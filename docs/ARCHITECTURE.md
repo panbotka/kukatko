@@ -61,6 +61,10 @@ photo-sorter se obtížně používá.
 5. **Robustnost > featur navíc.** Persistentní stav, idempotence, graceful degradace,
    žádné ztráty dat při restartu/výpadku boxu.
 6. **YAGNI.** Žádné spekulativní featury. Jednoduché, testovatelné, ohraničené moduly.
+7. **Testovatelnost a kvalita od začátku.** Každá změna má unit a (kde dává smysl) integrační
+   testy. Přísný `golangci-lint` a testy jsou **tvrdá brána** (`make check`). Nic se nemerguje
+   s červeným lintem nebo testy. Cíl: rozšiřitelná aplikace, kterou další iterace nerozbije.
+   Detail viz [§19 Kvalita, testování a linting](#19-kvalita-testovani-a-linting).
 
 ---
 
@@ -519,3 +523,57 @@ Detailní tasky se zakládají v systému **botka**. Milníky jsou seřazené pr
 - **M5 — Import/migrace:** PhotoPrism API import + originály + inkrement (PP UID); migrace z photo-sorteru (PS UID, 1:1 embeddingy).
 - **M6 — Backup & ops:** S3 backup (originály + dump), durable audit, rate-limiting, metriky, (volitelně WoL auto-wake), hardening.
 - **M7 — Polish:** detail fotky (PP+PS kombo), mobil/tablet, i18n úplnost, slideshow efekty, výkon, nedestruktivní úpravy.
+
+---
+
+## 19. Kvalita, testování a linting
+
+Robustnost a rozšiřitelnost jsou prvotřídní cíl. Každý task (i autonomní v botce) musí
+dodržet tato pravidla; **task není hotový s červeným lintem nebo testy.**
+
+### 19.1 Linting (Go)
+- **golangci-lint v2**, konfigurace **`.golangci.yml` převzatá a adaptovaná z photo-sorteru**
+  (přísná sada ~40+ linterů: `revive`, `gosec`, `errcheck`, `errorlint`, `wrapcheck`,
+  `cyclop`, `gocognit`, `funlen`, `dupl`, `goconst`, `gocritic`, `prealloc`, `sqlclosecheck`,
+  `bodyclose`, `noctx`, `testifylint`, `thelper`, `usetesting`, `nilerr`, `lll` (120),
+  `misspell`, `godot`, `nakedret`, `unparam`, `wastedassign`, …).
+- Nastavení mj.: `funlen` 60/40, `gocognit` 15, `goconst` 3, `lll` 120. Exported symboly
+  dokumentované (`revive: exported`). `//nolint` jen s odůvodněním (`nolintlint`).
+- `gofmt`/`gofumpt` čistý kód.
+
+### 19.2 Testy (Go)
+- **Unit testy** pro veškerou business logiku (table-driven, `testify`). Čisté funkce bez I/O
+  preferovat → snadno testovatelné.
+- **Integrační testy** pro DB repozitáře a HTTP handlery proti **reálnému pgvector Postgresu**
+  (test DB `kukatko_test`, DSN v `KUKATKO_TEST_DATABASE_URL`). Harness: aplikuje migrace,
+  poskytne čistý stav per test (truncate/transakce + rollback). Když env chybí, integrační
+  testy se `t.Skip` (aby rychlá brána `make check` nevyžadovala DB).
+- Externí závislosti (embeddings sidecar, PhotoPrism API, mapy.com, S3) za **rozhraním**
+  (interface) → v testech mockované/fake; kontrakt sidecaru ověřit i contract testem proti
+  fake serveru.
+- Smysluplné pokrytí logiky (ne vanity %). Nové chování = nové/aktualizované testy.
+
+### 19.3 Frontend testy
+- **ESLint** (strict) + **Prettier**. **Vitest + React Testing Library** pro komponenty a hooky
+  (zejména stav filtrů v URL, i18n, auth flow). Kritické toky (login, upload, hledání) pokrýt.
+- (Volitelně M7) **Playwright** E2E pro pár klíčových scénářů.
+
+### 19.4 Make targety a brána
+```
+make fmt              # gofmt/gofumpt + prettier
+make vet              # go vet
+make lint             # golangci-lint run
+make lint-fix         # golangci-lint run --fix
+make test             # unit testy (bez DB)
+make test-integration # integrační testy (vyžaduje KUKATKO_TEST_DATABASE_URL)
+make check            # fmt + vet + lint + test   ← brána
+make build            # frontend build + go build (embed)
+```
+
+### 19.5 CI a brána v botce
+- **GitHub Actions:** na push/PR spustit `make check` + `make test-integration` se service
+  kontejnerem `pgvector/pgvector:pg17` (env `KUKATKO_TEST_DATABASE_URL`) + frontend lint/test.
+- **Botka verification command projektu = `make check`** → pokud task zanechá červený lint
+  nebo testy, dostane stav `needs_review` místo `done`.
+- Autonomní agenti pro Go kód používají skill **golang-developer** (přísný lint, dokumentace,
+  testy).
