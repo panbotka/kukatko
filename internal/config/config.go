@@ -1,0 +1,248 @@
+// Package config defines kukatko's typed configuration and loads it from a YAML
+// file with environment-variable overrides.
+//
+// Configuration is layered: built-in defaults < YAML file < environment
+// variables (env always wins). Environment variables use the KUKATKO_ prefix
+// and map onto nested keys by replacing dots with underscores, for example
+// KUKATKO_DATABASE_URL -> database.url and KUKATKO_WEB_PORT -> web.port. The
+// mapy.com API key is the one exception: it is read from the unprefixed
+// MAPY_API_KEY so it can be shared with other tooling.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/spf13/viper"
+)
+
+const (
+	// envPrefix is the prefix for environment variables that override config
+	// keys, for example KUKATKO_WEB_PORT overrides web.port.
+	envPrefix = "KUKATKO"
+	// envConfigPath is the environment variable that points at the YAML config
+	// file when no explicit path is given.
+	envConfigPath = "KUKATKO_CONFIG"
+	// defaultConfigPath is the YAML file consulted when neither an explicit path
+	// nor envConfigPath is provided. A missing file is not an error.
+	defaultConfigPath = "config.yaml"
+	// maxPort is the highest valid TCP port number.
+	maxPort = 65535
+)
+
+// Sentinel validation errors returned by Validate so callers can match them
+// with errors.Is.
+var (
+	// ErrMissingDatabaseURL indicates database.url was left empty.
+	ErrMissingDatabaseURL = errors.New("config: database.url is required (set KUKATKO_DATABASE_URL)")
+	// ErrInvalidWebPort indicates web.port is outside the valid TCP range.
+	ErrInvalidWebPort = errors.New("config: web.port must be between 1 and 65535")
+	// ErrInvalidPoolSize indicates the connection-pool sizes are inconsistent.
+	ErrInvalidPoolSize = errors.New("config: invalid database connection-pool sizing")
+	// ErrInvalidEmbeddingDim indicates an embedding dimension is not positive.
+	ErrInvalidEmbeddingDim = errors.New("config: embedding image_dim and face_dim must be positive")
+)
+
+// Config is the fully resolved, typed configuration for a kukatko process.
+type Config struct {
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Storage   StorageConfig   `mapstructure:"storage"`
+	Web       WebConfig       `mapstructure:"web"`
+	Embedding EmbeddingConfig `mapstructure:"embedding"`
+	Auth      AuthConfig      `mapstructure:"auth"`
+	Maps      MapsConfig      `mapstructure:"maps"`
+	Backup    BackupConfig    `mapstructure:"backup"`
+	Trash     TrashConfig     `mapstructure:"trash"`
+	Duplicate DuplicateConfig `mapstructure:"duplicate"`
+}
+
+// DatabaseConfig holds the PostgreSQL connection string and pool sizing.
+type DatabaseConfig struct {
+	URL          string `mapstructure:"url"`
+	MaxOpenConns int    `mapstructure:"max_open_conns"`
+	MaxIdleConns int    `mapstructure:"max_idle_conns"`
+}
+
+// StorageConfig holds on-disk locations for original media and derived caches.
+type StorageConfig struct {
+	OriginalsPath string `mapstructure:"originals_path"`
+	CachePath     string `mapstructure:"cache_path"`
+}
+
+// WebConfig holds the HTTP listener and session/CORS settings.
+type WebConfig struct {
+	Host           string   `mapstructure:"host"`
+	Port           int      `mapstructure:"port"`
+	SessionSecret  string   `mapstructure:"session_secret"`
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
+}
+
+// EmbeddingConfig points at the external embedding service and records the
+// vector dimensions it produces.
+type EmbeddingConfig struct {
+	URL      string `mapstructure:"url"`
+	ImageDim int    `mapstructure:"image_dim"`
+	FaceDim  int    `mapstructure:"face_dim"`
+}
+
+// AuthConfig holds the credentials used to bootstrap the initial admin account.
+type AuthConfig struct {
+	BootstrapAdminUsername string `mapstructure:"bootstrap_admin_username"`
+	BootstrapAdminPassword string `mapstructure:"bootstrap_admin_password"`
+}
+
+// MapsConfig holds the server-side mapy.com API key (kept off the client).
+type MapsConfig struct {
+	MapyAPIKey string `mapstructure:"mapy_api_key"`
+}
+
+// BackupConfig holds the S3 destination and schedule for in-process backups.
+type BackupConfig struct {
+	S3       S3Config `mapstructure:"s3"`
+	Schedule string   `mapstructure:"schedule"`
+}
+
+// S3Config holds connection details for an S3-compatible backup endpoint.
+type S3Config struct {
+	Endpoint  string `mapstructure:"endpoint"`
+	Region    string `mapstructure:"region"`
+	Bucket    string `mapstructure:"bucket"`
+	AccessKey string `mapstructure:"access_key"`
+	SecretKey string `mapstructure:"secret_key"`
+	PathStyle bool   `mapstructure:"path_style"`
+}
+
+// TrashConfig holds the soft-delete retention policy.
+type TrashConfig struct {
+	RetentionDays int `mapstructure:"retention_days"`
+}
+
+// DuplicateConfig holds thresholds for duplicate detection.
+type DuplicateConfig struct {
+	Enabled          bool    `mapstructure:"enabled"`
+	PhashMaxDiff     int     `mapstructure:"phash_max_diff"`
+	EmbeddingMaxDist float64 `mapstructure:"embedding_max_dist"`
+}
+
+// Load reads configuration from the resolved YAML file (if present) overlaid
+// with KUKATKO_-prefixed environment variables, validates it, and returns the
+// typed result. configPath, when non-empty, takes precedence over the
+// KUKATKO_CONFIG environment variable and the default config.yaml. A missing
+// config file is not an error: defaults plus environment variables are used.
+func Load(configPath string) (*Config, error) {
+	v := viper.New()
+	setDefaults(v)
+
+	v.SetConfigType("yaml")
+	v.SetConfigFile(resolveConfigPath(configPath))
+
+	v.SetEnvPrefix(envPrefix)
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+	// MAPY_API_KEY is shared with other tooling and lives outside the KUKATKO_
+	// prefix, so it must be bound explicitly.
+	if err := v.BindEnv("maps.mapy_api_key", "MAPY_API_KEY"); err != nil {
+		return nil, fmt.Errorf("config: binding MAPY_API_KEY: %w", err)
+	}
+
+	if err := readConfigFile(v); err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("config: decoding configuration: %w", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// readConfigFile loads the configured YAML file into v, treating a missing file
+// as a non-error (env-only operation is supported); any other read or parse
+// failure is returned wrapped.
+func readConfigFile(v *viper.Viper) error {
+	if err := v.ReadInConfig(); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("config: reading %s: %w", v.ConfigFileUsed(), err)
+	}
+	return nil
+}
+
+// resolveConfigPath selects the YAML file path: an explicit configPath wins,
+// then the KUKATKO_CONFIG environment variable, then defaultConfigPath.
+func resolveConfigPath(configPath string) string {
+	if configPath != "" {
+		return configPath
+	}
+	if envPath := os.Getenv(envConfigPath); envPath != "" {
+		return envPath
+	}
+	return defaultConfigPath
+}
+
+// setDefaults registers the built-in default for every configuration key. Every
+// key gets a default so that AutomaticEnv overrides are picked up on Unmarshal
+// even when no YAML file is present.
+func setDefaults(v *viper.Viper) {
+	v.SetDefault("database.url", "")
+	v.SetDefault("database.max_open_conns", 25)
+	v.SetDefault("database.max_idle_conns", 5)
+
+	v.SetDefault("storage.originals_path", "/var/lib/kukatko/originals")
+	v.SetDefault("storage.cache_path", "/var/lib/kukatko/cache")
+
+	v.SetDefault("web.host", "0.0.0.0")
+	v.SetDefault("web.port", 8080)
+	v.SetDefault("web.session_secret", "")
+	v.SetDefault("web.allowed_origins", []string{})
+
+	v.SetDefault("embedding.url", "http://localhost:8000")
+	v.SetDefault("embedding.image_dim", 768)
+	v.SetDefault("embedding.face_dim", 512)
+
+	v.SetDefault("auth.bootstrap_admin_username", "")
+	v.SetDefault("auth.bootstrap_admin_password", "")
+
+	v.SetDefault("maps.mapy_api_key", "")
+
+	v.SetDefault("backup.s3.endpoint", "")
+	v.SetDefault("backup.s3.region", "")
+	v.SetDefault("backup.s3.bucket", "")
+	v.SetDefault("backup.s3.access_key", "")
+	v.SetDefault("backup.s3.secret_key", "")
+	v.SetDefault("backup.s3.path_style", false)
+	v.SetDefault("backup.schedule", "")
+
+	v.SetDefault("trash.retention_days", 30)
+
+	v.SetDefault("duplicate.enabled", true)
+	v.SetDefault("duplicate.phash_max_diff", 8)
+	v.SetDefault("duplicate.embedding_max_dist", 0.05)
+}
+
+// Validate checks that required fields are present and inter-field invariants
+// hold, returning one of the package's sentinel errors (matchable with
+// errors.Is) wrapped with offending values where useful.
+func (c *Config) Validate() error {
+	if c.Database.URL == "" {
+		return ErrMissingDatabaseURL
+	}
+	if c.Web.Port < 1 || c.Web.Port > maxPort {
+		return fmt.Errorf("%w: got %d", ErrInvalidWebPort, c.Web.Port)
+	}
+	if c.Database.MaxIdleConns > c.Database.MaxOpenConns {
+		return fmt.Errorf("%w: max_idle_conns (%d) exceeds max_open_conns (%d)",
+			ErrInvalidPoolSize, c.Database.MaxIdleConns, c.Database.MaxOpenConns)
+	}
+	if c.Embedding.ImageDim < 1 || c.Embedding.FaceDim < 1 {
+		return ErrInvalidEmbeddingDim
+	}
+	return nil
+}

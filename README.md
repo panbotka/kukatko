@@ -26,8 +26,27 @@ Potřebuješ **Go 1.26+** a **golangci-lint v2**.
 ```bash
 make check            # brána kvality: fmt + vet + lint + unit testy
 make build            # zkompiluje statický binár do bin/kukatko (CGO_ENABLED=0)
-./bin/kukatko serve   # HTTP server na :8080 (GET /healthz), graceful shutdown na SIGINT/SIGTERM
-./bin/kukatko version # vypíše verzi a commit
+
+# serve potřebuje aspoň database.url (typicky přes env):
+export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
+./bin/kukatko serve                       # HTTP server na web.host:web.port (default 0.0.0.0:8080)
+./bin/kukatko serve --config config.yaml  # explicitní cesta ke konfiguraci
+./bin/kukatko version                     # vypíše verzi a commit
 ```
+
+## Konfigurace
+
+Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).
+Zkopíruj [`config.example.yaml`](config.example.yaml) na `config.yaml` (nebo gitignorovaný
+`config.local.yaml`) a uprav. Cesta k souboru se bere z `--config` flagu, jinak z env
+`KUKATKO_CONFIG`, jinak default `config.yaml`. **Soubor je volitelný** — se `KUKATKO_DATABASE_URL`
+v prostředí běží appka na defaultech.
+
+Env proměnné mají prefix `KUKATKO_` a tečky v klíči nahrazují podtržítka
+(`database.url` → `KUKATKO_DATABASE_URL`, `web.port` → `KUKATKO_WEB_PORT`,
+`backup.s3.bucket` → `KUKATKO_BACKUP_S3_BUCKET`). Výjimka: mapy.com klíč se čte z
+neprefixované `MAPY_API_KEY`. Tajemství (DSN, session secret, admin heslo, S3 klíče,
+mapy klíč) drž v prostředí, ne v commitnutém souboru. Všechny klíče a defaulty popisuje
+`config.example.yaml`.
 
 Více v [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (layout, make cíle, brána kvality).

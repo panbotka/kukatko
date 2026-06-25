@@ -16,6 +16,8 @@ How to build, run, and verify Kukátko locally. Read [`CLAUDE.md`](../CLAUDE.md)
 cmd/kukatko/        # CLI entrypoint (Cobra root + serve/version subcommands), kept thin
 internal/server/    # chi HTTP server: routing, handlers, graceful shutdown
 internal/version/   # build-time version/commit (ldflags-injectable)
+internal/config/    # typed config: YAML + env override via Viper (config.Load)
+config.example.yaml # documented example config (committed; real config is gitignored)
 .golangci.yml       # strict golangci-lint v2 config (the quality gate)
 Makefile            # single source of truth for all tasks
 ```
@@ -23,9 +25,11 @@ Makefile            # single source of truth for all tasks
 ## CLI
 
 ```bash
-make build            # compile to bin/kukatko (CGO_ENABLED=0, version/commit injected)
-./bin/kukatko serve   # start the HTTP server on :8080 (Ctrl-C / SIGTERM = graceful shutdown)
-./bin/kukatko version # print version and commit
+make build                              # compile to bin/kukatko (CGO_ENABLED=0, version/commit injected)
+export KUKATKO_DATABASE_URL="postgres://…"  # required by serve
+./bin/kukatko serve                     # start HTTP server on web.host:web.port (default 0.0.0.0:8080)
+./bin/kukatko serve --config config.yaml    # use an explicit config file
+./bin/kukatko version                   # print version and commit
 ```
 
 `kukatko serve` exposes `GET /healthz`, returning `200` with a JSON body:
@@ -34,8 +38,20 @@ make build            # compile to bin/kukatko (CGO_ENABLED=0, version/commit in
 { "status": "ok", "version": { "version": "dev", "commit": "none" } }
 ```
 
-The listen port is hardcoded to `:8080` for now; configuration (YAML + env via Viper)
-arrives in a later milestone.
+## Configuration
+
+`internal/config` loads a typed `Config` via `config.Load(path)`: built-in defaults are
+overlaid with an optional YAML file and then `KUKATKO_`-prefixed environment variables
+(env always wins). The file path is resolved from the `--config` flag, then the
+`KUKATKO_CONFIG` env var, then the default `config.yaml`; a missing file is not an error.
+
+Env keys map onto nested config keys by replacing dots with underscores
+(`database.url` → `KUKATKO_DATABASE_URL`, `web.port` → `KUKATKO_WEB_PORT`). The one
+exception is `maps.mapy_api_key`, read from the unprefixed `MAPY_API_KEY`. `database.url`
+is required; `web.port`, the connection-pool sizes, and embedding dimensions are validated.
+Every key and its default is documented in [`config.example.yaml`](../config.example.yaml).
+Copy it to `config.yaml` (or the gitignored `config.local.yaml`) and keep secrets in the
+environment.
 
 ## Make targets
 

@@ -1,8 +1,8 @@
 // Package server implements the kukatko HTTP server: chi routing, request
 // handlers, and the server lifecycle (start and graceful shutdown).
 //
-// Configuration (listen address, timeouts, …) is intentionally hardcoded for
-// now; it will be wired to the config subsystem in a later milestone.
+// The listen address is supplied by the caller (resolved from the config
+// subsystem in the serve command); timeouts remain hardcoded for now.
 package server
 
 import (

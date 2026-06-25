@@ -21,9 +21,11 @@ inkrementální).
 ## Struktura a příkazy (scaffold M0)
 - **Layout:** `cmd/kukatko/` (tenký Cobra entrypoint: root + `serve` + `version`),
   `internal/server/` (chi HTTP server, graceful shutdown), `internal/version/`
-  (ldflags-injectable `Version`/`Commit`). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
-- **CLI:** `kukatko serve` (HTTP server na `:8080` natvrdo dokud nepřijde config; `GET /healthz`
-  → 200 JSON `{"status":"ok","version":{…}}`), `kukatko version` (verze + commit).
+  (ldflags-injectable `Version`/`Commit`), `internal/config/` (typovaná konfigurace,
+  Viper, `Load()`). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+- **CLI:** `kukatko serve` (načte config a poslouchá na `web.host:web.port`, default
+  `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`),
+  `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
 - **Make cíle:** `fmt` (golangci-lint fmt = gofmt+goimports), `vet`, `lint`, `lint-fix`,
   `test` (unit, `-race`, vyžaduje cgo/gcc), `test-integration` (tag `integration` +
   `KUKATKO_TEST_DATABASE_URL`), `check` (brána), `build` (`CGO_ENABLED=0` → `bin/kukatko`),
@@ -39,6 +41,16 @@ inkrementální).
   proti reálné test DB. Nové chování = nové/aktualizované testy. Cíl: rozšiřitelná aplikace,
   kterou další iterace nerozbije. Detail v `docs/ARCHITECTURE.md` §19.
 - Frontend: **ESLint** (strict) + **Vitest** musí projít (zapojeno do `make`). Žádné `any` bez důvodu.
+
+## Konfigurace
+- **`internal/config`** (`config.Load(path)`): YAML + env override přes Viper, **env vždy
+  vyhrává**. Cesta: `--config` flag → `KUKATKO_CONFIG` env → default `config.yaml`. Soubor je
+  volitelný (chybějící = jen defaulty + env). Required: `database.url`.
+- Env: prefix `KUKATKO_`, tečka → podtržítko (`database.url` → `KUKATKO_DATABASE_URL`,
+  `backup.s3.bucket` → `KUKATKO_BACKUP_S3_BUCKET`). Výjimka: `maps.mapy_api_key` ↔ `MAPY_API_KEY`.
+- **`config.example.yaml`** dokumentuje všechny klíče + defaulty; je commitnutý. Reálný config
+  (`config.yaml`/`config.local.yaml`) a tajemství **necommituj**. Nové konfig klíče přidávej do
+  `Config` structu, `setDefaults`, `config.example.yaml` a testů zároveň.
 
 ## Databáze
 - DB je **už provisionovaná** v shared Postgresu (pgvector 0.8.1 + unaccent).

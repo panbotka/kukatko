@@ -1,0 +1,86 @@
+# Kukátko — example configuration.
+#
+# Copy this file to `config.yaml` (or `config.local.yaml`, which is gitignored)
+# and adjust. Every key may be overridden by an environment variable using the
+# KUKATKO_ prefix with dots replaced by underscores, e.g.:
+#   database.url    -> KUKATKO_DATABASE_URL
+#   web.port        -> KUKATKO_WEB_PORT
+#   backup.s3.bucket-> KUKATKO_BACKUP_S3_BUCKET
+# The environment value always wins over the file value.
+#
+# Secrets (database URL, session secret, admin password, S3 keys, mapy.com key)
+# should come from the environment in production — keep them out of committed
+# files. The mapy.com key is the one exception to the prefix rule: it is read
+# from the unprefixed MAPY_API_KEY.
+#
+# The config file is OPTIONAL: with KUKATKO_DATABASE_URL set in the environment,
+# kukatko runs on defaults alone.
+
+database:
+  # PostgreSQL DSN. REQUIRED (no default). Usually set via KUKATKO_DATABASE_URL.
+  url: "postgres://kukatko:password@localhost:5432/kukatko?sslmode=disable"
+  # Maximum number of open connections in the pool.
+  max_open_conns: 25
+  # Maximum number of idle connections (must not exceed max_open_conns).
+  max_idle_conns: 5
+
+storage:
+  # Directory holding original, immutable media files.
+  originals_path: "/var/lib/kukatko/originals"
+  # Directory for derived artifacts (thumbnails, video posters, …).
+  cache_path: "/var/lib/kukatko/cache"
+
+web:
+  # Listen host. Use 0.0.0.0 to bind all interfaces.
+  host: "0.0.0.0"
+  # Listen TCP port (1–65535).
+  port: 8080
+  # Secret used to sign session cookies. Set via KUKATKO_WEB_SESSION_SECRET.
+  session_secret: ""
+  # CORS allowed origins. As an env var, comma-separated:
+  #   KUKATKO_WEB_ALLOWED_ORIGINS="https://a.example,https://b.example"
+  allowed_origins: []
+
+embedding:
+  # URL of the external embedding service (runs on the box; may be offline).
+  url: "http://localhost:8000"
+  # Dimensionality of image embeddings produced by the service.
+  image_dim: 768
+  # Dimensionality of face embeddings produced by the service.
+  face_dim: 512
+
+auth:
+  # Credentials used to create the initial admin account on first run.
+  bootstrap_admin_username: ""
+  # Set via KUKATKO_AUTH_BOOTSTRAP_ADMIN_PASSWORD; do not commit a real value.
+  bootstrap_admin_password: ""
+
+maps:
+  # mapy.com API key. Kept server-side (proxied). Read from MAPY_API_KEY.
+  mapy_api_key: ""
+
+backup:
+  s3:
+    # S3-compatible endpoint (AWS / MinIO / Backblaze / Wasabi).
+    endpoint: ""
+    region: ""
+    bucket: ""
+    # Set access_key / secret_key via the environment, not this file.
+    access_key: ""
+    secret_key: ""
+    # Use path-style addressing (required by most MinIO setups).
+    path_style: false
+  # Cron-style backup schedule (empty disables scheduled backups).
+  schedule: ""
+
+trash:
+  # Days a soft-deleted item is retained before permanent deletion.
+  retention_days: 30
+
+duplicate:
+  # Enable duplicate detection.
+  enabled: true
+  # Maximum perceptual-hash Hamming distance to treat images as duplicates.
+  phash_max_diff: 8
+  # Maximum embedding cosine distance to treat images as duplicates.
+  embedding_max_dist: 0.05
