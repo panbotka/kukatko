@@ -1,0 +1,28 @@
+# Go
+/kukatko
+/dist/
+*.test
+*.out
+
+# Node / frontend build
+web/node_modules/
+web/dist/
+internal/web/static/dist/
+
+# Local config & secrets (never commit)
+*.local.yaml
+*.local.yml
+.env
+.env.*
+config.local.*
+.secrets/
+
+# Data
+/data/
+*.sqlite
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
