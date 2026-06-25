@@ -25,17 +25,29 @@ inkrementální).
   Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` s `Ping`/`Close`/`Pool`,
   embedded migration runner `Migrate`, pgvector typy registrované na každém spojení;
   SQL migrace v `internal/database/migrations/*.sql`), `internal/database/dbtest/`
-  (integrační test harness: `dbtest.New(t)`, `dbtest.TruncateAll`). Detail:
-  [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+  (integrační test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/web/`
+  (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
+  `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
+  gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
+  frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+- **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
+  (`Layout`, `LanguageSwitcher`), `pages/` (`HomePage` volá `GET /healthz`, `NotFoundPage`),
+  `services/` (`health.ts`), `i18n/` (i18next init + `locales/{cs,en}/common.json`),
+  `test/setup.ts`. Konfig: `vite.config.ts` (build → `../internal/web/static/dist`,
+  vitest jsdom, dev proxy `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed),
+  `.prettierrc.json`, `tsconfig*.json`.
 - **CLI:** `kukatko serve` (načte config, **spustí migrace**, pak poslouchá na
   `web.host:web.port`, default `0.0.0.0:8080`; `GET /healthz` → 200 JSON
-  `{"status":"ok","version":{…}}`), `kukatko migrate` (spustí pending migrace samostatně
+  `{"status":"ok","version":{…}}`, ostatní cesty servíruje **embedované SPA** s fallbackem
+  na `index.html`), `kukatko migrate` (spustí pending migrace samostatně
   a skončí), `kukatko version` (verze + commit). Persistentní flag `--config <path>`
   určuje YAML config.
-- **Make cíle:** `fmt` (golangci-lint fmt = gofmt+goimports), `vet`, `lint`, `lint-fix`,
-  `test` (unit, `-race`, vyžaduje cgo/gcc), `test-integration` (tag `integration` +
-  `KUKATKO_TEST_DATABASE_URL`), `check` (brána), `build` (`CGO_ENABLED=0` → `bin/kukatko`),
-  `clean`, `help`. Verzi injectuješ `make build VERSION=x.y.z`.
+- **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
+  + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
+  cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`), `check`
+  (brána), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `clean`, `help`.
+  Frontend-only cíle: `web-deps` (`npm ci`), `web-build`, `web-fmt`, `web-lint`, `web-test`.
+  Verzi injectuješ `make build VERSION=x.y.z`. Frontend potřebuje **Node.js 22+**.
 
 ## Tvrdá brána kvality (NEPŘESKAKOVAT)
 - **`make check` (gofmt + go vet + golangci-lint + unit testy) MUSÍ projít.** Je to verification
@@ -46,7 +58,8 @@ inkrementální).
 - **Testy jsou povinné u každé změny:** unit testy pro logiku; **integrační testy** pro DB/HTTP
   proti reálné test DB. Nové chování = nové/aktualizované testy. Cíl: rozšiřitelná aplikace,
   kterou další iterace nerozbije. Detail v `docs/ARCHITECTURE.md` §19.
-- Frontend: **ESLint** (strict) + **Vitest** musí projít (zapojeno do `make`). Žádné `any` bez důvodu.
+- Frontend: **ESLint** (strict) + **Prettier** (`--check`) + **Vitest** musí projít (zapojeno do
+  `make`). Žádné `any` bez důvodu.
 
 ## Konfigurace
 - **`internal/config`** (`config.Load(path)`): YAML + env override přes Viper, **env vždy

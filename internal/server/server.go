@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/panbotka/kukatko/internal/version"
+	"github.com/panbotka/kukatko/internal/web"
 )
 
 const (
@@ -77,9 +78,13 @@ func (s *Server) Addr() string {
 	return s.httpServer.Addr
 }
 
-// routes registers all HTTP routes on the server's router.
+// routes registers all HTTP routes on the server's router. API endpoints are
+// registered explicitly; the embedded SPA handler is installed as the not-found
+// handler so it serves unmatched paths (client-side routes, static assets)
+// while leaving method-not-allowed responses on real API routes intact.
 func (s *Server) routes() {
 	s.router.Get("/healthz", handleHealthz)
+	s.router.NotFound(web.Handler().ServeHTTP)
 }
 
 // Run starts the HTTP server and blocks until ctx is canceled (for example on

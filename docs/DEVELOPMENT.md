@@ -7,6 +7,7 @@ How to build, run, and verify Kukátko locally. Read [`CLAUDE.md`](../CLAUDE.md)
 
 - **Go 1.26+**
 - **golangci-lint v2** (provides both `golangci-lint run` and `golangci-lint fmt`)
+- **Node.js 22+** (npm) — for the `web/` frontend (Vite build, ESLint, Prettier, Vitest)
 - A C compiler (`gcc`/`cc`) — only needed for `make test`, because the race detector
   requires cgo. The production binary is still built with `CGO_ENABLED=0`.
 
@@ -17,9 +18,29 @@ cmd/kukatko/        # CLI entrypoint (Cobra root + serve/version subcommands), k
 internal/server/    # chi HTTP server: routing, handlers, graceful shutdown
 internal/version/   # build-time version/commit (ldflags-injectable)
 internal/config/    # typed config: YAML + env override via Viper (config.Load)
+internal/web/       # SPA fallback handler + internal/web/static (//go:embed of dist)
+web/                # React 19 + TS + Vite frontend (Superhero theme, i18n); builds into
+                    #   internal/web/static/dist, which Go embeds into the binary
 config.example.yaml # documented example config (committed; real config is gitignored)
 .golangci.yml       # strict golangci-lint v2 config (the quality gate)
 Makefile            # single source of truth for all tasks
+```
+
+## Frontend
+
+The SPA lives in `web/` (React 19 + TypeScript + Vite, react-bootstrap + Bootswatch
+Superhero, react-router-dom, i18next with Czech default). `npm run build` outputs to
+`internal/web/static/dist`; Go embeds that directory (`//go:embed all:dist/*`) and serves it
+with an SPA fallback (unknown non-asset paths → `index.html`; fingerprinted files under
+`/assets/` get an immutable cache). A committed `internal/web/static/dist/.gitkeep` keeps the
+embed directive valid on a fresh checkout before any build. Dev loop:
+
+```bash
+cd web && npm install   # once
+npm run dev             # Vite dev server, proxies /healthz and /api to localhost:8080
+npm run lint            # ESLint (strict, typed)
+npm run format:check    # Prettier
+npm run test            # Vitest + React Testing Library
 ```
 
 ## CLI
@@ -37,6 +58,10 @@ export KUKATKO_DATABASE_URL="postgres://…"  # required by serve
 ```json
 { "status": "ok", "version": { "version": "dev", "commit": "none" } }
 ```
+
+All other paths are served by the embedded SPA (client-side routes fall back to
+`index.html`). Build the frontend first (`make build` does this automatically) so the binary
+embeds real assets; without a build, only the `.gitkeep` placeholder is embedded.
 
 ## Configuration
 
@@ -56,16 +81,21 @@ environment.
 ## Make targets
 
 ```bash
-make fmt              # gofmt + goimports (via golangci-lint fmt)
+make fmt              # golangci-lint fmt + Prettier --write
 make vet              # go vet
-make lint             # golangci-lint run (strict config)
-make lint-fix         # golangci-lint run --fix
-make test             # unit tests with the race detector (no DB needed)
+make lint             # golangci-lint run + ESLint (strict) + Prettier --check
+make lint-fix         # golangci-lint run --fix + eslint --fix
+make test             # Go unit tests (race detector, no DB) + Vitest
 make test-integration # integration tests (requires KUKATKO_TEST_DATABASE_URL)
-make check            # fmt + vet + lint + test  ← the quality gate
-make build            # compile the static binary into bin/
-make clean            # remove build artifacts
+make check            # fmt + vet + lint + test  ← the quality gate (Go + frontend)
+make build            # frontend build + compile the static binary into bin/
+make clean            # remove build artifacts (binary, embedded dist, web build)
 make help             # list targets
+
+# frontend-only targets (run npm under web/):
+make web-deps   # npm ci         make web-build  # npm run build → embed dir
+make web-lint   # eslint+prettier make web-test   # vitest
+make web-fmt    # prettier --write
 ```
 
 ## The quality gate

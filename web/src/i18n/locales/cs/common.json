@@ -1,0 +1,31 @@
+{
+  "app": {
+    "name": "Kukátko",
+    "tagline": "Samostatná správa fotek a videí"
+  },
+  "nav": {
+    "home": "Domů",
+    "library": "Knihovna",
+    "map": "Mapa"
+  },
+  "language": {
+    "cs": "Čeština",
+    "en": "English",
+    "switch": "Přepnout jazyk"
+  },
+  "home": {
+    "title": "Vítejte v Kukátku",
+    "subtitle": "Samostatná aplikace pro správu fotek a videí — náhrada PhotoPrismu.",
+    "apiStatusTitle": "Stav backendu",
+    "checking": "Zjišťuji dostupnost…",
+    "healthy": "Backend je dostupný",
+    "unhealthy": "Backend není dostupný",
+    "version": "Verze",
+    "commit": "Commit"
+  },
+  "notFound": {
+    "title": "Stránka nenalezena",
+    "message": "Požadovaná stránka neexistuje.",
+    "back": "Zpět na domovskou stránku"
+  }
+}

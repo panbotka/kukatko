@@ -96,6 +96,10 @@ linters:
   exclusions:
     presets:
       - std-error-handling
+    paths:
+      # Vendored Go sources shipped inside frontend npm packages (e.g. flatted)
+      # are not ours to lint; keep them out of the Go quality gate.
+      - web/node_modules
     rules:
       # Don't check error return on Logout calls
       - linters: [errcheck]
@@ -147,6 +151,9 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/panbotka/kukatko
+  exclusions:
+    paths:
+      - web/node_modules
 
 output:
   sort-order:

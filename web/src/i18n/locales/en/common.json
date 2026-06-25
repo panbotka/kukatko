@@ -1,0 +1,31 @@
+{
+  "app": {
+    "name": "Kukátko",
+    "tagline": "Self-hosted photo & video library"
+  },
+  "nav": {
+    "home": "Home",
+    "library": "Library",
+    "map": "Map"
+  },
+  "language": {
+    "cs": "Čeština",
+    "en": "English",
+    "switch": "Switch language"
+  },
+  "home": {
+    "title": "Welcome to Kukátko",
+    "subtitle": "A self-hosted photo and video management application — a PhotoPrism replacement.",
+    "apiStatusTitle": "Backend status",
+    "checking": "Checking availability…",
+    "healthy": "Backend is reachable",
+    "unhealthy": "Backend is unreachable",
+    "version": "Version",
+    "commit": "Commit"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "message": "The requested page does not exist.",
+    "back": "Back to home"
+  }
+}

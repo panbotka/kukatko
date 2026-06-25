@@ -4,45 +4,77 @@ VERSION  ?= dev
 COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS  := -X $(PKG)/internal/version.Version=$(VERSION) -X $(PKG)/internal/version.Commit=$(COMMIT)
 
-.PHONY: help fmt vet lint lint-fix test test-integration check build clean
+# Frontend (Vite + React) lives in web/ and builds into the Go embed directory.
+WEB_DIR  := web
+
+.PHONY: help fmt vet lint lint-fix test test-integration check build clean \
+        web-deps web-build web-fmt web-lint web-test
 
 ## help: List available make targets.
 help:
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/^## //'
 
-## fmt: Format Go sources (gofmt + goimports via golangci-lint formatters).
-fmt:
+## fmt: Format Go sources (golangci-lint formatters) and the frontend (Prettier).
+fmt: web-deps
 	golangci-lint fmt
+	cd $(WEB_DIR) && npm run format
 
 ## vet: Run go vet static analysis.
 vet:
 	go vet ./...
 
-## lint: Run golangci-lint with the strict project config.
-lint:
+## lint: Run golangci-lint plus the frontend ESLint (strict) and Prettier check.
+lint: web-deps
 	golangci-lint run ./...
+	cd $(WEB_DIR) && npm run lint && npm run format:check
 
-## lint-fix: Run golangci-lint applying available autofixes.
-lint-fix:
+## lint-fix: Run golangci-lint and ESLint applying available autofixes.
+lint-fix: web-deps
 	golangci-lint run --fix ./...
+	cd $(WEB_DIR) && npm run lint -- --fix
 
-## test: Run unit tests with the race detector (integration tests excluded).
+## test: Run Go unit tests (race detector) and the frontend Vitest suite.
 ## CGO is enabled here only so the race detector works; the production binary
 ## is still built with CGO_ENABLED=0 (see the build target).
-test:
+test: web-deps
 	CGO_ENABLED=1 go test -race ./...
+	cd $(WEB_DIR) && npm run test
 
 ## test-integration: Run integration tests (requires KUKATKO_TEST_DATABASE_URL).
 test-integration:
 	CGO_ENABLED=1 go test -race -tags=integration ./...
 
-## check: Full quality gate — fmt, vet, lint, and unit tests.
+## check: Full quality gate — fmt, vet, lint, and unit tests (Go + frontend).
 check: fmt vet lint test
 
-## build: Compile the static kukatko binary into bin/ (CGO disabled).
-build:
+## web-deps: Install frontend dependencies from the lockfile (idempotent).
+web-deps:
+	cd $(WEB_DIR) && npm ci
+
+## web-build: Build the frontend into internal/web/static/dist for embedding.
+web-build: web-deps
+	cd $(WEB_DIR) && npm run build
+	printf '' > internal/web/static/dist/.gitkeep
+
+## web-fmt: Format frontend sources with Prettier.
+web-fmt: web-deps
+	cd $(WEB_DIR) && npm run format
+
+## web-lint: Lint the frontend (ESLint strict + Prettier check).
+web-lint: web-deps
+	cd $(WEB_DIR) && npm run lint && npm run format:check
+
+## web-test: Run the frontend Vitest suite.
+web-test: web-deps
+	cd $(WEB_DIR) && npm run test
+
+## build: Build the frontend, then compile the static kukatko binary (CGO off).
+## The frontend is built first so go:embed captures the SPA into the binary.
+build: web-build
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/$(APP_NAME) ./cmd/$(APP_NAME)
 
-## clean: Remove build artifacts.
+## clean: Remove build artifacts (binary, coverage, embedded dist, web build).
 clean:
 	rm -rf bin/ coverage.out
+	rm -rf $(WEB_DIR)/dist $(WEB_DIR)/coverage
+	find internal/web/static/dist -mindepth 1 ! -name .gitkeep -delete

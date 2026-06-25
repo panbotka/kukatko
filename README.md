@@ -12,7 +12,7 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - Mapy ([mapy.com](https://mapy.com)), slideshow, alba, štítky, hromadná editace metadat,
   per-user oblíbené, dvojjazyčné UI (čeština default + angličtina), S3 zálohování.
 
-> **Stav:** aktivní vývoj (milník M0 — základní kostra backendu). Architektura:
+> **Stav:** aktivní vývoj (milník M0 — kostra backendu + frontendu). Architektura:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), vývojářský návod:
 > [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 >
@@ -21,11 +21,11 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 
 ## Rychlý start
 
-Potřebuješ **Go 1.26+** a **golangci-lint v2**.
+Potřebuješ **Go 1.26+**, **golangci-lint v2** a **Node.js 22+** (npm) pro frontend.
 
 ```bash
-make check            # brána kvality: fmt + vet + lint + unit testy
-make build            # zkompiluje statický binár do bin/kukatko (CGO_ENABLED=0)
+make check            # brána kvality: fmt + vet + lint + unit testy (Go i frontend)
+make build            # build frontendu (Vite) + statický binár do bin/kukatko (CGO_ENABLED=0)
 
 # serve i migrate potřebují aspoň database.url (typicky přes env):
 export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
@@ -64,5 +64,31 @@ Env proměnné mají prefix `KUKATKO_` a tečky v klíči nahrazují podtržítk
 neprefixované `MAPY_API_KEY`. Tajemství (DSN, session secret, admin heslo, S3 klíče,
 mapy klíč) drž v prostředí, ne v commitnutém souboru. Všechny klíče a defaulty popisuje
 `config.example.yaml`.
+
+## Frontend
+
+SPA je **React 19 + TypeScript + Vite** v adresáři [`web/`](web/), stylovaná tématem
+**Bootswatch Superhero** (dark) přes **react-bootstrap**, s routováním `react-router-dom`
+a i18n přes **i18next** (**čeština default** + angličtina, volba se persistuje do
+`localStorage`). Build (`npm run build`) se zapisuje do `internal/web/static/dist`, odkud ho
+Go embeduje (`//go:embed`) a servíruje s **SPA fallbackem** (neznámé ne-asset cesty →
+`index.html`; fingerprintované soubory pod `/assets/` mají immutable cache). `kukatko serve`
+tak vrací jak `GET /healthz`, tak celé SPA.
+
+Vývoj frontendu (dev server s proxy na Go backend) a samostatné cíle:
+
+```bash
+cd web && npm install     # jednorázová instalace závislostí
+npm run dev               # Vite dev server (proxy /healthz a /api → localhost:8080)
+
+# nebo přes Makefile (z kořene repa):
+make web-build            # build SPA do internal/web/static/dist
+make web-lint             # ESLint (strict) + Prettier --check
+make web-test             # Vitest (React Testing Library)
+make web-fmt              # Prettier --write
+```
+
+Frontendové cíle jsou zapojené do hlavní brány: `make lint`/`make test`/`make fmt`/`make check`
+spouští i ESLint, Prettier a Vitest. Build SPA běží v `make build` před `go build`.
 
 Více v [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (layout, make cíle, brána kvality).

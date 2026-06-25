@@ -8,7 +8,11 @@
 # Node / frontend build
 web/node_modules/
 web/dist/
-internal/web/static/dist/
+web/coverage/
+# Embedded SPA build output: ignore everything except the .gitkeep placeholder,
+# which must stay tracked so //go:embed compiles on a fresh checkout.
+internal/web/static/dist/*
+!internal/web/static/dist/.gitkeep
 
 # Local config & secrets (never commit)
 *.local.yaml
