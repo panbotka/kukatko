@@ -51,6 +51,16 @@ inkrementální).
 - **Per-user oblíbené** (ne globální). **mapy.com klíč drž server-side** (backend proxy).
 - Streamuj velké soubory (upload/download/video) — nedrž je celé v RAM.
 
+## Definition of Done — před KAŽDÝM commitem
+Vždy, na konci každého tasku, v tomto pořadí:
+1. **Aktualizuj `README.md` a `CLAUDE.md`** — rozšiř/eedituj je tak, aby odrážely tvé změny:
+   nové featury, příkazy/subkomandy, konfigurační klíče, env proměnné, `make` cíle, závislosti,
+   konvence. Dokumentace nesmí zestárnout. Pokud se nic relevantního nezměnilo, ověř a nech být.
+   Velké architektonické změny promítni i do `docs/ARCHITECTURE.md`.
+2. **`make check`** musí projít (gofmt + vet + lint + testy + frontend lint/test).
+3. **Commit** (anglicky, výstižně) a **push**. Commit message zakonči řádkem:
+   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+
 ## Mimo rozsah
 - **Fotokniha** (z photo-sorteru se nepřebírá).
 - Veřejné sdílení/share-linky nejsou priorita.
