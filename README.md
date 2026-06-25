@@ -12,7 +12,22 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - Mapy ([mapy.com](https://mapy.com)), slideshow, alba, štítky, hromadná editace metadat,
   per-user oblíbené, dvojjazyčné UI (čeština default + angličtina), S3 zálohování.
 
-> **Stav:** fáze návrhu. Implementace zatím neprobíhá. Architektura: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> **Stav:** aktivní vývoj (milník M0 — základní kostra backendu). Architektura:
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), vývojářský návod:
+> [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 >
 > PhotoPrism zůstává **primární** systém až do ostrého přechodu na Kukátko; do té doby
 > Kukátko běží paralelně a importuje z PhotoPrismu read-only.
+
+## Rychlý start
+
+Potřebuješ **Go 1.26+** a **golangci-lint v2**.
+
+```bash
+make check            # brána kvality: fmt + vet + lint + unit testy
+make build            # zkompiluje statický binár do bin/kukatko (CGO_ENABLED=0)
+./bin/kukatko serve   # HTTP server na :8080 (GET /healthz), graceful shutdown na SIGINT/SIGTERM
+./bin/kukatko version # vypíše verzi a commit
+```
+
+Více v [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (layout, make cíle, brána kvality).

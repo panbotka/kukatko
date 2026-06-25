@@ -18,6 +18,17 @@ inkrementální).
 - **Obrázky/videa bez CGO:** pure-Go pro JPEG/PNG/WebP; **shell-out** na `heif-convert` (HEIC),
   `exiftool`/`dcraw` (RAW preview), `ffmpeg`/`ffprobe` (video poster/metadata/streaming).
 
+## Struktura a příkazy (scaffold M0)
+- **Layout:** `cmd/kukatko/` (tenký Cobra entrypoint: root + `serve` + `version`),
+  `internal/server/` (chi HTTP server, graceful shutdown), `internal/version/`
+  (ldflags-injectable `Version`/`Commit`). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+- **CLI:** `kukatko serve` (HTTP server na `:8080` natvrdo dokud nepřijde config; `GET /healthz`
+  → 200 JSON `{"status":"ok","version":{…}}`), `kukatko version` (verze + commit).
+- **Make cíle:** `fmt` (golangci-lint fmt = gofmt+goimports), `vet`, `lint`, `lint-fix`,
+  `test` (unit, `-race`, vyžaduje cgo/gcc), `test-integration` (tag `integration` +
+  `KUKATKO_TEST_DATABASE_URL`), `check` (brána), `build` (`CGO_ENABLED=0` → `bin/kukatko`),
+  `clean`, `help`. Verzi injectuješ `make build VERSION=x.y.z`.
+
 ## Tvrdá brána kvality (NEPŘESKAKOVAT)
 - **`make check` (gofmt + go vet + golangci-lint + unit testy) MUSÍ projít.** Je to verification
   command projektu — červený lint/testy = task skončí jako `needs_review`.

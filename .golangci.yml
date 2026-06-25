@@ -1,0 +1,154 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - copyloopvar
+    - cyclop
+    - dupl
+    - dupword
+    - durationcheck
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - forcetypeassert
+    - funlen
+    - gocognit
+    - goconst
+    - gocritic
+    - godot
+    - godox
+    - gosec
+    - intrange
+    - lll
+    - makezero
+    - mirror
+    - misspell
+    - modernize
+    - musttag
+    - nakedret
+    - nestif
+    - nilnil
+    - nilerr
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - perfsprint
+    - prealloc
+    - predeclared
+    - reassign
+    - recvcheck
+    - revive
+    - sqlclosecheck
+    - testifylint
+    - thelper
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - wrapcheck
+
+  settings:
+    funlen:
+      lines: 60
+      statements: 40
+    gocognit:
+      min-complexity: 15
+    goconst:
+      min-occurrences: 3
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
+        - hugeParam
+        - rangeValCopy
+    gosec:
+      excludes:
+        - G104  # Unhandled errors - already covered by errcheck with granular exclusions
+        - G704  # SSRF via taint - false positives on validated URLs (scheme + host checked in constructors)
+        - G706  # Log injection via taint - false positives on sanitized values (sanitizeForLog / NewReplacer)
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+        - name: package-comments
+          disabled: true
+    exhaustive:
+      default-signifies-exhaustive: true
+    lll:
+      line-length: 120
+    nakedret:
+      max-func-lines: 20
+    perfsprint:
+      err-error: true
+      errorf: true
+      sprintf1: true
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # Don't check error return on Logout calls
+      - linters: [errcheck]
+        source: "\\.Logout\\(\\)"
+      # Don't check error return on fmt.Sscanf
+      - linters: [errcheck]
+        source: "fmt\\.Sscanf"
+      # Don't check error return on io.Copy to http.ResponseWriter
+      - linters: [errcheck]
+        source: "io\\.Copy\\("
+      # Don't check error return on w.Write (http response writes)
+      - linters: [errcheck]
+        source: "w\\.Write\\("
+      # Don't check error return on json.Encoder.Encode to http response
+      - linters: [errcheck]
+        source: "json\\.NewEncoder\\(w\\)"
+      # Don't check error return on tx.Rollback in defers
+      - linters: [errcheck]
+        source: "tx\\.Rollback\\(\\)"
+      # nil, nil return is a valid "not found" pattern in database layer
+      - path: "internal/database/"
+        linters:
+          - nilnil
+      # Relax rules in test files
+      - path: "_test\\.go"
+        linters:
+          - cyclop
+          - dupl
+          - funlen
+          - gocognit
+          - gocritic
+          - errcheck
+          - goconst
+          - gosec
+          - forcetypeassert
+          - lll
+          - unparam
+          - usestdlibvars
+          - nestif
+          - thelper
+          - usetesting
+          - wrapcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/panbotka/kukatko
+
+output:
+  sort-order:
+    - linter
+    - file
