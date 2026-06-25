@@ -39,6 +39,10 @@ photo-sorter se obtížně používá.
 - Plná podpora telefon/tablet.
 - Filtry a řazení všude (knihovna, alba, štítky).
 - Detail fotky = kombinace PhotoPrism + photo-sorter (metadata/editace, obličeje, podobné).
+- **Videa** (mp4/mov/live photos jako v PhotoPrismu) — ukládání, poster + náhledy přes `ffmpeg`,
+  přehrávání/streamování (range requests), import videí z PhotoPrismu. Embedding na poster snímku
+  (videa jsou tím i vyhledatelná).
+- **Správa duplikátů** — review podobných/duplicitních fotek (pHash + embedding) a hromadný úklid.
 
 **Co je mimo rozsah:**
 
@@ -163,9 +167,10 @@ Volby vycházejí z photo-sorteru (osvědčené) a z rešerše ([§16](#16-refer
   vs GB díky shrink-on-load. Default je pure-Go.)
 
 ### Inference sidecar (na boxu)
-- Samostatná HTTP služba, **stejný kontrakt jako photo-sorter** (viz [§6.1](#61-kontrakt-sidecaru)),
-  aby šla 1:1 migrace embeddingů. Referenční implementace: **Immich machine-learning**
-  (FastAPI + ONNX Runtime/CUDA).
+- **Reuse existující služby na boxu.** Kukátko nestaví nový sidecar — volá **existující
+  embeddings službu běžící na boxu** (stejné modely jako photo-sorter → 1:1 kompatibilita).
+  Adresa je v konfiguraci (`embedding.url`); když je box offline, joby čekají ve frontě
+  (viz [§8](#8-asynchronni-joby--box-offline)). Kontrakt viz [§6.1](#61-kontrakt-sidecaru).
 - Modely (stejné jako photo-sorter): **CLIP ViT-L/14** (image+text, 768-dim),
   **InsightFace `buffalo_l`** (ArcFace, 512-dim). Pozn.: pretrained packy jsou typicky
   *non-commercial/research* — pro osobní použití OK.
