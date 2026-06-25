@@ -19,13 +19,19 @@ inkrementální).
   `exiftool`/`dcraw` (RAW preview), `ffmpeg`/`ffprobe` (video poster/metadata/streaming).
 
 ## Struktura a příkazy (scaffold M0)
-- **Layout:** `cmd/kukatko/` (tenký Cobra entrypoint: root + `serve` + `version`),
+- **Layout:** `cmd/kukatko/` (tenký Cobra entrypoint: root + `serve` + `migrate` + `version`),
   `internal/server/` (chi HTTP server, graceful shutdown), `internal/version/`
   (ldflags-injectable `Version`/`Commit`), `internal/config/` (typovaná konfigurace,
-  Viper, `Load()`). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
-- **CLI:** `kukatko serve` (načte config a poslouchá na `web.host:web.port`, default
-  `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`),
-  `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
+  Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` s `Ping`/`Close`/`Pool`,
+  embedded migration runner `Migrate`, pgvector typy registrované na každém spojení;
+  SQL migrace v `internal/database/migrations/*.sql`), `internal/database/dbtest/`
+  (integrační test harness: `dbtest.New(t)`, `dbtest.TruncateAll`). Detail:
+  [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+- **CLI:** `kukatko serve` (načte config, **spustí migrace**, pak poslouchá na
+  `web.host:web.port`, default `0.0.0.0:8080`; `GET /healthz` → 200 JSON
+  `{"status":"ok","version":{…}}`), `kukatko migrate` (spustí pending migrace samostatně
+  a skončí), `kukatko version` (verze + commit). Persistentní flag `--config <path>`
+  určuje YAML config.
 - **Make cíle:** `fmt` (golangci-lint fmt = gofmt+goimports), `vet`, `lint`, `lint-fix`,
   `test` (unit, `-race`, vyžaduje cgo/gcc), `test-integration` (tag `integration` +
   `KUKATKO_TEST_DATABASE_URL`), `check` (brána), `build` (`CGO_ENABLED=0` → `bin/kukatko`),
@@ -58,8 +64,10 @@ inkrementální).
   `KUKATKO_TEST_DATABASE_URL` (integrační testy, DB `kukatko_test`, bezpečné truncatovat).
   Tamtéž je `MAPY_API_KEY`.
 - **Nikdy necommituj tajemství.** `.secrets/`, `*.local.yaml`, `.env*` jsou gitignored.
-- Migrace = SQL v `embed.FS`, auto-apply na startu, lexikografické pořadí. FK s
-  `ON DELETE CASCADE`/`SET NULL` (žádné sirotky).
+- Migrace = SQL v `embed.FS` (`internal/database/migrations/NNNN_name.sql`), auto-apply na
+  startu ve vzestupném pořadí verze, každá ve vlastní transakci, idempotentně evidované
+  v tabulce `schema_migrations`. Jména `0001_init.sql`. FK s `ON DELETE CASCADE`/`SET NULL`
+  (žádné sirotky).
 
 ## Klíčové vzory
 - **Embeddings sidecar se NESTAVÍ.** Kukátko volá existující službu na **boxu** (stejné modely

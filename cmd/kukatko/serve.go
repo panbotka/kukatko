@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/panbotka/kukatko/internal/config"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/server"
 	"github.com/panbotka/kukatko/internal/version"
 )
@@ -25,17 +25,22 @@ func newServeCmd() *cobra.Command {
 		Long:  "Start the kukatko HTTP server and serve the API until interrupted (SIGINT/SIGTERM).",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			configPath, err := cmd.Flags().GetString("config")
+			cfg, err := loadConfigFromFlags(cmd)
 			if err != nil {
-				return fmt.Errorf("reading --config flag: %w", err)
-			}
-			cfg, err := config.Load(configPath)
-			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
+				return err
 			}
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+
+			db, err := database.New(ctx, cfg.Database)
+			if err != nil {
+				return fmt.Errorf("connecting to database: %w", err)
+			}
+			defer db.Close()
+			if _, err = db.Migrate(ctx); err != nil {
+				return fmt.Errorf("applying migrations: %w", err)
+			}
 
 			addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
 			srv := server.New(addr)

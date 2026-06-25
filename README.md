@@ -27,11 +27,27 @@ Potřebuješ **Go 1.26+** a **golangci-lint v2**.
 make check            # brána kvality: fmt + vet + lint + unit testy
 make build            # zkompiluje statický binár do bin/kukatko (CGO_ENABLED=0)
 
-# serve potřebuje aspoň database.url (typicky přes env):
+# serve i migrate potřebují aspoň database.url (typicky přes env):
 export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
-./bin/kukatko serve                       # HTTP server na web.host:web.port (default 0.0.0.0:8080)
+./bin/kukatko migrate                     # spustí pending DB migrace a skončí
+./bin/kukatko serve                       # spustí migrace, pak HTTP server (default 0.0.0.0:8080)
 ./bin/kukatko serve --config config.yaml  # explicitní cesta ke konfiguraci
 ./bin/kukatko version                     # vypíše verzi a commit
+```
+
+## Databáze a migrace
+
+Kukátko používá **PostgreSQL + pgvector** (typy `vector`/`halfvec`) a **unaccent**. Migrace
+jsou SQL soubory embedované v binárce (`internal/database/migrations/NNNN_name.sql`); spouští
+se automaticky na startu `serve` (nebo ručně přes `kukatko migrate`) ve vzestupném pořadí
+verze, každá ve vlastní transakci, a evidují se v tabulce `schema_migrations` (idempotentní —
+nikdy se neaplikují dvakrát).
+
+Integrační testy běží proti reálné test DB:
+
+```bash
+export KUKATKO_TEST_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko_test"
+make test-integration   # bez KUKATKO_TEST_DATABASE_URL se DB testy přeskočí (t.Skip)
 ```
 
 ## Konfigurace

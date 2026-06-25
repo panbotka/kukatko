@@ -1,6 +1,12 @@
 package main
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"github.com/panbotka/kukatko/internal/config"
+)
 
 // newRootCmd builds the root Cobra command for the kukatko CLI and attaches all
 // subcommands. Usage and errors are silenced so that RunE failures surface as a
@@ -16,6 +22,20 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().String("config", "",
 		"path to the YAML config file (default: $KUKATKO_CONFIG or config.yaml)")
-	root.AddCommand(newServeCmd(), newVersionCmd())
+	root.AddCommand(newServeCmd(), newMigrateCmd(), newVersionCmd())
 	return root
+}
+
+// loadConfigFromFlags reads the persistent --config flag from cmd and loads the
+// typed configuration, wrapping any flag-lookup or load failure with context.
+func loadConfigFromFlags(cmd *cobra.Command) (*config.Config, error) {
+	configPath, err := cmd.Flags().GetString("config")
+	if err != nil {
+		return nil, fmt.Errorf("reading --config flag: %w", err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading config: %w", err)
+	}
+	return cfg, nil
 }
