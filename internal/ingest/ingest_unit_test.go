@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/exif"
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -86,7 +87,7 @@ func TestBuildPhoto(t *testing.T) {
 		Width: 4000, Height: 3000, Orientation: 6, TakenAtSource: exif.SourceExif,
 		CameraMake: "Canon", ISO: &iso, Mime: "",
 	}
-	p := buildPhoto(stored, meta, "ph_user")
+	p := buildPhoto(stored, mediaMeta{kind: photos.MediaImage, shared: meta}, "ph_user")
 
 	if p.FileName != "pic.jpg" {
 		t.Errorf("FileName = %q, want pic.jpg", p.FileName)
@@ -97,6 +98,9 @@ func TestBuildPhoto(t *testing.T) {
 	if p.FileMime != "image/jpeg" || p.FileOrientation != 6 || p.TakenAtSource != "exif" {
 		t.Errorf("derived fields mismatch: %+v", p)
 	}
+	if p.MediaType != photos.MediaImage {
+		t.Errorf("MediaType = %q, want image", p.MediaType)
+	}
 	if p.ISO == nil || *p.ISO != 200 {
 		t.Errorf("ISO not mapped: %+v", p.ISO)
 	}
@@ -105,13 +109,52 @@ func TestBuildPhoto(t *testing.T) {
 	}
 }
 
+// TestBuildPhoto_video verifies the video media type and the video-only fields
+// (duration, codecs, audio, fps) are mapped onto the photo.
+func TestBuildPhoto_video(t *testing.T) {
+	t.Parallel()
+	dur, fps := 5312, 29.97
+	stored := storage.StoredFile{Hash: "vid1", RelPath: "2024/05/clip.mp4", Size: 4242, MIME: "video/mp4"}
+	media := mediaMeta{
+		kind:   photos.MediaVideo,
+		shared: exif.Metadata{Width: 1280, Height: 720, Mime: "video/mp4", TakenAtSource: exif.SourceExif},
+		video: &videoFields{
+			durationMs: &dur, videoCodec: "h264", audioCodec: "aac", hasAudio: true, fps: &fps,
+		},
+	}
+	p := buildPhoto(stored, media, "")
+
+	if p.MediaType != photos.MediaVideo {
+		t.Errorf("MediaType = %q, want video", p.MediaType)
+	}
+	if p.FileMime != "video/mp4" || p.FileWidth != 1280 || p.FileHeight != 720 {
+		t.Errorf("file fields mismatch: %+v", p)
+	}
+	if p.DurationMs == nil || *p.DurationMs != 5312 {
+		t.Errorf("DurationMs = %v, want 5312", p.DurationMs)
+	}
+	if p.VideoCodec != "h264" || p.AudioCodec != "aac" || !p.HasAudio {
+		t.Errorf("codec/audio fields mismatch: %+v", p)
+	}
+	if p.FPS == nil || *p.FPS != 29.97 {
+		t.Errorf("FPS = %v, want 29.97", p.FPS)
+	}
+	// Orientation defaults to 1 (no transform) for a poster-derived video frame.
+	if p.FileOrientation != 1 {
+		t.Errorf("FileOrientation = %d, want 1", p.FileOrientation)
+	}
+}
+
 // TestBuildPhoto_anonymousLeavesUploaderNil verifies an empty uploader yields a
 // nil pointer (SQL NULL) rather than a pointer to "".
 func TestBuildPhoto_anonymousLeavesUploaderNil(t *testing.T) {
 	t.Parallel()
-	p := buildPhoto(storage.StoredFile{RelPath: "a/b.jpg"}, exif.Metadata{}, "")
+	p := buildPhoto(storage.StoredFile{RelPath: "a/b.jpg"}, mediaMeta{}, "")
 	if p.UploadedBy != nil {
 		t.Errorf("UploadedBy = %v, want nil for anonymous upload", p.UploadedBy)
+	}
+	if p.MediaType != photos.MediaImage {
+		t.Errorf("MediaType = %q, want image (default)", p.MediaType)
 	}
 }
 

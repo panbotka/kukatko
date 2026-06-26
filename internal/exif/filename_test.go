@@ -77,3 +77,20 @@ func TestParseFilenameDate_patterns(t *testing.T) {
 		})
 	}
 }
+
+// TestFilenameTakenAt verifies the exported wrapper returns a pointer to the
+// parsed time on a match and (nil, false) when the name carries no date.
+func TestFilenameTakenAt(t *testing.T) {
+	t.Parallel()
+
+	got, ok := FilenameTakenAt("VID_20230115_143052.mp4")
+	if !ok || got == nil {
+		t.Fatalf("FilenameTakenAt(video) = %v, %v; want a time and true", got, ok)
+	}
+	if want := time.Date(2023, 1, 15, 14, 30, 52, 0, time.UTC); !got.Equal(want) {
+		t.Errorf("FilenameTakenAt = %v, want %v", got, want)
+	}
+	if got, ok := FilenameTakenAt("clip.mp4"); ok || got != nil {
+		t.Errorf("FilenameTakenAt(no date) = %v, %v; want nil, false", got, ok)
+	}
+}

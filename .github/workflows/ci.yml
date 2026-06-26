@@ -78,6 +78,11 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Install media tooling (ffmpeg + exiftool)
+        # ffmpeg/ffprobe drive the video ingest (metadata probe + poster frame);
+        # exiftool is the metadata fallback and the RAW/HEIC pipeline.
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libimage-exiftool-perl
+
       - name: Create required Postgres extensions
         # Migrations also CREATE EXTENSION IF NOT EXISTS, but provision them up
         # front so the test DB is ready independent of migration ordering.

@@ -155,6 +155,54 @@ func TestFileHashUnique(t *testing.T) {
 	}
 }
 
+// TestMediaTypeRoundTrip verifies the video columns persist and read back, and
+// that an unset media type defaults to image.
+func TestMediaTypeRoundTrip(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	// An image sample with no explicit media type defaults to image.
+	img, err := store.Create(ctx, samplePhoto("img"))
+	if err != nil {
+		t.Fatalf("Create image: %v", err)
+	}
+	if img.MediaType != photos.MediaImage {
+		t.Errorf("default MediaType = %q, want image", img.MediaType)
+	}
+
+	clip := samplePhoto("vid")
+	clip.FilePath = "2023/06/vid.mp4"
+	clip.FileName = "vid.mp4"
+	clip.FileMime = "video/mp4"
+	clip.MediaType = photos.MediaVideo
+	clip.DurationMs = new(5312)
+	clip.VideoCodec = "h264"
+	clip.AudioCodec = "aac"
+	clip.HasAudio = true
+	clip.FPS = new(29.97)
+
+	created, err := store.Create(ctx, clip)
+	if err != nil {
+		t.Fatalf("Create video: %v", err)
+	}
+	got, err := store.GetByUID(ctx, created.UID)
+	if err != nil {
+		t.Fatalf("GetByUID: %v", err)
+	}
+	if got.MediaType != photos.MediaVideo {
+		t.Errorf("MediaType = %q, want video", got.MediaType)
+	}
+	if got.DurationMs == nil || *got.DurationMs != 5312 {
+		t.Errorf("DurationMs = %v, want 5312", got.DurationMs)
+	}
+	if got.VideoCodec != "h264" || got.AudioCodec != "aac" || !got.HasAudio {
+		t.Errorf("codec/audio mismatch: %+v", got)
+	}
+	if got.FPS == nil || *got.FPS != 29.97 {
+		t.Errorf("FPS = %v, want 29.97", got.FPS)
+	}
+}
+
 // TestExternalIDLookups verifies dedup/migration lookups by external IDs.
 func TestExternalIDLookups(t *testing.T) {
 	store, _ := newStore(t)

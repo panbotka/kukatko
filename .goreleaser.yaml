@@ -56,11 +56,13 @@ nfpms:
       - deb
     file_name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     dependencies:
-      # exiftool (metadata), heif-convert (HEIC), dcraw (RAW preview),
-      # psql (DB tooling). No texlive — the photo book is out of scope.
+      # exiftool (metadata), heif-convert (HEIC), dcraw (RAW preview), ffmpeg
+      # (video metadata probe + poster/thumbnails), psql (DB tooling).
+      # No texlive — the photo book is out of scope.
       - libimage-exiftool-perl
       - libheif-examples | libheif-bin
       - dcraw
+      - ffmpeg
       - postgresql-client
       - ca-certificates
     contents:

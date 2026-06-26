@@ -8,6 +8,9 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"os"
+	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -32,8 +36,41 @@ type testEnv struct {
 	svc      *ingest.Service
 	store    *photos.Store
 	thumbs   *thumb.Thumbnailer
+	enq      *recordingEnqueuer
 	db       *database.DB
 	uploader string
+}
+
+// recordingEnqueuer is a JobEnqueuer that records the photo UIDs jobs were
+// enqueued for, so a test can assert post-ingest work (image embedding, face
+// detection) was scheduled — including on a video's poster frame.
+type recordingEnqueuer struct {
+	mu     sync.Mutex
+	embeds []string
+	faces  []string
+}
+
+// EnqueueImageEmbed records uid and reports success.
+func (r *recordingEnqueuer) EnqueueImageEmbed(_ context.Context, uid string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.embeds = append(r.embeds, uid)
+	return nil
+}
+
+// EnqueueFaceDetect records uid and reports success.
+func (r *recordingEnqueuer) EnqueueFaceDetect(_ context.Context, uid string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.faces = append(r.faces, uid)
+	return nil
+}
+
+// enqueuedEmbed reports whether an image-embed job was enqueued for uid.
+func (r *recordingEnqueuer) enqueuedEmbed(uid string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Contains(r.embeds, uid)
 }
 
 // newEnv builds an ingest service wired to real storage, thumbnailer and photo
@@ -60,14 +97,16 @@ func newEnv(t *testing.T, dup config.DuplicateConfig) *testEnv {
 	}
 	thumbs := thumb.New(fs, t.TempDir())
 	store := photos.NewStore(db.Pool())
+	enq := &recordingEnqueuer{}
 	svc := ingest.New(ingest.Config{
 		Storage:     fs,
 		Photos:      store,
 		Thumbnailer: thumbs,
+		Enqueuer:    enq,
 		Duplicate:   dup,
 		TempDir:     t.TempDir(),
 	})
-	return &testEnv{svc: svc, store: store, thumbs: thumbs, db: db, uploader: uploader.UID}
+	return &testEnv{svc: svc, store: store, thumbs: thumbs, enq: enq, db: db, uploader: uploader.UID}
 }
 
 // jpegBytes encodes a small solid-colour JPEG at the given quality. Different
@@ -258,6 +297,84 @@ func TestIngest_concurrentIdentical(t *testing.T) {
 		if res.Outcome == ingest.OutcomeDuplicate && res.PhotoUID != "" && res.PhotoUID != uid {
 			t.Errorf("duplicate points at %q, want %q", res.PhotoUID, uid)
 		}
+	}
+}
+
+// sampleVideo reads the committed tiny test clip, skipping the test when the
+// ffmpeg suite (needed to probe it and extract a poster) is not installed.
+func sampleVideo(t *testing.T) []byte {
+	t.Helper()
+	if !video.FFmpegAvailable() {
+		t.Skip("ffmpeg not installed; skipping video ingest test")
+	}
+	data, err := os.ReadFile(filepath.Join("testdata", "sample.mp4"))
+	if err != nil {
+		t.Fatalf("reading sample video: %v", err)
+	}
+	return data
+}
+
+// TestIngest_video verifies a video upload is catalogued as a video with probed
+// metadata, a poster-derived thumbnail, and an enqueued embedding job.
+func TestIngest_video(t *testing.T) {
+	env := newEnv(t, config.DuplicateConfig{Enabled: false})
+	ctx := t.Context()
+
+	res := env.ingest(ctx, sampleVideo(t), "VID_20230115_143052.mp4")
+	if res.Outcome != ingest.OutcomeCreated || res.Status != 201 {
+		t.Fatalf("result = %+v, want created/201", res)
+	}
+
+	photo, err := env.store.GetByUID(ctx, res.PhotoUID)
+	if err != nil {
+		t.Fatalf("GetByUID: %v", err)
+	}
+	if photo.MediaType != photos.MediaVideo {
+		t.Errorf("MediaType = %q, want video", photo.MediaType)
+	}
+	if photo.FileWidth != 160 || photo.FileHeight != 120 {
+		t.Errorf("dimensions = %dx%d, want 160x120", photo.FileWidth, photo.FileHeight)
+	}
+	if photo.VideoCodec != "h264" {
+		t.Errorf("VideoCodec = %q, want h264", photo.VideoCodec)
+	}
+	if !photo.HasAudio || photo.AudioCodec == "" {
+		t.Errorf("audio: has=%v codec=%q, want present", photo.HasAudio, photo.AudioCodec)
+	}
+	if photo.DurationMs == nil || *photo.DurationMs <= 0 {
+		t.Errorf("DurationMs = %v, want > 0", photo.DurationMs)
+	}
+	if photo.FPS == nil || *photo.FPS <= 0 {
+		t.Errorf("FPS = %v, want > 0", photo.FPS)
+	}
+
+	// The poster frame is fed through the thumbnailer, so the grid tile exists.
+	rc, err := env.thumbs.Open(photo.FileHash, "tile_224")
+	if err != nil {
+		t.Fatalf("poster thumbnail not generated: %v", err)
+	}
+	_ = rc.Close()
+
+	// The poster participates in semantic search: an embedding job was enqueued.
+	if !env.enq.enqueuedEmbed(res.PhotoUID) {
+		t.Error("no image-embed job enqueued for the video poster")
+	}
+}
+
+// TestIngest_videoDuplicate verifies SHA256 dedup works for videos: a second
+// upload of the same bytes is reported as a duplicate of the first.
+func TestIngest_videoDuplicate(t *testing.T) {
+	env := newEnv(t, config.DuplicateConfig{Enabled: false})
+	ctx := t.Context()
+	data := sampleVideo(t)
+
+	first := env.ingest(ctx, data, "clip.mp4")
+	if first.Outcome != ingest.OutcomeCreated {
+		t.Fatalf("first = %+v, want created", first)
+	}
+	second := env.ingest(ctx, data, "clip-again.mp4")
+	if second.Outcome != ingest.OutcomeDuplicate || second.PhotoUID != first.PhotoUID {
+		t.Fatalf("second = %+v, want duplicate of %s", second, first.PhotoUID)
 	}
 }
 

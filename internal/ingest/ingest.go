@@ -45,6 +45,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // ErrFileTooLarge indicates an uploaded file exceeded the configured maximum
@@ -164,14 +165,17 @@ func (s *Service) Ingest(ctx context.Context, src io.Reader, filename, uploadedB
 		return dup
 	}
 
-	meta := extractMeta(ctx, staged.path)
-
-	stored, err := s.storeOriginal(ctx, staged, filename, meta.TakenAt)
+	media, err := extractMedia(ctx, staged.path, filename)
 	if err != nil {
 		return errorResult(filename, err)
 	}
 
-	photo, dup, err := s.catalogue(ctx, filename, stored, meta, uploadedBy)
+	stored, err := s.storeOriginal(ctx, staged, filename, media.shared.TakenAt)
+	if err != nil {
+		return errorResult(filename, err)
+	}
+
+	photo, dup, err := s.catalogue(ctx, filename, stored, media, uploadedBy)
 	if err != nil {
 		return errorResult(filename, err)
 	}
@@ -268,9 +272,9 @@ func (s *Service) storeOriginal(
 // inserted duplicate), it returns a duplicate FileResult via the second return
 // value instead of an error; the photo is returned only on a genuine create.
 func (s *Service) catalogue(
-	ctx context.Context, filename string, stored storage.StoredFile, meta exif.Metadata, uploadedBy string,
+	ctx context.Context, filename string, stored storage.StoredFile, media mediaMeta, uploadedBy string,
 ) (photos.Photo, *FileResult, error) {
-	created, err := s.photos.Create(ctx, buildPhoto(stored, meta, uploadedBy))
+	created, err := s.photos.Create(ctx, buildPhoto(stored, media, uploadedBy))
 	if errors.Is(err, photos.ErrFileHashTaken) {
 		dup := s.resolveRace(ctx, filename, stored)
 		return photos.Photo{}, &dup, nil
@@ -423,6 +427,39 @@ func (s *Service) enqueueJobs(ctx context.Context, photoUID string) []Warning {
 	return warnings
 }
 
+// mediaMeta is the unified metadata an uploaded file contributes to its
+// photos.Photo: the shared (image-shaped) fields plus, for videos, the
+// video-only extras. It lets a single buildPhoto handle both kinds.
+type mediaMeta struct {
+	// kind is the media type written to photos.media_type.
+	kind photos.MediaType
+	// shared carries the fields common to images and videos (capture time, GPS,
+	// dimensions, MIME, raw metadata document).
+	shared exif.Metadata
+	// video is non-nil only for videos and carries the video-only fields.
+	video *videoFields
+}
+
+// videoFields holds the video-only metadata probed from the container.
+type videoFields struct {
+	durationMs *int
+	videoCodec string
+	audioCodec string
+	hasAudio   bool
+	fps        *float64
+}
+
+// extractMedia reads the metadata for an uploaded file, dispatching on whether
+// filename names a video. Images take the EXIF path; videos are probed via
+// ffprobe/exiftool and require ffmpeg for poster extraction, so a missing ffmpeg
+// is reported as an error (the only fatal case — see extractVideoMedia).
+func extractMedia(ctx context.Context, path, filename string) (mediaMeta, error) {
+	if !video.IsVideoPath(filename) {
+		return mediaMeta{kind: photos.MediaImage, shared: extractMeta(ctx, path)}, nil
+	}
+	return extractVideoMedia(ctx, path, filename)
+}
+
 // extractMeta reads EXIF/GPS metadata from the staged file, degrading to an
 // empty (unknown-source) Metadata when extraction fails so a file with no EXIF
 // is never a reason to reject an upload.
@@ -434,9 +471,68 @@ func extractMeta(ctx context.Context, path string) exif.Metadata {
 	return meta
 }
 
+// extractVideoMedia probes a video's metadata. It requires ffmpeg (the poster
+// frame, generated downstream by the thumbnailer/hasher via imgconvert, has no
+// fallback) and returns a clear ErrFFmpegMissing-wrapped error when it is
+// absent. A metadata probe failure is non-fatal: the video is still catalogued
+// with whatever could be resolved (capture time falls back to the filename).
+func extractVideoMedia(ctx context.Context, path, filename string) (mediaMeta, error) {
+	if !video.FFmpegAvailable() {
+		return mediaMeta{}, fmt.Errorf("ingest: video %q: %w", filename, video.ErrFFmpegMissing)
+	}
+	vm, err := video.Probe(ctx, path)
+	if err != nil {
+		vm = video.Metadata{}
+	}
+	return mediaMeta{
+		kind:   photos.MediaVideo,
+		shared: sharedFromVideo(vm, filename),
+		video: &videoFields{
+			durationMs: vm.DurationMs,
+			videoCodec: vm.VideoCodec,
+			audioCodec: vm.AudioCodec,
+			hasAudio:   vm.HasAudio,
+			fps:        vm.FPS,
+		},
+	}, nil
+}
+
+// sharedFromVideo maps a video.Metadata onto the shared exif.Metadata fields,
+// resolving the capture time from the container creation time and falling back
+// to the original upload filename (the staged temp file has no usable name).
+func sharedFromVideo(vm video.Metadata, filename string) exif.Metadata {
+	meta := exif.Metadata{
+		TakenAt:  vm.TakenAt,
+		Lat:      vm.Lat,
+		Lng:      vm.Lng,
+		Altitude: vm.Altitude,
+		Width:    vm.Width,
+		Height:   vm.Height,
+		Mime:     vm.Mime,
+		Exif:     vm.Raw,
+	}
+	switch {
+	case meta.TakenAt != nil:
+		meta.TakenAtSource = exif.SourceExif
+	default:
+		if when, ok := exif.FilenameTakenAt(filename); ok {
+			meta.TakenAt = when
+			meta.TakenAtSource = exif.SourceFilename
+		} else {
+			meta.TakenAtSource = exif.SourceUnknown
+		}
+	}
+	return meta
+}
+
 // buildPhoto maps a stored file and its extracted metadata onto a photos.Photo
 // ready for insertion. The UID and timestamps are assigned by the database.
-func buildPhoto(stored storage.StoredFile, meta exif.Metadata, uploadedBy string) photos.Photo {
+func buildPhoto(stored storage.StoredFile, media mediaMeta, uploadedBy string) photos.Photo {
+	meta := media.shared
+	kind := media.kind
+	if kind == "" {
+		kind = photos.MediaImage
+	}
 	p := photos.Photo{
 		FileHash:        stored.Hash,
 		FilePath:        stored.RelPath,
@@ -446,6 +542,7 @@ func buildPhoto(stored storage.StoredFile, meta exif.Metadata, uploadedBy string
 		FileWidth:       meta.Width,
 		FileHeight:      meta.Height,
 		FileOrientation: orientationOrDefault(meta.Orientation),
+		MediaType:       kind,
 		TakenAt:         meta.TakenAt,
 		TakenAtSource:   takenAtSource(meta.TakenAtSource),
 		Lat:             meta.Lat,
@@ -459,6 +556,13 @@ func buildPhoto(stored storage.StoredFile, meta exif.Metadata, uploadedBy string
 		Exposure:        meta.Exposure,
 		FocalLength:     meta.FocalLength,
 		Exif:            marshalExif(meta.Exif),
+	}
+	if media.video != nil {
+		p.DurationMs = media.video.durationMs
+		p.VideoCodec = media.video.videoCodec
+		p.AudioCodec = media.video.audioCodec
+		p.HasAudio = media.video.hasAudio
+		p.FPS = media.video.fps
 	}
 	if uploadedBy != "" {
 		p.UploadedBy = &uploadedBy

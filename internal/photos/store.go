@@ -31,7 +31,8 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // argument order in Create, so the three must be kept in lockstep.
 var photoInsertColumns = []string{
 	"uid", "file_hash", "file_path", "file_name", "file_size", "file_mime",
-	"file_width", "file_height", "file_orientation", "taken_at", "taken_at_source",
+	"file_width", "file_height", "file_orientation", "media_type", "duration_ms",
+	"video_codec", "audio_codec", "has_audio", "fps", "taken_at", "taken_at_source",
 	"title", "description", "notes", "lat", "lng", "altitude", "camera_make",
 	"camera_model", "lens_model", "iso", "aperture", "exposure", "focal_length",
 	"exif", "private", "archived_at", "uploaded_by", "photoprism_uid",
@@ -82,7 +83,8 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 	var exif []byte
 	if err := row.Scan(
 		&p.UID, &p.FileHash, &p.FilePath, &p.FileName, &p.FileSize, &p.FileMime,
-		&p.FileWidth, &p.FileHeight, &p.FileOrientation, &p.TakenAt, &p.TakenAtSource,
+		&p.FileWidth, &p.FileHeight, &p.FileOrientation, &p.MediaType, &p.DurationMs,
+		&p.VideoCodec, &p.AudioCodec, &p.HasAudio, &p.FPS, &p.TakenAt, &p.TakenAtSource,
 		&p.Title, &p.Description, &p.Notes, &p.Lat, &p.Lng, &p.Altitude, &p.CameraMake,
 		&p.CameraModel, &p.LensModel, &p.ISO, &p.Aperture, &p.Exposure, &p.FocalLength,
 		&exif, &p.Private, &p.ArchivedAt, &p.UploadedBy, &p.PhotoprismUID,
@@ -106,9 +108,13 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		}
 		p.UID = uid
 	}
+	if p.MediaType == "" {
+		p.MediaType = MediaImage
+	}
 	args := []any{
 		p.UID, p.FileHash, p.FilePath, p.FileName, p.FileSize, p.FileMime,
-		p.FileWidth, p.FileHeight, p.FileOrientation, p.TakenAt, p.TakenAtSource,
+		p.FileWidth, p.FileHeight, p.FileOrientation, p.MediaType, p.DurationMs,
+		p.VideoCodec, p.AudioCodec, p.HasAudio, p.FPS, p.TakenAt, p.TakenAtSource,
 		p.Title, p.Description, p.Notes, p.Lat, p.Lng, p.Altitude, p.CameraMake,
 		p.CameraModel, p.LensModel, p.ISO, p.Aperture, p.Exposure, p.FocalLength,
 		nilIfEmptyJSON(p.Exif), p.Private, p.ArchivedAt, p.UploadedBy, p.PhotoprismUID,

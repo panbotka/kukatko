@@ -33,7 +33,8 @@ inkrementální).
   `API` = HTTP handlery + RBAC middleware `RequireAuth`/`RequireWrite`/`RequireAdmin` +
   `RegisterRoutes`; session a users v migraci `0002_auth.sql`), `internal/photos/`
   (jádro foto-katalogu: typované modely `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`,
-  `FileRole` original/sidecar/edited, UID generátor prefix `ph`, `Store` nad pgx s
+  `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generátor prefix `ph`,
+  `Store` nad pgx s
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/
   `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/private/
   uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/fulltext search,
@@ -42,7 +43,9 @@ inkrementální).
   `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
   `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
-  `photo_edits` (all-or-nothing crop, rotace 0/90/180/270); FK `ON DELETE CASCADE`
+  `photo_edits` (all-or-nothing crop, rotace 0/90/180/270); video sloupce v migraci
+  `0004_video.sql` (`media_type` image/video/live CHECK+partial index, `duration_ms`,
+  `video_codec`, `audio_codec`, `has_audio`, `fps`); FK `ON DELETE CASCADE`
   na satelity, `uploaded_by` `ON DELETE SET NULL`), `internal/storage/`
   (on-disk úložiště originálů: rozhraní `Storage` + filesystemová implementace `FS`
   `NewFS(root)`; `Store(ctx,src,takenAt,originalName)` streamuje na disk + počítá **SHA256**,
@@ -64,12 +67,21 @@ inkrementální).
   **EXIF orientace** (1–8) automaticky; pure-Go JPEG/PNG/WebP + `golang.org/x/image`
   (`draw.CatmullRom` resize); sentinely `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
   `SizeNames()`/`IsValidSize`), `internal/imgconvert/`
-  (HEIC/RAW → dekódovatelný JPEG, **shell-out**: `EnsureDecodable(ctx,path)` →
+  (HEIC/RAW/video → dekódovatelný JPEG, **shell-out**: `EnsureDecodable(ctx,path)` →
   (cesta, cleanup, err); JPEG/PNG/WebP passthrough, **HEIC** přes `heif-convert` na temp JPEG,
   **RAW** (cr2/cr3/nef/arw/dng/raf/orf/rw2/pef/srw) vytáhne embedded preview přes
-  `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/`-ThumbnailImage`) místo demosaicu;
-  `DetectFormat`/`IsSupportedFormat`; sentinely `ErrConverterMissing`/`ErrUnsupportedFormat`/
-  `ErrNoEmbeddedPreview`; chybějící nástroj = jasná chyba), `internal/exif/`
+  `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/`-ThumbnailImage`) místo demosaicu,
+  **video** (`FormatVideo`) deleguje na `video.ExtractPoster` (poster frame přes `ffmpeg`) —
+  thumbnailer i pHash zpracují poster jako fotku; `DetectFormat`/`IsSupportedFormat`; sentinely
+  `ErrConverterMissing`/`ErrUnsupportedFormat`/`ErrNoEmbeddedPreview`; chybějící nástroj = jasná
+  chyba), `internal/video/`
+  (video bez CGO, **shell-out** na FFmpeg suite: `Probe(ctx,path) (Metadata,error)` přes
+  `ffprobe -print_format json -show_format -show_streams` → `DurationMs`/`VideoCodec`/`AudioCodec`/
+  `HasAudio`/`FPS` (parsing racionálu)/rozměry/`TakenAt` (creation_time)/GPS (ISO 6709), **fallback
+  na `exiftool`** přes `internal/exif` když `ffprobe` chybí; `ExtractPoster(ctx,path)` →
+  reprezentativní snímek přes `ffmpeg` (~1 s, fallback první frame) na temp JPEG + once-cleanup;
+  `IsVideoPath`/`IsVideoExt`/`FFmpegAvailable`/`FFprobeAvailable`; sentinely `ErrFFmpegMissing`/
+  `ErrFFprobeMissing`/`ErrNoMetadataTool`/`ErrPosterFailed`), `internal/exif/`
   (extrakce EXIF/GPS metadat při importu, **CGO-free**: `Extract(ctx,path) (Metadata,error)`
   → `TakenAt`+`TakenAtSource` (`exif`/`filename`/`unknown`), `Lat`/`Lng`/`Altitude`,
   `CameraMake`/`CameraModel`/`LensModel`, `ISO`/`Aperture`/`Exposure`/`FocalLength`,
@@ -84,8 +96,12 @@ inkrementální).
   = Hammingova vzdálenost přes `bits.OnesCount64`; near-dup = malá vzdálenost), `internal/ingest/`
   (upload/ingest pipeline: `Service` = `New(Config{Storage,Photos,Thumbnailer,Enqueuer,Duplicate,
   MaxFileSize,TempDir})` s `Ingest(ctx,src,filename,uploadedBy) FileResult` — streamuje do tempu +
-  SHA256, exact-dup check, EXIF, `storage.Store` (`YYYY/MM`), insert `photos`+primární `photo_files`,
-  pHash/dHash → `photo_phashes`, náhledy, enqueue jobů; **per-file** `FileResult{Filename,Status,
+  SHA256, exact-dup check, metadata (`mediaMeta`: **foto** → EXIF; **video** dle `video.IsVideoPath`
+  → `media_type=video` + `video.Probe`, vyžaduje `ffmpeg` jinak per-file error `ErrFFmpegMissing`,
+  `taken_at` fallback na původní jméno přes `exif.FilenameTakenAt`), `storage.Store` (`YYYY/MM`),
+  insert `photos` (vč. video sloupců)+primární `photo_files`, pHash/dHash → `photo_phashes`
+  (u videa z poster framu), náhledy (u videa poster), enqueue jobů (poster frame se účastní
+  search/people); **per-file** `FileResult{Filename,Status,
   Outcome (created/duplicate/error),PhotoUID,Error,Warnings}` — nikdy nevrací error, vše v resultu;
   **race**: souběžné identické uploady → jedna fotka (storage hard-link + unique `file_hash`), poražený
   čistá duplicita; **near-dup warning** config-gated přes `photos.NearestPhash`; `JobEnqueuer` =
@@ -192,13 +208,14 @@ inkrementální).
 - **CI/CD a balíčkování:** `.github/workflows/ci.yml` (push/PR → job `check` = `make check`
   na Go 1.26 + Node 22 + golangci-lint v2.11.4; job `integration` = `make test-integration`
   proti service containeru `pgvector/pgvector:pg17`, extensions `vector`/`unaccent` v setup
-  kroku, `KUKATKO_TEST_DATABASE_URL` na efemérní CI DB). `.github/workflows/release.yml`
+  kroku + apt `ffmpeg`/`libimage-exiftool-perl` (video probe/poster), `KUKATKO_TEST_DATABASE_URL`
+  na efemérní CI DB). `.github/workflows/release.yml`
   (tag `v*.*.*`) pouští **goreleaser** (`.goreleaser.yaml`): `CGO_ENABLED=0` pro arm64+amd64,
   verze/commit přes ldflags do `internal/version`, frontend build v before-hooku, **.deb**
   přes nfpm. `deb/`: `kukatko.service` (systemd, user `kukatko`, `EnvironmentFile`,
   `Restart=always`), `kukatko.env` (dpkg conffile `config|noreplace`),
   `postinstall.sh`/`preremove.sh`/`postremove.sh` (user + `/var/lib/kukatko/{originals,cache}`).
-  Apt deps: `libimage-exiftool-perl`, `libheif-examples|libheif-bin`, `dcraw`,
+  Apt deps: `libimage-exiftool-perl`, `libheif-examples|libheif-bin`, `dcraw`, `ffmpeg`,
   `postgresql-client`, `ca-certificates`; **bez texlive**.
 
 ## Tvrdá brána kvality (NEPŘESKAKOVAT)

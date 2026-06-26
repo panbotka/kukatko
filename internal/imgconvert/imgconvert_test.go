@@ -42,8 +42,10 @@ func TestIsSupportedFormat(t *testing.T) {
 		{".HEIC", true},
 		{".cr2", true},
 		{".nef", true},
+		{".mp4", true},
+		{".mov", true},
+		{".MKV", true},
 		{".txt", false},
-		{".mp4", false},
 		{"", false},
 	}
 	for _, tc := range tests {
@@ -69,6 +71,8 @@ func TestDetectFormat(t *testing.T) {
 		{"heic by ext and magic", "a.heic", heicMagic, FormatHEIC},
 		{"raw by ext, tiff magic", "a.cr2", tiffMagic, FormatRAW},
 		{"raw by ext, unknown magic", "a.nef", []byte{0x01, 0x02, 0x03, 0x04}, FormatRAW},
+		{"video by ext (mp4)", "a.mp4", []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p'}, FormatVideo},
+		{"video by ext (mkv)", "a.mkv", []byte{0x1a, 0x45, 0xdf, 0xa3}, FormatVideo},
 		{"magic overrides wrong ext", "a.png", jpegMagic, FormatJPEG},
 		{"unknown ext, jpeg magic", "a.bin", jpegMagic, FormatJPEG},
 		{"unknown ext and magic", "a.bin", []byte{0x00, 0x01, 0x02, 0x03}, FormatUnknown},
@@ -138,6 +142,20 @@ func TestEnsureDecodable_converterMissing(t *testing.T) {
 		if cleanup != nil {
 			t.Errorf("%s: cleanup must be nil on error", tc.name)
 		}
+	}
+}
+
+// TestEnsureDecodable_videoMissingFFmpeg verifies the video branch reports a
+// clear error (not a passthrough) when ffmpeg is absent from PATH.
+func TestEnsureDecodable_videoMissingFFmpeg(t *testing.T) {
+	t.Setenv("PATH", "") // exec.LookPath finds no ffmpeg.
+	p := writeFile(t, t.TempDir(), "clip.mp4", []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p'})
+	_, cleanup, err := EnsureDecodable(context.Background(), p)
+	if err == nil {
+		t.Fatal("video without ffmpeg = nil error, want a clear failure")
+	}
+	if cleanup != nil {
+		t.Error("cleanup must be nil on error")
 	}
 }
 

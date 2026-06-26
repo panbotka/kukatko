@@ -196,6 +196,11 @@ Originály na disku v layoutu `YYYY/MM/<filename>`.
   - `photoprism_uid VARCHAR(32)` — PhotoUID z PhotoPrismu (dedup + inkrement).
   - `photoprism_file_hash VARCHAR(40)` — SHA1 souboru z PhotoPrismu (download mapping).
   - `photosorter_uid VARCHAR(32)` — UID z photo-sorteru (migrace).
+  - **Video** (migrace `0004_video.sql`): `media_type IN (image|video|live)` (default `image`,
+    partial index pro „jen videa"), `duration_ms`, `video_codec`, `audio_codec`, `has_audio`,
+    `fps`. Naplněné u videí přes `internal/video.Probe` (ffprobe → exiftool fallback);
+    poster frame (`internal/video.ExtractPoster`, ffmpeg) jde do thumbnaileru/pHash i embed/face
+    jobů. Live foto = still jako primární image + motion klip jako další `photo_files` řádek.
   - generovaný `fts tsvector` sloupec (GIN index) — viz [§6.2](#62-fulltext).
   - `favorite` se **přesouvá** do per-user tabulky (viz níže).
 - **`photo_files`** — originály + odvozeniny, `role IN (original|sidecar|edited)`, `is_primary`.

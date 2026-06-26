@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // Sentinel errors so callers can branch with errors.Is — most importantly to
@@ -49,6 +51,7 @@ const (
 	FormatWebP    = "webp"
 	FormatHEIC    = "heic"
 	FormatRAW     = "raw"
+	FormatVideo   = "video"
 	FormatUnknown = "unknown"
 )
 
@@ -75,8 +78,8 @@ var extFormats = map[string]string{
 }
 
 // IsSupportedFormat reports whether the pipeline can ingest a file with this
-// extension. The extension may include or omit the leading dot and is
-// case-insensitive.
+// extension — a directly decodable image, a convertible HEIC/RAW, or a video.
+// The extension may include or omit the leading dot and is case-insensitive.
 func IsSupportedFormat(ext string) bool {
 	if ext == "" {
 		return false
@@ -84,17 +87,23 @@ func IsSupportedFormat(ext string) bool {
 	if !strings.HasPrefix(ext, ".") {
 		ext = "." + ext
 	}
-	_, ok := extFormats[strings.ToLower(ext)]
-	return ok
+	if _, ok := extFormats[strings.ToLower(ext)]; ok {
+		return true
+	}
+	return video.IsVideoExt(ext)
 }
 
-// DetectFormat returns one of "jpeg", "png", "webp", "heic", "raw", or
-// "unknown" for the file at path. The extension is consulted first and then
-// verified by magic bytes. When extension and magic disagree, the magic-byte
-// result wins for JPEG/PNG/WebP/HEIC. RAW formats are accepted on extension
-// alone — every vendor's RAW container has a different header, so there is no
-// universal "this is a RAW" magic to match against.
+// DetectFormat returns one of "jpeg", "png", "webp", "heic", "raw", "video", or
+// "unknown" for the file at path. Video is decided on extension alone (the many
+// container brands have no single magic to match). The extension is otherwise
+// consulted first and then verified by magic bytes. When extension and magic
+// disagree, the magic-byte result wins for JPEG/PNG/WebP/HEIC. RAW formats are
+// accepted on extension alone — every vendor's RAW container has a different
+// header, so there is no universal "this is a RAW" magic to match against.
 func DetectFormat(path string) string {
+	if video.IsVideoPath(path) {
+		return FormatVideo
+	}
 	extFmt := formatByExt(path)
 	magic := magicFormat(path)
 	if magic == FormatUnknown {
@@ -119,10 +128,11 @@ func DetectFormat(path string) string {
 // function the caller MUST defer.
 //
 // If the input is already JPEG/PNG/WebP, EnsureDecodable returns srcPath
-// unchanged with a no-op cleanup and a nil error. If the input is HEIC/HEIF or
-// a supported RAW, the matching external converter is invoked to produce a
-// temporary JPEG under os.TempDir(); the temp path is returned with a cleanup
-// that removes it (safe to call multiple times).
+// unchanged with a no-op cleanup and a nil error. If the input is HEIC/HEIF, a
+// supported RAW, or a video, the matching external tool (heif-convert, exiftool,
+// or ffmpeg for a video poster frame) is invoked to produce a temporary JPEG
+// under os.TempDir(); the temp path is returned with a cleanup that removes it
+// (safe to call multiple times).
 //
 // On error the returned cleanup is nil (nothing to clean up); on any successful
 // return it is non-nil, so callers can unconditionally defer cleanup().
@@ -140,6 +150,12 @@ func EnsureDecodable(ctx context.Context, srcPath string) (string, func(), error
 		return convertHEIC(ctx, srcPath)
 	case FormatRAW:
 		return convertRAW(ctx, srcPath)
+	case FormatVideo:
+		decPath, cleanup, err := video.ExtractPoster(ctx, srcPath)
+		if err != nil {
+			return "", nil, fmt.Errorf("imgconvert: video poster: %w", err)
+		}
+		return decPath, cleanup, nil
 	default:
 		return "", nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, filepath.Base(srcPath))
 	}

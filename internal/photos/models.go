@@ -33,6 +33,21 @@ var (
 	ErrEditNotFound = errors.New("photos: edits not found")
 )
 
+// MediaType classifies what kind of media a photo row holds, mirrored by the
+// SQL CHECK constraint on photos.media_type.
+type MediaType string
+
+// The recognised media types.
+const (
+	// MediaImage is a still image (the default for every catalogued photo).
+	MediaImage MediaType = "image"
+	// MediaVideo is a standalone video clip.
+	MediaVideo MediaType = "video"
+	// MediaLive is a live photo: a still image whose companion motion clip is
+	// linked as a separate photo_files row.
+	MediaLive MediaType = "live"
+)
+
 // FileRole enumerates the kind of file a photo_files row represents.
 type FileRole string
 
@@ -61,6 +76,20 @@ type Photo struct {
 	FileWidth       int    `json:"file_width"`
 	FileHeight      int    `json:"file_height"`
 	FileOrientation int    `json:"file_orientation"`
+
+	// MediaType discriminates images from videos and live photos. It defaults to
+	// MediaImage; the video fields below are zero/nil for images.
+	MediaType MediaType `json:"media_type"`
+	// DurationMs is the clip length in milliseconds for videos, nil otherwise.
+	DurationMs *int `json:"duration_ms,omitempty"`
+	// VideoCodec / AudioCodec name the container's primary video/audio codecs
+	// (e.g. "h264", "aac"); empty for images or when a stream is absent.
+	VideoCodec string `json:"video_codec"`
+	AudioCodec string `json:"audio_codec"`
+	// HasAudio reports whether a video carries an audio stream.
+	HasAudio bool `json:"has_audio"`
+	// FPS is a video's average frame rate, nil for images.
+	FPS *float64 `json:"fps,omitempty"`
 
 	TakenAt       *time.Time `json:"taken_at,omitempty"`
 	TakenAtSource string     `json:"taken_at_source"`

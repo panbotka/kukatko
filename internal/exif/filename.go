@@ -20,6 +20,18 @@ var filenameDatePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?P<y>\d{4})[-_.]?(?P<mo>\d{2})[-_.]?(?P<d>\d{2})`),
 }
 
+// FilenameTakenAt recovers a capture time from name's base name using the same
+// camera/screenshot naming conventions Extract uses, returning the parsed UTC
+// time and true on success. It lets non-image pipelines (notably video ingest,
+// where the staged temp file has no usable name) reuse the filename-date
+// fallback with the original upload filename.
+func FilenameTakenAt(name string) (*time.Time, bool) {
+	if when, ok := parseFilenameDate(name); ok {
+		return &when, true
+	}
+	return nil, false
+}
+
 // parseFilenameDate attempts to recover a capture time from path's base name,
 // trying each known naming convention in turn. It returns the parsed time in
 // UTC and true on success, or the zero time and false when no pattern matches or

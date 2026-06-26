@@ -58,6 +58,10 @@ Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
   dedup na **SHA256** `file_hash` (UNIQUE), EXIF/kamera/GPS metadata, `exif` JSONB (GIN),
   `archived_at`/`private`, `uploaded_by` (FK `users` `ON DELETE SET NULL`). Externí ID pro
   import/migraci: `photoprism_uid`, `photoprism_file_hash` (SHA1), `photosorter_uid`.
+  **Video** (migrace `0004_video.sql`): `media_type` (`image`/`video`/`live`, default `image`,
+  CHECK + partial index) + `duration_ms`, `video_codec`, `audio_codec`, `has_audio`, `fps`
+  (vyplněné jen u videí). Live foto = still jako primární image + motion klip jako další
+  `photo_files` řádek.
 - **`photo_files`** — originál + odvozeniny, `role` original/sidecar/edited, max. jeden
   `is_primary` na fotku. **`photo_phashes`** — `phash`/`dhash` (near-dup). **`photo_edits`**
   — nedestruktivní úpravy (crop 0..1 all-or-nothing, rotace 0/90/180/270, brightness/contrast).
@@ -107,13 +111,29 @@ shell-out na externí nástroje pro HEIC/RAW).
   **jednou na fotku**, jednotlivé velikosti se enkódují paralelně s omezenou konkurencí
   (`WithConcurrency(n)`, default `GOMAXPROCS`). **EXIF orientace** (`photo.FileOrientation`,
   1–8) se aplikuje automaticky.
-- **HEIC/RAW** (`internal/imgconvert`): `EnsureDecodable(ctx, path)` vrátí cestu k souboru,
+- **HEIC/RAW/video** (`internal/imgconvert`): `EnsureDecodable(ctx, path)` vrátí cestu k souboru,
   který umí `image.Decode`. JPEG/PNG/WebP projdou beze změny; **HEIC** se převede přes
   `heif-convert` na dočasný JPEG; **RAW** (cr2/cr3/nef/arw/dng/raf/orf/rw2/pef/srw) vytáhne
   **embedded JPEG preview** přes `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/
-  `-ThumbnailImage`) místo plného demosaicu. Chybějící externí nástroj vrací jasný
-  `ErrConverterMissing`. Runtime apt závislosti: `libheif-examples`/`libheif-bin`,
-  `libimage-exiftool-perl`.
+  `-ThumbnailImage`) místo plného demosaicu; **video** (mp4/mov/m4v/avi/mkv/webm/…) deleguje na
+  `internal/video.ExtractPoster` (poster frame přes `ffmpeg`). Díky tomu thumbnailer i pHash
+  zpracují video poster úplně stejně jako fotku. Chybějící externí nástroj vrací jasný
+  `ErrConverterMissing` (resp. `video.ErrFFmpegMissing`). Runtime apt závislosti:
+  `libheif-examples`/`libheif-bin`, `libimage-exiftool-perl`, `ffmpeg`.
+
+### Video (`internal/video`)
+
+CGO-free shell-out na **FFmpeg suite** (`ffprobe`/`ffmpeg`):
+
+- **`Probe(ctx, path)`** — metadata přes `ffprobe -print_format json -show_format -show_streams`:
+  `duration_ms`, video/audio kodeky, `has_audio`, `fps` (parsing racionálu `30000/1001`),
+  rozměry, `creation_time` (→ `taken_at`), GPS (ISO 6709 `+lat+lng+alt/`). **Fallback na
+  `exiftool`** (přes `internal/exif`) když `ffprobe` chybí; celý probe dokument se ukládá do
+  `photos.exif`.
+- **`ExtractPoster(ctx, path)`** — reprezentativní snímek přes `ffmpeg` (~1 s do klipu, fallback
+  na první frame u kratších) do dočasného JPEG + once-only cleanup.
+- **`IsVideoPath` / `FFmpegAvailable` / `FFprobeAvailable`** + sentinely `ErrFFmpegMissing`/
+  `ErrFFprobeMissing`/`ErrNoMetadataTool`/`ErrPosterFailed`.
 
 ### EXIF / GPS metadata (`internal/exif`)
 
@@ -152,11 +172,18 @@ Endpoint **`POST /api/v1/upload`** (přístup editor/admin) přijímá `multipar
 
 1. Stream do dočasného souboru + průběžný **SHA256**.
 2. **Exact-dup** podle SHA256 (`photos.GetByFileHash`) → friendly per-file „duplicate".
-3. Detekce formátu/MIME + extrakce EXIF/GPS, publikace originálu do úložiště (`YYYY/MM`).
-4. Insert `photos` + primární `photo_files` + výpočet **pHash/dHash** → `photo_phashes`.
-5. Generování **náhledů** (thumbnailer).
+3. Detekce typu média podle přípony (`video.IsVideoPath`). **Foto** → EXIF/GPS (`internal/exif`);
+   **video** → `media_type=video` + probe (`internal/video.Probe`: duration/kodeky/fps/GPS/čas),
+   `taken_at` fallback na původní jméno souboru. Pak publikace originálu do úložiště (`YYYY/MM`).
+4. Insert `photos` (vč. video sloupců) + primární `photo_files` + výpočet **pHash/dHash** →
+   `photo_phashes` (u videa z poster framu).
+5. Generování **náhledů** (thumbnailer) — u videa z poster framu, takže grid ukazuje poster.
 6. **Enqueue** jobů `image_embed` + `face_detect` přes `ingest.JobEnqueuer` — zatím
-   `NopEnqueuer` (TODO hook, fronta vznikne v jobs tasku).
+   `NopEnqueuer` (TODO hook, fronta vznikne v jobs tasku); u videa běží na poster framu, takže
+   se účastní sémantického/face vyhledávání.
+
+Video vyžaduje **`ffmpeg`** (poster nemá fallback) — chybějící `ffmpeg` u video uploadu vrací
+jasný per-file error `video.ErrFFmpegMissing`. `ffprobe` má fallback na `exiftool`.
 
 Vrací **per-file** seznam výsledků `{filename, status, outcome (created/duplicate/error),
 photo_uid?, error?, warnings?}` se 409 sémantikou duplicit v `status` (celková odpověď je 200,
