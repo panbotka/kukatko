@@ -6,12 +6,23 @@
   "nav": {
     "home": "Domů",
     "library": "Knihovna",
-    "map": "Mapa"
+    "map": "Mapa",
+    "upload": "Nahrát",
+    "account": "Můj účet",
+    "logout": "Odhlásit se"
   },
   "language": {
     "cs": "Čeština",
     "en": "English",
     "switch": "Přepnout jazyk"
+  },
+  "roles": {
+    "admin": "Správce",
+    "editor": "Editor",
+    "viewer": "Prohlížeč"
+  },
+  "auth": {
+    "loading": "Načítání…"
   },
   "home": {
     "title": "Vítejte v Kukátku",
@@ -22,6 +33,37 @@
     "unhealthy": "Backend není dostupný",
     "version": "Verze",
     "commit": "Commit"
+  },
+  "login": {
+    "title": "Přihlášení",
+    "username": "Uživatelské jméno",
+    "password": "Heslo",
+    "submit": "Přihlásit se",
+    "usernameRequired": "Zadejte uživatelské jméno.",
+    "passwordRequired": "Zadejte heslo.",
+    "errorInvalid": "Nesprávné uživatelské jméno nebo heslo.",
+    "errorRateLimited": "Příliš mnoho pokusů o přihlášení. Zkuste to prosím za chvíli.",
+    "errorGeneric": "Přihlášení se nezdařilo. Zkuste to prosím znovu."
+  },
+  "account": {
+    "title": "Můj účet",
+    "username": "Uživatelské jméno",
+    "displayName": "Zobrazované jméno",
+    "role": "Role",
+    "changePassword": "Změna hesla",
+    "currentPassword": "Současné heslo",
+    "newPassword": "Nové heslo",
+    "confirmPassword": "Potvrzení nového hesla",
+    "passwordHint": "Heslo musí mít alespoň {{min}} znaků.",
+    "submit": "Změnit heslo",
+    "success": "Heslo bylo úspěšně změněno.",
+    "currentRequired": "Zadejte současné heslo.",
+    "confirmRequired": "Potvrďte nové heslo.",
+    "tooShort": "Nové heslo musí mít alespoň {{min}} znaků.",
+    "mismatch": "Hesla se neshodují.",
+    "errorCurrentWrong": "Současné heslo není správné.",
+    "errorTooShort": "Nové heslo nesplňuje požadavky na délku.",
+    "errorGeneric": "Změna hesla se nezdařila. Zkuste to prosím znovu."
   },
   "notFound": {
     "title": "Stránka nenalezena",

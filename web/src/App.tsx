@@ -1,19 +1,33 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
+import { AuthProvider } from './auth/AuthProvider'
+import { RequireAuth } from './auth/ProtectedRoute'
 import { Layout } from './components/Layout'
+import { AccountPage } from './pages/AccountPage'
 import { HomePage } from './pages/HomePage'
+import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
-/** Root component wiring client-side routing under the shared layout shell. */
+/**
+ * Root component: provides auth state, then wires client-side routing. `/login`
+ * is public; everything else is gated by {@link RequireAuth} and rendered under
+ * the shared layout shell.
+ */
 export function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Route>
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<RequireAuth />}>
+            <Route element={<Layout />}>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/account" element={<AccountPage />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
+          </Route>
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   )
 }

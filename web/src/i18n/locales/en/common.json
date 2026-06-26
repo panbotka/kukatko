@@ -6,12 +6,23 @@
   "nav": {
     "home": "Home",
     "library": "Library",
-    "map": "Map"
+    "map": "Map",
+    "upload": "Upload",
+    "account": "My account",
+    "logout": "Sign out"
   },
   "language": {
     "cs": "Čeština",
     "en": "English",
     "switch": "Switch language"
+  },
+  "roles": {
+    "admin": "Administrator",
+    "editor": "Editor",
+    "viewer": "Viewer"
+  },
+  "auth": {
+    "loading": "Loading…"
   },
   "home": {
     "title": "Welcome to Kukátko",
@@ -22,6 +33,37 @@
     "unhealthy": "Backend is unreachable",
     "version": "Version",
     "commit": "Commit"
+  },
+  "login": {
+    "title": "Sign in",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "usernameRequired": "Please enter your username.",
+    "passwordRequired": "Please enter your password.",
+    "errorInvalid": "Invalid username or password.",
+    "errorRateLimited": "Too many login attempts. Please try again later.",
+    "errorGeneric": "Sign in failed. Please try again."
+  },
+  "account": {
+    "title": "My account",
+    "username": "Username",
+    "displayName": "Display name",
+    "role": "Role",
+    "changePassword": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "passwordHint": "Password must be at least {{min}} characters long.",
+    "submit": "Change password",
+    "success": "Your password has been changed.",
+    "currentRequired": "Please enter your current password.",
+    "confirmRequired": "Please confirm your new password.",
+    "tooShort": "The new password must be at least {{min}} characters long.",
+    "mismatch": "The passwords do not match.",
+    "errorCurrentWrong": "Your current password is incorrect.",
+    "errorTooShort": "The new password does not meet the length requirement.",
+    "errorGeneric": "Could not change password. Please try again."
   },
   "notFound": {
     "title": "Page not found",

@@ -65,6 +65,39 @@ neprefixované `MAPY_API_KEY`. Tajemství (DSN, session secret, admin heslo, S3 
 mapy klíč) drž v prostředí, ne v commitnutém souboru. Všechny klíče a defaulty popisuje
 `config.example.yaml`.
 
+## Autentizace a autorizace
+
+Kukátko má vlastní účty (bcrypt cost 12), role **admin / editor / viewer** (editor a admin mají
+write, viewer je read-only) a session přes **HttpOnly + SameSite=Strict** cookie s opaque
+tokenem. Vylepšení proti photo-sorteru: **sliding expiry** (aktivní session se prodlužuje),
+**rate-limit na loginu** a **změna hesla zruší ostatní session** uživatele.
+
+- **Bootstrap admina:** na prázdné tabulce `users` se z `auth.bootstrap_admin_username` +
+  `auth.bootstrap_admin_password` vytvoří první admin (jinak `serve` jen zaloguje varování).
+  Heslo dej přes env `KUKATKO_AUTH_BOOTSTRAP_ADMIN_PASSWORD`, necommituj ho.
+- **Sliding expiry:** každý ověřený request posune `expires_at` na `now+session_ttl`, ale nikdy
+  za `created_at+session_max_lifetime`. Expirované session čistí hodinová úloha.
+- **Rate-limit:** víc než `auth.login_rate_limit` neúspěšných pokusů na (username+IP) za
+  `auth.login_rate_window` vrací HTTP 429.
+
+Endpointy pod `/api/v1` (JSON):
+
+| Metoda | Cesta | Přístup | Popis |
+|--------|-------|---------|-------|
+| POST | `/auth/login` | veřejné | `{username,password}` → nastaví session cookie, vrátí uživatele + `download_token` |
+| POST | `/auth/logout` | veřejné | zruší session a cookie (idempotentní) |
+| GET  | `/auth/me` | přihlášený | aktuální uživatel + `download_token` |
+| POST | `/auth/password` | přihlášený | `{current_password,new_password}` → změní heslo, zruší ostatní session |
+| GET  | `/admin/users` | admin | seznam uživatelů |
+| POST | `/admin/users` | admin | `{username,password,display_name,email,role}` → vytvoří uživatele |
+| PATCH | `/admin/users/{uid}` | admin | `{display_name,email,role,disabled}` → upraví profil |
+| POST | `/admin/users/{uid}/disable` | admin | zakáže účet (zruší jeho session) |
+| POST | `/admin/users/{uid}/password` | admin | `{new_password}` → reset hesla (zruší všechny jeho session) |
+
+RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin`). Konfigurační
+klíče (`auth.session_ttl`, `auth.session_max_lifetime`, `auth.login_rate_limit`,
+`auth.login_rate_window`, `web.secure_cookies`) popisuje [`config.example.yaml`](config.example.yaml).
+
 ## Frontend
 
 SPA je **React 19 + TypeScript + Vite** v adresáři [`web/`](web/), stylovaná tématem
@@ -74,6 +107,22 @@ a i18n přes **i18next** (**čeština default** + angličtina, volba se persistu
 Go embeduje (`//go:embed`) a servíruje s **SPA fallbackem** (neznámé ne-asset cesty →
 `index.html`; fingerprintované soubory pod `/assets/` mají immutable cache). `kukatko serve`
 tak vrací jak `GET /healthz`, tak celé SPA.
+
+**Autentizace ve frontendu:** `AuthProvider` ([`web/src/auth/`](web/src/auth/)) načte na startu
+`GET /auth/me` a přes hook `useAuth()` vystavuje `user`/`role`/`login`/`logout`/`refresh` +
+odvozené `canWrite`/`isAdmin`. Přihlašovací stránka (`/login`) je veřejná; vše ostatní hlídá
+`RequireAuth` (nepřihlášený → redirect na `/login` s uložením původní cesty, po přihlášení
+návrat zpět), role hlídá `RequireRole`. Navbar ukazuje přihlášeného uživatele s odhlášením a
+odkazem na **Můj účet** (`/account` — změna vlastního hesla přes `POST /auth/password`); write
+akce jsou skryté prohlížečům (`viewer`). Auth volání backendu jsou v
+[`web/src/services/auth.ts`](web/src/services/auth.ts) (typy `User`/`Role`/`AuthSession`,
+`ApiError` se statusem, helpery `canWrite`/`roleAtLeast`).
+
+**URL = stav (Zpět vždy funguje):** sdílený hook `useUrlState`
+([`web/src/lib/urlState.ts`](web/src/lib/urlState.ts)) čte/zapisuje stav pohledu (filtry, řazení,
+hledání, stránka) do query parametrů přes History API, takže Back/Forward obnoví předchozí stav.
+Tohle je konvence pro budoucí seznam/knihovnu — výchozí hodnoty se z URL vynechávají (čisté URL),
+update defaultně pushuje historii (`{ replace: true }` pro živé psaní).
 
 Vývoj frontendu (dev server s proxy na Go backend) a samostatné cíle:
 

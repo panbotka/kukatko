@@ -1,18 +1,29 @@
 import Container from 'react-bootstrap/Container'
 import Nav from 'react-bootstrap/Nav'
 import Navbar from 'react-bootstrap/Navbar'
+import NavDropdown from 'react-bootstrap/NavDropdown'
 import { useTranslation } from 'react-i18next'
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+
+import { useAuth } from '../auth/AuthContext'
 
 import { LanguageSwitcher } from './LanguageSwitcher'
 
 /**
- * Application shell: a responsive top navbar (brand, navigation placeholders,
- * language switcher) above the routed page content. Disabled nav items are
+ * Application shell: a responsive top navbar (brand, navigation, language
+ * switcher, and the signed-in user menu) above the routed page content.
+ * Write-only navigation is hidden from viewers; disabled nav items are
  * placeholders for milestones not yet implemented.
  */
 export function Layout() {
   const { t } = useTranslation()
+  const { user, canWrite, logout } = useAuth()
+  const navigate = useNavigate()
+
+  async function handleLogout() {
+    await logout()
+    void navigate('/login', { replace: true })
+  }
 
   return (
     <>
@@ -33,8 +44,31 @@ export function Layout() {
               <Nav.Link as={NavLink} to="/map" disabled>
                 {t('nav.map')}
               </Nav.Link>
+              {/* Write actions are gated by role: hidden from viewers. */}
+              {canWrite && (
+                <Nav.Link as={NavLink} to="/upload" disabled>
+                  {t('nav.upload')}
+                </Nav.Link>
+              )}
             </Nav>
             <LanguageSwitcher />
+            {user && (
+              <Nav className="ms-md-3">
+                <NavDropdown align="end" title={user.display_name || user.username} id="user-menu">
+                  <NavDropdown.Item as={Link} to="/account">
+                    {t('nav.account')}
+                  </NavDropdown.Item>
+                  <NavDropdown.Divider />
+                  <NavDropdown.Item
+                    onClick={() => {
+                      void handleLogout()
+                    }}
+                  >
+                    {t('nav.logout')}
+                  </NavDropdown.Item>
+                </NavDropdown>
+              </Nav>
+            )}
           </Navbar.Collapse>
         </Container>
       </Navbar>
