@@ -178,8 +178,9 @@ Endpoint **`POST /api/v1/upload`** (přístup editor/admin) přijímá `multipar
 4. Insert `photos` (vč. video sloupců) + primární `photo_files` + výpočet **pHash/dHash** →
    `photo_phashes` (u videa z poster framu).
 5. Generování **náhledů** (thumbnailer) — u videa z poster framu, takže grid ukazuje poster.
-6. **Enqueue** jobů `image_embed` + `face_detect` přes `ingest.JobEnqueuer` — zatím
-   `NopEnqueuer` (TODO hook, fronta vznikne v jobs tasku); u videa běží na poster framu, takže
+6. **Enqueue** jobů `image_embed` + `face_detect` přes `ingest.JobEnqueuer` — perzistentní
+   implementace `jobs.Enqueuer` (viz [fronta jobů](#persistentní-fronta-jobů-internaljobs)) nebo
+   `NopEnqueuer` (default, dokud worker frontu nedrénuje); u videa běží na poster framu, takže
    se účastní sémantického/face vyhledávání.
 
 Video vyžaduje **`ffmpeg`** (poster nemá fallback) — chybějící `ffmpeg` u video uploadu vrací
@@ -192,6 +193,37 @@ na jednu fotku (storage hard-link + unique constraint `file_hash`), poražený d
 duplicitu, ne 500. **Near-duplicate** (config-gated `duplicate.*`): pokud existuje velmi podobný
 pHash, výsledek nese `warning` (neblokuje). Limit velikosti souboru: `upload.max_file_size_mb`
 (0 = bez limitu).
+
+### Persistentní fronta jobů (`internal/jobs`)
+
+Durable, Postgresem podložená fronta (migrace `0005_jobs.sql`, tabulka `jobs`) — hlavní
+robustnostní vylepšení proti photo-sorteru, jehož in-memory joby se ztrácely při restartu. Joby
+přežijí restart, retryují s exponenciálním backoffem, dedupují se podle fotky a čekají v `queued`,
+když je embeddings box offline (upload a prohlížení fungují bez něj).
+
+- **Tabulka `jobs`**: `id BIGSERIAL`, `type`, `state` (`queued`/`running`/`done`/`failed`/`dead`),
+  `priority`, `payload` JSONB, `attempts`/`max_attempts` (default 5), `last_error`, `run_after`
+  (backoff/odložení), `locked_by`/`locked_at`, `created_at`/`updated_at`. Index na
+  `(state, run_after, priority)`; **dedup** = partial unique index na
+  `(type, payload->>'photo_uid') WHERE state IN ('queued','running')` (NULL photo_uid se nededupuje,
+  takže joby bez fotky — např. `backup` — nekolidují).
+- **`Store`** (`jobs.NewStore(pool)`):
+  - `Enqueue(ctx, type, payload, opts)` — idempotentní vůči dedup klíči; aktivní duplikát vrací
+    `ErrDuplicate`. `EnqueueOptions{Priority, MaxAttempts, RunAfter}`.
+  - `Claim(ctx, workerID, types...)` — atomicky vezme další běhuschopný job přes
+    `SELECT … FOR UPDATE SKIP LOCKED` (`run_after <= now()`, řazení `priority DESC, run_after ASC,
+    id ASC`), označí `running` + `locked_by`/`locked_at`. Prázdná fronta → `ErrNoJobs`. Souběžní
+    workeři nikdy nedostanou stejný job.
+  - `Complete(id)` / `Fail(id, err)` — `Fail` inkrementuje `attempts`; dokud `attempts < max_attempts`
+    requeue s exponenciálním backoffem přes `run_after` (base 30 s, cap 1 h), jinak `state=dead` +
+    `last_error` (dead-letter).
+  - `Heartbeat(id, workerID)` + `RecoverStaleLocks(staleAfter)` — běžící joby se zastaralým zámkem
+    (mrtvý worker) se requeují (počítá se jako pokus); heartbeat zámek osvěží a chrání před recovery.
+  - Helpery: `CountsByState` / `CountsByType`, `ListDead`, `RequeueDead`, `Get`.
+- **`jobs.Enqueuer`** (`NewEnqueuer(store)`) implementuje `ingest.JobEnqueuer`
+  (`EnqueueImageEmbed`/`EnqueueFaceDetect` s payloadem `{"photo_uid": …}`, `ErrDuplicate` =
+  no-op) — wiring fronty do uploadu. Exekuční smyčka (worker, který frontu drénuje) je samostatný
+  task.
 
 ## Konfigurace
 

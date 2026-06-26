@@ -117,7 +117,25 @@ inkrementální).
   částečný přes raw-key presence (vynechané pole beze změny, `null` maže nullable, validace
   souřadnic); média `thumb/{size}`+`download` **streamují** přes `io.Copy` se `streamMedia`
   (`Cache-Control`/`ETag`/`304`, `Content-Length` z DB, náhled generován on-miss),
-  guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`), `internal/web/`
+  guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`), `internal/jobs/`
+  (persistentní fronta jobů v Postgresu, **hlavní robustnost proti photo-sorteru** —
+  joby přežijí restart, retryují, dedupují, čekají když je box offline; tabulka `jobs` v migraci
+  `0005_jobs.sql`: `state` queued/running/done/failed/dead, `priority`, `payload` JSONB,
+  `attempts`/`max_attempts` (default 5), `run_after` backoff, `locked_by`/`locked_at`; index
+  `(state, run_after, priority)` + **dedup** partial unique na `(type, payload->>'photo_uid')
+  WHERE state IN (queued,running)`; `Store` = `NewStore(pool)` s
+  `Enqueue(ctx,type,payload,opts)` (idempotentní na dedup klíč → `ErrDuplicate`,
+  `EnqueueOptions{Priority,MaxAttempts,RunAfter}`),
+  `Claim(ctx,workerID,types...)` (atomicky přes `SELECT … FOR UPDATE SKIP LOCKED`,
+  `run_after<=now()`, řazení priority DESC/run_after ASC/id ASC, mark running+lock →
+  prázdná fronta `ErrNoJobs`), `Complete`/`Fail(err)` (inkrement attempts → requeue s
+  exponenciálním backoffem přes `run_after` base 30 s/cap 1 h, jinak `state=dead`+`last_error`),
+  `Heartbeat`/`RecoverStaleLocks(staleAfter)` (zastaralý zámek = mrtvý worker → requeue jako pokus),
+  helpery `CountsByState`/`CountsByType`/`ListDead`/`RequeueDead`/`Get`; sentinely
+  `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrNotDead`; **typy jobů** `image_embed`/
+  `face_detect`/`thumbnail`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` = `NewEnqueuer(store)`
+  implementuje `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`, `ErrDuplicate`=no-op);
+  exekuční smyčka/worker je samostatný task), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
