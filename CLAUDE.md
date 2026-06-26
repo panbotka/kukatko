@@ -155,7 +155,20 @@ inkrementální).
   mountuje `/jobs`; `GET /jobs/stats` (counts by_state/by_type+total), `GET /jobs`
   (recent/dead-letter výpis, query `state`/`limit`≤500/`offset`, neplatný → 400),
   `POST /jobs/{id}/requeue` (dead/failed → queued; 404 missing, 409 ne-requeueable);
-  frontend polluje, žádné SSE), `internal/web/`
+  frontend polluje, žádné SSE), `internal/embedding/`
+  (HTTP klient k inferenčnímu sidecaru na **boxu**, stejný kontrakt jako photo-sorter, vše za
+  rozhraním `Client` (fakeovatelné v testech): `New(Config{BaseURL,ImageDim,FaceDim,
+  RequestTimeout,HealthTimeout,HealthPath,HTTPClient})` → `*HTTPClient`; `ImageEmbedding(ctx,
+  img io.Reader)`/`TextEmbedding(ctx,text)` → 768-dim CLIP vektor + `model`/`pretrained`
+  (`POST /embed/image` multipart `file` streamovaný přes `io.Pipe` / `POST /embed/text` JSON
+  `{text}`), `FaceEmbeddings(ctx,img)` → `[]Face` (512-dim embedding, `BBox [4]float64`
+  v px `[x1,y1,x2,y2]`, `DetScore`)+`model` (`POST /embed/face` multipart `file`),
+  `Healthy(ctx) bool` (probe `GET /health`, jakákoli HTTP odpověď = box dostupný, jen
+  transport-error/timeout = offline); **box offline-aware typové chyby** `ErrUnavailable`
+  (transport selhal / status 502/503/504, retryable — helper `IsUnavailable`) vs `ErrBadResponse`
+  (chybná odpověď) vs `ErrDimMismatch` (validace rozměrů 768/512) vs `ErrInvalidURL`; zrušený
+  kontext se nevydává za nedostupnost; per-request timeouty přes context (default request 60 s /
+  health 5 s), nikdy nedrží obrázek celý v RAM), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
