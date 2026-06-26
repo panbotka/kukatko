@@ -212,7 +212,27 @@ inkrementální).
   `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(limit)` =
   uid nearchivovaných fotek bez embeddingu (LEFT JOIN, nejnovější první, `limit<=0`=vše) pro
   backfill; FK `ON DELETE CASCADE` — mazání fotky
-  smaže embeddingy i faces, oprava photo-sorter mezery se sirotky), `internal/embedjob/`
+  smaže embeddingy i faces, oprava photo-sorter mezery se sirotky), `internal/people/`
+  (DB vrstva pro **subjekty** (osoby/zvířata/jiné) a **markery** (face/label regiony na
+  fotkách), tabulky `subjects`/`markers` v migraci `0008_subjects_markers.sql`: `subjects`
+  = `uid PK` (prefix `su`), `slug UNIQUE`, `name`, `type IN (person|pet|other)`, `favorite`,
+  `private`, `notes`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`), časy; `markers` =
+  `uid PK` (prefix `mk`), `photo_uid` (FK photos `ON DELETE CASCADE`), `subject_uid` (FK
+  subjects `ON DELETE SET NULL`), `type IN (face|label)`, normalizovaný bbox `x,y,w,h`
+  DOUBLE PRECISION (0..1 display space, jako `faces.bbox`), `score`, `invalid`, `reviewed`,
+  časy + indexy na `photo_uid`/`subject_uid`; `Store` = `NewStore(pool)` nad sdíleným pgx
+  poolem: **subjekty** `CreateSubject`(generuje uid + **unikátní slug z name** — `Slugify`
+  bez diakritiky/ASCII, kolize → číselný sufix `name-2`)/`GetSubjectByUID`/`GetSubjectBySlug`/
+  `UpdateSubject`(přeslugování + refresh `faces.subject_name` cache)/`ListSubjects` (s počty
+  nearchivovaných... resp. **non-invalid** markerů per subjekt, řazení dle jména)/
+  `DeleteSubject` (FK odpojí markery, vyčistí faces cache); **markery** `CreateMarker`
+  (validace typu/`0..1` bounds, volitelně rovnou subjekt → faces cache)/`GetMarkerByUID`/
+  `ListMarkersByPhoto`/`AssignSubject`+`UnassignSubject` (v transakci aktualizují
+  denormalizovaný **faces cache** `marker_uid`/`subject_uid`/`subject_name` přes
+  `WHERE marker_uid = $1`)/`SetMarkerInvalid`/`SetMarkerReviewed`/`DeleteMarker` (vyčistí
+  faces cache); sentinely `ErrSubjectNotFound`/`ErrMarkerNotFound`/`ErrSlugExhausted`/
+  `ErrInvalidType`/`ErrInvalidBounds`; **faces cache se drží konzistentní** při každé změně
+  markeru/subjektu (mazání, rename, assign/unassign)), `internal/embedjob/`
   (zapojení CLIP embeddingu do fronty + embeddingové dotazy, vše za rozhraními
   `PhotoStore`/`VectorStore`/`Previewer`/`Enqueuer`+`embedding.Client`: `Service` =
   `New(Config{Photos,Vectors,Client,Previewer,Enqueuer,PreviewSize,OfflineRetryDelay,

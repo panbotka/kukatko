@@ -324,6 +324,38 @@ nekladný `maxDistance` filtr vypne. Helpery `ToHalfVec`/`FromHalfVec` (`[]float
 embeddingu (LEFT JOIN na `embeddings`, nejnovější první; `limit <= 0` = všechny) — podklad pro
 backfill.
 
+### Subjekty & markery (`internal/people`)
+
+Pojmenované **subjekty** (osoby / zvířata / jiné) a **markery** (face/label regiony na fotkách)
+v migraci `0008_subjects_markers.sql`:
+
+- **`subjects`**: `uid` PK (prefix `su`), `slug` UNIQUE (generovaný z `name`, bez diakritiky a
+  unikátní díky číselnému sufixu), `name`, `type IN (person|pet|other)`, `favorite`, `private`,
+  `notes`, `cover_photo_uid` (FK photos `ON DELETE SET NULL` — subjekt přežije smazání cover
+  fotky), `created_at`/`updated_at`.
+- **`markers`**: `uid` PK (prefix `mk`), `photo_uid` (FK photos `ON DELETE CASCADE`),
+  `subject_uid` (FK subjects `ON DELETE SET NULL`), `type IN (face|label)`, normalizovaný bbox
+  `x,y,w,h DOUBLE PRECISION` (0..1 display space, stejná konvence jako `faces.bbox`), `score`,
+  `invalid`, `reviewed`, časy; indexy na `photo_uid` a `subject_uid`.
+
+`people.Store` (`NewStore(pool)`) nad sdíleným pgx poolem:
+
+- **Subjekty:** `CreateSubject` (generuje uid + **unikátní slug z jména** přes `Slugify`,
+  kolize → `name-2`/`name-3`/…), `GetSubjectByUID`/`GetSubjectBySlug`, `UpdateSubject`
+  (přeslugování při změně jména + refresh cache `faces.subject_name`), `ListSubjects`
+  (subjekty s počtem **non-invalid** markerů, řazení dle jména), `DeleteSubject` (FK odpojí
+  markery na `NULL`, vyčistí faces cache).
+- **Markery:** `CreateMarker` (validace typu a `0..1` bounds → `ErrInvalidType`/
+  `ErrInvalidBounds`; volitelně rovnou se subjektem), `GetMarkerByUID`, `ListMarkersByPhoto`,
+  `AssignSubject`/`UnassignSubject`, `SetMarkerInvalid`/`SetMarkerReviewed`, `DeleteMarker`.
+
+**Konzistence denormalizovaného faces cache:** `faces` (migrace 0006) drží cache sloupce
+`marker_uid`/`subject_uid`/`subject_name` kvůli rychlému renderu. `people` je udržuje v
+synchronizaci — každá změna markeru/subjektu (assign/unassign, rename subjektu, mazání markeru
+i subjektu) aktualizuje odpovídající `faces` řádky **ve stejné transakci** (`WHERE marker_uid =
+$1`, resp. `WHERE subject_uid = $1`). Sentinely: `ErrSubjectNotFound`/`ErrMarkerNotFound`/
+`ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidBounds`.
+
 ### Image embedding & similar photos (`internal/embedjob`)
 
 `embedjob.Service` zapojuje CLIP embedding do fronty jobů a staví nad ním embeddingové dotazy.
