@@ -8,6 +8,7 @@ import { HomePage } from './pages/HomePage'
 import { LibraryPage } from './pages/LibraryPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { SearchPage } from './pages/SearchPage'
 import { UploadPage } from './pages/UploadPage'
 
 /**
@@ -25,6 +26,7 @@ export function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<HomePage />} />
               <Route path="/library" element={<LibraryPage />} />
+              <Route path="/search" element={<SearchPage />} />
               {/* Uploading is a write action: editors and admins only. */}
               <Route element={<RequireRole role="editor" />}>
                 <Route path="/upload" element={<UploadPage />} />

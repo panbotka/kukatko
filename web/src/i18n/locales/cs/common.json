@@ -6,6 +6,7 @@
   "nav": {
     "home": "Domů",
     "library": "Knihovna",
+    "search": "Hledat",
     "map": "Mapa",
     "upload": "Nahrát",
     "account": "Můj účet",
@@ -114,6 +115,33 @@
       "private": "Soukromé",
       "unavailable": "Náhled není dostupný"
     }
+  },
+  "search": {
+    "title": "Hledání",
+    "formLabel": "Hledat fotky",
+    "queryLabel": "Hledaný výraz",
+    "placeholder": "Hledat fotky…",
+    "submit": "Hledat",
+    "modeLabel": "Režim",
+    "mode": {
+      "hybrid": "Hybridní",
+      "fulltext": "Fulltext",
+      "semantic": "Sémantické"
+    },
+    "degraded": "Sémantické vyhledávání je dočasně nedostupné (inferenční služba je offline). Zobrazují se fulltextové výsledky.",
+    "prompt": "Zadejte hledaný výraz.",
+    "empty": {
+      "title": "Nic nenalezeno",
+      "hint": "Zkuste jiný výraz nebo upravte filtry."
+    },
+    "error": {
+      "load": "Vyhledávání se nezdařilo."
+    }
+  },
+  "similar": {
+    "title": "Podobné fotky",
+    "loading": "Načítání podobných fotek…",
+    "error": "Podobné fotky se nepodařilo načíst."
   },
   "upload": {
     "title": "Nahrát",

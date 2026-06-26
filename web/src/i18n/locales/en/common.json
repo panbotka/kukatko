@@ -6,6 +6,7 @@
   "nav": {
     "home": "Home",
     "library": "Library",
+    "search": "Search",
     "map": "Map",
     "upload": "Upload",
     "account": "My account",
@@ -114,6 +115,33 @@
       "private": "Private",
       "unavailable": "Preview unavailable"
     }
+  },
+  "search": {
+    "title": "Search",
+    "formLabel": "Search photos",
+    "queryLabel": "Search term",
+    "placeholder": "Search photos…",
+    "submit": "Search",
+    "modeLabel": "Mode",
+    "mode": {
+      "hybrid": "Hybrid",
+      "fulltext": "Full-text",
+      "semantic": "Semantic"
+    },
+    "degraded": "Semantic search is temporarily unavailable (the inference service is offline). Showing full-text results.",
+    "prompt": "Enter a search term.",
+    "empty": {
+      "title": "Nothing found",
+      "hint": "Try a different term or adjust the filters."
+    },
+    "error": {
+      "load": "Search failed."
+    }
+  },
+  "similar": {
+    "title": "Similar photos",
+    "loading": "Loading similar photos…",
+    "error": "Could not load similar photos."
   },
   "upload": {
     "title": "Upload",

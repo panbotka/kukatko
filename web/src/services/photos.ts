@@ -191,6 +191,54 @@ export async function searchPhotos(
 }
 
 /**
+ * One entry in the similar-photos response (`internal/photoapi/similar.go`): a
+ * full photo record plus its cosine `distance` to the source photo (smaller is
+ * closer / more similar).
+ */
+export interface SimilarPhoto extends Photo {
+  distance: number
+}
+
+/** Response body of `GET /api/v1/photos/{uid}/similar`. */
+export interface SimilarResponse {
+  similar: SimilarPhoto[]
+}
+
+/**
+ * Fetches the photos most visually similar to `uid` via
+ * `GET /api/v1/photos/{uid}/similar`, ordered nearest-first and excluding the
+ * source photo. The endpoint is empty-friendly: a photo that has not been
+ * embedded yet (or a server with no search backend) yields an empty list with
+ * 200, so an empty array is a normal result, not an error.
+ *
+ * @param limit optional cap on the number of neighbours (backend default 24,
+ *   max 100); omitted values use the backend default.
+ * @throws ApiError with `status` 404 (no such photo) or 5xx so the caller can
+ *   render the matching message.
+ */
+export async function fetchSimilar(
+  uid: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<SimilarPhoto[]> {
+  const query = new URLSearchParams()
+  if (limit !== undefined) {
+    query.set('limit', String(limit))
+  }
+  const suffix = query.toString() === '' ? '' : `?${query.toString()}`
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/similar${suffix}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  const body = (await res.json()) as SimilarResponse
+  return body.similar
+}
+
+/**
  * Builds the URL of a photo's cached thumbnail at the given size (for example
  * `tile_500`). The media endpoint accepts the session cookie sent by the browser
  * for same-origin `<img>` requests; an optional download token is appended for

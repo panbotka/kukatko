@@ -485,10 +485,33 @@ nabízí hledání, řazení (nejnovější/nejstarší/přidané/název/velikos
 poloha (GPS), soukromé, fotoaparát a přepínač archivu — **celý stav pohledu (filtry + řazení)
 žije v URL** přes `useUrlState`, takže Back/Forward obnoví přesný pohled a sdílení URL ho
 reprodukuje. Stránkování řeší hook
-[`usePhotoLibrary`](web/src/hooks/usePhotoLibrary.ts) (akumuluje stránky, `loadMore`/`retry`,
-reset + refetch při změně filtrů, ruší in-flight requesty a ignoruje stale odpovědi); data čte
+[`usePhotoLibrary`](web/src/hooks/usePhotoLibrary.ts) — tenká obálka nad sdíleným
+[`usePaginatedPhotos`](web/src/hooks/usePaginatedPhotos.ts) (akumuluje stránky, `loadMore`/`retry`,
+reset + refetch při změně dotazu, ruší in-flight requesty a ignoruje stale odpovědi); data čte
 přes [`services/photos.ts`](web/src/services/photos.ts) (`fetchPhotos` nad `GET /api/v1/photos`,
 `thumbUrl`). Pohled má i18n loading-skeleton, prázdný stav i chybový stav s „Zkusit znovu".
+
+**Hledání (`/search`):** stránka
+([`web/src/pages/SearchPage.tsx`](web/src/pages/SearchPage.tsx)) s **prominentním vyhledávacím
+polem** (přítomným i v navbaru přes [`components/NavbarSearch`](web/src/components/NavbarSearch.tsx))
+a **přepínačem režimu** (hybridní – výchozí / fulltext / sémantické). **Dotaz i režim žijí v URL**
+(`?q=…&mode=hybrid`) přes `useUrlState`, takže Back funguje a URL je sdílitelná; psaní je
+**debouncované** (350 ms) než se zapíše do URL a spustí dotaz. Výsledky se renderují ve **stejné
+virtualizované mřížce** jako knihovna a sdílí `FilterBar` (s prop `showSearch`/`showSort` skrytými,
+protože dotaz a relevance řízené řazení patří hledání). Data čte hook
+[`usePhotoSearch`](web/src/hooks/usePhotoSearch.ts) (nad `usePaginatedPhotos`) přes `searchPhotos`
+nad `GET /api/v1/search`; prázdný dotaz je `idle` stav (žádný request, výzva uživateli). Když je
+**inferenční služba offline**, backend vrátí `degraded: true` a pohled zobrazí **neblokující
+upozornění**, že sémantické hledání je dočasně nedostupné (výsledky padnou na fulltext). Pohled má
+i18n idle/loading/empty/error stavy. Mapování URL ↔ stav je v
+[`lib/searchView.ts`](web/src/lib/searchView.ts) (`SearchView`, `SEARCH_DEFAULTS`, `toMode`).
+
+**Podobné fotky:** znovupoužitelná komponenta
+[`components/library/SimilarPhotos`](web/src/components/library/SimilarPhotos.tsx) (pro pozdější
+detail fotky) načte `GET /api/v1/photos/{uid}/similar` přes `fetchSimilar` a zobrazí **horizontálně
+scrollovatelný pruh** náhledů podobných fotek, každý odkazující na svůj detail. Je empty-friendly
+(fotka bez embeddingu → prázdná odpověď → nic nerenderuje), má loading/error stav a refetchuje při
+změně `uid`.
 
 **Multiupload (`/upload`, editor/admin):** stránka
 ([`web/src/pages/UploadPage.tsx`](web/src/pages/UploadPage.tsx)) pro hromadné nahrávání fotek/videí

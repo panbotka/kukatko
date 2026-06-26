@@ -8,6 +8,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 import { LanguageSwitcher } from './LanguageSwitcher'
+import { NavbarSearch } from './NavbarSearch'
 
 /**
  * Application shell: a responsive top navbar (brand, navigation, language
@@ -41,6 +42,9 @@ export function Layout() {
               <Nav.Link as={NavLink} to="/library">
                 {t('nav.library')}
               </Nav.Link>
+              <Nav.Link as={NavLink} to="/search">
+                {t('nav.search')}
+              </Nav.Link>
               <Nav.Link as={NavLink} to="/map" disabled>
                 {t('nav.map')}
               </Nav.Link>
@@ -51,6 +55,7 @@ export function Layout() {
                 </Nav.Link>
               )}
             </Nav>
+            <NavbarSearch />
             <LanguageSwitcher />
             {user && (
               <Nav className="ms-md-3">

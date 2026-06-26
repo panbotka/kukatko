@@ -71,14 +71,21 @@ export function viewToParams(view: LibraryView): PhotoListParams {
   }
 }
 
-/** Reports whether any filter (excluding sort) differs from its default. */
-export function hasActiveFilters(view: LibraryView): boolean {
+/**
+ * Reports whether any filter (excluding sort) differs from its default. Pass
+ * `ignoreQuery` on the search page, where `q` is the page's own search query
+ * rather than a filter this bar should offer to clear.
+ */
+export function hasActiveFilters(
+  view: LibraryView,
+  options: { ignoreQuery?: boolean } = {},
+): boolean {
   return (
     view.archived !== LIBRARY_DEFAULTS.archived ||
     view.has_gps !== '' ||
     view.private !== '' ||
     view.camera !== '' ||
-    view.q !== '' ||
+    (!options.ignoreQuery && view.q !== '') ||
     view.taken_after !== '' ||
     view.taken_before !== ''
   )

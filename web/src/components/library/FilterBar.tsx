@@ -8,63 +8,87 @@ import { hasActiveFilters, type LibraryView, LIBRARY_DEFAULTS } from '../../lib/
 import { type SetUrlState } from '../../lib/urlState'
 
 /** Props for {@link FilterBar}. */
-export interface FilterBarProps {
-  view: LibraryView
-  onChange: SetUrlState<LibraryView>
+export interface FilterBarProps<T extends LibraryView> {
+  view: T
+  onChange: SetUrlState<T>
   /** Total number of photos matching the current filters, shown as a count. */
   total: number
+  /**
+   * Whether to show the substring search input. The search page hides it
+   * (`false`) because its prominent query box already owns `q`. Defaults true.
+   */
+  showSearch?: boolean
+  /**
+   * Whether to show the sort control. The search page hides it (`false`) because
+   * results are ranked by relevance/similarity and the backend ignores sort in
+   * search modes. Defaults true.
+   */
+  showSort?: boolean
 }
 
 /**
  * Library filter + sort controls. Sort, the tri-state and date filters push a
  * history entry (so Back steps through views), while the free-text inputs
  * replace it (so live typing does not flood history). All state lives in the URL
- * via `onChange`; the bar is fully controlled by `view`.
+ * via `onChange`; the bar is fully controlled by `view`. Generic over the view
+ * type so it serves both the library ({@link LibraryView}) and the search page
+ * (a superset adding `mode`); only the library fields are ever written here, so
+ * any extra fields (e.g. the search mode) are preserved untouched.
  */
-export function FilterBar({ view, onChange, total }: FilterBarProps) {
+export function FilterBar<T extends LibraryView>({
+  view,
+  onChange,
+  total,
+  showSearch = true,
+  showSort = true,
+}: FilterBarProps<T>) {
   const { t } = useTranslation()
 
   const push = (patch: Partial<LibraryView>) => {
-    onChange(patch)
+    onChange(patch as Partial<T>)
   }
   const replace = (patch: Partial<LibraryView>) => {
-    onChange(patch, { replace: true })
+    onChange(patch as Partial<T>, { replace: true })
   }
 
   return (
     <Form className="mb-3" role="search" aria-label={t('library.filters.label')}>
       <Row className="g-2 align-items-end">
-        <Col xs={12} md={4} lg={3}>
-          <Form.Group controlId="library-search">
-            <Form.Label className="small mb-1">{t('library.filters.search')}</Form.Label>
-            <Form.Control
-              type="search"
-              value={view.q}
-              placeholder={t('library.filters.searchPlaceholder')}
-              onChange={(e) => {
-                replace({ q: e.target.value })
-              }}
-            />
-          </Form.Group>
-        </Col>
+        {showSearch && (
+          <Col xs={12} md={4} lg={3}>
+            <Form.Group controlId="library-search">
+              <Form.Label className="small mb-1">{t('library.filters.search')}</Form.Label>
+              <Form.Control
+                type="search"
+                value={view.q}
+                placeholder={t('library.filters.searchPlaceholder')}
+                onChange={(e) => {
+                  replace({ q: e.target.value })
+                }}
+              />
+            </Form.Group>
+          </Col>
+        )}
 
-        <Col xs={6} md={3} lg={2}>
-          <Form.Group controlId="library-sort">
-            <Form.Label className="small mb-1">{t('library.filters.sort')}</Form.Label>
-            <Form.Select
-              value={view.sort}
-              onChange={(e) => {
-                push({ sort: e.target.value })
-              }}
-            >
-              <option value="newest">{t('library.sort.newest')}</option>
-              <option value="oldest">{t('library.sort.oldest')}</option>
-              <option value="added">{t('library.sort.added')}</option>
-              <option value="title">{t('library.sort.title')}</option>
-              <option value="size">{t('library.sort.size')}</option>
-            </Form.Select>
-          </Form.Group>
-        </Col>
+        {showSort && (
+          <Col xs={6} md={3} lg={2}>
+            <Form.Group controlId="library-sort">
+              <Form.Label className="small mb-1">{t('library.filters.sort')}</Form.Label>
+              <Form.Select
+                value={view.sort}
+                onChange={(e) => {
+                  push({ sort: e.target.value })
+                }}
+              >
+                <option value="newest">{t('library.sort.newest')}</option>
+                <option value="oldest">{t('library.sort.oldest')}</option>
+                <option value="added">{t('library.sort.added')}</option>
+                <option value="title">{t('library.sort.title')}</option>
+                <option value="size">{t('library.sort.size')}</option>
+              </Form.Select>
+            </Form.Group>
+          </Col>
+        )}
 
         <Col xs={6} md={3} lg={2}>
           <Form.Group controlId="library-archived">
@@ -149,13 +173,15 @@ export function FilterBar({ view, onChange, total }: FilterBarProps) {
         <span className="text-secondary small" aria-live="polite">
           {t('library.count', { count: total })}
         </span>
-        {hasActiveFilters(view) && (
+        {hasActiveFilters(view, { ignoreQuery: !showSearch }) && (
           <Button
             type="button"
             size="sm"
             variant="outline-secondary"
             onClick={() => {
-              push({ ...LIBRARY_DEFAULTS, sort: view.sort })
+              // Keep the current sort, and keep the query when it is owned by the
+              // page's own search box (search page) rather than this bar.
+              push({ ...LIBRARY_DEFAULTS, sort: view.sort, ...(showSearch ? {} : { q: view.q }) })
             }}
           >
             {t('library.filters.clear')}

@@ -233,7 +233,9 @@ inkrementální).
   frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
   (`Layout` = navbar shell s user-menu/logout + role-gated nav — odkaz **Knihovna**
-  míří na `/library`, **Nahrát** na `/upload` (jen editor/admin), `LanguageSwitcher`;
+  míří na `/library`, **Hledat** na `/search`, **Nahrát** na `/upload` (jen editor/admin),
+  `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
+  `LanguageSwitcher`;
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
   `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
   `UploadItem` (řádek fronty: jméno+velikost, progress-bar, status badge, near-duplicate
@@ -241,19 +243,30 @@ inkrementální).
   (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, placeholder bez
   layout-shiftu), `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
   window-scroll, `endReached` → další stránka, footer spinner/retry), `FilterBar`
-  (datum od/do, poloha, soukromé, fotoaparát, archiv, řazení + počet + „zrušit filtry"),
+  (datum od/do, poloha, soukromé, fotoaparát, archiv, řazení + počet + „zrušit filtry";
+  generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
+  na search stránce), `SimilarPhotos` (znovupoužitelný horizontálně scrollovatelný pruh
+  podobných fotek nad `GET /photos/{uid}/similar` přes `fetchSimilar`, odkazy na detail,
+  empty-friendly + loading/error, refetch při změně `uid`),
   `GridSkeleton` (placeholder mřížka při prvním načtení)),
   `pages/` (`HomePage` volá `GET /healthz`, `LoginPage`, `AccountPage` = změna vlastního hesla,
   `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL,
+  `SearchPage` = sémantické/hybridní/fulltext hledání: prominentní debouncované (350 ms)
+  vyhledávací pole + přepínač režimu (`q`+`mode` v URL), stejná virtualizovaná mřížka jako
+  knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
+  (sidecar offline), idle/loading/empty/error stavy,
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
   po dokončení odkaz na nově nahrané fotky (`/library?sort=added`),
   `NotFoundPage`), `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`; `ProtectedRoute` =
-  `RequireAuth` + `RequireRole` route guardy), `hooks/` (`usePhotoLibrary` = paginovaný
-  infinite-scroll loader nad `fetchPhotos`: akumuluje stránky, `loadMore`/`retry`,
-  reset+refetch při změně filtrů, ruší in-flight requesty a ignoruje stale odpovědi;
+  `RequireAuth` + `RequireRole` route guardy), `hooks/` (`usePaginatedPhotos` = sdílený
+  paginovaný infinite-scroll loader nad libovolným `PageFetcher`: akumuluje stránky,
+  `loadMore`/`retry`, reset+refetch při změně dotazu/`key`/`enabled`, ruší in-flight requesty
+  a ignoruje stale odpovědi, vystavuje i `mode`/`degraded`; `enabled:false` → `idle` stav bez
+  requestu; `usePhotoLibrary` = tenká obálka nad ním nad `fetchPhotos`; `usePhotoSearch` =
+  obálka nad `searchPhotos` s injektovaným `mode`, vypnutá při prázdném `q` (idle);
   `useUploadQueue` = fronta uploadu: `addFiles` (dedup jméno+velikost+mtime)/`removeItem`/
   `start`/`retry`/`retryFailed`/`clear`, konkurenční strop `MAX_CONCURRENT_UPLOADS` (3),
   per-file status+progress, souhrn počtů, `createdUids` pro odkaz do knihovny; auto-drainuje
@@ -261,13 +274,17 @@ inkrementální).
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` + `LIBRARY_DEFAULTS` + `viewToParams`
-  (sanitizuje sort/archived) + `hasActiveFilters` — mapování URL stavu na API params),
+  (sanitizuje sort/archived) + `hasActiveFilters` (`{ignoreQuery}` na search stránce) —
+  mapování URL stavu na API params; `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
+  + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér),
   `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
   `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
   (filtry/řazení/stránkování → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
   `searchPhotos(params,mode?,signal)` nad `GET /api/v1/search` (mód
   `fulltext`/`semantic`/`hybrid`, odpověď navíc `mode`+`degraded`),
+  `fetchSimilar(uid,limit?,signal)` nad `GET /api/v1/photos/{uid}/similar` → `SimilarPhoto[]`
+  (`Photo`+`distance`; empty-friendly), typy `SimilarPhoto`/`SimilarResponse`,
   `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo`/`PhotoListParams`/
   `PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`; `upload.ts` = `uploadFile(file,{onProgress,signal})`
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
@@ -276,7 +293,7 @@ inkrementální).
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth` → `Layout` (`/`, `/library`,
-  `/account`; `/upload` navíc pod `RequireRole role="editor"` = write-only). Konfig:
+  `/search`, `/account`; `/upload` navíc pod `RequireRole role="editor"` = write-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.

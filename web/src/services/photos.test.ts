@@ -4,8 +4,10 @@ import { ApiError } from './auth'
 import {
   buildPhotoQuery,
   fetchPhotos,
+  fetchSimilar,
   type PhotoListResponse,
   searchPhotos,
+  type SimilarResponse,
   thumbUrl,
 } from './photos'
 
@@ -126,6 +128,40 @@ describe('searchPhotos', () => {
   it('throws ApiError carrying the status on a non-OK response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'q is required' }, 400)))
     await expect(searchPhotos({ q: '' })).rejects.toMatchObject({ name: 'ApiError', status: 400 })
+  })
+})
+
+describe('fetchSimilar', () => {
+  const SIMILAR: SimilarResponse = {
+    similar: [{ ...RESPONSE.photos[0], distance: 0.12 }],
+  }
+
+  it('requests the similar endpoint and returns the similar array', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(SIMILAR, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const got = await fetchSimilar('ph1')
+    expect(got).toHaveLength(1)
+    expect(got[0].uid).toBe('ph1')
+    expect(got[0].distance).toBe(0.12)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/photos/ph1/similar')
+    expect(init.credentials).toBe('same-origin')
+  })
+
+  it('appends the limit when provided', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(SIMILAR, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchSimilar('ph1', 12)
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(url).toBe('/api/v1/photos/ph1/similar?limit=12')
+  })
+
+  it('throws ApiError carrying the status on a non-OK response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'not found' }, 404)))
+    await expect(fetchSimilar('missing')).rejects.toMatchObject({ name: 'ApiError', status: 404 })
   })
 })
 
