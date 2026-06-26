@@ -115,6 +115,27 @@ shell-out na externí nástroje pro HEIC/RAW).
   `ErrConverterMissing`. Runtime apt závislosti: `libheif-examples`/`libheif-bin`,
   `libimage-exiftool-perl`.
 
+### EXIF / GPS metadata (`internal/exif`)
+
+Extrakce metadat při importu, **bez CGO**. `exif.Extract(ctx, path)` vrací `exif.Metadata`
+(mapuje se 1:1 na sloupce `internal/photos.Photo`): `TakenAt` + `TakenAtSource`
+(`exif`/`filename`/`unknown`), `Lat`/`Lng`/`Altitude`, `CameraMake`/`CameraModel`/`LensModel`,
+`ISO`/`Aperture`/`Exposure`/`FocalLength`, `Width`/`Height`/`Orientation`, `Mime` a plný EXIF
+jako JSON-able mapa (`Exif`).
+
+- **Primární cesta**: shell-out na `exiftool -json -n` (numerické hodnoty → deterministické
+  parsování rozměrů, orientace a souřadnic). **Fallback** na čistě-Go parser
+  (`rwcarlsen/goexif`), když `exiftool` není na PATH nebo selže — fallback čte i rozměry/MIME
+  přes `image.DecodeConfig` + `http.DetectContentType`.
+- **GPS**: EXIF rational souřadnice se převádějí na desetinné stupně, hemisféra dle
+  `N/S/E/W` refů (jih/západ → záporné); `GPSAltitudeRef = 1` → záporná výška.
+- **`taken_at`**: preferuje EXIF `DateTimeOriginal` (zóna-prosté časy jako UTC); když chybí,
+  zkusí datum z **názvu souboru** (`IMG_20230115_143052`, `2023-01-15 14.30.52`, …); jinak
+  `source = unknown`.
+- **Tolerance**: soubor bez EXIF (např. PNG screenshot) **není chyba** — vrací nulové hodnoty,
+  ne error. Error jen pro prázdnou cestu / nečitelný soubor.
+- Runtime apt závislost (volitelná, jinak fallback): `libimage-exiftool-perl`.
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).
