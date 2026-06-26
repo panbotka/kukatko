@@ -15,6 +15,7 @@ inkrementální).
 - **DB: PostgreSQL + pgvector.** Embeddingy se ukládají **přímo do DB** (`halfvec` + HNSW cosine).
 - **Frontend: React + TypeScript + Vite + react-bootstrap + Bootswatch Superhero**, embedovaný do
   binárky přes `//go:embed` (SPA fallback). i18n přes i18next: **čeština default**, angličtina.
+  Virtualizace dlouhých mřížek/seznamů přes **`react-virtuoso`**.
 - **Obrázky/videa bez CGO:** pure-Go pro JPEG/PNG/WebP; **shell-out** na `heif-convert` (HEIC),
   `exiftool`/`dcraw` (RAW preview), `ffmpeg`/`ffprobe` (video poster/metadata/streaming).
 
@@ -106,17 +107,35 @@ inkrementální).
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
   frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
-  (`Layout` = navbar shell s user-menu/logout + role-gated nav, `LanguageSwitcher`),
+  (`Layout` = navbar shell s user-menu/logout + role-gated nav — odkaz **Knihovna**
+  míří na `/library`, `LanguageSwitcher`; `components/library/` = `PhotoTile`
+  (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, placeholder bez
+  layout-shiftu), `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
+  window-scroll, `endReached` → další stránka, footer spinner/retry), `FilterBar`
+  (datum od/do, poloha, soukromé, fotoaparát, archiv, řazení + počet + „zrušit filtry"),
+  `GridSkeleton` (placeholder mřížka při prvním načtení)),
   `pages/` (`HomePage` volá `GET /healthz`, `LoginPage`, `AccountPage` = změna vlastního hesla,
+  `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
+  mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL,
   `NotFoundPage`), `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`; `ProtectedRoute` =
-  `RequireAuth` + `RequireRole` route guardy), `lib/` (`urlState.ts` = hook `useUrlState` +
+  `RequireAuth` + `RequireRole` route guardy), `hooks/` (`usePhotoLibrary` = paginovaný
+  infinite-scroll loader nad `fetchPhotos`: akumuluje stránky, `loadMore`/`retry`,
+  reset+refetch při změně filtrů, ruší in-flight requesty a ignoruje stale odpovědi),
+  `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
-  funguje"), `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
+  funguje"; `libraryView.ts` = typ `LibraryView` + `LIBRARY_DEFAULTS` + `viewToParams`
+  (sanitizuje sort/archived) + `hasActiveFilters` — mapování URL stavu na API params),
+  `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
   `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
-  `MIN_PASSWORD_LENGTH`), `i18n/` (i18next init + `locales/{cs,en}/common.json`; typované klíče
-  přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů), `test/setup.ts`.
-  Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth` → `Layout`. Konfig:
+  `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
+  (filtry/řazení/stránkování → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
+  `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo`/`PhotoListParams`/
+  `PhotoSort`/`ArchivedFilter`, `ApiError`), `i18n/` (i18next init + `locales/{cs,en}/common.json`;
+  typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
+  `test/setup.ts`.
+  Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth` → `Layout` (`/`, `/library`,
+  `/account`). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.

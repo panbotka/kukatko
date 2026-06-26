@@ -65,6 +65,56 @@
     "errorTooShort": "The new password does not meet the length requirement.",
     "errorGeneric": "Could not change password. Please try again."
   },
+  "library": {
+    "title": "Library",
+    "count": "Photos: {{count}}",
+    "loading": "Loading photos…",
+    "loadingMore": "Loading more photos…",
+    "filters": {
+      "label": "Photo filters",
+      "search": "Search",
+      "searchPlaceholder": "Title, description…",
+      "sort": "Sort",
+      "archived": "Archived",
+      "hasGps": "Location",
+      "private": "Private",
+      "camera": "Camera",
+      "cameraPlaceholder": "e.g. Canon",
+      "takenAfter": "Taken from",
+      "takenBefore": "Taken until",
+      "clear": "Clear filters"
+    },
+    "sort": {
+      "newest": "Newest",
+      "oldest": "Oldest",
+      "added": "Recently added",
+      "title": "Title",
+      "size": "File size"
+    },
+    "archived": {
+      "hide": "Hide archived",
+      "show": "Include archived",
+      "only": "Archived only"
+    },
+    "triState": {
+      "any": "Any",
+      "yes": "Yes",
+      "no": "No"
+    },
+    "empty": {
+      "title": "No photos found",
+      "hint": "Try adjusting or clearing the filters."
+    },
+    "error": {
+      "load": "Could not load photos.",
+      "more": "Could not load more photos.",
+      "retry": "Try again"
+    },
+    "tile": {
+      "private": "Private",
+      "unavailable": "Preview unavailable"
+    }
+  },
   "notFound": {
     "title": "Page not found",
     "message": "The requested page does not exist.",

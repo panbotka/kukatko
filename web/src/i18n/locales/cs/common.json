@@ -65,6 +65,56 @@
     "errorTooShort": "Nové heslo nesplňuje požadavky na délku.",
     "errorGeneric": "Změna hesla se nezdařila. Zkuste to prosím znovu."
   },
+  "library": {
+    "title": "Knihovna",
+    "count": "Počet fotek: {{count}}",
+    "loading": "Načítání fotek…",
+    "loadingMore": "Načítání dalších fotek…",
+    "filters": {
+      "label": "Filtry fotek",
+      "search": "Hledat",
+      "searchPlaceholder": "Název, popis…",
+      "sort": "Řazení",
+      "archived": "Archiv",
+      "hasGps": "Poloha",
+      "private": "Soukromé",
+      "camera": "Fotoaparát",
+      "cameraPlaceholder": "např. Canon",
+      "takenAfter": "Pořízeno od",
+      "takenBefore": "Pořízeno do",
+      "clear": "Zrušit filtry"
+    },
+    "sort": {
+      "newest": "Nejnovější",
+      "oldest": "Nejstarší",
+      "added": "Naposledy přidané",
+      "title": "Název",
+      "size": "Velikost souboru"
+    },
+    "archived": {
+      "hide": "Skrýt archivované",
+      "show": "Včetně archivovaných",
+      "only": "Pouze archivované"
+    },
+    "triState": {
+      "any": "Vše",
+      "yes": "Ano",
+      "no": "Ne"
+    },
+    "empty": {
+      "title": "Nenalezeny žádné fotky",
+      "hint": "Zkuste upravit nebo zrušit filtry."
+    },
+    "error": {
+      "load": "Fotky se nepodařilo načíst.",
+      "more": "Další fotky se nepodařilo načíst.",
+      "retry": "Zkusit znovu"
+    },
+    "tile": {
+      "private": "Soukromé",
+      "unavailable": "Náhled není dostupný"
+    }
+  },
   "notFound": {
     "title": "Stránka nenalezena",
     "message": "Požadovaná stránka neexistuje.",

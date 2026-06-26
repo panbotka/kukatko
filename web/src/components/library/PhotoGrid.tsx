@@ -1,0 +1,109 @@
+import { forwardRef } from 'react'
+import Button from 'react-bootstrap/Button'
+import Spinner from 'react-bootstrap/Spinner'
+import { useTranslation } from 'react-i18next'
+import { type GridComponents, VirtuosoGrid } from 'react-virtuoso'
+
+import { type Photo } from '../../services/photos'
+
+import { PhotoTile } from './PhotoTile'
+
+/** State the footer needs, threaded to the virtuoso components via `context`. */
+interface GridContext {
+  loadingMore: boolean
+  moreError: boolean
+  onRetry: () => void
+}
+
+/**
+ * Responsive CSS-grid list: columns adapt to the viewport via `auto-fill` so the
+ * tile count per row follows the available width on mobile, tablet and desktop.
+ */
+const List = forwardRef<
+  HTMLDivElement,
+  { style?: React.CSSProperties; children?: React.ReactNode }
+>(function List({ style, children, ...props }, ref) {
+  return (
+    <div
+      ref={ref}
+      {...props}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+        gap: '6px',
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  )
+})
+
+/** Footer slot: a spinner while a page loads, or a retry control if one failed. */
+function GridFooter({ context }: { context?: GridContext }) {
+  const { t } = useTranslation()
+  if (!context) {
+    return null
+  }
+  if (context.moreError) {
+    return (
+      <div className="d-flex align-items-center justify-content-center gap-2 py-4">
+        <span className="text-secondary">{t('library.error.more')}</span>
+        <Button size="sm" variant="outline-light" onClick={context.onRetry}>
+          {t('library.error.retry')}
+        </Button>
+      </div>
+    )
+  }
+  if (context.loadingMore) {
+    return (
+      <div className="d-flex justify-content-center py-4">
+        <Spinner animation="border" role="status" size="sm">
+          <span className="visually-hidden">{t('library.loadingMore')}</span>
+        </Spinner>
+      </div>
+    )
+  }
+  return null
+}
+
+const gridComponents: GridComponents<GridContext> = {
+  List,
+  Footer: GridFooter,
+}
+
+/** Props for {@link PhotoGrid}. */
+export interface PhotoGridProps {
+  photos: Photo[]
+  loadingMore: boolean
+  moreError: boolean
+  onEndReached: () => void
+  onRetry: () => void
+}
+
+/**
+ * Virtualized, infinite-scroll grid of photo tiles. Only the visible rows are
+ * mounted (react-virtuoso), and reaching the end requests the next page via
+ * `onEndReached`. It scrolls with the window so the page behaves like a normal
+ * document. The footer surfaces load-more progress and errors.
+ */
+export function PhotoGrid({
+  photos,
+  loadingMore,
+  moreError,
+  onEndReached,
+  onRetry,
+}: PhotoGridProps) {
+  return (
+    <VirtuosoGrid
+      useWindowScroll
+      data={photos}
+      context={{ loadingMore, moreError, onRetry }}
+      endReached={onEndReached}
+      components={gridComponents}
+      itemContent={(_index, photo) => <PhotoTile photo={photo} />}
+      computeItemKey={(_index, photo) => photo.uid}
+      style={{ minHeight: '50vh' }}
+    />
+  )
+}

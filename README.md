@@ -275,8 +275,25 @@ akce jsou skryté prohlížečům (`viewer`). Auth volání backendu jsou v
 **URL = stav (Zpět vždy funguje):** sdílený hook `useUrlState`
 ([`web/src/lib/urlState.ts`](web/src/lib/urlState.ts)) čte/zapisuje stav pohledu (filtry, řazení,
 hledání, stránka) do query parametrů přes History API, takže Back/Forward obnoví předchozí stav.
-Tohle je konvence pro budoucí seznam/knihovnu — výchozí hodnoty se z URL vynechávají (čisté URL),
-update defaultně pushuje historii (`{ replace: true }` pro živé psaní).
+Výchozí hodnoty se z URL vynechávají (čisté URL), update defaultně pushuje historii
+(`{ replace: true }` pro živé psaní).
+
+**Knihovna (`/library`):** hlavní pohled
+([`web/src/pages/LibraryPage.tsx`](web/src/pages/LibraryPage.tsx)) je **virtualizovaná, nekonečně
+scrollující mřížka náhledů** s filtrovacím panelem. Mřížku renderuje
+[`react-virtuoso`](https://virtuoso.dev/) `VirtuosoGrid` (window-scroll, responzivní sloupce přes
+CSS `auto-fill`, mountuje jen viditelné řádky); dosažení konce (`endReached`) dotáhne další
+stránku. Dlaždice ([`components/library/PhotoTile`](web/src/components/library/PhotoTile.tsx)) jsou
+čtvercové, **lazy-load** (`loading="lazy"`, pevný `aspect-ratio` → bez layout-shiftu) a vedou na
+detail `/photos/{uid}`. **Filtr-bar** ([`components/library/FilterBar`](web/src/components/library/FilterBar.tsx))
+nabízí hledání, řazení (nejnovější/nejstarší/přidané/název/velikost), rozsah dat pořízení,
+poloha (GPS), soukromé, fotoaparát a přepínač archivu — **celý stav pohledu (filtry + řazení)
+žije v URL** přes `useUrlState`, takže Back/Forward obnoví přesný pohled a sdílení URL ho
+reprodukuje. Stránkování řeší hook
+[`usePhotoLibrary`](web/src/hooks/usePhotoLibrary.ts) (akumuluje stránky, `loadMore`/`retry`,
+reset + refetch při změně filtrů, ruší in-flight requesty a ignoruje stale odpovědi); data čte
+přes [`services/photos.ts`](web/src/services/photos.ts) (`fetchPhotos` nad `GET /api/v1/photos`,
+`thumbUrl`). Pohled má i18n loading-skeleton, prázdný stav i chybový stav s „Zkusit znovu".
 
 Vývoj frontendu (dev server s proxy na Go backend) a samostatné cíle:
 

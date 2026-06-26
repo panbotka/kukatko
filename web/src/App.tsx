@@ -5,6 +5,7 @@ import { RequireAuth } from './auth/ProtectedRoute'
 import { Layout } from './components/Layout'
 import { AccountPage } from './pages/AccountPage'
 import { HomePage } from './pages/HomePage'
+import { LibraryPage } from './pages/LibraryPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
@@ -22,6 +23,7 @@ export function App() {
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
               <Route path="/" element={<HomePage />} />
+              <Route path="/library" element={<LibraryPage />} />
               <Route path="/account" element={<AccountPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>

@@ -38,7 +38,7 @@ export function Layout() {
               <Nav.Link as={NavLink} to="/" end>
                 {t('nav.home')}
               </Nav.Link>
-              <Nav.Link as={NavLink} to="/library" disabled>
+              <Nav.Link as={NavLink} to="/library">
                 {t('nav.library')}
               </Nav.Link>
               <Nav.Link as={NavLink} to="/map" disabled>
