@@ -18,12 +18,17 @@ type fakeQueue struct {
 	pending   []jobs.Job
 	completed []int64
 	failed    map[int64]error
+	deferred  map[int64]time.Duration
 	recovered int
 }
 
 // newFakeQueue returns a fakeQueue seeded with the given pending jobs.
 func newFakeQueue(pending ...jobs.Job) *fakeQueue {
-	return &fakeQueue{pending: pending, failed: make(map[int64]error)}
+	return &fakeQueue{
+		pending:  pending,
+		failed:   make(map[int64]error),
+		deferred: make(map[int64]time.Duration),
+	}
 }
 
 // Claim pops and returns the next pending job, or jobs.ErrNoJobs when empty.
@@ -54,6 +59,14 @@ func (q *fakeQueue) Fail(_ context.Context, id int64, cause error) (jobs.Job, er
 	return jobs.Job{ID: id}, nil
 }
 
+// Defer records the deferral delay for id and returns a placeholder job.
+func (q *fakeQueue) Defer(_ context.Context, id int64, delay time.Duration) (jobs.Job, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.deferred[id] = delay
+	return jobs.Job{ID: id}, nil
+}
+
 // RecoverStaleLocks counts the call and recovers nothing.
 func (q *fakeQueue) RecoverStaleLocks(_ context.Context, _ time.Duration) (int64, error) {
 	q.mu.Lock()
@@ -70,6 +83,15 @@ func (q *fakeQueue) snapshot() ([]int64, map[int64]error) {
 	failed := make(map[int64]error, len(q.failed))
 	maps.Copy(failed, q.failed)
 	return done, failed
+}
+
+// deferredSnapshot returns a copy of the recorded deferrals.
+func (q *fakeQueue) deferredSnapshot() map[int64]time.Duration {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := make(map[int64]time.Duration, len(q.deferred))
+	maps.Copy(out, q.deferred)
+	return out
 }
 
 // newTestWorker builds a Worker over q with reg and fast intervals for tests.
@@ -120,6 +142,31 @@ func TestProcess_failsOnHandlerError(t *testing.T) {
 	_, failed := q.snapshot()
 	if !errors.Is(failed[3], boom) {
 		t.Errorf("failed[3] = %v, want boom", failed[3])
+	}
+}
+
+// TestProcess_defersOnRetryAfter verifies a handler returning a RetryAfterError
+// defers the job (no attempt burned) instead of failing it.
+func TestProcess_defersOnRetryAfter(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("box offline")
+	q := newFakeQueue()
+	reg := NewRegistry()
+	reg.Register("transient", func(context.Context, jobs.Job) error {
+		return RetryAfter(90*time.Second, cause)
+	})
+	w := newTestWorker(q, reg)
+
+	w.process(context.Background(), "test-0", jobs.Job{ID: 4, Type: "transient"})
+
+	done, failed := q.snapshot()
+	if len(done) != 0 || len(failed) != 0 {
+		t.Errorf("retry-after job recorded as done/failed: completed=%v failed=%v", done, failed)
+	}
+	deferred := q.deferredSnapshot()
+	if got := deferred[4]; got != 90*time.Second {
+		t.Errorf("deferred[4] = %v, want 90s", got)
 	}
 }
 

@@ -82,6 +82,47 @@ func (s *Store) GetEmbedding(ctx context.Context, photoUID string) (Embedding, e
 	return emb, nil
 }
 
+// listMissingEmbeddingSQL selects the uids of non-archived photos that have no
+// row in embeddings, newest first. The %s placeholder is replaced with a LIMIT
+// clause only when a positive limit is requested.
+const listMissingEmbeddingSQL = `
+SELECT p.uid
+FROM photos p
+LEFT JOIN embeddings e ON e.photo_uid = p.uid
+WHERE e.photo_uid IS NULL AND p.archived_at IS NULL
+ORDER BY p.created_at DESC, p.uid DESC%s`
+
+// ListPhotosMissingEmbedding returns the uids of non-archived photos that do not
+// yet have an image embedding, newest first. A positive limit caps the result;
+// a non-positive limit returns every missing photo. It backs the embedding
+// backfill, which enqueues an image_embed job per returned uid.
+func (s *Store) ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]string, error) {
+	query := fmt.Sprintf(listMissingEmbeddingSQL, "")
+	args := []any(nil)
+	if limit > 0 {
+		query = fmt.Sprintf(listMissingEmbeddingSQL, "\nLIMIT $1")
+		args = []any{limit}
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing photos missing embedding: %w", err)
+	}
+	defer rows.Close()
+
+	var uids []string
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, fmt.Errorf("scanning photo uid: %w", err)
+		}
+		uids = append(uids, uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating photos missing embedding: %w", err)
+	}
+	return uids, nil
+}
+
 // withReadTx runs fn inside a read-only transaction with hnsw.ef_search tuned for
 // recall. The transaction is always rolled back (queries make no changes), so the
 // SET LOCAL never leaks beyond the call. Errors from fn are returned unwrapped so

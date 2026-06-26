@@ -25,6 +25,39 @@ var (
 	ErrHandlerPanic = errors.New("worker: handler panicked")
 )
 
+// RetryAfterError is the error a handler returns to tell the worker to requeue
+// the job to run after Delay WITHOUT counting a failed attempt (the queue's
+// Defer, not Fail). Handlers use it for transient, no-fault conditions — chiefly
+// the embeddings box being offline — so a job waits in the queue for the
+// condition to clear without ever exhausting its retry budget. Cause is the
+// underlying error, kept for logging and errors.Is/As unwrapping.
+type RetryAfterError struct {
+	// Delay is how long to wait before the job becomes runnable again.
+	Delay time.Duration
+	// Cause is the transient error that triggered the deferral.
+	Cause error
+}
+
+// RetryAfter wraps cause as a RetryAfterError requesting the job be requeued
+// after delay without burning a retry attempt. It is the constructor handlers
+// use to signal a transient, no-fault retry.
+func RetryAfter(delay time.Duration, cause error) error {
+	return &RetryAfterError{Delay: delay, Cause: cause}
+}
+
+// Error implements error, describing the deferral and its cause.
+func (e *RetryAfterError) Error() string {
+	if e.Cause == nil {
+		return fmt.Sprintf("worker: retry after %s", e.Delay)
+	}
+	return fmt.Sprintf("worker: retry after %s: %v", e.Delay, e.Cause)
+}
+
+// Unwrap exposes the underlying cause so errors.Is/As can match it.
+func (e *RetryAfterError) Unwrap() error {
+	return e.Cause
+}
+
 const (
 	// defaultConcurrency is the number of worker goroutines when Config.Concurrency
 	// is not positive.
@@ -53,6 +86,8 @@ type Queue interface {
 	Complete(ctx context.Context, id int64) error
 	// Fail records a failed attempt, requeuing with backoff or dead-lettering.
 	Fail(ctx context.Context, id int64, cause error) (jobs.Job, error)
+	// Defer requeues a job to run after delay without counting a failed attempt.
+	Defer(ctx context.Context, id int64, delay time.Duration) (jobs.Job, error)
 	// RecoverStaleLocks requeues running jobs whose lock is older than staleAfter.
 	RecoverStaleLocks(ctx context.Context, staleAfter time.Duration) (int64, error)
 }
@@ -214,21 +249,41 @@ func runHandler(ctx context.Context, handler HandlerFunc, job jobs.Job) (err err
 	return handler(ctx, job)
 }
 
-// record writes a job's terminal outcome to the queue: Complete when cause is
-// nil, otherwise Fail. The write uses a fresh, shutdown-immune context with a
-// short timeout so a result computed just before shutdown is still persisted.
+// record writes a job's outcome to the queue: Complete when cause is nil, Defer
+// (no attempt burned) when cause is a RetryAfterError, otherwise Fail. The write
+// uses a fresh, shutdown-immune context with a short timeout so a result computed
+// just before shutdown is still persisted.
 func (w *Worker) record(ctx context.Context, job jobs.Job, cause error) {
 	bookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bookkeepingTimeout)
 	defer cancel()
-	if cause == nil {
+	switch {
+	case cause == nil:
 		if err := w.queue.Complete(bookCtx, job.ID); err != nil {
 			log.Printf("worker: completing job %d: %v", job.ID, err)
 		}
-		return
+	case isRetryAfter(cause):
+		w.deferJob(bookCtx, job, cause)
+	default:
+		if _, err := w.queue.Fail(bookCtx, job.ID, cause); err != nil {
+			log.Printf("worker: failing job %d (cause %v): %v", job.ID, cause, err)
+		}
 	}
-	if _, err := w.queue.Fail(bookCtx, job.ID, cause); err != nil {
-		log.Printf("worker: failing job %d (cause %v): %v", job.ID, cause, err)
+}
+
+// deferJob requeues job for a later run without counting an attempt, used when a
+// handler returns a RetryAfterError for a transient, no-fault condition.
+func (w *Worker) deferJob(ctx context.Context, job jobs.Job, cause error) {
+	var ra *RetryAfterError
+	_ = errors.As(cause, &ra)
+	if _, err := w.queue.Defer(ctx, job.ID, ra.Delay); err != nil {
+		log.Printf("worker: deferring job %d (cause %v): %v", job.ID, cause, err)
 	}
+}
+
+// isRetryAfter reports whether err is (or wraps) a RetryAfterError.
+func isRetryAfter(err error) bool {
+	var ra *RetryAfterError
+	return errors.As(err, &ra)
 }
 
 // recoverLoop periodically requeues jobs whose lock has gone stale (their worker

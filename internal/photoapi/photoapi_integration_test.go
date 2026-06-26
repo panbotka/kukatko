@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
+	"github.com/panbotka/kukatko/internal/vectors"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -39,6 +40,7 @@ type env struct {
 	authSvc *auth.Service
 	store   *photos.Store
 	fs      *storage.FS
+	vectors *vectors.Store
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database.
@@ -56,10 +58,12 @@ func newEnv(t *testing.T) *env {
 		t.Fatalf("storage.NewFS: %v", err)
 	}
 	store := photos.NewStore(db.Pool())
+	vectorStore := vectors.NewStore(db.Pool())
 	api := photoapi.NewAPI(photoapi.Config{
 		Store:           store,
 		Storage:         fs,
 		Thumbnailer:     thumb.New(fs, t.TempDir()),
+		Similar:         vectorStore,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,
@@ -72,7 +76,7 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{server: server, authSvc: authSvc, store: store, fs: fs}
+	return &env{server: server, authSvc: authSvc, store: store, fs: fs, vectors: vectorStore}
 }
 
 // login creates a user with the given role and returns a cookie-bearing client

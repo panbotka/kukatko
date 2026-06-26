@@ -35,7 +35,8 @@ inkrementální).
   (jádro foto-katalogu: typované modely `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`,
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generátor prefix `ph`,
   `Store` nad pgx s
-  `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/
+  `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/`ListByUIDs`
+  (batch lookup dle uid, ignoruje neznámé — pro similar API)/
   `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/private/
   uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/fulltext search,
   řazení taken_at/created_at/uid/title/file_size, stránkování limit/offset; `Count` sdílí
@@ -130,7 +131,8 @@ inkrementální).
   `run_after<=now()`, řazení priority DESC/run_after ASC/id ASC, mark running+lock →
   prázdná fronta `ErrNoJobs`), `Complete`/`Fail(err)` (inkrement attempts → requeue s
   exponenciálním backoffem přes `run_after` base 30 s/cap 1 h, jinak `state=dead`+`last_error`),
-  `Heartbeat`/`RecoverStaleLocks(staleAfter)` (zastaralý zámek = mrtvý worker → requeue jako pokus),
+  `Defer(id,delay)` (requeue na `now()+delay` **bez** započtení pokusu — offline box počká bez
+  spálení retry budgetu), `Heartbeat`/`RecoverStaleLocks(staleAfter)` (zastaralý zámek = mrtvý worker → requeue jako pokus),
   helpery `CountsByState`/`CountsByType`/`ListDead`/`RequeueDead`/`Requeue` (dead **i**
   failed → queued, pro admin endpoint)/`List`(`ListOptions{State,Limit,Offset}`, řazení
   updated_at DESC, limit cap 500, pro admin výpis)/`Get`; sentinely
@@ -145,10 +147,12 @@ inkrementální).
   s `Run(ctx)` — spustí `Concurrency` goroutin pollujících `Claim` (filtr na registrované
   `Types`), dispatch na handler dle `job.Type`, `Complete`/`Fail` dle výsledku přes
   **shutdown-immune** bookkeeping kontext (`context.WithoutCancel`), plus stale-lock recovery
-  ticker; `Queue` interface = podmnožina `jobs.Store` (`Claim`/`Complete`/`Fail`/
+  ticker; `Queue` interface = podmnožina `jobs.Store` (`Claim`/`Complete`/`Fail`/`Defer`/
   `RecoverStaleLocks`) pro testovatelnost; **graceful shutdown** = ctx cancel zastaví claiming,
   job běžící při shutdownu je opuštěn (lock recoveruje fronta), panika handleru →
-  `ErrHandlerPanic` (job fail, ne crash), neznámý typ → `ErrNoHandler`; built-in **noop**
+  `ErrHandlerPanic` (job fail, ne crash), neznámý typ → `ErrNoHandler`; handler může vrátit
+  `RetryAfter(delay,cause)`/`RetryAfterError` → worker místo `Fail` zavolá `Defer(delay)` (přechodná
+  bezchybná chyba, žádný spálený pokus — používá `image_embed` při offline boxu); built-in **noop**
   handler (`TypeNoop`/`NoopHandler`/`RegisterBuiltins`) jen pro sanity/testy; `Run` vrací nil),
   `internal/jobsapi/`
   (admin-only HTTP API nad frontou: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
@@ -182,8 +186,24 @@ inkrementální).
   první) v **read-only transakci** se `SET LOCAL hnsw.ef_search = 100`; `limit` ořez `[1,500]`,
   nekladný `maxDistance` filtr vypne; helpery `ToHalfVec`/`FromHalfVec` (`[]float32` ↔
   `pgvector.HalfVector`); sentinely `ErrEmbeddingNotFound`/`ErrDimMismatch` (validace 768/512)/
-  `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); FK `ON DELETE CASCADE` — mazání fotky
-  smaže embeddingy i faces, oprava photo-sorter mezery se sirotky), `internal/web/`
+  `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(limit)` =
+  uid nearchivovaných fotek bez embeddingu (LEFT JOIN, nejnovější první, `limit<=0`=vše) pro
+  backfill; FK `ON DELETE CASCADE` — mazání fotky
+  smaže embeddingy i faces, oprava photo-sorter mezery se sirotky), `internal/embedjob/`
+  (zapojení CLIP embeddingu do fronty + embeddingové dotazy, vše za rozhraními
+  `PhotoStore`/`VectorStore`/`Previewer`/`Enqueuer`+`embedding.Client`: `Service` =
+  `New(Config{Photos,Vectors,Client,Previewer,Enqueuer,PreviewSize,OfflineRetryDelay,
+  DuplicateMaxDist})`; **handler `image_embed`** `Handle`(=`worker.HandlerFunc`, registrovaný
+  v `serve`) → z payloadu `{"photo_uid"}` načte fotku, vyrenderuje (idempotentně) náhled `fit_720`,
+  pošle sidecaru `ImageEmbedding`, uloží 768-dim `halfvec` přes `vectors.SaveEmbedding`+`model`/
+  `pretrained`; **idempotentní** (fotka s embeddingem se přeskočí bez volání sidecaru), **box
+  offline** (`embedding.IsUnavailable`) → `worker.RetryAfter(5 min)` (odložení bez spálení pokusu),
+  jiná chyba normální retry; `BackfillEmbeddings(ctx)` zařadí `image_embed` pro každou fotku bez
+  embeddingu (dedup no-op), vrací počet; `Duplicates(ctx,uid)` embeddingová detekce blízkých
+  duplikátů do `duplicate.embedding_max_dist`, bez sebe sama (`<=0` vypne)), `internal/processapi/`
+  (admin-only HTTP API pro hromadné zpracování: `NewAPI(Config{Backfiller,RequireAdmin})`+
+  `RegisterRoutes` mountuje `/process`; `POST /process/embeddings` → `{enqueued}` spustí
+  `embedjob.BackfillEmbeddings`), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého

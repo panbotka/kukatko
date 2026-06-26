@@ -17,8 +17,11 @@ import (
 // the HTTP API. Read endpoints reuse the auth subsystem's RequireAuth guard,
 // metadata and archive endpoints its RequireWrite guard, and media endpoints its
 // RequireAuthOrDownloadToken guard (cookie or download token) — all supplied via
-// authAPI so the photoapi package stays decoupled from auth's wiring.
-func buildPhotoAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) (*photoapi.API, error) {
+// authAPI so the photoapi package stays decoupled from auth's wiring. similar is
+// the shared vector store backing the similar-photos endpoint.
+func buildPhotoAPI(
+	cfg *config.Config, db *database.DB, authAPI *auth.API, similar photoapi.SimilarSearcher,
+) (*photoapi.API, error) {
 	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
 	if err != nil {
 		return nil, fmt.Errorf("initialising originals storage: %w", err)
@@ -30,6 +33,7 @@ func buildPhotoAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) (*pho
 		Store:           photoStore,
 		Storage:         store,
 		Thumbnailer:     thumbnailer,
+		Similar:         similar,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,

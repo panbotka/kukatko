@@ -27,6 +27,7 @@ type API struct {
 	store           *photos.Store
 	storage         storage.Storage
 	thumbnailer     *thumb.Thumbnailer
+	similar         SimilarSearcher
 	requireAuth     func(http.Handler) http.Handler
 	requireWrite    func(http.Handler) http.Handler
 	requireDownload func(http.Handler) http.Handler
@@ -40,6 +41,9 @@ type Config struct {
 	Storage storage.Storage
 	// Thumbnailer serves (and generates on miss) cached thumbnails.
 	Thumbnailer *thumb.Thumbnailer
+	// Similar backs the similar-photos endpoint with embedding search. When nil
+	// the endpoint degrades to an empty result instead of failing.
+	Similar SimilarSearcher
 	// RequireAuth guards read endpoints for any authenticated user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireWrite guards metadata and archive endpoints for editors and admins.
@@ -55,6 +59,7 @@ func NewAPI(cfg Config) *API {
 		store:           cfg.Store,
 		storage:         cfg.Storage,
 		thumbnailer:     cfg.Thumbnailer,
+		similar:         cfg.Similar,
 		requireAuth:     cfg.RequireAuth,
 		requireWrite:    cfg.RequireWrite,
 		requireDownload: cfg.RequireDownload,
@@ -66,6 +71,7 @@ func NewAPI(cfg Config) *API {
 //
 //	GET    /photos                    RequireAuth      list with filters/sort/page
 //	GET    /photos/{uid}              RequireAuth      full detail
+//	GET    /photos/{uid}/similar      RequireAuth      visually similar photos
 //	PATCH  /photos/{uid}              RequireWrite     update metadata
 //	POST   /photos/{uid}/archive      RequireWrite     soft-delete
 //	POST   /photos/{uid}/unarchive    RequireWrite     restore
@@ -75,6 +81,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/photos", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleList)
 		r.With(a.requireAuth).Get("/{uid}", a.handleDetail)
+		r.With(a.requireAuth).Get("/{uid}/similar", a.handleSimilar)
 		r.With(a.requireWrite).Patch("/{uid}", a.handleUpdate)
 		r.With(a.requireWrite).Post("/{uid}/archive", a.handleArchive)
 		r.With(a.requireWrite).Post("/{uid}/unarchive", a.handleUnarchive)

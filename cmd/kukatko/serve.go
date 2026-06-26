@@ -11,9 +11,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/server"
 	"github.com/panbotka/kukatko/internal/version"
+	"github.com/panbotka/kukatko/internal/worker"
 )
 
 // sessionCleanupInterval is how often expired sessions and stale rate-limiter
@@ -30,56 +34,85 @@ func newServeCmd() *cobra.Command {
 		Long:  "Start the kukatko HTTP server and serve the API until interrupted (SIGINT/SIGTERM).",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := loadConfigFromFlags(cmd)
-			if err != nil {
-				return err
-			}
-
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-
-			db, err := database.New(ctx, cfg.Database)
-			if err != nil {
-				return fmt.Errorf("connecting to database: %w", err)
-			}
-			defer db.Close()
-			if _, err = db.Migrate(ctx); err != nil {
-				return fmt.Errorf("applying migrations: %w", err)
-			}
-
-			authAPI, authSvc := buildAuth(cfg, db)
-			if err := runBootstrap(ctx, cmd, authSvc, cfg.Auth); err != nil {
-				return err
-			}
-			go authSvc.RunCleanup(ctx, sessionCleanupInterval)
-			go authAPI.RunMaintenance(ctx, sessionCleanupInterval)
-
-			ingestAPI, err := buildIngest(cfg, db, authAPI)
-			if err != nil {
-				return err
-			}
-
-			photoAPI, err := buildPhotoAPI(cfg, db, authAPI)
-			if err != nil {
-				return err
-			}
-
-			jobWorker, jobAPI := buildJobs(cfg, db, authAPI)
-			startWorker(ctx, jobWorker)
-
-			addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
-			srv := server.New(addr,
-				server.WithAPI(authAPI.RegisterRoutes),
-				server.WithAPI(ingestAPI.RegisterRoutes),
-				server.WithAPI(photoAPI.RegisterRoutes),
-				server.WithAPI(jobAPI.RegisterRoutes),
-			)
-			cmd.Printf("kukatko %s listening on %s\n", version.Get(), srv.Addr())
-
-			if err = srv.Run(ctx); err != nil {
-				return fmt.Errorf("running server: %w", err)
-			}
-			return nil
+			return runServe(cmd)
 		},
 	}
+}
+
+// runServe loads the configuration, opens the database (applying migrations),
+// wires the auth subsystem and all HTTP API groups plus the background worker,
+// and serves until the process receives SIGINT or SIGTERM.
+func runServe(cmd *cobra.Command) error {
+	cfg, err := loadConfigFromFlags(cmd)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	db, err := database.New(ctx, cfg.Database)
+	if err != nil {
+		return fmt.Errorf("connecting to database: %w", err)
+	}
+	defer db.Close()
+	if _, err = db.Migrate(ctx); err != nil {
+		return fmt.Errorf("applying migrations: %w", err)
+	}
+
+	authAPI, authSvc := buildAuth(cfg, db)
+	if err := runBootstrap(ctx, cmd, authSvc, cfg.Auth); err != nil {
+		return err
+	}
+	go authSvc.RunCleanup(ctx, sessionCleanupInterval)
+	go authAPI.RunMaintenance(ctx, sessionCleanupInterval)
+
+	apis, jobWorker, err := buildServices(cfg, db, authAPI)
+	if err != nil {
+		return err
+	}
+	startWorker(ctx, jobWorker)
+
+	addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
+	srv := server.New(addr, apis...)
+	cmd.Printf("kukatko %s listening on %s\n", version.Get(), srv.Addr())
+
+	if err = srv.Run(ctx); err != nil {
+		return fmt.Errorf("running server: %w", err)
+	}
+	return nil
+}
+
+// buildServices assembles every HTTP API group and the background worker over a
+// shared queue store: upload/ingest, photo browse/curation (with embedding-backed
+// similar search), the admin jobs and processing APIs, and the image_embed
+// worker handler. It returns the server options registering those routes plus the
+// worker for the serve command to run.
+func buildServices(
+	cfg *config.Config, db *database.DB, authAPI *auth.API,
+) ([]server.Option, *worker.Worker, error) {
+	jobStore := jobs.NewStore(db.Pool())
+	enqueuer := jobs.NewEnqueuer(jobStore)
+
+	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer)
+	if err != nil {
+		return nil, nil, err
+	}
+	embedSvc, vectorStore, err := buildEmbedService(cfg, db, enqueuer)
+	if err != nil {
+		return nil, nil, err
+	}
+	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore)
+	if err != nil {
+		return nil, nil, err
+	}
+	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc)
+
+	return []server.Option{
+		server.WithAPI(authAPI.RegisterRoutes),
+		server.WithAPI(ingestAPI.RegisterRoutes),
+		server.WithAPI(photoAPI.RegisterRoutes),
+		server.WithAPI(jobAPI.RegisterRoutes),
+		server.WithAPI(processAPI.RegisterRoutes),
+	}, jobWorker, nil
 }

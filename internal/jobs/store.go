@@ -209,6 +209,32 @@ func (s *Store) Fail(ctx context.Context, id int64, cause error) (Job, error) {
 	return job, nil
 }
 
+// Defer requeues the running job identified by id to run after delay WITHOUT
+// counting a failed attempt: it returns the job to 'queued', pushes run_after to
+// now()+delay (a non-positive delay runs it again immediately), and clears the
+// lock, leaving attempts untouched. It is for transient, no-fault conditions —
+// chiefly the embeddings box being offline — so a job simply waits in the queue
+// for the box to come back without ever exhausting its retry budget. It returns
+// the refreshed job, or ErrJobNotFound if no running job has that id.
+func (s *Store) Defer(ctx context.Context, id int64, delay time.Duration) (Job, error) {
+	const q = `UPDATE jobs SET
+			state = 'queued',
+			run_after = now() + make_interval(secs => greatest($2::float8, 0)),
+			locked_by = NULL,
+			locked_at = NULL,
+			updated_at = now()
+		WHERE id = $1 AND state = 'running'
+		RETURNING ` + jobColumns
+	job, err := scanJob(s.pool.QueryRow(ctx, q, id, delay.Seconds()))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Job{}, ErrJobNotFound
+		}
+		return Job{}, err
+	}
+	return job, nil
+}
+
 // Heartbeat refreshes the lock timestamp of the running job identified by id and
 // owned by workerID, keeping RecoverStaleLocks from reclaiming a job that is
 // still being worked. It returns ErrJobNotFound if no such running job exists.

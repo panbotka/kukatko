@@ -15,9 +15,11 @@ import (
 // buildIngest assembles the upload/ingest subsystem: the on-disk original
 // store, the thumbnailer, the photo repository, and the HTTP API. The upload
 // route reuses the auth subsystem's write guard (editors and admins) supplied
-// via authAPI. The job enqueuer defaults to the no-op hook until the persistent
-// job queue exists (see ingest.NopEnqueuer).
-func buildIngest(cfg *config.Config, db *database.DB, authAPI *auth.API) (*ingest.API, error) {
+// via authAPI. enqueuer is the shared persistent-queue adapter, so a freshly
+// uploaded photo immediately gets its image_embed and face_detect jobs queued.
+func buildIngest(
+	cfg *config.Config, db *database.DB, authAPI *auth.API, enqueuer ingest.JobEnqueuer,
+) (*ingest.API, error) {
 	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
 	if err != nil {
 		return nil, fmt.Errorf("initialising originals storage: %w", err)
@@ -29,6 +31,7 @@ func buildIngest(cfg *config.Config, db *database.DB, authAPI *auth.API) (*inges
 		Storage:     store,
 		Photos:      photoStore,
 		Thumbnailer: thumbnailer,
+		Enqueuer:    enqueuer,
 		Duplicate:   cfg.Duplicate,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
 	})

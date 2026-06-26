@@ -178,10 +178,10 @@ Endpoint **`POST /api/v1/upload`** (přístup editor/admin) přijímá `multipar
 4. Insert `photos` (vč. video sloupců) + primární `photo_files` + výpočet **pHash/dHash** →
    `photo_phashes` (u videa z poster framu).
 5. Generování **náhledů** (thumbnailer) — u videa z poster framu, takže grid ukazuje poster.
-6. **Enqueue** jobů `image_embed` + `face_detect` přes `ingest.JobEnqueuer` — perzistentní
-   implementace `jobs.Enqueuer` (viz [fronta jobů](#persistentní-fronta-jobů-internaljobs)) nebo
-   `NopEnqueuer` (default, dokud worker frontu nedrénuje); u videa běží na poster framu, takže
-   se účastní sémantického/face vyhledávání.
+6. **Enqueue** jobů `image_embed` + `face_detect` přes `ingest.JobEnqueuer` — `serve` injektuje
+   perzistentní `jobs.Enqueuer` (viz [fronta jobů](#persistentní-fronta-jobů-internaljobs)), takže
+   nová fotka hned dostane embedding/face joby; v testech bez fronty se použije `NopEnqueuer`.
+   U videa běží na poster framu, takže se účastní sémantického/face vyhledávání.
 
 Video vyžaduje **`ffmpeg`** (poster nemá fallback) — chybějící `ffmpeg` u video uploadu vrací
 jasný per-file error `video.ErrFFmpegMissing`. `ffprobe` má fallback na `exiftool`.
@@ -217,6 +217,9 @@ když je embeddings box offline (upload a prohlížení fungují bez něj).
   - `Complete(id)` / `Fail(id, err)` — `Fail` inkrementuje `attempts`; dokud `attempts < max_attempts`
     requeue s exponenciálním backoffem přes `run_after` (base 30 s, cap 1 h), jinak `state=dead` +
     `last_error` (dead-letter).
+  - `Defer(id, delay)` — requeue běžícího jobu na `now()+delay` **bez** započtení pokusu (atributy
+    `attempts` se nemění, zámek se uvolní). Pro přechodné, bezchybné stavy — hlavně když je
+    embeddings box offline — takže job počká ve frontě na návrat boxu, aniž by vyčerpal retry budget.
   - `Heartbeat(id, workerID)` + `RecoverStaleLocks(staleAfter)` — běžící joby se zastaralým zámkem
     (mrtvý worker) se requeují (počítá se jako pokus); heartbeat zámek osvěží a chrání před recovery.
   - Helpery: `CountsByState` / `CountsByType`, `ListDead`, `RequeueDead`, `Requeue` (dead **i**
@@ -233,8 +236,11 @@ Exekuční smyčka, která frontu drénuje, běží **v procesu `kukatko serve`*
 - **`Registry`** (`NewRegistry()`) mapuje `type` → `HandlerFunc` (`func(ctx, jobs.Job) error`)
   přes `Register(type, fn)`; panika na prázdný typ, nil handler nebo duplicitní registraci
   (programátorská chyba při startu). Built-in **noop** handler (`TypeNoop`, `RegisterBuiltins`)
-  jen pro sanity/testy — reálné typy (`image_embed`, `face_detect`, …) registrují pozdější
-  milníky.
+  jen pro sanity/testy; reálný handler `image_embed` registruje `embedjob.Service.Handle`
+  (viz níže), `face_detect` a další doplní pozdější milníky.
+- **`RetryAfter(delay, cause)` / `RetryAfterError`** — handler jím signalizuje „přechodná chyba,
+  zopakuj později bez započtení pokusu". Worker takový výsledek pozná (`errors.As`) a místo `Fail`
+  zavolá frontové `Defer(delay)`. Používá ho `image_embed`, když je box offline.
 - **`Worker`** (`New(Config{Queue, Registry, Concurrency, PollInterval, StaleAfter,
   StaleScanInterval, IDPrefix})`) — `Run(ctx)` spustí `Concurrency` goroutin, které pollují
   `Claim` (filtr na registrované `Types`), dispatchnou job na handler dle `job.Type` a podle
@@ -245,7 +251,7 @@ Exekuční smyčka, která frontu drénuje, běží **v procesu `kukatko serve`*
   vypnutí je **opuštěn** (jeho zámek později requeue fronta přes `RecoverStaleLocks`), `Run`
   se čistě vrátí. Panika handleru → `ErrHandlerPanic` (job se failne, worker nespadne),
   neznámý typ jobu → `ErrNoHandler`.
-- **`Queue`** je interface = podmnožina `jobs.Store` (`Claim`/`Complete`/`Fail`/
+- **`Queue`** je interface = podmnožina `jobs.Store` (`Claim`/`Complete`/`Fail`/`Defer`/
   `RecoverStaleLocks`), takže runtime jde unit-testovat s fakem.
 - Tuning přes `worker.*` config (`count`, `poll_interval`, `stale_after`,
   `stale_scan_interval`).
@@ -306,7 +312,28 @@ nad `embedding <=> $vec` (nejbližší první), `SaveFaces`(idempotentní replac
 `SET LOCAL hnsw.ef_search = 100` pro lepší recall; `limit` se ořezává do `[1,500]`,
 nekladný `maxDistance` filtr vypne. Helpery `ToHalfVec`/`FromHalfVec` (`[]float32` ↔
 `pgvector.HalfVector`), validace rozměrů přes `ErrDimMismatch`, duplicitní `face_index` →
-`ErrFaceIndexTaken`.
+`ErrFaceIndexTaken`. `ListPhotosMissingEmbedding(limit)` vrací uid nearchivovaných fotek bez
+embeddingu (LEFT JOIN na `embeddings`, nejnovější první; `limit <= 0` = všechny) — podklad pro
+backfill.
+
+### Image embedding & similar photos (`internal/embedjob`)
+
+`embedjob.Service` zapojuje CLIP embedding do fronty jobů a staví nad ním embeddingové dotazy.
+Vše za rozhraními (`PhotoStore`/`VectorStore`/`Previewer`/`Enqueuer` + `embedding.Client`), takže
+se unit-testuje s faky bez sítě/DB/disku.
+
+- **Handler `image_embed`** (`Handle` = `worker.HandlerFunc`, registrovaný v `serve`): z payloadu
+  `{"photo_uid": …}` načte fotku, vyrenderuje (idempotentně) náhled `fit_720`, pošle ho sidecaru
+  (`Client.ImageEmbedding`) a uloží 768-dim `halfvec` přes `vectors.SaveEmbedding` (+ `model`/
+  `pretrained`). **Idempotentní** — fotka, která už embedding má, se přeskočí bez volání sidecaru.
+  **Box offline** (`embedding.IsUnavailable`) → vrátí `worker.RetryAfter(5 min, …)`, takže se job
+  jen odloží (`Defer`) bez spálení pokusu; jiná chyba jde normální retry/dead-letter cestou.
+- **`BackfillEmbeddings(ctx)`** — pro každou fotku bez embeddingu (`ListPhotosMissingEmbedding`)
+  zařadí `image_embed` (dedup = no-op), vrací počet. Bezpečné spouštět opakovaně.
+- **`Duplicates(ctx, photoUID)`** — embeddingová detekce blízkých duplikátů: najde fotky do
+  konfigurované cosine vzdálenosti (`duplicate.embedding_max_dist`) od embeddingu fotky, bez ní
+  samé; `<= 0` ji vypne, fotka bez embeddingu → nil. Doplňuje pHash kontrolu, kterou upload dělá
+  už při ingestu (kdy embedding ještě neexistuje).
 
 ## Konfigurace
 
@@ -354,11 +381,14 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/upload` | editor/admin | `multipart/form-data` s jedním+ soubory → per-file `{outcome, photo_uid, warnings}` (viz Upload / ingest) |
 | GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API) |
 | GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` |
+| GET | `/photos/{uid}/similar` | přihlášený | vizuálně podobné fotky dle cosine vzdálenosti embeddingu (`?limit`, default 24, max 100) → `{similar:[{…photo, distance}]}` |
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
 | POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
 | POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |
 | GET | `/photos/{uid}/thumb/{size}` | session/token | náhled (cache, generuje se on-miss) — streamuje JPEG, `ETag`/304 |
 | GET | `/photos/{uid}/download` | session/token | originál jako příloha — streamuje (nikdy celý v RAM), `Content-Length`/`ETag` |
+| GET | `/jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue` | admin | fronta jobů (viz Admin Jobs API) |
+| POST | `/process/embeddings` | admin | backfill — zařadí `image_embed` pro fotky bez embeddingu → `{enqueued}` (viz Process API) |
 
 RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin` /
 `RequireAuthOrDownloadToken`). Konfigurační
@@ -383,6 +413,11 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
     `next_offset` (null na poslední stránce) pro infinite scroll.
   - **Neplatný parametr → HTTP 400.**
 - **Detail** `GET /photos/{uid}` — fotka + `files` (seznam `photo_files`), `404` když chybí.
+- **Podobné** `GET /photos/{uid}/similar` — fotky seřazené dle rostoucí cosine vzdálenosti
+  embeddingu zdrojové fotky, **bez** ní samé; každá nese plný `Photo` + `distance`. `?limit`
+  (default 24, max 100). **Empty-friendly:** fotka bez embeddingu (ještě nezpracovaná) → prázdný
+  seznam s `200`, neexistující fotka → `404`. Vektorové hledání zajišťuje injektovaný
+  `SimilarSearcher` (= `vectors.Store`); sousedi se dohledají batch dotazem `photos.ListByUIDs`.
 - **Úprava** `PATCH /photos/{uid}` (editor/admin) — částečná: pole vynechané v těle se nemění,
   explicitní `null` maže nullable pole (`taken_at`/`lat`/`lng`); rozsah souřadnic se validuje
   (`lat ∈ ⟨-90,90⟩`, `lng ∈ ⟨-180,180⟩`).
@@ -393,6 +428,15 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   cookie **nebo** `download_token` v query parametru `?t=…` (`RequireAuthOrDownloadToken`), takže
   fungují i `<img>`/`<video>` bez cookie. Náhled se na cache-miss vygeneruje on-demand; download
   posílá originál jako `attachment` s `Content-Length` z DB.
+
+### Process API (`internal/processapi`)
+
+Admin-only HTTP API pro hromadné zpracování katalogu (guard `RequireAdmin`), montuje
+`buildJobs` (`cmd/kukatko/jobs.go`) přes `server.WithAPI`:
+
+- `POST /api/v1/process/embeddings` → `{enqueued}` — spustí `embedjob.BackfillEmbeddings`:
+  zařadí `image_embed` job pro každou fotku bez embeddingu (dedup = no-op), vrátí počet. Recovery
+  cesta pro fotky nahrané, když byl box offline, nebo importované před zavedením embeddingů.
 
 ## Frontend
 

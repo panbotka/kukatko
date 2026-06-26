@@ -460,3 +460,39 @@ func TestCascadeDelete(t *testing.T) {
 		t.Errorf("edit not cascaded: %v", err)
 	}
 }
+
+// TestListByUIDs verifies the batch lookup returns the requested photos
+// (ignoring unknown uids) and that an empty input is a no-op.
+func TestListByUIDs(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	a, err := store.Create(ctx, samplePhoto("batch-a"))
+	if err != nil {
+		t.Fatalf("create a: %v", err)
+	}
+	b, err := store.Create(ctx, samplePhoto("batch-b"))
+	if err != nil {
+		t.Fatalf("create b: %v", err)
+	}
+
+	got, err := store.ListByUIDs(ctx, []string{a.UID, b.UID, "ph_missing"})
+	if err != nil {
+		t.Fatalf("ListByUIDs: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListByUIDs returned %d photos, want 2", len(got))
+	}
+	found := map[string]bool{}
+	for _, p := range got {
+		found[p.UID] = true
+	}
+	if !found[a.UID] || !found[b.UID] {
+		t.Errorf("ListByUIDs = %v, want %s and %s", found, a.UID, b.UID)
+	}
+
+	empty, err := store.ListByUIDs(ctx, nil)
+	if err != nil || len(empty) != 0 {
+		t.Errorf("ListByUIDs(nil) = %v, %v; want empty, nil", empty, err)
+	}
+}

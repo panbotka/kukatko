@@ -168,6 +168,36 @@ func (s *Store) getPhoto(ctx context.Context, col, val string) (Photo, error) {
 	return photo, nil
 }
 
+// ListByUIDs returns the photos whose uid is in uids, in unspecified order. It
+// is a batch lookup for callers that already hold a set of uids (for example the
+// similar-photos endpoint, which resolves vector matches to photo records) and
+// want to avoid issuing one query per uid. Missing uids are simply absent from
+// the result; an empty input returns an empty slice without querying.
+func (s *Store) ListByUIDs(ctx context.Context, uids []string) ([]Photo, error) {
+	if len(uids) == 0 {
+		return []Photo{}, nil
+	}
+	q := "SELECT " + photoColumns + " FROM photos WHERE uid = ANY($1)"
+	rows, err := s.pool.Query(ctx, q, uids)
+	if err != nil {
+		return nil, fmt.Errorf("photos: listing by uids: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]Photo, 0, len(uids))
+	for rows.Next() {
+		photo, err := scanPhoto(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, photo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("photos: iterating by uids: %w", err)
+	}
+	return out, nil
+}
+
 // UpdateMetadata applies the user-editable metadata in m to the photo identified
 // by uid, bumps updated_at, and returns the refreshed photo. It returns
 // ErrPhotoNotFound if no such photo exists.

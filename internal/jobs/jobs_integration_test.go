@@ -190,6 +190,49 @@ func TestClaimSkipLocked(t *testing.T) {
 	}
 }
 
+// TestDefer verifies Defer requeues a running job to run after the delay without
+// counting a failed attempt, and that Defer on a non-running job is rejected.
+func TestDefer(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	job, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "defer"), jobs.EnqueueOptions{})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	claimed, err := store.Claim(ctx, "w1")
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	deferred, err := store.Defer(ctx, claimed.ID, time.Minute)
+	if err != nil {
+		t.Fatalf("Defer: %v", err)
+	}
+	if deferred.State != jobs.StateQueued {
+		t.Errorf("state = %q, want queued", deferred.State)
+	}
+	if deferred.Attempts != 0 {
+		t.Errorf("attempts = %d, want 0 (no attempt burned)", deferred.Attempts)
+	}
+	if !deferred.RunAfter.After(time.Now()) {
+		t.Errorf("run_after = %v, want a future time", deferred.RunAfter)
+	}
+	if deferred.LockedBy != nil {
+		t.Errorf("locked_by = %v, want nil after defer", deferred.LockedBy)
+	}
+
+	// The job is no longer runnable until its delay elapses.
+	if _, err := store.Claim(ctx, "w2"); !errors.Is(err, jobs.ErrNoJobs) {
+		t.Errorf("claim deferred job = %v, want ErrNoJobs", err)
+	}
+
+	// Defer on a queued (non-running) job matches nothing.
+	if _, err := store.Defer(ctx, job.ID, time.Minute); !errors.Is(err, jobs.ErrJobNotFound) {
+		t.Errorf("Defer non-running = %v, want ErrJobNotFound", err)
+	}
+}
+
 // TestRetryBackoffDeadLetter verifies failed jobs increment attempts and requeue
 // with backoff until max_attempts, then dead-letter; and that a dead job can be
 // listed and requeued.

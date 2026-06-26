@@ -180,6 +180,75 @@ func TestEmbeddingCascadeDelete(t *testing.T) {
 	}
 }
 
+// TestListPhotosMissingEmbedding verifies the backfill enumeration returns only
+// photos without an embedding and honours the limit.
+func TestListPhotosMissingEmbedding(t *testing.T) {
+	store, photoStore, _ := newStore(t)
+	ctx := t.Context()
+
+	withEmb := makePhoto(t, photoStore, "has-emb")
+	missing1 := makePhoto(t, photoStore, "missing-1")
+	missing2 := makePhoto(t, photoStore, "missing-2")
+	saveEmbedding(t, store, withEmb, imageVec(map[int]float32{0: 1}))
+
+	all, err := store.ListPhotosMissingEmbedding(ctx, 0)
+	if err != nil {
+		t.Fatalf("ListPhotosMissingEmbedding: %v", err)
+	}
+	if !containsAll(all, missing1, missing2) || contains(all, withEmb) {
+		t.Errorf("missing = %v, want %s and %s but not %s", all, missing1, missing2, withEmb)
+	}
+
+	limited, err := store.ListPhotosMissingEmbedding(ctx, 1)
+	if err != nil {
+		t.Fatalf("ListPhotosMissingEmbedding limited: %v", err)
+	}
+	if len(limited) != 1 {
+		t.Errorf("limited length = %d, want 1", len(limited))
+	}
+}
+
+// TestListPhotosMissingEmbedding_excludesArchived verifies archived photos are
+// never enqueued for backfill.
+func TestListPhotosMissingEmbedding_excludesArchived(t *testing.T) {
+	store, photoStore, _ := newStore(t)
+	ctx := t.Context()
+
+	live := makePhoto(t, photoStore, "live")
+	archived := makePhoto(t, photoStore, "archived")
+	if _, err := photoStore.Archive(ctx, archived); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+
+	missing, err := store.ListPhotosMissingEmbedding(ctx, 0)
+	if err != nil {
+		t.Fatalf("ListPhotosMissingEmbedding: %v", err)
+	}
+	if !contains(missing, live) || contains(missing, archived) {
+		t.Errorf("missing = %v, want %s but not archived %s", missing, live, archived)
+	}
+}
+
+// contains reports whether uid is present in uids.
+func contains(uids []string, uid string) bool {
+	for _, u := range uids {
+		if u == uid {
+			return true
+		}
+	}
+	return false
+}
+
+// containsAll reports whether every want uid is present in uids.
+func containsAll(uids []string, want ...string) bool {
+	for _, w := range want {
+		if !contains(uids, w) {
+			return false
+		}
+	}
+	return true
+}
+
 // saveEmbedding is a brief helper for tests that only need an embedding stored.
 func saveEmbedding(t *testing.T, store *vectors.Store, uid string, vec []float32) {
 	t.Helper()
