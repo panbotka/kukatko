@@ -279,11 +279,24 @@ Stejný jako photo-sorter (`EMBEDDING_URL`, default offline-aware). HTTP:
 
 ### 6.2 Hledání
 
-- **Sémantické (text→fotka):** text → `/embed/text` → HNSW cosine nad `embeddings`.
+- **Implementace:** jediný endpoint `GET /api/v1/search?q=…&mode=…` (`internal/photoapi`),
+  parametr `mode` = `fulltext` | `semantic` | `hybrid` (**default `hybrid`**). Všechny módy
+  ctí standardní list filtry (datum/GPS/private/…) i stránkování; odpověď má stejný tvar jako
+  list + pole `mode` (efektivní mód) a `degraded` (viz níže).
 - **Fulltext:** PostgreSQL `tsvector` (dictionary `simple`, `unaccent` pro češtinu) nad
   title(A) > description(B) > notes(C) > file_name(D). Diakritika necitlivá („deti" = „Děti").
-- **Hybrid:** výsledky fulltextu a sémantiky se sloučí/seřadí (skóre + váhy). Konkrétní
-  fúze (RRF nebo vážený součet) se doladí; default RRF.
+  Řazení dle `ts_rank` (`photos.Store.Search`).
+- **Sémantické (text→fotka):** text → sidecar `/embed/text` (768-dim CLIP) → HNSW cosine nad
+  `embeddings` (`vectors.Store.FindSimilar`). Kandidáti se pak profiltrují list filtry přes
+  `photos.Store.FilterUIDs` (strukturální filtry, ignoruje fulltext) a seřadí dle vzdálenosti.
+- **Hybrid:** fulltextový a sémantický ranking se sloučí **Reciprocal Rank Fusion (RRF)** —
+  skóre položky = Σ 1/(k + rank) přes oba seznamy, konstanta **k = 60** (původní RRF paper,
+  Cormack et al. 2009). Výsledek je deduplikovaný (sjednocení obou seznamů), seřazený dle
+  fúzního skóre (tie-break dle uid sestupně).
+- **Box offline → graceful degradace:** když sidecar nedostane embedding dotazu
+  (`embedding.IsUnavailable`, nebo embedder/vector store nezapojen), `semantic`/`hybrid`
+  spadnou na čistý fulltext a odpověď nastaví `degraded: true` (UI o tom informuje uživatele).
+  Upload i prohlížení fungují bez boxu dál.
 - **Podobné fotky:** HNSW nad `embeddings` (`embedding <=> $vec`), práh vzdálenosti pro
   „duplikáty" (~0.05) i „podobné" (vyšší práh).
 - **Parametry HNSW:** `m=16`, `ef_construction=200`, dotaz `SET LOCAL hnsw.ef_search=100`

@@ -36,7 +36,10 @@ inkrementální).
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generátor prefix `ph`,
   `Store` nad pgx s
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/`ListByUIDs`
-  (batch lookup dle uid, ignoruje neznámé — pro similar API)/
+  (batch lookup dle uid, ignoruje neznámé — pro similar API)/`FilterUIDs`
+  (z dané množiny uid vrátí ty, co projdou strukturálními List filtry — ignoruje řazení,
+  stránkování i `FullText`; companion k sémantickému hledání: caller drží kandidáty z
+  embeddings indexu a profiltruje je list filtry, pořadí dle podobnosti si řadí sám)/
   `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/private/
   uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search,
   řazení taken_at/created_at/uid/title/file_size, stránkování limit/offset; `Count` sdílí
@@ -118,17 +121,23 @@ inkrementální).
   TODO hook `EnqueueImageEmbed`/`EnqueueFaceDetect`, default `NopEnqueuer` než vznikne fronta;
   `API` = `NewAPI(svc, requireWrite)` + `RegisterRoutes` mountuje `POST /upload` za `RequireWrite`;
   multipart se streamuje part-by-part, nikdy celý soubor v RAM), `internal/photoapi/`
-  (read/curace HTTP API nad katalogem: `NewAPI(Config{Store,Storage,Thumbnailer,RequireAuth,
-  RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos` **a `GET /search`**;
-  `parseListParams`
+  (read/curace HTTP API nad katalogem: `NewAPI(Config{Store,Storage,Thumbnailer,Similar,
+  Embedder,RequireAuth,RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`
+  **a `GET /search`**; `parseListParams`
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
   newest/oldest/taken_at/added/title/size + `order`, `archived` false/true/only, `private`,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`; neplatný → 400),
   list vrací `{photos,total,limit,offset,next_offset}` pro infinite scroll;
-  `GET /search?q=` (`handleSearch`) = fulltext režim: `q` je tsquery (povinný, prázdný/
-  whitespace → 400), `params.FullText`, řadí se dle relevance přes `store.Search` (ignoruje
-  `sort`/`order`), ctí ostatní List filtry + stránkování, stejný tvar odpovědi jako list
-  (sdílený `writePage`); `PATCH` je
+  `GET /search?q=&mode=` (`handleSearch`, `search.go`) = **sémantické + hybridní hledání**,
+  `mode` = `fulltext`|`semantic`|`hybrid` (default `hybrid`, neznámý → 400), `q` povinný
+  (prázdný/whitespace → 400): **fulltext** řadí dle `ts_rank` přes `store.Search`; **semantic**
+  embedne `q` přes `TextEmbedder` (sidecar) → `Similar.FindSimilar` (cosine HNSW) →
+  profiltruje kandidáty `store.FilterUIDs` → řadí dle vzdálenosti; **hybrid** sloučí oba
+  rankingy **Reciprocal Rank Fusion** (`fuseRRF`, konstanta `rrfK=60`), dedup, řadí dle
+  fúzního skóre. Všechny módy ctí List filtry + stránkování (`sort`/`order` ignorovány),
+  odpověď = list tvar + `mode` (efektivní) + `degraded`; **box offline** (`Embedder` nil nebo
+  `embedding.IsUnavailable`) → `semantic`/`hybrid` spadnou na fulltext s `degraded: true`;
+  `TextEmbedder` interface (fakeovatelný, splňuje ho `embedding.Client`); `PATCH` je
   částečný přes raw-key presence (vynechané pole beze změny, `null` maže nullable, validace
   souřadnic); média `thumb/{size}`+`download` **streamují** přes `io.Copy` se `streamMedia`
   (`Cache-Control`/`ETag`/`304`, `Content-Length` z DB, náhled generován on-miss),
@@ -257,8 +266,10 @@ inkrementální).
   `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
   (filtry/řazení/stránkování → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
+  `searchPhotos(params,mode?,signal)` nad `GET /api/v1/search` (mód
+  `fulltext`/`semantic`/`hybrid`, odpověď navíc `mode`+`degraded`),
   `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo`/`PhotoListParams`/
-  `PhotoSort`/`ArchivedFilter`, `ApiError`; `upload.ts` = `uploadFile(file,{onProgress,signal})`
+  `PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`; `upload.ts` = `uploadFile(file,{onProgress,signal})`
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
   `UploadOutcome`), `i18n/` (i18next init + `locales/{cs,en}/common.json`;
@@ -293,10 +304,14 @@ inkrementální).
   v `serve` (`buildIngest` v `cmd/kukatko/ingest.go`). Limit `upload.max_file_size_mb` (0 = bez limitu).
 - **Photos API (`/api/v1`, `internal/photoapi`):** `GET /photos` (přihlášený) — list s filtry/
   řazením/stránkováním (query params, neplatný → 400) → `{photos,total,limit,offset,next_offset}`;
-  `GET /search?q=` (přihlášený) — **česky-aware fulltext** nad generovaným `fts tsvector`
-  sloupcem (dictionary `simple` + `unaccent`, diakritika necitlivá), řazení dle `ts_rank`
-  (title>description>notes>file_name), ctí ostatní list filtry + stránkování, stejný tvar
-  odpovědi jako list; `q` povinný (prázdný → 400);
+  `GET /search?q=&mode=` (přihlášený) — **sémantické + hybridní hledání**, `mode` =
+  `fulltext`|`semantic`|`hybrid` (default `hybrid`, neznámý → 400): **fulltext** = česky-aware
+  fulltext nad `fts tsvector` (dictionary `simple` + `unaccent`, řazení `ts_rank`
+  title>description>notes>file_name); **semantic** = `q` → CLIP embedding přes sidecar →
+  cosine HNSW nad `embeddings`, řazení dle podobnosti; **hybrid** = fúze obou přes
+  **Reciprocal Rank Fusion (k=60)**, dedup. Všechny módy ctí ostatní list filtry + stránkování,
+  odpověď jako list + `mode` + `degraded`; `q` povinný (prázdný → 400); **box offline** →
+  `semantic`/`hybrid` graceful fallback na fulltext s `degraded: true`;
   `GET /photos/{uid}` plný detail + `files`; `PATCH /photos/{uid}` (editor/admin) částečná úprava
   metadat (null maže nullable, validace souřadnic); `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);

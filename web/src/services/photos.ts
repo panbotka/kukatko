@@ -40,7 +40,23 @@ export interface PhotoListResponse {
   limit: number
   offset: number
   next_offset: number | null
+  /** Effective search mode, only present on `GET /search` responses. */
+  mode?: SearchMode
+  /**
+   * True when a semantic or hybrid search fell back to full-text because the
+   * embeddings sidecar was unavailable, so the UI can tell the user semantic
+   * ranking was skipped. Absent (treated as false) on list responses.
+   */
+  degraded?: boolean
 }
+
+/**
+ * Search ranking mode for `GET /search` (`internal/photoapi`): `fulltext` ranks
+ * by Czech-aware full-text relevance, `semantic` by CLIP vector similarity to the
+ * embedded query, and `hybrid` (the default) fuses the two with Reciprocal Rank
+ * Fusion.
+ */
+export type SearchMode = 'fulltext' | 'semantic' | 'hybrid'
 
 /** Public sort aliases accepted by the list endpoint (`internal/photoapi`). */
 export type PhotoSort = 'newest' | 'oldest' | 'added' | 'title' | 'size'
@@ -133,6 +149,37 @@ export async function fetchPhotos(
 ): Promise<PhotoListResponse> {
   const query = buildPhotoQuery(params)
   const res = await fetch(`${API_BASE}/photos?${query.toString()}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PhotoListResponse
+}
+
+/**
+ * Searches the catalogue via `GET /api/v1/search`. `params.q` is the search text
+ * (required by the backend; an empty value yields a 400). `mode` selects the
+ * ranking strategy (default `hybrid`); list filters and pagination in `params`
+ * apply in every mode. The response mirrors {@link fetchPhotos} and additionally
+ * carries the effective `mode` and a `degraded` flag set when a semantic/hybrid
+ * search fell back to full-text because the sidecar was offline.
+ *
+ * @throws ApiError with `status` 400 (missing query / invalid filter) or 5xx so
+ *   the caller can render the matching message.
+ */
+export async function searchPhotos(
+  params: PhotoListParams,
+  mode?: SearchMode,
+  signal?: AbortSignal,
+): Promise<PhotoListResponse> {
+  const query = buildPhotoQuery(params)
+  if (mode !== undefined) {
+    query.set('mode', mode)
+  }
+  const res = await fetch(`${API_BASE}/search?${query.toString()}`, {
     method: 'GET',
     credentials: 'same-origin',
     signal,

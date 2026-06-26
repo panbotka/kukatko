@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from './auth'
-import { buildPhotoQuery, fetchPhotos, type PhotoListResponse, thumbUrl } from './photos'
+import {
+  buildPhotoQuery,
+  fetchPhotos,
+  type PhotoListResponse,
+  searchPhotos,
+  thumbUrl,
+} from './photos'
 
 const RESPONSE: PhotoListResponse = {
   photos: [
@@ -87,6 +93,39 @@ describe('fetchPhotos', () => {
       status: 400,
     })
     await expect(fetchPhotos({ sort: 'newest' })).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('searchPhotos', () => {
+  it('requests the search endpoint with the query and mode, and parses the body', async () => {
+    const degradedBody: PhotoListResponse = { ...RESPONSE, mode: 'hybrid', degraded: true }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(degradedBody, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const got = await searchPhotos({ q: 'beach', limit: 20 }, 'semantic')
+    expect(got.degraded).toBe(true)
+    expect(got.mode).toBe('hybrid')
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/api/v1/search?')
+    expect(url).toContain('q=beach')
+    expect(url).toContain('mode=semantic')
+    expect(init.credentials).toBe('same-origin')
+  })
+
+  it('omits the mode parameter when not provided', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(RESPONSE, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await searchPhotos({ q: 'sunset' })
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(url).toContain('q=sunset')
+    expect(url).not.toContain('mode=')
+  })
+
+  it('throws ApiError carrying the status on a non-OK response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'q is required' }, 400)))
+    await expect(searchPhotos({ q: '' })).rejects.toMatchObject({ name: 'ApiError', status: 400 })
   })
 })
 

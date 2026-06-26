@@ -4,7 +4,9 @@ package photoapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -36,11 +39,39 @@ const testPassword = "correct horse battery staple"
 // env wires the auth and photo APIs behind an httptest server over the
 // integration database, plus the storage used to seed real files.
 type env struct {
-	server  *httptest.Server
-	authSvc *auth.Service
-	store   *photos.Store
-	fs      *storage.FS
-	vectors *vectors.Store
+	server   *httptest.Server
+	authSvc  *auth.Service
+	store    *photos.Store
+	fs       *storage.FS
+	vectors  *vectors.Store
+	embedder *fakeEmbedder
+}
+
+// fakeEmbedder is a controllable photoapi.TextEmbedder for the search tests: it
+// maps a query string to a fixed embedding vector so semantic ranking is
+// deterministic, and can be flipped offline to exercise the degraded fall-back.
+type fakeEmbedder struct {
+	// byQuery maps query text to the vector returned for it. A query with no
+	// entry returns defaultVec, a non-zero unit vector (so cosine distance is
+	// never NaN against seeded embeddings).
+	byQuery map[string][]float32
+	// unavailable, when true, makes TextEmbedding report the sidecar offline.
+	unavailable bool
+}
+
+// TextEmbedding returns the configured vector for text, or an error wrapping
+// embedding.ErrUnavailable when the fake is offline, mirroring the real client's
+// contract so the degraded path can be exercised.
+func (f *fakeEmbedder) TextEmbedding(
+	_ context.Context, text string,
+) ([]float32, string, string, error) {
+	if f.unavailable {
+		return nil, "", "", fmt.Errorf("fake sidecar offline: %w", embedding.ErrUnavailable)
+	}
+	if v, ok := f.byQuery[text]; ok {
+		return v, "fake-model", "fake-pretrained", nil
+	}
+	return imageVecAt(map[int]float32{0: 1}), "fake-model", "fake-pretrained", nil
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database.
@@ -59,11 +90,13 @@ func newEnv(t *testing.T) *env {
 	}
 	store := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
+	embedder := &fakeEmbedder{byQuery: map[string][]float32{}}
 	api := photoapi.NewAPI(photoapi.Config{
 		Store:           store,
 		Storage:         fs,
 		Thumbnailer:     thumb.New(fs, t.TempDir()),
 		Similar:         vectorStore,
+		Embedder:        embedder,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,
@@ -76,7 +109,10 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{server: server, authSvc: authSvc, store: store, fs: fs, vectors: vectorStore}
+	return &env{
+		server: server, authSvc: authSvc, store: store,
+		fs: fs, vectors: vectorStore, embedder: embedder,
+	}
 }
 
 // login creates a user with the given role and returns a cookie-bearing client
@@ -196,13 +232,16 @@ func mustDo(t *testing.T, client *http.Client, method, urlStr string, body []byt
 	return resp
 }
 
-// listResp mirrors the list endpoint's JSON body.
+// listResp mirrors the list and search endpoints' JSON body. Mode and Degraded
+// are only populated by the search endpoint.
 type listResp struct {
 	Photos     []photos.Photo `json:"photos"`
 	Total      int            `json:"total"`
 	Limit      int            `json:"limit"`
 	Offset     int            `json:"offset"`
 	NextOffset *int           `json:"next_offset"`
+	Mode       string         `json:"mode"`
+	Degraded   bool           `json:"degraded"`
 }
 
 // getList fetches the list endpoint with the given query and decodes the body.

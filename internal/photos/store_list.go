@@ -159,6 +159,47 @@ func (s *Store) Search(ctx context.Context, params ListParams) ([]Photo, error) 
 	return photos, nil
 }
 
+// FilterUIDs returns the photos among uids that pass params' structural filters
+// (archive state, private, uploader, date range, GPS, camera, lens, substring
+// search), as a slice in unspecified order. It is the structural-filter
+// companion to a vector similarity search: the caller holds an ordered set of
+// candidate uids from the embeddings index and uses this to drop the ones a
+// browse filter would hide, then reorders the survivors by similarity itself.
+// params' ordering, pagination and FullText query are ignored — semantic
+// relevance, not full-text rank, drives a similarity search. An empty input
+// returns an empty slice without querying.
+func (s *Store) FilterUIDs(ctx context.Context, uids []string, params ListParams) ([]Photo, error) {
+	if len(uids) == 0 {
+		return []Photo{}, nil
+	}
+	// FullText would add a tsquery filter; a semantic search must not require a
+	// full-text match, so clear it before building the WHERE clause.
+	params.FullText = ""
+	where, args := buildWhere(params)
+	args = append(args, uids)
+	where = append(where, "uid = ANY($"+strconv.Itoa(len(args))+")")
+	query := "SELECT " + photoColumns + " FROM photos WHERE " + strings.Join(where, " AND ")
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("photos: filtering uids: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]Photo, 0, len(uids))
+	for rows.Next() {
+		photo, scanErr := scanPhoto(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		out = append(out, photo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("photos: iterating filtered uids: %w", err)
+	}
+	return out, nil
+}
+
 // Count returns the number of photos matching params' filters, ignoring its
 // limit, offset and ordering. It powers the total used by paginated listings.
 func (s *Store) Count(ctx context.Context, params ListParams) (int, error) {

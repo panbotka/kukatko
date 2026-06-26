@@ -29,6 +29,7 @@ type API struct {
 	storage         storage.Storage
 	thumbnailer     *thumb.Thumbnailer
 	similar         SimilarSearcher
+	embedder        TextEmbedder
 	requireAuth     func(http.Handler) http.Handler
 	requireWrite    func(http.Handler) http.Handler
 	requireDownload func(http.Handler) http.Handler
@@ -42,9 +43,13 @@ type Config struct {
 	Storage storage.Storage
 	// Thumbnailer serves (and generates on miss) cached thumbnails.
 	Thumbnailer *thumb.Thumbnailer
-	// Similar backs the similar-photos endpoint with embedding search. When nil
-	// the endpoint degrades to an empty result instead of failing.
+	// Similar backs the similar-photos endpoint and the vector half of semantic
+	// and hybrid search. When nil those modes degrade to full-text search.
 	Similar SimilarSearcher
+	// Embedder embeds the query text into the CLIP vector space for semantic and
+	// hybrid search. When nil, or when it reports the sidecar unavailable, those
+	// modes degrade gracefully to full-text search with a degraded flag.
+	Embedder TextEmbedder
 	// RequireAuth guards read endpoints for any authenticated user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireWrite guards metadata and archive endpoints for editors and admins.
@@ -61,6 +66,7 @@ func NewAPI(cfg Config) *API {
 		storage:         cfg.Storage,
 		thumbnailer:     cfg.Thumbnailer,
 		similar:         cfg.Similar,
+		embedder:        cfg.Embedder,
 		requireAuth:     cfg.RequireAuth,
 		requireWrite:    cfg.RequireWrite,
 		requireDownload: cfg.RequireDownload,
@@ -102,6 +108,13 @@ type listResponse struct {
 	Limit      int            `json:"limit"`
 	Offset     int            `json:"offset"`
 	NextOffset *int           `json:"next_offset"`
+	// Mode is the effective search mode (fulltext/semantic/hybrid). It is only
+	// set by the search endpoint and omitted from a plain list response.
+	Mode string `json:"mode,omitempty"`
+	// Degraded is true when a semantic or hybrid search fell back to full-text
+	// because the embeddings sidecar was unavailable, so the UI can tell the user
+	// that semantic ranking was skipped. Omitted when false.
+	Degraded bool `json:"degraded,omitempty"`
 }
 
 // handleList parses the query filters, returns the matching page of photos plus
@@ -126,11 +139,11 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	writePage(w, params, list, total)
 }
 
-// writePage writes a paginated page of photos as a listResponse, computing the
-// effective limit and the next-page offset (nil on the last page) used by an
-// infinite-scroll client. It is shared by the list and search endpoints, whose
-// page shape is identical.
-func writePage(w http.ResponseWriter, params photos.ListParams, list []photos.Photo, total int) {
+// pageResponse builds the paginated listResponse for a page of photos, computing
+// the effective limit and the next-page offset (nil on the last page) used by an
+// infinite-scroll client. The search endpoint reuses it and then sets the Mode
+// and Degraded fields, which a plain list leaves empty.
+func pageResponse(params photos.ListParams, list []photos.Photo, total int) listResponse {
 	limit := params.Limit
 	if limit <= 0 {
 		limit = defaultPageLimit
@@ -144,16 +157,28 @@ func writePage(w http.ResponseWriter, params photos.ListParams, list []photos.Ph
 	if next := params.Offset + len(list); next < total && len(list) > 0 {
 		resp.NextOffset = &next
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp
 }
 
-// handleSearch runs a Czech-aware, diacritics-insensitive full-text search over
-// the photo catalogue, ranked by relevance. The `q` query parameter carries the
-// search text (required; empty or whitespace-only yields 400). Every list filter
-// (date range, GPS, private, camera, …) and the limit/offset pagination apply,
-// so a search can be scoped exactly like a browse; the `sort`/`order` params are
-// ignored because results are always ranked. The response mirrors the list
-// endpoint (photos, total, limit, offset, next_offset) for infinite scroll.
+// writePage writes a paginated page of photos as a listResponse. It is used by
+// the list endpoint; the search endpoint builds the response via pageResponse so
+// it can annotate it with the mode and degraded flag.
+func writePage(w http.ResponseWriter, params photos.ListParams, list []photos.Photo, total int) {
+	writeJSON(w, http.StatusOK, pageResponse(params, list, total))
+}
+
+// handleSearch searches the photo catalogue in one of three modes selected by
+// the `mode` query parameter — `fulltext`, `semantic` or `hybrid` (the default).
+// The `q` parameter carries the search text (required; empty or whitespace-only
+// yields 400). Full-text matching is Czech-aware and diacritics-insensitive;
+// semantic matching embeds the query via the sidecar and ranks by CLIP vector
+// similarity; hybrid fuses the two with Reciprocal Rank Fusion. Every list filter
+// (date range, GPS, private, camera, …) and the limit/offset pagination apply in
+// all modes; the `sort`/`order` params are ignored because results are always
+// ranked. When the sidecar is unavailable, semantic and hybrid fall back to
+// full-text and the response sets `degraded: true`. The response otherwise
+// mirrors the list endpoint (photos, total, limit, offset, next_offset) plus the
+// effective `mode`.
 func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	params, err := parseListParams(r.URL.Query())
 	if err != nil {
@@ -165,21 +190,24 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "q is required")
 		return
 	}
+	mode, err := parseSearchMode(r.URL.Query().Get("mode"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// q is the full-text query here, not the list's substring filter.
 	params.FullText = query
 	params.Search = ""
 
-	list, err := a.store.Search(r.Context(), params)
+	result, err := a.runSearch(r.Context(), mode, query, params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "searching photos failed")
 		return
 	}
-	total, err := a.store.Count(r.Context(), params)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "counting search results failed")
-		return
-	}
-	writePage(w, params, list, total)
+	resp := pageResponse(params, result.photos, result.total)
+	resp.Mode = string(mode)
+	resp.Degraded = result.degraded
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // defaultPageLimit mirrors the store's default page size for reporting the

@@ -98,11 +98,11 @@ func buildServices(
 	if err != nil {
 		return nil, nil, err
 	}
-	embedSvc, vectorStore, err := buildEmbedService(cfg, db, enqueuer)
+	embedSvc, vectorStore, embedClient, err := buildEmbedService(cfg, db, enqueuer)
 	if err != nil {
 		return nil, nil, err
 	}
-	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore)
+	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore, embedClient)
 	if err != nil {
 		return nil, nil, err
 	}

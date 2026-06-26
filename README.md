@@ -76,7 +76,9 @@ Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
 `GetByPhotoprismUID`/`GetByPhotosorterUID`, `UpdateMetadata`, `Archive`/`Unarchive`,
 `Delete`, `List`/`Count` (filtr archived/private/uploader, řazení, stránkování),
 `Search` (fulltext nad `fts` sloupcem, řazení dle `ts_rank`, ctí list filtry +
-stránkování; prázdný dotaz → `ErrEmptySearch`) a metody pro soubory/phash/edits.
+stránkování; prázdný dotaz → `ErrEmptySearch`), `FilterUIDs` (z množiny uid vrátí ty,
+co projdou strukturálními list filtry — pro sémantické hledání: profiltruje vektorové
+kandidáty) a metody pro soubory/phash/edits.
 
 ### Úložiště originálů (`internal/storage`)
 
@@ -386,7 +388,7 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/admin/users/{uid}/password` | admin | `{new_password}` → reset hesla (zruší všechny jeho session) |
 | POST | `/upload` | editor/admin | `multipart/form-data` s jedním+ soubory → per-file `{outcome, photo_uid, warnings}` (viz Upload / ingest) |
 | GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API) |
-| GET | `/search?q=` | přihlášený | česky-aware fulltext (tsvector + unaccent, diakritika necitlivá), řazení dle relevance (`ts_rank`, title>description>notes>file_name), ctí list filtry + stránkování; `q` povinný → stejný tvar jako `/photos` |
+| GET | `/search?q=&mode=` | přihlášený | sémantické + hybridní hledání; `mode` = `fulltext`/`semantic`/`hybrid` (default `hybrid`): fulltext (tsvector + unaccent, `ts_rank`), semantic (CLIP text→embedding → cosine HNSW), hybrid (fúze obou přes **Reciprocal Rank Fusion**, k=60, dedup); všechny módy ctí list filtry + stránkování; `q` povinný → tvar jako `/photos` + `mode`+`degraded`; box offline → fallback na fulltext s `degraded:true` |
 | GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` |
 | GET | `/photos/{uid}/similar` | přihlášený | vizuálně podobné fotky dle cosine vzdálenosti embeddingu (`?limit`, default 24, max 100) → `{similar:[{…photo, distance}]}` |
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |

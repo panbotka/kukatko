@@ -17,15 +17,16 @@ import (
 // buildEmbedService assembles the embedding subsystem: the on-disk original
 // store and thumbnailer (the preview sent to the sidecar), the photo and vector
 // repositories, and the offline-aware embeddings sidecar client. It returns the
-// embedjob.Service (the image_embed handler and backfill) plus the vector store,
-// which the photo API reuses to back the similar-photos endpoint. enqueuer is
-// the shared queue adapter the backfill schedules jobs through.
+// embedjob.Service (the image_embed handler and backfill) plus the vector store
+// and the sidecar client, which the photo API reuses to back the similar-photos
+// endpoint and semantic/hybrid search. enqueuer is the shared queue adapter the
+// backfill schedules jobs through.
 func buildEmbedService(
 	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
-) (*embedjob.Service, *vectors.Store, error) {
+) (*embedjob.Service, *vectors.Store, embedding.Client, error) {
 	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("initialising originals storage: %w", err)
+		return nil, nil, nil, fmt.Errorf("initialising originals storage: %w", err)
 	}
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath)
 	photoStore := photos.NewStore(db.Pool())
@@ -37,7 +38,7 @@ func buildEmbedService(
 		FaceDim:  cfg.Embedding.FaceDim,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("initialising embedding client: %w", err)
+		return nil, nil, nil, fmt.Errorf("initialising embedding client: %w", err)
 	}
 
 	svc := embedjob.New(embedjob.Config{
@@ -48,5 +49,5 @@ func buildEmbedService(
 		Enqueuer:         enqueuer,
 		DuplicateMaxDist: cfg.Duplicate.EmbeddingMaxDist,
 	})
-	return svc, vectorStore, nil
+	return svc, vectorStore, client, nil
 }
