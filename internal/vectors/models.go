@@ -122,6 +122,26 @@ type FaceMatch struct {
 	Distance  float64
 }
 
+// FaceCandidate is a face-embedding similarity hit enriched with the cached
+// people-assignment columns and the bounding box, so the face-suggestion logic
+// can aggregate neighbours by subject and apply a size filter without a second
+// query. Distance is the cosine distance to the query vector (smaller is closer).
+type FaceCandidate struct {
+	// PhotoUID and FaceIndex identify the neighbouring face row.
+	PhotoUID  string
+	FaceIndex int
+	// Distance is the cosine distance to the query vector.
+	Distance float64
+	// BBox is the neighbour's normalised bounding box [x, y, w, h] in 0..1.
+	BBox [4]float64
+	// SubjectUID and SubjectName are the cached assignment, nil/empty when the
+	// neighbour is not assigned to any subject.
+	SubjectUID  *string
+	SubjectName string
+	// MarkerUID is the cached marker the neighbour is tied to, nil when unmatched.
+	MarkerUID *string
+}
+
 // ToHalfVec wraps a []float32 as a pgvector.HalfVector so it can be bound as a
 // halfvec query parameter or column value.
 func ToHalfVec(vec []float32) pgvector.HalfVector {

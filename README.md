@@ -321,7 +321,11 @@ což je na Pi podstatné.
 `SaveEmbedding`/`GetEmbedding` (`ErrEmbeddingNotFound`), `FindSimilar(vec, limit, maxDistance)`
 nad `embedding <=> $vec` (nejbližší první), `SaveFaces`(idempotentní replace v transakci)/
 `ListFaces`/`DeleteFaces`, `FindSimilarFaces`,
-`RecordFaceDetection(uid, faces, model)` (atomicky nahradí faces fotky **a** zapíše
+`FindSimilarFaceCandidates(vec, limit, maxDistance)` (jako `FindSimilarFaces`, ale vrací i cache
+`subject_uid`/`subject_name`/`marker_uid` a `bbox` — podklad pro návrhy identit),
+`UpdateFaceMarker(photoUID, faceIndex, markerUID, subjectUID, subjectName)` (zapíše cache sloupce
+na jeden obličej; prázdný `markerUID`/`subjectUID` → `NULL` — tudy se cachuje IoU match a linkuje
+obličej k markeru), `RecordFaceDetection(uid, faces, model)` (atomicky nahradí faces fotky **a** zapíše
 `face_detections` řádek — i pro nula obličejů), `FacesDetected(uid)` (existuje `face_detections`
 řádek?), `ListPhotosMissingFaces(limit)`. Dotazy běží v **read-only transakci** se
 `SET LOCAL hnsw.ef_search = 100` pro lepší recall; `limit` se ořezává do `[1,500]`,
@@ -363,6 +367,34 @@ synchronizaci — každá změna markeru/subjektu (assign/unassign, rename subje
 i subjektu) aktualizuje odpovídající `faces` řádky **ve stejné transakci** (`WHERE marker_uid =
 $1`, resp. `WHERE subject_uid = $1`). Sentinely: `ErrSubjectNotFound`/`ErrMarkerNotFound`/
 `ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidBounds`.
+
+### Face↔marker matching, přiřazování & návrhy (`internal/facematch`)
+
+Propojuje detekované obličeje s markery/subjekty a navrhuje pravděpodobné identity. Vše za
+rozhraními (`PhotoStore`/`FaceStore`/`PeopleStore`), takže se unit-testuje s faky bez DB.
+
+- **IoU geometrie** (`IoU(a, b [4]float64)`, čistá funkce): Intersection-over-Union dvou
+  normalizovaných boxů `[x,y,w,h]` (0..1). `findBestMarker` vybere nejpřekrývající se **face**
+  marker (ignoruje `invalid`), match platí při `IoU ≥ faces.iou_threshold` (default 0.1, mirror
+  photo-sorteru).
+- **`PhotoFaces(ctx, photoUID)`** (backing `GET /photos/{uid}/faces`): pro každý uložený obličej
+  spočítá nejlepší marker dle IoU, určí akci (`create_marker` / `assign_person` / `already_done`),
+  **zacachuje match na řádek obličeje** (`UpdateFaceMarker`) a pro nepojmenované obličeje přidá
+  návrhy. Markery bez odpovídajícího obličeje se připojí (záporné `face_index`) pro detail UI.
+- **Návrhy** (`aggregateSuggestions`, čistá funkce): z nejbližších face embeddingů
+  (`FindSimilarFaceCandidates`, HNSW cosine) agreguje kandidáty dle subjektu, vyloučí obličeje na
+  stejné fotce, subjekty **už přiřazené na fotce** (jiné osoby) a obličeje **pod minimální
+  velikostí** (`faces.min_face_size`), seřadí dle průměrné vzdálenosti, `confidence = 1 −
+  distance`, limit `faces.suggestion_limit` (~5). Primární práh `faces.suggestion_max_distance`,
+  s **fallbackem** na neomezenou vzdálenost když je návrhů málo.
+- **Přiřazování (state machine)** (`Apply(ctx, AssignRequest)`, backing
+  `POST /photos/{uid}/faces/assign`, editor/admin): `create_marker` (vytvoří face marker + přiřadí
+  subjekt + zalinkuje obličej), `assign_person` (přiřadí subjekt existujícímu markeru),
+  `unassign_person` (odpojí subjekt). Drží `faces` cache i `marker.reviewed` konzistentní
+  (assign → `reviewed=true`, unassign → `reviewed=false`). **Auto-create subjektu dle jména**
+  (find-or-create přes `Slugify` + `GetSubjectBySlug`). Sentinely `ErrInvalidAction`/
+  `ErrMissingBBox`/`ErrMissingMarker`/`ErrMissingSubject`; chybějící foto/marker/subjekt se mapuje
+  na 404.
 
 ### Image embedding & similar photos (`internal/embedjob`)
 
@@ -457,6 +489,8 @@ Endpointy pod `/api/v1` (JSON):
 | GET | `/search?q=&mode=` | přihlášený | sémantické + hybridní hledání; `mode` = `fulltext`/`semantic`/`hybrid` (default `hybrid`): fulltext (tsvector + unaccent, `ts_rank`), semantic (CLIP text→embedding → cosine HNSW), hybrid (fúze obou přes **Reciprocal Rank Fusion**, k=60, dedup); všechny módy ctí list filtry + stránkování; `q` povinný → tvar jako `/photos` + `mode`+`degraded`; box offline → fallback na fulltext s `degraded:true` |
 | GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` |
 | GET | `/photos/{uid}/similar` | přihlášený | vizuálně podobné fotky dle cosine vzdálenosti embeddingu (`?limit`, default 24, max 100) → `{similar:[{…photo, distance}]}` |
+| GET | `/photos/{uid}/faces` | přihlášený | obličeje fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`) a **návrhy** identit pro nepojmenované — face↔marker IoU matching (viz `internal/facematch`) |
+| POST | `/photos/{uid}/faces/assign` | editor/admin | přiřazovací akce `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`: `create_marker`/`assign_person`/`unassign_person`; auto-create subjektu dle jména; drží `faces` cache + `marker.reviewed` konzistentní |
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
 | POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
 | POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |

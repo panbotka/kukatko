@@ -102,13 +102,29 @@ type EmbeddingConfig struct {
 	FaceDim  int    `mapstructure:"face_dim"`
 }
 
-// FacesConfig tunes the face_detect job.
+// FacesConfig tunes the face_detect job and the face↔marker matching and
+// suggestion logic.
 type FacesConfig struct {
 	// MinDetScore is the minimum detector confidence (det_score) a detected face
 	// must have to be stored; lower-confidence detections are dropped. The sidecar
 	// applies its own detection threshold, so this is a second, configurable floor.
 	// A non-positive value disables the filter (stores every detection).
 	MinDetScore float64 `mapstructure:"min_det_score"`
+	// IoUThreshold is the minimum Intersection-over-Union a detected face's box must
+	// share with an existing marker for the two to be considered the same region.
+	// Mirrors photo-sorter's 0.1 default.
+	IoUThreshold float64 `mapstructure:"iou_threshold"`
+	// SuggestionLimit caps how many likely subjects are suggested for an unnamed
+	// face.
+	SuggestionLimit int `mapstructure:"suggestion_limit"`
+	// SuggestionMaxDistance is the cosine-distance cutoff for the primary suggestion
+	// search; neighbouring faces farther than this are ignored before the threshold
+	// fallback widens the search. A non-positive value disables the primary cutoff.
+	SuggestionMaxDistance float64 `mapstructure:"suggestion_max_distance"`
+	// MinFaceSize is the minimum normalised width (0..1) a neighbouring face must
+	// have to contribute a suggestion, so tiny background faces do not drive
+	// identity guesses. A non-positive value disables the size filter.
+	MinFaceSize float64 `mapstructure:"min_face_size"`
 }
 
 // AuthConfig holds the credentials used to bootstrap the initial admin account
@@ -275,6 +291,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("embedding.face_dim", 512)
 
 	v.SetDefault("faces.min_det_score", 0.5)
+	v.SetDefault("faces.iou_threshold", 0.1)
+	v.SetDefault("faces.suggestion_limit", 5)
+	v.SetDefault("faces.suggestion_max_distance", 0.5)
+	v.SetDefault("faces.min_face_size", 0.02)
 
 	v.SetDefault("auth.bootstrap_admin_username", "")
 	v.SetDefault("auth.bootstrap_admin_password", "")
@@ -285,6 +305,13 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("maps.mapy_api_key", "")
 
+	setOpsDefaults(v)
+}
+
+// setOpsDefaults registers defaults for the backup, trash, duplicate, upload and
+// worker subsystems. It is split out of setDefaults to keep each function focused
+// and within the length budget.
+func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("backup.s3.endpoint", "")
 	v.SetDefault("backup.s3.region", "")
 	v.SetDefault("backup.s3.bucket", "")

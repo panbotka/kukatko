@@ -58,6 +58,19 @@ faces:
   # sidecar applies its own detection threshold, so this is a second floor. Set
   # to 0 (or below) to store every detection.
   min_det_score: 0.5
+  # Minimum Intersection-over-Union a detected face must share with an existing
+  # marker for the two to be treated as the same region (face↔marker matching).
+  iou_threshold: 0.1
+  # Maximum number of likely subjects suggested for an unnamed face.
+  suggestion_limit: 5
+  # Cosine-distance cutoff for the primary suggestion search; neighbouring faces
+  # farther than this are ignored before the threshold fallback widens the search.
+  # Set to 0 (or below) to disable the primary cutoff.
+  suggestion_max_distance: 0.5
+  # Minimum normalised width (0..1) a neighbouring face must have to contribute a
+  # suggestion, so tiny background faces do not drive identity guesses. Set to 0
+  # (or below) to disable the size filter.
+  min_face_size: 0.02
 
 auth:
   # Credentials used to create the initial admin account on first run.

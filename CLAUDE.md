@@ -203,7 +203,11 @@ inkrementální).
   sdíleným pgx poolem:
   `SaveEmbedding`(upsert)/`GetEmbedding`(`ErrEmbeddingNotFound`)/`FindSimilar(vec,limit,maxDistance)`
   pro 768-dim obrázkové embeddingy, `SaveFaces`(idempotentní replace v transakci)/`ListFaces`/
-  `DeleteFaces`/`FindSimilarFaces` pro 512-dim face embeddingy + cache sloupce
+  `DeleteFaces`/`FindSimilarFaces`/`FindSimilarFaceCandidates` (jako `FindSimilarFaces`, ale
+  vrací i cache `subject_uid`/`subject_name`/`marker_uid` + `bbox` — podklad pro návrhy identit)/
+  `UpdateFaceMarker(photoUID,faceIndex,markerUID,subjectUID,subjectName)` (zapíše cache sloupce na
+  jeden obličej, prázdný marker/subject → `NULL`; tudy se cachuje IoU match) pro 512-dim face
+  embeddingy + cache sloupce
   marker_uid/subject_uid/subject_name/photo_width/photo_height/orientation a normalizovaný
   `bbox DOUBLE PRECISION[4]` `[x,y,w,h]`; podobnost přes `embedding <=> $vec` (cosine, nejbližší
   první) v **read-only transakci** se `SET LOCAL hnsw.ef_search = 100`; `limit` ořez `[1,500]`,
@@ -240,7 +244,31 @@ inkrementální).
   `WHERE marker_uid = $1`)/`SetMarkerInvalid`/`SetMarkerReviewed`/`DeleteMarker` (vyčistí
   faces cache); sentinely `ErrSubjectNotFound`/`ErrMarkerNotFound`/`ErrSlugExhausted`/
   `ErrInvalidType`/`ErrInvalidBounds`; **faces cache se drží konzistentní** při každé změně
-  markeru/subjektu (mazání, rename, assign/unassign)), `internal/embedjob/`
+  markeru/subjektu (mazání, rename, assign/unassign)), `internal/facematch/`
+  (propojení detekovaných obličejů s markery/subjekty + návrhy identit, vše za rozhraními
+  `PhotoStore`/`FaceStore`/`PeopleStore` (unit-testovatelné s faky bez DB): `Service` =
+  `New(Config{Photos,Faces,People,IoUThreshold,SuggestionLimit,SuggestionMaxDistance,MinFaceSize})`;
+  **IoU geometrie** `IoU(a,b [4]float64)` (čistá funkce, Intersection-over-Union normalizovaných
+  boxů `[x,y,w,h]`), `findBestMarker` vybere nejpřekrývající se **face** marker (ignoruje
+  `invalid`), match při `IoU ≥ faces.iou_threshold` (default 0.1, mirror photo-sorteru);
+  **`PhotoFaces(ctx,photoUID)`** (backing `GET /photos/{uid}/faces`) → pro každý uložený obličej
+  spočítá nejlepší marker dle IoU, určí akci (`create_marker`/`assign_person`/`already_done`),
+  **zacachuje match na řádek obličeje** přes `vectors.UpdateFaceMarker`, a pro nepojmenované
+  obličeje přidá návrhy; markery bez odpovídajícího obličeje připojí (záporné `face_index`);
+  **návrhy** (`aggregateSuggestions`, čistá funkce) z `vectors.FindSimilarFaceCandidates`
+  (HNSW cosine) agregují kandidáty dle subjektu, vyloučí obličeje na stejné fotce, subjekty už
+  přiřazené na fotce (jiné osoby) a obličeje pod `faces.min_face_size`, řadí dle průměrné
+  vzdálenosti, `confidence = 1 − distance`, limit `faces.suggestion_limit`, primární práh
+  `faces.suggestion_max_distance` s fallbackem na neomezenou vzdálenost když je návrhů málo;
+  **přiřazovací state machine** `Apply(ctx,AssignRequest)` (backing
+  `POST /photos/{uid}/faces/assign`, editor/admin): `create_marker` (vytvoří face marker + přiřadí
+  subjekt + zalinkuje obličej), `assign_person` (přiřadí subjekt existujícímu markeru),
+  `unassign_person` (odpojí subjekt), drží `faces` cache i `marker.reviewed` konzistentní
+  (assign → reviewed, unassign → unreviewed), **auto-create subjektu dle jména** (find-or-create
+  přes `Slugify`+`GetSubjectBySlug`); sentinely `ErrInvalidAction`/`ErrMissingBBox`/
+  `ErrMissingMarker`/`ErrMissingSubject`, chybějící foto/marker/subjekt → 404 v HTTP vrstvě
+  (`photoapi.FaceService` interface + handlery v `internal/photoapi/faces.go`); tunables v
+  `faces.*` configu), `internal/embedjob/`
   (zapojení CLIP embeddingu do fronty + embeddingové dotazy, vše za rozhraními
   `PhotoStore`/`VectorStore`/`Previewer`/`Enqueuer`+`embedding.Client`: `Service` =
   `New(Config{Photos,Vectors,Client,Previewer,Enqueuer,PreviewSize,OfflineRetryDelay,
@@ -374,7 +402,14 @@ inkrementální).
   **Reciprocal Rank Fusion (k=60)**, dedup. Všechny módy ctí ostatní list filtry + stránkování,
   odpověď jako list + `mode` + `degraded`; `q` povinný (prázdný → 400); **box offline** →
   `semantic`/`hybrid` graceful fallback na fulltext s `degraded: true`;
-  `GET /photos/{uid}` plný detail + `files`; `PATCH /photos/{uid}` (editor/admin) částečná úprava
+  `GET /photos/{uid}` plný detail + `files`; `GET /photos/{uid}/faces` (přihlášený) — obličeje
+  fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`)
+  a **návrhy** identit pro nepojmenované (face↔marker IoU matching, viz `internal/facematch`; 503
+  když face backend není zapojen); `POST /photos/{uid}/faces/assign` (editor/admin) — přiřazovací
+  akce `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`
+  (`create_marker`/`assign_person`/`unassign_person`), auto-create subjektu dle jména, drží `faces`
+  cache + `marker.reviewed` konzistentní (400 validace, 404 chybějící foto/marker/subjekt);
+  `PATCH /photos/{uid}` (editor/admin) částečná úprava
   metadat (null maže nullable, validace souřadnic); `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);
   `GET /photos/{uid}/thumb/{size}` a `/download` (session/`?t=` token) **streamují** média
