@@ -115,6 +115,46 @@
       "unavailable": "Náhled není dostupný"
     }
   },
+  "upload": {
+    "title": "Nahrát",
+    "subtitle": "Přidejte do knihovny fotky a videa.",
+    "dropzone": {
+      "headline": "Přetáhněte fotky sem",
+      "active": "Pusťte soubory pro přidání",
+      "hint": "nebo je vyberte ze zařízení",
+      "browse": "Vybrat soubory",
+      "camera": "Vyfotit",
+      "ariaInput": "Vyberte fotky nebo videa k nahrání",
+      "ariaCamera": "Vyfotit fotoaparátem"
+    },
+    "queue": {
+      "heading": "Vybrané soubory"
+    },
+    "actions": {
+      "start": "Nahrát ({{count}})",
+      "retryFailed": "Opakovat neúspěšné",
+      "clear": "Vymazat vše",
+      "remove": "Odebrat",
+      "retry": "Opakovat"
+    },
+    "status": {
+      "queued": "Ve frontě",
+      "uploading": "Nahrávání…",
+      "created": "Nahráno",
+      "duplicate": "Již v knihovně",
+      "error": "Selhalo"
+    },
+    "summary": {
+      "line": "{{created}} nahráno · {{duplicate}} duplikát · {{error}} selhalo · {{pending}} čeká"
+    },
+    "warning": {
+      "near_duplicate": "Vypadá podobně jako fotka, která už je v knihovně."
+    },
+    "done": {
+      "title": "Nahrávání dokončeno.",
+      "viewLibrary": "Zobrazit v knihovně"
+    }
+  },
   "notFound": {
     "title": "Stránka nenalezena",
     "message": "Požadovaná stránka neexistuje.",

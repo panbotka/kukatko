@@ -108,7 +108,11 @@ inkrementální).
   frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
   (`Layout` = navbar shell s user-menu/logout + role-gated nav — odkaz **Knihovna**
-  míří na `/library`, `LanguageSwitcher`; `components/library/` = `PhotoTile`
+  míří na `/library`, **Nahrát** na `/upload` (jen editor/admin), `LanguageSwitcher`;
+  `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
+  `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
+  `UploadItem` (řádek fronty: jméno+velikost, progress-bar, status badge, near-duplicate
+  varování, remove/retry akce); `components/library/` = `PhotoTile`
   (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, placeholder bez
   layout-shiftu), `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
   window-scroll, `endReached` → další stránka, footer spinner/retry), `FilterBar`
@@ -117,11 +121,18 @@ inkrementální).
   `pages/` (`HomePage` volá `GET /healthz`, `LoginPage`, `AccountPage` = změna vlastního hesla,
   `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL,
+  `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
+  nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
+  po dokončení odkaz na nově nahrané fotky (`/library?sort=added`),
   `NotFoundPage`), `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`; `ProtectedRoute` =
   `RequireAuth` + `RequireRole` route guardy), `hooks/` (`usePhotoLibrary` = paginovaný
   infinite-scroll loader nad `fetchPhotos`: akumuluje stránky, `loadMore`/`retry`,
-  reset+refetch při změně filtrů, ruší in-flight requesty a ignoruje stale odpovědi),
+  reset+refetch při změně filtrů, ruší in-flight requesty a ignoruje stale odpovědi;
+  `useUploadQueue` = fronta uploadu: `addFiles` (dedup jméno+velikost+mtime)/`removeItem`/
+  `start`/`retry`/`retryFailed`/`clear`, konkurenční strop `MAX_CONCURRENT_UPLOADS` (3),
+  per-file status+progress, souhrn počtů, `createdUids` pro odkaz do knihovny; auto-drainuje
+  frontu efektem po `start`/retry, ruší běžící uploady při unmountu),
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` + `LIBRARY_DEFAULTS` + `viewToParams`
@@ -131,11 +142,14 @@ inkrementální).
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
   (filtry/řazení/stránkování → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
   `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo`/`PhotoListParams`/
-  `PhotoSort`/`ArchivedFilter`, `ApiError`), `i18n/` (i18next init + `locales/{cs,en}/common.json`;
+  `PhotoSort`/`ArchivedFilter`, `ApiError`; `upload.ts` = `uploadFile(file,{onProgress,signal})`
+  nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
+  streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
+  `UploadOutcome`), `i18n/` (i18next init + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth` → `Layout` (`/`, `/library`,
-  `/account`). Konfig:
+  `/account`; `/upload` navíc pod `RequireRole role="editor"` = write-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.

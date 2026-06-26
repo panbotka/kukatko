@@ -1,13 +1,14 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import { AuthProvider } from './auth/AuthProvider'
-import { RequireAuth } from './auth/ProtectedRoute'
+import { RequireAuth, RequireRole } from './auth/ProtectedRoute'
 import { Layout } from './components/Layout'
 import { AccountPage } from './pages/AccountPage'
 import { HomePage } from './pages/HomePage'
 import { LibraryPage } from './pages/LibraryPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { UploadPage } from './pages/UploadPage'
 
 /**
  * Root component: provides auth state, then wires client-side routing. `/login`
@@ -24,6 +25,10 @@ export function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<HomePage />} />
               <Route path="/library" element={<LibraryPage />} />
+              {/* Uploading is a write action: editors and admins only. */}
+              <Route element={<RequireRole role="editor" />}>
+                <Route path="/upload" element={<UploadPage />} />
+              </Route>
               <Route path="/account" element={<AccountPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>

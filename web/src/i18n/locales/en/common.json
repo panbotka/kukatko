@@ -115,6 +115,46 @@
       "unavailable": "Preview unavailable"
     }
   },
+  "upload": {
+    "title": "Upload",
+    "subtitle": "Add photos and videos to your library.",
+    "dropzone": {
+      "headline": "Drag photos here",
+      "active": "Drop the files to add them",
+      "hint": "or choose them from your device",
+      "browse": "Choose files",
+      "camera": "Take a photo",
+      "ariaInput": "Choose photos or videos to upload",
+      "ariaCamera": "Take a photo with the camera"
+    },
+    "queue": {
+      "heading": "Selected files"
+    },
+    "actions": {
+      "start": "Upload ({{count}})",
+      "retryFailed": "Retry failed",
+      "clear": "Clear all",
+      "remove": "Remove",
+      "retry": "Retry"
+    },
+    "status": {
+      "queued": "Queued",
+      "uploading": "Uploading…",
+      "created": "Uploaded",
+      "duplicate": "Already in library",
+      "error": "Failed"
+    },
+    "summary": {
+      "line": "{{created}} uploaded · {{duplicate}} duplicate · {{error}} failed · {{pending}} pending"
+    },
+    "warning": {
+      "near_duplicate": "Looks similar to a photo already in the library."
+    },
+    "done": {
+      "title": "Upload complete.",
+      "viewLibrary": "View in library"
+    }
+  },
   "notFound": {
     "title": "Page not found",
     "message": "The requested page does not exist.",

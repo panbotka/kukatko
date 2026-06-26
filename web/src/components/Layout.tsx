@@ -46,7 +46,7 @@ export function Layout() {
               </Nav.Link>
               {/* Write actions are gated by role: hidden from viewers. */}
               {canWrite && (
-                <Nav.Link as={NavLink} to="/upload" disabled>
+                <Nav.Link as={NavLink} to="/upload">
                   {t('nav.upload')}
                 </Nav.Link>
               )}

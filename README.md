@@ -295,6 +295,22 @@ reset + refetch při změně filtrů, ruší in-flight requesty a ignoruje stale
 přes [`services/photos.ts`](web/src/services/photos.ts) (`fetchPhotos` nad `GET /api/v1/photos`,
 `thumbUrl`). Pohled má i18n loading-skeleton, prázdný stav i chybový stav s „Zkusit znovu".
 
+**Multiupload (`/upload`, editor/admin):** stránka
+([`web/src/pages/UploadPage.tsx`](web/src/pages/UploadPage.tsx)) pro hromadné nahrávání fotek/videí
+včetně **mobilu**. [`components/upload/DropZone`](web/src/components/upload/DropZone.tsx) nabízí
+**drag-and-drop** zónu i file input (`multiple`, `accept="image/*,video/*"` → na mobilu otevře
+galerii) a samostatné tlačítko **Vyfotit** (`capture="environment"` → fotoaparát). Frontu řídí hook
+[`useUploadQueue`](web/src/hooks/useUploadQueue.ts): přidávání/odebírání souborů (dedup podle
+jméno+velikost+mtime), upload s **konkurenčním stropem** (`MAX_CONCURRENT_UPLOADS`, výchozí 3),
+**per-file progress** a koncový stav (nahráno / duplikát / selhalo) se souhrnem počtů, **retry**
+neúspěšných (jednotlivě i hromadně) a abort běžících. Každý soubor jde **vlastním** `POST
+/api/v1/upload` requestem přes [`services/upload.ts`](web/src/services/upload.ts) (`uploadFile` nad
+**`XMLHttpRequest`** kvůli upload-progress eventům; FormData se streamuje, nikdy celé v RAM). Per-file
+[`UploadItem`](web/src/components/upload/UploadItem.tsx) ukazuje progress-bar, status badge a
+**near-duplicate varování** z API (neblokuje). Po dokončení nabídne odkaz na nově nahrané fotky
+v knihovně (`/library?sort=added`). Vše i18n (cs/en), touch-friendly. Odkaz **Nahrát** v navbaru je
+viditelný jen pro editory/adminy.
+
 Vývoj frontendu (dev server s proxy na Go backend) a samostatné cíle:
 
 ```bash
