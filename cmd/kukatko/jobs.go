@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/facejob"
@@ -18,12 +19,13 @@ import (
 // the built-in handlers plus the image_embed and face_detect handlers registered)
 // that drains the shared queue store, the admin HTTP API exposing queue
 // stats/listings/requeue, and the admin processing API (embedding and face
-// backfills). The worker is returned to the serve command to run for the process
-// lifetime; both APIs mount their admin-guarded routes via authAPI so the api
-// packages stay decoupled from auth's wiring.
+// backfills plus the face-clustering trigger). The worker is returned to the
+// serve command to run for the process lifetime; both APIs mount their
+// admin-guarded routes via authAPI so the api packages stay decoupled from
+// auth's wiring.
 func buildJobs(
 	cfg *config.Config, store *jobs.Store, authAPI *auth.API,
-	embedSvc *embedjob.Service, faceSvc *facejob.Service,
+	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
 ) (*worker.Worker, *jobsapi.API, *processapi.API) {
 	registry := worker.NewRegistry()
 	worker.RegisterBuiltins(registry)
@@ -46,6 +48,7 @@ func buildJobs(
 	procAPI := processapi.NewAPI(processapi.Config{
 		Backfiller:     embedSvc,
 		FaceBackfiller: faceSvc,
+		Reclusterer:    clusterSvc,
 		RequireAdmin:   authAPI.RequireAdmin,
 	})
 	return w, jobAPI, procAPI

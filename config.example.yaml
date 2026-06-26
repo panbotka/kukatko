@@ -72,6 +72,24 @@ faces:
   # (or below) to disable the size filter.
   min_face_size: 0.02
 
+cluster:
+  # Face auto-clustering: groups unassigned faces of the same person so a whole
+  # group can be named in one action (POST /api/v1/process/clusters rebuilds the
+  # clusters; the clusters are exposed under /api/v1/faces/clusters).
+  #
+  # Maximum cosine distance between two faces for them to be linked as the same
+  # person. Lower is stricter (fewer, purer clusters); higher is looser. Set to 0
+  # (or below) to fall back to the default.
+  threshold: 0.4
+  # Smallest connected component that becomes a cluster; smaller groups stay
+  # unclustered so single stray faces are not surfaced. Set to 0 (or below) to
+  # fall back to the default.
+  min_size: 2
+  # Cosine-distance cutoff for suggesting an existing subject for a cluster: named
+  # neighbours farther than this from the cluster's centroid produce no
+  # suggestion. Set to 0 (or below) to fall back to the default.
+  suggestion_max_distance: 0.5
+
 auth:
   # Credentials used to create the initial admin account on first run.
   bootstrap_admin_username: ""

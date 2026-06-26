@@ -396,6 +396,41 @@ rozhraními (`PhotoStore`/`FaceStore`/`PeopleStore`), takže se unit-testuje s f
   `ErrMissingBBox`/`ErrMissingMarker`/`ErrMissingSubject`; chybějící foto/marker/subjekt se mapuje
   na 404.
 
+### Auto-clustering obličejů (`internal/cluster` + `internal/clusterapi`)
+
+Seskupuje **dosud nepřiřazené obličeje** (bez subjektu) do shluků téže osoby, aby šel celý shluk
+pojmenovat jedním tahem — klíčové zlepšení UX oproti photo-sorteru, kde se obličeje pojmenovávaly
+po jednom. Tabulka `face_clusters` (migrace `0010_face_clusters.sql`: `uid` PK prefix `fc`,
+`centroid halfvec(512)`, `size`, `model`, časy) + cache sloupec `faces.cluster_uid` (FK
+`ON DELETE SET NULL`).
+
+- **Algoritmus** (`internal/cluster`, čisté funkce v `algo.go`/`suggest.go` jsou unit-testované):
+  greedy **souvislé komponenty** (union-find) nad HNSW nejbližšími sousedy každého clusterovatelného
+  obličeje do **prahu cosine vzdálenosti** (`cluster.threshold`, default 0.4). Hrana = dva obličeje
+  blíž než práh; každá komponenta o velikosti `≥ cluster.min_size` (default 2) se stane shlukem,
+  menší zůstanou nesclustrované. Pro každý shluk se spočítá L2-normalizovaný **centroid**
+  (průměr embeddingů) — slouží k výběru reprezentativního obličeje a k návrhu existujícího subjektu.
+- **Inkrementální a re-spustitelné** (`Recluster(ctx)`): clusterovatelný je jen obličej **bez
+  subjektu** (`subject_uid IS NULL`) **a bez shluku** (`cluster_uid IS NULL`), takže re-clustering
+  nikdy nesáhne na přiřazené ani na už sclustrované obličeje — seskupí jen čerstvé nepřiřazené.
+  Deterministické pro danou množinu obličejů.
+- **`ListClusters(ctx)`** (backing `GET /faces/clusters`): pro každý shluk vrátí velikost,
+  reprezentativní obličej (nejblíž centroidu), pár příkladů a **návrh existujícího subjektu** —
+  nejbližší **už pojmenovaný** centroid (`FindSimilarFaceCandidates` nad centroidem, agregace dle
+  subjektu, `confidence = 1 − distance`). Návrh je `null`, když žádný pojmenovaný soused není dost
+  blízko (`cluster.suggestion_max_distance`, default 0.5).
+- **`AssignCluster(ctx, req)`** (backing `POST /faces/clusters/{id}/assign`, editor/admin): přiřadí
+  **všechny** obličeje shluku jednomu subjektu (dle `subject_uid`, jinak find-or-create dle
+  `subject_name`) — pro každý obličej vytvoří face marker přes **sdílenou facematch state machine**
+  (žádná duplikace logiky vytváření markerů), pak spotřebovaný shluk smaže (FK uvolní `cluster_uid`).
+- **`RemoveFace(ctx, clusterUID, ref)`** (backing `POST /faces/clusters/{id}/remove-face`,
+  editor/admin): odpojí zatoulaný obličej ze shluku **před** pojmenováním (aby nezašpinil jméno),
+  přepočítá centroid/velikost; když shluk osiří, smaže ho. Vrací refreshnutý view (nebo `deleted`).
+- **HTTP vrstva** (`internal/clusterapi`): `Service` rozhraní (splňuje ho `cluster.Service`),
+  `NewAPI(Config{Service, RequireWrite})` + `RegisterRoutes` mountuje `/faces/clusters`; 503 když
+  backend není zapojen, 400/404/409 dle sentinelů. Admin trigger re-clusteringu je
+  `POST /api/v1/process/clusters` (viz Process API). Tunables v `cluster.*` configu.
+
 ### Image embedding & similar photos (`internal/embedjob`)
 
 `embedjob.Service` zapojuje CLIP embedding do fronty jobů a staví nad ním embeddingové dotazy.
@@ -491,6 +526,9 @@ Endpointy pod `/api/v1` (JSON):
 | GET | `/photos/{uid}/similar` | přihlášený | vizuálně podobné fotky dle cosine vzdálenosti embeddingu (`?limit`, default 24, max 100) → `{similar:[{…photo, distance}]}` |
 | GET | `/photos/{uid}/faces` | přihlášený | obličeje fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`) a **návrhy** identit pro nepojmenované — face↔marker IoU matching (viz `internal/facematch`) |
 | POST | `/photos/{uid}/faces/assign` | editor/admin | přiřazovací akce `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`: `create_marker`/`assign_person`/`unassign_person`; auto-create subjektu dle jména; drží `faces` cache + `marker.reviewed` konzistentní |
+| GET | `/faces/clusters` | editor/admin | shluky nepřiřazených obličejů (auto-clustering) → `{clusters:[{uid,size,representative,examples,suggestion?}]}`; `suggestion` = nejbližší pojmenovaný subjekt (viz `internal/cluster`) |
+| POST | `/faces/clusters/{id}/assign` | editor/admin | přiřadí **celý shluk** jednomu subjektu `{subject_uid?,subject_name?}` (find-or-create dle jména) → markery pro všechny obličeje; shluk se spotřebuje |
+| POST | `/faces/clusters/{id}/remove-face` | editor/admin | odpojí zatoulaný obličej `{photo_uid,face_index}` ze shluku před pojmenováním → refreshnutý shluk (nebo `null` když osiří) |
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
 | POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
 | POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |
@@ -499,6 +537,7 @@ Endpointy pod `/api/v1` (JSON):
 | GET | `/jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue` | admin | fronta jobů (viz Admin Jobs API) |
 | POST | `/process/embeddings` | admin | backfill — zařadí `image_embed` pro fotky bez embeddingu → `{enqueued}` (viz Process API) |
 | POST | `/process/faces` | admin | backfill — zařadí `face_detect` pro fotky bez detekce obličejů → `{enqueued}` (viz Process API) |
+| POST | `/process/clusters` | admin | re-clustering — seskupí nepřiřazené obličeje do shluků → `{created}` (viz Process API) |
 
 RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin` /
 `RequireAuthOrDownloadToken`). Konfigurační
@@ -550,6 +589,10 @@ Admin-only HTTP API pro hromadné zpracování katalogu (guard `RequireAdmin`), 
 - `POST /api/v1/process/faces` → `{enqueued}` — spustí `facejob.BackfillFaces`: zařadí
   `face_detect` job pro každou fotku bez detekce obličejů (dedup = no-op), vrátí počet. Recovery
   cesta stejně jako u embeddingů.
+- `POST /api/v1/process/clusters` → `{created}` — spustí `cluster.Recluster`: seskupí dosud
+  nepřiřazené, nesclustrované obličeje do shluků téže osoby (souvislé komponenty nad HNSW sousedy do
+  prahu cosine vzdálenosti), vrátí počet nově vzniklých shluků. Inkrementální a re-spustitelné —
+  nesáhne na přiřazené ani už sclustrované obličeje (viz `internal/cluster`).
 
 ## Frontend
 

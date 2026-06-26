@@ -85,9 +85,9 @@ func runServe(cmd *cobra.Command) error {
 
 // buildServices assembles every HTTP API group and the background worker over a
 // shared queue store: upload/ingest, photo browse/curation (with embedding-backed
-// similar search), the admin jobs and processing APIs, and the image_embed and
-// face_detect worker handlers. It returns the server options registering those
-// routes plus the worker for the serve command to run.
+// similar search), face auto-clustering, the admin jobs and processing APIs, and
+// the image_embed and face_detect worker handlers. It returns the server options
+// registering those routes plus the worker for the serve command to run.
 func buildServices(
 	cfg *config.Config, db *database.DB, authAPI *auth.API,
 ) ([]server.Option, *worker.Worker, error) {
@@ -106,16 +106,19 @@ func buildServices(
 	if err != nil {
 		return nil, nil, err
 	}
-	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore, embedClient)
+	matchSvc := buildFaceMatch(cfg, db)
+	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore, embedClient, matchSvc)
 	if err != nil {
 		return nil, nil, err
 	}
-	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc)
+	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
+	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc)
 
 	return []server.Option{
 		server.WithAPI(authAPI.RegisterRoutes),
 		server.WithAPI(ingestAPI.RegisterRoutes),
 		server.WithAPI(photoAPI.RegisterRoutes),
+		server.WithAPI(clusterAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
 	}, jobWorker, nil

@@ -61,6 +61,7 @@ type Config struct {
 	Web       WebConfig       `mapstructure:"web"`
 	Embedding EmbeddingConfig `mapstructure:"embedding"`
 	Faces     FacesConfig     `mapstructure:"faces"`
+	Cluster   ClusterConfig   `mapstructure:"cluster"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	Maps      MapsConfig      `mapstructure:"maps"`
 	Backup    BackupConfig    `mapstructure:"backup"`
@@ -125,6 +126,23 @@ type FacesConfig struct {
 	// have to contribute a suggestion, so tiny background faces do not drive
 	// identity guesses. A non-positive value disables the size filter.
 	MinFaceSize float64 `mapstructure:"min_face_size"`
+}
+
+// ClusterConfig tunes face auto-clustering, which groups unassigned faces of the
+// same person so a whole group can be named at once.
+type ClusterConfig struct {
+	// Threshold is the maximum cosine distance between two faces for them to be
+	// linked as the same person during clustering. Lower is stricter (fewer, purer
+	// clusters); higher is looser. A non-positive value falls back to the default.
+	Threshold float64 `mapstructure:"threshold"`
+	// MinSize is the smallest connected component that becomes a cluster; smaller
+	// groups stay unclustered so single stray faces are not surfaced. A
+	// non-positive value falls back to the default.
+	MinSize int `mapstructure:"min_size"`
+	// SuggestionMaxDistance is the cosine-distance cutoff for suggesting an existing
+	// subject for a cluster: named neighbours farther than this from the cluster's
+	// centroid produce no suggestion. A non-positive value falls back to the default.
+	SuggestionMaxDistance float64 `mapstructure:"suggestion_max_distance"`
 }
 
 // AuthConfig holds the credentials used to bootstrap the initial admin account
@@ -295,6 +313,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("faces.suggestion_limit", 5)
 	v.SetDefault("faces.suggestion_max_distance", 0.5)
 	v.SetDefault("faces.min_face_size", 0.02)
+
+	v.SetDefault("cluster.threshold", 0.4)
+	v.SetDefault("cluster.min_size", 2)
+	v.SetDefault("cluster.suggestion_max_distance", 0.5)
 
 	v.SetDefault("auth.bootstrap_admin_username", "")
 	v.SetDefault("auth.bootstrap_admin_password", "")

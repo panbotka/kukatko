@@ -297,9 +297,45 @@ inkrementální).
   `face_detect` pro každou nezpracovanou fotku (`ListPhotosMissingFaces`, dedup no-op), vrací
   počet), `internal/processapi/`
   (admin-only HTTP API pro hromadné zpracování: `NewAPI(Config{Backfiller,FaceBackfiller,
-  RequireAdmin})`+`RegisterRoutes` mountuje `/process`; `POST /process/embeddings` → `{enqueued}`
-  spustí `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued}` spustí
-  `facejob.BackfillFaces`), `internal/web/`
+  Reclusterer,RequireAdmin})`+`RegisterRoutes` mountuje `/process`; `POST /process/embeddings` →
+  `{enqueued}` spustí `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued}` spustí
+  `facejob.BackfillFaces`, `POST /process/clusters` → `{created}` spustí `cluster.Recluster`
+  (re-clustering nepřiřazených obličejů; `Reclusterer` volitelný — nil → 503)), `internal/cluster/`
+  (face auto-clustering: seskupuje **dosud nepřiřazené obličeje** (bez subjektu) do shluků téže
+  osoby, aby šel celý shluk pojmenovat jedním tahem (klíčové UX zlepšení oproti per-face naming
+  photo-sorteru); tabulka `face_clusters` (migrace `0010_face_clusters.sql`: `uid` PK prefix `fc`,
+  `centroid halfvec(512)` cosine, `size`, `model`, časy) + cache sloupec `faces.cluster_uid` FK
+  `ON DELETE SET NULL`; vše za rozhraními `FaceSearcher` (podmnožina `vectors.Store`) a `FaceAssigner`
+  (podmnožina `facematch.Service`) → unit-testovatelné s faky; `Service` =
+  `New(Config{Store,Faces,Assigner,Threshold,MinSize,SuggestionMaxDistance})`, defaulty
+  `DefaultThreshold` 0.4 / `DefaultMinSize` 2 / `DefaultSuggestionMaxDistance` 0.5; **algoritmus**
+  (čisté funkce `algo.go`/`suggest.go`): greedy **souvislé komponenty** (union-find) nad HNSW
+  nejbližšími sousedy každého clusterovatelného obličeje do prahu cosine vzdálenosti — hrana = dva
+  obličeje blíž než `threshold`, komponenta `≥ minSize` se stane shlukem, menší zůstanou
+  nesclustrované; per-shluk L2-normalizovaný **centroid** (`centroid`/`normalize`/`cosineDistance`)
+  pro výběr reprezentanta (`nearestToCentroid`) i návrh subjektu; **`Recluster(ctx)`** clusteruje
+  jen obličeje **bez subjektu A bez shluku** (`subject_uid IS NULL AND cluster_uid IS NULL`) →
+  inkrementální a re-spustitelné, nikdy nesáhne na přiřazené ani sclustrované, deterministické;
+  **`ListClusters(ctx)`** (backing `GET /faces/clusters`) → per shluk velikost, reprezentativní
+  obličej, příklady (`maxExamples` 4) a **návrh existujícího subjektu** (`bestSubjectSuggestion`
+  agreguje `FindSimilarFaceCandidates` nad centroidem dle subjektu, `confidence = 1 − distance`,
+  null když žádný pojmenovaný soused < `suggestionMaxDistance`); **`AssignCluster(ctx,req)`**
+  (backing `POST /faces/clusters/{id}/assign`) přiřadí **všechny** obličeje shluku jednomu subjektu
+  (dle `subject_uid`, jinak find-or-create dle `subject_name`) přes **sdílenou facematch state
+  machine** (`create_marker`, subjekt se resolvuje jednou a pinuje pro zbytek), pak spotřebovaný
+  shluk smaže (FK uvolní `cluster_uid`); **`RemoveFace(ctx,clusterUID,ref)`** (backing
+  `POST /faces/clusters/{id}/remove-face`) odpojí zatoulaný obličej **před** pojmenováním, přepočítá
+  centroid/velikost (`RefreshCluster`), osiřelý shluk smaže; `Store` nad sdíleným pgx poolem
+  (`ListUnclusteredFaces`/`ListClusterFaces`/`CreateCluster`/`AddFacesToCluster`/`ListClusters`/
+  `GetCluster`/`DeleteCluster`/`RemoveFaceFromCluster`/`RefreshCluster`); sentinely
+  `ErrClusterNotFound`/`ErrEmptyCluster`/`ErrMissingSubject`/`ErrFaceNotInCluster`; tunables v
+  `cluster.*` configu), `internal/clusterapi/`
+  (editor/admin HTTP API nad clusteringem: `Service` rozhraní (splňuje ho `cluster.Service`),
+  `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mountuje `/faces/clusters`:
+  `GET /faces/clusters` (list shluků + návrhy), `POST /faces/clusters/{id}/assign` (přiřadí celý
+  shluk), `POST /faces/clusters/{id}/remove-face` (odpojí obličej); 503 když backend nezapojen,
+  400/404/409 dle sentinelů; mountuje se v `serve` (`buildClusterAPI` v `cmd/kukatko/clusters.go`,
+  které sdílí `facematch.Service` z `buildFaceMatch`)), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -419,15 +455,24 @@ inkrementální).
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
   (recent/dead-letter výpis, query `state`/`limit`/`offset`, neplatný → 400);
   `POST /jobs/{id}/requeue` → refreshnutý job (dead/failed → queued; 404 missing, 409
-  ne-requeueable). Frontend polluje (žádné SSE). Mountuje se čtvrtým `server.WithAPI`
+  ne-requeueable). Frontend polluje (žádné SSE). Mountuje se pátým `server.WithAPI`
   (`buildJobs` v `cmd/kukatko/jobs.go`), který registruje handlery `image_embed`
   (`embedjob.Service`) i `face_detect` (`facejob.Service`) a zároveň postaví a `serve` spustí
   **background worker** (`internal/worker`) na celý život procesu (`startWorker`, zastaví
   se na shutdownu přes ctx).
+- **Clusters API (`/api/v1`, `internal/clusterapi`, editor/admin přes `RequireWrite`):**
+  `GET /faces/clusters` → `{clusters:[{uid,size,representative,examples,suggestion?}]}` (shluky
+  nepřiřazených obličejů z auto-clusteringu, `suggestion` = nejbližší pojmenovaný subjekt);
+  `POST /faces/clusters/{id}/assign` `{subject_uid?,subject_name?}` přiřadí **celý shluk** jednomu
+  subjektu (find-or-create dle jména) → markery pro všechny obličeje, shluk se spotřebuje;
+  `POST /faces/clusters/{id}/remove-face` `{photo_uid,face_index}` odpojí zatoulaný obličej před
+  pojmenováním → refreshnutý shluk (nebo `null` když osiří); 503 bez backendu, 400/404/409 dle
+  sentinelů. Mountuje se čtvrtým `server.WithAPI` (`buildClusterAPI` v `cmd/kukatko/clusters.go`).
 - **Process API (`/api/v1`, `internal/processapi`, admin-only přes `RequireAdmin`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` pro fotky bez embeddingu),
-  `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů).
-  Mountuje se pátým `server.WithAPI` (`buildJobs`).
+  `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů),
+  `POST /process/clusters` → `{created}` (re-clustering nepřiřazených obličejů přes
+  `cluster.Recluster`). Mountuje se šestým `server.WithAPI` (`buildJobs`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

@@ -37,6 +37,19 @@ func (f *fakeFaceBackfiller) BackfillFaces(context.Context) (int, error) {
 	return f.enqueued, f.err
 }
 
+// fakeReclusterer is a Reclusterer stub returning canned values.
+type fakeReclusterer struct {
+	created int
+	err     error
+	calls   int
+}
+
+// Recluster records the call and returns the canned result.
+func (f *fakeReclusterer) Recluster(context.Context) (int, error) {
+	f.calls++
+	return f.created, f.err
+}
+
 // passthrough is a no-op middleware standing in for the admin guard.
 func passthrough(next http.Handler) http.Handler { return next }
 
@@ -44,6 +57,21 @@ func passthrough(next http.Handler) http.Handler { return next }
 func newServer(t *testing.T, bf Backfiller, ff FaceBackfiller) *httptest.Server {
 	t.Helper()
 	api := NewAPI(Config{Backfiller: bf, FaceBackfiller: ff, RequireAdmin: passthrough})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// newServerWithRecluster mounts the API with the given reclusterer (the
+// backfillers are stubbed) behind a passthrough guard.
+func newServerWithRecluster(t *testing.T, rc Reclusterer) *httptest.Server {
+	t.Helper()
+	api := NewAPI(Config{
+		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
+		Reclusterer: rc, RequireAdmin: passthrough,
+	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
 	srv := httptest.NewServer(r)
@@ -137,5 +165,55 @@ func TestBackfillFaces_error(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+// TestRecluster_ok reports the created count on success.
+func TestRecluster_ok(t *testing.T) {
+	t.Parallel()
+
+	rc := &fakeReclusterer{created: 3}
+	srv := newServerWithRecluster(t, rc)
+
+	resp := postProcess(t, srv.URL+"/process/clusters")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body reclusterResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Created != 3 {
+		t.Errorf("created = %d, want 3", body.Created)
+	}
+	if rc.calls != 1 {
+		t.Errorf("reclusterer calls = %d, want 1", rc.calls)
+	}
+}
+
+// TestRecluster_error maps a clustering failure to 500.
+func TestRecluster_error(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithRecluster(t, &fakeReclusterer{err: errors.New("boom")})
+
+	resp := postProcess(t, srv.URL+"/process/clusters")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+// TestRecluster_unavailable answers 503 when no clustering backend is wired.
+func TestRecluster_unavailable(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithRecluster(t, nil)
+
+	resp := postProcess(t, srv.URL+"/process/clusters")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
 	}
 }
