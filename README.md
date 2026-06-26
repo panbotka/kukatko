@@ -50,6 +50,24 @@ export KUKATKO_TEST_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko_
 make test-integration   # bez KUKATKO_TEST_DATABASE_URL se DB testy přeskočí (t.Skip)
 ```
 
+### Foto-schéma (`internal/photos`)
+
+Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
+
+- **`photos`** — jeden řádek na fotku/video; PK `uid` (app-generovaný, prefix `ph`),
+  dedup na **SHA256** `file_hash` (UNIQUE), EXIF/kamera/GPS metadata, `exif` JSONB (GIN),
+  `archived_at`/`private`, `uploaded_by` (FK `users` `ON DELETE SET NULL`). Externí ID pro
+  import/migraci: `photoprism_uid`, `photoprism_file_hash` (SHA1), `photosorter_uid`.
+- **`photo_files`** — originál + odvozeniny, `role` original/sidecar/edited, max. jeden
+  `is_primary` na fotku. **`photo_phashes`** — `phash`/`dhash` (near-dup). **`photo_edits`**
+  — nedestruktivní úpravy (crop 0..1 all-or-nothing, rotace 0/90/180/270, brightness/contrast).
+  Satelitní tabulky mají FK `ON DELETE CASCADE`.
+
+`photos.Store` (nad pgx poolem) nabízí `Create`, `GetByUID`/`GetByFileHash`/
+`GetByPhotoprismUID`/`GetByPhotosorterUID`, `UpdateMetadata`, `Archive`/`Unarchive`,
+`Delete`, `List` (filtr archived/private/uploader, řazení, stránkování) a metody pro
+soubory/phash/edits. Plné CRUD filtry a HTTP API přijdou v dalším tasku.
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).

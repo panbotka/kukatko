@@ -30,7 +30,17 @@ inkrementální).
   `HashPassword`/`CheckPassword`, UID/token generátory, sliding-window `Limiter`,
   `Store` nad pgx, `Service` orchestrace login/session/bootstrap/správa uživatelů,
   `API` = HTTP handlery + RBAC middleware `RequireAuth`/`RequireWrite`/`RequireAdmin` +
-  `RegisterRoutes`; session a users v migraci `0002_auth.sql`), `internal/web/`
+  `RegisterRoutes`; session a users v migraci `0002_auth.sql`), `internal/photos/`
+  (jádro foto-katalogu: typované modely `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`,
+  `FileRole` original/sidecar/edited, UID generátor prefix `ph`, `Store` nad pgx s
+  `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/
+  `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List` (filtr archived/private/uploader,
+  řazení taken_at/created_at/uid, stránkování), plus `CreateFile`/`ListFiles`,
+  `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
+  `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
+  `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
+  `photo_edits` (all-or-nothing crop, rotace 0/90/180/270); FK `ON DELETE CASCADE`
+  na satelity, `uploaded_by` `ON DELETE SET NULL`), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
