@@ -1,0 +1,88 @@
+version: 2
+
+project_name: kukatko
+
+before:
+  hooks:
+    # Keep the module tidy and build the embedded SPA so the binary ships the
+    # current frontend (go:embed captures internal/web/static/dist).
+    - go mod tidy
+    - sh -c "cd web && npm ci && npm run build"
+
+builds:
+  - id: kukatko
+    main: ./cmd/kukatko
+    binary: kukatko
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      # arm64 is the production target (Raspberry Pi); amd64 is for dev/CI.
+      - arm64
+      - amd64
+    ldflags:
+      - -s -w
+      - -X github.com/panbotka/kukatko/internal/version.Version={{.Version}}
+      - -X github.com/panbotka/kukatko/internal/version.Commit={{.ShortCommit}}
+
+archives:
+  - id: tarball
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+
+nfpms:
+  - id: deb
+    package_name: kukatko
+    vendor: Pan Botka
+    homepage: https://github.com/panbotka/kukatko
+    maintainer: Tomas Kozak <kozak@talko.cz>
+    description: |
+      Kukátko — self-contained photo and video management application and a
+      robust replacement for PhotoPrism. Single Go binary with an embedded
+      React web UI, backed by PostgreSQL + pgvector, with semantic and
+      full-text search, face recognition, and an external embeddings service.
+    license: MIT
+    section: misc
+    priority: optional
+    bindir: /usr/bin
+    formats:
+      - deb
+    file_name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    dependencies:
+      # exiftool (metadata), heif-convert (HEIC), dcraw (RAW preview),
+      # psql (DB tooling). No texlive — the photo book is out of scope.
+      - libimage-exiftool-perl
+      - libheif-examples | libheif-bin
+      - dcraw
+      - postgresql-client
+      - ca-certificates
+    contents:
+      - src: deb/kukatko.service
+        dst: /lib/systemd/system/kukatko.service
+      - src: deb/kukatko.env
+        dst: /etc/kukatko/kukatko.env
+        type: config|noreplace
+    scripts:
+      postinstall: deb/postinstall.sh
+      preremove: deb/preremove.sh
+      postremove: deb/postremove.sh
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+release:
+  footer: |
+    ---
+    Released by [GoReleaser](https://goreleaser.com).

@@ -1,0 +1,24 @@
+[Unit]
+Description=Kukátko — self-hosted photo & video library
+Documentation=https://github.com/panbotka/kukatko
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kukatko
+Group=kukatko
+EnvironmentFile=/etc/kukatko/kukatko.env
+ExecStart=/usr/bin/kukatko serve
+ExecReload=/usr/bin/env kill -HUP $MAINPID
+Restart=always
+RestartSec=5s
+WorkingDirectory=/var/lib/kukatko
+TimeoutStopSec=30s
+# Hardening: the service only needs its own state dir and standard runtime.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/kukatko
+
+[Install]
+WantedBy=multi-user.target

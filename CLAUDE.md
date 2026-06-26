@@ -72,6 +72,17 @@ inkrementální).
   (brána), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `clean`, `help`.
   Frontend-only cíle: `web-deps` (`npm ci`), `web-build`, `web-fmt`, `web-lint`, `web-test`.
   Verzi injectuješ `make build VERSION=x.y.z`. Frontend potřebuje **Node.js 22+**.
+- **CI/CD a balíčkování:** `.github/workflows/ci.yml` (push/PR → job `check` = `make check`
+  na Go 1.26 + Node 22 + golangci-lint v2.11.4; job `integration` = `make test-integration`
+  proti service containeru `pgvector/pgvector:pg17`, extensions `vector`/`unaccent` v setup
+  kroku, `KUKATKO_TEST_DATABASE_URL` na efemérní CI DB). `.github/workflows/release.yml`
+  (tag `v*.*.*`) pouští **goreleaser** (`.goreleaser.yaml`): `CGO_ENABLED=0` pro arm64+amd64,
+  verze/commit přes ldflags do `internal/version`, frontend build v before-hooku, **.deb**
+  přes nfpm. `deb/`: `kukatko.service` (systemd, user `kukatko`, `EnvironmentFile`,
+  `Restart=always`), `kukatko.env` (dpkg conffile `config|noreplace`),
+  `postinstall.sh`/`preremove.sh`/`postremove.sh` (user + `/var/lib/kukatko/{originals,cache}`).
+  Apt deps: `libimage-exiftool-perl`, `libheif-examples|libheif-bin`, `dcraw`,
+  `postgresql-client`, `ca-certificates`; **bez texlive**.
 
 ## Tvrdá brána kvality (NEPŘESKAKOVAT)
 - **`make check` (gofmt + go vet + golangci-lint + unit testy) MUSÍ projít.** Je to verification

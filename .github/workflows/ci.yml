@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26"
+  NODE_VERSION: "22"
+  GOLANGCI_LINT_VERSION: "v2.11.4"
+
+jobs:
+  # Full quality gate: gofmt + go vet + golangci-lint + Go unit tests +
+  # frontend ESLint/Prettier/Vitest. This is the project's `make check`.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" "${GOLANGCI_LINT_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Run quality gate (make check)
+        run: make check
+
+  # Integration tests (DB/HTTP) against a real ephemeral Postgres + pgvector.
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: kukatko
+          POSTGRES_PASSWORD: kukatko
+          POSTGRES_DB: kukatko_test
+        ports:
+          - 5432:5432
+        # Wait until Postgres is accepting connections before the job runs.
+        options: >-
+          --health-cmd "pg_isready -U kukatko -d kukatko_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Ephemeral CI database — safe to truncate. No secrets here.
+      KUKATKO_TEST_DATABASE_URL: postgres://kukatko:kukatko@localhost:5432/kukatko_test?sslmode=disable
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Create required Postgres extensions
+        # Migrations also CREATE EXTENSION IF NOT EXISTS, but provision them up
+        # front so the test DB is ready independent of migration ordering.
+        run: |
+          PGPASSWORD=kukatko psql -h localhost -U kukatko -d kukatko_test \
+            -c 'CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS unaccent;'
+
+      - name: Run integration tests
+        run: make test-integration

@@ -140,4 +140,38 @@ make web-fmt              # Prettier --write
 Frontendové cíle jsou zapojené do hlavní brány: `make lint`/`make test`/`make fmt`/`make check`
 spouští i ESLint, Prettier a Vitest. Build SPA běží v `make build` před `go build`.
 
+## CI a release (balíčkování)
+
+**CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) běží na push/PR do `main`:
+
+- **`check`** — Go 1.26 + Node 22 (+ golangci-lint v2.11.4), spustí brzdu kvality `make check`
+  (gofmt + vet + golangci-lint + Go unit testy + frontend ESLint/Prettier/Vitest).
+- **`integration`** — `make test-integration` proti **service containeru
+  `pgvector/pgvector:pg17`**; setup krok vytvoří rozšíření `vector` a `unaccent`,
+  `KUKATKO_TEST_DATABASE_URL` míří na efemérní CI databázi (žádné tajemství v logu).
+
+Cache: Go modul/build cache (`actions/setup-go`) a npm (`actions/setup-node`,
+`web/package-lock.json`).
+
+**Release** ([`.github/workflows/release.yml`](.github/workflows/release.yml)) se spustí na tagu
+`v*.*.*` a pustí **goreleaser** ([`.goreleaser.yaml`](.goreleaser.yaml)): build `CGO_ENABLED=0`
+pro **arm64** (Raspberry Pi, produkce) i **amd64** (dev), verze/commit přes ldflags do
+`internal/version`, frontend se buildí v before-hooku, takže embedovaná SPA je aktuální. Lokální
+ověření celé pipeline: `goreleaser release --snapshot --clean`.
+
+**.deb balíček** (nfpm v goreleaseru) instaluje:
+
+- binár do `/usr/bin/kukatko`,
+- **systemd unit** [`deb/kukatko.service`](deb/kukatko.service) do `/lib/systemd/system/`
+  (`kukatko serve`, `Restart=always`, `EnvironmentFile=/etc/kukatko/kukatko.env`, dedikovaný
+  uživatel `kukatko`),
+- env-file šablonu [`deb/kukatko.env`](deb/kukatko.env) do `/etc/kukatko/kukatko.env` jako dpkg
+  **conffile** (`config|noreplace` — operátorské úpravy přežijí upgrade),
+- postinstall ([`deb/postinstall.sh`](deb/postinstall.sh)) založí systémového uživatele a datové
+  adresáře `/var/lib/kukatko/{originals,cache}`.
+
+Apt závislosti: `libimage-exiftool-perl` (exiftool), `libheif-examples | libheif-bin`
+(`heif-convert`), `dcraw` (RAW preview), `postgresql-client`, `ca-certificates`. **Bez texlive**
+(fotokniha je mimo rozsah).
+
 Více v [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (layout, make cíle, brána kvality).
