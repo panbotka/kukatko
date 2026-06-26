@@ -40,6 +40,9 @@ web:
   # CORS allowed origins. As an env var, comma-separated:
   #   KUKATKO_WEB_ALLOWED_ORIGINS="https://a.example,https://b.example"
   allowed_origins: []
+  # Mark session cookies as Secure (HTTPS-only). Keep false for plain-HTTP local
+  # development; enable when running behind a TLS-terminating reverse proxy.
+  secure_cookies: false
 
 embedding:
   # URL of the external embedding service (runs on the box; may be offline).
@@ -54,6 +57,16 @@ auth:
   bootstrap_admin_username: ""
   # Set via KUKATKO_AUTH_BOOTSTRAP_ADMIN_PASSWORD; do not commit a real value.
   bootstrap_admin_password: ""
+  # Sliding idle window: every authenticated request extends the session to
+  # now+session_ttl (an active user is never logged out). Go duration string.
+  session_ttl: "168h"
+  # Absolute cap on a session's age regardless of activity (sliding extension
+  # never pushes expiry past created_at+session_max_lifetime). Must be >= ttl.
+  session_max_lifetime: "720h"
+  # Max failed login attempts per username+IP within login_rate_window before
+  # further attempts are rejected with HTTP 429 (brute-force protection).
+  login_rate_limit: 10
+  login_rate_window: "15m"
 
 maps:
   # mapy.com API key. Kept server-side (proxied). Read from MAPY_API_KEY.
@@ -80,7 +93,14 @@ trash:
 duplicate:
   # Enable duplicate detection.
   enabled: true
-  # Maximum perceptual-hash Hamming distance to treat images as duplicates.
+  # Maximum perceptual-hash Hamming distance to flag an upload as a possible
+  # near-duplicate of an existing photo (a non-blocking warning on the result).
   phash_max_diff: 8
   # Maximum embedding cosine distance to treat images as duplicates.
   embedding_max_dist: 0.05
+
+# Upload / ingest limits.
+upload:
+  # Maximum size of a single uploaded file, in mebibytes. 0 disables the cap
+  # (uploads are streamed to disk and never buffered whole in memory regardless).
+  max_file_size_mb: 0

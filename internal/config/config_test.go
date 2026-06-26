@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // setMinimalEnv sets just the required database URL so Load passes validation
@@ -42,7 +43,13 @@ func TestLoad_defaults(t *testing.T) {
 		{"duplicate.enabled", cfg.Duplicate.Enabled, true},
 		{"duplicate.phash_max_diff", cfg.Duplicate.PhashMaxDiff, 8},
 		{"duplicate.embedding_max_dist", cfg.Duplicate.EmbeddingMaxDist, 0.05},
+		{"upload.max_file_size_mb", cfg.Upload.MaxFileSizeMB, 0},
 		{"backup.s3.path_style", cfg.Backup.S3.PathStyle, false},
+		{"web.secure_cookies", cfg.Web.SecureCookies, false},
+		{"auth.session_ttl", cfg.Auth.SessionTTL, 168 * time.Hour},
+		{"auth.session_max_lifetime", cfg.Auth.SessionMaxLifetime, 720 * time.Hour},
+		{"auth.login_rate_limit", cfg.Auth.LoginRateLimit, 10},
+		{"auth.login_rate_window", cfg.Auth.LoginRateWindow, 15 * time.Minute},
 	}
 	for _, c := range checks {
 		if c.got != c.want {
@@ -88,6 +95,49 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	}
 	if !cfg.Backup.S3.PathStyle {
 		t.Error("backup.s3.path_style = false, want true")
+	}
+}
+
+// TestMaxFileSizeBytes verifies the mebibyte-to-byte conversion and the
+// unlimited (0/negative) cases.
+func TestMaxFileSizeBytes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		mb   int
+		want int64
+	}{
+		{"unlimited zero", 0, 0},
+		{"unlimited negative", -5, 0},
+		{"one mebibyte", 1, 1024 * 1024},
+		{"two hundred mebibytes", 200, 200 * 1024 * 1024},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := UploadConfig{MaxFileSizeMB: tt.mb}.MaxFileSizeBytes()
+			if got != tt.want {
+				t.Errorf("MaxFileSizeBytes(%d) = %d, want %d", tt.mb, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLoad_uploadEnvOverride verifies the upload size cap parses from the
+// environment.
+func TestLoad_uploadEnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_UPLOAD_MAX_FILE_SIZE_MB", "512")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Upload.MaxFileSizeMB != 512 {
+		t.Errorf("upload.max_file_size_mb = %d, want 512", cfg.Upload.MaxFileSizeMB)
+	}
+	if got := cfg.Upload.MaxFileSizeBytes(); got != 512*1024*1024 {
+		t.Errorf("MaxFileSizeBytes = %d, want %d", got, 512*1024*1024)
 	}
 }
 
@@ -181,6 +231,58 @@ func TestLoad_invalidPoolSize(t *testing.T) {
 	_, err := Load("")
 	if !errors.Is(err, ErrInvalidPoolSize) {
 		t.Fatalf("Load error = %v, want ErrInvalidPoolSize", err)
+	}
+}
+
+// TestLoad_authDurationEnvOverride verifies Go-duration auth keys parse from
+// environment variables (via viper's string-to-duration decode hook).
+func TestLoad_authDurationEnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_AUTH_SESSION_TTL", "1h")
+	t.Setenv("KUKATKO_AUTH_SESSION_MAX_LIFETIME", "24h")
+	t.Setenv("KUKATKO_AUTH_LOGIN_RATE_LIMIT", "3")
+	t.Setenv("KUKATKO_AUTH_LOGIN_RATE_WINDOW", "30s")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Auth.SessionTTL != time.Hour {
+		t.Errorf("auth.session_ttl = %s, want 1h", cfg.Auth.SessionTTL)
+	}
+	if cfg.Auth.SessionMaxLifetime != 24*time.Hour {
+		t.Errorf("auth.session_max_lifetime = %s, want 24h", cfg.Auth.SessionMaxLifetime)
+	}
+	if cfg.Auth.LoginRateLimit != 3 {
+		t.Errorf("auth.login_rate_limit = %d, want 3", cfg.Auth.LoginRateLimit)
+	}
+	if cfg.Auth.LoginRateWindow != 30*time.Second {
+		t.Errorf("auth.login_rate_window = %s, want 30s", cfg.Auth.LoginRateWindow)
+	}
+}
+
+// TestLoad_invalidSessionLifetime verifies a max lifetime shorter than the
+// sliding TTL fails validation.
+func TestLoad_invalidSessionLifetime(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_AUTH_SESSION_TTL", "48h")
+	t.Setenv("KUKATKO_AUTH_SESSION_MAX_LIFETIME", "24h")
+
+	_, err := Load("")
+	if !errors.Is(err, ErrInvalidSessionLifetime) {
+		t.Fatalf("Load error = %v, want ErrInvalidSessionLifetime", err)
+	}
+}
+
+// TestLoad_invalidLoginRateLimit verifies a non-positive attempt count fails
+// validation.
+func TestLoad_invalidLoginRateLimit(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_AUTH_LOGIN_RATE_LIMIT", "0")
+
+	_, err := Load("")
+	if !errors.Is(err, ErrInvalidLoginRateLimit) {
+		t.Fatalf("Load error = %v, want ErrInvalidLoginRateLimit", err)
 	}
 }
 

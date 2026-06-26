@@ -41,8 +41,11 @@ test: web-deps
 	cd $(WEB_DIR) && npm run test
 
 ## test-integration: Run integration tests (requires KUKATKO_TEST_DATABASE_URL).
+## -p 1 serialises package execution: integration packages share one test
+## database, so running them concurrently would let one package's TruncateAll
+## wipe another's rows mid-test.
 test-integration:
-	CGO_ENABLED=1 go test -race -tags=integration ./...
+	CGO_ENABLED=1 go test -race -p 1 -tags=integration ./...
 
 ## check: Full quality gate — fmt, vet, lint, and unit tests (Go + frontend).
 check: fmt vet lint test

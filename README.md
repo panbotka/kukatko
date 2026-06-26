@@ -136,6 +136,36 @@ jako JSON-able mapa (`Exif`).
   ne error. Error jen pro prázdnou cestu / nečitelný soubor.
 - Runtime apt závislost (volitelná, jinak fallback): `libimage-exiftool-perl`.
 
+### Perceptuální hashe (`internal/phash`)
+
+Čistě-Go (bez CGO) výpočet dvou 64bitových perceptuálních hashů pro detekci **podobných**
+(ne jen byte-identických) fotek: **pHash** přes 2-D DCT (32×32 → low-freq 8×8 blok, práh
+medián bez DC) a **dHash** (gradientní, 9×8). `phash.Compute(img)` vrací `Hashes{Phash, Dhash int64}`,
+`phash.Distance(a, b)` je Hammingova vzdálenost. Ukládá se do `photo_phashes`; menší vzdálenost
+= vizuálně podobnější. Near-duplicate dotaz `photos.Store.NearestPhash(ctx, phash)` počítá
+vzdálenost v Postgresu (`bit_count(phash::bit(64) # …)`).
+
+### Upload / ingest pipeline (`internal/ingest`)
+
+Endpoint **`POST /api/v1/upload`** (přístup editor/admin) přijímá `multipart/form-data` s jedním
+či více soubory a **streamuje** je (nikdy nedrží celý soubor v RAM). Pipeline na soubor:
+
+1. Stream do dočasného souboru + průběžný **SHA256**.
+2. **Exact-dup** podle SHA256 (`photos.GetByFileHash`) → friendly per-file „duplicate".
+3. Detekce formátu/MIME + extrakce EXIF/GPS, publikace originálu do úložiště (`YYYY/MM`).
+4. Insert `photos` + primární `photo_files` + výpočet **pHash/dHash** → `photo_phashes`.
+5. Generování **náhledů** (thumbnailer).
+6. **Enqueue** jobů `image_embed` + `face_detect` přes `ingest.JobEnqueuer` — zatím
+   `NopEnqueuer` (TODO hook, fronta vznikne v jobs tasku).
+
+Vrací **per-file** seznam výsledků `{filename, status, outcome (created/duplicate/error),
+photo_uid?, error?, warnings?}` se 409 sémantikou duplicit v `status` (celková odpověď je 200,
+takže parciální dávky reportují čistě). **Race**: souběžné uploady identického obsahu konvergují
+na jednu fotku (storage hard-link + unique constraint `file_hash`), poražený dostane čistou
+duplicitu, ne 500. **Near-duplicate** (config-gated `duplicate.*`): pokud existuje velmi podobný
+pHash, výsledek nese `warning` (neblokuje). Limit velikosti souboru: `upload.max_file_size_mb`
+(0 = bez limitu).
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).
@@ -179,6 +209,7 @@ Endpointy pod `/api/v1` (JSON):
 | PATCH | `/admin/users/{uid}` | admin | `{display_name,email,role,disabled}` → upraví profil |
 | POST | `/admin/users/{uid}/disable` | admin | zakáže účet (zruší jeho session) |
 | POST | `/admin/users/{uid}/password` | admin | `{new_password}` → reset hesla (zruší všechny jeho session) |
+| POST | `/upload` | editor/admin | `multipart/form-data` s jedním+ soubory → per-file `{outcome, photo_uid, warnings}` (viz Upload / ingest) |
 
 RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin`). Konfigurační
 klíče (`auth.session_ttl`, `auth.session_max_lifetime`, `auth.login_rate_limit`,

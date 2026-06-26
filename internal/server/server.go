@@ -40,11 +40,26 @@ const (
 type Server struct {
 	httpServer *http.Server
 	router     chi.Router
+	apiGroups  []func(chi.Router)
+}
+
+// Option customises a Server during construction.
+type Option func(*Server)
+
+// WithAPI registers a function that mounts routes onto the /api/v1 router group.
+// Multiple WithAPI options compose; each register runs against the same
+// versioned subrouter, so callers (for example the auth subsystem) add their
+// endpoints under /api/v1.
+func WithAPI(register func(r chi.Router)) Option {
+	return func(s *Server) {
+		s.apiGroups = append(s.apiGroups, register)
+	}
 }
 
 // New constructs a Server listening on addr with all routes and middleware
-// registered. If addr is empty, DefaultAddr is used.
-func New(addr string) *Server {
+// registered. If addr is empty, DefaultAddr is used. Options (for example
+// WithAPI) extend the server with additional route groups.
+func New(addr string, opts ...Option) *Server {
 	if addr == "" {
 		addr = DefaultAddr
 	}
@@ -62,6 +77,9 @@ func New(addr string) *Server {
 			Handler:           router,
 			ReadHeaderTimeout: readHeaderTimeout,
 		},
+	}
+	for _, opt := range opts {
+		opt(srv)
 	}
 	srv.routes()
 	return srv
@@ -84,6 +102,13 @@ func (s *Server) Addr() string {
 // while leaving method-not-allowed responses on real API routes intact.
 func (s *Server) routes() {
 	s.router.Get("/healthz", handleHealthz)
+	if len(s.apiGroups) > 0 {
+		s.router.Route("/api/v1", func(r chi.Router) {
+			for _, register := range s.apiGroups {
+				register(r)
+			}
+		})
+	}
 	s.router.NotFound(web.Handler().ServeHTTP)
 }
 

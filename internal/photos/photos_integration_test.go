@@ -332,6 +332,43 @@ func TestPhashAndEditRoundTrip(t *testing.T) {
 	}
 }
 
+// TestNearestPhash verifies the perceptual-hash nearest-neighbour query returns
+// the closest photo by Hamming distance and reports ErrPhashNotFound on an empty
+// table.
+func TestNearestPhash(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	if _, _, err := store.NearestPhash(ctx, 0); !errors.Is(err, photos.ErrPhashNotFound) {
+		t.Fatalf("NearestPhash on empty table = %v, want ErrPhashNotFound", err)
+	}
+
+	near, err := store.Create(ctx, samplePhoto("near"))
+	if err != nil {
+		t.Fatalf("Create near: %v", err)
+	}
+	far, err := store.Create(ctx, samplePhoto("far"))
+	if err != nil {
+		t.Fatalf("Create far: %v", err)
+	}
+	// near.phash = 0b000 (distance 1 from query 0b001); far.phash = 0b1111111
+	// (distance 6 from query).
+	if err := store.SetPhash(ctx, photos.Phash{PhotoUID: near.UID, Phash: 0, Dhash: 0}); err != nil {
+		t.Fatalf("SetPhash near: %v", err)
+	}
+	if err := store.SetPhash(ctx, photos.Phash{PhotoUID: far.UID, Phash: 0b1111111, Dhash: 0}); err != nil {
+		t.Fatalf("SetPhash far: %v", err)
+	}
+
+	uid, distance, err := store.NearestPhash(ctx, 0b1)
+	if err != nil {
+		t.Fatalf("NearestPhash: %v", err)
+	}
+	if uid != near.UID || distance != 1 {
+		t.Errorf("NearestPhash = (%q, %d), want (%q, 1)", uid, distance, near.UID)
+	}
+}
+
 // TestCascadeDelete verifies deleting a photo removes its files, phashes and
 // edits via ON DELETE CASCADE.
 func TestCascadeDelete(t *testing.T) {

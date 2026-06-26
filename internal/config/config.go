@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -43,6 +44,14 @@ var (
 	ErrInvalidPoolSize = errors.New("config: invalid database connection-pool sizing")
 	// ErrInvalidEmbeddingDim indicates an embedding dimension is not positive.
 	ErrInvalidEmbeddingDim = errors.New("config: embedding image_dim and face_dim must be positive")
+	// ErrInvalidSessionLifetime indicates the session TTL or max-lifetime is
+	// non-positive, or the max lifetime is shorter than the sliding TTL.
+	ErrInvalidSessionLifetime = errors.New(
+		"config: auth.session_ttl and auth.session_max_lifetime must be positive with max >= ttl")
+	// ErrInvalidLoginRateLimit indicates the login rate-limit attempt count or
+	// window is non-positive.
+	ErrInvalidLoginRateLimit = errors.New(
+		"config: auth.login_rate_limit and auth.login_rate_window must be positive")
 )
 
 // Config is the fully resolved, typed configuration for a kukatko process.
@@ -56,6 +65,7 @@ type Config struct {
 	Backup    BackupConfig    `mapstructure:"backup"`
 	Trash     TrashConfig     `mapstructure:"trash"`
 	Duplicate DuplicateConfig `mapstructure:"duplicate"`
+	Upload    UploadConfig    `mapstructure:"upload"`
 }
 
 // DatabaseConfig holds the PostgreSQL connection string and pool sizing.
@@ -77,6 +87,9 @@ type WebConfig struct {
 	Port           int      `mapstructure:"port"`
 	SessionSecret  string   `mapstructure:"session_secret"`
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
+	// SecureCookies marks session cookies as Secure (HTTPS-only). Leave false
+	// for plain-HTTP local development; enable behind a TLS-terminating proxy.
+	SecureCookies bool `mapstructure:"secure_cookies"`
 }
 
 // EmbeddingConfig points at the external embedding service and records the
@@ -87,10 +100,22 @@ type EmbeddingConfig struct {
 	FaceDim  int    `mapstructure:"face_dim"`
 }
 
-// AuthConfig holds the credentials used to bootstrap the initial admin account.
+// AuthConfig holds the credentials used to bootstrap the initial admin account
+// plus the session and login rate-limiting policy.
 type AuthConfig struct {
 	BootstrapAdminUsername string `mapstructure:"bootstrap_admin_username"`
 	BootstrapAdminPassword string `mapstructure:"bootstrap_admin_password"`
+	// SessionTTL is the sliding idle window: each authenticated request extends a
+	// session's expiry to now+SessionTTL, so an active user never gets logged out.
+	SessionTTL time.Duration `mapstructure:"session_ttl"`
+	// SessionMaxLifetime caps the absolute age of a session regardless of
+	// activity; sliding extension never pushes expiry beyond created_at+this.
+	SessionMaxLifetime time.Duration `mapstructure:"session_max_lifetime"`
+	// LoginRateLimit is the maximum number of failed login attempts allowed per
+	// username+IP within LoginRateWindow before further attempts return 429.
+	LoginRateLimit int `mapstructure:"login_rate_limit"`
+	// LoginRateWindow is the trailing window over which LoginRateLimit applies.
+	LoginRateWindow time.Duration `mapstructure:"login_rate_window"`
 }
 
 // MapsConfig holds the server-side mapy.com API key (kept off the client).
@@ -124,6 +149,21 @@ type DuplicateConfig struct {
 	Enabled          bool    `mapstructure:"enabled"`
 	PhashMaxDiff     int     `mapstructure:"phash_max_diff"`
 	EmbeddingMaxDist float64 `mapstructure:"embedding_max_dist"`
+}
+
+// UploadConfig holds limits for the upload/ingest endpoint.
+type UploadConfig struct {
+	// MaxFileSizeMB caps a single uploaded file in mebibytes. 0 disables the cap
+	// (uploads are streamed and never buffered whole in memory regardless).
+	MaxFileSizeMB int `mapstructure:"max_file_size_mb"`
+}
+
+// MaxFileSizeBytes returns the per-file upload cap in bytes, or 0 for no cap.
+func (u UploadConfig) MaxFileSizeBytes() int64 {
+	if u.MaxFileSizeMB <= 0 {
+		return 0
+	}
+	return int64(u.MaxFileSizeMB) * 1024 * 1024
 }
 
 // Load reads configuration from the resolved YAML file (if present) overlaid
@@ -202,6 +242,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("web.port", 8080)
 	v.SetDefault("web.session_secret", "")
 	v.SetDefault("web.allowed_origins", []string{})
+	v.SetDefault("web.secure_cookies", false)
 
 	v.SetDefault("embedding.url", "http://localhost:8000")
 	v.SetDefault("embedding.image_dim", 768)
@@ -209,6 +250,10 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("auth.bootstrap_admin_username", "")
 	v.SetDefault("auth.bootstrap_admin_password", "")
+	v.SetDefault("auth.session_ttl", "168h")          // 7-day sliding idle window
+	v.SetDefault("auth.session_max_lifetime", "720h") // 30-day absolute cap
+	v.SetDefault("auth.login_rate_limit", 10)
+	v.SetDefault("auth.login_rate_window", "15m")
 
 	v.SetDefault("maps.mapy_api_key", "")
 
@@ -225,6 +270,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("duplicate.enabled", true)
 	v.SetDefault("duplicate.phash_max_diff", 8)
 	v.SetDefault("duplicate.embedding_max_dist", 0.05)
+
+	v.SetDefault("upload.max_file_size_mb", 0) // 0 = unlimited
 }
 
 // Validate checks that required fields are present and inter-field invariants
@@ -243,6 +290,18 @@ func (c *Config) Validate() error {
 	}
 	if c.Embedding.ImageDim < 1 || c.Embedding.FaceDim < 1 {
 		return ErrInvalidEmbeddingDim
+	}
+	return c.Auth.validate()
+}
+
+// validate checks the auth session and rate-limit invariants, returning one of
+// the package's sentinel errors wrapped with the offending values.
+func (a *AuthConfig) validate() error {
+	if a.SessionTTL <= 0 || a.SessionMaxLifetime <= 0 || a.SessionMaxLifetime < a.SessionTTL {
+		return fmt.Errorf("%w: ttl=%s max=%s", ErrInvalidSessionLifetime, a.SessionTTL, a.SessionMaxLifetime)
+	}
+	if a.LoginRateLimit < 1 || a.LoginRateWindow <= 0 {
+		return fmt.Errorf("%w: limit=%d window=%s", ErrInvalidLoginRateLimit, a.LoginRateLimit, a.LoginRateWindow)
 	}
 	return nil
 }

@@ -102,6 +102,28 @@ func (s *Store) GetPhash(ctx context.Context, photoUID string) (Phash, error) {
 	return p, nil
 }
 
+// NearestPhash returns the photo UID whose stored perceptual hash is closest to
+// phash, together with that Hamming distance (number of differing bits over the
+// 64-bit pHash). It powers the near-duplicate warning at ingest time. Only the
+// pHash is compared; the gradient dHash is stored for future use. It returns
+// ErrPhashNotFound when no photo_phashes rows exist yet (the first upload).
+//
+// The distance is computed in PostgreSQL: each bigint hash is reinterpreted as
+// bit(64), XORed, and its set bits counted with bit_count.
+func (s *Store) NearestPhash(ctx context.Context, phash int64) (uid string, distance int, err error) {
+	const q = `SELECT photo_uid, bit_count((phash::bit(64)) # ($1::bigint::bit(64))) AS dist
+		FROM photo_phashes
+		ORDER BY dist ASC, photo_uid
+		LIMIT 1`
+	if err := s.pool.QueryRow(ctx, q, phash).Scan(&uid, &distance); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", 0, ErrPhashNotFound
+		}
+		return "", 0, fmt.Errorf("photos: querying nearest phash: %w", err)
+	}
+	return uid, distance, nil
+}
+
 // SetEdit upserts the non-destructive edits for e.PhotoUID, replacing any
 // existing row and bumping updated_at. The all-or-nothing crop and the rotation
 // allow-list are enforced by SQL CHECK constraints. It returns a wrapped error
