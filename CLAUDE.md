@@ -40,7 +40,16 @@ inkrementální).
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
   `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
   `photo_edits` (all-or-nothing crop, rotace 0/90/180/270); FK `ON DELETE CASCADE`
-  na satelity, `uploaded_by` `ON DELETE SET NULL`), `internal/web/`
+  na satelity, `uploaded_by` `ON DELETE SET NULL`), `internal/storage/`
+  (on-disk úložiště originálů: rozhraní `Storage` + filesystemová implementace `FS`
+  `NewFS(root)`; `Store(ctx,src,takenAt,originalName)` streamuje na disk + počítá **SHA256**,
+  layout `YYYY/MM/<filename>` (datum z `taken_at`, fallback čas importu), publikace
+  **atomickým hard-linkem** přes temp v `<root>/.tmp`; kolize jmen: shodný obsah →
+  `ErrAlreadyExists` (dedup signál), jiný obsah → číselný sufix `name_1.ext` bez přepisu;
+  `Open`/`Stat`/`Delete`/`AbsPath` s cestami confinovanými do rootu (`ErrInvalidPath`);
+  MIME z obsahu (sniff 512 B) + přípona jako hint (`mediaTypeByExt` pro HEIC/RAW/video);
+  sentinely `ErrAlreadyExists`/`ErrInvalidPath`/`ErrTooManyCollisions`; nikdy nedrží soubor
+  celý v RAM), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého

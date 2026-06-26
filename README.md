@@ -68,6 +68,25 @@ Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
 `Delete`, `List` (filtr archived/private/uploader, řazení, stránkování) a metody pro
 soubory/phash/edits. Plné CRUD filtry a HTTP API přijdou v dalším tasku.
 
+### Úložiště originálů (`internal/storage`)
+
+On-disk vrstva pro originální média. Rozhraní `Storage` + filesystemová implementace `FS`
+(`NewFS(root)`):
+
+- **`Store(ctx, src, takenAt, originalName)`** streamuje vstup na disk (nikdy nedrží celý
+  soubor v RAM), počítá při zápisu **SHA256** a vrací `StoredFile{Hash, RelPath, Size, MIME}`.
+  Layout je `YYYY/MM/<filename>` (datum z `taken_at`, fallback na čas importu). Zápis je
+  crash-safe a race-free: data jdou do temp souboru v `<root>/.tmp` a publikují se **atomickým
+  hard-linkem** na cílovou cestu.
+- **Kolize jmen:** stejné jméno + **shodný obsah** → vrátí existující `StoredFile` se sentinelem
+  `ErrAlreadyExists` (dedup signál pro volajícího); stejné jméno + **jiný obsah** → uloží pod
+  číselným sufixem (`name_1.ext`), nikdy nepřepíše. Autoritativní katalogový dedup je věcí DB
+  (`photos.file_hash` UNIQUE).
+- **`Open`/`Stat`/`Delete`/`AbsPath`** pracují s relativní cestou; všechny cesty jsou
+  confinované do rootu (žádný únik přes `..`), neplatné cesty vrací `ErrInvalidPath`.
+- **MIME** se detekuje z obsahu (sniffing prvních 512 B) s příponou jako fallback; tabulka
+  `mediaTypeByExt` pokrývá formáty, které stdlib nezná (HEIC/HEIF/AVIF, RAW, kontejnerové video).
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).
