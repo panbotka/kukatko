@@ -56,6 +56,21 @@ func (s *Store) GetSessionByToken(ctx context.Context, token string) (Session, e
 	return sess, nil
 }
 
+// GetSessionByDownloadToken returns the session whose separate media download
+// token matches token, or ErrSessionNotFound if none matches. It backs
+// cookie-less media URLs (e.g. <img>/<video> tags carrying ?t=<download_token>).
+func (s *Store) GetSessionByDownloadToken(ctx context.Context, token string) (Session, error) {
+	q := "SELECT " + sessionColumns + " FROM sessions WHERE download_token = $1"
+	sess, err := scanSession(s.pool.QueryRow(ctx, q, token))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Session{}, ErrSessionNotFound
+		}
+		return Session{}, err
+	}
+	return sess, nil
+}
+
 // UpdateSessionExpiry sets a new expiry for the session identified by id. It
 // returns ErrSessionNotFound if no row was affected.
 func (s *Store) UpdateSessionExpiry(ctx context.Context, id string, expiresAt time.Time) error {

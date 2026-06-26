@@ -23,6 +23,46 @@ func (a *API) RequireAdmin(next http.Handler) http.Handler {
 	return a.requireRole(requireAdmin, next)
 }
 
+// downloadTokenParam is the query parameter carrying a session's media download
+// token on cookie-less media URLs (thumbnails, originals, video streams).
+const downloadTokenParam = "t"
+
+// RequireAuthOrDownloadToken wraps next so it runs for any authenticated caller,
+// accepting either the session cookie or, failing that, a valid download token in
+// the "t" query parameter. The authenticated principal is placed on the request
+// context just as RequireAuth does. Requests with neither a valid cookie nor a
+// valid token get 401. It guards media endpoints so a browser <img>/<video> tag
+// can fetch protected thumbnails and originals without relying on the cookie.
+func (a *API) RequireAuthOrDownloadToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p, err := a.authenticateRequest(r)
+		if err != nil {
+			p, err = a.authenticateDownloadToken(r)
+		}
+		if err != nil {
+			a.clearExpiredCookie(w, err)
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), p)))
+	})
+}
+
+// authenticateDownloadToken reads the download token from the request's "t"
+// query parameter and validates it through the service, returning the
+// authenticated principal. A missing token is reported as ErrSessionNotFound.
+func (a *API) authenticateDownloadToken(r *http.Request) (principal, error) {
+	token := r.URL.Query().Get(downloadTokenParam)
+	if token == "" {
+		return principal{}, ErrSessionNotFound
+	}
+	user, sess, err := a.svc.AuthenticateDownloadToken(r.Context(), token)
+	if err != nil {
+		return principal{}, err
+	}
+	return principal{user: user, session: sess}, nil
+}
+
 // requireRole returns a middleware that authenticates the request, enforces req
 // against the user's role, attaches the principal to the context, and calls
 // next. It writes 401 when authentication fails and 403 when the role is

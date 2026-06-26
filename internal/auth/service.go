@@ -154,6 +154,35 @@ func (s *Service) extendSession(ctx context.Context, sess Session, user User, no
 	return sess, nil
 }
 
+// AuthenticateDownloadToken validates an opaque media download token and returns
+// the live user and session. Unlike Authenticate it does not slide the session's
+// expiry (media URLs are fetched far too often for that to be meaningful), but it
+// applies the same liveness checks: ErrSessionNotFound for an unknown token,
+// ErrSessionExpired (and deletes the row) for a lapsed session, and
+// ErrUserDisabled (and deletes the user's sessions) if the account was disabled.
+func (s *Service) AuthenticateDownloadToken(ctx context.Context, token string) (User, Session, error) {
+	sess, err := s.store.GetSessionByDownloadToken(ctx, token)
+	if err != nil {
+		return User{}, Session{}, err
+	}
+	now := s.now()
+	if !sess.ExpiresAt.After(now) {
+		_ = s.store.DeleteSessionByToken(ctx, sess.Token)
+		return User{}, Session{}, ErrSessionExpired
+	}
+
+	user, err := s.store.GetUserByUID(ctx, sess.UserUID)
+	if err != nil {
+		return User{}, Session{}, err
+	}
+	if user.Disabled {
+		_, _ = s.store.DeleteUserSessions(ctx, user.UID)
+		return User{}, Session{}, ErrUserDisabled
+	}
+	sess.Role = user.Role
+	return user, sess, nil
+}
+
 // Logout deletes the session identified by token. It is idempotent: logging out
 // an already-removed session is not an error.
 func (s *Service) Logout(ctx context.Context, token string) error {

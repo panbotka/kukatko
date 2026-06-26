@@ -59,10 +59,16 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 
+			photoAPI, err := buildPhotoAPI(cfg, db, authAPI)
+			if err != nil {
+				return err
+			}
+
 			addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
 			srv := server.New(addr,
 				server.WithAPI(authAPI.RegisterRoutes),
 				server.WithAPI(ingestAPI.RegisterRoutes),
+				server.WithAPI(photoAPI.RegisterRoutes),
 			)
 			cmd.Printf("kukatko %s listening on %s\n", version.Get(), srv.Addr())
 

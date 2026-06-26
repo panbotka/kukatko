@@ -374,3 +374,46 @@ func TestBootstrap_outcomes(t *testing.T) {
 		}
 	})
 }
+
+// TestAuthenticateDownloadToken covers the media download-token validation: a
+// live token resolves to its user and session, an unknown token is reported as
+// ErrSessionNotFound, and an expired session is rejected and pruned.
+func TestAuthenticateDownloadToken(t *testing.T) {
+	env := newTestEnv(t)
+	user := env.createUser(t, "dora", auth.RoleViewer)
+
+	sess, _, err := env.svc.Login(t.Context(), "dora", testPassword)
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+
+	t.Run("valid token resolves user and session", func(t *testing.T) {
+		gotUser, gotSess, err := env.svc.AuthenticateDownloadToken(t.Context(), sess.DownloadToken)
+		if err != nil {
+			t.Fatalf("AuthenticateDownloadToken: %v", err)
+		}
+		if gotUser.UID != user.UID || gotSess.ID != sess.ID {
+			t.Errorf("resolved user=%s session=%s, want %s/%s", gotUser.UID, gotSess.ID, user.UID, sess.ID)
+		}
+		if gotSess.Role != auth.RoleViewer {
+			t.Errorf("session role = %s, want viewer", gotSess.Role)
+		}
+	})
+
+	t.Run("unknown token is ErrSessionNotFound", func(t *testing.T) {
+		if _, _, err := env.svc.AuthenticateDownloadToken(t.Context(), "nope"); !errors.Is(err, auth.ErrSessionNotFound) {
+			t.Errorf("error = %v, want ErrSessionNotFound", err)
+		}
+	})
+
+	t.Run("expired session is rejected and deleted", func(t *testing.T) {
+		*env.now = env.now.Add(testMaxLifetime + time.Minute)
+		if _, _, err := env.svc.AuthenticateDownloadToken(t.Context(), sess.DownloadToken); !errors.Is(err, auth.ErrSessionExpired) {
+			t.Fatalf("error = %v, want ErrSessionExpired", err)
+		}
+		// The row is gone, so a retry now reports it as not found.
+		if _, _, err := env.svc.AuthenticateDownloadToken(t.Context(), sess.DownloadToken); !errors.Is(err, auth.ErrSessionNotFound) {
+			t.Errorf("post-expiry error = %v, want ErrSessionNotFound", err)
+		}
+	})
+}

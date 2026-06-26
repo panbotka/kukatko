@@ -34,8 +34,10 @@ inkrementální).
   (jádro foto-katalogu: typované modely `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`,
   `FileRole` original/sidecar/edited, UID generátor prefix `ph`, `Store` nad pgx s
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/
-  `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List` (filtr archived/private/uploader,
-  řazení taken_at/created_at/uid, stránkování), plus `CreateFile`/`ListFiles`,
+  `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/private/
+  uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/fulltext search,
+  řazení taken_at/created_at/uid/title/file_size, stránkování limit/offset; `Count` sdílí
+  `buildWhere` filtry pro `total`), plus `CreateFile`/`ListFiles`,
   `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
   `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
@@ -88,7 +90,17 @@ inkrementální).
   čistá duplicita; **near-dup warning** config-gated přes `photos.NearestPhash`; `JobEnqueuer` =
   TODO hook `EnqueueImageEmbed`/`EnqueueFaceDetect`, default `NopEnqueuer` než vznikne fronta;
   `API` = `NewAPI(svc, requireWrite)` + `RegisterRoutes` mountuje `POST /upload` za `RequireWrite`;
-  multipart se streamuje part-by-part, nikdy celý soubor v RAM), `internal/web/`
+  multipart se streamuje part-by-part, nikdy celý soubor v RAM), `internal/photoapi/`
+  (read/curace HTTP API nad katalogem: `NewAPI(Config{Store,Storage,Thumbnailer,RequireAuth,
+  RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`; `parseListParams`
+  validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
+  newest/oldest/taken_at/added/title/size + `order`, `archived` false/true/only, `private`,
+  `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`; neplatný → 400),
+  list vrací `{photos,total,limit,offset,next_offset}` pro infinite scroll; `PATCH` je
+  částečný přes raw-key presence (vynechané pole beze změny, `null` maže nullable, validace
+  souřadnic); média `thumb/{size}`+`download` **streamují** přes `io.Copy` se `streamMedia`
+  (`Cache-Control`/`ETag`/`304`, `Content-Length` z DB, náhled generován on-miss),
+  guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -122,11 +134,21 @@ inkrementální).
   session uživatele). Role: admin/editor/viewer (editor+admin write). **Sliding session expiry**
   (`auth.session_ttl` do cap `auth.session_max_lifetime`), **login rate-limit**
   (`auth.login_rate_limit`/`auth.login_rate_window` → 429), **bootstrap admin** z
-  `auth.bootstrap_admin_username/password`.
+  `auth.bootstrap_admin_username/password`. Middleware navíc `RequireAuthOrDownloadToken`
+  (session cookie nebo `?t=download_token` přes `Service.AuthenticateDownloadToken` →
+  `Store.GetSessionByDownloadToken`) pro média bez cookie.
 - **Upload API (`/api/v1`):** `POST /upload` (editor/admin přes `RequireWrite`) — `multipart/form-data`
   s jedním+ soubory, **streamuje** se. Vrací `{"results":[{filename,status,outcome,photo_uid?,error?,
   warnings?}]}` (celkově 200, 409 sémantika duplicit per-file). Mountuje se druhým `server.WithAPI`
   v `serve` (`buildIngest` v `cmd/kukatko/ingest.go`). Limit `upload.max_file_size_mb` (0 = bez limitu).
+- **Photos API (`/api/v1`, `internal/photoapi`):** `GET /photos` (přihlášený) — list s filtry/
+  řazením/stránkováním (query params, neplatný → 400) → `{photos,total,limit,offset,next_offset}`;
+  `GET /photos/{uid}` plný detail + `files`; `PATCH /photos/{uid}` (editor/admin) částečná úprava
+  metadat (null maže nullable, validace souřadnic); `POST /photos/{uid}/archive`+`/unarchive`
+  (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);
+  `GET /photos/{uid}/thumb/{size}` a `/download` (session/`?t=` token) **streamují** média
+  (`Cache-Control`/`ETag`/`304`). Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v
+  `cmd/kukatko/photos.go`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

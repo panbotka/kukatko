@@ -210,10 +210,47 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/admin/users/{uid}/disable` | admin | zakáže účet (zruší jeho session) |
 | POST | `/admin/users/{uid}/password` | admin | `{new_password}` → reset hesla (zruší všechny jeho session) |
 | POST | `/upload` | editor/admin | `multipart/form-data` s jedním+ soubory → per-file `{outcome, photo_uid, warnings}` (viz Upload / ingest) |
+| GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API) |
+| GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` |
+| PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
+| POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
+| POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |
+| GET | `/photos/{uid}/thumb/{size}` | session/token | náhled (cache, generuje se on-miss) — streamuje JPEG, `ETag`/304 |
+| GET | `/photos/{uid}/download` | session/token | originál jako příloha — streamuje (nikdy celý v RAM), `Content-Length`/`ETag` |
 
-RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin`). Konfigurační
+RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin` /
+`RequireAuthOrDownloadToken`). Konfigurační
 klíče (`auth.session_ttl`, `auth.session_max_lifetime`, `auth.login_rate_limit`,
 `auth.login_rate_window`, `web.secure_cookies`) popisuje [`config.example.yaml`](config.example.yaml).
+
+### Foto API (`internal/photoapi`)
+
+Prohlížení a kurace katalogu jsou v balíčku [`internal/photoapi`](internal/photoapi/) (HTTP
+vrstva nad `internal/photos` + `internal/storage` + `internal/thumb`; guardy se injektují
+z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `buildPhotoAPI`
+(`cmd/kukatko/photos.go`) třetím `server.WithAPI` v `serve`.
+
+- **Seznam** `GET /photos` — query parametry zrcadlitelné do URL (FE „Zpět vždy funguje"):
+  - **Filtry:** `taken_after`/`taken_before` (RFC3339 nebo `YYYY-MM-DD`), `has_gps` (`true`/`false`),
+    `camera`, `lens`, `q` (fulltext title/description/notes), `private` (`true`/`false`),
+    `uploader` (UID), `archived` (`false` výchozí = jen živé, `true` = včetně archivu, `only` =
+    jen archiv).
+  - **Řazení:** `sort` = `newest` (default) / `oldest` / `taken_at` / `added` / `title` / `size`,
+    s volitelným `order=asc|desc`.
+  - **Stránkování:** `limit` (default 100, max 500) + `offset`. Odpověď nese `total` a
+    `next_offset` (null na poslední stránce) pro infinite scroll.
+  - **Neplatný parametr → HTTP 400.**
+- **Detail** `GET /photos/{uid}` — fotka + `files` (seznam `photo_files`), `404` když chybí.
+- **Úprava** `PATCH /photos/{uid}` (editor/admin) — částečná: pole vynechané v těle se nemění,
+  explicitní `null` maže nullable pole (`taken_at`/`lat`/`lng`); rozsah souřadnic se validuje
+  (`lat ∈ ⟨-90,90⟩`, `lng ∈ ⟨-180,180⟩`).
+- **Archivace** `POST /photos/{uid}/archive` + `/unarchive` (editor/admin) — soft-delete přes
+  `archived_at`; archivované jsou z výchozího seznamu vyloučené.
+- **Média** `GET /photos/{uid}/thumb/{size}` a `/download` — **streamují** se (`io.Copy`, nikdy
+  celý soubor v RAM), s `Cache-Control`/`ETag` (a `304` na `If-None-Match`). Přístup přes session
+  cookie **nebo** `download_token` v query parametru `?t=…` (`RequireAuthOrDownloadToken`), takže
+  fungují i `<img>`/`<video>` bez cookie. Náhled se na cache-miss vygeneruje on-demand; download
+  posílá originál jako `attachment` s `Content-Length` z DB.
 
 ## Frontend
 

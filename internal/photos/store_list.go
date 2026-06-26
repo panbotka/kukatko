@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // SortField names a column the photo list may be ordered by. Only the values
@@ -20,6 +21,10 @@ const (
 	SortByCreatedAt SortField = "created_at"
 	// SortByUID orders by UID (a stable, total order).
 	SortByUID SortField = "uid"
+	// SortByTitle orders by the photo title (alphabetical).
+	SortByTitle SortField = "title"
+	// SortBySize orders by the original file size in bytes.
+	SortBySize SortField = "file_size"
 )
 
 // sortColumns maps each accepted SortField to its physical column. Lookups
@@ -28,6 +33,8 @@ var sortColumns = map[SortField]string{
 	SortByTakenAt:   "taken_at",
 	SortByCreatedAt: "created_at",
 	SortByUID:       "uid",
+	SortByTitle:     "title",
+	SortBySize:      "file_size",
 }
 
 // SortOrder is the direction of a List ordering.
@@ -44,9 +51,9 @@ const (
 // defaultListLimit caps a page when ListParams.Limit is unset (<= 0).
 const defaultListLimit = 100
 
-// ListParams is the filtering, sorting and pagination scaffold for List. The
-// full filter set (text search, date ranges, people, albums, …) is added by the
-// CRUD task; this carries the fields the catalogue needs immediately.
+// ListParams is the filtering, sorting and pagination scaffold for List and
+// Count. All values are bound as query parameters; the sort column is chosen
+// from an allow-list, so no field can inject SQL.
 type ListParams struct {
 	// IncludeArchived returns archived photos alongside live ones when true. By
 	// default (false) only live photos (archived_at IS NULL) are returned.
@@ -60,6 +67,24 @@ type ListParams struct {
 	// UploadedBy, when non-empty, restricts the result to photos uploaded by the
 	// given user UID.
 	UploadedBy string
+	// TakenAfter, when non-nil, keeps photos whose taken_at is at or after it.
+	// Photos with an unknown capture time (NULL taken_at) are excluded.
+	TakenAfter *time.Time
+	// TakenBefore, when non-nil, keeps photos whose taken_at is at or before it.
+	// Photos with an unknown capture time (NULL taken_at) are excluded.
+	TakenBefore *time.Time
+	// HasGPS, when non-nil, keeps photos that have (true) or lack (false) both a
+	// latitude and a longitude.
+	HasGPS *bool
+	// Camera, when non-empty, keeps photos whose make or model contains it
+	// (case-insensitive substring match).
+	Camera string
+	// Lens, when non-empty, keeps photos whose lens model contains it
+	// (case-insensitive substring match).
+	Lens string
+	// Search, when non-empty, keeps photos whose title, description or notes
+	// contain it (case-insensitive substring match).
+	Search string
 	// Sort selects the ordering column; an unknown value falls back to
 	// SortByTakenAt.
 	Sort SortField
@@ -96,27 +121,102 @@ func (s *Store) List(ctx context.Context, params ListParams) ([]Photo, error) {
 	return photos, nil
 }
 
+// Count returns the number of photos matching params' filters, ignoring its
+// limit, offset and ordering. It powers the total used by paginated listings.
+func (s *Store) Count(ctx context.Context, params ListParams) (int, error) {
+	query, args := buildCountQuery(params)
+	var total int
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("photos: counting photos: %w", err)
+	}
+	return total, nil
+}
+
+// buildWhere assembles the parameterised WHERE filters shared by List and
+// Count. It returns the filter clauses (to be joined with AND) and the bound
+// argument values in matching positional order, starting at $1. The bind closure
+// appends a value and yields its placeholder so every caller value is bound, not
+// interpolated.
+func buildWhere(params ListParams) (where []string, args []any) {
+	bind := func(value any) string {
+		args = append(args, value)
+		return "$" + strconv.Itoa(len(args))
+	}
+	where = append(where, archivedClauses(params)...)
+	where = append(where, scalarClauses(params, bind)...)
+	where = append(where, gpsClauses(params)...)
+	where = append(where, textClauses(params, bind)...)
+	return where, args
+}
+
+// archivedClauses returns the archive-state filter: live-only by default,
+// archived-only when requested (which takes precedence), or none when archived
+// photos are explicitly included.
+func archivedClauses(params ListParams) []string {
+	switch {
+	case params.OnlyArchived:
+		return []string{"archived_at IS NOT NULL"}
+	case !params.IncludeArchived:
+		return []string{"archived_at IS NULL"}
+	default:
+		return nil
+	}
+}
+
+// scalarClauses returns the equality and range filters (private, uploader, date
+// range), binding each value through bind.
+func scalarClauses(params ListParams, bind func(any) string) []string {
+	var where []string
+	if params.Private != nil {
+		where = append(where, "private = "+bind(*params.Private))
+	}
+	if params.UploadedBy != "" {
+		where = append(where, "uploaded_by = "+bind(params.UploadedBy))
+	}
+	if params.TakenAfter != nil {
+		where = append(where, "taken_at >= "+bind(*params.TakenAfter))
+	}
+	if params.TakenBefore != nil {
+		where = append(where, "taken_at <= "+bind(*params.TakenBefore))
+	}
+	return where
+}
+
+// gpsClauses returns the has-GPS filter, which needs no bound parameter: present
+// requires both coordinates, absent requires at least one to be missing.
+func gpsClauses(params ListParams) []string {
+	if params.HasGPS == nil {
+		return nil
+	}
+	if *params.HasGPS {
+		return []string{"lat IS NOT NULL AND lng IS NOT NULL"}
+	}
+	return []string{"(lat IS NULL OR lng IS NULL)"}
+}
+
+// textClauses returns the case-insensitive substring filters (camera, lens,
+// free-text search), binding each wildcard pattern through bind.
+func textClauses(params ListParams, bind func(any) string) []string {
+	var where []string
+	if params.Camera != "" {
+		p := bind("%" + params.Camera + "%")
+		where = append(where, "(camera_make ILIKE "+p+" OR camera_model ILIKE "+p+")")
+	}
+	if params.Lens != "" {
+		where = append(where, "lens_model ILIKE "+bind("%"+params.Lens+"%"))
+	}
+	if params.Search != "" {
+		p := bind("%" + params.Search + "%")
+		where = append(where, "(title ILIKE "+p+" OR description ILIKE "+p+" OR notes ILIKE "+p+")")
+	}
+	return where
+}
+
 // buildListQuery assembles the parameterised SELECT for List: the WHERE filters,
 // the validated ORDER BY, and the LIMIT/OFFSET. All caller values are bound as
 // parameters; ordering is chosen from an allow-list, never interpolated raw.
 func buildListQuery(params ListParams) (string, []any) {
-	var where []string
-	var args []any
-
-	switch {
-	case params.OnlyArchived:
-		where = append(where, "archived_at IS NOT NULL")
-	case !params.IncludeArchived:
-		where = append(where, "archived_at IS NULL")
-	}
-	if params.Private != nil {
-		args = append(args, *params.Private)
-		where = append(where, "private = $"+strconv.Itoa(len(args)))
-	}
-	if params.UploadedBy != "" {
-		args = append(args, params.UploadedBy)
-		where = append(where, "uploaded_by = $"+strconv.Itoa(len(args)))
-	}
+	where, args := buildWhere(params)
 
 	query := "SELECT " + photoColumns + " FROM photos"
 	if len(where) > 0 {
@@ -133,6 +233,17 @@ func buildListQuery(params ListParams) (string, []any) {
 	args = append(args, params.Offset)
 	query += " OFFSET $" + strconv.Itoa(len(args))
 
+	return query, args
+}
+
+// buildCountQuery assembles the parameterised SELECT count(*) for Count, reusing
+// List's WHERE filters but omitting ordering and pagination.
+func buildCountQuery(params ListParams) (string, []any) {
+	where, args := buildWhere(params)
+	query := "SELECT count(*) FROM photos"
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
 	return query, args
 }
 

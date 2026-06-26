@@ -3,6 +3,7 @@ package photos
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestPlaceholders verifies the positional-parameter list for representative
@@ -75,6 +76,16 @@ func TestOrderClause(t *testing.T) {
 			want:   "uid DESC NULLS LAST",
 		},
 		{
+			name:   "title ascending",
+			params: ListParams{Sort: SortByTitle, Order: OrderAsc},
+			want:   "title ASC NULLS LAST, uid ASC",
+		},
+		{
+			name:   "size descending",
+			params: ListParams{Sort: SortBySize, Order: OrderDesc},
+			want:   "file_size DESC NULLS LAST, uid DESC",
+		},
+		{
 			name:   "unknown field falls back to taken_at",
 			params: ListParams{Sort: SortField("evil; DROP TABLE photos")},
 			want:   "taken_at DESC NULLS LAST, uid DESC",
@@ -140,4 +151,67 @@ func TestBuildListQuery(t *testing.T) {
 			t.Errorf("args = %v, want [true us123 10 5]", args)
 		}
 	})
+
+	t.Run("date range, gps, camera, lens and search bind params", func(t *testing.T) {
+		t.Parallel()
+		after := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+		before := time.Date(2023, 12, 31, 0, 0, 0, 0, time.UTC)
+		query, args := buildListQuery(ListParams{
+			TakenAfter:  &after,
+			TakenBefore: &before,
+			HasGPS:      &yes,
+			Camera:      "Canon",
+			Lens:        "RF 50",
+			Search:      "beach",
+		})
+		for _, want := range []string{
+			"taken_at >= $1", "taken_at <= $2",
+			"lat IS NOT NULL AND lng IS NOT NULL",
+			"camera_make ILIKE $3 OR camera_model ILIKE $3",
+			"lens_model ILIKE $4",
+			"title ILIKE $5 OR description ILIKE $5 OR notes ILIKE $5",
+		} {
+			if !strings.Contains(query, want) {
+				t.Errorf("query missing %q: %q", want, query)
+			}
+		}
+		// 5 bound filter args (has-gps is inline SQL) + LIMIT + OFFSET.
+		if len(args) != 7 {
+			t.Fatalf("args = %v, want 7 entries", args)
+		}
+		if args[2] != "%Canon%" || args[3] != "%RF 50%" || args[4] != "%beach%" {
+			t.Errorf("substring filters not wrapped in wildcards: %v", args)
+		}
+	})
+
+	t.Run("has-gps false matches missing coordinates", func(t *testing.T) {
+		t.Parallel()
+		no := false
+		query, _ := buildListQuery(ListParams{HasGPS: &no})
+		if !strings.Contains(query, "(lat IS NULL OR lng IS NULL)") {
+			t.Errorf("query missing absent-gps filter: %q", query)
+		}
+	})
+}
+
+// TestBuildCountQuery verifies the count query reuses the same filters as the
+// list query but omits ordering and pagination.
+func TestBuildCountQuery(t *testing.T) {
+	t.Parallel()
+
+	yes := true
+	query, args := buildCountQuery(ListParams{Private: &yes, Limit: 10, Offset: 5})
+	if !strings.HasPrefix(query, "SELECT count(*) FROM photos") {
+		t.Errorf("count query has wrong prefix: %q", query)
+	}
+	if strings.Contains(query, "ORDER BY") || strings.Contains(query, "LIMIT") || strings.Contains(query, "OFFSET") {
+		t.Errorf("count query must not order or paginate: %q", query)
+	}
+	if !strings.Contains(query, "private = $1") {
+		t.Errorf("count query missing filter: %q", query)
+	}
+	// Only the filter arg is bound; limit/offset are ignored by Count.
+	if len(args) != 1 || args[0] != true {
+		t.Errorf("args = %v, want [true]", args)
+	}
 }
