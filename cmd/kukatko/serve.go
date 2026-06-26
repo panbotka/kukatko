@@ -64,11 +64,15 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 
+			jobWorker, jobAPI := buildJobs(cfg, db, authAPI)
+			startWorker(ctx, jobWorker)
+
 			addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
 			srv := server.New(addr,
 				server.WithAPI(authAPI.RegisterRoutes),
 				server.WithAPI(ingestAPI.RegisterRoutes),
 				server.WithAPI(photoAPI.RegisterRoutes),
+				server.WithAPI(jobAPI.RegisterRoutes),
 			)
 			cmd.Printf("kukatko %s listening on %s\n", version.Get(), srv.Addr())
 

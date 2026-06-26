@@ -219,11 +219,46 @@ když je embeddings box offline (upload a prohlížení fungují bez něj).
     `last_error` (dead-letter).
   - `Heartbeat(id, workerID)` + `RecoverStaleLocks(staleAfter)` — běžící joby se zastaralým zámkem
     (mrtvý worker) se requeují (počítá se jako pokus); heartbeat zámek osvěží a chrání před recovery.
-  - Helpery: `CountsByState` / `CountsByType`, `ListDead`, `RequeueDead`, `Get`.
+  - Helpery: `CountsByState` / `CountsByType`, `ListDead`, `RequeueDead`, `Requeue` (dead **i**
+    failed → queued), `List(ListOptions{State,Limit,Offset})` (recent výpis, řazení
+    `updated_at DESC`, limit cap 500), `Get`.
 - **`jobs.Enqueuer`** (`NewEnqueuer(store)`) implementuje `ingest.JobEnqueuer`
   (`EnqueueImageEmbed`/`EnqueueFaceDetect` s payloadem `{"photo_uid": …}`, `ErrDuplicate` =
-  no-op) — wiring fronty do uploadu. Exekuční smyčka (worker, který frontu drénuje) je samostatný
-  task.
+  no-op) — wiring fronty do uploadu.
+
+### Background worker (`internal/worker`)
+
+Exekuční smyčka, která frontu drénuje, běží **v procesu `kukatko serve`**:
+
+- **`Registry`** (`NewRegistry()`) mapuje `type` → `HandlerFunc` (`func(ctx, jobs.Job) error`)
+  přes `Register(type, fn)`; panika na prázdný typ, nil handler nebo duplicitní registraci
+  (programátorská chyba při startu). Built-in **noop** handler (`TypeNoop`, `RegisterBuiltins`)
+  jen pro sanity/testy — reálné typy (`image_embed`, `face_detect`, …) registrují pozdější
+  milníky.
+- **`Worker`** (`New(Config{Queue, Registry, Concurrency, PollInterval, StaleAfter,
+  StaleScanInterval, IDPrefix})`) — `Run(ctx)` spustí `Concurrency` goroutin, které pollují
+  `Claim` (filtr na registrované `Types`), dispatchnou job na handler dle `job.Type` a podle
+  výsledku zavolají `Complete`/`Fail`. Bookkeeping (`Complete`/`Fail`) běží přes
+  **shutdown-immune** kontext (`context.WithoutCancel`), takže výsledek dopočítaný těsně před
+  vypnutím se ještě uloží. Vedle workerů běží **stale-lock recovery** ticker.
+- **Graceful shutdown**: zrušení `ctx` (SIGINT/SIGTERM) zastaví claiming; job běžící při
+  vypnutí je **opuštěn** (jeho zámek později requeue fronta přes `RecoverStaleLocks`), `Run`
+  se čistě vrátí. Panika handleru → `ErrHandlerPanic` (job se failne, worker nespadne),
+  neznámý typ jobu → `ErrNoHandler`.
+- **`Queue`** je interface = podmnožina `jobs.Store` (`Claim`/`Complete`/`Fail`/
+  `RecoverStaleLocks`), takže runtime jde unit-testovat s fakem.
+- Tuning přes `worker.*` config (`count`, `poll_interval`, `stale_after`,
+  `stale_scan_interval`).
+
+### Admin Jobs API (`internal/jobsapi`)
+
+Admin-only HTTP API nad frontou (guard `RequireAdmin`), frontend ho polluje (žádné SSE):
+
+- `GET /api/v1/jobs/stats` → `{by_state, by_type, total}` (agregované counts pro dashboard).
+- `GET /api/v1/jobs` → `{jobs, limit, offset}` (recent / dead-letter výpis; query `state`,
+  `limit` ≤ 500, `offset`; neplatný parametr → 400).
+- `POST /api/v1/jobs/{id}/requeue` → refreshnutý job (dead/failed → `queued`; 404 missing,
+  409 ne-requeueable).
 
 ## Konfigurace
 

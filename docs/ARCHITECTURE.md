@@ -318,6 +318,12 @@ které se ztratí při restartu).
 
 - **Persistentní fronta v Postgresu** (`jobs`). Worker bere práci přes
   `SELECT … FOR UPDATE SKIP LOCKED`, ať více workerů/instancí nekoliduje.
+- **Worker runtime** (`internal/worker`) běží **v procesu `kukatko serve`**: konfigurovatelný
+  počet goroutin pollujících `Claim` s omezenou souběžností, dispatch na handler z **registru**
+  (`Register(type, HandlerFunc)`) podle `job.Type`, `Complete`/`Fail` dle výsledku, plus
+  stale-lock recovery. **Graceful shutdown** (SIGINT/SIGTERM) zastaví claiming a opuštěné
+  in-flight joby nechá frontě k recovery. Stav fronty se čte přes **admin Jobs API**
+  (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); UI ho polluje.
 - **Typy jobů:** `thumbnail` (běží lokálně na Pi, hned), `image_embed`, `face_detect`
   (vyžadují box), `pp_import`, `ps_migrate`, `backup`.
 - **Box offline:** embeddings client před zpracováním ověří dostupnost sidecaru (health check).

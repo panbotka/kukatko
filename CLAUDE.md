@@ -131,11 +131,31 @@ inkrementální).
   prázdná fronta `ErrNoJobs`), `Complete`/`Fail(err)` (inkrement attempts → requeue s
   exponenciálním backoffem přes `run_after` base 30 s/cap 1 h, jinak `state=dead`+`last_error`),
   `Heartbeat`/`RecoverStaleLocks(staleAfter)` (zastaralý zámek = mrtvý worker → requeue jako pokus),
-  helpery `CountsByState`/`CountsByType`/`ListDead`/`RequeueDead`/`Get`; sentinely
+  helpery `CountsByState`/`CountsByType`/`ListDead`/`RequeueDead`/`Requeue` (dead **i**
+  failed → queued, pro admin endpoint)/`List`(`ListOptions{State,Limit,Offset}`, řazení
+  updated_at DESC, limit cap 500, pro admin výpis)/`Get`; sentinely
   `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrNotDead`; **typy jobů** `image_embed`/
   `face_detect`/`thumbnail`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` = `NewEnqueuer(store)`
-  implementuje `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`, `ErrDuplicate`=no-op);
-  exekuční smyčka/worker je samostatný task), `internal/web/`
+  implementuje `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`, `ErrDuplicate`=no-op)),
+  `internal/worker/`
+  (in-process background worker runtime, **hlavní exekuční smyčka fronty**: `Registry` =
+  `NewRegistry()`+`Register(type, HandlerFunc)`+`Handler`/`Types` (panika na prázdný typ/nil
+  handler/duplicitní registraci); `HandlerFunc` = `func(ctx, jobs.Job) error`; `Worker` =
+  `New(Config{Queue,Registry,Concurrency,PollInterval,StaleAfter,StaleScanInterval,IDPrefix})`
+  s `Run(ctx)` — spustí `Concurrency` goroutin pollujících `Claim` (filtr na registrované
+  `Types`), dispatch na handler dle `job.Type`, `Complete`/`Fail` dle výsledku přes
+  **shutdown-immune** bookkeeping kontext (`context.WithoutCancel`), plus stale-lock recovery
+  ticker; `Queue` interface = podmnožina `jobs.Store` (`Claim`/`Complete`/`Fail`/
+  `RecoverStaleLocks`) pro testovatelnost; **graceful shutdown** = ctx cancel zastaví claiming,
+  job běžící při shutdownu je opuštěn (lock recoveruje fronta), panika handleru →
+  `ErrHandlerPanic` (job fail, ne crash), neznámý typ → `ErrNoHandler`; built-in **noop**
+  handler (`TypeNoop`/`NoopHandler`/`RegisterBuiltins`) jen pro sanity/testy; `Run` vrací nil),
+  `internal/jobsapi/`
+  (admin-only HTTP API nad frontou: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
+  mountuje `/jobs`; `GET /jobs/stats` (counts by_state/by_type+total), `GET /jobs`
+  (recent/dead-letter výpis, query `state`/`limit`≤500/`offset`, neplatný → 400),
+  `POST /jobs/{id}/requeue` (dead/failed → queued; 404 missing, 409 ne-requeueable);
+  frontend polluje, žádné SSE), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -187,8 +207,9 @@ inkrementální).
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.
-- **CLI:** `kukatko serve` (načte config, **spustí migrace**, **bootstrapne admina** a spustí
-  hodinové čištění expirovaných session, pak poslouchá na `web.host:web.port`, default
+- **CLI:** `kukatko serve` (načte config, **spustí migrace**, **bootstrapne admina**, spustí
+  hodinové čištění expirovaných session a **background worker** (`internal/worker`) na
+  zpracování fronty jobů, pak poslouchá na `web.host:web.port`, default
   `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`, auth/admin API
   pod `/api/v1` — viz níže, ostatní cesty servíruje **embedované SPA** s fallbackem na
   `index.html`), `kukatko migrate` (spustí pending migrace samostatně a skončí),
@@ -216,6 +237,14 @@ inkrementální).
   `GET /photos/{uid}/thumb/{size}` a `/download` (session/`?t=` token) **streamují** média
   (`Cache-Control`/`ETag`/`304`). Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v
   `cmd/kukatko/photos.go`).
+- **Jobs API (`/api/v1`, `internal/jobsapi`, admin-only přes `RequireAdmin`):**
+  `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
+  (recent/dead-letter výpis, query `state`/`limit`/`offset`, neplatný → 400);
+  `POST /jobs/{id}/requeue` → refreshnutý job (dead/failed → queued; 404 missing, 409
+  ne-requeueable). Frontend polluje (žádné SSE). Mountuje se čtvrtým `server.WithAPI`
+  (`buildJobs` v `cmd/kukatko/jobs.go`), který zároveň postaví a `serve` spustí
+  **background worker** (`internal/worker`) na celý život procesu (`startWorker`, zastaví
+  se na shutdownu přes ctx).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

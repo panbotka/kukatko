@@ -66,6 +66,7 @@ type Config struct {
 	Trash     TrashConfig     `mapstructure:"trash"`
 	Duplicate DuplicateConfig `mapstructure:"duplicate"`
 	Upload    UploadConfig    `mapstructure:"upload"`
+	Worker    WorkerConfig    `mapstructure:"worker"`
 }
 
 // DatabaseConfig holds the PostgreSQL connection string and pool sizing.
@@ -156,6 +157,21 @@ type UploadConfig struct {
 	// MaxFileSizeMB caps a single uploaded file in mebibytes. 0 disables the cap
 	// (uploads are streamed and never buffered whole in memory regardless).
 	MaxFileSizeMB int `mapstructure:"max_file_size_mb"`
+}
+
+// WorkerConfig tunes the in-process background worker that drains the job queue.
+type WorkerConfig struct {
+	// Count is the number of jobs processed in parallel. <= 0 uses the worker's
+	// built-in default.
+	Count int `mapstructure:"count"`
+	// PollInterval is how long an idle worker waits before polling the queue
+	// again when it is empty.
+	PollInterval time.Duration `mapstructure:"poll_interval"`
+	// StaleAfter is the lock age past which a running job is presumed abandoned
+	// (its worker died) and recovered for retry.
+	StaleAfter time.Duration `mapstructure:"stale_after"`
+	// StaleScanInterval is how often stale-lock recovery runs.
+	StaleScanInterval time.Duration `mapstructure:"stale_scan_interval"`
 }
 
 // MaxFileSizeBytes returns the per-file upload cap in bytes, or 0 for no cap.
@@ -272,6 +288,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("duplicate.embedding_max_dist", 0.05)
 
 	v.SetDefault("upload.max_file_size_mb", 0) // 0 = unlimited
+
+	v.SetDefault("worker.count", 2)
+	v.SetDefault("worker.poll_interval", "2s")
+	v.SetDefault("worker.stale_after", "5m")
+	v.SetDefault("worker.stale_scan_interval", "1m")
 }
 
 // Validate checks that required fields are present and inter-field invariants

@@ -27,6 +27,12 @@ const (
 	// defaultDeadListLimit bounds ListDead when the caller passes a non-positive
 	// limit.
 	defaultDeadListLimit = 100
+	// defaultListLimit is the page size List uses when the caller passes a
+	// non-positive limit.
+	defaultListLimit = 100
+	// maxListLimit caps List's page size so an admin request cannot ask for an
+	// unbounded result set.
+	maxListLimit = 500
 )
 
 // jobColumns is the canonical, ordered column list for job reads (and for INSERT
@@ -330,12 +336,29 @@ func (s *Store) ListDead(ctx context.Context, limit, offset int) ([]Job, error) 
 // budget, runnable immediately, and returns the refreshed job. It returns
 // ErrJobNotFound if no job has that id, or ErrNotDead if the job is not dead.
 func (s *Store) RequeueDead(ctx context.Context, id int64) (Job, error) {
+	return s.requeueInStates(ctx, id, []string{string(StateDead)})
+}
+
+// Requeue resets a dead-lettered or terminally failed job back to 'queued' with
+// a fresh attempt budget, runnable immediately, and returns the refreshed job.
+// It backs the admin requeue endpoint, which may target either a dead-letter or
+// a failed job. It returns ErrJobNotFound if no job has that id, or ErrNotDead
+// if the job is in neither a dead nor a failed state.
+func (s *Store) Requeue(ctx context.Context, id int64) (Job, error) {
+	return s.requeueInStates(ctx, id, []string{string(StateDead), string(StateFailed)})
+}
+
+// requeueInStates resets the job identified by id to a fresh 'queued' state when
+// its current state is one of states, returning the refreshed job. It returns
+// ErrJobNotFound if no job has that id, or ErrNotDead if the job is in some
+// other state.
+func (s *Store) requeueInStates(ctx context.Context, id int64, states []string) (Job, error) {
 	const q = `UPDATE jobs SET
 			state = 'queued', attempts = 0, last_error = '', run_after = now(),
 			locked_by = NULL, locked_at = NULL, updated_at = now()
-		WHERE id = $1 AND state = 'dead'
+		WHERE id = $1 AND state = ANY($2)
 		RETURNING ` + jobColumns
-	job, err := scanJob(s.pool.QueryRow(ctx, q, id))
+	job, err := scanJob(s.pool.QueryRow(ctx, q, id, states))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Job{}, s.requeueMissReason(ctx, id)
@@ -345,11 +368,62 @@ func (s *Store) RequeueDead(ctx context.Context, id int64) (Job, error) {
 	return job, nil
 }
 
-// requeueMissReason explains why a RequeueDead update matched no row: the job is
-// missing (ErrJobNotFound) or exists but is not dead (ErrNotDead).
+// requeueMissReason explains why a requeue update matched no row: the job is
+// missing (ErrJobNotFound) or exists but is not in a requeueable state
+// (ErrNotDead).
 func (s *Store) requeueMissReason(ctx context.Context, id int64) error {
 	if _, err := s.Get(ctx, id); err != nil {
 		return err
 	}
 	return ErrNotDead
+}
+
+// ListOptions filters and paginates Store.List. The zero value lists the most
+// recently updated jobs across all states up to defaultListLimit.
+type ListOptions struct {
+	// State, when non-nil, restricts the result to jobs in that lifecycle state.
+	State *State
+	// Limit caps the page size; a non-positive value uses defaultListLimit and
+	// any value above maxListLimit is clamped to it.
+	Limit int
+	// Offset skips the given number of leading rows for pagination.
+	Offset int
+}
+
+// List returns a page of jobs ordered most-recently-updated first (id breaks
+// ties), optionally restricted to a single state. It backs the admin job
+// browser and dead-letter view.
+func (s *Store) List(ctx context.Context, opts ListOptions) ([]Job, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+	args := []any{limit, opts.Offset}
+	where := ""
+	if opts.State != nil {
+		where = "WHERE state = $3 "
+		args = append(args, string(*opts.State))
+	}
+	q := "SELECT " + jobColumns + " FROM jobs " + where +
+		"ORDER BY updated_at DESC, id DESC LIMIT $1 OFFSET $2"
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("jobs: listing jobs: %w", err)
+	}
+	defer rows.Close()
+	list := make([]Job, 0, limit)
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("jobs: iterating jobs: %w", err)
+	}
+	return list, nil
 }

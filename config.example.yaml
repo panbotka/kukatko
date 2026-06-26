@@ -104,3 +104,15 @@ upload:
   # Maximum size of a single uploaded file, in mebibytes. 0 disables the cap
   # (uploads are streamed to disk and never buffered whole in memory regardless).
   max_file_size_mb: 0
+
+# Background worker that drains the persistent job queue inside `kukatko serve`.
+worker:
+  # Number of jobs processed in parallel. 0 uses the built-in default.
+  count: 2
+  # How long an idle worker waits before polling the queue again when empty.
+  poll_interval: 2s
+  # Lock age past which a running job is presumed abandoned (its worker died)
+  # and recovered for retry by the queue.
+  stale_after: 5m
+  # How often stale-lock recovery runs.
+  stale_scan_interval: 1m
