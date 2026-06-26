@@ -168,7 +168,22 @@ inkrementální).
   (transport selhal / status 502/503/504, retryable — helper `IsUnavailable`) vs `ErrBadResponse`
   (chybná odpověď) vs `ErrDimMismatch` (validace rozměrů 768/512) vs `ErrInvalidURL`; zrušený
   kontext se nevydává za nedostupnost; per-request timeouty přes context (default request 60 s /
-  health 5 s), nikdy nedrží obrázek celý v RAM), `internal/web/`
+  health 5 s), nikdy nedrží obrázek celý v RAM), `internal/vectors/`
+  (DB vrstva pro embeddingy a obličeje, **uloženo přímo v Postgresu** jako `halfvec` (float16)
+  sloupce s HNSW cosine indexy — tabulky `embeddings`/`faces` v migraci `0006_embeddings.sql`;
+  `halfvec` místo `vector` půlí paměť HNSW indexu při zanedbatelné ztrátě recall na
+  normalizovaných CLIP/ArcFace vektorech (důležité na Pi); `Store` = `NewStore(pool)` nad
+  sdíleným pgx poolem:
+  `SaveEmbedding`(upsert)/`GetEmbedding`(`ErrEmbeddingNotFound`)/`FindSimilar(vec,limit,maxDistance)`
+  pro 768-dim obrázkové embeddingy, `SaveFaces`(idempotentní replace v transakci)/`ListFaces`/
+  `DeleteFaces`/`FindSimilarFaces` pro 512-dim face embeddingy + cache sloupce
+  marker_uid/subject_uid/subject_name/photo_width/photo_height/orientation a normalizovaný
+  `bbox DOUBLE PRECISION[4]` `[x,y,w,h]`; podobnost přes `embedding <=> $vec` (cosine, nejbližší
+  první) v **read-only transakci** se `SET LOCAL hnsw.ef_search = 100`; `limit` ořez `[1,500]`,
+  nekladný `maxDistance` filtr vypne; helpery `ToHalfVec`/`FromHalfVec` (`[]float32` ↔
+  `pgvector.HalfVector`); sentinely `ErrEmbeddingNotFound`/`ErrDimMismatch` (validace 768/512)/
+  `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); FK `ON DELETE CASCADE` — mazání fotky
+  smaže embeddingy i faces, oprava photo-sorter mezery se sirotky), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého

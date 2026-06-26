@@ -281,6 +281,33 @@ nevydává za nedostupnost. Base URL z `embedding.url`, rozměry z `embedding.im
 timeouty mají rozumné defaulty (request 60 s, health 5 s). Joby `image_embed`/`face_detect`
 přes tohle čekají ve frontě, dokud box nenaběhne.
 
+### Embeddings & faces schema (`internal/vectors`)
+
+Embeddingy se ukládají **přímo do PostgreSQL** jako `halfvec` (float16) sloupce s **HNSW
+cosine** indexy (migrace `0006_embeddings.sql`) — žádný externí vektorový store, podobnostní
+hledání je obyčejný SQL dotaz přes operátor `<=>`. `halfvec` místo `vector` (float32) **půlí
+paměť HNSW indexu** s zanedbatelnou ztrátou recall na normalizovaných CLIP/ArcFace vektorech,
+což je na Pi podstatné.
+
+- **`embeddings`**: jeden CLIP obrázkový embedding na fotku (`photo_uid` PK FK `ON DELETE
+  CASCADE`, `embedding halfvec(768)`, `model`/`pretrained`/`dim`/`created_at`), HNSW index
+  `hnsw (embedding halfvec_cosine_ops) WITH (m=16, ef_construction=200)`.
+- **`faces`**: nula a více detekovaných obličejů na fotku (`id` BIGSERIAL, `photo_uid` FK
+  `ON DELETE CASCADE`, `face_index`, `embedding halfvec(512)`, `bbox DOUBLE PRECISION[4]`
+  normalizovaný `[x,y,w,h]` 0..1, `det_score`, `model`/`dim`/`created_at` + cache sloupce
+  `marker_uid`/`subject_uid`/`subject_name`/`photo_width`/`photo_height`/`orientation`),
+  `UNIQUE(photo_uid, face_index)` + HNSW index na `embedding`. FK `ON DELETE CASCADE` opravuje
+  mezeru photo-sorteru, kde embeddingy/faces neměly FK a vznikali sirotci.
+
+`vectors.Store` (`NewStore(pool)`) nad sdíleným pgx poolem:
+`SaveEmbedding`/`GetEmbedding` (`ErrEmbeddingNotFound`), `FindSimilar(vec, limit, maxDistance)`
+nad `embedding <=> $vec` (nejbližší první), `SaveFaces`(idempotentní replace v transakci)/
+`ListFaces`/`DeleteFaces`, `FindSimilarFaces`. Dotazy běží v **read-only transakci** se
+`SET LOCAL hnsw.ef_search = 100` pro lepší recall; `limit` se ořezává do `[1,500]`,
+nekladný `maxDistance` filtr vypne. Helpery `ToHalfVec`/`FromHalfVec` (`[]float32` ↔
+`pgvector.HalfVector`), validace rozměrů přes `ErrDimMismatch`, duplicitní `face_index` →
+`ErrFaceIndexTaken`.
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).
