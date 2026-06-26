@@ -12,6 +12,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -69,6 +70,7 @@ func NewAPI(cfg Config) *API {
 // RegisterRoutes mounts the photo endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
+//	GET    /search                    RequireAuth      full-text search (ranked)
 //	GET    /photos                    RequireAuth      list with filters/sort/page
 //	GET    /photos/{uid}              RequireAuth      full detail
 //	GET    /photos/{uid}/similar      RequireAuth      visually similar photos
@@ -78,6 +80,7 @@ func NewAPI(cfg Config) *API {
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail
 //	GET    /photos/{uid}/download     RequireDownload  original file
 func (a *API) RegisterRoutes(r chi.Router) {
+	r.With(a.requireAuth).Get("/search", a.handleSearch)
 	r.Route("/photos", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleList)
 		r.With(a.requireAuth).Get("/{uid}", a.handleDetail)
@@ -120,7 +123,14 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "counting photos failed")
 		return
 	}
+	writePage(w, params, list, total)
+}
 
+// writePage writes a paginated page of photos as a listResponse, computing the
+// effective limit and the next-page offset (nil on the last page) used by an
+// infinite-scroll client. It is shared by the list and search endpoints, whose
+// page shape is identical.
+func writePage(w http.ResponseWriter, params photos.ListParams, list []photos.Photo, total int) {
 	limit := params.Limit
 	if limit <= 0 {
 		limit = defaultPageLimit
@@ -135,6 +145,41 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		resp.NextOffset = &next
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleSearch runs a Czech-aware, diacritics-insensitive full-text search over
+// the photo catalogue, ranked by relevance. The `q` query parameter carries the
+// search text (required; empty or whitespace-only yields 400). Every list filter
+// (date range, GPS, private, camera, …) and the limit/offset pagination apply,
+// so a search can be scoped exactly like a browse; the `sort`/`order` params are
+// ignored because results are always ranked. The response mirrors the list
+// endpoint (photos, total, limit, offset, next_offset) for infinite scroll.
+func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
+	params, err := parseListParams(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "q is required")
+		return
+	}
+	// q is the full-text query here, not the list's substring filter.
+	params.FullText = query
+	params.Search = ""
+
+	list, err := a.store.Search(r.Context(), params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "searching photos failed")
+		return
+	}
+	total, err := a.store.Count(r.Context(), params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "counting search results failed")
+		return
+	}
+	writePage(w, params, list, total)
 }
 
 // defaultPageLimit mirrors the store's default page size for reporting the

@@ -31,6 +31,9 @@ var (
 	ErrPhashNotFound = errors.New("photos: perceptual hashes not found")
 	// ErrEditNotFound indicates no photo_edits row matched the given photo.
 	ErrEditNotFound = errors.New("photos: edits not found")
+	// ErrEmptySearch indicates Search was called without a full-text query, which
+	// would otherwise rank every photo with a zero score.
+	ErrEmptySearch = errors.New("photos: empty full-text search query")
 )
 
 // MediaType classifies what kind of media a photo row holds, mirrored by the

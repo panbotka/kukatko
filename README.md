@@ -62,6 +62,11 @@ Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
   CHECK + partial index) + `duration_ms`, `video_codec`, `audio_codec`, `has_audio`, `fps`
   (vyplněné jen u videí). Live foto = still jako primární image + motion klip jako další
   `photo_files` řádek.
+  **Fulltext** (migrace `0007_fts.sql`): generovaný sloupec `fts tsvector` (GIN index) =
+  `setweight` nad `to_tsvector('simple', immutable_unaccent(...))` z title (A) > description
+  (B) > notes (C) > normalizovaný file_name (D); diakritika necitlivá přes IMMUTABLE
+  `immutable_unaccent` wrapper. `GENERATED ALWAYS … STORED` drží `fts` aktuální při každém
+  insertu/úpravě metadat bez triggeru.
 - **`photo_files`** — originál + odvozeniny, `role` original/sidecar/edited, max. jeden
   `is_primary` na fotku. **`photo_phashes`** — `phash`/`dhash` (near-dup). **`photo_edits`**
   — nedestruktivní úpravy (crop 0..1 all-or-nothing, rotace 0/90/180/270, brightness/contrast).
@@ -69,8 +74,9 @@ Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
 
 `photos.Store` (nad pgx poolem) nabízí `Create`, `GetByUID`/`GetByFileHash`/
 `GetByPhotoprismUID`/`GetByPhotosorterUID`, `UpdateMetadata`, `Archive`/`Unarchive`,
-`Delete`, `List` (filtr archived/private/uploader, řazení, stránkování) a metody pro
-soubory/phash/edits. Plné CRUD filtry a HTTP API přijdou v dalším tasku.
+`Delete`, `List`/`Count` (filtr archived/private/uploader, řazení, stránkování),
+`Search` (fulltext nad `fts` sloupcem, řazení dle `ts_rank`, ctí list filtry +
+stránkování; prázdný dotaz → `ErrEmptySearch`) a metody pro soubory/phash/edits.
 
 ### Úložiště originálů (`internal/storage`)
 
@@ -380,6 +386,7 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/admin/users/{uid}/password` | admin | `{new_password}` → reset hesla (zruší všechny jeho session) |
 | POST | `/upload` | editor/admin | `multipart/form-data` s jedním+ soubory → per-file `{outcome, photo_uid, warnings}` (viz Upload / ingest) |
 | GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API) |
+| GET | `/search?q=` | přihlášený | česky-aware fulltext (tsvector + unaccent, diakritika necitlivá), řazení dle relevance (`ts_rank`, title>description>notes>file_name), ctí list filtry + stránkování; `q` povinný → stejný tvar jako `/photos` |
 | GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` |
 | GET | `/photos/{uid}/similar` | přihlášený | vizuálně podobné fotky dle cosine vzdálenosti embeddingu (`?limit`, default 24, max 100) → `{similar:[{…photo, distance}]}` |
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |

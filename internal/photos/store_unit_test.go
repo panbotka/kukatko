@@ -194,6 +194,59 @@ func TestBuildListQuery(t *testing.T) {
 	})
 }
 
+// TestBuildSearchQuery verifies the search query binds the full-text query,
+// ranks by ts_rank, keeps the list filters and paginates.
+func TestBuildSearchQuery(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ranks by ts_rank and binds the query", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildSearchQuery(ListParams{FullText: "tomas", Limit: 20, Offset: 40})
+		for _, want := range []string{
+			"fts @@ websearch_to_tsquery('simple', immutable_unaccent($1))",
+			"ORDER BY ts_rank(fts, websearch_to_tsquery('simple', immutable_unaccent($2))) DESC, uid DESC",
+			"LIMIT $3",
+			"OFFSET $4",
+		} {
+			if !strings.Contains(query, want) {
+				t.Errorf("query missing %q: %q", want, query)
+			}
+		}
+		// The query string is bound twice (WHERE match + rank), then limit/offset.
+		if len(args) != 4 {
+			t.Fatalf("args = %v, want 4 entries", args)
+		}
+		if args[0] != "tomas" || args[1] != "tomas" || args[2] != 20 || args[3] != 40 {
+			t.Errorf("args = %v, want [tomas tomas 20 40]", args)
+		}
+	})
+
+	t.Run("keeps list filters alongside the full-text match", func(t *testing.T) {
+		t.Parallel()
+		yes := true
+		query, args := buildSearchQuery(ListParams{FullText: "beach", Private: &yes})
+		if !strings.Contains(query, "private = $1") {
+			t.Errorf("query missing private filter: %q", query)
+		}
+		if !strings.Contains(query, "fts @@ websearch_to_tsquery('simple', immutable_unaccent($2))") {
+			t.Errorf("query missing bound full-text match after filters: %q", query)
+		}
+		// private + fts query (WHERE) + fts query (rank) + limit + offset.
+		if len(args) != 5 {
+			t.Fatalf("args = %v, want 5 entries", args)
+		}
+	})
+
+	t.Run("defaults the limit when unset", func(t *testing.T) {
+		t.Parallel()
+		_, args := buildSearchQuery(ListParams{FullText: "x"})
+		// fts(WHERE) + fts(rank) + limit + offset, with the default limit applied.
+		if len(args) != 4 || args[2] != defaultListLimit {
+			t.Errorf("args = %v, want default limit %d at index 2", args, defaultListLimit)
+		}
+	})
+}
+
 // TestBuildCountQuery verifies the count query reuses the same filters as the
 // list query but omits ordering and pagination.
 func TestBuildCountQuery(t *testing.T) {

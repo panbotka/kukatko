@@ -38,15 +38,24 @@ inkrementální).
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/`ListByUIDs`
   (batch lookup dle uid, ignoruje neznámé — pro similar API)/
   `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/private/
-  uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/fulltext search,
+  uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search,
   řazení taken_at/created_at/uid/title/file_size, stránkování limit/offset; `Count` sdílí
-  `buildWhere` filtry pro `total`), plus `CreateFile`/`ListFiles`,
+  `buildWhere` filtry pro `total`)/`Search` (česky-aware fulltext nad generovaným `fts
+  tsvector` sloupcem: `ListParams.FullText` přes `websearch_to_tsquery('simple',
+  immutable_unaccent(q))`, řazení dle `ts_rank` (title>description>notes>file_name),
+  diakritika necitlivá, ctí všechny List filtry + stránkování; prázdný dotaz →
+  `ErrEmptySearch`; `Count` s `FullText` vrací total díky sdílenému `buildWhere`),
+  plus `CreateFile`/`ListFiles`,
   `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
   `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
   `photo_edits` (all-or-nothing crop, rotace 0/90/180/270); video sloupce v migraci
   `0004_video.sql` (`media_type` image/video/live CHECK+partial index, `duration_ms`,
-  `video_codec`, `audio_codec`, `has_audio`, `fps`); FK `ON DELETE CASCADE`
+  `video_codec`, `audio_codec`, `has_audio`, `fps`); generovaný `fts tsvector` sloupec +
+  GIN index a IMMUTABLE `immutable_unaccent` wrapper v migraci `0007_fts.sql` (fulltext,
+  `setweight` A/B/C/D, `to_tsvector('simple', immutable_unaccent(...))`, `file_name`
+  normalizován regexem na tokeny; generated column drží `fts` aktuální i po editaci
+  metadat bez triggeru); FK `ON DELETE CASCADE`
   na satelity, `uploaded_by` `ON DELETE SET NULL`), `internal/storage/`
   (on-disk úložiště originálů: rozhraní `Storage` + filesystemová implementace `FS`
   `NewFS(root)`; `Store(ctx,src,takenAt,originalName)` streamuje na disk + počítá **SHA256**,
@@ -110,11 +119,16 @@ inkrementální).
   `API` = `NewAPI(svc, requireWrite)` + `RegisterRoutes` mountuje `POST /upload` za `RequireWrite`;
   multipart se streamuje part-by-part, nikdy celý soubor v RAM), `internal/photoapi/`
   (read/curace HTTP API nad katalogem: `NewAPI(Config{Store,Storage,Thumbnailer,RequireAuth,
-  RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`; `parseListParams`
+  RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos` **a `GET /search`**;
+  `parseListParams`
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
   newest/oldest/taken_at/added/title/size + `order`, `archived` false/true/only, `private`,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`; neplatný → 400),
-  list vrací `{photos,total,limit,offset,next_offset}` pro infinite scroll; `PATCH` je
+  list vrací `{photos,total,limit,offset,next_offset}` pro infinite scroll;
+  `GET /search?q=` (`handleSearch`) = fulltext režim: `q` je tsquery (povinný, prázdný/
+  whitespace → 400), `params.FullText`, řadí se dle relevance přes `store.Search` (ignoruje
+  `sort`/`order`), ctí ostatní List filtry + stránkování, stejný tvar odpovědi jako list
+  (sdílený `writePage`); `PATCH` je
   částečný přes raw-key presence (vynechané pole beze změny, `null` maže nullable, validace
   souřadnic); média `thumb/{size}`+`download` **streamují** přes `io.Copy` se `streamMedia`
   (`Cache-Control`/`ETag`/`304`, `Content-Length` z DB, náhled generován on-miss),
@@ -279,6 +293,10 @@ inkrementální).
   v `serve` (`buildIngest` v `cmd/kukatko/ingest.go`). Limit `upload.max_file_size_mb` (0 = bez limitu).
 - **Photos API (`/api/v1`, `internal/photoapi`):** `GET /photos` (přihlášený) — list s filtry/
   řazením/stránkováním (query params, neplatný → 400) → `{photos,total,limit,offset,next_offset}`;
+  `GET /search?q=` (přihlášený) — **česky-aware fulltext** nad generovaným `fts tsvector`
+  sloupcem (dictionary `simple` + `unaccent`, diakritika necitlivá), řazení dle `ts_rank`
+  (title>description>notes>file_name), ctí ostatní list filtry + stránkování, stejný tvar
+  odpovědi jako list; `q` povinný (prázdný → 400);
   `GET /photos/{uid}` plný detail + `files`; `PATCH /photos/{uid}` (editor/admin) částečná úprava
   metadat (null maže nullable, validace souřadnic); `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);

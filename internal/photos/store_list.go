@@ -85,6 +85,11 @@ type ListParams struct {
 	// Search, when non-empty, keeps photos whose title, description or notes
 	// contain it (case-insensitive substring match).
 	Search string
+	// FullText, when non-empty, keeps photos whose search vector (title,
+	// description, notes, normalised file_name) matches it as a Czech-aware,
+	// diacritics-insensitive full-text query. It is used by Search, where it also
+	// drives the ts_rank ordering; List and Count treat it as a plain filter.
+	FullText string
 	// Sort selects the ordering column; an unknown value falls back to
 	// SortByTakenAt.
 	Sort SortField
@@ -121,6 +126,39 @@ func (s *Store) List(ctx context.Context, params ListParams) ([]Photo, error) {
 	return photos, nil
 }
 
+// Search returns the photos whose search vector matches params.FullText,
+// ordered by full-text relevance (ts_rank, which weights title > description >
+// notes > file_name) with the UID as a stable tiebreaker. It honours every List
+// filter (date range, GPS, private, …) and the same limit/offset pagination, so
+// a search can be scoped exactly like a browse. params.FullText must be
+// non-empty; an empty query yields ErrEmptySearch rather than every photo. Pair
+// it with Count (which shares the filters) for the total. The slice is empty
+// (not nil) when nothing matches.
+func (s *Store) Search(ctx context.Context, params ListParams) ([]Photo, error) {
+	if params.FullText == "" {
+		return nil, ErrEmptySearch
+	}
+	query, args := buildSearchQuery(params)
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("photos: searching photos: %w", err)
+	}
+	defer rows.Close()
+
+	photos := make([]Photo, 0)
+	for rows.Next() {
+		photo, scanErr := scanPhoto(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		photos = append(photos, photo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("photos: iterating search results: %w", err)
+	}
+	return photos, nil
+}
+
 // Count returns the number of photos matching params' filters, ignoring its
 // limit, offset and ordering. It powers the total used by paginated listings.
 func (s *Store) Count(ctx context.Context, params ListParams) (int, error) {
@@ -142,11 +180,20 @@ func buildWhere(params ListParams) (where []string, args []any) {
 		args = append(args, value)
 		return "$" + strconv.Itoa(len(args))
 	}
-	where = append(where, archivedClauses(params)...)
+	return whereClauses(params, bind), args
+}
+
+// whereClauses returns every WHERE filter implied by params, binding each value
+// through bind. It is shared by buildWhere (which owns the bind closure) and by
+// buildSearchQuery (which needs to interleave its own binds for the ts_rank
+// ordering), so the filter set stays identical across list, count and search.
+func whereClauses(params ListParams, bind func(any) string) []string {
+	where := archivedClauses(params)
 	where = append(where, scalarClauses(params, bind)...)
 	where = append(where, gpsClauses(params)...)
 	where = append(where, textClauses(params, bind)...)
-	return where, args
+	where = append(where, ftsClauses(params, bind)...)
+	return where
 }
 
 // archivedClauses returns the archive-state filter: live-only by default,
@@ -212,6 +259,25 @@ func textClauses(params ListParams, bind func(any) string) []string {
 	return where
 }
 
+// ftsClauses returns the full-text match filter, binding the raw query string so
+// it is parsed by the same unaccented tsquery expression that Search ranks on.
+// It returns nil when no full-text query is set.
+func ftsClauses(params ListParams, bind func(any) string) []string {
+	if params.FullText == "" {
+		return nil
+	}
+	return []string{"fts @@ " + tsQueryExpr(bind(params.FullText))}
+}
+
+// tsQueryExpr returns the SQL that turns the query string at the given bound
+// placeholder into a tsquery, mirroring the generated fts column: the `simple`
+// dictionary (no stemming) wrapped in immutable_unaccent for diacritics-
+// insensitive matching. websearch_to_tsquery is used because it never errors on
+// arbitrary user input and supports quoted phrases and "-" exclusions.
+func tsQueryExpr(placeholder string) string {
+	return "websearch_to_tsquery('simple', immutable_unaccent(" + placeholder + "))"
+}
+
 // buildListQuery assembles the parameterised SELECT for List: the WHERE filters,
 // the validated ORDER BY, and the LIMIT/OFFSET. All caller values are bound as
 // parameters; ordering is chosen from an allow-list, never interpolated raw.
@@ -244,6 +310,33 @@ func buildCountQuery(params ListParams) (string, []any) {
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
+	return query, args
+}
+
+// buildSearchQuery assembles the parameterised SELECT for Search: the WHERE
+// filters (which include the full-text match via ftsClauses), an ORDER BY that
+// ranks rows with ts_rank over the same unaccented tsquery, and LIMIT/OFFSET.
+// The query string is bound a second time for the rank expression rather than
+// reusing the WHERE placeholder, keeping each builder self-contained; the bound
+// value is identical, so the planner still sees one query. All caller values are
+// bound as parameters.
+func buildSearchQuery(params ListParams) (string, []any) {
+	where, args := buildWhere(params)
+	query := "SELECT " + photoColumns + " FROM photos WHERE " + strings.Join(where, " AND ")
+
+	args = append(args, params.FullText)
+	rank := "ts_rank(fts, " + tsQueryExpr("$"+strconv.Itoa(len(args))) + ")"
+	query += " ORDER BY " + rank + " DESC, uid DESC"
+
+	limit := params.Limit
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+	args = append(args, limit)
+	query += " LIMIT $" + strconv.Itoa(len(args))
+	args = append(args, params.Offset)
+	query += " OFFSET $" + strconv.Itoa(len(args))
+
 	return query, args
 }
 
