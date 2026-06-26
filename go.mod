@@ -9,6 +9,9 @@ require (
 	github.com/pgvector/pgvector-go/pgx v0.4.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.21.0
+	golang.org/x/crypto v0.53.0
+	golang.org/x/image v0.43.0
+	golang.org/x/sync v0.21.0
 )
 
 require (
@@ -27,7 +30,6 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 )

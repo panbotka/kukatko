@@ -49,7 +49,24 @@ inkrementální).
   `Open`/`Stat`/`Delete`/`AbsPath` s cestami confinovanými do rootu (`ErrInvalidPath`);
   MIME z obsahu (sniff 512 B) + přípona jako hint (`mediaTypeByExt` pro HEIC/RAW/video);
   sentinely `ErrAlreadyExists`/`ErrInvalidPath`/`ErrTooManyCollisions`; nikdy nedrží soubor
-  celý v RAM), `internal/web/`
+  celý v RAM), `internal/thumb/`
+  (thumbnailer náhledů, **CGO-free**: registr velikostí `sizes`+`sizeOrder` ve dvou režimech
+  `fit` (max-strana, zachová poměr, neupscaluje) a `crop-square` (center-crop), default sada
+  `fit_720/1280/1920/2560/3840` + `tile_100/224/500`; cache layout pod `storage.cache_path`
+  `thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg` (shard z hex SHA256), regenerovatelné +
+  **idempotentní** (skip existujících) + atomický zápis temp+rename; `Thumbnailer` =
+  `New(store,cacheDir,WithConcurrency(n))` s API `Generate(ctx,photo,sizes...)`/
+  `GenerateAll(ctx,photo)` (mapa size→abs cesta)/`Path(hash,size)`/`Open(hash,size)`;
+  dekód jednou na fotku, paralelní enkód velikostí (errgroup, default `GOMAXPROCS`),
+  **EXIF orientace** (1–8) automaticky; pure-Go JPEG/PNG/WebP + `golang.org/x/image`
+  (`draw.CatmullRom` resize); sentinely `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
+  `SizeNames()`/`IsValidSize`), `internal/imgconvert/`
+  (HEIC/RAW → dekódovatelný JPEG, **shell-out**: `EnsureDecodable(ctx,path)` →
+  (cesta, cleanup, err); JPEG/PNG/WebP passthrough, **HEIC** přes `heif-convert` na temp JPEG,
+  **RAW** (cr2/cr3/nef/arw/dng/raf/orf/rw2/pef/srw) vytáhne embedded preview přes
+  `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/`-ThumbnailImage`) místo demosaicu;
+  `DetectFormat`/`IsSupportedFormat`; sentinely `ErrConverterMissing`/`ErrUnsupportedFormat`/
+  `ErrNoEmbeddedPreview`; chybějící nástroj = jasná chyba), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého

@@ -87,6 +87,34 @@ On-disk vrstva pro originální média. Rozhraní `Storage` + filesystemová imp
 - **MIME** se detekuje z obsahu (sniffing prvních 512 B) s příponou jako fallback; tabulka
   `mediaTypeByExt` pokrývá formáty, které stdlib nezná (HEIC/HEIF/AVIF, RAW, kontejnerové video).
 
+### Náhledy / thumbnailer (`internal/thumb` + `internal/imgconvert`)
+
+Generování a cache odvozených JPEG náhledů přímo na Pi, **bez CGO** (pure-Go dekódování +
+shell-out na externí nástroje pro HEIC/RAW).
+
+- **Registr velikostí** (`internal/thumb`): pojmenované velikosti ve dvou režimech — `fit_*`
+  (nejdelší strana ≤ limit, zachová poměr, neupscaluje) a `tile_*` (center-crop na čtverec).
+  Výchozí sada: `fit_720/1280/1920/2560/3840` a `tile_100/224/500` (kvalita JPEG ~85–90).
+  Sada se snadno rozšiřuje — přidáš položku do `sizes` + `sizeOrder` a propíše se do celé
+  pipeline. Introspekce: `SizeNames()`, `IsValidSize(name)`.
+- **Cache layout** pod `storage.cache_path`: `thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg`
+  (shardováno podle prvních tří byte-párů hex SHA256 originálu). Plně regenerovatelné
+  z originálů a **idempotentní** — existující velikost se nepřegeneruje ani nepřepíše. Zápis
+  je atomický (temp + rename), takže paralelní zápis stejného obsahu konverguje race-free.
+- **API** (`thumb.New(store, cachePath)`): `Generate(ctx, photo, sizes...)`,
+  `GenerateAll(ctx, photo)` (vrací mapu `size → absolutní cesta`), `Path(hash, size)`,
+  `Open(hash, size)` (vrací `ErrNotCached`, dokud náhled neexistuje). Zdroj se dekóduje
+  **jednou na fotku**, jednotlivé velikosti se enkódují paralelně s omezenou konkurencí
+  (`WithConcurrency(n)`, default `GOMAXPROCS`). **EXIF orientace** (`photo.FileOrientation`,
+  1–8) se aplikuje automaticky.
+- **HEIC/RAW** (`internal/imgconvert`): `EnsureDecodable(ctx, path)` vrátí cestu k souboru,
+  který umí `image.Decode`. JPEG/PNG/WebP projdou beze změny; **HEIC** se převede přes
+  `heif-convert` na dočasný JPEG; **RAW** (cr2/cr3/nef/arw/dng/raf/orf/rw2/pef/srw) vytáhne
+  **embedded JPEG preview** přes `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/
+  `-ThumbnailImage`) místo plného demosaicu. Chybějící externí nástroj vrací jasný
+  `ErrConverterMissing`. Runtime apt závislosti: `libheif-examples`/`libheif-bin`,
+  `libimage-exiftool-perl`.
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).
