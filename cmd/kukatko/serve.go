@@ -85,9 +85,9 @@ func runServe(cmd *cobra.Command) error {
 
 // buildServices assembles every HTTP API group and the background worker over a
 // shared queue store: upload/ingest, photo browse/curation (with embedding-backed
-// similar search), the admin jobs and processing APIs, and the image_embed
-// worker handler. It returns the server options registering those routes plus the
-// worker for the serve command to run.
+// similar search), the admin jobs and processing APIs, and the image_embed and
+// face_detect worker handlers. It returns the server options registering those
+// routes plus the worker for the serve command to run.
 func buildServices(
 	cfg *config.Config, db *database.DB, authAPI *auth.API,
 ) ([]server.Option, *worker.Worker, error) {
@@ -102,11 +102,15 @@ func buildServices(
 	if err != nil {
 		return nil, nil, err
 	}
+	faceSvc, err := buildFaceService(cfg, db, enqueuer, vectorStore, embedClient)
+	if err != nil {
+		return nil, nil, err
+	}
 	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore, embedClient)
 	if err != nil {
 		return nil, nil, err
 	}
-	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc)
+	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc)
 
 	return []server.Option{
 		server.WithAPI(authAPI.RegisterRoutes),

@@ -97,15 +97,23 @@ ORDER BY p.created_at DESC, p.uid DESC%s`
 // a non-positive limit returns every missing photo. It backs the embedding
 // backfill, which enqueues an image_embed job per returned uid.
 func (s *Store) ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]string, error) {
-	query := fmt.Sprintf(listMissingEmbeddingSQL, "")
+	return s.queryPhotoUIDs(ctx, listMissingEmbeddingSQL, limit)
+}
+
+// queryPhotoUIDs runs a uid-listing query templated with a LIMIT placeholder and
+// returns the scanned uids. tmpl must contain a single %s that receives a LIMIT
+// clause when limit is positive (and an empty string otherwise). It backs the
+// "photos missing X" backfill listings, whose only difference is the join.
+func (s *Store) queryPhotoUIDs(ctx context.Context, tmpl string, limit int) ([]string, error) {
+	query := fmt.Sprintf(tmpl, "")
 	args := []any(nil)
 	if limit > 0 {
-		query = fmt.Sprintf(listMissingEmbeddingSQL, "\nLIMIT $1")
+		query = fmt.Sprintf(tmpl, "\nLIMIT $1")
 		args = []any{limit}
 	}
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("listing photos missing embedding: %w", err)
+		return nil, fmt.Errorf("listing photo uids: %w", err)
 	}
 	defer rows.Close()
 
@@ -118,7 +126,7 @@ func (s *Store) ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]st
 		uids = append(uids, uid)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating photos missing embedding: %w", err)
+		return nil, fmt.Errorf("iterating photo uids: %w", err)
 	}
 	return uids, nil
 }

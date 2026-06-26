@@ -60,6 +60,7 @@ type Config struct {
 	Storage   StorageConfig   `mapstructure:"storage"`
 	Web       WebConfig       `mapstructure:"web"`
 	Embedding EmbeddingConfig `mapstructure:"embedding"`
+	Faces     FacesConfig     `mapstructure:"faces"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	Maps      MapsConfig      `mapstructure:"maps"`
 	Backup    BackupConfig    `mapstructure:"backup"`
@@ -99,6 +100,15 @@ type EmbeddingConfig struct {
 	URL      string `mapstructure:"url"`
 	ImageDim int    `mapstructure:"image_dim"`
 	FaceDim  int    `mapstructure:"face_dim"`
+}
+
+// FacesConfig tunes the face_detect job.
+type FacesConfig struct {
+	// MinDetScore is the minimum detector confidence (det_score) a detected face
+	// must have to be stored; lower-confidence detections are dropped. The sidecar
+	// applies its own detection threshold, so this is a second, configurable floor.
+	// A non-positive value disables the filter (stores every detection).
+	MinDetScore float64 `mapstructure:"min_det_score"`
 }
 
 // AuthConfig holds the credentials used to bootstrap the initial admin account
@@ -263,6 +273,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("embedding.url", "http://localhost:8000")
 	v.SetDefault("embedding.image_dim", 768)
 	v.SetDefault("embedding.face_dim", 512)
+
+	v.SetDefault("faces.min_det_score", 0.5)
 
 	v.SetDefault("auth.bootstrap_admin_username", "")
 	v.SetDefault("auth.bootstrap_admin_password", "")

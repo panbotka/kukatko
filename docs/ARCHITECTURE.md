@@ -320,7 +320,13 @@ Workflow (vylepšené UX oproti photo-sorteru):
 7. **Stránky osob:** přehled, cover, počty, výskyty.
 
 Souřadnice: `faces.bbox` normalizované [x,y,w,h] (0..1, display space, EXIF-aware);
-`markers` taktéž 0..1. Převod z pixelů sidecaru řeší helper se swapem stran pro orientaci 5–8.
+`markers` taktéž 0..1. Převod z pixelů sidecaru řeší helper (`facejob.normalizeBBox`) se swapem
+stran pro orientaci 5–8 (sidecar/InsightFace rotuje obraz dle EXIF, takže `face_detect` posílá
+**originál v plném rozlišení**, ne náhled, aby měřítko bboxu odpovídalo uloženým rozměrům).
+Job `face_detect` (`internal/facejob`) je **idempotentní** přes tabulku `face_detections`
+(migrace 0009): jeden řádek na zpracovanou fotku odliší fotku bez obličejů od dosud
+nezpracované (`faces` může mít nula řádků). Slabé detekce filtruje práh `faces.min_det_score`.
+Admin backfill: `POST /api/v1/process/faces`.
 
 ---
 

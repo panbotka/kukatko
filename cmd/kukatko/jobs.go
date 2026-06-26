@@ -7,6 +7,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/embedjob"
+	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/jobsapi"
 	"github.com/panbotka/kukatko/internal/processapi"
@@ -14,18 +15,20 @@ import (
 )
 
 // buildJobs assembles the background job subsystem: the in-process worker (with
-// the built-in handlers plus the image_embed handler registered) that drains the
-// shared queue store, the admin HTTP API exposing queue stats/listings/requeue,
-// and the admin processing API (embedding backfill). The worker is returned to
-// the serve command to run for the process lifetime; both APIs mount their
-// admin-guarded routes via authAPI so the api packages stay decoupled from
-// auth's wiring.
+// the built-in handlers plus the image_embed and face_detect handlers registered)
+// that drains the shared queue store, the admin HTTP API exposing queue
+// stats/listings/requeue, and the admin processing API (embedding and face
+// backfills). The worker is returned to the serve command to run for the process
+// lifetime; both APIs mount their admin-guarded routes via authAPI so the api
+// packages stay decoupled from auth's wiring.
 func buildJobs(
-	cfg *config.Config, store *jobs.Store, authAPI *auth.API, embedSvc *embedjob.Service,
+	cfg *config.Config, store *jobs.Store, authAPI *auth.API,
+	embedSvc *embedjob.Service, faceSvc *facejob.Service,
 ) (*worker.Worker, *jobsapi.API, *processapi.API) {
 	registry := worker.NewRegistry()
 	worker.RegisterBuiltins(registry)
 	registry.Register(jobs.TypeImageEmbed, embedSvc.Handle)
+	registry.Register(jobs.TypeFaceDetect, faceSvc.Handle)
 
 	w := worker.New(worker.Config{
 		Queue:             store,
@@ -41,8 +44,9 @@ func buildJobs(
 		RequireAdmin: authAPI.RequireAdmin,
 	})
 	procAPI := processapi.NewAPI(processapi.Config{
-		Backfiller:   embedSvc,
-		RequireAdmin: authAPI.RequireAdmin,
+		Backfiller:     embedSvc,
+		FaceBackfiller: faceSvc,
+		RequireAdmin:   authAPI.RequireAdmin,
 	})
 	return w, jobAPI, procAPI
 }

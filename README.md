@@ -312,16 +312,24 @@ což je na Pi podstatné.
   `marker_uid`/`subject_uid`/`subject_name`/`photo_width`/`photo_height`/`orientation`),
   `UNIQUE(photo_uid, face_index)` + HNSW index na `embedding`. FK `ON DELETE CASCADE` opravuje
   mezeru photo-sorteru, kde embeddingy/faces neměly FK a vznikali sirotci.
+- **`face_detections`** (migrace `0009_face_detections.sql`): jeden řádek na fotku, která prošla
+  detekcí obličejů (`photo_uid` PK FK `ON DELETE CASCADE`, `face_count`, `model`, `detected_at`).
+  Protože `faces` může mít nula řádků, je tahle tabulka jediný způsob, jak odlišit fotku **bez
+  obličejů** od fotky **dosud nezpracované** — drží idempotenci `face_detect` jobu i backfill.
 
 `vectors.Store` (`NewStore(pool)`) nad sdíleným pgx poolem:
 `SaveEmbedding`/`GetEmbedding` (`ErrEmbeddingNotFound`), `FindSimilar(vec, limit, maxDistance)`
 nad `embedding <=> $vec` (nejbližší první), `SaveFaces`(idempotentní replace v transakci)/
-`ListFaces`/`DeleteFaces`, `FindSimilarFaces`. Dotazy běží v **read-only transakci** se
+`ListFaces`/`DeleteFaces`, `FindSimilarFaces`,
+`RecordFaceDetection(uid, faces, model)` (atomicky nahradí faces fotky **a** zapíše
+`face_detections` řádek — i pro nula obličejů), `FacesDetected(uid)` (existuje `face_detections`
+řádek?), `ListPhotosMissingFaces(limit)`. Dotazy běží v **read-only transakci** se
 `SET LOCAL hnsw.ef_search = 100` pro lepší recall; `limit` se ořezává do `[1,500]`,
 nekladný `maxDistance` filtr vypne. Helpery `ToHalfVec`/`FromHalfVec` (`[]float32` ↔
 `pgvector.HalfVector`), validace rozměrů přes `ErrDimMismatch`, duplicitní `face_index` →
 `ErrFaceIndexTaken`. `ListPhotosMissingEmbedding(limit)` vrací uid nearchivovaných fotek bez
-embeddingu (LEFT JOIN na `embeddings`, nejnovější první; `limit <= 0` = všechny) — podklad pro
+embeddingu (LEFT JOIN na `embeddings`, nejnovější první; `limit <= 0` = všechny) a
+`ListPhotosMissingFaces(limit)` analogicky uid fotek bez `face_detections` řádku — podklady pro
 backfill.
 
 ### Subjekty & markery (`internal/people`)
@@ -374,6 +382,32 @@ se unit-testuje s faky bez sítě/DB/disku.
   konfigurované cosine vzdálenosti (`duplicate.embedding_max_dist`) od embeddingu fotky, bez ní
   samé; `<= 0` ji vypne, fotka bez embeddingu → nil. Doplňuje pHash kontrolu, kterou upload dělá
   už při ingestu (kdy embedding ještě neexistuje).
+
+### Detekce obličejů (`internal/facejob`)
+
+`facejob.Service` zapojuje detekci obličejů do fronty jobů. Vše za rozhraními
+(`PhotoStore`/`VectorStore`/`ImageSource`/`Enqueuer` + `embedding.Client`), takže se unit-testuje
+s faky bez sítě/DB/disku.
+
+- **Handler `face_detect`** (`Handle` = `worker.HandlerFunc`, registrovaný v `serve`): z payloadu
+  `{"photo_uid": …}` načte fotku, otevře **dekódovatelný originál v plném rozlišení** (přes
+  `StorageSource` = `storage` + `imgconvert.EnsureDecodable`, takže HEIC/RAW/video se převedou) a
+  pošle ho sidecaru (`Client.FaceEmbeddings` → 512-dim ArcFace embeddingy + pixelové bboxy +
+  det_score). Originál (ne náhled) proto, že sidecar (InsightFace) sám rotuje podle EXIF a vrací
+  bbox v display pixelech — normalizace dle uložených rozměrů sedí jen ve stejném měřítku. Každý
+  obličej se uloží přes `vectors.RecordFaceDetection` (512-dim `halfvec`, **normalizovaný bbox**,
+  det_score, `face_index`, model, cache `photo_width`/`photo_height`/`orientation`).
+- **Převod bboxu** (`normalizeBBox`): pixelový `[x1,y1,x2,y2]` → normalizovaný `[x,y,w,h]` (0..1)
+  podle rozměrů fotky a **EXIF orientace** — pro orientace 5–8 (rotace o 90°/270°) se prohodí
+  šířka a výška display prostoru. Mirror photo-sorter logiky, otestováno přes všech 8 orientací.
+- **Filtr det_score** (`faces.min_det_score`, default `0.5`): obličeje s nižší confidence se
+  zahodí; přeživší se přeindexují souvisle (žádné mezery v `face_index`). `<= 0` filtr vypne.
+- **Idempotence**: fotka, která už má `face_detections` řádek, se přeskočí bez volání sidecaru;
+  detekce s **nula obličeji** se přesto zaznamená, takže se znovu nezpracovává. **Box offline**
+  (`embedding.IsUnavailable`) → `worker.RetryAfter(5 min, …)` (odložení bez spálení pokusu).
+- **`BackfillFaces(ctx)`** — zařadí `face_detect` pro každou nezpracovanou fotku
+  (`ListPhotosMissingFaces`, dedup = no-op), vrací počet. Upload zařazuje `face_detect` rovnou
+  při ingestu; backfill je recovery cesta pro fotky nahrané, když byl box offline.
 
 ## Konfigurace
 
@@ -430,6 +464,7 @@ Endpointy pod `/api/v1` (JSON):
 | GET | `/photos/{uid}/download` | session/token | originál jako příloha — streamuje (nikdy celý v RAM), `Content-Length`/`ETag` |
 | GET | `/jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue` | admin | fronta jobů (viz Admin Jobs API) |
 | POST | `/process/embeddings` | admin | backfill — zařadí `image_embed` pro fotky bez embeddingu → `{enqueued}` (viz Process API) |
+| POST | `/process/faces` | admin | backfill — zařadí `face_detect` pro fotky bez detekce obličejů → `{enqueued}` (viz Process API) |
 
 RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin` /
 `RequireAuthOrDownloadToken`). Konfigurační
@@ -478,6 +513,9 @@ Admin-only HTTP API pro hromadné zpracování katalogu (guard `RequireAdmin`), 
 - `POST /api/v1/process/embeddings` → `{enqueued}` — spustí `embedjob.BackfillEmbeddings`:
   zařadí `image_embed` job pro každou fotku bez embeddingu (dedup = no-op), vrátí počet. Recovery
   cesta pro fotky nahrané, když byl box offline, nebo importované před zavedením embeddingů.
+- `POST /api/v1/process/faces` → `{enqueued}` — spustí `facejob.BackfillFaces`: zařadí
+  `face_detect` job pro každou fotku bez detekce obličejů (dedup = no-op), vrátí počet. Recovery
+  cesta stejně jako u embeddingů.
 
 ## Frontend
 

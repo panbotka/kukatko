@@ -24,13 +24,26 @@ func (f *fakeBackfiller) BackfillEmbeddings(context.Context) (int, error) {
 	return f.enqueued, f.err
 }
 
+// fakeFaceBackfiller is a FaceBackfiller stub returning canned values.
+type fakeFaceBackfiller struct {
+	enqueued int
+	err      error
+	calls    int
+}
+
+// BackfillFaces records the call and returns the canned result.
+func (f *fakeFaceBackfiller) BackfillFaces(context.Context) (int, error) {
+	f.calls++
+	return f.enqueued, f.err
+}
+
 // passthrough is a no-op middleware standing in for the admin guard.
 func passthrough(next http.Handler) http.Handler { return next }
 
-// newServer mounts the API with the given backfiller behind a passthrough guard.
-func newServer(t *testing.T, bf Backfiller) *httptest.Server {
+// newServer mounts the API with the given backfillers behind a passthrough guard.
+func newServer(t *testing.T, bf Backfiller, ff FaceBackfiller) *httptest.Server {
 	t.Helper()
-	api := NewAPI(Config{Backfiller: bf, RequireAdmin: passthrough})
+	api := NewAPI(Config{Backfiller: bf, FaceBackfiller: ff, RequireAdmin: passthrough})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
 	srv := httptest.NewServer(r)
@@ -58,7 +71,7 @@ func TestBackfillEmbeddings_ok(t *testing.T) {
 	t.Parallel()
 
 	bf := &fakeBackfiller{enqueued: 7}
-	srv := newServer(t, bf)
+	srv := newServer(t, bf, &fakeFaceBackfiller{})
 
 	resp := postProcess(t, srv.URL+"/process/embeddings")
 	defer func() { _ = resp.Body.Close() }()
@@ -81,9 +94,46 @@ func TestBackfillEmbeddings_ok(t *testing.T) {
 func TestBackfillEmbeddings_error(t *testing.T) {
 	t.Parallel()
 
-	srv := newServer(t, &fakeBackfiller{err: errors.New("boom")})
+	srv := newServer(t, &fakeBackfiller{err: errors.New("boom")}, &fakeFaceBackfiller{})
 
 	resp := postProcess(t, srv.URL+"/process/embeddings")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+// TestBackfillFaces_ok reports the enqueued count on success.
+func TestBackfillFaces_ok(t *testing.T) {
+	t.Parallel()
+
+	ff := &fakeFaceBackfiller{enqueued: 4}
+	srv := newServer(t, &fakeBackfiller{}, ff)
+
+	resp := postProcess(t, srv.URL+"/process/faces")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body backfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Enqueued != 4 {
+		t.Errorf("enqueued = %d, want 4", body.Enqueued)
+	}
+	if ff.calls != 1 {
+		t.Errorf("face backfiller calls = %d, want 1", ff.calls)
+	}
+}
+
+// TestBackfillFaces_error maps a face-backfill failure to 500.
+func TestBackfillFaces_error(t *testing.T) {
+	t.Parallel()
+
+	srv := newServer(t, &fakeBackfiller{}, &fakeFaceBackfiller{err: errors.New("boom")})
+
+	resp := postProcess(t, srv.URL+"/process/faces")
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", resp.StatusCode)

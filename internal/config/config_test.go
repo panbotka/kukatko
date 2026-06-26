@@ -39,6 +39,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"embedding.url", cfg.Embedding.URL, "http://localhost:8000"},
 		{"embedding.image_dim", cfg.Embedding.ImageDim, 768},
 		{"embedding.face_dim", cfg.Embedding.FaceDim, 512},
+		{"faces.min_det_score", cfg.Faces.MinDetScore, 0.5},
 		{"trash.retention_days", cfg.Trash.RetentionDays, 30},
 		{"duplicate.enabled", cfg.Duplicate.Enabled, true},
 		{"duplicate.phash_max_diff", cfg.Duplicate.PhashMaxDiff, 8},

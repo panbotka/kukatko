@@ -211,8 +211,16 @@ inkrementální).
   `pgvector.HalfVector`); sentinely `ErrEmbeddingNotFound`/`ErrDimMismatch` (validace 768/512)/
   `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(limit)` =
   uid nearchivovaných fotek bez embeddingu (LEFT JOIN, nejnovější první, `limit<=0`=vše) pro
-  backfill; FK `ON DELETE CASCADE` — mazání fotky
-  smaže embeddingy i faces, oprava photo-sorter mezery se sirotky), `internal/people/`
+  backfill; **face-detection tracking** v tabulce `face_detections` (migrace
+  `0009_face_detections.sql`: `photo_uid PK` FK `ON DELETE CASCADE`, `face_count`, `model`,
+  `detected_at`) — protože `faces` může mít nula řádků, je to jediný způsob, jak odlišit fotku
+  bez obličejů od nezpracované; `RecordFaceDetection(uid,faces,model)` (atomicky nahradí faces
+  fotky **a** upsertne `face_detections` řádek — i pro nula obličejů; sdílí `replaceFaces` tx
+  helper se `SaveFaces`), `FacesDetected(uid)` (existuje řádek?), `ListPhotosMissingFaces(limit)`
+  (uid fotek bez `face_detections` řádku, jako `ListPhotosMissingEmbedding`); FK
+  `ON DELETE CASCADE` — mazání fotky
+  smaže embeddingy, faces i face_detections, oprava photo-sorter mezery se sirotky),
+  `internal/people/`
   (DB vrstva pro **subjekty** (osoby/zvířata/jiné) a **markery** (face/label regiony na
   fotkách), tabulky `subjects`/`markers` v migraci `0008_subjects_markers.sql`: `subjects`
   = `uid PK` (prefix `su`), `slug UNIQUE`, `name`, `type IN (person|pet|other)`, `favorite`,
@@ -243,10 +251,27 @@ inkrementální).
   offline** (`embedding.IsUnavailable`) → `worker.RetryAfter(5 min)` (odložení bez spálení pokusu),
   jiná chyba normální retry; `BackfillEmbeddings(ctx)` zařadí `image_embed` pro každou fotku bez
   embeddingu (dedup no-op), vrací počet; `Duplicates(ctx,uid)` embeddingová detekce blízkých
-  duplikátů do `duplicate.embedding_max_dist`, bez sebe sama (`<=0` vypne)), `internal/processapi/`
-  (admin-only HTTP API pro hromadné zpracování: `NewAPI(Config{Backfiller,RequireAdmin})`+
-  `RegisterRoutes` mountuje `/process`; `POST /process/embeddings` → `{enqueued}` spustí
-  `embedjob.BackfillEmbeddings`), `internal/web/`
+  duplikátů do `duplicate.embedding_max_dist`, bez sebe sama (`<=0` vypne)), `internal/facejob/`
+  (zapojení detekce obličejů do fronty, vše za rozhraními
+  `PhotoStore`/`VectorStore`/`ImageSource`/`Enqueuer`+`embedding.Client`: `Service` =
+  `New(Config{Photos,Vectors,Client,Source,Enqueuer,OfflineRetryDelay,MinDetScore})`; **handler
+  `face_detect`** `Handle`(=`worker.HandlerFunc`, registrovaný v `serve`) → z payloadu
+  `{"photo_uid"}` načte fotku, otevře **dekódovatelný originál v plném rozlišení** přes
+  `StorageSource` (= `storage.AbsPath` + `imgconvert.EnsureDecodable`, HEIC/RAW/video se převedou,
+  cleanup tempu na `Close`), pošle sidecaru `FaceEmbeddings` (512-dim + pixel bbox + det_score) a
+  uloží přes `vectors.RecordFaceDetection`; originál (ne náhled) proto, že sidecar (InsightFace)
+  sám rotuje dle EXIF a vrací bbox v display pixelech; **převod bboxu** `normalizeBBox` pixel
+  `[x1,y1,x2,y2]` → normalizovaný `[x,y,w,h]` (0..1) dle rozměrů fotky a **EXIF orientace** (swap
+  šířky/výšky pro orientace 5–8), mirror photo-sorter logiky; **filtr det_score**
+  (`faces.min_det_score`, default 0.5, `<=0` vypne) zahodí slabé detekce, přeživší přeindexuje
+  souvisle; **idempotentní** (fotka s `face_detections` řádkem se přeskočí; nula obličejů se přesto
+  zaznamená), **box offline** → `worker.RetryAfter(5 min)`; `BackfillFaces(ctx)` zařadí
+  `face_detect` pro každou nezpracovanou fotku (`ListPhotosMissingFaces`, dedup no-op), vrací
+  počet), `internal/processapi/`
+  (admin-only HTTP API pro hromadné zpracování: `NewAPI(Config{Backfiller,FaceBackfiller,
+  RequireAdmin})`+`RegisterRoutes` mountuje `/process`; `POST /process/embeddings` → `{enqueued}`
+  spustí `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued}` spustí
+  `facejob.BackfillFaces`), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -360,9 +385,14 @@ inkrementální).
   (recent/dead-letter výpis, query `state`/`limit`/`offset`, neplatný → 400);
   `POST /jobs/{id}/requeue` → refreshnutý job (dead/failed → queued; 404 missing, 409
   ne-requeueable). Frontend polluje (žádné SSE). Mountuje se čtvrtým `server.WithAPI`
-  (`buildJobs` v `cmd/kukatko/jobs.go`), který zároveň postaví a `serve` spustí
+  (`buildJobs` v `cmd/kukatko/jobs.go`), který registruje handlery `image_embed`
+  (`embedjob.Service`) i `face_detect` (`facejob.Service`) a zároveň postaví a `serve` spustí
   **background worker** (`internal/worker`) na celý život procesu (`startWorker`, zastaví
   se na shutdownu přes ctx).
+- **Process API (`/api/v1`, `internal/processapi`, admin-only přes `RequireAdmin`):**
+  `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` pro fotky bez embeddingu),
+  `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů).
+  Mountuje se pátým `server.WithAPI` (`buildJobs`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

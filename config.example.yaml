@@ -52,6 +52,13 @@ embedding:
   # Dimensionality of face embeddings produced by the service.
   face_dim: 512
 
+faces:
+  # Minimum detector confidence (det_score) a detected face must have to be
+  # stored; lower-confidence detections are dropped by the face_detect job. The
+  # sidecar applies its own detection threshold, so this is a second floor. Set
+  # to 0 (or below) to store every detection.
+  min_det_score: 0.5
+
 auth:
   # Credentials used to create the initial admin account on first run.
   bootstrap_admin_username: ""
