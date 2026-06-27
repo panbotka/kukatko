@@ -1,0 +1,61 @@
+package vectors
+
+import "math"
+
+// Centroid returns the L2-normalised mean of vecs, the cosine-space centre of a
+// set of embeddings. It returns nil when vecs is empty; a zero-magnitude mean
+// (which cannot arise from normalised inputs) is returned without normalisation
+// rather than producing NaNs. Vectors shorter than the first are summed over
+// their common prefix only.
+func Centroid(vecs [][]float32) []float32 {
+	if len(vecs) == 0 {
+		return nil
+	}
+	dim := len(vecs[0])
+	sum := make([]float64, dim)
+	for _, v := range vecs {
+		for i := 0; i < dim && i < len(v); i++ {
+			sum[i] += float64(v[i])
+		}
+	}
+	mean := make([]float32, dim)
+	for i := range sum {
+		mean[i] = float32(sum[i] / float64(len(vecs)))
+	}
+	return Normalize(mean)
+}
+
+// Normalize scales v to unit L2 length, returning it unchanged when its
+// magnitude is zero so the result never contains NaNs.
+func Normalize(v []float32) []float32 {
+	var sumSq float64
+	for _, x := range v {
+		sumSq += float64(x) * float64(x)
+	}
+	norm := math.Sqrt(sumSq)
+	if norm == 0 {
+		return v
+	}
+	out := make([]float32, len(v))
+	for i, x := range v {
+		out[i] = float32(float64(x) / norm)
+	}
+	return out
+}
+
+// CosineDistance returns the cosine distance (1 - cosine similarity) between a
+// and b, in [0, 2]. Vectors of unequal length compare over their common prefix;
+// a zero-magnitude operand yields the maximum distance of 1.
+func CosineDistance(a, b []float32) float64 {
+	var dot, na, nb float64
+	n := min(len(b), len(a))
+	for i := range n {
+		dot += float64(a[i]) * float64(b[i])
+		na += float64(a[i]) * float64(a[i])
+		nb += float64(b[i]) * float64(b[i])
+	}
+	if na == 0 || nb == 0 {
+		return 1
+	}
+	return 1 - dot/(math.Sqrt(na)*math.Sqrt(nb))
+}

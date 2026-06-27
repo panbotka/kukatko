@@ -3,6 +3,8 @@ package cluster
 import (
 	"context"
 	"fmt"
+
+	"github.com/panbotka/kukatko/internal/vectors"
 )
 
 // Recluster groups the currently clusterable faces (unassigned and not yet in a
@@ -74,7 +76,7 @@ func (s *Service) persistCluster(ctx context.Context, faces []Face, component []
 		vecs[k] = faces[idx].Vector
 		ids[k] = faces[idx].ID
 	}
-	created, err := s.store.CreateCluster(ctx, centroid(vecs), len(component), faces[component[0]].Model)
+	created, err := s.store.CreateCluster(ctx, vectors.Centroid(vecs), len(component), faces[component[0]].Model)
 	if err != nil {
 		return err
 	}

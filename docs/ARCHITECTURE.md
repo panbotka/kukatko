@@ -316,7 +316,11 @@ Workflow (vylepšené UX oproti photo-sorteru):
    (min. velikost obličeje, vyloučit jiné osoby), limit ~5.
 5. **Přiřazení:** stavy `create_marker` / `assign_person` / `unassign_person` / `already_done`.
 6. **Outlier detekce:** pro každou osobu spočítat centroid a seřadit obličeje dle vzdálenosti
-   → odhalí špatně přiřazené.
+   → odhalí špatně přiřazené. Implementace: `internal/outliers` (`Outliers(subjectUID)` nad
+   `vectors.ListFacesBySubject` + sdílené `vectors.Centroid`/`CosineDistance`) za endpointem
+   `GET /api/v1/subjects/{uid}/outliers` (editor/admin, `internal/outlierapi`); malé množiny
+   (< 3 obličeje) se vrátí s `meaningful:false`. Wrong obličej se odpojí přes existující assign
+   API — outlier vrstva nemutuje.
 7. **Stránky osob:** přehled, cover, počty, výskyty.
 
 Souřadnice: `faces.bbox` normalizované [x,y,w,h] (0..1, display space, EXIF-aware);

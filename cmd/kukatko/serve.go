@@ -85,8 +85,9 @@ func runServe(cmd *cobra.Command) error {
 
 // buildServices assembles every HTTP API group and the background worker over a
 // shared queue store: upload/ingest, photo browse/curation (with embedding-backed
-// similar search), face auto-clustering, the admin jobs and processing APIs, and
-// the image_embed and face_detect worker handlers. It returns the server options
+// similar search), face auto-clustering, per-subject face outlier detection, the
+// admin jobs and processing APIs, and the image_embed and face_detect worker
+// handlers. It returns the server options
 // registering those routes plus the worker for the serve command to run.
 func buildServices(
 	cfg *config.Config, db *database.DB, authAPI *auth.API,
@@ -112,6 +113,7 @@ func buildServices(
 		return nil, nil, err
 	}
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
+	outlierAPI := buildOutlierAPI(db, authAPI)
 	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc)
 
 	return []server.Option{
@@ -119,6 +121,7 @@ func buildServices(
 		server.WithAPI(ingestAPI.RegisterRoutes),
 		server.WithAPI(photoAPI.RegisterRoutes),
 		server.WithAPI(clusterAPI.RegisterRoutes),
+		server.WithAPI(outlierAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
 	}, jobWorker, nil

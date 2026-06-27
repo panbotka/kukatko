@@ -203,6 +203,8 @@ inkrementální).
   sdíleným pgx poolem:
   `SaveEmbedding`(upsert)/`GetEmbedding`(`ErrEmbeddingNotFound`)/`FindSimilar(vec,limit,maxDistance)`
   pro 768-dim obrázkové embeddingy, `SaveFaces`(idempotentní replace v transakci)/`ListFaces`/
+  `ListFacesBySubject(subjectUID)` (obličeje s daným `subject_uid`, řazení `(photo_uid,
+  face_index)` — podklad pro outlier detekci; sdílí `queryFaces`/`scanFace` se `ListFaces`)/
   `DeleteFaces`/`FindSimilarFaces`/`FindSimilarFaceCandidates` (jako `FindSimilarFaces`, ale
   vrací i cache `subject_uid`/`subject_name`/`marker_uid` + `bbox` — podklad pro návrhy identit)/
   `UpdateFaceMarker(photoUID,faceIndex,markerUID,subjectUID,subjectName)` (zapíše cache sloupce na
@@ -212,7 +214,10 @@ inkrementální).
   `bbox DOUBLE PRECISION[4]` `[x,y,w,h]`; podobnost přes `embedding <=> $vec` (cosine, nejbližší
   první) v **read-only transakci** se `SET LOCAL hnsw.ef_search = 100`; `limit` ořez `[1,500]`,
   nekladný `maxDistance` filtr vypne; helpery `ToHalfVec`/`FromHalfVec` (`[]float32` ↔
-  `pgvector.HalfVector`); sentinely `ErrEmbeddingNotFound`/`ErrDimMismatch` (validace 768/512)/
+  `pgvector.HalfVector`) a **sdílená vektorová matematika** `Centroid`(L2-normalizovaný
+  element-wise průměr)/`Normalize`/`CosineDistance` v `math.go` (jediná implementace, kterou
+  znovupoužívá i `internal/cluster` i `internal/outliers`); sentinely
+  `ErrEmbeddingNotFound`/`ErrDimMismatch` (validace 768/512)/
   `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(limit)` =
   uid nearchivovaných fotek bez embeddingu (LEFT JOIN, nejnovější první, `limit<=0`=vše) pro
   backfill; **face-detection tracking** v tabulce `face_detections` (migrace
@@ -335,7 +340,23 @@ inkrementální).
   `GET /faces/clusters` (list shluků + návrhy), `POST /faces/clusters/{id}/assign` (přiřadí celý
   shluk), `POST /faces/clusters/{id}/remove-face` (odpojí obličej); 503 když backend nezapojen,
   400/404/409 dle sentinelů; mountuje se v `serve` (`buildClusterAPI` v `cmd/kukatko/clusters.go`,
-  které sdílí `facematch.Service` z `buildFaceMatch`)), `internal/web/`
+  které sdílí `facematch.Service` z `buildFaceMatch`)), `internal/outliers/`
+  (per-osoba outlier detekce obličejů: odhalí pravděpodobně **špatně přiřazené obličeje**
+  seřazením dle vzdálenosti od centroidu embeddingů osoby, mirror photo-sorteru; vše za rozhraními
+  `FaceStore` (podmnožina `vectors.Store`) a `PeopleStore` (podmnožina `people.Store`) →
+  unit-testovatelné s faky bez DB; `Service` = `New(Config{Faces,People})`;
+  **`Outliers(ctx,subjectUID)`** (backing `GET /subjects/{uid}/outliers`) ověří subjekt
+  (`people.ErrSubjectNotFound`), načte `vectors.ListFacesBySubject`, spočítá centroid
+  (`vectors.Centroid`), ohodnotí každý obličej `vectors.CosineDistance` od centroidu a vrátí je
+  **sestupně** (nejpodezřelejší první, tie-break `photo_uid`/`face_index`); `Result` =
+  `{subject_uid,count,meaningful,faces:[OutlierFace{photo_uid,face_index,bbox,det_score,distance,
+  marker_uid?,width,height,orientation}]}`; **malé množiny** (< `MinMeaningful`=3 obličeje) →
+  `meaningful:false` (žádný se nevyčlení), obličeje se přesto vrátí seřazené; žádná mutace — wrong
+  obličej se odpojí přes existující assign API), `internal/outlierapi/`
+  (editor/admin HTTP API nad outlier detekcí: `Service` rozhraní (splňuje ho `outliers.Service`),
+  `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mountuje `GET /subjects/{uid}/outliers`
+  za `RequireWrite`; 503 bez backendu, 404 chybějící subjekt; mountuje se v `serve`
+  (`buildOutlierAPI` v `cmd/kukatko/outliers.go`)), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -455,7 +476,7 @@ inkrementální).
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
   (recent/dead-letter výpis, query `state`/`limit`/`offset`, neplatný → 400);
   `POST /jobs/{id}/requeue` → refreshnutý job (dead/failed → queued; 404 missing, 409
-  ne-requeueable). Frontend polluje (žádné SSE). Mountuje se pátým `server.WithAPI`
+  ne-requeueable). Frontend polluje (žádné SSE). Mountuje se šestým `server.WithAPI`
   (`buildJobs` v `cmd/kukatko/jobs.go`), který registruje handlery `image_embed`
   (`embedjob.Service`) i `face_detect` (`facejob.Service`) a zároveň postaví a `serve` spustí
   **background worker** (`internal/worker`) na celý život procesu (`startWorker`, zastaví
@@ -468,11 +489,19 @@ inkrementální).
   `POST /faces/clusters/{id}/remove-face` `{photo_uid,face_index}` odpojí zatoulaný obličej před
   pojmenováním → refreshnutý shluk (nebo `null` když osiří); 503 bez backendu, 400/404/409 dle
   sentinelů. Mountuje se čtvrtým `server.WithAPI` (`buildClusterAPI` v `cmd/kukatko/clusters.go`).
+- **Outliers API (`/api/v1`, `internal/outlierapi`, editor/admin přes `RequireWrite`):**
+  `GET /subjects/{uid}/outliers` → `{subject_uid,count,meaningful,faces:[{photo_uid,face_index,
+  bbox,det_score,distance,marker_uid?,width,height,orientation}]}` (obličeje osoby seřazené
+  sestupně dle kosinové vzdálenosti od centroidu jejích embeddingů — nejpravděpodobněji špatně
+  přiřazené první); 1–2 obličeje → `meaningful:false`; špatný obličej se odpojí přes existující
+  `POST /photos/{uid}/faces/assign` (`unassign_person`), tahle vrstva nemutuje; 503 bez backendu,
+  404 chybějící subjekt. Mountuje se pátým `server.WithAPI` (`buildOutlierAPI` v
+  `cmd/kukatko/outliers.go`).
 - **Process API (`/api/v1`, `internal/processapi`, admin-only přes `RequireAdmin`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` pro fotky bez embeddingu),
   `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů),
   `POST /process/clusters` → `{created}` (re-clustering nepřiřazených obličejů přes
-  `cluster.Recluster`). Mountuje se šestým `server.WithAPI` (`buildJobs`).
+  `cluster.Recluster`). Mountuje se sedmým `server.WithAPI` (`buildJobs`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

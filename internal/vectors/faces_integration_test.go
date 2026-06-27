@@ -159,6 +159,68 @@ func TestFindSimilarFaces(t *testing.T) {
 	}
 }
 
+// subjectFace builds a face with the given index, embedding and cached subject
+// uid, used to populate ListFacesBySubject cases.
+func subjectFace(index int, vec []float32, subject string) vectors.Face {
+	return vectors.Face{
+		FaceIndex:   index,
+		Vector:      vec,
+		BBox:        [4]float64{0.1, 0.2, 0.3, 0.4},
+		DetScore:    0.95,
+		Model:       "buffalo_l",
+		SubjectUID:  &subject,
+		PhotoWidth:  4000,
+		PhotoHeight: 3000,
+		Orientation: 1,
+	}
+}
+
+// TestListFacesBySubject returns only the faces cached for the given subject, in
+// ascending (photo_uid, face_index) order, and an empty slice for an unknown one.
+func TestListFacesBySubject(t *testing.T) {
+	store, photoStore, _ := newStore(t)
+	ctx := t.Context()
+	const alice, bob = "su_alice", "su_bob"
+	p1 := makePhoto(t, photoStore, "subj_p1")
+	p2 := makePhoto(t, photoStore, "subj_p2")
+
+	if err := store.SaveFaces(ctx, p1, []vectors.Face{
+		subjectFace(0, faceVec(map[int]float32{0: 1}), alice),
+		subjectFace(1, faceVec(map[int]float32{1: 1}), bob),
+	}); err != nil {
+		t.Fatalf("SaveFaces p1: %v", err)
+	}
+	if err := store.SaveFaces(ctx, p2, []vectors.Face{
+		subjectFace(0, faceVec(map[int]float32{2: 1}), alice),
+	}); err != nil {
+		t.Fatalf("SaveFaces p2: %v", err)
+	}
+
+	got, err := store.ListFacesBySubject(ctx, alice)
+	if err != nil {
+		t.Fatalf("ListFacesBySubject: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListFacesBySubject(alice) = %d faces, want 2", len(got))
+	}
+	for _, f := range got {
+		if f.SubjectUID == nil || *f.SubjectUID != alice {
+			t.Errorf("face not assigned to alice: %+v", f)
+		}
+	}
+	seen := map[string]bool{got[0].PhotoUID: true, got[1].PhotoUID: true}
+	if !seen[p1] || !seen[p2] {
+		t.Errorf("ListFacesBySubject(alice) photos = %v, want %s and %s", seen, p1, p2)
+	}
+	if got[0].PhotoUID > got[1].PhotoUID {
+		t.Errorf("faces not ordered by photo_uid: %s, %s", got[0].PhotoUID, got[1].PhotoUID)
+	}
+
+	if none, _ := store.ListFacesBySubject(ctx, "su_nobody"); len(none) != 0 {
+		t.Errorf("ListFacesBySubject(nobody) = %d, want 0", len(none))
+	}
+}
+
 // TestFacesCascadeDelete checks that deleting a photo removes its faces.
 func TestFacesCascadeDelete(t *testing.T) {
 	store, photoStore, _ := newStore(t)

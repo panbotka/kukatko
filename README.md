@@ -431,6 +431,31 @@ po jednom. Tabulka `face_clusters` (migrace `0010_face_clusters.sql`: `uid` PK p
   backend není zapojen, 400/404/409 dle sentinelů. Admin trigger re-clusteringu je
   `POST /api/v1/process/clusters` (viz Process API). Tunables v `cluster.*` configu.
 
+### Outlier detekce obličejů (`internal/outliers` + `internal/outlierapi`)
+
+Pro danou osobu odhalí pravděpodobně **špatně přiřazené obličeje** seřazením podle vzdálenosti
+od centroidu jejích embeddingů (mirror photo-sorteru). Vše za rozhraními (`FaceStore` =
+podmnožina `vectors.Store`, `PeopleStore` = podmnožina `people.Store`), takže se unit-testuje
+s faky bez DB.
+
+- **`Outliers(ctx, subjectUID)`** (backing `GET /subjects/{uid}/outliers`): ověří existenci
+  subjektu (`people.ErrSubjectNotFound` → 404), načte všechny obličeje s `subject_uid =
+  subjectUID` (`vectors.ListFacesBySubject`), spočítá **centroid** (element-wise průměr,
+  L2-normalizovaný) přes sdílené `vectors.Centroid`, ohodnotí každý obličej **kosinovou
+  vzdáleností** od centroidu (`vectors.CosineDistance`) a vrátí je seřazené **sestupně**
+  (nejpodezřelejší první; tie-break dle `photo_uid`/`face_index` pro determinismus).
+- Odpověď = `{subject_uid, count, meaningful, faces:[{photo_uid, face_index, bbox, det_score,
+  distance, marker_uid?, width, height, orientation}]}`. UI z `faces` vyrenderuje ořez náhledu
+  a špatný obličej **odpojí přes existující assign API** (`POST /photos/{uid}/faces/assign`
+  s `unassign_person`) — tahle vrstva žádnou mutaci nepřidává.
+- **Malé množiny:** 1–2 obličeje → `meaningful: false` (z tak mála se žádný obličej nevyčlení),
+  obličeje se přesto vrátí seřazené.
+- **HTTP vrstva** (`internal/outlierapi`): `Service` rozhraní (splňuje ho `outliers.Service`),
+  `NewAPI(Config{Service, RequireWrite})` + `RegisterRoutes` mountuje `GET /subjects/{uid}/
+  outliers` za `RequireWrite` (editor/admin); 503 bez backendu, 404 chybějící subjekt.
+- Sdílená vektorová matematika `vectors.Centroid`/`vectors.Normalize`/`vectors.CosineDistance`
+  (v `internal/vectors/math.go`) je jediná implementace — `internal/cluster` ji znovupoužívá.
+
 ### Image embedding & similar photos (`internal/embedjob`)
 
 `embedjob.Service` zapojuje CLIP embedding do fronty jobů a staví nad ním embeddingové dotazy.
@@ -529,6 +554,7 @@ Endpointy pod `/api/v1` (JSON):
 | GET | `/faces/clusters` | editor/admin | shluky nepřiřazených obličejů (auto-clustering) → `{clusters:[{uid,size,representative,examples,suggestion?}]}`; `suggestion` = nejbližší pojmenovaný subjekt (viz `internal/cluster`) |
 | POST | `/faces/clusters/{id}/assign` | editor/admin | přiřadí **celý shluk** jednomu subjektu `{subject_uid?,subject_name?}` (find-or-create dle jména) → markery pro všechny obličeje; shluk se spotřebuje |
 | POST | `/faces/clusters/{id}/remove-face` | editor/admin | odpojí zatoulaný obličej `{photo_uid,face_index}` ze shluku před pojmenováním → refreshnutý shluk (nebo `null` když osiří) |
+| GET | `/subjects/{uid}/outliers` | editor/admin | obličeje osoby seřazené dle vzdálenosti od centroidu (nejpodezřelejší první) → `{subject_uid,count,meaningful,faces:[{photo_uid,face_index,bbox,distance,…}]}`; 1–2 obličeje → `meaningful:false` (viz `internal/outliers`); špatný obličej se odpojí přes assign API |
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
 | POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
 | POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |

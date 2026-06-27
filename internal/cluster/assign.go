@@ -7,6 +7,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/people"
+	"github.com/panbotka/kukatko/internal/vectors"
 )
 
 // AssignCluster assigns every face in a cluster to one subject and returns the
@@ -114,7 +115,7 @@ func (s *Service) refreshView(ctx context.Context, clusterUID string, faces []Fa
 	for i := range faces {
 		vecs[i] = faces[i].Vector
 	}
-	if err := s.store.RefreshCluster(ctx, clusterUID, centroid(vecs), len(faces)); err != nil {
+	if err := s.store.RefreshCluster(ctx, clusterUID, vectors.Centroid(vecs), len(faces)); err != nil {
 		return View{}, err
 	}
 	refreshed, err := s.store.GetCluster(ctx, clusterUID)

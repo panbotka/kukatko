@@ -30,6 +30,16 @@ FROM faces
 WHERE photo_uid = $1
 ORDER BY face_index`
 
+// listFacesBySubjectSQL reads every face cached as belonging to a subject, in a
+// deterministic (photo_uid, face_index) order so callers ranking by distance get
+// a stable tie-break.
+const listFacesBySubjectSQL = `
+SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
+       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation
+FROM faces
+WHERE subject_uid = $1
+ORDER BY photo_uid, face_index`
+
 // SaveFaces replaces all faces of photoUID with the supplied set, atomically:
 // existing rows are deleted and the new ones inserted in one transaction, so
 // re-running face detection for a photo is idempotent. Each vector is validated
@@ -171,9 +181,24 @@ func insertFaces(ctx context.Context, tx pgx.Tx, photoUID string, faces []Face) 
 // ListFaces returns every face stored for photoUID, ordered by face_index. A
 // photo with no faces yields an empty slice and a nil error.
 func (s *Store) ListFaces(ctx context.Context, photoUID string) ([]Face, error) {
-	rows, err := s.pool.Query(ctx, listFacesSQL, photoUID)
+	return s.queryFaces(ctx, listFacesSQL, photoUID)
+}
+
+// ListFacesBySubject returns every face cached as assigned to subjectUID, ordered
+// deterministically by (photo_uid, face_index). A subject with no assigned faces
+// yields an empty slice and a nil error. It backs per-person outlier detection,
+// which ranks these faces by distance from their centroid.
+func (s *Store) ListFacesBySubject(ctx context.Context, subjectUID string) ([]Face, error) {
+	return s.queryFaces(ctx, listFacesBySubjectSQL, subjectUID)
+}
+
+// queryFaces runs a face-listing query with a single argument and scans every row
+// into a Face via scanFace. It backs ListFaces and ListFacesBySubject, whose only
+// difference is the WHERE clause; an empty result yields a nil slice, nil error.
+func (s *Store) queryFaces(ctx context.Context, query, arg string) ([]Face, error) {
+	rows, err := s.pool.Query(ctx, query, arg)
 	if err != nil {
-		return nil, fmt.Errorf("listing faces for %s: %w", photoUID, err)
+		return nil, fmt.Errorf("listing faces for %s: %w", arg, err)
 	}
 	defer rows.Close()
 
@@ -186,7 +211,7 @@ func (s *Store) ListFaces(ctx context.Context, photoUID string) ([]Face, error) 
 		faces = append(faces, face)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating faces for %s: %w", photoUID, err)
+		return nil, fmt.Errorf("iterating faces for %s: %w", arg, err)
 	}
 	return faces, nil
 }
