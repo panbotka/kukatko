@@ -12,6 +12,7 @@ import { LabelDetailPage } from './pages/LabelDetailPage'
 import { LabelsPage } from './pages/LabelsPage'
 import { LibraryPage } from './pages/LibraryPage'
 import { LoginPage } from './pages/LoginPage'
+import { MapPage } from './pages/MapPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
@@ -39,6 +40,7 @@ export function App() {
               <Route path="/labels" element={<LabelsPage />} />
               <Route path="/labels/:uid" element={<LabelDetailPage />} />
               <Route path="/search" element={<SearchPage />} />
+              <Route path="/map" element={<MapPage />} />
               <Route path="/photos/:uid" element={<PhotoDetailPage />} />
               <Route path="/people" element={<PeoplePage />} />
               <Route path="/people/:uid" element={<SubjectPage />} />

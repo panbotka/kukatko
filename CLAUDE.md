@@ -15,7 +15,8 @@ inkrementální).
 - **DB: PostgreSQL + pgvector.** Embeddingy se ukládají **přímo do DB** (`halfvec` + HNSW cosine).
 - **Frontend: React + TypeScript + Vite + react-bootstrap + Bootswatch Superhero**, embedovaný do
   binárky přes `//go:embed` (SPA fallback). i18n přes i18next: **čeština default**, angličtina.
-  Virtualizace dlouhých mřížek/seznamů přes **`react-virtuoso`**.
+  Virtualizace dlouhých mřížek/seznamů přes **`react-virtuoso`**. Mapový pohled přes
+  **`leaflet`** + **`leaflet.markercluster`** (dlaždice přes backend proxy, klíč zůstává server-side).
 - **Obrázky/videa bez CGO:** pure-Go pro JPEG/PNG/WebP; **shell-out** na `heif-convert` (HEIC),
   `exiftool`/`dcraw` (RAW preview), `ffmpeg`/`ffprobe` (video poster/metadata/streaming).
 
@@ -502,7 +503,7 @@ inkrementální).
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
   (`Layout` = navbar shell s user-menu/logout + role-gated nav — odkaz **Knihovna**
   míří na `/library`, **Alba** na `/albums`, **Štítky** na `/labels`, **Hledat** na `/search`,
-  **Lidé** na `/people`, **Nahrát** na `/upload` (jen editor/admin),
+  **Lidé** na `/people`, **Mapa** na `/map`, **Nahrát** na `/upload` (jen editor/admin),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
   `LanguageSwitcher`;
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
@@ -551,7 +552,18 @@ inkrementální).
   `ClustersPage` = `/people/clusters` (editor/admin) review fronta nepojmenovaných shluků:
   `ClusterCard` (reprezentant + ukázky + odebrání zatoulaného obličeje + jednorázové pojmenování
   celého shluku) v `Row`/`Col` mřížce, optimistické odebrání po pojmenování,
+  `MapPage` = `/map` mapový pohled: geotagované fotky jako shlukované markery nad mapy.com
+  dlaždicemi (Leaflet), přepínač podkladu + filtry (datum/archiv/soukromé) v `MapFilterBar`,
+  stav (mapset/viewport/filtry) v URL — posun/zoom zapisuje viewport bez refetche, změna filtru
+  dotáhne GeoJSON; klik na marker → detail fotky; loading/empty/error stavy,
   `NotFoundPage`),
+  `components/map/` = `LeafletMap` (imperativní Leaflet most: dlaždicová vrstva na **backend
+  proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (klíč server-side, `{r}`→`@2x` na retině),
+  **povinné mapy.com prvky** — attribution „© Seznam.cz a.s. a další" → `/copyright` a klikatelné
+  **logo** vlevo dole → `mapy.com`; `leaflet.markercluster` shluky (klik přibližuje), markery
+  z GeoJSON, popup s náhledem → detail fotky; jednorázový setup, výměna URL dlaždic při změně
+  mapsetu, přestavba markerů při změně fotek, fit-bounds na markery), `MapFilterBar` (přepínač
+  podkladu basic/outdoor/aerial + datum od/do, archiv, soukromé, počet, zrušit filtry);
   `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`, `FaceThumb`
   (čtvercový výřez obličeje z thumbnailu fotky dle normalized bbox přes `faceCropStyle`),
   `FaceOverlay`+`FaceAssignPanel` (boxy přes obrázek z normalized bbox přes `faceBoxStyle`,
@@ -572,7 +584,9 @@ inkrementální).
   `useSubjectPhotos` = obálka nad `usePaginatedPhotos` nad `GET /subjects/{uid}/photos`
   (galerie osoby, reset+reload při změně `uid`); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
   nad `GET /photos` scopnutým na album/štítek (`{album?,label?}` + filtry/sort z URL, volitelný
-  `reloadKey` pro refetch po mutaci); `useSelection` = multi-výběr fotek v mřížce
+  `reloadKey` pro refetch po mutaci); `useMapPhotos` = jednorázový (nestránkovaný) loader
+  GeoJSON feedu geotagovaných fotek nad `fetchMapPhotos` (`status` loading/ready/error, `retry`,
+  ruší in-flight + ignoruje stale při změně filtrů); `useSelection` = multi-výběr fotek v mřížce
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`clear`)),
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
@@ -580,6 +594,10 @@ inkrementální).
   (sanitizuje sort/archived) + `hasActiveFilters` (`{ignoreQuery}` na search stránce) —
   mapování URL stavu na API params; `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
   + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér;
+  `mapView.ts` = typ `MapView` (mapset + viewport `lat`/`lng`/`z` + filtry) + `MAP_DEFAULTS` +
+  `mapViewToParams` (sanitizuje archived) + `viewportFromView`/`mapsetFromView`/`hasActiveMapFilters`
+  — mapování URL stavu mapy na feed params; `mapPopup.ts` = pure `buildPopupElement` (náhled +
+  odkaz na detail fotky jako popup element, plain klik → SPA navigace, modifikovaný klik projde);
   `faceGeometry.ts` = pure `faceBoxStyle` (normalized bbox → absolutní `left/top/width/height`
   v %, pro overlay) + `faceCropStyle` (čtvercový výřez obličeje z thumbnailu přes
   background-position/-size, pro `FaceThumb`)),
@@ -608,12 +626,16 @@ inkrementální).
   `assignCluster`/`removeClusterFace`, outlier `fetchOutliers`; typy `Subject`/`SubjectCount`/
   `SubjectInput`/`SubjectType`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
   `ClusterView`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/
-  `OutlierFace`; sdílí `ApiError`+`buildPhotoQuery` z `auth.ts`/`photos.ts`),
+  `OutlierFace`; sdílí `ApiError`+`buildPhotoQuery` z `auth.ts`/`photos.ts`);
+  `map.ts` = mapový klient: `fetchMapPhotos(params,signal)` nad `GET /api/v1/map/photos`
+  (GeoJSON FeatureCollection geotagovaných fotek + `buildMapQuery`), `tileLayerUrl(mapset)` (Leaflet
+  URL template na backend proxy, **bez API klíče**), `toMapset`/`MAPSETS`; typy
+  `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`),
   `i18n/` (i18next init + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth` → `Layout` (`/`, `/library`,
-  `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/photos/:uid`, `/people`,
+  `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`, `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload` a `/people/clusters`
   navíc pod `RequireRole role="editor"` = write-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy

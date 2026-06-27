@@ -926,6 +926,27 @@ neúspěšných (jednotlivě i hromadně) a abort běžících. Každý soubor j
 v knihovně (`/library?sort=added`). Vše i18n (cs/en), touch-friendly. Odkaz **Nahrát** v navbaru je
 viditelný jen pro editory/adminy.
 
+**Mapa (`/map`):** stránka ([`web/src/pages/MapPage.tsx`](web/src/pages/MapPage.tsx)) zobrazuje
+geotagované fotky jako **shlukované markery** nad dlaždicemi [mapy.com](https://mapy.com) přes
+**[Leaflet](https://leafletjs.com/) + [Leaflet.markercluster](https://github.com/Leaflet/Leaflet.markercluster)**.
+Dlaždicová vrstva míří na **backendovou proxy** (`/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}`), takže
+**API klíč nikdy neopustí server**; `{r}` se na retina displejích změní na `@2x`. Imperativní
+Leaflet logika je izolovaná v [`components/map/LeafletMap`](web/src/components/map/LeafletMap.tsx)
+(most React props → Leaflet přes efekty: jednorázový setup, výměna URL dlaždic při změně mapsetu,
+přestavba markerů při změně fotek). **Povinné ovládací prvky mapy.com** jsou vždy přítomné:
+attribution s odkazem „© Seznam.cz a.s. a další" (→ `mapy.com/copyright`) a **klikatelné logo**
+vlevo dole odkazující na `mapy.com`. Klik na **shluk** přibližuje (default markercluster), klik na
+**marker** otevře popup s náhledem ([`lib/mapPopup.ts`](web/src/lib/mapPopup.ts)) odkazujícím na
+detail fotky (`/photos/{uid}`, SPA navigace). **Přepínač podkladu** (základní/turistická/letecká)
+a **filtry** (rozsah dat, archiv, soukromé) jsou v
+[`components/map/MapFilterBar`](web/src/components/map/MapFilterBar.tsx). **Stav žije v URL** přes
+`useUrlState` ([`lib/mapView.ts`](web/src/lib/mapView.ts) — mapset, viewport `lat`/`lng`/`z`,
+filtry), takže Back/Forward i sdílení URL reprodukují mapu; **posun/zoom** zapisuje viewport bez
+refetche, **změna filtru** dotáhne GeoJSON znovu. Data čte hook
+[`useMapPhotos`](web/src/hooks/useMapPhotos.ts) přes `fetchMapPhotos` nad `GET /api/v1/map/photos`
+([`services/map.ts`](web/src/services/map.ts), GeoJSON FeatureCollection). Pohled má i18n
+loading/empty/error stavy a je responzivní/touch. Odkaz **Mapa** je v navbaru.
+
 Vývoj frontendu (dev server s proxy na Go backend) a samostatné cíle:
 
 ```bash

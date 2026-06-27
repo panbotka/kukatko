@@ -54,7 +54,7 @@ export function Layout() {
               <Nav.Link as={NavLink} to="/people">
                 {t('nav.people')}
               </Nav.Link>
-              <Nav.Link as={NavLink} to="/map" disabled>
+              <Nav.Link as={NavLink} to="/map">
                 {t('nav.map')}
               </Nav.Link>
               {/* Write actions are gated by role: hidden from viewers. */}

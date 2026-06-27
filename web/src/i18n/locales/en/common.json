@@ -143,6 +143,44 @@
       "load": "Search failed."
     }
   },
+  "map": {
+    "title": "Map",
+    "count": "Photos on the map: {{count}}",
+    "loading": "Loading photos…",
+    "thumbAlt": "Photo on the map",
+    "mapset": {
+      "label": "Base map",
+      "basic": "Basic",
+      "outdoor": "Outdoor",
+      "aerial": "Aerial"
+    },
+    "filters": {
+      "label": "Map filters",
+      "takenAfter": "Taken from",
+      "takenBefore": "Taken until",
+      "archived": "Archived",
+      "private": "Private",
+      "clear": "Clear filters"
+    },
+    "archived": {
+      "hide": "Hide archived",
+      "show": "Include archived",
+      "only": "Archived only"
+    },
+    "triState": {
+      "any": "Any",
+      "yes": "Yes",
+      "no": "No"
+    },
+    "empty": {
+      "title": "No geotagged photos",
+      "hint": "No photos match the current filters, or none have a location yet."
+    },
+    "error": {
+      "load": "Could not load the map.",
+      "retry": "Try again"
+    }
+  },
   "similar": {
     "title": "Similar photos",
     "loading": "Loading similar photos…",

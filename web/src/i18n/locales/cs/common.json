@@ -237,6 +237,44 @@
     "count": "Vybráno: {{count}}",
     "cancel": "Zrušit"
   },
+  "map": {
+    "title": "Mapa",
+    "count": "Fotek na mapě: {{count}}",
+    "loading": "Načítání fotek…",
+    "thumbAlt": "Fotka na mapě",
+    "mapset": {
+      "label": "Podkladová mapa",
+      "basic": "Základní",
+      "outdoor": "Turistická",
+      "aerial": "Letecká"
+    },
+    "filters": {
+      "label": "Filtry mapy",
+      "takenAfter": "Pořízeno od",
+      "takenBefore": "Pořízeno do",
+      "archived": "Archiv",
+      "private": "Soukromé",
+      "clear": "Zrušit filtry"
+    },
+    "archived": {
+      "hide": "Skrýt archiv",
+      "show": "Včetně archivu",
+      "only": "Jen archiv"
+    },
+    "triState": {
+      "any": "Vše",
+      "yes": "Ano",
+      "no": "Ne"
+    },
+    "empty": {
+      "title": "Žádné fotky s polohou",
+      "hint": "Aktuálním filtrům neodpovídají žádné fotky, nebo zatím žádná nemá polohu."
+    },
+    "error": {
+      "load": "Mapu se nepodařilo načíst.",
+      "retry": "Zkusit znovu"
+    }
+  },
   "similar": {
     "title": "Podobné fotky",
     "loading": "Načítání podobných fotek…",
