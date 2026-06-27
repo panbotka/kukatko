@@ -525,8 +525,11 @@ inkrementální).
   pageuje přes offset); **scope pro mapování členství**: `AlbumUID`→`s=<albumUID>` (fotky alba),
   `Query`→`q=` natvrdo (přebije watermark, pro `label:"<slug>"`); parsuje
   UID/TakenAt/Lat/Lng/Altitude/Title/Description/Type/Width/Height/
-  OriginalName/Camera/Lens/EXIF + `Files[]` (UID, **Hash=SHA1**, Primary, Mime, `Markers[]`),
-  `Photo.PrimaryFile()` vrátí primární soubor; `ListAlbums`/`ListLabels`/`ListSubjects(ctx,ListParams
+  OriginalName/Camera/Lens/EXIF + `Files[]` (UID, **Hash=SHA1**, Primary, Mime, `Video`/`Codec`,
+  `Markers[]`),
+  `Photo.PrimaryFile()` vrátí primární soubor, `File.IsVideo()` (Video flag/`video/*` mime),
+  `Photo.VideoFile()` (motion soubor video/live fotky) a `Photo.StillFile()` (still fotky);
+  `ListAlbums`/`ListLabels`/`ListSubjects(ctx,ListParams
   {Count,Offset})` → `GET /api/v1/{albums,labels,subjects}`, markery z `Files[].Markers[]`;
   `DownloadOriginal(ctx,fileHash)` → `GET /api/v1/dl/{hash}?t=<download_token>` **streamuje** originál
   (`Download{Body,ContentType,ContentLength}`, tělo vlastní caller; nikdy celý v RAM přes
@@ -540,16 +543,25 @@ inkrementální).
   `internal/ppimport/`
   (read-only, **inkrementální a idempotentní** import z PhotoPrismu — vše za rozhraními
   `PhotoPrismClient`/`RunStore`/`PhotoStore`/`Storage`/`Thumbnailer`/`AlbumStore`/`LabelStore`/
-  `PeopleStore`/`Enqueuer` → unit-testovatelné s faky; `Service` = `New(Config{Client,Runs,Photos,
-  Storage,Thumbnailer,Albums,Labels,People,Enqueuer,PageSize,TempDir,MaxFileSize,Logger})`;
+  `PeopleStore`/`Enqueuer`/`VideoProber` → unit-testovatelné s faky; `Service` = `New(Config{Client,Runs,Photos,
+  Storage,Thumbnailer,Albums,Labels,People,Enqueuer,Prober,PageSize,TempDir,MaxFileSize,Logger})`
+  (`Prober` volitelný — nil → `defaultProber` nad `video.Probe`);
   **`Import(ctx) (Result,error)`** otevře `import_runs` běh, navrhne na poslední úspěšný watermark a:
   (1) pageuje `ListPhotos(UpdatedSince=watermark)` — per fotka dedup dle `photoprism_uid` (už
-  importovaná → `UpdateMetadata` jen při změně, jinak skip), jinak **stáhne** primární originál do
+  importovaná → `UpdateMetadata` jen při změně, jinak skip), jinak **vybere média** (`selectMedia`,
+  `video.go`): PP `Type` video/animated → **stáhne samotný video soubor** (`Photo.VideoFile()`,
+  media_type `video`, video soubor bez streamu graceful → image), live → **still jako primární
+  originál + motion klip jako sidecar** (`Photo.StillFile()`+`VideoFile()`, media_type `live`),
+  jinak image; **stáhne** vybraný originál do
   tempu + **SHA256**, dedup dle `file_hash` (shodný obsah → backfill ID přes
-  `photos.SetPhotoprismRef`, žádná nová fotka), uloží originál, `photos.Create` s **PP metadaty**
-  (title/desc/taken_at/GPS/camera/EXIF) + `photoprism_uid`/`photoprism_file_hash` + **EXIF orientace
+  `photos.SetPhotoprismRef`, žádná nová fotka), uloží originál, **probne video metadata**
+  (`Prober.Probe` → `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`; u video z originálu,
+  u live z motion klipu; best-effort, selhání → nulová pole), `photos.Create` s **PP metadaty**
+  (title/desc/taken_at/GPS/camera/EXIF) + media_type + video metadata + `photoprism_uid`/`photoprism_file_hash` + **EXIF orientace
   ze souboru** (PP ji nevystavuje — `exif.Extract` doplní geometrii/orientaci/MIME, PP přebije
-  kurátorská pole), náhledy a **enqueue `image_embed`+`face_detect`**; counts **checkpoint po každé
+  kurátorská pole), **u live** stáhne+uloží motion klip jako `RoleSidecar` photo_file (best-effort),
+  náhledy (u videa **poster frame** přes thumbnailer/ffmpeg) a **enqueue `image_embed`** (na posteru)
+  **+`face_detect`**; counts **checkpoint po každé
   stránce** přes `UpdateCounts`; (2) **lidé** z `Files[].Markers[]` nově importovaných fotek
   (pojmenovaný validní face marker → find-or-create subjekt dle `Slugify` + přiřazený marker; jen na
   prvním importu, ať re-run neduplikuje); (3) **alba & štítky** find-or-create dle názvu (mapa z
@@ -559,11 +571,40 @@ inkrementální).
   backoff řeší klient, **watermark se nikdy neposune za nejstarší selhání** (`runState`); bezpečné
   re-runovat. **`Handle(ctx,job)`** = `worker.HandlerFunc` pro `pp_import` (ignoruje payload, volá
   `Import`), `JobPayload()` nese pevný sentinel `photo_uid` → dedup fronty pustí jen jeden import),
-  `internal/importapi/`
-  (admin-only HTTP trigger importu: rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`); `NewAPI(Config{
-  Queue,RequireAdmin})`+`RegisterRoutes` mountuje `POST /import/photoprism` → zařadí `pp_import` job s
-  `ppimport.JobPayload()` (202 `{job_id,status}`); `jobs.ErrDuplicate` → 409 (import už běží), jiná
-  chyba → 500; neběží inline — import patří na background worker), `internal/web/`
+  `internal/photosorter/`
+  (read-only klient k PostgreSQL DB **photo-sorteru** — datový zdroj přímé migrace (ARCHITECTURE.md
+  §10), vše za `*Reader`: `New(ctx, Config{DSN,Schema,MaxConns})` otevře **vlastní** pgx pool
+  (oddělený od Kukátko) s pgvector typy registrovanými na každém spojení, volitelný `Schema` scopne
+  každý dotaz přes `search_path` (integrační test čte fake schéma vedle Kukátko tabulek); `Close()`
+  uvolní pool; `ErrInvalidDSN`. Čte **jen** tabulky migrace — `ListPhotos(PhotoListParams{UpdatedSince,
+  Limit,Offset})` (řazení `updated_at, uid`, `updated_at > $1` pro resume), `ListSubjects`/`ListAlbums`/
+  `ListLabels(ListParams)`, `Embedding`/`Faces`/`FacesProcessed`/`Phash`/`Edit`/`Markers`/
+  `AlbumMemberships`/`LabelMemberships(photoUID)` — embeddingy scanují do `[]float32` (pgvector),
+  bbox do `[4]float64`; **fotoknihu ani share-linky nikdy nečte**), `internal/psimport/`
+  (read-only, **inkrementální a idempotentní** přímá migrace z photo-sorteru — vše za rozhraními
+  `Source`/`RunStore`/`PhotoStore`/`VectorStore`/`PeopleStore`/`AlbumStore`/`LabelStore`/`Storage`/
+  `Thumbnailer`/`Enqueuer` → unit-testovatelné s faky; `Service` = `New(Config{Source,Runs,Photos,
+  Vectors,People,Albums,Labels,Storage,Thumbnailer,Enqueuer,OpenOriginal,PageSize,Logger})` (panika
+  na nil collaborator); **`Migrate(ctx) (Result,error)`** otevře `import_runs` běh (`source=photosorter`),
+  navrhne na poslední úspěšný watermark: (1) **buildMappings** find-or-create Kukátko subjekt (slug
+  z jména) / album (title) / štítek (jméno) pro každý photo-sorter → ps-uid→kk-uid mapy (generický
+  `mapCatalogue`); (2) pageuje `ListPhotos(UpdatedSince=watermark)` — per fotka match dle
+  `photosorter_uid` (skip), jinak dle **`file_hash`** (backfill `photos.SetPhotosorterRef`, žádné
+  kopírování), jinak **zkopíruje originál** z `file_path` (SHA256, náhledy) a `photos.Create` s PS
+  metadaty + `photosorter_uid`; (3) **satelity** — embedding (768) a faces (512 + bbox + det_score +
+  cache) vloží **1:1** přes `vectors.SaveEmbedding`/`RecordFaceDetection` (zachová model/pretrained,
+  remapuje subjekt, zachová marker_uid), fotka **bez** PS embeddingu/detekce dostane Kukátko
+  `image_embed`/`face_detect` job; markery (pod původním UID), album/label členství, phash a edit
+  best-effort idempotentně; counts **checkpoint po stránce**; pak `Complete` s watermarkem.
+  **Per-fotka chyba** → `counts.failed`, **neabortuje běh** (jen infra chyba `Fail`ne); **watermark
+  se nikdy neposune za nejstarší selhání** (`runState`); bezpečné re-runovat. **`Handle(ctx,job)`** =
+  `worker.HandlerFunc` pro `ps_migrate` (ignoruje payload, volá `Migrate`), `JobPayload()` nese pevný
+  sentinel → dedup fronty pustí jen jednu migraci), `internal/importapi/`
+  (admin-only HTTP triggery importů: rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`); `NewAPI(Config{
+  Queue,RequireAdmin,EnablePhotoPrism,EnablePhotoSorter})`+`RegisterRoutes` mountuje (jen pro
+  nakonfigurované zdroje) `POST /import/photoprism` → `pp_import` a `POST /import/photosorter` →
+  `ps_migrate` job (sdílený `enqueue` helper, 202 `{job_id,status}`); `jobs.ErrDuplicate` → 409
+  (už běží), jiná chyba → 500; neběží inline — patří na background worker), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -764,6 +805,9 @@ inkrementální).
   `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`, auth/admin API
   pod `/api/v1` — viz níže, ostatní cesty servíruje **embedované SPA** s fallbackem na
   `index.html`), `kukatko migrate` (spustí pending migrace samostatně a skončí),
+  `kukatko migrate photosorter` (synchronní read-only inkrementální **migrace dat z photo-sorteru** —
+  `psimport`; aplikuje DB migrace, pak `Service.Migrate`; potřebuje `import.photosorter.dsn`, jinak
+  `errPSMigrateNotConfigured`; pro ops/cron bez běžícího serveru),
   `kukatko import photoprism` (synchronní read-only inkrementální import z PhotoPrismu — `ppimport`;
   potřebuje `import.photoprism.base_url`, jinak chyba; pro ops/cron bez běžícího serveru),
   `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.

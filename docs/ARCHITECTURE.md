@@ -377,7 +377,14 @@ PhotoPrism běží paralelně a zůstává primární. Import je **read-only, op
   `photoprism auth add -n Kukatko -s "photos albums"`. Token v `Authorization: Bearer`.
 - **Výpis fotek:** `GET /api/v1/photos?count=1000&offset=N&merged=true&order=updated&q=updated:"<RFC3339>"`.
   Stránkování `count`≤1000 + `offset`. Pole: UID, TakenAt, Lat/Lng/Altitude, Title/Description,
-  Type, Width/Height, OriginalName, Camera/Lens/EXIF, `Files[]` (UID, Hash=SHA1, Primary, Mime, Markers[]).
+  Type, Width/Height, OriginalName, Camera/Lens/EXIF, `Files[]` (UID, Hash=SHA1, Primary, Mime,
+  Video/Codec, Markers[]).
+- **Videa & live photos:** PP `Type` video/animated → stáhne se **samotný video soubor**
+  (`Files[]` s `Video=true`), uloží s `media_type=video` a **probnutými** video metadaty
+  (`duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` přes `internal/video.Probe`), poster +
+  náhledy přes ffmpeg, embedding běží na posteru. PP `Type` live → **still** jako primární originál +
+  **motion klip** jako `sidecar` photo_file (`media_type=live`), video metadata z motion klipu. Vše
+  ostatní jako u obrázků (dedup, externí ID, alba/labely/lidé, inkrement).
 - **Inkrement:** ukládat high-watermark `max(UpdatedAt)` do `import_runs`; další běh táhne jen
   `updated:` ≥ watermark. (Empiricky ověřit, zda `updated:` zachytí i změny metadat; jinak
   fallback na `added:` + watermark.)
@@ -407,6 +414,16 @@ bez přepočtu.
   `subjects`, `markers`, `albums`/`album_photos`, `labels`/`photo_labels`, `photo_edits`,
   `photo_phashes`. **Nepřenáší se:** fotokniha (`photo_books`, …), share-linky.
 - Originály: pokud nejsou na stejném disku, zkopírovat dle `file_path`.
+
+**Stav: implementováno.** Read-only klient `internal/photosorter` (vlastní pgx pool, volitelný
+`search_path` scope pro testy) + migrátor `internal/psimport` (`Service.Migrate`). Spouští se CLI
+`kukatko migrate photosorter` (synchronně) nebo admin triggerem `POST /api/v1/import/photosorter`,
+který zařadí singleton `ps_migrate` job na background worker. Běh je **inkrementální a idempotentní**:
+resume přes `import_runs` watermark (viz [§9](#9-import-z-photoprismu-s11)), match dle
+`photosorter_uid`/`file_hash`, embeddingy/obličeje 1:1, satelity find-or-create; per-fotka chyby se
+tallyují a běh pokračuje. Konfigurace `import.photosorter.{dsn,page_size}`
+(`KUKATKO_IMPORT_PHOTOSORTER_DSN`). Pokrytí: unit testy s faky + integrační testy proti
+naseedovanému fake photo-sorter schématu.
 
 ---
 

@@ -75,19 +75,20 @@ func (s *Service) importOnePhoto(ctx context.Context, pp photoprism.Photo, state
 }
 
 // processPhoto dedups a photo by its PhotoPrism UID — updating an already-imported
-// photo's metadata when it changed — and otherwise imports it as new. A photo
-// with no primary file cannot be downloaded and is a per-photo failure.
+// photo's metadata when it changed — and otherwise imports it as new. A photo with
+// no importable file (no still and no video) cannot be downloaded and is a
+// per-photo failure.
 func (s *Service) processPhoto(ctx context.Context, pp photoprism.Photo) (outcome, error) {
-	primary, ok := pp.PrimaryFile()
+	sel, ok := selectMedia(pp)
 	if !ok {
-		return outcomeSkipped, fmt.Errorf("ppimport: photo %s has no primary file", pp.UID)
+		return outcomeSkipped, fmt.Errorf("ppimport: photo %s has no importable file", pp.UID)
 	}
 	existing, err := s.photos.GetByPhotoprismUID(ctx, pp.UID)
 	switch {
 	case err == nil:
 		return s.updateExisting(ctx, existing, pp)
 	case errors.Is(err, photos.ErrPhotoNotFound):
-		return s.importNew(ctx, pp, primary)
+		return s.importNew(ctx, pp, sel)
 	default:
 		return outcomeSkipped, fmt.Errorf("ppimport: looking up %s: %w", pp.UID, err)
 	}
@@ -108,29 +109,42 @@ func (s *Service) updateExisting(ctx context.Context, existing photos.Photo, pp 
 	return outcomeUpdated, nil
 }
 
-// importNew downloads, dedups, stores and catalogues a not-yet-imported photo. A
-// content hash that already exists (an identical file uploaded directly or
-// migrated from photo-sorter) skips creation and backfills the PhotoPrism
-// references so the next run dedups on the UID without re-downloading.
-func (s *Service) importNew(ctx context.Context, pp photoprism.Photo, primary photoprism.File) (outcome, error) {
-	staged, err := s.download(ctx, primary.Hash)
+// importNew downloads, dedups, stores and catalogues a not-yet-imported photo,
+// reusing the video ingest path for videos and live photos: the original (a video
+// for clips, the still for live photos) is staged and probed, a live photo's
+// motion clip is staged alongside it, and the catalogued row carries the resolved
+// media type plus any probed video metadata. A content hash that already exists
+// (an identical file uploaded directly or migrated from photo-sorter) skips
+// creation and backfills the PhotoPrism references so the next run dedups on the
+// UID without re-downloading.
+func (s *Service) importNew(ctx context.Context, pp photoprism.Photo, sel mediaSelection) (outcome, error) {
+	staged, err := s.download(ctx, sel.original.Hash)
 	if err != nil {
 		return outcomeSkipped, err
 	}
 	defer staged.cleanup()
 
-	if dup, err := s.dedupByContent(ctx, staged.hash, pp, primary); err != nil {
+	if dup, err := s.dedupByContent(ctx, staged.hash, pp, sel.original); err != nil {
 		return outcomeSkipped, err
 	} else if dup {
 		return outcomeSkipped, nil
 	}
 
-	photo, created, err := s.catalogue(ctx, pp, primary, staged)
+	motion := s.stageMotion(ctx, sel)
+	if motion != nil {
+		defer motion.cleanup()
+	}
+	vfields := s.videoFieldsFor(ctx, sel, staged, motion)
+
+	photo, created, err := s.catalogue(ctx, pp, sel, staged, vfields)
 	if err != nil {
 		return outcomeSkipped, err
 	}
 	if !created {
 		return outcomeSkipped, nil
+	}
+	if motion != nil {
+		s.linkMotion(ctx, photo, *sel.motion, motion)
 	}
 	s.postProcess(ctx, photo, pp)
 	return outcomeImported, nil
@@ -158,19 +172,24 @@ func (s *Service) dedupByContent(
 }
 
 // catalogue stores the original and inserts the photos + primary photo_files
-// rows. A unique-content race (the same bytes catalogued concurrently) is not an
-// error: it returns created=false so the caller treats it as a duplicate. The
-// stored original is published before the row so a failed insert leaves only a
-// reclaimable content-addressed file behind.
+// rows. The photo carries the selection's resolved media type (authoritative over
+// PhotoPrism's, so a video with no detectable stream degrades to an image) and any
+// probed video metadata. A unique-content race (the same bytes catalogued
+// concurrently) is not an error: it returns created=false so the caller treats it
+// as a duplicate. The stored original is published before the row so a failed
+// insert leaves only a reclaimable content-addressed file behind.
 func (s *Service) catalogue(
-	ctx context.Context, pp photoprism.Photo, primary photoprism.File, staged *stagedFile,
+	ctx context.Context, pp photoprism.Photo, sel mediaSelection, staged *stagedFile, vfields videoFields,
 ) (photos.Photo, bool, error) {
-	stored, err := s.storeOriginal(ctx, pp, primary, staged)
+	stored, err := s.storeOriginal(ctx, pp, sel.original, staged)
 	if err != nil {
 		return photos.Photo{}, false, err
 	}
 	meta := extractFileMeta(ctx, staged.path)
-	created, err := s.photos.Create(ctx, buildPhoto(pp, primary, stored, meta))
+	photo := buildPhoto(pp, sel.original, stored, meta)
+	photo.MediaType = sel.kind
+	vfields.apply(&photo)
+	created, err := s.photos.Create(ctx, photo)
 	if errors.Is(err, photos.ErrFileHashTaken) {
 		return photos.Photo{}, false, nil
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photoprism"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // hashBytes returns the hex SHA256 of b, mirroring the storage layer so a fake
@@ -243,6 +244,7 @@ type fakePhotoStore struct {
 	byUID   map[string]photos.Photo
 	byPPUID map[string]string
 	byHash  map[string]string
+	files   map[string][]photos.PhotoFile
 	seq     int
 }
 
@@ -252,6 +254,7 @@ func newFakePhotoStore() *fakePhotoStore {
 		byUID:   map[string]photos.Photo{},
 		byPPUID: map[string]string{},
 		byHash:  map[string]string{},
+		files:   map[string][]photos.PhotoFile{},
 	}
 }
 
@@ -271,8 +274,10 @@ func (s *fakePhotoStore) Create(_ context.Context, p photos.Photo) (photos.Photo
 	return p, nil
 }
 
-// CreateFile records nothing; the importer only needs it to succeed.
+// CreateFile records the file row against its photo so tests can assert the
+// primary original and any live-photo sidecar were linked.
 func (s *fakePhotoStore) CreateFile(_ context.Context, f photos.PhotoFile) (photos.PhotoFile, error) {
+	s.files[f.PhotoUID] = append(s.files[f.PhotoUID], f)
 	return f, nil
 }
 
@@ -498,6 +503,36 @@ func (e *fakeEnqueuer) EnqueueImageEmbed(_ context.Context, uid string) error {
 func (e *fakeEnqueuer) EnqueueFaceDetect(_ context.Context, uid string) error {
 	e.faces = append(e.faces, uid)
 	return nil
+}
+
+// fakeProber is an in-memory VideoProber returning canned metadata for any path,
+// recording the paths it probed so tests can assert which staged file (the video
+// original or a live photo's motion clip) was probed.
+type fakeProber struct {
+	meta   video.Metadata
+	err    error
+	mu     sync.Mutex
+	probed []string
+	calls  int
+}
+
+// Probe records the call and returns the canned metadata (or error).
+func (p *fakeProber) Probe(_ context.Context, filePath string) (video.Metadata, error) {
+	p.mu.Lock()
+	p.calls++
+	p.probed = append(p.probed, filePath)
+	p.mu.Unlock()
+	if p.err != nil {
+		return video.Metadata{}, p.err
+	}
+	return p.meta, nil
+}
+
+// probeCalls reports how many times Probe was invoked.
+func (p *fakeProber) probeCalls() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
 }
 
 // errDownload is a sentinel used to simulate a failed download in tests.

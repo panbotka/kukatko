@@ -35,6 +35,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photoprism"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // DefaultPageSize is the listing page size used when Config.PageSize is left
@@ -148,6 +149,14 @@ type Enqueuer interface {
 	EnqueueFaceDetect(ctx context.Context, photoUID string) error
 }
 
+// VideoProber probes a downloaded video for its container metadata. It abstracts
+// video.Probe so the importer can be unit-tested with canned metadata and no real
+// ffprobe/ffmpeg. It is satisfied by the package's defaultProber.
+type VideoProber interface {
+	// Probe reads the container metadata of the video at path.
+	Probe(ctx context.Context, path string) (video.Metadata, error)
+}
+
 // Config bundles the Service's collaborators and tunables. Every collaborator is
 // required; the tunables fall back to package defaults when left zero.
 type Config struct {
@@ -169,6 +178,8 @@ type Config struct {
 	People PeopleStore
 	// Enqueuer schedules the image_embed and face_detect jobs.
 	Enqueuer Enqueuer
+	// Prober probes downloaded videos for their metadata; nil uses video.Probe.
+	Prober VideoProber
 	// PageSize is the listing page size (default DefaultPageSize).
 	PageSize int
 	// TempDir is where downloads are staged before publishing ("" uses the OS
@@ -192,6 +203,7 @@ type Service struct {
 	labels      LabelStore
 	people      PeopleStore
 	enqueuer    Enqueuer
+	prober      VideoProber
 	pageSize    int
 	tempDir     string
 	maxFileSize int64
@@ -211,6 +223,10 @@ func New(cfg Config) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	prober := cfg.Prober
+	if prober == nil {
+		prober = defaultProber{}
+	}
 	return &Service{
 		client:      cfg.Client,
 		runs:        cfg.Runs,
@@ -221,6 +237,7 @@ func New(cfg Config) *Service {
 		labels:      cfg.Labels,
 		people:      cfg.People,
 		enqueuer:    cfg.Enqueuer,
+		prober:      prober,
 		pageSize:    pageSize,
 		tempDir:     cfg.TempDir,
 		maxFileSize: cfg.MaxFileSize,

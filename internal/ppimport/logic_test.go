@@ -67,7 +67,8 @@ func TestMapMediaType(t *testing.T) {
 	t.Parallel()
 	cases := map[string]photos.MediaType{
 		"image": photos.MediaImage, "video": photos.MediaVideo, "live": photos.MediaLive,
-		"VIDEO": photos.MediaVideo, "raw": photos.MediaImage, "": photos.MediaImage,
+		"VIDEO": photos.MediaVideo, "animated": photos.MediaVideo, "raw": photos.MediaImage,
+		"": photos.MediaImage,
 	}
 	for in, want := range cases {
 		if got := mapMediaType(in); got != want {

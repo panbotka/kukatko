@@ -153,11 +153,14 @@ func originalName(pp photoprism.Photo, primary photoprism.File) string {
 }
 
 // mapMediaType maps a PhotoPrism photo type onto Kukátko's media-type
-// discriminator. Everything that is not a video or live photo (raw, animated,
-// vector, …) is catalogued as an image.
+// discriminator. Videos and animated photos (which PhotoPrism backs with a
+// transcoded clip) are videos; live photos keep their own kind; everything else
+// (raw, vector, …) is catalogued as an image. The actual stored file still decides
+// the final kind (see selectMedia): a video type with no detectable stream
+// degrades to an image.
 func mapMediaType(ppType string) photos.MediaType {
 	switch strings.ToLower(ppType) {
-	case "video":
+	case "video", "animated":
 		return photos.MediaVideo
 	case "live":
 		return photos.MediaLive

@@ -6,12 +6,16 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/jpeg"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -28,6 +32,19 @@ import (
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
+
+// tinyMP4 is a 64x64, 1-second H.264 sample clip served by the fake PhotoPrism
+// for the video and live-photo import tests; it is small enough to probe and to
+// extract a poster frame from with the real ffmpeg/ffprobe in CI.
+//
+//go:embed testdata/tiny.mp4
+var tinyMP4 []byte
+
+// tinyMP4b is a second, byte-distinct sample clip so the incremental video test
+// imports a genuinely new file rather than tripping content dedup.
+//
+//go:embed testdata/tiny2.mp4
+var tinyMP4b []byte
 
 // These tests run only under `make test-integration` against the database named
 // by KUKATKO_TEST_DATABASE_URL. They share one database and truncate between
@@ -111,6 +128,44 @@ func (c *fakePPClient) addPhoto(uid string, updated time.Time, title string, sha
 	}
 }
 
+// addVideo registers the given MP4 sample as a video original and returns the
+// photo. Callers pass byte-distinct samples so content dedup does not collapse
+// separate videos.
+func (c *fakePPClient) addVideo(uid string, updated time.Time, title string, data []byte) photoprism.Photo {
+	if c.files == nil {
+		c.files = map[string][]byte{}
+	}
+	hash := "h-" + uid
+	c.files[hash] = data
+	return photoprism.Photo{
+		UID: uid, Type: "video", Title: title, TakenAt: updated, UpdatedAt: updated,
+		Width: 64, Height: 64,
+		Files: []photoprism.File{
+			{UID: "f-" + uid, Hash: hash, Primary: true, Video: true, Mime: "video/mp4", Name: uid + ".mp4"},
+		},
+	}
+}
+
+// addLive registers a JPEG still and the sample MP4 motion clip, returning the
+// live photo that links them.
+func (c *fakePPClient) addLive(uid string, updated time.Time, title string, shade uint8) photoprism.Photo {
+	if c.files == nil {
+		c.files = map[string][]byte{}
+	}
+	still := "h-" + uid
+	motion := "hm-" + uid
+	c.files[still] = jpegOf(shade)
+	c.files[motion] = tinyMP4
+	return photoprism.Photo{
+		UID: uid, Type: "live", Title: title, TakenAt: updated, UpdatedAt: updated,
+		Width: 8, Height: 8,
+		Files: []photoprism.File{
+			{UID: "fs-" + uid, Hash: still, Primary: true, Mime: "image/jpeg", Name: uid + ".jpg"},
+			{UID: "fm-" + uid, Hash: motion, Video: true, Mime: "video/mp4", Name: uid + ".mov"},
+		},
+	}
+}
+
 // filterByUpdated returns photos updated at or after since (inclusive).
 func filterByUpdated(in []photoprism.Photo, since time.Time) []photoprism.Photo {
 	if since.IsZero() {
@@ -150,6 +205,7 @@ type testEnv struct {
 	client *fakePPClient
 	photos *photos.Store
 	db     *database.DB
+	cache  string
 }
 
 // newEnv builds an import service wired to real stores, storage and thumbnailer
@@ -163,20 +219,42 @@ func newEnv(t *testing.T, client *fakePPClient) *testEnv {
 	if err != nil {
 		t.Fatalf("storage: %v", err)
 	}
+	cache := t.TempDir()
 	pool := db.Pool()
 	svc := ppimport.New(ppimport.Config{
 		Client:      client,
 		Runs:        importer.NewStore(pool),
 		Photos:      photos.NewStore(pool),
 		Storage:     store,
-		Thumbnailer: thumb.New(store, t.TempDir()),
+		Thumbnailer: thumb.New(store, cache),
 		Albums:      organize.NewStore(pool),
 		Labels:      organize.NewStore(pool),
 		People:      people.NewStore(pool),
 		Enqueuer:    jobs.NewEnqueuer(jobs.NewStore(pool)),
 		PageSize:    50,
 	})
-	return &testEnv{svc: svc, client: client, photos: photos.NewStore(pool), db: db}
+	return &testEnv{svc: svc, client: client, photos: photos.NewStore(pool), db: db, cache: cache}
+}
+
+// thumbCount returns how many JPEG thumbnails the thumbnailer wrote under the
+// cache directory; for a video this is non-zero only if the poster frame was
+// extracted and resized.
+func (e *testEnv) thumbCount(t *testing.T) int {
+	t.Helper()
+	count := 0
+	err := filepath.WalkDir(e.cache, func(_ string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".jpg") {
+			count++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking thumb cache: %v", err)
+	}
+	return count
 }
 
 // jobCount returns how many jobs of the given type are queued.
@@ -460,5 +538,150 @@ func TestIntegration_perPhotoFailure(t *testing.T) {
 	}
 	if status != string(importer.StatusDone) {
 		t.Errorf("run status = %q, want done", status)
+	}
+}
+
+// TestIntegration_video verifies a video is imported as a video photo with probed
+// metadata, a generated poster, external IDs and an enqueued embedding job; the
+// re-run is idempotent and a later run incrementally picks up a new video.
+func TestIntegration_video(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	client.photos = []photoprism.Photo{client.addVideo("vid1", t0, "Clip", tinyMP4)}
+	env := newEnv(t, client)
+
+	result, err := env.svc.Import(ctx)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Imported != 1 {
+		t.Fatalf("imported = %d, want 1", result.Counts.Imported)
+	}
+
+	photo := assertVideoPhoto(t, env, "vid1")
+	if photo.PhotoprismUID == nil || *photo.PhotoprismUID != "vid1" ||
+		photo.PhotoprismFileHash == nil || *photo.PhotoprismFileHash != "h-vid1" {
+		t.Errorf("external IDs = %v / %v", photo.PhotoprismUID, photo.PhotoprismFileHash)
+	}
+	if env.thumbCount(t) == 0 {
+		t.Error("no poster/thumbnails generated for the video")
+	}
+	if got := env.jobCount(t, jobs.TypeImageEmbed); got != 1 {
+		t.Errorf("image_embed jobs = %d, want 1 (poster embedding)", got)
+	}
+
+	// Re-run is idempotent: no new photo, no re-download.
+	downloadsBefore := client.downloadCount()
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("re-run: %v", err)
+	}
+	if got := countRows(t, env, "photos"); got != 1 {
+		t.Errorf("photos after re-run = %d, want 1", got)
+	}
+	if client.downloadCount() != downloadsBefore {
+		t.Errorf("re-run re-downloaded: %d -> %d", downloadsBefore, client.downloadCount())
+	}
+
+	// Incremental: a new video added after the watermark is picked up.
+	client.photos = append(client.photos, client.addVideo("vid2", t0.Add(2*time.Hour), "Clip2", tinyMP4b))
+	inc, err := env.svc.Import(ctx)
+	if err != nil {
+		t.Fatalf("incremental import: %v", err)
+	}
+	if inc.Counts.Imported != 1 {
+		t.Errorf("incremental imported = %d, want 1 (the new video)", inc.Counts.Imported)
+	}
+	assertVideoPhoto(t, env, "vid2")
+}
+
+// assertVideoPhoto fetches the imported video photo and checks its media type and
+// probed video metadata, returning it for further assertions.
+func assertVideoPhoto(t *testing.T, env *testEnv, ppUID string) photos.Photo {
+	t.Helper()
+	photo, err := env.photos.GetByPhotoprismUID(t.Context(), ppUID)
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID(%s): %v", ppUID, err)
+	}
+	if photo.MediaType != photos.MediaVideo {
+		t.Errorf("media_type = %q, want video", photo.MediaType)
+	}
+	if photo.DurationMs == nil || *photo.DurationMs <= 0 {
+		t.Errorf("duration_ms = %v, want > 0 (probed)", photo.DurationMs)
+	}
+	if photo.VideoCodec == "" {
+		t.Error("video_codec empty, want a probed codec")
+	}
+	return photo
+}
+
+// TestIntegration_livePhoto verifies a live photo stores the still as the primary
+// original and the motion clip as a sidecar file, catalogued as media_type live.
+func TestIntegration_livePhoto(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	client.photos = []photoprism.Photo{client.addLive("live1", t0, "Moment", 120)}
+	env := newEnv(t, client)
+
+	result, err := env.svc.Import(ctx)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Imported != 1 {
+		t.Fatalf("imported = %d, want 1", result.Counts.Imported)
+	}
+
+	photo, err := env.photos.GetByPhotoprismUID(ctx, "live1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID: %v", err)
+	}
+	if photo.MediaType != photos.MediaLive {
+		t.Errorf("media_type = %q, want live", photo.MediaType)
+	}
+	files, err := env.photos.ListFiles(ctx, photo.UID)
+	if err != nil {
+		t.Fatalf("ListFiles: %v", err)
+	}
+	assertLivePhotoFiles(t, files)
+
+	// Re-run links no duplicate file rows.
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("re-run: %v", err)
+	}
+	again, err := env.photos.ListFiles(ctx, photo.UID)
+	if err != nil {
+		t.Fatalf("ListFiles after re-run: %v", err)
+	}
+	if len(again) != len(files) {
+		t.Errorf("file rows after re-run = %d, want %d (idempotent)", len(again), len(files))
+	}
+}
+
+// assertLivePhotoFiles checks the still primary original and the motion sidecar
+// were both linked.
+func assertLivePhotoFiles(t *testing.T, files []photos.PhotoFile) {
+	t.Helper()
+	if len(files) != 2 {
+		t.Fatalf("file rows = %d, want 2 (still + motion)", len(files))
+	}
+	var primary, sidecar *photos.PhotoFile
+	for i := range files {
+		switch files[i].Role {
+		case photos.RoleOriginal:
+			primary = &files[i]
+		case photos.RoleSidecar:
+			sidecar = &files[i]
+		default:
+		}
+	}
+	if primary == nil || !primary.IsPrimary {
+		t.Errorf("primary still missing or not primary: %+v", primary)
+	}
+	if sidecar == nil || sidecar.IsPrimary {
+		t.Errorf("sidecar motion missing or marked primary: %+v", sidecar)
+	}
+	if sidecar != nil && !strings.HasPrefix(sidecar.FileMime, "video/") {
+		t.Errorf("sidecar mime = %q, want video/*", sidecar.FileMime)
 	}
 }

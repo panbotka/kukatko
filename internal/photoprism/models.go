@@ -1,6 +1,9 @@
 package photoprism
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Photo is the subset of a PhotoPrism photo-search result that Kukátko imports.
 // Field names match PhotoPrism's JSON keys (upper-camel-case) via struct tags.
@@ -56,6 +59,35 @@ func (p Photo) PrimaryFile() (File, bool) {
 	return File{}, false
 }
 
+// VideoFile returns the photo's first video file (the motion clip of a video or
+// live photo) and true, or a zero File and false when the photo has no video
+// stream (a plain still image). It backs the video/live import path, which stores
+// the actual motion file rather than PhotoPrism's generated still.
+func (p Photo) VideoFile() (File, bool) {
+	for _, f := range p.Files {
+		if f.IsVideo() {
+			return f, true
+		}
+	}
+	return File{}, false
+}
+
+// StillFile returns the photo's still-image file and true: the primary file when
+// it is not itself a video, otherwise the first non-video file. It returns false
+// when every file is a video (a plain clip with no extracted frame). It backs the
+// live-photo import path, which stores the still as the primary original.
+func (p Photo) StillFile() (File, bool) {
+	if f, ok := p.PrimaryFile(); ok && !f.IsVideo() {
+		return f, true
+	}
+	for _, f := range p.Files {
+		if !f.IsVideo() {
+			return f, true
+		}
+	}
+	return File{}, false
+}
+
 // File is one underlying file of a PhotoPrism photo. Hash is the SHA1 content
 // hash PhotoPrism uses both to identify the file and as the download key.
 type File struct {
@@ -77,8 +109,20 @@ type File struct {
 	Height int `json:"Height"`
 	// FileType is PhotoPrism's file-type tag (e.g. "jpg", "mp4").
 	FileType string `json:"FileType"`
+	// Video marks the file as a playable video stream; PhotoPrism sets it on the
+	// motion file of a video or live photo.
+	Video bool `json:"Video"`
+	// Codec is the file's media codec (e.g. "avc1", "hvc1"); empty for stills.
+	Codec string `json:"Codec"`
 	// Markers are the face/label regions detected on this file.
 	Markers []Marker `json:"Markers"`
+}
+
+// IsVideo reports whether the file is a playable video stream, recognised by
+// PhotoPrism's Video flag or a video/* MIME type. It is the criterion the import
+// uses to tell a video or live photo's motion file from its still.
+func (f File) IsVideo() bool {
+	return f.Video || strings.HasPrefix(strings.ToLower(f.Mime), "video/")
 }
 
 // Marker is a face or label region on a file, used to seed Kukátko's markers and

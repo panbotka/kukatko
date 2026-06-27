@@ -30,10 +30,16 @@ make build            # build frontendu (Vite) + statický binár do bin/kukatko
 # serve i migrate potřebují aspoň database.url (typicky přes env):
 export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
 ./bin/kukatko migrate                     # spustí pending DB migrace a skončí
+./bin/kukatko migrate photosorter         # read-only inkrementální migrace dat z photo-sorteru
+./bin/kukatko import photoprism           # read-only inkrementální import z PhotoPrismu
 ./bin/kukatko serve                       # spustí migrace, pak HTTP server (default 0.0.0.0:8080)
 ./bin/kukatko serve --config config.yaml  # explicitní cesta ke konfiguraci
 ./bin/kukatko version                     # vypíše verzi a commit
 ```
+
+`migrate photosorter` potřebuje read-only DSN photo-sorter DB v `import.photosorter.dsn`
+(`KUKATKO_IMPORT_PHOTOSORTER_DSN`); bez něj příkaz i jeho admin trigger
+`POST /api/v1/import/photosorter` selžou/se neregistrují.
 
 ## Databáze a migrace
 
@@ -732,12 +738,20 @@ PhotoPrismu, sítě, DB i disku.
   `Service.Import`.
 - **Běh** (`Service.Import`) — otevře `import_runs` běh, navrhne na poslední úspěšný watermark a:
   1. **Fotky** — pageuje `ListPhotos(UpdatedSince=watermark)`; per fotka dedup dle `photoprism_uid`
-     (už importovaná → update změněných metadat, jinak skip), jinak stáhne primární originál,
-     spočítá **SHA256**, dedupuje dle `file_hash` (shodný obsah už v katalogu → backfill
-     `photoprism_uid`/`photoprism_file_hash` přes `photos.SetPhotoprismRef`, žádná nová fotka),
-     uloží originál, založí `photos` řádek s **PP metadaty** (title/desc/taken_at/GPS/camera/EXIF)
-     + externími ID + **EXIF orientací ze souboru** (PP ji nevystavuje), vyrenderuje náhledy a
-     **zařadí `image_embed` + `face_detect`** joby. Counts se **checkpointují po každé stránce**.
+     (už importovaná → update změněných metadat, jinak skip), jinak **vybere média dle PP `Type`**
+     (`selectMedia`): **video/animated** → stáhne samotný **video soubor** (`Photo.VideoFile()`,
+     `media_type=video`; video bez detekovatelného streamu graceful degraduje na image), **live** →
+     **still** jako primární originál + **motion klip** jako `sidecar` photo_file
+     (`Photo.StillFile()`+`VideoFile()`, `media_type=live`), jinak **image** (primární soubor);
+     stáhne vybraný originál, spočítá **SHA256**, dedupuje dle `file_hash` (shodný obsah už v katalogu
+     → backfill `photoprism_uid`/`photoprism_file_hash` přes `photos.SetPhotoprismRef`, žádná nová
+     fotka), uloží originál, **u videa/live probne video metadata** (`Prober.Probe` →
+     `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`; u video z originálu, u live z motion
+     klipu; best-effort), založí `photos` řádek s **PP metadaty** (title/desc/taken_at/GPS/camera/EXIF)
+     + `media_type` + video metadata + externími ID + **EXIF orientací ze souboru** (PP ji nevystavuje),
+     **u live** uloží i motion klip jako `RoleSidecar`, vyrenderuje náhledy (**u videa poster frame**
+     přes ffmpeg) a **zařadí `image_embed`** (na posteru) **+ `face_detect`** joby. Counts se
+     **checkpointují po každé stránce**.
   2. **Lidé** — z `Files[].Markers[]` nově importované fotky: každý **pojmenovaný validní face
      marker** find-or-create subjekt (dle `Slugify`) + Kukátko marker přiřazený subjektu (markery
      jen při prvním importu, ať re-run neduplikuje).
@@ -750,6 +764,46 @@ PhotoPrismu, sítě, DB i disku.
   se nikdy neposune za nejstarší selhání** (selhaná fotka se příště znovu nabere); celý import je
   bezpečný k opakování. Konfiguruje se přes `import.photoprism.{base_url,token,page_size}`; bez
   `base_url` se import job ani endpoint neregistrují (CLI vrátí chybu).
+
+### photo-sorter migrace (`internal/photosorter` + `internal/psimport`)
+
+Read-only, **inkrementální a idempotentní** přímá migrace z PostgreSQL DB **photo-sorteru**
+(ARCHITECTURE.md §10). Protože photo-sorter i Kukátko používají **stejné modely a rozměry**
+(CLIP 768 + InsightFace 512) a **stejné SHA256** file hashe, **embeddingy a obličeje se přenášejí
+1:1** bez přepočtu a fotky deduplikují přímo. Všechny spolupracovníky drží za rozhraními →
+unit-testovatelné s faky bez photo-sorteru, sítě, DB i disku; **integrační testy** jedou proti
+**naseedovanému fake photo-sorter schématu** (`ps_fixture`) vedle Kukátko tabulek v jedné test DB.
+
+- **`internal/photosorter`** — read-only klient s vlastním pgx poolem (oddělený od Kukátko),
+  pgvector typy registrované na každém spojení, volitelný `Schema` scopne každý dotaz přes
+  `search_path` (tak integrační test čte fake schéma). Čte **jen** tabulky, které migrace potřebuje
+  (`photos`, `embeddings`, `faces`, `faces_processed`, `subjects`, `markers`, `albums`/
+  `album_photos`, `labels`/`photo_labels`, `photo_phashes`, `photo_edits`) — **fotoknihu ani
+  share-linky nikdy nečte**.
+- **Spuštění** — buď CLI `kukatko migrate photosorter` (synchronně, pro ops/cron), nebo admin
+  endpoint `POST /api/v1/import/photosorter`, který zařadí **`ps_migrate` job** (běží v background
+  workeru). `ps_migrate` payload nese pevný sentinel, takže dedup fronty pustí **jen jednu migraci**
+  naráz (druhý trigger → 409). Handler i CLI volají stejnou `Service.Migrate`.
+- **Běh** (`Service.Migrate`) — otevře `import_runs` běh (`source=photosorter`), navrhne na poslední
+  úspěšný watermark a:
+  1. **Katalogy** — find-or-create Kukátko **subjekt** (dle slug z jména), **album** (dle title)
+     a **štítek** (dle jména) pro každý photo-sorter; vznikne ps-uid → kk-uid mapa pro satelity.
+  2. **Fotky** — pageuje `ListPhotos(UpdatedSince=watermark)` (řazení `updated_at`); per fotka
+     match dle `photosorter_uid` (už migrovaná → skip), jinak dle **`file_hash`** (už v katalogu,
+     např. z PhotoPrism importu → backfill `photosorter_uid` přes `photos.SetPhotosorterRef`, žádné
+     kopírování), jinak **zkopíruje originál** z `file_path` do Kukátko storage (SHA256, náhledy),
+     založí `photos` řádek s photo-sorter metadaty + `photosorter_uid`.
+  3. **Satelity** — **embedding** (768) a **faces** (512 + bbox + det_score + cache) se vloží
+     **1:1** (zachová `model`/`pretrained`, remapuje subjekt, zachová `marker_uid`); fotka, kterou
+     photo-sorter **neembedoval/nedetekoval**, dostane Kukátko `image_embed`/`face_detect` job.
+     **markery** se migrují pod původním UID (idempotence), **album/label členství**, **phash**
+     a **edit** se přenesou (best-effort, idempotentně).
+  4. **Uzavření** — zapíše counts + nový watermark a běh `done`.
+- **Robustnost** — per-fotka chyba se zaznamená do `counts.failed` a **nepřeruší běh** (jen
+  infrastrukturní chyba běh `fail`ne); **watermark se nikdy neposune za nejstarší selhání**; celá
+  migrace je bezpečná k opakování. Konfiguruje se přes `import.photosorter.{dsn,page_size}` (DSN
+  přes `KUKATKO_IMPORT_PHOTOSORTER_DSN`, necommituj); bez `dsn` se migrace job ani endpoint
+  neregistrují (CLI vrátí chybu).
 
 ## Konfigurace
 

@@ -31,10 +31,12 @@ type harness struct {
 	people  *fakePeopleStore
 	enq     *fakeEnqueuer
 	storage *fakeStorage
+	prober  *fakeProber
 }
 
 // newHarness builds a Service wired to fakes, with a small page size so the
-// paging loops are exercised.
+// paging loops are exercised. The fake prober returns empty metadata by default;
+// video/live tests set h.prober.meta before importing.
 func newHarness(client *fakeClient) *harness {
 	runs := &fakeRunStore{}
 	photoStore := newFakePhotoStore()
@@ -43,6 +45,7 @@ func newHarness(client *fakeClient) *harness {
 	peopleStore := newFakePeopleStore()
 	enq := &fakeEnqueuer{}
 	store := newFakeStorage()
+	prober := &fakeProber{}
 	svc := New(Config{
 		Client:      client,
 		Runs:        runs,
@@ -53,12 +56,13 @@ func newHarness(client *fakeClient) *harness {
 		Labels:      labels,
 		People:      peopleStore,
 		Enqueuer:    enq,
+		Prober:      prober,
 		PageSize:    2,
 		Logger:      discardLogger(),
 	})
 	return &harness{
 		svc: svc, client: client, runs: runs, photos: photoStore,
-		albums: albums, labels: labels, people: peopleStore, enq: enq, storage: store,
+		albums: albums, labels: labels, people: peopleStore, enq: enq, storage: store, prober: prober,
 	}
 }
 
