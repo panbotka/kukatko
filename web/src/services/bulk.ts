@@ -3,9 +3,10 @@ import { ApiError } from './auth'
 /**
  * Bulk-metadata client for `POST /api/v1/photos/bulk` (`internal/bulkapi`):
  * applies one operation set to many photos in a single transaction. The UI uses
- * it to add a multi-photo grid selection to albums or labels in one call; the
- * full operation set is intentionally not modelled here — only the fields the
- * selection affordances need are declared.
+ * it from the grid-selection bulk-edit toolbar to add/remove albums and labels,
+ * set or clear the description and location, change the private/archive state and
+ * toggle the per-user favorite — all in one call — and to render the per-photo
+ * result summary the endpoint returns.
  */
 
 const API_BASE = '/api/v1'
@@ -28,16 +29,45 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `request failed: ${res.status}`
 }
 
+/** A coordinate pair for a `set_location` bulk operation. */
+export interface BulkLocation {
+  lat: number
+  lng: number
+}
+
 /**
- * The subset of bulk operations the grid-selection affordances use: adding the
- * selected photos to albums and/or attaching labels. Every field is optional;
- * omitted operations are not applied.
+ * The bulk operations the grid-selection toolbar can apply to many photos at
+ * once, mirroring `internal/bulkapi` (`operationsInput`). Every field is
+ * optional; omitted operations are left unchanged. Set/clear pairs are distinct
+ * keys (matching the wire format): `set_*` carries a value, `clear_*` is a flag,
+ * and supplying both of a pair — or both `archive` and `unarchive` — is rejected
+ * by the backend with a 400. `set_favorite` is per-user (the acting user).
  */
 export interface BulkOperations {
   add_to_albums?: string[]
   remove_from_albums?: string[]
   add_labels?: string[]
   remove_labels?: string[]
+  /** Set the title/caption to this value. */
+  set_caption?: string
+  /** Clear the title/caption. */
+  clear_caption?: boolean
+  /** Set the description to this value. */
+  set_description?: string
+  /** Clear the description. */
+  clear_description?: boolean
+  /** Set the GPS location. */
+  set_location?: BulkLocation
+  /** Clear the GPS location. */
+  clear_location?: boolean
+  /** Set the private flag. */
+  set_private?: boolean
+  /** Archive (soft-delete) the photos. */
+  archive?: boolean
+  /** Unarchive the photos. */
+  unarchive?: boolean
+  /** Favorite (true) or unfavorite (false) for the acting user. */
+  set_favorite?: boolean
 }
 
 /** Per-photo outcome of a bulk apply (`bulk.PhotoResult`). */

@@ -6,6 +6,7 @@
   "nav": {
     "home": "Home",
     "library": "Library",
+    "favorites": "Favorites",
     "albums": "Albums",
     "labels": "Labels",
     "search": "Search",
@@ -75,7 +76,8 @@
     "loading": "Loading photos…",
     "loadingMore": "Loading more photos…",
     "select": "Select",
-    "addToCollection": "Add to album / label",
+    "selectAll": "Select all",
+    "bulkEdit": "Bulk edit",
     "filters": {
       "label": "Photo filters",
       "search": "Search",
@@ -262,17 +264,69 @@
       "hint": "Attach this label to photos to see them here."
     }
   },
-  "collection": {
-    "add": {
-      "title": "Add {{count}} photos",
-      "loading": "Loading…",
-      "loadError": "Could not load albums and labels.",
-      "saveError": "Could not add the photos. Please try again.",
-      "album": "Album",
-      "label": "Label",
-      "none": "— none —",
-      "cancel": "Cancel",
-      "confirm": "Add"
+  "favorites": {
+    "title": "Favorites",
+    "empty": {
+      "title": "No favorites yet",
+      "hint": "Tap the heart on a photo to add it to your favorites."
+    }
+  },
+  "favorite": {
+    "add": "Add to favorites",
+    "remove": "Remove from favorites"
+  },
+  "bulkEdit": {
+    "title": "Edit {{count}} photos",
+    "loading": "Loading…",
+    "loadError": "Could not load albums and labels.",
+    "applyError": "The bulk edit failed. Please try again.",
+    "noOps": "Choose at least one change to apply.",
+    "addAlbum": "Add to album",
+    "removeAlbum": "Remove from album",
+    "addLabel": "Add label",
+    "removeLabel": "Remove label",
+    "none": "— no change —",
+    "description": {
+      "label": "Description",
+      "noChange": "— no change —",
+      "set": "Set to…",
+      "clear": "Clear",
+      "placeholder": "New description…"
+    },
+    "location": {
+      "label": "Location",
+      "noChange": "— no change —",
+      "set": "Set to…",
+      "clear": "Clear",
+      "lat": "Latitude",
+      "lng": "Longitude",
+      "invalid": "Enter a valid latitude and longitude."
+    },
+    "private": {
+      "label": "Private",
+      "noChange": "— no change —",
+      "yes": "Make private",
+      "no": "Make public"
+    },
+    "archive": {
+      "label": "Archive",
+      "noChange": "— no change —",
+      "archive": "Archive",
+      "unarchive": "Unarchive"
+    },
+    "favorite": {
+      "label": "Favorite",
+      "noChange": "— no change —",
+      "yes": "Add to favorites",
+      "no": "Remove from favorites"
+    },
+    "cancel": "Cancel",
+    "apply": "Apply",
+    "result": {
+      "title": "Result",
+      "summary": "{{updated}} updated · {{skipped}} skipped · {{errored}} failed",
+      "errorsTitle": "Photos that failed",
+      "done": "Done"
     }
   },
   "selection": {

@@ -502,7 +502,8 @@ inkrementální).
   frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
   (`Layout` = navbar shell s user-menu/logout + role-gated nav — odkaz **Knihovna**
-  míří na `/library`, **Alba** na `/albums`, **Štítky** na `/labels`, **Hledat** na `/search`,
+  míří na `/library`, **Oblíbené** na `/favorites`, **Alba** na `/albums`, **Štítky** na `/labels`,
+  **Hledat** na `/search`,
   **Lidé** na `/people`, **Mapa** na `/map`, **Nahrát** na `/upload` (jen editor/admin),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
   `LanguageSwitcher`;
@@ -511,24 +512,36 @@ inkrementální).
   `UploadItem` (řádek fronty: jméno+velikost, progress-bar, status badge, near-duplicate
   varování, remove/retry akce); `components/library/` = `PhotoTile`
   (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, placeholder bez
-  layout-shiftu), `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
-  window-scroll, `endReached` → další stránka, footer spinner/retry), `FilterBar`
+  layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`),
+  `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
+  window-scroll, `endReached` → další stránka, footer spinner/retry; prop `favoritable`
+  prosákne srdíčko na dlaždice), `FilterBar`
   (datum od/do, poloha, soukromé, fotoaparát, archiv, řazení + počet + „zrušit filtry";
   generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
   na search stránce), `SimilarPhotos` (znovupoužitelný horizontálně scrollovatelný pruh
   podobných fotek nad `GET /photos/{uid}/similar` přes `fetchSimilar`, odkazy na detail,
   empty-friendly + loading/error, refetch při změně `uid`),
+  `FavoriteButton` (heart toggle nad `useFavorite` — **optimistický** per-user favorite
+  s rollbackem; bez role-gate, smí každý přihlášený; jako overlay na dlaždici je sibling
+  linku, takže klik nenaviguje),
   `GridSkeleton` (placeholder mřížka při prvním načtení); `PhotoTile`+`PhotoGrid` podporují
-  volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`),
+  volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`;
+  heart se v selection módu skryje),
   `components/organize/` = `AlbumTile` (karta alba: cover/název/počet → `/albums/{uid}`),
   `AlbumEditModal` (create/rename alba: název/popis/soukromé), `LabelEditModal` (create/rename
   štítku: jméno/priorita), `ReorderableGrid` (ne-virtualizovaná drag-and-drop mřížka + šipky pro
   přeřazení alba, controlled přes `onReorder`), `SelectionBar` (sticky toolbar výběru: počet +
-  akce + zrušit), `AddToCollectionModal` (přidá výběr fotek do alba/štítku přes `POST /photos/bulk`),
+  akce + zrušit), `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`: add/remove
+  alba, add/remove štítku, set/clear popisu, set/clear polohy, soukromé, archiv, oblíbené — set/clear
+  páry jako samostatné módy; klientská validace souřadnic + „aspoň jedna změna"; po aplikaci
+  **per-foto result summary** z odpovědi),
   `pages/` (`HomePage` volá `GET /healthz`, `LoginPage`, `AccountPage` = změna vlastního hesla,
   `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
-  mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, plus pro editory
-  **režim výběru** → `AddToCollectionModal` (přidat do alba/štítku přes bulk API),
+  mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka na dlaždicích
+  (favoritable), plus pro editory **režim výběru** (`Vybrat`/`Vybrat vše`) → `BulkEditModal`
+  (hromadná úprava metadat přes bulk API),
+  `FavoritesPage` = `/favorites` oblíbené aktuálního uživatele: stejná mřížka/filtry jako knihovna
+  scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených na místě,
   `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
   `AlbumDetailPage` = `/albums/:uid` hlavička + editorské akce (upravit/smazat/vybrat/přeřadit) nad
   fotomřížkou scopnutou na album (`useScopedPhotos` + `FilterBar` + URL stav); přeřazení přes
@@ -543,7 +556,7 @@ inkrementální).
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
   po dokončení odkaz na nově nahrané fotky (`/library?sort=added`),
   `PhotoDetailPage` = `/photos/:uid` detail fotky: obrázek s interaktivním `FaceOverlay`
-  (pojmenování obličejů) + pruh `SimilarPhotos`,
+  (pojmenování obličejů) + `FavoriteButton` v hlavičce + pruh `SimilarPhotos`,
   `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (cover/jméno/počet
   fotek), editorům odkaz na review shluků,
   `SubjectPage` = `/people/:uid` stránka osoby: hlavička (jméno/typ + edit přes
@@ -587,7 +600,10 @@ inkrementální).
   `reloadKey` pro refetch po mutaci); `useMapPhotos` = jednorázový (nestránkovaný) loader
   GeoJSON feedu geotagovaných fotek nad `fetchMapPhotos` (`status` loading/ready/error, `retry`,
   ruší in-flight + ignoruje stale při změně filtrů); `useSelection` = multi-výběr fotek v mřížce
-  (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`clear`)),
+  (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
+  `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
+  (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
+  `uid`/server stavu)),
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` + `LIBRARY_DEFAULTS` + `viewToParams`
@@ -609,14 +625,19 @@ inkrementální).
   `fulltext`/`semantic`/`hybrid`, odpověď navíc `mode`+`degraded`),
   `fetchSimilar(uid,limit?,signal)` nad `GET /api/v1/photos/{uid}/similar` → `SimilarPhoto[]`
   (`Photo`+`distance`; empty-friendly), typy `SimilarPhoto`/`SimilarResponse`,
-  `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo`/`PhotoListParams`
-  (vč. `album`/`label` scope)/`PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`;
+  `favoritePhoto(uid,favorite,signal)` nad `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (per-user
+  toggle, 204, podklad optimistického `useFavorite`),
+  `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo` (vč.
+  `is_favorite`)/`PhotoListParams`
+  (vč. `album`/`label` scope + `favorite` filtr)/`PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`;
   `organize.ts` = Albums/Labels klient: alba `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
   `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`/`reorderAlbumPhotos`, štítky `fetchLabels`/
   `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; typy
   `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput`; `bulk.ts` =
-  `bulkUpdatePhotos(uids,ops)` nad `POST /photos/bulk` (selection → add do alba/štítku), typy
-  `BulkOperations`/`BulkResult`; `upload.ts` = `uploadFile(file,{onProgress,signal})`
+  `bulkUpdatePhotos(uids,ops)` nad `POST /photos/bulk` (hromadná úprava výběru), typy
+  `BulkOperations` (add/remove alba+štítku, set/clear caption+popisu+polohy, set_private,
+  archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `upload.ts` =
+  `uploadFile(file,{onProgress,signal})`
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
   `UploadOutcome`; `photos.ts` navíc `fetchPhoto(uid)` (detail `GET /photos/{uid}` →
@@ -635,7 +656,8 @@ inkrementální).
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth` → `Layout` (`/`, `/library`,
-  `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`, `/photos/:uid`, `/people`,
+  `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`,
+  `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload` a `/people/clusters`
   navíc pod `RequireRole role="editor"` = write-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy

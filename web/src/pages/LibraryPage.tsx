@@ -7,7 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
-import { AddToCollectionModal } from '../components/organize/AddToCollectionModal'
+import { BulkEditModal } from '../components/organize/BulkEditModal'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useSelection } from '../hooks/useSelection'
@@ -18,15 +18,17 @@ import { useUrlState } from '../lib/urlState'
  * The main photo library: a filter/sort bar over a virtualized, infinite-scroll
  * thumbnail grid. The entire view (filters, sort) lives in the URL, so Back /
  * Forward restore the exact view and sharing the URL reproduces it. The grid
- * pages through the API as the user scrolls. Editors can enter selection mode to
- * add a multi-photo selection to an album or label via the bulk API.
+ * pages through the API as the user scrolls. Every tile carries a favorite heart
+ * (a personal toggle for all roles); editors can additionally enter selection
+ * mode to bulk-edit a multi-photo selection (albums, labels, description,
+ * location, private, archive, favorite) via the bulk API.
  */
 export function LibraryPage() {
   const { t } = useTranslation()
   const { canWrite } = useAuth()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const selection = useSelection()
-  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   // Memoise the API params so the data hook only reloads when the query changes.
   const params = useMemo(() => viewToParams(view), [view])
@@ -46,14 +48,24 @@ export function LibraryPage() {
       {selection.active && (
         <SelectionBar count={selection.count} onCancel={selection.disable}>
           <Button
+            variant="outline-secondary"
+            size="sm"
+            disabled={photos.length === 0}
+            onClick={() => {
+              selection.selectMany(photos.map((p) => p.uid))
+            }}
+          >
+            {t('library.selectAll')}
+          </Button>
+          <Button
             variant="primary"
             size="sm"
             disabled={selection.count === 0}
             onClick={() => {
-              setAdding(true)
+              setEditing(true)
             }}
           >
-            {t('library.addToCollection')}
+            {t('library.bulkEdit')}
           </Button>
         </SelectionBar>
       )}
@@ -90,18 +102,19 @@ export function LibraryPage() {
               ? { active: true, selected: selection.selected, onToggle: selection.toggle }
               : undefined
           }
+          favoritable={!selection.active}
         />
       )}
 
       {canWrite && (
-        <AddToCollectionModal
-          show={adding}
+        <BulkEditModal
+          show={editing}
           photoUids={[...selection.selected]}
           onHide={() => {
-            setAdding(false)
+            setEditing(false)
           }}
           onDone={() => {
-            setAdding(false)
+            setEditing(false)
             selection.disable()
           }}
         />

@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom'
 
 import { GRID_THUMB_SIZE, type Photo, thumbUrl } from '../../services/photos'
 
+import { FavoriteButton } from './FavoriteButton'
+
 /** Props for {@link PhotoTile}. */
 export interface PhotoTileProps {
   photo: Photo
@@ -18,6 +20,12 @@ export interface PhotoTileProps {
   selected?: boolean
   /** Toggles this tile's selection (only meaningful when selectable). */
   onToggleSelect?: (uid: string) => void
+  /**
+   * When true a favorite heart overlay is shown (a personal toggle available to
+   * every user). It is hidden in selection mode so the tile stays a clean
+   * selection target. Defaults false.
+   */
+  favoritable?: boolean
 }
 
 /**
@@ -33,6 +41,7 @@ export function PhotoTile({
   selectable = false,
   selected = false,
   onToggleSelect,
+  favoritable = false,
 }: PhotoTileProps) {
   const { t } = useTranslation()
   const [loaded, setLoaded] = useState(false)
@@ -94,30 +103,26 @@ export function PhotoTile({
     </>
   )
 
-  if (selectable) {
-    return (
-      <button
-        type="button"
-        aria-pressed={selected}
-        aria-label={label}
-        title={label}
-        onClick={() => {
-          onToggleSelect?.(photo.uid)
-        }}
-        className={`btn p-0 border-0 d-block position-relative bg-secondary-subtle overflow-hidden rounded w-100${
-          selected ? ' ring ring-primary' : ''
-        }`}
-        style={{
-          aspectRatio: '1 / 1',
-          outline: selected ? '3px solid var(--bs-primary)' : undefined,
-        }}
-      >
-        {inner}
-      </button>
-    )
-  }
-
-  return (
+  const base = selectable ? (
+    <button
+      type="button"
+      aria-pressed={selected}
+      aria-label={label}
+      title={label}
+      onClick={() => {
+        onToggleSelect?.(photo.uid)
+      }}
+      className={`btn p-0 border-0 d-block position-relative bg-secondary-subtle overflow-hidden rounded w-100${
+        selected ? ' ring ring-primary' : ''
+      }`}
+      style={{
+        aspectRatio: '1 / 1',
+        outline: selected ? '3px solid var(--bs-primary)' : undefined,
+      }}
+    >
+      {inner}
+    </button>
+  ) : (
     <Link
       to={`/photos/${photo.uid}`}
       className="d-block position-relative bg-secondary-subtle overflow-hidden rounded"
@@ -127,5 +132,21 @@ export function PhotoTile({
     >
       {inner}
     </Link>
+  )
+
+  // The favorite heart sits in a relative wrapper as a sibling of the link/button
+  // (never nested inside it — interactive content cannot nest), so toggling a
+  // favorite never navigates or toggles selection. Hidden in selection mode.
+  return (
+    <div className="position-relative">
+      {base}
+      {favoritable && !selectable && (
+        <FavoriteButton
+          uid={photo.uid}
+          favorite={photo.is_favorite ?? false}
+          className="position-absolute bottom-0 end-0 m-1"
+        />
+      )}
+    </div>
   )
 }

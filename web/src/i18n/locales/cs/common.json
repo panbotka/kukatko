@@ -6,6 +6,7 @@
   "nav": {
     "home": "Domů",
     "library": "Knihovna",
+    "favorites": "Oblíbené",
     "albums": "Alba",
     "labels": "Štítky",
     "search": "Hledat",
@@ -75,7 +76,8 @@
     "loading": "Načítání fotek…",
     "loadingMore": "Načítání dalších fotek…",
     "select": "Vybrat",
-    "addToCollection": "Přidat do alba / štítku",
+    "selectAll": "Vybrat vše",
+    "bulkEdit": "Hromadná úprava",
     "filters": {
       "label": "Filtry fotek",
       "search": "Hledat",
@@ -219,17 +221,69 @@
       "hint": "Připoj tento štítek k fotkám a uvidíš je tady."
     }
   },
-  "collection": {
-    "add": {
-      "title": "Přidat {{count}} fotek",
-      "loading": "Načítání…",
-      "loadError": "Alba a štítky se nepodařilo načíst.",
-      "saveError": "Fotky se nepodařilo přidat. Zkus to prosím znovu.",
-      "album": "Album",
-      "label": "Štítek",
-      "none": "— žádné —",
-      "cancel": "Zrušit",
-      "confirm": "Přidat"
+  "favorites": {
+    "title": "Oblíbené",
+    "empty": {
+      "title": "Zatím žádné oblíbené",
+      "hint": "Klepni na srdíčko u fotky a přidej ji mezi oblíbené."
+    }
+  },
+  "favorite": {
+    "add": "Přidat mezi oblíbené",
+    "remove": "Odebrat z oblíbených"
+  },
+  "bulkEdit": {
+    "title": "Upravit {{count}} fotek",
+    "loading": "Načítání…",
+    "loadError": "Alba a štítky se nepodařilo načíst.",
+    "applyError": "Hromadná úprava se nezdařila. Zkus to prosím znovu.",
+    "noOps": "Vyber alespoň jednu změnu.",
+    "addAlbum": "Přidat do alba",
+    "removeAlbum": "Odebrat z alba",
+    "addLabel": "Přidat štítek",
+    "removeLabel": "Odebrat štítek",
+    "none": "— beze změny —",
+    "description": {
+      "label": "Popis",
+      "noChange": "— beze změny —",
+      "set": "Nastavit na…",
+      "clear": "Vymazat",
+      "placeholder": "Nový popis…"
+    },
+    "location": {
+      "label": "Poloha",
+      "noChange": "— beze změny —",
+      "set": "Nastavit na…",
+      "clear": "Vymazat",
+      "lat": "Zeměpisná šířka",
+      "lng": "Zeměpisná délka",
+      "invalid": "Zadej platnou zeměpisnou šířku a délku."
+    },
+    "private": {
+      "label": "Soukromé",
+      "noChange": "— beze změny —",
+      "yes": "Nastavit jako soukromé",
+      "no": "Nastavit jako veřejné"
+    },
+    "archive": {
+      "label": "Archiv",
+      "noChange": "— beze změny —",
+      "archive": "Archivovat",
+      "unarchive": "Vrátit z archivu"
+    },
+    "favorite": {
+      "label": "Oblíbené",
+      "noChange": "— beze změny —",
+      "yes": "Přidat mezi oblíbené",
+      "no": "Odebrat z oblíbených"
+    },
+    "cancel": "Zrušit",
+    "apply": "Použít",
+    "result": {
+      "title": "Výsledek",
+      "summary": "{{updated}} upraveno · {{skipped}} přeskočeno · {{errored}} selhalo",
+      "errorsTitle": "Fotky, které selhaly",
+      "done": "Hotovo"
     }
   },
   "selection": {

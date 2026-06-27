@@ -7,6 +7,7 @@ import { AccountPage } from './pages/AccountPage'
 import { AlbumDetailPage } from './pages/AlbumDetailPage'
 import { AlbumsPage } from './pages/AlbumsPage'
 import { ClustersPage } from './pages/ClustersPage'
+import { FavoritesPage } from './pages/FavoritesPage'
 import { HomePage } from './pages/HomePage'
 import { LabelDetailPage } from './pages/LabelDetailPage'
 import { LabelsPage } from './pages/LabelsPage'
@@ -35,6 +36,7 @@ export function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<HomePage />} />
               <Route path="/library" element={<LibraryPage />} />
+              <Route path="/favorites" element={<FavoritesPage />} />
               <Route path="/albums" element={<AlbumsPage />} />
               <Route path="/albums/:uid" element={<AlbumDetailPage />} />
               <Route path="/labels" element={<LabelsPage />} />

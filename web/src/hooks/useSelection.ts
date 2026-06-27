@@ -14,6 +14,8 @@ export interface UseSelectionResult {
   disable: () => void
   /** Toggles whether `uid` is selected. */
   toggle: (uid: string) => void
+  /** Adds every UID in `uids` to the selection (e.g. select-all-in-view). */
+  selectMany: (uids: string[]) => void
   /** Clears the selection without leaving selection mode. */
   clear: () => void
 }
@@ -53,8 +55,18 @@ export function useSelection(): UseSelectionResult {
     })
   }, [])
 
+  const selectMany = useCallback((uids: string[]) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const uid of uids) {
+        next.add(uid)
+      }
+      return next
+    })
+  }, [])
+
   return useMemo(
-    () => ({ active, selected, count: selected.size, enable, disable, toggle, clear }),
-    [active, selected, enable, disable, toggle, clear],
+    () => ({ active, selected, count: selected.size, enable, disable, toggle, selectMany, clear }),
+    [active, selected, enable, disable, toggle, selectMany, clear],
   )
 }

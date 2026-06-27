@@ -27,6 +27,13 @@ export interface Photo {
   archived_at?: string
   created_at: string
   updated_at: string
+  /**
+   * Whether the current user has favorited this photo. Present on list, search
+   * and detail responses (`internal/photoapi` annotates each photo for the
+   * acting user); absent (treated as false) when the favorites backend is
+   * unwired.
+   */
+  is_favorite?: boolean
 }
 
 /**
@@ -88,6 +95,11 @@ export interface PhotoListParams {
   album?: string
   /** Scope the listing to photos carrying this label (`label` query param). */
   label?: string
+  /**
+   * Scope the listing to the current user's favorites when set to `'true'`
+   * (`favorite` query param). Any other value / undefined means no scope.
+   */
+  favorite?: string
 }
 
 const API_BASE = '/api/v1'
@@ -139,6 +151,7 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('taken_before', params.taken_before)
   set('album', params.album)
   set('label', params.label)
+  set('favorite', params.favorite)
   return query
 }
 
@@ -291,6 +304,30 @@ export function thumbUrl(uid: string, size: string, downloadToken?: string | nul
     return `${url}?t=${encodeURIComponent(downloadToken)}`
   }
   return url
+}
+
+/**
+ * Toggles whether the current user has favorited a photo via
+ * `PUT /api/v1/photos/{uid}/favorite` (favorite) or `DELETE …` (unfavorite).
+ * Both are idempotent and resolve with no body (204). Favoriting is a personal
+ * action available to every signed-in user, including viewers.
+ *
+ * @throws ApiError with `status` 404 (no such photo), 503 (favorites backend
+ *   unwired) or 5xx, so the caller can roll back an optimistic update.
+ */
+export async function favoritePhoto(
+  uid: string,
+  favorite: boolean,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/favorite`, {
+    method: favorite ? 'PUT' : 'DELETE',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
 }
 
 /** Thumbnail size used for library grid tiles — a square crop, high enough DPI. */

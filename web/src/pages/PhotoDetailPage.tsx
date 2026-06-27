@@ -4,6 +4,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 
+import { FavoriteButton } from '../components/library/FavoriteButton'
 import { FaceOverlay } from '../components/people/FaceOverlay'
 import { SimilarPhotos } from '../components/library/SimilarPhotos'
 import { fetchPhoto, type PhotoDetail } from '../services/photos'
@@ -67,6 +68,7 @@ export function PhotoDetailPage() {
           ← {t('photo.back')}
         </Link>
         <h1 className="h4 mb-0">{title}</h1>
+        <FavoriteButton uid={photo.uid} favorite={photo.is_favorite ?? false} className="ms-auto" />
       </div>
 
       <div className="mb-4">

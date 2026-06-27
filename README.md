@@ -901,14 +901,28 @@ umí odebrat fotky z alba nebo nastavit obálku.
 štítek otevře [`LabelDetailPage`](web/src/pages/LabelDetailPage.tsx) — fotomřížka scopnutá na
 štítek přes `GET /photos?label={uid}` (opět `useScopedPhotos` + `FilterBar` + URL stav).
 
-**Přidání do alba/štítku z výběru:** knihovna má pro editory **režim výběru** (`useSelection`):
-dlaždice se přepnou na zaškrtávací (`PhotoTile` `selectable`), `SelectionBar` nabídne
-**Přidat do alba / štítku** přes
-[`AddToCollectionModal`](web/src/components/organize/AddToCollectionModal.tsx), který aplikuje
-hromadnou operaci na vybrané fotky přes `POST /photos/bulk`
-([`services/bulk.ts`](web/src/services/bulk.ts)). Alba/štítky API volá
-[`services/organize.ts`](web/src/services/organize.ts) (CRUD + členství/připojení), `photos.ts`
-přidává `album`/`label` scope do `PhotoListParams`. Odkazy **Alba** a **Štítky** jsou v navbaru.
+**Hromadná úprava z výběru:** knihovna má pro editory **režim výběru** (`useSelection`):
+dlaždice se přepnou na zaškrtávací (`PhotoTile` `selectable`), sticky `SelectionBar` ukáže počet
+a nabídne **Vybrat vše** (select-all-in-view přes `useSelection.selectMany`) a **Hromadná úprava**
+přes [`BulkEditModal`](web/src/components/organize/BulkEditModal.tsx). Modal načte alba/štítky a
+v jednom `POST /photos/bulk` ([`services/bulk.ts`](web/src/services/bulk.ts)) aplikuje libovolnou
+podmnožinu operací — **přidat/odebrat album**, **přidat/odebrat štítek**, **nastavit/vymazat popis**,
+**nastavit/vymazat polohu**, **soukromé**, **archiv**, **oblíbené** (per-user); set/clear páry jsou
+samostatné módy, souřadnice se validují klientsky a vyžaduje se aspoň jedna změna. Po aplikaci se
+místo formuláře zobrazí **per-foto result summary** (kolik upraveno/přeskočeno/selhalo + seznam
+chyb) z odpovědi. Alba/štítky API volá [`services/organize.ts`](web/src/services/organize.ts)
+(CRUD + členství/připojení), `photos.ts` přidává `album`/`label` scope do `PhotoListParams`. Odkazy
+**Alba** a **Štítky** jsou v navbaru.
+
+**Oblíbené (`/favorites` + srdíčko všude):** každá dlaždice v knihovně i hlavička detailu fotky
+nesou **heart toggle** ([`FavoriteButton`](web/src/components/library/FavoriteButton.tsx) nad hookem
+[`useFavorite`](web/src/hooks/useFavorite.ts)) — **optimistický** per-user toggle nad
+`PUT`/`DELETE /photos/{uid}/favorite` (`favoritePhoto` v `photos.ts`) s **rollbackem** při chybě.
+Oblíbení je osobní akce **dostupná i prohlížečům** (bez role-gate), na rozdíl od hromadné úpravy
+(jen editor/admin). Stránka [`FavoritesPage`](web/src/pages/FavoritesPage.tsx) (`/favorites`, odkaz
+v navbaru) je stejná mřížka/filtry jako knihovna, scopnutá `favorite=true`, takže fotku lze z
+oblíbených odebrat přímo na místě. Každá fotka v seznamu/hledání/detailu nese `is_favorite` pro
+aktuálního uživatele.
 
 **Multiupload (`/upload`, editor/admin):** stránka
 ([`web/src/pages/UploadPage.tsx`](web/src/pages/UploadPage.tsx)) pro hromadné nahrávání fotek/videí

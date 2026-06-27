@@ -42,6 +42,9 @@ export function Layout() {
               <Nav.Link as={NavLink} to="/library">
                 {t('nav.library')}
               </Nav.Link>
+              <Nav.Link as={NavLink} to="/favorites">
+                {t('nav.favorites')}
+              </Nav.Link>
               <Nav.Link as={NavLink} to="/albums">
                 {t('nav.albums')}
               </Nav.Link>

@@ -91,6 +91,11 @@ export interface PhotoGridProps {
   onRetry: () => void
   /** Optional selection mode; when omitted the grid is a plain link grid. */
   selection?: PhotoGridSelection
+  /**
+   * When true each tile shows a favorite heart overlay (a personal toggle). The
+   * heart is suppressed while a tile is a selection target. Defaults false.
+   */
+  favoritable?: boolean
 }
 
 /**
@@ -106,6 +111,7 @@ export function PhotoGrid({
   onEndReached,
   onRetry,
   selection,
+  favoritable = false,
 }: PhotoGridProps) {
   return (
     <VirtuosoGrid
@@ -120,6 +126,7 @@ export function PhotoGrid({
           selectable={selection?.active ?? false}
           selected={selection?.selected.has(photo.uid) ?? false}
           onToggleSelect={selection?.onToggle}
+          favoritable={favoritable}
         />
       )}
       computeItemKey={(_index, photo) => photo.uid}

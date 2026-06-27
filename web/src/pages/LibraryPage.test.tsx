@@ -103,10 +103,18 @@ const viewerAuth = {
   refresh: vi.fn(),
 } as unknown as AuthContextValue
 
-function renderLibrary(initialEntry = '/library') {
+/** Editor auth context: write actions (selection, bulk edit) are enabled. */
+const editorAuth = {
+  ...viewerAuth,
+  user: { uid: 'u2', username: 'e', display_name: 'E', role: 'editor' },
+  role: 'editor',
+  canWrite: true,
+} as unknown as AuthContextValue
+
+function renderLibraryAs(auth: AuthContextValue, initialEntry = '/library') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={viewerAuth}>
+      <AuthContext.Provider value={auth}>
         <MemoryRouter initialEntries={[initialEntry]}>
           <LibraryPage />
           <LocationProbe />
@@ -114,6 +122,10 @@ function renderLibrary(initialEntry = '/library') {
       </AuthContext.Provider>
     </I18nextProvider>,
   )
+}
+
+function renderLibrary(initialEntry = '/library') {
+  return renderLibraryAs(viewerAuth, initialEntry)
 }
 
 beforeEach(async () => {
@@ -217,5 +229,48 @@ describe('LibraryPage', () => {
     expect(await screen.findByRole('link', { name: 'b.jpg' })).toBeInTheDocument()
     const second = fetchMock.mock.calls[1][0]
     expect(second.offset).toBe(1)
+  })
+
+  it('shows favorite hearts to a viewer but no selection / bulk-edit controls', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    renderLibraryAs(viewerAuth)
+
+    // A favorite heart overlay is present (personal action, allowed for all).
+    expect(await screen.findByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
+    // But the write-only selection trigger is not.
+    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+  })
+
+  it('lets an editor enter selection mode and multi-select photos', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
+    const user = userEvent.setup()
+    renderLibraryAs(editorAuth)
+
+    await user.click(await screen.findByRole('button', { name: 'Select' }))
+
+    // Tiles become selection targets (buttons) rather than links.
+    const tileA = screen.getByRole('button', { name: 'a.jpg' })
+    expect(tileA).toHaveAttribute('aria-pressed', 'false')
+
+    // Bulk edit is disabled until something is selected.
+    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
+
+    await user.click(tileA)
+    expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+  })
+
+  it('select-all selects every photo in view', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
+    const user = userEvent.setup()
+    renderLibraryAs(editorAuth)
+
+    await user.click(await screen.findByRole('button', { name: 'Select' }))
+    await user.click(screen.getByRole('button', { name: 'Select all' }))
+
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'b.jpg' })).toHaveAttribute('aria-pressed', 'true')
   })
 })
