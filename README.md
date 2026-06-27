@@ -476,6 +476,39 @@ takže se unit-testuje s faky bez DB.
   `GET /subjects/{uid}/outliers` na témže routeru. Mountuje se osmým `server.WithAPI`
   (`buildPeopleAPI` v `cmd/kukatko/people.go`).
 
+### Alba, štítky & oblíbené (`internal/organize`)
+
+Organizační schéma nad katalogem (migrace `0011_albums_labels_favorites.sql`, balíček
+`internal/organize` se `Store` nad sdíleným pgx poolem). Oblíbené jsou v Kukátku **per-user**
+(nahrazují globální `photos.favorite` z photo-sorteru).
+
+- **`albums`** — PK `uid` (prefix `al`), `slug` UNIQUE (z `title`, Slugify + číselný sufix),
+  `title`/`description`, `type` CHECK (`album`/`folder`/`moment`/`state`/`month`),
+  `cover_photo_uid` (FK `photos` `ON DELETE SET NULL`), `private`, `order_by` (free-text řazení
+  galerie, default `added`), `created_by` (FK `users` `ON DELETE SET NULL`), časy.
+  **`album_photos`** — členství: PK `(album_uid, photo_uid)`, oba FK `ON DELETE CASCADE`,
+  `sort_order` (manuální pořadí), `added_at`.
+- **`labels`** — PK `uid` (prefix `lb`), `slug` UNIQUE (z `name`), `name`, `priority` (řazení
+  v UI), časy. **`photo_labels`** — připojení: PK `(photo_uid, label_uid)`, oba FK
+  `ON DELETE CASCADE`, `source` CHECK (`manual`/`ai`/`import`), `uncertainty` (int %), `created_at`.
+- **`user_favorites`** — per-user oblíbené: PK `(user_uid, photo_uid)`, oba FK
+  `ON DELETE CASCADE`, `added_at`.
+
+`organize.Store` API:
+
+- **Alba** — `CreateAlbum`/`GetAlbumByUID`/`GetAlbumBySlug`/`UpdateAlbum` (re-slug z title)/
+  `ListAlbums` (s počty fotek, řazení dle title)/`DeleteAlbum`; členství `AddPhoto`
+  (idempotentní upsert pozice)/`RemovePhoto` (idempotentní)/`ReorderPhotos` (atomický přepis
+  `sort_order` dle pořadí)/`SetCover` (set/clear cover)/`ListPhotoUIDs` (řazení `sort_order`).
+- **Štítky** — `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel` (re-slug)/
+  `ListLabels` (s počty, řazení priority DESC)/`DeleteLabel`; připojení `AttachLabel`
+  (idempotentní upsert source/uncertainty)/`DetachLabel` (idempotentní)/`ListPhotoUIDsByLabel`.
+- **Oblíbené** — `AddFavorite`/`RemoveFavorite` (obojí idempotentní), `IsFavorite`,
+  `ListFavorites` (per-user, newest-first).
+- **Sentinely** — `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`/`ErrUserNotFound`/
+  `ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidSource`. FK porušení při zápisu do join tabulek
+  se mapují na not-found sentinely podle porušeného sloupce (`photo_uid` → photo apod.).
+
 ### People UI (frontend)
 
 Kompletní lidský zážitek nad výše uvedenými API (react-bootstrap Superhero, i18n cs/en,

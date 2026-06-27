@@ -373,7 +373,31 @@ inkrementální).
   markery, nearchivované, newest-first) → page → `ListByUIDs` → reorder dle uid pořadí); body
   decode `DisallowUnknownFields` + 1 MiB limit + prázdné jméno → 400; sentinely mapované
   `ErrSubjectNotFound`→404/`ErrInvalidType`→400; mountuje se osmým `server.WithAPI`
-  (`buildPeopleAPI` v `cmd/kukatko/people.go`)), `internal/web/`
+  (`buildPeopleAPI` v `cmd/kukatko/people.go`)), `internal/organize/`
+  (DB vrstva pro **organizaci** — alba, štítky a **per-user oblíbené** (nahrazují globální
+  `photos.favorite` z photo-sorteru); tabulky `albums`/`album_photos`/`labels`/`photo_labels`/
+  `user_favorites` v migraci `0011_albums_labels_favorites.sql`: **`albums`** = `uid PK`
+  (prefix `al`), `slug UNIQUE` (Slugify z `title`, číselný sufix na kolizi), `title`/`description`,
+  `type IN (album|folder|moment|state|month)`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`),
+  `private`, `order_by` (free-text řazení galerie, default `added`), `created_by` (FK users
+  `ON DELETE SET NULL`), časy; **`album_photos`** = členství `(album_uid, photo_uid) PK`, oba FK
+  `ON DELETE CASCADE`, `sort_order`/`added_at`; **`labels`** = `uid PK` (prefix `lb`), `slug UNIQUE`
+  (z `name`), `name`, `priority`, časy; **`photo_labels`** = připojení `(photo_uid, label_uid) PK`,
+  oba FK `ON DELETE CASCADE`, `source IN (manual|ai|import)`, `uncertainty` (int %), `created_at`;
+  **`user_favorites`** = `(user_uid, photo_uid) PK`, oba FK `ON DELETE CASCADE`, `added_at`;
+  `Store` = `NewStore(pool)` nad sdíleným pgx poolem: **alba** `CreateAlbum`/`GetAlbumByUID`/
+  `GetAlbumBySlug`/`UpdateAlbum` (re-slug z title)/`ListAlbums` (s počty fotek, řazení dle title)/
+  `DeleteAlbum`/`AddPhoto` (idempotentní upsert pozice)/`RemovePhoto` (idempotentní)/`ReorderPhotos`
+  (atomický přepis `sort_order` dle pořadí v tx)/`SetCover` (set/clear cover)/`ListPhotoUIDs`
+  (řazení `sort_order`); **štítky** `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel`
+  (re-slug)/`ListLabels` (s počty, řazení priority DESC)/`DeleteLabel`/`AttachLabel` (idempotentní
+  upsert source/uncertainty)/`DetachLabel` (idempotentní)/`ListPhotoUIDsByLabel`; **oblíbené**
+  `AddFavorite`/`RemoveFavorite` (obojí idempotentní)/`IsFavorite`/`ListFavorites` (per-user,
+  newest-first); typy `AlbumType`/`LabelSource` zrcadlí SQL CHECKy, slug helper s per-druh
+  fallbackem (`album`/`label`); sentinely `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`/
+  `ErrUserNotFound`/`ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidSource` — FK porušení při zápisu
+  do join tabulek se mapuje na not-found sentinel podle porušeného sloupce (`photo_uid` → photo,
+  jinak album/label/user)), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
