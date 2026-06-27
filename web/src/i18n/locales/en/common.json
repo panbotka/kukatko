@@ -472,6 +472,39 @@
       "viewLibrary": "View in library"
     }
   },
+  "slideshow": {
+    "start": "Slideshow",
+    "title": "Photo slideshow",
+    "prev": "Previous",
+    "next": "Next",
+    "play": "Play",
+    "pause": "Pause",
+    "fullscreen": "Fullscreen",
+    "exitFullscreen": "Exit fullscreen",
+    "settings": "Settings",
+    "close": "Close",
+    "back": "Back",
+    "position": "{{current}} / {{total}}",
+    "loading": "Loading photos…",
+    "empty": {
+      "title": "No photos to play",
+      "hint": "Adjust or clear the filters, or add some photos."
+    },
+    "error": {
+      "load": "Could not load photos.",
+      "retry": "Try again"
+    },
+    "effect": {
+      "label": "Transition",
+      "fade": "Fade",
+      "slide": "Slide",
+      "none": "None"
+    },
+    "speed": {
+      "label": "Speed",
+      "seconds": "{{seconds}} s"
+    }
+  },
   "notFound": {
     "title": "Page not found",
     "message": "The requested page does not exist.",

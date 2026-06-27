@@ -472,6 +472,39 @@
       "viewLibrary": "Zobrazit v knihovně"
     }
   },
+  "slideshow": {
+    "start": "Promítání",
+    "title": "Promítání fotek",
+    "prev": "Předchozí",
+    "next": "Další",
+    "play": "Spustit",
+    "pause": "Pozastavit",
+    "fullscreen": "Celá obrazovka",
+    "exitFullscreen": "Ukončit celou obrazovku",
+    "settings": "Nastavení",
+    "close": "Zavřít",
+    "back": "Zpět",
+    "position": "{{current}} / {{total}}",
+    "loading": "Načítání fotek…",
+    "empty": {
+      "title": "Žádné fotky k promítání",
+      "hint": "Uprav nebo zruš filtry, případně přidej fotky."
+    },
+    "error": {
+      "load": "Fotky se nepodařilo načíst.",
+      "retry": "Zkusit znovu"
+    },
+    "effect": {
+      "label": "Přechod",
+      "fade": "Prolnutí",
+      "slide": "Posun",
+      "none": "Bez efektu"
+    },
+    "speed": {
+      "label": "Rychlost",
+      "seconds": "{{seconds}} s"
+    }
+  },
   "notFound": {
     "title": "Stránka nenalezena",
     "message": "Požadovaná stránka neexistuje.",

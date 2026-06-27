@@ -9,6 +9,7 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
+import { slideshowHref } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
 import { fetchLabel, type Label } from '../services/organize'
 
@@ -69,6 +70,14 @@ export function LabelDetailPage() {
           ← {t('labelDetail.back')}
         </Link>
         <h1 className="h3 mb-0">{title}</h1>
+        {photos.length > 0 && (
+          <Link
+            to={slideshowHref({ label: uid }, view)}
+            className="btn btn-outline-secondary btn-sm ms-auto"
+          >
+            {t('slideshow.start')}
+          </Link>
+        )}
       </div>
 
       <FilterBar view={view} onChange={setView} total={total} />

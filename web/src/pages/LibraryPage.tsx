@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { FilterBar } from '../components/library/FilterBar'
@@ -12,6 +13,7 @@ import { SelectionBar } from '../components/organize/SelectionBar'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useSelection } from '../hooks/useSelection'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
+import { slideshowHref } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
 
 /**
@@ -38,10 +40,19 @@ export function LibraryPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="h3 mb-0">{t('library.title')}</h1>
-        {canWrite && !selection.active && (
-          <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
-            {t('library.select')}
-          </Button>
+        {!selection.active && (
+          <div className="d-flex gap-1 flex-wrap">
+            {status === 'ready' && photos.length > 0 && (
+              <Link to={slideshowHref({}, view)} className="btn btn-outline-secondary btn-sm">
+                {t('slideshow.start')}
+              </Link>
+            )}
+            {canWrite && (
+              <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
+                {t('library.select')}
+              </Button>
+            )}
+          </div>
         )}
       </div>
 

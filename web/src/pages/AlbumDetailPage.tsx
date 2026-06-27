@@ -20,6 +20,7 @@ import {
   type LibraryView,
   viewToParams,
 } from '../lib/libraryView'
+import { slideshowHref } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
 import {
   type Album,
@@ -199,28 +200,40 @@ export function AlbumDetailPage() {
           <h1 className="h3 mb-0">{album?.title ?? ''}</h1>
           {album?.private && <Badge bg="secondary">{t('albums.private')}</Badge>}
         </div>
-        {canWrite && album && mode === 'browse' && (
+        {album && mode === 'browse' && (
           <div className="d-flex gap-1 flex-wrap">
-            <Button
-              variant="outline-secondary"
-              size="sm"
-              onClick={() => {
-                setEditing(true)
-              }}
-            >
-              {t('albumDetail.edit')}
-            </Button>
-            <Button variant="outline-secondary" size="sm" onClick={enterSelect}>
-              {t('albumDetail.select')}
-            </Button>
-            {canReorder && (
-              <Button variant="outline-secondary" size="sm" onClick={enterReorder}>
-                {t('albumDetail.reorder')}
-              </Button>
+            {photos.length > 0 && (
+              <Link
+                to={slideshowHref({ album: uid }, view)}
+                className="btn btn-outline-secondary btn-sm"
+              >
+                {t('slideshow.start')}
+              </Link>
             )}
-            <Button variant="outline-danger" size="sm" onClick={() => void removeAlbum()}>
-              {t('albumDetail.delete')}
-            </Button>
+            {canWrite && (
+              <>
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  onClick={() => {
+                    setEditing(true)
+                  }}
+                >
+                  {t('albumDetail.edit')}
+                </Button>
+                <Button variant="outline-secondary" size="sm" onClick={enterSelect}>
+                  {t('albumDetail.select')}
+                </Button>
+                {canReorder && (
+                  <Button variant="outline-secondary" size="sm" onClick={enterReorder}>
+                    {t('albumDetail.reorder')}
+                  </Button>
+                )}
+                <Button variant="outline-danger" size="sm" onClick={() => void removeAlbum()}>
+                  {t('albumDetail.delete')}
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -961,6 +961,31 @@ refetche, **změna filtru** dotáhne GeoJSON znovu. Data čte hook
 ([`services/map.ts`](web/src/services/map.ts), GeoJSON FeatureCollection). Pohled má i18n
 loading/empty/error stavy a je responzivní/touch. Odkaz **Mapa** je v navbaru.
 
+**Slideshow (`/slideshow`):** fullscreen promítání fotek
+([`web/src/pages/SlideshowPage.tsx`](web/src/pages/SlideshowPage.tsx)) spustitelné tlačítkem
+**Promítání** z detailu **alba**, **štítku** i z (filtrované) **knihovny**. Cílový pohled si nese
+**stejné řazení/filtry** jako mřížka, ze které se spouští — launch link staví
+[`lib/slideshowView.ts`](web/src/lib/slideshowView.ts) (`slideshowHref`) z aktuálního URL stavu,
+takže scope (`?album=`/`?label=`) i filtry round-trippují přes URL a **Zpět** se vrací do
+předchozího pohledu. Stránka pageuje katalog přes sdílený
+[`usePaginatedPhotos`](web/src/hooks/usePaginatedPhotos.ts) (`fetchPhotos`), takže **velké sady se
+nenačítají najednou**. Routa žije **mimo layout shell** (bez navbaru), aby zabrala celý viewport.
+
+Přehrávání řídí hook [`useSlideshow`](web/src/hooks/useSlideshow.ts): vlastní index + play/pause,
+**auto-advance na nastavitelný interval** (setTimeout, manuální další/předchozí resetuje odpočet),
+wrap-around na konci, a **prefetch dalších stránek** (`PRELOAD_AHEAD` snímků dopředu přes
+`onLoadMore`) — na samém konci s další stránkou počká místo zacyklení. Prázdná sada je no-op.
+Prezentační vrstva [`components/slideshow/Slideshow`](web/src/components/slideshow/Slideshow.tsx)
+zobrazí aktuální fotku v **preview velikosti** (`fit_1920`), **přednačítá sousední snímky**
+(`new Image()`), a nese ovládání **předchozí / play-pause / další / celá obrazovka / nastavení /
+zavřít** plus titulek a pozici `n / total`. **Klávesy** (←/→ navigace, mezerník play/pause, Esc
+ukončí nebo opustí fullscreen, F fullscreen) a **dotyk** (vodorovný swipe) fungují na mobilu/tabletu;
+Fullscreen API se feature-detectuje. **Efekt přechodu** (prolnutí / posun / bez efektu, CSS v
+[`slideshow.css`](web/src/components/slideshow/slideshow.css)) a **rychlost** se volí v panelu
+nastavení a **persistují do `localStorage`** přes [`useSlideshowSettings`](web/src/hooks/useSlideshowSettings.ts)
++ [`lib/slideshowSettings.ts`](web/src/lib/slideshowSettings.ts) (sanitizace při čtení i zápisu),
+takže volba přežije reload a další promítání. Vše i18n (cs/en).
+
 Vývoj frontendu (dev server s proxy na Go backend) a samostatné cíle:
 
 ```bash

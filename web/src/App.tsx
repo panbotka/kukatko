@@ -18,6 +18,7 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { SearchPage } from './pages/SearchPage'
+import { SlideshowPage } from './pages/SlideshowPage'
 import { SubjectPage } from './pages/SubjectPage'
 import { UploadPage } from './pages/UploadPage'
 
@@ -33,6 +34,8 @@ export function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<RequireAuth />}>
+            {/* Fullscreen slideshow lives outside the layout shell (no navbar). */}
+            <Route path="/slideshow" element={<SlideshowPage />} />
             <Route element={<Layout />}>
               <Route path="/" element={<HomePage />} />
               <Route path="/library" element={<LibraryPage />} />

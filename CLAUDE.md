@@ -538,16 +538,19 @@ inkrementální).
   `pages/` (`HomePage` volá `GET /healthz`, `LoginPage`, `AccountPage` = změna vlastního hesla,
   `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka na dlaždicích
-  (favoritable), plus pro editory **režim výběru** (`Vybrat`/`Vybrat vše`) → `BulkEditModal`
+  (favoritable), tlačítko **Promítání** (`slideshowHref` → `/slideshow` s aktuálními filtry/řazením),
+  plus pro editory **režim výběru** (`Vybrat`/`Vybrat vše`) → `BulkEditModal`
   (hromadná úprava metadat přes bulk API),
   `FavoritesPage` = `/favorites` oblíbené aktuálního uživatele: stejná mřížka/filtry jako knihovna
   scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených na místě,
   `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
-  `AlbumDetailPage` = `/albums/:uid` hlavička + editorské akce (upravit/smazat/vybrat/přeřadit) nad
+  `AlbumDetailPage` = `/albums/:uid` hlavička + tlačítko **Promítání** (všem) + editorské akce
+  (upravit/smazat/vybrat/přeřadit) nad
   fotomřížkou scopnutou na album (`useScopedPhotos` + `FilterBar` + URL stav); přeřazení přes
   `ReorderableGrid`→`PATCH /albums/{uid}/order`, výběr → odebrat z alba / nastavit cover,
   `LabelsPage` = `/labels` seznam štítků s počty + create/rename/delete (editor/admin),
-  `LabelDetailPage` = `/labels/:uid` fotomřížka scopnutá na štítek (`useScopedPhotos` + `FilterBar` + URL),
+  `LabelDetailPage` = `/labels/:uid` fotomřížka scopnutá na štítek (`useScopedPhotos` + `FilterBar` + URL)
+  + tlačítko **Promítání**,
   `SearchPage` = sémantické/hybridní/fulltext hledání: prominentní debouncované (350 ms)
   vyhledávací pole + přepínač režimu (`q`+`mode` v URL), stejná virtualizovaná mřížka jako
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
@@ -569,7 +572,18 @@ inkrementální).
   dlaždicemi (Leaflet), přepínač podkladu + filtry (datum/archiv/soukromé) v `MapFilterBar`,
   stav (mapset/viewport/filtry) v URL — posun/zoom zapisuje viewport bez refetche, změna filtru
   dotáhne GeoJSON; klik na marker → detail fotky; loading/empty/error stavy,
+  `SlideshowPage` = `/slideshow` fullscreen promítání (mimo `Layout`, bez navbaru): čte scope
+  (`?album=`/`?label=`/žádné) + filtry/řazení z URL (stejný stav jako mřížka), pageuje přes
+  `usePaginatedPhotos` (`fetchPhotos`, velké sady se nenačítají najednou), řídí `useSlideshow` +
+  `useSlideshowSettings`, renderuje loading/empty/error stavy nebo `Slideshow`; exit → `navigate(-1)`
+  (fallback na zdrojový pohled), takže Zpět funguje,
   `NotFoundPage`),
+  `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
+  velikosti `fit_1920` s CSS přechodem dle `settings.effect`, přednačítání sousedních snímků přes
+  `new Image()`, ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek + pozice
+  `n/total`; klávesy ←/→ / mezerník / Esc / F a dotykový swipe; Fullscreen API feature-detected;
+  panel nastavení = výběr efektu + rychlosti) + `slideshow.css` (keyframes `slideshow-fade`/
+  `slideshow-slide`, fullscreen layout);
   `components/map/` = `LeafletMap` (imperativní Leaflet most: dlaždicová vrstva na **backend
   proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (klíč server-side, `{r}`→`@2x` na retině),
   **povinné mapy.com prvky** — attribution „© Seznam.cz a.s. a další" → `/copyright` a klikatelné
@@ -603,7 +617,13 @@ inkrementální).
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
-  `uid`/server stavu)),
+  `uid`/server stavu;
+  `useSlideshow({length,hasMore,intervalMs,autoPlay?,onLoadMore?})` = řízení promítání: vlastní
+  `index`+`playing`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`, auto-advance na interval
+  (setTimeout, manuální nav resetuje odpočet), wrap-around, prefetch `PRELOAD_AHEAD` snímků dopředu
+  přes `onLoadMore` (na konci s další stránkou počká místo zacyklení), prázdná sada = no-op, clamp
+  indexu při zmenšení sady; `useSlideshowSettings` = persistentní efekt+rychlost přes
+  `lib/slideshowSettings` (read once on mount, setteri zapisují do localStorage, sanitizace))),
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` + `LIBRARY_DEFAULTS` + `viewToParams`
@@ -616,7 +636,13 @@ inkrementální).
   odkaz na detail fotky jako popup element, plain klik → SPA navigace, modifikovaný klik projde);
   `faceGeometry.ts` = pure `faceBoxStyle` (normalized bbox → absolutní `left/top/width/height`
   v %, pro overlay) + `faceCropStyle` (čtvercový výřez obličeje z thumbnailu přes
-  background-position/-size, pro `FaceThumb`)),
+  background-position/-size, pro `FaceThumb`);
+  `slideshowSettings.ts` = typ `SlideshowSettings{effect,intervalMs}` + `SlideshowEffect`
+  (`fade`/`slide`/`none`) + nabídky `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` + `SLIDESHOW_DEFAULTS`
+  + pure `readSettings`/`writeSettings`/`sanitizeSettings` (localStorage `kukatko.slideshow.settings`,
+  sanitizace efektu + clamp intervalu, fallback na defaulty při chybě/nedostupném storage);
+  `slideshowView.ts` = pure `slideshowHref(scope,view)` (staví `/slideshow?…` z `LibraryView` přes
+  `writeUrlState` + scope `album`/`label`, default filtry vynechá — launch link promítání)),
   `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
   `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
@@ -655,7 +681,8 @@ inkrementální).
   `i18n/` (i18next init + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
-  Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth` → `Layout` (`/`, `/library`,
+  Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` je pod
+  `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru), zbytek pod `Layout` (`/`, `/library`,
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`,
   `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload` a `/people/clusters`
