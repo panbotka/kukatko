@@ -79,6 +79,42 @@ func (s *Store) ListFavorites(ctx context.Context, userUID string) ([]string, er
 	return out, nil
 }
 
+// favoritedAmongSQL returns, for one user, the subset of the given photo UIDs that
+// the user has favorited. It is used to annotate a page of photos with the current
+// user's favorite flag in a single round-trip instead of one IsFavorite per photo.
+const favoritedAmongSQL = `
+SELECT photo_uid FROM user_favorites
+WHERE user_uid = $1 AND photo_uid = ANY($2)`
+
+// FavoritedAmong reports which of photoUIDs the user identified by userUID has
+// favorited, as a set keyed by photo UID (only favorited UIDs are present, each
+// mapped to true). An empty photoUIDs slice yields an empty map without querying.
+// It lets a caller annotate a whole page of photos with the current user's
+// is-favorite flag in one query.
+func (s *Store) FavoritedAmong(ctx context.Context, userUID string, photoUIDs []string) (map[string]bool, error) {
+	out := make(map[string]bool, len(photoUIDs))
+	if len(photoUIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx, favoritedAmongSQL, userUID, photoUIDs)
+	if err != nil {
+		return nil, fmt.Errorf("organize: checking favorites for user %s: %w", userUID, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, fmt.Errorf("organize: scanning favorited photo uid: %w", err)
+		}
+		out[uid] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("organize: iterating favorited photos for %s: %w", userUID, err)
+	}
+	return out, nil
+}
+
 // translateFavoriteFK maps a foreign-key violation from a user_favorites write to
 // ErrUserNotFound or ErrPhotoNotFound by inspecting the violated constraint, and
 // wraps any other error. The constraint name is matched on the referencing column

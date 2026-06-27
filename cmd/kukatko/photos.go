@@ -7,6 +7,7 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/facematch"
+	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -58,6 +59,7 @@ func buildPhotoAPI(
 		Similar:         similar,
 		Embedder:        embedder,
 		Faces:           faceSvc,
+		Favorites:       organize.NewStore(db.Pool()),
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,

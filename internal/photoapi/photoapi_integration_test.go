@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/embedding"
+	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -97,6 +98,7 @@ func newEnv(t *testing.T) *env {
 		Thumbnailer:     thumb.New(fs, t.TempDir()),
 		Similar:         vectorStore,
 		Embedder:        embedder,
+		Favorites:       organize.NewStore(db.Pool()),
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,

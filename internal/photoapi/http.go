@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -31,6 +32,7 @@ type API struct {
 	similar         SimilarSearcher
 	embedder        TextEmbedder
 	faces           FaceService
+	favorites       FavoriteStore
 	requireAuth     func(http.Handler) http.Handler
 	requireWrite    func(http.Handler) http.Handler
 	requireDownload func(http.Handler) http.Handler
@@ -55,6 +57,10 @@ type Config struct {
 	// (face↔marker matching, suggestions and the assignment state machine). When
 	// nil those endpoints answer 503.
 	Faces FaceService
+	// Favorites backs the per-user favorite endpoints, the is_favorite annotation
+	// on list/detail responses and the favorite=true filter. When nil those
+	// endpoints answer 503 and photos report is_favorite false.
+	Favorites FavoriteStore
 	// RequireAuth guards read endpoints for any authenticated user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireWrite guards metadata and archive endpoints for editors and admins.
@@ -73,6 +79,7 @@ func NewAPI(cfg Config) *API {
 		similar:         cfg.Similar,
 		embedder:        cfg.Embedder,
 		faces:           cfg.Faces,
+		favorites:       cfg.Favorites,
 		requireAuth:     cfg.RequireAuth,
 		requireWrite:    cfg.RequireWrite,
 		requireDownload: cfg.RequireDownload,
@@ -93,13 +100,19 @@ func NewAPI(cfg Config) *API {
 //	POST   /photos/{uid}/unarchive    RequireWrite     restore
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail
 //	GET    /photos/{uid}/download     RequireDownload  original file
+//	PUT    /photos/{uid}/favorite     RequireAuth      favorite (current user)
+//	DELETE /photos/{uid}/favorite     RequireAuth      unfavorite (current user)
+//	GET    /favorites                 RequireAuth      current user's favorites
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/search", a.handleSearch)
+	r.With(a.requireAuth).Get("/favorites", a.handleFavorites)
 	r.Route("/photos", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleList)
 		r.With(a.requireAuth).Get("/{uid}", a.handleDetail)
 		r.With(a.requireAuth).Get("/{uid}/similar", a.handleSimilar)
 		r.With(a.requireAuth).Get("/{uid}/faces", a.handleFaces)
+		r.With(a.requireAuth).Put("/{uid}/favorite", a.handleAddFavorite)
+		r.With(a.requireAuth).Delete("/{uid}/favorite", a.handleRemoveFavorite)
 		r.With(a.requireWrite).Post("/{uid}/faces/assign", a.handleFaceAssign)
 		r.With(a.requireWrite).Patch("/{uid}", a.handleUpdate)
 		r.With(a.requireWrite).Post("/{uid}/archive", a.handleArchive)
@@ -113,11 +126,11 @@ func (a *API) RegisterRoutes(r chi.Router) {
 // offset to request for the following page, or null when the current page is the
 // last one — letting an infinite-scroll client page until it is absent.
 type listResponse struct {
-	Photos     []photos.Photo `json:"photos"`
-	Total      int            `json:"total"`
-	Limit      int            `json:"limit"`
-	Offset     int            `json:"offset"`
-	NextOffset *int           `json:"next_offset"`
+	Photos     []photoView `json:"photos"`
+	Total      int         `json:"total"`
+	Limit      int         `json:"limit"`
+	Offset     int         `json:"offset"`
+	NextOffset *int        `json:"next_offset"`
 	// Mode is the effective search mode (fulltext/semantic/hybrid). It is only
 	// set by the search endpoint and omitted from a plain list response.
 	Mode string `json:"mode,omitempty"`
@@ -127,33 +140,38 @@ type listResponse struct {
 	Degraded bool `json:"degraded,omitempty"`
 }
 
-// handleList parses the query filters, returns the matching page of photos plus
-// the total count and the next-page offset for infinite scroll. Invalid filter,
-// sort or pagination values are answered with 400.
+// handleList parses the query filters, returns the matching page of photos (each
+// annotated with the current user's is_favorite flag) plus the total count and the
+// next-page offset for infinite scroll. The favorite=true filter scopes the list to
+// the caller's own favorites. Invalid filter, sort or pagination values are answered
+// with 400.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	params, err := parseListParams(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	list, err := a.store.List(r.Context(), params)
+	favorite, err := favoriteRequested(r.URL.Query())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "listing photos failed")
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	total, err := a.store.Count(r.Context(), params)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "counting photos failed")
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	writePage(w, params, list, total)
+	if favorite {
+		params.FavoriteOf = user.UID
+	}
+	a.writeFavoritePage(w, r, user.UID, params)
 }
 
-// pageResponse builds the paginated listResponse for a page of photos, computing
-// the effective limit and the next-page offset (nil on the last page) used by an
-// infinite-scroll client. The search endpoint reuses it and then sets the Mode
-// and Degraded fields, which a plain list leaves empty.
-func pageResponse(params photos.ListParams, list []photos.Photo, total int) listResponse {
+// pageResponse builds the paginated listResponse for a page of photo views,
+// computing the effective limit and the next-page offset (nil on the last page)
+// used by an infinite-scroll client. The search endpoint reuses it and then sets
+// the Mode and Degraded fields, which a plain list leaves empty.
+func pageResponse(params photos.ListParams, list []photoView, total int) listResponse {
 	limit := params.Limit
 	if limit <= 0 {
 		limit = defaultPageLimit
@@ -168,13 +186,6 @@ func pageResponse(params photos.ListParams, list []photos.Photo, total int) list
 		resp.NextOffset = &next
 	}
 	return resp
-}
-
-// writePage writes a paginated page of photos as a listResponse. It is used by
-// the list endpoint; the search endpoint builds the response via pageResponse so
-// it can annotate it with the mode and degraded flag.
-func writePage(w http.ResponseWriter, params photos.ListParams, list []photos.Photo, total int) {
-	writeJSON(w, http.StatusOK, pageResponse(params, list, total))
 }
 
 // handleSearch searches the photo catalogue in one of three modes selected by
@@ -205,6 +216,11 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	// q is the full-text query here, not the list's substring filter.
 	params.FullText = query
 	params.Search = ""
@@ -214,7 +230,12 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "searching photos failed")
 		return
 	}
-	resp := pageResponse(params, result.photos, result.total)
+	views, err := a.annotateFavorites(r.Context(), user.UID, result.photos)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "resolving favorites failed")
+		return
+	}
+	resp := pageResponse(params, views, result.total)
 	resp.Mode = string(mode)
 	resp.Degraded = result.degraded
 	writeJSON(w, http.StatusOK, resp)
@@ -225,16 +246,22 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 const defaultPageLimit = 100
 
 // photoDetail is the JSON body returned by the detail endpoint: the photo (with
-// its metadata, EXIF and GPS) plus the list of its stored files.
+// its metadata, EXIF, GPS and the current user's is_favorite flag) plus the list
+// of its stored files.
 type photoDetail struct {
-	photos.Photo
+	photoView
 	Files []photos.PhotoFile `json:"files"`
 }
 
-// handleDetail returns a photo's full detail, including its file list. A missing
-// photo is answered with 404.
+// handleDetail returns a photo's full detail, including its file list and the
+// current user's is_favorite flag. A missing photo is answered with 404.
 func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	photo, err := a.store.GetByUID(r.Context(), uid)
 	if err != nil {
 		writePhotoError(w, err, "fetching photo failed")
@@ -245,7 +272,12 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "fetching photo files failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, photoDetail{Photo: photo, Files: files})
+	views, err := a.annotateFavorites(r.Context(), user.UID, []photos.Photo{photo})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "resolving favorite failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, photoDetail{photoView: views[0], Files: files})
 }
 
 // handleArchive soft-deletes the photo (sets archived_at) and returns the

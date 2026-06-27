@@ -448,6 +448,22 @@ func TestFavoritesIdempotentAndIsolated(t *testing.T) {
 		t.Errorf("bob favorites = %v, want [%s]", bobFavs, p1)
 	}
 
+	// FavoritedAmong resolves a page's flags in one query and stays per-user.
+	aliceSet, err := store.FavoritedAmong(ctx, alice, []string{p1, p2})
+	if err != nil {
+		t.Fatalf("FavoritedAmong: %v", err)
+	}
+	if !aliceSet[p1] || !aliceSet[p2] {
+		t.Errorf("alice FavoritedAmong = %v, want both true", aliceSet)
+	}
+	bobSet, _ := store.FavoritedAmong(ctx, bob, []string{p1, p2})
+	if !bobSet[p1] || bobSet[p2] {
+		t.Errorf("bob FavoritedAmong = %v, want {p1:true, p2 absent}", bobSet)
+	}
+	if empty, _ := store.FavoritedAmong(ctx, alice, nil); len(empty) != 0 {
+		t.Errorf("FavoritedAmong(nil) = %v, want empty", empty)
+	}
+
 	if err := store.RemoveFavorite(ctx, alice, p1); err != nil {
 		t.Fatalf("RemoveFavorite: %v", err)
 	}

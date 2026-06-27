@@ -244,6 +244,19 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 			t.Fatalf("args = %v, want 4 entries", args)
 		}
 	})
+
+	t.Run("favorite scope binds the user uid", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{FavoriteOf: "us_1"})
+		want := "EXISTS (SELECT 1 FROM user_favorites uf " +
+			"WHERE uf.photo_uid = photos.uid AND uf.user_uid = $1)"
+		if !strings.Contains(query, want) {
+			t.Errorf("query missing favorite scope %q: %q", want, query)
+		}
+		if len(args) != 3 || args[0] != "us_1" {
+			t.Errorf("args = %v, want [us_1 limit offset]", args)
+		}
+	})
 }
 
 // TestBuildSearchQuery verifies the search query binds the full-text query,

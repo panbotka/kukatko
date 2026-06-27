@@ -158,6 +158,17 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 	return nil
 }
 
+// favoriteRequested reports whether the favorite=true filter is set on the query.
+// It returns a descriptive error for a non-boolean value so the caller can answer
+// 400, mirroring the other boolean filters. An absent or false value yields false.
+func favoriteRequested(q url.Values) (bool, error) {
+	b, err := boolParam(q, "favorite")
+	if err != nil {
+		return false, err
+	}
+	return b != nil && *b, nil
+}
+
 // intParam parses the named integer query parameter, returning fallback when it
 // is absent and a descriptive error when present but not a valid integer.
 func intParam(q url.Values, name string, fallback int) (int, error) {

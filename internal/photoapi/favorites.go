@@ -1,0 +1,177 @@
+package photoapi
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/photos"
+)
+
+// FavoriteStore is the subset of the organize repository the photo API needs to
+// expose per-user favorites: toggling a photo's favorite state for a user and
+// reporting which of a page's photos that user has favorited. It is an interface
+// so photoapi depends on the behaviour, not the organize store's construction;
+// organize.Store satisfies it and a test fake can stand in.
+type FavoriteStore interface {
+	// AddFavorite marks photoUID as a favorite of userUID. It is idempotent and
+	// returns organize.ErrPhotoNotFound when the photo does not exist.
+	AddFavorite(ctx context.Context, userUID, photoUID string) error
+	// RemoveFavorite unfavorites photoUID for userUID. It is idempotent.
+	RemoveFavorite(ctx context.Context, userUID, photoUID string) error
+	// FavoritedAmong reports which of photoUIDs userUID has favorited, as a set
+	// keyed by photo UID (only favorited UIDs present).
+	FavoritedAmong(ctx context.Context, userUID string, photoUIDs []string) (map[string]bool, error)
+}
+
+// photoView is a photo annotated with the current user's is-favorite flag for the
+// list, search and detail responses. It embeds photos.Photo so every photo field
+// marshals at the top level, adding is_favorite alongside.
+type photoView struct {
+	photos.Photo
+	// IsFavorite reports whether the current user has favorited this photo.
+	IsFavorite bool `json:"is_favorite"`
+}
+
+// annotateFavorites pairs each photo with the current user's is-favorite flag,
+// resolving the whole page's flags in one FavoritedAmong query. When no favorites
+// store is wired it returns the photos with IsFavorite false rather than failing,
+// so the rest of the catalogue keeps working without the favorites backend.
+func (a *API) annotateFavorites(
+	ctx context.Context, userUID string, list []photos.Photo,
+) ([]photoView, error) {
+	views := make([]photoView, len(list))
+	for i, p := range list {
+		views[i] = photoView{Photo: p}
+	}
+	if a.favorites == nil || len(list) == 0 {
+		return views, nil
+	}
+	uids := make([]string, len(list))
+	for i, p := range list {
+		uids[i] = p.UID
+	}
+	favored, err := a.favorites.FavoritedAmong(ctx, userUID, uids)
+	if err != nil {
+		return nil, fmt.Errorf("photoapi: resolving favorites: %w", err)
+	}
+	for i := range views {
+		views[i].IsFavorite = favored[views[i].UID]
+	}
+	return views, nil
+}
+
+// handleAddFavorite marks the photo named in the path as a favorite of the current
+// user. It is idempotent (favoriting twice still succeeds) and returns 204. A
+// missing photo yields 404; an unwired favorites backend yields 503.
+func (a *API) handleAddFavorite(w http.ResponseWriter, r *http.Request) {
+	a.runFavoriteToggle(w, r, a.addFavorite)
+}
+
+// handleRemoveFavorite unfavorites the photo named in the path for the current
+// user. It is idempotent (removing a non-favorite still succeeds) and returns 204.
+func (a *API) handleRemoveFavorite(w http.ResponseWriter, r *http.Request) {
+	a.runFavoriteToggle(w, r, a.removeFavorite)
+}
+
+// addFavorite adds the favorite for the acting user, wrapping (but preserving via
+// %w) a missing-photo error so the caller can still map it to 404.
+func (a *API) addFavorite(ctx context.Context, userUID, photoUID string) error {
+	if err := a.favorites.AddFavorite(ctx, userUID, photoUID); err != nil {
+		return fmt.Errorf("photoapi: adding favorite: %w", err)
+	}
+	return nil
+}
+
+// removeFavorite removes the favorite for the acting user.
+func (a *API) removeFavorite(ctx context.Context, userUID, photoUID string) error {
+	if err := a.favorites.RemoveFavorite(ctx, userUID, photoUID); err != nil {
+		return fmt.Errorf("photoapi: removing favorite: %w", err)
+	}
+	return nil
+}
+
+// runFavoriteToggle resolves the acting user, applies op to the path photo and
+// writes 204 on success. It answers 503 when no favorites backend is wired, 401
+// when unauthenticated, and 404 when the photo does not exist.
+func (a *API) runFavoriteToggle(
+	w http.ResponseWriter, r *http.Request,
+	op func(ctx context.Context, userUID, photoUID string) error,
+) {
+	if a.favorites == nil {
+		writeError(w, http.StatusServiceUnavailable, "favorites backend not configured")
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	uid := chi.URLParam(r, "uid")
+	if err := op(r.Context(), user.UID, uid); err != nil {
+		writeFavoriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleFavorites lists the current user's favorited photos reusing the photo-list
+// shape: it scopes the list to the caller's favorites and otherwise honours every
+// filter, the sort and pagination just like GET /photos. It answers 503 when no
+// favorites backend is wired and 400 on an invalid filter value.
+func (a *API) handleFavorites(w http.ResponseWriter, r *http.Request) {
+	if a.favorites == nil {
+		writeError(w, http.StatusServiceUnavailable, "favorites backend not configured")
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	params, err := parseListParams(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	params.FavoriteOf = user.UID
+	a.writeFavoritePage(w, r, user.UID, params)
+}
+
+// writeFavoritePage runs the favorites-scoped list and writes the annotated page.
+// It is shared by GET /favorites and the favorite=true branch of GET /photos.
+func (a *API) writeFavoritePage(
+	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams,
+) {
+	list, err := a.store.List(r.Context(), params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "listing photos failed")
+		return
+	}
+	total, err := a.store.Count(r.Context(), params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "counting photos failed")
+		return
+	}
+	views, err := a.annotateFavorites(r.Context(), userUID, list)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "resolving favorites failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, pageResponse(params, views, total))
+}
+
+// writeFavoriteError maps a favorites store error to an HTTP response: 404 for a
+// missing photo, otherwise 500.
+func writeFavoriteError(w http.ResponseWriter, err error) {
+	if errors.Is(err, organize.ErrPhotoNotFound) {
+		writeError(w, http.StatusNotFound, "photo not found")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "updating favorite failed")
+}

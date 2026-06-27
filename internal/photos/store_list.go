@@ -98,6 +98,11 @@ type ListParams struct {
 	// with that UID. It scopes the shared list/search path to a label so every
 	// other filter, the sort and pagination apply unchanged.
 	LabelUID string
+	// FavoriteOf, when non-empty, restricts the result to photos the user with that
+	// UID has favorited. Favorites are per-user, so this scope is always bound to
+	// the current caller; it keeps the favorites grid on the shared list/search
+	// path so every other filter, the sort and pagination apply unchanged.
+	FavoriteOf string
 	// Sort selects the ordering column; an unknown value falls back to
 	// SortByTakenAt.
 	Sort SortField
@@ -243,7 +248,22 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 	where = append(where, textClauses(params, bind)...)
 	where = append(where, ftsClauses(params, bind)...)
 	where = append(where, membershipClauses(params, bind)...)
+	where = append(where, favoriteClauses(params, bind)...)
 	return where
+}
+
+// favoriteClauses returns the per-user favorites scoping filter as a correlated
+// EXISTS subquery, binding the user UID through bind. Like the album/label
+// scopes it keeps a favorites-only listing on the shared List/Count/Search path,
+// so the standard filters, the chosen ordering and pagination all apply on top.
+// The outer photo reference is qualified (photos.uid) to disambiguate it from the
+// join table's photo_uid inside the subquery.
+func favoriteClauses(params ListParams, bind func(any) string) []string {
+	if params.FavoriteOf == "" {
+		return nil
+	}
+	return []string{"EXISTS (SELECT 1 FROM user_favorites uf " +
+		"WHERE uf.photo_uid = photos.uid AND uf.user_uid = " + bind(params.FavoriteOf) + ")"}
 }
 
 // membershipClauses returns the album/label scoping filters as correlated EXISTS

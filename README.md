@@ -504,7 +504,8 @@ Organizační schéma nad katalogem (migrace `0011_albums_labels_favorites.sql`,
   `ListLabels` (s počty, řazení priority DESC)/`DeleteLabel`; připojení `AttachLabel`
   (idempotentní upsert source/uncertainty)/`DetachLabel` (idempotentní)/`ListPhotoUIDsByLabel`.
 - **Oblíbené** — `AddFavorite`/`RemoveFavorite` (obojí idempotentní), `IsFavorite`,
-  `ListFavorites` (per-user, newest-first).
+  `ListFavorites` (per-user, newest-first), `FavoritedAmong` (z dané množiny photo uid vrátí
+  per-user podmnožinu oblíbených jako množinu — anotace celé stránky `is_favorite` jedním dotazem).
 - **Sentinely** — `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`/`ErrUserNotFound`/
   `ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidSource`. FK porušení při zápisu do join tabulek
   se mapují na not-found sentinely podle porušeného sloupce (`photo_uid` → photo apod.).
@@ -680,7 +681,11 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/upload` | editor/admin | `multipart/form-data` s jedním+ soubory → per-file `{outcome, photo_uid, warnings}` (viz Upload / ingest) |
 | GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API) |
 | GET | `/search?q=&mode=` | přihlášený | sémantické + hybridní hledání; `mode` = `fulltext`/`semantic`/`hybrid` (default `hybrid`): fulltext (tsvector + unaccent, `ts_rank`), semantic (CLIP text→embedding → cosine HNSW), hybrid (fúze obou přes **Reciprocal Rank Fusion**, k=60, dedup); všechny módy ctí list filtry + stránkování; `q` povinný → tvar jako `/photos` + `mode`+`degraded`; box offline → fallback na fulltext s `degraded:true` |
-| GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` |
+| GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` + `is_favorite` (pro aktuálního uživatele) |
+| GET | `/photos?favorite=true` | přihlášený | seznam scopnutý na oblíbené **aktuálního uživatele** (per-user); každá fotka v seznamu/hledání/detailu nese `is_favorite` |
+| PUT | `/photos/{uid}/favorite` | přihlášený | označí fotku jako oblíbenou aktuálního uživatele (idempotentní) → 204; 404 chybějící fotka |
+| DELETE | `/photos/{uid}/favorite` | přihlášený | zruší oblíbenou aktuálního uživatele (idempotentní) → 204 |
+| GET | `/favorites` | přihlášený | oblíbené aktuálního uživatele ve tvaru `/photos` (sdílí filtry/řazení/stránkování) |
 | GET | `/photos/{uid}/similar` | přihlášený | vizuálně podobné fotky dle cosine vzdálenosti embeddingu (`?limit`, default 24, max 100) → `{similar:[{…photo, distance}]}` |
 | GET | `/photos/{uid}/faces` | přihlášený | obličeje fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`) a **návrhy** identit pro nepojmenované — face↔marker IoU matching (viz `internal/facematch`) |
 | POST | `/photos/{uid}/faces/assign` | editor/admin | přiřazovací akce `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`: `create_marker`/`assign_person`/`unassign_person`; auto-create subjektu dle jména; drží `faces` cache + `marker.reviewed` konzistentní |
@@ -736,13 +741,23 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   - **Filtry:** `taken_after`/`taken_before` (RFC3339 nebo `YYYY-MM-DD`), `has_gps` (`true`/`false`),
     `camera`, `lens`, `q` (fulltext title/description/notes), `private` (`true`/`false`),
     `uploader` (UID), `archived` (`false` výchozí = jen živé, `true` = včetně archivu, `only` =
-    jen archiv).
+    jen archiv), `favorite=true` (jen fotky, které **přihlášený uživatel** označil jako oblíbené —
+    per-user scope přes korelované `EXISTS` nad `user_favorites`).
   - **Řazení:** `sort` = `newest` (default) / `oldest` / `taken_at` / `added` / `title` / `size`,
     s volitelným `order=asc|desc`.
   - **Stránkování:** `limit` (default 100, max 500) + `offset`. Odpověď nese `total` a
     `next_offset` (null na poslední stránce) pro infinite scroll.
+  - **`is_favorite`:** každá fotka v odpovědi (seznam, hledání i detail) nese `is_favorite`
+    příznak pro **aktuálního uživatele** (anotace celé stránky jedním `FavoritedAmong` dotazem).
   - **Neplatný parametr → HTTP 400.**
-- **Detail** `GET /photos/{uid}` — fotka + `files` (seznam `photo_files`), `404` když chybí.
+- **Detail** `GET /photos/{uid}` — fotka + `files` (seznam `photo_files`) + `is_favorite`,
+  `404` když chybí.
+- **Oblíbené** `PUT /photos/{uid}/favorite` + `DELETE /photos/{uid}/favorite` (každý přihlášený,
+  oblíbené jsou osobní) — idempotentní toggle oblíbené pro aktuálního uživatele → `204`; `404`
+  na chybějící fotku, `503` bez favorites backendu. **Výpis** `GET /favorites` (přihlášený) —
+  oblíbené aktuálního uživatele ve stejném tvaru jako `GET /photos` (sdílí filtry/řazení/stránkování,
+  je to ekvivalent `GET /photos?favorite=true`). Favorites backend (`FavoriteStore`, splňuje ho
+  `organize.Store`) se injektuje přes `Config.Favorites`.
 - **Podobné** `GET /photos/{uid}/similar` — fotky seřazené dle rostoucí cosine vzdálenosti
   embeddingu zdrojové fotky, **bez** ní samé; každá nese plný `Photo` + `distance`. `?limit`
   (default 24, max 100). **Empty-friendly:** fotka bez embeddingu (ještě nezpracovaná) → prázdný
