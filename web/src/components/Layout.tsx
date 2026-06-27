@@ -18,7 +18,7 @@ import { NavbarSearch } from './NavbarSearch'
  */
 export function Layout() {
   const { t } = useTranslation()
-  const { user, canWrite, logout } = useAuth()
+  const { user, canWrite, isAdmin, logout } = useAuth()
   const navigate = useNavigate()
 
   async function handleLogout() {
@@ -64,6 +64,12 @@ export function Layout() {
               {canWrite && (
                 <Nav.Link as={NavLink} to="/upload">
                   {t('nav.upload')}
+                </Nav.Link>
+              )}
+              {/* Import/migration administration is admin-only. */}
+              {isAdmin && (
+                <Nav.Link as={NavLink} to="/import">
+                  {t('nav.import')}
                 </Nav.Link>
               )}
             </Nav>

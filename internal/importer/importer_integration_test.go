@@ -183,6 +183,54 @@ func TestStore_Errors(t *testing.T) {
 	}
 }
 
+// TestStore_List verifies the history listing returns runs across all sources
+// most-recently-started first, honours limit and offset, and yields a non-nil
+// empty slice when there is no history.
+func TestStore_List(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	store := importer.NewStore(db.Pool())
+	ctx := t.Context()
+
+	// Empty history: a non-nil, empty page.
+	empty, err := store.List(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("List(empty): %v", err)
+	}
+	if empty == nil || len(empty) != 0 {
+		t.Fatalf("List(empty) = %v, want non-nil empty slice", empty)
+	}
+
+	// Three runs across both sources, started in order.
+	first := mustStart(t, store, importer.SourcePhotoPrism)
+	second := mustStart(t, store, importer.SourcePhotoSorter)
+	third := mustStart(t, store, importer.SourcePhotoPrism)
+
+	all, err := store.List(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("List returned %d runs, want 3", len(all))
+	}
+	// Most recently started first: third, second, first.
+	wantOrder := []int64{third, second, first}
+	for i, want := range wantOrder {
+		if all[i].ID != want {
+			t.Errorf("List[%d].ID = %d, want %d", i, all[i].ID, want)
+		}
+	}
+
+	// Paging: limit 1, offset 1 returns just the second-newest run.
+	page, err := store.List(ctx, 1, 1)
+	if err != nil {
+		t.Fatalf("List(paged): %v", err)
+	}
+	if len(page) != 1 || page[0].ID != second {
+		t.Errorf("List(limit=1,offset=1) = %+v, want one run id %d", page, second)
+	}
+}
+
 // mustStart starts a run and fails the test on error, returning the new run id.
 func mustStart(t *testing.T, store *importer.Store, source importer.Source) int64 {
 	t.Helper()

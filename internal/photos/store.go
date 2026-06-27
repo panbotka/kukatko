@@ -174,6 +174,27 @@ func (s *Store) SetPhotoprismRef(ctx context.Context, uid, ppUID, ppFileHash str
 	return photo, nil
 }
 
+// SetPhotosorterRef stamps the photo-sorter external identifier onto the photo
+// identified by uid and returns the refreshed photo. The photo-sorter migration
+// uses it to backfill the reference onto a photo whose content was deduplicated
+// by SHA256 against an already-catalogued file (for example one uploaded directly
+// or imported from PhotoPrism), so subsequent migration runs short-circuit on the
+// photosorter_uid lookup instead of re-copying the original and so the migrated
+// embeddings and faces attach to the existing photo. It returns ErrPhotoNotFound
+// if no such photo exists.
+func (s *Store) SetPhotosorterRef(ctx context.Context, uid, psUID string) (Photo, error) {
+	q := `UPDATE photos SET photosorter_uid = $2, updated_at = now()
+		WHERE uid = $1 RETURNING ` + photoColumns
+	photo, err := scanPhoto(s.pool.QueryRow(ctx, q, uid, psUID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Photo{}, ErrPhotoNotFound
+		}
+		return Photo{}, err
+	}
+	return photo, nil
+}
+
 // getPhoto fetches a single photo filtered by an equality on the trusted column
 // name col (an internal constant, never user input), translating pgx.ErrNoRows
 // into ErrPhotoNotFound.

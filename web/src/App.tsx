@@ -9,6 +9,7 @@ import { AlbumsPage } from './pages/AlbumsPage'
 import { ClustersPage } from './pages/ClustersPage'
 import { FavoritesPage } from './pages/FavoritesPage'
 import { HomePage } from './pages/HomePage'
+import { ImportPage } from './pages/ImportPage'
 import { LabelDetailPage } from './pages/LabelDetailPage'
 import { LabelsPage } from './pages/LabelsPage'
 import { LibraryPage } from './pages/LibraryPage'
@@ -53,6 +54,10 @@ export function App() {
               <Route element={<RequireRole role="editor" />}>
                 <Route path="/upload" element={<UploadPage />} />
                 <Route path="/people/clusters" element={<ClustersPage />} />
+              </Route>
+              {/* Import/migration administration is admin-only. */}
+              <Route element={<RequireRole role="admin" />}>
+                <Route path="/import" element={<ImportPage />} />
               </Route>
               <Route path="/account" element={<AccountPage />} />
               <Route path="*" element={<NotFoundPage />} />

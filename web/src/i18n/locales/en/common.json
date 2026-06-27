@@ -13,6 +13,7 @@
     "people": "People",
     "map": "Map",
     "upload": "Upload",
+    "import": "Import",
     "account": "My account",
     "logout": "Sign out"
   },
@@ -509,5 +510,58 @@
     "title": "Page not found",
     "message": "The requested page does not exist.",
     "back": "Back to home"
+  },
+  "import": {
+    "title": "Import & migration",
+    "intro": "PhotoPrism stays the primary store. Imports are read-only, incremental and repeatable — it is safe to run them again and they resume where they left off.",
+    "warnFirstRun": "A first run can take a while and pull in a large number of photos. Subsequent runs only process new changes.",
+    "confirmFirstRun": "This is the first run for this source and may take a while. Start the import?",
+    "adminOnly": "This page is available to administrators only.",
+    "loading": "Loading imports…",
+    "error": "Failed to load import status.",
+    "source": {
+      "photoprism": "PhotoPrism",
+      "photosorter": "Photo-sorter"
+    },
+    "photoprismDesc": "Incremental import from a running PhotoPrism instance (photos, metadata, albums, labels, people).",
+    "photosorterDesc": "Direct migration from the photo-sorter database (photos, embeddings, faces, albums, labels).",
+    "start": "Start import",
+    "starting": "Starting…",
+    "inProgress": "In progress",
+    "notConfigured": "This source is not configured.",
+    "noRuns": "No runs yet.",
+    "lastRun": "Last run",
+    "runningSince": "Running since {{time}}",
+    "startedNotice": "The import has been queued and will start shortly.",
+    "conflictNotice": "An import is already in progress.",
+    "errorNotice": "Failed to start the import. Please try again.",
+    "counts": {
+      "imported": "New",
+      "updated": "Updated",
+      "skipped": "Skipped",
+      "failed": "Failed"
+    },
+    "status": {
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed"
+    },
+    "jobs": {
+      "title": "Background processing queue",
+      "queued": "Queued",
+      "running": "Running",
+      "failed": "Failed",
+      "dead": "Dead"
+    },
+    "history": {
+      "title": "Run history",
+      "source": "Source",
+      "started": "Started",
+      "finished": "Finished",
+      "status": "Status",
+      "counts": "Counts",
+      "lastError": "Last error",
+      "empty": "No import runs yet."
+    }
   }
 }

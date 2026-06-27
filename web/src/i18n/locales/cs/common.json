@@ -13,6 +13,7 @@
     "people": "Lidé",
     "map": "Mapa",
     "upload": "Nahrát",
+    "import": "Import",
     "account": "Můj účet",
     "logout": "Odhlásit se"
   },
@@ -509,5 +510,58 @@
     "title": "Stránka nenalezena",
     "message": "Požadovaná stránka neexistuje.",
     "back": "Zpět na domovskou stránku"
+  },
+  "import": {
+    "title": "Import a migrace",
+    "intro": "PhotoPrism zůstává primární úložiště. Import je pouze pro čtení, inkrementální a opakovatelný — bezpečně ho můžeš spustit znovu a naváže tam, kde skončil.",
+    "warnFirstRun": "První spuštění může být dlouhé a stáhne velké množství fotek. Další běhy už zpracují jen novinky.",
+    "confirmFirstRun": "Tohle je první běh pro tento zdroj a může chvíli trvat. Spustit import?",
+    "adminOnly": "Tato stránka je dostupná jen administrátorům.",
+    "loading": "Načítání importů…",
+    "error": "Stav importu se nepodařilo načíst.",
+    "source": {
+      "photoprism": "PhotoPrism",
+      "photosorter": "Photo-sorter"
+    },
+    "photoprismDesc": "Inkrementální import z běžící instance PhotoPrismu (fotky, metadata, alba, štítky, lidé).",
+    "photosorterDesc": "Přímá migrace z databáze photo-sorteru (fotky, embeddingy, obličeje, alba, štítky).",
+    "start": "Spustit import",
+    "starting": "Spouštím…",
+    "inProgress": "Probíhá",
+    "notConfigured": "Tento zdroj není nakonfigurován.",
+    "noRuns": "Zatím žádné běhy.",
+    "lastRun": "Poslední běh",
+    "runningSince": "Běží od {{time}}",
+    "startedNotice": "Import byl zařazen a brzy se rozběhne.",
+    "conflictNotice": "Import už probíhá.",
+    "errorNotice": "Import se nepodařilo spustit. Zkus to prosím znovu.",
+    "counts": {
+      "imported": "Nové",
+      "updated": "Aktualizované",
+      "skipped": "Přeskočené",
+      "failed": "Chyby"
+    },
+    "status": {
+      "running": "Probíhá",
+      "done": "Hotovo",
+      "failed": "Selhalo"
+    },
+    "jobs": {
+      "title": "Fronta zpracování na pozadí",
+      "queued": "Ve frontě",
+      "running": "Běží",
+      "failed": "Chyby",
+      "dead": "Mrtvé"
+    },
+    "history": {
+      "title": "Historie běhů",
+      "source": "Zdroj",
+      "started": "Začátek",
+      "finished": "Konec",
+      "status": "Stav",
+      "counts": "Počty",
+      "lastError": "Poslední chyba",
+      "empty": "Zatím žádné běhy importu."
+    }
   }
 }

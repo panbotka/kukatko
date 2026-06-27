@@ -23,11 +23,12 @@ import (
 // backfills plus the face-clustering trigger). The worker is returned to the
 // serve command to run for the process lifetime; both APIs mount their
 // admin-guarded routes via authAPI so the api packages stay decoupled from
-// auth's wiring.
+// auth's wiring. The psMigrate handler (nil when photo-sorter is not configured)
+// registers the ps_migrate job.
 func buildJobs(
 	cfg *config.Config, store *jobs.Store, authAPI *auth.API,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
-	importSvc *ppimport.Service,
+	importSvc *ppimport.Service, psMigrate worker.HandlerFunc,
 ) (*worker.Worker, *jobsapi.API, *processapi.API) {
 	registry := worker.NewRegistry()
 	worker.RegisterBuiltins(registry)
@@ -35,6 +36,9 @@ func buildJobs(
 	registry.Register(jobs.TypeFaceDetect, faceSvc.Handle)
 	if importSvc != nil {
 		registry.Register(jobs.TypePPImport, importSvc.Handle)
+	}
+	if psMigrate != nil {
+		registry.Register(jobs.TypePSMigrate, psMigrate)
 	}
 
 	w := worker.New(worker.Config{

@@ -129,7 +129,9 @@ func buildServices(
 			return nil, nil, err
 		}
 	}
-	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc, importSvc)
+	psMigrate := psMigrateHandlerOrNil(cfg, db, enqueuer)
+	jobWorker, jobAPI, processAPI := buildJobs(
+		cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc, importSvc, psMigrate)
 
 	opts := []server.Option{
 		server.WithAPI(authAPI.RegisterRoutes),
@@ -143,9 +145,9 @@ func buildServices(
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
-	}
-	if importSvc != nil {
-		opts = append(opts, server.WithAPI(buildImportAPI(jobStore, authAPI).RegisterRoutes))
+		// Always mount: the run-history endpoint must work for the admin UI even
+		// when no import source is configured; the triggers self-gate per source.
+		server.WithAPI(buildImportAPI(cfg, db, jobStore, authAPI).RegisterRoutes),
 	}
 	return opts, jobWorker, nil
 }

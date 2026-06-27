@@ -178,3 +178,11 @@ import:
     token: ""
     # Photo listing page size; the client clamps it to PhotoPrism's cap (1000).
     page_size: 1000
+  photosorter:
+    # Read-only PostgreSQL DSN of the photo-sorter database to migrate from.
+    # Empty disables the `kukatko migrate photosorter` command and the
+    # POST /api/v1/import/photosorter trigger. Set via
+    # KUKATKO_IMPORT_PHOTOSORTER_DSN; do not commit a real value.
+    dsn: ""
+    # Photo listing page size for the migration.
+    page_size: 500

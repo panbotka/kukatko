@@ -74,9 +74,24 @@ type Config struct {
 }
 
 // ImportConfig groups the read-only import sources. PhotoPrism stays primary
-// during the migration; its import is incremental and repeatable.
+// during the migration; its import is incremental and repeatable. PhotoSorter is
+// the one-off (optionally repeatable) direct database migration from photo-sorter.
 type ImportConfig struct {
-	PhotoPrism PhotoPrismConfig `mapstructure:"photoprism"`
+	PhotoPrism  PhotoPrismConfig  `mapstructure:"photoprism"`
+	PhotoSorter PhotoSorterConfig `mapstructure:"photosorter"`
+}
+
+// PhotoSorterConfig holds the read-only connection to the photo-sorter database
+// for the one-off migration (internal/psimport). The DSN should come from the
+// environment (KUKATKO_IMPORT_PHOTOSORTER_DSN), not a committed file. An empty
+// DSN disables the migration command and its admin trigger.
+type PhotoSorterConfig struct {
+	// DSN is the read-only PostgreSQL connection string for the photo-sorter
+	// database (empty disables the migration).
+	DSN string `mapstructure:"dsn"`
+	// PageSize is the photo-listing page size; a non-positive value defaults to
+	// psimport.DefaultPageSize.
+	PageSize int `mapstructure:"page_size"`
 }
 
 // PhotoPrismConfig holds the connection details for the read-only PhotoPrism API
@@ -396,6 +411,9 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("import.photoprism.base_url", "")
 	v.SetDefault("import.photoprism.token", "")
 	v.SetDefault("import.photoprism.page_size", 1000)
+
+	v.SetDefault("import.photosorter.dsn", "")
+	v.SetDefault("import.photosorter.page_size", 500)
 }
 
 // Validate checks that required fields are present and inter-field invariants

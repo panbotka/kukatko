@@ -512,7 +512,9 @@ inkrementální).
   **bez** watermarku (oba matchují jen běžící běh → `ErrRunNotFound` na dvojí uzavření),
   `Get(ctx,id)`, `LatestWatermark(ctx,source)` → `(time.Time, found bool, err)` watermark
   **posledního úspěšného** běhu zdroje pro navázání dalšího inkrementu — ignoruje běžící/failed
-  běhy i done bez watermarku, každý zdroj má vlastní kurzor; sentinely
+  běhy i done bez watermarku, každý zdroj má vlastní kurzor, `List(ctx,limit,offset)` stránka běhů
+  **přes všechny zdroje** newest-started-first (limit clamp `[1,200]`, default 50, non-nil prázdná
+  stránka) — podklad admin historie importů; sentinely
   `ErrRunNotFound`/`ErrInvalidSource`), `internal/photoprism/`
   (read-only HTTP klient k běžící instanci PhotoPrismu — podklad inkrementálního importu, vše za
   rozhraním `Client` (fakeovatelné): `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryBaseDelay,
@@ -600,11 +602,17 @@ inkrementální).
   se nikdy neposune za nejstarší selhání** (`runState`); bezpečné re-runovat. **`Handle(ctx,job)`** =
   `worker.HandlerFunc` pro `ps_migrate` (ignoruje payload, volá `Migrate`), `JobPayload()` nese pevný
   sentinel → dedup fronty pustí jen jednu migraci), `internal/importapi/`
-  (admin-only HTTP triggery importů: rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`); `NewAPI(Config{
-  Queue,RequireAdmin,EnablePhotoPrism,EnablePhotoSorter})`+`RegisterRoutes` mountuje (jen pro
-  nakonfigurované zdroje) `POST /import/photoprism` → `pp_import` a `POST /import/photosorter` →
-  `ps_migrate` job (sdílený `enqueue` helper, 202 `{job_id,status}`); `jobs.ErrDuplicate` → 409
-  (už běží), jiná chyba → 500; neběží inline — patří na background worker), `internal/web/`
+  (admin-only HTTP API importů: rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`) a `RunLister`
+  (List, splňuje `*importer.Store`); `NewAPI(Config{Queue,Runs,RequireAdmin,EnablePhotoPrism,
+  EnablePhotoSorter})`+`RegisterRoutes` mountuje **vždy** `GET /import/runs` (historie + `sources`
+  flagy jaké zdroje jsou nakonfigurované) a — **jen pro nakonfigurované zdroje** —
+  `POST /import/photoprism` → `pp_import` a `POST /import/photosorter` → `ps_migrate` job (sdílený
+  `enqueue` helper, 202 `{job_id,status}`); `jobs.ErrDuplicate` → 409 (už běží), jiná chyba → 500;
+  `GET /import/runs` (`parsePaging` limit≤200/offset, neplatný → 400) vrací
+  `{runs,limit,offset,sources:{photoprism,photosorter}}` (stránka `import_runs` newest-started-first
+  přes `importer.Store.List`); celá API se v `serve` mountuje vždy (`buildImportAPI` v
+  `cmd/kukatko/import.go`), aby historie fungovala i bez zdroje; triggery neběží inline — patří na
+  background worker), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -614,6 +622,7 @@ inkrementální).
   míří na `/library`, **Oblíbené** na `/favorites`, **Alba** na `/albums`, **Štítky** na `/labels`,
   **Hledat** na `/search`,
   **Lidé** na `/people`, **Mapa** na `/map`, **Nahrát** na `/upload` (jen editor/admin),
+  **Import** na `/import` (jen admin, gate `isAdmin`),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
   `LanguageSwitcher`;
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
@@ -667,6 +676,12 @@ inkrementální).
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
   po dokončení odkaz na nově nahrané fotky (`/library?sort=added`),
+  `ImportPage` = `/import` (jen admin) admin konzole importu/migrace: dvě sekce (PhotoPrism,
+  photo-sorter) s tlačítkem **Spustit import** (gate na `sources` flagy), živý průběh běžícího běhu
+  (spinner + counts imported/updated/skipped/failed) a stav fronty na pozadí (`GET /jobs/stats`),
+  plus tabulka **historie běhů** (`import_runs`: zdroj/začátek/konec/stav/počty/chyba); polluje
+  `GET /import/runs` + `GET /jobs/stats` po 3 s, 409 → „už běží", confirm před prvním (velkým) během
+  zdroje, sebe-gate na `isAdmin`,
   `PhotoDetailPage` = `/photos/:uid` detail fotky: obrázek s interaktivním `FaceOverlay`
   (pojmenování obličejů) + `FavoriteButton` v hlavičce + pruh `SimilarPhotos`,
   `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (cover/jméno/počet
@@ -786,7 +801,12 @@ inkrementální).
   `map.ts` = mapový klient: `fetchMapPhotos(params,signal)` nad `GET /api/v1/map/photos`
   (GeoJSON FeatureCollection geotagovaných fotek + `buildMapQuery`), `tileLayerUrl(mapset)` (Leaflet
   URL template na backend proxy, **bez API klíče**), `toMapset`/`MAPSETS`; typy
-  `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`),
+  `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`);
+  `import.ts` = admin import klient: `fetchImportRuns(signal)` nad `GET /api/v1/import/runs`
+  (`{runs,limit,offset,sources}`), `fetchJobStats(signal)` nad `GET /api/v1/jobs/stats`,
+  `startImport(source,signal)` nad `POST /api/v1/import/{photoprism|photosorter}` (409 → ApiError);
+  typy `ImportSource`/`RunStatus`/`ImportCounts`/`ImportRun`/`ImportSources`/`ImportRunsResponse`/
+  `StartImportResult`/`JobStats`),
   `i18n/` (i18next init + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
@@ -795,7 +815,8 @@ inkrementální).
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`,
   `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload` a `/people/clusters`
-  navíc pod `RequireRole role="editor"` = write-only). Konfig:
+  navíc pod `RequireRole role="editor"` = write-only, `/import` pod `RequireRole role="admin"` =
+  admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.
@@ -936,6 +957,15 @@ inkrementální).
   `uid`/`title`/`taken_at`/`media_type`/relativní `thumb`. mapy.com chyby (401/403→502, 404→404,
   429→429, 5xx→502/503) **neprosakují klíč**; bez `maps.mapy_api_key` vrací tile/rgeocode 503,
   GeoJSON funguje. Mountuje se `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).
+- **Import API (`/api/v1`, `internal/importapi`, admin-only přes `RequireAdmin`):** triggery a
+  historie read-only importů. `GET /import/runs` (**vždy registrovaný**) → `{runs,limit,offset,
+  sources:{photoprism,photosorter}}` — stránka `import_runs` newest-started-first (query
+  `limit`≤200/`offset`, neplatný → 400) + `sources` flagy jaké zdroje jsou nakonfigurované (podklad
+  admin Import UI: zapnutí/vypnutí sekcí). `POST /import/photoprism` → `pp_import` a
+  `POST /import/photosorter` → `ps_migrate` (jen pro nakonfigurované zdroje, jinak 404) zařadí jeden
+  singleton job → 202 `{job_id,status}`; `jobs.ErrDuplicate` (už běží) → 409, jiná chyba → 500.
+  Celá API se mountuje vždy (`buildImportAPI` v `cmd/kukatko/import.go`), aby historie fungovala i
+  bez konfigurovaného zdroje. Frontend (`ImportPage`) polluje `GET /import/runs` + `GET /jobs/stats`.
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

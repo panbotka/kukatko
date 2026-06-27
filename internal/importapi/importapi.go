@@ -1,12 +1,14 @@
-// Package importapi exposes the admin-only HTTP trigger for the PhotoPrism
-// import. It does not run the import inline — a full import is long-running and
-// belongs on the background worker — but enqueues a single pp_import job and
-// returns its id. The job's payload carries a fixed sentinel so the queue's dedup
-// key allows only one import to be queued or running at a time: triggering again
-// while an import is in flight is reported as a conflict, not a second run.
+// Package importapi exposes the admin-only HTTP triggers for the read-only
+// imports: the PhotoPrism import (pp_import) and the photo-sorter migration
+// (ps_migrate). It does not run either inline — both are long-running and belong
+// on the background worker — but enqueues a single job and returns its id. Each
+// job's payload carries a fixed sentinel so the queue's dedup key allows only one
+// of that kind to be queued or running at a time: triggering again while one is
+// in flight is reported as a conflict, not a second run. Only the endpoints whose
+// source is configured are registered.
 //
 // The package depends only on a Queue behaviour and an admin guard, both
-// injected, so it stays decoupled from the job store and the importer's wiring.
+// injected, so it stays decoupled from the job store and the importers' wiring.
 package importapi
 
 import (
@@ -15,11 +17,24 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/ppimport"
+	"github.com/panbotka/kukatko/internal/psimport"
+)
+
+// Paging defaults for the run-history listing. The store clamps too, but
+// validating here yields a clear 400 on a malformed query parameter.
+const (
+	// defaultRunsLimit is the page size used when the client omits limit.
+	defaultRunsLimit = 50
+	// maxRunsLimit caps the page size accepted from the client.
+	maxRunsLimit = 200
 )
 
 // Queue enqueues background jobs. It is the import-facing subset of jobs.Store,
@@ -30,25 +45,49 @@ type Queue interface {
 	Enqueue(ctx context.Context, jobType string, payload json.RawMessage, opts jobs.EnqueueOptions) (jobs.Job, error)
 }
 
-// API exposes the import trigger over HTTP. The admin guard is supplied by the
+// RunLister reads the import-run history for the admin history view. It is the
+// import-facing subset of importer.Store, satisfied by *importer.Store.
+type RunLister interface {
+	// List returns a page of import runs across every source, most recently
+	// started first.
+	List(ctx context.Context, limit, offset int) ([]importer.Run, error)
+}
+
+// API exposes the import triggers over HTTP. The admin guard is supplied by the
 // caller (the auth subsystem) so this package depends on auth's behaviour, not
 // its wiring.
 type API struct {
-	queue        Queue
-	requireAdmin func(http.Handler) http.Handler
+	queue             Queue
+	runs              RunLister
+	requireAdmin      func(http.Handler) http.Handler
+	enablePhotoPrism  bool
+	enablePhotoSorter bool
 }
 
-// Config bundles the dependencies of NewAPI. Both fields are required.
+// Config bundles the dependencies of NewAPI. Queue, Runs and RequireAdmin are
+// required; the Enable* flags select which source triggers are registered.
 type Config struct {
-	// Queue is the job queue the trigger enqueues the pp_import job onto.
+	// Queue is the job queue the triggers enqueue jobs onto.
 	Queue Queue
-	// RequireAdmin guards the endpoint for administrators only.
+	// Runs reads the import-run history for the history endpoint.
+	Runs RunLister
+	// RequireAdmin guards the endpoints for administrators only.
 	RequireAdmin func(http.Handler) http.Handler
+	// EnablePhotoPrism registers POST /import/photoprism when set.
+	EnablePhotoPrism bool
+	// EnablePhotoSorter registers POST /import/photosorter when set.
+	EnablePhotoSorter bool
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{queue: cfg.queueOrPanic(), requireAdmin: cfg.RequireAdmin}
+	return &API{
+		queue:             cfg.queueOrPanic(),
+		runs:              cfg.runsOrPanic(),
+		requireAdmin:      cfg.RequireAdmin,
+		enablePhotoPrism:  cfg.EnablePhotoPrism,
+		enablePhotoSorter: cfg.EnablePhotoSorter,
+	}
 }
 
 // queueOrPanic returns the configured queue, panicking on a nil one since a
@@ -60,17 +99,110 @@ func (c Config) queueOrPanic() Queue {
 	return c.Queue
 }
 
-// RegisterRoutes mounts the import endpoint onto r, which the caller has scoped
-// under the API base path (for example /api/v1):
+// runsOrPanic returns the configured run lister, panicking on a nil one since a
+// missing store is a wiring bug that should surface at startup.
+func (c Config) runsOrPanic() RunLister {
+	if c.Runs == nil {
+		panic("importapi: NewAPI requires a Runs store")
+	}
+	return c.Runs
+}
+
+// RegisterRoutes mounts the import endpoints onto r, which the caller has scoped
+// under the API base path (for example /api/v1). The history endpoint is always
+// registered so the admin UI can render past runs even when no source is
+// configured; the triggers are registered only for configured sources:
 //
-//	POST /import/photoprism  RequireAdmin  enqueue a PhotoPrism import job
+//	GET  /import/runs         RequireAdmin  recent import-run history + enabled sources
+//	POST /import/photoprism   RequireAdmin  enqueue a PhotoPrism import job
+//	POST /import/photosorter  RequireAdmin  enqueue a photo-sorter migration job
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireAdmin).Post("/import/photoprism", a.handleImportPhotoPrism)
+	r.With(a.requireAdmin).Get("/import/runs", a.handleListRuns)
+	if a.enablePhotoPrism {
+		r.With(a.requireAdmin).Post("/import/photoprism", a.handleImportPhotoPrism)
+	}
+	if a.enablePhotoSorter {
+		r.With(a.requireAdmin).Post("/import/photosorter", a.handleImportPhotoSorter)
+	}
+}
+
+// sources reports which import sources are configured, so the admin UI can show
+// or disable each section.
+type sources struct {
+	PhotoPrism  bool `json:"photoprism"`
+	PhotoSorter bool `json:"photosorter"`
+}
+
+// runsResponse is the JSON body of the run-history endpoint: a page of runs plus
+// the echoed paging and the set of configured sources.
+type runsResponse struct {
+	Runs    []importer.Run `json:"runs"`
+	Limit   int            `json:"limit"`
+	Offset  int            `json:"offset"`
+	Sources sources        `json:"sources"`
+}
+
+// handleListRuns returns a page of import-run history across all sources, most
+// recently started first, together with which sources are configured. A
+// malformed limit or offset is answered with 400.
+func (a *API) handleListRuns(w http.ResponseWriter, r *http.Request) {
+	limit, offset, err := parsePaging(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	runs, err := a.runs.List(r.Context(), limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "listing import runs failed")
+		return
+	}
+	if runs == nil {
+		runs = []importer.Run{}
+	}
+	writeJSON(w, http.StatusOK, runsResponse{
+		Runs:    runs,
+		Limit:   limit,
+		Offset:  offset,
+		Sources: sources{PhotoPrism: a.enablePhotoPrism, PhotoSorter: a.enablePhotoSorter},
+	})
+}
+
+// errInvalidLimit and errInvalidOffset are returned by parsePaging for malformed
+// paging query parameters.
+var (
+	errInvalidLimit  = errors.New("invalid limit")
+	errInvalidOffset = errors.New("invalid offset")
+)
+
+// parsePaging reads the limit and offset query parameters, applying the default
+// limit when absent and capping it at maxRunsLimit. It returns errInvalidLimit
+// or errInvalidOffset when a value is present but not a valid non-negative (for
+// offset) or positive (for limit) integer.
+func parsePaging(q url.Values) (limit, offset int, err error) {
+	limit = defaultRunsLimit
+	if raw := q.Get("limit"); raw != "" {
+		n, convErr := strconv.Atoi(raw)
+		if convErr != nil || n < 1 {
+			return 0, 0, errInvalidLimit
+		}
+		if n > maxRunsLimit {
+			n = maxRunsLimit
+		}
+		limit = n
+	}
+	if raw := q.Get("offset"); raw != "" {
+		n, convErr := strconv.Atoi(raw)
+		if convErr != nil || n < 0 {
+			return 0, 0, errInvalidOffset
+		}
+		offset = n
+	}
+	return limit, offset, nil
 }
 
 // importResponse is the JSON body returned when an import job is enqueued.
 type importResponse struct {
-	// JobID is the queued pp_import job's id.
+	// JobID is the queued job's id.
 	JobID int64 `json:"job_id"`
 	// Status is the queued job's state ("queued").
 	Status string `json:"status"`
@@ -80,11 +212,24 @@ type importResponse struct {
 // flight (the dedup sentinel collides) is reported as 409 Conflict; the queued
 // job is reported as 202 Accepted with its id.
 func (a *API) handleImportPhotoPrism(w http.ResponseWriter, r *http.Request) {
-	job, err := a.queue.Enqueue(r.Context(), jobs.TypePPImport, ppimport.JobPayload(), jobs.EnqueueOptions{
-		MaxAttempts: 3,
-	})
+	a.enqueue(w, r, jobs.TypePPImport, ppimport.JobPayload(), "a photoprism import is already in progress")
+}
+
+// handleImportPhotoSorter enqueues a single ps_migrate job, with the same
+// conflict and accepted semantics as the PhotoPrism trigger.
+func (a *API) handleImportPhotoSorter(w http.ResponseWriter, r *http.Request) {
+	a.enqueue(w, r, jobs.TypePSMigrate, psimport.JobPayload(), "a photo-sorter migration is already in progress")
+}
+
+// enqueue inserts a singleton import job and writes the HTTP response: 409 on a
+// dedup conflict (using conflictMsg), 500 on any other failure, or 202 with the
+// queued job's id on success.
+func (a *API) enqueue(
+	w http.ResponseWriter, r *http.Request, jobType string, payload json.RawMessage, conflictMsg string,
+) {
+	job, err := a.queue.Enqueue(r.Context(), jobType, payload, jobs.EnqueueOptions{MaxAttempts: 3})
 	if errors.Is(err, jobs.ErrDuplicate) {
-		writeError(w, http.StatusConflict, "a photoprism import is already in progress")
+		writeError(w, http.StatusConflict, conflictMsg)
 		return
 	}
 	if err != nil {

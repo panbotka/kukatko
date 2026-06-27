@@ -60,12 +60,17 @@ func buildImportService(
 	}), nil
 }
 
-// buildImportAPI assembles the admin-only HTTP trigger that enqueues a pp_import
-// job on the shared queue store. The admin guard is supplied via authAPI so
-// importapi stays decoupled from auth's wiring.
-func buildImportAPI(store *jobs.Store, authAPI *auth.API) *importapi.API {
+// buildImportAPI assembles the admin-only HTTP API for imports: the run-history
+// endpoint (always registered) and the pp_import/ps_migrate triggers, which are
+// registered only for configured sources. Triggers enqueue onto the shared queue
+// store; history reads the import_runs table over the shared pool. The admin
+// guard is supplied via authAPI so importapi stays decoupled from auth's wiring.
+func buildImportAPI(cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API) *importapi.API {
 	return importapi.NewAPI(importapi.Config{
-		Queue:        store,
-		RequireAdmin: authAPI.RequireAdmin,
+		Queue:             store,
+		Runs:              importer.NewStore(db.Pool()),
+		RequireAdmin:      authAPI.RequireAdmin,
+		EnablePhotoPrism:  importConfigured(cfg),
+		EnablePhotoSorter: psImportConfigured(cfg),
 	})
 }

@@ -805,6 +805,27 @@ unit-testovatelné s faky bez photo-sorteru, sítě, DB i disku; **integrační 
   přes `KUKATKO_IMPORT_PHOTOSORTER_DSN`, necommituj); bez `dsn` se migrace job ani endpoint
   neregistrují (CLI vrátí chybu).
 
+### Import admin UI (`internal/importapi` + `web` `ImportPage`)
+
+Admin-only konzole na `/import` ([`web/src/pages/ImportPage.tsx`](web/src/pages/ImportPage.tsx)) pro
+spuštění a sledování importů — viditelná v navbaru jen administrátorům (gate `isAdmin`), route pod
+`RequireRole role="admin"`.
+
+- **Backend** (`internal/importapi`, vše admin-only přes `RequireAdmin`) přidává k triggerům i
+  **historii**: `GET /api/v1/import/runs` (vždy registrovaný) → `{runs,limit,offset,sources}` —
+  stránka `import_runs` newest-started-first (query `limit`≤200/`offset`, neplatný → 400) plus
+  `sources:{photoprism,photosorter}` flagy jaké zdroje jsou nakonfigurované. Stránku čte
+  `importer.Store.List`. Celá API se mountuje **vždy** (i bez konfigurovaného zdroje), aby historie
+  fungovala; triggery `POST /import/{photoprism,photosorter}` se registrují jen pro konfigurované
+  zdroje (jinak 404).
+- **Frontend** ([`web/src/services/import.ts`](web/src/services/import.ts)) polluje
+  `GET /import/runs` + `GET /jobs/stats` po 3 s. Dvě sekce (PhotoPrism, photo-sorter) s tlačítkem
+  **Spustit import** (gate na `sources` flagy + běžící běh), **živý průběh** běžícího běhu (spinner +
+  counts imported/updated/skipped/failed), souhrn **fronty na pozadí** (queued/running/failed/dead)
+  a tabulka **historie běhů** (zdroj / začátek / konec / stav / počty / poslední chyba). Jasně sděluje,
+  že PhotoPrism zůstává primární a import je inkrementální/opakovatelný; před **prvním** (potenciálně
+  velkým) během zdroje se ptá na potvrzení. 409 → „import už běží". i18n cs/en.
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).
@@ -894,6 +915,9 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/process/embeddings` | admin | backfill — zařadí `image_embed` pro fotky bez embeddingu → `{enqueued}` (viz Process API) |
 | POST | `/process/faces` | admin | backfill — zařadí `face_detect` pro fotky bez detekce obličejů → `{enqueued}` (viz Process API) |
 | POST | `/process/clusters` | admin | re-clustering — seskupí nepřiřazené obličeje do shluků → `{created}` (viz Process API) |
+| GET | `/import/runs` | admin | historie běhů importu/migrace + `sources` flagy → `{runs,limit,offset,sources}` (viz Import admin UI) |
+| POST | `/import/photoprism` | admin | zařadí `pp_import` job (jen je-li zdroj konfigurován) → 202 `{job_id,status}`, 409 už běží |
+| POST | `/import/photosorter` | admin | zařadí `ps_migrate` job (jen je-li zdroj konfigurován) → 202 `{job_id,status}`, 409 už běží |
 
 RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin` /
 `RequireAuthOrDownloadToken`). Konfigurační

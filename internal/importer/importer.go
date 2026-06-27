@@ -104,6 +104,16 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // in one place.
 const runColumns = `id, source, started_at, finished_at, status, high_watermark, counts, last_error`
 
+// Paging limits applied by List so a caller can never request an unbounded page.
+const (
+	// defaultListLimit is the page size used when the caller passes a
+	// non-positive limit.
+	defaultListLimit = 50
+	// maxListLimit caps the page size so a single query can never read an
+	// unbounded number of rows.
+	maxListLimit = 200
+)
+
 // startSQL inserts a new running run and returns the full row.
 const startSQL = `
 INSERT INTO import_runs (source, status, counts)
@@ -202,6 +212,49 @@ func (s *Store) Get(ctx context.Context, id int64) (Run, error) {
 		return Run{}, fmt.Errorf("importer: getting run %d: %w", id, err)
 	}
 	return run, nil
+}
+
+// listSQL reads a page of runs across all sources, most recently started first.
+// The id tiebreaker keeps the order stable when two runs share a started_at.
+const listSQL = `
+SELECT ` + runColumns + `
+FROM import_runs
+ORDER BY started_at DESC, id DESC
+LIMIT $1 OFFSET $2`
+
+// List returns a page of import runs across every source, ordered most recently
+// started first, for the admin history view. limit is clamped to
+// [1, maxListLimit] (a non-positive limit defaults to defaultListLimit) and a
+// negative offset is treated as zero, so the result set is always bounded. An
+// empty history yields a non-nil, empty slice.
+func (s *Store) List(ctx context.Context, limit, offset int) ([]Run, error) {
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.pool.Query(ctx, listSQL, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("importer: listing runs: %w", err)
+	}
+	defer rows.Close()
+
+	runs := make([]Run, 0, limit)
+	for rows.Next() {
+		run, scanErr := scanRun(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("importer: iterating runs: %w", err)
+	}
+	return runs, nil
 }
 
 // latestWatermarkSQL reads the watermark of the most recent successful run for a
