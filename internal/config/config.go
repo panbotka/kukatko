@@ -88,6 +88,9 @@ type PhotoPrismConfig struct {
 	BaseURL string `mapstructure:"base_url"`
 	// Token is the Bearer app password / access token used for every request.
 	Token string `mapstructure:"token"`
+	// PageSize is the photo listing page size; the client clamps it to
+	// PhotoPrism's cap (1000) and a non-positive value defaults to 1000.
+	PageSize int `mapstructure:"page_size"`
 }
 
 // DatabaseConfig holds the PostgreSQL connection string and pool sizing.
@@ -392,6 +395,7 @@ func setOpsDefaults(v *viper.Viper) {
 
 	v.SetDefault("import.photoprism.base_url", "")
 	v.SetDefault("import.photoprism.token", "")
+	v.SetDefault("import.photoprism.page_size", 1000)
 }
 
 // Validate checks that required fields are present and inter-field invariants

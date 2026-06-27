@@ -15,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/server"
 	"github.com/panbotka/kukatko/internal/version"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -122,9 +123,15 @@ func buildServices(
 	if err != nil {
 		return nil, nil, err
 	}
-	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc)
+	var importSvc *ppimport.Service
+	if importConfigured(cfg) {
+		if importSvc, err = buildImportService(cfg, db, enqueuer); err != nil {
+			return nil, nil, err
+		}
+	}
+	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc, importSvc)
 
-	return []server.Option{
+	opts := []server.Option{
 		server.WithAPI(authAPI.RegisterRoutes),
 		server.WithAPI(ingestAPI.RegisterRoutes),
 		server.WithAPI(photoAPI.RegisterRoutes),
@@ -136,5 +143,9 @@ func buildServices(
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
-	}, jobWorker, nil
+	}
+	if importSvc != nil {
+		opts = append(opts, server.WithAPI(buildImportAPI(jobStore, authAPI).RegisterRoutes))
+	}
+	return opts, jobWorker, nil
 }

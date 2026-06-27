@@ -27,7 +27,7 @@ func TestRootCmd_subcommandsRegistered(t *testing.T) {
 	t.Parallel()
 
 	root := newRootCmd()
-	want := map[string]bool{"serve": false, "version": false}
+	want := map[string]bool{"serve": false, "version": false, "import": false}
 	for _, c := range root.Commands() {
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true
@@ -37,6 +37,22 @@ func TestRootCmd_subcommandsRegistered(t *testing.T) {
 		if !found {
 			t.Errorf("subcommand %q not registered on root", name)
 		}
+	}
+}
+
+// TestImportCmd_hasPhotoPrismChild verifies the import command exposes the
+// photoprism subcommand.
+func TestImportCmd_hasPhotoPrismChild(t *testing.T) {
+	t.Parallel()
+
+	var found bool
+	for _, c := range newImportCmd().Commands() {
+		if c.Name() == "photoprism" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("import command has no photoprism subcommand")
 	}
 }
 

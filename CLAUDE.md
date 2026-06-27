@@ -36,7 +36,9 @@ inkrementální).
   (jádro foto-katalogu: typované modely `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`,
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generátor prefix `ph`,
   `Store` nad pgx s
-  `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/`ListByUIDs`
+  `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/`SetPhotoprismRef`
+  (backfill `photoprism_uid`+`photoprism_file_hash` na fotku deduplikovanou dle SHA256 — PhotoPrism
+  import to volá, aby další inkrement short-circuitnul na uid místo re-downloadu)/`ListByUIDs`
   (batch lookup dle uid, ignoruje neznámé — pro similar API)/`FilterUIDs`
   (z dané množiny uid vrátí ty, co projdou strukturálními List filtry — ignoruje řazení,
   stránkování i `FullText`; companion k sémantickému hledání: caller drží kandidáty z
@@ -516,10 +518,13 @@ inkrementální).
   rozhraním `Client` (fakeovatelné): `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryBaseDelay,
   RetryMaxDelay,HTTPClient})` → `*HTTPClient`, `ErrInvalidURL` na nevalidní base URL; **autentizace**
   dlouhožijícím app password/access tokenem v hlavičce `Authorization: Bearer` na **každém**
-  requestu (ne per-request login); `ListPhotos(ctx,PhotoListParams{Count,Offset,UpdatedSince,Order})`
+  requestu (ne per-request login); `ListPhotos(ctx,PhotoListParams{Count,Offset,UpdatedSince,Order,
+  AlbumUID,Query})`
   → `GET /api/v1/photos?count=…&offset=…&merged=true&order=updated[&q=updated:"<RFC3339>"]`
   pro **inkrementální** pull (UpdatedSince→filtr `updated:`, count ořez na `MaxCount` 1000, caller
-  pageuje přes offset), parsuje UID/TakenAt/Lat/Lng/Altitude/Title/Description/Type/Width/Height/
+  pageuje přes offset); **scope pro mapování členství**: `AlbumUID`→`s=<albumUID>` (fotky alba),
+  `Query`→`q=` natvrdo (přebije watermark, pro `label:"<slug>"`); parsuje
+  UID/TakenAt/Lat/Lng/Altitude/Title/Description/Type/Width/Height/
   OriginalName/Camera/Lens/EXIF + `Files[]` (UID, **Hash=SHA1**, Primary, Mime, `Markers[]`),
   `Photo.PrimaryFile()` vrátí primární soubor; `ListAlbums`/`ListLabels`/`ListSubjects(ctx,ListParams
   {Count,Offset})` → `GET /api/v1/{albums,labels,subjects}`, markery z `Files[].Markers[]`;
@@ -531,8 +536,34 @@ inkrementální).
   exponenciální backoff ctící `Retry-After`, JSON endpointy vyžadují `Content-Type:
   application/json`; typové chyby `ErrInvalidURL`/`ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/
   `ErrUpstream`/`ErrUnavailable`/`ErrBadResponse` nikdy nenesou token ani tělo odpovědi; konfig
-  `import.photoprism.{base_url,token}`, klient zatím není zapojen do `serve` — staví se až importérem
-  v dalším milníku), `internal/web/`
+  `import.photoprism.{base_url,token,page_size}`; klient staví importér (`ppimport`)),
+  `internal/ppimport/`
+  (read-only, **inkrementální a idempotentní** import z PhotoPrismu — vše za rozhraními
+  `PhotoPrismClient`/`RunStore`/`PhotoStore`/`Storage`/`Thumbnailer`/`AlbumStore`/`LabelStore`/
+  `PeopleStore`/`Enqueuer` → unit-testovatelné s faky; `Service` = `New(Config{Client,Runs,Photos,
+  Storage,Thumbnailer,Albums,Labels,People,Enqueuer,PageSize,TempDir,MaxFileSize,Logger})`;
+  **`Import(ctx) (Result,error)`** otevře `import_runs` běh, navrhne na poslední úspěšný watermark a:
+  (1) pageuje `ListPhotos(UpdatedSince=watermark)` — per fotka dedup dle `photoprism_uid` (už
+  importovaná → `UpdateMetadata` jen při změně, jinak skip), jinak **stáhne** primární originál do
+  tempu + **SHA256**, dedup dle `file_hash` (shodný obsah → backfill ID přes
+  `photos.SetPhotoprismRef`, žádná nová fotka), uloží originál, `photos.Create` s **PP metadaty**
+  (title/desc/taken_at/GPS/camera/EXIF) + `photoprism_uid`/`photoprism_file_hash` + **EXIF orientace
+  ze souboru** (PP ji nevystavuje — `exif.Extract` doplní geometrii/orientaci/MIME, PP přebije
+  kurátorská pole), náhledy a **enqueue `image_embed`+`face_detect`**; counts **checkpoint po každé
+  stránce** přes `UpdateCounts`; (2) **lidé** z `Files[].Markers[]` nově importovaných fotek
+  (pojmenovaný validní face marker → find-or-create subjekt dle `Slugify` + přiřazený marker; jen na
+  prvním importu, ať re-run neduplikuje); (3) **alba & štítky** find-or-create dle názvu (mapa z
+  `ListAlbums`/`ListLabels`), členství přes scopnutý `ListPhotos` (`AlbumUID`/`label:"<slug>"`) →
+  idempotentní `AddPhoto`/`AttachLabel`; pak běh `Complete` s watermarkem; **per-fotka chyba** se
+  zaznamená do `counts.failed` a **nepřeruší běh** (jen infrastrukturní chyba běh `Fail`ne), 429
+  backoff řeší klient, **watermark se nikdy neposune za nejstarší selhání** (`runState`); bezpečné
+  re-runovat. **`Handle(ctx,job)`** = `worker.HandlerFunc` pro `pp_import` (ignoruje payload, volá
+  `Import`), `JobPayload()` nese pevný sentinel `photo_uid` → dedup fronty pustí jen jeden import),
+  `internal/importapi/`
+  (admin-only HTTP trigger importu: rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`); `NewAPI(Config{
+  Queue,RequireAdmin})`+`RegisterRoutes` mountuje `POST /import/photoprism` → zařadí `pp_import` job s
+  `ppimport.JobPayload()` (202 `{job_id,status}`); `jobs.ErrDuplicate` → 409 (import už běží), jiná
+  chyba → 500; neběží inline — import patří na background worker), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -733,6 +764,8 @@ inkrementální).
   `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`, auth/admin API
   pod `/api/v1` — viz níže, ostatní cesty servíruje **embedované SPA** s fallbackem na
   `index.html`), `kukatko migrate` (spustí pending migrace samostatně a skončí),
+  `kukatko import photoprism` (synchronní read-only inkrementální import z PhotoPrismu — `ppimport`;
+  potřebuje `import.photoprism.base_url`, jinak chyba; pro ops/cron bez běžícího serveru),
   `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
   `server.New(addr, server.WithAPI(register))` mountuje route-skupiny pod `/api/v1`.
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque

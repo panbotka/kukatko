@@ -234,6 +234,38 @@ func TestExternalIDLookups(t *testing.T) {
 	}
 }
 
+// TestSetPhotoprismRef verifies the PhotoPrism external IDs can be backfilled onto
+// a photo that was catalogued without them (the SHA256-dedup path of the import).
+func TestSetPhotoprismRef(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	created, err := store.Create(ctx, samplePhoto("ref"))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.PhotoprismUID != nil {
+		t.Fatalf("seed photo already has a photoprism_uid: %v", created.PhotoprismUID)
+	}
+
+	updated, err := store.SetPhotoprismRef(ctx, created.UID, "ppNEWuid", "sha1hash")
+	if err != nil {
+		t.Fatalf("SetPhotoprismRef: %v", err)
+	}
+	if updated.PhotoprismUID == nil || *updated.PhotoprismUID != "ppNEWuid" ||
+		updated.PhotoprismFileHash == nil || *updated.PhotoprismFileHash != "sha1hash" {
+		t.Errorf("refs = %v / %v, want ppNEWuid / sha1hash", updated.PhotoprismUID, updated.PhotoprismFileHash)
+	}
+	byPP, err := store.GetByPhotoprismUID(ctx, "ppNEWuid")
+	if err != nil || byPP.UID != created.UID {
+		t.Errorf("GetByPhotoprismUID after backfill = %+v, %v", byPP, err)
+	}
+
+	if _, err := store.SetPhotoprismRef(ctx, "ph_missing", "x", "y"); !errors.Is(err, photos.ErrPhotoNotFound) {
+		t.Errorf("SetPhotoprismRef(missing) = %v, want ErrPhotoNotFound", err)
+	}
+}
+
 // TestList exercises the filtering, sorting and pagination scaffold.
 func TestList(t *testing.T) {
 	store, _ := newStore(t)

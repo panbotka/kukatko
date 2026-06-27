@@ -176,3 +176,5 @@ import:
     # every request (PhotoPrism: `photoprism auth add -n Kukatko -s "photos albums"`).
     # Set via KUKATKO_IMPORT_PHOTOPRISM_TOKEN; do not commit a real value.
     token: ""
+    # Photo listing page size; the client clamps it to PhotoPrism's cap (1000).
+    page_size: 1000

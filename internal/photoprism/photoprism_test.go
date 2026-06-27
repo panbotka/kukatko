@@ -105,6 +105,54 @@ func TestListPhotos_incrementalQuery(t *testing.T) {
 	}
 }
 
+// TestListPhotos_scopedQuery verifies AlbumUID sets the s= album filter and that
+// a raw Query overrides the UpdatedSince watermark filter — the two scoping modes
+// used to map album and label membership during import.
+func TestListPhotos_scopedQuery(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		params PhotoListParams
+		wantS  string
+		wantQ  string
+	}{
+		{
+			name:   "album scope sets s",
+			params: PhotoListParams{AlbumUID: "as6sg6bxpogaaba1"},
+			wantS:  "as6sg6bxpogaaba1",
+			wantQ:  "",
+		},
+		{
+			name:   "raw query overrides watermark",
+			params: PhotoListParams{Query: `label:"cat"`, UpdatedSince: time.Now()},
+			wantS:  "",
+			wantQ:  `label:"cat"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var gotQuery url.Values
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotQuery = r.URL.Query()
+				writeJSON(w, `[]`)
+			}))
+			defer srv.Close()
+
+			c := newTestClient(t, srv.URL)
+			if _, err := c.ListPhotos(context.Background(), tt.params); err != nil {
+				t.Fatalf("ListPhotos: %v", err)
+			}
+			if got := gotQuery.Get("s"); got != tt.wantS {
+				t.Errorf("query s = %q, want %q", got, tt.wantS)
+			}
+			if got := gotQuery.Get("q"); got != tt.wantQ {
+				t.Errorf("query q = %q, want %q", got, tt.wantQ)
+			}
+		})
+	}
+}
+
 // TestListPhotos_paging verifies the caller can page by advancing the offset and
 // that each request reflects the requested offset.
 func TestListPhotos_paging(t *testing.T) {

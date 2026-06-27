@@ -704,6 +704,9 @@ testy nepotřebují reálný PhotoPrism, síť ani token.
   (caller pageuje, dokud stránka vrací plný `count`). Parsují se pole UID, TakenAt, Lat/Lng/Altitude,
   Title/Description, Type, Width/Height, OriginalName, Camera/Lens/EXIF a `Files[]`
   (UID, **Hash = SHA1**, Primary, Mime, `Markers[]`). `Photo.PrimaryFile()` vrátí primární soubor.
+  `PhotoListParams` navíc umí **scopnout** výpis pro mapování členství: `AlbumUID` přidá filtr
+  `s=<albumUID>` (fotky alba), `Query` nastaví `q=` natvrdo (přebije watermark — používá se pro
+  `label:"<slug>"`).
 - **`ListAlbums`/`ListLabels`/`ListSubjects(ctx, ListParams)`** → `GET /api/v1/{albums,labels,subjects}`
   (count/offset); markery jedou přes `Files[].Markers[]`.
 - **`DownloadOriginal(ctx, fileHash)`** → `GET /api/v1/dl/{hash}?t=<download_token>` **streamuje**
@@ -714,6 +717,39 @@ testy nepotřebují reálný PhotoPrism, síť ani token.
   vyžadují `Content-Type: application/json`; rozumné timeouty (JSON volání `Timeout`, download jen
   ctx callera); typové chyby `ErrInvalidURL`/`ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/
   `ErrUpstream`/`ErrUnavailable`/`ErrBadResponse` — nikdy neobsahují token ani tělo odpovědi.
+
+### PhotoPrism import (`internal/ppimport` + `internal/importapi`)
+
+Read-only, **inkrementální a idempotentní** import z PhotoPrismu (ARCHITECTURE.md §9). Stáhne
+nové/změněné fotky, dedupuje, namapuje externí ID a po importu nechá běžné joby dopočítat
+embeddingy/obličeje. Všechny spolupracovníky drží za rozhraními → unit-testovatelné s faky bez
+PhotoPrismu, sítě, DB i disku.
+
+- **Spuštění** — buď CLI `kukatko import photoprism` (synchronně, pro ops/cron bez běžícího
+  serveru), nebo admin endpoint `POST /api/v1/import/photoprism`, který zařadí **`pp_import` job**
+  (běží v background workeru). `pp_import` payload nese pevný sentinel `photo_uid`, takže dedup
+  fronty pustí **jen jeden import** naráz (druhý trigger → 409). Handler i CLI volají stejnou
+  `Service.Import`.
+- **Běh** (`Service.Import`) — otevře `import_runs` běh, navrhne na poslední úspěšný watermark a:
+  1. **Fotky** — pageuje `ListPhotos(UpdatedSince=watermark)`; per fotka dedup dle `photoprism_uid`
+     (už importovaná → update změněných metadat, jinak skip), jinak stáhne primární originál,
+     spočítá **SHA256**, dedupuje dle `file_hash` (shodný obsah už v katalogu → backfill
+     `photoprism_uid`/`photoprism_file_hash` přes `photos.SetPhotoprismRef`, žádná nová fotka),
+     uloží originál, založí `photos` řádek s **PP metadaty** (title/desc/taken_at/GPS/camera/EXIF)
+     + externími ID + **EXIF orientací ze souboru** (PP ji nevystavuje), vyrenderuje náhledy a
+     **zařadí `image_embed` + `face_detect`** joby. Counts se **checkpointují po každé stránce**.
+  2. **Lidé** — z `Files[].Markers[]` nově importované fotky: každý **pojmenovaný validní face
+     marker** find-or-create subjekt (dle `Slugify`) + Kukátko marker přiřazený subjektu (markery
+     jen při prvním importu, ať re-run neduplikuje).
+  3. **Alba & štítky** — find-or-create dle názvu (mapa z `ListAlbums`/`ListLabels`), členství přes
+     scopnutý `ListPhotos` (`AlbumUID` / `label:"<slug>"`) → `AddPhoto` / `AttachLabel` (oboje
+     idempotentní), jen pro už importované fotky.
+  4. **Uzavření** — zapíše counts + nový watermark a běh `done`.
+- **Robustnost** — per-fotka chyba se zaznamená do `counts.failed` a **nepřeruší běh** (jen
+  infrastrukturní chyba — nelze listovat / DB — běh `fail`ne); 429 backoff řeší klient; **watermark
+  se nikdy neposune za nejstarší selhání** (selhaná fotka se příště znovu nabere); celý import je
+  bezpečný k opakování. Konfiguruje se přes `import.photoprism.{base_url,token,page_size}`; bez
+  `base_url` se import job ani endpoint neregistrují (CLI vrátí chybu).
 
 ## Konfigurace
 

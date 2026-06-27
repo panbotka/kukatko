@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/jobsapi"
+	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/processapi"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -26,11 +27,15 @@ import (
 func buildJobs(
 	cfg *config.Config, store *jobs.Store, authAPI *auth.API,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
+	importSvc *ppimport.Service,
 ) (*worker.Worker, *jobsapi.API, *processapi.API) {
 	registry := worker.NewRegistry()
 	worker.RegisterBuiltins(registry)
 	registry.Register(jobs.TypeImageEmbed, embedSvc.Handle)
 	registry.Register(jobs.TypeFaceDetect, faceSvc.Handle)
+	if importSvc != nil {
+		registry.Register(jobs.TypePPImport, importSvc.Handle)
+	}
 
 	w := worker.New(worker.Config{
 		Queue:             store,

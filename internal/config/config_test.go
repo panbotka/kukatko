@@ -348,6 +348,9 @@ func TestLoad_importPhotoPrismDefaults(t *testing.T) {
 	if cfg.Import.PhotoPrism.BaseURL != "" || cfg.Import.PhotoPrism.Token != "" {
 		t.Errorf("import.photoprism defaults = %+v, want empty", cfg.Import.PhotoPrism)
 	}
+	if cfg.Import.PhotoPrism.PageSize != 1000 {
+		t.Errorf("import.photoprism.page_size default = %d, want 1000", cfg.Import.PhotoPrism.PageSize)
+	}
 }
 
 // TestLoad_importPhotoPrismEnvOverride verifies the import.photoprism keys can be

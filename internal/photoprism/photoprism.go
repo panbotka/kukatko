@@ -87,16 +87,29 @@ var (
 // PhotoListParams selects a page of photos for an incremental pull. UpdatedSince,
 // when non-zero, restricts the listing to photos updated at or after it via the
 // q=updated:"<RFC3339>" filter — the basis of repeatable, incremental imports.
+//
+// AlbumUID and Query scope a listing to a subset of photos for mapping album and
+// label membership during import: AlbumUID sets the s=<albumUID> album filter,
+// and Query supplies a raw PhotoPrism search expression (for example
+// label:"<slug>") that takes precedence over the UpdatedSince watermark filter.
 type PhotoListParams struct {
 	// Count is the page size; it is clamped to MaxCount and defaults to MaxCount
 	// when non-positive.
 	Count int
 	// Offset is the zero-based page offset; negative values are treated as zero.
 	Offset int
-	// UpdatedSince, when non-zero, filters to photos with UpdatedAt >= it.
+	// UpdatedSince, when non-zero, filters to photos with UpdatedAt >= it. It is
+	// ignored when Query is set.
 	UpdatedSince time.Time
 	// Order overrides the listing order; it defaults to "updated".
 	Order string
+	// AlbumUID, when non-empty, scopes the listing to the album's photos via the
+	// s=<albumUID> filter (used to map album membership).
+	AlbumUID string
+	// Query, when non-empty, is used verbatim as the q= search expression and
+	// overrides the UpdatedSince watermark filter (used to map label membership
+	// via label:"<slug>").
+	Query string
 }
 
 // query renders the params as PhotoPrism photo-search query parameters,
@@ -111,7 +124,13 @@ func (p PhotoListParams) query() url.Values {
 	q.Set("offset", strconv.Itoa(max(0, p.Offset)))
 	q.Set("merged", "true")
 	q.Set("order", order)
-	if !p.UpdatedSince.IsZero() {
+	if p.AlbumUID != "" {
+		q.Set("s", p.AlbumUID)
+	}
+	switch {
+	case p.Query != "":
+		q.Set("q", p.Query)
+	case !p.UpdatedSince.IsZero():
 		q.Set("q", `updated:"`+p.UpdatedSince.UTC().Format(time.RFC3339)+`"`)
 	}
 	return q
