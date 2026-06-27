@@ -56,6 +56,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"worker.poll_interval", cfg.Worker.PollInterval, 2 * time.Second},
 		{"worker.stale_after", cfg.Worker.StaleAfter, 5 * time.Minute},
 		{"worker.stale_scan_interval", cfg.Worker.StaleScanInterval, time.Minute},
+		{"bulk.max_batch_size", cfg.Bulk.MaxBatchSize, 1000},
 		{"backup.s3.path_style", cfg.Backup.S3.PathStyle, false},
 		{"web.secure_cookies", cfg.Web.SecureCookies, false},
 		{"auth.session_ttl", cfg.Auth.SessionTTL, 168 * time.Hour},

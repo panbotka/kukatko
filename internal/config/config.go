@@ -69,6 +69,7 @@ type Config struct {
 	Duplicate DuplicateConfig `mapstructure:"duplicate"`
 	Upload    UploadConfig    `mapstructure:"upload"`
 	Worker    WorkerConfig    `mapstructure:"worker"`
+	Bulk      BulkConfig      `mapstructure:"bulk"`
 }
 
 // DatabaseConfig holds the PostgreSQL connection string and pool sizing.
@@ -218,6 +219,14 @@ type WorkerConfig struct {
 	StaleScanInterval time.Duration `mapstructure:"stale_scan_interval"`
 }
 
+// BulkConfig limits the bulk metadata editing endpoint.
+type BulkConfig struct {
+	// MaxBatchSize caps how many photo UIDs one bulk request may target. A
+	// request exceeding it is rejected with a clear error before any change. A
+	// non-positive value falls back to the bulk package's built-in default.
+	MaxBatchSize int `mapstructure:"max_batch_size"`
+}
+
 // MaxFileSizeBytes returns the per-file upload cap in bytes, or 0 for no cap.
 func (u UploadConfig) MaxFileSizeBytes() int64 {
 	if u.MaxFileSizeMB <= 0 {
@@ -354,6 +363,8 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("worker.poll_interval", "2s")
 	v.SetDefault("worker.stale_after", "5m")
 	v.SetDefault("worker.stale_scan_interval", "1m")
+
+	v.SetDefault("bulk.max_batch_size", 1000)
 }
 
 // Validate checks that required fields are present and inter-field invariants

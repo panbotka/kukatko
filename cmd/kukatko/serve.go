@@ -117,6 +117,7 @@ func buildServices(
 	outlierAPI := buildOutlierAPI(db, authAPI)
 	peopleAPI := buildPeopleAPI(db, authAPI)
 	organizeAPI := buildOrganizeAPI(db, authAPI)
+	bulkAPI := buildBulkAPI(cfg, db, authAPI)
 	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc)
 
 	return []server.Option{
@@ -127,6 +128,7 @@ func buildServices(
 		server.WithAPI(outlierAPI.RegisterRoutes),
 		server.WithAPI(peopleAPI.RegisterRoutes),
 		server.WithAPI(organizeAPI.RegisterRoutes),
+		server.WithAPI(bulkAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
 	}, jobWorker, nil

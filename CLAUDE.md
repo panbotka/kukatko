@@ -425,6 +425,34 @@ inkrementální).
   jede přes sdílené `GET /photos` scopnuté `?album={uid}`/`?label={uid}` (viz `photos.ListParams`
   `AlbumUID`/`LabelUID` + `photoapi` `parseListParams`); mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`, sdílí jednu `organize.Store` pro alba i štítky)),
+  `internal/audit/`
+  (durable audit trail, tabulka `audit_log` v migraci `0012_audit_log.sql`: `id BIGSERIAL`,
+  `actor_uid` FK users `ON DELETE SET NULL`, `action`, `target_type`, `target_uid`, `details JSONB`,
+  `created_at`; **klíčový vzor** `Write(ctx, exec, Entry)` zapisuje přes rozhraní `Execer`
+  (splňuje ho pool **i** `pgx.Tx`), takže audit řádek může jet v **téže transakci** jako mutace
+  (ARCHITECTURE §5.1/§12 „audit log durable"); `Entry{ActorUID,Action,TargetType,TargetUID,Details}`
+  (prázdné UID → SQL NULL, nil details → `{}`), action konstanta `ActionPhotosBulk`; `Store` =
+  `NewStore(pool)` se `Record(ctx,Entry)` (vlastní spojení) a `List(ctx,limit,offset)`
+  (newest-first, limit cap 500/default 100) pro admin/test čtení), `internal/bulk/`
+  (hromadná editace metadat: `Service` = `NewService(pool, maxBatch)` s `Apply(ctx, actorUID,
+  photoUIDs, ops Operations) (Result, error)` — **celá dávka v jediné transakci** s audit
+  záznamem; `Operations` = volitelná pole `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
+  `Title`/`Description *string` (nil=beze změny, ""=clear), `Location *Location`+`ClearLocation`,
+  `Private`/`Archive`/`Favorite *bool`; `Apply` validuje dávku (ErrNoPhotos/ErrNoOperations/
+  ErrBatchTooLarge), ověří existenci alb/štítků v add operacích (ErrAlbumNotFound/ErrLabelNotFound),
+  pak per-foto: duplicitní uid → `skipped`, neexistující fotka → `error` **bez abortu ostatních**,
+  jinak aplikuje a `updated`; vlastní idempotentní SQL (vlastní tx kvůli atomicitě, nepoužívá
+  organize/photos store metody, které mají vlastní spojení); favorite je **per-user** (`actorUID`);
+  `Result{Results:[{photo_uid,status,error?}],Counts{total,updated,skipped,errored}}`; skutečná DB
+  chyba rollbackne celou dávku; `Summary()` (audit details) + `IsEmpty()`), `internal/bulkapi/`
+  (HTTP nad `bulk.Service`: rozhraní `Service` (Apply) — fakeovatelné; `NewAPI(Config{Service,
+  RequireWrite})`+`RegisterRoutes` mountuje `POST /photos/bulk` za `RequireWrite`; tělo
+  `{photo_uids,operations}` přes `operationsInput` se **set/clear páry jako samostatné klíče**
+  (jednoznačné, konflikt `set_*`+`clear_*` / `archive`+`unarchive` → 400), `set_caption`→title,
+  validace souřadnic, `DisallowUnknownFields` (neznámá operace → 400) + 4 MiB limit; chyby mapované
+  `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413, jinak 500;
+  per-foto chyby vrací 200 s detailem v těle; mountuje se dalším `server.WithAPI`
+  (`buildBulkAPI` v `cmd/kukatko/bulk.go`)),
   `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
@@ -630,6 +658,17 @@ inkrementální).
   fotek alba/štítku** jede přes sdílené `GET /photos?album={uid}`/`?label={uid}` (stejný tvar +
   filtry/řazení/stránkování). Viewer čte, ale nemutuje (403). Mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
+- **Bulk metadata API (`/api/v1`, `internal/bulkapi`, editor/admin přes `RequireWrite`):**
+  `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` aplikuje sadu operací na mnoho fotek
+  **v jediné transakci** s audit-log záznamem. Operace (každá volitelná): `add_to_albums`/
+  `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
+  `set_description`/`clear_description`, `set_location {lat,lng}`/`clear_location`, `set_private`,
+  `archive`/`unarchive`, `set_favorite` (**per-user**). Odpověď `{results:[{photo_uid,status,
+  error?}],counts:{total,updated,skipped,errored}}` (200 i při dílčích chybách): `updated`/
+  `skipped` (duplicitní uid)/`error` (fotka neexistuje — **neabortuje validní**); jen DB chyba
+  rollbackne celou dávku (500). Konflikt set/clear nebo archive/unarchive, neznámá operace,
+  chybějící album/štítek v add → **400**; dávka nad `bulk.max_batch_size` (default 1000) → **413**.
+  Mountuje se dalším `server.WithAPI` (`buildBulkAPI` v `cmd/kukatko/bulk.go`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

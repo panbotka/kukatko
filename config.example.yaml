@@ -154,3 +154,10 @@ worker:
   stale_after: 5m
   # How often stale-lock recovery runs.
   stale_scan_interval: 1m
+
+# Bulk metadata editing endpoint (POST /api/v1/photos/bulk).
+bulk:
+  # Maximum number of photo UIDs a single bulk request may target. Requests that
+  # exceed it are rejected with HTTP 413 before any change is made. 0 falls back
+  # to the built-in default (1000).
+  max_batch_size: 1000

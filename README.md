@@ -536,6 +536,37 @@ frontend znovupoužije stejnou virtualizovanou mřížku.
   fotka), 403 (viewer na mutaci), 401 (nepřihlášený). Mountuje se devátým `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
 
+### Hromadná editace metadat (`internal/bulk` + `internal/bulkapi`)
+
+Jeden endpoint **`POST /api/v1/photos/bulk`** (editor/admin přes `RequireWrite`) aplikuje sadu
+operací na **mnoho fotek najednou v jediné transakci** spolu s durable audit-log záznamem, takže
+celá dávka commitne nebo se rollbackne atomicky. Tělo: `{"photo_uids":[…],"operations":{…}}`.
+Podporované operace (každá volitelná, neuvedené pole = beze změny):
+
+- `add_to_albums`/`remove_from_albums` `[al…]`, `add_labels`/`remove_labels` `[lb…]` (idempotentní);
+- `set_caption`/`clear_caption` (→ `title`), `set_description`/`clear_description`;
+- `set_location {lat,lng}` (validace rozsahu) / `clear_location`;
+- `set_private` (bool), `archive` / `unarchive` (vzájemně se vylučují);
+- `set_favorite` (bool) — **per-user** oblíbená pro volajícího.
+
+Set/clear páry jsou samostatné klíče (ne presence/null), takže payload je jednoznačný a konflikt
+(`set_*` + `clear_*`, `archive` + `unarchive`) je **400**. Neznámý klíč operace → **400**
+(`DisallowUnknownFields`). Dávka nad limit `bulk.max_batch_size` (default 1000) → **413**.
+
+- **Sémantika výsledku** — odpověď `{results:[{photo_uid,status,error?}],counts:{total,updated,
+  skipped,errored}}` (HTTP 200 i při dílčích chybách). Per-foto stavy: `updated` (aplikováno),
+  `skipped` (duplicitní uid v dávce), `error` (fotka neexistuje). **Chybějící fotka neabortuje
+  validní** — zaznamená se jako error, ostatní se aplikují a commitnou; jen skutečná DB chyba
+  rollbackne celou dávku (500). Alba/štítky v add operacích se ověřují předem (chybějící → 400).
+- **Audit log** (`internal/audit`, migrace `0012_audit_log.sql`, tabulka `audit_log`) — `Write(ctx,
+  exec, Entry)` zapisuje přes libovolný executor (pool **nebo** `pgx.Tx`), takže bulk zápis vloží
+  audit řádek do **téže transakce** jako mutace. `Store.Record`/`List` pro samostatný zápis a
+  admin/test čtení; sloupce `actor_uid` (FK users `ON DELETE SET NULL`), `action`, `target_type`,
+  `target_uid`, `details JSONB`, `created_at`.
+- **Vrstvy** — `bulk.Service` (`NewService(pool, maxBatch)`, `Apply(ctx, actorUID, photoUIDs, ops)`)
+  drží transakční logiku a vlastní SQL (vlastní tx kvůli atomicitě), `bulkapi` dělá HTTP +
+  validaci payloadu. Mountuje se dalším `server.WithAPI` (`buildBulkAPI` v `cmd/kukatko/bulk.go`).
+
 ### People UI (frontend)
 
 Kompletní lidský zážitek nad výše uvedenými API (react-bootstrap Superhero, i18n cs/en,

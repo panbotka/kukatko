@@ -218,7 +218,10 @@ Originály na disku v layoutu `YYYY/MM/<filename>`.
 - **`labels`** + **`photo_labels`** — `source IN (manual|ai|import)`, `uncertainty`.
 - **`users`** — `role IN (admin|editor|viewer)`, `password_hash` (bcrypt cost 12), `disabled`.
 - **`sessions`** — viz [§11](#11-auth-a-bezpečnost) (přidáno sliding expiry).
-- **`audit_log`** — durable, zapisuje se **ve stejné transakci** jako mutace.
+- **`audit_log`** — durable, zapisuje se **ve stejné transakci** jako mutace (migrace
+  `0012_audit_log.sql`, balík `internal/audit`: `Write(ctx, exec, Entry)` přes pool **i** `pgx.Tx`).
+  První konzument: hromadná editace metadat (`POST /api/v1/photos/bulk`, `internal/bulk` +
+  `internal/bulkapi`).
 
 ### 5.2 Nové tabulky v Kukátku
 
