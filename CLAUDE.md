@@ -495,7 +495,23 @@ inkrementální).
   relativní `thumb` cesta `tile_224`, fotky bez obou souřadnic se přeskočí); defaulty cache 24h /
   rate 5/s burst 10 / max 50000 features; mountuje se `server.WithAPI` (`buildMapsAPI` v
   `cmd/kukatko/maps.go`, klient se staví jen když je `maps.mapy_api_key` nastaven)),
-  `internal/web/`
+  `internal/importer/`
+  (evidence běhů importu/migrace + high-watermarky pro **inkrementální, idempotentní** import,
+  tabulka `import_runs` v migraci `0013_import_runs.sql`: `id BIGSERIAL`, `source TEXT`
+  CHECK `photoprism|photosorter`, `started_at`/`finished_at TIMESTAMPTZ`, `status TEXT`
+  CHECK `running|done|failed`, `high_watermark TIMESTAMPTZ` (největší zpracovaný zdrojový
+  timestamp, např. max PhotoPrism `UpdatedAt`), `counts JSONB` `{imported,updated,skipped,failed}`,
+  `last_error TEXT`; partial index `(source, finished_at DESC) WHERE status='done' AND
+  high_watermark IS NOT NULL` pro resume dotaz; typy `Source` (`SourcePhotoPrism`/
+  `SourcePhotoSorter` + `Valid()`)/`Status` (`StatusRunning`/`StatusDone`/`StatusFailed`)/`Counts`/
+  `Run`; `Store` = `NewStore(pool)`: `Start(ctx,source)` otevře `running` řádek (`ErrInvalidSource`),
+  `UpdateCounts(ctx,id,counts)` přepíše tally, `Complete(ctx,id,watermark,counts)` uzavře jako
+  `done` se stampnutým `finished_at`+watermarkem, `Fail(ctx,id,lastErr,counts)` jako `failed`
+  **bez** watermarku (oba matchují jen běžící běh → `ErrRunNotFound` na dvojí uzavření),
+  `Get(ctx,id)`, `LatestWatermark(ctx,source)` → `(time.Time, found bool, err)` watermark
+  **posledního úspěšného** běhu zdroje pro navázání dalšího inkrementu — ignoruje běžící/failed
+  běhy i done bez watermarku, každý zdroj má vlastní kurzor; sentinely
+  `ErrRunNotFound`/`ErrInvalidSource`), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého

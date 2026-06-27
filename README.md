@@ -661,6 +661,32 @@ s faky bez sítě/DB/disku.
   (`ListPhotosMissingFaces`, dedup = no-op), vrací počet. Upload zařazuje `face_detect` rovnou
   při ingestu; backfill je recovery cesta pro fotky nahrané, když byl box offline.
 
+### Sledování importů (`internal/importer`)
+
+Evidence běhů importu/migrace a jejich high-watermarků pro **inkrementální, idempotentní** import
+(migrace `0013_import_runs.sql`, tabulka `import_runs`; viz ARCHITECTURE.md §5.2/§9/§10). Každý běh
+importu z PhotoPrismu (`photoprism`) nebo migrace z photo-sorteru (`photosorter`) si uloží časové
+okno, které zpracoval: `high_watermark` (`TIMESTAMPTZ`) = největší zdrojový timestamp (např. max
+PhotoPrism `UpdatedAt`). Další běh téhož zdroje naváže na watermark **posledního úspěšného** běhu,
+takže spadlý/chybný běh kurzor neposune a práce se jen zopakuje.
+
+- **Schéma** — `import_runs`: `id BIGSERIAL PK`, `source TEXT CHECK(photoprism|photosorter)`,
+  `started_at`/`finished_at TIMESTAMPTZ`, `status TEXT CHECK(running|done|failed)`,
+  `high_watermark TIMESTAMPTZ` (NULL dokud běh neskončí / nic nezpracoval), `counts JSONB`
+  (`{imported,updated,skipped,failed}`), `last_error TEXT`. Partial index
+  `(source, finished_at DESC) WHERE status='done' AND high_watermark IS NOT NULL` zlevňuje resume
+  dotaz na přesně ty řádky, které čte.
+- **`importer.Store`** (`NewStore(pool)`) — lifecycle běhu: `Start(ctx, source)` otevře řádek ve
+  stavu `running` (neznámý zdroj → `ErrInvalidSource`), `UpdateCounts(ctx, id, counts)` průběžně
+  přepíše tally, `Complete(ctx, id, watermark, counts)` uzavře běh jako `done` se stampnutým
+  `finished_at` + watermarkem, `Fail(ctx, id, lastErr, counts)` jako `failed` **bez** watermarku.
+  `Complete`/`Fail` matchují jen běžící běh (žádné dvojí uzavření → `ErrRunNotFound`). `Get(ctx, id)`
+  čte jeden běh.
+- **`LatestWatermark(ctx, source)`** → `(time.Time, found bool, err)` — watermark **posledního
+  úspěšného** běhu zdroje (řazení dle `finished_at`), kterým má další inkrementální běh navázat;
+  `found=false` při prvním (plném) běhu. **Ignoruje** běžící i failed běhy a done běhy bez
+  watermarku. Každý zdroj má vlastní nezávislý kurzor.
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).
