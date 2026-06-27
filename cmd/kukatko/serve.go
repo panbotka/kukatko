@@ -73,8 +73,20 @@ func runServe(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	// The backup API is always mounted (it self-reports "not configured"); the
+	// scheduler only runs when a destination is configured. It is wired here so
+	// its scheduler can be tied to the serve context.
+	backupSvc, err := buildBackupService(cfg)
+	if err != nil {
+		return err
+	}
+	apis = append(apis, server.WithAPI(buildBackupAPI(backupSvc, authAPI).RegisterRoutes))
+
 	startWorker(ctx, jobWorker)
 	go trashSvc.RunPurge(ctx, trashPurgeInterval)
+	if backupSvc != nil {
+		go backupSvc.RunSchedule(ctx, cfg.Backup.Schedule)
+	}
 
 	addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
 	srv := server.New(addr, apis...)

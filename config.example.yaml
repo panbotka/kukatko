@@ -124,8 +124,14 @@ backup:
     secret_key: ""
     # Use path-style addressing (required by most MinIO setups).
     path_style: false
-  # Cron-style backup schedule (empty disables scheduled backups).
+  # Cron-style backup schedule (standard 5-field cron or @daily/@hourly/@every
+  # descriptors). Empty disables scheduled backups (manual `kukatko backup` and
+  # the admin trigger still work).
   schedule: ""
+  # How many of the most recent database dumps to keep in the bucket; older
+  # dumps are pruned after a successful run. 0 or below keeps every dump.
+  # Originals are never pruned.
+  retention: 7
 
 trash:
   # Days a soft-deleted item is retained before permanent deletion.

@@ -32,6 +32,7 @@ export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
 ./bin/kukatko migrate                     # spustí pending DB migrace a skončí
 ./bin/kukatko migrate photosorter         # read-only inkrementální migrace dat z photo-sorteru
 ./bin/kukatko import photoprism           # read-only inkrementální import z PhotoPrismu
+./bin/kukatko backup                      # jednorázová záloha (pg_dump + sync originálů) na S3
 ./bin/kukatko serve                       # spustí migrace, pak HTTP server (default 0.0.0.0:8080)
 ./bin/kukatko serve --config config.yaml  # explicitní cesta ke konfiguraci
 ./bin/kukatko version                     # vypíše verzi a commit
@@ -826,6 +827,39 @@ spuštění a sledování importů — viditelná v navbaru jen administrátorů
   že PhotoPrism zůstává primární a import je inkrementální/opakovatelný; před **prvním** (potenciálně
   velkým) během zdroje se ptá na potvrzení. 409 → „import už běží". i18n cs/en.
 
+### S3 záloha (`internal/backup` + `internal/backupapi`)
+
+V procesu, plánovaná záloha **databáze a originálů** na libovolný **S3-kompatibilní** endpoint
+(AWS / MinIO / Backblaze / Wasabi) přes **`minio-go/v7`** s **path-style** adresováním a
+**streamovaným** uploadem (`objectSize=-1`, nikdy nedrží soubor celý v RAM). Vše za rozhraními
+(`ObjectStore`/`Dumper`/`OriginalSource`) → unit-testovatelné s faky bez S3, DB i FS. Tajné klíče
+nikdy neprosáknou do logu ani chyby.
+
+Jeden běh dělá tři věci v pořadí:
+
+1. **Dump databáze** — shell-out na **`pg_dump`** (custom/komprimovaný formát, `--no-owner
+   --no-privileges`) streamovaný rovnou na S3 jako `db/kukatko-<timestamp>.dump`. DSN se předává
+   přes env proměnnou `PGDATABASE` (ne argument), aby heslo nebylo vidět v `ps`. Timestamp dodává
+   plánovač/příkaz.
+2. **Sync originálů** — projde úložiště originálů a **inkrementálně** nahraje jen ty, co v bucketu
+   ještě nejsou (skip dle klíče + velikosti), streamovaně; klíč = relativní cesta originálu, dump
+   se ukládá pod `db/` prefix. Dočasná upload složka `.tmp` se přeskakuje.
+3. **Retence** — po úspěšném dumpu prořeže staré dumpy na posledních `backup.retention` (≤ 0 =
+   nechat vše). **Nikdy nesahá na originály** (jen prefix `db/`) a **nikdy neprořezává po
+   neúspěšném dumpu**, takže selhání zálohy nemůže smazat poslední dobré dumpy.
+
+- **Plánovač**: `backup.schedule` (standardní 5-pole cron nebo `@daily`/`@hourly`/`@every 6h`
+  deskriptory přes `robfig/cron`) běží uvnitř `kukatko serve`; prázdný/neplatný rozvrh plánované
+  zálohy vypne (manuální stále fungují). Souběžné běhy se serializují (`ErrAlreadyRunning`).
+- **CLI**: `kukatko backup` spustí jednu zálohu synchronně a vypíše počty (ops/cron bez běžícího
+  serveru). Vyžaduje `backup.s3.endpoint` + `backup.s3.bucket`.
+- **Admin API** (`internal/backupapi`, admin-only): `GET /api/v1/backup` (stav + poslední běh,
+  `configured:false` když není nakonfigurováno) a `POST /api/v1/backup` (spustí zálohu na pozadí →
+  202, 409 když už běží, 503 bez konfigurace).
+- Runtime apt závislost: **`postgresql-client`** (pg_dump). Konfig klíče
+  `backup.s3.{endpoint,region,bucket,access_key,secret_key,path_style}`, `backup.schedule`,
+  `backup.retention`; tajemství (`access_key`/`secret_key`) přes env.
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).
@@ -921,6 +955,8 @@ Endpointy pod `/api/v1` (JSON):
 | GET | `/import/runs` | admin | historie běhů importu/migrace + `sources` flagy → `{runs,limit,offset,sources}` (viz Import admin UI) |
 | POST | `/import/photoprism` | admin | zařadí `pp_import` job (jen je-li zdroj konfigurován) → 202 `{job_id,status}`, 409 už běží |
 | POST | `/import/photosorter` | admin | zařadí `ps_migrate` job (jen je-li zdroj konfigurován) → 202 `{job_id,status}`, 409 už běží |
+| GET | `/backup` | admin | stav S3 zálohy + poslední běh (`configured:false` bez konfigurace) |
+| POST | `/backup` | admin | spustí zálohu na pozadí → 202 `{status}`, 409 už běží, 503 bez konfigurace |
 
 RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin` /
 `RequireAuthOrDownloadToken`). Konfigurační

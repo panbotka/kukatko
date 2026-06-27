@@ -27,7 +27,7 @@ func TestRootCmd_subcommandsRegistered(t *testing.T) {
 	t.Parallel()
 
 	root := newRootCmd()
-	want := map[string]bool{"serve": false, "version": false, "import": false}
+	want := map[string]bool{"serve": false, "version": false, "import": false, "backup": false}
 	for _, c := range root.Commands() {
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true

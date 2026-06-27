@@ -59,6 +59,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"bulk.max_batch_size", cfg.Bulk.MaxBatchSize, 1000},
 		{"maps.base_url", cfg.Maps.BaseURL, "https://api.mapy.com"},
 		{"backup.s3.path_style", cfg.Backup.S3.PathStyle, false},
+		{"backup.retention", cfg.Backup.Retention, 7},
 		{"web.secure_cookies", cfg.Web.SecureCookies, false},
 		{"auth.session_ttl", cfg.Auth.SessionTTL, 168 * time.Hour},
 		{"auth.session_max_lifetime", cfg.Auth.SessionMaxLifetime, 720 * time.Hour},

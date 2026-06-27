@@ -631,7 +631,33 @@ inkrementální).
   `{runs,limit,offset,sources:{photoprism,photosorter}}` (stránka `import_runs` newest-started-first
   přes `importer.Store.List`); celá API se v `serve` mountuje vždy (`buildImportAPI` v
   `cmd/kukatko/import.go`), aby historie fungovala i bez zdroje; triggery neběží inline — patří na
-  background worker), `internal/web/`
+  background worker), `internal/backup/`
+  (v procesu, plánovaná **S3 záloha** databáze a originálů, vše za rozhraními
+  `ObjectStore`/`Dumper`/`OriginalSource` → unit-testovatelné s faky bez S3/DB/FS; `Service` =
+  `New(Config{Objects,Originals,Dumper,Retention,Logger})` (panika na nil Objects/Originals/Dumper);
+  **`Run(ctx,ts)`** dělá tři věci v pořadí: (1) **dump DB** přes `Dumper` streamovaný na S3 jako
+  `db/kukatko-<ts>.dump` (`objectSize=-1`, nikdy celý v RAM; ts dodá plánovač/příkaz), (2)
+  **inkrementální sync originálů** (`SyncOriginals` — skip dle klíče+velikosti přes `ObjectStore.Stat`,
+  klíč = relativní cesta originálu), (3) **retence** (`PruneDumps` — prořeže staré dumpy na posledních
+  `Retention`, `≤0` = nechat vše; **jen prefix `db/`, nikdy originály**); **dump je povinný** — selhání
+  abortuje běh **před** prořezáním, takže neúspěšná záloha nemůže smazat poslední dobré dumpy;
+  `Run` serializuje souběžné běhy (`ErrAlreadyRunning`), `Trigger(ctx,ts)` spustí běh na pozadí
+  (detached ctx, pro HTTP handler), `Status()` = stav + poslední běh; **`RunSchedule(ctx,spec)`**
+  plánovač přes `ParseSchedule` (standardní 5-pole cron / `@daily`/`@every` deskriptory přes
+  `robfig/cron`; prázdný → `ErrNoSchedule`, neplatný → `ErrInvalidSchedule` → plánované zálohy
+  vypnuté, manuální fungují) s vlastní ctx-aware smyčkou; **`s3Store`** (`NewS3Store(S3Options)`) =
+  minio-go/v7 adaptér, **path-style** (`BucketLookupPath`), `parseEndpoint` (scheme→TLS, bare host =
+  TLS), sentinely `ErrNotConfigured`/`ErrInvalidEndpoint`, `isNotFound` (404/NoSuchKey) → Stat
+  ok=false / Remove idempotentní; **`pgDumper`** (`NewPgDumper(dsn)`) = shell-out `pg_dump
+  --format=custom --no-owner --no-privileges`, **DSN přes env `PGDATABASE`** (ne argument, aby heslo
+  nebylo v `ps`), `Dump` vrací reader (Close čeká na proces + surfacuje stderr), `PgDumpAvailable`,
+  `ErrPgDumpMissing`; **`DiskOriginals`** (`NewDiskOriginals(root)`) = walk úložiště (skip `.tmp`,
+  confine klíče proti traversalu); klíče tajemství nikdy nelogovat), `internal/backupapi/`
+  (admin-only HTTP API nad zálohou: rozhraní `Service` (Status+Trigger, splňuje ho `*backup.Service`,
+  fakeovatelné, **nil = nenakonfigurováno**); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes`
+  mountuje `GET /backup` (stav + poslední běh, nil service → `configured:false`) a `POST /backup`
+  (spustí `Trigger` na pozadí → 202 `{status:"started"}`, `ErrAlreadyRunning` → 409, nil service →
+  503); mountuje se v `serve` vždy (`buildBackupAPI` v `cmd/kukatko/backup.go`)), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -856,7 +882,9 @@ inkrementální).
 - **CLI:** `kukatko serve` (načte config, **spustí migrace**, **bootstrapne admina**, spustí
   hodinové čištění expirovaných session, **background worker** (`internal/worker`) na
   zpracování fronty jobů a **plánovaný úklid koše** (`internal/trash` `RunPurge`, každých 6 h —
-  trvale maže fotky archivované déle než `trash.retention_days`; retence ≤ 0 ho vypne), pak
+  trvale maže fotky archivované déle než `trash.retention_days`; retence ≤ 0 ho vypne),
+  **plánovanou S3 zálohu** (`internal/backup` `RunSchedule` na `backup.schedule`; jen je-li
+  `backup.s3.{endpoint,bucket}` nakonfigurováno), pak
   poslouchá na `web.host:web.port`, default
   `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`, auth/admin API
   pod `/api/v1` — viz níže, ostatní cesty servíruje **embedované SPA** s fallbackem na
@@ -866,6 +894,9 @@ inkrementální).
   `errPSMigrateNotConfigured`; pro ops/cron bez běžícího serveru),
   `kukatko import photoprism` (synchronní read-only inkrementální import z PhotoPrismu — `ppimport`;
   potřebuje `import.photoprism.base_url`, jinak chyba; pro ops/cron bez běžícího serveru),
+  `kukatko backup` (synchronní jednorázová **S3 záloha** — `internal/backup`; pg_dump + sync
+  originálů + retence; potřebuje `backup.s3.{endpoint,bucket}`, jinak `errBackupNotConfigured`;
+  pro ops/cron bez běžícího serveru),
   `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
   `server.New(addr, server.WithAPI(register))` mountuje route-skupiny pod `/api/v1`.
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
@@ -1006,6 +1037,15 @@ inkrementální).
   singleton job → 202 `{job_id,status}`; `jobs.ErrDuplicate` (už běží) → 409, jiná chyba → 500.
   Celá API se mountuje vždy (`buildImportAPI` v `cmd/kukatko/import.go`), aby historie fungovala i
   bez konfigurovaného zdroje. Frontend (`ImportPage`) polluje `GET /import/runs` + `GET /jobs/stats`.
+- **Backup API (`/api/v1`, `internal/backupapi`, admin-only přes `RequireAdmin`):** stav a trigger
+  S3 zálohy. `GET /backup` → stav + poslední běh (`{configured,running,last_started_at,
+  last_finished_at,last_error,last_result}`; bez konfigurace `configured:false`); `POST /backup`
+  spustí zálohu na **pozadí** (`Trigger`) → 202 `{status:"started"}`, `backup.ErrAlreadyRunning` →
+  409, bez konfigurace → 503. Celá API se mountuje **vždy** (`buildBackupAPI` v
+  `cmd/kukatko/backup.go`); plánovač (`backup.schedule`) a CLI `kukatko backup` sdílí stejný
+  `backup.Service`. Konfig klíče `backup.s3.{endpoint,region,bucket,access_key,secret_key,
+  path_style}`, `backup.schedule` (cron), `backup.retention` (kolik posledních dumpů nechat; ≤ 0 =
+  vše). Runtime dep `pg_dump` (`postgresql-client`). Tajemství (`access_key`/`secret_key`) přes env.
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

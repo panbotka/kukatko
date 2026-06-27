@@ -210,10 +210,15 @@ type MapsConfig struct {
 	BaseURL string `mapstructure:"base_url"`
 }
 
-// BackupConfig holds the S3 destination and schedule for in-process backups.
+// BackupConfig holds the S3 destination, schedule and retention for in-process
+// backups.
 type BackupConfig struct {
 	S3       S3Config `mapstructure:"s3"`
 	Schedule string   `mapstructure:"schedule"`
+	// Retention is how many of the most recent database dumps are kept in the
+	// bucket; older dumps are pruned after a successful backup. A value <= 0
+	// disables pruning (every dump is kept). Originals are never pruned.
+	Retention int `mapstructure:"retention"`
 }
 
 // S3Config holds connection details for an S3-compatible backup endpoint.
@@ -392,6 +397,7 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("backup.s3.secret_key", "")
 	v.SetDefault("backup.s3.path_style", false)
 	v.SetDefault("backup.schedule", "")
+	v.SetDefault("backup.retention", 7)
 
 	v.SetDefault("trash.retention_days", 30)
 
