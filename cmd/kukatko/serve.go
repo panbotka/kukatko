@@ -86,10 +86,10 @@ func runServe(cmd *cobra.Command) error {
 // buildServices assembles every HTTP API group and the background worker over a
 // shared queue store: upload/ingest, photo browse/curation (with embedding-backed
 // similar search), face auto-clustering, per-subject face outlier detection, the
-// subject (people) catalogue, the album and label catalogue, the admin jobs and
-// processing APIs, and the image_embed and face_detect worker handlers. It
-// returns the server options registering those routes plus the worker for the
-// serve command to run.
+// subject (people) catalogue, the album and label catalogue, the maps proxy and
+// GeoJSON feed, the admin jobs and processing APIs, and the image_embed and
+// face_detect worker handlers. It returns the server options registering those
+// routes plus the worker for the serve command to run.
 func buildServices(
 	cfg *config.Config, db *database.DB, authAPI *auth.API,
 ) ([]server.Option, *worker.Worker, error) {
@@ -118,6 +118,10 @@ func buildServices(
 	peopleAPI := buildPeopleAPI(db, authAPI)
 	organizeAPI := buildOrganizeAPI(db, authAPI)
 	bulkAPI := buildBulkAPI(cfg, db, authAPI)
+	mapsAPI, err := buildMapsAPI(cfg, db, authAPI)
+	if err != nil {
+		return nil, nil, err
+	}
 	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc)
 
 	return []server.Option{
@@ -129,6 +133,7 @@ func buildServices(
 		server.WithAPI(peopleAPI.RegisterRoutes),
 		server.WithAPI(organizeAPI.RegisterRoutes),
 		server.WithAPI(bulkAPI.RegisterRoutes),
+		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
 	}, jobWorker, nil

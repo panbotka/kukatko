@@ -164,9 +164,14 @@ type AuthConfig struct {
 	LoginRateWindow time.Duration `mapstructure:"login_rate_window"`
 }
 
-// MapsConfig holds the server-side mapy.com API key (kept off the client).
+// MapsConfig holds the server-side mapy.com API key (kept off the client) and
+// the base URL of the mapy.com REST API the tile and reverse-geocode proxies
+// call.
 type MapsConfig struct {
 	MapyAPIKey string `mapstructure:"mapy_api_key"`
+	// BaseURL is the root of the mapy.com REST API; it is overridable mainly so
+	// tests can point the proxy at a fake server.
+	BaseURL string `mapstructure:"base_url"`
 }
 
 // BackupConfig holds the S3 destination and schedule for in-process backups.
@@ -335,6 +340,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.login_rate_window", "15m")
 
 	v.SetDefault("maps.mapy_api_key", "")
+	v.SetDefault("maps.base_url", "https://api.mapy.com")
 
 	setOpsDefaults(v)
 }

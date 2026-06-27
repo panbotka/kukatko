@@ -464,6 +464,36 @@ inkrementální).
   `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413, jinak 500;
   per-foto chyby vrací 200 s detailem v těle; mountuje se dalším `server.WithAPI`
   (`buildBulkAPI` v `cmd/kukatko/bulk.go`)),
+  `internal/mapy/`
+  (server-side HTTP klient k mapy.com REST API, **klíč nikdy neopustí server** — posílá se jen
+  v hlavičce `X-Mapy-Api-Key`, nikdy v URL/chybě, vše za rozhraním `Client` (fakeovatelné):
+  `New(Config{BaseURL,APIKey,Lang,Timeout,HTTPClient})` → `*HTTPClient`; `Tile(ctx,TileParams{
+  Mapset,Z,X,Y,Retina}) (*TileResult,error)` (validuje mapset allowlist, staví URL
+  `/v1/maptiles/{mapset}/256[@2x]/{z}/{x}/{y}`, **streamuje** body přes `cancelReadCloser` který
+  na Close zruší request ctx — nikdy nedrží dlaždici v RAM), `ReverseGeocode(ctx,lat,lng)
+  (*GeocodeResult,error)` (`/v1/rgeocode?lon=&lat=&lang=cs` → zjednodušený první `item` na
+  `{Name,Location,RegionalStructure}`); allowlist `basic|outdoor|aerial|winter`
+  (`IsValidMapset`), retina jen `basic`/`outdoor` (`RetinaSupported`); sentinely
+  `ErrUnauthorized` (401/403) / `ErrNotFound` (404 i prázdné items) / `ErrRateLimited` (429) /
+  `ErrUpstream` (jiný status / nečitelná odpověď) / `ErrUnavailable` (transport / 502/503/504) /
+  `ErrInvalidMapset` / `ErrInvalidURL`; `statusError` **nepřidává tělo** odpovědi do chyby, aby
+  klíč neprosákl ani když ho mapy.com echoují), `internal/mapsapi/`
+  (HTTP API pro mapy — tile proxy, reverse geocode a GeoJSON feed; rozhraní `TileFetcher`/
+  `Geocoder` (splňuje je `mapy.Client`, nil → 503) a `PhotoLister` (`photos.Store.List`) →
+  unit-testovatelné s faky; `NewAPI(Config{Tiles,Geocoder,Photos,RequireAuth,TileCacheMaxAge,
+  GeocodeCacheTTL,GeocodeRatePerSec,GeocodeRateBurst,MaxGeoPhotos})`+`RegisterRoutes` mountuje
+  `/map` za `RequireAuth`: `GET /map/tiles/{mapset}/{z}/{x}/{y}` (validuje mapset→400/retina ze
+  sufixu `@2x` na `{y}` nebo `?retina=true`, **streamuje** přes `io.Copy` s `Cache-Control:
+  public, max-age, immutable`; chyby přes `writeTileError` → 404/429/503/502), `GET /map/rgeocode
+  ?lat=&lng=` (parsuje+range-checkuje souřadnice→400, **TTL+capacity cache** `geocodeCache` klíč =
+  souřadnice na 5 desetin, uncached lookup přes **token-bucket** `rateLimiter`→429 šetří kredity,
+  odpověď zjednodušená + `Cache-Control: private`), `GET /map/photos` (GeoJSON
+  **FeatureCollection**, `parseGeoParams` vynutí `HasGPS=true` + ctí `taken_after`/`taken_before`/
+  `album`/`label`/`archived`/`private`, `Limit=MaxGeoPhotos`, řazení taken_at desc; každá feature
+  `Point` se souřadnicí RFC 7946 `[lng,lat]` a properties `uid`/`title`/`taken_at`/`media_type`/
+  relativní `thumb` cesta `tile_224`, fotky bez obou souřadnic se přeskočí); defaulty cache 24h /
+  rate 5/s burst 10 / max 50000 features; mountuje se `server.WithAPI` (`buildMapsAPI` v
+  `cmd/kukatko/maps.go`, klient se staví jen když je `maps.mapy_api_key` nastaven)),
   `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
@@ -684,6 +714,19 @@ inkrementální).
   rollbackne celou dávku (500). Konflikt set/clear nebo archive/unarchive, neznámá operace,
   chybějící album/štítek v add → **400**; dávka nad `bulk.max_batch_size` (default 1000) → **413**.
   Mountuje se dalším `server.WithAPI` (`buildBulkAPI` v `cmd/kukatko/bulk.go`).
+- **Maps API (`/api/v1`, `internal/mapsapi` + `internal/mapy`, přihlášený přes `RequireAuth`):**
+  backendová proxy na mapy.com (**klíč nikdy do klienta** — jen hlavička `X-Mapy-Api-Key`) +
+  GeoJSON feed. `GET /map/tiles/{mapset}/{z}/{x}/{y}` — proxy dlaždice, **streamuje** s dlouhým
+  immutable `Cache-Control`; `mapset` allowlist `basic|outdoor|aerial|winter` (jiný → 400, ještě
+  před voláním), retina `@2x` (sufix na `{y}` nebo `?retina=true`) jen pro `basic`/`outdoor`,
+  neplatné `z`/`x`/`y` → 400. `GET /map/rgeocode?lat=&lng=` — reverse geocode → zjednodušené
+  `{name,location,regional_structure}`, **cachované** (klíč = zaokrouhlená souřadnice) a
+  **rate-limitované** (token-bucket, geocode = 4 kredity) → 429 přes limit, 404 bez shody.
+  `GET /map/photos` — **GeoJSON FeatureCollection** geotagovaných fotek (souřadnice `[lng,lat]`),
+  ctí filtry `taken_after`/`taken_before`/`album`/`label`/`archived`/`private`, feature nese
+  `uid`/`title`/`taken_at`/`media_type`/relativní `thumb`. mapy.com chyby (401/403→502, 404→404,
+  429→429, 5xx→502/503) **neprosakují klíč**; bez `maps.mapy_api_key` vrací tile/rgeocode 503,
+  GeoJSON funguje. Mountuje se `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

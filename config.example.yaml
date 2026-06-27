@@ -109,6 +109,9 @@ auth:
 maps:
   # mapy.com API key. Kept server-side (proxied). Read from MAPY_API_KEY.
   mapy_api_key: ""
+  # Base URL of the mapy.com REST API the tile/reverse-geocode proxies call.
+  # Override only to target a different endpoint (e.g. a test double).
+  base_url: "https://api.mapy.com"
 
 backup:
   s3:

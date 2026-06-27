@@ -568,6 +568,32 @@ Set/clear páry jsou samostatné klíče (ne presence/null), takže payload je j
   drží transakční logiku a vlastní SQL (vlastní tx kvůli atomicitě), `bulkapi` dělá HTTP +
   validaci payloadu. Mountuje se dalším `server.WithAPI` (`buildBulkAPI` v `cmd/kukatko/bulk.go`).
 
+### Mapy: dlaždice, reverse geocode & GeoJSON (`internal/mapy` + `internal/mapsapi`)
+
+Backendová proxy na [mapy.com](https://mapy.com), aby **API klíč nikdy neopustil server** (posílá
+se jen v hlavičce `X-Mapy-Api-Key`), plus GeoJSON feed geotagovaných fotek pro mapový pohled.
+Všechny endpointy vyžadují přihlášení (`RequireAuth`), mountuje se `server.WithAPI` (`buildMapsAPI`
+v `cmd/kukatko/maps.go`).
+
+- **`GET /api/v1/map/tiles/{mapset}/{z}/{x}/{y}`** — proxy dlaždice: backend doplní klíč a **streamuje**
+  bajty zpět s dlouhým `Cache-Control` (immutable). `mapset` je omezen na allowlist
+  `basic|outdoor|aerial|winter` (jiný → 400, ještě před voláním mapy.com); retina `@2x` (sufix na `{y}`
+  nebo `?retina=true`) se aplikuje jen pro `basic`/`outdoor`. Neplatné `z`/`x`/`y` → 400.
+- **`GET /api/v1/map/rgeocode?lat=&lng=`** — reverse geocode → zjednodušené
+  `{name, location, regional_structure}`. **Cachuje se** (klíč = zaokrouhlená souřadnice) a uncached
+  lookupy jsou **rate-limitované** kvůli kreditům (geocode = 4 kredity); přes limit → 429, bez shody → 404.
+- **`GET /api/v1/map/photos`** — **GeoJSON FeatureCollection** geotagovaných fotek (jen ty s lat/lng;
+  souřadnice RFC 7946 `[lng, lat]`). Ctí standardní list filtry (`taken_after`/`taken_before`, `album`,
+  `label`, `archived`, `private`); každá feature nese `uid`, `title`, `taken_at`, `media_type` a relativní
+  `thumb` cestu pro markery/clustering.
+- **mapy.com chyby** (401/403/404/429/5xx) se mapují na rozumné statusy (bad key/upstream → 502,
+  nedostupné → 503, 404/429 propagovány) a **nikdy neprosakuje klíč** do odpovědí ani chyb. Bez
+  nakonfigurovaného klíče (`maps.mapy_api_key`) vrací tile/rgeocode 503, GeoJSON funguje dál.
+- **Vrstvy** — `mapy.Client` (HTTP klient k mapy.com za rozhraním, fakeovatelný; sentinely
+  `ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/`ErrUpstream`/`ErrUnavailable`/`ErrInvalidMapset`),
+  `mapsapi` dělá HTTP handlery + cache + rate-limit + parsing filtrů. Base URL je konfigurovatelná
+  (`maps.base_url`, default `https://api.mapy.com`) hlavně pro test double (httptest fake mapy.com).
+
 ### People UI (frontend)
 
 Kompletní lidský zážitek nad výše uvedenými API (react-bootstrap Superhero, i18n cs/en,
