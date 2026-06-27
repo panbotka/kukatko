@@ -242,7 +242,9 @@ inkrementální).
   bez diakritiky/ASCII, kolize → číselný sufix `name-2`)/`GetSubjectByUID`/`GetSubjectBySlug`/
   `UpdateSubject`(přeslugování + refresh `faces.subject_name` cache)/`ListSubjects` (s počty
   nearchivovaných... resp. **non-invalid** markerů per subjekt, řazení dle jména)/
-  `DeleteSubject` (FK odpojí markery, vyčistí faces cache); **markery** `CreateMarker`
+  `DeleteSubject` (FK odpojí markery, vyčistí faces cache)/`ListPhotoUIDsBySubject` (distinct
+  uid nearchivovaných fotek s non-invalid markerem subjektu, newest-first — podklad galerie
+  subjektu v `peopleapi`); **markery** `CreateMarker`
   (validace typu/`0..1` bounds, volitelně rovnou subjekt → faces cache)/`GetMarkerByUID`/
   `ListMarkersByPhoto`/`AssignSubject`+`UnassignSubject` (v transakci aktualizují
   denormalizovaný **faces cache** `marker_uid`/`subject_uid`/`subject_name` přes
@@ -356,14 +358,29 @@ inkrementální).
   (editor/admin HTTP API nad outlier detekcí: `Service` rozhraní (splňuje ho `outliers.Service`),
   `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mountuje `GET /subjects/{uid}/outliers`
   za `RequireWrite`; 503 bez backendu, 404 chybějící subjekt; mountuje se v `serve`
-  (`buildOutlierAPI` v `cmd/kukatko/outliers.go`)), `internal/web/`
+  (`buildOutlierAPI` v `cmd/kukatko/outliers.go`)), `internal/peopleapi/`
+  (read/curace HTTP API nad subjekty (osoby/zvířata/jiné) — podklad People UI: rozhraní
+  `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubject`/
+  `UpdateSubject`/`DeleteSubject`/`ListPhotoUIDsBySubject`) a `PhotoStore` (`photos.Store.ListByUIDs`)
+  → unit-testovatelné s faky bez DB; `NewAPI(Config{Subjects,Photos,RequireAuth,RequireWrite})`+
+  `RegisterRoutes` mountuje **ploché** cesty (ne mounted subrouter, aby koexistovaly s
+  `outlierapi` `GET /subjects/{uid}/outliers` bez chi Mount konfliktu): `GET /subjects`
+  (RequireAuth, `{subjects:[SubjectCount]}` s počty markerů), `POST /subjects` (RequireWrite,
+  create → 201, validace jména/typu), `GET /subjects/{uid}` (RequireAuth), `PATCH /subjects/{uid}`
+  (RequireWrite, editace name/type/favorite/private/notes/cover_photo_uid), `DELETE /subjects/{uid}`
+  (RequireWrite → 204), `GET /subjects/{uid}/photos` (RequireAuth, paginovaná galerie fotek subjektu
+  `{photos,total,limit,offset,next_offset}` — `ListPhotoUIDsBySubject` (distinct non-invalid
+  markery, nearchivované, newest-first) → page → `ListByUIDs` → reorder dle uid pořadí); body
+  decode `DisallowUnknownFields` + 1 MiB limit + prázdné jméno → 400; sentinely mapované
+  `ErrSubjectNotFound`→404/`ErrInvalidType`→400; mountuje se osmým `server.WithAPI`
+  (`buildPeopleAPI` v `cmd/kukatko/people.go`)), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
   frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
   (`Layout` = navbar shell s user-menu/logout + role-gated nav — odkaz **Knihovna**
-  míří na `/library`, **Hledat** na `/search`, **Nahrát** na `/upload` (jen editor/admin),
+  míří na `/library`, **Hledat** na `/search`, **Lidé** na `/people`, **Nahrát** na `/upload` (jen editor/admin),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
   `LanguageSwitcher`;
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
@@ -389,7 +406,23 @@ inkrementální).
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
   po dokončení odkaz na nově nahrané fotky (`/library?sort=added`),
-  `NotFoundPage`), `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
+  `PhotoDetailPage` = `/photos/:uid` detail fotky: obrázek s interaktivním `FaceOverlay`
+  (pojmenování obličejů) + pruh `SimilarPhotos`,
+  `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (cover/jméno/počet
+  fotek), editorům odkaz na review shluků,
+  `SubjectPage` = `/people/:uid` stránka osoby: hlavička (jméno/typ + edit přes
+  `SubjectEditModal`), paginovaná galerie (`useSubjectPhotos` + `SubjectPhotoTile` se
+  „set as cover" akcí editorům), a sekce `Outliers` (jen editor/admin),
+  `ClustersPage` = `/people/clusters` (editor/admin) review fronta nepojmenovaných shluků:
+  `ClusterCard` (reprezentant + ukázky + odebrání zatoulaného obličeje + jednorázové pojmenování
+  celého shluku) v `Row`/`Col` mřížce, optimistické odebrání po pojmenování,
+  `NotFoundPage`),
+  `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`, `FaceThumb`
+  (čtvercový výřez obličeje z thumbnailu fotky dle normalized bbox přes `faceCropStyle`),
+  `FaceOverlay`+`FaceAssignPanel` (boxy přes obrázek z normalized bbox přes `faceBoxStyle`,
+  klik → panel s návrhy (one-tap accept) + free-text jméno; optimistický update + refetch),
+  `ClusterCard`, `Outliers` (žebříček podezřelých obličejů s one-tap unassign);
+  `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`; `ProtectedRoute` =
   `RequireAuth` + `RequireRole` route guardy), `hooks/` (`usePaginatedPhotos` = sdílený
   paginovaný infinite-scroll loader nad libovolným `PageFetcher`: akumuluje stránky,
@@ -400,13 +433,18 @@ inkrementální).
   `useUploadQueue` = fronta uploadu: `addFiles` (dedup jméno+velikost+mtime)/`removeItem`/
   `start`/`retry`/`retryFailed`/`clear`, konkurenční strop `MAX_CONCURRENT_UPLOADS` (3),
   per-file status+progress, souhrn počtů, `createdUids` pro odkaz do knihovny; auto-drainuje
-  frontu efektem po `start`/retry, ruší běžící uploady při unmountu),
+  frontu efektem po `start`/retry, ruší běžící uploady při unmountu;
+  `useSubjectPhotos` = obálka nad `usePaginatedPhotos` nad `GET /subjects/{uid}/photos`
+  (galerie osoby, reset+reload při změně `uid`)),
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` + `LIBRARY_DEFAULTS` + `viewToParams`
   (sanitizuje sort/archived) + `hasActiveFilters` (`{ignoreQuery}` na search stránce) —
   mapování URL stavu na API params; `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
-  + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér),
+  + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér;
+  `faceGeometry.ts` = pure `faceBoxStyle` (normalized bbox → absolutní `left/top/width/height`
+  v %, pro overlay) + `faceCropStyle` (čtvercový výřez obličeje z thumbnailu přes
+  background-position/-size, pro `FaceThumb`)),
   `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
   `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
@@ -419,11 +457,20 @@ inkrementální).
   `PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`; `upload.ts` = `uploadFile(file,{onProgress,signal})`
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
-  `UploadOutcome`), `i18n/` (i18next init + `locales/{cs,en}/common.json`;
+  `UploadOutcome`; `photos.ts` navíc `fetchPhoto(uid)` (detail `GET /photos/{uid}` →
+  `PhotoDetail` = `Photo`+`files`); `people.ts` = People/face klient: subjekty
+  `fetchSubjects`/`fetchSubject`/`createSubject`/`updateSubject`/`deleteSubject`/
+  `fetchSubjectPhotos`, obličeje `fetchFaces`/`assignFace`, shluky `fetchClusters`/
+  `assignCluster`/`removeClusterFace`, outlier `fetchOutliers`; typy `Subject`/`SubjectCount`/
+  `SubjectInput`/`SubjectType`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
+  `ClusterView`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/
+  `OutlierFace`; sdílí `ApiError`+`buildPhotoQuery` z `auth.ts`/`photos.ts`),
+  `i18n/` (i18next init + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth` → `Layout` (`/`, `/library`,
-  `/search`, `/account`; `/upload` navíc pod `RequireRole role="editor"` = write-only). Konfig:
+  `/search`, `/photos/:uid`, `/people`, `/people/:uid`, `/account`; `/upload` a `/people/clusters`
+  navíc pod `RequireRole role="editor"` = write-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.
@@ -497,6 +544,16 @@ inkrementální).
   `POST /photos/{uid}/faces/assign` (`unassign_person`), tahle vrstva nemutuje; 503 bez backendu,
   404 chybějící subjekt. Mountuje se pátým `server.WithAPI` (`buildOutlierAPI` v
   `cmd/kukatko/outliers.go`).
+- **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
+  `{subjects:[{...subject, marker_count}]}` (řazení dle jména, počty non-invalid markerů);
+  `POST /subjects` (RequireWrite) → 201 vytvoří subjekt z `{name,type,favorite,private,notes,
+  cover_photo_uid?}` (prázdné jméno / neznámý typ → 400); `GET /subjects/{uid}` (RequireAuth) →
+  subjekt (404); `PATCH /subjects/{uid}` (RequireWrite) → editace stejných polí (404/400);
+  `DELETE /subjects/{uid}` (RequireWrite) → 204 (markery se odpojí server-side); `GET
+  /subjects/{uid}/photos` (RequireAuth) → paginovaná galerie fotek subjektu
+  `{photos,total,limit,offset,next_offset}` (newest-first, jen nearchivované, `limit`≤500). Mountuje
+  se osmým `server.WithAPI` (`buildPeopleAPI` v `cmd/kukatko/people.go`). Záznamy fotek subjektu
+  staví na `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markery → photo uid).
 - **Process API (`/api/v1`, `internal/processapi`, admin-only přes `RequireAdmin`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` pro fotky bez embeddingu),
   `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů),

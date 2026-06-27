@@ -7,6 +7,7 @@
     "home": "Domů",
     "library": "Knihovna",
     "search": "Hledat",
+    "people": "Lidé",
     "map": "Mapa",
     "upload": "Nahrát",
     "account": "Můj účet",
@@ -142,6 +143,104 @@
     "title": "Podobné fotky",
     "loading": "Načítání podobných fotek…",
     "error": "Podobné fotky se nepodařilo načíst."
+  },
+  "people": {
+    "title": "Lidé",
+    "reviewClusters": "Projít skupiny obličejů",
+    "loading": "Načítání lidí…",
+    "error": "Lidi se nepodařilo načíst.",
+    "empty": {
+      "title": "Zatím žádní lidé",
+      "hint": "Pojmenuj nějaké skupiny obličejů a začni budovat své lidi."
+    },
+    "noCover": "Bez náhledu",
+    "private": "Soukromé",
+    "photoCount": "{{count}} fotek"
+  },
+  "subject": {
+    "loading": "Načítání osoby…",
+    "error": "Tuto osobu se nepodařilo načíst.",
+    "back": "Lidé",
+    "editButton": "Upravit",
+    "photos": "Fotky",
+    "loadingPhotos": "Načítání fotek…",
+    "noPhotos": "Tato osoba zatím nemá žádné fotky.",
+    "loadMore": "Načíst další",
+    "loadingMore": "Načítání…",
+    "type": {
+      "person": "Osoba",
+      "pet": "Zvíře",
+      "other": "Jiné"
+    },
+    "cover": {
+      "set": "Nastavit jako náhled",
+      "current": "Náhled"
+    },
+    "edit": {
+      "title": "Upravit osobu",
+      "error": "Nepodařilo se uložit. Zkontroluj jméno a zkus to znovu.",
+      "name": "Jméno",
+      "type": "Typ",
+      "favorite": "Oblíbené",
+      "private": "Soukromé",
+      "notes": "Poznámky",
+      "cancel": "Zrušit",
+      "save": "Uložit"
+    }
+  },
+  "clusters": {
+    "title": "Skupiny obličejů",
+    "subtitle": "Nepojmenované skupiny stejného obličeje — pojmenuj celou skupinu naráz.",
+    "loading": "Načítání skupin obličejů…",
+    "error": "Skupiny obličejů se nepodařilo načíst.",
+    "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "empty": {
+      "title": "Žádné skupiny k projití",
+      "hint": "Nové skupiny se zde objeví, jak budou obličeje detekovány a shlukovány."
+    },
+    "representative": "Reprezentativní obličej",
+    "sample": "Ukázkový obličej",
+    "removeFace": "Odebrat tento obličej ze skupiny",
+    "size": "{{count}} obličejů",
+    "nameAs": "Pojmenovat jako {{name}} ({{confidence}} %)",
+    "nameLabel": "Pojmenuj tuto skupinu",
+    "namePlaceholder": "Nové nebo existující jméno…",
+    "name": "Pojmenovat skupinu"
+  },
+  "faces": {
+    "title": "Obličeje",
+    "loading": "Načítání obličejů…",
+    "error": "Obličeje se nepodařilo načíst.",
+    "none": "Na této fotce nebyl detekován žádný obličej.",
+    "unnamed": "Nepojmenovaný obličej {{index}}",
+    "assignError": "Přiřazení se nepodařilo uložit. Zkus to prosím znovu.",
+    "panel": {
+      "title": "Pojmenuj tento obličej",
+      "assignedTo": "Přiřazeno k {{name}}",
+      "close": "Zavřít",
+      "unassign": "Odebrat osobu",
+      "suggestions": "Návrhy",
+      "nameLabel": "Jméno",
+      "namePlaceholder": "Nové nebo existující jméno…",
+      "assign": "Přiřadit"
+    }
+  },
+  "outliers": {
+    "title": "Možné chyby",
+    "subtitle": "Obličeje nejméně podobné této osobě — pravděpodobně přiřazené omylem.",
+    "loading": "Načítání…",
+    "error": "Podezřelé obličeje se nepodařilo načíst.",
+    "empty": "Žádné přiřazené obličeje k projití.",
+    "notMeaningful": "Příliš málo obličejů pro spolehlivé seřazení.",
+    "unassignError": "Obličej se nepodařilo odebrat. Zkus to prosím znovu.",
+    "faceLabel": "Obličej (vzdálenost {{distance}})",
+    "openPhoto": "Otevřít fotku",
+    "unassign": "Není to tato osoba"
+  },
+  "photo": {
+    "loading": "Načítání fotky…",
+    "error": "Tuto fotku se nepodařilo načíst.",
+    "back": "Knihovna"
   },
   "upload": {
     "title": "Nahrát",

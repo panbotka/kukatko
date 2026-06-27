@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -200,6 +201,43 @@ func (s *Store) ListSubjects(ctx context.Context) ([]SubjectCount, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("people: iterating subjects: %w", err)
+	}
+	return out, nil
+}
+
+// listSubjectPhotoUIDsSQL returns the distinct photos that carry at least one
+// non-invalid marker assigned to a subject, newest first (by capture time, with
+// undated photos last), then by uid for a stable order. Archived photos are
+// excluded so a subject's gallery mirrors the default library view.
+const listSubjectPhotoUIDsSQL = `
+SELECT DISTINCT m.photo_uid, p.taken_at
+FROM markers m
+JOIN photos p ON p.uid = m.photo_uid
+WHERE m.subject_uid = $1 AND m.invalid = FALSE AND p.archived_at IS NULL
+ORDER BY p.taken_at DESC NULLS LAST, m.photo_uid`
+
+// ListPhotoUIDsBySubject returns the UIDs of every non-archived photo that has a
+// non-invalid marker assigned to the subject identified by subjectUID, ordered
+// newest first. A subject with no such photos yields an empty slice and a nil
+// error. The caller paginates and resolves the UIDs to full photo records.
+func (s *Store) ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, listSubjectPhotoUIDsSQL, subjectUID)
+	if err != nil {
+		return nil, fmt.Errorf("people: listing photos for subject %s: %w", subjectUID, err)
+	}
+	defer rows.Close()
+
+	out := make([]string, 0)
+	for rows.Next() {
+		var uid string
+		var takenAt *time.Time
+		if err := rows.Scan(&uid, &takenAt); err != nil {
+			return nil, fmt.Errorf("people: scanning subject photo uid: %w", err)
+		}
+		out = append(out, uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("people: iterating subject photos for %s: %w", subjectUID, err)
 	}
 	return out, nil
 }

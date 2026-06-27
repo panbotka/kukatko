@@ -45,6 +45,9 @@ export function Layout() {
               <Nav.Link as={NavLink} to="/search">
                 {t('nav.search')}
               </Nav.Link>
+              <Nav.Link as={NavLink} to="/people">
+                {t('nav.people')}
+              </Nav.Link>
               <Nav.Link as={NavLink} to="/map" disabled>
                 {t('nav.map')}
               </Nav.Link>

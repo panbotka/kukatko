@@ -191,6 +191,41 @@ export async function searchPhotos(
 }
 
 /**
+ * A primary or sidecar file backing a photo (`photos.PhotoFile`). Only the
+ * fields the detail view needs are declared.
+ */
+export interface PhotoFile {
+  id: number
+  role: string
+  is_primary: boolean
+  file_mime: string
+  file_size: number
+}
+
+/** Full photo detail (`internal/photoapi` detail handler): a photo plus its files. */
+export interface PhotoDetail extends Photo {
+  files: PhotoFile[]
+}
+
+/**
+ * Fetches one photo's full detail via `GET /api/v1/photos/{uid}`.
+ *
+ * @throws ApiError with `status` 404 (no such photo) or 5xx so the caller can
+ *   render the matching message.
+ */
+export async function fetchPhoto(uid: string, signal?: AbortSignal): Promise<PhotoDetail> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PhotoDetail
+}
+
+/**
  * One entry in the similar-photos response (`internal/photoapi/similar.go`): a
  * full photo record plus its cosine `distance` to the source photo (smaller is
  * closer / more similar).

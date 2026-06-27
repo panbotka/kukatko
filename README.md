@@ -456,6 +456,48 @@ s faky bez DB.
 - Sdílená vektorová matematika `vectors.Centroid`/`vectors.Normalize`/`vectors.CosineDistance`
   (v `internal/vectors/math.go`) je jediná implementace — `internal/cluster` ji znovupoužívá.
 
+### Subjekty / People API (`internal/peopleapi`)
+
+Read/curační HTTP API nad subjekty (osoby/zvířata/jiné) — backend pro **People UI**. Stojí na
+rozhraních (`SubjectStore` = podmnožina `people.Store`, `PhotoStore` = `photos.Store.ListByUIDs`),
+takže se unit-testuje s faky bez DB.
+
+- `GET /subjects` (RequireAuth) → `{subjects:[{...subject, marker_count}]}` (řazení dle jména).
+- `POST /subjects` (RequireWrite) → 201 vytvoří subjekt z `{name, type, favorite, private, notes,
+  cover_photo_uid?}`; tělo přes `DisallowUnknownFields` + 1 MiB limit, prázdné jméno/neznámý typ → 400.
+- `GET /subjects/{uid}` (RequireAuth) → subjekt (404 chybějící).
+- `PATCH /subjects/{uid}` (RequireWrite) → editace `name/type/favorite/private/notes/cover_photo_uid`.
+- `DELETE /subjects/{uid}` (RequireWrite) → 204 (markery se odpojí přes FK).
+- `GET /subjects/{uid}/photos` (RequireAuth) → paginovaná galerie fotek subjektu
+  `{photos, total, limit, offset, next_offset}` (newest-first, jen nearchivované, `limit` ≤ 500).
+  Staví na `people.Store.ListPhotoUIDsBySubject` (distinct photo uid z non-invalid markerů) →
+  ořez stránky → `photos.Store.ListByUIDs` → reorder dle uid pořadí.
+- **Cesty jsou ploché** (ne `chi.Route`/Mount), aby koexistovaly s `outlierapi`
+  `GET /subjects/{uid}/outliers` na témže routeru. Mountuje se osmým `server.WithAPI`
+  (`buildPeopleAPI` v `cmd/kukatko/people.go`).
+
+### People UI (frontend)
+
+Kompletní lidský zážitek nad výše uvedenými API (react-bootstrap Superhero, i18n cs/en,
+responzivní/touch). Routy v `Layout` navbaru pod odkazem **Lidé** (`/people`):
+
+- **`/people`** (`PeoplePage`) — mřížka osob (`SubjectTile`: cover/jméno/počet fotek);
+  editorům odkaz na review shluků.
+- **`/people/:uid`** (`SubjectPage`) — stránka osoby: hlavička (jméno/typ, edit přes
+  `SubjectEditModal`), paginovaná galerie (`useSubjectPhotos` + `SubjectPhotoTile` se „set as
+  cover" akcí), a sekce **outlierů** (`Outliers` — žebříček podezřelých obličejů, one-tap unassign;
+  jen editor/admin).
+- **`/people/clusters`** (`ClustersPage`, editor/admin) — **primární rychlá cesta**: fronta
+  nepojmenovaných shluků obličejů, každý `ClusterCard` (reprezentant + ukázky + odebrání zatoulaného
+  obličeje + **jednorázové pojmenování celého shluku** na nový/existující subjekt); optimistické
+  odebrání po pojmenování.
+- **`/photos/:uid`** (`PhotoDetailPage`) — detail fotky s interaktivním **`FaceOverlay`**: boxy
+  obličejů kreslené z normalized bbox (`faceBoxStyle`), klik → panel s návrhy identit (one-tap
+  accept) + free-text jméno; optimistický update + refetch. Plus pruh `SimilarPhotos`.
+- Společné: `FaceThumb` (výřez obličeje z thumbnailu přes `faceCropStyle`), klient `services/people.ts`,
+  geometrie `lib/faceGeometry.ts`. Vitest pokrývá pojmenování shluku, pozicování/přiřazení v overlay
+  a unassign outlierů (mock API).
+
 ### Image embedding & similar photos (`internal/embedjob`)
 
 `embedjob.Service` zapojuje CLIP embedding do fronty jobů a staví nad ním embeddingové dotazy.
@@ -555,6 +597,12 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/faces/clusters/{id}/assign` | editor/admin | přiřadí **celý shluk** jednomu subjektu `{subject_uid?,subject_name?}` (find-or-create dle jména) → markery pro všechny obličeje; shluk se spotřebuje |
 | POST | `/faces/clusters/{id}/remove-face` | editor/admin | odpojí zatoulaný obličej `{photo_uid,face_index}` ze shluku před pojmenováním → refreshnutý shluk (nebo `null` když osiří) |
 | GET | `/subjects/{uid}/outliers` | editor/admin | obličeje osoby seřazené dle vzdálenosti od centroidu (nejpodezřelejší první) → `{subject_uid,count,meaningful,faces:[{photo_uid,face_index,bbox,distance,…}]}`; 1–2 obličeje → `meaningful:false` (viz `internal/outliers`); špatný obličej se odpojí přes assign API |
+| GET | `/subjects` | přihlášený | seznam subjektů s počty fotek → `{subjects:[{…subject, marker_count}]}` (viz Subjekty / People API) |
+| POST | `/subjects` | editor/admin | `{name,type,favorite,private,notes,cover_photo_uid?}` → 201 vytvoří subjekt (prázdné jméno/neznámý typ → 400) |
+| GET | `/subjects/{uid}` | přihlášený | detail subjektu (404 chybějící) |
+| PATCH | `/subjects/{uid}` | editor/admin | editace `name/type/favorite/private/notes/cover_photo_uid` |
+| DELETE | `/subjects/{uid}` | editor/admin | smaže subjekt (markery se odpojí) → 204 |
+| GET | `/subjects/{uid}/photos` | přihlášený | paginovaná galerie fotek subjektu → `{photos,total,limit,offset,next_offset}` (newest-first, nearchivované) |
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
 | POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
 | POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |

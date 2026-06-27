@@ -185,6 +185,40 @@ func TestListSubjectsCounts(t *testing.T) {
 	}
 }
 
+// TestListPhotoUIDsBySubject returns each photo with a non-invalid marker for the
+// subject, de-duplicated, and excludes photos whose only marker is invalid.
+func TestListPhotoUIDsBySubject(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+	p1 := makePhoto(t, photoStore, "subj_p1")
+	p2 := makePhoto(t, photoStore, "subj_p2")
+	p3 := makePhoto(t, photoStore, "subj_p3")
+
+	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+
+	// p1 has two valid markers (must appear once), p2 one valid marker, p3 only an
+	// invalid marker (must be excluded).
+	mkMarker(t, store, p1, &alice.UID, false)
+	mkMarker(t, store, p1, &alice.UID, false)
+	mkMarker(t, store, p2, &alice.UID, false)
+	mkMarker(t, store, p3, &alice.UID, true)
+
+	uids, err := store.ListPhotoUIDsBySubject(ctx, alice.UID)
+	if err != nil {
+		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
+	}
+	got := map[string]bool{}
+	for _, u := range uids {
+		if got[u] {
+			t.Errorf("duplicate uid %s", u)
+		}
+		got[u] = true
+	}
+	if len(uids) != 2 || !got[p1] || !got[p2] || got[p3] {
+		t.Errorf("uids = %v, want exactly {%s, %s}", uids, p1, p2)
+	}
+}
+
 // mkMarker creates a face marker for the given photo/subject and optional invalid
 // flag, returning its uid.
 func mkMarker(t *testing.T, store *people.Store, photoUID string, subjectUID *string, invalid bool) string {

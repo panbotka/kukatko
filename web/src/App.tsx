@@ -4,11 +4,15 @@ import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth, RequireRole } from './auth/ProtectedRoute'
 import { Layout } from './components/Layout'
 import { AccountPage } from './pages/AccountPage'
+import { ClustersPage } from './pages/ClustersPage'
 import { HomePage } from './pages/HomePage'
 import { LibraryPage } from './pages/LibraryPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { PeoplePage } from './pages/PeoplePage'
+import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { SearchPage } from './pages/SearchPage'
+import { SubjectPage } from './pages/SubjectPage'
 import { UploadPage } from './pages/UploadPage'
 
 /**
@@ -27,9 +31,13 @@ export function App() {
               <Route path="/" element={<HomePage />} />
               <Route path="/library" element={<LibraryPage />} />
               <Route path="/search" element={<SearchPage />} />
-              {/* Uploading is a write action: editors and admins only. */}
+              <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+              <Route path="/people" element={<PeoplePage />} />
+              <Route path="/people/:uid" element={<SubjectPage />} />
+              {/* Uploading and cluster review are write actions: editors and admins only. */}
               <Route element={<RequireRole role="editor" />}>
                 <Route path="/upload" element={<UploadPage />} />
+                <Route path="/people/clusters" element={<ClustersPage />} />
               </Route>
               <Route path="/account" element={<AccountPage />} />
               <Route path="*" element={<NotFoundPage />} />

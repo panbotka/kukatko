@@ -7,6 +7,7 @@
     "home": "Home",
     "library": "Library",
     "search": "Search",
+    "people": "People",
     "map": "Map",
     "upload": "Upload",
     "account": "My account",
@@ -142,6 +143,104 @@
     "title": "Similar photos",
     "loading": "Loading similar photos…",
     "error": "Could not load similar photos."
+  },
+  "people": {
+    "title": "People",
+    "reviewClusters": "Review face groups",
+    "loading": "Loading people…",
+    "error": "Could not load people.",
+    "empty": {
+      "title": "No people yet",
+      "hint": "Name some face groups to start building your people."
+    },
+    "noCover": "No cover",
+    "private": "Private",
+    "photoCount": "{{count}} photos"
+  },
+  "subject": {
+    "loading": "Loading person…",
+    "error": "Could not load this person.",
+    "back": "People",
+    "editButton": "Edit",
+    "photos": "Photos",
+    "loadingPhotos": "Loading photos…",
+    "noPhotos": "This person has no photos yet.",
+    "loadMore": "Load more",
+    "loadingMore": "Loading…",
+    "type": {
+      "person": "Person",
+      "pet": "Pet",
+      "other": "Other"
+    },
+    "cover": {
+      "set": "Set as cover",
+      "current": "Cover"
+    },
+    "edit": {
+      "title": "Edit person",
+      "error": "Could not save. Check the name and try again.",
+      "name": "Name",
+      "type": "Type",
+      "favorite": "Favorite",
+      "private": "Private",
+      "notes": "Notes",
+      "cancel": "Cancel",
+      "save": "Save"
+    }
+  },
+  "clusters": {
+    "title": "Face groups",
+    "subtitle": "Unnamed groups of the same face — name a whole group at once.",
+    "loading": "Loading face groups…",
+    "error": "Could not load face groups.",
+    "actionError": "The action failed. Please try again.",
+    "empty": {
+      "title": "No face groups to review",
+      "hint": "New groups appear here as faces are detected and clustered."
+    },
+    "representative": "Representative face",
+    "sample": "Sample face",
+    "removeFace": "Remove this face from the group",
+    "size": "{{count}} faces",
+    "nameAs": "Name as {{name}} ({{confidence}}%)",
+    "nameLabel": "Name this group",
+    "namePlaceholder": "New or existing name…",
+    "name": "Name group"
+  },
+  "faces": {
+    "title": "Faces",
+    "loading": "Loading faces…",
+    "error": "Could not load faces.",
+    "none": "No faces detected in this photo.",
+    "unnamed": "Unnamed face {{index}}",
+    "assignError": "Could not save the assignment. Please try again.",
+    "panel": {
+      "title": "Name this face",
+      "assignedTo": "Assigned to {{name}}",
+      "close": "Close",
+      "unassign": "Remove person",
+      "suggestions": "Suggestions",
+      "nameLabel": "Name",
+      "namePlaceholder": "New or existing name…",
+      "assign": "Assign"
+    }
+  },
+  "outliers": {
+    "title": "Possible mistakes",
+    "subtitle": "Faces least like this person — likely assigned by mistake.",
+    "loading": "Loading…",
+    "error": "Could not load suspected faces.",
+    "empty": "No assigned faces to review.",
+    "notMeaningful": "Too few faces to rank reliably.",
+    "unassignError": "Could not remove the face. Please try again.",
+    "faceLabel": "Face (distance {{distance}})",
+    "openPhoto": "Open photo",
+    "unassign": "Not this person"
+  },
+  "photo": {
+    "loading": "Loading photo…",
+    "error": "Could not load this photo.",
+    "back": "Library"
   },
   "upload": {
     "title": "Upload",

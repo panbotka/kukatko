@@ -114,6 +114,7 @@ func buildServices(
 	}
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
 	outlierAPI := buildOutlierAPI(db, authAPI)
+	peopleAPI := buildPeopleAPI(db, authAPI)
 	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc)
 
 	return []server.Option{
@@ -122,6 +123,7 @@ func buildServices(
 		server.WithAPI(photoAPI.RegisterRoutes),
 		server.WithAPI(clusterAPI.RegisterRoutes),
 		server.WithAPI(outlierAPI.RegisterRoutes),
+		server.WithAPI(peopleAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
 	}, jobWorker, nil
