@@ -70,6 +70,24 @@ type Config struct {
 	Upload    UploadConfig    `mapstructure:"upload"`
 	Worker    WorkerConfig    `mapstructure:"worker"`
 	Bulk      BulkConfig      `mapstructure:"bulk"`
+	Import    ImportConfig    `mapstructure:"import"`
+}
+
+// ImportConfig groups the read-only import sources. PhotoPrism stays primary
+// during the migration; its import is incremental and repeatable.
+type ImportConfig struct {
+	PhotoPrism PhotoPrismConfig `mapstructure:"photoprism"`
+}
+
+// PhotoPrismConfig holds the connection details for the read-only PhotoPrism API
+// client (internal/photoprism). The token is a long-lived app password / access
+// token and should come from the environment
+// (KUKATKO_IMPORT_PHOTOPRISM_TOKEN), not a committed file.
+type PhotoPrismConfig struct {
+	// BaseURL is the root of the PhotoPrism instance (empty disables the import).
+	BaseURL string `mapstructure:"base_url"`
+	// Token is the Bearer app password / access token used for every request.
+	Token string `mapstructure:"token"`
 }
 
 // DatabaseConfig holds the PostgreSQL connection string and pool sizing.
@@ -371,6 +389,9 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("worker.stale_scan_interval", "1m")
 
 	v.SetDefault("bulk.max_batch_size", 1000)
+
+	v.SetDefault("import.photoprism.base_url", "")
+	v.SetDefault("import.photoprism.token", "")
 }
 
 // Validate checks that required fields are present and inter-field invariants

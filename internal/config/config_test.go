@@ -336,3 +336,34 @@ func TestResolveConfigPath(t *testing.T) {
 		}
 	})
 }
+
+// TestLoad_importPhotoPrismDefaults verifies the import.photoprism keys default
+// to empty (import disabled).
+func TestLoad_importPhotoPrismDefaults(t *testing.T) {
+	setMinimalEnv(t)
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Import.PhotoPrism.BaseURL != "" || cfg.Import.PhotoPrism.Token != "" {
+		t.Errorf("import.photoprism defaults = %+v, want empty", cfg.Import.PhotoPrism)
+	}
+}
+
+// TestLoad_importPhotoPrismEnvOverride verifies the import.photoprism keys can be
+// supplied via the KUKATKO_ environment (secret token included).
+func TestLoad_importPhotoPrismEnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_IMPORT_PHOTOPRISM_BASE_URL", "https://photos.example")
+	t.Setenv("KUKATKO_IMPORT_PHOTOPRISM_TOKEN", "secret-app-token")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Import.PhotoPrism.BaseURL != "https://photos.example" {
+		t.Errorf("base_url = %q", cfg.Import.PhotoPrism.BaseURL)
+	}
+	if cfg.Import.PhotoPrism.Token != "secret-app-token" {
+		t.Errorf("token = %q", cfg.Import.PhotoPrism.Token)
+	}
+}

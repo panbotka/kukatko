@@ -164,3 +164,15 @@ bulk:
   # exceed it are rejected with HTTP 413 before any change is made. 0 falls back
   # to the built-in default (1000).
   max_batch_size: 1000
+
+# Read-only import sources. PhotoPrism stays the primary catalog during the
+# migration; its import is incremental (high-watermark on UpdatedAt) and
+# repeatable.
+import:
+  photoprism:
+    # Root URL of the running PhotoPrism instance. Empty disables the import.
+    base_url: ""
+    # Long-lived app password / access token, sent as Authorization: Bearer on
+    # every request (PhotoPrism: `photoprism auth add -n Kukatko -s "photos albums"`).
+    # Set via KUKATKO_IMPORT_PHOTOPRISM_TOKEN; do not commit a real value.
+    token: ""

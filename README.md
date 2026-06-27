@@ -687,6 +687,34 @@ takže spadlý/chybný běh kurzor neposune a práce se jen zopakuje.
   `found=false` při prvním (plném) běhu. **Ignoruje** běžící i failed běhy a done běhy bez
   watermarku. Každý zdroj má vlastní nezávislý kurzor.
 
+### PhotoPrism API klient (`internal/photoprism`)
+
+Read-only HTTP klient k běžící instanci PhotoPrismu — podklad inkrementálního importu (viz
+ARCHITECTURE.md §9). Vše za rozhraním `Client` (fakeovatelné v testech), takže importér ani
+testy nepotřebují reálný PhotoPrism, síť ani token.
+
+- **Autentizace** — dlouhožijící **app password / access token** (PP:
+  `photoprism auth add -n Kukatko -s "photos albums"`) se posílá v hlavičce `Authorization: Bearer`
+  na **každém** requestu; nikdy se neloguje per-request (login je nejtvrději rate-limited).
+  Konfiguruje se přes `import.photoprism.{base_url,token}` (token přes
+  `KUKATKO_IMPORT_PHOTOPRISM_TOKEN`, necommituj).
+- **`ListPhotos(ctx, PhotoListParams)`** → `GET /api/v1/photos?count=1000&offset=N&merged=true&
+  order=updated&q=updated:"<RFC3339>"`. `UpdatedSince` (nenulové) přidá filtr `updated:` pro
+  **inkrementální** pull; `count` se ořezává na `MaxCount` (1000), `offset` řídí stránkování
+  (caller pageuje, dokud stránka vrací plný `count`). Parsují se pole UID, TakenAt, Lat/Lng/Altitude,
+  Title/Description, Type, Width/Height, OriginalName, Camera/Lens/EXIF a `Files[]`
+  (UID, **Hash = SHA1**, Primary, Mime, `Markers[]`). `Photo.PrimaryFile()` vrátí primární soubor.
+- **`ListAlbums`/`ListLabels`/`ListSubjects(ctx, ListParams)`** → `GET /api/v1/{albums,labels,subjects}`
+  (count/offset); markery jedou přes `Files[].Markers[]`.
+- **`DownloadOriginal(ctx, fileHash)`** → `GET /api/v1/dl/{hash}?t=<download_token>` **streamuje**
+  originál (nikdy celý v RAM; tělo vlastní caller a zavře ho). Download token se získá z
+  create-session (`POST /api/v1/session`, čte `config.downloadToken`), **může rotovat** — klient ho
+  průběžně přebírá z hlavičky `X-Download-Token` a při 401/403 jednou obnoví session a zopakuje.
+- **Robustnost** — **429** se retryuje s exponenciálním backoffem (ctí `Retry-After`); JSON endpointy
+  vyžadují `Content-Type: application/json`; rozumné timeouty (JSON volání `Timeout`, download jen
+  ctx callera); typové chyby `ErrInvalidURL`/`ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/
+  `ErrUpstream`/`ErrUnavailable`/`ErrBadResponse` — nikdy neobsahují token ani tělo odpovědi.
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).

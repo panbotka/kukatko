@@ -511,7 +511,28 @@ inkrementální).
   `Get(ctx,id)`, `LatestWatermark(ctx,source)` → `(time.Time, found bool, err)` watermark
   **posledního úspěšného** běhu zdroje pro navázání dalšího inkrementu — ignoruje běžící/failed
   běhy i done bez watermarku, každý zdroj má vlastní kurzor; sentinely
-  `ErrRunNotFound`/`ErrInvalidSource`), `internal/web/`
+  `ErrRunNotFound`/`ErrInvalidSource`), `internal/photoprism/`
+  (read-only HTTP klient k běžící instanci PhotoPrismu — podklad inkrementálního importu, vše za
+  rozhraním `Client` (fakeovatelné): `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryBaseDelay,
+  RetryMaxDelay,HTTPClient})` → `*HTTPClient`, `ErrInvalidURL` na nevalidní base URL; **autentizace**
+  dlouhožijícím app password/access tokenem v hlavičce `Authorization: Bearer` na **každém**
+  requestu (ne per-request login); `ListPhotos(ctx,PhotoListParams{Count,Offset,UpdatedSince,Order})`
+  → `GET /api/v1/photos?count=…&offset=…&merged=true&order=updated[&q=updated:"<RFC3339>"]`
+  pro **inkrementální** pull (UpdatedSince→filtr `updated:`, count ořez na `MaxCount` 1000, caller
+  pageuje přes offset), parsuje UID/TakenAt/Lat/Lng/Altitude/Title/Description/Type/Width/Height/
+  OriginalName/Camera/Lens/EXIF + `Files[]` (UID, **Hash=SHA1**, Primary, Mime, `Markers[]`),
+  `Photo.PrimaryFile()` vrátí primární soubor; `ListAlbums`/`ListLabels`/`ListSubjects(ctx,ListParams
+  {Count,Offset})` → `GET /api/v1/{albums,labels,subjects}`, markery z `Files[].Markers[]`;
+  `DownloadOriginal(ctx,fileHash)` → `GET /api/v1/dl/{hash}?t=<download_token>` **streamuje** originál
+  (`Download{Body,ContentType,ContentLength}`, tělo vlastní caller; nikdy celý v RAM přes
+  `cancelReadCloser`), **download token** z create-session `POST /api/v1/session`
+  (`config.downloadToken`) thread-safe cachovaný, **rotuje** → přebírá se z hlavičky
+  `X-Download-Token`, na 401/403 jednou obnoví session a zopakuje; **robustnost** 429 →
+  exponenciální backoff ctící `Retry-After`, JSON endpointy vyžadují `Content-Type:
+  application/json`; typové chyby `ErrInvalidURL`/`ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/
+  `ErrUpstream`/`ErrUnavailable`/`ErrBadResponse` nikdy nenesou token ani tělo odpovědi; konfig
+  `import.photoprism.{base_url,token}`, klient zatím není zapojen do `serve` — staví se až importérem
+  v dalším milníku), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
