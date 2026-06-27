@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/server"
+	"github.com/panbotka/kukatko/internal/trash"
 	"github.com/panbotka/kukatko/internal/version"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -68,11 +69,12 @@ func runServe(cmd *cobra.Command) error {
 	go authSvc.RunCleanup(ctx, sessionCleanupInterval)
 	go authAPI.RunMaintenance(ctx, sessionCleanupInterval)
 
-	apis, jobWorker, err := buildServices(cfg, db, authAPI)
+	apis, jobWorker, trashSvc, err := buildServices(cfg, db, authAPI)
 	if err != nil {
 		return err
 	}
 	startWorker(ctx, jobWorker)
+	go trashSvc.RunPurge(ctx, trashPurgeInterval)
 
 	addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
 	srv := server.New(addr, apis...)
@@ -93,26 +95,30 @@ func runServe(cmd *cobra.Command) error {
 // routes plus the worker for the serve command to run.
 func buildServices(
 	cfg *config.Config, db *database.DB, authAPI *auth.API,
-) ([]server.Option, *worker.Worker, error) {
+) ([]server.Option, *worker.Worker, *trash.Service, error) {
 	jobStore := jobs.NewStore(db.Pool())
 	enqueuer := jobs.NewEnqueuer(jobStore)
 
 	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	embedSvc, vectorStore, embedClient, err := buildEmbedService(cfg, db, enqueuer)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	faceSvc, err := buildFaceService(cfg, db, enqueuer, vectorStore, embedClient)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	matchSvc := buildFaceMatch(cfg, db)
-	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore, embedClient, matchSvc)
+	trashSvc, err := buildTrashService(cfg, db)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore, embedClient, matchSvc, trashSvc)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
 	outlierAPI := buildOutlierAPI(db, authAPI)
@@ -121,12 +127,12 @@ func buildServices(
 	bulkAPI := buildBulkAPI(cfg, db, authAPI)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var importSvc *ppimport.Service
 	if importConfigured(cfg) {
 		if importSvc, err = buildImportService(cfg, db, enqueuer); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	psMigrate := psMigrateHandlerOrNil(cfg, db, enqueuer)
@@ -149,5 +155,5 @@ func buildServices(
 		// when no import source is configured; the triggers self-gate per source.
 		server.WithAPI(buildImportAPI(cfg, db, jobStore, authAPI).RegisterRoutes),
 	}
-	return opts, jobWorker, nil
+	return opts, jobWorker, trashSvc, nil
 }

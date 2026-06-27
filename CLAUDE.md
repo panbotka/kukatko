@@ -56,6 +56,8 @@ inkrementální).
   diakritika necitlivá, ctí všechny List filtry + stránkování; prázdný dotaz →
   `ErrEmptySearch`; `Count` s `FullText` vrací total díky sdílenému `buildWhere`),
   plus `CreateFile`/`ListFiles`,
+  `ListArchivedUIDs(before,limit,offset)` (uid archivovaných fotek oldest-archived-first,
+  `before` nil = vše / non-nil = jen `archived_at <= before` retenční cutoff — podklad koše/purge),
   `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
   `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
@@ -85,7 +87,9 @@ inkrementální).
   `GenerateAll(ctx,photo)` (mapa size→abs cesta)/`Path(hash,size)`/`Open(hash,size)`;
   dekód jednou na fotku, paralelní enkód velikostí (errgroup, default `GOMAXPROCS`),
   **EXIF orientace** (1–8) automaticky; pure-Go JPEG/PNG/WebP + `golang.org/x/image`
-  (`draw.CatmullRom` resize); sentinely `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
+  (`draw.CatmullRom` resize); `Remove(hash)` smaže všechny cachované velikosti pro hash
+  (idempotentní, chybějící skip — úklid náhledů při purge fotky); sentinely
+  `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
   `SizeNames()`/`IsValidSize`), `internal/imgconvert/`
   (HEIC/RAW/video → dekódovatelný JPEG, **shell-out**: `EnsureDecodable(ctx,path)` →
   (cesta, cleanup, err); JPEG/PNG/WebP passthrough, **HEIC** přes `heif-convert` na temp JPEG,
@@ -156,7 +160,22 @@ inkrementální).
   částečný přes raw-key presence (vynechané pole beze změny, `null` maže nullable, validace
   souřadnic); média `thumb/{size}`+`download` **streamují** přes `io.Copy` se `streamMedia`
   (`Cache-Control`/`ETag`/`304`, `Content-Length` z DB, náhled generován on-miss),
-  guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`), `internal/jobs/`
+  guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`), `internal/trash/`
+  (trvalé mazání (purge) soft-deletovaných fotek, vše za rozhraními `PhotoStore`/`FileStorage`/
+  `ThumbStore`/`RemoteRemover` (unit-testovatelné s faky): `Service` = `New(Config{Photos,Storage,
+  Thumbnailer,Remote?,RetentionDays,BatchSize,Logger})` (panika na nil Photos/Storage/Thumbnailer);
+  **purgeOne** smaže artefakty fotky (originál přes `Storage.Delete`, cachované náhledy přes
+  `Thumbnailer.Remove`, volitelně S3 objekt přes `RemoteRemover`) **a pak** DB řádek
+  (`photos.Delete` kaskáduje embeddingy/faces/markery/album_photos/photo_labels/phashe/edity/oblíbené
+  přes `ON DELETE CASCADE`) — artefakty napřed, takže přerušený purge nechá re-purgovatelný řádek
+  místo dangling souborů; idempotentní (chybějící soubor/`os.ErrNotExist`/`thumb.ErrInvalidHash`
+  se ignoruje); `PurgePhoto(uid)` (404 `photos.ErrPhotoNotFound`, `ErrNotArchived` na živou fotku),
+  `EmptyTrash()` (purge všech archivovaných) a `PurgeExpired()` (jen `archived_at` starší než
+  `RetentionDays`, ≤ 0 = no-op) iterují `photos.ListArchivedUIDs` v oldest-first dávkách
+  (`BatchSize`, default 200) → `Result{Purged,Failed}`; **per-fotka selhání** se zaloguje, počítá a
+  přeskočí (offset roste, fotka zůstane v koši pro retry), jen zrušený ctx aborte; `RunPurge(ctx,
+  interval)` = plánovaný úklid (hned + každý interval, vypnutý při retenci ≤ 0) pro `serve`
+  goroutinu), `internal/jobs/`
   (persistentní fronta jobů v Postgresu, **hlavní robustnost proti photo-sorteru** —
   joby přežijí restart, retryují, dedupují, čekají když je box offline; tabulka `jobs` v migraci
   `0005_jobs.sql`: `state` queued/running/done/failed/dead, `priority`, `payload` JSONB,
@@ -622,6 +641,7 @@ inkrementální).
   míří na `/library`, **Oblíbené** na `/favorites`, **Alba** na `/albums`, **Štítky** na `/labels`,
   **Hledat** na `/search`,
   **Lidé** na `/people`, **Mapa** na `/map`, **Nahrát** na `/upload` (jen editor/admin),
+  **Koš** na `/trash` (jen editor/admin, gate `canWrite`),
   **Import** na `/import` (jen admin, gate `isAdmin`),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
   `LanguageSwitcher`;
@@ -701,7 +721,14 @@ inkrementální).
   `usePaginatedPhotos` (`fetchPhotos`, velké sady se nenačítají najednou), řídí `useSlideshow` +
   `useSlideshowSettings`, renderuje loading/empty/error stavy nebo `Slideshow`; exit → `navigate(-1)`
   (fallback na zdrojový pohled), takže Zpět funguje,
+  `TrashPage` = `/trash` (editor/admin) koš: archivované fotky (`useScopedPhotos`-style listing přes
+  `usePaginatedPhotos` scopnutý `archived=only`) v mřížce `TrashCard` s `FilterBar`, **obnova**
+  (`unarchivePhoto`) a **trvalé mazání** (`purgePhoto`) jednotlivě i hromadně (`useSelection`
+  `SelectionBar`), **Vyprázdnit koš** (`emptyTrash`), každá trvalá akce přes potvrzovací `Modal`;
+  `fetchTrashInfo` dotáhne retenci pro odpočet na kartách,
   `NotFoundPage`),
+  `components/trash/` = `TrashCard` (dlaždice archivované fotky: náhled + odpočet do auto-purge přes
+  `trashCountdown` + restore/delete akce + výběr v selection módu);
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
   velikosti `fit_1920` s CSS přechodem dle `settings.effect`, přednačítání sousedních snímků přes
   `new Image()`, ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek + pozice
@@ -766,7 +793,10 @@ inkrementální).
   + pure `readSettings`/`writeSettings`/`sanitizeSettings` (localStorage `kukatko.slideshow.settings`,
   sanitizace efektu + clamp intervalu, fallback na defaulty při chybě/nedostupném storage);
   `slideshowView.ts` = pure `slideshowHref(scope,view)` (staví `/slideshow?…` z `LibraryView` přes
-  `writeUrlState` + scope `album`/`label`, default filtry vynechá — launch link promítání)),
+  `writeUrlState` + scope `album`/`label`, default filtry vynechá — launch link promítání);
+  `trashCountdown.ts` = pure `purgeCountdown(archivedAt,retentionDays,now?)` (zbývající dny do
+  auto-purge z `archived_at` + retence → `{daysLeft,due}` nebo `null` když odpočet neplatí
+  (nearchivovaná / retence ≤ 0 / neparsovatelné), odpočet na kartách koše)),
   `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
   `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
@@ -777,6 +807,9 @@ inkrementální).
   (`Photo`+`distance`; empty-friendly), typy `SimilarPhoto`/`SimilarResponse`,
   `favoritePhoto(uid,favorite,signal)` nad `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (per-user
   toggle, 204, podklad optimistického `useFavorite`),
+  **koš** `unarchivePhoto(uid)` (`POST …/unarchive` obnova), `purgePhoto(uid)` (`POST …/purge?confirm=true`
+  trvalé mazání), `emptyTrash()` (`POST /trash/empty?confirm=true` → `PurgeResult{purged,failed}`),
+  `fetchTrashInfo()` (`GET /trash/info` → `TrashInfo{retention_days}`),
   `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo` (vč.
   `is_favorite`)/`PhotoListParams`
   (vč. `album`/`label` scope + `favorite` filtr)/`PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`;
@@ -814,15 +847,17 @@ inkrementální).
   `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru), zbytek pod `Layout` (`/`, `/library`,
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`,
   `/photos/:uid`, `/people`,
-  `/people/:uid`, `/account`; `/upload` a `/people/clusters`
+  `/people/:uid`, `/account`; `/upload`, `/people/clusters` a `/trash`
   navíc pod `RequireRole role="editor"` = write-only, `/import` pod `RequireRole role="admin"` =
   admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.
 - **CLI:** `kukatko serve` (načte config, **spustí migrace**, **bootstrapne admina**, spustí
-  hodinové čištění expirovaných session a **background worker** (`internal/worker`) na
-  zpracování fronty jobů, pak poslouchá na `web.host:web.port`, default
+  hodinové čištění expirovaných session, **background worker** (`internal/worker`) na
+  zpracování fronty jobů a **plánovaný úklid koše** (`internal/trash` `RunPurge`, každých 6 h —
+  trvale maže fotky archivované déle než `trash.retention_days`; retence ≤ 0 ho vypne), pak
+  poslouchá na `web.host:web.port`, default
   `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`, auth/admin API
   pod `/api/v1` — viz níže, ostatní cesty servíruje **embedované SPA** s fallbackem na
   `index.html`), `kukatko migrate` (spustí pending migrace samostatně a skončí),
@@ -873,6 +908,11 @@ inkrementální).
   `PATCH /photos/{uid}` (editor/admin) částečná úprava
   metadat (null maže nullable, validace souřadnic); `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);
+  **koš / trvalé mazání** (`trash.go`, backuje `internal/trash` přes rozhraní `Purger`, nil → 503):
+  `POST /photos/{uid}/purge` (editor/admin, `?confirm=true` jinak 400, 404 chybí, 409 fotka není
+  archivovaná → 204) a `POST /trash/empty` (editor/admin, `?confirm=true` → `{purged,failed}`)
+  trvale mažou archivované fotky, `GET /trash/info` (přihlášený) vrací `{retention_days}` pro odpočet
+  do auto-purge; seznam koše jede přes sdílené `GET /photos?archived=only`;
   `GET /photos/{uid}/thumb/{size}` a `/download` (session/`?t=` token) **streamují** média
   (`Cache-Control`/`ETag`/`304`). Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v
   `cmd/kukatko/photos.go`).

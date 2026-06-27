@@ -132,6 +132,28 @@ func (t *Thumbnailer) Open(hash, size string) (io.ReadCloser, error) {
 	return f, nil
 }
 
+// Remove deletes every registered thumbnail size cached for the given file
+// hash, leaving no derived images behind when its source photo is purged. It is
+// idempotent: sizes that were never generated are skipped, so removing twice (or
+// removing a hash with no cache) is not an error. It returns ErrInvalidHash for
+// a malformed hash, or the first hard I/O error encountered while deleting (a
+// missing file is not such an error).
+func (t *Thumbnailer) Remove(hash string) error {
+	if err := validateHash(hash); err != nil {
+		return err
+	}
+	for _, size := range SizeNames() {
+		abs, err := t.Path(hash, size)
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("thumb: removing cached %s/%s: %w", hash, size, err)
+		}
+	}
+	return nil
+}
+
 // GenerateAll generates every registered size for photo. It is a thin wrapper
 // over Generate using SizeNames().
 func (t *Thumbnailer) GenerateAll(ctx context.Context, photo photos.Photo) (map[string]string, error) {

@@ -33,6 +33,8 @@ type API struct {
 	embedder        TextEmbedder
 	faces           FaceService
 	favorites       FavoriteStore
+	purger          Purger
+	retentionDays   int
 	requireAuth     func(http.Handler) http.Handler
 	requireWrite    func(http.Handler) http.Handler
 	requireDownload func(http.Handler) http.Handler
@@ -61,6 +63,12 @@ type Config struct {
 	// on list/detail responses and the favorite=true filter. When nil those
 	// endpoints answer 503 and photos report is_favorite false.
 	Favorites FavoriteStore
+	// Purger backs the permanent-delete endpoints (purge one, empty trash). When
+	// nil those endpoints answer 503.
+	Purger Purger
+	// RetentionDays is the trash retention window reported by the trash-info
+	// endpoint so the UI can show the auto-purge countdown.
+	RetentionDays int
 	// RequireAuth guards read endpoints for any authenticated user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireWrite guards metadata and archive endpoints for editors and admins.
@@ -80,6 +88,8 @@ func NewAPI(cfg Config) *API {
 		embedder:        cfg.Embedder,
 		faces:           cfg.Faces,
 		favorites:       cfg.Favorites,
+		purger:          cfg.Purger,
+		retentionDays:   cfg.RetentionDays,
 		requireAuth:     cfg.RequireAuth,
 		requireWrite:    cfg.RequireWrite,
 		requireDownload: cfg.RequireDownload,
@@ -102,10 +112,15 @@ func NewAPI(cfg Config) *API {
 //	GET    /photos/{uid}/download     RequireDownload  original file
 //	PUT    /photos/{uid}/favorite     RequireAuth      favorite (current user)
 //	DELETE /photos/{uid}/favorite     RequireAuth      unfavorite (current user)
+//	POST   /photos/{uid}/purge        RequireWrite     permanent delete (confirm)
 //	GET    /favorites                 RequireAuth      current user's favorites
+//	GET    /trash/info                RequireAuth      retention window (countdown)
+//	POST   /trash/empty               RequireWrite     permanent delete all (confirm)
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/search", a.handleSearch)
 	r.With(a.requireAuth).Get("/favorites", a.handleFavorites)
+	r.With(a.requireAuth).Get("/trash/info", a.handleTrashInfo)
+	r.With(a.requireWrite).Post("/trash/empty", a.handleEmptyTrash)
 	r.Route("/photos", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleList)
 		r.With(a.requireAuth).Get("/{uid}", a.handleDetail)
@@ -117,6 +132,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Patch("/{uid}", a.handleUpdate)
 		r.With(a.requireWrite).Post("/{uid}/archive", a.handleArchive)
 		r.With(a.requireWrite).Post("/{uid}/unarchive", a.handleUnarchive)
+		r.With(a.requireWrite).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
 		r.With(a.requireDownload).Get("/{uid}/download", a.handleDownload)
 	})

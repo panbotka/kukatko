@@ -909,6 +909,9 @@ Endpointy pod `/api/v1` (JSON):
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
 | POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
 | POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |
+| POST | `/photos/{uid}/purge` | editor/admin | **trvale** smaže archivovanou fotku (řádek+kaskáda, originál, náhledy, případně S3); vyžaduje `?confirm=true` → 204, 400 bez potvrzení, 404 chybí, 409 fotka není archivovaná |
+| GET | `/trash/info` | přihlášený | retenční okno `{retention_days}` pro odpočet do auto-purge |
+| POST | `/trash/empty` | editor/admin | **trvale** smaže všechny archivované fotky (vyžaduje `?confirm=true`) → `{purged,failed}` |
 | GET | `/photos/{uid}/thumb/{size}` | session/token | náhled (cache, generuje se on-miss) — streamuje JPEG, `ETag`/304 |
 | GET | `/photos/{uid}/download` | session/token | originál jako příloha — streamuje (nikdy celý v RAM), `Content-Length`/`ETag` |
 | GET | `/jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue` | admin | fronta jobů (viz Admin Jobs API) |
@@ -962,6 +965,19 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   (`lat ∈ ⟨-90,90⟩`, `lng ∈ ⟨-180,180⟩`).
 - **Archivace** `POST /photos/{uid}/archive` + `/unarchive` (editor/admin) — soft-delete přes
   `archived_at`; archivované jsou z výchozího seznamu vyloučené.
+- **Koš / trvalé mazání** (`internal/trash`) — archivované fotky se po uplynutí retence
+  (`trash.retention_days`, default 30) **natvrdo smažou** plánovaným úklidem v `kukatko serve`
+  (každých 6 h, `RunPurge`; retence ≤ 0 ho vypne). Purge smaže DB řádek (kaskáda embeddingů/
+  obličejů/markerů/album_photos/photo_labels/phashů/editů/oblíbených přes `ON DELETE CASCADE`),
+  originál + cachované náhledy z disku a (je-li nakonfigurován) odpovídající S3 objekt; je
+  **idempotentní** a maže artefakty **před** řádkem, takže přerušený běh nechá re-purgovatelný
+  řádek místo osiřelých souborů (žádné dangling files). Manuální ovládání:
+  `POST /photos/{uid}/purge` (jedna fotka) a `POST /trash/empty` (vše) — obojí vyžaduje
+  `?confirm=true`; `GET /trash/info` vrací retenční okno pro odpočet v UI. Seznam koše jede přes
+  sdílené `GET /photos?archived=only`. HTTP vrstva (`internal/photoapi/trash.go`) volá purge
+  službu přes rozhraní `Purger` (nil → 503); službu staví `buildTrashService`
+  (`cmd/kukatko/trash.go`). **Trash UI** je stránka `/trash` (editor/admin) s obnovou a trvalým
+  mazáním (jednotlivě i hromadně) a odpočtem do auto-purge.
 - **Média** `GET /photos/{uid}/thumb/{size}` a `/download` — **streamují** se (`io.Copy`, nikdy
   celý soubor v RAM), s `Cache-Control`/`ETag` (a `304` na `If-None-Match`). Přístup přes session
   cookie **nebo** `download_token` v query parametru `?t=…` (`RequireAuthOrDownloadToken`), takže

@@ -15,7 +15,8 @@
     "upload": "Upload",
     "import": "Import",
     "account": "My account",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "trash": "Trash"
   },
   "language": {
     "cs": "Čeština",
@@ -562,6 +563,33 @@
       "counts": "Counts",
       "lastError": "Last error",
       "empty": "No import runs yet."
+    }
+  },
+  "trash": {
+    "title": "Trash",
+    "empty": {
+      "title": "Trash is empty",
+      "hint": "Archived photos appear here until their retention period runs out."
+    },
+    "restore": "Restore",
+    "deleteForever": "Delete forever",
+    "emptyTrash": "Empty trash",
+    "restoreSelected": "Restore selected",
+    "deleteSelected": "Delete selected",
+    "loadMore": "Load more",
+    "selectItem": "Select {{name}}",
+    "actionError": "The action failed.",
+    "countdown": {
+      "days": "{{count}}d left",
+      "due": "due"
+    },
+    "confirm": {
+      "title": "Delete permanently?",
+      "single": "This photo, including its original, will be permanently deleted. This cannot be undone.",
+      "bulk": "{{count}} photos, including their originals, will be permanently deleted. This cannot be undone.",
+      "empty": "Every photo in the trash, including originals, will be permanently deleted. This cannot be undone.",
+      "confirm": "Delete forever",
+      "cancel": "Cancel"
     }
   }
 }

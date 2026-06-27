@@ -235,6 +235,43 @@ func TestGenerate_idempotent(t *testing.T) {
 	}
 }
 
+// TestRemove_deletesAllSizesIdempotently generates several sizes, removes them
+// all by hash, confirms they are gone, and that removing again (or removing a
+// hash with no cache) is not an error.
+func TestRemove_deletesAllSizesIdempotently(t *testing.T) {
+	t.Parallel()
+	th, store := newThumbnailer(t)
+	photo := storeJPEG(t, store, 600, 400, 0)
+
+	generated, err := th.GenerateAll(context.Background(), photo)
+	if err != nil {
+		t.Fatalf("GenerateAll: %v", err)
+	}
+
+	if err := th.Remove(photo.FileHash); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	for size, abs := range generated {
+		if _, statErr := os.Stat(abs); !errors.Is(statErr, os.ErrNotExist) {
+			t.Errorf("size %q still present after Remove: %v", size, statErr)
+		}
+	}
+
+	// Removing again, with nothing cached, is a no-op.
+	if err := th.Remove(photo.FileHash); err != nil {
+		t.Errorf("second Remove: %v", err)
+	}
+}
+
+// TestRemove_invalidHash rejects a malformed hash with ErrInvalidHash.
+func TestRemove_invalidHash(t *testing.T) {
+	t.Parallel()
+	th, _ := newThumbnailer(t)
+	if err := th.Remove("xyz"); !errors.Is(err, ErrInvalidHash) {
+		t.Errorf("Remove(\"xyz\") error = %v, want ErrInvalidHash", err)
+	}
+}
+
 // TestGenerate_errors covers unknown sizes, invalid hashes, and the empty-size
 // no-op.
 func TestGenerate_errors(t *testing.T) {

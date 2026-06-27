@@ -330,5 +330,87 @@ export async function favoritePhoto(
   }
 }
 
+/**
+ * Restores an archived photo via `POST /api/v1/photos/{uid}/unarchive`, clearing
+ * its `archived_at` so it leaves the trash and reappears in the library. Editor/
+ * admin only.
+ *
+ * @throws ApiError with `status` 404 (no such photo), 403 (not an editor) or 5xx.
+ */
+export async function unarchivePhoto(uid: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/unarchive`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+}
+
+/**
+ * Permanently deletes a single archived photo via
+ * `POST /api/v1/photos/{uid}/purge?confirm=true`. This is irreversible: the row,
+ * its originals and thumbnails are removed. The explicit `confirm=true` guard
+ * mirrors the server's requirement. Editor/admin only.
+ *
+ * @throws ApiError with `status` 404 (no such photo), 409 (not archived), 503
+ *   (purge backend unwired) or 5xx.
+ */
+export async function purgePhoto(uid: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/purge?confirm=true`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+}
+
+/** Counts returned by the empty-trash action. */
+export interface PurgeResult {
+  purged: number
+  failed: number
+}
+
+/**
+ * Permanently deletes every archived photo via
+ * `POST /api/v1/trash/empty?confirm=true` and returns how many were purged and
+ * failed. Irreversible; editor/admin only.
+ *
+ * @throws ApiError with `status` 503 (purge backend unwired) or 5xx.
+ */
+export async function emptyTrash(signal?: AbortSignal): Promise<PurgeResult> {
+  const res = await fetch(`${API_BASE}/trash/empty?confirm=true`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PurgeResult
+}
+
+/** The trash retention window, used to show each item's auto-purge countdown. */
+export interface TrashInfo {
+  retention_days: number
+}
+
+/**
+ * Fetches the trash retention window via `GET /api/v1/trash/info` so the trash
+ * UI can compute how long each archived photo has before it is auto-purged.
+ *
+ * @throws ApiError on a non-2xx response.
+ */
+export async function fetchTrashInfo(signal?: AbortSignal): Promise<TrashInfo> {
+  const res = await fetch(`${API_BASE}/trash/info`, { credentials: 'same-origin', signal })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as TrashInfo
+}
+
 /** Thumbnail size used for library grid tiles — a square crop, high enough DPI. */
 export const GRID_THUMB_SIZE = 'tile_500'

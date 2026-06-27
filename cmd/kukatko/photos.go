@@ -44,6 +44,7 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 func buildPhotoAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API,
 	similar photoapi.SimilarSearcher, embedder photoapi.TextEmbedder, faceSvc *facematch.Service,
+	purger photoapi.Purger,
 ) (*photoapi.API, error) {
 	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
 	if err != nil {
@@ -60,6 +61,8 @@ func buildPhotoAPI(
 		Embedder:        embedder,
 		Faces:           faceSvc,
 		Favorites:       organize.NewStore(db.Pool()),
+		Purger:          purger,
+		RetentionDays:   cfg.Trash.RetentionDays,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,

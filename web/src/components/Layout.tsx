@@ -66,6 +66,11 @@ export function Layout() {
                   {t('nav.upload')}
                 </Nav.Link>
               )}
+              {canWrite && (
+                <Nav.Link as={NavLink} to="/trash">
+                  {t('nav.trash')}
+                </Nav.Link>
+              )}
               {/* Import/migration administration is admin-only. */}
               {isAdmin && (
                 <Nav.Link as={NavLink} to="/import">

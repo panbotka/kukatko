@@ -21,6 +21,7 @@ import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { SearchPage } from './pages/SearchPage'
 import { SlideshowPage } from './pages/SlideshowPage'
 import { SubjectPage } from './pages/SubjectPage'
+import { TrashPage } from './pages/TrashPage'
 import { UploadPage } from './pages/UploadPage'
 
 /**
@@ -54,6 +55,8 @@ export function App() {
               <Route element={<RequireRole role="editor" />}>
                 <Route path="/upload" element={<UploadPage />} />
                 <Route path="/people/clusters" element={<ClustersPage />} />
+                {/* Trash management (restore / permanent delete) is a write action. */}
+                <Route path="/trash" element={<TrashPage />} />
               </Route>
               {/* Import/migration administration is admin-only. */}
               <Route element={<RequireRole role="admin" />}>
