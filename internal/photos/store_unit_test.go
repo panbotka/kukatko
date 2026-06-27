@@ -194,6 +194,58 @@ func TestBuildListQuery(t *testing.T) {
 	})
 }
 
+// TestBuildListQuery_membershipScope verifies the album/label scope filters add
+// correlated EXISTS subqueries that bind the UID and apply alongside the standard
+// filters and pagination.
+func TestBuildListQuery_membershipScope(t *testing.T) {
+	t.Parallel()
+
+	t.Run("album scope binds the uid", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{AlbumUID: "al_1"})
+		want := "EXISTS (SELECT 1 FROM album_photos ap " +
+			"WHERE ap.photo_uid = photos.uid AND ap.album_uid = $1)"
+		if !strings.Contains(query, want) {
+			t.Errorf("query missing album scope %q: %q", want, query)
+		}
+		if len(args) != 3 || args[0] != "al_1" {
+			t.Errorf("args = %v, want [al_1 limit offset]", args)
+		}
+	})
+
+	t.Run("label scope binds the uid", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{LabelUID: "lb_1"})
+		want := "EXISTS (SELECT 1 FROM photo_labels pl " +
+			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = $1)"
+		if !strings.Contains(query, want) {
+			t.Errorf("query missing label scope %q: %q", want, query)
+		}
+		if len(args) != 3 || args[0] != "lb_1" {
+			t.Errorf("args = %v, want [lb_1 limit offset]", args)
+		}
+	})
+
+	t.Run("scope applies after the other filters and keeps the archive guard", func(t *testing.T) {
+		t.Parallel()
+		yes := true
+		query, args := buildListQuery(ListParams{AlbumUID: "al_2", Private: &yes})
+		if !strings.Contains(query, "private = $1") {
+			t.Errorf("query missing private filter: %q", query)
+		}
+		if !strings.Contains(query, "ap.album_uid = $2") {
+			t.Errorf("query missing bound album scope after filters: %q", query)
+		}
+		if !strings.Contains(query, "archived_at IS NULL") {
+			t.Errorf("query dropped the live-only guard: %q", query)
+		}
+		// private + album uid + limit + offset.
+		if len(args) != 4 {
+			t.Fatalf("args = %v, want 4 entries", args)
+		}
+	})
+}
+
 // TestBuildSearchQuery verifies the search query binds the full-text query,
 // ranks by ts_rank, keeps the list filters and paginates.
 func TestBuildSearchQuery(t *testing.T) {

@@ -41,7 +41,9 @@ inkrementální).
   stránkování i `FullText`; companion k sémantickému hledání: caller drží kandidáty z
   embeddings indexu a profiltruje je list filtry, pořadí dle podobnosti si řadí sám)/
   `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/private/
-  uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search,
+  uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
+  **album/label scope** `AlbumUID`/`LabelUID` korelovaným `EXISTS` nad `album_photos`/`photo_labels`
+  — podklad sdíleného scoped výpisu fotek alba/štítku přes `GET /photos?album=`/`?label=`,
   řazení taken_at/created_at/uid/title/file_size, stránkování limit/offset; `Count` sdílí
   `buildWhere` filtry pro `total`)/`Search` (česky-aware fulltext nad generovaným `fts
   tsvector` sloupcem: `ListParams.FullText` přes `websearch_to_tsquery('simple',
@@ -126,7 +128,8 @@ inkrementální).
   **a `GET /search`**; `parseListParams`
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
   newest/oldest/taken_at/added/title/size + `order`, `archived` false/true/only, `private`,
-  `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`; neplatný → 400),
+  `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`album`/`label`
+  scope** → `AlbumUID`/`LabelUID`; neplatný → 400),
   list vrací `{photos,total,limit,offset,next_offset}` pro infinite scroll;
   `GET /search?q=&mode=` (`handleSearch`, `search.go`) = **sémantické + hybridní hledání**,
   `mode` = `fulltext`|`semantic`|`hybrid` (default `hybrid`, neznámý → 400), `q` povinný
@@ -397,7 +400,32 @@ inkrementální).
   fallbackem (`album`/`label`); sentinely `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`/
   `ErrUserNotFound`/`ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidSource` — FK porušení při zápisu
   do join tabulek se mapuje na not-found sentinel podle porušeného sloupce (`photo_uid` → photo,
-  jinak album/label/user)), `internal/web/`
+  jinak album/label/user)), `internal/organizeapi/`
+  (read/curace HTTP API nad alby a štítky — podklad Albums/Labels UI: rozhraní `AlbumStore`/
+  `LabelStore` (podmnožiny `organize.Store`) → unit-testovatelné s faky bez DB;
+  `NewAPI(Config{Albums,Labels,RequireAuth,RequireWrite})`+`RegisterRoutes` mountuje dva
+  subroutery: **alba** `GET /albums` (RequireAuth, `{albums:[AlbumCount]}` s počty + cover),
+  `POST /albums` (RequireWrite, 201, `title` povinný, validace typu přes `ErrInvalidType`),
+  `GET /albums/{uid}` (RequireAuth), `PATCH /albums/{uid}` (RequireWrite, edituje
+  title/description/cover_photo_uid/private/order_by; **strukturální `type` se zachová** —
+  handler načte existující album a `type` z těla nepřebírá, takže folder/moment/… nelze přepsat),
+  `DELETE /albums/{uid}` (RequireWrite → 204), členství `POST /albums/{uid}/photos`
+  `{photo_uids:[…]}` (přidá za stávající fotky — base pozice = `len(ListPhotoUIDs)`),
+  `DELETE /albums/{uid}/photos` `{photo_uids:[…]}` (odebere, idempotentní),
+  `PATCH /albums/{uid}/order` `{photo_uids:[…]}` (přeřadí přes `ReorderPhotos`) — všechny tři
+  membership endpointy vrací aktuální pořadí `{photo_uids:[…]}`, nejdřív ověří existenci alba
+  (`requireAlbum` → 404); **štítky** `GET /labels` (RequireAuth, `{labels:[LabelCount]}`),
+  `POST /labels` (RequireWrite, 201, `name` povinný), `GET /labels/{uid}` (RequireAuth),
+  `PATCH /labels/{uid}` (RequireWrite, name/priority), `DELETE /labels/{uid}` (RequireWrite → 204),
+  připojení `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}` → 204 (validace source
+  přes `ErrInvalidSource`), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204 (ověří existenci
+  štítku → 404, pak idempotentní detach); body decode `DisallowUnknownFields` + 1 MiB limit;
+  sentinely mapované `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`→404,
+  `ErrInvalidType`/`ErrInvalidSource`→400; **prohlížení fotek alba/štítku nemá vlastní endpoint** —
+  jede přes sdílené `GET /photos` scopnuté `?album={uid}`/`?label={uid}` (viz `photos.ListParams`
+  `AlbumUID`/`LabelUID` + `photoapi` `parseListParams`); mountuje se dalším `server.WithAPI`
+  (`buildOrganizeAPI` v `cmd/kukatko/organize.go`, sdílí jednu `organize.Store` pro alba i štítky)),
+  `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -522,6 +550,8 @@ inkrementální).
   v `serve` (`buildIngest` v `cmd/kukatko/ingest.go`). Limit `upload.max_file_size_mb` (0 = bez limitu).
 - **Photos API (`/api/v1`, `internal/photoapi`):** `GET /photos` (přihlášený) — list s filtry/
   řazením/stránkováním (query params, neplatný → 400) → `{photos,total,limit,offset,next_offset}`;
+  filtr `?album={uid}`/`?label={uid}` scopne výpis na fotky alba/štítku (sdílený endpoint pro
+  galerii alba i štítku, ctí všechny ostatní filtry/řazení/stránkování — viz Albums & Labels API);
   `GET /search?q=&mode=` (přihlášený) — **sémantické + hybridní hledání**, `mode` =
   `fulltext`|`semantic`|`hybrid` (default `hybrid`, neznámý → 400): **fulltext** = česky-aware
   fulltext nad `fts tsvector` (dictionary `simple` + `unaccent`, řazení `ts_rank`
@@ -583,6 +613,23 @@ inkrementální).
   `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů),
   `POST /process/clusters` → `{created}` (re-clustering nepřiřazených obličejů přes
   `cluster.Recluster`). Mountuje se sedmým `server.WithAPI` (`buildJobs`).
+- **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **alba** `GET /albums`
+  (RequireAuth) → `{albums:[{...album, photo_count}]}` (počty + cover); `POST /albums`
+  (RequireWrite) → 201 z `{title,description?,type?,cover_photo_uid?,private?,order_by?}` (prázdný
+  title / neplatný typ → 400); `GET /albums/{uid}` (RequireAuth, 404); `PATCH /albums/{uid}`
+  (RequireWrite) edituje title/description/cover_photo_uid/private/order_by (**`type` se zachová**,
+  není editovatelný); `DELETE /albums/{uid}` (RequireWrite → 204); členství
+  `POST /albums/{uid}/photos` `{photo_uids:[…]}` (přidá za stávající), `DELETE /albums/{uid}/photos`
+  `{photo_uids:[…]}` (odebere), `PATCH /albums/{uid}/order` `{photo_uids:[…]}` (přeřadí) — všechny
+  vrací aktuální pořadí `{photo_uids:[…]}`, 404 chybějící album/fotka. **Štítky** `GET /labels`
+  (RequireAuth) → `{labels:[{...label, photo_count}]}` (řazení priority DESC); `POST /labels`
+  (RequireWrite) → 201 z `{name,priority?}` (prázdné jméno → 400); `GET /labels/{uid}`
+  (RequireAuth, 404); `PATCH /labels/{uid}` (RequireWrite, name/priority); `DELETE /labels/{uid}`
+  (RequireWrite → 204); připojení `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}`
+  → 204 (neplatný source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204. **Galerie
+  fotek alba/štítku** jede přes sdílené `GET /photos?album={uid}`/`?label={uid}` (stejný tvar +
+  filtry/řazení/stránkování). Viewer čte, ale nemutuje (403). Mountuje se dalším `server.WithAPI`
+  (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

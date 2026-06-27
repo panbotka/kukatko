@@ -144,6 +144,15 @@ func TestParseListParams_valid(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "album and label scope",
+			query: "album=al_1&label=lb_2",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.AlbumUID != "al_1" || p.LabelUID != "lb_2" {
+					t.Errorf("scope filters mismapped: album=%q label=%q", p.AlbumUID, p.LabelUID)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

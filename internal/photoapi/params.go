@@ -121,7 +121,9 @@ func applyArchived(q url.Values, params *photos.ListParams) error {
 }
 
 // applyFilters validates and applies the metadata filters: private, has-GPS,
-// date range, camera, lens, uploader and free-text search.
+// date range, camera, lens, uploader and free-text search, plus the album and
+// label scope filters that restrict the list to one album's or one label's
+// photos so the same endpoint serves a scoped grid.
 func applyFilters(q url.Values, params *photos.ListParams) error {
 	private, err := boolParam(q, "private")
 	if err != nil {
@@ -151,6 +153,8 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 	params.Lens = q.Get("lens")
 	params.UploadedBy = q.Get("uploader")
 	params.Search = q.Get("q")
+	params.AlbumUID = q.Get("album")
+	params.LabelUID = q.Get("label")
 	return nil
 }
 

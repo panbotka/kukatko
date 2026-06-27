@@ -90,6 +90,14 @@ type ListParams struct {
 	// diacritics-insensitive full-text query. It is used by Search, where it also
 	// drives the ts_rank ordering; List and Count treat it as a plain filter.
 	FullText string
+	// AlbumUID, when non-empty, restricts the result to photos that are members of
+	// the album with that UID. It scopes the shared list/search path to an album so
+	// every other filter, the sort and pagination apply unchanged.
+	AlbumUID string
+	// LabelUID, when non-empty, restricts the result to photos that carry the label
+	// with that UID. It scopes the shared list/search path to a label so every
+	// other filter, the sort and pagination apply unchanged.
+	LabelUID string
 	// Sort selects the ordering column; an unknown value falls back to
 	// SortByTakenAt.
 	Sort SortField
@@ -234,6 +242,26 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 	where = append(where, gpsClauses(params)...)
 	where = append(where, textClauses(params, bind)...)
 	where = append(where, ftsClauses(params, bind)...)
+	where = append(where, membershipClauses(params, bind)...)
+	return where
+}
+
+// membershipClauses returns the album/label scoping filters as correlated EXISTS
+// subqueries, binding each UID through bind. They keep an album- or label-scoped
+// listing on the shared List/Count/Search path, so the standard filters, the
+// chosen ordering and pagination all apply on top of the scope. The outer photo
+// reference is qualified (photos.uid) to disambiguate it from the join table's
+// photo_uid inside the subquery.
+func membershipClauses(params ListParams, bind func(any) string) []string {
+	var where []string
+	if params.AlbumUID != "" {
+		where = append(where, "EXISTS (SELECT 1 FROM album_photos ap "+
+			"WHERE ap.photo_uid = photos.uid AND ap.album_uid = "+bind(params.AlbumUID)+")")
+	}
+	if params.LabelUID != "" {
+		where = append(where, "EXISTS (SELECT 1 FROM photo_labels pl "+
+			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = "+bind(params.LabelUID)+")")
+	}
 	return where
 }
 

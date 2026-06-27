@@ -509,6 +509,33 @@ Organizační schéma nad katalogem (migrace `0011_albums_labels_favorites.sql`,
   `ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidSource`. FK porušení při zápisu do join tabulek
   se mapují na not-found sentinely podle porušeného sloupce (`photo_uid` → photo apod.).
 
+### Alba & štítky API (`internal/organizeapi`)
+
+HTTP API nad katalogem alb a štítků (`NewAPI(Config{Albums,Labels,RequireAuth,RequireWrite})` +
+`RegisterRoutes`). `Albums`/`Labels` jsou rozhraní (podmnožiny `organize.Store`), takže se
+handlery unit-testují s faky bez DB. Čtení je pro každého přihlášeného (`RequireAuth`), mutace
+pro editora/admina (`RequireWrite`). Prohlížení fotek alba/štítku **nemá vlastní endpoint** —
+jede přes sdílené `GET /photos` scopnuté `?album={uid}` / `?label={uid}` (viz níže), takže
+frontend znovupoužije stejnou virtualizovanou mřížku.
+
+- **Alba** — `GET /albums` (list s počty + cover), `POST /albums` (201, `title` povinný, validace
+  typu), `GET /albums/{uid}`, `PATCH /albums/{uid}` (title/description/cover/order_by/private;
+  **strukturální `type` se zachová**, není editovatelný), `DELETE /albums/{uid}` (204);
+  členství `POST /albums/{uid}/photos` `{photo_uids:[…]}` (přidá za stávající fotky),
+  `DELETE /albums/{uid}/photos` `{photo_uids:[…]}` (odebere), `PATCH /albums/{uid}/order`
+  `{photo_uids:[…]}` (přeřadí) — všechny tři vrací aktuální pořadí `{photo_uids:[…]}`.
+- **Štítky** — `GET /labels` (list s počty), `POST /labels` (201, `name` povinný),
+  `GET /labels/{uid}`, `PATCH /labels/{uid}` (name/priority), `DELETE /labels/{uid}` (204);
+  připojení `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}` (204),
+  `DELETE /labels/{uid}/photos` `{photo_uid}` (204).
+- **Scoped listing** — `GET /photos?album={uid}` a `GET /photos?label={uid}` (a stejně tak
+  `GET /search`) přidávají do `photos.ListParams` korelované `EXISTS` filtry (`AlbumUID`/`LabelUID`),
+  takže scope ctí všechny ostatní list filtry, řazení i stránkování a odpověď má identický tvar
+  jako běžný výpis knihovny.
+- **Stavové kódy** — 400 (validace/neznámé pole/neplatný typ/source), 404 (chybějící album/štítek/
+  fotka), 403 (viewer na mutaci), 401 (nepřihlášený). Mountuje se devátým `server.WithAPI`
+  (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
+
 ### People UI (frontend)
 
 Kompletní lidský zážitek nad výše uvedenými API (react-bootstrap Superhero, i18n cs/en,
@@ -636,6 +663,22 @@ Endpointy pod `/api/v1` (JSON):
 | PATCH | `/subjects/{uid}` | editor/admin | editace `name/type/favorite/private/notes/cover_photo_uid` |
 | DELETE | `/subjects/{uid}` | editor/admin | smaže subjekt (markery se odpojí) → 204 |
 | GET | `/subjects/{uid}/photos` | přihlášený | paginovaná galerie fotek subjektu → `{photos,total,limit,offset,next_offset}` (newest-first, nearchivované) |
+| GET | `/albums` | přihlášený | seznam alb s počty fotek + cover → `{albums:[{…album, photo_count}]}` (viz Alba & štítky API) |
+| POST | `/albums` | editor/admin | `{title,description?,type?,cover_photo_uid?,private?,order_by?}` → 201 (prázdný title/neplatný typ → 400) |
+| GET | `/albums/{uid}` | přihlášený | detail alba (404 chybějící) |
+| PATCH | `/albums/{uid}` | editor/admin | editace `title/description/cover_photo_uid/private/order_by` (strukturální `type` se zachová) |
+| DELETE | `/albums/{uid}` | editor/admin | smaže album (členství se odpojí) → 204 |
+| POST | `/albums/{uid}/photos` | editor/admin | `{photo_uids:[…]}` přidá fotky za stávající → `{photo_uids:[…]}` (aktuální pořadí) |
+| DELETE | `/albums/{uid}/photos` | editor/admin | `{photo_uids:[…]}` odebere fotky → `{photo_uids:[…]}` |
+| PATCH | `/albums/{uid}/order` | editor/admin | `{photo_uids:[…]}` přeřadí fotky alba → `{photo_uids:[…]}` |
+| GET | `/labels` | přihlášený | seznam štítků s počty fotek → `{labels:[{…label, photo_count}]}` (řazení priority DESC) |
+| POST | `/labels` | editor/admin | `{name,priority?}` → 201 (prázdné jméno → 400) |
+| GET | `/labels/{uid}` | přihlášený | detail štítku (404 chybějící) |
+| PATCH | `/labels/{uid}` | editor/admin | editace `name/priority` |
+| DELETE | `/labels/{uid}` | editor/admin | smaže štítek (připojení se odpojí) → 204 |
+| POST | `/labels/{uid}/photos` | editor/admin | `{photo_uid,source?,uncertainty?}` připojí štítek k fotce → 204 |
+| DELETE | `/labels/{uid}/photos` | editor/admin | `{photo_uid}` odpojí štítek od fotky → 204 |
+| GET | `/photos?album={uid}` / `?label={uid}` | přihlášený | scoped výpis fotek alba/štítku přes sdílené `/photos` (ctí filtry/řazení/stránkování, stejný tvar) |
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
 | POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
 | POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |
