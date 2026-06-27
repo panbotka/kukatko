@@ -84,6 +84,10 @@ export interface PhotoListParams {
   taken_after?: string
   /** RFC3339 timestamp or YYYY-MM-DD date. */
   taken_before?: string
+  /** Scope the listing to photos in this album (`album` query param). */
+  album?: string
+  /** Scope the listing to photos carrying this label (`label` query param). */
+  label?: string
 }
 
 const API_BASE = '/api/v1'
@@ -133,6 +137,8 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('q', params.q)
   set('taken_after', params.taken_after)
   set('taken_before', params.taken_before)
+  set('album', params.album)
+  set('label', params.label)
   return query
 }
 

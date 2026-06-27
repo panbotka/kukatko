@@ -4,8 +4,12 @@ import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth, RequireRole } from './auth/ProtectedRoute'
 import { Layout } from './components/Layout'
 import { AccountPage } from './pages/AccountPage'
+import { AlbumDetailPage } from './pages/AlbumDetailPage'
+import { AlbumsPage } from './pages/AlbumsPage'
 import { ClustersPage } from './pages/ClustersPage'
 import { HomePage } from './pages/HomePage'
+import { LabelDetailPage } from './pages/LabelDetailPage'
+import { LabelsPage } from './pages/LabelsPage'
 import { LibraryPage } from './pages/LibraryPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -30,6 +34,10 @@ export function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<HomePage />} />
               <Route path="/library" element={<LibraryPage />} />
+              <Route path="/albums" element={<AlbumsPage />} />
+              <Route path="/albums/:uid" element={<AlbumDetailPage />} />
+              <Route path="/labels" element={<LabelsPage />} />
+              <Route path="/labels/:uid" element={<LabelDetailPage />} />
               <Route path="/search" element={<SearchPage />} />
               <Route path="/photos/:uid" element={<PhotoDetailPage />} />
               <Route path="/people" element={<PeoplePage />} />

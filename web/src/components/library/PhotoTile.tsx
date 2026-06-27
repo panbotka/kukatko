@@ -1,16 +1,39 @@
 import { useState } from 'react'
+import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { GRID_THUMB_SIZE, type Photo, thumbUrl } from '../../services/photos'
 
+/** Props for {@link PhotoTile}. */
+export interface PhotoTileProps {
+  photo: Photo
+  /**
+   * When true the tile is a selection target: clicking toggles selection (via
+   * {@link PhotoTileProps.onToggleSelect}) instead of navigating to the detail
+   * page, and a checkbox overlay reflects {@link PhotoTileProps.selected}.
+   */
+  selectable?: boolean
+  /** Whether this tile is currently selected (only meaningful when selectable). */
+  selected?: boolean
+  /** Toggles this tile's selection (only meaningful when selectable). */
+  onToggleSelect?: (uid: string) => void
+}
+
 /**
- * A single square thumbnail tile in the library grid. The tile links to the
- * photo's detail route (`/photos/{uid}`). The image is lazy-loaded and sits in a
- * fixed square box so the grid never shifts as thumbnails stream in; a neutral
- * placeholder is shown until it loads or if it fails.
+ * A single square thumbnail tile in the library grid. By default the tile links
+ * to the photo's detail route (`/photos/{uid}`); in selection mode it instead
+ * toggles its selection so a grid of tiles can be batch-added to an album or
+ * given a label. The image is lazy-loaded and sits in a fixed square box so the
+ * grid never shifts as thumbnails stream in; a neutral placeholder is shown until
+ * it loads or if it fails.
  */
-export function PhotoTile({ photo }: { photo: Photo }) {
+export function PhotoTile({
+  photo,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+}: PhotoTileProps) {
   const { t } = useTranslation()
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -19,14 +42,8 @@ export function PhotoTile({ photo }: { photo: Photo }) {
   const taken = photo.taken_at ? new Date(photo.taken_at).toLocaleDateString() : ''
   const alt = taken !== '' ? `${label} — ${taken}` : label
 
-  return (
-    <Link
-      to={`/photos/${photo.uid}`}
-      className="d-block position-relative bg-secondary-subtle overflow-hidden rounded"
-      style={{ aspectRatio: '1 / 1' }}
-      aria-label={label}
-      title={label}
-    >
+  const inner = (
+    <>
       {!failed && (
         <img
           src={thumbUrl(photo.uid, GRID_THUMB_SIZE)}
@@ -56,6 +73,16 @@ export function PhotoTile({ photo }: { photo: Photo }) {
           {t('library.tile.unavailable')}
         </span>
       )}
+      {selectable && (
+        <Form.Check
+          type="checkbox"
+          checked={selected}
+          readOnly
+          tabIndex={-1}
+          aria-hidden="true"
+          className="position-absolute top-0 start-0 m-1"
+        />
+      )}
       {photo.private && (
         <span
           className="position-absolute top-0 end-0 m-1 badge text-bg-dark opacity-75"
@@ -64,6 +91,41 @@ export function PhotoTile({ photo }: { photo: Photo }) {
           {t('library.tile.private')}
         </span>
       )}
+    </>
+  )
+
+  if (selectable) {
+    return (
+      <button
+        type="button"
+        aria-pressed={selected}
+        aria-label={label}
+        title={label}
+        onClick={() => {
+          onToggleSelect?.(photo.uid)
+        }}
+        className={`btn p-0 border-0 d-block position-relative bg-secondary-subtle overflow-hidden rounded w-100${
+          selected ? ' ring ring-primary' : ''
+        }`}
+        style={{
+          aspectRatio: '1 / 1',
+          outline: selected ? '3px solid var(--bs-primary)' : undefined,
+        }}
+      >
+        {inner}
+      </button>
+    )
+  }
+
+  return (
+    <Link
+      to={`/photos/${photo.uid}`}
+      className="d-block position-relative bg-secondary-subtle overflow-hidden rounded"
+      style={{ aspectRatio: '1 / 1' }}
+      aria-label={label}
+      title={label}
+    >
+      {inner}
     </Link>
   )
 }

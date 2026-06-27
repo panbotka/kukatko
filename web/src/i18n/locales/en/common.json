@@ -6,6 +6,8 @@
   "nav": {
     "home": "Home",
     "library": "Library",
+    "albums": "Albums",
+    "labels": "Labels",
     "search": "Search",
     "people": "People",
     "map": "Map",
@@ -72,6 +74,8 @@
     "count": "Photos: {{count}}",
     "loading": "Loading photos…",
     "loadingMore": "Loading more photos…",
+    "select": "Select",
+    "addToCollection": "Add to album / label",
     "filters": {
       "label": "Photo filters",
       "search": "Search",
@@ -143,6 +147,100 @@
     "title": "Similar photos",
     "loading": "Loading similar photos…",
     "error": "Could not load similar photos."
+  },
+  "albums": {
+    "title": "Albums",
+    "create": "New album",
+    "loading": "Loading albums…",
+    "error": "Could not load albums.",
+    "noCover": "No cover",
+    "private": "Private",
+    "photoCount": "{{count}} photos",
+    "empty": {
+      "title": "No albums yet",
+      "hint": "Create an album to start grouping your photos."
+    },
+    "edit": {
+      "titleNew": "New album",
+      "titleEdit": "Edit album",
+      "error": "Could not save. Check the title and try again.",
+      "name": "Title",
+      "description": "Description",
+      "private": "Private",
+      "cancel": "Cancel",
+      "save": "Save"
+    },
+    "reorder": {
+      "moveBack": "Move {{name}} earlier",
+      "moveForward": "Move {{name}} later"
+    }
+  },
+  "albumDetail": {
+    "back": "Albums",
+    "error": "Could not load this album.",
+    "actionError": "The action failed. Please try again.",
+    "edit": "Edit",
+    "delete": "Delete",
+    "select": "Select",
+    "reorder": "Reorder",
+    "reorderHint": "Drag photos or use the arrows to reorder; changes save automatically.",
+    "reorderDone": "Done",
+    "setCover": "Set as cover",
+    "removeSelected": "Remove from album",
+    "confirmDelete": "Delete the album \"{{name}}\"? The photos themselves are kept.",
+    "empty": {
+      "title": "This album has no photos",
+      "hint": "Add photos from the library by selecting them and choosing this album."
+    }
+  },
+  "labels": {
+    "title": "Labels",
+    "create": "New label",
+    "rename": "Rename",
+    "delete": "Delete",
+    "loading": "Loading labels…",
+    "error": "Could not load labels.",
+    "actionError": "The action failed. Please try again.",
+    "confirmDelete": "Delete the label \"{{name}}\"?",
+    "empty": {
+      "title": "No labels yet",
+      "hint": "Create a label to start tagging your photos."
+    },
+    "edit": {
+      "titleNew": "New label",
+      "titleEdit": "Edit label",
+      "error": "Could not save. Check the name and try again.",
+      "name": "Name",
+      "priority": "Priority",
+      "cancel": "Cancel",
+      "save": "Save"
+    }
+  },
+  "labelDetail": {
+    "back": "Labels",
+    "error": "Could not load this label.",
+    "empty": {
+      "title": "No photos with this label",
+      "hint": "Attach this label to photos to see them here."
+    }
+  },
+  "collection": {
+    "add": {
+      "title": "Add {{count}} photos",
+      "loading": "Loading…",
+      "loadError": "Could not load albums and labels.",
+      "saveError": "Could not add the photos. Please try again.",
+      "album": "Album",
+      "label": "Label",
+      "none": "— none —",
+      "cancel": "Cancel",
+      "confirm": "Add"
+    }
+  },
+  "selection": {
+    "label": "Selection actions",
+    "count": "{{count}} selected",
+    "cancel": "Cancel"
   },
   "people": {
     "title": "People",

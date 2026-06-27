@@ -882,6 +882,34 @@ scrollovatelný pruh** náhledů podobných fotek, každý odkazující na svůj
 (fotka bez embeddingu → prázdná odpověď → nic nerenderuje), má loading/error stav a refetchuje při
 změně `uid`.
 
+**Alba (`/albums`, `/albums/{uid}`):** [`AlbumsPage`](web/src/pages/AlbumsPage.tsx) je responzivní
+mřížka karet alb ([`components/organize/AlbumTile`](web/src/components/organize/AlbumTile.tsx) —
+cover, název, počet fotek), každá vede na detail. Editoři/admini mají tlačítko **Nové album**
+([`AlbumEditModal`](web/src/components/organize/AlbumEditModal.tsx) = create/rename, popis,
+soukromé). [`AlbumDetailPage`](web/src/pages/AlbumDetailPage.tsx) ukazuje hlavičku (název, badge
+soukromé) s editorskými akcemi (upravit/smazat/**vybrat**/**přeřadit**) nad fotomřížkou
+**scopnutou na album** přes sdílené `GET /photos?album={uid}` (hook
+[`useScopedPhotos`](web/src/hooks/useScopedPhotos.ts), stejný `FilterBar` + URL stav jako knihovna).
+**Přeřazení** ([`ReorderableGrid`](web/src/components/organize/ReorderableGrid.tsx)) jde
+drag-and-dropem i šipkami (přístupné) a ukládá se přes `PATCH /albums/{uid}/order`; výběr
+([`useSelection`](web/src/hooks/useSelection.ts) + [`SelectionBar`](web/src/components/organize/SelectionBar.tsx))
+umí odebrat fotky z alba nebo nastavit obálku.
+
+**Štítky (`/labels`, `/labels/{uid}`):** [`LabelsPage`](web/src/pages/LabelsPage.tsx) je seznam
+štítků s počty fotek; editoři je vytvářejí/přejmenovávají/mažou
+([`LabelEditModal`](web/src/components/organize/LabelEditModal.tsx) = jméno + priorita). Klik na
+štítek otevře [`LabelDetailPage`](web/src/pages/LabelDetailPage.tsx) — fotomřížka scopnutá na
+štítek přes `GET /photos?label={uid}` (opět `useScopedPhotos` + `FilterBar` + URL stav).
+
+**Přidání do alba/štítku z výběru:** knihovna má pro editory **režim výběru** (`useSelection`):
+dlaždice se přepnou na zaškrtávací (`PhotoTile` `selectable`), `SelectionBar` nabídne
+**Přidat do alba / štítku** přes
+[`AddToCollectionModal`](web/src/components/organize/AddToCollectionModal.tsx), který aplikuje
+hromadnou operaci na vybrané fotky přes `POST /photos/bulk`
+([`services/bulk.ts`](web/src/services/bulk.ts)). Alba/štítky API volá
+[`services/organize.ts`](web/src/services/organize.ts) (CRUD + členství/připojení), `photos.ts`
+přidává `album`/`label` scope do `PhotoListParams`. Odkazy **Alba** a **Štítky** jsou v navbaru.
+
 **Multiupload (`/upload`, editor/admin):** stránka
 ([`web/src/pages/UploadPage.tsx`](web/src/pages/UploadPage.tsx)) pro hromadné nahrávání fotek/videí
 včetně **mobilu**. [`components/upload/DropZone`](web/src/components/upload/DropZone.tsx) nabízí

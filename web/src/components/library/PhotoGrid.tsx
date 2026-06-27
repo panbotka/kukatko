@@ -72,6 +72,16 @@ const gridComponents: GridComponents<GridContext> = {
   Footer: GridFooter,
 }
 
+/** Selection wiring for a grid in selection mode. */
+export interface PhotoGridSelection {
+  /** When true, tiles become selection targets instead of detail links. */
+  active: boolean
+  /** The currently selected photo UIDs. */
+  selected: Set<string>
+  /** Toggles a photo's selection. */
+  onToggle: (uid: string) => void
+}
+
 /** Props for {@link PhotoGrid}. */
 export interface PhotoGridProps {
   photos: Photo[]
@@ -79,6 +89,8 @@ export interface PhotoGridProps {
   moreError: boolean
   onEndReached: () => void
   onRetry: () => void
+  /** Optional selection mode; when omitted the grid is a plain link grid. */
+  selection?: PhotoGridSelection
 }
 
 /**
@@ -93,6 +105,7 @@ export function PhotoGrid({
   moreError,
   onEndReached,
   onRetry,
+  selection,
 }: PhotoGridProps) {
   return (
     <VirtuosoGrid
@@ -101,7 +114,14 @@ export function PhotoGrid({
       context={{ loadingMore, moreError, onRetry }}
       endReached={onEndReached}
       components={gridComponents}
-      itemContent={(_index, photo) => <PhotoTile photo={photo} />}
+      itemContent={(_index, photo) => (
+        <PhotoTile
+          photo={photo}
+          selectable={selection?.active ?? false}
+          selected={selection?.selected.has(photo.uid) ?? false}
+          onToggleSelect={selection?.onToggle}
+        />
+      )}
       computeItemKey={(_index, photo) => photo.uid}
       style={{ minHeight: '50vh' }}
     />

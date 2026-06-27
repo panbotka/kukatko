@@ -5,6 +5,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -89,13 +90,28 @@ function LocationProbe() {
   )
 }
 
+/** Minimal viewer auth context: enough for LibraryPage's role-gated controls. */
+const viewerAuth = {
+  status: 'authenticated',
+  user: { uid: 'u1', username: 'u', display_name: 'U', role: 'viewer' },
+  role: 'viewer',
+  downloadToken: null,
+  canWrite: false,
+  isAdmin: false,
+  login: vi.fn(),
+  logout: vi.fn(),
+  refresh: vi.fn(),
+} as unknown as AuthContextValue
+
 function renderLibrary(initialEntry = '/library') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <LibraryPage />
-        <LocationProbe />
-      </MemoryRouter>
+      <AuthContext.Provider value={viewerAuth}>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <LibraryPage />
+          <LocationProbe />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }

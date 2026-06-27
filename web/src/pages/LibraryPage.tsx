@@ -1,12 +1,16 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
+import { useAuth } from '../auth/AuthContext'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
+import { AddToCollectionModal } from '../components/organize/AddToCollectionModal'
+import { SelectionBar } from '../components/organize/SelectionBar'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
+import { useSelection } from '../hooks/useSelection'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 
@@ -14,11 +18,15 @@ import { useUrlState } from '../lib/urlState'
  * The main photo library: a filter/sort bar over a virtualized, infinite-scroll
  * thumbnail grid. The entire view (filters, sort) lives in the URL, so Back /
  * Forward restore the exact view and sharing the URL reproduces it. The grid
- * pages through the API as the user scrolls.
+ * pages through the API as the user scrolls. Editors can enter selection mode to
+ * add a multi-photo selection to an album or label via the bulk API.
  */
 export function LibraryPage() {
   const { t } = useTranslation()
+  const { canWrite } = useAuth()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
+  const selection = useSelection()
+  const [adding, setAdding] = useState(false)
 
   // Memoise the API params so the data hook only reloads when the query changes.
   const params = useMemo(() => viewToParams(view), [view])
@@ -26,7 +34,29 @@ export function LibraryPage() {
 
   return (
     <>
-      <h1 className="h3 mb-3">{t('library.title')}</h1>
+      <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h1 className="h3 mb-0">{t('library.title')}</h1>
+        {canWrite && !selection.active && (
+          <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
+            {t('library.select')}
+          </Button>
+        )}
+      </div>
+
+      {selection.active && (
+        <SelectionBar count={selection.count} onCancel={selection.disable}>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={selection.count === 0}
+            onClick={() => {
+              setAdding(true)
+            }}
+          >
+            {t('library.addToCollection')}
+          </Button>
+        </SelectionBar>
+      )}
 
       <FilterBar view={view} onChange={setView} total={total} />
 
@@ -55,6 +85,25 @@ export function LibraryPage() {
           moreError={moreError}
           onEndReached={loadMore}
           onRetry={retry}
+          selection={
+            selection.active
+              ? { active: true, selected: selection.selected, onToggle: selection.toggle }
+              : undefined
+          }
+        />
+      )}
+
+      {canWrite && (
+        <AddToCollectionModal
+          show={adding}
+          photoUids={[...selection.selected]}
+          onHide={() => {
+            setAdding(false)
+          }}
+          onDone={() => {
+            setAdding(false)
+            selection.disable()
+          }}
         />
       )}
     </>

@@ -6,6 +6,8 @@
   "nav": {
     "home": "Domů",
     "library": "Knihovna",
+    "albums": "Alba",
+    "labels": "Štítky",
     "search": "Hledat",
     "people": "Lidé",
     "map": "Mapa",
@@ -72,6 +74,8 @@
     "count": "Počet fotek: {{count}}",
     "loading": "Načítání fotek…",
     "loadingMore": "Načítání dalších fotek…",
+    "select": "Vybrat",
+    "addToCollection": "Přidat do alba / štítku",
     "filters": {
       "label": "Filtry fotek",
       "search": "Hledat",
@@ -138,6 +142,100 @@
     "error": {
       "load": "Vyhledávání se nezdařilo."
     }
+  },
+  "albums": {
+    "title": "Alba",
+    "create": "Nové album",
+    "loading": "Načítání alb…",
+    "error": "Alba se nepodařilo načíst.",
+    "noCover": "Bez náhledu",
+    "private": "Soukromé",
+    "photoCount": "{{count}} fotek",
+    "empty": {
+      "title": "Zatím žádná alba",
+      "hint": "Vytvoř album a začni seskupovat své fotky."
+    },
+    "edit": {
+      "titleNew": "Nové album",
+      "titleEdit": "Upravit album",
+      "error": "Nepodařilo se uložit. Zkontroluj název a zkus to znovu.",
+      "name": "Název",
+      "description": "Popis",
+      "private": "Soukromé",
+      "cancel": "Zrušit",
+      "save": "Uložit"
+    },
+    "reorder": {
+      "moveBack": "Posunout {{name}} dříve",
+      "moveForward": "Posunout {{name}} později"
+    }
+  },
+  "albumDetail": {
+    "back": "Alba",
+    "error": "Toto album se nepodařilo načíst.",
+    "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "edit": "Upravit",
+    "delete": "Smazat",
+    "select": "Vybrat",
+    "reorder": "Přeřadit",
+    "reorderHint": "Přetáhni fotky nebo použij šipky pro přeřazení; změny se ukládají automaticky.",
+    "reorderDone": "Hotovo",
+    "setCover": "Nastavit jako náhled",
+    "removeSelected": "Odebrat z alba",
+    "confirmDelete": "Smazat album „{{name}}“? Samotné fotky zůstanou zachovány.",
+    "empty": {
+      "title": "Toto album nemá žádné fotky",
+      "hint": "Přidej fotky z knihovny tak, že je vybereš a zvolíš toto album."
+    }
+  },
+  "labels": {
+    "title": "Štítky",
+    "create": "Nový štítek",
+    "rename": "Přejmenovat",
+    "delete": "Smazat",
+    "loading": "Načítání štítků…",
+    "error": "Štítky se nepodařilo načíst.",
+    "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "confirmDelete": "Smazat štítek „{{name}}“?",
+    "empty": {
+      "title": "Zatím žádné štítky",
+      "hint": "Vytvoř štítek a začni označovat své fotky."
+    },
+    "edit": {
+      "titleNew": "Nový štítek",
+      "titleEdit": "Upravit štítek",
+      "error": "Nepodařilo se uložit. Zkontroluj jméno a zkus to znovu.",
+      "name": "Jméno",
+      "priority": "Priorita",
+      "cancel": "Zrušit",
+      "save": "Uložit"
+    }
+  },
+  "labelDetail": {
+    "back": "Štítky",
+    "error": "Tento štítek se nepodařilo načíst.",
+    "empty": {
+      "title": "Žádné fotky s tímto štítkem",
+      "hint": "Připoj tento štítek k fotkám a uvidíš je tady."
+    }
+  },
+  "collection": {
+    "add": {
+      "title": "Přidat {{count}} fotek",
+      "loading": "Načítání…",
+      "loadError": "Alba a štítky se nepodařilo načíst.",
+      "saveError": "Fotky se nepodařilo přidat. Zkus to prosím znovu.",
+      "album": "Album",
+      "label": "Štítek",
+      "none": "— žádné —",
+      "cancel": "Zrušit",
+      "confirm": "Přidat"
+    }
+  },
+  "selection": {
+    "label": "Akce výběru",
+    "count": "Vybráno: {{count}}",
+    "cancel": "Zrušit"
   },
   "similar": {
     "title": "Podobné fotky",

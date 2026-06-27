@@ -501,7 +501,8 @@ inkrementální).
   frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
   (`Layout` = navbar shell s user-menu/logout + role-gated nav — odkaz **Knihovna**
-  míří na `/library`, **Hledat** na `/search`, **Lidé** na `/people`, **Nahrát** na `/upload` (jen editor/admin),
+  míří na `/library`, **Alba** na `/albums`, **Štítky** na `/labels`, **Hledat** na `/search`,
+  **Lidé** na `/people`, **Nahrát** na `/upload` (jen editor/admin),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
   `LanguageSwitcher`;
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
@@ -516,10 +517,23 @@ inkrementální).
   na search stránce), `SimilarPhotos` (znovupoužitelný horizontálně scrollovatelný pruh
   podobných fotek nad `GET /photos/{uid}/similar` přes `fetchSimilar`, odkazy na detail,
   empty-friendly + loading/error, refetch při změně `uid`),
-  `GridSkeleton` (placeholder mřížka při prvním načtení)),
+  `GridSkeleton` (placeholder mřížka při prvním načtení); `PhotoTile`+`PhotoGrid` podporují
+  volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`),
+  `components/organize/` = `AlbumTile` (karta alba: cover/název/počet → `/albums/{uid}`),
+  `AlbumEditModal` (create/rename alba: název/popis/soukromé), `LabelEditModal` (create/rename
+  štítku: jméno/priorita), `ReorderableGrid` (ne-virtualizovaná drag-and-drop mřížka + šipky pro
+  přeřazení alba, controlled přes `onReorder`), `SelectionBar` (sticky toolbar výběru: počet +
+  akce + zrušit), `AddToCollectionModal` (přidá výběr fotek do alba/štítku přes `POST /photos/bulk`),
   `pages/` (`HomePage` volá `GET /healthz`, `LoginPage`, `AccountPage` = změna vlastního hesla,
   `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
-  mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL,
+  mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, plus pro editory
+  **režim výběru** → `AddToCollectionModal` (přidat do alba/štítku přes bulk API),
+  `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
+  `AlbumDetailPage` = `/albums/:uid` hlavička + editorské akce (upravit/smazat/vybrat/přeřadit) nad
+  fotomřížkou scopnutou na album (`useScopedPhotos` + `FilterBar` + URL stav); přeřazení přes
+  `ReorderableGrid`→`PATCH /albums/{uid}/order`, výběr → odebrat z alba / nastavit cover,
+  `LabelsPage` = `/labels` seznam štítků s počty + create/rename/delete (editor/admin),
+  `LabelDetailPage` = `/labels/:uid` fotomřížka scopnutá na štítek (`useScopedPhotos` + `FilterBar` + URL),
   `SearchPage` = sémantické/hybridní/fulltext hledání: prominentní debouncované (350 ms)
   vyhledávací pole + přepínač režimu (`q`+`mode` v URL), stejná virtualizovaná mřížka jako
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
@@ -556,7 +570,10 @@ inkrementální).
   per-file status+progress, souhrn počtů, `createdUids` pro odkaz do knihovny; auto-drainuje
   frontu efektem po `start`/retry, ruší běžící uploady při unmountu;
   `useSubjectPhotos` = obálka nad `usePaginatedPhotos` nad `GET /subjects/{uid}/photos`
-  (galerie osoby, reset+reload při změně `uid`)),
+  (galerie osoby, reset+reload při změně `uid`); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
+  nad `GET /photos` scopnutým na album/štítek (`{album?,label?}` + filtry/sort z URL, volitelný
+  `reloadKey` pro refetch po mutaci); `useSelection` = multi-výběr fotek v mřížce
+  (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`clear`)),
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` + `LIBRARY_DEFAULTS` + `viewToParams`
@@ -574,8 +591,14 @@ inkrementální).
   `fulltext`/`semantic`/`hybrid`, odpověď navíc `mode`+`degraded`),
   `fetchSimilar(uid,limit?,signal)` nad `GET /api/v1/photos/{uid}/similar` → `SimilarPhoto[]`
   (`Photo`+`distance`; empty-friendly), typy `SimilarPhoto`/`SimilarResponse`,
-  `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo`/`PhotoListParams`/
-  `PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`; `upload.ts` = `uploadFile(file,{onProgress,signal})`
+  `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo`/`PhotoListParams`
+  (vč. `album`/`label` scope)/`PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`;
+  `organize.ts` = Albums/Labels klient: alba `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
+  `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`/`reorderAlbumPhotos`, štítky `fetchLabels`/
+  `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; typy
+  `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput`; `bulk.ts` =
+  `bulkUpdatePhotos(uids,ops)` nad `POST /photos/bulk` (selection → add do alba/štítku), typy
+  `BulkOperations`/`BulkResult`; `upload.ts` = `uploadFile(file,{onProgress,signal})`
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
   `UploadOutcome`; `photos.ts` navíc `fetchPhoto(uid)` (detail `GET /photos/{uid}` →
@@ -590,7 +613,8 @@ inkrementální).
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth` → `Layout` (`/`, `/library`,
-  `/search`, `/photos/:uid`, `/people`, `/people/:uid`, `/account`; `/upload` a `/people/clusters`
+  `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/photos/:uid`, `/people`,
+  `/people/:uid`, `/account`; `/upload` a `/people/clusters`
   navíc pod `RequireRole role="editor"` = write-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
