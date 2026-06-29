@@ -219,9 +219,12 @@ Originály na disku v layoutu `YYYY/MM/<filename>`.
 - **`users`** — `role IN (admin|editor|viewer)`, `password_hash` (bcrypt cost 12), `disabled`.
 - **`sessions`** — viz [§11](#11-auth-a-bezpečnost) (přidáno sliding expiry).
 - **`audit_log`** — durable, zapisuje se **ve stejné transakci** jako mutace (migrace
-  `0012_audit_log.sql`, balík `internal/audit`: `Write(ctx, exec, Entry)` přes pool **i** `pgx.Tx`).
-  První konzument: hromadná editace metadat (`POST /api/v1/photos/bulk`, `internal/bulk` +
-  `internal/bulkapi`).
+  `0012_audit_log.sql` + `0014_audit_request.sql` přidává `ip`/`user_agent` a index
+  `(target_type, target_uid)`, balík `internal/audit`: `Write(ctx, exec, Entry)` přes pool **i**
+  `pgx.Tx`; handler konvence `FromRequest`→`Meta`→`Entry`). Konzumenti: hromadná editace metadat
+  (`POST /api/v1/photos/bulk`) a foto PATCH/archive/unarchive (audited varianty `photos.Store`).
+  Admin čtení: `GET /api/v1/audit` (`internal/auditapi`, filtry user/entity/action/datum +
+  stránkování, admin-only). Další mutační domény přebírají in-tx audit konvenci postupně.
 
 ### 5.2 Nové tabulky v Kukátku
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -297,27 +298,36 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleArchive soft-deletes the photo (sets archived_at) and returns the
-// refreshed photo. A missing photo is answered with 404.
+// refreshed photo, recording an audit entry in the same transaction. A missing
+// photo is answered with 404.
 func (a *API) handleArchive(w http.ResponseWriter, r *http.Request) {
-	runArchive(w, r, a.store.Archive, "archiving photo failed")
+	runArchive(w, r, audit.ActionPhotoArchive, a.store.ArchiveAudited, "archiving photo failed")
 }
 
 // handleUnarchive restores an archived photo (clears archived_at) and returns
-// the refreshed photo. A missing photo is answered with 404.
+// the refreshed photo, recording an audit entry in the same transaction. A
+// missing photo is answered with 404.
 func (a *API) handleUnarchive(w http.ResponseWriter, r *http.Request) {
-	runArchive(w, r, a.store.Unarchive, "unarchiving photo failed")
+	runArchive(w, r, audit.ActionPhotoUnarchive, a.store.UnarchiveAudited, "unarchiving photo failed")
 }
 
-// runArchive applies the archive-state transition op to the photo named in the
-// request path and writes the refreshed photo, mapping a missing photo to 404
-// and any other failure to 500 with failMsg.
+// runArchive applies the audited archive-state transition op to the photo named
+// in the request path and writes the refreshed photo, recording action in the
+// audit log within the mutation transaction. It maps a missing photo to 404 and
+// any other failure to 500 with failMsg.
 func runArchive(
-	w http.ResponseWriter, r *http.Request,
-	op func(ctx context.Context, uid string) (photos.Photo, error),
+	w http.ResponseWriter, r *http.Request, action string,
+	op func(ctx context.Context, uid string, entry audit.Entry) (photos.Photo, error),
 	failMsg string,
 ) {
 	uid := chi.URLParam(r, "uid")
-	photo, err := op(r.Context(), uid)
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	entry := audit.FromRequest(r, user.UID).Entry(action, "photos", uid, nil)
+	photo, err := op(r.Context(), uid, entry)
 	if err != nil {
 		writePhotoError(w, err, failMsg)
 		return

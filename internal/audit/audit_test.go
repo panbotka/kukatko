@@ -66,8 +66,8 @@ func TestWrite_argumentsAndDetails(t *testing.T) {
 	if err := Write(context.Background(), exec, entry); err != nil {
 		t.Fatalf("Write() error = %v, want nil", err)
 	}
-	if len(exec.args) != 5 {
-		t.Fatalf("Write() passed %d args, want 5", len(exec.args))
+	if len(exec.args) != 7 {
+		t.Fatalf("Write() passed %d args, want 7", len(exec.args))
 	}
 	if exec.args[0] != nil {
 		t.Errorf("actor_uid arg = %v, want nil", exec.args[0])
@@ -77,6 +77,12 @@ func TestWrite_argumentsAndDetails(t *testing.T) {
 	}
 	if exec.args[3] != nil {
 		t.Errorf("target_uid arg = %v, want nil", exec.args[3])
+	}
+	if exec.args[5] != nil {
+		t.Errorf("ip arg = %v, want nil", exec.args[5])
+	}
+	if exec.args[6] != nil {
+		t.Errorf("user_agent arg = %v, want nil", exec.args[6])
 	}
 	raw, ok := exec.args[4].([]byte)
 	if !ok {

@@ -244,11 +244,19 @@ func (s *Store) ListByUIDs(ctx context.Context, uids []string) ([]Photo, error) 
 // by uid, bumps updated_at, and returns the refreshed photo. It returns
 // ErrPhotoNotFound if no such photo exists.
 func (s *Store) UpdateMetadata(ctx context.Context, uid string, m MetadataUpdate) (Photo, error) {
-	q := `UPDATE photos SET
+	return updateMetadataRow(ctx, s.pool, uid, m)
+}
+
+// updateMetadataRow runs the metadata UPDATE on q, which may be the pool or an
+// open transaction, and returns the refreshed photo or ErrPhotoNotFound. The
+// transaction form backs UpdateMetadataAudited, which writes an audit row in the
+// same transaction.
+func updateMetadataRow(ctx context.Context, q rowQuerier, uid string, m MetadataUpdate) (Photo, error) {
+	sql := `UPDATE photos SET
 		title = $2, description = $3, notes = $4, taken_at = $5, taken_at_source = $6,
 		lat = $7, lng = $8, altitude = $9, private = $10, updated_at = now()
 		WHERE uid = $1 RETURNING ` + photoColumns
-	photo, err := scanPhoto(s.pool.QueryRow(ctx, q, uid,
+	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid,
 		m.Title, m.Description, m.Notes, m.TakenAt, m.TakenAtSource,
 		m.Lat, m.Lng, m.Altitude, m.Private))
 	if err != nil {
@@ -276,13 +284,20 @@ func (s *Store) Unarchive(ctx context.Context, uid string) (Photo, error) {
 // setArchived sets or clears archived_at for the photo identified by uid and
 // returns the refreshed photo, translating pgx.ErrNoRows into ErrPhotoNotFound.
 func (s *Store) setArchived(ctx context.Context, uid string, archived bool) (Photo, error) {
+	return setArchivedRow(ctx, s.pool, uid, archived)
+}
+
+// setArchivedRow sets or clears archived_at on q, which may be the pool or an
+// open transaction, and returns the refreshed photo or ErrPhotoNotFound. The
+// transaction form backs ArchiveAudited/UnarchiveAudited.
+func setArchivedRow(ctx context.Context, q rowQuerier, uid string, archived bool) (Photo, error) {
 	expr := "NULL"
 	if archived {
 		expr = "now()"
 	}
-	q := "UPDATE photos SET archived_at = " + expr + ", updated_at = now() " +
+	sql := "UPDATE photos SET archived_at = " + expr + ", updated_at = now() " +
 		"WHERE uid = $1 RETURNING " + photoColumns
-	photo, err := scanPhoto(s.pool.QueryRow(ctx, q, uid))
+	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Photo{}, ErrPhotoNotFound

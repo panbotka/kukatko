@@ -6,10 +6,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
@@ -39,6 +42,12 @@ type updateBody struct {
 func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	present, body, err := decodeUpdate(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -57,12 +66,26 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := a.store.UpdateMetadata(r.Context(), uid, update)
+	entry := audit.FromRequest(r, user.UID).Entry(
+		audit.ActionPhotoUpdate, "photos", uid, map[string]any{"fields": presentFields(present)},
+	)
+	updated, err := a.store.UpdateMetadataAudited(r.Context(), uid, update, entry)
 	if err != nil {
 		writePhotoError(w, err, "updating photo failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// presentFields returns the sorted names of the metadata fields the caller sent,
+// recorded in the audit entry so the trail shows which fields a PATCH touched.
+func presentFields(present map[string]struct{}) []string {
+	fields := make([]string, 0, len(present))
+	for name := range present {
+		fields = append(fields, name)
+	}
+	sort.Strings(fields)
+	return fields
 }
 
 // decodeUpdate reads the JSON request body once, returning the set of keys that

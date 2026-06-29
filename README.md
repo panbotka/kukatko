@@ -570,14 +570,42 @@ Set/clear páry jsou samostatné klíče (ne presence/null), takže payload je j
   `skipped` (duplicitní uid v dávce), `error` (fotka neexistuje). **Chybějící fotka neabortuje
   validní** — zaznamená se jako error, ostatní se aplikují a commitnou; jen skutečná DB chyba
   rollbackne celou dávku (500). Alba/štítky v add operacích se ověřují předem (chybějící → 400).
-- **Audit log** (`internal/audit`, migrace `0012_audit_log.sql`, tabulka `audit_log`) — `Write(ctx,
-  exec, Entry)` zapisuje přes libovolný executor (pool **nebo** `pgx.Tx`), takže bulk zápis vloží
-  audit řádek do **téže transakce** jako mutace. `Store.Record`/`List` pro samostatný zápis a
-  admin/test čtení; sloupce `actor_uid` (FK users `ON DELETE SET NULL`), `action`, `target_type`,
-  `target_uid`, `details JSONB`, `created_at`.
+- **Audit log** (`internal/audit`) — bulk zápis vloží audit řádek do **téže transakce** jako mutace
+  přes `audit.Write(ctx, tx, Entry)`. Plný popis durable audit trailu a admin API viz sekce
+  [Durable audit log](#durable-audit-log-internalaudit--internalauditapi) níže.
 - **Vrstvy** — `bulk.Service` (`NewService(pool, maxBatch)`, `Apply(ctx, actorUID, photoUIDs, ops)`)
   drží transakční logiku a vlastní SQL (vlastní tx kvůli atomicitě), `bulkapi` dělá HTTP +
   validaci payloadu. Mountuje se dalším `server.WithAPI` (`buildBulkAPI` v `cmd/kukatko/bulk.go`).
+
+### Durable audit log (`internal/audit` + `internal/auditapi`)
+
+Append-only audit trail zapisovaný **ve stejné transakci** jako mutace, kterou eviduje — opravuje
+mezeru photo-sorteru, který audit zapisoval až po commitu (při pádu mezi commitem mutace a zápisem
+auditu se záznam ztratil). Tabulka `audit_log` (migrace `0012_audit_log.sql`, rozšířená v
+`0014_audit_request.sql`): `id BIGSERIAL`, `actor_uid` (FK users `ON DELETE SET NULL` — trail
+přežije smazání účtu), `action`, `target_type`, `target_uid`, `details JSONB`, `ip`, `user_agent`,
+`created_at`; indexy na `(created_at)`, `(target_type, target_uid)`, `(action)`, `(actor_uid)`.
+(Sloupce `actor`/`target`/`details` odpovídají spec termínům `user`/`entity`/`metadata` — zachována
+jsou původně shipnutá jména, přejmenování aplikované migrace by bylo destruktivní.)
+
+- **Mechanismus** — `Write(ctx, exec, Entry)` přijímá `Execer` (pool **i** `pgx.Tx`), takže audit
+  insert jede na téže transakci jako mutace a commitne/rollbackne s ní (žádný osiřelý ani chybějící
+  záznam). `Store.Record` zapíše na vlastním spojení; `Store.List(ctx, Filter)` + `Count(ctx, Filter)`
+  filtrovaně čtou (actor/entity/action/datum, stránkování, newest-first, limit cap 500/default 100).
+- **Konvence pro handlery** — `audit.FromRequest(r, actorUID)` posbírá actor (z auth kontextu), IP
+  (`X-Forwarded-For` → `X-Real-IP` → `RemoteAddr`) a User-Agent do `Meta`; `meta.Entry(action,
+  entityType, entityUID, details)` z toho postaví `Entry`. Action konstanty: `ActionPhotosBulk`,
+  `ActionPhoto{Update,Archive,Unarchive}`, `ActionAlbum/Label{Create,Update,Delete}`,
+  `ActionFaceAssign`, `ActionUser{Create,Update,Disable,Password}`.
+- **Zapojené in-tx mutace** — hromadná editace (`internal/bulk`) a foto PATCH/archive/unarchive přes
+  audited varianty `photos.Store.{UpdateMetadata,Archive,Unarchive}Audited` (sdílený `rowQuerier`
+  spustí mutaci na tx, `mutateAudited` přidá audit a commitne). Ostatní mutační domény (alba/štítky,
+  lidé, správa uživatelů) přebírají stejný vzor v navazujících iteracích.
+- **Admin API** — `GET /api/v1/audit` (admin-only přes `RequireAdmin`, `internal/auditapi`) vrací
+  `{entries,total,limit,offset,next_offset}` newest-first s filtry `?user=`/`?entity_type=`/
+  `?entity_uid=`/`?action=`/`?since=`/`?until=` (RFC3339) a `?limit=`(≤500)/`?offset=`; neplatný
+  čas/číslo → 400. Jen čtení — zápisy jdou výhradně přes mutační transakce. Mountuje se
+  `buildAuditAPI` v `cmd/kukatko/audit.go`.
 
 ### Mapy: dlaždice, reverse geocode & GeoJSON (`internal/mapy` + `internal/mapsapi`)
 

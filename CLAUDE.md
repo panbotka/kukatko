@@ -461,14 +461,32 @@ inkrementální).
   `AlbumUID`/`LabelUID` + `photoapi` `parseListParams`); mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`, sdílí jednu `organize.Store` pro alba i štítky)),
   `internal/audit/`
-  (durable audit trail, tabulka `audit_log` v migraci `0012_audit_log.sql`: `id BIGSERIAL`,
-  `actor_uid` FK users `ON DELETE SET NULL`, `action`, `target_type`, `target_uid`, `details JSONB`,
-  `created_at`; **klíčový vzor** `Write(ctx, exec, Entry)` zapisuje přes rozhraní `Execer`
-  (splňuje ho pool **i** `pgx.Tx`), takže audit řádek může jet v **téže transakci** jako mutace
-  (ARCHITECTURE §5.1/§12 „audit log durable"); `Entry{ActorUID,Action,TargetType,TargetUID,Details}`
-  (prázdné UID → SQL NULL, nil details → `{}`), action konstanta `ActionPhotosBulk`; `Store` =
-  `NewStore(pool)` se `Record(ctx,Entry)` (vlastní spojení) a `List(ctx,limit,offset)`
-  (newest-first, limit cap 500/default 100) pro admin/test čtení), `internal/bulk/`
+  (durable audit trail, tabulka `audit_log` v migraci `0012_audit_log.sql` rozšířená v
+  `0014_audit_request.sql` o `ip`/`user_agent` + composite index `(target_type, target_uid)`:
+  `id BIGSERIAL`, `actor_uid` FK users `ON DELETE SET NULL`, `action`, `target_type`, `target_uid`,
+  `details JSONB`, `ip`, `user_agent`, `created_at` (sloupcová jména `actor/target/details` =
+  spec termíny `user/entity/metadata`); **klíčový vzor** `Write(ctx, exec, Entry)` zapisuje přes
+  rozhraní `Execer` (splňuje ho pool **i** `pgx.Tx`), takže audit řádek jede v **téže transakci**
+  jako mutace — commitne/rollbackne s ní (ARCHITECTURE §5.1/§11/§12 „audit log durable", oprava
+  photo-sorter after-commit mezery); `Entry{ActorUID,Action,TargetType,TargetUID,Details,IP,
+  UserAgent}` (prázdné UID/IP/UA → SQL NULL, nil details → `{}`); **konvence pro handlery**
+  `Meta` + `FromRequest(r, actorUID)` (actor z auth kontextu, IP z `X-Forwarded-For`/`X-Real-IP`/
+  `RemoteAddr`, UA z hlavičky) → `(Meta).Entry(action, targetType, targetUID, details)` staví
+  ostatní entry; action konstanty `ActionPhotosBulk`/`ActionPhoto{Update,Archive,Unarchive}`/
+  `ActionAlbum{Create,Update,Delete}`/`ActionLabel{Create,Update,Delete}`/`ActionFaceAssign`/
+  `ActionUser{Create,Update,Disable,Password}`; `Store` = `NewStore(pool)` se `Record(ctx,Entry)`
+  (vlastní spojení) a **filtrovaným čtením** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ActorUID,
+  TargetType,TargetUID,Action,Since,Until,Limit,Offset}`, newest-first, limit cap 500/default 100)
+  pro admin výpis. **Zapojené in-tx mutace**: bulk (`internal/bulk`) + foto PATCH/archive/unarchive
+  přes audited varianty `photos.Store.{UpdateMetadata,Archive,Unarchive}Audited` (mutace + audit
+  v jedné tx přes sdílený `rowQuerier`/`mutateAudited`); další domény (alba/štítky/lidé/uživatelé)
+  následují stejnou konvenci), `internal/auditapi/`
+  (admin-only HTTP API nad audit trailem: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
+  mountuje `GET /audit` za `RequireAdmin`; `parseFilter` z query `user`/`entity_type`/`entity_uid`/
+  `action`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (neplatný čas/číslo → 400),
+  vrací `{entries,total,limit,offset,next_offset}` newest-first; jen čtení — zápisy jdou přes
+  mutační transakce jinde; mountuje se vždy posledním `server.WithAPI` (`buildAuditAPI` v
+  `cmd/kukatko/audit.go`)), `internal/bulk/`
   (hromadná editace metadat: `Service` = `NewService(pool, maxBatch)` s `Apply(ctx, actorUID,
   photoUIDs, ops Operations) (Result, error)` — **celá dávka v jediné transakci** s audit
   záznamem; `Operations` = volitelná pole `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
@@ -1090,6 +1108,13 @@ inkrementální).
   restore db` při zastaveném serveru. Celá API se mountuje **vždy** (`buildRestoreAPI` v
   `cmd/kukatko/restore.go`; service nil = nenakonfigurováno). Runtime dep `pg_restore`
   (`postgresql-client`, stejný balík jako pg_dump). Runbook: `docs/RESTORE.md`.
+- **Audit API (`/api/v1`, `internal/auditapi`, admin-only přes `RequireAdmin`):** read-only výpis
+  durable audit trailu. `GET /audit` → `{entries,total,limit,offset,next_offset}` (entry =
+  `{id,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}`, newest-first)
+  s filtry `?user=`/`?entity_type=`/`?entity_uid=`/`?action=`/`?since=`/`?until=` (RFC3339) a
+  stránkováním `?limit=`(≤500)/`?offset=`; neplatný čas/číslo → 400. Audit záznamy se **nezapisují
+  přes HTTP** — vznikají uvnitř mutačních transakcí (in-tx `audit.Write`, viz `internal/audit`
+  konvence). Mountuje se vždy (`buildAuditAPI` v `cmd/kukatko/audit.go`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

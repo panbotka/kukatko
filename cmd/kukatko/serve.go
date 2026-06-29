@@ -156,8 +156,7 @@ func buildServices(
 		}
 	}
 	psMigrate := psMigrateHandlerOrNil(cfg, db, enqueuer)
-	jobWorker, jobAPI, processAPI := buildJobs(
-		cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc, importSvc, psMigrate)
+	jobWorker, jobAPI, processAPI := buildJobs(cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc, importSvc, psMigrate)
 
 	opts := []server.Option{
 		server.WithAPI(authAPI.RegisterRoutes),
@@ -171,9 +170,9 @@ func buildServices(
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
-		// Always mount: the run-history endpoint must work for the admin UI even
-		// when no import source is configured; the triggers self-gate per source.
+		// Import history and audit log are always mounted (import triggers self-gate).
 		server.WithAPI(buildImportAPI(cfg, db, jobStore, authAPI).RegisterRoutes),
+		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 	}
 	return opts, jobWorker, trashSvc, nil
 }
