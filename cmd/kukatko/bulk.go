@@ -6,6 +6,7 @@ import (
 	"github.com/panbotka/kukatko/internal/bulkapi"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
 // buildBulkAPI assembles the bulk metadata editing HTTP API over the shared
@@ -17,8 +18,10 @@ import (
 // auth's wiring.
 func buildBulkAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) *bulkapi.API {
 	service := bulk.NewService(db.Pool(), cfg.Bulk.MaxBatchSize)
+	bulkLimit := ratelimit.New(cfg.RateLimit.Bulk.RatePerSec, cfg.RateLimit.Bulk.Burst)
 	return bulkapi.NewAPI(bulkapi.Config{
 		Service:      service,
 		RequireWrite: authAPI.RequireWrite,
+		RateLimit:    bulkLimit.Middleware,
 	})
 }

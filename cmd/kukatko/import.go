@@ -15,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photoprism"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/ppimport"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -68,10 +69,12 @@ func buildImportService(
 // store; history reads the import_runs table over the shared pool. The admin
 // guard is supplied via authAPI so importapi stays decoupled from auth's wiring.
 func buildImportAPI(cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API) *importapi.API {
+	importLimit := ratelimit.New(cfg.RateLimit.Import.RatePerSec, cfg.RateLimit.Import.Burst)
 	return importapi.NewAPI(importapi.Config{
 		Queue:             store,
 		Runs:              importer.NewStore(db.Pool()),
 		RequireAdmin:      authAPI.RequireAdmin,
+		RateLimit:         importLimit.Middleware,
 		EnablePhotoPrism:  importConfigured(cfg),
 		EnablePhotoSorter: psImportConfigured(cfg),
 	})

@@ -221,7 +221,7 @@ func assertLabelMembers(t *testing.T, ctx context.Context, env *env, labelUID st
 // assertAuditWritten fails unless a photos.bulk audit entry by actorUID exists.
 func assertAuditWritten(t *testing.T, ctx context.Context, env *env, actorUID string) {
 	t.Helper()
-	records, err := env.audit.List(ctx, 10, 0)
+	records, err := env.audit.List(ctx, audit.Filter{Limit: 10})
 	if err != nil {
 		t.Fatalf("list audit: %v", err)
 	}

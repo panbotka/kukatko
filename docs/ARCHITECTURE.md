@@ -447,6 +447,10 @@ naseedovanému fake photo-sorter schématu.
   - **Sliding expiry** — prodloužení při aktivitě (aktivní uživatel nevypadne po 30 dnech).
   - **Změna hesla zruší ostatní sessions** uživatele.
   - **Rate-limit na `/auth/login`** (brute-force ochrana; photo-sorter ji má jen na share-link).
+  - **Rate-limit náročných endpointů** (`internal/ratelimit`) — per-client-IP token-bucket
+    (`ratelimit.*` config) na `POST /upload`, `POST /photos/bulk`, `POST /import/*` a
+    `GET /map/tiles/...`, aby jeden klient nezahltil server; prázdný bucket → 429. Limiter běží
+    před auth checkem a je vypnutelný (`rate_per_sec ≤ 0`).
 - **Audit log durable** — zápis do `audit_log` ve **stejné transakci** jako mutace (photo-sorter
   zapisuje až po commitu → při crashi ztráta).
 - **Mapy.com klíč** se nikdy neposílá do prohlížeče — tile/geocode requesty jdou přes

@@ -237,7 +237,7 @@ func passthrough(next http.Handler) http.Handler { return next }
 // 400 before any ingest work happens (the nil Service is never reached).
 func TestHandleUpload_rejectsNonMultipart(t *testing.T) {
 	t.Parallel()
-	api := NewAPI(nil, passthrough)
+	api := NewAPI(nil, passthrough, nil)
 	req := httptest.NewRequestWithContext(
 		context.Background(), http.MethodPost, "/upload", strings.NewReader("not multipart"),
 	)
@@ -255,7 +255,7 @@ func TestHandleUpload_rejectsNonMultipart(t *testing.T) {
 func TestHandleUpload_rejectsNoFiles(t *testing.T) {
 	t.Parallel()
 	body := "--bnd\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\nhello\r\n--bnd--\r\n"
-	api := NewAPI(nil, passthrough)
+	api := NewAPI(nil, passthrough, nil)
 	req := httptest.NewRequestWithContext(
 		context.Background(), http.MethodPost, "/upload", strings.NewReader(body),
 	)

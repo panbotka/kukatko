@@ -37,6 +37,7 @@ type Service interface {
 type API struct {
 	service      Service
 	requireWrite func(http.Handler) http.Handler
+	rateLimit    func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI.
@@ -45,19 +46,32 @@ type Config struct {
 	Service Service
 	// RequireWrite guards the endpoint for editors and admins.
 	RequireWrite func(http.Handler) http.Handler
+	// RateLimit is an optional per-client-IP throttle applied ahead of the auth
+	// check. A nil value disables throttling.
+	RateLimit func(http.Handler) http.Handler
 }
 
-// NewAPI returns an API from cfg.
+// NewAPI returns an API from cfg. A nil RateLimit disables throttling.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, requireWrite: cfg.RequireWrite}
+	rateLimit := cfg.RateLimit
+	if rateLimit == nil {
+		rateLimit = passthroughMiddleware
+	}
+	return &API{service: cfg.Service, requireWrite: cfg.RequireWrite, rateLimit: rateLimit}
 }
+
+// passthroughMiddleware is a no-op middleware used when no rate limiter is configured.
+func passthroughMiddleware(next http.Handler) http.Handler { return next }
 
 // RegisterRoutes mounts the bulk endpoint onto r, scoped by the caller under the
 // API base path (for example /api/v1):
 //
-//	POST /photos/bulk   RequireWrite   apply metadata operations to many photos
+//	POST /photos/bulk   rate limit + RequireWrite   apply metadata operations to many photos
+//
+// The rate limiter runs outermost so an abusive batch flood is capped by client
+// IP before the auth lookup and the transactional apply.
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireWrite).Post("/photos/bulk", a.handleBulk)
+	r.With(a.rateLimit, a.requireWrite).Post("/photos/bulk", a.handleBulk)
 }
 
 // handleBulk decodes the request, resolves the operation set, applies it for the

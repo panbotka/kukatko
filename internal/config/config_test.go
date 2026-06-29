@@ -69,6 +69,14 @@ func TestLoad_defaults(t *testing.T) {
 		{"auth.session_max_lifetime", cfg.Auth.SessionMaxLifetime, 720 * time.Hour},
 		{"auth.login_rate_limit", cfg.Auth.LoginRateLimit, 10},
 		{"auth.login_rate_window", cfg.Auth.LoginRateWindow, 15 * time.Minute},
+		{"ratelimit.upload.rate_per_sec", cfg.RateLimit.Upload.RatePerSec, 5.0},
+		{"ratelimit.upload.burst", cfg.RateLimit.Upload.Burst, 30},
+		{"ratelimit.bulk.rate_per_sec", cfg.RateLimit.Bulk.RatePerSec, 2.0},
+		{"ratelimit.bulk.burst", cfg.RateLimit.Bulk.Burst, 10},
+		{"ratelimit.import.rate_per_sec", cfg.RateLimit.Import.RatePerSec, 1.0},
+		{"ratelimit.import.burst", cfg.RateLimit.Import.Burst, 3},
+		{"ratelimit.tiles.rate_per_sec", cfg.RateLimit.Tiles.RatePerSec, 50.0},
+		{"ratelimit.tiles.burst", cfg.RateLimit.Tiles.Burst, 200},
 	}
 	for _, c := range checks {
 		if c.got != c.want {
@@ -157,6 +165,29 @@ func TestLoad_uploadEnvOverride(t *testing.T) {
 	}
 	if got := cfg.Upload.MaxFileSizeBytes(); got != 512*1024*1024 {
 		t.Errorf("MaxFileSizeBytes = %d, want %d", got, 512*1024*1024)
+	}
+}
+
+// TestLoad_rateLimitEnvOverride verifies the per-endpoint rate-limit rules parse
+// from the environment, including the float rate and the disable sentinel (0).
+func TestLoad_rateLimitEnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC", "12.5")
+	t.Setenv("KUKATKO_RATELIMIT_UPLOAD_BURST", "60")
+	t.Setenv("KUKATKO_RATELIMIT_TILES_RATE_PER_SEC", "0")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.RateLimit.Upload.RatePerSec != 12.5 {
+		t.Errorf("ratelimit.upload.rate_per_sec = %v, want 12.5", cfg.RateLimit.Upload.RatePerSec)
+	}
+	if cfg.RateLimit.Upload.Burst != 60 {
+		t.Errorf("ratelimit.upload.burst = %d, want 60", cfg.RateLimit.Upload.Burst)
+	}
+	if cfg.RateLimit.Tiles.RatePerSec != 0 {
+		t.Errorf("ratelimit.tiles.rate_per_sec = %v, want 0 (disabled)", cfg.RateLimit.Tiles.RatePerSec)
 	}
 }
 

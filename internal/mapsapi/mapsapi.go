@@ -69,6 +69,7 @@ type API struct {
 	geocoder        Geocoder
 	photos          PhotoLister
 	requireAuth     func(http.Handler) http.Handler
+	tileRateLimit   func(http.Handler) http.Handler
 	tileCacheMaxAge time.Duration
 	geocodeCacheTTL time.Duration
 	geocodeCache    *geocodeCache
@@ -88,6 +89,10 @@ type Config struct {
 	Photos PhotoLister
 	// RequireAuth guards every endpoint for authenticated users.
 	RequireAuth func(http.Handler) http.Handler
+	// TileRateLimit is an optional per-client-IP throttle on the tile proxy,
+	// applied ahead of the auth check. A nil value disables throttling. The
+	// geocode proxy keeps its own credit-protecting limiter (GeocodeRatePerSec).
+	TileRateLimit func(http.Handler) http.Handler
 	// TileCacheMaxAge sets the Cache-Control max-age on proxied tiles (default
 	// defaultTileCacheMaxAge).
 	TileCacheMaxAge time.Duration
@@ -126,11 +131,16 @@ func NewAPI(cfg Config) *API {
 	if maxGeo <= 0 {
 		maxGeo = defaultMaxGeoPhotos
 	}
+	tileRateLimit := cfg.TileRateLimit
+	if tileRateLimit == nil {
+		tileRateLimit = passthroughMiddleware
+	}
 	return &API{
 		tiles:           cfg.Tiles,
 		geocoder:        cfg.Geocoder,
 		photos:          cfg.Photos,
 		requireAuth:     cfg.RequireAuth,
+		tileRateLimit:   tileRateLimit,
 		tileCacheMaxAge: tileMaxAge,
 		geocodeCacheTTL: geoTTL,
 		geocodeCache:    newGeocodeCache(defaultGeocodeCacheSize),
@@ -138,6 +148,9 @@ func NewAPI(cfg Config) *API {
 		maxGeoPhotos:    maxGeo,
 	}
 }
+
+// passthroughMiddleware is a no-op middleware used when no tile rate limiter is configured.
+func passthroughMiddleware(next http.Handler) http.Handler { return next }
 
 // RegisterRoutes mounts the maps endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1). Every route requires auth:
@@ -147,7 +160,7 @@ func NewAPI(cfg Config) *API {
 //	GET /map/photos                     GeoJSON FeatureCollection of geotagged photos
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/map", func(r chi.Router) {
-		r.With(a.requireAuth).Get("/tiles/{mapset}/{z}/{x}/{y}", a.handleTile)
+		r.With(a.tileRateLimit, a.requireAuth).Get("/tiles/{mapset}/{z}/{x}/{y}", a.handleTile)
 		r.With(a.requireAuth).Get("/rgeocode", a.handleReverseGeocode)
 		r.With(a.requireAuth).Get("/photos", a.handlePhotos)
 	})

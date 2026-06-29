@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mapsapi"
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
 // buildMapsAPI assembles the maps subsystem: the mapy.com proxy client (built
@@ -31,10 +32,12 @@ func buildMapsAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) (*maps
 		tiles, geocoder = client, client
 	}
 
+	tileLimit := ratelimit.New(cfg.RateLimit.Tiles.RatePerSec, cfg.RateLimit.Tiles.Burst)
 	return mapsapi.NewAPI(mapsapi.Config{
-		Tiles:       tiles,
-		Geocoder:    geocoder,
-		Photos:      photos.NewStore(db.Pool()),
-		RequireAuth: authAPI.RequireAuth,
+		Tiles:         tiles,
+		Geocoder:      geocoder,
+		Photos:        photos.NewStore(db.Pool()),
+		RequireAuth:   authAPI.RequireAuth,
+		TileRateLimit: tileLimit.Middleware,
 	}), nil
 }

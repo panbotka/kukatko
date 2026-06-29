@@ -1011,6 +1011,28 @@ tokenem. Vylepšení proti photo-sorteru: **sliding expiry** (aktivní session s
 - **Rate-limit:** víc než `auth.login_rate_limit` neúspěšných pokusů na (username+IP) za
   `auth.login_rate_window` vrací HTTP 429.
 
+### Rate-limity náročných endpointů (`internal/ratelimit`)
+
+Mimo login mají **per-client-IP token-bucket** limity i zdrojově náročné endpointy, aby jeden
+hlučný klient nevyčerpal sdílené prostředky. `internal/ratelimit` je znovupoužitelný balík
+(`New(ratePerSec, burst)` → `Allow(key)` / `Middleware`), keyovaný IP adresou klienta (z
+`X-Forwarded-For`/`X-Real-IP` za důvěryhodnou proxy přes chi `RealIP`); prázdný bucket → **HTTP
+429** s hlavičkou `Retry-After`. Limiter běží **před** auth checkem (flood se zahodí dřív než
+DB lookup), je **paměťově omezený** (opportunistický úklid plně doplněných bucketů, cap
+`maxBuckets`) a `rate_per_sec ≤ 0` celé pravidlo **vypne** (pak je middleware no-op).
+
+Pokryté endpointy a defaulty (config sekce `ratelimit.*`):
+
+| Pravidlo | Endpoint | `rate_per_sec` | `burst` |
+|----------|----------|----------------|---------|
+| `upload` | `POST /upload` | 5 | 30 |
+| `bulk` | `POST /photos/bulk` | 2 | 10 |
+| `import` | `POST /import/{photoprism,photosorter}` | 1 | 3 |
+| `tiles` | `GET /map/tiles/...` | 50 | 200 |
+
+Reverse-geocode proxy (`GET /map/rgeocode`) si drží vlastní credit-šetřící limiter pod `maps.*`.
+Klíče přepíšeš env, např. `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC=10`.
+
 Endpointy pod `/api/v1` (JSON):
 
 | Metoda | Cesta | Přístup | Popis |

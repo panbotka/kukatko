@@ -53,7 +53,7 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 		Duplicate:   config.DuplicateConfig{Enabled: false},
 		TempDir:     t.TempDir(),
 	})
-	ingestAPI := ingest.NewAPI(ingestSvc, authAPI.RequireWrite)
+	ingestAPI := ingest.NewAPI(ingestSvc, authAPI.RequireWrite, nil)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/bulk"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
 // passthrough is a no-op middleware standing in for the write guard in tests.
@@ -183,6 +184,41 @@ func TestHandleBulk_unauthenticated(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
+	}
+}
+
+// TestHandleBulk_rateLimited verifies the injected rate-limit middleware is wired
+// into the route: once a client IP exhausts its burst, further requests are
+// rejected with 429 before reaching the handler.
+func TestHandleBulk_rateLimited(t *testing.T) {
+	t.Parallel()
+
+	// A burst of 2 with a negligible refill rate so the third request within the
+	// test window is denied.
+	limiter := ratelimit.New(0.0001, 2)
+	api := NewAPI(Config{Service: stubService{}, RequireWrite: passthrough, RateLimit: limiter.Middleware})
+	r := chi.NewRouter()
+	r.Route("/api/v1", api.RegisterRoutes)
+
+	do := func() int {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/photos/bulk",
+			strings.NewReader(`{"photo_uids":["ph1"],"operations":{"archive":true}}`))
+		req.RemoteAddr = "203.0.113.7:9000"
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// The stub service has no authenticated user, so allowed requests return 401;
+	// the point is that the first two pass the limiter and the third is throttled.
+	if got := do(); got != http.StatusUnauthorized {
+		t.Fatalf("first request: status = %d, want 401 (passed limiter)", got)
+	}
+	if got := do(); got != http.StatusUnauthorized {
+		t.Fatalf("second request: status = %d, want 401 (passed limiter)", got)
+	}
+	if got := do(); got != http.StatusTooManyRequests {
+		t.Fatalf("third request: status = %d, want 429 (throttled)", got)
 	}
 }
 

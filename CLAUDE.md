@@ -722,7 +722,17 @@ inkrementální).
   503 bez konfigurace, 502 při chybě S3) a `POST /restore/verify` (integritní report, 503 bez
   konfigurace); **destruktivní obnova DB se přes HTTP záměrně neexponuje** (podtrhla by tabulky
   běžícímu serveru — patří do CLI při zastaveném serveru); mountuje se v `serve` vždy
-  (`buildRestoreAPI` v `cmd/kukatko/restore.go`)), `internal/web/`
+  (`buildRestoreAPI` v `cmd/kukatko/restore.go`)), `internal/ratelimit/`
+  (znovupoužitelný **per-key token-bucket rate limiter** + HTTP middleware pro náročné endpointy:
+  `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, per-klíč bucket) / `Cleanup`/`RunMaintenance`
+  (úklid plně doplněných bucketů) / `Middleware` (chi-kompatibilní, keyuje **client IP** přes
+  `clientIP` z `RemoteAddr` — chi `RealIP` ji plní z `X-Forwarded-For`/`X-Real-IP`; prázdný bucket →
+  **429** + `Retry-After`); `ratePerSec ≤ 0` → **disabled** limiter (Allow vždy true, Middleware
+  no-op — endpoint se vypne čistě configem); paměťově omezený opportunistickým úklidem při `maxBuckets`
+  (8192), takže nepotřebuje externí goroutinu; mountuje se jako outermost middleware ahead-of-auth na
+  `POST /upload` (ingest), `POST /photos/bulk` (bulkapi), `POST /import/*` (importapi) a
+  `GET /map/tiles/...` (mapsapi) — limity z `ratelimit.*` configu; login a geocode mají vlastní
+  limitery), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -1185,6 +1195,11 @@ inkrementální).
   Ethernet rámec; vyžaduje CAP_NET_RAW), `min_queue` (práh čekajících `image_embed`/`face_detect`
   jobů, default 1), `cooldown` (min. rozestup mezi packety, default 5m). Validace `ErrInvalidWake`:
   enabled vyžaduje validní MAC + aspoň jeden cíl (`broadcast_addr`/`interface`).
+- **Rate-limit klíče (`ratelimit.*`, `internal/ratelimit`):** per-client-IP token-bucket limity na
+  náročných endpointech. Sekce `upload`/`bulk`/`import`/`tiles`, každá `{rate_per_sec, burst}`;
+  defaulty 5/30, 2/10, 1/3, 50/200; `rate_per_sec ≤ 0` pravidlo vypne (middleware no-op). Env např.
+  `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. Login má vlastní limiter (`auth.login_rate_*`), geocode
+  proxy taky (`maps.*`).
 - **`config.example.yaml`** dokumentuje všechny klíče + defaulty; je commitnutý. Reálný config
   (`config.yaml`/`config.local.yaml`) a tajemství **necommituj**. Nové konfig klíče přidávej do
   `Config` structu, `setDefaults`, `config.example.yaml` a testů zároveň.

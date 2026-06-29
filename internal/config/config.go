@@ -77,6 +77,30 @@ type Config struct {
 	Import    ImportConfig    `mapstructure:"import"`
 	Log       LogConfig       `mapstructure:"log"`
 	Metrics   MetricsConfig   `mapstructure:"metrics"`
+	RateLimit RateLimitConfig `mapstructure:"ratelimit"`
+}
+
+// RateLimitConfig configures per-client-IP rate limiting on resource-intensive
+// endpoints. Each rule is an independent token bucket; a rule with a
+// non-positive RatePerSec disables limiting for that endpoint.
+type RateLimitConfig struct {
+	// Upload caps POST /upload (multipart ingest).
+	Upload RateLimitRule `mapstructure:"upload"`
+	// Bulk caps POST /photos/bulk (batch metadata edits).
+	Bulk RateLimitRule `mapstructure:"bulk"`
+	// Import caps the POST /import/* migration triggers.
+	Import RateLimitRule `mapstructure:"import"`
+	// Tiles caps GET /map/tiles/... (the mapy.com tile proxy). The geocode
+	// proxy has its own credit-protecting limiter under maps.*.
+	Tiles RateLimitRule `mapstructure:"tiles"`
+}
+
+// RateLimitRule is one per-client-IP token bucket: RatePerSec tokens replenish
+// per second up to Burst tokens. A non-positive RatePerSec disables the rule so
+// the endpoint is never throttled.
+type RateLimitRule struct {
+	RatePerSec float64 `mapstructure:"rate_per_sec"`
+	Burst      int     `mapstructure:"burst"`
 }
 
 // LogConfig configures structured logging.
@@ -479,6 +503,18 @@ func setOpsDefaults(v *viper.Viper) {
 
 	v.SetDefault("import.photosorter.dsn", "")
 	v.SetDefault("import.photosorter.page_size", 500)
+
+	// Per-client-IP rate limits on heavy endpoints. Defaults are generous enough
+	// for normal human/UI use and only bite under abusive flooding. Set
+	// rate_per_sec to 0 to disable any individual rule.
+	v.SetDefault("ratelimit.upload.rate_per_sec", 5)
+	v.SetDefault("ratelimit.upload.burst", 30)
+	v.SetDefault("ratelimit.bulk.rate_per_sec", 2)
+	v.SetDefault("ratelimit.bulk.burst", 10)
+	v.SetDefault("ratelimit.import.rate_per_sec", 1)
+	v.SetDefault("ratelimit.import.burst", 3)
+	v.SetDefault("ratelimit.tiles.rate_per_sec", 50)
+	v.SetDefault("ratelimit.tiles.burst", 200)
 }
 
 // Validate checks that required fields are present and inter-field invariants

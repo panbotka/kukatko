@@ -20,21 +20,36 @@ import (
 type API struct {
 	svc          *Service
 	requireWrite func(http.Handler) http.Handler
+	rateLimit    func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API that runs uploads through svc and protects the route
 // with requireWrite (typically auth.API.RequireWrite, allowing editors and
-// admins). requireWrite must not be nil.
-func NewAPI(svc *Service, requireWrite func(http.Handler) http.Handler) *API {
-	return &API{svc: svc, requireWrite: requireWrite}
+// admins). requireWrite must not be nil. rateLimit is an optional per-client-IP
+// throttle applied ahead of the auth check; a nil value disables throttling.
+func NewAPI(
+	svc *Service,
+	requireWrite func(http.Handler) http.Handler,
+	rateLimit func(http.Handler) http.Handler,
+) *API {
+	if rateLimit == nil {
+		rateLimit = passthroughMiddleware
+	}
+	return &API{svc: svc, requireWrite: requireWrite, rateLimit: rateLimit}
 }
+
+// passthroughMiddleware is a no-op middleware used when no rate limiter is configured.
+func passthroughMiddleware(next http.Handler) http.Handler { return next }
 
 // RegisterRoutes mounts the upload endpoint onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
-//	POST /upload   RequireWrite   multipart/form-data, one or more files
+//	POST /upload   rate limit + RequireWrite   multipart/form-data, one or more files
+//
+// The rate limiter runs outermost so a flood is rejected by client IP before the
+// auth lookup, capping the work a single noisy uploader can impose.
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireWrite).Post("/upload", a.handleUpload)
+	r.With(a.rateLimit, a.requireWrite).Post("/upload", a.handleUpload)
 }
 
 // uploadResponse is the JSON body returned by the upload endpoint: one result

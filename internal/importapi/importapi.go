@@ -60,6 +60,7 @@ type API struct {
 	queue             Queue
 	runs              RunLister
 	requireAdmin      func(http.Handler) http.Handler
+	rateLimit         func(http.Handler) http.Handler
 	enablePhotoPrism  bool
 	enablePhotoSorter bool
 }
@@ -73,22 +74,33 @@ type Config struct {
 	Runs RunLister
 	// RequireAdmin guards the endpoints for administrators only.
 	RequireAdmin func(http.Handler) http.Handler
+	// RateLimit is an optional per-client-IP throttle applied to the POST trigger
+	// routes ahead of the admin check. A nil value disables throttling.
+	RateLimit func(http.Handler) http.Handler
 	// EnablePhotoPrism registers POST /import/photoprism when set.
 	EnablePhotoPrism bool
 	// EnablePhotoSorter registers POST /import/photosorter when set.
 	EnablePhotoSorter bool
 }
 
-// NewAPI returns an API from cfg.
+// NewAPI returns an API from cfg. A nil RateLimit disables throttling.
 func NewAPI(cfg Config) *API {
+	rateLimit := cfg.RateLimit
+	if rateLimit == nil {
+		rateLimit = passthroughMiddleware
+	}
 	return &API{
 		queue:             cfg.queueOrPanic(),
 		runs:              cfg.runsOrPanic(),
 		requireAdmin:      cfg.RequireAdmin,
+		rateLimit:         rateLimit,
 		enablePhotoPrism:  cfg.EnablePhotoPrism,
 		enablePhotoSorter: cfg.EnablePhotoSorter,
 	}
 }
+
+// passthroughMiddleware is a no-op middleware used when no rate limiter is configured.
+func passthroughMiddleware(next http.Handler) http.Handler { return next }
 
 // queueOrPanic returns the configured queue, panicking on a nil one since a
 // missing queue is a wiring bug that should surface at startup.
@@ -119,10 +131,10 @@ func (c Config) runsOrPanic() RunLister {
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAdmin).Get("/import/runs", a.handleListRuns)
 	if a.enablePhotoPrism {
-		r.With(a.requireAdmin).Post("/import/photoprism", a.handleImportPhotoPrism)
+		r.With(a.rateLimit, a.requireAdmin).Post("/import/photoprism", a.handleImportPhotoPrism)
 	}
 	if a.enablePhotoSorter {
-		r.With(a.requireAdmin).Post("/import/photosorter", a.handleImportPhotoSorter)
+		r.With(a.rateLimit, a.requireAdmin).Post("/import/photosorter", a.handleImportPhotoSorter)
 	}
 }
 
