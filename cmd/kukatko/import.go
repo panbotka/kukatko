@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/importapi"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoprism"
@@ -31,7 +32,7 @@ func importConfigured(cfg *config.Config) bool {
 // and the job enqueuer. The caller must ensure the import is configured
 // (importConfigured) before calling; an empty base URL yields a client error.
 func buildImportService(
-	cfg *config.Config, db *database.DB, enqueuer ppimport.Enqueuer,
+	cfg *config.Config, db *database.DB, enqueuer ppimport.Enqueuer, reg *metrics.Registry,
 ) (*ppimport.Service, error) {
 	client, err := photoprism.New(photoprism.Config{
 		BaseURL: cfg.Import.PhotoPrism.BaseURL,
@@ -50,13 +51,14 @@ func buildImportService(
 		Runs:        importer.NewStore(pool),
 		Photos:      photos.NewStore(pool),
 		Storage:     store,
-		Thumbnailer: thumb.New(store, cfg.Storage.CachePath),
+		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...),
 		Albums:      organize.NewStore(pool),
 		Labels:      organize.NewStore(pool),
 		People:      people.NewStore(pool),
 		Enqueuer:    enqueuer,
 		PageSize:    cfg.Import.PhotoPrism.PageSize,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
+		Metrics:     importObserver(reg),
 	}), nil
 }
 

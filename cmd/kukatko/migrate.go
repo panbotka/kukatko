@@ -83,7 +83,8 @@ func runMigratePhotoSorter(cmd *cobra.Command) error {
 		return fmt.Errorf("applying migrations: %w", err)
 	}
 
-	result, err := runPSMigration(ctx, cfg, db, jobs.NewEnqueuer(jobs.NewStore(db.Pool())))
+	// The CLI migration command does not serve metrics, so pass a nil registry.
+	result, err := runPSMigration(ctx, cfg, db, jobs.NewEnqueuer(jobs.NewStore(db.Pool())), nil)
 	if err != nil {
 		return fmt.Errorf("running photo-sorter migration: %w", err)
 	}

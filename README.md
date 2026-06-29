@@ -922,6 +922,44 @@ při zastaveném serveru. Náhledy se po obnově regenerují líně on-demand; e
 
 Plný postup (fresh machine → install → restore → verify) s přesnými příkazy: [`docs/RESTORE.md`](docs/RESTORE.md).
 
+### Observability — metriky & strukturované logy (`internal/metrics` + `internal/obs`)
+
+Lehká observabilita po vzoru photo-sorteru, zapojená v `kukatko serve`.
+
+**Prometheus metriky** (`internal/metrics`): jeden izolovaný registr (ne globální
+`DefaultRegisterer`, takže testy mají vlastní povrch) v namespace `kukatko_`. `serve` ho
+mountuje na **`GET /metrics`** (mimo `/api/v1`, **bez autentizace** — chraň ho na síťové
+vrstvě) a instaluje request-metriky middleware. Série:
+
+- **HTTP** — `kukatko_http_requests_total{method,route,status}`,
+  `kukatko_http_request_duration_seconds{method,route}`, `kukatko_http_inflight_requests`.
+  `route` je **chi route pattern** (`/photos/{uid}`), neshoda → `unmatched` (omezená kardinalita,
+  nikdy syrová URL). Scrape `/metrics` se sám nepočítá.
+- **Joby** — `kukatko_jobs_started_total{type}`, `kukatko_jobs_finished_total{type,outcome}`,
+  `kukatko_jobs_execution_duration_seconds{type,outcome}` (outcome `success`/`error`/`deferred`)
+  přes `worker.Observer` hook; hloubka fronty `kukatko_jobs_queue_depth{state}` +
+  `kukatko_jobs_queue_depth_by_type{type}` přes kolektor, který čte `jobs.Store` na scrape.
+- **Embeddings sidecar** — `kukatko_embedding_request_duration_seconds{operation,outcome}` +
+  `kukatko_embedding_service_up` přes dekorátor `embedding.Instrument` (transparentní, vrací
+  vnitřní chybu beze změny, takže `errors.Is(ErrUnavailable)` funguje dál).
+- **Import** — `kukatko_import_run_photos{source,outcome}` (poslední checkpointnutá tally běhu)
+  přes `importer.ProgressObserver` v ppimport/psimport.
+- **Náhledy** — `kukatko_thumbnail_generation_duration_seconds` přes `thumb.WithObserver`.
+- **DB pool** — `kukatko_db_pool_*` (total/acquired/idle/max + wait/empty-acquire) přes kolektor
+  nad `pgxpool.Stat`.
+- Standardní `go_*` a `process_*` rodiny.
+
+**Strukturované logy** (`internal/obs`): slog **JSON** na stderr, level z `log.level`
+(`KUKATKO_LOG_LEVEL`; debug/info/warn/error, neplatný → chyba při startu). **Access-log
+middleware** vypisuje jeden řádek na request s konzistentními poli `request_id` (z chi
+`RequestID`, váže logy + `X-Request-Id` hlavičku), `method`, `path`, `route`, `status`, `bytes`,
+`duration_ms`, `remote_ip` a `user` (UID, stampnutý auth middlewarem do request-scoped bagu);
+`/metrics` se neloguje. **Redakce tajemství**: slog `ReplaceAttr` hook nahradí hodnotu jakéhokoli
+atributu, jehož klíč obsahuje `password`/`token`/`secret`/`api_key`/`access_key`/`secret_key`/
+`authorization`/`cookie`/`credential`/`dsn`, za `[REDACTED]` — mapy klíč, S3 klíče, session token
+ani heslo nikdy neprosáknou do logu. Vypnutí metrik: `metrics.enabled=false`
+(`KUKATKO_METRICS_ENABLED=false`) — `/metrics` se nemountuje, access-log běží dál.
+
 ## Konfigurace
 
 Kukátko se konfiguruje **YAML souborem s env override** (Viper; env vždy vyhrává).

@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/jobsapi"
+	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/processapi"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -28,7 +29,7 @@ import (
 func buildJobs(
 	cfg *config.Config, store *jobs.Store, authAPI *auth.API,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
-	importSvc *ppimport.Service, psMigrate worker.HandlerFunc,
+	importSvc *ppimport.Service, psMigrate worker.HandlerFunc, reg *metrics.Registry,
 ) (*worker.Worker, *jobsapi.API, *processapi.API) {
 	registry := worker.NewRegistry()
 	worker.RegisterBuiltins(registry)
@@ -48,6 +49,7 @@ func buildJobs(
 		PollInterval:      cfg.Worker.PollInterval,
 		StaleAfter:        cfg.Worker.StaleAfter,
 		StaleScanInterval: cfg.Worker.StaleScanInterval,
+		Metrics:           workerObserver(reg),
 	})
 
 	jobAPI := jobsapi.NewAPI(jobsapi.Config{

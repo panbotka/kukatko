@@ -933,9 +933,13 @@ inkrementální).
   **plánovanou S3 zálohu** (`internal/backup` `RunSchedule` na `backup.schedule`; jen je-li
   `backup.s3.{endpoint,bucket}` nakonfigurováno), pak
   poslouchá na `web.host:web.port`, default
-  `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`, auth/admin API
+  `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`, **`GET /metrics`**
+  Prometheus (mimo `/api/v1`, bez autentizace; jen když `metrics.enabled`), auth/admin API
   pod `/api/v1` — viz níže, ostatní cesty servíruje **embedované SPA** s fallbackem na
-  `index.html`), `kukatko migrate` (spustí pending migrace samostatně a skončí),
+  `index.html`; `serve` navíc nastaví **strukturované logování** (`obs.Setup`, JSON slog na
+  stderr, level `log.level`) a — když `metrics.enabled` — postaví `metrics.Registry`, zaregistruje
+  DB-pool + job-queue-depth kolektory a vloží request-metriky + access-log middleware přes
+  `server.WithMiddleware`/`WithMetricsHandler`), `kukatko migrate` (spustí pending migrace samostatně a skončí),
   `kukatko migrate photosorter` (synchronní read-only inkrementální **migrace dat z photo-sorteru** —
   `psimport`; aplikuje DB migrace, pak `Service.Migrate`; potřebuje `import.photosorter.dsn`, jinak
   `errPSMigrateNotConfigured`; pro ops/cron bez běžícího serveru),
@@ -1153,6 +1157,9 @@ inkrementální).
   volitelný (chybějící = jen defaulty + env). Required: `database.url`.
 - Env: prefix `KUKATKO_`, tečka → podtržítko (`database.url` → `KUKATKO_DATABASE_URL`,
   `backup.s3.bucket` → `KUKATKO_BACKUP_S3_BUCKET`). Výjimka: `maps.mapy_api_key` ↔ `MAPY_API_KEY`.
+- **Observability klíče:** `log.level` (debug/info/warn/error, default info, neplatný → chyba při
+  startu; `KUKATKO_LOG_LEVEL`) a `metrics.enabled` (bool, default true; vypnuté → `/metrics` se
+  nemountuje, request-metriky middleware se neinstaluje, access-log běží dál; `KUKATKO_METRICS_ENABLED`).
 - **`config.example.yaml`** dokumentuje všechny klíče + defaulty; je commitnutý. Reálný config
   (`config.yaml`/`config.local.yaml`) a tajemství **necommituj**. Nové konfig klíče přidávej do
   `Config` structu, `setDefaults`, `config.example.yaml` a testů zároveň.

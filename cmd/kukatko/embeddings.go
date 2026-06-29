@@ -8,6 +8,7 @@ import (
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -22,13 +23,13 @@ import (
 // endpoint and semantic/hybrid search. enqueuer is the shared queue adapter the
 // backfill schedules jobs through.
 func buildEmbedService(
-	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
+	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer, reg *metrics.Registry,
 ) (*embedjob.Service, *vectors.Store, embedding.Client, error) {
 	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("initialising originals storage: %w", err)
 	}
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...)
 	photoStore := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
 
@@ -40,14 +41,15 @@ func buildEmbedService(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("initialising embedding client: %w", err)
 	}
+	instrumented := instrumentEmbedding(client, reg)
 
 	svc := embedjob.New(embedjob.Config{
 		Photos:           photoStore,
 		Vectors:          vectorStore,
-		Client:           client,
+		Client:           instrumented,
 		Previewer:        thumbnailer,
 		Enqueuer:         enqueuer,
 		DuplicateMaxDist: cfg.Duplicate.EmbeddingMaxDist,
 	})
-	return svc, vectorStore, client, nil
+	return svc, vectorStore, instrumented, nil
 }

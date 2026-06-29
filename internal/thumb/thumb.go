@@ -26,6 +26,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -71,10 +72,36 @@ type Thumbnailer struct {
 	cacheDir string
 	// workers bounds the number of sizes encoded concurrently per photo.
 	workers int
+	// observer receives per-size generation timing; never nil after New.
+	observer Observer
 }
+
+// Observer receives the wall-clock time taken to generate one thumbnail size.
+// It is satisfied by *metrics.Registry; tests use a fake. Implementations must
+// be safe for concurrent use, since sizes are encoded in parallel.
+type Observer interface {
+	// ObserveThumbnail records that generating one size took d.
+	ObserveThumbnail(d time.Duration)
+}
+
+// nopObserver is the default Observer when none is configured; it does nothing.
+type nopObserver struct{}
+
+// ObserveThumbnail does nothing.
+func (nopObserver) ObserveThumbnail(time.Duration) {}
 
 // Option customises a Thumbnailer at construction time.
 type Option func(*Thumbnailer)
+
+// WithObserver sets the Observer that receives per-size generation timing. A
+// nil observer is ignored, leaving the no-op default in place.
+func WithObserver(obs Observer) Option {
+	return func(t *Thumbnailer) {
+		if obs != nil {
+			t.observer = obs
+		}
+	}
+}
 
 // WithConcurrency sets the maximum number of sizes encoded in parallel for a
 // single photo. Values below 1 are ignored (the default is GOMAXPROCS).
@@ -93,6 +120,7 @@ func New(store storage.Storage, cacheDir string, opts ...Option) *Thumbnailer {
 		originals: store,
 		cacheDir:  cacheDir,
 		workers:   max(runtime.GOMAXPROCS(0), 1),
+		observer:  nopObserver{},
 	}
 	for _, opt := range opts {
 		opt(t)
@@ -233,6 +261,7 @@ func (t *Thumbnailer) planSizes(hash string, sizes []string) (result map[string]
 // writeSize resizes the already-decoded image for the named size, JPEG-encodes
 // it, and writes it atomically to absPath.
 func (t *Thumbnailer) writeSize(img image.Image, name, absPath string) error {
+	start := time.Now()
 	resized, err := resizeForSpec(img, sizes[name])
 	if err != nil {
 		return err
@@ -244,6 +273,7 @@ func (t *Thumbnailer) writeSize(img image.Image, name, absPath string) error {
 	if err := writeFileAtomic(absPath, data); err != nil {
 		return fmt.Errorf("thumb: write %s: %w", name, err)
 	}
+	t.observer.ObserveThumbnail(time.Since(start))
 	return nil
 }
 

@@ -190,6 +190,8 @@ type Config struct {
 	PageSize int
 	// Logger receives per-item failure diagnostics; nil uses slog.Default().
 	Logger *slog.Logger
+	// Metrics receives per-page progress tallies; nil disables instrumentation.
+	Metrics importer.ProgressObserver
 }
 
 // Service runs the photo-sorter migration over the injected collaborators.
@@ -207,6 +209,7 @@ type Service struct {
 	open     func(path string) (io.ReadCloser, error)
 	pageSize int
 	log      *slog.Logger
+	metrics  importer.ProgressObserver
 }
 
 // New builds a Service from cfg, applying defaults for the optional tunables. It
@@ -230,11 +233,15 @@ func New(cfg Config) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	metrics := cfg.Metrics
+	if metrics == nil {
+		metrics = importer.NopProgressObserver{}
+	}
 	return &Service{
 		src: cfg.Source, runs: cfg.Runs, photos: cfg.Photos, vectors: cfg.Vectors,
 		people: cfg.People, albums: cfg.Albums, labels: cfg.Labels,
 		storage: cfg.Storage, thumbs: cfg.Thumbnailer, enqueuer: cfg.Enqueuer,
-		open: open, pageSize: pageSize, log: logger,
+		open: open, pageSize: pageSize, log: logger, metrics: metrics,
 	}
 }
 
@@ -335,6 +342,8 @@ func (s *Service) migratePhotos(ctx context.Context, runID int64, maps mappings,
 		if err := s.runs.UpdateCounts(ctx, runID, state.counts); err != nil {
 			return fmt.Errorf("psimport: checkpointing counts: %w", err)
 		}
+		c := state.counts
+		s.metrics.SetImportProgress("photosorter", c.Imported, c.Updated, c.Skipped, c.Failed)
 		if len(page) < s.pageSize {
 			return nil
 		}

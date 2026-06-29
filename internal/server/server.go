@@ -38,9 +38,11 @@ const (
 // Server wraps an http.Server together with the chi router that defines the
 // kukatko HTTP API.
 type Server struct {
-	httpServer *http.Server
-	router     chi.Router
-	apiGroups  []func(chi.Router)
+	httpServer     *http.Server
+	router         chi.Router
+	apiGroups      []func(chi.Router)
+	middlewares    []func(http.Handler) http.Handler
+	metricsHandler http.Handler
 }
 
 // Option customises a Server during construction.
@@ -56,6 +58,24 @@ func WithAPI(register func(r chi.Router)) Option {
 	}
 }
 
+// WithMiddleware appends observability (or other) middlewares applied to every
+// route after the built-in RequestID/RealIP and before Recoverer. They run in
+// the order given; pass the metrics middleware and the structured access logger
+// here. Multiple WithMiddleware options compose.
+func WithMiddleware(mw ...func(http.Handler) http.Handler) Option {
+	return func(s *Server) {
+		s.middlewares = append(s.middlewares, mw...)
+	}
+}
+
+// WithMetricsHandler mounts h at GET /metrics (outside /api/v1, so Prometheus
+// scrapes without authenticating). A nil handler leaves /metrics unmounted.
+func WithMetricsHandler(h http.Handler) Option {
+	return func(s *Server) {
+		s.metricsHandler = h
+	}
+}
+
 // New constructs a Server listening on addr with all routes and middleware
 // registered. If addr is empty, DefaultAddr is used. Options (for example
 // WithAPI) extend the server with additional route groups.
@@ -67,8 +87,6 @@ func New(addr string, opts ...Option) *Server {
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(middleware.RealIP)
-	router.Use(middleware.Logger)
-	router.Use(middleware.Recoverer)
 
 	srv := &Server{
 		router: router,
@@ -81,6 +99,13 @@ func New(addr string, opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(srv)
 	}
+	// Observability middlewares (metrics, structured access log) are injected via
+	// WithMiddleware so they see the RequestID/RealIP already set; Recoverer runs
+	// innermost so the access log records the recovered 500.
+	for _, mw := range srv.middlewares {
+		router.Use(mw)
+	}
+	router.Use(middleware.Recoverer)
 	srv.routes()
 	return srv
 }
@@ -102,6 +127,9 @@ func (s *Server) Addr() string {
 // while leaving method-not-allowed responses on real API routes intact.
 func (s *Server) routes() {
 	s.router.Get("/healthz", handleHealthz)
+	if s.metricsHandler != nil {
+		s.router.Method(http.MethodGet, "/metrics", s.metricsHandler)
+	}
 	if len(s.apiGroups) > 0 {
 		s.router.Route("/api/v1", func(r chi.Router) {
 			for _, register := range s.apiGroups {

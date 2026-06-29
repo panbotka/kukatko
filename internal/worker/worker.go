@@ -76,6 +76,40 @@ const (
 	bookkeepingTimeout = 10 * time.Second
 )
 
+// Job outcome label values reported to the Observer.
+const (
+	// outcomeSuccess marks a handler that returned nil.
+	outcomeSuccess = "success"
+	// outcomeError marks a handler that returned a (non-deferral) error or a
+	// job whose type had no handler.
+	outcomeError = "error"
+	// outcomeDeferred marks a job requeued without a burned attempt because the
+	// handler asked to retry later (the box was offline).
+	outcomeDeferred = "deferred"
+)
+
+// Observer receives background-job lifecycle signals so the worker stays
+// decoupled from the metrics package: it is satisfied by *metrics.Registry and
+// faked in tests. A nil Observer disables instrumentation. Implementations must
+// be safe for concurrent use.
+type Observer interface {
+	// JobStarted records that a job of jobType was dispatched to its handler.
+	JobStarted(jobType string)
+	// JobFinished records that a job of jobType finished with outcome (one of
+	// "success", "error", "deferred") after running for d.
+	JobFinished(jobType, outcome string, d time.Duration)
+}
+
+// nopObserver is the default Observer used when Config.Metrics is nil; every
+// method is a no-op.
+type nopObserver struct{}
+
+// JobStarted does nothing.
+func (nopObserver) JobStarted(string) {}
+
+// JobFinished does nothing.
+func (nopObserver) JobFinished(string, string, time.Duration) {}
+
 // Queue is the subset of jobs.Store the worker depends on, expressed as an
 // interface so the runtime can be unit-tested with a fake.
 type Queue interface {
@@ -114,6 +148,8 @@ type Config struct {
 	// IDPrefix prefixes the per-goroutine worker id stamped on claimed jobs.
 	// Empty uses "<hostname>-<pid>".
 	IDPrefix string
+	// Metrics receives per-job lifecycle signals. Nil disables instrumentation.
+	Metrics Observer
 }
 
 // Worker polls the queue with bounded concurrency and dispatches claimed jobs to
@@ -126,6 +162,7 @@ type Worker struct {
 	staleAfter        time.Duration
 	staleScanInterval time.Duration
 	idPrefix          string
+	metrics           Observer
 }
 
 // New constructs a Worker from cfg, applying defaults for any unset tuning knob.
@@ -145,7 +182,17 @@ func New(cfg Config) *Worker {
 		staleAfter:        orDefaultDuration(cfg.StaleAfter, defaultStaleAfter),
 		staleScanInterval: orDefaultDuration(cfg.StaleScanInterval, defaultStaleScanInterval),
 		idPrefix:          orDefaultPrefix(cfg.IDPrefix),
+		metrics:           orDefaultObserver(cfg.Metrics),
 	}
+}
+
+// orDefaultObserver returns obs when non-nil, otherwise a no-op Observer so the
+// worker never has to nil-check its metrics hook.
+func orDefaultObserver(obs Observer) Observer {
+	if obs != nil {
+		return obs
+	}
+	return nopObserver{}
 }
 
 // orDefaultInt returns v when positive, otherwise fallback.
@@ -229,12 +276,29 @@ func (w *Worker) process(ctx context.Context, workerID string, job jobs.Job) {
 		w.record(ctx, job, fmt.Errorf("%w: %q", ErrNoHandler, job.Type))
 		return
 	}
+	w.metrics.JobStarted(job.Type)
+	start := time.Now()
 	err := runHandler(ctx, handler, job)
 	if err != nil && ctx.Err() != nil {
 		log.Printf("worker %s: job %d (%s) abandoned on shutdown", workerID, job.ID, job.Type)
 		return
 	}
+	w.metrics.JobFinished(job.Type, outcomeFor(err), time.Since(start))
 	w.record(ctx, job, err)
+}
+
+// outcomeFor classifies a handler's result into an Observer outcome label:
+// a nil error is success, a RetryAfterError is a deferral, anything else is an
+// error.
+func outcomeFor(err error) string {
+	switch {
+	case err == nil:
+		return outcomeSuccess
+	case isRetryAfter(err):
+		return outcomeDeferred
+	default:
+		return outcomeError
+	}
 }
 
 // runHandler invokes handler, converting a panic into an ErrHandlerPanic error so

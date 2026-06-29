@@ -194,3 +194,20 @@ import:
     dsn: ""
     # Photo listing page size for the migration.
     page_size: 500
+
+# Structured logging. Logs are emitted as JSON on stderr with a secret-redacting
+# hook (values whose key names a password/token/api_key/secret/cookie/dsn are
+# replaced with "[REDACTED]"). Override the level with KUKATKO_LOG_LEVEL.
+log:
+  # Minimum level emitted: debug, info, warn, or error. Empty defaults to info;
+  # an invalid value fails startup.
+  level: info
+
+# Prometheus metrics. When enabled, `kukatko serve` mounts GET /metrics
+# (unauthenticated) and instruments HTTP requests, the job queue/worker, the
+# embeddings sidecar, imports, thumbnail generation, and the DB pool. /metrics is
+# not authenticated — restrict it at the network layer (bind/firewall) when the
+# server is exposed publicly. Override with KUKATKO_METRICS_ENABLED.
+metrics:
+  # Mount /metrics and install the request-metrics middleware.
+  enabled: true

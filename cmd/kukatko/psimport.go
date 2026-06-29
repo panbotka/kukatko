@@ -8,6 +8,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -32,7 +33,7 @@ func psImportConfigured(cfg *config.Config) bool {
 // album/label/people catalogues and the job enqueuer (to cover photos
 // photo-sorter never embedded or detected).
 func newPSImportService(
-	cfg *config.Config, db *database.DB, reader psimport.Source, enqueuer psimport.Enqueuer,
+	cfg *config.Config, db *database.DB, reader psimport.Source, enqueuer psimport.Enqueuer, reg *metrics.Registry,
 ) (*psimport.Service, error) {
 	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
 	if err != nil {
@@ -48,9 +49,10 @@ func newPSImportService(
 		Albums:      organize.NewStore(pool),
 		Labels:      organize.NewStore(pool),
 		Storage:     store,
-		Thumbnailer: thumb.New(store, cfg.Storage.CachePath),
+		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...),
 		Enqueuer:    enqueuer,
 		PageSize:    cfg.Import.PhotoSorter.PageSize,
+		Metrics:     importObserver(reg),
 	}), nil
 }
 
@@ -59,7 +61,7 @@ func newPSImportService(
 // shared by the CLI command and the background ps_migrate job handler so the
 // photo-sorter connection pool lives only for the duration of a migration.
 func runPSMigration(
-	ctx context.Context, cfg *config.Config, db *database.DB, enqueuer psimport.Enqueuer,
+	ctx context.Context, cfg *config.Config, db *database.DB, enqueuer psimport.Enqueuer, reg *metrics.Registry,
 ) (psimport.Result, error) {
 	reader, err := photosorter.New(ctx, photosorter.Config{DSN: cfg.Import.PhotoSorter.DSN})
 	if err != nil {
@@ -67,7 +69,7 @@ func runPSMigration(
 	}
 	defer reader.Close()
 
-	svc, err := newPSImportService(cfg, db, reader, enqueuer)
+	svc, err := newPSImportService(cfg, db, reader, enqueuer, reg)
 	if err != nil {
 		return psimport.Result{}, err
 	}
@@ -81,19 +83,23 @@ func runPSMigration(
 // psMigrateHandlerOrNil returns the ps_migrate worker handler when the migration
 // is configured, or nil otherwise. Keeping the gate here keeps buildServices'
 // branch count down.
-func psMigrateHandlerOrNil(cfg *config.Config, db *database.DB, enqueuer psimport.Enqueuer) worker.HandlerFunc {
+func psMigrateHandlerOrNil(
+	cfg *config.Config, db *database.DB, enqueuer psimport.Enqueuer, reg *metrics.Registry,
+) worker.HandlerFunc {
 	if !psImportConfigured(cfg) {
 		return nil
 	}
-	return newPSMigrateHandler(cfg, db, enqueuer)
+	return newPSMigrateHandler(cfg, db, enqueuer, reg)
 }
 
 // newPSMigrateHandler returns the worker handler for ps_migrate jobs. It opens a
 // fresh photo-sorter reader per run (migrations are rare, admin-triggered) so no
 // photo-sorter connection pool is held for the process lifetime.
-func newPSMigrateHandler(cfg *config.Config, db *database.DB, enqueuer psimport.Enqueuer) worker.HandlerFunc {
+func newPSMigrateHandler(
+	cfg *config.Config, db *database.DB, enqueuer psimport.Enqueuer, reg *metrics.Registry,
+) worker.HandlerFunc {
 	return func(ctx context.Context, _ jobs.Job) error {
-		if _, err := runPSMigration(ctx, cfg, db, enqueuer); err != nil {
+		if _, err := runPSMigration(ctx, cfg, db, enqueuer, reg); err != nil {
 			return fmt.Errorf("running photo-sorter migration: %w", err)
 		}
 		return nil

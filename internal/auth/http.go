@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/obs"
 )
 
 // sessionCookieName is the name of the HttpOnly cookie carrying the opaque
@@ -71,8 +73,11 @@ type contextKey int
 
 const principalContextKey contextKey = iota
 
-// withPrincipal returns a copy of ctx carrying the authenticated principal.
+// withPrincipal returns a copy of ctx carrying the authenticated principal and
+// stamps the user's UID onto the request's observability fields so the
+// access-log line can attribute the request to its caller.
 func withPrincipal(ctx context.Context, p principal) context.Context {
+	obs.SetUser(ctx, p.user.UID)
 	return context.WithValue(ctx, principalContextKey, p)
 }
 

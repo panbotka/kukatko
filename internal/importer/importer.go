@@ -67,6 +67,23 @@ type Counts struct {
 	Failed int `json:"failed"`
 }
 
+// ProgressObserver receives an import run's latest checkpointed photo tally so
+// it can be exported as metrics. It is satisfied by *metrics.Registry; the
+// import services call it after every page checkpoint. Implementations must be
+// safe for concurrent use. source is the import source ("photoprism" or
+// "photosorter").
+type ProgressObserver interface {
+	// SetImportProgress publishes the latest tally for source.
+	SetImportProgress(source string, imported, updated, skipped, failed int)
+}
+
+// NopProgressObserver is a ProgressObserver whose methods do nothing; the
+// import services fall back to it when no observer is configured.
+type NopProgressObserver struct{}
+
+// SetImportProgress does nothing.
+func (NopProgressObserver) SetImportProgress(string, int, int, int, int) {}
+
 // Run is one row of import_runs: a single import or migration run with its
 // lifecycle state, watermark, and tallies. FinishedAt and HighWatermark are nil
 // while the run is in progress or when no watermark was produced.

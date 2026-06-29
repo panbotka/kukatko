@@ -47,6 +47,8 @@ func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState
 		if err := s.runs.UpdateCounts(ctx, runID, state.counts); err != nil {
 			return fmt.Errorf("ppimport: checkpointing counts: %w", err)
 		}
+		c := state.counts
+		s.metrics.SetImportProgress("photoprism", c.Imported, c.Updated, c.Skipped, c.Failed)
 		if len(page) < s.pageSize {
 			return nil
 		}

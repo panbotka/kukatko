@@ -62,7 +62,8 @@ func runImportPhotoPrism(cmd *cobra.Command) error {
 		return fmt.Errorf("applying migrations: %w", err)
 	}
 
-	svc, err := buildImportService(cfg, db, jobs.NewEnqueuer(jobs.NewStore(db.Pool())))
+	// The CLI import command does not serve metrics, so pass a nil registry.
+	svc, err := buildImportService(cfg, db, jobs.NewEnqueuer(jobs.NewStore(db.Pool())), nil)
 	if err != nil {
 		return err
 	}

@@ -189,6 +189,8 @@ type Config struct {
 	MaxFileSize int64
 	// Logger receives per-item failure diagnostics; nil uses slog.Default().
 	Logger *slog.Logger
+	// Metrics receives per-page progress tallies; nil disables instrumentation.
+	Metrics importer.ProgressObserver
 }
 
 // Service runs the PhotoPrism import. It is safe for use by a single run at a
@@ -208,6 +210,7 @@ type Service struct {
 	tempDir     string
 	maxFileSize int64
 	log         *slog.Logger
+	metrics     importer.ProgressObserver
 }
 
 // New builds a Service from cfg, applying defaults for the optional tunables. It
@@ -227,6 +230,10 @@ func New(cfg Config) *Service {
 	if prober == nil {
 		prober = defaultProber{}
 	}
+	metrics := cfg.Metrics
+	if metrics == nil {
+		metrics = importer.NopProgressObserver{}
+	}
 	return &Service{
 		client:      cfg.Client,
 		runs:        cfg.Runs,
@@ -242,6 +249,7 @@ func New(cfg Config) *Service {
 		tempDir:     cfg.TempDir,
 		maxFileSize: cfg.MaxFileSize,
 		log:         logger,
+		metrics:     metrics,
 	}
 }
 

@@ -71,6 +71,23 @@ type Config struct {
 	Worker    WorkerConfig    `mapstructure:"worker"`
 	Bulk      BulkConfig      `mapstructure:"bulk"`
 	Import    ImportConfig    `mapstructure:"import"`
+	Log       LogConfig       `mapstructure:"log"`
+	Metrics   MetricsConfig   `mapstructure:"metrics"`
+}
+
+// LogConfig configures structured logging.
+type LogConfig struct {
+	// Level is the minimum slog level emitted: debug, info, warn, or error. An
+	// empty value defaults to info; an invalid value fails startup.
+	Level string `mapstructure:"level"`
+}
+
+// MetricsConfig configures the Prometheus metrics endpoint.
+type MetricsConfig struct {
+	// Enabled mounts GET /metrics and installs the request-metrics middleware
+	// when true. /metrics is unauthenticated, so restrict it at the network
+	// layer (bind/firewall) when exposing the server publicly.
+	Enabled bool `mapstructure:"enabled"`
 }
 
 // ImportConfig groups the read-only import sources. PhotoPrism stays primary
@@ -382,6 +399,9 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("maps.mapy_api_key", "")
 	v.SetDefault("maps.base_url", "https://api.mapy.com")
+
+	v.SetDefault("log.level", "info")
+	v.SetDefault("metrics.enabled", true)
 
 	setOpsDefaults(v)
 }
