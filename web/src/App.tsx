@@ -7,6 +7,7 @@ import { AccountPage } from './pages/AccountPage'
 import { AlbumDetailPage } from './pages/AlbumDetailPage'
 import { AlbumsPage } from './pages/AlbumsPage'
 import { ClustersPage } from './pages/ClustersPage'
+import { DuplicatesPage } from './pages/DuplicatesPage'
 import { FavoritesPage } from './pages/FavoritesPage'
 import { HomePage } from './pages/HomePage'
 import { ImportPage } from './pages/ImportPage'
@@ -56,6 +57,8 @@ export function App() {
               <Route element={<RequireRole role="editor" />}>
                 <Route path="/upload" element={<UploadPage />} />
                 <Route path="/people/clusters" element={<ClustersPage />} />
+                {/* Duplicate review archives photos in bulk: editors and admins only. */}
+                <Route path="/duplicates" element={<DuplicatesPage />} />
                 {/* Trash management (restore / permanent delete) is a write action. */}
                 <Route path="/trash" element={<TrashPage />} />
               </Route>

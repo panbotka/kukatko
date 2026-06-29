@@ -274,7 +274,10 @@ inkrementální).
   `ErrEmbeddingNotFound`/`ErrDimMismatch` (validace 768/512)/
   `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(limit)` =
   uid nearchivovaných fotek bez embeddingu (LEFT JOIN, nejnovější první, `limit<=0`=vše) pro
-  backfill; **face-detection tracking** v tabulce `face_detections` (migrace
+  backfill; `FindDuplicatePairs(neighbours,maxDist)` = near-duplicate páry dle embedding cosine
+  vzdálenosti (`duplicate.go`, `CROSS JOIN LATERAL` + HNSW `LIMIT` neighbours per fotka, žádný
+  O(n²) sken; `maxDist<=0`→žádné páry; read-only tx s `hnsw.ef_search`) — podklad
+  `internal/duplicates`; **face-detection tracking** v tabulce `face_detections` (migrace
   `0009_face_detections.sql`: `photo_uid PK` FK `ON DELETE CASCADE`, `face_count`, `model`,
   `detected_at`) — protože `faces` může mít nula řádků, je to jediný způsob, jak odlišit fotku
   bez obličejů od nezpracované; `RecordFaceDetection(uid,faces,model)` (atomicky nahradí faces
@@ -758,6 +761,29 @@ inkrementální).
   `DisallowUnknownFields`, prázdný výběr → 400, `ErrOrphanImportUnavailable` → 503, jinak `RepairResult`);
   mountuje se v `serve` (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go`, service staví
   `buildMaintenanceAndThumb` sdílený s registrací `thumbnail` handleru v `buildJobs`)),
+  `internal/duplicates/`
+  (**review surface pro near-duplicate fotky** nad rámec upload-time varování: linkuje fotky dvěma
+  signály — pHash Hammingova vzdálenost do `duplicate.phash_max_diff` a embedding cosine vzdálenost
+  do `duplicate.embedding_max_dist` — a slévá hrany do souvislých komponent přes union-find
+  (`algo.go` disjoint-set + path compression/union by rank); **bez O(n²)**: pHash přes **banded-LSH**
+  buckety (`bandCount`=`maxDiff+1` pásem dle pigeonhole garantuje sdílený bucket pro páry do prahu,
+  kandidáti se ověří plnou Hammingovou vzdáleností), embeddingy přes HNSW (`vectors.FindDuplicatePairs`).
+  Vše za rozhraními `PhotoSource` (`ListByUIDs`)/`PhashSource` (`ListActivePhashes`)/`EmbeddingSource`
+  (`FindDuplicatePairs`, nil vypne embedding grouping) → unit-testovatelné s faky; `Service` =
+  `New(Config{Photos,Phashes,Embeddings,PhashMaxDiff,EmbeddingMaxDist,Neighbours})` (panika na nil
+  Photos/Phashes; `PhashMaxDiff<0` vypne pHash, `EmbeddingMaxDist<=0` vypne embedding);
+  **`FindGroups(ctx,limit,offset)`** (backing `GET /duplicates`) → `Result{Groups,Total,Limit,Offset,
+  NextOffset}`; každá `Group{ID (nejmenší uid),Reason (phash/embedding/both),KeeperUID,Members}`,
+  `Member` nese rozměry/velikost/`taken_at`/media_type + `is_keeper` + `phash_distance`/
+  `embedding_distance` ke keeperovi; **navržený keeper** = nejvyšší rozlišení → největší soubor →
+  nejstarší → nejmenší uid (`selectKeeperIndex`); skupiny řazené largest-first/newest-keeper/id,
+  `limit` clamp `[1,100]`; jen čte, **nikdy nemutuje** (úklid jde přes bulk/archive API); archivované
+  fotky se nescanují (`ListActivePhashes` filtruje `archived_at IS NULL`)), `internal/duplicatesapi/`
+  (editor/admin HTTP API nad detekcí duplikátů: rozhraní `Service` (`FindGroups`, splňuje
+  `*duplicates.Service`, **nil → 503** ať route existuje i při vypnuté detekci);
+  `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mountuje `GET /duplicates` za `RequireWrite`
+  (query `limit`≤100/`offset`, neplatný → 400, sken selže → 500); mountuje se v `serve`
+  (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`, při `duplicate.enabled=false` nil služba)),
   `internal/ratelimit/`
   (znovupoužitelný **per-key token-bucket rate limiter** + HTTP middleware pro náročné endpointy:
   `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, per-klíč bucket) / `Cleanup`/`RunMaintenance`
@@ -779,6 +805,7 @@ inkrementální).
   **Hledat** na `/search`,
   **Lidé** na `/people`, **Mapa** na `/map`, **Nahrát** na `/upload` (jen editor/admin),
   **Koš** na `/trash` (jen editor/admin, gate `canWrite`),
+  **Duplikáty** na `/duplicates` (jen editor/admin, gate `canWrite`),
   **Import** na `/import` (jen admin, gate `isAdmin`),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
   `LanguageSwitcher`;
@@ -869,9 +896,17 @@ inkrementální).
   (`unarchivePhoto`) a **trvalé mazání** (`purgePhoto`) jednotlivě i hromadně (`useSelection`
   `SelectionBar`), **Vyprázdnit koš** (`emptyTrash`), každá trvalá akce přes potvrzovací `Modal`;
   `fetchTrashInfo` dotáhne retenci pro odpočet na kartách,
+  `DuplicatesPage` = `/duplicates` (editor/admin) kontrola duplikátů: stránkovaný seznam skupin
+  (`fetchDuplicates`, „načíst další" přes `next_offset`) v `DuplicateGroupCard`; per skupina uživatel
+  vybere keeper a **archivuje zbytek** přes `bulkUpdatePhotos(archiveUids,{archive:true})` (zbytek do
+  koše, vratné) → skupina zmizí + success alert s počtem, nebo skupinu **odmítne** („není duplikát",
+  jen lokálně skryje); 503 → „nedostupné", loading přes `GridSkeleton`, error s retry,
   `NotFoundPage`),
   `components/trash/` = `TrashCard` (dlaždice archivované fotky: náhled + odpočet do auto-purge přes
   `trashCountdown` + restore/delete akce + výběr v selection módu);
+  `components/duplicates/` = `DuplicateGroupCard` (karta skupiny: členové vedle sebe s náhledem/
+  rozměry/velikostí/`taken_at`/vzdálenostmi, radio výběr keepera (default navržený), badge `reason`,
+  akce **Archivovat ostatní** / **Není duplikát**, busy stav);
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
   velikosti `fit_1920` s CSS přechodem dle `settings.effect`, přednačítání sousedních snímků přes
   `new Image()`, ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek + pozice
@@ -939,7 +974,9 @@ inkrementální).
   `writeUrlState` + scope `album`/`label`, default filtry vynechá — launch link promítání);
   `trashCountdown.ts` = pure `purgeCountdown(archivedAt,retentionDays,now?)` (zbývající dny do
   auto-purge z `archived_at` + retence → `{daysLeft,due}` nebo `null` když odpočet neplatí
-  (nearchivovaná / retence ≤ 0 / neparsovatelné), odpočet na kartách koše)),
+  (nearchivovaná / retence ≤ 0 / neparsovatelné), odpočet na kartách koše);
+  `format.ts` = pure `formatBytes(bytes)` (byte count → human-readable binární jednotky, např.
+  `1536`→`"1.5 KB"`, neplatné→`"0 B"`) pro velikost souboru na duplicate-group kartách)),
   `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
   `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
@@ -962,7 +999,11 @@ inkrementální).
   `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput`; `bulk.ts` =
   `bulkUpdatePhotos(uids,ops)` nad `POST /photos/bulk` (hromadná úprava výběru), typy
   `BulkOperations` (add/remove alba+štítku, set/clear caption+popisu+polohy, set_private,
-  archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `upload.ts` =
+  archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `duplicates.ts` =
+  `fetchDuplicates(params,signal)` nad `GET /api/v1/duplicates` (skupiny duplikátů →
+  `DuplicatesResponse{groups,total,limit,offset,next_offset}`), typy `DuplicateReason`/
+  `DuplicateMember`/`DuplicateGroup`/`DuplicatesParams`; úklid jde přes `bulk.ts`
+  `bulkUpdatePhotos`; `upload.ts` =
   `uploadFile(file,{onProgress,signal})`
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
@@ -994,7 +1035,7 @@ inkrementální).
   `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru), zbytek pod `Layout` (`/`, `/library`,
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`,
   `/photos/:uid`, `/people`,
-  `/people/:uid`, `/account`; `/upload`, `/people/clusters` a `/trash`
+  `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/trash` a `/duplicates`
   navíc pod `RequireRole role="editor"` = write-only, `/import` a `/maintenance` pod
   `RequireRole role="admin"` = admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
@@ -1209,6 +1250,16 @@ inkrementální).
   400, orphan import bez importéru → 503 (`ErrOrphanImportUnavailable`). Opravy jsou idempotentní a
   jedou přes frontu jobů (thumbnail/pHash přes `thumbnail` job, embeddingy/faces backfill), **nikdy
   nemažou originály**. Mountuje se vždy (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go`).
+- **Duplicates API (`/api/v1`, `internal/duplicatesapi` + `internal/duplicates`, editor/admin přes
+  `RequireWrite`):** `GET /duplicates?limit=&offset=` → `{groups,total,limit,offset,next_offset}`
+  skupiny pravděpodobných duplikátů z pHash Hammingovy vzdálenosti (`duplicate.phash_max_diff`,
+  banded-LSH) **a/nebo** embedding cosine vzdálenosti (`duplicate.embedding_max_dist`, HNSW), slité
+  union-findem do souvislých komponent (žádný O(n²) sken). Každá skupina nese členy (náhled/rozměry/
+  velikost/`taken_at`/vzdálenosti) + `reason` (phash/embedding/both) + navržený `keeper_uid`
+  (nejvyšší rozlišení → největší → nejstarší → uid); řazení largest-first, `limit`≤100, neplatný →
+  400, sken selže → 500. **Jen čte — nic nemaže.** Při `duplicate.enabled=false` route odpovídá 503.
+  Úklid jede klient přes sdílené **bulk API** (`POST /photos/bulk` `{archive:true}` → koš, vratné).
+  Mountuje se vždy (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

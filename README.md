@@ -1118,6 +1118,7 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/photos/{uid}/purge` | editor/admin | **trvale** smaže archivovanou fotku (řádek+kaskáda, originál, náhledy, případně S3); vyžaduje `?confirm=true` → 204, 400 bez potvrzení, 404 chybí, 409 fotka není archivovaná |
 | GET | `/trash/info` | přihlášený | retenční okno `{retention_days}` pro odpočet do auto-purge |
 | POST | `/trash/empty` | editor/admin | **trvale** smaže všechny archivované fotky (vyžaduje `?confirm=true`) → `{purged,failed}` |
+| GET | `/duplicates` | editor/admin | skupiny pravděpodobných duplikátů (pHash + embedding) → `{groups,total,limit,offset,next_offset}`; query `limit`(≤100)/`offset`; 503 když `duplicate.enabled=false` (viz Duplicates) |
 | GET | `/photos/{uid}/thumb/{size}` | session/token | náhled (cache, generuje se on-miss) — streamuje JPEG, `ETag`/304 |
 | GET | `/photos/{uid}/download` | session/token | originál jako příloha — streamuje (nikdy celý v RAM), `Content-Length`/`ETag` |
 | GET | `/jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue` | admin | fronta jobů (viz Admin Jobs API) |
@@ -1188,6 +1189,23 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   službu přes rozhraní `Purger` (nil → 503); službu staví `buildTrashService`
   (`cmd/kukatko/trash.go`). **Trash UI** je stránka `/trash` (editor/admin) s obnovou a trvalým
   mazáním (jednotlivě i hromadně) a odpočtem do auto-purge.
+- **Duplikáty — kontrola a úklid** (`internal/duplicates` + `internal/duplicatesapi`) — vedle
+  upload-time varování existuje **review surface**: `GET /duplicates` (editor/admin) vrací
+  **skupiny** pravděpodobných duplikátů. Linkuje fotky dvěma signály — perceptual-hash (pHash)
+  Hammingovou vzdáleností do `duplicate.phash_max_diff` bitů a embedding cosine vzdáleností do
+  `duplicate.embedding_max_dist` — a sloučí hrany do souvislých komponent přes union-find. **Žádný
+  O(n²) sken:** pHash používá banded-LSH buckety (pigeonhole na `maxDiff+1` pásem garantuje sdílený
+  bucket pro páry do prahu), embeddingy jdou přes HNSW index (`vectors.FindDuplicatePairs`,
+  korelovaný `CROSS JOIN LATERAL` s `LIMIT` neighbours per fotka). Každá skupina nese členy
+  s detaily pro porovnání (náhled, rozměry, velikost, `taken_at`, vzdálenost ke keeperovi)
+  a **navržený keeper** (nejvyšší rozlišení → největší soubor → nejstarší → nejmenší uid); řazení
+  skupin largest-first, stránkování `limit`(≤100)/`offset`. Detekce **nikdy nic nemaže** — jen čte.
+  Embeddingy se čtou z Postgresu, takže to funguje i když je box offline. Zapojeno `buildDuplicatesAPI`
+  (`cmd/kukatko/duplicates.go`); při `duplicate.enabled=false` se route mountuje s nil službou
+  a odpovídá 503. **Duplicates UI** je stránka `/duplicates` (editor/admin): skupiny vedle sebe,
+  uživatel vybere fotku k zachování a **archivuje zbytek** přes sdílené bulk API
+  (`POST /photos/bulk` `{archive:true}` → koš, vratné), nebo skupinu **odmítne** jako „není
+  duplikát" (zmizí z pohledu). Žádné auto-mazání, vždy potvrzení uživatelem.
 - **Média** `GET /photos/{uid}/thumb/{size}` a `/download` — **streamují** se (`io.Copy`, nikdy
   celý soubor v RAM), s `Cache-Control`/`ETag` (a `304` na `If-None-Match`). Přístup přes session
   cookie **nebo** `download_token` v query parametru `?t=…` (`RequireAuthOrDownloadToken`), takže

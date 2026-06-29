@@ -15,6 +15,7 @@
     "upload": "Upload",
     "import": "Import",
     "maintenance": "Maintenance",
+    "duplicates": "Duplicates",
     "account": "My account",
     "logout": "Sign out",
     "trash": "Trash"
@@ -638,5 +639,29 @@
       "failed": "Failed",
       "dead": "Dead"
     }
+  },
+  "duplicates": {
+    "title": "Duplicates",
+    "subtitle": "Review groups of near-identical photos. Pick the one to keep and archive the rest, or dismiss a group as not a duplicate. Archived photos go to the trash and can be restored.",
+    "reason": {
+      "phash": "Similar image",
+      "embedding": "Similar content",
+      "both": "Very similar"
+    },
+    "memberCount": "{{count}} photos",
+    "keepThis": "Keep this",
+    "keepAndArchive": "Keep & archive {{count}} others",
+    "dismiss": "Not a duplicate",
+    "phashDistanceTitle": "Perceptual-hash distance to the kept photo (lower is more similar)",
+    "embeddingDistanceTitle": "Embedding distance to the kept photo (lower is more similar)",
+    "archived": "Archived {{count}} photos.",
+    "actionError": "The action failed.",
+    "unavailable": "Duplicate detection is disabled in the server configuration.",
+    "error": "Failed to load duplicates.",
+    "empty": {
+      "title": "No duplicates found",
+      "hint": "Nothing looks like a near-duplicate right now."
+    },
+    "loadMore": "Load more"
   }
 }

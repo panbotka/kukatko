@@ -15,6 +15,7 @@
     "upload": "Nahrát",
     "import": "Import",
     "maintenance": "Údržba",
+    "duplicates": "Duplikáty",
     "account": "Můj účet",
     "logout": "Odhlásit se",
     "trash": "Koš"
@@ -638,5 +639,29 @@
       "failed": "Selhalo",
       "dead": "Mrtvé"
     }
+  },
+  "duplicates": {
+    "title": "Duplikáty",
+    "subtitle": "Procházejte skupiny téměř shodných fotek. Vyberte, kterou ponechat, a zbytek archivujte, nebo skupinu zamítněte jako neduplicitní. Archivované fotky putují do koše a lze je obnovit.",
+    "reason": {
+      "phash": "Podobný obrázek",
+      "embedding": "Podobný obsah",
+      "both": "Velmi podobné"
+    },
+    "memberCount": "{{count}} fotek",
+    "keepThis": "Ponechat tuto",
+    "keepAndArchive": "Ponechat a archivovat zbylé ({{count}})",
+    "dismiss": "Není duplikát",
+    "phashDistanceTitle": "Vzdálenost perceptuálního hashe od ponechané fotky (nižší = podobnější)",
+    "embeddingDistanceTitle": "Vzdálenost embeddingu od ponechané fotky (nižší = podobnější)",
+    "archived": "Archivováno fotek: {{count}}.",
+    "actionError": "Akce se nezdařila.",
+    "unavailable": "Detekce duplikátů je v konfiguraci serveru vypnutá.",
+    "error": "Načtení duplikátů se nezdařilo.",
+    "empty": {
+      "title": "Žádné duplikáty",
+      "hint": "Momentálně nic nevypadá jako téměř duplicitní."
+    },
+    "loadMore": "Načíst další"
   }
 }

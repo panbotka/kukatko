@@ -124,6 +124,36 @@ func (s *Store) NearestPhash(ctx context.Context, phash int64) (uid string, dist
 	return uid, distance, nil
 }
 
+// ListActivePhashes returns the perceptual hashes of every non-archived photo,
+// for the duplicate-detection scan. Archived (trashed) photos are excluded so
+// they are never grouped as duplicates. The result is ordered by photo_uid for
+// deterministic grouping and is empty (not nil) when no live photo has a hash.
+func (s *Store) ListActivePhashes(ctx context.Context) ([]Phash, error) {
+	const q = `SELECT ph.photo_uid, ph.phash, ph.dhash, ph.created_at
+		FROM photo_phashes ph
+		JOIN photos p ON p.uid = ph.photo_uid
+		WHERE p.archived_at IS NULL
+		ORDER BY ph.photo_uid`
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("photos: querying active phashes: %w", err)
+	}
+	defer rows.Close()
+
+	hashes := make([]Phash, 0)
+	for rows.Next() {
+		var p Phash
+		if err := rows.Scan(&p.PhotoUID, &p.Phash, &p.Dhash, &p.CreatedAt); err != nil {
+			return nil, fmt.Errorf("photos: scanning active phash: %w", err)
+		}
+		hashes = append(hashes, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("photos: iterating active phashes: %w", err)
+	}
+	return hashes, nil
+}
+
 // SetEdit upserts the non-destructive edits for e.PhotoUID, replacing any
 // existing row and bumping updated_at. The all-or-nothing crop and the rotation
 // allow-list are enforced by SQL CHECK constraints. It returns a wrapped error

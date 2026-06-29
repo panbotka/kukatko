@@ -67,6 +67,11 @@ export function Layout() {
                 </Nav.Link>
               )}
               {canWrite && (
+                <Nav.Link as={NavLink} to="/duplicates">
+                  {t('nav.duplicates')}
+                </Nav.Link>
+              )}
+              {canWrite && (
                 <Nav.Link as={NavLink} to="/trash">
                   {t('nav.trash')}
                 </Nav.Link>
