@@ -213,6 +213,24 @@ inkrementální).
   `RetryAfter(delay,cause)`/`RetryAfterError` → worker místo `Fail` zavolá `Defer(delay)` (přechodná
   bezchybná chyba, žádný spálený pokus — používá `image_embed` při offline boxu); built-in **noop**
   handler (`TypeNoop`/`NoopHandler`/`RegisterBuiltins`) jen pro sanity/testy; `Run` vrací nil),
+  `internal/wake/`
+  (volitelný **Wake-on-LAN auto-wake** boxu, **default OFF** a plně inertní když vypnuto: balík
+  pošle magic packet na lokální LAN když čekají `image_embed`/`face_detect` joby a sidecar je
+  offline, ať se fronta dožene bez ručního zapnutí; vše za rozhraními `QueueDepth`
+  (`PendingEmbeddingJobs(ctx)` — splňuje ho adapter nad `jobs.Store.CountPending`),
+  `HealthChecker` (`Healthy(ctx)` — splňuje ho `embedding.Client`) a `Sender`
+  (`Send(ctx,mac)` — **fakeovatelné v testech**, žádný reálný síťový provoz); `Packet(mac)`
+  staví magic packet přes `mdlayher/wol` (102 B: 6× 0xFF + MAC 16×); `Service` =
+  `New(Config{Enabled,MAC,BroadcastAddr,Interface,MinQueue,Cooldown,GracePeriod,Queue,Health,
+  Sender,Logger,Clock})` (disabled → inertní; enabled vyžaduje validní MAC + Queue/Health, jinak
+  default síťový sender: UDP broadcast na `BroadcastAddr`, nebo raw Ethernet rámec na `Interface`
+  přes `wol.NewRawClient`, vyžaduje CAP_NET_RAW); **`Tick(ctx)`** = jeden cyklus: pošle packet jen
+  když enabled **&&** `pending ≥ MinQueue` **&&** cooldown uplynul **&&** sidecar offline, pak po
+  `GracePeriod` překontroluje zdraví a zaloguje jestli box naběhl (jinak backoff do cooldownu);
+  **cooldown se nastaví i při chybě sendu** (nespamuje broken sender); `Run(ctx,interval)` =
+  plánovaná smyčka (hned + každý interval) ve vlastní goroutině — **nikdy neblokuje zpracování
+  jobů**; chyby se jen logují, nikdy nevrací; defaulty `MinQueue` 1 / `Cooldown` 5 min /
+  `GracePeriod` 30 s; tunables v `embedding.wake.*` configu),
   `internal/jobsapi/`
   (admin-only HTTP API nad frontou: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
   mountuje `/jobs`; `GET /jobs/stats` (counts by_state/by_type+total), `GET /jobs`
@@ -931,8 +949,9 @@ inkrementální).
   zpracování fronty jobů a **plánovaný úklid koše** (`internal/trash` `RunPurge`, každých 6 h —
   trvale maže fotky archivované déle než `trash.retention_days`; retence ≤ 0 ho vypne),
   **plánovanou S3 zálohu** (`internal/backup` `RunSchedule` na `backup.schedule`; jen je-li
-  `backup.s3.{endpoint,bucket}` nakonfigurováno), pak
-  poslouchá na `web.host:web.port`, default
+  `backup.s3.{endpoint,bucket}` nakonfigurováno) a **volitelný Wake-on-LAN auto-wake boxu**
+  (`internal/wake` `Run`, každou minutu; jen je-li `embedding.wake.enabled`, jinak plně inertní),
+  pak poslouchá na `web.host:web.port`, default
   `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`, **`GET /metrics`**
   Prometheus (mimo `/api/v1`, bez autentizace; jen když `metrics.enabled`), auth/admin API
   pod `/api/v1` — viz níže, ostatní cesty servíruje **embedované SPA** s fallbackem na
@@ -1160,6 +1179,12 @@ inkrementální).
 - **Observability klíče:** `log.level` (debug/info/warn/error, default info, neplatný → chyba při
   startu; `KUKATKO_LOG_LEVEL`) a `metrics.enabled` (bool, default true; vypnuté → `/metrics` se
   nemountuje, request-metriky middleware se neinstaluje, access-log běží dál; `KUKATKO_METRICS_ENABLED`).
+- **Wake-on-LAN klíče (`embedding.wake.*`, `internal/wake`):** `enabled` (bool, **default false** —
+  feature plně inertní), `mac` (MAC boxu, **povinný a parseovaný při validaci** když enabled),
+  `broadcast_addr` (UDP broadcast cíl, default `255.255.255.255:9`), `interface` (NIC pro raw
+  Ethernet rámec; vyžaduje CAP_NET_RAW), `min_queue` (práh čekajících `image_embed`/`face_detect`
+  jobů, default 1), `cooldown` (min. rozestup mezi packety, default 5m). Validace `ErrInvalidWake`:
+  enabled vyžaduje validní MAC + aspoň jeden cíl (`broadcast_addr`/`interface`).
 - **`config.example.yaml`** dokumentuje všechny klíče + defaulty; je commitnutý. Reálný config
   (`config.yaml`/`config.local.yaml`) a tajemství **necommituj**. Nové konfig klíče přidávej do
   `Config` structu, `setDefaults`, `config.example.yaml` a testů zároveň.

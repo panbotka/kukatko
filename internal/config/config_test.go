@@ -39,6 +39,10 @@ func TestLoad_defaults(t *testing.T) {
 		{"embedding.url", cfg.Embedding.URL, "http://localhost:8000"},
 		{"embedding.image_dim", cfg.Embedding.ImageDim, 768},
 		{"embedding.face_dim", cfg.Embedding.FaceDim, 512},
+		{"embedding.wake.enabled", cfg.Embedding.Wake.Enabled, false},
+		{"embedding.wake.broadcast_addr", cfg.Embedding.Wake.BroadcastAddr, "255.255.255.255:9"},
+		{"embedding.wake.min_queue", cfg.Embedding.Wake.MinQueue, 1},
+		{"embedding.wake.cooldown", cfg.Embedding.Wake.Cooldown, 5 * time.Minute},
 		{"faces.min_det_score", cfg.Faces.MinDetScore, 0.5},
 		{"faces.iou_threshold", cfg.Faces.IoUThreshold, 0.1},
 		{"faces.suggestion_limit", cfg.Faces.SuggestionLimit, 5},
@@ -234,6 +238,85 @@ func TestLoad_invalidWebPort(t *testing.T) {
 	_, err := Load("")
 	if !errors.Is(err, ErrInvalidWebPort) {
 		t.Fatalf("Load error = %v, want ErrInvalidWebPort", err)
+	}
+}
+
+// TestLoad_wakeEnvOverride verifies the Wake-on-LAN settings parse from the
+// environment, including a valid MAC and a custom cooldown.
+func TestLoad_wakeEnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_EMBEDDING_WAKE_ENABLED", "true")
+	t.Setenv("KUKATKO_EMBEDDING_WAKE_MAC", "aa:bb:cc:dd:ee:ff")
+	t.Setenv("KUKATKO_EMBEDDING_WAKE_BROADCAST_ADDR", "192.168.1.255:9")
+	t.Setenv("KUKATKO_EMBEDDING_WAKE_MIN_QUEUE", "4")
+	t.Setenv("KUKATKO_EMBEDDING_WAKE_COOLDOWN", "10m")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	w := cfg.Embedding.Wake
+	if !w.Enabled || w.MAC != "aa:bb:cc:dd:ee:ff" || w.BroadcastAddr != "192.168.1.255:9" {
+		t.Errorf("wake basics = %+v, want enabled with mac/broadcast set", w)
+	}
+	if w.MinQueue != 4 || w.Cooldown != 10*time.Minute {
+		t.Errorf("wake thresholds = min_queue %d cooldown %s, want 4/10m", w.MinQueue, w.Cooldown)
+	}
+}
+
+// TestLoad_wakeValidation verifies that an enabled wake config with a
+// missing/invalid MAC (or no destination) fails validation, while a disabled
+// config tolerates any MAC value.
+func TestLoad_wakeValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr bool
+	}{
+		{
+			name:    "enabled without mac",
+			env:     map[string]string{"KUKATKO_EMBEDDING_WAKE_ENABLED": "true"},
+			wantErr: true,
+		},
+		{
+			name: "enabled with invalid mac",
+			env: map[string]string{
+				"KUKATKO_EMBEDDING_WAKE_ENABLED": "true",
+				"KUKATKO_EMBEDDING_WAKE_MAC":     "not-a-mac",
+			},
+			wantErr: true,
+		},
+		{
+			name: "enabled with valid mac and default broadcast",
+			env: map[string]string{
+				"KUKATKO_EMBEDDING_WAKE_ENABLED": "true",
+				"KUKATKO_EMBEDDING_WAKE_MAC":     "aa:bb:cc:dd:ee:ff",
+			},
+			wantErr: false,
+		},
+		{
+			name: "disabled tolerates garbage mac",
+			env: map[string]string{
+				"KUKATKO_EMBEDDING_WAKE_ENABLED": "false",
+				"KUKATKO_EMBEDDING_WAKE_MAC":     "garbage",
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			_, err := Load("")
+			if tt.wantErr && !errors.Is(err, ErrInvalidWake) {
+				t.Fatalf("Load error = %v, want ErrInvalidWake", err)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("Load returned unexpected error: %v", err)
+			}
+		})
 	}
 }
 

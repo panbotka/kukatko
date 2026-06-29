@@ -51,6 +51,25 @@ embedding:
   image_dim: 768
   # Dimensionality of face embeddings produced by the service.
   face_dim: 512
+  # Optional Wake-on-LAN auto-wake of the embeddings box. When enabled, the
+  # server sends a magic packet on the local LAN whenever image_embed/face_detect
+  # jobs are waiting above min_queue AND the sidecar health check reports offline.
+  # Wake-on-LAN does NOT traverse Tailscale (no L2 broadcast) — the host must
+  # share the physical LAN with the box. Default OFF; manual power-on stays fine.
+  wake:
+    # Turn auto-wake on. When false the feature is fully inert (no polling/packets).
+    enabled: false
+    # The box NIC's hardware address (the magic-packet target). Required when enabled.
+    mac: ""
+    # UDP broadcast destination for the magic packet (used when interface is empty).
+    broadcast_addr: "255.255.255.255:9"
+    # Local NIC name to emit a raw Ethernet magic frame on (e.g. "eth0"); needs
+    # CAP_NET_RAW. Empty selects the UDP broadcast path above instead.
+    interface: ""
+    # Minimum pending image_embed/face_detect jobs before a wake is attempted.
+    min_queue: 1
+    # Minimum delay between successive magic packets, so a sleeping box is not spammed.
+    cooldown: 5m
 
 faces:
   # Minimum detector confidence (det_score) a detected face must have to be

@@ -79,7 +79,7 @@ func runServe(cmd *cobra.Command) error {
 		return err
 	}
 
-	apis, jobWorker, trashSvc, err := buildServices(cfg, db, authAPI, reg)
+	apis, bg, err := buildServices(cfg, db, authAPI, reg)
 	if err != nil {
 		return err
 	}
@@ -88,10 +88,8 @@ func runServe(cmd *cobra.Command) error {
 		return err
 	}
 
-	startWorker(ctx, jobWorker)
-	go trashSvc.RunPurge(ctx, trashPurgeInterval)
-	if backupSvc != nil {
-		go backupSvc.RunSchedule(ctx, cfg.Backup.Schedule)
+	if err := startBackgroundServices(ctx, cfg, db, bg, backupSvc); err != nil {
+		return err
 	}
 
 	apis = append(apis, observabilityOptions(reg, logger)...)
@@ -102,6 +100,27 @@ func runServe(cmd *cobra.Command) error {
 
 	if err = srv.Run(ctx); err != nil {
 		return fmt.Errorf("running server: %w", err)
+	}
+	return nil
+}
+
+// startBackgroundServices builds the optional Wake-on-LAN auto-wake service and
+// launches every background goroutine tied to ctx so they stop on shutdown: the
+// job worker, the trash retention purge, the auto-wake check loop (inert when
+// disabled), and — when configured — the scheduled S3 backup.
+func startBackgroundServices(
+	ctx context.Context, cfg *config.Config, db *database.DB,
+	bg backgroundServices, backupSvc *backup.Service,
+) error {
+	wakeSvc, err := buildWakeService(cfg, db)
+	if err != nil {
+		return err
+	}
+	startWorker(ctx, bg.worker)
+	go bg.trash.RunPurge(ctx, trashPurgeInterval)
+	go wakeSvc.Run(ctx, wakeCheckInterval)
+	if backupSvc != nil {
+		go backupSvc.RunSchedule(ctx, cfg.Backup.Schedule)
 	}
 	return nil
 }
@@ -181,39 +200,48 @@ func observabilityOptions(reg *metrics.Registry, logger *slog.Logger) []server.O
 	}
 }
 
-// buildServices assembles every HTTP API group and the background worker over a
+// backgroundServices bundles the long-running services the serve command starts
+// as goroutines tied to the process context: the job worker and the trash
+// retention purge. The optional Wake-on-LAN auto-wake is built separately in
+// runServe (it needs no API routes).
+type backgroundServices struct {
+	worker *worker.Worker
+	trash  *trash.Service
+}
+
+// buildServices assembles every HTTP API group and the background services over a
 // shared queue store: upload/ingest, photo browse/curation (with embedding-backed
 // similar search), face auto-clustering, per-subject face outlier detection, the
 // subject (people) catalogue, the album and label catalogue, the maps proxy and
 // GeoJSON feed, the admin jobs and processing APIs, and the image_embed and
 // face_detect worker handlers. It returns the server options registering those
-// routes plus the worker for the serve command to run.
+// routes plus the background services for the serve command to run.
 func buildServices(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, reg *metrics.Registry,
-) ([]server.Option, *worker.Worker, *trash.Service, error) {
+) ([]server.Option, backgroundServices, error) {
 	jobStore := jobs.NewStore(db.Pool())
 	enqueuer := jobs.NewEnqueuer(jobStore)
 	registerJobQueueMetrics(reg, jobStore)
 	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer, reg)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, backgroundServices{}, err
 	}
 	embedSvc, vectorStore, embedClient, err := buildEmbedService(cfg, db, enqueuer, reg)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, backgroundServices{}, err
 	}
 	faceSvc, err := buildFaceService(cfg, db, enqueuer, vectorStore, embedClient)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, backgroundServices{}, err
 	}
 	matchSvc := buildFaceMatch(cfg, db)
 	trashSvc, err := buildTrashService(cfg, db)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, backgroundServices{}, err
 	}
 	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore, embedClient, matchSvc, trashSvc, reg)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, backgroundServices{}, err
 	}
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
 	outlierAPI := buildOutlierAPI(db, authAPI)
@@ -222,12 +250,12 @@ func buildServices(
 	bulkAPI := buildBulkAPI(cfg, db, authAPI)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, backgroundServices{}, err
 	}
 	var importSvc *ppimport.Service
 	if importConfigured(cfg) {
 		if importSvc, err = buildImportService(cfg, db, enqueuer, reg); err != nil {
-			return nil, nil, nil, err
+			return nil, backgroundServices{}, err
 		}
 	}
 	psMigrate := psMigrateHandlerOrNil(cfg, db, enqueuer, reg)
@@ -249,5 +277,5 @@ func buildServices(
 		server.WithAPI(buildImportAPI(cfg, db, jobStore, authAPI).RegisterRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 	}
-	return opts, jobWorker, trashSvc, nil
+	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
 }

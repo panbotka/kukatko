@@ -12,6 +12,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -52,6 +53,9 @@ var (
 	// window is non-positive.
 	ErrInvalidLoginRateLimit = errors.New(
 		"config: auth.login_rate_limit and auth.login_rate_window must be positive")
+	// ErrInvalidWake indicates the Wake-on-LAN auto-wake settings are enabled but
+	// inconsistent (missing/invalid MAC, or no destination to send the packet to).
+	ErrInvalidWake = errors.New("config: invalid embedding.wake settings")
 )
 
 // Config is the fully resolved, typed configuration for a kukatko process.
@@ -152,9 +156,38 @@ type WebConfig struct {
 // EmbeddingConfig points at the external embedding service and records the
 // vector dimensions it produces.
 type EmbeddingConfig struct {
-	URL      string `mapstructure:"url"`
-	ImageDim int    `mapstructure:"image_dim"`
-	FaceDim  int    `mapstructure:"face_dim"`
+	URL      string     `mapstructure:"url"`
+	ImageDim int        `mapstructure:"image_dim"`
+	FaceDim  int        `mapstructure:"face_dim"`
+	Wake     WakeConfig `mapstructure:"wake"`
+}
+
+// WakeConfig optionally wakes the embeddings box via Wake-on-LAN when embedding
+// jobs are waiting and the sidecar is offline. It is OFF by default; manual
+// power-on of the box remains fine. Wake-on-LAN does not traverse Tailscale (an
+// L3 overlay with no L2 broadcast), so the kukatko host must share the physical
+// LAN with the box and send the magic packet locally.
+type WakeConfig struct {
+	// Enabled turns on auto-wake. When false the feature is fully inert: no
+	// queue polling, no health checks, and no packets are ever sent.
+	Enabled bool `mapstructure:"enabled"`
+	// MAC is the box's network-card hardware address (the magic-packet target),
+	// for example "aa:bb:cc:dd:ee:ff". Required when Enabled.
+	MAC string `mapstructure:"mac"`
+	// BroadcastAddr is the UDP broadcast destination for the magic packet, for
+	// example "192.168.1.255:9". Used when Interface is empty.
+	BroadcastAddr string `mapstructure:"broadcast_addr"`
+	// Interface is the local NIC name to emit a raw Ethernet magic frame on (for
+	// example "eth0"); it requires CAP_NET_RAW. Empty selects the UDP broadcast
+	// path via BroadcastAddr instead.
+	Interface string `mapstructure:"interface"`
+	// MinQueue is the minimum number of pending image_embed/face_detect jobs
+	// before a wake is attempted. A non-positive value defaults to 1.
+	MinQueue int `mapstructure:"min_queue"`
+	// Cooldown is the minimum delay between successive magic packets so a sleeping
+	// box is not spammed. A non-positive value falls back to the wake package's
+	// built-in default.
+	Cooldown time.Duration `mapstructure:"cooldown"`
 }
 
 // FacesConfig tunes the face_detect job and the face↔marker matching and
@@ -379,6 +412,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("embedding.url", "http://localhost:8000")
 	v.SetDefault("embedding.image_dim", 768)
 	v.SetDefault("embedding.face_dim", 512)
+	v.SetDefault("embedding.wake.enabled", false)
+	v.SetDefault("embedding.wake.mac", "")
+	v.SetDefault("embedding.wake.broadcast_addr", "255.255.255.255:9")
+	v.SetDefault("embedding.wake.interface", "")
+	v.SetDefault("embedding.wake.min_queue", 1)
+	v.SetDefault("embedding.wake.cooldown", "5m")
 
 	v.SetDefault("faces.min_det_score", 0.5)
 	v.SetDefault("faces.iou_threshold", 0.1)
@@ -459,7 +498,29 @@ func (c *Config) Validate() error {
 	if c.Embedding.ImageDim < 1 || c.Embedding.FaceDim < 1 {
 		return ErrInvalidEmbeddingDim
 	}
+	if err := c.Embedding.Wake.validate(); err != nil {
+		return err
+	}
 	return c.Auth.validate()
+}
+
+// validate checks the Wake-on-LAN settings when auto-wake is enabled: a parseable
+// MAC must be present and at least one destination (broadcast address or
+// interface) must be configured. A disabled wake config is always valid.
+func (w *WakeConfig) validate() error {
+	if !w.Enabled {
+		return nil
+	}
+	if w.MAC == "" {
+		return fmt.Errorf("%w: embedding.wake.mac is required when wake is enabled", ErrInvalidWake)
+	}
+	if _, err := net.ParseMAC(w.MAC); err != nil {
+		return fmt.Errorf("%w: embedding.wake.mac %q: %w", ErrInvalidWake, w.MAC, err)
+	}
+	if w.BroadcastAddr == "" && w.Interface == "" {
+		return fmt.Errorf("%w: set embedding.wake.broadcast_addr or embedding.wake.interface", ErrInvalidWake)
+	}
+	return nil
 }
 
 // validate checks the auth session and rate-limit invariants, returning one of

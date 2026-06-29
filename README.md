@@ -275,6 +275,27 @@ Exekuční smyčka, která frontu drénuje, běží **v procesu `kukatko serve`*
 - Tuning přes `worker.*` config (`count`, `poll_interval`, `stale_after`,
   `stale_scan_interval`).
 
+### Wake-on-LAN auto-wake boxu (`internal/wake`)
+
+Volitelně **probudí GPU box přes Wake-on-LAN**, když ve frontě čekají embeddingové joby a sidecar
+je offline, takže se fronta dožene bez ručního zapnutí boxu. **Defaultně vypnuto** a plně inertní.
+
+- **Trigger:** `Run(ctx, interval)` běží ve vlastní goroutině v `serve` (každou minutu) a pošle
+  magic packet **jen** když je `embedding.wake.enabled`, počet čekajících (`queued`/`running`)
+  `image_embed`/`face_detect` jobů dosáhne `min_queue`, **uplynul cooldown** a health check
+  sidecaru hlásí **offline**. Po `GracePeriod` (30 s) překontroluje zdraví a zaloguje, jestli box
+  naběhl; jinak se backoffne do dalšího cooldownu. Smyčka **nikdy neblokuje zpracování jobů** a
+  chyby jen loguje.
+- **Síť:** Wake-on-LAN **nefunguje přes Tailscale** (L3 overlay bez L2 broadcastu) — host musí být
+  na stejné fyzické LAN jako box. Default je UDP broadcast na `broadcast_addr` (knihovna
+  `mdlayher/wol`), volitelně raw Ethernet rámec na `interface` (vyžaduje CAP_NET_RAW). Uspávání
+  boxu je mimo rozsah.
+- **Testovatelnost:** `QueueDepth`/`HealthChecker`/`Sender` jsou rozhraní → unit testy běží s
+  fakeem sendera, **žádný reálný síťový provoz**; `Packet(mac)` staví magic packet (102 B) a je
+  testovaný samostatně.
+- Konfig `embedding.wake.{enabled,mac,broadcast_addr,interface,min_queue,cooldown}`; enabled
+  vyžaduje validní `mac` (jinak `ErrInvalidWake` při startu).
+
 ### Admin Jobs API (`internal/jobsapi`)
 
 Admin-only HTTP API nad frontou (guard `RequireAdmin`), frontend ho polluje (žádné SSE):

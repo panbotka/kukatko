@@ -364,10 +364,18 @@ které se ztratí při restartu).
 - **Retry & dead-letter:** `attempts < max_attempts`, exponenciální backoff přes `run_after`,
   pak `state=dead` + `last_error` (viditelné v adminu).
 - **Progress:** UI dostává stav z DB (polling / SSE jen jako tenká vrstva nad DB stavem).
-- **Auto-wake boxu (volitelné, M6+):** když je fronta neprázdná, Pi pošle Wake-on-LAN
-  magic packet na lokální LAN (WoL **nefunguje přímo přes Tailscale** — Pi musí být na stejné
-  fyzické síti jako box). Go knihovna `mdlayher/wol`. Po dokončení nechat box usnout.
-  Defaultně vypnuto, ruční zapnutí boxu stačí.
+- **Auto-wake boxu (volitelné, `internal/wake`):** balík `wake` periodicky kontroluje frontu
+  (každou minutu, `wakeCheckInterval`) a když je nakonfigurovaně **zapnuto** a počet čekajících
+  `image_embed`/`face_detect` jobů dosáhne `embedding.wake.min_queue` **a zároveň** health check
+  sidecaru hlásí offline, pošle Wake-on-LAN magic packet na lokální LAN (knihovna `mdlayher/wol`).
+  **Cooldown** (`embedding.wake.cooldown`) brání spamování spícího boxu; po **grace period** se
+  zdraví překontroluje a zaloguje, jestli box naběhl, jinak se backoffne do dalšího cooldownu.
+  Smyčka běží ve vlastní goroutině v `serve` — **nikdy neblokuje zpracování jobů**. WoL
+  **nefunguje přímo přes Tailscale** (L3 overlay bez L2 broadcastu) — host musí být na stejné
+  fyzické síti jako box; defaultní cesta je UDP broadcast na `embedding.wake.broadcast_addr`,
+  volitelně raw Ethernet rámec na `embedding.wake.interface` (vyžaduje CAP_NET_RAW). **Defaultně
+  vypnuto** (`embedding.wake.enabled=false`), plně inertní; ruční zapnutí boxu stačí. Uspávání
+  boxu je mimo rozsah.
 
 ---
 
@@ -602,7 +610,7 @@ Detailní tasky se zakládají v systému **botka**. Milníky jsou seřazené pr
 - **M3 — Lidé:** face joby, markery/subjekty, IoU matching, auto-clustering, návrhy, přiřazování UX, outliers, stránky osob.
 - **M4 — Organizace:** alba, štítky, hromadná editace metadat, per-user oblíbené, mapa (mapy.com proxy), slideshow.
 - **M5 — Import/migrace:** PhotoPrism API import + originály + inkrement (PP UID); migrace z photo-sorteru (PS UID, 1:1 embeddingy).
-- **M6 — Backup & ops:** S3 backup (originály + dump), durable audit, rate-limiting, metriky, (volitelně WoL auto-wake), hardening.
+- **M6 — Backup & ops:** S3 backup (originály + dump), durable audit, rate-limiting, metriky, volitelný WoL auto-wake (`internal/wake`), hardening.
 - **M7 — Polish:** detail fotky (PP+PS kombo), mobil/tablet, i18n úplnost, slideshow efekty, výkon, nedestruktivní úpravy.
 
 ---

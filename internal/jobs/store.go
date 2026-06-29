@@ -331,6 +331,22 @@ func (s *Store) CountsByType(ctx context.Context) (map[string]int, error) {
 	return s.groupCount(ctx, "type")
 }
 
+// CountPending returns how many jobs of the given types are still pending, that
+// is queued or running (not yet in a terminal state). With no types it returns
+// 0. It backs the optional Wake-on-LAN auto-wake, which only sends a magic
+// packet when embedding work is actually waiting on the box.
+func (s *Store) CountPending(ctx context.Context, types ...string) (int, error) {
+	if len(types) == 0 {
+		return 0, nil
+	}
+	const q = "SELECT count(*) FROM jobs WHERE state IN ('queued', 'running') AND type = ANY($1)"
+	var n int
+	if err := s.pool.QueryRow(ctx, q, types).Scan(&n); err != nil {
+		return 0, fmt.Errorf("jobs: counting pending jobs: %w", err)
+	}
+	return n, nil
+}
+
 // ListDead returns dead-lettered jobs, most recently updated first, for the admin
 // dead-letter view. A non-positive limit defaults to defaultDeadListLimit.
 func (s *Store) ListDead(ctx context.Context, limit, offset int) ([]Job, error) {

@@ -388,3 +388,51 @@ func TestCounts(t *testing.T) {
 		t.Errorf("byType = %+v, want image_embed 2 face_detect 1", byType)
 	}
 }
+
+// TestCountPending verifies CountPending counts only queued/running jobs of the
+// requested types, excludes other types and terminal (done) jobs, and returns 0
+// with no types — the query backing the optional Wake-on-LAN auto-wake.
+func TestCountPending(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	for _, uid := range []string{"a", "b"} {
+		if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, uid), jobs.EnqueueOptions{}); err != nil {
+			t.Fatalf("enqueue image_embed %s: %v", uid, err)
+		}
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeFaceDetect, photoPayload(t, "a"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("enqueue face_detect: %v", err)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeThumbnail, photoPayload(t, "a"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("enqueue thumbnail: %v", err)
+	}
+
+	pending, err := store.CountPending(ctx, jobs.TypeImageEmbed, jobs.TypeFaceDetect)
+	if err != nil {
+		t.Fatalf("CountPending: %v", err)
+	}
+	if pending != 3 {
+		t.Errorf("pending embedding jobs = %d, want 3", pending)
+	}
+
+	if n, err := store.CountPending(ctx); err != nil || n != 0 {
+		t.Errorf("CountPending() = %d, %v, want 0, nil", n, err)
+	}
+
+	// Completing a claimed image_embed job moves it out of the pending set.
+	claimed, err := store.Claim(ctx, "w1", jobs.TypeImageEmbed)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if err := store.Complete(ctx, claimed.ID); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	pending, err = store.CountPending(ctx, jobs.TypeImageEmbed, jobs.TypeFaceDetect)
+	if err != nil {
+		t.Fatalf("CountPending after complete: %v", err)
+	}
+	if pending != 2 {
+		t.Errorf("pending after completing one = %d, want 2", pending)
+	}
+}
