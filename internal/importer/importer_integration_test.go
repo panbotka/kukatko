@@ -159,6 +159,57 @@ func TestStore_LatestWatermark(t *testing.T) {
 	}
 }
 
+// TestStore_LatestRun verifies the per-source latest-run query returns the most
+// recently started run regardless of status (unlike LatestWatermark) and keeps
+// each source's cursor independent.
+func TestStore_LatestRun(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	store := importer.NewStore(db.Pool())
+	ctx := t.Context()
+
+	// No runs yet: not found.
+	if _, ok, err := store.LatestRun(ctx, importer.SourcePhotoPrism); err != nil || ok {
+		t.Fatalf("LatestRun with no runs = (ok=%v, err=%v), want (false, nil)", ok, err)
+	}
+
+	// A done run, then a newer failed run for the same source: the failed run is
+	// the latest and must win (status is not filtered).
+	done := mustStart(t, store, importer.SourcePhotoPrism)
+	watermark := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	if err := store.Complete(ctx, done, &watermark, importer.Counts{Imported: 3}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	failed := mustStart(t, store, importer.SourcePhotoPrism)
+	if err := store.Fail(ctx, failed, "boom", importer.Counts{Failed: 1}); err != nil {
+		t.Fatalf("Fail: %v", err)
+	}
+
+	got, ok, err := store.LatestRun(ctx, importer.SourcePhotoPrism)
+	if err != nil {
+		t.Fatalf("LatestRun: %v", err)
+	}
+	if !ok {
+		t.Fatal("LatestRun ok = false, want true")
+	}
+	if got.ID != failed {
+		t.Errorf("LatestRun id = %d, want %d (the newer failed run)", got.ID, failed)
+	}
+	if got.Status != importer.StatusFailed {
+		t.Errorf("LatestRun status = %q, want failed", got.Status)
+	}
+
+	// A different source has its own cursor, still empty here.
+	if _, ok, err := store.LatestRun(ctx, importer.SourcePhotoSorter); err != nil || ok {
+		t.Errorf("LatestRun for photosorter = (ok=%v, err=%v), want (false, nil)", ok, err)
+	}
+
+	// An unrecognised source is rejected.
+	if _, _, err := store.LatestRun(ctx, importer.Source("nope")); !errors.Is(err, importer.ErrInvalidSource) {
+		t.Errorf("LatestRun(invalid) error = %v, want ErrInvalidSource", err)
+	}
+}
+
 // TestStore_Errors covers the not-found and invalid-source error paths.
 func TestStore_Errors(t *testing.T) {
 	db := dbtest.New(t)

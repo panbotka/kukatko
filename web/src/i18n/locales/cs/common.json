@@ -18,7 +18,8 @@
     "duplicates": "Duplikáty",
     "account": "Můj účet",
     "logout": "Odhlásit se",
-    "trash": "Koš"
+    "trash": "Koš",
+    "system": "Systém"
   },
   "language": {
     "cs": "Čeština",
@@ -663,5 +664,68 @@
       "hint": "Momentálně nic nevypadá jako téměř duplicitní."
     },
     "loadMore": "Načíst další"
+  },
+  "system": {
+    "title": "Stav systému",
+    "subtitle": "Provozní zdraví běžící instance — databáze, embeddingy, fronta úloh, zálohy, importy a úložiště.",
+    "adminOnly": "Tato stránka je dostupná pouze administrátorům.",
+    "loading": "Načítání stavu…",
+    "error": "Stav systému se nepodařilo načíst.",
+    "version": {
+      "title": "Verze"
+    },
+    "database": {
+      "title": "Databáze",
+      "reachable": "Dostupná",
+      "unreachable": "Nedostupná"
+    },
+    "embeddings": {
+      "title": "Embeddingy (box)",
+      "online": "Online",
+      "offline": "Offline",
+      "offlineHint": "Box je offline → {{n}} úloh embeddingů čeká ve frontě a dožene se, jakmile bude box online."
+    },
+    "jobs": {
+      "title": "Fronta úloh",
+      "total": "Celkem",
+      "queued": "Ve frontě",
+      "running": "Běží",
+      "failed": "Selhalo",
+      "dead": "Mrtvé",
+      "pending": "Čeká na box",
+      "requeue": "Znovu zařadit mrtvé úlohy",
+      "requeued": "Znovu zařazeno úloh: {{n}}.",
+      "requeueError": "Mrtvé úlohy se nepodařilo znovu zařadit."
+    },
+    "imports": {
+      "title": "Importy",
+      "never": "zatím neproběhl",
+      "trigger": "Spustit import"
+    },
+    "backup": {
+      "title": "Záloha",
+      "notConfigured": "Záloha není nakonfigurována.",
+      "running": "Probíhá",
+      "idle": "Nečinná",
+      "lastRun": "Poslední běh",
+      "never": "zatím neproběhla",
+      "success": "Úspěch",
+      "failed": "Chyba",
+      "trigger": "Spustit zálohu",
+      "triggered": "Záloha byla spuštěna na pozadí.",
+      "triggerConflict": "Záloha už běží.",
+      "triggerError": "Zálohu se nepodařilo spustit."
+    },
+    "storage": {
+      "title": "Úložiště",
+      "originals": "Originály",
+      "cache": "Cache",
+      "free": "Volné místo",
+      "total": "Celková kapacita"
+    },
+    "actions": {
+      "title": "Rychlé akce:",
+      "maintenance": "Kontrola údržby"
+    }
   }
 }

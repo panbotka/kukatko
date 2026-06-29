@@ -180,6 +180,12 @@ func appendOpsAPIs(
 		return nil, nil, err
 	}
 	apis = append(apis, server.WithAPI(restoreAPI.RegisterRoutes))
+
+	systemAPI, err := buildSystemAPI(cfg, db, authAPI, backupSvc)
+	if err != nil {
+		return nil, nil, err
+	}
+	apis = append(apis, server.WithAPI(systemAPI.RegisterRoutes))
 	return apis, backupSvc, nil
 }
 

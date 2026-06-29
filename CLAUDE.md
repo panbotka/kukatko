@@ -572,7 +572,10 @@ inkrementální).
   **bez** watermarku (oba matchují jen běžící běh → `ErrRunNotFound` na dvojí uzavření),
   `Get(ctx,id)`, `LatestWatermark(ctx,source)` → `(time.Time, found bool, err)` watermark
   **posledního úspěšného** běhu zdroje pro navázání dalšího inkrementu — ignoruje běžící/failed
-  běhy i done bez watermarku, každý zdroj má vlastní kurzor, `List(ctx,limit,offset)` stránka běhů
+  běhy i done bez watermarku, každý zdroj má vlastní kurzor, `LatestRun(ctx,source)` →
+  `(Run, found bool, err)` **nejnovější běh zdroje bez ohledu na stav** (running/done/failed —
+  na rozdíl od `LatestWatermark` nefiltruje status; podklad system-status dashboardu),
+  `List(ctx,limit,offset)` stránka běhů
   **přes všechny zdroje** newest-started-first (limit clamp `[1,200]`, default 50, non-nil prázdná
   stránka) — podklad admin historie importů; sentinely
   `ErrRunNotFound`/`ErrInvalidSource`), `internal/photoprism/`
@@ -784,7 +787,27 @@ inkrementální).
   `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mountuje `GET /duplicates` za `RequireWrite`
   (query `limit`≤100/`offset`, neplatný → 400, sken selže → 500); mountuje se v `serve`
   (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`, při `duplicate.enabled=false` nil služba)),
-  `internal/ratelimit/`
+  `internal/system/`
+  (agregace provozního stavu instance pro admin **system-status dashboard** — žádná nová data, jen
+  sloučení existujících subsystémů; vše za malými rozhraními `DBPinger` (`database.DB`)/
+  `EmbeddingHealth` (`embedding.Client.Healthy`)/`JobCounter`
+  (`jobs.Store.CountsByState`/`CountsByType`/`CountPending`)/`ImportLister` (`importer.Store.LatestRun`)/
+  `BackupReporter` (`backup.Service.Status`, **nil = nenakonfigurováno**) → unit-testovatelné s faky
+  bez DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Imports,OriginalsPath,
+  CachePath,StorageTTL,Clock})`; **`Collect(ctx) (Status,error)`** sbírá `Status{Version,Database,
+  Embeddings,Jobs,Backup,Imports,Storage}`: embeddings online/offline, fronta (by_state/by_type/total/
+  dead_letter/pending_embeddings = queued+running `image_embed`/`face_detect`), backup stav+poslední
+  výsledek, poslední import per zdroj, úložiště (velikost originálů+cache walkem, volné/celkové místo
+  `statfs` přes `golang.org/x/sys/unix`, **memoizováno** `storageCache` na `defaultStorageTTL` 30 s aby
+  polling nepřecházel strom), DB reachability (`Ping`, **sanitizovaná** chyba), verze/commit; chyby
+  čtení fronty/importů (vyžadují DB) → error (500), nedostupná DB a nečitelné úložiště inline
+  best-effort), `internal/systemapi/`
+  (admin-only HTTP API nad system stavem: rozhraní `StatusCollector` (`Collect`, splňuje
+  `*system.Service`, fakeovatelné); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes` mountuje
+  `GET /system/status` za `RequireAdmin` (snapshot; collect selže → 500); mountuje se vždy
+  (`buildSystemAPI` v `cmd/kukatko/system.go`, staví vlastní bezstavový embeddings klient jen pro
+  Healthy probe, sdílí pool pro job/import stores, backup služba předaná nil-safe; mountuje se
+  v `appendOpsAPIs` vedle backup/restore)), `internal/ratelimit/`
   (znovupoužitelný **per-key token-bucket rate limiter** + HTTP middleware pro náročné endpointy:
   `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, per-klíč bucket) / `Cleanup`/`RunMaintenance`
   (úklid plně doplněných bucketů) / `Middleware` (chi-kompatibilní, keyuje **client IP** přes
@@ -807,6 +830,7 @@ inkrementální).
   **Koš** na `/trash` (jen editor/admin, gate `canWrite`),
   **Duplikáty** na `/duplicates` (jen editor/admin, gate `canWrite`),
   **Import** na `/import` (jen admin, gate `isAdmin`),
+  **Systém** na `/system` (jen admin, gate `isAdmin`),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
   `LanguageSwitcher`;
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
@@ -872,6 +896,12 @@ inkrementální).
   zbývajícím počtem z poslední kontroly) → **Spustit opravy** (`POST /maintenance/repair`) s výsledným
   souhrnem, plus stav fronty na pozadí (`GET /jobs/stats` polluje po 3 s) jako progress; sebe-gate na
   `isAdmin`,
+  `SystemStatusPage` = `/system` (jen admin) **system-status dashboard**: auto-refresh (polling 5 s)
+  `GET /system/status` → kartová mřížka (DB, embeddingy, fronta jobů, záloha, importy, úložiště,
+  verze) s **rychlými akcemi** — *znovu zařadit mrtvé úlohy* (`requeueDeadLetterJobs`: list dead →
+  per-job `POST /jobs/{id}/requeue`), *spustit zálohu* (`POST /backup`), odkazy na flow importu
+  (`/import`) a kontroly údržby (`/maintenance`); **box offline** + čekající embeddingy → zvýrazněná
+  hláška „doženou se po návratu"; loading/error/notice stavy, sebe-gate na `isAdmin`,
   `PhotoDetailPage` = `/photos/:uid` detail fotky: obrázek s interaktivním `FaceOverlay`
   (pojmenování obličejů) + `FavoriteButton` v hlavičce + pruh `SimilarPhotos`,
   `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (cover/jméno/počet
@@ -1028,6 +1058,12 @@ inkrementální).
   `GET /api/v1/maintenance/scan` → `ScanReport`, `runMaintenanceRepair(options,signal)` nad
   `POST /api/v1/maintenance/repair` → `RepairResult`; typy `Finding`/`ScanReport`/`RepairOptions`/
   `RepairResult`; sdílí `ApiError` z `auth.ts` a `fetchJobStats` z `import.ts` pro progress,
+  `system.ts` = admin system-status klient: `fetchSystemStatus(signal)` nad `GET /api/v1/system/status`
+  → `SystemStatus`, `triggerBackup(signal)` nad `POST /api/v1/backup` (409/503 → ApiError),
+  `requeueDeadLetterJobs(signal)` (vylistuje `GET /jobs?state=dead` → per-job `POST /jobs/{id}/requeue`,
+  vrací počet, 404/409 skip); typy `SystemStatus`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
+  `BackupStatus`/`ImportsStatus`/`StorageStatus`/`VersionInfo`; sdílí `ApiError` z `auth.ts` a `ImportRun`
+  z `import.ts`,
   `i18n/` (i18next init + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
@@ -1036,7 +1072,7 @@ inkrementální).
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`,
   `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/trash` a `/duplicates`
-  navíc pod `RequireRole role="editor"` = write-only, `/import` a `/maintenance` pod
+  navíc pod `RequireRole role="editor"` = write-only, `/import`, `/maintenance` a `/system` pod
   `RequireRole role="admin"` = admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
@@ -1260,6 +1296,16 @@ inkrementální).
   400, sken selže → 500. **Jen čte — nic nemaže.** Při `duplicate.enabled=false` route odpovídá 503.
   Úklid jede klient přes sdílené **bulk API** (`POST /photos/bulk` `{archive:true}` → koš, vratné).
   Mountuje se vždy (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`).
+- **System status API (`/api/v1`, `internal/systemapi` + `internal/system`, admin-only přes
+  `RequireAdmin`):** `GET /system/status` → jeden agregovaný snapshot provozního zdraví:
+  `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,total,dead_letter,
+  pending_embeddings},backup (=backup.Status),imports{photoprism,photosorter (=importer.Run|null)},
+  storage{originals_bytes,cache_bytes,free_bytes,total_bytes}}`. Sloučení existujících subsystémů
+  (embeddings health, fronta jobů, backup stav, poslední import per zdroj přes
+  `importer.Store.LatestRun`, využití disku, DB ping); úložiště memoizováno 30 s. Collect selže (DB
+  pro fronту/importy) → 500; nedostupná DB/úložiště inline best-effort. Mountuje se **vždy**
+  (`buildSystemAPI` v `cmd/kukatko/system.go`). Admin UI **Systém** (`/system`, `SystemStatusPage`)
+  polluje po 5 s a nabízí rychlé akce (requeue dead-letter, trigger backup, odkazy na import/údržbu).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

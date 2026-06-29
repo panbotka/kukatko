@@ -303,6 +303,36 @@ func (s *Store) LatestWatermark(ctx context.Context, source Source) (time.Time, 
 	return watermark, true, nil
 }
 
+// latestRunSQL reads the most recently started run for a source regardless of
+// its status, so the admin dashboard can show the last run (running, done or
+// failed) of each source. The id tiebreaker keeps the order stable when two runs
+// share a started_at.
+const latestRunSQL = `
+SELECT ` + runColumns + `
+FROM import_runs
+WHERE source = $1
+ORDER BY started_at DESC, id DESC
+LIMIT 1`
+
+// LatestRun returns the most recently started run for source, whatever its
+// status. The boolean is false when the source has never run. It returns
+// ErrInvalidSource if source is not recognised. Unlike LatestWatermark it does
+// not filter on status, so a running or failed run is reported too.
+func (s *Store) LatestRun(ctx context.Context, source Source) (Run, bool, error) {
+	if !source.Valid() {
+		return Run{}, false, fmt.Errorf("%w: %q", ErrInvalidSource, source)
+	}
+	row := s.pool.QueryRow(ctx, latestRunSQL, string(source))
+	run, err := scanRun(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Run{}, false, nil
+	}
+	if err != nil {
+		return Run{}, false, fmt.Errorf("importer: latest run for %s: %w", source, err)
+	}
+	return run, true, nil
+}
+
 // rowScanner is the subset of pgx.Row that scanRun needs, satisfied by both
 // pool.QueryRow results and rows from a multi-row query.
 type rowScanner interface {

@@ -87,6 +87,11 @@ export function Layout() {
                   {t('nav.maintenance')}
                 </Nav.Link>
               )}
+              {isAdmin && (
+                <Nav.Link as={NavLink} to="/system">
+                  {t('nav.system')}
+                </Nav.Link>
+              )}
             </Nav>
             <NavbarSearch />
             <LanguageSwitcher />

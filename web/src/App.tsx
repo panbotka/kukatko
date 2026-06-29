@@ -23,6 +23,7 @@ import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { SearchPage } from './pages/SearchPage'
 import { SlideshowPage } from './pages/SlideshowPage'
 import { SubjectPage } from './pages/SubjectPage'
+import { SystemStatusPage } from './pages/SystemStatusPage'
 import { TrashPage } from './pages/TrashPage'
 import { UploadPage } from './pages/UploadPage'
 
@@ -66,6 +67,7 @@ export function App() {
               <Route element={<RequireRole role="admin" />}>
                 <Route path="/import" element={<ImportPage />} />
                 <Route path="/maintenance" element={<MaintenancePage />} />
+                <Route path="/system" element={<SystemStatusPage />} />
               </Route>
               <Route path="/account" element={<AccountPage />} />
               <Route path="*" element={<NotFoundPage />} />

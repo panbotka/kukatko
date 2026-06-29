@@ -18,7 +18,8 @@
     "duplicates": "Duplicates",
     "account": "My account",
     "logout": "Sign out",
-    "trash": "Trash"
+    "trash": "Trash",
+    "system": "System"
   },
   "language": {
     "cs": "Čeština",
@@ -663,5 +664,68 @@
       "hint": "Nothing looks like a near-duplicate right now."
     },
     "loadMore": "Load more"
+  },
+  "system": {
+    "title": "System status",
+    "subtitle": "Operational health of the running instance — database, embeddings, job queue, backups, imports and storage.",
+    "adminOnly": "This page is available to administrators only.",
+    "loading": "Loading status…",
+    "error": "Failed to load the system status.",
+    "version": {
+      "title": "Version"
+    },
+    "database": {
+      "title": "Database",
+      "reachable": "Reachable",
+      "unreachable": "Unreachable"
+    },
+    "embeddings": {
+      "title": "Embeddings (box)",
+      "online": "Online",
+      "offline": "Offline",
+      "offlineHint": "Box is offline → {{n}} embedding jobs are queued and will resume once the box is back online."
+    },
+    "jobs": {
+      "title": "Job queue",
+      "total": "Total",
+      "queued": "Queued",
+      "running": "Running",
+      "failed": "Failed",
+      "dead": "Dead",
+      "pending": "Waiting on box",
+      "requeue": "Requeue dead-letter jobs",
+      "requeued": "Requeued {{n}} jobs.",
+      "requeueError": "Failed to requeue the dead-letter jobs."
+    },
+    "imports": {
+      "title": "Imports",
+      "never": "never run",
+      "trigger": "Trigger import"
+    },
+    "backup": {
+      "title": "Backup",
+      "notConfigured": "Backup is not configured.",
+      "running": "Running",
+      "idle": "Idle",
+      "lastRun": "Last run",
+      "never": "never run",
+      "success": "Success",
+      "failed": "Failed",
+      "trigger": "Trigger backup",
+      "triggered": "Backup started in the background.",
+      "triggerConflict": "A backup is already running.",
+      "triggerError": "Failed to trigger the backup."
+    },
+    "storage": {
+      "title": "Storage",
+      "originals": "Originals",
+      "cache": "Cache",
+      "free": "Free space",
+      "total": "Total capacity"
+    },
+    "actions": {
+      "title": "Quick actions:",
+      "maintenance": "Maintenance scan"
+    }
   }
 }
