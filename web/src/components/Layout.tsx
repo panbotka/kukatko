@@ -71,10 +71,15 @@ export function Layout() {
                   {t('nav.trash')}
                 </Nav.Link>
               )}
-              {/* Import/migration administration is admin-only. */}
+              {/* Import/migration and maintenance administration are admin-only. */}
               {isAdmin && (
                 <Nav.Link as={NavLink} to="/import">
                   {t('nav.import')}
+                </Nav.Link>
+              )}
+              {isAdmin && (
+                <Nav.Link as={NavLink} to="/maintenance">
+                  {t('nav.maintenance')}
                 </Nav.Link>
               )}
             </Nav>

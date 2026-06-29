@@ -722,7 +722,43 @@ inkrementální).
   503 bez konfigurace, 502 při chybě S3) a `POST /restore/verify` (integritní report, 503 bez
   konfigurace); **destruktivní obnova DB se přes HTTP záměrně neexponuje** (podtrhla by tabulky
   běžícímu serveru — patří do CLI při zastaveném serveru); mountuje se v `serve` vždy
-  (`buildRestoreAPI` v `cmd/kukatko/restore.go`)), `internal/ratelimit/`
+  (`buildRestoreAPI` v `cmd/kukatko/restore.go`)), `internal/maintenance/`
+  (**integritní kontrola & opravy knihovny** — udržuje velkou dlouhožijící knihovnu konzistentní:
+  odhalí drift mezi katalogem a soubory na disku a doplní/přegeneruje odvozená data; zrcadlí
+  photo-sorter `cache build-thumbs`, ale je širší a bezpečnější (**nikdy nemaže originály** — to je
+  práce koše/purge), idempotentní, opravy přes persistentní frontu jobů; vše za rozhraními
+  `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`,
+  splňuje `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`,
+  `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`DiskScanner` (`List`, adaptér nad
+  `backup.DiskOriginals`)/`ThumbChecker` (`HasThumbnail`, `NewThumbCache` nad `thumb.Thumbnailer`)/
+  `Enqueuer` (`EnqueueThumbnail`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
+  `FaceBackfiller` (`facejob.Service`)/`OrphanImporter` (volitelný, nil vypne orphan import) →
+  unit-testovatelné s faky bez DB/disku/fronty; `Service` = `New(Config{...,SampleLimit})`
+  (panika na nil povinný kolaborant; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) vrátí
+  `Report{Photos,FilesInDB,OriginalsOnDisk,MissingOriginals,OrphanFiles,MissingThumbnails,
+  MissingEmbeddings,MissingFaces,MissingPhashes}` — každá třída je `Finding{Count,Samples}`
+  (count + omezený vzorek identifikátorů); `representativeThumbSize`=`tile_224` je proxy přítomnosti
+  náhledů, orphan = soubor na disku bez `photo_files.file_path` (`orphanKeys` set-diff), `Report.Clean()`;
+  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans})`** (každá opt-in,
+  idempotentní, pevné pořadí) → `RepairResult` se scheduling počty: thumbnails/phashes zařadí
+  `thumbnail` joby (`EnqueueThumbnail`), embeddings/faces volají backfill, orphan import jede přes
+  upload pipeline (per-orphan selhání se počítá bez abortu); `ErrOrphanImportUnavailable` když je
+  import vybrán bez importéru), `internal/thumbjob/`
+  (worker handler `thumbnail` jobu — **repair path** pro maintenance: regeneruje z originálu odvozená
+  data fotky, **náhledy** (`Thumbnailer.GenerateAll`, skip cachovaných) a **pHash/dHash** (jen když
+  chybí, `phash.Compute` nad dekódovaným originálem), vše za rozhraními `PhotoStore`/`Thumbnailer`/
+  `Decoder` (`StorageDecoder` = `storage.AbsPath`+`imgconvert.EnsureDecodable`, fakeovatelný) →
+  unit-testovatelné bez disku; `Service` = `New(Config{Photos,Thumbnailer,Decoder})` (panika na nil),
+  `Handle`=`worker.HandlerFunc` (payload `{photo_uid}`, prázdný → `ErrMissingPhotoUID` dead-letter),
+  `Regenerate(uid)`/`ensurePhash` idempotentní; registrovaný v `serve` na `jobs.TypeThumbnail`),
+  `internal/maintenanceapi/`
+  (admin-only HTTP API nad maintenance: rozhraní `Service` (Scan+Repair, splňuje `*maintenance.Service`,
+  nil → 503); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes` mountuje `/maintenance`:
+  `GET /maintenance/scan` (integritní report) a `POST /maintenance/repair` (tělo `RepairOptions`,
+  `DisallowUnknownFields`, prázdný výběr → 400, `ErrOrphanImportUnavailable` → 503, jinak `RepairResult`);
+  mountuje se v `serve` (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go`, service staví
+  `buildMaintenanceAndThumb` sdílený s registrací `thumbnail` handleru v `buildJobs`)),
+  `internal/ratelimit/`
   (znovupoužitelný **per-key token-bucket rate limiter** + HTTP middleware pro náročné endpointy:
   `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, per-klíč bucket) / `Cleanup`/`RunMaintenance`
   (úklid plně doplněných bucketů) / `Middleware` (chi-kompatibilní, keyuje **client IP** přes
@@ -803,6 +839,12 @@ inkrementální).
   plus tabulka **historie běhů** (`import_runs`: zdroj/začátek/konec/stav/počty/chyba); polluje
   `GET /import/runs` + `GET /jobs/stats` po 3 s, 409 → „už běží", confirm před prvním (velkým) během
   zdroje, sebe-gate na `isAdmin`,
+  `MaintenancePage` = `/maintenance` (jen admin) konzole údržby knihovny: tlačítko **Spustit kontrolu**
+  (`GET /maintenance/scan`) → souhrn totálů + tabulka nálezů (počet + vzorky per třída, nebo „knihovna
+  konzistentní"), checkboxy oprav (náhledy/embeddingy/obličeje/hashe/import osiřelých — anotované
+  zbývajícím počtem z poslední kontroly) → **Spustit opravy** (`POST /maintenance/repair`) s výsledným
+  souhrnem, plus stav fronty na pozadí (`GET /jobs/stats` polluje po 3 s) jako progress; sebe-gate na
+  `isAdmin`,
   `PhotoDetailPage` = `/photos/:uid` detail fotky: obrázek s interaktivním `FaceOverlay`
   (pojmenování obličejů) + `FavoriteButton` v hlavičce + pruh `SimilarPhotos`,
   `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (cover/jméno/počet
@@ -941,6 +983,10 @@ inkrementální).
   `startImport(source,signal)` nad `POST /api/v1/import/{photoprism|photosorter}` (409 → ApiError);
   typy `ImportSource`/`RunStatus`/`ImportCounts`/`ImportRun`/`ImportSources`/`ImportRunsResponse`/
   `StartImportResult`/`JobStats`),
+  `maintenance.ts` = admin maintenance klient: `fetchMaintenanceScan(signal)` nad
+  `GET /api/v1/maintenance/scan` → `ScanReport`, `runMaintenanceRepair(options,signal)` nad
+  `POST /api/v1/maintenance/repair` → `RepairResult`; typy `Finding`/`ScanReport`/`RepairOptions`/
+  `RepairResult`; sdílí `ApiError` z `auth.ts` a `fetchJobStats` z `import.ts` pro progress,
   `i18n/` (i18next init + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
   `test/setup.ts`.
@@ -949,8 +995,8 @@ inkrementální).
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`,
   `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters` a `/trash`
-  navíc pod `RequireRole role="editor"` = write-only, `/import` pod `RequireRole role="admin"` =
-  admin-only). Konfig:
+  navíc pod `RequireRole role="editor"` = write-only, `/import` a `/maintenance` pod
+  `RequireRole role="admin"` = admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.
@@ -984,6 +1030,12 @@ inkrementální).
   `restore originals` (stáhne chybějící originály, skip dle klíče+velikosti, resumovatelné),
   `restore verify` (integritní report fotek v DB vs originálů na disku); runbook
   [`docs/RESTORE.md`](docs/RESTORE.md),
+  **`kukatko maintenance`** (integritní kontrola & opravy knihovny — `internal/maintenance`; pro
+  ops/cron bez běžícího serveru, aplikuje migrace a postaví službu sdílenou s admin API):
+  `maintenance scan` (read-only integritní report — disk↔DB drift + chybějící odvozená data) a
+  `maintenance repair` s flagy `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
+  (každá opt-in; thumbnails/phashes zařadí `thumbnail` joby drainované workerem běžícího serveru,
+  embeddings/faces backfill, orphan import synchronně přes upload pipeline; bez flagu no-op),
   `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
   `server.New(addr, server.WithAPI(register))` mountuje route-skupiny pod `/api/v1`.
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
@@ -1148,6 +1200,15 @@ inkrementální).
   stránkováním `?limit=`(≤500)/`?offset=`; neplatný čas/číslo → 400. Audit záznamy se **nezapisují
   přes HTTP** — vznikají uvnitř mutačních transakcí (in-tx `audit.Write`, viz `internal/audit`
   konvence). Mountuje se vždy (`buildAuditAPI` v `cmd/kukatko/audit.go`).
+- **Maintenance API (`/api/v1`, `internal/maintenanceapi`, admin-only přes `RequireAdmin`):**
+  integritní kontrola & opravy knihovny. `GET /maintenance/scan` → `Report` (counts + vzorky:
+  `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
+  `missing_phashes` + totály `photos`/`files_in_db`/`originals_on_disk`); `POST /maintenance/repair`
+  `{thumbnails,embeddings,faces,phashes,import_orphans}` (každá opt-in) → `RepairResult` se scheduling
+  počty (`*_enqueued` + `orphans_imported/skipped/failed`); `DisallowUnknownFields`, prázdný výběr →
+  400, orphan import bez importéru → 503 (`ErrOrphanImportUnavailable`). Opravy jsou idempotentní a
+  jedou přes frontu jobů (thumbnail/pHash přes `thumbnail` job, embeddingy/faces backfill), **nikdy
+  nemažou originály**. Mountuje se vždy (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go`).
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

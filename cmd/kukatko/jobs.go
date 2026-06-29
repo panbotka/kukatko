@@ -7,10 +7,12 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/config"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/jobsapi"
+	"github.com/panbotka/kukatko/internal/maintenanceapi"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/processapi"
@@ -25,16 +27,23 @@ import (
 // serve command to run for the process lifetime; both APIs mount their
 // admin-guarded routes via authAPI so the api packages stay decoupled from
 // auth's wiring. The psMigrate handler (nil when photo-sorter is not configured)
-// registers the ps_migrate job.
+// registers the ps_migrate job. It also builds the thumbnail handler (regenerating
+// thumbnails/pHashes) and the library-maintenance service/API, since both are part
+// of the job subsystem; a build failure for either is returned as an error.
 func buildJobs(
-	cfg *config.Config, store *jobs.Store, authAPI *auth.API,
+	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
 	importSvc *ppimport.Service, psMigrate worker.HandlerFunc, reg *metrics.Registry,
-) (*worker.Worker, *jobsapi.API, *processapi.API) {
+) (*worker.Worker, *jobsapi.API, *processapi.API, *maintenanceapi.API, error) {
+	thumbHandler, maintenanceSvc, err := buildMaintenanceAndThumb(cfg, db, enqueuer, embedSvc, faceSvc, reg)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	registry := worker.NewRegistry()
 	worker.RegisterBuiltins(registry)
 	registry.Register(jobs.TypeImageEmbed, embedSvc.Handle)
 	registry.Register(jobs.TypeFaceDetect, faceSvc.Handle)
+	registry.Register(jobs.TypeThumbnail, thumbHandler)
 	if importSvc != nil {
 		registry.Register(jobs.TypePPImport, importSvc.Handle)
 	}
@@ -52,17 +61,14 @@ func buildJobs(
 		Metrics:           workerObserver(reg),
 	})
 
-	jobAPI := jobsapi.NewAPI(jobsapi.Config{
-		Store:        store,
-		RequireAdmin: authAPI.RequireAdmin,
-	})
+	jobAPI := jobsapi.NewAPI(jobsapi.Config{Store: store, RequireAdmin: authAPI.RequireAdmin})
 	procAPI := processapi.NewAPI(processapi.Config{
 		Backfiller:     embedSvc,
 		FaceBackfiller: faceSvc,
 		Reclusterer:    clusterSvc,
 		RequireAdmin:   authAPI.RequireAdmin,
 	})
-	return w, jobAPI, procAPI
+	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, authAPI), nil
 }
 
 // startWorker runs w in the background, tied to ctx so it stops on shutdown. A

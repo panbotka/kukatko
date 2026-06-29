@@ -14,6 +14,7 @@ import { LabelDetailPage } from './pages/LabelDetailPage'
 import { LabelsPage } from './pages/LabelsPage'
 import { LibraryPage } from './pages/LibraryPage'
 import { LoginPage } from './pages/LoginPage'
+import { MaintenancePage } from './pages/MaintenancePage'
 import { MapPage } from './pages/MapPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PeoplePage } from './pages/PeoplePage'
@@ -61,6 +62,7 @@ export function App() {
               {/* Import/migration administration is admin-only. */}
               <Route element={<RequireRole role="admin" />}>
                 <Route path="/import" element={<ImportPage />} />
+                <Route path="/maintenance" element={<MaintenancePage />} />
               </Route>
               <Route path="/account" element={<AccountPage />} />
               <Route path="*" element={<NotFoundPage />} />

@@ -14,6 +14,7 @@
     "map": "Mapa",
     "upload": "Nahrát",
     "import": "Import",
+    "maintenance": "Údržba",
     "account": "Můj účet",
     "logout": "Odhlásit se",
     "trash": "Koš"
@@ -590,6 +591,52 @@
       "empty": "Všechny fotky v koši budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
       "confirm": "Smazat navždy",
       "cancel": "Zrušit"
+    }
+  },
+  "maintenance": {
+    "title": "Údržba knihovny",
+    "subtitle": "Kontrola integrity mezi katalogem a soubory na disku a oprava odvozených dat. Originály se nikdy nemažou.",
+    "adminOnly": "Tato stránka je dostupná pouze administrátorům.",
+    "loading": "Načítání…",
+    "scan": {
+      "run": "Spustit kontrolu",
+      "running": "Probíhá kontrola…",
+      "title": "Výsledek kontroly",
+      "summary": "{{photos}} fotek · {{files}} souborů v DB · {{disk}} originálů na disku",
+      "clean": "Knihovna je konzistentní.",
+      "empty": "Zatím neproběhla žádná kontrola. Spusťte kontrolu integrity.",
+      "error": "Kontrola se nezdařila."
+    },
+    "findings": {
+      "missing_originals": "Chybějící originály",
+      "orphan_files": "Osiřelé soubory na disku",
+      "missing_thumbnails": "Chybějící náhledy",
+      "missing_embeddings": "Chybějící embeddingy",
+      "missing_faces": "Chybějící detekce obličejů",
+      "missing_phashes": "Chybějící perceptuální hashe",
+      "samples": "Ukázky"
+    },
+    "repair": {
+      "title": "Opravy",
+      "hint": "Vyberte, co opravit. Opravy běží na pozadí přes frontu úloh.",
+      "thumbnails": "Obnovit chybějící náhledy",
+      "embeddings": "Doplnit chybějící embeddingy",
+      "faces": "Doplnit chybějící detekce obličejů",
+      "phashes": "Přepočítat chybějící perceptuální hashe",
+      "import_orphans": "Importovat osiřelé originály do katalogu",
+      "run": "Spustit opravy",
+      "running": "Spouštím…",
+      "none": "Vyberte alespoň jednu opravu.",
+      "error": "Oprava se nezdařila.",
+      "result": "Naplánováno: náhledy {{thumbnails}}, hashe {{phashes}}, embeddingy {{embeddings}}, obličeje {{faces}}; osiřelé importováno {{imported}}, přeskočeno {{skipped}}, selhalo {{failed}}."
+    },
+    "jobs": {
+      "title": "Fronta úloh na pozadí",
+      "total": "Celkem",
+      "queued": "Ve frontě",
+      "running": "Běží",
+      "failed": "Selhalo",
+      "dead": "Mrtvé"
     }
   }
 }

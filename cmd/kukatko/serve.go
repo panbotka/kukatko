@@ -244,38 +244,48 @@ func buildServices(
 		return nil, backgroundServices{}, err
 	}
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
-	outlierAPI := buildOutlierAPI(db, authAPI)
-	peopleAPI := buildPeopleAPI(db, authAPI)
-	organizeAPI := buildOrganizeAPI(db, authAPI)
-	bulkAPI := buildBulkAPI(cfg, db, authAPI)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
-	var importSvc *ppimport.Service
-	if importConfigured(cfg) {
-		if importSvc, err = buildImportService(cfg, db, enqueuer, reg); err != nil {
-			return nil, backgroundServices{}, err
-		}
+	importSvc, err := buildImportServiceOrNil(cfg, db, enqueuer, reg)
+	if err != nil {
+		return nil, backgroundServices{}, err
 	}
 	psMigrate := psMigrateHandlerOrNil(cfg, db, enqueuer, reg)
-	jobWorker, jobAPI, processAPI := buildJobs(
-		cfg, jobStore, authAPI, embedSvc, faceSvc, clusterSvc, importSvc, psMigrate, reg)
+	jobWorker, jobAPI, processAPI, maintenanceAPI, err := buildJobs(
+		cfg, db, jobStore, authAPI, enqueuer, embedSvc, faceSvc, clusterSvc, importSvc, psMigrate, reg)
+	if err != nil {
+		return nil, backgroundServices{}, err
+	}
 	opts := []server.Option{
 		server.WithAPI(authAPI.RegisterRoutes),
 		server.WithAPI(ingestAPI.RegisterRoutes),
 		server.WithAPI(photoAPI.RegisterRoutes),
 		server.WithAPI(clusterAPI.RegisterRoutes),
-		server.WithAPI(outlierAPI.RegisterRoutes),
-		server.WithAPI(peopleAPI.RegisterRoutes),
-		server.WithAPI(organizeAPI.RegisterRoutes),
-		server.WithAPI(bulkAPI.RegisterRoutes),
+		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildPeopleAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildOrganizeAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildBulkAPI(cfg, db, authAPI).RegisterRoutes),
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
+		server.WithAPI(maintenanceAPI.RegisterRoutes),
 		// Import history and audit log are always mounted (import triggers self-gate).
 		server.WithAPI(buildImportAPI(cfg, db, jobStore, authAPI).RegisterRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 	}
 	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
+}
+
+// buildImportServiceOrNil builds the PhotoPrism import service when a source is
+// configured, returning (nil, nil) otherwise so the caller mounts import history
+// without a trigger.
+func buildImportServiceOrNil(
+	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer, reg *metrics.Registry,
+) (*ppimport.Service, error) {
+	if !importConfigured(cfg) {
+		return nil, nil //nolint:nilnil // (nil, nil) is the documented "not configured" signal.
+	}
+	return buildImportService(cfg, db, enqueuer, reg)
 }

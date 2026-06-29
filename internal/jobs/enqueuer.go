@@ -38,6 +38,14 @@ func (e *Enqueuer) EnqueueFaceDetect(ctx context.Context, photoUID string) error
 	return e.enqueuePhotoJob(ctx, TypeFaceDetect, photoUID)
 }
 
+// EnqueueThumbnail schedules thumbnail regeneration (and pHash recompute when
+// missing) for the photo identified by photoUID. A pre-existing active job for
+// the same photo is a no-op (nil error). It backs the library-maintenance
+// thumbnail and pHash repairs.
+func (e *Enqueuer) EnqueueThumbnail(ctx context.Context, photoUID string) error {
+	return e.enqueuePhotoJob(ctx, TypeThumbnail, photoUID)
+}
+
 // enqueuePhotoJob enqueues a job of jobType carrying {"photo_uid": photoUID},
 // swallowing ErrDuplicate so the call is idempotent per photo.
 func (e *Enqueuer) enqueuePhotoJob(ctx context.Context, jobType, photoUID string) error {

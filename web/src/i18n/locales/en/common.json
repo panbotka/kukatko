@@ -14,6 +14,7 @@
     "map": "Map",
     "upload": "Upload",
     "import": "Import",
+    "maintenance": "Maintenance",
     "account": "My account",
     "logout": "Sign out",
     "trash": "Trash"
@@ -590,6 +591,52 @@
       "empty": "Every photo in the trash, including originals, will be permanently deleted. This cannot be undone.",
       "confirm": "Delete forever",
       "cancel": "Cancel"
+    }
+  },
+  "maintenance": {
+    "title": "Library maintenance",
+    "subtitle": "Check integrity between the catalogue and the files on disk, and repair derived data. Originals are never deleted.",
+    "adminOnly": "This page is available to administrators only.",
+    "loading": "Loading…",
+    "scan": {
+      "run": "Run scan",
+      "running": "Scanning…",
+      "title": "Scan result",
+      "summary": "{{photos}} photos · {{files}} files in DB · {{disk}} originals on disk",
+      "clean": "The library is consistent.",
+      "empty": "No scan has run yet. Run an integrity scan.",
+      "error": "The scan failed."
+    },
+    "findings": {
+      "missing_originals": "Missing originals",
+      "orphan_files": "Orphan files on disk",
+      "missing_thumbnails": "Missing thumbnails",
+      "missing_embeddings": "Missing embeddings",
+      "missing_faces": "Missing face detections",
+      "missing_phashes": "Missing perceptual hashes",
+      "samples": "Samples"
+    },
+    "repair": {
+      "title": "Repairs",
+      "hint": "Choose what to repair. Repairs run in the background through the job queue.",
+      "thumbnails": "Regenerate missing thumbnails",
+      "embeddings": "Backfill missing embeddings",
+      "faces": "Backfill missing face detections",
+      "phashes": "Recompute missing perceptual hashes",
+      "import_orphans": "Import orphan originals into the catalogue",
+      "run": "Run repairs",
+      "running": "Starting…",
+      "none": "Select at least one repair.",
+      "error": "The repair failed.",
+      "result": "Scheduled: thumbnails {{thumbnails}}, hashes {{phashes}}, embeddings {{embeddings}}, faces {{faces}}; orphans imported {{imported}}, skipped {{skipped}}, failed {{failed}}."
+    },
+    "jobs": {
+      "title": "Background job queue",
+      "total": "Total",
+      "queued": "Queued",
+      "running": "Running",
+      "failed": "Failed",
+      "dead": "Dead"
     }
   }
 }
