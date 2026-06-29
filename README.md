@@ -33,6 +33,10 @@ export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
 ./bin/kukatko migrate photosorter         # read-only inkrementální migrace dat z photo-sorteru
 ./bin/kukatko import photoprism           # read-only inkrementální import z PhotoPrismu
 ./bin/kukatko backup                      # jednorázová záloha (pg_dump + sync originálů) na S3
+./bin/kukatko restore list                # vypíše dumpy dostupné v bucketu (nejnovější první)
+./bin/kukatko restore db --yes            # obnoví DB z nejnovějšího dumpu (DESTRUKTIVNÍ) + migrace
+./bin/kukatko restore originals           # stáhne chybějící originály z S3 (přeskočí existující)
+./bin/kukatko restore verify              # integritní report: fotky v DB vs originály na disku
 ./bin/kukatko serve                       # spustí migrace, pak HTTP server (default 0.0.0.0:8080)
 ./bin/kukatko serve --config config.yaml  # explicitní cesta ke konfiguraci
 ./bin/kukatko version                     # vypíše verzi a commit
@@ -856,9 +860,39 @@ Jeden běh dělá tři věci v pořadí:
 - **Admin API** (`internal/backupapi`, admin-only): `GET /api/v1/backup` (stav + poslední běh,
   `configured:false` když není nakonfigurováno) a `POST /api/v1/backup` (spustí zálohu na pozadí →
   202, 409 když už běží, 503 bez konfigurace).
-- Runtime apt závislost: **`postgresql-client`** (pg_dump). Konfig klíče
+- Runtime apt závislost: **`postgresql-client`** (pg_dump **i** pg_restore). Konfig klíče
   `backup.s3.{endpoint,region,bucket,access_key,secret_key,path_style}`, `backup.schedule`,
   `backup.retention`; tajemství (`access_key`/`secret_key`) přes env.
+
+### Obnova / disaster recovery (`internal/backup` + `internal/restoreapi`)
+
+Protějšek zálohy, aby byla skutečně **použitelná**. Sdílí `backup.s3.*` konfiguraci (bucket =
+zdroj obnovy), `database.url` (cíl) a `storage.originals_path` (kam se zapisují originály). Vše za
+stejnými rozhraními (`ObjectStore` rozšířeno o `Open`, nové `Restorer`/`LocalOriginals`/
+`PhotoCatalog`) → unit-testovatelné s faky. Tajemství nikdy do logu ani argv.
+
+CLI strom **`kukatko restore`** (ops/cron bez běžícího serveru; vyžaduje `backup.s3.{endpoint,bucket}`):
+
+- **`restore list`** — vypíše dumpy v bucketu (`db/kukatko-*.dump`), nejnovější první.
+- **`restore db [--dump KEY] [--yes] [--verify]`** — **DESTRUKTIVNÍ**: stáhne dump z S3 a streamuje
+  ho rovnou do **`pg_restore`** (`--clean --if-exists --single-transaction --no-owner
+  --no-privileges`, čte archiv ze stdin → nikdy celý v RAM). Heslo se předává přes `PGPASSWORD` env
+  (parsované z DSN), **nikdy v argv**. Po obnově idempotentně re-aplikuje migrace. Bez `--dump`
+  obnoví nejnovější dump; **vyžaduje `--yes`** (přepisuje všechna data). `--verify` rovnou spustí
+  integritní report.
+- **`restore originals`** — stáhne z bucketu jen originály, které na disku ještě nejsou (skip dle
+  **klíče + velikosti**), atomickým zápisem přes `.tmp` + rename → **resumovatelné** (přerušený běh
+  se bezpečně zopakuje). Dumpy pod `db/` se přeskakují.
+- **`restore verify`** — integritní report: **fotek v DB vs originálů na disku** + nesoulady
+  (`photo_files.file_path` chybějící na disku / soubory na disku bez záznamu v katalogu), s
+  omezeným vzorkem na výpis.
+
+**Admin API** (`internal/restoreapi`, admin-only, jen read-only operace): `GET /api/v1/restore/dumps`
+(seznam dumpů, 503 bez konfigurace) a `POST /api/v1/restore/verify` (integritní report). Destruktivní
+obnova DB se přes HTTP **záměrně neexponuje** (podtrhla by tabulky běžícímu serveru) — patří do CLI
+při zastaveném serveru. Náhledy se po obnově regenerují líně on-demand; embeddingy/faces jsou v dumpu.
+
+Plný postup (fresh machine → install → restore → verify) s přesnými příkazy: [`docs/RESTORE.md`](docs/RESTORE.md).
 
 ## Konfigurace
 
@@ -957,6 +991,8 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/import/photosorter` | admin | zařadí `ps_migrate` job (jen je-li zdroj konfigurován) → 202 `{job_id,status}`, 409 už běží |
 | GET | `/backup` | admin | stav S3 zálohy + poslední běh (`configured:false` bez konfigurace) |
 | POST | `/backup` | admin | spustí zálohu na pozadí → 202 `{status}`, 409 už běží, 503 bez konfigurace |
+| GET | `/restore/dumps` | admin | seznam dumpů v bucketu (nejnovější první) → `{dumps}`, 503 bez konfigurace, 502 při chybě S3 |
+| POST | `/restore/verify` | admin | integritní report (fotky v DB vs originály na disku) → `VerifyReport`, 503 bez konfigurace |
 
 RBAC se vynucuje middlewarem (`RequireAuth` / `RequireWrite` / `RequireAdmin` /
 `RequireAuthOrDownloadToken`). Konfigurační

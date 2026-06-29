@@ -72,6 +72,9 @@ type ObjectStore interface {
 	// Put streams size bytes from reader to key. A negative size streams the body
 	// without buffering it whole (multipart upload). contentType may be empty.
 	Put(ctx context.Context, key string, reader io.Reader, size int64, contentType string) error
+	// Open opens the object at key for streaming reads (used by restore). The
+	// caller must close the returned reader.
+	Open(ctx context.Context, key string) (io.ReadCloser, error)
 	// List returns every object whose key begins with prefix.
 	List(ctx context.Context, prefix string) ([]Object, error)
 	// Remove deletes the object at key. A missing object is not an error.

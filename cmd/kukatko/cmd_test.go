@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -27,7 +28,9 @@ func TestRootCmd_subcommandsRegistered(t *testing.T) {
 	t.Parallel()
 
 	root := newRootCmd()
-	want := map[string]bool{"serve": false, "version": false, "import": false, "backup": false}
+	want := map[string]bool{
+		"serve": false, "version": false, "import": false, "backup": false, "restore": false,
+	}
 	for _, c := range root.Commands() {
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true
@@ -53,6 +56,49 @@ func TestImportCmd_hasPhotoPrismChild(t *testing.T) {
 	}
 	if !found {
 		t.Error("import command has no photoprism subcommand")
+	}
+}
+
+// TestRestoreCmd_hasChildren verifies the restore command exposes the
+// list/db/originals/verify subcommands.
+func TestRestoreCmd_hasChildren(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]bool{"list": false, "db": false, "originals": false, "verify": false}
+	for _, c := range newRestoreCmd().Commands() {
+		if _, ok := want[c.Name()]; ok {
+			want[c.Name()] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("restore command has no %q subcommand", name)
+		}
+	}
+}
+
+// TestRestoreDB_requiresConfirmation verifies the destructive database restore
+// refuses to run without the explicit --yes flag, even when configured.
+func TestRestoreDB_requiresConfirmation(t *testing.T) {
+	// t.Setenv forbids t.Parallel; the env is restored after the test.
+	t.Setenv("KUKATKO_DATABASE_URL", "postgres://user:pass@localhost:5432/db?sslmode=disable")
+	t.Setenv("KUKATKO_BACKUP_S3_ENDPOINT", "http://localhost:9000")
+	t.Setenv("KUKATKO_BACKUP_S3_BUCKET", "backups")
+
+	if _, err := executeCmd(t, "restore", "db"); !errors.Is(err, errRestoreNotConfirmed) {
+		t.Errorf("restore db without --yes error = %v, want errRestoreNotConfirmed", err)
+	}
+}
+
+// TestRestoreList_requiresConfiguration verifies a restore aborts cleanly when no
+// S3 destination is configured.
+func TestRestoreList_requiresConfiguration(t *testing.T) {
+	t.Setenv("KUKATKO_DATABASE_URL", "postgres://user:pass@localhost:5432/db?sslmode=disable")
+	t.Setenv("KUKATKO_BACKUP_S3_ENDPOINT", "")
+	t.Setenv("KUKATKO_BACKUP_S3_BUCKET", "")
+
+	if _, err := executeCmd(t, "restore", "list"); !errors.Is(err, errRestoreNotConfigured) {
+		t.Errorf("restore list unconfigured error = %v, want errRestoreNotConfigured", err)
 	}
 }
 

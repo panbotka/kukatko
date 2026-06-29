@@ -113,6 +113,8 @@ maps:
   # Override only to target a different endpoint (e.g. a test double).
   base_url: "https://api.mapy.com"
 
+# Backup destination. The same s3.* settings are reused by `kukatko restore`
+# (list dumps, restore the database, download originals) — see docs/RESTORE.md.
 backup:
   s3:
     # S3-compatible endpoint (AWS / MinIO / Backblaze / Wasabi).

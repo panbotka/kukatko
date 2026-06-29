@@ -58,6 +58,8 @@ inkrementální).
   plus `CreateFile`/`ListFiles`,
   `ListArchivedUIDs(before,limit,offset)` (uid archivovaných fotek oldest-archived-first,
   `before` nil = vše / non-nil = jen `archived_at <= before` retenční cutoff — podklad koše/purge),
+  `CountPhotos()` (total fotek vč. archivovaných) + `ListFilePaths()` (všechny `photo_files.file_path`)
+  — podklad post-restore integritního reportu (`backup.PhotoCatalog`),
   `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
   `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
@@ -652,12 +654,39 @@ inkrementální).
   --format=custom --no-owner --no-privileges`, **DSN přes env `PGDATABASE`** (ne argument, aby heslo
   nebylo v `ps`), `Dump` vrací reader (Close čeká na proces + surfacuje stderr), `PgDumpAvailable`,
   `ErrPgDumpMissing`; **`DiskOriginals`** (`NewDiskOriginals(root)`) = walk úložiště (skip `.tmp`,
-  confine klíče proti traversalu); klíče tajemství nikdy nelogovat), `internal/backupapi/`
+  confine klíče proti traversalu) — **slouží i obnově** přes `Stat(key)` (existuje + velikost, pro
+  skip-existing) a `Write(key,r)` (atomický zápis do `.tmp` + rename → resumovatelné); klíče
+  tajemství nikdy nelogovat;
+  **OBNOVA / disaster recovery** (`restore.go`, `pgrestore.go` — protějšek zálohy): `ObjectStore`
+  rozšířeno o **`Open(ctx,key)`** (stream GET z bucketu, na `s3Store` přes `minio GetObject`); nová
+  rozhraní **`Restorer`** (`Restore(ctx,archive io.Reader)`), **`LocalOriginals`** (List/Stat/Write,
+  splňuje `DiskOriginals`) a **`PhotoCatalog`** (`CountPhotos`/`ListFilePaths`, splňuje `photos.Store`);
+  **`RestoreService`** = `NewRestoreService(RestoreConfig{Objects,Restorer,Originals,Photos,Logger})`
+  (panika na nil Objects): **`ListDumps`** (dumpy pod `db/` končící `.dump`, nejnovější první) /
+  **`LatestDump`** (`ErrNoDumps`) / **`RestoreDatabase(key)`** (prázdný key → nejnovější; streamuje
+  dump z S3 rovnou do `Restorer`; `ErrDumpNotFound` na neznámý key — **destruktivní**) /
+  **`RestoreOriginals`** (stáhne z bucketu jen chybějící originály — skip dle klíče+velikosti přes
+  `LocalOriginals.Stat`, dumpy pod `db/` přeskočí, atomický `Write` → resumovatelné, ctí ctx cancel,
+  `RestoreOriginalsResult{Downloaded,Skipped}`) / **`Verify`** (integritní report `VerifyReport`
+  {PhotosInDB,FilesInDB,OriginalsOnDisk,MissingOnDisk,ExtraOnDisk,Consistent} přes čistou `reconcile`
+  set-diff `photo_files.file_path` vs disk); **`pgRestorer`** (`NewPgRestorer(dsn)`) = shell-out
+  `pg_restore --format=custom --clean --if-exists --no-owner --no-privileges --single-transaction
+  --dbname=<db>`, čte archiv **ze stdin** (nikdy celý v RAM), **DSN parsován do PG\* env**
+  (`PGHOST`/`PGPORT`/`PGUSER`/**`PGPASSWORD`**/`PGDATABASE` přes `pgx.ParseConfig`) → heslo **nikdy
+  v argv**; `PgRestoreAvailable`, sentinely `ErrPgRestoreMissing`/`ErrInvalidDSN`; tajemství nikam
+  neprosáknou), `internal/backupapi/`
   (admin-only HTTP API nad zálohou: rozhraní `Service` (Status+Trigger, splňuje ho `*backup.Service`,
   fakeovatelné, **nil = nenakonfigurováno**); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes`
   mountuje `GET /backup` (stav + poslední běh, nil service → `configured:false`) a `POST /backup`
   (spustí `Trigger` na pozadí → 202 `{status:"started"}`, `ErrAlreadyRunning` → 409, nil service →
-  503); mountuje se v `serve` vždy (`buildBackupAPI` v `cmd/kukatko/backup.go`)), `internal/web/`
+  503); mountuje se v `serve` vždy (`buildBackupAPI` v `cmd/kukatko/backup.go`)), `internal/restoreapi/`
+  (admin-only HTTP API nad obnovou, **jen read-only operace**: rozhraní `Service`
+  (`ListDumps`+`Verify`, splňuje ho `*backup.RestoreService`, fakeovatelné, **nil = nenakonfigurováno**);
+  `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes` mountuje `GET /restore/dumps` (seznam dumpů,
+  503 bez konfigurace, 502 při chybě S3) a `POST /restore/verify` (integritní report, 503 bez
+  konfigurace); **destruktivní obnova DB se přes HTTP záměrně neexponuje** (podtrhla by tabulky
+  běžícímu serveru — patří do CLI při zastaveném serveru); mountuje se v `serve` vždy
+  (`buildRestoreAPI` v `cmd/kukatko/restore.go`)), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
@@ -897,6 +926,13 @@ inkrementální).
   `kukatko backup` (synchronní jednorázová **S3 záloha** — `internal/backup`; pg_dump + sync
   originálů + retence; potřebuje `backup.s3.{endpoint,bucket}`, jinak `errBackupNotConfigured`;
   pro ops/cron bez běžícího serveru),
+  **`kukatko restore`** (strom obnovy/disaster recovery — `internal/backup`; sdílí `backup.s3.*`,
+  jinak `errRestoreNotConfigured`; pro ops/cron bez běžícího serveru): `restore list` (dumpy v
+  bucketu), `restore db [--dump KEY] [--yes] [--verify]` (**destruktivní** obnova DB přes
+  `pg_restore` streamovaný z S3 + idempotentní re-migrace; bez `--yes` → `errRestoreNotConfirmed`),
+  `restore originals` (stáhne chybějící originály, skip dle klíče+velikosti, resumovatelné),
+  `restore verify` (integritní report fotek v DB vs originálů na disku); runbook
+  [`docs/RESTORE.md`](docs/RESTORE.md),
   `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
   `server.New(addr, server.WithAPI(register))` mountuje route-skupiny pod `/api/v1`.
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
@@ -1046,6 +1082,14 @@ inkrementální).
   `backup.Service`. Konfig klíče `backup.s3.{endpoint,region,bucket,access_key,secret_key,
   path_style}`, `backup.schedule` (cron), `backup.retention` (kolik posledních dumpů nechat; ≤ 0 =
   vše). Runtime dep `pg_dump` (`postgresql-client`). Tajemství (`access_key`/`secret_key`) přes env.
+- **Restore API (`/api/v1`, `internal/restoreapi`, admin-only přes `RequireAdmin`):** **jen
+  read-only** operace nad obnovou. `GET /restore/dumps` → `{dumps:[{key,size}]}` (dumpy v bucketu,
+  nejnovější první; 503 bez konfigurace, 502 při chybě S3); `POST /restore/verify` → `VerifyReport`
+  (fotky v DB vs originály na disku + nesoulady; 503 bez konfigurace). **Destruktivní obnova DB se
+  přes HTTP záměrně neexponuje** (podtrhla by tabulky běžícímu serveru) — patří do CLI `kukatko
+  restore db` při zastaveném serveru. Celá API se mountuje **vždy** (`buildRestoreAPI` v
+  `cmd/kukatko/restore.go`; service nil = nenakonfigurováno). Runtime dep `pg_restore`
+  (`postgresql-client`, stejný balík jako pg_dump). Runbook: `docs/RESTORE.md`.
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —

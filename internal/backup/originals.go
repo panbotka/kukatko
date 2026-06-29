@@ -94,6 +94,57 @@ func (d *DiskOriginals) Open(_ context.Context, key string) (io.ReadCloser, erro
 	return file, nil
 }
 
+// Stat reports whether the original at key already exists on disk and, when it
+// does, its byte size, so the restore download can skip files already present at
+// the same size. A missing file yields ok=false with a nil error; the path is
+// confined to the root.
+func (d *DiskOriginals) Stat(_ context.Context, key string) (LocalOriginal, bool, error) {
+	abs := filepath.Join(d.root, filepath.FromSlash(confineKey(key)))
+	info, err := os.Stat(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return LocalOriginal{}, false, nil
+		}
+		return LocalOriginal{}, false, fmt.Errorf("backup: statting %s: %w", key, err)
+	}
+	return LocalOriginal{Key: key, Size: info.Size()}, true, nil
+}
+
+// Write streams reader to the original at key, creating parent directories and
+// publishing the file atomically: it writes to a temporary file under the
+// root's .tmp directory and renames it into place only once fully written. An
+// interrupted download therefore never leaves a partial file at the final path,
+// so re-running the restore safely resumes (the partial temp file is discarded).
+// The path is confined to the root.
+func (d *DiskOriginals) Write(_ context.Context, key string, reader io.Reader) error {
+	rel := confineKey(key)
+	abs := filepath.Join(d.root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
+		return fmt.Errorf("backup: creating directory for %s: %w", key, err)
+	}
+	tmpDir := filepath.Join(d.root, tmpDirName)
+	if err := os.MkdirAll(tmpDir, 0o750); err != nil {
+		return fmt.Errorf("backup: creating temp directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(tmpDir, "restore-*")
+	if err != nil {
+		return fmt.Errorf("backup: creating temp file for %s: %w", key, err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }() // no-op once renamed away.
+	if _, err := io.Copy(tmp, reader); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("backup: writing %s: %w", key, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("backup: closing temp file for %s: %w", key, err)
+	}
+	if err := os.Rename(tmpName, abs); err != nil {
+		return fmt.Errorf("backup: publishing %s: %w", key, err)
+	}
+	return nil
+}
+
 // confineKey cleans key as if rooted at "/" so that any "../" segments cannot
 // escape above the originals root, then strips the leading slash.
 func confineKey(key string) string {

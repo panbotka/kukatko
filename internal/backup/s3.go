@@ -133,6 +133,17 @@ func (s *s3Store) Put(ctx context.Context, key string, reader io.Reader, size in
 	return nil
 }
 
+// Open opens the object at key for streaming reads. The returned *minio.Object
+// is lazy: the first Read performs the GET, and a missing object surfaces as a
+// read error rather than here. The caller must close it.
+func (s *s3Store) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("backup: open %s: %w", key, err)
+	}
+	return obj, nil
+}
+
 // List returns every object whose key begins with prefix, reading the recursive
 // listing channel to completion.
 func (s *s3Store) List(ctx context.Context, prefix string) ([]Object, error) {

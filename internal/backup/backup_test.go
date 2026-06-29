@@ -30,6 +30,7 @@ type fakeStore struct {
 	statErr   error
 	listErr   error
 	putErr    error
+	openErr   error
 	removeErr error
 }
 
@@ -71,6 +72,20 @@ func (f *fakeStore) Put(_ context.Context, key string, reader io.Reader, size in
 	f.objects[key] = storedObject{data: data}
 	f.putSizes[key] = size
 	return nil
+}
+
+// Open returns a reader over the stored object at key, or an error when absent.
+func (f *fakeStore) Open(_ context.Context, key string) (io.ReadCloser, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.openErr != nil {
+		return nil, f.openErr
+	}
+	obj, ok := f.objects[key]
+	if !ok {
+		return nil, fmt.Errorf("not found: %s", key)
+	}
+	return io.NopCloser(bytes.NewReader(obj.data)), nil
 }
 
 // List returns every stored object whose key begins with prefix.

@@ -490,13 +490,32 @@ naseedovanému fake photo-sorter schématu.
 - **goreleaser**, `CGO_ENABLED=0`, **arch arm64** (+ amd64 pro vývoj), `.deb` balík se
   systemd unitem a env-file (conffile, zachová se při upgradu).
 - Runtime závislosti (apt): `exiftool`, `libheif-examples` (heif-convert), `dcraw`/LibRaw,
-  `postgresql-client` (pg_dump). (Bez `texlive` — fotokniha vynechána.)
+  `postgresql-client` (pg_dump **i** pg_restore). (Bez `texlive` — fotokniha vynechána.)
 - DB migrace auto-apply na startu. Frontend `npm ci && npm run build` → `embed.FS`.
 
 ### Zálohování (S13)
 - V procesu, plánovaně (cron/scheduler): `pg_dump` + sync originálů na **S3-kompatibilní**
   endpoint (`minio-go`, path-style, stream `objectSize=-1`). Konfigurovatelný endpoint
   (AWS/MinIO/Backblaze/Wasabi). Retence/verze konfigurovatelná.
+
+### Obnova / disaster recovery (S13)
+- Protějšek zálohy, aby byla **použitelná**. CLI strom `kukatko restore` (sdílí `backup.s3.*`
+  konfiguraci, `internal/backup`):
+  - `restore list` — vypíše dumpy v bucketu (`db/kukatko-*.dump`), nejnovější první.
+  - `restore db [--dump KEY] [--yes] [--verify]` — **destruktivní**: stáhne dump z S3 a streamuje
+    ho do `pg_restore` (`--clean --if-exists --single-transaction`, heslo přes `PGPASSWORD` env,
+    nikdy v argv), pak idempotentně re-aplikuje migrace. Vyžaduje `--yes` (přepisuje data).
+    Bez `--dump` obnoví nejnovější dump.
+  - `restore originals` — stáhne chybějící originály z bucketu do `storage.originals_path`,
+    přeskočí už existující dle **klíče + velikosti**; atomický zápis přes `.tmp` + rename →
+    **resumovatelné** (přerušený běh se bezpečně zopakuje).
+  - `restore verify` — integritní report: počet fotek v DB vs. originálů na disku + nesoulady
+    (`photo_files.file_path` chybějící na disku / soubory na disku bez záznamu).
+- **Admin API** (`internal/restoreapi`, admin-only, jen **read-only** operace): `GET /restore/dumps`
+  a `POST /restore/verify`. Destruktivní obnova DB se přes HTTP **záměrně neexponuje** (obnova pod
+  běžícím serverem by mu podtrhla tabulky) — patří do CLI při zastaveném serveru.
+- Náhledy (cache) se po obnově regenerují **líně** on-demand; embeddingy/faces jsou součástí dumpu.
+- Runbook (fresh machine → install → restore → verify): [`docs/RESTORE.md`](RESTORE.md).
 
 ### Observability
 - **Prometheus** metriky (jako photo-sorter), `audit_log`, strukturované logy.

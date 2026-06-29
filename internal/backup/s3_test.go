@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -165,6 +166,36 @@ func TestS3Store_List(t *testing.T) {
 	}
 	if objects[0].Key != "db/kukatko-20260101T000000Z.dump" || objects[0].Size != 10 {
 		t.Errorf("objects[0] = %+v, want first dump size 10", objects[0])
+	}
+}
+
+func TestS3Store_Open(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Open used method %s, want GET", r.Method)
+		}
+		if !strings.HasPrefix(r.URL.Path, "/backups/") {
+			t.Errorf("Open path = %q, want path-style /backups/...", r.URL.Path)
+		}
+		w.Header().Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
+		w.Header().Set("Content-Length", "13")
+		fmt.Fprint(w, "archive-bytes")
+	}))
+	defer srv.Close()
+	store := newTestStore(t, srv.URL)
+
+	reader, err := store.Open(context.Background(), "db/kukatko-20260101T000000Z.dump")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = reader.Close() }()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "archive-bytes" {
+		t.Errorf("Open() content = %q, want archive-bytes", data)
 	}
 }
 

@@ -82,6 +82,14 @@ func runServe(cmd *cobra.Command) error {
 	}
 	apis = append(apis, server.WithAPI(buildBackupAPI(backupSvc, authAPI).RegisterRoutes))
 
+	// The restore API (list dumps + integrity check) is always mounted; its
+	// service is nil (503) when no destination is configured.
+	restoreAPI, err := buildRestoreAPI(cfg, db, authAPI)
+	if err != nil {
+		return err
+	}
+	apis = append(apis, server.WithAPI(restoreAPI.RegisterRoutes))
+
 	startWorker(ctx, jobWorker)
 	go trashSvc.RunPurge(ctx, trashPurgeInterval)
 	if backupSvc != nil {
