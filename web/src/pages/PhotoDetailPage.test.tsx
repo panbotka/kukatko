@@ -208,6 +208,32 @@ describe('PhotoDetailPage', () => {
     expect(screen.getByText('ISO 200')).toBeInTheDocument()
   })
 
+  it('plays a video with a range-streaming player instead of an image', async () => {
+    fetchPhotoMock.mockResolvedValue(
+      photo({ media_type: 'video', file_name: 'clip.mp4', file_mime: 'video/mp4', title: 'Clip' }),
+    )
+    const { container } = renderPage()
+
+    await screen.findByRole('heading', { name: 'Clip' })
+    const video = container.querySelector('video')
+    expect(video).not.toBeNull()
+    expect(video?.getAttribute('src')).toContain('/photos/b/video')
+    // No still <img> is rendered for the main preview of a video.
+    expect(container.querySelector('img[alt="Clip"]')).toBeNull()
+  })
+
+  it('shows a live photo with a hold-to-play motion clip', async () => {
+    fetchPhotoMock.mockResolvedValue(
+      photo({ media_type: 'live', file_name: 'live.heic', title: 'Live' }),
+    )
+    const { container } = renderPage()
+
+    await screen.findByRole('heading', { name: 'Live' })
+    expect(screen.getByRole('button', { name: /Live/ })).toBeInTheDocument()
+    const video = container.querySelector('video')
+    expect(video?.getAttribute('src')).toContain('/photos/b/video')
+  })
+
   it('offers prev/next that respect the list order and a Back link to the origin', async () => {
     renderPage(true, '/photos/b?sort=oldest&album=al_1')
 

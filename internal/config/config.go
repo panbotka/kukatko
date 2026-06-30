@@ -72,6 +72,7 @@ type Config struct {
 	Trash     TrashConfig     `mapstructure:"trash"`
 	Duplicate DuplicateConfig `mapstructure:"duplicate"`
 	Upload    UploadConfig    `mapstructure:"upload"`
+	Video     VideoConfig     `mapstructure:"video"`
 	Worker    WorkerConfig    `mapstructure:"worker"`
 	Bulk      BulkConfig      `mapstructure:"bulk"`
 	Import    ImportConfig    `mapstructure:"import"`
@@ -317,6 +318,18 @@ type DuplicateConfig struct {
 	EmbeddingMaxDist float64 `mapstructure:"embedding_max_dist"`
 }
 
+// VideoConfig tunes video playback/streaming. Videos are always served with
+// HTTP range support so browsers can seek without downloading the whole file.
+type VideoConfig struct {
+	// Transcode enables on-the-fly transcoding of non-web-friendly codecs (for
+	// example HEVC/H.265) to H.264/MP4 via ffmpeg so they play in the browser.
+	// It is OFF by default: transcoding is CPU-intensive and produced on every
+	// playback (no caching), and the transcoded stream cannot be seeked
+	// precisely. When off, a non-web-friendly video is streamed as-is and the
+	// client falls back to a download link when the browser cannot decode it.
+	Transcode bool `mapstructure:"transcode"`
+}
+
 // UploadConfig holds limits for the upload/ingest endpoint.
 type UploadConfig struct {
 	// MaxFileSizeMB caps a single uploaded file in mebibytes. 0 disables the cap
@@ -489,6 +502,8 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("duplicate.embedding_max_dist", 0.05)
 
 	v.SetDefault("upload.max_file_size_mb", 0) // 0 = unlimited
+
+	v.SetDefault("video.transcode", false) // on-the-fly HEVC→H.264 transcode is opt-in
 
 	v.SetDefault("worker.count", 2)
 	v.SetDefault("worker.poll_interval", "2s")

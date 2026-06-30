@@ -106,8 +106,13 @@ inkrementální).
   `HasAudio`/`FPS` (parsing racionálu)/rozměry/`TakenAt` (creation_time)/GPS (ISO 6709), **fallback
   na `exiftool`** přes `internal/exif` když `ffprobe` chybí; `ExtractPoster(ctx,path)` →
   reprezentativní snímek přes `ffmpeg` (~1 s, fallback první frame) na temp JPEG + once-cleanup;
-  `IsVideoPath`/`IsVideoExt`/`FFmpegAvailable`/`FFprobeAvailable`; sentinely `ErrFFmpegMissing`/
-  `ErrFFprobeMissing`/`ErrNoMetadataTool`/`ErrPosterFailed`), `internal/exif/`
+  `IsVideoPath`/`IsVideoExt`/`FFmpegAvailable`/`FFprobeAvailable`; **on-the-fly transcode pro
+  playback** (`transcode.go`): `IsWebFriendlyCodec(codec)` (h264/avc/vp8/vp9/av1/theora hrají
+  nativně v prohlížeči, prázdný=neznámý=ne), `TranscodeArgs(src)` (ffmpeg → **fragmentovaný**
+  H.264/AAC MP4 na `pipe:1` přes `frag_keyframe+empty_moov`, audio volitelně `0:a?` — testovatelné
+  bez ffmpeg) a `Transcode(ctx,src) (*TranscodeStream,error)` (spustí ffmpeg, `Read`/`Close` =
+  `io.ReadCloser`, Close zabije proces + reapne; `ErrFFmpegMissing` když ffmpeg chybí); sentinely
+  `ErrFFmpegMissing`/`ErrFFprobeMissing`/`ErrNoMetadataTool`/`ErrPosterFailed`), `internal/exif/`
   (extrakce EXIF/GPS metadat při importu, **CGO-free**: `Extract(ctx,path) (Metadata,error)`
   → `TakenAt`+`TakenAtSource` (`exif`/`filename`/`unknown`), `Lat`/`Lng`/`Altitude`,
   `CameraMake`/`CameraModel`/`LensModel`, `ISO`/`Aperture`/`Exposure`/`FocalLength`,
@@ -162,7 +167,14 @@ inkrementální).
   částečný přes raw-key presence (vynechané pole beze změny, `null` maže nullable, validace
   souřadnic); média `thumb/{size}`+`download` **streamují** přes `io.Copy` se `streamMedia`
   (`Cache-Control`/`ETag`/`304`, `Content-Length` z DB, náhled generován on-miss),
-  guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`; **nedestruktivní
+  guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`; **video streaming**
+  (`video.go`): `GET /photos/{uid}/video` streamuje video **s HTTP Range** přes `http.ServeContent`
+  (206 partial, `Accept-Ranges`, seek, If-Range/If-None-Match, paměťově omezené ze `*os.File` přes
+  `storage.AbsPath`) pro inline HTML5 přehrávání; live fotka servíruje svůj **motion klip** sidecar
+  (`pickMotionClip` dle video MIME/přípony), still image → 404; **on-the-fly transcode** gated
+  `VideoConfig`/`video.transcode` (default off) + `video.IsWebFriendlyCodec` + `video.FFmpegAvailable`
+  → `video.Transcode` (H.264/MP4 progressive, žádný range, `no-store`), fallback na originál když
+  ffmpeg selže nebo je codec neznámý; **nedestruktivní
   edit** přes `Organizer` (album/label chipy detailu) a `EditService`/`edit.go`+`media_edit.go`
   (`GET`/`PUT /photos/{uid}/edit`, download honoruje edit přes `internal/photoedit`)), `internal/photoedit/`
   (**CGO-free aplikace nedestruktivního editu** na dekódovaný obrázek pro download/preview: `Apply(img,
@@ -844,7 +856,8 @@ inkrementální).
   `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
   `UploadItem` (řádek fronty: jméno+velikost, progress-bar, status badge, near-duplicate
   varování, remove/retry akce); `components/library/` = `PhotoTile`
-  (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, placeholder bez
+  (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, **play badge + délka** u
+  videa/live fotky (`▶` + `formatDuration`), placeholder bez
   layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`),
   `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
   window-scroll, `endReached` → další stránka, footer spinner/retry; prop `favoritable`
@@ -910,7 +923,11 @@ inkrementální).
   (`/import`) a kontroly údržby (`/maintenance`); **box offline** + čekající embeddingy → zvýrazněná
   hláška „doženou se po návratu"; loading/error/notice stavy, sebe-gate na `isAdmin`,
   `PhotoDetailPage` = `/photos/:uid` **bohatý detail fotky**: velký náhled (`fit_1920`)
-  reflektující uložený nedestruktivní edit (CSS), **prev/next navigace** respektující pořadí
+  reflektující uložený nedestruktivní edit (CSS) — u **videa** místo obrázku `VideoPlayer`
+  (`components/photo/`, HTML5 `<video controls>` nad range endpointem `…/video`, poster `fit_1920`,
+  klávesy/fullscreen/touch zdarma, fallback na stažení když codec prohlížeč neumí), u **live fotky**
+  `LivePhoto` (still + „Live" badge, motion klip se přehraje při hover/podržení/focusu), **prev/next
+  navigace** respektující pořadí
   zdrojového výpisu (`usePhotoNeighbors` pageuje stejný `GET /photos` se scope+filtry z URL),
   deep-linkovatelný + **Zpět** na zdrojový pohled (`lib/detailView` `backHref`/`detailToParams`/
   `detailQueryString`), `FavoriteButton` v hlavičce, tlačítka **Stáhnout originál** /
@@ -1026,7 +1043,8 @@ inkrementální).
   auto-purge z `archived_at` + retence → `{daysLeft,due}` nebo `null` když odpočet neplatí
   (nearchivovaná / retence ≤ 0 / neparsovatelné), odpočet na kartách koše);
   `format.ts` = pure `formatBytes(bytes)` (byte count → human-readable binární jednotky, např.
-  `1536`→`"1.5 KB"`, neplatné→`"0 B"`) pro velikost souboru na duplicate-group kartách)),
+  `1536`→`"1.5 KB"`, neplatné→`"0 B"`) pro velikost souboru na duplicate-group kartách +
+  `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, neplatné→`"0:00"`) pro délku videa na dlaždicích)),
   `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
   `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
@@ -1040,8 +1058,9 @@ inkrementální).
   **koš** `unarchivePhoto(uid)` (`POST …/unarchive` obnova), `purgePhoto(uid)` (`POST …/purge?confirm=true`
   trvalé mazání), `emptyTrash()` (`POST /trash/empty?confirm=true` → `PurgeResult{purged,failed}`),
   `fetchTrashInfo()` (`GET /trash/info` → `TrashInfo{retention_days}`),
-  `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `GRID_THUMB_SIZE`, typy `Photo` (vč.
-  `is_favorite`)/`PhotoListParams`
+  `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `videoUrl(uid,token?)` (range stream pro
+  `<video>`), `GRID_THUMB_SIZE`, typy `Photo` (vč. `is_favorite` + video pole
+  `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`)/`PhotoListParams`
   (vč. `album`/`label` scope + `favorite` filtr)/`PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`;
   `organize.ts` = Albums/Labels klient: alba `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
   `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`/`reorderAlbumPhotos`, štítky `fetchLabels`/
@@ -1196,7 +1215,10 @@ inkrementální).
   trvale mažou archivované fotky, `GET /trash/info` (přihlášený) vrací `{retention_days}` pro odpočet
   do auto-purge; seznam koše jede přes sdílené `GET /photos?archived=only`;
   `GET /photos/{uid}/thumb/{size}` a `/download` (session/`?t=` token) **streamují** média
-  (`Cache-Control`/`ETag`/`304`). Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v
+  (`Cache-Control`/`ETag`/`304`); `GET /photos/{uid}/video` (session/`?t=` token) streamuje video
+  **s HTTP Range** (206 partial, `Accept-Ranges`, seek; live fotka = motion klip, still → 404) pro
+  inline HTML5 přehrávání, volitelný on-the-fly transcode neweb-friendly codeců přes
+  `video.transcode` config (default off). Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v
   `cmd/kukatko/photos.go`).
 - **Jobs API (`/api/v1`, `internal/jobsapi`, admin-only přes `RequireAdmin`):**
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
@@ -1382,6 +1404,11 @@ inkrementální).
 - **Observability klíče:** `log.level` (debug/info/warn/error, default info, neplatný → chyba při
   startu; `KUKATKO_LOG_LEVEL`) a `metrics.enabled` (bool, default true; vypnuté → `/metrics` se
   nemountuje, request-metriky middleware se neinstaluje, access-log běží dál; `KUKATKO_METRICS_ENABLED`).
+- **Video klíče (`video.*`, `internal/config`):** `transcode` (bool, **default false**) — zapne
+  on-the-fly transcode neweb-friendly codeců (HEVC/H.265 …) na H.264/MP4 přes ffmpeg pro přehrání
+  v prohlížeči. Off = video se streamuje as-is (s HTTP Range) a klient nabídne stažení, když ho
+  prohlížeč neumí dekódovat. Transcode je CPU-náročný, běží na každé přehrání (necachuje se) a
+  transcodovaný stream nelze přesně seekovat — proto opt-in. `KUKATKO_VIDEO_TRANSCODE`.
 - **Wake-on-LAN klíče (`embedding.wake.*`, `internal/wake`):** `enabled` (bool, **default false** —
   feature plně inertní), `mac` (MAC boxu, **povinný a parseovaný při validaci** když enabled),
   `broadcast_addr` (UDP broadcast cíl, default `255.255.255.255:9`), `interface` (NIC pro raw

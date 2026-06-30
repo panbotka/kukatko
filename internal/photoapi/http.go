@@ -38,6 +38,7 @@ type API struct {
 	organizer       PhotoOrganizer
 	purger          Purger
 	retentionDays   int
+	videoTranscode  bool
 	requireAuth     func(http.Handler) http.Handler
 	requireWrite    func(http.Handler) http.Handler
 	requireDownload func(http.Handler) http.Handler
@@ -75,6 +76,10 @@ type Config struct {
 	// RetentionDays is the trash retention window reported by the trash-info
 	// endpoint so the UI can show the auto-purge countdown.
 	RetentionDays int
+	// VideoTranscode enables on-the-fly transcoding of non-web-friendly video
+	// codecs to H.264/MP4 on the video streaming endpoint. When false (the
+	// default) such videos are streamed as-is and the client offers a download.
+	VideoTranscode bool
 	// RequireAuth guards read endpoints for any authenticated user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireWrite guards metadata and archive endpoints for editors and admins.
@@ -97,6 +102,7 @@ func NewAPI(cfg Config) *API {
 		organizer:       cfg.Organizer,
 		purger:          cfg.Purger,
 		retentionDays:   cfg.RetentionDays,
+		videoTranscode:  cfg.VideoTranscode,
 		requireAuth:     cfg.RequireAuth,
 		requireWrite:    cfg.RequireWrite,
 		requireDownload: cfg.RequireDownload,
@@ -118,6 +124,7 @@ func NewAPI(cfg Config) *API {
 //	POST   /photos/{uid}/archive      RequireWrite     soft-delete
 //	POST   /photos/{uid}/unarchive    RequireWrite     restore
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail
+//	GET    /photos/{uid}/video        RequireDownload  video stream (range/206)
 //	GET    /photos/{uid}/download     RequireDownload  original file
 //	PUT    /photos/{uid}/favorite     RequireAuth      favorite (current user)
 //	DELETE /photos/{uid}/favorite     RequireAuth      unfavorite (current user)
@@ -145,6 +152,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Post("/{uid}/unarchive", a.handleUnarchive)
 		r.With(a.requireWrite).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
+		r.With(a.requireDownload).Get("/{uid}/video", a.handleVideo)
 		r.With(a.requireDownload).Get("/{uid}/download", a.handleDownload)
 	})
 }

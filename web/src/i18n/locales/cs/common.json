@@ -125,7 +125,9 @@
     },
     "tile": {
       "private": "Soukromé",
-      "unavailable": "Náhled není dostupný"
+      "unavailable": "Náhled není dostupný",
+      "video": "Video",
+      "live": "Živá fotka"
     }
   },
   "search": {
@@ -444,6 +446,14 @@
       "info": "Informace",
       "location": "Poloha",
       "edit": "Úpravy"
+    },
+    "video": {
+      "label": "Přehrávač videa",
+      "loading": "Načítání videa…",
+      "unsupported": "Toto video nelze v prohlížeči přehrát.",
+      "downloadInstead": "Stáhnout video",
+      "live": "Živá fotka",
+      "livePlay": "Podržením nebo najetím přehrajete pohyblivou část"
     },
     "metadata": {
       "formLabel": "Úprava metadat fotky",

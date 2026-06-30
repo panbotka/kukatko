@@ -173,6 +173,16 @@ upload:
   # (uploads are streamed to disk and never buffered whole in memory regardless).
   max_file_size_mb: 0
 
+# Video playback/streaming. Videos are always served with HTTP range support so
+# browsers can seek without downloading the whole file.
+video:
+  # Transcode non-web-friendly codecs (e.g. HEVC/H.265) to H.264/MP4 on the fly
+  # via ffmpeg so they play in the browser. OFF by default: transcoding is
+  # CPU-intensive, runs on every playback (no caching) and the transcoded stream
+  # cannot be seeked precisely. When off, such a video is streamed as-is and the
+  # client offers a download link when the browser cannot decode it.
+  transcode: false
+
 # Background worker that drains the persistent job queue inside `kukatko serve`.
 worker:
   # Number of jobs processed in parallel. 0 uses the built-in default.

@@ -9,7 +9,8 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - **Sémantické i fulltextové hledání**, podobné fotky, **rozpoznávání obličejů/lidí**.
 - **Pi-first:** běží na Raspberry Pi, výpočet embeddingů deleguje na výkonný stroj (box s GPU).
 - **Import z PhotoPrismu** přes API (+ stažení originálů) a **migrace dat z photo-sorteru**.
-- Mapy ([mapy.com](https://mapy.com)), slideshow, alba, štítky, hromadná editace metadat,
+- **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
+  ([mapy.com](https://mapy.com)), slideshow, alba, štítky, hromadná editace metadat,
   per-user oblíbené, dvojjazyčné UI (čeština default + angličtina), S3 zálohování.
 
 > **Stav:** aktivní vývoj (milník M0 — kostra backendu + frontendu). Architektura:
@@ -155,6 +156,14 @@ CGO-free shell-out na **FFmpeg suite** (`ffprobe`/`ffmpeg`):
   na první frame u kratších) do dočasného JPEG + once-only cleanup.
 - **`IsVideoPath` / `FFmpegAvailable` / `FFprobeAvailable`** + sentinely `ErrFFmpegMissing`/
   `ErrFFprobeMissing`/`ErrNoMetadataTool`/`ErrPosterFailed`.
+- **Playback / streaming** — videa se servírují přes `GET /photos/{uid}/video` s **HTTP Range**
+  (`http.ServeContent`: 206 partial, `Accept-Ranges`, seek bez stažení celého souboru, paměťově
+  omezené ze `*os.File`); live fotka streamuje svůj motion klip. **Volitelný on-the-fly transcode**
+  neweb-friendly kodeců (HEVC/H.265 …) na H.264/MP4 přes `ffmpeg` — `IsWebFriendlyCodec` +
+  `TranscodeArgs` (fragmentovaný MP4 na `pipe:1`) + `Transcode`. Default **vypnuto**
+  (`video.transcode`): transcode je CPU-náročný, běží na každé přehrání (necachuje se) a nelze ho
+  přesně seekovat; vypnuto = video se streamuje as-is a frontend nabídne stažení, když ho prohlížeč
+  neumí dekódovat. Frontend: HTML5 přehrávač na detailu fotky + play badge/délka na dlaždicích.
 
 ### EXIF / GPS metadata (`internal/exif`)
 
@@ -1159,6 +1168,7 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/trash/empty` | editor/admin | **trvale** smaže všechny archivované fotky (vyžaduje `?confirm=true`) → `{purged,failed}` |
 | GET | `/duplicates` | editor/admin | skupiny pravděpodobných duplikátů (pHash + embedding) → `{groups,total,limit,offset,next_offset}`; query `limit`(≤100)/`offset`; 503 když `duplicate.enabled=false` (viz Duplicates) |
 | GET | `/photos/{uid}/thumb/{size}` | session/token | náhled (cache, generuje se on-miss) — streamuje JPEG, `ETag`/304 |
+| GET | `/photos/{uid}/video` | session/token | inline video stream s **HTTP Range** (206 partial, `Accept-Ranges`, seek; live fotka = motion klip, still → 404); volitelný on-the-fly transcode přes `video.transcode` |
 | GET | `/photos/{uid}/download` | session/token | fotka jako příloha — originál streamuje (nikdy celý v RAM), `Content-Length`/`ETag`; má-li uložený nedestruktivní edit, vrací **upravenou** verzi renderovanou za běhu (pokud není `?original=true`) |
 | GET | `/jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue` | admin | fronta jobů (viz Admin Jobs API) |
 | POST | `/process/embeddings` | admin | backfill — zařadí `image_embed` pro fotky bez embeddingu → `{enqueued}` (viz Process API) |
@@ -1250,6 +1260,15 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   cookie **nebo** `download_token` v query parametru `?t=…` (`RequireAuthOrDownloadToken`), takže
   fungují i `<img>`/`<video>` bez cookie. Náhled se na cache-miss vygeneruje on-demand; download
   posílá originál jako `attachment` s `Content-Length` z DB.
+- **Video** `GET /photos/{uid}/video` (`internal/photoapi/video.go`) — inline stream pro HTML5
+  přehrávač **s HTTP Range** přes `http.ServeContent` (206 partial, `Content-Range`, `Accept-Ranges`,
+  seek bez stažení celého klipu, `If-Range`/`If-None-Match`/`If-Modified-Since`, paměťově omezené ze
+  `*os.File` přes `storage.AbsPath`). Live fotka streamuje svůj **motion klip** sidecar
+  (`pickMotionClip` dle video MIME/přípony), still image → 404. **On-the-fly transcode** je gated
+  `video.transcode` (default off) + `video.IsWebFriendlyCodec` (h264/vp8/vp9/av1/… hrají nativně) +
+  `video.FFmpegAvailable`: neweb-friendly codec se transcoduje na progressive H.264/MP4
+  (`video.Transcode`, žádný range, `no-store`), s fallbackem na originál když ffmpeg selže. Frontend
+  (`VideoPlayer`/`LivePhoto`) ukazuje fallback ke stažení, když prohlížeč codec neumí.
 
 ### Process API (`internal/processapi`)
 

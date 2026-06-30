@@ -34,6 +34,16 @@ export interface Photo {
   altitude?: number
   /** Media kind: `image`, `video` or `live`. Absent is treated as `image`. */
   media_type?: string
+  /** Clip length in milliseconds for videos/live photos; absent for images. */
+  duration_ms?: number
+  /** Primary video codec (e.g. `h264`, `hevc`); empty/absent for images. */
+  video_codec?: string
+  /** Primary audio codec (e.g. `aac`); empty/absent when there is no audio. */
+  audio_codec?: string
+  /** Whether the video carries an audio stream. */
+  has_audio?: boolean
+  /** Average frame rate of the video; absent for images. */
+  fps?: number
   private: boolean
   archived_at?: string
   created_at: string
@@ -452,6 +462,21 @@ export async function fetchSimilar(
  */
 export function thumbUrl(uid: string, size: string, downloadToken?: string | null): string {
   const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/thumb/${encodeURIComponent(size)}`
+  if (downloadToken !== undefined && downloadToken !== null && downloadToken !== '') {
+    return `${url}?t=${encodeURIComponent(downloadToken)}`
+  }
+  return url
+}
+
+/**
+ * Builds the URL of a photo's inline video stream
+ * (`GET /api/v1/photos/{uid}/video`). The endpoint supports HTTP range requests
+ * (seeking) and serves a live photo's motion clip. The browser sends the session
+ * cookie for same-origin `<video>` requests; an optional download token is
+ * appended for cookie-less contexts.
+ */
+export function videoUrl(uid: string, downloadToken?: string | null): string {
+  const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/video`
   if (downloadToken !== undefined && downloadToken !== null && downloadToken !== '') {
     return `${url}?t=${encodeURIComponent(downloadToken)}`
   }

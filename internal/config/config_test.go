@@ -56,6 +56,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"duplicate.phash_max_diff", cfg.Duplicate.PhashMaxDiff, 8},
 		{"duplicate.embedding_max_dist", cfg.Duplicate.EmbeddingMaxDist, 0.05},
 		{"upload.max_file_size_mb", cfg.Upload.MaxFileSizeMB, 0},
+		{"video.transcode", cfg.Video.Transcode, false},
 		{"worker.count", cfg.Worker.Count, 2},
 		{"worker.poll_interval", cfg.Worker.PollInterval, 2 * time.Second},
 		{"worker.stale_after", cfg.Worker.StaleAfter, 5 * time.Minute},

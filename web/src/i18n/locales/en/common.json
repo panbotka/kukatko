@@ -125,7 +125,9 @@
     },
     "tile": {
       "private": "Private",
-      "unavailable": "Preview unavailable"
+      "unavailable": "Preview unavailable",
+      "video": "Video",
+      "live": "Live"
     }
   },
   "search": {
@@ -444,6 +446,14 @@
       "info": "Info",
       "location": "Location",
       "edit": "Edit"
+    },
+    "video": {
+      "label": "Video player",
+      "loading": "Loading video…",
+      "unsupported": "This video cannot be played in your browser.",
+      "downloadInstead": "Download the video",
+      "live": "Live",
+      "livePlay": "Hold or hover to play the motion clip"
     },
     "metadata": {
       "formLabel": "Edit photo metadata",

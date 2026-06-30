@@ -66,6 +66,7 @@ func buildPhotoAPI(
 		Organizer:       organizeStore,
 		Purger:          purger,
 		RetentionDays:   cfg.Trash.RetentionDays,
+		VideoTranscode:  cfg.Video.Transcode,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,

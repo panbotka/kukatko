@@ -3,9 +3,15 @@ import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { formatDuration } from '../../lib/format'
 import { GRID_THUMB_SIZE, type Photo, thumbUrl } from '../../services/photos'
 
 import { FavoriteButton } from './FavoriteButton'
+
+/** Whether the photo is a playable video or a live photo (has a motion clip). */
+function isPlayable(photo: Photo): boolean {
+  return photo.media_type === 'video' || photo.media_type === 'live'
+}
 
 /** Props for {@link PhotoTile}. */
 export interface PhotoTileProps {
@@ -105,6 +111,20 @@ export function PhotoTile({
           aria-hidden="true"
         >
           {t('library.tile.private')}
+        </span>
+      )}
+      {isPlayable(photo) && (
+        <span
+          className="position-absolute bottom-0 start-0 m-1 badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1"
+          role="img"
+          aria-label={
+            photo.media_type === 'live' ? t('library.tile.live') : t('library.tile.video')
+          }
+        >
+          <span aria-hidden="true">▶</span>
+          {photo.duration_ms !== undefined && photo.duration_ms > 0 && (
+            <span>{formatDuration(photo.duration_ms)}</span>
+          )}
         </span>
       )}
     </>

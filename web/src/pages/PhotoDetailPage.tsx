@@ -13,9 +13,11 @@ import { useAuth } from '../auth/AuthContext'
 import { FavoriteButton } from '../components/library/FavoriteButton'
 import { SimilarPhotos } from '../components/library/SimilarPhotos'
 import { EditPanel } from '../components/photo/EditPanel'
+import { LivePhoto } from '../components/photo/LivePhoto'
 import { MetadataPanel } from '../components/photo/MetadataPanel'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
 import { PhotoLocation } from '../components/photo/PhotoLocation'
+import { VideoPlayer } from '../components/photo/VideoPlayer'
 import { FaceOverlay } from '../components/people/FaceOverlay'
 import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
@@ -106,6 +108,37 @@ export function PhotoDetailPage() {
   const neighborTo = (neighbor: string) =>
     detailQuery === '' ? `/photos/${neighbor}` : `/photos/${neighbor}?${detailQuery}`
 
+  const poster = thumbUrl(photo.uid, 'fit_1920', downloadToken)
+
+  // Render the main media by kind: a range-streaming player for videos, a
+  // hover/hold motion preview for live photos, and the edit-reflecting still for
+  // images. Non-destructive edits apply to images only (the backend never
+  // re-renders video edits), so the video/live branches do not carry edit CSS.
+  const renderMedia = () => {
+    if (photo.media_type === 'video') {
+      return (
+        <VideoPlayer
+          uid={photo.uid}
+          title={title}
+          poster={poster}
+          downloadHref={downloadUrl(photo.uid, { original: true, token: downloadToken })}
+          token={downloadToken}
+        />
+      )
+    }
+    if (photo.media_type === 'live') {
+      return <LivePhoto uid={photo.uid} title={title} poster={poster} token={downloadToken} />
+    }
+    return (
+      <img
+        src={poster}
+        alt={title}
+        className="mw-100"
+        style={{ maxHeight: '70vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
+      />
+    )
+  }
+
   return (
     <>
       <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
@@ -119,12 +152,7 @@ export function PhotoDetailPage() {
       <Row className="g-3">
         <Col lg={7}>
           <div className="position-relative bg-dark rounded overflow-hidden d-flex justify-content-center">
-            <img
-              src={thumbUrl(photo.uid, 'fit_1920', downloadToken)}
-              alt={title}
-              className="mw-100"
-              style={{ maxHeight: '70vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
-            />
+            {renderMedia()}
             {neighbors.prev !== null && (
               <Link
                 to={neighborTo(neighbors.prev)}
