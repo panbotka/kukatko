@@ -63,6 +63,7 @@ func buildPhotoAPI(
 		Embedder:        embedder,
 		Faces:           faceSvc,
 		Favorites:       organizeStore,
+		Ratings:         organizeStore,
 		Organizer:       organizeStore,
 		Purger:          purger,
 		RetentionDays:   cfg.Trash.RetentionDays,

@@ -89,9 +89,9 @@ func TestAnnotateFavorites(t *testing.T) {
 		t.Parallel()
 		fake := &fakeFavorites{favored: map[string]bool{"ph_1": true, "ph_3": true}}
 		api := &API{favorites: fake}
-		views, err := api.annotateFavorites(context.Background(), "us_1", list)
+		views, err := api.annotate(context.Background(), "us_1", list)
 		if err != nil {
-			t.Fatalf("annotateFavorites: %v", err)
+			t.Fatalf("annotate: %v", err)
 		}
 		want := map[string]bool{"ph_1": true, "ph_2": false, "ph_3": true}
 		for _, v := range views {
@@ -108,18 +108,18 @@ func TestAnnotateFavorites(t *testing.T) {
 		t.Parallel()
 		fake := &fakeFavorites{err: errors.New("must not be called")}
 		api := &API{favorites: fake}
-		views, err := api.annotateFavorites(context.Background(), "us_1", nil)
+		views, err := api.annotate(context.Background(), "us_1", nil)
 		if err != nil || len(views) != 0 {
-			t.Fatalf("annotateFavorites(empty) = %v, %v", views, err)
+			t.Fatalf("annotate(empty) = %v, %v", views, err)
 		}
 	})
 
 	t.Run("nil store leaves flags false", func(t *testing.T) {
 		t.Parallel()
 		api := &API{}
-		views, err := api.annotateFavorites(context.Background(), "us_1", list)
+		views, err := api.annotate(context.Background(), "us_1", list)
 		if err != nil {
-			t.Fatalf("annotateFavorites: %v", err)
+			t.Fatalf("annotate: %v", err)
 		}
 		for _, v := range views {
 			if v.IsFavorite {
@@ -131,8 +131,8 @@ func TestAnnotateFavorites(t *testing.T) {
 	t.Run("propagates the store error", func(t *testing.T) {
 		t.Parallel()
 		api := &API{favorites: &fakeFavorites{err: errors.New("boom")}}
-		if _, err := api.annotateFavorites(context.Background(), "us_1", list); err == nil {
-			t.Fatal("annotateFavorites error = nil, want store error")
+		if _, err := api.annotate(context.Background(), "us_1", list); err == nil {
+			t.Fatal("annotate error = nil, want store error")
 		}
 	})
 }

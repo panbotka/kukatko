@@ -153,6 +153,36 @@ func TestParseListParams_valid(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "sort rating",
+			query: "sort=rating",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.Sort != photos.SortByRating || p.Order != photos.OrderDesc {
+					t.Errorf("sort = %v/%v, want rating/desc", p.Sort, p.Order)
+				}
+			},
+		},
+		{
+			name:  "min_rating and flag filters",
+			query: "min_rating=3&flag=pick",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.MinRating == nil || *p.MinRating != 3 {
+					t.Errorf("MinRating = %v, want 3", p.MinRating)
+				}
+				if p.Flag == nil || *p.Flag != "pick" {
+					t.Errorf("Flag = %v, want pick", p.Flag)
+				}
+			},
+		},
+		{
+			name:  "flag reject",
+			query: "flag=reject",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.Flag == nil || *p.Flag != "reject" {
+					t.Errorf("Flag = %v, want reject", p.Flag)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -186,6 +216,9 @@ func TestParseListParams_invalid(t *testing.T) {
 		{name: "non-bool has_gps", query: "has_gps=42"},
 		{name: "bad taken_after", query: "taken_after=yesterday"},
 		{name: "bad taken_before", query: "taken_before=2023/01/01"},
+		{name: "non-integer min_rating", query: "min_rating=many"},
+		{name: "unknown flag", query: "flag=star"},
+		{name: "flag none rejected as filter", query: "flag=none"},
 	}
 
 	for _, tt := range tests {

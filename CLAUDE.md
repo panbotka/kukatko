@@ -160,20 +160,29 @@ inkrementální).
   `API` = `NewAPI(svc, requireWrite)` + `RegisterRoutes` mountuje `POST /upload` za `RequireWrite`;
   multipart se streamuje part-by-part, nikdy celý soubor v RAM), `internal/photoapi/`
   (read/curace HTTP API nad katalogem: `NewAPI(Config{Store,Storage,Thumbnailer,Similar,
-  Embedder,Faces,Favorites,RequireAuth,RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`
+  Embedder,Faces,Favorites,Ratings,RequireAuth,RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`
   **, `GET /search` a `GET /favorites`**; `parseListParams`
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
-  newest/oldest/taken_at/added/title/size + `order`, `archived` false/true/only, `private`,
+  newest/oldest/taken_at/added/title/size**/rating** + `order`, `archived` false/true/only, `private`,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`album`/`label`
-  scope** → `AlbumUID`/`LabelUID`; neplatný → 400) + `favoriteRequested` parsuje `favorite=true`
-  → handler nastaví per-user `FavoriteOf` na aktuálního uživatele;
+  scope** → `AlbumUID`/`LabelUID`, **per-user `min_rating` (int) + `flag` (`pick`/`reject`)**
+  → `MinRating`/`Flag`; neplatný → 400) + `favoriteRequested` parsuje `favorite=true`
+  → handler nastaví per-user `FavoriteOf` na aktuálního uživatele; handlery list/search/favorites
+  nastaví `RatedBy` na aktuálního uživatele, takže `min_rating`/`flag`/`sort=rating` jsou scopnuté na něj;
   list vrací `{photos,total,limit,offset,next_offset}` (každá fotka anotovaná `is_favorite`
-  pro aktuálního uživatele přes `annotateFavorites`+`FavoriteStore.FavoritedAmong`) pro infinite scroll;
+  + per-user `rating`/`flag` přes sdílený `annotate`: `FavoriteStore.FavoritedAmong` +
+  `RatingStore.RatingsAmong`, fotka bez řádku = rating 0 / flag `none`) pro infinite scroll;
   **per-user oblíbené** (`favorites.go`): `PUT`/`DELETE /photos/{uid}/favorite` (každý přihlášený,
   idempotentní toggle → 204, 404 chybějící fotka, 503 bez `Favorites` backendu) + `GET /favorites`
   (oblíbené aktuálního uživatele ve tvaru list endpointu, ekvivalent `?favorite=true`);
   `FavoriteStore` interface (splňuje ho `organize.Store`) je nil-safe (nezapojeno → `is_favorite`
   false, favorite endpointy 503);
+  **per-user hodnocení** (`ratings.go`): `PUT /photos/{uid}/rating` `{rating?:0..5, flag?:none|pick|reject}`
+  (každý přihlášený, aspoň jedna hodnota, validace předem → 400 neplatná, 404 chybějící fotka, 503 bez
+  `Ratings` backendu; nastaví rating a/nebo flag přes `SetRating`/`SetFlag`) + `DELETE /photos/{uid}/rating`
+  (idempotentní clear přes `ClearRating` → 204); `RatingStore` interface (splňuje ho `organize.Store`,
+  `SetRating`/`SetFlag`/`ClearRating`/`RatingsAmong`) je nil-safe (nezapojeno → rating 0 / flag `none`,
+  rating endpointy 503);
   `GET /search?q=&mode=` (`handleSearch`, `search.go`) = **sémantické + hybridní hledání**,
   `mode` = `fulltext`|`semantic`|`hybrid` (default `hybrid`, neznámý → 400), `q` povinný
   (prázdný/whitespace → 400): **fulltext** řadí dle `ts_rank` přes `store.Search`; **semantic**
@@ -507,7 +516,9 @@ inkrementální).
   `SetRating(user,photo,rating)` (validace 0–5 → `ErrInvalidRating`) / `SetFlag(user,photo,flag)`
   (validace none/pick/reject → `ErrInvalidFlag`) — idempotentní upsert jedné kolony v transakci,
   druhá kolona se zachová; když řádek spadne na rating 0 + flag `none`, smaže se (tabulka zůstane
-  řídká); `GetRating(user,photo)` → `PhotoRating{Rating,Flag}` (chybějící řádek = 0/`none`, nil err);
+  řídká); `ClearRating(user,photo)` smaže rating i flag jedním idempotentním DELETE (mirror
+  `RemoveFavorite`, no-op na nehodnocené/chybějící fotce — podklad `DELETE /photos/{uid}/rating`);
+  `GetRating(user,photo)` → `PhotoRating{Rating,Flag}` (chybějící řádek = 0/`none`, nil err);
   `RatingsAmong(user,photoUIDs)` → mapa `photo_uid → PhotoRating` jen pro hodnocené fotky (anotace
   celé stránky jedním dotazem, mirror `FavoritedAmong`, chybějící caller defaultuje na 0/`none`);
   typy `AlbumType`/`LabelSource`/`RatingFlag` (none/pick/reject)
@@ -594,17 +605,20 @@ inkrementální).
   photoUIDs, ops Operations) (Result, error)` — **celá dávka v jediné transakci** s audit
   záznamem; `Operations` = volitelná pole `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
   `Title`/`Description *string` (nil=beze změny, ""=clear), `Location *Location`+`ClearLocation`,
-  `Private`/`Archive`/`Favorite *bool`; `Apply` validuje dávku (ErrNoPhotos/ErrNoOperations/
+  `Private`/`Archive`/`Favorite *bool`, **`Rating *int` (0–5) + `Flag *string` (none/pick/reject)**;
+  `Apply` validuje dávku (ErrNoPhotos/ErrNoOperations/
   ErrBatchTooLarge), ověří existenci alb/štítků v add operacích (ErrAlbumNotFound/ErrLabelNotFound),
   pak per-foto: duplicitní uid → `skipped`, neexistující fotka → `error` **bez abortu ostatních**,
   jinak aplikuje a `updated`; vlastní idempotentní SQL (vlastní tx kvůli atomicitě, nepoužívá
-  organize/photos store metody, které mají vlastní spojení); favorite je **per-user** (`actorUID`);
+  organize/photos store metody, které mají vlastní spojení); favorite **i hodnocení** jsou
+  **per-user** (`actorUID`) — rating/flag upsert + prune all-defaults řádku zrcadlí `organize` store;
   `Result{Results:[{photo_uid,status,error?}],Counts{total,updated,skipped,errored}}`; skutečná DB
   chyba rollbackne celou dávku; `Summary()` (audit details) + `IsEmpty()`), `internal/bulkapi/`
   (HTTP nad `bulk.Service`: rozhraní `Service` (Apply) — fakeovatelné; `NewAPI(Config{Service,
   RequireWrite})`+`RegisterRoutes` mountuje `POST /photos/bulk` za `RequireWrite`; tělo
   `{photo_uids,operations}` přes `operationsInput` se **set/clear páry jako samostatné klíče**
   (jednoznačné, konflikt `set_*`+`clear_*` / `archive`+`unarchive` → 400), `set_caption`→title,
+  **`set_rating` (0–5) / `set_flag` (none/pick/reject)** s validací → 400,
   validace souřadnic, `DisallowUnknownFields` (neznámá operace → 400) + 4 MiB limit; chyby mapované
   `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413, jinak 500;
   per-foto chyby vrací 200 s detailem v těle; mountuje se dalším `server.WithAPI`
@@ -1306,11 +1320,16 @@ inkrementální).
   **Reciprocal Rank Fusion (k=60)**, dedup. Všechny módy ctí ostatní list filtry + stránkování,
   odpověď jako list + `mode` + `degraded`; `q` povinný (prázdný → 400); **box offline** →
   `semantic`/`hybrid` graceful fallback na fulltext s `degraded: true`;
-  list i search nesou per-fotku `is_favorite` pro aktuálního uživatele, `?favorite=true` scopne
-  list na jeho oblíbené; `GET /photos/{uid}` plný detail + `files` + `is_favorite`;
+  list i search nesou per-fotku `is_favorite` **+ per-user `rating`/`flag`** pro aktuálního uživatele,
+  `?favorite=true` scopne list na jeho oblíbené, **`?min_rating=n` / `?flag=pick|reject` / `?sort=rating`**
+  scopnuté na něj (fotka bez řádku = rating 0 / flag `none`);
+  `GET /photos/{uid}` plný detail + `files` + `is_favorite` + `rating`/`flag`;
   **per-user oblíbené** `PUT`/`DELETE /photos/{uid}/favorite` (každý přihlášený, idempotentní → 204,
   404 chybějící fotka, 503 bez backendu) + `GET /favorites` (oblíbené aktuálního uživatele ve tvaru
-  list endpointu, filtry/řazení/stránkování jako `/photos`); `GET /photos/{uid}/faces` (přihlášený) — obličeje
+  list endpointu, filtry/řazení/stránkování jako `/photos`);
+  **per-user hodnocení** `PUT /photos/{uid}/rating` `{rating?:0..5, flag?:none|pick|reject}` (každý
+  přihlášený, aspoň jedna hodnota → 204, 400 neplatná, 404 chybějící fotka, 503 bez backendu) +
+  `DELETE /photos/{uid}/rating` (idempotentní clear → 204); `GET /photos/{uid}/faces` (přihlášený) — obličeje
   fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`)
   a **návrhy** identit pro nepojmenované (face↔marker IoU matching, viz `internal/facematch`; 503
   když face backend není zapojen); `POST /photos/{uid}/faces/assign` (editor/admin) — přiřazovací
@@ -1413,7 +1432,8 @@ inkrementální).
   **v jediné transakci** s audit-log záznamem. Operace (každá volitelná): `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
   `set_description`/`clear_description`, `set_location {lat,lng}`/`clear_location`, `set_private`,
-  `archive`/`unarchive`, `set_favorite` (**per-user**). Odpověď `{results:[{photo_uid,status,
+  `archive`/`unarchive`, `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
+  (none/pick/reject) (**per-user**, neplatná hodnota → 400). Odpověď `{results:[{photo_uid,status,
   error?}],counts:{total,updated,skipped,errored}}` (200 i při dílčích chybách): `updated`/
   `skipped` (duplicitní uid)/`error` (fotka neexistuje — **neabortuje validní**); jen DB chyba
   rollbackne celou dávku (500). Konflikt set/clear nebo archive/unarchive, neznámá operace,

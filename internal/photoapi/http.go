@@ -35,6 +35,7 @@ type API struct {
 	embedder        TextEmbedder
 	faces           FaceService
 	favorites       FavoriteStore
+	ratings         RatingStore
 	organizer       PhotoOrganizer
 	purger          Purger
 	retentionDays   int
@@ -67,6 +68,10 @@ type Config struct {
 	// on list/detail responses and the favorite=true filter. When nil those
 	// endpoints answer 503 and photos report is_favorite false.
 	Favorites FavoriteStore
+	// Ratings backs the per-user rating/flag endpoints, the rating/flag annotation
+	// on list/detail responses and the min_rating/flag filters and rating sort.
+	// When nil those endpoints answer 503 and photos report rating 0 / flag "none".
+	Ratings RatingStore
 	// Organizer backs the album/label membership chips on the detail response.
 	// When nil the detail response omits the memberships.
 	Organizer PhotoOrganizer
@@ -99,6 +104,7 @@ func NewAPI(cfg Config) *API {
 		embedder:        cfg.Embedder,
 		faces:           cfg.Faces,
 		favorites:       cfg.Favorites,
+		ratings:         cfg.Ratings,
 		organizer:       cfg.Organizer,
 		purger:          cfg.Purger,
 		retentionDays:   cfg.RetentionDays,
@@ -128,6 +134,8 @@ func NewAPI(cfg Config) *API {
 //	GET    /photos/{uid}/download     RequireDownload  original file
 //	PUT    /photos/{uid}/favorite     RequireAuth      favorite (current user)
 //	DELETE /photos/{uid}/favorite     RequireAuth      unfavorite (current user)
+//	PUT    /photos/{uid}/rating       RequireAuth      set rating/flag (current user)
+//	DELETE /photos/{uid}/rating       RequireAuth      clear rating/flag (current user)
 //	POST   /photos/{uid}/purge        RequireWrite     permanent delete (confirm)
 //	GET    /favorites                 RequireAuth      current user's favorites
 //	GET    /trash/info                RequireAuth      retention window (countdown)
@@ -144,6 +152,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAuth).Get("/{uid}/faces", a.handleFaces)
 		r.With(a.requireAuth).Put("/{uid}/favorite", a.handleAddFavorite)
 		r.With(a.requireAuth).Delete("/{uid}/favorite", a.handleRemoveFavorite)
+		r.With(a.requireAuth).Put("/{uid}/rating", a.handleSetRating)
+		r.With(a.requireAuth).Delete("/{uid}/rating", a.handleClearRating)
 		r.With(a.requireWrite).Post("/{uid}/faces/assign", a.handleFaceAssign)
 		r.With(a.requireWrite).Patch("/{uid}", a.handleUpdate)
 		r.With(a.requireAuth).Get("/{uid}/edit", a.handleGetEdit)
@@ -259,15 +269,17 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// q is the full-text query here, not the list's substring filter.
 	params.FullText = query
 	params.Search = ""
+	// Scope the per-user rating filters and the rating sort to the caller.
+	params.RatedBy = &user.UID
 
 	result, err := a.runSearch(r.Context(), mode, query, params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "searching photos failed")
 		return
 	}
-	views, err := a.annotateFavorites(r.Context(), user.UID, result.photos)
+	views, err := a.annotate(r.Context(), user.UID, result.photos)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "resolving favorites failed")
+		writeError(w, http.StatusInternalServerError, "annotating photos failed")
 		return
 	}
 	resp := pageResponse(params, views, result.total)
@@ -310,9 +322,9 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "fetching photo files failed")
 		return
 	}
-	views, err := a.annotateFavorites(r.Context(), user.UID, []photos.Photo{photo})
+	views, err := a.annotate(r.Context(), user.UID, []photos.Photo{photo})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "resolving favorite failed")
+		writeError(w, http.StatusInternalServerError, "annotating photo failed")
 		return
 	}
 	albums, labels, err := a.photoMemberships(r.Context(), uid)

@@ -80,6 +80,22 @@ func (s *Store) upsertRating(
 	return nil
 }
 
+// clearRatingSQL removes a user's rating row for a photo outright, dropping both
+// the star rating and the pick/reject flag in one idempotent statement.
+const clearRatingSQL = `DELETE FROM user_ratings WHERE user_uid = $1 AND photo_uid = $2`
+
+// ClearRating removes the rating and flag the user identified by userUID has set
+// on photoUID, resetting the photo back to the default rating 0 / flag "none".
+// It is idempotent: clearing a photo the user never rated — or one that no longer
+// exists — is a no-op that still succeeds, mirroring RemoveFavorite so the DELETE
+// rating endpoint can answer 204 without a prior-existence check.
+func (s *Store) ClearRating(ctx context.Context, userUID, photoUID string) error {
+	if _, err := s.pool.Exec(ctx, clearRatingSQL, userUID, photoUID); err != nil {
+		return fmt.Errorf("organize: clearing rating %s for user %s: %w", photoUID, userUID, err)
+	}
+	return nil
+}
+
 // GetRating returns the star rating and flag the user identified by userUID has
 // set on photoUID. A photo the user has never rated has no row and yields the
 // zero value (rating 0, flag "none") with a nil error.

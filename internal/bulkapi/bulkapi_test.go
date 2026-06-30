@@ -93,6 +93,34 @@ func TestToOperations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "set rating",
+			in:   operationsInput{SetRating: new(4)},
+			check: func(t *testing.T, ops bulk.Operations) {
+				if ops.Rating == nil || *ops.Rating != 4 {
+					t.Errorf("Rating = %v, want 4", ops.Rating)
+				}
+			},
+		},
+		{
+			name:    "rating out of range",
+			in:      operationsInput{SetRating: new(6)},
+			wantErr: true,
+		},
+		{
+			name: "set flag",
+			in:   operationsInput{SetFlag: new("reject")},
+			check: func(t *testing.T, ops bulk.Operations) {
+				if ops.Flag == nil || *ops.Flag != "reject" {
+					t.Errorf("Flag = %v, want reject", ops.Flag)
+				}
+			},
+		},
+		{
+			name:    "unknown flag",
+			in:      operationsInput{SetFlag: new("star")},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

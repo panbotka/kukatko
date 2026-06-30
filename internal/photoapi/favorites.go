@@ -54,41 +54,60 @@ type labelRef struct {
 	Name string `json:"name"`
 }
 
-// photoView is a photo annotated with the current user's is-favorite flag for the
-// list, search and detail responses. It embeds photos.Photo so every photo field
-// marshals at the top level, adding is_favorite alongside.
+// photoView is a photo annotated with the current user's per-user state for the
+// list, search and detail responses: the is-favorite flag plus the star rating
+// and pick/reject flag (carried by the embedded photos.Photo's rating/flag
+// fields). It embeds photos.Photo so every photo field marshals at the top level,
+// adding is_favorite alongside.
 type photoView struct {
 	photos.Photo
 	// IsFavorite reports whether the current user has favorited this photo.
 	IsFavorite bool `json:"is_favorite"`
 }
 
-// annotateFavorites pairs each photo with the current user's is-favorite flag,
-// resolving the whole page's flags in one FavoritedAmong query. When no favorites
-// store is wired it returns the photos with IsFavorite false rather than failing,
-// so the rest of the catalogue keeps working without the favorites backend.
-func (a *API) annotateFavorites(
+// annotate pairs each photo with the current user's per-user annotations —
+// is_favorite plus the star rating and pick/reject flag — resolving the whole
+// page's favorites and ratings in one query each. A nil favorites or ratings
+// store leaves those annotations at their defaults (is_favorite false, rating 0,
+// flag "none") rather than failing, so the catalogue keeps working without either
+// backend.
+func (a *API) annotate(
 	ctx context.Context, userUID string, list []photos.Photo,
 ) ([]photoView, error) {
 	views := make([]photoView, len(list))
 	for i, p := range list {
+		// Normalise the raw catalogue default (empty flag) to "none" so a photo
+		// without a rating row still reports a valid flag.
+		p.Flag = string(organize.FlagNone)
 		views[i] = photoView{Photo: p}
 	}
-	if a.favorites == nil || len(list) == 0 {
+	if len(list) == 0 {
 		return views, nil
 	}
 	uids := make([]string, len(list))
 	for i, p := range list {
 		uids[i] = p.UID
 	}
+	if err := a.applyFavorites(ctx, userUID, uids, views); err != nil {
+		return nil, err
+	}
+	return views, a.annotateRatings(ctx, userUID, uids, views)
+}
+
+// applyFavorites sets each view's IsFavorite flag from one FavoritedAmong query,
+// leaving them false when no favorites store is wired.
+func (a *API) applyFavorites(ctx context.Context, userUID string, uids []string, views []photoView) error {
+	if a.favorites == nil {
+		return nil
+	}
 	favored, err := a.favorites.FavoritedAmong(ctx, userUID, uids)
 	if err != nil {
-		return nil, fmt.Errorf("photoapi: resolving favorites: %w", err)
+		return fmt.Errorf("photoapi: resolving favorites: %w", err)
 	}
 	for i := range views {
 		views[i].IsFavorite = favored[views[i].UID]
 	}
-	return views, nil
+	return nil
 }
 
 // handleAddFavorite marks the photo named in the path as a favorite of the current
@@ -169,10 +188,13 @@ func (a *API) handleFavorites(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeFavoritePage runs the favorites-scoped list and writes the annotated page.
-// It is shared by GET /favorites and the favorite=true branch of GET /photos.
+// It is shared by GET /favorites and the favorite=true branch of GET /photos. It
+// scopes the per-user rating filters and the rating sort to the caller by binding
+// RatedBy here, so min_rating/flag and sort=rating apply for any list request.
 func (a *API) writeFavoritePage(
 	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams,
 ) {
+	params.RatedBy = &userUID
 	list, err := a.store.List(r.Context(), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing photos failed")
@@ -183,9 +205,9 @@ func (a *API) writeFavoritePage(
 		writeError(w, http.StatusInternalServerError, "counting photos failed")
 		return
 	}
-	views, err := a.annotateFavorites(r.Context(), userUID, list)
+	views, err := a.annotate(r.Context(), userUID, list)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "resolving favorites failed")
+		writeError(w, http.StatusInternalServerError, "annotating photos failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, pageResponse(params, views, total))

@@ -23,6 +23,8 @@ func TestOperations_IsEmpty(t *testing.T) {
 		{"clear location", Operations{ClearLocation: true}, false},
 		{"archive", Operations{Archive: new(true)}, false},
 		{"favorite", Operations{Favorite: new(false)}, false},
+		{"rating", Operations{Rating: new(4)}, false},
+		{"flag", Operations{Flag: new("pick")}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -45,9 +47,13 @@ func TestOperations_Summary(t *testing.T) {
 		Description:   new("hi"),
 		ClearLocation: true,
 		Private:       new(true),
+		Rating:        new(5),
+		Flag:          new("reject"),
 	}
 	summary := ops.Summary()
-	for _, key := range []string{"add_albums", "remove_labels", "description", "clear_location", "private"} {
+	for _, key := range []string{
+		"add_albums", "remove_labels", "description", "clear_location", "private", "rating", "flag",
+	} {
 		if _, ok := summary[key]; !ok {
 			t.Errorf("Summary() missing key %q in %v", key, summary)
 		}

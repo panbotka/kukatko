@@ -121,6 +121,44 @@ func TestRatingsAmong(t *testing.T) {
 	}
 }
 
+// TestClearRating verifies the rating clear drops both columns, is idempotent on
+// an unrated or missing photo, and stays per-user.
+func TestClearRating(t *testing.T) {
+	store, photoStore, userStore, _ := newStores(t)
+	ctx := t.Context()
+	alice := makeUser(t, userStore, "rclear_alice", "rcalice")
+	bob := makeUser(t, userStore, "rclear_bob", "rcbob")
+	photoUID := makePhoto(t, photoStore, "rclear")
+
+	if err := store.SetRating(ctx, alice, photoUID, 4); err != nil {
+		t.Fatalf("SetRating: %v", err)
+	}
+	if err := store.SetFlag(ctx, alice, photoUID, "pick"); err != nil {
+		t.Fatalf("SetFlag: %v", err)
+	}
+	if err := store.SetFlag(ctx, bob, photoUID, "reject"); err != nil {
+		t.Fatalf("SetFlag bob: %v", err)
+	}
+
+	if err := store.ClearRating(ctx, alice, photoUID); err != nil {
+		t.Fatalf("ClearRating: %v", err)
+	}
+	if got, _ := store.GetRating(ctx, alice, photoUID); got.Rating != 0 || got.Flag != "none" {
+		t.Errorf("alice after clear = %+v, want {0 none}", got)
+	}
+	// Bob's rating is untouched (per-user).
+	if got, _ := store.GetRating(ctx, bob, photoUID); got.Rating != 0 || got.Flag != "reject" {
+		t.Errorf("bob after alice clear = %+v, want {0 reject} (isolation)", got)
+	}
+	// Clearing again, and clearing an unrated/missing photo, are no-op successes.
+	if err := store.ClearRating(ctx, alice, photoUID); err != nil {
+		t.Errorf("ClearRating idempotent: %v", err)
+	}
+	if err := store.ClearRating(ctx, alice, "phmissing"); err != nil {
+		t.Errorf("ClearRating missing photo = %v, want nil (idempotent)", err)
+	}
+}
+
 // TestRatingsValidationAndMissing checks input validation and the not-found
 // mappings for rating writes.
 func TestRatingsValidationAndMissing(t *testing.T) {

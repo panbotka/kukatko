@@ -91,6 +91,7 @@ func newEnv(t *testing.T) *env {
 	}
 	store := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
+	organizeStore := organize.NewStore(db.Pool())
 	embedder := &fakeEmbedder{byQuery: map[string][]float32{}}
 	api := photoapi.NewAPI(photoapi.Config{
 		Store:           store,
@@ -98,7 +99,8 @@ func newEnv(t *testing.T) *env {
 		Thumbnailer:     thumb.New(fs, t.TempDir()),
 		Similar:         vectorStore,
 		Embedder:        embedder,
-		Favorites:       organize.NewStore(db.Pool()),
+		Favorites:       organizeStore,
+		Ratings:         organizeStore,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,

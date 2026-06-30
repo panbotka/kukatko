@@ -41,7 +41,16 @@ type operationsInput struct {
 	Archive          bool           `json:"archive"`
 	Unarchive        bool           `json:"unarchive"`
 	SetFavorite      *bool          `json:"set_favorite"`
+	SetRating        *int           `json:"set_rating"`
+	SetFlag          *string        `json:"set_flag"`
 }
+
+// The inclusive bounds of a star rating accepted by a set-rating operation,
+// mirroring the SQL CHECK on user_ratings.rating.
+const (
+	minRating = 0
+	maxRating = 5
+)
 
 // locationInput is the lat/lng pair of a set-location operation.
 type locationInput struct {
@@ -85,7 +94,48 @@ func (in operationsInput) toOperations() (bulk.Operations, error) {
 		return bulk.Operations{}, err
 	}
 	ops.Archive = archive
+
+	rating, err := resolveRating(in.SetRating)
+	if err != nil {
+		return bulk.Operations{}, err
+	}
+	ops.Rating = rating
+
+	flag, err := resolveFlag(in.SetFlag)
+	if err != nil {
+		return bulk.Operations{}, err
+	}
+	ops.Flag = flag
 	return ops, nil
+}
+
+// resolveRating validates a set-rating operation, rejecting a star value outside
+// the 0–5 range. A nil pointer means no change.
+func resolveRating(set *int) (*int, error) {
+	if set == nil {
+		// No rating change requested: nil pointer, nil error is the "leave
+		// unchanged" signal here.
+		return nil, nil //nolint:nilnil
+	}
+	if *set < minRating || *set > maxRating {
+		return nil, fmt.Errorf("set_rating %d out of range [%d, %d]", *set, minRating, maxRating)
+	}
+	return set, nil
+}
+
+// resolveFlag validates a set-flag operation, rejecting anything other than
+// "none", "pick" or "reject". A nil pointer means no change.
+func resolveFlag(set *string) (*string, error) {
+	if set == nil {
+		// No flag change requested: nil pointer, nil error means "leave unchanged".
+		return nil, nil //nolint:nilnil
+	}
+	switch *set {
+	case "none", "pick", "reject":
+		return set, nil
+	default:
+		return nil, fmt.Errorf("set_flag %q must be none, pick or reject", *set)
+	}
 }
 
 // resolveText turns a set/clear pair for a text field into a single optional

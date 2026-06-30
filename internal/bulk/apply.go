@@ -39,6 +39,26 @@ ON CONFLICT (user_uid, photo_uid) DO NOTHING`
 // removeFavoriteSQL removes the acting user's favorite (idempotent).
 const removeFavoriteSQL = `DELETE FROM user_favorites WHERE user_uid = $1 AND photo_uid = $2`
 
+// setRatingSQL upserts the acting user's star rating, leaving any flag at its
+// existing value (or its 'none' default for a new row).
+const setRatingSQL = `
+INSERT INTO user_ratings (user_uid, photo_uid, rating)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_uid, photo_uid) DO UPDATE SET rating = EXCLUDED.rating, updated_at = now()`
+
+// setFlagSQL upserts the acting user's pick/reject flag, leaving any rating at
+// its existing value (or its 0 default for a new row).
+const setFlagSQL = `
+INSERT INTO user_ratings (user_uid, photo_uid, flag)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_uid, photo_uid) DO UPDATE SET flag = EXCLUDED.flag, updated_at = now()`
+
+// pruneRatingSQL drops a rating row that has fallen back to all defaults (rating
+// 0 and flag 'none'), keeping the table sparse like the organize store does.
+const pruneRatingSQL = `
+DELETE FROM user_ratings
+WHERE user_uid = $1 AND photo_uid = $2 AND rating = 0 AND flag = 'none'`
+
 // Apply runs the bulk operations against the target photos in a single
 // transaction. actorUID is the acting user (used for favorites and the audit
 // entry). It validates the batch, verifies that every album/label referenced by
@@ -168,7 +188,10 @@ func processPhoto(
 	if err := applyLabels(ctx, tx, uid, ops); err != nil {
 		return err
 	}
-	return applyFavorite(ctx, tx, uid, actorUID, ops)
+	if err := applyFavorite(ctx, tx, uid, actorUID, ops); err != nil {
+		return err
+	}
+	return applyRating(ctx, tx, uid, actorUID, ops)
 }
 
 // photoColumnUpdate builds the UPDATE photos statement for the column-level
@@ -267,6 +290,29 @@ func applyFavorite(ctx context.Context, tx pgx.Tx, uid, actorUID string, ops Ope
 	}
 	if _, err := tx.Exec(ctx, query, actorUID, uid); err != nil {
 		return fmt.Errorf("bulk: setting favorite for photo %s: %w", uid, err)
+	}
+	return nil
+}
+
+// applyRating writes the acting user's star rating and/or pick/reject flag for the
+// photo when requested, then prunes the row should it have fallen back to all
+// defaults, keeping user_ratings sparse. Values are validated by the API layer.
+func applyRating(ctx context.Context, tx pgx.Tx, uid, actorUID string, ops Operations) error {
+	if ops.Rating == nil && ops.Flag == nil {
+		return nil
+	}
+	if ops.Rating != nil {
+		if _, err := tx.Exec(ctx, setRatingSQL, actorUID, uid, *ops.Rating); err != nil {
+			return fmt.Errorf("bulk: setting rating for photo %s: %w", uid, err)
+		}
+	}
+	if ops.Flag != nil {
+		if _, err := tx.Exec(ctx, setFlagSQL, actorUID, uid, *ops.Flag); err != nil {
+			return fmt.Errorf("bulk: setting flag for photo %s: %w", uid, err)
+		}
+	}
+	if _, err := tx.Exec(ctx, pruneRatingSQL, actorUID, uid); err != nil {
+		return fmt.Errorf("bulk: pruning rating for photo %s: %w", uid, err)
 	}
 	return nil
 }

@@ -575,6 +575,8 @@ nahrazují globální `photos.favorite` z photo-sorteru).
 - **Hodnocení** — `SetRating(user,photo,rating)` (validace 0–5 → `ErrInvalidRating`) a
   `SetFlag(user,photo,flag)` (validace `none`/`pick`/`reject` → `ErrInvalidFlag`): idempotentní
   upsert jediné kolony v transakci (druhá se zachová), a když řádek spadne na 0/`none`, smaže ho.
+  `ClearRating(user,photo)` smaže hodnocení i flag jedním idempotentním DELETE (mirror
+  `RemoveFavorite`, no-op na nehodnocené/chybějící fotce — podklad `DELETE /photos/{uid}/rating`).
   `GetRating(user,photo)` → `PhotoRating{Rating,Flag}` (chybějící řádek = 0/`none`).
   `RatingsAmong(user,photoUIDs)` → mapa `photo_uid → PhotoRating` jen pro hodnocené fotky (anotace
   celé stránky jedním dotazem, mirror `FavoritedAmong`; chybějící fotky caller defaultuje na 0/`none`).
@@ -642,7 +644,9 @@ Podporované operace (každá volitelná, neuvedené pole = beze změny):
 - `set_caption`/`clear_caption` (→ `title`), `set_description`/`clear_description`;
 - `set_location {lat,lng}` (validace rozsahu) / `clear_location`;
 - `set_private` (bool), `archive` / `unarchive` (vzájemně se vylučují);
-- `set_favorite` (bool) — **per-user** oblíbená pro volajícího.
+- `set_favorite` (bool) — **per-user** oblíbená pro volajícího;
+- `set_rating` (0–5) / `set_flag` (`none`/`pick`/`reject`) — **per-user** hodnocení pro volajícího
+  (neplatná hodnota → **400**; řádek `user_ratings` se vyčistí, když spadne na rating 0 + flag `none`).
 
 Set/clear páry jsou samostatné klíče (ne presence/null), takže payload je jednoznačný a konflikt
 (`set_*` + `clear_*`, `archive` + `unarchive`) je **400**. Neznámý klíč operace → **400**
@@ -1201,14 +1205,16 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/admin/users/{uid}/disable` | admin | zakáže účet (zruší jeho session) |
 | POST | `/admin/users/{uid}/password` | admin | `{new_password}` → reset hesla (zruší všechny jeho session) |
 | POST | `/upload` | editor/admin | `multipart/form-data` s jedním+ soubory → per-file `{outcome, photo_uid, warnings}` (viz Upload / ingest) |
-| GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API) |
+| GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API); per-user filtry `min_rating` (≥ n), `flag` (`pick`/`reject`) a řazení `sort=rating` scopnuté na aktuálního uživatele |
 | GET | `/search?q=&mode=` | přihlášený | sémantické + hybridní hledání; `mode` = `fulltext`/`semantic`/`hybrid` (default `hybrid`): fulltext (tsvector + unaccent, `ts_rank`), semantic (CLIP text→embedding → cosine HNSW), hybrid (fúze obou přes **Reciprocal Rank Fusion**, k=60, dedup); všechny módy ctí list filtry + stránkování; `q` povinný → tvar jako `/photos` + `mode`+`degraded`; box offline → fallback na fulltext s `degraded:true` |
-| GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` + `albums` + `labels` + `is_favorite` (pro aktuálního uživatele) |
+| GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` + `albums` + `labels` + `is_favorite` + `rating`/`flag` (pro aktuálního uživatele) |
 | GET | `/photos/{uid}/edit` | přihlášený | uložený nedestruktivní edit (`crop`/`rotation`/`brightness`/`contrast`); neupravená fotka → neutrální edit |
 | PUT | `/photos/{uid}/edit` | editor/admin | zapíše nedestruktivní edit do `photo_edits` (validace bounds); originál se nemění, download ho honoruje |
-| GET | `/photos?favorite=true` | přihlášený | seznam scopnutý na oblíbené **aktuálního uživatele** (per-user); každá fotka v seznamu/hledání/detailu nese `is_favorite` |
+| GET | `/photos?favorite=true` | přihlášený | seznam scopnutý na oblíbené **aktuálního uživatele** (per-user); každá fotka v seznamu/hledání/detailu nese `is_favorite` + `rating`/`flag` (per-user, nehodnocená = 0 / `none`) |
 | PUT | `/photos/{uid}/favorite` | přihlášený | označí fotku jako oblíbenou aktuálního uživatele (idempotentní) → 204; 404 chybějící fotka |
 | DELETE | `/photos/{uid}/favorite` | přihlášený | zruší oblíbenou aktuálního uživatele (idempotentní) → 204 |
+| PUT | `/photos/{uid}/rating` | přihlášený | nastaví hvězdičky a/nebo flag aktuálního uživatele `{rating?:0..5, flag?:none\|pick\|reject}` (aspoň jedno) → 204; 400 neplatná hodnota, 404 chybějící fotka, 503 bez backendu |
+| DELETE | `/photos/{uid}/rating` | přihlášený | zruší hodnocení i flag aktuálního uživatele (idempotentní) → 204 |
 | GET | `/favorites` | přihlášený | oblíbené aktuálního uživatele ve tvaru `/photos` (sdílí filtry/řazení/stránkování) |
 | GET | `/photos/{uid}/similar` | přihlášený | vizuálně podobné fotky dle cosine vzdálenosti embeddingu (`?limit`, default 24, max 100) → `{similar:[{…photo, distance}]}` |
 | GET | `/photos/{uid}/faces` | přihlášený | obličeje fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`) a **návrhy** identit pro nepojmenované — face↔marker IoU matching (viz `internal/facematch`) |

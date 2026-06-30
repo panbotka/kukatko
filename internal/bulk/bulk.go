@@ -56,7 +56,8 @@ type Location struct {
 // field is independently optional: nil slices/pointers and a false ClearLocation
 // mean "leave unchanged". A non-nil Title/Description pointer sets that column
 // (the empty string clears it); ClearLocation wipes lat/lng; Archive true
-// archives and false unarchives; Favorite toggles the acting user's favorite.
+// archives and false unarchives; Favorite toggles the acting user's favorite;
+// Rating sets the acting user's star rating (0–5) and Flag the pick/reject flag.
 type Operations struct {
 	AddAlbums     []string
 	RemoveAlbums  []string
@@ -69,6 +70,8 @@ type Operations struct {
 	Private       *bool
 	Archive       *bool
 	Favorite      *bool
+	Rating        *int
+	Flag          *string
 }
 
 // PhotoResult is the outcome of one photo in a bulk request.
@@ -181,5 +184,11 @@ func (o Operations) addScalarSummary(summary map[string]any) {
 	}
 	if o.Favorite != nil {
 		summary["favorite"] = *o.Favorite
+	}
+	if o.Rating != nil {
+		summary["rating"] = *o.Rating
+	}
+	if o.Flag != nil {
+		summary["flag"] = *o.Flag
 	}
 }

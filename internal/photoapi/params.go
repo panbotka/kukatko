@@ -31,6 +31,7 @@ var sortAliases = map[string]sortSpec{
 	"added":    {photos.SortByCreatedAt, photos.OrderDesc},
 	"title":    {photos.SortByTitle, photos.OrderAsc},
 	"size":     {photos.SortBySize, photos.OrderDesc},
+	"rating":   {photos.SortByRating, photos.OrderDesc},
 }
 
 // parseListParams turns the request's query string into validated photos.List
@@ -51,7 +52,35 @@ func parseListParams(q url.Values) (photos.ListParams, error) {
 	if err := applyFilters(q, &params); err != nil {
 		return photos.ListParams{}, err
 	}
+	if err := applyRatingFilters(q, &params); err != nil {
+		return photos.ListParams{}, err
+	}
 	return params, nil
+}
+
+// applyRatingFilters validates and applies the per-user rating filters: min_rating
+// keeps photos the caller has rated at or above the given star value, and flag
+// keeps photos the caller has marked pick or reject. Both take effect only when
+// the handler binds RatedBy to the caller; a photo without a rating row counts as
+// rating 0 / flag "none".
+func applyRatingFilters(q url.Values, params *photos.ListParams) error {
+	if raw := q.Get("min_rating"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			return errors.New("min_rating must be an integer")
+		}
+		params.MinRating = &n
+	}
+	if raw := q.Get("flag"); raw != "" {
+		switch raw {
+		case "pick", "reject":
+			flag := raw
+			params.Flag = &flag
+		default:
+			return fmt.Errorf("unknown flag %q (want pick or reject)", raw)
+		}
+	}
+	return nil
 }
 
 // applyPagination validates and applies the limit and offset query parameters.

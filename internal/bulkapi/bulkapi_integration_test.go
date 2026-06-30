@@ -328,6 +328,44 @@ func TestBulk_favoriteIsPerUser(t *testing.T) {
 	}
 }
 
+// TestBulk_ratingIsPerUser verifies set_rating and set_flag record the rating for
+// the acting user and that an out-of-range rating is rejected with 400.
+func TestBulk_ratingIsPerUser(t *testing.T) {
+	env := newEnv(t, 1000)
+	editor, editorUID := env.login(t, "editor", auth.RoleEditor)
+	ctx := t.Context()
+	uid := env.seedPhoto(t, "rate1")
+
+	body, _ := json.Marshal(map[string]any{
+		"photo_uids": []string{uid},
+		"operations": map[string]any{"set_rating": 4, "set_flag": "pick"},
+	})
+	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	got, err := env.organize.GetRating(ctx, editorUID, uid)
+	if err != nil {
+		t.Fatalf("GetRating: %v", err)
+	}
+	if got.Rating != 4 || got.Flag != "pick" {
+		t.Errorf("rating = %+v, want {4 pick}", got)
+	}
+
+	// An out-of-range rating is rejected before any change.
+	bad, _ := json.Marshal(map[string]any{
+		"photo_uids": []string{uid},
+		"operations": map[string]any{"set_rating": 9},
+	})
+	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", bad)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid rating status = %d, want 400", resp.StatusCode)
+	}
+}
+
 // TestBulk_unknownOperationRejected verifies an unknown operation key is a 400.
 func TestBulk_unknownOperationRejected(t *testing.T) {
 	env := newEnv(t, 1000)
