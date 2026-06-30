@@ -291,6 +291,7 @@ func buildServices(
 		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPeopleAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildOrganizeAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildBulkAPI(cfg, db, authAPI).RegisterRoutes),
 		server.WithAPI(buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes),
 		server.WithAPI(mapsAPI.RegisterRoutes),

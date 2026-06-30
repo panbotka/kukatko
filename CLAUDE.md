@@ -537,7 +537,28 @@ inkrementální).
   jede přes sdílené `GET /photos` scopnuté `?album={uid}`/`?label={uid}` (viz `photos.ListParams`
   `AlbumUID`/`LabelUID` + `photoapi` `parseListParams`); mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`, sdílí jednu `organize.Store` pro alba i štítky)),
-  `internal/audit/`
+  `internal/savedsearch/`
+  (DB vrstva pro **per-user uložená hledání** ("smart albums") — pojmenovaná, vlastníkova soukromá
+  definice filtru/hledání, kterou si uživatel znovu otevře; zrcadlí per-user vlastnictví
+  `user_favorites`; tabulka `saved_searches` v migraci `0017_saved_searches.sql`: `uid PK` (prefix `ss`),
+  `owner_uid` FK users `ON DELETE CASCADE`, `name TEXT NOT NULL`, `params JSONB NOT NULL` (opaktní
+  uložený stav pohledu/hledání: filtry, řazení, dotaz, mód), `created_at`/`updated_at`, index na
+  `owner_uid`; `Store` = `NewStore(pool)`: `Create(ctx,ownerUID,name,params)`/`List(ctx,ownerUID)`
+  (newest-first dle `created_at`)/`Get(ctx,uid)`/`Update(ctx,uid,name,params)` (přepíše name+params,
+  stampne `updated_at`)/`Delete(ctx,uid)`; `params` jako `json.RawMessage` (prázdné → `{}`, aby NOT NULL
+  sloupec dostal validní JSON), `Get`/`Update`/`Delete` na chybějící řádek → sentinel `ErrNotFound`;
+  vlastnictví **neřeší store** — scopuje ho HTTP vrstva nad ním)), `internal/savedsearchapi/`
+  (read/curace HTTP API nad uloženými hledáními: rozhraní `Store` (podmnožina `savedsearch.Store`) →
+  unit-testovatelné s faky; `NewAPI(Config{Store,RequireAuth})`+`RegisterRoutes` mountuje
+  `/saved-searches` **vše za `RequireAuth`** a **scopnuté na přihlášeného uživatele** z auth kontextu
+  (`auth.UserFromContext`): `GET /saved-searches` (`{saved_searches:[{uid,name,params,created_at,
+  updated_at}]}` aktuálního uživatele, owner_uid se ve view záměrně neukazuje), `POST /saved-searches`
+  `{name,params}` → 201 (prázdné jméno → 400, `params` volitelné → `{}`), `GET /saved-searches/{uid}`
+  → 200, `PATCH /saved-searches/{uid}` `{name?,params?}` → 200 (vynechané pole beze změny, prázdné
+  jméno → 400), `DELETE /saved-searches/{uid}` → 204; **vlastnická izolace** — sdílený helper
+  `ownedSearch` načte řádek a porovná `owner_uid` s aktérem, cizí (i neexistující) → **404** (nikdy
+  neprozradí cizí hledání); tělo `DisallowUnknownFields` + 1 MiB limit, sentinel `ErrNotFound`→404;
+  mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`)), `internal/audit/`
   (durable audit trail, tabulka `audit_log` v migraci `0012_audit_log.sql` rozšířená v
   `0014_audit_request.sql` o `ip`/`user_agent` + composite index `(target_type, target_uid)`:
   `id BIGSERIAL`, `actor_uid` FK users `ON DELETE SET NULL`, `action`, `target_type`, `target_uid`,
@@ -1339,6 +1360,16 @@ inkrementální).
   fotek alba/štítku** jede přes sdílené `GET /photos?album={uid}`/`?label={uid}` (stejný tvar +
   filtry/řazení/stránkování). Viewer čte, ale nemutuje (403). Mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
+- **Saved Searches API (`/api/v1`, `internal/savedsearchapi` + `internal/savedsearch`, přihlášený přes
+  `RequireAuth`):** per-user **uložená hledání** ("smart albums") — pojmenovaná, vlastníkova soukromá
+  definice filtru/hledání. `GET /saved-searches` → `{saved_searches:[{uid,name,params,created_at,
+  updated_at}]}` (jen aktuálního uživatele, newest-first); `POST /saved-searches` `{name,params}` →
+  201 (prázdné jméno → 400, `params` JSONB volitelné → `{}`); `GET /saved-searches/{uid}` → 200;
+  `PATCH /saved-searches/{uid}` `{name?,params?}` → 200 (vynechané pole beze změny); `DELETE
+  /saved-searches/{uid}` → 204. **Každá operace je scopnutá na přihlášeného uživatele** z auth
+  kontextu — uložené hledání cizího vlastníka se **vždy hlásí jako 404** (nikdy se neprozradí), tělo
+  `DisallowUnknownFields` + 1 MiB limit. Tabulka `saved_searches` (migrace `0017_saved_searches.sql`).
+  Mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`).
 - **Bulk metadata API (`/api/v1`, `internal/bulkapi`, editor/admin přes `RequireWrite`):**
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` aplikuje sadu operací na mnoho fotek
   **v jediné transakci** s audit-log záznamem. Operace (každá volitelná): `add_to_albums`/

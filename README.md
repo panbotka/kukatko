@@ -610,6 +610,27 @@ frontend znovupoužije stejnou virtualizovanou mřížku.
   fotka), 403 (viewer na mutaci), 401 (nepřihlášený). Mountuje se devátým `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
 
+### Uložená hledání / chytrá alba (`internal/savedsearch` + `internal/savedsearchapi`)
+
+Per-user **uložená hledání** ("smart albums"): pojmenovaná, **vlastníkova soukromá** definice
+filtru/hledání (filtry, řazení, dotaz, mód jako opaktní JSONB `params`), kterou si uživatel může
+později znovu otevřít. Zrcadlí per-user model vlastnictví `user_favorites` — jen vlastník své uložené
+hledání vidí a smí ho měnit. Tabulka `saved_searches` v migraci `0017_saved_searches.sql`
+(`uid PK` prefix `ss`, `owner_uid` FK users `ON DELETE CASCADE`, `name`, `params JSONB NOT NULL`,
+`created_at`/`updated_at`, index na `owner_uid`).
+
+- **`internal/savedsearch`** — `Store` nad sdíleným pgx poolem: `Create(ctx,ownerUID,name,params)`,
+  `List(ctx,ownerUID)` (newest-first), `Get(ctx,uid)`, `Update(ctx,uid,name,params)`, `Delete(ctx,uid)`;
+  `params` se drží jako `json.RawMessage` (prázdné → `{}`), sentinel `ErrNotFound`.
+- **`internal/savedsearchapi`** — `NewAPI(Config{Store,RequireAuth})` + `RegisterRoutes` pod `/api/v1`,
+  vše za `RequireAuth` a **scopnuté na přihlášeného uživatele** z auth kontextu: `GET /saved-searches`
+  (`{saved_searches:[{uid,name,params,created_at,updated_at}]}`), `POST /saved-searches`
+  `{name,params}` → 201 (prázdné jméno → 400), `GET /saved-searches/{uid}` → 200,
+  `PATCH /saved-searches/{uid}` `{name?,params?}` → 200, `DELETE /saved-searches/{uid}` → 204.
+  **Vlastnická izolace** — uložené hledání cizího vlastníka se vždy hlásí jako **404** (nikdy se
+  neprozradí), tělo dekódováno s `DisallowUnknownFields` + 1 MiB limit. Mountuje se `server.WithAPI`
+  (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`).
+
 ### Hromadná editace metadat (`internal/bulk` + `internal/bulkapi`)
 
 Jeden endpoint **`POST /api/v1/photos/bulk`** (editor/admin přes `RequireWrite`) aplikuje sadu
