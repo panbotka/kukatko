@@ -1113,7 +1113,17 @@ inkrementální).
   z `import.ts`,
   `i18n/` (i18next init + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
-  `test/setup.ts`.
+  `styles/app.css` (**global responzivní polish vrstva** importovaná v `main.tsx` hned za
+  Bootswatch CSS — jen cross-cutting mobil/touch věci, které Bootstrap utility neumí: **safe-area
+  insety** přes `env(safe-area-inset-*)` (fungují díky `viewport-fit=cover` v `index.html`) na
+  navbaru (`.kukatko-navbar`) a hlavním kontejneru (`.kukatko-main`); guard proti vodorovnému
+  scrollu/overscroll bounce (`body overflow-x:hidden`, `html overscroll-behavior-y:none`); sdílený
+  **sticky-toolbar offset** `.kukatko-sticky-toolbar` (`top: navbar height + safe-area-inset-top`,
+  z-index pod navbarem — in-page sticky bary jako `SelectionBar` dosednou pod navbar, ne pod něj);
+  **min. tap-target** `.kukatko-tap-target` (2.75rem/44px) pro icon-only ovládání jako
+  `FavoriteButton`; CSS proměnná `--kukatko-navbar-height`),
+  `test/setup.ts` (jsdom **`window.matchMedia` stub** — non-matching default, jednotlivé testy ho
+  můžou přepsat pro simulaci telefonu).
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` je pod
   `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru), zbytek pod `Layout` (`/`, `/library`,
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`,

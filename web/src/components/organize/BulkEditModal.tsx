@@ -186,7 +186,7 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
   }
 
   return (
-    <Modal show={show} onHide={onHide} centered scrollable>
+    <Modal show={show} onHide={onHide} centered scrollable fullscreen="sm-down">
       <Modal.Header closeButton>
         <Modal.Title>
           {result ? t('bulkEdit.result.title') : t('bulkEdit.title', { count: photoUids.length })}

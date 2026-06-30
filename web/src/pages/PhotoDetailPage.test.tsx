@@ -208,6 +208,16 @@ describe('PhotoDetailPage', () => {
     expect(screen.getByText('ISO 200')).toBeInTheDocument()
   })
 
+  it('stacks the media and panel columns full-width below the lg breakpoint', async () => {
+    const { container } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    // Both columns are `col-12` (full width, stacked) until `lg`, where they
+    // split 7/5 side-by-side — so on phones and tablets the preview sits above
+    // the metadata panel instead of squeezing into a narrow half-column.
+    expect(container.querySelector('.col-12.col-lg-7')).not.toBeNull()
+    expect(container.querySelector('.col-12.col-lg-5')).not.toBeNull()
+  })
+
   it('plays a video with a range-streaming player instead of an image', async () => {
     fetchPhotoMock.mockResolvedValue(
       photo({ media_type: 'video', file_name: 'clip.mp4', file_mime: 'video/mp4', title: 'Clip' }),

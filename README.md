@@ -1296,6 +1296,20 @@ Go embeduje (`//go:embed`) a servíruje s **SPA fallbackem** (neznámé ne-asset
 `index.html`; fingerprintované soubory pod `/assets/` mají immutable cache). `kukatko serve`
 tak vrací jak `GET /healthz`, tak celé SPA.
 
+**Mobil/tablet:** celá aplikace je responzivní pro telefony i tablety. `index.html` má
+`viewport-fit=cover` a tenká global vrstva [`web/src/styles/app.css`](web/src/styles/app.css)
+(importovaná v `main.tsx`) řeší cross-cutting touch věci, které Bootstrap utility neumí:
+**safe-area insety** (notch/home-indicator) na navbaru i hlavním kontejneru, guard proti
+vodorovnému scrollu a overscroll bounce, sdílený **sticky-toolbar offset**
+(`.kukatko-sticky-toolbar` — in-page sticky bary jako výběrový toolbar dosednou pod navbar,
+ne pod něj) a min. **tap-target 44px** (`.kukatko-tap-target`) pro icon-only ovládání (srdíčko
+oblíbených). Mřížky jsou `auto-fill` CSS grid (přizpůsobí počet sloupců šířce), detail fotky se
+pod `lg` **stáčí na celou šířku** (náhled nad panelem metadat), editační modály (alba/štítky/osoby/
+hromadná úprava) jdou na telefonech do **fullscreen** (`fullscreen="sm-down"`), slideshow i mapa
+jsou plně touch (swipe, pinch/zoom/pan). Multiupload bere fotky z **mobilní galerie i fotoaparátu**
+([`components/upload/DropZone`](web/src/components/upload/DropZone.tsx) — `accept="image/*,video/*"`,
+`multiple`, plus tlačítko fotoaparátu přes `capture="environment"`).
+
 **Autentizace ve frontendu:** `AuthProvider` ([`web/src/auth/`](web/src/auth/)) načte na startu
 `GET /auth/me` a přes hook `useAuth()` vystavuje `user`/`role`/`login`/`logout`/`refresh` +
 odvozené `canWrite`/`isAdmin`. Přihlašovací stránka (`/login`) je veřejná; vše ostatní hlídá

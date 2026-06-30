@@ -58,7 +58,7 @@ export function FavoriteButton({ uid, favorite, className }: FavoriteButtonProps
       title={isFavorite ? t('favorite.remove') : t('favorite.add')}
       disabled={pending}
       onClick={handleClick}
-      className={`btn btn-sm p-1 lh-1 border-0 rounded-circle d-inline-flex ${
+      className={`btn btn-sm p-1 lh-1 border-0 rounded-circle d-inline-flex align-items-center justify-content-center kukatko-tap-target ${
         isFavorite ? 'text-danger' : 'text-white'
       } ${className ?? ''}`}
       style={{ backgroundColor: 'rgba(0, 0, 0, 0.45)' }}

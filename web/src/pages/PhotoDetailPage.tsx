@@ -150,7 +150,7 @@ export function PhotoDetailPage() {
       </div>
 
       <Row className="g-3">
-        <Col lg={7}>
+        <Col xs={12} lg={7}>
           <div className="position-relative bg-dark rounded overflow-hidden d-flex justify-content-center">
             {renderMedia()}
             {neighbors.prev !== null && (
@@ -204,7 +204,7 @@ export function PhotoDetailPage() {
           </section>
         </Col>
 
-        <Col lg={5}>
+        <Col xs={12} lg={5}>
           <Tabs defaultActiveKey="info" className="mb-3">
             <Tab eventKey="info" title={t('photo.tabs.info')}>
               <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />

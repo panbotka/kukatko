@@ -34,6 +34,15 @@ afterEach(() => {
 })
 
 describe('FavoriteButton', () => {
+  it('carries a finger-friendly tap-target class', () => {
+    renderButton(false)
+    // The icon glyph is small, so the button reserves a 44px touch area for
+    // comfortable tapping on phones (see `.kukatko-tap-target`).
+    expect(screen.getByRole('button', { name: 'Add to favorites' })).toHaveClass(
+      'kukatko-tap-target',
+    )
+  })
+
   it('favorites optimistically and calls the API', async () => {
     favoriteMock.mockResolvedValue(undefined)
     const user = userEvent.setup()

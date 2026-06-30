@@ -1,0 +1,68 @@
+/*
+ * Global responsive polish for phones and tablets. Bootswatch Superhero supplies
+ * the base theme; this layer adds only the cross-cutting mobile/touch concerns
+ * that Bootstrap utilities cannot express on their own:
+ *
+ *   - safe-area (notch / home-indicator) insets via `env(safe-area-inset-*)`,
+ *     which only resolve to non-zero values because `index.html` opts in with
+ *     `viewport-fit=cover`;
+ *   - guarding against accidental horizontal scrolling / overscroll bounce;
+ *   - a shared sticky-toolbar offset so in-page sticky bars (selection, filters)
+ *     come to rest just below the sticky navbar instead of tucking underneath it;
+ *   - comfortable minimum tap targets for icon-only controls.
+ *
+ * Kept intentionally small and theme-agnostic — page layout still lives in the
+ * components via Bootstrap's responsive grid utilities.
+ */
+
+:root {
+  /* Approximate height of the collapsed top navbar (Bootstrap default padding +
+     brand line-height). Used to offset in-page sticky toolbars. */
+  --kukatko-navbar-height: 3.5rem;
+}
+
+html {
+  /* Stop the whole document rubber-banding on iOS when a scroll region reaches
+     its edge; inner scrollers (e.g. the virtualized grid) still scroll. */
+  overscroll-behavior-y: none;
+}
+
+body {
+  /* A stray full-bleed element should never make the page scroll sideways on a
+     phone; clip horizontal overflow at the root. `clip` (not `hidden`) avoids
+     turning the body into a scroll container, which would break the sticky
+     navbar's `position: sticky`. */
+  overflow-x: clip;
+}
+
+/* Honour side notches in landscape by padding the navbar and the main content
+   container into the safe area. `env()` is 0 on devices without insets, so this
+   is a no-op on desktop. */
+.kukatko-navbar {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.kukatko-main {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* In-page sticky toolbars (selection bar, future filter bars) rest just below
+   the sticky navbar — including any top safe-area inset — rather than sliding
+   under it. The navbar keeps a higher stacking context (Bootstrap `.sticky-top`
+   is z-index 1020), so this bar layers correctly beneath it. */
+.kukatko-sticky-toolbar {
+  position: sticky;
+  top: calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px));
+  z-index: 1019;
+}
+
+/* Icon-only controls (e.g. the favorite heart overlay) need a finger-friendly
+   hit area even when their glyph is small. 44px is the common touch-target
+   minimum. */
+.kukatko-tap-target {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}

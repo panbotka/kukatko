@@ -32,6 +32,7 @@ export function NavbarSearch() {
       <Form.Control
         type="search"
         size="sm"
+        className="flex-grow-1"
         value={text}
         placeholder={t('search.placeholder')}
         aria-label={t('search.queryLabel')}

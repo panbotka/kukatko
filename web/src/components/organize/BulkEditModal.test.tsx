@@ -118,6 +118,15 @@ describe('BulkEditModal', () => {
     expect(onDone).toHaveBeenCalledTimes(1)
   })
 
+  it('renders as a fullscreen sheet on small viewports', async () => {
+    renderModal()
+    // react-bootstrap maps `fullscreen="sm-down"` to this dialog class, which the
+    // Bootstrap stylesheet turns into a full-screen sheet below the `sm`
+    // breakpoint (phones) while staying a centered dialog on larger screens.
+    await screen.findByRole('dialog')
+    expect(document.querySelector('.modal-dialog')?.className).toContain('modal-fullscreen-sm-down')
+  })
+
   it('blocks applying with no operations chosen', async () => {
     const user = userEvent.setup()
     renderModal()

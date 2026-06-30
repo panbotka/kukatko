@@ -20,7 +20,7 @@ export function SelectionBar({ count, onCancel, children }: SelectionBarProps) {
   const { t } = useTranslation()
   return (
     <div
-      className="d-flex align-items-center gap-2 flex-wrap bg-body-tertiary border rounded p-2 mb-3 sticky-top"
+      className="d-flex align-items-center gap-2 flex-wrap bg-body-tertiary border rounded p-2 mb-3 kukatko-sticky-toolbar"
       role="toolbar"
       aria-label={t('selection.label')}
     >

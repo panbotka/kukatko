@@ -64,7 +64,7 @@ export function LabelEditModal({ label, show, onHide, onSaved }: LabelEditModalP
   }
 
   return (
-    <Modal show={show} onHide={onHide} centered>
+    <Modal show={show} onHide={onHide} centered fullscreen="sm-down">
       <Form
         onSubmit={(event) => {
           void save(event)

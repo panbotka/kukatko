@@ -28,7 +28,14 @@ export function Layout() {
 
   return (
     <>
-      <Navbar expand="md" bg="dark" variant="dark" sticky="top" collapseOnSelect>
+      <Navbar
+        expand="md"
+        bg="dark"
+        variant="dark"
+        sticky="top"
+        collapseOnSelect
+        className="kukatko-navbar"
+      >
         <Container>
           <Navbar.Brand as={Link} to="/">
             {t('app.name')}
@@ -115,7 +122,7 @@ export function Layout() {
           </Navbar.Collapse>
         </Container>
       </Navbar>
-      <Container as="main" className="py-4">
+      <Container as="main" className="py-4 kukatko-main">
         <Outlet />
       </Container>
     </>
