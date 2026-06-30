@@ -145,6 +145,11 @@ maps:
   # Base URL of the mapy.com REST API the tile/reverse-geocode proxies call.
   # Override only to target a different endpoint (e.g. a test double).
   base_url: "https://api.mapy.com"
+  # Reverse-geocode throttle for the background `places` job (which caches each
+  # geotagged photo's location). Protects the mapy.com monthly credit budget;
+  # processing slowly is fine. geocode_rate_per_sec <= 0 disables the throttle.
+  geocode_rate_per_sec: 5
+  geocode_burst: 10
 
 # Backup destination. The same s3.* settings are reused by `kukatko restore`
 # (list dumps, restore the database, download originals) — see docs/RESTORE.md.

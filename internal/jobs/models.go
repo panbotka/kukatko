@@ -63,6 +63,8 @@ const (
 	TypeFaceDetect = "face_detect"
 	// TypeThumbnail (re)generates a photo's thumbnails locally.
 	TypeThumbnail = "thumbnail"
+	// TypePlaces reverse-geocodes a photo's GPS coordinates into a place.
+	TypePlaces = "places"
 	// TypePPImport imports a batch from PhotoPrism.
 	TypePPImport = "pp_import"
 	// TypePSMigrate migrates data from photo-sorter.

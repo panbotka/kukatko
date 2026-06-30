@@ -323,6 +323,13 @@ type MapsConfig struct {
 	// BaseURL is the root of the mapy.com REST API; it is overridable mainly so
 	// tests can point the proxy at a fake server.
 	BaseURL string `mapstructure:"base_url"`
+	// GeocodeRatePerSec caps how many reverse-geocode calls per second the
+	// background `places` job sends to mapy.com, protecting the monthly credit
+	// budget. <= 0 disables the throttle.
+	GeocodeRatePerSec float64 `mapstructure:"geocode_rate_per_sec"`
+	// GeocodeBurst is the `places` job geocode limiter's bucket size (how many
+	// calls may burst before the per-second rate applies).
+	GeocodeBurst int `mapstructure:"geocode_burst"`
 }
 
 // BackupConfig holds the S3 destination, schedule and retention for in-process
@@ -514,13 +521,22 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.login_rate_limit", 10)
 	v.SetDefault("auth.login_rate_window", "15m")
 
-	v.SetDefault("maps.mapy_api_key", "")
-	v.SetDefault("maps.base_url", "https://api.mapy.com")
+	setMapsDefaults(v)
 
 	v.SetDefault("log.level", "info")
 	v.SetDefault("metrics.enabled", true)
 
 	setOpsDefaults(v)
+}
+
+// setMapsDefaults registers the mapy.com proxy defaults: an empty API key (so the
+// proxy is disabled until configured), the public REST base URL, and the
+// reverse-geocode throttle backing the background places job.
+func setMapsDefaults(v *viper.Viper) {
+	v.SetDefault("maps.mapy_api_key", "")
+	v.SetDefault("maps.base_url", "https://api.mapy.com")
+	v.SetDefault("maps.geocode_rate_per_sec", 5.0)
+	v.SetDefault("maps.geocode_burst", 10)
 }
 
 // setThumbDefaults registers the thumbnail-engine defaults: the pure-Go engine,

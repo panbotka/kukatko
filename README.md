@@ -716,6 +716,34 @@ v `cmd/kukatko/maps.go`).
   `mapsapi` dělá HTTP handlery + cache + rate-limit + parsing filtrů. Base URL je konfigurovatelná
   (`maps.base_url`, default `https://api.mapy.com`) hlavně pro test double (httptest fake mapy.com).
 
+### Places: reverse-geokódovaná lokalita fotky (`internal/places` + `internal/placesjob`)
+
+Geotagované fotky se na pozadí reverse-geokódují na hierarchii **country / region (kraj) / city
+(obec) / place_name** a cachují na fotce, aby šla knihovna procházet a filtrovat dle lokality bez
+opakovaného volání rate-limitovaného geokodéru (browse API + UI jsou samostatné tasky). Geokódování
+běží jako **frontový job `places`** (ne inline) přes existující `mapy.ReverseGeocode`.
+
+- **Schéma** — **vedlejší tabulka `photo_places`** (migrace `0018_photo_places.sql`) keyovaná
+  `photo_uid` (FK `ON DELETE CASCADE`), ne sloupce na široké `photos`: místo je řídké (jen geotagované
+  fotky mají řádek) a je to odvozená, regenerovatelná cache plněná asynchronně. Sloupce
+  `country`/`region`/`city`/`place_name` (`TEXT NOT NULL DEFAULT ''`), `lat`/`lng`
+  (`DOUBLE PRECISION` — souřadnice, ze kterých byl geokód spočítán; NULL u fotky bez GPS) a
+  `geocoded_at`; indexy na `country` a `city` pro grouping/filtering. `places.Store` =
+  `GetPlace`/`SavePlace` (upsert)/`ListPhotosMissingPlaces` (geotagované nearchivované fotky bez místa).
+- **Job handler** (`placesjob.Service.Handle`, `places` job) — z `{photo_uid}` načte fotku;
+  **idempotentní** (fotka s místem pro **aktuální** souřadnice se přeskočí, změna souřadnic →
+  re-geokód), fotka **bez GPS** dostane prázdný "processed" marker (nikdy se neretryuje). Jinak
+  zavolá geokodér, `parsePlace` rozparsuje `regional_structure` (typy `regional.country`/`region`/
+  `municipality`) na country/region/city + place_name = nejspecifičtější label, a uloží.
+- **Odolnost & kredity** — mapy.com nedostupné / rate-limited → `worker.RetryAfter` (odložení bez
+  spálení pokusu, zrcadlí embed/face job); `ErrNotFound` → processed marker (neretryuje forever).
+  Vlastní **token-bucket limiter** (`maps.geocode_rate_per_sec` default 5 / `geocode_burst` 10)
+  chrání měsíční mapy.com kreditní budget — prázdný → krátké odložení (zpracovat pomalu je OK).
+- **Backfill & wiring** — `placesjob.BackfillPlaces` zařadí `places` pro každou geotagovanou fotku
+  bez místa; admin `POST /api/v1/process/places` → `{enqueued}`. Handler se registruje na worker a
+  endpoint je dostupný **jen když je `maps.mapy_api_key` nastaven** (jinak 503), klient se staví
+  server-side (`buildPlacesServiceOrNil` v `cmd/kukatko/places.go`). Vše za rozhraními → fake v testech.
+
 ### People UI (frontend)
 
 Kompletní lidský zážitek nad výše uvedenými API (react-bootstrap Superhero, i18n cs/en,
@@ -1225,6 +1253,7 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/process/embeddings` | admin | backfill — zařadí `image_embed` pro fotky bez embeddingu → `{enqueued}` (viz Process API) |
 | POST | `/process/faces` | admin | backfill — zařadí `face_detect` pro fotky bez detekce obličejů → `{enqueued}` (viz Process API) |
 | POST | `/process/clusters` | admin | re-clustering — seskupí nepřiřazené obličeje do shluků → `{created}` (viz Process API) |
+| POST | `/process/places` | admin | backfill — zařadí `places` reverse-geokód pro geotagované fotky bez místa → `{enqueued}`; 503 bez mapy.com klíče (viz Process API) |
 | GET | `/import/runs` | admin | historie běhů importu/migrace + `sources` flagy → `{runs,limit,offset,sources}` (viz Import admin UI) |
 | POST | `/import/photoprism` | admin | zařadí `pp_import` job (jen je-li zdroj konfigurován) → 202 `{job_id,status}`, 409 už běží |
 | POST | `/import/photosorter` | admin | zařadí `ps_migrate` job (jen je-li zdroj konfigurován) → 202 `{job_id,status}`, 409 už běží |

@@ -116,6 +116,10 @@ func TestEnqueuer(t *testing.T) {
 			if err := enq.EnqueueFaceDetect(context.Background(), "ph1"); fake.lastType != TypeFaceDetect {
 				t.Errorf("EnqueueFaceDetect lastType = %q (err=%v), want %q", fake.lastType, err, TypeFaceDetect)
 			}
+
+			if err := enq.EnqueuePlaces(context.Background(), "ph1"); fake.lastType != TypePlaces {
+				t.Errorf("EnqueuePlaces lastType = %q (err=%v), want %q", fake.lastType, err, TypePlaces)
+			}
 		})
 	}
 }

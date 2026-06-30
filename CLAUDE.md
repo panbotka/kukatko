@@ -235,8 +235,9 @@ inkrementální).
   failed → queued, pro admin endpoint)/`List`(`ListOptions{State,Limit,Offset}`, řazení
   updated_at DESC, limit cap 500, pro admin výpis)/`Get`; sentinely
   `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrNotDead`; **typy jobů** `image_embed`/
-  `face_detect`/`thumbnail`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` = `NewEnqueuer(store)`
-  implementuje `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`, `ErrDuplicate`=no-op)),
+  `face_detect`/`thumbnail`/`places`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` = `NewEnqueuer(store)`
+  implementuje `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`/`EnqueueThumbnail`/
+  `EnqueuePlaces`, `ErrDuplicate`=no-op)),
   `internal/worker/`
   (in-process background worker runtime, **hlavní exekuční smyčka fronty**: `Registry` =
   `NewRegistry()`+`Register(type, HandlerFunc)`+`Handler`/`Types` (panika na prázdný typ/nil
@@ -402,10 +403,14 @@ inkrementální).
   `face_detect` pro každou nezpracovanou fotku (`ListPhotosMissingFaces`, dedup no-op), vrací
   počet), `internal/processapi/`
   (admin-only HTTP API pro hromadné zpracování: `NewAPI(Config{Backfiller,FaceBackfiller,
-  Reclusterer,RequireAdmin})`+`RegisterRoutes` mountuje `/process`; `POST /process/embeddings` →
+  Reclusterer,PlacesBackfiller,RequireAdmin})`+`RegisterRoutes` mountuje `/process`;
+  `POST /process/embeddings` →
   `{enqueued}` spustí `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued}` spustí
   `facejob.BackfillFaces`, `POST /process/clusters` → `{created}` spustí `cluster.Recluster`
-  (re-clustering nepřiřazených obličejů; `Reclusterer` volitelný — nil → 503)), `internal/cluster/`
+  (re-clustering nepřiřazených obličejů; `Reclusterer` volitelný — nil → 503),
+  `POST /process/places` → `{enqueued}` spustí `placesjob.BackfillPlaces` (backfill reverse-geokódu
+  geotagovaných fotek; `PlacesBackfiller` volitelný — nil → 503, tj. bez mapy.com klíče)),
+  `internal/cluster/`
   (face auto-clustering: seskupuje **dosud nepřiřazené obličeje** (bez subjektu) do shluků téže
   osoby, aby šel celý shluk pojmenovat jedním tahem (klíčové UX zlepšení oproti per-face naming
   photo-sorteru); tabulka `face_clusters` (migrace `0010_face_clusters.sql`: `uid` PK prefix `fc`,
@@ -634,7 +639,37 @@ inkrementální).
   relativní `thumb` cesta `tile_224`, fotky bez obou souřadnic se přeskočí); defaulty cache 24h /
   rate 5/s burst 10 / max 50000 features; mountuje se `server.WithAPI` (`buildMapsAPI` v
   `cmd/kukatko/maps.go`, klient se staví jen když je `maps.mapy_api_key` nastaven)),
-  `internal/importer/`
+  `internal/places/`
+  (DB vrstva pro **cache reverse-geocoded místa** fotky — country/region/city/place_name resolvnuté
+  z GPS přes mapy.com a uložené, aby šla knihovna procházet/filtrovat dle lokality bez opakovaného
+  volání rate-limitovaného geokodéru; **schema choice: vedlejší tabulka `photo_places`** (ne sloupce
+  na široké `photos`) keyovaná `photo_uid` FK `ON DELETE CASCADE` — místo je řídké (jen geotagované
+  fotky mají řádek) a je to odvozená regenerovatelná cache plněná asynchronně jobem, zrcadlí
+  `face_detections`/`user_ratings`; migrace `0018_photo_places.sql`: `photo_uid PK`, `country`/
+  `region`/`city`/`place_name TEXT NOT NULL DEFAULT ''`, `lat`/`lng DOUBLE PRECISION` (souřadnice,
+  ze kterých byl geokód spočítán — detekce změny pozice → re-geokód; NULL u fotky bez GPS, jejíž
+  řádek jen značí "zpracováno"), `geocoded_at TIMESTAMPTZ`, indexy na `country` a `city` (grouping/
+  filtering dle lokality); `Store` = `NewStore(pool)`: `GetPlace(photoUID)` (`ErrPlaceNotFound`)/
+  `SavePlace(Place)` (upsert na `photo_uid`, stampne `geocoded_at`)/`ListPhotosMissingPlaces(limit)`
+  (uid nearchivovaných **geotagovaných** fotek bez `photo_places` řádku, newest-first, LEFT JOIN —
+  podklad backfillu)), `internal/placesjob/`
+  (zapojení reverse geokódování do fronty, vše za rozhraními `PhotoStore`/`PlaceStore`/`Geocoder`
+  (podmnožina `mapy.Client`, fakeovatelná)/`Enqueuer`/`RateLimiter` → unit-testovatelné s faky bez
+  sítě/DB; `Service` = `New(Config{Photos,Places,Geocoder,Enqueuer,Limiter,OfflineRetryDelay,
+  RateLimitDelay})` (panika na nil Photos/Places/Geocoder/Enqueuer, `Limiter` nil → always-allow);
+  **handler `places`** `Handle`(=`worker.HandlerFunc`, registrovaný v `serve` když je mapy klíč
+  nastaven) → z payloadu `{"photo_uid"}` načte fotku; **idempotentní** (fotka s místem cachovaným pro
+  **aktuální** souřadnice se přeskočí; změna souřadnic → re-geokód), fotka **bez GPS** → uloží prázdný
+  "processed" marker (nikdy se neretryuje); jinak `mapy.ReverseGeocode(lat,lng)` → `parsePlace`
+  parsuje `regional_structure` (typy `regional.country`/`region`/`municipality`, prefix `regional.`
+  volitelný) na country/region/city + place_name = nejspecifičtější label, uloží přes
+  `places.SavePlace` se zdrojovými souřadnicemi; **mapy.com nedostupné/rate-limited**
+  (`mapy.ErrUnavailable`/`ErrRateLimited`) → `worker.RetryAfter(5 min)` (odložení bez spálení pokusu,
+  zrcadlí embed job), **`mapy.ErrNotFound`** → processed marker se souřadnicemi (neretryuje se forever),
+  jiná chyba normální retry; **respekt k mapy.com kreditům**: `RateLimiter` (token-bucket `NewTokenBucket(
+  ratePerSec,burst)`, zrcadlí geocode proxy limiter; `maps.geocode_rate_per_sec`/`geocode_burst`) — když
+  je prázdný, `worker.RetryAfter(1 min)` (zpracovat pomalu je OK); `BackfillPlaces(ctx)` zařadí `places`
+  pro každou geotagovanou fotku bez místa (dedup no-op), vrací počet), `internal/importer/`
   (evidence běhů importu/migrace + high-watermarky pro **inkrementální, idempotentní** import,
   tabulka `import_runs` v migraci `0013_import_runs.sql`: `id BIGSERIAL`, `source TEXT`
   CHECK `photoprism|photosorter`, `started_at`/`finished_at TIMESTAMPTZ`, `status TEXT`
@@ -1309,9 +1344,10 @@ inkrementální).
   `POST /jobs/{id}/requeue` → refreshnutý job (dead/failed → queued; 404 missing, 409
   ne-requeueable). Frontend polluje (žádné SSE). Mountuje se šestým `server.WithAPI`
   (`buildJobs` v `cmd/kukatko/jobs.go`), který registruje handlery `image_embed`
-  (`embedjob.Service`) i `face_detect` (`facejob.Service`) a zároveň postaví a `serve` spustí
-  **background worker** (`internal/worker`) na celý život procesu (`startWorker`, zastaví
-  se na shutdownu přes ctx).
+  (`embedjob.Service`), `face_detect` (`facejob.Service`) a — když je mapy.com klíč nastaven —
+  `places` (`placesjob.Service`, `buildPlacesServiceOrNil` v `cmd/kukatko/places.go`) a zároveň
+  postaví a `serve` spustí **background worker** (`internal/worker`) na celý život procesu
+  (`startWorker`, zastaví se na shutdownu přes ctx).
 - **Clusters API (`/api/v1`, `internal/clusterapi`, editor/admin přes `RequireWrite`):**
   `GET /faces/clusters` → `{clusters:[{uid,size,representative,examples,suggestion?}]}` (shluky
   nepřiřazených obličejů z auto-clusteringu, `suggestion` = nejbližší pojmenovaný subjekt);
@@ -1342,7 +1378,9 @@ inkrementální).
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` pro fotky bez embeddingu),
   `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů),
   `POST /process/clusters` → `{created}` (re-clustering nepřiřazených obličejů přes
-  `cluster.Recluster`). Mountuje se sedmým `server.WithAPI` (`buildJobs`).
+  `cluster.Recluster`), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geokódu pro
+  geotagované fotky bez místa přes `placesjob.BackfillPlaces`; 503 když není mapy.com klíč). Mountuje
+  se sedmým `server.WithAPI` (`buildJobs`).
 - **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **alba** `GET /albums`
   (RequireAuth) → `{albums:[{...album, photo_count}]}` (počty + cover); `POST /albums`
   (RequireWrite) → 201 z `{title,description?,type?,cover_photo_uid?,private?,order_by?}` (prázdný
@@ -1520,6 +1558,12 @@ inkrementální).
   defaulty 5/30, 2/10, 1/3, 50/200; `rate_per_sec ≤ 0` pravidlo vypne (middleware no-op). Env např.
   `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. Login má vlastní limiter (`auth.login_rate_*`), geocode
   proxy taky (`maps.*`).
+- **Maps/geocode klíče (`maps.*`, `internal/config`):** `mapy_api_key` (server-side, env
+  `MAPY_API_KEY`; prázdný → tile/rgeocode proxy 503, `places` job se neregistruje a `/process/places`
+  vrací 503), `base_url` (default `https://api.mapy.com`), a throttle reverse-geokódu pro background
+  **`places` job** (cachuje lokalitu fotky): `geocode_rate_per_sec` (default 5, ≤ 0 vypne) +
+  `geocode_burst` (default 10) — chrání měsíční mapy.com kreditní budget, zpracovat pomalu je OK.
+  `KUKATKO_MAPS_GEOCODE_RATE_PER_SEC`/`_GEOCODE_BURST`.
 - **`config.example.yaml`** dokumentuje všechny klíče + defaulty; je commitnutý. Reálný config
   (`config.yaml`/`config.local.yaml`) a tajemství **necommituj**. Nové konfig klíče přidávej do
   `Config` structu, `setDefaults`, `config.example.yaml` a testů zároveň.

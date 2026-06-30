@@ -50,6 +50,19 @@ func (f *fakeReclusterer) Recluster(context.Context) (int, error) {
 	return f.created, f.err
 }
 
+// fakePlacesBackfiller is a PlacesBackfiller stub returning canned values.
+type fakePlacesBackfiller struct {
+	enqueued int
+	err      error
+	calls    int
+}
+
+// BackfillPlaces records the call and returns the canned result.
+func (f *fakePlacesBackfiller) BackfillPlaces(context.Context) (int, error) {
+	f.calls++
+	return f.enqueued, f.err
+}
+
 // passthrough is a no-op middleware standing in for the admin guard.
 func passthrough(next http.Handler) http.Handler { return next }
 
@@ -71,6 +84,21 @@ func newServerWithRecluster(t *testing.T, rc Reclusterer) *httptest.Server {
 	api := NewAPI(Config{
 		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
 		Reclusterer: rc, RequireAdmin: passthrough,
+	})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// newServerWithPlaces mounts the API with the given places backfiller (the others
+// are stubbed) behind a passthrough guard.
+func newServerWithPlaces(t *testing.T, pb PlacesBackfiller) *httptest.Server {
+	t.Helper()
+	api := NewAPI(Config{
+		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
+		PlacesBackfiller: pb, RequireAdmin: passthrough,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -212,6 +240,56 @@ func TestRecluster_unavailable(t *testing.T) {
 	srv := newServerWithRecluster(t, nil)
 
 	resp := postProcess(t, srv.URL+"/process/clusters")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+// TestBackfillPlaces_ok reports the enqueued count on success.
+func TestBackfillPlaces_ok(t *testing.T) {
+	t.Parallel()
+
+	pb := &fakePlacesBackfiller{enqueued: 5}
+	srv := newServerWithPlaces(t, pb)
+
+	resp := postProcess(t, srv.URL+"/process/places")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body backfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Enqueued != 5 {
+		t.Errorf("enqueued = %d, want 5", body.Enqueued)
+	}
+	if pb.calls != 1 {
+		t.Errorf("places backfiller calls = %d, want 1", pb.calls)
+	}
+}
+
+// TestBackfillPlaces_error maps a place-backfill failure to 500.
+func TestBackfillPlaces_error(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithPlaces(t, &fakePlacesBackfiller{err: errors.New("boom")})
+
+	resp := postProcess(t, srv.URL+"/process/places")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+// TestBackfillPlaces_unavailable answers 503 when no geocoding backend is wired.
+func TestBackfillPlaces_unavailable(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithPlaces(t, nil)
+
+	resp := postProcess(t, srv.URL+"/process/places")
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", resp.StatusCode)

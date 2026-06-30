@@ -66,6 +66,8 @@ func TestLoad_defaults(t *testing.T) {
 		{"worker.stale_scan_interval", cfg.Worker.StaleScanInterval, time.Minute},
 		{"bulk.max_batch_size", cfg.Bulk.MaxBatchSize, 1000},
 		{"maps.base_url", cfg.Maps.BaseURL, "https://api.mapy.com"},
+		{"maps.geocode_rate_per_sec", cfg.Maps.GeocodeRatePerSec, 5.0},
+		{"maps.geocode_burst", cfg.Maps.GeocodeBurst, 10},
 		{"backup.s3.path_style", cfg.Backup.S3.PathStyle, false},
 		{"backup.retention", cfg.Backup.Retention, 7},
 		{"web.secure_cookies", cfg.Web.SecureCookies, false},

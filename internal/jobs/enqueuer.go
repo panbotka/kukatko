@@ -46,6 +46,13 @@ func (e *Enqueuer) EnqueueThumbnail(ctx context.Context, photoUID string) error 
 	return e.enqueuePhotoJob(ctx, TypeThumbnail, photoUID)
 }
 
+// EnqueuePlaces schedules reverse geocoding for the photo identified by photoUID.
+// A pre-existing active job for the same photo is a no-op (nil error). It backs
+// the place backfill that fills the location cache for geotagged photos.
+func (e *Enqueuer) EnqueuePlaces(ctx context.Context, photoUID string) error {
+	return e.enqueuePhotoJob(ctx, TypePlaces, photoUID)
+}
+
 // enqueuePhotoJob enqueues a job of jobType carrying {"photo_uid": photoUID},
 // swallowing ErrDuplicate so the call is idempotent per photo.
 func (e *Enqueuer) enqueuePhotoJob(ctx context.Context, jobType, photoUID string) error {

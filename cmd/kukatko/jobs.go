@@ -27,15 +27,21 @@ import (
 // serve command to run for the process lifetime; both APIs mount their
 // admin-guarded routes via authAPI so the api packages stay decoupled from
 // auth's wiring. The psMigrate handler (nil when photo-sorter is not configured)
-// registers the ps_migrate job. It also builds the thumbnail handler (regenerating
-// thumbnails/pHashes) and the library-maintenance service/API, since both are part
-// of the job subsystem; a build failure for either is returned as an error.
+// registers the ps_migrate job. The places handler (nil when no mapy.com key is
+// configured) registers the `places` reverse-geocode job and backs the place
+// backfill. It also builds the thumbnail handler (regenerating thumbnails/pHashes)
+// and the library-maintenance service/API, since both are part of the job
+// subsystem; a build failure for either is returned as an error.
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
 	importSvc *ppimport.Service, psMigrate worker.HandlerFunc, reg *metrics.Registry,
 ) (*worker.Worker, *jobsapi.API, *processapi.API, *maintenanceapi.API, error) {
 	thumbHandler, maintenanceSvc, err := buildMaintenanceAndThumb(cfg, db, enqueuer, embedSvc, faceSvc, reg)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	placesSvc, err := buildPlacesServiceOrNil(cfg, db, enqueuer)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -50,6 +56,9 @@ func buildJobs(
 	if psMigrate != nil {
 		registry.Register(jobs.TypePSMigrate, psMigrate)
 	}
+	if placesSvc != nil {
+		registry.Register(jobs.TypePlaces, placesSvc.Handle)
+	}
 
 	w := worker.New(worker.Config{
 		Queue:             store,
@@ -62,11 +71,18 @@ func buildJobs(
 	})
 
 	jobAPI := jobsapi.NewAPI(jobsapi.Config{Store: store, RequireAdmin: authAPI.RequireAdmin})
+	// Pass the places backfiller as a nil interface (not a typed nil pointer) when
+	// it is not configured, so processapi's nil check disables /process/places.
+	var placesBF processapi.PlacesBackfiller
+	if placesSvc != nil {
+		placesBF = placesSvc
+	}
 	procAPI := processapi.NewAPI(processapi.Config{
-		Backfiller:     embedSvc,
-		FaceBackfiller: faceSvc,
-		Reclusterer:    clusterSvc,
-		RequireAdmin:   authAPI.RequireAdmin,
+		Backfiller:       embedSvc,
+		FaceBackfiller:   faceSvc,
+		Reclusterer:      clusterSvc,
+		PlacesBackfiller: placesBF,
+		RequireAdmin:     authAPI.RequireAdmin,
 	})
 	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, authAPI), nil
 }

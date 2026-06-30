@@ -41,19 +41,30 @@ type Reclusterer interface {
 	Recluster(ctx context.Context) (int, error)
 }
 
+// PlacesBackfiller enqueues a `places` job for every geotagged photo missing
+// place data. It is satisfied by placesjob.Service. A nil PlacesBackfiller
+// disables the /process/places endpoint (it answers 503), which is how the server
+// degrades when no mapy.com key is configured.
+type PlacesBackfiller interface {
+	// BackfillPlaces enqueues a `places` job for every geotagged photo missing a
+	// cached place and returns how many were scheduled.
+	BackfillPlaces(ctx context.Context) (int, error)
+}
+
 // API exposes the processing endpoints over HTTP. The admin guard is supplied by
 // the caller (the auth subsystem) so this package depends on auth's behaviour,
 // not its wiring.
 type API struct {
-	backfiller     Backfiller
-	faceBackfiller FaceBackfiller
-	reclusterer    Reclusterer
-	requireAdmin   func(http.Handler) http.Handler
+	backfiller       Backfiller
+	faceBackfiller   FaceBackfiller
+	reclusterer      Reclusterer
+	placesBackfiller PlacesBackfiller
+	requireAdmin     func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Backfiller, FaceBackfiller and
-// RequireAdmin are required; Reclusterer is optional (a nil value disables the
-// clustering endpoint).
+// RequireAdmin are required; Reclusterer and PlacesBackfiller are optional (a nil
+// value disables the corresponding endpoint, which answers 503).
 type Config struct {
 	// Backfiller runs the embedding backfill.
 	Backfiller Backfiller
@@ -61,6 +72,8 @@ type Config struct {
 	FaceBackfiller FaceBackfiller
 	// Reclusterer runs the face auto-clustering pass.
 	Reclusterer Reclusterer
+	// PlacesBackfiller runs the reverse-geocode (place) backfill.
+	PlacesBackfiller PlacesBackfiller
 	// RequireAdmin guards every endpoint for administrators only.
 	RequireAdmin func(http.Handler) http.Handler
 }
@@ -68,10 +81,11 @@ type Config struct {
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
 	return &API{
-		backfiller:     cfg.Backfiller,
-		faceBackfiller: cfg.FaceBackfiller,
-		reclusterer:    cfg.Reclusterer,
-		requireAdmin:   cfg.RequireAdmin,
+		backfiller:       cfg.Backfiller,
+		faceBackfiller:   cfg.FaceBackfiller,
+		reclusterer:      cfg.Reclusterer,
+		placesBackfiller: cfg.PlacesBackfiller,
+		requireAdmin:     cfg.RequireAdmin,
 	}
 }
 
@@ -81,11 +95,13 @@ func NewAPI(cfg Config) *API {
 //	POST /process/embeddings  RequireAdmin  backfill missing image embeddings
 //	POST /process/faces       RequireAdmin  backfill missing face detections
 //	POST /process/clusters    RequireAdmin  rebuild face clusters from unassigned faces
+//	POST /process/places      RequireAdmin  backfill missing reverse-geocoded places
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/process", func(r chi.Router) {
 		r.With(a.requireAdmin).Post("/embeddings", a.handleBackfillEmbeddings)
 		r.With(a.requireAdmin).Post("/faces", a.handleBackfillFaces)
 		r.With(a.requireAdmin).Post("/clusters", a.handleRecluster)
+		r.With(a.requireAdmin).Post("/places", a.handleBackfillPlaces)
 	})
 }
 
@@ -134,6 +150,22 @@ func (a *API) handleBackfillFaces(w http.ResponseWriter, r *http.Request) {
 	enqueued, err := a.faceBackfiller.BackfillFaces(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling faces failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
+}
+
+// handleBackfillPlaces enqueues `places` jobs for all geotagged photos missing a
+// cached place and reports how many were scheduled. It answers 503 when no
+// geocoding backend is wired (no mapy.com key configured).
+func (a *API) handleBackfillPlaces(w http.ResponseWriter, r *http.Request) {
+	if a.placesBackfiller == nil {
+		writeError(w, http.StatusServiceUnavailable, "place geocoding not available")
+		return
+	}
+	enqueued, err := a.placesBackfiller.BackfillPlaces(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "backfilling places failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
