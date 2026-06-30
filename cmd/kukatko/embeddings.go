@@ -29,7 +29,7 @@ func buildEmbedService(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("initialising originals storage: %w", err)
 	}
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
 

@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/obs"
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/server"
+	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
 	"github.com/panbotka/kukatko/internal/version"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -60,6 +61,7 @@ func runServe(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	logThumbEngine(logger, cfg)
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -139,6 +141,23 @@ func initObservability(cfg *config.Config) (*slog.Logger, *metrics.Registry, err
 		reg = metrics.New()
 	}
 	return logger, reg, nil
+}
+
+// logThumbEngine logs which thumbnail engine is active. When the vips engine is
+// requested it reports whether the vipsthumbnail binary was resolved on PATH; a
+// missing binary is a warning because the thumbnailer silently degrades to the
+// pure-Go engine, which the operator likely did not intend.
+func logThumbEngine(logger *slog.Logger, cfg *config.Config) {
+	if !cfg.Thumb.VipsEnabled() {
+		logger.Info("thumbnail engine", "engine", config.ThumbEngineGo)
+		return
+	}
+	if thumb.VipsAvailable(cfg.Thumb.VipsBinary) {
+		logger.Info("thumbnail engine", "engine", config.ThumbEngineVips, "binary", cfg.Thumb.VipsBinary)
+		return
+	}
+	logger.Warn("thumbnail engine vips requested but vipsthumbnail not found on PATH; using pure-Go",
+		"binary", cfg.Thumb.VipsBinary)
 }
 
 // registerDBPoolMetrics installs the pgx pool collector on reg, a no-op when

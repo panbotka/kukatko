@@ -52,7 +52,7 @@ func buildImportService(
 		Runs:        importer.NewStore(pool),
 		Photos:      photos.NewStore(pool),
 		Storage:     store,
-		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...),
+		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...),
 		Albums:      organize.NewStore(pool),
 		Labels:      organize.NewStore(pool),
 		People:      people.NewStore(pool),

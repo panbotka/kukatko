@@ -4,16 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 )
 
+const (
+	// efSearch is the HNSW hnsw.ef_search applied to every read transaction. A
+	// higher value visits more candidates per query, trading a little latency for
+	// better recall. The design pins it at 100: a measured sweet spot for the
+	// halfvec/cosine indexes on the Pi (see docs/PERF.md), comfortably below the
+	// pgvector ceiling. The Pi's limited RAM and the modest library size make a
+	// larger ef_search pure latency cost with no recall benefit.
+	efSearch = 100
+	// efSearchMax is the upper bound the design forbids reaching: an ef_search at
+	// or above it spends far more time per query for negligible recall gain on
+	// these indexes and is never used. The guard test enforces efSearch stays
+	// below it.
+	efSearchMax = 400
+)
+
 // efSearchStmt tunes HNSW recall for the duration of a read transaction. A
 // higher ef_search visits more candidates per query, trading a little latency
 // for better recall; SET LOCAL scopes it to the current transaction only.
-const efSearchStmt = "SET LOCAL hnsw.ef_search = 100"
+var efSearchStmt = "SET LOCAL hnsw.ef_search = " + strconv.Itoa(efSearch)
 
 // Store is the database access layer for embeddings and faces. It owns no
 // connection; it borrows the shared pgx pool supplied at construction.

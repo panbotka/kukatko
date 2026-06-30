@@ -34,6 +34,9 @@ func TestLoad_defaults(t *testing.T) {
 		{"database.max_idle_conns", cfg.Database.MaxIdleConns, 5},
 		{"storage.originals_path", cfg.Storage.OriginalsPath, "/var/lib/kukatko/originals"},
 		{"storage.cache_path", cfg.Storage.CachePath, "/var/lib/kukatko/cache"},
+		{"thumb.engine", cfg.Thumb.Engine, ThumbEngineGo},
+		{"thumb.vips_binary", cfg.Thumb.VipsBinary, "vipsthumbnail"},
+		{"thumb.concurrency", cfg.Thumb.Concurrency, 0},
 		{"web.host", cfg.Web.Host, "0.0.0.0"},
 		{"web.port", cfg.Web.Port, 8080},
 		{"embedding.url", cfg.Embedding.URL, "http://localhost:8000"},
@@ -347,6 +350,50 @@ func TestLoad_wakeValidation(t *testing.T) {
 			}
 			if !tt.wantErr && err != nil {
 				t.Fatalf("Load returned unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestLoad_thumbEngine verifies thumb.engine is overridable and validated: the
+// accepted values load, an unknown engine fails startup with ErrInvalidThumbEngine.
+func TestLoad_thumbEngine(t *testing.T) {
+	tests := []struct {
+		name       string
+		engine     string
+		wantErr    bool
+		wantEngine string
+	}{
+		{name: "empty defaults to go", engine: "", wantErr: false, wantEngine: ThumbEngineGo},
+		{name: "go accepted", engine: "go", wantErr: false, wantEngine: ThumbEngineGo},
+		{name: "vips accepted", engine: "vips", wantErr: false, wantEngine: ThumbEngineVips},
+		{name: "unknown rejected", engine: "imagemagick", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			if tt.engine != "" {
+				t.Setenv("KUKATKO_THUMB_ENGINE", tt.engine)
+			}
+			t.Setenv("KUKATKO_THUMB_CONCURRENCY", "3")
+			cfg, err := Load("")
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidThumbEngine) {
+					t.Fatalf("Load error = %v, want ErrInvalidThumbEngine", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load returned unexpected error: %v", err)
+			}
+			if cfg.Thumb.Engine != tt.wantEngine {
+				t.Errorf("thumb.engine = %q, want %q", cfg.Thumb.Engine, tt.wantEngine)
+			}
+			if cfg.Thumb.VipsEnabled() != (tt.wantEngine == ThumbEngineVips) {
+				t.Errorf("VipsEnabled() = %v, inconsistent with engine %q", cfg.Thumb.VipsEnabled(), cfg.Thumb.Engine)
+			}
+			if cfg.Thumb.Concurrency != 3 {
+				t.Errorf("thumb.concurrency = %d, want 3", cfg.Thumb.Concurrency)
 			}
 		})
 	}

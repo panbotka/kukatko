@@ -51,7 +51,7 @@ func buildPhotoAPI(
 	if err != nil {
 		return nil, fmt.Errorf("initialising originals storage: %w", err)
 	}
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())
 	organizeStore := organize.NewStore(db.Pool())
 

@@ -15,7 +15,8 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 
 > **Stav:** aktivní vývoj (milník M0 — kostra backendu + frontendu). Architektura:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), vývojářský návod:
-> [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+> [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md), výkonové poznámky:
+> [`docs/PERF.md`](docs/PERF.md).
 >
 > PhotoPrism zůstává **primární** systém až do ostrého přechodu na Kukátko; do té doby
 > Kukátko běží paralelně a importuje z PhotoPrismu read-only.
@@ -85,6 +86,12 @@ Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
   `is_primary` na fotku. **`photo_phashes`** — `phash`/`dhash` (near-dup). **`photo_edits`**
   — nedestruktivní úpravy (crop 0..1 all-or-nothing, rotace 0/90/180/270, brightness/contrast).
   Satelitní tabulky mají FK `ON DELETE CASCADE`.
+- **Výkonové indexy** (migrace `0015_perf_indexes.sql`): partial composite indexy přesně
+  odpovídající nejčastějšímu řazení mřížky — `idx_photos_live_taken_at (taken_at DESC NULLS
+  LAST, uid DESC) WHERE archived_at IS NULL` a `idx_photos_live_created_at (...)` pro `sort=added`.
+  Stránka časové osy je díky nim **index scan bez Sortu** (původní `idx_photos_taken_at` byl
+  NULLS FIRST bez `uid` tiebreaku, takže vynucoval sort celé množiny). Detail + EXPLAIN test:
+  [`docs/PERF.md`](docs/PERF.md).
 
 `photos.Store` (nad pgx poolem) nabízí `Create`, `GetByUID`/`GetByFileHash`/
 `GetByPhotoprismUID`/`GetByPhotosorterUID`, `UpdateMetadata`, `Archive`/`Unarchive`,
@@ -131,8 +138,18 @@ shell-out na externí nástroje pro HEIC/RAW).
   `GenerateAll(ctx, photo)` (vrací mapu `size → absolutní cesta`), `Path(hash, size)`,
   `Open(hash, size)` (vrací `ErrNotCached`, dokud náhled neexistuje). Zdroj se dekóduje
   **jednou na fotku**, jednotlivé velikosti se enkódují paralelně s omezenou konkurencí
-  (`WithConcurrency(n)`, default `GOMAXPROCS`). **EXIF orientace** (`photo.FileOrientation`,
-  1–8) se aplikuje automaticky.
+  (`WithConcurrency(n)`, default `GOMAXPROCS`, vázáno přes `thumb.concurrency`). **EXIF
+  orientace** (`photo.FileOrientation`, 1–8) se aplikuje automaticky.
+- **Volitelný vips engine** (`thumb.engine: vips`, `WithVips(bin)`): pure-Go dekódování velkých
+  JPEGů je na Pi pomalé a paměťově náročné (~1 s / ~90 MB na jeden `fit_720` z 12 MP fotky,
+  ~4 s / ~1,18 GB na všechny velikosti — viz [`docs/PERF.md`](docs/PERF.md)). `vips` přepne
+  JPEG/PNG/WebP náhledy na **shell-out na `vipsthumbnail`** (`internal/thumb/vips.go`) — výrazně
+  rychlejší a paměťově úspornější, **stále bez CGO** (samostatný binár, ne libvips bindings).
+  Pure-Go zůstává default; vips **per-foto fallbackuje** na pure-Go pro ostatní formáty
+  (HEIC/RAW/video přes `imgconvert`) i při jakémkoli selhání vipsu, takže nikdy nemění výstup —
+  jen rychlost. Stejná sémantika (fit `WxH>` bez upscalu, crop `--smartcrop centre`, EXIF
+  autorotace). `serve` zaloguje aktivní engine a varuje, když je `vips` vyžádán, ale
+  `vipsthumbnail` není na PATH (apt `libvips-tools`).
 - **HEIC/RAW/video** (`internal/imgconvert`): `EnsureDecodable(ctx, path)` vrátí cestu k souboru,
   který umí `image.Decode`. JPEG/PNG/WebP projdou beze změny; **HEIC** se převede přes
   `heif-convert` na dočasný JPEG; **RAW** (cr2/cr3/nef/arw/dng/raf/orf/rw2/pef/srw) vytáhne

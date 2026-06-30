@@ -82,7 +82,7 @@ func buildThumbHandler(cfg *config.Config, db *database.DB, reg *metrics.Registr
 	if err != nil {
 		return nil, fmt.Errorf("initialising originals storage: %w", err)
 	}
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	svc := thumbjob.New(thumbjob.Config{
 		Photos:      photos.NewStore(db.Pool()),
 		Thumbnailer: thumbnailer,
@@ -104,7 +104,7 @@ func buildMaintenanceService(
 	if err != nil {
 		return nil, fmt.Errorf("initialising originals storage: %w", err)
 	}
-	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...)
+	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())
 	ingestSvc := ingest.New(ingest.Config{
 		Storage:     store,

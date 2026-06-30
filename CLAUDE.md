@@ -69,7 +69,11 @@ inkrementální).
   GIN index a IMMUTABLE `immutable_unaccent` wrapper v migraci `0007_fts.sql` (fulltext,
   `setweight` A/B/C/D, `to_tsvector('simple', immutable_unaccent(...))`, `file_name`
   normalizován regexem na tokeny; generated column drží `fts` aktuální i po editaci
-  metadat bez triggeru); FK `ON DELETE CASCADE`
+  metadat bez triggeru); **výkonové partial composite indexy** v migraci `0015_perf_indexes.sql`
+  (`idx_photos_live_taken_at (taken_at DESC NULLS LAST, uid DESC) WHERE archived_at IS NULL` +
+  companion `idx_photos_live_created_at` pro `sort=added`) přesně odpovídají nejčastějšímu řazení
+  mřížky → stránka časové osy je index scan **bez Sortu** (EXPLAIN integrační test
+  `store_perf_integration_test.go`, viz `docs/PERF.md`); FK `ON DELETE CASCADE`
   na satelity, `uploaded_by` `ON DELETE SET NULL`), `internal/storage/`
   (on-disk úložiště originálů: rozhraní `Storage` + filesystemová implementace `FS`
   `NewFS(root)`; `Store(ctx,src,takenAt,originalName)` streamuje na disk + počítá **SHA256**,
@@ -87,9 +91,17 @@ inkrementální).
   **idempotentní** (skip existujících) + atomický zápis temp+rename; `Thumbnailer` =
   `New(store,cacheDir,WithConcurrency(n))` s API `Generate(ctx,photo,sizes...)`/
   `GenerateAll(ctx,photo)` (mapa size→abs cesta)/`Path(hash,size)`/`Open(hash,size)`;
-  dekód jednou na fotku, paralelní enkód velikostí (errgroup, default `GOMAXPROCS`),
+  dekód jednou na fotku, paralelní enkód velikostí (errgroup, default `GOMAXPROCS`,
+  vázáno přes `thumb.concurrency`),
   **EXIF orientace** (1–8) automaticky; pure-Go JPEG/PNG/WebP + `golang.org/x/image`
-  (`draw.CatmullRom` resize); `Remove(hash)` smaže všechny cachované velikosti pro hash
+  (`draw.CatmullRom` resize); **volitelný vips engine** (`WithVips(bin)`, config `thumb.engine:
+  vips`, `vips.go`): pure-Go dekód velkých JPEGů je na Pi pomalý/paměťově náročný (~1 s / ~90 MB
+  na `fit_720` z 12 MP, ~4 s / ~1,18 GB na `GenerateAll` — viz `docs/PERF.md`), `vips` přepne
+  JPEG/PNG/WebP náhledy na **shell-out na `vipsthumbnail`** (`tryVips` → `vipsArgs`: fit `WxH>`
+  bez upscalu, crop `--smartcrop centre`, `[Q=…,strip]`, EXIF autorotace), **stále bez CGO**;
+  pure-Go zůstává default, vips **per-foto fallbackuje** na pure-Go pro ostatní formáty
+  (HEIC/RAW/video) i při jakémkoli selhání → nikdy nemění výstup, jen rychlost; `VipsAvailable(bin)`
+  pro startup log; `Remove(hash)` smaže všechny cachované velikosti pro hash
   (idempotentní, chybějící skip — úklid náhledů při purge fotky); sentinely
   `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
   `SizeNames()`/`IsValidSize`), `internal/imgconvert/`
@@ -285,7 +297,9 @@ inkrementální).
   embeddingy + cache sloupce
   marker_uid/subject_uid/subject_name/photo_width/photo_height/orientation a normalizovaný
   `bbox DOUBLE PRECISION[4]` `[x,y,w,h]`; podobnost přes `embedding <=> $vec` (cosine, nejbližší
-  první) v **read-only transakci** se `SET LOCAL hnsw.ef_search = 100`; `limit` ořez `[1,500]`,
+  první) v **read-only transakci** se `SET LOCAL hnsw.ef_search = 100` (konstanta `efSearch=100`,
+  guard test drží `0 < efSearch < efSearchMax=400` — design ji nikdy nezvedá k 400, viz
+  `docs/PERF.md`); `limit` ořez `[1,500]`,
   nekladný `maxDistance` filtr vypne; helpery `ToHalfVec`/`FromHalfVec` (`[]float32` ↔
   `pgvector.HalfVector`) a **sdílená vektorová matematika** `Centroid`(L2-normalizovaný
   element-wise průměr)/`Normalize`/`CosineDistance` v `math.go` (jediná implementace, kterou
@@ -1429,6 +1443,13 @@ inkrementální).
 - **Observability klíče:** `log.level` (debug/info/warn/error, default info, neplatný → chyba při
   startu; `KUKATKO_LOG_LEVEL`) a `metrics.enabled` (bool, default true; vypnuté → `/metrics` se
   nemountuje, request-metriky middleware se neinstaluje, access-log běží dál; `KUKATKO_METRICS_ENABLED`).
+- **Thumbnail klíče (`thumb.*`, `internal/config`):** `engine` (`go` **default** / `vips`;
+  neznámá hodnota → `ErrInvalidThumbEngine` při startu) — `vips` přepne JPEG/PNG/WebP náhledy na
+  shell-out na `vipsthumbnail` (rychlejší/úspornější na velkých obrázcích, **stále bez CGO**),
+  pure-Go zůstává default a per-foto fallback; `vips_binary` (executable na PATH, default
+  `vipsthumbnail`, jen pro `vips`); `concurrency` (max velikostí enkódovaných paralelně na fotku,
+  `0`=GOMAXPROCS — sniž na paměťově omezeném hostu). `KUKATKO_THUMB_ENGINE`/`_VIPS_BINARY`/
+  `_CONCURRENCY`. `serve` loguje aktivní engine + varuje, když `vips` chybí na PATH. Viz `docs/PERF.md`.
 - **Video klíče (`video.*`, `internal/config`):** `transcode` (bool, **default false**) — zapne
   on-the-fly transcode neweb-friendly codeců (HEVC/H.265 …) na H.264/MP4 přes ffmpeg pro přehrání
   v prohlížeči. Off = video se streamuje as-is (s HTTP Range) a klient nabídne stažení, když ho

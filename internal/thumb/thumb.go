@@ -72,6 +72,9 @@ type Thumbnailer struct {
 	cacheDir string
 	// workers bounds the number of sizes encoded concurrently per photo.
 	workers int
+	// vipsBin is the resolved vipsthumbnail path when the vips engine is enabled,
+	// or "" for the pure-Go default. See WithVips.
+	vipsBin string
 	// observer receives per-size generation timing; never nil after New.
 	observer Observer
 }
@@ -209,6 +212,13 @@ func (t *Thumbnailer) Generate(
 		return nil, err
 	}
 	if len(needed) == 0 {
+		return result, nil
+	}
+
+	// Fast path: shell out to vipsthumbnail for directly-supported originals. On
+	// any failure it returns false and we fall through to the pure-Go engine, so
+	// output never depends on vips succeeding — only speed does.
+	if t.tryVips(ctx, photo, needed, result) {
 		return result, nil
 	}
 

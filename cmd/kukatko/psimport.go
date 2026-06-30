@@ -49,7 +49,7 @@ func newPSImportService(
 		Albums:      organize.NewStore(pool),
 		Labels:      organize.NewStore(pool),
 		Storage:     store,
-		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...),
+		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...),
 		Enqueuer:    enqueuer,
 		PageSize:    cfg.Import.PhotoSorter.PageSize,
 		Metrics:     importObserver(reg),

@@ -30,6 +30,20 @@ storage:
   # Directory for derived artifacts (thumbnails, video posters, …).
   cache_path: "/var/lib/kukatko/cache"
 
+thumb:
+  # Thumbnail rendering engine: "go" (default, pure-Go decode+resize, CGO-free)
+  # or "vips" (shell out to vipsthumbnail for JPEG/PNG/WebP — markedly faster and
+  # far lower-memory on large images). The vips engine falls back to the pure-Go
+  # engine per photo for any other source (HEIC/RAW/video) or if a vips call
+  # fails, so it never changes output — only speed. Requires the vipsthumbnail
+  # binary (Debian/Ubuntu: apt install libvips-tools). KUKATKO_THUMB_ENGINE.
+  engine: "go"
+  # vipsthumbnail executable resolved on PATH (only used when engine is "vips").
+  vips_binary: "vipsthumbnail"
+  # Max thumbnail sizes encoded in parallel per photo. 0 = GOMAXPROCS. Lower it on
+  # memory-constrained hosts to cap peak thumbnail memory. KUKATKO_THUMB_CONCURRENCY.
+  concurrency: 0
+
 web:
   # Listen host. Use 0.0.0.0 to bind all interfaces.
   host: "0.0.0.0"

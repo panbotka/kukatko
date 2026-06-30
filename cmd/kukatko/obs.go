@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
@@ -12,14 +13,23 @@ import (
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
-// thumbOptions returns the thumbnailer options that wire generation timing into
-// reg, or no options when reg is nil (metrics disabled). It keeps every
-// thumb.New call site instrumented consistently.
-func thumbOptions(reg *metrics.Registry) []thumb.Option {
-	if reg == nil {
-		return nil
+// thumbOptions returns the thumbnailer options shared by every thumb.New call
+// site: generation-timing instrumentation when reg is non-nil, the configured
+// per-photo encode concurrency, and the vips engine when thumb.engine is "vips"
+// (resolved on PATH; a no-op when the binary is missing). It keeps the engine
+// selection and instrumentation consistent across the process.
+func thumbOptions(cfg *config.Config, reg *metrics.Registry) []thumb.Option {
+	var opts []thumb.Option
+	if reg != nil {
+		opts = append(opts, thumb.WithObserver(reg))
 	}
-	return []thumb.Option{thumb.WithObserver(reg)}
+	if cfg.Thumb.Concurrency > 0 {
+		opts = append(opts, thumb.WithConcurrency(cfg.Thumb.Concurrency))
+	}
+	if cfg.Thumb.VipsEnabled() {
+		opts = append(opts, thumb.WithVips(cfg.Thumb.VipsBinary))
+	}
+	return opts
 }
 
 // instrumentEmbedding wraps c so its calls report latency and availability to

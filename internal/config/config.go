@@ -56,12 +56,16 @@ var (
 	// ErrInvalidWake indicates the Wake-on-LAN auto-wake settings are enabled but
 	// inconsistent (missing/invalid MAC, or no destination to send the packet to).
 	ErrInvalidWake = errors.New("config: invalid embedding.wake settings")
+	// ErrInvalidThumbEngine indicates thumb.engine is set to an unknown value (it
+	// must be empty, "go" or "vips").
+	ErrInvalidThumbEngine = errors.New(`config: thumb.engine must be "go" or "vips"`)
 )
 
 // Config is the fully resolved, typed configuration for a kukatko process.
 type Config struct {
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Storage   StorageConfig   `mapstructure:"storage"`
+	Thumb     ThumbConfig     `mapstructure:"thumb"`
 	Web       WebConfig       `mapstructure:"web"`
 	Embedding EmbeddingConfig `mapstructure:"embedding"`
 	Faces     FacesConfig     `mapstructure:"faces"`
@@ -165,6 +169,42 @@ type DatabaseConfig struct {
 type StorageConfig struct {
 	OriginalsPath string `mapstructure:"originals_path"`
 	CachePath     string `mapstructure:"cache_path"`
+}
+
+// Thumbnail engine names accepted by ThumbConfig.Engine.
+const (
+	// ThumbEngineGo is the default pure-Go, CGO-free thumbnailer.
+	ThumbEngineGo = "go"
+	// ThumbEngineVips shells out to the vipsthumbnail binary for JPEG/PNG/WebP
+	// originals (faster and far lower-memory on large images), falling back to the
+	// pure-Go engine for any other source. It keeps the binary CGO-free.
+	ThumbEngineVips = "vips"
+)
+
+// ThumbConfig tunes thumbnail generation, the most CPU/memory-intensive
+// per-photo work on the Pi. The defaults keep the pure-Go engine; vips is an
+// opt-in acceleration for hosts with the libvips CLI installed.
+type ThumbConfig struct {
+	// Engine selects the rendering engine: "go" (default, pure-Go decode+resize,
+	// CGO-free) or "vips" (shell out to vipsthumbnail for JPEG/PNG/WebP, which is
+	// markedly faster and uses a fraction of the memory on large images). An empty
+	// value means "go". The vips engine falls back to the pure-Go engine per photo
+	// for any source vipsthumbnail cannot read (HEIC/RAW/video go through the
+	// existing imgconvert pre-decode) or if a vips invocation fails, so it never
+	// changes output behaviour — only speed.
+	Engine string `mapstructure:"engine"`
+	// VipsBinary overrides the vipsthumbnail executable resolved on PATH (default
+	// "vipsthumbnail"). Only consulted when Engine is "vips".
+	VipsBinary string `mapstructure:"vips_binary"`
+	// Concurrency bounds the number of sizes encoded in parallel for a single
+	// photo. A non-positive value uses GOMAXPROCS. Lower it on memory-constrained
+	// hosts to cap peak thumbnail memory.
+	Concurrency int `mapstructure:"concurrency"`
+}
+
+// VipsEnabled reports whether the vips engine is requested.
+func (t ThumbConfig) VipsEnabled() bool {
+	return t.Engine == ThumbEngineVips
 }
 
 // WebConfig holds the HTTP listener and session/CORS settings.
@@ -439,6 +479,7 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("storage.originals_path", "/var/lib/kukatko/originals")
 	v.SetDefault("storage.cache_path", "/var/lib/kukatko/cache")
+	setThumbDefaults(v)
 
 	v.SetDefault("web.host", "0.0.0.0")
 	v.SetDefault("web.port", 8080)
@@ -480,6 +521,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("metrics.enabled", true)
 
 	setOpsDefaults(v)
+}
+
+// setThumbDefaults registers the thumbnail-engine defaults: the pure-Go engine,
+// the vipsthumbnail binary name (used only when the engine is "vips"), and an
+// unbounded (GOMAXPROCS) per-photo encode concurrency.
+func setThumbDefaults(v *viper.Viper) {
+	v.SetDefault("thumb.engine", ThumbEngineGo) // pure-Go default; vips is opt-in
+	v.SetDefault("thumb.vips_binary", "vipsthumbnail")
+	v.SetDefault("thumb.concurrency", 0) // non-positive falls back to GOMAXPROCS
 }
 
 // setOpsDefaults registers defaults for the backup, trash, duplicate, upload and
@@ -552,6 +602,9 @@ func (c *Config) Validate() error {
 	if err := c.Embedding.Wake.validate(); err != nil {
 		return err
 	}
+	if err := c.Thumb.validate(); err != nil {
+		return err
+	}
 	return c.Auth.validate()
 }
 
@@ -572,6 +625,18 @@ func (w *WakeConfig) validate() error {
 		return fmt.Errorf("%w: set embedding.wake.broadcast_addr or embedding.wake.interface", ErrInvalidWake)
 	}
 	return nil
+}
+
+// validate checks the thumbnail engine selection: it must be empty (treated as
+// the pure-Go default), "go" or "vips". An unknown engine fails startup so a
+// typo cannot silently leave thumbnails on the default engine.
+func (t ThumbConfig) validate() error {
+	switch t.Engine {
+	case "", ThumbEngineGo, ThumbEngineVips:
+		return nil
+	default:
+		return fmt.Errorf("%w: got %q", ErrInvalidThumbEngine, t.Engine)
+	}
 }
 
 // validate checks the auth session and rate-limit invariants, returning one of
