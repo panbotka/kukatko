@@ -4,6 +4,7 @@ import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
+import { formatDateTime } from '../../lib/format'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
 
 /** Props for {@link MetadataPanel}. */
@@ -50,7 +51,7 @@ function Field({ label, value }: { label: string; value: string | undefined }) {
  * a photo can be geotagged or have its coordinates cleared. All text is i18n.
  */
 export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
@@ -222,7 +223,9 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
       <Field label={t('photo.metadata.notes')} value={photo.notes} />
       <Field
         label={t('photo.metadata.takenAt')}
-        value={photo.taken_at !== undefined ? new Date(photo.taken_at).toLocaleString() : undefined}
+        value={
+          photo.taken_at !== undefined ? formatDateTime(photo.taken_at, i18n.language) : undefined
+        }
       />
       <Field label={t('photo.metadata.camera')} value={photo.camera_model || photo.camera_make} />
       <Field label={t('photo.metadata.lens')} value={photo.lens_model} />

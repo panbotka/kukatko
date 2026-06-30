@@ -3,7 +3,7 @@ import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
-import { formatDuration } from '../../lib/format'
+import { formatDate, formatDuration } from '../../lib/format'
 import { GRID_THUMB_SIZE, type Photo, thumbUrl } from '../../services/photos'
 
 import { FavoriteButton } from './FavoriteButton'
@@ -56,12 +56,12 @@ export function PhotoTile({
   favoritable = false,
   detailQuery,
 }: PhotoTileProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
 
   const label = photo.title !== '' ? photo.title : photo.file_name
-  const taken = photo.taken_at ? new Date(photo.taken_at).toLocaleDateString() : ''
+  const taken = photo.taken_at ? formatDate(photo.taken_at, i18n.language) : ''
   const alt = taken !== '' ? `${label} — ${taken}` : label
 
   const inner = (

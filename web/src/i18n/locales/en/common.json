@@ -202,7 +202,8 @@
     "error": "Could not load albums.",
     "noCover": "No cover",
     "private": "Private",
-    "photoCount": "{{count}} photos",
+    "photoCount_one": "{{count}} photo",
+    "photoCount_other": "{{count}} photos",
     "empty": {
       "title": "No albums yet",
       "hint": "Create an album to start grouping your photos."
@@ -283,7 +284,8 @@
     "remove": "Remove from favorites"
   },
   "bulkEdit": {
-    "title": "Edit {{count}} photos",
+    "title_one": "Edit {{count}} photo",
+    "title_other": "Edit {{count}} photos",
     "loading": "Loading…",
     "loadError": "Could not load albums and labels.",
     "applyError": "The bulk edit failed. Please try again.",
@@ -352,7 +354,8 @@
     },
     "noCover": "No cover",
     "private": "Private",
-    "photoCount": "{{count}} photos"
+    "photoCount_one": "{{count}} photo",
+    "photoCount_other": "{{count}} photos"
   },
   "subject": {
     "loading": "Loading person…",
@@ -398,7 +401,8 @@
     "representative": "Representative face",
     "sample": "Sample face",
     "removeFace": "Remove this face from the group",
-    "size": "{{count}} faces",
+    "size_one": "{{count}} face",
+    "size_other": "{{count}} faces",
     "nameAs": "Name as {{name}} ({{confidence}}%)",
     "nameLabel": "Name this group",
     "namePlaceholder": "New or existing name…",
@@ -655,6 +659,7 @@
     "loadMore": "Load more",
     "selectItem": "Select {{name}}",
     "actionError": "The action failed.",
+    "unavailable": "Permanent deletion is disabled in the server configuration.",
     "countdown": {
       "days": "{{count}}d left",
       "due": "due"
@@ -662,7 +667,8 @@
     "confirm": {
       "title": "Delete permanently?",
       "single": "This photo, including its original, will be permanently deleted. This cannot be undone.",
-      "bulk": "{{count}} photos, including their originals, will be permanently deleted. This cannot be undone.",
+      "bulk_one": "{{count}} photo, including its original, will be permanently deleted. This cannot be undone.",
+      "bulk_other": "{{count}} photos, including their originals, will be permanently deleted. This cannot be undone.",
       "empty": "Every photo in the trash, including originals, will be permanently deleted. This cannot be undone.",
       "confirm": "Delete forever",
       "cancel": "Cancel"
@@ -722,13 +728,15 @@
       "embedding": "Similar content",
       "both": "Very similar"
     },
-    "memberCount": "{{count}} photos",
+    "memberCount_one": "{{count}} photo",
+    "memberCount_other": "{{count}} photos",
     "keepThis": "Keep this",
     "keepAndArchive": "Keep & archive {{count}} others",
     "dismiss": "Not a duplicate",
     "phashDistanceTitle": "Perceptual-hash distance to the kept photo (lower is more similar)",
     "embeddingDistanceTitle": "Embedding distance to the kept photo (lower is more similar)",
-    "archived": "Archived {{count}} photos.",
+    "archived_one": "Archived {{count}} photo.",
+    "archived_other": "Archived {{count}} photos.",
     "actionError": "The action failed.",
     "unavailable": "Duplicate detection is disabled in the server configuration.",
     "error": "Failed to load duplicates.",

@@ -1291,7 +1291,15 @@ Admin-only HTTP API pro hromadné zpracování katalogu (guard `RequireAdmin`), 
 SPA je **React 19 + TypeScript + Vite** v adresáři [`web/`](web/), stylovaná tématem
 **Bootswatch Superhero** (dark) přes **react-bootstrap**, s routováním `react-router-dom`
 a i18n přes **i18next** (**čeština default** + angličtina, volba se persistuje do
-`localStorage`). Build (`npm run build`) se zapisuje do `internal/web/static/dist`, odkud ho
+`localStorage`). Všechny UI texty jdou přes `t()` — **žádné natvrdo zapsané řetězce**; oba jazyky
+mají kompletní, paralelní sadu klíčů. Počty se **pluralizují** přes i18next CLDR plural sufixy
+(čeština `_one/_few/_many/_other`, angličtina `_one/_other` — caller předá `{ count }`), datumy se
+formátují podle aktivního jazyka (`lib/format` `formatDate`/`formatDateTime`). Sadu hlídají
+**drift-guard testy** ([`web/src/i18n/i18n.test.ts`](web/src/i18n/i18n.test.ts) +
+[`screens.test.tsx`](web/src/i18n/screens.test.tsx)): cs/en musí mít identické logické klíče,
+žádné prázdné hodnoty, kompletní plural kategorie i shodné interpolační proměnné, a reprezentativní
+obrazovky se vykreslí bez missing-translation warningů. Build (`npm run build`) se zapisuje do
+`internal/web/static/dist`, odkud ho
 Go embeduje (`//go:embed`) a servíruje s **SPA fallbackem** (neznámé ne-asset cesty →
 `index.html`; fingerprintované soubory pod `/assets/` mají immutable cache). `kukatko serve`
 tak vrací jak `GET /healthz`, tak celé SPA.

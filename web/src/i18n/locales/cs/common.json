@@ -159,7 +159,10 @@
     "error": "Alba se nepodařilo načíst.",
     "noCover": "Bez náhledu",
     "private": "Soukromé",
-    "photoCount": "{{count}} fotek",
+    "photoCount_one": "{{count}} fotka",
+    "photoCount_few": "{{count}} fotky",
+    "photoCount_many": "{{count}} fotky",
+    "photoCount_other": "{{count}} fotek",
     "empty": {
       "title": "Zatím žádná alba",
       "hint": "Vytvoř album a začni seskupovat své fotky."
@@ -240,7 +243,10 @@
     "remove": "Odebrat z oblíbených"
   },
   "bulkEdit": {
-    "title": "Upravit {{count}} fotek",
+    "title_one": "Upravit {{count}} fotku",
+    "title_few": "Upravit {{count}} fotky",
+    "title_many": "Upravit {{count}} fotky",
+    "title_other": "Upravit {{count}} fotek",
     "loading": "Načítání…",
     "loadError": "Alba a štítky se nepodařilo načíst.",
     "applyError": "Hromadná úprava se nezdařila. Zkus to prosím znovu.",
@@ -352,7 +358,10 @@
     },
     "noCover": "Bez náhledu",
     "private": "Soukromé",
-    "photoCount": "{{count}} fotek"
+    "photoCount_one": "{{count}} fotka",
+    "photoCount_few": "{{count}} fotky",
+    "photoCount_many": "{{count}} fotky",
+    "photoCount_other": "{{count}} fotek"
   },
   "subject": {
     "loading": "Načítání osoby…",
@@ -398,7 +407,10 @@
     "representative": "Reprezentativní obličej",
     "sample": "Ukázkový obličej",
     "removeFace": "Odebrat tento obličej ze skupiny",
-    "size": "{{count}} obličejů",
+    "size_one": "{{count}} obličej",
+    "size_few": "{{count}} obličeje",
+    "size_many": "{{count}} obličeje",
+    "size_other": "{{count}} obličejů",
     "nameAs": "Pojmenovat jako {{name}} ({{confidence}} %)",
     "nameLabel": "Pojmenuj tuto skupinu",
     "namePlaceholder": "Nové nebo existující jméno…",
@@ -655,6 +667,7 @@
     "loadMore": "Načíst další",
     "selectItem": "Vybrat {{name}}",
     "actionError": "Akce se nezdařila.",
+    "unavailable": "Trvalé mazání je v konfiguraci serveru vypnuté.",
     "countdown": {
       "days": "za {{count}} d",
       "due": "ke smazání"
@@ -662,7 +675,10 @@
     "confirm": {
       "title": "Trvale smazat?",
       "single": "Tato fotka bude nenávratně smazána včetně originálu. Tuto akci nelze vrátit.",
-      "bulk": "{{count}} fotek bude nenávratně smazáno včetně originálů. Tuto akci nelze vrátit.",
+      "bulk_one": "{{count}} fotka bude nenávratně smazána včetně originálu. Tuto akci nelze vrátit.",
+      "bulk_few": "{{count}} fotky budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
+      "bulk_many": "{{count}} fotky budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
+      "bulk_other": "{{count}} fotek bude nenávratně smazáno včetně originálů. Tuto akci nelze vrátit.",
       "empty": "Všechny fotky v koši budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
       "confirm": "Smazat navždy",
       "cancel": "Zrušit"
@@ -722,13 +738,19 @@
       "embedding": "Podobný obsah",
       "both": "Velmi podobné"
     },
-    "memberCount": "{{count}} fotek",
+    "memberCount_one": "{{count}} fotka",
+    "memberCount_few": "{{count}} fotky",
+    "memberCount_many": "{{count}} fotky",
+    "memberCount_other": "{{count}} fotek",
     "keepThis": "Ponechat tuto",
     "keepAndArchive": "Ponechat a archivovat zbylé ({{count}})",
     "dismiss": "Není duplikát",
     "phashDistanceTitle": "Vzdálenost perceptuálního hashe od ponechané fotky (nižší = podobnější)",
     "embeddingDistanceTitle": "Vzdálenost embeddingu od ponechané fotky (nižší = podobnější)",
-    "archived": "Archivováno fotek: {{count}}.",
+    "archived_one": "Archivována {{count}} fotka.",
+    "archived_few": "Archivovány {{count}} fotky.",
+    "archived_many": "Archivováno {{count}} fotky.",
+    "archived_other": "Archivováno {{count}} fotek.",
     "actionError": "Akce se nezdařila.",
     "unavailable": "Detekce duplikátů je v konfiguraci serveru vypnutá.",
     "error": "Načtení duplikátů se nezdařilo.",

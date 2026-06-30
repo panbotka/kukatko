@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
-import { formatBytes } from '../lib/format'
+import { formatBytes, formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
 import type { ImportRun } from '../services/import'
 import {
@@ -36,9 +36,9 @@ type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; da
 /** Transient outcome of a quick action, shown as a dismissible alert. */
 type ActionNotice = { kind: 'success'; message: string } | { kind: 'error'; message: string }
 
-/** Formats an ISO timestamp for display using the browser locale. */
-function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString()
+/** Formats an ISO timestamp for display using the active UI language. */
+function formatTimestamp(value: string, locale: string): string {
+  return formatDateTime(value, locale)
 }
 
 /** The build version / commit card. */
@@ -154,7 +154,7 @@ function JobsCard({
 
 /** Renders the most recent run of one import source, or a "never" placeholder. */
 function ImportRunLine({ source, run }: { source: string; run: ImportRun | null }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   return (
     <div className="mb-2">
       <span className="fw-semibold">{t(`import.source.${source}`)}</span>:{' '}
@@ -166,8 +166,8 @@ function ImportRunLine({ source, run }: { source: string; run: ImportRun | null 
             {t(`import.status.${run.status}`)}
           </Badge>{' '}
           <span className="text-secondary small">
-            {formatTimestamp(run.finished_at ?? run.started_at)} · {t('import.counts.imported')}{' '}
-            {run.counts.imported}
+            {formatTimestamp(run.finished_at ?? run.started_at, i18n.language)} ·{' '}
+            {t('import.counts.imported')} {run.counts.imported}
           </span>
         </>
       ) : (
@@ -206,7 +206,7 @@ function BackupCard({
   onTrigger: () => void
   triggering: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   return (
     <Card className="h-100">
       <Card.Body className="d-flex flex-column">
@@ -228,7 +228,7 @@ function BackupCard({
               {t('system.backup.lastRun')}:{' '}
               {backup.last_finished_at ? (
                 <>
-                  {formatTimestamp(backup.last_finished_at)}{' '}
+                  {formatTimestamp(backup.last_finished_at, i18n.language)}{' '}
                   {backup.last_error ? (
                     <Badge bg="danger">{t('system.backup.failed')}</Badge>
                   ) : (

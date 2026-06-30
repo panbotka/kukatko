@@ -1044,7 +1044,11 @@ inkrementální).
   (nearchivovaná / retence ≤ 0 / neparsovatelné), odpočet na kartách koše);
   `format.ts` = pure `formatBytes(bytes)` (byte count → human-readable binární jednotky, např.
   `1536`→`"1.5 KB"`, neplatné→`"0 B"`) pro velikost souboru na duplicate-group kartách +
-  `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, neplatné→`"0:00"`) pro délku videa na dlaždicích)),
+  `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, neplatné→`"0:00"`) pro délku videa na dlaždicích +
+  **locale-aware** `formatDate(value,locale)`/`formatDateTime(value,locale)` (ISO/epoch/`Date` →
+  `toLocaleDateString`/`toLocaleString` s **aktivním jazykem UI** `i18n.language`, ne výchozím
+  jazykem prohlížeče; neparseovatelný vstup → původní string; používá PhotoTile/DuplicateGroupCard/
+  MetadataPanel/Import/System pro datumy v cs/en formátu))),
   `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
   `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
@@ -1112,7 +1116,18 @@ inkrementální).
   `BackupStatus`/`ImportsStatus`/`StorageStatus`/`VersionInfo`; sdílí `ApiError` z `auth.ts` a `ImportRun`
   z `import.ts`,
   `i18n/` (i18next init + `locales/{cs,en}/common.json`;
-  typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů),
+  typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů;
+  **čeština default**, žádné natvrdo zapsané UI texty — vše přes `t()`. **Pluralizace** přes
+  i18next CLDR plural sufixy: count-vázané řetězce kde se podstatné jméno shoduje s číslem mají
+  formy `key_one/_few/_many/_other` (čeština) a `key_one/_other` (angličtina) — caller jen předá
+  `{ count }` (např. `albums.photoCount`, `clusters.size`, `bulkEdit.title`, `duplicates.memberCount`/
+  `archived`, `trash.confirm.bulk`); label-tvary s dvojtečkou/závorkou (`library.count`, `selection.count`)
+  zůstávají bez plurálu. **Datumy/čísla respektují jazyk** přes `lib/format` `formatDate`/`formatDateTime`
+  (`i18n.language`). **Drift-guard testy** `i18n.test.ts` (cs/en mají identické *logické* klíče po
+  odstranění plural sufixu, žádné prázdné hodnoty, každý jazyk má všechny své CLDR plural kategorie,
+  interpolační `{{var}}` proměnné se shodují napříč jazyky) + `screens.test.tsx` (reprezentativní
+  obrazovky — navbar + dlaždice — se vykreslí bez missing-key warningů v cs i en přes
+  `cloneInstance({saveMissing})`, plural rendering 1/3/5, language-switch přepíše viditelný text)),
   `styles/app.css` (**global responzivní polish vrstva** importovaná v `main.tsx` hned za
   Bootswatch CSS — jen cross-cutting mobil/touch věci, které Bootstrap utility neumí: **safe-area
   insety** přes `env(safe-area-inset-*)` (fungují díky `viewport-fit=cover` v `index.html`) na

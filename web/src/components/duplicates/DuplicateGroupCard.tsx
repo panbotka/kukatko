@@ -8,7 +8,7 @@ import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
-import { formatBytes } from '../../lib/format'
+import { formatBytes, formatDate } from '../../lib/format'
 import { type DuplicateGroup, type DuplicateMember } from '../../services/duplicates'
 import { thumbUrl } from '../../services/photos'
 
@@ -96,7 +96,7 @@ interface DuplicateMemberTileProps {
 
 /** A single comparison tile: thumbnail, metadata and the keep-this radio. */
 function DuplicateMemberTile({ member, selected, groupId, onSelect }: DuplicateMemberTileProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const label = member.title !== '' ? member.title : member.file_name
   return (
     <div className={`border rounded p-2 h-100 ${selected ? 'border-primary border-2' : ''}`}>
@@ -116,7 +116,7 @@ function DuplicateMemberTile({ member, selected, groupId, onSelect }: DuplicateM
         {member.file_width}×{member.file_height} · {formatBytes(member.file_size)}
       </div>
       {member.taken_at !== undefined && member.taken_at !== '' && (
-        <div className="small text-secondary">{new Date(member.taken_at).toLocaleDateString()}</div>
+        <div className="small text-secondary">{formatDate(member.taken_at, i18n.language)}</div>
       )}
       <div className="d-flex gap-1 flex-wrap my-1">
         {member.phash_distance !== undefined && (

@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { useCallback, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
@@ -16,9 +17,16 @@ const PAGE_SIZE = 20
 /** Top-level load status of the duplicates view. */
 type Status = 'loading' | 'ready' | 'error' | 'unavailable'
 
-/** Resolves a failed mutation to a user-facing message (server text or fallback). */
-function actionMessage(err: unknown, fallback: string): string {
-  return err instanceof ApiError ? err.message : fallback
+/**
+ * Resolves a failed mutation to a localized, user-facing message. Raw server
+ * text is never surfaced: a 503 maps to the "detection disabled" string and
+ * everything else to the generic action-failed message, both translated.
+ */
+function actionMessage(err: unknown, t: TFunction): string {
+  if (err instanceof ApiError && err.status === 503) {
+    return t('duplicates.unavailable')
+  }
+  return t('duplicates.actionError')
 }
 
 /**
@@ -87,7 +95,7 @@ export function DuplicatesPage() {
       remove(group.id)
       setResultMessage(t('duplicates.archived', { count: result.counts.updated }))
     } catch (err) {
-      setActionError(actionMessage(err, t('duplicates.actionError')))
+      setActionError(actionMessage(err, t))
     } finally {
       setBusyGroupId(null)
     }

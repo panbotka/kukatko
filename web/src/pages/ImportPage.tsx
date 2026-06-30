@@ -10,6 +10,7 @@ import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
+import { formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
 import {
   fetchImportRuns,
@@ -45,9 +46,9 @@ type State =
   | { status: 'error' }
   | { status: 'ready'; runs: ImportRun[]; sources: ImportSources }
 
-/** Formats an ISO timestamp for display using the browser locale. */
-function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString()
+/** Formats an ISO timestamp for display using the active UI language. */
+function formatTimestamp(value: string, locale: string): string {
+  return formatDateTime(value, locale)
 }
 
 /** Returns the most recent run for a source, or null when there is none. */
@@ -93,7 +94,7 @@ interface SourceCardProps {
  * not configured.
  */
 function SourceCard({ source, enabled, latestRun, starting, notice, onStart }: SourceCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const inProgress = latestRun?.status === 'running'
 
   return (
@@ -115,7 +116,9 @@ function SourceCard({ source, enabled, latestRun, starting, notice, onStart }: S
             <div className="d-flex align-items-center gap-2 mb-2">
               <Spinner animation="border" size="sm" role="status" />
               <span>
-                {t('import.runningSince', { time: formatTimestamp(latestRun.started_at) })}
+                {t('import.runningSince', {
+                  time: formatTimestamp(latestRun.started_at, i18n.language),
+                })}
               </span>
             </div>
             <CountsBadges counts={latestRun.counts} />
@@ -129,7 +132,7 @@ function SourceCard({ source, enabled, latestRun, starting, notice, onStart }: S
               <Badge bg={STATUS_VARIANT[latestRun.status]}>
                 {t(`import.status.${latestRun.status}`)}
               </Badge>{' '}
-              {formatTimestamp(latestRun.finished_at ?? latestRun.started_at)}
+              {formatTimestamp(latestRun.finished_at ?? latestRun.started_at, i18n.language)}
             </div>
             <CountsBadges counts={latestRun.counts} />
           </div>
@@ -182,7 +185,7 @@ function JobStatsBar({ stats }: { stats: JobStats }) {
 
 /** The run-history table across all sources, most recent first. */
 function RunHistoryTable({ runs }: { runs: ImportRun[] }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   if (runs.length === 0) {
     return <p className="text-secondary">{t('import.history.empty')}</p>
   }
@@ -202,8 +205,8 @@ function RunHistoryTable({ runs }: { runs: ImportRun[] }) {
         {runs.map((run) => (
           <tr key={run.id}>
             <td>{t(`import.source.${run.source}`)}</td>
-            <td>{formatTimestamp(run.started_at)}</td>
-            <td>{run.finished_at ? formatTimestamp(run.finished_at) : '—'}</td>
+            <td>{formatTimestamp(run.started_at, i18n.language)}</td>
+            <td>{run.finished_at ? formatTimestamp(run.finished_at, i18n.language) : '—'}</td>
             <td>
               <Badge bg={STATUS_VARIANT[run.status]}>{t(`import.status.${run.status}`)}</Badge>
             </td>

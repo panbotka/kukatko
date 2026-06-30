@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatBytes, formatDuration } from './format'
+import { formatBytes, formatDate, formatDateTime, formatDuration } from './format'
 
 describe('formatBytes', () => {
   it('renders bytes without decimals', () => {
@@ -16,6 +16,30 @@ describe('formatBytes', () => {
     expect(formatBytes(0)).toBe('0 B')
     expect(formatBytes(-10)).toBe('0 B')
     expect(formatBytes(Number.NaN)).toBe('0 B')
+  })
+})
+
+describe('formatDate / formatDateTime', () => {
+  const iso = '2026-03-09T14:05:00Z'
+
+  it('formats a date using the requested locale', () => {
+    // Czech uses day-first dotted dates; en-US uses month-first slashes. We only
+    // assert the locales differ so the formatting genuinely follows the UI
+    // language rather than the host default.
+    const cs = formatDate(iso, 'cs')
+    const en = formatDate(iso, 'en-US')
+    expect(cs).toContain('2026')
+    expect(en).toContain('2026')
+    expect(cs).not.toBe(en)
+  })
+
+  it('formats date and time including the year', () => {
+    expect(formatDateTime(iso, 'cs')).toContain('2026')
+  })
+
+  it('returns the original string for an unparseable value', () => {
+    expect(formatDate('not-a-date', 'cs')).toBe('not-a-date')
+    expect(formatDateTime('', 'en')).toBe('')
   })
 })
 
