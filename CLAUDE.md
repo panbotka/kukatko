@@ -49,6 +49,8 @@ inkrementální).
   uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
   **album/label scope** `AlbumUID`/`LabelUID` korelovaným `EXISTS` nad `album_photos`/`photo_labels`
   — podklad sdíleného scoped výpisu fotek alba/štítku přes `GET /photos?album=`/`?label=`,
+  plus **place scope** `Country`/`City` (exact match jedním korelovaným `EXISTS` nad `photo_places`)
+  — podklad `GET /photos?country=&city=`,
   plus **per-user favorite scope** `FavoriteOf` korelovaným `EXISTS` nad `user_favorites`
   — podklad `GET /photos?favorite=true` a `GET /favorites`,
   plus **per-user rating filtry** `RatedBy` (uid aktuálního uživatele, scopuje anotaci/filtry/řazení)
@@ -63,6 +65,11 @@ inkrementální).
   immutable_unaccent(q))`, řazení dle `ts_rank` (title>description>notes>file_name),
   diakritika necitlivá, ctí všechny List filtry + stránkování; prázdný dotaz →
   `ErrEmptySearch`; `Count` s `FullText` vrací total díky sdílenému `buildWhere`),
+  `AggregatePlaces(country)` (place hierarchie `[]CountryPlaces{Country,Count,Cities:[]CityCount}` —
+  jedním `GROUP BY country, city` JOINem `photos`×`photo_places` přes nearchivované fotky s place
+  daty, hierarchii složí v Go, řazení count desc/jméno; prázdné `country`='' = všechny země, jinak
+  drill-down do měst jedné země; fotky s prázdným `country` (no-GPS marker) vyloučené — podklad
+  `placesapi`),
   plus `CreateFile`/`ListFiles`,
   `ListArchivedUIDs(before,limit,offset)` (uid archivovaných fotek oldest-archived-first,
   `before` nil = vše / non-nil = jen `archived_at <= before` retenční cutoff — podklad koše/purge),
@@ -165,7 +172,8 @@ inkrementální).
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
   newest/oldest/taken_at/added/title/size**/rating** + `order`, `archived` false/true/only, `private`,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`album`/`label`
-  scope** → `AlbumUID`/`LabelUID`, **per-user `min_rating` (int) + `flag` (`pick`/`reject`)**
+  scope** → `AlbumUID`/`LabelUID`, **`country`/`city` place scope** → `Country`/`City`,
+  **per-user `min_rating` (int) + `flag` (`pick`/`reject`)**
   → `MinRating`/`Flag`; neplatný → 400) + `favoriteRequested` parsuje `favorite=true`
   → handler nastaví per-user `FavoriteOf` na aktuálního uživatele; handlery list/search/favorites
   nastaví `RatedBy` na aktuálního uživatele, takže `min_rating`/`flag`/`sort=rating` jsou scopnuté na něj;
@@ -574,7 +582,18 @@ inkrementální).
   jméno → 400), `DELETE /saved-searches/{uid}` → 204; **vlastnická izolace** — sdílený helper
   `ownedSearch` načte řádek a porovná `owner_uid` s aktérem, cizí (i neexistující) → **404** (nikdy
   neprozradí cizí hledání); tělo `DisallowUnknownFields` + 1 MiB limit, sentinel `ErrNotFound`→404;
-  mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`)), `internal/audit/`
+  mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`)), `internal/placesapi/`
+  (read-only HTTP API nad reverse-geokódovanou place hierarchií — podklad Places browse: rozhraní
+  `Store` (podmnožina `photos.Store`: `AggregatePlaces`) → unit-testovatelné s fakem; `NewAPI(Config{
+  Store,RequireAuth})`+`RegisterRoutes` mountuje `GET /places` za `RequireAuth`: hierarchie s počty
+  `{places:[{country,count,cities:[{city,count}]}]}` agregovaná přes nearchivované fotky s place daty
+  (count země zahrnuje i fotky bez města, cities vždy pole; řazení count desc/jméno), volitelné
+  `?country=` drillne jen do měst jedné země; fotky bez place dat vyloučené (počítá `photos.Store.
+  AggregatePlaces` jedním `GROUP BY country, city` JOINem na `photo_places`). **Procházení fotek
+  lokality nemá vlastní endpoint** — jede přes sdílené `GET /photos` scopnuté `?country=`/`?city=`
+  (`photos.ListParams` `Country`/`City` + `photoapi` `parseListParams`); mountuje se `server.WithAPI`
+  (`buildPlacesAPI` v `cmd/kukatko/places.go`, agregace přes photos store nad `photo_places` cache)),
+  `internal/audit/`
   (durable audit trail, tabulka `audit_log` v migraci `0012_audit_log.sql` rozšířená v
   `0014_audit_request.sql` o `ip`/`user_agent` + composite index `(target_type, target_uid)`:
   `id BIGSERIAL`, `actor_uid` FK users `ON DELETE SET NULL`, `action`, `target_type`, `target_uid`,
@@ -1417,6 +1436,18 @@ inkrementální).
   fotek alba/štítku** jede přes sdílené `GET /photos?album={uid}`/`?label={uid}` (stejný tvar +
   filtry/řazení/stránkování). Viewer čte, ale nemutuje (403). Mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
+- **Places API (`/api/v1`, `internal/placesapi`, přihlášený přes `RequireAuth`):** procházení
+  reverse-geokódované place hierarchie + scoping výpisu fotek na lokalitu. `GET /places` →
+  `{places:[{country, count, cities:[{city, count}]}]}` — počty agregované přes **nearchivované**
+  fotky s place daty; `count` země zahrnuje i fotky bez známého města (může převýšit součet měst),
+  `cities` je vždy pole; řazení **count desc, pak jméno** (pro země i města); fotky bez place dat
+  (žádný `photo_places` řádek nebo prázdný `country` — no-GPS „processed" marker) vyloučené.
+  Volitelné `?country=` drillne jen do měst jedné země. Agregaci počítá `photos.Store.AggregatePlaces`
+  (jeden `GROUP BY country, city` JOIN na `photo_places`, hierarchii složí v Go). **Galerie fotek
+  lokality** jede přes sdílené `GET /photos?country={c}&city={c}` (`Country`/`City` exact match přes
+  korelovaný `EXISTS` nad `photo_places` v `buildWhere`, takže `Count` sedí; stejný tvar + ostatní
+  filtry/řazení/stránkování, archivní mimo výchozí výpis). Mountuje se `server.WithAPI`
+  (`buildPlacesAPI` v `cmd/kukatko/places.go`).
 - **Saved Searches API (`/api/v1`, `internal/savedsearchapi` + `internal/savedsearch`, přihlášený přes
   `RequireAuth`):** per-user **uložená hledání** ("smart albums") — pojmenovaná, vlastníkova soukromá
   definice filtru/hledání. `GET /saved-searches` → `{saved_searches:[{uid,name,params,created_at,

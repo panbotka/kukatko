@@ -748,6 +748,26 @@ běží jako **frontový job `places`** (ne inline) přes existující `mapy.Rev
   endpoint je dostupný **jen když je `maps.mapy_api_key` nastaven** (jinak 503), klient se staví
   server-side (`buildPlacesServiceOrNil` v `cmd/kukatko/places.go`). Vše za rozhraními → fake v testech.
 
+### Places Browse API (`internal/placesapi`)
+
+Procházení nacachované place hierarchie + scoping výpisu fotek na lokalitu (backend, vždy
+namountováno).
+
+- **`GET /api/v1/places`** (přihlášený) — hierarchie s počty agregovanými přes **nearchivované**
+  fotky s place daty: `{places:[{country, count, cities:[{city, count}]}]}`. `count` země zahrnuje
+  i fotky bez známého města (může převýšit součet měst), `cities` je vždy pole (prázdné, když žádné
+  město). Volitelné `?country=` drillne jen do měst jedné země. Řazení **count desc, pak jméno**
+  (pro země i města). Fotky bez place dat (žádný `photo_places` řádek nebo prázdný `country` — např.
+  no-GPS „processed" marker) jsou vyloučené. Agregaci počítá `photos.Store.AggregatePlaces(country)`
+  (jeden `GROUP BY country, city` JOIN na `photo_places`, hierarchii složí v Go). Mountuje se
+  `server.WithAPI` (`buildPlacesAPI` v `cmd/kukatko/places.go`, agregace přes photos store nad
+  `photo_places` cache).
+- **Scoped listing** — `photos.ListParams` má `Country`/`City` (exact match) přidané do `buildWhere`
+  (jeden korelovaný `EXISTS` nad `photo_places`, takže `Count` sedí), `photoapi.parseListParams`
+  čte `?country=`/`?city=`. Sdílené **`GET /photos?country=&city=`** vrátí fotky dané lokality a
+  ctí všechny ostatní filtry/řazení/stránkování — přesně vzor `?album=`/`?label=` scopingu (archivní
+  fotky mimo výchozí výpis).
+
 ### People UI (frontend)
 
 Kompletní lidský zážitek nad výše uvedenými API (react-bootstrap Superhero, i18n cs/en,
@@ -1205,7 +1225,7 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/admin/users/{uid}/disable` | admin | zakáže účet (zruší jeho session) |
 | POST | `/admin/users/{uid}/password` | admin | `{new_password}` → reset hesla (zruší všechny jeho session) |
 | POST | `/upload` | editor/admin | `multipart/form-data` s jedním+ soubory → per-file `{outcome, photo_uid, warnings}` (viz Upload / ingest) |
-| GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API); per-user filtry `min_rating` (≥ n), `flag` (`pick`/`reject`) a řazení `sort=rating` scopnuté na aktuálního uživatele |
+| GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API); per-user filtry `min_rating` (≥ n), `flag` (`pick`/`reject`) a řazení `sort=rating` scopnuté na aktuálního uživatele; `country`/`city` scopnou na lokalitu (viz Places) |
 | GET | `/search?q=&mode=` | přihlášený | sémantické + hybridní hledání; `mode` = `fulltext`/`semantic`/`hybrid` (default `hybrid`): fulltext (tsvector + unaccent, `ts_rank`), semantic (CLIP text→embedding → cosine HNSW), hybrid (fúze obou přes **Reciprocal Rank Fusion**, k=60, dedup); všechny módy ctí list filtry + stránkování; `q` povinný → tvar jako `/photos` + `mode`+`degraded`; box offline → fallback na fulltext s `degraded:true` |
 | GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` + `albums` + `labels` + `is_favorite` + `rating`/`flag` (pro aktuálního uživatele) |
 | GET | `/photos/{uid}/edit` | přihlášený | uložený nedestruktivní edit (`crop`/`rotation`/`brightness`/`contrast`); neupravená fotka → neutrální edit |
@@ -1245,6 +1265,8 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/labels/{uid}/photos` | editor/admin | `{photo_uid,source?,uncertainty?}` připojí štítek k fotce → 204 |
 | DELETE | `/labels/{uid}/photos` | editor/admin | `{photo_uid}` odpojí štítek od fotky → 204 |
 | GET | `/photos?album={uid}` / `?label={uid}` | přihlášený | scoped výpis fotek alba/štítku přes sdílené `/photos` (ctí filtry/řazení/stránkování, stejný tvar) |
+| GET | `/places` | přihlášený | place hierarchie s počty `{places:[{country,count,cities:[{city,count}]}]}` nad nearchivovanými fotkami; `?country=` drillne do měst jedné země; řazení count desc/jméno |
+| GET | `/photos?country=&city=` | přihlášený | scoped výpis fotek dané lokality (exact match na cache `photo_places`) přes sdílené `/photos` (ctí ostatní filtry/řazení/stránkování) |
 | PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
 | POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
 | POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |

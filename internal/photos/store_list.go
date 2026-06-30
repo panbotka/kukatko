@@ -103,6 +103,15 @@ type ListParams struct {
 	// with that UID. It scopes the shared list/search path to a label so every
 	// other filter, the sort and pagination apply unchanged.
 	LabelUID string
+	// Country, when non-empty, restricts the result to photos whose cached place
+	// has exactly that country. It scopes the shared list/search path to a place
+	// (via the photo_places side table) so every other filter, the sort and
+	// pagination apply unchanged.
+	Country string
+	// City, when non-empty, restricts the result to photos whose cached place has
+	// exactly that city. Like Country it scopes the shared list/search path via the
+	// photo_places side table.
+	City string
 	// FavoriteOf, when non-empty, restricts the result to photos the user with that
 	// UID has favorited. Favorites are per-user, so this scope is always bound to
 	// the current caller; it keeps the favorites grid on the shared list/search
@@ -267,6 +276,7 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 	where = append(where, textClauses(params, bind)...)
 	where = append(where, ftsClauses(params, bind)...)
 	where = append(where, membershipClauses(params, bind)...)
+	where = append(where, placeClauses(params, bind)...)
 	where = append(where, favoriteClauses(params, bind)...)
 	where = append(where, ratingClauses(params, bind)...)
 	return where
@@ -329,6 +339,28 @@ func membershipClauses(params ListParams, bind func(any) string) []string {
 			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = "+bind(params.LabelUID)+")")
 	}
 	return where
+}
+
+// placeClauses returns the country/city scoping filter as a single correlated
+// EXISTS subquery over the photo_places side table, binding each value through
+// bind. Place data lives in photo_places (one row per geotagged photo), not on
+// the photos row, so the scope is expressed as EXISTS rather than a plain column
+// comparison. Both values, when set, are ANDed inside one subquery; an empty
+// Country and City add no clause. The outer photo reference is qualified
+// (photos.uid) to disambiguate it from the join table's photo_uid.
+func placeClauses(params ListParams, bind func(any) string) []string {
+	var conds []string
+	if params.Country != "" {
+		conds = append(conds, "pp.country = "+bind(params.Country))
+	}
+	if params.City != "" {
+		conds = append(conds, "pp.city = "+bind(params.City))
+	}
+	if len(conds) == 0 {
+		return nil
+	}
+	return []string{"EXISTS (SELECT 1 FROM photo_places pp " +
+		"WHERE pp.photo_uid = photos.uid AND " + strings.Join(conds, " AND ") + ")"}
 }
 
 // archivedClauses returns the archive-state filter: live-only by default,

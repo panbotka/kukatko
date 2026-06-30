@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"syscall"
 	"time"
@@ -283,26 +284,38 @@ func buildServices(
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
-	opts := []server.Option{
+	opts := slices.Concat([]server.Option{
 		server.WithAPI(authAPI.RegisterRoutes),
 		server.WithAPI(ingestAPI.RegisterRoutes),
 		server.WithAPI(photoAPI.RegisterRoutes),
 		server.WithAPI(clusterAPI.RegisterRoutes),
-		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildPeopleAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildOrganizeAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildBulkAPI(cfg, db, authAPI).RegisterRoutes),
 		server.WithAPI(buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes),
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
 		server.WithAPI(maintenanceAPI.RegisterRoutes),
-		// Import history and audit log are always mounted (import triggers self-gate).
+		// Import history is always mounted (import triggers self-gate).
 		server.WithAPI(buildImportAPI(cfg, db, jobStore, authAPI).RegisterRoutes),
+	}, readAPIOptions(db, authAPI))
+	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
+}
+
+// readAPIOptions builds the server options for the read/curation API groups that
+// depend only on the shared pool and the auth guard: per-subject face outliers,
+// the people (subject) catalogue, albums and labels, the places browse hierarchy,
+// per-user saved searches and the audit log. Route groups mount on distinct paths,
+// so their relative order does not matter. Splitting them out keeps buildServices
+// within the function-length limit.
+func readAPIOptions(db *database.DB, authAPI *auth.API) []server.Option {
+	return []server.Option{
+		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildPeopleAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildOrganizeAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildPlacesAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 	}
-	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
 }
 
 // buildImportServiceOrNil builds the PhotoPrism import service when a source is

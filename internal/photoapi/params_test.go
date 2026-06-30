@@ -154,6 +154,15 @@ func TestParseListParams_valid(t *testing.T) {
 			},
 		},
 		{
+			name:  "country and city place scope",
+			query: "country=Czechia&city=Praha",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.Country != "Czechia" || p.City != "Praha" {
+					t.Errorf("place filters mismapped: country=%q city=%q", p.Country, p.City)
+				}
+			},
+		},
+		{
 			name:  "sort rating",
 			query: "sort=rating",
 			check: func(t *testing.T, p photos.ListParams) {

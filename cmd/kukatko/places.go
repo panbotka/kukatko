@@ -3,14 +3,29 @@ package main
 import (
 	"fmt"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/placesapi"
 	"github.com/panbotka/kukatko/internal/placesjob"
 )
+
+// buildPlacesAPI assembles the places browse HTTP API over the shared pool: a
+// signed-in user listing the country/city place hierarchy (with per-place photo
+// counts) of the non-archived library and drilling into a single country. The
+// read guard is supplied via authAPI so placesapi stays decoupled from auth's
+// wiring; the aggregation runs over the photos store, which joins the
+// photo_places cache.
+func buildPlacesAPI(db *database.DB, authAPI *auth.API) *placesapi.API {
+	return placesapi.NewAPI(placesapi.Config{
+		Store:       photos.NewStore(db.Pool()),
+		RequireAuth: authAPI.RequireAuth,
+	})
+}
 
 // buildPlacesServiceOrNil assembles the reverse-geocode (places) job service when
 // a mapy.com API key is configured, returning (nil, nil) otherwise so the `places`
