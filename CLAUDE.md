@@ -33,7 +33,9 @@ inkrementální).
   `Store` nad pgx, `Service` orchestrace login/session/bootstrap/správa uživatelů,
   `API` = HTTP handlery + RBAC middleware `RequireAuth`/`RequireWrite`/`RequireAdmin` +
   `RegisterRoutes`; session a users v migraci `0002_auth.sql`), `internal/photos/`
-  (jádro foto-katalogu: typované modely `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`,
+  (jádro foto-katalogu: typované modely `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`
+  (`Photo` nese i per-user anotační pole `Rating int`/`Flag string` — JSON `rating`/`flag`,
+  analogická `is_favorite`; neukládají se v `photos`, plní je HTTP handlery z `organize.Store`),
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generátor prefix `ph`,
   `Store` nad pgx s
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/`SetPhotoprismRef`
@@ -49,7 +51,13 @@ inkrementální).
   — podklad sdíleného scoped výpisu fotek alba/štítku přes `GET /photos?album=`/`?label=`,
   plus **per-user favorite scope** `FavoriteOf` korelovaným `EXISTS` nad `user_favorites`
   — podklad `GET /photos?favorite=true` a `GET /favorites`,
-  řazení taken_at/created_at/uid/title/file_size, stránkování limit/offset; `Count` sdílí
+  plus **per-user rating filtry** `RatedBy` (uid aktuálního uživatele, scopuje anotaci/filtry/řazení)
+  + `MinRating` (rating ≥ n korelovaným `EXISTS` nad `user_ratings`, ≤ 0 = bez filtru, fotka bez řádku
+  = rating 0) + `Flag` (`pick`/`reject` korelovaným `EXISTS`) — všechny aktivní jen když je `RatedBy`
+  nastaveno, fotka bez řádku = rating 0 / flag `none`,
+  řazení taken_at/created_at/uid/title/file_size **+ `rating`** (řazení dle ratingu `RatedBy`
+  uživatele přes korelovaný poddotaz nad `user_ratings`, `NULLS LAST` — nehodnocené poslední; aktivní
+  jen s `RatedBy`), stránkování limit/offset; `Count` sdílí
   `buildWhere` filtry pro `total`)/`Search` (česky-aware fulltext nad generovaným `fts
   tsvector` sloupcem: `ListParams.FullText` přes `websearch_to_tsquery('simple',
   immutable_unaccent(q))`, řazení dle `ts_rank` (title>description>notes>file_name),
@@ -464,9 +472,11 @@ inkrementální).
   decode `DisallowUnknownFields` + 1 MiB limit + prázdné jméno → 400; sentinely mapované
   `ErrSubjectNotFound`→404/`ErrInvalidType`→400; mountuje se osmým `server.WithAPI`
   (`buildPeopleAPI` v `cmd/kukatko/people.go`)), `internal/organize/`
-  (DB vrstva pro **organizaci** — alba, štítky a **per-user oblíbené** (nahrazují globální
-  `photos.favorite` z photo-sorteru); tabulky `albums`/`album_photos`/`labels`/`photo_labels`/
-  `user_favorites` v migraci `0011_albums_labels_favorites.sql`: **`albums`** = `uid PK`
+  (DB vrstva pro **organizaci** — alba, štítky, **per-user oblíbené** (nahrazují globální
+  `photos.favorite` z photo-sorteru) a **per-user hodnocení** (hvězdičky 0–5 + pick/reject flag);
+  tabulky `albums`/`album_photos`/`labels`/`photo_labels`/
+  `user_favorites` v migraci `0011_albums_labels_favorites.sql` a `user_ratings` v migraci
+  `0016_user_ratings.sql`: **`albums`** = `uid PK`
   (prefix `al`), `slug UNIQUE` (Slugify z `title`, číselný sufix na kolizi), `title`/`description`,
   `type IN (album|folder|moment|state|month)`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`),
   `private`, `order_by` (free-text řazení galerie, default `added`), `created_by` (FK users
@@ -475,6 +485,10 @@ inkrementální).
   (z `name`), `name`, `priority`, časy; **`photo_labels`** = připojení `(photo_uid, label_uid) PK`,
   oba FK `ON DELETE CASCADE`, `source IN (manual|ai|import)`, `uncertainty` (int %), `created_at`;
   **`user_favorites`** = `(user_uid, photo_uid) PK`, oba FK `ON DELETE CASCADE`, `added_at`;
+  **`user_ratings`** = `(user_uid, photo_uid) PK`, oba FK `ON DELETE CASCADE`, `rating SMALLINT 0..5`
+  (CHECK), `flag TEXT IN (none|pick|reject)` (CHECK), `updated_at` — řádek existuje jen pro
+  nedefaultní hodnotu (store maže řádek, který spadne na rating 0 + flag `none`), takže fotka bez
+  řádku = rating 0 / flag `none`;
   `Store` = `NewStore(pool)` nad sdíleným pgx poolem: **alba** `CreateAlbum`/`GetAlbumByUID`/
   `GetAlbumBySlug`/`UpdateAlbum` (re-slug z title)/`ListAlbums` (s počty fotek, řazení dle title)/
   `DeleteAlbum`/`AddPhoto` (idempotentní upsert pozice)/`RemovePhoto` (idempotentní)/`ReorderPhotos`
@@ -484,12 +498,21 @@ inkrementální).
   upsert source/uncertainty)/`DetachLabel` (idempotentní)/`ListPhotoUIDsByLabel`; **oblíbené**
   `AddFavorite`/`RemoveFavorite` (obojí idempotentní)/`IsFavorite`/`ListFavorites` (per-user,
   newest-first)/`FavoritedAmong` (z množiny photo uid vrátí per-user podmnožinu oblíbených jako
-  množinu — anotace celé stránky `is_favorite` jedním dotazem); typy `AlbumType`/`LabelSource`
+  množinu — anotace celé stránky `is_favorite` jedním dotazem); **hodnocení** (`ratings.go`)
+  `SetRating(user,photo,rating)` (validace 0–5 → `ErrInvalidRating`) / `SetFlag(user,photo,flag)`
+  (validace none/pick/reject → `ErrInvalidFlag`) — idempotentní upsert jedné kolony v transakci,
+  druhá kolona se zachová; když řádek spadne na rating 0 + flag `none`, smaže se (tabulka zůstane
+  řídká); `GetRating(user,photo)` → `PhotoRating{Rating,Flag}` (chybějící řádek = 0/`none`, nil err);
+  `RatingsAmong(user,photoUIDs)` → mapa `photo_uid → PhotoRating` jen pro hodnocené fotky (anotace
+  celé stránky jedním dotazem, mirror `FavoritedAmong`, chybějící caller defaultuje na 0/`none`);
+  typy `AlbumType`/`LabelSource`/`RatingFlag` (none/pick/reject)
   zrcadlí SQL CHECKy, slug helper s per-druh
   fallbackem (`album`/`label`); sentinely `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`/
-  `ErrUserNotFound`/`ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidSource` — FK porušení při zápisu
-  do join tabulek se mapuje na not-found sentinel podle porušeného sloupce (`photo_uid` → photo,
-  jinak album/label/user)), `internal/organizeapi/`
+  `ErrUserNotFound`/`ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidSource`/`ErrInvalidRating`/
+  `ErrInvalidFlag` — FK porušení při zápisu
+  do join tabulek (`user_favorites`/`user_ratings`) se mapuje na not-found sentinel podle porušeného
+  sloupce přes sdílený `translateUserPhotoFK` (`photo_uid` → photo, jinak user;
+  album/label přes `translateMembershipFK`/`translateAttachFK`)), `internal/organizeapi/`
   (read/curace HTTP API nad alby a štítky — podklad Albums/Labels UI: rozhraní `AlbumStore`/
   `LabelStore` (podmnožiny `organize.Store`) → unit-testovatelné s faky bez DB;
   `NewAPI(Config{Albums,Labels,RequireAuth,RequireWrite})`+`RegisterRoutes` mountuje dva

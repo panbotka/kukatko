@@ -1,6 +1,7 @@
 package photos
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -90,11 +91,33 @@ func TestOrderClause(t *testing.T) {
 			params: ListParams{Sort: SortField("evil; DROP TABLE photos")},
 			want:   "taken_at DESC NULLS LAST, uid DESC",
 		},
+		{
+			name:   "rating sort uses a correlated subquery bound to the user",
+			params: ListParams{Sort: SortByRating, RatedBy: new("us_1"), Order: OrderDesc},
+			want: "(SELECT ur.rating FROM user_ratings ur " +
+				"WHERE ur.photo_uid = photos.uid AND ur.user_uid = $1) DESC NULLS LAST, uid DESC",
+		},
+		{
+			name:   "rating sort ascending keeps NULLS LAST",
+			params: ListParams{Sort: SortByRating, RatedBy: new("us_1"), Order: OrderAsc},
+			want: "(SELECT ur.rating FROM user_ratings ur " +
+				"WHERE ur.photo_uid = photos.uid AND ur.user_uid = $1) ASC NULLS LAST, uid ASC",
+		},
+		{
+			name:   "rating sort without a user falls back to taken_at",
+			params: ListParams{Sort: SortByRating},
+			want:   "taken_at DESC NULLS LAST, uid DESC",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := orderClause(tt.params); got != tt.want {
+			var args []any
+			bind := func(value any) string {
+				args = append(args, value)
+				return "$" + strconv.Itoa(len(args))
+			}
+			if got := orderClause(tt.params, bind); got != tt.want {
 				t.Errorf("orderClause(%+v) = %q, want %q", tt.params, got, tt.want)
 			}
 		})
@@ -255,6 +278,88 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 		}
 		if len(args) != 3 || args[0] != "us_1" {
 			t.Errorf("args = %v, want [us_1 limit offset]", args)
+		}
+	})
+}
+
+// TestBuildListQuery_ratingFilters verifies the per-user rating filters add
+// correlated EXISTS subqueries that bind the user UID and the value, apply only
+// when RatedBy is set, and that the rating sort binds its user after the filters.
+func TestBuildListQuery_ratingFilters(t *testing.T) {
+	t.Parallel()
+
+	t.Run("min rating binds the user and the threshold", func(t *testing.T) {
+		t.Parallel()
+		three := 3
+		query, args := buildListQuery(ListParams{RatedBy: new("us_1"), MinRating: &three})
+		want := "EXISTS (SELECT 1 FROM user_ratings ur " +
+			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = $1 AND ur.rating >= $2)"
+		if !strings.Contains(query, want) {
+			t.Errorf("query missing min-rating filter %q: %q", want, query)
+		}
+		if len(args) != 4 || args[0] != "us_1" || args[1] != 3 {
+			t.Errorf("args = %v, want [us_1 3 limit offset]", args)
+		}
+	})
+
+	t.Run("non-positive min rating adds no filter", func(t *testing.T) {
+		t.Parallel()
+		zero := 0
+		query, args := buildListQuery(ListParams{RatedBy: new("us_1"), MinRating: &zero})
+		if strings.Contains(query, "user_ratings") {
+			t.Errorf("query should not filter on user_ratings for min rating 0: %q", query)
+		}
+		if len(args) != 2 {
+			t.Errorf("args = %v, want [limit offset]", args)
+		}
+	})
+
+	t.Run("flag filter binds pick", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{RatedBy: new("us_1"), Flag: new("pick")})
+		want := "EXISTS (SELECT 1 FROM user_ratings ur " +
+			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = $1 AND ur.flag = $2)"
+		if !strings.Contains(query, want) {
+			t.Errorf("query missing flag filter %q: %q", want, query)
+		}
+		if len(args) != 4 || args[0] != "us_1" || args[1] != "pick" {
+			t.Errorf("args = %v, want [us_1 pick limit offset]", args)
+		}
+	})
+
+	t.Run("flag none adds no filter", func(t *testing.T) {
+		t.Parallel()
+		query, _ := buildListQuery(ListParams{RatedBy: new("us_1"), Flag: new("none")})
+		if strings.Contains(query, "user_ratings") {
+			t.Errorf("query should not filter on user_ratings for flag none: %q", query)
+		}
+	})
+
+	t.Run("rating filters need a rated-by user", func(t *testing.T) {
+		t.Parallel()
+		five := 5
+		query, _ := buildListQuery(ListParams{MinRating: &five, Flag: new("pick")})
+		if strings.Contains(query, "user_ratings") {
+			t.Errorf("query should not filter on user_ratings without RatedBy: %q", query)
+		}
+	})
+
+	t.Run("rating sort binds the user after the filters", func(t *testing.T) {
+		t.Parallel()
+		two := 2
+		query, args := buildListQuery(ListParams{
+			RatedBy: new("us_1"), MinRating: &two, Sort: SortByRating,
+		})
+		if !strings.Contains(query, "ur.rating >= $2") {
+			t.Errorf("query missing bound min-rating filter: %q", query)
+		}
+		// $1 user (filter) + $2 threshold + $3 user (sort) + limit + offset.
+		if !strings.Contains(query, "ORDER BY (SELECT ur.rating FROM user_ratings ur "+
+			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = $3) DESC NULLS LAST, uid DESC") {
+			t.Errorf("query missing rating sort bound after filters: %q", query)
+		}
+		if len(args) != 5 || args[2] != "us_1" {
+			t.Errorf("args = %v, want [us_1 2 us_1 limit offset]", args)
 		}
 	})
 }

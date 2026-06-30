@@ -123,6 +123,14 @@ type Photo struct {
 	PhotoprismFileHash *string `json:"photoprism_file_hash,omitempty"`
 	PhotosorterUID     *string `json:"photosorter_uid,omitempty"`
 
+	// Rating and Flag are the current user's per-user star rating (0–5) and
+	// pick/reject flag ("none"/"pick"/"reject"), analogous to is_favorite. They are
+	// not stored on the photos table; HTTP handlers populate them from the
+	// per-user user_ratings store (organize.Store.RatingsAmong), so a photo read
+	// straight from the catalogue carries the zero value (rating 0, empty flag).
+	Rating int    `json:"rating"`
+	Flag   string `json:"flag"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

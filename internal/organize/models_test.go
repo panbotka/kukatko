@@ -83,15 +83,43 @@ func TestTranslateAttachFK(t *testing.T) {
 	}
 }
 
-// TestTranslateFavoriteFK checks the user_favorites foreign-key error mapping.
-func TestTranslateFavoriteFK(t *testing.T) {
+// TestTranslateUserPhotoFK checks the (user_uid, photo_uid) foreign-key error
+// mapping shared by user_favorites and user_ratings writes.
+func TestTranslateUserPhotoFK(t *testing.T) {
 	t.Parallel()
 
-	if err := translateFavoriteFK(fkError("user_favorites_user_uid_fkey")); !errors.Is(err, ErrUserNotFound) {
-		t.Errorf("user fk = %v, want ErrUserNotFound", err)
+	if err := translateUserPhotoFK(fkError("user_favorites_user_uid_fkey"), "x"); !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("favorites user fk = %v, want ErrUserNotFound", err)
 	}
-	if err := translateFavoriteFK(fkError("user_favorites_photo_uid_fkey")); !errors.Is(err, ErrPhotoNotFound) {
-		t.Errorf("photo fk = %v, want ErrPhotoNotFound", err)
+	if err := translateUserPhotoFK(fkError("user_favorites_photo_uid_fkey"), "x"); !errors.Is(err, ErrPhotoNotFound) {
+		t.Errorf("favorites photo fk = %v, want ErrPhotoNotFound", err)
+	}
+	if err := translateUserPhotoFK(fkError("user_ratings_user_uid_fkey"), "x"); !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("ratings user fk = %v, want ErrUserNotFound", err)
+	}
+	if err := translateUserPhotoFK(fkError("user_ratings_photo_uid_fkey"), "x"); !errors.Is(err, ErrPhotoNotFound) {
+		t.Errorf("ratings photo fk = %v, want ErrPhotoNotFound", err)
+	}
+}
+
+// TestRatingFlagValid checks the recognised set of rating flags.
+func TestRatingFlagValid(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		flag RatingFlag
+		want bool
+	}{
+		{flag: FlagNone, want: true},
+		{flag: FlagPick, want: true},
+		{flag: FlagReject, want: true},
+		{flag: "", want: false},
+		{flag: "star", want: false},
+	}
+	for _, tt := range tests {
+		if got := tt.flag.valid(); got != tt.want {
+			t.Errorf("RatingFlag(%q).valid() = %v, want %v", tt.flag, got, tt.want)
+		}
 	}
 }
 

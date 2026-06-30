@@ -536,11 +536,12 @@ takže se unit-testuje s faky bez DB.
   `GET /subjects/{uid}/outliers` na témže routeru. Mountuje se osmým `server.WithAPI`
   (`buildPeopleAPI` v `cmd/kukatko/people.go`).
 
-### Alba, štítky & oblíbené (`internal/organize`)
+### Alba, štítky, oblíbené & hodnocení (`internal/organize`)
 
-Organizační schéma nad katalogem (migrace `0011_albums_labels_favorites.sql`, balíček
-`internal/organize` se `Store` nad sdíleným pgx poolem). Oblíbené jsou v Kukátku **per-user**
-(nahrazují globální `photos.favorite` z photo-sorteru).
+Organizační schéma nad katalogem (migrace `0011_albums_labels_favorites.sql` a
+`0016_user_ratings.sql`, balíček `internal/organize` se `Store` nad sdíleným pgx poolem).
+Oblíbené i hodnocení (hvězdičky + pick/reject flag) jsou v Kukátku **per-user** (oblíbené
+nahrazují globální `photos.favorite` z photo-sorteru).
 
 - **`albums`** — PK `uid` (prefix `al`), `slug` UNIQUE (z `title`, Slugify + číselný sufix),
   `title`/`description`, `type` CHECK (`album`/`folder`/`moment`/`state`/`month`),
@@ -553,6 +554,11 @@ Organizační schéma nad katalogem (migrace `0011_albums_labels_favorites.sql`,
   `ON DELETE CASCADE`, `source` CHECK (`manual`/`ai`/`import`), `uncertainty` (int %), `created_at`.
 - **`user_favorites`** — per-user oblíbené: PK `(user_uid, photo_uid)`, oba FK
   `ON DELETE CASCADE`, `added_at`.
+- **`user_ratings`** — per-user hodnocení: PK `(user_uid, photo_uid)`, oba FK `ON DELETE CASCADE`,
+  `rating SMALLINT` CHECK 0–5 (default 0), `flag TEXT` CHECK (`none`/`pick`/`reject`, default
+  `none`), `updated_at`. Řádek existuje **jen pro nedefaultní hodnotu** — když rating spadne na 0
+  a flag na `none`, store řádek smaže, takže fotka bez řádku = rating 0 / flag `none` a tabulka
+  zůstává řídká.
 
 `organize.Store` API:
 
@@ -566,9 +572,16 @@ Organizační schéma nad katalogem (migrace `0011_albums_labels_favorites.sql`,
 - **Oblíbené** — `AddFavorite`/`RemoveFavorite` (obojí idempotentní), `IsFavorite`,
   `ListFavorites` (per-user, newest-first), `FavoritedAmong` (z dané množiny photo uid vrátí
   per-user podmnožinu oblíbených jako množinu — anotace celé stránky `is_favorite` jedním dotazem).
+- **Hodnocení** — `SetRating(user,photo,rating)` (validace 0–5 → `ErrInvalidRating`) a
+  `SetFlag(user,photo,flag)` (validace `none`/`pick`/`reject` → `ErrInvalidFlag`): idempotentní
+  upsert jediné kolony v transakci (druhá se zachová), a když řádek spadne na 0/`none`, smaže ho.
+  `GetRating(user,photo)` → `PhotoRating{Rating,Flag}` (chybějící řádek = 0/`none`).
+  `RatingsAmong(user,photoUIDs)` → mapa `photo_uid → PhotoRating` jen pro hodnocené fotky (anotace
+  celé stránky jedním dotazem, mirror `FavoritedAmong`; chybějící fotky caller defaultuje na 0/`none`).
 - **Sentinely** — `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`/`ErrUserNotFound`/
-  `ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidSource`. FK porušení při zápisu do join tabulek
-  se mapují na not-found sentinely podle porušeného sloupce (`photo_uid` → photo apod.).
+  `ErrSlugExhausted`/`ErrInvalidType`/`ErrInvalidSource`/`ErrInvalidRating`/`ErrInvalidFlag`. FK
+  porušení při zápisu do join tabulek se mapují na not-found sentinely podle porušeného sloupce
+  (`photo_uid` → photo, jinak user/album/label).
 
 ### Alba & štítky API (`internal/organizeapi`)
 

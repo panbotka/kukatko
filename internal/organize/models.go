@@ -34,6 +34,10 @@ var (
 	ErrInvalidType = errors.New("organize: invalid album type")
 	// ErrInvalidSource indicates a photo-label source outside the allowed set.
 	ErrInvalidSource = errors.New("organize: invalid label source")
+	// ErrInvalidRating indicates a star rating outside the allowed 0–5 range.
+	ErrInvalidRating = errors.New("organize: invalid rating")
+	// ErrInvalidFlag indicates a pick/reject flag outside the allowed set.
+	ErrInvalidFlag = errors.New("organize: invalid rating flag")
 )
 
 // AlbumType classifies an album, mirrored by the SQL CHECK constraint on
@@ -149,4 +153,47 @@ type LabelCount struct {
 type LabelUpdate struct {
 	Name     string `json:"name"`
 	Priority int    `json:"priority"`
+}
+
+// RatingFlag is a per-user pick/reject cull marker on a photo, mirrored by the
+// SQL CHECK constraint on user_ratings.flag.
+type RatingFlag string
+
+// The recognised rating flags.
+const (
+	// FlagNone is the absence of a pick/reject marker (the default).
+	FlagNone RatingFlag = "none"
+	// FlagPick marks a photo the user wants to keep/select.
+	FlagPick RatingFlag = "pick"
+	// FlagReject marks a photo the user wants to discard/cull.
+	FlagReject RatingFlag = "reject"
+)
+
+// valid reports whether f is one of the recognised rating flags.
+func (f RatingFlag) valid() bool {
+	switch f {
+	case FlagNone, FlagPick, FlagReject:
+		return true
+	default:
+		return false
+	}
+}
+
+// The inclusive bounds of a star rating, mirroring the SQL CHECK constraint on
+// user_ratings.rating.
+const (
+	// ratingMin is the lowest star rating (unrated).
+	ratingMin = 0
+	// ratingMax is the highest star rating.
+	ratingMax = 5
+)
+
+// PhotoRating is a user's star rating (0–5) and pick/reject flag for one photo.
+// A photo a user has never rated reads back as the zero value — rating 0, flag
+// "none" — because the store keeps no row for all-default ratings.
+type PhotoRating struct {
+	// Rating is the user's star rating from 0 (unrated) to 5.
+	Rating int `json:"rating"`
+	// Flag is the user's pick/reject marker; one of "none", "pick", "reject".
+	Flag string `json:"flag"`
 }

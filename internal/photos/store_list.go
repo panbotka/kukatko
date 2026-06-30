@@ -25,6 +25,11 @@ const (
 	SortByTitle SortField = "title"
 	// SortBySize orders by the original file size in bytes.
 	SortBySize SortField = "file_size"
+	// SortByRating orders by the RatedBy user's star rating (unrated photos last).
+	// Unlike the others it is not a plain column on photos; it resolves to a
+	// correlated subquery over user_ratings and is honoured only when RatedBy is
+	// set, since a rating is always scoped to the current caller.
+	SortByRating SortField = "rating"
 )
 
 // sortColumns maps each accepted SortField to its physical column. Lookups
@@ -103,6 +108,20 @@ type ListParams struct {
 	// the current caller; it keeps the favorites grid on the shared list/search
 	// path so every other filter, the sort and pagination apply unchanged.
 	FavoriteOf string
+	// RatedBy, when non-nil, is the current caller's user UID and scopes the
+	// per-user rating annotation, filters (MinRating, Flag) and the rating sort to
+	// that user. Ratings are per-user, so they are always bound to the caller;
+	// MinRating, Flag and SortByRating have no effect when RatedBy is nil.
+	RatedBy *string
+	// MinRating, when non-nil and positive, keeps photos the RatedBy user has
+	// rated at or above the given star value (correlated EXISTS over user_ratings).
+	// A photo with no rating row counts as rating 0, so a positive minimum
+	// excludes it; a value <= 0 matches every photo and adds no filter.
+	MinRating *int
+	// Flag, when non-nil and one of "pick"/"reject", keeps photos the RatedBy user
+	// has marked with that flag (correlated EXISTS over user_ratings). A photo with
+	// no rating row counts as flag "none", so it is excluded.
+	Flag *string
 	// Sort selects the ordering column; an unknown value falls back to
 	// SortByTakenAt.
 	Sort SortField
@@ -249,6 +268,33 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 	where = append(where, ftsClauses(params, bind)...)
 	where = append(where, membershipClauses(params, bind)...)
 	where = append(where, favoriteClauses(params, bind)...)
+	where = append(where, ratingClauses(params, bind)...)
+	return where
+}
+
+// ratingClauses returns the per-user rating filters (minimum star rating and
+// pick/reject flag) as correlated EXISTS subqueries over user_ratings, binding
+// each value through bind. Both are scoped to params.RatedBy (the current
+// caller), so they apply only when a rating user is set. A photo with no rating
+// row counts as rating 0 / flag "none", so a positive MinRating or a pick/reject
+// flag filter excludes it; a MinRating <= 0 matches every photo and adds no
+// clause. The outer photo reference is qualified (photos.uid) to disambiguate it
+// from the join table's photo_uid inside the subquery.
+func ratingClauses(params ListParams, bind func(any) string) []string {
+	if params.RatedBy == nil {
+		return nil
+	}
+	var where []string
+	if params.MinRating != nil && *params.MinRating > 0 {
+		where = append(where, "EXISTS (SELECT 1 FROM user_ratings ur "+
+			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = "+bind(*params.RatedBy)+
+			" AND ur.rating >= "+bind(*params.MinRating)+")")
+	}
+	if params.Flag != nil && (*params.Flag == "pick" || *params.Flag == "reject") {
+		where = append(where, "EXISTS (SELECT 1 FROM user_ratings ur "+
+			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = "+bind(*params.RatedBy)+
+			" AND ur.flag = "+bind(*params.Flag)+")")
+	}
 	return where
 }
 
@@ -372,12 +418,18 @@ func tsQueryExpr(placeholder string) string {
 // parameters; ordering is chosen from an allow-list, never interpolated raw.
 func buildListQuery(params ListParams) (string, []any) {
 	where, args := buildWhere(params)
+	// Continue binding from where buildWhere left off so the rating sort's
+	// correlated subquery can bind the RatedBy user after the filter parameters.
+	bind := func(value any) string {
+		args = append(args, value)
+		return "$" + strconv.Itoa(len(args))
+	}
 
 	query := "SELECT " + photoColumns + " FROM photos"
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY " + orderClause(params)
+	query += " ORDER BY " + orderClause(params, bind)
 
 	limit := params.Limit
 	if limit <= 0 {
@@ -429,18 +481,26 @@ func buildSearchQuery(params ListParams) (string, []any) {
 	return query, args
 }
 
-// orderClause returns the validated "column DIR" ORDER BY body for params,
-// defaulting to taken_at and descending. NULLS LAST keeps photos with an unknown
-// capture time at the end of timeline orderings. UID is appended as a tiebreaker
-// for a stable, total order across pages.
-func orderClause(params ListParams) string {
-	column, ok := sortColumns[params.Sort]
-	if !ok {
-		column = "taken_at"
-	}
+// orderClause returns the validated ORDER BY body for params, defaulting to
+// taken_at and descending. NULLS LAST keeps photos with an unknown sort value at
+// the end of an ordering; UID is appended as a tiebreaker for a stable, total
+// order across pages. The rating sort orders by the RatedBy user's star rating
+// via a correlated subquery over user_ratings (unrated photos sort last),
+// binding the user UID through bind; it falls back to the default when RatedBy is
+// nil, since a rating is always scoped to the current caller.
+func orderClause(params ListParams, bind func(any) string) string {
 	direction := "DESC"
 	if params.Order == OrderAsc {
 		direction = "ASC"
+	}
+	if params.Sort == SortByRating && params.RatedBy != nil {
+		sub := "(SELECT ur.rating FROM user_ratings ur " +
+			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = " + bind(*params.RatedBy) + ")"
+		return sub + " " + direction + " NULLS LAST, uid " + direction
+	}
+	column, ok := sortColumns[params.Sort]
+	if !ok {
+		column = "taken_at"
 	}
 	clause := column + " " + direction + " NULLS LAST"
 	if column != "uid" {

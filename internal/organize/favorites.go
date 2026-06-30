@@ -3,7 +3,6 @@ package organize
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 // addFavoriteSQL records a user's favorite, doing nothing if the photo is already
@@ -19,7 +18,7 @@ ON CONFLICT (user_uid, photo_uid) DO NOTHING`
 func (s *Store) AddFavorite(ctx context.Context, userUID, photoUID string) error {
 	_, err := s.pool.Exec(ctx, addFavoriteSQL, userUID, photoUID)
 	if err != nil {
-		return translateFavoriteFK(err)
+		return translateUserPhotoFK(err, "favorite write")
 	}
 	return nil
 }
@@ -113,19 +112,4 @@ func (s *Store) FavoritedAmong(ctx context.Context, userUID string, photoUIDs []
 		return nil, fmt.Errorf("organize: iterating favorited photos for %s: %w", userUID, err)
 	}
 	return out, nil
-}
-
-// translateFavoriteFK maps a foreign-key violation from a user_favorites write to
-// ErrUserNotFound or ErrPhotoNotFound by inspecting the violated constraint, and
-// wraps any other error. The constraint name is matched on the referencing column
-// ("photo_uid") rather than the table name, because the table name
-// "user_favorites" contains "user" in both constraints.
-func translateFavoriteFK(err error) error {
-	if name, ok := isForeignKeyViolation(err); ok {
-		if strings.Contains(name, "photo_uid") {
-			return ErrPhotoNotFound
-		}
-		return ErrUserNotFound
-	}
-	return fmt.Errorf("organize: favorite write: %w", err)
 }
