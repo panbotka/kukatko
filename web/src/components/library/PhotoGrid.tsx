@@ -96,6 +96,11 @@ export interface PhotoGridProps {
    * heart is suppressed while a tile is a selection target. Defaults false.
    */
   favoritable?: boolean
+  /**
+   * Query string appended to each tile's detail link so the detail page inherits
+   * this list's order and scope (for prev/next and Back).
+   */
+  detailQuery?: string
 }
 
 /**
@@ -112,6 +117,7 @@ export function PhotoGrid({
   onRetry,
   selection,
   favoritable = false,
+  detailQuery,
 }: PhotoGridProps) {
   return (
     <VirtuosoGrid
@@ -127,6 +133,7 @@ export function PhotoGrid({
           selected={selection?.selected.has(photo.uid) ?? false}
           onToggleSelect={selection?.onToggle}
           favoritable={favoritable}
+          detailQuery={detailQuery}
         />
       )}
       computeItemKey={(_index, photo) => photo.uid}

@@ -12,6 +12,7 @@ import { BulkEditModal } from '../components/organize/BulkEditModal'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useSelection } from '../hooks/useSelection'
+import { detailQueryString } from '../lib/detailView'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { slideshowHref } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
@@ -34,6 +35,11 @@ export function LibraryPage() {
 
   // Memoise the API params so the data hook only reloads when the query changes.
   const params = useMemo(() => viewToParams(view), [view])
+  // The detail link carries this view so prev/next and Back respect the order.
+  const detailQuery = useMemo(
+    () => detailQueryString({ ...view, album: '', label: '', favorite: '' }),
+    [view],
+  )
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = usePhotoLibrary(params)
 
   return (
@@ -114,6 +120,7 @@ export function LibraryPage() {
               : undefined
           }
           favoritable={!selection.active}
+          detailQuery={detailQuery}
         />
       )}
 

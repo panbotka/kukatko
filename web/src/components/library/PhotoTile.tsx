@@ -26,6 +26,12 @@ export interface PhotoTileProps {
    * selection target. Defaults false.
    */
   favoritable?: boolean
+  /**
+   * Query string (without the leading `?`) appended to the detail link so the
+   * detail page inherits the originating list's order and scope for prev/next and
+   * Back. Empty/undefined links to the bare detail route.
+   */
+  detailQuery?: string
 }
 
 /**
@@ -42,6 +48,7 @@ export function PhotoTile({
   selected = false,
   onToggleSelect,
   favoritable = false,
+  detailQuery,
 }: PhotoTileProps) {
   const { t } = useTranslation()
   const [loaded, setLoaded] = useState(false)
@@ -124,7 +131,11 @@ export function PhotoTile({
     </button>
   ) : (
     <Link
-      to={`/photos/${photo.uid}`}
+      to={
+        detailQuery !== undefined && detailQuery !== ''
+          ? `/photos/${photo.uid}?${detailQuery}`
+          : `/photos/${photo.uid}`
+      }
       className="d-block position-relative bg-secondary-subtle overflow-hidden rounded"
       style={{ aspectRatio: '1 / 1' }}
       aria-label={label}

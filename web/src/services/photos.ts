@@ -23,6 +23,17 @@ export interface Photo {
   camera_make: string
   camera_model: string
   lens_model: string
+  /** Capture notes (private annotations); present on detail responses. */
+  notes?: string
+  /** EXIF capture settings, present when the original carried them. */
+  iso?: number
+  aperture?: number
+  exposure?: string
+  focal_length?: number
+  /** GPS altitude in metres, when geotagged with elevation. */
+  altitude?: number
+  /** Media kind: `image`, `video` or `live`. Absent is treated as `image`. */
+  media_type?: string
   private: boolean
   archived_at?: string
   created_at: string
@@ -221,9 +232,150 @@ export interface PhotoFile {
   file_size: number
 }
 
-/** Full photo detail (`internal/photoapi` detail handler): a photo plus its files. */
+/** A compact album reference on a photo detail response (an inline chip). */
+export interface PhotoAlbumRef {
+  uid: string
+  title: string
+}
+
+/** A compact label reference on a photo detail response (an inline chip). */
+export interface PhotoLabelRef {
+  uid: string
+  name: string
+}
+
+/**
+ * Full photo detail (`internal/photoapi` detail handler): a photo plus its
+ * files and its album/label memberships (empty arrays when none).
+ */
 export interface PhotoDetail extends Photo {
   files: PhotoFile[]
+  albums: PhotoAlbumRef[]
+  labels: PhotoLabelRef[]
+}
+
+/**
+ * Partial metadata update for `PATCH /api/v1/photos/{uid}`. An omitted key leaves
+ * the field unchanged; `null` clears a nullable field (`taken_at`, `lat`, `lng`).
+ * Mirrors the backend `updateBody`.
+ */
+export interface PhotoMetadataUpdate {
+  title?: string
+  description?: string
+  notes?: string
+  taken_at?: string | null
+  lat?: number | null
+  lng?: number | null
+  private?: boolean
+}
+
+/**
+ * Applies a partial metadata update to a photo via `PATCH /api/v1/photos/{uid}`
+ * and returns the refreshed detail. Editor/admin only.
+ *
+ * @throws ApiError with `status` 400 (invalid field/coordinate), 403 (viewer),
+ *   404 (no such photo) or 5xx.
+ */
+export async function updatePhoto(
+  uid: string,
+  patch: PhotoMetadataUpdate,
+  signal?: AbortSignal,
+): Promise<PhotoDetail> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}`, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PhotoDetail
+}
+
+/**
+ * The non-destructive edit stored for a photo (`photo_edits`): an optional
+ * normalised crop rectangle (all four set together or all absent), a rotation of
+ * 0/90/180/270 degrees, and brightness/contrast each neutral at 0 and meaningful
+ * in [-1, 1]. Mirrors the backend `photos.Edit`.
+ */
+export interface PhotoEdit {
+  photo_uid?: string
+  crop_x?: number
+  crop_y?: number
+  crop_w?: number
+  crop_h?: number
+  rotation: number
+  brightness: number
+  contrast: number
+  updated_at?: string
+}
+
+/**
+ * Fetches the stored non-destructive edit for a photo via
+ * `GET /api/v1/photos/{uid}/edit`. An unedited photo returns a neutral edit
+ * (rotation 0, brightness/contrast 0, no crop), so the caller always has a value.
+ *
+ * @throws ApiError with `status` 404 (no such photo) or 5xx.
+ */
+export async function fetchEdit(uid: string, signal?: AbortSignal): Promise<PhotoEdit> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/edit`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PhotoEdit
+}
+
+/**
+ * Saves the non-destructive edit for a photo via `PUT /api/v1/photos/{uid}/edit`
+ * and returns the persisted edit. The original file is never modified; downloads
+ * honour the edit. Editor/admin only.
+ *
+ * @throws ApiError with `status` 400 (invalid edit), 403 (viewer), 404 (no such
+ *   photo) or 5xx.
+ */
+export async function saveEdit(
+  uid: string,
+  edit: PhotoEdit,
+  signal?: AbortSignal,
+): Promise<PhotoEdit> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/edit`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PhotoEdit
+}
+
+/**
+ * Builds the URL of a photo's download (`GET /api/v1/photos/{uid}/download`). By
+ * default the download honours any saved edit; pass `original: true` for the
+ * untouched original bytes. A download token can be appended for cookie-less
+ * contexts.
+ */
+export function downloadUrl(
+  uid: string,
+  options: { original?: boolean; token?: string | null } = {},
+): string {
+  const query = new URLSearchParams()
+  if (options.original === true) {
+    query.set('original', 'true')
+  }
+  if (options.token !== undefined && options.token !== null && options.token !== '') {
+    query.set('t', options.token)
+  }
+  const suffix = query.toString() === '' ? '' : `?${query.toString()}`
+  return `${API_BASE}/photos/${encodeURIComponent(uid)}/download${suffix}`
 }
 
 /**

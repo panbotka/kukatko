@@ -435,7 +435,70 @@
   "photo": {
     "loading": "Načítání fotky…",
     "error": "Tuto fotku se nepodařilo načíst.",
-    "back": "Knihovna"
+    "back": "Zpět",
+    "prev": "Předchozí fotka",
+    "next": "Další fotka",
+    "download": "Stáhnout originál",
+    "downloadEdited": "Stáhnout upravenou",
+    "tabs": {
+      "info": "Informace",
+      "location": "Poloha",
+      "edit": "Úpravy"
+    },
+    "metadata": {
+      "formLabel": "Úprava metadat fotky",
+      "title": "Název",
+      "description": "Popis",
+      "notes": "Poznámky",
+      "takenAt": "Datum pořízení",
+      "camera": "Fotoaparát",
+      "lens": "Objektiv",
+      "aperture": "Clona",
+      "exposure": "Expozice",
+      "focalLength": "Ohnisko",
+      "iso": "ISO",
+      "fileName": "Soubor",
+      "lat": "Zeměpisná šířka",
+      "lng": "Zeměpisná délka",
+      "edit": "Upravit",
+      "save": "Uložit",
+      "cancel": "Zrušit",
+      "saveError": "Uložení se nezdařilo. Zkontroluj zadané hodnoty."
+    },
+    "organize": {
+      "albums": "Alba",
+      "labels": "Štítky",
+      "noAlbums": "V žádném albu.",
+      "noLabels": "Bez štítků.",
+      "addAlbum": "Přidat do alba",
+      "addLabel": "Přidat štítek",
+      "add": "Přidat",
+      "removeAlbum": "Odebrat z alba {{name}}",
+      "removeLabel": "Odebrat štítek {{name}}",
+      "error": "Změnu se nepodařilo uložit."
+    },
+    "location": {
+      "none": "Tato fotka nemá uloženou polohu. Geotag přidáš v záložce Informace.",
+      "lookup": "Zjistit místo",
+      "lookupError": "Místo se nepodařilo zjistit.",
+      "clear": "Vymazat polohu"
+    },
+    "edit": {
+      "title": "Úpravy",
+      "previewAlt": "Náhled úprav",
+      "rotation": "Otočení",
+      "rotateRight": "Otočit doprava",
+      "brightness": "Jas",
+      "contrast": "Kontrast",
+      "crop": "Oříznout",
+      "crop_x": "Levý okraj",
+      "crop_y": "Horní okraj",
+      "crop_w": "Šířka",
+      "crop_h": "Výška",
+      "save": "Uložit úpravy",
+      "reset": "Obnovit originál",
+      "error": "Úpravy se nepodařilo uložit."
+    }
   },
   "upload": {
     "title": "Nahrát",

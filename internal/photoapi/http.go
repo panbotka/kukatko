@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -34,6 +35,7 @@ type API struct {
 	embedder        TextEmbedder
 	faces           FaceService
 	favorites       FavoriteStore
+	organizer       PhotoOrganizer
 	purger          Purger
 	retentionDays   int
 	requireAuth     func(http.Handler) http.Handler
@@ -64,6 +66,9 @@ type Config struct {
 	// on list/detail responses and the favorite=true filter. When nil those
 	// endpoints answer 503 and photos report is_favorite false.
 	Favorites FavoriteStore
+	// Organizer backs the album/label membership chips on the detail response.
+	// When nil the detail response omits the memberships.
+	Organizer PhotoOrganizer
 	// Purger backs the permanent-delete endpoints (purge one, empty trash). When
 	// nil those endpoints answer 503.
 	Purger Purger
@@ -89,6 +94,7 @@ func NewAPI(cfg Config) *API {
 		embedder:        cfg.Embedder,
 		faces:           cfg.Faces,
 		favorites:       cfg.Favorites,
+		organizer:       cfg.Organizer,
 		purger:          cfg.Purger,
 		retentionDays:   cfg.RetentionDays,
 		requireAuth:     cfg.RequireAuth,
@@ -107,6 +113,8 @@ func NewAPI(cfg Config) *API {
 //	GET    /photos/{uid}/faces        RequireAuth      faces + assignment + suggestions
 //	POST   /photos/{uid}/faces/assign RequireWrite     create/assign/unassign marker
 //	PATCH  /photos/{uid}              RequireWrite     update metadata
+//	GET    /photos/{uid}/edit         RequireAuth      stored non-destructive edit
+//	PUT    /photos/{uid}/edit         RequireWrite     save non-destructive edit
 //	POST   /photos/{uid}/archive      RequireWrite     soft-delete
 //	POST   /photos/{uid}/unarchive    RequireWrite     restore
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail
@@ -131,6 +139,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAuth).Delete("/{uid}/favorite", a.handleRemoveFavorite)
 		r.With(a.requireWrite).Post("/{uid}/faces/assign", a.handleFaceAssign)
 		r.With(a.requireWrite).Patch("/{uid}", a.handleUpdate)
+		r.With(a.requireAuth).Get("/{uid}/edit", a.handleGetEdit)
+		r.With(a.requireWrite).Put("/{uid}/edit", a.handlePutEdit)
 		r.With(a.requireWrite).Post("/{uid}/archive", a.handleArchive)
 		r.With(a.requireWrite).Post("/{uid}/unarchive", a.handleUnarchive)
 		r.With(a.requireWrite).Post("/{uid}/purge", a.handlePurge)
@@ -263,11 +273,14 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 const defaultPageLimit = 100
 
 // photoDetail is the JSON body returned by the detail endpoint: the photo (with
-// its metadata, EXIF, GPS and the current user's is_favorite flag) plus the list
-// of its stored files.
+// its metadata, EXIF, GPS and the current user's is_favorite flag), the list of
+// its stored files, and its album/label memberships (empty when no organizer is
+// wired) so the detail view can show and edit them inline.
 type photoDetail struct {
 	photoView
-	Files []photos.PhotoFile `json:"files"`
+	Files  []photos.PhotoFile `json:"files"`
+	Albums []albumRef         `json:"albums"`
+	Labels []labelRef         `json:"labels"`
 }
 
 // handleDetail returns a photo's full detail, including its file list and the
@@ -294,7 +307,40 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "resolving favorite failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, photoDetail{photoView: views[0], Files: files})
+	albums, labels, err := a.photoMemberships(r.Context(), uid)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "fetching photo organization failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, photoDetail{
+		photoView: views[0], Files: files, Albums: albums, Labels: labels,
+	})
+}
+
+// photoMemberships returns the photo's album and label chips for the detail
+// response, or empty (non-nil) slices when no organizer is wired so the JSON
+// always carries arrays rather than null.
+func (a *API) photoMemberships(ctx context.Context, uid string) ([]albumRef, []labelRef, error) {
+	albums := make([]albumRef, 0)
+	labels := make([]labelRef, 0)
+	if a.organizer == nil {
+		return albums, labels, nil
+	}
+	albumRows, err := a.organizer.AlbumsForPhoto(ctx, uid)
+	if err != nil {
+		return nil, nil, fmt.Errorf("photoapi: albums for photo: %w", err)
+	}
+	for _, album := range albumRows {
+		albums = append(albums, albumRef{UID: album.UID, Title: album.Title})
+	}
+	labelRows, err := a.organizer.LabelsForPhoto(ctx, uid)
+	if err != nil {
+		return nil, nil, fmt.Errorf("photoapi: labels for photo: %w", err)
+	}
+	for _, label := range labelRows {
+		labels = append(labels, labelRef{UID: label.UID, Name: label.Name})
+	}
+	return albums, labels, nil
 }
 
 // handleArchive soft-deletes the photo (sets archived_at) and returns the

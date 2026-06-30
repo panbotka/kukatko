@@ -76,10 +76,13 @@ func (a *API) openThumb(r *http.Request, photo photos.Photo, size string) (io.Re
 	return reader, nil
 }
 
-// handleDownload streams a photo's original file as an attachment. A missing
-// photo or a file gone from storage is answered with 404. The file is streamed
-// chunk by chunk (never buffered whole in memory) with its content type, length,
-// an ETag and a download filename.
+// handleDownload streams a photo's file as an attachment. When the photo carries
+// a non-destructive edit (and the caller did not ask for ?original=true) the
+// edited image is rendered on the fly and served instead, so a download honours
+// the edits while the stored original is never modified. A missing photo or a
+// file gone from storage is answered with 404. The original is streamed chunk by
+// chunk (never buffered whole); an edited image is rendered into memory because a
+// transform cannot be streamed.
 func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	photo, err := a.store.GetByUID(r.Context(), uid)
@@ -88,6 +91,16 @@ func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if a.maybeServeEdited(w, r, photo) {
+		return
+	}
+	a.serveOriginal(w, r, photo)
+}
+
+// serveOriginal streams the photo's stored original file as an attachment,
+// answering 404 when the file is gone from storage and 500 on any other open
+// error.
+func (a *API) serveOriginal(w http.ResponseWriter, r *http.Request, photo photos.Photo) {
 	reader, err := a.storage.Open(r.Context(), photo.FilePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

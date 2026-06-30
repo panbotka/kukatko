@@ -215,6 +215,37 @@ func (s *Store) ListPhotoUIDsByLabel(ctx context.Context, labelUID string) ([]st
 	return out, nil
 }
 
+// listLabelsForPhotoSQL selects every label attached to a photo, highest
+// priority first then by name. The columns are alias-qualified because
+// photo_labels also has a created_at column, which would otherwise be ambiguous.
+const listLabelsForPhotoSQL = "SELECT l.uid, l.slug, l.name, l.priority, l.created_at, l.updated_at " +
+	"FROM labels l JOIN photo_labels pl ON pl.label_uid = l.uid WHERE pl.photo_uid = $1 " +
+	"ORDER BY l.priority DESC, l.name"
+
+// LabelsForPhoto returns the labels attached to the photo identified by photoUID,
+// ordered by priority then name. It backs the photo detail view's inline label
+// chips. An unknown photo yields an empty slice (not an error).
+func (s *Store) LabelsForPhoto(ctx context.Context, photoUID string) ([]Label, error) {
+	rows, err := s.pool.Query(ctx, listLabelsForPhotoSQL, photoUID)
+	if err != nil {
+		return nil, fmt.Errorf("organize: listing labels for photo %s: %w", photoUID, err)
+	}
+	defer rows.Close()
+
+	out := make([]Label, 0)
+	for rows.Next() {
+		label, err := scanLabel(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, label)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("organize: iterating labels for photo %s: %w", photoUID, err)
+	}
+	return out, nil
+}
+
 // translateAttachFK maps a foreign-key violation from a photo_labels write to
 // ErrLabelNotFound or ErrPhotoNotFound by inspecting the violated constraint, and
 // wraps any other error. The constraint name is matched on the referencing column

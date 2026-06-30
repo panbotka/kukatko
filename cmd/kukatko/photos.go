@@ -53,6 +53,7 @@ func buildPhotoAPI(
 	}
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(reg)...)
 	photoStore := photos.NewStore(db.Pool())
+	organizeStore := organize.NewStore(db.Pool())
 
 	return photoapi.NewAPI(photoapi.Config{
 		Store:           photoStore,
@@ -61,7 +62,8 @@ func buildPhotoAPI(
 		Similar:         similar,
 		Embedder:        embedder,
 		Faces:           faceSvc,
-		Favorites:       organize.NewStore(db.Pool()),
+		Favorites:       organizeStore,
+		Organizer:       organizeStore,
 		Purger:          purger,
 		RetentionDays:   cfg.Trash.RetentionDays,
 		RequireAuth:     authAPI.RequireAuth,

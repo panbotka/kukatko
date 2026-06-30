@@ -302,6 +302,36 @@ func (s *Store) ListPhotoUIDs(ctx context.Context, albumUID string) ([]string, e
 	return out, nil
 }
 
+// listAlbumsForPhotoSQL selects every album a photo belongs to, newest-titled
+// first by title for a stable order.
+const listAlbumsForPhotoSQL = "SELECT " + albumColumns + " FROM albums a " +
+	"JOIN album_photos ap ON ap.album_uid = a.uid WHERE ap.photo_uid = $1 ORDER BY a.title"
+
+// AlbumsForPhoto returns the albums the photo identified by photoUID belongs to,
+// ordered by title. It backs the photo detail view's inline album chips. An
+// unknown photo simply yields an empty slice (not an error), since membership is
+// the question being asked.
+func (s *Store) AlbumsForPhoto(ctx context.Context, photoUID string) ([]Album, error) {
+	rows, err := s.pool.Query(ctx, listAlbumsForPhotoSQL, photoUID)
+	if err != nil {
+		return nil, fmt.Errorf("organize: listing albums for photo %s: %w", photoUID, err)
+	}
+	defer rows.Close()
+
+	out := make([]Album, 0)
+	for rows.Next() {
+		album, err := scanAlbum(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, album)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("organize: iterating albums for photo %s: %w", photoUID, err)
+	}
+	return out, nil
+}
+
 // translateMembershipFK maps a foreign-key violation from an album_photos write
 // to ErrAlbumNotFound or ErrPhotoNotFound by inspecting the violated constraint,
 // and wraps any other error. The constraint name is matched on the referencing

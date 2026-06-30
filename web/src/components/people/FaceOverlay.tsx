@@ -22,6 +22,12 @@ export interface FaceOverlayProps {
   photoUid: string
   /** Thumbnail size used as the base image. Defaults to `fit_1280`. */
   imageSize?: string
+  /**
+   * When true the overlay is read-only: face boxes are drawn (with their names)
+   * but cannot be selected or named, for viewers who may not assign people.
+   * Defaults false.
+   */
+  readOnly?: boolean
 }
 
 /** Fetch lifecycle of the overlay. */
@@ -49,7 +55,11 @@ function buildAssign(
  * and refetches to reconcile. It is the reusable building block a photo detail
  * page mounts over the image.
  */
-export function FaceOverlay({ photoUid, imageSize = 'fit_1280' }: FaceOverlayProps) {
+export function FaceOverlay({
+  photoUid,
+  imageSize = 'fit_1280',
+  readOnly = false,
+}: FaceOverlayProps) {
   const { t } = useTranslation()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [selected, setSelected] = useState<number | null>(null)
@@ -177,6 +187,7 @@ export function FaceOverlay({ photoUid, imageSize = 'fit_1280' }: FaceOverlayPro
               aria-label={label}
               title={label}
               aria-pressed={selected === face.face_index}
+              disabled={readOnly}
               onClick={() => {
                 setSelected(face.face_index)
               }}
@@ -186,7 +197,7 @@ export function FaceOverlay({ photoUid, imageSize = 'fit_1280' }: FaceOverlayPro
                 borderStyle: 'solid',
                 borderColor: named ? 'var(--bs-success)' : 'var(--bs-warning)',
                 background: 'transparent',
-                cursor: 'pointer',
+                cursor: readOnly ? 'default' : 'pointer',
               }}
             />
           )
@@ -201,7 +212,7 @@ export function FaceOverlay({ photoUid, imageSize = 'fit_1280' }: FaceOverlayPro
         </Alert>
       )}
 
-      {selectedFace && (
+      {selectedFace && !readOnly && (
         <FaceAssignPanel
           face={selectedFace}
           busy={busy}

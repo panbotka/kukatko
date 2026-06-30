@@ -162,7 +162,14 @@ inkrementální).
   částečný přes raw-key presence (vynechané pole beze změny, `null` maže nullable, validace
   souřadnic); média `thumb/{size}`+`download` **streamují** přes `io.Copy` se `streamMedia`
   (`Cache-Control`/`ETag`/`304`, `Content-Length` z DB, náhled generován on-miss),
-  guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`), `internal/trash/`
+  guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`; **nedestruktivní
+  edit** přes `Organizer` (album/label chipy detailu) a `EditService`/`edit.go`+`media_edit.go`
+  (`GET`/`PUT /photos/{uid}/edit`, download honoruje edit přes `internal/photoedit`)), `internal/photoedit/`
+  (**CGO-free aplikace nedestruktivního editu** na dekódovaný obrázek pro download/preview: `Apply(img,
+  photos.Edit) image.Image` aplikuje **crop** (normalizovaný `[x,y,w,h]` 0..1), **rotaci** 0/90/180/270
+  a **jas/kontrast** (lineární škála kolem 0.5, mapuje se 1:1 na frontend CSS `brightness(1+b)`/
+  `contrast(1+c)`), pure-Go přes `golang.org/x/image`; `IsIdentity(edit)` přeskočí no-op; `orient.go`
+  = EXIF orientace; identita = passthrough originálu, jinak render do JPEGu), `internal/trash/`
   (trvalé mazání (purge) soft-deletovaných fotek, vše za rozhraními `PhotoStore`/`FileStorage`/
   `ThumbStore`/`RemoteRemover` (unit-testovatelné s faky): `Service` = `New(Config{Photos,Storage,
   Thumbnailer,Remote?,RetentionDays,BatchSize,Logger})` (panika na nil Photos/Storage/Thumbnailer);
@@ -902,8 +909,21 @@ inkrementální).
   per-job `POST /jobs/{id}/requeue`), *spustit zálohu* (`POST /backup`), odkazy na flow importu
   (`/import`) a kontroly údržby (`/maintenance`); **box offline** + čekající embeddingy → zvýrazněná
   hláška „doženou se po návratu"; loading/error/notice stavy, sebe-gate na `isAdmin`,
-  `PhotoDetailPage` = `/photos/:uid` detail fotky: obrázek s interaktivním `FaceOverlay`
-  (pojmenování obličejů) + `FavoriteButton` v hlavičce + pruh `SimilarPhotos`,
+  `PhotoDetailPage` = `/photos/:uid` **bohatý detail fotky**: velký náhled (`fit_1920`)
+  reflektující uložený nedestruktivní edit (CSS), **prev/next navigace** respektující pořadí
+  zdrojového výpisu (`usePhotoNeighbors` pageuje stejný `GET /photos` se scope+filtry z URL),
+  deep-linkovatelný + **Zpět** na zdrojový pohled (`lib/detailView` `backHref`/`detailToParams`/
+  `detailQueryString`), `FavoriteButton` v hlavičce, tlačítka **Stáhnout originál** /
+  **Stáhnout upravenou** (`downloadUrl`), interaktivní `FaceOverlay` (pojmenování obličejů),
+  pruh `SimilarPhotos` a pravý panel se záložkami (`components/photo/`): **Informace**
+  (`MetadataPanel` = view/edit title/description/notes/taken_at + camera/lens/EXIF + lat/lng,
+  PATCH přes `updatePhoto`; `OrganizePanel` = inline add/remove alb a štítků přes organize API),
+  **Poloha** (`PhotoLocation` = Leaflet mini-mapa nad mapy.com proxy + on-demand reverse-geocode
+  `reverseGeocode` + clear location) a **Úpravy** (editor/admin: `EditPanel` = rotace/jas/kontrast/
+  crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`); viewer vidí read-only
+  (žádná záložka Úpravy, žádné edit akce, `FaceOverlay` readOnly); `lib/photoEdit` = pure helpery
+  edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
+  `rotateRight`/`hasCrop`/`NEUTRAL_EDIT`),
   `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (cover/jméno/počet
   fotek), editorům odkaz na review shluků,
   `SubjectPage` = `/people/:uid` stránka osoby: hlavička (jméno/typ + edit přes
@@ -1038,7 +1058,12 @@ inkrementální).
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
   `UploadOutcome`; `photos.ts` navíc `fetchPhoto(uid)` (detail `GET /photos/{uid}` →
-  `PhotoDetail` = `Photo`+`files`); `people.ts` = People/face klient: subjekty
+  `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chipy), `updatePhoto(uid,patch)`
+  (`PATCH …` částečná editace metadat → `PhotoMetadataUpdate`, null maže nullable),
+  `fetchEdit(uid)`/`saveEdit(uid,edit)` (`GET`/`PUT …/edit` nedestruktivní edit → `PhotoEdit`
+  crop/rotation/brightness/contrast), `downloadUrl(uid,{original?,token?})` (URL downloadu,
+  default honoruje edit, `original:true` pro originál); typy `PhotoDetail`/`PhotoAlbumRef`/
+  `PhotoLabelRef`/`PhotoMetadataUpdate`/`PhotoEdit`; `people.ts` = People/face klient: subjekty
   `fetchSubjects`/`fetchSubject`/`createSubject`/`updateSubject`/`deleteSubject`/
   `fetchSubjectPhotos`, obličeje `fetchFaces`/`assignFace`, shluky `fetchClusters`/
   `assignCluster`/`removeClusterFace`, outlier `fetchOutliers`; typy `Subject`/`SubjectCount`/
@@ -1047,8 +1072,11 @@ inkrementální).
   `OutlierFace`; sdílí `ApiError`+`buildPhotoQuery` z `auth.ts`/`photos.ts`);
   `map.ts` = mapový klient: `fetchMapPhotos(params,signal)` nad `GET /api/v1/map/photos`
   (GeoJSON FeatureCollection geotagovaných fotek + `buildMapQuery`), `tileLayerUrl(mapset)` (Leaflet
-  URL template na backend proxy, **bez API klíče**), `toMapset`/`MAPSETS`; typy
-  `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`);
+  URL template na backend proxy, **bez API klíče**), `reverseGeocode(lat,lng,signal?)` nad
+  `GET /api/v1/map/rgeocode` (on-demand reverse geocode pro detail fotky → `GeocodeResult`),
+  `toMapset`/`MAPSETS`; typy
+  `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`/
+  `GeocodeResult`/`RegionalItem`);
   `import.ts` = admin import klient: `fetchImportRuns(signal)` nad `GET /api/v1/import/runs`
   (`{runs,limit,offset,sources}`), `fetchJobStats(signal)` nad `GET /api/v1/jobs/stats`,
   `startImport(source,signal)` nad `POST /api/v1/import/{photoprism|photosorter}` (409 → ApiError);
@@ -1152,6 +1180,13 @@ inkrementální).
   akce `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`
   (`create_marker`/`assign_person`/`unassign_person`), auto-create subjektu dle jména, drží `faces`
   cache + `marker.reviewed` konzistentní (400 validace, 404 chybějící foto/marker/subjekt);
+  `GET /photos/{uid}` plný detail navíc nese **členství** `albums`/`labels` (inline chipy detailu,
+  přes `PhotoOrganizer` rozhraní / `organize.Store.AlbumsForPhoto`+`LabelsForPhoto`; nil organizer →
+  prázdná pole); **nedestruktivní edit** (`internal/photoedit` + `edit.go`/`media_edit.go`):
+  `GET /photos/{uid}/edit` (přihlášený) → uložený `photos.Edit` (crop/rotace 0-90-180-270/jas/kontrast,
+  neupravená fotka → neutrální edit) a `PUT /photos/{uid}/edit` (editor/admin) zapíše edit do
+  `photo_edits` (validace bounds; originál se nikdy nemění — `GET …/download` ho **renderuje za běhu**
+  přes `photoedit.Apply`, pokud caller nedá `?original=true`);
   `PATCH /photos/{uid}` (editor/admin) částečná úprava
   metadat (null maže nullable, validace souřadnic); `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);

@@ -146,3 +146,44 @@ export function toMapset(raw: string): Mapset {
 export function tileLayerUrl(mapset: Mapset): string {
   return `${API_BASE}/map/tiles/${mapset}/{z}/{x}/{y}{r}`
 }
+
+/** One administrative level of a reverse-geocoded place (region, town, …). */
+export interface RegionalItem {
+  name: string
+  type: string
+}
+
+/**
+ * A reverse-geocoded location (`internal/mapy` GeocodeResult): a primary name,
+ * a human-readable location string and the administrative structure around it.
+ */
+export interface GeocodeResult {
+  name: string
+  location: string
+  regional_structure: RegionalItem[]
+}
+
+/**
+ * Reverse-geocodes a coordinate via the backend proxy
+ * `GET /api/v1/map/rgeocode?lat=&lng=` (the mapy.com key stays server-side). The
+ * backend caches and rate-limits the upstream call to conserve credits.
+ *
+ * @throws ApiError with `status` 404 (no place found), 429 (rate limited), 503
+ *   (geocoding not configured) or 5xx, so the caller can show the right message.
+ */
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal,
+): Promise<GeocodeResult> {
+  const query = new URLSearchParams({ lat: String(lat), lng: String(lng) })
+  const res = await fetch(`${API_BASE}/map/rgeocode?${query.toString()}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as GeocodeResult
+}

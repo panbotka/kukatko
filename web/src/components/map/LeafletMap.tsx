@@ -51,6 +51,9 @@ export interface LeafletMapProps {
   onSelectPhoto: (uid: string) => void
   /** Alt text for a thumbnail without its own title. */
   thumbAlt: string
+  /** CSS height of the map container. Defaults to `70vh`; a detail mini-map
+   * passes a smaller fixed height. */
+  height?: string
 }
 
 /**
@@ -71,6 +74,7 @@ export function LeafletMap({
   onViewportChange,
   onSelectPhoto,
   thumbAlt,
+  height = '70vh',
 }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -186,7 +190,5 @@ export function LeafletMap({
     }
   }, [features])
 
-  return (
-    <div ref={containerRef} className="kukatko-map" style={{ height: '70vh', width: '100%' }} />
-  )
+  return <div ref={containerRef} className="kukatko-map" style={{ height, width: '100%' }} />
 }

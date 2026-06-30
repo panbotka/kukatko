@@ -521,3 +521,77 @@ func TestFavoriteCascadeOnUserDelete(t *testing.T) {
 		t.Errorf("bob favorite removed by alice's deletion, want preserved")
 	}
 }
+
+// TestAlbumsForPhoto returns the albums a photo belongs to, ordered by title.
+func TestAlbumsForPhoto(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+
+	photoUID := makePhoto(t, photoStore, "ph-mem")
+	zebra, err := store.CreateAlbum(ctx, organize.Album{Title: "Zebra"})
+	if err != nil {
+		t.Fatalf("CreateAlbum Zebra: %v", err)
+	}
+	alps, err := store.CreateAlbum(ctx, organize.Album{Title: "Alps"})
+	if err != nil {
+		t.Fatalf("CreateAlbum Alps: %v", err)
+	}
+	if _, err := store.CreateAlbum(ctx, organize.Album{Title: "Empty"}); err != nil {
+		t.Fatalf("CreateAlbum Empty: %v", err)
+	}
+	if err := store.AddPhoto(ctx, zebra.UID, photoUID, 0); err != nil {
+		t.Fatalf("AddPhoto Zebra: %v", err)
+	}
+	if err := store.AddPhoto(ctx, alps.UID, photoUID, 0); err != nil {
+		t.Fatalf("AddPhoto Alps: %v", err)
+	}
+
+	got, err := store.AlbumsForPhoto(ctx, photoUID)
+	if err != nil {
+		t.Fatalf("AlbumsForPhoto: %v", err)
+	}
+	if len(got) != 2 || got[0].Title != "Alps" || got[1].Title != "Zebra" {
+		t.Fatalf("AlbumsForPhoto = %+v, want [Alps, Zebra]", got)
+	}
+
+	none, err := store.AlbumsForPhoto(ctx, "ph-nope")
+	if err != nil {
+		t.Fatalf("AlbumsForPhoto(unknown): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("AlbumsForPhoto(unknown) = %+v, want empty", none)
+	}
+}
+
+// TestLabelsForPhoto returns the labels attached to a photo, highest priority first.
+func TestLabelsForPhoto(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+
+	photoUID := makePhoto(t, photoStore, "ph-lbl")
+	low, err := store.CreateLabel(ctx, organize.Label{Name: "beach", Priority: 1})
+	if err != nil {
+		t.Fatalf("CreateLabel beach: %v", err)
+	}
+	high, err := store.CreateLabel(ctx, organize.Label{Name: "sunset", Priority: 9})
+	if err != nil {
+		t.Fatalf("CreateLabel sunset: %v", err)
+	}
+	if _, err := store.CreateLabel(ctx, organize.Label{Name: "unused", Priority: 5}); err != nil {
+		t.Fatalf("CreateLabel unused: %v", err)
+	}
+	if err := store.AttachLabel(ctx, photoUID, low.UID, organize.SourceManual, 0); err != nil {
+		t.Fatalf("AttachLabel beach: %v", err)
+	}
+	if err := store.AttachLabel(ctx, photoUID, high.UID, organize.SourceManual, 0); err != nil {
+		t.Fatalf("AttachLabel sunset: %v", err)
+	}
+
+	got, err := store.LabelsForPhoto(ctx, photoUID)
+	if err != nil {
+		t.Fatalf("LabelsForPhoto: %v", err)
+	}
+	if len(got) != 2 || got[0].Name != "sunset" || got[1].Name != "beach" {
+		t.Fatalf("LabelsForPhoto = %+v, want [sunset, beach]", got)
+	}
+}

@@ -29,6 +29,31 @@ type FavoriteStore interface {
 	FavoritedAmong(ctx context.Context, userUID string, photoUIDs []string) (map[string]bool, error)
 }
 
+// PhotoOrganizer is the subset of the organize repository the detail endpoint
+// needs to list a photo's album and label memberships, so the detail view can
+// show them as inline chips. It is an interface so photoapi depends on the
+// behaviour; organize.Store satisfies it and a test fake can stand in. When nil
+// the detail response simply omits the memberships.
+type PhotoOrganizer interface {
+	// AlbumsForPhoto returns the albums the photo belongs to, ordered by title.
+	AlbumsForPhoto(ctx context.Context, photoUID string) ([]organize.Album, error)
+	// LabelsForPhoto returns the labels attached to the photo, ordered by priority.
+	LabelsForPhoto(ctx context.Context, photoUID string) ([]organize.Label, error)
+}
+
+// albumRef is the compact album reference embedded in a photo detail response:
+// just enough to render and link an inline album chip.
+type albumRef struct {
+	UID   string `json:"uid"`
+	Title string `json:"title"`
+}
+
+// labelRef is the compact label reference embedded in a photo detail response.
+type labelRef struct {
+	UID  string `json:"uid"`
+	Name string `json:"name"`
+}
+
 // photoView is a photo annotated with the current user's is-favorite flag for the
 // list, search and detail responses. It embeds photos.Photo so every photo field
 // marshals at the top level, adding is_favorite alongside.

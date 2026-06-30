@@ -435,7 +435,70 @@
   "photo": {
     "loading": "Loading photo…",
     "error": "Could not load this photo.",
-    "back": "Library"
+    "back": "Back",
+    "prev": "Previous photo",
+    "next": "Next photo",
+    "download": "Download original",
+    "downloadEdited": "Download edited",
+    "tabs": {
+      "info": "Info",
+      "location": "Location",
+      "edit": "Edit"
+    },
+    "metadata": {
+      "formLabel": "Edit photo metadata",
+      "title": "Title",
+      "description": "Description",
+      "notes": "Notes",
+      "takenAt": "Taken at",
+      "camera": "Camera",
+      "lens": "Lens",
+      "aperture": "Aperture",
+      "exposure": "Exposure",
+      "focalLength": "Focal length",
+      "iso": "ISO",
+      "fileName": "File",
+      "lat": "Latitude",
+      "lng": "Longitude",
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saveError": "Saving failed. Check the entered values."
+    },
+    "organize": {
+      "albums": "Albums",
+      "labels": "Labels",
+      "noAlbums": "Not in any album.",
+      "noLabels": "No labels.",
+      "addAlbum": "Add to album",
+      "addLabel": "Add label",
+      "add": "Add",
+      "removeAlbum": "Remove from album {{name}}",
+      "removeLabel": "Remove label {{name}}",
+      "error": "Could not save the change."
+    },
+    "location": {
+      "none": "This photo has no stored location. Add a geotag on the Info tab.",
+      "lookup": "Look up place",
+      "lookupError": "Could not look up the place.",
+      "clear": "Clear location"
+    },
+    "edit": {
+      "title": "Edits",
+      "previewAlt": "Edit preview",
+      "rotation": "Rotation",
+      "rotateRight": "Rotate right",
+      "brightness": "Brightness",
+      "contrast": "Contrast",
+      "crop": "Crop",
+      "crop_x": "Left edge",
+      "crop_y": "Top edge",
+      "crop_w": "Width",
+      "crop_h": "Height",
+      "save": "Save edits",
+      "reset": "Reset to original",
+      "error": "Could not save the edits."
+    }
   },
   "upload": {
     "title": "Upload",

@@ -671,9 +671,18 @@ responzivní/touch). Routy v `Layout` navbaru pod odkazem **Lidé** (`/people`):
   nepojmenovaných shluků obličejů, každý `ClusterCard` (reprezentant + ukázky + odebrání zatoulaného
   obličeje + **jednorázové pojmenování celého shluku** na nový/existující subjekt); optimistické
   odebrání po pojmenování.
-- **`/photos/:uid`** (`PhotoDetailPage`) — detail fotky s interaktivním **`FaceOverlay`**: boxy
-  obličejů kreslené z normalized bbox (`faceBoxStyle`), klik → panel s návrhy identit (one-tap
-  accept) + free-text jméno; optimistický update + refetch. Plus pruh `SimilarPhotos`.
+- **`/photos/:uid`** (`PhotoDetailPage`) — **bohatý detail fotky**: velký náhled reflektující
+  uložený nedestruktivní edit, **prev/next** navigace respektující pořadí zdrojového výpisu
+  (`usePhotoNeighbors`), deep-link + **Zpět** na zdrojový pohled (`lib/detailView`), stažení
+  originálu i upravené verze. Pravý panel se záložkami (`components/photo/`): **Informace**
+  (`MetadataPanel` view/edit title/description/notes/taken_at + EXIF + lat/lng; `OrganizePanel`
+  inline add/remove alb a štítků), **Poloha** (`PhotoLocation` Leaflet mini-mapa nad mapy.com
+  proxy + on-demand reverse-geocode + clear), **Úpravy** (editor/admin: `EditPanel`
+  rotace/jas/kontrast/crop s živým CSS preview → `PUT /photos/{uid}/edit`). Interaktivní
+  **`FaceOverlay`** (boxy obličejů z normalized bbox, klik → návrhy identit + free-text jméno),
+  `FavoriteButton` (per-user), pruh `SimilarPhotos`. Viewer vidí read-only. Vitest pokrývá
+  edit metadat, prev/next + Zpět, add/remove alb/štítků, favorite toggle, zápis editu + preview,
+  read-only viewer (mock API/Leaflet).
 - Společné: `FaceThumb` (výřez obličeje z thumbnailu přes `faceCropStyle`), klient `services/people.ts`,
   geometrie `lib/faceGeometry.ts`. Vitest pokrývá pojmenování shluku, pozicování/přiřazení v overlay
   a unassign outlierů (mock API).
@@ -1106,7 +1115,9 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/upload` | editor/admin | `multipart/form-data` s jedním+ soubory → per-file `{outcome, photo_uid, warnings}` (viz Upload / ingest) |
 | GET | `/photos` | přihlášený | seznam s filtry/řazením/stránkováním → `{photos,total,limit,offset,next_offset}` (viz Foto API) |
 | GET | `/search?q=&mode=` | přihlášený | sémantické + hybridní hledání; `mode` = `fulltext`/`semantic`/`hybrid` (default `hybrid`): fulltext (tsvector + unaccent, `ts_rank`), semantic (CLIP text→embedding → cosine HNSW), hybrid (fúze obou přes **Reciprocal Rank Fusion**, k=60, dedup); všechny módy ctí list filtry + stránkování; `q` povinný → tvar jako `/photos` + `mode`+`degraded`; box offline → fallback na fulltext s `degraded:true` |
-| GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` + `is_favorite` (pro aktuálního uživatele) |
+| GET | `/photos/{uid}` | přihlášený | plný detail fotky (metadata, EXIF, GPS) + `files` + `albums` + `labels` + `is_favorite` (pro aktuálního uživatele) |
+| GET | `/photos/{uid}/edit` | přihlášený | uložený nedestruktivní edit (`crop`/`rotation`/`brightness`/`contrast`); neupravená fotka → neutrální edit |
+| PUT | `/photos/{uid}/edit` | editor/admin | zapíše nedestruktivní edit do `photo_edits` (validace bounds); originál se nemění, download ho honoruje |
 | GET | `/photos?favorite=true` | přihlášený | seznam scopnutý na oblíbené **aktuálního uživatele** (per-user); každá fotka v seznamu/hledání/detailu nese `is_favorite` |
 | PUT | `/photos/{uid}/favorite` | přihlášený | označí fotku jako oblíbenou aktuálního uživatele (idempotentní) → 204; 404 chybějící fotka |
 | DELETE | `/photos/{uid}/favorite` | přihlášený | zruší oblíbenou aktuálního uživatele (idempotentní) → 204 |
@@ -1148,7 +1159,7 @@ Endpointy pod `/api/v1` (JSON):
 | POST | `/trash/empty` | editor/admin | **trvale** smaže všechny archivované fotky (vyžaduje `?confirm=true`) → `{purged,failed}` |
 | GET | `/duplicates` | editor/admin | skupiny pravděpodobných duplikátů (pHash + embedding) → `{groups,total,limit,offset,next_offset}`; query `limit`(≤100)/`offset`; 503 když `duplicate.enabled=false` (viz Duplicates) |
 | GET | `/photos/{uid}/thumb/{size}` | session/token | náhled (cache, generuje se on-miss) — streamuje JPEG, `ETag`/304 |
-| GET | `/photos/{uid}/download` | session/token | originál jako příloha — streamuje (nikdy celý v RAM), `Content-Length`/`ETag` |
+| GET | `/photos/{uid}/download` | session/token | fotka jako příloha — originál streamuje (nikdy celý v RAM), `Content-Length`/`ETag`; má-li uložený nedestruktivní edit, vrací **upravenou** verzi renderovanou za běhu (pokud není `?original=true`) |
 | GET | `/jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue` | admin | fronta jobů (viz Admin Jobs API) |
 | POST | `/process/embeddings` | admin | backfill — zařadí `image_embed` pro fotky bez embeddingu → `{enqueued}` (viz Process API) |
 | POST | `/process/faces` | admin | backfill — zařadí `face_detect` pro fotky bez detekce obličejů → `{enqueued}` (viz Process API) |
