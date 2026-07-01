@@ -49,6 +49,11 @@ export interface PhotoTileProps {
    * Back. Empty/undefined links to the bare detail route.
    */
   detailQuery?: string
+  /**
+   * When true the tile shows the keyboard focus highlight — the target of the
+   * grid's arrow/`hjkl` navigation. Purely visual; it does not steal DOM focus.
+   */
+  focused?: boolean
 }
 
 /**
@@ -67,6 +72,7 @@ export function PhotoTile({
   favoritable = false,
   ratable = false,
   detailQuery,
+  focused = false,
 }: PhotoTileProps) {
   const { t, i18n } = useTranslation()
   const [loaded, setLoaded] = useState(false)
@@ -214,7 +220,10 @@ export function PhotoTile({
   // rating or favoriting never navigates or toggles selection. Both are hidden in
   // selection mode so the tile stays a clean selection target.
   return (
-    <div className="position-relative">
+    <div
+      className={`position-relative${focused ? ' kukatko-tile-focused' : ''}`}
+      data-focused={focused ? 'true' : undefined}
+    >
       {base}
       {showRating && (
         <span

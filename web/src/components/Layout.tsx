@@ -8,6 +8,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 import { SavedSearchesMenu } from './savedsearch/SavedSearchesMenu'
+import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import { NavbarSearch } from './NavbarSearch'
 
@@ -107,6 +108,9 @@ export function Layout() {
             <NavbarSearch />
             <Nav>
               <SavedSearchesMenu />
+            </Nav>
+            <Nav className="align-items-center">
+              <KeyboardShortcutsHelp />
             </Nav>
             <LanguageSwitcher />
             {user && (

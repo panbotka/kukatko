@@ -98,11 +98,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
           <h2 className="h6 text-secondary mb-2">{t('globalSearch.groups.labels')}</h2>
           <div className="d-flex flex-wrap gap-2">
             {result.labels.map((label) => (
-              <Link
-                key={label.uid}
-                to={`/labels/${label.uid}`}
-                className="text-decoration-none"
-              >
+              <Link key={label.uid} to={`/labels/${label.uid}`} className="text-decoration-none">
                 <Badge bg="primary" className="fw-normal">
                   {label.name}
                   <span className="ms-2 opacity-75">{label.photo_count}</span>

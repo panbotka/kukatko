@@ -1594,6 +1594,25 @@ chyb) z odpovědi. Alba/štítky API volá [`services/organize.ts`](web/src/serv
 (CRUD + členství/připojení), `photos.ts` přidává `album`/`label` scope do `PhotoListParams`. Odkazy
 **Alba** a **Štítky** jsou v navbaru.
 
+**Klávesové zkratky:** mřížka i detail fotky jsou ovladatelné z klávesnice přes sdílený hook
+[`useKeyboardShortcuts`](web/src/hooks/useKeyboardShortcuts.ts) a malý registr
+[`lib/shortcuts.ts`](web/src/lib/shortcuts.ts) (zdroj pravdy pro nápovědu i chování). V **mřížce**
+(`LibraryPage`/`PhotoGrid` přes [`useGridKeyboardNavigation`](web/src/hooks/useGridKeyboardNavigation.ts))
+posouvají šipky a `j`/`k`/`h`/`l` viditelné **zvýraznění fokusu** mezi dlaždicemi — fokus sleduje
+virtualizaci a doroluje dlaždici do view (šířka řádku se čte z živého `grid-template`, takže
+odpovídá responzivnímu `auto-fill`); `Enter` otevře fokusovanou fotku, `x` přepne její výběr (zapne
+režim výběru, integruje se s `useSelection`), `f` přepne oblíbenou (optimisticky přes `favoritePhoto`)
+a `Escape` zruší nejdřív výběr, poté fokus. V **detailu** (`PhotoDetailPage`) `←`/`→` listují na
+předchozí/další fotku (zachovává pořadí/scope zdrojového výpisu), `f` přepne oblíbenou (sdílí jeden
+`useFavorite` s hlavičkovým srdíčkem přes controlled `FavoriteToggle`) a `Escape` se vrátí na
+zdrojový výpis. Číselné hodnotící klávesy (`0`–`5`, `p`/`r`) řeší samostatně ratings UI. Zkratky
+**nikdy nevystřelí**, když uživatel píše do inputu/textarey/`contenteditable` nebo je otevřený
+**modal s formulářem** (`isFormModalOpen`), takže psaní ani dialogy nepřebijí. Nápovědu otevře
+`?` (Shift+/) kdekoli nebo **ikonka klávesnice** v navbaru — modal
+[`KeyboardShortcutsHelp`](web/src/components/KeyboardShortcutsHelp.tsx) vypíše všechny zkratky
+seskupené dle kontextu (Mřížka / Detail) a zavře se Escapem nebo křížkem. i18n cs+en; fokus-ring je
+`.kukatko-tile-focused` v [`styles/app.css`](web/src/styles/app.css).
+
 **Oblíbené (`/favorites` + srdíčko všude):** každá dlaždice v knihovně i hlavička detailu fotky
 nesou **heart toggle** ([`FavoriteButton`](web/src/components/library/FavoriteButton.tsx) nad hookem
 [`useFavorite`](web/src/hooks/useFavorite.ts)) — **optimistický** per-user toggle nad

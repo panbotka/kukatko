@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  type GlobalSearchResult,
-  globalSearch,
-  hasEntityMatches,
-  isEmptyResult,
-} from './search'
+import { type GlobalSearchResult, globalSearch, hasEntityMatches, isEmptyResult } from './search'
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -60,9 +55,9 @@ describe('hasEntityMatches', () => {
   })
 
   it('is false when only photos (or nothing) match', () => {
-    expect(
-      hasEntityMatches({ query: 'x', albums: [], labels: [], people: [], photos: [] }),
-    ).toBe(false)
+    expect(hasEntityMatches({ query: 'x', albums: [], labels: [], people: [], photos: [] })).toBe(
+      false,
+    )
   })
 })
 

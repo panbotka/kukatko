@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { forwardRef, type ReactNode, useImperativeHandle } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -98,6 +98,7 @@ function LocationProbe() {
   return (
     <>
       <span data-testid="search">{location.search}</span>
+      <span data-testid="pathname">{location.pathname}</span>
       <button
         type="button"
         onClick={() => {
@@ -296,6 +297,70 @@ describe('LibraryPage', () => {
     expect(screen.getByText('2 selected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'b.jpg' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('arrow keys move a visible focus highlight between tiles', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+
+    // First arrow focuses the first tile (its wrapper gets the highlight marker).
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    expect(
+      screen.getByRole('link', { name: 'a.jpg' }).closest('[data-focused="true"]'),
+    ).not.toBeNull()
+
+    // The next arrow moves the highlight to the second tile.
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    expect(
+      screen.getByRole('link', { name: 'b.jpg' }).closest('[data-focused="true"]'),
+    ).not.toBeNull()
+    expect(screen.getByRole('link', { name: 'a.jpg' }).closest('[data-focused="true"]')).toBeNull()
+
+    // Left moves it back to the first tile.
+    fireEvent.keyDown(document, { key: 'ArrowLeft' })
+    expect(
+      screen.getByRole('link', { name: 'a.jpg' }).closest('[data-focused="true"]'),
+    ).not.toBeNull()
+  })
+
+  it('Enter opens the focused photo detail', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    fireEvent.keyDown(document, { key: 'ArrowRight' }) // focus tile a
+    fireEvent.keyDown(document, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/a')
+    })
+  })
+
+  it('x selects the focused tile and enters selection mode', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
+    renderLibraryAs(editorAuth)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    fireEvent.keyDown(document, { key: 'ArrowRight' }) // focus tile a
+    fireEvent.keyDown(document, { key: 'x' })
+
+    // The tile is now a selection target and is selected; the selection bar shows.
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('does not move focus while typing in the filter search input', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    const search = screen.getByLabelText('Search')
+    search.focus()
+    fireEvent.keyDown(search, { key: 'ArrowRight' })
+
+    expect(document.querySelector('[data-focused="true"]')).toBeNull()
   })
 
   it('clicking a timeline month scrolls the grid to that month’s index', async () => {

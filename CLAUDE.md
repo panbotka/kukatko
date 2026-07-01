@@ -1006,7 +1006,10 @@ inkrementální).
   zavírá se na blur/Escape, empty/loading/error stavy vč. „Nic nenalezeno"),
   `SavedSearchesMenu` (navbar dropdown uložených hledání vedle vyhledávacího pole — lazy fetch při
   otevření, položky otevírají uložený pohled přes `savedSearchHref`, „Spravovat" míří na `/saved`),
-  `LanguageSwitcher`;
+  `LanguageSwitcher`,
+  `KeyboardShortcutsHelp` (v navbaru: ikonka klávesnice + **modal nápovědy zkratek** — otevře se
+  `?` (Shift+/) kdekoli nebo klikem, vypíše všechny zkratky seskupené dle kontextu (Mřížka / Detail)
+  ze `lib/shortcuts.ts` `SHORTCUT_GROUPS`, zavře Escapem/křížkem);
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
   `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
   `UploadItem` (řádek fronty: jméno+velikost, progress-bar, status badge, near-duplicate
@@ -1219,6 +1222,16 @@ inkrementální).
   infinite-scroll kurzorem (nebo clampne na poslední načtené, když už další stránky nejsou) —
   podklad skoku časové osy na měsíc před načtenou částí; `useSelection` = multi-výběr fotek v mřížce
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
+  `useKeyboardShortcuts(handlers,{enabled?})` = sdílené plumbing všech klávesových zkratek: jeden
+  document-level `keydown` listener dispatchuje dle normalizovaného `shortcutToken(event.key)` na
+  `handlers` (přes refy, bind jednou a vždy vidí aktuální closury), matched key `preventDefault`;
+  **nikdy nevystřelí** při držení Ctrl/Meta/Alt, při psaní (`isTypingElement`) ani při otevřeném
+  form-modalu (`isFormModalOpen`); `useGridKeyboardNavigation({count,enabled,resetKey,getColumns,
+  scrollToIndex,onOpen,onToggleSelect,onToggleFavorite,hasSelection,onClearSelection})` = navigace
+  mřížky nad `useKeyboardShortcuts`: drží `focusedIndex` (zvýraznění), šipky + `j`/`k`/`h`/`l` posouvají
+  (vlevo/vpravo o 1, nahoru/dolů o řádek dle živého počtu sloupců) a dorolují dlaždici do view, `Enter`
+  otevře, `x` vybere (zapne selection mód), `f` přepne oblíbenou, `Escape` zruší nejdřív výběr, pak
+  fokus; fokus se resetuje na `resetKey` (nová filtr/sort/scope);
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
   `uid`/server stavu; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user
@@ -1239,6 +1252,11 @@ inkrementální).
   mapování URL stavu na API params; `ratingHotkeys.ts` = pure `ratingHotkey(key)` (`0`–`5` →
   rating, `p`/`r` → pick/reject, jinak null) + `isTypingElement(target)` (input/textarea/select/
   contenteditable → hotkey se přeskočí) — sdíleno detailem fotky i fokusnutou dlaždicí;
+  `shortcuts.ts` = registr klávesových zkratek + pure helpery: `shortcutToken(key)` (normalizace
+  `KeyboardEvent.key` — single-char lower-case, named keys passthrough, `?` zůstává), `isFormModalOpen`
+  (je otevřený `.modal.show` s form controlem? → suppress zkratek za dialogem), `HELP_SHORTCUT_KEY`
+  (`?`) a `SHORTCUT_GROUPS` (grouped Grid/Detail zdroj pravdy pro nápovědu, `titleKey`/`descriptionKey`
+  typované jako i18next `ParseKeys`, takže neexistující klíč je compile error);
   `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
   + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér;
   `savedSearchView.ts` = pure `isSearchParams(params)` (přítomnost `mode` rozlišuje search od library

@@ -67,6 +67,16 @@ body {
   min-height: 2.75rem;
 }
 
+/* Keyboard focus highlight for the photo grid: a clearly visible ring around the
+   tile currently targeted by arrow / hjkl navigation. Distinct from the selection
+   outline (primary) so both can be shown at once, and inset slightly so it hugs
+   the rounded thumbnail without being clipped. */
+.kukatko-tile-focused {
+  outline: 3px solid var(--bs-info, #5bc0de);
+  outline-offset: -1px;
+  border-radius: var(--bs-border-radius, 0.375rem);
+}
+
 /* Timeline scrubber: a thin, fixed vertical date rail pinned to the right edge,
    below the sticky navbar. It overlays the viewport (does not take grid space),
    so a loading/empty timeline renders nothing without shifting the grid. Ticks

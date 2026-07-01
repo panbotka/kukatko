@@ -426,6 +426,28 @@
     "count": "{{count}} selected",
     "cancel": "Cancel"
   },
+  "shortcuts": {
+    "open": "Keyboard shortcuts",
+    "title": "Keyboard shortcuts",
+    "close": "Close",
+    "helpHint": "Press ? anytime to open this help.",
+    "groups": {
+      "grid": "Photo grid",
+      "detail": "Photo detail"
+    },
+    "grid": {
+      "move": "Move focus between photos",
+      "open": "Open the focused photo",
+      "select": "Select / deselect the focused photo",
+      "favorite": "Toggle favorite on the focused photo",
+      "escape": "Clear selection, then focus"
+    },
+    "detail": {
+      "prevNext": "Previous / next photo",
+      "favorite": "Toggle favorite",
+      "back": "Back to the list"
+    }
+  },
   "people": {
     "title": "People",
     "reviewClusters": "Review face groups",

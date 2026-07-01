@@ -26,12 +26,15 @@ interface GridContext {
  */
 const List = forwardRef<
   HTMLDivElement,
-  { style?: React.CSSProperties; children?: React.ReactNode }
->(function List({ style, children, ...props }, ref) {
+  { style?: React.CSSProperties; className?: string; children?: React.ReactNode }
+>(function List({ style, className, children, ...props }, ref) {
   return (
     <div
       ref={ref}
       {...props}
+      // The class lets the page measure the live column count (for row-wise
+      // keyboard navigation) from the rendered grid's computed `grid-template`.
+      className={`kukatko-photo-grid${className ? ` ${className}` : ''}`}
       style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
@@ -121,6 +124,11 @@ export interface PhotoGridProps {
    * scrubber highlight the month owning the first visible photo.
    */
   onRangeChanged?: (range: ListRange) => void
+  /**
+   * Index of the tile carrying the keyboard focus highlight, or -1 for none.
+   * Drives the visible highlight for arrow/`hjkl` grid navigation.
+   */
+  focusedIndex?: number
 }
 
 /**
@@ -141,6 +149,7 @@ export function PhotoGrid({
   detailQuery,
   gridRef,
   onRangeChanged,
+  focusedIndex = -1,
 }: PhotoGridProps) {
   return (
     <VirtuosoGrid
@@ -151,7 +160,7 @@ export function PhotoGrid({
       endReached={onEndReached}
       rangeChanged={onRangeChanged}
       components={gridComponents}
-      itemContent={(_index, photo) => (
+      itemContent={(index, photo) => (
         <PhotoTile
           photo={photo}
           selectable={selection?.active ?? false}
@@ -160,6 +169,7 @@ export function PhotoGrid({
           favoritable={favoritable}
           ratable={ratable}
           detailQuery={detailQuery}
+          focused={index === focusedIndex}
         />
       )}
       computeItemKey={(_index, photo) => photo.uid}

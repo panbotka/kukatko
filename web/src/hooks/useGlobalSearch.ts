@@ -29,7 +29,10 @@ export interface GlobalSearchState {
  * this: the navbar passes its raw input (relying on the internal debounce), while
  * the search page passes its already-committed URL query.
  */
-export function useGlobalSearch(query: string, debounceMs = DEFAULT_DEBOUNCE_MS): GlobalSearchState {
+export function useGlobalSearch(
+  query: string,
+  debounceMs = DEFAULT_DEBOUNCE_MS,
+): GlobalSearchState {
   const trimmed = query.trim()
   const [state, setState] = useState<GlobalSearchState>({ status: 'idle', result: null })
   const latestRequest = useRef(0)

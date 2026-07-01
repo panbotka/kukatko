@@ -7,10 +7,10 @@ import Spinner from 'react-bootstrap/Spinner'
 import Tab from 'react-bootstrap/Tab'
 import Tabs from 'react-bootstrap/Tabs'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
-import { FavoriteButton } from '../components/library/FavoriteButton'
+import { FavoriteToggle } from '../components/library/FavoriteButton'
 import { FlagControl } from '../components/library/FlagControl'
 import { RatingStars } from '../components/library/RatingStars'
 import { SimilarPhotos } from '../components/library/SimilarPhotos'
@@ -21,6 +21,8 @@ import { OrganizePanel } from '../components/photo/OrganizePanel'
 import { PhotoLocation } from '../components/photo/PhotoLocation'
 import { VideoPlayer } from '../components/photo/VideoPlayer'
 import { FaceOverlay } from '../components/people/FaceOverlay'
+import { useFavorite } from '../hooks/useFavorite'
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
 import { useRating } from '../hooks/useRating'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
@@ -55,6 +57,7 @@ export function PhotoDetailPage() {
   const { t } = useTranslation()
   const { uid = '' } = useParams<{ uid: string }>()
   const { canWrite, downloadToken } = useAuth()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [state, setState] = useState<State>({ status: 'loading' })
 
@@ -62,6 +65,41 @@ export function PhotoDetailPage() {
   const neighborParams = useMemo(() => detailToParams(view), [view])
   const detailQuery = detailQueryString(view)
   const neighbors = usePhotoNeighbors(uid, neighborParams)
+
+  // The neighbour's detail URL, carrying the originating order/scope so prev/next
+  // keeps paging the same list. Shared by the arrow-key shortcut and the on-image
+  // prev/next links.
+  const neighborTo = (neighbor: string) =>
+    detailQuery === '' ? `/photos/${neighbor}` : `/photos/${neighbor}?${detailQuery}`
+
+  // The favorite is lifted here so the header heart and the `f` shortcut share one
+  // optimistic toggle. It resyncs to the photo's stored flag once it loads.
+  const favorite = useFavorite(
+    uid,
+    state.status === 'ready' ? (state.photo.is_favorite ?? false) : false,
+  )
+
+  // Detail shortcuts: ←/→ page to the previous/next photo, `f` toggles favorite,
+  // Escape returns to the originating list view. Rating keys (0–5, p/r) are handled
+  // by the separate effect above. The hook suppresses these while typing.
+  useKeyboardShortcuts({
+    ArrowLeft: () => {
+      if (neighbors.prev !== null) {
+        void navigate(neighborTo(neighbors.prev), { replace: true })
+      }
+    },
+    ArrowRight: () => {
+      if (neighbors.next !== null) {
+        void navigate(neighborTo(neighbors.next), { replace: true })
+      }
+    },
+    f: () => {
+      favorite.toggle()
+    },
+    Escape: () => {
+      void navigate(backHref(view))
+    },
+  })
 
   // The optimistic rating hook (stars + flag) drives both the header controls and
   // the number/p/r hotkeys. It is instantiated before the loading/error guards
@@ -141,9 +179,6 @@ export function PhotoDetailPage() {
     setState({ status: 'ready', photo, edit: updated })
   }
 
-  const neighborTo = (neighbor: string) =>
-    detailQuery === '' ? `/photos/${neighbor}` : `/photos/${neighbor}?${detailQuery}`
-
   const poster = thumbUrl(photo.uid, 'fit_1920', downloadToken)
 
   // Render the main media by kind: a range-streaming player for videos, a
@@ -195,7 +230,13 @@ export function PhotoDetailPage() {
             disabled={rating.pending}
             size={18}
           />
-          <FavoriteButton uid={photo.uid} favorite={photo.is_favorite ?? false} />
+          <FavoriteToggle
+            favorite={favorite.favorite}
+            pending={favorite.pending}
+            onToggle={() => {
+              favorite.toggle()
+            }}
+          />
         </div>
       </div>
 

@@ -1,7 +1,7 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -162,6 +162,12 @@ function auth(canWrite: boolean): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
+/** Surfaces the current pathname so keyboard-navigation tests can assert routes. */
+function LocationProbe() {
+  const location = useLocation()
+  return <span data-testid="pathname">{location.pathname}</span>
+}
+
 function renderPage(canWrite = true, entry = '/photos/b?sort=oldest') {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -170,6 +176,7 @@ function renderPage(canWrite = true, entry = '/photos/b?sort=oldest') {
           <Routes>
             <Route path="/photos/:uid" element={<PhotoDetailPage />} />
           </Routes>
+          <LocationProbe />
         </MemoryRouter>
       </AuthContext.Provider>
     </I18nextProvider>,
@@ -362,6 +369,41 @@ describe('PhotoDetailPage', () => {
     const main = screen.getByRole('img', { name: 'Beach' })
     await waitFor(() => {
       expect(main).toHaveStyle({ transform: 'rotate(90deg)' })
+    })
+  })
+
+  it('pages to the next photo with the right arrow key', async () => {
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    // Neighbours must be resolved before the arrow can navigate.
+    await screen.findByRole('link', { name: 'Next photo' })
+
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+    })
+  })
+
+  it('toggles the favorite with the f key', async () => {
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    fireEvent.keyDown(document, { key: 'f' })
+
+    await waitFor(() => {
+      expect(favoritePhotoMock).toHaveBeenCalledWith('b', true)
+    })
+  })
+
+  it('returns to the source list with Escape', async () => {
+    renderPage(true, '/photos/b?sort=oldest')
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/library')
     })
   })
 

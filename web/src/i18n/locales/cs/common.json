@@ -389,6 +389,28 @@
     "count": "Vybráno: {{count}}",
     "cancel": "Zrušit"
   },
+  "shortcuts": {
+    "open": "Klávesové zkratky",
+    "title": "Klávesové zkratky",
+    "close": "Zavřít",
+    "helpHint": "Kdykoli stiskni ? pro zobrazení této nápovědy.",
+    "groups": {
+      "grid": "Mřížka fotek",
+      "detail": "Detail fotky"
+    },
+    "grid": {
+      "move": "Přesun výběru mezi fotkami",
+      "open": "Otevřít vybranou fotku",
+      "select": "Vybrat / zrušit výběr fotky",
+      "favorite": "Přepnout oblíbenou u vybrané fotky",
+      "escape": "Zrušit výběr, poté zaměření"
+    },
+    "detail": {
+      "prevNext": "Předchozí / další fotka",
+      "favorite": "Přepnout oblíbenou",
+      "back": "Zpět na seznam"
+    }
+  },
   "map": {
     "title": "Mapa",
     "count": "Fotek na mapě: {{count}}",
