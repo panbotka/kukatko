@@ -633,6 +633,19 @@ hledání vidí a smí ho měnit. Tabulka `saved_searches` v migraci `0017_saved
   neprozradí), tělo dekódováno s `DisallowUnknownFields` + 1 MiB limit. Mountuje se `server.WithAPI`
   (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`).
 
+**Frontend (uložená hledání):** klient `web/src/services/savedSearches.ts` (`fetchSavedSearches`/
+`createSavedSearch`/`updateSavedSearch`/`deleteSavedSearch`, typy `SavedSearch`/`SavedSearchParams`/
+`SavedSearchUpdate`). `params` je **verbatim URL view-state objekt** (`Record<string,string>`), který
+appka už serializuje do URL přes `useUrlState` — uloží se a obnoví beze změny. Pure helper
+`web/src/lib/savedSearchView.ts` (`isSearchParams` — přítomnost `mode` rozlišuje search od library
+pohledu; `savedSearchHref` — složí `pathname?query` na `/library` nebo `/search` a minimálně zakóduje
+params proti defaultům, takže otevření obnoví pohled přesně). Akce **„Uložit pohled"** na `LibraryPage`
+i `SearchPage` (`SaveSearchModal` v `web/src/components/savedsearch/` — modal pro pojmenování při
+vytvoření i přejmenování), dedikovaná stránka **`/saved`** (`SavedSearchesPage` — seznam s otevřením/
+přejmenováním/optimistickým mazáním + empty state) a **navbar dropdown** (`SavedSearchesMenu` — lazy
+fetch při otevření, položky otevírají uložený pohled, „Spravovat" míří na `/saved`). Nav odkaz +
+route `/saved` (jakýkoli přihlášený) v `Layout`/`App.tsx`.
+
 ### Globální hledání (`internal/globalsearchapi`)
 
 Jeden **grouped cross-entity** endpoint **`GET /api/v1/search/global?q=`** (přihlášený přes

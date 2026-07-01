@@ -999,6 +999,8 @@ inkrementální).
   **Import** na `/import` (jen admin, gate `isAdmin`),
   **Systém** na `/system` (jen admin, gate `isAdmin`),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
+  `SavedSearchesMenu` (navbar dropdown uložených hledání vedle vyhledávacího pole — lazy fetch při
+  otevření, položky otevírají uložený pohled přes `savedSearchHref`, „Spravovat" míří na `/saved`),
   `LanguageSwitcher`;
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
   `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
@@ -1043,7 +1045,11 @@ inkrementální).
   na dlaždicích (favoritable+ratable, rating hotkeys na fokusnuté dlaždici), tlačítko **Promítání**
   (`slideshowHref` → `/slideshow` s aktuálními filtry/řazením),
   plus pro editory **režim výběru** (`Vybrat`/`Vybrat vše`) → `BulkEditModal`
-  (hromadná úprava metadat přes bulk API),
+  (hromadná úprava metadat přes bulk API), plus tlačítko **Uložit pohled** (`SaveSearchModal` →
+  `createSavedSearch` s aktuálním view objektem jako `params`),
+  `SavedSearchesPage` = `/saved` (jakýkoli přihlášený) „Moje uložená hledání": seznam uložených
+  pohledů aktuálního uživatele, každý odkaz otevírá přesně obnovený pohled (`savedSearchHref`), plus
+  přejmenování (`SaveSearchModal`) a **optimistické mazání** + empty state,
   `FavoritesPage` = `/favorites` oblíbené aktuálního uživatele: stejná mřížka/filtry jako knihovna
   scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených + hvězdy/flag na místě (ratable),
   `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
@@ -1057,7 +1063,8 @@ inkrementální).
   `SearchPage` = sémantické/hybridní/fulltext hledání: prominentní debouncované (350 ms)
   vyhledávací pole + přepínač režimu (`q`+`mode` v URL), stejná virtualizovaná mřížka jako
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
-  (sidecar offline), idle/loading/empty/error stavy,
+  (sidecar offline), idle/loading/empty/error stavy, plus tlačítko **Uložit pohled**
+  (`SaveSearchModal` — `params` nese i `mode`, takže obnova míří na `/search`),
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
   po dokončení odkaz na nově nahrané fotky (`/library?sort=added`),
@@ -1128,6 +1135,9 @@ inkrementální).
   koše, vratné) → skupina zmizí + success alert s počtem, nebo skupinu **odmítne** („není duplikát",
   jen lokálně skryje); 503 → „nedostupné", loading přes `GridSkeleton`, error s retry,
   `NotFoundPage`),
+  `components/savedsearch/` = `SaveSearchModal` (modal pro pojmenování při uložení nového pohledu
+  i přejmenování existujícího uloženého hledání) + `SavedSearchesMenu` (navbar dropdown, lazy fetch
+  při otevření, položky → uložený pohled, „Spravovat" → `/saved`);
   `components/trash/` = `TrashCard` (dlaždice archivované fotky: náhled + odpočet do auto-purge přes
   `trashCountdown` + restore/delete akce + výběr v selection módu);
   `components/duplicates/` = `DuplicateGroupCard` (karta skupiny: členové vedle sebe s náhledem/
@@ -1192,6 +1202,10 @@ inkrementální).
   contenteditable → hotkey se přeskočí) — sdíleno detailem fotky i fokusnutou dlaždicí;
   `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
   + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér;
+  `savedSearchView.ts` = pure `isSearchParams(params)` (přítomnost `mode` rozlišuje search od library
+  pohledu) + `savedSearchHref(params)` (složí `pathname?query` na `/library` nebo `/search`, minimálně
+  zakóduje uložené params proti defaultům přes `writeUrlState`, ignoruje neznámé/zastaralé klíče) —
+  obnova uloženého hledání na přesnou URL;
   `mapView.ts` = typ `MapView` (mapset + viewport `lat`/`lng`/`z` + filtry) + `MAP_DEFAULTS` +
   `mapViewToParams` (sanitizuje archived) + `viewportFromView`/`mapsetFromView`/`hasActiveMapFilters`
   — mapování URL stavu mapy na feed params; `mapPopup.ts` = pure `buildPopupElement` (náhled +
@@ -1239,7 +1253,11 @@ inkrementální).
   `organize.ts` = Albums/Labels klient: alba `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
   `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`/`reorderAlbumPhotos`, štítky `fetchLabels`/
   `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; typy
-  `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput`; `bulk.ts` =
+  `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput`;
+  `savedSearches.ts` = uložená hledání klient: `fetchSavedSearches`/`createSavedSearch(name,params)`/
+  `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` nad `/api/v1/saved-searches`, typy
+  `SavedSearch`/`SavedSearchParams` (= verbatim URL view-state `Record<string,string>`)/
+  `SavedSearchUpdate`; `bulk.ts` =
   `bulkUpdatePhotos(uids,ops)` nad `POST /photos/bulk` (hromadná úprava výběru), typy
   `BulkOperations` (add/remove alba+štítku, set/clear caption+popisu+polohy, set_private,
   archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `duplicates.ts` =
@@ -1311,7 +1329,7 @@ inkrementální).
   můžou přepsat pro simulaci telefonu).
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` je pod
   `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru), zbytek pod `Layout` (`/`, `/library`,
-  `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/map`,
+  `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/trash` a `/duplicates`
   navíc pod `RequireRole role="editor"` = write-only, `/import`, `/maintenance` a `/system` pod

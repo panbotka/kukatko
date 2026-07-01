@@ -164,6 +164,30 @@
       "load": "Search failed."
     }
   },
+  "savedSearches": {
+    "nav": "Saved searches",
+    "title": "My saved searches",
+    "saveView": "Save view",
+    "manage": "Manage saved searches",
+    "rename": "Rename",
+    "delete": "Delete",
+    "loading": "Loading saved searches…",
+    "error": "Could not load saved searches.",
+    "actionError": "The action failed. Please try again.",
+    "confirmDelete": "Delete the saved search \"{{name}}\"?",
+    "empty": {
+      "title": "No saved searches yet",
+      "hint": "Save the current view to jump back to it in one click."
+    },
+    "edit": {
+      "titleNew": "Save view",
+      "titleEdit": "Rename saved search",
+      "error": "Could not save. Check the name and try again.",
+      "name": "Name",
+      "cancel": "Cancel",
+      "save": "Save"
+    }
+  },
   "map": {
     "title": "Map",
     "count": "Photos on the map: {{count}}",

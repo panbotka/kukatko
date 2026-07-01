@@ -20,6 +20,7 @@ import { MapPage } from './pages/MapPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
+import { SavedSearchesPage } from './pages/SavedSearchesPage'
 import { SearchPage } from './pages/SearchPage'
 import { SlideshowPage } from './pages/SlideshowPage'
 import { SubjectPage } from './pages/SubjectPage'
@@ -50,6 +51,7 @@ export function App() {
               <Route path="/labels" element={<LabelsPage />} />
               <Route path="/labels/:uid" element={<LabelDetailPage />} />
               <Route path="/search" element={<SearchPage />} />
+              <Route path="/saved" element={<SavedSearchesPage />} />
               <Route path="/map" element={<MapPage />} />
               <Route path="/photos/:uid" element={<PhotoDetailPage />} />
               <Route path="/people" element={<PeoplePage />} />

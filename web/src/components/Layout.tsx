@@ -7,6 +7,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 
+import { SavedSearchesMenu } from './savedsearch/SavedSearchesMenu'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import { NavbarSearch } from './NavbarSearch'
 
@@ -101,6 +102,9 @@ export function Layout() {
               )}
             </Nav>
             <NavbarSearch />
+            <Nav>
+              <SavedSearchesMenu />
+            </Nav>
             <LanguageSwitcher />
             {user && (
               <Nav className="ms-md-3">

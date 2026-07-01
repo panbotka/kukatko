@@ -10,6 +10,7 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BulkEditModal } from '../components/organize/BulkEditModal'
 import { SelectionBar } from '../components/organize/SelectionBar'
+import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useSelection } from '../hooks/useSelection'
 import { detailQueryString } from '../lib/detailView'
@@ -32,6 +33,7 @@ export function LibraryPage() {
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const selection = useSelection()
   const [editing, setEditing] = useState(false)
+  const [savingView, setSavingView] = useState(false)
 
   // Memoise the API params so the data hook only reloads when the query changes.
   const params = useMemo(() => viewToParams(view), [view])
@@ -53,6 +55,15 @@ export function LibraryPage() {
                 {t('slideshow.start')}
               </Link>
             )}
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={() => {
+                setSavingView(true)
+              }}
+            >
+              {t('savedSearches.saveView')}
+            </Button>
             {canWrite && (
               <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
                 {t('library.select')}
@@ -138,6 +149,17 @@ export function LibraryPage() {
           }}
         />
       )}
+
+      <SaveSearchModal
+        show={savingView}
+        params={view}
+        onHide={() => {
+          setSavingView(false)
+        }}
+        onSaved={() => {
+          setSavingView(false)
+        }}
+      />
     </>
   )
 }

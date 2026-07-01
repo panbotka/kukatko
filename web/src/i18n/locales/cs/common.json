@@ -164,6 +164,30 @@
       "load": "Vyhledávání se nezdařilo."
     }
   },
+  "savedSearches": {
+    "nav": "Uložená hledání",
+    "title": "Moje uložená hledání",
+    "saveView": "Uložit pohled",
+    "manage": "Spravovat uložená hledání",
+    "rename": "Přejmenovat",
+    "delete": "Smazat",
+    "loading": "Načítání uložených hledání…",
+    "error": "Uložená hledání se nepodařilo načíst.",
+    "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "confirmDelete": "Smazat uložené hledání „{{name}}“?",
+    "empty": {
+      "title": "Zatím žádná uložená hledání",
+      "hint": "Ulož si aktuální pohled a rychle se k němu vrátíš."
+    },
+    "edit": {
+      "titleNew": "Uložit pohled",
+      "titleEdit": "Přejmenovat uložené hledání",
+      "error": "Nepodařilo se uložit. Zkontroluj jméno a zkus to znovu.",
+      "name": "Jméno",
+      "cancel": "Zrušit",
+      "save": "Uložit"
+    }
+  },
   "albums": {
     "title": "Alba",
     "create": "Nové album",

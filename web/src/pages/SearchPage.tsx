@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
+import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
 import { viewToParams } from '../lib/libraryView'
 import { SEARCH_DEFAULTS, type SearchView, toMode } from '../lib/searchView'
@@ -39,6 +40,7 @@ export function SearchPage() {
   // URL (and the fetch) only update after the user pauses. The query is the
   // page's own input, separate from the filter bar.
   const [text, setText] = useState(view.q)
+  const [savingView, setSavingView] = useState(false)
 
   // Keep the input in sync when the URL query changes from elsewhere (the navbar
   // search, Back/Forward, a shared link).
@@ -61,7 +63,18 @@ export function SearchPage() {
 
   return (
     <>
-      <h1 className="h3 mb-3">{t('search.title')}</h1>
+      <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h1 className="h3 mb-0">{t('search.title')}</h1>
+        <Button
+          variant="outline-secondary"
+          size="sm"
+          onClick={() => {
+            setSavingView(true)
+          }}
+        >
+          {t('savedSearches.saveView')}
+        </Button>
+      </div>
 
       <Form
         role="search"
@@ -147,6 +160,17 @@ export function SearchPage() {
           onRetry={retry}
         />
       )}
+
+      <SaveSearchModal
+        show={savingView}
+        params={view}
+        onHide={() => {
+          setSavingView(false)
+        }}
+        onSaved={() => {
+          setSavingView(false)
+        }}
+      />
     </>
   )
 }
