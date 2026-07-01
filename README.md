@@ -1317,6 +1317,16 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   - **Neplatný parametr → HTTP 400.**
 - **Detail** `GET /photos/{uid}` — fotka + `files` (seznam `photo_files`) + `is_favorite`,
   `404` když chybí.
+- **Timeline** `GET /photos/timeline` (přihlášený) — měsíční date-histogram knihovny pro rychlý
+  rok/měsíc scrubber. Přijímá **stejné filtry** jako `GET /photos` (archived/private/has_gps/date
+  range/camera/lens/uploader/album/label/country/city/favorite/`q`) přes sdílený `parseListParams`,
+  takže buckety odpovídají přesně tomu, co by seznam vrátil ve stejném pořadí. Odpověď
+  `{buckets:[{year,month,count,cumulative}],total}` — buckety řazené **nejnovější první** (dle
+  `taken_at`, jako výchozí mřížka), `cumulative` = počet fotek **před** bucketem v tomto pořadí
+  (mapuje bucket na scroll-index). `total` je celkový počet (přes `Count`) a zahrnuje i fotky bez
+  data pořízení, které do žádného bucketu nespadají (řadí se na konec). `sort`/`order` se ignorují
+  (vždy grupováno dle data; scrubber předpokládá výchozí řazení dle data). Backuje ho
+  `photos.Store.TimelineBuckets` (sdílí `buildWhere` s `List`/`Count`). **Neplatný parametr → 400.**
 - **Oblíbené** `PUT /photos/{uid}/favorite` + `DELETE /photos/{uid}/favorite` (každý přihlášený,
   oblíbené jsou osobní) — idempotentní toggle oblíbené pro aktuálního uživatele → `204`; `404`
   na chybějící fotku, `503` bez favorites backendu. **Výpis** `GET /favorites` (přihlášený) —

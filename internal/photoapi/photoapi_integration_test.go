@@ -712,3 +712,102 @@ func TestList_requiresAuth(t *testing.T) {
 		}
 	}
 }
+
+// timelineResp mirrors the timeline endpoint's JSON body.
+type timelineResp struct {
+	Buckets []struct {
+		Year       int `json:"year"`
+		Month      int `json:"month"`
+		Count      int `json:"count"`
+		Cumulative int `json:"cumulative"`
+	} `json:"buckets"`
+	Total int `json:"total"`
+}
+
+// TestTimeline exercises the month-histogram endpoint: default buckets with
+// cumulative counts and archived excluded, and the filter query params honoured
+// so the buckets match the same-filtered list.
+func TestTimeline(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "editor", auth.RoleEditor)
+	base := env.server.URL
+
+	dec := time.Date(2023, 12, 20, 9, 0, 0, 0, time.UTC)
+	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
+	env.seedPhoto(t, photos.Photo{Title: "Dec A", TakenAt: ptrTime(dec), TakenAtSource: "exif"},
+		"deca.jpg", 200, 10, 10)
+	env.seedPhoto(t, photos.Photo{Title: "Dec B", TakenAt: ptrTime(dec), TakenAtSource: "exif"},
+		"decb.jpg", 10, 200, 10)
+	jun1 := env.seedPhoto(t, photos.Photo{Title: "Jun", TakenAt: ptrTime(jun), TakenAtSource: "exif", Private: true},
+		"jun.jpg", 10, 10, 200)
+	archived := env.seedPhoto(t, photos.Photo{Title: "Old", TakenAt: ptrTime(dec), TakenAtSource: "exif"},
+		"old.jpg", 30, 30, 30)
+	if _, err := env.store.Archive(t.Context(), archived.UID); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+
+	t.Run("default histogram excludes archived", func(t *testing.T) {
+		got := getTimeline(t, client, base, "")
+		if got.Total != 3 {
+			t.Fatalf("total = %d, want 3 (archived excluded)", got.Total)
+		}
+		if len(got.Buckets) != 2 {
+			t.Fatalf("buckets = %+v, want 2 months", got.Buckets)
+		}
+		if got.Buckets[0].Year != 2023 || got.Buckets[0].Month != 12 ||
+			got.Buckets[0].Count != 2 || got.Buckets[0].Cumulative != 0 {
+			t.Errorf("bucket[0] = %+v, want 2023-12 count 2 cumulative 0", got.Buckets[0])
+		}
+		if got.Buckets[1].Year != 2023 || got.Buckets[1].Month != 6 ||
+			got.Buckets[1].Count != 1 || got.Buckets[1].Cumulative != 2 {
+			t.Errorf("bucket[1] = %+v, want 2023-06 count 1 cumulative 2", got.Buckets[1])
+		}
+	})
+
+	t.Run("filter scopes the histogram like the list", func(t *testing.T) {
+		got := getTimeline(t, client, base, "private=true")
+		if got.Total != 1 || len(got.Buckets) != 1 {
+			t.Fatalf("private timeline = %+v total=%d, want the single June photo", got.Buckets, got.Total)
+		}
+		if got.Buckets[0].Month != 6 || got.Buckets[0].Count != 1 {
+			t.Errorf("bucket = %+v, want 2023-06 count 1", got.Buckets[0])
+		}
+		// The scoped list agrees on the total and the single member.
+		list := getList(t, client, base, "private=true")
+		if list.Total != got.Total || len(list.Photos) != 1 || list.Photos[0].UID != jun1.UID {
+			t.Errorf("list total=%d photos=%v, want 1/[%s]", list.Total, uids(list.Photos), jun1.UID)
+		}
+	})
+
+	t.Run("invalid filter is 400", func(t *testing.T) {
+		resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/timeline?archived=maybe", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400 for invalid archived", resp.StatusCode)
+		}
+	})
+
+	t.Run("requires auth", func(t *testing.T) {
+		resp := mustDo(t, &http.Client{}, http.MethodGet, base+"/api/v1/photos/timeline", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("anonymous status = %d, want 401", resp.StatusCode)
+		}
+	})
+}
+
+// getTimeline fetches the timeline endpoint with the given query and decodes the
+// body, failing the test on a non-200 status.
+func getTimeline(t *testing.T, client *http.Client, base, query string) timelineResp {
+	t.Helper()
+	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/timeline?"+query, nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("timeline status = %d for %q, want 200", resp.StatusCode, query)
+	}
+	var out timelineResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode timeline: %v", err)
+	}
+	return out
+}

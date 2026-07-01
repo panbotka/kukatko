@@ -70,6 +70,13 @@ inkrementální).
   daty, hierarchii složí v Go, řazení count desc/jméno; prázdné `country`='' = všechny země, jinak
   drill-down do měst jedné země; fotky s prázdným `country` (no-GPS marker) vyloučené — podklad
   `placesapi`),
+  `TimelineBuckets(params)` (měsíční date-histogram `Timeline{Buckets:[]TimelineBucket{Year,Month,
+  Count,Cumulative},Total}` — jedním `GROUP BY` dle `date_part(year/month, taken_at)` nad
+  nearchivovanými fotkami, řazení nejnovější první (`year DESC, month DESC`, jako výchozí mřížka),
+  `Cumulative` (běžný součet dřívějších=novějších bucketů) spočítán v Go a rovná se scroll-indexu
+  prvního snímku bucketu; sdílí `buildWhere` s `List`/`Count`, takže buckety přesně odpovídají
+  seznamu; fotky bez `taken_at` do bucketů nespadají (řadí se na konec), ale `Total` (přes `Count`)
+  je zahrnuje — podklad `photoapi` timeline scrubberu),
   plus `CreateFile`/`ListFiles`,
   `ListArchivedUIDs(before,limit,offset)` (uid archivovaných fotek oldest-archived-first,
   `before` nil = vše / non-nil = jen `archived_at <= before` retenční cutoff — podklad koše/purge),
@@ -168,7 +175,7 @@ inkrementální).
   multipart se streamuje part-by-part, nikdy celý soubor v RAM), `internal/photoapi/`
   (read/curace HTTP API nad katalogem: `NewAPI(Config{Store,Storage,Thumbnailer,Similar,
   Embedder,Faces,Favorites,Ratings,RequireAuth,RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`
-  **, `GET /search` a `GET /favorites`**; `parseListParams`
+  **, `GET /photos/timeline`, `GET /search` a `GET /favorites`**; `parseListParams`
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
   newest/oldest/taken_at/added/title/size**/rating** + `order`, `archived` false/true/only, `private`,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`album`/`label`
@@ -1331,6 +1338,13 @@ inkrementální).
   řazením/stránkováním (query params, neplatný → 400) → `{photos,total,limit,offset,next_offset}`;
   filtr `?album={uid}`/`?label={uid}` scopne výpis na fotky alba/štítku (sdílený endpoint pro
   galerii alba i štítku, ctí všechny ostatní filtry/řazení/stránkování — viz Albums & Labels API);
+  `GET /photos/timeline` (přihlášený) — **měsíční date-histogram** knihovny (podklad rok/měsíc
+  scrubberu): přijímá **stejné filtry** jako `GET /photos` přes `parseListParams`, odpověď
+  `{buckets:[{year,month,count,cumulative}],total}`, buckety řazené nejnovější první (dle `taken_at`,
+  jako výchozí mřížka), `cumulative` = počet fotek **před** bucketem (mapuje bucket na scroll-index),
+  `total` (přes `Count`) zahrnuje i fotky bez data pořízení (do žádného bucketu nespadají, řadí se
+  na konec); `sort`/`order` se ignorují (vždy grupováno dle data), backuje ho
+  `photos.Store.TimelineBuckets` (sdílí `buildWhere` s `List`/`Count`), neplatný param → 400;
   `GET /search?q=&mode=` (přihlášený) — **sémantické + hybridní hledání**, `mode` =
   `fulltext`|`semantic`|`hybrid` (default `hybrid`, neznámý → 400): **fulltext** = česky-aware
   fulltext nad `fts tsvector` (dictionary `simple` + `unaccent`, řazení `ts_rank`
