@@ -2,7 +2,12 @@ import { forwardRef } from 'react'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { type GridComponents, VirtuosoGrid } from 'react-virtuoso'
+import {
+  type GridComponents,
+  type ListRange,
+  VirtuosoGrid,
+  type VirtuosoGridHandle,
+} from 'react-virtuoso'
 
 import { type Photo } from '../../services/photos'
 
@@ -106,6 +111,16 @@ export interface PhotoGridProps {
    * this list's order and scope (for prev/next and Back).
    */
   detailQuery?: string
+  /**
+   * Imperative handle to the underlying virtuoso grid, exposing `scrollToIndex`
+   * so the timeline scrubber can jump to a photo index.
+   */
+  gridRef?: React.Ref<VirtuosoGridHandle>
+  /**
+   * Called with the visible item range each time it changes, letting the
+   * scrubber highlight the month owning the first visible photo.
+   */
+  onRangeChanged?: (range: ListRange) => void
 }
 
 /**
@@ -124,13 +139,17 @@ export function PhotoGrid({
   favoritable = false,
   ratable = false,
   detailQuery,
+  gridRef,
+  onRangeChanged,
 }: PhotoGridProps) {
   return (
     <VirtuosoGrid
+      ref={gridRef}
       useWindowScroll
       data={photos}
       context={{ loadingMore, moreError, onRetry }}
       endReached={onEndReached}
+      rangeChanged={onRangeChanged}
       components={gridComponents}
       itemContent={(_index, photo) => (
         <PhotoTile

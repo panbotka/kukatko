@@ -1016,7 +1016,15 @@ inkrementální).
   v selection módu skryjí),
   `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
   window-scroll, `endReached` → další stránka, footer spinner/retry; props `favoritable`/`ratable`
-  prosáknou srdíčko a hvězdy/flag na dlaždice), `FilterBar`
+  prosáknou srdíčko a hvězdy/flag na dlaždice; volitelný `gridRef` (imperativní `scrollToIndex`
+  handle) + `onRangeChanged` (viditelný rozsah) pro časovou osu),
+  `TimelineScrubber` (**časová osa** — tenká fixní svislá datová lišta u mřížky: fetchne měsíční
+  histogram přes `useTimeline(params)` (refetch při změně filtrů), každý měsíc = klikací tick
+  umístěný proporčně dle `cumulative/total`, měsíční popisky přes `lib/format` `formatMonth`;
+  klik/tažení skočí na měsíc přes `onJump(bucket.cumulative)`, aktivní měsíc se zvýrazní dle
+  `activeIndex` (start viditelného rozsahu); overlay `position: fixed`, takže loading/prázdný
+  timeline nerendruje nic a neposouvá layout, na malých šířkách se skryje přes `styles/app.css`
+  `.kukatko-timeline*`; jen pro výchozí newest řazení), `FilterBar`
   (datum od/do, poloha, soukromé, fotoaparát, archiv, **min. hodnocení ≥1…≥5**, **flag
   vybrané/zamítnuté**, řazení (vč. **dle hodnocení**) + počet + „zrušit filtry";
   generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
@@ -1044,6 +1052,9 @@ inkrementální).
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka **i hvězdy/flag**
   na dlaždicích (favoritable+ratable, rating hotkeys na fokusnuté dlaždici), tlačítko **Promítání**
   (`slideshowHref` → `/slideshow` s aktuálními filtry/řazením),
+  plus **časová osa** (`TimelineScrubber`) vedle mřížky pro rychlé skoky na měsíc — mřížka
+  vystaví `gridRef`+`onRangeChanged`, skok jede přes `useGridJump` (donačte stránky, když měsíc
+  leží za načtenou částí), zobrazí se jen pro výchozí newest řazení a mimo režim výběru,
   plus pro editory **režim výběru** (`Vybrat`/`Vybrat vše`) → `BulkEditModal`
   (hromadná úprava metadat přes bulk API), plus tlačítko **Uložit pohled** (`SaveSearchModal` →
   `createSavedSearch` s aktuálním view objektem jako `params`),
@@ -1185,7 +1196,13 @@ inkrementální).
   + filtry/sort z URL, options `{reloadKey?,enabled?}` — `reloadKey` pro refetch po mutaci, `enabled:false`
   → idle bez fetche, např. Places před výběrem města); `useMapPhotos` = jednorázový (nestránkovaný) loader
   GeoJSON feedu geotagovaných fotek nad `fetchMapPhotos` (`status` loading/ready/error, `retry`,
-  ruší in-flight + ignoruje stale při změně filtrů); `useSelection` = multi-výběr fotek v mřížce
+  ruší in-flight + ignoruje stale při změně filtrů); `useTimeline(params)` = jednorázový loader
+  měsíčního date-histogramu nad `fetchTimeline` (`buckets`/`total`/`status`, refetch při změně
+  filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGridJump({gridRef,
+  loadedCount,hasMore,loadingMore,loadMore})` = vrátí `jumpTo(index)`, který skočí mřížkou na foto
+  index přes `VirtuosoGridHandle.scrollToIndex` a **nejdřív donačte stránky**, když cíl leží za
+  infinite-scroll kurzorem (nebo clampne na poslední načtené, když už další stránky nejsou) —
+  podklad skoku časové osy na měsíc před načtenou částí; `useSelection` = multi-výběr fotek v mřížce
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
@@ -1232,6 +1249,8 @@ inkrementální).
   `format.ts` = pure `formatBytes(bytes)` (byte count → human-readable binární jednotky, např.
   `1536`→`"1.5 KB"`, neplatné→`"0 B"`) pro velikost souboru na duplicate-group kartách +
   `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, neplatné→`"0:00"`) pro délku videa na dlaždicích +
+  `formatMonth(year,month,locale)` (1-based rok/měsíc → locale-aware krátký měsíc + rok, např.
+  `2026,1,'en'`→`"Jan 2026"`, mimo 1–12 → `""`) pro popisky ticků časové osy +
   **locale-aware** `formatDate(value,locale)`/`formatDateTime(value,locale)` (ISO/epoch/`Date` →
   `toLocaleDateString`/`toLocaleString` s **aktivním jazykem UI** `i18n.language`, ne výchozím
   jazykem prohlížeče; neparseovatelný vstup → původní string; používá PhotoTile/DuplicateGroupCard/
@@ -1244,6 +1263,9 @@ inkrementální).
   `fulltext`/`semantic`/`hybrid`, odpověď navíc `mode`+`degraded`),
   `fetchSimilar(uid,limit?,signal)` nad `GET /api/v1/photos/{uid}/similar` → `SimilarPhoto[]`
   (`Photo`+`distance`; empty-friendly), typy `SimilarPhoto`/`SimilarResponse`,
+  `fetchTimeline(params,signal)` nad `GET /api/v1/photos/timeline` → `Timeline{buckets,total}`
+  (měsíční date-histogram, stejné filtry jako list; sort/stránkování backend ignoruje), typy
+  `Timeline`/`TimelineBucket{year,month,count,cumulative}` — podklad `TimelineScrubber`,
   `favoritePhoto(uid,favorite,signal)` nad `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (per-user
   toggle, 204, podklad optimistického `useFavorite`),
   `ratePhoto(uid,{rating?,flag?},signal)` nad `PUT /api/v1/photos/{uid}/rating` +
@@ -1335,7 +1357,9 @@ inkrementální).
   **sticky-toolbar offset** `.kukatko-sticky-toolbar` (`top: navbar height + safe-area-inset-top`,
   z-index pod navbarem — in-page sticky bary jako `SelectionBar` dosednou pod navbar, ne pod něj);
   **min. tap-target** `.kukatko-tap-target` (2.75rem/44px) pro icon-only ovládání jako
-  `FavoriteButton`; CSS proměnná `--kukatko-navbar-height`),
+  `FavoriteButton`; **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
+  okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
+  none` pro tažení, na šířkách ≤ 575.98px skrytá); CSS proměnná `--kukatko-navbar-height`),
   `test/setup.ts` (jsdom **`window.matchMedia` stub** — non-matching default, jednotlivé testy ho
   můžou přepsat pro simulaci telefonu).
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` je pod

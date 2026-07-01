@@ -141,6 +141,10 @@
       "unavailable": "Preview unavailable",
       "video": "Video",
       "live": "Live"
+    },
+    "timeline": {
+      "label": "Timeline",
+      "jumpTo": "Jump to {{month}}"
     }
   },
   "search": {

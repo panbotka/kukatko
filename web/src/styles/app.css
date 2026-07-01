@@ -66,3 +66,84 @@ body {
   min-width: 2.75rem;
   min-height: 2.75rem;
 }
+
+/* Timeline scrubber: a thin, fixed vertical date rail pinned to the right edge,
+   below the sticky navbar. It overlays the viewport (does not take grid space),
+   so a loading/empty timeline renders nothing without shifting the grid. Ticks
+   are absolutely positioned inside by their cumulative fraction. `touch-action`
+   lets us handle a vertical drag without the page scrolling underneath. */
+.kukatko-timeline {
+  position: fixed;
+  top: calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px) + 1rem);
+  right: env(safe-area-inset-right, 0px);
+  bottom: 1rem;
+  width: 3.25rem;
+  z-index: 1018;
+  touch-action: none;
+  user-select: none;
+}
+
+.kukatko-timeline-tick {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.25rem;
+  background: none;
+  border: 0;
+  color: var(--bs-secondary-color, rgba(255, 255, 255, 0.6));
+  font-size: 0.7rem;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kukatko-timeline-mark {
+  display: inline-block;
+  width: 0.8rem;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  transition:
+    width 0.1s ease,
+    height 0.1s ease;
+}
+
+.kukatko-timeline-tick:hover,
+.kukatko-timeline-tick.active {
+  color: var(--bs-emphasis-color, #fff);
+}
+
+.kukatko-timeline-tick.active .kukatko-timeline-mark {
+  width: 1.4rem;
+  height: 3px;
+}
+
+.kukatko-timeline-year {
+  font-weight: 600;
+}
+
+/* Floating label showing the month currently under the visible grid range. */
+.kukatko-timeline-current {
+  position: absolute;
+  right: 100%;
+  transform: translateY(-50%);
+  margin-right: 0.3rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 0.25rem;
+  background: var(--bs-primary, #df691a);
+  color: #fff;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* On very small screens the rail would crowd the grid — hide it there. */
+@media (max-width: 575.98px) {
+  .kukatko-timeline {
+    display: none;
+  }
+}

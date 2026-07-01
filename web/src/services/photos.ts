@@ -695,5 +695,59 @@ export async function fetchTrashInfo(signal?: AbortSignal): Promise<TrashInfo> {
   return (await res.json()) as TrashInfo
 }
 
+/**
+ * One month-granularity bucket of the library timeline (`photos.TimelineBucket`,
+ * `GET /api/v1/photos/timeline`): the number of photos captured in that calendar
+ * month (`count`) and the number of photos that sort before this bucket in the
+ * default newest-first grid order (`cumulative`). Because buckets are ordered
+ * newest-first and never overlap, `cumulative` is the scroll index of the
+ * bucket's first photo — which is exactly what the scrubber jumps to.
+ */
+export interface TimelineBucket {
+  year: number
+  month: number
+  count: number
+  cumulative: number
+}
+
+/**
+ * The month date-histogram of the library (`photos.Timeline`,
+ * `GET /api/v1/photos/timeline`): the buckets in newest-first order plus the
+ * overall `total`. `total` counts every matching photo — including those with an
+ * unknown capture time that belong to no bucket — so it may exceed the sum of the
+ * bucket counts.
+ */
+export interface Timeline {
+  buckets: TimelineBucket[]
+  total: number
+}
+
+/**
+ * Fetches the month date-histogram of the library via
+ * `GET /api/v1/photos/timeline`. It accepts the same filter params as
+ * {@link fetchPhotos} (sort/order and pagination are ignored server-side — the
+ * histogram is always grouped by capture date, newest-first) so the buckets line
+ * up with the default-sorted grid and a scrubber can map a month to a scroll
+ * index via each bucket's `cumulative`.
+ *
+ * @throws ApiError with `status` 400 (invalid filter) or 5xx so the caller can
+ *   render the matching message.
+ */
+export async function fetchTimeline(
+  params: PhotoListParams,
+  signal?: AbortSignal,
+): Promise<Timeline> {
+  const query = buildPhotoQuery(params)
+  const res = await fetch(`${API_BASE}/photos/timeline?${query.toString()}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as Timeline
+}
+
 /** Thumbnail size used for library grid tiles — a square crop, high enough DPI. */
 export const GRID_THUMB_SIZE = 'tile_500'

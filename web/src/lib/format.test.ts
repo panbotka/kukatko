@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatBytes, formatDate, formatDateTime, formatDuration } from './format'
+import { formatBytes, formatDate, formatDateTime, formatDuration, formatMonth } from './format'
 
 describe('formatBytes', () => {
   it('renders bytes without decimals', () => {
@@ -40,6 +40,28 @@ describe('formatDate / formatDateTime', () => {
   it('returns the original string for an unparseable value', () => {
     expect(formatDate('not-a-date', 'cs')).toBe('not-a-date')
     expect(formatDateTime('', 'en')).toBe('')
+  })
+})
+
+describe('formatMonth', () => {
+  it('formats a 1-based year/month as a locale-aware month and year', () => {
+    // January 2026 — assert the year is present and the two locales differ so
+    // the month name genuinely follows the UI language.
+    const cs = formatMonth(2026, 1, 'cs')
+    const en = formatMonth(2026, 1, 'en-US')
+    expect(cs).toContain('2026')
+    expect(en).toContain('2026')
+    expect(en.toLowerCase()).toContain('jan')
+    expect(cs).not.toBe(en)
+  })
+
+  it('accepts month 12 (December) without rolling into the next year', () => {
+    expect(formatMonth(2025, 12, 'en-US')).toContain('2025')
+  })
+
+  it('returns an empty string for an out-of-range month', () => {
+    expect(formatMonth(2026, 0, 'en')).toBe('')
+    expect(formatMonth(2026, 13, 'en')).toBe('')
   })
 })
 

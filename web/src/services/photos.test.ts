@@ -5,9 +5,11 @@ import {
   buildPhotoQuery,
   fetchPhotos,
   fetchSimilar,
+  fetchTimeline,
   type PhotoListResponse,
   searchPhotos,
   type SimilarResponse,
+  type Timeline,
   thumbUrl,
 } from './photos'
 
@@ -162,6 +164,40 @@ describe('fetchSimilar', () => {
   it('throws ApiError carrying the status on a non-OK response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'not found' }, 404)))
     await expect(fetchSimilar('missing')).rejects.toMatchObject({ name: 'ApiError', status: 404 })
+  })
+})
+
+describe('fetchTimeline', () => {
+  const TIMELINE: Timeline = {
+    buckets: [
+      { year: 2026, month: 2, count: 3, cumulative: 0 },
+      { year: 2026, month: 1, count: 5, cumulative: 3 },
+    ],
+    total: 8,
+  }
+
+  it('requests the timeline endpoint with the encoded filters and parses the body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(TIMELINE, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      fetchTimeline({ sort: 'newest', camera: 'Canon', has_gps: 'true' }),
+    ).resolves.toEqual(TIMELINE)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/api/v1/photos/timeline?')
+    expect(url).toContain('camera=Canon')
+    expect(url).toContain('has_gps=true')
+    expect(init.credentials).toBe('same-origin')
+  })
+
+  it('throws ApiError carrying the status on a non-OK response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'bad filter' }, 400)))
+    await expect(fetchTimeline({ sort: 'newest' })).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 400,
+    })
+    await expect(fetchTimeline({ sort: 'newest' })).rejects.toBeInstanceOf(ApiError)
   })
 })
 

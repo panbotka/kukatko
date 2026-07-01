@@ -1,50 +1,70 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { type ReactNode } from 'react'
+import { forwardRef, type ReactNode, useImperativeHandle } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
+import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
-import { type Photo, type PhotoListResponse } from '../services/photos'
+import { type Photo, type PhotoListResponse, type Timeline } from '../services/photos'
 
 import { LibraryPage } from './LibraryPage'
 
+// Shared spy captured across renders so tests can assert the scrubber scrolled
+// the grid. Hoisted so the (hoisted) vi.mock factory can reference it.
+const grid = vi.hoisted(() => ({ scrollToIndex: vi.fn() }))
+
 // Minimal stand-in for react-virtuoso's grid: jsdom has no layout, so the real
-// virtualized grid would render nothing. This renders every item and exposes a
-// button to fire `endReached` (the infinite-scroll trigger).
+// virtualized grid would render nothing. This renders every item, exposes a
+// button to fire `endReached` (the infinite-scroll trigger), and forwards a
+// `scrollToIndex` handle so the timeline scrubber can drive it.
 interface MockGridProps {
   data: Photo[]
   itemContent: (index: number, item: Photo) => ReactNode
   endReached?: () => void
+  rangeChanged?: (range: ListRange) => void
 }
 vi.mock('react-virtuoso', () => ({
-  VirtuosoGrid: ({ data, itemContent, endReached }: MockGridProps) => (
-    <div data-testid="grid">
-      {data.map((item, index) => (
-        <div key={item.uid}>{itemContent(index, item)}</div>
-      ))}
-      <button
-        type="button"
-        onClick={() => {
-          endReached?.()
-        }}
-      >
-        __endReached
-      </button>
-    </div>
-  ),
+  VirtuosoGrid: forwardRef<VirtuosoGridHandle, MockGridProps>(function MockGrid(
+    { data, itemContent, endReached },
+    ref,
+  ) {
+    useImperativeHandle(ref, () => ({
+      scrollToIndex: grid.scrollToIndex,
+      scrollTo: vi.fn(),
+      scrollBy: vi.fn(),
+    }))
+    return (
+      <div data-testid="grid">
+        {data.map((item, index) => (
+          <div key={item.uid}>{itemContent(index, item)}</div>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            endReached?.()
+          }}
+        >
+          __endReached
+        </button>
+      </div>
+    )
+  }),
 }))
 
-// Keep the real thumbUrl/GRID_THUMB_SIZE; only the network call is faked.
+// Keep the real thumbUrl/GRID_THUMB_SIZE; only the network calls are faked.
 vi.mock('../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/photos')>()
-  return { ...actual, fetchPhotos: vi.fn() }
+  return { ...actual, fetchPhotos: vi.fn(), fetchTimeline: vi.fn() }
 })
 
-const { fetchPhotos } = await import('../services/photos')
+const { fetchPhotos, fetchTimeline } = await import('../services/photos')
 const fetchMock = vi.mocked(fetchPhotos)
+const timelineMock = vi.mocked(fetchTimeline)
+
+const EMPTY_TIMELINE: Timeline = { buckets: [], total: 0 }
 
 function photo(uid: string, name: string): Photo {
   return {
@@ -131,6 +151,10 @@ function renderLibrary(initialEntry = '/library') {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchMock.mockReset()
+  timelineMock.mockReset()
+  // Default: no timeline, so the scrubber renders nothing unless a test opts in.
+  timelineMock.mockResolvedValue(EMPTY_TIMELINE)
+  grid.scrollToIndex.mockReset()
 })
 
 afterEach(() => {
@@ -272,5 +296,29 @@ describe('LibraryPage', () => {
     expect(screen.getByText('2 selected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'b.jpg' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('clicking a timeline month scrolls the grid to that month’s index', async () => {
+    // Three loaded photos spanning two months; the scrubber's January bucket
+    // starts at grid index 2 (its cumulative), which is already loaded.
+    fetchMock.mockResolvedValue(
+      page([photo('a', 'a.jpg'), photo('b', 'b.jpg'), photo('c', 'c.jpg')], 3, null),
+    )
+    timelineMock.mockResolvedValue({
+      buckets: [
+        { year: 2026, month: 2, count: 2, cumulative: 0 },
+        { year: 2026, month: 1, count: 1, cumulative: 2 },
+      ],
+      total: 3,
+    })
+    const user = userEvent.setup()
+    renderLibrary()
+
+    const jan = await screen.findByRole('button', { name: 'Jump to Jan 2026' })
+    await user.click(jan)
+
+    await waitFor(() => {
+      expect(grid.scrollToIndex).toHaveBeenCalledWith({ index: 2, align: 'start' })
+    })
   })
 })

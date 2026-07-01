@@ -1512,6 +1512,19 @@ reset + refetch při změně dotazu, ruší in-flight requesty a ignoruje stale 
 přes [`services/photos.ts`](web/src/services/photos.ts) (`fetchPhotos` nad `GET /api/v1/photos`,
 `thumbUrl`). Pohled má i18n loading-skeleton, prázdný stav i chybový stav s „Zkusit znovu".
 
+Vedle mřížky je **časová osa** ([`components/library/TimelineScrubber`](web/src/components/library/TimelineScrubber.tsx))
+— tenká fixní svislá datová lišta pro rychlé skoky na měsíc. Hook
+[`useTimeline`](web/src/hooks/useTimeline.ts) natáhne měsíční date-histogram přes
+`fetchTimeline` (`GET /api/v1/photos/timeline`, stejné filtry jako list, refetch při jejich změně);
+každý měsíc je klikací tick umístěný proporčně dle `cumulative / total`, měsíční popisky přes
+`lib/format` `formatMonth`. Klik nebo tažení skočí mřížkou na daný měsíc přes `scrollToIndex`
+s indexem `bucket.cumulative` — pokud měsíc leží **za** načtenou částí, hook
+[`useGridJump`](web/src/hooks/useGridJump.ts) nejdřív donačte stránky, než skočí. Jak se mřížka
+scrolluje (`rangeChanged`), zvýrazní se měsíc obsahující začátek viditelného rozsahu. Lišta je
+`position: fixed` overlay, takže loading/prázdný timeline nic nerendruje a neposouvá layout, na
+malých šířkách se skryje (`styles/app.css` `.kukatko-timeline*`); zobrazí se jen pro výchozí newest
+řazení a mimo režim výběru.
+
 **Hledání (`/search`):** stránka
 ([`web/src/pages/SearchPage.tsx`](web/src/pages/SearchPage.tsx)) s **prominentním vyhledávacím
 polem** (přítomným i v navbaru přes [`components/NavbarSearch`](web/src/components/NavbarSearch.tsx))

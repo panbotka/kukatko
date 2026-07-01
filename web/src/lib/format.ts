@@ -57,6 +57,27 @@ export function formatDateTime(value: string | number | Date, locale: string): s
 }
 
 /**
+ * Formats a 1-based calendar month (`year`, `month` in 1–12) as a locale-aware
+ * short month name plus the year, e.g. `2026, 1, 'en'` → `"Jan 2026"` and
+ * `'cs'` → `"led 2026"`. Used by the timeline scrubber to label its month
+ * ticks. An out-of-range month (outside 1–12) renders as an empty string so a
+ * bad bucket never surfaces a wrong label.
+ */
+export function formatMonth(year: number, month: number, locale: string): string {
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return ''
+  }
+  // Build the date from parts (day 1, local midnight) so the short month name is
+  // stable regardless of the host timezone; only the month name is localised,
+  // the year is appended verbatim.
+  const date = new Date(year, month - 1, 1)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+  return `${date.toLocaleDateString(locale, { month: 'short' })} ${year}`
+}
+
+/**
  * Formats a duration in milliseconds as a clock string: `M:SS` under an hour
  * (e.g. `154000` → `"2:34"`) and `H:MM:SS` from an hour up (e.g. `3754000` →
  * `"1:02:34"`). Non-finite or non-positive inputs render as `"0:00"`.

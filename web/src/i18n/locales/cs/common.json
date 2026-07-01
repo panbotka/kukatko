@@ -141,6 +141,10 @@
       "unavailable": "Náhled není dostupný",
       "video": "Video",
       "live": "Živá fotka"
+    },
+    "timeline": {
+      "label": "Časová osa",
+      "jumpTo": "Přejít na {{month}}"
     }
   },
   "search": {

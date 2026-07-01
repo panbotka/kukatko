@@ -1,16 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
+import { TimelineScrubber } from '../components/library/TimelineScrubber'
 import { BulkEditModal } from '../components/organize/BulkEditModal'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
+import { useGridJump } from '../hooks/useGridJump'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useSelection } from '../hooks/useSelection'
 import { detailQueryString } from '../lib/detailView'
@@ -42,7 +45,27 @@ export function LibraryPage() {
     () => detailQueryString({ ...view, album: '', label: '', favorite: '' }),
     [view],
   )
-  const { photos, total, status, loadingMore, moreError, loadMore, retry } = usePhotoLibrary(params)
+  const { photos, total, status, loadingMore, moreError, hasMore, loadMore, retry } =
+    usePhotoLibrary(params)
+
+  // Timeline scrubber wiring: a ref to the grid to scroll it, the first visible
+  // index to highlight the current month, and a jump that loads pages first when
+  // the target month lies ahead of the infinite-scroll cursor. The scrubber is
+  // only meaningful for the default newest-first date order (the timeline is
+  // always date-grouped), so it is hidden for other sorts and in selection mode.
+  const gridRef = useRef<VirtuosoGridHandle>(null)
+  const [rangeStart, setRangeStart] = useState(0)
+  const jumpTo = useGridJump({
+    gridRef,
+    loadedCount: photos.length,
+    hasMore,
+    loadingMore,
+    loadMore,
+  })
+  const onRangeChanged = useCallback((range: ListRange) => {
+    setRangeStart(range.startIndex)
+  }, [])
+  const showScrubber = view.sort === LIBRARY_DEFAULTS.sort && !selection.active
 
   return (
     <>
@@ -119,21 +142,28 @@ export function LibraryPage() {
       )}
 
       {status === 'ready' && photos.length > 0 && (
-        <PhotoGrid
-          photos={photos}
-          loadingMore={loadingMore}
-          moreError={moreError}
-          onEndReached={loadMore}
-          onRetry={retry}
-          selection={
-            selection.active
-              ? { active: true, selected: selection.selected, onToggle: selection.toggle }
-              : undefined
-          }
-          favoritable={!selection.active}
-          ratable={!selection.active}
-          detailQuery={detailQuery}
-        />
+        <>
+          <PhotoGrid
+            photos={photos}
+            loadingMore={loadingMore}
+            moreError={moreError}
+            onEndReached={loadMore}
+            onRetry={retry}
+            selection={
+              selection.active
+                ? { active: true, selected: selection.selected, onToggle: selection.toggle }
+                : undefined
+            }
+            favoritable={!selection.active}
+            ratable={!selection.active}
+            detailQuery={detailQuery}
+            gridRef={gridRef}
+            onRangeChanged={onRangeChanged}
+          />
+          {showScrubber && (
+            <TimelineScrubber params={params} activeIndex={rangeStart} onJump={jumpTo} />
+          )}
+        </>
       )}
 
       {canWrite && (

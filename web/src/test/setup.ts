@@ -25,6 +25,21 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   })
 }
 
+// jsdom does not implement the Pointer Capture API, so components that call
+// setPointerCapture / hasPointerCapture / releasePointerCapture during a drag
+// (e.g. the timeline scrubber) would throw. Provide inert no-op stubs so the
+// production code can call them unconditionally.
+if (typeof Element !== 'undefined') {
+  const proto = Element.prototype as unknown as {
+    setPointerCapture?: (pointerId: number) => void
+    releasePointerCapture?: (pointerId: number) => void
+    hasPointerCapture?: (pointerId: number) => boolean
+  }
+  proto.setPointerCapture ??= () => undefined
+  proto.releasePointerCapture ??= () => undefined
+  proto.hasPointerCapture ??= () => false
+}
+
 // React Testing Library does not auto-clean between tests under Vitest's
 // default config, so unmount rendered trees after each test to avoid leakage.
 afterEach(() => {
