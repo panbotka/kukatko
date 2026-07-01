@@ -31,6 +31,19 @@ func scanLabel(row pgx.Row) (Label, error) {
 	return l, nil
 }
 
+// scanLabelCount reads one label-with-count row (the labelColumns list followed
+// by a photo_count column) in order, wrapping any scan error. It is shared by
+// ListLabels and SearchLabels, whose projections match.
+func scanLabelCount(row pgx.Row) (LabelCount, error) {
+	var lc LabelCount
+	if err := row.Scan(
+		&lc.UID, &lc.Slug, &lc.Name, &lc.Priority, &lc.CreatedAt, &lc.UpdatedAt, &lc.PhotoCount,
+	); err != nil {
+		return LabelCount{}, fmt.Errorf("organize: scanning label count: %w", err)
+	}
+	return lc, nil
+}
+
 // CreateLabel inserts l and returns it refreshed with the generated UID, unique
 // slug and timestamps. The slug is derived from l.Name and a numeric suffix is
 // appended on collision.
@@ -117,11 +130,9 @@ func (s *Store) ListLabels(ctx context.Context) ([]LabelCount, error) {
 
 	out := make([]LabelCount, 0)
 	for rows.Next() {
-		var lc LabelCount
-		if err := rows.Scan(
-			&lc.UID, &lc.Slug, &lc.Name, &lc.Priority, &lc.CreatedAt, &lc.UpdatedAt, &lc.PhotoCount,
-		); err != nil {
-			return nil, fmt.Errorf("organize: scanning label count: %w", err)
+		lc, err := scanLabelCount(rows)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, lc)
 	}

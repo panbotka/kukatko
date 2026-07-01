@@ -367,7 +367,8 @@ inkrementální).
   nearchivovaných... resp. **non-invalid** markerů per subjekt, řazení dle jména)/
   `DeleteSubject` (FK odpojí markery, vyčistí faces cache)/`ListPhotoUIDsBySubject` (distinct
   uid nearchivovaných fotek s non-invalid markerem subjektu, newest-first — podklad galerie
-  subjektu v `peopleapi`); **markery** `CreateMarker`
+  subjektu v `peopleapi`)/`SearchSubjects(q,limit)` (accent/case-insensitive ILIKE nad
+  `immutable_unaccent(name)`, cap limit — podklad `globalsearchapi`); **markery** `CreateMarker`
   (validace typu/`0..1` bounds, volitelně rovnou subjekt → faces cache)/`GetMarkerByUID`/
   `ListMarkersByPhoto`/`AssignSubject`+`UnassignSubject` (v transakci aktualizují
   denormalizovaný **faces cache** `marker_uid`/`subject_uid`/`subject_name` přes
@@ -520,11 +521,14 @@ inkrementální).
   řádku = rating 0 / flag `none`;
   `Store` = `NewStore(pool)` nad sdíleným pgx poolem: **alba** `CreateAlbum`/`GetAlbumByUID`/
   `GetAlbumBySlug`/`UpdateAlbum` (re-slug z title)/`ListAlbums` (s počty fotek, řazení dle title)/
+  `SearchAlbums(q,limit)` (accent/case-insensitive ILIKE nad `immutable_unaccent(title/description)`,
+  s počty, cap limit — podklad `globalsearchapi`)/
   `DeleteAlbum`/`AddPhoto` (idempotentní upsert pozice)/`RemovePhoto` (idempotentní)/`ReorderPhotos`
   (atomický přepis `sort_order` dle pořadí v tx)/`SetCover` (set/clear cover)/`ListPhotoUIDs`
   (řazení `sort_order`); **štítky** `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel`
-  (re-slug)/`ListLabels` (s počty, řazení priority DESC)/`DeleteLabel`/`AttachLabel` (idempotentní
-  upsert source/uncertainty)/`DetachLabel` (idempotentní)/`ListPhotoUIDsByLabel`; **oblíbené**
+  (re-slug)/`ListLabels` (s počty, řazení priority DESC)/`SearchLabels(q,limit)` (accent/case-insensitive
+  ILIKE nad `immutable_unaccent(name)`, s počty, cap limit — podklad `globalsearchapi`)/`DeleteLabel`/
+  `AttachLabel` (idempotentní upsert source/uncertainty)/`DetachLabel` (idempotentní)/`ListPhotoUIDsByLabel`; **oblíbené**
   `AddFavorite`/`RemoveFavorite` (obojí idempotentní)/`IsFavorite`/`ListFavorites` (per-user,
   newest-first)/`FavoritedAmong` (z množiny photo uid vrátí per-user podmnožinu oblíbených jako
   množinu — anotace celé stránky `is_favorite` jedním dotazem); **hodnocení** (`ratings.go`)
@@ -589,7 +593,18 @@ inkrementální).
   jméno → 400), `DELETE /saved-searches/{uid}` → 204; **vlastnická izolace** — sdílený helper
   `ownedSearch` načte řádek a porovná `owner_uid` s aktérem, cizí (i neexistující) → **404** (nikdy
   neprozradí cizí hledání); tělo `DisallowUnknownFields` + 1 MiB limit, sentinel `ErrNotFound`→404;
-  mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`)), `internal/placesapi/`
+  mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`)), `internal/globalsearchapi/`
+  (grouped **global search** HTTP API napříč entitami — podklad navbar quick-results i cross-entity sekce
+  search stránky: malá rozhraní `Organizer` (`SearchAlbums`/`SearchLabels`, splňuje `organize.Store`),
+  `PeopleSearcher` (`SearchSubjects`, splňuje `people.Store`) a `PhotoSearcher` (`Search`, splňuje
+  `photos.Store` — reuse existujícího fulltextu přes `ListParams.FullText`) → unit-testovatelné s faky;
+  `NewAPI(Config{Organizer,People,Photos,Limit,RequireAuth})`+`RegisterRoutes` mountuje
+  `GET /search/global?q=` za `RequireAuth`: každou skupinu odbaví zvlášť (`SearchAlbums`/`SearchLabels`/
+  `SearchSubjects` capnuté na `Limit`, default `defaultGroupLimit` 8; fotky přes fulltext s `Limit`),
+  vrací grouped envelope `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],
+  people:[{uid,name,cover}], photos:[…usual photo shape…]}` (každá skupina vždy non-nil pole); prázdný/
+  whitespace `q` → 400, chyba store → 500; mountuje se `server.WithAPI` (`buildGlobalSearchAPI` v
+  `cmd/kukatko/globalsearch.go`, sdílí organize/people/photos store)), `internal/placesapi/`
   (read-only HTTP API nad reverse-geokódovanou place hierarchií — podklad Places browse: rozhraní
   `Store` (podmnožina `photos.Store`: `AggregatePlaces`) → unit-testovatelné s fakem; `NewAPI(Config{
   Store,RequireAuth})`+`RegisterRoutes` mountuje `GET /places` za `RequireAuth`: hierarchie s počty
@@ -1472,6 +1487,16 @@ inkrementální).
   kontextu — uložené hledání cizího vlastníka se **vždy hlásí jako 404** (nikdy se neprozradí), tělo
   `DisallowUnknownFields` + 1 MiB limit. Tabulka `saved_searches` (migrace `0017_saved_searches.sql`).
   Mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`).
+- **Global Search API (`/api/v1`, `internal/globalsearchapi`, přihlášený přes `RequireAuth`):**
+  grouped **cross-entity search** pro navbar quick-results a search stránku. `GET /search/global?q=` →
+  `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],
+  people:[{uid,name,cover}], photos:[…usual photo shape…]}` — alba/štítky/osoby matchované dle
+  name/description **accent- a case-insensitive** (`immutable_unaccent` + ILIKE přes store metody
+  `SearchAlbums`/`SearchLabels`/`SearchSubjects`), fotky přes **existující fulltext** (`photos.Store.
+  Search` nad `fts` tsvector). Každá skupina je capnutá na malé top-N (default 8, `Config.Limit`), pole
+  jsou vždy non-nil. Prázdný/whitespace `q` → 400, chyba store → 500. Existující `GET /search` (per-user
+  photo fulltext/semantic/hybrid) zůstává beze změny. Mountuje se `server.WithAPI` (`buildGlobalSearchAPI`
+  v `cmd/kukatko/globalsearch.go`, sdílí organize/people/photos store).
 - **Bulk metadata API (`/api/v1`, `internal/bulkapi`, editor/admin přes `RequireWrite`):**
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` aplikuje sadu operací na mnoho fotek
   **v jediné transakci** s audit-log záznamem. Operace (každá volitelná): `add_to_albums`/

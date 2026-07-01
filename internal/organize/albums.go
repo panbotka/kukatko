@@ -33,6 +33,20 @@ func scanAlbum(row pgx.Row) (Album, error) {
 	return a, nil
 }
 
+// scanAlbumCount reads one album-with-count row (the albumColumns list followed
+// by a photo_count column) in order, wrapping any scan error. It is shared by
+// ListAlbums and SearchAlbums, whose projections match.
+func scanAlbumCount(row pgx.Row) (AlbumCount, error) {
+	var ac AlbumCount
+	if err := row.Scan(
+		&ac.UID, &ac.Slug, &ac.Title, &ac.Description, &ac.Type, &ac.CoverPhotoUID,
+		&ac.Private, &ac.OrderBy, &ac.CreatedBy, &ac.CreatedAt, &ac.UpdatedAt, &ac.PhotoCount,
+	); err != nil {
+		return AlbumCount{}, fmt.Errorf("organize: scanning album count: %w", err)
+	}
+	return ac, nil
+}
+
 // CreateAlbum inserts a and returns it refreshed with the generated UID, unique
 // slug and timestamps. The slug is derived from a.Title and a numeric suffix is
 // appended on collision. An empty type defaults to AlbumManual and an empty
@@ -147,12 +161,9 @@ func (s *Store) ListAlbums(ctx context.Context) ([]AlbumCount, error) {
 
 	out := make([]AlbumCount, 0)
 	for rows.Next() {
-		var ac AlbumCount
-		if err := rows.Scan(
-			&ac.UID, &ac.Slug, &ac.Title, &ac.Description, &ac.Type, &ac.CoverPhotoUID,
-			&ac.Private, &ac.OrderBy, &ac.CreatedBy, &ac.CreatedAt, &ac.UpdatedAt, &ac.PhotoCount,
-		); err != nil {
-			return nil, fmt.Errorf("organize: scanning album count: %w", err)
+		ac, err := scanAlbumCount(rows)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, ac)
 	}

@@ -633,6 +633,27 @@ hledání vidí a smí ho měnit. Tabulka `saved_searches` v migraci `0017_saved
   neprozradí), tělo dekódováno s `DisallowUnknownFields` + 1 MiB limit. Mountuje se `server.WithAPI`
   (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`).
 
+### Globální hledání (`internal/globalsearchapi`)
+
+Jeden **grouped cross-entity** endpoint **`GET /api/v1/search/global?q=`** (přihlášený přes
+`RequireAuth`) pro navbar quick-results a cross-entity sekci search stránky: najde shody napříč
+**alby, štítky, osobami a fotkami** jedním dotazem. Alba/štítky/osoby se matchují dle name/description
+**accent- a case-insensitive** (`immutable_unaccent` + ILIKE), fotky přes **existující fulltext** nad
+`fts` tsvector — existující `GET /search` (per-user photo fulltext/semantic/hybrid) zůstává beze změny.
+
+- **Nové store metody** — `organize.Store.SearchAlbums(ctx,q,limit)` (title/description) a
+  `SearchLabels(ctx,q,limit)` (name), `people.Store.SearchSubjects(ctx,q,limit)` (name); každá capuje
+  výsledek na `limit`, řadí stabilně a vrací počty (alba/štítky). LIKE metaznaky v `q` se escapují,
+  takže matchují doslovně.
+- **`internal/globalsearchapi`** — malá rozhraní `Organizer`/`PeopleSearcher`/`PhotoSearcher` (splňují
+  je `organize.Store`/`people.Store`/`photos.Store`) → unit-testovatelné s faky.
+  `NewAPI(Config{Organizer,People,Photos,Limit,RequireAuth})` + `RegisterRoutes` mountuje
+  `GET /search/global`; každou skupinu odbaví zvlášť, capne na `Limit` (default 8). Odpověď
+  `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],
+  people:[{uid,name,cover}], photos:[…usual photo shape…]}` (skupiny vždy non-nil pole). Prázdný/
+  whitespace `q` → **400**, chyba store → **500**. Mountuje se `server.WithAPI`
+  (`buildGlobalSearchAPI` v `cmd/kukatko/globalsearch.go`, sdílí organize/people/photos store).
+
 ### Hromadná editace metadat (`internal/bulk` + `internal/bulkapi`)
 
 Jeden endpoint **`POST /api/v1/photos/bulk`** (editor/admin přes `RequireWrite`) aplikuje sadu
