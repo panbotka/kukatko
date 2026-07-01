@@ -55,7 +55,26 @@ export interface Photo {
    * unwired.
    */
   is_favorite?: boolean
+  /**
+   * The current user's star rating for this photo, 0–5 (0 = unrated). Present on
+   * list, search and detail responses (`internal/photoapi` annotates each photo
+   * for the acting user). Optional — mirroring {@link Photo.is_favorite} — so it
+   * defaults to 0 when the ratings backend is unwired or the field is absent.
+   */
+  rating?: number
+  /**
+   * The current user's pick/reject flag for this photo. Present on list, search
+   * and detail responses; optional (treated as `'none'` when absent), like
+   * {@link Photo.rating}.
+   */
+  flag?: RatingFlag
 }
+
+/**
+ * The per-user pick/reject flag on a photo (`internal/organize` `RatingFlag`):
+ * `none` (no flag), `pick` (keeper) or `reject` (cull candidate).
+ */
+export type RatingFlag = 'none' | 'pick' | 'reject'
 
 /**
  * Response body of `GET /api/v1/photos`. `next_offset` is the offset to request
@@ -86,8 +105,13 @@ export interface PhotoListResponse {
  */
 export type SearchMode = 'fulltext' | 'semantic' | 'hybrid'
 
-/** Public sort aliases accepted by the list endpoint (`internal/photoapi`). */
-export type PhotoSort = 'newest' | 'oldest' | 'added' | 'title' | 'size'
+/**
+ * Public sort aliases accepted by the list endpoint (`internal/photoapi`).
+ * `rating` sorts by the acting user's star rating (unrated last); the backend
+ * only honours it when the request is scoped to a rating user (which the list
+ * handler always is for the signed-in caller).
+ */
+export type PhotoSort = 'newest' | 'oldest' | 'added' | 'title' | 'size' | 'rating'
 
 /** Archive-state selector: hide archived (default), include them, or only them. */
 export type ArchivedFilter = 'false' | 'true' | 'only'
@@ -121,6 +145,18 @@ export interface PhotoListParams {
    * (`favorite` query param). Any other value / undefined means no scope.
    */
   favorite?: string
+  /**
+   * Minimum star rating filter as a string, `'1'`–`'5'` (`min_rating` query
+   * param): keep only photos the acting user rated at least this high. Empty /
+   * undefined means no filter.
+   */
+  min_rating?: string
+  /**
+   * Pick/reject flag filter (`flag` query param): `'pick'` or `'reject'` keeps
+   * only photos the acting user flagged accordingly. Empty / undefined means no
+   * filter.
+   */
+  flag?: string
 }
 
 const API_BASE = '/api/v1'
@@ -173,6 +209,8 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('album', params.album)
   set('label', params.label)
   set('favorite', params.favorite)
+  set('min_rating', params.min_rating)
+  set('flag', params.flag)
   return query
 }
 
@@ -499,6 +537,62 @@ export async function favoritePhoto(
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/favorite`, {
     method: favorite ? 'PUT' : 'DELETE',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+}
+
+/**
+ * A partial rating update for `PUT /api/v1/photos/{uid}/rating`: a star rating
+ * (0–5) and/or a pick/reject flag. At least one must be present; an omitted key
+ * leaves that field unchanged. Mirrors the backend `ratingBody`.
+ */
+export interface RatingUpdate {
+  rating?: number
+  flag?: RatingFlag
+}
+
+/**
+ * Sets the current user's star rating and/or pick/reject flag on a photo via
+ * `PUT /api/v1/photos/{uid}/rating`. Idempotent, resolves with no body (204).
+ * Rating is a personal action available to every signed-in user. Pass just the
+ * field you are changing (e.g. `{ rating: 4 }` or `{ flag: 'reject' }`).
+ *
+ * @throws ApiError with `status` 400 (invalid rating/flag, or empty update),
+ *   404 (no such photo), 503 (ratings backend unwired) or 5xx, so the caller can
+ *   roll back an optimistic update.
+ */
+export async function ratePhoto(
+  uid: string,
+  update: RatingUpdate,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/rating`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+}
+
+/**
+ * Clears the current user's rating and flag on a photo via
+ * `DELETE /api/v1/photos/{uid}/rating` (resets it to rating 0 / flag `none`).
+ * Idempotent, resolves with no body (204).
+ *
+ * @throws ApiError with `status` 404 (no such photo), 503 (ratings backend
+ *   unwired) or 5xx, so the caller can roll back an optimistic update.
+ */
+export async function clearRating(uid: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/rating`, {
+    method: 'DELETE',
     credentials: 'same-origin',
     signal,
   })

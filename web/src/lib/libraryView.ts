@@ -18,6 +18,10 @@ export type LibraryView = {
   q: string
   taken_after: string
   taken_before: string
+  /** Minimum star rating filter: '' (any) or '1'–'5'. */
+  min_rating: string
+  /** Pick/reject flag filter: '' (any), 'pick' or 'reject'. */
+  flag: string
 }
 
 /**
@@ -34,10 +38,12 @@ export const LIBRARY_DEFAULTS: LibraryView = {
   q: '',
   taken_after: '',
   taken_before: '',
+  min_rating: '',
+  flag: '',
 }
 
 /** Accepted sort aliases; an unknown value falls back to the default. */
-const SORTS: readonly PhotoSort[] = ['newest', 'oldest', 'added', 'title', 'size']
+const SORTS: readonly PhotoSort[] = ['newest', 'oldest', 'added', 'title', 'size', 'rating']
 
 /** Accepted archive selectors; an unknown value falls back to hiding archived. */
 const ARCHIVED: readonly ArchivedFilter[] = ['false', 'true', 'only']
@@ -68,6 +74,8 @@ export function viewToParams(view: LibraryView): PhotoListParams {
     q: view.q,
     taken_after: view.taken_after,
     taken_before: view.taken_before,
+    min_rating: view.min_rating,
+    flag: view.flag,
   }
 }
 
@@ -87,6 +95,8 @@ export function hasActiveFilters(
     view.camera !== '' ||
     (!options.ignoreQuery && view.q !== '') ||
     view.taken_after !== '' ||
-    view.taken_before !== ''
+    view.taken_before !== '' ||
+    view.min_rating !== '' ||
+    view.flag !== ''
   )
 }

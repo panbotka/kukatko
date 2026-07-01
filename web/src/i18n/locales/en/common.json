@@ -95,6 +95,8 @@
       "cameraPlaceholder": "e.g. Canon",
       "takenAfter": "Taken from",
       "takenBefore": "Taken until",
+      "minRating": "Rating",
+      "flag": "Flag",
       "clear": "Clear filters"
     },
     "sort": {
@@ -102,7 +104,17 @@
       "oldest": "Oldest",
       "added": "Recently added",
       "title": "Title",
-      "size": "File size"
+      "size": "File size",
+      "rating": "Rating"
+    },
+    "minRating": {
+      "any": "Any",
+      "atLeast": "≥ {{n}}"
+    },
+    "flag": {
+      "any": "Any",
+      "picks": "Picks",
+      "rejects": "Rejects"
     },
     "archived": {
       "hide": "Hide archived",
@@ -282,6 +294,15 @@
   "favorite": {
     "add": "Add to favorites",
     "remove": "Remove from favorites"
+  },
+  "rating": {
+    "label": "Rating",
+    "value": "Rated {{n}} of 5",
+    "rate": "Rate {{n}} of 5",
+    "flag": "Flag",
+    "pick": "Pick",
+    "reject": "Reject",
+    "rejected": "Rejected"
   },
   "bulkEdit": {
     "title_one": "Edit {{count}} photo",

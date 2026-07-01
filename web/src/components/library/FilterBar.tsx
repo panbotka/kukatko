@@ -85,6 +85,7 @@ export function FilterBar<T extends LibraryView>({
                 <option value="added">{t('library.sort.added')}</option>
                 <option value="title">{t('library.sort.title')}</option>
                 <option value="size">{t('library.sort.size')}</option>
+                <option value="rating">{t('library.sort.rating')}</option>
               </Form.Select>
             </Form.Group>
           </Col>
@@ -126,6 +127,41 @@ export function FilterBar<T extends LibraryView>({
               push({ private: value })
             }}
           />
+        </Col>
+
+        <Col xs={6} md={3} lg={2}>
+          <Form.Group controlId="library-min-rating">
+            <Form.Label className="small mb-1">{t('library.filters.minRating')}</Form.Label>
+            <Form.Select
+              value={view.min_rating}
+              onChange={(e) => {
+                push({ min_rating: e.target.value })
+              }}
+            >
+              <option value="">{t('library.minRating.any')}</option>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <option key={n} value={String(n)}>
+                  {t('library.minRating.atLeast', { n })}
+                </option>
+              ))}
+            </Form.Select>
+          </Form.Group>
+        </Col>
+
+        <Col xs={6} md={3} lg={2}>
+          <Form.Group controlId="library-flag">
+            <Form.Label className="small mb-1">{t('library.filters.flag')}</Form.Label>
+            <Form.Select
+              value={view.flag}
+              onChange={(e) => {
+                push({ flag: e.target.value })
+              }}
+            >
+              <option value="">{t('library.flag.any')}</option>
+              <option value="pick">{t('library.flag.picks')}</option>
+              <option value="reject">{t('library.flag.rejects')}</option>
+            </Form.Select>
+          </Form.Group>
         </Col>
 
         <Col xs={12} sm={6} md={4} lg={3}>

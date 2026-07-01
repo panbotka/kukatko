@@ -120,6 +120,7 @@ export function LibraryPage() {
               : undefined
           }
           favoritable={!selection.active}
+          ratable={!selection.active}
           detailQuery={detailQuery}
         />
       )}

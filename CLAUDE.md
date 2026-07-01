@@ -1006,21 +1006,29 @@ inkrementální).
   varování, remove/retry akce); `components/library/` = `PhotoTile`
   (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, **play badge + délka** u
   videa/live fotky (`▶` + `formatDuration`), placeholder bez
-  layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`),
+  layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`;
+  volitelný **rating overlay** `ratable` → kompaktní `RatingStars`+`FlagControl` (per-user
+  hvězdy 0–5 + pick/reject) nad `useRating`, plus **hotkeys na fokusnuté dlaždici** `0`–`5`
+  nastaví hodnocení a `p`/`r` pick/reject (`ratingHotkey`/`isTypingElement`, nefungují při psaní
+  do inputu); **zamítnutá fotka** je ztlumená + má reject badge; heart i rating overlay se
+  v selection módu skryjí),
   `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
-  window-scroll, `endReached` → další stránka, footer spinner/retry; prop `favoritable`
-  prosákne srdíčko na dlaždice), `FilterBar`
-  (datum od/do, poloha, soukromé, fotoaparát, archiv, řazení + počet + „zrušit filtry";
+  window-scroll, `endReached` → další stránka, footer spinner/retry; props `favoritable`/`ratable`
+  prosáknou srdíčko a hvězdy/flag na dlaždice), `FilterBar`
+  (datum od/do, poloha, soukromé, fotoaparát, archiv, **min. hodnocení ≥1…≥5**, **flag
+  vybrané/zamítnuté**, řazení (vč. **dle hodnocení**) + počet + „zrušit filtry";
   generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
   na search stránce), `SimilarPhotos` (znovupoužitelný horizontálně scrollovatelný pruh
   podobných fotek nad `GET /photos/{uid}/similar` přes `fetchSimilar`, odkazy na detail,
   empty-friendly + loading/error, refetch při změně `uid`),
   `FavoriteButton` (heart toggle nad `useFavorite` — **optimistický** per-user favorite
   s rollbackem; bez role-gate, smí každý přihlášený; jako overlay na dlaždici je sibling
-  linku, takže klik nenaviguje),
+  linku, takže klik nenaviguje), `RatingStars` (pure controlled 0–5 hvězd; klik na aktuální
+  hodnocení maže na 0; bez `onRate` read-only display) + `FlagControl` (pure controlled pick/
+  reject toggle, klik na aktivní flag maže na `none`; oba sibling linku → klik nenaviguje),
   `GridSkeleton` (placeholder mřížka při prvním načtení); `PhotoTile`+`PhotoGrid` podporují
   volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`;
-  heart se v selection módu skryje),
+  heart i rating overlay se v selection módu skryjí),
   `components/organize/` = `AlbumTile` (karta alba: cover/název/počet → `/albums/{uid}`),
   `AlbumEditModal` (create/rename alba: název/popis/soukromé), `LabelEditModal` (create/rename
   štítku: jméno/priorita), `ReorderableGrid` (ne-virtualizovaná drag-and-drop mřížka + šipky pro
@@ -1031,12 +1039,13 @@ inkrementální).
   **per-foto result summary** z odpovědi),
   `pages/` (`HomePage` volá `GET /healthz`, `LoginPage`, `AccountPage` = změna vlastního hesla,
   `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
-  mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka na dlaždicích
-  (favoritable), tlačítko **Promítání** (`slideshowHref` → `/slideshow` s aktuálními filtry/řazením),
+  mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka **i hvězdy/flag**
+  na dlaždicích (favoritable+ratable, rating hotkeys na fokusnuté dlaždici), tlačítko **Promítání**
+  (`slideshowHref` → `/slideshow` s aktuálními filtry/řazením),
   plus pro editory **režim výběru** (`Vybrat`/`Vybrat vše`) → `BulkEditModal`
   (hromadná úprava metadat přes bulk API),
   `FavoritesPage` = `/favorites` oblíbené aktuálního uživatele: stejná mřížka/filtry jako knihovna
-  scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených na místě,
+  scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených + hvězdy/flag na místě (ratable),
   `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
   `AlbumDetailPage` = `/albums/:uid` hlavička + tlačítko **Promítání** (všem) + editorské akce
   (upravit/smazat/vybrat/přeřadit) nad
@@ -1078,7 +1087,9 @@ inkrementální).
   navigace** respektující pořadí
   zdrojového výpisu (`usePhotoNeighbors` pageuje stejný `GET /photos` se scope+filtry z URL),
   deep-linkovatelný + **Zpět** na zdrojový pohled (`lib/detailView` `backHref`/`detailToParams`/
-  `detailQueryString`), `FavoriteButton` v hlavičce, tlačítka **Stáhnout originál** /
+  `detailQueryString`), v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + pick/reject
+  nad `useRating`) a `FavoriteButton`, plus **rating hotkeys** `0`–`5`/`p`/`r` na document (mimo
+  psaní do inputu), tlačítka **Stáhnout originál** /
   **Stáhnout upravenou** (`downloadUrl`), interaktivní `FaceOverlay` (pojmenování obličejů),
   pruh `SimilarPhotos` a pravý panel se záložkami (`components/photo/`): **Informace**
   (`MetadataPanel` = view/edit title/description/notes/taken_at + camera/lens/EXIF + lat/lng,
@@ -1161,7 +1172,10 @@ inkrementální).
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
-  `uid`/server stavu;
+  `uid`/server stavu; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user
+  hodnocení (hvězdy) + pick/reject flag nad `ratePhoto` (`PUT …/rating` jen s měněným polem),
+  `setRating`/`setFlag` s per-poli rollbackem při chybě, no-op na shodnou hodnotu, `pending` přes
+  in-flight counter, resync na změnu `uid`/server stavu (mirror `useFavorite`);
   `useSlideshow({length,hasMore,intervalMs,autoPlay?,onLoadMore?})` = řízení promítání: vlastní
   `index`+`playing`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`, auto-advance na interval
   (setTimeout, manuální nav resetuje odpočet), wrap-around, prefetch `PRELOAD_AHEAD` snímků dopředu
@@ -1170,9 +1184,13 @@ inkrementální).
   `lib/slideshowSettings` (read once on mount, setteri zapisují do localStorage, sanitizace))),
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
-  funguje"; `libraryView.ts` = typ `LibraryView` + `LIBRARY_DEFAULTS` + `viewToParams`
-  (sanitizuje sort/archived) + `hasActiveFilters` (`{ignoreQuery}` na search stránce) —
-  mapování URL stavu na API params; `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
+  funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag`) + `LIBRARY_DEFAULTS` +
+  `viewToParams` (sanitizuje sort/archived, prosákne `min_rating`/`flag`; `sort` union navíc
+  `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce, zahrnuje rating/flag) —
+  mapování URL stavu na API params; `ratingHotkeys.ts` = pure `ratingHotkey(key)` (`0`–`5` →
+  rating, `p`/`r` → pick/reject, jinak null) + `isTypingElement(target)` (input/textarea/select/
+  contenteditable → hotkey se přeskočí) — sdíleno detailem fotky i fokusnutou dlaždicí;
+  `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
   + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér;
   `mapView.ts` = typ `MapView` (mapset + viewport `lat`/`lng`/`z` + filtry) + `MAP_DEFAULTS` +
   `mapViewToParams` (sanitizuje archived) + `viewportFromView`/`mapsetFromView`/`hasActiveMapFilters`
@@ -1207,13 +1225,17 @@ inkrementální).
   (`Photo`+`distance`; empty-friendly), typy `SimilarPhoto`/`SimilarResponse`,
   `favoritePhoto(uid,favorite,signal)` nad `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (per-user
   toggle, 204, podklad optimistického `useFavorite`),
+  `ratePhoto(uid,{rating?,flag?},signal)` nad `PUT /api/v1/photos/{uid}/rating` +
+  `clearRating(uid,signal)` nad `DELETE …/rating` (per-user hvězdy 0–5 + pick/reject flag, 204,
+  podklad `useRating`), typy `RatingUpdate`/`RatingFlag`,
   **koš** `unarchivePhoto(uid)` (`POST …/unarchive` obnova), `purgePhoto(uid)` (`POST …/purge?confirm=true`
   trvalé mazání), `emptyTrash()` (`POST /trash/empty?confirm=true` → `PurgeResult{purged,failed}`),
   `fetchTrashInfo()` (`GET /trash/info` → `TrashInfo{retention_days}`),
   `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `videoUrl(uid,token?)` (range stream pro
-  `<video>`), `GRID_THUMB_SIZE`, typy `Photo` (vč. `is_favorite` + video pole
+  `<video>`), `GRID_THUMB_SIZE`, typy `Photo` (vč. `is_favorite` + per-user `rating`/`flag` + video pole
   `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`)/`PhotoListParams`
-  (vč. `album`/`label` scope + `favorite` filtr)/`PhotoSort`/`ArchivedFilter`/`SearchMode`, `ApiError`;
+  (vč. `album`/`label` scope + `favorite` filtr + `min_rating`/`flag` filtry)/`PhotoSort`
+  (vč. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`;
   `organize.ts` = Albums/Labels klient: alba `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
   `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`/`reorderAlbumPhotos`, štítky `fetchLabels`/
   `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; typy

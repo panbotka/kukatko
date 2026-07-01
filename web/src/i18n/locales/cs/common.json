@@ -95,6 +95,8 @@
       "cameraPlaceholder": "např. Canon",
       "takenAfter": "Pořízeno od",
       "takenBefore": "Pořízeno do",
+      "minRating": "Hodnocení",
+      "flag": "Označení",
       "clear": "Zrušit filtry"
     },
     "sort": {
@@ -102,7 +104,17 @@
       "oldest": "Nejstarší",
       "added": "Naposledy přidané",
       "title": "Název",
-      "size": "Velikost souboru"
+      "size": "Velikost souboru",
+      "rating": "Hodnocení"
+    },
+    "minRating": {
+      "any": "Vše",
+      "atLeast": "≥ {{n}}"
+    },
+    "flag": {
+      "any": "Vše",
+      "picks": "Vybrané",
+      "rejects": "Zamítnuté"
     },
     "archived": {
       "hide": "Skrýt archivované",
@@ -241,6 +253,15 @@
   "favorite": {
     "add": "Přidat mezi oblíbené",
     "remove": "Odebrat z oblíbených"
+  },
+  "rating": {
+    "label": "Hodnocení",
+    "value": "Hodnocení {{n}} z 5",
+    "rate": "Ohodnotit {{n}} z 5",
+    "flag": "Označení",
+    "pick": "Vybrat",
+    "reject": "Zamítnout",
+    "rejected": "Zamítnuto"
   },
   "bulkEdit": {
     "title_one": "Upravit {{count}} fotku",

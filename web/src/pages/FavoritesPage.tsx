@@ -58,6 +58,7 @@ export function FavoritesPage() {
           onEndReached={loadMore}
           onRetry={retry}
           favoritable
+          ratable
         />
       )}
     </>

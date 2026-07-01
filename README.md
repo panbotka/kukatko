@@ -813,7 +813,9 @@ responzivní/touch). Routy v `Layout` navbaru pod odkazem **Lidé** (`/people`):
   proxy + on-demand reverse-geocode + clear), **Úpravy** (editor/admin: `EditPanel`
   rotace/jas/kontrast/crop s živým CSS preview → `PUT /photos/{uid}/edit`). Interaktivní
   **`FaceOverlay`** (boxy obličejů z normalized bbox, klik → návrhy identit + free-text jméno),
-  `FavoriteButton` (per-user), pruh `SimilarPhotos`. Viewer vidí read-only. Vitest pokrývá
+  v hlavičce **hvězdy + pick/reject** (`RatingStars`/`FlagControl` nad `useRating`) a
+  `FavoriteButton` (per-user) plus **rating hotkeys** `0`–`5`/`p`/`r` (mimo psaní do inputu),
+  pruh `SimilarPhotos`. Viewer vidí read-only. Vitest pokrývá
   edit metadat, prev/next + Zpět, add/remove alb/štítků, favorite toggle, zápis editu + preview,
   read-only viewer (mock API/Leaflet).
 - Společné: `FaceThumb` (výřez obličeje z thumbnailu přes `faceCropStyle`), klient `services/people.ts`,
@@ -1481,10 +1483,11 @@ CSS `auto-fill`, mountuje jen viditelné řádky); dosažení konce (`endReached
 stránku. Dlaždice ([`components/library/PhotoTile`](web/src/components/library/PhotoTile.tsx)) jsou
 čtvercové, **lazy-load** (`loading="lazy"`, pevný `aspect-ratio` → bez layout-shiftu) a vedou na
 detail `/photos/{uid}`. **Filtr-bar** ([`components/library/FilterBar`](web/src/components/library/FilterBar.tsx))
-nabízí hledání, řazení (nejnovější/nejstarší/přidané/název/velikost), rozsah dat pořízení,
-poloha (GPS), soukromé, fotoaparát a přepínač archivu — **celý stav pohledu (filtry + řazení)
-žije v URL** přes `useUrlState`, takže Back/Forward obnoví přesný pohled a sdílení URL ho
-reprodukuje. Stránkování řeší hook
+nabízí hledání, řazení (nejnovější/nejstarší/přidané/název/velikost/**hodnocení**), rozsah dat
+pořízení, poloha (GPS), soukromé, fotoaparát, přepínač archivu a **per-user filtry hodnocení**
+(min. hvězdy ≥1…≥5 a flag vybrané/zamítnuté) — **celý stav pohledu (filtry + řazení) žije v URL**
+přes `useUrlState`, takže Back/Forward obnoví přesný pohled a sdílení URL ho
+reprodukuje (mapování v [`lib/libraryView.ts`](web/src/lib/libraryView.ts), pole `min_rating`/`flag`). Stránkování řeší hook
 [`usePhotoLibrary`](web/src/hooks/usePhotoLibrary.ts) — tenká obálka nad sdíleným
 [`usePaginatedPhotos`](web/src/hooks/usePaginatedPhotos.ts) (akumuluje stránky, `loadMore`/`retry`,
 reset + refetch při změně dotazu, ruší in-flight requesty a ignoruje stale odpovědi); data čte
@@ -1554,6 +1557,21 @@ Oblíbení je osobní akce **dostupná i prohlížečům** (bez role-gate), na r
 v navbaru) je stejná mřížka/filtry jako knihovna, scopnutá `favorite=true`, takže fotku lze z
 oblíbených odebrat přímo na místě. Každá fotka v seznamu/hledání/detailu nese `is_favorite` pro
 aktuálního uživatele.
+
+**Hodnocení (hvězdy + pick/reject všude):** vedle srdíčka nese hlavička detailu fotky i každá
+dlaždice knihovny/oblíbených **kompaktní ovládání hodnocení** — 0–5 hvězd
+([`RatingStars`](web/src/components/library/RatingStars.tsx)) a pick/reject flag
+([`FlagControl`](web/src/components/library/FlagControl.tsx)) nad hookem
+[`useRating`](web/src/hooks/useRating.ts): **optimistický** per-user zápis přes
+`PUT /photos/{uid}/rating` (`ratePhoto` v `photos.ts`, posílá se jen měněné pole) s **rollbackem**
+při chybě, mirror `useFavorite`. Klik na aktuální hvězdu/flag ho zruší (0 / `none`). Hodnocení je
+osobní akce **dostupná i prohlížečům** (bez role-gate). **Klávesové zkratky** — na detailu fotky
+(document listener) i na **fokusnuté dlaždici** v mřížce nastaví `0`–`5` počet hvězd, `p` = vybrat,
+`r` = zamítnout (čistý mapper [`lib/ratingHotkeys.ts`](web/src/lib/ratingHotkeys.ts)
+`ratingHotkey`/`isTypingElement`); zkratky **nefungují při psaní** do inputu/textarea/contenteditable.
+**Zamítnutá** dlaždice je ztlumená a nese reject badge; hvězdy/flag overlay se v režimu výběru skryje
+(jako srdíčko). Filtrovat a řadit dle hodnocení jde přes `FilterBar` (viz výše). Vitest pokrývá
+optimistický update + rollback (`useRating`/`RatingStars`), hotkey a filtr/řazení ve `FilterBar`.
 
 **Multiupload (`/upload`, editor/admin):** stránka
 ([`web/src/pages/UploadPage.tsx`](web/src/pages/UploadPage.tsx)) pro hromadné nahrávání fotek/videí

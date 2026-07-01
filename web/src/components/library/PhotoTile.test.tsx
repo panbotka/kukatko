@@ -1,12 +1,21 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import type { Photo } from '../../services/photos'
 
 import { PhotoTile } from './PhotoTile'
+
+// Only the rating network call is faked; the optimistic hook logic runs for real.
+vi.mock('../../services/photos', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/photos')>()
+  return { ...actual, ratePhoto: vi.fn() }
+})
+
+const { ratePhoto } = await import('../../services/photos')
+const rateMock = vi.mocked(ratePhoto)
 
 /** Builds a minimal Photo with the given overrides. */
 function photo(overrides: Partial<Photo> = {}): Photo {
@@ -31,11 +40,11 @@ function photo(overrides: Partial<Photo> = {}): Photo {
   }
 }
 
-function renderTile(p: Photo) {
+function renderTile(p: Photo, ratable = false) {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter>
-        <PhotoTile photo={p} />
+        <PhotoTile photo={p} ratable={ratable} />
       </MemoryRouter>
     </I18nextProvider>,
   )
@@ -43,6 +52,8 @@ function renderTile(p: Photo) {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  rateMock.mockReset()
+  rateMock.mockResolvedValue(undefined)
 })
 
 describe('PhotoTile video badge', () => {
@@ -69,5 +80,46 @@ describe('PhotoTile video badge', () => {
     renderTile(photo({ media_type: 'image', file_name: 'still.jpg' }))
     expect(screen.queryByRole('img', { name: 'Video' })).not.toBeInTheDocument()
     expect(screen.queryByRole('img', { name: 'Live' })).not.toBeInTheDocument()
+  })
+})
+
+describe('PhotoTile rating overlay', () => {
+  it('shows a star/flag overlay only when ratable', () => {
+    const { rerender } = renderTile(photo({ media_type: 'image', file_name: 'still.jpg' }))
+    expect(screen.queryByRole('button', { name: 'Rate 3 of 5' })).not.toBeInTheDocument()
+
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <PhotoTile photo={photo({ media_type: 'image' })} ratable />
+        </MemoryRouter>
+      </I18nextProvider>,
+    )
+    expect(screen.getByRole('button', { name: 'Rate 3 of 5' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pick' })).toBeInTheDocument()
+  })
+
+  it('sets the rating via a number-key hotkey on the focused tile', () => {
+    renderTile(photo({ media_type: 'image' }), true)
+    const link = screen.getByRole('link', { name: 'Clip' })
+
+    fireEvent.keyDown(link, { key: '5' })
+    expect(rateMock).toHaveBeenCalledWith('ph1', { rating: 5 })
+  })
+
+  it('sets pick/reject flags via the p and r hotkeys', () => {
+    renderTile(photo({ media_type: 'image' }), true)
+    const link = screen.getByRole('link', { name: 'Clip' })
+
+    fireEvent.keyDown(link, { key: 'p' })
+    expect(rateMock).toHaveBeenCalledWith('ph1', { flag: 'pick' })
+
+    fireEvent.keyDown(link, { key: 'r' })
+    expect(rateMock).toHaveBeenCalledWith('ph1', { flag: 'reject' })
+  })
+
+  it('dims the tile and shows a badge for reject-flagged photos', () => {
+    renderTile(photo({ media_type: 'image', flag: 'reject' }), true)
+    expect(screen.getByText('Rejected')).toBeInTheDocument()
   })
 })

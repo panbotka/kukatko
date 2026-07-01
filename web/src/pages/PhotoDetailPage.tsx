@@ -11,6 +11,8 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { FavoriteButton } from '../components/library/FavoriteButton'
+import { FlagControl } from '../components/library/FlagControl'
+import { RatingStars } from '../components/library/RatingStars'
 import { SimilarPhotos } from '../components/library/SimilarPhotos'
 import { EditPanel } from '../components/photo/EditPanel'
 import { LivePhoto } from '../components/photo/LivePhoto'
@@ -20,8 +22,10 @@ import { PhotoLocation } from '../components/photo/PhotoLocation'
 import { VideoPlayer } from '../components/photo/VideoPlayer'
 import { FaceOverlay } from '../components/people/FaceOverlay'
 import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
+import { useRating } from '../hooks/useRating'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
 import { editPreviewStyle, isIdentityEdit } from '../lib/photoEdit'
+import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { readUrlState } from '../lib/urlState'
 import {
   downloadUrl,
@@ -58,6 +62,38 @@ export function PhotoDetailPage() {
   const neighborParams = useMemo(() => detailToParams(view), [view])
   const detailQuery = detailQueryString(view)
   const neighbors = usePhotoNeighbors(uid, neighborParams)
+
+  // The optimistic rating hook (stars + flag) drives both the header controls and
+  // the number/p/r hotkeys. It is instantiated before the loading/error guards
+  // (hook rules) and resyncs to the photo's stored values once it loads.
+  const initialRating = state.status === 'ready' ? (state.photo.rating ?? 0) : 0
+  const initialFlag = state.status === 'ready' ? (state.photo.flag ?? 'none') : 'none'
+  const rating = useRating(uid, initialRating, initialFlag)
+  const { setRating, setFlag } = rating
+
+  // Number keys 0–5 set the rating, p = pick, r = reject — but never while the
+  // user is typing in an input/textarea/contenteditable.
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey || isTypingElement(event.target)) {
+        return
+      }
+      const action = ratingHotkey(event.key)
+      if (action === null) {
+        return
+      }
+      event.preventDefault()
+      if (action.kind === 'rating') {
+        setRating(action.value)
+      } else {
+        setFlag(action.value)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => {
+      document.removeEventListener('keydown', handler)
+    }
+  }, [setRating, setFlag])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -146,7 +182,21 @@ export function PhotoDetailPage() {
           ← {t('photo.back')}
         </Link>
         <h1 className="h4 mb-0 text-truncate">{title}</h1>
-        <FavoriteButton uid={photo.uid} favorite={photo.is_favorite ?? false} className="ms-auto" />
+        <div className="ms-auto d-flex align-items-center gap-2 flex-wrap">
+          <RatingStars
+            rating={rating.rating}
+            onRate={rating.setRating}
+            disabled={rating.pending}
+            size={22}
+          />
+          <FlagControl
+            flag={rating.flag}
+            onFlag={rating.setFlag}
+            disabled={rating.pending}
+            size={18}
+          />
+          <FavoriteButton uid={photo.uid} favorite={photo.is_favorite ?? false} />
+        </div>
       </div>
 
       <Row className="g-3">
