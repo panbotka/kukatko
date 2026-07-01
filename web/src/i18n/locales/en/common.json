@@ -169,6 +169,20 @@
       "load": "Search failed."
     }
   },
+  "globalSearch": {
+    "resultsLabel": "Quick search results",
+    "sectionsLabel": "Matching albums, labels and people",
+    "loading": "Searching…",
+    "empty": "Nothing found",
+    "error": "Search failed.",
+    "untitled": "Untitled",
+    "groups": {
+      "albums": "Albums",
+      "labels": "Labels",
+      "people": "People",
+      "photos": "Photos"
+    }
+  },
   "savedSearches": {
     "nav": "Saved searches",
     "title": "My saved searches",

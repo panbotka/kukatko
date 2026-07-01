@@ -667,6 +667,18 @@ Jeden **grouped cross-entity** endpoint **`GET /api/v1/search/global?q=`** (při
   whitespace `q` → **400**, chyba store → **500**. Mountuje se `server.WithAPI`
   (`buildGlobalSearchAPI` v `cmd/kukatko/globalsearch.go`, sdílí organize/people/photos store).
 
+**Frontend (globální hledání):** klient `web/src/services/search.ts` (`globalSearch(q,signal)` →
+`GlobalSearchResult` + helpery `hasEntityMatches`/`isEmptyResult`) a hook
+[`useGlobalSearch(query)`](web/src/hooks/useGlobalSearch.ts) (debounce 250 ms, idle/loading/ready/error,
+ruší in-flight). [`NavbarSearch`](web/src/components/NavbarSearch.tsx) přidává **živý grouped
+quick-results dropdown**: jak uživatel píše, ukáže shodná alba/štítky/lidi/fotky seskupené dle typu
+s náhledy; klik naviguje přímo na entitu (`/albums/{uid}`, `/labels/{uid}`, `/people/{uid}`,
+`/photos/{uid}`), Enter/Submit jde na plnou `/search?q=…`; klávesnicově ovladatelný (šipky/Enter),
+zavírá se na blur/Escape, empty/loading/error stavy. Na search stránce
+[`GlobalSearchSections`](web/src/components/search/GlobalSearchSections.tsx) vykreslí nad photo
+mřížkou kompaktní chipy shodných alb/lidí/štítků (jen když existují), takže textový dotaz vynese
+i nefotkové entity.
+
 ### Hromadná editace metadat (`internal/bulk` + `internal/bulkapi`)
 
 Jeden endpoint **`POST /api/v1/photos/bulk`** (editor/admin přes `RequireWrite`) aplikuje sadu
@@ -1536,8 +1548,11 @@ protože dotaz a relevance řízené řazení patří hledání). Data čte hook
 [`usePhotoSearch`](web/src/hooks/usePhotoSearch.ts) (nad `usePaginatedPhotos`) přes `searchPhotos`
 nad `GET /api/v1/search`; prázdný dotaz je `idle` stav (žádný request, výzva uživateli). Když je
 **inferenční služba offline**, backend vrátí `degraded: true` a pohled zobrazí **neblokující
-upozornění**, že sémantické hledání je dočasně nedostupné (výsledky padnou na fulltext). Pohled má
-i18n idle/loading/empty/error stavy. Mapování URL ↔ stav je v
+upozornění**, že sémantické hledání je dočasně nedostupné (výsledky padnou na fulltext). Nad photo
+mřížkou navíc [`GlobalSearchSections`](web/src/components/search/GlobalSearchSections.tsx) vykreslí
+**kompaktní cross-entity sekce** — chipy shodných alb, lidí a štítků z grouped `GET /search/global` —
+takže textový dotaz vynese i nefotkové entity (viz *Globální hledání* výše). Pohled má i18n
+idle/loading/empty/error stavy. Mapování URL ↔ stav je v
 [`lib/searchView.ts`](web/src/lib/searchView.ts) (`SearchView`, `SEARCH_DEFAULTS`, `toMode`).
 
 **Podobné fotky:** znovupoužitelná komponenta

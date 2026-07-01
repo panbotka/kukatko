@@ -10,6 +10,7 @@ import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
+import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
 import { viewToParams } from '../lib/libraryView'
 import { SEARCH_DEFAULTS, type SearchView, toMode } from '../lib/searchView'
@@ -120,6 +121,8 @@ export function SearchPage() {
       </Form>
 
       <FilterBar view={view} onChange={setView} total={total} showSearch={false} showSort={false} />
+
+      <GlobalSearchSections query={view.q} />
 
       {degraded && (
         <Alert variant="warning" className="py-2">

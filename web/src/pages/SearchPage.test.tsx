@@ -32,6 +32,19 @@ vi.mock('../services/photos', async (importOriginal) => {
   return { ...actual, searchPhotos: vi.fn() }
 })
 
+// The cross-entity sections run their own global search; stub it to an empty
+// result so this suite stays focused on the photo grid (see GlobalSearchSections
+// tests for the sections themselves).
+vi.mock('../services/search', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/search')>()
+  return {
+    ...actual,
+    globalSearch: vi
+      .fn()
+      .mockResolvedValue({ query: '', albums: [], labels: [], people: [], photos: [] }),
+  }
+})
+
 const { searchPhotos } = await import('../services/photos')
 const searchMock = vi.mocked(searchPhotos)
 

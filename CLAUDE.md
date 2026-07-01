@@ -998,7 +998,12 @@ inkrementální).
   **Duplikáty** na `/duplicates` (jen editor/admin, gate `canWrite`),
   **Import** na `/import` (jen admin, gate `isAdmin`),
   **Systém** na `/system` (jen admin, gate `isAdmin`),
-  `NavbarSearch` (kompaktní vyhledávací pole v navbaru → submit naviguje na `/search?q=…`),
+  `NavbarSearch` (kompaktní vyhledávací pole v navbaru s **živým grouped quick-results dropdownem**:
+  jak uživatel píše, debouncovaně (`useGlobalSearch`) volá `GET /search/global` a zobrazí shodné
+  **alba/štítky/lidé/fotky** seskupené dle typu s náhledy; klik na řádek naviguje přímo na entitu
+  (album→`/albums/{uid}`, štítek→`/labels/{uid}`, osoba→`/people/{uid}`, fotka→`/photos/{uid}`),
+  Enter/Submit jde na plnou stránku `/search?q=…`; dropdown je klávesnicově ovladatelný (šipky/Enter),
+  zavírá se na blur/Escape, empty/loading/error stavy vč. „Nic nenalezeno"),
   `SavedSearchesMenu` (navbar dropdown uložených hledání vedle vyhledávacího pole — lazy fetch při
   otevření, položky otevírají uložený pohled přes `savedSearchHref`, „Spravovat" míří na `/saved`),
   `LanguageSwitcher`;
@@ -1074,7 +1079,9 @@ inkrementální).
   `SearchPage` = sémantické/hybridní/fulltext hledání: prominentní debouncované (350 ms)
   vyhledávací pole + přepínač režimu (`q`+`mode` v URL), stejná virtualizovaná mřížka jako
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
-  (sidecar offline), idle/loading/empty/error stavy, plus tlačítko **Uložit pohled**
+  (sidecar offline), idle/loading/empty/error stavy, plus nad mřížkou **cross-entity sekce**
+  (`GlobalSearchSections`) s chipy shodných alb/lidí/štítků (grouped `GET /search/global`), aby
+  textový dotaz vynesl i nefotkové entity, plus tlačítko **Uložit pohled**
   (`SaveSearchModal` — `params` nese i `mode`, takže obnova míří na `/search`),
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
@@ -1155,6 +1162,11 @@ inkrementální).
   `components/savedsearch/` = `SaveSearchModal` (modal pro pojmenování při uložení nového pohledu
   i přejmenování existujícího uloženého hledání) + `SavedSearchesMenu` (navbar dropdown, lazy fetch
   při otevření, položky → uložený pohled, „Spravovat" → `/saved`);
+  `components/search/` = `GlobalSearchSections` (kompaktní cross-entity sekce nad photo mřížkou
+  search stránky: přes `useGlobalSearch(query)` natáhne grouped `GET /search/global` a vyrenderuje
+  chipy shodných **alb/lidí/štítků** odkazující na entitu; nezávislé na photo fulltext/semantic
+  hledání pod ním, nerendruje nic dokud nepřijde aspoň jedna nefotková shoda — prázdný dotaz /
+  probíhající hledání / jen-fotky shoda nepřidá žádné chrome);
   `components/trash/` = `TrashCard` (dlaždice archivované fotky: náhled + odpočet do auto-purge přes
   `trashCountdown` + restore/delete akce + výběr v selection módu);
   `components/duplicates/` = `DuplicateGroupCard` (karta skupiny: členové vedle sebe s náhledem/
@@ -1198,7 +1210,10 @@ inkrementální).
   GeoJSON feedu geotagovaných fotek nad `fetchMapPhotos` (`status` loading/ready/error, `retry`,
   ruší in-flight + ignoruje stale při změně filtrů); `useTimeline(params)` = jednorázový loader
   měsíčního date-histogramu nad `fetchTimeline` (`buckets`/`total`/`status`, refetch při změně
-  filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGridJump({gridRef,
+  filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGlobalSearch(query,
+  debounceMs?)` = debouncovaný (default 250 ms) grouped global-search loader nad `globalSearch`
+  (`status` idle/loading/ready/error + `result`, prázdný dotaz → idle bez requestu, ruší in-flight +
+  ignoruje stale — podklad navbar quick-results i `GlobalSearchSections`); `useGridJump({gridRef,
   loadedCount,hasMore,loadingMore,loadMore})` = vrátí `jumpTo(index)`, který skočí mřížkou na foto
   index přes `VirtuosoGridHandle.scrollToIndex` a **nejdřív donačte stránky**, když cíl leží za
   infinite-scroll kurzorem (nebo clampne na poslední načtené, když už další stránky nejsou) —
@@ -1286,7 +1301,12 @@ inkrementální).
   `savedSearches.ts` = uložená hledání klient: `fetchSavedSearches`/`createSavedSearch(name,params)`/
   `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` nad `/api/v1/saved-searches`, typy
   `SavedSearch`/`SavedSearchParams` (= verbatim URL view-state `Record<string,string>`)/
-  `SavedSearchUpdate`; `bulk.ts` =
+  `SavedSearchUpdate`; `search.ts` = grouped **global search** klient: `globalSearch(q,signal)` nad
+  `GET /api/v1/search/global` → `GlobalSearchResult{query,albums,labels,people,photos}` (top-N per
+  skupina, každá vždy pole) + pure helpery `hasEntityMatches`/`isEmptyResult`, typy
+  `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult`; oddělené od
+  photo `searchPhotos` (fulltext/semantic/hybrid), podklad navbar quick-results i
+  `GlobalSearchSections`; `bulk.ts` =
   `bulkUpdatePhotos(uids,ops)` nad `POST /photos/bulk` (hromadná úprava výběru), typy
   `BulkOperations` (add/remove alba+štítku, set/clear caption+popisu+polohy, set_private,
   archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `duplicates.ts` =

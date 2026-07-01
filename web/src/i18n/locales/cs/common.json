@@ -169,6 +169,20 @@
       "load": "Vyhledávání se nezdařilo."
     }
   },
+  "globalSearch": {
+    "resultsLabel": "Rychlé výsledky hledání",
+    "sectionsLabel": "Odpovídající alba, štítky a lidé",
+    "loading": "Hledání…",
+    "empty": "Nic nenalezeno",
+    "error": "Hledání se nezdařilo.",
+    "untitled": "Bez názvu",
+    "groups": {
+      "albums": "Alba",
+      "labels": "Štítky",
+      "people": "Lidé",
+      "photos": "Fotky"
+    }
+  },
   "savedSearches": {
     "nav": "Uložená hledání",
     "title": "Moje uložená hledání",
