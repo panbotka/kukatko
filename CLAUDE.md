@@ -993,7 +993,7 @@ inkrementální).
   (`Layout` = navbar shell s user-menu/logout + role-gated nav — odkaz **Knihovna**
   míří na `/library`, **Oblíbené** na `/favorites`, **Alba** na `/albums`, **Štítky** na `/labels`,
   **Hledat** na `/search`,
-  **Lidé** na `/people`, **Mapa** na `/map`, **Nahrát** na `/upload` (jen editor/admin),
+  **Lidé** na `/people`, **Mapa** na `/map`, **Místa** na `/places`, **Nahrát** na `/upload` (jen editor/admin),
   **Koš** na `/trash` (jen editor/admin, gate `canWrite`),
   **Duplikáty** na `/duplicates` (jen editor/admin, gate `canWrite`),
   **Import** na `/import` (jen admin, gate `isAdmin`),
@@ -1119,6 +1119,12 @@ inkrementální).
   dlaždicemi (Leaflet), přepínač podkladu + filtry (datum/archiv/soukromé) v `MapFilterBar`,
   stav (mapset/viewport/filtry) v URL — posun/zoom zapisuje viewport bez refetche, změna filtru
   dotáhne GeoJSON; klik na marker → detail fotky; loading/empty/error stavy,
+  `PlacesPage` = `/places` procházení knihovny dle lokality: jedním fetchem `fetchPlaces()` natáhne
+  hierarchii zemí→měst s počty; **drill v URL** (`?country=&city=` přes `useUrlState` nad
+  `PlacesView` = `LibraryView`+`country`/`city`, takže Zpět prochází úrovně) — úroveň 1 seznam zemí
+  (`ListGroup`), úroveň 2 města vybrané země (z nested dat, bez refetche), úroveň 3 fotomřížka
+  scopnutá na `{country,city}` přes `useScopedPhotos` (enabled až po výběru města) + sdílený
+  `FilterBar` + breadcrumb Místa/země/město; loading/empty/error stavy,
   `SlideshowPage` = `/slideshow` fullscreen promítání (mimo `Layout`, bez navbaru): čte scope
   (`?album=`/`?label=`/žádné) + filtry/řazení z URL (stejný stav jako mřížka), pageuje přes
   `usePaginatedPhotos` (`fetchPhotos`, velké sady se nenačítají najednou), řídí `useSlideshow` +
@@ -1175,8 +1181,9 @@ inkrementální).
   frontu efektem po `start`/retry, ruší běžící uploady při unmountu;
   `useSubjectPhotos` = obálka nad `usePaginatedPhotos` nad `GET /subjects/{uid}/photos`
   (galerie osoby, reset+reload při změně `uid`); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
-  nad `GET /photos` scopnutým na album/štítek (`{album?,label?}` + filtry/sort z URL, volitelný
-  `reloadKey` pro refetch po mutaci); `useMapPhotos` = jednorázový (nestránkovaný) loader
+  nad `GET /photos` scopnutým na album/štítek/**lokalitu** (`PhotoScope` `{album?,label?,country?,city?}`
+  + filtry/sort z URL, options `{reloadKey?,enabled?}` — `reloadKey` pro refetch po mutaci, `enabled:false`
+  → idle bez fetche, např. Places před výběrem města); `useMapPhotos` = jednorázový (nestránkovaný) loader
   GeoJSON feedu geotagovaných fotek nad `fetchMapPhotos` (`status` loading/ready/error, `retry`,
   ruší in-flight + ignoruje stale při změně filtrů); `useSelection` = multi-výběr fotek v mřížce
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
@@ -1248,7 +1255,7 @@ inkrementální).
   `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `videoUrl(uid,token?)` (range stream pro
   `<video>`), `GRID_THUMB_SIZE`, typy `Photo` (vč. `is_favorite` + per-user `rating`/`flag` + video pole
   `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`)/`PhotoListParams`
-  (vč. `album`/`label` scope + `favorite` filtr + `min_rating`/`flag` filtry)/`PhotoSort`
+  (vč. `album`/`label` scope + **`country`/`city` place scope** + `favorite` filtr + `min_rating`/`flag` filtry)/`PhotoSort`
   (vč. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`;
   `organize.ts` = Albums/Labels klient: alba `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
   `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`/`reorderAlbumPhotos`, štítky `fetchLabels`/
@@ -1288,6 +1295,10 @@ inkrementální).
   `toMapset`/`MAPSETS`; typy
   `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`/
   `GeocodeResult`/`RegionalItem`);
+  `places.ts` = klient hierarchie míst: `fetchPlaces(country?,signal)` nad `GET /api/v1/places`
+  → `PlaceCountry[]` (země s počty + nested `cities`, volitelné `country` drillne do měst jedné
+  země); typy `PlaceCountry`/`PlaceCity`; procházení fotek lokality jde přes sdílené
+  `fetchPhotos({country,city})`;
   `import.ts` = admin import klient: `fetchImportRuns(signal)` nad `GET /api/v1/import/runs`
   (`{runs,limit,offset,sources}`), `fetchJobStats(signal)` nad `GET /api/v1/jobs/stats`,
   `startImport(source,signal)` nad `POST /api/v1/import/{photoprism|photosorter}` (409 → ApiError);
@@ -1330,7 +1341,7 @@ inkrementální).
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` je pod
   `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru), zbytek pod `Layout` (`/`, `/library`,
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
-  `/photos/:uid`, `/people`,
+  `/places`, `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/trash` a `/duplicates`
   navíc pod `RequireRole role="editor"` = write-only, `/import`, `/maintenance` a `/system` pod
   `RequireRole role="admin"` = admin-only). Konfig:

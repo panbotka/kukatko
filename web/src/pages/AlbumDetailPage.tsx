@@ -66,7 +66,7 @@ export function AlbumDetailPage() {
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,
-    reloadKey,
+    { reloadKey },
   )
 
   const reload = useCallback(() => {

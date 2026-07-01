@@ -12,6 +12,7 @@
     "search": "Search",
     "people": "People",
     "map": "Map",
+    "places": "Places",
     "upload": "Upload",
     "import": "Import",
     "maintenance": "Maintenance",
@@ -306,6 +307,25 @@
     "empty": {
       "title": "No photos with this label",
       "hint": "Attach this label to photos to see them here."
+    }
+  },
+  "places": {
+    "title": "Places",
+    "breadcrumb": "Places navigation",
+    "photoCount_one": "{{count}} photo",
+    "photoCount_other": "{{count}} photos",
+    "error": "Could not load places.",
+    "empty": {
+      "title": "No places yet",
+      "hint": "Photos with GPS coordinates appear here once their location is processed."
+    },
+    "noCities": {
+      "title": "No cities",
+      "hint": "This country has no recognised cities yet."
+    },
+    "emptyPhotos": {
+      "title": "No photos from this place",
+      "hint": "Try adjusting the filters."
     }
   },
   "favorites": {

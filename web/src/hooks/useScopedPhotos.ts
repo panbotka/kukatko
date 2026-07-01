@@ -5,22 +5,41 @@ import { fetchPhotos, type PhotoListParams } from '../services/photos'
 import { usePaginatedPhotos, type UsePaginatedPhotosResult } from './usePaginatedPhotos'
 
 /**
- * A photo-list scope: restrict the listing to one album or one label. Exactly
- * one field is set by the album/label detail pages; both empty would list the
+ * A photo-list scope: restrict the listing to one album, one label, or one
+ * place (country and/or city). The detail pages set exactly the field(s) their
+ * view needs (an album, a label, or a country + city); all empty would list the
  * whole library, which these callers never do.
  */
 export interface PhotoScope {
   album?: string
   label?: string
+  /** Scope to photos taken in this country (paired with `city` on the Places page). */
+  country?: string
+  /** Scope to photos taken in this city. */
+  city?: string
+}
+
+/** Options for {@link useScopedPhotos}. */
+export interface UseScopedPhotosOptions {
+  /**
+   * Extra value folded into the reload key so a change outside `params` (e.g. a
+   * mutation the page wants to reflect) resets and reloads the grid.
+   */
+  reloadKey?: string
+  /**
+   * When false the hook fetches nothing and reports `idle` — e.g. the Places
+   * page before a city is selected. Defaults to true.
+   */
+  enabled?: boolean
 }
 
 /**
- * Drives a paginated, infinite-scroll photo grid scoped to an album or label,
- * honouring the library filters/sort in `params`. A thin wrapper over
+ * Drives a paginated, infinite-scroll photo grid scoped to an album, a label or
+ * a place, honouring the library filters/sort in `params`. A thin wrapper over
  * {@link usePaginatedPhotos} bound to `GET /photos` with the scope folded into
- * the query (`?album=`/`?label=`), so album and label galleries reuse the same
- * grid, filters and paging as the main library. Changing the scope or `params`
- * resets and reloads from the first page.
+ * the query (`?album=`/`?label=`/`?country=&city=`), so album, label and place
+ * galleries reuse the same grid, filters and paging as the main library.
+ * Changing the scope or `params` resets and reloads from the first page.
  *
  * `params` should be memoised by the caller (e.g. derived from URL state) so its
  * identity changes only when the query actually changes.
@@ -28,15 +47,24 @@ export interface PhotoScope {
 export function useScopedPhotos(
   scope: PhotoScope,
   params: PhotoListParams,
-  reloadKey?: string,
+  options: UseScopedPhotosOptions = {},
 ): UsePaginatedPhotosResult {
   const scoped = useMemo<PhotoListParams>(
-    () => ({ ...params, album: scope.album, label: scope.label }),
-    [params, scope.album, scope.label],
+    () => ({
+      ...params,
+      album: scope.album,
+      label: scope.label,
+      country: scope.country,
+      city: scope.city,
+    }),
+    [params, scope.album, scope.label, scope.country, scope.city],
   )
   const fetcher = useCallback(
     (p: PhotoListParams, signal: AbortSignal) => fetchPhotos(p, signal),
     [],
   )
-  return usePaginatedPhotos(scoped, fetcher, { key: reloadKey })
+  return usePaginatedPhotos(scoped, fetcher, {
+    key: options.reloadKey,
+    enabled: options.enabled,
+  })
 }

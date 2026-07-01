@@ -10,7 +10,7 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - **Pi-first:** běží na Raspberry Pi, výpočet embeddingů deleguje na výkonný stroj (box s GPU).
 - **Import z PhotoPrismu** přes API (+ stažení originálů) a **migrace dat z photo-sorteru**.
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
-  ([mapy.com](https://mapy.com)), slideshow, alba, štítky, hromadná editace metadat,
+  ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   per-user oblíbené, dvojjazyčné UI (čeština default + angličtina), S3 zálohování.
 
 > **Stav:** aktivní vývoj (milník M0 — kostra backendu + frontendu). Architektura:
@@ -801,6 +801,11 @@ namountováno).
   čte `?country=`/`?city=`. Sdílené **`GET /photos?country=&city=`** vrátí fotky dané lokality a
   ctí všechny ostatní filtry/řazení/stránkování — přesně vzor `?album=`/`?label=` scopingu (archivní
   fotky mimo výchozí výpis).
+- **Frontend** — `PlacesPage` (`/places`, navbar **Místa**, všem přihlášeným) nad
+  `places.ts` `fetchPlaces(country?)`: jedním fetchem natáhne hierarchii zemí→měst (`PlaceCountry[]`)
+  a prokliká úrovně země → město → **fotomřížka** scopnutá na `{country,city}` přes `useScopedPhotos`
+  (`enabled` až po výběru města) + sdílený `FilterBar`/`PhotoGrid`. Drill i filtry jsou v URL
+  (`/places?country=&city=` přes `useUrlState`), takže Zpět prochází úrovně; loading/empty/error stavy.
 
 ### People UI (frontend)
 

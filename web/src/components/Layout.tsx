@@ -68,6 +68,9 @@ export function Layout() {
               <Nav.Link as={NavLink} to="/map">
                 {t('nav.map')}
               </Nav.Link>
+              <Nav.Link as={NavLink} to="/places">
+                {t('nav.places')}
+              </Nav.Link>
               {/* Write actions are gated by role: hidden from viewers. */}
               {canWrite && (
                 <Nav.Link as={NavLink} to="/upload">

@@ -12,6 +12,7 @@
     "search": "Hledat",
     "people": "Lidé",
     "map": "Mapa",
+    "places": "Místa",
     "upload": "Nahrát",
     "import": "Import",
     "maintenance": "Údržba",
@@ -265,6 +266,27 @@
     "empty": {
       "title": "Žádné fotky s tímto štítkem",
       "hint": "Připoj tento štítek k fotkám a uvidíš je tady."
+    }
+  },
+  "places": {
+    "title": "Místa",
+    "breadcrumb": "Procházení míst",
+    "photoCount_one": "{{count}} fotka",
+    "photoCount_few": "{{count}} fotky",
+    "photoCount_many": "{{count}} fotky",
+    "photoCount_other": "{{count}} fotek",
+    "error": "Místa se nepodařilo načíst.",
+    "empty": {
+      "title": "Zatím žádná místa",
+      "hint": "Fotky s GPS souřadnicemi se sem objeví po zpracování polohy."
+    },
+    "noCities": {
+      "title": "Žádná města",
+      "hint": "V této zemi zatím nejsou žádná rozpoznaná města."
+    },
+    "emptyPhotos": {
+      "title": "Žádné fotky z tohoto místa",
+      "hint": "Zkus upravit filtry."
     }
   },
   "favorites": {

@@ -141,6 +141,16 @@ export interface PhotoListParams {
   /** Scope the listing to photos carrying this label (`label` query param). */
   label?: string
   /**
+   * Scope the listing to photos in this country (`country` query param, exact
+   * match against the reverse-geocoded place). Empty / undefined means no scope.
+   */
+  country?: string
+  /**
+   * Scope the listing to photos in this city (`city` query param, exact match).
+   * Usually paired with `country`. Empty / undefined means no scope.
+   */
+  city?: string
+  /**
    * Scope the listing to the current user's favorites when set to `'true'`
    * (`favorite` query param). Any other value / undefined means no scope.
    */
@@ -208,6 +218,8 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('taken_before', params.taken_before)
   set('album', params.album)
   set('label', params.label)
+  set('country', params.country)
+  set('city', params.city)
   set('favorite', params.favorite)
   set('min_rating', params.min_rating)
   set('flag', params.flag)
