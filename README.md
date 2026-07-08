@@ -1513,11 +1513,18 @@ CSS `auto-fill`, mountuje jen viditelné řádky); dosažení konce (`endReached
 stránku. Dlaždice ([`components/library/PhotoTile`](web/src/components/library/PhotoTile.tsx)) jsou
 čtvercové, **lazy-load** (`loading="lazy"`, pevný `aspect-ratio` → bez layout-shiftu) a vedou na
 detail `/photos/{uid}`. **Filtr-bar** ([`components/library/FilterBar`](web/src/components/library/FilterBar.tsx))
-nabízí hledání, řazení (nejnovější/nejstarší/přidané/název/velikost/**hodnocení**), rozsah dat
-pořízení, poloha (GPS), soukromé, fotoaparát, přepínač archivu a **per-user filtry hodnocení**
-(min. hvězdy ≥1…≥5 a flag vybrané/zamítnuté) — **celý stav pohledu (filtry + řazení) žije v URL**
+je **navržený pro klidný výchozí stav**: v hlavičce je jen prominentní **vyhledávací pole**
+(vizuální kotva), **řazení** (nejnovější/nejstarší/přidané/název/velikost/**hodnocení**) a tlačítko
+**Filtry** s odznakem počtu aktivních filtrů. Pokročilé filtry (rozsah dat pořízení, poloha (GPS),
+soukromé, fotoaparát, archiv a **per-user filtry hodnocení** — min. hvězdy ≥1…≥5 a flag vybrané/
+zamítnuté) žijí v **rozbalovacím panelu** (na desktopu inline collapse, na mobilu offcanvas přes
+`matchMedia`), takže výchozí pohled není přeplácaný. Každý aktivní filtr se ukazuje jako **odebíratelný
+chip** (křížek zruší právě ten jeden filtr) plus jedno **Zrušit filtry**. Ovládací prvky mají
+touch-friendly velikost (~44 px). **Celý stav pohledu (filtry + řazení) žije v URL**
 přes `useUrlState`, takže Back/Forward obnoví přesný pohled a sdílení URL ho
-reprodukuje (mapování v [`lib/libraryView.ts`](web/src/lib/libraryView.ts), pole `min_rating`/`flag`). Stránkování řeší hook
+reprodukuje (mapování v [`lib/libraryView.ts`](web/src/lib/libraryView.ts), pole `min_rating`/`flag`).
+Props `showSearch`/`showSort` (search stránka) skryjí dotaz/řazení, přičemž chipy, panel i Zrušit
+filtry fungují dál. Stránkování řeší hook
 [`usePhotoLibrary`](web/src/hooks/usePhotoLibrary.ts) — tenká obálka nad sdíleným
 [`usePaginatedPhotos`](web/src/hooks/usePaginatedPhotos.ts) (akumuluje stránky, `loadMore`/`retry`,
 reset + refetch při změně dotazu, ruší in-flight requesty a ignoruje stale odpovědi); data čte

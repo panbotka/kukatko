@@ -1038,10 +1038,18 @@ inkrementální).
   `activeIndex` (start viditelného rozsahu); overlay `position: fixed`, takže loading/prázdný
   timeline nerendruje nic a neposouvá layout, na malých šířkách se skryje přes `styles/app.css`
   `.kukatko-timeline*`; jen pro výchozí newest řazení), `FilterBar`
-  (datum od/do, poloha, soukromé, fotoaparát, archiv, **min. hodnocení ≥1…≥5**, **flag
-  vybrané/zamítnuté**, řazení (vč. **dle hodnocení**) + počet + „zrušit filtry";
+  (**redesign pro klidný výchozí stav + progresivní odhalení**: v hlavičce jen prominentní
+  vyhledávací pole (vizuální kotva, největší prvek), řazení (vč. **dle hodnocení**) a tlačítko
+  **Filtry** s odznakem počtu aktivních filtrů; pokročilé filtry (datum od/do, poloha, soukromé,
+  fotoaparát, archiv, **min. hodnocení ≥1…≥5**, **flag vybrané/zamítnuté**) žijí v rozbalovacím
+  panelu — na desktopu inline `Collapse`, na mobilu `Offcanvas` dle `matchMedia` (`useIsNarrow`,
+  defenzivní k jsdom, kde `matchMedia` vrací `undefined`); každý aktivní filtr = odebíratelný
+  **chip** (`buildChips`, `text-bg-primary` pill s křížkem, zruší jen ten filtr — dotaz `q` chip
+  nemá, má vlastní pole) + jedno **„zrušit filtry"** + počet fotek; **beze změny chování** — vše
+  jede přes `viewToParams`/`useUrlState`/`LibraryView`, dotaz replacuje historii, ostatní pushují;
   generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
-  na search stránce), `SimilarPhotos` (znovupoužitelný horizontálně scrollovatelný pruh
+  na search stránce (chipy/panel/zrušit fungují dál); tap-targety ~44 px přes `styles/app.css`
+  `.kukatko-filter-*`), `SimilarPhotos` (znovupoužitelný horizontálně scrollovatelný pruh
   podobných fotek nad `GET /photos/{uid}/similar` přes `fetchSimilar`, odkazy na detail,
   empty-friendly + loading/error, refetch při změně `uid`),
   `FavoriteButton` (heart toggle nad `useFavorite` — **optimistický** per-user favorite
@@ -1402,7 +1410,10 @@ inkrementální).
   **min. tap-target** `.kukatko-tap-target` (2.75rem/44px) pro icon-only ovládání jako
   `FavoriteButton`; **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
   okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
-  none` pro tažení, na šířkách ≤ 575.98px skrytá); CSS proměnná `--kukatko-navbar-height`),
+  none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`
+  (`.kukatko-filter-search` = search pole roste a plní řádek hlavičky, `.kukatko-filter-sort`
+  min. šířka, `.kukatko-filter-panel` = 44px tap-targety na prvcích panelu, `.kukatko-filter-chip`
+  = tappable pill chip s křížkem); CSS proměnná `--kukatko-navbar-height`),
   `test/setup.ts` (jsdom **`window.matchMedia` stub** — non-matching default, jednotlivé testy ho
   můžou přepsat pro simulaci telefonu).
   Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` je pod

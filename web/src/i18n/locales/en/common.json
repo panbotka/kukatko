@@ -101,6 +101,9 @@
       "takenBefore": "Taken until",
       "minRating": "Rating",
       "flag": "Flag",
+      "toggle": "Filters",
+      "dateRange": "Date taken",
+      "removeFilter": "Remove filter: {{name}}",
       "clear": "Clear filters"
     },
     "sort": {

@@ -157,3 +157,40 @@ body {
     display: none;
   }
 }
+
+/* Library filter bar. The search field is the visual anchor (it grows to fill
+   the header row); advanced filters live in a collapsible panel / offcanvas and
+   surface as removable chips. These rules only cover what Bootstrap utilities
+   cannot: the search field's flex behaviour, comfortable tap targets inside the
+   panel, and the chip affordance. */
+.kukatko-filter-search {
+  flex: 1 1 18rem;
+  min-width: 12rem;
+}
+
+/* Keep the sort select from shrinking below a legible width in the header. */
+.kukatko-filter-sort {
+  min-width: 9rem;
+}
+
+/* Controls inside the advanced panel are finger-friendly (44px minimum). */
+.kukatko-filter-panel .form-control,
+.kukatko-filter-panel .form-select {
+  min-height: 2.75rem;
+}
+
+/* Active-filter chips: a comfortably tappable pill with a trailing remove
+   button. Sized so the whole chip clears the touch-target floor. */
+.kukatko-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding-inline: 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.kukatko-filter-chip .btn-close {
+  padding: 0.4rem;
+  font-size: 0.6rem;
+}

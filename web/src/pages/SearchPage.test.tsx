@@ -48,6 +48,9 @@ vi.mock('../services/search', async (importOriginal) => {
 const { searchPhotos } = await import('../services/photos')
 const searchMock = vi.mocked(searchPhotos)
 
+const { globalSearch } = await import('../services/search')
+const globalSearchMock = vi.mocked(globalSearch)
+
 function photo(uid: string, name: string): Photo {
   return {
     uid,
@@ -93,6 +96,11 @@ function renderSearch(initialEntry = '/search') {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   searchMock.mockReset()
+  // `restoreMocks: true` wipes the factory's resolved value after each test, so
+  // re-establish it here; otherwise the cross-entity sections' debounced global
+  // search resolves to `undefined` and leaks an unhandled rejection.
+  globalSearchMock.mockReset()
+  globalSearchMock.mockResolvedValue({ query: '', albums: [], labels: [], people: [], photos: [] })
 })
 
 afterEach(() => {

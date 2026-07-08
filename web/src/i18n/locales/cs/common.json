@@ -101,6 +101,9 @@
       "takenBefore": "Pořízeno do",
       "minRating": "Hodnocení",
       "flag": "Označení",
+      "toggle": "Filtry",
+      "dateRange": "Datum pořízení",
+      "removeFilter": "Odebrat filtr: {{name}}",
       "clear": "Zrušit filtry"
     },
     "sort": {
