@@ -425,4 +425,116 @@ describe('PhotoDetailPage', () => {
     const organize = screen.getByText('Holidays').closest('div')
     expect(within(organize as HTMLElement).getByText('Holidays')).toBeInTheDocument()
   })
+
+  describe('fullscreen lightbox', () => {
+    it('opens the fullscreen viewer when the main image is clicked', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Open fullscreen' }))
+
+      const dialog = screen.getByRole('dialog', { name: 'Fullscreen photo viewer' })
+      expect(within(dialog).getByRole('img').getAttribute('src')).toContain(
+        '/photos/b/thumb/fit_1920',
+      )
+    })
+
+    it('closes on the close button, the backdrop and Esc', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      // Close button.
+      await user.click(screen.getByRole('button', { name: 'Open fullscreen' }))
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      // Backdrop click.
+      await user.click(screen.getByRole('button', { name: 'Open fullscreen' }))
+      fireEvent.click(screen.getByRole('dialog'))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      // Escape closes the viewer without navigating away from the photo.
+      await user.click(screen.getByRole('button', { name: 'Open fullscreen' }))
+      fireEvent.keyDown(document, { key: 'Escape' })
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      })
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+    })
+
+    it('pages prev/next through the list and stops at the ends', async () => {
+      const user = userEvent.setup()
+      renderPage(true, '/photos/b?sort=oldest')
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      await user.click(screen.getByRole('button', { name: 'Open fullscreen' }))
+      const dialog = screen.getByRole('dialog')
+
+      // Neighbours resolve → the next arrow appears; the viewer shows photo b.
+      const next = await within(dialog).findByRole('button', { name: 'Next photo' })
+      expect(within(dialog).getByRole('img').getAttribute('src')).toContain('/photos/b/thumb')
+
+      // Step to the last photo; the next arrow disappears at the end.
+      await user.click(next)
+      await waitFor(() => {
+        expect(within(dialog).getByRole('img').getAttribute('src')).toContain('/photos/c/thumb')
+      })
+      await waitFor(() => {
+        expect(within(dialog).queryByRole('button', { name: 'Next photo' })).not.toBeInTheDocument()
+      })
+
+      // Step back to the first photo; the prev arrow disappears at the start.
+      await user.click(within(dialog).getByRole('button', { name: 'Previous photo' }))
+      // The next arrow reappearing signals the neighbours of b have resolved.
+      await within(dialog).findByRole('button', { name: 'Next photo' })
+      expect(within(dialog).getByRole('img').getAttribute('src')).toContain('/photos/b/thumb')
+
+      await user.click(within(dialog).getByRole('button', { name: 'Previous photo' }))
+      await waitFor(() => {
+        expect(within(dialog).getByRole('img').getAttribute('src')).toContain('/photos/a/thumb')
+      })
+      expect(
+        within(dialog).queryByRole('button', { name: 'Previous photo' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('restores the detail URL to the last-viewed photo on close', async () => {
+      const user = userEvent.setup()
+      renderPage(true, '/photos/b?sort=oldest')
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      await user.click(screen.getByRole('button', { name: 'Open fullscreen' }))
+      const dialog = screen.getByRole('dialog')
+      const next = await within(dialog).findByRole('button', { name: 'Next photo' })
+      await user.click(next)
+      await waitFor(() => {
+        expect(within(dialog).getByRole('img').getAttribute('src')).toContain('/photos/c/thumb')
+      })
+
+      await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
+    })
+
+    it('does not open the image lightbox for a video', async () => {
+      fetchPhotoMock.mockResolvedValue(
+        photo({
+          media_type: 'video',
+          file_name: 'clip.mp4',
+          file_mime: 'video/mp4',
+          title: 'Clip',
+        }),
+      )
+      renderPage()
+      await screen.findByRole('heading', { name: 'Clip' })
+
+      // Videos keep their own native fullscreen; there is no image-lightbox trigger.
+      expect(screen.queryByRole('button', { name: 'Open fullscreen' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
 })

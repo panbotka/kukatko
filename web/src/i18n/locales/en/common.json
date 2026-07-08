@@ -557,6 +557,11 @@
     "next": "Next photo",
     "download": "Download original",
     "downloadEdited": "Download edited",
+    "lightbox": {
+      "open": "Open fullscreen",
+      "close": "Close",
+      "label": "Fullscreen photo viewer"
+    },
     "tabs": {
       "info": "Info",
       "location": "Location",

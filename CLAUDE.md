@@ -1124,8 +1124,17 @@ inkrementální).
   reflektující uložený nedestruktivní edit (CSS) — u **videa** místo obrázku `VideoPlayer`
   (`components/photo/`, HTML5 `<video controls>` nad range endpointem `…/video`, poster `fit_1920`,
   klávesy/fullscreen/touch zdarma, fallback na stažení když codec prohlížeč neumí), u **live fotky**
-  `LivePhoto` (still + „Live" badge, motion klip se přehraje při hover/podržení/focusu), **prev/next
-  navigace** respektující pořadí
+  `LivePhoto` (still + „Live" badge, motion klip se přehraje při hover/podržení/focusu); **klik na
+  still náhled otevře fullscreen lightbox** (`Lightbox` v `components/photo/` + `lightbox.css`):
+  fotka na celou obrazovku (contain) na tmavém pozadí s uloženým editem, **velké šipky vlevo/vpravo**
+  listující stejné pořadí/scope jako detail (vlastní `usePhotoNeighbors` nad `neighborParams`, stop
+  na koncích), klávesy ←/→ + Esc, swipe na mobilu, close křížkem (44px tap-target) i klikem na pozadí,
+  přednačtení sousedů (`new Image()` na `fit_1920`), fetch title+editu zobrazené fotky při navigaci;
+  lightbox si listuje **interně bez změny URL** a při zavření předá aktuální uid zpět → detail obnoví
+  URL (`navigate` replace), takže Zpět vždy funguje; video/live neotevírá image-lightbox (mají vlastní
+  nativní fullscreen), a **detailové klávesové zkratky (←/→/Esc/rating hotkeys) jsou při otevřeném
+  lightboxu vypnuté** (`useKeyboardShortcuts({enabled:!lightboxOpen})`), aby je ovládal lightbox;
+  **prev/next navigace** respektující pořadí
   zdrojového výpisu (`usePhotoNeighbors` pageuje stejný `GET /photos` se scope+filtry z URL),
   deep-linkovatelný + **Zpět** na zdrojový pohled (`lib/detailView` `backHref`/`detailToParams`/
   `detailQueryString`), v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + pick/reject

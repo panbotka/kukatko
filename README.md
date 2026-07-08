@@ -837,17 +837,24 @@ responzivní/touch). Routy v `Layout` navbaru pod odkazem **Lidé** (`/people`):
 - **`/photos/:uid`** (`PhotoDetailPage`) — **bohatý detail fotky**: velký náhled reflektující
   uložený nedestruktivní edit, **prev/next** navigace respektující pořadí zdrojového výpisu
   (`usePhotoNeighbors`), deep-link + **Zpět** na zdrojový pohled (`lib/detailView`), stažení
-  originálu i upravené verze. Pravý panel se záložkami (`components/photo/`): **Informace**
+  originálu i upravené verze. **Klik na náhled otevře fullscreen lightbox** (`components/photo/`
+  `Lightbox`): fotka na celou obrazovku (contain) na tmavém pozadí s uloženým editem, **velké
+  šipky vlevo/vpravo** listující stejné pořadí/scope jako detail (`usePhotoNeighbors`, stop na
+  koncích), klávesy ←/→ a Esc, swipe na mobilu, close křížkem i klikem na pozadí, přednačtení
+  sousedů; lightbox si listuje interně a **při zavření obnoví URL** na aktuální fotku (Zpět vždy
+  funguje). Video/live fotka má vlastní nativní fullscreen (`VideoPlayer`/`LivePhoto`) a
+  image-lightbox neotevírá. Pravý panel se záložkami (`components/photo/`): **Informace**
   (`MetadataPanel` view/edit title/description/notes/taken_at + EXIF + lat/lng; `OrganizePanel`
   inline add/remove alb a štítků), **Poloha** (`PhotoLocation` Leaflet mini-mapa nad mapy.com
   proxy + on-demand reverse-geocode + clear), **Úpravy** (editor/admin: `EditPanel`
   rotace/jas/kontrast/crop s živým CSS preview → `PUT /photos/{uid}/edit`). Interaktivní
   **`FaceOverlay`** (boxy obličejů z normalized bbox, klik → návrhy identit + free-text jméno),
   v hlavičce **hvězdy + pick/reject** (`RatingStars`/`FlagControl` nad `useRating`) a
-  `FavoriteButton` (per-user) plus **rating hotkeys** `0`–`5`/`p`/`r` (mimo psaní do inputu),
-  pruh `SimilarPhotos`. Viewer vidí read-only. Vitest pokrývá
+  `FavoriteButton` (per-user) plus **rating hotkeys** `0`–`5`/`p`/`r` (mimo psaní do inputu;
+  vypnuté když je lightbox otevřený), pruh `SimilarPhotos`. Viewer vidí read-only. Vitest pokrývá
   edit metadat, prev/next + Zpět, add/remove alb/štítků, favorite toggle, zápis editu + preview,
-  read-only viewer (mock API/Leaflet).
+  read-only viewer, **lightbox** (otevření klikem, zavření křížkem/pozadím/Esc, prev/next vč.
+  konců, video neotevírá) (mock API/Leaflet).
 - Společné: `FaceThumb` (výřez obličeje z thumbnailu přes `faceCropStyle`), klient `services/people.ts`,
   geometrie `lib/faceGeometry.ts`. Vitest pokrývá pojmenování shluku, pozicování/přiřazení v overlay
   a unassign outlierů (mock API).

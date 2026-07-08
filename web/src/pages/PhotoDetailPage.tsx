@@ -15,6 +15,7 @@ import { FlagControl } from '../components/library/FlagControl'
 import { RatingStars } from '../components/library/RatingStars'
 import { SimilarPhotos } from '../components/library/SimilarPhotos'
 import { EditPanel } from '../components/photo/EditPanel'
+import { Lightbox } from '../components/photo/Lightbox'
 import { LivePhoto } from '../components/photo/LivePhoto'
 import { MetadataPanel } from '../components/photo/MetadataPanel'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
@@ -60,6 +61,7 @@ export function PhotoDetailPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [state, setState] = useState<State>({ status: 'loading' })
+  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   const view = useMemo(() => readUrlState(searchParams, DETAIL_DEFAULTS), [searchParams])
   const neighborParams = useMemo(() => detailToParams(view), [view])
@@ -81,25 +83,30 @@ export function PhotoDetailPage() {
 
   // Detail shortcuts: ←/→ page to the previous/next photo, `f` toggles favorite,
   // Escape returns to the originating list view. Rating keys (0–5, p/r) are handled
-  // by the separate effect above. The hook suppresses these while typing.
-  useKeyboardShortcuts({
-    ArrowLeft: () => {
-      if (neighbors.prev !== null) {
-        void navigate(neighborTo(neighbors.prev), { replace: true })
-      }
+  // by the separate effect above. The hook suppresses these while typing. They are
+  // disabled while the lightbox is open, which owns ←/→ (page the viewer) and Esc
+  // (close it).
+  useKeyboardShortcuts(
+    {
+      ArrowLeft: () => {
+        if (neighbors.prev !== null) {
+          void navigate(neighborTo(neighbors.prev), { replace: true })
+        }
+      },
+      ArrowRight: () => {
+        if (neighbors.next !== null) {
+          void navigate(neighborTo(neighbors.next), { replace: true })
+        }
+      },
+      f: () => {
+        favorite.toggle()
+      },
+      Escape: () => {
+        void navigate(backHref(view))
+      },
     },
-    ArrowRight: () => {
-      if (neighbors.next !== null) {
-        void navigate(neighborTo(neighbors.next), { replace: true })
-      }
-    },
-    f: () => {
-      favorite.toggle()
-    },
-    Escape: () => {
-      void navigate(backHref(view))
-    },
-  })
+    { enabled: !lightboxOpen },
+  )
 
   // The optimistic rating hook (stars + flag) drives both the header controls and
   // the number/p/r hotkeys. It is instantiated before the loading/error guards
@@ -113,7 +120,13 @@ export function PhotoDetailPage() {
   // user is typing in an input/textarea/contenteditable.
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey || isTypingElement(event.target)) {
+      if (
+        lightboxOpen ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        isTypingElement(event.target)
+      ) {
         return
       }
       const action = ratingHotkey(event.key)
@@ -131,7 +144,7 @@ export function PhotoDetailPage() {
     return () => {
       document.removeEventListener('keydown', handler)
     }
-  }, [setRating, setFlag])
+  }, [setRating, setFlag, lightboxOpen])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -200,14 +213,37 @@ export function PhotoDetailPage() {
     if (photo.media_type === 'live') {
       return <LivePhoto uid={photo.uid} title={title} poster={poster} token={downloadToken} />
     }
+    // Clicking the still image opens the fullscreen lightbox. Videos/live photos
+    // keep their own native fullscreen (the range player / motion clip) and never
+    // reach this branch, so they never open the image lightbox.
     return (
-      <img
-        src={poster}
-        alt={title}
-        className="mw-100"
-        style={{ maxHeight: '70vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
-      />
+      <button
+        type="button"
+        className="border-0 bg-transparent p-0 d-inline-flex"
+        style={{ cursor: 'zoom-in' }}
+        aria-label={t('photo.lightbox.open')}
+        onClick={() => {
+          setLightboxOpen(true)
+        }}
+      >
+        <img
+          src={poster}
+          alt={title}
+          className="mw-100"
+          style={{ maxHeight: '70vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
+        />
+      </button>
     )
+  }
+
+  // Close the lightbox, restoring the detail URL to whichever photo is on screen
+  // (the viewer pages the list internally without touching the URL), so browser
+  // Back still returns to the originating list view.
+  const closeLightbox = (finalUid: string) => {
+    setLightboxOpen(false)
+    if (finalUid !== photo.uid) {
+      void navigate(neighborTo(finalUid), { replace: true })
+    }
   }
 
   return (
@@ -317,6 +353,17 @@ export function PhotoDetailPage() {
       <div className="mt-4">
         <SimilarPhotos uid={photo.uid} />
       </div>
+
+      {lightboxOpen && photo.media_type !== 'video' && photo.media_type !== 'live' && (
+        <Lightbox
+          initialUid={photo.uid}
+          initialTitle={title}
+          initialEdit={edit}
+          params={neighborParams}
+          token={downloadToken}
+          onClose={closeLightbox}
+        />
+      )}
     </>
   )
 }

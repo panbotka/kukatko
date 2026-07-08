@@ -567,6 +567,11 @@
     "next": "Další fotka",
     "download": "Stáhnout originál",
     "downloadEdited": "Stáhnout upravenou",
+    "lightbox": {
+      "open": "Zobrazit na celou obrazovku",
+      "close": "Zavřít",
+      "label": "Prohlížeč fotek na celou obrazovku"
+    },
     "tabs": {
       "info": "Informace",
       "location": "Poloha",
