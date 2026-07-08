@@ -16,7 +16,8 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 > **Stav:** aktivní vývoj (milník M0 — kostra backendu + frontendu). Architektura:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), vývojářský návod:
 > [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md), výkonové poznámky:
-> [`docs/PERF.md`](docs/PERF.md).
+> [`docs/PERF.md`](docs/PERF.md), UI/UX audit + backlog:
+> [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md).
 >
 > PhotoPrism zůstává **primární** systém až do ostrého přechodu na Kukátko; do té doby
 > Kukátko běží paralelně a importuje z PhotoPrismu read-only.
@@ -1497,7 +1498,10 @@ tak vrací jak `GET /healthz`, tak celé SPA.
 vodorovnému scrollu a overscroll bounce, sdílený **sticky-toolbar offset**
 (`.kukatko-sticky-toolbar` — in-page sticky bary jako výběrový toolbar dosednou pod navbar,
 ne pod něj) a min. **tap-target 44px** (`.kukatko-tap-target`) pro icon-only ovládání (srdíčko
-oblíbených). Mřížky jsou `auto-fill` CSS grid (přizpůsobí počet sloupců šířce), detail fotky se
+oblíbených). Navíc **app-wide touch-target floor**: `@media (pointer: coarse)` vynutí min. 44px na
+všech tlačítkách, formulářových prvcích, nav/dropdown položkách i checkboxech na dotykových
+zařízeních (telefon/tablet), aniž by zasahoval do hutnějšího desktop layoutu — systémová oprava
+drobných `size="sm"` ovládání napříč aplikací. Mřížky jsou `auto-fill` CSS grid (přizpůsobí počet sloupců šířce), detail fotky se
 pod `lg` **stáčí na celou šířku** (náhled nad panelem metadat), editační modály (alba/štítky/osoby/
 hromadná úprava) jdou na telefonech do **fullscreen** (`fullscreen="sm-down"`), slideshow i mapa
 jsou plně touch (swipe, pinch/zoom/pan). Multiupload bere fotky z **mobilní galerie i fotoaparátu**

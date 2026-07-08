@@ -1068,7 +1068,11 @@ inkrementální).
   alba, add/remove štítku, set/clear popisu, set/clear polohy, soukromé, archiv, oblíbené — set/clear
   páry jako samostatné módy; klientská validace souřadnic + „aspoň jedna změna"; po aplikaci
   **per-foto result summary** z odpovědi),
-  `pages/` (`HomePage` volá `GET /healthz`, `LoginPage`, `AccountPage` = změna vlastního hesla,
+  `pages/` (`HomePage` = přívětivá uvítací stránka: nadpis + mřížka velkých klikacích karet
+  (`Card as={Link}`) na hlavní cíle (Knihovna, Hledat, Alba, Lidé, Mapa a pro editory Nahrát,
+  přes datový registr `TILES` s `nav.*` titulky + `home.tiles.*` popisky, `writeOnly` gate na
+  Nahrát), technický stav (`GET /healthz` + verze) demotovaný do malého ztlumeného řádku dole
+  (bez commit hashe), `LoginPage`, `AccountPage` = změna vlastního hesla,
   `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka **i hvězdy/flag**
   na dlaždicích (favoritable+ratable, rating hotkeys na fokusnuté dlaždici), tlačítko **Promítání**
@@ -1436,7 +1440,12 @@ inkrementální).
   **sticky-toolbar offset** `.kukatko-sticky-toolbar` (`top: navbar height + safe-area-inset-top`,
   z-index pod navbarem — in-page sticky bary jako `SelectionBar` dosednou pod navbar, ne pod něj);
   **min. tap-target** `.kukatko-tap-target` (2.75rem/44px) pro icon-only ovládání jako
-  `FavoriteButton`; **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
+  `FavoriteButton`; **app-wide touch-target floor** — `@media (pointer: coarse)` blok, který na
+  dotykových zařízeních (telefon/tablet) vynutí min. 44px na `.btn`/`.form-control`/`.form-select`/
+  `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link` + větší `.form-check-input`,
+  bez zásahu do desktop (fine-pointer) layoutu a bez per-komponentových změn (systémová oprava
+  všudypřítomných `size="sm"` ovládání); **uvítací karty** `.kukatko-home-tile` (jemný hover
+  lift + zvýraznění okraje pro klikací karty na `HomePage`); **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
   okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
   none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`
   (`.kukatko-filter-search` = search pole roste a plní řádek hlavičky, `.kukatko-filter-sort`

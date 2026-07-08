@@ -3,6 +3,10 @@ import { defineConfig } from 'vitest/config'
 
 // The Vite build writes into the Go embed directory so `go build` captures the
 // compiled SPA into the binary. In dev, API calls are proxied to the Go server.
+// The backend target defaults to :8080 but can be overridden with KUKATKO_DEV_API
+// (e.g. when :8080 is taken by another service on a shared host).
+const apiTarget = process.env.KUKATKO_DEV_API ?? 'http://localhost:8080'
+
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -11,8 +15,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/healthz': 'http://localhost:8080',
-      '/api': 'http://localhost:8080',
+      '/healthz': apiTarget,
+      '/api': apiTarget,
     },
   },
   test: {

@@ -83,7 +83,6 @@ export function LabelsPage() {
         {canWrite && (
           <Button
             variant="primary"
-            size="sm"
             onClick={() => {
               setCreating(true)
             }}

@@ -49,7 +49,6 @@ export function AlbumsPage() {
         {canWrite && (
           <Button
             variant="primary"
-            size="sm"
             onClick={() => {
               setCreating(true)
             }}

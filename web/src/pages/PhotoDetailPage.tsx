@@ -252,7 +252,7 @@ export function PhotoDetailPage() {
         <Link to={backHref(view)} className="text-decoration-none">
           ← {t('photo.back')}
         </Link>
-        <h1 className="h4 mb-0 text-truncate">{title}</h1>
+        <h1 className="h3 mb-0 text-truncate">{title}</h1>
         <div className="ms-auto d-flex align-items-center gap-2 flex-wrap">
           <RatingStars
             rating={rating.rating}

@@ -48,7 +48,7 @@ export function PeoplePage() {
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="h3 mb-0">{t('people.title')}</h1>
         {canWrite && (
-          <Link to="/people/clusters" className="btn btn-outline-primary btn-sm">
+          <Link to="/people/clusters" className="btn btn-outline-primary">
             {t('people.reviewClusters')}
           </Link>
         )}

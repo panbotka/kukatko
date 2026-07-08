@@ -12,7 +12,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { formatBytes, formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
-import type { ImportRun } from '../services/import'
+import type { ImportRun, ImportSource } from '../services/import'
 import {
   fetchSystemStatus,
   requeueDeadLetterJobs,
@@ -153,7 +153,7 @@ function JobsCard({
 }
 
 /** Renders the most recent run of one import source, or a "never" placeholder. */
-function ImportRunLine({ source, run }: { source: string; run: ImportRun | null }) {
+function ImportRunLine({ source, run }: { source: ImportSource; run: ImportRun | null }) {
   const { t, i18n } = useTranslation()
   return (
     <div className="mb-2">

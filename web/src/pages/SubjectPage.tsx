@@ -129,7 +129,9 @@ export function SubjectPage() {
         </div>
       )}
       {status === 'ready' && photos.length === 0 && (
-        <p className="text-secondary">{t('subject.noPhotos')}</p>
+        <div className="text-center text-secondary py-5">
+          <p className="mb-0 fs-5">{t('subject.noPhotos')}</p>
+        </div>
       )}
       {photos.length > 0 && (
         <>

@@ -40,13 +40,19 @@
   },
   "home": {
     "title": "Vítejte v Kukátku",
-    "subtitle": "Samostatná aplikace pro správu fotek a videí — náhrada PhotoPrismu.",
-    "apiStatusTitle": "Stav backendu",
-    "checking": "Zjišťuji dostupnost…",
-    "healthy": "Backend je dostupný",
-    "unhealthy": "Backend není dostupný",
+    "subtitle": "Všechny vaše fotky a videa přehledně na jednom místě.",
+    "checking": "Ověřuji dostupnost…",
+    "healthy": "Vše funguje",
+    "unhealthy": "Aplikace je momentálně nedostupná",
     "version": "Verze",
-    "commit": "Commit"
+    "tiles": {
+      "library": "Procházejte všechny své fotky a videa.",
+      "search": "Najděte fotky podle slova nebo obsahu.",
+      "albums": "Uspořádejte fotky do alb.",
+      "people": "Najděte fotky podle osob.",
+      "map": "Prohlížejte fotky na mapě.",
+      "upload": "Přidejte nové fotky a videa."
+    }
   },
   "login": {
     "title": "Přihlášení",
@@ -165,7 +171,7 @@
       "fulltext": "Fulltext",
       "semantic": "Sémantické"
     },
-    "degraded": "Sémantické vyhledávání je dočasně nedostupné (inferenční služba je offline). Zobrazují se fulltextové výsledky.",
+    "degraded": "Vyhledávání podle obsahu je teď dočasně nedostupné. Zobrazujeme výsledky podle textu.",
     "prompt": "Zadejte hledaný výraz.",
     "empty": {
       "title": "Nic nenalezeno",
@@ -515,7 +521,7 @@
     "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
     "empty": {
       "title": "Žádné skupiny k projití",
-      "hint": "Nové skupiny se zde objeví, jak budou obličeje detekovány a shlukovány."
+      "hint": "Nové skupiny se tu objeví, jakmile aplikace rozpozná obličeje na vašich fotkách."
     },
     "representative": "Reprezentativní obličej",
     "sample": "Ukázkový obličej",
@@ -621,7 +627,7 @@
       "error": "Změnu se nepodařilo uložit."
     },
     "location": {
-      "none": "Tato fotka nemá uloženou polohu. Geotag přidáš v záložce Informace.",
+      "none": "Tato fotka nemá uloženou polohu. Přidáš ji v záložce Informace.",
       "lookup": "Zjistit místo",
       "lookupError": "Místo se nepodařilo zjistit.",
       "clear": "Vymazat polohu"

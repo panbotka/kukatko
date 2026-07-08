@@ -67,6 +67,52 @@ body {
   min-height: 2.75rem;
 }
 
+/* App-wide touch-target floor. On coarse-pointer devices (phones, tablets) every
+   interactive control should clear the ~44px finger-friendly minimum regardless
+   of Bootstrap's `size="sm"` sizing, without forcing per-component markup
+   changes. Scoped to `pointer: coarse` so fine-pointer (desktop/mouse) layouts
+   stay compact and untouched — dense on desktop, comfortable on touch. The
+   flex centering keeps a small button's label vertically centred once its box
+   grows past the text height. */
+@media (pointer: coarse) {
+  .btn,
+  .form-control,
+  .form-select,
+  .nav-link,
+  .dropdown-item,
+  .list-group-item-action,
+  .page-link {
+    min-height: 2.75rem;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Checkboxes/radios are the tightest hit areas of all — enlarge the control
+     itself so it is tappable without hunting for the exact pixel. */
+  .form-check-input {
+    min-width: 1.35rem;
+    min-height: 1.35rem;
+  }
+}
+
+/* Home welcome tiles: whole-card links to the main destinations. A subtle hover
+   lift + border emphasis signals they are clickable without adding chrome. */
+.kukatko-home-tile {
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.kukatko-home-tile:hover,
+.kukatko-home-tile:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--bs-primary, #df691a);
+}
+
 /* Keyboard focus highlight for the photo grid: a clearly visible ring around the
    tile currently targeted by arrow / hjkl navigation. Distinct from the selection
    outline (primary) so both can be shown at once, and inset slightly so it hugs

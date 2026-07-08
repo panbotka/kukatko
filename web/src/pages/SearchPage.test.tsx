@@ -172,7 +172,7 @@ describe('SearchPage', () => {
     renderSearch('/search?q=beach&mode=semantic')
 
     expect(
-      await screen.findByText(/semantic search is temporarily unavailable/i),
+      await screen.findByText(/search by content is temporarily unavailable/i),
     ).toBeInTheDocument()
     // The results still render alongside the notice (non-blocking).
     expect(screen.getByRole('link', { name: 'a.jpg' })).toBeInTheDocument()

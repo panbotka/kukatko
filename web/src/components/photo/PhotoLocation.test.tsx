@@ -123,7 +123,7 @@ describe('PhotoLocation', () => {
 
     renderLocation({ photo: photo({ lat: undefined, lng: undefined }) })
     expect(
-      screen.getByText('This photo has no stored location. Add a geotag on the Info tab.'),
+      screen.getByText('This photo has no stored location. Add it on the Info tab.'),
     ).toBeInTheDocument()
   })
 })

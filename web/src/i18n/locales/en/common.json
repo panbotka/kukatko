@@ -40,13 +40,19 @@
   },
   "home": {
     "title": "Welcome to Kukátko",
-    "subtitle": "A self-hosted photo and video management application — a PhotoPrism replacement.",
-    "apiStatusTitle": "Backend status",
+    "subtitle": "All your photos and videos, neatly in one place.",
     "checking": "Checking availability…",
-    "healthy": "Backend is reachable",
-    "unhealthy": "Backend is unreachable",
+    "healthy": "Everything is working",
+    "unhealthy": "The app is currently unavailable",
     "version": "Version",
-    "commit": "Commit"
+    "tiles": {
+      "library": "Browse all your photos and videos.",
+      "search": "Find photos by word or content.",
+      "albums": "Organize photos into albums.",
+      "people": "Find photos by person.",
+      "map": "See your photos on a map.",
+      "upload": "Add new photos and videos."
+    }
   },
   "login": {
     "title": "Sign in",
@@ -165,7 +171,7 @@
       "fulltext": "Full-text",
       "semantic": "Semantic"
     },
-    "degraded": "Semantic search is temporarily unavailable (the inference service is offline). Showing full-text results.",
+    "degraded": "Search by content is temporarily unavailable right now. Showing text-based results instead.",
     "prompt": "Enter a search term.",
     "empty": {
       "title": "Nothing found",
@@ -507,7 +513,7 @@
     "actionError": "The action failed. Please try again.",
     "empty": {
       "title": "No face groups to review",
-      "hint": "New groups appear here as faces are detected and clustered."
+      "hint": "New groups appear here once the app recognizes faces in your photos."
     },
     "representative": "Representative face",
     "sample": "Sample face",
@@ -611,7 +617,7 @@
       "error": "Could not save the change."
     },
     "location": {
-      "none": "This photo has no stored location. Add a geotag on the Info tab.",
+      "none": "This photo has no stored location. Add it on the Info tab.",
       "lookup": "Look up place",
       "lookupError": "Could not look up the place.",
       "clear": "Clear location"
