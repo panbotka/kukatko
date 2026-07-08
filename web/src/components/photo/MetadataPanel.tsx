@@ -1,11 +1,13 @@
-import { type SyntheticEvent, useState } from 'react'
+import { type SyntheticEvent, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
+import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
 import { formatDateTime } from '../../lib/format'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
+import { LeafletMap } from '../map/LeafletMap'
 
 /** Props for {@link MetadataPanel}. */
 export interface MetadataPanelProps {
@@ -29,6 +31,14 @@ function toLocalInput(iso: string | undefined): string {
   // Shift to local time then trim to minutes (YYYY-MM-DDTHH:mm).
   const offset = date.getTimezoneOffset() * 60_000
   return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+/** The canonical coordinate text for a photo, or empty when it has no location. */
+function initialCoordText(photo: PhotoDetail): string {
+  if (photo.lat !== undefined && photo.lng !== undefined) {
+    return formatCoordinates({ lat: photo.lat, lng: photo.lng })
+  }
+  return ''
 }
 
 /** A read-only labelled value row, omitted entirely when the value is empty. */
@@ -60,21 +70,36 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   const [description, setDescription] = useState(photo.description)
   const [notes, setNotes] = useState(photo.notes ?? '')
   const [takenAt, setTakenAt] = useState(toLocalInput(photo.taken_at))
-  const [lat, setLat] = useState(photo.lat !== undefined ? String(photo.lat) : '')
-  const [lng, setLng] = useState(photo.lng !== undefined ? String(photo.lng) : '')
+  // The location lives as a single free-form coordinate string; it is parsed to
+  // drive the map marker and, on save, the PATCH lat/lng.
+  const [coordText, setCoordText] = useState(() => initialCoordText(photo))
+
+  const parsedCoords = useMemo(() => parseCoordinates(coordText), [coordText])
+  const hasCoordText = coordText.trim() !== ''
+  const coordsInvalid = hasCoordText && !parsedCoords.ok
+  // The controlled marker position: the parsed coordinate, or none while the
+  // text is empty or not yet valid.
+  const markerPosition: Coordinates | null = parsedCoords.ok ? parsedCoords.value : null
 
   function startEditing() {
     setTitle(photo.title)
     setDescription(photo.description)
     setNotes(photo.notes ?? '')
     setTakenAt(toLocalInput(photo.taken_at))
-    setLat(photo.lat !== undefined ? String(photo.lat) : '')
-    setLng(photo.lng !== undefined ? String(photo.lng) : '')
+    setCoordText(initialCoordText(photo))
     setError(false)
     setEditing(true)
   }
 
-  /** Builds the PATCH payload, mapping empty inputs to a cleared (null) value. */
+  /** Rewrites the coordinate text in canonical decimal degrees after a map move. */
+  function pickLocation(lat: number, lng: number) {
+    setCoordText(formatCoordinates({ lat, lng }))
+  }
+
+  /**
+   * Builds the PATCH payload, mapping empty coordinates to a cleared (null)
+   * location and refusing to build one while the coordinate text is invalid.
+   */
   function buildPatch(): PhotoMetadataUpdate | null {
     const patch: PhotoMetadataUpdate = {
       title: title.trim(),
@@ -82,17 +107,15 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
       notes,
       taken_at: takenAt === '' ? null : new Date(takenAt).toISOString(),
     }
-    if (lat.trim() === '' && lng.trim() === '') {
+    if (!hasCoordText) {
       patch.lat = null
       patch.lng = null
     } else {
-      const latNum = Number(lat)
-      const lngNum = Number(lng)
-      if (Number.isNaN(latNum) || Number.isNaN(lngNum)) {
+      if (!parsedCoords.ok) {
         return null
       }
-      patch.lat = latNum
-      patch.lng = lngNum
+      patch.lat = parsedCoords.value.lat
+      patch.lng = parsedCoords.value.lng
     }
     return patch
   }
@@ -170,28 +193,61 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             }}
           />
         </Form.Group>
-        <div className="d-flex gap-2 mb-2">
-          <Form.Group className="flex-fill" controlId="photo-lat">
-            <Form.Label className="small text-secondary mb-1">{t('photo.metadata.lat')}</Form.Label>
+        <Form.Group className="mb-2" controlId="photo-coordinates">
+          <Form.Label className="small text-secondary mb-1">
+            {t('photo.metadata.coordinates')}
+          </Form.Label>
+          <div className="d-flex gap-2 align-items-start">
             <Form.Control
-              value={lat}
+              value={coordText}
               onChange={(event) => {
-                setLat(event.target.value)
+                setCoordText(event.target.value)
               }}
+              placeholder={t('photo.metadata.coordinatesPlaceholder')}
+              isInvalid={coordsInvalid}
+              inputMode="text"
+              aria-describedby="photo-coordinates-help"
             />
-          </Form.Group>
-          <Form.Group className="flex-fill" controlId="photo-lng">
-            <Form.Label className="small text-secondary mb-1">{t('photo.metadata.lng')}</Form.Label>
-            <Form.Control
-              value={lng}
-              onChange={(event) => {
-                setLng(event.target.value)
+            <Button
+              type="button"
+              variant="outline-secondary"
+              size="sm"
+              className="flex-shrink-0 kukatko-tap-target"
+              disabled={!hasCoordText}
+              onClick={() => {
+                setCoordText('')
               }}
-            />
-          </Form.Group>
+            >
+              {t('photo.metadata.clearLocation')}
+            </Button>
+          </div>
+          {coordsInvalid && (
+            <Form.Text className="text-danger d-block">
+              {t('photo.metadata.coordinatesInvalid')}
+            </Form.Text>
+          )}
+          <Form.Text id="photo-coordinates-help" className="text-secondary d-block">
+            {t('photo.metadata.coordinatesHelp')}
+          </Form.Text>
+        </Form.Group>
+        <div className="mb-2 rounded overflow-hidden">
+          <LeafletMap
+            features={[]}
+            mapset="basic"
+            viewport={
+              markerPosition !== null
+                ? { lat: markerPosition.lat, lng: markerPosition.lng, zoom: 13 }
+                : null
+            }
+            onViewportChange={() => undefined}
+            onSelectPhoto={() => undefined}
+            thumbAlt={t('map.thumbAlt')}
+            height="260px"
+            picker={{ position: markerPosition, onPick: pickLocation }}
+          />
         </div>
         <div className="d-flex gap-2">
-          <Button type="submit" variant="primary" size="sm" disabled={saving}>
+          <Button type="submit" variant="primary" size="sm" disabled={saving || coordsInvalid}>
             {t('photo.metadata.save')}
           </Button>
           <Button

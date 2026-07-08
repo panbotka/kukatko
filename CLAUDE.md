@@ -1142,7 +1142,16 @@ inkrementální).
   psaní do inputu), tlačítka **Stáhnout originál** /
   **Stáhnout upravenou** (`downloadUrl`), interaktivní `FaceOverlay` (pojmenování obličejů),
   pruh `SimilarPhotos` a pravý panel se záložkami (`components/photo/`): **Informace**
-  (`MetadataPanel` = view/edit title/description/notes/taken_at + camera/lens/EXIF + lat/lng,
+  (`MetadataPanel` = view/edit title/description/notes/taken_at + camera/lens/EXIF + **vizuální
+  location picker** (nahradil holá lat/lng pole): jedno tolerantní pole souřadnic parsované
+  pure helperem `lib/coordinates` (`parseCoordinates`→`{lat,lng}`|error / `formatCoordinates`;
+  **desetinné stupně** `49.1234, 16.5678` (komma/mezera, ±), **DMS** `49°7'24.2"N 16°34'12.5"E`,
+  **stupně-desetinné-minuty** `49°7.4'N, 16°34.2'E`, tolerantní k mezerám/unicode primám/'',
+  hemisféry N/S/E/W i znaménka, axis reorder dle hemisfér, range check) nad **`LeafletMap` picker
+  módem** (nová prop `picker={position,onPick}`: draggable marker + click-to-place nad mapy.com
+  tile proxy, panTo jen u parse-driven změny, ne u klik/drag); **obousměrný sync** (text→marker,
+  marker→kanonický text desetinných stupňů), **neplatný text = inline chyba + `disabled` Save**
+  (nikdy nePATCHne smetí), tlačítko vymazat polohu (lat/lng null), bez souřadnic mapa nad ČR;
   PATCH přes `updatePhoto`; `OrganizePanel` = inline add/remove alb a štítků přes organize API,
   přidání jede přes **`AddAutocomplete`** (`components/photo/`, type-to-filter combobox nad
   react-bootstrap primitivy, bez nové závislosti — nahradil dřívější `Form.Select` dropdown;
@@ -1297,6 +1306,11 @@ inkrementální).
   `faceGeometry.ts` = pure `faceBoxStyle` (normalized bbox → absolutní `left/top/width/height`
   v %, pro overlay) + `faceCropStyle` (čtvercový výřez obličeje z thumbnailu přes
   background-position/-size, pro `FaceThumb`);
+  `coordinates.ts` = pure tolerantní parser souřadnic pro location picker: `parseCoordinates(input)`
+  → `{ok:true,value:{lat,lng}}` | `{ok:false,error:'empty'|'format'|'range'}` (desetinné stupně /
+  DMS / stupně-desetinné-minuty, komma/mezera oddělovač, ±/hemisféry N/S/E/W, unicode primy/`''`,
+  axis reorder dle hemisfér, range check ±90/±180) + `formatCoordinates({lat,lng},precision=6)` →
+  kanonický `"49.123400, 16.567800"` (round-tripuje parserem) — sdílí `MetadataPanel` picker;
   `slideshowSettings.ts` = typ `SlideshowSettings{effect,intervalMs}` + `SlideshowEffect`
   (`fade`/`slide`/`none`) + nabídky `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` + `SLIDESHOW_DEFAULTS`
   + pure `readSettings`/`writeSettings`/`sanitizeSettings` (localStorage `kukatko.slideshow.settings`,

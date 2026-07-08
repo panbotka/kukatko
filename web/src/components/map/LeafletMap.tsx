@@ -37,6 +37,30 @@ const markerIcon = L.divIcon({
   iconAnchor: [9, 9],
 })
 
+/**
+ * A larger, high-contrast pin for the location picker's draggable marker: big
+ * enough to be an easy touch drag target on a phone.
+ */
+const pickerIcon = L.divIcon({
+  className: 'kukatko-map-picker-pin',
+  html: '<span style="display:block;width:24px;height:24px;border-radius:50%;background:#dc3545;border:3px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.7)"></span>',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+})
+
+/**
+ * Turns the map into an interactive location picker: a single draggable marker
+ * at `position` (or none when `null`). Clicking the map or dragging the marker
+ * calls `onPick` with the new coordinate; the parent moves `position` in
+ * response, so the picker is fully controlled.
+ */
+export interface LeafletPicker {
+  /** Current picked coordinate, or `null` when no location is set. */
+  position: { lat: number; lng: number } | null
+  /** Called when the user clicks the map or drops the marker. */
+  onPick: (lat: number, lng: number) => void
+}
+
 /** Props for {@link LeafletMap}. */
 export interface LeafletMapProps {
   /** Geotagged photos to plot as clustered markers. */
@@ -54,6 +78,13 @@ export interface LeafletMapProps {
   /** CSS height of the map container. Defaults to `70vh`; a detail mini-map
    * passes a smaller fixed height. */
   height?: string
+  /**
+   * When set, turns the map into an interactive location picker with a draggable
+   * marker (used by the metadata editor to geotag a photo). Omitted for the
+   * read-only cluster map. Whether picking is enabled is fixed for the map's
+   * lifetime; only the position and callback may change.
+   */
+  picker?: LeafletPicker
 }
 
 /**
@@ -75,11 +106,17 @@ export function LeafletMap({
   onSelectPhoto,
   thumbAlt,
   height = '70vh',
+  picker,
 }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const tileLayerRef = useRef<L.TileLayer | null>(null)
   const clusterRef = useRef<L.MarkerClusterGroup | null>(null)
+  // The picker's single draggable marker, created lazily once a position exists.
+  const pickerMarkerRef = useRef<L.Marker | null>(null)
+  // When true, the next position change came from a click/drag (already where the
+  // user wants it), so the map should not re-pan; a change from parsed text does.
+  const skipPanRef = useRef(false)
   // Whether the map has fitted its bounds to the markers yet (only auto-fit once,
   // and never when an explicit viewport was supplied).
   const didFitRef = useRef(false)
@@ -92,6 +129,11 @@ export function LeafletMap({
   onSelectRef.current = onSelectPhoto
   const thumbAltRef = useRef(thumbAlt)
   thumbAltRef.current = thumbAlt
+  const onPickRef = useRef(picker?.onPick)
+  onPickRef.current = picker?.onPick
+  // Whether this map instance is a picker is fixed at mount (a page renders it in
+  // one mode or the other), captured so the one-time setup effect can read it.
+  const pickerEnabledRef = useRef(picker !== undefined)
   // Captured once: the initial viewport and mapset used to build the map.
   const initialViewportRef = useRef(viewport)
   const initialMapsetRef = useRef(mapset)
@@ -152,6 +194,14 @@ export function LeafletMap({
       onViewportChangeRef.current({ lat: center.lat, lng: center.lng, zoom: map.getZoom() })
     })
 
+    // In picker mode a click on the map places the marker at that point.
+    if (pickerEnabledRef.current) {
+      map.on('click', (event: L.LeafletMouseEvent) => {
+        skipPanRef.current = true
+        onPickRef.current?.(event.latlng.lat, event.latlng.lng)
+      })
+    }
+
     return () => {
       map.remove()
       mapRef.current = null
@@ -189,6 +239,54 @@ export function LeafletMap({
       didFitRef.current = true
     }
   }, [features])
+
+  // Picker mode: keep the draggable marker in sync with the controlled position.
+  // Depends on the primitive lat/lng so it re-runs whenever the parent moves the
+  // marker (via parsed text) or clears it, but not on unrelated re-renders.
+  const pickerLat = picker?.position?.lat
+  const pickerLng = picker?.position?.lng
+  useEffect(() => {
+    if (!pickerEnabledRef.current) {
+      return
+    }
+    const map = mapRef.current
+    if (map === null) {
+      return
+    }
+
+    if (pickerLat === undefined || pickerLng === undefined) {
+      if (pickerMarkerRef.current !== null) {
+        map.removeLayer(pickerMarkerRef.current)
+        pickerMarkerRef.current = null
+      }
+      return
+    }
+
+    if (pickerMarkerRef.current === null) {
+      const marker = L.marker([pickerLat, pickerLng], {
+        icon: pickerIcon,
+        draggable: true,
+        autoPan: true,
+      })
+      marker.on('dragend', () => {
+        const latlng = marker.getLatLng()
+        skipPanRef.current = true
+        onPickRef.current?.(latlng.lat, latlng.lng)
+      })
+      marker.addTo(map)
+      pickerMarkerRef.current = marker
+    } else {
+      pickerMarkerRef.current.setLatLng([pickerLat, pickerLng])
+    }
+
+    // Recentre only for programmatic moves (parsed text); a click/drag already
+    // sits where the user wants it, so leave the viewport put.
+    if (skipPanRef.current) {
+      skipPanRef.current = false
+    } else {
+      map.panTo([pickerLat, pickerLng])
+    }
+  }, [pickerLat, pickerLng])
 
   return <div ref={containerRef} className="kukatko-map" style={{ height, width: '100%' }} />
 }

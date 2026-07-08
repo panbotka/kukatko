@@ -844,7 +844,13 @@ responzivní/touch). Routy v `Layout` navbaru pod odkazem **Lidé** (`/people`):
   sousedů; lightbox si listuje interně a **při zavření obnoví URL** na aktuální fotku (Zpět vždy
   funguje). Video/live fotka má vlastní nativní fullscreen (`VideoPlayer`/`LivePhoto`) a
   image-lightbox neotevírá. Pravý panel se záložkami (`components/photo/`): **Informace**
-  (`MetadataPanel` view/edit title/description/notes/taken_at + EXIF + lat/lng; `OrganizePanel`
+  (`MetadataPanel` view/edit title/description/notes/taken_at + EXIF + **interaktivní location
+  picker**: jedno tolerantní pole souřadnic (`lib/coordinates` parser: desetinné stupně / DMS /
+  stupně-desetinné-minuty, N/S/E/W i znaménka, komma/mezera oddělovač) nad Leaflet mapou
+  (`LeafletMap` **picker mód** nad mapy.com tile proxy) s **taháním/klikáním** značky —
+  obousměrný sync (parse textu posune značku, přesun značky přepíše text na kanonické desetinné
+  stupně), neplatný text ukáže inline chybu a **blokuje uložení**, tlačítko vymazat polohu; bez
+  souřadnic mapa startuje nad ČR; `OrganizePanel`
   inline add/remove alb a štítků — přidání přes `AddAutocomplete` type-to-filter combobox,
   klientský case/accent-insensitive filtr, klávesnice + „nic neodpovídá" stav, bez zakládání
   nových alb/štítků), **Poloha** (`PhotoLocation` Leaflet mini-mapa nad mapy.com
