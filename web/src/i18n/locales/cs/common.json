@@ -612,7 +612,7 @@
       "noLabels": "Bez štítků.",
       "addAlbum": "Přidat do alba",
       "addLabel": "Přidat štítek",
-      "add": "Přidat",
+      "noMatch": "Nic neodpovídá.",
       "removeAlbum": "Odebrat z alba {{name}}",
       "removeLabel": "Odebrat štítek {{name}}",
       "error": "Změnu se nepodařilo uložit."

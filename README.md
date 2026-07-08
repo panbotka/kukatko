@@ -845,7 +845,9 @@ responzivní/touch). Routy v `Layout` navbaru pod odkazem **Lidé** (`/people`):
   funguje). Video/live fotka má vlastní nativní fullscreen (`VideoPlayer`/`LivePhoto`) a
   image-lightbox neotevírá. Pravý panel se záložkami (`components/photo/`): **Informace**
   (`MetadataPanel` view/edit title/description/notes/taken_at + EXIF + lat/lng; `OrganizePanel`
-  inline add/remove alb a štítků), **Poloha** (`PhotoLocation` Leaflet mini-mapa nad mapy.com
+  inline add/remove alb a štítků — přidání přes `AddAutocomplete` type-to-filter combobox,
+  klientský case/accent-insensitive filtr, klávesnice + „nic neodpovídá" stav, bez zakládání
+  nových alb/štítků), **Poloha** (`PhotoLocation` Leaflet mini-mapa nad mapy.com
   proxy + on-demand reverse-geocode + clear), **Úpravy** (editor/admin: `EditPanel`
   rotace/jas/kontrast/crop s živým CSS preview → `PUT /photos/{uid}/edit`). Interaktivní
   **`FaceOverlay`** (boxy obličejů z normalized bbox, klik → návrhy identit + free-text jméno),

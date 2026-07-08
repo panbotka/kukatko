@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
-import Button from 'react-bootstrap/Button'
 import CloseButton from 'react-bootstrap/CloseButton'
-import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
@@ -18,6 +16,7 @@ import {
   removeAlbumPhotos,
 } from '../../services/organize'
 import { type PhotoDetail } from '../../services/photos'
+import { AddAutocomplete } from './AddAutocomplete'
 
 /** Props for {@link OrganizePanel}. */
 export interface OrganizePanelProps {
@@ -31,16 +30,15 @@ export interface OrganizePanelProps {
 
 /**
  * The albums & labels panel: the photo's current album and label chips (each
- * linking to its scoped list), with inline add (a dropdown of the remaining
- * albums/labels) and remove controls for editors. Mutations call the organize API
- * and update the photo's memberships in place. Viewers see the chips read-only.
+ * linking to its scoped list), with inline add (a type-to-filter autocomplete
+ * over the remaining albums/labels — see {@link AddAutocomplete}) and remove
+ * controls for editors. Mutations call the organize API and update the photo's
+ * memberships in place. Viewers see the chips read-only.
  */
 export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps) {
   const { t } = useTranslation()
   const [albums, setAlbums] = useState<AlbumCount[]>([])
   const [labels, setLabels] = useState<LabelCount[]>([])
-  const [albumChoice, setAlbumChoice] = useState('')
-  const [labelChoice, setLabelChoice] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
 
@@ -61,10 +59,20 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
     }
   }, [canWrite])
 
-  const memberAlbumUids = new Set(photo.albums.map((album) => album.uid))
-  const memberLabelUids = new Set(photo.labels.map((label) => label.uid))
-  const availableAlbums = albums.filter((album) => !memberAlbumUids.has(album.uid))
-  const availableLabels = labels.filter((label) => !memberLabelUids.has(label.uid))
+  // Offer only albums/labels the photo is not already in, mapped to the
+  // autocomplete's option shape.
+  const albumOptions = useMemo(() => {
+    const members = new Set(photo.albums.map((album) => album.uid))
+    return albums
+      .filter((album) => !members.has(album.uid))
+      .map((album) => ({ uid: album.uid, label: album.title }))
+  }, [albums, photo.albums])
+  const labelOptions = useMemo(() => {
+    const members = new Set(photo.labels.map((label) => label.uid))
+    return labels
+      .filter((label) => !members.has(label.uid))
+      .map((label) => ({ uid: label.uid, label: label.name }))
+  }, [labels, photo.labels])
 
   async function run(action: () => Promise<PhotoDetail>) {
     setBusy(true)
@@ -78,12 +86,11 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
     }
   }
 
-  function addAlbum() {
-    const album = albums.find((candidate) => candidate.uid === albumChoice)
+  function addAlbum(uid: string) {
+    const album = albums.find((candidate) => candidate.uid === uid)
     if (album === undefined) {
       return
     }
-    setAlbumChoice('')
     void run(async () => {
       await addAlbumPhotos(album.uid, [photo.uid])
       return { ...photo, albums: [...photo.albums, { uid: album.uid, title: album.title }] }
@@ -97,12 +104,11 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
     })
   }
 
-  function addLabel() {
-    const label = labels.find((candidate) => candidate.uid === labelChoice)
+  function addLabel(uid: string) {
+    const label = labels.find((candidate) => candidate.uid === uid)
     if (label === undefined) {
       return
     }
-    setLabelChoice('')
     void run(async () => {
       await attachLabel(label.uid, photo.uid)
       return { ...photo, labels: [...photo.labels, { uid: label.uid, name: label.name }] }
@@ -146,32 +152,14 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           </Badge>
         ))}
       </div>
-      {canWrite && availableAlbums.length > 0 && (
-        <div className="d-flex gap-2 mb-3">
-          <Form.Select
-            size="sm"
-            value={albumChoice}
-            aria-label={t('photo.organize.addAlbum')}
-            onChange={(event) => {
-              setAlbumChoice(event.target.value)
-            }}
-          >
-            <option value="">{t('photo.organize.addAlbum')}</option>
-            {availableAlbums.map((album) => (
-              <option key={album.uid} value={album.uid}>
-                {album.title}
-              </option>
-            ))}
-          </Form.Select>
-          <Button
-            variant="outline-primary"
-            size="sm"
-            disabled={busy || albumChoice === ''}
-            onClick={addAlbum}
-          >
-            {t('photo.organize.add')}
-          </Button>
-        </div>
+      {canWrite && albumOptions.length > 0 && (
+        <AddAutocomplete
+          id="organize-add-album"
+          label={t('photo.organize.addAlbum')}
+          options={albumOptions}
+          disabled={busy}
+          onAdd={addAlbum}
+        />
       )}
 
       <div className="small text-secondary mb-1">{t('photo.organize.labels')}</div>
@@ -196,32 +184,14 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           </Badge>
         ))}
       </div>
-      {canWrite && availableLabels.length > 0 && (
-        <div className="d-flex gap-2">
-          <Form.Select
-            size="sm"
-            value={labelChoice}
-            aria-label={t('photo.organize.addLabel')}
-            onChange={(event) => {
-              setLabelChoice(event.target.value)
-            }}
-          >
-            <option value="">{t('photo.organize.addLabel')}</option>
-            {availableLabels.map((label) => (
-              <option key={label.uid} value={label.uid}>
-                {label.name}
-              </option>
-            ))}
-          </Form.Select>
-          <Button
-            variant="outline-primary"
-            size="sm"
-            disabled={busy || labelChoice === ''}
-            onClick={addLabel}
-          >
-            {t('photo.organize.add')}
-          </Button>
-        </div>
+      {canWrite && labelOptions.length > 0 && (
+        <AddAutocomplete
+          id="organize-add-label"
+          label={t('photo.organize.addLabel')}
+          options={labelOptions}
+          disabled={busy}
+          onAdd={addLabel}
+        />
       )}
     </div>
   )

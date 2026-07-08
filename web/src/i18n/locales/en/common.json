@@ -602,7 +602,7 @@
       "noLabels": "No labels.",
       "addAlbum": "Add to album",
       "addLabel": "Add label",
-      "add": "Add",
+      "noMatch": "No matches.",
       "removeAlbum": "Remove from album {{name}}",
       "removeLabel": "Remove label {{name}}",
       "error": "Could not save the change."

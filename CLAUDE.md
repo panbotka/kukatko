@@ -1143,7 +1143,12 @@ inkrementální).
   **Stáhnout upravenou** (`downloadUrl`), interaktivní `FaceOverlay` (pojmenování obličejů),
   pruh `SimilarPhotos` a pravý panel se záložkami (`components/photo/`): **Informace**
   (`MetadataPanel` = view/edit title/description/notes/taken_at + camera/lens/EXIF + lat/lng,
-  PATCH přes `updatePhoto`; `OrganizePanel` = inline add/remove alb a štítků přes organize API),
+  PATCH přes `updatePhoto`; `OrganizePanel` = inline add/remove alb a štítků přes organize API,
+  přidání jede přes **`AddAutocomplete`** (`components/photo/`, type-to-filter combobox nad
+  react-bootstrap primitivy, bez nové závislosti — nahradil dřívější `Form.Select` dropdown;
+  filtruje klientsky **case/accent-insensitive** přes `lib/text` `foldText`/`foldedIncludes`,
+  klávesnice ↑/↓/Enter/Esc + klik, „nic neodpovídá" stav, ~44px tap-targety, ARIA combobox/listbox;
+  nezakládá nová alba/štítky — tvorba zůstává na Albums/Labels stránce)),
   **Poloha** (`PhotoLocation` = Leaflet mini-mapa nad mapy.com proxy + on-demand reverse-geocode
   `reverseGeocode` + clear location) a **Úpravy** (editor/admin: `EditPanel` = rotace/jas/kontrast/
   crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`); viewer vidí read-only

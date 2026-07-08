@@ -301,9 +301,9 @@ describe('PhotoDetailPage', () => {
       expect(fetchAlbumsMock).toHaveBeenCalled()
     })
 
-    // Add the photo to a non-member album.
-    await user.selectOptions(screen.getByLabelText('Add to album'), 'al_2')
-    await user.click(screen.getAllByRole('button', { name: 'Add' })[0])
+    // Add the photo to a non-member album via the autocomplete.
+    await user.type(screen.getByRole('combobox', { name: 'Add to album' }), 'trips')
+    await user.click(await screen.findByRole('option', { name: 'Trips' }))
     await waitFor(() => {
       expect(addAlbumPhotosMock).toHaveBeenCalledWith('al_2', ['b'])
     })
@@ -324,8 +324,8 @@ describe('PhotoDetailPage', () => {
       expect(fetchLabelsMock).toHaveBeenCalled()
     })
 
-    await user.selectOptions(screen.getByLabelText('Add label'), 'lb_2')
-    await user.click(screen.getAllByRole('button', { name: 'Add' })[1])
+    await user.type(screen.getByRole('combobox', { name: 'Add label' }), 'forest')
+    await user.click(await screen.findByRole('option', { name: 'Forest' }))
     await waitFor(() => {
       expect(attachLabelMock).toHaveBeenCalledWith('lb_2', 'b')
     })
