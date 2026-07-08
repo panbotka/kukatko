@@ -990,14 +990,19 @@ inkrementální).
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
   frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
-  (`Layout` = navbar shell s user-menu/logout + role-gated nav — odkaz **Knihovna**
-  míří na `/library`, **Oblíbené** na `/favorites`, **Alba** na `/albums`, **Štítky** na `/labels`,
-  **Hledat** na `/search`,
-  **Lidé** na `/people`, **Mapa** na `/map`, **Místa** na `/places`, **Nahrát** na `/upload` (jen editor/admin),
-  **Koš** na `/trash` (jen editor/admin, gate `canWrite`),
-  **Duplikáty** na `/duplicates` (jen editor/admin, gate `canWrite`),
-  **Import** na `/import` (jen admin, gate `isAdmin`),
-  **Systém** na `/system` (jen admin, gate `isAdmin`),
+  (`Layout` = navbar shell s user-menu/logout + role-gated nav **seskupenou do `NavDropdown`
+  menu** (`BROWSE_ITEMS`/`TOOLS_ITEMS`/`ADMIN_ITEMS` datové registry + `renderGroup` helper), aby
+  lišta zůstala přehledná: **Domů** dostupné přes brand link; dropdown **Procházet** (`nav.browse`)
+  sdružuje **Knihovna** `/library`, **Oblíbené** `/favorites`, **Alba** `/albums`, **Štítky**
+  `/labels`, **Lidé** `/people`, **Místa** `/places`, **Mapa** `/map` (všem rolím); **Hledat**
+  `/search` a **Nahrát** `/upload` (jen editor/admin, gate `canWrite`) zůstávají prominentní
+  top-level; editorský dropdown **Nástroje** (`nav.tools`, celý gate `canWrite`) sdružuje
+  **Duplikáty** `/duplicates` + **Koš** `/trash`; adminský dropdown **Správa** (`nav.admin`, celý
+  gate `isAdmin`) sdružuje **Import** `/import` + **Údržba** `/maintenance` + **Systém** `/system`.
+  Dropdown se skryje celý, když má uživatel skryté všechny jeho položky (Tools/Admin u viewera);
+  rodičovské menu má **active stav** (`active` prop) když je aktuální route některé z jeho dětí
+  (`pathMatches` ctí i detail sub-cesty jako `/albums/{uid}`); položky v mobilním burger menu
+  expandují inline s tap-targety (`kukatko-tap-target`),
   `NavbarSearch` (kompaktní vyhledávací pole v navbaru s **živým grouped quick-results dropdownem**:
   jak uživatel píše, debouncovaně (`useGlobalSearch`) volá `GET /search/global` a zobrazí shodné
   **alba/štítky/lidé/fotky** seskupené dle typu s náhledy; klik na řádek naviguje přímo na entitu

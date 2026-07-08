@@ -5,6 +5,9 @@
   },
   "nav": {
     "home": "Domů",
+    "browse": "Procházet",
+    "tools": "Nástroje",
+    "admin": "Správa",
     "library": "Knihovna",
     "favorites": "Oblíbené",
     "albums": "Alba",

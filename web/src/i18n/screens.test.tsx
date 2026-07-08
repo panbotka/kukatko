@@ -106,7 +106,9 @@ describe('language switch updates all visible text', () => {
   it('swaps navbar labels from Czech to English and back', async () => {
     await i18n.changeLanguage('cs')
     const { rerender } = renderScreens(i18n)
-    expect(screen.getByRole('link', { name: 'Knihovna' })).toBeInTheDocument()
+    // The library destinations now live inside the "Procházet" (Browse) group,
+    // whose always-visible dropdown toggle reflects the active language.
+    expect(screen.getByRole('button', { name: 'Procházet' })).toBeInTheDocument()
 
     await i18n.changeLanguage('en')
     rerender(
@@ -121,7 +123,7 @@ describe('language switch updates all visible text', () => {
         </AuthContext.Provider>
       </I18nextProvider>,
     )
-    expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Knihovna' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Browse' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Procházet' })).not.toBeInTheDocument()
   })
 })

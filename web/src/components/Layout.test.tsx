@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -60,18 +61,54 @@ describe('Layout navbar', () => {
     expect(container.querySelector('main.kukatko-main')).not.toBeNull()
   })
 
-  it('hides write- and admin-only links from viewers', () => {
+  it('hides the Tools/Admin groups and Upload from viewers', async () => {
+    const user = userEvent.setup()
     renderLayout(auth({ canWrite: false, isAdmin: false }))
+
+    // Browse is available to every role: opening it reveals the library links.
+    const browse = screen.getByRole('button', { name: 'Browse' })
+    await user.click(browse)
     expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument()
+
+    // Neither the editor Tools group nor the admin Admin group is rendered,
+    // and the write-only Upload entry stays hidden.
+    expect(screen.queryByRole('button', { name: 'Tools' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Upload' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
   })
 
-  it('shows write links to editors and admin links to admins', () => {
+  it('shows the Tools group to editors and the Admin group to admins', async () => {
+    const user = userEvent.setup()
     renderLayout(auth({ canWrite: true, isAdmin: true }))
+
+    // Upload is prominent as a top-level link.
     expect(screen.getByRole('link', { name: 'Upload' })).toBeInTheDocument()
+
+    // The editor-only Tools dropdown groups Duplicates and Trash.
+    await user.click(screen.getByRole('button', { name: 'Tools' }))
     expect(screen.getByRole('link', { name: 'Trash' })).toBeInTheDocument()
+
+    // The admin-only Admin dropdown groups Import, Maintenance and System.
+    await user.click(screen.getByRole('button', { name: 'Admin' }))
     expect(screen.getByRole('link', { name: 'Import' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'System' })).toBeInTheDocument()
+  })
+
+  it('marks the parent group active when a child route is current', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth({ canWrite: true, isAdmin: true })}>
+          <MemoryRouter initialEntries={['/albums']}>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path="/albums" element={<div>albums content</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+    // /albums lives under Browse, so its toggle carries the active state.
+    expect(screen.getByRole('button', { name: 'Browse' })).toHaveClass('active')
   })
 })

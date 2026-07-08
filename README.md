@@ -1592,7 +1592,17 @@ samostatné módy, souřadnice se validují klientsky a vyžaduje se aspoň jedn
 místo formuláře zobrazí **per-foto result summary** (kolik upraveno/přeskočeno/selhalo + seznam
 chyb) z odpovědi. Alba/štítky API volá [`services/organize.ts`](web/src/services/organize.ts)
 (CRUD + členství/připojení), `photos.ts` přidává `album`/`label` scope do `PhotoListParams`. Odkazy
-**Alba** a **Štítky** jsou v navbaru.
+**Alba** a **Štítky** jsou v navbaru pod dropdownem **Procházet**.
+
+**Navbar — seskupené menu:** aby horní lišta zůstala přehledná, jsou příbuzné cíle v
+[`Layout`](web/src/components/Layout.tsx) sloučené do `react-bootstrap` `NavDropdown` skupin místo
+plochého seznamu odkazů: **Domů** je dostupné přes brand link, dropdown **Procházet** sdružuje
+Knihovna/Oblíbené/Alba/Štítky/Lidé/Místa/Mapa (všem rolím), **Hledat** a **Nahrát** zůstávají
+prominentní top-level, editorský dropdown **Nástroje** (gate `canWrite`) sdružuje Duplikáty + Koš a
+adminský dropdown **Správa** (gate `isAdmin`) sdružuje Import + Údržba + Systém. Skupina se skryje
+celá, když jsou pro danou roli skryté všechny její položky, a rodičovské menu se rozsvítí do
+active stavu, když je aktuální route některé z jeho dětí (včetně detail sub-cest). V mobilním
+burger menu se skupiny rozbalují inline s finger-friendly tap-targety.
 
 **Klávesové zkratky:** mřížka i detail fotky jsou ovladatelné z klávesnice přes sdílený hook
 [`useKeyboardShortcuts`](web/src/hooks/useKeyboardShortcuts.ts) a malý registr
