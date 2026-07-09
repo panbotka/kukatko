@@ -52,11 +52,22 @@ func (a *API) handleVideo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "photo has no playable video")
 		return
 	}
-	if a.shouldTranscode(photo) {
-		a.streamTranscoded(w, r, photo, src)
+
+	// Both http.ServeContent and ffmpeg need a real file. Materializing once here
+	// also covers the transcode path's fallback to streaming the original, so a
+	// remote backend never fetches the same clip twice for one request.
+	absPath, cleanup, err := a.storage.Materialize(r.Context(), src.relPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "opening video failed")
 		return
 	}
-	a.streamVideoFile(w, r, photo, src)
+	defer cleanup()
+
+	if a.shouldTranscode(photo) {
+		a.streamTranscoded(w, r, photo, src, absPath)
+		return
+	}
+	a.streamVideoFile(w, r, photo, src, absPath)
 }
 
 // shouldTranscode reports whether the photo's video should be transcoded on the
@@ -105,13 +116,15 @@ func pickMotionClip(files []photos.PhotoFile) (photos.PhotoFile, bool) {
 	return photos.PhotoFile{}, false
 }
 
-// streamVideoFile serves the stored video file with HTTP range support via
-// http.ServeContent, so the browser can seek and resume. The ETag (content hash)
-// and modtime let ServeContent answer conditional and If-Range requests. A file
-// gone from storage is answered with 404, any other open error with 500.
-func (a *API) streamVideoFile(w http.ResponseWriter, r *http.Request, photo photos.Photo, src videoSource) {
-	absPath := a.storage.AbsPath(src.relPath)
-	file, err := os.Open(absPath) //nolint:gosec // path is confined by storage.AbsPath.
+// streamVideoFile serves the materialized video file at absPath with HTTP range
+// support via http.ServeContent, so the browser can seek and resume. The ETag
+// (content hash) and modtime let ServeContent answer conditional and If-Range
+// requests. A file gone from storage is answered with 404, any other open error
+// with 500.
+func (a *API) streamVideoFile(
+	w http.ResponseWriter, r *http.Request, photo photos.Photo, src videoSource, absPath string,
+) {
+	file, err := os.Open(absPath) //nolint:gosec // path is confined to the storage root.
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			writeError(w, http.StatusNotFound, "video file not found")
@@ -138,17 +151,18 @@ func (a *API) streamVideoFile(w http.ResponseWriter, r *http.Request, photo phot
 	http.ServeContent(w, r, path.Base(src.relPath), info.ModTime(), file)
 }
 
-// streamTranscoded transcodes the video to H.264/MP4 on the fly and streams the
-// result for playback. The transcoded stream cannot be seeked (no range
-// support) and is never cached. If ffmpeg fails to start, it falls back to
-// streaming the original file so playback still works when the browser can
-// decode it.
-func (a *API) streamTranscoded(w http.ResponseWriter, r *http.Request, photo photos.Photo, src videoSource) {
-	absPath := a.storage.AbsPath(src.relPath)
+// streamTranscoded transcodes the materialized video at absPath to H.264/MP4 on
+// the fly and streams the result for playback. The transcoded stream cannot be
+// seeked (no range support) and is never cached. If ffmpeg fails to start, it
+// falls back to streaming the original file so playback still works when the
+// browser can decode it.
+func (a *API) streamTranscoded(
+	w http.ResponseWriter, r *http.Request, photo photos.Photo, src videoSource, absPath string,
+) {
 	stream, err := video.Transcode(r.Context(), absPath)
 	if err != nil {
 		log.Printf("photoapi: transcode start for %s: %v; serving original", photo.UID, err)
-		a.streamVideoFile(w, r, photo, src)
+		a.streamVideoFile(w, r, photo, src, absPath)
 		return
 	}
 	defer func() { _ = stream.Close() }()

@@ -86,7 +86,15 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   layout `YYYY/MM/<filename>` (datum z `taken_at`, fallback čas importu), publikace
   **atomickým hard-linkem** přes temp v `<root>/.tmp`; kolize jmen: shodný obsah →
   `ErrAlreadyExists` (dedup signál), jiný obsah → číselný sufix `name_1.ext` bez přepisu;
-  `Open`/`Stat`/`Delete`/`AbsPath` s cestami confinovanými do rootu (`ErrInvalidPath`);
+  `Open`/`Stat`/`Delete`/`Materialize` s cestami confinovanými do rootu (`ErrInvalidPath`);
+  rozhraní **neprozrazuje filesystem** (předpoklad pro budoucí object-storage backend):
+  `URL(relPath)` vrací adresu, na kterou si klient sáhne přímo — FS vrací `""`, protože
+  originály na disku nejsou přes HTTP dostupné a servíruje je aplikace; `Materialize(ctx,relPath)`
+  vrací **reálný lokální soubor** pro nástroje, které umí jen jméno souboru (exiftool, ffprobe,
+  ffmpeg, heif-convert, vipsthumbnail) + `cleanup`, který volající **vždy** zavolá (i na error
+  path, jinak vzdálený backend leakuje temp); FS **nekopíruje** — vrátí cestu samotného originálu
+  a no-op `cleanup` (idempotentní, bezpečný i při vícenásobném volání), takže lokální vývoj
+  i testy zůstávají zero-copy;
   MIME z obsahu (sniff 512 B) + přípona jako hint (`mediaTypeByExt` pro HEIC/RAW/video);
   sentinely `ErrAlreadyExists`/`ErrInvalidPath`/`ErrTooManyCollisions`; nikdy nedrží soubor
   celý v RAM), `internal/thumb/`
@@ -198,7 +206,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   guard `RequireAuthOrDownloadToken` = session cookie nebo `?t=download_token`; **video streaming**
   (`video.go`): `GET /photos/{uid}/video` streamuje video **s HTTP Range** přes `http.ServeContent`
   (206 partial, `Accept-Ranges`, seek, If-Range/If-None-Match, paměťově omezené ze `*os.File` přes
-  `storage.AbsPath`) pro inline HTML5 přehrávání; live fotka servíruje svůj **motion klip** sidecar
+  `storage.Materialize`, jednou za request — sdílí ho i transcode fallback) pro inline HTML5
+  přehrávání; live fotka servíruje svůj **motion klip** sidecar
   (`pickMotionClip` dle video MIME/přípony), still image → 404; **on-the-fly transcode** gated
   `VideoConfig`/`video.transcode` (default off) + `video.IsWebFriendlyCodec` + `video.FFmpegAvailable`
   → `video.Transcode` (H.264/MP4 progressive, žádný range, `no-store`), fallback na originál když
@@ -400,8 +409,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `New(Config{Photos,Vectors,Client,Source,Enqueuer,OfflineRetryDelay,MinDetScore})`; **handler
   `face_detect`** `Handle`(=`worker.HandlerFunc`, registrovaný v `serve`) → z payloadu
   `{"photo_uid"}` načte fotku, otevře **dekódovatelný originál v plném rozlišení** přes
-  `StorageSource` (= `storage.AbsPath` + `imgconvert.EnsureDecodable`, HEIC/RAW/video se převedou,
-  cleanup tempu na `Close`), pošle sidecaru `FaceEmbeddings` (512-dim + pixel bbox + det_score) a
+  `StorageSource` (= `storage.Materialize` + `imgconvert.EnsureDecodable` za rozhraním
+  `Materializer`, HEIC/RAW/video se převedou, `Close` uvolní temp i materializovaný originál),
+  pošle sidecaru `FaceEmbeddings` (512-dim + pixel bbox + det_score) a
   uloží přes `vectors.RecordFaceDetection`; originál (ne náhled) proto, že sidecar (InsightFace)
   sám rotuje dle EXIF a vrací bbox v display pixelech; **převod bboxu** `normalizeBBox` pixel
   `[x1,y1,x2,y2]` → normalizovaný `[x,y,w,h]` (0..1) dle rozměrů fotky a **EXIF orientace** (swap
@@ -904,7 +914,7 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (worker handler `thumbnail` jobu — **repair path** pro maintenance: regeneruje z originálu odvozená
   data fotky, **náhledy** (`Thumbnailer.GenerateAll`, skip cachovaných) a **pHash/dHash** (jen když
   chybí, `phash.Compute` nad dekódovaným originálem), vše za rozhraními `PhotoStore`/`Thumbnailer`/
-  `Decoder` (`StorageDecoder` = `storage.AbsPath`+`imgconvert.EnsureDecodable`, fakeovatelný) →
+  `Decoder` (`StorageDecoder` = `storage.Materialize`+`imgconvert.EnsureDecodable`, fakeovatelný) →
   unit-testovatelné bez disku; `Service` = `New(Config{Photos,Thumbnailer,Decoder})` (panika na nil),
   `Handle`=`worker.HandlerFunc` (payload `{photo_uid}`, prázdný → `ErrMissingPhotoUID` dead-letter),
   `Regenerate(uid)`/`ensurePhash` idempotentní; registrovaný v `serve` na `jobs.TypeThumbnail`),

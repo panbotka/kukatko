@@ -66,14 +66,21 @@ func (a *API) maybeServeEdited(w http.ResponseWriter, r *http.Request, photo pho
 // slice. HEIC/RAW originals are converted to a decodable form first. The whole
 // image is held in memory, which is unavoidable for a transform.
 func (a *API) renderEdited(ctx context.Context, photo photos.Photo, edit photos.Edit) ([]byte, error) {
-	absPath := a.storage.AbsPath(photo.FilePath)
-	decodable, cleanup, err := imgconvert.EnsureDecodable(ctx, absPath)
+	absPath, releaseOriginal, err := a.storage.Materialize(ctx, photo.FilePath)
+	if err != nil {
+		return nil, fmt.Errorf("photoapi: materializing original: %w", err)
+	}
+	defer releaseOriginal()
+
+	// Deferred after releaseOriginal so it runs first: the decoded file may be
+	// derived from the original.
+	decodable, releaseDecoded, err := imgconvert.EnsureDecodable(ctx, absPath)
 	if err != nil {
 		return nil, fmt.Errorf("photoapi: ensuring decodable: %w", err)
 	}
-	defer cleanup()
+	defer releaseDecoded()
 
-	file, err := os.Open(decodable) //nolint:gosec // path is confined by storage.AbsPath.
+	file, err := os.Open(decodable) //nolint:gosec // path is confined to the storage root.
 	if err != nil {
 		return nil, fmt.Errorf("photoapi: opening original: %w", err)
 	}

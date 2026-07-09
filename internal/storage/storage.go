@@ -74,7 +74,22 @@ type Storage interface {
 	// Delete removes the file at relPath. It returns an error wrapping
 	// os.ErrNotExist when the file is absent.
 	Delete(ctx context.Context, relPath string) error
-	// AbsPath returns the absolute filesystem path for relPath, confined to the
-	// storage root (a relPath that would escape the root is clamped to it).
-	AbsPath(relPath string) string
+	// URL returns the address at which a client can fetch the object at relPath
+	// directly, bypassing the application. It returns the empty string when the
+	// backend exposes no such address — as the filesystem backend does, its
+	// originals living on a disk no browser can reach — in which case the caller
+	// must serve the bytes itself through the application's own media routes,
+	// which stream the file via Open.
+	URL(relPath string) string
+	// Materialize yields a real local file for relPath, for the external tools
+	// (exiftool, ffprobe, ffmpeg, heif-convert, vipsthumbnail) that take a
+	// filename and cannot read an io.Reader. A backend whose objects are already
+	// local returns their path as-is and copies nothing; a remote backend
+	// downloads to a temporary file.
+	//
+	// The caller must always call cleanup once it is done with the file,
+	// including on its own error paths, or a remote backend leaks a temp file.
+	// cleanup is never nil — it is a no-op even when Materialize fails — and is
+	// safe to call more than once.
+	Materialize(ctx context.Context, relPath string) (path string, cleanup func(), err error)
 }

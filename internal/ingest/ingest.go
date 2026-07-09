@@ -364,13 +364,21 @@ func (s *Service) computePhash(ctx context.Context, photo photos.Photo) []Warnin
 
 // decodeOriginal resolves the photo's stored original to a decodable image,
 // shelling out via imgconvert for HEIC/RAW and decoding pure-Go formats
-// directly. The returned cleanup must be deferred by the caller.
+// directly. The returned cleanup releases the materialized original along with
+// any intermediate file, and must be deferred by the caller.
 func (s *Service) decodeOriginal(ctx context.Context, photo photos.Photo) (image.Image, func(), error) {
-	abs := s.storage.AbsPath(photo.FilePath)
-	decPath, cleanup, err := imgconvert.EnsureDecodable(ctx, abs)
+	abs, releaseOriginal, err := s.storage.Materialize(ctx, photo.FilePath)
 	if err != nil {
+		return nil, nil, fmt.Errorf("ingest: materializing original: %w", err)
+	}
+	decPath, releaseDecoded, err := imgconvert.EnsureDecodable(ctx, abs)
+	if err != nil {
+		releaseOriginal()
 		return nil, nil, fmt.Errorf("ingest: ensuring decodable: %w", err)
 	}
+	// The decoded file may be derived from the original, so drop it first.
+	cleanup := func() { releaseDecoded(); releaseOriginal() }
+
 	file, err := os.Open(decPath) //nolint:gosec // G304: decPath comes from storage/imgconvert, not user input.
 	if err != nil {
 		cleanup()

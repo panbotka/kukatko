@@ -77,19 +77,18 @@ func vipsSupportsMime(mime string) bool {
 }
 
 // tryVips renders every size in needed for photo through the vips engine,
-// returning true when it produced them all. It returns false — leaving the
-// caller to fall back to the pure-Go engine — when the engine is disabled, the
-// source is not a vips-handled format, or any vips invocation fails. The
-// original is read directly by vips; orientation is applied by vipsthumbnail's
-// built-in EXIF autorotation (the same orientation Kukátko stored at import), so
-// output matches the pure-Go engine.
+// reading the materialized original at src and returning true when it produced
+// them all. It returns false — leaving the caller to fall back to the pure-Go
+// engine — when the engine is disabled, the source is not a vips-handled format,
+// or any vips invocation fails. The original is read directly by vips;
+// orientation is applied by vipsthumbnail's built-in EXIF autorotation (the same
+// orientation Kukátko stored at import), so output matches the pure-Go engine.
 func (t *Thumbnailer) tryVips(
-	ctx context.Context, photo photos.Photo, needed []string, result map[string]string,
+	ctx context.Context, photo photos.Photo, src string, needed []string, result map[string]string,
 ) bool {
 	if !t.usesVips() || !vipsSupportsMime(photo.FileMime) {
 		return false
 	}
-	src := t.originals.AbsPath(photo.FilePath)
 	group, gctx := errgroup.WithContext(ctx)
 	group.SetLimit(t.workers)
 	for _, name := range needed {

@@ -10,11 +10,12 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
-// PathResolver maps a photo's stored relative path to an absolute filesystem
-// path. It is the subset of storage.Storage StorageSource needs.
-type PathResolver interface {
-	// AbsPath returns the absolute filesystem path for relPath.
-	AbsPath(relPath string) string
+// Materializer yields a real local file for a photo's stored relative path. It
+// is the subset of storage.Storage StorageSource needs.
+type Materializer interface {
+	// Materialize returns a local path for relPath together with a cleanup the
+	// caller must always run once it is done with the file.
+	Materialize(ctx context.Context, relPath string) (path string, cleanup func(), err error)
 }
 
 // Decoder turns a media path into a path the standard image decoders can read,
@@ -27,19 +28,19 @@ type Decoder func(ctx context.Context, srcPath string) (path string, cleanup fun
 // face_detect handler streams to the sidecar so detected pixel boxes line up with
 // the photo's stored dimensions.
 type StorageSource struct {
-	storage PathResolver
+	storage Materializer
 	decode  Decoder
 }
 
 // NewStorageSource builds a StorageSource over storage, using
 // imgconvert.EnsureDecodable as its decoder.
-func NewStorageSource(storage PathResolver) *StorageSource {
+func NewStorageSource(storage Materializer) *StorageSource {
 	return &StorageSource{storage: storage, decode: imgconvert.EnsureDecodable}
 }
 
-// cleanupReadCloser wraps an open file with the temp-file cleanup returned by the
-// decoder, so closing the reader both closes the file and removes any temporary
-// converted copy.
+// cleanupReadCloser wraps an open file with the cleanup that releases the
+// materialized original and any temporary converted copy, so closing the reader
+// both closes the file and frees everything behind it.
 type cleanupReadCloser struct {
 	file    *os.File
 	cleanup func()
@@ -54,7 +55,7 @@ func (c *cleanupReadCloser) Read(p []byte) (int, error) {
 	return n, err //nolint:wrapcheck // io.EOF must pass through unwrapped for callers.
 }
 
-// Close closes the file and then runs the decoder cleanup.
+// Close closes the file and then runs the cleanup.
 func (c *cleanupReadCloser) Close() error {
 	err := c.file.Close()
 	c.cleanup()
@@ -64,16 +65,24 @@ func (c *cleanupReadCloser) Close() error {
 	return nil
 }
 
-// OpenDecodable resolves the photo's original path, ensures it is decodable
-// (converting non-native formats to a temporary JPEG) and opens it for reading.
-// The returned reader's Close removes any temporary converted file.
+// OpenDecodable materializes the photo's original as a local file, ensures it is
+// decodable (converting non-native formats to a temporary JPEG) and opens it for
+// reading. The returned reader's Close releases both the temporary converted file
+// and the materialized original; every error path here releases them too.
 func (s *StorageSource) OpenDecodable(ctx context.Context, photo photos.Photo) (io.ReadCloser, error) {
-	abs := s.storage.AbsPath(photo.FilePath)
-	decodable, cleanup, err := s.decode(ctx, abs)
+	abs, releaseOriginal, err := s.storage.Materialize(ctx, photo.FilePath)
 	if err != nil {
+		return nil, fmt.Errorf("facejob: materializing image for %s: %w", photo.UID, err)
+	}
+	decodable, releaseDecoded, err := s.decode(ctx, abs)
+	if err != nil {
+		releaseOriginal()
 		return nil, fmt.Errorf("facejob: ensuring decodable image for %s: %w", photo.UID, err)
 	}
-	file, err := os.Open(decodable) //nolint:gosec // G304: path derived from storage-confined AbsPath.
+	// The decoded file may be derived from the original, so drop it first.
+	cleanup := func() { releaseDecoded(); releaseOriginal() }
+
+	file, err := os.Open(decodable) //nolint:gosec // G304: path derived from the storage-confined original.
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("facejob: opening image for %s: %w", photo.UID, err)

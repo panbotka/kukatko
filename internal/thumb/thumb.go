@@ -65,8 +65,8 @@ const (
 // per photo in a job queue) and the bounded internal concurrency parallelises
 // the per-size encode work for a single photo.
 type Thumbnailer struct {
-	// originals resolves a photo's stored file path to an absolute on-disk path
-	// (HEIC/RAW shell-out and the decoder both need a real file path).
+	// originals materializes a photo's stored original as a local file (the
+	// HEIC/RAW shell-out and the vips engine both need a real file path).
 	originals storage.Storage
 	// cacheDir is the configured cache root (storage.cache_path).
 	cacheDir string
@@ -215,14 +215,24 @@ func (t *Thumbnailer) Generate(
 		return result, nil
 	}
 
+	// Both engines shell out to tools that take a filename, so the original has to
+	// exist as a local file for the rest of this call. Materializing it once here
+	// keeps a remote backend from fetching the same original twice when vips
+	// declines and the pure-Go engine takes over.
+	src, cleanup, err := t.originals.Materialize(ctx, photo.FilePath)
+	if err != nil {
+		return nil, fmt.Errorf("thumb: materializing original: %w", err)
+	}
+	defer cleanup()
+
 	// Fast path: shell out to vipsthumbnail for directly-supported originals. On
 	// any failure it returns false and we fall through to the pure-Go engine, so
 	// output never depends on vips succeeding — only speed does.
-	if t.tryVips(ctx, photo, needed, result) {
+	if t.tryVips(ctx, photo, src, needed, result) {
 		return result, nil
 	}
 
-	img, err := decodeAndOrient(ctx, t.originals.AbsPath(photo.FilePath), photo.FileOrientation)
+	img, err := decodeAndOrient(ctx, src, photo.FileOrientation)
 	if err != nil {
 		return nil, err
 	}

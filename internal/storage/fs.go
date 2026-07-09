@@ -40,6 +40,9 @@ type FS struct {
 	tmpDir string
 }
 
+// compile-time assertion that *FS satisfies Storage.
+var _ Storage = (*FS)(nil)
+
 // NewFS returns an FS rooted at root, creating the root and its temporary upload
 // directory if they do not yet exist. It returns a wrapped error if either
 // directory cannot be created.
@@ -184,11 +187,28 @@ func (s *FS) Delete(_ context.Context, relPath string) error {
 	return nil
 }
 
-// AbsPath returns the absolute filesystem path for relPath, confined to the
-// storage root.
-func (s *FS) AbsPath(relPath string) string {
-	return filepath.Join(s.root, filepath.FromSlash(confine(relPath)))
+// URL returns the empty string: originals under the storage root are not exposed
+// over HTTP, so a client cannot fetch them directly and must go through the
+// application's media routes instead. See Storage.URL.
+func (s *FS) URL(_ string) string {
+	return ""
 }
+
+// Materialize returns the original's own path under the storage root together
+// with a no-op cleanup. The file is already local, so nothing is copied and
+// nothing has to be removed afterwards — which is what keeps local development
+// and the test suite zero-copy. See Storage.Materialize.
+func (s *FS) Materialize(_ context.Context, relPath string) (string, func(), error) {
+	abs, err := s.safeAbs(relPath)
+	if err != nil {
+		return "", noopCleanup, err
+	}
+	return abs, noopCleanup, nil
+}
+
+// noopCleanup is the cleanup returned by FS.Materialize. There is no temporary
+// file to remove, and calling it any number of times does nothing.
+func noopCleanup() {}
 
 // safeAbs resolves relPath to an absolute path confined to the root, rejecting
 // paths that resolve to the root directory itself with ErrInvalidPath.

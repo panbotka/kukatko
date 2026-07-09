@@ -130,8 +130,14 @@ On-disk vrstva pro originální média. Rozhraní `Storage` + filesystemová imp
   `ErrAlreadyExists` (dedup signál pro volajícího); stejné jméno + **jiný obsah** → uloží pod
   číselným sufixem (`name_1.ext`), nikdy nepřepíše. Autoritativní katalogový dedup je věcí DB
   (`photos.file_hash` UNIQUE).
-- **`Open`/`Stat`/`Delete`/`AbsPath`** pracují s relativní cestou; všechny cesty jsou
+- **`Open`/`Stat`/`Delete`/`Materialize`** pracují s relativní cestou; všechny cesty jsou
   confinované do rootu (žádný únik přes `..`), neplatné cesty vrací `ErrInvalidPath`.
+- Rozhraní `Storage` **nepředpokládá filesystem**. `URL(relPath)` vrací adresu, na kterou si
+  klient sáhne přímo (FS vrací `""` — originály na disku nejsou přes HTTP dostupné, servíruje je
+  aplikace). `Materialize(ctx,relPath)` vrací reálný lokální soubor pro nástroje, které umí jen
+  jméno souboru (exiftool, ffprobe, ffmpeg, heif-convert, vipsthumbnail), plus `cleanup`, který
+  volající **vždy** zavolá — i na error path. FS nekopíruje: vrátí cestu samotného originálu
+  a no-op `cleanup`.
 - **MIME** se detekuje z obsahu (sniffing prvních 512 B) s příponou jako fallback; tabulka
   `mediaTypeByExt` pokrývá formáty, které stdlib nezná (HEIC/HEIF/AVIF, RAW, kontejnerové video).
 
@@ -1464,7 +1470,7 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
 - **Video** `GET /photos/{uid}/video` (`internal/photoapi/video.go`) — inline stream pro HTML5
   přehrávač **s HTTP Range** přes `http.ServeContent` (206 partial, `Content-Range`, `Accept-Ranges`,
   seek bez stažení celého klipu, `If-Range`/`If-None-Match`/`If-Modified-Since`, paměťově omezené ze
-  `*os.File` přes `storage.AbsPath`). Live fotka streamuje svůj **motion klip** sidecar
+  `*os.File` přes `storage.Materialize`). Live fotka streamuje svůj **motion klip** sidecar
   (`pickMotionClip` dle video MIME/přípony), still image → 404. **On-the-fly transcode** je gated
   `video.transcode` (default off) + `video.IsWebFriendlyCodec` (h264/vp8/vp9/av1/… hrají nativně) +
   `video.FFmpegAvailable`: neweb-friendly codec se transcoduje na progressive H.264/MP4

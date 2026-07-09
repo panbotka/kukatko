@@ -95,8 +95,8 @@ func Transcode(ctx context.Context, srcPath string) (*TranscodeStream, error) {
 		return nil, fmt.Errorf("%w: %w", ErrFFmpegMissing, err)
 	}
 	cctx, cancel := context.WithCancel(ctx)
-	// #nosec G204 -- srcPath is the stored original confined by storage.AbsPath;
-	// the remaining arguments are constant flags.
+	// #nosec G204 -- srcPath is the stored original, materialized by the storage
+	// layer and confined to its root; the remaining arguments are constant flags.
 	cmd := exec.CommandContext(cctx, ffmpegBinary, TranscodeArgs(srcPath)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

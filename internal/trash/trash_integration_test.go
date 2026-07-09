@@ -126,7 +126,15 @@ func (e *purgeEnv) seedPhoto(t *testing.T, name string, at *time.Time) (photos.P
 			t.Fatalf("stamp archived_at: %v", err)
 		}
 	}
-	return photo, e.fs.AbsPath(stored.RelPath), tileAbs
+	// The returned path is asserted against for the rest of the test, so the
+	// original stays materialized until the test ends rather than being released
+	// here.
+	originalAbs, release, err := e.fs.Materialize(ctx, stored.RelPath)
+	if err != nil {
+		t.Fatalf("fs.Materialize: %v", err)
+	}
+	t.Cleanup(release)
+	return photo, originalAbs, tileAbs
 }
 
 // assertGone fails if any DB row or on-disk artifact for the purged photo

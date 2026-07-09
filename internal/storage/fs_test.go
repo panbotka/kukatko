@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -208,7 +210,8 @@ func TestFSStore_concurrentIdenticalWrites(t *testing.T) {
 	}
 	assertContent(t, fs, "2024/05/race.jpg", string(content))
 	// No suffixed duplicates must have been created.
-	if _, err := os.Stat(fs.AbsPath("2024/05/race_1.jpg")); !errors.Is(err, os.ErrNotExist) {
+	dup := filepath.Join(fs.root, filepath.FromSlash("2024/05/race_1.jpg"))
+	if _, err := os.Stat(dup); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("unexpected suffixed duplicate exists (stat err = %v)", err)
 	}
 }
@@ -286,7 +289,7 @@ func TestFSOpen_invalidPath(t *testing.T) {
 	}
 }
 
-func TestFSAbsPath_confinement(t *testing.T) {
+func TestFSMaterialize_confinement(t *testing.T) {
 	t.Parallel()
 	fs := newTestFS(t)
 
@@ -302,16 +305,110 @@ func TestFSAbsPath_confinement(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := fs.AbsPath(tt.relPath)
+			got, cleanup, err := fs.Materialize(t.Context(), tt.relPath)
+			if err != nil {
+				t.Fatalf("Materialize(%q): %v", tt.relPath, err)
+			}
+			defer cleanup()
 			want := filepath.Join(fs.root, filepath.FromSlash(tt.wantRel))
 			if got != want {
-				t.Errorf("AbsPath(%q) = %q, want %q", tt.relPath, got, want)
+				t.Errorf("Materialize(%q) = %q, want %q", tt.relPath, got, want)
 			}
 			if !strings.HasPrefix(got, fs.root) {
-				t.Errorf("AbsPath(%q) = %q escapes root %q", tt.relPath, got, fs.root)
+				t.Errorf("Materialize(%q) = %q escapes root %q", tt.relPath, got, fs.root)
 			}
 		})
 	}
+}
+
+func TestFSMaterialize_invalidPath(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+
+	for _, relPath := range []string{"", "/", "..", "../.."} {
+		path, cleanup, err := fs.Materialize(t.Context(), relPath)
+		if !errors.Is(err, ErrInvalidPath) {
+			t.Errorf("Materialize(%q) err = %v, want ErrInvalidPath", relPath, err)
+		}
+		if path != "" {
+			t.Errorf("Materialize(%q) path = %q, want empty on error", relPath, path)
+		}
+		if cleanup == nil {
+			t.Fatalf("Materialize(%q) cleanup = nil, want a no-op on error", relPath)
+		}
+		cleanup()
+	}
+}
+
+// TestFSMaterialize_zeroCopy pins the property the whole filesystem backend rests
+// on: materializing an original hands back that very file, copies nothing, and
+// leaves it in place afterwards — however many times cleanup is called.
+func TestFSMaterialize_zeroCopy(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+	content := "original bytes"
+
+	stored, err := fs.Store(t.Context(), strings.NewReader(content), fixedTime, "orig.jpg")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	before := treeOf(t, fs.root)
+
+	path, cleanup, err := fs.Materialize(t.Context(), stored.RelPath)
+	if err != nil {
+		t.Fatalf("Materialize: %v", err)
+	}
+	if want := filepath.Join(fs.root, filepath.FromSlash(stored.RelPath)); path != want {
+		t.Errorf("Materialize path = %q, want the stored original at %q", path, want)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read materialized file: %v", err)
+	}
+	if string(got) != content {
+		t.Errorf("materialized content = %q, want %q", got, content)
+	}
+	// Nothing was written: no temporary copy anywhere under the storage root.
+	if during := treeOf(t, fs.root); !slices.Equal(before, during) {
+		t.Errorf("Materialize copied files: tree %v, want unchanged %v", during, before)
+	}
+
+	// cleanup is a no-op and is safe to call more than once; the original survives.
+	cleanup()
+	cleanup()
+	if after := treeOf(t, fs.root); !slices.Equal(before, after) {
+		t.Errorf("cleanup changed the store: tree %v, want unchanged %v", after, before)
+	}
+}
+
+func TestFSURL_noDirectAddress(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+
+	if got := fs.URL("2024/05/a.jpg"); got != "" {
+		t.Errorf("URL = %q, want empty: local originals are not fetchable by a client", got)
+	}
+}
+
+// treeOf returns every file path under root, sorted, so a test can assert that an
+// operation created or removed nothing.
+func treeOf(t *testing.T, root string) []string {
+	t.Helper()
+	var paths []string
+	walkErr := filepath.WalkDir(root, func(path string, entry iofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		t.Fatalf("walk %s: %v", root, walkErr)
+	}
+	slices.Sort(paths)
+	return paths
 }
 
 func TestSuffixName(t *testing.T) {

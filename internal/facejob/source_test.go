@@ -11,11 +11,21 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
-// staticResolver returns a fixed absolute path regardless of input.
-type staticResolver struct{ abs string }
+// staticMaterializer hands out a fixed local path regardless of input, counting
+// how many times its cleanup ran so tests can prove the original is released.
+type staticMaterializer struct {
+	abs      string
+	err      error
+	released int
+}
 
-// AbsPath returns the configured absolute path.
-func (s staticResolver) AbsPath(_ string) string { return s.abs }
+// Materialize returns the configured path, or the configured error.
+func (s *staticMaterializer) Materialize(_ context.Context, _ string) (string, func(), error) {
+	if s.err != nil {
+		return "", func() {}, s.err
+	}
+	return s.abs, func() { s.released++ }, nil
+}
 
 // writeTempJPEG writes some bytes to a temp file and returns its path.
 func writeTempJPEG(t *testing.T, content string) string {
@@ -34,8 +44,9 @@ func TestStorageSource_passthrough(t *testing.T) {
 
 	path := writeTempJPEG(t, "jpeg-bytes")
 	cleaned := false
+	store := &staticMaterializer{abs: path}
 	src := &StorageSource{
-		storage: staticResolver{abs: path},
+		storage: store,
 		decode: func(_ context.Context, p string) (string, func(), error) {
 			return p, func() { cleaned = true }, nil
 		},
@@ -58,6 +69,9 @@ func TestStorageSource_passthrough(t *testing.T) {
 	if !cleaned {
 		t.Error("decoder cleanup was not run on Close")
 	}
+	if store.released != 1 {
+		t.Errorf("materialized original released %d times, want 1", store.released)
+	}
 }
 
 // TestStorageSource_convertedCleanup opens a temporary converted file and removes
@@ -66,8 +80,9 @@ func TestStorageSource_convertedCleanup(t *testing.T) {
 	t.Parallel()
 
 	temp := writeTempJPEG(t, "converted")
+	store := &staticMaterializer{abs: "/originals/photo.heic"}
 	src := &StorageSource{
-		storage: staticResolver{abs: "/originals/photo.heic"},
+		storage: store,
 		decode: func(_ context.Context, _ string) (string, func(), error) {
 			return temp, func() { _ = os.Remove(temp) }, nil
 		},
@@ -83,6 +98,27 @@ func TestStorageSource_convertedCleanup(t *testing.T) {
 	if _, err := os.Stat(temp); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("temp converted file still present after Close: %v", err)
 	}
+	if store.released != 1 {
+		t.Errorf("materialized original released %d times, want 1", store.released)
+	}
+}
+
+// TestStorageSource_materializeError surfaces a storage failure and never calls
+// the decoder.
+func TestStorageSource_materializeError(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("offline")
+	src := &StorageSource{
+		storage: &staticMaterializer{err: wantErr},
+		decode: func(_ context.Context, _ string) (string, func(), error) {
+			t.Error("decoder ran despite a materialize failure")
+			return "", func() {}, nil
+		},
+	}
+	if _, err := src.OpenDecodable(context.Background(), photos.Photo{UID: "ph1"}); !errors.Is(err, wantErr) {
+		t.Errorf("OpenDecodable error = %v, want %v", err, wantErr)
+	}
 }
 
 // TestStorageSource_decodeError surfaces a decoder failure.
@@ -90,14 +126,18 @@ func TestStorageSource_decodeError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("boom")
+	store := &staticMaterializer{abs: "/x"}
 	src := &StorageSource{
-		storage: staticResolver{abs: "/x"},
+		storage: store,
 		decode: func(_ context.Context, _ string) (string, func(), error) {
 			return "", nil, wantErr
 		},
 	}
 	if _, err := src.OpenDecodable(context.Background(), photos.Photo{UID: "ph1"}); !errors.Is(err, wantErr) {
 		t.Errorf("OpenDecodable error = %v, want %v", err, wantErr)
+	}
+	if store.released != 1 {
+		t.Errorf("materialized original released %d times after a decode failure, want 1", store.released)
 	}
 }
 
@@ -107,8 +147,9 @@ func TestStorageSource_openError(t *testing.T) {
 	t.Parallel()
 
 	cleaned := false
+	store := &staticMaterializer{abs: "/x"}
 	src := &StorageSource{
-		storage: staticResolver{abs: "/x"},
+		storage: store,
 		decode: func(_ context.Context, _ string) (string, func(), error) {
 			return filepath.Join(t.TempDir(), "does-not-exist.jpg"), func() { cleaned = true }, nil
 		},
@@ -118,5 +159,8 @@ func TestStorageSource_openError(t *testing.T) {
 	}
 	if !cleaned {
 		t.Error("cleanup was not run after an open failure")
+	}
+	if store.released != 1 {
+		t.Errorf("materialized original released %d times after an open failure, want 1", store.released)
 	}
 }

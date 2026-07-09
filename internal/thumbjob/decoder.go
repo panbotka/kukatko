@@ -35,17 +35,25 @@ func NewStorageDecoder(store storage.Storage) *StorageDecoder {
 }
 
 // DecodeOriginal resolves the photo's stored original to a decodable image and
-// decodes it. The returned cleanup removes any intermediate file produced for
-// HEIC/RAW and must be deferred by the caller. The image is decoded without
-// applying EXIF orientation, matching the pHash the upload pipeline computes.
+// decodes it. The returned cleanup releases the materialized original and removes
+// any intermediate file produced for HEIC/RAW; the caller must defer it. The
+// image is decoded without applying EXIF orientation, matching the pHash the
+// upload pipeline computes.
 func (d *StorageDecoder) DecodeOriginal(
 	ctx context.Context, photo photos.Photo,
 ) (image.Image, func(), error) {
-	abs := d.storage.AbsPath(photo.FilePath)
-	decPath, cleanup, err := imgconvert.EnsureDecodable(ctx, abs)
+	abs, releaseOriginal, err := d.storage.Materialize(ctx, photo.FilePath)
 	if err != nil {
+		return nil, nil, fmt.Errorf("thumbjob: materializing original: %w", err)
+	}
+	decPath, releaseDecoded, err := imgconvert.EnsureDecodable(ctx, abs)
+	if err != nil {
+		releaseOriginal()
 		return nil, nil, fmt.Errorf("thumbjob: ensuring decodable: %w", err)
 	}
+	// The decoded file may be derived from the original, so drop it first.
+	cleanup := func() { releaseDecoded(); releaseOriginal() }
+
 	file, err := os.Open(decPath) //nolint:gosec // G304: decPath comes from storage/imgconvert, not user input.
 	if err != nil {
 		cleanup()
