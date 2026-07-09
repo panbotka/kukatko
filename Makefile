@@ -47,8 +47,9 @@ test: web-deps
 test-integration:
 	CGO_ENABLED=1 go test -race -p 1 -tags=integration ./...
 
-## check: Full quality gate — fmt, vet, lint, and unit tests (Go + frontend).
-check: fmt vet lint test
+## check: Full quality gate — docs budget, fmt, vet, lint, and unit tests (Go + frontend).
+## docs-budget runs first: it is the cheapest check, so it should fail fastest.
+check: docs-budget fmt vet lint test
 
 ## docs-budget: Fail if CLAUDE.md grew beyond its rules+index budget.
 docs-budget:
