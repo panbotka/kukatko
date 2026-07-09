@@ -7,7 +7,7 @@ export function NotFoundPage() {
 
   return (
     <div className="text-center py-5">
-      <h1 className="display-5 mb-3">{t('notFound.title')}</h1>
+      <h1 className="kk-page-title mb-3">{t('notFound.title')}</h1>
       <p className="text-secondary mb-4">{t('notFound.message')}</p>
       <Link to="/" className="btn btn-primary">
         {t('notFound.back')}

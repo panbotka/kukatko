@@ -75,7 +75,7 @@ export function KeyboardShortcutsHelp() {
         <Modal.Body>
           {SHORTCUT_GROUPS.map((group) => (
             <section key={group.titleKey} className="mb-3">
-              <h3 className="h6 text-secondary">{t(group.titleKey)}</h3>
+              <h3 className="kk-section-title text-secondary">{t(group.titleKey)}</h3>
               <Table size="sm" borderless className="mb-0 align-middle">
                 <tbody>
                   {group.entries.map((entry) => (

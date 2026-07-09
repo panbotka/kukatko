@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { EmptyState } from '../EmptyState'
+
 import { type AlbumCount } from '../../services/organize'
 import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
 
@@ -22,12 +24,12 @@ export function AlbumTile({ album }: AlbumTileProps) {
   return (
     <Link
       to={`/albums/${album.uid}`}
-      className="d-block text-decoration-none text-body"
+      className="kk-tile d-block text-decoration-none text-body"
       aria-label={album.title}
       title={album.title}
     >
       <div
-        className="position-relative bg-secondary-subtle overflow-hidden rounded mb-1 d-flex align-items-center justify-content-center"
+        className="kk-tile__media mb-1 d-flex align-items-center justify-content-center"
         style={{ aspectRatio: '1 / 1' }}
       >
         {cover !== undefined && cover !== '' ? (
@@ -40,7 +42,7 @@ export function AlbumTile({ album }: AlbumTileProps) {
             style={{ objectFit: 'cover' }}
           />
         ) : (
-          <span className="text-secondary small p-2 text-center">{t('albums.noCover')}</span>
+          <EmptyState size="sm" title={t('albums.noCover')} className="kk-tile__placeholder" />
         )}
         {album.private && (
           <span
@@ -52,7 +54,7 @@ export function AlbumTile({ album }: AlbumTileProps) {
         )}
       </div>
       <div className="fw-semibold text-truncate">{album.title}</div>
-      <div className="small text-secondary">
+      <div className="kk-text-caption text-secondary">
         {t('albums.photoCount', { count: album.photo_count })}
       </div>
     </Link>

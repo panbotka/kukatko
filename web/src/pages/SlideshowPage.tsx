@@ -5,6 +5,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
+import { EmptyState } from '../components/EmptyState'
 import { Slideshow } from '../components/slideshow/Slideshow'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
 import { useSlideshow } from '../hooks/useSlideshow'
@@ -106,12 +107,16 @@ export function SlideshowPage() {
 
   if (photos.length === 0) {
     return (
-      <div className="slideshow d-flex flex-column align-items-center justify-content-center text-center text-light p-4">
-        <p className="mb-1 fs-5">{t('slideshow.empty.title')}</p>
-        <p className="mb-3 small text-secondary">{t('slideshow.empty.hint')}</p>
-        <Button variant="outline-light" size="sm" onClick={exit}>
-          {t('slideshow.back')}
-        </Button>
+      <div className="slideshow d-flex flex-column align-items-center justify-content-center text-light p-4">
+        <EmptyState
+          title={t('slideshow.empty.title')}
+          hint={t('slideshow.empty.hint')}
+          action={
+            <Button variant="outline-light" size="sm" onClick={exit}>
+              {t('slideshow.back')}
+            </Button>
+          }
+        />
       </div>
     )
   }

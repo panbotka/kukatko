@@ -5,6 +5,7 @@ import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '../components/EmptyState'
 import { ClusterCard } from '../components/people/ClusterCard'
 import {
   assignCluster,
@@ -97,7 +98,7 @@ export function ClustersPage() {
 
   return (
     <>
-      <h1 className="h3 mb-1">{t('clusters.title')}</h1>
+      <h1 className="kk-page-title mb-1">{t('clusters.title')}</h1>
       <p className="text-secondary">{t('clusters.subtitle')}</p>
 
       {actionError && (
@@ -123,10 +124,7 @@ export function ClustersPage() {
       {state.status === 'error' && <Alert variant="danger">{t('clusters.error')}</Alert>}
 
       {state.status === 'ready' && state.clusters.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('clusters.empty.title')}</p>
-          <p className="mb-0 small">{t('clusters.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('clusters.empty.title')} hint={t('clusters.empty.hint')} />
       )}
 
       {state.status === 'ready' && state.clusters.length > 0 && (

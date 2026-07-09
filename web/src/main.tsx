@@ -2,6 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import 'bootswatch/dist/superhero/bootstrap.min.css'
+// The design token layer sits between Bootswatch and the polish layer: it
+// defines the `--kk-*` custom properties that `app.css` and the components
+// consume, so it must be imported before them.
+import './styles/tokens.css'
 import './styles/app.css'
 
 import './i18n'

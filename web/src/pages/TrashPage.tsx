@@ -7,6 +7,7 @@ import Modal from 'react-bootstrap/Modal'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { SelectionBar } from '../components/organize/SelectionBar'
@@ -134,7 +135,7 @@ export function TrashPage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h1 className="h3 mb-0">{t('trash.title')}</h1>
+        <h1 className="kk-page-title mb-0">{t('trash.title')}</h1>
         <div className="d-flex gap-1 flex-wrap">
           {!selection.active && (
             <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
@@ -215,10 +216,7 @@ export function TrashPage() {
       )}
 
       {status === 'ready' && photos.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('trash.empty.title')}</p>
-          <p className="mb-0 small">{t('trash.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('trash.empty.title')} hint={t('trash.empty.hint')} />
       )}
 
       {status === 'ready' && photos.length > 0 && (

@@ -5,6 +5,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
+import { EmptyState } from '../components/EmptyState'
 import { LeafletMap } from '../components/map/LeafletMap'
 import { MapFilterBar } from '../components/map/MapFilterBar'
 import { useMapPhotos } from '../hooks/useMapPhotos'
@@ -73,7 +74,7 @@ export function MapPage() {
 
   return (
     <>
-      <h1 className="h3 mb-3">{t('map.title')}</h1>
+      <h1 className="kk-page-title mb-3">{t('map.title')}</h1>
 
       <MapFilterBar view={view} onChange={setView} mapset={mapset} count={features.length} />
 
@@ -108,12 +109,13 @@ export function MapPage() {
 
           {status === 'ready' && features.length === 0 && (
             <div
-              className="position-absolute top-0 start-50 translate-middle-x mt-2 px-3 py-2 rounded bg-dark text-light small text-center"
+              className="position-absolute top-0 start-50 translate-middle-x mt-2 px-3 rounded bg-dark text-light"
               style={{ zIndex: 1000, maxWidth: '90%' }}
               aria-live="polite"
             >
-              <div>{t('map.empty.title')}</div>
-              <div className="text-secondary">{t('map.empty.hint')}</div>
+              {/* Compact variant: this floats over the map rather than filling
+                  the space a collection would occupy. */}
+              <EmptyState size="sm" title={t('map.empty.title')} hint={t('map.empty.hint')} />
             </div>
           )}
         </div>

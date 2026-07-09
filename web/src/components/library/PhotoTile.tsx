@@ -125,13 +125,13 @@ export function PhotoTile({
           style={{
             objectFit: 'cover',
             opacity: loaded ? 1 : 0,
-            transition: 'opacity 0.2s ease-in',
+            transition: 'opacity var(--kk-duration-base) var(--kk-ease-standard)',
           }}
         />
       )}
       {thumb.failed && (
         <span
-          className="d-flex w-100 h-100 align-items-center justify-content-center text-secondary small p-2 text-center"
+          className="d-flex w-100 h-100 align-items-center justify-content-center text-secondary kk-text-caption p-2 text-center"
           role="img"
           aria-label={t('library.tile.unavailable')}
         >
@@ -187,7 +187,7 @@ export function PhotoTile({
       onClick={() => {
         onToggleSelect?.(photo.uid)
       }}
-      className={`btn p-0 border-0 d-block position-relative bg-secondary-subtle overflow-hidden rounded w-100${
+      className={`kk-tile__media btn p-0 border-0 d-block w-100${
         selected ? ' ring ring-primary' : ''
       }`}
       style={{
@@ -204,7 +204,7 @@ export function PhotoTile({
           ? `/photos/${photo.uid}?${detailQuery}`
           : `/photos/${photo.uid}`
       }
-      className="d-block position-relative bg-secondary-subtle overflow-hidden rounded"
+      className="kk-tile__media d-block"
       style={{ aspectRatio: '1 / 1', opacity: rejected ? 0.55 : undefined }}
       aria-label={label}
       title={label}
@@ -223,7 +223,7 @@ export function PhotoTile({
   // selection mode so the tile stays a clean selection target.
   return (
     <div
-      className={`position-relative${focused ? ' kukatko-tile-focused' : ''}`}
+      className={`kk-tile position-relative${focused ? ' kukatko-tile-focused' : ''}`}
       data-focused={focused ? 'true' : undefined}
     >
       {base}

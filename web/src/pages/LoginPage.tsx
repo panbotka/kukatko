@@ -82,9 +82,9 @@ export function LoginPage() {
   return (
     <Row className="justify-content-center">
       <Col xs={12} sm={10} md={6} lg={5} xl={4}>
-        <Card bg="dark" text="light" border="secondary" className="mt-4 mt-md-5">
+        <Card text="light" className="mt-4 mt-md-5">
           <Card.Body>
-            <Card.Title as="h1" className="h3 mb-4 text-center">
+            <Card.Title as="h1" className="kk-page-title mb-4 text-center">
               {t('login.title')}
             </Card.Title>
 

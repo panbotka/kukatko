@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
+import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -159,7 +160,7 @@ export function LibraryPage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h1 className="h3 mb-0">{t('library.title')}</h1>
+        <h1 className="kk-page-title mb-0">{t('library.title')}</h1>
         {!selection.active && (
           <div className="d-flex gap-1 flex-wrap">
             {status === 'ready' && photos.length > 0 && (
@@ -224,10 +225,7 @@ export function LibraryPage() {
       )}
 
       {status === 'ready' && photos.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('library.empty.title')}</p>
-          <p className="mb-0 small">{t('library.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('library.empty.title')} hint={t('library.empty.hint')} />
       )}
 
       {status === 'ready' && photos.length > 0 && (

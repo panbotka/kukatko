@@ -72,7 +72,7 @@ export function HomePage() {
 
   return (
     <>
-      <h1 className="h3 mb-1">{t('home.title')}</h1>
+      <h1 className="kk-page-title mb-1">{t('home.title')}</h1>
       <p className="text-secondary mb-4">{t('home.subtitle')}</p>
 
       <Row xs={1} sm={2} lg={3} className="g-3">
@@ -81,13 +81,11 @@ export function HomePage() {
             <Card
               as={Link}
               to={tile.to}
-              bg="dark"
               text="light"
-              border="secondary"
               className="h-100 text-decoration-none kukatko-home-tile"
             >
               <Card.Body>
-                <Card.Title as="h2" className="h5 mb-1">
+                <Card.Title as="h2" className="kk-section-title mb-1">
                   {t(tile.titleKey)}
                 </Card.Title>
                 <Card.Text className="text-secondary mb-0">{t(tile.descKey)}</Card.Text>

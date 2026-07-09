@@ -149,7 +149,7 @@ function RepairForm({ report, selection, onToggle, onRun, state }: RepairFormPro
   return (
     <Card className="mb-4">
       <Card.Body>
-        <h2 className="h6 mb-1">{t('maintenance.repair.title')}</h2>
+        <h2 className="kk-section-title mb-1">{t('maintenance.repair.title')}</h2>
         <p className="text-secondary small">{t('maintenance.repair.hint')}</p>
         <Form>
           {REPAIR_KEYS.map((key) => {
@@ -213,7 +213,7 @@ function JobStatsBar({ stats }: { stats: JobStats }) {
   return (
     <Card className="mb-4">
       <Card.Body>
-        <h2 className="h6 mb-2">{t('maintenance.jobs.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('maintenance.jobs.title')}</h2>
         <div className="d-flex gap-2 flex-wrap">
           <Badge bg="primary">
             {t('maintenance.jobs.total')}: {stats.total}
@@ -328,13 +328,13 @@ export function MaintenancePage() {
 
   return (
     <>
-      <h1 className="h3 mb-1">{t('maintenance.title')}</h1>
+      <h1 className="kk-page-title mb-1">{t('maintenance.title')}</h1>
       <p className="text-secondary">{t('maintenance.subtitle')}</p>
 
       <Card className="mb-4">
         <Card.Body>
           <div className="d-flex justify-content-between align-items-center mb-3">
-            <h2 className="h6 mb-0">{t('maintenance.scan.title')}</h2>
+            <h2 className="kk-section-title mb-0">{t('maintenance.scan.title')}</h2>
             <Button
               variant="outline-primary"
               disabled={scan.status === 'loading'}

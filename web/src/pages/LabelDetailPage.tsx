@@ -4,6 +4,7 @@ import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 
+import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -69,7 +70,7 @@ export function LabelDetailPage() {
         <Link to="/labels" className="text-decoration-none">
           ← {t('labelDetail.back')}
         </Link>
-        <h1 className="h3 mb-0">{title}</h1>
+        <h1 className="kk-page-title mb-0">{title}</h1>
         {photos.length > 0 && (
           <Link
             to={slideshowHref({ label: uid }, view)}
@@ -94,10 +95,7 @@ export function LabelDetailPage() {
       )}
 
       {status === 'ready' && photos.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('labelDetail.empty.title')}</p>
-          <p className="mb-0 small">{t('labelDetail.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('labelDetail.empty.title')} hint={t('labelDetail.empty.hint')} />
       )}
 
       {status === 'ready' && photos.length > 0 && (

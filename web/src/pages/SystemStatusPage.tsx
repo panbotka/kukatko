@@ -47,8 +47,8 @@ function VersionCard({ version }: { version: VersionInfo }) {
   return (
     <Card className="h-100">
       <Card.Body>
-        <h2 className="h6 mb-2">{t('system.version.title')}</h2>
-        <div className="fs-5">{version.version}</div>
+        <h2 className="kk-section-title mb-2">{t('system.version.title')}</h2>
+        <div className="kk-section-title">{version.version}</div>
         <div className="text-secondary small font-monospace text-break">{version.commit}</div>
       </Card.Body>
     </Card>
@@ -61,7 +61,7 @@ function DatabaseCard({ database }: { database: DatabaseStatus }) {
   return (
     <Card className="h-100">
       <Card.Body>
-        <h2 className="h6 mb-2">{t('system.database.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('system.database.title')}</h2>
         {database.reachable ? (
           <Badge bg="success">{t('system.database.reachable')}</Badge>
         ) : (
@@ -84,7 +84,7 @@ function EmbeddingsCard({
   return (
     <Card className="h-100">
       <Card.Body>
-        <h2 className="h6 mb-2">{t('system.embeddings.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('system.embeddings.title')}</h2>
         {embeddings.online ? (
           <Badge bg="success">{t('system.embeddings.online')}</Badge>
         ) : (
@@ -117,7 +117,7 @@ function JobsCard({
   return (
     <Card className="h-100">
       <Card.Body>
-        <h2 className="h6 mb-2">{t('system.jobs.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('system.jobs.title')}</h2>
         <div className="d-flex gap-2 flex-wrap mb-3">
           <Badge bg="primary">
             {t('system.jobs.total')}: {jobs.total}
@@ -183,7 +183,7 @@ function ImportsCard({ imports }: { imports: ImportsStatus }) {
   return (
     <Card className="h-100">
       <Card.Body className="d-flex flex-column">
-        <h2 className="h6 mb-2">{t('system.imports.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('system.imports.title')}</h2>
         <ImportRunLine source="photoprism" run={imports.photoprism} />
         <ImportRunLine source="photosorter" run={imports.photosorter} />
         <div className="mt-auto pt-2">
@@ -210,7 +210,7 @@ function BackupCard({
   return (
     <Card className="h-100">
       <Card.Body className="d-flex flex-column">
-        <h2 className="h6 mb-2">{t('system.backup.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('system.backup.title')}</h2>
         {!backup.configured ? (
           <Alert variant="secondary" className="mb-3">
             {t('system.backup.notConfigured')}
@@ -263,7 +263,7 @@ function StorageCard({ storage }: { storage: StorageStatus }) {
   return (
     <Card className="h-100">
       <Card.Body>
-        <h2 className="h6 mb-2">{t('system.storage.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('system.storage.title')}</h2>
         <dl className="row mb-0 small">
           <dt className="col-6 text-secondary fw-normal">{t('system.storage.originals')}</dt>
           <dd className="col-6 text-end mb-1">{formatBytes(storage.originals_bytes)}</dd>
@@ -375,7 +375,7 @@ export function SystemStatusPage() {
 
   return (
     <>
-      <h1 className="h3 mb-1">{t('system.title')}</h1>
+      <h1 className="kk-page-title mb-1">{t('system.title')}</h1>
       <p className="text-secondary">{t('system.subtitle')}</p>
 
       {notice && (

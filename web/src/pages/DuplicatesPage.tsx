@@ -5,6 +5,7 @@ import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '../components/EmptyState'
 import { DuplicateGroupCard } from '../components/duplicates/DuplicateGroupCard'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { ApiError } from '../services/auth'
@@ -108,7 +109,7 @@ export function DuplicatesPage() {
   return (
     <>
       <div className="mb-3">
-        <h1 className="h3 mb-1">{t('duplicates.title')}</h1>
+        <h1 className="kk-page-title mb-1">{t('duplicates.title')}</h1>
         <p className="text-secondary mb-0">{t('duplicates.subtitle')}</p>
       </div>
 
@@ -157,10 +158,7 @@ export function DuplicatesPage() {
       )}
 
       {status === 'ready' && groups.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('duplicates.empty.title')}</p>
-          <p className="mb-0 small">{t('duplicates.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('duplicates.empty.title')} hint={t('duplicates.empty.hint')} />
       )}
 
       {status === 'ready' &&

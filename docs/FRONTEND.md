@@ -30,7 +30,20 @@ zapiš sem.
   `LanguageSwitcher`,
   `KeyboardShortcutsHelp` (v navbaru: ikonka klávesnice + **modal nápovědy zkratek** — otevře se
   `?` (Shift+/) kdekoli nebo klikem, vypíše všechny zkratky seskupené dle kontextu (Mřížka / Detail)
-  ze `lib/shortcuts.ts` `SHORTCUT_GROUPS`, zavře Escapem/křížkem);
+  ze `lib/shortcuts.ts` `SHORTCUT_GROUPS`, zavře Escapem/křížkem),
+  `EmptyState` (**sdílený placeholder prázdné kolekce**: ikona v kulaté jámě, krátký titulek,
+  jednořádkový hint a volitelné akční tlačítko, vycentrované v prostoru, který by kolekce zabrala.
+  Props `title` (povinné), `hint?`, `icon?` (default = obrys prázdného rámečku, `aria-hidden`),
+  `action?` (obvykle stejné tlačítko, které nabízí naplněný pohled), `size?` `'md' | 'sm'`
+  (kompaktní varianta pro dlaždici/úzký panel), `className?`. Titulky/hinty si **překládá volající**
+  (každá stránka má vlastní i18n klíč, aby copy byla konkrétní). Nahradil holé jednořádky
+  „Bez štítků." / „Bez náhledu" i všechny ručně skládané `text-center py-5` bloky napříč
+  stránkami (`LibraryPage`, `SearchPage`, `AlbumsPage`, `AlbumDetailPage`, `LabelsPage`,
+  `LabelDetailPage`, `PeoplePage`, `SubjectPage`, `PlacesPage`, `MapPage`, `FavoritesPage`,
+  `SavedSearchesPage`, `ClustersPage`, `DuplicatesPage`, `TrashPage`, `SlideshowPage` (s akcí
+  „Zpět"), `ImportPage`) i v komponentách (`AlbumTile`/`SubjectTile` cover placeholder,
+  `OrganizePanel` bez štítků, `Outliers`). Bloky se objeví přes `.kk-appear`, které
+  `prefers-reduced-motion` vypne. Testy: `EmptyState.test.tsx`);
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
   `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
   `UploadItem` (řádek fronty: jméno+velikost, progress-bar, status badge, near-duplicate
@@ -464,8 +477,33 @@ zapiš sem.
   interpolační `{{var}}` proměnné se shodují napříč jazyky) + `screens.test.tsx` (reprezentativní
   obrazovky — navbar + dlaždice — se vykreslí bez missing-key warningů v cs i en přes
   `cloneInstance({saveMissing})`, plural rendering 1/3/5, language-switch přepíše viditelný text)),
+  `styles/tokens.css` (**design token vrstva** — jediný zdroj pravdy pro odstupy, rádiusy, elevaci,
+  motion a typografickou škálu; importovaná **jednou** v `main.tsx` hned za Bootswatch CSS a **před**
+  `app.css`, které tokeny konzumuje. Bootswatch Superhero zůstává základní téma — tohle je vrstva
+  **nad** ním, nepřepisuje `--bs-*` proměnné globálně. Obsah: **spacing** `--kk-space-1..7` (4px
+  škála), **rádiusy** `--kk-radius-sm/md/lg/pill`, **elevace** `--kk-shadow-0..3` (na tmavém tématu
+  vždy dvojice: drop shadow + `inset 0 1px 0` horní highlight, jinak by stín na navy pozadí zanikl),
+  **povrchy** `--kk-surface-raised` (odvozený z `--bs-body-bg`; **záměrně není** Superhero
+  `--bs-card-bg` `#4e5d6c` — ta barva je zároveň `secondary`, takže `outline-secondary` tlačítko
+  na ní zmizí) a `--kk-surface-sunken` (jáma pod náhledem), **motion** `--kk-duration-fast/
+  base/slow` + `--kk-ease-standard`, **focus ring** `--kk-focus-ring-*`, **typografie**
+  `--kk-font-size-*`/`--kk-line-height-*`/`--kk-tracking-*`.
+  Sémantické třídy: **typografická škála** `.kk-page-title` (jedna na route, na `<h1>`),
+  `.kk-section-title` (nadpis panelu/sekce, `<h2>`/`<h3>`), `.kk-text-body`, `.kk-text-caption`,
+  `.kk-text-eyebrow` — komponenty **nenastavují vlastní `font-size`** (žádné `h3`/`h5`/`fs-5`
+  utility na nadpisech, žádné inline `fontSize`); **povrchy** `.card` (ztrácí těžký okraj přes
+  `--bs-card-border-color: transparent`, dostává `--kk-shadow-1`; `.border-primary` apod. stále
+  fungují) a `.kk-surface`; **dlaždice** `.kk-tile` + `.kk-tile__media` (bez okraje, elevace,
+  hover/focus lift na `--kk-shadow-3` — používají `AlbumTile`, `SubjectTile`, `PhotoTile`;
+  `:focus-within` pokrývá `PhotoTile`, kde je fokusovatelný až vnitřní odkaz) a `.kk-tile-row`
+  (řádková varianta pro seznam štítků — místo liftu se zvýrazní pozadím, protože řádek v sloupci
+  nemá kam vyskočit); `.kk-tile__placeholder`; **appear** `.kk-appear` (jednorázový fade-up).
+  **Focus outline se nikdy neodstraňuje** — `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible`
+  kreslí `outline` (přežije `overflow: hidden` náhledu). **`prefers-reduced-motion`**: token
+  durations spadnou na `1ms`, lift (`transform`) a `.kk-appear` se vypnou úplně; spinnery
+  a progress bary animují dál, protože nesou význam),
   `styles/app.css` (**global responzivní polish vrstva** importovaná v `main.tsx` hned za
-  Bootswatch CSS — jen cross-cutting mobil/touch věci, které Bootstrap utility neumí: **safe-area
+  `tokens.css` — jen cross-cutting mobil/touch věci, které Bootstrap utility neumí: **safe-area
   insety** přes `env(safe-area-inset-*)` (fungují díky `viewport-fit=cover` v `index.html`) na
   navbaru (`.kukatko-navbar`) a hlavním kontejneru (`.kukatko-main`); guard proti vodorovnému
   scrollu/overscroll bounce (`body overflow-x:hidden`, `html overscroll-behavior-y:none`); sdílený
@@ -476,8 +514,9 @@ zapiš sem.
   dotykových zařízeních (telefon/tablet) vynutí min. 44px na `.btn`/`.form-control`/`.form-select`/
   `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link` + větší `.form-check-input`,
   bez zásahu do desktop (fine-pointer) layoutu a bez per-komponentových změn (systémová oprava
-  všudypřítomných `size="sm"` ovládání); **uvítací karty** `.kukatko-home-tile` (jemný hover
-  lift + zvýraznění okraje pro klikací karty na `HomePage`); **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
+  všudypřítomných `size="sm"` ovládání); **uvítací karty** `.kukatko-home-tile` (hover
+  lift + prohloubená elevace pro klikací karty na `HomePage`; durations z token vrstvy, takže
+  `prefers-reduced-motion` je vypne bez další práce); **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
   okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
   none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`
   (`.kukatko-filter-search` = search pole roste a plní řádek hlavičky, `.kukatko-filter-sort`

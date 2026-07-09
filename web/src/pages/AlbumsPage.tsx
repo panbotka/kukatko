@@ -5,6 +5,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
+import { EmptyState } from '../components/EmptyState'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { AlbumTile } from '../components/organize/AlbumTile'
 import { type AlbumCount, fetchAlbums } from '../services/organize'
@@ -45,7 +46,7 @@ export function AlbumsPage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h1 className="h3 mb-0">{t('albums.title')}</h1>
+        <h1 className="kk-page-title mb-0">{t('albums.title')}</h1>
         {canWrite && (
           <Button
             variant="primary"
@@ -69,10 +70,7 @@ export function AlbumsPage() {
       {state.status === 'error' && <Alert variant="danger">{t('albums.error')}</Alert>}
 
       {state.status === 'ready' && state.albums.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('albums.empty.title')}</p>
-          <p className="mb-0 small">{t('albums.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('albums.empty.title')} hint={t('albums.empty.hint')} />
       )}
 
       {state.status === 'ready' && state.albums.length > 0 && (

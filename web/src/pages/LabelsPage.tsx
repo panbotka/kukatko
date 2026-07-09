@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { EmptyState } from '../components/EmptyState'
 import { LabelEditModal } from '../components/organize/LabelEditModal'
 import { deleteLabel, fetchLabels, type Label, type LabelCount } from '../services/organize'
 
@@ -79,7 +80,7 @@ export function LabelsPage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h1 className="h3 mb-0">{t('labels.title')}</h1>
+        <h1 className="kk-page-title mb-0">{t('labels.title')}</h1>
         {canWrite && (
           <Button
             variant="primary"
@@ -105,18 +106,15 @@ export function LabelsPage() {
       {state.status === 'error' && <Alert variant="danger">{t('labels.error')}</Alert>}
 
       {state.status === 'ready' && state.labels.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('labels.empty.title')}</p>
-          <p className="mb-0 small">{t('labels.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('labels.empty.title')} hint={t('labels.empty.hint')} />
       )}
 
       {state.status === 'ready' && state.labels.length > 0 && (
-        <ListGroup>
+        <ListGroup className="gap-2">
           {state.labels.map((label) => (
             <ListGroup.Item
               key={label.uid}
-              className="d-flex align-items-center justify-content-between gap-2"
+              className="kk-tile-row d-flex align-items-center justify-content-between gap-2"
             >
               <Link to={`/labels/${label.uid}`} className="text-decoration-none flex-grow-1">
                 {label.name}{' '}

@@ -1,0 +1,385 @@
+/*
+ * Design token layer — the single source of truth for spacing, radii, elevation,
+ * motion and the typography scale.
+ *
+ * Bootswatch Superhero stays the base theme (a binding rule). This file is a
+ * *layer on top of it*: it never redefines Bootstrap's own `--bs-*` variables
+ * except where a component opts in, so upgrading Bootswatch stays safe. Every
+ * value is exposed as a `--kk-*` custom property; components consume the tokens
+ * (or the semantic classes below) instead of hard-coding pixels.
+ *
+ * Imported once, at the app root (`main.tsx`), before `app.css` so the polish
+ * layer can consume the tokens.
+ *
+ * Why the shadows look the way they do: Superhero is a dark theme, and a plain
+ * dark drop shadow is nearly invisible against a dark navy surface. Elevation is
+ * therefore expressed as a *pair* — a darker-than-background drop shadow plus a
+ * 1px top highlight ring (`inset 0 1px 0`) that catches the imaginary light and
+ * gives the surface an edge without a heavy border.
+ */
+
+:root {
+  /* ---- Spacing scale -------------------------------------------------
+     A 4px-based scale. Use these for gaps, padding and margins that
+     Bootstrap's own `p-*`/`m-*`/`gap-*` utilities cannot express (grid gaps,
+     component internals). Bootstrap's spacer stays independent. */
+  --kk-space-1: 0.25rem; /* 4px  — icon/label gaps */
+  --kk-space-2: 0.5rem; /* 8px  — tight internal padding */
+  --kk-space-3: 0.75rem; /* 12px — grid gutters */
+  --kk-space-4: 1rem; /* 16px — default block rhythm */
+  --kk-space-5: 1.5rem; /* 24px — section separation */
+  --kk-space-6: 2rem; /* 32px — page-level separation */
+  --kk-space-7: 3rem; /* 48px — hero / empty-state breathing room */
+
+  /* ---- Border radii ---------------------------------------------------
+     `sm` for controls and chips, `md` for cards/tiles, `lg` for panels and
+     modals, `pill` for badges and toggles. */
+  --kk-radius-sm: 0.375rem;
+  --kk-radius-md: 0.625rem;
+  --kk-radius-lg: 1rem;
+  --kk-radius-pill: 62.5rem;
+
+  /* ---- Elevation ------------------------------------------------------
+     Four steps, each a drop shadow + top highlight. `0` is the flat resting
+     state, `1` is a card at rest, `2` a card under the pointer, `3` a lifted
+     tile or an overlay. Above `3` use Bootstrap's own modal/backdrop chrome. */
+  --kk-shadow-0: none;
+  --kk-shadow-1:
+    0 1px 2px rgb(0 0 0 / 24%), 0 2px 6px rgb(0 0 0 / 16%), inset 0 1px 0 rgb(255 255 255 / 4%);
+  --kk-shadow-2:
+    0 2px 4px rgb(0 0 0 / 28%), 0 6px 16px rgb(0 0 0 / 22%), inset 0 1px 0 rgb(255 255 255 / 6%);
+  --kk-shadow-3:
+    0 4px 8px rgb(0 0 0 / 32%), 0 12px 28px rgb(0 0 0 / 28%), inset 0 1px 0 rgb(255 255 255 / 8%);
+
+  /* ---- Surfaces -------------------------------------------------------
+     Both are derived from the page background so they follow the theme.
+     `raised` is a panel or row sitting above the page. It is deliberately NOT
+     Superhero's card colour (`#4e5d6c`): that colour is also `secondary`, so an
+     `outline-secondary` button placed on it becomes invisible — its border and
+     label are exactly the surface. `sunken` is the well a thumbnail loads into,
+     so an unloaded tile reads as a quiet hole rather than a bright block. */
+  --kk-surface-raised: color-mix(in srgb, var(--bs-body-bg) 90%, #fff 10%);
+  --kk-surface-sunken: color-mix(in srgb, var(--bs-body-bg) 88%, #000 12%);
+
+  /* ---- Motion ---------------------------------------------------------
+     Three durations. `fast` for a colour/opacity swap under the pointer,
+     `base` for a lift or a panel toggle, `slow` for an element appearing.
+     The easing curve decelerates hard: things arrive, they do not coast. */
+  --kk-duration-fast: 120ms;
+  --kk-duration-base: 200ms;
+  --kk-duration-slow: 320ms;
+  --kk-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- Focus ring -----------------------------------------------------
+     Keyboard focus is never traded away for looks. The ring is the theme's
+     `info` cyan, which reads clearly against both the navy page and an
+     arbitrary photo thumbnail. */
+  --kk-focus-ring-color: var(--bs-info, #5bc0de);
+  --kk-focus-ring-width: 3px;
+  --kk-focus-ring-offset: 2px;
+
+  /* ---- Typography scale -----------------------------------------------
+     Exactly three text roles plus a caption. Components use the classes below
+     and never set `font-size` themselves. */
+  --kk-font-size-page-title: 1.75rem;
+  --kk-line-height-page-title: 1.2;
+  --kk-font-size-section-title: 1.125rem;
+  --kk-line-height-section-title: 1.35;
+  --kk-font-size-body: 1rem;
+  --kk-line-height-body: 1.55;
+  --kk-font-size-caption: 0.8125rem;
+  --kk-line-height-caption: 1.4;
+  --kk-tracking-tight: -0.01em;
+  --kk-tracking-wide: 0.04em;
+}
+
+/*
+ * Reduced motion: zero out the token durations so every transition built on
+ * them collapses to an instant state change. Deliberately scoped to the tokens
+ * and to the decorative transforms/keyframes below — spinners and progress bars
+ * carry meaning (something is happening) and keep animating.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --kk-duration-fast: 1ms;
+    --kk-duration-base: 1ms;
+    --kk-duration-slow: 1ms;
+  }
+}
+
+/* ---- Typography ------------------------------------------------------- */
+
+/*
+ * The page title. Exactly one per route, on the `<h1>`. Replaces the ad-hoc
+ * `h3`/`display-*` utilities pages used to reach for, so every page opens at
+ * the same size regardless of who wrote it.
+ */
+.kk-page-title {
+  font-size: var(--kk-font-size-page-title);
+  line-height: var(--kk-line-height-page-title);
+  font-weight: 600;
+  letter-spacing: var(--kk-tracking-tight);
+}
+
+/*
+ * A section title: the heading of a panel, a card, or a group inside a page.
+ * Sits clearly below the page title without competing with body copy.
+ */
+.kk-section-title {
+  font-size: var(--kk-font-size-section-title);
+  line-height: var(--kk-line-height-section-title);
+  font-weight: 600;
+  letter-spacing: var(--kk-tracking-tight);
+}
+
+/* Body copy. The default for prose inside panels and empty states. */
+.kk-text-body {
+  font-size: var(--kk-font-size-body);
+  line-height: var(--kk-line-height-body);
+}
+
+/*
+ * Captions: counts, timestamps, hints. One definition replaces the scattered
+ * `small` + inline `font-size` pairs.
+ */
+.kk-text-caption {
+  font-size: var(--kk-font-size-caption);
+  line-height: var(--kk-line-height-caption);
+}
+
+/* An eyebrow above a section title — used where a group needs a quiet label. */
+.kk-text-eyebrow {
+  font-size: var(--kk-font-size-caption);
+  line-height: var(--kk-line-height-caption);
+  font-weight: 600;
+  letter-spacing: var(--kk-tracking-wide);
+  text-transform: uppercase;
+}
+
+/* ---- Surfaces and elevation ------------------------------------------- */
+
+/*
+ * Cards trade their border for elevation, keeping Superhero's card colour.
+ * Bootstrap draws the card border from `--bs-card-border-color`, so overriding
+ * that variable (rather than the `border` shorthand) leaves `.border-primary`
+ * and friends free to paint an intentional, semantic border on top.
+ */
+.card {
+  --bs-card-border-color: transparent;
+  --bs-card-border-radius: var(--kk-radius-md);
+  --bs-card-inner-border-radius: calc(var(--kk-radius-md) - 1px);
+
+  box-shadow: var(--kk-shadow-1);
+  transition: box-shadow var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+/*
+ * A generic raised surface for panels that are not `.card` (sidebars, inline
+ * detail panels).
+ */
+.kk-surface {
+  background-color: var(--kk-surface-raised);
+  border-radius: var(--kk-radius-md);
+  box-shadow: var(--kk-shadow-1);
+}
+
+/* ---- Tiles ------------------------------------------------------------ */
+
+/*
+ * The shared affordance behind album, label, people and photo tiles: a
+ * borderless thumbnail that lifts and brightens under the pointer, and shows a
+ * clear focus ring for the keyboard.
+ *
+ * `.kk-tile` goes on the interactive element (a link, a button, a list item);
+ * `.kk-tile__media` on the thumbnail box it contains. Splitting the two keeps
+ * the lift on the whole tile while the shadow hugs the image's rounded corners.
+ */
+.kk-tile {
+  border-radius: var(--kk-radius-md);
+  transition:
+    transform var(--kk-duration-base) var(--kk-ease-standard),
+    box-shadow var(--kk-duration-base) var(--kk-ease-standard),
+    background-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-tile__media {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--kk-radius-md);
+  background-color: var(--kk-surface-sunken);
+  box-shadow: var(--kk-shadow-1);
+  transition: box-shadow var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+/*
+ * `:focus-within` covers the photo grid, where the tile is a wrapper and the
+ * focusable element is the media box inside it (the wrapper also hosts sibling
+ * overlays — the favourite heart, the rating stars — which must not nest inside
+ * the link).
+ */
+.kk-tile:hover,
+.kk-tile:focus-visible,
+.kk-tile:focus-within {
+  transform: translateY(-2px);
+}
+
+.kk-tile:hover .kk-tile__media,
+.kk-tile:focus-visible .kk-tile__media,
+.kk-tile:focus-within .kk-tile__media {
+  box-shadow: var(--kk-shadow-3);
+}
+
+/*
+ * Focus must remain obvious. The ring is drawn with `outline`, which paints
+ * outside the box and so survives the thumbnail's `overflow: hidden`; the
+ * offset keeps it clear of the rounded corners.
+ */
+.kk-tile:focus-visible,
+.kk-tile__media:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+/*
+ * A tile rendered as a row rather than a thumbnail (the labels list). It keeps
+ * the elevation/hover contract but highlights instead of lifting, because a row
+ * in a stack has nowhere to lift to without colliding with its neighbours.
+ */
+.kk-tile-row {
+  /* Rendered as a `.list-group-item`, whose border is drawn from this variable;
+     zeroing it (rather than the `border` shorthand) also disables Bootstrap's
+     adjacent-sibling border collapsing, so gapped rows keep a uniform box. */
+  --bs-list-group-border-width: 0;
+
+  border-radius: var(--kk-radius-md);
+  background-color: var(--kk-surface-raised);
+  box-shadow: var(--kk-shadow-1);
+  transition:
+    box-shadow var(--kk-duration-base) var(--kk-ease-standard),
+    background-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+/* Bootstrap rounds only the first/last item, from the group's own radius —
+   align it with the tile radius so a gapped list looks like a stack of tiles. */
+.list-group {
+  --bs-list-group-border-radius: var(--kk-radius-md);
+}
+
+.kk-tile-row:hover,
+.kk-tile-row:focus-within {
+  background-color: color-mix(in srgb, var(--kk-surface-raised) 88%, var(--bs-primary) 12%);
+  box-shadow: var(--kk-shadow-2);
+}
+
+/* The placeholder shown inside a tile whose cover thumbnail is missing. */
+.kk-tile__placeholder {
+  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The lift is decorative; the shadow/colour change alone still signals hover. */
+  .kk-tile:hover,
+  .kk-tile:focus-visible,
+  .kk-tile:focus-within {
+    transform: none;
+  }
+}
+
+/* ---- Appear ------------------------------------------------------------ */
+
+/*
+ * A one-shot entrance for content that replaces a spinner (empty states,
+ * freshly loaded panels). Non-essential by definition, so it is skipped
+ * entirely under `prefers-reduced-motion`.
+ */
+@keyframes kk-appear {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.kk-appear {
+  animation: kk-appear var(--kk-duration-slow) var(--kk-ease-standard) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-appear {
+    animation: none;
+  }
+}
+
+/* ---- Empty state ------------------------------------------------------- */
+
+/*
+ * A centred column: icon, title, one-line hint, optional action. Generous
+ * vertical padding because an empty collection should read as intentional
+ * breathing room, not as a page that failed to load.
+ */
+.kk-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kk-space-2);
+  padding-block: var(--kk-space-7);
+  padding-inline: var(--kk-space-4);
+  text-align: center;
+}
+
+.kk-empty-state__icon {
+  display: grid;
+  place-items: center;
+  width: 4rem;
+  height: 4rem;
+  margin-bottom: var(--kk-space-1);
+  border-radius: var(--kk-radius-pill);
+  background-color: var(--kk-surface-raised);
+  box-shadow: var(--kk-shadow-1);
+  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
+}
+
+/*
+ * `--bs-emphasis-color` is `#000` at Superhero's root (the theme only flips it
+ * inside `[data-bs-theme="dark"]`), so the title takes the body colour instead
+ * — otherwise it renders black on the navy page.
+ */
+.kk-empty-state__title {
+  margin: 0;
+  color: var(--bs-body-color, #fff);
+}
+
+.kk-empty-state__hint {
+  max-width: 42ch;
+  margin: 0;
+  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
+}
+
+.kk-empty-state__action {
+  margin-top: var(--kk-space-3);
+}
+
+/*
+ * The compact variant fits inside a tile or a narrow panel: smaller icon, no
+ * outer padding, and the hint suppressed by the caller.
+ */
+.kk-empty-state--sm {
+  gap: var(--kk-space-1);
+  padding-block: var(--kk-space-3);
+}
+
+.kk-empty-state--sm .kk-empty-state__icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-bottom: 0;
+
+  /* Inside a tile's sunken well or a floating overlay the medallion would read
+     as a second surface; the glyph alone is enough at this size. */
+  background-color: transparent;
+  box-shadow: none;
+}

@@ -3,6 +3,7 @@ import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -28,7 +29,7 @@ export function FavoritesPage() {
 
   return (
     <>
-      <h1 className="h3 mb-3">{t('favorites.title')}</h1>
+      <h1 className="kk-page-title mb-3">{t('favorites.title')}</h1>
 
       <FilterBar view={view} onChange={setView} total={total} />
 
@@ -44,10 +45,7 @@ export function FavoritesPage() {
       )}
 
       {status === 'ready' && photos.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('favorites.empty.title')}</p>
-          <p className="mb-0 small">{t('favorites.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('favorites.empty.title')} hint={t('favorites.empty.hint')} />
       )}
 
       {status === 'ready' && photos.length > 0 && (

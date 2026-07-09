@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -197,7 +198,7 @@ export function AlbumDetailPage() {
           <Link to="/albums" className="text-decoration-none">
             ← {t('albumDetail.back')}
           </Link>
-          <h1 className="h3 mb-0">{album?.title ?? ''}</h1>
+          <h1 className="kk-page-title mb-0">{album?.title ?? ''}</h1>
           {album?.private && <Badge bg="secondary">{t('albums.private')}</Badge>}
         </div>
         {album && mode === 'browse' && (
@@ -284,10 +285,7 @@ export function AlbumDetailPage() {
       )}
 
       {status === 'ready' && photos.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('albumDetail.empty.title')}</p>
-          <p className="mb-0 small">{t('albumDetail.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('albumDetail.empty.title')} hint={t('albumDetail.empty.hint')} />
       )}
 
       {status === 'ready' && photos.length > 0 && mode === 'reorder' && (

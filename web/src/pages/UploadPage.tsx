@@ -36,7 +36,7 @@ export function UploadPage() {
 
   return (
     <>
-      <h1 className="h3 mb-1">{t('upload.title')}</h1>
+      <h1 className="kk-page-title mb-1">{t('upload.title')}</h1>
       <p className="text-secondary">{t('upload.subtitle')}</p>
 
       <DropZone onFiles={addFiles} />
@@ -44,7 +44,7 @@ export function UploadPage() {
       {hasItems && (
         <>
           <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-            <h2 className="h5 mb-0">{t('upload.queue.heading')}</h2>
+            <h2 className="kk-section-title mb-0">{t('upload.queue.heading')}</h2>
             <div className="d-flex flex-wrap gap-2">
               <Button type="button" variant="primary" onClick={start} disabled={!hasQueued}>
                 {t('upload.actions.start', { count: summary.queued })}

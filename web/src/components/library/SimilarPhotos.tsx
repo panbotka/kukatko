@@ -52,7 +52,7 @@ export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
   if (state.status === 'loading') {
     return (
       <section aria-label={t('similar.title')}>
-        <h2 className="h6 mb-2">{t('similar.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('similar.title')}</h2>
         <div className="d-flex justify-content-center py-3">
           <Spinner animation="border" role="status" size="sm">
             <span className="visually-hidden">{t('similar.loading')}</span>
@@ -65,7 +65,7 @@ export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
   if (state.status === 'error') {
     return (
       <section aria-label={t('similar.title')}>
-        <h2 className="h6 mb-2">{t('similar.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('similar.title')}</h2>
         <p className="text-secondary small mb-0">{t('similar.error')}</p>
       </section>
     )
@@ -79,7 +79,7 @@ export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
 
   return (
     <section aria-label={t('similar.title')}>
-      <h2 className="h6 mb-2">{t('similar.title')}</h2>
+      <h2 className="kk-section-title mb-2">{t('similar.title')}</h2>
       <div className="d-flex gap-2 overflow-auto pb-2" style={{ scrollSnapType: 'x proximity' }}>
         {state.photos.map((photo) => {
           const label = photo.title !== '' ? photo.title : photo.file_name

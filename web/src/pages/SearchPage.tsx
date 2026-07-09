@@ -6,6 +6,7 @@ import Form from 'react-bootstrap/Form'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -65,7 +66,7 @@ export function SearchPage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h1 className="h3 mb-0">{t('search.title')}</h1>
+        <h1 className="kk-page-title mb-0">{t('search.title')}</h1>
         <Button
           variant="outline-secondary"
           size="sm"
@@ -132,7 +133,7 @@ export function SearchPage() {
 
       {status === 'idle' && (
         <div className="text-center text-secondary py-5">
-          <p className="mb-0 fs-5">{t('search.prompt')}</p>
+          <p className="mb-0 kk-section-title">{t('search.prompt')}</p>
         </div>
       )}
 
@@ -148,10 +149,7 @@ export function SearchPage() {
       )}
 
       {status === 'ready' && photos.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('search.empty.title')}</p>
-          <p className="mb-0 small">{t('search.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('search.empty.title')} hint={t('search.empty.hint')} />
       )}
 
       {status === 'ready' && photos.length > 0 && (

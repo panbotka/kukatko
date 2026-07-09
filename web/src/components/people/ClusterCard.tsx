@@ -75,7 +75,7 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
                 variant="danger"
                 size="sm"
                 className="position-absolute top-0 end-0 p-0 lh-1"
-                style={{ width: '18px', height: '18px', fontSize: '0.7rem' }}
+                style={{ width: '18px', height: '18px', fontSize: 'var(--kk-font-size-caption)' }}
                 disabled={busy}
                 aria-label={t('clusters.removeFace')}
                 onClick={() => {

@@ -5,6 +5,7 @@ import Button from 'react-bootstrap/Button'
 import ListGroup from 'react-bootstrap/ListGroup'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -112,7 +113,7 @@ export function PlacesPage() {
   return (
     <>
       <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
-        <h1 className="h3 mb-0">{t('places.title')}</h1>
+        <h1 className="kk-page-title mb-0">{t('places.title')}</h1>
       </div>
 
       {/* Breadcrumb drill: Places / Country / City, each level clickable. */}
@@ -164,10 +165,7 @@ export function PlacesPage() {
           {/* Level 1: countries. */}
           {country === '' &&
             (state.countries.length === 0 ? (
-              <div className="text-center text-secondary py-5">
-                <p className="mb-1 fs-5">{t('places.empty.title')}</p>
-                <p className="mb-0 small">{t('places.empty.hint')}</p>
-              </div>
+              <EmptyState title={t('places.empty.title')} hint={t('places.empty.hint')} />
             ) : (
               <ListGroup>
                 {state.countries.map((c) => (
@@ -192,10 +190,7 @@ export function PlacesPage() {
           {country !== '' &&
             city === '' &&
             (selectedCountry === undefined || selectedCountry.cities.length === 0 ? (
-              <div className="text-center text-secondary py-5">
-                <p className="mb-1 fs-5">{t('places.noCities.title')}</p>
-                <p className="mb-0 small">{t('places.noCities.hint')}</p>
-              </div>
+              <EmptyState title={t('places.noCities.title')} hint={t('places.noCities.hint')} />
             ) : (
               <ListGroup>
                 {selectedCountry.cities.map((c) => (
@@ -236,10 +231,10 @@ export function PlacesPage() {
               )}
 
               {status === 'ready' && photos.length === 0 && (
-                <div className="text-center text-secondary py-5">
-                  <p className="mb-1 fs-5">{t('places.emptyPhotos.title')}</p>
-                  <p className="mb-0 small">{t('places.emptyPhotos.hint')}</p>
-                </div>
+                <EmptyState
+                  title={t('places.emptyPhotos.title')}
+                  hint={t('places.emptyPhotos.hint')}
+                />
               )}
 
               {status === 'ready' && photos.length > 0 && (

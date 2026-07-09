@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { EmptyState } from '../components/EmptyState'
 import { SubjectTile } from '../components/people/SubjectTile'
 import { fetchSubjects, type SubjectCount } from '../services/people'
 
@@ -46,7 +47,7 @@ export function PeoplePage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h1 className="h3 mb-0">{t('people.title')}</h1>
+        <h1 className="kk-page-title mb-0">{t('people.title')}</h1>
         {canWrite && (
           <Link to="/people/clusters" className="btn btn-outline-primary">
             {t('people.reviewClusters')}
@@ -65,10 +66,7 @@ export function PeoplePage() {
       {state.status === 'error' && <Alert variant="danger">{t('people.error')}</Alert>}
 
       {state.status === 'ready' && state.subjects.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('people.empty.title')}</p>
-          <p className="mb-0 small">{t('people.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('people.empty.title')} hint={t('people.empty.hint')} />
       )}
 
       {state.status === 'ready' && state.subjects.length > 0 && (

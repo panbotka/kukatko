@@ -297,7 +297,7 @@ function AdvancedFilters({
     <Row className="kukatko-filter-panel g-3">
       <Col xs={12} lg={6}>
         <fieldset className="mb-0">
-          <legend className="col-form-label pt-0 fw-semibold fs-6">
+          <legend className="col-form-label pt-0 fw-semibold kk-text-body">
             {t('library.filters.dateRange')}
           </legend>
           <Row className="g-2">

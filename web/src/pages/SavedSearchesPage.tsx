@@ -6,6 +6,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { EmptyState } from '../components/EmptyState'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { savedSearchHref } from '../lib/savedSearchView'
 import { deleteSavedSearch, fetchSavedSearches, type SavedSearch } from '../services/savedSearches'
@@ -80,7 +81,7 @@ export function SavedSearchesPage() {
 
   return (
     <>
-      <h1 className="h3 mb-3">{t('savedSearches.title')}</h1>
+      <h1 className="kk-page-title mb-3">{t('savedSearches.title')}</h1>
 
       {actionError && <Alert variant="danger">{t('savedSearches.actionError')}</Alert>}
 
@@ -95,10 +96,7 @@ export function SavedSearchesPage() {
       {state.status === 'error' && <Alert variant="danger">{t('savedSearches.error')}</Alert>}
 
       {state.status === 'ready' && state.searches.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-1 fs-5">{t('savedSearches.empty.title')}</p>
-          <p className="mb-0 small">{t('savedSearches.empty.hint')}</p>
-        </div>
+        <EmptyState title={t('savedSearches.empty.title')} hint={t('savedSearches.empty.hint')} />
       )}
 
       {state.status === 'ready' && state.searches.length > 0 && (

@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { EmptyState } from '../components/EmptyState'
 import { Outliers } from '../components/people/Outliers'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
 import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
@@ -104,7 +105,7 @@ export function SubjectPage() {
           <Link to="/people" className="text-decoration-none">
             ← {t('subject.back')}
           </Link>
-          <h1 className="h3 mb-0">{subject.name}</h1>
+          <h1 className="kk-page-title mb-0">{subject.name}</h1>
           <Badge bg="secondary">{t(`subject.type.${subject.type}`)}</Badge>
         </div>
         {canWrite && (
@@ -120,7 +121,7 @@ export function SubjectPage() {
         )}
       </div>
 
-      <h2 className="h5">{t('subject.photos')}</h2>
+      <h2 className="kk-section-title">{t('subject.photos')}</h2>
       {status === 'loading' && (
         <div className="d-flex justify-content-center py-4">
           <Spinner animation="border" role="status" size="sm">
@@ -128,11 +129,7 @@ export function SubjectPage() {
           </Spinner>
         </div>
       )}
-      {status === 'ready' && photos.length === 0 && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-0 fs-5">{t('subject.noPhotos')}</p>
-        </div>
-      )}
+      {status === 'ready' && photos.length === 0 && <EmptyState title={t('subject.noPhotos')} />}
       {photos.length > 0 && (
         <>
           <div
@@ -172,7 +169,7 @@ export function SubjectPage() {
 
       {canWrite && (
         <section className="mt-4">
-          <h2 className="h5">{t('outliers.title')}</h2>
+          <h2 className="kk-section-title">{t('outliers.title')}</h2>
           <p className="text-secondary small">{t('outliers.subtitle')}</p>
           <Outliers subjectUid={subject.uid} />
         </section>

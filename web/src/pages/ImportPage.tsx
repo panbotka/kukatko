@@ -10,6 +10,7 @@ import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
+import { EmptyState } from '../components/EmptyState'
 import { formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
 import {
@@ -163,7 +164,7 @@ function JobStatsBar({ stats }: { stats: JobStats }) {
   return (
     <Card className="mb-4">
       <Card.Body>
-        <h2 className="h6 mb-2">{t('import.jobs.title')}</h2>
+        <h2 className="kk-section-title mb-2">{t('import.jobs.title')}</h2>
         <div className="d-flex gap-2 flex-wrap">
           <Badge bg="secondary">
             {t('import.jobs.queued')}: {stats.by_state.queued ?? 0}
@@ -187,7 +188,7 @@ function JobStatsBar({ stats }: { stats: JobStats }) {
 function RunHistoryTable({ runs }: { runs: ImportRun[] }) {
   const { t, i18n } = useTranslation()
   if (runs.length === 0) {
-    return <p className="text-secondary">{t('import.history.empty')}</p>
+    return <EmptyState size="sm" title={t('import.history.empty')} />
   }
   return (
     <Table striped hover responsive size="sm">
@@ -293,7 +294,7 @@ export function ImportPage() {
 
   return (
     <>
-      <h1 className="h3 mb-3">{t('import.title')}</h1>
+      <h1 className="kk-page-title mb-3">{t('import.title')}</h1>
       <Alert variant="info">
         <p className="mb-1">{t('import.intro')}</p>
         <p className="mb-0 small">{t('import.warnFirstRun')}</p>
@@ -330,7 +331,7 @@ export function ImportPage() {
 
           {jobStats && <JobStatsBar stats={jobStats} />}
 
-          <h2 className="h5 mb-3">{t('import.history.title')}</h2>
+          <h2 className="kk-section-title mb-3">{t('import.history.title')}</h2>
           <RunHistoryTable runs={state.runs} />
         </>
       )}

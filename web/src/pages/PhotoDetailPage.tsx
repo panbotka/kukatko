@@ -252,7 +252,7 @@ export function PhotoDetailPage() {
         <Link to={backHref(view)} className="text-decoration-none">
           ← {t('photo.back')}
         </Link>
-        <h1 className="h3 mb-0 text-truncate">{title}</h1>
+        <h1 className="kk-page-title mb-0 text-truncate">{title}</h1>
         <div className="ms-auto d-flex align-items-center gap-2 flex-wrap">
           <RatingStars
             rating={rating.rating}
@@ -320,7 +320,7 @@ export function PhotoDetailPage() {
           </div>
 
           <section className="mt-3" aria-label={t('faces.title')}>
-            <h2 className="h6 mb-2">{t('faces.title')}</h2>
+            <h2 className="kk-section-title mb-2">{t('faces.title')}</h2>
             <FaceOverlay photoUid={photo.uid} readOnly={!canWrite} />
           </section>
         </Col>

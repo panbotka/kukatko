@@ -60,7 +60,7 @@ export function DropZone({ onFiles }: DropZoneProps) {
         onDragEnter={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        <span className="fs-5 fw-semibold mb-1">
+        <span className="kk-section-title mb-1">
           {dragActive ? t('upload.dropzone.active') : t('upload.dropzone.headline')}
         </span>
         <span className="text-secondary mb-3">{t('upload.dropzone.hint')}</span>

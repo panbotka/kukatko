@@ -78,9 +78,9 @@ export function AccountPage() {
   return (
     <Row className="justify-content-center">
       <Col xs={12} md={8} lg={6}>
-        <h1 className="h3 mb-4">{t('account.title')}</h1>
+        <h1 className="kk-page-title mb-4">{t('account.title')}</h1>
 
-        <Card bg="dark" text="light" border="secondary" className="mb-4">
+        <Card text="light" className="mb-4">
           <Card.Body>
             <dl className="row mb-0">
               <dt className="col-sm-4">{t('account.username')}</dt>
@@ -99,9 +99,9 @@ export function AccountPage() {
           </Card.Body>
         </Card>
 
-        <Card bg="dark" text="light" border="secondary">
+        <Card text="light">
           <Card.Body>
-            <Card.Title as="h2" className="h5 mb-3">
+            <Card.Title as="h2" className="kk-section-title mb-3">
               {t('account.changePassword')}
             </Card.Title>
 

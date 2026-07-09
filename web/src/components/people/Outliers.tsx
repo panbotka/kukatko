@@ -5,6 +5,8 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { EmptyState } from '../EmptyState'
+
 import {
   assignFace,
   fetchOutliers,
@@ -101,7 +103,7 @@ export function Outliers({ subjectUid }: OutliersProps) {
 
   const { faces, meaningful } = state.result
   if (faces.length === 0) {
-    return <p className="text-secondary small mb-0">{t('outliers.empty')}</p>
+    return <EmptyState size="sm" title={t('outliers.empty')} />
   }
 
   return (

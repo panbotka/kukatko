@@ -52,7 +52,9 @@ export function GlobalSearchSections({ query }: { query: string }) {
     <section aria-label={t('globalSearch.sectionsLabel')} className="mb-4">
       {result.albums.length > 0 && (
         <div className="mb-3">
-          <h2 className="h6 text-secondary mb-2">{t('globalSearch.groups.albums')}</h2>
+          <h2 className="kk-section-title text-secondary mb-2">
+            {t('globalSearch.groups.albums')}
+          </h2>
           <div className="d-flex flex-wrap gap-2">
             {result.albums.map((album) => (
               <Link
@@ -75,7 +77,9 @@ export function GlobalSearchSections({ query }: { query: string }) {
 
       {result.people.length > 0 && (
         <div className="mb-3">
-          <h2 className="h6 text-secondary mb-2">{t('globalSearch.groups.people')}</h2>
+          <h2 className="kk-section-title text-secondary mb-2">
+            {t('globalSearch.groups.people')}
+          </h2>
           <div className="d-flex flex-wrap gap-2">
             {result.people.map((person) => (
               <Link
@@ -95,7 +99,9 @@ export function GlobalSearchSections({ query }: { query: string }) {
 
       {result.labels.length > 0 && (
         <div className="mb-3">
-          <h2 className="h6 text-secondary mb-2">{t('globalSearch.groups.labels')}</h2>
+          <h2 className="kk-section-title text-secondary mb-2">
+            {t('globalSearch.groups.labels')}
+          </h2>
           <div className="d-flex flex-wrap gap-2">
             {result.labels.map((label) => (
               <Link key={label.uid} to={`/labels/${label.uid}`} className="text-decoration-none">

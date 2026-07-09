@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { EmptyState } from '../EmptyState'
+
 import { type SubjectCount } from '../../services/people'
 import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
 
@@ -22,12 +24,12 @@ export function SubjectTile({ subject }: SubjectTileProps) {
   return (
     <Link
       to={`/people/${subject.uid}`}
-      className="d-block text-decoration-none text-body"
+      className="kk-tile d-block text-decoration-none text-body"
       aria-label={subject.name}
       title={subject.name}
     >
       <div
-        className="position-relative bg-secondary-subtle overflow-hidden rounded mb-1 d-flex align-items-center justify-content-center"
+        className="kk-tile__media mb-1 d-flex align-items-center justify-content-center"
         style={{ aspectRatio: '1 / 1' }}
       >
         {cover !== undefined && cover !== '' ? (
@@ -40,7 +42,7 @@ export function SubjectTile({ subject }: SubjectTileProps) {
             style={{ objectFit: 'cover' }}
           />
         ) : (
-          <span className="text-secondary small p-2 text-center">{t('people.noCover')}</span>
+          <EmptyState size="sm" title={t('people.noCover')} className="kk-tile__placeholder" />
         )}
         {subject.private && (
           <span
@@ -52,7 +54,7 @@ export function SubjectTile({ subject }: SubjectTileProps) {
         )}
       </div>
       <div className="fw-semibold text-truncate">{subject.name}</div>
-      <div className="small text-secondary">
+      <div className="kk-text-caption text-secondary">
         {t('people.photoCount', { count: subject.marker_count })}
       </div>
     </Link>
