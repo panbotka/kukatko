@@ -171,10 +171,13 @@ Measured end to end on the Raspberry Pi dev box with warm Go/golangci/npm caches
 | `make check` | wall time |
 | --- | --- |
 | before this change | 173 s |
-| after, `npm ci` still needed | 136 s |
-| after, lockfile unchanged | 137 s |
+| after, first run | 133 s |
+| after, immediate rerun | 130 s |
 
-Where the ~37 s went: the race detector (`CGO_ENABLED=1 go test -race ./...` takes 48 s against
+Both "after" runs had an up-to-date stamp, so neither reran `npm ci`; a lockfile change adds
+that back as a one-off (~7 s).
+
+Where the ~40 s went: the race detector (`CGO_ENABLED=1 go test -race ./...` takes 48 s against
 14 s for the cache-sharing `CGO_ENABLED=0 go test ./...`), `npm ci` (7 s), and the duplicate
 `go vet` compile (1 s) — offset by the 16 s newly spent on `tsc`, which used to hide until
 `make build`.
