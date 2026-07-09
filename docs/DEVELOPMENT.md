@@ -166,6 +166,19 @@ integration packages want a database.
 The test bucket (`kukatko-test` by default) is created if absent and **emptied between
 cases** — point the variables at a throwaway bucket, never at a real one.
 
+`internal/backup` has an integration test for the **bucket-to-bucket** originals backup, behind the
+same variables. It needs **two** buckets, derived from `KUKATKO_TEST_S3_BUCKET` by suffix
+(`kukatko-test-primary` and `kukatko-test-backup`); both are created if absent and emptied between
+cases. It covers the server-side copy, an incremental re-run that copies nothing new, the fact that
+an object deleted from the primary survives in the backup, and the loud failure when no target is
+configured. No database is needed:
+
+```bash
+KUKATKO_TEST_S3_ENDPOINT=http://127.0.0.1:18100 \
+KUKATKO_TEST_S3_ACCESS_KEY=kukatko KUKATKO_TEST_S3_SECRET_KEY=kukatko-secret \
+  go test -tags=integration -run TestBucketBackup ./internal/backup/
+```
+
 `internal/storagemigrate` has an integration test that wants **both**: the bucket *and*
 `KUKATKO_TEST_DATABASE_URL`, because it migrates a fixture library out of a real catalogue,
 kills the run mid-photo, resumes it, and asserts every object landed exactly once and that the

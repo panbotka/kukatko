@@ -919,13 +919,15 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   přes `importer.Store.List`); celá API se v `serve` mountuje vždy (`buildImportAPI` v
   `cmd/kukatko/import.go`), aby historie fungovala i bez zdroje; triggery neběží inline — patří na
   background worker), `internal/backup/`
-  (v procesu, plánovaná **S3 záloha** databáze a originálů, vše za rozhraními
-  `ObjectStore`/`Dumper`/`OriginalSource` → unit-testovatelné s faky bez S3/DB/FS; `Service` =
+  (v procesu, plánovaná **S3 záloha** databáze a originálů do **druhého, nezávislého bucketu**, vše
+  za rozhraními `ObjectStore`/`Dumper`/`OriginalSource` → unit-testovatelné s faky bez S3/DB/FS;
+  `Service` =
   `New(Config{Objects,Originals,Dumper,Retention,Logger})` (panika na nil Objects/Originals/Dumper);
   **`Run(ctx,ts)`** dělá tři věci v pořadí: (1) **dump DB** přes `Dumper` streamovaný na S3 jako
   `db/kukatko-<ts>.dump` (`objectSize=-1`, nikdy celý v RAM; ts dodá plánovač/příkaz), (2)
   **inkrementální sync originálů** (`SyncOriginals` — skip dle klíče+velikosti přes `ObjectStore.Stat`,
-  klíč = relativní cesta originálu), (3) **retence** (`PruneDumps` — prořeže staré dumpy na posledních
+  klíč = relativní cesta originálu; **čistě aditivní**, smazání ve zdroji se nepropaguje), (3)
+  **retence** (`PruneDumps` — prořeže staré dumpy na posledních
   `Retention`, `≤0` = nechat vše; **jen prefix `db/`, nikdy originály**); **dump je povinný** — selhání
   abortuje běh **před** prořezáním, takže neúspěšná záloha nemůže smazat poslední dobré dumpy;
   `Run` serializuje souběžné běhy (`ErrAlreadyRunning`), `Trigger(ctx,ts)` spustí běh na pozadí
@@ -935,12 +937,26 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   vypnuté, manuální fungují) s vlastní ctx-aware smyčkou; **`s3Store`** (`NewS3Store(S3Options)`) =
   minio-go/v7 adaptér, **path-style** (`BucketLookupPath`), `parseEndpoint` (scheme→TLS, bare host =
   TLS), sentinely `ErrNotConfigured`/`ErrInvalidEndpoint`, `isNotFound` (404/NoSuchKey) → Stat
-  ok=false / Remove idempotentní; **`pgDumper`** (`NewPgDumper(dsn)`) = shell-out `pg_dump
+  ok=false / Remove idempotentní, **`CopyFrom(srcBucket,srcKey,key)`** = **server-side copy** přes
+  `ComposeObject` (jeden zdroj → degraduje na prostý `CopyObject`, nad 5 GiB sáhne po multipart
+  copy) — bajty **neprojdou procesem**; request jde na *tenhle* endpoint, takže jeho credentials
+  musí umět **číst `srcBucket`**; **`pgDumper`** (`NewPgDumper(dsn)`) = shell-out `pg_dump
   --format=custom --no-owner --no-privileges`, **DSN přes env `PGDATABASE`** (ne argument, aby heslo
   nebylo v `ps`), `Dump` vrací reader (Close čeká na proces + surfacuje stderr), `PgDumpAvailable`,
-  `ErrPgDumpMissing`; **`DiskOriginals`** (`NewDiskOriginals(root)`) = walk úložiště (skip `.tmp`,
-  confine klíče proti traversalu) — **slouží i obnově** přes `Stat(key)` (existuje + velikost, pro
-  skip-existing) a `Write(key,r)` (atomický zápis do `.tmp` + rename → resumovatelné); klíče
+  `ErrPgDumpMissing`;
+  **zdroj originálů** = `OriginalSource` (`List` + `CopyTo(ctx,dst,original)`; `CopyTo` si sám volí,
+  jak bajty přenese) a vybírá ho `storage.backend` v `cmd/kukatko/backup.go` (`buildBackupOriginals`):
+  **`DiskOriginals`** (`NewDiskOriginals(root)`, backend `fs`) = walk úložiště (skip `.tmp`,
+  confine klíče proti traversalu), `CopyTo` streamuje soubor nahoru přes `Put` — **slouží i obnově**
+  přes `Stat(key)` (existuje + velikost, pro skip-existing) a `Write(key,r)` (atomický zápis do
+  `.tmp` + rename → resumovatelné);
+  **`BucketOriginals`** (`bucket.go`, `NewBucketOriginals(source,bucket)`, backend `r2`) = `List`
+  vylistuje primární bucket (skip prefixů `db/` a `.tmp/` — dump ani rozdělaný upload není originál),
+  `CopyTo` deleguje na `dst.CopyFrom` → **kopie bucket→bucket server-side**, takže knihovna se nikdy
+  netahá na VPS, aby se odtud nahrála zpět; sentinely `ErrNoSourceStore`/`ErrNoSourceBucket`
+  (nenakonfigurovaný primár **nesmí** vypadat jako prázdná knihovna) a `errBackupSameBucket` ve
+  wiringu (mířit zálohu na primární bucket = nezálohovat nic). **Objektový store nemá verzování**,
+  druhý bucket je jediná ochrana proti smazání → originály se **nikdy** neexpirují; klíče ani
   tajemství nikdy nelogovat;
   **OBNOVA / disaster recovery** (`restore.go`, `pgrestore.go` — protějšek zálohy): `ObjectStore`
   rozšířeno o **`Open(ctx,key)`** (stream GET z bucketu, na `s3Store` přes `minio GetObject`); nová

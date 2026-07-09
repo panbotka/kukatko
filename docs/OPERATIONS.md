@@ -29,6 +29,8 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   potřebuje `import.photoprism.base_url`, jinak chyba; pro ops/cron bez běžícího serveru),
   `kukatko backup` (synchronní jednorázová **S3 záloha** — `internal/backup`; pg_dump + sync
   originálů + retence; potřebuje `backup.s3.{endpoint,bucket}`, jinak `errBackupNotConfigured`;
+  při `storage.backend: r2` se originály **kopírují bucket→bucket server-side** a záloha do
+  **téhož** bucketu, ve kterém leží knihovna, skončí `errBackupSameBucket`;
   pro ops/cron bez běžícího serveru),
   **`kukatko restore`** (strom obnovy/disaster recovery — `internal/backup`; sdílí `backup.s3.*`,
   jinak `errRestoreNotConfigured`; pro ops/cron bez běžícího serveru): `restore list` (dumpy v
@@ -128,6 +130,29 @@ kukatko storage migrate-to-r2 --delete-local                 # nahraj a uklízej
   nová metoda rozhraní. Než vznikne, musí nasazení na R2 zrcadlit náhledy do bucketu **mimo aplikaci**
   (např. `rclone sync` z `cache_path`), jinak Worker odpoví na každou dlaždici 404. Originálů a videa
   se to netýká — ty do bucketu zapisuje `Store` při importu.
+- **Backup klíče (`backup.*`, `internal/backup`):** `backup.s3.*` popisuje **druhý, nezávislý
+  bucket** — `endpoint`, `region`, `bucket`, `access_key`/`secret_key` a `path_style` (bool,
+  default false; MinIO a většina self-hosted S3 ho chce). Nesdílí **nic** se `storage.r2.*`, takže
+  záloha může žít v jiném účtu i u jiného poskytovatele; **nepředpokládej, že oba jsou R2.** Dál
+  `backup.schedule` (5-pole cron / `@daily`/`@every`; prázdné vypne plánovač) a `backup.retention`
+  (kolik posledních **dumpů** nechat, ≤ 0 = nechat vše). Env: `KUKATKO_BACKUP_S3_ENDPOINT`/
+  `_REGION`/`_BUCKET`/`_ACCESS_KEY`/`_SECRET_KEY`/`_PATH_STYLE`, `KUKATKO_BACKUP_SCHEDULE`,
+  `KUKATKO_BACKUP_RETENTION`.
+  **Odkud se berou originály, určuje `storage.backend`:** `fs` → `backup.DiskOriginals` prochází
+  `storage.originals_path` a streamuje soubory nahoru; `r2` → `backup.BucketOriginals` vylistuje
+  primární bucket a nechá **backup endpoint objekt zkopírovat server-side** (`CopyObject` přes
+  `ComposeObject`, takže i objekt > 5 GiB projde multipart copy) — payload **nikdy neteče přes
+  aplikaci**, což je celý smysl na VPS, jehož disk knihovnu neunese.
+  **Důsledek pro oprávnění:** server-side copy se posílá na `backup.s3.endpoint` s primárním
+  bucketem jako zdrojem, takže `backup.s3.access_key` musí umět **číst `storage.r2.bucket`**
+  (typicky tentýž S3 service / účet, nebo cross-account grant). `retention` prořezává **jen
+  prefix `db/`** — originály se **nikdy neexpirují** a smazání v primárním bucketu se do zálohy
+  **nepropaguje**; kopie je čistě aditivní. **Raději hlasitě spadnout než potichu zazálohovat
+  nic:** chybějící `backup.s3.{endpoint,bucket}` → `errBackupNotConfigured`, míření zálohy na
+  primární bucket → `errBackupSameBucket` (obojí ve wiringu, `cmd/kukatko/backup.go`). Chybějící
+  `storage.r2.bucket` zachytí už `config.Load` (`ErrIncompleteR2Config`) při startu; sentinely
+  `backup.ErrNoSourceStore`/`ErrNoSourceBucket` proto hlídají jen wiring bug uvnitř balíčku.
+  Verzování objektů **neexistuje**, druhý bucket je jediná ochrana — viz [`RESTORE.md`](RESTORE.md).
 - **Thumbnail klíče (`thumb.*`, `internal/config`):** `engine` (`go` **default** / `vips`;
   neznámá hodnota → `ErrInvalidThumbEngine` při startu) — `vips` přepne JPEG/PNG/WebP náhledy na
   shell-out na `vipsthumbnail` (rychlejší/úspornější na velkých obrázcích, **stále bez CGO**),

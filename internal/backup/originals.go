@@ -94,6 +94,22 @@ func (d *DiskOriginals) Open(_ context.Context, key string) (io.ReadCloser, erro
 	return file, nil
 }
 
+// CopyTo streams the original at original.Key from disk into dst under the same
+// key. Unlike the bucket source there is no server-side shortcut available: the
+// bytes exist only on this host, so they necessarily pass through this process.
+// The stream is never buffered whole.
+func (d *DiskOriginals) CopyTo(ctx context.Context, dst ObjectStore, original LocalOriginal) error {
+	reader, err := d.Open(ctx, original.Key)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+	if err := dst.Put(ctx, original.Key, reader, original.Size, ""); err != nil {
+		return fmt.Errorf("backup: uploading %s: %w", original.Key, err)
+	}
+	return nil
+}
+
 // Stat reports whether the original at key already exists on disk and, when it
 // does, its byte size, so the restore download can skip files already present at
 // the same size. A missing file yields ok=false with a nil error; the path is

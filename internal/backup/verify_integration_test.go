@@ -25,6 +25,7 @@ func (nilObjectStore) Stat(context.Context, string) (backup.Object, bool, error)
 	return backup.Object{}, false, nil
 }
 func (nilObjectStore) Put(context.Context, string, io.Reader, int64, string) error { return nil }
+func (nilObjectStore) CopyFrom(context.Context, string, string, string) error      { return nil }
 func (nilObjectStore) Open(context.Context, string) (io.ReadCloser, error)         { return nil, nil }
 func (nilObjectStore) List(context.Context, string) ([]backup.Object, error)       { return nil, nil }
 func (nilObjectStore) Remove(context.Context, string) error                        { return nil }

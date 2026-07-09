@@ -75,6 +75,38 @@ func TestDiskOriginals_Open(t *testing.T) {
 	}
 }
 
+func TestDiskOriginals_CopyTo(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeFile(t, root, "2026/01/a.jpg", "hello")
+	dst := newFakeStore(nil)
+
+	err := NewDiskOriginals(root).CopyTo(context.Background(), dst, LocalOriginal{Key: "2026/01/a.jpg", Size: 5})
+	if err != nil {
+		t.Fatalf("CopyTo() error = %v", err)
+	}
+	if got := string(dst.objects["2026/01/a.jpg"].data); got != "hello" {
+		t.Errorf("copied content = %q, want hello", got)
+	}
+	// The local source has no server-side shortcut: it streams the file up with a
+	// known size, and never asks the destination to copy.
+	if got := dst.putSizes["2026/01/a.jpg"]; got != 5 {
+		t.Errorf("Put size = %d, want 5", got)
+	}
+	if len(dst.copied) != 0 {
+		t.Errorf("CopyTo issued server-side copies %v, want none", dst.copied)
+	}
+}
+
+func TestDiskOriginals_CopyTo_missingFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	err := NewDiskOriginals(root).CopyTo(context.Background(), newFakeStore(nil), LocalOriginal{Key: "gone.jpg"})
+	if err == nil {
+		t.Fatal("CopyTo() on a missing original error = nil, want non-nil")
+	}
+}
+
 func TestDiskOriginals_Open_confined(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

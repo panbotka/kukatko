@@ -21,17 +21,31 @@ type storedObject struct {
 
 // fakeStore is an in-memory ObjectStore for testing the orchestration without a
 // live S3 service. It records the size argument passed to Put so tests can assert
-// the streamed (-1) upload contract.
+// the streamed (-1) upload contract, and the copies it was asked to make so tests
+// can assert that a bucket-to-bucket transfer went server-side.
 type fakeStore struct {
-	mu        sync.Mutex
-	objects   map[string]storedObject
-	putSizes  map[string]int64
-	removed   []string
+	mu       sync.Mutex
+	objects  map[string]storedObject
+	putSizes map[string]int64
+	removed  []string
+	// peers are the other buckets this store's service can copy from, keyed by
+	// bucket name — the fake equivalent of "the endpoint can read that bucket".
+	peers map[string]*fakeStore
+	// copied records every (srcBucket, srcKey, dstKey) CopyFrom was asked for.
+	copied    []copyCall
 	statErr   error
 	listErr   error
 	putErr    error
 	openErr   error
+	copyErr   error
 	removeErr error
+}
+
+// copyCall is one recorded server-side copy request.
+type copyCall struct {
+	srcBucket string
+	srcKey    string
+	dstKey    string
 }
 
 // newFakeStore returns an empty fakeStore seeded with the given objects.
@@ -40,7 +54,7 @@ func newFakeStore(seed map[string][]byte) *fakeStore {
 	for key, data := range seed {
 		objects[key] = storedObject{data: data}
 	}
-	return &fakeStore{objects: objects, putSizes: map[string]int64{}}
+	return &fakeStore{objects: objects, putSizes: map[string]int64{}, peers: map[string]*fakeStore{}}
 }
 
 // Stat returns the seeded object for key, or ok=false when absent.
@@ -71,6 +85,31 @@ func (f *fakeStore) Put(_ context.Context, key string, reader io.Reader, size in
 	defer f.mu.Unlock()
 	f.objects[key] = storedObject{data: data}
 	f.putSizes[key] = size
+	return nil
+}
+
+// CopyFrom models the service copying srcKey out of the peer bucket srcBucket
+// into key, entirely inside the "service": the bytes never pass through a reader
+// the caller supplied. It records the call and fails when srcBucket is unknown,
+// which is what a real endpoint does when it cannot read the source bucket.
+func (f *fakeStore) CopyFrom(_ context.Context, srcBucket, srcKey, key string) error {
+	if f.copyErr != nil {
+		return f.copyErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.copied = append(f.copied, copyCall{srcBucket: srcBucket, srcKey: srcKey, dstKey: key})
+	peer, ok := f.peers[srcBucket]
+	if !ok {
+		return fmt.Errorf("no such source bucket: %s", srcBucket)
+	}
+	peer.mu.Lock()
+	defer peer.mu.Unlock()
+	obj, ok := peer.objects[srcKey]
+	if !ok {
+		return fmt.Errorf("no such source object: %s/%s", srcBucket, srcKey)
+	}
+	f.objects[key] = obj
 	return nil
 }
 
@@ -144,11 +183,22 @@ type fakeDumpReader struct {
 // Close returns the configured close error.
 func (r *fakeDumpReader) Close() error { return r.closeErr }
 
-// fakeOriginals is an in-memory OriginalSource.
+// fakeOriginals is an in-memory OriginalSource that streams each original into
+// the destination, as the local-disk source does.
 type fakeOriginals struct {
 	files   map[string][]byte
 	listErr error
 	openErr error
+}
+
+// CopyTo streams the seeded original at original.Key into dst under the same key.
+func (o *fakeOriginals) CopyTo(ctx context.Context, dst ObjectStore, original LocalOriginal) error {
+	reader, err := o.Open(ctx, original.Key)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+	return dst.Put(ctx, original.Key, reader, original.Size, "")
 }
 
 // List returns each seeded file as a LocalOriginal.

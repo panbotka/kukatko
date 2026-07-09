@@ -199,11 +199,26 @@ maps:
   geocode_rate_per_sec: 5
   geocode_burst: 10
 
-# Backup destination. The same s3.* settings are reused by `kukatko restore`
-# (list dumps, restore the database, download originals) — see docs/RESTORE.md.
+# Backup destination: a SECOND, INDEPENDENT bucket. It shares nothing with
+# storage.r2.* — its own endpoint, region, bucket and credentials — so it can
+# live in another account or with another provider. Do not assume both are R2.
+#
+# There is no object versioning to fall back on, so this bucket is the ONLY
+# protection against an accidental or malicious delete. See docs/RESTORE.md.
+#
+# Where originals are read from follows storage.backend:
+#   fs → walked from storage.originals_path and streamed up.
+#   r2 → listed in storage.r2.bucket and copied across SERVER-SIDE, so the
+#        payload never passes through this process. That copy is issued against
+#        s3.endpoint below with storage.r2.bucket named as the source, so these
+#        credentials must be able to READ the primary bucket.
+# Pointing this at storage.r2.bucket itself is a fatal misconfiguration.
+#
+# The same s3.* settings are reused by `kukatko restore` (list dumps, restore
+# the database, download originals) — see docs/RESTORE.md.
 backup:
   s3:
-    # S3-compatible endpoint (AWS / MinIO / Backblaze / Wasabi).
+    # S3-compatible endpoint (AWS / MinIO / Backblaze / Wasabi / R2).
     endpoint: ""
     region: ""
     bucket: ""
@@ -218,7 +233,8 @@ backup:
   schedule: ""
   # How many of the most recent database dumps to keep in the bucket; older
   # dumps are pruned after a successful run. 0 or below keeps every dump.
-  # Originals are never pruned.
+  # Originals are NEVER pruned: with no versioning underneath, a deleted
+  # original is a lost photo.
   retention: 7
 
 trash:

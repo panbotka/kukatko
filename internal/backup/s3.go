@@ -133,6 +133,26 @@ func (s *s3Store) Put(ctx context.Context, key string, reader io.Reader, size in
 	return nil
 }
 
+// CopyFrom copies srcKey out of srcBucket into key, server-side: the request is
+// issued against this store's endpoint with srcBucket named as the copy source,
+// so the service moves the bytes itself and none of them cross this process.
+// ComposeObject rather than CopyObject is used because a plain copy is capped at
+// 5 GiB, and a single video can exceed that; with one source and no metadata
+// rewrite ComposeObject degrades to exactly that plain copy, and only reaches for
+// a multipart server-side copy when the object is too large for one.
+//
+// The credentials this store was built with must be able to read srcBucket, which
+// in practice means both buckets are served by the same S3 service (or that the
+// backup account has been granted read on the primary bucket).
+func (s *s3Store) CopyFrom(ctx context.Context, srcBucket, srcKey, key string) error {
+	dst := minio.CopyDestOptions{Bucket: s.bucket, Object: key}
+	src := minio.CopySrcOptions{Bucket: srcBucket, Object: srcKey}
+	if _, err := s.client.ComposeObject(ctx, dst, src); err != nil {
+		return fmt.Errorf("backup: copy %s/%s to %s: %w", srcBucket, srcKey, key, err)
+	}
+	return nil
+}
+
 // Open opens the object at key for streaming reads. The returned *minio.Object
 // is lazy: the first Read performs the GET, and a missing object surfaces as a
 // read error rather than here. The caller must close it.

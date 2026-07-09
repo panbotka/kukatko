@@ -1,19 +1,28 @@
 // Package backup performs in-process, scheduled backups of the kukatko database
-// and original media to an S3-compatible bucket.
+// and original media to a second, independent S3-compatible bucket.
 //
 // A backup run does three things, in order: it streams a pg_dump of the
 // configured database to db/kukatko-<timestamp>.dump, it incrementally syncs the
-// on-disk originals to the bucket (skipping objects already present at the same
+// originals into the same bucket (skipping objects already present at the same
 // key and size), and it prunes old database dumps down to the configured
-// retention count. Pruning only ever touches the dump prefix, never originals,
-// and only runs after the new dump has been stored, so a failed dump never
-// deletes existing backups.
+// retention count. Pruning only ever touches the dump prefix, so originals are
+// never expired — with no object versioning underneath, a deleted original is a
+// lost photo — and it only runs after the new dump has been stored, so a failed
+// dump never deletes existing backups.
 //
-// Everything external sits behind an interface — ObjectStore for the bucket,
-// Dumper for pg_dump, OriginalSource for the originals on disk — so the
+// Where the originals are read from depends on the storage backend. DiskOriginals
+// walks a local originals root and streams each file up. BucketOriginals reads
+// the primary object store and has the backup service copy each object
+// server-side, so a library that lives in a bucket is never dragged through this
+// process to be uploaded again. Either way the sync is additive: an object
+// deleted from the primary is left untouched in the backup bucket.
+//
+// Everything external sits behind an interface — ObjectStore for the backup
+// bucket, Dumper for pg_dump, OriginalSource for the originals — so the
 // orchestration is unit-testable with fakes and no live S3, database or
-// filesystem. The concrete implementations live in s3.go, pgdump.go and
-// originals.go. Secret keys are confined to the S3 client and never logged.
+// filesystem. The concrete implementations live in s3.go, pgdump.go,
+// originals.go and bucket.go. Secret keys are confined to the S3 client and
+// never logged.
 package backup
 
 import (
@@ -62,8 +71,9 @@ type Object struct {
 }
 
 // ObjectStore is the subset of an S3-compatible bucket the backup needs:
-// statting an object (for incremental skip), streaming an upload, listing a
-// prefix (for retention) and removing an object (for pruning).
+// statting an object (for incremental skip), streaming an upload, copying an
+// object in from another bucket, listing a prefix (for retention) and removing
+// an object (for pruning).
 type ObjectStore interface {
 	// Stat returns the object at key with ok=true when present, or a zero Object
 	// with ok=false and a nil error when it does not exist. A genuine transport or
@@ -72,6 +82,11 @@ type ObjectStore interface {
 	// Put streams size bytes from reader to key. A negative size streams the body
 	// without buffering it whole (multipart upload). contentType may be empty.
 	Put(ctx context.Context, key string, reader io.Reader, size int64, contentType string) error
+	// CopyFrom copies srcKey out of srcBucket into key in this store, asking the
+	// destination service to perform the transfer itself so the payload never
+	// passes through this process. The destination service must therefore be able
+	// to read srcBucket with the credentials this store was built with.
+	CopyFrom(ctx context.Context, srcBucket, srcKey, key string) error
 	// Open opens the object at key for streaming reads (used by restore). The
 	// caller must close the returned reader.
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
@@ -91,9 +106,10 @@ type Dumper interface {
 	Dump(ctx context.Context) (io.ReadCloser, error)
 }
 
-// LocalOriginal identifies one stored original by its slash-separated key
-// (relative path within the originals root, reused verbatim as the object key)
-// and byte size.
+// LocalOriginal identifies one stored original by its slash-separated key and
+// byte size. The key is the path relative to the originals root for the local
+// backend and the object key for the bucket backend; both layouts are identical,
+// and the key is reused verbatim in the backup bucket.
 type LocalOriginal struct {
 	// Key is the slash-separated path relative to the originals root.
 	Key string
@@ -101,13 +117,16 @@ type LocalOriginal struct {
 	Size int64
 }
 
-// OriginalSource enumerates and opens the on-disk originals so the sync can
-// stream each one to the bucket.
+// OriginalSource enumerates the originals to back up and transfers one into the
+// backup bucket. How the transfer happens is the source's business: the local
+// backend streams the file up, the bucket backend has the destination copy it
+// server-side.
 type OriginalSource interface {
 	// List returns every stored original. The order is unspecified.
 	List(ctx context.Context) ([]LocalOriginal, error)
-	// Open opens the original at key for reading; the caller must close it.
-	Open(ctx context.Context, key string) (io.ReadCloser, error)
+	// CopyTo transfers original into dst under the same key, overwriting whatever
+	// occupies it.
+	CopyTo(ctx context.Context, dst ObjectStore, original LocalOriginal) error
 }
 
 // Result reports what one backup run did: the dump object created, how many
@@ -143,9 +162,10 @@ type Status struct {
 // required; Retention <= 0 disables dump pruning and a nil Logger uses the
 // standard logger.
 type Config struct {
-	// Objects is the destination bucket.
+	// Objects is the destination bucket: a second bucket, independent of the one
+	// originals normally live in.
 	Objects ObjectStore
-	// Originals enumerates and opens the on-disk originals to sync.
+	// Originals enumerates the originals to sync and transfers each into Objects.
 	Originals OriginalSource
 	// Dumper produces the streamed database dump.
 	Dumper Dumper
@@ -309,9 +329,11 @@ func (s *Service) backupDatabase(ctx context.Context, ts time.Time) (string, err
 	return key, nil
 }
 
-// SyncOriginals uploads every on-disk original that is not already in the bucket
-// at the same key and size, streaming each one. It returns the number uploaded
-// and the number skipped as already present.
+// SyncOriginals transfers every original that is not already in the backup
+// bucket at the same key and size, and returns the number transferred and the
+// number skipped as already present. The sync is purely additive: it never
+// removes an object from the backup bucket, so an original deleted from the
+// primary store survives here.
 func (s *Service) SyncOriginals(ctx context.Context) (uploaded, skipped int, err error) {
 	list, err := s.originals.List(ctx)
 	if err != nil {
@@ -329,8 +351,8 @@ func (s *Service) SyncOriginals(ctx context.Context) (uploaded, skipped int, err
 			skipped++
 			continue
 		}
-		if uploadErr := s.uploadOriginal(ctx, original); uploadErr != nil {
-			return uploaded, skipped, uploadErr
+		if copyErr := s.copyOriginal(ctx, original); copyErr != nil {
+			return uploaded, skipped, copyErr
 		}
 		uploaded++
 	}
@@ -347,15 +369,12 @@ func (s *Service) originalPresent(ctx context.Context, original LocalOriginal) (
 	return ok && existing.Size == original.Size, nil
 }
 
-// uploadOriginal streams a single original to the bucket at its key.
-func (s *Service) uploadOriginal(ctx context.Context, original LocalOriginal) error {
-	reader, err := s.originals.Open(ctx, original.Key)
-	if err != nil {
-		return fmt.Errorf("backup: opening %s: %w", original.Key, err)
-	}
-	defer func() { _ = reader.Close() }()
-	if err := s.objects.Put(ctx, original.Key, reader, original.Size, ""); err != nil {
-		return fmt.Errorf("backup: uploading %s: %w", original.Key, err)
+// copyOriginal transfers one original into the backup bucket, leaving it to the
+// source to decide how: the local backend streams the bytes up, the bucket
+// backend has the destination copy them across server-side.
+func (s *Service) copyOriginal(ctx context.Context, original LocalOriginal) error {
+	if err := s.originals.CopyTo(ctx, s.objects, original); err != nil {
+		return fmt.Errorf("backup: syncing originals: %w", err)
 	}
 	return nil
 }
@@ -363,7 +382,8 @@ func (s *Service) uploadOriginal(ctx context.Context, original LocalOriginal) er
 // PruneDumps removes database dumps beyond the configured retention, keeping the
 // newest Retention dumps and deleting the rest. It is a no-op when retention is
 // disabled (<= 0) or there are no excess dumps. It only ever lists and removes
-// objects under the dump prefix, so originals are never affected.
+// objects under the dump prefix, so originals are never affected: retention
+// applies to dumps alone, and an original in the backup bucket is never expired.
 func (s *Service) PruneDumps(ctx context.Context) (int, error) {
 	if s.retention <= 0 {
 		return 0, nil
