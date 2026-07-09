@@ -26,6 +26,10 @@ config.local.*
 /data/
 *.sqlite
 
+# Local dev server (scripts/dev.sh): storage root and log
+/.devdata/
+/kukatko.log
+
 # Editor / OS
 .DS_Store
 .idea/

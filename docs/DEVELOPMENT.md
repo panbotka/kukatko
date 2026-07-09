@@ -63,6 +63,42 @@ All other paths are served by the embedded SPA (client-side routes fall back to
 `index.html`). Build the frontend first (`make build` does this automatically) so the binary
 embeds real assets; without a build, only the `.gitkeep` placeholder is embedded.
 
+## Dev server
+
+`scripts/dev.sh` rebuilds and restarts the local dev server in single-binary (embed) mode —
+one process serving the API and the embedded SPA on one port, exactly as in production.
+
+```bash
+./scripts/dev.sh          # smart rebuild: skips npm ci / Vite / go build when nothing changed
+./scripts/dev.sh --force  # rebuild all three stages
+```
+
+It stops any running instance, rebuilds only the stages whose inputs changed, starts the
+server in the background on `${KUKATKO_DEV_PORT:-6480}`, and waits up to 30 s for
+`GET /healthz`. It exits `0` once the server is healthy, or `1` with the tail of
+`kukatko.log` if it never came up — which is why it is a gate before every commit (see the
+Definition of Done in [`CLAUDE.md`](../CLAUDE.md)).
+
+Each build stage is skipped independently, using `find -newer`: `npm ci` against
+`package-lock.json`, the Vite build against `internal/web/static/dist/index.html`, and
+`go build` against `bin/kukatko`. The stages cascade — a rebuilt SPA changes the embedded
+assets, so it forces a rebuild of the binary. A backend-only change therefore skips the Vite
+build entirely: a cached restart takes about 2 s versus roughly 35 s for `--force`.
+
+The script deliberately does not call `make build`, because `build → web-build → web-deps`
+runs `npm ci` unconditionally, and `npm ci` wipes and reinstalls `node_modules` every time.
+
+The DSN comes from `KUKATKO_DATABASE_URL_HOST` in the gitignored `.secrets/db.env`: the
+script runs on the host, outside the Docker network, so it needs the localhost DSN. Uploads
+and thumbnails land in the gitignored `.devdata/`.
+
+The same script is registered as the project's `dev_command` in Botka (`dev_port` 6480).
+Botka runs it, waits for it to **exit**, and then discovers the real server PID by scanning
+the port — so the script must background the server and return rather than `exec` into it.
+
+For frontend-only iteration, `cd web && npm run dev` is still faster: the Vite dev server
+proxies `/healthz` and `/api` to the backend.
+
 ## Configuration
 
 `internal/config` loads a typed `Config` via `config.Load(path)`: built-in defaults are

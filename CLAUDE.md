@@ -174,7 +174,10 @@ Vždy, na konci každého tasku, v tomto pořadí:
    - **`CLAUDE.md` sáhni jen tehdy, když se změnilo _pravidlo_ nebo přibyl/zmizel balíček.**
      Nikdy do něj nepiš popisné detaily — na to je `docs/` a hlídá to `make docs-budget`.
 2. **`make check`** musí projít (docs-budget + gofmt + vet + lint + testy + frontend lint/test).
-3. **Commit** (anglicky, výstižně) a **push**. Commit message zakonči řádkem:
+3. **`./scripts/dev.sh`** musí projít — dev server nastartuje a odpoví na `/healthz`. Zachytí,
+   co `make check` z principu nevidí: chybějící migraci, rozbité wiring v `cmd/kukatko`, panic
+   při startu. Neúspěšný start (exit 1) = **necommituj**. Detail v `docs/DEVELOPMENT.md`.
+4. **Commit** (anglicky, výstižně) a **push**. Commit message zakonči řádkem:
    `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 
 ## Mimo rozsah
