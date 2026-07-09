@@ -129,8 +129,11 @@ Three parts. A rule an agent can violate silently is not a rule.
 ## Explicitly out of scope
 
 - **Rewriting or condensing the moved prose.** Zero information loss. A later task may trim.
-- **`README.md`.** Its 1789 lines duplicate much of this content. Reconciling that overlap
-  is a separate change with a far larger blast radius. Recorded as follow-up.
+- **Deduplicating `README.md`.** Its 1789 lines duplicate much of this content. Reconciling
+  that overlap is a separate change with a far larger blast radius. Recorded as follow-up.
+  The only permitted `README.md` change here is **purely additive**: a short document map
+  pointing at the new files, so a human landing in the README can find them. No existing
+  README prose is removed or rewritten.
 - **`@`-imports.** They inline at load time and save nothing.
 
 ## Verification
