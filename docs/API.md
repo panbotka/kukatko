@@ -14,6 +14,23 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `auth.bootstrap_admin_username/password`. Middleware navíc `RequireAuthOrDownloadToken`
   (session cookie nebo `?t=download_token` přes `Service.AuthenticateDownloadToken` →
   `Store.GetSessionByDownloadToken`) pro média bez cookie.
+- **API tokeny (`/api/v1/auth/tokens`, vše za `RequireAuth`):** dlouhodobé bearer credentials pro
+  neinteraktivní klienty (CLI, skripty, agenti). `POST /auth/tokens` (`{name, expires_at?}`) → 201
+  `{token:{id,user_uid,name,created_at,expires_at?,last_used_at?,revoked_at?}, secret:"kkt_<id>_<secret>"}`
+  — **`secret` se vrací jediný a poslední raz**, server drží jen SHA-256 hash; 400 (prázdné jméno /
+  expirace v minulosti / neznámé pole), **429** (creation rate-limit sdílí login limiter, klíč
+  `apitoken:<uid>|<ip>`). `GET /auth/tokens` → `{tokens:[…]}` — **jen vlastní tokeny volajícího**,
+  nikdy secrety ani hashe. `DELETE /auth/tokens/{id}` → 204 (idempotentní; už revokovaný token je
+  taky 204 a nepíše druhý audit záznam); **cizí token → 404, ne 403** (admin smí revokovat komukoli).
+  Create i revoke píšou audit (`api_token.create`/`api_token.revoke`) **ve stejné transakci** jako
+  mutaci.
+- **Bearer autentizace:** `authenticateRequest` bere `Authorization: Bearer kkt_<id>_<secret>`
+  **vedle** session cookie (cookie cesta beze změny). Token **dědí roli svého uživatele** → žádný
+  druhý permission systém, `RequireAuth`/`RequireWrite`/`RequireAdmin` platí beze změny. Špatný
+  bearer je **finální** (nezkouší se cookie téhož requestu); jiné schéma než Bearer propadne na
+  cookie. Revokovaný / expirovaný / neznámý / poškozený token i token zakázaného uživatele → vždy
+  **401** (nikdy 403) se **stejným tělem** — nelze rozlišit, který případ nastal. `last_used_at` se
+  přepisuje nejvýš jednou za minutu (stejná pojistka jako sliding session).
 - **Upload API (`/api/v1`):** `POST /upload` (editor/admin přes `RequireWrite`) — `multipart/form-data`
   s jedním+ soubory, **streamuje** se. Vrací `{"results":[{filename,status,outcome,photo_uid?,error?,
   warnings?}]}` (celkově 200, 409 sémantika duplicit per-file). Mountuje se druhým `server.WithAPI`

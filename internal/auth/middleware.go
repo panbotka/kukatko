@@ -83,10 +83,24 @@ func (a *API) requireRole(req requirement, next http.Handler) http.Handler {
 	})
 }
 
-// authenticateRequest reads the session cookie and validates it through the
-// service, returning the authenticated principal. A missing cookie is reported
-// as ErrSessionNotFound; other validation failures propagate from the service.
+// authenticateRequest resolves the request's credential into an authenticated
+// principal. It accepts either an "Authorization: Bearer <token>" API token or,
+// failing that, the session cookie. A bearer credential that does not
+// authenticate is final — the request is not retried against the cookie — but a
+// header that carries no bearer credential at all falls through to the cookie
+// path, which is unchanged: a missing cookie is reported as ErrSessionNotFound
+// and other validation failures propagate from the service.
+//
+// A token principal carries no Session; it is not a session and nothing about it
+// slides, logs out, or hands out media download tokens.
 func (a *API) authenticateRequest(r *http.Request) (principal, error) {
+	if token, ok := bearerToken(r.Header.Get("Authorization")); ok {
+		user, _, err := a.svc.AuthenticateAPIToken(r.Context(), token)
+		if err != nil {
+			return principal{}, err
+		}
+		return principal{user: user}, nil
+	}
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return principal{}, ErrSessionNotFound

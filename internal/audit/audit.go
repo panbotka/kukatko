@@ -79,6 +79,10 @@ const (
 	ActionUserDisable = "user.disable"
 	// ActionUserPassword records an admin password reset for a user.
 	ActionUserPassword = "user.password"
+	// ActionAPITokenCreate records minting a long-lived API token.
+	ActionAPITokenCreate = "api_token.create"
+	// ActionAPITokenRevoke records revoking a long-lived API token.
+	ActionAPITokenRevoke = "api_token.revoke"
 )
 
 // insertSQL appends one audit entry. It is shared by Store.Record and the

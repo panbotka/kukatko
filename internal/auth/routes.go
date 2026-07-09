@@ -10,6 +10,9 @@ import "github.com/go-chi/chi/v5"
 //	POST   /auth/logout           public (idempotent)
 //	GET    /auth/me               RequireAuth
 //	POST   /auth/password         RequireAuth
+//	POST   /auth/tokens           RequireAuth
+//	GET    /auth/tokens           RequireAuth
+//	DELETE /auth/tokens/{id}      RequireAuth
 //	GET    /admin/users           RequireAdmin
 //	POST   /admin/users           RequireAdmin
 //	PATCH  /admin/users/{uid}     RequireAdmin
@@ -21,6 +24,12 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.Post("/logout", a.handleLogout)
 		r.With(a.RequireAuth).Get("/me", a.handleMe)
 		r.With(a.RequireAuth).Post("/password", a.handlePassword)
+		r.Route("/tokens", func(r chi.Router) {
+			r.Use(a.RequireAuth)
+			r.Post("/", a.handleCreateAPIToken)
+			r.Get("/", a.handleListAPITokens)
+			r.Delete("/{id}", a.handleRevokeAPIToken)
+		})
 	})
 
 	r.Route("/admin/users", func(r chi.Router) {

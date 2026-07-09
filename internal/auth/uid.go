@@ -11,6 +11,9 @@ const (
 	userUIDPrefix = "us"
 	// sessionIDPrefix marks UIDs that identify session rows.
 	sessionIDPrefix = "se"
+	// apiTokenIDPrefix marks UIDs that identify api_tokens rows. It also appears
+	// in the plaintext credential, as the lookup key of "kkt_<id>_<secret>".
+	apiTokenIDPrefix = "at"
 	// uidSuffixLen is the number of random characters appended after the prefix.
 	// At ~5 bits per character this yields ~120 bits of entropy, and with the
 	// two-character prefixes the total stays at 26 — well within VARCHAR(32).
