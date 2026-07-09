@@ -1,8 +1,10 @@
 package storage
 
 import (
+	"encoding/json"
 	"errors"
 	"net/url"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -226,6 +228,169 @@ func TestNewURLSignerDefaultsTTL(t *testing.T) {
 	}
 	if signer.ttl != DefaultURLTTL {
 		t.Errorf("ttl = %s, want %s", signer.ttl, DefaultURLTTL)
+	}
+}
+
+// vectorsPath is the golden file freezing the signed-URL contract. It is a
+// published artifact: the edge Worker in the infra repository
+// (cloudflare-r2/) verifies its own implementation against the same file.
+const vectorsPath = "testdata/url_signature_vectors.json"
+
+// regenerate is appended to every golden-vector failure. A mismatch means the
+// signing algorithm moved, and the Worker that verifies these URLs did not.
+const regenerate = "the signed URL contract changed: regenerate " + vectorsPath +
+	" and ship the matching Worker change in the infra repo (cloudflare-r2/) before deploying either side"
+
+// urlSignatureVector is one fixture from the golden file: a signing secret, an
+// object key, an expiry, and the signature the contract says they produce.
+type urlSignatureVector struct {
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	Secret         string `json:"secret"`
+	PreviousSecret string `json:"previous_secret"`
+	Key            string `json:"key"`
+	ExpiresAt      int64  `json:"expires_at"`
+	Signature      string `json:"signature"`
+	// Mints reports whether signing Key and ExpiresAt with Secret reproduces
+	// Signature. It is false for a signature made with the previous secret and
+	// for a deliberately wrong one.
+	Mints bool `json:"mints"`
+	// Verifies reports whether a verifier holding Secret and PreviousSecret
+	// accepts Signature at ExpiresAt.
+	Verifies bool `json:"verifies"`
+}
+
+// urlSignatureVectors is the golden file. Only the fields the Go side is held to
+// are decoded; the prose the Worker's authors read is ignored here.
+type urlSignatureVectors struct {
+	Version   int `json:"version"`
+	Algorithm struct {
+		MAC               string `json:"mac"`
+		SignatureEncoding string `json:"signature_encoding"`
+		QueryParameters   struct {
+			Expires   string `json:"expires"`
+			Signature string `json:"signature"`
+		} `json:"query_parameters"`
+	} `json:"algorithm"`
+	Vectors []urlSignatureVector `json:"vectors"`
+}
+
+// loadURLSignatureVectors reads and decodes the golden file.
+func loadURLSignatureVectors(t *testing.T) urlSignatureVectors {
+	t.Helper()
+	raw, err := os.ReadFile(vectorsPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", vectorsPath, err)
+	}
+	var vectors urlSignatureVectors
+	if err := json.Unmarshal(raw, &vectors); err != nil {
+		t.Fatalf("decoding %s: %v", vectorsPath, err)
+	}
+	if len(vectors.Vectors) == 0 {
+		t.Fatalf("%s carries no vectors", vectorsPath)
+	}
+	return vectors
+}
+
+// vectorSigner returns a signer configured from a vector, its clock pinned so a
+// URL minted right now expires at exactly the vector's expiry.
+func vectorSigner(t *testing.T, vector urlSignatureVector) *URLSigner {
+	t.Helper()
+	signer, err := NewURLSigner(testBaseURL, vector.Secret, vector.PreviousSecret, DefaultURLTTL)
+	if err != nil {
+		t.Fatalf("NewURLSigner(%s): %v", vector.Name, err)
+	}
+	signer.now = func() time.Time { return time.Unix(vector.ExpiresAt, 0).Add(-DefaultURLTTL) }
+	return signer
+}
+
+// TestURLSignatureVectorsDescribeThisImplementation guards the parts of the
+// contract the vectors state in prose rather than in a signature: the query
+// parameter names and the MAC itself. Renaming a parameter here without
+// regenerating the file — and telling the Worker — would 403 every image.
+func TestURLSignatureVectorsDescribeThisImplementation(t *testing.T) {
+	t.Parallel()
+	vectors := loadURLSignatureVectors(t)
+
+	if got := vectors.Algorithm.QueryParameters.Expires; got != QueryExpires {
+		t.Errorf("expiry query parameter = %q, package uses %q; %s", got, QueryExpires, regenerate)
+	}
+	if got := vectors.Algorithm.QueryParameters.Signature; got != QuerySignature {
+		t.Errorf("signature query parameter = %q, package uses %q; %s", got, QuerySignature, regenerate)
+	}
+	if got := vectors.Algorithm.MAC; got != "HMAC-SHA256" {
+		t.Errorf("mac = %q, want HMAC-SHA256; %s", got, regenerate)
+	}
+	for _, vector := range vectors.Vectors {
+		// Lowercase hex of a SHA-256 MAC, as the file promises.
+		if len(vector.Signature) != 64 {
+			t.Errorf("vector %s: signature %q is not 64 hex characters; %s", vector.Name, vector.Signature, regenerate)
+		}
+	}
+}
+
+// TestURLSignatureVectorsMint asserts SignedURL reproduces every golden
+// signature — and, for the vectors that were not signed with the current secret,
+// that it produces something else.
+func TestURLSignatureVectorsMint(t *testing.T) {
+	t.Parallel()
+	for _, vector := range loadURLSignatureVectors(t).Vectors {
+		t.Run(vector.Name, func(t *testing.T) {
+			t.Parallel()
+			signer := vectorSigner(t, vector)
+
+			parsed, err := url.Parse(signer.SignedURL(vector.Key))
+			if err != nil {
+				t.Fatalf("parsing signed URL: %v", err)
+			}
+			if got, want := parsed.Path, "/"+vector.Key; got != want {
+				t.Errorf("path = %q, want %q", got, want)
+			}
+			if got, want := parsed.Query().Get(QueryExpires), strconv.FormatInt(vector.ExpiresAt, 10); got != want {
+				t.Fatalf("exp = %q, want %q", got, want)
+			}
+
+			got := parsed.Query().Get(QuerySignature)
+			switch {
+			case vector.Mints && got != vector.Signature:
+				t.Errorf("sig = %q, want %q (%s); %s", got, vector.Signature, vector.Description, regenerate)
+			case !vector.Mints && got == vector.Signature:
+				t.Errorf("sig = %q, want anything else (%s); %s", got, vector.Description, regenerate)
+			}
+		})
+	}
+}
+
+// TestURLSignatureVectorsVerify asserts Verify agrees with every golden vector
+// at its expiry, and that an accepted one goes stale one second later.
+func TestURLSignatureVectorsVerify(t *testing.T) {
+	t.Parallel()
+	for _, vector := range loadURLSignatureVectors(t).Vectors {
+		t.Run(vector.Name, func(t *testing.T) {
+			t.Parallel()
+			signer := vectorSigner(t, vector)
+			expiresAt := time.Unix(vector.ExpiresAt, 0)
+			expiry := strconv.FormatInt(vector.ExpiresAt, 10)
+
+			// The boundary second is still fresh, so a vector's verdict is about
+			// its signature alone.
+			signer.now = func() time.Time { return expiresAt }
+			err := signer.Verify(vector.Key, expiry, vector.Signature)
+			if vector.Verifies {
+				if err != nil {
+					t.Fatalf("Verify(%s) = %v, want nil (%s); %s", vector.Name, err, vector.Description, regenerate)
+				}
+				signer.now = func() time.Time { return expiresAt.Add(time.Second) }
+				if err := signer.Verify(vector.Key, expiry, vector.Signature); !errors.Is(err, ErrURLExpired) {
+					t.Errorf("Verify(%s, one second stale) = %v, want ErrURLExpired", vector.Name, err)
+				}
+				return
+			}
+			if !errors.Is(err, ErrInvalidSignature) {
+				t.Errorf("Verify(%s) = %v, want ErrInvalidSignature (%s); %s",
+					vector.Name, err, vector.Description, regenerate)
+			}
+		})
 	}
 }
 

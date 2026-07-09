@@ -48,9 +48,11 @@ than UI filters.
   on every request. Egress is free, so this costs latency, not money.
 - **R2 has no native object versioning** that could be confirmed in its documentation. The
   durability plan therefore does not depend on it (see Backup below).
-- The Worker is a second deployable, written in JavaScript. It does not violate the
-  single-static-binary rule — it runs on Cloudflare, not in the binary — but it is a separate
-  artifact to version and deploy.
+- The Worker is **not built in this repository**. It, the bucket, its bindings and its hostname
+  are defined in the infra repository (`/home/pi/projects/infra`), in the `cloudflare-r2/`
+  Terraform root module, and applied by Terraform there. It does not violate the
+  single-static-binary rule — it runs on Cloudflare, not in the binary — and Kukátko neither
+  builds nor deploys it. What the two repositories share is a contract, not code.
 
 ## Design
 
@@ -77,14 +79,25 @@ https://<media-domain>/<object-key>?exp=<unix-seconds>&sig=<hex HMAC-SHA256>
 ```
 
 The signature covers the object key and the expiry. Kukátko and the Worker share the secret;
-the Worker holds it as a Cloudflare secret, Kukátko as `storage.r2.url_signing_secret`.
+the Worker holds it as a `secret_text` binding, Kukátko as `storage.r2.url_signing_secret`.
 Support **two secrets at once** (current and previous) so the secret can be rotated without a
 window of broken URLs.
 
 A short TTL — one hour by default — bounds the damage from a leaked URL. Photo payloads carry
 freshly signed URLs on every API response, so a reloaded page simply gets new ones.
 
+Kukátko mints and the Worker verifies, in different repositories and different languages, and
+no build fails when the two drift apart. The signature is therefore frozen as golden test
+vectors in `internal/storage/testdata/url_signature_vectors.json`, which both sides test
+against: changing the algorithm means regenerating that file, which makes the change visible
+in review and forces the Worker to move in step.
+
 ### The Worker
+
+The Worker is an **external deployable**, defined and applied by Terraform in the infra
+repository's `cloudflare-r2/` root module together with the bucket, the R2 binding, the signing
+secrets and the hostname it is served on (`kukatko-media.panbotka.cz`). Nothing about it ships
+from this repository.
 
 For each request the Worker:
 
@@ -151,7 +164,7 @@ expired: a deleted original is a lost photo.**
 
 - `storage.backend`: `fs` (default) or `r2`
 - `storage.r2.endpoint`, `.region`, `.bucket`, `.access_key`, `.secret_key`
-- `storage.r2.media_base_url` — the Worker's domain
+- `storage.r2.media_base_url` — the Worker's domain, `https://kukatko-media.panbotka.cz`
 - `storage.r2.url_signing_secret` and `.url_signing_secret_previous`
 - `storage.r2.url_ttl` — default one hour
 - `storage.temp_path` — where `Materialize` writes
@@ -169,7 +182,7 @@ than restarts.
 | --- | --- |
 | 200 | Replace `AbsPath` with `URL` + `Materialize`; `FS` behaviour unchanged |
 | 190 | R2 backend over minio-go, config keys, `storage.backend` |
-| 185 | The Cloudflare Worker: signature check, Range passthrough, canonical-key caching |
+| 185 | *(infra repo, `cloudflare-r2/`)* The Cloudflare Worker: signature check, Range passthrough, canonical-key caching. Here: only the golden signature vectors it is tested against |
 | 180 | Serve media through the Worker: signed URLs in API payloads, redirects |
 | 170 | `kukatko storage migrate-to-r2` — idempotent, resumable |
 | 160 | Backup: bucket-to-bucket copy to an independent second bucket |

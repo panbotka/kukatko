@@ -120,7 +120,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   současným. Nejdřív se ověří podpis (podvržený klíč i expirace → `ErrInvalidSignature`), pak
   teprve expirace (`ErrURLExpired`). Default TTL 1 h. Klíč **není tajemství** — bez platného
   podpisu ho edge Worker odmítne. Access key ani signing secret se nikdy nedostanou do logu
-  ani do chyby. Integrační testy `r2_integration_test.go` (tag `integration`) běží proti reálnému
+  ani do chyby. **Worker (verifikátor) žije v infra repu** (`cloudflare-r2/`, Terraform), takže
+  kontrakt drží golden vektory `testdata/url_signature_vectors.json` — publikovaný artefakt, proti
+  kterému testuje Go signer (`sign_test.go`) i Worker; změna algoritmu = regenerace souboru
+  a souběžná úprava Workeru. Integrační testy `r2_integration_test.go` (tag `integration`) běží proti reálnému
   S3-kompatibilnímu endpointu z `KUKATKO_TEST_S3_ENDPOINT` (stačí MinIO; bez proměnné se skipnou)),
   `internal/thumb/`
   (thumbnailer náhledů, **CGO-free**: registr velikostí `sizes`+`sizeOrder` ve dvou režimech

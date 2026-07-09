@@ -190,6 +190,15 @@ Volby vycházejí z photo-sorteru (osvědčené) a z rešerše ([§16](#16-refer
 - **Podepsané URL:** `https://<media_base_url>/<key>?exp=<unix>&sig=<hex HMAC-SHA256>`, podpis kryje
   klíč i expiraci. Ověřují se **dvě tajemství naráz** (současné + předchozí), takže rotace nemá okno
   rozbitých URL. Default TTL 1 h; každá API odpověď nese čerstvě podepsané URL.
+- **Worker není součástí téhle repo.** Bucket, zdroják Workeru, jeho bindingy i hostname
+  (`kukatko-media.panbotka.cz`) žijí v **infra repu** (`/home/pi/projects/infra`, root modul
+  `cloudflare-r2/`) a nasazuje je tam Terraform. Kukátko URL **razí** (`internal/storage/sign.go`),
+  Worker je **ověřuje** — dvě implementace ve dvou repech a dvou jazycích, jejichž rozejití by
+  žádný build nezachytil (jeden bajt navíc v podepisované zprávě = 403 na každou fotku).
+- **Kontrakt drží golden vektory:** `internal/storage/testdata/url_signature_vectors.json` (secret,
+  klíč, expirace → očekávaný podpis; včetně předchozího tajemství a záměrně špatného podpisu).
+  Testuje se proti nim **obojí** — Go signer i Worker v infra repu. Změna algoritmu = regenerace
+  souboru, což změnu zviditelní v review a vynutí souběžnou úpravu Workeru.
 - **Hard-link nemá v object storage ekvivalent a není potřeba:** `PutObject` je atomický a
   katalogový dedup drží unique constraint na `photos.file_hash`. Uploady i stahování streamují —
   soubor nikdy nedrží celý v RAM; `r2` je stageuje přes `storage.temp_path`, protože klíč závisí na

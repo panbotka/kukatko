@@ -63,15 +63,16 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   (`https://<accountid>.r2.cloudflarestorage.com`), `region` (R2 bere jen `auto`, default),
   `bucket` (**drž ho privátní** — objekty servíruje edge Worker, který ověřuje podpis URL),
   `access_key`/`secret_key` (R2 API token), `media_base_url` (doména Workeru, pod kterou se razí
-  podepsané URL), `url_signing_secret` (+ `url_signing_secret_previous`) a `url_ttl` (default `1h`,
-  musí být kladné). Env: `KUKATKO_STORAGE_R2_ENDPOINT`/`_REGION`/`_BUCKET`/`_ACCESS_KEY`/
+  podepsané URL — `https://kukatko-media.panbotka.cz`), `url_signing_secret`
+  (+ `url_signing_secret_previous`) a `url_ttl` (default `1h`, musí být kladné). Env:
+  `KUKATKO_STORAGE_R2_ENDPOINT`/`_REGION`/`_BUCKET`/`_ACCESS_KEY`/
   `_SECRET_KEY`/`_MEDIA_BASE_URL`/`_URL_SIGNING_SECRET`/`_URL_SIGNING_SECRET_PREVIOUS`/`_URL_TTL`.
   Validace `ErrIncompleteR2Config` **při startu**: backend `r2` vyžaduje všechny klíče kromě
   `url_signing_secret_previous` (chybějící jsou vyjmenované v chybě — jen jména, nikdy hodnoty)
-  a kladné `url_ttl`. **Rotace podpisového tajemství bez výpadku:** starou hodnotu přesuň do
-  `url_signing_secret_previous`, novou dej do `url_signing_secret` — ověřují se obě, podepisuje se
-  tou novou; starou zahoď, až vyprší poslední vydaná URL (tj. po `url_ttl`). Stejné tajemství musí
-  mít i Worker. Tajemství ani access key se nikdy nelogují a neobjeví se v chybě.
+  a kladné `url_ttl`. Tajemství ani access key se nikdy nelogují a neobjeví se v chybě.
+  **Worker sám v téhle repo není** — bucket, jeho zdroják, bindingy i hostname definuje a nasazuje
+  Terraform v infra repu (root modul `cloudflare-r2/`). Rotace podpisového tajemství proto sahá do
+  **dvou repozitářů** — postup níž.
 - **Thumbnail klíče (`thumb.*`, `internal/config`):** `engine` (`go` **default** / `vips`;
   neznámá hodnota → `ErrInvalidThumbEngine` při startu) — `vips` přepne JPEG/PNG/WebP náhledy na
   shell-out na `vipsthumbnail` (rychlejší/úspornější na velkých obrázcích, **stále bez CGO**),
@@ -101,6 +102,31 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   **`places` job** (cachuje lokalitu fotky): `geocode_rate_per_sec` (default 5, ≤ 0 vypne) +
   `geocode_burst` (default 10) — chrání měsíční mapy.com kreditní budget, zpracovat pomalu je OK.
   `KUKATKO_MAPS_GEOCODE_RATE_PER_SEC`/`_GEOCODE_BURST`.
+
+### Rotace `url_signing_secret` (procedura přes dva repozitáře)
+
+Kukátko media URL **podepisuje**, edge Worker je **ověřuje**. Worker žije v **infra repu**
+(root modul `cloudflare-r2/`, nasazuje ho Terraform), takže **stejná hodnota** musí být
+nakonfigurovaná na obou stranách: tady jako `storage.r2.url_signing_secret`, tam jako binding typu
+`secret_text` na Workeru. Ověřují se **obě** tajemství naráz (`url_signing_secret` +
+`url_signing_secret_previous`), podepisuje se vždy tím současným — rotace proto nemá okno
+rozbitých URL, **když se dodrží pořadí**:
+
+1. Stávající hodnotu `url_signing_secret` přesuň do `url_signing_secret_previous` — na obou
+   stranách (Kukátko i Worker v infra repu).
+2. Novou hodnotu dej do `url_signing_secret` — opět na obou stranách.
+3. Nasaď **obě** strany (`terraform apply` v `cloudflare-r2/`, restart Kukátka). Na jejich pořadí
+   nezáleží: dokud obě znají staré i nové tajemství, ověří se URL podepsané kterýmkoli z nich.
+4. Počkej, až vyprší **poslední už vydaná URL** — tedy aspoň `url_ttl` (default **1 h**) od chvíle,
+   kdy Kukátko přestalo podepisovat starým tajemstvím.
+5. Teprve pak starou hodnotu zahoď: vyprázdni `url_signing_secret_previous` na obou stranách
+   a znovu nasaď.
+
+Zkratka přes kroky 1–2 (přepsat `url_signing_secret` bez uložení staré hodnoty do `_previous`)
+**403ne každou fotku**, na kterou už prohlížeč nebo API odpověď drží podepsané URL. Samotný kontrakt
+podpisu (zpráva `"<key>\n<expiry>"`, HMAC-SHA256, hex) je zamrzlý v golden vektorech
+`internal/storage/testdata/url_signature_vectors.json`; testují se proti nim obě strany, takže se
+algoritmus nedá změnit jen v jedné z nich.
 
 ## Make cíle a CI/CD
 

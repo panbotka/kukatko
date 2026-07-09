@@ -55,13 +55,21 @@ storage:
     # Credentials of an R2 API token. KUKATKO_STORAGE_R2_ACCESS_KEY / _SECRET_KEY.
     access_key: ""
     secret_key: ""
-    # Domain of the edge Worker serving the objects. Signed URLs are minted under it
-    # and handed straight to the browser. KUKATKO_STORAGE_R2_MEDIA_BASE_URL.
+    # Domain of the edge Worker serving the objects — https://kukatko-media.panbotka.cz.
+    # Signed URLs are minted under it and handed straight to the browser. The Worker
+    # is NOT built here: it, the bucket and this hostname are defined in the infra
+    # repo (cloudflare-r2/) and deployed by Terraform.
+    # KUKATKO_STORAGE_R2_MEDIA_BASE_URL.
     media_base_url: ""
-    # Shared with the Worker; signs "<object-key>\n<expiry>" with HMAC-SHA256.
+    # Shared with the Worker; signs "<object-key>\n<expiry>" with HMAC-SHA256. The
+    # very same value must be set as the Worker's secret_text binding in the infra
+    # repo (cloudflare-r2/) — Kukátko mints, the Worker verifies, and the contract
+    # they are both tested against is internal/storage/testdata/url_signature_vectors.json.
     # url_signing_secret_previous is still ACCEPTED on verification, so the secret
     # rotates without a window of broken URLs: move the old value there, put the new
-    # one in url_signing_secret, and drop the old one once every URL has expired.
+    # one in url_signing_secret, deploy both sides, and drop the old one only once
+    # every outstanding URL has expired (url_ttl, one hour by default). Full
+    # procedure in docs/OPERATIONS.md.
     # KUKATKO_STORAGE_R2_URL_SIGNING_SECRET / _URL_SIGNING_SECRET_PREVIOUS.
     url_signing_secret: ""
     url_signing_secret_previous: ""

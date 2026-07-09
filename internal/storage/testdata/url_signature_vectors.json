@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "description": "Golden test vectors pinning the signed media URL contract. Kukátko mints these URLs in internal/storage/sign.go; the Cloudflare Worker defined in the infra repository (cloudflare-r2/) verifies them. The two implementations live in different repositories and different languages, and no build fails when they drift, so both sides are tested against this file. Changing the signing algorithm means regenerating these vectors and shipping the matching Worker change in the same breath.",
+  "producer": "github.com/panbotka/kukatko — internal/storage.URLSigner",
+  "consumers": [
+    "github.com/panbotka/kukatko — internal/storage/sign_test.go",
+    "infra — cloudflare-r2/ (the media Worker and its tests)"
+  ],
+  "algorithm": {
+    "url": "https://<media_base_url>/<object-key>?exp=<expires_at>&sig=<signature>",
+    "mac": "HMAC-SHA256",
+    "message": "the object key, a single 0x0A newline byte, and the expiry as a decimal integer without padding or sign",
+    "signature_encoding": "lowercase hex, 64 characters",
+    "query_parameters": {
+      "expires": "exp",
+      "signature": "sig"
+    },
+    "notes": [
+      "The object key is signed unescaped, as UTF-8 bytes. Only its rendering into the URL path is percent-encoded, so a verifier must percent-decode the path (and strip the leading slash and any base path prefix) before computing the MAC. See the utf8-key vector.",
+      "expires_at is Unix seconds. A URL is fresh while now <= expires_at and expired from now > expires_at; the boundary second is still valid.",
+      "The expiry is covered by the MAC, so extending it invalidates the signature. See the tampered-expiry vector.",
+      "A verifier accepts two secrets at once, the current one and the previous one, so the secret rotates without a window of broken URLs. Signing always uses the current secret. Comparison must be constant-time.",
+      "Signature freshness and signature authenticity are separate checks: a vector with verifies=true is accepted at expires_at, not necessarily at the time the test runs.",
+      "The default URL lifetime is 3600 seconds (storage.r2.url_ttl), but it is not part of this contract: only the (key, expires_at, signature) triple is."
+    ]
+  },
+  "vector_fields": {
+    "name": "stable identifier of the vector",
+    "description": "what the vector pins",
+    "secret": "the current signing secret held by the verifier; the signer always signs with this one",
+    "previous_secret": "the retired secret the verifier still accepts; empty when none is configured",
+    "key": "the object key, unescaped",
+    "expires_at": "Unix seconds, the value of the exp query parameter",
+    "signature": "the value of the sig query parameter",
+    "mints": "true when signing (key, expires_at) with secret reproduces signature",
+    "verifies": "true when a verifier holding secret and previous_secret accepts signature for (key, expires_at) at expires_at"
+  },
+  "vectors": [
+    {
+      "name": "plain-key",
+      "description": "A real original: YYYY/MM/<sha256>.<ext>.",
+      "secret": "kukatko-url-signing-secret-v2",
+      "previous_secret": "",
+      "key": "2024/03/9f2a7c1d4e6b8a0c3f5d7e9b1a2c4d6e8f0a1b2c3d4e5f60718293a4b5c6d7e.jpg",
+      "expires_at": 1767225600,
+      "signature": "25a695484b42653dcb03ca461d92ebd4436593967f4e400f084cea91b2c04d8c",
+      "mints": true,
+      "verifies": true
+    },
+    {
+      "name": "multi-segment-key",
+      "description": "A thumbnail key: several path segments, so the slashes must reach the MAC unescaped.",
+      "secret": "kukatko-url-signing-secret-v2",
+      "previous_secret": "",
+      "key": "thumb/9f/2a/7c/9f2a7c1d4e6b8a0c3f5d7e9b1a2c4d6e8f0a1b2c3d4e5f60718293a4b5c6d7e_512.jpg",
+      "expires_at": 1767225600,
+      "signature": "31a04123692f68401920cee70d05adeaf0cc9e3368cf214fe2d908fbeab1d8ea",
+      "mints": true,
+      "verifies": true
+    },
+    {
+      "name": "utf8-key",
+      "description": "A key with non-ASCII characters and a space. The MAC covers the decoded UTF-8 bytes, not the percent-encoded path.",
+      "secret": "kukatko-url-signing-secret-v2",
+      "previous_secret": "",
+      "key": "2024/05/Šťastné Vánoce.jpg",
+      "expires_at": 1767225600,
+      "signature": "cad0fb8e27854aa3facb06067b7ff99b47c62e38d5adc36fbb4a48cefe0ad003",
+      "mints": true,
+      "verifies": true
+    },
+    {
+      "name": "zero-expiry",
+      "description": "The expiry is signed as the literal \"0\", not as an empty or padded string.",
+      "secret": "kukatko-url-signing-secret-v2",
+      "previous_secret": "",
+      "key": "2024/03/9f2a7c1d4e6b8a0c3f5d7e9b1a2c4d6e8f0a1b2c3d4e5f60718293a4b5c6d7e.jpg",
+      "expires_at": 0,
+      "signature": "e55f7af7871a9c45594067aaff0a87c38e69434285b474512439fcacf7ba5546",
+      "mints": true,
+      "verifies": true
+    },
+    {
+      "name": "far-future-expiry",
+      "description": "An expiry far beyond 2038: the timestamp is a 64-bit integer on both sides.",
+      "secret": "kukatko-url-signing-secret-v2",
+      "previous_secret": "",
+      "key": "2024/03/9f2a7c1d4e6b8a0c3f5d7e9b1a2c4d6e8f0a1b2c3d4e5f60718293a4b5c6d7e.jpg",
+      "expires_at": 253402300799,
+      "signature": "9d5dae81f331ab76ec79b225163688e3715dc2f9133928668c6ef0d54cfd27d4",
+      "mints": true,
+      "verifies": true
+    },
+    {
+      "name": "previous-secret",
+      "description": "A URL handed out before a rotation, signed with what is now the previous secret. Verification must still accept it; minting must not reproduce it.",
+      "secret": "kukatko-url-signing-secret-v2",
+      "previous_secret": "kukatko-url-signing-secret-v1",
+      "key": "2024/03/9f2a7c1d4e6b8a0c3f5d7e9b1a2c4d6e8f0a1b2c3d4e5f60718293a4b5c6d7e.jpg",
+      "expires_at": 1767225600,
+      "signature": "8ffd8c607060d6a17ba446138034dbd7ff88a4c342c506e7b1effdb0f38fca63",
+      "mints": false,
+      "verifies": true
+    },
+    {
+      "name": "dropped-previous-secret",
+      "description": "The same URL once the previous secret has been dropped from the configuration. It must now be rejected.",
+      "secret": "kukatko-url-signing-secret-v2",
+      "previous_secret": "",
+      "key": "2024/03/9f2a7c1d4e6b8a0c3f5d7e9b1a2c4d6e8f0a1b2c3d4e5f60718293a4b5c6d7e.jpg",
+      "expires_at": 1767225600,
+      "signature": "8ffd8c607060d6a17ba446138034dbd7ff88a4c342c506e7b1effdb0f38fca63",
+      "mints": false,
+      "verifies": false
+    },
+    {
+      "name": "tampered-expiry",
+      "description": "A well-formed signature for the plain key at 1767225600, replayed with the expiry pushed to the far future. Deliberately wrong: the expiry is inside the MAC, so this must be rejected as an invalid signature rather than served.",
+      "secret": "kukatko-url-signing-secret-v2",
+      "previous_secret": "",
+      "key": "2024/03/9f2a7c1d4e6b8a0c3f5d7e9b1a2c4d6e8f0a1b2c3d4e5f60718293a4b5c6d7e.jpg",
+      "expires_at": 253402300799,
+      "signature": "25a695484b42653dcb03ca461d92ebd4436593967f4e400f084cea91b2c04d8c",
+      "mints": false,
+      "verifies": false
+    }
+  ]
+}
