@@ -57,15 +57,17 @@ implemented**, per the task's conservative-changes rule.
 
 ## Shared shell — `Layout` (navbar)
 
-- **Clarity:** Good. Grouped Browse / Tools / Admin dropdowns keep the bar scannable; role-gated
-  groups are hidden from roles that cannot use them.
-- **Touch-friendliness:** Dropdown items already carry `kukatko-tap-target`; the coarse-pointer
-  floor now also covers `.nav-link` and the collapsed burger menu. ✅
+- **Clarity:** Good. Library / Albums / Labels sit top-level (the three ways the library is actually
+  browsed); the rest collapses into Browse, and role-gated Tools / Admin groups are hidden from roles
+  that cannot use them.
+- **Touch-friendliness:** Nav links and dropdown items carry `kukatko-tap-target`; the coarse-pointer
+  floor also covers `.nav-link` and the collapsed burger menu. ✅
 - **Consistency:** `app.name` brand doubles as the "Home" link — fine, but there is no visible
-  "Home"/"Domů" entry in the bar itself (only inside the parent dropdown labels). Minor.
+  "Home"/"Domů" entry in the bar itself. Minor.
   📋 Consider a small home/brand affordance hint. ⚪⚪
-- **Readability / States / Intimidation:** No issues. The navbar search + saved-searches menu are
-  discoverable.
+- **Readability / States / Intimidation:** No issues. Every entry pairs a bootstrap-icons glyph with
+  an action-describing `title`, so daily users recognise entries by shape. Searching and saved
+  searches left the bar: both are reached from `/search` (search also from the library page). ✅
 
 ---
 
@@ -306,7 +308,8 @@ Ordered by impact-to-effort. 🔴/🟡/⚪ = impact, then effort.
 Per the task brief, these larger items are owned by their own tickets and were intentionally **not**
 touched in this pass:
 
-- **Navbar dropdown grouping** — already shipped; any further restructuring is separate.
+- **Navbar structure** — already shipped (top-level Library/Albums/Labels + Browse/Tools/Admin
+  dropdowns, icons + action titles); any further restructuring is separate.
 - **Library FilterBar redesign** — already shipped (calm default + progressive disclosure); further
   work separate.
 - **Fullscreen photo viewer** — already shipped (Lightbox); further work separate.

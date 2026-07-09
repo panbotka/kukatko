@@ -6,27 +6,27 @@ zapiš sem.
 
 <!-- BODY BEGIN -->
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
-  (`Layout` = navbar shell s user-menu/logout + role-gated nav **seskupenou do `NavDropdown`
-  menu** (`BROWSE_ITEMS`/`TOOLS_ITEMS`/`ADMIN_ITEMS` datové registry + `renderGroup` helper), aby
-  lišta zůstala přehledná: **Domů** dostupné přes brand link; dropdown **Procházet** (`nav.browse`)
-  sdružuje **Knihovna** `/library`, **Oblíbené** `/favorites`, **Alba** `/albums`, **Štítky**
-  `/labels`, **Lidé** `/people`, **Místa** `/places`, **Mapa** `/map` (všem rolím); **Hledat**
-  `/search` a **Nahrát** `/upload` (jen editor/admin, gate `canWrite`) zůstávají prominentní
-  top-level; editorský dropdown **Nástroje** (`nav.tools`, celý gate `canWrite`) sdružuje
-  **Duplikáty** `/duplicates` + **Koš** `/trash`; adminský dropdown **Správa** (`nav.admin`, celý
-  gate `isAdmin`) sdružuje **Import** `/import` + **Údržba** `/maintenance` + **Systém** `/system`.
-  Dropdown se skryje celý, když má uživatel skryté všechny jeho položky (Tools/Admin u viewera);
-  rodičovské menu má **active stav** (`active` prop) když je aktuální route některé z jeho dětí
-  (`pathMatches` ctí i detail sub-cesty jako `/albums/{uid}`); položky v mobilním burger menu
-  expandují inline s tap-targety (`kukatko-tap-target`),
-  `NavbarSearch` (kompaktní vyhledávací pole v navbaru s **živým grouped quick-results dropdownem**:
-  jak uživatel píše, debouncovaně (`useGlobalSearch`) volá `GET /search/global` a zobrazí shodné
-  **alba/štítky/lidé/fotky** seskupené dle typu s náhledy; klik na řádek naviguje přímo na entitu
-  (album→`/albums/{uid}`, štítek→`/labels/{uid}`, osoba→`/people/{uid}`, fotka→`/photos/{uid}`),
-  Enter/Submit jde na plnou stránku `/search?q=…`; dropdown je klávesnicově ovladatelný (šipky/Enter),
-  zavírá se na blur/Escape, empty/loading/error stavy vč. „Nic nenalezeno"),
-  `SavedSearchesMenu` (navbar dropdown uložených hledání vedle vyhledávacího pole — lazy fetch při
-  otevření, položky otevírají uložený pohled přes `savedSearchHref`, „Spravovat" míří na `/saved`),
+  (`Layout` = navbar shell s user-menu/logout + role-gated nav, **vyvážená kolem toho, jak se
+  knihovna reálně prochází — po albu, po štítku, po roce**: **Domů** přes brand link; **Knihovna**
+  `/library`, **Alba** `/albums` a **Štítky** `/labels` jsou vždy viditelné top-level položky
+  (registr `PRIMARY_ITEMS`); zbylé browse cíle sdružuje dropdown **Procházet** (`nav.browse`,
+  `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`, **Místa** `/places`, **Mapa**
+  `/map`; **Nahrát** `/upload` je top-level (gate `canWrite`); editorský dropdown **Nástroje**
+  (`nav.tools`, `TOOLS_GROUP`, celý gate `canWrite`) sdružuje **Duplikáty** `/duplicates` + **Koš**
+  `/trash`; adminský dropdown **Správa** (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje
+  **Import** `/import` + **Údržba** `/maintenance` + **Systém** `/system`. **V navbaru není hledání**
+  (ani odkaz, ani živé pole ani uložená hledání) — hledá se z knihovny a ze stránky `/search`.
+  Každá položka i každý dropdown toggle nese **ikonu** (`Icon`) a **`title` popisující akci**, ne
+  podstatné jméno („Zobrazit alba", ne „Alba"; klíče `nav.titles.*`); ikony jsou dekorativní
+  (`aria-hidden`) vedle viditelného textového labelu. Dropdown se skryje celý, když má uživatel
+  skryté všechny jeho položky (Tools/Admin u viewera); rodičovské menu má **active stav** (`active`
+  prop), když je aktuální route některé z jeho dětí (`pathMatches` ctí i detail sub-cesty jako
+  `/albums/{uid}`) — skládá se z `Dropdown`+`Dropdown.Toggle as={NavLink}` (ne `NavDropdown`, ten
+  spotřebuje prop `title` na obsah toggle, takže by nezbyl na tooltip); položky v mobilním burger
+  menu expandují inline s tap-targety (`kukatko-tap-target`),
+  `Icon` (**jediná ikonová sada** aplikace: bootstrap-icons glyf jako `<i class="bi bi-{name}">`,
+  font se importuje globálně v `main.tsx`; union `IconName` drží slovník použitých ikon, takže překlep
+  je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),
   `LanguageSwitcher`,
   `KeyboardShortcutsHelp` (v navbaru: ikonka klávesnice + **modal nápovědy zkratek** — otevře se
   `?` (Shift+/) kdekoli nebo klikem, vypíše všechny zkratky seskupené dle kontextu (Mřížka / Detail)
@@ -99,8 +99,9 @@ zapiš sem.
   páry jako samostatné módy; klientská validace souřadnic + „aspoň jedna změna"; po aplikaci
   **per-foto result summary** z odpovědi),
   `pages/` (`HomePage` = přívětivá uvítací stránka: nadpis + mřížka velkých klikacích karet
-  (`Card as={Link}`) na hlavní cíle (Knihovna, Hledat, Alba, Lidé, Mapa a pro editory Nahrát,
-  přes datový registr `TILES` s `nav.*` titulky + `home.tiles.*` popisky, `writeOnly` gate na
+  (`Card as={Link}`) na hlavní cíle (Knihovna, Hledat, Alba, Štítky, Lidé, Mapa a pro editory
+  Nahrát, přes datový registr `TILES` s `nav.*` titulky + `home.tiles.*` popisky + `nav.titles.*`
+  akčními tooltipy + `Icon` ikonou — stejné jako navbar, `writeOnly` gate na
   Nahrát), technický stav (`GET /healthz` + verze) demotovaný do malého ztlumeného řádku dole
   (bez commit hashe), `LoginPage`, `AccountPage` = změna vlastního hesla,
   `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
@@ -131,7 +132,8 @@ zapiš sem.
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
   (sidecar offline), idle/loading/empty/error stavy, plus nad mřížkou **cross-entity sekce**
   (`GlobalSearchSections`) s chipy shodných alb/lidí/štítků (grouped `GET /search/global`), aby
-  textový dotaz vynesl i nefotkové entity, plus tlačítko **Uložit pohled**
+  textový dotaz vynesl i nefotkové entity, plus v hlavičce **jediný vstupní bod uložených hledání**
+  (`SavedSearchesDropdown` — vypsat, otevřít, „Spravovat" → `/saved`) vedle tlačítka **Uložit pohled**
   (`SaveSearchModal` — `params` nese i `mode`, takže obnova míří na `/search`),
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
@@ -233,8 +235,9 @@ zapiš sem.
   jen lokálně skryje); 503 → „nedostupné", loading přes `GridSkeleton`, error s retry,
   `NotFoundPage`),
   `components/savedsearch/` = `SaveSearchModal` (modal pro pojmenování při uložení nového pohledu
-  i přejmenování existujícího uloženého hledání) + `SavedSearchesMenu` (navbar dropdown, lazy fetch
-  při otevření, položky → uložený pohled, „Spravovat" → `/saved`);
+  i přejmenování existujícího uloženého hledání) + `SavedSearchesDropdown` (dropdown v hlavičce
+  `SearchPage` — **ne v navbaru**; lazy fetch při otevření, položky otevírají uložený pohled přes
+  `savedSearchHref`, „Spravovat" → `/saved`, loading/empty/error stavy uvnitř menu);
   `components/search/` = `GlobalSearchSections` (kompaktní cross-entity sekce nad photo mřížkou
   search stránky: přes `useGlobalSearch(query)` natáhne grouped `GET /search/global` a vyrenderuje
   chipy shodných **alb/lidí/štítků** odkazující na entitu; nezávislé na photo fulltext/semantic
@@ -286,7 +289,7 @@ zapiš sem.
   filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGlobalSearch(query,
   debounceMs?)` = debouncovaný (default 250 ms) grouped global-search loader nad `globalSearch`
   (`status` idle/loading/ready/error + `result`, prázdný dotaz → idle bez requestu, ruší in-flight +
-  ignoruje stale — podklad navbar quick-results i `GlobalSearchSections`); `useGridJump({gridRef,
+  ignoruje stale — podklad `GlobalSearchSections`); `useGridJump({gridRef,
   loadedCount,hasMore,loadingMore,loadMore})` = vrátí `jumpTo(index)`, který skočí mřížkou na foto
   index přes `VirtuosoGridHandle.scrollToIndex` a **nejdřív donačte stránky**, když cíl leží za
   infinite-scroll kurzorem (nebo clampne na poslední načtené, když už další stránky nejsou) —
@@ -413,8 +416,7 @@ zapiš sem.
   `GET /api/v1/search/global` → `GlobalSearchResult{query,albums,labels,people,photos}` (top-N per
   skupina, každá vždy pole) + pure helpery `hasEntityMatches`/`isEmptyResult`, typy
   `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult`; oddělené od
-  photo `searchPhotos` (fulltext/semantic/hybrid), podklad navbar quick-results i
-  `GlobalSearchSections`; `bulk.ts` =
+  photo `searchPhotos` (fulltext/semantic/hybrid), podklad `GlobalSearchSections`; `bulk.ts` =
   `bulkUpdatePhotos(uids,ops)` nad `POST /photos/bulk` (hromadná úprava výběru), typy
   `BulkOperations` (add/remove alba+štítku, set/clear caption+popisu+polohy, set_private,
   archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `duplicates.ts` =

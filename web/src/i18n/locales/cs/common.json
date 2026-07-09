@@ -23,7 +23,29 @@
     "account": "Můj účet",
     "logout": "Odhlásit se",
     "trash": "Koš",
-    "system": "Systém"
+    "system": "Systém",
+    "titles": {
+      "home": "Přejít na úvodní stránku",
+      "library": "Zobrazit knihovnu fotek",
+      "albums": "Zobrazit alba",
+      "labels": "Zobrazit štítky",
+      "browse": "Zobrazit další způsoby procházení",
+      "favorites": "Zobrazit oblíbené fotky",
+      "people": "Zobrazit lidi a zvířata",
+      "places": "Zobrazit místa",
+      "map": "Zobrazit fotky na mapě",
+      "search": "Hledat mezi fotkami",
+      "upload": "Nahrát nové fotky",
+      "tools": "Zobrazit nástroje",
+      "duplicates": "Zkontrolovat duplikáty",
+      "trash": "Zobrazit koš",
+      "admin": "Zobrazit správu",
+      "import": "Spustit import fotek",
+      "maintenance": "Spustit údržbu knihovny",
+      "system": "Zobrazit stav systému",
+      "account": "Spravovat vlastní účet",
+      "logout": "Odhlásit se z Kukátka"
+    }
   },
   "language": {
     "cs": "Čeština",
@@ -49,6 +71,7 @@
       "library": "Procházejte všechny své fotky a videa.",
       "search": "Najděte fotky podle slova nebo obsahu.",
       "albums": "Uspořádejte fotky do alb.",
+      "labels": "Najděte fotky podle štítků.",
       "people": "Najděte fotky podle osob.",
       "map": "Prohlížejte fotky na mapě.",
       "upload": "Přidejte nové fotky a videa."
@@ -164,7 +187,6 @@
     "formLabel": "Hledat fotky",
     "queryLabel": "Hledaný výraz",
     "placeholder": "Hledat fotky…",
-    "submit": "Hledat",
     "modeLabel": "Režim",
     "mode": {
       "hybrid": "Hybridní",
@@ -182,17 +204,12 @@
     }
   },
   "globalSearch": {
-    "resultsLabel": "Rychlé výsledky hledání",
     "sectionsLabel": "Odpovídající alba, štítky a lidé",
-    "loading": "Hledání…",
-    "empty": "Nic nenalezeno",
-    "error": "Hledání se nezdařilo.",
     "untitled": "Bez názvu",
     "groups": {
       "albums": "Alba",
       "labels": "Štítky",
-      "people": "Lidé",
-      "photos": "Fotky"
+      "people": "Lidé"
     }
   },
   "savedSearches": {
@@ -217,7 +234,11 @@
       "name": "Jméno",
       "cancel": "Zrušit",
       "save": "Uložit"
-    }
+    },
+    "navTitle": "Zobrazit uložená hledání",
+    "openTitle": "Otevřít uložené hledání „{{name}}“",
+    "manageTitle": "Přejmenovat nebo smazat uložená hledání",
+    "saveViewTitle": "Uložit aktuální pohled jako hledání"
   },
   "albums": {
     "title": "Alba",

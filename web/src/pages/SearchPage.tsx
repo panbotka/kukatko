@@ -11,6 +11,7 @@ import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
+import { SavedSearchesDropdown } from '../components/savedsearch/SavedSearchesDropdown'
 import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
 import { viewToParams } from '../lib/libraryView'
@@ -28,6 +29,9 @@ const SEARCH_DEBOUNCE_MS = 350
  * it commits to the URL (and triggers a fetch). When a semantic/hybrid search
  * falls back to full-text because the embeddings sidecar is offline, a
  * non-blocking notice explains that semantic ranking was skipped.
+ *
+ * This page also owns saved searches: the header pairs a "save this view" button
+ * with the {@link SavedSearchesDropdown} that lists, applies and manages them.
  */
 export function SearchPage() {
   const { t } = useTranslation()
@@ -44,7 +48,7 @@ export function SearchPage() {
   const [text, setText] = useState(view.q)
   const [savingView, setSavingView] = useState(false)
 
-  // Keep the input in sync when the URL query changes from elsewhere (the navbar
+  // Keep the input in sync when the URL query changes from elsewhere (a saved
   // search, Back/Forward, a shared link).
   useEffect(() => {
     setText(view.q)
@@ -67,15 +71,21 @@ export function SearchPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="kk-page-title mb-0">{t('search.title')}</h1>
-        <Button
-          variant="outline-secondary"
-          size="sm"
-          onClick={() => {
-            setSavingView(true)
-          }}
-        >
-          {t('savedSearches.saveView')}
-        </Button>
+        <div className="d-flex align-items-center gap-2">
+          {/* Saved searches live here rather than in the navbar: they are a
+              search-page concern, and `/saved` stays reachable from the menu. */}
+          <SavedSearchesDropdown />
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            title={t('savedSearches.saveViewTitle')}
+            onClick={() => {
+              setSavingView(true)
+            }}
+          >
+            {t('savedSearches.saveView')}
+          </Button>
+        </div>
       </div>
 
       <Form

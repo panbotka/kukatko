@@ -67,6 +67,7 @@ describe('HomePage', () => {
     expect(library).toHaveAttribute('href', '/library')
     expect(screen.getByRole('link', { name: /Search/ })).toHaveAttribute('href', '/search')
     expect(screen.getByRole('link', { name: /Albums/ })).toHaveAttribute('href', '/albums')
+    expect(screen.getByRole('link', { name: /Labels/ })).toHaveAttribute('href', '/labels')
     expect(screen.getByRole('link', { name: /People/ })).toHaveAttribute('href', '/people')
     expect(screen.getByRole('link', { name: /Map/ })).toHaveAttribute('href', '/map')
 
@@ -76,6 +77,17 @@ describe('HomePage', () => {
     // The status line quietly confirms reachability once health resolves.
     expect(await screen.findByText('Everything is working')).toBeInTheDocument()
     expect(screen.getByText(/1\.2\.3/)).toBeInTheDocument()
+  })
+
+  it('gives every card link an icon and a title naming the action', () => {
+    renderHome(true)
+
+    const albums = screen.getByRole('link', { name: /Albums/ })
+    // The tooltip describes what clicking does, not just the destination noun.
+    expect(albums).toHaveAttribute('title', 'Show the albums')
+    const icon = albums.querySelector('i.bi.bi-collection')
+    expect(icon).not.toBeNull()
+    expect(icon).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('hides the upload tile from viewers', async () => {

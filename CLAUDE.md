@@ -17,7 +17,8 @@ inkrementální).
   Router chi/v5, CLI Cobra, config Viper, DB `pgx`/`pgvector-go`.
 - **DB: PostgreSQL + pgvector.** Embeddingy se ukládají **přímo do DB** (`halfvec` + HNSW cosine).
 - **Frontend: React + TypeScript + Vite + react-bootstrap + Bootswatch Superhero**, embedovaný do
-  binárky přes `//go:embed` (SPA fallback). i18n přes i18next: **čeština default**, angličtina.
+  binárky přes `//go:embed` (SPA fallback). Ikony **jen `bootstrap-icons`** přes komponentu `Icon`
+  (jedna sada, dekorativní `aria-hidden`). i18n přes i18next: **čeština default**, angličtina.
   Virtualizace dlouhých mřížek/seznamů přes **`react-virtuoso`**. Mapový pohled přes
   **`leaflet`** + **`leaflet.markercluster`** (dlaždice přes backend proxy, klíč zůstává server-side).
 - **Obrázky/videa bez CGO:** pure-Go pro JPEG/PNG/WebP; **shell-out** na `heif-convert` (HEIC),

@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { Icon, type IconName } from '../components/Icon'
 import { fetchHealth, type HealthResponse } from '../services/health'
 
 type HealthState =
@@ -21,28 +22,75 @@ interface HomeTile {
   to: string
   titleKey: ParseKeys
   descKey: ParseKeys
+  /** Names the action the tile performs, for its `title` tooltip. */
+  actionKey: ParseKeys
+  icon: IconName
   /** When true the tile is only shown to users who can upload (editor/admin). */
   writeOnly?: boolean
 }
 
 /**
- * The everyday welcome tiles. Titles reuse the navbar labels so the wording
- * stays in one place; each description lives under `home.tiles.*`. Upload is a
- * write action, gated behind `canWrite`.
+ * The everyday welcome tiles. Titles, icons and action tooltips reuse the navbar
+ * entries so a tile and its nav item read identically; each description lives
+ * under `home.tiles.*`. Upload is a write action, gated behind `canWrite`.
  */
 const TILES: HomeTile[] = [
-  { to: '/library', titleKey: 'nav.library', descKey: 'home.tiles.library' },
-  { to: '/search', titleKey: 'nav.search', descKey: 'home.tiles.search' },
-  { to: '/albums', titleKey: 'nav.albums', descKey: 'home.tiles.albums' },
-  { to: '/people', titleKey: 'nav.people', descKey: 'home.tiles.people' },
-  { to: '/map', titleKey: 'nav.map', descKey: 'home.tiles.map' },
-  { to: '/upload', titleKey: 'nav.upload', descKey: 'home.tiles.upload', writeOnly: true },
+  {
+    to: '/library',
+    titleKey: 'nav.library',
+    descKey: 'home.tiles.library',
+    actionKey: 'nav.titles.library',
+    icon: 'images',
+  },
+  {
+    to: '/search',
+    titleKey: 'nav.search',
+    descKey: 'home.tiles.search',
+    actionKey: 'nav.titles.search',
+    icon: 'search',
+  },
+  {
+    to: '/albums',
+    titleKey: 'nav.albums',
+    descKey: 'home.tiles.albums',
+    actionKey: 'nav.titles.albums',
+    icon: 'collection',
+  },
+  {
+    to: '/labels',
+    titleKey: 'nav.labels',
+    descKey: 'home.tiles.labels',
+    actionKey: 'nav.titles.labels',
+    icon: 'tags',
+  },
+  {
+    to: '/people',
+    titleKey: 'nav.people',
+    descKey: 'home.tiles.people',
+    actionKey: 'nav.titles.people',
+    icon: 'people',
+  },
+  {
+    to: '/map',
+    titleKey: 'nav.map',
+    descKey: 'home.tiles.map',
+    actionKey: 'nav.titles.map',
+    icon: 'map',
+  },
+  {
+    to: '/upload',
+    titleKey: 'nav.upload',
+    descKey: 'home.tiles.upload',
+    actionKey: 'nav.titles.upload',
+    icon: 'cloud-arrow-up',
+    writeOnly: true,
+  },
 ]
 
 /**
  * Landing page: a friendly welcome with large, clearly labelled cards linking to
- * the app's main destinations (library, search, albums, people, map, and — for
- * editors — upload). A small, de-emphasised status line at the bottom quietly
+ * the app's main destinations (library, search, albums, labels, people, map, and
+ * — for editors — upload). A small, de-emphasised status line at the bottom quietly
  * confirms the app is reachable and shows the build version; the technical
  * detail is kept out of the way of ordinary users rather than being the page's
  * centrepiece.
@@ -82,10 +130,15 @@ export function HomePage() {
               as={Link}
               to={tile.to}
               text="light"
+              title={t(tile.actionKey)}
               className="h-100 text-decoration-none kukatko-home-tile"
             >
               <Card.Body>
-                <Card.Title as="h2" className="kk-section-title mb-1">
+                <Card.Title
+                  as="h2"
+                  className="kk-section-title mb-1 d-flex align-items-center gap-2"
+                >
+                  <Icon name={tile.icon} />
                   {t(tile.titleKey)}
                 </Card.Title>
                 <Card.Text className="text-secondary mb-0">{t(tile.descKey)}</Card.Text>

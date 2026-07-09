@@ -674,14 +674,15 @@ pohledu; `savedSearchHref` — složí `pathname?query` na `/library` nebo `/sea
 params proti defaultům, takže otevření obnoví pohled přesně). Akce **„Uložit pohled"** na `LibraryPage`
 i `SearchPage` (`SaveSearchModal` v `web/src/components/savedsearch/` — modal pro pojmenování při
 vytvoření i přejmenování), dedikovaná stránka **`/saved`** (`SavedSearchesPage` — seznam s otevřením/
-přejmenováním/optimistickým mazáním + empty state) a **navbar dropdown** (`SavedSearchesMenu` — lazy
-fetch při otevření, položky otevírají uložený pohled, „Spravovat" míří na `/saved`). Nav odkaz +
-route `/saved` (jakýkoli přihlášený) v `Layout`/`App.tsx`.
+přejmenováním/optimistickým mazáním + empty state) a **dropdown v hlavičce `SearchPage`**
+(`SavedSearchesDropdown` — lazy fetch při otevření, položky otevírají uložený pohled, „Spravovat" míří
+na `/saved`). Uložená hledání se ovládají **jen ze stránky `/search`**, ne z navbaru; route `/saved`
+(jakýkoli přihlášený) v `App.tsx`.
 
 ### Globální hledání (`internal/globalsearchapi`)
 
 Jeden **grouped cross-entity** endpoint **`GET /api/v1/search/global?q=`** (přihlášený přes
-`RequireAuth`) pro navbar quick-results a cross-entity sekci search stránky: najde shody napříč
+`RequireAuth`) pro cross-entity sekci search stránky: najde shody napříč
 **alby, štítky, osobami a fotkami** jedním dotazem. Alba/štítky/osoby se matchují dle name/description
 **accent- a case-insensitive** (`immutable_unaccent` + ILIKE), fotky přes **existující fulltext** nad
 `fts` tsvector — existující `GET /search` (per-user photo fulltext/semantic/hybrid) zůstává beze změny.
@@ -702,11 +703,7 @@ Jeden **grouped cross-entity** endpoint **`GET /api/v1/search/global?q=`** (při
 **Frontend (globální hledání):** klient `web/src/services/search.ts` (`globalSearch(q,signal)` →
 `GlobalSearchResult` + helpery `hasEntityMatches`/`isEmptyResult`) a hook
 [`useGlobalSearch(query)`](web/src/hooks/useGlobalSearch.ts) (debounce 250 ms, idle/loading/ready/error,
-ruší in-flight). [`NavbarSearch`](web/src/components/NavbarSearch.tsx) přidává **živý grouped
-quick-results dropdown**: jak uživatel píše, ukáže shodná alba/štítky/lidi/fotky seskupené dle typu
-s náhledy; klik naviguje přímo na entitu (`/albums/{uid}`, `/labels/{uid}`, `/people/{uid}`,
-`/photos/{uid}`), Enter/Submit jde na plnou `/search?q=…`; klávesnicově ovladatelný (šipky/Enter),
-zavírá se na blur/Escape, empty/loading/error stavy. Na search stránce
+ruší in-flight). Na search stránce
 [`GlobalSearchSections`](web/src/components/search/GlobalSearchSections.tsx) vykreslí nad photo
 mřížkou kompaktní chipy shodných alb/lidí/štítků (jen když existují), takže textový dotaz vynese
 i nefotkové entity.

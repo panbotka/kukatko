@@ -23,7 +23,29 @@
     "account": "My account",
     "logout": "Sign out",
     "trash": "Trash",
-    "system": "System"
+    "system": "System",
+    "titles": {
+      "home": "Go to the home page",
+      "library": "Show the photo library",
+      "albums": "Show the albums",
+      "labels": "Show the labels",
+      "browse": "Show more ways to browse",
+      "favorites": "Show the favorite photos",
+      "people": "Show people and animals",
+      "places": "Show the places",
+      "map": "Show the photos on a map",
+      "search": "Search the photos",
+      "upload": "Upload new photos",
+      "tools": "Show the tools",
+      "duplicates": "Review the duplicates",
+      "trash": "Show the trash",
+      "admin": "Show the administration",
+      "import": "Run a photo import",
+      "maintenance": "Run library maintenance",
+      "system": "Show the system status",
+      "account": "Manage your own account",
+      "logout": "Sign out of Kukátko"
+    }
   },
   "language": {
     "cs": "Čeština",
@@ -49,6 +71,7 @@
       "library": "Browse all your photos and videos.",
       "search": "Find photos by word or content.",
       "albums": "Organize photos into albums.",
+      "labels": "Find photos by label.",
       "people": "Find photos by person.",
       "map": "See your photos on a map.",
       "upload": "Add new photos and videos."
@@ -164,7 +187,6 @@
     "formLabel": "Search photos",
     "queryLabel": "Search term",
     "placeholder": "Search photos…",
-    "submit": "Search",
     "modeLabel": "Mode",
     "mode": {
       "hybrid": "Hybrid",
@@ -182,17 +204,12 @@
     }
   },
   "globalSearch": {
-    "resultsLabel": "Quick search results",
     "sectionsLabel": "Matching albums, labels and people",
-    "loading": "Searching…",
-    "empty": "Nothing found",
-    "error": "Search failed.",
     "untitled": "Untitled",
     "groups": {
       "albums": "Albums",
       "labels": "Labels",
-      "people": "People",
-      "photos": "Photos"
+      "people": "People"
     }
   },
   "savedSearches": {
@@ -217,7 +234,11 @@
       "name": "Name",
       "cancel": "Cancel",
       "save": "Save"
-    }
+    },
+    "navTitle": "Show your saved searches",
+    "openTitle": "Open the saved search \"{{name}}\"",
+    "manageTitle": "Rename or delete your saved searches",
+    "saveViewTitle": "Save the current view as a search"
   },
   "map": {
     "title": "Map",

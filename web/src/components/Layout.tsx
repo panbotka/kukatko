@@ -1,50 +1,118 @@
 import type { ParseKeys } from 'i18next'
 import Container from 'react-bootstrap/Container'
+import Dropdown from 'react-bootstrap/Dropdown'
 import Nav from 'react-bootstrap/Nav'
 import Navbar from 'react-bootstrap/Navbar'
 import NavDropdown from 'react-bootstrap/NavDropdown'
+import NavItem from 'react-bootstrap/NavItem'
+import BsNavLink from 'react-bootstrap/NavLink'
 import { useTranslation } from 'react-i18next'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 
-import { SavedSearchesMenu } from './savedsearch/SavedSearchesMenu'
+import { Icon, type IconName } from './Icon'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 import { LanguageSwitcher } from './LanguageSwitcher'
-import { NavbarSearch } from './NavbarSearch'
 
-/** A single navigable destination inside a grouped navbar dropdown. */
-interface NavGroupItem {
+/**
+ * A single navigable destination. `titleKey` names the *action* the entry
+ * performs ("Show the albums"), not the destination noun — it becomes the
+ * `title` tooltip, so it should tell a first-time user what clicking does while
+ * the short visible label plus `icon` carry recognition for the daily users.
+ */
+interface NavEntry {
   to: string
   labelKey: ParseKeys
+  titleKey: ParseKeys
+  icon: IconName
+}
+
+/** A dropdown of related destinations, behind a labelled, icon-bearing toggle. */
+interface NavGroup {
+  id: string
+  labelKey: ParseKeys
+  titleKey: ParseKeys
+  icon: IconName
+  items: NavEntry[]
 }
 
 /**
- * The "Procházet" (Browse) group: the everyday library destinations. These are
- * available to every signed-in role, so the whole group is always rendered.
+ * The always-visible destinations, in the order the library is actually browsed:
+ * everything, then by album, then by label. Available to every signed-in role.
  */
-const BROWSE_ITEMS: NavGroupItem[] = [
-  { to: '/library', labelKey: 'nav.library' },
-  { to: '/favorites', labelKey: 'nav.favorites' },
-  { to: '/albums', labelKey: 'nav.albums' },
-  { to: '/labels', labelKey: 'nav.labels' },
-  { to: '/people', labelKey: 'nav.people' },
-  { to: '/places', labelKey: 'nav.places' },
-  { to: '/map', labelKey: 'nav.map' },
+const PRIMARY_ITEMS: NavEntry[] = [
+  { to: '/library', labelKey: 'nav.library', titleKey: 'nav.titles.library', icon: 'images' },
+  { to: '/albums', labelKey: 'nav.albums', titleKey: 'nav.titles.albums', icon: 'collection' },
+  { to: '/labels', labelKey: 'nav.labels', titleKey: 'nav.titles.labels', icon: 'tags' },
 ]
+
+/** The "Procházet" (Browse) group: the less-travelled ways into the library. */
+const BROWSE_GROUP: NavGroup = {
+  id: 'nav-browse',
+  labelKey: 'nav.browse',
+  titleKey: 'nav.titles.browse',
+  icon: 'compass',
+  items: [
+    {
+      to: '/favorites',
+      labelKey: 'nav.favorites',
+      titleKey: 'nav.titles.favorites',
+      icon: 'heart',
+    },
+    { to: '/people', labelKey: 'nav.people', titleKey: 'nav.titles.people', icon: 'people' },
+    { to: '/places', labelKey: 'nav.places', titleKey: 'nav.titles.places', icon: 'geo-alt' },
+    { to: '/map', labelKey: 'nav.map', titleKey: 'nav.titles.map', icon: 'map' },
+  ],
+}
 
 /** The editor-only "Nástroje" (Tools) group, gated behind `canWrite`. */
-const TOOLS_ITEMS: NavGroupItem[] = [
-  { to: '/duplicates', labelKey: 'nav.duplicates' },
-  { to: '/trash', labelKey: 'nav.trash' },
-]
+const TOOLS_GROUP: NavGroup = {
+  id: 'nav-tools',
+  labelKey: 'nav.tools',
+  titleKey: 'nav.titles.tools',
+  icon: 'tools',
+  items: [
+    {
+      to: '/duplicates',
+      labelKey: 'nav.duplicates',
+      titleKey: 'nav.titles.duplicates',
+      icon: 'files',
+    },
+    { to: '/trash', labelKey: 'nav.trash', titleKey: 'nav.titles.trash', icon: 'trash' },
+  ],
+}
 
 /** The admin-only "Správa" (Admin) group, gated behind `isAdmin`. */
-const ADMIN_ITEMS: NavGroupItem[] = [
-  { to: '/import', labelKey: 'nav.import' },
-  { to: '/maintenance', labelKey: 'nav.maintenance' },
-  { to: '/system', labelKey: 'nav.system' },
-]
+const ADMIN_GROUP: NavGroup = {
+  id: 'nav-admin',
+  labelKey: 'nav.admin',
+  titleKey: 'nav.titles.admin',
+  icon: 'sliders',
+  items: [
+    {
+      to: '/import',
+      labelKey: 'nav.import',
+      titleKey: 'nav.titles.import',
+      icon: 'box-arrow-in-down',
+    },
+    {
+      to: '/maintenance',
+      labelKey: 'nav.maintenance',
+      titleKey: 'nav.titles.maintenance',
+      icon: 'wrench-adjustable',
+    },
+    { to: '/system', labelKey: 'nav.system', titleKey: 'nav.titles.system', icon: 'activity' },
+  ],
+}
+
+/** The write-gated upload entry, kept top-level so adding photos stays one click away. */
+const UPLOAD_ITEM: NavEntry = {
+  to: '/upload',
+  labelKey: 'nav.upload',
+  titleKey: 'nav.titles.upload',
+  icon: 'cloud-arrow-up',
+}
 
 /**
  * Reports whether `pathname` matches the given nav route, treating a route as
@@ -56,12 +124,15 @@ function pathMatches(pathname: string, route: string): boolean {
 }
 
 /**
- * Application shell: a responsive top navbar (brand, grouped navigation
- * dropdowns, language switcher, and the signed-in user menu) above the routed
- * page content. Related destinations are collapsed into "Procházet" (Browse),
- * an editor-only "Nástroje" (Tools) and an admin-only "Správa" (Admin) menu so
- * the bar stays scannable; role-gated groups are hidden entirely from roles
- * that cannot use any of their children.
+ * Application shell: a responsive top navbar (brand, navigation, language
+ * switcher, and the signed-in user menu) above the routed page content.
+ *
+ * The bar is ordered around how the library is browsed: **Knihovna**, **Alba**
+ * and **Štítky** are always visible, the remaining browse destinations collapse
+ * into "Procházet", and the role-gated "Nástroje"/"Správa" groups are hidden
+ * entirely from roles that cannot use any of their children. Searching is not in
+ * the bar — it lives on the library page and on `/search`. Every entry pairs an
+ * icon (for daily recognition) with a `title` describing the action it performs.
  */
 export function Layout() {
   const { t } = useTranslation()
@@ -75,25 +146,59 @@ export function Layout() {
   }
 
   /** True when any route in `items` is the current location. */
-  function groupActive(items: NavGroupItem[]): boolean {
+  function groupActive(items: NavEntry[]): boolean {
     return items.some((item) => pathMatches(pathname, item.to))
   }
 
-  /** Renders a grouped dropdown of role-agnostic nav destinations. */
-  function renderGroup(id: string, titleKey: ParseKeys, items: NavGroupItem[]) {
+  /** Renders a top-level nav link: icon, visible label, action tooltip. */
+  function renderLink(entry: NavEntry) {
     return (
-      <NavDropdown title={t(titleKey)} id={id} active={groupActive(items)}>
-        {items.map((item) => (
-          <NavDropdown.Item
-            key={item.to}
-            as={NavLink}
-            to={item.to}
-            className="kukatko-tap-target d-flex align-items-center"
-          >
-            {t(item.labelKey)}
-          </NavDropdown.Item>
-        ))}
-      </NavDropdown>
+      <Nav.Link
+        key={entry.to}
+        as={NavLink}
+        to={entry.to}
+        title={t(entry.titleKey)}
+        className="kukatko-tap-target d-flex align-items-center gap-2"
+      >
+        <Icon name={entry.icon} />
+        {t(entry.labelKey)}
+      </Nav.Link>
+    )
+  }
+
+  /**
+   * Renders a grouped dropdown. It is assembled from `Dropdown` rather than
+   * `NavDropdown` because the latter spends the `title` prop on the toggle's
+   * visible content, leaving no way to also set the `title` tooltip attribute.
+   */
+  function renderGroup(group: NavGroup) {
+    return (
+      <Dropdown as={NavItem}>
+        <Dropdown.Toggle
+          as={BsNavLink}
+          id={group.id}
+          active={groupActive(group.items)}
+          title={t(group.titleKey)}
+          className="kukatko-tap-target d-flex align-items-center gap-2"
+        >
+          <Icon name={group.icon} />
+          {t(group.labelKey)}
+        </Dropdown.Toggle>
+        <Dropdown.Menu>
+          {group.items.map((item) => (
+            <Dropdown.Item
+              key={item.to}
+              as={NavLink}
+              to={item.to}
+              title={t(item.titleKey)}
+              className="kukatko-tap-target d-flex align-items-center gap-2"
+            >
+              <Icon name={item.icon} />
+              {t(item.labelKey)}
+            </Dropdown.Item>
+          ))}
+        </Dropdown.Menu>
+      </Dropdown>
     )
   }
 
@@ -108,33 +213,23 @@ export function Layout() {
         className="kukatko-navbar"
       >
         <Container>
-          <Navbar.Brand as={Link} to="/">
+          <Navbar.Brand as={Link} to="/" title={t('nav.titles.home')}>
             {t('app.name')}
           </Navbar.Brand>
           <Navbar.Toggle aria-controls="main-navbar" />
           <Navbar.Collapse id="main-navbar">
             <Nav className="me-auto">
-              {/* Home stays reachable via the brand link; Browse groups the
-                  everyday library destinations for all roles. */}
-              {renderGroup('nav-browse', 'nav.browse', BROWSE_ITEMS)}
-              {/* Search and Upload stay prominent as top-level entries. */}
-              <Nav.Link as={NavLink} to="/search">
-                {t('nav.search')}
-              </Nav.Link>
+              {/* Home stays reachable via the brand link. Library, Albums and
+                  Labels are the everyday entry points, so they never hide. */}
+              {PRIMARY_ITEMS.map(renderLink)}
+              {/* The remaining browse destinations, one level down. */}
+              {renderGroup(BROWSE_GROUP)}
               {/* Upload is a write action: hidden from viewers. */}
-              {canWrite && (
-                <Nav.Link as={NavLink} to="/upload">
-                  {t('nav.upload')}
-                </Nav.Link>
-              )}
+              {canWrite && renderLink(UPLOAD_ITEM)}
               {/* Editor-only tools; the whole group is hidden from viewers. */}
-              {canWrite && renderGroup('nav-tools', 'nav.tools', TOOLS_ITEMS)}
+              {canWrite && renderGroup(TOOLS_GROUP)}
               {/* Admin-only administration; hidden from non-admins. */}
-              {isAdmin && renderGroup('nav-admin', 'nav.admin', ADMIN_ITEMS)}
-            </Nav>
-            <NavbarSearch />
-            <Nav>
-              <SavedSearchesMenu />
+              {isAdmin && renderGroup(ADMIN_GROUP)}
             </Nav>
             <Nav className="align-items-center">
               <KeyboardShortcutsHelp />
@@ -143,15 +238,24 @@ export function Layout() {
             {user && (
               <Nav className="ms-md-3">
                 <NavDropdown align="end" title={user.display_name || user.username} id="user-menu">
-                  <NavDropdown.Item as={Link} to="/account">
+                  <NavDropdown.Item
+                    as={Link}
+                    to="/account"
+                    title={t('nav.titles.account')}
+                    className="d-flex align-items-center gap-2"
+                  >
+                    <Icon name="person-circle" />
                     {t('nav.account')}
                   </NavDropdown.Item>
                   <NavDropdown.Divider />
                   <NavDropdown.Item
+                    title={t('nav.titles.logout')}
+                    className="d-flex align-items-center gap-2"
                     onClick={() => {
                       void handleLogout()
                     }}
                   >
+                    <Icon name="box-arrow-right" />
                     {t('nav.logout')}
                   </NavDropdown.Item>
                 </NavDropdown>
