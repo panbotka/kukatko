@@ -132,6 +132,78 @@ func TestClient_get_unauthorized(t *testing.T) {
 	}
 }
 
+// TestClient_forbidden verifies a viewer's token — which authenticates fine but
+// may not mutate — gets a message that says exactly that, rather than the opaque
+// "insufficient permissions" the server sends. The token is never echoed.
+func TestClient_forbidden(t *testing.T) {
+	t.Parallel()
+
+	client := testClient(t, "kkt_viewer_supersecret", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"error":"insufficient permissions"}`))
+	})
+
+	_, err := client.CreateAlbum(t.Context(), AlbumInput{Title: "Trip"})
+	var forbidden *ForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Fatalf("CreateAlbum error = %v (%T), want *ForbiddenError", err, err)
+	}
+	msg := err.Error()
+	for _, want := range []string{"403", "permission denied", "editor or admin", "viewer"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("403 message %q does not mention %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "supersecret") {
+		t.Errorf("403 message leaks the token: %q", msg)
+	}
+	if strings.Contains(msg, "insufficient permissions") {
+		t.Errorf("403 message dumps the response body: %q", msg)
+	}
+}
+
+// TestClient_send_noContent verifies a 204 is a success that yields no body, which
+// is what every toggle and attach endpoint answers with.
+func TestClient_send_noContent(t *testing.T) {
+	t.Parallel()
+
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	raw, err := client.send(t.Context(), http.MethodPut, "/photos/pht01/favorite", nil)
+	if err != nil {
+		t.Fatalf("send returned %v", err)
+	}
+	if raw != nil {
+		t.Errorf("send returned %q, want no body for a 204", raw)
+	}
+}
+
+// TestClient_send_created verifies a 201 is a success carrying the created
+// resource, which is what the create endpoints answer with.
+func TestClient_send_created(t *testing.T) {
+	t.Parallel()
+
+	var gotType string
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		gotType = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"uid":"alb01"}`))
+	})
+
+	raw, err := client.send(t.Context(), http.MethodPost, "/albums", map[string]string{"title": "Trip"})
+	if err != nil {
+		t.Fatalf("send returned %v", err)
+	}
+	if gotType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json for a body-carrying request", gotType)
+	}
+	if string(raw) != `{"uid":"alb01"}` {
+		t.Errorf("send returned %q, want the created resource", raw)
+	}
+}
+
 // TestClient_get_statusError verifies a non-401 failure carries the server's own
 // error text.
 func TestClient_get_statusError(t *testing.T) {

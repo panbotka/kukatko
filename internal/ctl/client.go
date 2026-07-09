@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,6 +46,23 @@ func (e *UnauthorizedError) Error() string {
 		"Create a new one (POST " + apiBasePath + "/auth/tokens while logged in), then store it:\n" +
 		"    kukatko ctl config set-context <name> --server " + e.Server + " --token-stdin\n" +
 		"or export " + EnvToken + " for a one-off command."
+}
+
+// ForbiddenError reports a 403 from the server: the token authenticated, but its
+// role is not allowed to perform the request. Every mutating ctl command is
+// guarded server-side by the editor/admin write check, so this is what a viewer's
+// token gets. The message says that plainly instead of dumping the server's body,
+// which is only ever the opaque "insufficient permissions".
+type ForbiddenError struct {
+	// Server is the endpoint that refused the request.
+	Server string
+}
+
+// Error renders the actionable 403 message.
+func (e *ForbiddenError) Error() string {
+	return "permission denied (HTTP 403) at " + e.Server + ": " +
+		"this API token's role may not perform this operation.\n" +
+		"Creating, editing and deleting need the editor or admin role; a viewer token may only read."
 }
 
 // StatusError reports any other non-2xx response. Message is the server's own
@@ -97,23 +115,30 @@ func (c *Client) Server() string {
 // get issues an authenticated GET against apiBasePath+path and returns the raw
 // response body. The body is returned undecoded on purpose: `-o json` prints the
 // API's own bytes back, unchanged, and only the table renderer needs a decoder.
-//
-// A 401 yields *UnauthorizedError, any other non-200 a *StatusError, and a
-// transport failure a wrapped error.
 func (c *Client) get(ctx context.Context, path string, query url.Values) (json.RawMessage, error) {
-	endpoint := c.server + apiBasePath + path
-	if len(query) > 0 {
-		endpoint += "?" + query.Encode()
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("building request for %s: %w", path, err)
-	}
-	req.Header.Set("Accept", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	return c.do(ctx, http.MethodGet, path, query, nil)
+}
 
+// send issues an authenticated mutating request (POST, PUT, PATCH or DELETE)
+// carrying body as JSON, or no body at all when body is nil. It returns the raw
+// response body, which is nil for the endpoints that answer 204 No Content.
+func (c *Client) send(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+	return c.do(ctx, method, path, nil, body)
+}
+
+// do performs one authenticated request and returns the raw response body, or nil
+// when the server answered 204 No Content.
+//
+// A 401 yields *UnauthorizedError, a 403 *ForbiddenError, any other non-2xx a
+// *StatusError, and a transport failure a wrapped error. The token is never part
+// of any of them.
+func (c *Client) do(
+	ctx context.Context, method, path string, query url.Values, body any,
+) (json.RawMessage, error) {
+	req, err := c.newRequest(ctx, method, path, query, body)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.httpc.Do(req)
 	if err != nil {
 		// url.Error already embeds the endpoint; the token is never part of it.
@@ -121,17 +146,64 @@ func (c *Client) get(ctx context.Context, path string, query url.Values) (json.R
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 	if err != nil {
 		return nil, fmt.Errorf("reading response from %s: %w", path, err)
 	}
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, &UnauthorizedError{Server: c.server}
+	if err := c.statusError(resp.StatusCode, raw); err != nil {
+		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, &StatusError{Status: resp.StatusCode, Message: errorMessage(body)}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil, nil
 	}
-	return body, nil
+	return raw, nil
+}
+
+// newRequest builds the authenticated request for one call, encoding body as JSON
+// when it is not nil.
+func (c *Client) newRequest(
+	ctx context.Context, method, path string, query url.Values, body any,
+) (*http.Request, error) {
+	endpoint := c.server + apiBasePath + path
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+	var payload io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("encoding the request body for %s: %w", path, err)
+		}
+		payload = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, payload)
+	if err != nil {
+		return nil, fmt.Errorf("building request for %s: %w", path, err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	return req, nil
+}
+
+// statusError maps a response status onto the typed error the CLI reports, or nil
+// for any 2xx. The API answers 200, 201 and 204 across the resources ctl drives,
+// so the whole 2xx range is accepted rather than one status per endpoint.
+func (c *Client) statusError(status int, body []byte) error {
+	switch {
+	case status == http.StatusUnauthorized:
+		return &UnauthorizedError{Server: c.server}
+	case status == http.StatusForbidden:
+		return &ForbiddenError{Server: c.server}
+	case status < http.StatusOK || status >= http.StatusMultipleChoices:
+		return &StatusError{Status: status, Message: errorMessage(body)}
+	default:
+		return nil
+	}
 }
 
 // errorMessage extracts the server's {"error": …} text from an error body,

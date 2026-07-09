@@ -23,8 +23,9 @@ var (
 	ErrInvalidSearchMode = errors.New(`ctl: mode must be "fulltext", "semantic" or "hybrid"`)
 	// ErrEmptyQuery indicates a blank search query, which the API rejects with 400.
 	ErrEmptyQuery = errors.New("ctl: search query must not be empty")
-	// ErrEmptyUID indicates a blank photo uid.
-	ErrEmptyUID = errors.New("ctl: photo uid must not be empty")
+	// ErrEmptyUID indicates a blank resource uid. The wrapping error names which
+	// resource — a photo, an album, a label or a subject — was left unnamed.
+	ErrEmptyUID = errors.New("ctl: uid must not be empty")
 )
 
 // Bounds on --year. Photography starts well after minYear, and a year beyond
@@ -254,8 +255,8 @@ func (c *Client) ListPhotos(ctx context.Context, opts ListOptions) (json.RawMess
 // ErrEmptyUID for a blank uid and a *StatusError with status 404 for a photo
 // that does not exist.
 func (c *Client) GetPhoto(ctx context.Context, uid string) (json.RawMessage, error) {
-	if uid == "" {
-		return nil, ErrEmptyUID
+	if err := requireUID("photo", uid); err != nil {
+		return nil, err
 	}
 	return c.get(ctx, "/photos/"+url.PathEscape(uid), nil)
 }

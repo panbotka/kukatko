@@ -114,7 +114,10 @@ func newCtlCmd() *cobra.Command {
 	flags.StringVar(&opts.configPath, "ctl-config", "",
 		"path to the client context file (default: ~/.config/kukatko/ctl.yaml)")
 
-	cmd.AddCommand(newCtlConfigCmd(opts), newCtlPhotosCmd(opts))
+	cmd.AddCommand(
+		newCtlConfigCmd(opts), newCtlPhotosCmd(opts), newCtlAlbumsCmd(opts), newCtlLabelsCmd(opts),
+		newCtlSubjectsCmd(opts), newCtlFavoritesCmd(opts), newCtlRatingCmd(opts), newCtlBulkCmd(opts),
+	)
 	return cmd
 }
 
@@ -277,35 +280,16 @@ func newCtlConfigUseContextCmd(opts *ctlOptions) *cobra.Command {
 	}
 }
 
-// renderPhotoPage writes a photo list or search result in the requested format:
-// the API's own JSON bytes, unchanged, or a compact table.
+// renderPhotoPage writes a photo list, a search result, a favorites page or a
+// subject's gallery — all four share the /photos envelope — in the requested
+// format: the API's own JSON bytes, unchanged, or a compact table.
 func renderPhotoPage(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	if format == ctl.FormatJSON {
-		return writeRawJSON(w, raw)
-	}
-	page, err := ctl.DecodePhotoPage(raw)
-	if err != nil {
-		return fmt.Errorf("rendering the photo list: %w", err)
-	}
-	if err := ctl.WritePhotoPage(w, page); err != nil {
-		return fmt.Errorf("rendering the photo list: %w", err)
-	}
-	return nil
+	return renderRaw(w, format, raw, "photo list", ctl.DecodePhotoPage, ctl.WritePhotoPage)
 }
 
 // renderPhotoDetail writes a single photo in the requested format.
 func renderPhotoDetail(w io.Writer, format ctl.Format, raw json.RawMessage) error {
-	if format == ctl.FormatJSON {
-		return writeRawJSON(w, raw)
-	}
-	detail, err := ctl.DecodePhotoDetail(raw)
-	if err != nil {
-		return fmt.Errorf("rendering the photo: %w", err)
-	}
-	if err := ctl.WritePhotoDetail(w, detail); err != nil {
-		return fmt.Errorf("rendering the photo: %w", err)
-	}
-	return nil
+	return renderRaw(w, format, raw, "photo", ctl.DecodePhotoDetail, ctl.WritePhotoDetail)
 }
 
 // writeRawJSON echoes the API's response bytes for -o json.

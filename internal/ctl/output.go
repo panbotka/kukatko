@@ -55,34 +55,61 @@ func WriteJSON(w io.Writer, raw json.RawMessage) error {
 	return nil
 }
 
+// writeLine writes one line of prose, used for an empty result or a summary.
+func writeLine(w io.Writer, line string) error {
+	if _, err := io.WriteString(w, line+"\n"); err != nil {
+		return fmt.Errorf("writing output: %w", err)
+	}
+	return nil
+}
+
+// writeTable renders a header and its rows through a tabwriter, so every resource
+// prints the same column-aligned shape without repeating the plumbing.
+func writeTable(w io.Writer, header []string, rows [][]string) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, strings.Join(header, "\t"))
+	for _, row := range rows {
+		fmt.Fprintln(tw, strings.Join(row, "\t"))
+	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("writing table: %w", err)
+	}
+	return nil
+}
+
+// writeKeyValues renders a detail view as an aligned key/value table.
+func writeKeyValues(w io.Writer, rows [][2]string) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	for _, row := range rows {
+		fmt.Fprintf(tw, "%s\t%s\n", row[0], row[1])
+	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("writing table: %w", err)
+	}
+	return nil
+}
+
 // WritePhotoPage renders a page of photos as a compact table followed by a
 // single summary line carrying the paging state (and, for a search, the
 // effective ranking mode). An empty page prints one line and no header.
 func WritePhotoPage(w io.Writer, page PhotoPage) error {
 	if len(page.Photos) == 0 {
-		if _, err := io.WriteString(w, "no photos found\n"); err != nil {
-			return fmt.Errorf("writing output: %w", err)
-		}
-		return nil
+		return writeLine(w, "no photos found")
 	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "UID\tTAKEN\tTITLE\tFILE\tSIZE")
+	rows := make([][]string, 0, len(page.Photos))
 	for _, photo := range page.Photos {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+		rows = append(rows, []string{
 			photo.UID,
 			formatTime(photo.TakenAt),
 			elide(dash(photo.Title), titleWidth),
 			elide(dash(photo.FileName), fileWidth),
 			formatSize(photo.FileSize),
-		)
+		})
 	}
-	if err := tw.Flush(); err != nil {
-		return fmt.Errorf("writing table: %w", err)
+	if err := writeTable(w, []string{"UID", "TAKEN", "TITLE", "FILE", "SIZE"}, rows); err != nil {
+		return err
 	}
-	if _, err := io.WriteString(w, "\n"+pageSummary(page)+"\n"); err != nil {
-		return fmt.Errorf("writing output: %w", err)
-	}
-	return nil
+	return writeLine(w, "\n"+pageSummary(page))
 }
 
 // pageSummary builds the one-line footer describing how much of the result set
@@ -108,14 +135,7 @@ func pageSummary(page PhotoPage) string {
 
 // WritePhotoDetail renders one photo as an aligned key/value table.
 func WritePhotoDetail(w io.Writer, detail PhotoDetail) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	for _, row := range detailRows(detail) {
-		fmt.Fprintf(tw, "%s\t%s\n", row[0], row[1])
-	}
-	if err := tw.Flush(); err != nil {
-		return fmt.Errorf("writing table: %w", err)
-	}
-	return nil
+	return writeKeyValues(w, detailRows(detail))
 }
 
 // detailRows lists the key/value pairs of a photo detail in display order.
@@ -148,13 +168,9 @@ func detailRows(detail PhotoDetail) [][2]string {
 // one with an asterisk. Tokens are never printed — only whether one is stored.
 func WriteContexts(w io.Writer, cfg *Config) error {
 	if cfg == nil || len(cfg.Contexts) == 0 {
-		if _, err := io.WriteString(w, "no contexts configured\n"); err != nil {
-			return fmt.Errorf("writing output: %w", err)
-		}
-		return nil
+		return writeLine(w, "no contexts configured")
 	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "CURRENT\tNAME\tSERVER\tTOKEN")
+	rows := make([][]string, 0, len(cfg.Contexts))
 	for _, ctx := range cfg.Contexts {
 		current := ""
 		if ctx.Name == cfg.CurrentContext {
@@ -164,12 +180,9 @@ func WriteContexts(w io.Writer, cfg *Config) error {
 		if ctx.Token != "" {
 			token = "stored"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", current, ctx.Name, ctx.Server, token)
+		rows = append(rows, []string{current, ctx.Name, ctx.Server, token})
 	}
-	if err := tw.Flush(); err != nil {
-		return fmt.Errorf("writing table: %w", err)
-	}
-	return nil
+	return writeTable(w, []string{"CURRENT", "NAME", "SERVER", "TOKEN"}, rows)
 }
 
 // joinRefs renders album or label references as a comma-separated list of their

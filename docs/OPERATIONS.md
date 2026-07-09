@@ -149,12 +149,18 @@ aktuální kontext, `--ctl-config <path>` jiný soubor.
 
 `-o table` (default) je kompaktní tabulka + jeden souhrnný řádek (`3 of 42 photos · offset 0 ·
 next offset 3`, u hledání navíc `mode`/`degraded`). Prázdný výsledek vypíše jediný řádek
-`no photos found` **bez hlavičky**. `-o json` tiskne **JSON serveru beze změny** (žádný
-re-marshal) pro strojové zpracování; `-o yaml` neexistuje.
+`no photos found` / `no albums found` / … **bez hlavičky**. `-o json` tiskne **JSON serveru beze
+změny** (žádný re-marshal) pro strojové zpracování; `-o yaml` neexistuje.
+
+**Výjimka pro `204 No Content`.** Kde API nevrací tělo (attach/detach štítku, oblíbené,
+hodnocení), není co propustit beze změny — `-o table` vypíše jednu větu a `-o json` jediný
+payload, který si CLI vyrábí samo: `{"status":"ok","message":"photo pht01 favorited"}`. Pipeline
+tak pozná úspěch od chyby.
 
 Exit `0` při úspěchu, nenulový při HTTP i transportní chybě. **`401`** dá krátkou akční
-hlášku (token chybí / expiroval / byl revokován + jak vyrobit nový), ne stacktrace a ne výpis
-těla odpovědi.
+hlášku (token chybí / expiroval / byl revokován + jak vyrobit nový). **`403`** (viewer sáhl na
+mutaci) řekne **rovnou, že nestačí role** — mutace chtějí `editor`/`admin`, viewer jen čte.
+Ani jedna nevypisuje stacktrace, tělo odpovědi, ani token.
 
 #### `ctl photos`
 
@@ -190,6 +196,136 @@ kukatkoctl photos get pht01h2j3
 kukatkoctl photos search "západ slunce nad jezerem" --mode semantic
 KUKATKO_SERVER=http://localhost:8080 KUKATKO_TOKEN=kkt_… kukatkoctl photos list
 ```
+
+#### `ctl albums`
+
+Alba a jejich členství (`internal/organizeapi`). Výpis smí kdokoli přihlášený; **create a členství
+chtějí `editor`/`admin`**.
+
+| Příkaz | Význam |
+| --- | --- |
+| `ctl albums list` | `GET /albums` — **holé `{"albums":[…]}`, bez stránkování**, každé album s počtem fotek |
+| `ctl albums get <uid>` | `GET /albums/{uid}`; detail **neposílá** `photo_count`, sloupec proto chybí |
+| `ctl albums create <title>` | `POST /albums`; `--description`, `--type`, `--order-by`, `--cover`, `--private` |
+| `ctl albums add-photos <album-uid> [<photo-uid>…]` | `POST /albums/{uid}/photos` — přidá **za** stávající |
+| `ctl albums remove-photos <album-uid> [<photo-uid>…]` | `DELETE /albums/{uid}/photos`; nečlen = no-op |
+
+`--type` je `album` (default), `folder`, `moment`, `state` nebo `month`; ručně dává smysl jen
+`album`, zbytek generuje server. `add-photos`/`remove-photos` čtou uidy z argumentů, nebo **ze
+stdin**, když žádné nejsou (viz *Velké dávky* níže), a posílají je v **jednom** požadavku.
+V tabulce vypíšou jeden řádek (`album alb1a2b3 now holds 12 photos`), `-o json` celé nové pořadí.
+
+#### `ctl labels`
+
+Štítky a jejich navěšení na fotky (`internal/organizeapi`). Výpis kdokoli; zbytek `editor`/`admin`.
+
+| Příkaz | Význam |
+| --- | --- |
+| `ctl labels list` | `GET /labels` — **holé `{"labels":[…]}`**, řazeno dle priority |
+| `ctl labels get <uid>` | `GET /labels/{uid}` |
+| `ctl labels create <name>` | `POST /labels`; `--priority` |
+| `ctl labels attach <label-uid> <photo-uid>` | `POST /labels/{uid}/photos`; `--source`, `--uncertainty` |
+| `ctl labels detach <label-uid> <photo-uid>` | `DELETE /labels/{uid}/photos`; nenavěšený = no-op |
+
+`--source` je `manual` (default), `ai` nebo `import`. Vynechaný se do těla **neposílá**, ať si
+server dosadí vlastní default.
+
+#### `ctl subjects`
+
+Osoby, zvířata a další subjekty face pipeline (`internal/peopleapi`). **Celý strom je read-only** —
+zakládat a editovat subjekty patří do UI, kde je vidět galerie obličejů a rozhodnutí jde ověřit.
+
+| Příkaz | Význam |
+| --- | --- |
+| `ctl subjects list` | `GET /subjects` — **holé `{"subjects":[…]}`**, s počtem markerů |
+| `ctl subjects get <uid>` | `GET /subjects/{uid}` |
+| `ctl subjects photos <uid>` | `GET /subjects/{uid}/photos`; `--limit`/`--offset` |
+
+Galerie subjektu je jediný stránkovaný subject endpoint a vrací **obálku `/photos`**, takže se
+tiskne jako fotolist. Filtry katalogu nečte, tak je `ctl` ani nenabízí.
+
+#### `ctl favorites` a `ctl rating`
+
+Oblíbené i hodnocení jsou **per-user**, ne globální: scopne je token, ne parametr. Smí je proto
+měnit **i viewer** — na svoje.
+
+| Příkaz | Význam |
+| --- | --- |
+| `ctl favorites list` | `GET /favorites`; obálka `/photos` + filtry jako `photos list` (bez `--favorite`) |
+| `ctl favorites add <uid>` | `PUT /photos/{uid}/favorite` (idempotentní, `204`) |
+| `ctl favorites remove <uid>` | `DELETE /photos/{uid}/favorite` (idempotentní, `204`) |
+| `ctl rating set <uid> [<0-5>]` | `PUT /photos/{uid}/rating`; `--flag none\|pick\|reject` |
+| `ctl rating clear <uid>` | `DELETE /photos/{uid}/rating` (idempotentní) |
+
+Hvězdy a flag jsou **nezávislé**: co u `rating set` vynecháš, to server nechá být — musíš ale zadat
+aspoň jedno. `ctl favorites list` parametr `favorite` neposílá; endpoint se scopne sám.
+
+#### `ctl bulk`
+
+Jedna metadatová editace na mnoho fotek (`POST /photos/bulk`, `editor`/`admin`).
+
+```
+ctl bulk [<photo-uid>…] [operace…] [--yes]
+```
+
+**Celá dávka jde v jednom požadavku**, protože ji server aplikuje v **jedné transakci** — smyčka
+po fotkách by atomicitu vyměnila za N transakcí a N audit řádků. Server stropuje dávku na 1000 fotek
+(`413`). Uidy se berou z argumentů, nebo **ze stdin**, když žádné nejsou; ze stdin se čtou čtyři
+tvary: obálka `{"photos":[…]}` (přesně to, co tiskne `ctl photos list -o json`), holé JSON pole uidů,
+holé pole objektů s `uid`, nebo prostý seznam oddělený bílými znaky. Uidy se trimují a **deduplikují**.
+
+| Flag | Význam |
+| --- | --- |
+| `--add-album` / `--remove-album` | uid alba; opakovatelné |
+| `--add-label` / `--remove-label` | uid štítku; opakovatelné |
+| `--set-caption` / `--clear-caption` | titulek fotky |
+| `--set-description` / `--clear-description` | popis |
+| `--location "lat,lng"` / `--clear-location` | GPS pozice |
+| `--private[=false]` | soukromá fotka |
+| `--favorite[=false]` | oblíbená (per-user) |
+| `--archive` / `--unarchive` | přesun do koše / zpět |
+| `--rating 0..5` | hvězdy (per-user) |
+| `--flag none\|pick\|reject` | cull flag (per-user) |
+
+Flagy, jejichž „nezadáno" je taky platná hodnota (`--private`, `--favorite`, `--rating`, `--flag`),
+se posílají **jen když je vážně napíšeš** — jinak by `ctl bulk --add-label x` tiše odoblíbil všechno,
+čeho se dotkne, a shodil hodnocení na nulu. Vzájemně se vylučující dvojice (`--set-caption`
++ `--clear-caption`, `--archive` + `--unarchive`, …), rozsah hvězd, flag i souřadnice se ověřují
+**lokálně**, aby překlep nestál round trip ani rollbacknutou transakci.
+
+Výstup je souhrn (`120 photos · 118 updated · 0 skipped · 2 errored`); **vypíšou se jen fotky, které
+selhaly**. Celý per-fotkový rozpad je v `-o json`.
+
+#### Velké dávky: potvrzení nad 50 fotkami
+
+Příkaz, který by sáhl na **víc než 50 fotek** (`ctl bulk`, `ctl albums add-photos`/`remove-photos`),
+se nejdřív zeptá:
+
+```
+About to apply this edit to 120 photos, more than the 50-photo threshold. Continue? [y/N]
+```
+
+`--yes` / `-y` dotaz přeskočí. Když uidy přišly **ze stdin**, dotaz položit nejde — ten stream už
+spolkl seznam uidů a v pipeline není terminál, ze kterého odpovědět. Příkaz proto **skončí chybou,
+která si řekne o `--yes`**, místo aby na nezodpověditelnou otázku tiše pokračoval.
+
+```bash
+kukatkoctl albums create "Léto 2024" --description "prázdniny"
+kukatkoctl labels attach lbl1a2b3 pht01h2j3
+kukatkoctl subjects photos sub1a2b3 --limit 20
+kukatkoctl favorites add pht01h2j3
+kukatkoctl rating set pht01h2j3 5 --flag pick
+
+# celá dávka v jedné transakci, uidy rovnou z výpisu:
+kukatkoctl photos search "jezero" --limit 200 -o json | kukatkoctl bulk --add-label lbl1a2b3 --yes
+kukatkoctl photos list --year 2019 -o json | kukatkoctl bulk --archive --yes
+```
+
+#### Co `ctl` schválně neumí
+
+Zálohy, obnovu, migrace, údržbu, import a frontu jobů **po síti nenabízí**. Jsou destruktivní nebo
+dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy jen jako lokální subkomandy
+(`kukatko backup`, `restore`, `migrate`, `maintenance`, `import`, …).
 
 ## Konfigurační klíče
 

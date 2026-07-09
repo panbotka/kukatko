@@ -1112,11 +1112,15 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
     pak `KUKATKO_SERVER`/`KUKATKO_TOKEN` **přebijí po jednotlivých polích**, takže samotné
     `KUKATKO_TOKEN` přecredentialuje uložený kontext. Chyby `ErrContextNotFound`, `ErrNoServer`.
   - `client.go` — `NewClient(server, token)` (validuje absolutní http(s) URL → `ErrInvalidServerURL`),
-    interní `get(ctx, path, query)` posílá `Authorization: Bearer <token>` a vrací **surové** tělo
-    (`json.RawMessage`), protože `-o json` tiskne bajty serveru beze změny. `401` → `*UnauthorizedError`
-    s krátkou akční hláškou (token chybí / expiroval / byl revokován + jak vyrobit nový) — **nikdy**
-    výpis těla ani tokenu; jiný non-2xx → `*StatusError` s `{"error":…}` textem serveru (jinak omezený
-    úryvek těla). Tělo se čte přes `io.LimitReader`, timeout 30 s.
+    interní `get(ctx, path, query)` a `send(ctx, method, path, body)` posílají
+    `Authorization: Bearer <token>` a vracejí **surové** tělo (`json.RawMessage`), protože `-o json`
+    tiskne bajty serveru beze změny; `204 No Content` vrací `nil` tělo. Úspěch je celý rozsah `2xx` —
+    API odpovídá 200, 201 i 204 podle endpointu. `401` → `*UnauthorizedError` s krátkou akční hláškou
+    (token chybí / expiroval / byl revokován + jak vyrobit nový); `403` → `*ForbiddenError`, který
+    **řekne, že nestačí role** (mutace chtějí editor/admin, viewer jen čte), místo výpisu serverového
+    `insufficient permissions`. **Nikdy** výpis těla ani tokenu; jiný non-2xx → `*StatusError`
+    s `{"error":…}` textem serveru (jinak omezený úryvek těla). Tělo se čte přes `io.LimitReader`,
+    timeout 30 s.
   - `photos.go` — `ListPhotos`/`GetPhoto`/`SearchPhotos` + `DecodePhotoPage`/`DecodePhotoDetail`.
     **Dekodér je per-resource záměrně:** API nemá jednotnou list obálku (`photos` vrací
     `{photos,total,limit,offset,next_offset}`, ostatní zdroje holý seznam) a sjednocovat ho nesmíme —
@@ -1125,11 +1129,46 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
     nestojí round trip. **`--year` API nezná** — překládá se na inkluzivní rozsah
     `taken_after`/`taken_before` (`taken_at >= … <= …`), horní mez je poslední instant 31. 12.
     `SearchOptions` přidává `q` + `mode` (`fulltext`/`semantic`/`hybrid`).
+  - `albums.go` — `ListAlbums`/`GetAlbum`/`CreateAlbum`/`AddAlbumPhotos`/`RemoveAlbumPhotos`
+    + `DecodeAlbums`/`DecodeAlbum`/`DecodePhotoUIDs`. Obálka je **holé `{"albums":[…]}` bez stránkování**
+    — proto vlastní dekodér. `PhotoCount` plní jen list; detail ho neposílá, takže ho renderer netiskne.
+    `AlbumInput` se validuje lokálně (`ErrEmptyTitle`, `ErrInvalidAlbumType`); membership posílá celý
+    seznam uidů v **jednom** požadavku a server vrací obnovené pořadí.
+  - `labels.go` — `ListLabels`/`GetLabel`/`CreateLabel`/`AttachLabel`/`DetachLabel` + `DecodeLabels`/
+    `DecodeLabel`. Obálka je **holé `{"labels":[…]}`** řazené dle priority (třetí tvar). Attach/detach
+    odpovídají `204`. Prázdný `source` se ze těla vypustí, ať server dosadí vlastní `manual`
+    (`ErrInvalidLabelSource`, `ErrEmptyName`).
+  - `subjects.go` — `ListSubjects`/`GetSubject`/`SubjectPhotos` + `DecodeSubjects`/`DecodeSubject`.
+    Obálka je **holé `{"subjects":[…]}`**; galerie subjektu ale **má tvar `/photos`**, takže se čte
+    `DecodePhotoPage` (stejný tvar, ne sjednocený). `PageOptions` nabízí jen limit/offset — filtry
+    katalogu endpoint nečte, tak je ctl ani nenabízí.
+  - `curate.go` — `ListFavorites` (obálka `/photos`, parametr `favorite` se zahazuje: endpoint se
+    scopne sám), `AddFavorite`/`RemoveFavorite`, `SetRating`/`ClearRating`. Oblíbené i hodnocení jsou
+    **per-user**, takže je smí měnit i viewer. Hvězdy i flag jsou nezávislé ukazatele — co pošleš `nil`,
+    to server nechá být (`ErrEmptyRating`, `ErrInvalidRating`, `ErrInvalidFlag`).
+  - `bulk.go` — `Bulk(ctx, photoUIDs, ops)` posílá **jeden** `POST /photos/bulk` na celou dávku, protože
+    server ji aplikuje v jedné transakci; smyčka po fotkách by atomicitu vyměnila za N transakcí a N
+    audit řádků. `BulkOperations` má tagy 1:1 s API (endpoint odmítá neznámá pole) a všechno `omitempty`,
+    aby se nulová hodnota neposlala jako reálná změna. `Validate()` zrcadlí serverové kontroly (vzájemně
+    se vylučující set/clear páry, rozsah hvězd, flag, souřadnice) → `ErrNoOperations`,
+    `ErrConflictingOperations`, `ErrInvalidLocation`. `DecodeBulkResult` čte `{results,counts}` (čtvrtý
+    tvar). `ParseLocation("lat,lng")`.
+  - `uids.go` — `ParsePhotoUIDs(r)` čte množinu fotek ze stdin ve **čtyřech** tvarech: obálka
+    `{"photos":[…]}` (přesně to, co tiskne `ctl photos list -o json`), holé JSON pole uidů, holé pole
+    objektů s `uid`, nebo prostý seznam oddělený bílými znaky. `NormalizeUIDs` trimuje, zahazuje prázdné
+    a **deduplikuje** (aby počet v potvrzovacím dotazu odpovídal tomu, co se opravdu pošle) →
+    `ErrNoPhotoUIDs`. `ConfirmThreshold = 50` je hranice, nad kterou se příkaz ptá.
   - `output.go` — `ParseFormat` (`table`/`json`; **`yaml` schválně ne**), `WriteJSON` (echo bajtů beze
-    změny), `WritePhotoPage` (tabulka + jeden souhrnný řádek: kolik z kolika, `offset`, `next offset`,
-    u hledání efektivní `mode` a případné `degraded`), `WritePhotoDetail`, `WriteContexts`
-    (**token se nikdy netiskne**, jen `stored`/`not set`). Prázdný výsledek = jediný řádek
-    `no photos found`, žádná hlavička — agent si nesplete hlavičku s řádkem.
+    změny), sdílené `writeTable`/`writeKeyValues`/`writeLine`, `WritePhotoPage` (tabulka + jeden souhrnný
+    řádek: kolik z kolika, `offset`, `next offset`, u hledání efektivní `mode` a případné `degraded`),
+    `WritePhotoDetail`, `WriteContexts` (**token se nikdy netiskne**, jen `stored`/`not set`).
+    Prázdný výsledek = jediný řádek `no photos found`, žádná hlavička — agent si nesplete hlavičku
+    s řádkem.
+  - `render.go` — `WriteAlbums`/`WriteAlbum`, `WriteLabels`/`WriteLabel`, `WriteSubjects`/`WriteSubject`,
+    `WriteMembership` (jeden řádek: kolik fotek album nově drží), `WriteBulkResult` (souhrn + tabulka
+    **jen** neúspěšných fotek) a `WriteAck`. `Ack` je jediný payload, který si CLI **vyrábí samo**: kde
+    API odpoví `204`, není co propustit beze změny, takže `-o json` dostane
+    `{"status":"ok","message":…}` a pipeline pozná úspěch od chyby.
 
   Strom příkazů, konfigurační soubor a symlink `kukatkoctl` popisuje
   [`docs/OPERATIONS.md`](OPERATIONS.md).
