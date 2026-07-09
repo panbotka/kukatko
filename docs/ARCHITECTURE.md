@@ -175,6 +175,31 @@ Volby vycházejí z photo-sorteru (osvědčené) a z rešerše ([§16](#16-refer
   **InsightFace `buffalo_l`** (ArcFace, 512-dim). Pozn.: pretrained packy jsou typicky
   *non-commercial/research* — pro osobní použití OK.
 
+### Úložiště originálů (`storage.backend`)
+- **Dva backendy za jedním rozhraním `storage.Storage`**, přepínané jediným konfiguračním
+  klíčem `storage.backend`; nad rozhraním žádný balíček rozdíl nepozná.
+  - **`fs`** (default) — originály na lokálním disku, publikace atomickým hard-linkem.
+    Existující nasazení i celá testovací sada tím zůstávají nedotčené.
+  - **`r2`** — **privátní** Cloudflare R2 bucket (S3-kompatibilní, klient je **stejné
+    `minio-go/v7`** jako u záloh; žádná nová závislost). Pro VPS, jehož disk knihovnu
+    (~120 GB) neunese.
+- **Object key = `photos.file_path` / `photo_files.file_path` doslova.** Ta hodnota už v Postgresu
+  je a neodvozuje se; klíč tedy *je* ona → **žádný nový sloupec a žádná migrace klíčů**. Náhledy si
+  nechávají svůj hash-derived cache layout, který se rovnou stává klíčem. Klíč **není tajemství**:
+  request bez platného podpisu odmítne Worker dřív, než se k objektu dostane.
+- **Podepsané URL:** `https://<media_base_url>/<key>?exp=<unix>&sig=<hex HMAC-SHA256>`, podpis kryje
+  klíč i expiraci. Ověřují se **dvě tajemství naráz** (současné + předchozí), takže rotace nemá okno
+  rozbitých URL. Default TTL 1 h; každá API odpověď nese čerstvě podepsané URL.
+- **Hard-link nemá v object storage ekvivalent a není potřeba:** `PutObject` je atomický a
+  katalogový dedup drží unique constraint na `photos.file_hash`. Uploady i stahování streamují —
+  soubor nikdy nedrží celý v RAM; `r2` je stageuje přes `storage.temp_path`, protože klíč závisí na
+  obsahu (bez SHA256 nelze odlišit re-upload od stejnojmenného jiného souboru) a protože
+  `Materialize` musí externím nástrojům podat **reálný lokální soubor**. Temp soubor se maže vždy,
+  i na error path.
+- Detaily (metadata `x-amz-meta-sha256`, konfigurační klíče, rotace tajemství) v
+  [`docs/PACKAGES.md`](PACKAGES.md) a [`docs/OPERATIONS.md`](OPERATIONS.md); rozhodnutí a cenové
+  srovnání proti DO Spaces v `docs/superpowers/specs/2026-07-09-s3-storage-design.md`.
+
 ### Zálohování
 - **`minio-go/v7`** (generický S3 endpoint, path-style, stream `objectSize=-1`).
 
@@ -184,7 +209,7 @@ Volby vycházejí z photo-sorteru (osvědčené) a z rešerše ([§16](#16-refer
 
 Schéma navazuje na photo-sorter (kompatibilita pro migraci) s úpravami pro Kukátko.
 UID = `VARCHAR(32)`, generované aplikací (prefix + náhodný suffix). `file_hash` = SHA256 hex.
-Originály na disku v layoutu `YYYY/MM/<filename>`.
+Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 rovnou object key.
 
 ### 5.1 Klíčové tabulky (převzaté z photo-sorteru, upravené)
 
@@ -641,6 +666,10 @@ dodržet tato pravidla; **task není hotový s červeným lintem nebo testy.**
   (test DB `kukatko_test`, DSN v `KUKATKO_TEST_DATABASE_URL`). Harness: aplikuje migrace,
   poskytne čistý stav per test (truncate/transakce + rollback). Když env chybí, integrační
   testy se `t.Skip` (aby rychlá brána `make check` nevyžadovala DB).
+- **R2 backend** má integrační testy proti **reálnému S3-kompatibilnímu endpointu**
+  (`KUKATKO_TEST_S3_ENDPOINT`, stačí MinIO; volitelně `_BUCKET`/`_REGION`/`_ACCESS_KEY`/`_SECRET_KEY`):
+  store/open/stat/delete, materialize + úklid temp souboru (i na error path) a klíč s UTF-8 jménem.
+  Bez proměnné se skipnou, stejně jako DB testy. Podepisování URL je čistá funkce → unit testy.
 - Externí závislosti (embeddings sidecar, PhotoPrism API, mapy.com, S3) za **rozhraním**
   (interface) → v testech mockované/fake; kontrakt sidecaru ověřit i contract testem proti
   fake serveru.

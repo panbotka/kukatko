@@ -144,6 +144,28 @@ Unit tests run without external dependencies. Integration tests (DB/HTTP against
 pgvector Postgres) are kept behind the `integration` build tag and `KUKATKO_TEST_DATABASE_URL`,
 so `make check` stays fast and DB-free; they are added alongside the DB layer in a later task.
 
+The R2 storage backend has its own integration tests, behind the same build tag and
+`KUKATKO_TEST_S3_ENDPOINT` (plus `KUKATKO_TEST_S3_BUCKET`, `_REGION`, `_ACCESS_KEY`,
+`_SECRET_KEY`). They skip when the endpoint is unset. Any S3-compatible endpoint works; a
+throwaway MinIO is the easiest:
+
+```bash
+docker run -d --name kukatko-minio -p 127.0.0.1:18100:9000 \
+  -e MINIO_ROOT_USER=kukatko -e MINIO_ROOT_PASSWORD=kukatko-secret \
+  quay.io/minio/minio:latest server /data
+
+KUKATKO_TEST_S3_ENDPOINT=http://127.0.0.1:18100 \
+KUKATKO_TEST_S3_ACCESS_KEY=kukatko KUKATKO_TEST_S3_SECRET_KEY=kukatko-secret \
+  go test -tags=integration -run TestR2 ./internal/storage/
+```
+
+MinIO binds to loopback on a port outside the ranges this host reserves. Running the whole
+`make test-integration` instead also needs `KUKATKO_TEST_DATABASE_URL`, since the other
+integration packages want a database.
+
+The test bucket (`kukatko-test` by default) is created if absent and **emptied between
+cases** — point the variables at a throwaway bucket, never at a real one.
+
 ## Releasing version info
 
 `Version` and `Commit` in `internal/version` are injected at build time. `make build` does

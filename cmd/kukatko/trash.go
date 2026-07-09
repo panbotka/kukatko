@@ -1,13 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/photos"
-	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
 )
@@ -26,9 +24,9 @@ const trashPurgeInterval = 6 * time.Hour
 // uploader defining the object layout, so trash.Config.Remote is left nil and
 // remote backup objects are not purged until that subsystem lands.
 func buildTrashService(cfg *config.Config, db *database.DB) (*trash.Service, error) {
-	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
+	store, err := newStorage(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("initialising originals storage: %w", err)
+		return nil, err
 	}
 	return trash.New(trash.Config{
 		Photos:        photos.NewStore(db.Pool()),

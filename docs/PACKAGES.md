@@ -81,23 +81,48 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   mřížky → stránka časové osy je index scan **bez Sortu** (EXPLAIN integrační test
   `store_perf_integration_test.go`, viz `docs/PERF.md`); FK `ON DELETE CASCADE`
   na satelity, `uploaded_by` `ON DELETE SET NULL`), `internal/storage/`
-  (on-disk úložiště originálů: rozhraní `Storage` + filesystemová implementace `FS`
-  `NewFS(root)`; `Store(ctx,src,takenAt,originalName)` streamuje na disk + počítá **SHA256**,
-  layout `YYYY/MM/<filename>` (datum z `taken_at`, fallback čas importu), publikace
-  **atomickým hard-linkem** přes temp v `<root>/.tmp`; kolize jmen: shodný obsah →
-  `ErrAlreadyExists` (dedup signál), jiný obsah → číselný sufix `name_1.ext` bez přepisu;
-  `Open`/`Stat`/`Delete`/`Materialize` s cestami confinovanými do rootu (`ErrInvalidPath`);
-  rozhraní **neprozrazuje filesystem** (předpoklad pro budoucí object-storage backend):
-  `URL(relPath)` vrací adresu, na kterou si klient sáhne přímo — FS vrací `""`, protože
-  originály na disku nejsou přes HTTP dostupné a servíruje je aplikace; `Materialize(ctx,relPath)`
-  vrací **reálný lokální soubor** pro nástroje, které umí jen jméno souboru (exiftool, ffprobe,
-  ffmpeg, heif-convert, vipsthumbnail) + `cleanup`, který volající **vždy** zavolá (i na error
-  path, jinak vzdálený backend leakuje temp); FS **nekopíruje** — vrátí cestu samotného originálu
-  a no-op `cleanup` (idempotentní, bezpečný i při vícenásobném volání), takže lokální vývoj
-  i testy zůstávají zero-copy;
-  MIME z obsahu (sniff 512 B) + přípona jako hint (`mediaTypeByExt` pro HEIC/RAW/video);
-  sentinely `ErrAlreadyExists`/`ErrInvalidPath`/`ErrTooManyCollisions`; nikdy nedrží soubor
-  celý v RAM), `internal/thumb/`
+  (úložiště originálů: rozhraní `Storage` + **dvě** implementace — filesystemová `FS`
+  `NewFS(root)` a Cloudflare R2 `NewR2(R2Options)`. Vybírá je `storage.backend` (`fs` **default** /
+  `r2`) přes `newStorage(cfg)` v `cmd/kukatko/storage.go`; nad rozhraním žádný balíček rozdíl
+  nepozná. Společné oběma: `Store(ctx,src,takenAt,originalName)` streamuje + počítá **SHA256**,
+  layout `YYYY/MM/<filename>` (datum z `taken_at`, fallback čas importu); kolize jmen: shodný
+  obsah → `ErrAlreadyExists` (dedup signál), jiný obsah → číselný sufix `name_1.ext` **bez
+  přepisu**; `Open`/`Stat`/`Delete`/`Materialize` s cestami confinovanými do rootu
+  (`ErrInvalidPath`), chybějící soubor/objekt wrapuje `os.ErrNotExist`; MIME z obsahu (sniff
+  512 B) + přípona jako hint (`mediaTypeByExt` pro HEIC/RAW/video); sentinely
+  `ErrAlreadyExists`/`ErrInvalidPath`/`ErrTooManyCollisions`; nikdy nedrží soubor celý v RAM
+  (sdílený `streamToTemp` v `temp.go`).
+  **`FS`** publikuje **atomickým hard-linkem** přes temp v `<root>/.tmp`.
+  **`R2`** (`r2.go`, klient **minio-go v7** — stejná knihovna jako `internal/backup`, žádná nová
+  závislost) jede nad **privátním** bucketem, kde **object key = `photos.file_path` doslova**
+  (žádný nový sloupec, žádná migrace klíčů). Hard-link nemá ekvivalent a není potřeba: `PutObject`
+  je atomický, katalogový dedup drží unique constraint na `photos.file_hash`. Upload jde přes
+  staged temp soubor v `storage.temp_path`, protože klíč závisí na obsahu — bez hashe nelze
+  odlišit byte-identický re-upload od stejnojmenného jiného souboru; SHA256 se ukládá jako
+  user-metadata `x-amz-meta-sha256` a je to jediný způsob, jak dedup poznat bez stažení objektu
+  (ETag je MD5, u multipartu opaque). Objekt bez té metadaty (zapsaný cizím nástrojem) se bere
+  jako jiný obsah → sufix.
+  Rozhraní **neprozrazuje filesystem**: `URL(relPath)` vrací adresu, na kterou si klient sáhne
+  přímo — `FS` vrací `""` (originály na disku nejsou přes HTTP dostupné, servíruje je aplikace),
+  `R2` vrací **podepsanou krátkodobou URL** (nebo `""`, když `media_base_url` chybí);
+  `Materialize(ctx,relPath)` vrací **reálný lokální soubor** pro nástroje, které umí jen jméno
+  souboru (exiftool, ffprobe, ffmpeg, heif-convert, vipsthumbnail) + `cleanup`, který volající
+  **vždy** zavolá (i na error path, jinak vzdálený backend leakuje temp); `FS` **nekopíruje** —
+  vrátí cestu samotného originálu a no-op `cleanup` (idempotentní), takže lokální vývoj i testy
+  zůstávají zero-copy; `R2` stáhne objekt do `storage.temp_path` se **zachovanou příponou**
+  (`imgconvert` na ni dispatchuje RAW/video) a `cleanup` (idempotentní přes `sync.Once`) ho smaže —
+  i na error path, kde se částečný soubor maže hned.
+  **Podepsané URL** (`sign.go`, `URLSigner`): `https://<media_base_url>/<key>?exp=<unix>&sig=<hex>`,
+  kde `sig = HMAC-SHA256(secret, key + "\n" + exp)` — podpis kryje klíč i expiraci a klíč se
+  podepisuje **neescapovaný** (UTF-8 jméno se percent-enkóduje až při renderu cesty).
+  `Verify(key,exp,sig)` porovnává **v konstantním čase** proti **dvěma** tajemstvím (současné +
+  předchozí), takže rotace `url_signing_secret` nemá okno rozbitých URL; podepisuje se vždy tím
+  současným. Nejdřív se ověří podpis (podvržený klíč i expirace → `ErrInvalidSignature`), pak
+  teprve expirace (`ErrURLExpired`). Default TTL 1 h. Klíč **není tajemství** — bez platného
+  podpisu ho edge Worker odmítne. Access key ani signing secret se nikdy nedostanou do logu
+  ani do chyby. Integrační testy `r2_integration_test.go` (tag `integration`) běží proti reálnému
+  S3-kompatibilnímu endpointu z `KUKATKO_TEST_S3_ENDPOINT` (stačí MinIO; bez proměnné se skipnou)),
+  `internal/thumb/`
   (thumbnailer náhledů, **CGO-free**: registr velikostí `sizes`+`sizeOrder` ve dvou režimech
   `fit` (max-strana, zachová poměr, neupscaluje) a `crop-square` (center-crop), default sada
   `fit_720/1280/1920/2560/3840` + `tile_100/224/500`; cache layout pod `storage.cache_path`

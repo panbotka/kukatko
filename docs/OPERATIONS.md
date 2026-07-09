@@ -52,6 +52,26 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
 - **Observability klíče:** `log.level` (debug/info/warn/error, default info, neplatný → chyba při
   startu; `KUKATKO_LOG_LEVEL`) a `metrics.enabled` (bool, default true; vypnuté → `/metrics` se
   nemountuje, request-metriky middleware se neinstaluje, access-log běží dál; `KUKATKO_METRICS_ENABLED`).
+- **Storage klíče (`storage.*`, `internal/storage`):** `backend` (`fs` **default** = lokální disk /
+  `r2` = privátní Cloudflare R2 bucket; neznámá hodnota → `ErrInvalidStorageBackend` při startu),
+  `originals_path` (root originálů, jen pro `fs`), `cache_path` (odvozené artefakty — náhledy,
+  video postery), `temp_path` (default `/var/lib/kukatko/tmp`; `r2` přes něj stageuje uploady
+  a materializuje objekty pro nástroje, co umí jen jméno souboru — musí se tam vejít **největší
+  jeden soubor**, ne knihovna). `KUKATKO_STORAGE_BACKEND`/`_ORIGINALS_PATH`/`_CACHE_PATH`/
+  `_TEMP_PATH`.
+- **Cloudflare R2 klíče (`storage.r2.*`, čtou se jen když `storage.backend: r2`):** `endpoint`
+  (`https://<accountid>.r2.cloudflarestorage.com`), `region` (R2 bere jen `auto`, default),
+  `bucket` (**drž ho privátní** — objekty servíruje edge Worker, který ověřuje podpis URL),
+  `access_key`/`secret_key` (R2 API token), `media_base_url` (doména Workeru, pod kterou se razí
+  podepsané URL), `url_signing_secret` (+ `url_signing_secret_previous`) a `url_ttl` (default `1h`,
+  musí být kladné). Env: `KUKATKO_STORAGE_R2_ENDPOINT`/`_REGION`/`_BUCKET`/`_ACCESS_KEY`/
+  `_SECRET_KEY`/`_MEDIA_BASE_URL`/`_URL_SIGNING_SECRET`/`_URL_SIGNING_SECRET_PREVIOUS`/`_URL_TTL`.
+  Validace `ErrIncompleteR2Config` **při startu**: backend `r2` vyžaduje všechny klíče kromě
+  `url_signing_secret_previous` (chybějící jsou vyjmenované v chybě — jen jména, nikdy hodnoty)
+  a kladné `url_ttl`. **Rotace podpisového tajemství bez výpadku:** starou hodnotu přesuň do
+  `url_signing_secret_previous`, novou dej do `url_signing_secret` — ověřují se obě, podepisuje se
+  tou novou; starou zahoď, až vyprší poslední vydaná URL (tj. po `url_ttl`). Stejné tajemství musí
+  mít i Worker. Tajemství ani access key se nikdy nelogují a neobjeví se v chybě.
 - **Thumbnail klíče (`thumb.*`, `internal/config`):** `engine` (`go` **default** / `vips`;
   neznámá hodnota → `ErrInvalidThumbEngine` při startu) — `vips` přepne JPEG/PNG/WebP náhledy na
   shell-out na `vipsthumbnail` (rychlejší/úspornější na velkých obrázcích, **stále bez CGO**),
@@ -88,7 +108,8 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
 - **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
   + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
   cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —
-  integrační balíky sdílí jednu test DB, takže běží sériově), `check`
+  integrační balíky sdílí jednu test DB, takže běží sériově; testy R2 backendu navíc chtějí
+  `KUKATKO_TEST_S3_ENDPOINT` — bez ní se skipnou, viz `docs/DEVELOPMENT.md`), `check`
   (brána), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `clean`, `help`.
   Frontend-only cíle: `web-deps` (`npm ci`), `web-build`, `web-fmt`, `web-lint`, `web-test`.
   Verzi injectuješ `make build VERSION=x.y.z`. Frontend potřebuje **Node.js 22+**.

@@ -25,10 +25,50 @@ database:
   max_idle_conns: 5
 
 storage:
-  # Directory holding original, immutable media files.
+  # Where originals live: "fs" (default, local disk) or "r2" (private Cloudflare
+  # R2 bucket, for a host whose disk cannot hold the library). Anything else fails
+  # startup. KUKATKO_STORAGE_BACKEND.
+  backend: "fs"
+  # Directory holding original, immutable media files. Only the "fs" backend uses it.
   originals_path: "/var/lib/kukatko/originals"
   # Directory for derived artifacts (thumbnails, video posters, …).
   cache_path: "/var/lib/kukatko/cache"
+  # Directory the "r2" backend stages uploads through and materializes objects into
+  # for the tools that need a real file (exiftool, ffprobe, ffmpeg, heif-convert,
+  # vipsthumbnail). It needs room for the largest single file, not for the library.
+  # KUKATKO_STORAGE_TEMP_PATH.
+  temp_path: "/var/lib/kukatko/tmp"
+
+  # Cloudflare R2. Read only when backend is "r2"; then every key below except
+  # url_signing_secret_previous is REQUIRED, and a missing one fails startup with a
+  # message naming it. Keep credentials out of this file — set them via the
+  # environment.
+  r2:
+    # S3 API endpoint: https://<accountid>.r2.cloudflarestorage.com.
+    # KUKATKO_STORAGE_R2_ENDPOINT.
+    endpoint: ""
+    # Bucket region. R2 accepts only "auto". KUKATKO_STORAGE_R2_REGION.
+    region: "auto"
+    # Bucket holding originals and thumbnails. Keep it PRIVATE: objects are served
+    # by an edge Worker that checks the URL signature. KUKATKO_STORAGE_R2_BUCKET.
+    bucket: ""
+    # Credentials of an R2 API token. KUKATKO_STORAGE_R2_ACCESS_KEY / _SECRET_KEY.
+    access_key: ""
+    secret_key: ""
+    # Domain of the edge Worker serving the objects. Signed URLs are minted under it
+    # and handed straight to the browser. KUKATKO_STORAGE_R2_MEDIA_BASE_URL.
+    media_base_url: ""
+    # Shared with the Worker; signs "<object-key>\n<expiry>" with HMAC-SHA256.
+    # url_signing_secret_previous is still ACCEPTED on verification, so the secret
+    # rotates without a window of broken URLs: move the old value there, put the new
+    # one in url_signing_secret, and drop the old one once every URL has expired.
+    # KUKATKO_STORAGE_R2_URL_SIGNING_SECRET / _URL_SIGNING_SECRET_PREVIOUS.
+    url_signing_secret: ""
+    url_signing_secret_previous: ""
+    # How long a signed URL stays valid. Short on purpose: a leaked URL is useful for
+    # at most this long, and every API response carries freshly signed URLs. Must be
+    # positive. KUKATKO_STORAGE_R2_URL_TTL.
+    url_ttl: "1h"
 
 thumb:
   # Thumbnail rendering engine: "go" (default, pure-Go decode+resize, CGO-free)

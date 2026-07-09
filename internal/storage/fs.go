@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -60,62 +59,24 @@ func NewFS(root string) (*FS, error) {
 func (s *FS) Store(
 	ctx context.Context, src io.Reader, takenAt time.Time, originalName string,
 ) (StoredFile, error) {
-	tmpPath, hash, size, header, err := s.streamToTemp(ctx, src)
+	tmp, err := streamToTemp(ctx, s.tmpDir, src)
 	if err != nil {
 		return StoredFile{}, err
 	}
-	defer func() { _ = os.Remove(tmpPath) }()
+	defer func() { _ = os.Remove(tmp.Path) }()
 
-	name := sanitizeName(originalName, hash)
+	name := sanitizeName(originalName, tmp.Hash)
 	relDir := relDirFor(takenAt)
-	relPath, existed, err := s.linkIntoPlace(tmpPath, relDir, name, hash)
+	relPath, existed, err := s.linkIntoPlace(tmp.Path, relDir, name, tmp.Hash)
 	if err != nil {
 		return StoredFile{}, err
 	}
 
-	stored := StoredFile{Hash: hash, RelPath: relPath, Size: size, MIME: detectMIME(header, name)}
+	stored := StoredFile{Hash: tmp.Hash, RelPath: relPath, Size: tmp.Size, MIME: detectMIME(tmp.Header, name)}
 	if existed {
 		return stored, ErrAlreadyExists
 	}
 	return stored, nil
-}
-
-// streamToTemp copies src into a fresh temporary file, computing the SHA256
-// digest and capturing the leading bytes for MIME sniffing as it goes, without
-// buffering the whole file. It returns the temp file path, the hex digest, the
-// byte count, and the captured header. The caller owns the returned temp path
-// and must remove it; on error the temp file is removed here.
-func (s *FS) streamToTemp(
-	ctx context.Context, src io.Reader,
-) (tmpPath, hash string, size int64, header []byte, err error) {
-	tmp, err := os.CreateTemp(s.tmpDir, "upload-*")
-	if err != nil {
-		return "", "", 0, nil, fmt.Errorf("storage: creating temp file: %w", err)
-	}
-	// actualPath is the temp file's real name; the named tmpPath return is only
-	// set on success, so the defer must clean up via this captured local instead.
-	actualPath := tmp.Name()
-	defer func() {
-		closeErr := tmp.Close()
-		if err == nil && closeErr != nil {
-			err = fmt.Errorf("storage: closing temp file: %w", closeErr)
-		}
-		if err != nil {
-			_ = os.Remove(actualPath)
-		}
-	}()
-
-	hasher := sha256.New()
-	sniffer := &headerSniffer{}
-	written, err := io.Copy(io.MultiWriter(tmp, hasher, sniffer), ctxReader(ctx, src))
-	if err != nil {
-		return "", "", 0, nil, fmt.Errorf("storage: streaming upload: %w", err)
-	}
-	if err = tmp.Sync(); err != nil {
-		return "", "", 0, nil, fmt.Errorf("storage: flushing temp file: %w", err)
-	}
-	tmpPath = actualPath
-	return tmpPath, hex.EncodeToString(hasher.Sum(nil)), written, sniffer.buf, nil
 }
 
 // linkIntoPlace publishes the temp file at tmpPath into relDir under name,
@@ -206,10 +167,6 @@ func (s *FS) Materialize(_ context.Context, relPath string) (string, func(), err
 	return abs, noopCleanup, nil
 }
 
-// noopCleanup is the cleanup returned by FS.Materialize. There is no temporary
-// file to remove, and calling it any number of times does nothing.
-func noopCleanup() {}
-
 // safeAbs resolves relPath to an absolute path confined to the root, rejecting
 // paths that resolve to the root directory itself with ErrInvalidPath.
 func (s *FS) safeAbs(relPath string) (string, error) {
@@ -273,44 +230,4 @@ func fileHasHash(absPath, want string) (bool, error) {
 		return false, fmt.Errorf("storage: hashing %s: %w", absPath, err)
 	}
 	return hex.EncodeToString(hasher.Sum(nil)) == want, nil
-}
-
-// headerSniffer is an io.Writer that retains the first sniffLen bytes written to
-// it (for MIME content sniffing) and discards the rest.
-type headerSniffer struct {
-	buf []byte
-}
-
-// Write appends bytes from p to the retained header until sniffLen bytes have
-// been captured, then ignores further input. It always reports the full length
-// as written so it can sit in an io.MultiWriter without short-write errors.
-func (h *headerSniffer) Write(p []byte) (int, error) {
-	if remaining := sniffLen - len(h.buf); remaining > 0 {
-		take := min(remaining, len(p))
-		h.buf = append(h.buf, p[:take]...)
-	}
-	return len(p), nil
-}
-
-// readerFunc adapts a function to io.Reader, letting a closure satisfy the
-// interface without a context-carrying struct.
-type readerFunc func(p []byte) (int, error)
-
-// Read calls the underlying function.
-func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
-
-// ctxReader wraps reader so that reads abort once ctx is done, letting a very
-// large or slow upload be cancelled mid-stream. The context is captured in the
-// closure rather than stored in a struct field.
-func ctxReader(ctx context.Context, reader io.Reader) io.Reader {
-	return readerFunc(func(p []byte) (int, error) {
-		if err := ctx.Err(); err != nil {
-			return 0, fmt.Errorf("storage: upload cancelled: %w", err)
-		}
-		n, err := reader.Read(p)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return n, fmt.Errorf("storage: reading upload: %w", err)
-		}
-		return n, err //nolint:wrapcheck // io.EOF must pass through unwrapped for io.Copy.
-	})
 }

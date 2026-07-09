@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -32,8 +33,14 @@ func TestLoad_defaults(t *testing.T) {
 	}{
 		{"database.max_open_conns", cfg.Database.MaxOpenConns, 25},
 		{"database.max_idle_conns", cfg.Database.MaxIdleConns, 5},
+		{"storage.backend", cfg.Storage.Backend, StorageBackendFS},
 		{"storage.originals_path", cfg.Storage.OriginalsPath, "/var/lib/kukatko/originals"},
 		{"storage.cache_path", cfg.Storage.CachePath, "/var/lib/kukatko/cache"},
+		{"storage.temp_path", cfg.Storage.TempPath, "/var/lib/kukatko/tmp"},
+		{"storage.r2.region", cfg.Storage.R2.Region, "auto"},
+		{"storage.r2.endpoint", cfg.Storage.R2.Endpoint, ""},
+		{"storage.r2.bucket", cfg.Storage.R2.Bucket, ""},
+		{"storage.r2.url_ttl", cfg.Storage.R2.URLTTL, time.Hour},
 		{"thumb.engine", cfg.Thumb.Engine, ThumbEngineGo},
 		{"thumb.vips_binary", cfg.Thumb.VipsBinary, "vipsthumbnail"},
 		{"thumb.concurrency", cfg.Thumb.Concurrency, 0},
@@ -398,6 +405,187 @@ func TestLoad_thumbEngine(t *testing.T) {
 				t.Errorf("thumb.concurrency = %d, want 3", cfg.Thumb.Concurrency)
 			}
 		})
+	}
+}
+
+// setR2Env sets every storage.r2 key an "r2" deployment requires, so a test can
+// blank exactly the one it is about.
+func setR2Env(t *testing.T) {
+	t.Helper()
+	t.Setenv("KUKATKO_STORAGE_BACKEND", StorageBackendR2)
+	t.Setenv("KUKATKO_STORAGE_TEMP_PATH", "/var/lib/kukatko/tmp")
+	t.Setenv("KUKATKO_STORAGE_R2_ENDPOINT", "https://account.r2.cloudflarestorage.com")
+	t.Setenv("KUKATKO_STORAGE_R2_BUCKET", "kukatko")
+	t.Setenv("KUKATKO_STORAGE_R2_ACCESS_KEY", "access")
+	t.Setenv("KUKATKO_STORAGE_R2_SECRET_KEY", "secret")
+	t.Setenv("KUKATKO_STORAGE_R2_MEDIA_BASE_URL", "https://media.example.com")
+	t.Setenv("KUKATKO_STORAGE_R2_URL_SIGNING_SECRET", "signing-secret")
+}
+
+// TestLoad_storageBackend verifies storage.backend is overridable and validated:
+// "fs" and "r2" load, an unknown backend fails startup.
+func TestLoad_storageBackend(t *testing.T) {
+	tests := []struct {
+		name    string
+		backend string
+		wantErr bool
+	}{
+		{name: "empty defaults to fs", backend: ""},
+		{name: "fs accepted", backend: StorageBackendFS},
+		{name: "r2 accepted", backend: StorageBackendR2},
+		{name: "unknown rejected", backend: "s3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			if tt.backend == StorageBackendR2 {
+				setR2Env(t)
+			} else if tt.backend != "" {
+				t.Setenv("KUKATKO_STORAGE_BACKEND", tt.backend)
+			}
+			cfg, err := Load("")
+			if tt.backend == "s3" {
+				if !errors.Is(err, ErrInvalidStorageBackend) {
+					t.Fatalf("Load error = %v, want ErrInvalidStorageBackend", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load returned unexpected error: %v", err)
+			}
+			want := tt.backend
+			if want == "" {
+				want = StorageBackendFS
+			}
+			if cfg.Storage.Backend != want {
+				t.Errorf("storage.backend = %q, want %q", cfg.Storage.Backend, want)
+			}
+		})
+	}
+}
+
+// TestLoad_r2EnvOverride verifies every storage.r2 key maps onto its KUKATKO_
+// environment variable, including the duration and the previous signing secret.
+func TestLoad_r2EnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	setR2Env(t)
+	t.Setenv("KUKATKO_STORAGE_R2_REGION", "auto")
+	t.Setenv("KUKATKO_STORAGE_R2_URL_SIGNING_SECRET_PREVIOUS", "old-secret")
+	t.Setenv("KUKATKO_STORAGE_R2_URL_TTL", "15m")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	checks := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{"storage.backend", cfg.Storage.Backend, StorageBackendR2},
+		{"storage.temp_path", cfg.Storage.TempPath, "/var/lib/kukatko/tmp"},
+		{"storage.r2.endpoint", cfg.Storage.R2.Endpoint, "https://account.r2.cloudflarestorage.com"},
+		{"storage.r2.region", cfg.Storage.R2.Region, "auto"},
+		{"storage.r2.bucket", cfg.Storage.R2.Bucket, "kukatko"},
+		{"storage.r2.access_key", cfg.Storage.R2.AccessKey, "access"},
+		{"storage.r2.secret_key", cfg.Storage.R2.SecretKey, "secret"},
+		{"storage.r2.media_base_url", cfg.Storage.R2.MediaBaseURL, "https://media.example.com"},
+		{"storage.r2.url_signing_secret", cfg.Storage.R2.URLSigningSecret, "signing-secret"},
+		{"storage.r2.url_signing_secret_previous", cfg.Storage.R2.URLSigningSecretPrevious, "old-secret"},
+		{"storage.r2.url_ttl", cfg.Storage.R2.URLTTL, 15 * time.Minute},
+	}
+	for _, check := range checks {
+		if check.got != check.want {
+			t.Errorf("%s = %v, want %v", check.name, check.got, check.want)
+		}
+	}
+}
+
+// TestLoad_r2MissingKeyFailsFast verifies that selecting the r2 backend without a
+// required key fails startup rather than surfacing later as a runtime error, and
+// that the message names the missing key without leaking any credential value.
+func TestLoad_r2MissingKeyFailsFast(t *testing.T) {
+	tests := []struct {
+		env string
+		key string
+	}{
+		{env: "KUKATKO_STORAGE_R2_ENDPOINT", key: "storage.r2.endpoint"},
+		{env: "KUKATKO_STORAGE_R2_BUCKET", key: "storage.r2.bucket"},
+		{env: "KUKATKO_STORAGE_R2_ACCESS_KEY", key: "storage.r2.access_key"},
+		{env: "KUKATKO_STORAGE_R2_SECRET_KEY", key: "storage.r2.secret_key"},
+		{env: "KUKATKO_STORAGE_R2_MEDIA_BASE_URL", key: "storage.r2.media_base_url"},
+		{env: "KUKATKO_STORAGE_R2_URL_SIGNING_SECRET", key: "storage.r2.url_signing_secret"},
+	}
+	for _, tt := range tests {
+		t.Run("missing "+tt.key, func(t *testing.T) {
+			setMinimalEnv(t)
+			setR2Env(t)
+			t.Setenv(tt.env, "")
+
+			_, err := Load("")
+			if !errors.Is(err, ErrIncompleteR2Config) {
+				t.Fatalf("Load error = %v, want ErrIncompleteR2Config", err)
+			}
+			if !strings.Contains(err.Error(), tt.key) {
+				t.Errorf("Load error %q does not name the missing key %q", err, tt.key)
+			}
+			for _, secret := range []string{"secret", "signing-secret", "access"} {
+				if strings.Contains(err.Error(), `"`+secret+`"`) {
+					t.Errorf("Load error leaks a credential value: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestLoad_r2EmptyTempPathFailsFast verifies that blanking storage.temp_path in
+// the YAML file fails startup for the r2 backend, which stages every upload and
+// download through it. The key has a default, so only a file can empty it: viper
+// treats an empty environment variable as unset.
+func TestLoad_r2EmptyTempPathFailsFast(t *testing.T) {
+	setMinimalEnv(t)
+	setR2Env(t)
+	os.Unsetenv("KUKATKO_STORAGE_TEMP_PATH")
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("storage:\n  temp_path: \"\"\n"), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	_, err := Load(path)
+	if !errors.Is(err, ErrIncompleteR2Config) {
+		t.Fatalf("Load error = %v, want ErrIncompleteR2Config", err)
+	}
+	if !strings.Contains(err.Error(), "storage.temp_path") {
+		t.Errorf("Load error %q does not name storage.temp_path", err)
+	}
+}
+
+// TestLoad_r2InvalidTTL verifies a non-positive signed-URL TTL fails startup: it
+// would mint URLs that are expired the moment they are handed out.
+func TestLoad_r2InvalidTTL(t *testing.T) {
+	setMinimalEnv(t)
+	setR2Env(t)
+	t.Setenv("KUKATKO_STORAGE_R2_URL_TTL", "0s")
+
+	_, err := Load("")
+	if !errors.Is(err, ErrIncompleteR2Config) {
+		t.Fatalf("Load error = %v, want ErrIncompleteR2Config", err)
+	}
+}
+
+// TestLoad_fsBackendIgnoresR2 verifies the default backend never looks at the R2
+// settings, so an existing deployment is unaffected by the new keys.
+func TestLoad_fsBackendIgnoresR2(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_STORAGE_BACKEND", StorageBackendFS)
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Storage.R2.Endpoint != "" {
+		t.Errorf("storage.r2.endpoint = %q, want empty", cfg.Storage.R2.Endpoint)
 	}
 }
 

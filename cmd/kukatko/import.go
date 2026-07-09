@@ -16,7 +16,6 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/ratelimit"
-	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -42,9 +41,9 @@ func buildImportService(
 	if err != nil {
 		return nil, fmt.Errorf("initialising photoprism client: %w", err)
 	}
-	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
+	store, err := newStorage(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("initialising originals storage: %w", err)
+		return nil, err
 	}
 	pool := db.Pool()
 	return ppimport.New(ppimport.Config{

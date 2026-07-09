@@ -59,6 +59,13 @@ var (
 	// ErrInvalidThumbEngine indicates thumb.engine is set to an unknown value (it
 	// must be empty, "go" or "vips").
 	ErrInvalidThumbEngine = errors.New(`config: thumb.engine must be "go" or "vips"`)
+	// ErrInvalidStorageBackend indicates storage.backend is set to an unknown value
+	// (it must be empty, "fs" or "r2").
+	ErrInvalidStorageBackend = errors.New(`config: storage.backend must be "fs" or "r2"`)
+	// ErrIncompleteR2Config indicates storage.backend is "r2" but a required
+	// storage.r2.* key is missing or storage.r2.url_ttl is non-positive. The error
+	// names the offending keys and never their values.
+	ErrIncompleteR2Config = errors.New("config: storage.backend is \"r2\" but its configuration is incomplete")
 )
 
 // Config is the fully resolved, typed configuration for a kukatko process.
@@ -165,10 +172,56 @@ type DatabaseConfig struct {
 	MaxIdleConns int    `mapstructure:"max_idle_conns"`
 }
 
-// StorageConfig holds on-disk locations for original media and derived caches.
+// Storage backend names accepted by StorageConfig.Backend.
+const (
+	// StorageBackendFS is the default backend: originals live on a local disk
+	// under storage.originals_path.
+	StorageBackendFS = "fs"
+	// StorageBackendR2 stores originals in a private Cloudflare R2 bucket, which
+	// is what lets Kukátko run on a VPS whose disk cannot hold the library.
+	StorageBackendR2 = "r2"
+)
+
+// StorageConfig selects the originals backend and holds the on-disk locations
+// both backends still need: the derived-artifact cache and the temp directory
+// that staged uploads and materialized downloads pass through.
 type StorageConfig struct {
+	// Backend is "fs" (default) or "r2". An unknown value fails startup.
+	Backend string `mapstructure:"backend"`
+	// OriginalsPath is the local originals root, used only by the "fs" backend.
 	OriginalsPath string `mapstructure:"originals_path"`
-	CachePath     string `mapstructure:"cache_path"`
+	// CachePath holds derived artifacts (thumbnails, video posters, …).
+	CachePath string `mapstructure:"cache_path"`
+	// TempPath is where the "r2" backend stages uploads and materializes objects
+	// for the tools that need a real file. It must fit the largest single file.
+	TempPath string `mapstructure:"temp_path"`
+	// R2 configures the "r2" backend and is ignored by the "fs" backend.
+	R2 R2Config `mapstructure:"r2"`
+}
+
+// R2Config holds the Cloudflare R2 bucket, its S3 credentials, and the settings
+// for the signed URLs that let a browser fetch a private object from the edge
+// Worker. SecretKey and the signing secrets are credentials: they are never
+// logged, and validation reports only the names of missing keys.
+type R2Config struct {
+	// Endpoint is the S3 API host, for R2 <accountid>.r2.cloudflarestorage.com.
+	Endpoint string `mapstructure:"endpoint"`
+	// Region is the bucket region; R2 expects "auto".
+	Region string `mapstructure:"region"`
+	// Bucket holds originals and thumbnails.
+	Bucket string `mapstructure:"bucket"`
+	// AccessKey and SecretKey are the S3 credentials of an R2 API token.
+	AccessKey string `mapstructure:"access_key"`
+	SecretKey string `mapstructure:"secret_key"`
+	// MediaBaseURL is the domain the edge Worker serves objects on.
+	MediaBaseURL string `mapstructure:"media_base_url"`
+	// URLSigningSecret signs media URLs and is shared with the Worker.
+	// URLSigningSecretPrevious is additionally accepted on verification, so the
+	// secret can be rotated without a window of broken URLs.
+	URLSigningSecret         string `mapstructure:"url_signing_secret"`
+	URLSigningSecretPrevious string `mapstructure:"url_signing_secret_previous"`
+	// URLTTL is how long a signed URL stays valid.
+	URLTTL time.Duration `mapstructure:"url_ttl"`
 }
 
 // Thumbnail engine names accepted by ThumbConfig.Engine.
@@ -484,8 +537,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.max_open_conns", 25)
 	v.SetDefault("database.max_idle_conns", 5)
 
-	v.SetDefault("storage.originals_path", "/var/lib/kukatko/originals")
-	v.SetDefault("storage.cache_path", "/var/lib/kukatko/cache")
+	setStorageDefaults(v)
 	setThumbDefaults(v)
 
 	v.SetDefault("web.host", "0.0.0.0")
@@ -537,6 +589,27 @@ func setMapsDefaults(v *viper.Viper) {
 	v.SetDefault("maps.base_url", "https://api.mapy.com")
 	v.SetDefault("maps.geocode_rate_per_sec", 5.0)
 	v.SetDefault("maps.geocode_burst", 10)
+}
+
+// setStorageDefaults registers the storage defaults: the local filesystem
+// backend, its on-disk locations, and empty R2 settings. The R2 credentials have
+// no sensible default and are validated only when storage.backend is "r2", so an
+// "fs" deployment never has to mention them.
+func setStorageDefaults(v *viper.Viper) {
+	v.SetDefault("storage.backend", StorageBackendFS) // local disk default; R2 is opt-in
+	v.SetDefault("storage.originals_path", "/var/lib/kukatko/originals")
+	v.SetDefault("storage.cache_path", "/var/lib/kukatko/cache")
+	v.SetDefault("storage.temp_path", "/var/lib/kukatko/tmp")
+
+	v.SetDefault("storage.r2.endpoint", "")
+	v.SetDefault("storage.r2.region", "auto") // R2 accepts only "auto"
+	v.SetDefault("storage.r2.bucket", "")
+	v.SetDefault("storage.r2.access_key", "")
+	v.SetDefault("storage.r2.secret_key", "")
+	v.SetDefault("storage.r2.media_base_url", "")
+	v.SetDefault("storage.r2.url_signing_secret", "")
+	v.SetDefault("storage.r2.url_signing_secret_previous", "")
+	v.SetDefault("storage.r2.url_ttl", "1h")
 }
 
 // setThumbDefaults registers the thumbnail-engine defaults: the pure-Go engine,
@@ -621,7 +694,52 @@ func (c *Config) Validate() error {
 	if err := c.Thumb.validate(); err != nil {
 		return err
 	}
+	if err := c.Storage.validate(); err != nil {
+		return err
+	}
 	return c.Auth.validate()
+}
+
+// validate checks the storage backend selection and, when the R2 backend is
+// selected, that every key it needs is present. An "fs" deployment is always
+// valid: it never looks at the R2 settings.
+func (s StorageConfig) validate() error {
+	switch s.Backend {
+	case "", StorageBackendFS:
+		return nil
+	case StorageBackendR2:
+		return s.R2.validate(s.TempPath)
+	default:
+		return fmt.Errorf("%w: got %q", ErrInvalidStorageBackend, s.Backend)
+	}
+}
+
+// validate reports every missing R2 key at once, so a misconfigured deployment
+// fails startup with one actionable message rather than one key per restart. Only
+// key names are reported; a credential's value never reaches the error.
+func (r R2Config) validate(tempPath string) error {
+	required := []struct{ key, value string }{
+		{"storage.r2.endpoint", r.Endpoint},
+		{"storage.r2.bucket", r.Bucket},
+		{"storage.r2.access_key", r.AccessKey},
+		{"storage.r2.secret_key", r.SecretKey},
+		{"storage.r2.media_base_url", r.MediaBaseURL},
+		{"storage.r2.url_signing_secret", r.URLSigningSecret},
+		{"storage.temp_path", tempPath},
+	}
+	missing := make([]string, 0, len(required))
+	for _, field := range required {
+		if strings.TrimSpace(field.value) == "" {
+			missing = append(missing, field.key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: missing %s", ErrIncompleteR2Config, strings.Join(missing, ", "))
+	}
+	if r.URLTTL <= 0 {
+		return fmt.Errorf("%w: storage.r2.url_ttl must be positive, got %s", ErrIncompleteR2Config, r.URLTTL)
+	}
+	return nil
 }
 
 // validate checks the Wake-on-LAN settings when auto-wake is enabled: a parseable

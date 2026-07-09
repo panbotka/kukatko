@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
@@ -10,11 +8,10 @@ import (
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/ratelimit"
-	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
-// buildIngest assembles the upload/ingest subsystem: the on-disk original
+// buildIngest assembles the upload/ingest subsystem: the configured original
 // store, the thumbnailer, the photo repository, and the HTTP API. The upload
 // route reuses the auth subsystem's write guard (editors and admins) supplied
 // via authAPI. enqueuer is the shared persistent-queue adapter, so a freshly
@@ -22,9 +19,9 @@ import (
 func buildIngest(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, enqueuer ingest.JobEnqueuer, reg *metrics.Registry,
 ) (*ingest.API, error) {
-	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
+	store, err := newStorage(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("initialising originals storage: %w", err)
+		return nil, err
 	}
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())

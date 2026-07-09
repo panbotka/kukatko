@@ -78,9 +78,9 @@ func (o orphanImporter) ImportOriginal(ctx context.Context, key string) (mainten
 // the thumbnail job type so the library-maintenance thumbnail and pHash repairs
 // have a worker to run them.
 func buildThumbHandler(cfg *config.Config, db *database.DB, reg *metrics.Registry) (worker.HandlerFunc, error) {
-	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
+	store, err := newStorage(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("initialising originals storage: %w", err)
+		return nil, err
 	}
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	svc := thumbjob.New(thumbjob.Config{
@@ -100,9 +100,9 @@ func buildMaintenanceService(
 	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, reg *metrics.Registry,
 ) (*maintenance.Service, error) {
-	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
+	store, err := newStorage(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("initialising originals storage: %w", err)
+		return nil, err
 	}
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())

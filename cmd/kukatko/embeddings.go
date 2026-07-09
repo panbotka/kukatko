@@ -10,12 +10,11 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/photos"
-	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
-// buildEmbedService assembles the embedding subsystem: the on-disk original
+// buildEmbedService assembles the embedding subsystem: the configured original
 // store and thumbnailer (the preview sent to the sidecar), the photo and vector
 // repositories, and the offline-aware embeddings sidecar client. It returns the
 // embedjob.Service (the image_embed handler and backfill) plus the vector store
@@ -25,9 +24,9 @@ import (
 func buildEmbedService(
 	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer, reg *metrics.Registry,
 ) (*embedjob.Service, *vectors.Store, embedding.Client, error) {
-	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
+	store, err := newStorage(cfg)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("initialising originals storage: %w", err)
+		return nil, nil, nil, err
 	}
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())

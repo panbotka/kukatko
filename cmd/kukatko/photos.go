@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
@@ -12,7 +10,6 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
-	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -33,7 +30,7 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 	})
 }
 
-// buildPhotoAPI assembles the photo browse/curation subsystem: the on-disk
+// buildPhotoAPI assembles the photo browse/curation subsystem: the configured
 // original store and thumbnailer (for media serving), the photo repository, and
 // the HTTP API. Read endpoints reuse the auth subsystem's RequireAuth guard,
 // metadata and archive endpoints its RequireWrite guard, and media endpoints its
@@ -47,9 +44,9 @@ func buildPhotoAPI(
 	similar photoapi.SimilarSearcher, embedder photoapi.TextEmbedder, faceSvc *facematch.Service,
 	purger photoapi.Purger, reg *metrics.Registry,
 ) (*photoapi.API, error) {
-	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
+	store, err := newStorage(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("initialising originals storage: %w", err)
+		return nil, err
 	}
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())

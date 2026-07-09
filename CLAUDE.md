@@ -97,7 +97,7 @@ Jeden řádek na balíček — ať víš, co existuje, aniž bys otevíral `docs
 - `internal/savedsearch` — per-user uložená hledání („smart alba")
 - `internal/savedsearchapi` — `/saved-searches`, vše scopnuté na vlastníka (cizí → 404)
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
-- `internal/storage` — on-disk úložiště originálů (`YYYY/MM`, atomický hard-link, SHA256)
+- `internal/storage` — úložiště originálů (`YYYY/MM`, SHA256): lokální `FS` nebo Cloudflare `R2` s podepsanými URL
 - `internal/system` — agregace provozního stavu instance pro admin dashboard
 - `internal/systemapi` — admin-only `GET /system/status`
 - `internal/thumb` — thumbnailer (pure-Go default, volitelný `vips` engine), cache layout

@@ -14,7 +14,6 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/photosorter"
 	"github.com/panbotka/kukatko/internal/psimport"
-	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/vectors"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -35,9 +34,9 @@ func psImportConfigured(cfg *config.Config) bool {
 func newPSImportService(
 	cfg *config.Config, db *database.DB, reader psimport.Source, enqueuer psimport.Enqueuer, reg *metrics.Registry,
 ) (*psimport.Service, error) {
-	store, err := storage.NewFS(cfg.Storage.OriginalsPath)
+	store, err := newStorage(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("initialising originals storage: %w", err)
+		return nil, err
 	}
 	pool := db.Pool()
 	return psimport.New(psimport.Config{

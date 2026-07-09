@@ -1,8 +1,14 @@
-// Package storage is Kukátko's on-disk store for original media files. It owns a
+// Package storage is Kukátko's store for original media files. It owns a
 // deterministic layout — originals live under the configured originals root as
 // YYYY/MM/<filename>, where the date comes from a photo's taken_at timestamp
 // (falling back to the import time when that is unknown) — and computes the
 // SHA256 content hash of every file it writes.
+//
+// Two backends implement the same layout and contract: FS keeps originals on a
+// local disk, and R2 keeps them in a private Cloudflare R2 bucket, where the
+// relative path is the object key verbatim and clients fetch objects from an edge
+// Worker with a short-lived signed URL. Which one runs is chosen by
+// storage.backend at startup; nothing above this package knows the difference.
 //
 // Content identity is the SHA256 hex digest. Filename collisions within a month
 // directory are resolved safely: an incoming file whose bytes are identical to
