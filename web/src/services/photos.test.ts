@@ -24,6 +24,8 @@ const RESPONSE: PhotoListResponse = {
       file_width: 800,
       file_height: 600,
       taken_at_source: 'exif',
+      thumb_url: '/api/v1/photos/ph1/thumb/tile_500',
+      download_url: '/api/v1/photos/ph1/download?original=true',
       title: '',
       description: '',
       camera_make: '',

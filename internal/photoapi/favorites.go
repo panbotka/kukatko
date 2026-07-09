@@ -67,10 +67,14 @@ type photoView struct {
 
 // annotate pairs each photo with the current user's per-user annotations —
 // is_favorite plus the star rating and pick/reject flag — resolving the whole
-// page's favorites and ratings in one query each. A nil favorites or ratings
-// store leaves those annotations at their defaults (is_favorite false, rating 0,
-// flag "none") rather than failing, so the catalogue keeps working without either
-// backend.
+// page's favorites and ratings in one query each, and stamps on the media URLs
+// the client fetches. A nil favorites or ratings store leaves those annotations
+// at their defaults (is_favorite false, rating 0, flag "none") rather than
+// failing, so the catalogue keeps working without either backend.
+//
+// This is the one place a media URL enters a list response, and reaching it means
+// the caller was authorized to see these photos: see the mediaurl package doc on
+// why that makes the private flag and the archive real security boundaries.
 func (a *API) annotate(
 	ctx context.Context, userUID string, list []photos.Photo,
 ) ([]photoView, error) {
@@ -79,6 +83,7 @@ func (a *API) annotate(
 		// Normalise the raw catalogue default (empty flag) to "none" so a photo
 		// without a rating row still reports a valid flag.
 		p.Flag = string(organize.FlagNone)
+		a.media.DecorateOne(&p)
 		views[i] = photoView{Photo: p}
 	}
 	if len(list) == 0 {

@@ -19,6 +19,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -28,8 +29,11 @@ import (
 // caller (the auth subsystem) so this package depends on auth for the caller's
 // identity, not its wiring.
 type API struct {
-	store           *photos.Store
-	storage         storage.Storage
+	store   *photos.Store
+	storage storage.Storage
+	// media mints the client-facing thumb/download addresses stamped onto every
+	// photo payload, and tells the media routes whether to redirect or stream.
+	media           *mediaurl.Builder
 	thumbnailer     *thumb.Thumbnailer
 	similar         SimilarSearcher
 	embedder        TextEmbedder
@@ -49,7 +53,10 @@ type API struct {
 type Config struct {
 	// Store is the photo repository backing reads and metadata updates.
 	Store *photos.Store
-	// Storage serves original files for download.
+	// Storage serves original files for download and decides where clients fetch
+	// media: a backend that publishes signed URLs (R2) turns the media routes into
+	// redirects and stamps those URLs onto photo payloads, while the filesystem
+	// backend keeps the application streaming the bytes itself.
 	Storage storage.Storage
 	// Thumbnailer serves (and generates on miss) cached thumbnails.
 	Thumbnailer *thumb.Thumbnailer
@@ -99,6 +106,7 @@ func NewAPI(cfg Config) *API {
 	return &API{
 		store:           cfg.Store,
 		storage:         cfg.Storage,
+		media:           mediaurl.NewBuilder(cfg.Storage),
 		thumbnailer:     cfg.Thumbnailer,
 		similar:         cfg.Similar,
 		embedder:        cfg.Embedder,
@@ -130,9 +138,9 @@ func NewAPI(cfg Config) *API {
 //	PUT    /photos/{uid}/edit         RequireWrite     save non-destructive edit
 //	POST   /photos/{uid}/archive      RequireWrite     soft-delete
 //	POST   /photos/{uid}/unarchive    RequireWrite     restore
-//	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail
-//	GET    /photos/{uid}/video        RequireDownload  video stream (range/206)
-//	GET    /photos/{uid}/download     RequireDownload  original file
+//	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
+//	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
+//	GET    /photos/{uid}/download     RequireDownload  original file (or 302)
 //	PUT    /photos/{uid}/favorite     RequireAuth      favorite (current user)
 //	DELETE /photos/{uid}/favorite     RequireAuth      unfavorite (current user)
 //	PUT    /photos/{uid}/rating       RequireAuth      set rating/flag (current user)
@@ -369,21 +377,21 @@ func (a *API) photoMemberships(ctx context.Context, uid string) ([]albumRef, []l
 // refreshed photo, recording an audit entry in the same transaction. A missing
 // photo is answered with 404.
 func (a *API) handleArchive(w http.ResponseWriter, r *http.Request) {
-	runArchive(w, r, audit.ActionPhotoArchive, a.store.ArchiveAudited, "archiving photo failed")
+	a.runArchive(w, r, audit.ActionPhotoArchive, a.store.ArchiveAudited, "archiving photo failed")
 }
 
 // handleUnarchive restores an archived photo (clears archived_at) and returns
 // the refreshed photo, recording an audit entry in the same transaction. A
 // missing photo is answered with 404.
 func (a *API) handleUnarchive(w http.ResponseWriter, r *http.Request) {
-	runArchive(w, r, audit.ActionPhotoUnarchive, a.store.UnarchiveAudited, "unarchiving photo failed")
+	a.runArchive(w, r, audit.ActionPhotoUnarchive, a.store.UnarchiveAudited, "unarchiving photo failed")
 }
 
 // runArchive applies the audited archive-state transition op to the photo named
 // in the request path and writes the refreshed photo, recording action in the
 // audit log within the mutation transaction. It maps a missing photo to 404 and
 // any other failure to 500 with failMsg.
-func runArchive(
+func (a *API) runArchive(
 	w http.ResponseWriter, r *http.Request, action string,
 	op func(ctx context.Context, uid string, entry audit.Entry) (photos.Photo, error),
 	failMsg string,
@@ -400,6 +408,7 @@ func runArchive(
 		writePhotoError(w, err, failMsg)
 		return
 	}
+	a.media.DecorateOne(&photo)
 	writeJSON(w, http.StatusOK, photo)
 }
 

@@ -73,6 +73,14 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   **Worker sám v téhle repo není** — bucket, jeho zdroják, bindingy i hostname definuje a nasazuje
   Terraform v infra repu (root modul `cloudflare-r2/`). Rotace podpisového tajemství proto sahá do
   **dvou repozitářů** — postup níž.
+- **⚠️ Náhledy do bucketu zatím nikdo nenahrává.** Při `storage.backend: r2` razí API `thumb_url`
+  (a routa `/photos/{uid}/thumb/{size}` redirectuje) na objektový klíč
+  `thumb/aa/bb/cc/<hash>_<size>.jpg`, jenže `thumb.Thumbnailer` píše všechny velikosti **lokálně**
+  do `storage.cache_path` — pro oba backendy stejně. `storage.Storage.Store` neumí zapsat objekt na
+  **zvolený** klíč (odvozuje si ho z `taken_at` + jména souboru), takže publikaci cache musí přinést
+  nová metoda rozhraní. Než vznikne, musí nasazení na R2 zrcadlit náhledy do bucketu **mimo aplikaci**
+  (např. `rclone sync` z `cache_path`), jinak Worker odpoví na každou dlaždici 404. Originálů a videa
+  se to netýká — ty do bucketu zapisuje `Store` při importu.
 - **Thumbnail klíče (`thumb.*`, `internal/config`):** `engine` (`go` **default** / `vips`;
   neznámá hodnota → `ErrInvalidThumbEngine` při startu) — `vips` přepne JPEG/PNG/WebP náhledy na
   shell-out na `vipsthumbnail` (rychlejší/úspornější na velkých obrázcích, **stále bez CGO**),

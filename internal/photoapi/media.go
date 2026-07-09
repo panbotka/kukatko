@@ -25,10 +25,42 @@ const thumbCacheControl = "private, max-age=31536000, immutable"
 // per content hash but kept private to the authenticated caller.
 const originalCacheControl = "private, max-age=31536000, immutable"
 
+// redirectCacheControl keeps a redirect to a signed URL out of every cache. The
+// media it points at is immutable, but the signature that authorizes the fetch
+// expires, so a cached redirect would eventually send the client to a 403.
+const redirectCacheControl = "private, no-store"
+
+// redirectToMedia sends the client to the signed, short-lived URL at which the
+// edge Worker serves the object, transferring no media bytes through this
+// application. It is only ever reached after the caller has been authorized to
+// see the photo — minting the URL is exactly the act of granting access to the
+// object, since the Worker will serve anyone who presents the signature. The
+// private flag and the archive are therefore real security boundaries here, not
+// presentation filters: see the mediaurl package doc.
+func redirectToMedia(w http.ResponseWriter, r *http.Request, target string) {
+	w.Header().Set("Cache-Control", redirectCacheControl)
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
 // handleThumb streams a cached thumbnail for the photo named in the path,
 // generating it on a cache miss. An unknown size is answered with 400, a missing
 // photo with 404. The JPEG is streamed (never buffered whole) with an ETag so
 // repeat fetches can be answered 304.
+//
+// When the storage backend publishes its objects the route instead redirects to
+// the thumbnail's signed URL, so old links and bookmarks keep working without
+// this application ever touching the bytes. On that path the route neither
+// generates the thumbnail nor uploads it: it assumes the object already sits in
+// the bucket under thumb.RelPath's key.
+//
+// Nothing in this repository puts it there yet. thumb.Thumbnailer writes every
+// size to the local cache directory (storage.cache_path) with plain os calls, for
+// both backends, and storage.Storage cannot express the upload — Store derives
+// its own key from takenAt and the file name, so it cannot write an object at a
+// caller-chosen key. Publishing the thumbnail cache therefore needs a Storage
+// method that does, and until it exists a deployment on the R2 backend must have
+// its thumbnails mirrored into the bucket out of band. The originals and the
+// video below have no such gap: those objects are written by Store on ingest.
 func (a *API) handleThumb(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	size := chi.URLParam(r, "size")
@@ -40,6 +72,11 @@ func (a *API) handleThumb(w http.ResponseWriter, r *http.Request) {
 	photo, err := a.store.GetByUID(r.Context(), uid)
 	if err != nil {
 		writePhotoError(w, err, "fetching photo failed")
+		return
+	}
+
+	if signed := a.media.ThumbObject(photo.FileHash, size); signed != "" {
+		redirectToMedia(w, r, signed)
 		return
 	}
 
@@ -99,8 +136,14 @@ func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 // serveOriginal streams the photo's stored original file as an attachment,
 // answering 404 when the file is gone from storage and 500 on any other open
-// error.
+// error. When the storage backend publishes its objects it redirects to the
+// original's signed URL instead, and the bytes never pass through here.
 func (a *API) serveOriginal(w http.ResponseWriter, r *http.Request, photo photos.Photo) {
+	if signed := a.media.Object(photo.FilePath); signed != "" {
+		redirectToMedia(w, r, signed)
+		return
+	}
+
 	reader, err := a.storage.Open(r.Context(), photo.FilePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

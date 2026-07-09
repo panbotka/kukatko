@@ -20,9 +20,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storage"
 )
 
 // defaultGroupLimit is the per-group top-N cap applied when Config.Limit is
@@ -59,9 +61,11 @@ type PhotoSearcher interface {
 // supplied by the caller so this package depends on auth's behaviour, not its
 // wiring.
 type API struct {
-	organizer   Organizer
-	people      PeopleSearcher
-	photos      PhotoSearcher
+	organizer Organizer
+	people    PeopleSearcher
+	photos    PhotoSearcher
+	// media stamps the thumb/download URLs onto every photo hit.
+	media       *mediaurl.Builder
 	limit       int
 	requireAuth func(http.Handler) http.Handler
 }
@@ -74,6 +78,9 @@ type Config struct {
 	People PeopleSearcher
 	// Photos backs the photo group via the existing full-text search.
 	Photos PhotoSearcher
+	// Storage decides where a client fetches the returned photos' media. A nil
+	// storage points them at this application's own media routes.
+	Storage storage.Storage
 	// Limit caps each group's results. A non-positive value uses defaultGroupLimit.
 	Limit int
 	// RequireAuth guards the endpoint for any signed-in user.
@@ -91,6 +98,7 @@ func NewAPI(cfg Config) *API {
 		organizer:   cfg.Organizer,
 		people:      cfg.People,
 		photos:      cfg.Photos,
+		media:       mediaurl.NewBuilder(cfg.Storage),
 		limit:       limit,
 		requireAuth: cfg.RequireAuth,
 	}
@@ -167,6 +175,7 @@ func (a *API) handleGlobal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "searching photos failed")
 		return
 	}
+	a.media.Decorate(matchedPhotos)
 
 	writeJSON(w, http.StatusOK, response{
 		Query:  query,

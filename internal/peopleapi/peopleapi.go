@@ -17,8 +17,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storage"
 )
 
 // defaultPageLimit is the page size used when a subject-photos request omits or
@@ -58,8 +60,10 @@ type PhotoStore interface {
 // API exposes the subject endpoints over HTTP. The auth middlewares are supplied
 // by the caller so this package depends on auth's behaviour, not its wiring.
 type API struct {
-	subjects     SubjectStore
-	photos       PhotoStore
+	subjects SubjectStore
+	photos   PhotoStore
+	// media stamps the thumb/download URLs onto every photo this API returns.
+	media        *mediaurl.Builder
 	requireAuth  func(http.Handler) http.Handler
 	requireWrite func(http.Handler) http.Handler
 }
@@ -70,6 +74,9 @@ type Config struct {
 	Subjects SubjectStore
 	// Photos resolves subject photo UIDs to full records.
 	Photos PhotoStore
+	// Storage decides where a client fetches the returned photos' media. A nil
+	// storage points them at this application's own media routes.
+	Storage storage.Storage
 	// RequireAuth guards the read endpoints for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireWrite guards the mutating endpoints for editors and admins.
@@ -81,6 +88,7 @@ func NewAPI(cfg Config) *API {
 	return &API{
 		subjects:     cfg.Subjects,
 		photos:       cfg.Photos,
+		media:        mediaurl.NewBuilder(cfg.Storage),
 		requireAuth:  cfg.RequireAuth,
 		requireWrite: cfg.RequireWrite,
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/obs"
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/server"
+	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
 	"github.com/panbotka/kukatko/internal/version"
@@ -265,10 +266,11 @@ func buildServices(
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
-	photoAPI, err := buildPhotoAPI(cfg, db, authAPI, vectorStore, embedClient, matchSvc, trashSvc, reg)
+	mediaStore, err := newStorage(cfg)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
+	photoAPI := buildPhotoAPI(cfg, db, authAPI, mediaStore, vectorStore, embedClient, matchSvc, trashSvc, reg)
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI)
 	if err != nil {
@@ -297,7 +299,7 @@ func buildServices(
 		server.WithAPI(maintenanceAPI.RegisterRoutes),
 		// Import history is always mounted (import triggers self-gate).
 		server.WithAPI(buildImportAPI(cfg, db, jobStore, authAPI).RegisterRoutes),
-	}, readAPIOptions(db, authAPI))
+	}, readAPIOptions(db, authAPI, mediaStore))
 	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
 }
 
@@ -307,14 +309,17 @@ func buildServices(
 // per-user saved searches, the grouped global search and the audit log. Route
 // groups mount on distinct paths, so their relative order does not matter.
 // Splitting them out keeps buildServices within the function-length limit.
-func readAPIOptions(db *database.DB, authAPI *auth.API) []server.Option {
+//
+// The groups that return photo records take mediaStore, which decides where their
+// clients fetch each photo's thumbnail and original.
+func readAPIOptions(db *database.DB, authAPI *auth.API, mediaStore storage.Storage) []server.Option {
 	return []server.Option{
 		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildPeopleAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildPeopleAPI(db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildOrganizeAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPlacesAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildGlobalSearchAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 	}
 }

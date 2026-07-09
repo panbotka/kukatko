@@ -75,8 +75,19 @@ func (f *fakeEmbedder) TextEmbedding(
 	return imageVecAt(map[int]float32{0: 1}), "fake-model", "fake-pretrained", nil
 }
 
-// newEnv builds the HTTP test environment over a freshly truncated database.
+// newEnv builds the HTTP test environment over a freshly truncated database, with
+// the filesystem backend serving media.
 func newEnv(t *testing.T) *env {
+	t.Helper()
+	return newEnvWithMedia(t, nil)
+}
+
+// newEnvWithMedia builds the HTTP test environment with media served by the given
+// storage backend, which decides whether the media routes stream bytes or redirect
+// to a signed URL. A nil media backend uses the filesystem store. Seeding always
+// writes through the filesystem store (env.fs), so a photo row exists and its
+// object key is real whichever backend answers for it.
+func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -89,13 +100,17 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatalf("storage.NewFS: %v", err)
 	}
+	mediaStore := storage.Storage(fs)
+	if media != nil {
+		mediaStore = media
+	}
 	store := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
 	organizeStore := organize.NewStore(db.Pool())
 	embedder := &fakeEmbedder{byQuery: map[string][]float32{}}
 	api := photoapi.NewAPI(photoapi.Config{
 		Store:           store,
-		Storage:         fs,
+		Storage:         mediaStore,
 		Thumbnailer:     thumb.New(fs, t.TempDir()),
 		Similar:         vectorStore,
 		Embedder:        embedder,

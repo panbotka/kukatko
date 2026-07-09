@@ -1,21 +1,23 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
-import type { Photo } from '../../services/photos'
+import type { Photo, PhotoDetail } from '../../services/photos'
 
 import { PhotoTile } from './PhotoTile'
 
-// Only the rating network call is faked; the optimistic hook logic runs for real.
+// Only the network calls are faked; the optimistic rating hook and the stale-URL
+// retry in useThumbSrc run for real.
 vi.mock('../../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/photos')>()
-  return { ...actual, ratePhoto: vi.fn() }
+  return { ...actual, ratePhoto: vi.fn(), fetchPhoto: vi.fn() }
 })
 
-const { ratePhoto } = await import('../../services/photos')
+const { fetchPhoto, ratePhoto } = await import('../../services/photos')
 const rateMock = vi.mocked(ratePhoto)
+const fetchPhotoMock = vi.mocked(fetchPhoto)
 
 /** Builds a minimal Photo with the given overrides. */
 function photo(overrides: Partial<Photo> = {}): Photo {
@@ -28,6 +30,8 @@ function photo(overrides: Partial<Photo> = {}): Photo {
     file_width: 1920,
     file_height: 1080,
     taken_at_source: 'unknown',
+    thumb_url: '/api/v1/photos/ph1/thumb/tile_500',
+    download_url: '/api/v1/photos/ph1/download?original=true',
     title: 'Clip',
     description: '',
     camera_make: '',
@@ -38,6 +42,11 @@ function photo(overrides: Partial<Photo> = {}): Photo {
     updated_at: '2024-01-01T00:00:00Z',
     ...overrides,
   }
+}
+
+/** Builds the detail payload a refetch answers with, carrying a fresh thumb URL. */
+function detail(overrides: Partial<Photo> = {}): PhotoDetail {
+  return { ...photo(overrides), files: [], albums: [], labels: [] }
 }
 
 function renderTile(p: Photo, ratable = false) {
@@ -54,6 +63,63 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   rateMock.mockReset()
   rateMock.mockResolvedValue(undefined)
+  fetchPhotoMock.mockReset()
+})
+
+describe('PhotoTile thumbnail source', () => {
+  // A signed URL at the media Worker: another origin, a path keyed by file hash
+  // rather than UID, and a signature the frontend could never compute.
+  const signed = 'https://media.example/thumb/ab/cd/ef/abcdef_tile_500.jpg?sig=deadbeef&exp=99'
+
+  it('renders the thumb_url from the payload rather than a path built from the UID', () => {
+    renderTile(photo({ media_type: 'image', thumb_url: signed }))
+
+    const img = screen.getByRole('img', { name: 'Clip' })
+    expect(img).toHaveAttribute('src', signed)
+    // The old behaviour: a same-origin route constructed from the photo's UID.
+    expect(img.getAttribute('src')).not.toContain('/api/v1/photos/ph1/thumb/')
+  })
+
+  it('retries once with a freshly signed URL when the given one has expired', async () => {
+    const fresh = 'https://media.example/thumb/ab/cd/ef/abcdef_tile_500.jpg?sig=freshsig&exp=100'
+    fetchPhotoMock.mockResolvedValue(detail({ thumb_url: fresh }))
+    renderTile(photo({ media_type: 'image', thumb_url: signed }))
+
+    fireEvent.error(screen.getByRole('img', { name: 'Clip' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('img', { name: 'Clip' })).toHaveAttribute('src', fresh)
+    })
+    expect(fetchPhotoMock).toHaveBeenCalledWith('ph1')
+    expect(screen.queryByText('Preview unavailable')).not.toBeInTheDocument()
+  })
+
+  it('gives up after the retried URL also fails', async () => {
+    const fresh = 'https://media.example/thumb/ab/cd/ef/abcdef_tile_500.jpg?sig=freshsig&exp=100'
+    fetchPhotoMock.mockResolvedValue(detail({ thumb_url: fresh }))
+    renderTile(photo({ media_type: 'image', thumb_url: signed }))
+
+    fireEvent.error(screen.getByRole('img', { name: 'Clip' }))
+    await waitFor(() => {
+      expect(screen.getByRole('img', { name: 'Clip' })).toHaveAttribute('src', fresh)
+    })
+    fireEvent.error(screen.getByRole('img', { name: 'Clip' }))
+
+    expect(await screen.findByText('Preview unavailable')).toBeInTheDocument()
+    // Exactly once: a retry loop would hammer the API behind a missing thumbnail.
+    expect(fetchPhotoMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry a route URL, which never goes stale', async () => {
+    // The filesystem backend answers with its own route; a failure there means the
+    // thumbnail is missing, and refetching would hand back the same address.
+    fetchPhotoMock.mockResolvedValue(detail())
+    renderTile(photo({ media_type: 'image' }))
+
+    fireEvent.error(screen.getByRole('img', { name: 'Clip' }))
+
+    expect(await screen.findByText('Preview unavailable')).toBeInTheDocument()
+  })
 })
 
 describe('PhotoTile video badge', () => {

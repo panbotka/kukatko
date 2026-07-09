@@ -125,6 +125,23 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   kterému testuje Go signer (`sign_test.go`) i Worker; změna algoritmu = regenerace souboru
   a souběžná úprava Workeru. Integrační testy `r2_integration_test.go` (tag `integration`) běží proti reálnému
   S3-kompatibilnímu endpointu z `KUKATKO_TEST_S3_ENDPOINT` (stačí MinIO; bez proměnné se skipnou)),
+  `internal/mediaurl/`
+  (razí klientské adresy médií a razítkuje je na foto-payloady; jediné rozhodnutí dělá storage
+  backend přes `URL`. `NewBuilder(store)` → `Builder` s `Thumb(uid,fileHash,size)` /
+  `Download(uid,filePath)` (adresa pro klienta: podepsaná URL Workeru, jinak fallback na vlastní
+  routu `/api/v1/photos/...`), `Object(relPath)` / `ThumbObject(fileHash,size)` (**syrová** odpověď
+  backendu — prázdný řetězec = „stream to sám", neprázdný = „redirectuj tam"; tohle používají media
+  routy) a `Decorate(list)` / `DecorateOne(&photo)`, které plní `Photo.ThumbURL`+`Photo.DownloadURL`.
+  `Download` si u fallbacku vynutí `?original=true`, aby obě větve znamenaly totéž (uložený originál,
+  nikdy rendering nedestruktivního editu). **Nil `*Builder` je platný** a chová se jako backend, který
+  nic nepublikuje → API postavené bez storage (test) pořád vrací funkční payload. `uid`/`size` se do
+  routy percent-enkódují. Grid velikost je `thumb.GridSize` (`tile_500`) — jediná, kterou payload nese.
+  **Autorizace hlídá discovery**: URL se razí jen do odpovědi, na kterou už caller měl právo; objekt
+  pak hlídá podpis, který Worker ověřuje. Doc comment balíčku to říká výslovně, protože **starší návrh
+  s veřejným bucketem** dělal z `photos.private` a archivu jen prezentační filtr — to už **neplatí**,
+  jsou to reálné bezpečnostní hranice. Volají ho `photoapi` (`annotate`/`handleUpdate`/`runArchive`/
+  `resolveSimilar` + media routy), `peopleapi` a `globalsearchapi`; storage jim předává
+  `cmd/kukatko/serve.go` jako sdílený `mediaStore`),
   `internal/thumb/`
   (thumbnailer náhledů, **CGO-free**: registr velikostí `sizes`+`sizeOrder` ve dvou režimech
   `fit` (max-strana, zachová poměr, neupscaluje) a `crop-square` (center-crop), default sada
@@ -133,6 +150,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   **idempotentní** (skip existujících) + atomický zápis temp+rename; `Thumbnailer` =
   `New(store,cacheDir,WithConcurrency(n))` s API `Generate(ctx,photo,sizes...)`/
   `GenerateAll(ctx,photo)` (mapa size→abs cesta)/`Path(hash,size)`/`Open(hash,size)`;
+  balíčkové `RelPath(hash,size)` vrací tentýž cache path relativně — je to zároveň **object key**
+  náhledu ve vzdáleném backendu, proto se layout exportuje místo aby se odvozoval podruhé jinde;
+  `GridSize` (`tile_500`) je velikost, kterou renderuje mřížka a kterou nese `thumb_url` v payloadu;
   dekód jednou na fotku, paralelní enkód velikostí (errgroup, default `GOMAXPROCS`,
   vázáno přes `thumb.concurrency`),
   **EXIF orientace** (1–8) automaticky; pure-Go JPEG/PNG/WebP + `golang.org/x/image`

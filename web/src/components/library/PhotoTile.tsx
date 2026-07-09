@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useRating } from '../../hooks/useRating'
+import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDate, formatDuration } from '../../lib/format'
 import { isTypingElement, ratingHotkey } from '../../lib/ratingHotkeys'
-import { GRID_THUMB_SIZE, type Photo, thumbUrl } from '../../services/photos'
+import { type Photo } from '../../services/photos'
 
 import { FavoriteButton } from './FavoriteButton'
 import { FlagControl } from './FlagControl'
@@ -76,7 +77,10 @@ export function PhotoTile({
 }: PhotoTileProps) {
   const { t, i18n } = useTranslation()
   const [loaded, setLoaded] = useState(false)
-  const [failed, setFailed] = useState(false)
+  // The thumbnail address comes from the payload, not from the UID: only the
+  // server can sign it. A signed URL expires, so a failed load gets one retry
+  // with a freshly fetched one before the tile gives up.
+  const thumb = useThumbSrc(photo.uid, photo.thumb_url)
   // The optimistic rating hook is always instantiated (React hook rules); its
   // overlay and hotkeys only render/fire when the tile is ratable.
   const rating = useRating(photo.uid, photo.rating ?? 0, photo.flag ?? 'none')
@@ -107,18 +111,16 @@ export function PhotoTile({
 
   const inner = (
     <>
-      {!failed && (
+      {!thumb.failed && (
         <img
-          src={thumbUrl(photo.uid, GRID_THUMB_SIZE)}
+          src={thumb.src}
           alt={alt}
           loading="lazy"
           decoding="async"
           onLoad={() => {
             setLoaded(true)
           }}
-          onError={() => {
-            setFailed(true)
-          }}
+          onError={thumb.onError}
           className="w-100 h-100"
           style={{
             objectFit: 'cover',
@@ -127,7 +129,7 @@ export function PhotoTile({
           }}
         />
       )}
-      {failed && (
+      {thumb.failed && (
         <span
           className="d-flex w-100 h-100 align-items-center justify-content-center text-secondary small p-2 text-center"
           role="img"

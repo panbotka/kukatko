@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { type Photo } from '../../services/people'
-import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
 
 /** Props for {@link SubjectPhotoTile}. */
 export interface SubjectPhotoTileProps {
@@ -45,7 +44,7 @@ export function SubjectPhotoTile({
         title={label}
       >
         <img
-          src={thumbUrl(photo.uid, GRID_THUMB_SIZE)}
+          src={photo.thumb_url}
           alt={label}
           loading="lazy"
           decoding="async"

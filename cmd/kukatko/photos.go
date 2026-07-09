@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -39,15 +40,13 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 // the shared vector store backing the similar-photos endpoint and the semantic
 // half of search; embedder is the sidecar client that embeds query text for
 // semantic and hybrid search. faceSvc backs the /photos/{uid}/faces endpoints.
+// store is the shared originals backend, which also decides whether the media
+// routes stream bytes or redirect to signed edge URLs.
 func buildPhotoAPI(
-	cfg *config.Config, db *database.DB, authAPI *auth.API,
+	cfg *config.Config, db *database.DB, authAPI *auth.API, store storage.Storage,
 	similar photoapi.SimilarSearcher, embedder photoapi.TextEmbedder, faceSvc *facematch.Service,
 	purger photoapi.Purger, reg *metrics.Registry,
-) (*photoapi.API, error) {
-	store, err := newStorage(cfg)
-	if err != nil {
-		return nil, err
-	}
+) *photoapi.API {
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())
 	organizeStore := organize.NewStore(db.Pool())
@@ -68,5 +67,5 @@ func buildPhotoAPI(
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,
-	}), nil
+	})
 }

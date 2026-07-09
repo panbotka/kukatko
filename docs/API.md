@@ -68,12 +68,24 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   archivovaná → 204) a `POST /trash/empty` (editor/admin, `?confirm=true` → `{purged,failed}`)
   trvale mažou archivované fotky, `GET /trash/info` (přihlášený) vrací `{retention_days}` pro odpočet
   do auto-purge; seznam koše jede přes sdílené `GET /photos?archived=only`;
+  **adresy médií v payloadu** (`internal/mediaurl`): každá vrácená fotka nese `thumb_url`
+  (grid náhled `tile_500`) a `download_url` (originál, `?original=true` sémantika — nikdy rendering
+  editu). Hodnoty razí storage backend přes `Storage.URL`: `FS` vrací prázdno → fallback na vlastní
+  routy níže, `R2` vrací **krátkodobě podepsanou URL** (default 1 h) na doménu edge Workeru, takže
+  aplikace nepřenáší ani bajt médií. Klient je bere **jak jsou** a nikdy je neskládá z UID (podpis
+  nedokáže spočítat). Podepsaná URL expiruje → viz `useThumbSrc` v `docs/FRONTEND.md`;
   `GET /photos/{uid}/thumb/{size}` a `/download` (session/`?t=` token) **streamují** média
-  (`Cache-Control`/`ETag`/`304`); `GET /photos/{uid}/video` (session/`?t=` token) streamuje video
-  **s HTTP Range** (206 partial, `Accept-Ranges`, seek; live fotka = motion klip, still → 404) pro
-  inline HTML5 přehrávání, volitelný on-the-fly transcode neweb-friendly codeců přes
-  `video.transcode` config (default off). Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v
-  `cmd/kukatko/photos.go`).
+  (`Cache-Control`/`ETag`/`304`), nebo — když backend publikuje objekty — odpoví **`302` redirectem**
+  na podepsanou URL (`Cache-Control: private, no-store`, aby cache nepřežila podpis); routy zůstávají,
+  takže staré odkazy a záložky fungují dál. `GET /photos/{uid}/video` (session/`?t=` token) streamuje
+  video **s HTTP Range** (206 partial, `Accept-Ranges`, seek; live fotka = motion klip, still → 404)
+  pro inline HTML5 přehrávání, resp. redirectuje na Worker, který Range obsluhuje přímo z R2 (odpadá
+  požadavek na seekovatelný lokální soubor); volitelný on-the-fly transcode neweb-friendly codeců přes
+  `video.transcode` config (default off) krmí `ffmpeg` rovnou podepsanou URL (`ffmpeg` čte http(s)).
+  **Autorizace hlídá discovery:** podepsaná URL se razí jen do odpovědi, na kterou už caller měl
+  právo, takže `private` fotku ani archiv nikdy neuvidí. Na rozdíl od dřívějšího návrhu s veřejným
+  bucketem jsou `private` a archiv **skutečné bezpečnostní hranice** (viz doc comment `internal/mediaurl`).
+  Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v `cmd/kukatko/photos.go`).
 - **Jobs API (`/api/v1`, `internal/jobsapi`, admin-only přes `RequireAdmin`):**
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
   (recent/dead-letter výpis, query `state`/`limit`/`offset`, neplatný → 400);

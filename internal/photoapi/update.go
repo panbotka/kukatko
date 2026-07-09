@@ -74,6 +74,7 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writePhotoError(w, err, "updating photo failed")
 		return
 	}
+	a.media.DecorateOne(&updated)
 	writeJSON(w, http.StatusOK, updated)
 }
 

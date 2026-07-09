@@ -35,12 +35,14 @@ func IsWebFriendlyCodec(codec string) bool {
 }
 
 // TranscodeArgs builds the ffmpeg argument list that remuxes/transcodes the
-// video at src into a fragmented H.264/AAC MP4 written to stdout (pipe:1). The
-// fragmented flags (frag_keyframe+empty_moov) make the MP4 streamable to a pipe
-// without seeking back to write the moov atom, so the output can be copied
-// straight to an HTTP response. Audio is mapped optionally (0:a?) so silent
-// clips still transcode. It is a standalone function so the command construction
-// can be unit-tested without executing ffmpeg.
+// video at src into a fragmented H.264/AAC MP4 written to stdout (pipe:1). src is
+// either a local path or an http(s) URL: ffmpeg opens both, so a video living in
+// a remote bucket is transcoded straight from its signed URL rather than
+// downloaded first. The fragmented flags (frag_keyframe+empty_moov) make the MP4
+// streamable to a pipe without seeking back to write the moov atom, so the output
+// can be copied straight to an HTTP response. Audio is mapped optionally (0:a?)
+// so silent clips still transcode. It is a standalone function so the command
+// construction can be unit-tested without executing ffmpeg.
 func TranscodeArgs(src string) []string {
 	return []string{
 		"-nostdin",
@@ -84,20 +86,21 @@ func (s *TranscodeStream) Close() error {
 	return nil
 }
 
-// Transcode starts an ffmpeg process that transcodes the video at srcPath to a
-// streamable H.264/MP4 and returns a TranscodeStream the caller reads and then
-// closes. The transcode runs for as long as the returned stream is read; closing
-// it (or cancelling ctx) terminates ffmpeg. It returns an error wrapping
-// ErrFFmpegMissing when ffmpeg is not installed, so the caller can fall back to
-// serving the original.
-func Transcode(ctx context.Context, srcPath string) (*TranscodeStream, error) {
+// Transcode starts an ffmpeg process that transcodes the video at src — a local
+// path or an http(s) URL — to a streamable H.264/MP4 and returns a
+// TranscodeStream the caller reads and then closes. The transcode runs for as
+// long as the returned stream is read; closing it (or cancelling ctx) terminates
+// ffmpeg. It returns an error wrapping ErrFFmpegMissing when ffmpeg is not
+// installed, so the caller can fall back to serving the original.
+func Transcode(ctx context.Context, src string) (*TranscodeStream, error) {
 	if _, err := exec.LookPath(ffmpegBinary); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrFFmpegMissing, err)
 	}
 	cctx, cancel := context.WithCancel(ctx)
-	// #nosec G204 -- srcPath is the stored original, materialized by the storage
-	// layer and confined to its root; the remaining arguments are constant flags.
-	cmd := exec.CommandContext(cctx, ffmpegBinary, TranscodeArgs(srcPath)...)
+	// #nosec G204 -- src is either the stored original materialized by the storage
+	// layer and confined to its root, or a URL that layer signed; the remaining
+	// arguments are constant flags.
+	cmd := exec.CommandContext(cctx, ffmpegBinary, TranscodeArgs(src)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()

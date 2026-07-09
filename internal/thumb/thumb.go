@@ -131,14 +131,24 @@ func New(store storage.Storage, cacheDir string, opts ...Option) *Thumbnailer {
 	return t
 }
 
+// RelPath returns the slash-separated cache path of the thumbnail for the given
+// file hash and size — thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg — whether or not
+// it exists yet. It doubles as the object key under which a remote storage
+// backend keeps the thumbnail, which is why the layout is exported rather than
+// derived a second time elsewhere. It returns ErrUnknownSize for an unregistered
+// size or ErrInvalidHash for a malformed hash.
+func RelPath(hash, size string) (string, error) {
+	if !IsValidSize(size) {
+		return "", fmt.Errorf("%w: %q", ErrUnknownSize, size)
+	}
+	return cacheRelPath(hash, size)
+}
+
 // Path returns the absolute filesystem path of the thumbnail for the given file
 // hash and size, whether or not it exists yet. It returns ErrUnknownSize for an
 // unregistered size or ErrInvalidHash for a malformed hash.
 func (t *Thumbnailer) Path(hash, size string) (string, error) {
-	if !IsValidSize(size) {
-		return "", fmt.Errorf("%w: %q", ErrUnknownSize, size)
-	}
-	rel, err := cacheRelPath(hash, size)
+	rel, err := RelPath(hash, size)
 	if err != nil {
 		return "", err
 	}

@@ -29,13 +29,17 @@ type videoSource struct {
 	mime    string
 }
 
-// handleVideo streams a photo's video for inline HTML5 playback. The response
-// supports HTTP range requests (seeking without downloading the whole clip) via
-// http.ServeContent, which is also memory-bounded — it copies in fixed-size
-// chunks from a seekable file rather than buffering it. A live photo streams its
-// motion clip. When on-the-fly transcoding is enabled and the codec is not
-// browser-friendly the clip is transcoded to H.264/MP4 instead (no range
+// handleVideo streams a photo's video for inline HTML5 playback. A live photo
+// streams its motion clip. When on-the-fly transcoding is enabled and the codec
+// is not browser-friendly the clip is transcoded to H.264/MP4 instead (no range
 // support). A photo with no playable video is answered with 404.
+//
+// When the storage backend publishes its objects the response is a redirect to
+// the clip's signed URL and the edge Worker serves the Range requests straight
+// from the bucket. Otherwise the clip is served from a local file with
+// http.ServeContent, which supports range requests (seeking without downloading
+// the whole clip) and is memory-bounded — it copies in fixed-size chunks from a
+// seekable file rather than buffering it.
 func (a *API) handleVideo(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	photo, err := a.store.GetByUID(r.Context(), uid)
@@ -53,9 +57,12 @@ func (a *API) handleVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Both http.ServeContent and ffmpeg need a real file. Materializing once here
-	// also covers the transcode path's fallback to streaming the original, so a
-	// remote backend never fetches the same clip twice for one request.
+	if signed := a.media.Object(src.relPath); signed != "" {
+		a.serveRemoteVideo(w, r, photo, signed)
+		return
+	}
+
+	// Both http.ServeContent and ffmpeg need a real file.
 	absPath, cleanup, err := a.storage.Materialize(r.Context(), src.relPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "opening video failed")
@@ -64,10 +71,31 @@ func (a *API) handleVideo(w http.ResponseWriter, r *http.Request) {
 	defer cleanup()
 
 	if a.shouldTranscode(photo) {
-		a.streamTranscoded(w, r, photo, src, absPath)
+		a.streamTranscoded(w, r, photo, absPath, func() {
+			a.streamVideoFile(w, r, photo, src, absPath)
+		})
 		return
 	}
 	a.streamVideoFile(w, r, photo, src, absPath)
+}
+
+// serveRemoteVideo plays a clip that lives in a published bucket. A clip the
+// browser can decode is redirected to: the Worker streams it, honouring Range,
+// which is why the seekable local file http.ServeContent demands is no longer
+// needed. A clip that must be transcoded is fed to ffmpeg as the signed URL —
+// ffmpeg reads http(s) inputs natively (verified against the ffmpeg on the target
+// system: `ffmpeg -protocols` lists http, https and tls, and a transcode from a
+// URL carrying a query string succeeds), so the clip is never downloaded to disk
+// first. If ffmpeg cannot start, the client is redirected and left to decode what
+// it can.
+func (a *API) serveRemoteVideo(w http.ResponseWriter, r *http.Request, photo photos.Photo, signed string) {
+	if !a.shouldTranscode(photo) {
+		redirectToMedia(w, r, signed)
+		return
+	}
+	a.streamTranscoded(w, r, photo, signed, func() {
+		redirectToMedia(w, r, signed)
+	})
 }
 
 // shouldTranscode reports whether the photo's video should be transcoded on the
@@ -151,18 +179,18 @@ func (a *API) streamVideoFile(
 	http.ServeContent(w, r, path.Base(src.relPath), info.ModTime(), file)
 }
 
-// streamTranscoded transcodes the materialized video at absPath to H.264/MP4 on
-// the fly and streams the result for playback. The transcoded stream cannot be
-// seeked (no range support) and is never cached. If ffmpeg fails to start, it
-// falls back to streaming the original file so playback still works when the
-// browser can decode it.
+// streamTranscoded transcodes the video at input — a local path or an http(s)
+// URL, both of which ffmpeg reads — to H.264/MP4 on the fly and streams the
+// result for playback. The transcoded stream cannot be seeked (no range support)
+// and is never cached. If ffmpeg fails to start it calls onFailure, which serves
+// the original instead so playback still works when the browser can decode it.
 func (a *API) streamTranscoded(
-	w http.ResponseWriter, r *http.Request, photo photos.Photo, src videoSource, absPath string,
+	w http.ResponseWriter, r *http.Request, photo photos.Photo, input string, onFailure func(),
 ) {
-	stream, err := video.Transcode(r.Context(), absPath)
+	stream, err := video.Transcode(r.Context(), input)
 	if err != nil {
 		log.Printf("photoapi: transcode start for %s: %v; serving original", photo.UID, err)
-		a.streamVideoFile(w, r, photo, src, absPath)
+		onFailure()
 		return
 	}
 	defer func() { _ = stream.Close() }()

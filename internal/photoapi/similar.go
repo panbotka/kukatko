@@ -122,6 +122,7 @@ func (a *API) resolveSimilar(
 		if !ok {
 			continue // raced delete between search and load; skip it
 		}
+		a.media.DecorateOne(&photo)
 		out = append(out, similarPhoto{Photo: photo, Distance: m.Distance})
 	}
 	return out, nil

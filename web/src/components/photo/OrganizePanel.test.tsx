@@ -65,6 +65,8 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
     file_width: 1,
     file_height: 1,
     taken_at_source: 'exif',
+    thumb_url: '/api/v1/photos/p1/thumb/tile_500',
+    download_url: '/api/v1/photos/p1/download?original=true',
     title: 'Photo',
     description: '',
     camera_make: '',

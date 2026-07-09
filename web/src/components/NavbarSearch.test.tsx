@@ -33,6 +33,8 @@ const RESULT: GlobalSearchResult = {
       file_width: 1,
       file_height: 1,
       taken_at_source: 'exif',
+      thumb_url: '/api/v1/photos/ph1/thumb/tile_500',
+      download_url: '/api/v1/photos/ph1/download?original=true',
       title: '',
       description: '',
       camera_make: '',

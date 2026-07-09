@@ -19,6 +19,12 @@ type sizeSpec struct {
 	Mode string
 }
 
+// GridSize is the size the library grid renders, and therefore the one whose
+// address every photo payload carries as thumb_url. A page of a hundred tiles
+// fetches this size and nothing else, which is what makes it worth handing the
+// client directly rather than making it follow a redirect per tile.
+const GridSize = "tile_500"
+
 // sizes is the read-only registry of thumbnail sizes. Callers reference a size
 // by its string name (e.g. "fit_1920"). The set is intentionally small and
 // easy to extend: add an entry here and its slot in sizeOrder and every part of

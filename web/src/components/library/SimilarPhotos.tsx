@@ -3,7 +3,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
-import { fetchSimilar, GRID_THUMB_SIZE, type SimilarPhoto, thumbUrl } from '../../services/photos'
+import { fetchSimilar, type SimilarPhoto } from '../../services/photos'
 
 /** Props for {@link SimilarPhotos}. */
 export interface SimilarPhotosProps {
@@ -93,7 +93,7 @@ export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
               title={label}
             >
               <img
-                src={thumbUrl(photo.uid, GRID_THUMB_SIZE)}
+                src={photo.thumb_url}
                 alt={label}
                 loading="lazy"
                 decoding="async"

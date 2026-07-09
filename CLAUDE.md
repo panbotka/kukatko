@@ -72,6 +72,7 @@ Jeden řádek na balíček — ať víš, co existuje, aniž bys otevíral `docs
 - `internal/maintenanceapi` — admin-only `/maintenance` (scan, repair)
 - `internal/mapsapi` — tile proxy, reverse geocode, GeoJSON feed
 - `internal/mapy` — server-side klient mapy.com; **klíč nikdy neopustí server**
+- `internal/mediaurl` — razí `thumb_url`/`download_url` do payloadů; podepsaná URL, nebo vlastní routa
 - `internal/metrics` — Prometheus registry + kolektory (DB pool, hloubka fronty)
 - `internal/obs` — strukturované logování (JSON slog na stderr)
 - `internal/organize` — alba, štítky, **per-user** oblíbené a hodnocení

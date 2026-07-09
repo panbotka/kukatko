@@ -68,6 +68,21 @@ export interface Photo {
    * {@link Photo.rating}.
    */
   flag?: RatingFlag
+  /**
+   * Where to fetch this photo's grid thumbnail (`tile_500`). The backend decides:
+   * with originals on a local disk it is this application's own thumb route, and
+   * with them in the object store it is a short-lived signed URL at the media
+   * Worker's domain. Put it straight into `<img src>` — never rebuild it from the
+   * UID, which cannot produce the signature. Because a signed URL expires, an
+   * `<img>` using it must tolerate a stale one; see {@link useThumbSrc}.
+   */
+  thumb_url: string
+  /**
+   * Where to fetch this photo's untouched original bytes — a signed URL, or the
+   * download route with `?original=true`. It never renders a non-destructive
+   * edit; for that, link to the plain download route (see {@link downloadUrl}).
+   */
+  download_url: string
 }
 
 /**
@@ -422,6 +437,11 @@ export async function saveEdit(
  * default the download honours any saved edit; pass `original: true` for the
  * untouched original bytes. A download token can be appended for cookie-less
  * contexts.
+ *
+ * For the untouched original prefer {@link Photo.download_url} off the payload,
+ * which already points at the object store when that is where it lives. This
+ * route stays the only way to fetch a *rendered edit*, which only the application
+ * can produce.
  */
 export function downloadUrl(
   uid: string,
@@ -506,9 +526,14 @@ export async function fetchSimilar(
 
 /**
  * Builds the URL of a photo's cached thumbnail at the given size (for example
- * `tile_500`). The media endpoint accepts the session cookie sent by the browser
+ * `fit_1920`). The media endpoint accepts the session cookie sent by the browser
  * for same-origin `<img>` requests; an optional download token is appended for
  * cookie-less contexts.
+ *
+ * Use this only for a size no photo payload carries — a lightbox preview, an
+ * editor canvas, a cover addressed by UID alone. For a grid tile, read
+ * {@link Photo.thumb_url} off the payload instead: it already points wherever the
+ * media actually lives, whereas this route may cost the browser a redirect there.
  */
 export function thumbUrl(uid: string, size: string, downloadToken?: string | null): string {
   const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/thumb/${encodeURIComponent(size)}`
@@ -524,6 +549,11 @@ export function thumbUrl(uid: string, size: string, downloadToken?: string | nul
  * (seeking) and serves a live photo's motion clip. The browser sends the session
  * cookie for same-origin `<video>` requests; an optional download token is
  * appended for cookie-less contexts.
+ *
+ * When the clip lives in the object store the endpoint redirects to the media
+ * Worker, which serves the range requests itself. The `<video>` element follows
+ * the redirect on every request, so it always seeks against a fresh signature and
+ * playback of a long clip never outlives one.
  */
 export function videoUrl(uid: string, downloadToken?: string | null): string {
   const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/video`

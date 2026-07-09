@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { GRID_THUMB_SIZE, type Photo, thumbUrl } from '../../services/photos'
+import { type Photo } from '../../services/photos'
 
 /** Props for {@link ReorderableGrid}. */
 export interface ReorderableGridProps {
@@ -78,7 +78,7 @@ export function ReorderableGrid({ photos, onReorder }: ReorderableGridProps) {
             style={{ aspectRatio: '1 / 1', cursor: 'grab' }}
           >
             <img
-              src={thumbUrl(photo.uid, GRID_THUMB_SIZE)}
+              src={photo.thumb_url}
               alt={label}
               loading="lazy"
               decoding="async"

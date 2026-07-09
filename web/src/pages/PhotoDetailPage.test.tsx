@@ -83,6 +83,8 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
     file_height: 3000,
     taken_at: '2026-01-02T10:00:00Z',
     taken_at_source: 'exif',
+    thumb_url: '/api/v1/photos/b/thumb/tile_500',
+    download_url: '/api/v1/photos/b/download?original=true',
     title: 'Beach',
     description: 'A sunny day',
     notes: '',

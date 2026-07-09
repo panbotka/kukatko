@@ -130,14 +130,17 @@ func (a *API) handlePhotos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildPhotosResponse(list, len(uids), limit, offset))
 }
 
-// resolvePhotos loads the photos for the given page of UIDs and restores the
-// newest-first UID order (ListByUIDs returns rows in unspecified order).
+// resolvePhotos loads the photos for the given page of UIDs, restores the
+// newest-first UID order (ListByUIDs returns rows in unspecified order) and
+// stamps on the media URLs the client fetches.
 func (a *API) resolvePhotos(r *http.Request, page []string) ([]photos.Photo, error) {
 	list, err := a.photos.ListByUIDs(r.Context(), page)
 	if err != nil {
 		return nil, fmt.Errorf("peopleapi: loading subject photos: %w", err)
 	}
-	return orderByUIDs(page, list), nil
+	ordered := orderByUIDs(page, list)
+	a.media.Decorate(ordered)
+	return ordered, nil
 }
 
 // toSubject converts the request input into a people.Subject for creation.

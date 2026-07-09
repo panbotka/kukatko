@@ -131,6 +131,15 @@ type Photo struct {
 	Rating int    `json:"rating"`
 	Flag   string `json:"flag"`
 
+	// ThumbURL and DownloadURL are where a client fetches this photo's grid
+	// thumbnail and its original bytes. Like Rating and Flag they are not columns:
+	// HTTP handlers fill them on the way out (mediaurl.Builder), so a photo read
+	// straight from the catalogue carries empty strings. Depending on the storage
+	// backend they are either this application's own media routes or short-lived
+	// signed URLs at the edge Worker that serves the private bucket.
+	ThumbURL    string `json:"thumb_url,omitempty"`
+	DownloadURL string `json:"download_url,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

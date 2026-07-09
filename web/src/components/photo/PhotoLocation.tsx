@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { LeafletMap } from '../map/LeafletMap'
 import { type GeocodeResult, type MapFeature, reverseGeocode } from '../../services/map'
-import { GRID_THUMB_SIZE, type PhotoDetail, thumbUrl, updatePhoto } from '../../services/photos'
+import { type PhotoDetail, updatePhoto } from '../../services/photos'
 
 /** Props for {@link PhotoLocation}. */
 export interface PhotoLocationProps {
@@ -27,7 +27,7 @@ function locationFeature(photo: PhotoDetail, lat: number, lng: number): MapFeatu
       title: photo.title,
       taken_at: photo.taken_at,
       media_type: photo.media_type ?? 'image',
-      thumb: thumbUrl(photo.uid, GRID_THUMB_SIZE),
+      thumb: photo.thumb_url,
     },
   }
 }

@@ -205,7 +205,7 @@ export function PhotoDetailPage() {
           uid={photo.uid}
           title={title}
           poster={poster}
-          downloadHref={downloadUrl(photo.uid, { original: true, token: downloadToken })}
+          downloadHref={photo.download_url}
           token={downloadToken}
         />
       )
@@ -303,13 +303,7 @@ export function PhotoDetailPage() {
           </div>
 
           <div className="d-flex gap-2 mt-2 flex-wrap">
-            <Button
-              as="a"
-              href={downloadUrl(photo.uid, { original: true, token: downloadToken })}
-              variant="outline-secondary"
-              size="sm"
-              download
-            >
+            <Button as="a" href={photo.download_url} variant="outline-secondary" size="sm" download>
               {t('photo.download')}
             </Button>
             {!isIdentityEdit(edit) && (

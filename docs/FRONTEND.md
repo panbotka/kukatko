@@ -42,7 +42,8 @@ zapiš sem.
   hvězdy 0–5 + pick/reject) nad `useRating`, plus **hotkeys na fokusnuté dlaždici** `0`–`5`
   nastaví hodnocení a `p`/`r` pick/reject (`ratingHotkey`/`isTypingElement`, nefungují při psaní
   do inputu); **zamítnutá fotka** je ztlumená + má reject badge; heart i rating overlay se
-  v selection módu skryjí),
+  v selection módu skryjí; `src` bere **`photo.thumb_url` z payloadu** přes `useThumbSrc` a
+  **nikdy** ho neskládá z UID),
   `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
   window-scroll, `endReached` → další stránka, footer spinner/retry; props `favoritable`/`ratable`
   prosáknou srdíčko a hvězdy/flag na dlaždice; volitelný `gridRef` (imperativní `scrollToIndex`
@@ -294,6 +295,15 @@ zapiš sem.
   hodnocení (hvězdy) + pick/reject flag nad `ratePhoto` (`PUT …/rating` jen s měněným polem),
   `setRating`/`setFlag` s per-poli rollbackem při chybě, no-op na shodnou hodnotu, `pending` přes
   in-flight counter, resync na změnu `uid`/server stavu (mirror `useFavorite`);
+  `useThumbSrc(uid,thumbUrl)` → `{src,failed,onError}` = **odolnost vůči expirované podepsané URL**:
+  `thumb_url` v payloadu může být krátkodobě podepsaná adresa media Workeru (default 1 h), takže
+  payload držený ve virtualizovaném seznamu nebo přečkaný přes delší nečinnost dá `<img>` adresu,
+  kterou Worker odmítne. První `onError` proto **jednou** refetchne fotku (`fetchPhoto`) a zkusí to
+  s čerstvě podepsanou URL; druhý pád, selhaný refetch, prázdná nebo **nezměněná** adresa (to dělá
+  filesystem backend — jeho URL jsou routy a nestárnou, takže pád = fakt chybějící náhled) → `failed`
+  a volající vykreslí placeholder. Nová `thumbUrl` prop (nová stránka výsledků) resetuje retry budget.
+  Řeší se to takhle, **ne dlouhým TTL** — krátká životnost je celý smysl podpisu. Používá
+  `PhotoTile` a `TrashCard`;
   `useSlideshow({length,hasMore,intervalMs,autoPlay?,onLoadMore?})` = řízení promítání: vlastní
   `index`+`playing`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`, auto-advance na interval
   (setTimeout, manuální nav resetuje odpočet), wrap-around, prefetch `PRELOAD_AHEAD` snímků dopředu
@@ -369,10 +379,16 @@ zapiš sem.
   trvalé mazání), `emptyTrash()` (`POST /trash/empty?confirm=true` → `PurgeResult{purged,failed}`),
   `fetchTrashInfo()` (`GET /trash/info` → `TrashInfo{retention_days}`),
   `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `videoUrl(uid,token?)` (range stream pro
-  `<video>`), `GRID_THUMB_SIZE`, typy `Photo` (vč. `is_favorite` + per-user `rating`/`flag` + video pole
-  `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`)/`PhotoListParams`
+  `<video>`; při R2 backendu routa **302** redirectne na Workera, `<video>` redirect následuje
+  při každém requestu, takže seek jede vždy proti čerstvému podpisu), `GRID_THUMB_SIZE`,
+  typy `Photo` (vč. `is_favorite` + per-user `rating`/`flag` + video pole
+  `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` + **`thumb_url`/`download_url`**)/`PhotoListParams`
   (vč. `album`/`label` scope + **`country`/`city` place scope** + `favorite` filtr + `min_rating`/`flag` filtry)/`PhotoSort`
-  (vč. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`;
+  (vč. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`.
+  **Adresy médií se neskládají z UID.** Grid dlaždice i download odkaz berou `photo.thumb_url` /
+  `photo.download_url` z payloadu — jen server umí URL podepsat. `thumbUrl(uid,size)` zůstává pro
+  velikost, kterou payload nenese (lightbox, canvas editoru, cover podle UID) a `downloadUrl(uid,…)`
+  pro **rendering nedestruktivního editu**, který umí jen aplikace;
   `organize.ts` = Albums/Labels klient: alba `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
   `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`/`reorderAlbumPhotos`, štítky `fetchLabels`/
   `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; typy

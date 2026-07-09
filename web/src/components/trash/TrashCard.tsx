@@ -6,8 +6,9 @@ import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { purgeCountdown } from '../../lib/trashCountdown'
-import { GRID_THUMB_SIZE, type Photo, thumbUrl } from '../../services/photos'
+import { type Photo } from '../../services/photos'
 
 /** Props for {@link TrashCard}. */
 export interface TrashCardProps {
@@ -43,7 +44,7 @@ export function TrashCard({
 }: TrashCardProps) {
   const { t } = useTranslation()
   const [loaded, setLoaded] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const thumb = useThumbSrc(photo.uid, photo.thumb_url)
 
   const label = photo.title !== '' ? photo.title : photo.file_name
   const countdown = purgeCountdown(photo.archived_at, retentionDays)
@@ -60,18 +61,16 @@ export function TrashCard({
           aria-label={label}
           title={label}
         >
-          {!failed && (
+          {!thumb.failed && (
             <img
-              src={thumbUrl(photo.uid, GRID_THUMB_SIZE)}
+              src={thumb.src}
               alt={label}
               loading="lazy"
               decoding="async"
               onLoad={() => {
                 setLoaded(true)
               }}
-              onError={() => {
-                setFailed(true)
-              }}
+              onError={thumb.onError}
               className="w-100 h-100"
               style={{
                 objectFit: 'cover',
@@ -80,7 +79,7 @@ export function TrashCard({
               }}
             />
           )}
-          {failed && (
+          {thumb.failed && (
             <span className="d-flex w-100 h-100 align-items-center justify-content-center text-secondary small p-2 text-center">
               {t('library.tile.unavailable')}
             </span>
