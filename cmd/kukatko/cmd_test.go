@@ -12,7 +12,7 @@ import (
 func executeCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 
-	cmd := newRootCmd()
+	cmd := newRootCmd("kukatko")
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -27,9 +27,10 @@ func executeCmd(t *testing.T, args ...string) (string, error) {
 func TestRootCmd_subcommandsRegistered(t *testing.T) {
 	t.Parallel()
 
-	root := newRootCmd()
+	root := newRootCmd("kukatko")
 	want := map[string]bool{
 		"serve": false, "version": false, "import": false, "backup": false, "restore": false,
+		"ctl": false,
 	}
 	for _, c := range root.Commands() {
 		if _, ok := want[c.Name()]; ok {

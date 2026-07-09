@@ -11,7 +11,16 @@ import (
 // newRootCmd builds the root Cobra command for the kukatko CLI and attaches all
 // subcommands. Usage and errors are silenced so that RunE failures surface as a
 // single, clean message via main rather than a duplicated usage dump.
-func newRootCmd() *cobra.Command {
+//
+// argv0 is the name the binary was invoked under (os.Args[0]). Through a symlink
+// named kukatkoctl the ctl subtree becomes the root, so `kukatkoctl photos list`
+// works without the ctl level — one binary, two names.
+func newRootCmd(argv0 string) *cobra.Command {
+	if impliesCtl(argv0) {
+		ctlRoot := newCtlCmd()
+		ctlRoot.Use = ctlProgramName
+		return ctlRoot
+	}
 	root := &cobra.Command{
 		Use:   "kukatko",
 		Short: "Kukátko — self-hosted photo & video library",
@@ -23,7 +32,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().String("config", "",
 		"path to the YAML config file (default: $KUKATKO_CONFIG or config.yaml)")
 	root.AddCommand(newServeCmd(), newMigrateCmd(), newImportCmd(), newBackupCmd(),
-		newRestoreCmd(), newMaintenanceCmd(), newStorageCmd(), newVersionCmd())
+		newRestoreCmd(), newMaintenanceCmd(), newStorageCmd(), newCtlCmd(), newVersionCmd())
 	return root
 }
 

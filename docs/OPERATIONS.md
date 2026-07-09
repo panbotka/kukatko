@@ -47,6 +47,8 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   embeddings/faces backfill, orphan import synchronně přes upload pipeline; bez flagu no-op),
   **`kukatko storage`** (operace nad úložištěm originálů — `internal/storagemigrate`):
   `storage migrate-to-r2` (jednorázový **resumovatelný** přesun knihovny do R2, viz níže),
+  **`kukatko ctl`** (vzdálený klient nad HTTP API běžící instance — `internal/ctl`; jediný subkomand,
+  který **nesahá na DB ani disk**, viz níže),
   `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
   `server.New(addr, server.WithAPI(register))` mountuje route-skupiny pod `/api/v1`.
 
@@ -93,6 +95,100 @@ bucketu, co už má (`HEAD` = Class B, 10 M/měsíc zdarma), a zapisuje jen chyb
 kukatko storage migrate-to-r2 --dry-run                      # kolik toho zbývá
 kukatko storage migrate-to-r2 --concurrency 4                # nahraj, originály nech na disku
 kukatko storage migrate-to-r2 --delete-local                 # nahraj a uklízej za sebou
+```
+
+### `kukatko ctl` — vzdálený klient API
+
+Ostatní subkomandy sahají přímo na databázi a filesystem. `ctl` je opak: mluví s **běžící**
+instancí přes její `/api/v1`, autentizuje se **API tokenem** (`Authorization: Bearer kkt_…`,
+viz [`docs/API.md`](API.md)) a nepotřebuje ani `database.url`, ani přístup k originálům.
+Slouží k ovládání produkce z terminálu — a skrz ten terminál i agentem. Je to levnější
+v tokenech než MCP server: do kontextu modelu se nenačítá žádné tool schema, jen krátký
+příkaz a úzký výsledek. **Proto je výstup kompaktní** — to je celý smysl.
+
+**Jeden binár, dvě jména.** Přes symlink pojmenovaný `kukatkoctl` se úroveň `ctl` implikuje
+(detekce z `os.Args[0]`), takže `kukatkoctl photos list` == `kukatko ctl photos list`:
+
+```bash
+ln -s /usr/local/bin/kukatko /usr/local/bin/kukatkoctl
+```
+
+#### Konfigurace klienta
+
+Kontexty ve stylu `kubectl` žijí v **`~/.config/kukatko/ctl.yaml`** (ctí `XDG_CONFIG_HOME`).
+Se serverovou konfigurací (`internal/config`, `config.yaml`) **nemají nic společného** — ta
+popisuje server a o vzdáleném endpointu nic neví.
+
+```yaml
+current-context: prod
+contexts:
+  - name: prod
+    server: https://kukatko.example.com   # kořen webu, BEZ /api/v1 (klient si ho doplní)
+    token: kkt_ab12_…                     # plaintext tokenu; soubor je vždy 0600
+```
+
+Soubor se zapisuje **atomicky a vždy s módem `0600`** (adresář `0700`); existující
+world-readable soubor se před zápisem utáhne. **Token se nikdy nikam nevypisuje** — ani do
+logu, ani do chybové hlášky, ani do `ctl config list`.
+
+| Příkaz | Význam |
+| --- | --- |
+| `ctl config set-context <name> --server <url> [--token <t> \| --token-stdin] [--current]` | vytvoří/aktualizuje kontext; první vytvořený se stane aktuálním. Vynechané pole se zachová (změna URL nesmaže token). |
+| `ctl config list` (alias `get-contexts`) | vypíše kontexty; u tokenu jen `stored`/`not set` |
+| `ctl config use-context <name>` (alias `use`) | přepne aktuální kontext |
+
+`--token` je vidět v `ps` celému stroji — **preferuj `--token-stdin`**:
+`printf '%s' "$TOKEN" | kukatkoctl config set-context prod --server https://… --token-stdin`.
+
+**Env přebíjí aktivní kontext, po jednotlivých polích:** `KUKATKO_SERVER` a `KUKATKO_TOKEN`.
+Samotné `KUKATKO_TOKEN` tedy přecredentialuje uložený kontext, aniž bys sahal na soubor.
+Bez souboru i bez kontextu stačí obě proměnné. Flag `--context <name>` vybere jiný než
+aktuální kontext, `--ctl-config <path>` jiný soubor.
+
+#### Výstup a exit kódy
+
+`-o table` (default) je kompaktní tabulka + jeden souhrnný řádek (`3 of 42 photos · offset 0 ·
+next offset 3`, u hledání navíc `mode`/`degraded`). Prázdný výsledek vypíše jediný řádek
+`no photos found` **bez hlavičky**. `-o json` tiskne **JSON serveru beze změny** (žádný
+re-marshal) pro strojové zpracování; `-o yaml` neexistuje.
+
+Exit `0` při úspěchu, nenulový při HTTP i transportní chybě. **`401`** dá krátkou akční
+hlášku (token chybí / expiroval / byl revokován + jak vyrobit nový), ne stacktrace a ne výpis
+těla odpovědi.
+
+#### `ctl photos`
+
+| Příkaz | Význam |
+| --- | --- |
+| `ctl photos list` | stránka `GET /photos` |
+| `ctl photos get <uid>` | detail `GET /photos/{uid}` (+ soubory, alba, štítky) |
+| `ctl photos search <query>` | `GET /search?q=…&mode=…` |
+
+Filtry sdílí `list` i `search`, až na ty označené „jen `list`" / „jen `search`".
+`search` řadí dle relevance, takže `--sort`/`--order` nenabízí; `--favorite` nenabízí proto,
+že `GET /search` ten parametr vůbec nečte — nabízet ho by tiše vracelo nefiltrovaný výsledek.
+
+| Flag | Default | Význam |
+| --- | --- | --- |
+| `--limit` | `0` (= server default 100) | fotek na stránku, server stropuje na 500 |
+| `--offset` | `0` | kolik přeskočit; další offset říká souhrnný řádek |
+| `--sort` (jen `list`) | server default | `newest`/`oldest`/`taken_at`/`added`/`title`/`size`/`rating` |
+| `--order` (jen `list`) | dle `--sort` | `asc`/`desc` |
+| `--year` | `0` (bez filtru) | kalendářní rok. **API rok nezná** — klient ho překládá na `taken_after`/`taken_before` |
+| `--album` / `--label` | — | scope na uid alba/štítku |
+| `--favorite` (jen `list`) | `false` | jen vlastní oblíbené |
+| `--archived` | server default (`false`) | `true` = včetně archivu, `only` = jen koš |
+| `--mode` (jen `search`) | `hybrid` | `fulltext`/`semantic`/`hybrid` |
+
+Je-li box (embeddings sidecar) offline, `semantic`/`hybrid` spadne na fulltext a souhrnný
+řádek to řekne (`degraded`).
+
+```bash
+kukatkoctl photos list --year 2024 --limit 5
+kukatkoctl photos list --album alb1a2b3 --sort title -o json | jq '.photos[].uid'
+kukatkoctl photos get pht01h2j3
+kukatkoctl photos search "západ slunce nad jezerem" --mode semantic
+KUKATKO_SERVER=http://localhost:8080 KUKATKO_TOKEN=kkt_… kukatkoctl photos list
 ```
 
 ## Konfigurační klíče

@@ -16,7 +16,24 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `HashPassword`/`CheckPassword`, UID/token generátory, sliding-window `Limiter`,
   `Store` nad pgx, `Service` orchestrace login/session/bootstrap/správa uživatelů,
   `API` = HTTP handlery + RBAC middleware `RequireAuth`/`RequireWrite`/`RequireAdmin` +
-  `RegisterRoutes`; session a users v migraci `0002_auth.sql`), `internal/photos/`
+  `RegisterRoutes`; session a users v migraci `0002_auth.sql`.
+  **API tokeny** (`apitoken.go`, `store_apitoken.go`, `service_apitoken.go`,
+  `handlers_apitoken.go`, migrace `0020_api_tokens.sql`): dlouhodobý bearer credential
+  `kkt_<id>_<secret>` pro neinteraktivní klienty. `<id>` je PK řádku (prefix `at`), takže ověření
+  je **jeden indexovaný lookup**, ne scan přes hashe; `<secret>` nese 256 bitů z `crypto/rand`.
+  Ukládá se **jen hex SHA-256** secretu (`hashAPITokenSecret`) — **záměrně ne bcrypt**: bcrypt
+  chrání nízkoentropická hesla proti slovníku a platí se jednou za login, kdežto token se ověřuje
+  na *každém* requestu a 256bitový náhodný secret žádný slovník nemá; porovnání je konstantní
+  v čase (`subtle.ConstantTimeCompare`). Plaintext se vrací **právě jednou**, při vytvoření.
+  Model `APIToken` (`name`, `expires_at`, `last_used_at`, `revoked_at`) + čisté predikáty
+  `Revoked`/`Expired`/`Active`; token **dědí roli vlastníka** (žádný role sloupec, žádný druhý
+  permission systém). `Service.AuthenticateAPIToken` vrací u všech selhání jediný
+  `ErrInvalidAPIToken` (→ 401, nikdy 403, tělo nerozlišuje případ) a stampuje `last_used_at`
+  nejvýš jednou za `apiTokenUseInterval` (= minuta, zrcadlí `slidingRenewInterval`).
+  `Store.CreateAPITokenAudited`/`RevokeAPITokenAudited` píšou audit `inAuditedTx` — mutace i audit
+  řádek v jedné transakci; `errNoAuditableChange` udělá z opakované revokace no-op bez audit
+  záznamu. `bearerToken` parsuje `Authorization` case-insensitive dle RFC 7235; neexistující nebo
+  ne-Bearer schéma propadne na cookie), `internal/photos/`
   (jádro foto-katalogu: typované modely `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`
   (`Photo` nese i per-user anotační pole `Rating int`/`Flag string` — JSON `rating`/`flag`,
   analogická `is_favorite`; neukládají se v `photos`, plní je HTTP handlery z `organize.Store`),
@@ -1081,3 +1098,38 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
   frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+
+- **Remote CLI klient (`internal/ctl`):** klientská polovina `kukatko ctl` — jediný kus stromu, který
+  Kukátko volá **přes HTTP jako cizí server**, ne přes DB a disk. Nemá nic společného s `internal/config`
+  (ten popisuje *server* a o vzdáleném endpointu nic neví); jediný stav, který vlastní, je klientský
+  soubor `~/.config/kukatko/ctl.yaml`. Motivace: levnější v tokenech než MCP server — žádné tool schema
+  se nenačítá do kontextu modelu, jen krátký příkaz a úzký výsledek. Proto je výstup kompaktní.
+  - `config.go` — `Context{Name,Server,Token}` + `Config{CurrentContext,Contexts}` ve stylu kubectl.
+    `Load(path)` (chybějící soubor = prázdný config, ne chyba — běh jen z env proměnných), `Save(path,cfg)`
+    (atomicky: temp 0600 → `Rename` → `Chmod` 0600, adresář 0700; **existující world-readable soubor
+    utáhne**, nikdy do něj token nezapíše tak, jak je). `DefaultConfigPath()` ctí `XDG_CONFIG_HOME`.
+    `Resolve(cfg, contextName, env)` → `Endpoint`: vybere kontext (jménem → jinak `current-context`),
+    pak `KUKATKO_SERVER`/`KUKATKO_TOKEN` **přebijí po jednotlivých polích**, takže samotné
+    `KUKATKO_TOKEN` přecredentialuje uložený kontext. Chyby `ErrContextNotFound`, `ErrNoServer`.
+  - `client.go` — `NewClient(server, token)` (validuje absolutní http(s) URL → `ErrInvalidServerURL`),
+    interní `get(ctx, path, query)` posílá `Authorization: Bearer <token>` a vrací **surové** tělo
+    (`json.RawMessage`), protože `-o json` tiskne bajty serveru beze změny. `401` → `*UnauthorizedError`
+    s krátkou akční hláškou (token chybí / expiroval / byl revokován + jak vyrobit nový) — **nikdy**
+    výpis těla ani tokenu; jiný non-2xx → `*StatusError` s `{"error":…}` textem serveru (jinak omezený
+    úryvek těla). Tělo se čte přes `io.LimitReader`, timeout 30 s.
+  - `photos.go` — `ListPhotos`/`GetPhoto`/`SearchPhotos` + `DecodePhotoPage`/`DecodePhotoDetail`.
+    **Dekodér je per-resource záměrně:** API nemá jednotnou list obálku (`photos` vrací
+    `{photos,total,limit,offset,next_offset}`, ostatní zdroje holý seznam) a sjednocovat ho nesmíme —
+    rozbil by se frontend. `ListOptions` (limit/offset/sort/order/year/album/label/favorite/archived)
+    se validuje lokálně (`ErrInvalidPaging`/`ErrInvalidYear`/`ErrInvalidArchived`), takže překlep
+    nestojí round trip. **`--year` API nezná** — překládá se na inkluzivní rozsah
+    `taken_after`/`taken_before` (`taken_at >= … <= …`), horní mez je poslední instant 31. 12.
+    `SearchOptions` přidává `q` + `mode` (`fulltext`/`semantic`/`hybrid`).
+  - `output.go` — `ParseFormat` (`table`/`json`; **`yaml` schválně ne**), `WriteJSON` (echo bajtů beze
+    změny), `WritePhotoPage` (tabulka + jeden souhrnný řádek: kolik z kolika, `offset`, `next offset`,
+    u hledání efektivní `mode` a případné `degraded`), `WritePhotoDetail`, `WriteContexts`
+    (**token se nikdy netiskne**, jen `stored`/`not set`). Prázdný výsledek = jediný řádek
+    `no photos found`, žádná hlavička — agent si nesplete hlavičku s řádkem.
+
+  Strom příkazů, konfigurační soubor a symlink `kukatkoctl` popisuje
+  [`docs/OPERATIONS.md`](OPERATIONS.md).

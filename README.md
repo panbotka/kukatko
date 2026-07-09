@@ -12,6 +12,11 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   per-user oblíbené, dvojjazyčné UI (čeština default + angličtina), S3 zálohování.
+- **API tokeny** (`Authorization: Bearer kkt_…`) pro CLI, skripty a agenty — dlouhodobý credential
+  s vlastní expirací a revokací, dědí roli svého uživatele. Vyrobíš přes `POST /api/v1/auth/tokens`.
+- **`kukatko ctl`** — vzdálený klient, který ovládá **běžící** instanci přes její HTTP API
+  (kontexty ve stylu `kubectl`, `-o json` pro strojové zpracování). Přes symlink `kukatkoctl`
+  se úroveň `ctl` implikuje. Detail: [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 > **Stav:** aktivní vývoj (milník M0 — kostra backendu + frontendu). Architektura:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), vývojářský návod:
@@ -59,6 +64,12 @@ export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
 ./bin/kukatko serve                       # spustí migrace, pak HTTP server (default 0.0.0.0:8080)
 ./bin/kukatko serve --config config.yaml  # explicitní cesta ke konfiguraci
 ./bin/kukatko version                     # vypíše verzi a commit
+
+# ctl mluví s BĚŽÍCÍ instancí přes HTTP API — nepotřebuje database.url ani originály:
+printf '%s' "$KUKATKO_TOKEN" | ./bin/kukatko ctl config set-context prod \
+    --server https://kukatko.example.com --token-stdin
+./bin/kukatko ctl photos list --year 2024 --limit 5
+./bin/kukatko ctl photos search "západ slunce" --mode semantic -o json
 ```
 
 `migrate photosorter` potřebuje read-only DSN photo-sorter DB v `import.photosorter.dsn`

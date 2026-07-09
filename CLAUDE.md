@@ -41,11 +41,11 @@ Otevři **jeden** dokument podle toho, na co saháš. Nečti je preventivně vš
 ## Mapa balíčků
 Jeden řádek na balíček — ať víš, co existuje, aniž bys otevíral `docs/PACKAGES.md`.
 
-- `cmd/kukatko` — tenký Cobra entrypoint (`serve`/`migrate`/`import`/`backup`/`restore`/`maintenance`/`version`) + `buildXxxAPI` wiring
+- `cmd/kukatko` — tenký Cobra entrypoint (`serve`/`migrate`/`import`/`backup`/`restore`/`maintenance`/`ctl`/`version`) + `buildXxxAPI` wiring
 - `web/` — Vite + React 19 + TS frontend, buildí se do `internal/web/static/dist`
 - `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` běží **v téže transakci** jako mutace
 - `internal/auditapi` — admin-only `GET /audit` (read-only výpis)
-- `internal/auth` — role admin/editor/viewer, bcrypt, sliding sessions, RBAC middleware
+- `internal/auth` — role admin/editor/viewer, bcrypt, sliding sessions, RBAC middleware, API tokeny (Bearer)
 - `internal/backup` — S3 záloha (pg_dump + sync originálů + retence) **a** obnova
 - `internal/backupapi` — admin-only `GET`/`POST /backup`
 - `internal/bulk` — hromadná editace metadat, celá dávka v jedné transakci
@@ -53,6 +53,7 @@ Jeden řádek na balíček — ať víš, co existuje, aniž bys otevíral `docs
 - `internal/cluster` — auto-clustering nepřiřazených obličejů (union-find nad HNSW sousedy)
 - `internal/clusterapi` — `/faces/clusters` (list, assign, remove-face)
 - `internal/config` — typovaná konfigurace, Viper, `Load()`
+- `internal/ctl` — **klient** vlastního API pro `kukatko ctl`: kontexty (kubectl-style), Bearer token, table/JSON výstup
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector typy
 - `internal/duplicates` — near-dup skupiny (pHash banded-LSH + embedding HNSW, union-find); jen čte
 - `internal/duplicatesapi` — `GET /duplicates`
