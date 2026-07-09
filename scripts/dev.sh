@@ -43,9 +43,14 @@ done
 
 # --- secrets & config -------------------------------------------------------
 # db.env carries KUKATKO_DATABASE_URL_HOST (localhost DSN) and MAPY_API_KEY.
+# `set -a` exports everything it defines: db.env has no `export` keywords, so a
+# bare `source` would leave MAPY_API_KEY as a shell-local variable and the server
+# would start without a maps key (tile proxy → 503).
 if [[ -f .secrets/db.env ]]; then
+  set -a
   # shellcheck disable=SC1091
   source .secrets/db.env
+  set +a
 fi
 
 # Running on the host (outside the docker network), so use the localhost DSN.
