@@ -359,6 +359,164 @@ func TestR2MaterializeMissingObjectLeavesNoTempFile(t *testing.T) {
 	assertTempDirEmpty(t, tempDir)
 }
 
+func TestR2PutHeadRoundTripAtACallerChosenKey(t *testing.T) {
+	store, tempDir := newTestR2(t)
+	ctx := t.Context()
+	content := jpegBytes("put-head")
+	// A thumbnail cache path: a key no Store call could ever derive.
+	const key = "thumb/ab/cd/ef/abcdef_tile_500.jpg"
+	want := StoredFile{Hash: hashOf(content), RelPath: key, Size: int64(len(content)), MIME: "image/jpeg"}
+
+	if err := store.Put(ctx, bytes.NewReader(content), want); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	head, err := store.Head(ctx, key)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	if head.Hash != want.Hash || head.Size != want.Size || head.MIME != want.MIME {
+		t.Errorf("Head = %+v, want %+v", head, want)
+	}
+
+	reader, err := store.Open(ctx, key)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer reader.Close()
+	roundTripped, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("reading object: %v", err)
+	}
+	if !bytes.Equal(roundTripped, content) {
+		t.Error("Put stored different bytes than it was given")
+	}
+	// Nothing is staged: Put streams straight into the bucket.
+	assertTempDirEmpty(t, tempDir)
+}
+
+func TestR2PutOverwritesAndHeadOfAMissingObjectIsNotExist(t *testing.T) {
+	store, _ := newTestR2(t)
+	ctx := t.Context()
+	const key = "2024/05/overwrite.jpg"
+
+	if _, err := store.Head(ctx, key); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Head(missing) = %v, want os.ErrNotExist", err)
+	}
+
+	// An interrupted run leaves a half-written object; the resumed run must be able
+	// to replace it at the same key.
+	first := jpegBytes("first-attempt")
+	second := jpegBytes("second attempt, different length")
+	for _, content := range [][]byte{first, second} {
+		file := StoredFile{
+			Hash: hashOf(content), RelPath: key, Size: int64(len(content)), MIME: "image/jpeg",
+		}
+		if err := store.Put(ctx, bytes.NewReader(content), file); err != nil {
+			t.Fatalf("Put: %v", err)
+		}
+	}
+	head, err := store.Head(ctx, key)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	if head.Hash != hashOf(second) || head.Size != int64(len(second)) {
+		t.Errorf("Head = %+v, want the second content", head)
+	}
+}
+
+func TestR2PutRemovesTheObjectWhenTheContentDoesNotMatchItsDigest(t *testing.T) {
+	store, tempDir := newTestR2(t)
+	ctx := t.Context()
+	const key = "2024/05/lying.jpg"
+	actual := jpegBytes("what the disk holds")
+	declared := StoredFile{
+		Hash:    hashOf(jpegBytes("what the catalogue believes")),
+		RelPath: key,
+		Size:    int64(len(actual)),
+		MIME:    "image/jpeg",
+	}
+
+	err := store.Put(ctx, bytes.NewReader(actual), declared)
+	if !errors.Is(err, ErrHashMismatch) {
+		t.Fatalf("Put(wrong digest) = %v, want ErrHashMismatch", err)
+	}
+	// The object carried metadata that lied about its own bytes; it must be gone,
+	// or a later reader — or a migration deciding it may delete the local original
+	// — would trust it.
+	if _, err := store.Head(ctx, key); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Head after a rejected Put = %v, want os.ErrNotExist", err)
+	}
+	assertTempDirEmpty(t, tempDir)
+}
+
+func TestR2PutRejectsATruncatedStream(t *testing.T) {
+	store, _ := newTestR2(t)
+	content := jpegBytes("shorter than declared")
+	declared := StoredFile{
+		Hash:    hashOf(content),
+		RelPath: "2024/05/truncated.jpg",
+		Size:    int64(len(content)) + 100,
+		MIME:    "image/jpeg",
+	}
+
+	if err := store.Put(t.Context(), bytes.NewReader(content), declared); err == nil {
+		t.Fatal("Put(short stream) = nil, want an error")
+	}
+	if _, err := store.Head(t.Context(), declared.RelPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a short Put left an object behind: %v", err)
+	}
+}
+
+func TestR2Check(t *testing.T) {
+	store, _ := newTestR2(t)
+
+	if err := store.Check(t.Context()); err != nil {
+		t.Errorf("Check on the test bucket: %v", err)
+	}
+
+	absent := *store
+	absent.bucket = "kukatko-bucket-that-does-not-exist"
+	err := absent.Check(t.Context())
+	if !errors.Is(err, ErrBucketNotFound) {
+		t.Errorf("Check(missing bucket) = %v, want ErrBucketNotFound", err)
+	}
+	if !IsSystemic(err) {
+		t.Error("a missing bucket must be systemic: no retry can create it")
+	}
+}
+
+func TestR2CheckRejectsBadCredentialsSystemically(t *testing.T) {
+	endpoint := os.Getenv(envTestS3Endpoint)
+	if endpoint == "" {
+		t.Skipf("%s not set; skipping integration test", envTestS3Endpoint)
+	}
+	bucket := os.Getenv(envTestS3Bucket)
+	if bucket == "" {
+		bucket = "kukatko-test"
+	}
+	store, err := NewR2(R2Options{
+		Endpoint:  endpoint,
+		Region:    os.Getenv(envTestS3Region),
+		Bucket:    bucket,
+		AccessKey: "wrong-access-key",
+		SecretKey: "wrong-secret-key",
+		TempPath:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("NewR2: %v", err)
+	}
+
+	// Credentials that cannot open the bucket must stop a migration in its first
+	// second, not on its hundred-thousandth upload.
+	checkErr := store.Check(t.Context())
+	if checkErr == nil {
+		t.Fatal("Check with bad credentials = nil, want an error")
+	}
+	if !IsSystemic(checkErr) {
+		t.Errorf("IsSystemic(%v) = false, want true", checkErr)
+	}
+}
+
 func TestR2StoreRecordsContentHashMetadata(t *testing.T) {
 	store, _ := newTestR2(t)
 	content := jpegBytes("metadata")

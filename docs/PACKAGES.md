@@ -92,6 +92,19 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   512 B) + přípona jako hint (`mediaTypeByExt` pro HEIC/RAW/video); sentinely
   `ErrAlreadyExists`/`ErrInvalidPath`/`ErrTooManyCollisions`; nikdy nedrží soubor celý v RAM
   (sdílený `streamToTemp` v `temp.go`).
+  Trojice pro **hromadné přesuny** (`put.go`): `Put(ctx,src,StoredFile)` zapíše stream na klíč,
+  který **volí volající** (to `Store` neumí — ten si klíč odvozuje z `taken_at` a jména), a to
+  přesně tehdy, když obsah sedí na deklarovanou velikost i SHA256 — jinak `ErrSizeMismatch`
+  /`ErrHashMismatch` a **žádný použitelný objekt nezůstane** (`FS` přejmenuje až po ověření,
+  `R2` špatně nahraný objekt zase smaže: uniklý objekt je menší zlo než objekt, jehož metadata
+  lžou o jeho bajtech). `Head(ctx,relPath)` vrátí identitu objektu (velikost, digest, MIME) bez
+  přenosu obsahu — u `R2` jeden levný metadata request, u `FS` plné čtení; prázdný `Hash` =
+  „digest neznám" (objekt psal cizí nástroj), nikdy „digest sedí". `Check(ctx)` ověří, že root
+  existuje / bucket existuje a klíče na něj dosáhnou (`ErrBucketNotFound`), aby hodiny běžící
+  job spadl v první vteřině na překlepu, ne až na prvním uploadu. `storage.IsSystemic(err)`
+  odliší **nepoužitelný cíl** (špatné klíče, chybějící/zakázaný bucket, rozbitý endpoint; navíc
+  401/403 s neznámým kódem) od per-objektového selhání (chybějící klíč, throttle, useknutý
+  upload) — to je rozhodnutí „zastav celý běh" vs. „posbírej a jeď dál".
   **`FS`** publikuje **atomickým hard-linkem** přes temp v `<root>/.tmp`.
   **`R2`** (`r2.go`, klient **minio-go v7** — stejná knihovna jako `internal/backup`, žádná nová
   závislost) jede nad **privátním** bucketem, kde **object key = `photos.file_path` doslova**
@@ -125,6 +138,27 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   kterému testuje Go signer (`sign_test.go`) i Worker; změna algoritmu = regenerace souboru
   a souběžná úprava Workeru. Integrační testy `r2_integration_test.go` (tag `integration`) běží proti reálnému
   S3-kompatibilnímu endpointu z `KUKATKO_TEST_S3_ENDPOINT` (stačí MinIO; bez proměnné se skipnou)),
+  `internal/storagemigrate/`
+  (jednorázový **resumovatelný** přesun knihovny z lokálního disku do object storu; pohání
+  `kukatko storage migrate-to-r2`, flagy a billing viz [`docs/OPERATIONS.md`](OPERATIONS.md).
+  `New(Config)` → `Migrator`, `Run(ctx)` → `Result`. Config bere úzká rozhraní `Catalogue`
+  /`Source`/`Destination` (ne `storage.Storage`), takže celá pipeline jde protestovat s `FS`
+  místo bucketu; `Store` nad pgx pool je produkční `Catalogue`. **Závazné pořadí na fotku:**
+  nahraj všechny objekty (originál + náhledy, které už v cache jsou — negeneruje nové) →
+  `Head` je přečti zpátky a ověř velikost i SHA256 → `MarkMigrated` commitne řádek → teprve pak
+  volitelný `Delete` lokálního originálu. Neexistuje cesta, kde bajty žijí jen tam, kde se za ně
+  nikdo nezaručil. **Kurzor** je `photos.storage_migrated_at` (migrace `0019`), tedy
+  high-watermark `internal/importeru` **per řádek** — skalární watermark by lhal, protože při
+  `Concurrency > 1` doběhne fotka N+1 běžně dřív než N; stránkuje se `uid` kurzorem, takže
+  selhaná fotka nepadá do nekonečné smyčky ve stejném běhu. Objekt, který v bucketu leží se
+  správnou velikostí i digestem, se **znovu nenahrává** (`Skipped`) — to je celý rozdíl mezi
+  migrací zdarma a placenou. Per-fotková selhání se **sbírají** do `Result.Failures` a běh jede
+  dál; `storage.IsSystemic` chybu eskaluje na okamžitý stop. `DryRun` neošahá bucket, DB ani
+  disk — jen spočítá objekty a bajty. `Report` callback (throttlovaný `ReportEvery`, default
+  15 s) tiskne průběh + odhad zbytku. Streamuje; nikdy nedrží soubor v RAM. Integrační test
+  `storagemigrate_integration_test.go` (tag `integration`, potřebuje MinIO **i**
+  `KUKATKO_TEST_DATABASE_URL`) zabije běh uprostřed fotky, resumne ho a tvrdí, že každý objekt
+  přistál **právě jednou** a že fotce, které selhala verifikace, nikdo nesmazal originál),
   `internal/mediaurl/`
   (razí klientské adresy médií a razítkuje je na foto-payloady; jediné rozhodnutí dělá storage
   backend přes `URL`. `NewBuilder(store)` → `Builder` s `Thumb(uid,fileHash,size)` /

@@ -33,6 +33,19 @@ func (publishing) Store(context.Context, io.Reader, time.Time, string) (storage.
 	panic("unexpected Store")
 }
 
+// Put panics: the builder never writes.
+func (publishing) Put(context.Context, io.Reader, storage.StoredFile) error {
+	panic("unexpected Put")
+}
+
+// Head panics: the builder never inspects objects.
+func (publishing) Head(context.Context, string) (storage.StoredFile, error) {
+	panic("unexpected Head")
+}
+
+// Check panics: the builder never probes the backend.
+func (publishing) Check(context.Context) error { panic("unexpected Check") }
+
 // Open panics: the builder never reads bytes.
 func (publishing) Open(context.Context, string) (io.ReadCloser, error) { panic("unexpected Open") }
 

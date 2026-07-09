@@ -46,7 +46,14 @@ var (
 	// ErrInvalidEndpoint indicates the configured endpoint is not a usable host or
 	// http(s) URL.
 	ErrInvalidEndpoint = errors.New("storage: invalid R2 endpoint")
+	// ErrBucketNotFound indicates the configured bucket does not exist. It is a
+	// systemic error: no object can be written until someone creates the bucket.
+	ErrBucketNotFound = errors.New("storage: bucket does not exist")
 )
+
+// noSuchBucketCode is the S3 error code for a missing bucket. It shares HTTP 404
+// with a missing object and must never be mistaken for one.
+const noSuchBucketCode = "NoSuchBucket"
 
 // R2Options configures the Cloudflare R2 backend. It mirrors the storage.r2.*
 // config keys but is local to this package so the package stays decoupled from
@@ -248,6 +255,112 @@ func (r *R2) upload(ctx context.Context, key string, tmp tempFile, contentType s
 	return nil
 }
 
+// Put streams src straight into the bucket at file.RelPath, without the staged
+// temp file Store needs: the key is the caller's, so nothing has to be known
+// about the content before the write begins. See the Storage interface for the
+// full contract.
+//
+// The stream is digested as it is uploaded. Should it not hash to file.Hash —
+// the local file changed under the caller, or the catalogue's digest was never
+// right — the freshly written object carries metadata that lies about its own
+// bytes, so it is removed again before ErrHashMismatch is returned. A leaked
+// object would be the lesser evil, but a lie the next reader trusts is not.
+func (r *R2) Put(ctx context.Context, src io.Reader, file StoredFile) error {
+	key, err := objectKey(file.RelPath)
+	if err != nil {
+		return err
+	}
+	if file.Size < 0 {
+		return fmt.Errorf("%w: %s: negative size %d", ErrSizeMismatch, file.RelPath, file.Size)
+	}
+	streamed := newHashingReader(src)
+	_, err = r.client.PutObject(ctx, r.bucket, key, streamed, file.Size, minio.PutObjectOptions{
+		ContentType:  file.MIME,
+		UserMetadata: map[string]string{metaSHA256: file.Hash},
+	})
+	if err != nil {
+		return fmt.Errorf("storage: putting %s: %w", file.RelPath, err)
+	}
+	if err := verifyContent(file, streamed.sum(), streamed.read); err != nil {
+		_ = r.client.RemoveObject(ctx, r.bucket, key, minio.RemoveObjectOptions{})
+		return err
+	}
+	return nil
+}
+
+// Head returns the identity of the object at relPath from one metadata request,
+// transferring none of its content. The Hash is the SHA256 this backend recorded
+// when it wrote the object, and is empty for an object written by anything else.
+// See the Storage interface.
+func (r *R2) Head(ctx context.Context, relPath string) (StoredFile, error) {
+	key, err := objectKey(relPath)
+	if err != nil {
+		return StoredFile{}, err
+	}
+	info, err := r.client.StatObject(ctx, r.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		return StoredFile{}, objectError("stat", relPath, err)
+	}
+	return StoredFile{Hash: objectHash(info), RelPath: key, Size: info.Size, MIME: info.ContentType}, nil
+}
+
+// Check reports whether the configured bucket exists and the credentials may
+// reach it, returning ErrBucketNotFound when the bucket is absent. See the
+// Storage interface.
+func (r *R2) Check(ctx context.Context) error {
+	exists, err := r.client.BucketExists(ctx, r.bucket)
+	if err != nil {
+		return fmt.Errorf("storage: checking bucket %s: %w", r.bucket, err)
+	}
+	if !exists {
+		return fmt.Errorf("%w: %s", ErrBucketNotFound, r.bucket)
+	}
+	return nil
+}
+
+// systemicCodes are the S3 error codes that describe a destination no retry can
+// reach: the credentials are wrong, the bucket is missing or forbidden, or the
+// account is suspended. Every other code (a missing key, a throttled request, a
+// truncated upload) is a per-object failure that says nothing about the next
+// object.
+var systemicCodes = map[string]bool{
+	"AccessDenied":          true,
+	"AccountProblem":        true,
+	"ExpiredToken":          true,
+	"InvalidAccessKeyId":    true,
+	"InvalidBucketName":     true,
+	"InvalidToken":          true,
+	noSuchBucketCode:        true,
+	"SignatureDoesNotMatch": true,
+}
+
+// IsSystemic reports whether err means the destination itself is unusable, so a
+// bulk job must stop at once rather than march through the rest of the library
+// collecting the identical failure a hundred thousand times. Misconfiguration
+// (an unparseable endpoint, an incomplete destination, a missing bucket) and the
+// S3 authentication and bucket-level errors qualify; a network blip, a throttle
+// and a missing object do not.
+//
+// A 401 or 403 with an unrecognised code is treated as systemic: a destination
+// that refuses to authenticate this request will refuse the next one too.
+func IsSystemic(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrBucketNotFound) || errors.Is(err, ErrR2NotConfigured) ||
+		errors.Is(err, ErrInvalidEndpoint) {
+		return true
+	}
+	var resp minio.ErrorResponse
+	if !errors.As(err, &resp) {
+		return false
+	}
+	if systemicCodes[resp.Code] {
+		return true
+	}
+	return resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden
+}
+
 // Open opens the object at relPath for reading. The GET is issued eagerly so a
 // missing object fails here, wrapping os.ErrNotExist, rather than on first read.
 func (r *R2) Open(ctx context.Context, relPath string) (io.ReadCloser, error) {
@@ -387,10 +500,15 @@ func objectError(op, relPath string, err error) error {
 	return fmt.Errorf("storage: %s %s: %w", op, relPath, err)
 }
 
-// isNotFound reports whether err is an S3 "object does not exist" response (HTTP
-// 404, or a NoSuchKey code).
+// isNotFound reports whether err is an S3 "object does not exist" response (a
+// NoSuchKey code, or any other HTTP 404). A missing bucket answers 404 too, and
+// is deliberately excluded: reading it as a missing object would let a caller
+// conclude the key is free and happily "store" into a bucket that is not there.
 func isNotFound(err error) bool {
 	resp := minio.ToErrorResponse(err)
+	if resp.Code == noSuchBucketCode {
+		return false
+	}
 	return resp.StatusCode == http.StatusNotFound || resp.Code == "NoSuchKey"
 }
 

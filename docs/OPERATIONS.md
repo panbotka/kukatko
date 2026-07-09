@@ -43,8 +43,55 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   `maintenance repair` s flagy `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
   (každá opt-in; thumbnails/phashes zařadí `thumbnail` joby drainované workerem běžícího serveru,
   embeddings/faces backfill, orphan import synchronně přes upload pipeline; bez flagu no-op),
+  **`kukatko storage`** (operace nad úložištěm originálů — `internal/storagemigrate`):
+  `storage migrate-to-r2` (jednorázový **resumovatelný** přesun knihovny do R2, viz níže),
   `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
   `server.New(addr, server.WithAPI(register))` mountuje route-skupiny pod `/api/v1`.
+
+### `kukatko storage migrate-to-r2`
+
+Jednorázový přesun ~120 GB originálů (a už nacachovaných náhledů) z lokálního disku do R2
+bucketu. Běží hodiny, smí být kdykoli zabitý a znovu spuštěný. Klíče objektů = `file_path`
+z Postgresu, takže se nic nepřeklíčovává — bucket dostane stejný layout jako disk.
+
+Potřebuje `storage.r2.{endpoint,bucket,access_key,secret_key}` a `storage.temp_path`, jinak
+skončí na `errStorageR2NotConfigured` (zpráva jmenuje klíče, nikdy jejich hodnoty).
+`storage.r2.media_base_url` ani podpisový secret nepotřebuje — příkaz jen zapisuje objekty,
+nerazí URL. Pouští se **ještě před** přepnutím `storage.backend` na `r2`.
+
+| Flag | Default | Význam |
+| --- | --- | --- |
+| `--dry-run` | `false` | jen spočítá, kolik fotek/objektů/bajtů by se přesunulo; nesahá na bucket, DB ani disk |
+| `--delete-local` | `false` | smaže lokální originál — až **po** commitu řádku, nikdy u fotky, která neprošla verifikací |
+| `--concurrency` | `2` | kolik fotek se nahrává paralelně (schválně nízko: malá VPS, FD a paměť) |
+| `--batch-size` | `200` | kolik čekajících fotek se načte z katalogu najednou |
+
+**Pořadí kroků na fotku je závazné:** nahraj objekty → přečti si je zpátky (velikost + SHA256) →
+commitni řádek (`photos.storage_migrated_at`) → teprve pak smaž lokální originál. Náhledy se
+nemažou nikdy (jsou regenerovatelné z originálu). Fotka, která selhala, zůstane bez razítka
+i s originálem na disku a příští běh ji zkusí znovu.
+
+**Resume:** kurzorem je `photos.storage_migrated_at` (migrace `0019`) — stejné high-watermark
+pravidlo jako `internal/importer`, jen per řádek, protože při paralelismu doběhne fotka N+1
+běžně dřív než N. Hotová fotka se přeskočí; objekt, který už v bucketu leží se správnou
+velikostí i digestem, se znovu nenahrává.
+
+**Chyby:** per-fotkové selhání se sbírá a vypíše až na konci (běh pokračuje), systémové selhání
+(špatné klíče, chybějící bucket → `storage.IsSystemic`) běh **okamžitě** zastaví. Exit ≠ 0, když
+běh spadl nebo některá fotka selhala.
+
+**Průběh** se tiskne každých 15 s: hotové fotky, nahrané objekty a bajty, přeskočené, selhané
+a odhad zbytku — hodiny běžící job, který mlčí, je rozbitý job.
+
+**Billing:** R2 účtuje Class A operaci za každý zápis a milion měsíčně je zdarma → plná migrace
+~100 000 objektů vyjde na nulu. **Opakované plné nahrání už ne** — proto se příkaz nejdřív ptá
+bucketu, co už má (`HEAD` = Class B, 10 M/měsíc zdarma), a zapisuje jen chybějící.
+
+```bash
+kukatko storage migrate-to-r2 --dry-run                      # kolik toho zbývá
+kukatko storage migrate-to-r2 --concurrency 4                # nahraj, originály nech na disku
+kukatko storage migrate-to-r2 --delete-local                 # nahraj a uklízej za sebou
+```
 
 ## Konfigurační klíče
 

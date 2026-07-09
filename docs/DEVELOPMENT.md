@@ -166,6 +166,18 @@ integration packages want a database.
 The test bucket (`kukatko-test` by default) is created if absent and **emptied between
 cases** — point the variables at a throwaway bucket, never at a real one.
 
+`internal/storagemigrate` has an integration test that wants **both**: the bucket *and*
+`KUKATKO_TEST_DATABASE_URL`, because it migrates a fixture library out of a real catalogue,
+kills the run mid-photo, resumes it, and asserts every object landed exactly once and that the
+photo which failed verification still has its local original:
+
+```bash
+KUKATKO_TEST_S3_ENDPOINT=http://127.0.0.1:18100 \
+KUKATKO_TEST_S3_ACCESS_KEY=kukatko KUKATKO_TEST_S3_SECRET_KEY=kukatko-secret \
+KUKATKO_TEST_DATABASE_URL=... \
+  go test -tags=integration -run TestMigrateToR2 ./internal/storagemigrate/
+```
+
 ## Releasing version info
 
 `Version` and `Commit` in `internal/version` are injected at build time. `make build` does

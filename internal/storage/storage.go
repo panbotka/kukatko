@@ -72,6 +72,32 @@ type Storage interface {
 	// ErrAlreadyExists; when occupied by different content it stores under a
 	// numeric suffix and returns a nil error.
 	Store(ctx context.Context, src io.Reader, takenAt time.Time, originalName string) (StoredFile, error)
+	// Put streams src into the store at file.RelPath, a key the caller chooses
+	// rather than one the store derives, replacing whatever occupies it. It is how
+	// an artifact whose key is fixed elsewhere — a thumbnail, whose cache path is
+	// a function of its photo's hash and size — reaches the store, and how a bulk
+	// migration re-creates an existing layout in a new backend verbatim.
+	//
+	// file declares the identity the store must end up holding: exactly file.Size
+	// bytes, digesting to file.Hash, served as file.MIME. Implementations verify
+	// the stream against that identity as they write it and return ErrSizeMismatch
+	// or ErrHashMismatch without leaving a usable object behind, so a nil error
+	// means the content is durably in place and is the content that was promised.
+	// Nothing is buffered whole in memory.
+	Put(ctx context.Context, src io.Reader, file StoredFile) error
+	// Head returns the identity of the object at relPath as the store holds it:
+	// its size, its content digest and its media type. It reads no content. The
+	// Hash is the empty string when the store keeps no digest for the object,
+	// which is what a foreign tool's object looks like — an object whose identity
+	// is unknown, never one that may be assumed to match.
+	//
+	// It returns an error wrapping os.ErrNotExist when nothing is stored there.
+	Head(ctx context.Context, relPath string) (StoredFile, error)
+	// Check reports whether the store's destination is reachable and usable: the
+	// root exists, or the bucket exists and the credentials open it. It exists so
+	// a job that will run for hours fails in its first second on a typo rather
+	// than on its first upload.
+	Check(ctx context.Context) error
 	// Open opens the file at relPath for reading. The caller owns the returned
 	// reader and must close it.
 	Open(ctx context.Context, relPath string) (io.ReadCloser, error)

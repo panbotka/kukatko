@@ -110,6 +110,79 @@ func (s *FS) linkIntoPlace(tmpPath, relDir, name, hash string) (relPath string, 
 	return "", false, fmt.Errorf("%w: %s", ErrTooManyCollisions, name)
 }
 
+// Put streams src into the store at file.RelPath — a key the caller chooses,
+// unlike Store, which derives one from the capture date and the file name —
+// replacing whatever occupies it. See the Storage interface for the full
+// contract.
+//
+// The bytes land in a temp file on the same filesystem, are verified against
+// file's declared size and digest, and only then are renamed into place. So a
+// mismatch leaves the destination untouched, and no half-written file is ever
+// visible at its final path.
+func (s *FS) Put(ctx context.Context, src io.Reader, file StoredFile) error {
+	abs, err := s.safeAbs(file.RelPath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(abs), dirPerm); err != nil {
+		return fmt.Errorf("storage: creating directory for %s: %w", file.RelPath, err)
+	}
+	tmp, err := streamToTemp(ctx, s.tmpDir, src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Path) }()
+
+	if err := verifyContent(file, tmp.Hash, tmp.Size); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp.Path, abs); err != nil {
+		return fmt.Errorf("storage: publishing %s: %w", file.RelPath, err)
+	}
+	return nil
+}
+
+// Head returns the identity of the file at relPath. The digest is computed by
+// reading the whole file, so unlike the object backends — where Head is one
+// cheap metadata request — this costs a full read. See the Storage interface.
+func (s *FS) Head(_ context.Context, relPath string) (StoredFile, error) {
+	abs, err := s.safeAbs(relPath)
+	if err != nil {
+		return StoredFile{}, err
+	}
+	file, err := os.Open(abs) //nolint:gosec // G304: abs is confined to the storage root by safeAbs.
+	if err != nil {
+		return StoredFile{}, fmt.Errorf("storage: stat %s: %w", relPath, err)
+	}
+	defer func() { _ = file.Close() }()
+
+	hasher := sha256.New()
+	sniffer := &headerSniffer{}
+	size, err := io.Copy(io.MultiWriter(hasher, sniffer), file)
+	if err != nil {
+		return StoredFile{}, fmt.Errorf("storage: hashing %s: %w", relPath, err)
+	}
+	return StoredFile{
+		Hash:    hex.EncodeToString(hasher.Sum(nil)),
+		RelPath: confine(relPath),
+		Size:    size,
+		MIME:    detectMIME(sniffer.buf, path.Base(relPath)),
+	}, nil
+}
+
+// Check reports whether the storage root is present and is a directory. See the
+// Storage interface.
+func (s *FS) Check(_ context.Context) error {
+	info, err := os.Stat(s.root)
+	if err != nil {
+		return fmt.Errorf("storage: checking root %s: %w", s.root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: root %s is not a directory", ErrInvalidPath, s.root)
+	}
+	return nil
+}
+
 // Open opens the file at relPath for reading.
 func (s *FS) Open(_ context.Context, relPath string) (io.ReadCloser, error) {
 	abs, err := s.safeAbs(relPath)

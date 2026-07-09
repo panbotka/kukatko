@@ -99,6 +99,7 @@ Jeden řádek na balíček — ať víš, co existuje, aniž bys otevíral `docs
 - `internal/savedsearchapi` — `/saved-searches`, vše scopnuté na vlastníka (cizí → 404)
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
 - `internal/storage` — úložiště originálů (`YYYY/MM`, SHA256): lokální `FS` nebo Cloudflare `R2` s podepsanými URL
+- `internal/storagemigrate` — resumovatelný přesun knihovny do object storu; ověř → commitni řádek → teprve pak smaž originál
 - `internal/system` — agregace provozního stavu instance pro admin dashboard
 - `internal/systemapi` — admin-only `GET /system/status`
 - `internal/thumb` — thumbnailer (pure-Go default, volitelný `vips` engine), cache layout
