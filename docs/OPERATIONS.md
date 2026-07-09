@@ -443,16 +443,25 @@ algoritmus nedá změnit jen v jedné z nich.
 ## Make cíle a CI/CD
 
 <!-- BODY MAKE -->
-- **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write`), `vet`, `lint` (golangci-lint
-  + ESLint + Prettier `--check`), `lint-fix`, `test` (Go unit `-race` + Vitest; Go vyžaduje
-  cgo/gcc), `test-integration` (tag `integration` + `KUKATKO_TEST_DATABASE_URL`, `-p 1` —
-  integrační balíky sdílí jednu test DB, takže běží sériově; testy R2 backendu navíc chtějí
-  `KUKATKO_TEST_S3_ENDPOINT` — bez ní se skipnou, viz `docs/DEVELOPMENT.md`), `check`
-  (brána), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `clean`, `help`.
-  Frontend-only cíle: `web-deps` (`npm ci`), `web-build`, `web-fmt`, `web-lint`, `web-test`.
+- **Make cíle:** `fmt` (golangci-lint fmt + Prettier `--write` — **jediný cíl, který mění
+  soubory**), `fmt-check` (`golangci-lint fmt --diff` + Prettier `--check`, read-only),
+  `vet` (samostatně; `check` ho nepouští, protože `.golangci.yml` má `default: standard`,
+  takže `golangci-lint run` už `govet` obsahuje), `lint` (golangci-lint + ESLint),
+  `lint-fix`, `typecheck` (`tsc -b --noEmit`), `test` (Go unit `CGO_ENABLED=0` bez `-race`
+  + Vitest — sdílí build cache s `build`), `test-race` (`CGO_ENABLED=1 go test -race ./...`,
+  vyžaduje cgo/gcc; běží v CI, ne v bráně), `test-integration` (tag `integration` +
+  `KUKATKO_TEST_DATABASE_URL`, `-p 1` — integrační balíky sdílí jednu test DB, takže běží
+  sériově; testy R2 backendu navíc chtějí `KUKATKO_TEST_S3_ENDPOINT` — bez ní se skipnou,
+  viz `docs/DEVELOPMENT.md`), `check` (brána = `docs-budget` + `fmt-check` + `lint` +
+  `web-typecheck` + `test`; **nic nepřepisuje**, po úspěšném běhu je `git status --short`
+  prázdný), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `clean`, `help`.
+  Frontend-only cíle: `web-deps` (`npm ci`, hlídaný stamp souborem
+  `web/node_modules/.kukatko-npm-ci-stamp` závislým na `web/package-lock.json`, takže se
+  reinstaluje jen při změně lockfilu), `web-build`, `web-fmt`, `web-fmt-check`, `web-lint`,
+  `web-typecheck`, `web-test`.
   Verzi injectuješ `make build VERSION=x.y.z`. Frontend potřebuje **Node.js 22+**.
 - **CI/CD a balíčkování:** `.github/workflows/ci.yml` (push/PR → job `check` = `make check`
-  na Go 1.26 + Node 22 + golangci-lint v2.11.4; job `integration` = `make test-integration`
+  + `make test-race` na Go 1.26 + Node 22 + golangci-lint v2.11.4; job `integration` = `make test-integration`
   proti service containeru `pgvector/pgvector:pg17`, extensions `vector`/`unaccent` v setup
   kroku + apt `ffmpeg`/`libimage-exiftool-perl` (video probe/poster), `KUKATKO_TEST_DATABASE_URL`
   na efemérní CI DB). `.github/workflows/release.yml`

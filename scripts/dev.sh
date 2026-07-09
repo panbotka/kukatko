@@ -80,9 +80,9 @@ pkill -f "^$BINARY serve" 2>/dev/null || true
 sleep 1
 
 # --- build (only the stages whose inputs changed) ---------------------------
-# Deliberately NOT `make build`: that target depends on web-deps, which runs
-# `npm ci` unconditionally — and `npm ci` wipes and reinstalls node_modules on
-# every single restart.
+# Deliberately NOT `make build`: that target always reruns the Vite build and
+# `go build`, while a restart usually only needs one of them. (`web-deps` is no
+# longer a problem — it is stamped against the lockfile, same idea as below.)
 
 need_npm=true
 if [[ "$FORCE" == false &&

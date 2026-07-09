@@ -17,8 +17,10 @@ env:
   GOLANGCI_LINT_VERSION: "v2.11.4"
 
 jobs:
-  # Full quality gate: gofmt + go vet + golangci-lint + Go unit tests +
-  # frontend ESLint/Prettier/Vitest. This is the project's `make check`.
+  # Full quality gate: docs budget + formatting check + golangci-lint + frontend
+  # ESLint/Prettier/tsc + Go and Vitest unit tests. This is the project's `make check`.
+  # `make check` deliberately runs the Go tests without the race detector (see the
+  # Makefile), so CI runs `make test-race` as a separate step on top of it.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -46,6 +48,9 @@ jobs:
 
       - name: Run quality gate (make check)
         run: make check
+
+      - name: Run Go unit tests under the race detector
+        run: make test-race
 
   # Integration tests (DB/HTTP) against a real ephemeral Postgres + pgvector.
   integration:

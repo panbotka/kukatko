@@ -691,19 +691,23 @@ dodržet tato pravidla; **task není hotový s červeným lintem nebo testy.**
 
 ### 19.4 Make targety a brána
 ```
-make fmt              # gofmt/gofumpt + prettier
-make vet              # go vet
-make lint             # golangci-lint run
+make fmt              # gofmt/gofumpt + prettier (jediný cíl, který přepisuje soubory)
+make fmt-check        # ověření formátu bez zápisu (golangci-lint fmt --diff + prettier --check)
+make vet              # go vet (samostatně; v bráně ho pokrývá govet uvnitř golangci-lint)
+make lint             # golangci-lint run + eslint
 make lint-fix         # golangci-lint run --fix
-make test             # unit testy (bez DB)
+make typecheck        # tsc -b --noEmit (frontend)
+make test             # unit testy (bez DB, CGO_ENABLED=0, bez -race)
+make test-race        # unit testy s race detektorem (CGO_ENABLED=1) — v CI, ne v bráně
 make test-integration # integrační testy (vyžaduje KUKATKO_TEST_DATABASE_URL)
-make check            # fmt + vet + lint + test   ← brána
+make check            # docs-budget + fmt-check + lint + typecheck + test   ← brána (nic nemění)
 make build            # frontend build + go build (embed)
 ```
 
 ### 19.5 CI a brána v botce
-- **GitHub Actions:** na push/PR spustit `make check` + `make test-integration` se service
-  kontejnerem `pgvector/pgvector:pg17` (env `KUKATKO_TEST_DATABASE_URL`) + frontend lint/test.
+- **GitHub Actions:** na push/PR spustit `make check` + `make test-race` + `make test-integration`
+  se service kontejnerem `pgvector/pgvector:pg17` (env `KUKATKO_TEST_DATABASE_URL`) + frontend
+  lint/test. Race detektor je záměrně mimo `make check`, aby brána před commitem zůstala rychlá.
 - **Botka verification command projektu = `make check`** → pokud task zanechá červený lint
   nebo testy, dostane stav `needs_review` místo `done`.
 - Autonomní agenti pro Go kód používají skill **golang-developer** (přísný lint, dokumentace,

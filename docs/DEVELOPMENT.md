@@ -8,8 +8,9 @@ How to build, run, and verify Kukátko locally. Read [`CLAUDE.md`](../CLAUDE.md)
 - **Go 1.26+**
 - **golangci-lint v2** (provides both `golangci-lint run` and `golangci-lint fmt`)
 - **Node.js 22+** (npm) — for the `web/` frontend (Vite build, ESLint, Prettier, Vitest)
-- A C compiler (`gcc`/`cc`) — only needed for `make test`, because the race detector
-  requires cgo. The production binary is still built with `CGO_ENABLED=0`.
+- A C compiler (`gcc`/`cc`) — only needed for `make test-race` and `make test-integration`,
+  because the race detector requires cgo. `make check` and the production binary are both
+  `CGO_ENABLED=0`.
 
 ## Project layout
 
@@ -85,8 +86,10 @@ Each build stage is skipped independently, using `find -newer`: `npm ci` against
 assets, so it forces a rebuild of the binary. A backend-only change therefore skips the Vite
 build entirely: a cached restart takes about 2 s versus roughly 35 s for `--force`.
 
-The script deliberately does not call `make build`, because `build → web-build → web-deps`
-runs `npm ci` unconditionally, and `npm ci` wipes and reinstalls `node_modules` every time.
+The script deliberately does not call `make build`: it wants finer-grained staging than
+`build → web-build → web-deps` gives it (the make chain always reruns the Vite build and
+`go build`). Both now skip `npm ci` when the lockfile is unchanged — the script via
+`find -newer`, make via the `web-deps` stamp file.
 
 The DSN comes from `KUKATKO_DATABASE_URL_HOST` in the gitignored `.secrets/db.env`: the
 script runs on the host, outside the Docker network, so it needs the localhost DSN. Uploads
@@ -117,21 +120,25 @@ environment.
 ## Make targets
 
 ```bash
-make fmt              # golangci-lint fmt + Prettier --write
-make vet              # go vet
-make lint             # golangci-lint run + ESLint (strict) + Prettier --check
+make fmt              # golangci-lint fmt + Prettier --write   ← the only mutating target
+make fmt-check        # golangci-lint fmt --diff + Prettier --check (read-only)
+make vet              # go vet (standalone; `check` gets it via golangci-lint's govet)
+make lint             # golangci-lint run + ESLint (strict)
 make lint-fix         # golangci-lint run --fix + eslint --fix
-make test             # Go unit tests (race detector, no DB) + Vitest
+make typecheck        # tsc -b --noEmit over the frontend
+make test             # Go unit tests (CGO off, no race, no DB) + Vitest
+make test-race        # Go unit tests under the race detector (CGO_ENABLED=1)
 make test-integration # integration tests (requires KUKATKO_TEST_DATABASE_URL)
-make check            # fmt + vet + lint + test  ← the quality gate (Go + frontend)
+make check            # docs-budget + fmt-check + lint + typecheck + test  ← the quality gate
 make build            # frontend build + compile the static binary into bin/
 make clean            # remove build artifacts (binary, embedded dist, web build)
 make help             # list targets
 
 # frontend-only targets (run npm under web/):
-make web-deps   # npm ci         make web-build  # npm run build → embed dir
-make web-lint   # eslint+prettier make web-test   # vitest
-make web-fmt    # prettier --write
+make web-deps      # npm ci (stamped)   make web-build     # npm run build → embed dir
+make web-lint      # eslint             make web-test      # vitest
+make web-fmt       # prettier --write   make web-fmt-check # prettier --check
+make web-typecheck # tsc -b --noEmit
 ```
 
 ## The quality gate
@@ -139,6 +146,48 @@ make web-fmt    # prettier --write
 `make check` MUST pass before every commit (it is the project's verification command — a
 red lint or test means the task ends as `needs_review`). The `.golangci.yml` is strict and
 must not be weakened; `//nolint` is allowed only with a documented reason.
+
+`check` **never modifies a file**: a successful run on a clean tree leaves `git status --short`
+empty. It verifies formatting (`golangci-lint fmt --diff`, `prettier --check`) rather than
+applying it — use `make fmt` for that. It also runs the frontend type check, which `make build`
+would otherwise be the first thing to catch.
+
+Two checks deliberately live outside the gate so committing stays fast:
+
+- **`go vet`** — `.golangci.yml` sets `default: standard`, which already enables `govet`, so
+  `golangci-lint run ./...` covers it. The `vet` target remains for standalone use.
+- **`-race`** — the race detector needs `CGO_ENABLED=1`, whose toolchain cannot share the
+  build cache with the `CGO_ENABLED=0` production build and therefore recompiles the tree.
+  It moved to `make test-race`, which CI runs on every push (and `make test-integration`
+  keeps `-race` too).
+
+`web-deps` is guarded by a stamp file (`web/node_modules/.kukatko-npm-ci-stamp`) that depends
+on `web/package-lock.json`, so `npm ci` reruns only when the lockfile changes.
+
+### Wall time
+
+Measured end to end on the Raspberry Pi dev box with warm Go/golangci/npm caches:
+
+| `make check` | wall time |
+| --- | --- |
+| before this change | 173 s |
+| after, `npm ci` still needed | 136 s |
+| after, lockfile unchanged | 137 s |
+
+Where the ~37 s went: the race detector (`CGO_ENABLED=1 go test -race ./...` takes 48 s against
+14 s for the cache-sharing `CGO_ENABLED=0 go test ./...`), `npm ci` (7 s), and the duplicate
+`go vet` compile (1 s) — offset by the 16 s newly spent on `tsc`, which used to hide until
+`make build`.
+
+Two caveats worth knowing before optimising further:
+
+- **Warm-to-warm, a rerun is not faster.** It skips `npm ci` and recompiles nothing (Go prints
+  `(cached)` for every package), but those are only ~7 s here. ESLint (32 s) and Vitest (65 s)
+  cache nothing and now dominate the gate. They are the next thing to attack.
+- **The real win is on a cold cache** — a fresh CI runner, or a fresh Botka attempt on a box
+  that has not built the tree yet. There the cgo race toolchain used to recompile all 73
+  packages plus the instrumented standard library, and `npm ci` had to download the world;
+  neither happens any more.
 
 Unit tests run without external dependencies. Integration tests (DB/HTTP against a real
 pgvector Postgres) are kept behind the `integration` build tag and `KUKATKO_TEST_DATABASE_URL`,

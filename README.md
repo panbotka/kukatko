@@ -46,7 +46,7 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 Potřebuješ **Go 1.26+**, **golangci-lint v2** a **Node.js 22+** (npm) pro frontend.
 
 ```bash
-make check            # brána kvality: fmt + vet + lint + unit testy (Go i frontend)
+make check            # brána kvality: fmt-check + lint + typecheck + unit testy (Go i frontend)
 make build            # build frontendu (Vite) + statický binár do bin/kukatko (CGO_ENABLED=0)
 
 # serve i migrate potřebují aspoň database.url (typicky přes env):
@@ -1775,20 +1775,23 @@ npm run dev               # Vite dev server (proxy /healthz a /api → localhost
 
 # nebo přes Makefile (z kořene repa):
 make web-build            # build SPA do internal/web/static/dist
-make web-lint             # ESLint (strict) + Prettier --check
+make web-lint             # ESLint (strict)
+make web-fmt-check        # Prettier --check
+make web-typecheck        # tsc -b --noEmit
 make web-test             # Vitest (React Testing Library)
 make web-fmt              # Prettier --write
 ```
 
-Frontendové cíle jsou zapojené do hlavní brány: `make lint`/`make test`/`make fmt`/`make check`
-spouští i ESLint, Prettier a Vitest. Build SPA běží v `make build` před `go build`.
+Frontendové cíle jsou zapojené do hlavní brány: `make check` spouští ESLint, Prettier `--check`,
+`tsc` i Vitest. Build SPA běží v `make build` před `go build`.
 
 ## CI a release (balíčkování)
 
 **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) běží na push/PR do `main`:
 
 - **`check`** — Go 1.26 + Node 22 (+ golangci-lint v2.11.4), spustí brzdu kvality `make check`
-  (gofmt + vet + golangci-lint + Go unit testy + frontend ESLint/Prettier/Vitest).
+  (fmt-check + golangci-lint + Go unit testy + frontend ESLint/Prettier/tsc/Vitest) a na ni
+  navíc `make test-race` — race detektor je mimo bránu, ale v CI běží na každý push.
 - **`integration`** — `make test-integration` proti **service containeru
   `pgvector/pgvector:pg17`**; setup krok vytvoří rozšíření `vector` a `unaccent`,
   `KUKATKO_TEST_DATABASE_URL` míří na efemérní CI databázi (žádné tajemství v logu).

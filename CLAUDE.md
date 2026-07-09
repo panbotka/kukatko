@@ -114,8 +114,10 @@ Jeden řádek na balíček — ať víš, co existuje, aniž bys otevíral `docs
 - `internal/worker` — in-process worker runtime nad frontou jobů (claim/dispatch/complete)
 
 ## Tvrdá brána kvality (NEPŘESKAKOVAT)
-- **`make check` (docs-budget + gofmt + go vet + golangci-lint + unit testy) MUSÍ projít.** Je to
-  verification command projektu — červený lint/testy = task skončí jako `needs_review`.
+- **`make check` MUSÍ projít.** Je to verification command projektu — červený lint/testy = task
+  skončí jako `needs_review`. **`check` nikdy nemění soubory** (formátování jen ověřuje;
+  aplikuje ho `make fmt`), takže po úspěšném běhu je `git status --short` prázdný.
+  Race detector žije v `make test-race` (běží v CI), ne v bráně.
 - **`CLAUDE.md` obsahuje jen pravidla a rozcestník.** Popisné detaily patří do `docs/`.
   Limit 300 řádků vynucuje `make docs-budget`. Neobcházej ho — přesuň text do správného dokumentu.
 - Pro Go kód **používej skill `golang-developer`**.
@@ -176,7 +178,7 @@ Vždy, na konci každého tasku, v tomto pořadí:
    - uživatelsky viditelná featura → `README.md`
    - **`CLAUDE.md` sáhni jen tehdy, když se změnilo _pravidlo_ nebo přibyl/zmizel balíček.**
      Nikdy do něj nepiš popisné detaily — na to je `docs/` a hlídá to `make docs-budget`.
-2. **`make check`** musí projít (docs-budget + gofmt + vet + lint + testy + frontend lint/test).
+2. **`make check`** musí projít (docs-budget + fmt-check + lint + typecheck + testy + frontend).
 3. **`./scripts/dev.sh`** musí projít — dev server nastartuje a odpoví na `/healthz`. Zachytí,
    co `make check` z principu nevidí: chybějící migraci, rozbité wiring v `cmd/kukatko`, panic
    při startu. Neúspěšný start (exit 1) = **necommituj**. Detail v `docs/DEVELOPMENT.md`.
