@@ -1,0 +1,255 @@
+# HTTP API
+
+Popisný referenční přehled HTTP endpointů pod `/api/v1`. **Nejsou to pravidla** —
+pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapiš sem.
+
+<!-- BODY BEGIN -->
+- **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
+  `download_token`), `POST /auth/logout`, `GET /auth/me`, `POST /auth/password` (zruší ostatní
+  session). Admin-only: `GET|POST /admin/users`, `PATCH /admin/users/{uid}`,
+  `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset zruší všechny
+  session uživatele). Role: admin/editor/viewer (editor+admin write). **Sliding session expiry**
+  (`auth.session_ttl` do cap `auth.session_max_lifetime`), **login rate-limit**
+  (`auth.login_rate_limit`/`auth.login_rate_window` → 429), **bootstrap admin** z
+  `auth.bootstrap_admin_username/password`. Middleware navíc `RequireAuthOrDownloadToken`
+  (session cookie nebo `?t=download_token` přes `Service.AuthenticateDownloadToken` →
+  `Store.GetSessionByDownloadToken`) pro média bez cookie.
+- **Upload API (`/api/v1`):** `POST /upload` (editor/admin přes `RequireWrite`) — `multipart/form-data`
+  s jedním+ soubory, **streamuje** se. Vrací `{"results":[{filename,status,outcome,photo_uid?,error?,
+  warnings?}]}` (celkově 200, 409 sémantika duplicit per-file). Mountuje se druhým `server.WithAPI`
+  v `serve` (`buildIngest` v `cmd/kukatko/ingest.go`). Limit `upload.max_file_size_mb` (0 = bez limitu).
+- **Photos API (`/api/v1`, `internal/photoapi`):** `GET /photos` (přihlášený) — list s filtry/
+  řazením/stránkováním (query params, neplatný → 400) → `{photos,total,limit,offset,next_offset}`;
+  filtr `?album={uid}`/`?label={uid}` scopne výpis na fotky alba/štítku (sdílený endpoint pro
+  galerii alba i štítku, ctí všechny ostatní filtry/řazení/stránkování — viz Albums & Labels API);
+  `GET /photos/timeline` (přihlášený) — **měsíční date-histogram** knihovny (podklad rok/měsíc
+  scrubberu): přijímá **stejné filtry** jako `GET /photos` přes `parseListParams`, odpověď
+  `{buckets:[{year,month,count,cumulative}],total}`, buckety řazené nejnovější první (dle `taken_at`,
+  jako výchozí mřížka), `cumulative` = počet fotek **před** bucketem (mapuje bucket na scroll-index),
+  `total` (přes `Count`) zahrnuje i fotky bez data pořízení (do žádného bucketu nespadají, řadí se
+  na konec); `sort`/`order` se ignorují (vždy grupováno dle data), backuje ho
+  `photos.Store.TimelineBuckets` (sdílí `buildWhere` s `List`/`Count`), neplatný param → 400;
+  `GET /search?q=&mode=` (přihlášený) — **sémantické + hybridní hledání**, `mode` =
+  `fulltext`|`semantic`|`hybrid` (default `hybrid`, neznámý → 400): **fulltext** = česky-aware
+  fulltext nad `fts tsvector` (dictionary `simple` + `unaccent`, řazení `ts_rank`
+  title>description>notes>file_name); **semantic** = `q` → CLIP embedding přes sidecar →
+  cosine HNSW nad `embeddings`, řazení dle podobnosti; **hybrid** = fúze obou přes
+  **Reciprocal Rank Fusion (k=60)**, dedup. Všechny módy ctí ostatní list filtry + stránkování,
+  odpověď jako list + `mode` + `degraded`; `q` povinný (prázdný → 400); **box offline** →
+  `semantic`/`hybrid` graceful fallback na fulltext s `degraded: true`;
+  list i search nesou per-fotku `is_favorite` **+ per-user `rating`/`flag`** pro aktuálního uživatele,
+  `?favorite=true` scopne list na jeho oblíbené, **`?min_rating=n` / `?flag=pick|reject` / `?sort=rating`**
+  scopnuté na něj (fotka bez řádku = rating 0 / flag `none`);
+  `GET /photos/{uid}` plný detail + `files` + `is_favorite` + `rating`/`flag`;
+  **per-user oblíbené** `PUT`/`DELETE /photos/{uid}/favorite` (každý přihlášený, idempotentní → 204,
+  404 chybějící fotka, 503 bez backendu) + `GET /favorites` (oblíbené aktuálního uživatele ve tvaru
+  list endpointu, filtry/řazení/stránkování jako `/photos`);
+  **per-user hodnocení** `PUT /photos/{uid}/rating` `{rating?:0..5, flag?:none|pick|reject}` (každý
+  přihlášený, aspoň jedna hodnota → 204, 400 neplatná, 404 chybějící fotka, 503 bez backendu) +
+  `DELETE /photos/{uid}/rating` (idempotentní clear → 204); `GET /photos/{uid}/faces` (přihlášený) — obličeje
+  fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`)
+  a **návrhy** identit pro nepojmenované (face↔marker IoU matching, viz `internal/facematch`; 503
+  když face backend není zapojen); `POST /photos/{uid}/faces/assign` (editor/admin) — přiřazovací
+  akce `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`
+  (`create_marker`/`assign_person`/`unassign_person`), auto-create subjektu dle jména, drží `faces`
+  cache + `marker.reviewed` konzistentní (400 validace, 404 chybějící foto/marker/subjekt);
+  `GET /photos/{uid}` plný detail navíc nese **členství** `albums`/`labels` (inline chipy detailu,
+  přes `PhotoOrganizer` rozhraní / `organize.Store.AlbumsForPhoto`+`LabelsForPhoto`; nil organizer →
+  prázdná pole); **nedestruktivní edit** (`internal/photoedit` + `edit.go`/`media_edit.go`):
+  `GET /photos/{uid}/edit` (přihlášený) → uložený `photos.Edit` (crop/rotace 0-90-180-270/jas/kontrast,
+  neupravená fotka → neutrální edit) a `PUT /photos/{uid}/edit` (editor/admin) zapíše edit do
+  `photo_edits` (validace bounds; originál se nikdy nemění — `GET …/download` ho **renderuje za běhu**
+  přes `photoedit.Apply`, pokud caller nedá `?original=true`);
+  `PATCH /photos/{uid}` (editor/admin) částečná úprava
+  metadat (null maže nullable, validace souřadnic); `POST /photos/{uid}/archive`+`/unarchive`
+  (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);
+  **koš / trvalé mazání** (`trash.go`, backuje `internal/trash` přes rozhraní `Purger`, nil → 503):
+  `POST /photos/{uid}/purge` (editor/admin, `?confirm=true` jinak 400, 404 chybí, 409 fotka není
+  archivovaná → 204) a `POST /trash/empty` (editor/admin, `?confirm=true` → `{purged,failed}`)
+  trvale mažou archivované fotky, `GET /trash/info` (přihlášený) vrací `{retention_days}` pro odpočet
+  do auto-purge; seznam koše jede přes sdílené `GET /photos?archived=only`;
+  `GET /photos/{uid}/thumb/{size}` a `/download` (session/`?t=` token) **streamují** média
+  (`Cache-Control`/`ETag`/`304`); `GET /photos/{uid}/video` (session/`?t=` token) streamuje video
+  **s HTTP Range** (206 partial, `Accept-Ranges`, seek; live fotka = motion klip, still → 404) pro
+  inline HTML5 přehrávání, volitelný on-the-fly transcode neweb-friendly codeců přes
+  `video.transcode` config (default off). Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v
+  `cmd/kukatko/photos.go`).
+- **Jobs API (`/api/v1`, `internal/jobsapi`, admin-only přes `RequireAdmin`):**
+  `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
+  (recent/dead-letter výpis, query `state`/`limit`/`offset`, neplatný → 400);
+  `POST /jobs/{id}/requeue` → refreshnutý job (dead/failed → queued; 404 missing, 409
+  ne-requeueable). Frontend polluje (žádné SSE). Mountuje se šestým `server.WithAPI`
+  (`buildJobs` v `cmd/kukatko/jobs.go`), který registruje handlery `image_embed`
+  (`embedjob.Service`), `face_detect` (`facejob.Service`) a — když je mapy.com klíč nastaven —
+  `places` (`placesjob.Service`, `buildPlacesServiceOrNil` v `cmd/kukatko/places.go`) a zároveň
+  postaví a `serve` spustí **background worker** (`internal/worker`) na celý život procesu
+  (`startWorker`, zastaví se na shutdownu přes ctx).
+- **Clusters API (`/api/v1`, `internal/clusterapi`, editor/admin přes `RequireWrite`):**
+  `GET /faces/clusters` → `{clusters:[{uid,size,representative,examples,suggestion?}]}` (shluky
+  nepřiřazených obličejů z auto-clusteringu, `suggestion` = nejbližší pojmenovaný subjekt);
+  `POST /faces/clusters/{id}/assign` `{subject_uid?,subject_name?}` přiřadí **celý shluk** jednomu
+  subjektu (find-or-create dle jména) → markery pro všechny obličeje, shluk se spotřebuje;
+  `POST /faces/clusters/{id}/remove-face` `{photo_uid,face_index}` odpojí zatoulaný obličej před
+  pojmenováním → refreshnutý shluk (nebo `null` když osiří); 503 bez backendu, 400/404/409 dle
+  sentinelů. Mountuje se čtvrtým `server.WithAPI` (`buildClusterAPI` v `cmd/kukatko/clusters.go`).
+- **Outliers API (`/api/v1`, `internal/outlierapi`, editor/admin přes `RequireWrite`):**
+  `GET /subjects/{uid}/outliers` → `{subject_uid,count,meaningful,faces:[{photo_uid,face_index,
+  bbox,det_score,distance,marker_uid?,width,height,orientation}]}` (obličeje osoby seřazené
+  sestupně dle kosinové vzdálenosti od centroidu jejích embeddingů — nejpravděpodobněji špatně
+  přiřazené první); 1–2 obličeje → `meaningful:false`; špatný obličej se odpojí přes existující
+  `POST /photos/{uid}/faces/assign` (`unassign_person`), tahle vrstva nemutuje; 503 bez backendu,
+  404 chybějící subjekt. Mountuje se pátým `server.WithAPI` (`buildOutlierAPI` v
+  `cmd/kukatko/outliers.go`).
+- **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
+  `{subjects:[{...subject, marker_count}]}` (řazení dle jména, počty non-invalid markerů);
+  `POST /subjects` (RequireWrite) → 201 vytvoří subjekt z `{name,type,favorite,private,notes,
+  cover_photo_uid?}` (prázdné jméno / neznámý typ → 400); `GET /subjects/{uid}` (RequireAuth) →
+  subjekt (404); `PATCH /subjects/{uid}` (RequireWrite) → editace stejných polí (404/400);
+  `DELETE /subjects/{uid}` (RequireWrite) → 204 (markery se odpojí server-side); `GET
+  /subjects/{uid}/photos` (RequireAuth) → paginovaná galerie fotek subjektu
+  `{photos,total,limit,offset,next_offset}` (newest-first, jen nearchivované, `limit`≤500). Mountuje
+  se osmým `server.WithAPI` (`buildPeopleAPI` v `cmd/kukatko/people.go`). Záznamy fotek subjektu
+  staví na `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markery → photo uid).
+- **Process API (`/api/v1`, `internal/processapi`, admin-only přes `RequireAdmin`):**
+  `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` pro fotky bez embeddingu),
+  `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů),
+  `POST /process/clusters` → `{created}` (re-clustering nepřiřazených obličejů přes
+  `cluster.Recluster`), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geokódu pro
+  geotagované fotky bez místa přes `placesjob.BackfillPlaces`; 503 když není mapy.com klíč). Mountuje
+  se sedmým `server.WithAPI` (`buildJobs`).
+- **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **alba** `GET /albums`
+  (RequireAuth) → `{albums:[{...album, photo_count}]}` (počty + cover); `POST /albums`
+  (RequireWrite) → 201 z `{title,description?,type?,cover_photo_uid?,private?,order_by?}` (prázdný
+  title / neplatný typ → 400); `GET /albums/{uid}` (RequireAuth, 404); `PATCH /albums/{uid}`
+  (RequireWrite) edituje title/description/cover_photo_uid/private/order_by (**`type` se zachová**,
+  není editovatelný); `DELETE /albums/{uid}` (RequireWrite → 204); členství
+  `POST /albums/{uid}/photos` `{photo_uids:[…]}` (přidá za stávající), `DELETE /albums/{uid}/photos`
+  `{photo_uids:[…]}` (odebere), `PATCH /albums/{uid}/order` `{photo_uids:[…]}` (přeřadí) — všechny
+  vrací aktuální pořadí `{photo_uids:[…]}`, 404 chybějící album/fotka. **Štítky** `GET /labels`
+  (RequireAuth) → `{labels:[{...label, photo_count}]}` (řazení priority DESC); `POST /labels`
+  (RequireWrite) → 201 z `{name,priority?}` (prázdné jméno → 400); `GET /labels/{uid}`
+  (RequireAuth, 404); `PATCH /labels/{uid}` (RequireWrite, name/priority); `DELETE /labels/{uid}`
+  (RequireWrite → 204); připojení `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}`
+  → 204 (neplatný source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204. **Galerie
+  fotek alba/štítku** jede přes sdílené `GET /photos?album={uid}`/`?label={uid}` (stejný tvar +
+  filtry/řazení/stránkování). Viewer čte, ale nemutuje (403). Mountuje se dalším `server.WithAPI`
+  (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
+- **Places API (`/api/v1`, `internal/placesapi`, přihlášený přes `RequireAuth`):** procházení
+  reverse-geokódované place hierarchie + scoping výpisu fotek na lokalitu. `GET /places` →
+  `{places:[{country, count, cities:[{city, count}]}]}` — počty agregované přes **nearchivované**
+  fotky s place daty; `count` země zahrnuje i fotky bez známého města (může převýšit součet měst),
+  `cities` je vždy pole; řazení **count desc, pak jméno** (pro země i města); fotky bez place dat
+  (žádný `photo_places` řádek nebo prázdný `country` — no-GPS „processed" marker) vyloučené.
+  Volitelné `?country=` drillne jen do měst jedné země. Agregaci počítá `photos.Store.AggregatePlaces`
+  (jeden `GROUP BY country, city` JOIN na `photo_places`, hierarchii složí v Go). **Galerie fotek
+  lokality** jede přes sdílené `GET /photos?country={c}&city={c}` (`Country`/`City` exact match přes
+  korelovaný `EXISTS` nad `photo_places` v `buildWhere`, takže `Count` sedí; stejný tvar + ostatní
+  filtry/řazení/stránkování, archivní mimo výchozí výpis). Mountuje se `server.WithAPI`
+  (`buildPlacesAPI` v `cmd/kukatko/places.go`).
+- **Saved Searches API (`/api/v1`, `internal/savedsearchapi` + `internal/savedsearch`, přihlášený přes
+  `RequireAuth`):** per-user **uložená hledání** ("smart albums") — pojmenovaná, vlastníkova soukromá
+  definice filtru/hledání. `GET /saved-searches` → `{saved_searches:[{uid,name,params,created_at,
+  updated_at}]}` (jen aktuálního uživatele, newest-first); `POST /saved-searches` `{name,params}` →
+  201 (prázdné jméno → 400, `params` JSONB volitelné → `{}`); `GET /saved-searches/{uid}` → 200;
+  `PATCH /saved-searches/{uid}` `{name?,params?}` → 200 (vynechané pole beze změny); `DELETE
+  /saved-searches/{uid}` → 204. **Každá operace je scopnutá na přihlášeného uživatele** z auth
+  kontextu — uložené hledání cizího vlastníka se **vždy hlásí jako 404** (nikdy se neprozradí), tělo
+  `DisallowUnknownFields` + 1 MiB limit. Tabulka `saved_searches` (migrace `0017_saved_searches.sql`).
+  Mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`).
+- **Global Search API (`/api/v1`, `internal/globalsearchapi`, přihlášený přes `RequireAuth`):**
+  grouped **cross-entity search** pro navbar quick-results a search stránku. `GET /search/global?q=` →
+  `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],
+  people:[{uid,name,cover}], photos:[…usual photo shape…]}` — alba/štítky/osoby matchované dle
+  name/description **accent- a case-insensitive** (`immutable_unaccent` + ILIKE přes store metody
+  `SearchAlbums`/`SearchLabels`/`SearchSubjects`), fotky přes **existující fulltext** (`photos.Store.
+  Search` nad `fts` tsvector). Každá skupina je capnutá na malé top-N (default 8, `Config.Limit`), pole
+  jsou vždy non-nil. Prázdný/whitespace `q` → 400, chyba store → 500. Existující `GET /search` (per-user
+  photo fulltext/semantic/hybrid) zůstává beze změny. Mountuje se `server.WithAPI` (`buildGlobalSearchAPI`
+  v `cmd/kukatko/globalsearch.go`, sdílí organize/people/photos store).
+- **Bulk metadata API (`/api/v1`, `internal/bulkapi`, editor/admin přes `RequireWrite`):**
+  `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` aplikuje sadu operací na mnoho fotek
+  **v jediné transakci** s audit-log záznamem. Operace (každá volitelná): `add_to_albums`/
+  `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
+  `set_description`/`clear_description`, `set_location {lat,lng}`/`clear_location`, `set_private`,
+  `archive`/`unarchive`, `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
+  (none/pick/reject) (**per-user**, neplatná hodnota → 400). Odpověď `{results:[{photo_uid,status,
+  error?}],counts:{total,updated,skipped,errored}}` (200 i při dílčích chybách): `updated`/
+  `skipped` (duplicitní uid)/`error` (fotka neexistuje — **neabortuje validní**); jen DB chyba
+  rollbackne celou dávku (500). Konflikt set/clear nebo archive/unarchive, neznámá operace,
+  chybějící album/štítek v add → **400**; dávka nad `bulk.max_batch_size` (default 1000) → **413**.
+  Mountuje se dalším `server.WithAPI` (`buildBulkAPI` v `cmd/kukatko/bulk.go`).
+- **Maps API (`/api/v1`, `internal/mapsapi` + `internal/mapy`, přihlášený přes `RequireAuth`):**
+  backendová proxy na mapy.com (**klíč nikdy do klienta** — jen hlavička `X-Mapy-Api-Key`) +
+  GeoJSON feed. `GET /map/tiles/{mapset}/{z}/{x}/{y}` — proxy dlaždice, **streamuje** s dlouhým
+  immutable `Cache-Control`; `mapset` allowlist `basic|outdoor|aerial|winter` (jiný → 400, ještě
+  před voláním), retina `@2x` (sufix na `{y}` nebo `?retina=true`) jen pro `basic`/`outdoor`,
+  neplatné `z`/`x`/`y` → 400. `GET /map/rgeocode?lat=&lng=` — reverse geocode → zjednodušené
+  `{name,location,regional_structure}`, **cachované** (klíč = zaokrouhlená souřadnice) a
+  **rate-limitované** (token-bucket, geocode = 4 kredity) → 429 přes limit, 404 bez shody.
+  `GET /map/photos` — **GeoJSON FeatureCollection** geotagovaných fotek (souřadnice `[lng,lat]`),
+  ctí filtry `taken_after`/`taken_before`/`album`/`label`/`archived`/`private`, feature nese
+  `uid`/`title`/`taken_at`/`media_type`/relativní `thumb`. mapy.com chyby (401/403→502, 404→404,
+  429→429, 5xx→502/503) **neprosakují klíč**; bez `maps.mapy_api_key` vrací tile/rgeocode 503,
+  GeoJSON funguje. Mountuje se `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).
+- **Import API (`/api/v1`, `internal/importapi`, admin-only přes `RequireAdmin`):** triggery a
+  historie read-only importů. `GET /import/runs` (**vždy registrovaný**) → `{runs,limit,offset,
+  sources:{photoprism,photosorter}}` — stránka `import_runs` newest-started-first (query
+  `limit`≤200/`offset`, neplatný → 400) + `sources` flagy jaké zdroje jsou nakonfigurované (podklad
+  admin Import UI: zapnutí/vypnutí sekcí). `POST /import/photoprism` → `pp_import` a
+  `POST /import/photosorter` → `ps_migrate` (jen pro nakonfigurované zdroje, jinak 404) zařadí jeden
+  singleton job → 202 `{job_id,status}`; `jobs.ErrDuplicate` (už běží) → 409, jiná chyba → 500.
+  Celá API se mountuje vždy (`buildImportAPI` v `cmd/kukatko/import.go`), aby historie fungovala i
+  bez konfigurovaného zdroje. Frontend (`ImportPage`) polluje `GET /import/runs` + `GET /jobs/stats`.
+- **Backup API (`/api/v1`, `internal/backupapi`, admin-only přes `RequireAdmin`):** stav a trigger
+  S3 zálohy. `GET /backup` → stav + poslední běh (`{configured,running,last_started_at,
+  last_finished_at,last_error,last_result}`; bez konfigurace `configured:false`); `POST /backup`
+  spustí zálohu na **pozadí** (`Trigger`) → 202 `{status:"started"}`, `backup.ErrAlreadyRunning` →
+  409, bez konfigurace → 503. Celá API se mountuje **vždy** (`buildBackupAPI` v
+  `cmd/kukatko/backup.go`); plánovač (`backup.schedule`) a CLI `kukatko backup` sdílí stejný
+  `backup.Service`. Konfig klíče `backup.s3.{endpoint,region,bucket,access_key,secret_key,
+  path_style}`, `backup.schedule` (cron), `backup.retention` (kolik posledních dumpů nechat; ≤ 0 =
+  vše). Runtime dep `pg_dump` (`postgresql-client`). Tajemství (`access_key`/`secret_key`) přes env.
+- **Restore API (`/api/v1`, `internal/restoreapi`, admin-only přes `RequireAdmin`):** **jen
+  read-only** operace nad obnovou. `GET /restore/dumps` → `{dumps:[{key,size}]}` (dumpy v bucketu,
+  nejnovější první; 503 bez konfigurace, 502 při chybě S3); `POST /restore/verify` → `VerifyReport`
+  (fotky v DB vs originály na disku + nesoulady; 503 bez konfigurace). **Destruktivní obnova DB se
+  přes HTTP záměrně neexponuje** (podtrhla by tabulky běžícímu serveru) — patří do CLI `kukatko
+  restore db` při zastaveném serveru. Celá API se mountuje **vždy** (`buildRestoreAPI` v
+  `cmd/kukatko/restore.go`; service nil = nenakonfigurováno). Runtime dep `pg_restore`
+  (`postgresql-client`, stejný balík jako pg_dump). Runbook: `docs/RESTORE.md`.
+- **Audit API (`/api/v1`, `internal/auditapi`, admin-only přes `RequireAdmin`):** read-only výpis
+  durable audit trailu. `GET /audit` → `{entries,total,limit,offset,next_offset}` (entry =
+  `{id,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}`, newest-first)
+  s filtry `?user=`/`?entity_type=`/`?entity_uid=`/`?action=`/`?since=`/`?until=` (RFC3339) a
+  stránkováním `?limit=`(≤500)/`?offset=`; neplatný čas/číslo → 400. Audit záznamy se **nezapisují
+  přes HTTP** — vznikají uvnitř mutačních transakcí (in-tx `audit.Write`, viz `internal/audit`
+  konvence). Mountuje se vždy (`buildAuditAPI` v `cmd/kukatko/audit.go`).
+- **Maintenance API (`/api/v1`, `internal/maintenanceapi`, admin-only přes `RequireAdmin`):**
+  integritní kontrola & opravy knihovny. `GET /maintenance/scan` → `Report` (counts + vzorky:
+  `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
+  `missing_phashes` + totály `photos`/`files_in_db`/`originals_on_disk`); `POST /maintenance/repair`
+  `{thumbnails,embeddings,faces,phashes,import_orphans}` (každá opt-in) → `RepairResult` se scheduling
+  počty (`*_enqueued` + `orphans_imported/skipped/failed`); `DisallowUnknownFields`, prázdný výběr →
+  400, orphan import bez importéru → 503 (`ErrOrphanImportUnavailable`). Opravy jsou idempotentní a
+  jedou přes frontu jobů (thumbnail/pHash přes `thumbnail` job, embeddingy/faces backfill), **nikdy
+  nemažou originály**. Mountuje se vždy (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go`).
+- **Duplicates API (`/api/v1`, `internal/duplicatesapi` + `internal/duplicates`, editor/admin přes
+  `RequireWrite`):** `GET /duplicates?limit=&offset=` → `{groups,total,limit,offset,next_offset}`
+  skupiny pravděpodobných duplikátů z pHash Hammingovy vzdálenosti (`duplicate.phash_max_diff`,
+  banded-LSH) **a/nebo** embedding cosine vzdálenosti (`duplicate.embedding_max_dist`, HNSW), slité
+  union-findem do souvislých komponent (žádný O(n²) sken). Každá skupina nese členy (náhled/rozměry/
+  velikost/`taken_at`/vzdálenosti) + `reason` (phash/embedding/both) + navržený `keeper_uid`
+  (nejvyšší rozlišení → největší → nejstarší → uid); řazení largest-first, `limit`≤100, neplatný →
+  400, sken selže → 500. **Jen čte — nic nemaže.** Při `duplicate.enabled=false` route odpovídá 503.
+  Úklid jede klient přes sdílené **bulk API** (`POST /photos/bulk` `{archive:true}` → koš, vratné).
+  Mountuje se vždy (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`).
+- **System status API (`/api/v1`, `internal/systemapi` + `internal/system`, admin-only přes
+  `RequireAdmin`):** `GET /system/status` → jeden agregovaný snapshot provozního zdraví:
+  `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,total,dead_letter,
+  pending_embeddings},backup (=backup.Status),imports{photoprism,photosorter (=importer.Run|null)},
+  storage{originals_bytes,cache_bytes,free_bytes,total_bytes}}`. Sloučení existujících subsystémů
+  (embeddings health, fronta jobů, backup stav, poslední import per zdroj přes
+  `importer.Store.LatestRun`, využití disku, DB ping); úložiště memoizováno 30 s. Collect selže (DB
+  pro fronту/importy) → 500; nedostupná DB/úložiště inline best-effort. Mountuje se **vždy**
+  (`buildSystemAPI` v `cmd/kukatko/system.go`). Admin UI **Systém** (`/system`, `SystemStatusPage`)
+  polluje po 5 s a nabízí rychlé akce (requeue dead-letter, trigger backup, odkazy na import/údržbu).

@@ -22,6 +22,20 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 > PhotoPrism zůstává **primární** systém až do ostrého přechodu na Kukátko; do té doby
 > Kukátko běží paralelně a importuje z PhotoPrismu read-only.
 
+## Dokumentace
+
+| Dokument | Obsah |
+| --- | --- |
+| [`CLAUDE.md`](CLAUDE.md) | Konvence a tvrdá pravidla projektu |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architektura, datový model, milníky |
+| [`docs/PACKAGES.md`](docs/PACKAGES.md) | Referenční přehled Go balíčků |
+| [`docs/API.md`](docs/API.md) | Referenční přehled HTTP endpointů |
+| [`docs/FRONTEND.md`](docs/FRONTEND.md) | Referenční přehled frontendu |
+| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | CLI, konfigurační klíče, `make`, CI |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Lokální vývoj a build |
+| [`docs/PERF.md`](docs/PERF.md) | Výkon a měření |
+| [`docs/RESTORE.md`](docs/RESTORE.md) | Obnova ze zálohy |
+
 ## Rychlý start
 
 Potřebuješ **Go 1.26+**, **golangci-lint v2** a **Node.js 22+** (npm) pro frontend.

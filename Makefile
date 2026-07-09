@@ -7,7 +7,7 @@ LDFLAGS  := -X $(PKG)/internal/version.Version=$(VERSION) -X $(PKG)/internal/ver
 # Frontend (Vite + React) lives in web/ and builds into the Go embed directory.
 WEB_DIR  := web
 
-.PHONY: help fmt vet lint lint-fix test test-integration check build clean \
+.PHONY: help fmt vet lint lint-fix test test-integration check build clean docs-budget \
         web-deps web-build web-fmt web-lint web-test
 
 ## help: List available make targets.
@@ -47,8 +47,18 @@ test: web-deps
 test-integration:
 	CGO_ENABLED=1 go test -race -p 1 -tags=integration ./...
 
-## check: Full quality gate — fmt, vet, lint, and unit tests (Go + frontend).
-check: fmt vet lint test
+## check: Full quality gate — docs budget, fmt, vet, lint, and unit tests (Go + frontend).
+## docs-budget runs first: it is the cheapest check, so it should fail fastest.
+check: docs-budget fmt vet lint test
+
+## docs-budget: Fail if CLAUDE.md grew beyond its rules+index budget.
+docs-budget:
+	@lines=$$(wc -l < CLAUDE.md); \
+	if [ "$$lines" -gt 300 ]; then \
+	  echo "CLAUDE.md má $$lines řádků (limit 300). Detaily patří do docs/."; \
+	  echo "Popisné detaily patří do docs/PACKAGES.md, docs/API.md, docs/FRONTEND.md nebo docs/OPERATIONS.md."; \
+	  exit 1; \
+	fi
 
 ## web-deps: Install frontend dependencies from the lockfile (idempotent).
 web-deps:
