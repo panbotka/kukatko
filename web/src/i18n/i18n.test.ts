@@ -1,8 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { createInstance } from 'i18next'
+import LanguageDetector from 'i18next-browser-languagedetector'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import csCommon from './locales/cs/common.json'
 import enCommon from './locales/en/common.json'
-import { supportedLngs } from './index'
+import { initOptions, supportedLngs } from './index'
+
+/** The localStorage key i18next-browser-languagedetector caches under. */
+const STORAGE_KEY = 'i18nextLng'
+
+/** Boots a throwaway i18next on the app's own options, as a first load would. */
+async function bootFreshInstance() {
+  const instance = createInstance()
+  await instance.use(LanguageDetector).init(initOptions)
+  return instance
+}
 
 /** A nested i18next resource tree: strings, or further nested objects. */
 interface ResourceTree {
@@ -134,5 +146,42 @@ describe('i18n resource parity', () => {
       }
     }
     expect(mismatches).toEqual([])
+  })
+})
+
+/**
+ * Czech is the default of this instance, not merely its fallback string table:
+ * a brand-new visitor with no stored preference must land on Czech regardless of
+ * what their browser asks for. The language switcher (account page) is the only
+ * thing that changes it, and it persists through localStorage.
+ */
+describe('default language', () => {
+  beforeEach(() => {
+    window.localStorage.removeItem(STORAGE_KEY)
+  })
+
+  it('resolves to Czech on a first visit, whatever the browser prefers', async () => {
+    // Precondition: jsdom reports an English browser, so a `navigator` detector
+    // would win here. Without one, the Czech `fallbackLng` decides.
+    expect(navigator.language.startsWith('cs')).toBe(false)
+
+    const instance = await bootFreshInstance()
+
+    expect(instance.resolvedLanguage).toBe('cs')
+  })
+
+  it('restores a stored preference over the default', async () => {
+    window.localStorage.setItem(STORAGE_KEY, 'en')
+
+    const instance = await bootFreshInstance()
+
+    expect(instance.resolvedLanguage).toBe('en')
+  })
+
+  it('persists the chosen language so the next visit reopens in it', async () => {
+    const instance = await bootFreshInstance()
+    await instance.changeLanguage('en')
+
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('en')
   })
 })

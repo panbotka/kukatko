@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useState } from 'react'
+import { type SyntheticEvent, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
@@ -10,7 +10,15 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
+import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { ApiError, changePassword, MIN_PASSWORD_LENGTH } from '../services/auth'
+import { fetchHealth, type HealthResponse } from '../services/health'
+
+/** The outcome of the backend reachability probe behind the status line. */
+type HealthState =
+  | { status: 'loading' }
+  | { status: 'ok'; data: HealthResponse }
+  | { status: 'error' }
 
 type AccountErrorKey =
   | 'account.errorCurrentWrong'
@@ -40,6 +48,13 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  * Account page: shows the signed-in identity and role, and lets the user change
  * their own password via `POST /auth/password`. Validates that the new password
  * meets the minimum length and matches its confirmation before submitting.
+ *
+ * It also carries the two things a user sets about themselves rather than about
+ * the photos: the UI language (moved off the navbar, where it spent prime space
+ * on a setting a Czech-only instance never touches) and the app's technical
+ * status line — backend reachability and the build version. That detail used to
+ * greet everyone on the landing page; it lives here now, where a curious user
+ * goes looking for it, rather than in front of the photos.
  */
 export function AccountPage() {
   const { t } = useTranslation()
@@ -50,6 +65,23 @@ export function AccountPage() {
   const [confirm, setConfirm] = useState('')
   const [validated, setValidated] = useState(false)
   const [state, setState] = useState<FormState>({ status: 'idle' })
+  const [health, setHealth] = useState<HealthState>({ status: 'loading' })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchHealth(controller.signal)
+      .then((data) => {
+        setHealth({ status: 'ok', data })
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setHealth({ status: 'error' })
+        }
+      })
+    return () => {
+      controller.abort()
+    }
+  }, [])
 
   const tooShort = next.length > 0 && next.length < MIN_PASSWORD_LENGTH
   const mismatch = confirm.length > 0 && confirm !== next
@@ -96,6 +128,16 @@ export function AccountPage() {
                 {role ? <Badge bg="secondary">{t(`roles.${role}`)}</Badge> : null}
               </dd>
             </dl>
+          </Card.Body>
+        </Card>
+
+        <Card text="light" className="mb-4">
+          <Card.Body>
+            <Card.Title as="h2" className="kk-section-title mb-3">
+              {t('account.language')}
+            </Card.Title>
+            <LanguageSwitcher />
+            <div className="text-secondary small mt-2">{t('account.languageHint')}</div>
           </Card.Body>
         </Card>
 
@@ -195,7 +237,34 @@ export function AccountPage() {
             </Form>
           </Card.Body>
         </Card>
+
+        <div className="text-secondary small mt-4 d-flex align-items-center gap-2 flex-wrap">
+          <ApiStatusBadge state={health} />
+          {health.status === 'ok' && (
+            <span>
+              {t('account.version')} {health.data.version.version}
+            </span>
+          )}
+        </div>
       </Col>
     </Row>
   )
+}
+
+/** Renders the health badge for the current API request state. */
+function ApiStatusBadge({ state }: { state: HealthState }) {
+  const { t } = useTranslation()
+
+  if (state.status === 'loading') {
+    return (
+      <Badge bg="secondary" className="d-inline-flex align-items-center gap-2">
+        <Spinner animation="border" size="sm" role="status" aria-hidden="true" />
+        {t('account.apiStatus.checking')}
+      </Badge>
+    )
+  }
+  if (state.status === 'ok') {
+    return <Badge bg="success">{t('account.apiStatus.healthy')}</Badge>
+  }
+  return <Badge bg="danger">{t('account.apiStatus.unhealthy')}</Badge>
 }

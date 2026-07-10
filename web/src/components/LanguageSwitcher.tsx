@@ -11,7 +11,11 @@ const LABEL_KEYS = {
 
 /**
  * A compact button group that switches the active UI language. The chosen
- * language is persisted by i18next's language detector (localStorage).
+ * language is persisted by i18next's language detector (localStorage); with
+ * nothing stored the app falls back to Czech.
+ *
+ * It lives in the language section of the account page — every user of this
+ * instance is Czech, so the setting does not earn a permanent seat in the navbar.
  */
 export function LanguageSwitcher() {
   const { i18n, t } = useTranslation()

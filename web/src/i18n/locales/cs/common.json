@@ -60,23 +60,6 @@
   "auth": {
     "loading": "Načítání…"
   },
-  "home": {
-    "title": "Vítejte v Kukátku",
-    "subtitle": "Všechny vaše fotky a videa přehledně na jednom místě.",
-    "checking": "Ověřuji dostupnost…",
-    "healthy": "Vše funguje",
-    "unhealthy": "Aplikace je momentálně nedostupná",
-    "version": "Verze",
-    "tiles": {
-      "library": "Procházejte všechny své fotky a videa.",
-      "search": "Najděte fotky podle slova nebo obsahu.",
-      "albums": "Uspořádejte fotky do alb.",
-      "labels": "Najděte fotky podle štítků.",
-      "people": "Najděte fotky podle osob.",
-      "map": "Prohlížejte fotky na mapě.",
-      "upload": "Přidejte nové fotky a videa."
-    }
-  },
   "login": {
     "title": "Přihlášení",
     "username": "Uživatelské jméno",
@@ -106,7 +89,15 @@
     "mismatch": "Hesla se neshodují.",
     "errorCurrentWrong": "Současné heslo není správné.",
     "errorTooShort": "Nové heslo nesplňuje požadavky na délku.",
-    "errorGeneric": "Změna hesla se nezdařila. Zkuste to prosím znovu."
+    "errorGeneric": "Změna hesla se nezdařila. Zkuste to prosím znovu.",
+    "language": "Jazyk",
+    "languageHint": "Jazyk rozhraní. Výchozí je čeština.",
+    "version": "Verze",
+    "apiStatus": {
+      "checking": "Ověřuji dostupnost…",
+      "healthy": "Vše funguje",
+      "unhealthy": "Aplikace je momentálně nedostupná"
+    }
   },
   "library": {
     "title": "Knihovna",
@@ -165,6 +156,12 @@
     "empty": {
       "title": "Nenalezeny žádné fotky",
       "hint": "Zkuste upravit nebo zrušit filtry."
+    },
+    "emptyCatalog": {
+      "title": "Zatím tu nejsou žádné fotky",
+      "hint": "Nahrajte první fotky a videa a knihovna ožije.",
+      "hintViewer": "Jakmile někdo nahraje první fotky, uvidíte je tady.",
+      "action": "Nahrát fotky"
     },
     "error": {
       "load": "Fotky se nepodařilo načíst.",

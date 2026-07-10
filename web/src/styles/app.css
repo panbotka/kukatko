@@ -99,35 +99,6 @@ body {
   }
 }
 
-/* Home welcome tiles: whole-card links to the main destinations. They are
-   `.card`s, so the design layer already gives them elevation and a transparent
-   border; hovering deepens the elevation and warms the surface with the theme
-   accent instead of drawing a heavy outline. Durations come from the token
-   layer, so `prefers-reduced-motion` neutralises them for free. */
-.kukatko-home-tile {
-  transition:
-    transform var(--kk-duration-base) var(--kk-ease-standard),
-    box-shadow var(--kk-duration-base) var(--kk-ease-standard);
-}
-
-.kukatko-home-tile:hover,
-.kukatko-home-tile:focus-visible {
-  transform: translateY(-2px);
-  box-shadow: var(--kk-shadow-3);
-}
-
-.kukatko-home-tile:focus-visible {
-  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
-  outline-offset: var(--kk-focus-ring-offset);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .kukatko-home-tile:hover,
-  .kukatko-home-tile:focus-visible {
-    transform: none;
-  }
-}
-
 /* Keyboard focus highlight for the photo grid: a clearly visible ring around the
    tile currently targeted by arrow / hjkl navigation. Distinct from the selection
    outline (primary) so both can be shown at once, and inset slightly so it hugs

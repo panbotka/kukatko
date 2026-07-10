@@ -86,7 +86,7 @@ describe('UploadPage', () => {
 
     expect(await screen.findByText('Uploaded')).toBeInTheDocument()
     const link = await screen.findByRole('link', { name: 'View in library' })
-    expect(link).toHaveAttribute('href', '/library?sort=added')
+    expect(link).toHaveAttribute('href', '/?sort=added')
   })
 
   it('renders duplicate and error outcomes from the responses', async () => {

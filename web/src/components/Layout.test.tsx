@@ -64,7 +64,8 @@ describe('Layout navbar', () => {
   it('keeps Library, Albums and Labels as always-visible top-level links', () => {
     renderLayout(auth())
 
-    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/library')
+    // The library is the homepage, so its nav entry points at the root route.
+    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/')
     expect(screen.getByRole('link', { name: 'Albums' })).toHaveAttribute('href', '/albums')
     expect(screen.getByRole('link', { name: 'Labels' })).toHaveAttribute('href', '/labels')
   })
@@ -76,6 +77,16 @@ describe('Layout navbar', () => {
     expect(screen.queryByRole('link', { name: 'Search' })).not.toBeInTheDocument()
     expect(screen.queryByRole('search')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Saved searches' })).not.toBeInTheDocument()
+  })
+
+  it('no longer offers the language switcher', () => {
+    renderLayout(auth())
+
+    // The language setting lives on the account page: a Czech-only instance does
+    // not spend permanent bar space on it.
+    expect(screen.queryByRole('group', { name: 'Switch language' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Čeština' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'English' })).not.toBeInTheDocument()
   })
 
   it('groups the remaining browse destinations behind one dropdown', async () => {

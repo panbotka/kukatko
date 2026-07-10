@@ -19,7 +19,12 @@ import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useSelection } from '../hooks/useSelection'
 import { detailQueryString } from '../lib/detailView'
-import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
+import {
+  hasActiveFilters,
+  LIBRARY_DEFAULTS,
+  type LibraryView,
+  viewToParams,
+} from '../lib/libraryView'
 import { slideshowHref } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
 import { favoritePhoto } from '../services/photos'
@@ -157,6 +162,13 @@ export function LibraryPage() {
     onClearSelection: selection.clear,
   })
 
+  // "Nothing matches these filters" and "there are no photos yet" are different
+  // messages: the first asks the reader to relax a filter, the second — the very
+  // first thing a new user sees, since the library is the homepage — invites them
+  // to upload. Only an unfiltered empty result can mean the catalog itself is bare.
+  const noResults = status === 'ready' && photos.length === 0
+  const catalogEmpty = noResults && !hasActiveFilters(view)
+
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -224,8 +236,22 @@ export function LibraryPage() {
         </Alert>
       )}
 
-      {status === 'ready' && photos.length === 0 && (
+      {noResults && !catalogEmpty && (
         <EmptyState title={t('library.empty.title')} hint={t('library.empty.hint')} />
+      )}
+
+      {catalogEmpty && (
+        <EmptyState
+          title={t('library.emptyCatalog.title')}
+          hint={canWrite ? t('library.emptyCatalog.hint') : t('library.emptyCatalog.hintViewer')}
+          action={
+            canWrite ? (
+              <Link to="/upload" className="btn btn-primary">
+                {t('library.emptyCatalog.action')}
+              </Link>
+            ) : undefined
+          }
+        />
       )}
 
       {status === 'ready' && photos.length > 0 && (

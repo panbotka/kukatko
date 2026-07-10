@@ -1,6 +1,6 @@
 import { type PhotoListParams } from '../services/photos'
 
-import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from './libraryView'
+import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from './libraryView'
 import { writeUrlState } from './urlState'
 
 /**
@@ -49,8 +49,8 @@ export function detailQueryString(view: DetailView): string {
 
 /**
  * Builds the Back link to the originating list view: the scoped album/label page,
- * the favorites page, or the library, each carrying the library filters/sort so
- * the prior view is restored exactly.
+ * the favorites page, or the library (the homepage), each carrying the library
+ * filters/sort so the prior view is restored exactly.
  */
 export function backHref(view: DetailView): string {
   const libraryQuery = writeUrlState(view, LIBRARY_DEFAULTS).toString()
@@ -64,5 +64,5 @@ export function backHref(view: DetailView): string {
   if (view.favorite === 'true') {
     return `/favorites${suffix}`
   }
-  return `/library${suffix}`
+  return `${LIBRARY_PATH}${suffix}`
 }

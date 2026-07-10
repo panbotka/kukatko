@@ -1,6 +1,6 @@
 import { type SavedSearchParams } from '../services/savedSearches'
 
-import { LIBRARY_DEFAULTS, type LibraryView } from './libraryView'
+import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView } from './libraryView'
 import { SEARCH_DEFAULTS, type SearchView } from './searchView'
 import { writeUrlState } from './urlState'
 
@@ -24,11 +24,11 @@ export function isSearchParams(params: SavedSearchParams): boolean {
 
 /**
  * Builds the `pathname?query` a saved search opens to. It routes to `/search`
- * when the params describe a search (a `mode` is present) and to `/library`
- * otherwise, then encodes the saved params against the target page's defaults so
- * the URL is minimal and reproduces the view exactly. Unknown/stale keys are
- * ignored (only the target's known keys are encoded) and missing keys fall back
- * to their defaults.
+ * when the params describe a search (a `mode` is present) and to the library
+ * homepage otherwise, then encodes the saved params against the target page's
+ * defaults so the URL is minimal and reproduces the view exactly. Unknown/stale
+ * keys are ignored (only the target's known keys are encoded) and missing keys
+ * fall back to their defaults.
  */
 export function savedSearchHref(params: SavedSearchParams): string {
   if (isSearchParams(params)) {
@@ -38,5 +38,5 @@ export function savedSearchHref(params: SavedSearchParams): string {
   }
   const view: LibraryView = { ...LIBRARY_DEFAULTS, ...params }
   const query = writeUrlState(view, LIBRARY_DEFAULTS).toString()
-  return query === '' ? '/library' : `/library?${query}`
+  return query === '' ? LIBRARY_PATH : `${LIBRARY_PATH}?${query}`
 }

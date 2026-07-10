@@ -7,8 +7,9 @@ zapiš sem.
 <!-- BODY BEGIN -->
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
   (`Layout` = navbar shell s user-menu/logout + role-gated nav, **vyvážená kolem toho, jak se
-  knihovna reálně prochází — po albu, po štítku, po roce**: **Domů** přes brand link; **Knihovna**
-  `/library`, **Alba** `/albums` a **Štítky** `/labels` jsou vždy viditelné top-level položky
+  knihovna reálně prochází — po albu, po štítku, po roce**: **Knihovna** `/` (= úvodní stránka,
+  dostupná i přes brand link; `NavLink` má `end`, jinak by se rozsvítila na každé routě),
+  **Alba** `/albums` a **Štítky** `/labels` jsou vždy viditelné top-level položky
   (registr `PRIMARY_ITEMS`); zbylé browse cíle sdružuje dropdown **Procházet** (`nav.browse`,
   `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`, **Místa** `/places`, **Mapa**
   `/map`; **Nahrát** `/upload` je top-level (gate `canWrite`); editorský dropdown **Nástroje**
@@ -27,7 +28,9 @@ zapiš sem.
   `Icon` (**jediná ikonová sada** aplikace: bootstrap-icons glyf jako `<i class="bi bi-{name}">`,
   font se importuje globálně v `main.tsx`; union `IconName` drží slovník použitých ikon, takže překlep
   je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),
-  `LanguageSwitcher`,
+  `LanguageSwitcher` (button group cs/en, `aria-pressed` na aktivní; **nesedí v navbaru** —
+  bydlí v sekci Jazyk na `AccountPage`, protože tuhle instanci používají jen Češi a trvalé
+  místo v liště by bylo plýtvání. Volbu persistuje i18next language detector do localStorage),
   `KeyboardShortcutsHelp` (v navbaru: ikonka klávesnice + **modal nápovědy zkratek** — otevře se
   `?` (Shift+/) kdekoli nebo klikem, vypíše všechny zkratky seskupené dle kontextu (Mřížka / Detail)
   ze `lib/shortcuts.ts` `SHORTCUT_GROUPS`, zavře Escapem/křížkem),
@@ -98,16 +101,21 @@ zapiš sem.
   alba, add/remove štítku, set/clear popisu, set/clear polohy, soukromé, archiv, oblíbené — set/clear
   páry jako samostatné módy; klientská validace souřadnic + „aspoň jedna změna"; po aplikaci
   **per-foto result summary** z odpovědi),
-  `pages/` (`HomePage` = přívětivá uvítací stránka: nadpis + mřížka velkých klikacích karet
-  (`Card as={Link}`) na hlavní cíle (Knihovna, Hledat, Alba, Štítky, Lidé, Mapa a pro editory
-  Nahrát, přes datový registr `TILES` s `nav.*` titulky + `home.tiles.*` popisky + `nav.titles.*`
-  akčními tooltipy + `Icon` ikonou — stejné jako navbar, `writeOnly` gate na
-  Nahrát), technický stav (`GET /healthz` + verze) demotovaný do malého ztlumeného řádku dole
-  (bez commit hashe), `LoginPage`, `AccountPage` = změna vlastního hesla,
-  `LibraryPage` = hlavní foto-knihovna: `FilterBar` nad virtualizovanou nekonečně-scrollující
+  `pages/` (`LoginPage`, `AccountPage` = identita/role, **sekce Jazyk** (`LanguageSwitcher` +
+  hint, `account.language*`) a změna vlastního hesla, **plus technický stav aplikace**
+  (`GET /healthz` badge + verze, bez commit hashe) v malém ztlumeném řádku dole — status i jazyk
+  sem přišly odjinud (z úvodní stránky, resp. z navbaru): patří tam, kde je uživatel hledá, ne
+  před fotky ani do prime místa v liště,
+  `LibraryPage` = hlavní foto-knihovna **a zároveň úvodní stránka aplikace** (routa `/`):
+  `FilterBar` nad virtualizovanou nekonečně-scrollující
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka **i hvězdy/flag**
   na dlaždicích (favoritable+ratable, rating hotkeys na fokusnuté dlaždici), tlačítko **Promítání**
   (`slideshowHref` → `/slideshow` s aktuálními filtry/řazením),
+  **dva různé prázdné stavy** — s aktivními filtry „Nenalezeny žádné fotky" (zkus filtry zrušit),
+  bez filtrů „Zatím tu nejsou žádné fotky" s CTA na `/upload` (editor/admin; viewer dostane jen
+  vysvětlující větu), rozlišené přes `hasActiveFilters(view)`,
+  `LibraryRedirect` = shim pro vysloužilou routu `/library`: `<Navigate replace>` na `/` s doslova
+  zachovaným `search`+`hash` (staré záložky a odkazy fungují, `replace` zabrání odskočení Zpět),
   plus **časová osa** (`TimelineScrubber`) vedle mřížky pro rychlé skoky na měsíc — mřížka
   vystaví `gridRef`+`onRangeChanged`, skok jede přes `useGridJump` (donačte stránky, když měsíc
   leží za načtenou částí), zobrazí se jen pro výchozí newest řazení a mimo režim výběru,
@@ -137,7 +145,7 @@ zapiš sem.
   (`SaveSearchModal` — `params` nese i `mode`, takže obnova míří na `/search`),
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
-  po dokončení odkaz na nově nahrané fotky (`/library?sort=added`),
+  po dokončení odkaz na nově nahrané fotky (`/?sort=added`, přes `LIBRARY_PATH`),
   `ImportPage` = `/import` (jen admin) admin konzole importu/migrace: dvě sekce (PhotoPrism,
   photo-sorter) s tlačítkem **Spustit import** (gate na `sources` flagy), živý průběh běžícího běhu
   (spinner + counts imported/updated/skipped/failed) a stav fronty na pozadí (`GET /jobs/stats`),
@@ -329,6 +337,8 @@ zapiš sem.
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag`) + `LIBRARY_DEFAULTS` +
+  `LIBRARY_PATH` (= `/`, kanonická routa knihovny — **knihovna je úvodní stránka**; všechny odkazy
+  v appce míří sem, `/library` je jen redirect pro staré odkazy) +
   `viewToParams` (sanitizuje sort/archived, prosákne `min_rating`/`flag`; `sort` union navíc
   `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce, zahrnuje rating/flag) —
   mapování URL stavu na API params; `ratingHotkeys.ts` = pure `ratingHotkey(key)` (`0`–`5` →
@@ -342,7 +352,7 @@ zapiš sem.
   `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
   + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér;
   `savedSearchView.ts` = pure `isSearchParams(params)` (přítomnost `mode` rozlišuje search od library
-  pohledu) + `savedSearchHref(params)` (složí `pathname?query` na `/library` nebo `/search`, minimálně
+  pohledu) + `savedSearchHref(params)` (složí `pathname?query` na `LIBRARY_PATH` nebo `/search`, minimálně
   zakóduje uložené params proti defaultům přes `writeUrlState`, ignoruje neznámé/zastaralé klíče) —
   obnova uloženého hledání na přesnou URL;
   `mapView.ts` = typ `MapView` (mapset + viewport `lat`/`lng`/`z` + filtry) + `MAP_DEFAULTS` +
@@ -466,9 +476,13 @@ zapiš sem.
   vrací počet, 404/409 skip); typy `SystemStatus`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
   `BackupStatus`/`ImportsStatus`/`StorageStatus`/`VersionInfo`; sdílí `ApiError` z `auth.ts` a `ImportRun`
   z `import.ts`,
-  `i18n/` (i18next init + `locales/{cs,en}/common.json`;
+  `i18n/` (i18next init — options jsou exportované jako `initOptions`, ať si je test může nabootit
+  do vlastní instance — + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů;
-  **čeština default**, žádné natvrdo zapsané UI texty — vše přes `t()`. **Pluralizace** přes
+  **čeština default**, žádné natvrdo zapsané UI texty — vše přes `t()`. Jediný detektor je
+  `localStorage` (kam píše `LanguageSwitcher` z `AccountPage`); `navigator`/`htmlTag` **záměrně
+  nejsou** v `detection.order`, jinak by anglicky nastavený prohlížeč dostal při první návštěvě
+  anglické UI — bez uložené volby rozhoduje `fallbackLng: 'cs'`. **Pluralizace** přes
   i18next CLDR plural sufixy: count-vázané řetězce kde se podstatné jméno shoduje s číslem mají
   formy `key_one/_few/_many/_other` (čeština) a `key_one/_other` (angličtina) — caller jen předá
   `{ count }` (např. `albums.photoCount`, `clusters.size`, `bulkEdit.title`, `duplicates.memberCount`/
@@ -476,7 +490,9 @@ zapiš sem.
   zůstávají bez plurálu. **Datumy/čísla respektují jazyk** přes `lib/format` `formatDate`/`formatDateTime`
   (`i18n.language`). **Drift-guard testy** `i18n.test.ts` (cs/en mají identické *logické* klíče po
   odstranění plural sufixu, žádné prázdné hodnoty, každý jazyk má všechny své CLDR plural kategorie,
-  interpolační `{{var}}` proměnné se shodují napříč jazyky) + `screens.test.tsx` (reprezentativní
+  interpolační `{{var}}` proměnné se shodují napříč jazyky; navíc **default-language testy** nad
+  čerstvou instancí z `initOptions`: prázdný localStorage → `cs` i pod anglickým prohlížečem,
+  uložená volba vyhrává, změna jazyka se uloží) + `screens.test.tsx` (reprezentativní
   obrazovky — navbar + dlaždice — se vykreslí bez missing-key warningů v cs i en přes
   `cloneInstance({saveMissing})`, plural rendering 1/3/5, language-switch přepíše viditelný text)),
   `styles/tokens.css` (**design token vrstva** — jediný zdroj pravdy pro odstupy, rádiusy, elevaci,
@@ -516,9 +532,8 @@ zapiš sem.
   dotykových zařízeních (telefon/tablet) vynutí min. 44px na `.btn`/`.form-control`/`.form-select`/
   `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link` + větší `.form-check-input`,
   bez zásahu do desktop (fine-pointer) layoutu a bez per-komponentových změn (systémová oprava
-  všudypřítomných `size="sm"` ovládání); **uvítací karty** `.kukatko-home-tile` (hover
-  lift + prohloubená elevace pro klikací karty na `HomePage`; durations z token vrstvy, takže
-  `prefers-reduced-motion` je vypne bez další práce); **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
+  všudypřítomných `size="sm"` ovládání);
+  **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
   okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
   none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`
   (`.kukatko-filter-search` = search pole roste a plní řádek hlavičky, `.kukatko-filter-sort`
@@ -526,8 +541,12 @@ zapiš sem.
   = tappable pill chip s křížkem); CSS proměnná `--kukatko-navbar-height`),
   `test/setup.ts` (jsdom **`window.matchMedia` stub** — non-matching default, jednotlivé testy ho
   můžou přepsat pro simulaci telefonu).
-  Routing v `App.tsx`: `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` je pod
-  `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru), zbytek pod `Layout` (`/`, `/library`,
+  Routing v `App.tsx`: tabulka rout žije v exportované `AppRoutes` (aby ji šlo v testech mountnout
+  do `MemoryRouter` a ověřit samotné drátování — `App.test.tsx`), `App` ji jen obalí
+  `BrowserRouter`+`AuthProvider`. `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` je pod
+  `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru), zbytek pod `Layout`
+  (**`/` = `LibraryPage`** — knihovna je úvodní stránka; `/library` → `LibraryRedirect`
+  (`replace` redirect na `/` se zachovaným query stringem),
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/trash` a `/duplicates`

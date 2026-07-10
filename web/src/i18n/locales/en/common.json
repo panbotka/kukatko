@@ -60,23 +60,6 @@
   "auth": {
     "loading": "Loading…"
   },
-  "home": {
-    "title": "Welcome to Kukátko",
-    "subtitle": "All your photos and videos, neatly in one place.",
-    "checking": "Checking availability…",
-    "healthy": "Everything is working",
-    "unhealthy": "The app is currently unavailable",
-    "version": "Version",
-    "tiles": {
-      "library": "Browse all your photos and videos.",
-      "search": "Find photos by word or content.",
-      "albums": "Organize photos into albums.",
-      "labels": "Find photos by label.",
-      "people": "Find photos by person.",
-      "map": "See your photos on a map.",
-      "upload": "Add new photos and videos."
-    }
-  },
   "login": {
     "title": "Sign in",
     "username": "Username",
@@ -106,7 +89,15 @@
     "mismatch": "The passwords do not match.",
     "errorCurrentWrong": "Your current password is incorrect.",
     "errorTooShort": "The new password does not meet the length requirement.",
-    "errorGeneric": "Could not change password. Please try again."
+    "errorGeneric": "Could not change password. Please try again.",
+    "language": "Language",
+    "languageHint": "The language of the interface. Czech is the default.",
+    "version": "Version",
+    "apiStatus": {
+      "checking": "Checking availability…",
+      "healthy": "Everything is working",
+      "unhealthy": "The app is currently unavailable"
+    }
   },
   "library": {
     "title": "Library",
@@ -165,6 +156,12 @@
     "empty": {
       "title": "No photos found",
       "hint": "Try adjusting or clearing the filters."
+    },
+    "emptyCatalog": {
+      "title": "There are no photos yet",
+      "hint": "Upload your first photos and videos to bring the library to life.",
+      "hintViewer": "Once someone uploads the first photos, they will show up here.",
+      "action": "Upload photos"
     },
     "error": {
       "load": "Could not load photos.",

@@ -17,14 +17,12 @@ describe('isSearchParams', () => {
 })
 
 describe('savedSearchHref', () => {
-  it('routes a library view to /library with non-default filters encoded', () => {
-    expect(savedSearchHref({ sort: 'oldest', camera: 'Canon' })).toBe(
-      '/library?sort=oldest&camera=Canon',
-    )
+  it('routes a library view to the homepage with non-default filters encoded', () => {
+    expect(savedSearchHref({ sort: 'oldest', camera: 'Canon' })).toBe('/?sort=oldest&camera=Canon')
   })
 
-  it('routes an all-default library view to bare /library', () => {
-    expect(savedSearchHref({ sort: 'newest', archived: 'false', camera: '' })).toBe('/library')
+  it('routes an all-default library view to the bare homepage', () => {
+    expect(savedSearchHref({ sort: 'newest', archived: 'false', camera: '' })).toBe('/')
   })
 
   it('routes a search view to /search with the query and mode encoded', () => {
@@ -40,6 +38,6 @@ describe('savedSearchHref', () => {
 
   it('ignores unknown/stale keys and fills missing keys from defaults', () => {
     // `bogus` is not a known view key, so it is dropped; sort defaults through.
-    expect(savedSearchHref({ camera: 'Nikon', bogus: 'x' })).toBe('/library?camera=Nikon')
+    expect(savedSearchHref({ camera: 'Nikon', bogus: 'x' })).toBe('/?camera=Nikon')
   })
 })

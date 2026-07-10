@@ -670,7 +670,7 @@ hledání vidí a smí ho měnit. Tabulka `saved_searches` v migraci `0017_saved
 `SavedSearchUpdate`). `params` je **verbatim URL view-state objekt** (`Record<string,string>`), který
 appka už serializuje do URL přes `useUrlState` — uloží se a obnoví beze změny. Pure helper
 `web/src/lib/savedSearchView.ts` (`isSearchParams` — přítomnost `mode` rozlišuje search od library
-pohledu; `savedSearchHref` — složí `pathname?query` na `/library` nebo `/search` a minimálně zakóduje
+pohledu; `savedSearchHref` — složí `pathname?query` na `/` (knihovna) nebo `/search` a minimálně zakóduje
 params proti defaultům, takže otevření obnoví pohled přesně). Akce **„Uložit pohled"** na `LibraryPage`
 i `SearchPage` (`SaveSearchModal` v `web/src/components/savedsearch/` — modal pro pojmenování při
 vytvoření i přejmenování), dedikovaná stránka **`/saved`** (`SavedSearchesPage` — seznam s otevřením/
@@ -1505,8 +1505,10 @@ Admin-only HTTP API pro hromadné zpracování katalogu (guard `RequireAdmin`), 
 
 SPA je **React 19 + TypeScript + Vite** v adresáři [`web/`](web/), stylovaná tématem
 **Bootswatch Superhero** (dark) přes **react-bootstrap**, s routováním `react-router-dom`
-a i18n přes **i18next** (**čeština default** + angličtina, volba se persistuje do
-`localStorage`). Všechny UI texty jdou přes `t()` — **žádné natvrdo zapsané řetězce**; oba jazyky
+a i18n přes **i18next** (**čeština default** + angličtina; přepínač jazyka žije v sekci **Jazyk**
+na stránce **Můj účet**, ne v navigační liště, a volba se persistuje do `localStorage`. Bez uložené
+volby je jazyk vždy čeština — na prohlížeč se aplikace neptá).
+Všechny UI texty jdou přes `t()` — **žádné natvrdo zapsané řetězce**; oba jazyky
 mají kompletní, paralelní sadu klíčů. Počty se **pluralizují** přes i18next CLDR plural sufixy
 (čeština `_one/_few/_many/_other`, angličtina `_one/_other` — caller předá `{ count }`), datumy se
 formátují podle aktivního jazyka (`lib/format` `formatDate`/`formatDateTime`). Sadu hlídají
@@ -1541,7 +1543,8 @@ jsou plně touch (swipe, pinch/zoom/pan). Multiupload bere fotky z **mobilní ga
 odvozené `canWrite`/`isAdmin`. Přihlašovací stránka (`/login`) je veřejná; vše ostatní hlídá
 `RequireAuth` (nepřihlášený → redirect na `/login` s uložením původní cesty, po přihlášení
 návrat zpět), role hlídá `RequireRole`. Navbar ukazuje přihlášeného uživatele s odhlášením a
-odkazem na **Můj účet** (`/account` — změna vlastního hesla přes `POST /auth/password`); write
+odkazem na **Můj účet** (`/account` — změna vlastního hesla přes `POST /auth/password`, plus
+ztlumený řádek se stavem API (`GET /healthz`) a verzí buildu); write
 akce jsou skryté prohlížečům (`viewer`). Auth volání backendu jsou v
 [`web/src/services/auth.ts`](web/src/services/auth.ts) (typy `User`/`Role`/`AuthSession`,
 `ApiError` se statusem, helpery `canWrite`/`roleAtLeast`).
@@ -1552,7 +1555,10 @@ hledání, stránka) do query parametrů přes History API, takže Back/Forward 
 Výchozí hodnoty se z URL vynechávají (čisté URL), update defaultně pushuje historii
 (`{ replace: true }` pro živé psaní).
 
-**Knihovna (`/library`):** hlavní pohled
+**Knihovna (`/`, úvodní stránka):** knihovna **je** úvodní stránka — po přihlášení tě vítají
+fotky, ne rozcestník. Stará routa `/library` na `/` přesměrovává (se zachovaným query stringem),
+takže staré záložky a odkazy fungují dál. Prázdný katalog nabídne
+**nahrání prvních fotek**, prázdný výsledek filtru nabídne filtry zrušit. Hlavní pohled
 ([`web/src/pages/LibraryPage.tsx`](web/src/pages/LibraryPage.tsx)) je **virtualizovaná, nekonečně
 scrollující mřížka náhledů** s filtrovacím panelem. Mřížku renderuje
 [`react-virtuoso`](https://virtuoso.dev/) `VirtuosoGrid` (window-scroll, responzivní sloupce přes
@@ -1715,7 +1721,7 @@ neúspěšných (jednotlivě i hromadně) a abort běžících. Každý soubor j
 **`XMLHttpRequest`** kvůli upload-progress eventům; FormData se streamuje, nikdy celé v RAM). Per-file
 [`UploadItem`](web/src/components/upload/UploadItem.tsx) ukazuje progress-bar, status badge a
 **near-duplicate varování** z API (neblokuje). Po dokončení nabídne odkaz na nově nahrané fotky
-v knihovně (`/library?sort=added`). Vše i18n (cs/en), touch-friendly. Odkaz **Nahrát** v navbaru je
+v knihovně (`/?sort=added`). Vše i18n (cs/en), touch-friendly. Odkaz **Nahrát** v navbaru je
 viditelný jen pro editory/adminy.
 
 **Mapa (`/map`):** stránka ([`web/src/pages/MapPage.tsx`](web/src/pages/MapPage.tsx)) zobrazuje

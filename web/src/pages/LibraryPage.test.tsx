@@ -134,7 +134,7 @@ const editorAuth = {
   canWrite: true,
 } as unknown as AuthContextValue
 
-function renderLibraryAs(auth: AuthContextValue, initialEntry = '/library') {
+function renderLibraryAs(auth: AuthContextValue, initialEntry = '/') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth}>
@@ -147,7 +147,7 @@ function renderLibraryAs(auth: AuthContextValue, initialEntry = '/library') {
   )
 }
 
-function renderLibrary(initialEntry = '/library') {
+function renderLibrary(initialEntry = '/') {
   return renderLibraryAs(viewerAuth, initialEntry)
 }
 
@@ -171,10 +171,33 @@ describe('LibraryPage', () => {
     expect(screen.getByRole('status', { name: 'Loading photos…' })).toBeInTheDocument()
   })
 
-  it('renders the empty state when no photos match', async () => {
+  it('renders the empty state when no photos match the active filters', async () => {
     fetchMock.mockResolvedValue(page([], 0, null))
-    renderLibrary()
+    renderLibrary('/?camera=Canon')
+
     expect(await screen.findByText('No photos found')).toBeInTheDocument()
+    expect(screen.getByText('Try adjusting or clearing the filters.')).toBeInTheDocument()
+  })
+
+  it('invites an editor to upload when the catalog itself is empty', async () => {
+    fetchMock.mockResolvedValue(page([], 0, null))
+    renderLibraryAs(editorAuth)
+
+    // Unfiltered and empty means there is nothing to un-filter: point at upload.
+    expect(await screen.findByText('There are no photos yet')).toBeInTheDocument()
+    expect(screen.queryByText('No photos found')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Upload photos' })).toHaveAttribute('href', '/upload')
+  })
+
+  it('tells a viewer to wait rather than offering an upload they cannot do', async () => {
+    fetchMock.mockResolvedValue(page([], 0, null))
+    renderLibraryAs(viewerAuth)
+
+    expect(await screen.findByText('There are no photos yet')).toBeInTheDocument()
+    expect(
+      screen.getByText('Once someone uploads the first photos, they will show up here.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Upload photos' })).not.toBeInTheDocument()
   })
 
   it('renders an error with a retry that reloads the photos', async () => {
@@ -209,7 +232,7 @@ describe('LibraryPage', () => {
 
   it('reproduces the view from a shared URL (filters drive the first fetch)', async () => {
     fetchMock.mockResolvedValue(page([], 0, null))
-    renderLibrary('/library?sort=oldest&has_gps=true&camera=Canon')
+    renderLibrary('/?sort=oldest&has_gps=true&camera=Canon')
 
     await screen.findByText('No photos found')
     const first = fetchMock.mock.calls[0][0]

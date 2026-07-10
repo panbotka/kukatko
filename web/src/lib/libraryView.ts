@@ -1,6 +1,14 @@
 import { type ArchivedFilter, type PhotoListParams, type PhotoSort } from '../services/photos'
 
 /**
+ * The library's canonical route. The library *is* the homepage — the grid is the
+ * app's centrepiece — so every link the app builds points here. The historical
+ * `/library` route survives only as a replacing redirect for bookmarks and links
+ * minted before the swap; nothing in the app should target it.
+ */
+export const LIBRARY_PATH = '/'
+
+/**
  * URL-encoded view state for the library grid: every filter, the sort and the
  * archived toggle. All values are strings (the urlState convention), so the
  * whole view round-trips through the query string and Back/Forward restores it

@@ -31,12 +31,12 @@ These safe, global improvements were applied in the same session as this audit:
    `.page-link` and checkbox to clear the ~44 px finger-friendly minimum on phones/tablets —
    **without** touching desktop layouts or any per-component markup. This is the single
    highest-leverage fix for the pervasive `size="sm"` touch problem found on almost every page.
-2. **Friendly landing page** (`HomePage`). The landing page previously led with a **backend
-   health check, version number and a raw git commit hash** — pure developer jargon as the very
-   first screen. It is now a **welcome with large, labelled cards** linking to the main
-   destinations (Library, Search, Albums, People, Map, and — for editors — Upload). The technical
-   status is demoted to a small, muted line at the bottom (status + version only, no commit
-   hash). A new `HomePage.test.tsx` covers it.
+2. **Friendly landing page.** The landing page previously led with a **backend health check,
+   version number and a raw git commit hash** — pure developer jargon as the very first screen.
+   It became a welcome with large, labelled cards linking to the main destinations, and the
+   technical status was demoted to a small, muted line at the bottom (status + version only, no
+   commit hash). _Superseded:_ see the **Home** section below — the card grid is gone and `/`
+   now renders the photo library itself.
 3. **Primary-action prominence.** The primary "create" call-to-action on the Albums, Labels and
    People index pages was `size="sm"` (visually minor). Those primary buttons are now full size.
 4. **Heading consistency.** Photo detail's title was `h1.h4`; every other page uses `h1.h3`. It
@@ -85,8 +85,14 @@ implemented**, per the task's conservative-changes rule.
 - **Was the biggest single issue.** The landing page's centerpiece was "Backend status /
   Version / Commit `<hash>`" plus a "PhotoPrism replacement" subtitle — the most intimidating,
   least actionable screen for a non-technical user, with **no primary navigation at all**.
-- ✅ **Done:** rewritten as a welcome with destination cards; technical status demoted to a muted
-  footer. 🔴🟡
+- ✅ **Done (first pass):** rewritten as a welcome with destination cards; technical status
+  demoted to a muted footer. 🔴🟡
+- ✅ **Done (follow-up):** the card grid is gone too. `/` now renders the **photo library** —
+  the thing the app is for — so the photos greet the user instead of a menu of links to them.
+  `/library` survives as a replacing redirect (query string preserved) for old bookmarks, the
+  navbar's Knihovna entry points at `/`, and the health badge + build version moved to
+  `/account`. An empty catalog gets its own empty state pointing at Upload, distinct from the
+  "no photos match these filters" one. `App.test.tsx` covers the routing.
 
 ### Account (`/account`)
 - **Clarity/States:** Clear two-section layout (identity + change password). Thorough inline

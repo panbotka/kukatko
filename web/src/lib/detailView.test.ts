@@ -20,7 +20,7 @@ describe('detailView helpers', () => {
   })
 
   it('builds a Back link to the originating scope, carrying the library filters', () => {
-    expect(backHref(DETAIL_DEFAULTS)).toBe('/library')
+    expect(backHref(DETAIL_DEFAULTS)).toBe('/')
     expect(backHref({ ...DETAIL_DEFAULTS, album: 'al_1' })).toBe('/albums/al_1')
     expect(backHref({ ...DETAIL_DEFAULTS, label: 'lb_2' })).toBe('/labels/lb_2')
     expect(backHref({ ...DETAIL_DEFAULTS, favorite: 'true' })).toBe('/favorites')

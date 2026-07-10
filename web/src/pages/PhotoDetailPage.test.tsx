@@ -405,7 +405,9 @@ describe('PhotoDetailPage', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
 
     await waitFor(() => {
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/library')
+      // The library lives at the root route; anchor the match so `/photos/b`
+      // (which also contains a slash) cannot pass for it.
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
     })
   })
 

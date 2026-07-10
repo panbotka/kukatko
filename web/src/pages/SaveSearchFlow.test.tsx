@@ -107,7 +107,7 @@ describe('saving a view from the library', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <AuthContext.Provider value={viewerAuth}>
-          <MemoryRouter initialEntries={['/library?sort=oldest&camera=Canon']}>
+          <MemoryRouter initialEntries={['/?sort=oldest&camera=Canon']}>
             <LibraryPage />
           </MemoryRouter>
         </AuthContext.Provider>
@@ -125,7 +125,7 @@ describe('saving a view from the library', () => {
     const [name, params] = createMock.mock.calls[0]
     expect(name).toBe('My view')
     expect(params).toMatchObject({ sort: 'oldest', camera: 'Canon' })
-    // A library view must not carry a mode (so it restores to /library).
+    // A library view must not carry a mode (so it restores to the homepage).
     expect(params.mode).toBeUndefined()
   })
 })

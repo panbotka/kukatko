@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { DropZone } from '../components/upload/DropZone'
 import { UploadItem } from '../components/upload/UploadItem'
 import { useUploadQueue } from '../hooks/useUploadQueue'
+import { LIBRARY_PATH } from '../lib/libraryView'
 
 /**
  * Multiupload page: drag or pick many files (gallery/camera on mobile), review
@@ -87,7 +88,7 @@ export function UploadPage() {
           <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
             <span>{t('upload.done.title')}</span>
             {createdUids.length > 0 && (
-              <Link to="/library?sort=added" className="btn btn-outline-light btn-sm">
+              <Link to={`${LIBRARY_PATH}?sort=added`} className="btn btn-outline-light btn-sm">
                 {t('upload.done.viewLibrary')}
               </Link>
             )}

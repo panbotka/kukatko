@@ -10,10 +10,10 @@ import { useTranslation } from 'react-i18next'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { LIBRARY_PATH } from '../lib/libraryView'
 
 import { Icon, type IconName } from './Icon'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
-import { LanguageSwitcher } from './LanguageSwitcher'
 
 /**
  * A single navigable destination. `titleKey` names the *action* the entry
@@ -40,9 +40,10 @@ interface NavGroup {
 /**
  * The always-visible destinations, in the order the library is actually browsed:
  * everything, then by album, then by label. Available to every signed-in role.
+ * The library is the homepage, so its entry and the brand share a destination.
  */
 const PRIMARY_ITEMS: NavEntry[] = [
-  { to: '/library', labelKey: 'nav.library', titleKey: 'nav.titles.library', icon: 'images' },
+  { to: LIBRARY_PATH, labelKey: 'nav.library', titleKey: 'nav.titles.library', icon: 'images' },
   { to: '/albums', labelKey: 'nav.albums', titleKey: 'nav.titles.albums', icon: 'collection' },
   { to: '/labels', labelKey: 'nav.labels', titleKey: 'nav.titles.labels', icon: 'tags' },
 ]
@@ -124,15 +125,17 @@ function pathMatches(pathname: string, route: string): boolean {
 }
 
 /**
- * Application shell: a responsive top navbar (brand, navigation, language
- * switcher, and the signed-in user menu) above the routed page content.
+ * Application shell: a responsive top navbar (brand, navigation, and the
+ * signed-in user menu) above the routed page content.
  *
  * The bar is ordered around how the library is browsed: **Knihovna**, **Alba**
  * and **Štítky** are always visible, the remaining browse destinations collapse
  * into "Procházet", and the role-gated "Nástroje"/"Správa" groups are hidden
  * entirely from roles that cannot use any of their children. Searching is not in
- * the bar — it lives on the library page and on `/search`. Every entry pairs an
- * icon (for daily recognition) with a `title` describing the action it performs.
+ * the bar — it lives on the library page and on `/search`. Neither is the
+ * language switcher: this instance is Czech, so the setting sits on the account
+ * page rather than spending prime bar space. Every entry pairs an icon (for
+ * daily recognition) with a `title` describing the action it performs.
  */
 export function Layout() {
   const { t } = useTranslation()
@@ -150,13 +153,18 @@ export function Layout() {
     return items.some((item) => pathMatches(pathname, item.to))
   }
 
-  /** Renders a top-level nav link: icon, visible label, action tooltip. */
+  /**
+   * Renders a top-level nav link: icon, visible label, action tooltip. The root
+   * entry (the library) is matched exactly — without `end` its highlight would
+   * be a prefix match and light up on every route.
+   */
   function renderLink(entry: NavEntry) {
     return (
       <Nav.Link
         key={entry.to}
         as={NavLink}
         to={entry.to}
+        end={entry.to === LIBRARY_PATH}
         title={t(entry.titleKey)}
         className="kukatko-tap-target d-flex align-items-center gap-2"
       >
@@ -219,8 +227,8 @@ export function Layout() {
           <Navbar.Toggle aria-controls="main-navbar" />
           <Navbar.Collapse id="main-navbar">
             <Nav className="me-auto">
-              {/* Home stays reachable via the brand link. Library, Albums and
-                  Labels are the everyday entry points, so they never hide. */}
+              {/* Library (the homepage, also reachable via the brand link),
+                  Albums and Labels are the everyday entry points: never hidden. */}
               {PRIMARY_ITEMS.map(renderLink)}
               {/* The remaining browse destinations, one level down. */}
               {renderGroup(BROWSE_GROUP)}
@@ -234,7 +242,6 @@ export function Layout() {
             <Nav className="align-items-center">
               <KeyboardShortcutsHelp />
             </Nav>
-            <LanguageSwitcher />
             {user && (
               <Nav className="ms-md-3">
                 <NavDropdown align="end" title={user.display_name || user.username} id="user-menu">

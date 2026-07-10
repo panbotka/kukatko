@@ -70,9 +70,9 @@ describe('SavedSearchesPage', () => {
     ])
     renderPage()
 
-    // A library saved search restores to /library with its filters/sort.
+    // A library saved search restores to the homepage with its filters/sort.
     const libraryLink = await screen.findByRole('link', { name: 'Old Canon shots' })
-    expect(libraryLink).toHaveAttribute('href', '/library?sort=oldest&camera=Canon')
+    expect(libraryLink).toHaveAttribute('href', '/?sort=oldest&camera=Canon')
 
     // A search saved search (mode present) restores to /search with query + mode.
     const searchLink = screen.getByRole('link', { name: 'Sunset search' })

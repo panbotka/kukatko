@@ -10,7 +10,7 @@ import { Slideshow } from '../components/slideshow/Slideshow'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
 import { useSlideshow } from '../hooks/useSlideshow'
 import { useSlideshowSettings } from '../hooks/useSlideshowSettings'
-import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
+import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from '../lib/libraryView'
 import { readUrlState } from '../lib/urlState'
 import { fetchPhotos, type PhotoListParams } from '../services/photos'
 
@@ -75,7 +75,7 @@ export function SlideshowPage() {
     } else if (label !== '') {
       void navigate(`/labels/${label}`)
     } else {
-      void navigate('/library')
+      void navigate(LIBRARY_PATH)
     }
   }, [navigate, album, label])
 

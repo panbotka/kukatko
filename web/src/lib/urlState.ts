@@ -26,8 +26,8 @@ export function readUrlState<T extends UrlState>(params: URLSearchParams, defaul
 
 /**
  * Encodes view state into query params, omitting any value equal to its
- * default (or empty) so the URL stays minimal — `/library` rather than
- * `/library?sort=newest&page=1&q=`.
+ * default (or empty) so the URL stays minimal — `/` rather than
+ * `/?sort=newest&page=1&q=`.
  */
 export function writeUrlState<T extends UrlState>(state: T, defaults: T): URLSearchParams {
   const params = new URLSearchParams()
