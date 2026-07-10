@@ -382,10 +382,14 @@ zapiš sem.
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
   velikosti `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exportováno** — stránka musí přednačítat přesně
   tuhle URL), ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
-  **postup a zbývající čas** (`slideshow.progress` → „snímek 7 ze 40, zbývá 2 min 45 s"; počítá se
-  proti `total` ze serveru, ne proti načteným stránkám); klávesy ←/→ / mezerník / Esc / F
+  **postup** (`slideshow.progress` → „snímek 7 ze 40"; počítá se proti `total` ze serveru, ne proti
+  načteným stránkám — zbývající čas už tady není); klávesy ←/→ / mezerník / Esc / F
   a dotykový swipe; Fullscreen API feature-detected;
-  panel nastavení = výběr efektu + rychlosti; efekt **`kenburns`** navíc zapisuje na `<img>` inline
+  panel nastavení = výběr efektu + rychlosti a **vedle rychlosti odhad zbývajícího času**
+  (`slideshow.remaining` → „zbývá 2 min 45 s"; `slideshowRemainingMs(index, total, intervalMs)` — sleduje
+  index i zvolenou rychlost, takže odpočítává a hned reaguje na změnu rychlosti, drží se `total` ze
+  serveru (bez blikání při stránkování) a při pauze zamrzne; mizí s koncem promítání);
+  efekt **`kenburns`** navíc zapisuje na `<img>` inline
   `--kb-*` custom properties z `lib/kenBurns` (endpointy transformu + `--kb-duration` = interval) —
   aktivuje se **jen pro obrázky**, video snímek a uživatel s `prefers-reduced-motion`
   (`usePrefersReducedMotion`) dostanou statický snímek bez animace) + `slideshow.css` (keyframes
@@ -393,11 +397,9 @@ zapiš sem.
   před interpolací, takže se oba transformy interpolují jako shodný `translate() scale()` seznam),
   `@media (prefers-reduced-motion: reduce)` jako druhá pojistka, fullscreen layout)
   + `SlideshowStart` (**sdílené** tlačítko Promítání pro knihovnu / album / štítek / hledání:
-  `slideshowHref(scope,view)` + vedle něj na jeden řádek počet fotek a **odhad délky**
-  (`slideshow.estimate` → „40 fotek, asi 3 min 20 s") = `count × intervalMs` z
-  `useSlideshowSettings`, takže odhad sleduje naposledy zvolenou rychlost. `count` je `total`,
-  které stránka už má — **žádný extra count dotaz**; dokud není znám (nebo je 0), odhad se
-  **vynechá**, nerenderuje se zástupné číslo);
+  jen `slideshowHref(scope,view)`. **Žádný odhad délky před spuštěním** — přesunul se do přehrávače
+  vedle rychlosti, kde sleduje průběh; `count` prop grid pořád posílá (má ho z `total`), ale
+  komponenta ho nerenderuje);
   `components/map/` = `LeafletMap` (imperativní Leaflet most: dlaždicová vrstva na **backend
   proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (klíč server-side, `{r}`→`@2x` na retině),
   **povinné mapy.com prvky** — attribution „© Seznam.cz a.s. a další" → `/copyright` a klikatelné

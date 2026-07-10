@@ -84,16 +84,19 @@ describe('SlideshowPage', () => {
     renderPage('/slideshow?label=lb1')
 
     await screen.findByRole('img')
-    expect(screen.getByText('slide 1 of 2, 5 s left')).toBeInTheDocument()
+    expect(screen.getByText('slide 1 of 2')).toBeInTheDocument()
   })
 
   it('counts the remaining time against the server total, not the loaded page', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], { total: 40 }))
+    const user = userEvent.setup()
     renderPage('/slideshow')
 
     await screen.findByRole('img')
-    // 40 photos at the default 5 s: 39 still to come → 3 min 15 s.
-    expect(screen.getByText('slide 1 of 40, 3 min 15 s left')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    // 40 photos at the default 5 s: 39 still to come → 3 min 15 s, shown beside
+    // the speed control rather than in the caption.
+    expect(screen.getByText('3 min 15 s left')).toBeInTheDocument()
   })
 
   it('replays the search — not a library listing — when the URL carries a mode', async () => {

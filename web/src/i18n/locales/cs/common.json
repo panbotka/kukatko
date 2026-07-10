@@ -797,11 +797,8 @@
     "settings": "Nastavení",
     "close": "Zavřít",
     "back": "Zpět",
-    "estimate_one": "{{count}} fotka, asi {{duration}}",
-    "estimate_few": "{{count}} fotky, asi {{duration}}",
-    "estimate_many": "{{count}} fotky, asi {{duration}}",
-    "estimate_other": "{{count}} fotek, asi {{duration}}",
-    "progress": "snímek {{current}} ze {{total}}, zbývá {{remaining}}",
+    "progress": "snímek {{current}} ze {{total}}",
+    "remaining": "zbývá {{remaining}}",
     "loading": "Načítání fotek…",
     "empty": {
       "title": "Žádné fotky k promítání",

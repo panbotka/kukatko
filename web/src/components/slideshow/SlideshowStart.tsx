@@ -1,8 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
-import { useSlideshowSettings } from '../../hooks/useSlideshowSettings'
-import { formatDuration, slideshowDurationMs } from '../../lib/duration'
 import { type LibraryView } from '../../lib/libraryView'
 import { slideshowHref, type SlideshowScope } from '../../lib/slideshowView'
 
@@ -13,41 +11,29 @@ export interface SlideshowStartProps {
   /** The current filters/sort, carried into the slideshow so it plays this view. */
   view: LibraryView
   /**
-   * How many photos the slideshow will play — the total the page's list already
-   * reports, not a fresh count query. Omit it while the total is still unknown:
-   * the estimate is then left out rather than shown as a placeholder.
+   * How many photos the slideshow will play. Still accepted so the grids can pass
+   * the total they already know, but no longer shown here: the running-time
+   * estimate moved into the player, beside the speed control, where it tracks the
+   * show as it advances instead of sitting frozen on the start screen.
    */
   count?: number
 }
 
 /**
- * The "start slideshow" button plus, beside it, how much the reader is signing
- * up for: the photo count and the estimated running time ("40 fotek, asi 3 min
- * 20 s"). A 400-photo album at five seconds a slide is over half an hour, and
- * nothing else on the page says so.
+ * The "start slideshow" button. It carries the current scope and the view's
+ * filters/sort into the player so the show plays exactly the photos on screen,
+ * in the same order, and Back returns here.
  *
- * The estimate is the count times the persisted auto-advance interval, so it
- * follows the speed the reader last chose in the player. It renders on one line
- * next to the button and is omitted entirely when the count is not (yet) known.
+ * It shows no running-time estimate: that readout belongs to the player, next to
+ * the speed control, so it reflects the chosen speed and counts down as the show
+ * runs rather than previewing a single frozen number before it begins.
  */
-export function SlideshowStart({ scope, view, count }: SlideshowStartProps) {
+export function SlideshowStart({ scope, view }: SlideshowStartProps) {
   const { t } = useTranslation()
-  const { settings } = useSlideshowSettings()
-
-  const estimate =
-    count !== undefined && count > 0
-      ? t('slideshow.estimate', {
-          count,
-          duration: formatDuration(slideshowDurationMs(count, settings.intervalMs), t),
-        })
-      : null
 
   return (
-    <span className="d-inline-flex align-items-center gap-2">
-      <Link to={slideshowHref(scope, view)} className="btn btn-outline-secondary btn-sm">
-        {t('slideshow.start')}
-      </Link>
-      {estimate !== null && <small className="text-secondary text-nowrap">{estimate}</small>}
-    </span>
+    <Link to={slideshowHref(scope, view)} className="btn btn-outline-secondary btn-sm">
+      {t('slideshow.start')}
+    </Link>
   )
 }

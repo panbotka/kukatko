@@ -119,6 +119,14 @@ export function Slideshow({
   // loaded set (never expected) would do the same, so take the larger.
   const playCount = Math.max(total ?? 0, photos.length)
 
+  // The running-time readout shown beside the speed control: how much of the show
+  // is still to come at the current speed. It follows `index` (so it counts down
+  // as the show advances and freezes at its value while paused) and
+  // `settings.intervalMs` (so changing the speed updates it at once), and is
+  // measured against `playCount` — the stable server total — so it does not
+  // flicker between values as further pages page in.
+  const remaining = formatDuration(slideshowRemainingMs(index, playCount, settings.intervalMs), t)
+
   const toggleFullscreen = useCallback(() => {
     const el = containerRef.current
     if (el === null) {
@@ -248,14 +256,7 @@ export function Slideshow({
       <div className="slideshow__caption">
         <span className="text-truncate">{current.title || current.file_name}</span>
         <span className="flex-shrink-0 text-nowrap">
-          {t('slideshow.progress', {
-            current: index + 1,
-            total: playCount,
-            remaining: formatDuration(
-              slideshowRemainingMs(index, playCount, settings.intervalMs),
-              t,
-            ),
-          })}
+          {t('slideshow.progress', { current: index + 1, total: playCount })}
         </span>
       </div>
 
@@ -299,7 +300,12 @@ export function Slideshow({
               </Form.Select>
             </Form.Group>
             <Form.Group controlId="slideshow-speed">
-              <Form.Label className="small mb-1">{t('slideshow.speed.label')}</Form.Label>
+              <div className="d-flex justify-content-between align-items-baseline gap-2 mb-1">
+                <Form.Label className="small mb-0">{t('slideshow.speed.label')}</Form.Label>
+                <span className="small text-secondary text-nowrap">
+                  {t('slideshow.remaining', { remaining })}
+                </span>
+              </div>
               <Form.Select
                 size="sm"
                 value={String(settings.intervalMs)}

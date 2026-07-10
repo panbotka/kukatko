@@ -53,8 +53,8 @@ function photo(uid: string, name: string, title = '', mime = 'image/jpeg'): Phot
 const PHOTOS = [photo('a', 'a.jpg', 'Beach'), photo('b', 'b.jpg'), photo('c', 'c.jpg')]
 const SETTINGS: SlideshowSettings = { effect: 'fade', intervalMs: 5000 }
 
-function setup(overrides: Partial<SlideshowProps> = {}) {
-  const props: SlideshowProps = {
+function makeProps(overrides: Partial<SlideshowProps> = {}): SlideshowProps {
+  return {
     photos: PHOTOS,
     index: 0,
     playing: true,
@@ -67,12 +67,21 @@ function setup(overrides: Partial<SlideshowProps> = {}) {
     onIntervalChange: vi.fn(),
     ...overrides,
   }
+}
+
+function setup(overrides: Partial<SlideshowProps> = {}) {
+  const props = makeProps(overrides)
   render(
     <I18nextProvider i18n={i18n}>
       <Slideshow {...props} />
     </I18nextProvider>,
   )
   return props
+}
+
+/** Opens the settings panel (where the speed control and estimate live). */
+async function openSettings(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(screen.getByRole('button', { name: 'Settings' }))
 }
 
 beforeEach(async () => {
@@ -84,24 +93,68 @@ afterEach(() => {
 })
 
 describe('Slideshow', () => {
-  it('shows the current photo, its caption and its progress', () => {
+  it('shows the current photo and its position, with no time in the caption', () => {
     setup({ index: 0 })
     const img = screen.getByRole('img')
     expect(img).toHaveAttribute('alt', 'Beach')
     expect(img).toHaveAttribute('src', expect.stringContaining('/photos/a/thumb/'))
-    // Two photos still to come, 5 s each.
-    expect(screen.getByText('slide 1 of 3, 10 s left')).toBeInTheDocument()
+    // The caption carries only the position now; the remaining time moved to the
+    // settings panel, so nothing reads "… left" until that panel is open.
+    expect(screen.getByText('slide 1 of 3')).toBeInTheDocument()
+    expect(screen.queryByText(/left/)).not.toBeInTheDocument()
   })
 
-  it('counts down the remaining time as the show advances', () => {
-    setup({ index: 2 })
-    expect(screen.getByText('slide 3 of 3, 0 s left')).toBeInTheDocument()
+  it('shows the estimated remaining time beside the speed control during the show', async () => {
+    const user = userEvent.setup()
+    setup({ index: 0 }) // three photos at 5 s → two still to come → 10 s
+
+    // Hidden until the settings panel (with the speed control) is open.
+    expect(screen.queryByText('10 s left')).not.toBeInTheDocument()
+
+    await openSettings(user)
+
+    const remaining = screen.getByText('10 s left')
+    // It sits on the speed control's own row, right next to the "Speed" label.
+    expect(remaining.parentElement).toBe(screen.getByText('Speed').parentElement)
   })
 
-  it('measures progress against the whole show, not just the loaded pages', () => {
+  it('recomputes the remaining time at once when the interval changes', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <I18nextProvider i18n={i18n}>
+        <Slideshow {...makeProps({ index: 0, settings: { effect: 'fade', intervalMs: 5000 } })} />
+      </I18nextProvider>,
+    )
+    await openSettings(user)
+    expect(screen.getByText('10 s left')).toBeInTheDocument() // two to come × 5 s
+
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <Slideshow {...makeProps({ index: 0, settings: { effect: 'fade', intervalMs: 10000 } })} />
+      </I18nextProvider>,
+    )
+    // The panel stays open and the estimate follows the new speed immediately.
+    expect(screen.getByText('20 s left')).toBeInTheDocument() // two to come × 10 s
+    expect(screen.queryByText('10 s left')).not.toBeInTheDocument()
+  })
+
+  it('measures the estimate against the whole show, not just the loaded pages', async () => {
+    const user = userEvent.setup()
     // Three photos loaded of forty; slide 7 of 40 leaves 33 × 5 s = 2 min 45 s.
     setup({ index: 6, total: 40 })
-    expect(screen.getByText('slide 7 of 40, 2 min 45 s left')).toBeInTheDocument()
+    expect(screen.getByText('slide 7 of 40')).toBeInTheDocument()
+
+    await openSettings(user)
+    expect(screen.getByText('2 min 45 s left')).toBeInTheDocument()
+  })
+
+  it('keeps the estimate visible, frozen at its value, while paused', async () => {
+    const user = userEvent.setup()
+    setup({ index: 0, playing: false })
+
+    await openSettings(user)
+    // A paused show still shows the estimate; with the cursor held it stays at 10 s.
+    expect(screen.getByText('10 s left')).toBeInTheDocument()
   })
 
   it('applies the active transition effect to the image', () => {

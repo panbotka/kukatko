@@ -12,14 +12,6 @@ import { SlideshowStart, type SlideshowStartProps } from './SlideshowStart'
 const VIEW: LibraryView = { ...LIBRARY_DEFAULTS }
 const NO_SCOPE: SlideshowScope = {}
 
-/** Persists a slideshow interval, as the player's speed picker would. */
-function persistInterval(intervalMs: number): void {
-  window.localStorage.setItem(
-    'kukatko.slideshow.settings',
-    JSON.stringify({ effect: 'fade', intervalMs }),
-  )
-}
-
 function setup(overrides: Partial<SlideshowStartProps> = {}) {
   const props: SlideshowStartProps = { scope: NO_SCOPE, view: VIEW, ...overrides }
   return render(
@@ -44,56 +36,20 @@ describe('SlideshowStart', () => {
     window.localStorage.clear()
   })
 
-  it('estimates the running time from the count and the persisted interval', () => {
-    persistInterval(5000)
-
+  it('renders only the start link, with no running-time estimate', () => {
     setup({ count: 40 })
-
-    expect(screen.getByText('40 fotek, asi 3 min 20 s')).toBeInTheDocument()
-  })
-
-  it('recomputes the estimate when the persisted interval changes', () => {
-    persistInterval(10000)
-
-    setup({ count: 40 })
-
-    expect(screen.getByText('40 fotek, asi 6 min 40 s')).toBeInTheDocument()
-  })
-
-  it('warns that a 400-photo album is over half an hour', () => {
-    persistInterval(5000)
-
-    setup({ count: 400 })
-
-    expect(screen.getByText('400 fotek, asi 33 min 20 s')).toBeInTheDocument()
-  })
-
-  it('reaches into hours for a long show', () => {
-    persistInterval(15000)
-
-    setup({ count: 400 })
-
-    expect(screen.getByText('400 fotek, asi 1 h 40 min')).toBeInTheDocument()
-  })
-
-  it('pluralizes the photo count in Czech', () => {
-    persistInterval(5000)
-
-    setup({ count: 1 })
-
-    expect(screen.getByText('1 fotka, asi 5 s')).toBeInTheDocument()
-  })
-
-  it('omits the estimate when the count is not known yet', () => {
-    setup()
 
     expect(startLink()).toBeInTheDocument()
+    // The estimate now lives in the player, beside the speed control, so the
+    // start screen shows nothing about duration — even when a count is known.
     expect(screen.queryByText(/asi/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/fotek|fotka|fotky/)).not.toBeInTheDocument()
   })
 
-  it('omits the estimate for an empty set', () => {
-    setup({ count: 0 })
+  it('shows no estimate even for a large set', () => {
+    setup({ count: 400 })
 
+    expect(startLink()).toBeInTheDocument()
     expect(screen.queryByText(/asi/)).not.toBeInTheDocument()
   })
 

@@ -781,9 +781,8 @@
     "settings": "Settings",
     "close": "Close",
     "back": "Back",
-    "estimate_one": "{{count}} photo, about {{duration}}",
-    "estimate_other": "{{count}} photos, about {{duration}}",
-    "progress": "slide {{current}} of {{total}}, {{remaining}} left",
+    "progress": "slide {{current}} of {{total}}",
+    "remaining": "{{remaining}} left",
     "loading": "Loading photos…",
     "empty": {
       "title": "No photos to play",
