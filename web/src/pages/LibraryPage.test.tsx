@@ -83,7 +83,6 @@ function album(uid: string, title: string, photoCount: number): AlbumCount {
     description: '',
     type: 'album',
     private: false,
-    order_by: 'taken_at',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     photo_count: photoCount,

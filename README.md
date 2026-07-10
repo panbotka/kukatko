@@ -579,10 +579,12 @@ nahrazují globální `photos.favorite` z photo-sorteru).
 
 - **`albums`** — PK `uid` (prefix `al`), `slug` UNIQUE (z `title`, Slugify + číselný sufix),
   `title`/`description`, `type` CHECK (`album`/`folder`/`moment`/`state`/`month`),
-  `cover_photo_uid` (FK `photos` `ON DELETE SET NULL`), `private`, `order_by` (free-text řazení
-  galerie, default `added`), `created_by` (FK `users` `ON DELETE SET NULL`), časy.
+  `cover_photo_uid` (FK `photos` `ON DELETE SET NULL`), `private`, `created_by` (FK `users`
+  `ON DELETE SET NULL`), časy — album se **vždy zobrazuje chronologicky** (nejstarší první,
+  nedatovaná fotka padá na svůj upload čas), takže volba řazení ani ruční pořadí neexistují
+  (sloupce `order_by` a `sort_order` odstranila migrace `0022_chronological_albums.sql`).
   **`album_photos`** — členství: PK `(album_uid, photo_uid)`, oba FK `ON DELETE CASCADE`,
-  `sort_order` (manuální pořadí), `added_at`.
+  `added_at`.
 - **`labels`** — PK `uid` (prefix `lb`), `slug` UNIQUE (z `name`), `name`, `priority` (řazení
   v UI), časy. **`photo_labels`** — připojení: PK `(photo_uid, label_uid)`, oba FK
   `ON DELETE CASCADE`, `source` CHECK (`manual`/`ai`/`import`), `uncertainty` (int %), `created_at`.
@@ -629,19 +631,21 @@ jede přes sdílené `GET /photos` scopnuté `?album={uid}` / `?label={uid}` (vi
 frontend znovupoužije stejnou virtualizovanou mřížku.
 
 - **Alba** — `GET /albums` (list s počty + cover), `POST /albums` (201, `title` povinný, validace
-  typu), `GET /albums/{uid}`, `PATCH /albums/{uid}` (title/description/cover/order_by/private;
+  typu), `GET /albums/{uid}`, `PATCH /albums/{uid}` (title/description/cover/private;
   **strukturální `type` se zachová**, není editovatelný), `DELETE /albums/{uid}` (204);
-  členství `POST /albums/{uid}/photos` `{photo_uids:[…]}` (přidá za stávající fotky),
-  `DELETE /albums/{uid}/photos` `{photo_uids:[…]}` (odebere), `PATCH /albums/{uid}/order`
-  `{photo_uids:[…]}` (přeřadí) — všechny tři vrací aktuální pořadí `{photo_uids:[…]}`.
+  členství `POST /albums/{uid}/photos` `{photo_uids:[…]}` (přidá),
+  `DELETE /albums/{uid}/photos` `{photo_uids:[…]}` (odebere) — obě vrací aktuální
+  **chronologické** pořadí `{photo_uids:[…]}`; ruční přeřazení (`PATCH /albums/{uid}/order`)
+  neexistuje, album je vždy od nejstarší fotky.
 - **Štítky** — `GET /labels` (list s počty), `POST /labels` (201, `name` povinný),
   `GET /labels/{uid}`, `PATCH /labels/{uid}` (name/priority), `DELETE /labels/{uid}` (204);
   připojení `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}` (204),
   `DELETE /labels/{uid}/photos` `{photo_uid}` (204).
 - **Scoped listing** — `GET /photos?album={uid}` a `GET /photos?label={uid}` (a stejně tak
   `GET /search`) přidávají do `photos.ListParams` korelované `EXISTS` filtry (`AlbumUID`/`LabelUID`),
-  takže scope ctí všechny ostatní list filtry, řazení i stránkování a odpověď má identický tvar
-  jako běžný výpis knihovny.
+  takže scope ctí všechny ostatní list filtry i stránkování a odpověď má identický tvar
+  jako běžný výpis knihovny; album scope navíc **vynucuje chronologické řazení** (nejstarší
+  první, `sort`/`order` z query se ignorují), štítek ctí zvolené řazení.
 - **Stavové kódy** — 400 (validace/neznámé pole/neplatný typ/source), 404 (chybějící album/štítek/
   fotka), 403 (viewer na mutaci), 401 (nepřihlášený). Mountuje se devátým `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).

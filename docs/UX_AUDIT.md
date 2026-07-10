@@ -167,8 +167,9 @@ implemented**, per the task's conservative-changes rule.
 - States/copy: friendly and complete.
 
 ### Album detail (`/albums/:uid`)
-- **Touch (worst offender):** Up to **5 controls** (Slideshow, Edit, Select, Reorder, Delete) in
-  one `d-flex gap-1 flex-wrap`, all `size="sm"`. The coarse-pointer floor enlarges them ✅, but
+- **Touch (worst offender):** Up to **4 controls** (Slideshow, Edit, Select, Delete) in
+  one `d-flex gap-1 flex-wrap`, all `size="sm"` (was 5 — the Reorder button left with manual
+  album ordering; albums are now always chronological). The coarse-pointer floor enlarges them ✅, but
   📋 consider collapsing the editor actions into an **overflow "⋯" menu** on small screens to cut
   clutter. 🟡🟡
 - **Intimidation:** Delete uses native `window.confirm` (reassuring copy, but unstyled). 📋 See

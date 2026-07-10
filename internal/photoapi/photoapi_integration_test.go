@@ -46,6 +46,7 @@ type env struct {
 	fs       *storage.FS
 	vectors  *vectors.Store
 	embedder *fakeEmbedder
+	organize *organize.Store
 }
 
 // fakeEmbedder is a controllable photoapi.TextEmbedder for the search tests: it
@@ -130,7 +131,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	t.Cleanup(server.Close)
 	return &env{
 		server: server, authSvc: authSvc, store: store,
-		fs: fs, vectors: vectorStore, embedder: embedder,
+		fs: fs, vectors: vectorStore, embedder: embedder, organize: organizeStore,
 	}
 }
 
@@ -421,6 +422,54 @@ func TestList_sortAndPagination(t *testing.T) {
 			t.Errorf("paged order = %v, want %v", all, want)
 		}
 	})
+}
+
+// TestList_albumScopeChronological verifies that an album-scoped listing is
+// always chronological — oldest capture time first, a photo with no capture
+// time falling back to its upload time (sorting last here, as it was uploaded
+// just now) — no matter what sort or order parameters the query carries.
+func TestList_albumScopeChronological(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "editor", auth.RoleEditor)
+	base := env.server.URL
+
+	tOld := time.Date(2019, 5, 1, 9, 0, 0, 0, time.UTC)
+	tNew := time.Date(2023, 5, 1, 9, 0, 0, 0, time.UTC)
+	newest := env.seedPhoto(t, photos.Photo{Title: "Newest", TakenAt: ptrTime(tNew), TakenAtSource: "exif"}, "n.jpg", 210, 5, 5)
+	oldest := env.seedPhoto(t, photos.Photo{Title: "Oldest", TakenAt: ptrTime(tOld), TakenAtSource: "exif"}, "o.jpg", 5, 210, 5)
+	undated := env.seedPhoto(t, photos.Photo{Title: "Undated"}, "u.jpg", 5, 5, 210)
+	outside := env.seedPhoto(t, photos.Photo{Title: "Outside", TakenAt: ptrTime(tOld), TakenAtSource: "exif"}, "x.jpg", 120, 120, 5)
+
+	album, err := env.organize.CreateAlbum(t.Context(), organize.Album{Title: "Trip"})
+	if err != nil {
+		t.Fatalf("CreateAlbum: %v", err)
+	}
+	// Add newest-first so the chronological result cannot be insertion order.
+	for _, uid := range []string{newest.UID, undated.UID, oldest.UID} {
+		if err := env.organize.AddPhoto(t.Context(), album.UID, uid); err != nil {
+			t.Fatalf("AddPhoto(%s): %v", uid, err)
+		}
+	}
+
+	want := []string{oldest.UID, newest.UID, undated.UID}
+	queries := []string{
+		"album=" + album.UID,
+		"album=" + album.UID + "&sort=newest",
+		"album=" + album.UID + "&sort=newest&order=desc",
+		"album=" + album.UID + "&sort=title&order=desc",
+		"album=" + album.UID + "&sort=added",
+	}
+	for _, query := range queries {
+		got := getList(t, client, base, query)
+		if g := uids(got.Photos); !equalStrings(g, want) {
+			t.Errorf("order for %q = %v, want chronological %v", query, g, want)
+		}
+		for _, p := range got.Photos {
+			if p.UID == outside.UID {
+				t.Errorf("query %q leaked photo outside the album", query)
+			}
+		}
+	}
 }
 
 // equalStrings reports whether two string slices are equal element-wise.

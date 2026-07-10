@@ -14,8 +14,8 @@ type albumsResponse struct {
 }
 
 // photoUIDsResponse is the JSON body returned by the album membership endpoints,
-// echoing the album's photos in display order after the mutation so the client
-// can refresh without a second request.
+// echoing the album's photos in display (chronological) order after the mutation
+// so the client can refresh without a second request.
 type photoUIDsResponse struct {
 	PhotoUIDs []string `json:"photo_uids"`
 }
@@ -62,7 +62,7 @@ func (a *API) handleAlbumGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAlbumUpdate rewrites an album's editable fields (title, description,
-// cover, order_by, private) and returns the refreshed album. The album's
+// cover, private) and returns the refreshed album. The album's
 // structural type is preserved because it is not user-editable. A malformed body
 // or empty title answers 400; a missing album answers 404.
 func (a *API) handleAlbumUpdate(w http.ResponseWriter, r *http.Request) {
@@ -98,9 +98,10 @@ func (a *API) handleAlbumDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleAlbumAddPhotos appends the requested photos to the album, after the
-// photos already in it, and returns the refreshed membership order. A malformed
-// or empty body answers 400; a missing album or photo answers 404.
+// handleAlbumAddPhotos adds the requested photos to the album — which is always
+// presented chronologically, so no position is involved — and returns the
+// refreshed membership order. A malformed or empty body answers 400; a missing
+// album or photo answers 404.
 func (a *API) handleAlbumAddPhotos(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	if !a.requireAlbum(w, r, uid) {
@@ -111,13 +112,8 @@ func (a *API) handleAlbumAddPhotos(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	existing, err := a.albums.ListPhotoUIDs(r.Context(), uid)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "loading album photos failed")
-		return
-	}
-	for i, photoUID := range in.PhotoUIDs {
-		if err := a.albums.AddPhoto(r.Context(), uid, photoUID, len(existing)+i); err != nil {
+	for _, photoUID := range in.PhotoUIDs {
+		if err := a.albums.AddPhoto(r.Context(), uid, photoUID); err != nil {
 			status, msg := albumStatus(err)
 			writeError(w, status, msg)
 			return
@@ -144,24 +140,6 @@ func (a *API) handleAlbumRemovePhotos(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "removing album photo failed")
 			return
 		}
-	}
-	a.writeMembership(w, r, uid)
-}
-
-// handleAlbumReorder sets the album's photo order to the UID sequence in the body
-// and returns the refreshed order. UIDs that are not members are ignored. A
-// malformed or empty body answers 400; a missing album answers 404.
-func (a *API) handleAlbumReorder(w http.ResponseWriter, r *http.Request) {
-	uid := chi.URLParam(r, "uid")
-	in, err := decodePhotoUIDs(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := a.albums.ReorderPhotos(r.Context(), uid, in.PhotoUIDs); err != nil {
-		status, msg := albumStatus(err)
-		writeError(w, status, msg)
-		return
 	}
 	a.writeMembership(w, r, uid)
 }

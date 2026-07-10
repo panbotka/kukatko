@@ -66,11 +66,11 @@ func (s *Service) mapOneAlbum(ctx context.Context, a photoprism.Album, byTitle m
 	}
 }
 
-// attachAlbumMembers pages through a PhotoPrism album's photos and adds every one
-// already imported into Kukátko to the mapped album, preserving the listing order
-// as the sort key. Members not (yet) imported are skipped; AddPhoto is idempotent.
+// attachAlbumMembers pages through a PhotoPrism album's photos and adds every
+// one already imported into Kukátko to the mapped album. Kukátko presents
+// albums chronologically, so PhotoPrism's listing order is not carried over.
+// Members not (yet) imported are skipped; AddPhoto is idempotent.
 func (s *Service) attachAlbumMembers(ctx context.Context, ppAlbumUID, albumUID string) error {
-	sortKey := 0
 	for offset := 0; ; {
 		page, err := s.client.ListPhotos(ctx, photoprism.PhotoListParams{
 			Count:    s.pageSize,
@@ -85,11 +85,9 @@ func (s *Service) attachAlbumMembers(ctx context.Context, ppAlbumUID, albumUID s
 			if !ok {
 				continue
 			}
-			if err := s.albums.AddPhoto(ctx, albumUID, photo.UID, sortKey); err != nil {
+			if err := s.albums.AddPhoto(ctx, albumUID, photo.UID); err != nil {
 				s.log.Warn("ppimport: adding photo to album", "album", albumUID, "photo", photo.UID, "err", err)
-				continue
 			}
-			sortKey++
 		}
 		if len(page) < s.pageSize {
 			return nil

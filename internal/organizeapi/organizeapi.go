@@ -1,6 +1,6 @@
 // Package organizeapi exposes the album and label catalogue over HTTP: listing
 // albums and labels with their photo counts, creating/editing/deleting them,
-// managing an album's photo membership (add, remove, reorder) and attaching or
+// managing an album's photo membership (add, remove) and attaching or
 // detaching labels to photos. Browsing an album's or a label's photos is served
 // by the shared photo-list endpoint scoped with the ?album= / ?label= query
 // parameters, so this package owns only the catalogue and membership surface and
@@ -39,13 +39,11 @@ type AlbumStore interface {
 	UpdateAlbum(ctx context.Context, uid string, upd organize.AlbumUpdate) (organize.Album, error)
 	// DeleteAlbum removes an album, or returns organize.ErrAlbumNotFound.
 	DeleteAlbum(ctx context.Context, uid string) error
-	// AddPhoto adds a photo to an album at the given position (idempotent).
-	AddPhoto(ctx context.Context, albumUID, photoUID string, sortOrder int) error
+	// AddPhoto adds a photo to an album (idempotent).
+	AddPhoto(ctx context.Context, albumUID, photoUID string) error
 	// RemovePhoto removes a photo from an album (idempotent).
 	RemovePhoto(ctx context.Context, albumUID, photoUID string) error
-	// ReorderPhotos sets the album's photo order to the given UID sequence.
-	ReorderPhotos(ctx context.Context, albumUID string, orderedPhotoUIDs []string) error
-	// ListPhotoUIDs returns an album's photo UIDs in display order.
+	// ListPhotoUIDs returns an album's photo UIDs in display (chronological) order.
 	ListPhotoUIDs(ctx context.Context, albumUID string) ([]string, error)
 }
 
@@ -106,11 +104,10 @@ func NewAPI(cfg Config) *API {
 //	GET    /albums                RequireAuth   list albums with counts + cover
 //	POST   /albums                RequireWrite  create an album
 //	GET    /albums/{uid}          RequireAuth   one album
-//	PATCH  /albums/{uid}          RequireWrite  edit title/description/cover/order/private
+//	PATCH  /albums/{uid}          RequireWrite  edit title/description/cover/private
 //	DELETE /albums/{uid}          RequireWrite  delete an album
 //	POST   /albums/{uid}/photos   RequireWrite  add photos to the album
 //	DELETE /albums/{uid}/photos   RequireWrite  remove photos from the album
-//	PATCH  /albums/{uid}/order    RequireWrite  reorder the album's photos
 //
 //	GET    /labels                RequireAuth   list labels with counts
 //	POST   /labels                RequireWrite  create a label
@@ -131,7 +128,6 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Delete("/{uid}", a.handleAlbumDelete)
 		r.With(a.requireWrite).Post("/{uid}/photos", a.handleAlbumAddPhotos)
 		r.With(a.requireWrite).Delete("/{uid}/photos", a.handleAlbumRemovePhotos)
-		r.With(a.requireWrite).Patch("/{uid}/order", a.handleAlbumReorder)
 	})
 	r.Route("/labels", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleLabelList)

@@ -405,7 +405,7 @@ func (s *fakeAlbumStore) CreateAlbum(_ context.Context, a organize.Album) (organ
 }
 
 // AddPhoto records album membership idempotently.
-func (s *fakeAlbumStore) AddPhoto(_ context.Context, albumUID, photoUID string, _ int) error {
+func (s *fakeAlbumStore) AddPhoto(_ context.Context, albumUID, photoUID string) error {
 	if slices.Contains(s.members[albumUID], photoUID) {
 		return nil
 	}

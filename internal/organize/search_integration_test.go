@@ -43,7 +43,7 @@ func TestSearchAlbums(t *testing.T) {
 
 	// The sea album gets one photo so the count travels with the search row.
 	photoUID := makePhoto(t, photoStore, "sea-hash")
-	if err := store.AddPhoto(ctx, sea.UID, photoUID, 0); err != nil {
+	if err := store.AddPhoto(ctx, sea.UID, photoUID); err != nil {
 		t.Fatalf("adding photo to album: %v", err)
 	}
 

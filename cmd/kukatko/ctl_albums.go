@@ -97,7 +97,6 @@ func newCtlAlbumsCreateCmd(opts *ctlOptions) *cobra.Command {
 	flags.StringVar(&in.Description, "description", "", "album description")
 	flags.StringVar(&in.Type, "type", "",
 		"album type: album (default), folder, moment, state or month")
-	flags.StringVar(&in.OrderBy, "order-by", "", "photo order inside the album (default: added)")
 	flags.StringVar(&cover, "cover", "", "uid of the photo to use as the cover")
 	flags.BoolVar(&in.Private, "private", false, "hide the album from non-owners")
 	return cmd

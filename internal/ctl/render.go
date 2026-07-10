@@ -64,7 +64,6 @@ func WriteAlbum(w io.Writer, album Album) error {
 		{"TYPE", dash(album.Type)},
 		{"DESCRIPTION", dash(album.Description)},
 		{"PRIVATE", strconv.FormatBool(album.Private)},
-		{"ORDER BY", dash(album.OrderBy)},
 		{"COVER", dashPtr(album.CoverPhotoUID)},
 		{"CREATED", formatStamp(album.CreatedAt)},
 		{"UPDATED", formatStamp(album.UpdatedAt)},

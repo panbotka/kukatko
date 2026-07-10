@@ -63,6 +63,15 @@ func parseListParams(q url.Values) (photos.ListParams, error) {
 	if err := applyRatingFilters(q, &params); err != nil {
 		return photos.ListParams{}, err
 	}
+	// An album is always presented chronologically, oldest first, whatever sort
+	// or order the query carries. The override lives here — where the album
+	// scope enters the shared list path — so the endpoint's defaults stay
+	// untouched for every other view. Photos with no capture time fall back to
+	// their upload time inside SortByChronology, keeping the order total.
+	if params.AlbumUID != "" {
+		params.Sort = photos.SortByChronology
+		params.Order = photos.OrderAsc
+	}
 	return params, nil
 }
 

@@ -318,10 +318,6 @@
       "private": "Private",
       "cancel": "Cancel",
       "save": "Save"
-    },
-    "reorder": {
-      "moveBack": "Move {{name}} earlier",
-      "moveForward": "Move {{name}} later"
     }
   },
   "albumDetail": {
@@ -331,9 +327,6 @@
     "edit": "Edit",
     "delete": "Delete",
     "select": "Select",
-    "reorder": "Reorder",
-    "reorderHint": "Drag photos or use the arrows to reorder; changes save automatically.",
-    "reorderDone": "Done",
     "setCover": "Set as cover",
     "removeSelected": "Remove from album",
     "confirmDelete": "Delete the album \"{{name}}\"? The photos themselves are kept.",

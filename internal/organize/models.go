@@ -1,6 +1,7 @@
 // Package organize is Kukátko's database access layer for the organisation
-// features built on top of the photo catalogue: albums (ordered, named groupings
-// of photos), labels (tags attached to photos with a provenance and uncertainty)
+// features built on top of the photo catalogue: albums (named groupings of
+// photos, always presented chronologically),
+// labels (tags attached to photos with a provenance and uncertainty)
 // and per-user favorites (replacing photo-sorter's single global favorite flag).
 //
 // Albums and labels carry an application-generated UID and a unique slug derived
@@ -104,7 +105,6 @@ type Album struct {
 	Type          AlbumType `json:"type"`
 	CoverPhotoUID *string   `json:"cover_photo_uid,omitempty"`
 	Private       bool      `json:"private"`
-	OrderBy       string    `json:"order_by"`
 	CreatedBy     *string   `json:"created_by,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -149,7 +149,6 @@ type AlbumUpdate struct {
 	Type          AlbumType `json:"type"`
 	CoverPhotoUID *string   `json:"cover_photo_uid"`
 	Private       bool      `json:"private"`
-	OrderBy       string    `json:"order_by"`
 }
 
 // Label is a tag that can be attached to photos. Slug is generated from Name and

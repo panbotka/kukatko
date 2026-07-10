@@ -44,6 +44,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   řazením/stránkováním (query params, neplatný → 400) → `{photos,total,limit,offset,next_offset}`;
   filtr `?album={uid}`/`?label={uid}` scopne výpis na fotky alba/štítku (sdílený endpoint pro
   galerii alba i štítku, ctí všechny ostatní filtry/řazení/stránkování — viz Albums & Labels API);
+  **album scope si vždy vynutí chronologii**: fotky alba jdou od nejstarší (`taken_at ASC`, fotka
+  bez data pořízení padá na svůj upload čas `created_at`, takže pořadí je úplné a stabilní) a
+  `sort`/`order` z query se pro album ignorují — defaulty endpointu pro ostatní pohledy se nemění;
   `GET /photos/timeline` (přihlášený) — **měsíční date-histogram** knihovny (podklad rok/měsíc
   scrubberu): přijímá **stejné filtry** jako `GET /photos` přes `parseListParams`, odpověď
   `{buckets:[{year,month,count,cumulative}],total}`, buckety řazené nejnovější první (dle `taken_at`,
@@ -170,20 +173,21 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   jediný SQL dotaz (LEFT JOIN + LATERAL, bez migrace) a počítá **jen s živými fotkami** —
   archivovaná fotka se započítá do `photo_count`, ale obálku nedodá ani rozsah neposune. Chybí,
   když album nemá co ukázat / žádná fotka nemá známý `taken_at`. `POST /albums`
-  (RequireWrite) → 201 z `{title,description?,type?,cover_photo_uid?,private?,order_by?}` (prázdný
+  (RequireWrite) → 201 z `{title,description?,type?,cover_photo_uid?,private?}` (prázdný
   title / neplatný typ → 400); `GET /albums/{uid}` (RequireAuth, 404); `PATCH /albums/{uid}`
-  (RequireWrite) edituje title/description/cover_photo_uid/private/order_by (**`type` se zachová**,
+  (RequireWrite) edituje title/description/cover_photo_uid/private (**`type` se zachová**,
   není editovatelný); `DELETE /albums/{uid}` (RequireWrite → 204); členství
-  `POST /albums/{uid}/photos` `{photo_uids:[…]}` (přidá za stávající), `DELETE /albums/{uid}/photos`
-  `{photo_uids:[…]}` (odebere), `PATCH /albums/{uid}/order` `{photo_uids:[…]}` (přeřadí) — všechny
-  vrací aktuální pořadí `{photo_uids:[…]}`, 404 chybějící album/fotka. **Štítky** `GET /labels`
+  `POST /albums/{uid}/photos` `{photo_uids:[…]}` (přidá), `DELETE /albums/{uid}/photos`
+  `{photo_uids:[…]}` (odebere) — obě vrací aktuální **chronologické** pořadí `{photo_uids:[…]}`,
+  404 chybějící album/fotka. Ruční řazení alba neexistuje: `PATCH /albums/{uid}/order` byl
+  odstraněn (→ 404) a album se vždy zobrazuje od nejstarší fotky (viz Photos API). **Štítky** `GET /labels`
   (RequireAuth) → `{labels:[{...label, photo_count}]}` (řazení priority DESC); `POST /labels`
   (RequireWrite) → 201 z `{name,priority?}` (prázdné jméno → 400); `GET /labels/{uid}`
   (RequireAuth, 404); `PATCH /labels/{uid}` (RequireWrite, name/priority); `DELETE /labels/{uid}`
   (RequireWrite → 204); připojení `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}`
   → 204 (neplatný source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204. **Galerie
   fotek alba/štítku** jede přes sdílené `GET /photos?album={uid}`/`?label={uid}` (stejný tvar +
-  filtry/řazení/stránkování). Viewer čte, ale nemutuje (403). Mountuje se dalším `server.WithAPI`
+  filtry/stránkování; album scope má vždy vynucenou chronologii, štítek ctí zvolené řazení). Viewer čte, ale nemutuje (403). Mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
 - **Places API (`/api/v1`, `internal/placesapi`, přihlášený přes `RequireAuth`):** procházení
   reverse-geokódované place hierarchie + scoping výpisu fotek na lokalitu. `GET /places` →

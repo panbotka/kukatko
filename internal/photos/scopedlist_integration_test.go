@@ -55,8 +55,8 @@ func TestList_albumScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	for i, uid := range []string{older.UID, mid.UID, newer.UID} {
-		if err := org.AddPhoto(ctx, album.UID, uid, i); err != nil {
+	for _, uid := range []string{older.UID, mid.UID, newer.UID} {
+		if err := org.AddPhoto(ctx, album.UID, uid); err != nil {
 			t.Fatalf("AddPhoto(%s): %v", uid, err)
 		}
 	}

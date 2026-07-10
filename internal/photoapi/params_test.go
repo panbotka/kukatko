@@ -224,6 +224,46 @@ func TestParseListParams_valid(t *testing.T) {
 	}
 }
 
+// TestParseListParams_albumForcesChronology verifies that an album scope pins
+// the ordering to oldest-first chronology whatever sort and order the query
+// carries, while a query without the scope keeps its requested sort.
+func TestParseListParams_albumForcesChronology(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "bare album scope", query: "album=al1"},
+		{name: "sort ignored", query: "album=al1&sort=newest"},
+		{name: "sort and order ignored", query: "album=al1&sort=title&order=desc"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p, err := parse(t, tt.query)
+			if err != nil {
+				t.Fatalf("parseListParams(%q) error: %v", tt.query, err)
+			}
+			if p.Sort != photos.SortByChronology || p.Order != photos.OrderAsc {
+				t.Errorf("parseListParams(%q) sort = %s/%s, want chronology/asc",
+					tt.query, p.Sort, p.Order)
+			}
+		})
+	}
+
+	t.Run("no album scope keeps the requested sort", func(t *testing.T) {
+		t.Parallel()
+		p, err := parse(t, "sort=newest")
+		if err != nil {
+			t.Fatalf("parseListParams error: %v", err)
+		}
+		if p.Sort != photos.SortByTakenAt || p.Order != photos.OrderDesc {
+			t.Errorf("sort = %s/%s, want taken_at/desc", p.Sort, p.Order)
+		}
+	})
+}
+
 // TestParseListParams_invalid verifies that malformed values are rejected so the
 // handler can answer 400.
 func TestParseListParams_invalid(t *testing.T) {

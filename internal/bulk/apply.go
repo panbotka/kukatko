@@ -10,12 +10,13 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 )
 
-// addAlbumPhotoSQL adds a photo to an album, refreshing its position if already a
-// member so the operation is idempotent.
+// addAlbumPhotoSQL adds a photo to an album, leaving an existing membership
+// untouched so the operation is idempotent. Albums are always presented
+// chronologically, so a membership carries no position.
 const addAlbumPhotoSQL = `
-INSERT INTO album_photos (album_uid, photo_uid, sort_order)
-VALUES ($1, $2, $3)
-ON CONFLICT (album_uid, photo_uid) DO UPDATE SET sort_order = EXCLUDED.sort_order`
+INSERT INTO album_photos (album_uid, photo_uid)
+VALUES ($1, $2)
+ON CONFLICT (album_uid, photo_uid) DO NOTHING`
 
 // removeAlbumPhotoSQL removes a photo from an album (idempotent).
 const removeAlbumPhotoSQL = `DELETE FROM album_photos WHERE album_uid = $1 AND photo_uid = $2`
@@ -146,7 +147,6 @@ func requireAllExist(ctx context.Context, tx pgx.Tx, table string, uids []string
 func applyAll(
 	ctx context.Context, tx pgx.Tx, actorUID string, photoUIDs []string, ops Operations,
 ) (Result, error) {
-	nextPos := make(map[string]int)
 	seen := make(map[string]bool, len(photoUIDs))
 	var result Result
 	for _, uid := range photoUIDs {
@@ -164,7 +164,7 @@ func applyAll(
 			result.add(uid, StatusError, "photo not found")
 			continue
 		}
-		if err := processPhoto(ctx, tx, uid, actorUID, ops, nextPos); err != nil {
+		if err := processPhoto(ctx, tx, uid, actorUID, ops); err != nil {
 			return Result{}, err
 		}
 		result.add(uid, StatusUpdated, "")
@@ -174,15 +174,13 @@ func applyAll(
 }
 
 // processPhoto applies every requested operation to a single existing photo.
-func processPhoto(
-	ctx context.Context, tx pgx.Tx, uid, actorUID string, ops Operations, nextPos map[string]int,
-) error {
+func processPhoto(ctx context.Context, tx pgx.Tx, uid, actorUID string, ops Operations) error {
 	if query, args, ok := ops.photoColumnUpdate(uid); ok {
 		if _, err := tx.Exec(ctx, query, args...); err != nil {
 			return fmt.Errorf("bulk: updating photo %s: %w", uid, err)
 		}
 	}
-	if err := applyAlbums(ctx, tx, uid, ops, nextPos); err != nil {
+	if err := applyAlbums(ctx, tx, uid, ops); err != nil {
 		return err
 	}
 	if err := applyLabels(ctx, tx, uid, ops); err != nil {
@@ -239,22 +237,12 @@ func (o Operations) appendLocationAndArchive(set *[]string) {
 	}
 }
 
-// applyAlbums adds the photo to and removes it from the requested albums,
-// appending new memberships after an album's current last position.
-func applyAlbums(ctx context.Context, tx pgx.Tx, uid string, ops Operations, nextPos map[string]int) error {
+// applyAlbums adds the photo to and removes it from the requested albums.
+func applyAlbums(ctx context.Context, tx pgx.Tx, uid string, ops Operations) error {
 	for _, albumUID := range ops.AddAlbums {
-		pos, ok := nextPos[albumUID]
-		if !ok {
-			start, err := nextAlbumPosition(ctx, tx, albumUID)
-			if err != nil {
-				return err
-			}
-			pos = start
-		}
-		if _, err := tx.Exec(ctx, addAlbumPhotoSQL, albumUID, uid, pos); err != nil {
+		if _, err := tx.Exec(ctx, addAlbumPhotoSQL, albumUID, uid); err != nil {
 			return fmt.Errorf("bulk: adding photo %s to album %s: %w", uid, albumUID, err)
 		}
-		nextPos[albumUID] = pos + 1
 	}
 	for _, albumUID := range ops.RemoveAlbums {
 		if _, err := tx.Exec(ctx, removeAlbumPhotoSQL, albumUID, uid); err != nil {
@@ -329,17 +317,6 @@ func existsRow(ctx context.Context, tx pgx.Tx, query, arg string) (bool, error) 
 // photoExists reports whether a photo with the given UID exists.
 func photoExists(ctx context.Context, tx pgx.Tx, uid string) (bool, error) {
 	return existsRow(ctx, tx, "SELECT EXISTS(SELECT 1 FROM photos WHERE uid = $1)", uid)
-}
-
-// nextAlbumPosition returns the sort_order to use for a photo appended to the
-// album: one past the current maximum, or 0 for an empty album.
-func nextAlbumPosition(ctx context.Context, tx pgx.Tx, albumUID string) (int, error) {
-	var pos int
-	const query = "SELECT COALESCE(MAX(sort_order)+1, 0) FROM album_photos WHERE album_uid = $1"
-	if err := tx.QueryRow(ctx, query, albumUID).Scan(&pos); err != nil {
-		return 0, fmt.Errorf("bulk: next album position for %s: %w", albumUID, err)
-	}
-	return pos, nil
 }
 
 // writeAudit appends the bulk change to the audit log within the open

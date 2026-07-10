@@ -30,6 +30,12 @@ const (
 	// correlated subquery over user_ratings and is honoured only when RatedBy is
 	// set, since a rating is always scoped to the current caller.
 	SortByRating SortField = "rating"
+	// SortByChronology orders by capture time with the upload (catalogue
+	// insertion) time standing in for photos whose capture time is unknown, so
+	// the ordering is total and stable rather than pushing undated photos to an
+	// arbitrary end. It backs the album view, which is always presented oldest
+	// first; it is not offered as a public sort alias.
+	SortByChronology SortField = "chronology"
 )
 
 // sortColumns maps each accepted SortField to its physical column. Lookups
@@ -542,14 +548,21 @@ func buildSearchQuery(params ListParams) (string, []any) {
 // orderClause returns the validated ORDER BY body for params, defaulting to
 // taken_at and descending. NULLS LAST keeps photos with an unknown sort value at
 // the end of an ordering; UID is appended as a tiebreaker for a stable, total
-// order across pages. The rating sort orders by the RatedBy user's star rating
-// via a correlated subquery over user_ratings (unrated photos sort last),
-// binding the user UID through bind; it falls back to the default when RatedBy is
-// nil, since a rating is always scoped to the current caller.
+// order across pages. The chronology sort orders by capture time with the
+// upload time standing in for photos that have none. The rating sort orders by
+// the RatedBy user's star rating via a correlated subquery over user_ratings
+// (unrated photos sort last), binding the user UID through bind; it falls back
+// to the default when RatedBy is nil, since a rating is always scoped to the
+// current caller.
 func orderClause(params ListParams, bind func(any) string) string {
 	direction := "DESC"
 	if params.Order == OrderAsc {
 		direction = "ASC"
+	}
+	if params.Sort == SortByChronology {
+		// COALESCE never yields NULL here (created_at is NOT NULL), so no NULLS
+		// LAST is needed; the uid tiebreaker keeps the order total across pages.
+		return "COALESCE(taken_at, created_at) " + direction + ", uid " + direction
 	}
 	if params.Sort == SortByRating && params.RatedBy != nil {
 		sub := "(SELECT ur.rating FROM user_ratings ur " +

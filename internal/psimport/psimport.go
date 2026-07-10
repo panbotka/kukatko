@@ -116,8 +116,8 @@ type AlbumStore interface {
 	ListAlbums(ctx context.Context) ([]organize.AlbumSummary, error)
 	// CreateAlbum inserts a new album.
 	CreateAlbum(ctx context.Context, a organize.Album) (organize.Album, error)
-	// AddPhoto adds a photo to an album at the given sort key (idempotent).
-	AddPhoto(ctx context.Context, albumUID, photoUID string, sortOrder int) error
+	// AddPhoto adds a photo to an album (idempotent).
+	AddPhoto(ctx context.Context, albumUID, photoUID string) error
 }
 
 // LabelStore is the label subset the migration uses. Labels are find-or-created

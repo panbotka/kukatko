@@ -277,10 +277,6 @@
       "private": "Soukromé",
       "cancel": "Zrušit",
       "save": "Uložit"
-    },
-    "reorder": {
-      "moveBack": "Posunout {{name}} dříve",
-      "moveForward": "Posunout {{name}} později"
     }
   },
   "albumDetail": {
@@ -290,9 +286,6 @@
     "edit": "Upravit",
     "delete": "Smazat",
     "select": "Vybrat",
-    "reorder": "Přeřadit",
-    "reorderHint": "Přetáhni fotky nebo použij šipky pro přeřazení; změny se ukládají automaticky.",
-    "reorderDone": "Hotovo",
     "setCover": "Nastavit jako náhled",
     "removeSelected": "Odebrat z alba",
     "confirmDelete": "Smazat album „{{name}}“? Samotné fotky zůstanou zachovány.",

@@ -98,6 +98,20 @@ func (e *env) seedPhoto(t *testing.T, hash string) string {
 	return p.UID
 }
 
+// seedPhotoAt inserts a minimal photo captured at takenAt and returns its UID,
+// so membership tests can assert the chronological album order deterministically.
+func (e *env) seedPhotoAt(t *testing.T, hash string, takenAt time.Time) string {
+	t.Helper()
+	p, err := e.photos.Create(t.Context(), photos.Photo{
+		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
+		FileMime: "image/jpeg", TakenAt: &takenAt,
+	})
+	if err != nil {
+		t.Fatalf("seed photo %s: %v", hash, err)
+	}
+	return p.UID
+}
+
 // mustDo issues a request with an optional JSON body and returns the response.
 func (e *env) mustDo(t *testing.T, c *http.Client, method, path string, body []byte) *http.Response {
 	t.Helper()
@@ -154,11 +168,11 @@ func TestAlbumLifecycle(t *testing.T) {
 	}
 
 	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/albums/"+created.UID,
-		[]byte(`{"title":"Hory","private":true,"order_by":"oldest"}`))
+		[]byte(`{"title":"Hory","private":true}`))
 	var updated organize.Album
 	decodeBody(t, resp, &updated)
 	if updated.Title != "Hory" || updated.Slug != "hory" || !updated.Private ||
-		updated.OrderBy != "oldest" || updated.Type != organize.AlbumManual {
+		updated.Type != organize.AlbumManual {
 		t.Fatalf("unexpected updated album: %+v", updated)
 	}
 
@@ -174,44 +188,60 @@ func TestAlbumLifecycle(t *testing.T) {
 	_ = resp.Body.Close()
 }
 
-// TestAlbumMembership covers add, reorder and remove of an album's photos.
+// TestAlbumMembership covers add and remove of an album's photos, whose echoed
+// order is always chronological (oldest capture time first) no matter the order
+// they were added in.
 func TestAlbumMembership(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.RoleEditor)
-	p1 := env.seedPhoto(t, "m1")
-	p2 := env.seedPhoto(t, "m2")
-	p3 := env.seedPhoto(t, "m3")
+	oldest := env.seedPhotoAt(t, "m1", time.Date(2019, 3, 1, 8, 0, 0, 0, time.UTC))
+	middle := env.seedPhotoAt(t, "m2", time.Date(2021, 3, 1, 8, 0, 0, 0, time.UTC))
+	newest := env.seedPhotoAt(t, "m3", time.Date(2023, 3, 1, 8, 0, 0, 0, time.UTC))
 
 	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Trip"}`))
 	var album organize.Album
 	decodeBody(t, resp, &album)
 
-	// Add all three; they keep insertion order.
+	// Add all three newest-first; the echo comes back chronological anyway.
 	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/albums/"+album.UID+"/photos",
-		[]byte(`{"photo_uids":["`+p1+`","`+p2+`","`+p3+`"]}`))
+		[]byte(`{"photo_uids":["`+newest+`","`+middle+`","`+oldest+`"]}`))
 	var order struct {
 		PhotoUIDs []string `json:"photo_uids"`
 	}
 	decodeBody(t, resp, &order)
-	if len(order.PhotoUIDs) != 3 || order.PhotoUIDs[0] != p1 || order.PhotoUIDs[2] != p3 {
-		t.Fatalf("after add order = %v, want [%s %s %s]", order.PhotoUIDs, p1, p2, p3)
-	}
-
-	// Reorder.
-	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/albums/"+album.UID+"/order",
-		[]byte(`{"photo_uids":["`+p3+`","`+p1+`","`+p2+`"]}`))
-	decodeBody(t, resp, &order)
-	if order.PhotoUIDs[0] != p3 || order.PhotoUIDs[1] != p1 || order.PhotoUIDs[2] != p2 {
-		t.Fatalf("after reorder order = %v, want [%s %s %s]", order.PhotoUIDs, p3, p1, p2)
+	if len(order.PhotoUIDs) != 3 || order.PhotoUIDs[0] != oldest ||
+		order.PhotoUIDs[1] != middle || order.PhotoUIDs[2] != newest {
+		t.Fatalf("after add order = %v, want chronological [%s %s %s]",
+			order.PhotoUIDs, oldest, middle, newest)
 	}
 
 	// Remove one.
 	resp = env.mustDo(t, editor, http.MethodDelete, "/api/v1/albums/"+album.UID+"/photos",
-		[]byte(`{"photo_uids":["`+p1+`"]}`))
+		[]byte(`{"photo_uids":["`+middle+`"]}`))
 	decodeBody(t, resp, &order)
-	if len(order.PhotoUIDs) != 2 || order.PhotoUIDs[0] != p3 || order.PhotoUIDs[1] != p2 {
-		t.Fatalf("after remove order = %v, want [%s %s]", order.PhotoUIDs, p3, p2)
+	if len(order.PhotoUIDs) != 2 || order.PhotoUIDs[0] != oldest || order.PhotoUIDs[1] != newest {
+		t.Fatalf("after remove order = %v, want [%s %s]", order.PhotoUIDs, oldest, newest)
 	}
+}
+
+// TestAlbumReorderRouteRemoved asserts the manual reorder endpoint is gone from
+// the HTTP surface: albums are always chronological, so PATCH
+// /albums/{uid}/order answers 404 even for an editor and an existing album.
+func TestAlbumReorderRouteRemoved(t *testing.T) {
+	env := newEnv(t)
+	editor := env.login(t, "editor", auth.RoleEditor)
+	p1 := env.seedPhoto(t, "rr1")
+
+	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Trip"}`))
+	var album organize.Album
+	decodeBody(t, resp, &album)
+
+	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/albums/"+album.UID+"/order",
+		[]byte(`{"photo_uids":["`+p1+`"]}`))
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("reorder route status = %d, want 404 (route removed)", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
 }
 
 // TestAlbumMembershipNotFound maps a missing album/photo to 404.

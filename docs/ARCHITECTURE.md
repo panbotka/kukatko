@@ -248,7 +248,8 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
 - **`subjects`** — osoby/zvířata (`type IN (person|pet|other)`), `name`, `slug`, `cover_photo_uid`.
 - **`markers`** — `type IN (face|label)`, normalizovaný bbox (x,y,w,h 0..1), `subject_uid`,
   `score`, `invalid`, `reviewed`.
-- **`albums`** + **`album_photos`** — `type IN (album|folder|moment|state|month)`, `sort_order`.
+- **`albums`** + **`album_photos`** — `type IN (album|folder|moment|state|month)`; album je vždy
+  chronologické (ruční `sort_order` i volbu řazení `order_by` odstranila migrace 0022).
 - **`labels`** + **`photo_labels`** — `source IN (manual|ai|import)`, `uncertainty`.
 - **`users`** — `role IN (admin|editor|viewer)`, `password_hash` (bcrypt cost 12), `disabled`.
 - **`sessions`** — viz [§11](#11-auth-a-bezpečnost) (přidáno sliding expiry).

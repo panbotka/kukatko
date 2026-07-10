@@ -164,7 +164,7 @@ func TestGeoJSON_geotaggedAndFilters(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateAlbum: %v", err)
 		}
-		if err := env.organize.AddPhoto(ctx, album.UID, withGPS.UID, 0); err != nil {
+		if err := env.organize.AddPhoto(ctx, album.UID, withGPS.UID); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
 		}
 		fc := env.fetchGeo(t, "?album="+album.UID)

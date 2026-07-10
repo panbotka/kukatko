@@ -268,7 +268,7 @@ func (f *fakeAlbums) CreateAlbum(_ context.Context, a organize.Album) (organize.
 	return a, nil
 }
 
-func (f *fakeAlbums) AddPhoto(_ context.Context, albumUID, photoUID string, _ int) error {
+func (f *fakeAlbums) AddPhoto(_ context.Context, albumUID, photoUID string) error {
 	f.members[albumUID] = append(f.members[albumUID], photoUID)
 	return nil
 }

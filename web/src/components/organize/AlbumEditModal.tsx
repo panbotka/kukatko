@@ -58,7 +58,6 @@ export function AlbumEditModal({ album, show, onHide, onSaved }: AlbumEditModalP
       title: trimmed,
       description,
       private: isPrivate,
-      order_by: album?.order_by ?? '',
       cover_photo_uid: album?.cover_photo_uid ?? null,
     }
     setBusy(true)

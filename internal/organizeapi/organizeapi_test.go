@@ -24,23 +24,20 @@ type fakeAlbums struct {
 	updated   organize.Album
 	photoUIDs []string
 
-	listErr    error
-	getErr     error
-	createErr  error
-	updateErr  error
-	deleteErr  error
-	addErr     error
-	removeErr  error
-	reorderErr error
-	photosErr  error
+	listErr   error
+	getErr    error
+	createErr error
+	updateErr error
+	deleteErr error
+	addErr    error
+	removeErr error
+	photosErr error
 
 	lastCreate   organize.Album
 	lastUpdate   organize.AlbumUpdate
 	deletedUID   string
-	addedOrders  []int
 	addedUIDs    []string
 	removedUIDs  []string
-	reorderedTo  []string
 	getCallCount int
 }
 
@@ -68,20 +65,14 @@ func (f *fakeAlbums) DeleteAlbum(_ context.Context, uid string) error {
 	return f.deleteErr
 }
 
-func (f *fakeAlbums) AddPhoto(_ context.Context, _, photoUID string, sortOrder int) error {
+func (f *fakeAlbums) AddPhoto(_ context.Context, _, photoUID string) error {
 	f.addedUIDs = append(f.addedUIDs, photoUID)
-	f.addedOrders = append(f.addedOrders, sortOrder)
 	return f.addErr
 }
 
 func (f *fakeAlbums) RemovePhoto(_ context.Context, _, photoUID string) error {
 	f.removedUIDs = append(f.removedUIDs, photoUID)
 	return f.removeErr
-}
-
-func (f *fakeAlbums) ReorderPhotos(_ context.Context, _ string, ordered []string) error {
-	f.reorderedTo = ordered
-	return f.reorderErr
 }
 
 func (f *fakeAlbums) ListPhotoUIDs(context.Context, string) ([]string, error) {
@@ -284,11 +275,11 @@ func TestAlbumUpdate_preservesType(t *testing.T) {
 		updated: organize.Album{UID: "al_a", Title: "Trip II"},
 	}
 	rec := do(t, newServer(albums, &fakeLabels{}), http.MethodPatch, "/albums/al_a",
-		`{"title":"Trip II","order_by":"oldest"}`)
+		`{"title":"Trip II"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if albums.lastUpdate.Type != organize.AlbumMoment || albums.lastUpdate.OrderBy != "oldest" {
+	if albums.lastUpdate.Type != organize.AlbumMoment {
 		t.Errorf("update input mismatch: %+v", albums.lastUpdate)
 	}
 }
@@ -316,21 +307,27 @@ func TestAlbumDelete_ok(t *testing.T) {
 	}
 }
 
-// TestAlbumAddPhotos_appendsAfterExisting positions new photos after the ones
-// already in the album and echoes the refreshed order.
-func TestAlbumAddPhotos_appendsAfterExisting(t *testing.T) {
+// TestAlbumAddPhotos_ok adds every requested photo and echoes the album's
+// refreshed (chronological) membership order.
+func TestAlbumAddPhotos_ok(t *testing.T) {
 	t.Parallel()
-	albums := &fakeAlbums{photoUIDs: []string{"p1", "p2"}}
+	albums := &fakeAlbums{photoUIDs: []string{"p1", "p2", "p3", "p4"}}
 	rec := do(t, newServer(albums, &fakeLabels{}), http.MethodPost, "/albums/al_a/photos",
 		`{"photo_uids":["p3","p4"]}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if len(albums.addedOrders) != 2 || albums.addedOrders[0] != 2 || albums.addedOrders[1] != 3 {
-		t.Errorf("sort orders = %v, want [2 3]", albums.addedOrders)
-	}
-	if albums.addedUIDs[0] != "p3" || albums.addedUIDs[1] != "p4" {
+	if len(albums.addedUIDs) != 2 || albums.addedUIDs[0] != "p3" || albums.addedUIDs[1] != "p4" {
 		t.Errorf("added uids = %v, want [p3 p4]", albums.addedUIDs)
+	}
+	var got struct {
+		PhotoUIDs []string `json:"photo_uids"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if strings.Join(got.PhotoUIDs, ",") != "p1,p2,p3,p4" {
+		t.Errorf("response order = %v, want [p1 p2 p3 p4]", got.PhotoUIDs)
 	}
 }
 
@@ -380,37 +377,15 @@ func TestAlbumRemovePhotos_ok(t *testing.T) {
 	}
 }
 
-// TestAlbumReorder_ok forwards the new order and echoes the refreshed order.
-func TestAlbumReorder_ok(t *testing.T) {
+// TestAlbumReorderRoute_gone pins down that the manual reorder endpoint no
+// longer exists: albums are always chronological, so PATCH /albums/{uid}/order
+// must answer 404 rather than reach any handler.
+func TestAlbumReorderRoute_gone(t *testing.T) {
 	t.Parallel()
-	albums := &fakeAlbums{photoUIDs: []string{"p3", "p1", "p2"}}
-	rec := do(t, newServer(albums, &fakeLabels{}), http.MethodPatch, "/albums/al_a/order",
-		`{"photo_uids":["p3","p1","p2"]}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	if strings.Join(albums.reorderedTo, ",") != "p3,p1,p2" {
-		t.Errorf("reordered to %v, want [p3 p1 p2]", albums.reorderedTo)
-	}
-	var got struct {
-		PhotoUIDs []string `json:"photo_uids"`
-	}
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if strings.Join(got.PhotoUIDs, ",") != "p3,p1,p2" {
-		t.Errorf("response order = %v, want [p3 p1 p2]", got.PhotoUIDs)
-	}
-}
-
-// TestAlbumReorder_notFound maps a missing album to 404.
-func TestAlbumReorder_notFound(t *testing.T) {
-	t.Parallel()
-	albums := &fakeAlbums{reorderErr: organize.ErrAlbumNotFound}
-	rec := do(t, newServer(albums, &fakeLabels{}), http.MethodPatch, "/albums/al_x/order",
+	rec := do(t, newServer(&fakeAlbums{}, &fakeLabels{}), http.MethodPatch, "/albums/al_a/order",
 		`{"photo_uids":["p1"]}`)
 	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", rec.Code)
+		t.Fatalf("status = %d, want 404 (route removed)", rec.Code)
 	}
 }
 

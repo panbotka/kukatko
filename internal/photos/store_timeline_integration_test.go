@@ -125,8 +125,8 @@ func TestTimelineBuckets_albumScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	for i, hash := range []string{"tls-a", "tls-c"} {
-		if err := org.AddPhoto(ctx, album.UID, uids[hash], i); err != nil {
+	for _, hash := range []string{"tls-a", "tls-c"} {
+		if err := org.AddPhoto(ctx, album.UID, uids[hash]); err != nil {
 			t.Fatalf("AddPhoto(%s): %v", hash, err)
 		}
 	}

@@ -66,7 +66,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   nastaveno, fotka bez řádku = rating 0 / flag `none`,
   řazení taken_at/created_at/uid/title/file_size **+ `rating`** (řazení dle ratingu `RatedBy`
   uživatele přes korelovaný poddotaz nad `user_ratings`, `NULLS LAST` — nehodnocené poslední; aktivní
-  jen s `RatedBy`), stránkování limit/offset; `Count` sdílí
+  jen s `RatedBy`) **+ `chronology`** (`SortByChronology`: `COALESCE(taken_at, created_at)` — úplné,
+  stabilní chronologické pořadí, nedatovaná fotka padá na svůj upload čas; interní řazení pro
+  album view, není veřejný sort alias), stránkování limit/offset; `Count` sdílí
   `buildWhere` filtry pro `total`)/`Search` (česky-aware fulltext nad generovaným `fts
   tsvector` sloupcem: `ListParams.FullText` přes `websearch_to_tsquery('simple',
   immutable_unaccent(q))`, řazení dle `ts_rank` (title>description>notes>file_name),
@@ -279,7 +281,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   Embedder,Faces,Favorites,Ratings,RequireAuth,RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`
   **, `GET /photos/timeline`, **`GET /photos/years`**, `GET /search` a `GET /favorites`**; `parseListParams`
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
-  newest/oldest/taken_at/added/title/size**/rating** + `order`, `archived` false/true/only, `private`,
+  newest/oldest/taken_at/added/title/size**/rating** + `order` — **`album` scope obojí přebije**
+  na `SortByChronology`+`asc` (album je vždy chronologické, defaulty ostatních pohledů se nemění),
+  `archived` false/true/only, `private`,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`year` (čtyřciferný
   1000–9999) → `Year`**, **`album`/`label`
   scope** → `AlbumUID`/`LabelUID`, **`country`/`city` place scope** → `Country`/`City`,
@@ -618,9 +622,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `0016_user_ratings.sql`: **`albums`** = `uid PK`
   (prefix `al`), `slug UNIQUE` (Slugify z `title`, číselný sufix na kolizi), `title`/`description`,
   `type IN (album|folder|moment|state|month)`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`),
-  `private`, `order_by` (free-text řazení galerie, default `added`), `created_by` (FK users
-  `ON DELETE SET NULL`), časy; **`album_photos`** = členství `(album_uid, photo_uid) PK`, oba FK
-  `ON DELETE CASCADE`, `sort_order`/`added_at`; **`labels`** = `uid PK` (prefix `lb`), `slug UNIQUE`
+  `private`, `created_by` (FK users
+  `ON DELETE SET NULL`), časy — sloupec `order_by` odstranila migrace
+  `0022_chronological_albums.sql` (album se vždy zobrazuje chronologicky, volba řazení neexistuje);
+  **`album_photos`** = členství `(album_uid, photo_uid) PK`, oba FK
+  `ON DELETE CASCADE`, `added_at` (ruční pozice `sort_order` odstranila táž migrace); **`labels`** = `uid PK` (prefix `lb`), `slug UNIQUE`
   (z `name`), `name`, `priority`, časy; **`photo_labels`** = připojení `(photo_uid, label_uid) PK`,
   oba FK `ON DELETE CASCADE`, `source IN (manual|ai|import)`, `uncertainty` (int %), `created_at`;
   **`user_favorites`** = `(user_uid, photo_uid) PK`, oba FK `ON DELETE CASCADE`, `added_at`;
@@ -639,9 +645,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   ale do rozsahu nevstupuje)/
   `SearchAlbums(q,limit)` (accent/case-insensitive ILIKE nad `immutable_unaccent(title/description)`,
   s počty → `[]AlbumCount`, cap limit — podklad `globalsearchapi`)/
-  `DeleteAlbum`/`AddPhoto` (idempotentní upsert pozice)/`RemovePhoto` (idempotentní)/`ReorderPhotos`
-  (atomický přepis `sort_order` dle pořadí v tx)/`SetCover` (set/clear cover)/`ListPhotoUIDs`
-  (řazení `sort_order`); **štítky** `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel`
+  `DeleteAlbum`/`AddPhoto` (idempotentní, bez pozice — `ON CONFLICT DO NOTHING`)/`RemovePhoto`
+  (idempotentní)/`SetCover` (set/clear cover)/`ListPhotoUIDs`
+  (chronologicky: `COALESCE(taken_at, created_at), photo_uid` přes JOIN na `photos`); **štítky** `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel`
   (re-slug)/`ListLabels` (s počty, řazení priority DESC)/`SearchLabels(q,limit)` (accent/case-insensitive
   ILIKE nad `immutable_unaccent(name)`, s počty, cap limit — podklad `globalsearchapi`)/`DeleteLabel`/
   `AttachLabel` (idempotentní upsert source/uncertainty)/`DetachLabel` (idempotentní)/`ListPhotoUIDsByLabel`; **oblíbené**
@@ -671,14 +677,14 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `cover_uid` a rozsah `taken_from`/`taken_to`),
   `POST /albums` (RequireWrite, 201, `title` povinný, validace typu přes `ErrInvalidType`),
   `GET /albums/{uid}` (RequireAuth), `PATCH /albums/{uid}` (RequireWrite, edituje
-  title/description/cover_photo_uid/private/order_by; **strukturální `type` se zachová** —
+  title/description/cover_photo_uid/private; **strukturální `type` se zachová** —
   handler načte existující album a `type` z těla nepřebírá, takže folder/moment/… nelze přepsat),
   `DELETE /albums/{uid}` (RequireWrite → 204), členství `POST /albums/{uid}/photos`
-  `{photo_uids:[…]}` (přidá za stávající fotky — base pozice = `len(ListPhotoUIDs)`),
-  `DELETE /albums/{uid}/photos` `{photo_uids:[…]}` (odebere, idempotentní),
-  `PATCH /albums/{uid}/order` `{photo_uids:[…]}` (přeřadí přes `ReorderPhotos`) — všechny tři
-  membership endpointy vrací aktuální pořadí `{photo_uids:[…]}`, nejdřív ověří existenci alba
-  (`requireAlbum` → 404); **štítky** `GET /labels` (RequireAuth, `{labels:[LabelCount]}`),
+  `{photo_uids:[…]}` (přidá, bez pozice — album je vždy chronologické),
+  `DELETE /albums/{uid}/photos` `{photo_uids:[…]}` (odebere, idempotentní) — oba
+  membership endpointy vrací aktuální chronologické pořadí `{photo_uids:[…]}`, nejdřív ověří
+  existenci alba (`requireAlbum` → 404); ruční přeřazení `PATCH /albums/{uid}/order` bylo
+  odstraněno (→ 404); **štítky** `GET /labels` (RequireAuth, `{labels:[LabelCount]}`),
   `POST /labels` (RequireWrite, 201, `name` povinný), `GET /labels/{uid}` (RequireAuth),
   `PATCH /labels/{uid}` (RequireWrite, name/priority), `DELETE /labels/{uid}` (RequireWrite → 204),
   připojení `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}` → 204 (validace source

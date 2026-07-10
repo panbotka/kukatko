@@ -13,7 +13,7 @@ import (
 // their own decoder.
 const albumsBody = `{"albums":[
 	{"uid":"alb01","slug":"trip","title":"Trip","type":"album","private":false,"photo_count":12,
-	 "order_by":"added","created_at":"2024-05-01T10:22:33Z","updated_at":"2024-05-02T10:22:33Z"},
+	 "created_at":"2024-05-01T10:22:33Z","updated_at":"2024-05-02T10:22:33Z"},
 	{"uid":"alb02","slug":"private-moments","title":"Moments","type":"moment","private":true,"photo_count":3}
 ]}`
 
@@ -78,7 +78,7 @@ func TestClient_GetAlbum(t *testing.T) {
 	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		w.Write([]byte(`{"uid":"alb01","slug":"trip","title":"Trip","description":"Summer",
-			"type":"album","private":true,"order_by":"added","cover_photo_uid":"pht09"}`))
+			"type":"album","private":true,"cover_photo_uid":"pht09"}`))
 	})
 
 	raw, err := client.GetAlbum(t.Context(), "alb 01")

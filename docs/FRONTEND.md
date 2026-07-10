@@ -137,8 +137,7 @@ zapiš sem.
   přes `formatCaptureRange` (jen když album má datované fotky) / počet → `/albums/{uid}`;
   `EmptyState` až pro album bez fotek),
   `AlbumEditModal` (create/rename alba: název/popis/soukromé), `LabelEditModal` (create/rename
-  štítku: jméno/priorita), `ReorderableGrid` (ne-virtualizovaná drag-and-drop mřížka + šipky pro
-  přeřazení alba, controlled přes `onReorder`; ctí `useGridDensity` jako ostatní foto-mřížky), `SelectionBar` (sticky toolbar výběru: počet +
+  štítku: jméno/priorita), `SelectionBar` (sticky toolbar výběru: počet +
   akce + zrušit), `BulkEditControl` (**znovupoužitelný spouštěč** hromadné úpravy: tlačítko
   (`selection.edit`) + `BulkEditModal`, řízené výhradně výsledkem `useBulkEdit`; **viewerovi se
   nevykreslí vůbec**, při nulovém výběru je disabled — stačí ho vložit do `SelectionBar`, stránka
@@ -188,12 +187,13 @@ zapiš sem.
   scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených + hvězdy/flag na místě (ratable),
   `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
   `AlbumDetailPage` = `/albums/:uid` hlavička + tlačítko **Promítání** (všem) + editorské akce
-  (upravit/smazat/vybrat/přeřadit) nad
-  fotomřížkou scopnutou na album (`useScopedPhotos` + `FilterBar` + URL stav); přeřazení přes
-  `ReorderableGrid`→`PATCH /albums/{uid}/order`, výběr → nastavit cover / **hromadná úprava**
+  (upravit/smazat/vybrat) nad
+  fotomřížkou scopnutou na album (`useScopedPhotos` + `FilterBar showSort={false}` + URL stav) —
+  album je **vždy chronologické** (nejstarší první, vynucuje backend), takže stránka nemá selektor
+  řazení ani ruční přeřazování; výběr → nastavit cover / **hromadná úprava**
   (`BulkEditControl`) / odebrat z alba (odebrání i úspěšná úprava **výběr vyprázdní**, ať v něm
-  nezůstanou UID fotek, které z mřížky zmizely, a mřížku přenačtou přes `reloadKey`); stránka je
-  vždy v právě jednom režimu: procházení / `reordering` / `selection.active`,
+  nezůstanou UID fotek, které z mřížky zmizely, a mřížku přenačtou přes `reloadKey`); stránka buď
+  prochází, nebo vybírá (`selection.active`),
   `LabelsPage` = `/labels` seznam štítků s počty + create/rename/delete (editor/admin),
   `LabelDetailPage` = `/labels/:uid` fotomřížka scopnutá na štítek (`useScopedPhotos` + `FilterBar` + URL)
   + tlačítko **Promítání** + pro editory **režim výběru** → `BulkEditControl` (po úspěchu refetch),
@@ -616,7 +616,7 @@ zapiš sem.
   velikost, kterou payload nenese (lightbox, canvas editoru, cover podle UID) a `downloadUrl(uid,…)`
   pro **rendering nedestruktivního editu**, který umí jen aplikace;
   `organize.ts` = Albums/Labels klient: alba `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
-  `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`/`reorderAlbumPhotos`, štítky `fetchLabels`/
+  `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`, štítky `fetchLabels`/
   `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; typy
   `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput`;
   `savedSearches.ts` = uložená hledání klient: `fetchSavedSearches`/`createSavedSearch(name,params)`/

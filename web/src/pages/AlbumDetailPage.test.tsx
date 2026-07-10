@@ -38,7 +38,6 @@ vi.mock('../services/organize', async (importOriginal) => {
     ...actual,
     fetchAlbum: vi.fn(),
     deleteAlbum: vi.fn(),
-    reorderAlbumPhotos: vi.fn(),
     removeAlbumPhotos: vi.fn(),
     updateAlbum: vi.fn(),
     fetchAlbums: vi.fn(),
@@ -53,11 +52,10 @@ vi.mock('../services/bulk', async (importOriginal) => {
 
 const { fetchPhotos } = await import('../services/photos')
 const { bulkUpdatePhotos } = await import('../services/bulk')
-const { fetchAlbum, reorderAlbumPhotos, removeAlbumPhotos, fetchAlbums, fetchLabels } =
+const { fetchAlbum, removeAlbumPhotos, fetchAlbums, fetchLabels } =
   await import('../services/organize')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchAlbumMock = vi.mocked(fetchAlbum)
-const reorderMock = vi.mocked(reorderAlbumPhotos)
 const removeMock = vi.mocked(removeAlbumPhotos)
 const bulkMock = vi.mocked(bulkUpdatePhotos)
 const albumsMock = vi.mocked(fetchAlbums)
@@ -98,7 +96,6 @@ function album(): Album {
     description: '',
     type: 'album',
     private: false,
-    order_by: 'added',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   }
@@ -136,12 +133,10 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchPhotosMock.mockReset()
   fetchAlbumMock.mockReset()
-  reorderMock.mockReset()
   removeMock.mockReset()
   bulkMock.mockReset()
   albumsMock.mockReset()
   labelsMock.mockReset()
-  reorderMock.mockResolvedValue([])
   removeMock.mockResolvedValue([])
   albumsMock.mockResolvedValue([])
   labelsMock.mockResolvedValue([])
@@ -164,21 +159,20 @@ describe('AlbumDetailPage', () => {
     expect(fetchPhotosMock.mock.calls[0][0].album).toBe('al_1')
   })
 
-  it('persists a reorder via the API', async () => {
+  it('renders no sort selector and no manual reordering controls', async () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
-    const user = userEvent.setup()
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Reorder' }))
-
-    // Move the first photo later — the new order is [b, a].
-    await user.click(screen.getByRole('button', { name: 'Move a.jpg later' }))
-
-    await waitFor(() => {
-      expect(reorderMock).toHaveBeenCalledWith('al_1', ['b', 'a'])
-    })
+    // An album is always chronological: the shared filter bar hides its sort
+    // selector here (other photo lists keep theirs).
+    expect(screen.queryByRole('combobox', { name: 'Sort' })).not.toBeInTheDocument()
+    // Manual ordering is gone: no reorder mode, no per-tile drag handles.
+    expect(screen.queryByRole('button', { name: 'Reorder' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /^Move .+ (earlier|later)$/ }),
+    ).not.toBeInTheDocument()
   })
 
   it('hides mutation controls from viewers', async () => {
@@ -187,7 +181,6 @@ describe('AlbumDetailPage', () => {
     renderPage(false)
 
     await screen.findByRole('heading', { name: 'Holidays' })
-    expect(screen.queryByRole('button', { name: 'Reorder' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()

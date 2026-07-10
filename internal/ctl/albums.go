@@ -48,7 +48,6 @@ type Album struct {
 	Type          string    `json:"type"`
 	CoverPhotoUID *string   `json:"cover_photo_uid,omitempty"`
 	Private       bool      `json:"private"`
-	OrderBy       string    `json:"order_by"`
 	PhotoCount    int       `json:"photo_count"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -56,14 +55,13 @@ type Album struct {
 
 // AlbumInput is the body of POST /albums. Every field but Title is optional and
 // omitted from the wire when left at its zero value, so the server applies its
-// own defaults (type "album", order "added").
+// own defaults (type "album").
 type AlbumInput struct {
 	Title         string  `json:"title"`
 	Description   string  `json:"description,omitempty"`
 	Type          string  `json:"type,omitempty"`
 	CoverPhotoUID *string `json:"cover_photo_uid,omitempty"`
 	Private       bool    `json:"private,omitempty"`
-	OrderBy       string  `json:"order_by,omitempty"`
 }
 
 // validate range-checks the input the CLI can reject without a round trip.

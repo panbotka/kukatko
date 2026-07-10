@@ -29,7 +29,7 @@ func TestCtlAlbums_listAndGet(t *testing.T) {
 		gotPath = r.URL.Path
 		if strings.HasSuffix(r.URL.Path, "/alb01") {
 			w.Write([]byte(`{"uid":"alb01","slug":"trip","title":"Trip","description":"Summer",
-				"type":"album","private":true,"order_by":"added"}`))
+				"type":"album","private":true}`))
 			return
 		}
 		w.Write([]byte(albumsListBody))

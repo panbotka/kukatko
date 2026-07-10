@@ -12,12 +12,12 @@ import (
 // albumColumns is the canonical, ordered column list for album reads, matched by
 // scanAlbum.
 const albumColumns = "uid, slug, title, description, type, cover_photo_uid, " +
-	"private, order_by, created_by, created_at, updated_at"
+	"private, created_by, created_at, updated_at"
 
 // insertAlbumSQL inserts an album and returns the stored row.
 const insertAlbumSQL = `
-INSERT INTO albums (uid, slug, title, description, type, cover_photo_uid, private, order_by, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO albums (uid, slug, title, description, type, cover_photo_uid, private, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING ` + albumColumns
 
 // scanAlbum reads one album row in albumColumns order, wrapping any scan error
@@ -26,7 +26,7 @@ func scanAlbum(row pgx.Row) (Album, error) {
 	var a Album
 	if err := row.Scan(
 		&a.UID, &a.Slug, &a.Title, &a.Description, &a.Type, &a.CoverPhotoUID,
-		&a.Private, &a.OrderBy, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt,
+		&a.Private, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt,
 	); err != nil {
 		return Album{}, fmt.Errorf("organize: scanning album: %w", err)
 	}
@@ -40,7 +40,7 @@ func scanAlbumCount(row pgx.Row) (AlbumCount, error) {
 	var ac AlbumCount
 	if err := row.Scan(
 		&ac.UID, &ac.Slug, &ac.Title, &ac.Description, &ac.Type, &ac.CoverPhotoUID,
-		&ac.Private, &ac.OrderBy, &ac.CreatedBy, &ac.CreatedAt, &ac.UpdatedAt, &ac.PhotoCount,
+		&ac.Private, &ac.CreatedBy, &ac.CreatedAt, &ac.UpdatedAt, &ac.PhotoCount,
 	); err != nil {
 		return AlbumCount{}, fmt.Errorf("organize: scanning album count: %w", err)
 	}
@@ -54,7 +54,7 @@ func scanAlbumSummary(row pgx.Row) (AlbumSummary, error) {
 	var as AlbumSummary
 	if err := row.Scan(
 		&as.UID, &as.Slug, &as.Title, &as.Description, &as.Type, &as.CoverPhotoUID,
-		&as.Private, &as.OrderBy, &as.CreatedBy, &as.CreatedAt, &as.UpdatedAt, &as.PhotoCount,
+		&as.Private, &as.CreatedBy, &as.CreatedAt, &as.UpdatedAt, &as.PhotoCount,
 		&as.CoverUID, &as.TakenFrom, &as.TakenTo,
 	); err != nil {
 		return AlbumSummary{}, fmt.Errorf("organize: scanning album summary: %w", err)
@@ -64,17 +64,14 @@ func scanAlbumSummary(row pgx.Row) (AlbumSummary, error) {
 
 // CreateAlbum inserts a and returns it refreshed with the generated UID, unique
 // slug and timestamps. The slug is derived from a.Title and a numeric suffix is
-// appended on collision. An empty type defaults to AlbumManual and an empty
-// order_by to "added"; an unrecognised type returns ErrInvalidType.
+// appended on collision. An empty type defaults to AlbumManual; an unrecognised
+// type returns ErrInvalidType.
 func (s *Store) CreateAlbum(ctx context.Context, a Album) (Album, error) {
 	if a.Type == "" {
 		a.Type = AlbumManual
 	}
 	if !a.Type.valid() {
 		return Album{}, fmt.Errorf("%w: %q", ErrInvalidType, a.Type)
-	}
-	if a.OrderBy == "" {
-		a.OrderBy = "added"
 	}
 	if a.UID == "" {
 		uid, err := newAlbumUID()
@@ -88,7 +85,7 @@ func (s *Store) CreateAlbum(ctx context.Context, a Album) (Album, error) {
 		a.Slug = slug
 		return scanAlbum(s.pool.QueryRow(ctx, insertAlbumSQL,
 			a.UID, a.Slug, a.Title, a.Description, a.Type, a.CoverPhotoUID,
-			a.Private, a.OrderBy, a.CreatedBy))
+			a.Private, a.CreatedBy))
 	})
 }
 
@@ -122,14 +119,14 @@ func (s *Store) getAlbum(ctx context.Context, col, val string) (Album, error) {
 const updateAlbumSQL = `
 UPDATE albums SET
     slug = $2, title = $3, description = $4, type = $5,
-    cover_photo_uid = $6, private = $7, order_by = $8, updated_at = now()
+    cover_photo_uid = $6, private = $7, updated_at = now()
 WHERE uid = $1
 RETURNING ` + albumColumns
 
 // UpdateAlbum applies upd to the album identified by uid: it re-slugs from the
 // new title (kept unique) and rewrites the editable fields. An empty type
-// defaults to AlbumManual and an empty order_by to "added". It returns
-// ErrAlbumNotFound if no such album exists, or ErrInvalidType for a bad type.
+// defaults to AlbumManual. It returns ErrAlbumNotFound if no such album exists,
+// or ErrInvalidType for a bad type.
 func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (Album, error) {
 	if upd.Type == "" {
 		upd.Type = AlbumManual
@@ -137,14 +134,11 @@ func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (A
 	if !upd.Type.valid() {
 		return Album{}, fmt.Errorf("%w: %q", ErrInvalidType, upd.Type)
 	}
-	if upd.OrderBy == "" {
-		upd.OrderBy = "added"
-	}
 	base := slugify(upd.Title, albumFallbackSlug)
 	updated, err := insertWithUniqueSlug(base, func(slug string) (Album, error) {
 		return scanAlbum(s.pool.QueryRow(ctx, updateAlbumSQL,
 			uid, slug, upd.Title, upd.Description, upd.Type,
-			upd.CoverPhotoUID, upd.Private, upd.OrderBy))
+			upd.CoverPhotoUID, upd.Private))
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Album{}, ErrAlbumNotFound
@@ -172,7 +166,7 @@ func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (A
 //     hand-picked cover win over it.
 const listAlbumsSQL = `
 SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
-       a.private, a.order_by, a.created_by, a.created_at, a.updated_at,
+       a.private, a.created_by, a.created_at, a.updated_at,
        COUNT(ap.photo_uid) AS photo_count,
        COALESCE(a.cover_photo_uid, cover.photo_uid) AS cover_uid,
        MIN(p.taken_at) AS taken_from,
@@ -235,18 +229,19 @@ func (s *Store) DeleteAlbum(ctx context.Context, uid string) error {
 	return nil
 }
 
-// addPhotoSQL adds a photo to an album, updating its position if it is already a
-// member so the call is idempotent.
+// addPhotoSQL adds a photo to an album, ignoring the insert if it is already a
+// member so the call is idempotent. Albums are presented chronologically, so a
+// membership row carries no position.
 const addPhotoSQL = `
-INSERT INTO album_photos (album_uid, photo_uid, sort_order)
-VALUES ($1, $2, $3)
-ON CONFLICT (album_uid, photo_uid) DO UPDATE SET sort_order = EXCLUDED.sort_order`
+INSERT INTO album_photos (album_uid, photo_uid)
+VALUES ($1, $2)
+ON CONFLICT (album_uid, photo_uid) DO NOTHING`
 
-// AddPhoto adds photoUID to the album identified by albumUID at the given
-// sortOrder, updating the position if the photo is already a member (idempotent).
-// It returns ErrAlbumNotFound or ErrPhotoNotFound when either side does not exist.
-func (s *Store) AddPhoto(ctx context.Context, albumUID, photoUID string, sortOrder int) error {
-	_, err := s.pool.Exec(ctx, addPhotoSQL, albumUID, photoUID, sortOrder)
+// AddPhoto adds photoUID to the album identified by albumUID; adding a photo
+// that is already a member is a no-op (idempotent). It returns ErrAlbumNotFound
+// or ErrPhotoNotFound when either side does not exist.
+func (s *Store) AddPhoto(ctx context.Context, albumUID, photoUID string) error {
+	_, err := s.pool.Exec(ctx, addPhotoSQL, albumUID, photoUID)
 	if err != nil {
 		return translateMembershipFK(err)
 	}
@@ -260,49 +255,6 @@ func (s *Store) RemovePhoto(ctx context.Context, albumUID, photoUID string) erro
 		"DELETE FROM album_photos WHERE album_uid = $1 AND photo_uid = $2", albumUID, photoUID)
 	if err != nil {
 		return fmt.Errorf("organize: removing photo %s from album %s: %w", photoUID, albumUID, err)
-	}
-	return nil
-}
-
-// ReorderPhotos sets each photo's sort_order to its index in orderedPhotoUIDs,
-// applied atomically so the album never shows a half-reordered state. Photos in
-// the list that are not members of the album are ignored. It returns
-// ErrAlbumNotFound if no such album exists.
-func (s *Store) ReorderPhotos(ctx context.Context, albumUID string, orderedPhotoUIDs []string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("organize: begin reorder album %s: %w", albumUID, err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if err := albumExists(ctx, tx, albumUID); err != nil {
-		return err
-	}
-	for i, photoUID := range orderedPhotoUIDs {
-		if _, err := tx.Exec(ctx,
-			"UPDATE album_photos SET sort_order = $3 WHERE album_uid = $1 AND photo_uid = $2",
-			albumUID, photoUID, i,
-		); err != nil {
-			return fmt.Errorf("organize: reordering photo %s in album %s: %w", photoUID, albumUID, err)
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("organize: commit reorder album %s: %w", albumUID, err)
-	}
-	return nil
-}
-
-// albumExists returns ErrAlbumNotFound if no album with uid exists within tx, and
-// nil otherwise. It guards membership mutations that would otherwise silently
-// no-op on a missing album.
-func albumExists(ctx context.Context, tx pgx.Tx, uid string) error {
-	var exists bool
-	if err := tx.QueryRow(ctx,
-		"SELECT EXISTS (SELECT 1 FROM albums WHERE uid = $1)", uid).Scan(&exists); err != nil {
-		return fmt.Errorf("organize: checking album %s: %w", uid, err)
-	}
-	if !exists {
-		return ErrAlbumNotFound
 	}
 	return nil
 }
@@ -330,12 +282,16 @@ func (s *Store) SetCover(ctx context.Context, albumUID string, photoUID *string)
 	return a, nil
 }
 
-// listAlbumPhotoUIDsSQL returns an album's photos in display order: by sort_order,
-// then by the time they were added, then by uid for a stable tie-break.
+// listAlbumPhotoUIDsSQL returns an album's photos in display order: albums are
+// always chronological, oldest capture time first, with the upload (catalogue
+// insertion) time standing in for photos whose capture time is unknown and the
+// uid as a stable tie-break.
 const listAlbumPhotoUIDsSQL = `
-SELECT photo_uid FROM album_photos
-WHERE album_uid = $1
-ORDER BY sort_order, added_at, photo_uid`
+SELECT ap.photo_uid
+FROM album_photos ap
+JOIN photos p ON p.uid = ap.photo_uid
+WHERE ap.album_uid = $1
+ORDER BY COALESCE(p.taken_at, p.created_at), ap.photo_uid`
 
 // ListPhotoUIDs returns the UIDs of every photo in the album identified by
 // albumUID, in display order. An album with no photos yields an empty slice and a

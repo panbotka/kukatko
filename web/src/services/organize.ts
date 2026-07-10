@@ -71,7 +71,7 @@ async function sendJSON<T>(
 /** Album classification, mirroring the backend `organize.AlbumType`. */
 export type AlbumType = 'album' | 'folder' | 'moment' | 'state' | 'month'
 
-/** A named, ordered grouping of photos (`organize.Album`). */
+/** A named grouping of photos, always presented chronologically (`organize.Album`). */
 export interface Album {
   uid: string
   slug: string
@@ -80,7 +80,6 @@ export interface Album {
   type: AlbumType
   cover_photo_uid?: string
   private: boolean
-  order_by: string
   created_by?: string
   created_at: string
   updated_at: string
@@ -118,7 +117,6 @@ export interface AlbumInput {
   type?: AlbumType
   cover_photo_uid?: string | null
   private: boolean
-  order_by: string
 }
 
 /** Response body of `GET /api/v1/albums`. */
@@ -126,7 +124,7 @@ interface AlbumsResponse {
   albums: AlbumSummary[]
 }
 
-/** Response body of the album membership endpoints: the photos in display order. */
+/** Response body of the album membership endpoints: the photos in chronological display order. */
 interface PhotoUIDsResponse {
   photo_uids: string[]
 }
@@ -188,21 +186,6 @@ export async function removeAlbumPhotos(
   const body = await sendJSON<PhotoUIDsResponse>(
     'DELETE',
     `/albums/${encodeURIComponent(uid)}/photos`,
-    { photo_uids: photoUids },
-    signal,
-  )
-  return body.photo_uids
-}
-
-/** Reorders an album's photos to match `photoUids` and returns the new order. */
-export async function reorderAlbumPhotos(
-  uid: string,
-  photoUids: string[],
-  signal?: AbortSignal,
-): Promise<string[]> {
-  const body = await sendJSON<PhotoUIDsResponse>(
-    'PATCH',
-    `/albums/${encodeURIComponent(uid)}/order`,
     { photo_uids: photoUids },
     signal,
   )

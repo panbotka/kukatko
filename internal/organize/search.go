@@ -16,7 +16,7 @@ const defaultSearchLimit = 8
 // bound limit. The pattern in $1 is a pre-escaped "contains" ILIKE pattern.
 const searchAlbumsSQL = `
 SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
-       a.private, a.order_by, a.created_by, a.created_at, a.updated_at,
+       a.private, a.created_by, a.created_at, a.updated_at,
        COUNT(ap.photo_uid) AS photo_count
 FROM albums a
 LEFT JOIN album_photos ap ON ap.album_uid = a.uid

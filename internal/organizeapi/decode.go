@@ -38,7 +38,6 @@ type albumInput struct {
 	Type          organize.AlbumType `json:"type"`
 	CoverPhotoUID *string            `json:"cover_photo_uid"`
 	Private       bool               `json:"private"`
-	OrderBy       string             `json:"order_by"`
 }
 
 // labelInput is the JSON body accepted by the label create and update endpoints.
@@ -47,8 +46,8 @@ type labelInput struct {
 	Priority int    `json:"priority"`
 }
 
-// photoUIDsInput is the JSON body accepted by the album membership endpoints
-// (add, remove, reorder): the photos to add/remove, or the album's desired order.
+// photoUIDsInput is the JSON body accepted by the album membership endpoints:
+// the photos to add or remove.
 type photoUIDsInput struct {
 	PhotoUIDs []string `json:"photo_uids"`
 }
@@ -135,7 +134,6 @@ func (in albumInput) toAlbum() organize.Album {
 		Type:          in.Type,
 		CoverPhotoUID: in.CoverPhotoUID,
 		Private:       in.Private,
-		OrderBy:       in.OrderBy,
 	}
 }
 
@@ -148,7 +146,6 @@ func (in albumInput) toUpdate(existing organize.AlbumType) organize.AlbumUpdate 
 		Type:          existing,
 		CoverPhotoUID: in.CoverPhotoUID,
 		Private:       in.Private,
-		OrderBy:       in.OrderBy,
 	}
 }
 

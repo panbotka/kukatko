@@ -105,8 +105,9 @@ func (s *Service) transferMemberships(ctx context.Context, kkUID string, ps phot
 	s.transferLabelMemberships(ctx, kkUID, ps, maps)
 }
 
-// transferAlbumMemberships adds the photo to every mapped album it belongs to in
-// photo-sorter, preserving the sort order (AddPhoto is idempotent).
+// transferAlbumMemberships adds the photo to every mapped album it belongs to
+// in photo-sorter (AddPhoto is idempotent). Kukátko presents albums
+// chronologically, so photo-sorter's manual sort order is not carried over.
 func (s *Service) transferAlbumMemberships(ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings) {
 	members, err := s.src.AlbumMemberships(ctx, ps.UID)
 	if err != nil {
@@ -118,7 +119,7 @@ func (s *Service) transferAlbumMemberships(ctx context.Context, kkUID string, ps
 		if !ok || albumUID == "" {
 			continue
 		}
-		if err := s.albums.AddPhoto(ctx, albumUID, kkUID, members[i].SortOrder); err != nil {
+		if err := s.albums.AddPhoto(ctx, albumUID, kkUID); err != nil {
 			s.log.Warn("psimport: adding to album", "album", albumUID, "photo", kkUID, "err", err)
 		}
 	}

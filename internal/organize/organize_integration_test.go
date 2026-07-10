@@ -83,9 +83,6 @@ func TestAlbumCRUD(t *testing.T) {
 	if created.UID == "" || created.Slug != "leto-u-reky" || created.Type != organize.AlbumManual {
 		t.Fatalf("unexpected created album: %+v", created)
 	}
-	if created.OrderBy != "added" {
-		t.Errorf("order_by = %q, want default \"added\"", created.OrderBy)
-	}
 
 	byUID, err := store.GetAlbumByUID(ctx, created.UID)
 	if err != nil || byUID.UID != created.UID {
@@ -97,13 +94,13 @@ func TestAlbumCRUD(t *testing.T) {
 	}
 
 	updated, err := store.UpdateAlbum(ctx, created.UID, organize.AlbumUpdate{
-		Title: "Hory", Type: organize.AlbumFolder, Private: true, OrderBy: "oldest",
+		Title: "Hory", Type: organize.AlbumFolder, Private: true,
 	})
 	if err != nil {
 		t.Fatalf("UpdateAlbum: %v", err)
 	}
 	if updated.Title != "Hory" || updated.Slug != "hory" || updated.Type != organize.AlbumFolder ||
-		!updated.Private || updated.OrderBy != "oldest" {
+		!updated.Private {
 		t.Fatalf("unexpected updated album: %+v", updated)
 	}
 
@@ -153,22 +150,28 @@ func TestAlbumUniqueSlug(t *testing.T) {
 	}
 }
 
-// TestAlbumPhotoMembership exercises add (idempotent), list, reorder and remove.
+// TestAlbumPhotoMembership exercises add (idempotent), chronological listing
+// and remove. Albums are always presented oldest first, with the upload time
+// standing in for a photo with no capture time, so the listing ignores the
+// order in which photos were added.
 func TestAlbumPhotoMembership(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
 	album, _ := store.CreateAlbum(ctx, organize.Album{Title: "Album"})
-	p1 := makePhoto(t, photoStore, "ap1")
-	p2 := makePhoto(t, photoStore, "ap2")
-	p3 := makePhoto(t, photoStore, "ap3")
+	oldest := makePhotoAt(t, photoStore, "ap1", time.Date(2020, 6, 1, 10, 0, 0, 0, time.UTC))
+	middle := makePhotoAt(t, photoStore, "ap2", time.Date(2022, 6, 1, 10, 0, 0, 0, time.UTC))
+	// No capture time: falls back to its upload (created_at) time, which is
+	// "now" — after every capture time above, so it sorts last.
+	undated := makePhoto(t, photoStore, "ap3")
 
-	for i, p := range []string{p1, p2, p3} {
-		if err := store.AddPhoto(ctx, album.UID, p, i); err != nil {
+	// Add in an order that matches neither insertion nor chronology.
+	for _, p := range []string{undated, oldest, middle} {
+		if err := store.AddPhoto(ctx, album.UID, p); err != nil {
 			t.Fatalf("AddPhoto %s: %v", p, err)
 		}
 	}
-	// Re-adding is idempotent and updates position rather than erroring.
-	if err := store.AddPhoto(ctx, album.UID, p1, 0); err != nil {
+	// Re-adding an existing member is an idempotent no-op.
+	if err := store.AddPhoto(ctx, album.UID, oldest); err != nil {
 		t.Fatalf("AddPhoto idempotent: %v", err)
 	}
 
@@ -176,28 +179,20 @@ func TestAlbumPhotoMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListPhotoUIDs: %v", err)
 	}
-	if len(got) != 3 || got[0] != p1 || got[1] != p2 || got[2] != p3 {
-		t.Fatalf("ListPhotoUIDs = %v, want [%s %s %s]", got, p1, p2, p3)
+	if len(got) != 3 || got[0] != oldest || got[1] != middle || got[2] != undated {
+		t.Fatalf("ListPhotoUIDs = %v, want chronological [%s %s %s]", got, oldest, middle, undated)
 	}
 
-	if err := store.ReorderPhotos(ctx, album.UID, []string{p3, p1, p2}); err != nil {
-		t.Fatalf("ReorderPhotos: %v", err)
-	}
-	got, _ = store.ListPhotoUIDs(ctx, album.UID)
-	if len(got) != 3 || got[0] != p3 || got[1] != p1 || got[2] != p2 {
-		t.Fatalf("after reorder = %v, want [%s %s %s]", got, p3, p1, p2)
-	}
-
-	if err := store.RemovePhoto(ctx, album.UID, p1); err != nil {
+	if err := store.RemovePhoto(ctx, album.UID, oldest); err != nil {
 		t.Fatalf("RemovePhoto: %v", err)
 	}
 	// Removing again is idempotent.
-	if err := store.RemovePhoto(ctx, album.UID, p1); err != nil {
+	if err := store.RemovePhoto(ctx, album.UID, oldest); err != nil {
 		t.Fatalf("RemovePhoto idempotent: %v", err)
 	}
 	got, _ = store.ListPhotoUIDs(ctx, album.UID)
-	if len(got) != 2 || got[0] != p3 || got[1] != p2 {
-		t.Fatalf("after remove = %v, want [%s %s]", got, p3, p2)
+	if len(got) != 2 || got[0] != middle || got[1] != undated {
+		t.Fatalf("after remove = %v, want [%s %s]", got, middle, undated)
 	}
 }
 
@@ -208,14 +203,11 @@ func TestAlbumMembershipMissing(t *testing.T) {
 	album, _ := store.CreateAlbum(ctx, organize.Album{Title: "Album"})
 	photoUID := makePhoto(t, photoStore, "mm1")
 
-	if err := store.AddPhoto(ctx, "almissing", photoUID, 0); !errors.Is(err, organize.ErrAlbumNotFound) {
+	if err := store.AddPhoto(ctx, "almissing", photoUID); !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Errorf("AddPhoto missing album = %v, want ErrAlbumNotFound", err)
 	}
-	if err := store.AddPhoto(ctx, album.UID, "phmissing", 0); !errors.Is(err, organize.ErrPhotoNotFound) {
+	if err := store.AddPhoto(ctx, album.UID, "phmissing"); !errors.Is(err, organize.ErrPhotoNotFound) {
 		t.Errorf("AddPhoto missing photo = %v, want ErrPhotoNotFound", err)
-	}
-	if err := store.ReorderPhotos(ctx, "almissing", nil); !errors.Is(err, organize.ErrAlbumNotFound) {
-		t.Errorf("ReorderPhotos missing album = %v, want ErrAlbumNotFound", err)
 	}
 }
 
@@ -229,8 +221,8 @@ func TestAlbumListCounts(t *testing.T) {
 
 	a1, _ := store.CreateAlbum(ctx, organize.Album{Title: "Alps"})
 	b1, _ := store.CreateAlbum(ctx, organize.Album{Title: "Beach"})
-	_ = store.AddPhoto(ctx, a1.UID, p1, 0)
-	_ = store.AddPhoto(ctx, a1.UID, p2, 1)
+	_ = store.AddPhoto(ctx, a1.UID, p1)
+	_ = store.AddPhoto(ctx, a1.UID, p2)
 
 	list, err := store.ListAlbums(ctx)
 	if err != nil {
@@ -268,14 +260,14 @@ func TestAlbumListCoverAndRange(t *testing.T) {
 	_, _ = store.CreateAlbum(ctx, organize.Album{Title: "C Empty"})
 	undatedAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Undated"})
 	for _, uid := range []string{oldest, newest, archived} {
-		if err := store.AddPhoto(ctx, ranged.UID, uid, 0); err != nil {
+		if err := store.AddPhoto(ctx, ranged.UID, uid); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
 		}
-		if err := store.AddPhoto(ctx, pinned.UID, uid, 0); err != nil {
+		if err := store.AddPhoto(ctx, pinned.UID, uid); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
 		}
 	}
-	if err := store.AddPhoto(ctx, undatedAlbum.UID, undated, 0); err != nil {
+	if err := store.AddPhoto(ctx, undatedAlbum.UID, undated); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
 	if _, err := store.SetCover(ctx, pinned.UID, &oldest); err != nil {
@@ -391,7 +383,7 @@ func TestAlbumPhotoCascadeOnPhotoDelete(t *testing.T) {
 	ctx := t.Context()
 	album, _ := store.CreateAlbum(ctx, organize.Album{Title: "Album"})
 	photoUID := makePhoto(t, photoStore, "casc")
-	if err := store.AddPhoto(ctx, album.UID, photoUID, 0); err != nil {
+	if err := store.AddPhoto(ctx, album.UID, photoUID); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
 
@@ -648,10 +640,10 @@ func TestAlbumsForPhoto(t *testing.T) {
 	if _, err := store.CreateAlbum(ctx, organize.Album{Title: "Empty"}); err != nil {
 		t.Fatalf("CreateAlbum Empty: %v", err)
 	}
-	if err := store.AddPhoto(ctx, zebra.UID, photoUID, 0); err != nil {
+	if err := store.AddPhoto(ctx, zebra.UID, photoUID); err != nil {
 		t.Fatalf("AddPhoto Zebra: %v", err)
 	}
-	if err := store.AddPhoto(ctx, alps.UID, photoUID, 0); err != nil {
+	if err := store.AddPhoto(ctx, alps.UID, photoUID); err != nil {
 		t.Fatalf("AddPhoto Alps: %v", err)
 	}
 
