@@ -78,6 +78,36 @@ export function formatMonth(year: number, month: number, locale: string): string
 }
 
 /**
+ * Formats the capture-time span of a collection (an album's `taken_from` /
+ * `taken_to`) as a compact, single-line label that widens only as far as it must:
+ *
+ * - one calendar month: `"6/2007"`
+ * - one calendar year:  `"2006"`
+ * - several years:      `"1998–1999"` (en dash)
+ *
+ * A missing or unparseable bound — an album with no photos, or none with a known
+ * capture time — renders as an empty string, which the caller drops rather than
+ * showing an empty line. The bounds are read in the reader's timezone, the same
+ * one every other date in the app is shown in.
+ */
+export function formatCaptureRange(from?: string, to?: string): string {
+  const start = from === undefined ? null : toDate(from)
+  const end = to === undefined ? null : toDate(to)
+  if (start === null || end === null) {
+    return ''
+  }
+  const startYear = start.getFullYear()
+  const endYear = end.getFullYear()
+  if (startYear !== endYear) {
+    return `${startYear}–${endYear}`
+  }
+  if (start.getMonth() === end.getMonth()) {
+    return `${start.getMonth() + 1}/${startYear}`
+  }
+  return `${startYear}`
+}
+
+/**
  * Formats a duration in milliseconds as a clock string: `M:SS` under an hour
  * (e.g. `154000` → `"2:34"`) and `H:MM:SS` from an hour up (e.g. `3754000` →
  * `"1:02:34"`). Non-finite or non-positive inputs render as `"0:00"`.

@@ -252,10 +252,10 @@ func newFakeAlbums() *fakeAlbums {
 	return &fakeAlbums{bySlug: map[string]organize.Album{}, members: map[string][]string{}}
 }
 
-func (f *fakeAlbums) ListAlbums(context.Context) ([]organize.AlbumCount, error) {
-	out := make([]organize.AlbumCount, 0, len(f.bySlug))
+func (f *fakeAlbums) ListAlbums(context.Context) ([]organize.AlbumSummary, error) {
+	out := make([]organize.AlbumSummary, 0, len(f.bySlug))
 	for _, a := range f.bySlug {
-		out = append(out, organize.AlbumCount{Album: a})
+		out = append(out, organize.AlbumSummary{AlbumCount: organize.AlbumCount{Album: a}})
 	}
 	return out, nil
 }

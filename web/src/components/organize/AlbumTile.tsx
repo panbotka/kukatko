@@ -3,23 +3,29 @@ import { Link } from 'react-router-dom'
 
 import { EmptyState } from '../EmptyState'
 
-import { type AlbumCount } from '../../services/organize'
+import { formatCaptureRange } from '../../lib/format'
+import { type AlbumSummary } from '../../services/organize'
 import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
 
 /** Props for {@link AlbumTile}. */
 export interface AlbumTileProps {
-  /** The album with its photo count. */
-  album: AlbumCount
+  /** The album with its photo count, effective cover and capture-time span. */
+  album: AlbumSummary
 }
 
 /**
- * A single album card in the albums grid: a square cover thumbnail (cropped from
- * the album's chosen cover photo, or a neutral placeholder), the title, and the
- * count of photos in the album. Links to the album's detail page.
+ * A single album card in the albums grid: a square cover thumbnail, the title,
+ * the years the album spans, and the count of photos in it. Links to the album's
+ * detail page.
+ *
+ * The cover is the album's effective one — the hand-picked cover when there is
+ * one, and the album's newest photo otherwise — so a tile only falls back to the
+ * empty state when the album genuinely holds nothing to show.
  */
 export function AlbumTile({ album }: AlbumTileProps) {
   const { t } = useTranslation()
-  const cover = album.cover_photo_uid
+  const cover = album.cover_uid
+  const range = formatCaptureRange(album.taken_from, album.taken_to)
 
   return (
     <Link
@@ -42,7 +48,7 @@ export function AlbumTile({ album }: AlbumTileProps) {
             style={{ objectFit: 'cover' }}
           />
         ) : (
-          <EmptyState size="sm" title={t('albums.noCover')} className="kk-tile__placeholder" />
+          <EmptyState size="sm" title={t('albums.noPhotos')} className="kk-tile__placeholder" />
         )}
         {album.private && (
           <span
@@ -54,6 +60,7 @@ export function AlbumTile({ album }: AlbumTileProps) {
         )}
       </div>
       <div className="fw-semibold text-truncate">{album.title}</div>
+      {range !== '' && <div className="kk-text-caption text-secondary text-nowrap">{range}</div>}
       <div className="kk-text-caption text-secondary">
         {t('albums.photoCount', { count: album.photo_count })}
       </div>

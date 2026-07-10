@@ -10,7 +10,7 @@ import (
 
 // albumsResponse is the JSON body returned by the album-list endpoint.
 type albumsResponse struct {
-	Albums []organize.AlbumCount `json:"albums"`
+	Albums []organize.AlbumSummary `json:"albums"`
 }
 
 // photoUIDsResponse is the JSON body returned by the album membership endpoints,
@@ -20,8 +20,9 @@ type photoUIDsResponse struct {
 	PhotoUIDs []string `json:"photo_uids"`
 }
 
-// handleAlbumList returns every album with its photo count and cover. It answers
-// 500 if the store fails.
+// handleAlbumList returns every album with its photo count, the cover to render
+// for it (hand-picked, else its newest photo) and the span of capture times
+// across its photos. It answers 500 if the store fails.
 func (a *API) handleAlbumList(w http.ResponseWriter, r *http.Request) {
 	albums, err := a.albums.ListAlbums(r.Context())
 	if err != nil {

@@ -167,7 +167,7 @@ func mapCatalogue[E, P any](
 func (s *Service) mapAlbums(ctx context.Context) (map[string]string, error) {
 	return mapCatalogue(ctx, s.pageSize, "albums",
 		s.albums.ListAlbums,
-		func(a organize.AlbumCount) (string, string) { return a.Title, a.UID },
+		func(a organize.AlbumSummary) (string, string) { return a.Title, a.UID },
 		s.src.ListAlbums,
 		func(ps photosorter.Album) string { return ps.UID },
 		s.findOrCreateAlbum)

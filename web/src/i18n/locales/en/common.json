@@ -295,7 +295,7 @@
     "create": "New album",
     "loading": "Loading albums…",
     "error": "Could not load albums.",
-    "noCover": "No cover",
+    "noPhotos": "Empty album",
     "private": "Private",
     "photoCount_one": "{{count}} photo",
     "photoCount_other": "{{count}} photos",

@@ -158,7 +158,13 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   geotagované fotky bez místa přes `placesjob.BackfillPlaces`; 503 když není mapy.com klíč). Mountuje
   se sedmým `server.WithAPI` (`buildJobs`).
 - **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **alba** `GET /albums`
-  (RequireAuth) → `{albums:[{...album, photo_count}]}` (počty + cover); `POST /albums`
+  (RequireAuth) → `{albums:[{...album, photo_count, cover_uid?, taken_from?, taken_to?}]}`
+  (`organize.AlbumSummary`): `cover_uid` je **efektivní obálka** — ručně zvolené
+  `cover_photo_uid`, jinak **nejnovější živá fotka alba** (deterministicky: `taken_at DESC NULLS
+  LAST, uid`); `taken_from`/`taken_to` je **rozsah `taken_at`** přes fotky alba. Obojí agreguje
+  jediný SQL dotaz (LEFT JOIN + LATERAL, bez migrace) a počítá **jen s živými fotkami** —
+  archivovaná fotka se započítá do `photo_count`, ale obálku nedodá ani rozsah neposune. Chybí,
+  když album nemá co ukázat / žádná fotka nemá známý `taken_at`. `POST /albums`
   (RequireWrite) → 201 z `{title,description?,type?,cover_photo_uid?,private?,order_by?}` (prázdný
   title / neplatný typ → 400); `GET /albums/{uid}` (RequireAuth, 404); `PATCH /albums/{uid}`
   (RequireWrite) edituje title/description/cover_photo_uid/private/order_by (**`type` se zachová**,

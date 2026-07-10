@@ -113,7 +113,7 @@ type PeopleStore interface {
 // slug helper is unexported.
 type AlbumStore interface {
 	// ListAlbums lists existing albums with their photo counts.
-	ListAlbums(ctx context.Context) ([]organize.AlbumCount, error)
+	ListAlbums(ctx context.Context) ([]organize.AlbumSummary, error)
 	// CreateAlbum inserts a new album.
 	CreateAlbum(ctx context.Context, a organize.Album) (organize.Album, error)
 	// AddPhoto adds a photo to an album at the given sort key (idempotent).

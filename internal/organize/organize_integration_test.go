@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
@@ -34,6 +35,21 @@ func makePhoto(t *testing.T, store *photos.Store, hash string) string {
 		FileHash: hash,
 		FilePath: "2024/01/" + hash + ".jpg",
 		FileName: hash + ".jpg",
+	})
+	if err != nil {
+		t.Fatalf("creating photo %s: %v", hash, err)
+	}
+	return created.UID
+}
+
+// makePhotoAt inserts a minimal photo captured at takenAt and returns its uid.
+func makePhotoAt(t *testing.T, store *photos.Store, hash string, takenAt time.Time) string {
+	t.Helper()
+	created, err := store.Create(context.Background(), photos.Photo{
+		FileHash: hash,
+		FilePath: "2024/01/" + hash + ".jpg",
+		FileName: hash + ".jpg",
+		TakenAt:  &takenAt,
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", hash, err)
@@ -228,6 +244,99 @@ func TestAlbumListCounts(t *testing.T) {
 	}
 	if list[1].UID != b1.UID || list[1].PhotoCount != 0 {
 		t.Errorf("album[1] = %+v, want Beach count 0", list[1])
+	}
+}
+
+// TestAlbumListCoverAndRange checks the derived columns of ListAlbums: the
+// fallback cover (the album's newest live photo, the same one on every request),
+// the hand-picked cover taking precedence over it, the aggregated capture-time
+// span, and an archived photo supplying neither.
+func TestAlbumListCoverAndRange(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+
+	oldest := makePhotoAt(t, photoStore, "cr1", time.Date(1998, 5, 1, 10, 0, 0, 0, time.UTC))
+	newest := makePhotoAt(t, photoStore, "cr2", time.Date(1999, 8, 2, 11, 0, 0, 0, time.UTC))
+	archived := makePhotoAt(t, photoStore, "cr3", time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC))
+	if _, err := photoStore.Archive(ctx, archived); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	undated := makePhoto(t, photoStore, "cr4")
+
+	ranged, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Ranged"})
+	pinned, _ := store.CreateAlbum(ctx, organize.Album{Title: "B Pinned"})
+	_, _ = store.CreateAlbum(ctx, organize.Album{Title: "C Empty"})
+	undatedAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Undated"})
+	for _, uid := range []string{oldest, newest, archived} {
+		if err := store.AddPhoto(ctx, ranged.UID, uid, 0); err != nil {
+			t.Fatalf("AddPhoto: %v", err)
+		}
+		if err := store.AddPhoto(ctx, pinned.UID, uid, 0); err != nil {
+			t.Fatalf("AddPhoto: %v", err)
+		}
+	}
+	if err := store.AddPhoto(ctx, undatedAlbum.UID, undated, 0); err != nil {
+		t.Fatalf("AddPhoto: %v", err)
+	}
+	if _, err := store.SetCover(ctx, pinned.UID, &oldest); err != nil {
+		t.Fatalf("SetCover: %v", err)
+	}
+
+	list, err := store.ListAlbums(ctx)
+	if err != nil {
+		t.Fatalf("ListAlbums: %v", err)
+	}
+	if len(list) != 4 {
+		t.Fatalf("ListAlbums len = %d, want 4", len(list))
+	}
+
+	// A Ranged: no hand-picked cover, so the newest live photo stands in. The
+	// archived photo neither becomes the cover nor stretches the range to 2030.
+	if got := list[0]; got.CoverUID == nil || *got.CoverUID != newest {
+		t.Errorf("ranged cover = %v, want fallback %q", got.CoverUID, newest)
+	}
+	assertRange(t, "ranged", list[0],
+		time.Date(1998, 5, 1, 10, 0, 0, 0, time.UTC),
+		time.Date(1999, 8, 2, 11, 0, 0, 0, time.UTC))
+
+	// B Pinned: same photos, but a hand-picked cover wins over the fallback.
+	if got := list[1]; got.CoverUID == nil || *got.CoverUID != oldest {
+		t.Errorf("pinned cover = %v, want hand-picked %q", got.CoverUID, oldest)
+	}
+
+	// C Empty: nothing to draw and nothing to date.
+	if got := list[2]; got.CoverUID != nil || got.TakenFrom != nil || got.TakenTo != nil {
+		t.Errorf("empty album = %+v, want no cover and no range", got)
+	}
+
+	// D Undated: a photo with an unknown capture time still covers the album, but
+	// contributes no range.
+	if got := list[3]; got.CoverUID == nil || *got.CoverUID != undated {
+		t.Errorf("undated cover = %v, want %q", got.CoverUID, undated)
+	}
+	if got := list[3]; got.TakenFrom != nil || got.TakenTo != nil {
+		t.Errorf("undated album range = %v–%v, want none", got.TakenFrom, got.TakenTo)
+	}
+
+	// The fallback must be deterministic: the same album, the same cover, always.
+	again, err := store.ListAlbums(ctx)
+	if err != nil {
+		t.Fatalf("ListAlbums again: %v", err)
+	}
+	if *again[0].CoverUID != *list[0].CoverUID {
+		t.Errorf("fallback cover changed between calls: %q then %q",
+			*list[0].CoverUID, *again[0].CoverUID)
+	}
+}
+
+// assertRange fails when the album's capture-time span is not exactly from–to.
+func assertRange(t *testing.T, name string, got organize.AlbumSummary, from, to time.Time) {
+	t.Helper()
+	if got.TakenFrom == nil || !got.TakenFrom.Equal(from) {
+		t.Errorf("%s taken_from = %v, want %v", name, got.TakenFrom, from)
+	}
+	if got.TakenTo == nil || !got.TakenTo.Equal(to) {
+		t.Errorf("%s taken_to = %v, want %v", name, got.TakenTo, to)
 	}
 }
 

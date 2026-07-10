@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { AlbumTile } from '../components/organize/AlbumTile'
 import { Layout } from '../components/Layout'
-import type { AlbumCount } from '../services/organize'
+import type { AlbumSummary } from '../services/organize'
 
 import i18n from './index'
 
@@ -26,7 +26,7 @@ function adminAuth(): AuthContextValue {
 }
 
 /** Builds an album-with-count fixture for the plural-rendering checks. */
-function album(count: number): AlbumCount {
+function album(count: number): AlbumSummary {
   return {
     uid: `al${count}`,
     slug: `album-${count}`,

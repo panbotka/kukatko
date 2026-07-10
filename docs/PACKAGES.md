@@ -623,9 +623,16 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   nedefaultní hodnotu (store maže řádek, který spadne na rating 0 + flag `none`), takže fotka bez
   řádku = rating 0 / flag `none`;
   `Store` = `NewStore(pool)` nad sdíleným pgx poolem: **alba** `CreateAlbum`/`GetAlbumByUID`/
-  `GetAlbumBySlug`/`UpdateAlbum` (re-slug z title)/`ListAlbums` (s počty fotek, řazení dle title)/
+  `GetAlbumBySlug`/`UpdateAlbum` (re-slug z title)/`ListAlbums` → `[]AlbumSummary` (řazení dle
+  title; `AlbumCount` + `CoverUID`/`TakenFrom`/`TakenTo` — vše dopočtené **v jednom SQL**, bez
+  migrace: `photo_count` z LEFT JOIN `album_photos`, `MIN`/`MAX(taken_at)` z LEFT JOINu na `photos`
+  s `archived_at IS NULL`, fallback obálka z `LEFT JOIN LATERAL … ORDER BY taken_at DESC NULLS LAST,
+  uid LIMIT 1`; `CoverUID = COALESCE(cover_photo_uid, fallback)` → ručně zvolená obálka vyhrává,
+  jinak nejnovější **živá** fotka, deterministicky stejná při každém dotazu. Archivovaná fotka se
+  počítá do `photo_count`, ale obálku nedodá ani rozsah neposune; nedatovaná fotka může být obálkou,
+  ale do rozsahu nevstupuje)/
   `SearchAlbums(q,limit)` (accent/case-insensitive ILIKE nad `immutable_unaccent(title/description)`,
-  s počty, cap limit — podklad `globalsearchapi`)/
+  s počty → `[]AlbumCount`, cap limit — podklad `globalsearchapi`)/
   `DeleteAlbum`/`AddPhoto` (idempotentní upsert pozice)/`RemovePhoto` (idempotentní)/`ReorderPhotos`
   (atomický přepis `sort_order` dle pořadí v tx)/`SetCover` (set/clear cover)/`ListPhotoUIDs`
   (řazení `sort_order`); **štítky** `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel`
@@ -654,7 +661,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (read/curace HTTP API nad alby a štítky — podklad Albums/Labels UI: rozhraní `AlbumStore`/
   `LabelStore` (podmnožiny `organize.Store`) → unit-testovatelné s faky bez DB;
   `NewAPI(Config{Albums,Labels,RequireAuth,RequireWrite})`+`RegisterRoutes` mountuje dva
-  subroutery: **alba** `GET /albums` (RequireAuth, `{albums:[AlbumCount]}` s počty + cover),
+  subroutery: **alba** `GET /albums` (RequireAuth, `{albums:[AlbumSummary]}` — počty, efektivní
+  `cover_uid` a rozsah `taken_from`/`taken_to`),
   `POST /albums` (RequireWrite, 201, `title` povinný, validace typu přes `ErrInvalidType`),
   `GET /albums/{uid}` (RequireAuth), `PATCH /albums/{uid}` (RequireWrite, edituje
   title/description/cover_photo_uid/private/order_by; **strukturální `type` se zachová** —

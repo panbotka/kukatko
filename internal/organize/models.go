@@ -111,11 +111,34 @@ type Album struct {
 }
 
 // AlbumCount is an album paired with how many photos it contains, as returned by
-// ListAlbums.
+// SearchAlbums.
 type AlbumCount struct {
 	Album
 	// PhotoCount is the number of photos in the album.
 	PhotoCount int `json:"photo_count"`
+}
+
+// AlbumSummary is an album as the album index renders it: the album with its
+// photo count, the cover to show for it, and the span of capture times across
+// the photos it holds. It is what ListAlbums returns.
+//
+// The three added fields are derived, not stored: they are aggregated per album
+// in one pass over its membership, so a caller never fetches an album's photos
+// to learn what to draw.
+type AlbumSummary struct {
+	AlbumCount
+	// CoverUID is the photo whose thumbnail stands for the album: the hand-picked
+	// Album.CoverPhotoUID when one is set, and otherwise the album's newest
+	// visible photo — the same photo on every request, never an arbitrary one.
+	// It is nil only for an album that holds no visible photo and has no cover
+	// chosen by hand, which is the album index's cue to draw the empty state.
+	CoverUID *string `json:"cover_uid,omitempty"`
+	// TakenFrom and TakenTo bracket the capture times of the album's visible
+	// photos: the earliest and the latest. Both are nil together when no visible
+	// photo in the album has a known capture time, since a range needs at least
+	// one; a single photo (or many taken at one instant) makes them equal.
+	TakenFrom *time.Time `json:"taken_from,omitempty"`
+	TakenTo   *time.Time `json:"taken_to,omitempty"`
 }
 
 // AlbumUpdate carries the user-editable fields applied by Store.UpdateAlbum.

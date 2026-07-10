@@ -111,7 +111,10 @@ zapiš sem.
   `GridSkeleton` (placeholder mřížka při prvním načtení); `PhotoTile`+`PhotoGrid` podporují
   volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`;
   heart i rating overlay se v selection módu skryjí),
-  `components/organize/` = `AlbumTile` (karta alba: cover/název/počet → `/albums/{uid}`),
+  `components/organize/` = `AlbumTile` (karta alba: **efektivní obálka** `cover_uid`
+  (ručně zvolená, jinak nejnovější fotka alba — počítá backend) / název / **rozsah let**
+  přes `formatCaptureRange` (jen když album má datované fotky) / počet → `/albums/{uid}`;
+  `EmptyState` až pro album bez fotek),
   `AlbumEditModal` (create/rename alba: název/popis/soukromé), `LabelEditModal` (create/rename
   štítku: jméno/priorita), `ReorderableGrid` (ne-virtualizovaná drag-and-drop mřížka + šipky pro
   přeřazení alba, controlled přes `onReorder`), `SelectionBar` (sticky toolbar výběru: počet +
@@ -418,6 +421,9 @@ zapiš sem.
   `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, neplatné→`"0:00"`) pro délku videa na dlaždicích +
   `formatMonth(year,month,locale)` (1-based rok/měsíc → locale-aware krátký měsíc + rok, např.
   `2026,1,'en'`→`"Jan 2026"`, mimo 1–12 → `""`) pro popisky ticků časové osy +
+  `formatCaptureRange(from?,to?)` (rozsah `taken_at` alba → nejužší tvar: jeden měsíc
+  `"6/2007"`, jeden rok `"2006"`, jinak `"1998–1999"` s en-dash; chybějící/neplatná mez →
+  `""`, tj. album bez datovaných fotek nekreslí řádek) pro `AlbumTile` +
   **locale-aware** `formatDate(value,locale)`/`formatDateTime(value,locale)` (ISO/epoch/`Date` →
   `toLocaleDateString`/`toLocaleString` s **aktivním jazykem UI** `i18n.language`, ne výchozím
   jazykem prohlížeče; neparseovatelný vstup → původní string; používá PhotoTile/DuplicateGroupCard/

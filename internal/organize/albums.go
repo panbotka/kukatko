@@ -34,8 +34,8 @@ func scanAlbum(row pgx.Row) (Album, error) {
 }
 
 // scanAlbumCount reads one album-with-count row (the albumColumns list followed
-// by a photo_count column) in order, wrapping any scan error. It is shared by
-// ListAlbums and SearchAlbums, whose projections match.
+// by a photo_count column) in order, wrapping any scan error. It backs
+// SearchAlbums, whose projection matches.
 func scanAlbumCount(row pgx.Row) (AlbumCount, error) {
 	var ac AlbumCount
 	if err := row.Scan(
@@ -45,6 +45,21 @@ func scanAlbumCount(row pgx.Row) (AlbumCount, error) {
 		return AlbumCount{}, fmt.Errorf("organize: scanning album count: %w", err)
 	}
 	return ac, nil
+}
+
+// scanAlbumSummary reads one album-index row (the albumColumns list followed by
+// photo_count, the effective cover and the capture-time bounds) in order,
+// wrapping any scan error. It matches listAlbumsSQL's projection.
+func scanAlbumSummary(row pgx.Row) (AlbumSummary, error) {
+	var as AlbumSummary
+	if err := row.Scan(
+		&as.UID, &as.Slug, &as.Title, &as.Description, &as.Type, &as.CoverPhotoUID,
+		&as.Private, &as.OrderBy, &as.CreatedBy, &as.CreatedAt, &as.UpdatedAt, &as.PhotoCount,
+		&as.CoverUID, &as.TakenFrom, &as.TakenTo,
+	); err != nil {
+		return AlbumSummary{}, fmt.Errorf("organize: scanning album summary: %w", err)
+	}
+	return as, nil
 }
 
 // CreateAlbum inserts a and returns it refreshed with the generated UID, unique
@@ -137,35 +152,68 @@ func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (A
 	return updated, err
 }
 
-// listAlbumsSQL reads every album with its photo count, ordered by title then uid
-// for a stable index display. The album columns are alias-qualified because the
-// album_photos join also exposes uid-shaped columns.
+// listAlbumsSQL reads every album with its photo count, its effective cover and
+// the capture-time span of its photos, ordered by title then uid for a stable
+// index display. The album columns are alias-qualified because the album_photos
+// join also exposes uid-shaped columns.
+//
+// Three joins carry the derived columns, all of them per album, none of them
+// fetching an album's photos into the process:
+//
+//   - album_photos gives photo_count, which stays a count of membership rows.
+//   - photos, joined through that membership and restricted to the live
+//     catalogue, gives MIN/MAX of taken_at. An archived photo joins as a NULL
+//     row, so it is counted but cannot move the range; a photo with an unknown
+//     capture time drops out of MIN/MAX the same way.
+//   - the LATERAL picks the fallback cover: the album's newest live photo, with
+//     an unknown capture time sorted last (such a photo becomes the cover only
+//     when nothing else can) and uid breaking ties. Both keys are total, so the
+//     same album returns the same cover on every request. COALESCE lets a
+//     hand-picked cover win over it.
 const listAlbumsSQL = `
 SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
        a.private, a.order_by, a.created_by, a.created_at, a.updated_at,
-       COUNT(ap.photo_uid) AS photo_count
+       COUNT(ap.photo_uid) AS photo_count,
+       COALESCE(a.cover_photo_uid, cover.photo_uid) AS cover_uid,
+       MIN(p.taken_at) AS taken_from,
+       MAX(p.taken_at) AS taken_to
 FROM albums a
 LEFT JOIN album_photos ap ON ap.album_uid = a.uid
-GROUP BY a.uid
+LEFT JOIN photos p ON p.uid = ap.photo_uid AND p.archived_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT ap2.photo_uid
+    FROM album_photos ap2
+    JOIN photos p2 ON p2.uid = ap2.photo_uid
+    WHERE ap2.album_uid = a.uid AND p2.archived_at IS NULL
+    ORDER BY p2.taken_at DESC NULLS LAST, p2.uid
+    LIMIT 1
+) cover ON TRUE
+GROUP BY a.uid, cover.photo_uid
 ORDER BY a.title, a.uid`
 
-// ListAlbums returns every album together with how many photos it contains,
+// ListAlbums returns every album together with how many photos it contains, the
+// cover to render for it and the span of capture times across its photos,
 // ordered by title then uid. A store with no albums yields an empty slice and a
 // nil error.
-func (s *Store) ListAlbums(ctx context.Context) ([]AlbumCount, error) {
+//
+// Only live (non-archived) photos supply the fallback cover and the capture-time
+// span, so the index describes exactly the photos the album's grid shows. A
+// hand-picked cover is honoured as chosen, archived or not, because it is the
+// user's own explicit answer to what the album looks like.
+func (s *Store) ListAlbums(ctx context.Context) ([]AlbumSummary, error) {
 	rows, err := s.pool.Query(ctx, listAlbumsSQL)
 	if err != nil {
 		return nil, fmt.Errorf("organize: listing albums: %w", err)
 	}
 	defer rows.Close()
 
-	out := make([]AlbumCount, 0)
+	out := make([]AlbumSummary, 0)
 	for rows.Next() {
-		ac, err := scanAlbumCount(rows)
+		as, err := scanAlbumSummary(rows)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, ac)
+		out = append(out, as)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("organize: iterating albums: %w", err)

@@ -27,8 +27,9 @@ import (
 // interface so the handlers depend on behaviour rather than the concrete store,
 // keeping them unit-testable with fakes.
 type AlbumStore interface {
-	// ListAlbums returns every album with its photo count.
-	ListAlbums(ctx context.Context) ([]organize.AlbumCount, error)
+	// ListAlbums returns every album with its photo count, effective cover and
+	// capture-time span.
+	ListAlbums(ctx context.Context) ([]organize.AlbumSummary, error)
 	// CreateAlbum inserts an album and returns it with its generated UID/slug.
 	CreateAlbum(ctx context.Context, album organize.Album) (organize.Album, error)
 	// GetAlbumByUID returns one album or organize.ErrAlbumNotFound.

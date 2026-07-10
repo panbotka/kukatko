@@ -252,7 +252,7 @@
     "create": "Nové album",
     "loading": "Načítání alb…",
     "error": "Alba se nepodařilo načíst.",
-    "noCover": "Bez náhledu",
+    "noPhotos": "Prázdné album",
     "private": "Soukromé",
     "photoCount_one": "{{count}} fotka",
     "photoCount_few": "{{count}} fotky",

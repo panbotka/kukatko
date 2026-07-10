@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -17,7 +18,7 @@ import (
 // fakeAlbums is an in-memory AlbumStore for handler tests. The err fields force a
 // specific error from the matching method; the recorded fields capture inputs.
 type fakeAlbums struct {
-	list      []organize.AlbumCount
+	list      []organize.AlbumSummary
 	album     organize.Album
 	created   organize.Album
 	updated   organize.Album
@@ -43,7 +44,7 @@ type fakeAlbums struct {
 	getCallCount int
 }
 
-func (f *fakeAlbums) ListAlbums(context.Context) ([]organize.AlbumCount, error) {
+func (f *fakeAlbums) ListAlbums(context.Context) ([]organize.AlbumSummary, error) {
 	return f.list, f.listErr
 }
 
@@ -175,24 +176,47 @@ func do(t *testing.T, h http.Handler, method, target, body string) *httptest.Res
 
 // --- Albums -----------------------------------------------------------------
 
-// TestAlbumList_ok returns the albums with their counts.
+// TestAlbumList_ok returns the albums with their counts, the effective cover and
+// the capture-time span, and omits the latter two for an album that has neither.
 func TestAlbumList_ok(t *testing.T) {
 	t.Parallel()
-	albums := &fakeAlbums{list: []organize.AlbumCount{
-		{Album: organize.Album{UID: "al_a", Title: "Trip"}, PhotoCount: 4},
+	cover := "ph_cover"
+	from := time.Date(1998, 5, 1, 10, 0, 0, 0, time.UTC)
+	to := time.Date(1999, 8, 2, 11, 0, 0, 0, time.UTC)
+	albums := &fakeAlbums{list: []organize.AlbumSummary{
+		{
+			AlbumCount: organize.AlbumCount{
+				Album: organize.Album{UID: "al_a", Title: "Trip"}, PhotoCount: 4,
+			},
+			CoverUID:  &cover,
+			TakenFrom: &from,
+			TakenTo:   &to,
+		},
+		{AlbumCount: organize.AlbumCount{Album: organize.Album{UID: "al_b", Title: "Empty"}}},
 	}}
 	rec := do(t, newServer(albums, &fakeLabels{}), http.MethodGet, "/albums", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	var got struct {
-		Albums []organize.AlbumCount `json:"albums"`
+		Albums []organize.AlbumSummary `json:"albums"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(got.Albums) != 1 || got.Albums[0].PhotoCount != 4 {
-		t.Errorf("body mismatch: %+v", got.Albums)
+	if len(got.Albums) != 2 || got.Albums[0].PhotoCount != 4 {
+		t.Fatalf("body mismatch: %+v", got.Albums)
+	}
+	first := got.Albums[0]
+	if first.CoverUID == nil || *first.CoverUID != cover {
+		t.Errorf("cover_uid = %v, want %q", first.CoverUID, cover)
+	}
+	if first.TakenFrom == nil || !first.TakenFrom.Equal(from) ||
+		first.TakenTo == nil || !first.TakenTo.Equal(to) {
+		t.Errorf("range = %v–%v, want %v–%v", first.TakenFrom, first.TakenTo, from, to)
+	}
+	if second := got.Albums[1]; second.CoverUID != nil || second.TakenFrom != nil {
+		t.Errorf("empty album carries cover/range: %+v", second)
 	}
 }
 

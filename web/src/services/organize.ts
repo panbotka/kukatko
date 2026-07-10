@@ -92,6 +92,22 @@ export interface AlbumCount extends Album {
 }
 
 /**
+ * An album as the album index renders it (`organize.AlbumSummary`): the album
+ * with its photo count, the cover to draw and the capture-time span of the
+ * photos it holds.
+ *
+ * `cover_uid` is the hand-picked `cover_photo_uid` when there is one and the
+ * album's newest photo otherwise; it is absent only for an album with no photos
+ * to show. `taken_from`/`taken_to` are absent together when no photo in the
+ * album has a known capture time.
+ */
+export interface AlbumSummary extends AlbumCount {
+  cover_uid?: string
+  taken_from?: string
+  taken_to?: string
+}
+
+/**
  * Editable album fields sent to create (`POST /albums`) and update
  * (`PATCH /albums/{uid}`). `type` is only honoured on create — the backend
  * preserves the structural type on update. A `null` cover clears it.
@@ -107,7 +123,7 @@ export interface AlbumInput {
 
 /** Response body of `GET /api/v1/albums`. */
 interface AlbumsResponse {
-  albums: AlbumCount[]
+  albums: AlbumSummary[]
 }
 
 /** Response body of the album membership endpoints: the photos in display order. */
@@ -115,8 +131,11 @@ interface PhotoUIDsResponse {
   photo_uids: string[]
 }
 
-/** Lists every album with its photo count and cover, ordered by title. */
-export async function fetchAlbums(signal?: AbortSignal): Promise<AlbumCount[]> {
+/**
+ * Lists every album with its photo count, effective cover and capture-time
+ * span, ordered by title.
+ */
+export async function fetchAlbums(signal?: AbortSignal): Promise<AlbumSummary[]> {
   const body = await getJSON<AlbumsResponse>('/albums', signal)
   return body.albums
 }

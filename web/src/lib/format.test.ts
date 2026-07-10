@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatBytes, formatDate, formatDateTime, formatDuration, formatMonth } from './format'
+import {
+  formatBytes,
+  formatCaptureRange,
+  formatDate,
+  formatDateTime,
+  formatDuration,
+  formatMonth,
+} from './format'
 
 describe('formatBytes', () => {
   it('renders bytes without decimals', () => {
@@ -62,6 +69,34 @@ describe('formatMonth', () => {
   it('returns an empty string for an out-of-range month', () => {
     expect(formatMonth(2026, 0, 'en')).toBe('')
     expect(formatMonth(2026, 13, 'en')).toBe('')
+  })
+})
+
+describe('formatCaptureRange', () => {
+  // Every fixture sits at midday, mid-month, so no host timezone can shift it
+  // into a neighbouring month or year and make the expectation depend on where
+  // the test runs.
+  it('renders a span inside one month as month/year', () => {
+    expect(formatCaptureRange('2007-06-03T12:00:00Z', '2007-06-24T12:00:00Z')).toBe('6/2007')
+  })
+
+  it('renders a span inside one year as the bare year', () => {
+    expect(formatCaptureRange('2006-02-10T12:00:00Z', '2006-11-20T12:00:00Z')).toBe('2006')
+  })
+
+  it('renders a span across years as first–last with an en dash', () => {
+    expect(formatCaptureRange('1998-07-15T12:00:00Z', '1999-04-15T12:00:00Z')).toBe('1998–1999')
+  })
+
+  it('renders nothing for an album with no dated photos', () => {
+    expect(formatCaptureRange(undefined, undefined)).toBe('')
+    expect(formatCaptureRange('2006-02-10T12:00:00Z', undefined)).toBe('')
+    expect(formatCaptureRange(undefined, '2006-02-10T12:00:00Z')).toBe('')
+    expect(formatCaptureRange('not-a-date', 'not-a-date')).toBe('')
+  })
+
+  it('collapses a single photo to its own month', () => {
+    expect(formatCaptureRange('2019-09-09T12:00:00Z', '2019-09-09T12:00:00Z')).toBe('9/2019')
   })
 })
 

@@ -8,10 +8,13 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { AlbumTile } from '../components/organize/AlbumTile'
-import { type AlbumCount, fetchAlbums } from '../services/organize'
+import { type AlbumSummary, fetchAlbums } from '../services/organize'
 
 /** Fetch lifecycle of the albums list. */
-type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; albums: AlbumCount[] }
+type State =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; albums: AlbumSummary[] }
 
 /**
  * The albums index: a responsive grid of album cards (cover, title, count), each

@@ -381,7 +381,7 @@ func (t *fakeThumbs) GenerateAll(_ context.Context, _ photos.Photo) (map[string]
 
 // fakeAlbumStore records albums and membership in memory.
 type fakeAlbumStore struct {
-	albums  []organize.AlbumCount
+	albums  []organize.AlbumSummary
 	members map[string][]string
 	seq     int
 }
@@ -392,7 +392,7 @@ func newFakeAlbumStore() *fakeAlbumStore {
 }
 
 // ListAlbums returns the recorded albums.
-func (s *fakeAlbumStore) ListAlbums(_ context.Context) ([]organize.AlbumCount, error) {
+func (s *fakeAlbumStore) ListAlbums(_ context.Context) ([]organize.AlbumSummary, error) {
 	return s.albums, nil
 }
 
@@ -400,7 +400,7 @@ func (s *fakeAlbumStore) ListAlbums(_ context.Context) ([]organize.AlbumCount, e
 func (s *fakeAlbumStore) CreateAlbum(_ context.Context, a organize.Album) (organize.Album, error) {
 	s.seq++
 	a.UID = fmt.Sprintf("al%08d", s.seq)
-	s.albums = append(s.albums, organize.AlbumCount{Album: a})
+	s.albums = append(s.albums, organize.AlbumSummary{AlbumCount: organize.AlbumCount{Album: a}})
 	return a, nil
 }
 
