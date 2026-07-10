@@ -8,7 +8,12 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `download_token`), `POST /auth/logout`, `GET /auth/me`, `POST /auth/password` (zruší ostatní
   session). Admin-only: `GET|POST /admin/users`, `PATCH /admin/users/{uid}`,
   `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset zruší všechny
-  session uživatele). Role: admin/editor/viewer (editor+admin write). **Sliding session expiry**
+  session uživatele). Odpovědi admin user endpointů nesou vedle `display_name` i volný **`note`**
+  (admin poznámka, proč účet existuje / kdo to je). Obě pole jsou volitelná, default prázdný
+  řetězec. `note` delší než **1000 znaků** (runy, ne bajty) → 400 se zprávou pojmenující pole.
+  `PATCH` má u `note` **partial-update** sémantiku: vynechaný klíč nechá uloženou poznámku beze
+  změny, `""` ji smaže. **`note` čte jen admin** — nikdy není v payloadu `POST /auth/login` ani
+  `GET /auth/me`. Role: admin/editor/viewer (editor+admin write). **Sliding session expiry**
   (`auth.session_ttl` do cap `auth.session_max_lifetime`), **login rate-limit**
   (`auth.login_rate_limit`/`auth.login_rate_window` → 429), **bootstrap admin** z
   `auth.bootstrap_admin_username/password`. Middleware navíc `RequireAuthOrDownloadToken`

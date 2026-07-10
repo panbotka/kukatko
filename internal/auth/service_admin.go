@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"time"
+	"unicode/utf8"
 )
 
 // BootstrapOutcome reports what Bootstrap did, so the caller can log an
@@ -21,20 +22,41 @@ const (
 )
 
 // CreateUserInput holds the fields needed to create a user (admin-only).
+// DisplayName and Note are both optional and default to the empty string.
+//
+// Its field order and types mirror createUserRequest so the HTTP layer can
+// convert between them directly; keep the two in step.
 type CreateUserInput struct {
 	Username    string
 	Password    string
 	DisplayName string
 	Email       string
 	Role        Role
+	Note        string
 }
 
 // UpdateUserInput holds the mutable profile fields for an admin user update.
+// Note is a pointer to distinguish "absent" from "empty": nil leaves the stored
+// note untouched, while a pointer to "" clears it.
+//
+// Its field order and types mirror updateUserRequest so the HTTP layer can
+// convert between them directly; keep the two in step.
 type UpdateUserInput struct {
 	DisplayName string
 	Email       string
 	Role        Role
 	Disabled    bool
+	Note        *string
+}
+
+// validateNote returns ErrNoteTooLong when note exceeds MaxNoteLen. Length is
+// measured in runes rather than bytes so that a note of accented characters is
+// judged by the same limit as an ASCII one.
+func validateNote(note string) error {
+	if utf8.RuneCountInString(note) > MaxNoteLen {
+		return ErrNoteTooLong
+	}
+	return nil
 }
 
 // Bootstrap creates the first admin account when the users table is empty and a
@@ -65,11 +87,15 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (Boo
 
 // CreateUser validates and inserts a new user, hashing the supplied password. It
 // returns ErrInvalidRole for an unknown role, ErrPasswordTooShort for a weak
-// password, ErrUsernameTaken on a duplicate username, and the created user
-// (without its password hash relevant to callers) on success.
+// password, ErrNoteTooLong for an over-length note, ErrUsernameTaken on a
+// duplicate username, and the created user (without its password hash relevant
+// to callers) on success.
 func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, ErrInvalidRole
+	}
+	if err := validateNote(in.Note); err != nil {
+		return User{}, err
 	}
 	hash, err := HashPassword(in.Password)
 	if err != nil {
@@ -86,6 +112,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, err
 		Email:        in.Email,
 		Role:         in.Role,
 		PasswordHash: hash,
+		Note:         in.Note,
 	}
 	if err := s.store.CreateUser(ctx, user); err != nil {
 		return User{}, err
@@ -105,13 +132,19 @@ func (s *Service) GetUser(ctx context.Context, uid string) (User, error) {
 
 // UpdateUser updates a user's profile fields. When the update disables the
 // account, all of that user's sessions are invalidated so the change takes
-// effect immediately. It returns ErrInvalidRole for an unknown role and
-// ErrUserNotFound if no such user exists.
+// effect immediately. A nil in.Note leaves the stored note untouched. It returns
+// ErrInvalidRole for an unknown role, ErrNoteTooLong for an over-length note,
+// and ErrUserNotFound if no such user exists.
 func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, ErrInvalidRole
 	}
-	user, err := s.store.UpdateUserProfile(ctx, uid, in.DisplayName, in.Email, in.Role, in.Disabled)
+	if in.Note != nil {
+		if err := validateNote(*in.Note); err != nil {
+			return User{}, err
+		}
+	}
+	user, err := s.store.UpdateUserProfile(ctx, uid, in)
 	if err != nil {
 		return User{}, err
 	}

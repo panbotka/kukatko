@@ -288,6 +288,212 @@ func TestHTTP_changePassword(t *testing.T) {
 	assertStatus(t, env, client, http.MethodGet, "/api/v1/auth/me", "", http.StatusOK)
 }
 
+// adminUserBody marshals fields into a JSON body for the admin user endpoints.
+// A key that is simply absent from fields is absent from the body, which is how
+// the partial-update tests express "leave the note untouched".
+func adminUserBody(t *testing.T, fields map[string]any) string {
+	t.Helper()
+	b, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("marshalling body: %v", err)
+	}
+	return string(b)
+}
+
+// decodeUser unmarshals a single user object from a response body into a generic
+// map, so tests can assert on the presence or absence of a JSON key.
+func decodeUser(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var user map[string]any
+	if err := json.Unmarshal(body, &user); err != nil {
+		t.Fatalf("decoding user: %v (body %s)", err, body)
+	}
+	return user
+}
+
+// assertNote asserts the user object carries a note field equal to want.
+func assertNote(t *testing.T, user map[string]any, want string) {
+	t.Helper()
+	got, ok := user["note"]
+	if !ok {
+		t.Fatalf("admin user payload has no note field: %v", user)
+	}
+	if got != want {
+		t.Errorf("note = %q, want %q", got, want)
+	}
+}
+
+// createNotedUser creates a user through the admin API with the given note and
+// returns the decoded response body.
+func (e *httpEnv) createNotedUser(t *testing.T, admin *http.Client, username, note string) map[string]any {
+	t.Helper()
+	body := adminUserBody(t, map[string]any{
+		"username": username, "password": testPassword, "role": "viewer", "note": note,
+	})
+	status, data := e.do(t, admin, http.MethodPost, "/api/v1/admin/users", body)
+	if status != http.StatusCreated {
+		t.Fatalf("create user status = %d, want 201 (body %s)", status, data)
+	}
+	return decodeUser(t, data)
+}
+
+func TestHTTP_adminUserNoteLifecycle(t *testing.T) {
+	env := newHTTPEnv(t, 50)
+	env.mustCreate(t, "noteadmin", auth.RoleAdmin)
+	admin := env.loginClient(t, "noteadmin")
+
+	const note = "Contractor; account kept for the 2026 audit."
+	created := env.createNotedUser(t, admin, "noted", note)
+	assertNote(t, created, note)
+	uid, _ := created["uid"].(string)
+	path := "/api/v1/admin/users/" + uid
+
+	// A create that omits display_name and note stays valid and defaults to empty.
+	bare := adminUserBody(t, map[string]any{
+		"username": "bare", "password": testPassword, "role": "viewer",
+	})
+	status, data := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", bare)
+	if status != http.StatusCreated {
+		t.Fatalf("bare create status = %d, want 201 (body %s)", status, data)
+	}
+	assertNote(t, decodeUser(t, data), "")
+
+	// Omitting note from the update leaves the stored note untouched.
+	partial := adminUserBody(t, map[string]any{
+		"display_name": "Noted User", "email": "noted@example.com", "role": "viewer",
+	})
+	status, data = env.do(t, admin, http.MethodPatch, path, partial)
+	if status != http.StatusOK {
+		t.Fatalf("partial update status = %d, want 200 (body %s)", status, data)
+	}
+	updated := decodeUser(t, data)
+	assertNote(t, updated, note)
+	if updated["display_name"] != "Noted User" {
+		t.Errorf("display_name = %v, want %q", updated["display_name"], "Noted User")
+	}
+
+	// Sending an empty string clears the note.
+	clearBody := adminUserBody(t, map[string]any{
+		"display_name": "Noted User", "email": "noted@example.com", "role": "viewer", "note": "",
+	})
+	status, data = env.do(t, admin, http.MethodPatch, path, clearBody)
+	if status != http.StatusOK {
+		t.Fatalf("clear-note status = %d, want 200 (body %s)", status, data)
+	}
+	assertNote(t, decodeUser(t, data), "")
+}
+
+func TestHTTP_adminUserNoteListedAndPersisted(t *testing.T) {
+	env := newHTTPEnv(t, 50)
+	env.mustCreate(t, "listadmin", auth.RoleAdmin)
+	admin := env.loginClient(t, "listadmin")
+
+	const note = "Owner of the shared family album."
+	created := env.createNotedUser(t, admin, "listed", note)
+	uid, _ := created["uid"].(string)
+
+	status, data := env.do(t, admin, http.MethodGet, "/api/v1/admin/users", "")
+	if status != http.StatusOK {
+		t.Fatalf("list users status = %d, want 200 (body %s)", status, data)
+	}
+	var users []map[string]any
+	if err := json.Unmarshal(data, &users); err != nil {
+		t.Fatalf("decoding user list: %v (body %s)", err, data)
+	}
+	for _, u := range users {
+		if u["uid"] == uid {
+			assertNote(t, u, note)
+			return
+		}
+	}
+	t.Fatalf("created user %q missing from list (body %s)", uid, data)
+}
+
+func TestHTTP_adminUserNoteTooLong(t *testing.T) {
+	env := newHTTPEnv(t, 50)
+	env.mustCreate(t, "lenadmin", auth.RoleAdmin)
+	admin := env.loginClient(t, "lenadmin")
+
+	tooLong := strings.Repeat("a", auth.MaxNoteLen+1)
+
+	create := adminUserBody(t, map[string]any{
+		"username": "toolong", "password": testPassword, "role": "viewer", "note": tooLong,
+	})
+	status, data := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", create)
+	if status != http.StatusBadRequest {
+		t.Fatalf("over-length create status = %d, want 400 (body %s)", status, data)
+	}
+	if !strings.Contains(string(data), "note") {
+		t.Errorf("over-length create error does not name the note field: %s", data)
+	}
+
+	// The same limit applies on update.
+	target := env.createNotedUser(t, admin, "lentarget", "short")
+	uid, _ := target["uid"].(string)
+	update := adminUserBody(t, map[string]any{"role": "viewer", "note": tooLong})
+	status, data = env.do(t, admin, http.MethodPatch, "/api/v1/admin/users/"+uid, update)
+	if status != http.StatusBadRequest {
+		t.Fatalf("over-length update status = %d, want 400 (body %s)", status, data)
+	}
+	if !strings.Contains(string(data), "note") {
+		t.Errorf("over-length update error does not name the note field: %s", data)
+	}
+
+	// A note of exactly MaxNoteLen runes is accepted.
+	atLimit := adminUserBody(t, map[string]any{
+		"username": "atlimit", "password": testPassword, "role": "viewer",
+		"note": strings.Repeat("a", auth.MaxNoteLen),
+	})
+	if status, data := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", atLimit); status != http.StatusCreated {
+		t.Errorf("at-limit create status = %d, want 201 (body %s)", status, data)
+	}
+}
+
+func TestHTTP_userNoteNeverReachesNonAdmin(t *testing.T) {
+	env := newHTTPEnv(t, 50)
+	env.mustCreate(t, "secretadmin", auth.RoleAdmin)
+	admin := env.loginClient(t, "secretadmin")
+
+	const note = "Do not surface this to the account holder."
+	env.createNotedUser(t, admin, "subject", note)
+
+	// The noted user logs in as a plain viewer: neither the login payload nor
+	// /auth/me may carry the note.
+	client := newClient(t)
+	status, data := env.do(t, client, http.MethodPost, "/api/v1/auth/login", loginJSON("subject", testPassword))
+	if status != http.StatusOK {
+		t.Fatalf("login status = %d, want 200 (body %s)", status, data)
+	}
+	assertNoteAbsent(t, t.Name()+" login", data)
+
+	status, data = env.do(t, client, http.MethodGet, "/api/v1/auth/me", "")
+	if status != http.StatusOK {
+		t.Fatalf("me status = %d, want 200 (body %s)", status, data)
+	}
+	assertNoteAbsent(t, t.Name()+" me", data)
+
+	// And the viewer cannot reach the admin endpoint that would expose it.
+	assertStatus(t, env, client, http.MethodGet, "/api/v1/admin/users", "", http.StatusForbidden)
+}
+
+// assertNoteAbsent asserts that a session payload's embedded user object carries
+// no note key and that the note text appears nowhere in the raw body.
+func assertNoteAbsent(t *testing.T, label string, body []byte) {
+	t.Helper()
+	var resp struct {
+		User map[string]any `json:"user"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("%s: decoding body: %v (body %s)", label, err, body)
+	}
+	if _, ok := resp.User["note"]; ok {
+		t.Errorf("%s: payload leaks note field: %v", label, resp.User)
+	}
+	if strings.Contains(string(body), "Do not surface") {
+		t.Errorf("%s: payload leaks note text: %s", label, body)
+	}
+}
+
 func TestHTTP_adminResetPassword(t *testing.T) {
 	env := newHTTPEnv(t, 50)
 	env.mustCreate(t, "rootadmin", auth.RoleAdmin)

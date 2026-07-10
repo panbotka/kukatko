@@ -26,9 +26,11 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 // userColumns is the canonical, ordered column list for user reads, matched by
-// scanUser.
+// scanUser. It is valid in both a SELECT list and a RETURNING clause. note is
+// nullable in the schema, so it is coalesced to the empty string here and the Go
+// model can keep it a plain string.
 const userColumns = `uid, username, display_name, email, password_hash, role,
-	disabled, created_at, updated_at, last_login_at`
+	disabled, created_at, updated_at, last_login_at, COALESCE(note, '') AS note`
 
 // scanUser reads one user row in userColumns order from a pgx.Row (a single-row
 // QueryRow result or a row during iteration), returning a wrapped error on
@@ -37,7 +39,7 @@ func scanUser(row pgx.Row) (User, error) {
 	var u User
 	if err := row.Scan(
 		&u.UID, &u.Username, &u.DisplayName, &u.Email, &u.PasswordHash, &u.Role,
-		&u.Disabled, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt,
+		&u.Disabled, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Note,
 	); err != nil {
 		return User{}, fmt.Errorf("auth: scanning user: %w", err)
 	}
@@ -55,10 +57,10 @@ func isUniqueViolation(err error) bool {
 // defaults and not read back). It returns ErrUsernameTaken if the username
 // already exists, or a wrapped error otherwise.
 func (s *Store) CreateUser(ctx context.Context, u User) error {
-	const q = `INSERT INTO users (uid, username, display_name, email, password_hash, role, disabled)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	const q = `INSERT INTO users (uid, username, display_name, email, password_hash, role, disabled, note)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 	_, err := s.pool.Exec(ctx, q,
-		u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled)
+		u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ErrUsernameTaken
@@ -120,12 +122,15 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 // UpdateUserProfile updates the mutable profile fields of the user identified by
 // uid and returns the refreshed user. It returns ErrUserNotFound if no such user
 // exists. updated_at is bumped to now() by the statement.
-func (s *Store) UpdateUserProfile(
-	ctx context.Context, uid, displayName, email string, role Role, disabled bool,
-) (User, error) {
-	q := `UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5, updated_at = now()
+//
+// The note is a partial update: a nil in.Note leaves the stored note untouched,
+// while a non-nil one (including a pointer to "") overwrites it. COALESCE keeps
+// that branch in SQL, so a nil note needs no separate statement.
+func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
+	q := `UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
+			note = COALESCE($6::text, note), updated_at = now()
 		WHERE uid = $1 RETURNING ` + userColumns
-	user, err := scanUser(s.pool.QueryRow(ctx, q, uid, displayName, email, role, disabled))
+	user, err := scanUser(s.pool.QueryRow(ctx, q, uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrUserNotFound

@@ -24,7 +24,14 @@ var (
 	ErrInvalidRole = errors.New("auth: invalid role")
 	// ErrUserDisabled indicates the account is disabled.
 	ErrUserDisabled = errors.New("auth: user is disabled")
+	// ErrNoteTooLong indicates the user note exceeds MaxNoteLen characters. Its
+	// message names the offending field so it can be surfaced verbatim in a 400.
+	ErrNoteTooLong = errors.New("auth: note must be at most 1000 characters")
 )
+
+// MaxNoteLen is the maximum length of a user note, measured in runes rather than
+// bytes so that accented text is not penalised against the limit.
+const MaxNoteLen = 1000
 
 // User is a local account. PasswordHash is never serialised to clients (no JSON
 // tag exposure); the JSON form is used by the HTTP layer for user-management
@@ -41,6 +48,11 @@ type User struct {
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
 	// PasswordHash holds the bcrypt hash; it is excluded from JSON output.
 	PasswordHash string `json:"-"`
+	// Note is a free-text administrative note. It is excluded from JSON output
+	// so it can never leak through the login or /auth/me payloads, which embed a
+	// User verbatim. The admin-only user endpoints re-add it explicitly via
+	// adminUserResponse.
+	Note string `json:"-"`
 }
 
 // Session is an authenticated session bound to a user. Token is the opaque value

@@ -17,6 +17,12 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `Store` nad pgx, `Service` orchestrace login/session/bootstrap/správa uživatelů,
   `API` = HTTP handlery + RBAC middleware `RequireAuth`/`RequireWrite`/`RequireAdmin` +
   `RegisterRoutes`; session a users v migraci `0002_auth.sql`.
+  **Admin poznámka u uživatele** (`note`, migrace `0021_user_note.sql`, nullable TEXT →
+  `COALESCE(note,'')` v `userColumns`): `User.Note` je `json:"-"`, takže neuteče přes
+  `loginResponse` (`/auth/login`, `/auth/me`); admin endpointy ho přidávají zpět přes
+  `adminUserResponse` (embedded `User` + `note`). Validace `validateNote` → `ErrNoteTooLong`
+  (`MaxNoteLen` = 1000 **run**) → 400. `UpdateUserInput.Note` je `*string`: `nil` = nech být,
+  `""` = smaž (SQL `note = COALESCE($6::text, note)`).
   **API tokeny** (`apitoken.go`, `store_apitoken.go`, `service_apitoken.go`,
   `handlers_apitoken.go`, migrace `0020_api_tokens.sql`): dlouhodobý bearer credential
   `kkt_<id>_<secret>` pro neinteraktivní klienty. `<id>` je PK řádku (prefix `at`), takže ověření
