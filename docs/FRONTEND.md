@@ -74,7 +74,10 @@ zapiš sem.
   `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
   window-scroll, `endReached` → další stránka, footer spinner/retry; props `favoritable`/`ratable`
   prosáknou srdíčko a hvězdy/flag na dlaždice; volitelný `gridRef` (imperativní `scrollToIndex`
-  handle) + `onRangeChanged` (viditelný rozsah) pro časovou osu),
+  handle) + `onRangeChanged` (viditelný rozsah) pro časovou osu; šablonu sloupců bere z
+  `useGridDensity` → `lib/gridDensity` `gridTemplateColumns`, DOM nese `data-density` pro testy.
+  Změna hustoty **jen přestyluje** existující `<div>` — virtuoso doměří dlaždice, scroll i výběr
+  přežijí, protože se mřížka nekeyuje ani neremountuje),
   `TimelineScrubber` (**časová osa** — tenká fixní svislá datová lišta u mřížky: fetchne měsíční
   histogram přes `useTimeline(params)` (refetch při změně filtrů), každý měsíc = klikací tick
   umístěný proporčně dle `cumulative/total`, měsíční popisky přes `lib/format` `formatMonth`;
@@ -83,7 +86,8 @@ zapiš sem.
   timeline nerendruje nic a neposouvá layout, na malých šířkách se skryje přes `styles/app.css`
   `.kukatko-timeline*`; jen pro výchozí newest řazení), `FilterBar`
   (**redesign pro klidný výchozí stav + progresivní odhalení**: v hlavičce jen prominentní
-  vyhledávací pole (vizuální kotva, největší prvek), řazení (vč. **dle hodnocení**) a tlačítko
+  vyhledávací pole (vizuální kotva, největší prvek), řazení (vč. **dle hodnocení**),
+  `GridDensityControl` a tlačítko
   **Filtry** s odznakem počtu aktivních filtrů; pokročilé filtry (datum od/do, poloha, soukromé,
   fotoaparát, archiv, **min. hodnocení ≥1…≥5**, **flag vybrané/zamítnuté**) žijí v rozbalovacím
   panelu — na desktopu inline `Collapse`, na mobilu `Offcanvas` dle `matchMedia` (`useIsNarrow`,
@@ -92,7 +96,8 @@ zapiš sem.
   nemá, má vlastní pole) + jedno **„zrušit filtry"** + počet fotek; **beze změny chování** — vše
   jede přes `viewToParams`/`useUrlState`/`LibraryView`, dotaz replacuje historii, ostatní pushují;
   generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
-  na search stránce (chipy/panel/zrušit fungují dál); tap-targety ~44 px přes `styles/app.css`
+  na search stránce, `showDensity` skryje hustotu v koši (kartová, ne foto-mřížka)
+  (chipy/panel/zrušit fungují dál); tap-targety ~44 px přes `styles/app.css`
   `.kukatko-filter-*`;
   **tři facety, kterými se fotky reálně hledají** (prop `facets` z `useLibraryFacets`) jsou
   **vždy viditelné** pod hlavičkou, ne schované v panelu: **Rok** = prostý `<select>`
@@ -119,7 +124,12 @@ zapiš sem.
   linku, takže klik nenaviguje), `RatingStars` (pure controlled 0–5 hvězd; klik na aktuální
   hodnocení maže na 0; bez `onRate` read-only display) + `FlagControl` (pure controlled pick/
   reject toggle, klik na aktivní flag maže na `none`; oba sibling linku → klik nenaviguje),
-  `GridSkeleton` (placeholder mřížka při prvním načtení); `PhotoTile`+`PhotoGrid` podporují
+  `GridSkeleton` (placeholder mřížka při prvním načtení; zrcadlí i zvolenou hustotu, takže po
+  načtení fotek nenaskočí layout),
+  `GridDensityControl` (`<select>` **Dlaždic na řádek**: `Automaticky` + 2…8, ikona 3×3, popisek
+  `visually-hidden`; čte/píše `useGridDensity`, tedy localStorage, **ne URL** — je to preference
+  zařízení, ne součást sdíleného pohledu; sedí v hlavičce `FilterBar`u, mění všechny foto-mřížky
+  v appce najednou); `PhotoTile`+`PhotoGrid` podporují
   volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`;
   heart i rating overlay se v selection módu skryjí),
   `components/organize/` = `AlbumTile` (karta alba: **efektivní obálka** `cover_uid`
@@ -128,7 +138,7 @@ zapiš sem.
   `EmptyState` až pro album bez fotek),
   `AlbumEditModal` (create/rename alba: název/popis/soukromé), `LabelEditModal` (create/rename
   štítku: jméno/priorita), `ReorderableGrid` (ne-virtualizovaná drag-and-drop mřížka + šipky pro
-  přeřazení alba, controlled přes `onReorder`), `SelectionBar` (sticky toolbar výběru: počet +
+  přeřazení alba, controlled přes `onReorder`; ctí `useGridDensity` jako ostatní foto-mřížky), `SelectionBar` (sticky toolbar výběru: počet +
   akce + zrušit), `BulkEditControl` (**znovupoužitelný spouštěč** hromadné úpravy: tlačítko
   (`selection.edit`) + `BulkEditModal`, řízené výhradně výsledkem `useBulkEdit`; **viewerovi se
   nevykreslí vůbec**, při nulovém výběru je disabled — stačí ho vložit do `SelectionBar`, stránka
@@ -477,6 +487,12 @@ zapiš sem.
   ve stavu → `statusOf` mění identitu při každém dosednutí, takže na něm jde záviset efektem;
   `useSlideshowSettings` = persistentní efekt+rychlost přes
   `lib/slideshowSettings` (read once on mount, setteri zapisují do localStorage, sanitizace);
+  `useGridDensity()` → `{density,setDensity}` = hustota foto-mřížky (2–8 sloupců nebo `'auto'`)
+  přes `useSyncExternalStore` nad `lib/gridDensity`. localStorage je **jediný zdroj pravdy** (žádná
+  in-memory kopie): snapshot je primitivum, takže Reactí `Object.is` porovnání nikdy nezacyklí.
+  `subscribe` poslouchá i `storage` event → všechny záložky na zařízení drží stejný počet sloupců;
+  `setGridDensity` sanitizuje, zapíše a překreslí **všechny** mřížky naráz, bez contextu a bez
+  providera (takže i testy stránek fungují bez wrapperu);
   `usePrefersReducedMotion()` = sleduje `(prefers-reduced-motion: reduce)` přes `matchMedia`
   (odebírá `change`, chybějící/rozbité `matchMedia` → `false`) — volající dekorativní animaci
   **vynechá**, ne zkrátí)),
@@ -522,6 +538,17 @@ zapiš sem.
   in/out × 5 hloubek) se derivují **deterministicky** z FNV-1a hashe `uid`, takže stejné album
   vypadá při každém přehrání stejně. Oba endpointy drží offset do `panLimit` svého scale a scale
   i offset se interpolují lineárně → **obraz nikdy neodkryje okraj** scény;
+  `gridDensity.ts` = typ `GridDensity` (`'auto'` | 2…8) + `GRID_COLUMNS_MIN`/`MAX`/
+  `GRID_COLUMN_CHOICES`/`GRID_TILE_MIN_PX` (140) / `GRID_GAP_PX` (6) / `GRID_DENSITY_DEFAULT`
+  (`'auto'` = dnešní width-driven mřížka) + pure `readDensity`/`writeDensity`/`sanitizeDensity`
+  (localStorage `kukatko.grid.density`, holý skalár v JSON; číslo se zaokrouhlí a **oklampuje do
+  2…8**, cokoli jiného — chybějící klíč, rozbitý JSON, `NaN`, objekt — padá na default, nikdy
+  nehází) + pure `gridTemplateColumns(density, gapPx?)`. Trik pro „přesně N sloupců na desktopu,
+  míň (nikdy víc) na úzkém displeji": `repeat(auto-fill, minmax(max(140px, calc((100% - Gpx) / N)),
+  1fr))` — dokud se ideální šířka sloupce vejde nad práh 140 px, `auto-fill` naskládá přesně N;
+  pod prahem se stopy přestanou zmenšovat a vejde se jich méně. `G` = `(N-1)*gap + 1`, ten pixel
+  navíc je rezerva proti sub-pixel zaokrouhlení, které by jinak poslední sloupec shodilo na nový
+  řádek. Ověřeno v headless Chromiu pro N=2…8 na šířkách 300–1600 px;
   `slideshowSettings.ts` = typ `SlideshowSettings{effect,intervalMs}` + `SlideshowEffect`
   (`fade`/`slide`/`kenburns`/`none`) + nabídky `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` (1/2/3/5/10/15/30 s)
   + `SLIDESHOW_DEFAULTS` (`fade`, 5 s)

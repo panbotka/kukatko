@@ -15,6 +15,7 @@ import { hasActiveFilters, type LibraryView, LIBRARY_DEFAULTS } from '../../lib/
 import { type SetUrlState } from '../../lib/urlState'
 
 import { buildChips } from './filterChips'
+import { GridDensityControl } from './GridDensityControl'
 import { SearchableSelect } from './SearchableSelect'
 
 /** DOM id of the collapsible / offcanvas advanced-filter panel. */
@@ -38,6 +39,11 @@ export interface FilterBarProps<T extends LibraryView> {
    */
   showSort?: boolean
   /**
+   * Whether to show the grid-density picker. The trash hides it (`false`) because
+   * its grid is a card list, not the photo grid the density governs. Defaults true.
+   */
+  showDensity?: boolean
+  /**
    * The Year / Album / Label facet option lists. Omit to hide the facet row —
    * pages whose grid is already scoped to one album, label or place have nothing
    * to offer there. Album titles and label names also let the chips name a filter
@@ -56,7 +62,9 @@ export interface FilterBarProps<T extends LibraryView> {
  * Library filter + sort controls, built for a calm default and progressive
  * disclosure. The header is a single row: a prominent quick-filter field (the
  * visual anchor, matching title and description as you type), the sort selector,
- * and a "Filters" toggle badged with the count of active filters. Below it sits
+ * the grid-density picker (how many photos sit side by side — a per-device
+ * display preference, not part of the view), and a "Filters" toggle badged with
+ * the count of active filters. Below it sits
  * the facet row — Year, Album, Label — the three ways photos are actually found;
  * it appears only when the page supplies `facets`. The remaining filters (date
  * range, camera, archived, location, private, min rating, flag) live in a
@@ -82,6 +90,7 @@ export function FilterBar<T extends LibraryView>({
   total,
   showSearch = true,
   showSort = true,
+  showDensity = true,
   facets,
   searchHref,
 }: FilterBarProps<T>) {
@@ -156,6 +165,8 @@ export function FilterBar<T extends LibraryView>({
             <option value="rating">{t('library.sort.rating')}</option>
           </Form.Select>
         )}
+
+        {showDensity && <GridDensityControl />}
 
         <Button
           type="button"

@@ -9,6 +9,8 @@ import {
   type VirtuosoGridHandle,
 } from 'react-virtuoso'
 
+import { useGridDensity } from '../../hooks/useGridDensity'
+import { GRID_GAP_PX, gridTemplateColumns } from '../../lib/gridDensity'
 import { type Photo } from '../../services/photos'
 
 import { PhotoTile } from './PhotoTile'
@@ -21,24 +23,33 @@ interface GridContext {
 }
 
 /**
- * Responsive CSS-grid list: columns adapt to the viewport via `auto-fill` so the
- * tile count per row follows the available width on mobile, tablet and desktop.
+ * CSS-grid list honouring the user's density preference: it renders exactly the
+ * chosen number of columns wherever they fit, and falls back to fewer (never
+ * more) on a viewport too narrow for usable tiles. Left on `auto` the tile count
+ * per row simply follows the available width, as it always did.
+ *
+ * Changing the density only restyles this element — virtuoso re-measures the
+ * resized tiles and keeps the scroll position, and the page keeps its selection.
  */
 const List = forwardRef<
   HTMLDivElement,
   { style?: React.CSSProperties; className?: string; children?: React.ReactNode }
 >(function List({ style, className, children, ...props }, ref) {
+  const { density } = useGridDensity()
   return (
     <div
       ref={ref}
       {...props}
       // The class lets the page measure the live column count (for row-wise
-      // keyboard navigation) from the rendered grid's computed `grid-template`.
+      // keyboard navigation) from the rendered grid's computed `grid-template`;
+      // reading it back beats trusting the preference, which a narrow viewport
+      // may have overridden downwards.
       className={`kukatko-photo-grid${className ? ` ${className}` : ''}`}
+      data-density={String(density)}
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-        gap: '6px',
+        gridTemplateColumns: gridTemplateColumns(density),
+        gap: `${GRID_GAP_PX}px`,
         ...style,
       }}
     >

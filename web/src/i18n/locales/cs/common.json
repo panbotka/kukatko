@@ -136,6 +136,11 @@
       "removeFilter": "Odebrat filtr: {{name}}",
       "clear": "Zrušit filtry"
     },
+    "density": {
+      "label": "Dlaždic na řádek",
+      "auto": "Automaticky",
+      "columns": "{{n}} na řádek"
+    },
     "sort": {
       "newest": "Nejnovější",
       "oldest": "Nejstarší",

@@ -190,7 +190,8 @@ export function TrashPage() {
         </SelectionBar>
       )}
 
-      <FilterBar view={view} onChange={setView} total={total} />
+      {/* No density picker: the trash lists retention cards, not the photo grid. */}
+      <FilterBar view={view} onChange={setView} total={total} showDensity={false} />
 
       {actionError !== null && (
         <Alert

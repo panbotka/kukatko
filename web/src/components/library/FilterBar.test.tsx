@@ -18,6 +18,7 @@ function renderBar(
   props: {
     showSearch?: boolean
     showSort?: boolean
+    showDensity?: boolean
     facets?: LibraryFacets
     searchHref?: string
   } = {},
@@ -77,6 +78,8 @@ async function openPanel(user: ReturnType<typeof userEvent.setup>) {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  // The density picker reads localStorage; keep every test on a clean slate.
+  window.localStorage.removeItem('kukatko.grid.density')
 })
 
 describe('FilterBar header', () => {
@@ -95,6 +98,41 @@ describe('FilterBar header', () => {
     expect(screen.queryByLabelText('Sort')).not.toBeInTheDocument()
     // The filters toggle is still available.
     expect(screen.getByRole('button', { name: /Filters/ })).toBeInTheDocument()
+  })
+
+  it('offers the grid density from 2 to 8 columns plus the responsive default', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+    const density = screen.getByLabelText('Tiles per row')
+    expect(density).toHaveValue('auto')
+    const options = within(density)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(options).toEqual([
+      'Automatic',
+      '2 per row',
+      '3 per row',
+      '4 per row',
+      '5 per row',
+      '6 per row',
+      '7 per row',
+      '8 per row',
+    ])
+  })
+
+  it('persists the density per device instead of writing it to the URL view', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange)
+
+    await user.selectOptions(screen.getByLabelText('Tiles per row'), '4')
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem('kukatko.grid.density')).toBe('4')
+  })
+
+  it('hides the density picker when asked', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { showDensity: false })
+    expect(screen.queryByLabelText('Tiles per row')).not.toBeInTheDocument()
   })
 
   it('points the quick filter at /search for real search, carrying the view', () => {

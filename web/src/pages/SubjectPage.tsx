@@ -11,8 +11,13 @@ import { EmptyState } from '../components/EmptyState'
 import { Outliers } from '../components/people/Outliers'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
 import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
+import { useGridDensity } from '../hooks/useGridDensity'
 import { useSubjectPhotos } from '../hooks/useSubjectPhotos'
+import { gridTemplateColumns } from '../lib/gridDensity'
 import { fetchSubject, type Subject, updateSubject } from '../services/people'
+
+/** The subject gallery breathes a little more than the library grid. */
+const GALLERY_GAP_PX = 8
 
 /** Fetch lifecycle of the subject record. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; subject: Subject }
@@ -26,6 +31,7 @@ type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; su
 export function SubjectPage() {
   const { t } = useTranslation()
   const { canWrite } = useAuth()
+  const { density } = useGridDensity()
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState(false)
@@ -135,8 +141,8 @@ export function SubjectPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-              gap: '8px',
+              gridTemplateColumns: gridTemplateColumns(density, GALLERY_GAP_PX),
+              gap: `${GALLERY_GAP_PX}px`,
             }}
           >
             {photos.map((photo) => (

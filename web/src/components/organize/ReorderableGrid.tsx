@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useGridDensity } from '../../hooks/useGridDensity'
+import { GRID_GAP_PX, gridTemplateColumns } from '../../lib/gridDensity'
 import { type Photo } from '../../services/photos'
 
 /** Props for {@link ReorderableGrid}. */
@@ -34,6 +36,7 @@ function move(uids: string[], from: number, to: number): string[] {
  */
 export function ReorderableGrid({ photos, onReorder }: ReorderableGridProps) {
   const { t } = useTranslation()
+  const { density } = useGridDensity()
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const uids = photos.map((p) => p.uid)
 
@@ -48,8 +51,8 @@ export function ReorderableGrid({ photos, onReorder }: ReorderableGridProps) {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-        gap: '6px',
+        gridTemplateColumns: gridTemplateColumns(density),
+        gap: `${GRID_GAP_PX}px`,
       }}
     >
       {photos.map((photo, index) => {

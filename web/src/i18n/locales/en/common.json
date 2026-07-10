@@ -136,6 +136,11 @@
       "removeFilter": "Remove filter: {{name}}",
       "clear": "Clear filters"
     },
+    "density": {
+      "label": "Tiles per row",
+      "auto": "Automatic",
+      "columns": "{{n}} per row"
+    },
     "sort": {
       "newest": "Newest",
       "oldest": "Oldest",

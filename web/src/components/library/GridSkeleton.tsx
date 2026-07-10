@@ -1,12 +1,17 @@
 import { useTranslation } from 'react-i18next'
 
+import { useGridDensity } from '../../hooks/useGridDensity'
+import { GRID_GAP_PX, gridTemplateColumns } from '../../lib/gridDensity'
+
 /**
  * Placeholder grid shown during the first-page load. It mirrors the real grid's
- * responsive columns and square tiles so there is no layout shift when the
- * photos arrive. Purely decorative — announced once to assistive tech.
+ * columns — the user's chosen density included — and square tiles so there is no
+ * layout shift when the photos arrive. Purely decorative — announced once to
+ * assistive tech.
  */
 export function GridSkeleton({ count = 24 }: { count?: number }) {
   const { t } = useTranslation()
+  const { density } = useGridDensity()
   return (
     <div
       role="status"
@@ -14,8 +19,8 @@ export function GridSkeleton({ count = 24 }: { count?: number }) {
       aria-label={t('library.loading')}
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-        gap: '6px',
+        gridTemplateColumns: gridTemplateColumns(density),
+        gap: `${GRID_GAP_PX}px`,
       }}
     >
       {Array.from({ length: count }, (_, i) => (
