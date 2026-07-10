@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
@@ -6,14 +6,15 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
-import { Slideshow } from '../components/slideshow/Slideshow'
+import { Slideshow, SLIDESHOW_PREVIEW_SIZE } from '../components/slideshow/Slideshow'
+import { useImagePreloader } from '../hooks/useImagePreloader'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
-import { useSlideshow } from '../hooks/useSlideshow'
+import { preloadWindow, type SlideReadiness, useSlideshow } from '../hooks/useSlideshow'
 import { useSlideshowSettings } from '../hooks/useSlideshowSettings'
 import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from '../lib/libraryView'
 import { searchHref, type SearchView, toMode } from '../lib/searchView'
 import { readUrlState } from '../lib/urlState'
-import { fetchPhotos, type PhotoListParams, searchPhotos } from '../services/photos'
+import { fetchPhotos, type PhotoListParams, searchPhotos, thumbUrl } from '../services/photos'
 
 /**
  * The fullscreen slideshow route (`/slideshow`). It reads the source scope
@@ -25,6 +26,11 @@ import { fetchPhotos, type PhotoListParams, searchPhotos } from '../services/pho
  * loading / empty / error states before handing the loaded photos to the
  * {@link Slideshow} stage. Rendered outside the app layout shell so it can
  * occupy the whole viewport.
+ *
+ * It also owns the image preloading: a window of upcoming slides is decoded
+ * ahead of the cursor through {@link useImagePreloader}, and its readiness feeds
+ * back into {@link useSlideshow}, which holds the auto-advance until the next
+ * image can actually be painted instead of flashing an empty stage.
  */
 export function SlideshowPage() {
   const { t } = useTranslation()
@@ -64,12 +70,36 @@ export function SlideshowPage() {
   )
 
   const { settings, setEffect, setIntervalMs } = useSlideshowSettings()
+
+  // The stage's image, at the exact size the stage renders it: a prefetch of
+  // any other size would warm a different URL and leave the slide blank anyway.
+  const { statusOf, prime } = useImagePreloader()
+  const slideSrc = useCallback(
+    (i: number): string =>
+      i >= 0 && i < photos.length ? thumbUrl(photos[i].uid, SLIDESHOW_PREVIEW_SIZE) : '',
+    [photos],
+  )
+  const readiness = useCallback(
+    (i: number): SlideReadiness => {
+      const src = slideSrc(i)
+      return src === '' ? 'pending' : statusOf(src)
+    },
+    [slideSrc, statusOf],
+  )
+
   const { index, playing, next, prev, toggle } = useSlideshow({
     length: photos.length,
     hasMore,
     intervalMs: settings.intervalMs,
     onLoadMore: loadMore,
+    readiness,
   })
+
+  // Keep a window of decoded slides around the cursor. Everything outside it is
+  // released, so a long show does not accumulate every frame it has played.
+  useEffect(() => {
+    prime(preloadWindow(index, photos.length).map(slideSrc))
+  }, [prime, index, photos.length, slideSrc])
 
   // Leave to the prior view (Back) when there is history; otherwise fall back to
   // the source view so a directly opened slideshow still has somewhere to go.

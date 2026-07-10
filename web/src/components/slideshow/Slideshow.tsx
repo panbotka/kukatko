@@ -18,8 +18,12 @@ import { type Photo, thumbUrl } from '../../services/photos'
 
 import './slideshow.css'
 
-/** Preview size for the slideshow stage: a large fit-to-box preview, not a tile. */
-const PREVIEW_SIZE = 'fit_1920'
+/**
+ * Preview size for the slideshow stage: a large fit-to-box preview, not a tile.
+ * Exported because the page preloads upcoming slides, and a prefetch at any
+ * other size would warm the wrong image and leave the stage waiting anyway.
+ */
+export const SLIDESHOW_PREVIEW_SIZE = 'fit_1920'
 
 /** Minimum horizontal travel (px) for a touch swipe to count as next/prev. */
 const SWIPE_THRESHOLD = 50
@@ -79,9 +83,10 @@ function isFormControl(target: EventTarget | null): boolean {
  * transition, an always-available control bar (previous / play-pause / next /
  * fullscreen / settings) and a close button. It wires keyboard (← → for nav,
  * space to play/pause, Esc to exit or leave fullscreen) and touch (horizontal
- * swipe) controls, preloads the neighbouring photos at preview size for smooth
- * playback, and exposes the effect/speed pickers. All controls and labels are
- * translated; the photo set, index and playback state are owned by the caller.
+ * swipe) controls, and exposes the effect/speed pickers. All controls and labels
+ * are translated; the photo set, index and playback state are owned by the
+ * caller — including the preloading of upcoming slides, which the page drives so
+ * it can hold the advance until the next image has decoded.
  */
 export function Slideshow({
   photos,
@@ -185,15 +190,6 @@ export function Slideshow({
     }
   }, [onNext, onPrev, onToggle, onExit, toggleFullscreen])
 
-  // Preload the neighbouring photos at preview size so the next slide is ready.
-  useEffect(() => {
-    const targets = [index + 1, index + 2, index - 1].filter((i) => i >= 0 && i < photos.length)
-    for (const i of targets) {
-      const img = new Image()
-      img.src = thumbUrl(photos[i].uid, PREVIEW_SIZE)
-    }
-  }, [photos, index])
-
   const onTouchStart = useCallback((event: React.TouchEvent): void => {
     const touch = event.changedTouches[0]
     touchStart.current = { x: touch.clientX, y: touch.clientY }
@@ -267,7 +263,7 @@ export function Slideshow({
         <img
           key={current.uid}
           className={`slideshow__image ${effectClass}`}
-          src={thumbUrl(current.uid, PREVIEW_SIZE)}
+          src={thumbUrl(current.uid, SLIDESHOW_PREVIEW_SIZE)}
           alt={current.title || current.file_name}
           data-effect={settings.effect}
           style={kenBurns ? kenBurnsStyle(current.uid, settings.intervalMs) : undefined}

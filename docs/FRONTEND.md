@@ -315,7 +315,10 @@ zapiš sem.
   nebo **`searchPhotos`, když URL nese `mode`** (jinak by se `q` jen podstringově filtrovalo a hrála
   by se jiná sada), řídí `useSlideshow` +
   `useSlideshowSettings`, `total` ze serveru posílá do `Slideshow` (odpočet počítá celou show, ne jen
-  načtené stránky), renderuje loading/empty/error stavy nebo `Slideshow`; exit → `navigate(-1)`
+  načtené stránky), renderuje loading/empty/error stavy nebo `Slideshow`; **vlastní přednačítání
+  snímků**: `preloadWindow(index,length)` → URL v `SLIDESHOW_PREVIEW_SIZE` → `useImagePreloader`
+  (`prime` v efektu), jehož `statusOf` jde zpátky do `useSlideshow` jako `readiness`, takže
+  auto-advance počká, než je další snímek dekódovaný; exit → `navigate(-1)`
   (fallback na zdrojový pohled — album/štítek/`searchHref`/knihovna), takže Zpět funguje,
   `TrashPage` = `/trash` (editor/admin) koš: archivované fotky (`useScopedPhotos`-style listing přes
   `usePaginatedPhotos` scopnutý `archived=only`) v mřížce `TrashCard` s `FilterBar`, **obnova**
@@ -343,8 +346,8 @@ zapiš sem.
   rozměry/velikostí/`taken_at`/vzdálenostmi, radio výběr keepera (default navržený), badge `reason`,
   akce **Archivovat ostatní** / **Není duplikát**, busy stav);
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
-  velikosti `fit_1920` s CSS přechodem dle `settings.effect`, přednačítání sousedních snímků přes
-  `new Image()`, ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
+  velikosti `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exportováno** — stránka musí přednačítat přesně
+  tuhle URL), ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
   **postup a zbývající čas** (`slideshow.progress` → „snímek 7 ze 40, zbývá 2 min 45 s"; počítá se
   proti `total` ze serveru, ne proti načteným stránkám); klávesy ←/→ / mezerník / Esc / F
   a dotykový swipe; Fullscreen API feature-detected;
@@ -451,11 +454,28 @@ zapiš sem.
   a volající vykreslí placeholder. Nová `thumbUrl` prop (nová stránka výsledků) resetuje retry budget.
   Řeší se to takhle, **ne dlouhým TTL** — krátká životnost je celý smysl podpisu. Používá
   `PhotoTile` a `TrashCard`;
-  `useSlideshow({length,hasMore,intervalMs,autoPlay?,onLoadMore?})` = řízení promítání: vlastní
-  `index`+`playing`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`, auto-advance na interval
-  (setTimeout, manuální nav resetuje odpočet), wrap-around, prefetch `PRELOAD_AHEAD` snímků dopředu
+  `useSlideshow({length,hasMore,intervalMs,autoPlay?,onLoadMore?,readiness?,maxHoldMs?})` = řízení
+  promítání: vlastní `index`+`playing`+`holding`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`,
+  wrap-around, prefetch `PRELOAD_AHEAD` stránek dopředu
   přes `onLoadMore` (na konci s další stránkou počká místo zacyklení), prázdná sada = no-op, clamp
-  indexu při zmenšení sady; `useSlideshowSettings` = persistentní efekt+rychlost přes
+  indexu při zmenšení sady. **Auto-advance je hlídaný `readiness(index)`**: uplynulý interval
+  nepřepne slide, ale spustí *hold* — přepne se v okamžiku, kdy je další snímek `ready` (dekódovaný),
+  po `maxHoldMs` (default `MAX_HOLD_MS` = 10 s) přepne tak jako tak, a slide s `error` **přeskočí**
+  (rozbitý snímek show neblokuje). Manuální nav a pauza hold zruší (manuál nikdy nečeká, resume
+  začne čerstvý interval), interval se dá měnit **během holdu** bez restartu/zdvojení timeru
+  (timer se během holdu nearmuje, deadline holdu nezávisí na `intervalMs` ani na `readiness`).
+  Sada < 2 snímků ani nedrží, ani nepřepíná. `preloadWindow(index,length)` = indexy k přednačtení
+  (`PRELOAD_AHEAD` dopředu, `PRELOAD_BEHIND` dozadu, aktuální první, offsety **wrapují** →
+  na konci show jsou první snímky připravené na wrap-around, u malé sady se dedupuje);
+  `useImagePreloader()` → `{statusOf(url),prime(urls)}` = přednačítá okno obrázků a hlásí
+  `pending`/`ready`/`error`. `prime(urls)` je **celé okno** — cokoli mimo se hned uvolní
+  (`removeAttribute('src')` = abort in-flight fetche), poslední okno se uvolní na unmountu, takže
+  dlouhá show nekumuluje dekódované bitmapy. Readiness měří **`img.decode()`**, ne `onload`: onload
+  znamená „bajty dorazily", dekódování by teprve proběhlo při prvním paintu (přesně ten záblesk
+  prázdné plochy, kvůli kterému to celé je); `decode()` je feature-detected (jsdom ho nemá →
+  fallback na `onload`/`onerror`). Pozdní `decode()` už uvolněného obrázku se ignoruje. Statusy žijí
+  ve stavu → `statusOf` mění identitu při každém dosednutí, takže na něm jde záviset efektem;
+  `useSlideshowSettings` = persistentní efekt+rychlost přes
   `lib/slideshowSettings` (read once on mount, setteri zapisují do localStorage, sanitizace);
   `usePrefersReducedMotion()` = sleduje `(prefers-reduced-motion: reduce)` přes `matchMedia`
   (odebírá `change`, chybějící/rozbité `matchMedia` → `false`) — volající dekorativní animaci
