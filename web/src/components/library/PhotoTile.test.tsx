@@ -8,15 +8,13 @@ import type { Photo, PhotoDetail } from '../../services/photos'
 
 import { PhotoTile } from './PhotoTile'
 
-// Only the network calls are faked; the optimistic rating hook and the stale-URL
-// retry in useThumbSrc run for real.
+// Only the network call is faked; the stale-URL retry in useThumbSrc runs for real.
 vi.mock('../../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/photos')>()
-  return { ...actual, ratePhoto: vi.fn(), fetchPhoto: vi.fn() }
+  return { ...actual, fetchPhoto: vi.fn() }
 })
 
-const { fetchPhoto, ratePhoto } = await import('../../services/photos')
-const rateMock = vi.mocked(ratePhoto)
+const { fetchPhoto } = await import('../../services/photos')
 const fetchPhotoMock = vi.mocked(fetchPhoto)
 
 /** Builds a minimal Photo with the given overrides. */
@@ -49,11 +47,11 @@ function detail(overrides: Partial<Photo> = {}): PhotoDetail {
   return { ...photo(overrides), files: [], albums: [], labels: [] }
 }
 
-function renderTile(p: Photo, ratable = false) {
+function renderTile(p: Photo, favoritable = false) {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter>
-        <PhotoTile photo={p} ratable={ratable} />
+        <PhotoTile photo={p} favoritable={favoritable} />
       </MemoryRouter>
     </I18nextProvider>,
   )
@@ -61,8 +59,6 @@ function renderTile(p: Photo, ratable = false) {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
-  rateMock.mockReset()
-  rateMock.mockResolvedValue(undefined)
   fetchPhotoMock.mockReset()
 })
 
@@ -149,43 +145,29 @@ describe('PhotoTile video badge', () => {
   })
 })
 
-describe('PhotoTile rating overlay', () => {
-  it('shows a star/flag overlay only when ratable', () => {
-    const { rerender } = renderTile(photo({ media_type: 'image', file_name: 'still.jpg' }))
-    expect(screen.queryByRole('button', { name: 'Rate 3 of 5' })).not.toBeInTheDocument()
-
-    rerender(
-      <I18nextProvider i18n={i18n}>
-        <MemoryRouter>
-          <PhotoTile photo={photo({ media_type: 'image' })} ratable />
-        </MemoryRouter>
-      </I18nextProvider>,
-    )
-    expect(screen.getByRole('button', { name: 'Rate 3 of 5' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Pick' })).toBeInTheDocument()
+describe('PhotoTile curation controls', () => {
+  // Star rating and pick/reject flagging were moved off the tile into the photo
+  // detail view; the tile keeps only the favourite heart. Each case renders with
+  // `favoritable` so the heart is present — proving its removal, not the tile's
+  // failure to render an overlay, is what leaves the curation controls absent.
+  it('renders no star rating control on the tile', () => {
+    renderTile(photo({ media_type: 'image', rating: 3 }), true)
+    expect(screen.queryByRole('button', { name: /Rate \d of 5/ })).not.toBeInTheDocument()
   })
 
-  it('sets the rating via a number-key hotkey on the focused tile', () => {
+  it('renders no pick/reject flag control on the tile', () => {
     renderTile(photo({ media_type: 'image' }), true)
-    const link = screen.getByRole('link', { name: 'Clip' })
-
-    fireEvent.keyDown(link, { key: '5' })
-    expect(rateMock).toHaveBeenCalledWith('ph1', { rating: 5 })
+    expect(screen.queryByRole('button', { name: 'Pick' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument()
   })
 
-  it('sets pick/reject flags via the p and r hotkeys', () => {
-    renderTile(photo({ media_type: 'image' }), true)
-    const link = screen.getByRole('link', { name: 'Clip' })
-
-    fireEvent.keyDown(link, { key: 'p' })
-    expect(rateMock).toHaveBeenCalledWith('ph1', { flag: 'pick' })
-
-    fireEvent.keyDown(link, { key: 'r' })
-    expect(rateMock).toHaveBeenCalledWith('ph1', { flag: 'reject' })
-  })
-
-  it('dims the tile and shows a badge for reject-flagged photos', () => {
+  it('neither dims nor badges a reject-flagged photo on the tile', () => {
     renderTile(photo({ media_type: 'image', flag: 'reject' }), true)
-    expect(screen.getByText('Rejected')).toBeInTheDocument()
+    expect(screen.queryByText('Rejected')).not.toBeInTheDocument()
+  })
+
+  it('keeps the favourite heart on the tile', () => {
+    renderTile(photo({ media_type: 'image' }), true)
+    expect(screen.getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
   })
 })

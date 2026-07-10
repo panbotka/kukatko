@@ -1,17 +1,13 @@
-import { type KeyboardEvent, useState } from 'react'
+import { useState } from 'react'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
-import { useRating } from '../../hooks/useRating'
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDate, formatDuration } from '../../lib/format'
-import { isTypingElement, ratingHotkey } from '../../lib/ratingHotkeys'
 import { type Photo } from '../../services/photos'
 
 import { FavoriteButton } from './FavoriteButton'
-import { FlagControl } from './FlagControl'
-import { RatingStars } from './RatingStars'
 
 /** Whether the photo is a playable video or a live photo (has a motion clip). */
 function isPlayable(photo: Photo): boolean {
@@ -37,13 +33,6 @@ export interface PhotoTileProps {
    * selection target. Defaults false.
    */
   favoritable?: boolean
-  /**
-   * When true a compact star + pick/reject overlay is shown (a personal
-   * annotation available to every user) and number keys `0`–`5` / `p` / `r` on
-   * the focused tile set the rating/flag. Reject-flagged tiles are dimmed and get
-   * a badge. Hidden in selection mode, like the favorite heart. Defaults false.
-   */
-  ratable?: boolean
   /**
    * Query string (without the leading `?`) appended to the detail link so the
    * detail page inherits the originating list's order and scope for prev/next and
@@ -71,7 +60,6 @@ export function PhotoTile({
   selected = false,
   onToggleSelect,
   favoritable = false,
-  ratable = false,
   detailQuery,
   focused = false,
 }: PhotoTileProps) {
@@ -81,33 +69,10 @@ export function PhotoTile({
   // server can sign it. A signed URL expires, so a failed load gets one retry
   // with a freshly fetched one before the tile gives up.
   const thumb = useThumbSrc(photo.uid, photo.thumb_url)
-  // The optimistic rating hook is always instantiated (React hook rules); its
-  // overlay and hotkeys only render/fire when the tile is ratable.
-  const rating = useRating(photo.uid, photo.rating ?? 0, photo.flag ?? 'none')
 
   const label = photo.title !== '' ? photo.title : photo.file_name
   const taken = photo.taken_at ? formatDate(photo.taken_at, i18n.language) : ''
   const alt = taken !== '' ? `${label} — ${taken}` : label
-
-  const showRating = ratable && !selectable
-  const rejected = showRating && rating.flag === 'reject'
-
-  // Number keys 0–5 set the rating, p/r set pick/reject on the focused tile.
-  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.ctrlKey || event.metaKey || event.altKey || isTypingElement(event.target)) {
-      return
-    }
-    const action = ratingHotkey(event.key)
-    if (action === null) {
-      return
-    }
-    event.preventDefault()
-    if (action.kind === 'rating') {
-      rating.setRating(action.value)
-    } else {
-      rating.setFlag(action.value)
-    }
-  }
 
   const inner = (
     <>
@@ -156,11 +121,6 @@ export function PhotoTile({
           {t('library.tile.private')}
         </span>
       )}
-      {rejected && (
-        <span className="position-absolute bottom-0 start-0 m-1 badge text-bg-danger opacity-75">
-          {t('rating.rejected')}
-        </span>
-      )}
       {isPlayable(photo) && (
         <span
           className="position-absolute bottom-0 start-0 m-1 badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1"
@@ -205,10 +165,9 @@ export function PhotoTile({
           : `/photos/${photo.uid}`
       }
       className="kk-tile__media d-block"
-      style={{ aspectRatio: '1 / 1', opacity: rejected ? 0.55 : undefined }}
+      style={{ aspectRatio: '1 / 1' }}
       aria-label={label}
       title={label}
-      onKeyDown={showRating ? handleKeyDown : undefined}
     >
       {inner}
     </Link>
@@ -216,36 +175,15 @@ export function PhotoTile({
 
   // The favorite heart sits in a relative wrapper as a sibling of the link/button
   // (never nested inside it — interactive content cannot nest), so toggling a
-  // favorite never navigates or toggles selection. Hidden in selection mode.
-  // The rating overlay and favorite heart sit in the relative wrapper as siblings
-  // of the link/button (never nested — interactive content cannot nest), so
-  // rating or favoriting never navigates or toggles selection. Both are hidden in
-  // selection mode so the tile stays a clean selection target.
+  // favorite never navigates or toggles selection. Hidden in selection mode so the
+  // tile stays a clean selection target. Star rating and pick/reject flagging are
+  // deliberately absent from the tile; they live on the photo detail page.
   return (
     <div
       className={`kk-tile position-relative${focused ? ' kukatko-tile-focused' : ''}`}
       data-focused={focused ? 'true' : undefined}
     >
       {base}
-      {showRating && (
-        <span
-          className="position-absolute top-0 start-0 m-1 d-inline-flex align-items-center gap-1 rounded px-1"
-          style={{ backgroundColor: 'rgba(0, 0, 0, 0.45)' }}
-        >
-          <RatingStars
-            rating={rating.rating}
-            onRate={rating.setRating}
-            disabled={rating.pending}
-            size={14}
-          />
-          <FlagControl
-            flag={rating.flag}
-            onFlag={rating.setFlag}
-            disabled={rating.pending}
-            size={13}
-          />
-        </span>
-      )}
       {favoritable && !selectable && (
         <FavoriteButton
           uid={photo.uid}

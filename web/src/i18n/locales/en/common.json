@@ -416,8 +416,7 @@
     "rate": "Rate {{n}} of 5",
     "flag": "Flag",
     "pick": "Pick",
-    "reject": "Reject",
-    "rejected": "Rejected"
+    "reject": "Reject"
   },
   "bulkEdit": {
     "title_one": "Edit {{count}} photo",

@@ -292,7 +292,6 @@ export function LibraryPage() {
               onRetry={retry}
               selection={bulk.gridSelection}
               favoritable={!selection.active}
-              ratable={!selection.active}
               detailQuery={detailQuery}
               gridRef={gridRef}
               onRangeChanged={onRangeChanged}

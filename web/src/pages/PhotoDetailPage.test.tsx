@@ -245,6 +245,18 @@ describe('PhotoDetailPage', () => {
     expect(screen.getByTestId('similar')).toHaveAttribute('data-uid', 'b')
   })
 
+  it('exposes star rating and pick/reject flagging in the detail view', async () => {
+    // These curation controls were removed from the grid/list tiles; the detail
+    // view stays their home, reachable for keyboard and screen-reader users.
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    expect(screen.getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rate 5 of 5' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pick' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument()
+  })
+
   it('draws detected faces as an overlay on the single preview', async () => {
     fetchFacesMock.mockResolvedValue(facesResponse(2))
     const { container } = renderPage()

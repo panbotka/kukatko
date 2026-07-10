@@ -116,11 +116,6 @@ export interface PhotoGridProps {
    */
   favoritable?: boolean
   /**
-   * When true each tile shows a compact star/flag overlay and supports rating
-   * hotkeys on the focused tile. Suppressed in selection mode. Defaults false.
-   */
-  ratable?: boolean
-  /**
    * Query string appended to each tile's detail link so the detail page inherits
    * this list's order and scope (for prev/next and Back).
    */
@@ -156,7 +151,6 @@ export function PhotoGrid({
   onRetry,
   selection,
   favoritable = false,
-  ratable = false,
   detailQuery,
   gridRef,
   onRangeChanged,
@@ -178,7 +172,6 @@ export function PhotoGrid({
           selected={selection?.selected.has(photo.uid) ?? false}
           onToggleSelect={selection?.onToggle}
           favoritable={favoritable}
-          ratable={ratable}
           detailQuery={detailQuery}
           focused={index === focusedIndex}
         />

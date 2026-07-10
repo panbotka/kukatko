@@ -82,16 +82,13 @@ zapiš sem.
   varování, remove/retry akce); `components/library/` = `PhotoTile`
   (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, **play badge + délka** u
   videa/live fotky (`▶` + `formatDuration`), placeholder bez
-  layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`;
-  volitelný **rating overlay** `ratable` → kompaktní `RatingStars`+`FlagControl` (per-user
-  hvězdy 0–5 + pick/reject) nad `useRating`, plus **hotkeys na fokusnuté dlaždici** `0`–`5`
-  nastaví hodnocení a `p`/`r` pick/reject (`ratingHotkey`/`isTypingElement`, nefungují při psaní
-  do inputu); **zamítnutá fotka** je ztlumená + má reject badge; heart i rating overlay se
-  v selection módu skryjí; `src` bere **`photo.thumb_url` z payloadu** přes `useThumbSrc` a
+  layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`
+  (hodnocení hvězdami a pick/reject flag žijí **jen v detailu fotky**, ne na dlaždici);
+  heart se v selection módu skryje; `src` bere **`photo.thumb_url` z payloadu** přes `useThumbSrc` a
   **nikdy** ho neskládá z UID),
   `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
-  window-scroll, `endReached` → další stránka, footer spinner/retry; props `favoritable`/`ratable`
-  prosáknou srdíčko a hvězdy/flag na dlaždice; volitelný `gridRef` (imperativní `scrollToIndex`
+  window-scroll, `endReached` → další stránka, footer spinner/retry; prop `favoritable`
+  prosákne srdíčko na dlaždice; volitelný `gridRef` (imperativní `scrollToIndex`
   handle) + `onRangeChanged` (viditelný rozsah) pro časovou osu; šablonu sloupců bere z
   `useGridDensity` → `lib/gridDensity` `gridTemplateColumns`, DOM nese `data-density` pro testy.
   Změna hustoty **jen přestyluje** existující `<div>` — virtuoso doměří dlaždice, scroll i výběr
@@ -149,7 +146,7 @@ zapiš sem.
   zařízení, ne součást sdíleného pohledu; sedí v hlavičce `FilterBar`u, mění všechny foto-mřížky
   v appce najednou); `PhotoTile`+`PhotoGrid` podporují
   volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`;
-  heart i rating overlay se v selection módu skryjí),
+  heart se v selection módu skryje),
   `components/organize/` = `AlbumTile` (karta alba: **efektivní obálka** `cover_uid`
   (ručně zvolená, jinak nejnovější fotka alba — počítá backend) / název / **rozsah let**
   přes `formatCaptureRange` (jen když album má datované fotky) / počet → `/albums/{uid}`;
@@ -190,8 +187,8 @@ zapiš sem.
   před fotky ani do prime místa v liště,
   `LibraryPage` = hlavní foto-knihovna **a zároveň úvodní stránka aplikace** (routa `/`):
   `FilterBar` nad virtualizovanou nekonečně-scrollující
-  mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka **i hvězdy/flag**
-  na dlaždicích (favoritable+ratable, rating hotkeys na fokusnuté dlaždici), **`SlideshowStart`**
+  mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka
+  na dlaždicích (favoritable; hodnocení a pick/reject jsou jen v detailu fotky), **`SlideshowStart`**
   (tlačítko Promítání + odhad délky, počet fotek bere z `total`),
   **dva různé prázdné stavy** — s aktivními filtry „Nenalezeny žádné fotky", jehož hint
   **vyjmenuje aktivní filtry** (`buildChips(..., {facets, includeQuery: true})` spojené ` · `,
@@ -211,7 +208,7 @@ zapiš sem.
   pohledů aktuálního uživatele, každý odkaz otevírá přesně obnovený pohled (`savedSearchHref`), plus
   přejmenování (`SaveSearchModal`) a **optimistické mazání** + empty state,
   `FavoritesPage` = `/favorites` oblíbené aktuálního uživatele: stejná mřížka/filtry jako knihovna
-  scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených + hvězdy/flag na místě (ratable),
+  scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených na místě (favoritable),
   `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
   `AlbumDetailPage` = `/albums/:uid` hlavička + tlačítko **Promítání** (všem) + editorské akce
   (upravit/smazat/vybrat) nad

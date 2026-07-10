@@ -377,8 +377,7 @@
     "rate": "Ohodnotit {{n}} z 5",
     "flag": "Označení",
     "pick": "Vybrat",
-    "reject": "Zamítnout",
-    "rejected": "Zamítnuto"
+    "reject": "Zamítnout"
   },
   "bulkEdit": {
     "title_one": "Upravit {{count}} fotku",
