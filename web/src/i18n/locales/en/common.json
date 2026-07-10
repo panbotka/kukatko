@@ -773,6 +773,7 @@
       "label": "Transition",
       "fade": "Fade",
       "slide": "Slide",
+      "kenburns": "Ken Burns",
       "none": "None"
     },
     "speed": {

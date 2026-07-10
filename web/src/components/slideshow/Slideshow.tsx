@@ -5,6 +5,8 @@ import Form from 'react-bootstrap/Form'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
+import { kenBurnsStyle } from '../../lib/kenBurns'
 import {
   SLIDESHOW_EFFECTS,
   SLIDESHOW_INTERVALS_MS,
@@ -47,6 +49,14 @@ export interface SlideshowProps {
   loadingMore?: boolean
 }
 
+/** The CSS class animating each effect; `none` (and a stilled slide) get no class. */
+const EFFECT_CLASS: Readonly<Record<SlideshowEffect, string>> = {
+  fade: 'slideshow__image--fade',
+  slide: 'slideshow__image--slide',
+  kenburns: 'slideshow__image--kenburns',
+  none: '',
+}
+
 /** True when a keyboard event originates from a form control we should not hijack. */
 function isFormControl(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -79,6 +89,7 @@ export function Slideshow({
   loadingMore = false,
 }: SlideshowProps) {
   const { t } = useTranslation()
+  const reducedMotion = usePrefersReducedMotion()
   const containerRef = useRef<HTMLDivElement>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -196,12 +207,14 @@ export function Slideshow({
     [onNext, onPrev],
   )
 
-  const effectClass =
-    settings.effect === 'fade'
-      ? 'slideshow__image--fade'
-      : settings.effect === 'slide'
-        ? 'slideshow__image--slide'
-        : ''
+  // Ken Burns pans across the photo itself, so it only makes sense for stills:
+  // a video slide keeps its previous, motionless framing. A reduced-motion user
+  // gets the same static slide rather than a shortened pan.
+  const isVideo = current.file_mime.startsWith('video/')
+  const kenBurns = settings.effect === 'kenburns' && !reducedMotion && !isVideo
+  const appliedEffect: SlideshowEffect =
+    settings.effect === 'kenburns' && !kenBurns ? 'none' : settings.effect
+  const effectClass = EFFECT_CLASS[appliedEffect]
 
   return (
     <div
@@ -236,6 +249,7 @@ export function Slideshow({
           src={thumbUrl(current.uid, PREVIEW_SIZE)}
           alt={current.title || current.file_name}
           data-effect={settings.effect}
+          style={kenBurns ? kenBurnsStyle(current.uid, settings.intervalMs) : undefined}
           draggable={false}
         />
         {loadingMore && (
@@ -278,7 +292,7 @@ export function Slideshow({
               >
                 {SLIDESHOW_INTERVALS_MS.map((ms) => (
                   <option key={ms} value={ms}>
-                    {t('slideshow.speed.seconds', { count: Math.round(ms / 1000) })}
+                    {t('slideshow.speed.seconds', { seconds: Math.round(ms / 1000) })}
                   </option>
                 ))}
               </Form.Select>

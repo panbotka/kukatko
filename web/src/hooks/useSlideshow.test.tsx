@@ -121,6 +121,35 @@ describe('useSlideshow', () => {
     expect(result.current.index).toBe(2)
   })
 
+  it('picks up a new interval mid-show without restarting playback', () => {
+    const { result, rerender } = renderHook(
+      ({ intervalMs }: { intervalMs: number }) => useSlideshow({ length: 3, intervalMs }),
+      { initialProps: { intervalMs: 5000 } },
+    )
+
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(result.current.index).toBe(0)
+
+    // Speeding up keeps the current slide and the playing state; only the
+    // countdown to the next slide changes.
+    rerender({ intervalMs: 1000 })
+    expect(result.current.index).toBe(0)
+    expect(result.current.playing).toBe(true)
+
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(result.current.index).toBe(1)
+
+    // Every following slide runs on the new interval too.
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(result.current.index).toBe(2)
+  })
+
   it('is a no-op for an empty set', () => {
     const onLoadMore = vi.fn()
     const { result } = renderHook(() => useSlideshow({ length: 0, intervalMs: 1000, onLoadMore }))

@@ -308,8 +308,13 @@ zapiš sem.
   velikosti `fit_1920` s CSS přechodem dle `settings.effect`, přednačítání sousedních snímků přes
   `new Image()`, ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek + pozice
   `n/total`; klávesy ←/→ / mezerník / Esc / F a dotykový swipe; Fullscreen API feature-detected;
-  panel nastavení = výběr efektu + rychlosti) + `slideshow.css` (keyframes `slideshow-fade`/
-  `slideshow-slide`, fullscreen layout);
+  panel nastavení = výběr efektu + rychlosti; efekt **`kenburns`** navíc zapisuje na `<img>` inline
+  `--kb-*` custom properties z `lib/kenBurns` (endpointy transformu + `--kb-duration` = interval) —
+  aktivuje se **jen pro obrázky**, video snímek a uživatel s `prefers-reduced-motion`
+  (`usePrefersReducedMotion`) dostanou statický snímek bez animace) + `slideshow.css` (keyframes
+  `slideshow-fade`/`slideshow-slide`/`slideshow-kenburns` (`object-fit: cover`, `var()` se dosadí
+  před interpolací, takže se oba transformy interpolují jako shodný `translate() scale()` seznam),
+  `@media (prefers-reduced-motion: reduce)` jako druhá pojistka, fullscreen layout);
   `components/map/` = `LeafletMap` (imperativní Leaflet most: dlaždicová vrstva na **backend
   proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (klíč server-side, `{r}`→`@2x` na retině),
   **povinné mapy.com prvky** — attribution „© Seznam.cz a.s. a další" → `/copyright` a klikatelné
@@ -389,7 +394,10 @@ zapiš sem.
   (setTimeout, manuální nav resetuje odpočet), wrap-around, prefetch `PRELOAD_AHEAD` snímků dopředu
   přes `onLoadMore` (na konci s další stránkou počká místo zacyklení), prázdná sada = no-op, clamp
   indexu při zmenšení sady; `useSlideshowSettings` = persistentní efekt+rychlost přes
-  `lib/slideshowSettings` (read once on mount, setteri zapisují do localStorage, sanitizace))),
+  `lib/slideshowSettings` (read once on mount, setteri zapisují do localStorage, sanitizace);
+  `usePrefersReducedMotion()` = sleduje `(prefers-reduced-motion: reduce)` přes `matchMedia`
+  (odebírá `change`, chybějící/rozbité `matchMedia` → `false`) — volající dekorativní animaci
+  **vynechá**, ne zkrátí)),
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag` a facetů `year`/`album`/`label`) +
@@ -426,10 +434,19 @@ zapiš sem.
   DMS / stupně-desetinné-minuty, komma/mezera oddělovač, ±/hemisféry N/S/E/W, unicode primy/`''`,
   axis reorder dle hemisfér, range check ±90/±180) + `formatCoordinates({lat,lng},precision=6)` →
   kanonický `"49.123400, 16.567800"` (round-tripuje parserem) — sdílí `MetadataPanel` picker;
+  `kenBurns.ts` = pure `kenBurnsMotion(uid,intervalMs)` → endpointy pomalého zoom+pan přes celý
+  snímek (`durationMs` = interval, takže animace trvá přesně jeden slide) + `kenBurnsStyle(…)` →
+  `--kb-*` custom properties pro `slideshow.css` + `panLimit(scale)`. Parametry (8 směrů × zoom
+  in/out × 5 hloubek) se derivují **deterministicky** z FNV-1a hashe `uid`, takže stejné album
+  vypadá při každém přehrání stejně. Oba endpointy drží offset do `panLimit` svého scale a scale
+  i offset se interpolují lineárně → **obraz nikdy neodkryje okraj** scény;
   `slideshowSettings.ts` = typ `SlideshowSettings{effect,intervalMs}` + `SlideshowEffect`
-  (`fade`/`slide`/`none`) + nabídky `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` + `SLIDESHOW_DEFAULTS`
+  (`fade`/`slide`/`kenburns`/`none`) + nabídky `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` (1/2/3/5/10/15/30 s)
+  + `SLIDESHOW_DEFAULTS` (`fade`, 5 s)
   + pure `readSettings`/`writeSettings`/`sanitizeSettings` (localStorage `kukatko.slideshow.settings`,
-  sanitizace efektu + clamp intervalu, fallback na defaulty při chybě/nedostupném storage);
+  sanitizace efektu + interval **snapnutý na nejbližší nabízenou hodnotu** — dřív uložený interval,
+  který už v nabídce není (7 s), tak nespadne pod stůl ani nevyrenderuje prázdnou položku; při shodné
+  vzdálenosti vyhrává kratší; fallback na defaulty při chybě/nedostupném storage);
   `slideshowView.ts` = pure `slideshowHref(scope,view)` (staví `/slideshow?…` z `LibraryView` přes
   `writeUrlState` + scope `album`/`label`, default filtry vynechá — launch link promítání);
   `trashCountdown.ts` = pure `purgeCountdown(archivedAt,retentionDays,now?)` (zbývající dny do

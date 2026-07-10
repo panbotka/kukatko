@@ -22,6 +22,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .slideshow__image {
@@ -57,6 +58,52 @@
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+/* Ken Burns: a slow zoom-and-pan lasting the whole slide. The image fills the
+   stage (`cover`) instead of being letterboxed, because a `contain` image would
+   expose the backdrop the moment it pans. The endpoints and the duration come
+   from `--kb-*` custom properties that `lib/kenBurns.ts` derives from the photo
+   uid and the slide interval; `var()` substitutes before interpolation, so the
+   two transforms still interpolate as a matching `translate() scale()` list.
+   The short cross-fade rides along so slides do not cut hard. */
+.slideshow__image--kenburns {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+  transform-origin: center;
+  will-change: transform;
+  animation:
+    slideshow-fade 600ms ease,
+    slideshow-kenburns var(--kb-duration, 5000ms) linear both;
+}
+
+@keyframes slideshow-kenburns {
+  from {
+    transform: translate(var(--kb-from-x, 0%), var(--kb-from-y, 0%)) scale(var(--kb-from-scale, 1));
+  }
+  to {
+    transform: translate(var(--kb-to-x, 0%), var(--kb-to-y, 0%)) scale(var(--kb-to-scale, 1));
+  }
+}
+
+/* The component already drops the Ken Burns class under `prefers-reduced-motion`
+   (see `usePrefersReducedMotion`); this is the belt-and-braces guard for browsers
+   that honour the query but lack `matchMedia`, and it also stills fade/slide. */
+@media (prefers-reduced-motion: reduce) {
+  .slideshow__image--fade,
+  .slideshow__image--slide,
+  .slideshow__image--kenburns {
+    animation: none;
+  }
+
+  .slideshow__image--kenburns {
+    transform: none;
   }
 }
 

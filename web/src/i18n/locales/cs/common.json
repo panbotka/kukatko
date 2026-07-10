@@ -789,6 +789,7 @@
       "label": "Přechod",
       "fade": "Prolnutí",
       "slide": "Posun",
+      "kenburns": "Ken Burns",
       "none": "Bez efektu"
     },
     "speed": {
