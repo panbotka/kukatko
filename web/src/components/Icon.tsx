@@ -16,6 +16,7 @@ export type IconName =
   | 'compass'
   | 'files'
   | 'geo-alt'
+  | 'github'
   | 'heart'
   | 'images'
   | 'map'

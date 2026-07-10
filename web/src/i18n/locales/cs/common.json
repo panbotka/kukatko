@@ -3,6 +3,11 @@
     "name": "Kukátko",
     "tagline": "Samostatná správa fotek a videí"
   },
+  "footer": {
+    "operator": "Provozuje SDH Veselice",
+    "github": "GitHub",
+    "githubTitle": "Zobrazit zdrojový kód projektu na GitHubu"
+  },
   "nav": {
     "home": "Domů",
     "browse": "Procházet",

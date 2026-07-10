@@ -12,6 +12,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useAuth } from '../auth/AuthContext'
 import { LIBRARY_PATH } from '../lib/libraryView'
 
+import { Footer } from './Footer'
 import { Icon, type IconName } from './Icon'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 
@@ -127,7 +128,8 @@ function pathMatches(pathname: string, route: string): boolean {
 
 /**
  * Application shell: a responsive top navbar (brand, navigation, and the
- * signed-in user menu) above the routed page content.
+ * signed-in user menu) above the routed page content, and the global
+ * {@link Footer} below it.
  *
  * The bar is ordered around how the library is browsed: **Knihovna**, **Alba**
  * and **Štítky** are always visible, the remaining browse destinations collapse
@@ -275,6 +277,7 @@ export function Layout() {
       <Container as="main" className="py-4 kukatko-main">
         <Outlet />
       </Container>
+      <Footer />
     </>
   )
 }

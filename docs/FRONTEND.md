@@ -26,6 +26,13 @@ zapiš sem.
   `/albums/{uid}`) — skládá se z `Dropdown`+`Dropdown.Toggle as={NavLink}` (ne `NavDropdown`, ten
   spotřebuje prop `title` na obsah toggle, takže by nezbyl na tooltip); položky v mobilním burger
   menu expandují inline s tap-targety (`kukatko-tap-target`),
+  `Footer` (**globální patička** pod `<main>` na každé stránce v `Layout` — fullscreen
+  `/slideshow` běží mimo shell, takže ji nemá: „Provozuje SDH Veselice“ + odkaz na zdrojový kód
+  <https://github.com/panbotka/kukatko> v novém tabu s `rel="noopener noreferrer"` a dekorativní
+  ikonou `github` (`aria-hidden`); texty `footer.*` (cs/en). Rendruje se v normálním toku — na
+  krátké stránce prostě následuje obsah, nic nepřekrývá ani nefloatuje. Uvnitř je space-between
+  flex řádek: operátor + GitHub vlevo, pravá strana záměrně volná, aby tam později mohl bydlet
+  malý status areál bez přestavby; `.kukatko-footer` sdílí safe-area padding s `.kukatko-main`),
   `Icon` (**jediná ikonová sada** aplikace: bootstrap-icons glyf jako `<i class="bi bi-{name}">`,
   font se importuje globálně v `main.tsx`; union `IconName` drží slovník použitých ikon, takže překlep
   je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),

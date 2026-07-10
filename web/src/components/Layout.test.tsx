@@ -178,4 +178,10 @@ describe('Layout navbar', () => {
     // /places lives under Browse, so its toggle carries the active state.
     expect(screen.getByRole('button', { name: 'Browse' })).toHaveClass('active')
   })
+
+  it('renders the global footer below the routed content', () => {
+    renderLayout(auth())
+    // Every page under the layout shell gets the operator/source-code footer.
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Operated by SDH Veselice')
+  })
 })
