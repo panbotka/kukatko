@@ -6,7 +6,15 @@
   "footer": {
     "operator": "Operated by SDH Veselice",
     "github": "GitHub",
-    "githubTitle": "View the project's source code on GitHub"
+    "githubTitle": "View the project's source code on GitHub",
+    "jobs": {
+      "title": "Job queue",
+      "idle": "idle",
+      "queued": "queued",
+      "running": "running",
+      "failed": "failed",
+      "dead": "dead"
+    }
   },
   "nav": {
     "home": "Home",

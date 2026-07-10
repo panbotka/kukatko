@@ -6,7 +6,15 @@
   "footer": {
     "operator": "Provozuje SDH Veselice",
     "github": "GitHub",
-    "githubTitle": "Zobrazit zdrojový kód projektu na GitHubu"
+    "githubTitle": "Zobrazit zdrojový kód projektu na GitHubu",
+    "jobs": {
+      "title": "Fronta úloh",
+      "idle": "nečinné",
+      "queued": "ve frontě",
+      "running": "běží",
+      "failed": "selhalo",
+      "dead": "mrtvé"
+    }
   },
   "nav": {
     "home": "Domů",

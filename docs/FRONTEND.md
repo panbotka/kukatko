@@ -31,8 +31,14 @@ zapiš sem.
   <https://github.com/panbotka/kukatko> v novém tabu s `rel="noopener noreferrer"` a dekorativní
   ikonou `github` (`aria-hidden`); texty `footer.*` (cs/en). Rendruje se v normálním toku — na
   krátké stránce prostě následuje obsah, nic nepřekrývá ani nefloatuje. Uvnitř je space-between
-  flex řádek: operátor + GitHub vlevo, pravá strana záměrně volná, aby tam později mohl bydlet
-  malý status areál bez přestavby; `.kukatko-footer` sdílí safe-area padding s `.kukatko-main`),
+  flex řádek: operátor + GitHub vlevo, pravou stranu vyplňuje `children` (dnes admin badge stav
+  fronty jobů); `.kukatko-footer` sdílí safe-area padding s `.kukatko-main`),
+  `JobQueueBadges` (pravá strana patičky: kompaktní badge se stavem fronty jobů **jen pro adminy**;
+  přes `useAuth().isAdmin` + `useJobStats` — neadmin nic nerendruje a **nedělá žádný request**.
+  Jeden badge na neprázdný stav `queued`/`running`/`failed`/`dead` z `by_state` (terminální `done`
+  se záměrně vynechává), `failed`/`dead` mají `bg="danger"`, aby padly do oka; když je vše nulové,
+  jediný tichý badge `idle`. Selhání requestu badge tiše skryje — patička nikdy nespadne; texty
+  `footer.jobs.*` (cs/en)),
   `Icon` (**jediná ikonová sada** aplikace: bootstrap-icons glyf jako `<i class="bi bi-{name}">`,
   font se importuje globálně v `main.tsx`; union `IconName` drží slovník použitých ikon, takže překlep
   je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),
@@ -443,6 +449,11 @@ zapiš sem.
   filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGlobalSearch(query,
   debounceMs?)` = debouncovaný (default 250 ms) grouped global-search loader nad `globalSearch`
   (`status` idle/loading/ready/error + `result`, prázdný dotaz → idle bez requestu, ruší in-flight +
+  `useJobStats(enabled)` = poller stavu fronty jobů nad `fetchJobStats` (`GET /jobs/stats`) pro badge
+  v patičce: fetchuje **jen když `enabled`** (admin), refetch po ~30 s, **pauzuje při skryté záložce**
+  (`visibilitychange`/`document.hidden`) a při návratu hned refreshne; selhání spolkne a vrátí `null`
+  (badge se skryje), na unmountu/`enabled→false` ruší timer i in-flight request — nic ho nepřežije;
+
   ignoruje stale — podklad `GlobalSearchSections`); `useGridJump({gridRef,
   loadedCount,hasMore,loadingMore,loadMore})` = vrátí `jumpTo(index)`, který skočí mřížkou na foto
   index přes `VirtuosoGridHandle.scrollToIndex` a **nejdřív donačte stránky**, když cíl leží za

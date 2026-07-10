@@ -14,6 +14,7 @@ import { LIBRARY_PATH } from '../lib/libraryView'
 
 import { Footer } from './Footer'
 import { Icon, type IconName } from './Icon'
+import { JobQueueBadges } from './JobQueueBadges'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 
 /**
@@ -277,7 +278,9 @@ export function Layout() {
       <Container as="main" className="py-4 kukatko-main">
         <Outlet />
       </Container>
-      <Footer />
+      <Footer>
+        <JobQueueBadges />
+      </Footer>
     </>
   )
 }

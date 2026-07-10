@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Container from 'react-bootstrap/Container'
 import { useTranslation } from 'react-i18next'
 
@@ -6,15 +7,22 @@ import { Icon } from './Icon'
 /** Public home of the project's source code, linked from every page's footer. */
 const GITHUB_URL = 'https://github.com/panbotka/kukatko'
 
+/** Props for {@link Footer}. */
+interface FooterProps {
+  /** Optional status content for the right-hand side of the footer row. */
+  children?: ReactNode
+}
+
 /**
  * Global page footer: names who operates this instance and links to the
  * project's source code on GitHub. It renders in normal document flow below
  * the routed content — on short pages it simply follows the content rather
  * than floating over it or sticking to the viewport bottom. The footer is a
- * space-between flex row with the operator info on the left, so a small
- * status area can later occupy the right-hand side without restructuring it.
+ * space-between flex row with the operator info on the left; `children` fill
+ * the right-hand side (e.g. the admin job-queue badges) without restructuring
+ * it.
  */
-export function Footer() {
+export function Footer({ children }: FooterProps) {
   const { t } = useTranslation()
 
   return (
@@ -36,8 +44,9 @@ export function Footer() {
           {t('footer.github')}
         </a>
       </span>
-      {/* The right-hand side of the space-between row is intentionally empty:
-          it is reserved for a small status area to land in later. */}
+      {/* The right-hand side of the space-between row hosts optional status
+          content (the admin job-queue badges); empty for everyone else. */}
+      {children}
     </Container>
   )
 }
