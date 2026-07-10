@@ -49,13 +49,17 @@ export function useScopedPhotos(
   params: PhotoListParams,
   options: UseScopedPhotosOptions = {},
 ): UsePaginatedPhotosResult {
+  // A scope the page does not set must leave the matching filter in `params`
+  // untouched: the Places page scopes by country/city while the filter bar may
+  // still carry an album or label facet, and an album page may carry a label
+  // facet. Overwriting with the absent scope's `undefined` would silently drop it.
   const scoped = useMemo<PhotoListParams>(
     () => ({
       ...params,
-      album: scope.album,
-      label: scope.label,
-      country: scope.country,
-      city: scope.city,
+      album: scope.album ?? params.album,
+      label: scope.label ?? params.label,
+      country: scope.country ?? params.country,
+      city: scope.city ?? params.city,
     }),
     [params, scope.album, scope.label, scope.country, scope.city],
   )

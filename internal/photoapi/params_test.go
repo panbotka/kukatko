@@ -122,6 +122,24 @@ func TestParseListParams_valid(t *testing.T) {
 			},
 		},
 		{
+			name:  "year facet",
+			query: "year=2023",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.Year == nil || *p.Year != 2023 {
+					t.Errorf("Year = %v, want 2023", p.Year)
+				}
+			},
+		},
+		{
+			name:  "absent year is no filter",
+			query: "camera=leica",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.Year != nil {
+					t.Errorf("Year = %v, want nil", p.Year)
+				}
+			},
+		},
+		{
 			name:  "date range rfc3339 and date-only",
 			query: "taken_after=2023-01-02T03:04:05Z&taken_before=2023-12-31",
 			check: func(t *testing.T, p photos.ListParams) {
@@ -223,6 +241,9 @@ func TestParseListParams_invalid(t *testing.T) {
 		{name: "unknown archived", query: "archived=maybe"},
 		{name: "non-bool private", query: "private=sometimes"},
 		{name: "non-bool has_gps", query: "has_gps=42"},
+		{name: "non-integer year", query: "year=nineteen"},
+		{name: "year below the four-digit range", query: "year=42"},
+		{name: "year above the four-digit range", query: "year=12023"},
 		{name: "bad taken_after", query: "taken_after=yesterday"},
 		{name: "bad taken_before", query: "taken_before=2023/01/01"},
 		{name: "non-integer min_rating", query: "min_rating=many"},

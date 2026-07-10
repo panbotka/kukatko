@@ -46,6 +46,17 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `total` (přes `Count`) zahrnuje i fotky bez data pořízení (do žádného bucketu nespadají, řadí se
   na konec); `sort`/`order` se ignorují (vždy grupováno dle data), backuje ho
   `photos.Store.TimelineBuckets` (sdílí `buildWhere` s `List`/`Count`), neplatný param → 400;
+  `GET /photos/years` (přihlášený) — **rok-histogram** knihovny (podklad **year facetu** filtrů):
+  přijímá **stejné filtry** jako `GET /photos` přes `parseListParams`, odpověď
+  `{years:[{year,count}],total}`, buckety **nejnovější rok první**; ctí viditelnost volajícího
+  (`archived`/`private`) i per-user filtry (`favorite`, `min_rating`/`flag`) přesně jako list, takže
+  count bucketu = přesně to, co mřížka ukáže po výběru toho roku. Filtr `year` je **jediný
+  ignorovaný** — facet nesmí zúžit vlastní nabídku (jinak by po výběru 2019 zbyl v nabídce jen 2019);
+  `sort`/`order` a stránkování se ignorují (vždy grupováno dle roku). `total` (přes `Count`) zahrnuje
+  i fotky **bez data pořízení** (nespadají do žádného roku), takže může převýšit součet countů.
+  Backuje ho `photos.Store.YearBuckets` (sdílí `buildWhere` s `List`/`Count`), neplatný param → 400;
+  filtr `?year=YYYY` na `GET /photos` (čtyřciferný rok 1000–9999, jinak 400) drží jen fotky pořízené
+  v tom kalendářním roce — fotky s neznámým `taken_at` nikdy nematchují;
   `GET /search?q=&mode=` (přihlášený) — **sémantické + hybridní hledání**, `mode` =
   `fulltext`|`semantic`|`hybrid` (default `hybrid`, neznámý → 400): **fulltext** = česky-aware
   fulltext nad `fts tsvector` (dictionary `simple` + `unaccent`, řazení `ts_rank`

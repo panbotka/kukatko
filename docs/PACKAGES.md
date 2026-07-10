@@ -78,6 +78,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   prvního snímku bucketu; sdílí `buildWhere` s `List`/`Count`, takže buckety přesně odpovídají
   seznamu; fotky bez `taken_at` do bucketů nespadají (řadí se na konec), ale `Total` (přes `Count`)
   je zahrnuje — podklad `photoapi` timeline scrubberu),
+  `YearBuckets(params)` (rok-histogram `Years{Years:[]YearBucket{Year,Count},Total}` v
+  `store_years.go` — jedním `GROUP BY date_part('year', taken_at)`, řazení `year DESC`; sdílí
+  `buildWhere` s `List`/`Count`, takže count bucketu = přesně to, co `List` vrátí pro tytéž filtry
+  plus ten rok; `params.Sort`/`Order`/stránkování se ignorují, fotky bez `taken_at` do bucketů
+  nespadají, ale `Total` (přes `Count`) je zahrnuje — podklad `photoapi` year facetu),
   plus `CreateFile`/`ListFiles`,
   `ListArchivedUIDs(before,limit,offset)` (uid archivovaných fotek oldest-archived-first,
   `before` nil = vše / non-nil = jen `archived_at <= before` retenční cutoff — podklad koše/purge),
@@ -266,10 +271,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   multipart se streamuje part-by-part, nikdy celý soubor v RAM), `internal/photoapi/`
   (read/curace HTTP API nad katalogem: `NewAPI(Config{Store,Storage,Thumbnailer,Similar,
   Embedder,Faces,Favorites,Ratings,RequireAuth,RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`
-  **, `GET /photos/timeline`, `GET /search` a `GET /favorites`**; `parseListParams`
+  **, `GET /photos/timeline`, **`GET /photos/years`**, `GET /search` a `GET /favorites`**; `parseListParams`
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
   newest/oldest/taken_at/added/title/size**/rating** + `order`, `archived` false/true/only, `private`,
-  `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`album`/`label`
+  `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`year` (čtyřciferný
+  1000–9999) → `Year`**, **`album`/`label`
   scope** → `AlbumUID`/`LabelUID`, **`country`/`city` place scope** → `Country`/`City`,
   **per-user `min_rating` (int) + `flag` (`pick`/`reject`)**
   → `MinRating`/`Flag`; neplatný → 400) + `favoriteRequested` parsuje `favorite=true`
@@ -289,6 +295,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (idempotentní clear přes `ClearRating` → 204); `RatingStore` interface (splňuje ho `organize.Store`,
   `SetRating`/`SetFlag`/`ClearRating`/`RatingsAmong`) je nil-safe (nezapojeno → rating 0 / flag `none`,
   rating endpointy 503);
+  `GET /photos/years` (`handleYears`, `years.go`) = **rok-histogram** pro year facet knihovny
+  → `photos.Store.YearBuckets` → `{years:[{year,count}],total}`; bere tytéž filtry jako list
+  (vč. per-user `FavoriteOf`/`RatedBy`), ale **`params.Year` sám nuluje** — facet nesmí zúžit
+  vlastní nabídku; neplatný param → 400;
   `GET /search?q=&mode=` (`handleSearch`, `search.go`) = **sémantické + hybridní hledání**,
   `mode` = `fulltext`|`semantic`|`hybrid` (default `hybrid`, neznámý → 400), `q` povinný
   (prázdný/whitespace → 400): **fulltext** řadí dle `ts_rank` přes `store.Search`; **semantic**

@@ -108,9 +108,18 @@
     "selectAll": "Select all",
     "bulkEdit": "Bulk edit",
     "filters": {
-      "label": "Photo filters",
-      "search": "Search",
-      "searchPlaceholder": "Title, description…",
+      "barLabel": "Photo filters",
+      "search": "Filter the library",
+      "searchPlaceholder": "Filter by title and description…",
+      "searchHint": "Filters title and description.",
+      "fullSearchLink": "Full-text & semantic search →",
+      "year": "Year",
+      "anyYear": "Any year",
+      "yearOption": "{{year}} ({{n}})",
+      "album": "Album",
+      "anyAlbum": "Any album",
+      "label": "Label",
+      "anyLabel": "Any label",
       "sort": "Sort",
       "archived": "Archived",
       "hasGps": "Location",
@@ -155,7 +164,8 @@
     },
     "empty": {
       "title": "No photos found",
-      "hint": "Try adjusting or clearing the filters."
+      "hintFilters": "Active filters: {{filters}}",
+      "clearFilters": "Clear all filters"
     },
     "emptyCatalog": {
       "title": "There are no photos yet",

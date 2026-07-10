@@ -8,6 +8,7 @@ import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
+import { buildChips } from '../components/library/filterChips'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { TimelineScrubber } from '../components/library/TimelineScrubber'
@@ -16,6 +17,7 @@ import { SelectionBar } from '../components/organize/SelectionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { useGridJump } from '../hooks/useGridJump'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
+import { useLibraryFacets } from '../hooks/useLibraryFacets'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useSelection } from '../hooks/useSelection'
 import { detailQueryString } from '../lib/detailView'
@@ -25,6 +27,7 @@ import {
   type LibraryView,
   viewToParams,
 } from '../lib/libraryView'
+import { searchHref } from '../lib/searchView'
 import { slideshowHref } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
 import { favoritePhoto } from '../services/photos'
@@ -49,13 +52,13 @@ export function LibraryPage() {
 
   // Memoise the API params so the data hook only reloads when the query changes.
   const params = useMemo(() => viewToParams(view), [view])
-  // The detail link carries this view so prev/next and Back respect the order.
-  const detailQuery = useMemo(
-    () => detailQueryString({ ...view, album: '', label: '', favorite: '' }),
-    [view],
-  )
+  // The detail link carries this view — album and label facets included, so
+  // prev/next pages through the same filtered grid — but never the favorites
+  // scope, which the library never applies.
+  const detailQuery = useMemo(() => detailQueryString({ ...view, favorite: '' }), [view])
   const { photos, total, status, loadingMore, moreError, hasMore, loadMore, retry } =
     usePhotoLibrary(params)
+  const facets = useLibraryFacets(params)
 
   // Optimistic per-photo favorite overrides for the `f` keyboard shortcut on the
   // focused tile: the flip is applied to the displayed photos immediately (each
@@ -169,6 +172,15 @@ export function LibraryPage() {
   const noResults = status === 'ready' && photos.length === 0
   const catalogEmpty = noResults && !hasActiveFilters(view)
 
+  // A reader staring at zero results needs to see exactly which filters got them
+  // there — the quick-filter text included, unlike the bar's own chips — and be
+  // able to drop them all in one click. Clearing keeps the sort: it narrows
+  // nothing, so resetting it would be a surprise.
+  const activeFilters = buildChips(view, t, { facets, includeQuery: true })
+  const clearFilters = () => {
+    setView({ ...LIBRARY_DEFAULTS, sort: view.sort })
+  }
+
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -223,7 +235,13 @@ export function LibraryPage() {
         </SelectionBar>
       )}
 
-      <FilterBar view={view} onChange={setView} total={total} />
+      <FilterBar
+        view={view}
+        onChange={setView}
+        total={total}
+        facets={facets}
+        searchHref={searchHref(view)}
+      />
 
       {status === 'loading' && <GridSkeleton />}
 
@@ -237,7 +255,17 @@ export function LibraryPage() {
       )}
 
       {noResults && !catalogEmpty && (
-        <EmptyState title={t('library.empty.title')} hint={t('library.empty.hint')} />
+        <EmptyState
+          title={t('library.empty.title')}
+          hint={t('library.empty.hintFilters', {
+            filters: activeFilters.map((chip) => chip.label).join(' · '),
+          })}
+          action={
+            <Button variant="primary" onClick={clearFilters}>
+              {t('library.empty.clearFilters')}
+            </Button>
+          }
+        />
       )}
 
       {catalogEmpty && (

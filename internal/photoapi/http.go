@@ -129,6 +129,7 @@ func NewAPI(cfg Config) *API {
 //	GET    /search                    RequireAuth      full-text search (ranked)
 //	GET    /photos                    RequireAuth      list with filters/sort/page
 //	GET    /photos/timeline           RequireAuth      month date buckets (histogram)
+//	GET    /photos/years              RequireAuth      capture years with counts (facet)
 //	GET    /photos/{uid}              RequireAuth      full detail
 //	GET    /photos/{uid}/similar      RequireAuth      visually similar photos
 //	GET    /photos/{uid}/faces        RequireAuth      faces + assignment + suggestions
@@ -157,6 +158,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/photos", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleList)
 		r.With(a.requireAuth).Get("/timeline", a.handleTimeline)
+		r.With(a.requireAuth).Get("/years", a.handleYears)
 		r.With(a.requireAuth).Get("/{uid}", a.handleDetail)
 		r.With(a.requireAuth).Get("/{uid}/similar", a.handleSimilar)
 		r.With(a.requireAuth).Get("/{uid}/faces", a.handleFaces)

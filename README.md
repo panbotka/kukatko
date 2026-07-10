@@ -1403,7 +1403,8 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   - **Filtry:** `taken_after`/`taken_before` (RFC3339 nebo `YYYY-MM-DD`), `has_gps` (`true`/`false`),
     `camera`, `lens`, `q` (fulltext title/description/notes), `private` (`true`/`false`),
     `uploader` (UID), `archived` (`false` výchozí = jen živé, `true` = včetně archivu, `only` =
-    jen archiv), `favorite=true` (jen fotky, které **přihlášený uživatel** označil jako oblíbené —
+    jen archiv), `year` (čtyřciferný kalendářní rok pořízení, 1000–9999; fotky bez `taken_at`
+    nikdy nematchují), `favorite=true` (jen fotky, které **přihlášený uživatel** označil jako oblíbené —
     per-user scope přes korelované `EXISTS` nad `user_favorites`).
   - **Řazení:** `sort` = `newest` (default) / `oldest` / `taken_at` / `added` / `title` / `size`,
     s volitelným `order=asc|desc`.
@@ -1424,6 +1425,16 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   data pořízení, které do žádného bucketu nespadají (řadí se na konec). `sort`/`order` se ignorují
   (vždy grupováno dle data; scrubber předpokládá výchozí řazení dle data). Backuje ho
   `photos.Store.TimelineBuckets` (sdílí `buildWhere` s `List`/`Count`). **Neplatný parametr → 400.**
+- **Roky** `GET /photos/years` (přihlášený) — rok-histogram knihovny, podklad **year facetu**
+  filtrů. Přijímá **stejné filtry** jako `GET /photos` přes sdílený `parseListParams` a ctí
+  viditelnost volajícího (archived/private) i per-user filtry (favorite, rating/flag), takže count
+  roku je přesně to, co mřížka ukáže po jeho výběru. Odpověď `{years:[{year,count}],total}` —
+  **nejnovější rok první**. Filtr `year` je **jediný ignorovaný**: facet nesmí zúžit vlastní
+  nabídku, jinak by po výběru roku 2019 zbyl v nabídce jen 2019 a nešlo by přepnout.
+  `sort`/`order` a stránkování se ignorují (vždy grupováno dle roku). `total` (přes `Count`)
+  zahrnuje i fotky **bez data pořízení**, které do žádného roku nespadají, takže může převýšit
+  součet countů. Backuje ho `photos.Store.YearBuckets` (sdílí `buildWhere` s `List`/`Count`).
+  **Neplatný parametr → 400.**
 - **Oblíbené** `PUT /photos/{uid}/favorite` + `DELETE /photos/{uid}/favorite` (každý přihlášený,
   oblíbené jsou osobní) — idempotentní toggle oblíbené pro aktuálního uživatele → `204`; `404`
   na chybějící fotku, `503` bez favorites backendu. **Výpis** `GET /favorites` (přihlášený) —

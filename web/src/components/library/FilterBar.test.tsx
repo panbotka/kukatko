@@ -1,24 +1,73 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { type LibraryFacets } from '../../hooks/useLibraryFacets'
 import i18n from '../../i18n'
 import { LIBRARY_DEFAULTS, type LibraryView } from '../../lib/libraryView'
 import { type SetUrlState } from '../../lib/urlState'
+import { type AlbumCount, type LabelCount } from '../../services/organize'
 
 import { FilterBar } from './FilterBar'
 
 function renderBar(
   view: LibraryView,
   onChange: SetUrlState<LibraryView>,
-  props: { showSearch?: boolean; showSort?: boolean } = {},
+  props: {
+    showSearch?: boolean
+    showSort?: boolean
+    facets?: LibraryFacets
+    searchHref?: string
+  } = {},
 ) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <FilterBar view={view} onChange={onChange} total={0} {...props} />
+      <MemoryRouter>
+        <FilterBar view={view} onChange={onChange} total={0} {...props} />
+      </MemoryRouter>
     </I18nextProvider>,
   )
+}
+
+/** An album the facet select offers, trimmed to the fields the bar reads. */
+function album(uid: string, title: string, photoCount: number): AlbumCount {
+  return {
+    uid,
+    slug: uid,
+    title,
+    description: '',
+    type: 'album',
+    private: false,
+    order_by: 'taken_at',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    photo_count: photoCount,
+  }
+}
+
+/** A label the facet select offers, trimmed to the fields the bar reads. */
+function label(uid: string, name: string, photoCount: number): LabelCount {
+  return {
+    uid,
+    slug: uid,
+    name,
+    priority: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    photo_count: photoCount,
+  }
+}
+
+/** The three facet option lists, as `useLibraryFacets` would deliver them. */
+const FACETS: LibraryFacets = {
+  years: [
+    { year: 2023, count: 12 },
+    { year: 2021, count: 3 },
+  ],
+  albums: [album('al_1', 'Holidays', 12), album('al_2', 'Náměstí', 4)],
+  labels: [label('lb_1', 'Beach', 7), label('lb_2', 'Portrait', 2)],
 }
 
 /** Opens the advanced-filter panel so its controls become reachable. */
@@ -42,10 +91,26 @@ describe('FilterBar header', () => {
 
   it('hides the search and sort controls when asked', () => {
     renderBar(LIBRARY_DEFAULTS, vi.fn(), { showSearch: false, showSort: false })
-    expect(screen.queryByLabelText('Search')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Filter the library')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Sort')).not.toBeInTheDocument()
     // The filters toggle is still available.
     expect(screen.getByRole('button', { name: /Filters/ })).toBeInTheDocument()
+  })
+
+  it('points the quick filter at /search for real search, carrying the view', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'sunset' }, vi.fn(), { searchHref: '/search?q=sunset' })
+
+    // The quick filter says what it does; the link says where real search lives.
+    expect(screen.getByPlaceholderText('Filter by title and description…')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Full-text & semantic search/ })).toHaveAttribute(
+      'href',
+      '/search?q=sunset',
+    )
+  })
+
+  it('omits the search link when the page does not offer one', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+    expect(screen.queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
   })
 
   it('toggles the advanced panel open and closed', async () => {
@@ -58,6 +123,90 @@ describe('FilterBar header', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+})
+
+describe('FilterBar facets', () => {
+  it('hides the facet row when the page supplies no options', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+    expect(screen.queryByLabelText('Year')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Album')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Label')).not.toBeInTheDocument()
+  })
+
+  it('offers each year present in the catalog with its photo count', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
+
+    const year = screen.getByLabelText('Year')
+    expect(within(year).getByRole('option', { name: 'Any year' })).toBeInTheDocument()
+    expect(within(year).getByRole('option', { name: '2023 (12)' })).toBeInTheDocument()
+    expect(within(year).getByRole('option', { name: '2021 (3)' })).toBeInTheDocument()
+  })
+
+  it('writes the selected year to the view state', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange, { facets: FACETS })
+
+    await user.selectOptions(screen.getByLabelText('Year'), '2023')
+    expect(onChange).toHaveBeenCalledWith({ year: '2023' })
+  })
+
+  it('writes the album picked from the searchable select to the view state', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange, { facets: FACETS })
+
+    await user.click(screen.getByLabelText('Album'))
+    await user.click(screen.getByRole('option', { name: /Holidays/ }))
+    expect(onChange).toHaveBeenCalledWith({ album: 'al_1' })
+  })
+
+  it('narrows the album options as the reader types, ignoring case and accents', async () => {
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
+
+    await user.type(screen.getByLabelText('Album'), 'namesti')
+
+    expect(screen.getByRole('option', { name: /Náměstí/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Holidays/ })).not.toBeInTheDocument()
+  })
+
+  it('writes the label picked from the searchable select to the view state', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange, { facets: FACETS })
+
+    await user.click(screen.getByLabelText('Label'))
+    await user.click(screen.getByRole('option', { name: /Portrait/ }))
+    expect(onChange).toHaveBeenCalledWith({ label: 'lb_2' })
+  })
+
+  it('clears a facet from inside its own select', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1' }, onChange, { facets: FACETS })
+
+    // At rest the select shows the current choice, not a placeholder.
+    expect(screen.getByLabelText('Album')).toHaveValue('Holidays')
+    await user.click(screen.getByLabelText('Album'))
+    await user.click(screen.getByRole('option', { name: 'Any album' }))
+    expect(onChange).toHaveBeenCalledWith({ album: '' })
+  })
+
+  it('names an album/label chip by its title, not its uid', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, year: '2023', album: 'al_1', label: 'lb_1' }, vi.fn(), {
+      facets: FACETS,
+    })
+
+    expect(screen.getByText('Year: 2023')).toBeInTheDocument()
+    expect(screen.getByText('Album: Holidays')).toBeInTheDocument()
+    expect(screen.getByText('Label: Beach')).toBeInTheDocument()
+  })
+
+  it('falls back to the raw uid when the facet options do not name it', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_gone' }, vi.fn(), { facets: FACETS })
+    expect(screen.getByText('Album: al_gone')).toBeInTheDocument()
   })
 })
 

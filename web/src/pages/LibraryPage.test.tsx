@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type Photo, type PhotoListResponse, type Timeline } from '../services/photos'
 
 import { LibraryPage } from './LibraryPage'
@@ -57,14 +58,50 @@ vi.mock('react-virtuoso', () => ({
 // Keep the real thumbUrl/GRID_THUMB_SIZE; only the network calls are faked.
 vi.mock('../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/photos')>()
-  return { ...actual, fetchPhotos: vi.fn(), fetchTimeline: vi.fn() }
+  return { ...actual, fetchPhotos: vi.fn(), fetchTimeline: vi.fn(), fetchPhotoYears: vi.fn() }
 })
 
-const { fetchPhotos, fetchTimeline } = await import('../services/photos')
+// The filter bar's album/label facets load their options on mount.
+vi.mock('../services/organize', () => ({ fetchAlbums: vi.fn(), fetchLabels: vi.fn() }))
+
+const { fetchPhotos, fetchTimeline, fetchPhotoYears } = await import('../services/photos')
+const { fetchAlbums, fetchLabels } = await import('../services/organize')
 const fetchMock = vi.mocked(fetchPhotos)
 const timelineMock = vi.mocked(fetchTimeline)
+const yearsMock = vi.mocked(fetchPhotoYears)
+const albumsMock = vi.mocked(fetchAlbums)
+const labelsMock = vi.mocked(fetchLabels)
 
 const EMPTY_TIMELINE: Timeline = { buckets: [], total: 0 }
+
+/** An album the facet select offers, trimmed to the fields the bar reads. */
+function album(uid: string, title: string, photoCount: number): AlbumCount {
+  return {
+    uid,
+    slug: uid,
+    title,
+    description: '',
+    type: 'album',
+    private: false,
+    order_by: 'taken_at',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    photo_count: photoCount,
+  }
+}
+
+/** A label the facet select offers, trimmed to the fields the bar reads. */
+function label(uid: string, name: string, photoCount: number): LabelCount {
+  return {
+    uid,
+    slug: uid,
+    name,
+    priority: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    photo_count: photoCount,
+  }
+}
 
 function photo(uid: string, name: string): Photo {
   return {
@@ -157,6 +194,13 @@ beforeEach(async () => {
   timelineMock.mockReset()
   // Default: no timeline, so the scrubber renders nothing unless a test opts in.
   timelineMock.mockResolvedValue(EMPTY_TIMELINE)
+  // Default facet options; a test that cares about the facet row overrides them.
+  yearsMock.mockReset()
+  yearsMock.mockResolvedValue({ years: [], total: 0 })
+  albumsMock.mockReset()
+  albumsMock.mockResolvedValue([])
+  labelsMock.mockReset()
+  labelsMock.mockResolvedValue([])
   grid.scrollToIndex.mockReset()
 })
 
@@ -176,7 +220,34 @@ describe('LibraryPage', () => {
     renderLibrary('/?camera=Canon')
 
     expect(await screen.findByText('No photos found')).toBeInTheDocument()
-    expect(screen.getByText('Try adjusting or clearing the filters.')).toBeInTheDocument()
+    expect(screen.getByText('Active filters: Camera: Canon')).toBeInTheDocument()
+  })
+
+  it('names every active filter in the empty state, the quick filter included', async () => {
+    fetchMock.mockResolvedValue(page([], 0, null))
+    yearsMock.mockResolvedValue({ years: [{ year: 2023, count: 4 }], total: 4 })
+    albumsMock.mockResolvedValue([album('al_1', 'Holidays', 4)])
+    labelsMock.mockResolvedValue([label('lb_1', 'Beach', 2)])
+    renderLibrary('/?q=sunset&year=2023&album=al_1&label=lb_1')
+
+    // Albums and labels are named by their title, not the UID the URL carries.
+    expect(
+      await screen.findByText(
+        'Active filters: Filter the library: sunset · Year: 2023 · Album: Holidays · Label: Beach',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('clears every filter from the empty state, keeping the sort', async () => {
+    fetchMock.mockResolvedValue(page([], 0, null))
+    renderLibrary('/?camera=Canon&year=2023&sort=oldest')
+
+    await screen.findByText('No photos found')
+    await userEvent.click(screen.getByRole('button', { name: 'Clear all filters' }))
+
+    expect(screen.getByTestId('search')).toHaveTextContent('sort=oldest')
+    expect(screen.getByTestId('search').textContent).not.toContain('camera')
+    expect(screen.getByTestId('search').textContent).not.toContain('year')
   })
 
   it('invites an editor to upload when the catalog itself is empty', async () => {
@@ -239,6 +310,91 @@ describe('LibraryPage', () => {
     expect(first.sort).toBe('oldest')
     expect(first.has_gps).toBe('true')
     expect(first.camera).toBe('Canon')
+  })
+
+  it('writes a selected year facet to the query string and refetches with it', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    yearsMock.mockResolvedValue({
+      years: [
+        { year: 2023, count: 12 },
+        { year: 2021, count: 3 },
+      ],
+      total: 15,
+    })
+    const user = userEvent.setup()
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.selectOptions(await screen.findByLabelText('Year'), '2023')
+
+    expect(screen.getByTestId('search')).toHaveTextContent('year=2023')
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls
+      expect(calls[calls.length - 1][0].year).toBe('2023')
+    })
+  })
+
+  it('writes a selected album facet to the query string, and Back removes it', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    albumsMock.mockResolvedValue([album('al_1', 'Holidays', 12)])
+    const user = userEvent.setup()
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(await screen.findByLabelText('Album'))
+    await user.click(await screen.findByRole('option', { name: /Holidays/ }))
+
+    expect(screen.getByTestId('search')).toHaveTextContent('album=al_1')
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls
+      expect(calls[calls.length - 1][0].album).toBe('al_1')
+    })
+
+    // Facets push history, so Back returns to the unfiltered grid.
+    await user.click(screen.getByRole('button', { name: '__back' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('search').textContent).not.toContain('album')
+    })
+  })
+
+  it('writes a selected label facet to the query string', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    labelsMock.mockResolvedValue([label('lb_1', 'Beach', 7)])
+    const user = userEvent.setup()
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(await screen.findByLabelText('Label'))
+    await user.click(await screen.findByRole('option', { name: /Beach/ }))
+
+    expect(screen.getByTestId('search')).toHaveTextContent('label=lb_1')
+  })
+
+  it('combines the facets with the filters the library already had', async () => {
+    fetchMock.mockResolvedValue(page([], 0, null))
+    renderLibrary('/?year=2023&album=al_1&label=lb_1&camera=Canon&sort=oldest')
+
+    await screen.findByText('No photos found')
+    const first = fetchMock.mock.calls[0][0]
+    expect(first.year).toBe('2023')
+    expect(first.album).toBe('al_1')
+    expect(first.label).toBe('lb_1')
+    expect(first.camera).toBe('Canon')
+    expect(first.sort).toBe('oldest')
+  })
+
+  it('never asks the years endpoint to narrow its own facet', async () => {
+    fetchMock.mockResolvedValue(page([], 0, null))
+    renderLibrary('/?year=2023&camera=Canon')
+
+    await screen.findByText('No photos found')
+    await waitFor(() => {
+      expect(yearsMock).toHaveBeenCalled()
+    })
+    // The other filters still scope the counts; the selected year does not.
+    const asked = yearsMock.mock.calls[0][0]
+    expect(asked.year).toBe('')
+    expect(asked.camera).toBe('Canon')
   })
 
   it('Back restores the previous view and refetches it (Zpět vždy funguje)', async () => {
@@ -381,7 +537,7 @@ describe('LibraryPage', () => {
     renderLibrary()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    const search = screen.getByLabelText('Search')
+    const search = screen.getByLabelText('Filter the library')
     search.focus()
     fireEvent.keyDown(search, { key: 'ArrowRight' })
 

@@ -108,9 +108,18 @@
     "selectAll": "Vybrat vše",
     "bulkEdit": "Hromadná úprava",
     "filters": {
-      "label": "Filtry fotek",
-      "search": "Hledat",
-      "searchPlaceholder": "Název, popis…",
+      "barLabel": "Filtry fotek",
+      "search": "Filtrovat v knihovně",
+      "searchPlaceholder": "Filtrovat podle názvu a popisu…",
+      "searchHint": "Filtruje název a popis.",
+      "fullSearchLink": "Fulltext a sémantické hledání →",
+      "year": "Rok",
+      "anyYear": "Libovolný rok",
+      "yearOption": "{{year}} ({{n}})",
+      "album": "Album",
+      "anyAlbum": "Libovolné album",
+      "label": "Štítek",
+      "anyLabel": "Libovolný štítek",
       "sort": "Řazení",
       "archived": "Archiv",
       "hasGps": "Poloha",
@@ -155,7 +164,8 @@
     },
     "empty": {
       "title": "Nenalezeny žádné fotky",
-      "hint": "Zkuste upravit nebo zrušit filtry."
+      "hintFilters": "Aktivní filtry: {{filters}}",
+      "clearFilters": "Zrušit všechny filtry"
     },
     "emptyCatalog": {
       "title": "Zatím tu nejsou žádné fotky",

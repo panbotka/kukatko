@@ -78,6 +78,11 @@ type ListParams struct {
 	// TakenBefore, when non-nil, keeps photos whose taken_at is at or before it.
 	// Photos with an unknown capture time (NULL taken_at) are excluded.
 	TakenBefore *time.Time
+	// Year, when non-nil, keeps photos captured in that calendar year. Photos with
+	// an unknown capture time (NULL taken_at) are excluded. The year is derived the
+	// same way YearBuckets derives it, so selecting a bucket returns exactly the
+	// photos that bucket counted.
+	Year *int
 	// HasGPS, when non-nil, keeps photos that have (true) or lack (false) both a
 	// latitude and a longitude.
 	HasGPS *bool
@@ -272,6 +277,7 @@ func buildWhere(params ListParams) (where []string, args []any) {
 func whereClauses(params ListParams, bind func(any) string) []string {
 	where := archivedClauses(params)
 	where = append(where, scalarClauses(params, bind)...)
+	where = append(where, yearClauses(params, bind)...)
 	where = append(where, gpsClauses(params)...)
 	where = append(where, textClauses(params, bind)...)
 	where = append(where, ftsClauses(params, bind)...)
@@ -394,6 +400,26 @@ func scalarClauses(params ListParams, bind func(any) string) []string {
 		where = append(where, "taken_at <= "+bind(*params.TakenBefore))
 	}
 	return where
+}
+
+// yearClauses returns the capture-year filter, binding the year through bind. It
+// is expressed as a half-open taken_at range rather than the
+// date_part('year', taken_at) = $n it is equivalent to, so the planner can use
+// idx_photos_taken_at instead of scanning every row. The two forms select the
+// same photos: make_timestamptz resolves the year boundaries in the session time
+// zone, which is the very zone date_part reads the year in, and YearBuckets
+// groups by that same date_part — so filtering on a bucket's year returns exactly
+// the photos the bucket counted. NULL taken_at fails both comparisons, so undated
+// photos are excluded, as in the buckets. The explicit ::int casts pin the
+// parameters to make_timestamptz's integer signature (pgx binds a Go int as
+// bigint, which the function would not resolve).
+func yearClauses(params ListParams, bind func(any) string) []string {
+	if params.Year == nil {
+		return nil
+	}
+	from := "make_timestamptz((" + bind(*params.Year) + ")::int, 1, 1, 0, 0, 0)"
+	until := "make_timestamptz((" + bind(*params.Year+1) + ")::int, 1, 1, 0, 0, 0)"
+	return []string{"taken_at >= " + from + " AND taken_at < " + until}
 }
 
 // gpsClauses returns the has-GPS filter, which needs no bound parameter: present

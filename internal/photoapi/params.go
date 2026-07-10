@@ -14,6 +14,14 @@ import (
 // work a hostile or careless caller can demand. Larger values are clamped.
 const maxListLimit = 500
 
+// minYear and maxYear bound the accepted year filter to a four-digit calendar
+// year. Photography predates neither, and no EXIF capture time the importers
+// accept falls outside it, so anything else is a malformed request.
+const (
+	minYear = 1000
+	maxYear = 9999
+)
+
 // sortSpec pairs a list sort column with its natural default direction so a
 // caller can pick a sort key by intent ("newest", "title") and still override
 // the direction with an explicit order parameter.
@@ -150,10 +158,10 @@ func applyArchived(q url.Values, params *photos.ListParams) error {
 }
 
 // applyFilters validates and applies the metadata filters: private, has-GPS,
-// date range, camera, lens, uploader and free-text search, plus the album and
-// label scope filters and the country/city place scope filters that restrict the
-// list to one album's, one label's or one place's photos so the same endpoint
-// serves a scoped grid.
+// capture year, date range, camera, lens, uploader and free-text search, plus the
+// album and label scope filters and the country/city place scope filters that
+// restrict the list to one album's, one label's or one place's photos so the same
+// endpoint serves a scoped grid.
 func applyFilters(q url.Values, params *photos.ListParams) error {
 	private, err := boolParam(q, "private")
 	if err != nil {
@@ -166,6 +174,12 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 		return err
 	}
 	params.HasGPS = hasGPS
+
+	year, err := yearParam(q, "year")
+	if err != nil {
+		return err
+	}
+	params.Year = year
 
 	after, err := timeParam(q, "taken_after")
 	if err != nil {
@@ -213,6 +227,26 @@ func intParam(q url.Values, name string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be an integer", name)
 	}
 	return n, nil
+}
+
+// yearParam parses the named calendar-year query parameter, returning nil when it
+// is absent (no filter). It accepts only a four-digit year in minYear..maxYear —
+// the range GET /photos/years can ever offer — so a tampered value cannot reach
+// the timestamp arithmetic the year filter builds from it.
+func yearParam(q url.Values, name string) (*int, error) {
+	raw := q.Get(name)
+	if raw == "" {
+		// An absent optional filter legitimately yields no value and no error.
+		return nil, nil //nolint:nilnil
+	}
+	year, err := strconv.Atoi(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an integer", name)
+	}
+	if year < minYear || year > maxYear {
+		return nil, fmt.Errorf("%s must be between %d and %d", name, minYear, maxYear)
+	}
+	return &year, nil
 }
 
 // boolParam parses the named boolean query parameter, returning nil when it is

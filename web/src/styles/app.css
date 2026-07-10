@@ -205,6 +205,14 @@ body {
   min-width: 9rem;
 }
 
+/* The Year / Album / Label facet row sits directly under the header and stays
+   visible: these are the three ways photos are actually found. Its controls get
+   the same finger-friendly sizing as the advanced panel's. */
+.kukatko-filter-facets .form-control,
+.kukatko-filter-facets .form-select {
+  min-height: 2.75rem;
+}
+
 /* Controls inside the advanced panel are finger-friendly (44px minimum). */
 .kukatko-filter-panel .form-control,
 .kukatko-filter-panel .form-select {

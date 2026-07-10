@@ -1,4 +1,3 @@
-import type { TFunction } from 'i18next'
 import { useEffect, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
@@ -9,9 +8,14 @@ import InputGroup from 'react-bootstrap/InputGroup'
 import Offcanvas from 'react-bootstrap/Offcanvas'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
+import { type LibraryFacets } from '../../hooks/useLibraryFacets'
 import { hasActiveFilters, type LibraryView, LIBRARY_DEFAULTS } from '../../lib/libraryView'
 import { type SetUrlState } from '../../lib/urlState'
+
+import { buildChips } from './filterChips'
+import { SearchableSelect } from './SearchableSelect'
 
 /** DOM id of the collapsible / offcanvas advanced-filter panel. */
 const PANEL_ID = 'library-filter-panel'
@@ -33,25 +37,44 @@ export interface FilterBarProps<T extends LibraryView> {
    * search modes. Defaults true.
    */
   showSort?: boolean
+  /**
+   * The Year / Album / Label facet option lists. Omit to hide the facet row —
+   * pages whose grid is already scoped to one album, label or place have nothing
+   * to offer there. Album titles and label names also let the chips name a filter
+   * instead of showing its UID.
+   */
+  facets?: LibraryFacets
+  /**
+   * Where the "search the full text instead" link points, carrying the current
+   * view. Omit on pages that are not the library (and on `/search` itself, which
+   * is the destination), and no link is rendered.
+   */
+  searchHref?: string
 }
 
 /**
- * Library filter + sort controls, redesigned for a calm default and progressive
- * disclosure. The header is a single row: a prominent search field (the visual
- * anchor), the sort selector, and a "Filters" toggle badged with the count of
- * active advanced filters. The advanced filters (date range, camera, archived,
- * location, private, min rating, flag) live in a collapsible panel on desktop
- * and an offcanvas drawer on phones, so the resting state stays uncluttered.
- * Every active filter is echoed as a removable chip plus a single clear-all
- * action.
+ * Library filter + sort controls, built for a calm default and progressive
+ * disclosure. The header is a single row: a prominent quick-filter field (the
+ * visual anchor, matching title and description as you type), the sort selector,
+ * and a "Filters" toggle badged with the count of active filters. Below it sits
+ * the facet row — Year, Album, Label — the three ways photos are actually found;
+ * it appears only when the page supplies `facets`. The remaining filters (date
+ * range, camera, archived, location, private, min rating, flag) live in a
+ * collapsible panel on desktop and an offcanvas drawer on phones, so the resting
+ * state stays uncluttered. Every active filter is echoed as a removable chip plus
+ * a single clear-all action.
  *
- * Behaviour is unchanged: sort, the tri-state and date filters push a history
- * entry (so Back steps through views) while the free-text inputs replace it (so
- * live typing does not flood history). All state lives in the URL via
- * `onChange`; the bar is fully controlled by `view`. Generic over the view type
- * so it serves both the library ({@link LibraryView}) and the search page (a
- * superset adding `mode`); only the library fields are ever written here, so any
- * extra fields (e.g. the search mode) are preserved untouched.
+ * The quick filter is a substring match, not a search: `searchHref` puts a
+ * labelled link to `/search` beside it, which is where full-text and semantic
+ * search live. The two are never duplicated here.
+ *
+ * Facet and enum filters push a history entry (so Back steps through views) while
+ * the free-text inputs replace it (so live typing does not flood history). All
+ * state lives in the URL via `onChange`; the bar is fully controlled by `view`.
+ * Generic over the view type so it serves both the library ({@link LibraryView})
+ * and the search page (a superset adding `mode`); only the library fields are
+ * ever written here, so any extra fields (e.g. the search mode) are preserved
+ * untouched.
  */
 export function FilterBar<T extends LibraryView>({
   view,
@@ -59,6 +82,8 @@ export function FilterBar<T extends LibraryView>({
   total,
   showSearch = true,
   showSort = true,
+  facets,
+  searchHref,
 }: FilterBarProps<T>) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -71,7 +96,7 @@ export function FilterBar<T extends LibraryView>({
     onChange(patch as Partial<T>, { replace: true })
   }
 
-  const chips = buildChips(view, t)
+  const chips = buildChips(view, t, { facets })
   const clearVisible = hasActiveFilters(view, { ignoreQuery: !showSearch })
 
   const clearAll = () => {
@@ -83,24 +108,34 @@ export function FilterBar<T extends LibraryView>({
   const panel = <AdvancedFilters view={view} push={push} replace={replace} />
 
   return (
-    <Form className="mb-3" role="search" aria-label={t('library.filters.label')}>
+    <Form className="mb-3" role="search" aria-label={t('library.filters.barLabel')}>
       <div className="d-flex flex-wrap align-items-center gap-2">
         {showSearch && (
-          <InputGroup className="kukatko-filter-search">
-            <InputGroup.Text aria-hidden="true">
-              <SearchIcon />
-            </InputGroup.Text>
-            <Form.Control
-              type="search"
-              size="lg"
-              value={view.q}
-              aria-label={t('library.filters.search')}
-              placeholder={t('library.filters.searchPlaceholder')}
-              onChange={(e) => {
-                replace({ q: e.target.value })
-              }}
-            />
-          </InputGroup>
+          <div className="kukatko-filter-search">
+            <InputGroup>
+              <InputGroup.Text aria-hidden="true">
+                <SearchIcon />
+              </InputGroup.Text>
+              <Form.Control
+                type="search"
+                size="lg"
+                value={view.q}
+                aria-label={t('library.filters.search')}
+                placeholder={t('library.filters.searchPlaceholder')}
+                onChange={(e) => {
+                  replace({ q: e.target.value })
+                }}
+              />
+            </InputGroup>
+            {searchHref !== undefined && (
+              <div className="form-text mt-1">
+                {t('library.filters.searchHint')}{' '}
+                <Link to={searchHref} className="text-decoration-none">
+                  {t('library.filters.fullSearchLink')}
+                </Link>
+              </div>
+            )}
+          </div>
         )}
 
         {showSort && (
@@ -142,6 +177,8 @@ export function FilterBar<T extends LibraryView>({
           )}
         </Button>
       </div>
+
+      {facets && <FacetRow view={view} facets={facets} push={push} />}
 
       {chips.length > 0 && (
         <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
@@ -203,83 +240,81 @@ export function FilterBar<T extends LibraryView>({
   )
 }
 
-/** A single active-filter descriptor rendered as a removable chip. */
-interface FilterChip {
-  /** Stable key for React and the filter it represents. */
-  key: string
-  /** Human-readable "Field: value" summary shown on the chip. */
-  label: string
-  /** The patch that clears just this filter. */
-  clear: Partial<LibraryView>
-}
-
 /**
- * Derives the removable chips for every active advanced filter. The free-text
- * query is intentionally excluded: it either has its own visible search box or
- * (on the search page) belongs to the page, so it never appears as a chip. The
- * returned length doubles as the "active filters" count on the toggle badge.
+ * The three facets photos are actually found by: the years present in the
+ * catalog (each with its count, so the reader sees how much a year holds before
+ * committing), and the album and label the photo belongs to. Album and label are
+ * type-to-filter selects because both collections grow without bound; year is a
+ * plain select because the catalog only ever holds a handful of years.
+ *
+ * All three push a history entry, so Back steps back through facet choices.
  */
-function buildChips(view: LibraryView, t: TFunction): FilterChip[] {
-  const chips: FilterChip[] = []
-  const bool = (v: string) => t(v === 'true' ? 'library.triState.yes' : 'library.triState.no')
+function FacetRow({
+  view,
+  facets,
+  push,
+}: {
+  view: LibraryView
+  facets: LibraryFacets
+  push: (patch: Partial<LibraryView>) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Row className="kukatko-filter-facets g-2 mt-1">
+      <Col xs={12} md={4}>
+        <Form.Group controlId="library-year">
+          <Form.Label className="small mb-1">{t('library.filters.year')}</Form.Label>
+          <Form.Select
+            value={view.year}
+            onChange={(e) => {
+              push({ year: e.target.value })
+            }}
+          >
+            <option value="">{t('library.filters.anyYear')}</option>
+            {facets.years.map((bucket) => (
+              <option key={bucket.year} value={String(bucket.year)}>
+                {t('library.filters.yearOption', { year: bucket.year, n: bucket.count })}
+              </option>
+            ))}
+          </Form.Select>
+        </Form.Group>
+      </Col>
 
-  if (view.archived !== LIBRARY_DEFAULTS.archived) {
-    chips.push({
-      key: 'archived',
-      label: t(view.archived === 'only' ? 'library.archived.only' : 'library.archived.show'),
-      clear: { archived: LIBRARY_DEFAULTS.archived },
-    })
-  }
-  if (view.has_gps !== '') {
-    chips.push({
-      key: 'has_gps',
-      label: `${t('library.filters.hasGps')}: ${bool(view.has_gps)}`,
-      clear: { has_gps: '' },
-    })
-  }
-  if (view.private !== '') {
-    chips.push({
-      key: 'private',
-      label: `${t('library.filters.private')}: ${bool(view.private)}`,
-      clear: { private: '' },
-    })
-  }
-  if (view.camera !== '') {
-    chips.push({
-      key: 'camera',
-      label: `${t('library.filters.camera')}: ${view.camera}`,
-      clear: { camera: '' },
-    })
-  }
-  if (view.taken_after !== '') {
-    chips.push({
-      key: 'taken_after',
-      label: `${t('library.filters.takenAfter')}: ${view.taken_after}`,
-      clear: { taken_after: '' },
-    })
-  }
-  if (view.taken_before !== '') {
-    chips.push({
-      key: 'taken_before',
-      label: `${t('library.filters.takenBefore')}: ${view.taken_before}`,
-      clear: { taken_before: '' },
-    })
-  }
-  if (view.min_rating !== '') {
-    chips.push({
-      key: 'min_rating',
-      label: `${t('library.filters.minRating')}: ${t('library.minRating.atLeast', { n: view.min_rating })}`,
-      clear: { min_rating: '' },
-    })
-  }
-  if (view.flag !== '') {
-    chips.push({
-      key: 'flag',
-      label: `${t('library.filters.flag')}: ${t(view.flag === 'pick' ? 'library.flag.picks' : 'library.flag.rejects')}`,
-      clear: { flag: '' },
-    })
-  }
-  return chips
+      <Col xs={12} md={4}>
+        <SearchableSelect
+          id="library-album"
+          label={t('library.filters.album')}
+          anyLabel={t('library.filters.anyAlbum')}
+          value={view.album}
+          options={facets.albums.map((album) => ({
+            value: album.uid,
+            label: album.title,
+            count: album.photo_count,
+          }))}
+          onChange={(value) => {
+            push({ album: value })
+          }}
+        />
+      </Col>
+
+      <Col xs={12} md={4}>
+        <SearchableSelect
+          id="library-label"
+          label={t('library.filters.label')}
+          anyLabel={t('library.filters.anyLabel')}
+          value={view.label}
+          options={facets.labels.map((label) => ({
+            value: label.uid,
+            label: label.name,
+            count: label.photo_count,
+          }))}
+          onChange={(value) => {
+            push({ label: value })
+          }}
+        />
+      </Col>
+    </Row>
+  )
 }
 
 /** The advanced-filter controls, shared by the desktop collapse and mobile offcanvas. */

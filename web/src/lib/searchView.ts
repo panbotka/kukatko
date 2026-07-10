@@ -1,6 +1,7 @@
 import { type SearchMode } from '../services/photos'
 
 import { type LibraryView, LIBRARY_DEFAULTS } from './libraryView'
+import { writeUrlState } from './urlState'
 
 /**
  * URL-encoded view state for the search page: every library filter/sort field
@@ -33,4 +34,18 @@ const MODES: readonly SearchMode[] = ['fulltext', 'semantic', 'hybrid']
 /** Narrows a raw string to a known search mode, defaulting to "hybrid". */
 export function toMode(raw: string): SearchMode {
   return (MODES as readonly string[]).includes(raw) ? (raw as SearchMode) : 'hybrid'
+}
+
+/**
+ * Builds the link from a library view to the search page, carrying the filters
+ * (and the quick-filter text as the search query) so the reader lands on the same
+ * photos and can widen them with full-text or semantic search. Values equal to a
+ * default — the search `mode` among them — are omitted, keeping the URL minimal.
+ *
+ * This is the one bridge between the two pages: the library filters by substring,
+ * `/search` searches; neither duplicates the other.
+ */
+export function searchHref(view: LibraryView): string {
+  const query = writeUrlState({ ...SEARCH_DEFAULTS, ...view }, SEARCH_DEFAULTS).toString()
+  return query === '' ? '/search' : `/search?${query}`
 }

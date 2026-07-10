@@ -24,6 +24,19 @@ export type LibraryView = {
   private: string
   camera: string
   q: string
+  /**
+   * Capture-year facet: '' (any) or a four-digit year, one of those
+   * `GET /photos/years` offers. Photos with no capture time never match.
+   */
+  year: string
+  /**
+   * Album facet: '' (any) or an album UID. Doubles as the detail page's album
+   * scope (see {@link import('./detailView').DetailView}) — the same `album`
+   * query param means the same thing everywhere.
+   */
+  album: string
+  /** Label facet: '' (any) or a label UID. Doubles as the detail page's label scope. */
+  label: string
   taken_after: string
   taken_before: string
   /** Minimum star rating filter: '' (any) or '1'–'5'. */
@@ -44,6 +57,9 @@ export const LIBRARY_DEFAULTS: LibraryView = {
   private: '',
   camera: '',
   q: '',
+  year: '',
+  album: '',
+  label: '',
   taken_after: '',
   taken_before: '',
   min_rating: '',
@@ -66,11 +82,24 @@ function toArchived(raw: string): ArchivedFilter {
   return (ARCHIVED as readonly string[]).includes(raw) ? (raw as ArchivedFilter) : 'false'
 }
 
+/** A four-digit calendar year — the only year value the backend accepts. */
+const YEAR_PATTERN = /^\d{4}$/
+
+/**
+ * Narrows a raw string to a four-digit year, dropping anything else (a hand-typed
+ * or stale URL) to "no filter" rather than letting the backend answer 400 and the
+ * grid render an error.
+ */
+function toYear(raw: string): string {
+  return YEAR_PATTERN.test(raw) ? raw : ''
+}
+
 /**
  * Maps the URL view state to API list params, sanitising the enum-like fields so
- * a tampered URL cannot send an out-of-range sort/archived value to the backend.
- * Free-text and tri-state filters pass through verbatim (the backend treats an
- * empty value as no filter).
+ * a tampered URL cannot send an out-of-range sort/archived/year value to the
+ * backend. Free-text, tri-state and UID filters pass through verbatim (the
+ * backend treats an empty value as no filter, and an unknown album/label UID
+ * simply matches nothing).
  */
 export function viewToParams(view: LibraryView): PhotoListParams {
   return {
@@ -80,6 +109,9 @@ export function viewToParams(view: LibraryView): PhotoListParams {
     private: view.private,
     camera: view.camera,
     q: view.q,
+    year: toYear(view.year),
+    album: view.album,
+    label: view.label,
     taken_after: view.taken_after,
     taken_before: view.taken_before,
     min_rating: view.min_rating,
@@ -102,6 +134,9 @@ export function hasActiveFilters(
     view.private !== '' ||
     view.camera !== '' ||
     (!options.ignoreQuery && view.q !== '') ||
+    view.year !== '' ||
+    view.album !== '' ||
+    view.label !== '' ||
     view.taken_after !== '' ||
     view.taken_before !== '' ||
     view.min_rating !== '' ||

@@ -147,6 +147,12 @@ export interface PhotoListParams {
   private?: string
   camera?: string
   q?: string
+  /**
+   * Capture-year facet as a four-digit string, e.g. `'2023'` (`year` query
+   * param): keep only photos taken in that calendar year. Photos with an unknown
+   * capture time are excluded. Empty / undefined means no filter.
+   */
+  year?: string
   /** RFC3339 timestamp or YYYY-MM-DD date. */
   taken_after?: string
   /** RFC3339 timestamp or YYYY-MM-DD date. */
@@ -229,6 +235,7 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('private', params.private)
   set('camera', params.camera)
   set('q', params.q)
+  set('year', params.year)
   set('taken_after', params.taken_after)
   set('taken_before', params.taken_before)
   set('album', params.album)
@@ -777,6 +784,57 @@ export async function fetchTimeline(
     throw new ApiError(res.status, await readErrorMessage(res))
   }
   return (await res.json()) as Timeline
+}
+
+/**
+ * One calendar year that holds photos, with the number of photos captured in it
+ * (`photos.YearBucket`). Backs the library's year facet, where each year is
+ * offered with its count.
+ */
+export interface YearBucket {
+  year: number
+  count: number
+}
+
+/**
+ * The year histogram of the catalog (`photos.Years`,
+ * `GET /api/v1/photos/years`): the years that actually hold photos, newest first,
+ * plus the overall `total`. `total` counts every matching photo — including those
+ * with an unknown capture time that belong to no year — so it may exceed the sum
+ * of the bucket counts.
+ */
+export interface YearsResponse {
+  years: YearBucket[]
+  total: number
+}
+
+/**
+ * Fetches the years that hold photos, newest first, each with its count, via
+ * `GET /api/v1/photos/years` — the option list behind the library's year facet.
+ *
+ * It accepts the same filter params as {@link fetchPhotos}, and the counts respect
+ * them (including the caller's archived/private visibility), so a year's count is
+ * what the grid will show once that year is selected. The backend deliberately
+ * ignores `year` itself — a facet must not narrow its own options — so callers may
+ * pass the whole view; sort/order and pagination are ignored as well.
+ *
+ * @throws ApiError with `status` 400 (invalid filter) or 5xx so the caller can
+ *   render the matching message.
+ */
+export async function fetchPhotoYears(
+  params: PhotoListParams,
+  signal?: AbortSignal,
+): Promise<YearsResponse> {
+  const query = buildPhotoQuery(params)
+  const res = await fetch(`${API_BASE}/photos/years?${query.toString()}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as YearsResponse
 }
 
 /** Thumbnail size used for library grid tiles — a square crop, high enough DPI. */

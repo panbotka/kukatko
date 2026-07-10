@@ -82,7 +82,25 @@ zapiš sem.
   jede přes `viewToParams`/`useUrlState`/`LibraryView`, dotaz replacuje historii, ostatní pushují;
   generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
   na search stránce (chipy/panel/zrušit fungují dál); tap-targety ~44 px přes `styles/app.css`
-  `.kukatko-filter-*`), `SimilarPhotos` (znovupoužitelný horizontálně scrollovatelný pruh
+  `.kukatko-filter-*`;
+  **tři facety, kterými se fotky reálně hledají** (prop `facets` z `useLibraryFacets`) jsou
+  **vždy viditelné** pod hlavičkou, ne schované v panelu: **Rok** = prostý `<select>`
+  („Libovolný rok" + `{{year}} ({{n}})` z `GET /photos/years`, katalog má vždy jen hrstku let),
+  **Album** a **Štítek** = `SearchableSelect` (obě kolekce rostou bez omezení).
+  Inline pole **„filtrovat dle názvu/popisu"** (`q`) zůstává rychlým zúžením mřížky; vedle něj
+  **zřetelný odkaz na `/search`** pro skutečný fulltext + sémantické hledání (`searchHref` nese
+  aktuální `q`) — režimy hledání se tu **nezdvojují**), `SearchableSelect`
+  (`components/library/`, jednovýběrový facet, do kterého se dá psát: v klidu ukazuje volbu,
+  focus otevře celý seznam, psaní ho zúží **case- i diakritika-insensitive** přes `lib/text`
+  `foldedIncludes` (`namesti` najde `Náměstí`, stejně jako backendový `immutable_unaccent`);
+  vedoucí řádek „libovolné" facet zruší, klávesnice Up/Down/Enter/Esc, combobox/listbox ARIA,
+  strop `MAX_SUGGESTIONS` (50) rendrovaných návrhů; nikdy nevytváří položky —
+  zrcadlí `AddAutocomplete`), `filterChips.ts` (pure `buildChips(view, t, {facets?, includeQuery?})`
+  → `FilterChip{key,label,clear}` pro každý aktivní filtr; `facets` pojmenují album/štítek titulkem
+  místo UID (chybějící → raw UID, chip nikdy není prázdný), `includeQuery` zapíná chip pro `q`
+  — filter bar ho vypíná (má vlastní pole), **prázdný stav zapíná** (čtenář u nuly výsledků musí
+  vidět všechny filtry, které ho tam dostaly); délka pole = počet aktivních filtrů na odznaku),
+  `SimilarPhotos` (znovupoužitelný horizontálně scrollovatelný pruh
   podobných fotek nad `GET /photos/{uid}/similar` přes `fetchSimilar`, odkazy na detail,
   empty-friendly + loading/error, refetch při změně `uid`),
   `FavoriteButton` (heart toggle nad `useFavorite` — **optimistický** per-user favorite
@@ -111,7 +129,9 @@ zapiš sem.
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka **i hvězdy/flag**
   na dlaždicích (favoritable+ratable, rating hotkeys na fokusnuté dlaždici), tlačítko **Promítání**
   (`slideshowHref` → `/slideshow` s aktuálními filtry/řazením),
-  **dva různé prázdné stavy** — s aktivními filtry „Nenalezeny žádné fotky" (zkus filtry zrušit),
+  **dva různé prázdné stavy** — s aktivními filtry „Nenalezeny žádné fotky", jehož hint
+  **vyjmenuje aktivní filtry** (`buildChips(..., {facets, includeQuery: true})` spojené ` · `,
+  album/štítek titulkem, ne UID) a nabídne je jedním tlačítkem zrušit,
   bez filtrů „Zatím tu nejsou žádné fotky" s CTA na `/upload` (editor/admin; viewer dostane jen
   vysvětlující větu), rozlišené přes `hasActiveFilters(view)`,
   `LibraryRedirect` = shim pro vysloužilou routu `/library`: `<Navigate replace>` na `/` s doslova
@@ -292,7 +312,15 @@ zapiš sem.
   + filtry/sort z URL, options `{reloadKey?,enabled?}` — `reloadKey` pro refetch po mutaci, `enabled:false`
   → idle bez fetche, např. Places před výběrem města); `useMapPhotos` = jednorázový (nestránkovaný) loader
   GeoJSON feedu geotagovaných fotek nad `fetchMapPhotos` (`status` loading/ready/error, `retry`,
-  ruší in-flight + ignoruje stale při změně filtrů); `useTimeline(params)` = jednorázový loader
+  ruší in-flight + ignoruje stale při změně filtrů);
+  `useLibraryFacets(params)` = loader nabídek tří facetů knihovny → `LibraryFacets{years,albums,labels}`:
+  roky přes `fetchPhotoYears` **refetchuje při změně filtrů** (rok drží méně fotek, jakmile přibude
+  štítek), ale **`year` z requestu strhává** (backend ho stejně ignoruje — facet nesmí zúžit vlastní
+  nabídku — a bez něj zůstane request identický, takže přepínání let nerefetchuje); alba a štítky
+  jsou katalogové, načtou se **jednou**. Neúspěch nechá ten seznam **prázdný** místo chyby (facet,
+  který nemá co nabídnout, je degradovaný bar, ne rozbitá stránka — chyby načtení hlásí mřížka);
+  in-flight requesty ruší `AbortController` při změně `params`/unmountu, takže pomalá odpověď
+  nepřepíše novější (`params` si volající memoizuje z URL stavu); `useTimeline(params)` = jednorázový loader
   měsíčního date-histogramu nad `fetchTimeline` (`buckets`/`total`/`status`, refetch při změně
   filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGlobalSearch(query,
   debounceMs?)` = debouncovaný (default 250 ms) grouped global-search loader nad `globalSearch`
@@ -336,11 +364,14 @@ zapiš sem.
   `lib/slideshowSettings` (read once on mount, setteri zapisují do localStorage, sanitizace))),
   `lib/` (`urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
-  funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag`) + `LIBRARY_DEFAULTS` +
+  funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag` a facetů `year`/`album`/`label`) +
+  `LIBRARY_DEFAULTS` +
   `LIBRARY_PATH` (= `/`, kanonická routa knihovny — **knihovna je úvodní stránka**; všechny odkazy
   v appce míří sem, `/library` je jen redirect pro staré odkazy) +
-  `viewToParams` (sanitizuje sort/archived, prosákne `min_rating`/`flag`; `sort` union navíc
-  `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce, zahrnuje rating/flag) —
+  `viewToParams` (sanitizuje sort/archived/**year** — `toYear` propustí jen čtyřciferný rok, ručně
+  psaná/zastaralá URL spadne na „bez filtru" místo backendové 400 —, prosákne `min_rating`/`flag`
+  a UID facetů `album`/`label` (neznámé UID prostě nic nenamatchuje); `sort` union navíc
+  `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce, zahrnuje rating/flag i facety) —
   mapování URL stavu na API params; `ratingHotkeys.ts` = pure `ratingHotkey(key)` (`0`–`5` →
   rating, `p`/`r` → pick/reject, jinak null) + `isTypingElement(target)` (input/textarea/select/
   contenteditable → hotkey se přeskočí) — sdíleno detailem fotky i fokusnutou dlaždicí;
@@ -396,6 +427,10 @@ zapiš sem.
   `fetchTimeline(params,signal)` nad `GET /api/v1/photos/timeline` → `Timeline{buckets,total}`
   (měsíční date-histogram, stejné filtry jako list; sort/stránkování backend ignoruje), typy
   `Timeline`/`TimelineBucket{year,month,count,cumulative}` — podklad `TimelineScrubber`,
+  `fetchPhotoYears(params,signal)` nad `GET /api/v1/photos/years` → `YearsResponse{years,total}`
+  (rok-histogram, stejné filtry jako list; backend ignoruje `year` sám, sort/stránkování taky),
+  typy `YearsResponse`/`YearBucket{year,count}` — podklad year facetu (`useLibraryFacets`);
+  `PhotoListParams` navíc `year?: string` (čtyřciferný rok), `buildPhotoQuery` ho serializuje,
   `favoritePhoto(uid,favorite,signal)` nad `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (per-user
   toggle, 204, podklad optimistického `useFavorite`),
   `ratePhoto(uid,{rating?,flag?},signal)` nad `PUT /api/v1/photos/{uid}/rating` +
