@@ -24,6 +24,7 @@
     "logout": "Sign out",
     "trash": "Trash",
     "system": "System",
+    "users": "Users",
     "titles": {
       "home": "Go to the home page",
       "library": "Show the photo library",
@@ -43,6 +44,7 @@
       "import": "Run a photo import",
       "maintenance": "Run library maintenance",
       "system": "Show the system status",
+      "users": "Manage user accounts",
       "account": "Manage your own account",
       "logout": "Sign out of Kukátko"
     }
@@ -1016,6 +1018,77 @@
     "actions": {
       "title": "Quick actions:",
       "maintenance": "Maintenance scan"
+    }
+  },
+  "users": {
+    "title": "Users",
+    "subtitle": "The local accounts of this instance. Accounts are never deleted — they are retired by disabling, so their history stays intact.",
+    "adminOnly": "This page is available to administrators only.",
+    "loading": "Loading users…",
+    "error": "Failed to load the users.",
+    "retry": "Try again",
+    "create": "New user",
+    "edit": "Edit",
+    "changePassword": "Change password",
+    "enable": "Enable",
+    "disable": "Disable",
+    "never": "Never",
+    "selfDisableHint": "You cannot disable your own account.",
+    "empty": {
+      "title": "No users",
+      "hint": "Create the first account with the “New user” button."
+    },
+    "columns": {
+      "username": "Username",
+      "displayName": "Real name",
+      "role": "Role",
+      "state": "State",
+      "note": "Note",
+      "lastLogin": "Last login",
+      "created": "Created",
+      "actions": "Actions"
+    },
+    "state": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "form": {
+      "createTitle": "New user",
+      "editTitle": "Edit user",
+      "username": "Username",
+      "usernameImmutable": "The username cannot be changed.",
+      "usernameRequired": "Enter a username.",
+      "password": "Password",
+      "passwordHint": "At least {{min}} characters.",
+      "role": "Role",
+      "displayName": "Real name",
+      "note": "Note",
+      "noteHint": "Internal note, visible to administrators only.",
+      "cancel": "Cancel",
+      "submitCreate": "Create",
+      "submitSave": "Save"
+    },
+    "password": {
+      "title": "Change the password of {{username}}",
+      "hint": "A new password signs the user out of every device immediately. The current password is never shown — only its hash is stored.",
+      "newPassword": "New password",
+      "confirmPassword": "Repeat the new password",
+      "mismatch": "The passwords do not match.",
+      "submit": "Change password",
+      "success": "The password has been changed."
+    },
+    "confirm": {
+      "disableTitle": "Disable the account?",
+      "disableBody": "{{username}} will no longer be able to sign in and is signed out of every device immediately. The account can be enabled again later.",
+      "enableTitle": "Enable the account?",
+      "enableBody": "{{username}} will be able to sign in again."
+    },
+    "errors": {
+      "usernameTaken": "That username is already taken.",
+      "passwordTooShort": "The password must be at least {{min}} characters.",
+      "invalidRole": "Invalid role.",
+      "noteTooLong": "The note may be at most {{max}} characters.",
+      "generic": "The action could not be completed."
     }
   }
 }

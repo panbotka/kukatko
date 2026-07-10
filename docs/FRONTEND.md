@@ -15,7 +15,8 @@ zapiš sem.
   `/map`; **Nahrát** `/upload` je top-level (gate `canWrite`); editorský dropdown **Nástroje**
   (`nav.tools`, `TOOLS_GROUP`, celý gate `canWrite`) sdružuje **Duplikáty** `/duplicates` + **Koš**
   `/trash`; adminský dropdown **Správa** (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje
-  **Import** `/import` + **Údržba** `/maintenance` + **Systém** `/system`. **V navbaru není hledání**
+  **Import** `/import` + **Údržba** `/maintenance` + **Systém** `/system` + **Uživatelé** `/users`.
+  **V navbaru není hledání**
   (ani odkaz, ani živé pole ani uložená hledání) — hledá se z knihovny a ze stránky `/search`.
   Každá položka i každý dropdown toggle nese **ikonu** (`Icon`) a **`title` popisující akci**, ne
   podstatné jméno („Zobrazit alba", ne „Alba"; klíče `nav.titles.*`); ikony jsou dekorativní
@@ -208,6 +209,18 @@ zapiš sem.
   per-job `POST /jobs/{id}/requeue`), *spustit zálohu* (`POST /backup`), odkazy na flow importu
   (`/import`) a kontroly údržby (`/maintenance`); **box offline** + čekající embeddingy → zvýrazněná
   hláška „doženou se po návratu"; loading/error/notice stavy, sebe-gate na `isAdmin`,
+  `UsersPage` = `/users` (jen admin) **správa účtů**: tabulka uživatelů (jméno, celé jméno, role,
+  stav, poznámka, poslední přihlášení, vytvořen) nad `GET /admin/users`, dialogy **Nový uživatel**
+  (username/heslo/role/jméno/poznámka) a **Upravit** (role/jméno/poznámka; username je `readOnly`
+  `plaintext` — backend ho měnit neumí), **Změnit heslo** jinému uživateli (odhlásí ho ze všech
+  zařízení; hash se nikdy nikam nevykresluje) a **Povolit/Zakázat** za potvrzovacím dialogem
+  (`setUserDisabled`); **vlastní řádek má toggle `disabled`** + krátké vysvětlení proč
+  (`users.selfDisableHint`), **mazání se nenabízí** — účet se vyřazuje zakázáním, aby historie
+  (fotky, hodnocení, audit) zůstala celá. Validační chyby API se mapují na konkrétní pole
+  (`fieldErrorFor`: 409 → username, 400 podle klíčového slova → password/role/note, jinak
+  form-level alert), ne na obecný banner. Stavy: **skeleton** (`Placeholder` v tabulce) při načítání,
+  error alert s **Zkusit znovu**, prázdný stav (`EmptyState`, prakticky nedosažitelný — bootstrap
+  admin vždy existuje, ale nesmí spadnout); sebe-gate na `isAdmin`,
   `PhotoDetailPage` = `/photos/:uid` **bohatý detail fotky**: velký náhled (`fit_1920`)
   reflektující uložený nedestruktivní edit (CSS) — u **videa** místo obrázku `VideoPlayer`
   (`components/photo/`, HTML5 `<video controls>` nad range endpointem `…/video`, poster `fit_1920`,
@@ -599,6 +612,15 @@ zapiš sem.
   vrací počet, 404/409 skip); typy `SystemStatus`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
   `BackupStatus`/`ImportsStatus`/`StorageStatus`/`VersionInfo`; sdílí `ApiError` z `auth.ts` a `ImportRun`
   z `import.ts`,
+  `users.ts` = admin klient správy účtů nad `/api/v1/admin/users`: `fetchUsers(signal)` → `AdminUser[]`
+  (= `User` + `note`), `createUser(body,signal)` (`POST`, 409 = obsazený username, 400 = slabé heslo /
+  neplatná role / dlouhá poznámka), `updateUser(uid,body,signal)` (`PATCH`, **replace** celého
+  mutovatelného profilu → posílej i pole, která dialog nenabízí), `setUserDisabled(user,disabled,signal)`
+  (zakázat → dedikovaný `POST /{uid}/disable`, který nepotřebuje profil a nepřepíše souběžnou editaci;
+  povolit → `PATCH` s `disabled:false`, vlastní endpoint neexistuje) a `resetUserPassword(uid,pwd,signal)`
+  (`POST /{uid}/password`, 204, odhlásí všechny session cíle); konstanty `ROLES`/`MAX_NOTE_LENGTH`,
+  typy `AdminUser`/`CreateUserBody`/`UpdateUserBody`; hash hesla nemá kam uniknout — backend ho
+  neserializuje a žádný typ pro něj nemá pole,
   `i18n/` (i18next init — options jsou exportované jako `initOptions`, ať si je test může nabootit
   do vlastní instance — + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů;
@@ -676,8 +698,8 @@ zapiš sem.
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/trash` a `/duplicates`
-  navíc pod `RequireRole role="editor"` = write-only, `/import`, `/maintenance` a `/system` pod
-  `RequireRole role="admin"` = admin-only). Konfig:
+  navíc pod `RequireRole role="editor"` = write-only, `/import`, `/maintenance`, `/system`
+  a `/users` pod `RequireRole role="admin"` = admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.

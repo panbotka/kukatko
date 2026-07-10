@@ -28,6 +28,7 @@ import { SubjectPage } from './pages/SubjectPage'
 import { SystemStatusPage } from './pages/SystemStatusPage'
 import { TrashPage } from './pages/TrashPage'
 import { UploadPage } from './pages/UploadPage'
+import { UsersPage } from './pages/UsersPage'
 
 /**
  * The app's route table. `/login` is public; everything else is gated by
@@ -69,11 +70,12 @@ export function AppRoutes() {
             {/* Trash management (restore / permanent delete) is a write action. */}
             <Route path="/trash" element={<TrashPage />} />
           </Route>
-          {/* Import/migration administration is admin-only. */}
+          {/* Import/migration, upkeep and account administration are admin-only. */}
           <Route element={<RequireRole role="admin" />}>
             <Route path="/import" element={<ImportPage />} />
             <Route path="/maintenance" element={<MaintenancePage />} />
             <Route path="/system" element={<SystemStatusPage />} />
+            <Route path="/users" element={<UsersPage />} />
           </Route>
           <Route path="/account" element={<AccountPage />} />
           <Route path="*" element={<NotFoundPage />} />

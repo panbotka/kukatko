@@ -24,6 +24,7 @@
     "logout": "Odhlásit se",
     "trash": "Koš",
     "system": "Systém",
+    "users": "Uživatelé",
     "titles": {
       "home": "Přejít na úvodní stránku",
       "library": "Zobrazit knihovnu fotek",
@@ -43,6 +44,7 @@
       "import": "Spustit import fotek",
       "maintenance": "Spustit údržbu knihovny",
       "system": "Zobrazit stav systému",
+      "users": "Spravovat uživatelské účty",
       "account": "Spravovat vlastní účet",
       "logout": "Odhlásit se z Kukátka"
     }
@@ -1040,6 +1042,77 @@
     "actions": {
       "title": "Rychlé akce:",
       "maintenance": "Kontrola údržby"
+    }
+  },
+  "users": {
+    "title": "Uživatelé",
+    "subtitle": "Místní účty této instance. Účty se nemažou — vyřazují se zakázáním, aby jejich historie zůstala celá.",
+    "adminOnly": "Tato stránka je dostupná pouze administrátorům.",
+    "loading": "Načítání uživatelů…",
+    "error": "Uživatele se nepodařilo načíst.",
+    "retry": "Zkusit znovu",
+    "create": "Nový uživatel",
+    "edit": "Upravit",
+    "changePassword": "Změnit heslo",
+    "enable": "Povolit",
+    "disable": "Zakázat",
+    "never": "Nikdy",
+    "selfDisableHint": "Vlastní účet zakázat nelze.",
+    "empty": {
+      "title": "Žádní uživatelé",
+      "hint": "Vytvořte první účet tlačítkem „Nový uživatel“."
+    },
+    "columns": {
+      "username": "Uživatelské jméno",
+      "displayName": "Jméno",
+      "role": "Role",
+      "state": "Stav",
+      "note": "Poznámka",
+      "lastLogin": "Poslední přihlášení",
+      "created": "Vytvořen",
+      "actions": "Akce"
+    },
+    "state": {
+      "enabled": "Aktivní",
+      "disabled": "Zakázaný"
+    },
+    "form": {
+      "createTitle": "Nový uživatel",
+      "editTitle": "Upravit uživatele",
+      "username": "Uživatelské jméno",
+      "usernameImmutable": "Uživatelské jméno nelze změnit.",
+      "usernameRequired": "Zadejte uživatelské jméno.",
+      "password": "Heslo",
+      "passwordHint": "Alespoň {{min}} znaků.",
+      "role": "Role",
+      "displayName": "Jméno",
+      "note": "Poznámka",
+      "noteHint": "Interní poznámka viditelná pouze administrátorům.",
+      "cancel": "Zrušit",
+      "submitCreate": "Vytvořit",
+      "submitSave": "Uložit"
+    },
+    "password": {
+      "title": "Změnit heslo uživatele {{username}}",
+      "hint": "Nové heslo okamžitě odhlásí uživatele ze všech zařízení. Stávající heslo se nikde nezobrazuje — ukládá se jen jeho otisk.",
+      "newPassword": "Nové heslo",
+      "confirmPassword": "Nové heslo znovu",
+      "mismatch": "Hesla se neshodují.",
+      "submit": "Změnit heslo",
+      "success": "Heslo bylo změněno."
+    },
+    "confirm": {
+      "disableTitle": "Zakázat účet?",
+      "disableBody": "Uživatel {{username}} se nebude moci přihlásit a bude okamžitě odhlášen ze všech zařízení. Účet lze později znovu povolit.",
+      "enableTitle": "Povolit účet?",
+      "enableBody": "Uživatel {{username}} se bude moci znovu přihlásit."
+    },
+    "errors": {
+      "usernameTaken": "Toto uživatelské jméno je již obsazené.",
+      "passwordTooShort": "Heslo musí mít alespoň {{min}} znaků.",
+      "invalidRole": "Neplatná role.",
+      "noteTooLong": "Poznámka může mít nejvýše {{max}} znaků.",
+      "generic": "Akci se nepodařilo dokončit."
     }
   }
 }

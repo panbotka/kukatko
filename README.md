@@ -12,6 +12,8 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   per-user oblíbené, dvojjazyčné UI (čeština default + angličtina), S3 zálohování.
+- **Správa uživatelů** v UI (`/users`, jen admin): založení účtu, změna role/jména/poznámky, reset
+  hesla a zakázání účtu. Účty se nemažou — vyřazují se zakázáním, aby jejich historie zůstala celá.
 - **API tokeny** (`Authorization: Bearer kkt_…`) pro CLI, skripty a agenty — dlouhodobý credential
   s vlastní expirací a revokací, dědí roli svého uživatele. Vyrobíš přes `POST /api/v1/auth/tokens`.
 - **`kukatko ctl`** — vzdálený klient, který ovládá **běžící** instanci přes její HTTP API

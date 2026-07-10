@@ -21,6 +21,7 @@ export type IconName =
   | 'map'
   | 'people'
   | 'person-circle'
+  | 'person-gear'
   | 'search'
   | 'sliders'
   | 'tags'
