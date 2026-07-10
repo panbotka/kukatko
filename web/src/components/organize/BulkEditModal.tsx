@@ -8,9 +8,17 @@ import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
+import { useAuth } from '../../auth/AuthContext'
 import { ApiError } from '../../services/auth'
 import { type BulkOperations, type BulkResult, bulkUpdatePhotos } from '../../services/bulk'
-import { type AlbumCount, fetchAlbums, fetchLabels, type LabelCount } from '../../services/organize'
+import {
+  type AlbumCount,
+  createAlbum,
+  createLabel,
+  fetchAlbums,
+  fetchLabels,
+  type LabelCount,
+} from '../../services/organize'
 import { MultiSelect, type MultiSelectOption } from '../MultiSelect'
 
 /** Props for {@link BulkEditModal}. */
@@ -73,6 +81,35 @@ const EMPTY_FORM: FormState = {
  * blast radius is small enough to undo by hand.
  */
 const LARGE_SELECTION = 50
+
+/**
+ * An album or label picked via the multi-select's create entry is selected as
+ * its name behind this prefix until Apply creates it — real UIDs are short
+ * base32 strings and never carry a colon, so the two cannot collide. Deferring
+ * creation to Apply means cancelling the dialog never leaves an empty album or
+ * label behind: the bulk endpoint only accepts existing identifiers, so Apply
+ * first creates the pending entries, swaps their fresh UIDs in, and only then
+ * submits the batch.
+ */
+const CREATE_PREFIX = 'create:'
+
+/** Encodes a not-yet-existing entry name as a multi-select value. */
+function pendingValue(name: string): string {
+  return CREATE_PREFIX + name
+}
+
+/** Decodes a pending-creation value back to its name; null for a real UID. */
+function pendingName(value: string): string | null {
+  return value.startsWith(CREATE_PREFIX) ? value.slice(CREATE_PREFIX.length) : null
+}
+
+/** Synthetic options for pending creations, so their chips read as the name. */
+function pendingOptions(selected: string[]): MultiSelectOption[] {
+  return selected.flatMap((value) => {
+    const name = pendingName(value)
+    return name === null ? [] : [{ value, label: name }]
+  })
+}
 
 /**
  * Builds the {@link BulkOperations} payload from the form, or returns the
@@ -148,6 +185,7 @@ function buildOperations(form: FormState): BulkOperations | 'invalid-coords' | '
  */
 export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModalProps) {
   const { t } = useTranslation()
+  const { canWrite } = useAuth()
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
@@ -187,18 +225,96 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
     setConfirming(false)
   }
 
-  async function send(ops: BulkOperations) {
+  /**
+   * Creates one pending entry and swaps its fresh UID into the form (and the
+   * option list), so a later failure retries the batch without re-creating it.
+   * Returns the resolved add list.
+   */
+  async function resolveOne(
+    kind: 'album' | 'label',
+    values: string[],
+    value: string,
+    name: string,
+  ): Promise<string[]> {
+    let uid: string
+    if (kind === 'album') {
+      const album = await createAlbum({ title: name, description: '', private: false })
+      uid = album.uid
+      setLoad((prev) =>
+        prev.status === 'ready'
+          ? { ...prev, albums: [...prev.albums, { ...album, photo_count: 0 }] }
+          : prev,
+      )
+    } else {
+      const label = await createLabel({ name, priority: 0 })
+      uid = label.uid
+      setLoad((prev) =>
+        prev.status === 'ready'
+          ? { ...prev, labels: [...prev.labels, { ...label, photo_count: 0 }] }
+          : prev,
+      )
+    }
+    const resolved = values.map((current) => (current === value ? uid : current))
+    setForm((prev) => ({
+      ...prev,
+      [kind === 'album' ? 'addAlbums' : 'addLabels']: resolved,
+    }))
+    return resolved
+  }
+
+  /**
+   * Applies the batch: first creates the albums/labels picked via the create
+   * entry (the bulk endpoint only accepts existing identifiers), then submits
+   * one `POST /photos/bulk` with the resolved UIDs. A creation failure surfaces
+   * the server's message and stops before the batch, with every selection —
+   * including the entries created so far, now under their real UIDs — intact
+   * for a retry. A batch failure after a creation says so explicitly, so the
+   * reader knows the new entries exist and only the assignment is missing.
+   */
+  async function send(current: FormState) {
     setBusy(true)
     setError(null)
+    let created = false
     try {
-      setResult(await bulkUpdatePhotos(photoUids, ops))
-    } catch (err: unknown) {
-      // The backend rejects a bad batch with a reason the reader can act on
-      // (conflicting operations, too many photos); a generic failure would hide
-      // it. Anything else — a network drop, a 5xx with no body — falls back.
-      setError(
-        err instanceof ApiError && err.message !== '' ? err.message : t('bulkEdit.applyError'),
-      )
+      let resolved = current
+      for (const kind of ['album', 'label'] as const) {
+        const key = kind === 'album' ? 'addAlbums' : 'addLabels'
+        for (const value of current[key]) {
+          const name = pendingName(value)
+          if (name === null) {
+            continue
+          }
+          try {
+            resolved = { ...resolved, [key]: await resolveOne(kind, resolved[key], value, name) }
+            created = true
+          } catch (err: unknown) {
+            // Duplicate name, permission denied: the server names the problem.
+            setError(
+              err instanceof ApiError && err.message !== ''
+                ? t('bulkEdit.createError', { name, message: err.message })
+                : t('bulkEdit.applyError'),
+            )
+            return
+          }
+        }
+      }
+      const ops = buildOperations(resolved)
+      if (ops === 'empty' || ops === 'invalid-coords') {
+        // Unreachable: apply() validated the same form, and resolving pending
+        // entries only swaps values. The guard merely narrows the union.
+        return
+      }
+      try {
+        setResult(await bulkUpdatePhotos(photoUids, ops))
+      } catch (err: unknown) {
+        // The backend rejects a bad batch with a reason the reader can act on
+        // (conflicting operations, too many photos); a generic failure would
+        // hide it. Anything else — a network drop, a 5xx with no body — falls
+        // back.
+        const message =
+          err instanceof ApiError && err.message !== '' ? err.message : t('bulkEdit.applyError')
+        setError(created ? t('bulkEdit.createdButApplyFailed', { message }) : message)
+      }
     } finally {
       setBusy(false)
     }
@@ -220,7 +336,7 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
       setConfirming(true)
       return
     }
-    void send(ops)
+    void send(form)
   }
 
   return (
@@ -257,6 +373,7 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
                   albums={load.albums}
                   labels={load.labels}
                   busy={busy}
+                  allowCreate={canWrite}
                   onChange={update}
                 />
                 <PendingChanges
@@ -365,17 +482,32 @@ function BulkEditForm({
   albums,
   labels,
   busy,
+  allowCreate,
   onChange,
 }: {
   form: FormState
   albums: AlbumCount[]
   labels: LabelCount[]
   busy: boolean
+  /** Whether the add fields may create entries (the acting user may write). */
+  allowCreate: boolean
   onChange: (patch: Partial<FormState>) => void
 }) {
   const { t } = useTranslation()
   const albumOptions = useMemo(() => albums.map(albumOption), [albums])
   const labelOptions = useMemo(() => labels.map(labelOption), [labels])
+  // Only the add fields see the pending creations: a chip needs its option to
+  // read as the name, and offering to create in the same field again would
+  // duplicate it — while a remove field must never offer an album or label
+  // that does not exist yet.
+  const addAlbumOptions = useMemo(
+    () => [...albumOptions, ...pendingOptions(form.addAlbums)],
+    [albumOptions, form.addAlbums],
+  )
+  const addLabelOptions = useMemo(
+    () => [...labelOptions, ...pendingOptions(form.addLabels)],
+    [labelOptions, form.addLabels],
+  )
   return (
     <Form>
       <Section title={t('bulkEdit.sections.organize')}>
@@ -385,12 +517,19 @@ function BulkEditForm({
               id="bulk-add-albums"
               label={t('bulkEdit.addAlbums')}
               placeholder={t('bulkEdit.filterAlbums')}
-              options={albumOptions}
+              options={addAlbumOptions}
               selected={form.addAlbums}
               disabled={busy}
               onChange={(addAlbums) => {
                 onChange({ addAlbums })
               }}
+              onCreate={
+                allowCreate
+                  ? (name) => {
+                      onChange({ addAlbums: [...form.addAlbums, pendingValue(name)] })
+                    }
+                  : undefined
+              }
             />
           </Col>
           <Col xs={12} md={6}>
@@ -412,12 +551,19 @@ function BulkEditForm({
               id="bulk-add-labels"
               label={t('bulkEdit.addLabels')}
               placeholder={t('bulkEdit.filterLabels')}
-              options={labelOptions}
+              options={addLabelOptions}
               selected={form.addLabels}
               disabled={busy}
               onChange={(addLabels) => {
                 onChange({ addLabels })
               }}
+              onCreate={
+                allowCreate
+                  ? (name) => {
+                      onChange({ addLabels: [...form.addLabels, pendingValue(name)] })
+                    }
+                  : undefined
+              }
             />
           </Col>
           <Col xs={12} md={6}>
@@ -615,10 +761,16 @@ function PendingChanges({
   const { t } = useTranslation()
 
   const lines: ChangeLine[] = []
+  // A pending creation reads as its name — the entry will exist by the time
+  // the batch runs, so the prose can already state it plainly.
   const albumNames = (uids: string[]) =>
-    uids.map((uid) => albums.find((album) => album.uid === uid)?.title ?? uid).join(', ')
+    uids
+      .map((uid) => pendingName(uid) ?? albums.find((album) => album.uid === uid)?.title ?? uid)
+      .join(', ')
   const labelNames = (uids: string[]) =>
-    uids.map((uid) => labels.find((label) => label.uid === uid)?.name ?? uid).join(', ')
+    uids
+      .map((uid) => pendingName(uid) ?? labels.find((label) => label.uid === uid)?.name ?? uid)
+      .join(', ')
 
   if (form.addAlbums.length > 0) {
     lines.push({

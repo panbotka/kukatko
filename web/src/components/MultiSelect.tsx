@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
-import { foldedIncludes } from '../lib/text'
+import { foldedEquals, foldedIncludes } from '../lib/text'
 
 /** One selectable option in a {@link MultiSelect}. */
 export interface MultiSelectOption {
@@ -35,6 +35,16 @@ export interface MultiSelectProps {
    * Chips are painted in the danger key so a removal never reads like an addition.
    */
   destructive?: boolean
+  /**
+   * When set, a non-empty query that names no existing option — compared case-
+   * and accent-insensitively and ignoring surrounding whitespace, so `dovolena `
+   * never duplicates `Dovolená` — appends a trailing "Create «name»" entry to
+   * the list. Choosing it calls this with the trimmed name; the caller decides
+   * what creation means (typically it registers the name and selects a value for
+   * it via {@link MultiSelectProps.options} and {@link MultiSelectProps.selected}).
+   * Leave unset for a pick-only field, e.g. for readers without write access.
+   */
+  onCreate?: (name: string) => void
 }
 
 /** Cap on rendered suggestions so a catalog with thousands of labels stays responsive. */
@@ -57,8 +67,10 @@ const MAX_SUGGESTIONS = 50
  * Built on react-bootstrap primitives (no extra dependency) with combobox/listbox
  * ARIA roles and ~44px tap targets, mirroring
  * {@link import('./photo/AddAutocomplete').AddAutocomplete} and
- * {@link import('./library/SearchableSelect').SearchableSelect}. It never creates
- * options; it only picks from the ones it is given.
+ * {@link import('./library/SearchableSelect').SearchableSelect}. By default it
+ * only picks from the options it is given; with
+ * {@link MultiSelectProps.onCreate} set, a query that names no existing option
+ * also offers to create an entry of that name.
  */
 export function MultiSelect({
   id,
@@ -69,6 +81,7 @@ export function MultiSelect({
   placeholder,
   disabled,
   destructive,
+  onCreate,
 }: MultiSelectProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -97,6 +110,17 @@ export function MultiSelect({
     [options, selected, query],
   )
 
+  // Creating is offered only for a name no option already carries — checked
+  // against every option, selected ones included, so a name that differs only
+  // by case, accents or surrounding whitespace never becomes a duplicate. The
+  // create row sits after the suggestions, so its index is `suggestions.length`.
+  const trimmed = query.trim()
+  const canCreate =
+    onCreate !== undefined &&
+    trimmed !== '' &&
+    !options.some((option) => foldedEquals(option.label, trimmed))
+  const rowCount = suggestions.length + (canCreate ? 1 : 0)
+
   // Reset the keyboard highlight whenever the offered set changes.
   useEffect(() => {
     setActiveIndex(-1)
@@ -108,6 +132,15 @@ export function MultiSelect({
     if (!selected.includes(value)) {
       onChange([...selected, value])
     }
+  }
+
+  function create() {
+    if (onCreate === undefined) {
+      return
+    }
+    setQuery('')
+    setActiveIndex(-1)
+    onCreate(trimmed)
   }
 
   function remove(value: string) {
@@ -125,7 +158,7 @@ export function MultiSelect({
       case 'ArrowDown':
         event.preventDefault()
         setOpen(true)
-        setActiveIndex((i) => Math.min(i + 1, suggestions.length - 1))
+        setActiveIndex((i) => Math.min(i + 1, rowCount - 1))
         break
       case 'ArrowUp':
         event.preventDefault()
@@ -134,11 +167,16 @@ export function MultiSelect({
       case 'Enter': {
         // Never submit the surrounding form from this field.
         event.preventDefault()
-        if (activeIndex >= 0 && activeIndex < suggestions.length) {
+        if (canCreate && activeIndex === suggestions.length) {
+          create()
+        } else if (activeIndex >= 0 && activeIndex < suggestions.length) {
           add(suggestions[activeIndex].value)
-        } else if (query.trim() !== '' && suggestions.length > 0) {
+        } else if (trimmed !== '' && suggestions.length > 0) {
           // Nothing highlighted but something typed: take the best match.
           add(suggestions[0].value)
+        } else if (canCreate) {
+          // A brand-new name that matches nothing: Enter confirms creating it.
+          create()
         }
         break
       }
@@ -206,7 +244,7 @@ export function MultiSelect({
           className="dropdown-menu show w-100 mt-1 shadow overflow-auto"
           style={{ top: '100%', maxHeight: '50vh' }}
         >
-          {suggestions.length === 0 && (
+          {rowCount === 0 && (
             <li className="dropdown-item-text text-secondary kk-text-caption">
               {t('multiSelect.noMatch')}
             </li>
@@ -238,6 +276,27 @@ export function MultiSelect({
               </button>
             </li>
           ))}
+          {canCreate && (
+            <li>
+              <button
+                type="button"
+                role="option"
+                aria-selected={false}
+                className={`dropdown-item kukatko-tap-target d-flex align-items-center ${
+                  activeIndex === suggestions.length ? 'active' : ''
+                }`}
+                disabled={disabled}
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                }}
+                onClick={() => {
+                  create()
+                }}
+              >
+                <span className="text-truncate">{t('multiSelect.create', { name: trimmed })}</span>
+              </button>
+            </li>
+          )}
         </ul>
       )}
 

@@ -15,7 +15,8 @@ const OPTIONS: MultiSelectOption[] = [
 ]
 
 /** Renders the control with real state, so a pick is reflected back into it. */
-function Harness({ destructive }: { destructive?: boolean }) {
+function Harness({ destructive, creatable }: { destructive?: boolean; creatable?: boolean }) {
+  const [options, setOptions] = useState(OPTIONS)
   const [selected, setSelected] = useState<string[]>([])
   return (
     <I18nextProvider i18n={i18n}>
@@ -23,10 +24,19 @@ function Harness({ destructive }: { destructive?: boolean }) {
         id="albums"
         label="Albums"
         placeholder="Type to filter albums…"
-        options={OPTIONS}
+        options={options}
         selected={selected}
         onChange={setSelected}
         destructive={destructive}
+        onCreate={
+          creatable
+            ? (name) => {
+                // The parent's contract: register the new entry and select it.
+                setOptions((current) => [...current, { value: `new:${name}`, label: name }])
+                setSelected((current) => [...current, `new:${name}`])
+              }
+            : undefined
+        }
       />
     </I18nextProvider>
   )
@@ -99,5 +109,61 @@ describe('MultiSelect', () => {
     await user.click(screen.getByRole('option', { name: 'Trips 12' }))
 
     expect(screen.getByText('Trips').closest('.kk-chip')?.className).toContain('text-bg-danger')
+  })
+
+  it('offers a create entry for an unmatched name and selects what it creates', async () => {
+    const user = userEvent.setup()
+    render(<Harness creatable />)
+
+    const input = screen.getByLabelText('Albums')
+    await user.type(input, 'Dovolená')
+    await user.click(screen.getByRole('option', { name: 'Create “Dovolená”' }))
+
+    // The new entry is selected as a chip and the query is ready for more.
+    expect(screen.getByRole('button', { name: 'Remove Dovolená' })).toBeInTheDocument()
+    expect(input).toHaveValue('')
+
+    // Once it exists, the same name — even folded — no longer offers creation.
+    await user.type(input, 'dovolena')
+    expect(screen.queryByRole('option', { name: /^Create/ })).not.toBeInTheDocument()
+  })
+
+  it('never offers to create a case-, accent- or whitespace-insensitive match', async () => {
+    const user = userEvent.setup()
+    render(<Harness creatable />)
+
+    const input = screen.getByLabelText('Albums')
+    await user.type(input, ' leto ')
+    // The existing entry is offered instead of a duplicate.
+    expect(screen.getByRole('option', { name: 'Léto' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /^Create/ })).not.toBeInTheDocument()
+  })
+
+  it('offers no create entry for an empty or whitespace-only name', async () => {
+    const user = userEvent.setup()
+    render(<Harness creatable />)
+
+    const input = screen.getByLabelText('Albums')
+    await user.click(input)
+    expect(screen.queryByRole('option', { name: /^Create/ })).not.toBeInTheDocument()
+    await user.type(input, '   ')
+    expect(screen.queryByRole('option', { name: /^Create/ })).not.toBeInTheDocument()
+  })
+
+  it('offers no create entry without onCreate (a reader who may not write)', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    await user.type(screen.getByLabelText('Albums'), 'Dovolená')
+    expect(screen.queryByRole('option', { name: /^Create/ })).not.toBeInTheDocument()
+    expect(screen.getByText('No matches.')).toBeInTheDocument()
+  })
+
+  it('creates on Enter when the typed name matches nothing', async () => {
+    const user = userEvent.setup()
+    render(<Harness creatable />)
+
+    await user.type(screen.getByLabelText('Albums'), 'Dovolená{Enter}')
+    expect(screen.getByRole('button', { name: 'Remove Dovolená' })).toBeInTheDocument()
   })
 })

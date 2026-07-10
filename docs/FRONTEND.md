@@ -40,8 +40,13 @@ zapiš sem.
   shodu), **Backspace nad prázdným dotazem odebere poslední chip**, Esc zavře; combobox/listbox
   ARIA (`aria-multiselectable`), strop `MAX_SUGGESTIONS` (50) rendrovaných návrhů, ~44px tap
   targety. Prop `destructive` obarví label i chipy do danger klíče, aby odebrání nikdy nevypadalo
-  jako přidání. **Nikdy nezakládá položky** — jen vybírá z těch, které dostane; zrcadlí
-  `AddAutocomplete` a `SearchableSelect`),
+  jako přidání. Defaultně **nezakládá položky** — jen vybírá z těch, které dostane (zrcadlí
+  `AddAutocomplete` a `SearchableSelect`); s volitelným `onCreate(name)` přidá na konec seznamu
+  řádek **„Vytvořit «dotaz»“**, jen když neprázdný trimovaný dotaz fold-insensitive (case,
+  diakritika, okrajové mezery) neodpovídá **žádné** option — vybrané včetně — takže nikdy
+  nenabídne duplikát; Enter bez zvýraznění vytváří, jen když nic jiného neodpovídá. Co založení
+  znamená, řeší volající (typicky zaregistruje jméno a vybere pro něj hodnotu přes
+  `options`+`selected`); pro čtenáře bez práva zápisu se `onCreate` prostě nepředá),
   `KeyboardShortcutsHelp` (v navbaru: ikonka klávesnice + **modal nápovědy zkratek** — otevře se
   `?` (Shift+/) kdekoli nebo klikem, vypíše všechny zkratky seskupené dle kontextu (Mřížka / Detail)
   ze `lib/shortcuts.ts` `SHORTCUT_GROUPS`, zavře Escapem/křížkem),
@@ -144,7 +149,16 @@ zapiš sem.
   nedrží žádný stav dialogu), `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`, celá dávka
   jednou transakcí na backendu; formulář je rozdělený na **čtyři sekce** (`.kk-text-eyebrow`
   nadpisy): **Zařazení** (add/remove alb, add/remove štítků — čtyři `MultiSelect`y, takže jeden
-  apply zvládne **víc alb i víc štítků najednou**), **Metadata** (set/clear popisu), **Poloha**
+  apply zvládne **víc alb i víc štítků najednou**; add pole navíc přes `onCreate` nabízejí
+  **„Vytvořit «název»“** pro jméno, které fold-insensitive nic existujícího nenese — jen pro
+  uživatele s právem zápisu (`useAuth().canWrite`). Nová položka se okamžitě objeví jako chip
+  (hodnota `create:<název>`, `CREATE_PREFIX` — dvojtečka se v base32 UID nevyskytuje) a **založí
+  se až při Apply**: nejdřív `POST /albums`/`POST /labels` (defaulty: prázdný popis, neprivátní;
+  priorita 0), čerstvé UID se vymění do formuláře i options — retry tedy nezaloží duplikát — a
+  teprve pak jde dávka; zrušený dialog nezaloží nic. Neúspěch založení vypíše hlášku serveru
+  (`bulkEdit.createError`) a dávku neodešle, výběr zůstává; když se dávka nepovede až po založení,
+  `bulkEdit.createdButApplyFailed` řekne, že položky už existují a selhalo jen přiřazení),
+  **Metadata** (set/clear popisu), **Poloha**
   (set/clear souřadnic) a **Příznaky** (soukromé, archiv, oblíbené); set/clear páry zůstávají
   samostatné módy. **Destruktivní volby** (odebrání z alba/štítku, archivace) jsou v danger klíči
   (`destructive` chipy, `text-danger` label, `border-danger` select). Pod formulářem je

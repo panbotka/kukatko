@@ -375,6 +375,8 @@
     "loading": "Načítání…",
     "loadError": "Alba a štítky se nepodařilo načíst.",
     "applyError": "Hromadná úprava se nezdařila. Zkus to prosím znovu.",
+    "createError": "«{{name}}» se nepodařilo vytvořit: {{message}}",
+    "createdButApplyFailed": "Nová alba a štítky se vytvořily, jen přiřazení fotek selhalo: {{message}}",
     "noOps": "Vyber alespoň jednu změnu.",
     "sections": {
       "organize": "Zařazení",
@@ -466,6 +468,7 @@
     }
   },
   "multiSelect": {
+    "create": "Vytvořit «{{name}}»",
     "noMatch": "Nic nenalezeno.",
     "remove": "Odebrat {{name}}"
   },
