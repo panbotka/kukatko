@@ -9,14 +9,15 @@ import { type Photo, type PhotoListResponse } from '../services/photos'
 
 import { SlideshowPage } from './SlideshowPage'
 
-// Keep the real helpers; only the network call is faked.
+// Keep the real helpers; only the network calls are faked.
 vi.mock('../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/photos')>()
-  return { ...actual, fetchPhotos: vi.fn() }
+  return { ...actual, fetchPhotos: vi.fn(), searchPhotos: vi.fn() }
 })
 
-const { fetchPhotos } = await import('../services/photos')
+const { fetchPhotos, searchPhotos } = await import('../services/photos')
 const fetchMock = vi.mocked(fetchPhotos)
+const searchMock = vi.mocked(searchPhotos)
 
 function photo(uid: string, name: string): Photo {
   return {
@@ -59,6 +60,7 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   window.localStorage.clear()
   fetchMock.mockReset()
+  searchMock.mockReset()
 })
 
 afterEach(() => {
@@ -82,7 +84,26 @@ describe('SlideshowPage', () => {
     renderPage('/slideshow?label=lb1')
 
     await screen.findByRole('img')
-    expect(screen.getByText('1 / 2')).toBeInTheDocument()
+    expect(screen.getByText('slide 1 of 2, 5 s left')).toBeInTheDocument()
+  })
+
+  it('counts the remaining time against the server total, not the loaded page', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], { total: 40 }))
+    renderPage('/slideshow')
+
+    await screen.findByRole('img')
+    // 40 photos at the default 5 s: 39 still to come → 3 min 15 s.
+    expect(screen.getByText('slide 1 of 40, 3 min 15 s left')).toBeInTheDocument()
+  })
+
+  it('replays the search — not a library listing — when the URL carries a mode', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage('/slideshow?q=beach&mode=semantic')
+
+    await screen.findByRole('img')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(searchMock.mock.calls[0][0].q).toBe('beach')
+    expect(searchMock.mock.calls[0][1]).toBe('semantic')
   })
 
   it('shows a graceful empty state for an empty set', async () => {

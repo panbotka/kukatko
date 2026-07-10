@@ -149,8 +149,8 @@ zapiš sem.
   `LibraryPage` = hlavní foto-knihovna **a zároveň úvodní stránka aplikace** (routa `/`):
   `FilterBar` nad virtualizovanou nekonečně-scrollující
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka **i hvězdy/flag**
-  na dlaždicích (favoritable+ratable, rating hotkeys na fokusnuté dlaždici), tlačítko **Promítání**
-  (`slideshowHref` → `/slideshow` s aktuálními filtry/řazením),
+  na dlaždicích (favoritable+ratable, rating hotkeys na fokusnuté dlaždici), **`SlideshowStart`**
+  (tlačítko Promítání + odhad délky, počet fotek bere z `total`),
   **dva různé prázdné stavy** — s aktivními filtry „Nenalezeny žádné fotky", jehož hint
   **vyjmenuje aktivní filtry** (`buildChips(..., {facets, includeQuery: true})` spojené ` · `,
   album/štítek titulkem, ne UID) a nabídne je jedním tlačítkem zrušit,
@@ -182,7 +182,9 @@ zapiš sem.
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
   (sidecar offline), idle/loading/empty/error stavy, plus nad mřížkou **cross-entity sekce**
   (`GlobalSearchSections`) s chipy shodných alb/lidí/štítků (grouped `GET /search/global`), aby
-  textový dotaz vynesl i nefotkové entity, plus v hlavičce **jediný vstupní bod uložených hledání**
+  textový dotaz vynesl i nefotkové entity, plus v hlavičce **`SlideshowStart`** (scope `{mode}`,
+  takže promítání přehraje **výsledky hledání**, ne knihovnu filtrovanou podstringem `q`)
+  a **jediný vstupní bod uložených hledání**
   (`SavedSearchesDropdown` — vypsat, otevřít, „Spravovat" → `/saved`) vedle tlačítka **Uložit pohled**
   (`SaveSearchModal` — `params` nese i `mode`, takže obnova míří na `/search`),
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
@@ -275,10 +277,13 @@ zapiš sem.
   scopnutá na `{country,city}` přes `useScopedPhotos` (enabled až po výběru města) + sdílený
   `FilterBar` + breadcrumb Místa/země/město; loading/empty/error stavy,
   `SlideshowPage` = `/slideshow` fullscreen promítání (mimo `Layout`, bez navbaru): čte scope
-  (`?album=`/`?label=`/žádné) + filtry/řazení z URL (stejný stav jako mřížka), pageuje přes
-  `usePaginatedPhotos` (`fetchPhotos`, velké sady se nenačítají najednou), řídí `useSlideshow` +
-  `useSlideshowSettings`, renderuje loading/empty/error stavy nebo `Slideshow`; exit → `navigate(-1)`
-  (fallback na zdrojový pohled), takže Zpět funguje,
+  (`?album=`/`?label=`/`?mode=` pro hledání/žádné) + filtry/řazení z URL (stejný stav jako mřížka),
+  pageuje přes `usePaginatedPhotos` (velké sady se nenačítají najednou) — fetcher je `fetchPhotos`,
+  nebo **`searchPhotos`, když URL nese `mode`** (jinak by se `q` jen podstringově filtrovalo a hrála
+  by se jiná sada), řídí `useSlideshow` +
+  `useSlideshowSettings`, `total` ze serveru posílá do `Slideshow` (odpočet počítá celou show, ne jen
+  načtené stránky), renderuje loading/empty/error stavy nebo `Slideshow`; exit → `navigate(-1)`
+  (fallback na zdrojový pohled — album/štítek/`searchHref`/knihovna), takže Zpět funguje,
   `TrashPage` = `/trash` (editor/admin) koš: archivované fotky (`useScopedPhotos`-style listing přes
   `usePaginatedPhotos` scopnutý `archived=only`) v mřížce `TrashCard` s `FilterBar`, **obnova**
   (`unarchivePhoto`) a **trvalé mazání** (`purgePhoto`) jednotlivě i hromadně (`useSelection`
@@ -306,15 +311,23 @@ zapiš sem.
   akce **Archivovat ostatní** / **Není duplikát**, busy stav);
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
   velikosti `fit_1920` s CSS přechodem dle `settings.effect`, přednačítání sousedních snímků přes
-  `new Image()`, ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek + pozice
-  `n/total`; klávesy ←/→ / mezerník / Esc / F a dotykový swipe; Fullscreen API feature-detected;
+  `new Image()`, ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
+  **postup a zbývající čas** (`slideshow.progress` → „snímek 7 ze 40, zbývá 2 min 45 s"; počítá se
+  proti `total` ze serveru, ne proti načteným stránkám); klávesy ←/→ / mezerník / Esc / F
+  a dotykový swipe; Fullscreen API feature-detected;
   panel nastavení = výběr efektu + rychlosti; efekt **`kenburns`** navíc zapisuje na `<img>` inline
   `--kb-*` custom properties z `lib/kenBurns` (endpointy transformu + `--kb-duration` = interval) —
   aktivuje se **jen pro obrázky**, video snímek a uživatel s `prefers-reduced-motion`
   (`usePrefersReducedMotion`) dostanou statický snímek bez animace) + `slideshow.css` (keyframes
   `slideshow-fade`/`slideshow-slide`/`slideshow-kenburns` (`object-fit: cover`, `var()` se dosadí
   před interpolací, takže se oba transformy interpolují jako shodný `translate() scale()` seznam),
-  `@media (prefers-reduced-motion: reduce)` jako druhá pojistka, fullscreen layout);
+  `@media (prefers-reduced-motion: reduce)` jako druhá pojistka, fullscreen layout)
+  + `SlideshowStart` (**sdílené** tlačítko Promítání pro knihovnu / album / štítek / hledání:
+  `slideshowHref(scope,view)` + vedle něj na jeden řádek počet fotek a **odhad délky**
+  (`slideshow.estimate` → „40 fotek, asi 3 min 20 s") = `count × intervalMs` z
+  `useSlideshowSettings`, takže odhad sleduje naposledy zvolenou rychlost. `count` je `total`,
+  které stránka už má — **žádný extra count dotaz**; dokud není znám (nebo je 0), odhad se
+  **vynechá**, nerenderuje se zástupné číslo);
   `components/map/` = `LeafletMap` (imperativní Leaflet most: dlaždicová vrstva na **backend
   proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (klíč server-side, `{r}`→`@2x` na retině),
   **povinné mapy.com prvky** — attribution „© Seznam.cz a.s. a další" → `/copyright` a klikatelné
@@ -448,7 +461,15 @@ zapiš sem.
   který už v nabídce není (7 s), tak nespadne pod stůl ani nevyrenderuje prázdnou položku; při shodné
   vzdálenosti vyhrává kratší; fallback na defaulty při chybě/nedostupném storage);
   `slideshowView.ts` = pure `slideshowHref(scope,view)` (staví `/slideshow?…` z `LibraryView` přes
-  `writeUrlState` + scope `album`/`label`, default filtry vynechá — launch link promítání);
+  `writeUrlState` + scope `album`/`label`/`mode`, default filtry vynechá — launch link promítání;
+  `mode` se zapíše i když je roven defaultu, protože `SlideshowPage` čte jeho **přítomnost** jako
+  „tohle přišlo z hledání");
+  `duration.ts` = pure `splitDuration(ms)` → `{hours,minutes,seconds}` (zaokrouhlí na sekundy,
+  záporné/nekonečné → nula) + `formatDuration(ms,t)` → kompaktní jednořádkový zápis přes i18next
+  (`45 s` / `3 min 20 s` / `1 h 5 min`; nulová část se vynechá, u hodin se sekundy zahodí)
+  + `slideshowDurationMs(count,intervalMs)` (celá show = interval na fotku)
+  + `slideshowRemainingMs(index,total,intervalMs)` (fotky, které teprve přijdou — aktuální snímek
+  se nepočítá, poslední slide hlásí nulu, index za koncem taky);
   `trashCountdown.ts` = pure `purgeCountdown(archivedAt,retentionDays,now?)` (zbývající dny do
   auto-purge z `archived_at` + retence → `{daysLeft,due}` nebo `null` když odpočet neplatí
   (nearchivovaná / retence ≤ 0 / neparsovatelné), odpočet na kartách koše);

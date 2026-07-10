@@ -84,12 +84,24 @@ afterEach(() => {
 })
 
 describe('Slideshow', () => {
-  it('shows the current photo, its caption and position', () => {
+  it('shows the current photo, its caption and its progress', () => {
     setup({ index: 0 })
     const img = screen.getByRole('img')
     expect(img).toHaveAttribute('alt', 'Beach')
     expect(img).toHaveAttribute('src', expect.stringContaining('/photos/a/thumb/'))
-    expect(screen.getByText('1 / 3')).toBeInTheDocument()
+    // Two photos still to come, 5 s each.
+    expect(screen.getByText('slide 1 of 3, 10 s left')).toBeInTheDocument()
+  })
+
+  it('counts down the remaining time as the show advances', () => {
+    setup({ index: 2 })
+    expect(screen.getByText('slide 3 of 3, 0 s left')).toBeInTheDocument()
+  })
+
+  it('measures progress against the whole show, not just the loaded pages', () => {
+    // Three photos loaded of forty; slide 7 of 40 leaves 33 × 5 s = 2 min 45 s.
+    setup({ index: 6, total: 40 })
+    expect(screen.getByText('slide 7 of 40, 2 min 45 s left')).toBeInTheDocument()
   })
 
   it('applies the active transition effect to the image', () => {

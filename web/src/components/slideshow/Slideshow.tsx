@@ -6,6 +6,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
+import { formatDuration, slideshowRemainingMs } from '../../lib/duration'
 import { kenBurnsStyle } from '../../lib/kenBurns'
 import {
   SLIDESHOW_EFFECTS,
@@ -29,6 +30,13 @@ export interface SlideshowProps {
   photos: Photo[]
   /** Index of the currently shown photo (from {@link import('../../hooks/useSlideshow').useSlideshow}). */
   index: number
+  /**
+   * How many photos the show will play in total — the server's count for the
+   * query, which may exceed the loaded `photos` while further pages stream in.
+   * It drives the progress and remaining-time readout. Defaults to the loaded
+   * count when the caller has no total.
+   */
+  total?: number
   /** Whether the slideshow is auto-advancing. */
   playing: boolean
   /** The active effect / speed settings. */
@@ -78,6 +86,7 @@ function isFormControl(target: EventTarget | null): boolean {
 export function Slideshow({
   photos,
   index,
+  total,
   playing,
   settings,
   onNext,
@@ -99,6 +108,11 @@ export function Slideshow({
   // keeps `index` within range, so the current photo is always present. Clamp
   // defensively against a transient over-index while a page is still loading.
   const current = photos[Math.min(index, photos.length - 1)]
+
+  // Count the whole show, not just the pages loaded so far: "7 of 40" must not
+  // read "7 of 7" while the second page is still in flight. A total behind the
+  // loaded set (never expected) would do the same, so take the larger.
+  const playCount = Math.max(total ?? 0, photos.length)
 
   const toggleFullscreen = useCallback(() => {
     const el = containerRef.current
@@ -237,8 +251,15 @@ export function Slideshow({
 
       <div className="slideshow__caption">
         <span className="text-truncate">{current.title || current.file_name}</span>
-        <span className="flex-shrink-0">
-          {t('slideshow.position', { current: index + 1, total: photos.length })}
+        <span className="flex-shrink-0 text-nowrap">
+          {t('slideshow.progress', {
+            current: index + 1,
+            total: playCount,
+            remaining: formatDuration(
+              slideshowRemainingMs(index, playCount, settings.intervalMs),
+              t,
+            ),
+          })}
         </span>
       </div>
 

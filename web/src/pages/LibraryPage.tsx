@@ -15,6 +15,7 @@ import { TimelineScrubber } from '../components/library/TimelineScrubber'
 import { BulkEditModal } from '../components/organize/BulkEditModal'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
+import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useGridJump } from '../hooks/useGridJump'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import { useLibraryFacets } from '../hooks/useLibraryFacets'
@@ -28,9 +29,12 @@ import {
   viewToParams,
 } from '../lib/libraryView'
 import { searchHref } from '../lib/searchView'
-import { slideshowHref } from '../lib/slideshowView'
+import { type SlideshowScope } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
 import { favoritePhoto } from '../services/photos'
+
+/** The library plays every photo the filters leave — it scopes to no album or label. */
+const NO_SCOPE: SlideshowScope = {}
 
 /**
  * The main photo library: a filter/sort bar over a virtualized, infinite-scroll
@@ -188,9 +192,7 @@ export function LibraryPage() {
         {!selection.active && (
           <div className="d-flex gap-1 flex-wrap">
             {status === 'ready' && photos.length > 0 && (
-              <Link to={slideshowHref({}, view)} className="btn btn-outline-secondary btn-sm">
-                {t('slideshow.start')}
-              </Link>
+              <SlideshowStart scope={NO_SCOPE} view={view} count={total} />
             )}
             <Button
               variant="outline-secondary"

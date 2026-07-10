@@ -11,18 +11,20 @@ import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
 import { useSlideshow } from '../hooks/useSlideshow'
 import { useSlideshowSettings } from '../hooks/useSlideshowSettings'
 import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from '../lib/libraryView'
+import { searchHref, type SearchView, toMode } from '../lib/searchView'
 import { readUrlState } from '../lib/urlState'
-import { fetchPhotos, type PhotoListParams } from '../services/photos'
+import { fetchPhotos, type PhotoListParams, searchPhotos } from '../services/photos'
 
 /**
  * The fullscreen slideshow route (`/slideshow`). It reads the source scope
- * (`?album=` / `?label=` / none) and the library filters/sort from the URL —
- * exactly the state a grid encodes — so the slideshow plays the same photos in
- * the same order as the view it was launched from, and Back returns there. It
- * pages the catalogue through {@link usePaginatedPhotos} (loading more as the
- * cursor advances) and renders loading / empty / error states before handing the
- * loaded photos to the {@link Slideshow} stage. Rendered outside the app layout
- * shell so it can occupy the whole viewport.
+ * (`?album=` / `?label=` / `?mode=` for a search / none of them) and the library
+ * filters/sort from the URL — exactly the state a grid encodes — so the
+ * slideshow plays the same photos in the same order as the view it was launched
+ * from, and Back returns there. It pages the catalogue through
+ * {@link usePaginatedPhotos} (loading more as the cursor advances) and renders
+ * loading / empty / error states before handing the loaded photos to the
+ * {@link Slideshow} stage. Rendered outside the app layout shell so it can
+ * occupy the whole viewport.
  */
 export function SlideshowPage() {
   const { t } = useTranslation()
@@ -31,6 +33,10 @@ export function SlideshowPage() {
 
   const album = searchParams.get('album') ?? ''
   const label = searchParams.get('label') ?? ''
+  // A `mode` param means the slideshow was launched from the search page, so the
+  // query has to be ranked by `GET /search` — listing the library with the same
+  // `q` would only substring-match and play a different set of photos.
+  const mode = searchParams.get('mode') ?? ''
 
   // Derive the same API params a grid would, from the URL view state plus scope.
   const view = useMemo<LibraryView>(
@@ -47,12 +53,14 @@ export function SlideshowPage() {
   )
 
   const fetcher = useCallback(
-    (p: PhotoListParams, signal: AbortSignal) => fetchPhotos(p, signal),
-    [],
+    (p: PhotoListParams, signal: AbortSignal) =>
+      mode === '' ? fetchPhotos(p, signal) : searchPhotos(p, toMode(mode), signal),
+    [mode],
   )
-  const { photos, status, loadingMore, hasMore, loadMore, retry } = usePaginatedPhotos(
+  const { photos, total, status, loadingMore, hasMore, loadMore, retry } = usePaginatedPhotos(
     params,
     fetcher,
+    { key: mode },
   )
 
   const { settings, setEffect, setIntervalMs } = useSlideshowSettings()
@@ -74,10 +82,13 @@ export function SlideshowPage() {
       void navigate(`/albums/${album}`)
     } else if (label !== '') {
       void navigate(`/labels/${label}`)
+    } else if (mode !== '') {
+      const searchView: SearchView = { ...view, mode: toMode(mode) }
+      void navigate(searchHref(searchView))
     } else {
       void navigate(LIBRARY_PATH)
     }
-  }, [navigate, album, label])
+  }, [navigate, album, label, mode, view])
 
   if (status === 'loading') {
     return (
@@ -125,6 +136,7 @@ export function SlideshowPage() {
     <Slideshow
       photos={photos}
       index={index}
+      total={total}
       playing={playing}
       settings={settings}
       onNext={next}

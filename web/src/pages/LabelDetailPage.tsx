@@ -8,9 +8,9 @@ import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
+import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
-import { slideshowHref } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
 import { fetchLabel, type Label } from '../services/organize'
 
@@ -72,12 +72,9 @@ export function LabelDetailPage() {
         </Link>
         <h1 className="kk-page-title mb-0">{title}</h1>
         {photos.length > 0 && (
-          <Link
-            to={slideshowHref({ label: uid }, view)}
-            className="btn btn-outline-secondary btn-sm ms-auto"
-          >
-            {t('slideshow.start')}
-          </Link>
+          <span className="ms-auto">
+            <SlideshowStart scope={scope} view={view} count={total} />
+          </span>
         )}
       </div>
 

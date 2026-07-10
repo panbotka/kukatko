@@ -759,7 +759,9 @@
     "settings": "Settings",
     "close": "Close",
     "back": "Back",
-    "position": "{{current}} / {{total}}",
+    "estimate_one": "{{count}} photo, about {{duration}}",
+    "estimate_other": "{{count}} photos, about {{duration}}",
+    "progress": "slide {{current}} of {{total}}, {{remaining}} left",
     "loading": "Loading photos…",
     "empty": {
       "title": "No photos to play",
@@ -780,6 +782,13 @@
       "label": "Speed",
       "seconds": "{{seconds}} s"
     }
+  },
+  "duration": {
+    "seconds": "{{seconds}} s",
+    "minutes": "{{minutes}} min",
+    "minutesSeconds": "{{minutes}} min {{seconds}} s",
+    "hours": "{{hours}} h",
+    "hoursMinutes": "{{hours}} h {{minutes}} min"
   },
   "notFound": {
     "title": "Page not found",

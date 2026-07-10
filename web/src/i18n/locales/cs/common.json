@@ -775,7 +775,11 @@
     "settings": "Nastavení",
     "close": "Zavřít",
     "back": "Zpět",
-    "position": "{{current}} / {{total}}",
+    "estimate_one": "{{count}} fotka, asi {{duration}}",
+    "estimate_few": "{{count}} fotky, asi {{duration}}",
+    "estimate_many": "{{count}} fotky, asi {{duration}}",
+    "estimate_other": "{{count}} fotek, asi {{duration}}",
+    "progress": "snímek {{current}} ze {{total}}, zbývá {{remaining}}",
     "loading": "Načítání fotek…",
     "empty": {
       "title": "Žádné fotky k promítání",
@@ -796,6 +800,13 @@
       "label": "Rychlost",
       "seconds": "{{seconds}} s"
     }
+  },
+  "duration": {
+    "seconds": "{{seconds}} s",
+    "minutes": "{{minutes}} min",
+    "minutesSeconds": "{{minutes}} min {{seconds}} s",
+    "hours": "{{hours}} h",
+    "hoursMinutes": "{{hours}} h {{minutes}} min"
   },
   "notFound": {
     "title": "Stránka nenalezena",

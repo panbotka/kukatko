@@ -13,6 +13,7 @@ import { PhotoGrid } from '../components/library/PhotoGrid'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { ReorderableGrid } from '../components/organize/ReorderableGrid'
 import { SelectionBar } from '../components/organize/SelectionBar'
+import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { useSelection } from '../hooks/useSelection'
 import {
@@ -21,7 +22,6 @@ import {
   type LibraryView,
   viewToParams,
 } from '../lib/libraryView'
-import { slideshowHref } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
 import {
   type Album,
@@ -203,14 +203,7 @@ export function AlbumDetailPage() {
         </div>
         {album && mode === 'browse' && (
           <div className="d-flex gap-1 flex-wrap">
-            {photos.length > 0 && (
-              <Link
-                to={slideshowHref({ album: uid }, view)}
-                className="btn btn-outline-secondary btn-sm"
-              >
-                {t('slideshow.start')}
-              </Link>
-            )}
+            {photos.length > 0 && <SlideshowStart scope={scope} view={view} count={total} />}
             {canWrite && (
               <>
                 <Button

@@ -13,6 +13,7 @@ import { PhotoGrid } from '../components/library/PhotoGrid'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SavedSearchesDropdown } from '../components/savedsearch/SavedSearchesDropdown'
 import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
+import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
 import { viewToParams } from '../lib/libraryView'
 import { SEARCH_DEFAULTS, type SearchView, toMode } from '../lib/searchView'
@@ -29,6 +30,9 @@ const SEARCH_DEBOUNCE_MS = 350
  * it commits to the URL (and triggers a fetch). When a semantic/hybrid search
  * falls back to full-text because the embeddings sidecar is offline, a
  * non-blocking notice explains that semantic ranking was skipped.
+ *
+ * The results can be played as a slideshow, which replays the search itself (the
+ * `mode` travels in the URL) rather than re-listing the library by the query.
  *
  * This page also owns saved searches: the header pairs a "save this view" button
  * with the {@link SavedSearchesDropdown} that lists, applies and manages them.
@@ -71,7 +75,10 @@ export function SearchPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="kk-page-title mb-0">{t('search.title')}</h1>
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex align-items-center gap-2 flex-wrap">
+          {status === 'ready' && photos.length > 0 && (
+            <SlideshowStart scope={{ mode }} view={view} count={total} />
+          )}
           {/* Saved searches live here rather than in the navbar: they are a
               search-page concern, and `/saved` stays reachable from the menu. */}
           <SavedSearchesDropdown />
