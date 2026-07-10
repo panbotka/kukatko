@@ -120,31 +120,21 @@ export function FilterBar<T extends LibraryView>({
     <Form className="mb-3" role="search" aria-label={t('library.filters.barLabel')}>
       <div className="d-flex flex-wrap align-items-center gap-2">
         {showSearch && (
-          <div className="kukatko-filter-search">
-            <InputGroup>
-              <InputGroup.Text aria-hidden="true">
-                <SearchIcon />
-              </InputGroup.Text>
-              <Form.Control
-                type="search"
-                size="lg"
-                value={view.q}
-                aria-label={t('library.filters.search')}
-                placeholder={t('library.filters.searchPlaceholder')}
-                onChange={(e) => {
-                  replace({ q: e.target.value })
-                }}
-              />
-            </InputGroup>
-            {searchHref !== undefined && (
-              <div className="form-text mt-1">
-                {t('library.filters.searchHint')}{' '}
-                <Link to={searchHref} className="text-decoration-none">
-                  {t('library.filters.fullSearchLink')}
-                </Link>
-              </div>
-            )}
-          </div>
+          <InputGroup className="kukatko-filter-search">
+            <InputGroup.Text aria-hidden="true">
+              <SearchIcon />
+            </InputGroup.Text>
+            <Form.Control
+              type="search"
+              size="lg"
+              value={view.q}
+              aria-label={t('library.filters.search')}
+              placeholder={t('library.filters.searchPlaceholder')}
+              onChange={(e) => {
+                replace({ q: e.target.value })
+              }}
+            />
+          </InputGroup>
         )}
 
         {showSort && (
@@ -188,6 +178,18 @@ export function FilterBar<T extends LibraryView>({
           )}
         </Button>
       </div>
+
+      {/* The hint sits below the alignment row, not inside the search field's flex
+          item: kept a sibling of that item it would stretch the search column and
+          the row's centre alignment would push the sort selector down. */}
+      {showSearch && searchHref !== undefined && (
+        <div className="form-text mt-1">
+          {t('library.filters.searchHint')}{' '}
+          <Link to={searchHref} className="text-decoration-none">
+            {t('library.filters.fullSearchLink')}
+          </Link>
+        </div>
+      )}
 
       {facets && <FacetRow view={view} facets={facets} push={push} />}
 

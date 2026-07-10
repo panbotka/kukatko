@@ -163,6 +163,37 @@ describe('FilterBar header', () => {
   })
 })
 
+describe('FilterBar layout', () => {
+  // The sort selector must share the search input's row so the two line up. The
+  // search hint sits below that row — not inside it — so its extra height cannot
+  // stretch the search column and push the selector down under the row's centre
+  // alignment. Asserting on structure (not a fragile pixel measurement) keeps the
+  // guard honest in jsdom, where layout has no geometry.
+  it('keeps the sort selector in the search input row, with the hint outside it', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { searchHref: '/search' })
+
+    const sort = screen.getByLabelText('Sort')
+    const searchInput = screen.getByLabelText('Filter the library')
+    const row = sort.parentElement
+    expect(row).not.toBeNull()
+
+    // Both controls belong to the same header row (the alignment group)...
+    expect(row).toContainElement(searchInput)
+    // ...but the helper hint is not a member of it, so it can't affect alignment.
+    const hint = screen.getByRole('link', { name: /Full-text & semantic search/ })
+    expect(row).not.toContainElement(hint)
+  })
+
+  it('keeps the sort selector in the search input row when no hint is shown', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+
+    const sort = screen.getByLabelText('Sort')
+    const searchInput = screen.getByLabelText('Filter the library')
+    expect(sort.parentElement).toContainElement(searchInput)
+    expect(screen.queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
+  })
+})
+
 describe('FilterBar facets', () => {
   it('hides the facet row when the page supplies no options', () => {
     renderBar(LIBRARY_DEFAULTS, vi.fn())
