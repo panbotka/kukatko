@@ -7,18 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type AlbumCount, type LabelCount } from '../services/organize'
+import { type FacesResponse } from '../services/people'
 import { type PhotoDetail, type PhotoEdit, type PhotoListResponse } from '../services/photos'
 
 import { PhotoDetailPage } from './PhotoDetailPage'
 
 // Reused leaf components render their own data and (for Leaflet) need a real DOM;
 // stub them so this suite stays focused on the detail page's own behaviour. Their
-// own behaviour is covered by FaceOverlay.test.tsx / SimilarPhotos.test.tsx.
-vi.mock('../components/people/FaceOverlay', () => ({
-  FaceOverlay: ({ photoUid, readOnly }: { photoUid: string; readOnly?: boolean }) => (
-    <div data-testid="faces" data-uid={photoUid} data-readonly={String(readOnly ?? false)} />
-  ),
-}))
+// own behaviour is covered by SimilarPhotos.test.tsx. The face overlay is *not*
+// stubbed: this suite asserts the page renders exactly one image of the photo,
+// which only means something with the real overlay mounted.
 vi.mock('../components/library/SimilarPhotos', () => ({
   SimilarPhotos: ({ uid }: { uid: string }) => <div data-testid="similar" data-uid={uid} />,
 }))
@@ -52,10 +50,18 @@ vi.mock('../services/organize', async (importOriginal) => {
   }
 })
 
+vi.mock('../services/people', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/people')>()
+  return { ...actual, fetchFaces: vi.fn(), assignFace: vi.fn() }
+})
+
 const { fetchPhoto, fetchEdit, saveEdit, updatePhoto, favoritePhoto, fetchPhotos } =
   await import('../services/photos')
 const { fetchAlbums, fetchLabels, addAlbumPhotos, removeAlbumPhotos, attachLabel, detachLabel } =
   await import('../services/organize')
+const { fetchFaces, assignFace } = await import('../services/people')
+const fetchFacesMock = vi.mocked(fetchFaces)
+const assignFaceMock = vi.mocked(assignFace)
 
 const fetchPhotoMock = vi.mocked(fetchPhoto)
 const fetchEditMock = vi.mocked(fetchEdit)
@@ -111,6 +117,23 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
 
 function listPhoto(uid: string): PhotoDetail {
   return photo({ uid, file_name: `${uid}.jpg`, title: uid })
+}
+
+/** A faces response carrying `faces` detections on photo `b`. */
+function facesResponse(count: number): FacesResponse {
+  return {
+    photo_uid: 'b',
+    width: 4000,
+    height: 3000,
+    orientation: 1,
+    faces: Array.from({ length: count }, (_, index) => ({
+      face_index: index,
+      bbox: [0.1, 0.2, 0.3, 0.4] as [number, number, number, number],
+      det_score: 0.9,
+      action: 'create_marker' as const,
+      suggestions: [{ subject_uid: 'su_a', subject_name: 'Alice', distance: 0.1, confidence: 0.9 }],
+    })),
+  }
 }
 
 function page(uids: string[]): PhotoListResponse {
@@ -188,6 +211,11 @@ function renderPage(canWrite = true, entry = '/photos/b?sort=oldest') {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   vi.clearAllMocks()
+  // The face-overlay toggle persists to localStorage; start every test from the
+  // shipped default (overlay on).
+  window.localStorage.removeItem('kukatko.faces.overlay')
+  fetchFacesMock.mockResolvedValue(facesResponse(0))
+  assignFaceMock.mockResolvedValue(undefined)
   fetchPhotoMock.mockResolvedValue(photo())
   fetchEditMock.mockResolvedValue(NEUTRAL)
   fetchPhotosMock.mockResolvedValue(page(['a', 'b', 'c']))
@@ -205,14 +233,75 @@ afterEach(() => {
 })
 
 describe('PhotoDetailPage', () => {
-  it('renders the preview, faces, similar strip and EXIF metadata', async () => {
-    renderPage()
+  it('renders exactly one image of the photo when no face was detected', async () => {
+    const { container } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    await screen.findByText('No faces detected in this photo.')
 
-    expect(await screen.findByRole('heading', { name: 'Beach' })).toBeInTheDocument()
-    expect(screen.getByTestId('faces')).toHaveAttribute('data-uid', 'b')
-    expect(screen.getByTestId('faces')).toHaveAttribute('data-readonly', 'false')
+    // The whole point of the rework: faces are an overlay on the single preview,
+    // never a second copy of the image — and a photo with none only says so.
+    expect(container.querySelectorAll('img')).toHaveLength(1)
+    expect(container.querySelector('img')).toHaveAttribute('alt', 'Beach')
+    expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
     expect(screen.getByTestId('similar')).toHaveAttribute('data-uid', 'b')
-    // EXIF is shown read-only.
+  })
+
+  it('draws detected faces as an overlay on the single preview', async () => {
+    fetchFacesMock.mockResolvedValue(facesResponse(2))
+    const { container } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Unnamed face 2' })).toBeEnabled()
+    // Still exactly one image: the boxes are drawn over it.
+    expect(container.querySelectorAll('img')).toHaveLength(1)
+    expect(screen.queryByText('No faces detected in this photo.')).not.toBeInTheDocument()
+  })
+
+  it('toggles the face overlay and remembers the choice', async () => {
+    const user = userEvent.setup()
+    fetchFacesMock.mockResolvedValue(facesResponse(1))
+    renderPage()
+    await screen.findByTestId('face-overlay')
+
+    await user.click(screen.getByRole('button', { name: 'Hide faces' }))
+    expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
+    // The choice is persisted, so it carries across photos and reloads.
+    expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('false')
+
+    await user.click(screen.getByRole('button', { name: 'Show faces' }))
+    expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+    expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('true')
+  })
+
+  it('closes the naming panel when the overlay is hidden', async () => {
+    const user = userEvent.setup()
+    fetchFacesMock.mockResolvedValue(facesResponse(1))
+    renderPage()
+    await screen.findByTestId('face-overlay')
+
+    await user.click(screen.getByRole('button', { name: 'Unnamed face 1' }))
+    expect(screen.getByLabelText('Name this face')).toBeInTheDocument()
+
+    // Hiding the boxes must not leave an orphaned panel for an invisible face.
+    await user.click(screen.getByRole('button', { name: 'Hide faces' }))
+    expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
+  })
+
+  it('keeps the technical detail collapsed on first render', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    const expander = screen.getByRole('button', { name: 'Technical details' })
+    expect(expander).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('EOS R5')).not.toBeInTheDocument()
+    expect(screen.queryByText('ISO 200')).not.toBeInTheDocument()
+
+    // One click brings the EXIF back.
+    await user.click(expander)
+    expect(expander).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('EOS R5')).toBeInTheDocument()
     expect(screen.getByText('ISO 200')).toBeInTheDocument()
   })
@@ -412,6 +501,7 @@ describe('PhotoDetailPage', () => {
   })
 
   it('shows a read-only page to viewers', async () => {
+    fetchFacesMock.mockResolvedValue(facesResponse(1))
     renderPage(false)
     await screen.findByRole('heading', { name: 'Beach' })
 
@@ -422,8 +512,10 @@ describe('PhotoDetailPage', () => {
       screen.queryByRole('button', { name: 'Remove from album Holidays' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Add to album')).not.toBeInTheDocument()
-    // The face overlay is read-only and album lists are not fetched.
-    expect(screen.getByTestId('faces')).toHaveAttribute('data-readonly', 'true')
+    // Viewers see the faces drawn on the photo, but cannot select one to name it,
+    // and album lists are not fetched.
+    expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toBeDisabled()
     expect(fetchAlbumsMock).not.toHaveBeenCalled()
     // Chips are still shown (read-only).
     const organize = screen.getByText('Holidays').closest('div')

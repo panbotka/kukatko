@@ -9,6 +9,8 @@ import { formatDateTime } from '../../lib/format'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
 import { LeafletMap } from '../map/LeafletMap'
 
+import { MetaField } from './MetaField'
+
 /** Props for {@link MetadataPanel}. */
 export interface MetadataPanelProps {
   /** The photo whose metadata is shown and (for editors) edited. */
@@ -41,24 +43,12 @@ function initialCoordText(photo: PhotoDetail): string {
   return ''
 }
 
-/** A read-only labelled value row, omitted entirely when the value is empty. */
-function Field({ label, value }: { label: string; value: string | undefined }) {
-  if (value === undefined || value === '') {
-    return null
-  }
-  return (
-    <div className="mb-2">
-      <div className="small text-secondary">{label}</div>
-      <div>{value}</div>
-    </div>
-  )
-}
-
 /**
  * The metadata panel: a read-only summary of the photo's title, description,
- * notes, capture time and camera/lens/EXIF, with an inline edit form for
- * editors that PATCHes the catalogue. Location (lat/lng) is editable here too, so
- * a photo can be geotagged or have its coordinates cleared. All text is i18n.
+ * notes and capture time, with an inline edit form for editors that PATCHes the
+ * catalogue. Location (lat/lng) is editable here too, so a photo can be geotagged
+ * or have its coordinates cleared. Camera/lens/EXIF is deliberately absent — it
+ * lives in the collapsed {@link TechnicalDetails}. All text is i18n.
  */
 export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps) {
   const { t, i18n } = useTranslation()
@@ -266,30 +256,17 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
     )
   }
 
-  const exposure =
-    photo.exposure !== undefined && photo.exposure !== '' ? `${photo.exposure} s` : undefined
-  const focal = photo.focal_length !== undefined ? `${photo.focal_length} mm` : undefined
-  const aperture = photo.aperture !== undefined ? `f/${photo.aperture}` : undefined
-  const iso = photo.iso !== undefined ? `ISO ${photo.iso}` : undefined
-
   return (
     <div>
-      <Field label={t('photo.metadata.title')} value={photo.title} />
-      <Field label={t('photo.metadata.description')} value={photo.description} />
-      <Field label={t('photo.metadata.notes')} value={photo.notes} />
-      <Field
+      <MetaField label={t('photo.metadata.title')} value={photo.title} />
+      <MetaField label={t('photo.metadata.description')} value={photo.description} />
+      <MetaField label={t('photo.metadata.notes')} value={photo.notes} />
+      <MetaField
         label={t('photo.metadata.takenAt')}
         value={
           photo.taken_at !== undefined ? formatDateTime(photo.taken_at, i18n.language) : undefined
         }
       />
-      <Field label={t('photo.metadata.camera')} value={photo.camera_model || photo.camera_make} />
-      <Field label={t('photo.metadata.lens')} value={photo.lens_model} />
-      <Field label={t('photo.metadata.aperture')} value={aperture} />
-      <Field label={t('photo.metadata.exposure')} value={exposure} />
-      <Field label={t('photo.metadata.focalLength')} value={focal} />
-      <Field label={t('photo.metadata.iso')} value={iso} />
-      <Field label={t('photo.metadata.fileName')} value={photo.file_name} />
 
       {canWrite && (
         <Button variant="outline-secondary" size="sm" className="mt-2" onClick={startEditing}>

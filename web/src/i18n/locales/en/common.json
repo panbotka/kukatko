@@ -597,6 +597,8 @@
     "loading": "Loading faces…",
     "error": "Could not load faces.",
     "none": "No faces detected in this photo.",
+    "toggle": "Show faces",
+    "hide": "Hide faces",
     "unnamed": "Unnamed face {{index}}",
     "assignError": "Could not save the assignment. Please try again.",
     "panel": {
@@ -670,6 +672,10 @@
       "save": "Save",
       "cancel": "Cancel",
       "saveError": "Saving failed. Check the entered values."
+    },
+    "technical": {
+      "title": "Technical details",
+      "dimensions": "Dimensions"
     },
     "organize": {
       "albums": "Albums",

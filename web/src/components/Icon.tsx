@@ -9,6 +9,8 @@ export type IconName =
   | 'bookmarks'
   | 'box-arrow-in-down'
   | 'box-arrow-right'
+  | 'chevron-down'
+  | 'chevron-right'
   | 'cloud-arrow-up'
   | 'collection'
   | 'compass'

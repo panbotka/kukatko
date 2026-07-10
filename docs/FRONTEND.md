@@ -228,9 +228,14 @@ zapiš sem.
   `detailQueryString`), v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + pick/reject
   nad `useRating`) a `FavoriteButton`, plus **rating hotkeys** `0`–`5`/`p`/`r` na document (mimo
   psaní do inputu), tlačítka **Stáhnout originál** /
-  **Stáhnout upravenou** (`downloadUrl`), interaktivní `FaceOverlay` (pojmenování obličejů),
+  **Stáhnout upravenou** (`downloadUrl`); **stránka nese právě JEDEN obrázek fotky** — obličeje
+  jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad `useFaces`), nikdy druhá kopie snímku:
+  tlačítko **Zobrazit/Skrýt obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`)
+  a volba se pamatuje v localStorage (`lib/faceOverlayPref`); fotka bez obličejů = jediný
+  nenápadný řádek `faces.none`, žádný obrázek; klik na box otevře `FaceAssignPanel` pod náhledem;
   pruh `SimilarPhotos` a pravý panel se záložkami (`components/photo/`): **Informace**
-  (`MetadataPanel` = view/edit title/description/notes/taken_at + camera/lens/EXIF + **vizuální
+  (`MetadataPanel` = view/edit title/description/notes/taken_at — **bez** camera/lens/EXIF, ta
+  žije v `TechnicalDetails` — + **vizuální
   location picker** (nahradil holá lat/lng pole): jedno tolerantní pole souřadnic parsované
   pure helperem `lib/coordinates` (`parseCoordinates`→`{lat,lng}`|error / `formatCoordinates`;
   **desetinné stupně** `49.1234, 16.5678` (komma/mezera, ±), **DMS** `49°7'24.2"N 16°34'12.5"E`,
@@ -251,11 +256,17 @@ zapiš sem.
   prázdným seznamem, jinak by první štítek v katalogu nešel vytvořit, a `createAndAttachLabel`
   udělá `createLabel` + `attachLabel` v jedné akci; shodu jména hledá `foldedEquals` nad načteným
   seznamem, takže existující štítek jen připojí místo kolize na unikátním slugu; alba se odsud
-  nezakládají, nesou typ/obálku/privátnost — ta patří na stránku Alba)),
+  nezakládají, nesou typ/obálku/privátnost — ta patří na stránku Alba)) a `TechnicalDetails`
+  (**na první render zavřený** expander `aria-expanded`/`aria-controls`: camera/lens/clona/expozice/
+  ohnisko/ISO/název souboru/rozměry přes `MetaField`) — pořadí panelu promuje to podstatné
+  (titulek, popis, štítky, alba, obličeje) a technikálie schovává na jeden klik;
   **Poloha** (`PhotoLocation` = Leaflet mini-mapa nad mapy.com proxy + on-demand reverse-geocode
   `reverseGeocode` + clear location) a **Úpravy** (editor/admin: `EditPanel` = rotace/jas/kontrast/
-  crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`); viewer vidí read-only
-  (žádná záložka Úpravy, žádné edit akce, `FaceOverlay` readOnly); `lib/photoEdit` = pure helpery
+  crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`; záložka je `mountOnEnter`,
+  aby její vlastní preview nepřidalo druhý `<img>`); viewer vidí read-only
+  (žádná záložka Úpravy, žádné edit akce, `FaceOverlay` readOnly = boxy vidí, ale neklikne);
+  `components/photo/` dál nese `MetaField` (jeden read-only labelled řádek, prázdná hodnota =
+  nic; sdílí `MetadataPanel` i `TechnicalDetails`); `lib/photoEdit` = pure helpery
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
   `rotateRight`/`hasCrop`/`NEUTRAL_EDIT`),
   `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (cover/jméno/počet
@@ -337,8 +348,12 @@ zapiš sem.
   podkladu basic/outdoor/aerial + datum od/do, archiv, soukromé, počet, zrušit filtry);
   `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`, `FaceThumb`
   (čtvercový výřez obličeje z thumbnailu fotky dle normalized bbox přes `faceCropStyle`),
-  `FaceOverlay`+`FaceAssignPanel` (boxy přes obrázek z normalized bbox přes `faceBoxStyle`,
-  klik → panel s návrhy (one-tap accept) + free-text jméno; optimistický update + refetch),
+  `FaceOverlay`+`FaceAssignPanel` (`FaceOverlay` = **čistě prezentační** průhledná vrstva
+  klikatelných boxů z normalized bbox přes `faceBoxStyle`, **žádný vlastní obrázek ani fetch** —
+  mountuje se jako poslední dítě `position-relative` obalu těsně kolem `<img>`; vrstva je
+  click-through, pointer events chytají jen boxy (a při `readOnly` ani ty). Data + stavový
+  automat pojmenování drží hook `useFaces`; klik → `FaceAssignPanel` s návrhy (one-tap accept)
+  + free-text jméno; optimistický update + refetch),
   `ClusterCard`, `Outliers` (žebříček podezřelých obličejů s one-tap unassign);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`; `ProtectedRoute` =
@@ -387,6 +402,10 @@ zapiš sem.
   (vlevo/vpravo o 1, nahoru/dolů o řádek dle živého počtu sloupců) a dorolují dlaždici do view, `Enter`
   otevře, `x` vybere (zapne selection mód), `f` přepne oblíbenou, `Escape` zruší nejdřív výběr, pak
   fokus; fokus se resetuje na `resetKey` (nová filtr/sort/scope);
+  `useFaces(photoUid)` = načte obličeje fotky (`fetchFaces`) a drží stavový automat pojmenování
+  (výběr boxu, optimistické přiřazení, refetch smiřující se serverem, `busy`/`actionError`);
+  vytažen z `FaceOverlay`, aby detail mohl kreslit boxy nad svým jediným obrázkem a panel
+  pojmenování renderovat jinde na stránce;
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
   `uid`/server stavu; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user

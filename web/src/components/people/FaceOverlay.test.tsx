@@ -1,109 +1,100 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
-import { type FacesResponse } from '../../services/people'
+import { type FaceView } from '../../services/people'
 
 import { FaceOverlay } from './FaceOverlay'
 
-// Mock only the network calls; keep the rest of the module (types) real.
-vi.mock('../../services/people', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../services/people')>()
-  return { ...actual, fetchFaces: vi.fn(), assignFace: vi.fn() }
-})
-
-const { fetchFaces, assignFace } = await import('../../services/people')
-const fetchMock = vi.mocked(fetchFaces)
-const assignMock = vi.mocked(assignFace)
-
-/** A faces response with one unnamed face carrying one suggestion. */
-function facesResponse(): FacesResponse {
-  return {
-    photo_uid: 'ph1',
-    width: 1000,
-    height: 800,
-    orientation: 1,
-    faces: [
-      {
-        face_index: 0,
-        bbox: [0.1, 0.2, 0.3, 0.4],
-        det_score: 0.9,
-        action: 'create_marker',
-        suggestions: [
-          { subject_uid: 'su_a', subject_name: 'Alice', distance: 0.1, confidence: 0.9 },
-        ],
-      },
-    ],
-  }
+/** An unnamed detection and a named one, to cover both box styles. */
+function faces(): FaceView[] {
+  return [
+    {
+      face_index: 0,
+      bbox: [0.1, 0.2, 0.3, 0.4],
+      det_score: 0.9,
+      action: 'create_marker',
+      suggestions: [],
+    },
+    {
+      face_index: 1,
+      bbox: [0.5, 0.5, 0.2, 0.2],
+      det_score: 0.8,
+      action: 'assign_person',
+      marker_uid: 'mk_1',
+      subject_name: 'Alice',
+      suggestions: [],
+    },
+  ]
 }
 
-function renderOverlay() {
-  return render(
+function renderOverlay(readOnly = false, selected: number | null = null) {
+  const onSelect = vi.fn()
+  const result = render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter>
-        <FaceOverlay photoUid="ph1" />
-      </MemoryRouter>
+      <FaceOverlay faces={faces()} selected={selected} onSelect={onSelect} readOnly={readOnly} />
     </I18nextProvider>,
   )
+  return { ...result, onSelect }
 }
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
-  fetchMock.mockReset()
-  assignMock.mockReset()
-  assignMock.mockResolvedValue(undefined)
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('FaceOverlay', () => {
-  it('positions each face box from the normalized bbox', async () => {
-    fetchMock.mockResolvedValue(facesResponse())
-    renderOverlay()
+  it('draws no image of its own — only the boxes over the photo below', () => {
+    const { container } = renderOverlay()
 
-    const box = await screen.findByRole('button', { name: 'Unnamed face 1' })
-    expect(box).toHaveStyle({ left: '10%', top: '20%', width: '30%', height: '40%' })
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getAllByRole('button')).toHaveLength(2)
   })
 
-  it('accepts a suggestion with one tap and calls the assign API', async () => {
-    fetchMock.mockResolvedValue(facesResponse())
-    const user = userEvent.setup()
+  it('positions each face box from the normalized bbox', () => {
     renderOverlay()
 
-    await user.click(await screen.findByRole('button', { name: 'Unnamed face 1' }))
-    await user.click(screen.getByRole('button', { name: /Alice/ }))
-
-    await waitFor(() => {
-      expect(assignMock).toHaveBeenCalledWith('ph1', {
-        action: 'create_marker',
-        bbox: [0.1, 0.2, 0.3, 0.4],
-        face_index: 0,
-        subject_uid: 'su_a',
-      })
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toHaveStyle({
+      left: '10%',
+      top: '20%',
+      width: '30%',
+      height: '40%',
     })
   })
 
-  it('assigns a free-text name from the panel', async () => {
-    fetchMock.mockResolvedValue(facesResponse())
-    const user = userEvent.setup()
+  it('names a matched face by its subject and leaves unmatched ones numbered', () => {
     renderOverlay()
 
-    await user.click(await screen.findByRole('button', { name: 'Unnamed face 1' }))
-    await user.type(screen.getByLabelText('Name'), 'Bob')
-    await user.click(screen.getByRole('button', { name: 'Assign' }))
+    expect(screen.getByRole('button', { name: 'Alice' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toBeInTheDocument()
+  })
 
-    await waitFor(() => {
-      expect(assignMock).toHaveBeenCalledWith('ph1', {
-        action: 'create_marker',
-        bbox: [0.1, 0.2, 0.3, 0.4],
-        face_index: 0,
-        subject_name: 'Bob',
-      })
-    })
+  it('selects a face on click and marks the selected box pressed', async () => {
+    const user = userEvent.setup()
+    const { onSelect } = renderOverlay()
+
+    await user.click(screen.getByRole('button', { name: 'Unnamed face 1' }))
+    expect(onSelect).toHaveBeenCalledWith(0)
+  })
+
+  it('marks the selected box pressed', () => {
+    renderOverlay(false, 0)
+
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: 'Alice' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('is read-only and click-through for viewers', () => {
+    const { onSelect } = renderOverlay(true)
+
+    const box = screen.getByRole('button', { name: 'Unnamed face 1' })
+    expect(box).toBeDisabled()
+    // The box does not swallow clicks meant for the image underneath it.
+    expect(box).toHaveStyle({ pointerEvents: 'none' })
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

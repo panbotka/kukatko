@@ -20,13 +20,17 @@ import { LivePhoto } from '../components/photo/LivePhoto'
 import { MetadataPanel } from '../components/photo/MetadataPanel'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
 import { PhotoLocation } from '../components/photo/PhotoLocation'
+import { TechnicalDetails } from '../components/photo/TechnicalDetails'
 import { VideoPlayer } from '../components/photo/VideoPlayer'
+import { FaceAssignPanel } from '../components/people/FaceAssignPanel'
 import { FaceOverlay } from '../components/people/FaceOverlay'
+import { useFaces } from '../hooks/useFaces'
 import { useFavorite } from '../hooks/useFavorite'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
 import { useRating } from '../hooks/useRating'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
+import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { editPreviewStyle, isIdentityEdit } from '../lib/photoEdit'
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { readUrlState } from '../lib/urlState'
@@ -46,11 +50,13 @@ type State =
   | { status: 'ready'; photo: PhotoDetail; edit: PhotoEdit }
 
 /**
- * The rich photo detail page: a large preview that reflects the saved
- * non-destructive edit and supports prev/next navigation respecting the
- * originating list order, plus panels for metadata (view/edit), location (GPS
- * mini-map + reverse geocode), albums & labels, the edit tools, the face overlay
- * and a similar-photos strip. Every mutation is role-gated; viewers see a
+ * The rich photo detail page: exactly ONE preview of the photo, reflecting the
+ * saved non-destructive edit, with the detected faces drawn as a toggleable
+ * overlay on top of it (never a second copy of the image) and prev/next
+ * navigation that respects the originating list order. The right-hand panel
+ * leads with what matters — title, description, albums and labels — and demotes
+ * camera/lens/EXIF and the file facts to a collapsed expander; location and the
+ * edit tools stay on their own tabs. Every mutation is role-gated; viewers see a
  * read-only page. The whole view is deep-linkable and Back returns to the prior
  * list view (the order/scope is carried in the URL query).
  */
@@ -62,6 +68,10 @@ export function PhotoDetailPage() {
   const [searchParams] = useSearchParams()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [lightboxOpen, setLightboxOpen] = useState(false)
+  // The face-overlay choice is read once from localStorage and written back on
+  // every toggle, so it carries across photos and reloads.
+  const [facesVisible, setFacesVisible] = useState(readFaceOverlay)
+  const faces = useFaces(uid)
 
   const view = useMemo(() => readUrlState(searchParams, DETAIL_DEFAULTS), [searchParams])
   const neighborParams = useMemo(() => detailToParams(view), [view])
@@ -193,6 +203,23 @@ export function PhotoDetailPage() {
   }
 
   const poster = thumbUrl(photo.uid, 'fit_1920', downloadToken)
+  const selectedFace = faces.selected
+  const isStill = photo.media_type !== 'video' && photo.media_type !== 'live'
+  // The overlay is only ever drawn over the still image: it positions its boxes
+  // from normalised bboxes relative to its parent, and a video player's chrome is
+  // not the photo. Faces are never detected on clips anyway.
+  const showFaceBoxes = isStill && facesVisible && faces.faces.length > 0
+
+  // Hiding the overlay also drops the selection: a naming panel for a box the user
+  // can no longer see would be orphaned UI.
+  const toggleFaces = () => {
+    const next = !facesVisible
+    setFacesVisible(next)
+    writeFaceOverlay(next)
+    if (!next) {
+      faces.select(null)
+    }
+  }
 
   // Render the main media by kind: a range-streaming player for videos, a
   // hover/hold motion preview for live photos, and the edit-reflecting still for
@@ -215,24 +242,36 @@ export function PhotoDetailPage() {
     }
     // Clicking the still image opens the fullscreen lightbox. Videos/live photos
     // keep their own native fullscreen (the range player / motion clip) and never
-    // reach this branch, so they never open the image lightbox.
+    // reach this branch, so they never open the image lightbox. The face boxes are
+    // siblings of the button (never nested inside it) and sit in a wrapper that
+    // shrink-wraps the image, so their percentage geometry lands on the faces.
     return (
-      <button
-        type="button"
-        className="border-0 bg-transparent p-0 d-inline-flex"
-        style={{ cursor: 'zoom-in' }}
-        aria-label={t('photo.lightbox.open')}
-        onClick={() => {
-          setLightboxOpen(true)
-        }}
-      >
-        <img
-          src={poster}
-          alt={title}
-          className="mw-100"
-          style={{ maxHeight: '70vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
-        />
-      </button>
+      <div className="position-relative d-inline-flex mw-100">
+        <button
+          type="button"
+          className="border-0 bg-transparent p-0 d-inline-flex"
+          style={{ cursor: 'zoom-in' }}
+          aria-label={t('photo.lightbox.open')}
+          onClick={() => {
+            setLightboxOpen(true)
+          }}
+        >
+          <img
+            src={poster}
+            alt={title}
+            className="mw-100"
+            style={{ maxHeight: '70vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
+          />
+        </button>
+        {showFaceBoxes && (
+          <FaceOverlay
+            faces={faces.faces}
+            selected={faces.selected?.face_index ?? null}
+            onSelect={faces.select}
+            readOnly={!canWrite}
+          />
+        )}
+      </div>
     )
   }
 
@@ -317,20 +356,61 @@ export function PhotoDetailPage() {
                 {t('photo.downloadEdited')}
               </Button>
             )}
+            {isStill && faces.faces.length > 0 && (
+              <Button
+                type="button"
+                variant={facesVisible ? 'secondary' : 'outline-secondary'}
+                size="sm"
+                aria-pressed={facesVisible}
+                onClick={toggleFaces}
+              >
+                {facesVisible ? t('faces.hide') : t('faces.toggle')}
+              </Button>
+            )}
           </div>
 
-          <section className="mt-3" aria-label={t('faces.title')}>
-            <h2 className="kk-section-title mb-2">{t('faces.title')}</h2>
-            <FaceOverlay photoUid={photo.uid} readOnly={!canWrite} />
-          </section>
+          {/* Faces never get an image of their own: they are the overlay above.
+              A photo with none says so in one line, and the naming panel opens
+              below the preview when a box is picked. */}
+          {faces.status === 'ready' && faces.faces.length === 0 && (
+            <p className="text-secondary small mt-2 mb-0">{t('faces.none')}</p>
+          )}
+          {faces.actionError && (
+            <Alert variant="danger" className="mt-2 py-2 small">
+              {t('faces.assignError')}
+            </Alert>
+          )}
+          {selectedFace !== null && canWrite && (
+            <FaceAssignPanel
+              face={selectedFace}
+              busy={faces.busy}
+              onAcceptSuggestion={(suggestion) => {
+                faces.acceptSuggestion(selectedFace, suggestion)
+              }}
+              onAssignName={(name) => {
+                faces.assignName(selectedFace, name)
+              }}
+              onUnassign={() => {
+                faces.unassign(selectedFace)
+              }}
+              onClose={() => {
+                faces.select(null)
+              }}
+            />
+          )}
         </Col>
 
         <Col xs={12} lg={5}>
-          <Tabs defaultActiveKey="info" className="mb-3">
+          {/* `mountOnEnter` keeps the Edit tab's own preview image out of the DOM
+              until an editor opens it, so the page carries exactly one image of
+              the photo on first render. */}
+          <Tabs defaultActiveKey="info" className="mb-3" mountOnEnter>
             <Tab eventKey="info" title={t('photo.tabs.info')}>
               <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
               <hr />
               <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
+              <hr />
+              <TechnicalDetails photo={photo} />
             </Tab>
             <Tab eventKey="location" title={t('photo.tabs.location')}>
               <PhotoLocation photo={photo} canWrite={canWrite} onUpdated={setPhoto} />

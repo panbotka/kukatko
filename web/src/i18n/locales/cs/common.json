@@ -613,6 +613,8 @@
     "loading": "Načítání obličejů…",
     "error": "Obličeje se nepodařilo načíst.",
     "none": "Na této fotce nebyl detekován žádný obličej.",
+    "toggle": "Zobrazit obličeje",
+    "hide": "Skrýt obličeje",
     "unnamed": "Nepojmenovaný obličej {{index}}",
     "assignError": "Přiřazení se nepodařilo uložit. Zkus to prosím znovu.",
     "panel": {
@@ -686,6 +688,10 @@
       "save": "Uložit",
       "cancel": "Zrušit",
       "saveError": "Uložení se nezdařilo. Zkontroluj zadané hodnoty."
+    },
+    "technical": {
+      "title": "Technické údaje",
+      "dimensions": "Rozměry"
     },
     "organize": {
       "albums": "Alba",
