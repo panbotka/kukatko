@@ -8,6 +8,7 @@ import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
+import { ApiError } from '../../services/auth'
 import { type BulkOperations, type BulkResult, bulkUpdatePhotos } from '../../services/bulk'
 import { type AlbumCount, fetchAlbums, fetchLabels, type LabelCount } from '../../services/organize'
 import { MultiSelect, type MultiSelectOption } from '../MultiSelect'
@@ -191,8 +192,13 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
     setError(null)
     try {
       setResult(await bulkUpdatePhotos(photoUids, ops))
-    } catch {
-      setError(t('bulkEdit.applyError'))
+    } catch (err: unknown) {
+      // The backend rejects a bad batch with a reason the reader can act on
+      // (conflicting operations, too many photos); a generic failure would hide
+      // it. Anything else — a network drop, a 5xx with no body — falls back.
+      setError(
+        err instanceof ApiError && err.message !== '' ? err.message : t('bulkEdit.applyError'),
+      )
     } finally {
       setBusy(false)
     }

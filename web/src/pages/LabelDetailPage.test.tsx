@@ -1,9 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type Label } from '../services/organize'
 import { type Photo, type PhotoListResponse } from '../services/photos'
@@ -31,13 +33,22 @@ vi.mock('../services/photos', async (importOriginal) => {
 
 vi.mock('../services/organize', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/organize')>()
-  return { ...actual, fetchLabel: vi.fn() }
+  return { ...actual, fetchLabel: vi.fn(), fetchAlbums: vi.fn(), fetchLabels: vi.fn() }
+})
+
+vi.mock('../services/bulk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/bulk')>()
+  return { ...actual, bulkUpdatePhotos: vi.fn() }
 })
 
 const { fetchPhotos } = await import('../services/photos')
-const { fetchLabel } = await import('../services/organize')
+const { bulkUpdatePhotos } = await import('../services/bulk')
+const { fetchLabel, fetchAlbums, fetchLabels } = await import('../services/organize')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchLabelMock = vi.mocked(fetchLabel)
+const bulkMock = vi.mocked(bulkUpdatePhotos)
+const albumsMock = vi.mocked(fetchAlbums)
+const labelsMock = vi.mocked(fetchLabels)
 
 function photo(uid: string, name: string): Photo {
   return {
@@ -77,14 +88,30 @@ function label(): Label {
   }
 }
 
-function renderPage(entry = '/labels/lb_1') {
+function auth(canWrite: boolean): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
+    role: canWrite ? 'editor' : 'viewer',
+    downloadToken: null,
+    canWrite,
+    isAdmin: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+  } as unknown as AuthContextValue
+}
+
+function renderPage(entry = '/labels/lb_1', canWrite = true) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[entry]}>
-        <Routes>
-          <Route path="/labels/:uid" element={<LabelDetailPage />} />
-        </Routes>
-      </MemoryRouter>
+      <AuthContext.Provider value={auth(canWrite)}>
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route path="/labels/:uid" element={<LabelDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -93,6 +120,11 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchPhotosMock.mockReset()
   fetchLabelMock.mockReset()
+  bulkMock.mockReset()
+  albumsMock.mockReset()
+  labelsMock.mockReset()
+  albumsMock.mockResolvedValue([])
+  labelsMock.mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -123,5 +155,46 @@ describe('LabelDetailPage', () => {
     const first = fetchPhotosMock.mock.calls[0][0]
     expect(first.label).toBe('lb_1')
     expect(first.sort).toBe('oldest')
+  })
+
+  it('keeps selection and bulk edit away from viewers', async () => {
+    fetchLabelMock.mockResolvedValue(label())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage('/labels/lb_1', false)
+
+    await screen.findByRole('heading', { name: 'Sunset' })
+    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
+  })
+
+  it('bulk-edits exactly the selected photos, then reloads the grid', async () => {
+    fetchLabelMock.mockResolvedValue(label())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
+    bulkMock.mockResolvedValue({
+      results: [],
+      counts: { total: 1, updated: 1, skipped: 0, errored: 0 },
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'b.jpg' }))
+    const fetchesBefore = fetchPhotosMock.mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
+    await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['b'], { archive: true })
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Done' }))
+    expect(screen.getByText('0 selected')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
+    })
   })
 })

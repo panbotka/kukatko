@@ -108,7 +108,6 @@
     "loadingMore": "Loading more photos…",
     "select": "Select",
     "selectAll": "Select all",
-    "bulkEdit": "Bulk edit",
     "filters": {
       "barLabel": "Photo filters",
       "search": "Filter the library",
@@ -364,6 +363,7 @@
   "labelDetail": {
     "back": "Labels",
     "error": "Could not load this label.",
+    "select": "Select",
     "empty": {
       "title": "No photos with this label",
       "hint": "Attach this label to photos to see them here."
@@ -505,6 +505,7 @@
   "selection": {
     "label": "Selection actions",
     "count": "{{count}} selected",
+    "edit": "Bulk edit",
     "cancel": "Cancel"
   },
   "shortcuts": {

@@ -108,7 +108,6 @@
     "loadingMore": "Načítání dalších fotek…",
     "select": "Vybrat",
     "selectAll": "Vybrat vše",
-    "bulkEdit": "Hromadná úprava",
     "filters": {
       "barLabel": "Filtry fotek",
       "search": "Filtrovat v knihovně",
@@ -323,6 +322,7 @@
   "labelDetail": {
     "back": "Štítky",
     "error": "Tento štítek se nepodařilo načíst.",
+    "select": "Vybrat",
     "empty": {
       "title": "Žádné fotky s tímto štítkem",
       "hint": "Připoj tento štítek k fotkám a uvidíš je tady."
@@ -474,6 +474,7 @@
   "selection": {
     "label": "Akce výběru",
     "count": "Vybráno: {{count}}",
+    "edit": "Hromadná úprava",
     "cancel": "Zrušit"
   },
   "shortcuts": {

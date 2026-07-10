@@ -12,15 +12,15 @@ import { buildChips } from '../components/library/filterChips'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { TimelineScrubber } from '../components/library/TimelineScrubber'
-import { BulkEditModal } from '../components/organize/BulkEditModal'
+import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
+import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useGridJump } from '../hooks/useGridJump'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import { useLibraryFacets } from '../hooks/useLibraryFacets'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
-import { useSelection } from '../hooks/useSelection'
 import { detailQueryString } from '../lib/detailView'
 import {
   hasActiveFilters,
@@ -50,8 +50,6 @@ export function LibraryPage() {
   const { canWrite } = useAuth()
   const navigate = useNavigate()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
-  const selection = useSelection()
-  const [editing, setEditing] = useState(false)
   const [savingView, setSavingView] = useState(false)
 
   // Memoise the API params so the data hook only reloads when the query changes.
@@ -60,18 +58,26 @@ export function LibraryPage() {
   // prev/next pages through the same filtered grid — but never the favorites
   // scope, which the library never applies.
   const detailQuery = useMemo(() => detailQueryString({ ...view, favorite: '' }), [view])
+  // A bulk edit can change what the filters match, so bump the key to refetch.
+  const [reloadKey, setReloadKey] = useState('0')
+  const reload = useCallback(() => {
+    setReloadKey((k) => String(Number(k) + 1))
+  }, [])
   const { photos, total, status, loadingMore, moreError, hasMore, loadMore, retry } =
-    usePhotoLibrary(params)
+    usePhotoLibrary(params, { reloadKey })
   const facets = useLibraryFacets(params)
+  const bulk = useBulkEdit({ onEdited: reload })
+  const selection = bulk.selection
 
   // Optimistic per-photo favorite overrides for the `f` keyboard shortcut on the
   // focused tile: the flip is applied to the displayed photos immediately (each
   // tile's own useFavorite resyncs from the prop) and rolled back if the request
-  // fails. Cleared when the view changes so overrides never outlive their list.
+  // fails. Cleared whenever the list is refetched — a new view, or a bulk edit
+  // that may itself have set the favorite flag — so no override outlives its list.
   const [favOverrides, setFavOverrides] = useState<ReadonlyMap<string, boolean>>(new Map())
   useEffect(() => {
     setFavOverrides(new Map())
-  }, [detailQuery])
+  }, [detailQuery, reloadKey])
   const displayPhotos = useMemo(() => {
     if (favOverrides.size === 0) {
       return photos
@@ -203,7 +209,7 @@ export function LibraryPage() {
             >
               {t('savedSearches.saveView')}
             </Button>
-            {canWrite && (
+            {bulk.canBulkEdit && (
               <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
                 {t('library.select')}
               </Button>
@@ -224,16 +230,7 @@ export function LibraryPage() {
           >
             {t('library.selectAll')}
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={selection.count === 0}
-            onClick={() => {
-              setEditing(true)
-            }}
-          >
-            {t('library.bulkEdit')}
-          </Button>
+          <BulkEditControl bulk={bulk} />
         </SelectionBar>
       )}
 
@@ -293,11 +290,7 @@ export function LibraryPage() {
               moreError={moreError}
               onEndReached={loadMore}
               onRetry={retry}
-              selection={
-                selection.active
-                  ? { active: true, selected: selection.selected, onToggle: selection.toggle }
-                  : undefined
-              }
+              selection={bulk.gridSelection}
               favoritable={!selection.active}
               ratable={!selection.active}
               detailQuery={detailQuery}
@@ -310,20 +303,6 @@ export function LibraryPage() {
             <TimelineScrubber params={params} activeIndex={rangeStart} onJump={jumpTo} />
           )}
         </>
-      )}
-
-      {canWrite && (
-        <BulkEditModal
-          show={editing}
-          photoUids={[...selection.selected]}
-          onHide={() => {
-            setEditing(false)
-          }}
-          onDone={() => {
-            setEditing(false)
-            selection.disable()
-          }}
-        />
       )}
 
       <SaveSearchModal

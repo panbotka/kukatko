@@ -11,11 +11,12 @@ import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
+import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { ReorderableGrid } from '../components/organize/ReorderableGrid'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
+import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
-import { useSelection } from '../hooks/useSelection'
 import {
   hasActiveFilters,
   LIBRARY_DEFAULTS,
@@ -36,17 +37,18 @@ import { type Photo } from '../services/photos'
 /** Fetch lifecycle of the album record. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; album: Album }
 
-/** The album detail interaction modes. */
-type Mode = 'browse' | 'select' | 'reorder'
-
 /**
  * An album's detail page: a header (title, count, private badge, back link) with
  * editor controls (rename/delete via modal, reorder, select), above the photo
  * grid scoped to the album. Filters and sort live in the URL (shared
  * {@link FilterBar} + urlState). Editors can reorder the album by dragging (or
  * the per-tile controls) — persisted via `PATCH /albums/{uid}/order` — select
- * photos to remove from the album or set one as the cover, and rename or delete
- * the album. Mutation controls are hidden from viewers.
+ * photos to remove from the album, set one as the cover or bulk-edit their
+ * metadata, and rename or delete the album. Mutation controls are hidden from
+ * viewers.
+ *
+ * The page is in exactly one of three modes: browsing, reordering (`reordering`)
+ * or selecting (`selection.active`); entering one leaves the others.
  */
 export function AlbumDetailPage() {
   const { t } = useTranslation()
@@ -55,11 +57,10 @@ export function AlbumDetailPage() {
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState(false)
-  const [mode, setMode] = useState<Mode>('browse')
+  const [reordering, setReordering] = useState(false)
   const [reloadKey, setReloadKey] = useState('0')
   const [reorderOrder, setReorderOrder] = useState<Photo[]>([])
   const [actionError, setActionError] = useState(false)
-  const selection = useSelection()
 
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const params = useMemo(() => viewToParams(view), [view])
@@ -73,6 +74,9 @@ export function AlbumDetailPage() {
   const reload = useCallback(() => {
     setReloadKey((k) => String(Number(k) + 1))
   }, [])
+
+  const bulk = useBulkEdit({ onEdited: reload })
+  const selection = bulk.selection
 
   useEffect(() => {
     const controller = new AbortController()
@@ -95,17 +99,17 @@ export function AlbumDetailPage() {
   const enterReorder = useCallback(() => {
     selection.disable()
     setReorderOrder(photos)
-    setMode('reorder')
+    setReordering(true)
   }, [photos, selection])
 
   const enterSelect = useCallback(() => {
-    setMode('select')
+    setReordering(false)
     selection.enable()
   }, [selection])
 
   const leaveMode = useCallback(() => {
     selection.disable()
-    setMode('browse')
+    setReordering(false)
   }, [selection])
 
   const persistOrder = useCallback(
@@ -133,6 +137,9 @@ export function AlbumDetailPage() {
     setActionError(false)
     try {
       await removeAlbumPhotos(uid, uids)
+      // Leave selection mode before reloading: the removed photos vanish from the
+      // grid, and a selection still holding their UIDs would send them to the
+      // next action. A failed removal keeps the selection so it can be retried.
       leaveMode()
       reload()
     } catch {
@@ -201,7 +208,7 @@ export function AlbumDetailPage() {
           <h1 className="kk-page-title mb-0">{album?.title ?? ''}</h1>
           {album?.private && <Badge bg="secondary">{t('albums.private')}</Badge>}
         </div>
-        {album && mode === 'browse' && (
+        {album && !reordering && !selection.active && (
           <div className="d-flex gap-1 flex-wrap">
             {photos.length > 0 && <SlideshowStart scope={scope} view={view} count={total} />}
             {canWrite && (
@@ -234,7 +241,7 @@ export function AlbumDetailPage() {
 
       {actionError && <Alert variant="danger">{t('albumDetail.actionError')}</Alert>}
 
-      {mode === 'select' && (
+      {selection.active && (
         <SelectionBar count={selection.count} onCancel={leaveMode}>
           <Button
             variant="outline-secondary"
@@ -244,6 +251,7 @@ export function AlbumDetailPage() {
           >
             {t('albumDetail.setCover')}
           </Button>
+          <BulkEditControl bulk={bulk} />
           <Button
             variant="danger"
             size="sm"
@@ -255,7 +263,7 @@ export function AlbumDetailPage() {
         </SelectionBar>
       )}
 
-      {mode === 'reorder' && (
+      {reordering && (
         <div className="d-flex align-items-center gap-2 mb-3">
           <span className="text-secondary small me-auto">{t('albumDetail.reorderHint')}</span>
           <Button variant="primary" size="sm" onClick={leaveMode}>
@@ -264,7 +272,7 @@ export function AlbumDetailPage() {
         </div>
       )}
 
-      {mode !== 'reorder' && <FilterBar view={view} onChange={setView} total={total} />}
+      {!reordering && <FilterBar view={view} onChange={setView} total={total} />}
 
       {status === 'loading' && <GridSkeleton />}
 
@@ -281,22 +289,18 @@ export function AlbumDetailPage() {
         <EmptyState title={t('albumDetail.empty.title')} hint={t('albumDetail.empty.hint')} />
       )}
 
-      {status === 'ready' && photos.length > 0 && mode === 'reorder' && (
+      {status === 'ready' && photos.length > 0 && reordering && (
         <ReorderableGrid photos={reorderOrder} onReorder={(uids) => void persistOrder(uids)} />
       )}
 
-      {status === 'ready' && photos.length > 0 && mode !== 'reorder' && (
+      {status === 'ready' && photos.length > 0 && !reordering && (
         <PhotoGrid
           photos={photos}
           loadingMore={loadingMore}
           moreError={moreError}
           onEndReached={loadMore}
           onRetry={retry}
-          selection={
-            mode === 'select'
-              ? { active: true, selected: selection.selected, onToggle: selection.toggle }
-              : undefined
-          }
+          selection={bulk.gridSelection}
         />
       )}
 

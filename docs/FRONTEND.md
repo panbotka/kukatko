@@ -129,7 +129,10 @@ zapiš sem.
   `AlbumEditModal` (create/rename alba: název/popis/soukromé), `LabelEditModal` (create/rename
   štítku: jméno/priorita), `ReorderableGrid` (ne-virtualizovaná drag-and-drop mřížka + šipky pro
   přeřazení alba, controlled přes `onReorder`), `SelectionBar` (sticky toolbar výběru: počet +
-  akce + zrušit), `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`, celá dávka
+  akce + zrušit), `BulkEditControl` (**znovupoužitelný spouštěč** hromadné úpravy: tlačítko
+  (`selection.edit`) + `BulkEditModal`, řízené výhradně výsledkem `useBulkEdit`; **viewerovi se
+  nevykreslí vůbec**, při nulovém výběru je disabled — stačí ho vložit do `SelectionBar`, stránka
+  nedrží žádný stav dialogu), `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`, celá dávka
   jednou transakcí na backendu; formulář je rozdělený na **čtyři sekce** (`.kk-text-eyebrow`
   nadpisy): **Zařazení** (add/remove alb, add/remove štítků — čtyři `MultiSelect`y, takže jeden
   apply zvládne **víc alb i víc štítků najednou**), **Metadata** (set/clear popisu), **Poloha**
@@ -141,7 +144,9 @@ zapiš sem.
   Výběr **nad `LARGE_SELECTION` (50) fotek** vyžaduje **explicitní potvrzení**: první Apply jen
   otevře danger alert („Ano, použít na N fotek" / „Zpět"), a **jakákoli změna formuláře potvrzení
   odvolá**. Klientská validace souřadnic + „aspoň jedna změna" zůstává; po aplikaci
-  **per-foto result summary** z odpovědi),
+  **per-foto result summary** z odpovědi. Neúspěšný request **vypíše hlášku serveru**
+  (`ApiError.message` — konfliktní operace, příliš velká dávka), jinak generický `bulkEdit.applyError`;
+  výběr zůstává nedotčený, ať se dá apply zopakovat),
   `pages/` (`LoginPage`, `AccountPage` = identita/role, **sekce Jazyk** (`LanguageSwitcher` +
   hint, `account.language*`) a změna vlastního hesla, **plus technický stav aplikace**
   (`GET /healthz` badge + verze, bez commit hashe) v malém ztlumeném řádku dole — status i jazyk
@@ -162,8 +167,9 @@ zapiš sem.
   plus **časová osa** (`TimelineScrubber`) vedle mřížky pro rychlé skoky na měsíc — mřížka
   vystaví `gridRef`+`onRangeChanged`, skok jede přes `useGridJump` (donačte stránky, když měsíc
   leží za načtenou částí), zobrazí se jen pro výchozí newest řazení a mimo režim výběru,
-  plus pro editory **režim výběru** (`Vybrat`/`Vybrat vše`) → `BulkEditModal`
-  (hromadná úprava metadat přes bulk API), plus tlačítko **Uložit pohled** (`SaveSearchModal` →
+  plus pro editory **režim výběru** (`Vybrat`/`Vybrat vše`) → `useBulkEdit` + `BulkEditControl`
+  (hromadná úprava metadat přes bulk API; po úspěchu se mřížka přenačte přes `reloadKey`),
+  plus tlačítko **Uložit pohled** (`SaveSearchModal` →
   `createSavedSearch` s aktuálním view objektem jako `params`),
   `SavedSearchesPage` = `/saved` (jakýkoli přihlášený) „Moje uložená hledání": seznam uložených
   pohledů aktuálního uživatele, každý odkaz otevírá přesně obnovený pohled (`savedSearchHref`), plus
@@ -174,10 +180,13 @@ zapiš sem.
   `AlbumDetailPage` = `/albums/:uid` hlavička + tlačítko **Promítání** (všem) + editorské akce
   (upravit/smazat/vybrat/přeřadit) nad
   fotomřížkou scopnutou na album (`useScopedPhotos` + `FilterBar` + URL stav); přeřazení přes
-  `ReorderableGrid`→`PATCH /albums/{uid}/order`, výběr → odebrat z alba / nastavit cover,
+  `ReorderableGrid`→`PATCH /albums/{uid}/order`, výběr → nastavit cover / **hromadná úprava**
+  (`BulkEditControl`) / odebrat z alba (odebrání i úspěšná úprava **výběr vyprázdní**, ať v něm
+  nezůstanou UID fotek, které z mřížky zmizely, a mřížku přenačtou přes `reloadKey`); stránka je
+  vždy v právě jednom režimu: procházení / `reordering` / `selection.active`,
   `LabelsPage` = `/labels` seznam štítků s počty + create/rename/delete (editor/admin),
   `LabelDetailPage` = `/labels/:uid` fotomřížka scopnutá na štítek (`useScopedPhotos` + `FilterBar` + URL)
-  + tlačítko **Promítání**,
+  + tlačítko **Promítání** + pro editory **režim výběru** → `BulkEditControl` (po úspěchu refetch),
   `SearchPage` = sémantické/hybridní/fulltext hledání: prominentní debouncované (350 ms)
   vyhledávací pole + přepínač režimu (`q`+`mode` v URL), stejná virtualizovaná mřížka jako
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
@@ -374,7 +383,8 @@ zapiš sem.
   paginovaný infinite-scroll loader nad libovolným `PageFetcher`: akumuluje stránky,
   `loadMore`/`retry`, reset+refetch při změně dotazu/`key`/`enabled`, ruší in-flight requesty
   a ignoruje stale odpovědi, vystavuje i `mode`/`degraded`; `enabled:false` → `idle` stav bez
-  requestu; `usePhotoLibrary` = tenká obálka nad ním nad `fetchPhotos`; `usePhotoSearch` =
+  requestu; `usePhotoLibrary(params,{reloadKey?})` = tenká obálka nad ním nad `fetchPhotos`
+  (`reloadKey` refetchne mřížku po mutaci, stejně jako u `useScopedPhotos`); `usePhotoSearch` =
   obálka nad `searchPhotos` s injektovaným `mode`, vypnutá při prázdném `q` (idle);
   `useUploadQueue` = fronta uploadu: `addFiles` (dedup jméno+velikost+mtime)/`removeItem`/
   `start`/`retry`/`retryFailed`/`clear`, konkurenční strop `MAX_CONCURRENT_UPLOADS` (3),
@@ -405,6 +415,13 @@ zapiš sem.
   infinite-scroll kurzorem (nebo clampne na poslední načtené, když už další stránky nejsou) —
   podklad skoku časové osy na měsíc před načtenou částí; `useSelection` = multi-výběr fotek v mřížce
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
+  `useBulkEdit({onEdited?})` = **znovupoužitelná hromadná úprava** libovolného foto-seznamu:
+  `useSelection` + role gate (`canBulkEdit` = `canWrite`) + stav dialogu
+  (`editing`/`open`/`close`/`finish`), k tomu `photoUids` (**přesně vybrané**, nikdy celý filtrovaný
+  výsledek) a `gridSelection` rovnou do `PhotoGrid`. `finish` = zavřít dialog → `selection.clear()`
+  → `onEdited()` (refetch); režim výběru přežije, takže po úspěchu jde hned vybírat dál a žádné
+  zastaralé UID v něm nezůstane. Neúspěšný apply výběr **nechá být**. Stránka wiruje jen
+  `gridSelection` a `selection.enable()`, zbytek obstará `BulkEditControl`;
   `useKeyboardShortcuts(handlers,{enabled?})` = sdílené plumbing všech klávesových zkratek: jeden
   document-level `keydown` listener dispatchuje dle normalizovaného `shortcutToken(event.key)` na
   `handlers` (přes refy, bind jednou a vždy vidí aktuální closury), matched key `preventDefault`;
