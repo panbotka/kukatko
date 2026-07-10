@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
-import { foldedIncludes } from '../../lib/text'
+import { foldedEquals, foldedIncludes } from '../../lib/text'
 
 /** One selectable option in an {@link AddAutocomplete}. */
 export interface AutocompleteOption {
@@ -18,6 +18,13 @@ export interface AddAutocompleteProps {
   options: AutocompleteOption[]
   /** Called with the chosen option's uid; the input clears afterwards. */
   onAdd: (uid: string) => void
+  /**
+   * When set, a query matching no existing option offers to create an entry of
+   * that name. Resolve to `true` once it exists and is attached (the input then
+   * clears), or `false` when the mutation failed — the typed text is kept so the
+   * user can retry. Leave unset for a pick-only field.
+   */
+  onCreate?: (name: string) => Promise<boolean>
   /** Accessible name / placeholder for the field (e.g. "Add to album"). */
   label: string
   /** Unique id tying the visually-hidden label, input and listbox together. */
@@ -34,12 +41,25 @@ const MAX_SUGGESTIONS = 50
  * label. As the user types, options whose label matches the query
  * (case- and accent-insensitively) appear in a dropdown; choosing one — by click
  * or keyboard (Up/Down to move, Enter to select, Esc to close) — calls
- * {@link AddAutocompleteProps.onAdd} and clears the input. A "nothing matches"
- * row is shown when a non-empty query filters everything out; the field never
- * creates new albums/labels. Built on react-bootstrap primitives (no extra
- * dependency) with combobox/listbox ARIA roles and ~44px tap targets.
+ * {@link AddAutocompleteProps.onAdd} and clears the input.
+ *
+ * With {@link AddAutocompleteProps.onCreate} set, a query that names no existing
+ * option gets a trailing "create «query»" row, so a photo can be given a label
+ * that does not exist yet — including the very first one, when the option list
+ * is empty. Without it the field only picks, and a non-empty query that filters
+ * everything out shows a "nothing matches" row instead.
+ *
+ * Built on react-bootstrap primitives (no extra dependency) with
+ * combobox/listbox ARIA roles and ~44px tap targets.
  */
-export function AddAutocomplete({ options, onAdd, label, id, disabled }: AddAutocompleteProps) {
+export function AddAutocomplete({
+  options,
+  onAdd,
+  onCreate,
+  label,
+  id,
+  disabled,
+}: AddAutocompleteProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
@@ -53,6 +73,14 @@ export function AddAutocomplete({ options, onAdd, label, id, disabled }: AddAuto
     () => options.filter((option) => foldedIncludes(option.label, text)).slice(0, MAX_SUGGESTIONS),
     [options, text],
   )
+
+  // Creating is offered only for a name no option already carries; the create
+  // row sits after the suggestions, so its index is `suggestions.length`.
+  const canCreate =
+    onCreate !== undefined &&
+    trimmed !== '' &&
+    !options.some((option) => foldedEquals(option.label, trimmed))
+  const rowCount = suggestions.length + (canCreate ? 1 : 0)
 
   // A dropdown is only shown once the user has typed something.
   const showDropdown = open && trimmed !== ''
@@ -69,22 +97,41 @@ export function AddAutocomplete({ options, onAdd, label, id, disabled }: AddAuto
     onAdd(option.uid)
   }
 
+  async function create() {
+    if (onCreate === undefined || !(await onCreate(trimmed))) {
+      return
+    }
+    setText('')
+    setOpen(false)
+    setActiveIndex(-1)
+  }
+
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     switch (event.key) {
       case 'ArrowDown':
-        if (suggestions.length > 0) {
+        if (rowCount > 0) {
           event.preventDefault()
           setOpen(true)
-          setActiveIndex((i) => Math.min(i + 1, suggestions.length - 1))
+          setActiveIndex((i) => Math.min(i + 1, rowCount - 1))
         }
         break
       case 'ArrowUp':
-        if (suggestions.length > 0) {
+        if (rowCount > 0) {
           event.preventDefault()
           setActiveIndex((i) => Math.max(i - 1, -1))
         }
         break
       case 'Enter': {
+        // Nothing highlighted: Enter still creates when that is the only row,
+        // so typing a brand-new name and confirming it just works.
+        const creating =
+          canCreate &&
+          (activeIndex === suggestions.length || (activeIndex === -1 && rowCount === 1))
+        if (creating) {
+          event.preventDefault()
+          void create()
+          break
+        }
         const option = activeIndex >= 0 ? suggestions[activeIndex] : undefined
         if (option) {
           event.preventDefault()
@@ -145,7 +192,7 @@ export function AddAutocomplete({ options, onAdd, label, id, disabled }: AddAuto
           className="dropdown-menu show w-100 mt-1 shadow overflow-auto"
           style={{ top: '100%', maxHeight: '50vh' }}
         >
-          {suggestions.length === 0 && (
+          {rowCount === 0 && (
             <li className="dropdown-item-text text-secondary small">
               {t('photo.organize.noMatch')}
             </li>
@@ -172,6 +219,28 @@ export function AddAutocomplete({ options, onAdd, label, id, disabled }: AddAuto
               </button>
             </li>
           ))}
+          {canCreate && (
+            <li>
+              <button
+                type="button"
+                role="option"
+                aria-selected={activeIndex === suggestions.length}
+                // Guards against a second create while the first is in flight.
+                disabled={disabled}
+                className={`dropdown-item text-truncate kukatko-tap-target d-flex align-items-center ${
+                  activeIndex === suggestions.length ? 'active' : ''
+                }`}
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                }}
+                onClick={() => {
+                  void create()
+                }}
+              >
+                {t('photo.organize.createOption', { name: trimmed })}
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </div>

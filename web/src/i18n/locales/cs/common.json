@@ -650,6 +650,7 @@
       "addAlbum": "Přidat do alba",
       "addLabel": "Přidat štítek",
       "noMatch": "Nic neodpovídá.",
+      "createOption": "Vytvořit «{{name}}»",
       "removeAlbum": "Odebrat z alba {{name}}",
       "removeLabel": "Odebrat štítek {{name}}",
       "error": "Změnu se nepodařilo uložit."

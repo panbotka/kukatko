@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { foldedIncludes, foldText } from './text'
+import { foldedEquals, foldedIncludes, foldText } from './text'
 
 describe('foldText', () => {
   it('lower-cases, trims and strips diacritics', () => {
@@ -20,5 +20,17 @@ describe('foldedIncludes', () => {
   it('treats a blank needle as matching everything', () => {
     expect(foldedIncludes('anything', '')).toBe(true)
     expect(foldedIncludes('anything', '   ')).toBe(true)
+  })
+})
+
+describe('foldedEquals', () => {
+  it('equates names differing only in case, accents or padding', () => {
+    expect(foldedEquals('Dovolená', ' dovolena ')).toBe(true)
+    expect(foldedEquals('sunset', 'SUNSET')).toBe(true)
+  })
+
+  it('keeps distinct names apart', () => {
+    expect(foldedEquals('sunset', 'sun')).toBe(false)
+    expect(foldedEquals('Dovolená', '')).toBe(false)
   })
 })

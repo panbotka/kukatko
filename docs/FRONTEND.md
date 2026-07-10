@@ -221,7 +221,13 @@ zapiš sem.
   react-bootstrap primitivy, bez nové závislosti — nahradil dřívější `Form.Select` dropdown;
   filtruje klientsky **case/accent-insensitive** přes `lib/text` `foldText`/`foldedIncludes`,
   klávesnice ↑/↓/Enter/Esc + klik, „nic neodpovídá" stav, ~44px tap-targety, ARIA combobox/listbox;
-  nezakládá nová alba/štítky — tvorba zůstává na Albums/Labels stránce)),
+  volitelná prop `onCreate` přidá poslední řádek „Vytvořit «dotaz»", když dotaz nesedí na žádnou
+  existující položku — vrací `Promise<boolean>`, `true` vyčistí input, `false` **ponechá napsaný
+  text** k opakování; **štítek jde založit rovnou z fotky** — pole se štítky se renderuje i nad
+  prázdným seznamem, jinak by první štítek v katalogu nešel vytvořit, a `createAndAttachLabel`
+  udělá `createLabel` + `attachLabel` v jedné akci; shodu jména hledá `foldedEquals` nad načteným
+  seznamem, takže existující štítek jen připojí místo kolize na unikátním slugu; alba se odsud
+  nezakládají, nesou typ/obálku/privátnost — ta patří na stránku Alba)),
   **Poloha** (`PhotoLocation` = Leaflet mini-mapa nad mapy.com proxy + on-demand reverse-geocode
   `reverseGeocode` + clear location) a **Úpravy** (editor/admin: `EditPanel` = rotace/jas/kontrast/
   crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`); viewer vidí read-only

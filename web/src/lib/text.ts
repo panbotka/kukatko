@@ -27,3 +27,11 @@ export function foldedIncludes(haystack: string, needle: string): boolean {
   }
   return foldText(haystack).includes(q)
 }
+
+/**
+ * Reports whether two strings are the same name after folding
+ * ({@link foldText}), so `Dovolená` and `dovolena` are one and the same label.
+ */
+export function foldedEquals(a: string, b: string): boolean {
+  return foldText(a) === foldText(b)
+}

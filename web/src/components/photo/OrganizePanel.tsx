@@ -7,10 +7,12 @@ import { Link } from 'react-router-dom'
 
 import { EmptyState } from '../EmptyState'
 
+import { foldedEquals } from '../../lib/text'
 import {
   addAlbumPhotos,
   type AlbumCount,
   attachLabel,
+  createLabel,
   detachLabel,
   fetchAlbums,
   fetchLabels,
@@ -36,6 +38,11 @@ export interface OrganizePanelProps {
  * over the remaining albums/labels — see {@link AddAutocomplete}) and remove
  * controls for editors. Mutations call the organize API and update the photo's
  * memberships in place. Viewers see the chips read-only.
+ *
+ * The label field also creates: typing a name no label carries offers to create
+ * and attach it in one action, so a catalog with zero labels can still get its
+ * first one. The album field only picks — albums carry a type, cover and privacy
+ * flag that belong on the Albums page.
  */
 export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps) {
   const { t } = useTranslation()
@@ -76,13 +83,16 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
       .map((label) => ({ uid: label.uid, label: label.name }))
   }, [labels, photo.labels])
 
-  async function run(action: () => Promise<PhotoDetail>) {
+  /** Runs a mutation with the busy/error plumbing; reports whether it succeeded. */
+  async function run(action: () => Promise<PhotoDetail>): Promise<boolean> {
     setBusy(true)
     setError(false)
     try {
       onChanged(await action())
+      return true
     } catch {
       setError(true)
+      return false
     } finally {
       setBusy(false)
     }
@@ -121,6 +131,30 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
     void run(async () => {
       await detachLabel(uid, photo.uid)
       return { ...photo, labels: photo.labels.filter((label) => label.uid !== uid) }
+    })
+  }
+
+  /**
+   * Creates the label `name` and attaches it to the photo in one action, then
+   * reports success so the field can clear (or keep the text on failure).
+   *
+   * A label of that name may already exist and merely be missing from the
+   * options because the photo carries it, or because the list was fetched before
+   * someone else created it; attach the existing one rather than colliding on
+   * its unique slug.
+   */
+  function createAndAttachLabel(name: string): Promise<boolean> {
+    return run(async () => {
+      const existing = labels.find((candidate) => foldedEquals(candidate.name, name))
+      const label = existing ?? (await createLabel({ name, priority: 0 }))
+      if (existing === undefined) {
+        setLabels((current) => [...current, { ...label, photo_count: 0 }])
+      }
+      if (photo.labels.some((current) => current.uid === label.uid)) {
+        return photo
+      }
+      await attachLabel(label.uid, photo.uid)
+      return { ...photo, labels: [...photo.labels, { uid: label.uid, name: label.name }] }
     })
   }
 
@@ -186,13 +220,15 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           </Badge>
         ))}
       </div>
-      {canWrite && labelOptions.length > 0 && (
+      {/* Unlike albums, the label field stays even with no options — it creates. */}
+      {canWrite && (
         <AddAutocomplete
           id="organize-add-label"
           label={t('photo.organize.addLabel')}
           options={labelOptions}
           disabled={busy}
           onAdd={addLabel}
+          onCreate={createAndAttachLabel}
         />
       )}
     </div>

@@ -640,6 +640,7 @@
       "addAlbum": "Add to album",
       "addLabel": "Add label",
       "noMatch": "No matches.",
+      "createOption": "Create “{{name}}”",
       "removeAlbum": "Remove from album {{name}}",
       "removeLabel": "Remove label {{name}}",
       "error": "Could not save the change."
