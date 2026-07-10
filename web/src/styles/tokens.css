@@ -285,6 +285,29 @@
   }
 }
 
+/* ---- Chips ------------------------------------------------------------- */
+
+/*
+ * A removable token standing for one chosen value (an album to add, a label to
+ * drop). Bootstrap's `.badge` supplies the colour and the pill radius; this adds
+ * only what a badge lacks — a comfortable box around a trailing close button,
+ * and a cap so a long album title truncates instead of stretching the row.
+ */
+.kk-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding-inline-end: var(--kk-space-1);
+  font-size: var(--kk-font-size-caption);
+  font-weight: 500;
+}
+
+.kk-chip .btn-close {
+  flex-shrink: 0;
+  padding: 0.3rem;
+  font-size: 0.55rem;
+}
+
 /* ---- Appear ------------------------------------------------------------ */
 
 /*

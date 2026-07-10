@@ -31,6 +31,16 @@ zapiš sem.
   `LanguageSwitcher` (button group cs/en, `aria-pressed` na aktivní; **nesedí v navbaru** —
   bydlí v sekci Jazyk na `AccountPage`, protože tuhle instanci používají jen Češi a trvalé
   místo v liště by bylo plýtvání. Volbu persistuje i18next language detector do localStorage),
+  `MultiSelect` (**sdílený vyhledávatelný multi-select** pro kolekce, které rostou bez omezení —
+  alba a štítky: psaní zúží nabídku **case- i diakritika-insensitive** přes `lib/text`
+  `foldedIncludes`, každá volba se **přidá** (nenahradí), vybraná položka **zmizí ze seznamu**
+  a objeví se pod polem jako odebíratelný chip (`.kk-chip`), takže dlouhý seznam zůstává krátký
+  a výběr čitelný bez sloupce s fajfkami. Klávesnice Up/Down/Enter (bez zvýraznění bere nejlepší
+  shodu), **Backspace nad prázdným dotazem odebere poslední chip**, Esc zavře; combobox/listbox
+  ARIA (`aria-multiselectable`), strop `MAX_SUGGESTIONS` (50) rendrovaných návrhů, ~44px tap
+  targety. Prop `destructive` obarví label i chipy do danger klíče, aby odebrání nikdy nevypadalo
+  jako přidání. **Nikdy nezakládá položky** — jen vybírá z těch, které dostane; zrcadlí
+  `AddAutocomplete` a `SearchableSelect`),
   `KeyboardShortcutsHelp` (v navbaru: ikonka klávesnice + **modal nápovědy zkratek** — otevře se
   `?` (Shift+/) kdekoli nebo klikem, vypíše všechny zkratky seskupené dle kontextu (Mřížka / Detail)
   ze `lib/shortcuts.ts` `SHORTCUT_GROUPS`, zavře Escapem/křížkem),
@@ -118,9 +128,18 @@ zapiš sem.
   `AlbumEditModal` (create/rename alba: název/popis/soukromé), `LabelEditModal` (create/rename
   štítku: jméno/priorita), `ReorderableGrid` (ne-virtualizovaná drag-and-drop mřížka + šipky pro
   přeřazení alba, controlled přes `onReorder`), `SelectionBar` (sticky toolbar výběru: počet +
-  akce + zrušit), `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`: add/remove
-  alba, add/remove štítku, set/clear popisu, set/clear polohy, soukromé, archiv, oblíbené — set/clear
-  páry jako samostatné módy; klientská validace souřadnic + „aspoň jedna změna"; po aplikaci
+  akce + zrušit), `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`, celá dávka
+  jednou transakcí na backendu; formulář je rozdělený na **čtyři sekce** (`.kk-text-eyebrow`
+  nadpisy): **Zařazení** (add/remove alb, add/remove štítků — čtyři `MultiSelect`y, takže jeden
+  apply zvládne **víc alb i víc štítků najednou**), **Metadata** (set/clear popisu), **Poloha**
+  (set/clear souřadnic) a **Příznaky** (soukromé, archiv, oblíbené); set/clear páry zůstávají
+  samostatné módy. **Destruktivní volby** (odebrání z alba/štítku, archivace) jsou v danger klíči
+  (`destructive` chipy, `text-danger` label, `border-danger` select). Pod formulářem je
+  **`PendingChanges`** — `.kk-surface` panel, který větou po větě říká, co apply udělá, a **kolik
+  fotek to zasáhne** (destruktivní řádky červeně + `visually-hidden` „(destruktivní)"; `aria-live`).
+  Výběr **nad `LARGE_SELECTION` (50) fotek** vyžaduje **explicitní potvrzení**: první Apply jen
+  otevře danger alert („Ano, použít na N fotek" / „Zpět"), a **jakákoli změna formuláře potvrzení
+  odvolá**. Klientská validace souřadnic + „aspoň jedna změna" zůstává; po aplikaci
   **per-foto result summary** z odpovědi),
   `pages/` (`LoginPage`, `AccountPage` = identita/role, **sekce Jazyk** (`LanguageSwitcher` +
   hint, `account.language*`) a změna vlastního hesla, **plus technický stav aplikace**
@@ -562,7 +581,10 @@ zapiš sem.
   hover/focus lift na `--kk-shadow-3` — používají `AlbumTile`, `SubjectTile`, `PhotoTile`;
   `:focus-within` pokrývá `PhotoTile`, kde je fokusovatelný až vnitřní odkaz) a `.kk-tile-row`
   (řádková varianta pro seznam štítků — místo liftu se zvýrazní pozadím, protože řádek v sloupci
-  nemá kam vyskočit); `.kk-tile__placeholder`; **appear** `.kk-appear` (jednorázový fade-up).
+  nemá kam vyskočit); `.kk-tile__placeholder`; **chip** `.kk-chip` (odebíratelný token nad
+  Bootstrap `.badge` — jen to, co badge nemá: box kolem koncového `.btn-close` a strop šířky,
+  aby se dlouhý název alba zkrátil místo roztažení řádku; používá `MultiSelect`);
+  **appear** `.kk-appear` (jednorázový fade-up).
   **Focus outline se nikdy neodstraňuje** — `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible`
   kreslí `outline` (přežije `overflow: hidden` náhledu). **`prefers-reduced-motion`**: token
   durations spadnou na `1ms`, lift (`transform`) a `.kk-appear` se vypnou úplně; spinnery

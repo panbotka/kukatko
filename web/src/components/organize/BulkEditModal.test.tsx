@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -72,6 +72,19 @@ function renderModal(photoUids = ['ph1', 'ph2']) {
   )
 }
 
+/**
+ * Types `query` into a multi-select and picks the option whose label matches.
+ * The field is found by role, not by label text: an open listbox carries the
+ * same accessible name as the input it belongs to.
+ */
+async function pick(user: ReturnType<typeof userEvent.setup>, field: string, query: string) {
+  const input = await screen.findByRole('combobox', { name: field })
+  await user.clear(input)
+  await user.type(input, query)
+  const listbox = screen.getByRole('listbox', { name: field })
+  await user.click(within(listbox).getByRole('option', { name: new RegExp(`^${query}`, 'i') }))
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   bulkMock.mockReset()
@@ -79,8 +92,8 @@ beforeEach(async () => {
   labelsMock.mockReset()
   onHide.mockReset()
   onDone.mockReset()
-  albumsMock.mockResolvedValue([album('al1', 'Trips')])
-  labelsMock.mockResolvedValue([label('lb1', 'Sunset')])
+  albumsMock.mockResolvedValue([album('al1', 'Trips'), album('al2', 'Weddings')])
+  labelsMock.mockResolvedValue([label('lb1', 'Sunset'), label('lb2', 'Léto')])
 })
 
 afterEach(() => {
@@ -94,8 +107,7 @@ describe('BulkEditModal', () => {
     renderModal()
 
     // Wait for the album/label options to load.
-    const addAlbum = await screen.findByLabelText('Add to album')
-    await user.selectOptions(addAlbum, 'al1')
+    await pick(user, 'Add to albums', 'Trips')
     await user.selectOptions(screen.getByLabelText('Private'), 'true')
     await user.selectOptions(screen.getByLabelText('Description'), 'set')
     await user.type(await screen.findByLabelText('New description…'), 'Hello')
@@ -131,7 +143,8 @@ describe('BulkEditModal', () => {
     const user = userEvent.setup()
     renderModal()
 
-    await screen.findByLabelText('Add to album')
+    await screen.findByRole('combobox', { name: 'Add to albums' })
+    expect(screen.getByText('Nothing chosen yet.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 
     expect(await screen.findByText('Choose at least one change to apply.')).toBeInTheDocument()
@@ -154,5 +167,112 @@ describe('BulkEditModal', () => {
     expect(await screen.findByText('ph2')).toBeInTheDocument()
     expect(screen.getByText(/not found/)).toBeInTheDocument()
     expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], { archive: true })
+  })
+
+  it('filters the options as the reader types, case- and accent-insensitively', async () => {
+    const user = userEvent.setup()
+    renderModal()
+
+    const addLabels = await screen.findByRole('combobox', { name: 'Add labels' })
+    await user.type(addLabels, 'leto')
+
+    const listbox = screen.getByRole('listbox', { name: 'Add labels' })
+    expect(within(listbox).getByRole('option', { name: /^Léto/ })).toBeInTheDocument()
+    expect(within(listbox).queryByRole('option', { name: /^Sunset/ })).not.toBeInTheDocument()
+
+    // A query nothing matches says so rather than offering a stale list.
+    await user.clear(addLabels)
+    await user.type(addLabels, 'zzz')
+    expect(within(listbox).getByText('No matches.')).toBeInTheDocument()
+  })
+
+  it('adds and removes several albums and labels in one apply', async () => {
+    bulkMock.mockResolvedValue(result({ total: 2, updated: 2 }))
+    const user = userEvent.setup()
+    renderModal()
+
+    await pick(user, 'Add to albums', 'Trips')
+    await pick(user, 'Add to albums', 'Weddings')
+    await pick(user, 'Remove from albums', 'Trips')
+    await pick(user, 'Add labels', 'Sunset')
+    await pick(user, 'Add labels', 'Léto')
+    await pick(user, 'Remove labels', 'Sunset')
+
+    // Every pick is a chip, and the summary states the whole batch in prose.
+    expect(screen.getByText('Add to albums: Trips, Weddings')).toBeInTheDocument()
+    expect(screen.getByText('Remove from albums: Trips')).toBeInTheDocument()
+    expect(screen.getByText('Add labels: Sunset, Léto')).toBeInTheDocument()
+    expect(screen.getByText('Remove labels: Sunset')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], {
+        add_to_albums: ['al1', 'al2'],
+        remove_from_albums: ['al1'],
+        add_labels: ['lb1', 'lb2'],
+        remove_labels: ['lb1'],
+      })
+    })
+  })
+
+  it('drops a chosen album again when its chip is dismissed', async () => {
+    const user = userEvent.setup()
+    renderModal()
+
+    await pick(user, 'Add to albums', 'Trips')
+    expect(screen.getByText('Add to albums: Trips')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Remove Trips' }))
+    expect(screen.getByText('Nothing chosen yet.')).toBeInTheDocument()
+  })
+
+  it('requires an explicit confirmation for a selection larger than 50 photos', async () => {
+    bulkMock.mockResolvedValue(result({ total: 51, updated: 51 }))
+    const user = userEvent.setup()
+    const many = Array.from({ length: 51 }, (_, i) => `ph${String(i)}`)
+    renderModal(many)
+
+    expect(await screen.findByText('Applies to 51 selected photos.')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Archive'), 'archive')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    // The first Apply only asks; nothing has been sent yet.
+    expect(bulkMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/This change affects 51 photos at once/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Yes, apply to 51 photos' }))
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(many, { archive: true })
+    })
+  })
+
+  it('withdraws a granted confirmation when the form changes again', async () => {
+    const user = userEvent.setup()
+    renderModal(Array.from({ length: 51 }, (_, i) => `ph${String(i)}`))
+
+    await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(screen.getByRole('button', { name: 'Yes, apply to 51 photos' })).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Favorite'), 'true')
+    expect(
+      screen.queryByRole('button', { name: 'Yes, apply to 51 photos' }),
+    ).not.toBeInTheDocument()
+    expect(bulkMock).not.toHaveBeenCalled()
+  })
+
+  it('applies a small selection without asking for confirmation', async () => {
+    bulkMock.mockResolvedValue(result({ total: 50, updated: 50 }))
+    const user = userEvent.setup()
+    const fifty = Array.from({ length: 50 }, (_, i) => `ph${String(i)}`)
+    renderModal(fifty)
+
+    await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(fifty, { archive: true })
+    })
   })
 })

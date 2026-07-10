@@ -413,11 +413,18 @@
     "loadError": "Could not load albums and labels.",
     "applyError": "The bulk edit failed. Please try again.",
     "noOps": "Choose at least one change to apply.",
-    "addAlbum": "Add to album",
-    "removeAlbum": "Remove from album",
-    "addLabel": "Add label",
-    "removeLabel": "Remove label",
-    "none": "— no change —",
+    "sections": {
+      "organize": "Organize",
+      "metadata": "Metadata",
+      "location": "Location",
+      "flags": "Flags"
+    },
+    "addAlbums": "Add to albums",
+    "removeAlbums": "Remove from albums",
+    "addLabels": "Add labels",
+    "removeLabels": "Remove labels",
+    "filterAlbums": "Type to filter albums…",
+    "filterLabels": "Type to filter labels…",
     "description": {
       "label": "Description",
       "noChange": "— no change —",
@@ -452,6 +459,34 @@
       "yes": "Add to favorites",
       "no": "Remove from favorites"
     },
+    "summary": {
+      "title": "Pending changes",
+      "applies_one": "Applies to {{count}} selected photo.",
+      "applies_other": "Applies to {{count}} selected photos.",
+      "none": "Nothing chosen yet.",
+      "destructive": "(destructive)",
+      "addAlbums": "Add to albums: {{names}}",
+      "removeAlbums": "Remove from albums: {{names}}",
+      "addLabels": "Add labels: {{names}}",
+      "removeLabels": "Remove labels: {{names}}",
+      "setDescription": "Set the description to “{{value}}”",
+      "clearDescription": "Clear the description",
+      "setLocation": "Set the location to {{lat}}, {{lng}}",
+      "clearLocation": "Clear the location",
+      "private": "Make private",
+      "notPrivate": "Make public",
+      "archive": "Archive",
+      "unarchive": "Unarchive",
+      "favorite": "Add to favorites",
+      "unfavorite": "Remove from favorites"
+    },
+    "confirm": {
+      "body_one": "This change affects {{count}} photo. Read the summary above, then confirm.",
+      "body_other": "This change affects {{count}} photos at once. Read the summary above, then confirm.",
+      "apply_one": "Yes, apply to {{count}} photo",
+      "apply_other": "Yes, apply to {{count}} photos",
+      "back": "Go back"
+    },
     "cancel": "Cancel",
     "apply": "Apply",
     "result": {
@@ -460,6 +495,10 @@
       "errorsTitle": "Photos that failed",
       "done": "Done"
     }
+  },
+  "multiSelect": {
+    "noMatch": "No matches.",
+    "remove": "Remove {{name}}"
   },
   "selection": {
     "label": "Selection actions",

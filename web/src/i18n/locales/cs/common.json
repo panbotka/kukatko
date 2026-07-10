@@ -376,11 +376,18 @@
     "loadError": "Alba a štítky se nepodařilo načíst.",
     "applyError": "Hromadná úprava se nezdařila. Zkus to prosím znovu.",
     "noOps": "Vyber alespoň jednu změnu.",
-    "addAlbum": "Přidat do alba",
-    "removeAlbum": "Odebrat z alba",
-    "addLabel": "Přidat štítek",
-    "removeLabel": "Odebrat štítek",
-    "none": "— beze změny —",
+    "sections": {
+      "organize": "Zařazení",
+      "metadata": "Metadata",
+      "location": "Poloha",
+      "flags": "Příznaky"
+    },
+    "addAlbums": "Přidat do alb",
+    "removeAlbums": "Odebrat z alb",
+    "addLabels": "Přidat štítky",
+    "removeLabels": "Odebrat štítky",
+    "filterAlbums": "Piš pro filtrování alb…",
+    "filterLabels": "Piš pro filtrování štítků…",
     "description": {
       "label": "Popis",
       "noChange": "— beze změny —",
@@ -415,6 +422,40 @@
       "yes": "Přidat mezi oblíbené",
       "no": "Odebrat z oblíbených"
     },
+    "summary": {
+      "title": "Chystané změny",
+      "applies_one": "Použije se na {{count}} vybranou fotku.",
+      "applies_few": "Použije se na {{count}} vybrané fotky.",
+      "applies_many": "Použije se na {{count}} vybrané fotky.",
+      "applies_other": "Použije se na {{count}} vybraných fotek.",
+      "none": "Zatím nic nevybráno.",
+      "destructive": "(destruktivní)",
+      "addAlbums": "Přidat do alb: {{names}}",
+      "removeAlbums": "Odebrat z alb: {{names}}",
+      "addLabels": "Přidat štítky: {{names}}",
+      "removeLabels": "Odebrat štítky: {{names}}",
+      "setDescription": "Nastavit popis na „{{value}}“",
+      "clearDescription": "Vymazat popis",
+      "setLocation": "Nastavit polohu na {{lat}}, {{lng}}",
+      "clearLocation": "Vymazat polohu",
+      "private": "Nastavit jako soukromé",
+      "notPrivate": "Nastavit jako veřejné",
+      "archive": "Archivovat",
+      "unarchive": "Vrátit z archivu",
+      "favorite": "Přidat mezi oblíbené",
+      "unfavorite": "Odebrat z oblíbených"
+    },
+    "confirm": {
+      "body_one": "Změna se dotkne {{count}} fotky. Zkontroluj přehled výše a potvrď.",
+      "body_few": "Změna se dotkne {{count}} fotek najednou. Zkontroluj přehled výše a potvrď.",
+      "body_many": "Změna se dotkne {{count}} fotek najednou. Zkontroluj přehled výše a potvrď.",
+      "body_other": "Změna se dotkne {{count}} fotek najednou. Zkontroluj přehled výše a potvrď.",
+      "apply_one": "Ano, použít na {{count}} fotku",
+      "apply_few": "Ano, použít na {{count}} fotky",
+      "apply_many": "Ano, použít na {{count}} fotky",
+      "apply_other": "Ano, použít na {{count}} fotek",
+      "back": "Zpět"
+    },
     "cancel": "Zrušit",
     "apply": "Použít",
     "result": {
@@ -423,6 +464,10 @@
       "errorsTitle": "Fotky, které selhaly",
       "done": "Hotovo"
     }
+  },
+  "multiSelect": {
+    "noMatch": "Nic nenalezeno.",
+    "remove": "Odebrat {{name}}"
   },
   "selection": {
     "label": "Akce výběru",
