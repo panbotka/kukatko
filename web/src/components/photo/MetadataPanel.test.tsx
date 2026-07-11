@@ -190,6 +190,22 @@ describe('MetadataPanel location picker', () => {
   })
 })
 
+describe('MetadataPanel uploader', () => {
+  it('shows the resolved uploader name', () => {
+    renderPanel({ photo: photo({ uploader: { uid: 'u1', name: 'Camera Man' } }) })
+    expect(screen.getByText('Uploaded by')).toBeInTheDocument()
+    expect(screen.getByText('Camera Man')).toBeInTheDocument()
+  })
+
+  it('shows a neutral fallback when there is no uploader', () => {
+    renderPanel({ photo: photo() })
+    const label = screen.getByText('Uploaded by')
+    // The label row still renders, but with the neutral placeholder value.
+    expect(label).toBeInTheDocument()
+    expect(label.nextElementSibling).toHaveTextContent('—')
+  })
+})
+
 describe('MetadataPanel AI note', () => {
   it('shows the AI note read-only and PATCHes an edited value', async () => {
     const onUpdated = vi.fn()

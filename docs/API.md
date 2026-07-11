@@ -93,7 +93,11 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   cache + `marker.reviewed` konzistentní (400 validace, 404 chybějící foto/marker/subjekt);
   `GET /photos/{uid}` plný detail navíc nese **členství** `albums`/`labels` (inline chipy detailu,
   přes `PhotoOrganizer` rozhraní / `organize.Store.AlbumsForPhoto`+`LabelsForPhoto`; nil organizer →
-  prázdná pole); **nedestruktivní edit** (`internal/photoedit` + `edit.go`/`media_edit.go`):
+  prázdná pole) a **`uploader`** `{uid,name}` — kdo fotku nahrál, jméno resolvnuté server-side přes
+  `UserResolver` (`auth.Store.GetUserByUID`; `name` = `display_name`, fallback `username`); vynechán
+  (`omitempty`) u fotek bez `uploaded_by` (importy z PhotoPrism/photo-sorteru) i když uživatele nelze
+  resolvnout — resoluce je **jen na detailu**, list/search per-fotku uploadera neřeší (žádné N+1);
+  **nedestruktivní edit** (`internal/photoedit` + `edit.go`/`media_edit.go`):
   `GET /photos/{uid}/edit` (přihlášený) → uložený `photos.Edit` (crop/rotace 0-90-180-270/jas/kontrast,
   neupravená fotka → neutrální edit) a `PUT /photos/{uid}/edit` (editor/admin) zapíše edit do
   `photo_edits` (validace bounds; originál se nikdy nemění — `GET …/download` ho **renderuje za běhu**

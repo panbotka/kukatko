@@ -335,7 +335,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `VideoConfig`/`video.transcode` (default off) + `video.IsWebFriendlyCodec` + `video.FFmpegAvailable`
   → `video.Transcode` (H.264/MP4 progressive, žádný range, `no-store`), fallback na originál když
   ffmpeg selže nebo je codec neznámý; **nedestruktivní
-  edit** přes `Organizer` (album/label chipy detailu) a `EditService`/`edit.go`+`media_edit.go`
+  edit** přes `Organizer` (album/label chipy detailu); **uploader detailu** přes `UserResolver`
+  interface (splňuje ho `auth.Store.GetUserByUID`, drátuje `buildPhotoAPI`): `handleDetail`
+  resolvuje `photo.UploadedBy` → `uploader{uid,name}` (`name` = `display_name`, fallback `username`),
+  nil-safe (nezapojeno / bez uploadera / neresolvovatelný uživatel → `uploader` vynechán, jen na
+  detailu, žádné N+1 v listu); a `EditService`/`edit.go`+`media_edit.go`
   (`GET`/`PUT /photos/{uid}/edit`, download honoruje edit přes `internal/photoedit`)), `internal/photoedit/`
   (**CGO-free aplikace nedestruktivního editu** na dekódovaný obrázek pro download/preview: `Apply(img,
   photos.Edit) image.Image` aplikuje **crop** (normalizovaný `[x,y,w,h]` 0..1), **rotaci** 0/90/180/270

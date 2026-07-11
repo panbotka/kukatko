@@ -284,6 +284,14 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
           photo.taken_at !== undefined ? formatDateTime(photo.taken_at, i18n.language) : undefined
         }
       />
+      <MetaField
+        label={t('photo.metadata.uploadedBy')}
+        value={
+          photo.uploader !== undefined && photo.uploader.name !== ''
+            ? photo.uploader.name
+            : t('photo.metadata.uploaderUnknown')
+        }
+      />
 
       {canWrite && (
         <Button variant="outline-secondary" size="sm" className="mt-2" onClick={startEditing}>

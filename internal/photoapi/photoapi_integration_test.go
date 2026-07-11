@@ -117,6 +117,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Embedder:        embedder,
 		Favorites:       organizeStore,
 		Ratings:         organizeStore,
+		Users:           authStore,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,
@@ -525,6 +526,57 @@ func TestDetail(t *testing.T) {
 	defer func() { _ = missing.Body.Close() }()
 	if missing.StatusCode != http.StatusNotFound {
 		t.Errorf("missing detail status = %d, want 404", missing.StatusCode)
+	}
+}
+
+// TestDetailUploader verifies the detail response resolves a photo's uploader to
+// a human-readable name, and omits the uploader for a photo with no uploader.
+func TestDetailUploader(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	base := env.server.URL
+
+	uploader, err := env.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
+		Username: "cameraman", Password: testPassword, DisplayName: "Camera Man", Role: auth.RoleEditor,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser(uploader): %v", err)
+	}
+
+	type uploaderRef struct {
+		UID  string `json:"uid"`
+		Name string `json:"name"`
+	}
+	decodeUploader := func(t *testing.T, uid string) *uploaderRef {
+		t.Helper()
+		resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid, nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("detail status = %d, want 200", resp.StatusCode)
+		}
+		var detail struct {
+			Uploader *uploaderRef `json:"uploader"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+			t.Fatalf("decode detail: %v", err)
+		}
+		return detail.Uploader
+	}
+
+	withUploader := env.seedPhoto(t, photos.Photo{
+		Title: "Uploaded", TakenAtSource: "exif", UploadedBy: &uploader.UID,
+	}, "uploaded.jpg", 10, 20, 30)
+	if got := decodeUploader(t, withUploader.UID); got == nil {
+		t.Fatal("uploader = nil, want resolved reference")
+	} else if got.UID != uploader.UID || got.Name != "Camera Man" {
+		t.Errorf("uploader = %+v, want {uid=%s name=Camera Man}", got, uploader.UID)
+	}
+
+	noUploader := env.seedPhoto(t, photos.Photo{
+		Title: "Imported", TakenAtSource: "exif",
+	}, "imported.jpg", 40, 50, 60)
+	if got := decodeUploader(t, noUploader.UID); got != nil {
+		t.Errorf("uploader = %+v, want nil for a photo with no uploader", got)
 	}
 }
 

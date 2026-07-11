@@ -318,7 +318,9 @@ zapiš sem.
   nenápadný řádek `faces.none`, žádný obrázek; klik na box otevře `FaceAssignPanel` pod náhledem;
   pruh `SimilarPhotos` a pravý panel se záložkami (`components/photo/`): **Informace**
   (`MetadataPanel` = view/edit title/description/notes/ai_note/taken_at — **bez** camera/lens/EXIF, ta
-  žije v `TechnicalDetails` — + **vizuální
+  žije v `TechnicalDetails` — + read-only řádek **Nahrál/a** (`photo.metadata.uploadedBy`) se jménem
+  uploadera z `photo.uploader.name`, s neutrálním fallbackem `—` (`uploaderUnknown`) u importů/bez
+  uploadera — + **vizuální
   location picker** (nahradil holá lat/lng pole): jedno tolerantní pole souřadnic parsované
   pure helperem `lib/coordinates` (`parseCoordinates`→`{lat,lng}`|error / `formatCoordinates`;
   **desetinné stupně** `49.1234, 16.5678` (komma/mezera, ±), **DMS** `49°7'24.2"N 16°34'12.5"E`,
@@ -710,12 +712,13 @@ zapiš sem.
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
   `UploadOutcome`; `photos.ts` navíc `fetchPhoto(uid)` (detail `GET /photos/{uid}` →
-  `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chipy), `updatePhoto(uid,patch)`
+  `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chipy `+ uploader?` `{uid,name}`),
+  `updatePhoto(uid,patch)`
   (`PATCH …` částečná editace metadat → `PhotoMetadataUpdate`, null maže nullable),
   `fetchEdit(uid)`/`saveEdit(uid,edit)` (`GET`/`PUT …/edit` nedestruktivní edit → `PhotoEdit`
   crop/rotation/brightness/contrast), `downloadUrl(uid,{original?,token?})` (URL downloadu,
   default honoruje edit, `original:true` pro originál); typy `PhotoDetail`/`PhotoAlbumRef`/
-  `PhotoLabelRef`/`PhotoMetadataUpdate`/`PhotoEdit`; `people.ts` = People/face klient: subjekty
+  `PhotoLabelRef`/`PhotoUploaderRef`/`PhotoMetadataUpdate`/`PhotoEdit`; `people.ts` = People/face klient: subjekty
   `fetchSubjects`/`fetchSubject`/`createSubject`/`updateSubject`/`deleteSubject`/
   `fetchSubjectPhotos`, obličeje `fetchFaces`/`assignFace`, shluky `fetchClusters`/
   `assignCluster`/`removeClusterFace`, outlier `fetchOutliers`; typy `Subject`/`SubjectCount`/

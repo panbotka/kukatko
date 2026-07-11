@@ -333,13 +333,26 @@ export interface PhotoLabelRef {
 }
 
 /**
+ * The resolved uploader on a photo detail response: the uploading user's UID plus
+ * a human-readable `name` (display name, or username when the display name is
+ * empty). Absent (undefined) for photos with no uploader — e.g. items imported
+ * from PhotoPrism / photo-sorter — so the detail view shows a neutral fallback.
+ */
+export interface PhotoUploaderRef {
+  uid: string
+  name: string
+}
+
+/**
  * Full photo detail (`internal/photoapi` detail handler): a photo plus its
- * files and its album/label memberships (empty arrays when none).
+ * files, its album/label memberships (empty arrays when none), and the resolved
+ * uploader (omitted when the photo has no uploader).
  */
 export interface PhotoDetail extends Photo {
   files: PhotoFile[]
   albums: PhotoAlbumRef[]
   labels: PhotoLabelRef[]
+  uploader?: PhotoUploaderRef
 }
 
 /**

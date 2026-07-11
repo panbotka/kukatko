@@ -50,6 +50,10 @@ func buildPhotoAPI(
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())
 	organizeStore := organize.NewStore(db.Pool())
+	// The detail endpoint resolves a photo's uploader UID to a display name via
+	// the auth store; keep it behind photoapi.UserResolver so the package stays
+	// decoupled from auth's wiring.
+	userStore := auth.NewStore(db.Pool())
 
 	return photoapi.NewAPI(photoapi.Config{
 		Store:           photoStore,
@@ -61,6 +65,7 @@ func buildPhotoAPI(
 		Favorites:       organizeStore,
 		Ratings:         organizeStore,
 		Organizer:       organizeStore,
+		Users:           userStore,
 		Purger:          purger,
 		RetentionDays:   cfg.Trash.RetentionDays,
 		VideoTranscode:  cfg.Video.Transcode,
