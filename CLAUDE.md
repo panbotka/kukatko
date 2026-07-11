@@ -1,198 +1,198 @@
 # CLAUDE.md — Kukátko
 
-Konvence a tvrdá pravidla projektu. **Čti tohle i [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-před jakoukoli prací.** Tato pravidla platí pro každý task.
+Project conventions and hard rules. **Read this and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+before any work.** These rules apply to every task.
 
-Tenhle soubor obsahuje **jen pravidla a rozcestník**. Popisné detaily (balíčky, endpointy,
-komponenty, konfigurační klíče) žijí v `docs/` a čteš je až když je potřebuješ.
+This file holds **only rules and a signpost**. Descriptive details (packages, endpoints,
+components, config keys) live in `docs/` and you read them only when you need them.
 
-## Co to je
-Kukátko = samostatná aplikace pro správu fotek/videí, náhrada PhotoPrismu (kombinuje featury
-PhotoPrismu + photo-sorteru, robustnější). Plný návrh: `docs/ARCHITECTURE.md`. Fáze: aktivní
-vývoj přes autonomní tasky; PhotoPrism zůstává **primární** do cutoveru (import je read-only,
-inkrementální).
+## What it is
+Kukátko = a standalone photo/video management app, a replacement for PhotoPrism (combines
+PhotoPrism + photo-sorter features, more robust). Full design: `docs/ARCHITECTURE.md`. Phase:
+active development via autonomous tasks; PhotoPrism stays **primary** until cutover (import is
+read-only, incremental).
 
-## Tech stack (závazné)
-- **Backend: Go**, jeden statický binár, **`CGO_ENABLED=0`**. Modul `github.com/panbotka/kukatko`.
+## Tech stack (binding)
+- **Backend: Go**, a single static binary, **`CGO_ENABLED=0`**. Module `github.com/panbotka/kukatko`.
   Router chi/v5, CLI Cobra, config Viper, DB `pgx`/`pgvector-go`.
-- **DB: PostgreSQL + pgvector.** Embeddingy se ukládají **přímo do DB** (`halfvec` + HNSW cosine).
-- **Frontend: React + TypeScript + Vite + react-bootstrap + Bootswatch Superhero**, embedovaný do
-  binárky přes `//go:embed` (SPA fallback). Ikony **jen `bootstrap-icons`** přes komponentu `Icon`
-  (jedna sada, dekorativní `aria-hidden`). i18n přes i18next: **čeština default**, angličtina.
-  Virtualizace dlouhých mřížek/seznamů přes **`react-virtuoso`**. Mapový pohled přes
-  **`leaflet`** + **`leaflet.markercluster`** (dlaždice přes backend proxy, klíč zůstává server-side).
-- **Obrázky/videa bez CGO:** pure-Go pro JPEG/PNG/WebP; **shell-out** na `heif-convert` (HEIC),
+- **DB: PostgreSQL + pgvector.** Embeddings are stored **directly in the DB** (`halfvec` + HNSW cosine).
+- **Frontend: React + TypeScript + Vite + react-bootstrap + Bootswatch Superhero**, embedded into
+  the binary via `//go:embed` (SPA fallback). Icons **only `bootstrap-icons`** via the `Icon`
+  component (one set, decorative `aria-hidden`). i18n via i18next: **Czech default**, English.
+  Virtualize long grids/lists via **`react-virtuoso`**. Map view via
+  **`leaflet`** + **`leaflet.markercluster`** (tiles via a backend proxy, the key stays server-side).
+- **Images/videos without CGO:** pure-Go for JPEG/PNG/WebP; **shell-out** to `heif-convert` (HEIC),
   `exiftool`/`dcraw` (RAW preview), `ffmpeg`/`ffprobe` (video poster/metadata/streaming).
 
-## Kde co najdeš
-Otevři **jeden** dokument podle toho, na co saháš. Nečti je preventivně všechny.
+## Where to find what
+Open **one** document based on what you're touching. Don't read them all preemptively.
 
-| Sáhnu na… | Čtu |
+| I'm touching… | I read |
 | --- | --- |
-| Go balíček (`internal/*`, `cmd/*`) | [`docs/PACKAGES.md`](docs/PACKAGES.md) |
-| HTTP endpoint pod `/api/v1` | [`docs/API.md`](docs/API.md) |
-| Frontend (`web/`) — komponenta, hook, stránka, služba | [`docs/FRONTEND.md`](docs/FRONTEND.md) |
-| CLI příkaz, konfigurační klíč, `make` cíl, CI/balíčkování | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) |
-| Architektura, datový model, milníky, testovací strategie | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| Lokální vývoj, build frontendu, embed | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
-| Výkon (náhledy, vips, HNSW `ef_search`, indexy) | [`docs/PERF.md`](docs/PERF.md) |
-| Obnova ze zálohy / disaster recovery | [`docs/RESTORE.md`](docs/RESTORE.md) |
-| UX rozhodnutí a audit | [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md) |
+| A Go package (`internal/*`, `cmd/*`) | [`docs/PACKAGES.md`](docs/PACKAGES.md) |
+| An HTTP endpoint under `/api/v1` | [`docs/API.md`](docs/API.md) |
+| Frontend (`web/`) — component, hook, page, service | [`docs/FRONTEND.md`](docs/FRONTEND.md) |
+| A CLI command, config key, `make` target, CI/packaging | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) |
+| Architecture, data model, milestones, testing strategy | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| Local development, frontend build, embed | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
+| Performance (thumbnails, vips, HNSW `ef_search`, indexes) | [`docs/PERF.md`](docs/PERF.md) |
+| Restore from backup / disaster recovery | [`docs/RESTORE.md`](docs/RESTORE.md) |
+| UX decisions and audit | [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md) |
 
-## Mapa balíčků
-Jeden řádek na balíček — ať víš, co existuje, aniž bys otevíral `docs/PACKAGES.md`.
+## Package map
+One line per package — so you know what exists without opening `docs/PACKAGES.md`.
 
-- `cmd/kukatko` — tenký Cobra entrypoint (`serve`/`migrate`/`import`/`backup`/`restore`/`maintenance`/`ctl`/`version`) + `buildXxxAPI` wiring
-- `web/` — Vite + React 19 + TS frontend, buildí se do `internal/web/static/dist`
-- `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` běží **v téže transakci** jako mutace
-- `internal/auditapi` — admin-only `GET /audit` (read-only výpis)
-- `internal/auth` — role admin/editor/viewer, bcrypt, sliding sessions, RBAC middleware, API tokeny (Bearer)
-- `internal/backup` — S3 záloha (pg_dump + sync originálů + retence) **a** obnova
+- `cmd/kukatko` — thin Cobra entrypoint (`serve`/`migrate`/`import`/`backup`/`restore`/`maintenance`/`ctl`/`version`) + `buildXxxAPI` wiring
+- `web/` — Vite + React 19 + TS frontend, builds into `internal/web/static/dist`
+- `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
+- `internal/auditapi` — admin-only `GET /audit` (read-only listing)
+- `internal/auth` — admin/editor/viewer roles, bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer)
+- `internal/backup` — S3 backup (pg_dump + sync of originals + retention) **and** restore
 - `internal/backupapi` — admin-only `GET`/`POST /backup`
-- `internal/bulk` — hromadná editace metadat, celá dávka v jedné transakci
+- `internal/bulk` — bulk metadata editing, the whole batch in one transaction
 - `internal/bulkapi` — `POST /photos/bulk`
-- `internal/cluster` — auto-clustering nepřiřazených obličejů (union-find nad HNSW sousedy)
+- `internal/cluster` — auto-clustering of unassigned faces (union-find over HNSW neighbors)
 - `internal/clusterapi` — `/faces/clusters` (list, assign, remove-face)
-- `internal/config` — typovaná konfigurace, Viper, `Load()`
-- `internal/ctl` — **klient** vlastního API pro `kukatko ctl`: kontexty (kubectl-style), Bearer token, table/JSON výstup
-- `internal/database` — pgxpool wrapper, embedded migration runner, pgvector typy
-- `internal/duplicates` — near-dup skupiny (pHash banded-LSH + embedding HNSW, union-find); jen čte
+- `internal/config` — typed configuration, Viper, `Load()`
+- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON output
+- `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
+- `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only
 - `internal/duplicatesapi` — `GET /duplicates`
-- `internal/embedding` — HTTP klient inferenčního sidecaru na boxu; offline-aware typové chyby
+- `internal/embedding` — HTTP client of the inference sidecar on the box; offline-aware typed errors
 - `internal/embedjob` — worker handler `image_embed` + backfill
-- `internal/exif` — extrakce EXIF/GPS (exiftool, fallback pure-Go)
+- `internal/exif` — EXIF/GPS extraction (exiftool, pure-Go fallback)
 - `internal/facejob` — worker handler `face_detect` + backfill
-- `internal/facematch` — face↔marker IoU matching, návrhy identit, přiřazovací state machine
+- `internal/facematch` — face↔marker IoU matching, identity suggestions, assignment state machine
 - `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity)
-- `internal/imgconvert` — HEIC/RAW/video → dekódovatelný JPEG (shell-out)
-- `internal/importapi` — admin-only triggery importů + historie běhů
-- `internal/importer` — evidence běhů importu/migrace + high-watermarky
-- `internal/ingest` — upload pipeline: stream, SHA256 dedup, metadata, náhledy, enqueue jobů
-- `internal/jobs` — persistentní fronta jobů v Postgresu (retry, dedup, backoff, `Defer`)
+- `internal/imgconvert` — HEIC/RAW/video → decodable JPEG (shell-out)
+- `internal/importapi` — admin-only import triggers + run history
+- `internal/importer` — bookkeeping of import/migration runs + high-watermarks
+- `internal/ingest` — upload pipeline: stream, SHA256 dedup, metadata, thumbnails, enqueue jobs
+- `internal/jobs` — persistent job queue in Postgres (retry, dedup, backoff, `Defer`)
 - `internal/jobsapi` — admin-only `/jobs` (stats, list, requeue)
-- `internal/maintenance` — integritní kontrola & opravy knihovny; **nikdy nemaže originály**
+- `internal/maintenance` — library integrity check & repair; **never deletes originals**
 - `internal/maintenanceapi` — admin-only `/maintenance` (scan, repair)
 - `internal/mapsapi` — tile proxy, reverse geocode, GeoJSON feed
-- `internal/mapy` — server-side klient mapy.com; **klíč nikdy neopustí server**
-- `internal/mediaurl` — razí `thumb_url`/`download_url` do payloadů; podepsaná URL, nebo vlastní routa
-- `internal/metrics` — Prometheus registry + kolektory (DB pool, hloubka fronty)
-- `internal/obs` — strukturované logování (JSON slog na stderr)
-- `internal/organize` — alba, štítky, **per-user** oblíbené a hodnocení
+- `internal/mapy` — server-side mapy.com client; **the key never leaves the server**
+- `internal/mediaurl` — stamps `thumb_url`/`download_url` into payloads; signed URL, or an own route
+- `internal/metrics` — Prometheus registry + collectors (DB pool, queue depth)
+- `internal/obs` — structured logging (JSON slog to stderr)
+- `internal/organize` — albums, labels, **per-user** favorites and ratings
 - `internal/organizeapi` — `/albums`, `/labels`
 - `internal/outlierapi` — `GET /subjects/{uid}/outliers`
-- `internal/outliers` — per-osoba outlier detekce obličejů (vzdálenost od centroidu)
-- `internal/people` — subjekty (osoby/zvířata/jiné) a markery; drží `faces` cache konzistentní
-- `internal/peopleapi` — `/subjects` + galerie fotek subjektu
-- `internal/phash` — perceptuální hashe (pHash přes DCT, dHash gradientní)
-- `internal/photoapi` — read/curace API nad katalogem: list, search, média, edit, faces, rating
-- `internal/photoedit` — aplikace nedestruktivního editu (crop/rotace/jas/kontrast), pure-Go
-- `internal/photoprism` — read-only HTTP klient běžícího PhotoPrismu
-- `internal/photos` — **jádro foto-katalogu**, `Store` nad pgx; dedup na SHA256 `file_hash`
-- `internal/photosorter` — read-only klient PostgreSQL DB photo-sorteru
-- `internal/places` — cache reverse-geokódovaných míst (vedlejší tabulka `photo_places`)
-- `internal/placesapi` — `GET /places` (hierarchie zemí → měst s počty)
-- `internal/placesjob` — worker handler `places` (reverse geokód, rate-limited kvůli kreditům)
-- `internal/ppimport` — inkrementální **idempotentní** import z PhotoPrismu
-- `internal/processapi` — admin-only `/process/*` backfilly (embeddingy, faces, clustery, places)
-- `internal/psimport` — inkrementální **idempotentní** přímá migrace z photo-sorteru
+- `internal/outliers` — per-person outlier detection of faces (distance from centroid)
+- `internal/people` — subjects (people/animals/other) and markers; keeps the `faces` cache consistent
+- `internal/peopleapi` — `/subjects` + a subject's photo gallery
+- `internal/phash` — perceptual hashes (pHash via DCT, dHash gradient)
+- `internal/photoapi` — read/curation API over the catalog: list, search, media, edit, faces, rating
+- `internal/photoedit` — applies non-destructive edits (crop/rotate/brightness/contrast), pure-Go
+- `internal/photoprism` — read-only HTTP client of a running PhotoPrism
+- `internal/photos` — **the photo-catalog core**, `Store` over pgx; dedup on SHA256 `file_hash`
+- `internal/photosorter` — read-only client of the photo-sorter PostgreSQL DB
+- `internal/places` — cache of reverse-geocoded places (side table `photo_places`)
+- `internal/placesapi` — `GET /places` (hierarchy of countries → cities with counts)
+- `internal/placesjob` — worker handler `places` (reverse geocode, rate-limited due to credits)
+- `internal/ppimport` — incremental **idempotent** import from PhotoPrism
+- `internal/processapi` — admin-only `/process/*` backfills (embeddings, faces, clusters, places)
+- `internal/psimport` — incremental **idempotent** direct migration from photo-sorter
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
-- `internal/restoreapi` — admin-only **read-only** `/restore/*` (destruktivní obnova jen přes CLI)
-- `internal/savedsearch` — per-user uložená hledání („smart alba")
-- `internal/savedsearchapi` — `/saved-searches`, vše scopnuté na vlastníka (cizí → 404)
+- `internal/restoreapi` — admin-only **read-only** `/restore/*` (destructive restore only via CLI)
+- `internal/savedsearch` — per-user saved searches ("smart albums")
+- `internal/savedsearchapi` — `/saved-searches`, everything scoped to the owner (foreign → 404)
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
-- `internal/storage` — úložiště originálů (`YYYY/MM`, SHA256): lokální `FS` nebo Cloudflare `R2` s podepsanými URL
-- `internal/storagemigrate` — resumovatelný přesun knihovny do object storu; ověř → commitni řádek → teprve pak smaž originál
-- `internal/system` — agregace provozního stavu instance pro admin dashboard
+- `internal/storage` — storage of originals (`YYYY/MM`, SHA256): local `FS` or Cloudflare `R2` with signed URLs
+- `internal/storagemigrate` — resumable move of the library to object store; verify → commit the row → only then delete the original
+- `internal/system` — aggregation of instance operational state for the admin dashboard
 - `internal/systemapi` — admin-only `GET /system/status`
-- `internal/thumb` — thumbnailer (pure-Go default, volitelný `vips` engine), cache layout
-- `internal/thumbjob` — worker handler `thumbnail` (regenerace náhledů + pHashe)
-- `internal/trash` — trvalé mazání (purge) archivovaných fotek + plánovaná retence
-- `internal/vectors` — embeddingy a obličeje přímo v Postgresu (`halfvec` + HNSW cosine)
+- `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
+- `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes)
+- `internal/trash` — permanent deletion (purge) of archived photos + scheduled retention
+- `internal/vectors` — embeddings and faces directly in Postgres (`halfvec` + HNSW cosine)
 - `internal/version` — ldflags-injectable `Version`/`Commit`
-- `internal/video` — shell-out na ffprobe/ffmpeg: metadata, poster frame, on-the-fly transcode
-- `internal/wake` — volitelný Wake-on-LAN auto-wake boxu (**default off**, plně inertní)
-- `internal/web` — SPA fallback handler + `//go:embed` embedovaný frontend
-- `internal/worker` — in-process worker runtime nad frontou jobů (claim/dispatch/complete)
+- `internal/video` — shell-out to ffprobe/ffmpeg: metadata, poster frame, on-the-fly transcode
+- `internal/wake` — optional Wake-on-LAN auto-wake of the box (**default off**, fully inert)
+- `internal/web` — SPA fallback handler + `//go:embed` embedded frontend
+- `internal/worker` — in-process worker runtime over the job queue (claim/dispatch/complete)
 
-## Tvrdá brána kvality (NEPŘESKAKOVAT)
-- **`make check` MUSÍ projít.** Je to verification command projektu — červený lint/testy = task
-  skončí jako `needs_review`. **`check` nikdy nemění soubory** (formátování jen ověřuje;
-  aplikuje ho `make fmt`), takže po úspěšném běhu je `git status --short` prázdný.
-  Race detector žije v `make test-race` (běží v CI), ne v bráně.
-- **`CLAUDE.md` obsahuje jen pravidla a rozcestník.** Popisné detaily patří do `docs/`.
-  Limit 300 řádků vynucuje `make docs-budget`. Neobcházej ho — přesuň text do správného dokumentu.
-- Pro Go kód **používej skill `golang-developer`**.
-- **`.golangci.yml` je přísný** (převzatý z photo-sorteru). Needěl ho slabší. `//nolint` jen
-  s odůvodněním.
-- **Testy jsou povinné u každé změny:** unit testy pro logiku; **integrační testy** pro DB/HTTP
-  proti reálné test DB. Nové chování = nové/aktualizované testy. Cíl: rozšiřitelná aplikace,
-  kterou další iterace nerozbije. Detail v `docs/ARCHITECTURE.md` §19.
-- Frontend: **ESLint** (strict) + **Prettier** (`--check`) + **Vitest** musí projít (zapojeno do
-  `make`). Žádné `any` bez důvodu.
+## Hard quality gate (DO NOT SKIP)
+- **`make check` MUST pass.** It is the project's verification command — red lint/tests = the task
+  ends as `needs_review`. **`check` never changes files** (it only verifies formatting;
+  `make fmt` applies it), so after a successful run `git status --short` is empty.
+  The race detector lives in `make test-race` (runs in CI), not in the gate.
+- **`CLAUDE.md` holds only rules and a signpost.** Descriptive details belong in `docs/`.
+  The 300-line limit is enforced by `make docs-budget`. Don't circumvent it — move text to the right document.
+- For Go code **use the `golang-developer` skill**.
+- **`.golangci.yml` is strict** (inherited from photo-sorter). Don't weaken it. `//nolint` only
+  with justification.
+- **Tests are mandatory for every change:** unit tests for logic; **integration tests** for DB/HTTP
+  against a real test DB. New behavior = new/updated tests. Goal: an extensible app that the next
+  iteration won't break. Details in `docs/ARCHITECTURE.md` §19.
+- Frontend: **ESLint** (strict) + **Prettier** (`--check`) + **Vitest** must pass (wired into
+  `make`). No `any` without a reason.
 
-## Konfigurace
-- **`internal/config`** (`config.Load(path)`): YAML + env override přes Viper, **env vždy
-  vyhrává**. Cesta: `--config` flag → `KUKATKO_CONFIG` env → default `config.yaml`. Soubor je
-  volitelný (chybějící = jen defaulty + env). Required: `database.url`.
-- Env: prefix `KUKATKO_`, tečka → podtržítko (`database.url` → `KUKATKO_DATABASE_URL`,
-  `backup.s3.bucket` → `KUKATKO_BACKUP_S3_BUCKET`). Výjimka: `maps.mapy_api_key` ↔ `MAPY_API_KEY`.
-- **`config.example.yaml`** dokumentuje všechny klíče + defaulty; je commitnutý. Reálný config
-  (`config.yaml`/`config.local.yaml`) a tajemství **necommituj**. Nové konfig klíče přidávej do
-  `Config` structu, `setDefaults`, `config.example.yaml`, testů **a `docs/OPERATIONS.md`** zároveň.
-- Katalog všech klíčů (`thumb.*`, `video.*`, `embedding.wake.*`, `ratelimit.*`, `maps.*`, `log.*`,
-  `metrics.*`) je v [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+## Configuration
+- **`internal/config`** (`config.Load(path)`): YAML + env override via Viper, **env always
+  wins**. Path: `--config` flag → `KUKATKO_CONFIG` env → default `config.yaml`. The file is
+  optional (missing = defaults + env only). Required: `database.url`.
+- Env: prefix `KUKATKO_`, dot → underscore (`database.url` → `KUKATKO_DATABASE_URL`,
+  `backup.s3.bucket` → `KUKATKO_BACKUP_S3_BUCKET`). Exception: `maps.mapy_api_key` ↔ `MAPY_API_KEY`.
+- **`config.example.yaml`** documents all keys + defaults; it is committed. The real config
+  (`config.yaml`/`config.local.yaml`) and secrets are **not committed**. Add new config keys to
+  the `Config` struct, `setDefaults`, `config.example.yaml`, the tests **and `docs/OPERATIONS.md`** at once.
+- The catalog of all keys (`thumb.*`, `video.*`, `embedding.wake.*`, `ratelimit.*`, `maps.*`, `log.*`,
+  `metrics.*`) is in [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
-## Databáze
-- DB je **už provisionovaná** v shared Postgresu (pgvector 0.8.1 + unaccent).
-- DSN čti z gitignorovaného **`.secrets/db.env`**: `KUKATKO_DATABASE_URL` (app),
-  `KUKATKO_TEST_DATABASE_URL` (integrační testy, DB `kukatko_test`, bezpečné truncatovat).
-  Tamtéž je `MAPY_API_KEY`.
-- **Nikdy necommituj tajemství.** `.secrets/`, `*.local.yaml`, `.env*` jsou gitignored.
-- Migrace = SQL v `embed.FS` (`internal/database/migrations/NNNN_name.sql`), auto-apply na
-  startu ve vzestupném pořadí verze, každá ve vlastní transakci, idempotentně evidované
-  v tabulce `schema_migrations`. Jména `0001_init.sql`. FK s `ON DELETE CASCADE`/`SET NULL`
-  (žádné sirotky).
+## Database
+- The DB is **already provisioned** in shared Postgres (pgvector 0.8.1 + unaccent).
+- Read the DSN from the gitignored **`.secrets/db.env`**: `KUKATKO_DATABASE_URL` (app),
+  `KUKATKO_TEST_DATABASE_URL` (integration tests, DB `kukatko_test`, safe to truncate).
+  `MAPY_API_KEY` is there too.
+- **Never commit secrets.** `.secrets/`, `*.local.yaml`, `.env*` are gitignored.
+- Migrations = SQL in `embed.FS` (`internal/database/migrations/NNNN_name.sql`), auto-applied at
+  startup in ascending version order, each in its own transaction, idempotently recorded in the
+  `schema_migrations` table. Names like `0001_init.sql`. FKs with `ON DELETE CASCADE`/`SET NULL`
+  (no orphans).
 
-## Klíčové vzory
-- **Embeddings sidecar se NESTAVÍ.** Kukátko volá existující službu na **boxu** (stejné modely
-  jako photo-sorter → 1:1 migrace) na konfigurovatelné `embedding.url`. **Box bývá offline** →
-  joby (`image_embed`, `face_detect`) čekají v **persistentní frontě** v Postgresu, upload
-  a prohlížení fungují bez něj. Externí závislosti (sidecar, PhotoPrism API, mapy.com, S3) vždy
-  za rozhraním → v testech fake/mock.
-- **„Zpět vždy funguje":** stav pohledu (filtry/řazení/hledání/stránka) je v **URL query params**
+## Key patterns
+- **The embeddings sidecar is NOT built.** Kukátko calls the existing service on the **box** (same
+  models as photo-sorter → 1:1 migration) at a configurable `embedding.url`. **The box is often
+  offline** → jobs (`image_embed`, `face_detect`) wait in a **persistent queue** in Postgres, upload
+  and browsing work without it. External dependencies (sidecar, PhotoPrism API, mapy.com, S3) always
+  behind an interface → fake/mock in tests.
+- **"Back always works":** view state (filters/sorting/search/page) lives in **URL query params**
   + History API.
-- **Import/migrace:** ukládej externí ID (`photoprism_uid`, `photoprism_file_hash`,
-  `photosorter_uid`). PhotoPrism file hash je SHA1, Kukátko používá SHA256.
-- **Per-user oblíbené** (ne globální). **mapy.com klíč drž server-side** (backend proxy).
-- Streamuj velké soubory (upload/download/video) — nedrž je celé v RAM.
+- **Import/migration:** store external IDs (`photoprism_uid`, `photoprism_file_hash`,
+  `photosorter_uid`). The PhotoPrism file hash is SHA1, Kukátko uses SHA256.
+- **Per-user favorites** (not global). **Keep the mapy.com key server-side** (backend proxy).
+- Stream large files (upload/download/video) — don't hold them entirely in RAM.
 
-## Definition of Done — na konci KAŽDÉHO tasku
-**Task NENÍ hotový, dokud není commitnutý a pushnutý.** Dokončení tasku vždy zahrnuje
-commit — nikdy nenechávej necommitnuté změny v pracovním stromu ani „hotovou" práci bez
-commitu. Vždy, na konci každého tasku, v tomto pořadí:
+## Definition of Done — at the end of EVERY task
+**A task is NOT done until it is committed and pushed.** Completing a task always includes a
+commit — never leave uncommitted changes in the working tree, nor "finished" work without a
+commit. Always, at the end of every task, in this order:
 
-1. **Zapiš změnu do správného dokumentu.** Dokumentace nesmí zestárnout. Routing:
-   - nový/změněný Go balíček → `docs/PACKAGES.md` (+ jeden řádek do `## Mapa balíčků` výš)
-   - nový/změněný HTTP endpoint → `docs/API.md`
-   - nová/změněná frontend komponenta, hook, stránka, služba → `docs/FRONTEND.md`
-   - nový konfigurační klíč → `docs/OPERATIONS.md` **a** `config.example.yaml`
-   - nový CLI subkomand nebo `make` cíl → `docs/OPERATIONS.md`
-   - velká architektonická změna → `docs/ARCHITECTURE.md`
-   - uživatelsky viditelná featura → `README.md`
-   - **`CLAUDE.md` sáhni jen tehdy, když se změnilo _pravidlo_ nebo přibyl/zmizel balíček.**
-     Nikdy do něj nepiš popisné detaily — na to je `docs/` a hlídá to `make docs-budget`.
-2. **`make check`** musí projít (docs-budget + fmt-check + lint + typecheck + testy + frontend).
-3. **`make dev`** (= `./scripts/dev.sh`) musí projít — dev server nastartuje a odpoví na
-   `/healthz`. Zachytí, co `make check` z principu nevidí: chybějící migraci, rozbité wiring
-   v `cmd/kukatko`, panic při startu. Neúspěšný start (exit 1) = **necommituj**. Detail
-   v `docs/DEVELOPMENT.md`.
-4. **Commit** (anglicky, výstižně) a **push** — tímto krokem task teprve končí, viz pravidlo
-   výše. Commit message zakonči řádkem:
+1. **Write the change into the right document.** Docs must not go stale. Routing:
+   - new/changed Go package → `docs/PACKAGES.md` (+ one line into `## Package map` above)
+   - new/changed HTTP endpoint → `docs/API.md`
+   - new/changed frontend component, hook, page, service → `docs/FRONTEND.md`
+   - new config key → `docs/OPERATIONS.md` **and** `config.example.yaml`
+   - new CLI subcommand or `make` target → `docs/OPERATIONS.md`
+   - large architectural change → `docs/ARCHITECTURE.md`
+   - user-visible feature → `README.md`
+   - **Touch `CLAUDE.md` only when a _rule_ changed or a package was added/removed.**
+     Never write descriptive details into it — that's what `docs/` is for and `make docs-budget` guards it.
+2. **`make check`** must pass (docs-budget + fmt-check + lint + typecheck + tests + frontend).
+3. **`make dev`** (= `./scripts/dev.sh`) must pass — the dev server starts and answers on
+   `/healthz`. It catches what `make check` inherently can't see: a missing migration, broken wiring
+   in `cmd/kukatko`, a panic on startup. A failed start (exit 1) = **do not commit**. Details
+   in `docs/DEVELOPMENT.md`.
+4. **Commit** (in English, concise) and **push** — only this step actually ends the task, see the
+   rule above. End the commit message with the line:
    `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 
-## Mimo rozsah
-- **Fotokniha** (z photo-sorteru se nepřebírá).
-- Veřejné sdílení/share-linky nejsou priorita.
+## Out of scope
+- **Photo book** (not carried over from photo-sorter).
+- Public sharing / share links are not a priority.
 
-## Jazyk
-Kód, komentáře, commity, identifikátory **anglicky**. UI texty přes i18n (cs default, en).
+## Language
+Code, comments, commits, identifiers **in English**. UI texts via i18n (cs default, en).
