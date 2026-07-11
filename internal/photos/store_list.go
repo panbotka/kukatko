@@ -106,14 +106,18 @@ type ListParams struct {
 	// diacritics-insensitive full-text query. It is used by Search, where it also
 	// drives the ts_rank ordering; List and Count treat it as a plain filter.
 	FullText string
-	// AlbumUID, when non-empty, restricts the result to photos that are members of
-	// the album with that UID. It scopes the shared list/search path to an album so
-	// every other filter, the sort and pagination apply unchanged.
-	AlbumUID string
-	// LabelUID, when non-empty, restricts the result to photos that carry the label
-	// with that UID. It scopes the shared list/search path to a label so every
-	// other filter, the sort and pagination apply unchanged.
-	LabelUID string
+	// AlbumUIDs, when non-empty, restricts the result to photos that are members of
+	// every listed album (AND): each UID contributes its own correlated EXISTS over
+	// album_photos, so a photo must belong to all of them to match. It scopes the
+	// shared list/search path to one or more albums so every other filter, the sort
+	// and pagination apply unchanged.
+	AlbumUIDs []string
+	// LabelUIDs, when non-empty, restricts the result to photos that carry every
+	// listed label (AND): each UID contributes its own correlated EXISTS over
+	// photo_labels, so a photo must carry all of them to match. It scopes the shared
+	// list/search path to one or more labels so every other filter, the sort and
+	// pagination apply unchanged.
+	LabelUIDs []string
 	// Country, when non-empty, restricts the result to photos whose cached place
 	// has exactly that country. It scopes the shared list/search path to a place
 	// (via the photo_places side table) so every other filter, the sort and
@@ -335,20 +339,23 @@ func favoriteClauses(params ListParams, bind func(any) string) []string {
 }
 
 // membershipClauses returns the album/label scoping filters as correlated EXISTS
-// subqueries, binding each UID through bind. They keep an album- or label-scoped
-// listing on the shared List/Count/Search path, so the standard filters, the
-// chosen ordering and pagination all apply on top of the scope. The outer photo
-// reference is qualified (photos.uid) to disambiguate it from the join table's
-// photo_uid inside the subquery.
+// subqueries, binding each UID through bind. It emits one EXISTS per selected
+// album UID and one per selected label UID; because buildWhere joins every clause
+// with AND, a photo must be a member of every listed album and carry every listed
+// label to match ("in album A and album B, with label X and label Y"). The clauses
+// keep an album- or label-scoped listing on the shared List/Count/Search path, so
+// the standard filters, the chosen ordering and pagination all apply on top of the
+// scope. The outer photo reference is qualified (photos.uid) to disambiguate it
+// from the join table's photo_uid inside the subquery.
 func membershipClauses(params ListParams, bind func(any) string) []string {
-	var where []string
-	if params.AlbumUID != "" {
+	where := make([]string, 0, len(params.AlbumUIDs)+len(params.LabelUIDs))
+	for _, albumUID := range params.AlbumUIDs {
 		where = append(where, "EXISTS (SELECT 1 FROM album_photos ap "+
-			"WHERE ap.photo_uid = photos.uid AND ap.album_uid = "+bind(params.AlbumUID)+")")
+			"WHERE ap.photo_uid = photos.uid AND ap.album_uid = "+bind(albumUID)+")")
 	}
-	if params.LabelUID != "" {
+	for _, labelUID := range params.LabelUIDs {
 		where = append(where, "EXISTS (SELECT 1 FROM photo_labels pl "+
-			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = "+bind(params.LabelUID)+")")
+			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = "+bind(labelUID)+")")
 	}
 	return where
 }

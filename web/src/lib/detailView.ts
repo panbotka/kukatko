@@ -1,6 +1,12 @@
 import { type PhotoListParams } from '../services/photos'
 
-import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from './libraryView'
+import {
+  LIBRARY_DEFAULTS,
+  LIBRARY_PATH,
+  type LibraryView,
+  parseFilterList,
+  viewToParams,
+} from './libraryView'
 import { searchHref } from './searchView'
 import { writeUrlState } from './urlState'
 
@@ -62,17 +68,22 @@ export function detailQueryString(view: DetailView): string {
  * the search results, the favorites page, or the library (the homepage), each
  * carrying the library filters/sort so the prior view is restored exactly.
  *
- * When an album or label scope names the destination route, it is dropped from
- * the query — the page already scopes itself, so repeating the filter would only
- * make the URL redundant. A search scope (`mode` set) is rebuilt through
- * {@link searchHref}, which also carries the search query and mode.
+ * When exactly one album or label scopes the view, its own page names the
+ * destination route and the filter is dropped from the query — the page already
+ * scopes itself, so repeating it would only make the URL redundant. With several
+ * albums/labels selected there is no single page to land on, so Back falls
+ * through to the library carrying the whole multi-selection. A search scope
+ * (`mode` set) is rebuilt through {@link searchHref}, which also carries the
+ * search query and mode.
  */
 export function backHref(view: DetailView): string {
-  if (view.album !== '') {
-    return `/albums/${view.album}${libraryQuery({ ...view, album: '', label: '' })}`
+  const albums = parseFilterList(view.album)
+  const labels = parseFilterList(view.label)
+  if (albums.length === 1) {
+    return `/albums/${albums[0]}${libraryQuery({ ...view, album: '', label: '' })}`
   }
-  if (view.label !== '') {
-    return `/labels/${view.label}${libraryQuery({ ...view, album: '', label: '' })}`
+  if (labels.length === 1 && albums.length === 0) {
+    return `/labels/${labels[0]}${libraryQuery({ ...view, album: '', label: '' })}`
   }
   if (view.mode !== '') {
     return searchHref(view)

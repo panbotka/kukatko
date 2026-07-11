@@ -63,12 +63,14 @@ func parseListParams(q url.Values) (photos.ListParams, error) {
 	if err := applyRatingFilters(q, &params); err != nil {
 		return photos.ListParams{}, err
 	}
-	// An album is always presented chronologically, oldest first, whatever sort
-	// or order the query carries. The override lives here — where the album
+	// An album scope is always presented chronologically, oldest first, whatever
+	// sort or order the query carries. The override lives here — where the album
 	// scope enters the shared list path — so the endpoint's defaults stay
-	// untouched for every other view. Photos with no capture time fall back to
-	// their upload time inside SortByChronology, keeping the order total.
-	if params.AlbumUID != "" {
+	// untouched for every other view. It fires whenever at least one album is
+	// selected (the filter now accepts several, combined with AND). Photos with no
+	// capture time fall back to their upload time inside SortByChronology, keeping
+	// the order total.
+	if len(params.AlbumUIDs) > 0 {
 		params.Sort = photos.SortByChronology
 		params.Order = photos.OrderAsc
 	}
@@ -206,11 +208,31 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 	params.Lens = q.Get("lens")
 	params.UploadedBy = q.Get("uploader")
 	params.Search = q.Get("q")
-	params.AlbumUID = q.Get("album")
-	params.LabelUID = q.Get("label")
+	// Album and label are multi-valued: repeated params (?album=a&album=b) select
+	// several, combined with AND downstream. A single value still yields a
+	// one-element slice, so the historical ?album=<uid> form keeps working.
+	params.AlbumUIDs = nonEmptyValues(q["album"])
+	params.LabelUIDs = nonEmptyValues(q["label"])
 	params.Country = q.Get("country")
 	params.City = q.Get("city")
 	return nil
+}
+
+// nonEmptyValues returns values with the empty strings dropped, so a repeated
+// multi-value filter (?album=a&album=b) becomes its list of UIDs while a stray
+// empty value (?album=) adds no scope. It returns nil when nothing remains, so an
+// absent filter and an all-empty one are indistinguishable — both mean "no scope".
+func nonEmptyValues(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // favoriteRequested reports whether the favorite=true filter is set on the query.

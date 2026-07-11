@@ -241,16 +241,55 @@ describe('FilterBar facets', () => {
     expect(onChange).toHaveBeenCalledWith({ label: 'lb_2' })
   })
 
-  it('clears a facet from inside its own select', async () => {
+  it('adds a second album to the selection instead of replacing the first', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
     renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1' }, onChange, { facets: FACETS })
 
-    // At rest the select shows the current choice, not a placeholder.
-    expect(screen.getByLabelText('Album')).toHaveValue('Holidays')
     await user.click(screen.getByLabelText('Album'))
-    await user.click(screen.getByRole('option', { name: 'Any album' }))
+    await user.click(screen.getByRole('option', { name: /Náměstí/ }))
+    expect(onChange).toHaveBeenCalledWith({ album: 'al_1,al_2' })
+  })
+
+  it('drops the already-selected albums from the picker options', async () => {
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1' }, vi.fn(), { facets: FACETS })
+
+    await user.click(screen.getByLabelText('Album'))
+    // The chosen album is a chip below, not offered again in the picker.
+    expect(screen.queryByRole('option', { name: /Holidays/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /Náměstí/ })).toBeInTheDocument()
+  })
+
+  it('renders one chip per selected album and removes only that one', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1,al_2' }, onChange, { facets: FACETS })
+
+    expect(screen.getByText('Album: Holidays')).toBeInTheDocument()
+    expect(screen.getByText('Album: Náměstí')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Remove filter: Album: Holidays' }))
+    expect(onChange).toHaveBeenCalledWith({ album: 'al_2' })
+  })
+
+  it('clears the album facet when its last chip is removed', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1' }, onChange, { facets: FACETS })
+
+    await user.click(screen.getByRole('button', { name: 'Remove filter: Album: Holidays' }))
     expect(onChange).toHaveBeenCalledWith({ album: '' })
+  })
+
+  it('supports several labels combined with AND, each removable on its own', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, label: 'lb_1' }, onChange, { facets: FACETS })
+
+    await user.click(screen.getByLabelText('Label'))
+    await user.click(screen.getByRole('option', { name: /Portrait/ }))
+    expect(onChange).toHaveBeenCalledWith({ label: 'lb_1,lb_2' })
   })
 
   it('names an album/label chip by its title, not its uid', () => {
@@ -261,6 +300,13 @@ describe('FilterBar facets', () => {
     expect(screen.getByText('Year: 2023')).toBeInTheDocument()
     expect(screen.getByText('Album: Holidays')).toBeInTheDocument()
     expect(screen.getByText('Label: Beach')).toBeInTheDocument()
+  })
+
+  it('names each chip of a multi-album selection by its own title', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1,al_2' }, vi.fn(), { facets: FACETS })
+
+    expect(screen.getByText('Album: Holidays')).toBeInTheDocument()
+    expect(screen.getByText('Album: Náměstí')).toBeInTheDocument()
   })
 
   it('falls back to the raw uid when the facet options do not name it', () => {

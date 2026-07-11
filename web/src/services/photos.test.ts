@@ -71,6 +71,19 @@ describe('buildPhotoQuery', () => {
     expect(query.has('q')).toBe(false)
     expect(query.has('has_gps')).toBe(false)
   })
+
+  it('expands a comma-joined album/label list into repeated params', () => {
+    const query = buildPhotoQuery({ album: 'al_1,al_2', label: 'lb_1' })
+    // The backend parses repeated params (?album=a&album=b) and ANDs them.
+    expect(query.getAll('album')).toEqual(['al_1', 'al_2'])
+    expect(query.getAll('label')).toEqual(['lb_1'])
+  })
+
+  it('drops empty segments and emits nothing for an empty list', () => {
+    const query = buildPhotoQuery({ album: 'al_1,,al_2,', label: '' })
+    expect(query.getAll('album')).toEqual(['al_1', 'al_2'])
+    expect(query.has('label')).toBe(false)
+  })
 })
 
 describe('fetchPhotos', () => {

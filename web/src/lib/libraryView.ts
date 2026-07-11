@@ -30,12 +30,21 @@ export type LibraryView = {
    */
   year: string
   /**
-   * Album facet: '' (any) or an album UID. Doubles as the detail page's album
-   * scope (see {@link import('./detailView').DetailView}) — the same `album`
-   * query param means the same thing everywhere.
+   * Album facet: '' (any) or a comma-joined list of album UIDs, all of which a
+   * photo must belong to (AND). The list rides in this single URL key — the
+   * urlState layer stores every value as one string — with a comma delimiter that
+   * cannot occur in a UID; use {@link parseFilterList} / {@link joinFilterList} to
+   * decode and encode it. A single UID (no comma) is the plain one-album scope and
+   * doubles as the detail page's album scope (see
+   * {@link import('./detailView').DetailView}) — the same `album` query param
+   * means the same thing everywhere.
    */
   album: string
-  /** Label facet: '' (any) or a label UID. Doubles as the detail page's label scope. */
+  /**
+   * Label facet: '' (any) or a comma-joined list of label UIDs, all of which a
+   * photo must carry (AND). Encoded like {@link LibraryView.album}. A single UID
+   * doubles as the detail page's label scope.
+   */
   label: string
   taken_after: string
   taken_before: string
@@ -95,11 +104,58 @@ function toYear(raw: string): string {
 }
 
 /**
+ * The delimiter joining several album/label UIDs inside a single URL key. A comma
+ * cannot appear in a UID, so it round-trips the multi-selection through the
+ * `Record<string, string>` urlState layer without a dedicated key per value.
+ */
+export const FILTER_LIST_DELIMITER = ','
+
+/**
+ * Decodes a comma-joined filter list (e.g. an `album`/`label` view value) into its
+ * UIDs, dropping empty segments so `''` yields `[]` and a trailing comma is
+ * ignored. The order is preserved, matching the order the chips are shown in.
+ */
+export function parseFilterList(raw: string): string[] {
+  return raw.split(FILTER_LIST_DELIMITER).filter((uid) => uid !== '')
+}
+
+/** Encodes a list of UIDs back into the comma-joined form stored in the URL. */
+export function joinFilterList(uids: string[]): string {
+  return uids.join(FILTER_LIST_DELIMITER)
+}
+
+/**
+ * Returns the filter list with `uid` appended, unless it is empty or already
+ * present (selecting the same album/label twice is a no-op). Used by the facet
+ * controls, which add to the current selection rather than replacing it.
+ */
+export function addToFilterList(raw: string, uid: string): string {
+  if (uid === '') {
+    return raw
+  }
+  const uids = parseFilterList(raw)
+  if (uids.includes(uid)) {
+    return raw
+  }
+  return joinFilterList([...uids, uid])
+}
+
+/**
+ * Returns the filter list with `uid` removed, leaving the rest in order. Removing
+ * the last UID yields `''`, which clears the facet.
+ */
+export function removeFromFilterList(raw: string, uid: string): string {
+  return joinFilterList(parseFilterList(raw).filter((current) => current !== uid))
+}
+
+/**
  * Maps the URL view state to API list params, sanitising the enum-like fields so
  * a tampered URL cannot send an out-of-range sort/archived/year value to the
- * backend. Free-text, tri-state and UID filters pass through verbatim (the
+ * backend. Free-text, tri-state and UID filters pass through verbatim: the album
+ * and label values stay in their comma-joined form and are split into repeated
+ * query params by {@link import('../services/photos').buildPhotoQuery}. The
  * backend treats an empty value as no filter, and an unknown album/label UID
- * simply matches nothing).
+ * simply matches nothing.
  */
 export function viewToParams(view: LibraryView): PhotoListParams {
   return {

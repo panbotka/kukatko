@@ -11,7 +11,13 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { type LibraryFacets } from '../../hooks/useLibraryFacets'
-import { hasActiveFilters, type LibraryView, LIBRARY_DEFAULTS } from '../../lib/libraryView'
+import {
+  addToFilterList,
+  hasActiveFilters,
+  type LibraryView,
+  LIBRARY_DEFAULTS,
+  parseFilterList,
+} from '../../lib/libraryView'
 import { type SetUrlState } from '../../lib/urlState'
 
 import { buildChips } from './filterChips'
@@ -256,9 +262,16 @@ export function FilterBar<T extends LibraryView>({
 /**
  * The three facets photos are actually found by: the years present in the
  * catalog (each with its count, so the reader sees how much a year holds before
- * committing), and the album and label the photo belongs to. Album and label are
- * type-to-filter selects because both collections grow without bound; year is a
- * plain select because the catalog only ever holds a handful of years.
+ * committing), and the albums and labels the photo belongs to. Album and label
+ * are type-to-filter selects because both collections grow without bound; year is
+ * a plain select because the catalog only ever holds a handful of years.
+ *
+ * Album and label are multi-select: each pick *adds* to the current set (combined
+ * with AND — a photo must be in every chosen album and carry every chosen label),
+ * and the already-chosen ones show as removable chips below. The select therefore
+ * never displays a "current" value — it is a pure add-picker resting on its "any"
+ * placeholder — and it drops the already-selected entries from its options so the
+ * same album/label cannot be added twice.
  *
  * All three push a history entry, so Back steps back through facet choices.
  */
@@ -272,6 +285,8 @@ function FacetRow({
   push: (patch: Partial<LibraryView>) => void
 }) {
   const { t } = useTranslation()
+  const selectedAlbums = parseFilterList(view.album)
+  const selectedLabels = parseFilterList(view.label)
   return (
     <Row className="kukatko-filter-facets g-2 mt-1">
       <Col xs={12} md={4}>
@@ -298,14 +313,16 @@ function FacetRow({
           id="library-album"
           label={t('library.filters.album')}
           anyLabel={t('library.filters.anyAlbum')}
-          value={view.album}
-          options={facets.albums.map((album) => ({
-            value: album.uid,
-            label: album.title,
-            count: album.photo_count,
-          }))}
+          value=""
+          options={facets.albums
+            .filter((album) => !selectedAlbums.includes(album.uid))
+            .map((album) => ({
+              value: album.uid,
+              label: album.title,
+              count: album.photo_count,
+            }))}
           onChange={(value) => {
-            push({ album: value })
+            push({ album: addToFilterList(view.album, value) })
           }}
         />
       </Col>
@@ -315,14 +332,16 @@ function FacetRow({
           id="library-label"
           label={t('library.filters.label')}
           anyLabel={t('library.filters.anyLabel')}
-          value={view.label}
-          options={facets.labels.map((label) => ({
-            value: label.uid,
-            label: label.name,
-            count: label.photo_count,
-          }))}
+          value=""
+          options={facets.labels
+            .filter((label) => !selectedLabels.includes(label.uid))
+            .map((label) => ({
+              value: label.uid,
+              label: label.name,
+              count: label.photo_count,
+            }))}
           onChange={(value) => {
-            push({ label: value })
+            push({ label: addToFilterList(view.label, value) })
           }}
         />
       </Col>

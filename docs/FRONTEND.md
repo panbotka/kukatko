@@ -120,7 +120,11 @@ zapiš sem.
   **tři facety, kterými se fotky reálně hledají** (prop `facets` z `useLibraryFacets`) jsou
   **vždy viditelné** pod hlavičkou, ne schované v panelu: **Rok** = prostý `<select>`
   („Libovolný rok" + `{{year}} ({{n}})` z `GET /photos/years`, katalog má vždy jen hrstku let),
-  **Album** a **Štítek** = `SearchableSelect` (obě kolekce rostou bez omezení).
+  **Album** a **Štítek** = `SearchableSelect` (obě kolekce rostou bez omezení), **multi-výběr**:
+  každá volba se **přidá** k aktuální sadě (AND — fotka musí být ve všech vybraných albech a nést
+  všechny vybrané štítky), select je čistý „add-picker" (drží se placeholderu „libovolné", vybrané
+  položky ze svých options vypustí, aby nešly přidat dvakrát), už vybraná alba/štítky visí jako
+  odebratelné chipy (jeden na UID) níž.
   Inline pole **„filtrovat dle názvu/popisu"** (`q`) zůstává rychlým zúžením mřížky; vedle něj
   **zřetelný odkaz na `/search`** pro skutečný fulltext + sémantické hledání (`searchHref` nese
   aktuální `q`) — režimy hledání se tu **nezdvojují**), `SearchableSelect`
@@ -130,8 +134,10 @@ zapiš sem.
   vedoucí řádek „libovolné" facet zruší, klávesnice Up/Down/Enter/Esc, combobox/listbox ARIA,
   strop `MAX_SUGGESTIONS` (50) rendrovaných návrhů; nikdy nevytváří položky —
   zrcadlí `AddAutocomplete`), `filterChips.ts` (pure `buildChips(view, t, {facets?, includeQuery?})`
-  → `FilterChip{key,label,clear}` pro každý aktivní filtr; `facets` pojmenují album/štítek titulkem
-  místo UID (chybějící → raw UID, chip nikdy není prázdný), `includeQuery` zapíná chip pro `q`
+  → `FilterChip{key,label,clear}` pro každý aktivní filtr; **jeden chip na každé vybrané album a na
+  každý štítek** (`clear` odebere jen svoje UID ze seznamu, poslední chip facet vyčistí); `facets`
+  pojmenují album/štítek titulkem místo UID (chybějící → raw UID, chip nikdy není prázdný),
+  `includeQuery` zapíná chip pro `q`
   — filter bar ho vypíná (má vlastní pole), **prázdný stav zapíná** (čtenář u nuly výsledků musí
   vidět všechny filtry, které ho tam dostaly); délka pole = počet aktivních filtrů na odznaku),
   `SimilarPhotos` (znovupoužitelný horizontálně scrollovatelný pruh
@@ -576,10 +582,17 @@ zapiš sem.
   `LIBRARY_DEFAULTS` +
   `LIBRARY_PATH` (= `/`, kanonická routa knihovny — **knihovna je úvodní stránka**; všechny odkazy
   v appce míří sem, `/library` je jen redirect pro staré odkazy) +
+  **multi-výběr facetů `album`/`label`**: obě klíče nesou **čárkou spojený seznam UID** (urlState
+  ukládá každý klíč jako jeden string, čárka se v UID nevyskytuje) — helpery `parseFilterList`/
+  `joinFilterList`/`addToFilterList`/`removeFilterList` (sic `removeFromFilterList`) seznam kódují;
+  fotka musí být ve **všech** vybraných albech a nést **všechny** vybrané štítky (AND). Celý výběr
+  round-tripuje URL query, takže Zpět ho obnoví;
   `viewToParams` (sanitizuje sort/archived/**year** — `toYear` propustí jen čtyřciferný rok, ručně
   psaná/zastaralá URL spadne na „bez filtru" místo backendové 400 —, prosákne `min_rating`/`flag`
-  a UID facetů `album`/`label` (neznámé UID prostě nic nenamatchuje); `sort` union navíc
-  `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce, zahrnuje rating/flag i facety) —
+  a čárkou spojené UID facetů `album`/`label` beze změny — `buildPhotoQuery` je rozloží na opakované
+  parametry `?album=a&album=b`, které backend ANDuje; neznámé UID prostě nic nenamatchuje; `sort`
+  union navíc `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce, neprázdný seznam
+  album/label = aktivní filtr, zahrnuje rating/flag i facety) —
   mapování URL stavu na API params; `ratingHotkeys.ts` = pure `ratingHotkey(key)` (`0`–`5` →
   rating, `p`/`r` → pick/reject, jinak null) + `isTypingElement(target)` (input/textarea/select/
   contenteditable → hotkey se přeskočí) — sdíleno detailem fotky i fokusnutou dlaždicí;

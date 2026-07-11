@@ -163,9 +163,19 @@ export interface PhotoListParams {
   taken_after?: string
   /** RFC3339 timestamp or YYYY-MM-DD date. */
   taken_before?: string
-  /** Scope the listing to photos in this album (`album` query param). */
+  /**
+   * Scope the listing to photos in one or more albums (`album` query param).
+   * Several UIDs are comma-joined here and sent as repeated params
+   * (`?album=a&album=b`); the backend combines them with AND, so a photo must be
+   * a member of every album. A single UID (no comma) is the historical
+   * single-album scope. Empty / undefined means no scope.
+   */
   album?: string
-  /** Scope the listing to photos carrying this label (`label` query param). */
+  /**
+   * Scope the listing to photos carrying one or more labels (`label` query
+   * param). Like {@link PhotoListParams.album}, several UIDs are comma-joined and
+   * sent as repeated params combined with AND. Empty / undefined means no scope.
+   */
   label?: string
   /**
    * Scope the listing to photos in this country (`country` query param, exact
@@ -233,6 +243,20 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
       query.set(key, str)
     }
   }
+  // A multi-value filter is stored as one comma-joined string but sent as
+  // repeated params (?album=a&album=b), the form the backend parses into an AND
+  // of memberships. A single UID (no comma) collapses to one param, matching the
+  // historical single-album/label scope. Empty segments are dropped.
+  const setList = (key: string, value: string | undefined): void => {
+    if (value === undefined) {
+      return
+    }
+    for (const item of value.split(',')) {
+      if (item !== '') {
+        query.append(key, item)
+      }
+    }
+  }
   set('limit', params.limit)
   set('offset', params.offset)
   set('sort', params.sort)
@@ -244,8 +268,8 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('year', params.year)
   set('taken_after', params.taken_after)
   set('taken_before', params.taken_before)
-  set('album', params.album)
-  set('label', params.label)
+  setList('album', params.album)
+  setList('label', params.label)
   set('country', params.country)
   set('city', params.city)
   set('favorite', params.favorite)

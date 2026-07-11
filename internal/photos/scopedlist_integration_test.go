@@ -62,7 +62,7 @@ func TestList_albumScope(t *testing.T) {
 	}
 
 	t.Run("scope keeps only the album's photos", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{AlbumUID: album.UID})
+		list, err := store.List(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}})
 		if err != nil {
 			t.Fatalf("List(album): %v", err)
 		}
@@ -70,7 +70,7 @@ func TestList_albumScope(t *testing.T) {
 		if len(set) != 3 || set[outsider.UID] {
 			t.Fatalf("album scope = %v, want the 3 members without the outsider", set)
 		}
-		total, err := store.Count(ctx, photos.ListParams{AlbumUID: album.UID})
+		total, err := store.Count(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}})
 		if err != nil || total != 3 {
 			t.Fatalf("Count(album) = %d, %v, want 3", total, err)
 		}
@@ -78,7 +78,7 @@ func TestList_albumScope(t *testing.T) {
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
 		no := false
-		list, err := store.List(ctx, photos.ListParams{AlbumUID: album.UID, Private: &no})
+		list, err := store.List(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}, Private: &no})
 		if err != nil {
 			t.Fatalf("List(album, private=false): %v", err)
 		}
@@ -91,7 +91,7 @@ func TestList_albumScope(t *testing.T) {
 	t.Run("scope honours sort and pagination", func(t *testing.T) {
 		// Oldest-first, first page of one: the album's earliest photo.
 		list, err := store.List(ctx, photos.ListParams{
-			AlbumUID: album.UID, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 0,
+			AlbumUIDs: []string{album.UID}, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 0,
 		})
 		if err != nil {
 			t.Fatalf("List(album, sorted page): %v", err)
@@ -101,7 +101,7 @@ func TestList_albumScope(t *testing.T) {
 		}
 		// Second page advances to the next-oldest member.
 		list, err = store.List(ctx, photos.ListParams{
-			AlbumUID: album.UID, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 1,
+			AlbumUIDs: []string{album.UID}, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 1,
 		})
 		if err != nil {
 			t.Fatalf("List(album, second page): %v", err)
@@ -110,6 +110,59 @@ func TestList_albumScope(t *testing.T) {
 			t.Fatalf("second oldest page = %v, want [mid]", list)
 		}
 	})
+}
+
+// TestList_multipleAlbumsAND verifies that scoping List/Count by several albums
+// keeps only the photos that are members of every listed album — the AND
+// semantics the multi-album filter relies on. A photo in just one of the two
+// albums must be excluded.
+func TestList_multipleAlbumsAND(t *testing.T) {
+	store, db := newStore(t)
+	org := organize.NewStore(db.Pool())
+	ctx := t.Context()
+
+	inBoth := mustCreate(t, store, photos.Photo{
+		FileHash: "m-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "both",
+	})
+	inFirst := mustCreate(t, store, photos.Photo{
+		FileHash: "m-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "first-only",
+	})
+	inSecond := mustCreate(t, store, photos.Photo{
+		FileHash: "m-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "second-only",
+	})
+
+	first, err := org.CreateAlbum(ctx, organize.Album{Title: "First"})
+	if err != nil {
+		t.Fatalf("CreateAlbum(first): %v", err)
+	}
+	second, err := org.CreateAlbum(ctx, organize.Album{Title: "Second"})
+	if err != nil {
+		t.Fatalf("CreateAlbum(second): %v", err)
+	}
+	for _, uid := range []string{inBoth.UID, inFirst.UID} {
+		if err := org.AddPhoto(ctx, first.UID, uid); err != nil {
+			t.Fatalf("AddPhoto(first, %s): %v", uid, err)
+		}
+	}
+	for _, uid := range []string{inBoth.UID, inSecond.UID} {
+		if err := org.AddPhoto(ctx, second.UID, uid); err != nil {
+			t.Fatalf("AddPhoto(second, %s): %v", uid, err)
+		}
+	}
+
+	params := photos.ListParams{AlbumUIDs: []string{first.UID, second.UID}}
+	list, err := store.List(ctx, params)
+	if err != nil {
+		t.Fatalf("List(both albums): %v", err)
+	}
+	set := uidSet(list)
+	if len(set) != 1 || !set[inBoth.UID] {
+		t.Fatalf("multi-album AND = %v, want only the photo in both albums", set)
+	}
+	total, err := store.Count(ctx, params)
+	if err != nil || total != 1 {
+		t.Fatalf("Count(both albums) = %d, %v, want 1", total, err)
+	}
 }
 
 // TestList_labelScope verifies that scoping List/Count by label restricts the
@@ -142,7 +195,7 @@ func TestList_labelScope(t *testing.T) {
 	}
 
 	t.Run("scope keeps only the label's photos", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{LabelUID: label.UID})
+		list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{label.UID}})
 		if err != nil {
 			t.Fatalf("List(label): %v", err)
 		}
@@ -150,7 +203,7 @@ func TestList_labelScope(t *testing.T) {
 		if len(set) != 2 || set[untagged.UID] {
 			t.Fatalf("label scope = %v, want the 2 tagged photos", set)
 		}
-		total, err := store.Count(ctx, photos.ListParams{LabelUID: label.UID})
+		total, err := store.Count(ctx, photos.ListParams{LabelUIDs: []string{label.UID}})
 		if err != nil || total != 2 {
 			t.Fatalf("Count(label) = %d, %v, want 2", total, err)
 		}
@@ -158,7 +211,7 @@ func TestList_labelScope(t *testing.T) {
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
 		no := false
-		list, err := store.List(ctx, photos.ListParams{LabelUID: label.UID, Private: &no})
+		list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{label.UID}, Private: &no})
 		if err != nil {
 			t.Fatalf("List(label, private=false): %v", err)
 		}
@@ -167,4 +220,48 @@ func TestList_labelScope(t *testing.T) {
 			t.Fatalf("label+private scope = %v, want only the public tagged photo", set)
 		}
 	})
+}
+
+// TestList_multipleLabelsAND verifies that scoping List by several labels keeps
+// only the photos that carry every listed label — the AND semantics the
+// multi-label filter relies on. A photo with just one of the two labels must be
+// excluded.
+func TestList_multipleLabelsAND(t *testing.T) {
+	store, db := newStore(t)
+	org := organize.NewStore(db.Pool())
+	ctx := t.Context()
+
+	both := mustCreate(t, store, photos.Photo{
+		FileHash: "ml-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "both",
+	})
+	onlyBeach := mustCreate(t, store, photos.Photo{
+		FileHash: "ml-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "beach-only",
+	})
+
+	beach, err := org.CreateLabel(ctx, organize.Label{Name: "Beach"})
+	if err != nil {
+		t.Fatalf("CreateLabel(beach): %v", err)
+	}
+	sunset, err := org.CreateLabel(ctx, organize.Label{Name: "Sunset"})
+	if err != nil {
+		t.Fatalf("CreateLabel(sunset): %v", err)
+	}
+	if err := org.AttachLabel(ctx, both.UID, beach.UID, organize.SourceManual, 0); err != nil {
+		t.Fatalf("AttachLabel(both, beach): %v", err)
+	}
+	if err := org.AttachLabel(ctx, both.UID, sunset.UID, organize.SourceManual, 0); err != nil {
+		t.Fatalf("AttachLabel(both, sunset): %v", err)
+	}
+	if err := org.AttachLabel(ctx, onlyBeach.UID, beach.UID, organize.SourceManual, 0); err != nil {
+		t.Fatalf("AttachLabel(onlyBeach, beach): %v", err)
+	}
+
+	list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{beach.UID, sunset.UID}})
+	if err != nil {
+		t.Fatalf("List(both labels): %v", err)
+	}
+	set := uidSet(list)
+	if len(set) != 1 || !set[both.UID] {
+		t.Fatalf("multi-label AND = %v, want only the photo carrying both labels", set)
+	}
 }

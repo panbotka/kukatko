@@ -71,7 +71,7 @@ func TestBuildTimelineQuery(t *testing.T) {
 	}
 
 	// A scoped filter binds its value and is ANDed onto the guard.
-	scoped, scopedArgs := buildTimelineQuery(ListParams{AlbumUID: "al1"})
+	scoped, scopedArgs := buildTimelineQuery(ListParams{AlbumUIDs: []string{"al1"}})
 	if len(scopedArgs) != 1 || scopedArgs[0] != "al1" {
 		t.Fatalf("album scope args = %v, want [al1]", scopedArgs)
 	}
