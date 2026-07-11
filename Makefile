@@ -14,7 +14,7 @@ WEB_DIR  := web
 WEB_DEPS_STAMP := $(WEB_DIR)/node_modules/.kukatko-npm-ci-stamp
 
 .PHONY: help fmt fmt-check vet lint lint-fix typecheck test test-race test-integration \
-        check build clean docs-budget \
+        check build dev clean docs-budget \
         web-deps web-build web-fmt web-fmt-check web-lint web-test web-typecheck
 
 ## help: List available make targets.
@@ -121,6 +121,12 @@ web-test: web-deps
 ## The frontend is built first so go:embed captures the SPA into the binary.
 build: web-build
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/$(APP_NAME) ./cmd/$(APP_NAME)
+
+## dev: Run the app locally on :6480 (single embedded binary) via scripts/dev.sh,
+## rebuilding only what changed and returning once it answers /healthz.
+## Pass DEV_ARGS=--force to rebuild everything from scratch.
+dev:
+	./scripts/dev.sh $(DEV_ARGS)
 
 ## clean: Remove build artifacts (binary, coverage, embedded dist, web build).
 clean:

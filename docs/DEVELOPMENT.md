@@ -70,8 +70,9 @@ embeds real assets; without a build, only the `.gitkeep` placeholder is embedded
 one process serving the API and the embedded SPA on one port, exactly as in production.
 
 ```bash
-./scripts/dev.sh          # smart rebuild: skips npm ci / Vite / go build when nothing changed
-./scripts/dev.sh --force  # rebuild all three stages
+make dev                  # smart rebuild + restart (wraps scripts/dev.sh)
+make dev DEV_ARGS=--force # rebuild all three stages
+./scripts/dev.sh          # same thing directly; --force to rebuild everything
 ```
 
 It stops any running instance, rebuilds only the stages whose inputs changed, starts the
@@ -79,6 +80,15 @@ server in the background on `${KUKATKO_DEV_PORT:-6480}`, and waits up to 30 s fo
 `GET /healthz`. It exits `0` once the server is healthy, or `1` with the tail of
 `kukatko.log` if it never came up — which is why it is a gate before every commit (see the
 Definition of Done in [`CLAUDE.md`](../CLAUDE.md)).
+
+Stopping is two-layered on purpose. The anchored `pkill` reaps a server started from this
+same binary path; then the script also frees `${KUKATKO_DEV_PORT}` of **any** leftover
+kukatko squatting it — e.g. one left running by a `/verify` or worktree build under
+`/tmp/verify-*/bin/kukatko`, whose different path the anchored `pkill` never matches. Such an
+orphan would otherwise keep the port, answer the health check, and mask every rebuild with a
+stale binary. As a backstop the health gate confirms the pid listening on the port is the one
+it just started; if a squatter still holds it, the script fails loudly instead of reporting a
+fresh server. Only a kukatko is ever killed, so an unrelated service on that port is safe.
 
 Each build stage is skipped independently, using `find -newer`: `npm ci` against
 `package-lock.json`, the Vite build against `internal/web/static/dist/index.html`, and

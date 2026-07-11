@@ -79,6 +79,24 @@ echo "dev.sh: stopping any running instance…"
 pkill -f "^$BINARY serve" 2>/dev/null || true
 sleep 1
 
+# The anchored pkill only reaps a server started from THIS binary path. A kukatko
+# left over from a verify/worktree build (e.g. /tmp/verify-*/bin/kukatko serve)
+# squats $PORT under a different path, survives that pkill, and then answers the
+# health check below — so every rebuild reports "ready" while the stale process
+# keeps serving old code. Free the port explicitly, but only ever kill a kukatko,
+# so an unrelated service that happens to hold it is left untouched.
+port_kukatko_pids() {
+  ss -ltnp 2>/dev/null | grep -E "[*:]$PORT\b" | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u
+}
+for pid in $(port_kukatko_pids); do
+  exe=$(readlink "/proc/$pid/exe" 2>/dev/null || true)
+  if [[ "${exe% (deleted)}" == */kukatko ]]; then
+    echo "dev.sh: reaping stale kukatko (pid $pid) squatting :$PORT"
+    kill "$pid" 2>/dev/null || true
+  fi
+done
+sleep 1
+
 # --- build (only the stages whose inputs changed) ---------------------------
 # Deliberately NOT `make build`: that target always reruns the Vite build and
 # `go build`, while a restart usually only needs one of them. (`web-deps` is no
@@ -145,8 +163,18 @@ serve_pid=$!
 deadline=$((SECONDS + 30))
 while ((SECONDS < deadline)); do
   if curl -fsS --connect-timeout 1 --max-time 2 -o /dev/null "http://localhost:$PORT/healthz" 2>/dev/null; then
-    echo "dev.sh: server ready on :$PORT (pid $serve_pid)"
-    exit 0
+    # Confirm it is OUR server answering, not a stale process that beat us to the
+    # port: if the reaping above missed one, curl would still get a 200 from the
+    # squatter and we would falsely report a fresh server serving old code.
+    owner=$(ss -ltnp 2>/dev/null | grep -E "[*:]$PORT\b" | grep -oE 'pid=[0-9]+' | cut -d= -f2 | head -1) || true
+    if [[ "$owner" == "$serve_pid" ]]; then
+      echo "dev.sh: server ready on :$PORT (pid $serve_pid)"
+      exit 0
+    fi
+    echo "dev.sh: :$PORT is held by pid ${owner:-?}, not our server ($serve_pid) — a stale" >&2
+    echo "dev.sh: process is squatting the port. Kill it and re-run 'make dev'." >&2
+    kill "$serve_pid" 2>/dev/null || true
+    exit 1
   fi
   if ! kill -0 "$serve_pid" 2>/dev/null; then
     echo "dev.sh: server died during startup. Last 20 log lines:" >&2

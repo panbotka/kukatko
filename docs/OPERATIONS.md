@@ -454,7 +454,8 @@ algoritmus nedá změnit jen v jedné z nich.
   sériově; testy R2 backendu navíc chtějí `KUKATKO_TEST_S3_ENDPOINT` — bez ní se skipnou,
   viz `docs/DEVELOPMENT.md`), `check` (brána = `docs-budget` + `fmt-check` + `lint` +
   `web-typecheck` + `test`; **nic nepřepisuje**, po úspěšném běhu je `git status --short`
-  prázdný), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `clean`, `help`.
+  prázdný), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `dev` (smart rebuild + běh na
+  `:6480` přes `scripts/dev.sh`, `DEV_ARGS=--force` pro plný rebuild), `clean`, `help`.
   Frontend-only cíle: `web-deps` (`npm ci`, hlídaný stamp souborem
   `web/node_modules/.kukatko-npm-ci-stamp` závislým na `web/package-lock.json`, takže se
   reinstaluje jen při změně lockfilu), `web-build`, `web-fmt`, `web-fmt-check`, `web-lint`,

@@ -166,8 +166,10 @@ Jeden řádek na balíček — ať víš, co existuje, aniž bys otevíral `docs
 - **Per-user oblíbené** (ne globální). **mapy.com klíč drž server-side** (backend proxy).
 - Streamuj velké soubory (upload/download/video) — nedrž je celé v RAM.
 
-## Definition of Done — před KAŽDÝM commitem
-Vždy, na konci každého tasku, v tomto pořadí:
+## Definition of Done — na konci KAŽDÉHO tasku
+**Task NENÍ hotový, dokud není commitnutý a pushnutý.** Dokončení tasku vždy zahrnuje
+commit — nikdy nenechávej necommitnuté změny v pracovním stromu ani „hotovou" práci bez
+commitu. Vždy, na konci každého tasku, v tomto pořadí:
 
 1. **Zapiš změnu do správného dokumentu.** Dokumentace nesmí zestárnout. Routing:
    - nový/změněný Go balíček → `docs/PACKAGES.md` (+ jeden řádek do `## Mapa balíčků` výš)
@@ -180,10 +182,12 @@ Vždy, na konci každého tasku, v tomto pořadí:
    - **`CLAUDE.md` sáhni jen tehdy, když se změnilo _pravidlo_ nebo přibyl/zmizel balíček.**
      Nikdy do něj nepiš popisné detaily — na to je `docs/` a hlídá to `make docs-budget`.
 2. **`make check`** musí projít (docs-budget + fmt-check + lint + typecheck + testy + frontend).
-3. **`./scripts/dev.sh`** musí projít — dev server nastartuje a odpoví na `/healthz`. Zachytí,
-   co `make check` z principu nevidí: chybějící migraci, rozbité wiring v `cmd/kukatko`, panic
-   při startu. Neúspěšný start (exit 1) = **necommituj**. Detail v `docs/DEVELOPMENT.md`.
-4. **Commit** (anglicky, výstižně) a **push**. Commit message zakonči řádkem:
+3. **`make dev`** (= `./scripts/dev.sh`) musí projít — dev server nastartuje a odpoví na
+   `/healthz`. Zachytí, co `make check` z principu nevidí: chybějící migraci, rozbité wiring
+   v `cmd/kukatko`, panic při startu. Neúspěšný start (exit 1) = **necommituj**. Detail
+   v `docs/DEVELOPMENT.md`.
+4. **Commit** (anglicky, výstižně) a **push** — tímto krokem task teprve končí, viz pravidlo
+   výše. Commit message zakonči řádkem:
    `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 
 ## Mimo rozsah
