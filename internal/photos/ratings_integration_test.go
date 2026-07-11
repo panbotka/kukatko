@@ -111,6 +111,29 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 		}
 	})
 
+	t.Run("flag filter keeps only eye-marked photos", func(t *testing.T) {
+		if err := org.SetFlag(ctx, alice, unrated.UID, "eye"); err != nil {
+			t.Fatalf("SetFlag eye: %v", err)
+		}
+		t.Cleanup(func() {
+			// Restore the unrated photo to no rating row so the sort subtests below,
+			// which expect it to read back as NULL/last, are unaffected.
+			if err := org.ClearRating(ctx, alice, unrated.UID); err != nil {
+				t.Fatalf("ClearRating eye cleanup: %v", err)
+			}
+		})
+
+		eye := "eye"
+		list, err := store.List(ctx, photos.ListParams{RatedBy: &alice, Flag: &eye})
+		if err != nil {
+			t.Fatalf("List(flag eye): %v", err)
+		}
+		set := uidSet(list)
+		if len(set) != 1 || !set[unrated.UID] {
+			t.Fatalf("flag eye = %v, want only the eye-marked photo", set)
+		}
+	})
+
 	t.Run("rating sort orders by the user's rating with unrated last", func(t *testing.T) {
 		list, err := store.List(ctx, photos.ListParams{
 			RatedBy: &alice, Sort: photos.SortByRating, Order: photos.OrderDesc,

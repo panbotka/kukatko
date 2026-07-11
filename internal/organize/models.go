@@ -177,24 +177,29 @@ type LabelUpdate struct {
 	Priority int    `json:"priority"`
 }
 
-// RatingFlag is a per-user pick/reject cull marker on a photo, mirrored by the
-// SQL CHECK constraint on user_ratings.flag.
+// RatingFlag is a per-user personal mark on a photo, a single mutually-exclusive
+// value mirrored by the SQL CHECK constraint on user_ratings.flag. The stored
+// strings are internal and kept stable across the reframing from pick/reject
+// culling to a neutral eye/thumbs-up/thumbs-down mark; the UI maps them to icons.
 type RatingFlag string
 
-// The recognised rating flags.
+// The recognised rating flags. The stored strings are historical: 'pick' surfaces
+// as thumbs-up and 'reject' as thumbs-down in the UI.
 const (
-	// FlagNone is the absence of a pick/reject marker (the default).
+	// FlagNone is the absence of a personal mark (the default).
 	FlagNone RatingFlag = "none"
-	// FlagPick marks a photo the user wants to keep/select.
+	// FlagPick marks a photo with a thumbs-up (stored as the historical "pick").
 	FlagPick RatingFlag = "pick"
-	// FlagReject marks a photo the user wants to discard/cull.
+	// FlagReject marks a photo with a thumbs-down (stored as the historical "reject").
 	FlagReject RatingFlag = "reject"
+	// FlagEye marks a photo with the neutral eye ("seen"/keep-an-eye-on) mark.
+	FlagEye RatingFlag = "eye"
 )
 
 // valid reports whether f is one of the recognised rating flags.
 func (f RatingFlag) valid() bool {
 	switch f {
-	case FlagNone, FlagPick, FlagReject:
+	case FlagNone, FlagPick, FlagReject, FlagEye:
 		return true
 	default:
 		return false
@@ -210,12 +215,12 @@ const (
 	ratingMax = 5
 )
 
-// PhotoRating is a user's star rating (0–5) and pick/reject flag for one photo.
+// PhotoRating is a user's star rating (0–5) and personal mark for one photo.
 // A photo a user has never rated reads back as the zero value — rating 0, flag
 // "none" — because the store keeps no row for all-default ratings.
 type PhotoRating struct {
 	// Rating is the user's star rating from 0 (unrated) to 5.
 	Rating int `json:"rating"`
-	// Flag is the user's pick/reject marker; one of "none", "pick", "reject".
+	// Flag is the user's personal mark; one of "none", "pick", "reject", "eye".
 	Flag string `json:"flag"`
 }

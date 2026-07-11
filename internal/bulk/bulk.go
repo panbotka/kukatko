@@ -57,7 +57,7 @@ type Location struct {
 // mean "leave unchanged". A non-nil Title/Description pointer sets that column
 // (the empty string clears it); ClearLocation wipes lat/lng; Archive true
 // archives and false unarchives; Favorite toggles the acting user's favorite;
-// Rating sets the acting user's star rating (0–5) and Flag the pick/reject flag.
+// Rating sets the acting user's star rating (0–5) and Flag the personal mark.
 type Operations struct {
 	AddAlbums     []string
 	RemoveAlbums  []string

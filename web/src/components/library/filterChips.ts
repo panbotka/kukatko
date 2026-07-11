@@ -36,6 +36,22 @@ export interface BuildChipsOptions {
 }
 
 /**
+ * Maps a stored personal-mark flag value to its i18n label key for the filter
+ * chip. Falls back to the thumbs-down label for any unexpected value so a chip is
+ * never blank; the recognised values are `eye`, `pick` and `reject`.
+ */
+function flagChipLabelKey(flag: string) {
+  switch (flag) {
+    case 'eye':
+      return 'library.flag.eyes'
+    case 'pick':
+      return 'library.flag.picks'
+    default:
+      return 'library.flag.rejects'
+  }
+}
+
+/**
  * Derives the removable chips for every active filter. The returned length
  * doubles as the "active filters" count on the filter bar's toggle badge.
  */
@@ -133,7 +149,7 @@ export function buildChips(
   if (view.flag !== '') {
     chips.push({
       key: 'flag',
-      label: `${t('library.filters.flag')}: ${t(view.flag === 'pick' ? 'library.flag.picks' : 'library.flag.rejects')}`,
+      label: `${t('library.filters.flag')}: ${t(flagChipLabelKey(view.flag))}`,
       clear: { flag: '' },
     })
   }

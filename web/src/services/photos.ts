@@ -92,10 +92,12 @@ export interface Photo {
 }
 
 /**
- * The per-user pick/reject flag on a photo (`internal/organize` `RatingFlag`):
- * `none` (no flag), `pick` (keeper) or `reject` (cull candidate).
+ * The per-user personal mark on a photo (`internal/organize` `RatingFlag`), a
+ * single mutually-exclusive value. The stored strings are historical and kept
+ * stable; the UI shows them as icons: `none` (no mark), `pick` (thumbs-up),
+ * `reject` (thumbs-down) or `eye` (the neutral eye/"seen" mark).
  */
-export type RatingFlag = 'none' | 'pick' | 'reject'
+export type RatingFlag = 'none' | 'pick' | 'reject' | 'eye'
 
 /**
  * Response body of `GET /api/v1/photos`. `next_offset` is the offset to request
@@ -199,9 +201,9 @@ export interface PhotoListParams {
    */
   min_rating?: string
   /**
-   * Pick/reject flag filter (`flag` query param): `'pick'` or `'reject'` keeps
-   * only photos the acting user flagged accordingly. Empty / undefined means no
-   * filter.
+   * Personal-mark filter (`flag` query param): `'eye'`, `'pick'` (thumbs-up) or
+   * `'reject'` (thumbs-down) keeps only photos the acting user marked accordingly.
+   * Empty / undefined means no filter.
    */
   flag?: string
 }

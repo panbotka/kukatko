@@ -128,7 +128,7 @@ func newCtlRatingSetCmd(opts *ctlOptions) *cobra.Command {
 			return renderAck(cmd.OutOrStdout(), format, "photo "+args[0]+" rated "+ratingSummary(rating, flagPtr))
 		},
 	}
-	cmd.Flags().StringVar(&flag, "flag", "", "cull flag: none, pick or reject")
+	cmd.Flags().StringVar(&flag, "flag", "", "personal mark: none, pick, reject or eye")
 	return cmd
 }
 

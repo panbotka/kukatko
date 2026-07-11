@@ -123,18 +123,19 @@ func resolveRating(set *int) (*int, error) {
 	return set, nil
 }
 
-// resolveFlag validates a set-flag operation, rejecting anything other than
-// "none", "pick" or "reject". A nil pointer means no change.
+// resolveFlag validates a set-flag operation, rejecting anything other than the
+// recognised personal marks "none", "pick", "reject" or "eye". A nil pointer means
+// no change.
 func resolveFlag(set *string) (*string, error) {
 	if set == nil {
 		// No flag change requested: nil pointer, nil error means "leave unchanged".
 		return nil, nil //nolint:nilnil
 	}
 	switch *set {
-	case "none", "pick", "reject":
+	case "none", "pick", "reject", "eye":
 		return set, nil
 	default:
-		return nil, fmt.Errorf("set_flag %q must be none, pick or reject", *set)
+		return nil, fmt.Errorf("set_flag %q must be none, pick, reject or eye", *set)
 	}
 }
 

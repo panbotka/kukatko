@@ -81,13 +81,13 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   odpověď jako list + `mode` + `degraded`; `q` povinný (prázdný → 400); **box offline** →
   `semantic`/`hybrid` graceful fallback na fulltext s `degraded: true`;
   list i search nesou per-fotku `is_favorite` **+ per-user `rating`/`flag`** pro aktuálního uživatele,
-  `?favorite=true` scopne list na jeho oblíbené, **`?min_rating=n` / `?flag=pick|reject` / `?sort=rating`**
+  `?favorite=true` scopne list na jeho oblíbené, **`?min_rating=n` / `?flag=eye|pick|reject` / `?sort=rating`**
   scopnuté na něj (fotka bez řádku = rating 0 / flag `none`);
   `GET /photos/{uid}` plný detail + `files` + `is_favorite` + `rating`/`flag`;
   **per-user oblíbené** `PUT`/`DELETE /photos/{uid}/favorite` (každý přihlášený, idempotentní → 204,
   404 chybějící fotka, 503 bez backendu) + `GET /favorites` (oblíbené aktuálního uživatele ve tvaru
   list endpointu, filtry/řazení/stránkování jako `/photos`);
-  **per-user hodnocení** `PUT /photos/{uid}/rating` `{rating?:0..5, flag?:none|pick|reject}` (každý
+  **per-user hodnocení** `PUT /photos/{uid}/rating` `{rating?:0..5, flag?:none|pick|reject|eye}` (každý
   přihlášený, aspoň jedna hodnota → 204, 400 neplatná, 404 chybějící fotka, 503 bez backendu) +
   `DELETE /photos/{uid}/rating` (idempotentní clear → 204); `GET /photos/{uid}/faces` (přihlášený) — obličeje
   fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`)
@@ -241,7 +241,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
   `set_description`/`clear_description`, `set_location {lat,lng}`/`clear_location`, `set_private`,
   `archive`/`unarchive`, `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
-  (none/pick/reject) (**per-user**, neplatná hodnota → 400). Odpověď `{results:[{photo_uid,status,
+  (none/pick/reject/eye) (**per-user**, neplatná hodnota → 400). Odpověď `{results:[{photo_uid,status,
   error?}],counts:{total,updated,skipped,errored}}` (200 i při dílčích chybách): `updated`/
   `skipped` (duplicitní uid)/`error` (fotka neexistuje — **neabortuje validní**); jen DB chyba
   rollbackne celou dávku (500). Konflikt set/clear nebo archive/unarchive, neznámá operace,

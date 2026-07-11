@@ -248,7 +248,7 @@ describe('PhotoDetailPage', () => {
     expect(screen.getByTestId('similar')).toHaveAttribute('data-uid', 'b')
   })
 
-  it('exposes star rating and pick/reject flagging in the detail view', async () => {
+  it('exposes star rating and the personal mark in the detail view', async () => {
     // These curation controls were removed from the grid/list tiles; the detail
     // view stays their home, reachable for keyboard and screen-reader users.
     renderPage()
@@ -256,8 +256,9 @@ describe('PhotoDetailPage', () => {
 
     expect(screen.getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rate 5 of 5' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Pick' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Eye' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Thumbs up' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
   })
 
   it('draws detected faces as an overlay on the single preview', async () => {

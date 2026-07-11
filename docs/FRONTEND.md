@@ -86,8 +86,9 @@ zapiš sem.
   (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, **play badge + délka** u
   videa/live fotky (`▶` + `formatDuration`), placeholder bez
   layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`
-  (hodnocení hvězdami a pick/reject flag žijí **jen v detailu fotky**, ne na dlaždici);
-  heart se v selection módu skryje; `src` bere **`photo.thumb_url` z payloadu** přes `useThumbSrc` a
+  (hodnocení hvězdami a osobní označení žijí **jen v detailu fotky**, ne na dlaždici);
+  heart se v selection módu skryje (osobní označení a hodnocení jsou jen v detailu fotky);
+  `src` bere **`photo.thumb_url` z payloadu** přes `useThumbSrc` a
   **nikdy** ho neskládá z UID),
   `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
   window-scroll, `endReached` → další stránka, footer spinner/retry; prop `favoritable`
@@ -107,7 +108,7 @@ zapiš sem.
   vyhledávací pole (vizuální kotva, největší prvek), řazení (vč. **dle hodnocení**),
   `GridDensityControl` a tlačítko
   **Filtry** s odznakem počtu aktivních filtrů; pokročilé filtry (datum od/do, poloha, soukromé,
-  fotoaparát, archiv, **min. hodnocení ≥1…≥5**, **flag vybrané/zamítnuté**) žijí v rozbalovacím
+  fotoaparát, archiv, **min. hodnocení ≥1…≥5**, **osobní označení oko/vybrané/zamítnuté**) žijí v rozbalovacím
   panelu — na desktopu inline `Collapse`, na mobilu `Offcanvas` dle `matchMedia` (`useIsNarrow`,
   defenzivní k jsdom, kde `matchMedia` vrací `undefined`); každý aktivní filtr = odebíratelný
   **chip** (`buildChips`, `text-bg-primary` pill s křížkem, zruší jen ten filtr — dotaz `q` chip
@@ -146,8 +147,10 @@ zapiš sem.
   `FavoriteButton` (heart toggle nad `useFavorite` — **optimistický** per-user favorite
   s rollbackem; bez role-gate, smí každý přihlášený; jako overlay na dlaždici je sibling
   linku, takže klik nenaviguje), `RatingStars` (pure controlled 0–5 hvězd; klik na aktuální
-  hodnocení maže na 0; bez `onRate` read-only display) + `FlagControl` (pure controlled pick/
-  reject toggle, klik na aktivní flag maže na `none`; oba sibling linku → klik nenaviguje),
+  hodnocení maže na 0; bez `onRate` read-only display) + `FlagControl` (pure controlled **osobní
+  označení** — 3 mutually-exclusive toggle tlačítka s bootstrap-icons `Icon`: oko / palec nahoru
+  (`pick`) / palec dolů (`reject`), aktivní stav filled ikona + akcentní barva; klik na aktivní
+  značku maže na `none`; bez `onFlag` read-only; oba sibling linku → klik nenaviguje),
   `GridSkeleton` (placeholder mřížka při prvním načtení; zrcadlí i zvolenou hustotu, takže po
   načtení fotek nenaskočí layout),
   `GridDensityControl` (kompaktní zoom stepper **Dlaždic na řádek**: `−` / prostřední čip / `+`;
@@ -204,7 +207,7 @@ zapiš sem.
   `LibraryPage` = hlavní foto-knihovna **a zároveň úvodní stránka aplikace** (routa `/`):
   `FilterBar` nad virtualizovanou nekonečně-scrollující
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka
-  na dlaždicích (favoritable; hodnocení a pick/reject jsou jen v detailu fotky), **`SlideshowStart`**
+  na dlaždicích (favoritable; hodnocení a osobní označení jsou jen v detailu fotky), **`SlideshowStart`**
   (tlačítko Promítání + odhad délky, počet fotek bere z `total`),
   **dva různé prázdné stavy** — s aktivními filtry „Nenalezeny žádné fotky", jehož hint
   **vyjmenuje aktivní filtry** (`buildChips(..., {facets, includeQuery: true})` spojené ` · `,
@@ -332,8 +335,8 @@ zapiš sem.
   deep-linkovatelný + **Zpět** na zdrojový pohled — album/štítek/oblíbené/hledání/knihovnu podle scope,
   který dlaždice nese v `detailQuery` odkazu (`lib/detailView` `backHref`/`detailToParams`/
   `detailQueryString`; hledání se pozná podle `mode` v query, oblíbené podle `favorite=true`),
-  v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + pick/reject
-  nad `useRating`) a `FavoriteButton`, plus **rating hotkeys** `0`–`5`/`p`/`r` na document (mimo
+  v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + osobní označení oko/palec nahoru/palec dolů
+  nad `useRating`) a `FavoriteButton`, plus **rating hotkeys** `0`–`5`/`p`/`r`/`e` na document (mimo
   psaní do inputu), tlačítka **Stáhnout originál** /
   **Stáhnout upravenou** (`downloadUrl`); **stránka nese právě JEDEN obrázek fotky** — obličeje
   jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad `useFaces`), nikdy druhá kopie snímku:
@@ -555,7 +558,7 @@ zapiš sem.
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
   `uid`/server stavu; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user
-  hodnocení (hvězdy) + pick/reject flag nad `ratePhoto` (`PUT …/rating` jen s měněným polem),
+  hodnocení (hvězdy) + osobní označení nad `ratePhoto` (`PUT …/rating` jen s měněným polem),
   `setRating`/`setFlag` s per-poli rollbackem při chybě, no-op na shodnou hodnotu, `pending` přes
   in-flight counter, resync na změnu `uid`/server stavu (mirror `useFavorite`);
   `useThumbSrc(uid,thumbUrl)` → `{src,failed,onError}` = **odolnost vůči expirované podepsané URL**:
@@ -617,7 +620,7 @@ zapiš sem.
   union navíc `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce, neprázdný seznam
   album/label = aktivní filtr, zahrnuje rating/flag i facety) —
   mapování URL stavu na API params; `ratingHotkeys.ts` = pure `ratingHotkey(key)` (`0`–`5` →
-  rating, `p`/`r` → pick/reject, jinak null) + `isTypingElement(target)` (input/textarea/select/
+  rating, `p`/`r`/`e` → palec nahoru/palec dolů/oko, jinak null) + `isTypingElement(target)` (input/textarea/select/
   contenteditable → hotkey se přeskočí) — sdíleno detailem fotky i fokusnutou dlaždicí;
   `shortcuts.ts` = registr klávesových zkratek + pure helpery: `shortcutToken(key)` (normalizace
   `KeyboardEvent.key` — single-char lower-case, named keys passthrough, `?` zůstává), `isFormModalOpen`
@@ -713,8 +716,8 @@ zapiš sem.
   `favoritePhoto(uid,favorite,signal)` nad `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (per-user
   toggle, 204, podklad optimistického `useFavorite`),
   `ratePhoto(uid,{rating?,flag?},signal)` nad `PUT /api/v1/photos/{uid}/rating` +
-  `clearRating(uid,signal)` nad `DELETE …/rating` (per-user hvězdy 0–5 + pick/reject flag, 204,
-  podklad `useRating`), typy `RatingUpdate`/`RatingFlag`,
+  `clearRating(uid,signal)` nad `DELETE …/rating` (per-user hvězdy 0–5 + osobní označení
+  `none`/`pick`/`reject`/`eye`, 204, podklad `useRating`), typy `RatingUpdate`/`RatingFlag`,
   **koš** `unarchivePhoto(uid)` (`POST …/unarchive` obnova), `purgePhoto(uid)` (`POST …/purge?confirm=true`
   trvalé mazání), `emptyTrash()` (`POST /trash/empty?confirm=true` → `PurgeResult{purged,failed}`),
   `fetchTrashInfo()` (`GET /trash/info` → `TrashInfo{retention_days}`),

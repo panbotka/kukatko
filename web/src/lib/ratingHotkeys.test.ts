@@ -9,11 +9,13 @@ describe('ratingHotkey', () => {
     }
   })
 
-  it('maps p / r (any case) to pick / reject flags', () => {
+  it('maps p / r / e (any case) to thumbs-up / thumbs-down / eye marks', () => {
     expect(ratingHotkey('p')).toEqual({ kind: 'flag', value: 'pick' })
     expect(ratingHotkey('P')).toEqual({ kind: 'flag', value: 'pick' })
     expect(ratingHotkey('r')).toEqual({ kind: 'flag', value: 'reject' })
     expect(ratingHotkey('R')).toEqual({ kind: 'flag', value: 'reject' })
+    expect(ratingHotkey('e')).toEqual({ kind: 'flag', value: 'eye' })
+    expect(ratingHotkey('E')).toEqual({ kind: 'flag', value: 'eye' })
   })
 
   it('returns null for keys outside the rating range and other keys', () => {

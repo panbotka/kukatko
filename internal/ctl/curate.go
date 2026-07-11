@@ -14,8 +14,8 @@ import (
 var (
 	// ErrInvalidRating indicates a star rating outside the 0–5 range the API accepts.
 	ErrInvalidRating = errors.New("ctl: rating must be between 0 and 5")
-	// ErrInvalidFlag indicates a cull flag the API does not recognise.
-	ErrInvalidFlag = errors.New(`ctl: flag must be "none", "pick" or "reject"`)
+	// ErrInvalidFlag indicates a personal-mark flag the API does not recognise.
+	ErrInvalidFlag = errors.New(`ctl: flag must be "none", "pick", "reject" or "eye"`)
 	// ErrEmptyRating indicates a rating command that would change neither the stars
 	// nor the flag, which the API rejects with 400.
 	ErrEmptyRating = errors.New("ctl: a rating command must set the rating, the flag, or both")
@@ -30,14 +30,17 @@ const (
 	RatingMax = 5
 )
 
-// Cull flags accepted by PUT /photos/{uid}/rating.
+// Personal-mark flags accepted by PUT /photos/{uid}/rating. The stored strings
+// are historical; the web UI surfaces them as icons (thumbs-up/thumbs-down/eye).
 const (
-	// FlagNone is the absence of a pick/reject marker.
+	// FlagNone is the absence of a personal mark.
 	FlagNone = "none"
-	// FlagPick marks a photo the user wants to keep.
+	// FlagPick marks a photo with a thumbs-up (stored "pick").
 	FlagPick = "pick"
-	// FlagReject marks a photo the user wants to discard.
+	// FlagReject marks a photo with a thumbs-down (stored "reject").
 	FlagReject = "reject"
+	// FlagEye marks a photo with the neutral eye mark.
+	FlagEye = "eye"
 )
 
 // ratingBody is the body of PUT /photos/{uid}/rating: an optional star rating and
@@ -62,10 +65,10 @@ func (b ratingBody) validate() error {
 	return nil
 }
 
-// validateFlag rejects a cull flag the API does not recognise.
+// validateFlag rejects a personal-mark flag the API does not recognise.
 func validateFlag(flag string) error {
 	switch flag {
-	case FlagNone, FlagPick, FlagReject:
+	case FlagNone, FlagPick, FlagReject, FlagEye:
 		return nil
 	default:
 		return fmt.Errorf("%w: %q", ErrInvalidFlag, flag)

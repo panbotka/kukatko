@@ -113,6 +113,7 @@ func TestRatingFlagValid(t *testing.T) {
 		{flag: FlagNone, want: true},
 		{flag: FlagPick, want: true},
 		{flag: FlagReject, want: true},
+		{flag: FlagEye, want: true},
 		{flag: "", want: false},
 		{flag: "star", want: false},
 	}

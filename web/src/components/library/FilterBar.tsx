@@ -463,6 +463,7 @@ function AdvancedFilters({
             }}
           >
             <option value="">{t('library.flag.any')}</option>
+            <option value="eye">{t('library.flag.eyes')}</option>
             <option value="pick">{t('library.flag.picks')}</option>
             <option value="reject">{t('library.flag.rejects')}</option>
           </Form.Select>

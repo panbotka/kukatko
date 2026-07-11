@@ -117,6 +117,15 @@ func TestToOperations(t *testing.T) {
 			},
 		},
 		{
+			name: "set eye flag",
+			in:   operationsInput{SetFlag: new("eye")},
+			check: func(t *testing.T, ops bulk.Operations) {
+				if ops.Flag == nil || *ops.Flag != "eye" {
+					t.Errorf("Flag = %v, want eye", ops.Flag)
+				}
+			},
+		},
+		{
 			name:    "unknown flag",
 			in:      operationsInput{SetFlag: new("star")},
 			wantErr: true,

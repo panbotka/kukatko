@@ -237,6 +237,15 @@ func TestParseListParams_valid(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "flag eye",
+			query: "flag=eye",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.Flag == nil || *p.Flag != "eye" {
+					t.Errorf("Flag = %v, want eye", p.Flag)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -106,7 +106,7 @@ export function PhotoDetailPage() {
   )
 
   // Detail shortcuts: ←/→ page to the previous/next photo, `f` toggles favorite,
-  // Escape returns to the originating list view. Rating keys (0–5, p/r) are handled
+  // Escape returns to the originating list view. Rating keys (0–5, p/r/e) are handled
   // by the separate effect above. The hook suppresses these while typing. They are
   // disabled while the lightbox is open, which owns ←/→ (page the viewer) and Esc
   // (close it).
@@ -133,15 +133,15 @@ export function PhotoDetailPage() {
   )
 
   // The optimistic rating hook (stars + flag) drives both the header controls and
-  // the number/p/r hotkeys. It is instantiated before the loading/error guards
+  // the number/p/r/e hotkeys. It is instantiated before the loading/error guards
   // (hook rules) and resyncs to the photo's stored values once it loads.
   const initialRating = state.status === 'ready' ? (state.photo.rating ?? 0) : 0
   const initialFlag = state.status === 'ready' ? (state.photo.flag ?? 'none') : 'none'
   const rating = useRating(uid, initialRating, initialFlag)
   const { setRating, setFlag } = rating
 
-  // Number keys 0–5 set the rating, p = pick, r = reject — but never while the
-  // user is typing in an input/textarea/contenteditable.
+  // Number keys 0–5 set the rating; p = thumbs-up, r = thumbs-down, e = eye — but
+  // never while the user is typing in an input/textarea/contenteditable.
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (

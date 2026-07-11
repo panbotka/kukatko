@@ -117,6 +117,7 @@ func TestRatingRequest_validate(t *testing.T) {
 		{name: "flag only", body: ratingRequest{Flag: flag("pick")}},
 		{name: "both", body: ratingRequest{Rating: rating(5), Flag: flag("reject")}},
 		{name: "flag none allowed", body: ratingRequest{Flag: flag("none")}},
+		{name: "flag eye allowed", body: ratingRequest{Flag: flag("eye")}},
 		{name: "rating zero allowed", body: ratingRequest{Rating: rating(0)}},
 		{name: "rating too high", body: ratingRequest{Rating: rating(6)}, wantErr: true},
 		{name: "rating negative", body: ratingRequest{Rating: rating(-1)}, wantErr: true},
@@ -167,6 +168,7 @@ func TestIsValidFlag(t *testing.T) {
 		{"none", true},
 		{"pick", true},
 		{"reject", true},
+		{"eye", true},
 		{"", false},
 		{"star", false},
 	}

@@ -66,7 +66,7 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   — podklad `GET /photos?favorite=true` a `GET /favorites`,
   plus **per-user rating filtry** `RatedBy` (uid aktuálního uživatele, scopuje anotaci/filtry/řazení)
   + `MinRating` (rating ≥ n korelovaným `EXISTS` nad `user_ratings`, ≤ 0 = bez filtru, fotka bez řádku
-  = rating 0) + `Flag` (`pick`/`reject` korelovaným `EXISTS`) — všechny aktivní jen když je `RatedBy`
+  = rating 0) + `Flag` (`pick`/`reject`/`eye` korelovaným `EXISTS`) — všechny aktivní jen když je `RatedBy`
   nastaveno, fotka bez řádku = rating 0 / flag `none`,
   řazení taken_at/created_at/uid/title/file_size **+ `rating`** (řazení dle ratingu `RatedBy`
   uživatele přes korelovaný poddotaz nad `user_ratings`, `NULLS LAST` — nehodnocené poslední; aktivní
@@ -291,7 +291,7 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`year` (čtyřciferný
   1000–9999) → `Year`**, **`album`/`label`
   scope** → `AlbumUID`/`LabelUID`, **`country`/`city` place scope** → `Country`/`City`,
-  **per-user `min_rating` (int) + `flag` (`pick`/`reject`)**
+  **per-user `min_rating` (int) + `flag` (`pick`/`reject`/`eye`)**
   → `MinRating`/`Flag`; neplatný → 400) + `favoriteRequested` parsuje `favorite=true`
   → handler nastaví per-user `FavoriteOf` na aktuálního uživatele; handlery list/search/favorites
   nastaví `RatedBy` na aktuálního uživatele, takže `min_rating`/`flag`/`sort=rating` jsou scopnuté na něj;
@@ -303,7 +303,7 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (oblíbené aktuálního uživatele ve tvaru list endpointu, ekvivalent `?favorite=true`);
   `FavoriteStore` interface (splňuje ho `organize.Store`) je nil-safe (nezapojeno → `is_favorite`
   false, favorite endpointy 503);
-  **per-user hodnocení** (`ratings.go`): `PUT /photos/{uid}/rating` `{rating?:0..5, flag?:none|pick|reject}`
+  **per-user hodnocení** (`ratings.go`): `PUT /photos/{uid}/rating` `{rating?:0..5, flag?:none|pick|reject|eye}`
   (každý přihlášený, aspoň jedna hodnota, validace předem → 400 neplatná, 404 chybějící fotka, 503 bez
   `Ratings` backendu; nastaví rating a/nebo flag přes `SetRating`/`SetFlag`) + `DELETE /photos/{uid}/rating`
   (idempotentní clear přes `ClearRating` → 204); `RatingStore` interface (splňuje ho `organize.Store`,
@@ -624,7 +624,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `ErrSubjectNotFound`→404/`ErrInvalidType`→400; mountuje se osmým `server.WithAPI`
   (`buildPeopleAPI` v `cmd/kukatko/people.go`)), `internal/organize/`
   (DB vrstva pro **organizaci** — alba, štítky, **per-user oblíbené** (nahrazují globální
-  `photos.favorite` z photo-sorteru) a **per-user hodnocení** (hvězdičky 0–5 + pick/reject flag);
+  `photos.favorite` z photo-sorteru) a **per-user hodnocení** (hvězdičky 0–5 + osobní označení,
+  neutrální 3-stavová značka oko/palec nahoru/palec dolů — dřív pick/reject culling);
   tabulky `albums`/`album_photos`/`labels`/`photo_labels`/
   `user_favorites` v migraci `0011_albums_labels_favorites.sql` a `user_ratings` v migraci
   `0016_user_ratings.sql`: **`albums`** = `uid PK`
@@ -639,7 +640,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   oba FK `ON DELETE CASCADE`, `source IN (manual|ai|import)`, `uncertainty` (int %), `created_at`;
   **`user_favorites`** = `(user_uid, photo_uid) PK`, oba FK `ON DELETE CASCADE`, `added_at`;
   **`user_ratings`** = `(user_uid, photo_uid) PK`, oba FK `ON DELETE CASCADE`, `rating SMALLINT 0..5`
-  (CHECK), `flag TEXT IN (none|pick|reject)` (CHECK), `updated_at` — řádek existuje jen pro
+  (CHECK), `flag TEXT IN (none|pick|reject|eye)` (CHECK; `eye` přidala migrace
+  `0025_user_ratings_eye_flag.sql`, `pick`/`reject` = uložené historické stringy zobrazené jako ikony),
+  `updated_at` — řádek existuje jen pro
   nedefaultní hodnotu (store maže řádek, který spadne na rating 0 + flag `none`), takže fotka bez
   řádku = rating 0 / flag `none`;
   `Store` = `NewStore(pool)` nad sdíleným pgx poolem: **alba** `CreateAlbum`/`GetAlbumByUID`/

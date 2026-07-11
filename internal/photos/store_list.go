@@ -142,9 +142,9 @@ type ListParams struct {
 	// A photo with no rating row counts as rating 0, so a positive minimum
 	// excludes it; a value <= 0 matches every photo and adds no filter.
 	MinRating *int
-	// Flag, when non-nil and one of "pick"/"reject", keeps photos the RatedBy user
-	// has marked with that flag (correlated EXISTS over user_ratings). A photo with
-	// no rating row counts as flag "none", so it is excluded.
+	// Flag, when non-nil and one of "pick"/"reject"/"eye", keeps photos the RatedBy
+	// user has marked with that personal mark (correlated EXISTS over user_ratings).
+	// A photo with no rating row counts as flag "none", so it is excluded.
 	Flag *string
 	// Sort selects the ordering column; an unknown value falls back to
 	// SortByTakenAt.
@@ -299,11 +299,11 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 }
 
 // ratingClauses returns the per-user rating filters (minimum star rating and
-// pick/reject flag) as correlated EXISTS subqueries over user_ratings, binding
+// personal mark) as correlated EXISTS subqueries over user_ratings, binding
 // each value through bind. Both are scoped to params.RatedBy (the current
 // caller), so they apply only when a rating user is set. A photo with no rating
-// row counts as rating 0 / flag "none", so a positive MinRating or a pick/reject
-// flag filter excludes it; a MinRating <= 0 matches every photo and adds no
+// row counts as rating 0 / flag "none", so a positive MinRating or a personal-mark
+// (pick/reject/eye) filter excludes it; a MinRating <= 0 matches every photo and adds no
 // clause. The outer photo reference is qualified (photos.uid) to disambiguate it
 // from the join table's photo_uid inside the subquery.
 func ratingClauses(params ListParams, bind func(any) string) []string {
@@ -316,7 +316,7 @@ func ratingClauses(params ListParams, bind func(any) string) []string {
 			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = "+bind(*params.RatedBy)+
 			" AND ur.rating >= "+bind(*params.MinRating)+")")
 	}
-	if params.Flag != nil && (*params.Flag == "pick" || *params.Flag == "reject") {
+	if params.Flag != nil && (*params.Flag == "pick" || *params.Flag == "reject" || *params.Flag == "eye") {
 		where = append(where, "EXISTS (SELECT 1 FROM user_ratings ur "+
 			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = "+bind(*params.RatedBy)+
 			" AND ur.flag = "+bind(*params.Flag)+")")

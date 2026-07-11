@@ -47,7 +47,7 @@ INSERT INTO user_ratings (user_uid, photo_uid, rating)
 VALUES ($1, $2, $3)
 ON CONFLICT (user_uid, photo_uid) DO UPDATE SET rating = EXCLUDED.rating, updated_at = now()`
 
-// setFlagSQL upserts the acting user's pick/reject flag, leaving any rating at
+// setFlagSQL upserts the acting user's personal mark, leaving any rating at
 // its existing value (or its 0 default for a new row).
 const setFlagSQL = `
 INSERT INTO user_ratings (user_uid, photo_uid, flag)
@@ -282,7 +282,7 @@ func applyFavorite(ctx context.Context, tx pgx.Tx, uid, actorUID string, ops Ope
 	return nil
 }
 
-// applyRating writes the acting user's star rating and/or pick/reject flag for the
+// applyRating writes the acting user's star rating and/or personal mark for the
 // photo when requested, then prunes the row should it have fallen back to all
 // defaults, keeping user_ratings sparse. Values are validated by the API layer.
 func applyRating(ctx context.Context, tx pgx.Tx, uid, actorUID string, ops Operations) error {

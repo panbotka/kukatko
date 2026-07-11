@@ -108,7 +108,7 @@ func (f *bulkFlags) register(cmd *cobra.Command) {
 	flags.BoolVar(&f.archive, "archive", false, "move the photos to the trash")
 	flags.BoolVar(&f.unarchive, "unarchive", false, "restore the photos from the trash")
 	flags.IntVar(&f.rating, "rating", 0, "set the star rating, 0 to 5")
-	flags.StringVar(&f.flag, "flag", "", "set the cull flag: none, pick or reject")
+	flags.StringVar(&f.flag, "flag", "", "set the personal mark: none, pick, reject or eye")
 }
 
 // operations resolves the flag state into the API's operation set.

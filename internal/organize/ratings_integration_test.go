@@ -74,6 +74,41 @@ func TestRatingsUpsertDeleteAndIsolation(t *testing.T) {
 	}
 }
 
+// TestRatingsEyeFlag verifies the new 'eye' personal mark round-trips through the
+// store and, like the other flags, is dropped when cleared back to 'none'.
+func TestRatingsEyeFlag(t *testing.T) {
+	store, photoStore, userStore, _ := newStores(t)
+	ctx := t.Context()
+	user := makeUser(t, userStore, "reye_u", "reye")
+	photoUID := makePhoto(t, photoStore, "reye")
+
+	if err := store.SetFlag(ctx, user, photoUID, string(organize.FlagEye)); err != nil {
+		t.Fatalf("SetFlag(eye): %v", err)
+	}
+	if got, _ := store.GetRating(ctx, user, photoUID); got.Flag != string(organize.FlagEye) {
+		t.Fatalf("GetRating after SetFlag(eye) = %+v, want flag %q", got, organize.FlagEye)
+	}
+
+	// Switching from eye to another mark replaces it (mutually exclusive).
+	if err := store.SetFlag(ctx, user, photoUID, string(organize.FlagPick)); err != nil {
+		t.Fatalf("SetFlag(pick): %v", err)
+	}
+	if got, _ := store.GetRating(ctx, user, photoUID); got.Flag != string(organize.FlagPick) {
+		t.Fatalf("GetRating after SetFlag(pick) = %+v, want flag %q", got, organize.FlagPick)
+	}
+
+	// Clearing the eye back to none prunes the row.
+	if err := store.SetFlag(ctx, user, photoUID, string(organize.FlagEye)); err != nil {
+		t.Fatalf("SetFlag(eye) again: %v", err)
+	}
+	if err := store.SetFlag(ctx, user, photoUID, string(organize.FlagNone)); err != nil {
+		t.Fatalf("SetFlag(none): %v", err)
+	}
+	if got, _ := store.GetRating(ctx, user, photoUID); got.Flag != string(organize.FlagNone) {
+		t.Fatalf("GetRating after clearing eye = %+v, want flag %q", got, organize.FlagNone)
+	}
+}
+
 // TestRatingsAmong verifies the page-annotation helper resolves only rated photos
 // and stays per-user.
 func TestRatingsAmong(t *testing.T) {
