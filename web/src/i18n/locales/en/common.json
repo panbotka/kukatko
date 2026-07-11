@@ -676,6 +676,8 @@
       "notes": "Notes",
       "aiNote": "AI note",
       "takenAt": "Taken at",
+      "uploadedBy": "Uploaded by",
+      "uploadedByUnknown": "Unknown (imported)",
       "camera": "Camera",
       "lens": "Lens",
       "aperture": "Aperture",

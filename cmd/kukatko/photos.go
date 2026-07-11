@@ -61,6 +61,7 @@ func buildPhotoAPI(
 		Favorites:       organizeStore,
 		Ratings:         organizeStore,
 		Organizer:       organizeStore,
+		UserResolver:    auth.NewStore(db.Pool()),
 		Purger:          purger,
 		RetentionDays:   cfg.Trash.RetentionDays,
 		VideoTranscode:  cfg.Video.Transcode,

@@ -303,6 +303,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (oblíbené aktuálního uživatele ve tvaru list endpointu, ekvivalent `?favorite=true`);
   `FavoriteStore` interface (splňuje ho `organize.Store`) je nil-safe (nezapojeno → `is_favorite`
   false, favorite endpointy 503);
+  **uploader na detailu** (`http.go`): `handleDetail` resolvuje `photo.UploadedBy` přes
+  `UserResolver` interface (`GetUserByUID`, splňuje ho `*auth.Store`) na `uploader{uid,name}`
+  (jméno = `display_name`, jinak `username`); nil resolver, null `uploaded_by` nebo `ErrUserNotFound`
+  (smazaný uživatel) → `uploader` vynecháno místo 500. **Jen na detailu** — list/search neresolvují
+  (žádné N+1);
   **per-user hodnocení** (`ratings.go`): `PUT /photos/{uid}/rating` `{rating?:0..5, flag?:none|pick|reject}`
   (každý přihlášený, aspoň jedna hodnota, validace předem → 400 neplatná, 404 chybějící fotka, 503 bez
   `Ratings` backendu; nastaví rating a/nebo flag přes `SetRating`/`SetFlag`) + `DELETE /photos/{uid}/rating`

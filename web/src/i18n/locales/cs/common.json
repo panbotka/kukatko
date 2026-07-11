@@ -692,6 +692,8 @@
       "notes": "Poznámky",
       "aiNote": "Poznámka AI",
       "takenAt": "Datum pořízení",
+      "uploadedBy": "Nahrál/a",
+      "uploadedByUnknown": "Neznámý (import)",
       "camera": "Fotoaparát",
       "lens": "Objektiv",
       "aperture": "Clona",

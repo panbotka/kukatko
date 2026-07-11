@@ -41,6 +41,7 @@ type API struct {
 	favorites       FavoriteStore
 	ratings         RatingStore
 	organizer       PhotoOrganizer
+	users           UserResolver
 	purger          Purger
 	retentionDays   int
 	videoTranscode  bool
@@ -82,6 +83,12 @@ type Config struct {
 	// Organizer backs the album/label membership chips on the detail response.
 	// When nil the detail response omits the memberships.
 	Organizer PhotoOrganizer
+	// UserResolver resolves the uploader's UID to a human-readable name on the
+	// detail response only. When nil (or when the referenced user no longer
+	// exists) the detail response omits the uploader and the UI shows a neutral
+	// fallback. Resolution is deliberately confined to the detail endpoint to
+	// avoid a per-item user lookup on list/search responses.
+	UserResolver UserResolver
 	// Purger backs the permanent-delete endpoints (purge one, empty trash). When
 	// nil those endpoints answer 503.
 	Purger Purger
@@ -114,6 +121,7 @@ func NewAPI(cfg Config) *API {
 		favorites:       cfg.Favorites,
 		ratings:         cfg.Ratings,
 		organizer:       cfg.Organizer,
+		users:           cfg.UserResolver,
 		purger:          cfg.Purger,
 		retentionDays:   cfg.RetentionDays,
 		videoTranscode:  cfg.VideoTranscode,
@@ -304,15 +312,35 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 // effective limit back to the client when the request did not set one.
 const defaultPageLimit = 100
 
+// UserResolver resolves a user UID to the account record so the detail endpoint
+// can show a human-readable uploader name instead of a raw UID. It is an
+// interface so photoapi depends on the behaviour, not the auth store's
+// construction; *auth.Store satisfies it and a test fake can stand in.
+type UserResolver interface {
+	// GetUserByUID returns the user with the given UID, or auth.ErrUserNotFound
+	// when no such user exists.
+	GetUserByUID(ctx context.Context, uid string) (auth.User, error)
+}
+
+// uploaderRef identifies who uploaded a photo on the detail response: the
+// uploader's UID plus a human-readable name (the display name, or the username
+// when the display name is empty) — never a bare UID for the UI to render.
+type uploaderRef struct {
+	UID  string `json:"uid"`
+	Name string `json:"name"`
+}
+
 // photoDetail is the JSON body returned by the detail endpoint: the photo (with
 // its metadata, EXIF, GPS and the current user's is_favorite flag), the list of
-// its stored files, and its album/label memberships (empty when no organizer is
-// wired) so the detail view can show and edit them inline.
+// its stored files, its album/label memberships (empty when no organizer is
+// wired), and the resolved uploader (omitted when the photo has no uploader or
+// the user cannot be resolved) so the detail view can show and edit them inline.
 type photoDetail struct {
 	photoView
-	Files  []photos.PhotoFile `json:"files"`
-	Albums []albumRef         `json:"albums"`
-	Labels []labelRef         `json:"labels"`
+	Files    []photos.PhotoFile `json:"files"`
+	Albums   []albumRef         `json:"albums"`
+	Labels   []labelRef         `json:"labels"`
+	Uploader *uploaderRef       `json:"uploader,omitempty"`
 }
 
 // handleDetail returns a photo's full detail, including its file list and the
@@ -344,9 +372,37 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "fetching photo organization failed")
 		return
 	}
+	uploader, err := a.resolveUploader(r.Context(), photo.UploadedBy)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "resolving uploader failed")
+		return
+	}
 	writeJSON(w, http.StatusOK, photoDetail{
-		photoView: views[0], Files: files, Albums: albums, Labels: labels,
+		photoView: views[0], Files: files, Albums: albums, Labels: labels, Uploader: uploader,
 	})
+}
+
+// resolveUploader resolves uploadedBy to a compact reference carrying a
+// human-readable name (the display name, or the username when it is empty) for
+// the detail view. It returns a nil reference and no error when the photo has no
+// uploader, when no resolver is wired, or when the referenced user no longer
+// exists, so the detail view shows a neutral fallback rather than a broken row.
+func (a *API) resolveUploader(ctx context.Context, uploadedBy *string) (*uploaderRef, error) {
+	if uploadedBy == nil || *uploadedBy == "" || a.users == nil {
+		return nil, nil //nolint:nilnil // a nil reference is the "no uploader" signal, not an error.
+	}
+	user, err := a.users.GetUserByUID(ctx, *uploadedBy)
+	if err != nil {
+		if errors.Is(err, auth.ErrUserNotFound) {
+			return nil, nil //nolint:nilnil // a deleted uploader degrades to the fallback, not a 500.
+		}
+		return nil, fmt.Errorf("photoapi: resolving uploader: %w", err)
+	}
+	name := user.DisplayName
+	if name == "" {
+		name = user.Username
+	}
+	return &uploaderRef{UID: user.UID, Name: name}, nil
 }
 
 // photoMemberships returns the photo's album and label chips for the detail

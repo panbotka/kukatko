@@ -117,6 +117,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Embedder:        embedder,
 		Favorites:       organizeStore,
 		Ratings:         organizeStore,
+		UserResolver:    authStore,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,
@@ -526,6 +527,85 @@ func TestDetail(t *testing.T) {
 	if missing.StatusCode != http.StatusNotFound {
 		t.Errorf("missing detail status = %d, want 404", missing.StatusCode)
 	}
+}
+
+// detailUploader is the uploader reference the detail endpoint attaches; a nil
+// pointer means the photo has no resolvable uploader.
+type detailUploader struct {
+	UID  string `json:"uid"`
+	Name string `json:"name"`
+}
+
+// getDetailUploader fetches a photo's detail and returns its uploader reference
+// (nil when the payload omits it), failing the test on any transport error.
+func getDetailUploader(t *testing.T, client *http.Client, base, uid string) *detailUploader {
+	t.Helper()
+	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid, nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("detail status = %d, want 200", resp.StatusCode)
+	}
+	var detail struct {
+		Uploader *detailUploader `json:"uploader"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	return detail.Uploader
+}
+
+// createUser creates a real account (so the photos.uploaded_by FK is satisfiable)
+// and returns its UID.
+func (e *env) createUser(t *testing.T, username, displayName string) string {
+	t.Helper()
+	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
+		Username: username, DisplayName: displayName, Password: testPassword, Role: auth.RoleEditor,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser(%s): %v", username, err)
+	}
+	return user.UID
+}
+
+// TestDetailUploader verifies the detail endpoint resolves a photo's uploader to
+// a human-readable name (display name, or username when the display name is
+// empty) and omits the uploader for a photo with no uploaded_by.
+func TestDetailUploader(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	base := env.server.URL
+
+	namedUID := env.createUser(t, "alice", "Alice Example")
+	unnamedUID := env.createUser(t, "bob", "")
+
+	t.Run("resolves display name", func(t *testing.T) {
+		seeded := env.seedPhoto(t, photos.Photo{Title: "Named", UploadedBy: &namedUID}, "named.jpg", 10, 20, 30)
+		got := getDetailUploader(t, client, base, seeded.UID)
+		if got == nil {
+			t.Fatal("uploader missing, want resolved display name")
+		}
+		if got.UID != namedUID || got.Name != "Alice Example" {
+			t.Errorf("uploader = %+v, want uid=%s name=%q", got, namedUID, "Alice Example")
+		}
+	})
+
+	t.Run("falls back to username", func(t *testing.T) {
+		seeded := env.seedPhoto(t, photos.Photo{Title: "Unnamed", UploadedBy: &unnamedUID}, "unnamed.jpg", 40, 50, 60)
+		got := getDetailUploader(t, client, base, seeded.UID)
+		if got == nil {
+			t.Fatal("uploader missing, want username fallback")
+		}
+		if got.Name != "bob" {
+			t.Errorf("uploader name = %q, want username fallback %q", got.Name, "bob")
+		}
+	})
+
+	t.Run("omits when no uploader", func(t *testing.T) {
+		seeded := env.seedPhoto(t, photos.Photo{Title: "Imported"}, "imported.jpg", 70, 80, 90)
+		if got := getDetailUploader(t, client, base, seeded.UID); got != nil {
+			t.Errorf("uploader = %+v, want nil for a photo with no uploaded_by", got)
+		}
+	})
 }
 
 // TestUpdateMetadata verifies the PATCH endpoint applies partial updates, clears

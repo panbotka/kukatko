@@ -190,6 +190,22 @@ describe('MetadataPanel location picker', () => {
   })
 })
 
+describe('MetadataPanel uploader', () => {
+  it('renders the resolved uploader name', () => {
+    renderPanel({
+      photo: photo({ uploader: { uid: 'u1', name: 'Alice Example' } }),
+    })
+    expect(screen.getByText('Uploaded by')).toBeInTheDocument()
+    expect(screen.getByText('Alice Example')).toBeInTheDocument()
+  })
+
+  it('renders a neutral fallback when there is no uploader', () => {
+    renderPanel({ photo: photo() })
+    expect(screen.getByText('Uploaded by')).toBeInTheDocument()
+    expect(screen.getByText('Unknown (imported)')).toBeInTheDocument()
+  })
+})
+
 describe('MetadataPanel AI note', () => {
   it('shows the AI note read-only and PATCHes an edited value', async () => {
     const onUpdated = vi.fn()

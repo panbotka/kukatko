@@ -317,7 +317,9 @@ zapiš sem.
   a volba se pamatuje v localStorage (`lib/faceOverlayPref`); fotka bez obličejů = jediný
   nenápadný řádek `faces.none`, žádný obrázek; klik na box otevře `FaceAssignPanel` pod náhledem;
   pruh `SimilarPhotos` a pravý panel se záložkami (`components/photo/`): **Informace**
-  (`MetadataPanel` = view/edit title/description/notes/ai_note/taken_at — **bez** camera/lens/EXIF, ta
+  (`MetadataPanel` = view/edit title/description/notes/ai_note/taken_at + read-only řádek
+  **`uploadedBy`** (kdo fotku nahrál — `photo.uploader.name` z detailu, fallback `uploadedByUnknown`
+  „Neznámý (import)“ když `uploader` chybí, řádek se vždy vykreslí) — **bez** camera/lens/EXIF, ta
   žije v `TechnicalDetails` — + **vizuální
   location picker** (nahradil holá lat/lng pole): jedno tolerantní pole souřadnic parsované
   pure helperem `lib/coordinates` (`parseCoordinates`→`{lat,lng}`|error / `formatCoordinates`;
@@ -710,7 +712,8 @@ zapiš sem.
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
   `UploadOutcome`; `photos.ts` navíc `fetchPhoto(uid)` (detail `GET /photos/{uid}` →
-  `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chipy), `updatePhoto(uid,patch)`
+  `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chipy+`uploader?` `{uid,name}` `PhotoUploader`
+  — kdo nahrál, resolved server-side, absent u importů), `updatePhoto(uid,patch)`
   (`PATCH …` částečná editace metadat → `PhotoMetadataUpdate`, null maže nullable),
   `fetchEdit(uid)`/`saveEdit(uid,edit)` (`GET`/`PUT …/edit` nedestruktivní edit → `PhotoEdit`
   crop/rotation/brightness/contrast), `downloadUrl(uid,{original?,token?})` (URL downloadu,
