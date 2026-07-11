@@ -515,6 +515,86 @@ describe('PhotoDetailPage', () => {
     })
   })
 
+  it('keeps the current photo mounted while a neighbour loads, then swaps in place', async () => {
+    // Distinct photos per uid so the swap is observable; the neighbour's detail
+    // fetch is deferred so we can inspect the page mid-navigation.
+    let resolveNext!: (p: PhotoDetail) => void
+    const pendingNext = new Promise<PhotoDetail>((resolve) => {
+      resolveNext = resolve
+    })
+    fetchPhotoMock.mockImplementation((uid) =>
+      uid === 'c' ? pendingNext : Promise.resolve(photo({ uid: 'b', title: 'Beach' })),
+    )
+
+    renderPage(true, '/photos/b?sort=oldest')
+    await screen.findByRole('heading', { name: 'Beach' })
+    const beachImg = screen.getByRole('img', { name: 'Beach' })
+    await screen.findByRole('link', { name: 'Next photo' })
+
+    // Page to the next photo; its detail fetch is still in flight.
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+    })
+
+    // The point of the fix: the previous photo's heading and image stay mounted —
+    // the page never drops into the full-page loading branch (which returns early
+    // and would unmount both), so there is no full-page flicker.
+    expect(screen.getByRole('heading', { name: 'Beach' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Beach' })).toBe(beachImg)
+
+    // Once the neighbour resolves it swaps in place, replacing the old content.
+    resolveNext(photo({ uid: 'c', title: 'Cliff' }))
+    expect(await screen.findByRole('heading', { name: 'Cliff' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Beach' })).not.toBeInTheDocument()
+  })
+
+  it('cancels a superseded neighbour fetch so the latest target wins', async () => {
+    // Honour the abort signal so a superseded request rejects like a real fetch,
+    // and hand back a resolver per uid so the test controls the ordering.
+    const resolvers = new Map<string, (p: PhotoDetail) => void>()
+    fetchPhotoMock.mockImplementation(
+      (uid, signal) =>
+        new Promise<PhotoDetail>((resolve, reject) => {
+          resolvers.set(uid, resolve)
+          signal?.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'))
+          })
+        }),
+    )
+    fetchPhotosMock.mockResolvedValue(page(['a', 'b', 'c', 'd']))
+
+    renderPage(true, '/photos/b?sort=oldest')
+    // First load: resolve b so there is content to keep visible during navigation.
+    await waitFor(() => {
+      expect(resolvers.has('b')).toBe(true)
+    })
+    resolvers.get('b')?.(photo({ uid: 'b', title: 'Beach' }))
+    await screen.findByRole('heading', { name: 'Beach' })
+    await screen.findByRole('link', { name: 'Next photo' })
+
+    // Page forward twice in quick succession: b → c → d, neither detail resolved.
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+    })
+    await screen.findByRole('link', { name: 'Next photo' })
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/d')
+    })
+    // The superseded photo Beach stays on screen — no blank spinner between hops.
+    expect(screen.getByRole('heading', { name: 'Beach' })).toBeInTheDocument()
+
+    // Leaving c aborted its fetch, so resolving it now is a no-op on an already
+    // rejected promise and must not clobber the current target d.
+    resolvers.get('c')?.(photo({ uid: 'c', title: 'Cliff' }))
+    resolvers.get('d')?.(photo({ uid: 'd', title: 'Dune' }))
+
+    expect(await screen.findByRole('heading', { name: 'Dune' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Cliff' })).not.toBeInTheDocument()
+  })
+
   it('toggles the favorite with the f key', async () => {
     renderPage()
     await screen.findByRole('heading', { name: 'Beach' })

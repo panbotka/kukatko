@@ -163,7 +163,12 @@ export function PhotoDetailPage() {
 
   useEffect(() => {
     const controller = new AbortController()
-    setState({ status: 'loading' })
+    // Only blank to the full-page spinner on the very first load. When a photo is
+    // already on screen (prev/next navigation), keep it mounted and fetch the next
+    // one in the background, then swap in place — no full-page flicker. The abort
+    // on `uid` change still cancels the superseded request, so the latest target
+    // always wins.
+    setState((prev) => (prev.status === 'ready' ? prev : { status: 'loading' }))
     Promise.all([fetchPhoto(uid, controller.signal), fetchEdit(uid, controller.signal)])
       .then(([photo, edit]) => {
         setState({ status: 'ready', photo, edit })
@@ -172,6 +177,8 @@ export function PhotoDetailPage() {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return
         }
+        // A failed neighbour fetch surfaces the error instead of silently leaving
+        // the previous photo on screen as if navigation had not happened.
         setState({ status: 'error' })
       })
     return () => {
@@ -199,6 +206,13 @@ export function PhotoDetailPage() {
 
   const { photo, edit } = state
   const title = photo.title !== '' ? photo.title : photo.file_name
+  // While paging to a neighbour we keep the current photo (and its edit) mounted
+  // and fetch the next one in the background; the displayed photo only matches the
+  // route `uid` once that fetch resolves. Until then a subtle overlay marks the
+  // load, and the face UI — keyed on the target `uid`, not the shown photo — is
+  // held back so photo A never shows photo B's boxes. The prev/next arrows do
+  // track the target `uid` so rapid paging stays responsive (latest target wins).
+  const loadingNext = photo.uid !== uid
 
   const setPhoto = (updated: PhotoDetail) => {
     setState({ status: 'ready', photo: updated, edit })
@@ -212,8 +226,10 @@ export function PhotoDetailPage() {
   const isStill = photo.media_type !== 'video' && photo.media_type !== 'live'
   // The overlay is only ever drawn over the still image: it positions its boxes
   // from normalised bboxes relative to its parent, and a video player's chrome is
-  // not the photo. Faces are never detected on clips anyway.
-  const showFaceBoxes = isStill && facesVisible && faces.faces.length > 0
+  // not the photo. Faces are never detected on clips anyway. While a neighbour
+  // loads (`loadingNext`) the boxes are keyed on the target photo, so they must
+  // not be drawn over the still-displayed previous one.
+  const showFaceBoxes = isStill && facesVisible && faces.faces.length > 0 && !loadingNext
 
   // Hiding the overlay also drops the selection: a naming panel for a box the user
   // can no longer see would be orphaned UI.
@@ -344,6 +360,16 @@ export function PhotoDetailPage() {
                 ›
               </Link>
             )}
+            {/* Paging to a neighbour keeps the current photo visible; a small
+                corner spinner marks the background load instead of blanking the
+                whole page to a full-screen spinner. */}
+            {loadingNext && (
+              <div className="position-absolute top-0 end-0 m-2">
+                <Spinner animation="border" size="sm" variant="light" role="status">
+                  <span className="visually-hidden">{t('photo.loadingNext')}</span>
+                </Spinner>
+              </div>
+            )}
           </div>
 
           <div className="d-flex gap-2 mt-2 flex-wrap">
@@ -361,7 +387,7 @@ export function PhotoDetailPage() {
                 {t('photo.downloadEdited')}
               </Button>
             )}
-            {isStill && faces.faces.length > 0 && (
+            {isStill && faces.faces.length > 0 && !loadingNext && (
               <Button
                 type="button"
                 variant={facesVisible ? 'secondary' : 'outline-secondary'}
@@ -377,7 +403,7 @@ export function PhotoDetailPage() {
           {/* Faces never get an image of their own: they are the overlay above.
               A photo with none says so in one line, and the naming panel opens
               below the preview when a box is picked. */}
-          {faces.status === 'ready' && faces.faces.length === 0 && (
+          {faces.status === 'ready' && faces.faces.length === 0 && !loadingNext && (
             <p className="text-secondary small mt-2 mb-0">{t('faces.none')}</p>
           )}
           {faces.actionError && (

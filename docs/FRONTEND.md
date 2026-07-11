@@ -320,7 +320,14 @@ zapiš sem.
   lightboxu vypnuté** (`useKeyboardShortcuts({enabled:!lightboxOpen})`), aby je ovládal lightbox;
   **prev/next navigace** respektující pořadí
   zdrojového výpisu (`usePhotoNeighbors` pageuje `GET /photos` se scope+filtry z URL — nebo `GET /search`,
-  když detail vznikl z hledání, aby prev/next drželo stejné řazené výsledky),
+  když detail vznikl z hledání, aby prev/next drželo stejné řazené výsledky);
+  **listování bez fullpage flickeru** — jen **první** načtení ukáže velký spinner, při skoku na souseda
+  zůstane aktuální fotka namontovaná a nová se dotáhne na pozadí (`setState` nereaguje na `loading`, když
+  už je `ready`), pak se **swapne na místě**; nad snímkem přitom svítí nenápadný rohový spinner
+  (`photo.loadingNext`). Dokud běží načítání souseda (`loadingNext = photo.uid !== uid`), jsou obličeje/„bez
+  obličejů"/toggle keyed na cílový uid **potlačené**, aby se boxy fotky B nekreslily nad fotkou A; abort na
+  změnu `uid` ruší předběhnutý request (poslední cíl vyhrává), chyba načtení souseda spadne do error stavu
+  (nenechá tiše starou fotku),
   deep-linkovatelný + **Zpět** na zdrojový pohled — album/štítek/oblíbené/hledání/knihovnu podle scope,
   který dlaždice nese v `detailQuery` odkazu (`lib/detailView` `backHref`/`detailToParams`/
   `detailQueryString`; hledání se pozná podle `mode` v query, oblíbené podle `favorite=true`),

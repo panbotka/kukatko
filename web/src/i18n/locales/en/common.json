@@ -647,6 +647,7 @@
   },
   "photo": {
     "loading": "Loading photo…",
+    "loadingNext": "Loading photo…",
     "error": "Could not load this photo.",
     "back": "Back",
     "prev": "Previous photo",

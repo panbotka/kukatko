@@ -663,6 +663,7 @@
   },
   "photo": {
     "loading": "Načítání fotky…",
+    "loadingNext": "Načítání fotky…",
     "error": "Tuto fotku se nepodařilo načíst.",
     "back": "Zpět",
     "prev": "Předchozí fotka",
