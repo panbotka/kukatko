@@ -11,6 +11,7 @@ export type IconName =
   | 'box-arrow-right'
   | 'chevron-down'
   | 'chevron-right'
+  | 'clock-history'
   | 'cloud-arrow-up'
   | 'collection'
   | 'compass'

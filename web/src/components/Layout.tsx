@@ -101,6 +101,7 @@ const ADMIN_GROUP: NavGroup = {
     },
     { to: '/system', labelKey: 'nav.system', titleKey: 'nav.titles.system', icon: 'activity' },
     { to: '/users', labelKey: 'nav.users', titleKey: 'nav.titles.users', icon: 'person-gear' },
+    { to: '/audit', labelKey: 'nav.audit', titleKey: 'nav.titles.audit', icon: 'clock-history' },
   ],
 }
 

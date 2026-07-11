@@ -38,6 +38,7 @@
     "trash": "Koš",
     "system": "Systém",
     "users": "Uživatelé",
+    "audit": "Audit",
     "titles": {
       "home": "Přejít na úvodní stránku",
       "library": "Zobrazit knihovnu fotek",
@@ -58,6 +59,7 @@
       "maintenance": "Spustit údržbu knihovny",
       "system": "Zobrazit stav systému",
       "users": "Spravovat uživatelské účty",
+      "audit": "Zobrazit auditní log",
       "account": "Spravovat vlastní účet",
       "logout": "Odhlásit se z Kukátka"
     }
@@ -1144,6 +1146,50 @@
       "invalidRole": "Neplatná role.",
       "noteTooLong": "Poznámka může mít nejvýše {{max}} znaků.",
       "generic": "Akci se nepodařilo dokončit."
+    }
+  },
+  "audit": {
+    "title": "Auditní log",
+    "subtitle": "Trvalý záznam změn v této instanci, od nejnovějších. Filtrujte podle aktéra, akce, entity nebo data.",
+    "adminOnly": "Tato stránka je dostupná pouze administrátorům.",
+    "loading": "Načítání auditního logu…",
+    "error": "Auditní log se nepodařilo načíst.",
+    "retry": "Zkusit znovu",
+    "empty": {
+      "title": "Žádné záznamy",
+      "hint": "Zvoleným filtrům neodpovídá žádná událost. Zkuste je uvolnit."
+    },
+    "columns": {
+      "when": "Kdy",
+      "actor": "Kdo",
+      "action": "Akce",
+      "target": "Cíl",
+      "ip": "IP",
+      "details": "Detaily"
+    },
+    "filters": {
+      "actor": "Aktér",
+      "allActors": "Všichni aktéři",
+      "action": "Akce",
+      "actionPlaceholder": "např. photo.update",
+      "entityType": "Typ entity",
+      "entityTypePlaceholder": "např. photos",
+      "entityUid": "UID entity",
+      "since": "Od",
+      "until": "Do",
+      "apply": "Filtrovat",
+      "reset": "Zrušit filtry"
+    },
+    "details": {
+      "show": "Zobrazit detaily",
+      "hide": "Skrýt detaily",
+      "payload": "Detaily",
+      "userAgent": "User agent"
+    },
+    "pagination": {
+      "range": "Zobrazeno {{from}}–{{to}} z {{total}}",
+      "prev": "Předchozí",
+      "next": "Další"
     }
   }
 }

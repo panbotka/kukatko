@@ -38,6 +38,7 @@
     "trash": "Trash",
     "system": "System",
     "users": "Users",
+    "audit": "Audit",
     "titles": {
       "home": "Go to the home page",
       "library": "Show the photo library",
@@ -58,6 +59,7 @@
       "maintenance": "Run library maintenance",
       "system": "Show the system status",
       "users": "Manage user accounts",
+      "audit": "View the audit log",
       "account": "Manage your own account",
       "logout": "Sign out of Kukátko"
     }
@@ -1122,6 +1124,50 @@
       "invalidRole": "Invalid role.",
       "noteTooLong": "The note may be at most {{max}} characters.",
       "generic": "The action could not be completed."
+    }
+  },
+  "audit": {
+    "title": "Audit log",
+    "subtitle": "A durable record of changes on this instance, newest first. Filter by actor, action, entity or date.",
+    "adminOnly": "This page is available to administrators only.",
+    "loading": "Loading the audit log…",
+    "error": "The audit log could not be loaded.",
+    "retry": "Try again",
+    "empty": {
+      "title": "No entries",
+      "hint": "No events match the current filters. Try relaxing them."
+    },
+    "columns": {
+      "when": "When",
+      "actor": "Who",
+      "action": "Action",
+      "target": "Target",
+      "ip": "IP",
+      "details": "Details"
+    },
+    "filters": {
+      "actor": "Actor",
+      "allActors": "All actors",
+      "action": "Action",
+      "actionPlaceholder": "e.g. photo.update",
+      "entityType": "Entity type",
+      "entityTypePlaceholder": "e.g. photos",
+      "entityUid": "Entity UID",
+      "since": "From",
+      "until": "To",
+      "apply": "Filter",
+      "reset": "Clear filters"
+    },
+    "details": {
+      "show": "Show details",
+      "hide": "Hide details",
+      "payload": "Details",
+      "userAgent": "User agent"
+    },
+    "pagination": {
+      "range": "Showing {{from}}–{{to}} of {{total}}",
+      "prev": "Previous",
+      "next": "Next"
     }
   }
 }

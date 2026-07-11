@@ -6,6 +6,7 @@ import { Layout } from './components/Layout'
 import { AccountPage } from './pages/AccountPage'
 import { AlbumDetailPage } from './pages/AlbumDetailPage'
 import { AlbumsPage } from './pages/AlbumsPage'
+import { AuditPage } from './pages/AuditPage'
 import { ClustersPage } from './pages/ClustersPage'
 import { DuplicatesPage } from './pages/DuplicatesPage'
 import { FavoritesPage } from './pages/FavoritesPage'
@@ -79,6 +80,7 @@ export function AppRoutes() {
             <Route path="/maintenance" element={<MaintenancePage />} />
             <Route path="/system" element={<SystemStatusPage />} />
             <Route path="/users" element={<UsersPage />} />
+            <Route path="/audit" element={<AuditPage />} />
           </Route>
           <Route path="/account" element={<AccountPage />} />
           <Route path="*" element={<NotFoundPage />} />

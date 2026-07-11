@@ -16,7 +16,7 @@ zapiš sem.
   (`nav.tools`, `TOOLS_GROUP`, celý gate `canWrite`) sdružuje **Duplikáty** `/duplicates` + **Koš**
   `/trash`; **Import** `/import` (`IMPORT_ITEM`) je top-level s gate `canImport` (admin **nebo** ai);
   adminský dropdown **Správa** (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje
-  **Údržba** `/maintenance` + **Systém** `/system` + **Uživatelé** `/users`.
+  **Údržba** `/maintenance` + **Systém** `/system` + **Uživatelé** `/users` + **Audit** `/audit`.
   **V navbaru není hledání**
   (ani odkaz, ani živé pole ani uložená hledání) — hledá se z knihovny a ze stránky `/search`.
   Každá položka i každý dropdown toggle nese **ikonu** (`Icon`) a **`title` popisující akci**, ne
@@ -294,6 +294,16 @@ zapiš sem.
   form-level alert), ne na obecný banner. Stavy: **skeleton** (`Placeholder` v tabulce) při načítání,
   error alert s **Zkusit znovu**, prázdný stav (`EmptyState`, prakticky nedosažitelný — bootstrap
   admin vždy existuje, ale nesmí spadnout); sebe-gate na `isAdmin`,
+  `AuditPage` = `/audit` (jen admin) **auditní log**: read-only tabulka záznamů z `GET /audit`
+  od nejnovějších (kdy/kdo/akce/cíl/IP), `details` JSON přes rozbalovací řádek (`aria-expanded`,
+  ukáže i `user_agent`). Filtry (aktér = `<select>` nad rosterem přes `fetchUsers`, akce, typ+UID
+  entity, rozsah dat `od`/`do`) v **draft** formuláři → **Filtrovat** je zapíše do URL a resetuje
+  stránku, **Zrušit filtry** vyčistí; datumy se v `viewToParams` rozšíří na RFC 3339 hranice dne
+  (UTC). Stránkování prev/next nad `offset`/`next_offset` (limit 100) s počtem `od–do z total`;
+  filtry i offset žijí v URL (`useUrlState` nad `AUDIT_DEFAULTS`), takže Zpět obnoví přesný pohled.
+  Jména aktérů se dotahují z rosteru **best-effort** (fallback na UID, resp. `—` u systémové akce),
+  nikdy neblokují render tabulky. Loading/empty/error (retry přes `reloadKey`) stavy, sebe-gate na
+  `isAdmin`,
   `PhotoDetailPage` = `/photos/:uid` **bohatý detail fotky**: velký náhled (`fit_1920`)
   reflektující uložený nedestruktivní edit (CSS) — u **videa** místo obrázku `VideoPlayer`
   (`components/photo/`, HTML5 `<video controls>` nad range endpointem `…/video`, poster `fit_1920`,
@@ -603,6 +613,10 @@ zapiš sem.
   typované jako i18next `ParseKeys`, takže neexistující klíč je compile error);
   `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
   + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér;
+  `auditView.ts` = typ `AuditView` (filtry + `offset`, string-only pro URL) + `AUDIT_DEFAULTS`
+  + `AUDIT_PAGE_SIZE` (100) + `pickFilters` (view bez offsetu) + `viewToParams` (mapuje na
+  `AuditListParams`, `since`/`until` z `YYYY-MM-DD` rozšíří na RFC 3339 hranice dne v UTC) — podklad
+  `AuditPage`;
   `savedSearchView.ts` = pure `isSearchParams(params)` (přítomnost `mode` rozlišuje search od library
   pohledu) + `savedSearchHref(params)` (složí `pathname?query` na `LIBRARY_PATH` nebo `/search`, minimálně
   zakóduje uložené params proti defaultům přes `writeUrlState`, ignoruje neznámé/zastaralé klíče) —
@@ -773,6 +787,12 @@ zapiš sem.
   (`POST /{uid}/password`, 204, odhlásí všechny session cíle); konstanty `ROLES`/`MAX_NOTE_LENGTH`,
   typy `AdminUser`/`CreateUserBody`/`UpdateUserBody`; hash hesla nemá kam uniknout — backend ho
   neserializuje a žádný typ pro něj nemá pole,
+  `audit.ts` = admin auditní klient nad `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
+  `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializuje filtry
+  (prázdné/nulový offset vynechá); typy `AuditRecord` (nullable `actor_uid`/`target_uid`/`ip`/
+  `user_agent`/`details`)/`AuditListParams`; sdílí `ApiError` z `auth.ts`. Pozor na názvosloví:
+  query params používají jména endpointu (`user`/`entity_type`/`entity_uid`), záznamy sloupce
+  (`actor_uid`/`target_type`/`target_uid`),
   `i18n/` (i18next init — options jsou exportované jako `initOptions`, ať si je test může nabootit
   do vlastní instance — + `locales/{cs,en}/common.json`;
   typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů;
@@ -851,8 +871,8 @@ zapiš sem.
   `/places`, `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/trash` a `/duplicates`
   navíc pod `RequireRole role="editor"` = write-only, `/import` pod `RequireImport`
-  (admin **nebo** ai — mimo žebříček rolí, řídí `canImport`), `/maintenance`, `/system`
-  a `/users` pod `RequireRole role="admin"` = admin-only). Konfig:
+  (admin **nebo** ai — mimo žebříček rolí, řídí `canImport`), `/maintenance`, `/system`,
+  `/users` a `/audit` pod `RequireRole role="admin"` = admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.
