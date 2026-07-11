@@ -44,7 +44,7 @@ func (s *Store) SetRating(ctx context.Context, userUID, photoUID string, rating 
 	return s.upsertRating(ctx, setRatingUpsertSQL, userUID, photoUID, rating, "rating write")
 }
 
-// SetFlag sets the pick/reject flag photoUID has for the user identified by
+// SetFlag sets the personal-marking flag photoUID has for the user identified by
 // userUID, leaving any existing rating untouched. It is an idempotent upsert;
 // when the resulting row would be all-defaults (rating 0 and flag 'none') the row
 // is deleted instead. It returns ErrInvalidFlag for a flag outside the allowed

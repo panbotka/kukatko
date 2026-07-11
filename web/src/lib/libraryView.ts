@@ -50,7 +50,7 @@ export type LibraryView = {
   taken_before: string
   /** Minimum star rating filter: '' (any) or '1'–'5'. */
   min_rating: string
-  /** Pick/reject flag filter: '' (any), 'pick' or 'reject'. */
+  /** Personal-marking filter: '' (any), 'pick' (👍), 'reject' (👎) or 'eye' (👁). */
   flag: string
 }
 

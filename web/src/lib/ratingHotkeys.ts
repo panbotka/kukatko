@@ -2,8 +2,9 @@ import { type RatingFlag } from '../services/photos'
 
 /**
  * A rating action decoded from a keyboard key: either a star rating (0–5) or a
- * pick/reject flag. Number keys `0`–`5` set the rating, `p` picks and `r`
- * rejects. Any other key yields `null` (not a rating hotkey).
+ * personal-marking flag. Number keys `0`–`5` set the rating; `p` marks 👍
+ * thumbs-up (stored `pick`), `r` marks 👎 thumbs-down (stored `reject`) and `v`
+ * (viděno/viewed) marks 👁 eye. Any other key yields `null` (not a rating hotkey).
  */
 export type RatingHotkey =
   | { readonly kind: 'rating'; readonly value: number }
@@ -11,9 +12,10 @@ export type RatingHotkey =
 
 /**
  * Maps a `KeyboardEvent.key` to a rating action, or `null` when the key is not a
- * rating shortcut. `0`–`5` set the rating, `p`/`r` (case-insensitive) set the
- * pick/reject flag. A pure function so it is trivially testable and shared by the
- * photo detail page and the focused grid tile.
+ * rating shortcut. `0`–`5` set the rating; `p`/`r`/`v` (case-insensitive) set the
+ * personal marking (👍 thumbs-up / 👎 thumbs-down / 👁 eye). A pure function so it
+ * is trivially testable and shared by the photo detail page and the focused grid
+ * tile.
  */
 export function ratingHotkey(key: string): RatingHotkey | null {
   if (key.length === 1 && key >= '0' && key <= '5') {
@@ -25,6 +27,9 @@ export function ratingHotkey(key: string): RatingHotkey | null {
   }
   if (lower === 'r') {
     return { kind: 'flag', value: 'reject' }
+  }
+  if (lower === 'v') {
+    return { kind: 'flag', value: 'eye' }
   }
   return null
 }

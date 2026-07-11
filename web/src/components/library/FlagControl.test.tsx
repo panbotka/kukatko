@@ -24,18 +24,46 @@ beforeEach(async () => {
 })
 
 describe('FlagControl', () => {
-  it('reflects the active flag via aria-pressed', () => {
-    renderControl('pick')
-    expect(screen.getByRole('button', { name: 'Pick' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Reject' })).toHaveAttribute('aria-pressed', 'false')
+  it('renders one toggle button per personal-marking state', () => {
+    renderControl('none')
+    expect(screen.getByRole('button', { name: 'Eye' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Thumbs up' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
   })
 
-  it('sets the reject flag when reject is clicked', async () => {
+  it('reflects the active flag via aria-pressed', () => {
+    renderControl('pick')
+    expect(screen.getByRole('button', { name: 'Thumbs up' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: 'Thumbs down' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(screen.getByRole('button', { name: 'Eye' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('marks the eye state as active when the eye flag is set', () => {
+    renderControl('eye')
+    expect(screen.getByRole('button', { name: 'Eye' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('sets the eye flag when eye is clicked', async () => {
     const onFlag = vi.fn()
     const user = userEvent.setup()
     renderControl('none', onFlag)
 
-    await user.click(screen.getByRole('button', { name: 'Reject' }))
+    await user.click(screen.getByRole('button', { name: 'Eye' }))
+    expect(onFlag).toHaveBeenCalledWith('eye')
+  })
+
+  it('sets the reject flag when thumbs-down is clicked', async () => {
+    const onFlag = vi.fn()
+    const user = userEvent.setup()
+    renderControl('none', onFlag)
+
+    await user.click(screen.getByRole('button', { name: 'Thumbs down' }))
     expect(onFlag).toHaveBeenCalledWith('reject')
   })
 
@@ -44,7 +72,7 @@ describe('FlagControl', () => {
     const user = userEvent.setup()
     renderControl('pick', onFlag)
 
-    await user.click(screen.getByRole('button', { name: 'Pick' }))
+    await user.click(screen.getByRole('button', { name: 'Thumbs up' }))
     expect(onFlag).toHaveBeenCalledWith('none')
   })
 
@@ -54,7 +82,8 @@ describe('FlagControl', () => {
         <FlagControl flag="none" />
       </I18nextProvider>,
     )
-    expect(screen.getByRole('button', { name: 'Pick' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Eye' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Thumbs up' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Thumbs down' })).toBeDisabled()
   })
 })

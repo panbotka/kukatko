@@ -573,10 +573,12 @@ takže se unit-testuje s faky bez DB.
 
 ### Alba, štítky, oblíbené & hodnocení (`internal/organize`)
 
-Organizační schéma nad katalogem (migrace `0011_albums_labels_favorites.sql` a
-`0016_user_ratings.sql`, balíček `internal/organize` se `Store` nad sdíleným pgx poolem).
-Oblíbené i hodnocení (hvězdičky + pick/reject flag) jsou v Kukátku **per-user** (oblíbené
-nahrazují globální `photos.favorite` z photo-sorteru).
+Organizační schéma nad katalogem (migrace `0011_albums_labels_favorites.sql`,
+`0016_user_ratings.sql` a `0025_user_ratings_eye.sql`, balíček `internal/organize` se `Store`
+nad sdíleným pgx poolem). Oblíbené i hodnocení (hvězdičky + **osobní označení**) jsou v Kukátku
+**per-user** (oblíbené nahrazují globální `photos.favorite` z photo-sorteru). Osobní označení je
+neutrální trojstavová ikonka — 👁 oko, 👍 palec nahoru (uloženo `pick`), 👎 palec dolů (uloženo
+`reject`) — místo dřívějšího pick/reject cullingu.
 
 - **`albums`** — PK `uid` (prefix `al`), `slug` UNIQUE (z `title`, Slugify + číselný sufix),
   `title`/`description`, `type` CHECK (`album`/`folder`/`moment`/`state`/`month`),
@@ -592,7 +594,7 @@ nahrazují globální `photos.favorite` z photo-sorteru).
 - **`user_favorites`** — per-user oblíbené: PK `(user_uid, photo_uid)`, oba FK
   `ON DELETE CASCADE`, `added_at`.
 - **`user_ratings`** — per-user hodnocení: PK `(user_uid, photo_uid)`, oba FK `ON DELETE CASCADE`,
-  `rating SMALLINT` CHECK 0–5 (default 0), `flag TEXT` CHECK (`none`/`pick`/`reject`, default
+  `rating SMALLINT` CHECK 0–5 (default 0), `flag TEXT` CHECK (`none`/`pick`/`reject`/`eye`, default
   `none`), `updated_at`. Řádek existuje **jen pro nedefaultní hodnotu** — když rating spadne na 0
   a flag na `none`, store řádek smaže, takže fotka bez řádku = rating 0 / flag `none` a tabulka
   zůstává řídká.
@@ -610,7 +612,7 @@ nahrazují globální `photos.favorite` z photo-sorteru).
   `ListFavorites` (per-user, newest-first), `FavoritedAmong` (z dané množiny photo uid vrátí
   per-user podmnožinu oblíbených jako množinu — anotace celé stránky `is_favorite` jedním dotazem).
 - **Hodnocení** — `SetRating(user,photo,rating)` (validace 0–5 → `ErrInvalidRating`) a
-  `SetFlag(user,photo,flag)` (validace `none`/`pick`/`reject` → `ErrInvalidFlag`): idempotentní
+  `SetFlag(user,photo,flag)` (validace `none`/`pick`/`reject`/`eye` → `ErrInvalidFlag`): idempotentní
   upsert jediné kolony v transakci (druhá se zachová), a když řádek spadne na 0/`none`, smaže ho.
   `ClearRating(user,photo)` smaže hodnocení i flag jedním idempotentním DELETE (mirror
   `RemoveFavorite`, no-op na nehodnocené/chybějící fotce — podklad `DELETE /photos/{uid}/rating`).

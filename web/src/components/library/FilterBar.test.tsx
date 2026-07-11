@@ -336,6 +336,16 @@ describe('FilterBar advanced controls', () => {
     expect(onChange).toHaveBeenCalledWith({ flag: 'pick' })
   })
 
+  it('pushes the eye flag filter when the eye option is selected', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange)
+
+    await openPanel(user)
+    await user.selectOptions(screen.getByLabelText('Flag'), 'eye')
+    expect(onChange).toHaveBeenCalledWith({ flag: 'eye' })
+  })
+
   it('replaces history for live-typed free-text input', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
@@ -355,6 +365,11 @@ describe('FilterBar active-filter chips', () => {
     expect(screen.getByText('Flag: Picks')).toBeInTheDocument()
     const toggle = screen.getByRole('button', { name: /Filters/ })
     expect(within(toggle).getByText('2')).toBeInTheDocument()
+  })
+
+  it('renders the eye value on the flag chip', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, flag: 'eye' }, vi.fn())
+    expect(screen.getByText('Flag: Eyes')).toBeInTheDocument()
   })
 
   it('clears a single filter when its chip is dismissed', async () => {

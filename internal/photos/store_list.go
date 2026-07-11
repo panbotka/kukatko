@@ -299,10 +299,10 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 }
 
 // ratingClauses returns the per-user rating filters (minimum star rating and
-// pick/reject flag) as correlated EXISTS subqueries over user_ratings, binding
+// personal-marking flag) as correlated EXISTS subqueries over user_ratings, binding
 // each value through bind. Both are scoped to params.RatedBy (the current
 // caller), so they apply only when a rating user is set. A photo with no rating
-// row counts as rating 0 / flag "none", so a positive MinRating or a pick/reject
+// row counts as rating 0 / flag "none", so a positive MinRating or a pick/reject/eye
 // flag filter excludes it; a MinRating <= 0 matches every photo and adds no
 // clause. The outer photo reference is qualified (photos.uid) to disambiguate it
 // from the join table's photo_uid inside the subquery.
@@ -316,7 +316,7 @@ func ratingClauses(params ListParams, bind func(any) string) []string {
 			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = "+bind(*params.RatedBy)+
 			" AND ur.rating >= "+bind(*params.MinRating)+")")
 	}
-	if params.Flag != nil && (*params.Flag == "pick" || *params.Flag == "reject") {
+	if params.Flag != nil && (*params.Flag == "pick" || *params.Flag == "reject" || *params.Flag == "eye") {
 		where = append(where, "EXISTS (SELECT 1 FROM user_ratings ur "+
 			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = "+bind(*params.RatedBy)+
 			" AND ur.flag = "+bind(*params.Flag)+")")

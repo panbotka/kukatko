@@ -136,6 +136,7 @@ func TestClient_SetRating(t *testing.T) {
 	}{
 		{name: "stars only", rating: new(4), wantKeys: []string{"rating"}, noKeys: []string{"flag"}},
 		{name: "flag only", flag: new(FlagPick), wantKeys: []string{"flag"}, noKeys: []string{"rating"}},
+		{name: "eye flag only", flag: new(FlagEye), wantKeys: []string{"flag"}, noKeys: []string{"rating"}},
 		{name: "both", rating: new(0), flag: new(FlagReject), wantKeys: []string{"rating", "flag"}},
 	}
 	for _, tt := range tests {

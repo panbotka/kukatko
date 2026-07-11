@@ -155,10 +155,11 @@ describe('PhotoTile curation controls', () => {
     expect(screen.queryByRole('button', { name: /Rate \d of 5/ })).not.toBeInTheDocument()
   })
 
-  it('renders no pick/reject flag control on the tile', () => {
+  it('renders no personal-marking flag control on the tile', () => {
     renderTile(photo({ media_type: 'image' }), true)
-    expect(screen.queryByRole('button', { name: 'Pick' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Eye' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Thumbs up' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Thumbs down' })).not.toBeInTheDocument()
   })
 
   it('neither dims nor badges a reject-flagged photo on the tile', () => {

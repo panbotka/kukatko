@@ -142,3 +142,63 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 		}
 	})
 }
+
+// TestList_eyeFlagFilter verifies the neutral 'eye' personal-marking value:
+// SetFlag stores it and it round-trips through GetRating, the Flag filter returns
+// only the caller's eye-marked photos, and the mark is per-user (an unrelated user
+// sees none). Kept separate from TestList_ratingFiltersAndSort so its extra rows
+// don't perturb the rating-sort ordering assertions there.
+func TestList_eyeFlagFilter(t *testing.T) {
+	store, db := newStore(t)
+	org := organize.NewStore(db.Pool())
+	users := auth.NewStore(db.Pool())
+	ctx := t.Context()
+
+	alice := makeRatingUser(t, users, "eye_alice")
+	bob := makeRatingUser(t, users, "eye_bob")
+
+	eyed := mustCreate(t, store, photos.Photo{
+		FileHash: "eye-1", FilePath: "e/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "eyed",
+	})
+	picked := mustCreate(t, store, photos.Photo{
+		FileHash: "eye-2", FilePath: "e/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "picked",
+	})
+	// A photo with no rating row counts as flag "none", so the eye filter drops it.
+	mustCreate(t, store, photos.Photo{
+		FileHash: "eye-3", FilePath: "e/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "plain",
+	})
+
+	if err := org.SetFlag(ctx, alice, eyed.UID, "eye"); err != nil {
+		t.Fatalf("SetFlag eye: %v", err)
+	}
+	if err := org.SetFlag(ctx, alice, picked.UID, "pick"); err != nil {
+		t.Fatalf("SetFlag pick: %v", err)
+	}
+
+	// The eye flag round-trips through GetRating.
+	if got, err := org.GetRating(ctx, alice, eyed.UID); err != nil || got.Flag != "eye" {
+		t.Fatalf("GetRating(eyed) = %+v, %v, want flag eye", got, err)
+	}
+
+	eye := "eye"
+	t.Run("flag filter keeps only the eye-marked photo", func(t *testing.T) {
+		list, err := store.List(ctx, photos.ListParams{RatedBy: &alice, Flag: &eye})
+		if err != nil {
+			t.Fatalf("List(flag eye): %v", err)
+		}
+		set := uidSet(list)
+		if len(set) != 1 || !set[eyed.UID] {
+			t.Fatalf("flag eye = %v, want only eyed", set)
+		}
+	})
+
+	t.Run("eye mark is per-user", func(t *testing.T) {
+		list, err := store.List(ctx, photos.ListParams{RatedBy: &bob, Flag: &eye})
+		if err != nil {
+			t.Fatalf("List(bob flag eye): %v", err)
+		}
+		if len(list) != 0 {
+			t.Fatalf("bob flag eye = %v, want none (per-user isolation)", uidSet(list))
+		}
+	})
+}

@@ -131,9 +131,15 @@ export function buildChips(
     })
   }
   if (view.flag !== '') {
+    const flagLabelKey =
+      view.flag === 'pick'
+        ? 'library.flag.picks'
+        : view.flag === 'reject'
+          ? 'library.flag.rejects'
+          : 'library.flag.eyes'
     chips.push({
       key: 'flag',
-      label: `${t('library.filters.flag')}: ${t(view.flag === 'pick' ? 'library.flag.picks' : 'library.flag.rejects')}`,
+      label: `${t('library.filters.flag')}: ${t(flagLabelKey)}`,
       clear: { flag: '' },
     })
   }

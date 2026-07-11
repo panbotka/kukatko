@@ -175,7 +175,8 @@
     "flag": {
       "any": "Any",
       "picks": "Picks",
-      "rejects": "Rejects"
+      "rejects": "Rejects",
+      "eyes": "Eyes"
     },
     "archived": {
       "hide": "Hide archived",
@@ -418,9 +419,10 @@
     "label": "Rating",
     "value": "Rated {{n}} of 5",
     "rate": "Rate {{n}} of 5",
-    "flag": "Flag",
-    "pick": "Pick",
-    "reject": "Reject"
+    "flag": "Personal mark",
+    "pick": "Thumbs up",
+    "reject": "Thumbs down",
+    "eye": "Eye"
   },
   "bulkEdit": {
     "title_one": "Edit {{count}} photo",

@@ -167,6 +167,7 @@ func TestIsValidFlag(t *testing.T) {
 		{"none", true},
 		{"pick", true},
 		{"reject", true},
+		{"eye", true},
 		{"", false},
 		{"star", false},
 	}

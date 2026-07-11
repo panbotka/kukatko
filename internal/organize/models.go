@@ -37,7 +37,7 @@ var (
 	ErrInvalidSource = errors.New("organize: invalid label source")
 	// ErrInvalidRating indicates a star rating outside the allowed 0–5 range.
 	ErrInvalidRating = errors.New("organize: invalid rating")
-	// ErrInvalidFlag indicates a pick/reject flag outside the allowed set.
+	// ErrInvalidFlag indicates a personal-marking flag outside the allowed set.
 	ErrInvalidFlag = errors.New("organize: invalid rating flag")
 )
 
@@ -177,24 +177,29 @@ type LabelUpdate struct {
 	Priority int    `json:"priority"`
 }
 
-// RatingFlag is a per-user pick/reject cull marker on a photo, mirrored by the
-// SQL CHECK constraint on user_ratings.flag.
+// RatingFlag is a per-user personal marking on a photo — a neutral,
+// mutually-exclusive icon state (eye / thumbs-up / thumbs-down, or none),
+// mirrored by the SQL CHECK constraint on user_ratings.flag. The stored strings
+// are internal: users see the icons, so "pick" backs thumbs-up and "reject"
+// backs thumbs-down (kept unchanged from the earlier pick/reject cull marker).
 type RatingFlag string
 
 // The recognised rating flags.
 const (
-	// FlagNone is the absence of a pick/reject marker (the default).
+	// FlagNone is the absence of a personal marking (the default).
 	FlagNone RatingFlag = "none"
-	// FlagPick marks a photo the user wants to keep/select.
+	// FlagPick backs the 👍 thumbs-up mark (stored value kept for compatibility).
 	FlagPick RatingFlag = "pick"
-	// FlagReject marks a photo the user wants to discard/cull.
+	// FlagReject backs the 👎 thumbs-down mark (stored value kept for compatibility).
 	FlagReject RatingFlag = "reject"
+	// FlagEye backs the 👁 eye mark, a neutral "seen"/attention marking.
+	FlagEye RatingFlag = "eye"
 )
 
 // valid reports whether f is one of the recognised rating flags.
 func (f RatingFlag) valid() bool {
 	switch f {
-	case FlagNone, FlagPick, FlagReject:
+	case FlagNone, FlagPick, FlagReject, FlagEye:
 		return true
 	default:
 		return false
@@ -210,12 +215,12 @@ const (
 	ratingMax = 5
 )
 
-// PhotoRating is a user's star rating (0–5) and pick/reject flag for one photo.
-// A photo a user has never rated reads back as the zero value — rating 0, flag
-// "none" — because the store keeps no row for all-default ratings.
+// PhotoRating is a user's star rating (0–5) and personal-marking flag for one
+// photo. A photo a user has never rated reads back as the zero value — rating 0,
+// flag "none" — because the store keeps no row for all-default ratings.
 type PhotoRating struct {
 	// Rating is the user's star rating from 0 (unrated) to 5.
 	Rating int `json:"rating"`
-	// Flag is the user's pick/reject marker; one of "none", "pick", "reject".
+	// Flag is the user's personal marking; one of "none", "pick", "reject", "eye".
 	Flag string `json:"flag"`
 }

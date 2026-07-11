@@ -92,10 +92,12 @@ export interface Photo {
 }
 
 /**
- * The per-user pick/reject flag on a photo (`internal/organize` `RatingFlag`):
- * `none` (no flag), `pick` (keeper) or `reject` (cull candidate).
+ * The per-user personal marking on a photo (`internal/organize` `RatingFlag`) — a
+ * neutral, mutually-exclusive icon state. The stored strings are internal (users
+ * see icons): `none` (no mark), `pick` (👍 thumbs-up), `reject` (👎 thumbs-down)
+ * or `eye` (👁 eye). `pick`/`reject` are kept from the earlier pick/reject flag.
  */
-export type RatingFlag = 'none' | 'pick' | 'reject'
+export type RatingFlag = 'none' | 'pick' | 'reject' | 'eye'
 
 /**
  * Response body of `GET /api/v1/photos`. `next_offset` is the offset to request

@@ -61,7 +61,7 @@ func (b ratingRequest) validate() error {
 		return fmt.Errorf("rating %d out of range [%d, %d]", *b.Rating, ratingMin, ratingMax)
 	}
 	if b.Flag != nil && !isValidFlag(*b.Flag) {
-		return fmt.Errorf("unknown flag %q (want none, pick or reject)", *b.Flag)
+		return fmt.Errorf("unknown flag %q (want none, pick, reject or eye)", *b.Flag)
 	}
 	return nil
 }
@@ -73,10 +73,11 @@ const (
 	ratingMax = 5
 )
 
-// isValidFlag reports whether flag is one of the recognised pick/reject markers.
+// isValidFlag reports whether flag is one of the recognised personal-marking
+// values (none / pick / reject / eye).
 func isValidFlag(flag string) bool {
 	switch organize.RatingFlag(flag) {
-	case organize.FlagNone, organize.FlagPick, organize.FlagReject:
+	case organize.FlagNone, organize.FlagPick, organize.FlagReject, organize.FlagEye:
 		return true
 	default:
 		return false
@@ -103,9 +104,9 @@ func (a *API) annotateRatings(ctx context.Context, userUID string, uids []string
 	return nil
 }
 
-// handleSetRating sets the current user's star rating and/or pick/reject flag for
-// the photo named in the path. The body carries an optional rating (0–5) and an
-// optional flag ("none"/"pick"/"reject"); at least one is required. It returns 204
+// handleSetRating sets the current user's star rating and/or personal-marking
+// flag for the photo named in the path. The body carries an optional rating (0–5)
+// and an optional flag ("none"/"pick"/"reject"/"eye"); at least one is required. It returns 204
 // on success, 400 for a malformed body or out-of-range value, 404 for a missing
 // photo, 401 when unauthenticated and 503 when no ratings backend is wired.
 func (a *API) handleSetRating(w http.ResponseWriter, r *http.Request) {

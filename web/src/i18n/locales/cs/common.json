@@ -175,7 +175,8 @@
     "flag": {
       "any": "Vše",
       "picks": "Vybrané",
-      "rejects": "Zamítnuté"
+      "rejects": "Zamítnuté",
+      "eyes": "Označené okem"
     },
     "archived": {
       "hide": "Skrýt archivované",
@@ -379,9 +380,10 @@
     "label": "Hodnocení",
     "value": "Hodnocení {{n}} z 5",
     "rate": "Ohodnotit {{n}} z 5",
-    "flag": "Označení",
-    "pick": "Vybrat",
-    "reject": "Zamítnout"
+    "flag": "Osobní označení",
+    "pick": "Palec nahoru",
+    "reject": "Palec dolů",
+    "eye": "Oko"
   },
   "bulkEdit": {
     "title_one": "Upravit {{count}} fotku",
