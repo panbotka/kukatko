@@ -364,9 +364,14 @@ function AdvancedFilters({
     <Row className="kukatko-filter-panel g-3">
       <Col xs={12} lg={6}>
         <fieldset className="mb-0">
-          <legend className="col-form-label pt-0 fw-semibold kk-text-body">
-            {t('library.filters.dateRange')}
-          </legend>
+          {/* Group the two date inputs for assistive tech, but keep the group
+              name off-screen: a visible legend is a whole extra label row the
+              single-input sibling columns lack, which drops the date inputs
+              below their neighbours and misaligns the grid. The per-input
+              labels below carry the visible text in the same `.small mb-1`
+              style every other column uses, so all headings and inputs share a
+              baseline while the fieldset still exposes "Date taken" to a11y. */}
+          <legend className="visually-hidden">{t('library.filters.dateRange')}</legend>
           <Row className="g-2">
             <Col xs={6}>
               <Form.Group controlId="library-taken-after">
