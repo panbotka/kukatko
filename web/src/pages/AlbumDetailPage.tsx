@@ -13,8 +13,10 @@ import { PhotoGrid } from '../components/library/PhotoGrid'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
+import { SelectionStart } from '../components/organize/SelectionStart'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
@@ -48,7 +50,7 @@ export function AlbumDetailPage() {
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState(false)
-  const [reloadKey, setReloadKey] = useState('0')
+  const [reloadKey, reload] = useReloadKey()
   const [actionError, setActionError] = useState(false)
 
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
@@ -59,10 +61,6 @@ export function AlbumDetailPage() {
     params,
     { reloadKey },
   )
-
-  const reload = useCallback(() => {
-    setReloadKey((k) => String(Number(k) + 1))
-  }, [])
 
   const bulk = useBulkEdit({ onEdited: reload })
   const selection = bulk.selection
@@ -84,10 +82,6 @@ export function AlbumDetailPage() {
       controller.abort()
     }
   }, [uid])
-
-  const enterSelect = useCallback(() => {
-    selection.enable()
-  }, [selection])
 
   const leaveMode = useCallback(() => {
     selection.disable()
@@ -182,9 +176,7 @@ export function AlbumDetailPage() {
                 >
                   {t('albumDetail.edit')}
                 </Button>
-                <Button variant="outline-secondary" size="sm" onClick={enterSelect}>
-                  {t('albumDetail.select')}
-                </Button>
+                <SelectionStart bulk={bulk} />
                 <Button variant="outline-danger" size="sm" onClick={() => void removeAlbum()}>
                   {t('albumDetail.delete')}
                 </Button>

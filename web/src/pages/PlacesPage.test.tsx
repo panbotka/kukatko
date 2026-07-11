@@ -5,6 +5,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type PlaceCountry } from '../services/places'
 import { type Photo, type PhotoListResponse } from '../services/photos'
@@ -35,10 +36,25 @@ vi.mock('../services/places', async (importOriginal) => {
   return { ...actual, fetchPlaces: vi.fn() }
 })
 
+vi.mock('../services/organize', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/organize')>()
+  return { ...actual, fetchAlbums: vi.fn(), fetchLabels: vi.fn() }
+})
+
+vi.mock('../services/bulk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/bulk')>()
+  return { ...actual, bulkUpdatePhotos: vi.fn() }
+})
+
 const { fetchPhotos } = await import('../services/photos')
 const { fetchPlaces } = await import('../services/places')
+const { bulkUpdatePhotos } = await import('../services/bulk')
+const { fetchAlbums, fetchLabels } = await import('../services/organize')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchPlacesMock = vi.mocked(fetchPlaces)
+const bulkMock = vi.mocked(bulkUpdatePhotos)
+const albumsMock = vi.mocked(fetchAlbums)
+const labelsMock = vi.mocked(fetchLabels)
 
 function photo(uid: string): Photo {
   return {
@@ -79,14 +95,30 @@ const HIERARCHY: PlaceCountry[] = [
   { country: 'Italy', count: 3, cities: [{ city: 'Rome', count: 3 }] },
 ]
 
-function renderPage(entry = '/places') {
+function auth(canWrite: boolean): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
+    role: canWrite ? 'editor' : 'viewer',
+    downloadToken: null,
+    canWrite,
+    isAdmin: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+  } as unknown as AuthContextValue
+}
+
+function renderPage(entry = '/places', canWrite = true) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[entry]}>
-        <Routes>
-          <Route path="/places" element={<PlacesPage />} />
-        </Routes>
-      </MemoryRouter>
+      <AuthContext.Provider value={auth(canWrite)}>
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route path="/places" element={<PlacesPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -95,6 +127,11 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchPhotosMock.mockReset()
   fetchPlacesMock.mockReset()
+  bulkMock.mockReset()
+  albumsMock.mockReset()
+  labelsMock.mockReset()
+  albumsMock.mockResolvedValue([])
+  labelsMock.mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -166,5 +203,90 @@ describe('PlacesPage', () => {
 
     expect(await screen.findByText('Could not load places.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+})
+
+describe('PlacesPage bulk edit', () => {
+  it('offers no selection before a city is drilled into', async () => {
+    fetchPlacesMock.mockResolvedValue(HIERARCHY)
+    renderPage()
+
+    await screen.findByRole('button', { name: /Czechia/ })
+    // Only the place grid can be selected, and it is not on screen yet.
+    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+  })
+
+  it('keeps selection and bulk edit away from viewers', async () => {
+    fetchPlacesMock.mockResolvedValue(HIERARCHY)
+    fetchPhotosMock.mockResolvedValue(page([photo('a')]))
+    renderPage('/places?country=Italy&city=Rome', false)
+
+    await screen.findByTestId('grid')
+    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
+  })
+
+  it('disables the bulk-edit trigger until a photo is picked', async () => {
+    fetchPlacesMock.mockResolvedValue(HIERARCHY)
+    fetchPhotosMock.mockResolvedValue(page([photo('a')]))
+    const user = userEvent.setup()
+    renderPage('/places?country=Italy&city=Rome')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+
+    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+  })
+
+  it('bulk-edits exactly the picked photos, then reloads the scoped grid', async () => {
+    fetchPlacesMock.mockResolvedValue(HIERARCHY)
+    fetchPhotosMock.mockResolvedValue(page([photo('a'), photo('b')]))
+    bulkMock.mockResolvedValue({
+      results: [],
+      counts: { total: 1, updated: 1, skipped: 0, errored: 0 },
+    })
+    const user = userEvent.setup()
+    renderPage('/places?country=Czechia&city=Prague')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+    await user.click(screen.getByRole('button', { name: 'b.jpg' }))
+
+    const fetchesBefore = fetchPhotosMock.mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
+    await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['b'], { archive: true })
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Done' }))
+
+    expect(screen.getByText('0 selected')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
+    })
+  })
+
+  it('leaves selection mode when the drill moves to another place', async () => {
+    fetchPlacesMock.mockResolvedValue(HIERARCHY)
+    fetchPhotosMock.mockResolvedValue(page([photo('a')]))
+    const user = userEvent.setup()
+    renderPage('/places?country=Czechia&city=Prague')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+
+    // Step back up to the country: a Prague photo must not stay selected.
+    await user.click(screen.getByRole('button', { name: 'Czechia' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+    })
   })
 })

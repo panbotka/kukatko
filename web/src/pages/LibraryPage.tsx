@@ -14,6 +14,7 @@ import { PhotoGrid } from '../components/library/PhotoGrid'
 import { TimelineScrubber } from '../components/library/TimelineScrubber'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
+import { SelectionStart } from '../components/organize/SelectionStart'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
@@ -21,6 +22,7 @@ import { useGridJump } from '../hooks/useGridJump'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import { useLibraryFacets } from '../hooks/useLibraryFacets'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { detailQueryString } from '../lib/detailView'
 import {
   hasActiveFilters,
@@ -59,10 +61,7 @@ export function LibraryPage() {
   // scope, which the library never applies.
   const detailQuery = useMemo(() => detailQueryString({ ...view, favorite: '' }), [view])
   // A bulk edit can change what the filters match, so bump the key to refetch.
-  const [reloadKey, setReloadKey] = useState('0')
-  const reload = useCallback(() => {
-    setReloadKey((k) => String(Number(k) + 1))
-  }, [])
+  const [reloadKey, reload] = useReloadKey()
   const { photos, total, status, loadingMore, moreError, hasMore, loadMore, retry } =
     usePhotoLibrary(params, { reloadKey })
   const facets = useLibraryFacets(params)
@@ -209,11 +208,7 @@ export function LibraryPage() {
             >
               {t('savedSearches.saveView')}
             </Button>
-            {bulk.canBulkEdit && (
-              <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
-                {t('library.select')}
-              </Button>
-            )}
+            <SelectionStart bulk={bulk} />
           </div>
         )}
       </div>

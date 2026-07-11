@@ -5,6 +5,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -32,6 +33,16 @@ vi.mock('../services/photos', async (importOriginal) => {
   return { ...actual, searchPhotos: vi.fn() }
 })
 
+vi.mock('../services/organize', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/organize')>()
+  return { ...actual, fetchAlbums: vi.fn(), fetchLabels: vi.fn() }
+})
+
+vi.mock('../services/bulk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/bulk')>()
+  return { ...actual, bulkUpdatePhotos: vi.fn() }
+})
+
 // The cross-entity sections run their own global search; stub it to an empty
 // result so this suite stays focused on the photo grid (see GlobalSearchSections
 // tests for the sections themselves).
@@ -47,6 +58,12 @@ vi.mock('../services/search', async (importOriginal) => {
 
 const { searchPhotos } = await import('../services/photos')
 const searchMock = vi.mocked(searchPhotos)
+
+const { bulkUpdatePhotos } = await import('../services/bulk')
+const { fetchAlbums, fetchLabels } = await import('../services/organize')
+const bulkMock = vi.mocked(bulkUpdatePhotos)
+const albumsMock = vi.mocked(fetchAlbums)
+const labelsMock = vi.mocked(fetchLabels)
 
 const { globalSearch } = await import('../services/search')
 const globalSearchMock = vi.mocked(globalSearch)
@@ -84,13 +101,29 @@ function LocationProbe() {
   return <span data-testid="search">{location.search}</span>
 }
 
-function renderSearch(initialEntry = '/search') {
+function auth(canWrite: boolean): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
+    role: canWrite ? 'editor' : 'viewer',
+    downloadToken: null,
+    canWrite,
+    isAdmin: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+  } as unknown as AuthContextValue
+}
+
+function renderSearch(initialEntry = '/search', canWrite = true) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <SearchPage />
-        <LocationProbe />
-      </MemoryRouter>
+      <AuthContext.Provider value={auth(canWrite)}>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <SearchPage />
+          <LocationProbe />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -98,6 +131,11 @@ function renderSearch(initialEntry = '/search') {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   searchMock.mockReset()
+  bulkMock.mockReset()
+  albumsMock.mockReset()
+  labelsMock.mockReset()
+  albumsMock.mockResolvedValue([])
+  labelsMock.mockResolvedValue([])
   // `restoreMocks: true` wipes the factory's resolved value after each test, so
   // re-establish it here; otherwise the cross-entity sections' debounced global
   // search resolves to `undefined` and leaks an unhandled rejection.
@@ -198,5 +236,77 @@ describe('SearchPage', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }))
 
     expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+  })
+})
+
+describe('SearchPage bulk edit', () => {
+  it('keeps selection and bulk edit away from viewers', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderSearch('/search?q=beach', false)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
+  })
+
+  it('disables the bulk-edit trigger until a photo is picked', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderSearch('/search?q=beach')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+
+    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+  })
+
+  it('bulk-edits exactly the picked photos, then re-runs the search', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
+    bulkMock.mockResolvedValue({
+      results: [],
+      counts: { total: 1, updated: 1, skipped: 0, errored: 0 },
+    })
+    const user = userEvent.setup()
+    renderSearch('/search?q=beach')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+    await user.click(screen.getByRole('button', { name: 'b.jpg' }))
+
+    const searchesBefore = searchMock.mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
+    await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['b'], { archive: true })
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Done' }))
+
+    expect(screen.getByText('0 selected')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(searchMock.mock.calls.length).toBeGreaterThan(searchesBefore)
+    })
+  })
+
+  it('leaves selection mode when the query changes, so no result of the old search stays picked', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderSearch('/search?q=beach')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Mode'), 'fulltext')
+
+    await waitFor(() => {
+      expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+    })
+    expect(await screen.findByRole('button', { name: 'Select' })).toBeInTheDocument()
   })
 })

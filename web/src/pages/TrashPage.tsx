@@ -139,7 +139,7 @@ export function TrashPage() {
         <div className="d-flex gap-1 flex-wrap">
           {!selection.active && (
             <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
-              {t('library.select')}
+              {t('selection.enter')}
             </Button>
           )}
           <Button

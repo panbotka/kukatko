@@ -10,11 +10,16 @@ import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
+import { BulkEditControl } from '../components/organize/BulkEditControl'
+import { SelectionBar } from '../components/organize/SelectionBar'
+import { SelectionStart } from '../components/organize/SelectionStart'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SavedSearchesDropdown } from '../components/savedsearch/SavedSearchesDropdown'
 import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
+import { useBulkEdit } from '../hooks/useBulkEdit'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { viewToParams } from '../lib/libraryView'
 import { SEARCH_DEFAULTS, type SearchView, toMode } from '../lib/searchView'
 import { useUrlState } from '../lib/urlState'
@@ -36,6 +41,10 @@ const SEARCH_DEBOUNCE_MS = 350
  *
  * This page also owns saved searches: the header pairs a "save this view" button
  * with the {@link SavedSearchesDropdown} that lists, applies and manages them.
+ *
+ * Editors can enter selection mode over the results and bulk-edit the picked
+ * photos; the search re-runs afterwards, since an edit can change what the query
+ * and filters match.
  */
 export function SearchPage() {
   const { t } = useTranslation()
@@ -43,8 +52,13 @@ export function SearchPage() {
 
   const params = useMemo(() => viewToParams(view), [view])
   const mode = toMode(view.mode)
+  const [reloadKey, reload] = useReloadKey()
   const { photos, total, status, degraded, loadingMore, moreError, loadMore, retry } =
-    usePhotoSearch(params, mode)
+    usePhotoSearch(params, mode, { reloadKey })
+
+  const bulk = useBulkEdit({ onEdited: reload })
+  const selection = bulk.selection
+  const hasResults = status === 'ready' && photos.length > 0
 
   // Local, debounced mirror of the URL query so typing stays responsive but the
   // URL (and the fetch) only update after the user pauses. The query is the
@@ -57,6 +71,15 @@ export function SearchPage() {
   useEffect(() => {
     setText(view.q)
   }, [view.q])
+
+  // A new query or mode is a different result set, and an empty query shows no
+  // grid at all — a selection made against the old results has nowhere to live,
+  // so leave selection mode with it. Filters, which merely narrow the same
+  // search, keep the selection, as they do on the library.
+  const leaveSelection = selection.disable
+  useEffect(() => {
+    leaveSelection()
+  }, [view.q, mode, leaveSelection])
 
   // Debounce committing the typed query to the URL; an unchanged value is a no-op.
   useEffect(() => {
@@ -75,25 +98,34 @@ export function SearchPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="kk-page-title mb-0">{t('search.title')}</h1>
-        <div className="d-flex align-items-center gap-2 flex-wrap">
-          {status === 'ready' && photos.length > 0 && (
-            <SlideshowStart scope={{ mode }} view={view} count={total} />
-          )}
-          {/* Saved searches live here rather than in the navbar: they are a
-              search-page concern, and `/saved` stays reachable from the menu. */}
-          <SavedSearchesDropdown />
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            title={t('savedSearches.saveViewTitle')}
-            onClick={() => {
-              setSavingView(true)
-            }}
-          >
-            {t('savedSearches.saveView')}
-          </Button>
-        </div>
+        {/* The search's own actions step aside while a selection is being made,
+            as on the library: the selection bar below is then the only toolbar. */}
+        {!selection.active && (
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            {hasResults && <SlideshowStart scope={{ mode }} view={view} count={total} />}
+            {/* Saved searches live here rather than in the navbar: they are a
+                search-page concern, and `/saved` stays reachable from the menu. */}
+            <SavedSearchesDropdown />
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              title={t('savedSearches.saveViewTitle')}
+              onClick={() => {
+                setSavingView(true)
+              }}
+            >
+              {t('savedSearches.saveView')}
+            </Button>
+            {hasResults && <SelectionStart bulk={bulk} />}
+          </div>
+        )}
       </div>
+
+      {selection.active && (
+        <SelectionBar count={selection.count} onCancel={selection.disable}>
+          <BulkEditControl bulk={bulk} />
+        </SelectionBar>
+      )}
 
       <Form
         role="search"
@@ -169,13 +201,14 @@ export function SearchPage() {
         <EmptyState title={t('search.empty.title')} hint={t('search.empty.hint')} />
       )}
 
-      {status === 'ready' && photos.length > 0 && (
+      {hasResults && (
         <PhotoGrid
           photos={photos}
           loadingMore={loadingMore}
           moreError={moreError}
           onEndReached={loadMore}
           onRetry={retry}
+          selection={bulk.gridSelection}
         />
       )}
 

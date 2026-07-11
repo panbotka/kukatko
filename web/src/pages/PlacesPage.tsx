@@ -9,6 +9,11 @@ import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
+import { BulkEditControl } from '../components/organize/BulkEditControl'
+import { SelectionBar } from '../components/organize/SelectionBar'
+import { SelectionStart } from '../components/organize/SelectionStart'
+import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
@@ -47,12 +52,19 @@ type State =
  * in the URL (`/places?country=…&city=…`), so Back/Forward step through the
  * drill. The country → city hierarchy is fetched once; the grid loads only once a
  * city is chosen.
+ *
+ * Editors can enter selection mode over that grid and bulk-edit the picked
+ * photos, after which it refetches — an edit can move a photo's location, and so
+ * out of the place being browsed. Walking the drill leaves selection mode, since
+ * every place is its own list.
  */
 export function PlacesPage() {
   const { t } = useTranslation()
   const [state, setState] = useState<State>({ status: 'loading' })
   // Bumped to re-run the hierarchy fetch after an error retry.
-  const [reloadKey, setReloadKey] = useState(0)
+  const [hierarchyKey, reloadHierarchy] = useReloadKey()
+  // Bumped to refetch the scoped grid after a bulk edit.
+  const [photosKey, reloadPhotos] = useReloadKey()
 
   const [view, setView] = useUrlState<PlacesView>(PLACES_DEFAULTS)
   const { country, city } = view
@@ -64,8 +76,12 @@ export function PlacesPage() {
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,
-    { enabled: gridEnabled },
+    { enabled: gridEnabled, reloadKey: photosKey },
   )
+
+  const bulk = useBulkEdit({ onEdited: reloadPhotos })
+  const selection = bulk.selection
+  const hasPhotos = gridEnabled && status === 'ready' && photos.length > 0
 
   useEffect(() => {
     const controller = new AbortController()
@@ -83,7 +99,14 @@ export function PlacesPage() {
     return () => {
       controller.abort()
     }
-  }, [reloadKey])
+  }, [hierarchyKey])
+
+  // Each place is its own list: stepping through the drill (or back out of it)
+  // must not carry a selection of the previous place's photos into the next.
+  const leaveSelection = selection.disable
+  useEffect(() => {
+    leaveSelection()
+  }, [country, city, leaveSelection])
 
   const selectCountry = useCallback(
     (name: string) => {
@@ -112,8 +135,9 @@ export function PlacesPage() {
 
   return (
     <>
-      <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
+      <div className="d-flex justify-content-between align-items-center gap-2 mb-3 flex-wrap">
         <h1 className="kk-page-title mb-0">{t('places.title')}</h1>
+        {hasPhotos && <SelectionStart bulk={bulk} />}
       </div>
 
       {/* Breadcrumb drill: Places / Country / City, each level clickable. */}
@@ -148,13 +172,7 @@ export function PlacesPage() {
       {state.status === 'error' && (
         <Alert variant="danger" className="d-flex align-items-center justify-content-between">
           <span>{t('places.error')}</span>
-          <Button
-            variant="outline-light"
-            size="sm"
-            onClick={() => {
-              setReloadKey((k) => k + 1)
-            }}
-          >
+          <Button variant="outline-light" size="sm" onClick={reloadHierarchy}>
             {t('library.error.retry')}
           </Button>
         </Alert>
@@ -214,6 +232,12 @@ export function PlacesPage() {
           {/* Level 3: the photo grid scoped to the selected place. */}
           {gridEnabled && (
             <>
+              {selection.active && (
+                <SelectionBar count={selection.count} onCancel={selection.disable}>
+                  <BulkEditControl bulk={bulk} />
+                </SelectionBar>
+              )}
+
               <FilterBar view={view} onChange={setView} total={total} />
 
               {status === 'loading' && <GridSkeleton />}
@@ -237,13 +261,14 @@ export function PlacesPage() {
                 />
               )}
 
-              {status === 'ready' && photos.length > 0 && (
+              {hasPhotos && (
                 <PhotoGrid
                   photos={photos}
                   loadingMore={loadingMore}
                   moreError={moreError}
                   onEndReached={loadMore}
                   onRetry={retry}
+                  selection={bulk.gridSelection}
                 />
               )}
             </>

@@ -119,7 +119,6 @@
     "count": "Photos: {{count}}",
     "loading": "Loading photos…",
     "loadingMore": "Loading more photos…",
-    "select": "Select",
     "selectAll": "Select all",
     "filters": {
       "barLabel": "Photo filters",
@@ -339,7 +338,6 @@
     "actionError": "The action failed. Please try again.",
     "edit": "Edit",
     "delete": "Delete",
-    "select": "Select",
     "setCover": "Set as cover",
     "removeSelected": "Remove from album",
     "confirmDelete": "Delete the album \"{{name}}\"? The photos themselves are kept.",
@@ -374,7 +372,6 @@
   "labelDetail": {
     "back": "Labels",
     "error": "Could not load this label.",
-    "select": "Select",
     "empty": {
       "title": "No photos with this label",
       "hint": "Attach this label to photos to see them here."
@@ -518,6 +515,7 @@
   "selection": {
     "label": "Selection actions",
     "count": "{{count}} selected",
+    "enter": "Select",
     "edit": "Bulk edit",
     "cancel": "Cancel"
   },

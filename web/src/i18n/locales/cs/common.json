@@ -119,7 +119,6 @@
     "count": "Počet fotek: {{count}}",
     "loading": "Načítání fotek…",
     "loadingMore": "Načítání dalších fotek…",
-    "select": "Vybrat",
     "selectAll": "Vybrat vše",
     "filters": {
       "barLabel": "Filtry fotek",
@@ -298,7 +297,6 @@
     "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
     "edit": "Upravit",
     "delete": "Smazat",
-    "select": "Vybrat",
     "setCover": "Nastavit jako náhled",
     "removeSelected": "Odebrat z alba",
     "confirmDelete": "Smazat album „{{name}}“? Samotné fotky zůstanou zachovány.",
@@ -333,7 +331,6 @@
   "labelDetail": {
     "back": "Štítky",
     "error": "Tento štítek se nepodařilo načíst.",
-    "select": "Vybrat",
     "empty": {
       "title": "Žádné fotky s tímto štítkem",
       "hint": "Připoj tento štítek k fotkám a uvidíš je tady."
@@ -487,6 +484,7 @@
   "selection": {
     "label": "Akce výběru",
     "count": "Vybráno: {{count}}",
+    "enter": "Vybrat",
     "edit": "Hromadná úprava",
     "cancel": "Zrušit"
   },

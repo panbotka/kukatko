@@ -136,9 +136,11 @@ describe('saving a view from search', () => {
     const user = userEvent.setup()
     render(
       <I18nextProvider i18n={i18n}>
-        <MemoryRouter initialEntries={['/search?q=cat&mode=semantic']}>
-          <SearchPage />
-        </MemoryRouter>
+        <AuthContext.Provider value={viewerAuth}>
+          <MemoryRouter initialEntries={['/search?q=cat&mode=semantic']}>
+            <SearchPage />
+          </MemoryRouter>
+        </AuthContext.Provider>
       </I18nextProvider>,
     )
 

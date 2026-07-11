@@ -8,10 +8,15 @@ import { Link, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
+import { BulkEditControl } from '../components/organize/BulkEditControl'
+import { SelectionBar } from '../components/organize/SelectionBar'
+import { SelectionStart } from '../components/organize/SelectionStart'
 import { Outliers } from '../components/people/Outliers'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
 import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
+import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useGridDensity } from '../hooks/useGridDensity'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { useSubjectPhotos } from '../hooks/useSubjectPhotos'
 import { gridTemplateColumns } from '../lib/gridDensity'
 import { fetchSubject, type Subject, updateSubject } from '../services/people'
@@ -27,6 +32,10 @@ type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; su
  * set-cover action for editors), and — for editors — the outlier review section
  * to spot and detach mis-assigned faces. The gallery pages through
  * `GET /subjects/{uid}/photos` with a load-more control.
+ *
+ * Editors can also select photos in the gallery and bulk-edit them; the gallery
+ * refetches afterwards, since the edit may have taken photos out of it. The
+ * set-cover action lives on the tiles and is untouched outside selection mode.
  */
 export function SubjectPage() {
   const { t } = useTranslation()
@@ -37,7 +46,11 @@ export function SubjectPage() {
   const [editing, setEditing] = useState(false)
   const [coverBusy, setCoverBusy] = useState(false)
 
-  const { photos, status, hasMore, loadingMore, loadMore } = useSubjectPhotos(uid)
+  const [reloadKey, reload] = useReloadKey()
+  const { photos, status, hasMore, loadingMore, loadMore } = useSubjectPhotos(uid, { reloadKey })
+
+  const bulk = useBulkEdit({ onEdited: reload })
+  const selection = bulk.selection
 
   useEffect(() => {
     const controller = new AbortController()
@@ -56,6 +69,14 @@ export function SubjectPage() {
       controller.abort()
     }
   }, [uid])
+
+  // Walking from one person to the next reuses this page, so a selection made in
+  // the previous gallery would survive into a gallery that never showed those
+  // photos. Each subject is its own list: leave selection mode with the subject.
+  const leaveSelection = selection.disable
+  useEffect(() => {
+    leaveSelection()
+  }, [uid, leaveSelection])
 
   const setCover = useCallback(
     async (photoUid: string) => {
@@ -114,18 +135,29 @@ export function SubjectPage() {
           <h1 className="kk-page-title mb-0">{subject.name}</h1>
           <Badge bg="secondary">{t(`subject.type.${subject.type}`)}</Badge>
         </div>
-        {canWrite && (
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            onClick={() => {
-              setEditing(true)
-            }}
-          >
-            {t('subject.editButton')}
-          </Button>
+        {!selection.active && (
+          <div className="d-flex gap-1 flex-wrap">
+            {canWrite && (
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                onClick={() => {
+                  setEditing(true)
+                }}
+              >
+                {t('subject.editButton')}
+              </Button>
+            )}
+            {photos.length > 0 && <SelectionStart bulk={bulk} />}
+          </div>
         )}
       </div>
+
+      {selection.active && (
+        <SelectionBar count={selection.count} onCancel={selection.disable}>
+          <BulkEditControl bulk={bulk} />
+        </SelectionBar>
+      )}
 
       <h2 className="kk-section-title">{t('subject.photos')}</h2>
       {status === 'loading' && (
@@ -155,6 +187,9 @@ export function SubjectPage() {
                 onSetCover={(photoUid) => {
                   void setCover(photoUid)
                 }}
+                selectable={selection.active}
+                selected={selection.selected.has(photo.uid)}
+                onToggleSelect={selection.toggle}
               />
             ))}
           </div>

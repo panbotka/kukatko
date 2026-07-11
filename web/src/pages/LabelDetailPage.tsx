@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
@@ -10,8 +10,10 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
+import { SelectionStart } from '../components/organize/SelectionStart'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
@@ -34,7 +36,7 @@ export function LabelDetailPage() {
   const { t } = useTranslation()
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
-  const [reloadKey, setReloadKey] = useState('0')
+  const [reloadKey, reload] = useReloadKey()
 
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const params = useMemo(() => viewToParams(view), [view])
@@ -44,10 +46,6 @@ export function LabelDetailPage() {
     params,
     { reloadKey },
   )
-
-  const reload = useCallback(() => {
-    setReloadKey((k) => String(Number(k) + 1))
-  }, [])
 
   const bulk = useBulkEdit({ onEdited: reload })
   const selection = bulk.selection
@@ -93,11 +91,7 @@ export function LabelDetailPage() {
         {!selection.active && hasPhotos && (
           <div className="d-flex gap-1 flex-wrap">
             <SlideshowStart scope={scope} view={view} count={total} />
-            {bulk.canBulkEdit && (
-              <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
-                {t('labelDetail.select')}
-              </Button>
-            )}
+            <SelectionStart bulk={bulk} />
           </div>
         )}
       </div>

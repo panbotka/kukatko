@@ -156,7 +156,9 @@ zapiš sem.
   akce + zrušit), `BulkEditControl` (**znovupoužitelný spouštěč** hromadné úpravy: tlačítko
   (`selection.edit`) + `BulkEditModal`, řízené výhradně výsledkem `useBulkEdit`; **viewerovi se
   nevykreslí vůbec**, při nulovém výběru je disabled — stačí ho vložit do `SelectionBar`, stránka
-  nedrží žádný stav dialogu), `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`, celá dávka
+  nedrží žádný stav dialogu), `SelectionStart` (**protějšek** `BulkEditControl`: tlačítko
+  `selection.enter`, které zapne režim výběru; viewerovi ani už zapnutému výběru se nevykreslí,
+  `onEnter` přebije akci pro stránku, která musí nejdřív opustit jiný režim), `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`, celá dávka
   jednou transakcí na backendu; formulář je rozdělený na **čtyři sekce** (`.kk-text-eyebrow`
   nadpisy): **Zařazení** (add/remove alb, add/remove štítků — čtyři `MultiSelect`y, takže jeden
   apply zvládne **víc alb i víc štítků najednou**; add pole navíc přes `onCreate` nabízejí
@@ -209,6 +211,8 @@ zapiš sem.
   přejmenování (`SaveSearchModal`) a **optimistické mazání** + empty state,
   `FavoritesPage` = `/favorites` oblíbené aktuálního uživatele: stejná mřížka/filtry jako knihovna
   scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených na místě (favoritable),
+  pro editory **režim výběru** → `BulkEditControl`; hromadné odebrání z oblíbených fotku ze seznamu
+  vyhodí (výběr se čistí **před** refetchem, takže v něm nezůstane fotka, která zmizela z mřížky),
   `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
   `AlbumDetailPage` = `/albums/:uid` hlavička + tlačítko **Promítání** (všem) + editorské akce
   (upravit/smazat/vybrat) nad
@@ -231,6 +235,9 @@ zapiš sem.
   a **jediný vstupní bod uložených hledání**
   (`SavedSearchesDropdown` — vypsat, otevřít, „Spravovat" → `/saved`) vedle tlačítka **Uložit pohled**
   (`SaveSearchModal` — `params` nese i `mode`, takže obnova míří na `/search`),
+  plus pro editory **režim výběru** nad výsledky → `BulkEditControl` (po úspěchu se hledání
+  přehraje přes `reloadKey`); změna `q`/`mode` je jiná sada výsledků, takže **opouští režim výběru**
+  (filtry, které jen zužují totéž hledání, výběr nechají, stejně jako v knihovně),
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
   po dokončení odkaz na nově nahrané fotky (`/?sort=added`, přes `LIBRARY_PATH`),
@@ -329,7 +336,9 @@ zapiš sem.
   fotek), editorům odkaz na review shluků,
   `SubjectPage` = `/people/:uid` stránka osoby: hlavička (jméno/typ + edit přes
   `SubjectEditModal`), paginovaná galerie (`useSubjectPhotos` + `SubjectPhotoTile` se
-  „set as cover" akcí editorům), a sekce `Outliers` (jen editor/admin),
+  „set as cover" akcí editorům), a sekce `Outliers` (jen editor/admin); editoři můžou v galerii
+  **vybírat** → `BulkEditControl` (po úspěchu refetch galerie) — v režimu výběru je dlaždice jeden
+  selection target, takže „set as cover" ustoupí, jako srdíčko/hvězdy na dlaždici knihovny,
   `ClustersPage` = `/people/clusters` (editor/admin) review fronta nepojmenovaných shluků:
   `ClusterCard` (reprezentant + ukázky + odebrání zatoulaného obličeje + jednorázové pojmenování
   celého shluku) v `Row`/`Col` mřížce, optimistické odebrání po pojmenování,
@@ -342,7 +351,9 @@ zapiš sem.
   `PlacesView` = `LibraryView`+`country`/`city`, takže Zpět prochází úrovně) — úroveň 1 seznam zemí
   (`ListGroup`), úroveň 2 města vybrané země (z nested dat, bez refetche), úroveň 3 fotomřížka
   scopnutá na `{country,city}` přes `useScopedPhotos` (enabled až po výběru města) + sdílený
-  `FilterBar` + breadcrumb Místa/země/město; loading/empty/error stavy,
+  `FilterBar` + breadcrumb Místa/země/město; loading/empty/error stavy, pro editory **režim výběru**
+  nad mřížkou → `BulkEditControl` (po úspěchu refetch, edit může fotku z místa odstěhovat); průchod
+  drillem **opouští režim výběru**, každé místo je vlastní seznam,
   `SlideshowPage` = `/slideshow` fullscreen promítání (mimo `Layout`, bez navbaru): čte scope
   (`?album=`/`?label=`/`?mode=` pro hledání/žádné) + filtry/řazení z URL (stejný stav jako mřížka),
   pageuje přes `usePaginatedPhotos` (velké sady se nenačítají najednou) — fetcher je `fetchPhotos`,
@@ -423,19 +434,25 @@ zapiš sem.
   `loadMore`/`retry`, reset+refetch při změně dotazu/`key`/`enabled`, ruší in-flight requesty
   a ignoruje stale odpovědi, vystavuje i `mode`/`degraded`; `enabled:false` → `idle` stav bez
   requestu; `usePhotoLibrary(params,{reloadKey?})` = tenká obálka nad ním nad `fetchPhotos`
-  (`reloadKey` refetchne mřížku po mutaci, stejně jako u `useScopedPhotos`); `usePhotoSearch` =
-  obálka nad `searchPhotos` s injektovaným `mode`, vypnutá při prázdném `q` (idle);
+  (`reloadKey` refetchne mřížku po mutaci, stejně jako u `useScopedPhotos`); `usePhotoSearch(params,mode,{reloadKey?})` =
+  obálka nad `searchPhotos` s injektovaným `mode`, vypnutá při prázdném `q` (idle), `reloadKey`
+  přehraje hledání po mutaci;
   `useUploadQueue` = fronta uploadu: `addFiles` (dedup jméno+velikost+mtime)/`removeItem`/
   `start`/`retry`/`retryFailed`/`clear`, konkurenční strop `MAX_CONCURRENT_UPLOADS` (3),
   per-file status+progress, souhrn počtů, `createdUids` pro odkaz do knihovny; auto-drainuje
   frontu efektem po `start`/retry, ruší běžící uploady při unmountu;
-  `useSubjectPhotos` = obálka nad `usePaginatedPhotos` nad `GET /subjects/{uid}/photos`
-  (galerie osoby, reset+reload při změně `uid`); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
+  `useSubjectPhotos(uid,{reloadKey?})` = obálka nad `usePaginatedPhotos` nad
+  `GET /subjects/{uid}/photos` (galerie osoby, reset+reload při změně `uid` nebo `reloadKey`); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
   nad `GET /photos` scopnutým na album/štítek/**lokalitu** (`PhotoScope` `{album?,label?,country?,city?}`
   + filtry/sort z URL, options `{reloadKey?,enabled?}` — `reloadKey` pro refetch po mutaci, `enabled:false`
   → idle bez fetche, např. Places před výběrem města); `useMapPhotos` = jednorázový (nestránkovaný) loader
   GeoJSON feedu geotagovaných fotek nad `fetchMapPhotos` (`status` loading/ready/error, `retry`,
   ruší in-flight + ignoruje stale při změně filtrů);
+  `useJobStats(enabled)` = poller stavu fronty jobů nad `fetchJobStats` (`GET /jobs/stats`) pro badge
+  v patičce: fetchuje **jen když `enabled`** (admin), refetch po ~30 s, **pauzuje při skryté záložce**
+  (`visibilitychange`/`document.hidden`) a při návratu hned refreshne; selhání spolkne a vrátí `null`
+  (badge se skryje), na unmountu/`enabled→false` ruší timer i in-flight request — nic ho nepřežije;
+
   `useLibraryFacets(params)` = loader nabídek tří facetů knihovny → `LibraryFacets{years,albums,labels}`:
   roky přes `fetchPhotoYears` **refetchuje při změně filtrů** (rok drží méně fotek, jakmile přibude
   štítek), ale **`year` z requestu strhává** (backend ho stejně ignoruje — facet nesmí zúžit vlastní
@@ -448,11 +465,6 @@ zapiš sem.
   filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGlobalSearch(query,
   debounceMs?)` = debouncovaný (default 250 ms) grouped global-search loader nad `globalSearch`
   (`status` idle/loading/ready/error + `result`, prázdný dotaz → idle bez requestu, ruší in-flight +
-  `useJobStats(enabled)` = poller stavu fronty jobů nad `fetchJobStats` (`GET /jobs/stats`) pro badge
-  v patičce: fetchuje **jen když `enabled`** (admin), refetch po ~30 s, **pauzuje při skryté záložce**
-  (`visibilitychange`/`document.hidden`) a při návratu hned refreshne; selhání spolkne a vrátí `null`
-  (badge se skryje), na unmountu/`enabled→false` ruší timer i in-flight request — nic ho nepřežije;
-
   ignoruje stale — podklad `GlobalSearchSections`); `useGridJump({gridRef,
   loadedCount,hasMore,loadingMore,loadMore})` = vrátí `jumpTo(index)`, který skočí mřížkou na foto
   index přes `VirtuosoGridHandle.scrollToIndex` a **nejdřív donačte stránky**, když cíl leží za
@@ -465,7 +477,10 @@ zapiš sem.
   výsledek) a `gridSelection` rovnou do `PhotoGrid`. `finish` = zavřít dialog → `selection.clear()`
   → `onEdited()` (refetch); režim výběru přežije, takže po úspěchu jde hned vybírat dál a žádné
   zastaralé UID v něm nezůstane. Neúspěšný apply výběr **nechá být**. Stránka wiruje jen
-  `gridSelection` a `selection.enable()`, zbytek obstará `BulkEditControl`;
+  `gridSelection` a `SelectionStart`, zbytek obstará `BulkEditControl`;
+  `useReloadKey()` = `[key, reload]`, string čítač do `reloadKey` foto-seznamu — jedno `reload()`
+  resetne seznam a natáhne ho od první stránky; `reload` je stabilní, jde rovnou do
+  `useBulkEdit({onEdited})`;
   `useKeyboardShortcuts(handlers,{enabled?})` = sdílené plumbing všech klávesových zkratek: jeden
   document-level `keydown` listener dispatchuje dle normalizovaného `shortcutToken(event.key)` na
   `handlers` (přes refy, bind jednou a vždy vidí aktuální closury), matched key `preventDefault`;
