@@ -46,7 +46,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   řazením/stránkováním (query params, neplatný → 400) → `{photos,total,limit,offset,next_offset}`;
   filtr `?album={uid}`/`?label={uid}` scopne výpis na fotky alba/štítku (sdílený endpoint pro
   galerii alba i štítku, ctí všechny ostatní filtry/řazení/stránkování — viz Albums & Labels API);
-  **album scope si vždy vynutí chronologii**: fotky alba jdou od nejstarší (`taken_at ASC`, fotka
+  oba přijímají **více hodnot** (opakovaný param `?album=a&album=b`, i CSV `a,b`) a kombinují se
+  přes **AND** — fotka musí být ve *všech* zadaných albech a nést *všechny* zadané štítky;
+  **album scope si vždy vynutí chronologii** (i při více albech): fotky alba jdou od nejstarší (`taken_at ASC`, fotka
   bez data pořízení padá na svůj upload čas `created_at`, takže pořadí je úplné a stabilní) a
   `sort`/`order` z query se pro album ignorují — defaulty endpointu pro ostatní pohledy se nemění;
   `GET /photos/timeline` (přihlášený) — **měsíční date-histogram** knihovny (podklad rok/měsíc

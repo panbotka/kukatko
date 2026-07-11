@@ -75,7 +75,7 @@ describe('SlideshowPage', () => {
 
     await screen.findByRole('img')
     const params = fetchMock.mock.calls[0][0]
-    expect(params.album).toBe('al1')
+    expect(params.album).toEqual(['al1'])
     expect(params.sort).toBe('oldest')
   })
 

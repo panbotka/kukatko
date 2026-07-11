@@ -11,12 +11,19 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { type LibraryFacets } from '../../hooks/useLibraryFacets'
-import { hasActiveFilters, type LibraryView, LIBRARY_DEFAULTS } from '../../lib/libraryView'
+import {
+  addUID,
+  albumList,
+  hasActiveFilters,
+  labelList,
+  type LibraryView,
+  LIBRARY_DEFAULTS,
+} from '../../lib/libraryView'
 import { type SetUrlState } from '../../lib/urlState'
 
 import { buildChips } from './filterChips'
 import { GridDensityControl } from './GridDensityControl'
-import { SearchableSelect } from './SearchableSelect'
+import { SearchableSelect, type SelectOption } from './SearchableSelect'
 
 /** DOM id of the collapsible / offcanvas advanced-filter panel. */
 const PANEL_ID = 'library-filter-panel'
@@ -256,11 +263,15 @@ export function FilterBar<T extends LibraryView>({
 /**
  * The three facets photos are actually found by: the years present in the
  * catalog (each with its count, so the reader sees how much a year holds before
- * committing), and the album and label the photo belongs to. Album and label are
- * type-to-filter selects because both collections grow without bound; year is a
- * plain select because the catalog only ever holds a handful of years.
+ * committing), and the albums and labels the photo belongs to. Album and label
+ * are type-to-filter selects because both collections grow without bound; year is
+ * a plain select because the catalog only ever holds a handful of years.
  *
- * All three push a history entry, so Back steps back through facet choices.
+ * Album and label are multi-select and combine with AND: choosing one adds it to
+ * the set (already-chosen options drop out of the list), and the "any" row clears
+ * that whole facet. Each selection is echoed as a removable chip below, so a
+ * single one can be dropped without touching the rest. All three push a history
+ * entry, so Back steps back through facet choices.
  */
 function FacetRow({
   view,
@@ -294,39 +305,89 @@ function FacetRow({
       </Col>
 
       <Col xs={12} md={4}>
-        <SearchableSelect
+        <MultiFacetSelect
           id="library-album"
           label={t('library.filters.album')}
           anyLabel={t('library.filters.anyAlbum')}
-          value={view.album}
+          selected={albumList(view)}
           options={facets.albums.map((album) => ({
             value: album.uid,
             label: album.title,
             count: album.photo_count,
           }))}
-          onChange={(value) => {
-            push({ album: value })
+          onAdd={(uid) => {
+            push({ album: addUID(view.album, uid) })
+          }}
+          onClear={() => {
+            push({ album: '' })
           }}
         />
       </Col>
 
       <Col xs={12} md={4}>
-        <SearchableSelect
+        <MultiFacetSelect
           id="library-label"
           label={t('library.filters.label')}
           anyLabel={t('library.filters.anyLabel')}
-          value={view.label}
+          selected={labelList(view)}
           options={facets.labels.map((label) => ({
             value: label.uid,
             label: label.name,
             count: label.photo_count,
           }))}
-          onChange={(value) => {
-            push({ label: value })
+          onAdd={(uid) => {
+            push({ label: addUID(view.label, uid) })
+          }}
+          onClear={() => {
+            push({ label: '' })
           }}
         />
       </Col>
     </Row>
+  )
+}
+
+/**
+ * A multi-select facet built on the single-pick {@link SearchableSelect}: it
+ * resets to the "add" placeholder after every pick (`value=""`) and hides the
+ * already-selected options, so choosing one appends it via `onAdd`. The "any" row
+ * calls `onClear` to drop the whole facet at once; individual selections are
+ * removed through their chips in the bar above. Keeping the combobox single-pick
+ * means the type-to-filter and keyboard behaviour are reused unchanged.
+ */
+function MultiFacetSelect({
+  id,
+  label,
+  anyLabel,
+  selected,
+  options,
+  onAdd,
+  onClear,
+}: {
+  id: string
+  label: string
+  anyLabel: string
+  selected: string[]
+  options: SelectOption[]
+  onAdd: (uid: string) => void
+  onClear: () => void
+}) {
+  const available = options.filter((option) => !selected.includes(option.value))
+  return (
+    <SearchableSelect
+      id={id}
+      label={label}
+      anyLabel={anyLabel}
+      value=""
+      options={available}
+      onChange={(value) => {
+        if (value === '') {
+          onClear()
+        } else {
+          onAdd(value)
+        }
+      }}
+    />
   )
 }
 

@@ -156,7 +156,7 @@ describe('AlbumDetailPage', () => {
     await waitFor(() => {
       expect(fetchPhotosMock).toHaveBeenCalled()
     })
-    expect(fetchPhotosMock.mock.calls[0][0].album).toBe('al_1')
+    expect(fetchPhotosMock.mock.calls[0][0].album).toEqual(['al_1'])
   })
 
   it('links each tile to the detail page carrying the album scope', async () => {

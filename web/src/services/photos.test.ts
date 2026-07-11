@@ -71,6 +71,18 @@ describe('buildPhotoQuery', () => {
     expect(query.has('q')).toBe(false)
     expect(query.has('has_gps')).toBe(false)
   })
+
+  it('emits one repeated param per album/label UID for the AND scope', () => {
+    const query = buildPhotoQuery({ album: ['al_1', 'al_2'], label: ['lb_1'] })
+    expect(query.getAll('album')).toEqual(['al_1', 'al_2'])
+    expect(query.getAll('label')).toEqual(['lb_1'])
+  })
+
+  it('omits absent, empty and empty-string album/label values', () => {
+    const query = buildPhotoQuery({ album: [], label: ['', 'lb_1'] })
+    expect(query.has('album')).toBe(false)
+    expect(query.getAll('label')).toEqual(['lb_1'])
+  })
 })
 
 describe('fetchPhotos', () => {

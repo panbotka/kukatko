@@ -120,7 +120,12 @@ zapiš sem.
   **tři facety, kterými se fotky reálně hledají** (prop `facets` z `useLibraryFacets`) jsou
   **vždy viditelné** pod hlavičkou, ne schované v panelu: **Rok** = prostý `<select>`
   („Libovolný rok" + `{{year}} ({{n}})` z `GET /photos/years`, katalog má vždy jen hrstku let),
-  **Album** a **Štítek** = `SearchableSelect` (obě kolekce rostou bez omezení).
+  **Album** a **Štítek** = `SearchableSelect` v **multi-select** režimu (obě kolekce rostou bez
+  omezení): výběr se **přidává** do sady (už zvolené z nabídky vypadnou), řádek „libovolné" celý
+  facet zruší, jednotlivé volby se odebírají přes chipy — kombinují se přes **AND** (fotka musí být
+  ve *všech* albech a nést *všechny* štítky). `LibraryView.album`/`label` drží víc UID jako **čárkou
+  spojený seznam** v jednom URL klíči (round-trip přes URL → Zpět obnoví celý výběr); `viewToParams`
+  ho rozdělí a `buildPhotoQuery` pošle jako opakované query paramy, které backend ANDuje.
   Inline pole **„filtrovat dle názvu/popisu"** (`q`) zůstává rychlým zúžením mřížky; vedle něj
   **zřetelný odkaz na `/search`** pro skutečný fulltext + sémantické hledání (`searchHref` nese
   aktuální `q`) — režimy hledání se tu **nezdvojují**), `SearchableSelect`
@@ -130,7 +135,8 @@ zapiš sem.
   vedoucí řádek „libovolné" facet zruší, klávesnice Up/Down/Enter/Esc, combobox/listbox ARIA,
   strop `MAX_SUGGESTIONS` (50) rendrovaných návrhů; nikdy nevytváří položky —
   zrcadlí `AddAutocomplete`), `filterChips.ts` (pure `buildChips(view, t, {facets?, includeQuery?})`
-  → `FilterChip{key,label,clear}` pro každý aktivní filtr; `facets` pojmenují album/štítek titulkem
+  → `FilterChip{key,label,clear}` pro každý aktivní filtr; **jeden chip na každé zvolené album/štítek**,
+  jehož `clear` odebere jen to jedno UID ze sady; `facets` pojmenují album/štítek titulkem
   místo UID (chybějící → raw UID, chip nikdy není prázdný), `includeQuery` zapíná chip pro `q`
   — filter bar ho vypíná (má vlastní pole), **prázdný stav zapíná** (čtenář u nuly výsledků musí
   vidět všechny filtry, které ho tam dostaly); délka pole = počet aktivních filtrů na odznaku),

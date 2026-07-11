@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
@@ -66,9 +67,11 @@ func parseListParams(q url.Values) (photos.ListParams, error) {
 	// An album is always presented chronologically, oldest first, whatever sort
 	// or order the query carries. The override lives here — where the album
 	// scope enters the shared list path — so the endpoint's defaults stay
-	// untouched for every other view. Photos with no capture time fall back to
-	// their upload time inside SortByChronology, keeping the order total.
-	if params.AlbumUID != "" {
+	// untouched for every other view. It applies as soon as at least one album is
+	// selected (multiple albums are still an album view). Photos with no capture
+	// time fall back to their upload time inside SortByChronology, keeping the
+	// order total.
+	if len(params.AlbumUIDs) > 0 {
 		params.Sort = photos.SortByChronology
 		params.Order = photos.OrderAsc
 	}
@@ -206,11 +209,33 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 	params.Lens = q.Get("lens")
 	params.UploadedBy = q.Get("uploader")
 	params.Search = q.Get("q")
-	params.AlbumUID = q.Get("album")
-	params.LabelUID = q.Get("label")
+	params.AlbumUIDs = multiValueParam(q, "album")
+	params.LabelUIDs = multiValueParam(q, "label")
 	params.Country = q.Get("country")
 	params.City = q.Get("city")
 	return nil
+}
+
+// multiValueParam collects every value of the named repeated query parameter
+// (e.g. ?album=a&album=b) into a slice, additionally splitting each value on
+// commas so a single comma-joined value (?album=a,b) is accepted too — the form
+// the SPA keeps in its own URL. Whitespace is trimmed and empty entries are
+// dropped, so a single value still yields a one-element slice (backward compatible
+// with ?album=a) and an absent parameter yields nil (no filter).
+func multiValueParam(q url.Values, name string) []string {
+	raw := q[name]
+	if len(raw) == 0 {
+		return nil
+	}
+	var values []string
+	for _, value := range raw {
+		for part := range strings.SplitSeq(value, ",") {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				values = append(values, trimmed)
+			}
+		}
+	}
+	return values
 }
 
 // favoriteRequested reports whether the favorite=true filter is set on the query.

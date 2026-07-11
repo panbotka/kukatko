@@ -364,7 +364,7 @@ describe('PhotoDetailPage', () => {
     await waitFor(() => {
       expect(fetchPhotosMock).toHaveBeenCalled()
     })
-    expect(fetchPhotosMock.mock.calls[0][0]).toMatchObject({ sort: 'oldest', album: 'al_1' })
+    expect(fetchPhotosMock.mock.calls[0][0]).toMatchObject({ sort: 'oldest', album: ['al_1'] })
 
     const prev = await screen.findByRole('link', { name: 'Previous photo' })
     const next = await screen.findByRole('link', { name: 'Next photo' })

@@ -163,11 +163,44 @@ func TestParseListParams_valid(t *testing.T) {
 			},
 		},
 		{
-			name:  "album and label scope",
+			name:  "single album and label scope",
 			query: "album=al_1&label=lb_2",
 			check: func(t *testing.T, p photos.ListParams) {
-				if p.AlbumUID != "al_1" || p.LabelUID != "lb_2" {
-					t.Errorf("scope filters mismapped: album=%q label=%q", p.AlbumUID, p.LabelUID)
+				if len(p.AlbumUIDs) != 1 || p.AlbumUIDs[0] != "al_1" {
+					t.Errorf("album scope = %v, want [al_1]", p.AlbumUIDs)
+				}
+				if len(p.LabelUIDs) != 1 || p.LabelUIDs[0] != "lb_2" {
+					t.Errorf("label scope = %v, want [lb_2]", p.LabelUIDs)
+				}
+			},
+		},
+		{
+			name:  "repeated album and label params combine with AND",
+			query: "album=al_1&album=al_2&label=lb_1&label=lb_2",
+			check: func(t *testing.T, p photos.ListParams) {
+				if len(p.AlbumUIDs) != 2 || p.AlbumUIDs[0] != "al_1" || p.AlbumUIDs[1] != "al_2" {
+					t.Errorf("album scope = %v, want [al_1 al_2]", p.AlbumUIDs)
+				}
+				if len(p.LabelUIDs) != 2 || p.LabelUIDs[0] != "lb_1" || p.LabelUIDs[1] != "lb_2" {
+					t.Errorf("label scope = %v, want [lb_1 lb_2]", p.LabelUIDs)
+				}
+			},
+		},
+		{
+			name:  "comma-joined album values are split",
+			query: "album=al_1,al_2",
+			check: func(t *testing.T, p photos.ListParams) {
+				if len(p.AlbumUIDs) != 2 || p.AlbumUIDs[0] != "al_1" || p.AlbumUIDs[1] != "al_2" {
+					t.Errorf("album scope = %v, want [al_1 al_2]", p.AlbumUIDs)
+				}
+			},
+		},
+		{
+			name:  "absent album/label scope is nil",
+			query: "camera=leica",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.AlbumUIDs != nil || p.LabelUIDs != nil {
+					t.Errorf("scope = %v/%v, want nil/nil", p.AlbumUIDs, p.LabelUIDs)
 				}
 			},
 		},

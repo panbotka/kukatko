@@ -141,7 +141,7 @@ describe('LabelDetailPage', () => {
     await waitFor(() => {
       expect(fetchPhotosMock).toHaveBeenCalled()
     })
-    expect(fetchPhotosMock.mock.calls[0][0].label).toBe('lb_1')
+    expect(fetchPhotosMock.mock.calls[0][0].label).toEqual(['lb_1'])
   })
 
   it('links each tile to the detail page carrying the label scope', async () => {
@@ -164,7 +164,7 @@ describe('LabelDetailPage', () => {
       expect(fetchPhotosMock).toHaveBeenCalled()
     })
     const first = fetchPhotosMock.mock.calls[0][0]
-    expect(first.label).toBe('lb_1')
+    expect(first.label).toEqual(['lb_1'])
     expect(first.sort).toBe('oldest')
   })
 

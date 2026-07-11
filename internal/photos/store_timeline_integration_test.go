@@ -131,7 +131,7 @@ func TestTimelineBuckets_albumScope(t *testing.T) {
 		}
 	}
 
-	params := photos.ListParams{AlbumUID: album.UID}
+	params := photos.ListParams{AlbumUIDs: []string{album.UID}}
 	timeline, err := store.TimelineBuckets(ctx, params)
 	if err != nil {
 		t.Fatalf("TimelineBuckets(album): %v", err)

@@ -106,14 +106,16 @@ type ListParams struct {
 	// diacritics-insensitive full-text query. It is used by Search, where it also
 	// drives the ts_rank ordering; List and Count treat it as a plain filter.
 	FullText string
-	// AlbumUID, when non-empty, restricts the result to photos that are members of
-	// the album with that UID. It scopes the shared list/search path to an album so
-	// every other filter, the sort and pagination apply unchanged.
-	AlbumUID string
-	// LabelUID, when non-empty, restricts the result to photos that carry the label
-	// with that UID. It scopes the shared list/search path to a label so every
-	// other filter, the sort and pagination apply unchanged.
-	LabelUID string
+	// AlbumUIDs restricts the result to photos that are members of every listed
+	// album (AND): a photo matches only if it belongs to all of them. It scopes the
+	// shared list/search path to one or more albums so every other filter, the sort
+	// and pagination apply unchanged. Empty entries and an empty slice add no scope.
+	AlbumUIDs []string
+	// LabelUIDs restricts the result to photos that carry every listed label (AND):
+	// a photo matches only if it has all of them. It scopes the shared list/search
+	// path to one or more labels so every other filter, the sort and pagination
+	// apply unchanged. Empty entries and an empty slice add no scope.
+	LabelUIDs []string
 	// Country, when non-empty, restricts the result to photos whose cached place
 	// has exactly that country. It scopes the shared list/search path to a place
 	// (via the photo_places side table) so every other filter, the sort and
@@ -335,20 +337,35 @@ func favoriteClauses(params ListParams, bind func(any) string) []string {
 }
 
 // membershipClauses returns the album/label scoping filters as correlated EXISTS
-// subqueries, binding each UID through bind. They keep an album- or label-scoped
-// listing on the shared List/Count/Search path, so the standard filters, the
-// chosen ordering and pagination all apply on top of the scope. The outer photo
-// reference is qualified (photos.uid) to disambiguate it from the join table's
-// photo_uid inside the subquery.
+// subqueries: one per selected album UID and one per selected label UID, binding
+// each UID through bind. Because buildWhere joins every clause with AND, N album
+// subqueries plus M label subqueries mean "a member of every selected album AND
+// carrying every selected label" — the multi-select AND semantics. They keep an
+// album- or label-scoped listing on the shared List/Count/Search path, so the
+// standard filters, the chosen ordering and pagination all apply on top. Empty
+// UIDs and empty slices add no clause.
 func membershipClauses(params ListParams, bind func(any) string) []string {
-	var where []string
-	if params.AlbumUID != "" {
-		where = append(where, "EXISTS (SELECT 1 FROM album_photos ap "+
-			"WHERE ap.photo_uid = photos.uid AND ap.album_uid = "+bind(params.AlbumUID)+")")
-	}
-	if params.LabelUID != "" {
-		where = append(where, "EXISTS (SELECT 1 FROM photo_labels pl "+
-			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = "+bind(params.LabelUID)+")")
+	where := make([]string, 0, len(params.AlbumUIDs)+len(params.LabelUIDs))
+	where = append(where, existsClauses(params.AlbumUIDs, "album_photos", "ap", "album_uid", bind)...)
+	where = append(where, existsClauses(params.LabelUIDs, "photo_labels", "pl", "label_uid", bind)...)
+	return where
+}
+
+// existsClauses returns one correlated EXISTS subquery per non-empty UID in uids,
+// each testing that a row of `from` (aliased as `alias`) links the outer photo
+// (alias.photo_uid = photos.uid) to the UID via `column`, binding every UID
+// through bind. It backs both the album and the label membership filters, which
+// share this correlated join-table shape and differ only in table and column. The
+// outer photo reference is qualified (photos.uid) to disambiguate it from the join
+// table's photo_uid inside the subquery.
+func existsClauses(uids []string, from, alias, column string, bind func(any) string) []string {
+	where := make([]string, 0, len(uids))
+	for _, uid := range uids {
+		if uid == "" {
+			continue
+		}
+		where = append(where, "EXISTS (SELECT 1 FROM "+from+" "+alias+
+			" WHERE "+alias+".photo_uid = photos.uid AND "+alias+"."+column+" = "+bind(uid)+")")
 	}
 	return where
 }

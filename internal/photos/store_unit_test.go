@@ -225,7 +225,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("album scope binds the uid", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{AlbumUID: "al_1"})
+		query, args := buildListQuery(ListParams{AlbumUIDs: []string{"al_1"}})
 		want := "EXISTS (SELECT 1 FROM album_photos ap " +
 			"WHERE ap.photo_uid = photos.uid AND ap.album_uid = $1)"
 		if !strings.Contains(query, want) {
@@ -238,7 +238,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("label scope binds the uid", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{LabelUID: "lb_1"})
+		query, args := buildListQuery(ListParams{LabelUIDs: []string{"lb_1"}})
 		want := "EXISTS (SELECT 1 FROM photo_labels pl " +
 			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = $1)"
 		if !strings.Contains(query, want) {
@@ -249,10 +249,49 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 		}
 	})
 
+	t.Run("multiple albums and labels emit one bound EXISTS each", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{
+			AlbumUIDs: []string{"al_1", "al_2"},
+			LabelUIDs: []string{"lb_1", "lb_2"},
+		})
+		// One EXISTS per UID, ANDed, binding $1..$4 in order.
+		wants := []string{
+			"ap.album_uid = $1", "ap.album_uid = $2",
+			"pl.label_uid = $3", "pl.label_uid = $4",
+		}
+		for _, want := range wants {
+			if !strings.Contains(query, want) {
+				t.Errorf("query missing %q: %q", want, query)
+			}
+		}
+		// four scope uids + limit + offset.
+		if len(args) != 6 {
+			t.Fatalf("args = %v, want 6 entries", args)
+		}
+		for i, want := range []any{"al_1", "al_2", "lb_1", "lb_2"} {
+			if args[i] != want {
+				t.Errorf("args[%d] = %v, want %v", i, args[i], want)
+			}
+		}
+	})
+
+	t.Run("empty scope uids add no clause", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{AlbumUIDs: []string{""}, LabelUIDs: []string{}})
+		if strings.Contains(query, "album_photos") || strings.Contains(query, "photo_labels") {
+			t.Errorf("query added a membership clause for an empty scope: %q", query)
+		}
+		// limit + offset only.
+		if len(args) != 2 {
+			t.Fatalf("args = %v, want 2 entries", args)
+		}
+	})
+
 	t.Run("scope applies after the other filters and keeps the archive guard", func(t *testing.T) {
 		t.Parallel()
 		yes := true
-		query, args := buildListQuery(ListParams{AlbumUID: "al_2", Private: &yes})
+		query, args := buildListQuery(ListParams{AlbumUIDs: []string{"al_2"}, Private: &yes})
 		if !strings.Contains(query, "private = $1") {
 			t.Errorf("query missing private filter: %q", query)
 		}

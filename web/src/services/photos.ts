@@ -163,10 +163,18 @@ export interface PhotoListParams {
   taken_after?: string
   /** RFC3339 timestamp or YYYY-MM-DD date. */
   taken_before?: string
-  /** Scope the listing to photos in this album (`album` query param). */
-  album?: string
-  /** Scope the listing to photos carrying this label (`label` query param). */
-  label?: string
+  /**
+   * Scope the listing to photos in every listed album, combined with AND (one
+   * repeated `album` query param per UID). A single-element array is the common
+   * case (`?album=al_1`); an empty/undefined array means no album scope.
+   */
+  album?: string[]
+  /**
+   * Scope the listing to photos carrying every listed label, combined with AND
+   * (one repeated `label` query param per UID). Empty/undefined means no label
+   * scope.
+   */
+  label?: string[]
   /**
    * Scope the listing to photos in this country (`country` query param, exact
    * match against the reverse-geocoded place). Empty / undefined means no scope.
@@ -233,6 +241,15 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
       query.set(key, str)
     }
   }
+  // Multi-value filters (album, label) become one repeated param per UID, which
+  // the backend reads via q[key] and ANDs — a photo must match every listed UID.
+  const setAll = (key: string, values: string[] | undefined): void => {
+    for (const value of values ?? []) {
+      if (value !== '') {
+        query.append(key, value)
+      }
+    }
+  }
   set('limit', params.limit)
   set('offset', params.offset)
   set('sort', params.sort)
@@ -244,8 +261,8 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('year', params.year)
   set('taken_after', params.taken_after)
   set('taken_before', params.taken_before)
-  set('album', params.album)
-  set('label', params.label)
+  setAll('album', params.album)
+  setAll('label', params.label)
   set('country', params.country)
   set('city', params.city)
   set('favorite', params.favorite)

@@ -401,8 +401,8 @@ func TestGeoJSON_shapeAndFilters(t *testing.T) {
 	if got.HasGPS == nil || !*got.HasGPS {
 		t.Error("HasGPS not forced true on the GeoJSON query")
 	}
-	if got.AlbumUID != "al_1" {
-		t.Errorf("AlbumUID = %q, want al_1", got.AlbumUID)
+	if len(got.AlbumUIDs) != 1 || got.AlbumUIDs[0] != "al_1" {
+		t.Errorf("AlbumUIDs = %v, want [al_1]", got.AlbumUIDs)
 	}
 	if got.TakenAfter == nil {
 		t.Error("TakenAfter not parsed")

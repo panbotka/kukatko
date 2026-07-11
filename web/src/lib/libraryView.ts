@@ -30,12 +30,19 @@ export type LibraryView = {
    */
   year: string
   /**
-   * Album facet: '' (any) or an album UID. Doubles as the detail page's album
-   * scope (see {@link import('./detailView').DetailView}) — the same `album`
-   * query param means the same thing everywhere.
+   * Album facet: '' (none) or a {@link UID_DELIMITER}-joined list of album UIDs,
+   * combined with AND — a photo matches only if it is in every listed album. A
+   * single UID is the common case and round-trips as `?album=al_1`. Doubles as the
+   * detail page's album scope (see {@link import('./detailView').DetailView}) — the
+   * same `album` query param means the same thing everywhere. Use {@link albumList}
+   * to read it and {@link addUID}/{@link removeUID} to edit it.
    */
   album: string
-  /** Label facet: '' (any) or a label UID. Doubles as the detail page's label scope. */
+  /**
+   * Label facet: '' (none) or a {@link UID_DELIMITER}-joined list of label UIDs,
+   * combined with AND — a photo matches only if it carries every listed label.
+   * Doubles as the detail page's label scope. Read via {@link labelList}.
+   */
   label: string
   taken_after: string
   taken_before: string
@@ -82,6 +89,48 @@ function toArchived(raw: string): ArchivedFilter {
   return (ARCHIVED as readonly string[]).includes(raw) ? (raw as ArchivedFilter) : 'false'
 }
 
+/**
+ * The delimiter joining multiple album/label UIDs inside the single-string
+ * `album`/`label` view fields (the urlState layer stores every key as one
+ * string). A comma cannot appear in a UID, so it never collides with a value and
+ * the joined list round-trips cleanly through the URL query string.
+ */
+export const UID_DELIMITER = ','
+
+/** Splits a delimiter-joined UID field into its UIDs, dropping empties (`''` → `[]`). */
+export function splitUIDs(joined: string): string[] {
+  return joined.split(UID_DELIMITER).filter((uid) => uid !== '')
+}
+
+/** Joins UIDs back into the delimiter-encoded field (`[]` → `''`). */
+export function joinUIDs(uids: string[]): string {
+  return uids.join(UID_DELIMITER)
+}
+
+/** The album UIDs currently selected, in order. */
+export function albumList(view: LibraryView): string[] {
+  return splitUIDs(view.album)
+}
+
+/** The label UIDs currently selected, in order. */
+export function labelList(view: LibraryView): string[] {
+  return splitUIDs(view.label)
+}
+
+/**
+ * Returns the joined field with `uid` appended, or the field unchanged when it is
+ * already present (selections are a set, so a facet is never added twice).
+ */
+export function addUID(joined: string, uid: string): string {
+  const uids = splitUIDs(joined)
+  return uids.includes(uid) ? joined : joinUIDs([...uids, uid])
+}
+
+/** Returns the joined field with `uid` removed (a no-op when it is absent). */
+export function removeUID(joined: string, uid: string): string {
+  return joinUIDs(splitUIDs(joined).filter((existing) => existing !== uid))
+}
+
 /** A four-digit calendar year — the only year value the backend accepts. */
 const YEAR_PATTERN = /^\d{4}$/
 
@@ -99,7 +148,8 @@ function toYear(raw: string): string {
  * a tampered URL cannot send an out-of-range sort/archived/year value to the
  * backend. Free-text, tri-state and UID filters pass through verbatim (the
  * backend treats an empty value as no filter, and an unknown album/label UID
- * simply matches nothing).
+ * simply matches nothing). The delimiter-joined `album`/`label` fields are split
+ * into UID lists the query builder emits as repeated params, one per selected UID.
  */
 export function viewToParams(view: LibraryView): PhotoListParams {
   return {
@@ -110,8 +160,8 @@ export function viewToParams(view: LibraryView): PhotoListParams {
     camera: view.camera,
     q: view.q,
     year: toYear(view.year),
-    album: view.album,
-    label: view.label,
+    album: splitUIDs(view.album),
+    label: splitUIDs(view.label),
     taken_after: view.taken_after,
     taken_before: view.taken_before,
     min_rating: view.min_rating,

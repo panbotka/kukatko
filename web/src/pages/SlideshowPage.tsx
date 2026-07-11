@@ -11,7 +11,14 @@ import { useImagePreloader } from '../hooks/useImagePreloader'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
 import { preloadWindow, type SlideReadiness, useSlideshow } from '../hooks/useSlideshow'
 import { useSlideshowSettings } from '../hooks/useSlideshowSettings'
-import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from '../lib/libraryView'
+import {
+  albumList,
+  labelList,
+  LIBRARY_DEFAULTS,
+  LIBRARY_PATH,
+  type LibraryView,
+  viewToParams,
+} from '../lib/libraryView'
 import { searchHref, type SearchView, toMode } from '../lib/searchView'
 import { readUrlState } from '../lib/urlState'
 import { fetchPhotos, type PhotoListParams, searchPhotos, thumbUrl } from '../services/photos'
@@ -37,26 +44,19 @@ export function SlideshowPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
-  const album = searchParams.get('album') ?? ''
-  const label = searchParams.get('label') ?? ''
   // A `mode` param means the slideshow was launched from the search page, so the
   // query has to be ranked by `GET /search` — listing the library with the same
   // `q` would only substring-match and play a different set of photos.
   const mode = searchParams.get('mode') ?? ''
 
-  // Derive the same API params a grid would, from the URL view state plus scope.
+  // Derive the same API params a grid would, from the URL view state. viewToParams
+  // already splits the `album`/`label` facets into UID lists, so the slideshow
+  // plays exactly the set the URL describes — one or several albums/labels (AND).
   const view = useMemo<LibraryView>(
     () => readUrlState(searchParams, LIBRARY_DEFAULTS),
     [searchParams],
   )
-  const params = useMemo<PhotoListParams>(
-    () => ({
-      ...viewToParams(view),
-      album: album === '' ? undefined : album,
-      label: label === '' ? undefined : label,
-    }),
-    [view, album, label],
-  )
+  const params = useMemo<PhotoListParams>(() => viewToParams(view), [view])
 
   const fetcher = useCallback(
     (p: PhotoListParams, signal: AbortSignal) =>
@@ -108,17 +108,21 @@ export function SlideshowPage() {
       void navigate(-1)
       return
     }
-    if (album !== '') {
-      void navigate(`/albums/${album}`)
-    } else if (label !== '') {
-      void navigate(`/labels/${label}`)
+    // A single album/label scope names a dedicated page; several (or a mix) have
+    // none, so they fall through to the search (when launched from it) or library.
+    const albums = albumList(view)
+    const labels = labelList(view)
+    if (albums.length === 1 && labels.length === 0) {
+      void navigate(`/albums/${albums[0]}`)
+    } else if (labels.length === 1 && albums.length === 0) {
+      void navigate(`/labels/${labels[0]}`)
     } else if (mode !== '') {
       const searchView: SearchView = { ...view, mode: toMode(mode) }
       void navigate(searchHref(searchView))
     } else {
       void navigate(LIBRARY_PATH)
     }
-  }, [navigate, album, label, mode, view])
+  }, [navigate, mode, view])
 
   if (status === 'loading') {
     return (

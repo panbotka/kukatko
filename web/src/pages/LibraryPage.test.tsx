@@ -346,7 +346,7 @@ describe('LibraryPage', () => {
     expect(screen.getByTestId('search')).toHaveTextContent('album=al_1')
     await waitFor(() => {
       const calls = fetchMock.mock.calls
-      expect(calls[calls.length - 1][0].album).toBe('al_1')
+      expect(calls[calls.length - 1][0].album).toEqual(['al_1'])
     })
 
     // Facets push history, so Back returns to the unfiltered grid.
@@ -376,8 +376,8 @@ describe('LibraryPage', () => {
     await screen.findByText('No photos found')
     const first = fetchMock.mock.calls[0][0]
     expect(first.year).toBe('2023')
-    expect(first.album).toBe('al_1')
-    expect(first.label).toBe('lb_1')
+    expect(first.album).toEqual(['al_1'])
+    expect(first.label).toEqual(['lb_1'])
     expect(first.camera).toBe('Canon')
     expect(first.sort).toBe('oldest')
   })

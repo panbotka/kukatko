@@ -1,6 +1,13 @@
 import { type PhotoListParams } from '../services/photos'
 
-import { LIBRARY_DEFAULTS, LIBRARY_PATH, type LibraryView, viewToParams } from './libraryView'
+import {
+  albumList,
+  labelList,
+  LIBRARY_DEFAULTS,
+  LIBRARY_PATH,
+  type LibraryView,
+  viewToParams,
+} from './libraryView'
 import { searchHref } from './searchView'
 import { writeUrlState } from './urlState'
 
@@ -62,17 +69,22 @@ export function detailQueryString(view: DetailView): string {
  * the search results, the favorites page, or the library (the homepage), each
  * carrying the library filters/sort so the prior view is restored exactly.
  *
- * When an album or label scope names the destination route, it is dropped from
- * the query — the page already scopes itself, so repeating the filter would only
- * make the URL redundant. A search scope (`mode` set) is rebuilt through
- * {@link searchHref}, which also carries the search query and mode.
+ * When a *single* album or label scope names the destination route, it is dropped
+ * from the query — the page already scopes itself, so repeating the filter would
+ * only make the URL redundant. A multi-album/label filter (or albums mixed with
+ * labels) has no single scope page, so it falls through to the library — or the
+ * search when `mode` is set — carrying the whole filter so the exact prior view is
+ * restored. A search scope (`mode` set) is rebuilt through {@link searchHref},
+ * which also carries the search query and mode.
  */
 export function backHref(view: DetailView): string {
-  if (view.album !== '') {
-    return `/albums/${view.album}${libraryQuery({ ...view, album: '', label: '' })}`
+  const albums = albumList(view)
+  const labels = labelList(view)
+  if (albums.length === 1 && labels.length === 0) {
+    return `/albums/${albums[0]}${libraryQuery({ ...view, album: '', label: '' })}`
   }
-  if (view.label !== '') {
-    return `/labels/${view.label}${libraryQuery({ ...view, album: '', label: '' })}`
+  if (labels.length === 1 && albums.length === 0) {
+    return `/labels/${labels[0]}${libraryQuery({ ...view, album: '', label: '' })}`
   }
   if (view.mode !== '') {
     return searchHref(view)

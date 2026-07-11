@@ -1,7 +1,13 @@
 import type { TFunction } from 'i18next'
 
 import { type LibraryFacets } from '../../hooks/useLibraryFacets'
-import { type LibraryView, LIBRARY_DEFAULTS } from '../../lib/libraryView'
+import {
+  albumList,
+  labelList,
+  type LibraryView,
+  LIBRARY_DEFAULTS,
+  removeUID,
+} from '../../lib/libraryView'
 
 /** A single active-filter descriptor, rendered as a removable chip. */
 export interface FilterChip {
@@ -57,20 +63,21 @@ export function buildChips(
       clear: { year: '' },
     })
   }
-  if (view.album !== '') {
-    const album = facets?.albums.find((a) => a.uid === view.album)
+  for (const uid of albumList(view)) {
+    const album = facets?.albums.find((a) => a.uid === uid)
     chips.push({
-      key: 'album',
-      label: `${t('library.filters.album')}: ${album?.title ?? view.album}`,
-      clear: { album: '' },
+      key: `album:${uid}`,
+      label: `${t('library.filters.album')}: ${album?.title ?? uid}`,
+      // Remove just this album from the set, leaving any others in place.
+      clear: { album: removeUID(view.album, uid) },
     })
   }
-  if (view.label !== '') {
-    const label = facets?.labels.find((l) => l.uid === view.label)
+  for (const uid of labelList(view)) {
+    const label = facets?.labels.find((l) => l.uid === uid)
     chips.push({
-      key: 'label',
-      label: `${t('library.filters.label')}: ${label?.name ?? view.label}`,
-      clear: { label: '' },
+      key: `label:${uid}`,
+      label: `${t('library.filters.label')}: ${label?.name ?? uid}`,
+      clear: { label: removeUID(view.label, uid) },
     })
   }
   if (view.archived !== LIBRARY_DEFAULTS.archived) {

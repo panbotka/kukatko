@@ -5,8 +5,8 @@ import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from './
 describe('detailView helpers', () => {
   it('folds the album/label/favorite scope into the list params', () => {
     const params = detailToParams({ ...DETAIL_DEFAULTS, sort: 'oldest', album: 'al_1' })
-    expect(params.album).toBe('al_1')
-    expect(params.label).toBe('')
+    expect(params.album).toEqual(['al_1'])
+    expect(params.label).toEqual([])
     expect(params.favorite).toBe('')
     expect(params.sort).toBe('oldest')
   })
@@ -27,6 +27,19 @@ describe('detailView helpers', () => {
     // Library filters (but not the scope) are appended as a query suffix.
     expect(backHref({ ...DETAIL_DEFAULTS, album: 'al_1', sort: 'oldest' })).toBe(
       '/albums/al_1?sort=oldest',
+    )
+  })
+
+  it('falls back to the library for a multi-album/label filter, carrying the whole scope', () => {
+    // Several albums (or albums mixed with labels) have no single scope page, so
+    // Back returns to the library with the full multi-value filter preserved.
+    expect(backHref({ ...DETAIL_DEFAULTS, album: 'al_1,al_2' })).toBe('/?album=al_1%2Cal_2')
+    expect(backHref({ ...DETAIL_DEFAULTS, album: 'al_1', label: 'lb_1' })).toBe(
+      '/?album=al_1&label=lb_1',
+    )
+    // A multi-label filter opened from search returns to search with it intact.
+    expect(backHref({ ...DETAIL_DEFAULTS, mode: 'hybrid', label: 'lb_1,lb_2' })).toBe(
+      '/search?label=lb_1%2Clb_2',
     )
   })
 

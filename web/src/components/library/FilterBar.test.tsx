@@ -241,16 +241,41 @@ describe('FilterBar facets', () => {
     expect(onChange).toHaveBeenCalledWith({ label: 'lb_2' })
   })
 
-  it('clears a facet from inside its own select', async () => {
+  it('adds a second album to the set instead of replacing the first', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
     renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1' }, onChange, { facets: FACETS })
 
-    // At rest the select shows the current choice, not a placeholder.
-    expect(screen.getByLabelText('Album')).toHaveValue('Holidays')
+    // The select is an "add" control: the already-chosen album drops out of the
+    // list, and picking another appends it (AND), keeping the first.
+    await user.click(screen.getByLabelText('Album'))
+    expect(screen.queryByRole('option', { name: /Holidays/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: /Náměstí/ }))
+    expect(onChange).toHaveBeenCalledWith({ album: 'al_1,al_2' })
+  })
+
+  it('clears the whole album facet from the "any" row', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1,al_2' }, onChange, { facets: FACETS })
+
     await user.click(screen.getByLabelText('Album'))
     await user.click(screen.getByRole('option', { name: 'Any album' }))
     expect(onChange).toHaveBeenCalledWith({ album: '' })
+  })
+
+  it('renders one chip per selected album and removes just that one', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1,al_2' }, onChange, { facets: FACETS })
+
+    // One chip per album, each named by its title.
+    expect(screen.getByText('Album: Holidays')).toBeInTheDocument()
+    expect(screen.getByText('Album: Náměstí')).toBeInTheDocument()
+
+    // Removing the Holidays chip drops only al_1, leaving al_2.
+    await user.click(screen.getByRole('button', { name: 'Remove filter: Album: Holidays' }))
+    expect(onChange).toHaveBeenCalledWith({ album: 'al_2' })
   })
 
   it('names an album/label chip by its title, not its uid', () => {

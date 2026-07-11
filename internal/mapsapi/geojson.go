@@ -101,11 +101,14 @@ func toFeature(p *photos.Photo) (feature, bool) {
 // map's markers come back in one response.
 func (a *API) parseGeoParams(q url.Values) (photos.ListParams, error) {
 	params := photos.ListParams{
-		AlbumUID: q.Get("album"),
-		LabelUID: q.Get("label"),
-		Limit:    a.maxGeoPhotos,
-		Sort:     photos.SortByTakenAt,
-		Order:    photos.OrderDesc,
+		// Repeated (or comma-joined) values scope the feed to every listed album or
+		// label (AND). q["album"] is nil when absent, so an unscoped feed adds no
+		// membership clause; empty entries are skipped in the store.
+		AlbumUIDs: q["album"],
+		LabelUIDs: q["label"],
+		Limit:     a.maxGeoPhotos,
+		Sort:      photos.SortByTakenAt,
+		Order:     photos.OrderDesc,
 	}
 	hasGPS := true
 	params.HasGPS = &hasGPS

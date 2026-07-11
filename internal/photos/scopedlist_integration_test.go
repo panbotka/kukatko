@@ -62,7 +62,7 @@ func TestList_albumScope(t *testing.T) {
 	}
 
 	t.Run("scope keeps only the album's photos", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{AlbumUID: album.UID})
+		list, err := store.List(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}})
 		if err != nil {
 			t.Fatalf("List(album): %v", err)
 		}
@@ -70,7 +70,7 @@ func TestList_albumScope(t *testing.T) {
 		if len(set) != 3 || set[outsider.UID] {
 			t.Fatalf("album scope = %v, want the 3 members without the outsider", set)
 		}
-		total, err := store.Count(ctx, photos.ListParams{AlbumUID: album.UID})
+		total, err := store.Count(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}})
 		if err != nil || total != 3 {
 			t.Fatalf("Count(album) = %d, %v, want 3", total, err)
 		}
@@ -78,7 +78,7 @@ func TestList_albumScope(t *testing.T) {
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
 		no := false
-		list, err := store.List(ctx, photos.ListParams{AlbumUID: album.UID, Private: &no})
+		list, err := store.List(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}, Private: &no})
 		if err != nil {
 			t.Fatalf("List(album, private=false): %v", err)
 		}
@@ -91,7 +91,7 @@ func TestList_albumScope(t *testing.T) {
 	t.Run("scope honours sort and pagination", func(t *testing.T) {
 		// Oldest-first, first page of one: the album's earliest photo.
 		list, err := store.List(ctx, photos.ListParams{
-			AlbumUID: album.UID, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 0,
+			AlbumUIDs: []string{album.UID}, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 0,
 		})
 		if err != nil {
 			t.Fatalf("List(album, sorted page): %v", err)
@@ -101,7 +101,7 @@ func TestList_albumScope(t *testing.T) {
 		}
 		// Second page advances to the next-oldest member.
 		list, err = store.List(ctx, photos.ListParams{
-			AlbumUID: album.UID, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 1,
+			AlbumUIDs: []string{album.UID}, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 1,
 		})
 		if err != nil {
 			t.Fatalf("List(album, second page): %v", err)
@@ -142,7 +142,7 @@ func TestList_labelScope(t *testing.T) {
 	}
 
 	t.Run("scope keeps only the label's photos", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{LabelUID: label.UID})
+		list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{label.UID}})
 		if err != nil {
 			t.Fatalf("List(label): %v", err)
 		}
@@ -150,7 +150,7 @@ func TestList_labelScope(t *testing.T) {
 		if len(set) != 2 || set[untagged.UID] {
 			t.Fatalf("label scope = %v, want the 2 tagged photos", set)
 		}
-		total, err := store.Count(ctx, photos.ListParams{LabelUID: label.UID})
+		total, err := store.Count(ctx, photos.ListParams{LabelUIDs: []string{label.UID}})
 		if err != nil || total != 2 {
 			t.Fatalf("Count(label) = %d, %v, want 2", total, err)
 		}
@@ -158,13 +158,118 @@ func TestList_labelScope(t *testing.T) {
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
 		no := false
-		list, err := store.List(ctx, photos.ListParams{LabelUID: label.UID, Private: &no})
+		list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{label.UID}, Private: &no})
 		if err != nil {
 			t.Fatalf("List(label, private=false): %v", err)
 		}
 		set := uidSet(list)
 		if len(set) != 1 || !set[tagged.UID] {
 			t.Fatalf("label+private scope = %v, want only the public tagged photo", set)
+		}
+	})
+}
+
+// TestList_multiMembershipScope verifies the AND semantics of a multi-album /
+// multi-label scope: a photo is returned only when it is a member of EVERY
+// selected album and carries EVERY selected label. A photo missing any one is
+// excluded. It covers albums-only, labels-only and the combined scope.
+func TestList_multiMembershipScope(t *testing.T) {
+	store, db := newStore(t)
+	org := organize.NewStore(db.Pool())
+	ctx := t.Context()
+
+	newPhoto := func(hash string) photos.Photo {
+		return mustCreate(t, store, photos.Photo{
+			FileHash: hash, FilePath: "p/" + hash + ".jpg", FileName: hash + ".jpg",
+			FileMime: "image/jpeg", Title: hash,
+		})
+	}
+	// both is in albums A+B and carries labels X+Y (the only full match). Each of
+	// the others is missing exactly one membership, so every AND scope excludes it.
+	both := newPhoto("mm-both")
+	onlyA := newPhoto("mm-onlyA")
+	abX := newPhoto("mm-abX") // in A+B, only label X
+	xyA := newPhoto("mm-xyA") // labels X+Y, only album A
+	onlyX := newPhoto("mm-onlyX")
+
+	albumA, err := org.CreateAlbum(ctx, organize.Album{Title: "A"})
+	if err != nil {
+		t.Fatalf("CreateAlbum(A): %v", err)
+	}
+	albumB, err := org.CreateAlbum(ctx, organize.Album{Title: "B"})
+	if err != nil {
+		t.Fatalf("CreateAlbum(B): %v", err)
+	}
+	labelX, err := org.CreateLabel(ctx, organize.Label{Name: "X"})
+	if err != nil {
+		t.Fatalf("CreateLabel(X): %v", err)
+	}
+	labelY, err := org.CreateLabel(ctx, organize.Label{Name: "Y"})
+	if err != nil {
+		t.Fatalf("CreateLabel(Y): %v", err)
+	}
+
+	addAlbum := func(albumUID string, uids ...string) {
+		t.Helper()
+		for _, uid := range uids {
+			if err := org.AddPhoto(ctx, albumUID, uid); err != nil {
+				t.Fatalf("AddPhoto(%s): %v", uid, err)
+			}
+		}
+	}
+	attach := func(labelUID string, uids ...string) {
+		t.Helper()
+		for _, uid := range uids {
+			if err := org.AttachLabel(ctx, uid, labelUID, organize.SourceManual, 0); err != nil {
+				t.Fatalf("AttachLabel(%s): %v", uid, err)
+			}
+		}
+	}
+	addAlbum(albumA.UID, both.UID, onlyA.UID, abX.UID, xyA.UID)
+	addAlbum(albumB.UID, both.UID, abX.UID)
+	attach(labelX.UID, both.UID, abX.UID, xyA.UID, onlyX.UID)
+	attach(labelY.UID, both.UID, xyA.UID)
+
+	t.Run("all selected albums (AND)", func(t *testing.T) {
+		list, err := store.List(ctx, photos.ListParams{AlbumUIDs: []string{albumA.UID, albumB.UID}})
+		if err != nil {
+			t.Fatalf("List(A AND B): %v", err)
+		}
+		set := uidSet(list)
+		// Only photos in both A and B: both, abX. onlyA/xyA are in A only.
+		if len(set) != 2 || !set[both.UID] || !set[abX.UID] {
+			t.Fatalf("album A∧B = %v, want {both, abX}", set)
+		}
+	})
+
+	t.Run("all selected labels (AND)", func(t *testing.T) {
+		list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{labelX.UID, labelY.UID}})
+		if err != nil {
+			t.Fatalf("List(X AND Y): %v", err)
+		}
+		set := uidSet(list)
+		// Only photos with both X and Y: both, xyA. abX/onlyX lack Y.
+		if len(set) != 2 || !set[both.UID] || !set[xyA.UID] {
+			t.Fatalf("label X∧Y = %v, want {both, xyA}", set)
+		}
+	})
+
+	t.Run("albums and labels combined (AND)", func(t *testing.T) {
+		params := photos.ListParams{
+			AlbumUIDs: []string{albumA.UID, albumB.UID},
+			LabelUIDs: []string{labelX.UID, labelY.UID},
+		}
+		list, err := store.List(ctx, params)
+		if err != nil {
+			t.Fatalf("List(A∧B ∧ X∧Y): %v", err)
+		}
+		set := uidSet(list)
+		if len(set) != 1 || !set[both.UID] {
+			t.Fatalf("combined scope = %v, want only {both}", set)
+		}
+		total, err := store.Count(ctx, params)
+		if err != nil || total != 1 {
+			t.Fatalf("Count(combined) = %d, %v, want 1", total, err)
 		}
 	})
 }
