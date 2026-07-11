@@ -102,8 +102,20 @@ The script deliberately does not call `make build`: it wants finer-grained stagi
 `find -newer`, make via the `web-deps` stamp file.
 
 The DSN comes from `KUKATKO_DATABASE_URL_HOST` in the gitignored `.secrets/db.env`: the
-script runs on the host, outside the Docker network, so it needs the localhost DSN. Uploads
-and thumbnails land in the gitignored `.devdata/`.
+script runs on the host, outside the Docker network, so it needs the localhost DSN.
+Thumbnails are cached in the gitignored `.devdata/cache`.
+
+Dev serves originals from **Cloudflare R2** (bucket `kotrzina-photos`, edge-served through the
+signed-URL CDN Worker at `photos-cdn.kotrzina.cz`). The `KUKATKO_STORAGE_BACKEND=r2` switch and
+the `KUKATKO_STORAGE_R2_*` credentials live in `.secrets/db.env`, so they never reach the repo;
+`dev.sh` only adds a writable `KUKATKO_STORAGE_TEMP_PATH` (`.devdata/tmp`), which the R2 backend
+uses to stage objects and the FS backend ignores. The library was moved with
+`kukatko storage migrate-to-r2` and the local `.devdata/originals` tree was removed once every
+original had been verified byte-for-byte in the bucket. To run dev against the local filesystem
+instead, set `KUKATKO_STORAGE_BACKEND=fs` in `.secrets/db.env`. Caveat: under the R2 backend a
+thumbnail generated *after* the migration is written only to the local cache and the Worker
+cannot serve it until the cache is mirrored into the bucket — every already-imported photo is
+unaffected, since its thumbnails were uploaded by the migration.
 
 The same script is registered as the project's `dev_command` in Botka (`dev_port` 6480).
 Botka runs it, waits for it to **exit**, and then discovers the real server PID by scanning

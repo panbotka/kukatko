@@ -64,9 +64,14 @@ export CGO_ENABLED=0
 export KUKATKO_WEB_PORT="$PORT"
 export KUKATKO_STORAGE_ORIGINALS_PATH="${KUKATKO_STORAGE_ORIGINALS_PATH:-$REPO_ROOT/.devdata/originals}"
 export KUKATKO_STORAGE_CACHE_PATH="${KUKATKO_STORAGE_CACHE_PATH:-$REPO_ROOT/.devdata/cache}"
+# The R2 backend stages originals through a local temp dir before PUT (and on the
+# way out for downloads), so `storage.temp_path` must point somewhere writable —
+# the packaged default (/var/lib/kukatko/tmp) doesn't exist in a dev checkout.
+# Harmless for the FS backend, which never reads it.
+export KUKATKO_STORAGE_TEMP_PATH="${KUKATKO_STORAGE_TEMP_PATH:-$REPO_ROOT/.devdata/tmp}"
 export KUKATKO_AUTH_BOOTSTRAP_ADMIN_USERNAME="${KUKATKO_AUTH_BOOTSTRAP_ADMIN_USERNAME:-admin}"
 export KUKATKO_AUTH_BOOTSTRAP_ADMIN_PASSWORD="${KUKATKO_AUTH_BOOTSTRAP_ADMIN_PASSWORD:-admin12345}"
-mkdir -p "$KUKATKO_STORAGE_ORIGINALS_PATH" "$KUKATKO_STORAGE_CACHE_PATH"
+mkdir -p "$KUKATKO_STORAGE_ORIGINALS_PATH" "$KUKATKO_STORAGE_CACHE_PATH" "$KUKATKO_STORAGE_TEMP_PATH"
 
 # --- stop -------------------------------------------------------------------
 # Stop before building: `go build -o bin/kukatko` over a running binary fails
