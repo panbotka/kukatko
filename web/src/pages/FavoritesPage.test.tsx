@@ -125,6 +125,16 @@ describe('FavoritesPage', () => {
     expect(fetchMock.mock.calls[0][0].favorite).toBe('true')
   })
 
+  it('links each tile to the detail page carrying the favorites scope', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderFavorites()
+
+    // The tile's detail link carries ?favorite=true so Esc/Back and prev/next
+    // return to Favorites rather than the whole library.
+    const link = await screen.findByRole('link', { name: 'a.jpg' })
+    expect(link).toHaveAttribute('href', '/photos/a?favorite=true')
+  })
+
   it('renders an empty state when the user has no favorites', async () => {
     fetchMock.mockResolvedValue(page([]))
     renderFavorites()

@@ -214,6 +214,7 @@ zapiš sem.
   přejmenování (`SaveSearchModal`) a **optimistické mazání** + empty state,
   `FavoritesPage` = `/favorites` oblíbené aktuálního uživatele: stejná mřížka/filtry jako knihovna
   scopnutá `favorite=true`, srdíčka pro odebrání z oblíbených na místě (favoritable),
+  dlaždice nesou scope v detail odkazu (`detailQuery` s `favorite=true`) → Esc/Zpět/prev-next z fotky se vrací sem,
   pro editory **režim výběru** → `BulkEditControl`; hromadné odebrání z oblíbených fotku ze seznamu
   vyhodí (výběr se čistí **před** refetchem, takže v něm nezůstane fotka, která zmizela z mřížky),
   `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
@@ -223,15 +224,19 @@ zapiš sem.
   album je **vždy chronologické** (nejstarší první, vynucuje backend), takže stránka nemá selektor
   řazení ani ruční přeřazování; výběr → nastavit cover / **hromadná úprava**
   (`BulkEditControl`) / odebrat z alba (odebrání i úspěšná úprava **výběr vyprázdní**, ať v něm
-  nezůstanou UID fotek, které z mřížky zmizely, a mřížku přenačtou přes `reloadKey`); stránka buď
-  prochází, nebo vybírá (`selection.active`),
+  nezůstanou UID fotek, které z mřížky zmizely, a mřížku přenačtou přes `reloadKey`); dlaždice nesou
+  scope alba v detail odkazu (`detailQuery` s `album=uid`) → Esc/Zpět/prev-next z fotky se vrací do alba;
+  stránka buď prochází, nebo vybírá (`selection.active`),
   `LabelsPage` = `/labels` seznam štítků s počty + create/rename/delete (editor/admin),
-  `LabelDetailPage` = `/labels/:uid` fotomřížka scopnutá na štítek (`useScopedPhotos` + `FilterBar` + URL)
-  + tlačítko **Promítání** + pro editory **režim výběru** → `BulkEditControl` (po úspěchu refetch),
+  `LabelDetailPage` = `/labels/:uid` fotomřížka scopnutá na štítek (`useScopedPhotos` + `FilterBar` + URL);
+  dlaždice nesou scope štítku v detail odkazu (`detailQuery` s `label=uid`) → Esc/Zpět/prev-next z fotky
+  se vrací ke štítku; + tlačítko **Promítání** + pro editory **režim výběru** → `BulkEditControl` (po úspěchu refetch),
   `SearchPage` = sémantické/hybridní/fulltext hledání: prominentní debouncované (350 ms)
   vyhledávací pole + přepínač režimu (`q`+`mode` v URL), stejná virtualizovaná mřížka jako
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
-  (sidecar offline), idle/loading/empty/error stavy, plus nad mřížkou **cross-entity sekce**
+  (sidecar offline), idle/loading/empty/error stavy; dlaždice nesou scope hledání v detail odkazu
+  (`detailQuery` s `q`+`mode`) → Esc/Zpět z fotky se vrací k hledání (řazené výsledky, ne knihovna s `q`
+  jako podstring) a prev/next pageuje stejné výsledky, plus nad mřížkou **cross-entity sekce**
   (`GlobalSearchSections`) s chipy shodných alb/lidí/štítků (grouped `GET /search/global`), aby
   textový dotaz vynesl i nefotkové entity, plus v hlavičce **`SlideshowStart`** (scope `{mode}`,
   takže promítání přehraje **výsledky hledání**, ne knihovnu filtrovanou podstringem `q`)
@@ -281,17 +286,20 @@ zapiš sem.
   `LivePhoto` (still + „Live" badge, motion klip se přehraje při hover/podržení/focusu); **klik na
   still náhled otevře fullscreen lightbox** (`Lightbox` v `components/photo/` + `lightbox.css`):
   fotka na celou obrazovku (contain) na tmavém pozadí s uloženým editem, **velké šipky vlevo/vpravo**
-  listující stejné pořadí/scope jako detail (vlastní `usePhotoNeighbors` nad `neighborParams`, stop
-  na koncích), klávesy ←/→ + Esc, swipe na mobilu, close křížkem (44px tap-target) i klikem na pozadí,
+  listující stejné pořadí/scope jako detail (vlastní `usePhotoNeighbors` nad `neighborParams` + `mode`
+  pro hledání, stop na koncích), klávesy ←/→ + Esc, swipe na mobilu, close křížkem (44px tap-target) i klikem na pozadí,
   přednačtení sousedů (`new Image()` na `fit_1920`), fetch title+editu zobrazené fotky při navigaci;
   lightbox si listuje **interně bez změny URL** a při zavření předá aktuální uid zpět → detail obnoví
   URL (`navigate` replace), takže Zpět vždy funguje; video/live neotevírá image-lightbox (mají vlastní
   nativní fullscreen), a **detailové klávesové zkratky (←/→/Esc/rating hotkeys) jsou při otevřeném
   lightboxu vypnuté** (`useKeyboardShortcuts({enabled:!lightboxOpen})`), aby je ovládal lightbox;
   **prev/next navigace** respektující pořadí
-  zdrojového výpisu (`usePhotoNeighbors` pageuje stejný `GET /photos` se scope+filtry z URL),
-  deep-linkovatelný + **Zpět** na zdrojový pohled (`lib/detailView` `backHref`/`detailToParams`/
-  `detailQueryString`), v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + pick/reject
+  zdrojového výpisu (`usePhotoNeighbors` pageuje `GET /photos` se scope+filtry z URL — nebo `GET /search`,
+  když detail vznikl z hledání, aby prev/next drželo stejné řazené výsledky),
+  deep-linkovatelný + **Zpět** na zdrojový pohled — album/štítek/oblíbené/hledání/knihovnu podle scope,
+  který dlaždice nese v `detailQuery` odkazu (`lib/detailView` `backHref`/`detailToParams`/
+  `detailQueryString`; hledání se pozná podle `mode` v query, oblíbené podle `favorite=true`),
+  v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + pick/reject
   nad `useRating`) a `FavoriteButton`, plus **rating hotkeys** `0`–`5`/`p`/`r` na document (mimo
   psaní do inputu), tlačítka **Stáhnout originál** /
   **Stáhnout upravenou** (`downloadUrl`); **stránka nese právě JEDEN obrázek fotky** — obličeje

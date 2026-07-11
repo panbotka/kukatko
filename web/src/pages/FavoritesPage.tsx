@@ -13,6 +13,7 @@ import { SelectionStart } from '../components/organize/SelectionStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { detailQueryString } from '../lib/detailView'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 
@@ -36,6 +37,12 @@ export function FavoritesPage() {
   // Scope every page to the acting user's favorites; the rest of the filters and
   // the sort apply on top, exactly as in the library.
   const params = useMemo(() => ({ ...viewToParams(view), favorite: 'true' }), [view])
+  // Each tile carries the favorites scope so the detail page pages prev/next
+  // within favorites and Esc/Back returns here, not the whole library.
+  const detailQuery = useMemo(
+    () => detailQueryString({ ...view, favorite: 'true', mode: '' }),
+    [view],
+  )
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = usePhotoLibrary(
     params,
     { reloadKey },
@@ -84,6 +91,7 @@ export function FavoritesPage() {
           onRetry={retry}
           selection={bulk.gridSelection}
           favoritable
+          detailQuery={detailQuery}
         />
       )}
     </>

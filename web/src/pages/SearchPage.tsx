@@ -20,6 +20,7 @@ import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { detailQueryString } from '../lib/detailView'
 import { viewToParams } from '../lib/libraryView'
 import { SEARCH_DEFAULTS, type SearchView, toMode } from '../lib/searchView'
 import { useUrlState } from '../lib/urlState'
@@ -52,6 +53,13 @@ export function SearchPage() {
 
   const params = useMemo(() => viewToParams(view), [view])
   const mode = toMode(view.mode)
+  // Each tile carries the search scope — the query, filters and (always-present)
+  // mode — so the detail page pages prev/next through the same ranked results and
+  // Esc/Back returns to the search, not the library with `q` as a substring filter.
+  const detailQuery = useMemo(
+    () => detailQueryString({ ...view, favorite: '', mode }),
+    [view, mode],
+  )
   const [reloadKey, reload] = useReloadKey()
   const { photos, total, status, degraded, loadingMore, moreError, loadMore, retry } =
     usePhotoSearch(params, mode, { reloadKey })
@@ -209,6 +217,7 @@ export function SearchPage() {
           onEndReached={loadMore}
           onRetry={retry}
           selection={bulk.gridSelection}
+          detailQuery={detailQuery}
         />
       )}
 

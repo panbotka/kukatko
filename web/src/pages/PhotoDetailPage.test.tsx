@@ -34,6 +34,7 @@ vi.mock('../services/photos', async (importOriginal) => {
     updatePhoto: vi.fn(),
     favoritePhoto: vi.fn(),
     fetchPhotos: vi.fn(),
+    searchPhotos: vi.fn(),
   }
 })
 
@@ -55,7 +56,7 @@ vi.mock('../services/people', async (importOriginal) => {
   return { ...actual, fetchFaces: vi.fn(), assignFace: vi.fn() }
 })
 
-const { fetchPhoto, fetchEdit, saveEdit, updatePhoto, favoritePhoto, fetchPhotos } =
+const { fetchPhoto, fetchEdit, saveEdit, updatePhoto, favoritePhoto, fetchPhotos, searchPhotos } =
   await import('../services/photos')
 const { fetchAlbums, fetchLabels, addAlbumPhotos, removeAlbumPhotos, attachLabel, detachLabel } =
   await import('../services/organize')
@@ -69,6 +70,7 @@ const saveEditMock = vi.mocked(saveEdit)
 const updatePhotoMock = vi.mocked(updatePhoto)
 const favoritePhotoMock = vi.mocked(favoritePhoto)
 const fetchPhotosMock = vi.mocked(fetchPhotos)
+const searchPhotosMock = vi.mocked(searchPhotos)
 const fetchAlbumsMock = vi.mocked(fetchAlbums)
 const fetchLabelsMock = vi.mocked(fetchLabels)
 const addAlbumPhotosMock = vi.mocked(addAlbumPhotos)
@@ -218,6 +220,7 @@ beforeEach(async () => {
   fetchPhotoMock.mockResolvedValue(photo())
   fetchEditMock.mockResolvedValue(NEUTRAL)
   fetchPhotosMock.mockResolvedValue(page(['a', 'b', 'c']))
+  searchPhotosMock.mockResolvedValue(page(['a', 'b', 'c']))
   fetchAlbumsMock.mockResolvedValue([albumCount('al_1', 'Holidays'), albumCount('al_2', 'Trips')])
   fetchLabelsMock.mockResolvedValue([labelCount('lb_1', 'Sunset'), labelCount('lb_2', 'Forest')])
   addAlbumPhotosMock.mockResolvedValue(['b'])
@@ -372,6 +375,31 @@ describe('PhotoDetailPage', () => {
 
     const back = screen.getByRole('link', { name: /Back/ })
     expect(back).toHaveAttribute('href', expect.stringContaining('/albums/al_1'))
+  })
+
+  it('pages prev/next through the search and returns to it when opened from search', async () => {
+    renderPage(true, '/photos/b?q=beach&mode=semantic')
+
+    await screen.findByRole('heading', { name: 'Beach' })
+    // Neighbours come from GET /search (ranked), not the library list, so the
+    // order matches the results grid the photo was opened from.
+    await waitFor(() => {
+      expect(searchPhotosMock).toHaveBeenCalled()
+    })
+    expect(fetchPhotosMock).not.toHaveBeenCalled()
+    const [params, mode] = searchPhotosMock.mock.calls[0]
+    expect(params.q).toBe('beach')
+    expect(mode).toBe('semantic')
+
+    // Prev/next carry the search scope so navigation stays within the results.
+    const prev = await screen.findByRole('link', { name: 'Previous photo' })
+    const next = await screen.findByRole('link', { name: 'Next photo' })
+    expect(prev).toHaveAttribute('href', '/photos/a?q=beach&mode=semantic')
+    expect(next).toHaveAttribute('href', '/photos/c?q=beach&mode=semantic')
+
+    // Back reconstructs the search URL (query + mode), not the library.
+    const back = screen.getByRole('link', { name: /Back/ })
+    expect(back).toHaveAttribute('href', '/search?q=beach&mode=semantic')
   })
 
   it('edits metadata via the API and reflects the refreshed photo', async () => {

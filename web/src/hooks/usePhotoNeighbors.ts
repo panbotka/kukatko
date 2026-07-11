@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 
-import { fetchPhotos, type PhotoListParams } from '../services/photos'
+import {
+  fetchPhotos,
+  type PhotoListParams,
+  searchPhotos,
+  type SearchMode,
+} from '../services/photos'
 
 import { PAGE_SIZE } from './usePaginatedPhotos'
 
@@ -29,6 +34,11 @@ const NONE: PhotoNeighbors = { prev: null, next: null }
  * its following neighbour, then stops — bounded by {@link MAX_PAGES}. In-flight
  * requests are aborted when `uid`/`params` change or on unmount.
  *
+ * When `mode` is set the photo was opened from the search page, so paging goes
+ * through `GET /search` (ranking `params.q`) instead of the library list — the
+ * two return different orders for the same query, and prev/next must follow the
+ * search order the grid showed.
+ *
  * `params` should be memoised by the caller so its identity changes only when the
  * query actually changes. When `enabled` is false (e.g. no originating list) the
  * hook reports no neighbours without fetching.
@@ -37,9 +47,10 @@ export function usePhotoNeighbors(
   uid: string,
   params: PhotoListParams,
   enabled = true,
+  mode?: SearchMode,
 ): PhotoNeighbors {
   const [neighbors, setNeighbors] = useState<PhotoNeighbors>(NONE)
-  const key = JSON.stringify(params)
+  const key = JSON.stringify({ params, mode })
 
   useEffect(() => {
     if (!enabled) {
@@ -53,7 +64,11 @@ export function usePhotoNeighbors(
       const order: string[] = []
       let offset = 0
       for (let page = 0; page < MAX_PAGES; page++) {
-        const res = await fetchPhotos({ ...params, limit: PAGE_SIZE, offset }, controller.signal)
+        const pageParams = { ...params, limit: PAGE_SIZE, offset }
+        const res =
+          mode === undefined
+            ? await fetchPhotos(pageParams, controller.signal)
+            : await searchPhotos(pageParams, mode, controller.signal)
         for (const photo of res.photos) {
           order.push(photo.uid)
         }
@@ -88,7 +103,7 @@ export function usePhotoNeighbors(
       cancelled = true
       controller.abort()
     }
-  }, [uid, key, enabled, params])
+  }, [uid, key, enabled, params, mode])
 
   return neighbors
 }

@@ -57,9 +57,9 @@ export function LibraryPage() {
   // Memoise the API params so the data hook only reloads when the query changes.
   const params = useMemo(() => viewToParams(view), [view])
   // The detail link carries this view — album and label facets included, so
-  // prev/next pages through the same filtered grid — but never the favorites
-  // scope, which the library never applies.
-  const detailQuery = useMemo(() => detailQueryString({ ...view, favorite: '' }), [view])
+  // prev/next pages through the same filtered grid — but never the favorites or
+  // search scope, which the library never applies.
+  const detailQuery = useMemo(() => detailQueryString({ ...view, favorite: '', mode: '' }), [view])
   // A bulk edit can change what the filters match, so bump the key to refetch.
   const [reloadKey, reload] = useReloadKey()
   const { photos, total, status, loadingMore, moreError, hasMore, loadMore, retry } =

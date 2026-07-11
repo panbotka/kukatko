@@ -29,4 +29,26 @@ describe('detailView helpers', () => {
       '/albums/al_1?sort=oldest',
     )
   })
+
+  it('builds a Back link to the search when a search mode scope is present', () => {
+    // A default-mode (hybrid) search with no other state still returns to /search,
+    // because the search grid always writes the mode as the scope marker.
+    expect(backHref({ ...DETAIL_DEFAULTS, mode: 'hybrid' })).toBe('/search')
+    // The search query and filters travel back; hybrid (the search default) is
+    // omitted, a non-default mode is carried.
+    expect(backHref({ ...DETAIL_DEFAULTS, mode: 'hybrid', q: 'cat' })).toBe('/search?q=cat')
+    expect(backHref({ ...DETAIL_DEFAULTS, mode: 'fulltext', q: 'cat' })).toBe(
+      '/search?q=cat&mode=fulltext',
+    )
+  })
+
+  it('carries the search mode in the detail query string as the scope marker', () => {
+    // The library/album/label/favorites views leave mode empty, so it never
+    // appears; a search always writes it, even the default hybrid.
+    expect(new URLSearchParams(detailQueryString(DETAIL_DEFAULTS)).get('mode')).toBeNull()
+    const query = detailQueryString({ ...DETAIL_DEFAULTS, mode: 'hybrid', q: 'cat' })
+    const parsed = new URLSearchParams(query)
+    expect(parsed.get('mode')).toBe('hybrid')
+    expect(parsed.get('q')).toBe('cat')
+  })
 })

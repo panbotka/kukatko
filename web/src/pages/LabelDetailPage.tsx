@@ -15,6 +15,7 @@ import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
+import { detailQueryString } from '../lib/detailView'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 import { fetchLabel, type Label } from '../services/organize'
@@ -41,6 +42,12 @@ export function LabelDetailPage() {
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const params = useMemo(() => viewToParams(view), [view])
   const scope = useMemo(() => ({ label: uid }), [uid])
+  // Each tile carries the label scope so the detail page pages prev/next within
+  // this label and Esc/Back returns to it, not the whole library.
+  const detailQuery = useMemo(
+    () => detailQueryString({ ...view, label: uid, album: '', favorite: '', mode: '' }),
+    [view, uid],
+  )
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,
@@ -127,6 +134,7 @@ export function LabelDetailPage() {
           onEndReached={loadMore}
           onRetry={retry}
           selection={bulk.gridSelection}
+          detailQuery={detailQuery}
         />
       )}
     </>

@@ -144,6 +144,17 @@ describe('LabelDetailPage', () => {
     expect(fetchPhotosMock.mock.calls[0][0].label).toBe('lb_1')
   })
 
+  it('links each tile to the detail page carrying the label scope', async () => {
+    fetchLabelMock.mockResolvedValue(label())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    // The tile's detail link carries ?label so Esc/Back and prev/next stay in
+    // this label rather than falling through to the library.
+    const link = await screen.findByRole('link', { name: 'a.jpg' })
+    expect(link).toHaveAttribute('href', '/photos/a?label=lb_1')
+  })
+
   it('honours filters from the URL in the scoped fetch', async () => {
     fetchLabelMock.mockResolvedValue(label())
     fetchPhotosMock.mockResolvedValue(page([]))

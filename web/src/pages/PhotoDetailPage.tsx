@@ -33,6 +33,7 @@ import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '..
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { editPreviewStyle, isIdentityEdit } from '../lib/photoEdit'
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
+import { toMode } from '../lib/searchView'
 import { readUrlState } from '../lib/urlState'
 import {
   downloadUrl,
@@ -76,7 +77,11 @@ export function PhotoDetailPage() {
   const view = useMemo(() => readUrlState(searchParams, DETAIL_DEFAULTS), [searchParams])
   const neighborParams = useMemo(() => detailToParams(view), [view])
   const detailQuery = detailQueryString(view)
-  const neighbors = usePhotoNeighbors(uid, neighborParams)
+  // A `mode` scope means the photo was opened from search, so prev/next (and the
+  // lightbox) must page through `GET /search` in the same ranked order the results
+  // grid showed rather than the plain library list.
+  const searchMode = view.mode !== '' ? toMode(view.mode) : undefined
+  const neighbors = usePhotoNeighbors(uid, neighborParams, true, searchMode)
 
   // The neighbour's detail URL, carrying the originating order/scope so prev/next
   // keeps paging the same list. Shared by the arrow-key shortcut and the on-image
@@ -434,6 +439,7 @@ export function PhotoDetailPage() {
           initialTitle={title}
           initialEdit={edit}
           params={neighborParams}
+          mode={searchMode}
           token={downloadToken}
           onClose={closeLightbox}
         />

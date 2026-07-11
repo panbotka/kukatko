@@ -171,6 +171,17 @@ describe('SearchPage', () => {
     expect(mode).toBe('semantic')
   })
 
+  it('links each tile to the detail page carrying the search scope', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderSearch('/search?q=beach&mode=semantic')
+
+    // The tile's detail link carries the query and mode so Esc/Back returns to
+    // the search (ranked results), not the library with `q` as a substring
+    // filter, and prev/next pages the same ranked results.
+    const link = await screen.findByRole('link', { name: 'a.jpg' })
+    expect(link).toHaveAttribute('href', '/photos/a?q=beach&mode=semantic')
+  })
+
   it('changing the mode updates the URL and refetches', async () => {
     searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()

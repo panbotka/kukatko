@@ -159,6 +159,17 @@ describe('AlbumDetailPage', () => {
     expect(fetchPhotosMock.mock.calls[0][0].album).toBe('al_1')
   })
 
+  it('links each tile to the detail page carrying the album scope', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    // The tile's detail link carries ?album so pressing Esc/Back on the photo
+    // (and prev/next) returns to this album, not the whole library.
+    const link = await screen.findByRole('link', { name: 'a.jpg' })
+    expect(link).toHaveAttribute('href', '/photos/a?album=al_1')
+  })
+
   it('renders no sort selector and no manual reordering controls', async () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))

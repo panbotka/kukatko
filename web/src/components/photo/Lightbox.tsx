@@ -9,6 +9,7 @@ import {
   fetchPhoto,
   type PhotoEdit,
   type PhotoListParams,
+  type SearchMode,
   thumbUrl,
 } from '../../services/photos'
 
@@ -33,6 +34,12 @@ export interface LightboxProps {
    * follows the same order the detail page uses ({@link usePhotoNeighbors}).
    */
   params: PhotoListParams
+  /**
+   * Search ranking mode when the photo was opened from a search, so the viewer
+   * pages through `GET /search` in the same order the detail page does. Omitted
+   * for library/album/label/favorites, which page the plain list endpoint.
+   */
+  mode?: SearchMode
   /** Download token appended to the media URL for cookie-less contexts. */
   token?: string | null
   /**
@@ -58,6 +65,7 @@ export function Lightbox({
   initialTitle,
   initialEdit,
   params,
+  mode,
   token,
   onClose,
 }: LightboxProps) {
@@ -70,7 +78,7 @@ export function Lightbox({
   // for the photo we opened on; later navigation fetches the shown photo's data.
   const skipInitialFetch = useRef(true)
 
-  const neighbors = usePhotoNeighbors(uid, params)
+  const neighbors = usePhotoNeighbors(uid, params, true, mode)
 
   // Fetch the shown photo's title and saved edit when navigating to a neighbour,
   // so the caption and the applied edit match the image on screen.
