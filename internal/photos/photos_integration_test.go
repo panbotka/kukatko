@@ -91,6 +91,7 @@ func TestPhotoLifecycle(t *testing.T) {
 		Title:         "Sunset",
 		Description:   "On the coast",
 		Notes:         "keeper",
+		AiNote:        "detected: sea, sky, sunset",
 		TakenAt:       &newTaken,
 		TakenAtSource: "manual",
 		Lat:           new(49.0),
@@ -102,6 +103,15 @@ func TestPhotoLifecycle(t *testing.T) {
 	}
 	if updated.Title != "Sunset" || !updated.Private || updated.Lng != nil {
 		t.Errorf("UpdateMetadata result mismatch: %+v", updated)
+	}
+	if updated.AiNote != "detected: sea, sky, sunset" {
+		t.Errorf("UpdateMetadata ai_note = %q, want %q", updated.AiNote, "detected: sea, sky, sunset")
+	}
+	// The AI note must survive a fresh read, not just the RETURNING round-trip.
+	if reread, err := store.GetByUID(ctx, created.UID); err != nil {
+		t.Fatalf("GetByUID after update: %v", err)
+	} else if reread.AiNote != "detected: sea, sky, sunset" {
+		t.Errorf("reread ai_note = %q, want %q", reread.AiNote, "detected: sea, sky, sunset")
 	}
 	if updated.Lat == nil || *updated.Lat != 49.0 {
 		t.Errorf("UpdateMetadata lat = %v, want 49.0", updated.Lat)

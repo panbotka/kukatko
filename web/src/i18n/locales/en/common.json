@@ -674,6 +674,7 @@
       "title": "Title",
       "description": "Description",
       "notes": "Notes",
+      "aiNote": "AI note",
       "takenAt": "Taken at",
       "camera": "Camera",
       "lens": "Lens",

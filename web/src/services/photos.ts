@@ -25,6 +25,12 @@ export interface Photo {
   lens_model: string
   /** Capture notes (private annotations); present on detail responses. */
   notes?: string
+  /**
+   * Free-text note produced by an external AI classification pass. Editable in
+   * the UI and settable via the photo edit API; included in full-text search.
+   * Present on detail responses.
+   */
+  ai_note?: string
   /** EXIF capture settings, present when the original carried them. */
   iso?: number
   aperture?: number
@@ -345,6 +351,7 @@ export interface PhotoMetadataUpdate {
   title?: string
   description?: string
   notes?: string
+  ai_note?: string
   taken_at?: string | null
   lat?: number | null
   lng?: number | null

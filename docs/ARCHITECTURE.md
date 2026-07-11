@@ -224,6 +224,7 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
 
 - **`photos`** — `uid PK`, `file_hash UNIQUE` (SHA256), `file_path`, `file_name/size/mime`,
   `file_width/height/orientation`, `taken_at` + `taken_at_source`, `title/description/notes`,
+  `ai_note` (volný text z externí AI klasifikace, `NOT NULL DEFAULT ''`, editovatelný, ve fulltextu),
   `lat/lng/altitude`, `camera_make/model`, `lens_model`, `iso/aperture/exposure/focal_length`,
   `exif JSONB`, `private`, `archived_at`, `uploaded_by`, časy.
   **Nové sloupce pro Kukátko:**
@@ -325,8 +326,8 @@ Stejný jako photo-sorter (`EMBEDDING_URL`, default offline-aware). HTTP:
   ctí standardní list filtry (datum/GPS/private/…) i stránkování; odpověď má stejný tvar jako
   list + pole `mode` (efektivní mód) a `degraded` (viz níže).
 - **Fulltext:** PostgreSQL `tsvector` (dictionary `simple`, `unaccent` pro češtinu) nad
-  title(A) > description(B) > notes(C) > file_name(D). Diakritika necitlivá („deti" = „Děti").
-  Řazení dle `ts_rank` (`photos.Store.Search`).
+  title(A) > description(B) > notes(C) = ai_note(C) > file_name(D). Diakritika necitlivá
+  („deti" = „Děti"). Řazení dle `ts_rank` (`photos.Store.Search`).
 - **Sémantické (text→fotka):** text → sidecar `/embed/text` (768-dim CLIP) → HNSW cosine nad
   `embeddings` (`vectors.Store.FindSimilar`). Kandidáti se pak profiltrují list filtry přes
   `photos.Store.FilterUIDs` (strukturální filtry, ignoruje fulltext) a seřadí dle vzdálenosti.

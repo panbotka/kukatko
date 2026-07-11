@@ -690,6 +690,7 @@
       "title": "Název",
       "description": "Popis",
       "notes": "Poznámky",
+      "aiNote": "Poznámka AI",
       "takenAt": "Datum pořízení",
       "camera": "Fotoaparát",
       "lens": "Objektiv",

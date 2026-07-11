@@ -317,7 +317,7 @@ zapiš sem.
   a volba se pamatuje v localStorage (`lib/faceOverlayPref`); fotka bez obličejů = jediný
   nenápadný řádek `faces.none`, žádný obrázek; klik na box otevře `FaceAssignPanel` pod náhledem;
   pruh `SimilarPhotos` a pravý panel se záložkami (`components/photo/`): **Informace**
-  (`MetadataPanel` = view/edit title/description/notes/taken_at — **bez** camera/lens/EXIF, ta
+  (`MetadataPanel` = view/edit title/description/notes/ai_note/taken_at — **bez** camera/lens/EXIF, ta
   žije v `TechnicalDetails` — + **vizuální
   location picker** (nahradil holá lat/lng pole): jedno tolerantní pole souřadnic parsované
   pure helperem `lib/coordinates` (`parseCoordinates`→`{lat,lng}`|error / `formatCoordinates`;

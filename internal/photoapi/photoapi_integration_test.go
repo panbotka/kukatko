@@ -564,6 +564,33 @@ func TestUpdateMetadata(t *testing.T) {
 		}
 	})
 
+	t.Run("editor sets ai_note and detail returns it", func(t *testing.T) {
+		body := []byte(`{"ai_note":"detected: dog, beach, ball"}`)
+		resp := mustDo(t, editor, http.MethodPatch, url, body)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("patch status = %d, want 200", resp.StatusCode)
+		}
+		var got photos.Photo
+		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+			t.Fatalf("decode patch: %v", err)
+		}
+		if got.AiNote != "detected: dog, beach, ball" {
+			t.Errorf("patch ai_note = %q, want %q", got.AiNote, "detected: dog, beach, ball")
+		}
+
+		// The detail response must carry the persisted ai_note as well.
+		detailResp := mustDo(t, editor, http.MethodGet, url, nil)
+		defer func() { _ = detailResp.Body.Close() }()
+		var detail photos.Photo
+		if err := json.NewDecoder(detailResp.Body).Decode(&detail); err != nil {
+			t.Fatalf("decode detail: %v", err)
+		}
+		if detail.AiNote != "detected: dog, beach, ball" {
+			t.Errorf("detail ai_note = %q, want %q", detail.AiNote, "detected: dog, beach, ball")
+		}
+	})
+
 	t.Run("invalid coordinate is 400", func(t *testing.T) {
 		resp := mustDo(t, editor, http.MethodPatch, url, []byte(`{"lat":200}`))
 		defer func() { _ = resp.Body.Close() }()

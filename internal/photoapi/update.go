@@ -29,6 +29,7 @@ type updateBody struct {
 	Title       *string    `json:"title"`
 	Description *string    `json:"description"`
 	Notes       *string    `json:"notes"`
+	AiNote      *string    `json:"ai_note"`
 	TakenAt     *time.Time `json:"taken_at"`
 	Lat         *float64   `json:"lat"`
 	Lng         *float64   `json:"lng"`
@@ -129,6 +130,7 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 		Title:         current.Title,
 		Description:   current.Description,
 		Notes:         current.Notes,
+		AiNote:        current.AiNote,
 		TakenAt:       current.TakenAt,
 		TakenAtSource: current.TakenAtSource,
 		Lat:           current.Lat,
@@ -148,20 +150,24 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 }
 
 // applyScalars overlays the present non-nullable scalar fields (title,
-// description, notes, private) onto update. An explicit JSON null for one of
-// these is ignored, since the columns are not nullable.
+// description, notes, ai_note, private) onto update. An explicit JSON null for
+// one of these is ignored, since the columns are not nullable.
 func applyScalars(update *photos.MetadataUpdate, present map[string]struct{}, body updateBody) {
-	if _, ok := present["title"]; ok && body.Title != nil {
-		update.Title = *body.Title
-	}
-	if _, ok := present["description"]; ok && body.Description != nil {
-		update.Description = *body.Description
-	}
-	if _, ok := present["notes"]; ok && body.Notes != nil {
-		update.Notes = *body.Notes
-	}
+	applyPresentString(present, "title", body.Title, &update.Title)
+	applyPresentString(present, "description", body.Description, &update.Description)
+	applyPresentString(present, "notes", body.Notes, &update.Notes)
+	applyPresentString(present, "ai_note", body.AiNote, &update.AiNote)
 	if _, ok := present["private"]; ok && body.Private != nil {
 		update.Private = *body.Private
+	}
+}
+
+// applyPresentString copies value onto dst when key is present and value is
+// non-null. An omitted key or an explicit JSON null leaves dst unchanged, since
+// the backing column is NOT NULL.
+func applyPresentString(present map[string]struct{}, key string, value *string, dst *string) {
+	if _, ok := present[key]; ok && value != nil {
+		*dst = *value
 	}
 }
 

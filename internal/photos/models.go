@@ -100,6 +100,10 @@ type Photo struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Notes       string `json:"notes"`
+	// AiNote is free text produced by an external AI classification pass. Like the
+	// other text fields it defaults to '' in SQL; it is user-editable and included
+	// in full-text search (weighted like Notes).
+	AiNote string `json:"ai_note"`
 
 	Lat      *float64 `json:"lat,omitempty"`
 	Lng      *float64 `json:"lng,omitempty"`
@@ -188,6 +192,7 @@ type MetadataUpdate struct {
 	Title         string     `json:"title"`
 	Description   string     `json:"description"`
 	Notes         string     `json:"notes"`
+	AiNote        string     `json:"ai_note"`
 	TakenAt       *time.Time `json:"taken_at"`
 	TakenAtSource string     `json:"taken_at_source"`
 	Lat           *float64   `json:"lat"`

@@ -99,7 +99,10 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `photo_edits` (validace bounds; originál se nikdy nemění — `GET …/download` ho **renderuje za běhu**
   přes `photoedit.Apply`, pokud caller nedá `?original=true`);
   `PATCH /photos/{uid}` (editor/admin) částečná úprava
-  metadat (null maže nullable, validace souřadnic); `POST /photos/{uid}/archive`+`/unarchive`
+  metadat — `title/description/notes/ai_note/taken_at/lat/lng/private` (null maže nullable, validace
+  souřadnic); `ai_note` je volný text z externí AI klasifikace (píše ho i automat přes tuto routu),
+  vrací se v detailu i listu jako součást `photos.Photo` a je zahrnutý ve fulltextu (§ Vyhledávání);
+  `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);
   **koš / trvalé mazání** (`trash.go`, backuje `internal/trash` přes rozhraní `Purger`, nil → 503):
   `POST /photos/{uid}/purge` (editor/admin, `?confirm=true` jinak 400, 404 chybí, 409 fotka není

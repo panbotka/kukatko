@@ -33,7 +33,7 @@ var photoInsertColumns = []string{
 	"uid", "file_hash", "file_path", "file_name", "file_size", "file_mime",
 	"file_width", "file_height", "file_orientation", "media_type", "duration_ms",
 	"video_codec", "audio_codec", "has_audio", "fps", "taken_at", "taken_at_source",
-	"title", "description", "notes", "lat", "lng", "altitude", "camera_make",
+	"title", "description", "notes", "ai_note", "lat", "lng", "altitude", "camera_make",
 	"camera_model", "lens_model", "iso", "aperture", "exposure", "focal_length",
 	"exif", "private", "archived_at", "uploaded_by", "photoprism_uid",
 	"photoprism_file_hash", "photosorter_uid",
@@ -85,7 +85,7 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.UID, &p.FileHash, &p.FilePath, &p.FileName, &p.FileSize, &p.FileMime,
 		&p.FileWidth, &p.FileHeight, &p.FileOrientation, &p.MediaType, &p.DurationMs,
 		&p.VideoCodec, &p.AudioCodec, &p.HasAudio, &p.FPS, &p.TakenAt, &p.TakenAtSource,
-		&p.Title, &p.Description, &p.Notes, &p.Lat, &p.Lng, &p.Altitude, &p.CameraMake,
+		&p.Title, &p.Description, &p.Notes, &p.AiNote, &p.Lat, &p.Lng, &p.Altitude, &p.CameraMake,
 		&p.CameraModel, &p.LensModel, &p.ISO, &p.Aperture, &p.Exposure, &p.FocalLength,
 		&exif, &p.Private, &p.ArchivedAt, &p.UploadedBy, &p.PhotoprismUID,
 		&p.PhotoprismFileHash, &p.PhotosorterUID, &p.CreatedAt, &p.UpdatedAt,
@@ -115,7 +115,7 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		p.UID, p.FileHash, p.FilePath, p.FileName, p.FileSize, p.FileMime,
 		p.FileWidth, p.FileHeight, p.FileOrientation, p.MediaType, p.DurationMs,
 		p.VideoCodec, p.AudioCodec, p.HasAudio, p.FPS, p.TakenAt, p.TakenAtSource,
-		p.Title, p.Description, p.Notes, p.Lat, p.Lng, p.Altitude, p.CameraMake,
+		p.Title, p.Description, p.Notes, p.AiNote, p.Lat, p.Lng, p.Altitude, p.CameraMake,
 		p.CameraModel, p.LensModel, p.ISO, p.Aperture, p.Exposure, p.FocalLength,
 		nilIfEmptyJSON(p.Exif), p.Private, p.ArchivedAt, p.UploadedBy, p.PhotoprismUID,
 		p.PhotoprismFileHash, p.PhotosorterUID,
@@ -253,11 +253,11 @@ func (s *Store) UpdateMetadata(ctx context.Context, uid string, m MetadataUpdate
 // same transaction.
 func updateMetadataRow(ctx context.Context, q rowQuerier, uid string, m MetadataUpdate) (Photo, error) {
 	sql := `UPDATE photos SET
-		title = $2, description = $3, notes = $4, taken_at = $5, taken_at_source = $6,
-		lat = $7, lng = $8, altitude = $9, private = $10, updated_at = now()
+		title = $2, description = $3, notes = $4, ai_note = $5, taken_at = $6, taken_at_source = $7,
+		lat = $8, lng = $9, altitude = $10, private = $11, updated_at = now()
 		WHERE uid = $1 RETURNING ` + photoColumns
 	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid,
-		m.Title, m.Description, m.Notes, m.TakenAt, m.TakenAtSource,
+		m.Title, m.Description, m.Notes, m.AiNote, m.TakenAt, m.TakenAtSource,
 		m.Lat, m.Lng, m.Altitude, m.Private))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

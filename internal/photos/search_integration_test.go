@@ -90,6 +90,40 @@ func TestSearch_fieldWeighting(t *testing.T) {
 	}
 }
 
+// TestSearch_aiNoteMatches verifies a photo is found by a term that appears only
+// in its ai_note, so the AI classification text is part of the search vector.
+func TestSearch_aiNoteMatches(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	// The term "capybara" lives only in the AI note, nowhere else on the row.
+	tagged := textPhoto("ai-1", "a.jpg", "", "", "")
+	tagged.AiNote = "detected animal: capybara near water"
+	created, err := store.Create(ctx, tagged)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := store.Create(ctx, textPhoto("ai-2", "b.jpg", "Praha", "", "")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got := searchUIDs(t, store, photos.ListParams{FullText: "capybara"})
+	if len(got) != 1 || got[0] != created.UID {
+		t.Fatalf("Search(capybara) = %v, want [%s]", got, created.UID)
+	}
+
+	// Diacritics-insensitivity applies to the AI note too.
+	tagged2 := textPhoto("ai-3", "c.jpg", "", "", "")
+	tagged2.AiNote = "místo: Kladno"
+	kladno, err := store.Create(ctx, tagged2)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got := searchUIDs(t, store, photos.ListParams{FullText: "kladno"}); len(got) != 1 || got[0] != kladno.UID {
+		t.Fatalf("Search(kladno) = %v, want [%s]", got, kladno.UID)
+	}
+}
+
 // TestSearch_fileNameToken verifies the normalised file_name is searchable: a
 // token split out of "IMG_2024.heic" matches.
 func TestSearch_fileNameToken(t *testing.T) {

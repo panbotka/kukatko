@@ -59,6 +59,7 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   const [title, setTitle] = useState(photo.title)
   const [description, setDescription] = useState(photo.description)
   const [notes, setNotes] = useState(photo.notes ?? '')
+  const [aiNote, setAiNote] = useState(photo.ai_note ?? '')
   const [takenAt, setTakenAt] = useState(toLocalInput(photo.taken_at))
   // The location lives as a single free-form coordinate string; it is parsed to
   // drive the map marker and, on save, the PATCH lat/lng.
@@ -75,6 +76,7 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
     setTitle(photo.title)
     setDescription(photo.description)
     setNotes(photo.notes ?? '')
+    setAiNote(photo.ai_note ?? '')
     setTakenAt(toLocalInput(photo.taken_at))
     setCoordText(initialCoordText(photo))
     setError(false)
@@ -95,6 +97,7 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
       title: title.trim(),
       description,
       notes,
+      ai_note: aiNote,
       taken_at: takenAt === '' ? null : new Date(takenAt).toISOString(),
     }
     if (!hasCoordText) {
@@ -168,6 +171,19 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             value={notes}
             onChange={(event) => {
               setNotes(event.target.value)
+            }}
+          />
+        </Form.Group>
+        <Form.Group className="mb-2" controlId="photo-ai-note">
+          <Form.Label className="small text-secondary mb-1">
+            {t('photo.metadata.aiNote')}
+          </Form.Label>
+          <Form.Control
+            as="textarea"
+            rows={2}
+            value={aiNote}
+            onChange={(event) => {
+              setAiNote(event.target.value)
             }}
           />
         </Form.Group>
@@ -261,6 +277,7 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
       <MetaField label={t('photo.metadata.title')} value={photo.title} />
       <MetaField label={t('photo.metadata.description')} value={photo.description} />
       <MetaField label={t('photo.metadata.notes')} value={photo.notes} />
+      <MetaField label={t('photo.metadata.aiNote')} value={photo.ai_note} />
       <MetaField
         label={t('photo.metadata.takenAt')}
         value={

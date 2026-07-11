@@ -75,6 +75,7 @@ func TestMergeUpdate(t *testing.T) {
 		Title:         "Old",
 		Description:   "desc",
 		Notes:         "notes",
+		AiNote:        "old ai note",
 		TakenAt:       &taken,
 		TakenAtSource: "exif",
 		Lat:           new(10.0),
@@ -102,6 +103,32 @@ func TestMergeUpdate(t *testing.T) {
 		}
 		if got.Title != "New" || !got.Private {
 			t.Errorf("title/private not applied: %+v", got)
+		}
+	})
+
+	t.Run("ai_note overwritten while notes unchanged", func(t *testing.T) {
+		t.Parallel()
+		present := map[string]struct{}{"ai_note": {}}
+		got, err := mergeUpdate(base, present, updateBody{AiNote: new("fresh ai note")})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.AiNote != "fresh ai note" {
+			t.Errorf("ai_note = %q, want %q", got.AiNote, "fresh ai note")
+		}
+		if got.Notes != "notes" {
+			t.Errorf("notes = %q, want unchanged %q", got.Notes, "notes")
+		}
+	})
+
+	t.Run("omitted ai_note is unchanged", func(t *testing.T) {
+		t.Parallel()
+		got, err := mergeUpdate(base, map[string]struct{}{}, updateBody{})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.AiNote != "old ai note" {
+			t.Errorf("ai_note = %q, want unchanged %q", got.AiNote, "old ai note")
 		}
 	})
 

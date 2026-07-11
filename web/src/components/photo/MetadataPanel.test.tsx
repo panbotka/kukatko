@@ -189,3 +189,31 @@ describe('MetadataPanel location picker', () => {
     })
   })
 })
+
+describe('MetadataPanel AI note', () => {
+  it('shows the AI note read-only and PATCHes an edited value', async () => {
+    const onUpdated = vi.fn()
+    updatePhotoMock.mockResolvedValue(photo({ ai_note: 'detected: cat, sofa' }))
+    const user = userEvent.setup()
+    renderPanel({ photo: photo({ ai_note: 'detected: dog, beach' }), onUpdated })
+
+    // The read-only summary shows the AI note under its own label.
+    expect(screen.getByText('AI note')).toBeInTheDocument()
+    expect(screen.getByText('detected: dog, beach')).toBeInTheDocument()
+
+    await startEditing(user)
+    const field = screen.getByLabelText('AI note')
+    expect(field).toHaveValue('detected: dog, beach')
+    await user.clear(field)
+    await user.type(field, 'detected: cat, sofa')
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalledWith(
+        'b',
+        expect.objectContaining({ ai_note: 'detected: cat, sofa' }),
+      )
+    })
+    expect(onUpdated).toHaveBeenCalled()
+  })
+})
