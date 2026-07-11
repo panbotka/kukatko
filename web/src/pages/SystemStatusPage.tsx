@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
 import { formatBytes, formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
 import type { ImportRun, ImportSource } from '../services/import'
@@ -29,6 +30,20 @@ import {
 
 /** How often the status snapshot is re-polled while the page is open. */
 const POLL_INTERVAL_MS = 5000
+
+/**
+ * The job-queue states explained beneath the queue badges, in display order.
+ * Includes `pending` (work waiting on the AI box), which the System page shows
+ * and the Maintenance page does not.
+ */
+const SYSTEM_JOB_STATES: readonly JobStateKey[] = [
+  'total',
+  'queued',
+  'running',
+  'failed',
+  'dead',
+  'pending',
+]
 
 /** Fetch lifecycle of the system-status page. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: SystemStatus }
@@ -117,7 +132,8 @@ function JobsCard({
   return (
     <Card className="h-100">
       <Card.Body>
-        <h2 className="kk-section-title mb-2">{t('system.jobs.title')}</h2>
+        <h2 className="kk-section-title mb-1">{t('system.jobs.title')}</h2>
+        <p className="text-secondary small">{t('system.jobs.intro')}</p>
         <div className="d-flex gap-2 flex-wrap mb-3">
           <Badge bg="primary">
             {t('system.jobs.total')}: {jobs.total}
@@ -138,7 +154,9 @@ function JobsCard({
             {t('system.jobs.pending')}: {jobs.pending_embeddings}
           </Badge>
         </div>
+        <JobStateLegend states={SYSTEM_JOB_STATES} />
         <Button
+          className="mt-3"
           variant="outline-primary"
           size="sm"
           disabled={jobs.dead_letter === 0 || requeuing}

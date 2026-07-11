@@ -950,6 +950,7 @@
       "running": "Probíhá kontrola…",
       "title": "Výsledek kontroly",
       "summary": "{{photos}} fotek · {{files}} souborů v DB · {{disk}} originálů na disku",
+      "summaryHint": "Čísla by měla zhruba odpovídat; větší rozdíl mezi katalogem a diskem značí nesoulad — chybějící originály (v katalogu, ale ne na disku) nebo osiřelé soubory (na disku, ale ne v katalogu), viz níže.",
       "clean": "Knihovna je konzistentní.",
       "empty": "Zatím neproběhla žádná kontrola. Spusťte kontrolu integrity.",
       "error": "Kontrola se nezdařila."
@@ -961,11 +962,19 @@
       "missing_embeddings": "Chybějící embeddingy",
       "missing_faces": "Chybějící detekce obličejů",
       "missing_phashes": "Chybějící perceptuální hashe",
-      "samples": "Ukázky"
+      "samples": "Ukázky",
+      "descriptions": {
+        "missing_originals": "Fotka je v katalogu, ale její originální soubor na disku či úložišti chybí — hrozí skutečná ztráta dat, stojí za pozornost.",
+        "orphan_files": "Originál leží v úložišti, ale nepatří žádné fotce v katalogu (nikdy nebyl naimportován). Přidá je oprava „Importovat osiřelé originály do katalogu“.",
+        "missing_thumbnails": "Fotka nemá vygenerovaný náhled; v mřížce se může zobrazovat pomalu nebo prázdně. Opraví oprava náhledů.",
+        "missing_embeddings": "Fotka nemá AI vektor, takže ji nenajde vyhledávání podle podobnosti či obsahu. Doplní se, jakmile bude AI box online.",
+        "missing_faces": "Pro fotku ještě neproběhla detekce obličejů, takže se neobjeví u osob. Doplní se, jakmile bude box online.",
+        "missing_phashes": "Fotka nemá perceptuální otisk, který slouží k hledání téměř shodných duplikátů."
+      }
     },
     "repair": {
       "title": "Opravy",
-      "hint": "Vyberte, co opravit. Opravy běží na pozadí přes frontu úloh.",
+      "hint": "Vyberte, co opravit. Opravy neproběhnou hned — zařadí se jako úlohy na pozadí do fronty. Embeddingy a detekce obličejů navíc čekají, až bude AI box online.",
       "thumbnails": "Obnovit chybějící náhledy",
       "embeddings": "Doplnit chybějící embeddingy",
       "faces": "Doplnit chybějící detekce obličejů",
@@ -979,6 +988,7 @@
     },
     "jobs": {
       "title": "Fronta úloh na pozadí",
+      "intro": "Fronta na pozadí, která provádí opravy a doplňování dat (náhledy, embeddingy, obličeje…). Mrtvé úlohy lze znovu spustit na stránce Stav systému.",
       "total": "Celkem",
       "queued": "Ve frontě",
       "running": "Běží",
@@ -1016,6 +1026,24 @@
     },
     "loadMore": "Načíst další"
   },
+  "jobStates": {
+    "labels": {
+      "total": "Celkem",
+      "queued": "Ve frontě",
+      "running": "Běží",
+      "failed": "Selhalo",
+      "dead": "Mrtvé",
+      "pending": "Čeká na box"
+    },
+    "descriptions": {
+      "total": "Počet všech úloh v evidenci, včetně už dokončených.",
+      "queued": "Čekají na zpracování — včetně úloh naplánovaných na další pokus a úloh odložených, dokud je AI box offline (čekají, aniž by spotřebovaly své pokusy).",
+      "running": "Právě se zpracovávají.",
+      "failed": "Trvalé, neopakovatelné chyby (obvykle 0 — běžné chyby se zkoušejí znovu a případně skončí jako „Mrtvé“).",
+      "dead": "Úloha selhala i po vyčerpání všech pokusů (výchozí max 5) a byla odložena mimo frontu. Sama se už nespustí — je nutné ji ručně znovu zařadit (tlačítko „Znovu zařadit mrtvé úlohy“ na stránce Stav systému). Vysoký počet obvykle znamená, že nějaký typ úlohy opakovaně selhává, nebo byl box dlouho nedostupný.",
+      "pending": "Úlohy pro AI box (embeddingy a detekce obličejů), které čekají ve frontě, než se box vrátí online."
+    }
+  },
   "system": {
     "title": "Stav systému",
     "subtitle": "Provozní zdraví běžící instance — databáze, embeddingy, fronta úloh, zálohy, importy a úložiště.",
@@ -1038,6 +1066,7 @@
     },
     "jobs": {
       "title": "Fronta úloh",
+      "intro": "Fronta úloh na pozadí, která zpracovává opravy a doplňování dat. Mrtvé úlohy můžete znovu zařadit tlačítkem níže.",
       "total": "Celkem",
       "queued": "Ve frontě",
       "running": "Běží",

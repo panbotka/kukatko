@@ -135,6 +135,18 @@ describe('SystemStatusPage', () => {
     expect(screen.getByText('1.2.3')).toBeInTheDocument()
   })
 
+  it('explains the job-queue states in plain language, including box-pending', async () => {
+    renderPage()
+
+    // The queue is introduced and the tricky states are explained without hover.
+    expect(
+      await screen.findByText(/background job queue that processes repairs/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/failed even after all attempts were used up/)).toBeInTheDocument()
+    // The extra box-pending state (jobs waiting for the AI box) is explained here.
+    expect(screen.getByText(/waiting in the queue for the box/)).toBeInTheDocument()
+  })
+
   it('shows the offline-box queued embeddings hint', async () => {
     renderPage()
     expect(

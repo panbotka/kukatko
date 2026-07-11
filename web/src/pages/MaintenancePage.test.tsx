@@ -124,8 +124,12 @@ describe('MaintenancePage', () => {
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(screen.getByText('ph1, ph2')).toBeInTheDocument()
     expect(screen.getByText('2026/06/x.jpg')).toBeInTheDocument()
-    // The totals summary renders.
+    // The totals summary and its drift hint render.
     expect(screen.getByText(/10 photos/)).toBeInTheDocument()
+    expect(screen.getByText(/should roughly match/)).toBeInTheDocument()
+    // Each finding carries an inline plain-language explanation of what it means.
+    expect(screen.getByText(/has no generated thumbnail/)).toBeInTheDocument()
+    expect(screen.getByText(/belongs to no catalogue photo/)).toBeInTheDocument()
   })
 
   it('reports a clean library when the scan finds no problems', async () => {
@@ -168,11 +172,15 @@ describe('MaintenancePage', () => {
     expect(await screen.findByText('The repair failed.')).toBeInTheDocument()
   })
 
-  it('polls and renders the background job-queue stats', async () => {
+  it('polls and renders the background job-queue stats with a legend', async () => {
     statsMock.mockResolvedValue({ by_state: { queued: 7, running: 2 }, by_type: {}, total: 9 })
     renderPage()
 
     expect(await screen.findByText('Total: 9')).toBeInTheDocument()
     expect(screen.getByText('Queued: 7')).toBeInTheDocument()
+    // The queue is introduced and every state is explained in plain language,
+    // including what "Dead" means and that it needs a manual requeue.
+    expect(screen.getByText(/background queue that runs the repairs/)).toBeInTheDocument()
+    expect(screen.getByText(/failed even after all attempts were used up/)).toBeInTheDocument()
   })
 })

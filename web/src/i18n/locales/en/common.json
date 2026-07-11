@@ -932,6 +932,7 @@
       "running": "Scanning…",
       "title": "Scan result",
       "summary": "{{photos}} photos · {{files}} files in DB · {{disk}} originals on disk",
+      "summaryHint": "These numbers should roughly match; a larger gap between the catalogue and disk means something drifted — missing originals (in the catalogue, not on disk) or orphan files (on disk, not in the catalogue), see below.",
       "clean": "The library is consistent.",
       "empty": "No scan has run yet. Run an integrity scan.",
       "error": "The scan failed."
@@ -943,11 +944,19 @@
       "missing_embeddings": "Missing embeddings",
       "missing_faces": "Missing face detections",
       "missing_phashes": "Missing perceptual hashes",
-      "samples": "Samples"
+      "samples": "Samples",
+      "descriptions": {
+        "missing_originals": "The photo exists in the catalogue but its original file is gone from disk or storage — a real risk of data loss, worth attention.",
+        "orphan_files": "An original file sits in storage but belongs to no catalogue photo (never imported). The “Import orphan originals into the catalogue” repair adds them.",
+        "missing_thumbnails": "The photo has no generated thumbnail; the grid may show it slowly or blank. Fixed by the thumbnails repair.",
+        "missing_embeddings": "The photo has no AI vector, so similarity or content search won't find it. Filled in once the AI box is online.",
+        "missing_faces": "Face detection hasn't run for the photo yet, so it won't appear under people. Filled in once the box is online.",
+        "missing_phashes": "The photo has no perceptual fingerprint, used to find near-duplicates."
+      }
     },
     "repair": {
       "title": "Repairs",
-      "hint": "Choose what to repair. Repairs run in the background through the job queue.",
+      "hint": "Choose what to repair. Repairs don't run instantly — they are enqueued as background jobs. Embeddings and face detection also wait for the AI box to come online.",
       "thumbnails": "Regenerate missing thumbnails",
       "embeddings": "Backfill missing embeddings",
       "faces": "Backfill missing face detections",
@@ -961,6 +970,7 @@
     },
     "jobs": {
       "title": "Background job queue",
+      "intro": "The background queue that runs the repairs and backfills (thumbnails, embeddings, faces…). Dead jobs can be revived on the System status page.",
       "total": "Total",
       "queued": "Queued",
       "running": "Running",
@@ -994,6 +1004,24 @@
     },
     "loadMore": "Load more"
   },
+  "jobStates": {
+    "labels": {
+      "total": "Total",
+      "queued": "Queued",
+      "running": "Running",
+      "failed": "Failed",
+      "dead": "Dead",
+      "pending": "Waiting on box"
+    },
+    "descriptions": {
+      "total": "Every job on record, including ones that have already finished.",
+      "queued": "Waiting to be processed — including jobs scheduled for a retry and jobs deferred while the AI box is offline (they wait without using up their retry budget).",
+      "running": "Currently being processed.",
+      "failed": "Permanent, non-retryable failures (usually 0 — ordinary failures retry and then end up as “Dead”).",
+      "dead": "The job failed even after all attempts were used up (default max 5) and was set aside. It will not run again on its own — it must be manually requeued (the “Requeue dead-letter jobs” button on the System status page). A high count usually means a job type keeps failing, or the box was unreachable for a long time.",
+      "pending": "Jobs for the AI box (embeddings and face detection) waiting in the queue for the box to come back online."
+    }
+  },
   "system": {
     "title": "System status",
     "subtitle": "Operational health of the running instance — database, embeddings, job queue, backups, imports and storage.",
@@ -1016,6 +1044,7 @@
     },
     "jobs": {
       "title": "Job queue",
+      "intro": "The background job queue that processes repairs and data backfills. Dead jobs can be requeued with the button below.",
       "total": "Total",
       "queued": "Queued",
       "running": "Running",

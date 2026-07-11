@@ -40,6 +40,11 @@ zapiš sem.
   se záměrně vynechává), `failed`/`dead` mají `bg="danger"`, aby padly do oka; když je vše nulové,
   jediný tichý badge `idle`. Selhání requestu badge tiše skryje — patička nikdy nespadne; texty
   `footer.jobs.*` (cs/en)),
+  `JobStateLegend` (**sdílená legenda stavů fronty jobů**: kompaktní `dl` s tučným termem + tichým
+  jednovětým vysvětlením každého stavu, aby admin rozuměl bez najetí myší; popisky i vysvětlení ze
+  sdíleného i18n bloku `jobStates.labels.*`/`jobStates.descriptions.*`, takže znění je totožné na
+  `MaintenancePage` i `SystemStatusPage`; prop `states` řídí pořadí a výběr — Maintenance vynechává
+  `pending`, System ho přidává. Testy: `JobStateLegend.test.tsx`),
   `Icon` (**jediná ikonová sada** aplikace: bootstrap-icons glyf jako `<i class="bi bi-{name}">`,
   font se importuje globálně v `main.tsx`; union `IconName` drží slovník použitých ikon, takže překlep
   je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),
@@ -276,14 +281,19 @@ zapiš sem.
   (`GET /maintenance/scan`) → souhrn totálů + tabulka nálezů (počet + vzorky per třída, nebo „knihovna
   konzistentní"), checkboxy oprav (náhledy/embeddingy/obličeje/hashe/import osiřelých — anotované
   zbývajícím počtem z poslední kontroly) → **Spustit opravy** (`POST /maintenance/repair`) s výsledným
-  souhrnem, plus stav fronty na pozadí (`GET /jobs/stats` polluje po 3 s) jako progress; sebe-gate na
-  `isAdmin`,
+  souhrnem, plus stav fronty na pozadí (`GET /jobs/stats` polluje po 3 s) jako progress; **každý nález,
+  souhrnný „drift" řádek i každý stav fronty nese tiché plain-language vysvětlení** (bez najetí myší) —
+  `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint`, `maintenance.jobs.intro`
+  a sdílená `JobStateLegend` (total/queued/running/failed/**dead**) — aby admin poznal, co počet
+  znamená a zda je třeba jednat; sebe-gate na `isAdmin`,
   `SystemStatusPage` = `/system` (jen admin) **system-status dashboard**: auto-refresh (polling 5 s)
   `GET /system/status` → kartová mřížka (DB, embeddingy, fronta jobů, záloha, importy, úložiště,
   verze) s **rychlými akcemi** — *znovu zařadit mrtvé úlohy* (`requeueDeadLetterJobs`: list dead →
   per-job `POST /jobs/{id}/requeue`), *spustit zálohu* (`POST /backup`), odkazy na flow importu
   (`/import`) a kontroly údržby (`/maintenance`); **box offline** + čekající embeddingy → zvýrazněná
-  hláška „doženou se po návratu"; loading/error/notice stavy, sebe-gate na `isAdmin`,
+  hláška „doženou se po návratu"; karta fronty jobů nese sdílenou `JobStateLegend`
+  (total/queued/running/failed/**dead**/**pending** = „Čeká na box") s plain-language vysvětlením
+  každého stavu (`jobStates.*` + `system.jobs.intro`); loading/error/notice stavy, sebe-gate na `isAdmin`,
   `UsersPage` = `/users` (jen admin) **správa účtů**: tabulka uživatelů (jméno, celé jméno, role,
   stav, poznámka, poslední přihlášení, vytvořen) nad `GET /admin/users`, dialogy **Nový uživatel**
   (username/heslo/role/jméno/poznámka) a **Upravit** (role/jméno/poznámka; username je `readOnly`

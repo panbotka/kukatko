@@ -9,6 +9,7 @@ import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
+import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
 import { ApiError } from '../services/auth'
 import { fetchJobStats, type JobStats } from '../services/import'
 import {
@@ -50,6 +51,13 @@ const REPAIR_KEYS = ['thumbnails', 'embeddings', 'faces', 'phashes', 'import_orp
 /** A repair key, used to index {@link RepairOptions} and toggle its selection. */
 type RepairKey = (typeof REPAIR_KEYS)[number]
 
+/**
+ * The job-queue states explained beneath the queue badges, in display order.
+ * `pending` is omitted here — the Maintenance page has no box-pending badge; the
+ * System page adds it.
+ */
+const MAINT_JOB_STATES: readonly JobStateKey[] = ['total', 'queued', 'running', 'failed', 'dead']
+
 /** Returns the {@link Finding} for a finding key from the scan report. */
 function findingOf(report: ScanReport, key: FindingKey): Finding {
   return report[key]
@@ -84,13 +92,14 @@ function ScanResult({ report }: { report: ScanReport }) {
   const { t } = useTranslation()
   return (
     <>
-      <p className="text-secondary">
+      <p className="text-secondary mb-1">
         {t('maintenance.scan.summary', {
           photos: report.photos,
           files: report.files_in_db,
           disk: report.originals_on_disk,
         })}
       </p>
+      <p className="text-secondary small">{t('maintenance.scan.summaryHint')}</p>
       {report.missing_originals.count === 0 &&
       report.orphan_files.count === 0 &&
       report.missing_thumbnails.count === 0 &&
@@ -105,7 +114,12 @@ function ScanResult({ report }: { report: ScanReport }) {
               const finding = findingOf(report, key)
               return (
                 <tr key={key}>
-                  <td className="fw-semibold">{t(`maintenance.findings.${key}`)}</td>
+                  <td className="fw-semibold">
+                    {t(`maintenance.findings.${key}`)}
+                    <div className="fw-normal text-secondary small">
+                      {t(`maintenance.findings.descriptions.${key}`)}
+                    </div>
+                  </td>
                   <td style={{ width: '6rem' }}>
                     <Badge bg={finding.count > 0 ? 'warning' : 'secondary'} text="dark">
                       {finding.count}
@@ -213,8 +227,9 @@ function JobStatsBar({ stats }: { stats: JobStats }) {
   return (
     <Card className="mb-4">
       <Card.Body>
-        <h2 className="kk-section-title mb-2">{t('maintenance.jobs.title')}</h2>
-        <div className="d-flex gap-2 flex-wrap">
+        <h2 className="kk-section-title mb-1">{t('maintenance.jobs.title')}</h2>
+        <p className="text-secondary small">{t('maintenance.jobs.intro')}</p>
+        <div className="d-flex gap-2 flex-wrap mb-3">
           <Badge bg="primary">
             {t('maintenance.jobs.total')}: {stats.total}
           </Badge>
@@ -231,6 +246,7 @@ function JobStatsBar({ stats }: { stats: JobStats }) {
             {t('maintenance.jobs.dead')}: {stats.by_state.dead ?? 0}
           </Badge>
         </div>
+        <JobStateLegend states={MAINT_JOB_STATES} />
       </Card.Body>
     </Card>
   )
