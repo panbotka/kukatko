@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
+import Card from 'react-bootstrap/Card'
 import Col from 'react-bootstrap/Col'
 import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
-import Tab from 'react-bootstrap/Tab'
-import Tabs from 'react-bootstrap/Tabs'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { Icon } from '../components/Icon'
 import { FavoriteToggle } from '../components/library/FavoriteButton'
 import { FlagControl } from '../components/library/FlagControl'
 import { RatingStars } from '../components/library/RatingStars'
@@ -54,12 +54,17 @@ type State =
  * The rich photo detail page: exactly ONE preview of the photo, reflecting the
  * saved non-destructive edit, with the detected faces drawn as a toggleable
  * overlay on top of it (never a second copy of the image) and prev/next
- * navigation that respects the originating list order. The right-hand panel
- * leads with what matters — title, description, albums and labels — and demotes
- * camera/lens/EXIF and the file facts to a collapsed expander; location and the
- * edit tools stay on their own tabs. Every mutation is role-gated; viewers see a
- * read-only page. The whole view is deep-linkable and Back returns to the prior
- * list view (the order/scope is carried in the URL query).
+ * navigation that respects the originating list order. The photo spans the full
+ * width of the content area; the control/info panels sit BELOW it in a
+ * responsive card grid (information, location, edits side by side on wide
+ * screens, stacking to one column on narrow ones) that is easy to extend with
+ * more panels later. The information card leads with what matters — title,
+ * description, albums and labels — and demotes camera/lens/EXIF and the file
+ * facts to a collapsed expander. The edits card carries its own preview image,
+ * so it stays collapsed until opened to keep the page at one copy of the photo.
+ * Every mutation is role-gated; viewers see a read-only page. The whole view is
+ * deep-linkable and Back returns to the prior list view (the order/scope is
+ * carried in the URL query).
  */
 export function PhotoDetailPage() {
   const { t } = useTranslation()
@@ -69,6 +74,10 @@ export function PhotoDetailPage() {
   const [searchParams] = useSearchParams()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [lightboxOpen, setLightboxOpen] = useState(false)
+  // The edits card carries its own preview image, so — like the old
+  // `mountOnEnter` edit tab — it stays unmounted until the user opens it, keeping
+  // the detail page at exactly one copy of the photo on first render.
+  const [editOpen, setEditOpen] = useState(false)
   // The face-overlay choice is read once from localStorage and written back on
   // every toggle, so it carries across photos and reloads.
   const [facesVisible, setFacesVisible] = useState(readFaceOverlay)
@@ -281,7 +290,7 @@ export function PhotoDetailPage() {
             src={poster}
             alt={title}
             className="mw-100"
-            style={{ maxHeight: '70vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
+            style={{ maxHeight: '80vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
           />
         </button>
         {showFaceBoxes && (
@@ -336,123 +345,154 @@ export function PhotoDetailPage() {
         </div>
       </div>
 
-      <Row className="g-3">
-        <Col xs={12} lg={7}>
-          <div className="position-relative bg-dark rounded overflow-hidden d-flex justify-content-center">
-            {renderMedia()}
-            {neighbors.prev !== null && (
-              <Link
-                to={neighborTo(neighbors.prev)}
-                replace
-                aria-label={t('photo.prev')}
-                className="btn btn-dark opacity-75 position-absolute top-50 start-0 translate-middle-y ms-2"
-              >
-                ‹
-              </Link>
-            )}
-            {neighbors.next !== null && (
-              <Link
-                to={neighborTo(neighbors.next)}
-                replace
-                aria-label={t('photo.next')}
-                className="btn btn-dark opacity-75 position-absolute top-50 end-0 translate-middle-y me-2"
-              >
-                ›
-              </Link>
-            )}
-            {/* Paging to a neighbour keeps the current photo visible; a small
-                corner spinner marks the background load instead of blanking the
-                whole page to a full-screen spinner. */}
-            {loadingNext && (
-              <div className="position-absolute top-0 end-0 m-2">
-                <Spinner animation="border" size="sm" variant="light" role="status">
-                  <span className="visually-hidden">{t('photo.loadingNext')}</span>
-                </Spinner>
-              </div>
-            )}
+      {/* The photo spans the full width of the content area; the control/info
+          panels sit below it (see the grid further down). */}
+      <div className="position-relative bg-dark rounded overflow-hidden d-flex justify-content-center">
+        {renderMedia()}
+        {neighbors.prev !== null && (
+          <Link
+            to={neighborTo(neighbors.prev)}
+            replace
+            aria-label={t('photo.prev')}
+            className="btn btn-dark opacity-75 position-absolute top-50 start-0 translate-middle-y ms-2"
+          >
+            ‹
+          </Link>
+        )}
+        {neighbors.next !== null && (
+          <Link
+            to={neighborTo(neighbors.next)}
+            replace
+            aria-label={t('photo.next')}
+            className="btn btn-dark opacity-75 position-absolute top-50 end-0 translate-middle-y me-2"
+          >
+            ›
+          </Link>
+        )}
+        {/* Paging to a neighbour keeps the current photo visible; a small corner
+            spinner marks the background load instead of blanking the whole page
+            to a full-screen spinner. */}
+        {loadingNext && (
+          <div className="position-absolute top-0 end-0 m-2">
+            <Spinner animation="border" size="sm" variant="light" role="status">
+              <span className="visually-hidden">{t('photo.loadingNext')}</span>
+            </Spinner>
           </div>
+        )}
+      </div>
 
-          <div className="d-flex gap-2 mt-2 flex-wrap">
-            <Button as="a" href={photo.download_url} variant="outline-secondary" size="sm" download>
-              {t('photo.download')}
-            </Button>
-            {!isIdentityEdit(edit) && (
-              <Button
-                as="a"
-                href={downloadUrl(photo.uid, { token: downloadToken })}
-                variant="outline-secondary"
-                size="sm"
-                download
-              >
-                {t('photo.downloadEdited')}
-              </Button>
-            )}
-            {isStill && faces.faces.length > 0 && !loadingNext && (
-              <Button
-                type="button"
-                variant={facesVisible ? 'secondary' : 'outline-secondary'}
-                size="sm"
-                aria-pressed={facesVisible}
-                onClick={toggleFaces}
-              >
-                {facesVisible ? t('faces.hide') : t('faces.toggle')}
-              </Button>
-            )}
-          </div>
+      <div className="d-flex gap-2 mt-2 flex-wrap">
+        <Button as="a" href={photo.download_url} variant="outline-secondary" size="sm" download>
+          {t('photo.download')}
+        </Button>
+        {!isIdentityEdit(edit) && (
+          <Button
+            as="a"
+            href={downloadUrl(photo.uid, { token: downloadToken })}
+            variant="outline-secondary"
+            size="sm"
+            download
+          >
+            {t('photo.downloadEdited')}
+          </Button>
+        )}
+        {isStill && faces.faces.length > 0 && !loadingNext && (
+          <Button
+            type="button"
+            variant={facesVisible ? 'secondary' : 'outline-secondary'}
+            size="sm"
+            aria-pressed={facesVisible}
+            onClick={toggleFaces}
+          >
+            {facesVisible ? t('faces.hide') : t('faces.toggle')}
+          </Button>
+        )}
+      </div>
 
-          {/* Faces never get an image of their own: they are the overlay above.
-              A photo with none says so in one line, and the naming panel opens
-              below the preview when a box is picked. */}
-          {faces.status === 'ready' && faces.faces.length === 0 && !loadingNext && (
-            <p className="text-secondary small mt-2 mb-0">{t('faces.none')}</p>
-          )}
-          {faces.actionError && (
-            <Alert variant="danger" className="mt-2 py-2 small">
-              {t('faces.assignError')}
-            </Alert>
-          )}
-          {selectedFace !== null && canWrite && (
-            <FaceAssignPanel
-              face={selectedFace}
-              busy={faces.busy}
-              onAcceptSuggestion={(suggestion) => {
-                faces.acceptSuggestion(selectedFace, suggestion)
-              }}
-              onAssignName={(name) => {
-                faces.assignName(selectedFace, name)
-              }}
-              onUnassign={() => {
-                faces.unassign(selectedFace)
-              }}
-              onClose={() => {
-                faces.select(null)
-              }}
-            />
-          )}
-        </Col>
+      {/* Faces never get an image of their own: they are the overlay above.
+          A photo with none says so in one line, and the naming panel opens
+          below the preview when a box is picked. */}
+      {faces.status === 'ready' && faces.faces.length === 0 && !loadingNext && (
+        <p className="text-secondary small mt-2 mb-0">{t('faces.none')}</p>
+      )}
+      {faces.actionError && (
+        <Alert variant="danger" className="mt-2 py-2 small">
+          {t('faces.assignError')}
+        </Alert>
+      )}
+      {selectedFace !== null && canWrite && (
+        <FaceAssignPanel
+          face={selectedFace}
+          busy={faces.busy}
+          onAcceptSuggestion={(suggestion) => {
+            faces.acceptSuggestion(selectedFace, suggestion)
+          }}
+          onAssignName={(name) => {
+            faces.assignName(selectedFace, name)
+          }}
+          onUnassign={() => {
+            faces.unassign(selectedFace)
+          }}
+          onClose={() => {
+            faces.select(null)
+          }}
+        />
+      )}
 
-        <Col xs={12} lg={5}>
-          {/* `mountOnEnter` keeps the Edit tab's own preview image out of the DOM
-              until an editor opens it, so the page carries exactly one image of
-              the photo on first render. */}
-          <Tabs defaultActiveKey="info" className="mb-3" mountOnEnter>
-            <Tab eventKey="info" title={t('photo.tabs.info')}>
+      {/* Control/info panels below the photo: a responsive card grid that
+          stacks to one column on phones and spreads two/three across on wider
+          screens. New panels drop in as another <Col> without a layout rewrite. */}
+      <Row className="g-3 mt-1">
+        <Col xs={12} md={6} xl={4}>
+          <Card>
+            <Card.Header>{t('photo.tabs.info')}</Card.Header>
+            <Card.Body>
               <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
               <hr />
               <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
               <hr />
               <TechnicalDetails photo={photo} />
-            </Tab>
-            <Tab eventKey="location" title={t('photo.tabs.location')}>
-              <PhotoLocation photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
-            </Tab>
-            {canWrite && (
-              <Tab eventKey="edit" title={t('photo.tabs.edit')}>
-                <EditPanel uid={photo.uid} edit={edit} onSaved={setEdit} />
-              </Tab>
-            )}
-          </Tabs>
+            </Card.Body>
+          </Card>
         </Col>
+
+        <Col xs={12} md={6} xl={4}>
+          <Card>
+            <Card.Header>{t('photo.tabs.location')}</Card.Header>
+            <Card.Body>
+              <PhotoLocation photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {canWrite && (
+          <Col xs={12} md={6} xl={4}>
+            <Card>
+              {/* The edits card owns its own preview <img>; keeping it collapsed
+                  until opened (like the old `mountOnEnter` tab) means the page
+                  still carries exactly one copy of the photo on first render. */}
+              <Card.Header className="p-0">
+                <Button
+                  variant="link"
+                  className="w-100 d-flex align-items-center justify-content-between text-decoration-none text-reset px-3 py-2"
+                  aria-expanded={editOpen}
+                  aria-controls="photo-edit-region"
+                  onClick={() => {
+                    setEditOpen(!editOpen)
+                  }}
+                >
+                  <span>{t('photo.edit.title')}</span>
+                  <Icon name={editOpen ? 'chevron-down' : 'chevron-right'} />
+                </Button>
+              </Card.Header>
+              {editOpen && (
+                <Card.Body id="photo-edit-region">
+                  <EditPanel uid={photo.uid} edit={edit} onSaved={setEdit} />
+                </Card.Body>
+              )}
+            </Card>
+          </Col>
+        )}
       </Row>
 
       <div className="mt-4">

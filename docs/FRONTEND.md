@@ -304,7 +304,8 @@ zapiš sem.
   Jména aktérů se dotahují z rosteru **best-effort** (fallback na UID, resp. `—` u systémové akce),
   nikdy neblokují render tabulky. Loading/empty/error (retry přes `reloadKey`) stavy, sebe-gate na
   `isAdmin`,
-  `PhotoDetailPage` = `/photos/:uid` **bohatý detail fotky**: velký náhled (`fit_1920`)
+  `PhotoDetailPage` = `/photos/:uid` **bohatý detail fotky**: velký náhled **na celou šířku
+  obsahové oblasti** (`fit_1920`, still až `maxHeight:80vh`)
   reflektující uložený nedestruktivní edit (CSS) — u **videa** místo obrázku `VideoPlayer`
   (`components/photo/`, HTML5 `<video controls>` nad range endpointem `…/video`, poster `fit_1920`,
   klávesy/fullscreen/touch zdarma, fallback na stažení když codec prohlížeč neumí), u **live fotky**
@@ -339,7 +340,10 @@ zapiš sem.
   tlačítko **Zobrazit/Skrýt obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`)
   a volba se pamatuje v localStorage (`lib/faceOverlayPref`); fotka bez obličejů = jediný
   nenápadný řádek `faces.none`, žádný obrázek; klik na box otevře `FaceAssignPanel` pod náhledem;
-  pruh `SimilarPhotos` a pravý panel se záložkami (`components/photo/`): **Informace**
+  **ovládací/informační panely jsou POD fotkou** (ne vedle ní) v responzivní **mřížce karet**
+  (`Row`/`Col` `col-12 col-md-6 col-xl-4`: na mobilu jedna karta pod druhou, na širších 2–3 vedle
+  sebe; nový panel = další `<Col>` bez přepisu layoutu) — pruh `SimilarPhotos` je až pod nimi;
+  karty (`components/photo/`): **Informace**
   (`MetadataPanel` = view/edit title/description/notes/ai_note/taken_at — **bez** camera/lens/EXIF, ta
   žije v `TechnicalDetails` — + read-only řádek **Nahrál/a** (`photo.metadata.uploadedBy`) se jménem
   uploadera z `photo.uploader.name`, s neutrálním fallbackem `—` (`uploaderUnknown`) u importů/bez
@@ -370,9 +374,11 @@ zapiš sem.
   (titulek, popis, štítky, alba, obličeje) a technikálie schovává na jeden klik;
   **Poloha** (`PhotoLocation` = Leaflet mini-mapa nad mapy.com proxy + on-demand reverse-geocode
   `reverseGeocode` + clear location) a **Úpravy** (editor/admin: `EditPanel` = rotace/jas/kontrast/
-  crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`; záložka je `mountOnEnter`,
-  aby její vlastní preview nepřidalo druhý `<img>`); viewer vidí read-only
-  (žádná záložka Úpravy, žádné edit akce, `FaceOverlay` readOnly = boxy vidí, ale neklikne);
+  crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`; karta je **na první render
+  sbalená** — hlavička je toggle `aria-expanded`/`aria-controls`, `EditPanel` se nasadí až po
+  otevření, aby jeho vlastní preview nepřidalo druhý `<img>` a stránka nesla jednu kopii fotky);
+  viewer vidí read-only (žádná karta Úpravy, žádné edit akce, `FaceOverlay` readOnly = boxy vidí,
+  ale neklikne);
   `components/photo/` dál nese `MetaField` (jeden read-only labelled řádek, prázdná hodnota =
   nic; sdílí `MetadataPanel` i `TechnicalDetails`); `lib/photoEdit` = pure helpery
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/

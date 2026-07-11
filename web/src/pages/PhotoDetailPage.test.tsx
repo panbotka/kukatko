@@ -320,14 +320,28 @@ describe('PhotoDetailPage', () => {
     expect(screen.getByText('ISO 200')).toBeInTheDocument()
   })
 
-  it('stacks the media and panel columns full-width below the lg breakpoint', async () => {
+  it('lays the metadata, location, and edits panels below the photo in a responsive grid', async () => {
     const { container } = renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
-    // Both columns are `col-12` (full width, stacked) until `lg`, where they
-    // split 7/5 side-by-side — so on phones and tablets the preview sits above
-    // the metadata panel instead of squeezing into a narrow half-column.
-    expect(container.querySelector('.col-12.col-lg-7')).not.toBeNull()
-    expect(container.querySelector('.col-12.col-lg-5')).not.toBeNull()
+
+    // The photo spans the full width; the control/info panels now live below it
+    // in a card grid. The three columns stack to one column on phones (`col-12`)
+    // and spread two/three across on wider screens (`col-md-6` / `col-xl-4`), so
+    // a fourth panel drops in as another such column without a layout rewrite.
+    const cols = container.querySelectorAll('.col-12.col-md-6.col-xl-4')
+    expect(cols).toHaveLength(3)
+
+    // All three panels render (relocated, not removed): metadata (Info card),
+    // location (its map) and the editor-only edits toggle.
+    expect(screen.getByText('Info')).toBeInTheDocument()
+    expect(screen.getByText('Location')).toBeInTheDocument()
+    expect(screen.getByTestId('map')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edits' })).toBeInTheDocument()
+
+    // The panels sit *below* the full-width photo in document order, not beside it.
+    const img = screen.getByRole('img', { name: 'Beach' })
+    const infoCard = screen.getByText('Info')
+    expect(img.compareDocumentPosition(infoCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('plays a video with a range-streaming player instead of an image', async () => {
@@ -482,7 +496,9 @@ describe('PhotoDetailPage', () => {
     renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
 
-    await user.click(screen.getByRole('tab', { name: 'Edit' }))
+    // The edits card is collapsed by default (it owns a second preview image);
+    // opening it mounts the EditPanel below the photo.
+    await user.click(screen.getByRole('button', { name: 'Edits' }))
     // Rotating updates the live edit preview immediately.
     await user.click(screen.getByRole('button', { name: 'Rotate right' }))
     const editPreview = screen.getByLabelText('Edit preview')
@@ -624,8 +640,9 @@ describe('PhotoDetailPage', () => {
     renderPage(false)
     await screen.findByRole('heading', { name: 'Beach' })
 
-    // No edit affordances.
-    expect(screen.queryByRole('tab', { name: 'Edit' })).not.toBeInTheDocument()
+    // No edit affordances: neither the editor-only edits card nor the metadata
+    // edit button is offered to viewers.
+    expect(screen.queryByRole('button', { name: 'Edits' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Remove from album Holidays' }),

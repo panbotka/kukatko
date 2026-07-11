@@ -661,8 +661,7 @@
     },
     "tabs": {
       "info": "Info",
-      "location": "Location",
-      "edit": "Edit"
+      "location": "Location"
     },
     "video": {
       "label": "Video player",
