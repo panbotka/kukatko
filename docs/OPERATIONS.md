@@ -159,7 +159,9 @@ tak pozná úspěch od chyby.
 
 Exit `0` při úspěchu, nenulový při HTTP i transportní chybě. **`401`** dá krátkou akční
 hlášku (token chybí / expiroval / byl revokován + jak vyrobit nový). **`403`** (viewer sáhl na
-mutaci) řekne **rovnou, že nestačí role** — mutace chtějí `editor`/`admin`, viewer jen čte.
+mutaci) řekne **rovnou, že nestačí role** — mutace chtějí `editor`/`admin`/`ai`, viewer jen čte.
+Role **`ai`** je automat na API token: má zápis jako editor **plus** import (`POST /import/*`),
+ale ostatní admin akce (uživatelé, zálohy, jobs, údržba, procesy, audit, systém) vrací `403`.
 Ani jedna nevypisuje stacktrace, tělo odpovědi, ani token.
 
 #### `ctl photos`

@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 import * as authService from '../services/auth'
-import { canWrite, type AuthSession } from '../services/auth'
+import { canImport, canWrite, type AuthSession } from '../services/auth'
 
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext'
 
@@ -71,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       downloadToken: state.session?.download_token ?? null,
       canWrite: user ? canWrite(user.role) : false,
       isAdmin: user?.role === 'admin',
+      canImport: user ? canImport(user.role) : false,
       login,
       logout,
       refresh,

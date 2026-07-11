@@ -93,7 +93,7 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrUsernameTaken):
 		writeError(w, http.StatusConflict, "username already taken")
 	case errors.Is(err, ErrInvalidRole):
-		writeError(w, http.StatusBadRequest, "invalid role (want admin, editor, or viewer)")
+		writeError(w, http.StatusBadRequest, "invalid role (want admin, editor, viewer, or ai)")
 	case errors.Is(err, ErrPasswordTooShort):
 		writeError(w, http.StatusBadRequest, ErrPasswordTooShort.Error())
 	case errors.Is(err, ErrNoteTooLong):
@@ -160,7 +160,7 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 func writeUserMutationError(w http.ResponseWriter, err error, fallback string) {
 	switch {
 	case errors.Is(err, ErrInvalidRole):
-		writeError(w, http.StatusBadRequest, "invalid role (want admin, editor, or viewer)")
+		writeError(w, http.StatusBadRequest, "invalid role (want admin, editor, viewer, or ai)")
 	case errors.Is(err, ErrNoteTooLong):
 		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
 	case errors.Is(err, ErrUserNotFound):

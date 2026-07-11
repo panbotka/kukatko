@@ -70,7 +70,8 @@
   "roles": {
     "admin": "Administrator",
     "editor": "Editor",
-    "viewer": "Viewer"
+    "viewer": "Viewer",
+    "ai": "AI agent"
   },
   "auth": {
     "loading": "Loading…"

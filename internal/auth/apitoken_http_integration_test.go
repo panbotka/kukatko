@@ -53,6 +53,7 @@ func newTokenEnv(t *testing.T, createLimit int) *tokenEnv {
 		r.With(api.RequireAuth).Get("/probe/auth", probeOK)
 		r.With(api.RequireWrite).Get("/probe/write", probeOK)
 		r.With(api.RequireAdmin).Get("/probe/admin", probeOK)
+		r.With(api.RequireImport).Get("/probe/import", probeOK)
 	})
 
 	server := httptest.NewServer(r)

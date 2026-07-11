@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 
-import { canWrite, type Role, type User } from '../services/auth'
+import { canImport, canWrite, type Role, type User } from '../services/auth'
 
 /** Lifecycle of the auth session: still loading, signed in, or signed out. */
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
@@ -16,6 +16,8 @@ export interface AuthContextValue {
   canWrite: boolean
   /** True when the current user is an administrator. */
   isAdmin: boolean
+  /** True when the current user may trigger imports (admin or the ai agent). */
+  canImport: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
   /** Re-fetches the session from the backend (e.g. after role changes). */
@@ -37,5 +39,5 @@ export function useAuth(): AuthContextValue {
   return ctx
 }
 
-/** Helper re-export so consumers can derive write capability from a role. */
-export { canWrite }
+/** Helper re-exports so consumers can derive capabilities from a role. */
+export { canWrite, canImport }

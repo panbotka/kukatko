@@ -14,8 +14,9 @@ zapiš sem.
   `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`, **Místa** `/places`, **Mapa**
   `/map`; **Nahrát** `/upload` je top-level (gate `canWrite`); editorský dropdown **Nástroje**
   (`nav.tools`, `TOOLS_GROUP`, celý gate `canWrite`) sdružuje **Duplikáty** `/duplicates` + **Koš**
-  `/trash`; adminský dropdown **Správa** (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje
-  **Import** `/import` + **Údržba** `/maintenance` + **Systém** `/system` + **Uživatelé** `/users`.
+  `/trash`; **Import** `/import` (`IMPORT_ITEM`) je top-level s gate `canImport` (admin **nebo** ai);
+  adminský dropdown **Správa** (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje
+  **Údržba** `/maintenance` + **Systém** `/system` + **Uživatelé** `/users`.
   **V navbaru není hledání**
   (ani odkaz, ani živé pole ani uložená hledání) — hledá se z knihovny a ze stránky `/search`.
   Každá položka i každý dropdown toggle nese **ikonu** (`Icon`) a **`title` popisující akci**, ne
@@ -257,12 +258,12 @@ zapiš sem.
   všech souborů se **všechny** rozpoznané fotky (nové **i** duplicitní `resolvedUids`) přiřadí
   jedním `POST /photos/bulk` (stav „přiřazuji…“, úspěch, nebo **opakovatelná** chyba — fotky jsou
   nahrané, selhalo jen přiřazení); bez výběru se žádné volání nedělá,
-  `ImportPage` = `/import` (jen admin) admin konzole importu/migrace: dvě sekce (PhotoPrism,
+  `ImportPage` = `/import` (admin **nebo** ai) konzole importu/migrace: dvě sekce (PhotoPrism,
   photo-sorter) s tlačítkem **Spustit import** (gate na `sources` flagy), živý průběh běžícího běhu
   (spinner + counts imported/updated/skipped/failed) a stav fronty na pozadí (`GET /jobs/stats`),
   plus tabulka **historie běhů** (`import_runs`: zdroj/začátek/konec/stav/počty/chyba); polluje
   `GET /import/runs` + `GET /jobs/stats` po 3 s, 409 → „už běží", confirm před prvním (velkým) během
-  zdroje, sebe-gate na `isAdmin`,
+  zdroje, sebe-gate na `canImport`,
   `MaintenancePage` = `/maintenance` (jen admin) konzole údržby knihovny: tlačítko **Spustit kontrolu**
   (`GET /maintenance/scan`) → souhrn totálů + tabulka nálezů (počet + vzorky per třída, nebo „knihovna
   konzistentní"), checkboxy oprav (náhledy/embeddingy/obličeje/hashe/import osiřelých — anotované
@@ -447,8 +448,8 @@ zapiš sem.
   + free-text jméno; optimistický update + refetch),
   `ClusterCard`, `Outliers` (žebříček podezřelých obličejů s one-tap unassign);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
-  vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`; `ProtectedRoute` =
-  `RequireAuth` + `RequireRole` route guardy), `hooks/` (`usePaginatedPhotos` = sdílený
+  vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`/`canImport`; `ProtectedRoute` =
+  `RequireAuth` + `RequireRole` + `RequireImport` route guardy), `hooks/` (`usePaginatedPhotos` = sdílený
   paginovaný infinite-scroll loader nad libovolným `PageFetcher`: akumuluje stránky,
   `loadMore`/`retry`, reset+refetch při změně dotazu/`key`/`enabled`, ruší in-flight requesty
   a ignoruje stale odpovědi, vystavuje i `mode`/`degraded`; `enabled:false` → `idle` stav bez
@@ -653,7 +654,7 @@ zapiš sem.
   jazykem prohlížeče; neparseovatelný vstup → původní string; používá PhotoTile/DuplicateGroupCard/
   MetadataPanel/Import/System pro datumy v cs/en formátu))),
   `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
-  `User`/`Role`/`AuthSession`, `ApiError` se statusem, `canWrite`/`roleAtLeast`,
+  `User`/`Role` (admin/editor/viewer/ai)/`AuthSession`, `ApiError` se statusem, `canWrite`/`canImport`/`roleAtLeast`,
   `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
   (filtry/řazení/stránkování → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
   `searchPhotos(params,mode?,signal)` nad `GET /api/v1/search` (mód
@@ -833,7 +834,8 @@ zapiš sem.
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/trash` a `/duplicates`
-  navíc pod `RequireRole role="editor"` = write-only, `/import`, `/maintenance`, `/system`
+  navíc pod `RequireRole role="editor"` = write-only, `/import` pod `RequireImport`
+  (admin **nebo** ai — mimo žebříček rolí, řídí `canImport`), `/maintenance`, `/system`
   a `/users` pod `RequireRole role="admin"` = admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,

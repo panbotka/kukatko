@@ -89,8 +89,11 @@ export interface UpdateUserBody {
   note: string
 }
 
-/** The assignable roles, in descending order of privilege (`auth.Role`). */
-export const ROLES: readonly Role[] = ['admin', 'editor', 'viewer']
+/**
+ * The assignable roles (`auth.Role`), most privileged first, with the automated
+ * `ai` agent last since it is the special-purpose, token-only role.
+ */
+export const ROLES: readonly Role[] = ['admin', 'editor', 'viewer', 'ai']
 
 /** Maximum length of a user note in characters (`auth.MaxNoteLen`). */
 export const MAX_NOTE_LENGTH = 1000

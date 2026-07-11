@@ -1,14 +1,17 @@
-// Package importapi exposes the admin-only HTTP triggers for the read-only
-// imports: the PhotoPrism import (pp_import) and the photo-sorter migration
-// (ps_migrate). It does not run either inline — both are long-running and belong
-// on the background worker — but enqueues a single job and returns its id. Each
-// job's payload carries a fixed sentinel so the queue's dedup key allows only one
-// of that kind to be queued or running at a time: triggering again while one is
-// in flight is reported as a conflict, not a second run. Only the endpoints whose
+// Package importapi exposes the HTTP triggers for the read-only imports: the
+// PhotoPrism import (pp_import) and the photo-sorter migration (ps_migrate). It
+// does not run either inline — both are long-running and belong on the
+// background worker — but enqueues a single job and returns its id. Each job's
+// payload carries a fixed sentinel so the queue's dedup key allows only one of
+// that kind to be queued or running at a time: triggering again while one is in
+// flight is reported as a conflict, not a second run. Only the endpoints whose
 // source is configured are registered.
 //
-// The package depends only on a Queue behaviour and an admin guard, both
-// injected, so it stays decoupled from the job store and the importers' wiring.
+// The triggers are guarded by an injected import guard, which admits the admin
+// and ai roles (see auth.RequireImport); imports are the one otherwise
+// admin-gated action the ai agent may reach. The package depends only on a Queue
+// behaviour and that guard, so it stays decoupled from the job store, the
+// importers' wiring, and auth's role model.
 package importapi
 
 import (
@@ -53,29 +56,30 @@ type RunLister interface {
 	List(ctx context.Context, limit, offset int) ([]importer.Run, error)
 }
 
-// API exposes the import triggers over HTTP. The admin guard is supplied by the
+// API exposes the import triggers over HTTP. The import guard is supplied by the
 // caller (the auth subsystem) so this package depends on auth's behaviour, not
 // its wiring.
 type API struct {
 	queue             Queue
 	runs              RunLister
-	requireAdmin      func(http.Handler) http.Handler
+	requireImport     func(http.Handler) http.Handler
 	rateLimit         func(http.Handler) http.Handler
 	enablePhotoPrism  bool
 	enablePhotoSorter bool
 }
 
-// Config bundles the dependencies of NewAPI. Queue, Runs and RequireAdmin are
+// Config bundles the dependencies of NewAPI. Queue, Runs and RequireImport are
 // required; the Enable* flags select which source triggers are registered.
 type Config struct {
 	// Queue is the job queue the triggers enqueue jobs onto.
 	Queue Queue
 	// Runs reads the import-run history for the history endpoint.
 	Runs RunLister
-	// RequireAdmin guards the endpoints for administrators only.
-	RequireAdmin func(http.Handler) http.Handler
+	// RequireImport guards the endpoints for callers permitted to import (the
+	// admin and ai roles); every other admin surface stays admin-only.
+	RequireImport func(http.Handler) http.Handler
 	// RateLimit is an optional per-client-IP throttle applied to the POST trigger
-	// routes ahead of the admin check. A nil value disables throttling.
+	// routes ahead of the import check. A nil value disables throttling.
 	RateLimit func(http.Handler) http.Handler
 	// EnablePhotoPrism registers POST /import/photoprism when set.
 	EnablePhotoPrism bool
@@ -92,7 +96,7 @@ func NewAPI(cfg Config) *API {
 	return &API{
 		queue:             cfg.queueOrPanic(),
 		runs:              cfg.runsOrPanic(),
-		requireAdmin:      cfg.RequireAdmin,
+		requireImport:     cfg.RequireImport,
 		rateLimit:         rateLimit,
 		enablePhotoPrism:  cfg.EnablePhotoPrism,
 		enablePhotoSorter: cfg.EnablePhotoSorter,
@@ -123,18 +127,19 @@ func (c Config) runsOrPanic() RunLister {
 // RegisterRoutes mounts the import endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1). The history endpoint is always
 // registered so the admin UI can render past runs even when no source is
-// configured; the triggers are registered only for configured sources:
+// configured; the triggers are registered only for configured sources. Every
+// route is behind the import guard (admin or ai):
 //
-//	GET  /import/runs         RequireAdmin  recent import-run history + enabled sources
-//	POST /import/photoprism   RequireAdmin  enqueue a PhotoPrism import job
-//	POST /import/photosorter  RequireAdmin  enqueue a photo-sorter migration job
+//	GET  /import/runs         RequireImport  recent import-run history + enabled sources
+//	POST /import/photoprism   RequireImport  enqueue a PhotoPrism import job
+//	POST /import/photosorter  RequireImport  enqueue a photo-sorter migration job
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireAdmin).Get("/import/runs", a.handleListRuns)
+	r.With(a.requireImport).Get("/import/runs", a.handleListRuns)
 	if a.enablePhotoPrism {
-		r.With(a.rateLimit, a.requireAdmin).Post("/import/photoprism", a.handleImportPhotoPrism)
+		r.With(a.rateLimit, a.requireImport).Post("/import/photoprism", a.handleImportPhotoPrism)
 	}
 	if a.enablePhotoSorter {
-		r.With(a.rateLimit, a.requireAdmin).Post("/import/photosorter", a.handleImportPhotoSorter)
+		r.With(a.rateLimit, a.requireImport).Post("/import/photosorter", a.handleImportPhotoSorter)
 	}
 }
 

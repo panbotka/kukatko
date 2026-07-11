@@ -10,9 +10,11 @@ import i18n from '../i18n'
 import { Layout } from './Layout'
 
 /** Builds an auth context value with the given capabilities. */
-function auth(opts: { canWrite?: boolean; isAdmin?: boolean } = {}): AuthContextValue {
-  const { canWrite = false, isAdmin = false } = opts
-  const role = isAdmin ? 'admin' : canWrite ? 'editor' : 'viewer'
+function auth(
+  opts: { canWrite?: boolean; isAdmin?: boolean; canImport?: boolean; role?: string } = {},
+): AuthContextValue {
+  const { canWrite = false, isAdmin = false, canImport = isAdmin } = opts
+  const role = opts.role ?? (isAdmin ? 'admin' : canWrite ? 'editor' : 'viewer')
   return {
     status: 'authenticated',
     user: { uid: 'u1', username: 'u', display_name: 'User One', role },
@@ -20,6 +22,7 @@ function auth(opts: { canWrite?: boolean; isAdmin?: boolean } = {}): AuthContext
     downloadToken: null,
     canWrite,
     isAdmin,
+    canImport,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
@@ -144,27 +147,46 @@ describe('Layout navbar', () => {
     expect(screen.getByRole('link', { name: 'Favorites' })).toBeInTheDocument()
 
     // Neither the editor Tools group nor the admin Admin group is rendered,
-    // and the write-only Upload entry stays hidden.
+    // the write-only Upload entry stays hidden, and Import (admin/ai only) too.
     expect(screen.queryByRole('button', { name: 'Tools' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Upload' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
   })
 
-  it('shows the Tools group to editors and the Admin group to admins', async () => {
+  it('shows the Tools group to editors and the Admin group plus Import to admins', async () => {
     const user = userEvent.setup()
     renderLayout(auth({ canWrite: true, isAdmin: true }))
 
-    // Upload is prominent as a top-level link.
+    // Upload and Import are prominent as top-level links.
     expect(screen.getByRole('link', { name: 'Upload' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Import' })).toHaveAttribute('href', '/import')
 
     // The editor-only Tools dropdown groups Duplicates and Trash.
     await user.click(screen.getByRole('button', { name: 'Tools' }))
     expect(screen.getByRole('link', { name: 'Trash' })).toBeInTheDocument()
 
-    // The admin-only Admin dropdown groups Import, Maintenance and System.
+    // The admin-only Admin dropdown groups Maintenance, System and Users —
+    // Import has moved out to its own top-level link.
     await user.click(screen.getByRole('button', { name: 'Admin' }))
-    expect(screen.getByRole('link', { name: 'Import' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'System' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
+  })
+
+  it('shows curation, Tools and Import to the ai agent but hides the Admin group', () => {
+    // The ai agent has editor write powers plus import, but is not an admin.
+    renderLayout(auth({ canWrite: true, isAdmin: false, canImport: true, role: 'ai' }))
+
+    // Curation surfaces and the write-gated Upload/Tools stay visible.
+    expect(screen.getByRole('link', { name: 'Albums' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Upload' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tools' })).toBeInTheDocument()
+
+    // Import is reachable...
+    expect(screen.getByRole('link', { name: 'Import' })).toHaveAttribute('href', '/import')
+
+    // ...but the admin-only administration group is not rendered at all.
+    expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeInTheDocument()
   })
 
   it('marks a top-level link active on its detail sub-paths', () => {

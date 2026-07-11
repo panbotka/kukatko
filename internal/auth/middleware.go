@@ -23,6 +23,14 @@ func (a *API) RequireAdmin(next http.Handler) http.Handler {
 	return a.requireRole(requireAdmin, next)
 }
 
+// RequireImport wraps next so it runs only for callers permitted to trigger
+// imports (admin or the ai agent). Other roles get 403; unauthenticated requests
+// get 401. It guards the import/migration triggers, which the ai role may reach
+// even though every other admin-gated surface stays admin-only.
+func (a *API) RequireImport(next http.Handler) http.Handler {
+	return a.requireRole(requireImport, next)
+}
+
 // downloadTokenParam is the query parameter carrying a session's media download
 // token on cookie-less media URLs (thumbnails, originals, video streams).
 const downloadTokenParam = "t"

@@ -52,3 +52,18 @@ export function RequireRole({ role }: { role: Role }) {
   }
   return <Outlet />
 }
+
+/**
+ * Guards nested routes behind import permission (admin or the ai agent). Import
+ * sits off the role ladder — ai holds it without being an admin — so it needs a
+ * dedicated predicate rather than a {@link RequireRole} threshold. Users without
+ * it are sent to the home page.
+ */
+export function RequireImport() {
+  const { canImport } = useAuth()
+
+  if (!canImport) {
+    return <Navigate to="/" replace />
+  }
+  return <Outlet />
+}

@@ -12,11 +12,15 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   embedded migration runner `Migrate`, pgvector typy registrované na každém spojení;
   SQL migrace v `internal/database/migrations/*.sql`), `internal/database/dbtest/`
   (integrační test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/auth/`
-  (autentizace/autorizace: `Role` admin/editor/viewer + `authorize`, bcrypt cost 12
+  (autentizace/autorizace: `Role` admin/editor/viewer/ai + `authorize`, bcrypt cost 12
   `HashPassword`/`CheckPassword`, UID/token generátory, sliding-window `Limiter`,
   `Store` nad pgx, `Service` orchestrace login/session/bootstrap/správa uživatelů,
-  `API` = HTTP handlery + RBAC middleware `RequireAuth`/`RequireWrite`/`RequireAdmin` +
+  `API` = HTTP handlery + RBAC middleware `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireImport` +
   `RegisterRoutes`; session a users v migraci `0002_auth.sql`.
+  **Role `ai`** (migrace `0023_role_ai.sql` rozšiřuje CHECK na `users.role`) = automatizovaný agent
+  přihlašovaný API tokenem: `CanWrite()`=true (jako editor) a `CanImport()`=true, ale `IsAdmin()`=false.
+  Import je jediná jinak admin-only akce, kterou `ai` smí — proto samostatný predikát `requireImport`/
+  middleware `RequireImport` (admin **nebo** ai); ostatní admin moduly drží `RequireAdmin` (jen admin).
   **Admin poznámka u uživatele** (`note`, migrace `0021_user_note.sql`, nullable TEXT →
   `COALESCE(note,'')` v `userColumns`): `User.Note` je `json:"-"`, takže neuteče přes
   `loginResponse` (`/auth/login`, `/auth/me`); admin endpointy ho přidávají zpět přes
@@ -955,8 +959,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   se nikdy neposune za nejstarší selhání** (`runState`); bezpečné re-runovat. **`Handle(ctx,job)`** =
   `worker.HandlerFunc` pro `ps_migrate` (ignoruje payload, volá `Migrate`), `JobPayload()` nese pevný
   sentinel → dedup fronty pustí jen jednu migraci), `internal/importapi/`
-  (admin-only HTTP API importů: rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`) a `RunLister`
-  (List, splňuje `*importer.Store`); `NewAPI(Config{Queue,Runs,RequireAdmin,EnablePhotoPrism,
+  (HTTP API importů za `RequireImport` (admin **nebo** ai): rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`) a `RunLister`
+  (List, splňuje `*importer.Store`); `NewAPI(Config{Queue,Runs,RequireImport,EnablePhotoPrism,
   EnablePhotoSorter})`+`RegisterRoutes` mountuje **vždy** `GET /import/runs` (historie + `sources`
   flagy jaké zdroje jsou nakonfigurované) a — **jen pro nakonfigurované zdroje** —
   `POST /import/photoprism` → `pp_import` a `POST /import/photosorter` → `ps_migrate` job (sdílený

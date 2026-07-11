@@ -57,25 +57,30 @@ function runsResponse(runs: ImportRun[]): ImportRunsResponse {
 
 const emptyStats: JobStats = { by_state: {}, by_type: {}, total: 0 }
 
-function auth(isAdmin: boolean): AuthContextValue {
-  const role = isAdmin ? 'admin' : 'viewer'
+function auth(
+  opts: { isAdmin?: boolean; canImport?: boolean; role?: string } = {},
+): AuthContextValue {
+  const { isAdmin = false } = opts
+  const canImport = opts.canImport ?? isAdmin
+  const role = opts.role ?? (isAdmin ? 'admin' : 'viewer')
   return {
     status: 'authenticated',
     user: { uid: 'u1', username: 'u', display_name: 'U', role },
     role,
     downloadToken: null,
-    canWrite: isAdmin,
+    canWrite: isAdmin || canImport,
     isAdmin,
+    canImport,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
   } as unknown as AuthContextValue
 }
 
-function renderPage(isAdmin = true) {
+function renderPage(value: AuthContextValue = auth({ isAdmin: true })) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(isAdmin)}>
+      <AuthContext.Provider value={value}>
         <MemoryRouter>
           <ImportPage />
         </MemoryRouter>
@@ -165,12 +170,20 @@ describe('ImportPage', () => {
     expect(await screen.findByText('An import is already in progress.')).toBeInTheDocument()
   })
 
-  it('denies access to non-admins', async () => {
-    renderPage(false)
+  it('denies access to users without import permission', async () => {
+    renderPage(auth())
     expect(
       await screen.findByText('This page is available to administrators only.'),
     ).toBeInTheDocument()
     expect(screen.queryByText('Import & migration')).not.toBeInTheDocument()
     expect(runsMock).not.toHaveBeenCalled()
+  })
+
+  it('lets the ai agent (import permission, not admin) use the page', async () => {
+    runsMock.mockResolvedValue(runsResponse([run(2, 'photoprism', 'done')]))
+    renderPage(auth({ isAdmin: false, canImport: true, role: 'ai' }))
+
+    expect(await screen.findByText('Run history')).toBeInTheDocument()
+    expect(runsMock).toHaveBeenCalled()
   })
 })

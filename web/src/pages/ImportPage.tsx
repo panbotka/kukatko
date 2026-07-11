@@ -231,7 +231,9 @@ function RunHistoryTable({ runs }: { runs: ImportRun[] }) {
  */
 export function ImportPage() {
   const { t } = useTranslation()
-  const { isAdmin } = useAuth()
+  // Import is reachable by admins and the ai agent (see RequireImport); this
+  // in-page gate is a defensive fallback behind that route guard.
+  const { canImport } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [jobStats, setJobStats] = useState<JobStats | null>(null)
   const [starting, setStarting] = useState<ImportSource | null>(null)
@@ -248,7 +250,7 @@ export function ImportPage() {
   }, [])
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!canImport) {
       return
     }
     const controller = new AbortController()
@@ -266,7 +268,7 @@ export function ImportPage() {
       controller.abort()
       window.clearInterval(id)
     }
-  }, [isAdmin, refresh])
+  }, [canImport, refresh])
 
   async function handleStart(source: ImportSource) {
     const runs = state.status === 'ready' ? state.runs : []
@@ -288,7 +290,7 @@ export function ImportPage() {
     }
   }
 
-  if (!isAdmin) {
+  if (!canImport) {
     return <Alert variant="danger">{t('import.adminOnly')}</Alert>
   }
 

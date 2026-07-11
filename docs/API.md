@@ -13,7 +13,8 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   řetězec. `note` delší než **1000 znaků** (runy, ne bajty) → 400 se zprávou pojmenující pole.
   `PATCH` má u `note` **partial-update** sémantiku: vynechaný klíč nechá uloženou poznámku beze
   změny, `""` ji smaže. **`note` čte jen admin** — nikdy není v payloadu `POST /auth/login` ani
-  `GET /auth/me`. Role: admin/editor/viewer (editor+admin write). **Sliding session expiry**
+  `GET /auth/me`. Role: admin/editor/viewer/ai (editor+admin+ai write; `ai` = automat na API token
+  s editorskými právy zápisu **plus** import, ale bez ostatních admin práv). **Sliding session expiry**
   (`auth.session_ttl` do cap `auth.session_max_lifetime`), **login rate-limit**
   (`auth.login_rate_limit`/`auth.login_rate_window` → 429), **bootstrap admin** z
   `auth.bootstrap_admin_username/password`. Middleware navíc `RequireAuthOrDownloadToken`
@@ -31,7 +32,8 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   mutaci.
 - **Bearer autentizace:** `authenticateRequest` bere `Authorization: Bearer kkt_<id>_<secret>`
   **vedle** session cookie (cookie cesta beze změny). Token **dědí roli svého uživatele** → žádný
-  druhý permission systém, `RequireAuth`/`RequireWrite`/`RequireAdmin` platí beze změny. Špatný
+  druhý permission systém, `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireImport` platí beze
+  změny (typicky token role `ai`: write + import, zbytek admin-only vrací 403). Špatný
   bearer je **finální** (nezkouší se cookie téhož requestu); jiné schéma než Bearer propadne na
   cookie. Revokovaný / expirovaný / neznámý / poškozený token i token zakázaného uživatele → vždy
   **401** (nikdy 403) se **stejným tělem** — nelze rozlišit, který případ nastal. `last_used_at` se
@@ -246,7 +248,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `uid`/`title`/`taken_at`/`media_type`/relativní `thumb`. mapy.com chyby (401/403→502, 404→404,
   429→429, 5xx→502/503) **neprosakují klíč**; bez `maps.mapy_api_key` vrací tile/rgeocode 503,
   GeoJSON funguje. Mountuje se `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).
-- **Import API (`/api/v1`, `internal/importapi`, admin-only přes `RequireAdmin`):** triggery a
+- **Import API (`/api/v1`, `internal/importapi`, přes `RequireImport` = admin **nebo** ai):** triggery a
   historie read-only importů. `GET /import/runs` (**vždy registrovaný**) → `{runs,limit,offset,
   sources:{photoprism,photosorter}}` — stránka `import_runs` newest-started-first (query
   `limit`≤200/`offset`, neplatný → 400) + `sources` flagy jaké zdroje jsou nakonfigurované (podklad

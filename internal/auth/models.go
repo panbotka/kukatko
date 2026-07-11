@@ -20,7 +20,7 @@ var (
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 	// ErrSessionExpired indicates the session existed but has passed its expiry.
 	ErrSessionExpired = errors.New("auth: session expired")
-	// ErrInvalidRole indicates a role value outside admin/editor/viewer.
+	// ErrInvalidRole indicates a role value outside admin/editor/viewer/ai.
 	ErrInvalidRole = errors.New("auth: invalid role")
 	// ErrUserDisabled indicates the account is disabled.
 	ErrUserDisabled = errors.New("auth: user is disabled")

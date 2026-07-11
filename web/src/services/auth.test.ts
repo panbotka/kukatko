@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, canWrite, changePassword, fetchMe, login, logout, roleAtLeast } from './auth'
+import {
+  ApiError,
+  canImport,
+  canWrite,
+  changePassword,
+  fetchMe,
+  login,
+  logout,
+  roleAtLeast,
+} from './auth'
 
 const SESSION = {
   user: {
@@ -110,9 +119,24 @@ describe('role helpers', () => {
     expect(roleAtLeast('viewer', 'editor')).toBe(false)
   })
 
-  it('canWrite is true for editor and admin only', () => {
+  it('canWrite is true for editor, admin and the ai agent', () => {
     expect(canWrite('admin')).toBe(true)
     expect(canWrite('editor')).toBe(true)
+    expect(canWrite('ai')).toBe(true)
     expect(canWrite('viewer')).toBe(false)
+  })
+
+  it('ranks the ai agent alongside editor but below admin', () => {
+    // ai holds editor's write powers...
+    expect(roleAtLeast('ai', 'editor')).toBe(true)
+    // ...but is not an administrator.
+    expect(roleAtLeast('ai', 'admin')).toBe(false)
+  })
+
+  it('canImport is true for admin and the ai agent only', () => {
+    expect(canImport('admin')).toBe(true)
+    expect(canImport('ai')).toBe(true)
+    expect(canImport('editor')).toBe(false)
+    expect(canImport('viewer')).toBe(false)
   })
 })

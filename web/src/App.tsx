@@ -1,7 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import { AuthProvider } from './auth/AuthProvider'
-import { RequireAuth, RequireRole } from './auth/ProtectedRoute'
+import { RequireAuth, RequireImport, RequireRole } from './auth/ProtectedRoute'
 import { Layout } from './components/Layout'
 import { AccountPage } from './pages/AccountPage'
 import { AlbumDetailPage } from './pages/AlbumDetailPage'
@@ -70,9 +70,12 @@ export function AppRoutes() {
             {/* Trash management (restore / permanent delete) is a write action. */}
             <Route path="/trash" element={<TrashPage />} />
           </Route>
-          {/* Import/migration, upkeep and account administration are admin-only. */}
-          <Route element={<RequireRole role="admin" />}>
+          {/* Import/migration is reachable by admins and the ai agent. */}
+          <Route element={<RequireImport />}>
             <Route path="/import" element={<ImportPage />} />
+          </Route>
+          {/* Upkeep and account administration are admin-only. */}
+          <Route element={<RequireRole role="admin" />}>
             <Route path="/maintenance" element={<MaintenancePage />} />
             <Route path="/system" element={<SystemStatusPage />} />
             <Route path="/users" element={<UsersPage />} />

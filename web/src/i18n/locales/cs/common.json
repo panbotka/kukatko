@@ -70,7 +70,8 @@
   "roles": {
     "admin": "Správce",
     "editor": "Editor",
-    "viewer": "Prohlížeč"
+    "viewer": "Prohlížeč",
+    "ai": "AI agent"
   },
   "auth": {
     "loading": "Načítání…"

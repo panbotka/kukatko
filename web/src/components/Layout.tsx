@@ -94,12 +94,6 @@ const ADMIN_GROUP: NavGroup = {
   icon: 'sliders',
   items: [
     {
-      to: '/import',
-      labelKey: 'nav.import',
-      titleKey: 'nav.titles.import',
-      icon: 'box-arrow-in-down',
-    },
-    {
       to: '/maintenance',
       labelKey: 'nav.maintenance',
       titleKey: 'nav.titles.maintenance',
@@ -116,6 +110,18 @@ const UPLOAD_ITEM: NavEntry = {
   labelKey: 'nav.upload',
   titleKey: 'nav.titles.upload',
   icon: 'cloud-arrow-up',
+}
+
+/**
+ * The import trigger, kept top-level and gated behind `canImport` rather than
+ * `isAdmin`: the ai agent may import without being an administrator, so it lives
+ * outside the admin-only group.
+ */
+const IMPORT_ITEM: NavEntry = {
+  to: '/import',
+  labelKey: 'nav.import',
+  titleKey: 'nav.titles.import',
+  icon: 'box-arrow-in-down',
 }
 
 /**
@@ -143,7 +149,7 @@ function pathMatches(pathname: string, route: string): boolean {
  */
 export function Layout() {
   const { t } = useTranslation()
-  const { user, canWrite, isAdmin, logout } = useAuth()
+  const { user, canWrite, isAdmin, canImport, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
 
@@ -240,6 +246,8 @@ export function Layout() {
               {canWrite && renderLink(UPLOAD_ITEM)}
               {/* Editor-only tools; the whole group is hidden from viewers. */}
               {canWrite && renderGroup(TOOLS_GROUP)}
+              {/* Import is reachable by admins and the ai agent. */}
+              {canImport && renderLink(IMPORT_ITEM)}
               {/* Admin-only administration; hidden from non-admins. */}
               {isAdmin && renderGroup(ADMIN_GROUP)}
             </Nav>

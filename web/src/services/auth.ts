@@ -1,5 +1,9 @@
-/** User roles mirrored from the backend (`internal/auth/role.go`). */
-export type Role = 'admin' | 'editor' | 'viewer'
+/**
+ * User roles mirrored from the backend (`internal/auth/role.go`). `ai` is an
+ * automated agent (API token) with an editor's write powers plus permission to
+ * trigger imports, but no other administrative capability.
+ */
+export type Role = 'admin' | 'editor' | 'viewer' | 'ai'
 
 /** Authenticated user, mirroring the backend `auth.User` JSON shape. */
 export interface User {
@@ -139,10 +143,17 @@ export async function changePassword(
 /** Minimum password length enforced by the backend (`internal/auth`). */
 export const MIN_PASSWORD_LENGTH = 8
 
-/** Relative rank of each role; higher means more privileges. */
+/**
+ * Relative rank of each role on the read/write/admin ladder; higher means more
+ * privileges. The `ai` agent sits alongside `editor` (same write access) and is
+ * deliberately below `admin`: it is not an administrator. Import access, which
+ * `ai` also holds, is off this ladder and expressed by {@link canImport}, not by
+ * rank.
+ */
 const ROLE_RANK: Record<Role, number> = {
   viewer: 0,
   editor: 1,
+  ai: 1,
   admin: 2,
 }
 
@@ -151,7 +162,16 @@ export function roleAtLeast(role: Role, required: Role): boolean {
   return ROLE_RANK[role] >= ROLE_RANK[required]
 }
 
-/** Reports whether a role may perform write actions (editor or admin). */
+/** Reports whether a role may perform write actions (editor, admin or ai). */
 export function canWrite(role: Role): boolean {
   return roleAtLeast(role, 'editor')
+}
+
+/**
+ * Reports whether a role may trigger imports/migrations. Admins and the `ai`
+ * agent can; editors and viewers cannot. This mirrors the backend
+ * `Role.CanImport` and guards the `/import` route and nav entry.
+ */
+export function canImport(role: Role): boolean {
+  return role === 'admin' || role === 'ai'
 }

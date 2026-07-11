@@ -19,6 +19,7 @@ function adminAuth(): AuthContextValue {
     downloadToken: null,
     canWrite: true,
     isAdmin: true,
+    canImport: true,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
