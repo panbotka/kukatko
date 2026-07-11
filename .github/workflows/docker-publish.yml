@@ -1,0 +1,150 @@
+name: Docker Build & Publish
+
+# Build the container image and publish it to the GitHub Container Registry.
+#   - push to main       -> the `latest` tag (default branch only)
+#   - push of a vX.Y.Z tag -> semver tags {{version}} and {{major}}.{{minor}}
+#   - pull_request to main -> build only, never push (validates the Dockerfile)
+# The image is built and pushed ONLY after the test suite passes for the ref:
+# the `build` job `needs: test`, so a red suite blocks publication entirely.
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: ["main"]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  GO_VERSION: "1.26"
+  NODE_VERSION: "22"
+
+jobs:
+  # The publication gate: the full test suite (unit + frontend Vitest via
+  # `make test`, plus the DB/HTTP integration tests via `make test-integration`).
+  # This mirrors the setup of the `integration` job in ci.yml so the same tests
+  # that gate a merge also gate an image push. If anything here fails, `build`
+  # is skipped and no image is published.
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: kukatko
+          POSTGRES_PASSWORD: kukatko
+          POSTGRES_DB: kukatko_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kukatko -d kukatko_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Ephemeral CI database — safe to truncate. No secrets here.
+      KUKATKO_TEST_DATABASE_URL: postgres://kukatko:kukatko@localhost:5432/kukatko_test?sslmode=disable
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install media tooling (ffmpeg + exiftool)
+        # ffmpeg/ffprobe drive the video ingest (metadata probe + poster frame);
+        # exiftool is the metadata fallback and the RAW/HEIC pipeline.
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libimage-exiftool-perl
+
+      - name: Create required Postgres extensions
+        run: |
+          PGPASSWORD=kukatko psql -h localhost -U kukatko -d kukatko_test \
+            -c 'CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS unaccent;'
+
+      - name: Run unit + frontend tests (make test)
+        run: make test
+
+      - name: Run integration tests (make test-integration)
+        run: make test-integration
+
+  build:
+    # Publish only once the suite is green.
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log into ${{ env.REGISTRY }}
+        # PRs from forks cannot receive a write token, and PR builds never push,
+        # so skip the login entirely on pull_request events.
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # latest=false disables the action's automatic `latest` on tag pushes;
+          # we drive `latest` ourselves so it lands ONLY on the default branch.
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+
+      - name: Compute build args
+        id: buildargs
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Semver build: the tag without its leading "v" (v1.2.3 -> 1.2.3).
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            # Branch/PR build: not a release, so stamp the placeholder version.
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+          fi
+          echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Push on branch/tag events; on pull_request build only (validation).
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.buildargs.outputs.version }}
+            COMMIT_SHA=${{ steps.buildargs.outputs.commit }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

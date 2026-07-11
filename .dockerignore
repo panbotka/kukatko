@@ -1,0 +1,43 @@
+# Keep the build context small and free of secrets. The frontend deps and the
+# SPA build output are (re)produced inside the image, so they are excluded here.
+
+# Git & CI metadata
+.git
+.gitignore
+.github
+
+# Go build artifacts (the image builds its own binary)
+/bin/
+/kukatko
+/dist/
+*.test
+*.out
+kukatko.log
+
+# Node / frontend deps and local build output (reinstalled + rebuilt in-image)
+node_modules
+web/node_modules
+web/dist
+web/coverage
+
+# Secrets & local configuration — must never enter an image layer
+.secrets
+.env
+.env.*
+*.local.yaml
+*.local.yml
+config.local.*
+
+# Local dev-server state and data
+/.devdata/
+/data/
+
+# Docker files themselves
+Dockerfile
+.dockerignore
+
+# Editor / OS cruft
+.idea
+.vscode
+*.swp
+.DS_Store

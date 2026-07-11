@@ -474,3 +474,45 @@ algoritmus nedá změnit jen v jedné z nich.
   Apt deps: `libimage-exiftool-perl`, `libheif-examples|libheif-bin`, `dcraw`, `ffmpeg`,
   `postgresql-client`, `ca-certificates`; **bez texlive**.
 
+## Docker image — kontejnerový build a publikace na GHCR
+
+<!-- BODY DOCKER -->
+Vedle `.deb` (goreleaser) se Kukátko balí i jako **kontejnerový image** pro běh na amd64 VPS.
+Zdroje: `Dockerfile` + `.dockerignore` v rootu, workflow `.github/workflows/docker-publish.yml`
+a ukázkový `.env.example`.
+
+- **`Dockerfile` (root, multi-stage → malý statický image):**
+  1. **frontend** (`node:22-alpine`): `npm ci` + `npm run build` ve `web/` → zápis do
+     `internal/web/static/dist` (dané `vite.config.ts`).
+  2. **backend** (`golang:1.26-alpine`, `CGO_ENABLED=0`): `go mod download`, pak se **před**
+     `go build` nakopíruje hotový `dist/` z frontend stage (jinak `//go:embed all:dist/*`
+     v `internal/web/static` neprojde). Build je jedna statická binárka `./cmd/kukatko`;
+     `-ldflags "-s -w -X …/internal/version.Version=$VERSION -X …/internal/version.Commit=$COMMIT_SHA"`
+     razí verzi z build-args `VERSION`/`COMMIT_SHA`.
+  3. **runtime** (`alpine:3`): jen nástroje, na které se pipeline **reálně** shell-outuje —
+     `ffmpeg` (ffprobe + ffmpeg pro video metadata/poster/transcode), `exiftool` (EXIF/XMP
+     **a** RAW = extrakce zabudovaného JPEG preview přes `exiftool -b`, žádný demosaic → `dcraw`/
+     `libraw` netřeba) a `libheif-tools` (heif-convert pro HEIC/HEIF), plus `ca-certificates`
+     a `tzdata`. **Bez `libvips`** — `thumb.engine` je defaultně pure-Go. Běží jako **nonroot**
+     (`nobody`), `EXPOSE 8080` (= `web.port` default), `STOPSIGNAL SIGTERM` (graceful drain),
+     `ENTRYPOINT` binárka + `CMD ["serve"]`. Knihovnu/cache/tmp montuj jako volumes
+     (`/var/lib/kukatko/{originals,cache,tmp}`).
+- **Publikace (`docker-publish.yml`) na `ghcr.io/panbotka/kukatko`** (image = `${{ github.repository }}`),
+  autentizace přes vestavěný `GITHUB_TOKEN` (permission `packages: write`), **žádné další secrety**.
+  Triggery: push do `main`, push tagu `v*.*.*` a `pull_request` do `main` (**PR jen buildí, nikdy
+  nepushuje** — `push` je true jen když `github.event_name != 'pull_request'`).
+  - **Testovací brána:** job `test` pouští **`make test` + `make test-integration`** (zrcadlí setup
+    `integration` jobu z `ci.yml`: Go 1.26, Node 22, service container `pgvector/pgvector:pg17`,
+    extensions `vector`/`unaccent`, apt `ffmpeg`/`exiftool`, `KUKATKO_TEST_DATABASE_URL`). Job
+    `build` má **`needs: test`** → když testy spadnou, **žádný image se nepushne**.
+  - **Tagy** (přes `docker/metadata-action@v5`, `flavor: latest=false` + explicitní řízení):
+    push do `main` → **`latest`** (jen na default větvi, `enable={{is_default_branch}}`; na tazích
+    `latest` **ne**); tag `vMAJOR.MINOR.PATCH` → **`{{version}}`** a **`{{major}}.{{minor}}`**; k tomu
+    vždy immutable **`sha`** tag. Build přes `docker/build-push-action@v6` s build-args
+    `VERSION` (tag bez úvodního `v`, jinak `dev`) a `COMMIT_SHA` (short SHA).
+- **`.env.example` (root):** dokumentovaný, secret-free příklad env proměnných pro běh kontejneru
+  (`docker run --env-file .env …`). Odvozené z `config.example.yaml`: konvence `KUKATKO_` (tečka →
+  podtržítko) + výjimka `MAPY_API_KEY`. Pokrývá `KUKATKO_DATABASE_URL` (povinné), embedding URL,
+  storage/R2 klíče, backup S3 klíče a `MAPY_API_KEY`. Reálný **`.env` je gitignored**
+  (`.env`/`.env.*`), `.env.example` je výjimka a commituje se.
+

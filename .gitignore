@@ -19,6 +19,8 @@ internal/web/static/dist/*
 *.local.yml
 .env
 .env.*
+# ...but the documented, secret-free example IS committed.
+!.env.example
 config.local.*
 .secrets/
 
