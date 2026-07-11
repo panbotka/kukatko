@@ -99,23 +99,13 @@ describe('FilterBar header', () => {
     expect(screen.getByRole('button', { name: /Filters/ })).toBeInTheDocument()
   })
 
-  it('offers the grid density from 2 to 8 columns plus the responsive default', () => {
+  it('shows the grid-density stepper resting on the responsive default', () => {
     renderBar(LIBRARY_DEFAULTS, vi.fn())
-    const density = screen.getByLabelText('Tiles per row')
-    expect(density).toHaveValue('auto')
-    const options = within(density)
-      .getAllByRole('option')
-      .map((option) => option.textContent)
-    expect(options).toEqual([
-      'Automatic',
-      '2 per row',
-      '3 per row',
-      '4 per row',
-      '5 per row',
-      '6 per row',
-      '7 per row',
-      '8 per row',
-    ])
+    // Auto is the resting state: there is nothing to step below it and nothing to
+    // reset, so only "more" is available.
+    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Automatic' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'More tiles per row' })).toBeEnabled()
   })
 
   it('persists the density per device instead of writing it to the URL view', async () => {
@@ -123,10 +113,11 @@ describe('FilterBar header', () => {
     const user = userEvent.setup()
     renderBar(LIBRARY_DEFAULTS, onChange)
 
-    await user.selectOptions(screen.getByLabelText('Tiles per row'), '4')
+    await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
 
     expect(onChange).not.toHaveBeenCalled()
-    expect(window.localStorage.getItem('kukatko.grid.density')).toBe('4')
+    // Auto steps into the pinned range at the minimum column count.
+    expect(window.localStorage.getItem('kukatko.grid.density')).toBe('2')
   })
 
   it('hides the density picker when asked', () => {

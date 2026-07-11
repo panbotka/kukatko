@@ -110,7 +110,10 @@ describe('PhotoGrid', () => {
     const before = gridElement()
     expect(before).toHaveAttribute('data-density', 'auto')
 
-    await user.selectOptions(screen.getByLabelText('Tiles per row'), '3')
+    // The stepper walks auto → 2 → 3; each press restyles the live grid.
+    const more = screen.getByRole('button', { name: 'More tiles per row' })
+    await user.click(more)
+    await user.click(more)
 
     await waitFor(() => {
       expect(gridElement()).toHaveAttribute('data-density', '3')

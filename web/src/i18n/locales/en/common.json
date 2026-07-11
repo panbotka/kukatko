@@ -151,7 +151,11 @@
     "density": {
       "label": "Tiles per row",
       "auto": "Automatic",
-      "columns": "{{n}} per row"
+      "autoShort": "A",
+      "columns": "{{n}} per row",
+      "fewer": "Fewer tiles per row",
+      "more": "More tiles per row",
+      "reset": "Reset to automatic (now {{n}} per row)"
     },
     "sort": {
       "newest": "Newest",

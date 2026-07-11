@@ -47,6 +47,27 @@ export function sanitizeDensity(raw: unknown): GridDensity {
 }
 
 /**
+ * Steps a density one rung along the picker's ladder — `'auto'`, then every
+ * pinnable count from {@link GRID_COLUMNS_MIN} to {@link GRID_COLUMNS_MAX}. A
+ * positive `delta` pins more columns (smaller tiles); a negative one steps back
+ * toward `'auto'`, and the smallest pinned count drops to `'auto'` rather than
+ * off the end. Both ends clamp. The input is sanitized first, so a tampered
+ * value can never step to something off the ladder.
+ */
+export function stepDensity(density: GridDensity, delta: number): GridDensity {
+  const current = sanitizeDensity(density)
+  if (delta < 0) {
+    if (current === 'auto') return 'auto'
+    return current <= GRID_COLUMNS_MIN ? 'auto' : current - 1
+  }
+  if (delta > 0) {
+    if (current === 'auto') return GRID_COLUMNS_MIN
+    return Math.min(GRID_COLUMNS_MAX, current + 1)
+  }
+  return current
+}
+
+/**
  * Reads the persisted density, falling back to {@link GRID_DENSITY_DEFAULT} when
  * storage is empty, unavailable (private mode / no `window`) or holds invalid JSON.
  */

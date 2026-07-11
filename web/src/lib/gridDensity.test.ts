@@ -8,6 +8,7 @@ import {
   gridTemplateColumns,
   readDensity,
   sanitizeDensity,
+  stepDensity,
   writeDensity,
 } from './gridDensity'
 
@@ -26,6 +27,40 @@ describe('GRID_COLUMN_CHOICES', () => {
     expect(GRID_COLUMN_CHOICES).toEqual([2, 3, 4, 5, 6, 7, 8])
     expect(GRID_COLUMN_CHOICES.at(0)).toBe(GRID_COLUMNS_MIN)
     expect(GRID_COLUMN_CHOICES.at(-1)).toBe(GRID_COLUMNS_MAX)
+  })
+})
+
+describe('stepDensity', () => {
+  it('enters the pinned range from auto at the minimum column count', () => {
+    expect(stepDensity('auto', 1)).toBe(GRID_COLUMNS_MIN)
+  })
+
+  it('steps up one column at a time and clamps at the maximum', () => {
+    expect(stepDensity(4, 1)).toBe(5)
+    expect(stepDensity(GRID_COLUMNS_MAX, 1)).toBe(GRID_COLUMNS_MAX)
+  })
+
+  it('steps down one column at a time', () => {
+    expect(stepDensity(5, -1)).toBe(4)
+  })
+
+  it('drops from the minimum column count back to auto', () => {
+    expect(stepDensity(GRID_COLUMNS_MIN, -1)).toBe('auto')
+  })
+
+  it('clamps at auto when stepping below it', () => {
+    expect(stepDensity('auto', -1)).toBe('auto')
+  })
+
+  it('leaves the density untouched for a zero step', () => {
+    expect(stepDensity(3, 0)).toBe(3)
+    expect(stepDensity('auto', 0)).toBe('auto')
+  })
+
+  it('snaps a tampered value onto the ladder before stepping', () => {
+    // 42 sanitizes to the max, so stepping up clamps and stepping down is 7.
+    expect(stepDensity(42, 1)).toBe(GRID_COLUMNS_MAX)
+    expect(stepDensity(42, -1)).toBe(GRID_COLUMNS_MAX - 1)
   })
 })
 

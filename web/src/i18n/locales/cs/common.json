@@ -151,7 +151,11 @@
     "density": {
       "label": "Dlaždic na řádek",
       "auto": "Automaticky",
-      "columns": "{{n}} na řádek"
+      "autoShort": "A",
+      "columns": "{{n}} na řádek",
+      "fewer": "Méně dlaždic na řádek",
+      "more": "Více dlaždic na řádek",
+      "reset": "Zpět na automatické (teď {{n}} na řádek)"
     },
     "sort": {
       "newest": "Nejnovější",

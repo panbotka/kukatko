@@ -141,10 +141,13 @@ zapiš sem.
   reject toggle, klik na aktivní flag maže na `none`; oba sibling linku → klik nenaviguje),
   `GridSkeleton` (placeholder mřížka při prvním načtení; zrcadlí i zvolenou hustotu, takže po
   načtení fotek nenaskočí layout),
-  `GridDensityControl` (`<select>` **Dlaždic na řádek**: `Automaticky` + 2…8, ikona 3×3, popisek
-  `visually-hidden`; čte/píše `useGridDensity`, tedy localStorage, **ne URL** — je to preference
-  zařízení, ne součást sdíleného pohledu; sedí v hlavičce `FilterBar`u, mění všechny foto-mřížky
-  v appce najednou); `PhotoTile`+`PhotoGrid` podporují
+  `GridDensityControl` (kompaktní zoom stepper **Dlaždic na řádek**: `−` / prostřední čip / `+`;
+  `−` krokuje zpět k `Automaticky` (méně, větší dlaždice), `+` připne víc sloupců, prostřední čip
+  ukazuje stav — `A`, nebo počet sloupců — a kliknutím resetuje na `Automaticky`; krokuje po žebříčku
+  `stepDensity` (`auto`, pak 2…8); ikony přes `Icon` (`dash-lg`/`grid-3x3-gap-fill`/`plus-lg`), `−`
+  je disabled na `auto`, `+` na 8; čte/píše `useGridDensity`, tedy localStorage, **ne URL** — je to
+  preference zařízení, ne součást sdíleného pohledu; sedí v hlavičce `FilterBar`u, mění všechny
+  foto-mřížky v appce najednou); `PhotoTile`+`PhotoGrid` podporují
   volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`;
   heart se v selection módu skryje),
   `components/organize/` = `AlbumTile` (karta alba: **efektivní obálka** `cover_uid`
