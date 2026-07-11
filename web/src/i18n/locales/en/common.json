@@ -769,6 +769,20 @@
     "done": {
       "title": "Upload complete.",
       "viewLibrary": "View in library"
+    },
+    "organize": {
+      "heading": "Add to albums and labels",
+      "hint": "Chosen albums and labels are applied to every photo in this upload.",
+      "albums": "Albums",
+      "labels": "Labels",
+      "albumsPlaceholder": "Filter or create an album…",
+      "labelsPlaceholder": "Filter or create a label…",
+      "loadError": "Couldn't load albums and labels — you can still upload and organize later.",
+      "assigning": "Adding the photos to your albums and labels…",
+      "assigned": "Added to your albums and labels.",
+      "assignError": "Uploaded, but adding to albums and labels failed: {{message}}",
+      "assignErrorGeneric": "Uploaded, but adding to albums and labels failed.",
+      "retry": "Retry"
     }
   },
   "slideshow": {

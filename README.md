@@ -11,7 +11,8 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - **Import z PhotoPrismu** přes API (+ stažení originálů) a **migrace dat z photo-sorteru**.
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
-  per-user oblíbené, dvojjazyčné UI (čeština default + angličtina), S3 zálohování.
+  **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé
+  dávky do alb a štítků), per-user oblíbené, dvojjazyčné UI (čeština default + angličtina), S3 zálohování.
 - **Správa uživatelů** v UI (`/users`, jen admin): založení účtu, změna role/jména/poznámky, reset
   hesla a zakázání účtu. Účty se nemažou — vyřazují se zakázáním, aby jejich historie zůstala celá.
 - **API tokeny** (`Authorization: Bearer kkt_…`) pro CLI, skripty a agenty — dlouhodobý credential

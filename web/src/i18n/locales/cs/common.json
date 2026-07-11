@@ -785,6 +785,20 @@
     "done": {
       "title": "Nahrávání dokončeno.",
       "viewLibrary": "Zobrazit v knihovně"
+    },
+    "organize": {
+      "heading": "Přidat do alb a štítků",
+      "hint": "Vybraná alba a štítky se přidají ke každé fotce v tomto nahrání.",
+      "albums": "Alba",
+      "labels": "Štítky",
+      "albumsPlaceholder": "Filtrovat nebo vytvořit album…",
+      "labelsPlaceholder": "Filtrovat nebo vytvořit štítek…",
+      "loadError": "Alba a štítky se nepodařilo načíst — nahrát můžete i tak a uspořádat později.",
+      "assigning": "Přidávám fotky do vašich alb a štítků…",
+      "assigned": "Přidáno do vašich alb a štítků.",
+      "assignError": "Nahráno, ale přidání do alb a štítků selhalo: {{message}}",
+      "assignErrorGeneric": "Nahráno, ale přidání do alb a štítků selhalo.",
+      "retry": "Zkusit znovu"
     }
   },
   "slideshow": {

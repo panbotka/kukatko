@@ -54,6 +54,13 @@ export interface UseUploadQueueResult {
   isComplete: boolean
   /** UIDs of newly created photos, for linking into the library. */
   createdUids: string[]
+  /**
+   * UIDs of every photo the batch resolved to — created *and* duplicate — for
+   * post-upload assignment to albums/labels. A duplicate already in the library
+   * still carries a `photo_uid`, so it is included: a re-upload should land in
+   * the chosen albums just like a fresh one.
+   */
+  resolvedUids: string[]
   /** Adds files to the queue, skipping ones already present (name + size + mtime). */
   addFiles: (files: FileList | File[]) => void
   /** Removes a file from the queue, aborting it first if it is uploading. */
@@ -289,6 +296,18 @@ export function useUploadQueue(): UseUploadQueueResult {
     [items],
   )
 
+  const resolvedUids = useMemo(
+    () =>
+      items.flatMap((item) =>
+        (item.status === 'created' || item.status === 'duplicate') &&
+        item.photoUid !== undefined &&
+        item.photoUid !== ''
+          ? [item.photoUid]
+          : [],
+      ),
+    [items],
+  )
+
   const isUploading = summary.uploading > 0
   const isComplete = summary.total > 0 && summary.queued === 0 && summary.uploading === 0
 
@@ -298,6 +317,7 @@ export function useUploadQueue(): UseUploadQueueResult {
     isUploading,
     isComplete,
     createdUids,
+    resolvedUids,
     addFiles,
     removeItem,
     start,

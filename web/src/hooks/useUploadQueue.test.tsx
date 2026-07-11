@@ -156,6 +156,8 @@ describe('useUploadQueue', () => {
     })
     expect(hook.current.summary).toMatchObject({ created: 1, duplicate: 1, error: 1 })
     expect(hook.current.createdUids).toEqual(['ph1'])
+    // Assignment targets created *and* duplicate photos, but never failures.
+    expect(hook.current.resolvedUids).toEqual(['ph1', 'ph2'])
     expect(hook.current.items[2].error).toBe('boom')
   })
 

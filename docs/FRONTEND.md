@@ -79,7 +79,9 @@ zapiš sem.
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
   `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
   `UploadItem` (řádek fronty: jméno+velikost, progress-bar, status badge, near-duplicate
-  varování, remove/retry akce); `components/library/` = `PhotoTile`
+  varování, remove/retry akce), `UploadOrganize` (dva vyhledávatelné `MultiSelect` pro **alba**
+  a **štítky** platné pro celou dávku, s inline vytvořením nové položky přes `onCreate`; prázdné
+  by default, řízené `useUploadOrganize`); `components/library/` = `PhotoTile`
   (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, **play badge + délka** u
   videa/live fotky (`▶` + `formatDuration`), placeholder bez
   layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`
@@ -167,7 +169,9 @@ zapiš sem.
   apply zvládne **víc alb i víc štítků najednou**; add pole navíc přes `onCreate` nabízejí
   **„Vytvořit «název»“** pro jméno, které fold-insensitive nic existujícího nenese — jen pro
   uživatele s právem zápisu (`useAuth().canWrite`). Nová položka se okamžitě objeví jako chip
-  (hodnota `create:<název>`, `CREATE_PREFIX` — dvojtečka se v base32 UID nevyskytuje) a **založí
+  (hodnota `create:<název>`, `CREATE_PREFIX` — dvojtečka se v base32 UID nevyskytuje; sdílené
+  helpery `pendingValue`/`pendingName`/`pendingOptions` žijí v `lib/pendingCreate` a používá je
+  i `useUploadOrganize`) a **založí
   se až při Apply**: nejdřív `POST /albums`/`POST /labels` (defaulty: prázdný popis, neprivátní;
   priorita 0), čerstvé UID se vymění do formuláře i options — retry tedy nezaloží duplikát — a
   teprve pak jde dávka; zrušený dialog nezaloží nic. Neúspěch založení vypíše hlášku serveru
@@ -248,7 +252,11 @@ zapiš sem.
   (filtry, které jen zužují totéž hledání, výběr nechají, stejně jako v knihovně),
   `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
   nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
-  po dokončení odkaz na nově nahrané fotky (`/?sort=added`, přes `LIBRARY_PATH`),
+  po dokončení odkaz na nově nahrané fotky (`/?sort=added`, přes `LIBRARY_PATH`); nad frontou
+  `UploadOrganize` — před nahráním lze vybrat **alba a štítky** pro celou dávku a po dosettlování
+  všech souborů se **všechny** rozpoznané fotky (nové **i** duplicitní `resolvedUids`) přiřadí
+  jedním `POST /photos/bulk` (stav „přiřazuji…“, úspěch, nebo **opakovatelná** chyba — fotky jsou
+  nahrané, selhalo jen přiřazení); bez výběru se žádné volání nedělá,
   `ImportPage` = `/import` (jen admin) admin konzole importu/migrace: dvě sekce (PhotoPrism,
   photo-sorter) s tlačítkem **Spustit import** (gate na `sources` flagy), živý průběh běžícího běhu
   (spinner + counts imported/updated/skipped/failed) a stav fronty na pozadí (`GET /jobs/stats`),
@@ -450,8 +458,14 @@ zapiš sem.
   přehraje hledání po mutaci;
   `useUploadQueue` = fronta uploadu: `addFiles` (dedup jméno+velikost+mtime)/`removeItem`/
   `start`/`retry`/`retryFailed`/`clear`, konkurenční strop `MAX_CONCURRENT_UPLOADS` (3),
-  per-file status+progress, souhrn počtů, `createdUids` pro odkaz do knihovny; auto-drainuje
+  per-file status+progress, souhrn počtů, `createdUids` (jen nové) pro odkaz do knihovny
+  a `resolvedUids` (nové **i** duplicitní fotky) pro pouploadové přiřazení; auto-drainuje
   frontu efektem po `start`/retry, ruší běžící uploady při unmountu;
+  `useUploadOrganize` = výběr alb/štítků pro celou dávku uploadu + jejich přiřazení: načte katalogy
+  alb a štítků (`fetchAlbums`/`fetchLabels`), drží výběr (inline vytvoření jako `create:` marker
+  jako v `BulkEditModal`, sdílené helpery `lib/pendingCreate`), `runAssign(uids)` nejdřív založí
+  čekající alba/štítky a pak jedním `POST /photos/bulk` (`add_to_albums`+`add_labels`) přiřadí;
+  stav `idle`/`assigning`/`done`/`error`, `retryAssign` re-poslání téže dávky, `resetAssign`;
   `useSubjectPhotos(uid,{reloadKey?})` = obálka nad `usePaginatedPhotos` nad
   `GET /subjects/{uid}/photos` (galerie osoby, reset+reload při změně `uid` nebo `reloadKey`); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
   nad `GET /photos` scopnutým na album/štítek/**lokalitu** (`PhotoScope` `{album?,label?,country?,city?}`

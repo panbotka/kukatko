@@ -9,6 +9,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../../auth/AuthContext'
+import { pendingName, pendingOptions, pendingValue } from '../../lib/pendingCreate'
 import { ApiError } from '../../services/auth'
 import { type BulkOperations, type BulkResult, bulkUpdatePhotos } from '../../services/bulk'
 import {
@@ -81,35 +82,6 @@ const EMPTY_FORM: FormState = {
  * blast radius is small enough to undo by hand.
  */
 const LARGE_SELECTION = 50
-
-/**
- * An album or label picked via the multi-select's create entry is selected as
- * its name behind this prefix until Apply creates it — real UIDs are short
- * base32 strings and never carry a colon, so the two cannot collide. Deferring
- * creation to Apply means cancelling the dialog never leaves an empty album or
- * label behind: the bulk endpoint only accepts existing identifiers, so Apply
- * first creates the pending entries, swaps their fresh UIDs in, and only then
- * submits the batch.
- */
-const CREATE_PREFIX = 'create:'
-
-/** Encodes a not-yet-existing entry name as a multi-select value. */
-function pendingValue(name: string): string {
-  return CREATE_PREFIX + name
-}
-
-/** Decodes a pending-creation value back to its name; null for a real UID. */
-function pendingName(value: string): string | null {
-  return value.startsWith(CREATE_PREFIX) ? value.slice(CREATE_PREFIX.length) : null
-}
-
-/** Synthetic options for pending creations, so their chips read as the name. */
-function pendingOptions(selected: string[]): MultiSelectOption[] {
-  return selected.flatMap((value) => {
-    const name = pendingName(value)
-    return name === null ? [] : [{ value, label: name }]
-  })
-}
 
 /**
  * Builds the {@link BulkOperations} payload from the form, or returns the
