@@ -63,8 +63,76 @@ func (f *fakePlacesBackfiller) BackfillPlaces(context.Context) (int, error) {
 	return f.enqueued, f.err
 }
 
+// fakeThumbnailBackfiller models the thumbnail backfill over an in-memory queue:
+// it "enqueues" a job per candidate uid (the missing set, or the active set when
+// all is true), deduping against jobs already pending — mirroring the real
+// service, which counts every candidate and leaves dedup to the queue. It records
+// the last `all` flag and how many genuine jobs it created so a test can assert
+// both the reported count and idempotency across repeat calls.
+type fakeThumbnailBackfiller struct {
+	missing []string
+	active  []string
+	pending map[string]bool
+	created int
+	calls   int
+	lastAll bool
+	err     error
+}
+
+// newFakeThumbnailBackfiller returns a fake seeded with the missing and active
+// candidate uids.
+func newFakeThumbnailBackfiller(missing, active []string) *fakeThumbnailBackfiller {
+	return &fakeThumbnailBackfiller{missing: missing, active: active, pending: map[string]bool{}}
+}
+
+// BackfillThumbnails schedules the appropriate candidate set, deduping against
+// already-pending jobs, and returns how many candidates it iterated.
+func (f *fakeThumbnailBackfiller) BackfillThumbnails(_ context.Context, all bool) (int, error) {
+	f.calls++
+	f.lastAll = all
+	if f.err != nil {
+		return 0, f.err
+	}
+	candidates := f.missing
+	if all {
+		candidates = f.active
+	}
+	for _, uid := range candidates {
+		if !f.pending[uid] {
+			f.pending[uid] = true
+			f.created++
+		}
+	}
+	return len(candidates), nil
+}
+
 // passthrough is a no-op middleware standing in for the admin guard.
 func passthrough(next http.Handler) http.Handler { return next }
+
+// forbid is an admin guard that rejects every request with 403, standing in for
+// RequireAdmin denying a non-admin caller.
+func forbid(http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	})
+}
+
+// newServerWithThumbnails mounts the API with the given thumbnail backfiller (the
+// others are stubbed) behind the given admin guard.
+func newServerWithThumbnails(
+	t *testing.T, tb ThumbnailBackfiller, guard func(http.Handler) http.Handler,
+) *httptest.Server {
+	t.Helper()
+	api := NewAPI(Config{
+		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
+		ThumbnailBackfiller: tb, RequireAdmin: guard,
+	})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	return srv
+}
 
 // newServer mounts the API with the given backfillers behind a passthrough guard.
 func newServer(t *testing.T, bf Backfiller, ff FaceBackfiller) *httptest.Server {
@@ -293,5 +361,125 @@ func TestBackfillPlaces_unavailable(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+// TestBackfillThumbnails_ok enqueues a thumbnail job for a photo missing its
+// thumbnail and reports the enqueued count.
+func TestBackfillThumbnails_ok(t *testing.T) {
+	t.Parallel()
+
+	tb := newFakeThumbnailBackfiller([]string{"p1"}, nil)
+	srv := newServerWithThumbnails(t, tb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body backfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Enqueued != 1 {
+		t.Errorf("enqueued = %d, want 1", body.Enqueued)
+	}
+	if tb.calls != 1 || tb.lastAll {
+		t.Errorf("backfiller calls = %d, lastAll = %v, want 1 call with all=false", tb.calls, tb.lastAll)
+	}
+}
+
+// TestBackfillThumbnails_all forwards ?all=true so the backfiller runs the full
+// re-run over every non-archived photo.
+func TestBackfillThumbnails_all(t *testing.T) {
+	t.Parallel()
+
+	tb := newFakeThumbnailBackfiller([]string{"p1"}, []string{"p1", "p2", "p3"})
+	srv := newServerWithThumbnails(t, tb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails?all=true")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body backfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Enqueued != 3 {
+		t.Errorf("enqueued = %d, want 3", body.Enqueued)
+	}
+	if !tb.lastAll {
+		t.Error("?all=true should pass all=true to the backfiller")
+	}
+}
+
+// TestBackfillThumbnails_idempotent verifies a repeat call stays safe: the
+// endpoint answers 200 both times and the queue's dedup means no redundant jobs
+// pile up across the two runs.
+func TestBackfillThumbnails_idempotent(t *testing.T) {
+	t.Parallel()
+
+	tb := newFakeThumbnailBackfiller([]string{"p1", "p2"}, nil)
+	srv := newServerWithThumbnails(t, tb, passthrough)
+
+	for i := range 2 {
+		resp := postProcess(t, srv.URL+"/process/thumbnails")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("call %d status = %d, want 200", i+1, resp.StatusCode)
+		}
+		_ = resp.Body.Close()
+	}
+	if tb.calls != 2 {
+		t.Errorf("backfiller calls = %d, want 2", tb.calls)
+	}
+	if tb.created != 2 {
+		t.Errorf("jobs created across both runs = %d, want 2 (deduped)", tb.created)
+	}
+}
+
+// TestBackfillThumbnails_error maps a backfill failure to 500.
+func TestBackfillThumbnails_error(t *testing.T) {
+	t.Parallel()
+
+	tb := &fakeThumbnailBackfiller{err: errors.New("boom")}
+	srv := newServerWithThumbnails(t, tb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+// TestBackfillThumbnails_unavailable answers 503 when no thumbnail backfiller is
+// wired.
+func TestBackfillThumbnails_unavailable(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithThumbnails(t, nil, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+// TestBackfillThumbnails_forbidden verifies RequireAdmin guards the endpoint: a
+// non-admin caller is rejected with 403 and the backfiller is never invoked.
+func TestBackfillThumbnails_forbidden(t *testing.T) {
+	t.Parallel()
+
+	tb := newFakeThumbnailBackfiller([]string{"p1"}, nil)
+	srv := newServerWithThumbnails(t, tb, forbid)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", resp.StatusCode)
+	}
+	if tb.calls != 0 {
+		t.Errorf("backfiller calls = %d, want 0 (guard should block)", tb.calls)
 	}
 }

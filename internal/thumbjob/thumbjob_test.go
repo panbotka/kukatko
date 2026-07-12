@@ -237,3 +237,145 @@ func TestNewPanicsOnNil(t *testing.T) {
 	}()
 	New(Config{})
 }
+
+// fakeLister is an in-memory PhotoLister returning canned uid slices.
+type fakeLister struct {
+	missing    []string
+	active     []string
+	missingErr error
+	activeErr  error
+}
+
+func (f *fakeLister) ListPhotosMissingPhash(_ context.Context, _ int) ([]string, error) {
+	return f.missing, f.missingErr
+}
+
+func (f *fakeLister) ListActiveUIDs(context.Context) ([]string, error) {
+	return f.active, f.activeErr
+}
+
+// fakeEnqueuer models the queue's per-photo dedup: it records a job only the
+// first time a uid is scheduled, mirroring jobs.Enqueuer (which swallows a
+// duplicate and returns nil). It counts total calls and genuinely created jobs so
+// a test can assert both the reported enqueued count and that repeats do not pile
+// up redundant jobs.
+type fakeEnqueuer struct {
+	pending map[string]bool
+	created int
+	calls   int
+	err     error
+}
+
+func newFakeEnqueuer() *fakeEnqueuer { return &fakeEnqueuer{pending: map[string]bool{}} }
+
+func (f *fakeEnqueuer) EnqueueThumbnail(_ context.Context, photoUID string) error {
+	f.calls++
+	if f.err != nil {
+		return f.err
+	}
+	if !f.pending[photoUID] {
+		f.pending[photoUID] = true
+		f.created++
+	}
+	return nil
+}
+
+// newBackfillService wires a Service with the backfill collaborators over the
+// three no-op core fakes.
+func newBackfillService(l PhotoLister, e Enqueuer) *Service {
+	return New(Config{
+		Photos: &fakePhotos{}, Thumbnailer: &fakeThumbs{}, Decoder: &fakeDecoder{},
+		Lister: l, Enqueuer: e,
+	})
+}
+
+// TestBackfillThumbnails_missing enqueues a job per photo missing a thumbnail
+// (no pHash) and reports the count.
+func TestBackfillThumbnails_missing(t *testing.T) {
+	t.Parallel()
+	enq := newFakeEnqueuer()
+	svc := newBackfillService(&fakeLister{missing: []string{"a", "b", "c"}}, enq)
+
+	n, err := svc.BackfillThumbnails(context.Background(), false)
+	if err != nil {
+		t.Fatalf("BackfillThumbnails: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("enqueued = %d, want 3", n)
+	}
+	if enq.created != 3 {
+		t.Errorf("jobs created = %d, want 3", enq.created)
+	}
+}
+
+// TestBackfillThumbnails_all enqueues a job for every non-archived photo when the
+// full-re-run flag is set, using the active listing rather than the missing one.
+func TestBackfillThumbnails_all(t *testing.T) {
+	t.Parallel()
+	enq := newFakeEnqueuer()
+	svc := newBackfillService(&fakeLister{missing: []string{"a"}, active: []string{"a", "b", "c", "d"}}, enq)
+
+	n, err := svc.BackfillThumbnails(context.Background(), true)
+	if err != nil {
+		t.Fatalf("BackfillThumbnails(all): %v", err)
+	}
+	if n != 4 {
+		t.Errorf("enqueued = %d, want 4 (the active listing)", n)
+	}
+}
+
+// TestBackfillThumbnails_idempotent verifies a repeat run relies on the queue's
+// dedup so no redundant jobs pile up: the second call reports the same candidate
+// count, yet no new jobs are created.
+func TestBackfillThumbnails_idempotent(t *testing.T) {
+	t.Parallel()
+	enq := newFakeEnqueuer()
+	svc := newBackfillService(&fakeLister{missing: []string{"a", "b"}}, enq)
+
+	first, err := svc.BackfillThumbnails(context.Background(), false)
+	if err != nil {
+		t.Fatalf("BackfillThumbnails #1: %v", err)
+	}
+	second, err := svc.BackfillThumbnails(context.Background(), false)
+	if err != nil {
+		t.Fatalf("BackfillThumbnails #2: %v", err)
+	}
+	if first != 2 || second != 2 {
+		t.Errorf("enqueued = (%d, %d), want (2, 2)", first, second)
+	}
+	if enq.created != 2 {
+		t.Errorf("jobs created across both runs = %d, want 2 (deduped)", enq.created)
+	}
+	if enq.calls != 4 {
+		t.Errorf("enqueue calls = %d, want 4 (two per run)", enq.calls)
+	}
+}
+
+// TestBackfillThumbnails_listError propagates a listing failure.
+func TestBackfillThumbnails_listError(t *testing.T) {
+	t.Parallel()
+	svc := newBackfillService(&fakeLister{missingErr: errors.New("db down")}, newFakeEnqueuer())
+	if _, err := svc.BackfillThumbnails(context.Background(), false); err == nil {
+		t.Error("BackfillThumbnails should propagate a listing error")
+	}
+}
+
+// TestBackfillThumbnails_enqueueError returns the count enqueued so far and the
+// error when scheduling a job fails.
+func TestBackfillThumbnails_enqueueError(t *testing.T) {
+	t.Parallel()
+	svc := newBackfillService(&fakeLister{missing: []string{"a"}}, &fakeEnqueuer{err: errors.New("queue full")})
+	if _, err := svc.BackfillThumbnails(context.Background(), false); err == nil {
+		t.Error("BackfillThumbnails should propagate an enqueue error")
+	}
+}
+
+// TestBackfillThumbnails_unavailable verifies a Service built without the backfill
+// collaborators reports ErrBackfillUnavailable rather than panicking.
+func TestBackfillThumbnails_unavailable(t *testing.T) {
+	t.Parallel()
+	svc := newService(&fakePhotos{}, &fakeThumbs{}, &fakeDecoder{})
+	if _, err := svc.BackfillThumbnails(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
+		t.Errorf("err = %v, want ErrBackfillUnavailable", err)
+	}
+}

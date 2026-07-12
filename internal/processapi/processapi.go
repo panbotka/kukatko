@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -51,6 +52,19 @@ type PlacesBackfiller interface {
 	BackfillPlaces(ctx context.Context) (int, error)
 }
 
+// ThumbnailBackfiller enqueues a thumbnail job for every photo missing a
+// generated thumbnail. It is satisfied by thumbjob.Service. When all is true it
+// schedules every non-archived photo instead (a forced full re-run). Thumbnail
+// jobs run locally, so the backfill works regardless of the embeddings box being
+// offline. A nil ThumbnailBackfiller disables the /process/thumbnails endpoint
+// (it answers 503).
+type ThumbnailBackfiller interface {
+	// BackfillThumbnails enqueues a thumbnail job for every photo missing a
+	// thumbnail (or, when all is true, for every non-archived photo) and returns
+	// how many were scheduled.
+	BackfillThumbnails(ctx context.Context, all bool) (int, error)
+}
+
 // API exposes the processing endpoints over HTTP. The admin guard is supplied by
 // the caller (the auth subsystem) so this package depends on auth's behaviour,
 // not its wiring.
@@ -59,6 +73,7 @@ type API struct {
 	faceBackfiller   FaceBackfiller
 	reclusterer      Reclusterer
 	placesBackfiller PlacesBackfiller
+	thumbBackfiller  ThumbnailBackfiller
 	requireAdmin     func(http.Handler) http.Handler
 }
 
@@ -74,6 +89,8 @@ type Config struct {
 	Reclusterer Reclusterer
 	// PlacesBackfiller runs the reverse-geocode (place) backfill.
 	PlacesBackfiller PlacesBackfiller
+	// ThumbnailBackfiller runs the missing-thumbnail backfill.
+	ThumbnailBackfiller ThumbnailBackfiller
 	// RequireAdmin guards every endpoint for administrators only.
 	RequireAdmin func(http.Handler) http.Handler
 }
@@ -85,6 +102,7 @@ func NewAPI(cfg Config) *API {
 		faceBackfiller:   cfg.FaceBackfiller,
 		reclusterer:      cfg.Reclusterer,
 		placesBackfiller: cfg.PlacesBackfiller,
+		thumbBackfiller:  cfg.ThumbnailBackfiller,
 		requireAdmin:     cfg.RequireAdmin,
 	}
 }
@@ -96,12 +114,14 @@ func NewAPI(cfg Config) *API {
 //	POST /process/faces       RequireAdmin  backfill missing face detections
 //	POST /process/clusters    RequireAdmin  rebuild face clusters from unassigned faces
 //	POST /process/places      RequireAdmin  backfill missing reverse-geocoded places
+//	POST /process/thumbnails  RequireAdmin  backfill missing thumbnails (?all=true forces a full re-run)
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/process", func(r chi.Router) {
 		r.With(a.requireAdmin).Post("/embeddings", a.handleBackfillEmbeddings)
 		r.With(a.requireAdmin).Post("/faces", a.handleBackfillFaces)
 		r.With(a.requireAdmin).Post("/clusters", a.handleRecluster)
 		r.With(a.requireAdmin).Post("/places", a.handleBackfillPlaces)
+		r.With(a.requireAdmin).Post("/thumbnails", a.handleBackfillThumbnails)
 	})
 }
 
@@ -169,6 +189,35 @@ func (a *API) handleBackfillPlaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
+}
+
+// handleBackfillThumbnails enqueues thumbnail jobs for all photos missing a
+// generated thumbnail and reports how many were scheduled. With ?all=true it
+// schedules every non-archived photo (a forced full re-run). It answers 503 when
+// no thumbnail backfiller is wired.
+func (a *API) handleBackfillThumbnails(w http.ResponseWriter, r *http.Request) {
+	if a.thumbBackfiller == nil {
+		writeError(w, http.StatusServiceUnavailable, "thumbnail backfill not available")
+		return
+	}
+	enqueued, err := a.thumbBackfiller.BackfillThumbnails(r.Context(), queryFlag(r, "all"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "backfilling thumbnails failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
+}
+
+// queryFlag reports whether the request's query parameter name is set to a truthy
+// value ("true", "1", "yes", "on"; case-insensitive). A malformed or absent value
+// reads as false, so the flag is opt-in.
+func queryFlag(r *http.Request, name string) bool {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get(name))) {
+	case "true", "1", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // errorBody is the JSON body returned for error responses.
