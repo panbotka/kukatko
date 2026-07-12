@@ -55,8 +55,9 @@ func TestIsSupportedFormat(t *testing.T) {
 	}
 }
 
-// TestDetectFormat exercises extension/magic agreement, magic overriding a
-// wrong extension, and the RAW extension-wins rule.
+// TestDetectFormat exercises extension/magic agreement, magic overriding a wrong
+// extension (including a JPEG misnamed .dng), and RAW detection falling through to
+// the extension when the magic bytes match nothing recognised.
 func TestDetectFormat(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -70,7 +71,9 @@ func TestDetectFormat(t *testing.T) {
 		{"webp by ext and magic", "a.webp", webpMagic, FormatWebP},
 		{"heic by ext and magic", "a.heic", heicMagic, FormatHEIC},
 		{"raw by ext, tiff magic", "a.cr2", tiffMagic, FormatRAW},
+		{"real dng, tiff magic", "a.dng", tiffMagic, FormatRAW},
 		{"raw by ext, unknown magic", "a.nef", []byte{0x01, 0x02, 0x03, 0x04}, FormatRAW},
+		{"jpeg misnamed dng, magic wins", "a.dng", jpegMagic, FormatJPEG},
 		{"video by ext (mp4)", "a.mp4", []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p'}, FormatVideo},
 		{"video by ext (mkv)", "a.mkv", []byte{0x1a, 0x45, 0xdf, 0xa3}, FormatVideo},
 		{"magic overrides wrong ext", "a.png", jpegMagic, FormatJPEG},

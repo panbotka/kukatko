@@ -95,11 +95,15 @@ func IsSupportedFormat(ext string) bool {
 
 // DetectFormat returns one of "jpeg", "png", "webp", "heic", "raw", "video", or
 // "unknown" for the file at path. Video is decided on extension alone (the many
-// container brands have no single magic to match). The extension is otherwise
-// consulted first and then verified by magic bytes. When extension and magic
-// disagree, the magic-byte result wins for JPEG/PNG/WebP/HEIC. RAW formats are
-// accepted on extension alone — every vendor's RAW container has a different
-// header, so there is no universal "this is a RAW" magic to match against.
+// container brands have no single magic to match). Otherwise the magic bytes are
+// authoritative whenever they recognise a directly decodable format: a file whose
+// content is JPEG/PNG/WebP/HEIC is treated as such even when the extension says
+// otherwise — e.g. a plain JPEG misnamed .dng, which must not be sent down the
+// RAW embedded-preview path (it has no preview to extract). Only when the magic
+// bytes match nothing we recognise does the extension decide, and that is how RAW
+// is detected at all: every vendor's RAW container has a different header and
+// classifyMagic deliberately matches none of them, so a real RAW always reads as
+// unknown magic and falls through to its extension.
 func DetectFormat(path string) string {
 	if video.IsVideoPath(path) {
 		return FormatVideo
@@ -107,19 +111,16 @@ func DetectFormat(path string) string {
 	extFmt := formatByExt(path)
 	magic := magicFormat(path)
 	if magic == FormatUnknown {
-		// Magic bytes told us nothing; trust the extension. A genuinely invalid
-		// file produces a converter/decoder error later.
+		// Magic bytes told us nothing — a RAW container, or a genuinely invalid
+		// file. Trust the extension; an invalid file produces a converter or
+		// decoder error later.
 		return extFmt
-	}
-	if extFmt == FormatRAW {
-		// RAW extensions override magic because most RAWs are TIFF-based and
-		// magicFormat could never spot the vendor brand from the leading bytes.
-		return FormatRAW
 	}
 	if magic == extFmt {
 		return extFmt
 	}
-	// Extension and magic disagree; the magic bytes are authoritative.
+	// Extension and magic disagree and the magic bytes recognise a real format;
+	// they win, so a misnamed file is decoded by its true content.
 	return magic
 }
 

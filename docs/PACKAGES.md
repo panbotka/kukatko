@@ -255,7 +255,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   **RAW** (cr2/cr3/nef/arw/dng/raf/orf/rw2/pef/srw) vytáhne embedded preview přes
   `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/`-ThumbnailImage`) místo demosaicu,
   **video** (`FormatVideo`) deleguje na `video.ExtractPoster` (poster frame přes `ffmpeg`) —
-  thumbnailer i pHash zpracují poster jako fotku; `DetectFormat`/`IsSupportedFormat`; sentinely
+  thumbnailer i pHash zpracují poster jako fotku; `DetectFormat` dá přednost **magic bytům**,
+  kdykoli poznají přímo dekódovatelný formát (JPEG/PNG/WebP/HEIC) — takže JPEG přejmenovaný na
+  `.dng` se dekóduje podle obsahu, **ne** se pošle do RAW větve (kde by neměl embedded preview);
+  RAW se zvolí jen když magic nic nepozná (reálné RAW kontejnery mají různé hlavičky) → padá na
+  příponu; `IsSupportedFormat`; sentinely
   `ErrConverterMissing`/`ErrUnsupportedFormat`/`ErrNoEmbeddedPreview`; chybějící nástroj = jasná
   chyba), `internal/video/`
   (video bez CGO, **shell-out** na FFmpeg suite: `Probe(ctx,path) (Metadata,error)` přes
