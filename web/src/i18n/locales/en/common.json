@@ -40,7 +40,6 @@
     "users": "Users",
     "audit": "Audit",
     "titles": {
-      "home": "Go to the home page",
       "library": "Show the photo library",
       "albums": "Show the albums",
       "labels": "Show the labels",

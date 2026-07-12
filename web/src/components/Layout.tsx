@@ -232,14 +232,11 @@ export function Layout() {
         className="kukatko-navbar"
       >
         <Container>
-          <Navbar.Brand as={Link} to="/" title={t('nav.titles.home')}>
-            {t('app.name')}
-          </Navbar.Brand>
           <Navbar.Toggle aria-controls="main-navbar" />
           <Navbar.Collapse id="main-navbar">
             <Nav className="me-auto">
-              {/* Library (the homepage, also reachable via the brand link),
-                  Albums and Labels are the everyday entry points: never hidden. */}
+              {/* Library (the homepage), Albums and Labels are the everyday
+                  entry points: never hidden. */}
               {PRIMARY_ITEMS.map(renderLink)}
               {/* The remaining browse destinations, one level down. */}
               {renderGroup(BROWSE_GROUP)}

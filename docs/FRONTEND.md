@@ -7,8 +7,8 @@ zapiš sem.
 <!-- BODY BEGIN -->
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
   (`Layout` = navbar shell s user-menu/logout + role-gated nav, **vyvážená kolem toho, jak se
-  knihovna reálně prochází — po albu, po štítku, po roce**: **Knihovna** `/` (= úvodní stránka,
-  dostupná i přes brand link; `NavLink` má `end`, jinak by se rozsvítila na každé routě),
+  knihovna reálně prochází — po albu, po štítku, po roce**: **Knihovna** `/` (= úvodní stránka;
+  `NavLink` má `end`, jinak by se rozsvítila na každé routě),
   **Alba** `/albums` a **Štítky** `/labels` jsou vždy viditelné top-level položky
   (registr `PRIMARY_ITEMS`); zbylé browse cíle sdružuje dropdown **Procházet** (`nav.browse`,
   `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`, **Místa** `/places`, **Mapa**
