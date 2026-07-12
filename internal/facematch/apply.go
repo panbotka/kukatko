@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 )
 
@@ -14,26 +15,29 @@ import (
 // face marker and assign a subject), assign_person (assign a subject to an existing
 // marker) or unassign_person (clear a marker's subject). It keeps the faces cache and
 // the marker's reviewed flag consistent with the assignment, and auto-creates a
-// subject by name (find-or-create by slug) when one is not given by uid. An unknown
-// action returns ErrInvalidAction; missing required fields return the matching
-// ErrMissing* sentinel; a missing marker or subject is surfaced (wrapped) for the
-// HTTP layer to map to 404.
-func (s *Service) Apply(ctx context.Context, req AssignRequest) (AssignResult, error) {
+// subject by name (find-or-create by slug) when one is not given by uid. Each
+// transition records one audit entry — stamped with meta (the acting user and
+// request, empty for a system caller) — in the same transaction as the assignment
+// change. An unknown action returns ErrInvalidAction; missing required fields return
+// the matching ErrMissing* sentinel; a missing marker or subject is surfaced
+// (wrapped) for the HTTP layer to map to 404.
+func (s *Service) Apply(ctx context.Context, req AssignRequest, meta audit.Meta) (AssignResult, error) {
 	switch req.Action {
 	case ActionCreateMarker:
-		return s.applyCreateMarker(ctx, req)
+		return s.applyCreateMarker(ctx, req, meta)
 	case ActionAssignPerson:
-		return s.applyAssignPerson(ctx, req)
+		return s.applyAssignPerson(ctx, req, meta)
 	case ActionUnassignPerson:
-		return s.applyUnassign(ctx, req)
+		return s.applyUnassign(ctx, req, meta)
 	default:
 		return AssignResult{}, fmt.Errorf("%w: %q", ErrInvalidAction, req.Action)
 	}
 }
 
 // applyCreateMarker creates a face marker for the request's box, assigns it the
-// resolved subject, and links the named face to it.
-func (s *Service) applyCreateMarker(ctx context.Context, req AssignRequest) (AssignResult, error) {
+// resolved subject, and links the named face to it. The new marker is the audit
+// entry's target (its UID is stamped by the store).
+func (s *Service) applyCreateMarker(ctx context.Context, req AssignRequest, meta audit.Meta) (AssignResult, error) {
 	if req.BBox == nil {
 		return AssignResult{}, ErrMissingBBox
 	}
@@ -42,13 +46,14 @@ func (s *Service) applyCreateMarker(ctx context.Context, req AssignRequest) (Ass
 		return AssignResult{}, err
 	}
 	box := clampBox(*req.BBox)
-	marker, err := s.people.CreateMarker(ctx, people.Marker{
+	entry := meta.Entry(audit.ActionFaceAssign, "markers", "", assignDetails(req, subject))
+	marker, err := s.people.CreateMarkerAudited(ctx, people.Marker{
 		PhotoUID:   req.PhotoUID,
 		SubjectUID: &subject.UID,
 		Type:       people.MarkerFace,
 		X:          box[0], Y: box[1], W: box[2], H: box[3],
 		Reviewed: true,
-	})
+	}, entry)
 	if err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: creating marker: %w", err)
 	}
@@ -58,7 +63,7 @@ func (s *Service) applyCreateMarker(ctx context.Context, req AssignRequest) (Ass
 
 // applyAssignPerson assigns the resolved subject to an existing marker, marks the
 // marker reviewed, and links the named face to it.
-func (s *Service) applyAssignPerson(ctx context.Context, req AssignRequest) (AssignResult, error) {
+func (s *Service) applyAssignPerson(ctx context.Context, req AssignRequest, meta audit.Meta) (AssignResult, error) {
 	if req.MarkerUID == "" {
 		return AssignResult{}, ErrMissingMarker
 	}
@@ -66,7 +71,8 @@ func (s *Service) applyAssignPerson(ctx context.Context, req AssignRequest) (Ass
 	if err != nil {
 		return AssignResult{}, err
 	}
-	if _, err := s.people.AssignSubject(ctx, req.MarkerUID, subject.UID); err != nil {
+	entry := meta.Entry(audit.ActionFaceAssign, "markers", req.MarkerUID, assignDetails(req, subject))
+	if _, err := s.people.AssignSubjectAudited(ctx, req.MarkerUID, subject.UID, entry); err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: assigning subject: %w", err)
 	}
 	marker, err := s.people.SetMarkerReviewed(ctx, req.MarkerUID, true)
@@ -79,12 +85,13 @@ func (s *Service) applyAssignPerson(ctx context.Context, req AssignRequest) (Ass
 
 // applyUnassign clears a marker's subject and its reviewed flag. The face keeps its
 // marker_uid link (the region is still valid), only the subject cache is cleared,
-// which UnassignSubject does for every face tied to the marker.
-func (s *Service) applyUnassign(ctx context.Context, req AssignRequest) (AssignResult, error) {
+// which UnassignSubjectAudited does for every face tied to the marker.
+func (s *Service) applyUnassign(ctx context.Context, req AssignRequest, meta audit.Meta) (AssignResult, error) {
 	if req.MarkerUID == "" {
 		return AssignResult{}, ErrMissingMarker
 	}
-	if _, err := s.people.UnassignSubject(ctx, req.MarkerUID); err != nil {
+	entry := meta.Entry(audit.ActionFaceUnassign, "markers", req.MarkerUID, unassignDetails(req))
+	if _, err := s.people.UnassignSubjectAudited(ctx, req.MarkerUID, entry); err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: unassigning subject: %w", err)
 	}
 	marker, err := s.people.SetMarkerReviewed(ctx, req.MarkerUID, false)
@@ -92,6 +99,39 @@ func (s *Service) applyUnassign(ctx context.Context, req AssignRequest) (AssignR
 		return AssignResult{}, fmt.Errorf("facematch: marking unreviewed: %w", err)
 	}
 	return AssignResult{Action: ActionUnassignPerson, Marker: marker}, nil
+}
+
+// assignDetails builds the audit details for a face assignment (create_marker or
+// assign_person): the effective action, the photo, the resolved subject and, when
+// present, the linked face index. The affected marker is the entry's target.
+func assignDetails(req AssignRequest, subject people.Subject) map[string]any {
+	details := map[string]any{
+		"action":       req.Action,
+		"photo_uid":    req.PhotoUID,
+		"subject_uid":  subject.UID,
+		"subject_name": subject.Name,
+	}
+	if req.MarkerUID != "" {
+		details["marker_uid"] = req.MarkerUID
+	}
+	if req.FaceIndex != nil {
+		details["face_index"] = *req.FaceIndex
+	}
+	return details
+}
+
+// unassignDetails builds the audit details for clearing a face's subject: the
+// photo, the affected marker and, when present, the linked face index.
+func unassignDetails(req AssignRequest) map[string]any {
+	details := map[string]any{
+		"action":     req.Action,
+		"photo_uid":  req.PhotoUID,
+		"marker_uid": req.MarkerUID,
+	}
+	if req.FaceIndex != nil {
+		details["face_index"] = *req.FaceIndex
+	}
+	return details
 }
 
 // resolveSubject returns the subject named by the request: the one identified by

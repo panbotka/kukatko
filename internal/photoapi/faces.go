@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -21,8 +23,9 @@ type FaceService interface {
 	// unnamed faces, ranked subject suggestions.
 	PhotoFaces(ctx context.Context, photoUID string) (facematch.FacesResponse, error)
 	// Apply runs one assignment-state transition (create_marker / assign_person /
-	// unassign_person).
-	Apply(ctx context.Context, req facematch.AssignRequest) (facematch.AssignResult, error)
+	// unassign_person), recording an audit entry stamped with meta in the same
+	// transaction as the change.
+	Apply(ctx context.Context, req facematch.AssignRequest, meta audit.Meta) (facematch.AssignResult, error)
 }
 
 // handleFaces returns the faces detected on a photo together with their marker
@@ -44,11 +47,17 @@ func (a *API) handleFaces(w http.ResponseWriter, r *http.Request) {
 
 // handleFaceAssign applies a face-assignment transition (create marker, assign or
 // unassign a subject) named in the JSON body, with the photo uid taken from the
-// path. Validation problems answer 400, a missing marker or subject 404, and a
-// missing backend 503.
+// path. The acting user (from the auth context) and request are stamped onto the
+// audit entry the face service writes in the mutation's transaction. Validation
+// problems answer 400, a missing marker or subject 404, and a missing backend 503.
 func (a *API) handleFaceAssign(w http.ResponseWriter, r *http.Request) {
 	if a.faces == nil {
 		writeError(w, http.StatusServiceUnavailable, "face matching not available")
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 	var req facematch.AssignRequest
@@ -58,7 +67,7 @@ func (a *API) handleFaceAssign(w http.ResponseWriter, r *http.Request) {
 	}
 	req.PhotoUID = chi.URLParam(r, "uid")
 
-	result, err := a.faces.Apply(r.Context(), req)
+	result, err := a.faces.Apply(r.Context(), req, audit.FromRequest(r, user.UID))
 	if err != nil {
 		writeFaceError(w, err, "applying face assignment failed")
 		return

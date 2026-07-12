@@ -17,6 +17,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -33,19 +35,24 @@ const maxPageLimit = 500
 
 // SubjectStore is the subset of people.Store the API needs. It is an interface so
 // peopleapi depends on the behaviour rather than the concrete store, which keeps
-// the handlers unit-testable with fakes.
+// the handlers unit-testable with fakes. Every mutation takes an audit.Entry the
+// store writes in the same transaction as the change.
 type SubjectStore interface {
 	// ListSubjects returns every subject with its non-invalid marker count.
 	ListSubjects(ctx context.Context) ([]people.SubjectCount, error)
 	// GetSubjectByUID returns one subject or people.ErrSubjectNotFound.
 	GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error)
-	// CreateSubject inserts a subject and returns it with its generated UID/slug.
-	CreateSubject(ctx context.Context, subj people.Subject) (people.Subject, error)
-	// UpdateSubject rewrites a subject's editable fields, or returns
+	// CreateSubjectAudited inserts a subject (auditing the change) and returns it
+	// with its generated UID/slug.
+	CreateSubjectAudited(ctx context.Context, subj people.Subject, entry audit.Entry) (people.Subject, error)
+	// UpdateSubjectAudited rewrites a subject's editable fields (auditing the
+	// change), or returns people.ErrSubjectNotFound.
+	UpdateSubjectAudited(
+		ctx context.Context, uid string, upd people.SubjectUpdate, entry audit.Entry,
+	) (people.Subject, error)
+	// DeleteSubjectAudited removes a subject (auditing the change), or returns
 	// people.ErrSubjectNotFound.
-	UpdateSubject(ctx context.Context, uid string, upd people.SubjectUpdate) (people.Subject, error)
-	// DeleteSubject removes a subject, or returns people.ErrSubjectNotFound.
-	DeleteSubject(ctx context.Context, uid string) error
+	DeleteSubjectAudited(ctx context.Context, uid string, entry audit.Entry) error
 	// ListPhotoUIDsBySubject returns the subject's photo UIDs, newest first.
 	ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error)
 }
@@ -114,6 +121,22 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireWrite).Patch("/subjects/{uid}", a.handleUpdate)
 	r.With(a.requireWrite).Delete("/subjects/{uid}", a.handleDelete)
 	r.With(a.requireAuth).Get("/subjects/{uid}/photos", a.handlePhotos)
+}
+
+// auditEntry builds an audit entry for a subject mutation, stamping the acting
+// user (resolved from the request's auth context) plus the request's client IP and
+// User-Agent onto the given action, target and details. The store writes the
+// returned entry inside the mutation's transaction.
+//
+// The mutating routes are guarded by RequireWrite, so a principal is present in
+// production; an absent principal yields an empty actor UID (stored as NULL) rather
+// than failing, which keeps the handlers exercisable behind pass-through guards in
+// unit tests.
+func (a *API) auditEntry(
+	r *http.Request, action, targetUID string, details map[string]any,
+) audit.Entry {
+	user, _ := auth.UserFromContext(r.Context())
+	return audit.FromRequest(r, user.UID).Entry(action, "subjects", targetUID, details)
 }
 
 // errorBody is the JSON body returned for error responses.

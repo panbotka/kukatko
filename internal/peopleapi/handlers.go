@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -58,7 +59,9 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	subj, err := a.subjects.CreateSubject(r.Context(), in.toSubject())
+	toCreate := in.toSubject()
+	entry := a.auditEntry(r, audit.ActionSubjectCreate, "", subjectDetails(toCreate.Name, toCreate.Type))
+	subj, err := a.subjects.CreateSubjectAudited(r.Context(), toCreate, entry)
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
@@ -87,7 +90,10 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	subj, err := a.subjects.UpdateSubject(r.Context(), chi.URLParam(r, "uid"), in.toUpdate())
+	uid := chi.URLParam(r, "uid")
+	upd := in.toUpdate()
+	entry := a.auditEntry(r, audit.ActionSubjectUpdate, uid, subjectDetails(upd.Name, upd.Type))
+	subj, err := a.subjects.UpdateSubjectAudited(r.Context(), uid, upd, entry)
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
@@ -97,14 +103,31 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDelete removes the subject identified by the path UID, answering 204 on
-// success or 404 if no such subject exists.
+// success or 404 if no such subject exists. The subject is loaded first so the
+// audit entry records the removed subject's name and type; the load also gives a
+// clean 404 before the audited delete runs.
 func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
-	if err := a.subjects.DeleteSubject(r.Context(), chi.URLParam(r, "uid")); err != nil {
+	uid := chi.URLParam(r, "uid")
+	existing, err := a.subjects.GetSubjectByUID(r.Context(), uid)
+	if err != nil {
+		status, msg := subjectStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	entry := a.auditEntry(r, audit.ActionSubjectDelete, uid, subjectDetails(existing.Name, existing.Type))
+	if err := a.subjects.DeleteSubjectAudited(r.Context(), uid, entry); err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// subjectDetails builds the audit details for a subject mutation, recording the
+// subject's name and type so the trail identifies what was created, edited or
+// removed without a second lookup.
+func subjectDetails(name string, subjectType people.SubjectType) map[string]any {
+	return map[string]any{"name": name, "type": string(subjectType)}
 }
 
 // handlePhotos returns the requested page of the subject's photos, newest first,

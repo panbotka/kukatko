@@ -15,7 +15,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/people"
@@ -41,6 +43,7 @@ type env struct {
 	photos  *photos.Store
 	vectors *vectors.Store
 	people  *people.Store
+	db      *database.DB
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database.
@@ -80,15 +83,28 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{server: server, authSvc: authSvc, photos: photoStore, vectors: vectorStore, people: peopleStore}
+	return &env{
+		server: server, authSvc: authSvc, photos: photoStore,
+		vectors: vectorStore, people: peopleStore, db: db,
+	}
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
 func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
 	t.Helper()
-	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
+	client, _ := e.loginUID(t, username, role)
+	return client
+}
+
+// loginUID creates a user with the given role and returns a cookie-bearing client
+// together with the created user's UID, so a test can assert the actor recorded on
+// an audit row is exactly this user.
+func (e *env) loginUID(t *testing.T, username string, role auth.Role) (*http.Client, string) {
+	t.Helper()
+	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Password: testPassword, Role: role,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)
 	}
 	jar, err := cookiejar.New(nil)
@@ -102,7 +118,7 @@ func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want 200", resp.StatusCode)
 	}
-	return client
+	return client, user.UID
 }
 
 // mustDo issues an HTTP request with an optional JSON body and returns the response.
@@ -383,6 +399,52 @@ func TestAssign_validationAndAuth(t *testing.T) {
 		t.Errorf("viewer assign status = %d, want 403", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
+}
+
+// TestFaceAssignAudited checks the face-assignment endpoint records an audit entry
+// attributed to the acting user, in the same transaction as the change: creating a
+// marker while assigning records face.assign targeting the new marker, and clearing
+// it records face.unassign — both by the logged-in editor.
+func TestFaceAssignAudited(t *testing.T) {
+	env := newEnv(t)
+	ctx := t.Context()
+	editor, actor := env.loginUID(t, "audeditor", auth.RoleEditor)
+	uid := env.makePhoto(t, "faceauditphoto")
+	auditStore := audit.NewStore(env.db.Pool())
+
+	box := [4]float64{0.1, 0.1, 0.2, 0.2}
+	res := decodeAssign(t, env.assign(t, editor, uid, facematch.AssignRequest{
+		Action: facematch.ActionCreateMarker, BBox: &box, SubjectName: "Audited Person",
+	}))
+	markerUID := res.Marker.UID
+
+	assign, err := auditStore.List(ctx, audit.Filter{Action: audit.ActionFaceAssign, Limit: 10})
+	if err != nil {
+		t.Fatalf("list face.assign: %v", err)
+	}
+	if len(assign) != 1 {
+		t.Fatalf("face.assign rows = %d, want 1 (%+v)", len(assign), assign)
+	}
+	if assign[0].ActorUID == nil || *assign[0].ActorUID != actor {
+		t.Errorf("face.assign actor = %v, want %q", assign[0].ActorUID, actor)
+	}
+	if assign[0].TargetUID == nil || *assign[0].TargetUID != markerUID {
+		t.Errorf("face.assign target = %v, want %q", assign[0].TargetUID, markerUID)
+	}
+
+	_ = decodeAssign(t, env.assign(t, editor, uid, facematch.AssignRequest{
+		Action: facematch.ActionUnassignPerson, MarkerUID: markerUID,
+	}))
+	unassign, err := auditStore.List(ctx, audit.Filter{Action: audit.ActionFaceUnassign, Limit: 10})
+	if err != nil {
+		t.Fatalf("list face.unassign: %v", err)
+	}
+	if len(unassign) != 1 || unassign[0].ActorUID == nil || *unassign[0].ActorUID != actor {
+		t.Fatalf("face.unassign rows/actor = %+v, want 1 by %q", unassign, actor)
+	}
+	if unassign[0].TargetUID == nil || *unassign[0].TargetUID != markerUID {
+		t.Errorf("face.unassign target = %v, want %q", unassign[0].TargetUID, markerUID)
+	}
 }
 
 // decodeAssign decodes a 200 assignment response, failing on any other status.

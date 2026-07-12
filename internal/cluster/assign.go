@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -55,6 +56,9 @@ func (s *Service) assignFaces(ctx context.Context, req AssignRequest, faces []Fa
 	for i := range faces {
 		faceIndex := faces[i].FaceIndex
 		bbox := faces[i].BBox
+		// Cluster auto-assignment is a batch state transition rather than a single
+		// user action; it carries an empty audit.Meta, so each resulting face.assign
+		// row is attributed to no actor (stored NULL) but still records the change.
 		res, err := s.assigner.Apply(ctx, facematch.AssignRequest{
 			PhotoUID:    faces[i].PhotoUID,
 			Action:      facematch.ActionCreateMarker,
@@ -62,7 +66,7 @@ func (s *Service) assignFaces(ctx context.Context, req AssignRequest, faces []Fa
 			BBox:        &bbox,
 			SubjectUID:  subjectUID,
 			SubjectName: subjectName,
-		})
+		}, audit.Meta{})
 		if err != nil {
 			return AssignResult{}, fmt.Errorf(
 				"cluster: assigning face %d of %s: %w", faceIndex, faces[i].PhotoUID, err)

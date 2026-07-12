@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -61,25 +62,35 @@ type fakePeople struct {
 	reviewed       *bool
 	unassigned     string
 	nextUID        int
+	lastEntry      audit.Entry
 }
 
 func (f *fakePeople) ListMarkersByPhoto(_ context.Context, _ string) ([]people.Marker, error) {
 	return f.markers, nil
 }
 
-func (f *fakePeople) CreateMarker(_ context.Context, m people.Marker) (people.Marker, error) {
+func (f *fakePeople) CreateMarkerAudited(
+	_ context.Context, m people.Marker, entry audit.Entry,
+) (people.Marker, error) {
 	m.UID = "mk_new"
 	f.createdMarker = &m
+	f.lastEntry = entry
 	return m, nil
 }
 
-func (f *fakePeople) AssignSubject(_ context.Context, markerUID, subjectUID string) (people.Marker, error) {
+func (f *fakePeople) AssignSubjectAudited(
+	_ context.Context, markerUID, subjectUID string, entry audit.Entry,
+) (people.Marker, error) {
 	f.assigned = [2]string{markerUID, subjectUID}
+	f.lastEntry = entry
 	return people.Marker{UID: markerUID, SubjectUID: &subjectUID}, nil
 }
 
-func (f *fakePeople) UnassignSubject(_ context.Context, markerUID string) (people.Marker, error) {
+func (f *fakePeople) UnassignSubjectAudited(
+	_ context.Context, markerUID string, entry audit.Entry,
+) (people.Marker, error) {
 	f.unassigned = markerUID
+	f.lastEntry = entry
 	return people.Marker{UID: markerUID}, nil
 }
 
@@ -192,12 +203,15 @@ func TestApply_createMarkerFindOrCreate(t *testing.T) {
 	res, err := svc.Apply(ctx, AssignRequest{
 		PhotoUID: "p1", Action: ActionCreateMarker, SubjectName: "New Person",
 		FaceIndex: &idx, BBox: &box,
-	})
+	}, audit.Meta{ActorUID: "usr_actor"})
 	if err != nil {
 		t.Fatalf("Apply create_marker: %v", err)
 	}
 	if len(pe.created) != 1 || pe.created[0].Name != "New Person" {
 		t.Fatalf("subject not created: %+v", pe.created)
+	}
+	if pe.lastEntry.Action != audit.ActionFaceAssign || pe.lastEntry.ActorUID != "usr_actor" {
+		t.Errorf("create_marker audit entry = %+v, want face.assign by usr_actor", pe.lastEntry)
 	}
 	if pe.createdMarker == nil || !pe.createdMarker.Reviewed {
 		t.Errorf("marker not created reviewed: %+v", pe.createdMarker)
@@ -225,9 +239,12 @@ func TestApply_findExistingSubjectBySlug(t *testing.T) {
 
 	res, err := svc.Apply(ctx, AssignRequest{
 		PhotoUID: "p1", Action: ActionAssignPerson, MarkerUID: "mk1", SubjectName: "Anna",
-	})
+	}, audit.Meta{ActorUID: "usr_actor"})
 	if err != nil {
 		t.Fatalf("Apply assign_person: %v", err)
+	}
+	if pe.lastEntry.Action != audit.ActionFaceAssign || pe.lastEntry.TargetUID != "mk1" {
+		t.Errorf("assign_person audit entry = %+v, want face.assign targeting mk1", pe.lastEntry)
 	}
 	if len(pe.created) != 0 {
 		t.Errorf("created %d subjects, want 0 (reuse existing)", len(pe.created))
@@ -253,12 +270,15 @@ func TestApply_unassignClearsReviewed(t *testing.T) {
 
 	res, err := svc.Apply(ctx, AssignRequest{
 		PhotoUID: "p1", Action: ActionUnassignPerson, MarkerUID: "mk1",
-	})
+	}, audit.Meta{ActorUID: "usr_actor"})
 	if err != nil {
 		t.Fatalf("Apply unassign_person: %v", err)
 	}
 	if pe.unassigned != "mk1" {
 		t.Errorf("unassigned = %q, want mk1", pe.unassigned)
+	}
+	if pe.lastEntry.Action != audit.ActionFaceUnassign || pe.lastEntry.TargetUID != "mk1" {
+		t.Errorf("unassign audit entry = %+v, want face.unassign targeting mk1", pe.lastEntry)
 	}
 	if pe.reviewed == nil || *pe.reviewed {
 		t.Errorf("marker reviewed not cleared on unassign")
@@ -292,7 +312,7 @@ func TestApply_validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := svc.Apply(ctx, tt.req); !errors.Is(err, tt.wantErr) {
+			if _, err := svc.Apply(ctx, tt.req, audit.Meta{}); !errors.Is(err, tt.wantErr) {
 				t.Errorf("Apply(%+v) err = %v, want %v", tt.req, err, tt.wantErr)
 			}
 		})

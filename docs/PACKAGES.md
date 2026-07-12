@@ -495,7 +495,13 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `WHERE marker_uid = $1`)/`SetMarkerInvalid`/`SetMarkerReviewed`/`DeleteMarker` (vyčistí
   faces cache); sentinely `ErrSubjectNotFound`/`ErrMarkerNotFound`/`ErrSlugExhausted`/
   `ErrInvalidType`/`ErrInvalidBounds`; **faces cache se drží konzistentní** při každé změně
-  markeru/subjektu (mazání, rename, assign/unassign)), `internal/facematch/`
+  markeru/subjektu (mazání, rename, assign/unassign); **auditované varianty**
+  `CreateSubjectAudited`/`UpdateSubjectAudited`/`DeleteSubjectAudited` a
+  `CreateMarkerAudited`/`AssignSubjectAudited`/`UnassignSubjectAudited` (`internal/people/audit.go`)
+  přijmou `audit.Entry` a zapíšou ho **ve stejné transakci** jako změnu (`audit.Write(ctx,tx,entry)`),
+  takže audit řádek commitne/rollbackne atomicky s mutací (konvence `internal/photos`/`internal/organize`);
+  sdílené tx-jádro (`insertMarkerTx`/`assignSubjectTx`/`unassignSubjectTx`/`prepareSubjectInsert`) používají
+  obě varianty), `internal/facematch/`
   (propojení detekovaných obličejů s markery/subjekty + návrhy identit, vše za rozhraními
   `PhotoStore`/`FaceStore`/`PeopleStore` (unit-testovatelné s faky bez DB): `Service` =
   `New(Config{Photos,Faces,People,IoUThreshold,SuggestionLimit,SuggestionMaxDistance,MinFaceSize})`;
@@ -511,12 +517,16 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   přiřazené na fotce (jiné osoby) a obličeje pod `faces.min_face_size`, řadí dle průměrné
   vzdálenosti, `confidence = 1 − distance`, limit `faces.suggestion_limit`, primární práh
   `faces.suggestion_max_distance` s fallbackem na neomezenou vzdálenost když je návrhů málo;
-  **přiřazovací state machine** `Apply(ctx,AssignRequest)` (backing
+  **přiřazovací state machine** `Apply(ctx,AssignRequest,audit.Meta)` (backing
   `POST /photos/{uid}/faces/assign`, editor/admin): `create_marker` (vytvoří face marker + přiřadí
   subjekt + zalinkuje obličej), `assign_person` (přiřadí subjekt existujícímu markeru),
   `unassign_person` (odpojí subjekt), drží `faces` cache i `marker.reviewed` konzistentní
   (assign → reviewed, unassign → unreviewed), **auto-create subjektu dle jména** (find-or-create
-  přes `Slugify`+`GetSubjectBySlug`); sentinely `ErrInvalidAction`/`ErrMissingBBox`/
+  přes `Slugify`+`GetSubjectBySlug`); **audit**: každý přechod zapíše přes auditované `people`
+  metody 1 řádek ve stejné transakci jako změnu — `create_marker`/`assign_person` → `face.assign`,
+  `unassign_person` → `face.unassign` (target = marker, details akce/foto/subjekt/face_index);
+  `meta` je actor+request z `photoapi.handleFaceAssign`, prázdná pro systémový cluster caller
+  (actor NULL); sentinely `ErrInvalidAction`/`ErrMissingBBox`/
   `ErrMissingMarker`/`ErrMissingSubject`, chybějící foto/marker/subjekt → 404 v HTTP vrstvě
   (`photoapi.FaceService` interface + handlery v `internal/photoapi/faces.go`); tunables v
   `faces.*` configu), `internal/embedjob/`
@@ -609,8 +619,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   za `RequireWrite`; 503 bez backendu, 404 chybějící subjekt; mountuje se v `serve`
   (`buildOutlierAPI` v `cmd/kukatko/outliers.go`)), `internal/peopleapi/`
   (read/curace HTTP API nad subjekty (osoby/zvířata/jiné) — podklad People UI: rozhraní
-  `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubject`/
-  `UpdateSubject`/`DeleteSubject`/`ListPhotoUIDsBySubject`) a `PhotoStore` (`photos.Store.ListByUIDs`)
+  `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubjectAudited`/
+  `UpdateSubjectAudited`/`DeleteSubjectAudited`/`ListPhotoUIDsBySubject` — každá mutace bere `audit.Entry`
+  postavenou v `auditEntry` (`subject.create`/`update`/`delete`, actor z auth kontextu, details name/type;
+  `DELETE` napřed načte subjekt kvůli details a čistému 404)) a `PhotoStore` (`photos.Store.ListByUIDs`)
   → unit-testovatelné s faky bez DB; `NewAPI(Config{Subjects,Photos,RequireAuth,RequireWrite})`+
   `RegisterRoutes` mountuje **ploché** cesty (ne mounted subrouter, aby koexistovaly s
   `outlierapi` `GET /subjects/{uid}/outliers` bez chi Mount konfliktu): `GET /subjects`

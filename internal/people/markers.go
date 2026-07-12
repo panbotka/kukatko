@@ -71,9 +71,28 @@ func (s *Store) createMarkerWithSubject(ctx context.Context, m Marker) (Marker, 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	name, err := subjectName(ctx, tx, *m.SubjectUID)
+	created, err := insertMarkerTx(ctx, tx, m)
 	if err != nil {
 		return Marker{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Marker{}, fmt.Errorf("people: commit create marker: %w", err)
+	}
+	return created, nil
+}
+
+// insertMarkerTx inserts m within tx and, when it names a subject, refreshes the
+// denormalised faces cache for the new marker in the same transaction. It is the
+// shared core of the plain and audited marker-create paths, so both keep the
+// faces cache consistent identically. A missing subject returns ErrSubjectNotFound.
+func insertMarkerTx(ctx context.Context, tx pgx.Tx, m Marker) (Marker, error) {
+	var name string
+	if m.SubjectUID != nil {
+		resolved, err := subjectName(ctx, tx, *m.SubjectUID)
+		if err != nil {
+			return Marker{}, err
+		}
+		name = resolved
 	}
 	created, err := scanMarker(tx.QueryRow(ctx, insertMarkerSQL,
 		m.UID, m.PhotoUID, m.SubjectUID, m.Type, m.X, m.Y, m.W, m.H,
@@ -81,11 +100,10 @@ func (s *Store) createMarkerWithSubject(ctx context.Context, m Marker) (Marker, 
 	if err != nil {
 		return Marker{}, err
 	}
-	if err := assignFacesCache(ctx, tx, created.UID, *m.SubjectUID, name); err != nil {
-		return Marker{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Marker{}, fmt.Errorf("people: commit create marker: %w", err)
+	if m.SubjectUID != nil {
+		if err := assignFacesCache(ctx, tx, created.UID, *m.SubjectUID, name); err != nil {
+			return Marker{}, err
+		}
 	}
 	return created, nil
 }
@@ -146,6 +164,21 @@ func (s *Store) AssignSubject(ctx context.Context, markerUID, subjectUID string)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	updated, err := assignSubjectTx(ctx, tx, markerUID, subjectUID)
+	if err != nil {
+		return Marker{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Marker{}, fmt.Errorf("people: commit assign subject: %w", err)
+	}
+	return updated, nil
+}
+
+// assignSubjectTx points markerUID at subjectUID within tx and refreshes the
+// denormalised faces cache in the same transaction. It is the shared core of the
+// plain and audited assign paths. It returns ErrSubjectNotFound or ErrMarkerNotFound
+// when either side is missing.
+func assignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID, subjectUID string) (Marker, error) {
 	name, err := subjectName(ctx, tx, subjectUID)
 	if err != nil {
 		return Marker{}, err
@@ -159,9 +192,6 @@ func (s *Store) AssignSubject(ctx context.Context, markerUID, subjectUID string)
 	}
 	if err := assignFacesCache(ctx, tx, markerUID, subjectUID, name); err != nil {
 		return Marker{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Marker{}, fmt.Errorf("people: commit assign subject: %w", err)
 	}
 	return updated, nil
 }
@@ -180,6 +210,21 @@ func (s *Store) UnassignSubject(ctx context.Context, markerUID string) (Marker, 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	updated, err := unassignSubjectTx(ctx, tx, markerUID)
+	if err != nil {
+		return Marker{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Marker{}, fmt.Errorf("people: commit unassign subject: %w", err)
+	}
+	return updated, nil
+}
+
+// unassignSubjectTx clears markerUID's subject within tx and resets the cached
+// subject on any faces tied to it, in the same transaction. It is the shared core
+// of the plain and audited unassign paths. It returns ErrMarkerNotFound if no such
+// marker exists.
+func unassignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID string) (Marker, error) {
 	updated, err := scanMarker(tx.QueryRow(ctx, unassignMarkerSQL, markerUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -189,9 +234,6 @@ func (s *Store) UnassignSubject(ctx context.Context, markerUID string) (Marker, 
 	}
 	if err := clearFacesSubject(ctx, tx, markerUID); err != nil {
 		return Marker{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Marker{}, fmt.Errorf("people: commit unassign subject: %w", err)
 	}
 	return updated, nil
 }

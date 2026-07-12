@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -30,7 +31,9 @@ func (stubSearcher) FindSimilarFaceCandidates(
 type stubAssigner struct{}
 
 // Apply returns an empty result.
-func (stubAssigner) Apply(context.Context, facematch.AssignRequest) (facematch.AssignResult, error) {
+func (stubAssigner) Apply(
+	context.Context, facematch.AssignRequest, audit.Meta,
+) (facematch.AssignResult, error) {
 	return facematch.AssignResult{}, nil
 }
 

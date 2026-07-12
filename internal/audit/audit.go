@@ -81,8 +81,20 @@ const (
 	// ActionLabelDetach records detaching a label from a photo; the photo UID is
 	// recorded in the entry's details.
 	ActionLabelDetach = "label.detach"
-	// ActionFaceAssign records assigning/unassigning a face to a subject.
+	// ActionFaceAssign records assigning a face to a subject — either by pointing
+	// an existing marker at the subject or by creating a new face marker already
+	// naming it. The affected marker, subject and photo are listed in the details.
 	ActionFaceAssign = "face.assign"
+	// ActionFaceUnassign records clearing a marker's subject (unassigning a face);
+	// the affected marker and photo are listed in the details.
+	ActionFaceUnassign = "face.unassign"
+	// ActionSubjectCreate records creating a subject (person/pet/other).
+	ActionSubjectCreate = "subject.create"
+	// ActionSubjectUpdate records editing a subject's fields.
+	ActionSubjectUpdate = "subject.update"
+	// ActionSubjectDelete records deleting a subject; its name and type are listed
+	// in the details so the trail identifies what was removed.
+	ActionSubjectDelete = "subject.delete"
 	// ActionUserCreate records creating a user account.
 	ActionUserCreate = "user.create"
 	// ActionUserUpdate records editing a user account.

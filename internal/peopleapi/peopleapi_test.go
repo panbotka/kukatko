@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/peopleapi"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -32,6 +33,7 @@ type fakeSubjects struct {
 	lastUpdate people.SubjectUpdate
 	lastCreate people.Subject
 	deletedUID string
+	lastEntry  audit.Entry
 }
 
 // ListSubjects returns the canned subject list or error.
@@ -44,23 +46,31 @@ func (f *fakeSubjects) GetSubjectByUID(_ context.Context, _ string) (people.Subj
 	return f.subject, f.getErr
 }
 
-// CreateSubject records the input and returns the canned created subject or error.
-func (f *fakeSubjects) CreateSubject(_ context.Context, subj people.Subject) (people.Subject, error) {
+// CreateSubjectAudited records the input and audit entry and returns the canned
+// created subject or error.
+func (f *fakeSubjects) CreateSubjectAudited(
+	_ context.Context, subj people.Subject, entry audit.Entry,
+) (people.Subject, error) {
 	f.lastCreate = subj
+	f.lastEntry = entry
 	return f.created, f.createErr
 }
 
-// UpdateSubject records the update and returns the canned updated subject or error.
-func (f *fakeSubjects) UpdateSubject(
-	_ context.Context, _ string, upd people.SubjectUpdate,
+// UpdateSubjectAudited records the update and audit entry and returns the canned
+// updated subject or error.
+func (f *fakeSubjects) UpdateSubjectAudited(
+	_ context.Context, _ string, upd people.SubjectUpdate, entry audit.Entry,
 ) (people.Subject, error) {
 	f.lastUpdate = upd
+	f.lastEntry = entry
 	return f.updated, f.updateErr
 }
 
-// DeleteSubject records the deleted UID and returns the canned error.
-func (f *fakeSubjects) DeleteSubject(_ context.Context, uid string) error {
+// DeleteSubjectAudited records the deleted UID and audit entry and returns the
+// canned error.
+func (f *fakeSubjects) DeleteSubjectAudited(_ context.Context, uid string, entry audit.Entry) error {
 	f.deletedUID = uid
+	f.lastEntry = entry
 	return f.deleteErr
 }
 
@@ -155,6 +165,9 @@ func TestHandleCreate_ok(t *testing.T) {
 	if subjects.lastCreate.Name != "Bob" || subjects.lastCreate.Type != people.SubjectPerson {
 		t.Errorf("create input mismatch: %+v", subjects.lastCreate)
 	}
+	if subjects.lastEntry.Action != audit.ActionSubjectCreate || subjects.lastEntry.Details["name"] != "Bob" {
+		t.Errorf("create audit entry = %+v, want subject.create with name Bob", subjects.lastEntry)
+	}
 }
 
 // TestHandleCreate_emptyName rejects a body with no name.
@@ -198,6 +211,9 @@ func TestHandleUpdate_ok(t *testing.T) {
 	if subjects.lastUpdate.Type != people.SubjectPet || !subjects.lastUpdate.Favorite {
 		t.Errorf("update input mismatch: %+v", subjects.lastUpdate)
 	}
+	if subjects.lastEntry.Action != audit.ActionSubjectUpdate || subjects.lastEntry.TargetUID != "su_a" {
+		t.Errorf("update audit entry = %+v, want subject.update targeting su_a", subjects.lastEntry)
+	}
 }
 
 // TestHandleUpdate_invalidType maps the type sentinel to 400.
@@ -214,13 +230,16 @@ func TestHandleUpdate_invalidType(t *testing.T) {
 // TestHandleDelete_ok answers 204 and records the deleted UID.
 func TestHandleDelete_ok(t *testing.T) {
 	t.Parallel()
-	subjects := &fakeSubjects{}
+	subjects := &fakeSubjects{subject: people.Subject{UID: "su_a", Name: "Alice", Type: people.SubjectPerson}}
 	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodDelete, "/subjects/su_a", "")
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", rec.Code)
 	}
 	if subjects.deletedUID != "su_a" {
 		t.Errorf("deleted uid = %q, want su_a", subjects.deletedUID)
+	}
+	if subjects.lastEntry.Action != audit.ActionSubjectDelete || subjects.lastEntry.Details["name"] != "Alice" {
+		t.Errorf("delete audit entry = %+v, want subject.delete recording name Alice", subjects.lastEntry)
 	}
 }
 

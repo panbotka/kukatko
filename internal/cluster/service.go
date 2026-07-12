@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -52,8 +53,9 @@ type FaceSearcher interface {
 // cluster member into a named marker, reusing the single assignment state machine
 // rather than duplicating marker creation here.
 type FaceAssigner interface {
-	// Apply runs one assignment-state transition (here always create_marker).
-	Apply(ctx context.Context, req facematch.AssignRequest) (facematch.AssignResult, error)
+	// Apply runs one assignment-state transition (here always create_marker),
+	// auditing the change with the supplied meta.
+	Apply(ctx context.Context, req facematch.AssignRequest, meta audit.Meta) (facematch.AssignResult, error)
 }
 
 // Config bundles the Service's collaborators and tunables. Store, Faces and

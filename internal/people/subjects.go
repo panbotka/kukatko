@@ -44,26 +44,38 @@ func scanSubject(row pgx.Row) (Subject, error) {
 // numeric suffix is appended on collision. An empty type defaults to
 // SubjectPerson; an unrecognised type returns ErrInvalidType.
 func (s *Store) CreateSubject(ctx context.Context, subj Subject) (Subject, error) {
+	prepared, base, err := prepareSubjectInsert(subj)
+	if err != nil {
+		return Subject{}, err
+	}
+	return insertWithUniqueSlug(base, func(slug string) (Subject, error) {
+		prepared.Slug = slug
+		return scanSubject(s.pool.QueryRow(ctx, insertSubjectSQL,
+			prepared.UID, prepared.Slug, prepared.Name, prepared.Type, prepared.Favorite,
+			prepared.Private, prepared.Notes, prepared.CoverPhotoUID))
+	})
+}
+
+// prepareSubjectInsert defaults and validates subj for insertion and assigns a
+// generated UID when none is set, returning the prepared subject and the base slug
+// derived from its name. It is shared by CreateSubject and CreateSubjectAudited so
+// both apply identical validation and UID rules. It returns ErrInvalidType for an
+// unrecognised type.
+func prepareSubjectInsert(subj Subject) (Subject, string, error) {
 	if subj.Type == "" {
 		subj.Type = SubjectPerson
 	}
 	if !subj.Type.valid() {
-		return Subject{}, fmt.Errorf("%w: subject type %q", ErrInvalidType, subj.Type)
+		return Subject{}, "", fmt.Errorf("%w: subject type %q", ErrInvalidType, subj.Type)
 	}
 	if subj.UID == "" {
 		uid, err := newSubjectUID()
 		if err != nil {
-			return Subject{}, err
+			return Subject{}, "", err
 		}
 		subj.UID = uid
 	}
-	base := Slugify(subj.Name)
-	return insertWithUniqueSlug(base, func(slug string) (Subject, error) {
-		subj.Slug = slug
-		return scanSubject(s.pool.QueryRow(ctx, insertSubjectSQL,
-			subj.UID, subj.Slug, subj.Name, subj.Type, subj.Favorite,
-			subj.Private, subj.Notes, subj.CoverPhotoUID))
-	})
+	return subj, Slugify(subj.Name), nil
 }
 
 // insertWithUniqueSlug calls write with successive candidate slugs (base, base-2,
