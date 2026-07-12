@@ -1,8 +1,8 @@
 // Package imgconvert wraps the external decoders (heif-convert, exiftool/dcraw)
 // that turn HEIC/HEIF and RAW originals into an intermediate JPEG so the rest
 // of Kukátko's image pipeline — image.Decode, the thumbnailer, perceptual
-// hashes — can handle them with only the pure-Go JPEG/PNG/WebP decoders and
-// keep the binary CGO-free.
+// hashes — can handle them with only the pure-Go raster decoders
+// (JPEG/PNG/WebP/BMP/GIF/TIFF) and keep the binary CGO-free.
 //
 // The package is intentionally narrow: it inspects a file's extension and magic
 // bytes, dispatches to the right converter when one is needed, and otherwise
@@ -49,6 +49,9 @@ const (
 	FormatJPEG    = "jpeg"
 	FormatPNG     = "png"
 	FormatWebP    = "webp"
+	FormatBMP     = "bmp"
+	FormatGIF     = "gif"
+	FormatTIFF    = "tiff"
 	FormatHEIC    = "heic"
 	FormatRAW     = "raw"
 	FormatVideo   = "video"
@@ -63,18 +66,30 @@ var extFormats = map[string]string{
 	".jpeg": FormatJPEG,
 	".png":  FormatPNG,
 	".webp": FormatWebP,
-	".heic": FormatHEIC,
-	".heif": FormatHEIC,
+	".bmp":  FormatBMP,
+	".gif":  FormatGIF,
+	".tif":  FormatTIFF,
+	".tiff": FormatTIFF,
 	".cr2":  FormatRAW,
 	".cr3":  FormatRAW,
 	".nef":  FormatRAW,
+	".nrw":  FormatRAW,
 	".arw":  FormatRAW,
+	".srf":  FormatRAW,
 	".dng":  FormatRAW,
 	".raf":  FormatRAW,
 	".orf":  FormatRAW,
 	".rw2":  FormatRAW,
 	".pef":  FormatRAW,
 	".srw":  FormatRAW,
+	".3fr":  FormatRAW,
+	".iiq":  FormatRAW,
+	".x3f":  FormatRAW,
+	".kdc":  FormatRAW,
+	".mrw":  FormatRAW,
+	".mef":  FormatRAW,
+	".heic": FormatHEIC,
+	".heif": FormatHEIC,
 }
 
 // IsSupportedFormat reports whether the pipeline can ingest a file with this
@@ -93,17 +108,23 @@ func IsSupportedFormat(ext string) bool {
 	return video.IsVideoExt(ext)
 }
 
-// DetectFormat returns one of "jpeg", "png", "webp", "heic", "raw", "video", or
-// "unknown" for the file at path. Video is decided on extension alone (the many
-// container brands have no single magic to match). Otherwise the magic bytes are
-// authoritative whenever they recognise a directly decodable format: a file whose
-// content is JPEG/PNG/WebP/HEIC is treated as such even when the extension says
-// otherwise — e.g. a plain JPEG misnamed .dng, which must not be sent down the
-// RAW embedded-preview path (it has no preview to extract). Only when the magic
-// bytes match nothing we recognise does the extension decide, and that is how RAW
-// is detected at all: every vendor's RAW container has a different header and
-// classifyMagic deliberately matches none of them, so a real RAW always reads as
-// unknown magic and falls through to its extension.
+// DetectFormat returns one of "jpeg", "png", "webp", "bmp", "gif", "tiff",
+// "heic", "raw", "video", or "unknown" for the file at path. Video is decided on
+// extension alone (the many container brands have no single magic to match).
+// Otherwise the magic bytes are authoritative whenever they recognise a directly
+// decodable format: a file whose content is JPEG/PNG/WebP/BMP/GIF/TIFF/HEIC is
+// treated as such even when the extension says otherwise — e.g. a plain JPEG
+// misnamed .dng, which must not be sent down the RAW embedded-preview path (it
+// has no preview to extract).
+//
+// TIFF is the one ambiguous signature: most camera RAW containers (CR2, NEF,
+// ARW, DNG, NRW, …) are TIFF-based and share the II*/MM* header, so TIFF magic
+// must NOT hijack a real RAW. A RAW extension therefore wins over TIFF magic and
+// the file goes down the embedded-preview path exactly as before; every other
+// recognised magic still overrides the extension.
+//
+// Only when the magic bytes match nothing we recognise (a RAW whose header is
+// not TIFF, or a genuinely invalid file) does the extension decide on its own.
 func DetectFormat(path string) string {
 	if video.IsVideoPath(path) {
 		return FormatVideo
@@ -111,10 +132,16 @@ func DetectFormat(path string) string {
 	extFmt := formatByExt(path)
 	magic := magicFormat(path)
 	if magic == FormatUnknown {
-		// Magic bytes told us nothing — a RAW container, or a genuinely invalid
-		// file. Trust the extension; an invalid file produces a converter or
-		// decoder error later.
+		// Magic bytes told us nothing — a non-TIFF RAW container, or a genuinely
+		// invalid file. Trust the extension; an invalid file produces a converter
+		// or decoder error later.
 		return extFmt
+	}
+	if magic == FormatTIFF && extFmt == FormatRAW {
+		// A TIFF-based RAW container: the RAW extension is authoritative so the
+		// file keeps going through the embedded-preview path, not decoded as a
+		// plain TIFF (which would ignore the demosaic and lose the real image).
+		return FormatRAW
 	}
 	if magic == extFmt {
 		return extFmt
@@ -125,15 +152,15 @@ func DetectFormat(path string) string {
 }
 
 // EnsureDecodable returns a path to a file that image.Decode (with the JPEG,
-// PNG, and WebP decoders registered) can handle, together with a cleanup
-// function the caller MUST defer.
+// PNG, WebP, BMP, GIF, and TIFF decoders registered) can handle, together with a
+// cleanup function the caller MUST defer.
 //
-// If the input is already JPEG/PNG/WebP, EnsureDecodable returns srcPath
-// unchanged with a no-op cleanup and a nil error. If the input is HEIC/HEIF, a
-// supported RAW, or a video, the matching external tool (heif-convert, exiftool,
-// or ffmpeg for a video poster frame) is invoked to produce a temporary JPEG
-// under os.TempDir(); the temp path is returned with a cleanup that removes it
-// (safe to call multiple times).
+// If the input is already a pure-Go decodable raster (JPEG/PNG/WebP/BMP/GIF/
+// TIFF), EnsureDecodable returns srcPath unchanged with a no-op cleanup and a
+// nil error. If the input is HEIC/HEIF, a supported RAW, or a video, the
+// matching external tool (heif-convert, exiftool, or ffmpeg for a video poster
+// frame) is invoked to produce a temporary JPEG under os.TempDir(); the temp
+// path is returned with a cleanup that removes it (safe to call multiple times).
 //
 // On error the returned cleanup is nil (nothing to clean up); on any successful
 // return it is non-nil, so callers can unconditionally defer cleanup().
@@ -145,7 +172,7 @@ func EnsureDecodable(ctx context.Context, srcPath string) (string, func(), error
 		return "", nil, fmt.Errorf("imgconvert: stat %s: %w", filepath.Base(srcPath), err)
 	}
 	switch DetectFormat(srcPath) {
-	case FormatJPEG, FormatPNG, FormatWebP:
+	case FormatJPEG, FormatPNG, FormatWebP, FormatBMP, FormatGIF, FormatTIFF:
 		return srcPath, func() {}, nil
 	case FormatHEIC:
 		return convertHEIC(ctx, srcPath)
@@ -190,8 +217,11 @@ func magicFormat(path string) string {
 }
 
 // classifyMagic identifies common image formats from their leading bytes:
-// JPEG (FF D8 FF), PNG (89 50 4E 47 ...), WebP (RIFF....WEBP), and HEIC (an
-// ISO Base Media file with "ftyp" at offset 4 and a HEIC/HEIF major brand).
+// JPEG (FF D8 FF), PNG (89 50 4E 47 ...), WebP (RIFF....WEBP), HEIC (an ISO Base
+// Media file with "ftyp" at offset 4 and a HEIC/HEIF major brand), BMP ("BM"),
+// GIF ("GIF87a"/"GIF89a"), and TIFF (II*\0 little-endian or MM\0* big-endian).
+// TIFF is reported as such even though most camera RAW containers share the
+// header; DetectFormat resolves that ambiguity in favour of a RAW extension.
 func classifyMagic(b []byte) string {
 	switch {
 	case isJPEGMagic(b):
@@ -202,6 +232,12 @@ func classifyMagic(b []byte) string {
 		return FormatWebP
 	case isHEICMagic(b):
 		return FormatHEIC
+	case isBMPMagic(b):
+		return FormatBMP
+	case isGIFMagic(b):
+		return FormatGIF
+	case isTIFFMagic(b):
+		return FormatTIFF
 	default:
 		return FormatUnknown
 	}
@@ -237,4 +273,30 @@ func isHEIFBrand(brand string) bool {
 		return true
 	}
 	return false
+}
+
+// isBMPMagic reports whether b begins with the 2-byte BMP signature "BM".
+func isBMPMagic(b []byte) bool {
+	return len(b) >= 2 && b[0] == 'B' && b[1] == 'M'
+}
+
+// isGIFMagic reports whether b begins with a GIF87a or GIF89a signature.
+func isGIFMagic(b []byte) bool {
+	if len(b) < 6 {
+		return false
+	}
+	sig := string(b[:6])
+	return sig == "GIF87a" || sig == "GIF89a"
+}
+
+// isTIFFMagic reports whether b begins with a TIFF header — little-endian
+// (49 49 2A 00, "II*\0") or big-endian (4D 4D 00 2A, "MM\0*"). Most camera RAW
+// containers reuse this header; DetectFormat keeps them on the RAW path.
+func isTIFFMagic(b []byte) bool {
+	if len(b) < 4 {
+		return false
+	}
+	littleEndian := b[0] == 'I' && b[1] == 'I' && b[2] == 0x2A && b[3] == 0x00
+	bigEndian := b[0] == 'M' && b[1] == 'M' && b[2] == 0x00 && b[3] == 0x2A
+	return littleEndian || bigEndian
 }

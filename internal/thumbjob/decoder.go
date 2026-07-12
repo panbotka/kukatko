@@ -8,9 +8,12 @@ import (
 
 	// Register the pure-Go image decoders so image.Decode handles the formats the
 	// pipeline hashes directly; HEIC/RAW are pre-converted by imgconvert.
+	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 
 	"github.com/panbotka/kukatko/internal/imgconvert"

@@ -13,10 +13,14 @@ import (
 	"strings"
 
 	// Image format decoders registered for image.Decode: originals may be JPEG,
-	// PNG or WebP (HEIC/RAW are converted to a decodable JPEG by imgconvert first).
+	// PNG, WebP, BMP, GIF or TIFF (HEIC/RAW are converted to a decodable JPEG by
+	// imgconvert first).
+	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 
 	"github.com/panbotka/kukatko/internal/imgconvert"

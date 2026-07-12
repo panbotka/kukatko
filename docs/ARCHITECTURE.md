@@ -158,10 +158,13 @@ Volby vycházejí z photo-sorteru (osvědčené) a z rešerše ([§17](#17-refer
   `react-virtuoso` pro virtualizovaný grid.
 
 ### Zpracování obrázků (na Pi, bez CGO)
-- JPEG/PNG/WebP: pure-Go (`disintegration/imaging` + `golang.org/x/image`), paralelně přes
-  goroutines. EXIF orientace `imaging.AutoOrientation`.
+- JPEG/PNG/WebP/**BMP/GIF/TIFF**: pure-Go (`disintegration/imaging` + `golang.org/x/image/{bmp,tiff}`
+  + stdlib `image/gif`), paralelně přes goroutines. EXIF orientace `imaging.AutoOrientation`;
+  animovaný GIF se náhleduje z prvního snímku.
 - **HEIC:** shell-out `heif-convert` (apt `libheif-examples`) → JPEG → resize v Go.
-- **RAW:** vytáhnout embedded JPEG preview (`exiftool -b -PreviewImage` / `dcraw -e`), ne plný demosaic.
+- **RAW** (cr2/cr3/nef/nrw/arw/srf/dng/raf/orf/rw2/pef/srw/3fr/iiq/x3f/kdc/mrw/mef): vytáhnout
+  embedded JPEG preview (`exiftool -b -PreviewImage` / `dcraw -e`), ne plný demosaic. TIFF magic
+  neunese RAW — RAW přípona má přednost, protože RAW kontejnery jsou většinou TIFF-based.
 - EXIF metadata: `exiftool` (subprocess) + pure-Go fallback.
 - (Volitelně později: shell-out na `vipsthumbnail` pro velké soubory kvůli paměti — ~200 MB
   vs GB díky shrink-on-load. Default je pure-Go.)

@@ -251,14 +251,17 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
   `SizeNames()`/`IsValidSize`), `internal/imgconvert/`
   (HEIC/RAW/video → dekódovatelný JPEG, **shell-out**: `EnsureDecodable(ctx,path)` →
-  (cesta, cleanup, err); JPEG/PNG/WebP passthrough, **HEIC** přes `heif-convert` na temp JPEG,
-  **RAW** (cr2/cr3/nef/arw/dng/raf/orf/rw2/pef/srw) vytáhne embedded preview přes
-  `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/`-ThumbnailImage`) místo demosaicu,
-  **video** (`FormatVideo`) deleguje na `video.ExtractPoster` (poster frame přes `ffmpeg`) —
-  thumbnailer i pHash zpracují poster jako fotku; `DetectFormat` dá přednost **magic bytům**,
-  kdykoli poznají přímo dekódovatelný formát (JPEG/PNG/WebP/HEIC) — takže JPEG přejmenovaný na
-  `.dng` se dekóduje podle obsahu, **ne** se pošle do RAW větve (kde by neměl embedded preview);
-  RAW se zvolí jen když magic nic nepozná (reálné RAW kontejnery mají různé hlavičky) → padá na
+  (cesta, cleanup, err); **pure-Go passthrough** JPEG/PNG/WebP/**BMP/GIF/TIFF** (animovaný GIF →
+  první frame; dekodéry registruje blank import v `ingest` i `thumb`), **HEIC** přes `heif-convert`
+  na temp JPEG, **RAW** (cr2/cr3/nef/nrw/arw/srf/dng/raf/orf/rw2/pef/srw/3fr/iiq/x3f/kdc/mrw/mef)
+  vytáhne embedded preview přes `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/`-ThumbnailImage`)
+  místo demosaicu, **video** (`FormatVideo`) deleguje na `video.ExtractPoster` (poster frame přes
+  `ffmpeg`) — thumbnailer i pHash zpracují poster jako fotku; `DetectFormat` dá přednost **magic
+  bytům**, kdykoli poznají přímo dekódovatelný formát (JPEG/PNG/WebP/BMP/GIF/TIFF/HEIC) — takže JPEG
+  přejmenovaný na `.dng`/`.tif` se dekóduje podle obsahu, **ne** se pošle do RAW větve (kde by neměl
+  embedded preview); **výjimka: TIFF magic neunese RAW** — většina RAW kontejnerů je TIFF-based
+  (`II*`/`MM*`), takže RAW **přípona** má přednost před TIFF magic a soubor jde přes embedded-preview,
+  ne jako plochý TIFF; jinak RAW se zvolí, jen když magic nic nepozná (ostatní RAW hlavičky) → padá na
   příponu; `IsSupportedFormat`; sentinely
   `ErrConverterMissing`/`ErrUnsupportedFormat`/`ErrNoEmbeddedPreview`; chybějící nástroj = jasná
   chyba), `internal/video/`

@@ -8,15 +8,49 @@ export interface DropZoneProps {
   onFiles: (files: File[]) => void
 }
 
-/** Accept filter covering the photo and video formats the backend ingests. */
-const ACCEPT = 'image/*,video/*'
+/**
+ * Accept filter for the picker. `image/*,video/*` groups the phone gallery, but
+ * many browsers hide RAW and HEIC because they are not labelled `image/*`, so we
+ * additionally list those extensions explicitly (RAW vendors, HEIC/HEIF, plus
+ * BMP/GIF/TIFF). It is only a hint — drag-and-drop and the backend still accept
+ * any file — so a broad list can only reveal more, never reject.
+ */
+const ACCEPT = [
+  'image/*',
+  'video/*',
+  '.heic',
+  '.heif',
+  '.bmp',
+  '.gif',
+  '.tif',
+  '.tiff',
+  '.cr2',
+  '.cr3',
+  '.nef',
+  '.nrw',
+  '.arw',
+  '.srf',
+  '.dng',
+  '.raf',
+  '.orf',
+  '.rw2',
+  '.pef',
+  '.srw',
+  '.3fr',
+  '.iiq',
+  '.x3f',
+  '.kdc',
+  '.mrw',
+  '.mef',
+].join(',')
 
 /**
  * File selection surface: a large drag-and-drop target plus a hidden file input
  * triggered by a touch-friendly button. On mobile the input opens the gallery
- * (`accept="image/*,video/*"`, `multiple`); a second button opens the camera
- * directly via the `capture` attribute. Fully keyboard- and screen-reader
- * accessible — the label is wired to the input and the drop target is a button.
+ * (`accept` groups images/videos and also names RAW/HEIC extensions so they are
+ * not hidden, `multiple`); a second button opens the camera directly via the
+ * `capture` attribute. Fully keyboard- and screen-reader accessible — the label
+ * is wired to the input and the drop target is a button.
  */
 export function DropZone({ onFiles }: DropZoneProps) {
   const { t } = useTranslation()

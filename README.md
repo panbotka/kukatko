@@ -187,13 +187,16 @@ shell-out na externí nástroje pro HEIC/RAW).
   autorotace). `serve` zaloguje aktivní engine a varuje, když je `vips` vyžádán, ale
   `vipsthumbnail` není na PATH (apt `libvips-tools`).
 - **HEIC/RAW/video** (`internal/imgconvert`): `EnsureDecodable(ctx, path)` vrátí cestu k souboru,
-  který umí `image.Decode`. JPEG/PNG/WebP projdou beze změny; **HEIC** se převede přes
-  `heif-convert` na dočasný JPEG; **RAW** (cr2/cr3/nef/arw/dng/raf/orf/rw2/pef/srw) vytáhne
+  který umí `image.Decode`. **JPEG/PNG/WebP/BMP/GIF/TIFF** projdou beze změny (pure-Go dekodéry,
+  animovaný GIF se náhleduje z prvního snímku); **HEIC** se převede přes `heif-convert` na dočasný
+  JPEG; **RAW** (cr2/cr3/nef/nrw/arw/srf/dng/raf/orf/rw2/pef/srw/3fr/iiq/x3f/kdc/mrw/mef) vytáhne
   **embedded JPEG preview** přes `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/
   `-ThumbnailImage`) místo plného demosaicu; **video** (mp4/mov/m4v/avi/mkv/webm/…) deleguje na
   `internal/video.ExtractPoster` (poster frame přes `ffmpeg`). Díky tomu thumbnailer i pHash
-  zpracují video poster úplně stejně jako fotku. Chybějící externí nástroj vrací jasný
-  `ErrConverterMissing` (resp. `video.ErrFFmpegMissing`). Runtime apt závislosti:
+  zpracují video poster úplně stejně jako fotku. Detekce jde podle **magic bytů** (obsah vítězí nad
+  špatnou příponou), s jednou výjimkou: TIFF magic neunese RAW — většina RAW kontejnerů je
+  TIFF-based, takže RAW přípona má přednost a soubor jde přes embedded-preview. Chybějící externí
+  nástroj vrací jasný `ErrConverterMissing` (resp. `video.ErrFFmpegMissing`). Runtime apt závislosti:
   `libheif-examples`/`libheif-bin`, `libimage-exiftool-perl`, `ffmpeg`.
 
 ### Video (`internal/video`)
