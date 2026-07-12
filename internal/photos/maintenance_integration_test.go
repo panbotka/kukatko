@@ -96,3 +96,45 @@ func TestListPhotosMissingPhash(t *testing.T) {
 		t.Errorf("ListPhotosMissingPhash(1) = (%v, %v), want one uid", limited, err)
 	}
 }
+
+// TestListActiveUIDs verifies every non-archived photo is returned regardless of
+// whether it has a pHash, while archived photos are excluded — the candidate set
+// for the forced full thumbnail backfill.
+func TestListActiveUIDs(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	if uids, err := store.ListActiveUIDs(ctx); err != nil || len(uids) != 0 {
+		t.Fatalf("ListActiveUIDs() on empty = (%v, %v), want ([], nil)", uids, err)
+	}
+
+	hashed, err := store.Create(ctx, samplePhoto("active-hashed"))
+	if err != nil {
+		t.Fatalf("Create(hashed): %v", err)
+	}
+	if err := store.SetPhash(ctx, photos.Phash{PhotoUID: hashed.UID, Phash: 1, Dhash: 2}); err != nil {
+		t.Fatalf("SetPhash: %v", err)
+	}
+	plain, err := store.Create(ctx, samplePhoto("active-plain"))
+	if err != nil {
+		t.Fatalf("Create(plain): %v", err)
+	}
+	archived, err := store.Create(ctx, samplePhoto("active-archived"))
+	if err != nil {
+		t.Fatalf("Create(archived): %v", err)
+	}
+	if _, err := store.Archive(ctx, archived.UID); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+
+	uids, err := store.ListActiveUIDs(ctx)
+	if err != nil {
+		t.Fatalf("ListActiveUIDs(): %v", err)
+	}
+	sort.Strings(uids)
+	want := []string{hashed.UID, plain.UID}
+	sort.Strings(want)
+	if len(uids) != 2 || uids[0] != want[0] || uids[1] != want[1] {
+		t.Errorf("ListActiveUIDs() = %v, want %v (both non-archived, archived excluded)", uids, want)
+	}
+}

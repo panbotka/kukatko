@@ -22,7 +22,6 @@ import (
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
 	"github.com/panbotka/kukatko/internal/vectors"
-	"github.com/panbotka/kukatko/internal/worker"
 )
 
 // maintenanceDisk adapts backup.DiskOriginals (which walks the originals root) to
@@ -73,22 +72,29 @@ func (o orphanImporter) ImportOriginal(ctx context.Context, key string) (mainten
 	}
 }
 
-// buildThumbHandler assembles the thumbnail job handler: it regenerates a photo's
-// missing thumbnails and recomputes its pHash when absent. It is registered for
-// the thumbnail job type so the library-maintenance thumbnail and pHash repairs
-// have a worker to run them.
-func buildThumbHandler(cfg *config.Config, db *database.DB, reg *metrics.Registry) (worker.HandlerFunc, error) {
+// buildThumbService assembles the thumbnail job service: it regenerates a photo's
+// missing thumbnails and recomputes its pHash when absent (the thumbnail job
+// handler and the library-maintenance thumbnail/pHash repairs), and — wired with
+// the queue enqueuer and photo lister — drives the admin missing-thumbnail
+// backfill behind POST /process/thumbnails. The returned service exposes both
+// Handle (for the worker registry) and BackfillThumbnails (for processapi).
+func buildThumbService(
+	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer, reg *metrics.Registry,
+) (*thumbjob.Service, error) {
 	store, err := newStorage(cfg)
 	if err != nil {
 		return nil, err
 	}
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
+	photoStore := photos.NewStore(db.Pool())
 	svc := thumbjob.New(thumbjob.Config{
-		Photos:      photos.NewStore(db.Pool()),
+		Photos:      photoStore,
 		Thumbnailer: thumbnailer,
 		Decoder:     thumbjob.NewStorageDecoder(store),
+		Lister:      photoStore,
+		Enqueuer:    enqueuer,
 	})
-	return svc.Handle, nil
+	return svc, nil
 }
 
 // buildMaintenanceService assembles the library-maintenance service over the
@@ -127,15 +133,16 @@ func buildMaintenanceService(
 	}), nil
 }
 
-// buildMaintenanceAndThumb assembles the thumbnail job handler and the
+// buildMaintenanceAndThumb assembles the thumbnail job service and the
 // library-maintenance service in one step, so the serve wiring threads a single
-// error check. The handler regenerates thumbnails/pHashes; the service drives
-// scans and repairs.
+// error check. The thumbnail service regenerates thumbnails/pHashes and drives
+// the missing-thumbnail backfill; the maintenance service drives scans and
+// repairs.
 func buildMaintenanceAndThumb(
 	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, reg *metrics.Registry,
-) (worker.HandlerFunc, *maintenance.Service, error) {
-	thumbHandler, err := buildThumbHandler(cfg, db, reg)
+) (*thumbjob.Service, *maintenance.Service, error) {
+	thumbSvc, err := buildThumbService(cfg, db, enqueuer, reg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -143,7 +150,7 @@ func buildMaintenanceAndThumb(
 	if err != nil {
 		return nil, nil, err
 	}
-	return thumbHandler, maintenanceSvc, nil
+	return thumbSvc, maintenanceSvc, nil
 }
 
 // buildMaintenanceAPI assembles the admin-only maintenance HTTP API over svc. The

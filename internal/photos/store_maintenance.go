@@ -72,9 +72,32 @@ func (s *Store) ListPhotosMissingPhash(ctx context.Context, limit int) ([]string
 		query = fmt.Sprintf(listMissingPhashSQL, "\nLIMIT $1")
 		args = []any{limit}
 	}
+	return s.queryUIDs(ctx, "listing photos missing phash", query, args...)
+}
+
+// listActiveUIDsSQL selects the uids of every non-archived photo, newest first.
+const listActiveUIDsSQL = `
+SELECT uid
+FROM photos
+WHERE archived_at IS NULL
+ORDER BY created_at DESC, uid DESC`
+
+// ListActiveUIDs returns the uids of every non-archived photo, newest first. It
+// backs the forced full thumbnail backfill (`?all=true`), which enqueues a
+// thumbnail job per photo so any missing thumbnail size is regenerated even for
+// photos that already have a perceptual hash; the thumbnail handler skips sizes
+// already cached, so a full re-run stays cheap and never touches originals.
+func (s *Store) ListActiveUIDs(ctx context.Context) ([]string, error) {
+	return s.queryUIDs(ctx, "listing active photos", listActiveUIDsSQL)
+}
+
+// queryUIDs runs a single-column uid query and collects the results, wrapping any
+// failure with the given action for context. It is the shared scan loop behind
+// the uid-listing helpers.
+func (s *Store) queryUIDs(ctx context.Context, action, query string, args ...any) ([]string, error) {
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("photos: listing photos missing phash: %w", err)
+		return nil, fmt.Errorf("photos: %s: %w", action, err)
 	}
 	defer rows.Close()
 

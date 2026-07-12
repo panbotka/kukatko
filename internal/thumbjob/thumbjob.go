@@ -36,6 +36,12 @@ var ErrMissingPhotoUID = errors.New("thumbjob: job payload missing photo_uid")
 // distinctly from a missing photo (404) or an unexpected server error (500).
 var ErrRegenerateFailed = errors.New("thumbjob: thumbnail regeneration failed")
 
+// ErrBackfillUnavailable indicates BackfillThumbnails was called on a Service
+// built without the backfill collaborators (a PhotoLister and an Enqueuer). The
+// on-demand and worker-handler Services omit them, since they never backfill; a
+// Service that must back the /process/thumbnails endpoint is wired with both.
+var ErrBackfillUnavailable = errors.New("thumbjob: thumbnail backfill not configured")
+
 // PhotoStore is the subset of the photo catalogue the handler needs: loading the
 // photo and reading/writing its perceptual hashes. It is satisfied by
 // *photos.Store.
@@ -70,7 +76,32 @@ type Decoder interface {
 	DecodeOriginal(ctx context.Context, photo photos.Photo) (image.Image, func(), error)
 }
 
-// Config bundles the collaborators a Service needs. All three are required.
+// PhotoLister enumerates the photos a thumbnail backfill should schedule. It is
+// satisfied by *photos.Store and is optional (only the Service backing the
+// /process/thumbnails endpoint needs it).
+type PhotoLister interface {
+	// ListPhotosMissingPhash returns the uids of non-archived photos that have no
+	// perceptual hash yet (limit <= 0 returns all). The thumbnail job computes the
+	// pHash alongside the thumbnail, so a missing pHash marks a photo whose
+	// thumbnail was never generated — the narrow "missing thumbnail" predicate.
+	ListPhotosMissingPhash(ctx context.Context, limit int) ([]string, error)
+	// ListActiveUIDs returns the uids of every non-archived photo, for a forced
+	// full re-run that re-checks thumbnails across the whole library.
+	ListActiveUIDs(ctx context.Context) ([]string, error)
+}
+
+// Enqueuer schedules thumbnail jobs for the backfill. It is satisfied by
+// jobs.Enqueuer and is optional (only the Service backing the /process/thumbnails
+// endpoint needs it).
+type Enqueuer interface {
+	// EnqueueThumbnail schedules thumbnail regeneration for photoUID, treating an
+	// existing active job as a no-op so repeated backfills do not pile up.
+	EnqueueThumbnail(ctx context.Context, photoUID string) error
+}
+
+// Config bundles the collaborators a Service needs. Photos, Thumbnailer and
+// Decoder are required; Lister and Enqueuer are optional and enable the thumbnail
+// backfill (BackfillThumbnails) when both are supplied.
 type Config struct {
 	// Photos is the catalogue repository.
 	Photos PhotoStore
@@ -78,23 +109,37 @@ type Config struct {
 	Thumbnailer Thumbnailer
 	// Decoder decodes originals for perceptual hashing.
 	Decoder Decoder
+	// Lister enumerates photos for the thumbnail backfill (optional).
+	Lister PhotoLister
+	// Enqueuer schedules thumbnail backfill jobs (optional).
+	Enqueuer Enqueuer
 }
 
 // Service regenerates a photo's derived data. It is safe for concurrent use: the
 // thumbnailer and catalogue layers tolerate concurrent calls for distinct photos.
 type Service struct {
-	photos  PhotoStore
-	thumbs  Thumbnailer
-	decoder Decoder
+	photos   PhotoStore
+	thumbs   Thumbnailer
+	decoder  Decoder
+	lister   PhotoLister
+	enqueuer Enqueuer
 }
 
-// New returns a Service from cfg. It panics if any collaborator is nil, since a
-// thumbnail job cannot run without all three.
+// New returns a Service from cfg. It panics if any of the three required
+// collaborators (Photos, Thumbnailer, Decoder) is nil, since a thumbnail job
+// cannot run without them. Lister and Enqueuer are optional; when both are
+// supplied the Service can also drive the thumbnail backfill.
 func New(cfg Config) *Service {
 	if cfg.Photos == nil || cfg.Thumbnailer == nil || cfg.Decoder == nil {
 		panic("thumbjob: Photos, Thumbnailer and Decoder are required")
 	}
-	return &Service{photos: cfg.Photos, thumbs: cfg.Thumbnailer, decoder: cfg.Decoder}
+	return &Service{
+		photos:   cfg.Photos,
+		thumbs:   cfg.Thumbnailer,
+		decoder:  cfg.Decoder,
+		lister:   cfg.Lister,
+		enqueuer: cfg.Enqueuer,
+	}
 }
 
 // jobPayload is the JSON shape of a thumbnail job's payload.
@@ -160,6 +205,58 @@ func (s *Service) ForceRegenerate(ctx context.Context, photoUID string) ([]strin
 		return nil, err
 	}
 	return sortedSizeNames(sizes), nil
+}
+
+// BackfillThumbnails enqueues a thumbnail job for every photo that currently
+// lacks a generated thumbnail, returning how many uids it scheduled. "Missing a
+// thumbnail" is defined as having no perceptual hash — the pHash is computed by
+// the thumbnail job alongside the thumbnail, so its absence marks a photo whose
+// thumbnailing never completed (an undecodable format at ingest, an offline box,
+// or a transient error). When all is true it instead schedules every
+// non-archived photo, so any thumbnail size missing from an otherwise-hashed
+// photo is regenerated too; the thumbnail handler skips sizes already cached, so
+// the full re-run stays cheap and never rewrites an original.
+//
+// It only enqueues jobs — the actual thumbnailing runs later in the local
+// thumbnail worker, so the backfill proceeds regardless of whether the
+// embeddings box is online. It is idempotent: a photo whose thumbnail job is
+// already queued is a harmless no-op (the enqueuer dedupes), so concurrent or
+// repeated runs never pile up redundant jobs. It returns ErrBackfillUnavailable
+// when the Service was built without the Lister and Enqueuer collaborators.
+func (s *Service) BackfillThumbnails(ctx context.Context, all bool) (int, error) {
+	if s.lister == nil || s.enqueuer == nil {
+		return 0, ErrBackfillUnavailable
+	}
+	uids, err := s.backfillCandidates(ctx, all)
+	if err != nil {
+		return 0, err
+	}
+	enqueued := 0
+	for _, uid := range uids {
+		if err := s.enqueuer.EnqueueThumbnail(ctx, uid); err != nil {
+			return enqueued, fmt.Errorf("thumbjob: enqueuing thumbnail for %s: %w", uid, err)
+		}
+		enqueued++
+	}
+	return enqueued, nil
+}
+
+// backfillCandidates returns the uids the backfill should schedule: every
+// non-archived photo when all is set, otherwise only those missing a perceptual
+// hash (the narrow "no thumbnail generated" predicate).
+func (s *Service) backfillCandidates(ctx context.Context, all bool) ([]string, error) {
+	if all {
+		uids, err := s.lister.ListActiveUIDs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("thumbjob: listing active photos: %w", err)
+		}
+		return uids, nil
+	}
+	uids, err := s.lister.ListPhotosMissingPhash(ctx, 0)
+	if err != nil {
+		return nil, fmt.Errorf("thumbjob: listing photos missing thumbnail: %w", err)
+	}
+	return uids, nil
 }
 
 // sortedSizeNames returns the keys of a size→path map in sorted order, so a

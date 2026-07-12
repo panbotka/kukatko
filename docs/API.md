@@ -193,8 +193,14 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů),
   `POST /process/clusters` → `{created}` (re-clustering nepřiřazených obličejů přes
   `cluster.Recluster`), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geokódu pro
-  geotagované fotky bez místa přes `placesjob.BackfillPlaces`; 503 když není mapy.com klíč). Mountuje
-  se `server.WithAPI` (`buildJobs`).
+  geotagované fotky bez místa přes `placesjob.BackfillPlaces`; 503 když není mapy.com klíč),
+  `POST /process/thumbnails` → `{enqueued}` (backfill `thumbnail` pro fotky **bez vygenerovaného
+  náhledu** přes `thumbjob.BackfillThumbnails`; „chybí náhled“ = fotka bez perceptuálního hashe,
+  který `thumbnail` job počítá spolu s náhledem). Volitelné `?all=true` naplánuje **každou
+  nearchivovanou fotku** (vynucený úplný re-run — dožene i chybějící velikost náhledu u fotky, která
+  hash už má; job přeskočí velikosti již v cache, takže je běh levný a originál nikdy nemění).
+  Náhledy se generují **lokálně**, takže backfill funguje i když je box offline; fronta jobů
+  deduplikuje, takže opakované spuštění je idempotentní. Mountuje se `server.WithAPI` (`buildJobs`).
 - **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **alba** `GET /albums`
   (RequireAuth) → `{albums:[{...album, photo_count, cover_uid?, taken_from?, taken_to?}]}`
   (`organize.AlbumSummary`): `cover_uid` je **efektivní obálka** — ručně zvolené

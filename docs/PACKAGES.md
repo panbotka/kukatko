@@ -109,7 +109,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `before` nil = vše / non-nil = jen `archived_at <= before` retenční cutoff — podklad koše/purge),
   `CountPhotos()` (total fotek vč. archivovaných) + `ListFilePaths()` (všechny `photo_files.file_path`)
   — podklad post-restore integritního reportu (`backup.PhotoCatalog`),
-  `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
+  maintenance listery (`store_maintenance.go`): `ListPrimaryFiles()`,
+  `ListPhotosMissingPhash(limit)` (uid nearchivovaných fotek bez pHashe — podklad thumbnail
+  backfillu/oprav) a `ListActiveUIDs()` (uid všech nearchivovaných fotek — podklad vynuceného úplného
+  thumbnail backfillu `?all=true`), `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
   `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
   `photo_edits` (all-or-nothing crop, rotace 0/90/180/270); video sloupce v migraci
@@ -593,14 +596,17 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `face_detect` pro každou nezpracovanou fotku (`ListPhotosMissingFaces`, dedup no-op), vrací
   počet), `internal/processapi/`
   (admin-only HTTP API pro hromadné zpracování: `NewAPI(Config{Backfiller,FaceBackfiller,
-  Reclusterer,PlacesBackfiller,RequireAdmin})`+`RegisterRoutes` mountuje `/process`;
+  Reclusterer,PlacesBackfiller,ThumbnailBackfiller,RequireAdmin})`+`RegisterRoutes` mountuje `/process`;
   `POST /process/embeddings` →
   `{enqueued}` spustí `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued}` spustí
   `facejob.BackfillFaces`, `POST /process/clusters` → `{created}` spustí `cluster.Recluster`
   (re-clustering nepřiřazených obličejů; `Reclusterer` volitelný — nil → 503),
   `POST /process/places` → `{enqueued}` spustí `placesjob.BackfillPlaces` (backfill reverse-geokódu
-  geotagovaných fotek; `PlacesBackfiller` volitelný — nil → 503, tj. bez mapy.com klíče)),
-  `internal/cluster/`
+  geotagovaných fotek; `PlacesBackfiller` volitelný — nil → 503, tj. bez mapy.com klíče),
+  `POST /process/thumbnails` → `{enqueued}` spustí `thumbjob.BackfillThumbnails(all)` (backfill
+  `thumbnail` pro fotky bez náhledu = bez pHashe; `?all=true` naplánuje každou nearchivovanou fotku;
+  `ThumbnailBackfiller` volitelný — nil → 503; lokální, funguje i s offline boxem; `queryFlag`
+  parsuje `?all`)), `internal/cluster/`
   (face auto-clustering: seskupuje **dosud nepřiřazené obličeje** (bez subjektu) do shluků téže
   osoby, aby šel celý shluk pojmenovat jedním tahem (klíčové UX zlepšení oproti per-face naming
   photo-sorteru); tabulka `face_clusters` (migrace `0010_face_clusters.sql`: `uid` PK prefix `fc`,
@@ -1128,14 +1134,20 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   data fotky, **náhledy** (`Thumbnailer.GenerateAll`, skip cachovaných) a **pHash/dHash** (jen když
   chybí, `phash.Compute` nad dekódovaným originálem), vše za rozhraními `PhotoStore`/`Thumbnailer`/
   `Decoder` (`StorageDecoder` = `storage.Materialize`+`imgconvert.EnsureDecodable`, fakeovatelný) →
-  unit-testovatelné bez disku; `Service` = `New(Config{Photos,Thumbnailer,Decoder})` (panika na nil),
+  unit-testovatelné bez disku; `Service` = `New(Config{Photos,Thumbnailer,Decoder,Lister?,Enqueuer?})`
+  (panika na nil povinný kolaborant; `Lister`/`Enqueuer` volitelné — zapnou backfill),
   `Handle`=`worker.HandlerFunc` (payload `{photo_uid}`, prázdný → `ErrMissingPhotoUID` dead-letter),
   `Regenerate(uid)`/`ensurePhash` idempotentní; registrovaný v `serve` na `jobs.TypeThumbnail`.
   **Force path** `ForceRegenerate(uid) ([]string,error)` je on-demand protějšek (podklad servisní
   akce "regenerate thumbnail" v `photoapi`): **přepíše** všechny náhledy (`Thumbnailer.RegenerateAll`,
   atomický overwrite) a **vždy** přepočítá pHash (`recomputePhash`, sdílené s `ensurePhash`), vrací
   seřazené názvy velikostí; chybějící foto → `photos.ErrPhotoNotFound`, chybějící/nedekódovatelný
-  originál zabalen do `ErrRegenerateFailed` (HTTP 422)),
+  originál zabalen do `ErrRegenerateFailed` (HTTP 422). **Backfill** `BackfillThumbnails(ctx,all)
+  (int,error)` (podklad `POST /process/thumbnails`): zařadí `thumbnail` job pro každou fotku **bez
+  náhledu** = bez pHashe (`PhotoLister.ListPhotosMissingPhash`), nebo — když `all` — pro každou
+  nearchivovanou (`ListActiveUIDs`, dožene chybějící velikost i u fotky s pHashem); enqueue přes
+  `Enqueuer.EnqueueThumbnail` (dedup no-op → idempotentní), vrací počet; `ErrBackfillUnavailable`
+  když `Service` neměl `Lister`/`Enqueuer`),
   `internal/maintenanceapi/`
   (admin-only HTTP API nad maintenance: rozhraní `Service` (Scan+Repair, splňuje `*maintenance.Service`,
   nil → 503); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes` mountuje `/maintenance`:
