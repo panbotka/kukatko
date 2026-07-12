@@ -19,6 +19,8 @@ import {
   parseFilterList,
 } from '../../lib/libraryView'
 import { type SetUrlState } from '../../lib/urlState'
+import { entityBadgeClassName, entityIcon } from '../entity'
+import { Icon } from '../Icon'
 
 import { buildChips } from './filterChips'
 import { GridDensityControl } from './GridDensityControl'
@@ -202,7 +204,13 @@ export function FilterBar<T extends LibraryView>({
       {chips.length > 0 && (
         <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
           {chips.map((chip) => (
-            <span key={chip.key} className="kukatko-filter-chip badge rounded-pill text-bg-primary">
+            <span
+              key={chip.key}
+              className={`kukatko-filter-chip badge rounded-pill ${
+                chip.kind === undefined ? 'text-bg-secondary' : entityBadgeClassName(chip.kind)
+              }`}
+            >
+              {chip.kind !== undefined && <Icon name={entityIcon(chip.kind)} className="me-1" />}
               {chip.label}
               <button
                 type="button"

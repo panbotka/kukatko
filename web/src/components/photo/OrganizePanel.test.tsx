@@ -335,3 +335,27 @@ describe('OrganizePanel label creation', () => {
     expect(attachLabelMock).not.toHaveBeenCalled()
   })
 })
+
+describe('OrganizePanel entity colours', () => {
+  it('colours album chips and label chips by their entity kind, each with a leading icon', () => {
+    // Read-only avoids the editor-only album/label fetch; the chips come from the
+    // photo prop, so this stays synchronous.
+    renderPanel({
+      canWrite: false,
+      photo: photo({
+        albums: [{ uid: 'a1', title: 'Holidays' }],
+        labels: [{ uid: 'l1', name: 'sunset' }],
+      }),
+    })
+
+    const albumChip = screen.getByRole('link', { name: 'Holidays' }).closest('.badge')
+    const labelChip = screen.getByRole('link', { name: 'sunset' }).closest('.badge')
+
+    // The organize panel shares the same convention as the library filter chips.
+    expect(albumChip).toHaveClass('kk-entity-album')
+    expect(labelChip).toHaveClass('kk-entity-label')
+    expect(albumChip?.className).not.toEqual(labelChip?.className)
+    expect(albumChip?.querySelector('.bi-collection')).not.toBeNull()
+    expect(labelChip?.querySelector('.bi-tags')).not.toBeNull()
+  })
+})
