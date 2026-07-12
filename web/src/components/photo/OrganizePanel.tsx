@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
-import Badge from 'react-bootstrap/Badge'
 import CloseButton from 'react-bootstrap/CloseButton'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { EmptyState } from '../EmptyState'
+import { ENTITY_STYLE } from '../entityStyle'
+import { Icon } from '../Icon'
 
 import { foldedEquals } from '../../lib/text'
 import {
@@ -172,7 +173,11 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           <span className="text-secondary small">{t('photo.organize.noAlbums')}</span>
         )}
         {photo.albums.map((album) => (
-          <Badge key={album.uid} bg="secondary" className="d-inline-flex align-items-center gap-1">
+          <span
+            key={album.uid}
+            className={`badge rounded-pill ${ENTITY_STYLE.album.className} d-inline-flex align-items-center gap-1`}
+          >
+            <Icon name={ENTITY_STYLE.album.icon} />
             <Link to={`/albums/${album.uid}`} className="text-white text-decoration-none">
               {album.title}
             </Link>
@@ -185,7 +190,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
                 }}
               />
             )}
-          </Badge>
+          </span>
         ))}
       </div>
       {canWrite && albumOptions.length > 0 && (
@@ -204,7 +209,11 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           <EmptyState size="sm" title={t('photo.organize.noLabels')} className="w-100" />
         )}
         {photo.labels.map((label) => (
-          <Badge key={label.uid} bg="info" className="d-inline-flex align-items-center gap-1">
+          <span
+            key={label.uid}
+            className={`badge rounded-pill ${ENTITY_STYLE.tag.className} d-inline-flex align-items-center gap-1`}
+          >
+            <Icon name={ENTITY_STYLE.tag.icon} />
             <Link to={`/labels/${label.uid}`} className="text-white text-decoration-none">
               {label.name}
             </Link>
@@ -217,7 +226,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
                 }}
               />
             )}
-          </Badge>
+          </span>
         ))}
       </div>
       {/* Unlike albums, the label field stays even with no options — it creates. */}

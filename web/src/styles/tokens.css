@@ -102,6 +102,26 @@
   --kk-focus-ring-width: 3px;
   --kk-focus-ring-offset: 2px;
 
+  /* ---- Entity hues ----------------------------------------------------
+     Albums, tags (labels) and people are three different kinds of thing, so
+     each gets its own hue — defined once here and reused wherever the entity
+     appears as a chip or badge (the library active-filter chips, the photo
+     organize panel, the global-search sections). This replaces the old habit
+     of painting every album/label chip in Superhero's primary orange, which
+     made albums and tags indistinguishable ("it just adds orange boxes").
+
+     The three hues — violet / teal / rose — are clearly apart from one another
+     and from the roles already reserved on this theme: orange (`primary`),
+     cyan (`info`/focus) and red (`danger`, the chip's close affordance). Each
+     background is dark enough to carry white text at ≥ 5:1 contrast on the navy
+     page. Colour is only ever an aid: every entity chip also keeps its text
+     label and a leading icon (see `components/entityStyle.ts`), so the
+     distinction survives for colour-blind readers. */
+  --kk-entity-album-bg: #6244c5; /* violet — albums */
+  --kk-entity-tag-bg: #0b7a64; /* teal   — tags (labels) */
+  --kk-entity-person-bg: #c23b6b; /* rose   — people */
+  --kk-entity-fg: #fff;
+
   /* ---- Typography scale -----------------------------------------------
      Exactly three text roles plus a caption. Components use the classes below
      and never set `font-size` themselves. */
@@ -330,6 +350,39 @@
   flex-shrink: 0;
   padding: 0.3rem;
   font-size: 0.55rem;
+}
+
+/* ---- Entity colours ---------------------------------------------------- */
+
+/*
+ * The album / tag / person colour convention: a modifier on a Bootstrap
+ * `.badge` (or any pill) that paints it in the entity's hue with white text.
+ * The hues live as tokens above so the mapping is defined once; these three
+ * classes are what components reach for (via `ENTITY_STYLE` in
+ * `components/entityStyle.ts`).
+ *
+ * `!important` is deliberate: it lets the modifier sit on an element that also
+ * carries a Bootstrap `.bg-*` / `.text-bg-*` utility (both of which are
+ * themselves `!important`) and win the colour without a specificity fight —
+ * so the same class works on a plain `.badge`, a react-bootstrap `<Badge>`, or
+ * a link styled as a pill.
+ */
+.kk-entity-album,
+.kk-entity-tag,
+.kk-entity-person {
+  color: var(--kk-entity-fg) !important;
+}
+
+.kk-entity-album {
+  background-color: var(--kk-entity-album-bg) !important;
+}
+
+.kk-entity-tag {
+  background-color: var(--kk-entity-tag-bg) !important;
+}
+
+.kk-entity-person {
+  background-color: var(--kk-entity-person-bg) !important;
 }
 
 /* ---- Appear ------------------------------------------------------------ */

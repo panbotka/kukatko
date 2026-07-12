@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom'
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
 import { thumbUrl } from '../../services/photos'
 import { hasEntityMatches } from '../../services/search'
+import { ENTITY_STYLE } from '../entityStyle'
+import { Icon } from '../Icon'
 
 /** Thumbnail size used for the small album/person avatars in the sections. */
 const SECTION_THUMB_SIZE = 'tile_100'
@@ -60,13 +62,13 @@ export function GlobalSearchSections({ query }: { query: string }) {
               <Link
                 key={album.uid}
                 to={`/albums/${album.uid}`}
-                className="d-inline-flex align-items-center gap-2 text-decoration-none border rounded-pill ps-1 pe-3 py-1"
+                className={`d-inline-flex align-items-center gap-2 text-decoration-none text-white rounded-pill ${ENTITY_STYLE.album.className} ps-1 pe-3 py-1`}
               >
                 <ChipThumb uid={album.cover} />
                 <span className="text-truncate" style={{ maxWidth: '12rem' }}>
                   {album.title || t('globalSearch.untitled')}
                 </span>
-                <Badge bg="secondary" pill>
+                <Badge bg="light" text="dark" pill>
                   {album.photo_count}
                 </Badge>
               </Link>
@@ -85,7 +87,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
               <Link
                 key={person.uid}
                 to={`/people/${person.uid}`}
-                className="d-inline-flex align-items-center gap-2 text-decoration-none border rounded-pill ps-1 pe-3 py-1"
+                className={`d-inline-flex align-items-center gap-2 text-decoration-none text-white rounded-pill ${ENTITY_STYLE.person.className} ps-1 pe-3 py-1`}
               >
                 <ChipThumb uid={person.cover} circle />
                 <span className="text-truncate" style={{ maxWidth: '12rem' }}>
@@ -105,10 +107,13 @@ export function GlobalSearchSections({ query }: { query: string }) {
           <div className="d-flex flex-wrap gap-2">
             {result.labels.map((label) => (
               <Link key={label.uid} to={`/labels/${label.uid}`} className="text-decoration-none">
-                <Badge bg="primary" className="fw-normal">
+                <span
+                  className={`badge rounded-pill ${ENTITY_STYLE.tag.className} fw-normal d-inline-flex align-items-center gap-1`}
+                >
+                  <Icon name={ENTITY_STYLE.tag.icon} />
                   {label.name}
-                  <span className="ms-2 opacity-75">{label.photo_count}</span>
-                </Badge>
+                  <span className="ms-1 opacity-75">{label.photo_count}</span>
+                </span>
               </Link>
             ))}
           </div>

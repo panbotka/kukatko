@@ -230,6 +230,26 @@ describe('OrganizePanel autocomplete', () => {
     )
   })
 
+  it('colours album and label chips with the shared entity convention', () => {
+    renderPanel({
+      photo: photo({
+        albums: [{ uid: 'a1', title: 'Holidays' }],
+        labels: [{ uid: 'l1', name: 'sunset' }],
+      }),
+      canWrite: false,
+    })
+
+    const albumChip = screen.getByRole('link', { name: 'Holidays' }).closest('span')
+    const labelChip = screen.getByRole('link', { name: 'sunset' }).closest('span')
+
+    // Albums and tags carry the same hue classes as the library filter chips, so
+    // the colour language is consistent across the app — and the two differ.
+    expect(albumChip).toHaveClass('kk-entity-album')
+    expect(labelChip).toHaveClass('kk-entity-tag')
+    expect(albumChip).not.toHaveClass('kk-entity-tag')
+    expect(labelChip).not.toHaveClass('kk-entity-album')
+  })
+
   it('hides the add controls from viewers', async () => {
     renderPanel({ canWrite: false })
     // Give any (skipped) fetch a tick; controls must never appear for viewers.

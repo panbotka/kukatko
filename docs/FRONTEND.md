@@ -115,8 +115,11 @@ zapiš sem.
   fotoaparát, archiv, **min. hodnocení ≥1…≥5**, **flag vybrané/zamítnuté**) žijí v rozbalovacím
   panelu — na desktopu inline `Collapse`, na mobilu `Offcanvas` dle `matchMedia` (`useIsNarrow`,
   defenzivní k jsdom, kde `matchMedia` vrací `undefined`); každý aktivní filtr = odebíratelný
-  **chip** (`buildChips`, `text-bg-primary` pill s křížkem, zruší jen ten filtr — dotaz `q` chip
-  nemá, má vlastní pole) + jedno **„zrušit filtry"** + počet fotek; **beze změny chování** — vše
+  **chip** (`buildChips`, pill s křížkem, zruší jen ten filtr — dotaz `q` chip
+  nemá, má vlastní pole; **album a štítek chip nesou barvu entity** — `.kk-entity-album`
+  vs. `.kk-entity-tag` + vodicí ikona z `ENTITY_STYLE`, takže album a štítek jsou na první pohled
+  odlišné (viz *barvy entit* v `tokens.css`); ostatní filtry zůstávají neutrální `text-bg-primary`)
+  + jedno **„zrušit filtry"** + počet fotek; **beze změny chování** — vše
   jede přes `viewToParams`/`useUrlState`/`LibraryView`, dotaz replacuje historii, ostatní pushují;
   generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
   na search stránce, `showDensity` skryje hustotu v koši (kartová, ne foto-mřížka)
@@ -139,8 +142,9 @@ zapiš sem.
   vedoucí řádek „libovolné" facet zruší, klávesnice Up/Down/Enter/Esc, combobox/listbox ARIA,
   strop `MAX_SUGGESTIONS` (50) rendrovaných návrhů; nikdy nevytváří položky —
   zrcadlí `AddAutocomplete`), `filterChips.ts` (pure `buildChips(view, t, {facets?, includeQuery?})`
-  → `FilterChip{key,label,clear}` pro každý aktivní filtr; **jeden chip na každé vybrané album a na
-  každý štítek** (`clear` odebere jen svoje UID ze seznamu, poslední chip facet vyčistí); `facets`
+  → `FilterChip{key,label,clear,kind?}` pro každý aktivní filtr; **jeden chip na každé vybrané album a na
+  každý štítek** (`clear` odebere jen svoje UID ze seznamu, poslední chip facet vyčistí; album chip má
+  `kind:'album'`, štítek `kind:'tag'` → `FilterBar` z toho vezme barvu + ikonu přes `ENTITY_STYLE`); `facets`
   pojmenují album/štítek titulkem místo UID (chybějící → raw UID, chip nikdy není prázdný),
   `includeQuery` zapíná chip pro `q`
   — filter bar ho vypíná (má vlastní pole), **prázdný stav zapíná** (čtenář u nuly výsledků musí
@@ -869,6 +873,18 @@ zapiš sem.
   nemá kam vyskočit); `.kk-tile__placeholder`; **chip** `.kk-chip` (odebíratelný token nad
   Bootstrap `.badge` — jen to, co badge nemá: box kolem koncového `.btn-close` a strop šířky,
   aby se dlouhý název alba zkrátil místo roztažení řádku; používá `MultiSelect`);
+  **barvy entit** — album/tag/osoba dostávají každý svůj odstín, aby se rozlišily na první pohled
+  (dřív byly album i štítek stejná primární oranžová = nešly rozeznat). Tokeny
+  `--kk-entity-album-bg` (fialová) / `--kk-entity-tag-bg` (tyrkysová) / `--kk-entity-person-bg`
+  (růžová) + `--kk-entity-fg` (bílá); modifikátory `.kk-entity-album/-tag/-person` na `.badge`
+  (barva má `!important`, aby přebila Bootstrap `.bg-*`/`.text-bg-*`, které jsou taky `!important`,
+  takže třída sedí na plain `.badge` i na `<Badge>` i na odkaz-pill). Mapování kind→třída+ikona je
+  **jednou** v `components/entityStyle.ts` (`ENTITY_STYLE`) a čte ho každé místo, kde se entita
+  zobrazí jako chip: aktivní filtr-chipy knihovny (`FilterBar`), organize panel fota
+  (`OrganizePanel`) a `GlobalSearchSections` — barevný jazyk je tak konzistentní, ne jednorázový.
+  Barva je **jen doplněk**: chip vždy nese i textový popisek a vodicí ikonu (album `collection` /
+  tag `tags` / osoba `person-circle`), aby rozlišení přežilo pro barvoslepé; bílý text má na navy
+  kontrast ≥ 5:1. Neutrální filtry (rok, hodnocení, flag…) zůstávají `text-bg-primary`;
   **appear** `.kk-appear` (jednorázový fade-up).
   **Focus outline se nikdy neodstraňuje** — `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible`
   kreslí `outline` (přežije `overflow: hidden` náhledu). **`prefers-reduced-motion`**: token
