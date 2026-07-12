@@ -135,6 +135,9 @@
       "anyAlbum": "Libovolné album",
       "label": "Štítek",
       "anyLabel": "Libovolný štítek",
+      "person": "Osoba",
+      "anyPerson": "Libovolná osoba",
+      "favorite": "Oblíbené",
       "sort": "Řazení",
       "archived": "Archiv",
       "hasGps": "Poloha",
@@ -176,6 +179,9 @@
       "picks": "Vybrané",
       "rejects": "Zamítnuté",
       "eyes": "Označené okem"
+    },
+    "favorite": {
+      "only": "Jen oblíbené"
     },
     "archived": {
       "hide": "Skrýt archivované",

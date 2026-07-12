@@ -180,6 +180,15 @@ export interface PhotoListParams {
    */
   label?: string
   /**
+   * Scope the listing to photos that contain one or more subjects/people
+   * (`person` query param). Like {@link PhotoListParams.album}, several subject
+   * UIDs are comma-joined here and sent as repeated params (`?person=a&person=b`)
+   * combined with AND, so a photo must contain every chosen person. A subject is on
+   * a photo when a named face/region marker links them. Empty / undefined means no
+   * scope.
+   */
+  person?: string
+  /**
    * Scope the listing to photos in this country (`country` query param, exact
    * match against the reverse-geocoded place). Empty / undefined means no scope.
    */
@@ -272,6 +281,7 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('taken_before', params.taken_before)
   setList('album', params.album)
   setList('label', params.label)
+  setList('person', params.person)
   set('country', params.country)
   set('city', params.city)
   set('favorite', params.favorite)

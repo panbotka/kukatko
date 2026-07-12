@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { type AlbumCount, fetchAlbums, fetchLabels, type LabelCount } from '../services/organize'
+import { fetchSubjects, type SubjectCount } from '../services/people'
 import { fetchPhotoYears, type PhotoListParams, type YearBucket } from '../services/photos'
 
 /**
- * The option lists behind the library's Year / Album / Label facets. Empty lists
- * are the honest resting state: a fresh catalog has no years, and a request that
- * failed leaves the facet with nothing to offer rather than a stale set.
+ * The option lists behind the library's Year / Album / Label / Person facets.
+ * Empty lists are the honest resting state: a fresh catalog has no years, and a
+ * request that failed leaves the facet with nothing to offer rather than a stale
+ * set.
  */
 export interface LibraryFacets {
   /** Years that hold photos, newest first, each with its count. */
@@ -15,6 +17,8 @@ export interface LibraryFacets {
   albums: AlbumCount[]
   /** Every label, ordered by priority then name, each with its photo count. */
   labels: LabelCount[]
+  /** Every subject (person/pet/other), ordered by name, each with its marker count. */
+  subjects: SubjectCount[]
 }
 
 /** Reports whether a rejection is just this effect's own abort on cleanup. */
@@ -38,6 +42,8 @@ function isAbort(err: unknown): boolean {
  * `params` changes or the caller unmounts, so a slow response cannot overwrite a
  * newer one.
  *
+ * Albums, labels and subjects are catalog-wide, so they load once on mount.
+ *
  * `params` should be memoised by the caller (e.g. derived from URL state) so its
  * identity changes only when the query actually changes.
  */
@@ -45,6 +51,7 @@ export function useLibraryFacets(params: PhotoListParams): LibraryFacets {
   const [years, setYears] = useState<YearBucket[]>([])
   const [albums, setAlbums] = useState<AlbumCount[]>([])
   const [labels, setLabels] = useState<LabelCount[]>([])
+  const [subjects, setSubjects] = useState<SubjectCount[]>([])
 
   // Drop the year filter so selecting a year does not re-request the same list.
   const yearParams = useMemo<PhotoListParams>(() => ({ ...params, year: '' }), [params])
@@ -88,10 +95,20 @@ export function useLibraryFacets(params: PhotoListParams): LibraryFacets {
         }
         setLabels([])
       })
+    fetchSubjects(controller.signal)
+      .then((list) => {
+        setSubjects(list)
+      })
+      .catch((err: unknown) => {
+        if (isAbort(err)) {
+          return
+        }
+        setSubjects([])
+      })
     return () => {
       controller.abort()
     }
   }, [])
 
-  return useMemo(() => ({ years, albums, labels }), [years, albums, labels])
+  return useMemo(() => ({ years, albums, labels, subjects }), [years, albums, labels, subjects])
 }

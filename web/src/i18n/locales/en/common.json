@@ -135,6 +135,9 @@
       "anyAlbum": "Any album",
       "label": "Label",
       "anyLabel": "Any label",
+      "person": "Person",
+      "anyPerson": "Any person",
+      "favorite": "Favorites",
       "sort": "Sort",
       "archived": "Archived",
       "hasGps": "Location",
@@ -176,6 +179,9 @@
       "picks": "Picks",
       "rejects": "Rejects",
       "eyes": "Eyes"
+    },
+    "favorite": {
+      "only": "Favorites only"
     },
     "archived": {
       "hide": "Hide archived",

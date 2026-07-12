@@ -306,6 +306,33 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 			t.Errorf("args = %v, want [us_1 limit offset]", args)
 		}
 	})
+
+	t.Run("subject scope binds the uid and guards invalid markers", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{SubjectUIDs: []string{"su_1"}})
+		want := "EXISTS (SELECT 1 FROM markers m " +
+			"WHERE m.photo_uid = photos.uid AND m.subject_uid = $1 AND m.invalid = FALSE)"
+		if !strings.Contains(query, want) {
+			t.Errorf("query missing subject scope %q: %q", want, query)
+		}
+		if len(args) != 3 || args[0] != "su_1" {
+			t.Errorf("args = %v, want [su_1 limit offset]", args)
+		}
+	})
+
+	t.Run("several subjects each emit an EXISTS bound in order (AND)", func(t *testing.T) {
+		t.Parallel()
+		query, args := buildListQuery(ListParams{SubjectUIDs: []string{"su_1", "su_2"}})
+		if strings.Count(query, "FROM markers m") != 2 {
+			t.Errorf("query missing one EXISTS per subject: %q", query)
+		}
+		if !strings.Contains(query, "m.subject_uid = $1") || !strings.Contains(query, "m.subject_uid = $2") {
+			t.Errorf("subject uids not bound in order: %q", query)
+		}
+		if len(args) != 4 || args[0] != "su_1" || args[1] != "su_2" {
+			t.Fatalf("args = %v, want [su_1 su_2 limit offset]", args)
+		}
+	})
 }
 
 // TestBuildListQuery_ratingFilters verifies the per-user rating filters add

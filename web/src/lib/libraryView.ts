@@ -46,6 +46,18 @@ export type LibraryView = {
    * doubles as the detail page's label scope.
    */
   label: string
+  /**
+   * Person facet: '' (any) or a comma-joined list of subject UIDs, every one of
+   * which a photo must contain (AND). Encoded like {@link LibraryView.album}; a
+   * subject is on a photo when a named face/region marker links them.
+   */
+  person: string
+  /**
+   * Favorites filter: '' (any) or 'true' to keep only the current user's
+   * favorites. A two-state toggle — the backend only scopes on 'true', so there is
+   * no "not favorited" value — wired into the URL like every other filter.
+   */
+  favorite: string
   taken_after: string
   taken_before: string
   /** Minimum star rating filter: '' (any) or '1'–'5'. */
@@ -69,6 +81,8 @@ export const LIBRARY_DEFAULTS: LibraryView = {
   year: '',
   album: '',
   label: '',
+  person: '',
+  favorite: '',
   taken_after: '',
   taken_before: '',
   min_rating: '',
@@ -151,11 +165,11 @@ export function removeFromFilterList(raw: string, uid: string): string {
 /**
  * Maps the URL view state to API list params, sanitising the enum-like fields so
  * a tampered URL cannot send an out-of-range sort/archived/year value to the
- * backend. Free-text, tri-state and UID filters pass through verbatim: the album
- * and label values stay in their comma-joined form and are split into repeated
- * query params by {@link import('../services/photos').buildPhotoQuery}. The
- * backend treats an empty value as no filter, and an unknown album/label UID
- * simply matches nothing.
+ * backend. Free-text, tri-state and UID filters pass through verbatim: the album,
+ * label and person values stay in their comma-joined form and are split into
+ * repeated query params by {@link import('../services/photos').buildPhotoQuery}.
+ * The backend treats an empty value as no filter, and an unknown album/label/person
+ * UID simply matches nothing.
  */
 export function viewToParams(view: LibraryView): PhotoListParams {
   return {
@@ -168,6 +182,8 @@ export function viewToParams(view: LibraryView): PhotoListParams {
     year: toYear(view.year),
     album: view.album,
     label: view.label,
+    person: view.person,
+    favorite: view.favorite,
     taken_after: view.taken_after,
     taken_before: view.taken_before,
     min_rating: view.min_rating,
@@ -193,6 +209,8 @@ export function hasActiveFilters(
     view.year !== '' ||
     view.album !== '' ||
     view.label !== '' ||
+    view.person !== '' ||
+    view.favorite !== '' ||
     view.taken_after !== '' ||
     view.taken_before !== '' ||
     view.min_rating !== '' ||

@@ -187,6 +187,24 @@ func TestParseListParams_valid(t *testing.T) {
 			},
 		},
 		{
+			name:  "person scope maps repeated params (AND)",
+			query: "person=su_1&person=su_2",
+			check: func(t *testing.T, p photos.ListParams) {
+				if len(p.SubjectUIDs) != 2 || p.SubjectUIDs[0] != "su_1" || p.SubjectUIDs[1] != "su_2" {
+					t.Errorf("person scope mismapped: %v", p.SubjectUIDs)
+				}
+			},
+		},
+		{
+			name:  "empty person value adds no scope",
+			query: "person=",
+			check: func(t *testing.T, p photos.ListParams) {
+				if len(p.SubjectUIDs) != 0 {
+					t.Errorf("empty person value should add no scope, got %v", p.SubjectUIDs)
+				}
+			},
+		},
+		{
 			name:  "empty album value adds no scope",
 			query: "album=&label=lb_1",
 			check: func(t *testing.T, p photos.ListParams) {

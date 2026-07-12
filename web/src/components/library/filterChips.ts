@@ -18,10 +18,10 @@ export interface FilterChip {
   /** The patch that clears just this filter. */
   clear: Partial<LibraryView>
   /**
-   * The catalog entity this chip stands for, when it is one. Album and label
-   * chips carry a kind so the bar can colour and icon them per the shared
-   * entity convention; the remaining filters (year, rating, flag, …) leave it
-   * undefined and keep the neutral chip style.
+   * The catalog entity this chip stands for, when it is one. Album, label and
+   * person chips carry a kind so the bar can colour and icon them per the shared
+   * entity convention; the remaining filters (year, favorites, rating, flag, …)
+   * leave it undefined and keep the neutral chip style.
    */
   kind?: EntityKind
 }
@@ -29,9 +29,9 @@ export interface FilterChip {
 /** Options for {@link buildChips}. */
 export interface BuildChipsOptions {
   /**
-   * The facet option lists, used to name an album/label by its title rather than
-   * its UID. Omitted (or missing an entry) falls back to the raw UID, so a chip
-   * is never blank.
+   * The facet option lists, used to name an album/label/person by its title or
+   * name rather than its UID. Omitted (or missing an entry) falls back to the raw
+   * UID, so a chip is never blank.
    */
   facets?: LibraryFacets
   /**
@@ -89,6 +89,24 @@ export function buildChips(
       label: `${t('library.filters.label')}: ${label?.name ?? uid}`,
       clear: { label: removeFromFilterList(view.label, uid) },
       kind: 'tag',
+    })
+  }
+  // One chip per selected person, named by the subject's name and carrying the
+  // person entity hue/icon, mirroring the album/label chips (all AND-combined).
+  for (const uid of parseFilterList(view.person)) {
+    const subject = facets?.subjects.find((s) => s.uid === uid)
+    chips.push({
+      key: `person:${uid}`,
+      label: `${t('library.filters.person')}: ${subject?.name ?? uid}`,
+      clear: { person: removeFromFilterList(view.person, uid) },
+      kind: 'person',
+    })
+  }
+  if (view.favorite === 'true') {
+    chips.push({
+      key: 'favorite',
+      label: t('library.filters.favorite'),
+      clear: { favorite: '' },
     })
   }
   if (view.archived !== LIBRARY_DEFAULTS.archived) {

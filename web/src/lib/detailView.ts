@@ -11,15 +11,15 @@ import { searchHref } from './searchView'
 import { writeUrlState } from './urlState'
 
 /**
- * The detail page's view state: the originating library view plus the favorites
- * scope and the search `mode` it may have been opened from. Carrying this in the
- * URL lets the detail page page through the same list for prev/next and build a
- * Back link to the exact originating view — the project's "Back always works".
+ * The detail page's view state: the originating library view plus the search
+ * `mode` it may have been opened from. Carrying this in the URL lets the detail
+ * page page through the same list for prev/next and build a Back link to the exact
+ * originating view — the project's "Back always works".
  *
- * The album and label scopes need no field of their own: they are library filters
- * ({@link LibraryView}'s `album`/`label` facets), and the `album`/`label` query
- * param means the same thing whether it came from a facet or from an album/label
- * page. Favorites is not expressible as a library filter, so it stays here.
+ * The album, label, person and favorites scopes need no field of their own: they
+ * are all library filters ({@link LibraryView}'s facets, `favorite` included), and
+ * each query param means the same thing whether it came from a facet or from a
+ * scoped page. Only the search `mode` is not a library filter, so it stays here.
  *
  * `mode` is the search-scope marker: it is only non-empty when the photo was
  * opened from the search page. Its presence — mirroring
@@ -32,26 +32,22 @@ import { writeUrlState } from './urlState'
 // A type alias (not interface) so it satisfies the urlState Record<string,string>
 // constraint, like LibraryView.
 export type DetailView = LibraryView & {
-  favorite: string
   mode: string
 }
 
-/** Defaults: the library defaults plus an empty (no) favorites/search scope. */
+/** Defaults: the library defaults plus an empty (no) search scope. */
 export const DETAIL_DEFAULTS: DetailView = {
   ...LIBRARY_DEFAULTS,
-  favorite: '',
   mode: '',
 }
 
 /**
  * Maps the detail view to the list params used to fetch the neighbouring photos:
- * the library filters/sort (album and label among them) plus the favorites scope.
+ * the library filters/sort — album, label, person and the favorites scope among
+ * them, all carried by {@link viewToParams}.
  */
 export function detailToParams(view: DetailView): PhotoListParams {
-  return {
-    ...viewToParams(view),
-    favorite: view.favorite,
-  }
+  return viewToParams(view)
 }
 
 /**
@@ -89,7 +85,9 @@ export function backHref(view: DetailView): string {
     return searchHref(view)
   }
   if (view.favorite === 'true') {
-    return `/favorites${libraryQuery(view)}`
+    // The favorites page already applies the favorites scope, so drop it from the
+    // query — mirroring how the album/label branches strip their own scope.
+    return `/favorites${libraryQuery({ ...view, favorite: '' })}`
   }
   return `${LIBRARY_PATH}${libraryQuery(view)}`
 }

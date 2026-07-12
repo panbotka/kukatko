@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
@@ -162,6 +163,125 @@ func TestList_multipleAlbumsAND(t *testing.T) {
 	total, err := store.Count(ctx, params)
 	if err != nil || total != 1 {
 		t.Fatalf("Count(both albums) = %d, %v, want 1", total, err)
+	}
+}
+
+// mustMarker attaches a marker on photoUID assigning subjectUID (marked invalid
+// when rejected), failing the test on error. It links a subject to a photo the way
+// the person filter joins them — through a named marker in the markers table.
+func mustMarker(t *testing.T, ppl *people.Store, photoUID, subjectUID string, rejected bool) {
+	t.Helper()
+	if _, err := ppl.CreateMarker(t.Context(), people.Marker{
+		PhotoUID: photoUID, SubjectUID: &subjectUID, Type: people.MarkerFace,
+		X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Invalid: rejected,
+	}); err != nil {
+		t.Fatalf("CreateMarker(%s->%s): %v", photoUID, subjectUID, err)
+	}
+}
+
+// TestList_subjectScope verifies that scoping List/Count by subject (person)
+// restricts the result to photos that contain the subject — a non-invalid marker
+// links them — while still honouring the standard filters, the contract the shared
+// GET /photos?person= grid relies on. Rejected (invalid) markers must not count,
+// matching the subject photo gallery.
+func TestList_subjectScope(t *testing.T) {
+	store, db := newStore(t)
+	ppl := people.NewStore(db.Pool())
+	ctx := t.Context()
+
+	withSubject := mustCreate(t, store, photos.Photo{
+		FileHash: "s-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "with",
+	})
+	withSubjectPriv := mustCreate(t, store, photos.Photo{
+		FileHash: "s-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
+		Title: "with-private", Private: true,
+	})
+	rejected := mustCreate(t, store, photos.Photo{
+		FileHash: "s-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "rejected",
+	})
+	// without carries no marker for the subject, so the scope must exclude it.
+	without := mustCreate(t, store, photos.Photo{
+		FileHash: "s-4", FilePath: "p/4.jpg", FileName: "4.jpg", FileMime: "image/jpeg", Title: "without",
+	})
+
+	subject, err := ppl.CreateSubject(ctx, people.Subject{Name: "Alice", Type: people.SubjectPerson})
+	if err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+	for _, uid := range []string{withSubject.UID, withSubjectPriv.UID} {
+		mustMarker(t, ppl, uid, subject.UID, false)
+	}
+	// A rejected (invalid) marker must not make the photo match the person filter.
+	mustMarker(t, ppl, rejected.UID, subject.UID, true)
+
+	t.Run("scope keeps only photos containing the subject", func(t *testing.T) {
+		list, err := store.List(ctx, photos.ListParams{SubjectUIDs: []string{subject.UID}})
+		if err != nil {
+			t.Fatalf("List(subject): %v", err)
+		}
+		set := uidSet(list)
+		if len(set) != 2 || set[rejected.UID] || set[without.UID] {
+			t.Fatalf("subject scope = %v, want the 2 photos with a valid marker", set)
+		}
+		total, err := store.Count(ctx, photos.ListParams{SubjectUIDs: []string{subject.UID}})
+		if err != nil || total != 2 {
+			t.Fatalf("Count(subject) = %d, %v, want 2", total, err)
+		}
+	})
+
+	t.Run("scope combines with a metadata filter", func(t *testing.T) {
+		no := false
+		list, err := store.List(ctx, photos.ListParams{SubjectUIDs: []string{subject.UID}, Private: &no})
+		if err != nil {
+			t.Fatalf("List(subject, private=false): %v", err)
+		}
+		set := uidSet(list)
+		if len(set) != 1 || !set[withSubject.UID] {
+			t.Fatalf("subject+private scope = %v, want only the public photo with the subject", set)
+		}
+	})
+}
+
+// TestList_multipleSubjectsAND verifies that scoping List by several subjects keeps
+// only the photos that contain every listed subject — the AND semantics the
+// multi-person filter relies on. A photo with just one of the two people must be
+// excluded.
+func TestList_multipleSubjectsAND(t *testing.T) {
+	store, db := newStore(t)
+	ppl := people.NewStore(db.Pool())
+	ctx := t.Context()
+
+	both := mustCreate(t, store, photos.Photo{
+		FileHash: "ms-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "both",
+	})
+	onlyAlice := mustCreate(t, store, photos.Photo{
+		FileHash: "ms-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "alice-only",
+	})
+
+	alice, err := ppl.CreateSubject(ctx, people.Subject{Name: "Alice", Type: people.SubjectPerson})
+	if err != nil {
+		t.Fatalf("CreateSubject(alice): %v", err)
+	}
+	bob, err := ppl.CreateSubject(ctx, people.Subject{Name: "Bob", Type: people.SubjectPerson})
+	if err != nil {
+		t.Fatalf("CreateSubject(bob): %v", err)
+	}
+	mustMarker(t, ppl, both.UID, alice.UID, false)
+	mustMarker(t, ppl, both.UID, bob.UID, false)
+	mustMarker(t, ppl, onlyAlice.UID, alice.UID, false)
+
+	params := photos.ListParams{SubjectUIDs: []string{alice.UID, bob.UID}}
+	list, err := store.List(ctx, params)
+	if err != nil {
+		t.Fatalf("List(both subjects): %v", err)
+	}
+	set := uidSet(list)
+	if len(set) != 1 || !set[both.UID] {
+		t.Fatalf("multi-subject AND = %v, want only the photo containing both people", set)
+	}
+	total, err := store.Count(ctx, params)
+	if err != nil || total != 1 {
+		t.Fatalf("Count(both subjects) = %d, %v, want 1", total, err)
 	}
 }
 
