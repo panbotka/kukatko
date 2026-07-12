@@ -664,6 +664,16 @@
       "info": "Info",
       "location": "Location"
     },
+    "sections": {
+      "organize": "Organize",
+      "caption": "Caption & place"
+    },
+    "privacy": {
+      "private": "Private",
+      "public": "Public",
+      "makePrivate": "Make private",
+      "makePublic": "Make public"
+    },
     "video": {
       "label": "Video player",
       "loading": "Loading video…",
@@ -693,6 +703,9 @@
       "coordinatesHelp": "Tap the map or drag the marker, or type coordinates (e.g. 49.1234, 16.5678 or 49°7'24.2\"N 16°34'12.5\"E).",
       "coordinatesInvalid": "Unrecognised coordinates. Use decimal degrees, DMS or degrees-decimal-minutes.",
       "clearLocation": "Clear location",
+      "location": "Location",
+      "editField": "Edit {{field}}",
+      "addPlaceholder": "Add…",
       "edit": "Edit",
       "save": "Save",
       "cancel": "Cancel",
@@ -713,10 +726,14 @@
       "createOption": "Create “{{name}}”",
       "removeAlbum": "Remove from album {{name}}",
       "removeLabel": "Remove label {{name}}",
+      "people": "People",
+      "noPeople": "No people in this photo.",
+      "editPerson": "Edit {{name}}",
+      "namePerson": "Name unnamed face {{index}}",
       "error": "Could not save the change."
     },
     "location": {
-      "none": "This photo has no stored location. Add it on the Info tab.",
+      "none": "This photo has no stored location.",
       "lookup": "Look up place",
       "lookupError": "Could not look up the place.",
       "clear": "Clear location"

@@ -349,52 +349,54 @@ zapiš sem.
   který dlaždice nese v `detailQuery` odkazu (`lib/detailView` `backHref`/`detailToParams`/
   `detailQueryString`; hledání se pozná podle `mode` v query, oblíbené podle `favorite=true`),
   v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + osobní označení eye/👍/👎
-  nad `useRating`) a `FavoriteButton`, plus **rating hotkeys** `0`–`5`/`p`/`r`/`v` na document (mimo
+  nad `useRating`), `FavoriteButton` a pro editory **přepínač soukromí** (`PrivacyToggle` = zámek
+  u srdíčka, `updatePhoto({private})` — uzavírá smyčku s knihovním filtrem „soukromé"), plus
+  **rating hotkeys** `0`–`5`/`p`/`r`/`v` na document (mimo
   psaní do inputu; `p`→👍, `r`→👎, `v`→👁), tlačítka **Stáhnout originál** /
   **Stáhnout upravenou** (`downloadUrl`); **stránka nese právě JEDEN obrázek fotky** — obličeje
   jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad `useFaces`), nikdy druhá kopie snímku:
   tlačítko **Zobrazit/Skrýt obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`)
-  a volba se pamatuje v localStorage (`lib/faceOverlayPref`); fotka bez obličejů = jediný
-  nenápadný řádek `faces.none`, žádný obrázek; klik na box otevře `FaceAssignPanel` pod náhledem;
-  **ovládací/informační panely jsou POD fotkou** (ne vedle ní) v responzivní **mřížce karet**
-  (`Row`/`Col` `col-12 col-md-6 col-xl-4`: na mobilu jedna karta pod druhou, na širších 2–3 vedle
-  sebe; nový panel = další `<Col>` bez přepisu layoutu) — pruh `SimilarPhotos` je až pod nimi;
-  karty (`components/photo/`): **Informace**
-  (`MetadataPanel` = view/edit title/description/notes/ai_note/taken_at — **bez** camera/lens/EXIF, ta
-  žije v `TechnicalDetails` — + read-only řádek **Nahrál/a** (`photo.metadata.uploadedBy`) se jménem
-  uploadera z `photo.uploader.name`, s neutrálním fallbackem `—` (`uploaderUnknown`) u importů/bez
-  uploadera — + **vizuální
-  location picker** (nahradil holá lat/lng pole): jedno tolerantní pole souřadnic parsované
-  pure helperem `lib/coordinates` (`parseCoordinates`→`{lat,lng}`|error / `formatCoordinates`;
-  **desetinné stupně** `49.1234, 16.5678` (komma/mezera, ±), **DMS** `49°7'24.2"N 16°34'12.5"E`,
-  **stupně-desetinné-minuty** `49°7.4'N, 16°34.2'E`, tolerantní k mezerám/unicode primám/'',
-  hemisféry N/S/E/W i znaménka, axis reorder dle hemisfér, range check) nad **`LeafletMap` picker
-  módem** (nová prop `picker={position,onPick}`: draggable marker + click-to-place nad mapy.com
-  tile proxy, panTo jen u parse-driven změny, ne u klik/drag); **obousměrný sync** (text→marker,
-  marker→kanonický text desetinných stupňů), **neplatný text = inline chyba + `disabled` Save**
-  (nikdy nePATCHne smetí), tlačítko vymazat polohu (lat/lng null), bez souřadnic mapa nad ČR;
-  PATCH přes `updatePhoto`; `OrganizePanel` = inline add/remove alb a štítků přes organize API,
-  přidání jede přes **`AddAutocomplete`** (`components/photo/`, type-to-filter combobox nad
-  react-bootstrap primitivy, bez nové závislosti — nahradil dřívější `Form.Select` dropdown;
-  filtruje klientsky **case/accent-insensitive** přes `lib/text` `foldText`/`foldedIncludes`,
-  klávesnice ↑/↓/Enter/Esc + klik, „nic neodpovídá" stav, ~44px tap-targety, ARIA combobox/listbox;
-  volitelná prop `onCreate` přidá poslední řádek „Vytvořit «dotaz»", když dotaz nesedí na žádnou
-  existující položku — vrací `Promise<boolean>`, `true` vyčistí input, `false` **ponechá napsaný
-  text** k opakování; **štítek jde založit rovnou z fotky** — pole se štítky se renderuje i nad
-  prázdným seznamem, jinak by první štítek v katalogu nešel vytvořit, a `createAndAttachLabel`
-  udělá `createLabel` + `attachLabel` v jedné akci; shodu jména hledá `foldedEquals` nad načteným
-  seznamem, takže existující štítek jen připojí místo kolize na unikátním slugu; alba se odsud
-  nezakládají, nesou typ/obálku/privátnost — ta patří na stránku Alba)) a `TechnicalDetails`
-  (**na první render zavřený** expander `aria-expanded`/`aria-controls`: camera/lens/clona/expozice/
-  ohnisko/ISO/název souboru/rozměry přes `MetaField`) — pořadí panelu promuje to podstatné
-  (titulek, popis, štítky, alba, obličeje) a technikálie schovává na jeden klik;
-  **Poloha** (`PhotoLocation` = Leaflet mini-mapa nad mapy.com proxy + on-demand reverse-geocode
-  `reverseGeocode` + clear location) a **Úpravy** (editor/admin: `EditPanel` = rotace/jas/kontrast/
-  crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`; karta je **na první render
-  sbalená** — hlavička je toggle `aria-expanded`/`aria-controls`, `EditPanel` se nasadí až po
-  otevření, aby jeho vlastní preview nepřidalo druhý `<img>` a stránka nesla jednu kopii fotky);
-  viewer vidí read-only (žádná karta Úpravy, žádné edit akce, `FaceOverlay` readOnly = boxy vidí,
-  ale neklikne);
+  a volba se pamatuje v localStorage (`lib/faceOverlayPref`); klik na box (nebo na person-chip
+  v bloku **Lidé**) otevře `FaceAssignPanel` v tom bloku;
+  **ovládací/informační panely jsou POD fotkou** (ne vedle ní), naskládané do **jednoho
+  čitelného sloupce** (`Row`/`Col` `col-12 col-xl-9 col-xxl-8`, na širokých obrazovkách
+  vycentrovaný) ve **striktním edit-first pořadí**, identickém na každém viewportu (na mobilu
+  se karty stackují ve stejném pořadí) — pruh `SimilarPhotos` je až pod nimi. Karty
+  (`components/photo/`): **1. Uspořádání** (`sections.organize`) = **primární blok, vždy
+  viditelný a přímo editovatelný** (žádný „edit mód"): `OrganizePanel` (inline add/remove alb
+  a štítků přes organize API) + `PeoplePanel` (lidé/obličeje jako **person-chips** nad stejným
+  `useFaces`, co drží overlay — chip i box na fotce jsou v syncu; editor kliknutím na chip otevře
+  `FaceAssignPanel` a přiřadí/přejmenuje/odebere osobu, viewer vidí pojmenované osoby read-only;
+  pojmenované = rose chip, nepojmenované detekce = neutrální chip); alba/štítky/lidé mají
+  odlišnou barvu přes `ENTITY_STYLE` (`components/entityStyle`). Přidání jede přes
+  **`AddAutocomplete`** (type-to-filter combobox nad react-bootstrap primitivy,
+  **case/accent-insensitive** přes `lib/text` `foldedIncludes`, klávesnice ↑/↓/Enter/Esc + klik,
+  „nic neodpovídá" stav, ~44px tap-targety, ARIA combobox/listbox; volitelná prop `onCreate` přidá
+  řádek „Vytvořit «dotaz»" — `createAndAttachLabel` udělá `createLabel` + `attachLabel`, shodu
+  jména hledá `foldedEquals`, takže existující štítek jen připojí místo kolize na slugu; alba se
+  odsud nezakládají — typ/obálka/privátnost patří na stránku Alba). **2. Popis a místo**
+  (`sections.caption`) = `MetadataPanel` = title/description/ai_note/notes/taken_at/poloha
+  **read-only, dokud editor neklikne na pole** — každé pole je vlastní inline edit affordance
+  (`EditableField` = celý řádek je tlačítko „Upravit «pole»" s pencil ikonou a muted „Přidat…"
+  placeholderem u prázdného pole), **žádné skryté globální „Upravit"** dole (to byl fix tohoto
+  tasku — dohledatelnost editace title/description/AI popisu). Klik na kterékoli pole otevře jeden
+  sdílený formulář (title/description/ai_note/notes/taken_at + **vizuální location picker**), Save
+  `updatePhoto` PATCH, Cancel revert. Location picker = jedno tolerantní pole souřadnic parsované
+  `lib/coordinates` (`parseCoordinates`/`formatCoordinates`: desetinné stupně `49.1234, 16.5678`,
+  DMS `49°7'24.2"N 16°34'12.5"E`, stupně-desetinné-minuty, hemisféry, axis reorder, range check)
+  nad **`LeafletMap` picker módem** (`picker={position,onPick}`: draggable marker + click-to-place,
+  obousměrný sync text↔marker, **neplatný text = inline chyba + `disabled` Save**, vymazat polohu =
+  lat/lng null); read-only poloha = `PhotoLocation` (mini-mapa nad mapy.com proxy + on-demand
+  `reverseGeocode`) **embedovaná** v tomto bloku. **3. Technické údaje** (`TechnicalDetails`,
+  **na první render zavřený** expander `aria-expanded`/`aria-controls`): camera/lens/clona/expozice/
+  ohnisko/ISO/název souboru/rozměry **+ řádek Nahrál/a** (`photo.metadata.uploadedBy` z
+  `photo.uploader.name`, fallback `—` `uploaderUnknown`) přes `MetaField` — read-only referenční
+  fakta. **4. Úpravy** (editor/admin, **na první render sbalená** karta úplně dole): `EditPanel` =
+  rotace/jas/kontrast/crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`; karta se
+  nasadí až po otevření (hlavička je toggle `aria-expanded`/`aria-controls`), aby jeho vlastní
+  preview nepřidalo druhý `<img>` a stránka nesla jednu kopii fotky. Viewer vidí vše read-only
+  (žádná karta Úpravy, žádné edit/add/remove akce, žádný přepínač soukromí, `FaceOverlay` readOnly
+  = boxy vidí, ale neklikne);
   `components/photo/` dál nese `MetaField` (jeden read-only labelled řádek, prázdná hodnota =
   nic; sdílí `MetadataPanel` i `TechnicalDetails`); `lib/photoEdit` = pure helpery
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/

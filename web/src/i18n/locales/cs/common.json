@@ -680,6 +680,16 @@
       "info": "Informace",
       "location": "Poloha"
     },
+    "sections": {
+      "organize": "Uspořádání",
+      "caption": "Popis a místo"
+    },
+    "privacy": {
+      "private": "Soukromé",
+      "public": "Veřejné",
+      "makePrivate": "Nastavit jako soukromé",
+      "makePublic": "Nastavit jako veřejné"
+    },
     "video": {
       "label": "Přehrávač videa",
       "loading": "Načítání videa…",
@@ -709,6 +719,9 @@
       "coordinatesHelp": "Klepni na mapu nebo přetáhni značku, nebo zadej souřadnice (např. 49.1234, 16.5678 nebo 49°7'24.2\"N 16°34'12.5\"E).",
       "coordinatesInvalid": "Nerozpoznané souřadnice. Použij desetinné stupně, DMS nebo stupně a desetinné minuty.",
       "clearLocation": "Vymazat polohu",
+      "location": "Poloha",
+      "editField": "Upravit: {{field}}",
+      "addPlaceholder": "Přidat…",
       "edit": "Upravit",
       "save": "Uložit",
       "cancel": "Zrušit",
@@ -729,10 +742,14 @@
       "createOption": "Vytvořit «{{name}}»",
       "removeAlbum": "Odebrat z alba {{name}}",
       "removeLabel": "Odebrat štítek {{name}}",
+      "people": "Lidé",
+      "noPeople": "Na této fotce nejsou žádní lidé.",
+      "editPerson": "Upravit: {{name}}",
+      "namePerson": "Pojmenovat neznámý obličej {{index}}",
       "error": "Změnu se nepodařilo uložit."
     },
     "location": {
-      "none": "Tato fotka nemá uloženou polohu. Přidáš ji v záložce Informace.",
+      "none": "Tato fotka nemá uloženou polohu.",
       "lookup": "Zjistit místo",
       "lookupError": "Místo se nepodařilo zjistit.",
       "clear": "Vymazat polohu"

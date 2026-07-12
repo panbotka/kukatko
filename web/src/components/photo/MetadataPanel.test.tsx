@@ -77,21 +77,27 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
   }
 }
 
-function renderPanel(props: { photo?: PhotoDetail; onUpdated?: () => void } = {}) {
+function renderPanel(
+  props: { photo?: PhotoDetail; onUpdated?: () => void; canWrite?: boolean } = {},
+) {
   return render(
     <I18nextProvider i18n={i18n}>
       <MetadataPanel
         photo={props.photo ?? photo()}
-        canWrite
+        canWrite={props.canWrite ?? true}
         onUpdated={props.onUpdated ?? vi.fn()}
       />
     </I18nextProvider>,
   )
 }
 
-/** Enters the edit form via the Edit button. */
+/**
+ * Enters the shared caption form via a per-field edit affordance. There is no
+ * global "Edit" button any more — each field is its own inline edit control — so
+ * clicking any of them (here the title's) reveals the whole form.
+ */
 async function startEditing(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Edit' }))
+  await user.click(screen.getByRole('button', { name: 'Edit Title' }))
 }
 
 beforeEach(async () => {
@@ -190,24 +196,39 @@ describe('MetadataPanel location picker', () => {
   })
 })
 
-describe('MetadataPanel uploader', () => {
-  it('shows the resolved uploader name', () => {
-    renderPanel({ photo: photo({ uploader: { uid: 'u1', name: 'Camera Man' } }) })
-    expect(screen.getByText('Uploaded by')).toBeInTheDocument()
-    expect(screen.getByText('Camera Man')).toBeInTheDocument()
+describe('MetadataPanel per-field editing', () => {
+  it('exposes a discoverable inline edit affordance for each caption field', () => {
+    // The whole point of the rework: no hidden global "Edit" button — every
+    // caption field is its own editable control an editor can find in place.
+    renderPanel({ photo: photo({ title: 'Beach', description: '', ai_note: 'cat' }) })
+
+    expect(screen.getByRole('button', { name: 'Edit Title' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Description' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit AI note' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Location' })).toBeInTheDocument()
+    // No single global "Edit" button remains.
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })
 
-  it('shows a neutral fallback when there is no uploader', () => {
-    renderPanel({ photo: photo() })
-    const label = screen.getByText('Uploaded by')
-    // The label row still renders, but with the neutral placeholder value.
-    expect(label).toBeInTheDocument()
-    expect(label.nextElementSibling).toHaveTextContent('—')
+  it('shows a muted "add…" placeholder for an empty field', () => {
+    renderPanel({ photo: photo({ title: 'Beach', description: '' }) })
+    // Title carries a value; the empty description invites adding one.
+    expect(screen.getByRole('button', { name: 'Edit Description' })).toHaveTextContent('Add…')
+    expect(screen.getByRole('button', { name: 'Edit Title' })).toHaveTextContent('Beach')
   })
-})
 
-describe('MetadataPanel AI note', () => {
-  it('shows the AI note read-only and PATCHes an edited value', async () => {
+  it('shows values read-only to a viewer with no edit affordances', () => {
+    renderPanel({
+      canWrite: false,
+      photo: photo({ title: 'Beach', description: 'Sunny', ai_note: 'cat' }),
+    })
+    expect(screen.getByText('Beach')).toBeInTheDocument()
+    expect(screen.getByText('Sunny')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit Title' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit Description' })).not.toBeInTheDocument()
+  })
+
+  it('shows the AI note read-only and PATCHes an edited value from its own field', async () => {
     const onUpdated = vi.fn()
     updatePhotoMock.mockResolvedValue(photo({ ai_note: 'detected: cat, sofa' }))
     const user = userEvent.setup()
@@ -217,7 +238,8 @@ describe('MetadataPanel AI note', () => {
     expect(screen.getByText('AI note')).toBeInTheDocument()
     expect(screen.getByText('detected: dog, beach')).toBeInTheDocument()
 
-    await startEditing(user)
+    // Its own inline affordance opens the shared form.
+    await user.click(screen.getByRole('button', { name: 'Edit AI note' }))
     const field = screen.getByLabelText('AI note')
     expect(field).toHaveValue('detected: dog, beach')
     await user.clear(field)

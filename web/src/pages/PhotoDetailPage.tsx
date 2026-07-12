@@ -19,10 +19,10 @@ import { Lightbox } from '../components/photo/Lightbox'
 import { LivePhoto } from '../components/photo/LivePhoto'
 import { MetadataPanel } from '../components/photo/MetadataPanel'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
-import { PhotoLocation } from '../components/photo/PhotoLocation'
+import { PeoplePanel } from '../components/photo/PeoplePanel'
+import { PrivacyToggle } from '../components/photo/PrivacyToggle'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
 import { VideoPlayer } from '../components/photo/VideoPlayer'
-import { FaceAssignPanel } from '../components/people/FaceAssignPanel'
 import { FaceOverlay } from '../components/people/FaceOverlay'
 import { useFaces } from '../hooks/useFaces'
 import { useFavorite } from '../hooks/useFavorite'
@@ -55,13 +55,16 @@ type State =
  * saved non-destructive edit, with the detected faces drawn as a toggleable
  * overlay on top of it (never a second copy of the image) and prev/next
  * navigation that respects the originating list order. The photo spans the full
- * width of the content area; the control/info panels sit BELOW it in a
- * responsive card grid (information, location, edits side by side on wide
- * screens, stacking to one column on narrow ones) that is easy to extend with
- * more panels later. The information card leads with what matters — title,
- * description, albums and labels — and demotes camera/lens/EXIF and the file
- * facts to a collapsed expander. The edits card carries its own preview image,
- * so it stays collapsed until opened to keep the page at one copy of the photo.
+ * width of the content area; the control/info panels sit BELOW it, stacked in a
+ * strict edit-first priority order that is identical on every viewport:
+ *   1. Organize (albums, tags, people) — the everyday action, always-on inline
+ *      editing with no separate "edit mode";
+ *   2. Caption & place (title, description, AI description, notes, taken-at,
+ *      location) — read-only until an editor clicks a field to reveal the form;
+ *   3. Technical details (camera/lens/EXIF, file facts, uploader) — reference
+ *      only, collapsed by default;
+ *   4. Photo editing (crop/rotate/brightness/contrast) — rare, editor-only,
+ *      collapsed at the very bottom so it never competes with Organize.
  * Every mutation is role-gated; viewers see a read-only page. The whole view is
  * deep-linkable and Back returns to the prior list view (the order/scope is
  * carried in the URL query).
@@ -231,7 +234,6 @@ export function PhotoDetailPage() {
   }
 
   const poster = thumbUrl(photo.uid, 'fit_1920', downloadToken)
-  const selectedFace = faces.selected
   const isStill = photo.media_type !== 'video' && photo.media_type !== 'live'
   // The overlay is only ever drawn over the still image: it positions its boxes
   // from normalised bboxes relative to its parent, and a video player's chrome is
@@ -318,11 +320,16 @@ export function PhotoDetailPage() {
   return (
     <>
       <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
-        <Link to={backHref(view)} className="text-decoration-none">
-          ← {t('photo.back')}
-        </Link>
-        <h1 className="kk-page-title mb-0 text-truncate">{title}</h1>
-        <div className="ms-auto d-flex align-items-center gap-2 flex-wrap">
+        {/* Back arrow + title stay grouped (min-width:0 lets the title truncate
+            instead of pushing the controls off-screen); the controls wrap below
+            as a block on narrow widths, so the title is never hidden. */}
+        <div className="d-flex align-items-center gap-2 me-auto" style={{ minWidth: 0 }}>
+          <Link to={backHref(view)} className="text-decoration-none flex-shrink-0">
+            ← {t('photo.back')}
+          </Link>
+          <h1 className="kk-page-title mb-0 text-truncate">{title}</h1>
+        </div>
+        <div className="d-flex align-items-center gap-2 flex-wrap">
           <RatingStars
             rating={rating.rating}
             onRate={rating.setRating}
@@ -342,6 +349,7 @@ export function PhotoDetailPage() {
               favorite.toggle()
             }}
           />
+          {canWrite && <PrivacyToggle photo={photo} onUpdated={setPhoto} />}
         </div>
       </div>
 
@@ -409,68 +417,45 @@ export function PhotoDetailPage() {
         )}
       </div>
 
-      {/* Faces never get an image of their own: they are the overlay above.
-          A photo with none says so in one line, and the naming panel opens
-          below the preview when a box is picked. */}
-      {faces.status === 'ready' && faces.faces.length === 0 && !loadingNext && (
-        <p className="text-secondary small mt-2 mb-0">{t('faces.none')}</p>
-      )}
-      {faces.actionError && (
-        <Alert variant="danger" className="mt-2 py-2 small">
-          {t('faces.assignError')}
-        </Alert>
-      )}
-      {selectedFace !== null && canWrite && (
-        <FaceAssignPanel
-          face={selectedFace}
-          busy={faces.busy}
-          onAcceptSuggestion={(suggestion) => {
-            faces.acceptSuggestion(selectedFace, suggestion)
-          }}
-          onAssignName={(name) => {
-            faces.assignName(selectedFace, name)
-          }}
-          onUnassign={() => {
-            faces.unassign(selectedFace)
-          }}
-          onClose={() => {
-            faces.select(null)
-          }}
-        />
-      )}
-
-      {/* Control/info panels below the photo: a responsive card grid that
-          stacks to one column on phones and spreads two/three across on wider
-          screens. New panels drop in as another <Col> without a layout rewrite. */}
-      <Row className="g-3 mt-1">
-        <Col xs={12} md={6} xl={4}>
-          <Card>
-            <Card.Header>{t('photo.tabs.info')}</Card.Header>
+      {/* Control/info panels below the photo, stacked in a strict edit-first
+          priority order that is identical on every viewport (a single readable
+          column, centred on wide screens): Organize first, then Caption & place,
+          Technical details, and finally Photo editing. */}
+      <Row className="justify-content-center mt-3">
+        <Col xs={12} xl={9} xxl={8}>
+          {/* 1. Organize — the primary block: albums, tags and people, always
+              visible and directly editable for an editor (no separate edit mode). */}
+          <Card className="mb-3">
+            <Card.Header>{t('photo.sections.organize')}</Card.Header>
             <Card.Body>
-              <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
-              <hr />
               <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
               <hr />
+              <PeoplePanel faces={faces} canWrite={canWrite} loading={loadingNext} />
+            </Card.Body>
+          </Card>
+
+          {/* 2. Caption & place — title/description/AI description/notes/taken-at/
+              location, read-only until an editor clicks a field to edit it. */}
+          <Card className="mb-3">
+            <Card.Header>{t('photo.sections.caption')}</Card.Header>
+            <Card.Body>
+              <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
+            </Card.Body>
+          </Card>
+
+          {/* 3. Technical details — reference only, collapsed by default (the
+              component owns its own expander). */}
+          <Card className="mb-3">
+            <Card.Body>
               <TechnicalDetails photo={photo} />
             </Card.Body>
           </Card>
-        </Col>
 
-        <Col xs={12} md={6} xl={4}>
-          <Card>
-            <Card.Header>{t('photo.tabs.location')}</Card.Header>
-            <Card.Body>
-              <PhotoLocation photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
-            </Card.Body>
-          </Card>
-        </Col>
-
-        {canWrite && (
-          <Col xs={12} md={6} xl={4}>
-            <Card>
-              {/* The edits card owns its own preview <img>; keeping it collapsed
-                  until opened (like the old `mountOnEnter` tab) means the page
-                  still carries exactly one copy of the photo on first render. */}
+          {/* 4. Photo editing — last, editor only, collapsed by default. The edits
+              card owns its own preview <img>; keeping it collapsed until opened
+              means the page still carries exactly one copy of the photo. */}
+          {canWrite && (
+            <Card className="mb-3">
               <Card.Header className="p-0">
                 <Button
                   variant="link"
@@ -491,8 +476,8 @@ export function PhotoDetailPage() {
                 </Card.Body>
               )}
             </Card>
-          </Col>
-        )}
+          )}
+        </Col>
       </Row>
 
       <div className="mt-4">
