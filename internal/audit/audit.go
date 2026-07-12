@@ -51,6 +51,11 @@ const (
 	// ActionPhotosBulk records a bulk metadata edit applied to many photos at
 	// once via the bulk API.
 	ActionPhotosBulk = "photos.bulk"
+	// ActionPhotosMerge records resolving a duplicate group by merging the
+	// redundant copies into a chosen keeper and archiving them. The keeper UID is
+	// the target; the archived copies and the counts of what moved (albums,
+	// labels, people, filled scalar fields) are listed in the entry's details.
+	ActionPhotosMerge = "photos.merge"
 	// ActionPhotoUpdate records a single-photo metadata edit (PATCH).
 	ActionPhotoUpdate = "photo.update"
 	// ActionPhotoArchive records moving a photo to the trash (soft delete).

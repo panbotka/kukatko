@@ -57,7 +57,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON output
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
 - `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only
-- `internal/duplicatesapi` — `GET /duplicates`
+- `internal/duplicatesapi` — `GET /duplicates`, `POST /duplicates/merge`
+- `internal/dupmerge` — transactional resolve of a dup group: union albums/labels/people onto the keeper, fill gaps, archive copies
 - `internal/embedding` — HTTP client of the inference sidecar on the box; offline-aware typed errors
 - `internal/embedjob` — worker handler `image_embed` + backfill
 - `internal/exif` — EXIF/GPS extraction (exiftool, pure-Go fallback)

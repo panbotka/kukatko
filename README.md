@@ -1383,6 +1383,7 @@ Endpointy pod `/api/v1` (JSON):
 | GET | `/trash/info` | přihlášený | retenční okno `{retention_days}` pro odpočet do auto-purge |
 | POST | `/trash/empty` | editor/admin | **trvale** smaže všechny archivované fotky (vyžaduje `?confirm=true`) → `{purged,failed}` |
 | GET | `/duplicates` | editor/admin | skupiny pravděpodobných duplikátů (pHash + embedding) → `{groups,total,limit,offset,next_offset}`; query `limit`(≤100)/`offset`; 503 když `duplicate.enabled=false` (viz Duplicates) |
+| POST | `/duplicates/merge` | editor/admin | vyřeší skupinu — sloučí kopie do keepera (union alb/štítků/osob, doplní chybějící pole) a archivuje je, v jedné transakci → `{keeper_uid,albums_added,labels_added,people_added,metadata_filled,archived,dry_run}`; `dry_run:true` = náhled |
 | GET | `/photos/{uid}/thumb/{size}` | session/token | náhled (cache, generuje se on-miss) — streamuje JPEG, `ETag`/304 |
 | GET | `/photos/{uid}/video` | session/token | inline video stream s **HTTP Range** (206 partial, `Accept-Ranges`, seek; live fotka = motion klip, still → 404); volitelný on-the-fly transcode přes `video.transcode` |
 | GET | `/photos/{uid}/download` | session/token | fotka jako příloha — originál streamuje (nikdy celý v RAM), `Content-Length`/`ETag`; má-li uložený nedestruktivní edit, vrací **upravenou** verzi renderovanou za běhu (pokud není `?original=true`) |
@@ -1476,7 +1477,7 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   službu přes rozhraní `Purger` (nil → 503); službu staví `buildTrashService`
   (`cmd/kukatko/trash.go`). **Trash UI** je stránka `/trash` (editor/admin) s obnovou a trvalým
   mazáním (jednotlivě i hromadně) a odpočtem do auto-purge.
-- **Duplikáty — kontrola a úklid** (`internal/duplicates` + `internal/duplicatesapi`) — vedle
+- **Duplikáty — kontrola a řešení** (`internal/duplicates` + `internal/dupmerge` + `internal/duplicatesapi`) — vedle
   upload-time varování existuje **review surface**: `GET /duplicates` (editor/admin) vrací
   **skupiny** pravděpodobných duplikátů. Linkuje fotky dvěma signály — perceptual-hash (pHash)
   Hammingovou vzdáleností do `duplicate.phash_max_diff` bitů a embedding cosine vzdáleností do
@@ -1489,10 +1490,15 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   skupin largest-first, stránkování `limit`(≤100)/`offset`. Detekce **nikdy nic nemaže** — jen čte.
   Embeddingy se čtou z Postgresu, takže to funguje i když je box offline. Zapojeno `buildDuplicatesAPI`
   (`cmd/kukatko/duplicates.go`); při `duplicate.enabled=false` se route mountuje s nil službou
-  a odpovídá 503. **Duplicates UI** je stránka `/duplicates` (editor/admin): skupiny vedle sebe,
-  uživatel vybere fotku k zachování a **archivuje zbytek** přes sdílené bulk API
-  (`POST /photos/bulk` `{archive:true}` → koš, vratné), nebo skupinu **odmítne** jako „není
-  duplikát" (zmizí z pohledu). Žádné auto-mazání, vždy potvrzení uživatelem.
+  a odpovídá 503. **Řešení** (`POST /duplicates/merge`, `internal/dupmerge`) skupinu nezahodí — v jedné
+  transakci **sloučí zbylé kopie do zvoleného keepera**: keeper zdědí union alb, štítků i osob (osoba =
+  box-less marker, protože bounding box je vázaný na konkrétní pixely) a doplní si chybějící skalární
+  pole (title/description + per-user rating/favorite/flag; **nikdy nepřepíše** existující hodnotu),
+  teprve pak se kopie archivují (originály zůstávají do purge) a merge se zapíše do auditu. Idempotentní
+  (re-run na vyřešené skupině = no-op). **Duplicates UI** je stránka `/duplicates` (editor/admin):
+  skupiny vedle sebe, uživatel vybere fotku k zachování, **„Ponechat nejlepší a sloučit"** ukáže náhled
+  (co se přesune + kolik kopií se archivuje) k potvrzení a pak zavolá merge, nebo skupinu **odmítne**
+  jako „není duplikát" (zmizí z pohledu). Žádné auto-mazání, vždy potvrzení uživatelem.
 - **Média** `GET /photos/{uid}/thumb/{size}` a `/download` — **streamují** se (`io.Copy`, nikdy
   celý soubor v RAM), s `Cache-Control`/`ETag` (a `304` na `If-None-Match`). Přístup přes session
   cookie **nebo** `download_token` v query parametru `?t=…` (`RequireAuthOrDownloadToken`), takže

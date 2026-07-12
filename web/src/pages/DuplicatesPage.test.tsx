@@ -5,21 +5,23 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
-import { type DuplicateGroup, type DuplicatesResponse } from '../services/duplicates'
+import {
+  type DuplicateGroup,
+  type DuplicatesResponse,
+  type MergeResult,
+} from '../services/duplicates'
 
 import { DuplicatesPage } from './DuplicatesPage'
 
 // Mock the network layer only, keeping the real types.
 vi.mock('../services/duplicates', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/duplicates')>()
-  return { ...actual, fetchDuplicates: vi.fn() }
+  return { ...actual, fetchDuplicates: vi.fn(), mergeDuplicates: vi.fn() }
 })
-vi.mock('../services/bulk', () => ({ bulkUpdatePhotos: vi.fn() }))
 
-const { fetchDuplicates } = await import('../services/duplicates')
-const { bulkUpdatePhotos } = await import('../services/bulk')
+const { fetchDuplicates, mergeDuplicates } = await import('../services/duplicates')
 const fetchMock = vi.mocked(fetchDuplicates)
-const bulkMock = vi.mocked(bulkUpdatePhotos)
+const mergeMock = vi.mocked(mergeDuplicates)
 
 // group builds a two-member duplicate group with the first member as keeper.
 function group(id: string, keeper: string, other: string): DuplicateGroup {
@@ -49,6 +51,19 @@ function page(groups: DuplicateGroup[]): DuplicatesResponse {
   return { groups, total: groups.length, limit: 20, offset: 0, next_offset: null }
 }
 
+// preview builds a merge preview/result with a mix of moves and one archived copy.
+function preview(keeper: string, dryRun: boolean): MergeResult {
+  return {
+    keeper_uid: keeper,
+    albums_added: 1,
+    labels_added: 0,
+    people_added: 2,
+    metadata_filled: ['title'],
+    archived: 1,
+    dry_run: dryRun,
+  }
+}
+
 function renderPage() {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -62,7 +77,7 @@ function renderPage() {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchMock.mockReset()
-  bulkMock.mockReset()
+  mergeMock.mockReset()
 })
 
 afterEach(() => {
@@ -79,47 +94,78 @@ describe('DuplicatesPage', () => {
     expect(screen.getByText('2 photos')).toBeInTheDocument()
   })
 
-  it('archives the non-kept members via the bulk API when keeping a photo', async () => {
+  it('previews the merge then, on confirm, merges and drops the group', async () => {
     const user = userEvent.setup()
     fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
-    bulkMock.mockResolvedValue({
-      results: [{ photo_uid: 'ph_dup', status: 'updated' }],
-      counts: { total: 1, updated: 1, skipped: 0, errored: 0 },
-    })
+    mergeMock
+      .mockResolvedValueOnce(preview('ph_keep', true))
+      .mockResolvedValueOnce(preview('ph_keep', false))
     renderPage()
     await screen.findByRole('img', { name: 'ph_keep.jpg' })
 
-    await user.click(screen.getByRole('button', { name: /Keep & archive/ }))
+    await user.click(screen.getByRole('button', { name: 'Keep best & merge' }))
 
+    // A dry-run preview is fetched and shown in a confirmation dialog.
     await waitFor(() => {
-      expect(bulkMock).toHaveBeenCalledWith(['ph_dup'], { archive: true })
+      expect(mergeMock).toHaveBeenCalledWith({
+        keeper_uid: 'ph_keep',
+        member_uids: ['ph_keep', 'ph_dup'],
+        dry_run: true,
+      })
     })
-    // The resolved group disappears from the view.
+    expect(await screen.findByText('Merge duplicates')).toBeInTheDocument()
+    expect(screen.getByText(/1 copy will be archived/)).toBeInTheDocument()
+
+    // Confirming performs the real merge (no dry_run) and removes the group.
+    await user.click(screen.getByRole('button', { name: 'Confirm merge' }))
+    await waitFor(() => {
+      expect(mergeMock).toHaveBeenLastCalledWith({
+        keeper_uid: 'ph_keep',
+        member_uids: ['ph_keep', 'ph_dup'],
+      })
+    })
     await waitFor(() => {
       expect(screen.queryByRole('img', { name: 'ph_keep.jpg' })).not.toBeInTheDocument()
     })
   })
 
-  it('archives the chosen keeper, not the suggested one, when the user changes it', async () => {
+  it('previews the chosen keeper, not the suggested one, when the user changes it', async () => {
     const user = userEvent.setup()
     fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
-    bulkMock.mockResolvedValue({
-      results: [],
-      counts: { total: 1, updated: 1, skipped: 0, errored: 0 },
-    })
+    mergeMock.mockResolvedValue(preview('ph_dup', true))
     renderPage()
     await screen.findByRole('img', { name: 'ph_keep.jpg' })
 
-    // Pick the other photo as the keeper, then archive the rest.
+    // Pick the other photo as the keeper, then start the merge.
     await user.click(screen.getByRole('radio', { name: 'Keep this', checked: false }))
-    await user.click(screen.getByRole('button', { name: /Keep & archive/ }))
+    await user.click(screen.getByRole('button', { name: 'Keep best & merge' }))
 
     await waitFor(() => {
-      expect(bulkMock).toHaveBeenCalledWith(['ph_keep'], { archive: true })
+      expect(mergeMock).toHaveBeenCalledWith({
+        keeper_uid: 'ph_dup',
+        member_uids: ['ph_keep', 'ph_dup'],
+        dry_run: true,
+      })
     })
   })
 
-  it('removes a dismissed group from the view without calling the bulk API', async () => {
+  it('cancels the merge without calling the commit and keeps the group', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
+    mergeMock.mockResolvedValue(preview('ph_keep', true))
+    renderPage()
+    await screen.findByRole('img', { name: 'ph_keep.jpg' })
+
+    await user.click(screen.getByRole('button', { name: 'Keep best & merge' }))
+    await screen.findByText('Merge duplicates')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    // Only the dry-run preview was called; the group stays.
+    expect(mergeMock).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('img', { name: 'ph_keep.jpg' })).toBeInTheDocument()
+  })
+
+  it('removes a dismissed group from the view without calling the merge API', async () => {
     const user = userEvent.setup()
     fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
     renderPage()
@@ -130,7 +176,7 @@ describe('DuplicatesPage', () => {
     await waitFor(() => {
       expect(screen.queryByRole('img', { name: 'ph_keep.jpg' })).not.toBeInTheDocument()
     })
-    expect(bulkMock).not.toHaveBeenCalled()
+    expect(mergeMock).not.toHaveBeenCalled()
   })
 
   it('shows the empty state when there are no duplicate groups', async () => {

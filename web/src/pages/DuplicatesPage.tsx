@@ -7,16 +7,28 @@ import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '../components/EmptyState'
 import { DuplicateGroupCard } from '../components/duplicates/DuplicateGroupCard'
+import { MergeConfirmModal } from '../components/duplicates/MergeConfirmModal'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { ApiError } from '../services/auth'
-import { bulkUpdatePhotos } from '../services/bulk'
-import { type DuplicateGroup, fetchDuplicates } from '../services/duplicates'
+import {
+  type DuplicateGroup,
+  type MergeResult,
+  fetchDuplicates,
+  mergeDuplicates,
+} from '../services/duplicates'
 
 /** Page size for the duplicate-group listing. */
 const PAGE_SIZE = 20
 
 /** Top-level load status of the duplicates view. */
 type Status = 'loading' | 'ready' | 'error' | 'unavailable'
+
+/** A merge awaiting the user's confirmation: the group, chosen keeper and preview. */
+interface PendingMerge {
+  group: DuplicateGroup
+  keeperUid: string
+  preview: MergeResult
+}
 
 /**
  * Resolves a failed mutation to a localized, user-facing message. Raw server
@@ -33,9 +45,10 @@ function actionMessage(err: unknown, t: TFunction): string {
 /**
  * The duplicates review page (editor/admin): groups of likely-duplicate photos
  * shown side by side. For each group the user picks which photo to keep and
- * archives the rest (through the bulk API, recoverable from the trash) or
- * dismisses the group as "not a duplicate", which removes it from the view. The
- * server never deletes anything on its own; every archive is an explicit choice.
+ * merges the rest into it — the keeper inherits every album, tag and person the
+ * copies carried, and the copies are archived (recoverable from the trash) — or
+ * dismisses the group as "not a duplicate". A preview of what will move is shown
+ * for confirmation before anything changes; the server never merges on its own.
  */
 export function DuplicatesPage() {
   const { t } = useTranslation()
@@ -44,6 +57,8 @@ export function DuplicatesPage() {
   const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [busyGroupId, setBusyGroupId] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingMerge | null>(null)
+  const [confirming, setConfirming] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [resultMessage, setResultMessage] = useState<string | null>(null)
 
@@ -81,25 +96,56 @@ export function DuplicatesPage() {
     })
   }
 
-  // remove drops a group from the view by id (after archive or dismiss).
+  // remove drops a group from the view by id (after merge or dismiss).
   const remove = (groupId: string) => {
     setGroups((prev) => prev.filter((group) => group.id !== groupId))
   }
 
-  const resolve = async (group: DuplicateGroup, keeperUid: string) => {
-    const archiveUids = group.members.map((m) => m.uid).filter((uid) => uid !== keeperUid)
+  // beginResolve previews the merge for the chosen keeper and, on success, opens
+  // the confirmation modal with what would move. The group stays until confirmed.
+  const beginResolve = async (group: DuplicateGroup, keeperUid: string) => {
     setBusyGroupId(group.id)
     setActionError(null)
     setResultMessage(null)
     try {
-      const result = await bulkUpdatePhotos(archiveUids, { archive: true })
-      remove(group.id)
-      setResultMessage(t('duplicates.archived', { count: result.counts.updated }))
+      const preview = await mergeDuplicates({
+        keeper_uid: keeperUid,
+        member_uids: group.members.map((m) => m.uid),
+        dry_run: true,
+      })
+      setPending({ group, keeperUid, preview })
+    } catch (err) {
+      setActionError(actionMessage(err, t))
+      setBusyGroupId(null)
+    }
+  }
+
+  // confirmResolve performs the merge the user confirmed and drops the group.
+  const confirmResolve = async () => {
+    if (pending === null) {
+      return
+    }
+    setConfirming(true)
+    try {
+      const result = await mergeDuplicates({
+        keeper_uid: pending.keeperUid,
+        member_uids: pending.group.members.map((m) => m.uid),
+      })
+      remove(pending.group.id)
+      setResultMessage(t('duplicates.merged', { count: result.archived }))
+      setPending(null)
     } catch (err) {
       setActionError(actionMessage(err, t))
     } finally {
+      setConfirming(false)
       setBusyGroupId(null)
     }
+  }
+
+  // cancelResolve closes the confirmation modal without merging.
+  const cancelResolve = () => {
+    setPending(null)
+    setBusyGroupId(null)
   }
 
   const dismiss = (groupId: string) => {
@@ -168,7 +214,7 @@ export function DuplicatesPage() {
             group={group}
             busy={busyGroupId === group.id}
             onResolve={(g, keeperUid) => {
-              void resolve(g, keeperUid)
+              void beginResolve(g, keeperUid)
             }}
             onDismiss={dismiss}
           />
@@ -181,6 +227,15 @@ export function DuplicatesPage() {
           </Button>
         </div>
       )}
+
+      <MergeConfirmModal
+        preview={pending?.preview ?? null}
+        busy={confirming}
+        onConfirm={() => {
+          void confirmResolve()
+        }}
+        onCancel={cancelResolve}
+      />
     </>
   )
 }

@@ -45,6 +45,26 @@ export interface DuplicatesParams {
   offset?: number
 }
 
+/** Body of a merge request: the chosen keeper, the full group, and dry-run flag. */
+export interface MergeInput {
+  keeper_uid: string
+  member_uids: string[]
+  /** When true, preview what would move without changing anything. */
+  dry_run?: boolean
+}
+
+/** What a merge moved onto the keeper — or, for a dry run, would move. */
+export interface MergeResult {
+  keeper_uid: string
+  albums_added: number
+  labels_added: number
+  people_added: number
+  /** Names of the scalar fields the keeper inherited (e.g. "title", "rating"). */
+  metadata_filled: string[]
+  archived: number
+  dry_run: boolean
+}
+
 interface ErrorBody {
   error?: string
 }
@@ -87,4 +107,28 @@ export async function fetchDuplicates(
     throw new ApiError(res.status, await readErrorMessage(res))
   }
   return (await res.json()) as DuplicatesResponse
+}
+
+/**
+ * Resolves a duplicate group via `POST /api/v1/duplicates/merge`: the redundant
+ * copies are merged into the chosen keeper (their albums, labels and people are
+ * unioned onto it and its missing scalar fields filled) and then archived. Pass
+ * `dry_run: true` to preview what would move without changing anything. Throws an
+ * {@link ApiError} carrying the HTTP status on failure.
+ */
+export async function mergeDuplicates(
+  input: MergeInput,
+  signal?: AbortSignal,
+): Promise<MergeResult> {
+  const res = await fetch(`${API_BASE}/duplicates/merge`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as MergeResult
 }
