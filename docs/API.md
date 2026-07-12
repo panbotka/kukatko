@@ -352,9 +352,15 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   union-findem do souvislých komponent (žádný O(n²) sken). Každá skupina nese členy (náhled/rozměry/
   velikost/`taken_at`/vzdálenosti) + `reason` (phash/embedding/both) + navržený `keeper_uid`
   (nejvyšší rozlišení → největší → nejstarší → uid); řazení largest-first, `limit`≤100, neplatný →
-  400, sken selže → 500. **Jen čte — nic nemaže.** Při `duplicate.enabled=false` route odpovídá 503.
-  Úklid jede klient přes sdílené **bulk API** (`POST /photos/bulk` `{archive:true}` → koš, vratné).
-  Mountuje se vždy (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`).
+  400, sken selže → 500. Listing **jen čte**; při `duplicate.enabled=false` route `GET` odpovídá 503.
+  `POST /duplicates/merge` (`internal/dupmerge`, `RequireWrite`) `{keeper_uid,member_uids[],dry_run?}` →
+  `{keeper_uid,albums_added,labels_added,people_added,metadata_filled[],archived,dry_run}`: v **jedné
+  transakci** sloučí zbylé kopie do zvoleného keepera — union alb, štítků a osob (subject↔keeper marker
+  bez boxu, typ `label`), doplní chybějící skalární pole (title/description + per-user rating/favorite/
+  flag; nikdy nepřepíše existující hodnotu), archivuje kopie (`archived_at`, originály do purge) a zapíše
+  `photos.merge` do auditu. Idempotentní (opětovné spuštění na vyřešené skupině = no-op); `dry_run:true`
+  jen spočítá náhled bez změn. Neplatná skupina → 400, neexistující keeper → 404, `merge=nil` → 503.
+  Route `merge` běží i při vypnuté detekci. Mount vždy `buildDuplicatesAPI` (`cmd/kukatko/duplicates.go`).
 - **System status API (`/api/v1`, `internal/systemapi` + `internal/system`, admin-only přes
   `RequireAdmin`):** `GET /system/status` → jeden agregovaný snapshot provozního zdraví:
   `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,total,dead_letter,

@@ -1174,13 +1174,26 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `Member` nese rozměry/velikost/`taken_at`/media_type + `is_keeper` + `phash_distance`/
   `embedding_distance` ke keeperovi; **navržený keeper** = nejvyšší rozlišení → největší soubor →
   nejstarší → nejmenší uid (`selectKeeperIndex`); skupiny řazené largest-first/newest-keeper/id,
-  `limit` clamp `[1,100]`; jen čte, **nikdy nemutuje** (úklid jde přes bulk/archive API); archivované
-  fotky se nescanují (`ListActivePhashes` filtruje `archived_at IS NULL`)), `internal/duplicatesapi/`
-  (editor/admin HTTP API nad detekcí duplikátů: rozhraní `Service` (`FindGroups`, splňuje
-  `*duplicates.Service`, **nil → 503** ať route existuje i při vypnuté detekci);
-  `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mountuje `GET /duplicates` za `RequireWrite`
-  (query `limit`≤100/`offset`, neplatný → 400, sken selže → 500); mountuje se v `serve`
-  (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`, při `duplicate.enabled=false` nil služba)),
+  `limit` clamp `[1,100]`; jen čte, **nikdy nemutuje** (řešení jde přes `dupmerge`); archivované
+  fotky se nescanují (`ListActivePhashes` filtruje `archived_at IS NULL`)), `internal/dupmerge/`
+  (**transakční sloučení near-duplicate skupiny do keepera** — mutační protějšek read-only `duplicates`;
+  `Service=NewService(pool)`, `Merge(ctx,Input{KeeperUID,MemberUIDs,ActorUID})→Result{albums_added,
+  labels_added,people_added,metadata_filled[],archived,dry_run}` a `Preview` (dry-run, tx rollback).
+  V **jedné `pgx.Tx`** (jako `bulk` — audited store metody si otevírají vlastní tx, nejdou složit)
+  spočítá `plan`: union alb/štítků/osob z kopií mínus co keeper už má, `pickFill` chybějících skalárů
+  (title/description z fotky + per-user favorite/rating/flag actora, **nikdy nepřepíše** existující
+  hodnotu), aktivní kopie k archivaci; aplikuje raw SQL (`INSERT … ON CONFLICT DO NOTHING`, osoba =
+  box-less `label` marker s vygenerovaným `mk…` uid — nová marker nemá `faces` řádek, cache netřeba),
+  archivuje (`archived_at IS NULL` guard) a zapíše `audit.ActionPhotosMerge`. **Prázdný plán = no-op**
+  (nezapíše nic → idempotentní re-run na vyřešené skupině); validace `ErrNoKeeper`/`ErrTooFewMembers`/
+  `ErrKeeperNotInGroup`/`ErrKeeperNotFound`), `internal/duplicatesapi/`
+  (editor/admin HTTP API nad detekcí a řešením duplikátů: rozhraní `Service` (`FindGroups`, splňuje
+  `*duplicates.Service`, **nil → 503**) a `MergeService` (`Merge`/`Preview`, splňuje `*dupmerge.Service`,
+  **nil → 503**); `NewAPI(Config{Service,Merge,RequireWrite})`+`RegisterRoutes` mountuje `GET /duplicates`
+  a `POST /duplicates/merge` za `RequireWrite` (listing: `limit`≤100/`offset`, neplatný → 400, sken selže
+  → 500; merge: chybná skupina → 400, neexistující keeper → 404, actor z `auth.UserFromContext`);
+  mountuje se v `serve` (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`, `Merge` vždy, `Service` při
+  `duplicate.enabled=false` nil)),
   `internal/system/`
   (agregace provozního stavu instance pro admin **system-status dashboard** — žádná nová data, jen
   sloučení existujících subsystémů; vše za malými rozhraními `DBPinger` (`database.DB`)/

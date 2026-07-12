@@ -20,7 +20,7 @@ interface DuplicateGroupCardProps {
   group: DuplicateGroup
   /** Whether an action on this group is in flight (disables the buttons). */
   busy: boolean
-  /** Keep keeperUid and archive the rest of the group. */
+  /** Keep keeperUid and merge the rest of the group into it. */
   onResolve: (group: DuplicateGroup, keeperUid: string) => void
   /** Dismiss the group as "not a duplicate" (removes it from the view). */
   onDismiss: (groupId: string) => void
@@ -29,13 +29,12 @@ interface DuplicateGroupCardProps {
 /**
  * One reviewable duplicate group: the members shown side by side, a radio to
  * choose which photo to keep (pre-selected to the server's suggested keeper), and
- * actions to keep-and-archive-the-rest or dismiss the group. The keeper choice is
- * local state; the parent performs the archive through the bulk API.
+ * actions to keep-the-best-and-merge-the-rest or dismiss the group. The keeper
+ * choice is local state; the parent previews and performs the merge.
  */
 export function DuplicateGroupCard({ group, busy, onResolve, onDismiss }: DuplicateGroupCardProps) {
   const { t } = useTranslation()
   const [keeperUid, setKeeperUid] = useState(group.keeper_uid)
-  const archiveCount = group.members.length - 1
 
   return (
     <Card className="mb-4">
@@ -80,7 +79,7 @@ export function DuplicateGroupCard({ group, busy, onResolve, onDismiss }: Duplic
             onResolve(group, keeperUid)
           }}
         >
-          {t('duplicates.keepAndArchive', { count: archiveCount })}
+          {t('duplicates.merge.button')}
         </Button>
       </Card.Footer>
     </Card>

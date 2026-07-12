@@ -473,12 +473,14 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`unarchivePhoto`) a **trvalé mazání** (`purgePhoto`) jednotlivě i hromadně (`useSelection`
   `SelectionBar`), **Vyprázdnit koš** (`emptyTrash`), každá trvalá akce přes potvrzovací `Modal`;
   `fetchTrashInfo` dotáhne retenci pro odpočet na kartách,
-  `DuplicatesPage` = `/duplicates` (editor/admin) kontrola duplikátů: stránkovaný seznam skupin
-  (`fetchDuplicates`, „načíst další" přes `next_offset`) v `DuplicateGroupCard`; per skupina uživatel
-  vybere keeper a **archivuje zbytek** přes `bulkUpdatePhotos(archiveUids,{archive:true})` (zbytek do
-  koše, vratné) → skupina zmizí + success alert s počtem, nebo skupinu **odmítne** („není duplikát",
-  jen lokálně skryje); 503 → „nedostupné", loading přes `GridSkeleton`, error s retry,
-  `NotFoundPage`),
+  `DuplicatesPage` = `/duplicates` (editor/admin) kontrola a **řešení** duplikátů: stránkovaný seznam
+  skupin (`fetchDuplicates`, „načíst další" přes `next_offset`) v `DuplicateGroupCard`; per skupina
+  uživatel vybere keeper a **„Ponechat nejlepší a sloučit"** → `mergeDuplicates(dry_run:true)` spočítá
+  náhled, který se ukáže v `MergeConfirmModal` („+3 alba, +2 štítky, +1 osoba · 2 kopie budou
+  archivovány"); po potvrzení `mergeDuplicates()` sloučí (keeper zdědí alba/štítky/osoby + doplní gapy,
+  kopie do koše — vratné) → skupina zmizí + success alert (`duplicates.merged`), nebo skupinu **odmítne**
+  („není duplikát", jen lokálně skryje); chyby přes `duplicates.actionError`/503 „nedostupné", loading
+  přes `GridSkeleton`, error s retry, `NotFoundPage`),
   `components/savedsearch/` = `SaveSearchModal` (modal pro pojmenování při uložení nového pohledu
   i přejmenování existujícího uloženého hledání) + `SavedSearchesDropdown` (dropdown v hlavičce
   `SearchPage` — **ne v navbaru**; lazy fetch při otevření, položky otevírají uložený pohled přes
@@ -492,7 +494,9 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `trashCountdown` + restore/delete akce + výběr v selection módu);
   `components/duplicates/` = `DuplicateGroupCard` (karta skupiny: členové vedle sebe s náhledem/
   rozměry/velikostí/`taken_at`/vzdálenostmi, radio výběr keepera (default navržený), badge `reason`,
-  akce **Archivovat ostatní** / **Není duplikát**, busy stav);
+  akce **Ponechat nejlepší a sloučit** (`onResolve` → náhled) / **Není duplikát**, busy stav) +
+  `MergeConfirmModal` (potvrzovací dialog: shrnutí co se přesune na keepera + kolik kopií se archivuje,
+  Potvrdit/Zrušit, busy spinner);
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
   velikosti `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exportováno** — stránka musí přednačítat přesně
   tuhle URL), ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
@@ -833,9 +837,10 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `BulkOperations` (add/remove alba+štítku, set/clear caption+popisu+polohy, set_private,
   archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `duplicates.ts` =
   `fetchDuplicates(params,signal)` nad `GET /api/v1/duplicates` (skupiny duplikátů →
-  `DuplicatesResponse{groups,total,limit,offset,next_offset}`), typy `DuplicateReason`/
-  `DuplicateMember`/`DuplicateGroup`/`DuplicatesParams`; úklid jde přes `bulk.ts`
-  `bulkUpdatePhotos`; `upload.ts` =
+  `DuplicatesResponse{groups,total,limit,offset,next_offset}`) + `mergeDuplicates(input,signal)` nad
+  `POST /api/v1/duplicates/merge` (řešení skupiny → `MergeResult{albums_added,labels_added,people_added,
+  metadata_filled[],archived,dry_run}`; `dry_run:true` = náhled), typy `DuplicateReason`/
+  `DuplicateMember`/`DuplicateGroup`/`DuplicatesParams`/`MergeInput`/`MergeResult`; `upload.ts` =
   `uploadFile(file,{onProgress,signal})`
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
