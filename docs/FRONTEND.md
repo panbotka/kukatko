@@ -84,8 +84,14 @@ zapiš sem.
   `prefers-reduced-motion` vypne. Testy: `EmptyState.test.tsx`);
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
   `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
-  `UploadItem` (řádek fronty: jméno+velikost, progress-bar, status badge, near-duplicate
-  varování, remove/retry akce), `UploadOrganize` (dva vyhledávatelné `MultiSelect` pro **alba**
+  `UploadProgressHeader` (**prominentní sticky** hlavička celé dávky: „done / total“, **jeden**
+  overall progress-bar vážený i částečným `progress` běžících souborů — `barLabel` pro a11y —,
+  živý rozpad počtů uploaded/duplicate/failed/remaining; po dokončení přepne na **completed
+  summary** s odkazem do knihovny a jednoklikovým retry-failed), `UploadItem` (řádek fronty jako
+  samostatná `kk-surface` karta: jméno+velikost, progress-bar, status badge, near-duplicate
+  varování, remove/retry akce; chybný řádek má `border-danger`), `UploadList` (**virtualizovaný**
+  `Virtuoso useWindowScroll` seznam řádků, mezery přes `pb-2`, aby 100+ souborů zůstalo svižné na
+  mobilu), `UploadOrganize` (dva vyhledávatelné `MultiSelect` pro **alba**
   a **štítky** platné pro celou dávku, s inline vytvořením nové položky přes `onCreate`; prázdné
   by default, řízené `useUploadOrganize`); `components/library/` = `PhotoTile`
   (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, **play badge + délka** u
@@ -268,9 +274,11 @@ zapiš sem.
   plus pro editory **režim výběru** nad výsledky → `BulkEditControl` (po úspěchu se hledání
   přehraje přes `reloadKey`); změna `q`/`mode` je jiná sada výsledků, takže **opouští režim výběru**
   (filtry, které jen zužují totéž hledání, výběr nechají, stejně jako v knihovně),
-  `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu): `DropZone`
-  nad frontou `UploadItem`, per-file progress/status, souhrn počtů, start/clear/retry-failed,
-  po dokončení odkaz na nově nahrané fotky (`/?sort=added`, přes `LIBRARY_PATH`); nad frontou
+  `UploadPage` = multiupload (drag-and-drop + galerie/fotoaparát na mobilu, **mobile-first**):
+  `DropZone` nad **sticky** `UploadProgressHeader` (celkový průběh dávky) a virtualizovaným
+  `UploadList` (`UploadItem` řádky), ovládání start/clear + přepínač **jen neúspěšné** (filtr
+  `showErrorsOnly` na chybné soubory); completed summary + odkaz na nově nahrané fotky
+  (`/?sort=added`, přes `LIBRARY_PATH` v hlavičce) a retry-failed jsou v `UploadProgressHeader`; nad frontou
   `UploadOrganize` — před nahráním lze vybrat **alba a štítky** pro celou dávku a po dosettlování
   všech souborů se **všechny** rozpoznané fotky (nové **i** duplicitní `resolvedUids`) přiřadí
   jedním `POST /photos/bulk` (stav „přiřazuji…“, úspěch, nebo **opakovatelná** chyba — fotky jsou
@@ -508,7 +516,9 @@ zapiš sem.
   přehraje hledání po mutaci;
   `useUploadQueue` = fronta uploadu: `addFiles` (dedup jméno+velikost+mtime)/`removeItem`/
   `start`/`retry`/`retryFailed`/`clear`, konkurenční strop `MAX_CONCURRENT_UPLOADS` (3),
-  per-file status+progress, souhrn počtů, `createdUids` (jen nové) pro odkaz do knihovny
+  per-file status+progress, souhrn počtů + `progress` (**celková** frakce dávky 0–1 vážená
+  částečným progressem běžících souborů, terminální soubory = hotové → plynulý overall bar),
+  `createdUids` (jen nové) pro odkaz do knihovny
   a `resolvedUids` (nové **i** duplicitní fotky) pro pouploadové přiřazení; auto-drainuje
   frontu efektem po `start`/retry, ruší běžící uploady při unmountu;
   `useUploadOrganize` = výběr alb/štítků pro celou dávku uploadu + jejich přiřazení: načte katalogy
