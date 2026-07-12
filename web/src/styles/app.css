@@ -35,6 +35,19 @@ body {
   overflow-x: clip;
 }
 
+/* Native form-control chrome must match the control's painted surface. The app
+   runs `color-scheme: dark` (dark page, dark scrollbars), but Bootswatch Superhero
+   paints every `.form-control`/`.form-select` with a white background and dark
+   text regardless of theme. Left to the page's dark scheme the browser draws the
+   native bits — a `type=date` field's placeholder text and calendar-picker glyph,
+   a `<select>`'s dropdown — light, i.e. invisible on that white surface. Pinning
+   the controls to the light scheme makes those native parts render dark-on-white,
+   matching the white field. */
+.form-control,
+.form-select {
+  color-scheme: light;
+}
+
 /* Honour side notches in landscape by padding the navbar and the main content
    container into the safe area. `env()` is 0 on devices without insets, so this
    is a no-op on desktop. */

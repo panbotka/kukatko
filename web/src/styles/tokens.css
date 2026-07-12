@@ -18,6 +18,30 @@
  * gives the surface an edge without a heavy border.
  */
 
+/*
+ * Theme root — keep Superhero's navy under Bootstrap's dark scheme.
+ *
+ * The app runs with `data-bs-theme="dark"` on <html> (set in index.html) so that
+ * Bootstrap's *dark* surface tokens apply everywhere — without it Superhero leaves
+ * `--bs-tertiary-bg`, `--bs-secondary-bg(-subtle)` and `--bs-emphasis-color` at
+ * light values on `:root`, which paints `.bg-body-tertiary` panels and skeletons
+ * near-white while the body text is also near-white (invisible labels; the library
+ * filter panel bug). But Superhero's `[data-bs-theme=dark]` block also swaps the
+ * page background from its signature navy (#0f2537) to a neutral charcoal (#212529)
+ * and dims the body text. We want the dark *surfaces* without losing the navy
+ * *identity*, so re-pin just the page background and body colour back to Superhero's
+ * root values. This keeps every already-correct screen — and the navy-derived
+ * `--kk-surface-*` color-mixes below — pixel-identical, while the broken light
+ * surfaces finally resolve dark. Specificity (`:root[...]`) beats Bootstrap's own
+ * `[data-bs-theme=dark]`.
+ */
+:root[data-bs-theme='dark'] {
+  --bs-body-bg: #0f2537;
+  --bs-body-bg-rgb: 15, 37, 55;
+  --bs-body-color: #ebebeb;
+  --bs-body-color-rgb: 235, 235, 235;
+}
+
 :root {
   /* ---- Spacing scale -------------------------------------------------
      A 4px-based scale. Use these for gaps, padding and margins that

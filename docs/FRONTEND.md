@@ -840,7 +840,16 @@ zapiš sem.
   `styles/tokens.css` (**design token vrstva** — jediný zdroj pravdy pro odstupy, rádiusy, elevaci,
   motion a typografickou škálu; importovaná **jednou** v `main.tsx` hned za Bootswatch CSS a **před**
   `app.css`, které tokeny konzumuje. Bootswatch Superhero zůstává základní téma — tohle je vrstva
-  **nad** ním, nepřepisuje `--bs-*` proměnné globálně. Obsah: **spacing** `--kk-space-1..7` (4px
+  **nad** ním, nepřepisuje `--bs-*` proměnné globálně (jediná výjimka je cílený **theme root**).
+  **Theme root:** aplikace běží s `data-bs-theme="dark"` na `<html>` (v `index.html`) — bez něj
+  Superhero nechává `--bs-tertiary-bg`, `--bs-secondary-bg(-subtle)` a `--bs-emphasis-color` na
+  **světlých** hodnotách na `:root` a do tmy je překlápí až uvnitř `[data-bs-theme=dark]`, takže
+  `.bg-body-tertiary` panely (advanced-filtr knihovny, `SelectionBar`, detail řádek auditu) i
+  skeletony (`.bg-secondary-subtle`) se malovaly skoro bílé pod skoro bílým `--bs-body-color` =
+  neviditelné popisky (white-on-white). Protože Superhero v dark bloku zároveň mění navy pozadí
+  `#0f2537` na neutrální charcoal `#212529`, `:root[data-bs-theme='dark']` v `tokens.css` **re-pinuje
+  `--bs-body-bg`/`--bs-body-color` zpět na navy** — tmavé *povrchy* bez ztráty navy *identity*
+  (a `--kk-surface-*` color-mixy z `--bs-body-bg` zůstanou beze změny). Obsah: **spacing** `--kk-space-1..7` (4px
   škála), **rádiusy** `--kk-radius-sm/md/lg/pill`, **elevace** `--kk-shadow-0..3` (na tmavém tématu
   vždy dvojice: drop shadow + `inset 0 1px 0` horní highlight, jinak by stín na navy pozadí zanikl),
   **povrchy** `--kk-surface-raised` (odvozený z `--bs-body-bg`; **záměrně není** Superhero
@@ -878,6 +887,10 @@ zapiš sem.
   `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link` + větší `.form-check-input`,
   bez zásahu do desktop (fine-pointer) layoutu a bez per-komponentových změn (systémová oprava
   všudypřítomných `size="sm"` ovládání);
+  **native form chrome** `.form-control`/`.form-select { color-scheme: light }` — Superhero maluje
+  form-controly bíle bez ohledu na téma, takže pod `color-scheme: dark` stránky by prohlížeč kreslil
+  jejich nativní části (placeholder a glyf kalendáře u `type=date`, dropdown selectu) světle =
+  neviditelné na bílém poli; připnutí ovládacích prvků na světlé schéma je vykreslí tmavě-na-bílém;
   **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
   okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
   none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`

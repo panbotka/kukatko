@@ -1,5 +1,16 @@
 <!doctype html>
-<html lang="cs">
+<!--
+  data-bs-theme="dark" is mandatory: Bootswatch Superhero leaves several surface
+  tokens (--bs-tertiary-bg, --bs-secondary-bg(-subtle), --bs-emphasis-color, …)
+  at LIGHT values on :root and only flips them to dark inside [data-bs-theme=dark].
+  Without it, .bg-body-tertiary panels and skeleton placeholders paint near-white
+  while the body text stays near-white too → invisible labels (see the library
+  filter panel). Setting it at the document root applies Bootstrap's dark surface
+  tokens everywhere. tokens.css then re-pins --bs-body-bg back to Superhero's navy
+  so the app keeps its signature page colour. `color-scheme: dark` (below, and set
+  by the dark theme block) keeps native chrome dark-appropriate.
+-->
+<html lang="cs" data-bs-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
