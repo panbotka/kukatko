@@ -50,15 +50,29 @@ describe('GridDensityControl', () => {
     expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeEnabled()
   })
 
-  it('drops from the minimum column count back to auto', async () => {
+  it('steps down to one photo per row and disables the fewer button there', async () => {
     window.localStorage.setItem(STORAGE_KEY, '2')
     const user = userEvent.setup()
     renderControl()
 
     await user.click(screen.getByRole('button', { name: 'Fewer tiles per row' }))
 
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('"auto"')
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('1')
+    expect(screen.getByText('1')).toBeInTheDocument()
+    // One photo per row is the floor: there is nothing fewer to step to.
     expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeDisabled()
+  })
+
+  it('steps back up from one photo per row', async () => {
+    window.localStorage.setItem(STORAGE_KEY, '1')
+    const user = userEvent.setup()
+    renderControl()
+
+    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
+
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('2')
+    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeEnabled()
   })
 
   it('cannot step past the maximum column count', () => {

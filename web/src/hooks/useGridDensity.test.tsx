@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GRID_COLUMNS_MAX, GRID_COLUMNS_MIN, GRID_DENSITY_DEFAULT } from '../lib/gridDensity'
 
@@ -7,18 +7,59 @@ import { useGridDensity } from './useGridDensity'
 
 const STORAGE_KEY = 'kukatko.grid.density'
 
+/**
+ * Points `window.matchMedia` at a fixed narrow/wide answer so the viewport-aware
+ * default is deterministic. The shared test setup stubs a non-matching (wide)
+ * `matchMedia`; this overrides it for a single test.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
 beforeEach(() => {
   window.localStorage.clear()
 })
 
 afterEach(() => {
   window.localStorage.clear()
+  // Restore the shared setup's wide default so tests never leak a narrow viewport.
+  mockViewport(false)
 })
 
 describe('useGridDensity', () => {
-  it('starts from the responsive default when nothing is persisted', () => {
+  it('starts from the responsive default on a wide viewport when nothing is persisted', () => {
+    mockViewport(false)
     const { result } = renderHook(() => useGridDensity())
     expect(result.current.density).toBe(GRID_DENSITY_DEFAULT)
+  })
+
+  it('defaults to one photo per row on a narrow viewport when nothing is persisted', () => {
+    mockViewport(true)
+    const { result } = renderHook(() => useGridDensity())
+    expect(result.current.density).toBe(GRID_COLUMNS_MIN)
+  })
+
+  it('honours a stored preference over the narrow-viewport default', () => {
+    mockViewport(true)
+    window.localStorage.setItem(STORAGE_KEY, '4')
+    const { result } = renderHook(() => useGridDensity())
+    expect(result.current.density).toBe(4)
+  })
+
+  it('honours an explicit auto choice even on a narrow viewport', () => {
+    mockViewport(true)
+    window.localStorage.setItem(STORAGE_KEY, '"auto"')
+    const { result } = renderHook(() => useGridDensity())
+    expect(result.current.density).toBe('auto')
   })
 
   it('round-trips a valid value and survives a remount', () => {
@@ -37,11 +78,11 @@ describe('useGridDensity', () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('6')
   })
 
-  it('clamps an out-of-range value into 2..8 on the way in', () => {
+  it('clamps an out-of-range value into 1..8 on the way in', () => {
     const { result } = renderHook(() => useGridDensity())
 
     act(() => {
-      result.current.setDensity(1)
+      result.current.setDensity(0)
     })
     expect(result.current.density).toBe(GRID_COLUMNS_MIN)
 
@@ -49,6 +90,16 @@ describe('useGridDensity', () => {
       result.current.setDensity(42)
     })
     expect(result.current.density).toBe(GRID_COLUMNS_MAX)
+  })
+
+  it('pins one photo per row when asked', () => {
+    const { result } = renderHook(() => useGridDensity())
+
+    act(() => {
+      result.current.setDensity(1)
+    })
+    expect(result.current.density).toBe(GRID_COLUMNS_MIN)
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('1')
   })
 
   it('clamps an out-of-range value that was already persisted', () => {

@@ -5,8 +5,8 @@
  */
 export type GridDensity = 'auto' | number
 
-/** The fewest columns the user may pin the grid to. */
-export const GRID_COLUMNS_MIN = 2
+/** The fewest columns the user may pin the grid to: one photo per row. */
+export const GRID_COLUMNS_MIN = 1
 
 /** The most columns the user may pin the grid to. */
 export const GRID_COLUMNS_MAX = 8
@@ -47,41 +47,61 @@ export function sanitizeDensity(raw: unknown): GridDensity {
 }
 
 /**
- * Steps a density one rung along the picker's ladder — `'auto'`, then every
- * pinnable count from {@link GRID_COLUMNS_MIN} to {@link GRID_COLUMNS_MAX}. A
- * positive `delta` pins more columns (smaller tiles); a negative one steps back
- * toward `'auto'`, and the smallest pinned count drops to `'auto'` rather than
- * off the end. Both ends clamp. The input is sanitized first, so a tampered
- * value can never step to something off the ladder.
+ * Steps a density one rung along the picker's ladder. A positive `delta` pins
+ * more columns (smaller tiles), a negative one fewer (larger tiles), and both
+ * ends clamp: one-per-row ({@link GRID_COLUMNS_MIN}) is the floor and
+ * {@link GRID_COLUMNS_MAX} the ceiling. `'auto'` is the responsive default off
+ * to the side of the ladder: stepping up from it enters the smallest
+ * *multi-column* count (never one-per-row, which is fewer tiles, not more), and
+ * stepping down from it stays put — `'auto'` is reached again only by resetting.
+ * The input is sanitized first, so a tampered value can never step off the ladder.
  */
 export function stepDensity(density: GridDensity, delta: number): GridDensity {
   const current = sanitizeDensity(density)
   if (delta < 0) {
-    if (current === 'auto') return 'auto'
-    return current <= GRID_COLUMNS_MIN ? 'auto' : current - 1
+    // One-per-row is the floor and `'auto'` has no rung below it; the control
+    // disables the `−` button in both states.
+    if (current === 'auto' || current <= GRID_COLUMNS_MIN) return current
+    return current - 1
   }
   if (delta > 0) {
-    if (current === 'auto') return GRID_COLUMNS_MIN
+    // Leaving `'auto'` pins the smallest multi-column layout, so "more tiles per
+    // row" from the responsive default never collapses to a single column.
+    if (current === 'auto') return Math.min(GRID_COLUMNS_MAX, GRID_COLUMNS_MIN + 1)
     return Math.min(GRID_COLUMNS_MAX, current + 1)
   }
   return current
 }
 
 /**
- * Reads the persisted density, falling back to {@link GRID_DENSITY_DEFAULT} when
- * storage is empty, unavailable (private mode / no `window`) or holds invalid JSON.
+ * Reads the persisted density, or `null` when the device has no usable stored
+ * preference — empty storage, storage unavailable (private mode / no `window`),
+ * or corrupt JSON. The distinction matters so the caller can pick a
+ * viewport-aware initial layout (one-per-row on a phone) only while the user has
+ * not chosen for themselves; a real stored choice, `'auto'` included, is honoured
+ * on every viewport.
  */
-export function readDensity(): GridDensity {
+export function readStoredDensity(): GridDensity | null {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (raw === null) {
-      return GRID_DENSITY_DEFAULT
+      return null
     }
     return sanitizeDensity(JSON.parse(raw))
   } catch {
-    // Storage unavailable or value not parseable — fall back to the default.
-    return GRID_DENSITY_DEFAULT
+    // Storage unavailable or value not parseable — treat as "no preference".
+    return null
   }
+}
+
+/**
+ * The density to fall back to when the device has no stored preference. A narrow
+ * (phone-width) viewport starts at one photo per row so the tiles aren't cramped;
+ * a wider viewport keeps the responsive multi-column default. Only consulted
+ * while nothing is persisted — see {@link readStoredDensity}.
+ */
+export function defaultDensityForViewport(isNarrow: boolean): GridDensity {
+  return isNarrow ? GRID_COLUMNS_MIN : GRID_DENSITY_DEFAULT
 }
 
 /**
@@ -99,9 +119,10 @@ export function writeDensity(density: GridDensity): void {
 /**
  * Builds the `grid-template-columns` value for a density.
  *
- * `'auto'` yields today's width-driven template. A pinned count yields tracks
- * whose *minimum* is the exact width `count` columns would need — so `auto-fill`
- * fits exactly `count` of them — floored at {@link GRID_TILE_MIN_PX}. Once the
+ * `'auto'` yields today's width-driven template and a pinned count of `1` a
+ * single full-width column. Any other pinned count yields tracks whose *minimum*
+ * is the exact width `count` columns would need — so `auto-fill` fits exactly
+ * `count` of them — floored at {@link GRID_TILE_MIN_PX}. Once the
  * viewport is too narrow for that floor the ideal width loses the `max()`, the
  * tracks stop shrinking, and `auto-fill` fits fewer columns. It can never fit
  * more, because a track is never narrower than its ideal width.
@@ -112,6 +133,13 @@ export function writeDensity(density: GridDensity): void {
 export function gridTemplateColumns(density: GridDensity, gapPx: number = GRID_GAP_PX): string {
   if (density === 'auto') {
     return `repeat(auto-fill, minmax(${GRID_TILE_MIN_PX}px, 1fr))`
+  }
+  if (density === 1) {
+    // One photo per row: a single track spanning the full content width. There
+    // is no tile floor to honour and nothing narrower to fall back to, so the
+    // auto-fill machinery is skipped entirely. `minmax(0, 1fr)` lets the column
+    // shrink with the viewport rather than being pinned to its content's width.
+    return 'minmax(0, 1fr)'
   }
   const gaps = (density - 1) * gapPx + 1
   const ideal = `calc((100% - ${gaps}px) / ${density})`

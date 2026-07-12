@@ -97,6 +97,15 @@ describe('PhotoGrid', () => {
     )
   })
 
+  it('renders one photo per row when pinned to a single column', () => {
+    window.localStorage.setItem(STORAGE_KEY, '1')
+    renderGrid()
+    const grid = gridElement()
+    expect(grid).toHaveAttribute('data-density', '1')
+    // A single full-width column — the existing tile at full width.
+    expect(grid.style.gridTemplateColumns).toBe(gridTemplateColumns(1))
+  })
+
   it('clamps a corrupt persisted value back to the responsive default', () => {
     window.localStorage.setItem(STORAGE_KEY, '{{{')
     renderGrid()
