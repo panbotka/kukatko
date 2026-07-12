@@ -20,6 +20,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -37,6 +38,18 @@ const hoursPerDay = 24
 // large trash is processed in bounded memory.
 const defaultBatchSize = 200
 
+// Purge sources, recorded in each purge's audit entry (details["source"]) so the
+// trail distinguishes a manual single purge, an empty-trash sweep, and the
+// scheduled retention purge.
+const (
+	// sourceManual is a single admin/editor purge of one photo.
+	sourceManual = "manual"
+	// sourceEmptyTrash is an admin/editor sweep of the whole trash.
+	sourceEmptyTrash = "empty_trash"
+	// sourceRetention is the scheduled, system-initiated retention purge.
+	sourceRetention = "retention"
+)
+
 // PhotoStore is the subset of the photo repository the purge needs: resolving a
 // photo and its files, enumerating the archived backlog, and deleting a row.
 type PhotoStore interface {
@@ -44,9 +57,11 @@ type PhotoStore interface {
 	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
 	// ListFiles returns every stored file (original and sidecars) for the photo.
 	ListFiles(ctx context.Context, photoUID string) ([]photos.PhotoFile, error)
-	// Delete removes the photo row, cascading its satellite rows. It returns
-	// photos.ErrPhotoNotFound when no such photo exists.
-	Delete(ctx context.Context, uid string) error
+	// DeleteAudited removes the photo row (cascading its satellite rows) and writes
+	// entry to the audit log in the same transaction, so the permanent deletion and
+	// its audit record commit atomically. It returns photos.ErrPhotoNotFound when no
+	// such photo exists, in which case nothing is deleted and no audit row is written.
+	DeleteAudited(ctx context.Context, uid string, entry audit.Entry) error
 	// ListArchivedUIDs returns archived photo UIDs oldest-first; before bounds the
 	// set to archived_at <= before (nil = all archived).
 	ListArchivedUIDs(ctx context.Context, before *time.Time, limit, offset int) ([]string, error)
@@ -140,11 +155,11 @@ func New(cfg Config) *Service {
 	}
 }
 
-// PurgePhoto permanently deletes the archived photo identified by uid. It
-// returns photos.ErrPhotoNotFound if no such photo exists, or ErrNotArchived if
-// the photo is live (not in the trash). On success the row and all its artifacts
-// are gone.
-func (s *Service) PurgePhoto(ctx context.Context, uid string) error {
+// PurgePhoto permanently deletes the archived photo identified by uid, recording
+// meta (the acting admin/editor) on the purge's audit entry. It returns
+// photos.ErrPhotoNotFound if no such photo exists, or ErrNotArchived if the photo
+// is live (not in the trash). On success the row and all its artifacts are gone.
+func (s *Service) PurgePhoto(ctx context.Context, uid string, meta audit.Meta) error {
 	photo, err := s.photos.GetByUID(ctx, uid)
 	if err != nil {
 		return fmt.Errorf("trash: resolving photo %s: %w", uid, err)
@@ -152,33 +167,36 @@ func (s *Service) PurgePhoto(ctx context.Context, uid string) error {
 	if photo.ArchivedAt == nil {
 		return ErrNotArchived
 	}
-	return s.purgeOne(ctx, uid)
+	return s.purgeOne(ctx, uid, meta, sourceManual)
 }
 
 // EmptyTrash permanently deletes every archived photo regardless of how long it
-// has been in the trash. It returns the count purged and failed; a per-photo
-// failure is recorded and the photo is left in the trash rather than aborting
-// the whole run.
-func (s *Service) EmptyTrash(ctx context.Context) (Result, error) {
-	return s.purgeArchived(ctx, nil)
+// has been in the trash, attributing each purge to meta (the acting
+// admin/editor). It returns the count purged and failed; a per-photo failure is
+// recorded and the photo is left in the trash rather than aborting the whole run.
+func (s *Service) EmptyTrash(ctx context.Context, meta audit.Meta) (Result, error) {
+	return s.purgeArchived(ctx, nil, meta, sourceEmptyTrash)
 }
 
 // PurgeExpired permanently deletes every archived photo whose archived_at is
-// older than the configured retention period. When retention is disabled
-// (RetentionDays <= 0) it is a no-op returning a zero Result.
+// older than the configured retention period. It runs without an HTTP actor, so
+// each purge is audited against a system actor (empty ActorUID). When retention
+// is disabled (RetentionDays <= 0) it is a no-op returning a zero Result.
 func (s *Service) PurgeExpired(ctx context.Context) (Result, error) {
 	if s.retentionDays <= 0 {
 		return Result{}, nil
 	}
 	cutoff := time.Now().Add(-time.Duration(s.retentionDays) * hoursPerDay * time.Hour)
-	return s.purgeArchived(ctx, &cutoff)
+	return s.purgeArchived(ctx, &cutoff, audit.Meta{}, sourceRetention)
 }
 
 // purgeArchived purges archived photos in oldest-first batches until none remain
-// in scope. before bounds the set (nil = all archived). Failed photos are
-// skipped via a growing offset so the loop always converges, and a cancelled
-// context stops it promptly.
-func (s *Service) purgeArchived(ctx context.Context, before *time.Time) (Result, error) {
+// in scope, attributing each purge to meta with the given source. before bounds
+// the set (nil = all archived). Failed photos are skipped via a growing offset so
+// the loop always converges, and a cancelled context stops it promptly.
+func (s *Service) purgeArchived(
+	ctx context.Context, before *time.Time, meta audit.Meta, source string,
+) (Result, error) {
 	var res Result
 	offset := 0
 	for {
@@ -192,19 +210,22 @@ func (s *Service) purgeArchived(ctx context.Context, before *time.Time) (Result,
 		if len(uids) == 0 {
 			return res, nil
 		}
-		if err := s.purgeBatch(ctx, uids, &res, &offset); err != nil {
+		if err := s.purgeBatch(ctx, uids, &res, &offset, meta, source); err != nil {
 			return res, err
 		}
 	}
 }
 
-// purgeBatch purges one batch of UIDs, accumulating counts into res. A per-photo
-// failure is logged, counted and skipped (offset is advanced so the failed UID
-// is stepped past on the next batch, keeping the loop convergent); only a
-// cancelled context aborts the batch.
-func (s *Service) purgeBatch(ctx context.Context, uids []string, res *Result, offset *int) error {
+// purgeBatch purges one batch of UIDs, accumulating counts into res and
+// attributing each purge to meta with the given source. A per-photo failure is
+// logged, counted and skipped (offset is advanced so the failed UID is stepped
+// past on the next batch, keeping the loop convergent); only a cancelled context
+// aborts the batch.
+func (s *Service) purgeBatch(
+	ctx context.Context, uids []string, res *Result, offset *int, meta audit.Meta, source string,
+) error {
 	for _, uid := range uids {
-		if err := s.purgeOne(ctx, uid); err != nil {
+		if err := s.purgeOne(ctx, uid, meta, source); err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return fmt.Errorf("trash: purge interrupted: %w", ctxErr)
 			}
@@ -219,10 +240,12 @@ func (s *Service) purgeBatch(ctx context.Context, uids []string, res *Result, of
 }
 
 // purgeOne deletes a single photo's artifacts (originals, thumbnails and remote
-// objects) and then its row. Artifacts are removed first so an interrupted purge
-// leaves a re-purgeable orphan row rather than dangling files; a hard artifact
-// error aborts before the row is deleted so the next run retries it.
-func (s *Service) purgeOne(ctx context.Context, uid string) error {
+// objects) and then its row, writing an audit entry (attributed to meta, tagged
+// with source) in the same transaction as the row deletion. Artifacts are removed
+// first so an interrupted purge leaves a re-purgeable orphan row rather than
+// dangling files; a hard artifact error aborts before the row is deleted so the
+// next run retries it.
+func (s *Service) purgeOne(ctx context.Context, uid string, meta audit.Meta, source string) error {
 	files, err := s.photos.ListFiles(ctx, uid)
 	if err != nil {
 		return fmt.Errorf("listing files: %w", err)
@@ -232,7 +255,8 @@ func (s *Service) purgeOne(ctx context.Context, uid string) error {
 			return err
 		}
 	}
-	if err := s.photos.Delete(ctx, uid); err != nil {
+	entry := meta.Entry(audit.ActionPhotoPurge, "photos", uid, map[string]any{"source": source})
+	if err := s.photos.DeleteAudited(ctx, uid, entry); err != nil {
 		return fmt.Errorf("deleting row: %w", err)
 	}
 	return nil

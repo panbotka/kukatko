@@ -7,15 +7,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
 // fakePhotoStore is an in-memory PhotoStore for the purge tests. It tracks which
-// rows were deleted and can be made to fail a specific row's deletion.
+// rows were deleted (and the audit entry each deletion carried) and can be made
+// to fail a specific row's deletion.
 type fakePhotoStore struct {
 	photos    map[string]photos.Photo
 	files     map[string][]photos.PhotoFile
 	deleted   map[string]bool
+	auditedAs map[string]audit.Entry
 	deleteErr map[string]error
 	listErr   error
 }
@@ -26,6 +29,7 @@ func newFakePhotoStore() *fakePhotoStore {
 		photos:    map[string]photos.Photo{},
 		files:     map[string][]photos.PhotoFile{},
 		deleted:   map[string]bool{},
+		auditedAs: map[string]audit.Entry{},
 		deleteErr: map[string]error{},
 	}
 }
@@ -51,8 +55,10 @@ func (f *fakePhotoStore) ListFiles(_ context.Context, uid string) ([]photos.Phot
 	return f.files[uid], nil
 }
 
-// Delete removes the seeded photo, honouring a configured per-uid error.
-func (f *fakePhotoStore) Delete(_ context.Context, uid string) error {
+// DeleteAudited removes the seeded photo and records the audit entry it carried,
+// honouring a configured per-uid error. A configured error leaves the row (and
+// records no audit entry), mirroring the real store's atomic rollback.
+func (f *fakePhotoStore) DeleteAudited(_ context.Context, uid string, entry audit.Entry) error {
 	if err := f.deleteErr[uid]; err != nil {
 		return err
 	}
@@ -61,6 +67,7 @@ func (f *fakePhotoStore) Delete(_ context.Context, uid string) error {
 	}
 	delete(f.photos, uid)
 	f.deleted[uid] = true
+	f.auditedAs[uid] = entry
 	return nil
 }
 
@@ -194,7 +201,7 @@ func TestPurgePhoto_states(t *testing.T) {
 			fs, th := newFakeStorage(), newFakeThumb()
 			svc := newService(t, store, fs, th, nil)
 
-			err := svc.PurgePhoto(context.Background(), tt.uid)
+			err := svc.PurgePhoto(context.Background(), tt.uid, audit.Meta{ActorUID: "usr_admin"})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("PurgePhoto error = %v, want %v", err, tt.wantErr)
 			}
@@ -207,6 +214,13 @@ func TestPurgePhoto_states(t *testing.T) {
 				}
 				if !th.removed[tt.uid+"-hash"] {
 					t.Errorf("thumbnails for %s-hash were not removed", tt.uid)
+				}
+				got := store.auditedAs[tt.uid]
+				if got.Action != audit.ActionPhotoPurge || got.ActorUID != "usr_admin" {
+					t.Errorf("purge audit entry = %+v, want action %q actor usr_admin", got, audit.ActionPhotoPurge)
+				}
+				if got.Details["source"] != sourceManual {
+					t.Errorf("purge audit source = %v, want %q", got.Details["source"], sourceManual)
 				}
 			}
 		})
@@ -222,7 +236,7 @@ func TestPurgePhoto_removesRemoteObject(t *testing.T) {
 	remote := &fakeRemote{removed: map[string]bool{}}
 	svc := newService(t, store, fs, th, remote)
 
-	if err := svc.PurgePhoto(context.Background(), "ph_a"); err != nil {
+	if err := svc.PurgePhoto(context.Background(), "ph_a", audit.Meta{}); err != nil {
 		t.Fatalf("PurgePhoto: %v", err)
 	}
 	if !remote.removed["ph_a.jpg"] {
@@ -241,7 +255,7 @@ func TestEmptyTrash_purgesAllArchived(t *testing.T) {
 	fs, th := newFakeStorage(), newFakeThumb()
 	svc := newService(t, store, fs, th, nil)
 
-	res, err := svc.EmptyTrash(context.Background())
+	res, err := svc.EmptyTrash(context.Background(), audit.Meta{})
 	if err != nil {
 		t.Fatalf("EmptyTrash: %v", err)
 	}
@@ -311,7 +325,7 @@ func TestPurgeArchived_keepsRowWhenArtifactDeleteFails(t *testing.T) {
 	fs.failOn["ph_bad.jpg"] = errors.New("disk on fire")
 	svc := newService(t, store, fs, th, nil)
 
-	res, err := svc.EmptyTrash(context.Background())
+	res, err := svc.EmptyTrash(context.Background(), audit.Meta{})
 	if err != nil {
 		t.Fatalf("EmptyTrash: %v", err)
 	}

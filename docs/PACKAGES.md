@@ -27,6 +27,15 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `adminUserResponse` (embedded `User` + `note`). Validace `validateNote` → `ErrNoteTooLong`
   (`MaxNoteLen` = 1000 **run**) → 400. `UpdateUserInput.Note` je `*string`: `nil` = nech být,
   `""` = smaž (SQL `note = COALESCE($6::text, note)`).
+  **Audit správy uživatelů** (`store_user_audit.go`): admin handlery volají auditované varianty
+  `Service.CreateUserAudited`/`UpdateUserAudited`/`SetUserDisabledAudited`/`ResetPasswordAudited`,
+  které přes `Store.CreateUserAudited`/`UpdateUserProfileAudited`/`SetUserDisabledAudited`/
+  `SetPasswordHashAudited` zapíšou `user.create`/`user.update`/`user.disable`/`user.password` audit
+  řádek `inAuditedTx` — **ve stejné transakci** jako změna (rollback ⇒ žádný audit řádek). Neaudito­
+  vané `CreateUser`/`UpdateUser`/`SetUserDisabled`/`ResetPassword` zůstávají pro bootstrap a test
+  seeding (sdílejí jádro `prepareNewUser`/`validateUserUpdate`/`invalidateIfDisabled`). Handler bere
+  actora z `UserFromContext` a staví `audit.FromRequest(r,uid).Entry(...)`; `details` nese
+  `username`/`role` (create) resp. `role`/`disabled` (update/disable).
   **API tokeny** (`apitoken.go`, `store_apitoken.go`, `service_apitoken.go`,
   `handlers_apitoken.go`, migrace `0020_api_tokens.sql`): dlouhodobý bearer credential
   `kkt_<id>_<secret>` pro neinteraktivní klienty. `<id>` je PK řádku (prefix `at`), takže ověření
@@ -350,17 +359,21 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `ThumbStore`/`RemoteRemover` (unit-testovatelné s faky): `Service` = `New(Config{Photos,Storage,
   Thumbnailer,Remote?,RetentionDays,BatchSize,Logger})` (panika na nil Photos/Storage/Thumbnailer);
   **purgeOne** smaže artefakty fotky (originál přes `Storage.Delete`, cachované náhledy přes
-  `Thumbnailer.Remove`, volitelně S3 objekt přes `RemoteRemover`) **a pak** DB řádek
-  (`photos.Delete` kaskáduje embeddingy/faces/markery/album_photos/photo_labels/phashe/edity/oblíbené
-  přes `ON DELETE CASCADE`) — artefakty napřed, takže přerušený purge nechá re-purgovatelný řádek
-  místo dangling souborů; idempotentní (chybějící soubor/`os.ErrNotExist`/`thumb.ErrInvalidHash`
-  se ignoruje); `PurgePhoto(uid)` (404 `photos.ErrPhotoNotFound`, `ErrNotArchived` na živou fotku),
-  `EmptyTrash()` (purge všech archivovaných) a `PurgeExpired()` (jen `archived_at` starší než
-  `RetentionDays`, ≤ 0 = no-op) iterují `photos.ListArchivedUIDs` v oldest-first dávkách
-  (`BatchSize`, default 200) → `Result{Purged,Failed}`; **per-fotka selhání** se zaloguje, počítá a
-  přeskočí (offset roste, fotka zůstane v koši pro retry), jen zrušený ctx aborte; `RunPurge(ctx,
-  interval)` = plánovaný úklid (hned + každý interval, vypnutý při retenci ≤ 0) pro `serve`
-  goroutinu), `internal/jobs/`
+  `Thumbnailer.Remove`, volitelně S3 objekt přes `RemoteRemover`) **a pak** DB řádek přes
+  `photos.DeleteAudited(uid,entry)` — smaže řádek (kaskáduje embeddingy/faces/markery/album_photos/
+  photo_labels/phashe/edity/oblíbené přes `ON DELETE CASCADE`) **a zapíše `photo.purge` audit řádek
+  ve stejné transakci** (durable-audit; rollback ⇒ žádný audit řádek); artefakty napřed, takže
+  přerušený purge nechá re-purgovatelný řádek místo dangling souborů; idempotentní (chybějící
+  soubor/`os.ErrNotExist`/`thumb.ErrInvalidHash` se ignoruje); `PurgePhoto(uid,meta)` (404
+  `photos.ErrPhotoNotFound`, `ErrNotArchived` na živou fotku), `EmptyTrash(meta)` (purge všech
+  archivovaných) a `PurgeExpired()` (jen `archived_at` starší než `RetentionDays`, ≤ 0 = no-op)
+  iterují `photos.ListArchivedUIDs` v oldest-first dávkách (`BatchSize`, default 200) →
+  `Result{Purged,Failed}`; **každý purge = jeden `photo.purge` audit řádek** (`audit.Meta` s
+  actorem u ručních purgů, prázdný systémový actor u plánovaného `PurgeExpired`; `details.source` =
+  `manual`/`empty_trash`/`retention`); **per-fotka selhání** se zaloguje, počítá a přeskočí (offset
+  roste, fotka zůstane v koši pro retry), jen zrušený ctx aborte; `RunPurge(ctx, interval)` =
+  plánovaný úklid (hned + každý interval, vypnutý při retenci ≤ 0) pro `serve` goroutinu),
+  `internal/jobs/`
   (persistentní fronta jobů v Postgresu, **hlavní robustnost proti photo-sorteru** —
   joby přežijí restart, retryují, dedupují, čekají když je box offline; tabulka `jobs` v migraci
   `0005_jobs.sql`: `state` queued/running/done/failed/dead, `priority`, `payload` JSONB,
@@ -782,15 +795,17 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   UserAgent}` (prázdné UID/IP/UA → SQL NULL, nil details → `{}`); **konvence pro handlery**
   `Meta` + `FromRequest(r, actorUID)` (actor z auth kontextu, IP z `X-Forwarded-For`/`X-Real-IP`/
   `RemoteAddr`, UA z hlavičky) → `(Meta).Entry(action, targetType, targetUID, details)` staví
-  ostatní entry; action konstanty `ActionPhotosBulk`/`ActionPhoto{Update,Archive,Unarchive}`/
+  ostatní entry; action konstanty `ActionPhotosBulk`/`ActionPhoto{Update,Archive,Unarchive,Purge}`/
   `ActionAlbum{Create,Update,Delete}`/`ActionLabel{Create,Update,Delete}`/`ActionFaceAssign`/
   `ActionUser{Create,Update,Disable,Password}`; `Store` = `NewStore(pool)` se `Record(ctx,Entry)`
   (vlastní spojení) a **filtrovaným čtením** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ActorUID,
   TargetType,TargetUID,Action,Since,Until,Limit,Offset}`, newest-first, limit cap 500/default 100)
   pro admin výpis. **Zapojené in-tx mutace**: bulk (`internal/bulk`) + foto PATCH/archive/unarchive
-  přes audited varianty `photos.Store.{UpdateMetadata,Archive,Unarchive}Audited` (mutace + audit
-  v jedné tx přes sdílený `rowQuerier`/`mutateAudited`); další domény (alba/štítky/lidé/uživatelé)
-  následují stejnou konvenci), `internal/auditapi/`
+  přes audited varianty `photos.Store.{UpdateMetadata,Archive,Unarchive}Audited`, **trvalý purge**
+  `photos.Store.DeleteAudited` (`internal/trash` → `photo.purge`, systémový actor u plánované retence)
+  a **správa uživatelů** `auth.Store.{CreateUser,UpdateUserProfile,SetUserDisabled,SetPasswordHash}Audited`
+  (`user.*`) — vše mutace + audit v jedné tx přes sdílený `rowQuerier`/`mutateAudited` (photos) resp.
+  `inAuditedTx` (auth); další domény (alba/štítky/lidé) následují stejnou konvenci), `internal/auditapi/`
   (admin-only HTTP API nad audit trailem: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
   mountuje `GET /audit` za `RequireAdmin`; `parseFilter` z query `user`/`entity_type`/`entity_uid`/
   `action`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (neplatný čas/číslo → 400),

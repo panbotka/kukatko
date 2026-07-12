@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/trash"
 )
@@ -24,13 +25,13 @@ type fakePurger struct {
 }
 
 // PurgePhoto records the uid and returns the configured error.
-func (f *fakePurger) PurgePhoto(_ context.Context, uid string) error {
+func (f *fakePurger) PurgePhoto(_ context.Context, uid string, _ audit.Meta) error {
 	f.purgedUID = uid
 	return f.purgeErr
 }
 
 // EmptyTrash counts its calls and returns the configured result/error.
-func (f *fakePurger) EmptyTrash(_ context.Context) (trash.Result, error) {
+func (f *fakePurger) EmptyTrash(_ context.Context, _ audit.Meta) (trash.Result, error) {
 	f.emptyCalls++
 	return f.emptyRes, f.emptyErr
 }

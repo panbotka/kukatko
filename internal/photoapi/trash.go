@@ -7,19 +7,22 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/trash"
 )
 
 // Purger is the subset of the trash service the HTTP layer needs: permanently
-// deleting one archived photo and emptying the whole trash. When nil the trash
-// mutation endpoints answer 503.
+// deleting one archived photo and emptying the whole trash. Each mutation carries
+// the acting user (audit.Meta) so the permanent deletion is attributed in the
+// audit trail. When nil the trash mutation endpoints answer 503.
 type Purger interface {
 	// PurgePhoto permanently deletes the archived photo, returning
 	// photos.ErrPhotoNotFound or trash.ErrNotArchived for the obvious cases.
-	PurgePhoto(ctx context.Context, uid string) error
+	PurgePhoto(ctx context.Context, uid string, meta audit.Meta) error
 	// EmptyTrash permanently deletes every archived photo and reports the counts.
-	EmptyTrash(ctx context.Context) (trash.Result, error)
+	EmptyTrash(ctx context.Context, meta audit.Meta) (trash.Result, error)
 }
 
 // trashInfo is the JSON body of the trash-info endpoint, carrying the retention
@@ -40,6 +43,15 @@ func confirmed(r *http.Request) bool {
 	return r.URL.Query().Get("confirm") == "true"
 }
 
+// purgeAuditMeta builds the audit envelope for a trash purge from r, attributing
+// it to the authenticated caller. The trash mutation endpoints are gated by
+// requireWrite, so a principal is always present in production; if one is somehow
+// absent the actor is recorded empty rather than failing the permanent deletion.
+func purgeAuditMeta(r *http.Request) audit.Meta {
+	user, _ := auth.UserFromContext(r.Context())
+	return audit.FromRequest(r, user.UID)
+}
+
 // handlePurge permanently deletes a single archived photo. It requires the
 // explicit confirm=true query parameter (400 otherwise), answers 404 for a
 // missing photo and 409 for a photo that is not archived, and 204 on success.
@@ -54,7 +66,7 @@ func (a *API) handlePurge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := chi.URLParam(r, "uid")
-	switch err := a.purger.PurgePhoto(r.Context(), uid); {
+	switch err := a.purger.PurgePhoto(r.Context(), uid, purgeAuditMeta(r)); {
 	case errors.Is(err, photos.ErrPhotoNotFound):
 		writeError(w, http.StatusNotFound, "photo not found")
 	case errors.Is(err, trash.ErrNotArchived):
@@ -78,7 +90,7 @@ func (a *API) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "confirmation required (confirm=true)")
 		return
 	}
-	res, err := a.purger.EmptyTrash(r.Context())
+	res, err := a.purger.EmptyTrash(r.Context(), purgeAuditMeta(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "emptying trash failed")
 		return

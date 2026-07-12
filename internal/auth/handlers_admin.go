@@ -5,7 +5,21 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/panbotka/kukatko/internal/audit"
 )
+
+// userTargetType names the audited entity kind for user accounts.
+const userTargetType = "users"
+
+// adminAuditMeta builds the audit envelope for an admin user-management mutation
+// from r, attributing it to the acting admin. The /admin/users routes are gated
+// by RequireAdmin, so a principal is always present in production; if one is
+// somehow absent the actor is recorded empty rather than blocking the change.
+func adminAuditMeta(r *http.Request) audit.Meta {
+	user, _ := UserFromContext(r.Context())
+	return audit.FromRequest(r, user.UID)
+}
 
 // createUserRequest is the JSON body of POST /admin/users. display_name and note
 // are optional and default to empty. Its shape mirrors CreateUserInput so the
@@ -79,7 +93,8 @@ func (a *API) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	user, err := a.svc.CreateUser(r.Context(), CreateUserInput(req))
+	entry := adminAuditMeta(r).Entry(audit.ActionUserCreate, userTargetType, "", nil)
+	user, err := a.svc.CreateUserAudited(r.Context(), CreateUserInput(req), entry)
 	if err != nil {
 		writeCreateUserError(w, err)
 		return
@@ -113,7 +128,9 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	user, err := a.svc.UpdateUser(r.Context(), uid, UpdateUserInput(req))
+	entry := adminAuditMeta(r).Entry(audit.ActionUserUpdate, userTargetType, uid,
+		map[string]any{"role": string(req.Role), "disabled": req.Disabled})
+	user, err := a.svc.UpdateUserAudited(r.Context(), uid, UpdateUserInput(req), entry)
 	if err != nil {
 		writeUserMutationError(w, err, "could not update user")
 		return
@@ -123,7 +140,10 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 // handleDisableUser disables a user and invalidates their sessions (admin only).
 func (a *API) handleDisableUser(w http.ResponseWriter, r *http.Request) {
-	user, err := a.svc.SetUserDisabled(r.Context(), chi.URLParam(r, "uid"), true)
+	uid := chi.URLParam(r, "uid")
+	entry := adminAuditMeta(r).Entry(audit.ActionUserDisable, userTargetType, uid,
+		map[string]any{"disabled": true})
+	user, err := a.svc.SetUserDisabledAudited(r.Context(), uid, true, entry)
 	if err != nil {
 		writeUserMutationError(w, err, "could not disable user")
 		return
@@ -141,7 +161,8 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	err := a.svc.ResetPassword(r.Context(), uid, req.NewPassword)
+	entry := adminAuditMeta(r).Entry(audit.ActionUserPassword, userTargetType, uid, nil)
+	err := a.svc.ResetPasswordAudited(r.Context(), uid, req.NewPassword, entry)
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)

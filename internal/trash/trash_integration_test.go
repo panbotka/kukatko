@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -200,7 +201,7 @@ func TestEmptyTrash_removesAllArchived(t *testing.T) {
 	b, bOrig, bThumb := env.seedPhoto(t, "b", &recent)
 	livePhoto, _, _ := env.seedPhoto(t, "live", nil)
 
-	res, err := env.svc.EmptyTrash(t.Context())
+	res, err := env.svc.EmptyTrash(t.Context(), audit.Meta{})
 	if err != nil {
 		t.Fatalf("EmptyTrash: %v", err)
 	}
@@ -224,15 +225,15 @@ func TestPurgePhoto_singleArchived(t *testing.T) {
 	archived, origAbs, thumbAbs := env.seedPhoto(t, "arch", &recent)
 	livePhoto, _, _ := env.seedPhoto(t, "live", nil)
 
-	if err := env.svc.PurgePhoto(t.Context(), livePhoto.UID); !errors.Is(err, trash.ErrNotArchived) {
+	if err := env.svc.PurgePhoto(t.Context(), livePhoto.UID, audit.Meta{}); !errors.Is(err, trash.ErrNotArchived) {
 		t.Fatalf("PurgePhoto(live) error = %v, want ErrNotArchived", err)
 	}
-	if err := env.svc.PurgePhoto(t.Context(), archived.UID); err != nil {
+	if err := env.svc.PurgePhoto(t.Context(), archived.UID, audit.Meta{}); err != nil {
 		t.Fatalf("PurgePhoto(archived): %v", err)
 	}
 	env.assertGone(t, archived, origAbs, thumbAbs)
 
-	if err := env.svc.PurgePhoto(t.Context(), "ph_missing"); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if err := env.svc.PurgePhoto(t.Context(), "ph_missing", audit.Meta{}); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("PurgePhoto(missing) error = %v, want ErrPhotoNotFound", err)
 	}
 }

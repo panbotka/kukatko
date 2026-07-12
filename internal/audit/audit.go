@@ -57,6 +57,11 @@ const (
 	ActionPhotoArchive = "photo.archive"
 	// ActionPhotoUnarchive records restoring a photo from the trash.
 	ActionPhotoUnarchive = "photo.unarchive"
+	// ActionPhotoPurge records the permanent, irreversible deletion of a photo
+	// from the trash — a manual purge, emptying the trash, or the scheduled
+	// retention purge. Unlike ActionPhotoArchive it cannot be undone, so it is
+	// audited with the purged photo's UID and the purge source in the details.
+	ActionPhotoPurge = "photo.purge"
 	// ActionAlbumCreate records creating an album.
 	ActionAlbumCreate = "album.create"
 	// ActionAlbumUpdate records editing an album's metadata.

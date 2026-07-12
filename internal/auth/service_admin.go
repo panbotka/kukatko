@@ -5,6 +5,8 @@ import (
 	"log"
 	"time"
 	"unicode/utf8"
+
+	"github.com/panbotka/kukatko/internal/audit"
 )
 
 // BootstrapOutcome reports what Bootstrap did, so the caller can log an
@@ -86,11 +88,46 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (Boo
 }
 
 // CreateUser validates and inserts a new user, hashing the supplied password. It
-// returns ErrInvalidRole for an unknown role, ErrPasswordTooShort for a weak
-// password, ErrNoteTooLong for an over-length note, ErrUsernameTaken on a
-// duplicate username, and the created user (without its password hash relevant
-// to callers) on success.
+// records no audit entry and is used for system-initiated creation (bootstrap,
+// test seeding); handlers that must attribute the action to an admin call
+// CreateUserAudited. It returns ErrInvalidRole for an unknown role,
+// ErrPasswordTooShort for a weak password, ErrNoteTooLong for an over-length
+// note, ErrUsernameTaken on a duplicate username, and the created user on success.
 func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, error) {
+	user, err := s.prepareNewUser(in)
+	if err != nil {
+		return User{}, err
+	}
+	if err := s.store.CreateUser(ctx, user); err != nil {
+		return User{}, err
+	}
+	return s.store.GetUserByUID(ctx, user.UID)
+}
+
+// CreateUserAudited creates a user like CreateUser and writes a user.create audit
+// entry attributed to entry's actor in the same transaction as the insert (see
+// internal/audit). The created user's username and role are recorded in the
+// entry's details, and its UID becomes the entry's target.
+func (s *Service) CreateUserAudited(ctx context.Context, in CreateUserInput, entry audit.Entry) (User, error) {
+	user, err := s.prepareNewUser(in)
+	if err != nil {
+		return User{}, err
+	}
+	if entry.Details == nil {
+		entry.Details = map[string]any{}
+	}
+	entry.Details["username"] = user.Username
+	entry.Details["role"] = string(user.Role)
+	if err := s.store.CreateUserAudited(ctx, user, entry); err != nil {
+		return User{}, err
+	}
+	return s.store.GetUserByUID(ctx, user.UID)
+}
+
+// prepareNewUser validates in and builds the User to insert, hashing the password
+// and assigning a fresh UID. It is shared by CreateUser and CreateUserAudited and
+// returns ErrInvalidRole, ErrPasswordTooShort or ErrNoteTooLong on invalid input.
+func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, ErrInvalidRole
 	}
@@ -105,7 +142,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, err
 	if err != nil {
 		return User{}, err
 	}
-	user := User{
+	return User{
 		UID:          uid,
 		Username:     normalizeUsername(in.Username),
 		DisplayName:  in.DisplayName,
@@ -113,11 +150,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, err
 		Role:         in.Role,
 		PasswordHash: hash,
 		Note:         in.Note,
-	}
-	if err := s.store.CreateUser(ctx, user); err != nil {
-		return User{}, err
-	}
-	return s.store.GetUserByUID(ctx, uid)
+	}, nil
 }
 
 // ListUsers returns every user ordered by username.
@@ -130,40 +163,81 @@ func (s *Service) GetUser(ctx context.Context, uid string) (User, error) {
 	return s.store.GetUserByUID(ctx, uid)
 }
 
-// UpdateUser updates a user's profile fields. When the update disables the
-// account, all of that user's sessions are invalidated so the change takes
-// effect immediately. A nil in.Note leaves the stored note untouched. It returns
-// ErrInvalidRole for an unknown role, ErrNoteTooLong for an over-length note,
-// and ErrUserNotFound if no such user exists.
+// UpdateUser updates a user's profile fields without recording an audit entry;
+// handlers use UpdateUserAudited. When the update disables the account, all of
+// that user's sessions are invalidated so the change takes effect immediately. A
+// nil in.Note leaves the stored note untouched. It returns ErrInvalidRole for an
+// unknown role, ErrNoteTooLong for an over-length note, and ErrUserNotFound if no
+// such user exists.
 func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
-	if !in.Role.Valid() {
-		return User{}, ErrInvalidRole
-	}
-	if in.Note != nil {
-		if err := validateNote(*in.Note); err != nil {
-			return User{}, err
-		}
+	if err := validateUserUpdate(in); err != nil {
+		return User{}, err
 	}
 	user, err := s.store.UpdateUserProfile(ctx, uid, in)
 	if err != nil {
 		return User{}, err
 	}
-	if in.Disabled {
-		if _, err := s.store.DeleteUserSessions(ctx, uid); err != nil {
-			return User{}, err
-		}
-	}
-	return user, nil
+	return s.invalidateIfDisabled(ctx, uid, in.Disabled, user)
 }
 
-// SetUserDisabled enables or disables the user identified by uid. Disabling also
-// invalidates all of that user's sessions so the lockout is immediate. It
-// returns the refreshed user, or ErrUserNotFound if no such user exists.
+// UpdateUserAudited updates a user's profile fields like UpdateUser and writes a
+// user.update audit entry attributed to entry's actor in the same transaction as
+// the change (see internal/audit).
+func (s *Service) UpdateUserAudited(
+	ctx context.Context, uid string, in UpdateUserInput, entry audit.Entry,
+) (User, error) {
+	if err := validateUserUpdate(in); err != nil {
+		return User{}, err
+	}
+	user, err := s.store.UpdateUserProfileAudited(ctx, uid, in, entry)
+	if err != nil {
+		return User{}, err
+	}
+	return s.invalidateIfDisabled(ctx, uid, in.Disabled, user)
+}
+
+// validateUserUpdate validates the role and optional note of an update input,
+// returning ErrInvalidRole or ErrNoteTooLong. A nil note skips the note check.
+func validateUserUpdate(in UpdateUserInput) error {
+	if !in.Role.Valid() {
+		return ErrInvalidRole
+	}
+	if in.Note != nil {
+		return validateNote(*in.Note)
+	}
+	return nil
+}
+
+// SetUserDisabled enables or disables the user identified by uid without
+// recording an audit entry; handlers use SetUserDisabledAudited. Disabling also
+// invalidates all of that user's sessions so the lockout is immediate. It returns
+// the refreshed user, or ErrUserNotFound if no such user exists.
 func (s *Service) SetUserDisabled(ctx context.Context, uid string, disabled bool) (User, error) {
 	user, err := s.store.SetUserDisabled(ctx, uid, disabled)
 	if err != nil {
 		return User{}, err
 	}
+	return s.invalidateIfDisabled(ctx, uid, disabled, user)
+}
+
+// SetUserDisabledAudited enables or disables a user like SetUserDisabled and
+// writes a user.disable audit entry attributed to entry's actor in the same
+// transaction as the change (see internal/audit).
+func (s *Service) SetUserDisabledAudited(
+	ctx context.Context, uid string, disabled bool, entry audit.Entry,
+) (User, error) {
+	user, err := s.store.SetUserDisabledAudited(ctx, uid, disabled, entry)
+	if err != nil {
+		return User{}, err
+	}
+	return s.invalidateIfDisabled(ctx, uid, disabled, user)
+}
+
+// invalidateIfDisabled deletes all of the user's sessions when disabled is true,
+// so a disable takes effect immediately, and returns user unchanged. Re-enabling
+// (disabled false) leaves existing sessions alone. Shared by the plain and
+// audited update/disable paths.
+func (s *Service) invalidateIfDisabled(ctx context.Context, uid string, disabled bool, user User) (User, error) {
 	if disabled {
 		if _, err := s.store.DeleteUserSessions(ctx, uid); err != nil {
 			return User{}, err
@@ -173,8 +247,9 @@ func (s *Service) SetUserDisabled(ctx context.Context, uid string, disabled bool
 }
 
 // ResetPassword sets a new password for the user identified by uid and
-// invalidates all of that user's sessions. It returns ErrPasswordTooShort for a
-// weak password and ErrUserNotFound if no such user exists.
+// invalidates all of that user's sessions, without recording an audit entry;
+// handlers use ResetPasswordAudited. It returns ErrPasswordTooShort for a weak
+// password and ErrUserNotFound if no such user exists.
 func (s *Service) ResetPassword(ctx context.Context, uid, newPassword string) error {
 	hash, err := HashPassword(newPassword)
 	if err != nil {
@@ -183,6 +258,26 @@ func (s *Service) ResetPassword(ctx context.Context, uid, newPassword string) er
 	if err := s.store.SetPasswordHash(ctx, uid, hash); err != nil {
 		return err
 	}
+	return s.invalidateSessions(ctx, uid)
+}
+
+// ResetPasswordAudited sets a new password like ResetPassword and writes a
+// user.password audit entry attributed to entry's actor in the same transaction
+// as the change (see internal/audit).
+func (s *Service) ResetPasswordAudited(ctx context.Context, uid, newPassword string, entry audit.Entry) error {
+	hash, err := HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	if err := s.store.SetPasswordHashAudited(ctx, uid, hash, entry); err != nil {
+		return err
+	}
+	return s.invalidateSessions(ctx, uid)
+}
+
+// invalidateSessions deletes every session of the user identified by uid so a
+// password change locks out other sessions immediately.
+func (s *Service) invalidateSessions(ctx context.Context, uid string) error {
 	if _, err := s.store.DeleteUserSessions(ctx, uid); err != nil {
 		return err
 	}

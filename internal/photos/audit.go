@@ -49,6 +49,26 @@ func (s *Store) UnarchiveAudited(ctx context.Context, uid string, entry audit.En
 	})
 }
 
+// DeleteAudited permanently deletes the photo identified by uid (cascading its
+// satellite rows) and writes entry to the audit log in the same transaction, so
+// the row deletion and the record of who purged it commit atomically and roll
+// back together on failure (the durable-audit convention; see internal/audit).
+// entry's TargetUID defaults to uid. It returns ErrPhotoNotFound when no row
+// matched, in which case nothing is deleted and no audit entry is written.
+func (s *Store) DeleteAudited(ctx context.Context, uid string, entry audit.Entry) error {
+	_, err := s.mutateAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
+		tag, err := tx.Exec(ctx, "DELETE FROM photos WHERE uid = $1", uid)
+		if err != nil {
+			return Photo{}, fmt.Errorf("photos: deleting photo: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return Photo{}, ErrPhotoNotFound
+		}
+		return Photo{}, nil
+	})
+	return err
+}
+
 // mutateAudited opens a transaction, runs mutate, writes entry (with TargetUID
 // defaulted to uid) on the same transaction and commits, so the mutation and its
 // audit row are atomic. If mutate or the audit write fails the transaction rolls
