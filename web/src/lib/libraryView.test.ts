@@ -41,22 +41,34 @@ describe('filter-list encoding', () => {
 })
 
 describe('viewToParams multi-value facets', () => {
-  it('passes the comma-joined album/label lists through unchanged', () => {
+  it('passes the comma-joined album/label/person lists through unchanged', () => {
     const params = viewToParams({
       ...LIBRARY_DEFAULTS,
       album: 'al_1,al_2',
       label: 'lb_1,lb_2',
+      person: 'su_1,su_2',
     })
     expect(params.album).toBe('al_1,al_2')
     expect(params.label).toBe('lb_1,lb_2')
+    expect(params.person).toBe('su_1,su_2')
+  })
+
+  it('carries the favorites toggle through to the list params', () => {
+    expect(viewToParams({ ...LIBRARY_DEFAULTS, favorite: 'true' }).favorite).toBe('true')
+    expect(viewToParams(LIBRARY_DEFAULTS).favorite).toBe('')
   })
 })
 
 describe('hasActiveFilters', () => {
-  it('treats a non-empty album or label list as an active filter', () => {
+  it('treats a non-empty album, label or person list as an active filter', () => {
     expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, album: 'al_1,al_2' })).toBe(true)
     expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, label: 'lb_1' })).toBe(true)
+    expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, person: 'su_1' })).toBe(true)
     expect(hasActiveFilters(LIBRARY_DEFAULTS)).toBe(false)
+  })
+
+  it('treats the favorites toggle as an active filter', () => {
+    expect(hasActiveFilters({ ...LIBRARY_DEFAULTS, favorite: 'true' })).toBe(true)
   })
 })
 

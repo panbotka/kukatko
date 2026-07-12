@@ -69,6 +69,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
   **album/label scope** `AlbumUID`/`LabelUID` korelovaným `EXISTS` nad `album_photos`/`photo_labels`
   — podklad sdíleného scoped výpisu fotek alba/štítku přes `GET /photos?album=`/`?label=`,
+  plus **person/subject scope** `SubjectUIDs` (multi, kombinace AND: jeden korelovaný `EXISTS` nad
+  `markers` per subjekt, `invalid = FALSE`) — podklad `GET /photos?person=` a osobního facetu filtrů,
   plus **place scope** `Country`/`City` (exact match jedním korelovaným `EXISTS` nad `photo_places`)
   — podklad `GET /photos?country=&city=`,
   plus **per-user favorite scope** `FavoriteOf` korelovaným `EXISTS` nad `user_favorites`
@@ -318,7 +320,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `archived` false/true/only, `private`,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`year` (čtyřciferný
   1000–9999) → `Year`**, **`album`/`label`
-  scope** → `AlbumUID`/`LabelUID`, **`country`/`city` place scope** → `Country`/`City`,
+  scope** → `AlbumUID`/`LabelUID`, **`person` scope (multi, AND)** → `SubjectUIDs`,
+  **`country`/`city` place scope** → `Country`/`City`,
   **per-user `min_rating` (int) + `flag` (`pick`/`reject`/`eye`)**
   → `MinRating`/`Flag`; neplatný → 400) + `favoriteRequested` parsuje `favorite=true`
   → handler nastaví per-user `FavoriteOf` na aktuálního uživatele; handlery list/search/favorites

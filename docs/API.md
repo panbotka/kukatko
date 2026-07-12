@@ -50,6 +50,10 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   vyberou několik alb/štítků najednou, kombinace **AND** — fotka musí být ve **všech** vybraných
   albech a nést **všechny** vybrané štítky (každý UID = vlastní korelovaný `EXISTS`). Jedna hodnota
   (`?album={uid}`) je zpětně kompatibilní jedno-albový scope;
+  **`person` scope** (`?person={uid}`, také multi-hodnotový, opakované `?person=a&person=b`,
+  kombinace **AND**) zúží výpis na fotky obsahující **všechny** vybrané subjekty (osoba/zvíře/jiné) —
+  join přes **markery** (pojmenovaná tvář/oblast, `invalid = FALSE`; zamítnuté markery se nepočítají),
+  každý UID = vlastní korelovaný `EXISTS` nad `markers`;
   **album scope si vždy vynutí chronologii** (stačí ≥ 1 vybrané album): fotky alba jdou od nejstarší
   (`taken_at ASC`, fotka bez data pořízení padá na svůj upload čas `created_at`, takže pořadí je úplné
   a stabilní) a `sort`/`order` z query se pro album ignorují — defaulty endpointu pro ostatní pohledy

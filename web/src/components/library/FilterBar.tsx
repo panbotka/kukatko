@@ -53,12 +53,19 @@ export interface FilterBarProps<T extends LibraryView> {
    */
   showDensity?: boolean
   /**
-   * The Year / Album / Label facet option lists. Omit to hide the facet row —
-   * pages whose grid is already scoped to one album, label or place have nothing
-   * to offer there. Album titles and label names also let the chips name a filter
-   * instead of showing its UID.
+   * The Year / Album / Label / Person facet option lists. Omit to hide the facet
+   * row — pages whose grid is already scoped to one album, label or place have
+   * nothing to offer there. Album titles, label names and subject names also let
+   * the chips name a filter instead of showing its UID.
    */
   facets?: LibraryFacets
+  /**
+   * Whether to show the favorites toggle. Off by default: pages already scoped to
+   * favorites (the Favorites page) would only offer a redundant, conflicting
+   * control. The library opts in so "favorites + album + year" can be combined in
+   * the main grid.
+   */
+  showFavorite?: boolean
   /**
    * Where the "search the full text instead" link points, carrying the current
    * view. Omit on pages that are not the library (and on `/search` itself, which
@@ -74,12 +81,13 @@ export interface FilterBarProps<T extends LibraryView> {
  * the grid-density picker (how many photos sit side by side — a per-device
  * display preference, not part of the view), and a "Filters" toggle badged with
  * the count of active filters. Below it sits
- * the facet row — Year, Album, Label — the three ways photos are actually found;
+ * the facet row — Year, Album, Label, Person — the ways photos are actually found;
  * it appears only when the page supplies `facets`. The remaining filters (date
- * range, camera, archived, location, private, min rating, flag) live in a
- * collapsible panel on desktop and an offcanvas drawer on phones, so the resting
- * state stays uncluttered. Every active filter is echoed as a removable chip plus
- * a single clear-all action.
+ * range, camera, archived, favorites, location, private, min rating, flag) live in
+ * a collapsible panel on desktop and an offcanvas drawer on phones, so the resting
+ * state stays uncluttered — the favorites toggle only when the page opts in via
+ * `showFavorite`. Every active filter is echoed as a removable chip plus a single
+ * clear-all action.
  *
  * The quick filter is a substring match, not a search: `searchHref` puts a
  * labelled link to `/search` beside it, which is where full-text and semantic
@@ -101,6 +109,7 @@ export function FilterBar<T extends LibraryView>({
   showSort = true,
   showDensity = true,
   facets,
+  showFavorite = false,
   searchHref,
 }: FilterBarProps<T>) {
   const { t } = useTranslation()
@@ -123,7 +132,9 @@ export function FilterBar<T extends LibraryView>({
     push({ ...LIBRARY_DEFAULTS, sort: view.sort, ...(showSearch ? {} : { q: view.q }) })
   }
 
-  const panel = <AdvancedFilters view={view} push={push} replace={replace} />
+  const panel = (
+    <AdvancedFilters view={view} push={push} replace={replace} showFavorite={showFavorite} />
+  )
 
   return (
     <Form className="mb-3" role="search" aria-label={t('library.filters.barLabel')}>
@@ -275,20 +286,22 @@ export function FilterBar<T extends LibraryView>({
 }
 
 /**
- * The three facets photos are actually found by: the years present in the
- * catalog (each with its count, so the reader sees how much a year holds before
- * committing), and the albums and labels the photo belongs to. Album and label
- * are type-to-filter selects because both collections grow without bound; year is
- * a plain select because the catalog only ever holds a handful of years.
+ * The four facets photos are actually found by: the years present in the catalog
+ * (each with its count, so the reader sees how much a year holds before
+ * committing), and the albums, labels and people (subjects) the photo belongs to
+ * or contains. Album, label and person are type-to-filter selects because all
+ * three collections grow without bound; year is a plain select because the catalog
+ * only ever holds a handful of years.
  *
- * Album and label are multi-select: each pick *adds* to the current set (combined
- * with AND — a photo must be in every chosen album and carry every chosen label),
- * and the already-chosen ones show as removable chips below. The select therefore
- * never displays a "current" value — it is a pure add-picker resting on its "any"
- * placeholder — and it drops the already-selected entries from its options so the
- * same album/label cannot be added twice.
+ * Album, label and person are multi-select: each pick *adds* to the current set
+ * (combined with AND — a photo must be in every chosen album, carry every chosen
+ * label and contain every chosen person), and the already-chosen ones show as
+ * removable chips below. The select therefore never displays a "current" value —
+ * it is a pure add-picker resting on its "any" placeholder — and it drops the
+ * already-selected entries from its options so the same entry cannot be added
+ * twice.
  *
- * All three push a history entry, so Back steps back through facet choices.
+ * All four push a history entry, so Back steps back through facet choices.
  */
 function FacetRow({
   view,
@@ -302,9 +315,10 @@ function FacetRow({
   const { t } = useTranslation()
   const selectedAlbums = parseFilterList(view.album)
   const selectedLabels = parseFilterList(view.label)
+  const selectedPeople = parseFilterList(view.person)
   return (
     <Row className="kukatko-filter-facets g-2 mt-1">
-      <Col xs={12} md={4}>
+      <Col xs={12} md={6} lg={3}>
         <Form.Group controlId="library-year">
           <Form.Label className="small mb-1">{t('library.filters.year')}</Form.Label>
           <Form.Select
@@ -323,7 +337,7 @@ function FacetRow({
         </Form.Group>
       </Col>
 
-      <Col xs={12} md={4}>
+      <Col xs={12} md={6} lg={3}>
         <SearchableSelect
           id="library-album"
           label={t('library.filters.album')}
@@ -342,7 +356,7 @@ function FacetRow({
         />
       </Col>
 
-      <Col xs={12} md={4}>
+      <Col xs={12} md={6} lg={3}>
         <SearchableSelect
           id="library-label"
           label={t('library.filters.label')}
@@ -360,6 +374,25 @@ function FacetRow({
           }}
         />
       </Col>
+
+      <Col xs={12} md={6} lg={3}>
+        <SearchableSelect
+          id="library-person"
+          label={t('library.filters.person')}
+          anyLabel={t('library.filters.anyPerson')}
+          value=""
+          options={facets.subjects
+            .filter((subject) => !selectedPeople.includes(subject.uid))
+            .map((subject) => ({
+              value: subject.uid,
+              label: subject.name,
+              count: subject.marker_count,
+            }))}
+          onChange={(value) => {
+            push({ person: addToFilterList(view.person, value) })
+          }}
+        />
+      </Col>
     </Row>
   )
 }
@@ -369,10 +402,12 @@ function AdvancedFilters({
   view,
   push,
   replace,
+  showFavorite,
 }: {
   view: LibraryView
   push: (patch: Partial<LibraryView>) => void
   replace: (patch: Partial<LibraryView>) => void
+  showFavorite: boolean
 }) {
   const { t } = useTranslation()
   return (
@@ -431,6 +466,27 @@ function AdvancedFilters({
           </Form.Select>
         </Form.Group>
       </Col>
+
+      {showFavorite && (
+        <Col xs={6} sm={6} lg={3}>
+          <Form.Group controlId="library-favorite">
+            <Form.Label className="small mb-1">{t('library.filters.favorite')}</Form.Label>
+            {/* A two-state filter, not a tri-state: the backend only scopes on
+                "favorites only", so there is no meaningful "not favorited" value.
+                Presented as a select to line up with the archived/GPS/private
+                controls beside it. */}
+            <Form.Select
+              value={view.favorite}
+              onChange={(e) => {
+                push({ favorite: e.target.value })
+              }}
+            >
+              <option value="">{t('library.triState.any')}</option>
+              <option value="true">{t('library.favorite.only')}</option>
+            </Form.Select>
+          </Form.Group>
+        </Col>
+      )}
 
       <Col xs={6} sm={6} lg={3}>
         <TriStateSelect

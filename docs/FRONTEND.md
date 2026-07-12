@@ -128,16 +128,20 @@ zapiš sem.
   + jedno **„zrušit filtry"** + počet fotek; **beze změny chování** — vše
   jede přes `viewToParams`/`useUrlState`/`LibraryView`, dotaz replacuje historii, ostatní pushují;
   generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
-  na search stránce, `showDensity` skryje hustotu v koši (kartová, ne foto-mřížka)
+  na search stránce, `showDensity` skryje hustotu v koši (kartová, ne foto-mřížka),
+  **`showFavorite`** zapne v panelu přepínač **Oblíbené** (dvoustavový select „Vše"/„Jen oblíbené"
+  → `view.favorite` `''`/`'true'`, backend scopuje jen na `true`; knihovna ho zapíná, aby šlo
+  kombinovat „oblíbené + album + rok" v hlavní mřížce, stránka Oblíbené ne — už je scopnutá)
   (chipy/panel/zrušit fungují dál); tap-targety ~44 px přes `styles/app.css`
   `.kukatko-filter-*`;
-  **tři facety, kterými se fotky reálně hledají** (prop `facets` z `useLibraryFacets`) jsou
+  **čtyři facety, kterými se fotky reálně hledají** (prop `facets` z `useLibraryFacets`) jsou
   **vždy viditelné** pod hlavičkou, ne schované v panelu: **Rok** = prostý `<select>`
   („Libovolný rok" + `{{year}} ({{n}})` z `GET /photos/years`, katalog má vždy jen hrstku let),
-  **Album** a **Štítek** = `SearchableSelect` (obě kolekce rostou bez omezení), **multi-výběr**:
-  každá volba se **přidá** k aktuální sadě (AND — fotka musí být ve všech vybraných albech a nést
-  všechny vybrané štítky), select je čistý „add-picker" (drží se placeholderu „libovolné", vybrané
-  položky ze svých options vypustí, aby nešly přidat dvakrát), už vybraná alba/štítky visí jako
+  **Album**, **Štítek** a **Osoba** = `SearchableSelect` (všechny kolekce rostou bez omezení;
+  osoby z `GET /subjects` s `marker_count`), **multi-výběr**: každá volba se **přidá** k aktuální
+  sadě (AND — fotka musí být ve všech vybraných albech, nést všechny štítky a obsahovat všechny
+  vybrané osoby), select je čistý „add-picker" (drží se placeholderu „libovolné", vybrané
+  položky ze svých options vypustí, aby nešly přidat dvakrát), už vybraná alba/štítky/osoby visí jako
   odebratelné chipy (jeden na UID) níž.
   Inline pole **„filtrovat dle názvu/popisu"** (`q`) zůstává rychlým zúžením mřížky; vedle něj
   **zřetelný odkaz na `/search`** pro skutečný fulltext + sémantické hledání (`searchHref` nese
@@ -148,10 +152,11 @@ zapiš sem.
   vedoucí řádek „libovolné" facet zruší, klávesnice Up/Down/Enter/Esc, combobox/listbox ARIA,
   strop `MAX_SUGGESTIONS` (50) rendrovaných návrhů; nikdy nevytváří položky —
   zrcadlí `AddAutocomplete`), `filterChips.ts` (pure `buildChips(view, t, {facets?, includeQuery?})`
-  → `FilterChip{key,label,clear,kind?}` pro každý aktivní filtr; **jeden chip na každé vybrané album a na
-  každý štítek** (`clear` odebere jen svoje UID ze seznamu, poslední chip facet vyčistí; album chip má
-  `kind:'album'`, štítek `kind:'tag'` → `FilterBar` z toho vezme barvu + ikonu přes `ENTITY_STYLE`); `facets`
-  pojmenují album/štítek titulkem místo UID (chybějící → raw UID, chip nikdy není prázdný),
+  → `FilterChip{key,label,clear,kind?}` pro každý aktivní filtr; **jeden chip na každé vybrané album,
+  štítek a osobu** (`clear` odebere jen svoje UID ze seznamu, poslední chip facet vyčistí; album chip má
+  `kind:'album'`, štítek `kind:'tag'`, osoba `kind:'person'` → `FilterBar` z toho vezme barvu + ikonu přes
+  `ENTITY_STYLE`; **oblíbené** = neutrální chip bez `kind`); `facets`
+  pojmenují album/štítek/osobu titulkem místo UID (chybějící → raw UID, chip nikdy není prázdný),
   `includeQuery` zapíná chip pro `q`
   — filter bar ho vypíná (má vlastní pole), **prázdný stav zapíná** (čtenář u nuly výsledků musí
   vidět všechny filtry, které ho tam dostaly); délka pole = počet aktivních filtrů na odznaku),
@@ -553,11 +558,11 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`visibilitychange`/`document.hidden`) a při návratu hned refreshne; selhání spolkne a vrátí `null`
   (badge se skryje), na unmountu/`enabled→false` ruší timer i in-flight request — nic ho nepřežije;
 
-  `useLibraryFacets(params)` = loader nabídek tří facetů knihovny → `LibraryFacets{years,albums,labels}`:
+  `useLibraryFacets(params)` = loader nabídek facetů knihovny → `LibraryFacets{years,albums,labels,subjects}`:
   roky přes `fetchPhotoYears` **refetchuje při změně filtrů** (rok drží méně fotek, jakmile přibude
   štítek), ale **`year` z requestu strhává** (backend ho stejně ignoruje — facet nesmí zúžit vlastní
-  nabídku — a bez něj zůstane request identický, takže přepínání let nerefetchuje); alba a štítky
-  jsou katalogové, načtou se **jednou**. Neúspěch nechá ten seznam **prázdný** místo chyby (facet,
+  nabídku — a bez něj zůstane request identický, takže přepínání let nerefetchuje); alba, štítky a
+  subjekty (osoby, přes `fetchSubjects`) jsou katalogové, načtou se **jednou**. Neúspěch nechá ten seznam **prázdný** místo chyby (facet,
   který nemá co nabídnout, je degradovaný bar, ne rozbitá stránka — chyby načtení hlásí mřížka);
   in-flight requesty ruší `AbortController` při změně `params`/unmountu, takže pomalá odpověď
   nepřepíše novější (`params` si volající memoizuje z URL stavu); `useTimeline(params)` = jednorázový loader
@@ -670,21 +675,21 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (clamp `[MIN_SCALE=1,MAX_SCALE=4]`, `DOUBLE_TAP_SCALE`), `isDoubleTap(dt,dist)` a `clampPan`;
   `urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
-  funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag` a facetů `year`/`album`/`label`) +
-  `LIBRARY_DEFAULTS` +
+  funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag`, přepínače `favorite` a facetů
+  `year`/`album`/`label`/`person`) + `LIBRARY_DEFAULTS` +
   `LIBRARY_PATH` (= `/`, kanonická routa knihovny — **knihovna je úvodní stránka**; všechny odkazy
   v appce míří sem, `/library` je jen redirect pro staré odkazy) +
-  **multi-výběr facetů `album`/`label`**: obě klíče nesou **čárkou spojený seznam UID** (urlState
+  **multi-výběr facetů `album`/`label`/`person`**: každý klíč nese **čárkou spojený seznam UID** (urlState
   ukládá každý klíč jako jeden string, čárka se v UID nevyskytuje) — helpery `parseFilterList`/
   `joinFilterList`/`addToFilterList`/`removeFilterList` (sic `removeFromFilterList`) seznam kódují;
-  fotka musí být ve **všech** vybraných albech a nést **všechny** vybrané štítky (AND). Celý výběr
-  round-tripuje URL query, takže Zpět ho obnoví;
+  fotka musí být ve **všech** vybraných albech, nést **všechny** štítky a obsahovat **všechny** vybrané
+  osoby (AND). Celý výběr round-tripuje URL query, takže Zpět ho obnoví;
   `viewToParams` (sanitizuje sort/archived/**year** — `toYear` propustí jen čtyřciferný rok, ručně
-  psaná/zastaralá URL spadne na „bez filtru" místo backendové 400 —, prosákne `min_rating`/`flag`
-  a čárkou spojené UID facetů `album`/`label` beze změny — `buildPhotoQuery` je rozloží na opakované
-  parametry `?album=a&album=b`, které backend ANDuje; neznámé UID prostě nic nenamatchuje; `sort`
-  union navíc `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce, neprázdný seznam
-  album/label = aktivní filtr, zahrnuje rating/flag i facety) —
+  psaná/zastaralá URL spadne na „bez filtru" místo backendové 400 —, prosákne `min_rating`/`flag`,
+  přepínač `favorite` a čárkou spojené UID facetů `album`/`label`/`person` beze změny — `buildPhotoQuery`
+  je rozloží na opakované parametry `?album=a&album=b`, které backend ANDuje; neznámé UID prostě nic
+  nenamatchuje; `sort` union navíc `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce,
+  neprázdný seznam album/label/person nebo `favorite` = aktivní filtr, zahrnuje rating/flag i facety) —
   mapování URL stavu na API params; `ratingHotkeys.ts` = pure `ratingHotkey(key)` (`0`–`5` →
   rating, `p`/`r`/`v` → osobní označení 👍/👎/👁 (stored pick/reject/eye), jinak null) + `isTypingElement(target)` (input/textarea/select/
   contenteditable → hotkey se přeskočí) — sdíleno detailem fotky i fokusnutou dlaždicí;
@@ -799,7 +804,8 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   při každém requestu, takže seek jede vždy proti čerstvému podpisu), `GRID_THUMB_SIZE`,
   typy `Photo` (vč. `is_favorite` + per-user `rating`/`flag` + video pole
   `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` + **`thumb_url`/`download_url`**)/`PhotoListParams`
-  (vč. `album`/`label` scope + **`country`/`city` place scope** + `favorite` filtr + `min_rating`/`flag` filtry)/`PhotoSort`
+  (vč. `album`/`label` scope + **`person` scope** (čárkou spojené UID subjektů → opakované `?person=`, AND)
+  + **`country`/`city` place scope** + `favorite` filtr + `min_rating`/`flag` filtry)/`PhotoSort`
   (vč. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`.
   **Adresy médií se neskládají z UID.** Grid dlaždice i download odkaz berou `photo.thumb_url` /
   `photo.download_url` z payloadu — jen server umí URL podepsat. `thumbUrl(uid,size)` zůstává pro

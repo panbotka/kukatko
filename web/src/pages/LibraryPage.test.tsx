@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type AlbumCount, type LabelCount } from '../services/organize'
+import { type SubjectCount } from '../services/people'
 import { type Photo, type PhotoListResponse, type Timeline } from '../services/photos'
 
 import { LibraryPage } from './LibraryPage'
@@ -64,13 +65,21 @@ vi.mock('../services/photos', async (importOriginal) => {
 // The filter bar's album/label facets load their options on mount.
 vi.mock('../services/organize', () => ({ fetchAlbums: vi.fn(), fetchLabels: vi.fn() }))
 
+// The filter bar's person facet loads its subjects on mount.
+vi.mock('../services/people', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/people')>()
+  return { ...actual, fetchSubjects: vi.fn() }
+})
+
 const { fetchPhotos, fetchTimeline, fetchPhotoYears } = await import('../services/photos')
 const { fetchAlbums, fetchLabels } = await import('../services/organize')
+const { fetchSubjects } = await import('../services/people')
 const fetchMock = vi.mocked(fetchPhotos)
 const timelineMock = vi.mocked(fetchTimeline)
 const yearsMock = vi.mocked(fetchPhotoYears)
 const albumsMock = vi.mocked(fetchAlbums)
 const labelsMock = vi.mocked(fetchLabels)
+const subjectsMock = vi.mocked(fetchSubjects)
 
 const EMPTY_TIMELINE: Timeline = { buckets: [], total: 0 }
 
@@ -99,6 +108,22 @@ function label(uid: string, name: string, photoCount: number): LabelCount {
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     photo_count: photoCount,
+  }
+}
+
+/** A subject the person facet offers, trimmed to the fields the bar reads. */
+function subject(uid: string, name: string, markerCount: number): SubjectCount {
+  return {
+    uid,
+    slug: uid,
+    name,
+    type: 'person',
+    favorite: false,
+    private: false,
+    notes: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    marker_count: markerCount,
   }
 }
 
@@ -200,6 +225,8 @@ beforeEach(async () => {
   albumsMock.mockResolvedValue([])
   labelsMock.mockReset()
   labelsMock.mockResolvedValue([])
+  subjectsMock.mockReset()
+  subjectsMock.mockResolvedValue([])
   grid.scrollToIndex.mockReset()
 })
 
@@ -353,6 +380,52 @@ describe('LibraryPage', () => {
     await user.click(screen.getByRole('button', { name: '__back' }))
     await waitFor(() => {
       expect(screen.getByTestId('search').textContent).not.toContain('album')
+    })
+  })
+
+  it('writes the picked person to the URL, refetches with it, and Back removes it', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    subjectsMock.mockResolvedValue([subject('su_1', 'Alice', 9)])
+    const user = userEvent.setup()
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(await screen.findByLabelText('Person'))
+    await user.click(await screen.findByRole('option', { name: /Alice/ }))
+
+    expect(screen.getByTestId('search')).toHaveTextContent('person=su_1')
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls
+      expect(calls[calls.length - 1][0].person).toBe('su_1')
+    })
+
+    // The person facet pushes history, so Back drops it — "Zpět vždy funguje".
+    await user.click(screen.getByRole('button', { name: '__back' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('search').textContent).not.toContain('person')
+    })
+    expect(fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0].person).toBe('')
+  })
+
+  it('sets and clears the favorites scope from the filter bar, refetching each time', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    const user = userEvent.setup()
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    // The favorites toggle lives in the advanced panel.
+    await user.click(screen.getByRole('button', { name: /Filters/ }))
+    await user.selectOptions(await screen.findByLabelText('Favorites'), 'true')
+
+    expect(screen.getByTestId('search')).toHaveTextContent('favorite=true')
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls
+      expect(calls[calls.length - 1][0].favorite).toBe('true')
+    })
+
+    await user.selectOptions(screen.getByLabelText('Favorites'), '')
+    await waitFor(() => {
+      expect(screen.getByTestId('search').textContent).not.toContain('favorite')
     })
   })
 

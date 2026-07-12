@@ -9,6 +9,7 @@ import i18n from '../../i18n'
 import { LIBRARY_DEFAULTS, type LibraryView } from '../../lib/libraryView'
 import { type SetUrlState } from '../../lib/urlState'
 import { type AlbumCount, type LabelCount } from '../../services/organize'
+import { type SubjectCount } from '../../services/people'
 
 import { FilterBar } from './FilterBar'
 
@@ -20,6 +21,7 @@ function renderBar(
     showSort?: boolean
     showDensity?: boolean
     facets?: LibraryFacets
+    showFavorite?: boolean
     searchHref?: string
   } = {},
 ) {
@@ -60,7 +62,23 @@ function label(uid: string, name: string, photoCount: number): LabelCount {
   }
 }
 
-/** The three facet option lists, as `useLibraryFacets` would deliver them. */
+/** A subject the person facet offers, trimmed to the fields the bar reads. */
+function subject(uid: string, name: string, markerCount: number): SubjectCount {
+  return {
+    uid,
+    slug: uid,
+    name,
+    type: 'person',
+    favorite: false,
+    private: false,
+    notes: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    marker_count: markerCount,
+  }
+}
+
+/** The four facet option lists, as `useLibraryFacets` would deliver them. */
 const FACETS: LibraryFacets = {
   years: [
     { year: 2023, count: 12 },
@@ -68,6 +86,7 @@ const FACETS: LibraryFacets = {
   ],
   albums: [album('al_1', 'Holidays', 12), album('al_2', 'Náměstí', 4)],
   labels: [label('lb_1', 'Beach', 7), label('lb_2', 'Portrait', 2)],
+  subjects: [subject('su_1', 'Alice', 9), subject('su_2', 'Bob', 5)],
 }
 
 /** Opens the advanced-filter panel so its controls become reachable. */
@@ -191,6 +210,7 @@ describe('FilterBar facets', () => {
     expect(screen.queryByLabelText('Year')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Album')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Label')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Person')).not.toBeInTheDocument()
   })
 
   it('offers each year present in the catalog with its photo count', () => {
@@ -290,6 +310,54 @@ describe('FilterBar facets', () => {
     await user.click(screen.getByLabelText('Label'))
     await user.click(screen.getByRole('option', { name: /Portrait/ }))
     expect(onChange).toHaveBeenCalledWith({ label: 'lb_1,lb_2' })
+  })
+
+  it('offers each subject in the person facet with its marker count', async () => {
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
+
+    await user.click(screen.getByLabelText('Person'))
+    expect(screen.getByRole('option', { name: /Alice/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /Bob/ })).toBeInTheDocument()
+  })
+
+  it('writes the person picked from the searchable select to the view state', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange, { facets: FACETS })
+
+    await user.click(screen.getByLabelText('Person'))
+    await user.click(screen.getByRole('option', { name: /Alice/ }))
+    expect(onChange).toHaveBeenCalledWith({ person: 'su_1' })
+  })
+
+  it('adds a second person to the selection instead of replacing the first', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, person: 'su_1' }, onChange, { facets: FACETS })
+
+    await user.click(screen.getByLabelText('Person'))
+    // The already-selected person is a chip below, not offered again here.
+    expect(screen.queryByRole('option', { name: /Alice/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: /Bob/ }))
+    expect(onChange).toHaveBeenCalledWith({ person: 'su_1,su_2' })
+  })
+
+  it('names a person chip by its subject name and colours it with the person hue', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, person: 'su_1' }, vi.fn(), { facets: FACETS })
+
+    const chip = screen.getByText('Person: Alice')
+    expect(chip).toHaveClass('kk-entity-person')
+    expect(chip).not.toHaveClass('text-bg-primary')
+  })
+
+  it('removes a single person chip, clearing the facet when its last one goes', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, person: 'su_1' }, onChange, { facets: FACETS })
+
+    await user.click(screen.getByRole('button', { name: 'Remove filter: Person: Alice' }))
+    expect(onChange).toHaveBeenCalledWith({ person: '' })
   })
 
   it('names an album/label chip by its title, not its uid', () => {
@@ -421,5 +489,47 @@ describe('FilterBar active-filter chips', () => {
 
     await user.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(onChange).toHaveBeenCalledWith({ ...LIBRARY_DEFAULTS, sort: 'title' })
+  })
+})
+
+describe('FilterBar favorites toggle', () => {
+  it('hides the favorites control unless the page opts in', async () => {
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
+
+    await openPanel(user)
+    expect(screen.queryByLabelText('Favorites')).not.toBeInTheDocument()
+  })
+
+  it('sets the favorite filter when favorites-only is chosen', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, onChange, { showFavorite: true })
+
+    await openPanel(user)
+    await user.selectOptions(screen.getByLabelText('Favorites'), 'true')
+    expect(onChange).toHaveBeenCalledWith({ favorite: 'true' })
+  })
+
+  it('clears the favorite filter when it is switched back to any', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, favorite: 'true' }, onChange, { showFavorite: true })
+
+    await openPanel(user)
+    await user.selectOptions(screen.getByLabelText('Favorites'), '')
+    expect(onChange).toHaveBeenCalledWith({ favorite: '' })
+  })
+
+  it('renders a removable Favorites chip when the filter is active', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, favorite: 'true' }, onChange, { showFavorite: true })
+
+    // The chip carries the neutral primary colour (favorites is not an entity).
+    const chip = screen.getByText('Favorites', { selector: '.kukatko-filter-chip' })
+    expect(chip).toHaveClass('text-bg-primary')
+    await user.click(screen.getByRole('button', { name: 'Remove filter: Favorites' }))
+    expect(onChange).toHaveBeenCalledWith({ favorite: '' })
   })
 })

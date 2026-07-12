@@ -118,6 +118,15 @@ type ListParams struct {
 	// list/search path to one or more labels so every other filter, the sort and
 	// pagination apply unchanged.
 	LabelUIDs []string
+	// SubjectUIDs, when non-empty, restricts the result to photos that contain every
+	// listed subject (person/pet/other) — AND semantics like the album/label scopes:
+	// each UID contributes its own correlated EXISTS over markers, so a photo must
+	// carry a non-invalid marker for all of them to match. A subject is linked to a
+	// photo by a marker (a named face/region); rejected markers (invalid = TRUE) do
+	// not count, matching the subject photo gallery. It keeps a person-scoped listing
+	// on the shared list/search path so every other filter, the sort and pagination
+	// apply unchanged.
+	SubjectUIDs []string
 	// Country, when non-empty, restricts the result to photos whose cached place
 	// has exactly that country. It scopes the shared list/search path to a place
 	// (via the photo_places side table) so every other filter, the sort and
@@ -292,6 +301,7 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 	where = append(where, textClauses(params, bind)...)
 	where = append(where, ftsClauses(params, bind)...)
 	where = append(where, membershipClauses(params, bind)...)
+	where = append(where, subjectClauses(params, bind)...)
 	where = append(where, placeClauses(params, bind)...)
 	where = append(where, favoriteClauses(params, bind)...)
 	where = append(where, ratingClauses(params, bind)...)
@@ -356,6 +366,27 @@ func membershipClauses(params ListParams, bind func(any) string) []string {
 	for _, labelUID := range params.LabelUIDs {
 		where = append(where, "EXISTS (SELECT 1 FROM photo_labels pl "+
 			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = "+bind(labelUID)+")")
+	}
+	return where
+}
+
+// subjectClauses returns the person/subject scoping filters as correlated EXISTS
+// subqueries over the markers table, binding each subject UID through bind. It
+// emits one EXISTS per selected subject UID; because buildWhere joins every clause
+// with AND, a photo must contain every listed subject to match ("with person A and
+// person B"). A subject is on a photo when a non-invalid marker (a named
+// face/region) links them, so rejected markers (invalid = TRUE) are ignored —
+// matching the subject photo gallery. The clauses keep a person-scoped listing on
+// the shared List/Count/Search path, so the standard filters, the chosen ordering
+// and pagination all apply on top of the scope. The outer photo reference is
+// qualified (photos.uid) to disambiguate it from the markers table's photo_uid
+// inside the subquery.
+func subjectClauses(params ListParams, bind func(any) string) []string {
+	where := make([]string, 0, len(params.SubjectUIDs))
+	for _, subjectUID := range params.SubjectUIDs {
+		where = append(where, "EXISTS (SELECT 1 FROM markers m "+
+			"WHERE m.photo_uid = photos.uid AND m.subject_uid = "+bind(subjectUID)+
+			" AND m.invalid = FALSE)")
 	}
 	return where
 }
