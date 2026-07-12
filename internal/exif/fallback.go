@@ -13,9 +13,12 @@ import (
 
 	// Register the decoders used for DecodeConfig so the fallback can read pixel
 	// dimensions of the formats Kukátko handles purely in Go.
+	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 )
 

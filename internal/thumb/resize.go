@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"image"
+	_ "image/gif" // register GIF decoder
 	"image/jpeg"
 	_ "image/png" // register PNG decoder
 	"os"
 
+	_ "golang.org/x/image/bmp"  // register BMP decoder
+	_ "golang.org/x/image/tiff" // register TIFF decoder
 	_ "golang.org/x/image/webp" // register WebP decoder
 
 	"golang.org/x/image/draw"
