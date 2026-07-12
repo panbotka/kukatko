@@ -401,3 +401,33 @@ describe('FilterBar active-filter chips', () => {
     expect(onChange).toHaveBeenCalledWith({ ...LIBRARY_DEFAULTS, sort: 'title' })
   })
 })
+
+describe('FilterBar entity chip colours', () => {
+  it('colours an album chip and a tag chip by their kind, each with a leading icon', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1', label: 'lb_1' }, vi.fn(), { facets: FACETS })
+
+    const albumChip = screen.getByText('Album: Holidays')
+    const labelChip = screen.getByText('Label: Beach')
+
+    // Album and tag are immediately distinguishable: different entity hues, and
+    // neither is the old primary orange that used to mean "album or tag".
+    expect(albumChip).toHaveClass('kk-entity-album')
+    expect(labelChip).toHaveClass('kk-entity-label')
+    expect(albumChip).not.toHaveClass('text-bg-primary')
+    expect(labelChip).not.toHaveClass('text-bg-primary')
+    expect(albumChip.className).not.toEqual(labelChip.className)
+
+    // A leading kind icon keeps the distinction for colour-blind readers.
+    expect(albumChip.querySelector('.bi-collection')).not.toBeNull()
+    expect(labelChip.querySelector('.bi-tags')).not.toBeNull()
+  })
+
+  it('leaves a non-entity filter chip in the neutral colour, with no entity hue', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, year: '2023' }, vi.fn(), { facets: FACETS })
+
+    const yearChip = screen.getByText('Year: 2023')
+    expect(yearChip).toHaveClass('text-bg-secondary')
+    expect(yearChip).not.toHaveClass('kk-entity-album')
+    expect(yearChip).not.toHaveClass('kk-entity-label')
+  })
+})

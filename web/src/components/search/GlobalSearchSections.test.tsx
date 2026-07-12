@@ -70,4 +70,24 @@ describe('GlobalSearchSections', () => {
     })
     expect(container.querySelector('section')).toBeNull()
   })
+
+  it('gives the label chip the tag hue instead of the primary orange', async () => {
+    searchMock.mockResolvedValue(RESULT)
+    renderSections('beach')
+
+    const labelChip = (await screen.findByRole('link', { name: /beachy/ })).querySelector('.badge')
+    expect(labelChip).toHaveClass('kk-entity-label')
+    expect(labelChip).not.toHaveClass('bg-primary')
+    expect(labelChip?.querySelector('.bi-tags')).not.toBeNull()
+  })
+
+  it('tints the album and person pills with their own entity hue', async () => {
+    searchMock.mockResolvedValue(RESULT)
+    renderSections('beach')
+
+    expect(await screen.findByRole('link', { name: /Beach trip/ })).toHaveClass(
+      'kk-entity-outline-album',
+    )
+    expect(screen.getByRole('link', { name: 'Beatrice' })).toHaveClass('kk-entity-outline-person')
+  })
 })

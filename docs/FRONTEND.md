@@ -48,6 +48,15 @@ zapiš sem.
   `Icon` (**jediná ikonová sada** aplikace: bootstrap-icons glyf jako `<i class="bi bi-{name}">`,
   font se importuje globálně v `main.tsx`; union `IconName` drží slovník použitých ikon, takže překlep
   je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),
+  `EntityBadge` + `entity.ts` (**barevná konvence pro tři katalogové entity** — album / štítek(tag) /
+  osoba — každá má **vlastní odstín**, aby chip poznal svůj druh na první pohled: knihovna dřív
+  malovala každý aktivní filtr stejnou primary oranžovou, takže „album" a „štítek" nešly rozeznat.
+  `entity.ts` mapuje `EntityKind` na **fill-třídu** (`kk-entity-album/label/person`) a **vedoucí ikonu**
+  (`collection`/`tags`/`person-circle`) — definováno **jednou**, konzumují to filter chipy knihovny,
+  organize panel fotky i cross-entity sekce searche; `EntityBadge` je prezentační `.badge` s tou
+  třídou + ikonou. Odstíny žijí jako `--kk-entity-*` v `tokens.css` (viz níže), leží daleko od sebe
+  i od primary oranžové a danger červené, nesou bílý text ≥5:1 na navy. **Barva je jen pomůcka** —
+  chip drží textový label i ikonu, takže rozdíl přežije i pro barvoslepé),
   `LanguageSwitcher` (button group cs/en, `aria-pressed` na aktivní; **nesedí v navbaru** —
   bydlí v sekci Jazyk na `AccountPage`, protože tuhle instanci používají jen Češi a trvalé
   místo v liště by bylo plýtvání. Volbu persistuje i18next language detector do localStorage),
@@ -115,8 +124,11 @@ zapiš sem.
   fotoaparát, archiv, **min. hodnocení ≥1…≥5**, **flag vybrané/zamítnuté**) žijí v rozbalovacím
   panelu — na desktopu inline `Collapse`, na mobilu `Offcanvas` dle `matchMedia` (`useIsNarrow`,
   defenzivní k jsdom, kde `matchMedia` vrací `undefined`); každý aktivní filtr = odebíratelný
-  **chip** (`buildChips`, `text-bg-primary` pill s křížkem, zruší jen ten filtr — dotaz `q` chip
-  nemá, má vlastní pole) + jedno **„zrušit filtry"** + počet fotek; **beze změny chování** — vše
+  **chip** (`buildChips`, pill s křížkem, zruší jen ten filtr — dotaz `q` chip
+  nemá, má vlastní pole; **chip alba a štítku nese svůj entitní odstín + vedoucí ikonu**
+  (`kk-entity-album`/`kk-entity-label` přes `entity.ts`), takže se poznají na první pohled, ostatní
+  filtry jsou neutrální `text-bg-secondary` — primary oranžová už neznamená „album/štítek") + jedno
+  **„zrušit filtry"** + počet fotek; **beze změny chování** — vše
   jede přes `viewToParams`/`useUrlState`/`LibraryView`, dotaz replacuje historii, ostatní pushují;
   generický nad `LibraryView`+supersetem, props `showSearch`/`showSort` skryjí dotaz/řazení
   na search stránce, `showDensity` skryje hustotu v koši (kartová, ne foto-mřížka)
@@ -139,7 +151,9 @@ zapiš sem.
   vedoucí řádek „libovolné" facet zruší, klávesnice Up/Down/Enter/Esc, combobox/listbox ARIA,
   strop `MAX_SUGGESTIONS` (50) rendrovaných návrhů; nikdy nevytváří položky —
   zrcadlí `AddAutocomplete`), `filterChips.ts` (pure `buildChips(view, t, {facets?, includeQuery?})`
-  → `FilterChip{key,label,clear}` pro každý aktivní filtr; **jeden chip na každé vybrané album a na
+  → `FilterChip{key,label,clear,kind?}` pro každý aktivní filtr (`kind` = `album`/`label` nese
+  entitní barvu/ikonu chipu přes `entity.ts`, ostatní filtry `kind` nemají a jsou neutrální);
+  **jeden chip na každé vybrané album a na
   každý štítek** (`clear` odebere jen svoje UID ze seznamu, poslední chip facet vyčistí); `facets`
   pojmenují album/štítek titulkem místo UID (chybějící → raw UID, chip nikdy není prázdný),
   `includeQuery` zapíná chip pro `q`
@@ -369,7 +383,9 @@ zapiš sem.
   tile proxy, panTo jen u parse-driven změny, ne u klik/drag); **obousměrný sync** (text→marker,
   marker→kanonický text desetinných stupňů), **neplatný text = inline chyba + `disabled` Save**
   (nikdy nePATCHne smetí), tlačítko vymazat polohu (lat/lng null), bez souřadnic mapa nad ČR;
-  PATCH přes `updatePhoto`; `OrganizePanel` = inline add/remove alb a štítků přes organize API,
+  PATCH přes `updatePhoto`; `OrganizePanel` = inline add/remove alb a štítků přes organize API
+  (chipy alb i štítků jsou `EntityBadge` — album fialová, štítek tyrkysová + vedoucí ikona, stejná
+  konvence jako filter chipy),
   přidání jede přes **`AddAutocomplete`** (`components/photo/`, type-to-filter combobox nad
   react-bootstrap primitivy, bez nové závislosti — nahradil dřívější `Form.Select` dropdown;
   filtruje klientsky **case/accent-insensitive** přes `lib/text` `foldText`/`foldedIncludes`,
@@ -445,7 +461,9 @@ zapiš sem.
   `savedSearchHref`, „Spravovat" → `/saved`, loading/empty/error stavy uvnitř menu);
   `components/search/` = `GlobalSearchSections` (kompaktní cross-entity sekce nad photo mřížkou
   search stránky: přes `useGlobalSearch(query)` natáhne grouped `GET /search/global` a vyrenderuje
-  chipy shodných **alb/lidí/štítků** odkazující na entitu; nezávislé na photo fulltext/semantic
+  chipy shodných **alb/lidí/štítků** odkazující na entitu (**entitní barva** dle konvence: štítkový
+  chip má tyrkysový fill `EntityBadge` místo dřívější primary oranžové, album/osoba pill nese
+  entitní obrys přes `kk-entity-outline-album/person`); nezávislé na photo fulltext/semantic
   hledání pod ním, nerendruje nic dokud nepřijde aspoň jedna nefotková shoda — prázdný dotaz /
   probíhající hledání / jen-fotky shoda nepřidá žádné chrome);
   `components/trash/` = `TrashCard` (dlaždice archivované fotky: náhled + odpočet do auto-purge přes
@@ -869,6 +887,14 @@ zapiš sem.
   nemá kam vyskočit); `.kk-tile__placeholder`; **chip** `.kk-chip` (odebíratelný token nad
   Bootstrap `.badge` — jen to, co badge nemá: box kolem koncového `.btn-close` a strop šířky,
   aby se dlouhý název alba zkrátil místo roztažení řádku; používá `MultiSelect`);
+  **entitní barvy** `--kk-entity-album` (fialová `#6f42c1`), `--kk-entity-label` (tyrkysová
+  `#0c7a6e`), `--kk-entity-person` (růžová `#b83f7d`) + `--kk-entity-on` (bílý text) — tři odstíny
+  pro album/štítek(tag)/osobu, daleko od sebe i od primary oranžové a danger červené, bílý text
+  ≥5:1 na navy; **fill-třídy** `.kk-entity-album/label/person` (jedou na `.badge`, dodají odstín +
+  bílý text) a **obrysové varianty** `.kk-entity-outline-album/label/person` (přepíšou `.border`
+  utilitě její `--bs-border-color`, bez `!important`); definováno **jednou** a konzumuje to
+  `EntityBadge`/`entity.ts` (filter chipy knihovny, organize panel, cross-entity sekce searche) —
+  barva je jen pomůcka, chip vždy drží text + vedoucí ikonu;
   **appear** `.kk-appear` (jednorázový fade-up).
   **Focus outline se nikdy neodstraňuje** — `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible`
   kreslí `outline` (přežije `overflow: hidden` náhledu). **`prefers-reduced-motion`**: token

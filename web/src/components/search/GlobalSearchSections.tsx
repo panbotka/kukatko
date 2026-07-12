@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
 import { thumbUrl } from '../../services/photos'
 import { hasEntityMatches } from '../../services/search'
+import { EntityBadge } from '../EntityBadge'
 
 /** Thumbnail size used for the small album/person avatars in the sections. */
 const SECTION_THUMB_SIZE = 'tile_100'
@@ -60,7 +61,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
               <Link
                 key={album.uid}
                 to={`/albums/${album.uid}`}
-                className="d-inline-flex align-items-center gap-2 text-decoration-none border rounded-pill ps-1 pe-3 py-1"
+                className="kk-entity-outline-album d-inline-flex align-items-center gap-2 text-decoration-none border rounded-pill ps-1 pe-3 py-1"
               >
                 <ChipThumb uid={album.cover} />
                 <span className="text-truncate" style={{ maxWidth: '12rem' }}>
@@ -85,7 +86,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
               <Link
                 key={person.uid}
                 to={`/people/${person.uid}`}
-                className="d-inline-flex align-items-center gap-2 text-decoration-none border rounded-pill ps-1 pe-3 py-1"
+                className="kk-entity-outline-person d-inline-flex align-items-center gap-2 text-decoration-none border rounded-pill ps-1 pe-3 py-1"
               >
                 <ChipThumb uid={person.cover} circle />
                 <span className="text-truncate" style={{ maxWidth: '12rem' }}>
@@ -105,10 +106,10 @@ export function GlobalSearchSections({ query }: { query: string }) {
           <div className="d-flex flex-wrap gap-2">
             {result.labels.map((label) => (
               <Link key={label.uid} to={`/labels/${label.uid}`} className="text-decoration-none">
-                <Badge bg="primary" className="fw-normal">
+                <EntityBadge kind="label" className="fw-normal">
                   {label.name}
                   <span className="ms-2 opacity-75">{label.photo_count}</span>
-                </Badge>
+                </EntityBadge>
               </Link>
             ))}
           </div>

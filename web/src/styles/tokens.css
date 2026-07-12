@@ -102,6 +102,25 @@
   --kk-focus-ring-width: 3px;
   --kk-focus-ring-offset: 2px;
 
+  /* ---- Entity colours -------------------------------------------------
+     Albums, tags (labels) and people each own one hue, so a chip's colour
+     tells its kind apart at a glance. The library used to paint every active
+     filter the same primary orange (`text-bg-primary`), which made "album" and
+     "tag" indistinguishable — "it just adds orange boxes". These three hues sit
+     far apart on the wheel and clear of both the primary orange (a generic
+     filter) and the danger red of a delete/close, so none is mistaken for
+     another or for the destructive affordance; each is dark enough to carry
+     white text at ≥5:1 on the navy page.
+
+     Colour is only an aid: every entity chip also keeps its text label and a
+     leading kind icon (collection / tags / person), so the distinction survives
+     for colour-blind readers. Consumed through the `.kk-entity-*` classes below
+     and the `EntityBadge` component. */
+  --kk-entity-album: #6f42c1; /* violet — white text 6.5:1 */
+  --kk-entity-label: #0c7a6e; /* teal   — white text 5.2:1 */
+  --kk-entity-person: #b83f7d; /* rose  — white text 5.2:1 */
+  --kk-entity-on: #fff; /* text + icon colour carried on all three fills */
+
   /* ---- Typography scale -----------------------------------------------
      Exactly three text roles plus a caption. Components use the classes below
      and never set `font-size` themselves. */
@@ -330,6 +349,49 @@
   flex-shrink: 0;
   padding: 0.3rem;
   font-size: 0.55rem;
+}
+
+/* ---- Entity chips ------------------------------------------------------ */
+
+/*
+ * The colour language for the three catalog entities (album / tag / person),
+ * defined once and reused wherever one appears as a token: the library filter
+ * chips, the photo organize panel and the global-search sections. A
+ * `.kk-entity-*` *fill* class rides on Bootstrap's `.badge`, supplying just the
+ * kind's hue and white text (the hues themselves are the `--kk-entity-*` tokens
+ * above). The `.kk-entity-outline-*` variants instead tint a bordered pill's
+ * edge — they re-point the `.border` utility's own `--bs-border-color`
+ * variable, so no `!important` is needed to beat that utility. Pair each with
+ * its leading icon via the `EntityBadge` component.
+ */
+.kk-entity-album,
+.kk-entity-label,
+.kk-entity-person {
+  color: var(--kk-entity-on);
+}
+
+.kk-entity-album {
+  background-color: var(--kk-entity-album);
+}
+
+.kk-entity-label {
+  background-color: var(--kk-entity-label);
+}
+
+.kk-entity-person {
+  background-color: var(--kk-entity-person);
+}
+
+.kk-entity-outline-album {
+  --bs-border-color: var(--kk-entity-album);
+}
+
+.kk-entity-outline-label {
+  --bs-border-color: var(--kk-entity-label);
+}
+
+.kk-entity-outline-person {
+  --bs-border-color: var(--kk-entity-person);
 }
 
 /* ---- Appear ------------------------------------------------------------ */

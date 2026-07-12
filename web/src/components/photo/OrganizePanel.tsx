@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
-import Badge from 'react-bootstrap/Badge'
 import CloseButton from 'react-bootstrap/CloseButton'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { EmptyState } from '../EmptyState'
+import { EntityBadge } from '../EntityBadge'
 
 import { foldedEquals } from '../../lib/text'
 import {
@@ -172,7 +172,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           <span className="text-secondary small">{t('photo.organize.noAlbums')}</span>
         )}
         {photo.albums.map((album) => (
-          <Badge key={album.uid} bg="secondary" className="d-inline-flex align-items-center gap-1">
+          <EntityBadge key={album.uid} kind="album">
             <Link to={`/albums/${album.uid}`} className="text-white text-decoration-none">
               {album.title}
             </Link>
@@ -185,7 +185,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
                 }}
               />
             )}
-          </Badge>
+          </EntityBadge>
         ))}
       </div>
       {canWrite && albumOptions.length > 0 && (
@@ -204,7 +204,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           <EmptyState size="sm" title={t('photo.organize.noLabels')} className="w-100" />
         )}
         {photo.labels.map((label) => (
-          <Badge key={label.uid} bg="info" className="d-inline-flex align-items-center gap-1">
+          <EntityBadge key={label.uid} kind="label">
             <Link to={`/labels/${label.uid}`} className="text-white text-decoration-none">
               {label.name}
             </Link>
@@ -217,7 +217,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
                 }}
               />
             )}
-          </Badge>
+          </EntityBadge>
         ))}
       </div>
       {/* Unlike albums, the label field stays even with no options — it creates. */}
