@@ -3,29 +3,38 @@ import ButtonGroup from 'react-bootstrap/ButtonGroup'
 import { useTranslation } from 'react-i18next'
 
 import { useGridDensity } from '../../hooks/useGridDensity'
-import { GRID_COLUMNS_MAX, GRID_DENSITY_DEFAULT, stepDensity } from '../../lib/gridDensity'
+import {
+  GRID_COLUMNS_MAX,
+  GRID_COLUMNS_MIN,
+  GRID_DENSITY_DEFAULT,
+  stepDensity,
+} from '../../lib/gridDensity'
 import { Icon } from '../Icon'
 
 /**
  * Picks how many photos sit side by side in the grid, as a compact zoom stepper:
- * `−` steps back toward the responsive `Auto` default (fewer, larger tiles), `+`
- * pins more columns (smaller tiles). The middle chip shows the current setting —
- * `A` for auto, otherwise the column count — and clicking it resets to `Auto`.
- * The preference lives in localStorage, so it is per device and survives a
- * reload, and it is deliberately not URL state — see `hooks/useGridDensity`.
+ * `−` pins fewer, larger tiles down to one photo per row (where it disables), `+`
+ * pins more columns (smaller tiles) up to the maximum (where it disables). The
+ * middle chip shows the current setting — `A` for auto, otherwise the column
+ * count — and clicking it resets to `Auto`. The preference lives in localStorage,
+ * so it is per device and survives a reload, and it is deliberately not URL state
+ * — see `hooks/useGridDensity`.
  */
 export function GridDensityControl() {
   const { t } = useTranslation()
   const { density, setDensity } = useGridDensity()
 
   const isAuto = density === 'auto'
+  // The `−` button bottoms out at one photo per row; `'auto'` sits off the
+  // ladder and has no rung below it either.
+  const atFewest = isAuto || density === GRID_COLUMNS_MIN
 
   return (
     <ButtonGroup size="lg" className="kukatko-grid-density" aria-label={t('library.density.label')}>
       <Button
         type="button"
         variant="outline-secondary"
-        disabled={isAuto}
+        disabled={atFewest}
         aria-label={t('library.density.fewer')}
         onClick={() => {
           setDensity(stepDensity(density, -1))

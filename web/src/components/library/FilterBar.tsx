@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Col from 'react-bootstrap/Col'
@@ -10,6 +10,7 @@ import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { type LibraryFacets } from '../../hooks/useLibraryFacets'
 import {
   addToFilterList,
@@ -104,7 +105,7 @@ export function FilterBar<T extends LibraryView>({
 }: FilterBarProps<T>) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const narrow = useIsNarrow()
+  const narrow = useIsNarrowViewport()
 
   const push = (patch: Partial<LibraryView>) => {
     onChange(patch as Partial<T>)
@@ -534,53 +535,6 @@ function TriStateSelect({
       </Form.Select>
     </Form.Group>
   )
-}
-
-/**
- * Tracks whether the viewport is phone-width (≤ 767.98px, Bootstrap's `md`
- * breakpoint) so the advanced filters open as an offcanvas drawer instead of an
- * inline collapse. Falls back to desktop when `matchMedia` is unavailable.
- */
-function useIsNarrow(): boolean {
-  const [narrow, setNarrow] = useState(() => matchesNarrow())
-  useEffect(() => {
-    const mq = narrowQuery()
-    if (!mq || typeof mq.addEventListener !== 'function') return
-    const handler = (e: MediaQueryListEvent) => {
-      setNarrow(e.matches)
-    }
-    mq.addEventListener('change', handler)
-    setNarrow(mq.matches)
-    return () => {
-      mq.removeEventListener('change', handler)
-    }
-  }, [])
-  return narrow
-}
-
-const NARROW_QUERY = '(max-width: 767.98px)'
-
-/**
- * Resolves the narrow-viewport media query, or `null` when `matchMedia` is
- * unavailable — jsdom, for instance, exposes the function but returns `undefined`.
- */
-function narrowQuery(): MediaQueryList | null {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null
-  // The DOM types promise a MediaQueryList, but jsdom's stub returns undefined;
-  // route through `unknown` + a guard so a broken environment yields null rather
-  // than crashing on `.matches`.
-  const result: unknown = window.matchMedia(NARROW_QUERY)
-  return isMediaQueryList(result) ? result : null
-}
-
-/** Narrows an unknown value to a usable {@link MediaQueryList}. */
-function isMediaQueryList(value: unknown): value is MediaQueryList {
-  return typeof value === 'object' && value !== null && 'matches' in value
-}
-
-/** Reads the current narrow-viewport state, guarding against missing matchMedia. */
-function matchesNarrow(): boolean {
-  return narrowQuery()?.matches ?? false
 }
 
 /** A magnifier glyph (Bootstrap Icons "search") marking the search field. */

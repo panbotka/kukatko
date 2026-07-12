@@ -191,7 +191,10 @@ Verified, already optimal — no change required:
 
 - **Grid virtualization**: `PhotoGrid` uses `react-virtuoso` `VirtuosoGrid` with
   `useWindowScroll`, so only on-screen tiles are mounted and the document scrolls
-  (`web/src/components/library/PhotoGrid.tsx`).
+  (`web/src/components/library/PhotoGrid.tsx`). This holds at every density: the
+  density control only restyles the grid's `grid-template-columns` (via
+  `lib/gridDensity` `gridTemplateColumns`), so even the one-photo-per-row layout
+  (`minmax(0, 1fr)`, default on phones) stays virtualized with intact infinite paging.
 - **Thumbnail lazy-loading**: `PhotoTile` renders `<img loading="lazy"
   decoding="async">` inside a fixed `aspectRatio: '1 / 1'` box (no layout shift)
   and fades in on load (`web/src/components/library/PhotoTile.tsx`).
