@@ -194,7 +194,13 @@ zapiš sem.
   nevykreslí vůbec**, při nulovém výběru je disabled — stačí ho vložit do `SelectionBar`, stránka
   nedrží žádný stav dialogu), `SelectionStart` (**protějšek** `BulkEditControl`: tlačítko
   `selection.enter`, které zapne režim výběru; viewerovi ani už zapnutému výběru se nevykreslí,
-  `onEnter` přebije akci pro stránku, která musí nejdřív opustit jiný režim), `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`, celá dávka
+  `onEnter` přebije akci pro stránku, která musí nejdřív opustit jiný režim),
+  `DownloadZipButton` (**stažení výběru nebo celého alba jako ZIP** originálů: volá
+  `downloadPhotosZip`, po dobu streamu ukazuje spinner a při selhání chybu — 413 = přes strop
+  (`download.zipTooMany`), jinak obecná (`download.zipError`); `photoUids` = aktuální výběr,
+  `albumUid` (+ `name` = titul alba) = celé album; **dostupné i viewerovi** (stažení není zápis),
+  disabled, když není co stáhnout. Vkládá se do `SelectionBar` knihovny a do hlavičky alba),
+  `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`, celá dávka
   jednou transakcí na backendu; formulář je rozdělený na **čtyři sekce** (`.kk-text-eyebrow`
   nadpisy): **Zařazení** (add/remove alb, add/remove štítků — čtyři `MultiSelect`y, takže jeden
   apply zvládne **víc alb i víc štítků najednou**; add pole navíc přes `onCreate` nabízejí
@@ -839,7 +845,11 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`PATCH …` částečná editace metadat → `PhotoMetadataUpdate`, null maže nullable),
   `fetchEdit(uid)`/`saveEdit(uid,edit)` (`GET`/`PUT …/edit` nedestruktivní edit → `PhotoEdit`
   crop/rotation/brightness/contrast), `downloadUrl(uid,{original?,token?})` (URL downloadu,
-  default honoruje edit, `original:true` pro originál); typy `PhotoDetail`/`PhotoAlbumRef`/
+  default honoruje edit, `original:true` pro originál),
+  `downloadPhotosZip({photoUids?,albumUid?,name?})` (**hromadné stažení ZIP**: `POST
+  …/download-zip`, přečte odpověď jako `Blob` a stáhne ji přes dočasnou object URL — jméno
+  archivu skládá klient (`name`.zip nebo `kukatko-photos-<date>.zip`, `date` počítá klient a
+  posílá i serveru), hází `ApiError` (413 = přes strop); typ `ZipDownloadRequest`); typy `PhotoDetail`/`PhotoAlbumRef`/
   `PhotoLabelRef`/`PhotoUploaderRef`/`PhotoMetadataUpdate`/`PhotoEdit`; `people.ts` = People/face klient: subjekty
   `fetchSubjects`/`fetchSubject`/`createSubject`/`updateSubject`/`deleteSubject`/
   `fetchSubjectPhotos`, obličeje `fetchFaces`/`assignFace`, shluky `fetchClusters`/

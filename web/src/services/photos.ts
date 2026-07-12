@@ -522,6 +522,85 @@ export function downloadUrl(
 }
 
 /**
+ * Names the photos to pack into a bulk ZIP download. Either an explicit set of
+ * UIDs (a library selection), an album to download whole, or both — the backend
+ * merges and de-duplicates them.
+ */
+export interface ZipDownloadRequest {
+  /** Explicit photo UIDs to include (a library selection). */
+  photoUids?: string[]
+  /** An album UID to expand to its live photos server-side (whole-album download). */
+  albumUid?: string
+  /**
+   * Base archive name without extension (e.g. an album title). When omitted a
+   * dated default (`kukatko-photos-<date>.zip`) is used.
+   */
+  name?: string
+}
+
+/**
+ * Downloads a set of photos' originals as a single ZIP via
+ * `POST /api/v1/photos/download-zip` and hands the archive to the browser as a
+ * file download. The server streams the archive; the response is read as a Blob
+ * and saved through a temporary object URL, so the caller only has to reflect the
+ * pending/error state.
+ *
+ * The archive name is computed client-side (the object-URL download uses the
+ * anchor's `download` attribute, not the server's Content-Disposition): the given
+ * `name` or a dated `kukatko-photos-<date>.zip`. The same date is sent to the
+ * server (which avoids wall-clock) for its own Content-Disposition.
+ *
+ * @throws ApiError on a non-OK response, notably 413 when the request is over the
+ *   per-download file cap, so the caller can show a specific message.
+ */
+export async function downloadPhotosZip(req: ZipDownloadRequest): Promise<void> {
+  const date = todayStamp()
+  const res = await fetch(`${API_BASE}/photos/download-zip`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({
+      photo_uids: req.photoUids,
+      album_uid: req.albumUid,
+      name: req.name,
+      date,
+    }),
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  const blob = await res.blob()
+  const base =
+    req.name !== undefined && req.name.trim() !== '' ? req.name.trim() : `kukatko-photos-${date}`
+  saveBlob(blob, `${base}.zip`)
+}
+
+/** Returns today's local date as YYYY-MM-DD, for the ZIP archive's name. */
+function todayStamp(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Saves a Blob to the user's downloads as `filename` by clicking a temporary
+ * anchor pointed at an object URL, revoking the URL afterwards so the blob can be
+ * garbage-collected.
+ */
+function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+/**
  * Fetches one photo's full detail via `GET /api/v1/photos/{uid}`.
  *
  * @throws ApiError with `status` 404 (no such photo) or 5xx so the caller can

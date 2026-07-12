@@ -12,6 +12,7 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
+import { DownloadZipButton } from '../components/organize/DownloadZipButton'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SelectionStart } from '../components/organize/SelectionStart'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
@@ -172,6 +173,9 @@ export function AlbumDetailPage() {
         {album && !selection.active && (
           <div className="d-flex gap-1 flex-wrap">
             {photos.length > 0 && <SlideshowStart scope={scope} view={view} count={total} />}
+            {total > 0 && (
+              <DownloadZipButton albumUid={uid} name={album.title} variant="outline-secondary" />
+            )}
             {canWrite && (
               <>
                 <Button

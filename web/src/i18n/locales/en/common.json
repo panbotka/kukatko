@@ -526,6 +526,12 @@
     "noMatch": "No matches.",
     "remove": "Remove {{name}}"
   },
+  "download": {
+    "zip": "Download ZIP",
+    "zipPending": "Preparing ZIP…",
+    "zipError": "The download could not be prepared. Please try again.",
+    "zipTooMany": "Too many photos to download at once. Select fewer and try again."
+  },
   "selection": {
     "label": "Selection actions",
     "count": "{{count}} selected",
