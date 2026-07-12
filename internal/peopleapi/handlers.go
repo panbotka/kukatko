@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -58,7 +59,9 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	subj, err := a.subjects.CreateSubject(r.Context(), in.toSubject())
+	entry := a.auditEntry(r, audit.ActionSubjectCreate, "",
+		map[string]any{"name": in.Name, "type": string(in.Type)})
+	subj, err := a.subjects.CreateSubjectAudited(r.Context(), in.toSubject(), entry)
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
@@ -87,7 +90,10 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	subj, err := a.subjects.UpdateSubject(r.Context(), chi.URLParam(r, "uid"), in.toUpdate())
+	uid := chi.URLParam(r, "uid")
+	entry := a.auditEntry(r, audit.ActionSubjectUpdate, uid,
+		map[string]any{"name": in.Name, "type": string(in.Type)})
+	subj, err := a.subjects.UpdateSubjectAudited(r.Context(), uid, in.toUpdate(), entry)
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
@@ -97,9 +103,19 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDelete removes the subject identified by the path UID, answering 204 on
-// success or 404 if no such subject exists.
+// success or 404 if no such subject exists. It first loads the subject so the
+// audit entry can record what was removed (name/type).
 func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
-	if err := a.subjects.DeleteSubject(r.Context(), chi.URLParam(r, "uid")); err != nil {
+	uid := chi.URLParam(r, "uid")
+	subj, err := a.subjects.GetSubjectByUID(r.Context(), uid)
+	if err != nil {
+		status, msg := subjectStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	entry := a.auditEntry(r, audit.ActionSubjectDelete, uid,
+		map[string]any{"name": subj.Name, "type": string(subj.Type)})
+	if err := a.subjects.DeleteSubjectAudited(r.Context(), uid, entry); err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
 		return

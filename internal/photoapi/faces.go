@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -58,7 +60,13 @@ func (a *API) handleFaceAssign(w http.ResponseWriter, r *http.Request) {
 	}
 	req.PhotoUID = chi.URLParam(r, "uid")
 
-	result, err := a.faces.Apply(r.Context(), req)
+	// The assignment state machine writes the face.assign/face.unassign audit row
+	// several interface hops away, so the acting user/IP/User-Agent are carried to
+	// it in the context rather than as a parameter.
+	user, _ := auth.UserFromContext(r.Context())
+	ctx := audit.ContextWithMeta(r.Context(), audit.FromRequest(r, user.UID))
+
+	result, err := a.faces.Apply(ctx, req)
 	if err != nil {
 		writeFaceError(w, err, "applying face assignment failed")
 		return

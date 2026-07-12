@@ -136,6 +136,21 @@ func (s *Store) UpdateSubject(ctx context.Context, uid string, upd SubjectUpdate
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	updated, err := updateSubjectWithCacheTx(ctx, tx, uid, upd)
+	if err != nil {
+		return Subject{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Subject{}, fmt.Errorf("people: commit update subject %s: %w", uid, err)
+	}
+	return updated, nil
+}
+
+// updateSubjectWithCacheTx rewrites the subject's editable fields and refreshes the
+// cached subject_name on its faces inside tx, returning the refreshed subject or
+// ErrSubjectNotFound. It is the transactional core shared by UpdateSubject and
+// UpdateSubjectAudited; the type validity check is left to the exported callers.
+func updateSubjectWithCacheTx(ctx context.Context, tx pgx.Tx, uid string, upd SubjectUpdate) (Subject, error) {
 	updated, err := updateSubjectTx(ctx, tx, uid, upd)
 	if err != nil {
 		return Subject{}, err
@@ -144,9 +159,6 @@ func (s *Store) UpdateSubject(ctx context.Context, uid string, upd SubjectUpdate
 		"UPDATE faces SET subject_name = $2 WHERE subject_uid = $1", uid, updated.Name,
 	); err != nil {
 		return Subject{}, fmt.Errorf("people: refreshing faces cache for %s: %w", uid, err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Subject{}, fmt.Errorf("people: commit update subject %s: %w", uid, err)
 	}
 	return updated, nil
 }
@@ -253,6 +265,20 @@ func (s *Store) DeleteSubject(ctx context.Context, uid string) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	if err := deleteSubjectTx(ctx, tx, uid); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("people: commit delete subject %s: %w", uid, err)
+	}
+	return nil
+}
+
+// deleteSubjectTx clears the cached subject_uid/subject_name on the subject's faces
+// and deletes the subject inside tx, returning ErrSubjectNotFound when no such
+// subject exists. It is the transactional core shared by DeleteSubject and
+// DeleteSubjectAudited.
+func deleteSubjectTx(ctx context.Context, tx pgx.Tx, uid string) error {
 	if _, err := tx.Exec(ctx,
 		"UPDATE faces SET subject_uid = NULL, subject_name = '' WHERE subject_uid = $1", uid,
 	); err != nil {
@@ -264,9 +290,6 @@ func (s *Store) DeleteSubject(ctx context.Context, uid string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrSubjectNotFound
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("people: commit delete subject %s: %w", uid, err)
 	}
 	return nil
 }

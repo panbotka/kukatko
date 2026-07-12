@@ -495,7 +495,14 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `WHERE marker_uid = $1`)/`SetMarkerInvalid`/`SetMarkerReviewed`/`DeleteMarker` (vyčistí
   faces cache); sentinely `ErrSubjectNotFound`/`ErrMarkerNotFound`/`ErrSlugExhausted`/
   `ErrInvalidType`/`ErrInvalidBounds`; **faces cache se drží konzistentní** při každé změně
-  markeru/subjektu (mazání, rename, assign/unassign)), `internal/facematch/`
+  markeru/subjektu (mazání, rename, assign/unassign); **audited varianty** mutací (`audit.go`):
+  `CreateSubjectAudited`/`UpdateSubjectAudited`/`DeleteSubjectAudited` a face-přiřazení
+  `CreateMarkerAudited`/`AssignSubjectAudited`/`UnassignSubjectAudited` spustí změnu i
+  `audit.Write` **v jedné transakci** (rollback ⇒ žádný audit řádek; sdílené tx-jádra
+  `updateSubjectWithCacheTx`/`deleteSubjectTx`/`assignSubjectTx`/`unassignSubjectTx`/
+  `createMarkerWithSubjectTx` + `inAuditedTx`, create subjektu retryuje slug per-transakci přes
+  `insertSubjectAuditedWithUniqueSlug`); ne-audited varianty zůstávají pro importy/systémové cesty),
+  `internal/facematch/`
   (propojení detekovaných obličejů s markery/subjekty + návrhy identit, vše za rozhraními
   `PhotoStore`/`FaceStore`/`PeopleStore` (unit-testovatelné s faky bez DB): `Service` =
   `New(Config{Photos,Faces,People,IoUThreshold,SuggestionLimit,SuggestionMaxDistance,MinFaceSize})`;
@@ -516,7 +523,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   subjekt + zalinkuje obličej), `assign_person` (přiřadí subjekt existujícímu markeru),
   `unassign_person` (odpojí subjekt), drží `faces` cache i `marker.reviewed` konzistentní
   (assign → reviewed, unassign → unreviewed), **auto-create subjektu dle jména** (find-or-create
-  přes `Slugify`+`GetSubjectBySlug`); sentinely `ErrInvalidAction`/`ErrMissingBBox`/
+  přes `Slugify`+`GetSubjectBySlug`); **každé přiřazení píše audit řádek atomicky** — `create_marker`
+  a `assign_person` píšou `face.assign`, `unassign_person` píše `face.unassign` (přes audited
+  `people` metody), s markerem jako target a subjektem/fotkou/face_index v details; aktora/IP/UA
+  handler předá kontextem (`audit.ContextWithMeta`/`MetaFromContext`), takže i cluster-assign
+  (`clusterapi`) je atribuovaný; sentinely `ErrInvalidAction`/`ErrMissingBBox`/
   `ErrMissingMarker`/`ErrMissingSubject`, chybějící foto/marker/subjekt → 404 v HTTP vrstvě
   (`photoapi.FaceService` interface + handlery v `internal/photoapi/faces.go`); tunables v
   `faces.*` configu), `internal/embedjob/`
@@ -609,9 +620,12 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   za `RequireWrite`; 503 bez backendu, 404 chybějící subjekt; mountuje se v `serve`
   (`buildOutlierAPI` v `cmd/kukatko/outliers.go`)), `internal/peopleapi/`
   (read/curace HTTP API nad subjekty (osoby/zvířata/jiné) — podklad People UI: rozhraní
-  `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubject`/
-  `UpdateSubject`/`DeleteSubject`/`ListPhotoUIDsBySubject`) a `PhotoStore` (`photos.Store.ListByUIDs`)
-  → unit-testovatelné s faky bez DB; `NewAPI(Config{Subjects,Photos,RequireAuth,RequireWrite})`+
+  `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubjectAudited`/
+  `UpdateSubjectAudited`/`DeleteSubjectAudited`/`ListPhotoUIDsBySubject`) a `PhotoStore`
+  (`photos.Store.ListByUIDs`) → unit-testovatelné s faky bez DB; **každá mutace píše přesně jeden
+  audit záznam ve stejné transakci** (`auditEntry` = aktor z `auth.UserFromContext` + `audit.FromRequest`,
+  akce `subject.create`/`subject.update`/`subject.delete`, target type `subjects`; delete nejdřív načte
+  subjekt kvůli `name`/`type` v details); `NewAPI(Config{Subjects,Photos,RequireAuth,RequireWrite})`+
   `RegisterRoutes` mountuje **ploché** cesty (ne mounted subrouter, aby koexistovaly s
   `outlierapi` `GET /subjects/{uid}/outliers` bez chi Mount konfliktu): `GET /subjects`
   (RequireAuth, `{subjects:[SubjectCount]}` s počty markerů), `POST /subjects` (RequireWrite,

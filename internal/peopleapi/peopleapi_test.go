@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/peopleapi"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -32,6 +33,8 @@ type fakeSubjects struct {
 	lastUpdate people.SubjectUpdate
 	lastCreate people.Subject
 	deletedUID string
+	// entries captures the audit entry each audited mutation was handed.
+	entries []audit.Entry
 }
 
 // ListSubjects returns the canned subject list or error.
@@ -44,23 +47,31 @@ func (f *fakeSubjects) GetSubjectByUID(_ context.Context, _ string) (people.Subj
 	return f.subject, f.getErr
 }
 
-// CreateSubject records the input and returns the canned created subject or error.
-func (f *fakeSubjects) CreateSubject(_ context.Context, subj people.Subject) (people.Subject, error) {
+// CreateSubjectAudited records the input and audit entry and returns the canned
+// created subject or error.
+func (f *fakeSubjects) CreateSubjectAudited(
+	_ context.Context, subj people.Subject, entry audit.Entry,
+) (people.Subject, error) {
 	f.lastCreate = subj
+	f.entries = append(f.entries, entry)
 	return f.created, f.createErr
 }
 
-// UpdateSubject records the update and returns the canned updated subject or error.
-func (f *fakeSubjects) UpdateSubject(
-	_ context.Context, _ string, upd people.SubjectUpdate,
+// UpdateSubjectAudited records the update and audit entry and returns the canned
+// updated subject or error.
+func (f *fakeSubjects) UpdateSubjectAudited(
+	_ context.Context, _ string, upd people.SubjectUpdate, entry audit.Entry,
 ) (people.Subject, error) {
 	f.lastUpdate = upd
+	f.entries = append(f.entries, entry)
 	return f.updated, f.updateErr
 }
 
-// DeleteSubject records the deleted UID and returns the canned error.
-func (f *fakeSubjects) DeleteSubject(_ context.Context, uid string) error {
+// DeleteSubjectAudited records the deleted UID and audit entry and returns the
+// canned error.
+func (f *fakeSubjects) DeleteSubjectAudited(_ context.Context, uid string, entry audit.Entry) error {
 	f.deletedUID = uid
+	f.entries = append(f.entries, entry)
 	return f.deleteErr
 }
 
@@ -155,6 +166,7 @@ func TestHandleCreate_ok(t *testing.T) {
 	if subjects.lastCreate.Name != "Bob" || subjects.lastCreate.Type != people.SubjectPerson {
 		t.Errorf("create input mismatch: %+v", subjects.lastCreate)
 	}
+	assertAuditEntry(t, subjects.entries, audit.ActionSubjectCreate, "Bob")
 }
 
 // TestHandleCreate_emptyName rejects a body with no name.
@@ -198,6 +210,7 @@ func TestHandleUpdate_ok(t *testing.T) {
 	if subjects.lastUpdate.Type != people.SubjectPet || !subjects.lastUpdate.Favorite {
 		t.Errorf("update input mismatch: %+v", subjects.lastUpdate)
 	}
+	assertAuditEntry(t, subjects.entries, audit.ActionSubjectUpdate, "Alice II")
 }
 
 // TestHandleUpdate_invalidType maps the type sentinel to 400.
@@ -211,16 +224,36 @@ func TestHandleUpdate_invalidType(t *testing.T) {
 	}
 }
 
-// TestHandleDelete_ok answers 204 and records the deleted UID.
+// TestHandleDelete_ok answers 204, records the deleted UID, and audits the removal
+// with the subject's name so the audit trail identifies what was removed.
 func TestHandleDelete_ok(t *testing.T) {
 	t.Parallel()
-	subjects := &fakeSubjects{}
+	subjects := &fakeSubjects{subject: people.Subject{UID: "su_a", Name: "Alice", Type: people.SubjectPerson}}
 	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodDelete, "/subjects/su_a", "")
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", rec.Code)
 	}
 	if subjects.deletedUID != "su_a" {
 		t.Errorf("deleted uid = %q, want su_a", subjects.deletedUID)
+	}
+	assertAuditEntry(t, subjects.entries, audit.ActionSubjectDelete, "Alice")
+}
+
+// assertAuditEntry checks exactly one audit entry was recorded with the given
+// action and name detail — the wiring proof that the handler stamps the mutation.
+func assertAuditEntry(t *testing.T, entries []audit.Entry, action, name string) {
+	t.Helper()
+	if len(entries) != 1 {
+		t.Fatalf("audit entries = %d, want 1 (%+v)", len(entries), entries)
+	}
+	if entries[0].Action != action {
+		t.Errorf("audit action = %q, want %q", entries[0].Action, action)
+	}
+	if entries[0].TargetType != "subjects" {
+		t.Errorf("audit target type = %q, want subjects", entries[0].TargetType)
+	}
+	if got, _ := entries[0].Details["name"].(string); got != name {
+		t.Errorf("audit detail name = %q, want %q", got, name)
 	}
 }
 

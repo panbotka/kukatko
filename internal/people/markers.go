@@ -71,6 +71,21 @@ func (s *Store) createMarkerWithSubject(ctx context.Context, m Marker) (Marker, 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	created, err := createMarkerWithSubjectTx(ctx, tx, m)
+	if err != nil {
+		return Marker{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Marker{}, fmt.Errorf("people: commit create marker: %w", err)
+	}
+	return created, nil
+}
+
+// createMarkerWithSubjectTx inserts m (which must name a subject) inside tx,
+// resolving the subject's name and refreshing the faces cache, and returns the
+// stored marker. It is the transactional core shared by createMarkerWithSubject
+// and CreateMarkerAudited.
+func createMarkerWithSubjectTx(ctx context.Context, tx pgx.Tx, m Marker) (Marker, error) {
 	name, err := subjectName(ctx, tx, *m.SubjectUID)
 	if err != nil {
 		return Marker{}, err
@@ -83,9 +98,6 @@ func (s *Store) createMarkerWithSubject(ctx context.Context, m Marker) (Marker, 
 	}
 	if err := assignFacesCache(ctx, tx, created.UID, *m.SubjectUID, name); err != nil {
 		return Marker{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Marker{}, fmt.Errorf("people: commit create marker: %w", err)
 	}
 	return created, nil
 }
@@ -146,6 +158,21 @@ func (s *Store) AssignSubject(ctx context.Context, markerUID, subjectUID string)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	updated, err := assignSubjectTx(ctx, tx, markerUID, subjectUID)
+	if err != nil {
+		return Marker{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Marker{}, fmt.Errorf("people: commit assign subject: %w", err)
+	}
+	return updated, nil
+}
+
+// assignSubjectTx points markerUID at subjectUID inside tx and refreshes the
+// faces cache, returning the updated marker. It translates a missing marker into
+// ErrMarkerNotFound and a missing subject into ErrSubjectNotFound. It is the
+// transactional core shared by AssignSubject and AssignSubjectAudited.
+func assignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID, subjectUID string) (Marker, error) {
 	name, err := subjectName(ctx, tx, subjectUID)
 	if err != nil {
 		return Marker{}, err
@@ -159,9 +186,6 @@ func (s *Store) AssignSubject(ctx context.Context, markerUID, subjectUID string)
 	}
 	if err := assignFacesCache(ctx, tx, markerUID, subjectUID, name); err != nil {
 		return Marker{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Marker{}, fmt.Errorf("people: commit assign subject: %w", err)
 	}
 	return updated, nil
 }
@@ -180,6 +204,20 @@ func (s *Store) UnassignSubject(ctx context.Context, markerUID string) (Marker, 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	updated, err := unassignSubjectTx(ctx, tx, markerUID)
+	if err != nil {
+		return Marker{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Marker{}, fmt.Errorf("people: commit unassign subject: %w", err)
+	}
+	return updated, nil
+}
+
+// unassignSubjectTx clears the subject of markerUID inside tx and resets the
+// faces cache, returning the updated marker or ErrMarkerNotFound. It is the
+// transactional core shared by UnassignSubject and UnassignSubjectAudited.
+func unassignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID string) (Marker, error) {
 	updated, err := scanMarker(tx.QueryRow(ctx, unassignMarkerSQL, markerUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -189,9 +227,6 @@ func (s *Store) UnassignSubject(ctx context.Context, markerUID string) (Marker, 
 	}
 	if err := clearFacesSubject(ctx, tx, markerUID); err != nil {
 		return Marker{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Marker{}, fmt.Errorf("people: commit unassign subject: %w", err)
 	}
 	return updated, nil
 }

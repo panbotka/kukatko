@@ -81,8 +81,20 @@ const (
 	// ActionLabelDetach records detaching a label from a photo; the photo UID is
 	// recorded in the entry's details.
 	ActionLabelDetach = "label.detach"
-	// ActionFaceAssign records assigning/unassigning a face to a subject.
+	// ActionFaceAssign records assigning a face (marker) to a subject, whether by
+	// creating a new marker for the face or pointing an existing marker at the
+	// subject; the marker and subject UIDs are recorded in the entry's details.
 	ActionFaceAssign = "face.assign"
+	// ActionFaceUnassign records clearing a face marker's subject; the marker UID
+	// is recorded in the entry's details.
+	ActionFaceUnassign = "face.unassign"
+	// ActionSubjectCreate records creating a subject (person/pet/other).
+	ActionSubjectCreate = "subject.create"
+	// ActionSubjectUpdate records editing a subject's fields.
+	ActionSubjectUpdate = "subject.update"
+	// ActionSubjectDelete records deleting a subject; its name and type are
+	// recorded in the entry's details.
+	ActionSubjectDelete = "subject.delete"
 	// ActionUserCreate records creating a user account.
 	ActionUserCreate = "user.create"
 	// ActionUserUpdate records editing a user account.
@@ -159,6 +171,29 @@ func (m Meta) Entry(action, targetType, targetUID string, details map[string]any
 		IP:         m.IP,
 		UserAgent:  m.UserAgent,
 	}
+}
+
+// metaContextKey is the private key under which a request's Meta is carried in a
+// context. It lets mutation code reached through several intermediary interfaces
+// (for example the facematch assignment state machine, invoked by both the photo
+// faces endpoint and the cluster-assign endpoint) recover the acting user, client
+// IP and User-Agent without every layer threading an explicit parameter.
+type metaContextKey struct{}
+
+// ContextWithMeta returns a copy of ctx carrying meta. A handler stashes the Meta
+// it built with FromRequest here so a downstream mutation, too far from the HTTP
+// request to receive it as a parameter, can stamp it onto its audit entry.
+func ContextWithMeta(ctx context.Context, meta Meta) context.Context {
+	return context.WithValue(ctx, metaContextKey{}, meta)
+}
+
+// MetaFromContext returns the Meta stored by ContextWithMeta, or the zero Meta
+// (empty actor/IP/User-Agent, which the entry stores as SQL NULL) when none is
+// present — so a code path exercised without a request still records an
+// unattributed entry rather than failing.
+func MetaFromContext(ctx context.Context) Meta {
+	meta, _ := ctx.Value(metaContextKey{}).(Meta)
+	return meta
 }
 
 // clientIP extracts the originating client IP from r, preferring proxy headers

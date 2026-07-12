@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 )
 
@@ -32,7 +33,8 @@ func (s *Service) Apply(ctx context.Context, req AssignRequest) (AssignResult, e
 }
 
 // applyCreateMarker creates a face marker for the request's box, assigns it the
-// resolved subject, and links the named face to it.
+// resolved subject, and links the named face to it. The marker create and its
+// face.assign audit row commit atomically.
 func (s *Service) applyCreateMarker(ctx context.Context, req AssignRequest) (AssignResult, error) {
 	if req.BBox == nil {
 		return AssignResult{}, ErrMissingBBox
@@ -42,13 +44,14 @@ func (s *Service) applyCreateMarker(ctx context.Context, req AssignRequest) (Ass
 		return AssignResult{}, err
 	}
 	box := clampBox(*req.BBox)
-	marker, err := s.people.CreateMarker(ctx, people.Marker{
+	entry := faceAuditEntry(ctx, audit.ActionFaceAssign, "", assignDetails(req, subject.UID, subject.Name))
+	marker, err := s.people.CreateMarkerAudited(ctx, people.Marker{
 		PhotoUID:   req.PhotoUID,
 		SubjectUID: &subject.UID,
 		Type:       people.MarkerFace,
 		X:          box[0], Y: box[1], W: box[2], H: box[3],
 		Reviewed: true,
-	})
+	}, entry)
 	if err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: creating marker: %w", err)
 	}
@@ -57,7 +60,8 @@ func (s *Service) applyCreateMarker(ctx context.Context, req AssignRequest) (Ass
 }
 
 // applyAssignPerson assigns the resolved subject to an existing marker, marks the
-// marker reviewed, and links the named face to it.
+// marker reviewed, and links the named face to it. The assignment and its
+// face.assign audit row commit atomically.
 func (s *Service) applyAssignPerson(ctx context.Context, req AssignRequest) (AssignResult, error) {
 	if req.MarkerUID == "" {
 		return AssignResult{}, ErrMissingMarker
@@ -66,7 +70,9 @@ func (s *Service) applyAssignPerson(ctx context.Context, req AssignRequest) (Ass
 	if err != nil {
 		return AssignResult{}, err
 	}
-	if _, err := s.people.AssignSubject(ctx, req.MarkerUID, subject.UID); err != nil {
+	entry := faceAuditEntry(ctx, audit.ActionFaceAssign, req.MarkerUID,
+		assignDetails(req, subject.UID, subject.Name))
+	if _, err := s.people.AssignSubjectAudited(ctx, req.MarkerUID, subject.UID, entry); err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: assigning subject: %w", err)
 	}
 	marker, err := s.people.SetMarkerReviewed(ctx, req.MarkerUID, true)
@@ -79,12 +85,14 @@ func (s *Service) applyAssignPerson(ctx context.Context, req AssignRequest) (Ass
 
 // applyUnassign clears a marker's subject and its reviewed flag. The face keeps its
 // marker_uid link (the region is still valid), only the subject cache is cleared,
-// which UnassignSubject does for every face tied to the marker.
+// which UnassignSubject does for every face tied to the marker. The unassign and
+// its face.unassign audit row commit atomically.
 func (s *Service) applyUnassign(ctx context.Context, req AssignRequest) (AssignResult, error) {
 	if req.MarkerUID == "" {
 		return AssignResult{}, ErrMissingMarker
 	}
-	if _, err := s.people.UnassignSubject(ctx, req.MarkerUID); err != nil {
+	entry := faceAuditEntry(ctx, audit.ActionFaceUnassign, req.MarkerUID, assignDetails(req, "", ""))
+	if _, err := s.people.UnassignSubjectAudited(ctx, req.MarkerUID, entry); err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: unassigning subject: %w", err)
 	}
 	marker, err := s.people.SetMarkerReviewed(ctx, req.MarkerUID, false)
@@ -92,6 +100,35 @@ func (s *Service) applyUnassign(ctx context.Context, req AssignRequest) (AssignR
 		return AssignResult{}, fmt.Errorf("facematch: marking unreviewed: %w", err)
 	}
 	return AssignResult{Action: ActionUnassignPerson, Marker: marker}, nil
+}
+
+// faceAuditEntry builds the audit entry for a face-assignment mutation from the
+// request Meta stashed in ctx by the HTTP handler (via audit.ContextWithMeta),
+// stamping the acting user, client IP and User-Agent onto action with the marker
+// as the target. A create_marker passes an empty markerUID so the store defaults
+// the target to the freshly created marker.
+func faceAuditEntry(ctx context.Context, action, markerUID string, details map[string]any) audit.Entry {
+	return audit.MetaFromContext(ctx).Entry(action, "markers", markerUID, details)
+}
+
+// assignDetails collects the identifying fields of a face assignment for the audit
+// entry: the photo, the subject (when named) and the face index (when set), plus
+// the source marker for an assign/unassign on an existing marker.
+func assignDetails(req AssignRequest, subjectUID, subjectName string) map[string]any {
+	details := map[string]any{"photo_uid": req.PhotoUID}
+	if req.MarkerUID != "" {
+		details["marker_uid"] = req.MarkerUID
+	}
+	if subjectUID != "" {
+		details["subject_uid"] = subjectUID
+	}
+	if subjectName != "" {
+		details["subject_name"] = subjectName
+	}
+	if req.FaceIndex != nil {
+		details["face_index"] = *req.FaceIndex
+	}
+	return details
 }
 
 // resolveSubject returns the subject named by the request: the one identified by

@@ -15,6 +15,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/people"
@@ -104,7 +106,13 @@ func (a *API) handleAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ClusterUID = chi.URLParam(r, "id")
-	result, err := a.service.AssignCluster(r.Context(), req)
+	// Assigning a cluster creates a face marker per member through the shared
+	// assignment state machine, which writes a face.assign audit row for each. The
+	// acting user/IP/User-Agent are carried to it in the context so those rows are
+	// attributed to whoever named the cluster.
+	user, _ := auth.UserFromContext(r.Context())
+	ctx := audit.ContextWithMeta(r.Context(), audit.FromRequest(r, user.UID))
+	result, err := a.service.AssignCluster(ctx, req)
 	if err != nil {
 		writeClusterError(w, err, "assigning cluster failed")
 		return

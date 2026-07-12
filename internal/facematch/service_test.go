@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -61,25 +62,37 @@ type fakePeople struct {
 	reviewed       *bool
 	unassigned     string
 	nextUID        int
+	// entries captures the audit entry each audited mutation was handed, so tests
+	// can assert the recorded action and details.
+	entries []audit.Entry
 }
 
 func (f *fakePeople) ListMarkersByPhoto(_ context.Context, _ string) ([]people.Marker, error) {
 	return f.markers, nil
 }
 
-func (f *fakePeople) CreateMarker(_ context.Context, m people.Marker) (people.Marker, error) {
+func (f *fakePeople) CreateMarkerAudited(
+	_ context.Context, m people.Marker, entry audit.Entry,
+) (people.Marker, error) {
 	m.UID = "mk_new"
 	f.createdMarker = &m
+	f.entries = append(f.entries, entry)
 	return m, nil
 }
 
-func (f *fakePeople) AssignSubject(_ context.Context, markerUID, subjectUID string) (people.Marker, error) {
+func (f *fakePeople) AssignSubjectAudited(
+	_ context.Context, markerUID, subjectUID string, entry audit.Entry,
+) (people.Marker, error) {
 	f.assigned = [2]string{markerUID, subjectUID}
+	f.entries = append(f.entries, entry)
 	return people.Marker{UID: markerUID, SubjectUID: &subjectUID}, nil
 }
 
-func (f *fakePeople) UnassignSubject(_ context.Context, markerUID string) (people.Marker, error) {
+func (f *fakePeople) UnassignSubjectAudited(
+	_ context.Context, markerUID string, entry audit.Entry,
+) (people.Marker, error) {
 	f.unassigned = markerUID
+	f.entries = append(f.entries, entry)
 	return people.Marker{UID: markerUID}, nil
 }
 
@@ -208,6 +221,13 @@ func TestApply_createMarkerFindOrCreate(t *testing.T) {
 	if ff.updates != 1 || ff.lastMarker != "mk_new" {
 		t.Errorf("face not linked: updates=%d marker=%s", ff.updates, ff.lastMarker)
 	}
+	entry := requireOneEntry(t, pe)
+	if entry.Action != audit.ActionFaceAssign {
+		t.Errorf("audit action = %q, want %q", entry.Action, audit.ActionFaceAssign)
+	}
+	if entry.Details["subject_name"] != "New Person" || entry.Details["photo_uid"] != "p1" {
+		t.Errorf("audit details = %+v", entry.Details)
+	}
 }
 
 // TestApply_findExistingSubjectBySlug checks an existing subject is reused, not
@@ -241,6 +261,13 @@ func TestApply_findExistingSubjectBySlug(t *testing.T) {
 	if res.Subject == nil || res.Subject.UID != "su_existing" {
 		t.Errorf("result subject = %+v, want su_existing", res.Subject)
 	}
+	entry := requireOneEntry(t, pe)
+	if entry.Action != audit.ActionFaceAssign || entry.TargetUID != "mk1" {
+		t.Errorf("audit entry = %+v, want face.assign on mk1", entry)
+	}
+	if entry.Details["subject_uid"] != "su_existing" {
+		t.Errorf("audit subject_uid = %v, want su_existing", entry.Details["subject_uid"])
+	}
 }
 
 // TestApply_unassignClearsReviewed checks unassign clears the subject and reviewed.
@@ -266,6 +293,39 @@ func TestApply_unassignClearsReviewed(t *testing.T) {
 	if res.Subject != nil {
 		t.Errorf("unassign result subject = %+v, want nil", res.Subject)
 	}
+	entry := requireOneEntry(t, pe)
+	if entry.Action != audit.ActionFaceUnassign || entry.TargetUID != "mk1" {
+		t.Errorf("audit entry = %+v, want face.unassign on mk1", entry)
+	}
+}
+
+// TestApply_auditMetaFromContext checks the acting user stashed in the context by
+// the HTTP handler reaches the audit entry the assignment state machine records.
+func TestApply_auditMetaFromContext(t *testing.T) {
+	t.Parallel()
+	ctx := audit.ContextWithMeta(context.Background(), audit.Meta{ActorUID: "usr_1", IP: "10.0.0.1"})
+
+	pe := &fakePeople{markers: []people.Marker{{UID: "mk1", Type: people.MarkerFace}}}
+	svc := newService(&fakePhotos{}, &fakeFaces{}, pe)
+
+	if _, err := svc.Apply(ctx, AssignRequest{
+		PhotoUID: "p1", Action: ActionUnassignPerson, MarkerUID: "mk1",
+	}); err != nil {
+		t.Fatalf("Apply unassign_person: %v", err)
+	}
+	entry := requireOneEntry(t, pe)
+	if entry.ActorUID != "usr_1" || entry.IP != "10.0.0.1" {
+		t.Errorf("audit actor/ip = %q/%q, want usr_1/10.0.0.1", entry.ActorUID, entry.IP)
+	}
+}
+
+// requireOneEntry asserts the fake recorded exactly one audit entry and returns it.
+func requireOneEntry(t *testing.T, pe *fakePeople) audit.Entry {
+	t.Helper()
+	if len(pe.entries) != 1 {
+		t.Fatalf("audit entries = %d, want 1 (%+v)", len(pe.entries), pe.entries)
+	}
+	return pe.entries[0]
 }
 
 // TestApply_validation checks the request-validation error paths.

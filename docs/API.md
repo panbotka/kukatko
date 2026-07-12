@@ -96,7 +96,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   když face backend není zapojen); `POST /photos/{uid}/faces/assign` (editor/admin) — přiřazovací
   akce `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`
   (`create_marker`/`assign_person`/`unassign_person`), auto-create subjektu dle jména, drží `faces`
-  cache + `marker.reviewed` konzistentní (400 validace, 404 chybějící foto/marker/subjekt);
+  cache + `marker.reviewed` konzistentní (400 validace, 404 chybějící foto/marker/subjekt); **píše
+  audit** `face.assign` (create/assign) resp. `face.unassign` (unassign) **ve stejné transakci** jako
+  změna markeru (marker jako target, subjekt/foto/face_index v details; aktor předán kontextem);
   `GET /photos/{uid}` plný detail navíc nese **členství** `albums`/`labels` (inline chipy detailu,
   přes `PhotoOrganizer` rozhraní / `organize.Store.AlbumsForPhoto`+`LabelsForPhoto`; nil organizer →
   prázdná pole) a **`uploader`** `{uid,name}` — kdo fotku nahrál, jméno resolvnuté server-side přes
@@ -151,7 +153,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `GET /faces/clusters` → `{clusters:[{uid,size,representative,examples,suggestion?}]}` (shluky
   nepřiřazených obličejů z auto-clusteringu, `suggestion` = nejbližší pojmenovaný subjekt);
   `POST /faces/clusters/{id}/assign` `{subject_uid?,subject_name?}` přiřadí **celý shluk** jednomu
-  subjektu (find-or-create dle jména) → markery pro všechny obličeje, shluk se spotřebuje;
+  subjektu (find-or-create dle jména) → markery pro všechny obličeje, shluk se spotřebuje (přes
+  sdílenou `facematch` state machine → **`face.assign` audit řádek na každý obličej**, atribuovaný
+  aktorovi předanému kontextem);
   `POST /faces/clusters/{id}/remove-face` `{photo_uid,face_index}` odpojí zatoulaný obličej před
   pojmenováním → refreshnutý shluk (nebo `null` když osiří); 503 bez backendu, 400/404/409 dle
   sentinelů. Mountuje se čtvrtým `server.WithAPI` (`buildClusterAPI` v `cmd/kukatko/clusters.go`).
@@ -170,7 +174,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   subjekt (404); `PATCH /subjects/{uid}` (RequireWrite) → editace stejných polí (404/400);
   `DELETE /subjects/{uid}` (RequireWrite) → 204 (markery se odpojí server-side); `GET
   /subjects/{uid}/photos` (RequireAuth) → paginovaná galerie fotek subjektu
-  `{photos,total,limit,offset,next_offset}` (newest-first, jen nearchivované, `limit`≤500). Mountuje
+  `{photos,total,limit,offset,next_offset}` (newest-first, jen nearchivované, `limit`≤500).
+  **create/update/delete píšou audit** (`subject.create`/`subject.update`/`subject.delete`) **ve
+  stejné transakci** jako změna (delete nese `name`/`type` odstraněného v details). Mountuje
   se osmým `server.WithAPI` (`buildPeopleAPI` v `cmd/kukatko/people.go`). Záznamy fotek subjektu
   staví na `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markery → photo uid).
 - **Process API (`/api/v1`, `internal/processapi`, admin-only přes `RequireAdmin`):**

@@ -3,6 +3,7 @@ package facematch
 import (
 	"context"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -52,12 +53,17 @@ type FaceStore interface {
 type PeopleStore interface {
 	// ListMarkersByPhoto returns every marker on the photo, oldest first.
 	ListMarkersByPhoto(ctx context.Context, photoUID string) ([]people.Marker, error)
-	// CreateMarker inserts a marker (optionally already naming a subject).
-	CreateMarker(ctx context.Context, m people.Marker) (people.Marker, error)
-	// AssignSubject points a marker at a subject and refreshes the faces cache.
-	AssignSubject(ctx context.Context, markerUID, subjectUID string) (people.Marker, error)
-	// UnassignSubject clears a marker's subject and the faces cache.
-	UnassignSubject(ctx context.Context, markerUID string) (people.Marker, error)
+	// CreateMarkerAudited inserts a marker already naming a subject and writes the
+	// given audit entry in the same transaction.
+	CreateMarkerAudited(ctx context.Context, m people.Marker, entry audit.Entry) (people.Marker, error)
+	// AssignSubjectAudited points a marker at a subject, refreshes the faces cache,
+	// and writes the given audit entry in the same transaction.
+	AssignSubjectAudited(
+		ctx context.Context, markerUID, subjectUID string, entry audit.Entry,
+	) (people.Marker, error)
+	// UnassignSubjectAudited clears a marker's subject and the faces cache, and
+	// writes the given audit entry in the same transaction.
+	UnassignSubjectAudited(ctx context.Context, markerUID string, entry audit.Entry) (people.Marker, error)
 	// SetMarkerReviewed sets or clears the reviewed flag on a marker.
 	SetMarkerReviewed(ctx context.Context, uid string, reviewed bool) (people.Marker, error)
 	// GetSubjectByUID returns a subject by uid, or people.ErrSubjectNotFound.
