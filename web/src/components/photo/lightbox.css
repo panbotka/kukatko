@@ -12,7 +12,10 @@
   padding: 3.5rem 0.5rem;
   background: rgba(0, 0, 0, 0.92);
   overflow: hidden;
-  touch-action: pan-y;
+  /* The viewer owns every touch gesture (pinch/double-tap zoom, pan, swipe), so
+     the browser must not scroll, pinch-zoom the page, or trigger its back-swipe
+     on the stage. */
+  touch-action: none;
 }
 
 .lightbox__image {
@@ -21,7 +24,12 @@
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
-  pointer-events: none;
+  touch-action: none;
+  /* The image receives touch/click so gestures land on it and a tap on the
+     image does not close the viewer (only the surrounding backdrop does); the
+     transform origin keeps double-tap/pinch zooming about the centre. */
+  transform-origin: center center;
+  will-change: transform;
 }
 
 /* Large, obvious controls with generous tap targets and visible focus states. */

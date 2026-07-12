@@ -3,7 +3,8 @@ import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
 import { usePhotoNeighbors } from '../../hooks/usePhotoNeighbors'
-import { editPreviewStyle, NEUTRAL_EDIT } from '../../lib/photoEdit'
+import { usePinchZoom } from '../../hooks/usePinchZoom'
+import { editPreviewStyle, editTransform, NEUTRAL_EDIT } from '../../lib/photoEdit'
 import {
   fetchEdit,
   fetchPhoto,
@@ -17,9 +18,6 @@ import './lightbox.css'
 
 /** Preview size for the lightbox stage: a large fit-to-box preview, not a tile. */
 const PREVIEW_SIZE = 'fit_1920'
-
-/** Minimum horizontal travel (px) for a touch swipe to count as next/prev. */
-const SWIPE_THRESHOLD = 50
 
 /** Props for {@link Lightbox}. */
 export interface LightboxProps {
@@ -56,9 +54,10 @@ export interface LightboxProps {
  * pages through the originating list via {@link usePhotoNeighbors} (same order and
  * scope as the detail page's prev/next, stopping at the ends), fetching each
  * photo's title and edit on navigation and preloading the neighbours so stepping
- * feels instant. Keyboard (← → Esc) and touch swipe are wired; closing hands the
- * currently shown UID back so the caller can keep the URL correct. This is the
- * quick single-photo viewer, distinct from the `/slideshow` auto-advance stage.
+ * feels instant. Keyboard (← → Esc), touch swipe, and pinch/double-tap zoom with
+ * drag-to-pan ({@link usePinchZoom}) are wired; closing hands the currently shown
+ * UID back so the caller can keep the URL correct. This is the quick single-photo
+ * viewer, distinct from the `/slideshow` auto-advance stage.
  */
 export function Lightbox({
   initialUid,
@@ -73,7 +72,6 @@ export function Lightbox({
   const [uid, setUid] = useState(initialUid)
   const [title, setTitle] = useState(initialTitle)
   const [edit, setEdit] = useState<PhotoEdit>(initialEdit)
-  const touchStart = useRef<{ x: number; y: number } | null>(null)
   // The initial photo's title/edit arrive via props, so skip the redundant fetch
   // for the photo we opened on; later navigation fetches the shown photo's data.
   const skipInitialFetch = useRef(true)
@@ -158,32 +156,20 @@ export function Lightbox({
     }
   }, [neighbors.prev, neighbors.next, token])
 
-  const onTouchStart = useCallback((event: React.TouchEvent): void => {
-    const touch = event.changedTouches[0]
-    touchStart.current = { x: touch.clientX, y: touch.clientY }
-  }, [])
-
-  const onTouchEnd = useCallback(
-    (event: React.TouchEvent): void => {
-      const start = touchStart.current
-      touchStart.current = null
-      if (start === null) {
-        return
-      }
-      const touch = event.changedTouches[0]
-      const dx = touch.clientX - start.x
-      const dy = touch.clientY - start.y
-      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) <= Math.abs(dy)) {
-        return
-      }
-      if (dx < 0) {
+  // Touch gestures: pinch/double-tap to zoom with drag-to-pan while zoomed, and
+  // a horizontal swipe to page while at rest. The zoom resets on every photo
+  // change (`resetKey={uid}`) and, because the lightbox unmounts on close, when
+  // it closes too. Desktop mouse/keyboard input never reaches these handlers.
+  const zoom = usePinchZoom({
+    resetKey: uid,
+    onSwipe: (direction) => {
+      if (direction === 'next') {
         goNext()
       } else {
         goPrev()
       }
     },
-    [goNext, goPrev],
-  )
+  })
 
   // Close only when the backdrop itself is clicked, not the image or a control
   // (those are children, so the target is never the backdrop element).
@@ -203,8 +189,9 @@ export function Lightbox({
       aria-modal="true"
       aria-label={t('photo.lightbox.label')}
       onClick={onBackdropClick}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
+      onTouchStart={zoom.handlers.onTouchStart}
+      onTouchMove={zoom.handlers.onTouchMove}
+      onTouchEnd={zoom.handlers.onTouchEnd}
     >
       <Button
         variant="dark"
@@ -220,7 +207,17 @@ export function Lightbox({
         className="lightbox__image"
         src={thumbUrl(uid, PREVIEW_SIZE, token ?? undefined)}
         alt={title}
-        style={editPreviewStyle(edit)}
+        style={{
+          ...editPreviewStyle(edit),
+          // Compose the zoom/pan transform with the saved rotation (rotate
+          // first, then scale/translate the rotated image); editPreviewStyle
+          // already set `transform` for rotation, so re-append it here.
+          transform: `translate(${String(zoom.translateX)}px, ${String(zoom.translateY)}px) scale(${String(zoom.scale)})${
+            editTransform(edit) === 'none' ? '' : ` ${editTransform(edit)}`
+          }`,
+          transition: zoom.gesturing ? 'none' : 'transform 0.18s ease-out',
+          cursor: zoom.isZoomed ? 'grab' : 'zoom-in',
+        }}
         draggable={false}
       />
 
