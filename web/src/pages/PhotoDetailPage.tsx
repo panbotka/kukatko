@@ -29,6 +29,7 @@ import { useFavorite } from '../hooks/useFavorite'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
 import { useRating } from '../hooks/useRating'
+import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { editPreviewStyle, isIdentityEdit } from '../lib/photoEdit'
@@ -104,6 +105,25 @@ export function PhotoDetailPage() {
   const neighborTo = (neighbor: string) =>
     detailQuery === '' ? `/photos/${neighbor}` : `/photos/${neighbor}?${detailQuery}`
 
+  // Page to a neighbour (prev/next) preserving the originating list order. Shared
+  // by the on-image ‹/› arrows, the ←/→ keys and the touch swipe so all three
+  // navigate identically (same URL/state, same stop-at-ends semantics).
+  const goToNeighbor = (neighbor: string | null): void => {
+    if (neighbor !== null) {
+      void navigate(neighborTo(neighbor), { replace: true })
+    }
+  }
+
+  // Touch: a horizontal swipe on the image pages to the next/previous photo via
+  // the very same navigation as the arrows/keys. A mostly-vertical drag falls
+  // through to native page scrolling, and the gesture is ignored when it starts
+  // on the face boxes or the ‹/› arrows (see useSwipeNavigation).
+  const swipe = useSwipeNavigation({
+    onSwipe: (direction) => {
+      goToNeighbor(direction === 'next' ? neighbors.next : neighbors.prev)
+    },
+  })
+
   // The favorite is lifted here so the header heart and the `f` shortcut share one
   // optimistic toggle. It resyncs to the photo's stored flag once it loads.
   const favorite = useFavorite(
@@ -119,14 +139,10 @@ export function PhotoDetailPage() {
   useKeyboardShortcuts(
     {
       ArrowLeft: () => {
-        if (neighbors.prev !== null) {
-          void navigate(neighborTo(neighbors.prev), { replace: true })
-        }
+        goToNeighbor(neighbors.prev)
       },
       ArrowRight: () => {
-        if (neighbors.next !== null) {
-          void navigate(neighborTo(neighbors.next), { replace: true })
-        }
+        goToNeighbor(neighbors.next)
       },
       f: () => {
         favorite.toggle()
@@ -291,12 +307,25 @@ export function PhotoDetailPage() {
     // siblings of the button (never nested inside it) and sit in a wrapper that
     // shrink-wraps the image, so their percentage geometry lands on the faces.
     return (
-      <div className="position-relative d-inline-flex mw-100">
+      <div
+        className="position-relative d-inline-flex mw-100"
+        // pan-y hands vertical drags to native scrolling while reserving
+        // horizontal ones for the swipe (and keeps the browser back-swipe off
+        // the image); the handlers only read start/end, never preventDefault.
+        style={{ touchAction: 'pan-y' }}
+        onTouchStart={swipe.onTouchStart}
+        onTouchMove={swipe.onTouchMove}
+        onTouchEnd={swipe.onTouchEnd}
+      >
         <button
           type="button"
           className="border-0 bg-transparent p-0 d-inline-flex"
           style={{ cursor: 'zoom-in' }}
           aria-label={t('photo.lightbox.open')}
+          // Marks the image as a valid swipe surface: the swipe is otherwise
+          // suppressed on interactive descendants (the face boxes), but the
+          // image itself must page.
+          data-swipe-surface=""
           onClick={() => {
             setLightboxOpen(true)
           }}

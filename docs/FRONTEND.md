@@ -339,7 +339,11 @@ zapiš sem.
   still náhled otevře fullscreen lightbox** (`Lightbox` v `components/photo/` + `lightbox.css`):
   fotka na celou obrazovku (contain) na tmavém pozadí s uloženým editem, **velké šipky vlevo/vpravo**
   listující stejné pořadí/scope jako detail (vlastní `usePhotoNeighbors` nad `neighborParams` + `mode`
-  pro hledání, stop na koncích), klávesy ←/→ + Esc, swipe na mobilu, close křížkem (44px tap-target) i klikem na pozadí,
+  pro hledání, stop na koncích), klávesy ←/→ + Esc, **dotyková gesta** (`usePinchZoom`): pinch a dvojklik
+zoom s posunem (pan) při přiblížení a horizontální swipe pro listování, když přiblíženo není (zoom se
+**resetuje při změně fotky i zavření**); close křížkem (44px tap-target) i klikem na **pozadí** — klik do
+samotného obrázku už nezavírá (obrázek má `pointer-events`/`touch-action:none`, aby gesta i dvojklik
+fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknutím na pozadí, ne na obrázek"),
   přednačtení sousedů (`new Image()` na `fit_1920`), fetch title+editu zobrazené fotky při navigaci;
   lightbox si listuje **interně bez změny URL** a při zavření předá aktuální uid zpět → detail obnoví
   URL (`navigate` replace), takže Zpět vždy funguje; video/live neotevírá image-lightbox (mají vlastní
@@ -347,7 +351,10 @@ zapiš sem.
   lightboxu vypnuté** (`useKeyboardShortcuts({enabled:!lightboxOpen})`), aby je ovládal lightbox;
   **prev/next navigace** respektující pořadí
   zdrojového výpisu (`usePhotoNeighbors` pageuje `GET /photos` se scope+filtry z URL — nebo `GET /search`,
-  když detail vznikl z hledání, aby prev/next drželo stejné řazené výsledky);
+  když detail vznikl z hledání, aby prev/next drželo stejné řazené výsledky); **na dotyku i horizontální
+  swipe přes obrázek** (`useSwipeNavigation`) volá tutéž navigaci jako šipky/klávesy — vertikální tah
+  scrolluje (nikdy nelistuje), gesto se ignoruje na interaktivních prvcích (obličejové boxy, ‹/› šipky),
+  protože jen obrázkové tlačítko nese `data-swipe-surface`;
   **listování bez fullpage flickeru** — jen **první** načtení ukáže velký spinner, při skoku na souseda
   zůstane aktuální fotka namontovaná a nová se dotáhne na pozadí (`setState` nereaguje na `loading`, když
   už je `ready`), pak se **swapne na místě**; nad snímkem přitom svítí nenápadný rohový spinner
@@ -584,6 +591,20 @@ zapiš sem.
   (vlevo/vpravo o 1, nahoru/dolů o řádek dle živého počtu sloupců) a dorolují dlaždici do view, `Enter`
   otevře, `x` vybere (zapne selection mód), `f` přepne oblíbenou, `Escape` zruší nejdřív výběr, pak
   fokus; fokus se resetuje na `resetKey` (nová filtr/sort/scope);
+  `useSwipeNavigation({onSwipe,enabled?,threshold?})` → `{onTouchStart,onTouchMove,onTouchEnd}` =
+  horizontální **swipe na dotyku → prev/next** na obrázku detailu; čte jen start/konec doteku a
+  **nikdy nedělá `preventDefault`**, takže mostly-vertikální tah propadne nativnímu scrollu (rozhoduje
+  `lib/gestures` `swipeAction`: práh + dominantní vodorovná složka). Gesto se zahodí při druhém prstu
+  (pinch) a když **začne na interaktivním prvku** (`button`/`a`/form) bez `data-swipe-surface` — takže
+  ťuknutí na obličejový box/šipku nelistuje, jen samotný obrázek (jeho tlačítko ten atribut nese). Myš
+  na desktopu sem nechodí, gesto je čistě aditivní pro dotyk;
+  `usePinchZoom({onSwipe,resetKey,enabled?})` →
+  `{scale,translateX,translateY,isZoomed,gesturing,handlers,reset}` = **pinch/dvojklik zoom** fullscreen
+  lightboxu s **pan** při přiblížení a swipe listováním v klidu: dva prsty škálují (`pinchScale`, clamp
+  `[1,4]`), **dvojklik** přepíná fit ↔ `DOUBLE_TAP_SCALE` (zoom k místu ťuknutí), tah přiblíženého
+  obrázku panuje (clamp `clampPan`, aby nevyjel z obrazovky), tah v klidu rozhodne swipe (`swipeAction`);
+  **zoom se resetuje při změně `resetKey`** (zobrazená fotka) a zavřením (lightbox se odmountuje). Povrch
+  má `touch-action:none`, takže `preventDefault` není potřeba a prohlížeč gesto nepřebíjí;
   `useFaces(photoUid)` = načte obličeje fotky (`fetchFaces`) a drží stavový automat pojmenování
   (výběr boxu, optimistické přiřazení, refetch smiřující se serverem, `busy`/`actionError`);
   vytažen z `FaceOverlay`, aby detail mohl kreslit boxy nad svým jediným obrázkem a panel
@@ -642,7 +663,12 @@ zapiš sem.
   `usePrefersReducedMotion()` = sleduje `(prefers-reduced-motion: reduce)` přes `matchMedia`
   (odebírá `change`, chybějící/rozbité `matchMedia` → `false`) — volající dekorativní animaci
   **vynechá**, ne zkrátí)),
-  `lib/` (`urlState.ts` = hook `useUrlState` +
+  `lib/` (`gestures.ts` = **pure, DOM-free rozhodovací helpery dotykových gest** sdílené
+  `useSwipeNavigation`/`usePinchZoom` (a proto **přímo unit-testovatelné** bez jsdom touch sekvencí):
+  `swipeAction(dx,dy,{threshold,ratio})` → `'prev'|'next'|null` (vlevo = next, vpravo = prev, práh +
+  dominantní vodorovná složka), `touchDistance`/`touchMidpoint`, `pinchScale`/`clampScale`
+  (clamp `[MIN_SCALE=1,MAX_SCALE=4]`, `DOUBLE_TAP_SCALE`), `isDoubleTap(dt,dist)` a `clampPan`;
+  `urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag` a facetů `year`/`album`/`label`) +
   `LIBRARY_DEFAULTS` +
