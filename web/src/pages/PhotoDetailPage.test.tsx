@@ -238,7 +238,8 @@ describe('PhotoDetailPage', () => {
   it('renders exactly one image of the photo when no face was detected', async () => {
     const { container } = renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
-    await screen.findByText('No faces detected in this photo.')
+    // The People block of the Organize card says so when there are no faces.
+    await screen.findByText('No people in this photo.')
 
     // The whole point of the rework: faces are an overlay on the single preview,
     // never a second copy of the image — and a photo with none only says so.
@@ -321,28 +322,67 @@ describe('PhotoDetailPage', () => {
     expect(screen.getByText('ISO 200')).toBeInTheDocument()
   })
 
-  it('lays the metadata, location, and edits panels below the photo in a responsive grid', async () => {
-    const { container } = renderPage()
+  it('stacks the panels below the photo in the edit-first priority order', async () => {
+    renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
 
-    // The photo spans the full width; the control/info panels now live below it
-    // in a card grid. The three columns stack to one column on phones (`col-12`)
-    // and spread two/three across on wider screens (`col-md-6` / `col-xl-4`), so
-    // a fourth panel drops in as another such column without a layout rewrite.
-    const cols = container.querySelectorAll('.col-12.col-md-6.col-xl-4')
-    expect(cols).toHaveLength(3)
-
-    // All three panels render (relocated, not removed): metadata (Info card),
-    // location (its map) and the editor-only edits toggle.
-    expect(screen.getByText('Info')).toBeInTheDocument()
-    expect(screen.getByText('Location')).toBeInTheDocument()
-    expect(screen.getByTestId('map')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Edits' })).toBeInTheDocument()
-
-    // The panels sit *below* the full-width photo in document order, not beside it.
+    // The panels sit below the full-width photo in a strict top-to-bottom
+    // priority order: Organize → Caption & place → Technical → Photo editing.
     const img = screen.getByRole('img', { name: 'Beach' })
-    const infoCard = screen.getByText('Info')
-    expect(img.compareDocumentPosition(infoCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const organize = screen.getByText('Organize')
+    const caption = screen.getByText('Caption & place')
+    const technical = screen.getByRole('button', { name: 'Technical details' })
+    const editing = screen.getByRole('button', { name: 'Edits' })
+
+    // Everything sits below the photo (document order), not beside it.
+    expect(img.compareDocumentPosition(organize) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Organize precedes Caption, which precedes Technical, which precedes editing.
+    expect(
+      organize.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      caption.compareDocumentPosition(technical) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      technical.compareDocumentPosition(editing) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    // The location map is embedded in the Caption & place block (read-only).
+    expect(screen.getByTestId('map')).toBeInTheDocument()
+  })
+
+  it('leads with the Organize block, editable inline without a global edit mode', async () => {
+    fetchFacesMock.mockResolvedValue(facesResponse(1))
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    await waitFor(() => {
+      expect(fetchAlbumsMock).toHaveBeenCalled()
+    })
+
+    // Albums, tags and people are all directly editable in the first card, with
+    // no separate "edit mode" to enter first.
+    expect(screen.getByRole('combobox', { name: 'Add to album' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Add label' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove from album Holidays' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove label Sunset' })).toBeInTheDocument()
+    // The unnamed face is a person chip an editor can click to name it.
+    expect(await screen.findByRole('button', { name: 'Name unnamed face 1' })).toBeInTheDocument()
+  })
+
+  it('names a face from a person chip in the Organize block', async () => {
+    const user = userEvent.setup()
+    fetchFacesMock.mockResolvedValue(facesResponse(1))
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    // Clicking the person chip opens the assign panel and naming PATCHes people.
+    await user.click(await screen.findByRole('button', { name: 'Name unnamed face 1' }))
+    expect(screen.getByLabelText('Name this face')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Name'), 'Alice')
+    await user.click(screen.getByRole('button', { name: 'Assign' }))
+    await waitFor(() => {
+      expect(assignFaceMock).toHaveBeenCalled()
+    })
   })
 
   it('plays a video with a range-streaming player instead of an image', async () => {
@@ -422,7 +462,8 @@ describe('PhotoDetailPage', () => {
     renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    // Each caption field is its own inline edit control (no global "Edit").
+    await user.click(screen.getByRole('button', { name: 'Edit Title' }))
     const titleInput = screen.getByLabelText('Title')
     await user.clear(titleInput)
     await user.type(titleInput, 'Sunset beach')
@@ -436,6 +477,30 @@ describe('PhotoDetailPage', () => {
     expect(updatePhotoMock.mock.calls[0][0]).toBe('b')
     expect(updatePhotoMock.mock.calls[0][1]).toMatchObject({ title: 'Sunset beach' })
     expect(await screen.findByRole('heading', { name: 'Sunset beach' })).toBeInTheDocument()
+  })
+
+  it('toggles the private/visibility flag for editors via the API', async () => {
+    const user = userEvent.setup()
+    updatePhotoMock.mockResolvedValue(photo({ private: true }))
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    // The photo starts public; the header toggle flips the `private` field —
+    // closing the loop with the library's existing "private" filter.
+    await user.click(screen.getByRole('button', { name: 'Make private' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalledWith('b', { private: true })
+    })
+    // Once private, the toggle offers to make it public again.
+    expect(await screen.findByRole('button', { name: 'Make public' })).toBeInTheDocument()
+  })
+
+  it('falls back to the file name in the header when the title is empty', async () => {
+    fetchPhotoMock.mockResolvedValue(photo({ title: '', file_name: 'IMG_1234.jpg' }))
+    renderPage()
+
+    // With no title, the heading beside the back arrow shows the original file name.
+    expect(await screen.findByRole('heading', { name: 'IMG_1234.jpg' })).toBeInTheDocument()
   })
 
   it('adds and removes album memberships inline', async () => {
@@ -641,10 +706,11 @@ describe('PhotoDetailPage', () => {
     renderPage(false)
     await screen.findByRole('heading', { name: 'Beach' })
 
-    // No edit affordances: neither the editor-only edits card nor the metadata
-    // edit button is offered to viewers.
+    // No edit affordances: neither the editor-only edits card, the per-field
+    // caption edit controls, nor the private/visibility toggle reach viewers.
     expect(screen.queryByRole('button', { name: 'Edits' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit Title' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Make private' })).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Remove from album Holidays' }),
     ).not.toBeInTheDocument()

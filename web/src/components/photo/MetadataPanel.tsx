@@ -7,13 +7,14 @@ import { useTranslation } from 'react-i18next'
 import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
 import { formatDateTime } from '../../lib/format'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
+import { Icon } from '../Icon'
 import { LeafletMap } from '../map/LeafletMap'
 
-import { MetaField } from './MetaField'
+import { PhotoLocation } from './PhotoLocation'
 
 /** Props for {@link MetadataPanel}. */
 export interface MetadataPanelProps {
-  /** The photo whose metadata is shown and (for editors) edited. */
+  /** The photo whose caption & place is shown and (for editors) edited. */
   photo: PhotoDetail
   /** Whether the current user may edit metadata (editor/admin). */
   canWrite: boolean
@@ -43,12 +44,69 @@ function initialCoordText(photo: PhotoDetail): string {
   return ''
 }
 
+/** Props for {@link EditableField}. */
+interface EditableFieldProps {
+  /** The (already translated) field label. */
+  label: string
+  /** The current value, or empty/undefined for an unset field. */
+  value: string | undefined
+  /** Whether the current user may edit (editor/admin). */
+  canWrite: boolean
+  /** Opens the caption edit form (shared by every field's affordance). */
+  onEdit: () => void
+}
+
 /**
- * The metadata panel: a read-only summary of the photo's title, description,
- * notes and capture time, with an inline edit form for editors that PATCHes the
- * catalogue. Location (lat/lng) is editable here too, so a photo can be geotagged
- * or have its coordinates cleared. Camera/lens/EXIF is deliberately absent — it
- * lives in the collapsed {@link TechnicalDetails}. All text is i18n.
+ * One caption field in read-only form. For an editor the whole row is a button —
+ * so the field itself is the edit affordance, with a pencil cue and an accessible
+ * "Edit «label»" name — that opens the shared caption form; a muted "add…"
+ * placeholder invites filling an empty field. A viewer sees the value alone (and
+ * an empty field renders nothing, so read-only panels stay free of blank rows).
+ */
+function EditableField({ label, value, canWrite, onEdit }: EditableFieldProps) {
+  const { t } = useTranslation()
+  const hasValue = value !== undefined && value.trim() !== ''
+
+  if (canWrite) {
+    return (
+      <button
+        type="button"
+        className="btn btn-link text-reset text-decoration-none d-block w-100 text-start p-0 mb-2"
+        aria-label={t('photo.metadata.editField', { field: label })}
+        onClick={onEdit}
+      >
+        <span className="small text-secondary d-block">{label}</span>
+        <span className="d-flex justify-content-between align-items-start gap-2">
+          <span className={hasValue ? 'text-break' : 'text-secondary fst-italic'}>
+            {hasValue ? value : t('photo.metadata.addPlaceholder')}
+          </span>
+          <Icon name="pencil" className="text-secondary flex-shrink-0" />
+        </span>
+      </button>
+    )
+  }
+
+  if (!hasValue) {
+    return null
+  }
+  return (
+    <div className="mb-2">
+      <div className="small text-secondary">{label}</div>
+      <div className="text-break">{value}</div>
+    </div>
+  )
+}
+
+/**
+ * The caption & place panel: the photo's title, description, AI description,
+ * capture notes, capture time and location shown read-only, each an inline edit
+ * affordance for editors that opens one shared form PATCHing the catalogue. This
+ * replaces the old single hidden "Edit" button so every caption field is
+ * discoverably editable in place. Location reuses {@link PhotoLocation} read-only
+ * (mini-map + on-demand reverse-geocode) and is set/changed/cleared through the
+ * form's coordinate field and Leaflet map picker. Camera/lens/EXIF and the
+ * uploader are deliberately absent — they live in the collapsed technical
+ * details. All text is i18n.
  */
 export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps) {
   const { t, i18n } = useTranslation()
@@ -163,17 +221,6 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             }}
           />
         </Form.Group>
-        <Form.Group className="mb-2" controlId="photo-notes">
-          <Form.Label className="small text-secondary mb-1">{t('photo.metadata.notes')}</Form.Label>
-          <Form.Control
-            as="textarea"
-            rows={2}
-            value={notes}
-            onChange={(event) => {
-              setNotes(event.target.value)
-            }}
-          />
-        </Form.Group>
         <Form.Group className="mb-2" controlId="photo-ai-note">
           <Form.Label className="small text-secondary mb-1">
             {t('photo.metadata.aiNote')}
@@ -184,6 +231,17 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             value={aiNote}
             onChange={(event) => {
               setAiNote(event.target.value)
+            }}
+          />
+        </Form.Group>
+        <Form.Group className="mb-2" controlId="photo-notes">
+          <Form.Label className="small text-secondary mb-1">{t('photo.metadata.notes')}</Form.Label>
+          <Form.Control
+            as="textarea"
+            rows={2}
+            value={notes}
+            onChange={(event) => {
+              setNotes(event.target.value)
             }}
           />
         </Form.Group>
@@ -274,30 +332,58 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
 
   return (
     <div>
-      <MetaField label={t('photo.metadata.title')} value={photo.title} />
-      <MetaField label={t('photo.metadata.description')} value={photo.description} />
-      <MetaField label={t('photo.metadata.notes')} value={photo.notes} />
-      <MetaField label={t('photo.metadata.aiNote')} value={photo.ai_note} />
-      <MetaField
+      <EditableField
+        label={t('photo.metadata.title')}
+        value={photo.title}
+        canWrite={canWrite}
+        onEdit={startEditing}
+      />
+      <EditableField
+        label={t('photo.metadata.description')}
+        value={photo.description}
+        canWrite={canWrite}
+        onEdit={startEditing}
+      />
+      <EditableField
+        label={t('photo.metadata.aiNote')}
+        value={photo.ai_note}
+        canWrite={canWrite}
+        onEdit={startEditing}
+      />
+      <EditableField
         label={t('photo.metadata.takenAt')}
         value={
           photo.taken_at !== undefined ? formatDateTime(photo.taken_at, i18n.language) : undefined
         }
+        canWrite={canWrite}
+        onEdit={startEditing}
       />
-      <MetaField
-        label={t('photo.metadata.uploadedBy')}
-        value={
-          photo.uploader !== undefined && photo.uploader.name !== ''
-            ? photo.uploader.name
-            : t('photo.metadata.uploaderUnknown')
-        }
+      <EditableField
+        label={t('photo.metadata.notes')}
+        value={photo.notes}
+        canWrite={canWrite}
+        onEdit={startEditing}
       />
 
-      {canWrite && (
-        <Button variant="outline-secondary" size="sm" className="mt-2" onClick={startEditing}>
-          {t('photo.metadata.edit')}
-        </Button>
-      )}
+      {/* Location: the read-only mini-map + place lookup (editing coordinates is
+          done in the shared form, so the embedded view stays read-only). */}
+      <div className="mb-1">
+        <div className="small text-secondary d-flex justify-content-between align-items-center">
+          <span>{t('photo.metadata.location')}</span>
+          {canWrite && (
+            <Button
+              variant="link"
+              size="sm"
+              className="p-0 text-decoration-none"
+              aria-label={t('photo.metadata.editField', { field: t('photo.metadata.location') })}
+              onClick={startEditing}
+            >
+              <Icon name="pencil" />
+            </Button>
+          )}
+        </div>
+        <PhotoLocation photo={photo} canWrite={false} onUpdated={onUpdated} />
+      </div>
     </div>
   )
 }

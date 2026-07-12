@@ -97,6 +97,26 @@ describe('TechnicalDetails', () => {
     expect(screen.queryByText('EOS R5')).not.toBeInTheDocument()
   })
 
+  it('shows the resolved uploader when expanded', async () => {
+    const user = userEvent.setup()
+    renderDetails({ uploader: { uid: 'u1', name: 'Camera Man' } })
+
+    // The uploader is an intrinsic reference fact, so it lives here with the EXIF.
+    expect(screen.queryByText('Uploaded by')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Technical details' }))
+    expect(screen.getByText('Uploaded by')).toBeInTheDocument()
+    expect(screen.getByText('Camera Man')).toBeInTheDocument()
+  })
+
+  it('falls back to a neutral uploader value when none is set', async () => {
+    const user = userEvent.setup()
+    renderDetails()
+
+    await user.click(screen.getByRole('button', { name: 'Technical details' }))
+    const label = screen.getByText('Uploaded by')
+    expect(label.nextElementSibling).toHaveTextContent('—')
+  })
+
   it('omits rows a photo has no value for', async () => {
     const user = userEvent.setup()
     renderDetails({

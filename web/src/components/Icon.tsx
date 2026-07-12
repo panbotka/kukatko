@@ -28,7 +28,9 @@ export type IconName =
   | 'hand-thumbs-up-fill'
   | 'heart'
   | 'images'
+  | 'lock-fill'
   | 'map'
+  | 'pencil'
   | 'people'
   | 'person-circle'
   | 'person-gear'
@@ -38,6 +40,7 @@ export type IconName =
   | 'tags'
   | 'tools'
   | 'trash'
+  | 'unlock'
   | 'wrench-adjustable'
 
 /**

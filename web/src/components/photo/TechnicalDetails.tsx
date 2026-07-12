@@ -17,10 +17,10 @@ export interface TechnicalDetailsProps {
 const REGION_ID = 'photo-technical-details'
 
 /**
- * The camera/lens/EXIF and file facts of a photo, collapsed behind an expander
- * that is closed on first render. This detail matters to few viewers on most
- * visits, so it stays out of the way of the title, description, albums, labels
- * and faces that lead the detail page — one click brings it back.
+ * The camera/lens/EXIF, file facts and uploader of a photo, collapsed behind an
+ * expander that is closed on first render. These are intrinsic, read-only
+ * reference facts, so they stay out of the way of the organize block and caption
+ * that lead the detail page — one click brings them back.
  */
 export function TechnicalDetails({ photo }: TechnicalDetailsProps) {
   const { t } = useTranslation()
@@ -64,6 +64,14 @@ export function TechnicalDetails({ photo }: TechnicalDetailsProps) {
           <MetaField label={t('photo.metadata.iso')} value={iso} />
           <MetaField label={t('photo.metadata.fileName')} value={photo.file_name} />
           <MetaField label={t('photo.technical.dimensions')} value={dimensions} />
+          <MetaField
+            label={t('photo.metadata.uploadedBy')}
+            value={
+              photo.uploader !== undefined && photo.uploader.name !== ''
+                ? photo.uploader.name
+                : t('photo.metadata.uploaderUnknown')
+            }
+          />
         </div>
       )}
     </section>
