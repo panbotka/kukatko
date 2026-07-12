@@ -96,7 +96,7 @@ func (t *Thumbnailer) tryVips(
 			if gctx.Err() != nil {
 				return gctx.Err()
 			}
-			return t.vipsWriteSize(gctx, src, name, result[name])
+			return t.vipsWriteSize(gctx, src, photo.FileHash, name, result[name])
 		})
 	}
 	return group.Wait() == nil
@@ -104,8 +104,10 @@ func (t *Thumbnailer) tryVips(
 
 // vipsWriteSize renders one size of src into absPath via vipsthumbnail, writing
 // to a sibling temp file and renaming it into place so no half-written thumbnail
-// is ever observed (matching the pure-Go atomic write).
-func (t *Thumbnailer) vipsWriteSize(ctx context.Context, src, name, absPath string) error {
+// is ever observed (matching the pure-Go atomic write), then publishes it to the
+// storage backend when that backend serves thumbnails from object URLs. hash is
+// the photo's file hash, which keys the published object.
+func (t *Thumbnailer) vipsWriteSize(ctx context.Context, src, hash, name, absPath string) error {
 	start := time.Now()
 	tmpPath, cleanup, err := reserveVipsTemp(absPath)
 	if err != nil {
@@ -123,7 +125,7 @@ func (t *Thumbnailer) vipsWriteSize(ctx context.Context, src, name, absPath stri
 		return fmt.Errorf("thumb: rename vips temp: %w", err)
 	}
 	t.observer.ObserveThumbnail(time.Since(start))
-	return nil
+	return t.publishSize(ctx, hash, name, absPath)
 }
 
 // reserveVipsTemp creates the destination directory and a unique sibling temp

@@ -53,19 +53,16 @@ func redirectToMedia(w http.ResponseWriter, r *http.Request, target string) {
 // generates the thumbnail nor uploads it: it assumes the object already sits in
 // the bucket under thumb.RelPath's key.
 //
-// What puts it there is `kukatko storage migrate-to-r2`, which walks the
-// catalogue and copies each photo's original and its cached thumbnails into the
-// bucket with storage.Storage's Put — the method that writes an object at a
-// caller-chosen key, which Store cannot, deriving its own from takenAt and the
-// file name. That covers every photo the migration has reached.
-//
-// It does not cover a photo ingested afterwards: thumb.Thumbnailer still writes
-// every size to the local cache directory (storage.cache_path) with plain os
-// calls, for both backends, and nothing uploads them. On the R2 backend a
-// freshly ingested photo therefore has an original in the bucket (Store wrote it
-// on ingest, as it does the video below) and thumbnails only on local disk, and
-// this route will redirect a client to an object that is not there. Closing that
-// gap belongs to the thumbnail job, which is where the sizes are generated.
+// Two writers keep the object there. thumb.Thumbnailer uploads every size it
+// generates to the bucket under thumb.RelPath's key whenever the backend
+// publishes URLs (storage.Storage's Put, the method that writes an object at a
+// caller-chosen key which Store cannot), so a freshly ingested photo has both its
+// original (Store wrote it on ingest, as it does the video below) and its
+// thumbnails in the bucket. And `kukatko storage migrate-to-r2` copies each
+// photo's original and its cached thumbnails into the bucket the same way, which
+// backfills every photo whose thumbnails predate that upload-on-generate
+// behaviour. So on a publishing backend the object this route redirects to is
+// there.
 func (a *API) handleThumb(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	size := chi.URLParam(r, "size")

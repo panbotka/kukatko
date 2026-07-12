@@ -18,6 +18,8 @@ package thumb
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
@@ -49,6 +51,10 @@ var (
 const (
 	// cacheSubdir is the top-level directory under the cache root for thumbs.
 	cacheSubdir = "thumb"
+	// thumbMIME is the media type of every cached thumbnail; the thumbnailer
+	// encodes nothing but JPEG. It is the type a publishing backend serves the
+	// uploaded object as.
+	thumbMIME = "image/jpeg"
 	// shardLen is the number of leading hex characters consumed by each of the
 	// three cache-tree shard levels (aa/bb/cc).
 	shardLen = 2
@@ -254,7 +260,7 @@ func (t *Thumbnailer) Generate(
 			if gctx.Err() != nil {
 				return gctx.Err()
 			}
-			return t.writeSize(img, name, result[name])
+			return t.writeSize(gctx, img, photo.FileHash, name, result[name])
 		})
 	}
 	if err := group.Wait(); err != nil {
@@ -289,8 +295,10 @@ func (t *Thumbnailer) planSizes(hash string, sizes []string) (result map[string]
 }
 
 // writeSize resizes the already-decoded image for the named size, JPEG-encodes
-// it, and writes it atomically to absPath.
-func (t *Thumbnailer) writeSize(img image.Image, name, absPath string) error {
+// it, writes it atomically to absPath (the local cache), and publishes it to the
+// storage backend when that backend serves thumbnails from object URLs. hash is
+// the photo's file hash, which keys the published object.
+func (t *Thumbnailer) writeSize(ctx context.Context, img image.Image, hash, name, absPath string) error {
 	start := time.Now()
 	resized, err := resizeForSpec(img, sizes[name])
 	if err != nil {
@@ -304,7 +312,61 @@ func (t *Thumbnailer) writeSize(img image.Image, name, absPath string) error {
 		return fmt.Errorf("thumb: write %s: %w", name, err)
 	}
 	t.observer.ObserveThumbnail(time.Since(start))
+	return t.publishSize(ctx, hash, name, absPath)
+}
+
+// publishSize uploads the freshly written thumbnail at absPath to the storage
+// backend under its canonical object key (RelPath(hash, size)), but only for a
+// backend that publishes client-fetchable URLs — an object store such as R2,
+// where mediaurl hands the client the object URL directly and the bytes must
+// therefore live in the bucket. A local filesystem backend serves thumbnails
+// from the cache directory and needs no upload, so its URL is empty and this is
+// a no-op.
+//
+// When the upload fails the local cache file is removed, so the size counts as
+// ungenerated and a later Generate re-encodes and re-uploads it. That preserves
+// the invariant that on a publishing backend every cached size is also in the
+// bucket — which is what lets a client's object URL resolve.
+func (t *Thumbnailer) publishSize(ctx context.Context, hash, size, absPath string) error {
+	rel, err := RelPath(hash, size)
+	if err != nil {
+		return err
+	}
+	if t.originals.URL(rel) == "" {
+		return nil
+	}
+	digest, byteLen, err := hashAndSize(absPath)
+	if err != nil {
+		return err
+	}
+	file, err := os.Open(absPath) //nolint:gosec // G304: absPath is built from a validated hex hash and registry size.
+	if err != nil {
+		return fmt.Errorf("thumb: reopening %s for upload: %w", size, err)
+	}
+	defer func() { _ = file.Close() }()
+	want := storage.StoredFile{Hash: digest, RelPath: rel, Size: byteLen, MIME: thumbMIME}
+	if err := t.originals.Put(ctx, file, want); err != nil {
+		_ = os.Remove(absPath)
+		return fmt.Errorf("thumb: publishing %s: %w", size, err)
+	}
 	return nil
+}
+
+// hashAndSize returns the lowercase hex SHA256 digest and byte length of the file
+// at absPath, streaming it so nothing is buffered whole in memory. Storage.Put
+// verifies the uploaded stream against exactly these two values.
+func hashAndSize(absPath string) (digest string, size int64, err error) {
+	file, err := os.Open(absPath) //nolint:gosec // G304: absPath is built from a validated hex hash and registry size.
+	if err != nil {
+		return "", 0, fmt.Errorf("thumb: opening %s for hashing: %w", absPath, err)
+	}
+	defer func() { _ = file.Close() }()
+	hasher := sha256.New()
+	size, err = io.Copy(hasher, file)
+	if err != nil {
+		return "", 0, fmt.Errorf("thumb: hashing %s: %w", absPath, err)
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), size, nil
 }
 
 // cacheRelPath returns the slash-separated cache path

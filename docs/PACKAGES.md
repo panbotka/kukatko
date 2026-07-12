@@ -229,6 +229,12 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `GenerateAll(ctx,photo)` (mapa size→abs cesta)/`Path(hash,size)`/`Open(hash,size)`;
   balíčkové `RelPath(hash,size)` vrací tentýž cache path relativně — je to zároveň **object key**
   náhledu ve vzdáleném backendu, proto se layout exportuje místo aby se odvozoval podruhé jinde;
+  **publikace na object store**: po zápisu velikosti do cache ji `publishSize` nahraje `Put`em pod
+  `RelPath` do backendu, který publikuje URL (`store.URL(rel) != ""`, tj. R2) — u FS je to no-op;
+  když upload selže, lokální soubor se smaže, takže velikost platí za nevygenerovanou a příští
+  `Generate` ji znovu vyrenderuje i nahraje (invariant: nacachovaná velikost na publikujícím
+  backendu je vždy i v bucketu, aby klientská object URL rozlišila). Tím čerstvý ingest na R2
+  dostane náhledy do bucketu stejně jako `storage migrate-to-r2`;
   `GridSize` (`tile_500`) je velikost, kterou renderuje mřížka a kterou nese `thumb_url` v payloadu;
   dekód jednou na fotku, paralelní enkód velikostí (errgroup, default `GOMAXPROCS`,
   vázáno přes `thumb.concurrency`),
