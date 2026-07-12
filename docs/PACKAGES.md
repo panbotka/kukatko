@@ -678,7 +678,14 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `ErrInvalidFlag` — FK porušení při zápisu
   do join tabulek (`user_favorites`/`user_ratings`) se mapuje na not-found sentinel podle porušeného
   sloupce přes sdílený `translateUserPhotoFK` (`photo_uid` → photo, jinak user;
-  album/label přes `translateMembershipFK`/`translateAttachFK`)), `internal/organizeapi/`
+  album/label přes `translateMembershipFK`/`translateAttachFK`);
+  **audited varianty** mutací (`audit.go`): `CreateAlbumAudited`/`UpdateAlbumAudited`/`DeleteAlbumAudited`/
+  `AddPhotosAudited`/`RemovePhotosAudited` a `CreateLabelAudited`/`UpdateLabelAudited`/`DeleteLabelAudited`/
+  `AttachLabelAudited`/`DetachLabelAudited` spustí změnu i `audit.Write` **v jedné transakci** (durable
+  audit — když se mutace rollbackne, audit záznam nevznikne; sdílený `inAuditedTx` +
+  `insertAuditedWithUniqueSlug`, který kolizi slugu u create/update řeší retry přes samostatné transakce
+  a audit píše jen úspěšný pokus); ne-audited varianty zůstávají pro systémové importery
+  (`psimport`/`ppimport`, bez aktora)), `internal/organizeapi/`
   (read/curace HTTP API nad alby a štítky — podklad Albums/Labels UI: rozhraní `AlbumStore`/
   `LabelStore` (podmnožiny `organize.Store`) → unit-testovatelné s faky bez DB;
   `NewAPI(Config{Albums,Labels,RequireAuth,RequireWrite})`+`RegisterRoutes` mountuje dva
@@ -699,7 +706,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   připojení `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}` → 204 (validace source
   přes `ErrInvalidSource`), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204 (ověří existenci
   štítku → 404, pak idempotentní detach); body decode `DisallowUnknownFields` + 1 MiB limit;
-  sentinely mapované `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`→404,
+  **každá mutace píše přesně jeden audit záznam ve stejné transakci** (volá audited store varianty,
+  aktor z `auth.UserFromContext` + `audit.FromRequest`, akce `album.create`/`update`/`delete`/
+  `add_photos`/`remove_photos` a `label.create`/`update`/`delete`/`attach`/`detach`; add/remove fotek =
+  jeden dávkový záznam s `photo_uids`/`count`, attach/detach nese `photo_uid` v details); odpovědi
+  se nemění; sentinely mapované `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`→404,
   `ErrInvalidType`/`ErrInvalidSource`→400; **prohlížení fotek alba/štítku nemá vlastní endpoint** —
   jede přes sdílené `GET /photos` scopnuté `?album={uid}`/`?label={uid}` (viz `photos.ListParams`
   `AlbumUID`/`LabelUID` + `photoapi` `parseListParams`); mountuje se dalším `server.WithAPI`

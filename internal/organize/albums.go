@@ -62,30 +62,47 @@ func scanAlbumSummary(row pgx.Row) (AlbumSummary, error) {
 	return as, nil
 }
 
+// prepareAlbumInsert validates and defaults a's type, ensures it carries a UID,
+// and returns the album ready to insert together with the base slug derived from
+// its title. It is shared by CreateAlbum and CreateAlbumAudited so both apply
+// identical validation and slug derivation. It returns ErrInvalidType for an
+// unrecognised type.
+func prepareAlbumInsert(a Album) (Album, string, error) {
+	if a.Type == "" {
+		a.Type = AlbumManual
+	}
+	if !a.Type.valid() {
+		return Album{}, "", fmt.Errorf("%w: %q", ErrInvalidType, a.Type)
+	}
+	if a.UID == "" {
+		uid, err := newAlbumUID()
+		if err != nil {
+			return Album{}, "", err
+		}
+		a.UID = uid
+	}
+	return a, slugify(a.Title, albumFallbackSlug), nil
+}
+
+// insertAlbumRow inserts a with the given slug using q (a pool or a transaction)
+// and returns the stored row. It underlies both the standalone and audited create
+// paths so the insert projection lives in one place.
+func insertAlbumRow(ctx context.Context, q rowQuerier, a Album, slug string) (Album, error) {
+	return scanAlbum(q.QueryRow(ctx, insertAlbumSQL,
+		a.UID, slug, a.Title, a.Description, a.Type, a.CoverPhotoUID, a.Private, a.CreatedBy))
+}
+
 // CreateAlbum inserts a and returns it refreshed with the generated UID, unique
 // slug and timestamps. The slug is derived from a.Title and a numeric suffix is
 // appended on collision. An empty type defaults to AlbumManual; an unrecognised
 // type returns ErrInvalidType.
 func (s *Store) CreateAlbum(ctx context.Context, a Album) (Album, error) {
-	if a.Type == "" {
-		a.Type = AlbumManual
+	prepared, base, err := prepareAlbumInsert(a)
+	if err != nil {
+		return Album{}, err
 	}
-	if !a.Type.valid() {
-		return Album{}, fmt.Errorf("%w: %q", ErrInvalidType, a.Type)
-	}
-	if a.UID == "" {
-		uid, err := newAlbumUID()
-		if err != nil {
-			return Album{}, err
-		}
-		a.UID = uid
-	}
-	base := slugify(a.Title, albumFallbackSlug)
 	return insertWithUniqueSlug(base, func(slug string) (Album, error) {
-		a.Slug = slug
-		return scanAlbum(s.pool.QueryRow(ctx, insertAlbumSQL,
-			a.UID, a.Slug, a.Title, a.Description, a.Type, a.CoverPhotoUID,
-			a.Private, a.CreatedBy))
+		return insertAlbumRow(ctx, s.pool, prepared, slug)
 	})
 }
 
@@ -123,22 +140,38 @@ UPDATE albums SET
 WHERE uid = $1
 RETURNING ` + albumColumns
 
+// prepareAlbumUpdate validates and defaults upd's type and returns it together
+// with the base slug derived from the new title. It is shared by UpdateAlbum and
+// UpdateAlbumAudited. It returns ErrInvalidType for an unrecognised type.
+func prepareAlbumUpdate(upd AlbumUpdate) (AlbumUpdate, string, error) {
+	if upd.Type == "" {
+		upd.Type = AlbumManual
+	}
+	if !upd.Type.valid() {
+		return AlbumUpdate{}, "", fmt.Errorf("%w: %q", ErrInvalidType, upd.Type)
+	}
+	return upd, slugify(upd.Title, albumFallbackSlug), nil
+}
+
+// updateAlbumRow rewrites the album identified by uid with upd and the given slug
+// using q (a pool or a transaction), returning the refreshed row (or pgx.ErrNoRows
+// when no album matches, which callers translate to ErrAlbumNotFound).
+func updateAlbumRow(ctx context.Context, q rowQuerier, uid string, upd AlbumUpdate, slug string) (Album, error) {
+	return scanAlbum(q.QueryRow(ctx, updateAlbumSQL,
+		uid, slug, upd.Title, upd.Description, upd.Type, upd.CoverPhotoUID, upd.Private))
+}
+
 // UpdateAlbum applies upd to the album identified by uid: it re-slugs from the
 // new title (kept unique) and rewrites the editable fields. An empty type
 // defaults to AlbumManual. It returns ErrAlbumNotFound if no such album exists,
 // or ErrInvalidType for a bad type.
 func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (Album, error) {
-	if upd.Type == "" {
-		upd.Type = AlbumManual
+	prepared, base, err := prepareAlbumUpdate(upd)
+	if err != nil {
+		return Album{}, err
 	}
-	if !upd.Type.valid() {
-		return Album{}, fmt.Errorf("%w: %q", ErrInvalidType, upd.Type)
-	}
-	base := slugify(upd.Title, albumFallbackSlug)
 	updated, err := insertWithUniqueSlug(base, func(slug string) (Album, error) {
-		return scanAlbum(s.pool.QueryRow(ctx, updateAlbumSQL,
-			uid, slug, upd.Title, upd.Description, upd.Type,
-			upd.CoverPhotoUID, upd.Private))
+		return updateAlbumRow(ctx, s.pool, uid, prepared, slug)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Album{}, ErrAlbumNotFound
@@ -215,11 +248,11 @@ func (s *Store) ListAlbums(ctx context.Context) ([]AlbumSummary, error) {
 	return out, nil
 }
 
-// DeleteAlbum removes the album identified by uid. Its album_photos membership
-// rows are removed by ON DELETE CASCADE. It returns ErrAlbumNotFound if no such
-// album exists.
-func (s *Store) DeleteAlbum(ctx context.Context, uid string) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM albums WHERE uid = $1", uid)
+// deleteAlbumRow deletes the album identified by uid using e (a pool or a
+// transaction), returning ErrAlbumNotFound when no row matched. Its album_photos
+// membership rows are removed by ON DELETE CASCADE.
+func deleteAlbumRow(ctx context.Context, e execer, uid string) error {
+	tag, err := e.Exec(ctx, "DELETE FROM albums WHERE uid = $1", uid)
 	if err != nil {
 		return fmt.Errorf("organize: deleting album %s: %w", uid, err)
 	}
@@ -227,6 +260,13 @@ func (s *Store) DeleteAlbum(ctx context.Context, uid string) error {
 		return ErrAlbumNotFound
 	}
 	return nil
+}
+
+// DeleteAlbum removes the album identified by uid. Its album_photos membership
+// rows are removed by ON DELETE CASCADE. It returns ErrAlbumNotFound if no such
+// album exists.
+func (s *Store) DeleteAlbum(ctx context.Context, uid string) error {
+	return deleteAlbumRow(ctx, s.pool, uid)
 }
 
 // addPhotoSQL adds a photo to an album, ignoring the insert if it is already a
@@ -248,15 +288,23 @@ func (s *Store) AddPhoto(ctx context.Context, albumUID, photoUID string) error {
 	return nil
 }
 
-// RemovePhoto removes photoUID from the album identified by albumUID. It is
-// idempotent: removing a photo that is not a member returns a nil error.
-func (s *Store) RemovePhoto(ctx context.Context, albumUID, photoUID string) error {
-	_, err := s.pool.Exec(ctx,
-		"DELETE FROM album_photos WHERE album_uid = $1 AND photo_uid = $2", albumUID, photoUID)
-	if err != nil {
+// removePhotoSQL removes one photo from an album's membership. It is idempotent:
+// removing a photo that is not a member affects no rows.
+const removePhotoSQL = "DELETE FROM album_photos WHERE album_uid = $1 AND photo_uid = $2"
+
+// removeAlbumPhotoRow removes photoUID from albumUID using e (a pool or a
+// transaction), wrapping any error. Removing a non-member is a no-op.
+func removeAlbumPhotoRow(ctx context.Context, e execer, albumUID, photoUID string) error {
+	if _, err := e.Exec(ctx, removePhotoSQL, albumUID, photoUID); err != nil {
 		return fmt.Errorf("organize: removing photo %s from album %s: %w", photoUID, albumUID, err)
 	}
 	return nil
+}
+
+// RemovePhoto removes photoUID from the album identified by albumUID. It is
+// idempotent: removing a photo that is not a member returns a nil error.
+func (s *Store) RemovePhoto(ctx context.Context, albumUID, photoUID string) error {
+	return removeAlbumPhotoRow(ctx, s.pool, albumUID, photoUID)
 }
 
 // setCoverSQL points an album's cover at a photo (or clears it) and returns the

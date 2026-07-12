@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/organize"
 )
 
@@ -41,13 +42,15 @@ func (a *API) handleAlbumCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	album, err := a.albums.CreateAlbum(r.Context(), in.toAlbum())
+	album := in.toAlbum()
+	entry := a.auditEntry(r, audit.ActionAlbumCreate, "albums", "", map[string]any{"title": album.Title})
+	created, err := a.albums.CreateAlbumAudited(r.Context(), album, entry)
 	if err != nil {
 		status, msg := albumStatus(err)
 		writeError(w, status, msg)
 		return
 	}
-	writeJSON(w, http.StatusCreated, album)
+	writeJSON(w, http.StatusCreated, created)
 }
 
 // handleAlbumGet returns the album identified by the path UID, or 404 if missing.
@@ -78,7 +81,8 @@ func (a *API) handleAlbumUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	album, err := a.albums.UpdateAlbum(r.Context(), uid, in.toUpdate(existing.Type))
+	entry := a.auditEntry(r, audit.ActionAlbumUpdate, "albums", uid, map[string]any{"title": in.Title})
+	album, err := a.albums.UpdateAlbumAudited(r.Context(), uid, in.toUpdate(existing.Type), entry)
 	if err != nil {
 		status, msg := albumStatus(err)
 		writeError(w, status, msg)
@@ -90,7 +94,9 @@ func (a *API) handleAlbumUpdate(w http.ResponseWriter, r *http.Request) {
 // handleAlbumDelete removes the album identified by the path UID, answering 204
 // on success or 404 if no such album exists.
 func (a *API) handleAlbumDelete(w http.ResponseWriter, r *http.Request) {
-	if err := a.albums.DeleteAlbum(r.Context(), chi.URLParam(r, "uid")); err != nil {
+	uid := chi.URLParam(r, "uid")
+	entry := a.auditEntry(r, audit.ActionAlbumDelete, "albums", uid, nil)
+	if err := a.albums.DeleteAlbumAudited(r.Context(), uid, entry); err != nil {
 		status, msg := albumStatus(err)
 		writeError(w, status, msg)
 		return
@@ -112,12 +118,11 @@ func (a *API) handleAlbumAddPhotos(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	for _, photoUID := range in.PhotoUIDs {
-		if err := a.albums.AddPhoto(r.Context(), uid, photoUID); err != nil {
-			status, msg := albumStatus(err)
-			writeError(w, status, msg)
-			return
-		}
+	entry := a.auditEntry(r, audit.ActionAlbumAddPhotos, "albums", uid, photoBatchDetails(in.PhotoUIDs))
+	if err := a.albums.AddPhotosAudited(r.Context(), uid, in.PhotoUIDs, entry); err != nil {
+		status, msg := albumStatus(err)
+		writeError(w, status, msg)
+		return
 	}
 	a.writeMembership(w, r, uid)
 }
@@ -135,13 +140,19 @@ func (a *API) handleAlbumRemovePhotos(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	for _, photoUID := range in.PhotoUIDs {
-		if err := a.albums.RemovePhoto(r.Context(), uid, photoUID); err != nil {
-			writeError(w, http.StatusInternalServerError, "removing album photo failed")
-			return
-		}
+	entry := a.auditEntry(r, audit.ActionAlbumRemovePhotos, "albums", uid, photoBatchDetails(in.PhotoUIDs))
+	if err := a.albums.RemovePhotosAudited(r.Context(), uid, in.PhotoUIDs, entry); err != nil {
+		writeError(w, http.StatusInternalServerError, "removing album photo failed")
+		return
 	}
 	a.writeMembership(w, r, uid)
+}
+
+// photoBatchDetails builds the audit details for an album membership change,
+// recording the affected photo UIDs and their count so the trail shows exactly
+// which photos an add/remove touched.
+func photoBatchDetails(photoUIDs []string) map[string]any {
+	return map[string]any{"photo_uids": photoUIDs, "count": len(photoUIDs)}
 }
 
 // requireAlbum reports whether the album exists, writing the mapped error

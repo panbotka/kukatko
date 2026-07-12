@@ -20,50 +20,68 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/organize"
 )
 
 // AlbumStore is the subset of organize.Store the album endpoints need. It is an
 // interface so the handlers depend on behaviour rather than the concrete store,
-// keeping them unit-testable with fakes.
+// keeping them unit-testable with fakes. Every mutation takes an audit.Entry the
+// store writes in the same transaction as the change.
 type AlbumStore interface {
 	// ListAlbums returns every album with its photo count, effective cover and
 	// capture-time span.
 	ListAlbums(ctx context.Context) ([]organize.AlbumSummary, error)
-	// CreateAlbum inserts an album and returns it with its generated UID/slug.
-	CreateAlbum(ctx context.Context, album organize.Album) (organize.Album, error)
+	// CreateAlbumAudited inserts an album (auditing the change) and returns it with
+	// its generated UID/slug.
+	CreateAlbumAudited(ctx context.Context, album organize.Album, entry audit.Entry) (organize.Album, error)
 	// GetAlbumByUID returns one album or organize.ErrAlbumNotFound.
 	GetAlbumByUID(ctx context.Context, uid string) (organize.Album, error)
-	// UpdateAlbum rewrites an album's editable fields, or returns
+	// UpdateAlbumAudited rewrites an album's editable fields (auditing the change),
+	// or returns organize.ErrAlbumNotFound.
+	UpdateAlbumAudited(
+		ctx context.Context, uid string, upd organize.AlbumUpdate, entry audit.Entry,
+	) (organize.Album, error)
+	// DeleteAlbumAudited removes an album (auditing the change), or returns
 	// organize.ErrAlbumNotFound.
-	UpdateAlbum(ctx context.Context, uid string, upd organize.AlbumUpdate) (organize.Album, error)
-	// DeleteAlbum removes an album, or returns organize.ErrAlbumNotFound.
-	DeleteAlbum(ctx context.Context, uid string) error
-	// AddPhoto adds a photo to an album (idempotent).
-	AddPhoto(ctx context.Context, albumUID, photoUID string) error
-	// RemovePhoto removes a photo from an album (idempotent).
-	RemovePhoto(ctx context.Context, albumUID, photoUID string) error
+	DeleteAlbumAudited(ctx context.Context, uid string, entry audit.Entry) error
+	// AddPhotosAudited adds photos to an album (idempotent) as one audited batch.
+	AddPhotosAudited(ctx context.Context, albumUID string, photoUIDs []string, entry audit.Entry) error
+	// RemovePhotosAudited removes photos from an album (idempotent) as one audited
+	// batch.
+	RemovePhotosAudited(ctx context.Context, albumUID string, photoUIDs []string, entry audit.Entry) error
 	// ListPhotoUIDs returns an album's photo UIDs in display (chronological) order.
 	ListPhotoUIDs(ctx context.Context, albumUID string) ([]string, error)
 }
 
-// LabelStore is the subset of organize.Store the label endpoints need.
+// LabelStore is the subset of organize.Store the label endpoints need. Every
+// mutation takes an audit.Entry the store writes in the same transaction.
 type LabelStore interface {
 	// ListLabels returns every label with its photo count.
 	ListLabels(ctx context.Context) ([]organize.LabelCount, error)
-	// CreateLabel inserts a label and returns it with its generated UID/slug.
-	CreateLabel(ctx context.Context, label organize.Label) (organize.Label, error)
+	// CreateLabelAudited inserts a label (auditing the change) and returns it with
+	// its generated UID/slug.
+	CreateLabelAudited(ctx context.Context, label organize.Label, entry audit.Entry) (organize.Label, error)
 	// GetLabelByUID returns one label or organize.ErrLabelNotFound.
 	GetLabelByUID(ctx context.Context, uid string) (organize.Label, error)
-	// UpdateLabel rewrites a label's editable fields, or returns
+	// UpdateLabelAudited rewrites a label's editable fields (auditing the change),
+	// or returns organize.ErrLabelNotFound.
+	UpdateLabelAudited(
+		ctx context.Context, uid string, upd organize.LabelUpdate, entry audit.Entry,
+	) (organize.Label, error)
+	// DeleteLabelAudited removes a label (auditing the change), or returns
 	// organize.ErrLabelNotFound.
-	UpdateLabel(ctx context.Context, uid string, upd organize.LabelUpdate) (organize.Label, error)
-	// DeleteLabel removes a label, or returns organize.ErrLabelNotFound.
-	DeleteLabel(ctx context.Context, uid string) error
-	// AttachLabel attaches a label to a photo with a source and uncertainty.
-	AttachLabel(ctx context.Context, photoUID, labelUID string, source organize.LabelSource, uncertainty int) error
-	// DetachLabel removes a label from a photo (idempotent).
-	DetachLabel(ctx context.Context, photoUID, labelUID string) error
+	DeleteLabelAudited(ctx context.Context, uid string, entry audit.Entry) error
+	// AttachLabelAudited attaches a label to a photo with a source and uncertainty
+	// (auditing the change).
+	AttachLabelAudited(
+		ctx context.Context, photoUID, labelUID string,
+		source organize.LabelSource, uncertainty int, entry audit.Entry,
+	) error
+	// DetachLabelAudited removes a label from a photo (idempotent, auditing the
+	// change).
+	DetachLabelAudited(ctx context.Context, photoUID, labelUID string, entry audit.Entry) error
 }
 
 // API exposes the album and label endpoints over HTTP. The route guards are
@@ -138,6 +156,22 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Post("/{uid}/photos", a.handleLabelAttach)
 		r.With(a.requireWrite).Delete("/{uid}/photos", a.handleLabelDetach)
 	})
+}
+
+// auditEntry builds an audit entry for a mutation, stamping the acting user
+// (resolved from the request's auth context) plus the request's client IP and
+// User-Agent onto the given action, target and details. The store writes the
+// returned entry inside the mutation's transaction.
+//
+// The mutating routes are guarded by RequireWrite, so a principal is present in
+// production; an absent principal yields an empty actor UID (stored as NULL)
+// rather than failing, which keeps the handlers exercisable behind pass-through
+// guards in unit tests.
+func (a *API) auditEntry(
+	r *http.Request, action, targetType, targetUID string, details map[string]any,
+) audit.Entry {
+	user, _ := auth.UserFromContext(r.Context())
+	return audit.FromRequest(r, user.UID).Entry(action, targetType, targetUID, details)
 }
 
 // errorBody is the JSON body returned for error responses.

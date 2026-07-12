@@ -63,12 +63,24 @@ const (
 	ActionAlbumUpdate = "album.update"
 	// ActionAlbumDelete records deleting an album.
 	ActionAlbumDelete = "album.delete"
+	// ActionAlbumAddPhotos records adding one or more photos to an album; the
+	// affected photo UIDs are listed in the entry's details.
+	ActionAlbumAddPhotos = "album.add_photos"
+	// ActionAlbumRemovePhotos records removing one or more photos from an album;
+	// the affected photo UIDs are listed in the entry's details.
+	ActionAlbumRemovePhotos = "album.remove_photos"
 	// ActionLabelCreate records creating a label.
 	ActionLabelCreate = "label.create"
 	// ActionLabelUpdate records editing a label.
 	ActionLabelUpdate = "label.update"
 	// ActionLabelDelete records deleting a label.
 	ActionLabelDelete = "label.delete"
+	// ActionLabelAttach records attaching a label to a photo; the photo UID is
+	// recorded in the entry's details.
+	ActionLabelAttach = "label.attach"
+	// ActionLabelDetach records detaching a label from a photo; the photo UID is
+	// recorded in the entry's details.
+	ActionLabelDetach = "label.detach"
 	// ActionFaceAssign records assigning/unassigning a face to a subject.
 	ActionFaceAssign = "face.assign"
 	// ActionUserCreate records creating a user account.

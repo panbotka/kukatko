@@ -44,21 +44,35 @@ func scanLabelCount(row pgx.Row) (LabelCount, error) {
 	return lc, nil
 }
 
+// prepareLabelInsert ensures l carries a UID and returns it together with the base
+// slug derived from its name. It is shared by CreateLabel and CreateLabelAudited.
+func prepareLabelInsert(l Label) (Label, string, error) {
+	if l.UID == "" {
+		uid, err := newLabelUID()
+		if err != nil {
+			return Label{}, "", err
+		}
+		l.UID = uid
+	}
+	return l, slugify(l.Name, labelFallbackSlug), nil
+}
+
+// insertLabelRow inserts l with the given slug using q (a pool or a transaction)
+// and returns the stored row.
+func insertLabelRow(ctx context.Context, q rowQuerier, l Label, slug string) (Label, error) {
+	return scanLabel(q.QueryRow(ctx, insertLabelSQL, l.UID, slug, l.Name, l.Priority))
+}
+
 // CreateLabel inserts l and returns it refreshed with the generated UID, unique
 // slug and timestamps. The slug is derived from l.Name and a numeric suffix is
 // appended on collision.
 func (s *Store) CreateLabel(ctx context.Context, l Label) (Label, error) {
-	if l.UID == "" {
-		uid, err := newLabelUID()
-		if err != nil {
-			return Label{}, err
-		}
-		l.UID = uid
+	prepared, base, err := prepareLabelInsert(l)
+	if err != nil {
+		return Label{}, err
 	}
-	base := slugify(l.Name, labelFallbackSlug)
 	return insertWithUniqueSlug(base, func(slug string) (Label, error) {
-		l.Slug = slug
-		return scanLabel(s.pool.QueryRow(ctx, insertLabelSQL, l.UID, l.Slug, l.Name, l.Priority))
+		return insertLabelRow(ctx, s.pool, prepared, slug)
 	})
 }
 
@@ -94,13 +108,20 @@ UPDATE labels SET slug = $2, name = $3, priority = $4, updated_at = now()
 WHERE uid = $1
 RETURNING ` + labelColumns
 
+// updateLabelRow rewrites the label identified by uid with upd and the given slug
+// using q (a pool or a transaction), returning the refreshed row (or pgx.ErrNoRows
+// when no label matches, which callers translate to ErrLabelNotFound).
+func updateLabelRow(ctx context.Context, q rowQuerier, uid string, upd LabelUpdate, slug string) (Label, error) {
+	return scanLabel(q.QueryRow(ctx, updateLabelSQL, uid, slug, upd.Name, upd.Priority))
+}
+
 // UpdateLabel applies upd to the label identified by uid: it re-slugs from the new
 // name (kept unique) and rewrites the editable fields. It returns ErrLabelNotFound
 // if no such label exists.
 func (s *Store) UpdateLabel(ctx context.Context, uid string, upd LabelUpdate) (Label, error) {
 	base := slugify(upd.Name, labelFallbackSlug)
 	updated, err := insertWithUniqueSlug(base, func(slug string) (Label, error) {
-		return scanLabel(s.pool.QueryRow(ctx, updateLabelSQL, uid, slug, upd.Name, upd.Priority))
+		return updateLabelRow(ctx, s.pool, uid, upd, slug)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Label{}, ErrLabelNotFound
@@ -142,11 +163,11 @@ func (s *Store) ListLabels(ctx context.Context) ([]LabelCount, error) {
 	return out, nil
 }
 
-// DeleteLabel removes the label identified by uid. Its photo_labels attachment
-// rows are removed by ON DELETE CASCADE. It returns ErrLabelNotFound if no such
-// label exists.
-func (s *Store) DeleteLabel(ctx context.Context, uid string) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM labels WHERE uid = $1", uid)
+// deleteLabelRow deletes the label identified by uid using e (a pool or a
+// transaction), returning ErrLabelNotFound when no row matched. Its photo_labels
+// attachment rows are removed by ON DELETE CASCADE.
+func deleteLabelRow(ctx context.Context, e execer, uid string) error {
+	tag, err := e.Exec(ctx, "DELETE FROM labels WHERE uid = $1", uid)
 	if err != nil {
 		return fmt.Errorf("organize: deleting label %s: %w", uid, err)
 	}
@@ -154,6 +175,13 @@ func (s *Store) DeleteLabel(ctx context.Context, uid string) error {
 		return ErrLabelNotFound
 	}
 	return nil
+}
+
+// DeleteLabel removes the label identified by uid. Its photo_labels attachment
+// rows are removed by ON DELETE CASCADE. It returns ErrLabelNotFound if no such
+// label exists.
+func (s *Store) DeleteLabel(ctx context.Context, uid string) error {
+	return deleteLabelRow(ctx, s.pool, uid)
 }
 
 // attachLabelSQL attaches a label to a photo, updating the source and uncertainty
@@ -164,6 +192,31 @@ VALUES ($1, $2, $3, $4)
 ON CONFLICT (photo_uid, label_uid)
 DO UPDATE SET source = EXCLUDED.source, uncertainty = EXCLUDED.uncertainty`
 
+// normalizeLabelSource defaults an empty source to SourceManual and validates it,
+// returning ErrInvalidSource for an unrecognised value. It is shared by AttachLabel
+// and AttachLabelAudited so the validation happens once, before any transaction.
+func normalizeLabelSource(source LabelSource) (LabelSource, error) {
+	if source == "" {
+		source = SourceManual
+	}
+	if !source.valid() {
+		return "", fmt.Errorf("%w: %q", ErrInvalidSource, source)
+	}
+	return source, nil
+}
+
+// attachLabelRow attaches labelUID to photoUID with source and uncertainty using
+// e (a pool or a transaction), translating a foreign-key violation to
+// ErrLabelNotFound or ErrPhotoNotFound. The source must already be normalised.
+func attachLabelRow(
+	ctx context.Context, e execer, photoUID, labelUID string, source LabelSource, uncertainty int,
+) error {
+	if _, err := e.Exec(ctx, attachLabelSQL, photoUID, labelUID, source, uncertainty); err != nil {
+		return translateAttachFK(err)
+	}
+	return nil
+}
+
 // AttachLabel attaches labelUID to photoUID with the given source and uncertainty,
 // updating both if the label is already attached (idempotent). An empty source
 // defaults to SourceManual; an unrecognised source returns ErrInvalidSource. It
@@ -171,15 +224,19 @@ DO UPDATE SET source = EXCLUDED.source, uncertainty = EXCLUDED.uncertainty`
 func (s *Store) AttachLabel(
 	ctx context.Context, photoUID, labelUID string, source LabelSource, uncertainty int,
 ) error {
-	if source == "" {
-		source = SourceManual
-	}
-	if !source.valid() {
-		return fmt.Errorf("%w: %q", ErrInvalidSource, source)
-	}
-	_, err := s.pool.Exec(ctx, attachLabelSQL, photoUID, labelUID, source, uncertainty)
+	normalized, err := normalizeLabelSource(source)
 	if err != nil {
-		return translateAttachFK(err)
+		return err
+	}
+	return attachLabelRow(ctx, s.pool, photoUID, labelUID, normalized, uncertainty)
+}
+
+// detachLabelRow removes labelUID from photoUID using e (a pool or a transaction),
+// wrapping any error. Detaching a label that is not attached is a no-op.
+func detachLabelRow(ctx context.Context, e execer, photoUID, labelUID string) error {
+	if _, err := e.Exec(ctx,
+		"DELETE FROM photo_labels WHERE photo_uid = $1 AND label_uid = $2", photoUID, labelUID); err != nil {
+		return fmt.Errorf("organize: detaching label %s from photo %s: %w", labelUID, photoUID, err)
 	}
 	return nil
 }
@@ -187,12 +244,7 @@ func (s *Store) AttachLabel(
 // DetachLabel removes labelUID from photoUID. It is idempotent: detaching a label
 // that is not attached returns a nil error.
 func (s *Store) DetachLabel(ctx context.Context, photoUID, labelUID string) error {
-	_, err := s.pool.Exec(ctx,
-		"DELETE FROM photo_labels WHERE photo_uid = $1 AND label_uid = $2", photoUID, labelUID)
-	if err != nil {
-		return fmt.Errorf("organize: detaching label %s from photo %s: %w", labelUID, photoUID, err)
-	}
-	return nil
+	return detachLabelRow(ctx, s.pool, photoUID, labelUID)
 }
 
 // listLabelPhotoUIDsSQL returns the photos carrying a label, newest attachment

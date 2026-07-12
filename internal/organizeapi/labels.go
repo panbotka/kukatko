@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/organize"
 )
 
@@ -32,13 +33,16 @@ func (a *API) handleLabelCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	label, err := a.labels.CreateLabel(r.Context(), in.toLabel())
+	label := in.toLabel()
+	entry := a.auditEntry(r, audit.ActionLabelCreate, "labels", "",
+		map[string]any{"name": label.Name, "priority": label.Priority})
+	created, err := a.labels.CreateLabelAudited(r.Context(), label, entry)
 	if err != nil {
 		status, msg := labelStatus(err)
 		writeError(w, status, msg)
 		return
 	}
-	writeJSON(w, http.StatusCreated, label)
+	writeJSON(w, http.StatusCreated, created)
 }
 
 // handleLabelGet returns the label identified by the path UID, or 404 if missing.
@@ -56,12 +60,15 @@ func (a *API) handleLabelGet(w http.ResponseWriter, r *http.Request) {
 // returns the refreshed label. A malformed body or empty name answers 400; a
 // missing label answers 404.
 func (a *API) handleLabelUpdate(w http.ResponseWriter, r *http.Request) {
+	uid := chi.URLParam(r, "uid")
 	in, err := decodeLabelInput(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	label, err := a.labels.UpdateLabel(r.Context(), chi.URLParam(r, "uid"), in.toUpdate())
+	entry := a.auditEntry(r, audit.ActionLabelUpdate, "labels", uid,
+		map[string]any{"name": in.Name, "priority": in.Priority})
+	label, err := a.labels.UpdateLabelAudited(r.Context(), uid, in.toUpdate(), entry)
 	if err != nil {
 		status, msg := labelStatus(err)
 		writeError(w, status, msg)
@@ -73,7 +80,9 @@ func (a *API) handleLabelUpdate(w http.ResponseWriter, r *http.Request) {
 // handleLabelDelete removes the label identified by the path UID, answering 204
 // on success or 404 if no such label exists.
 func (a *API) handleLabelDelete(w http.ResponseWriter, r *http.Request) {
-	if err := a.labels.DeleteLabel(r.Context(), chi.URLParam(r, "uid")); err != nil {
+	uid := chi.URLParam(r, "uid")
+	entry := a.auditEntry(r, audit.ActionLabelDelete, "labels", uid, nil)
+	if err := a.labels.DeleteLabelAudited(r.Context(), uid, entry); err != nil {
 		status, msg := labelStatus(err)
 		writeError(w, status, msg)
 		return
@@ -86,12 +95,16 @@ func (a *API) handleLabelDelete(w http.ResponseWriter, r *http.Request) {
 // malformed body or missing photo UID answers 400; an invalid source answers 400;
 // a missing label or photo answers 404.
 func (a *API) handleLabelAttach(w http.ResponseWriter, r *http.Request) {
+	uid := chi.URLParam(r, "uid")
 	in, err := decodeLabelPhoto(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	err = a.labels.AttachLabel(r.Context(), in.PhotoUID, chi.URLParam(r, "uid"), in.Source, in.Uncertainty)
+	entry := a.auditEntry(r, audit.ActionLabelAttach, "labels", uid, map[string]any{
+		"photo_uid": in.PhotoUID, "source": string(in.Source), "uncertainty": in.Uncertainty,
+	})
+	err = a.labels.AttachLabelAudited(r.Context(), in.PhotoUID, uid, in.Source, in.Uncertainty, entry)
 	if err != nil {
 		status, msg := labelStatus(err)
 		writeError(w, status, msg)
@@ -116,7 +129,8 @@ func (a *API) handleLabelDetach(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
-	if err := a.labels.DetachLabel(r.Context(), in.PhotoUID, uid); err != nil {
+	entry := a.auditEntry(r, audit.ActionLabelDetach, "labels", uid, map[string]any{"photo_uid": in.PhotoUID})
+	if err := a.labels.DetachLabelAudited(r.Context(), in.PhotoUID, uid, entry); err != nil {
 		writeError(w, http.StatusInternalServerError, "detaching label failed")
 		return
 	}

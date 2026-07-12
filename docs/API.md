@@ -202,7 +202,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   (RequireWrite → 204); připojení `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}`
   → 204 (neplatný source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204. **Galerie
   fotek alba/štítku** jede přes sdílené `GET /photos?album={uid}`/`?label={uid}` (stejný tvar +
-  filtry/stránkování; album scope má vždy vynucenou chronologii, štítek ctí zvolené řazení). Viewer čte, ale nemutuje (403). Mountuje se dalším `server.WithAPI`
+  filtry/stránkování; album scope má vždy vynucenou chronologii, štítek ctí zvolené řazení). Viewer čte, ale nemutuje (403).
+  Každá mutace (create/update/delete alba i štítku, add/remove fotek, attach/detach) píše audit záznam
+  (`album.*`/`label.*`) **ve stejné transakci** jako změna — odpovědi se nemění. Mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
 - **Places API (`/api/v1`, `internal/placesapi`, přihlášený přes `RequireAuth`):** procházení
   reverse-geokódované place hierarchie + scoping výpisu fotek na lokalitu. `GET /places` →

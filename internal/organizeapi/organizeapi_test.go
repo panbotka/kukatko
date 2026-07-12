@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/organizeapi"
 )
@@ -35,6 +36,7 @@ type fakeAlbums struct {
 
 	lastCreate   organize.Album
 	lastUpdate   organize.AlbumUpdate
+	lastEntry    audit.Entry
 	deletedUID   string
 	addedUIDs    []string
 	removedUIDs  []string
@@ -45,8 +47,11 @@ func (f *fakeAlbums) ListAlbums(context.Context) ([]organize.AlbumSummary, error
 	return f.list, f.listErr
 }
 
-func (f *fakeAlbums) CreateAlbum(_ context.Context, a organize.Album) (organize.Album, error) {
+func (f *fakeAlbums) CreateAlbumAudited(
+	_ context.Context, a organize.Album, entry audit.Entry,
+) (organize.Album, error) {
 	f.lastCreate = a
+	f.lastEntry = entry
 	return f.created, f.createErr
 }
 
@@ -55,23 +60,33 @@ func (f *fakeAlbums) GetAlbumByUID(context.Context, string) (organize.Album, err
 	return f.album, f.getErr
 }
 
-func (f *fakeAlbums) UpdateAlbum(_ context.Context, _ string, upd organize.AlbumUpdate) (organize.Album, error) {
+func (f *fakeAlbums) UpdateAlbumAudited(
+	_ context.Context, _ string, upd organize.AlbumUpdate, entry audit.Entry,
+) (organize.Album, error) {
 	f.lastUpdate = upd
+	f.lastEntry = entry
 	return f.updated, f.updateErr
 }
 
-func (f *fakeAlbums) DeleteAlbum(_ context.Context, uid string) error {
+func (f *fakeAlbums) DeleteAlbumAudited(_ context.Context, uid string, entry audit.Entry) error {
 	f.deletedUID = uid
+	f.lastEntry = entry
 	return f.deleteErr
 }
 
-func (f *fakeAlbums) AddPhoto(_ context.Context, _, photoUID string) error {
-	f.addedUIDs = append(f.addedUIDs, photoUID)
+func (f *fakeAlbums) AddPhotosAudited(
+	_ context.Context, _ string, photoUIDs []string, entry audit.Entry,
+) error {
+	f.addedUIDs = append(f.addedUIDs, photoUIDs...)
+	f.lastEntry = entry
 	return f.addErr
 }
 
-func (f *fakeAlbums) RemovePhoto(_ context.Context, _, photoUID string) error {
-	f.removedUIDs = append(f.removedUIDs, photoUID)
+func (f *fakeAlbums) RemovePhotosAudited(
+	_ context.Context, _ string, photoUIDs []string, entry audit.Entry,
+) error {
+	f.removedUIDs = append(f.removedUIDs, photoUIDs...)
+	f.lastEntry = entry
 	return f.removeErr
 }
 
@@ -96,6 +111,7 @@ type fakeLabels struct {
 
 	lastCreate   organize.Label
 	lastUpdate   organize.LabelUpdate
+	lastEntry    audit.Entry
 	deletedUID   string
 	attachedTo   string
 	attachSource organize.LabelSource
@@ -107,8 +123,11 @@ func (f *fakeLabels) ListLabels(context.Context) ([]organize.LabelCount, error) 
 	return f.list, f.listErr
 }
 
-func (f *fakeLabels) CreateLabel(_ context.Context, l organize.Label) (organize.Label, error) {
+func (f *fakeLabels) CreateLabelAudited(
+	_ context.Context, l organize.Label, entry audit.Entry,
+) (organize.Label, error) {
 	f.lastCreate = l
+	f.lastEntry = entry
 	return f.created, f.createErr
 }
 
@@ -116,27 +135,33 @@ func (f *fakeLabels) GetLabelByUID(context.Context, string) (organize.Label, err
 	return f.label, f.getErr
 }
 
-func (f *fakeLabels) UpdateLabel(_ context.Context, _ string, upd organize.LabelUpdate) (organize.Label, error) {
+func (f *fakeLabels) UpdateLabelAudited(
+	_ context.Context, _ string, upd organize.LabelUpdate, entry audit.Entry,
+) (organize.Label, error) {
 	f.lastUpdate = upd
+	f.lastEntry = entry
 	return f.updated, f.updateErr
 }
 
-func (f *fakeLabels) DeleteLabel(_ context.Context, uid string) error {
+func (f *fakeLabels) DeleteLabelAudited(_ context.Context, uid string, entry audit.Entry) error {
 	f.deletedUID = uid
+	f.lastEntry = entry
 	return f.deleteErr
 }
 
-func (f *fakeLabels) AttachLabel(
-	_ context.Context, photoUID, _ string, source organize.LabelSource, uncertainty int,
+func (f *fakeLabels) AttachLabelAudited(
+	_ context.Context, photoUID, _ string, source organize.LabelSource, uncertainty int, entry audit.Entry,
 ) error {
 	f.attachedTo = photoUID
 	f.attachSource = source
 	f.attachUncert = uncertainty
+	f.lastEntry = entry
 	return f.attachErr
 }
 
-func (f *fakeLabels) DetachLabel(_ context.Context, photoUID, _ string) error {
+func (f *fakeLabels) DetachLabelAudited(_ context.Context, photoUID, _ string, entry audit.Entry) error {
 	f.detachedFrom = photoUID
+	f.lastEntry = entry
 	return f.detachErr
 }
 
@@ -223,6 +248,9 @@ func TestAlbumCreate_ok(t *testing.T) {
 	if albums.lastCreate.Title != "Trip" || albums.lastCreate.Type != organize.AlbumFolder ||
 		!albums.lastCreate.Private {
 		t.Errorf("create input mismatch: %+v", albums.lastCreate)
+	}
+	if albums.lastEntry.Action != audit.ActionAlbumCreate || albums.lastEntry.TargetType != "albums" {
+		t.Errorf("audit entry mismatch: %+v", albums.lastEntry)
 	}
 }
 
@@ -319,6 +347,12 @@ func TestAlbumAddPhotos_ok(t *testing.T) {
 	}
 	if len(albums.addedUIDs) != 2 || albums.addedUIDs[0] != "p3" || albums.addedUIDs[1] != "p4" {
 		t.Errorf("added uids = %v, want [p3 p4]", albums.addedUIDs)
+	}
+	if albums.lastEntry.Action != audit.ActionAlbumAddPhotos {
+		t.Errorf("audit action = %q, want %q", albums.lastEntry.Action, audit.ActionAlbumAddPhotos)
+	}
+	if count, _ := albums.lastEntry.Details["count"].(int); count != 2 {
+		t.Errorf("audit details count = %v, want 2", albums.lastEntry.Details["count"])
 	}
 	var got struct {
 		PhotoUIDs []string `json:"photo_uids"`
@@ -474,6 +508,12 @@ func TestLabelAttach_ok(t *testing.T) {
 	if labels.attachedTo != "ph_1" || labels.attachSource != organize.SourceAI || labels.attachUncert != 20 {
 		t.Errorf("attach input mismatch: to=%q source=%q uncert=%d",
 			labels.attachedTo, labels.attachSource, labels.attachUncert)
+	}
+	if labels.lastEntry.Action != audit.ActionLabelAttach || labels.lastEntry.TargetType != "labels" {
+		t.Errorf("audit entry mismatch: %+v", labels.lastEntry)
+	}
+	if labels.lastEntry.Details["photo_uid"] != "ph_1" {
+		t.Errorf("audit details photo_uid = %v, want ph_1", labels.lastEntry.Details["photo_uid"])
 	}
 }
 
