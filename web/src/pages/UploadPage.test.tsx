@@ -1,15 +1,17 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { type UploadQueueItem } from '../hooks/useUploadQueue'
 import i18n from '../i18n'
 import { ApiError } from '../services/auth'
 import { type BulkResult } from '../services/bulk'
 import { type AlbumSummary, type LabelCount } from '../services/organize'
-import { type UploadFileResult } from '../services/upload'
+import { type UploadFileOptions, type UploadFileResult } from '../services/upload'
 
 import { UploadPage } from './UploadPage'
 
@@ -17,6 +19,24 @@ vi.mock('../services/upload', () => ({
   uploadFile: vi.fn(),
   isAbortError: (error: unknown): boolean =>
     error instanceof DOMException && error.name === 'AbortError',
+}))
+
+// jsdom has no layout, so the real virtualized list renders nothing. This
+// stand-in renders every item, which is all the assertions here need.
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: ({
+    data,
+    itemContent,
+  }: {
+    data: UploadQueueItem[]
+    itemContent: (index: number, item: UploadQueueItem) => ReactNode
+  }) => (
+    <div data-testid="upload-list">
+      {data.map((item, index) => (
+        <div key={item.id}>{itemContent(index, item)}</div>
+      ))}
+    </div>
+  ),
 }))
 vi.mock('../services/bulk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/bulk')>()
@@ -280,5 +300,93 @@ describe('UploadPage', () => {
     })
     expect(bulkMock).toHaveBeenLastCalledWith(['ph1'], { add_labels: ['lb1'] })
     expect(await screen.findByText('Added to your albums and labels.')).toBeInTheDocument()
+  })
+
+  it('shows a live overall header with done/total, a partial bar and counts', async () => {
+    // Capture in-flight uploads so we can observe the running (not just final)
+    // header state and drive partial progress.
+    const pending: { options: UploadFileOptions; resolve: (r: UploadFileResult) => void }[] = []
+    uploadMock.mockImplementation(
+      (_file: File, options: UploadFileOptions = {}) =>
+        new Promise<UploadFileResult>((resolve) => {
+          pending.push({ options, resolve })
+        }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('a.jpg'), file('b.jpg')])
+    await user.click(screen.getByRole('button', { name: 'Upload (2)' }))
+
+    // Both files are in flight (cap is 3): nothing done yet, both remaining.
+    expect(await screen.findByText('0 / 2')).toBeInTheDocument()
+    expect(screen.getByText('2 remaining')).toBeInTheDocument()
+    const header = screen.getByTestId('upload-progress-header')
+    expect(within(header).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
+
+    // Half of one file sent: the aggregate bar reflects the partial fraction,
+    // (0.5 + 0) / 2 = 25%, rather than jumping only in whole-file steps.
+    await act(async () => {
+      pending[0].options.onProgress?.(0.5)
+      await Promise.resolve()
+    })
+    expect(within(header).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25')
+
+    // Finishing that file advances done/total and the live counts.
+    await act(async () => {
+      pending[0].resolve(created('ph1'))
+      await Promise.resolve()
+    })
+    expect(await screen.findByText('1 / 2')).toBeInTheDocument()
+    expect(screen.getByText('1 uploaded')).toBeInTheDocument()
+    expect(screen.getByText('1 remaining')).toBeInTheDocument()
+  })
+
+  it('lets the user filter the list down to just the failed files', async () => {
+    uploadMock
+      .mockResolvedValueOnce(created('ph1'))
+      .mockResolvedValueOnce({ filename: 'b', status: 500, outcome: 'error', error: 'boom' })
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('a.jpg'), file('b.jpg')])
+    await user.click(screen.getByRole('button', { name: 'Upload (2)' }))
+
+    // Both files present; b.jpg is the failed one.
+    expect(await screen.findByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText('a.jpg')).toBeInTheDocument()
+    expect(screen.getByText('b.jpg')).toBeInTheDocument()
+
+    // Filtering to errors drops the succeeded file out of the list.
+    await user.click(screen.getByRole('button', { name: 'Show failed only (1)' }))
+    expect(screen.queryByText('a.jpg')).not.toBeInTheDocument()
+    expect(screen.getByText('b.jpg')).toBeInTheDocument()
+
+    // And back to all.
+    await user.click(screen.getByRole('button', { name: 'Show all' }))
+    expect(screen.getByText('a.jpg')).toBeInTheDocument()
+  })
+
+  it('shows a completed summary and retries failed files from it', async () => {
+    uploadMock
+      .mockResolvedValueOnce(created('ph1'))
+      .mockResolvedValueOnce({ filename: 'b', status: 500, outcome: 'error', error: 'boom' })
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('a.jpg'), file('b.jpg')])
+    await user.click(screen.getByRole('button', { name: 'Upload (2)' }))
+
+    // Terminal state: a clear completed summary that surfaces the failure.
+    expect(await screen.findByText('Upload complete.')).toBeInTheDocument()
+    expect(screen.getByText('1 uploaded, 0 duplicates, 1 failed')).toBeInTheDocument()
+
+    // One-tap whole-batch retry from the header recovers the failure.
+    uploadMock.mockResolvedValueOnce(created('ph2'))
+    await user.click(screen.getByRole('button', { name: 'Retry failed' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('2 uploaded, 0 duplicates, 0 failed')).toBeInTheDocument()
+    })
   })
 })

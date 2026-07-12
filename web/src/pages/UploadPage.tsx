@@ -1,27 +1,27 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
-import ListGroup from 'react-bootstrap/ListGroup'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { DropZone } from '../components/upload/DropZone'
-import { UploadItem } from '../components/upload/UploadItem'
+import { UploadList } from '../components/upload/UploadList'
 import { UploadOrganize } from '../components/upload/UploadOrganize'
+import { UploadProgressHeader } from '../components/upload/UploadProgressHeader'
 import { useUploadOrganize } from '../hooks/useUploadOrganize'
 import { useUploadQueue } from '../hooks/useUploadQueue'
-import { LIBRARY_PATH } from '../lib/libraryView'
 
 /**
  * Multiupload page: drag or pick many files (gallery/camera on mobile), review
- * the queue, upload with per-file progress and a counts summary, retry failures,
- * and jump to the freshly added photos in the library. Before uploading, the
- * user may pick albums and labels for the whole batch; once every file settles,
- * every resolved photo — new *or* duplicate — is added to them in one bulk call,
- * with an "assigning…" state and a retryable error if that step alone fails.
- * Every state and label is translated (cs/en) and the controls are sized for touch.
+ * the queue, upload with a prominent sticky overall-progress header and a
+ * virtualized per-file list, retry failures (whole-batch or per file, and an
+ * errors-only filter to find them in a big batch), and jump to the freshly added
+ * photos in the library. Before uploading, the user may pick albums and labels
+ * for the whole batch; once every file settles, every resolved photo — new *or*
+ * duplicate — is added to them in one bulk call, with an "assigning…" state and
+ * a retryable error if that step alone fails. Every state and label is
+ * translated (cs/en) and the controls are sized for touch.
  */
 export function UploadPage() {
   const { t } = useTranslation()
@@ -29,6 +29,7 @@ export function UploadPage() {
   const {
     items,
     summary,
+    progress,
     isUploading,
     isComplete,
     createdUids,
@@ -74,6 +75,21 @@ export function UploadPage() {
   const hasItems = items.length > 0
   const assigning = assign.status === 'assigning'
 
+  // Errors-only filter, so a handful of failures in a large batch are easy to
+  // find. It only makes sense while failures exist, so reset it once they are
+  // all retried away (or the queue is cleared).
+  const [showErrorsOnly, setShowErrorsOnly] = useState(false)
+  useEffect(() => {
+    if (!hasFailed) {
+      setShowErrorsOnly(false)
+    }
+  }, [hasFailed])
+
+  const visibleItems = useMemo(
+    () => (showErrorsOnly ? items.filter((item) => item.status === 'error') : items),
+    [items, showErrorsOnly],
+  )
+
   return (
     <>
       <h1 className="kk-page-title mb-1">{t('upload.title')}</h1>
@@ -93,15 +109,34 @@ export function UploadPage() {
 
       {hasItems && (
         <>
+          <UploadProgressHeader
+            summary={summary}
+            progress={progress}
+            isComplete={isComplete}
+            hasCreated={createdUids.length > 0}
+            onRetryFailed={retryFailed}
+          />
+
           <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
             <h2 className="kk-section-title mb-0">{t('upload.queue.heading')}</h2>
             <div className="d-flex flex-wrap gap-2">
-              <Button type="button" variant="primary" onClick={start} disabled={!hasQueued}>
-                {t('upload.actions.start', { count: summary.queued })}
-              </Button>
+              {hasQueued && (
+                <Button type="button" variant="primary" onClick={start}>
+                  {t('upload.actions.start', { count: summary.queued })}
+                </Button>
+              )}
               {hasFailed && (
-                <Button type="button" variant="outline-primary" onClick={retryFailed}>
-                  {t('upload.actions.retryFailed')}
+                <Button
+                  type="button"
+                  variant={showErrorsOnly ? 'danger' : 'outline-danger'}
+                  aria-pressed={showErrorsOnly}
+                  onClick={() => {
+                    setShowErrorsOnly((value) => !value)
+                  }}
+                >
+                  {showErrorsOnly
+                    ? t('upload.filter.showAll')
+                    : t('upload.filter.showErrors', { count: summary.error })}
                 </Button>
               )}
               <Button
@@ -115,34 +150,8 @@ export function UploadPage() {
             </div>
           </div>
 
-          <p className="text-secondary small mb-2" aria-live="polite">
-            {t('upload.summary.line', {
-              created: summary.created,
-              duplicate: summary.duplicate,
-              error: summary.error,
-              pending: summary.queued + summary.uploading,
-            })}
-          </p>
-
-          <ListGroup className="mb-3">
-            {items.map((item) => (
-              <UploadItem key={item.id} item={item} onRemove={removeItem} onRetry={retry} />
-            ))}
-          </ListGroup>
+          <UploadList items={visibleItems} onRemove={removeItem} onRetry={retry} />
         </>
-      )}
-
-      {isComplete && (
-        <Alert variant={hasFailed ? 'warning' : 'success'}>
-          <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
-            <span>{t('upload.done.title')}</span>
-            {createdUids.length > 0 && (
-              <Link to={`${LIBRARY_PATH}?sort=added`} className="btn btn-outline-light btn-sm">
-                {t('upload.done.viewLibrary')}
-              </Link>
-            )}
-          </div>
-        </Alert>
       )}
 
       {assigning && (

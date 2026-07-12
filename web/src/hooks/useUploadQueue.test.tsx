@@ -161,6 +161,38 @@ describe('useUploadQueue', () => {
     expect(hook.current.items[2].error).toBe('boom')
   })
 
+  it('reports overall progress, weighting in-flight files by their partial fraction', async () => {
+    const { result: hook } = renderHook(() => useUploadQueue())
+    act(() => {
+      hook.current.addFiles([file('a.jpg'), file('b.jpg')])
+    })
+    // Nothing sent yet.
+    expect(hook.current.progress).toBe(0)
+
+    act(() => {
+      hook.current.start()
+    })
+    // Both uploading at 0% — still nothing completed.
+    expect(hook.current.progress).toBe(0)
+
+    // One file half-sent contributes its fraction: (0.5 + 0) / 2 = 0.25.
+    act(() => {
+      pending[0].options.onProgress?.(0.5)
+    })
+    expect(hook.current.progress).toBeCloseTo(0.25)
+
+    // Settling it counts the file as fully done: (1 + 0) / 2 = 0.5.
+    await settle(0, result('created', 'ph1'))
+    expect(hook.current.progress).toBeCloseTo(0.5)
+
+    // A failed file still counts as done for the overall bar: (1 + 1) / 2 = 1.
+    await settle(1, { filename: 'b', status: 500, outcome: 'error', error: 'boom' })
+    await waitFor(() => {
+      expect(hook.current.isComplete).toBe(true)
+    })
+    expect(hook.current.progress).toBe(1)
+  })
+
   it('retries a failed file', async () => {
     const { result: hook } = renderHook(() => useUploadQueue())
     act(() => {

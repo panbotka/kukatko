@@ -784,8 +784,20 @@
       "duplicate": "Already in library",
       "error": "Failed"
     },
-    "summary": {
-      "line": "{{created}} uploaded · {{duplicate}} duplicate · {{error}} failed · {{pending}} pending"
+    "progress": {
+      "uploading": "Uploading…",
+      "ready": "Ready to upload",
+      "barLabel": "Overall upload progress",
+      "count": "{{done}} / {{total}}",
+      "uploaded": "{{count}} uploaded",
+      "duplicate": "{{count}} duplicate",
+      "failed": "{{count}} failed",
+      "remaining": "{{count}} remaining",
+      "summary": "{{created}} uploaded, {{duplicate}} duplicates, {{error}} failed"
+    },
+    "filter": {
+      "showErrors": "Show failed only ({{count}})",
+      "showAll": "Show all"
     },
     "warning": {
       "near_duplicate": "Looks similar to a photo already in the library."

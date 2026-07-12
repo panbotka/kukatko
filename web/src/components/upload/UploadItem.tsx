@@ -1,6 +1,5 @@
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
-import ListGroup from 'react-bootstrap/ListGroup'
 import ProgressBar from 'react-bootstrap/ProgressBar'
 import { useTranslation } from 'react-i18next'
 
@@ -75,13 +74,21 @@ function WarningLine({ warning }: { warning: UploadWarning }) {
  * status badge, any non-fatal warnings, and contextual actions (remove a file
  * that has not started or finished; retry a failed one). Touch targets are
  * full-size buttons for mobile use.
+ *
+ * Rendered as a self-contained raised card rather than a `ListGroup.Item` so it
+ * sits correctly inside the virtualized list (react-virtuoso positions each row
+ * independently); a failed row gains a danger border so a handful of failures in
+ * a large batch stand out even without the errors-only filter.
  */
 export function UploadItem({ item, onRemove, onRetry }: UploadItemProps) {
   const { t } = useTranslation()
   const percent = Math.round(item.progress * 100)
+  const errored = item.status === 'error'
 
   return (
-    <ListGroup.Item className="d-flex flex-column gap-2">
+    <div
+      className={`kk-surface p-3 d-flex flex-column gap-2${errored ? ' border border-danger' : ''}`}
+    >
       <div className="d-flex align-items-center justify-content-between gap-2">
         <div className="text-truncate">
           <span className="fw-semibold text-truncate d-inline-block align-bottom">
@@ -137,6 +144,6 @@ export function UploadItem({ item, onRemove, onRetry }: UploadItemProps) {
           </Button>
         )}
       </div>
-    </ListGroup.Item>
+    </div>
   )
 }

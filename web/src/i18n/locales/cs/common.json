@@ -800,8 +800,20 @@
       "duplicate": "Již v knihovně",
       "error": "Selhalo"
     },
-    "summary": {
-      "line": "{{created}} nahráno · {{duplicate}} duplikát · {{error}} selhalo · {{pending}} čeká"
+    "progress": {
+      "uploading": "Nahrávání…",
+      "ready": "Připraveno k nahrání",
+      "barLabel": "Celkový průběh nahrávání",
+      "count": "{{done}} / {{total}}",
+      "uploaded": "{{count}} nahráno",
+      "duplicate": "{{count}} duplikát",
+      "failed": "{{count}} selhalo",
+      "remaining": "{{count}} čeká",
+      "summary": "{{created}} nahráno, {{duplicate}} duplikátů, {{error}} selhalo"
+    },
+    "filter": {
+      "showErrors": "Jen neúspěšné ({{count}})",
+      "showAll": "Zobrazit vše"
     },
     "warning": {
       "near_duplicate": "Vypadá podobně jako fotka, která už je v knihovně."
