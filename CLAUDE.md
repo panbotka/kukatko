@@ -42,7 +42,7 @@ Open **one** document based on what you're touching. Don't read them all preempt
 ## Package map
 One line per package — so you know what exists without opening `docs/PACKAGES.md`.
 
-- `cmd/kukatko` — thin Cobra entrypoint (`serve`/`migrate`/`import`/`backup`/`restore`/`maintenance`/`ctl`/`version`) + `buildXxxAPI` wiring
+- `cmd/kukatko` — thin Cobra entrypoint (`serve`/`migrate`/`import`/`backup`/`restore`/`maintenance`/`storage`/`ctl`/`version`) + `buildXxxAPI` wiring
 - `web/` — Vite + React 19 + TS frontend, builds into `internal/web/static/dist`
 - `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
 - `internal/auditapi` — admin-only `GET /audit` (read-only listing)

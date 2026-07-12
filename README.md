@@ -21,7 +21,8 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   (kontexty ve stylu `kubectl`, `-o json` pro strojové zpracování). Přes symlink `kukatkoctl`
   se úroveň `ctl` implikuje. Detail: [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
-> **Stav:** aktivní vývoj (milník M0 — kostra backendu + frontendu). Architektura:
+> **Stav:** aktivní vývoj — funkce napříč milníky M0–M7 (§18 architektury) jsou implementované,
+> probíhá dolaďování. Architektura:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), vývojářský návod:
 > [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md), výkonové poznámky:
 > [`docs/PERF.md`](docs/PERF.md), UI/UX audit + backlog:
@@ -729,7 +730,7 @@ Podporované operace (každá volitelná, neuvedené pole = beze změny):
 - `set_location {lat,lng}` (validace rozsahu) / `clear_location`;
 - `set_private` (bool), `archive` / `unarchive` (vzájemně se vylučují);
 - `set_favorite` (bool) — **per-user** oblíbená pro volajícího;
-- `set_rating` (0–5) / `set_flag` (`none`/`pick`/`reject`) — **per-user** hodnocení pro volajícího
+- `set_rating` (0–5) / `set_flag` (`none`/`pick`/`reject`/`eye`) — **per-user** hodnocení pro volajícího
   (neplatná hodnota → **400**; řádek `user_ratings` se vyčistí, když spadne na rating 0 + flag `none`).
 
 Set/clear páry jsou samostatné klíče (ne presence/null), takže payload je jednoznačný a konflikt
@@ -1339,7 +1340,7 @@ Endpointy pod `/api/v1` (JSON):
 | GET | `/photos?favorite=true` | přihlášený | seznam scopnutý na oblíbené **aktuálního uživatele** (per-user); každá fotka v seznamu/hledání/detailu nese `is_favorite` + `rating`/`flag` (per-user, nehodnocená = 0 / `none`) |
 | PUT | `/photos/{uid}/favorite` | přihlášený | označí fotku jako oblíbenou aktuálního uživatele (idempotentní) → 204; 404 chybějící fotka |
 | DELETE | `/photos/{uid}/favorite` | přihlášený | zruší oblíbenou aktuálního uživatele (idempotentní) → 204 |
-| PUT | `/photos/{uid}/rating` | přihlášený | nastaví hvězdičky a/nebo flag aktuálního uživatele `{rating?:0..5, flag?:none\|pick\|reject}` (aspoň jedno) → 204; 400 neplatná hodnota, 404 chybějící fotka, 503 bez backendu |
+| PUT | `/photos/{uid}/rating` | přihlášený | nastaví hvězdičky a/nebo flag aktuálního uživatele `{rating?:0..5, flag?:none\|pick\|reject\|eye}` (aspoň jedno) → 204; 400 neplatná hodnota, 404 chybějící fotka, 503 bez backendu |
 | DELETE | `/photos/{uid}/rating` | přihlášený | zruší hodnocení i flag aktuálního uživatele (idempotentní) → 204 |
 | GET | `/favorites` | přihlášený | oblíbené aktuálního uživatele ve tvaru `/photos` (sdílí filtry/řazení/stránkování) |
 | GET | `/photos/{uid}/similar` | přihlášený | vizuálně podobné fotky dle cosine vzdálenosti embeddingu (`?limit`, default 24, max 100) → `{similar:[{…photo, distance}]}` |
@@ -1356,13 +1357,12 @@ Endpointy pod `/api/v1` (JSON):
 | DELETE | `/subjects/{uid}` | editor/admin | smaže subjekt (markery se odpojí) → 204 |
 | GET | `/subjects/{uid}/photos` | přihlášený | paginovaná galerie fotek subjektu → `{photos,total,limit,offset,next_offset}` (newest-first, nearchivované) |
 | GET | `/albums` | přihlášený | seznam alb s počty fotek + cover → `{albums:[{…album, photo_count}]}` (viz Alba & štítky API) |
-| POST | `/albums` | editor/admin | `{title,description?,type?,cover_photo_uid?,private?,order_by?}` → 201 (prázdný title/neplatný typ → 400) |
+| POST | `/albums` | editor/admin | `{title,description?,type?,cover_photo_uid?,private?}` → 201 (prázdný title/neplatný typ → 400) |
 | GET | `/albums/{uid}` | přihlášený | detail alba (404 chybějící) |
-| PATCH | `/albums/{uid}` | editor/admin | editace `title/description/cover_photo_uid/private/order_by` (strukturální `type` se zachová) |
+| PATCH | `/albums/{uid}` | editor/admin | editace `title/description/cover_photo_uid/private` (strukturální `type` se zachová) |
 | DELETE | `/albums/{uid}` | editor/admin | smaže album (členství se odpojí) → 204 |
 | POST | `/albums/{uid}/photos` | editor/admin | `{photo_uids:[…]}` přidá fotky za stávající → `{photo_uids:[…]}` (aktuální pořadí) |
-| DELETE | `/albums/{uid}/photos` | editor/admin | `{photo_uids:[…]}` odebere fotky → `{photo_uids:[…]}` |
-| PATCH | `/albums/{uid}/order` | editor/admin | `{photo_uids:[…]}` přeřadí fotky alba → `{photo_uids:[…]}` |
+| DELETE | `/albums/{uid}/photos` | editor/admin | `{photo_uids:[…]}` odebere fotky → `{photo_uids:[…]}` (album je vždy chronologické, ruční přeřazení neexistuje) |
 | GET | `/labels` | přihlášený | seznam štítků s počty fotek → `{labels:[{…label, photo_count}]}` (řazení priority DESC) |
 | POST | `/labels` | editor/admin | `{name,priority?}` → 201 (prázdné jméno → 400) |
 | GET | `/labels/{uid}` | přihlášený | detail štítku (404 chybějící) |
@@ -1619,8 +1619,7 @@ malých šířkách se skryje (`styles/app.css` `.kukatko-timeline*`); zobrazí 
 
 **Hledání (`/search`):** stránka
 ([`web/src/pages/SearchPage.tsx`](web/src/pages/SearchPage.tsx)) s **prominentním vyhledávacím
-polem** (přítomným i v navbaru přes [`components/NavbarSearch`](web/src/components/NavbarSearch.tsx))
-a **přepínačem režimu** (hybridní – výchozí / fulltext / sémantické). **Dotaz i režim žijí v URL**
+polem** a **přepínačem režimu** (hybridní – výchozí / fulltext / sémantické). **Dotaz i režim žijí v URL**
 (`?q=…&mode=hybrid`) přes `useUrlState`, takže Back funguje a URL je sdílitelná; psaní je
 **debouncované** (350 ms) než se zapíše do URL a spustí dotaz. Výsledky se renderují ve **stejné
 virtualizované mřížce** jako knihovna a sdílí `FilterBar` (s prop `showSearch`/`showSort` skrytými,
@@ -1647,11 +1646,10 @@ mřížka karet alb ([`components/organize/AlbumTile`](web/src/components/organi
 cover, název, počet fotek), každá vede na detail. Editoři/admini mají tlačítko **Nové album**
 ([`AlbumEditModal`](web/src/components/organize/AlbumEditModal.tsx) = create/rename, popis,
 soukromé). [`AlbumDetailPage`](web/src/pages/AlbumDetailPage.tsx) ukazuje hlavičku (název, badge
-soukromé) s editorskými akcemi (upravit/smazat/**vybrat**/**přeřadit**) nad fotomřížkou
+soukromé) s editorskými akcemi (upravit/smazat/**vybrat**) nad fotomřížkou
 **scopnutou na album** přes sdílené `GET /photos?album={uid}` (hook
 [`useScopedPhotos`](web/src/hooks/useScopedPhotos.ts), stejný `FilterBar` + URL stav jako knihovna).
-**Přeřazení** ([`ReorderableGrid`](web/src/components/organize/ReorderableGrid.tsx)) jde
-drag-and-dropem i šipkami (přístupné) a ukládá se přes `PATCH /albums/{uid}/order`; výběr
+Album se **vždy zobrazuje chronologicky** (pořadí drží backend, žádné ruční přeřazení); výběr
 ([`useSelection`](web/src/hooks/useSelection.ts) + [`SelectionBar`](web/src/components/organize/SelectionBar.tsx))
 umí odebrat fotky z alba nebo nastavit obálku.
 

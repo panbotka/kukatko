@@ -1,6 +1,6 @@
 # Kukátko — návrh architektury
 
-**Verze:** 0.1 (návrh) · **Datum:** 2026-06-25 · **Stav:** ke schválení, před implementací
+**Verze:** 0.1 (návrh) · **Datum:** 2026-06-25 · **Stav:** implementováno, v aktivním vývoji (M0–M7)
 
 Tento dokument je závazný návrh systému Kukátko. Vychází z design docu (feature list),
 z analýzy referenčního projektu **photo-sorter** (autor je tentýž) a z ověřené rešerše
@@ -54,7 +54,7 @@ photo-sorter se obtížně používá.
 ## 2. Vodící principy
 
 1. **Inspirace, ne kopie.** Z photo-sorteru přebíráme osvědčené kontrakty a datové schéma,
-   ale opravujeme jeho bolesti (viz [§13](#13-co-delame-jinak-nez-photo-sorter)).
+   ale opravujeme jeho bolesti (viz [§15](#15-co-delame-jinak-nez-photo-sorter)).
 2. **PhotoPrism zůstává primární** až do ostrého cutoveru. Import je read-only a opakovatelný;
    Kukátko běží paralelně a PhotoPrism nenarušuje.
 3. **Pi-first, box jako akcelerátor.** Aplikace běží na Raspberry Pi (ARM64, omezená RAM).
@@ -131,7 +131,7 @@ Každý subsystém má jeden účel, jasné rozhraní a jde testovat samostatně
 
 ## 4. Tech stack
 
-Volby vycházejí z photo-sorteru (osvědčené) a z rešerše ([§16](#16-reference)).
+Volby vycházejí z photo-sorteru (osvědčené) a z rešerše ([§17](#17-reference)).
 
 ### Backend
 - **Go**, jeden statický binár, **`CGO_ENABLED=0`** (jako photo-sorter — zachová jednoduchý
@@ -236,7 +236,7 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
     `fps`. Naplněné u videí přes `internal/video.Probe` (ffprobe → exiftool fallback);
     poster frame (`internal/video.ExtractPoster`, ffmpeg) jde do thumbnaileru/pHash i embed/face
     jobů. Live foto = still jako primární image + motion klip jako další `photo_files` řádek.
-  - generovaný `fts tsvector` sloupec (GIN index) — viz [§6.2](#62-fulltext).
+  - generovaný `fts tsvector` sloupec (GIN index) — viz [§6.2](#62-hledani).
   - `favorite` se **přesouvá** do per-user tabulky (viz níže).
 - **`photo_files`** — originály + odvozeniny, `role IN (original|sidecar|edited)`, `is_primary`.
 - **`photo_phashes`** — `phash/dhash BIGINT` (near-duplicate detekce).

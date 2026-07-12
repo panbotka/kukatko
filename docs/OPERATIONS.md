@@ -38,7 +38,7 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   `pg_restore` streamovaný z S3 + idempotentní re-migrace; bez `--yes` → `errRestoreNotConfirmed`),
   `restore originals` (stáhne chybějící originály, skip dle klíče+velikosti, resumovatelné),
   `restore verify` (integritní report fotek v DB vs originálů na disku); runbook
-  [`docs/RESTORE.md`](docs/RESTORE.md),
+  [`docs/RESTORE.md`](RESTORE.md),
   **`kukatko maintenance`** (integritní kontrola & opravy knihovny — `internal/maintenance`; pro
   ops/cron bez běžícího serveru, aplikuje migrace a postaví službu sdílenou s admin API):
   `maintenance scan` (read-only integritní report — disk↔DB drift + chybějící odvozená data) a

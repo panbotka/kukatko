@@ -84,6 +84,11 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `?favorite=true` scopne list na jeho oblíbené, **`?min_rating=n` / `?flag=pick|reject|eye` / `?sort=rating`**
   scopnuté na něj (fotka bez řádku = rating 0 / flag `none`);
   `GET /photos/{uid}` plný detail + `files` + `is_favorite` + `rating`/`flag`;
+  `GET /photos/{uid}/similar` (přihlášený) — **vizuálně podobné fotky** dle kosinové vzdálenosti
+  embeddingů (HNSW nad `embeddings`, `SimilarSearcher`/`vectors.Store`), nejbližší první: odpověď
+  `{similar:[{…fotka, distance}]}` (`distance` = kosinová vzdálenost ke zdrojové fotce, menší =
+  bližší), `?limit` (default 24, max 100); zdrojová fotka je z výsledku vyloučená. Fotka bez
+  embeddingu nebo bez similar backendu → prázdné `{similar:[]}` (200), 404 chybějící fotka;
   **per-user oblíbené** `PUT`/`DELETE /photos/{uid}/favorite` (každý přihlášený, idempotentní → 204,
   404 chybějící fotka, 503 bez backendu) + `GET /favorites` (oblíbené aktuálního uživatele ve tvaru
   list endpointu, filtry/řazení/stránkování jako `/photos`);
@@ -141,7 +146,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
   (recent/dead-letter výpis, query `state`/`limit`/`offset`, neplatný → 400);
   `POST /jobs/{id}/requeue` → refreshnutý job (dead/failed → queued; 404 missing, 409
-  ne-requeueable). Frontend polluje (žádné SSE). Mountuje se šestým `server.WithAPI`
+  ne-requeueable). Frontend polluje (žádné SSE). Mountuje se `server.WithAPI`
   (`buildJobs` v `cmd/kukatko/jobs.go`), který registruje handlery `image_embed`
   (`embedjob.Service`), `face_detect` (`facejob.Service`) a — když je mapy.com klíč nastaven —
   `places` (`placesjob.Service`, `buildPlacesServiceOrNil` v `cmd/kukatko/places.go`) a zároveň
@@ -161,7 +166,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   sestupně dle kosinové vzdálenosti od centroidu jejích embeddingů — nejpravděpodobněji špatně
   přiřazené první); 1–2 obličeje → `meaningful:false`; špatný obličej se odpojí přes existující
   `POST /photos/{uid}/faces/assign` (`unassign_person`), tahle vrstva nemutuje; 503 bez backendu,
-  404 chybějící subjekt. Mountuje se pátým `server.WithAPI` (`buildOutlierAPI` v
+  404 chybějící subjekt. Mountuje se `server.WithAPI` (`buildOutlierAPI` v
   `cmd/kukatko/outliers.go`).
 - **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
   `{subjects:[{...subject, marker_count}]}` (řazení dle jména, počty non-invalid markerů);
@@ -171,7 +176,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `DELETE /subjects/{uid}` (RequireWrite) → 204 (markery se odpojí server-side); `GET
   /subjects/{uid}/photos` (RequireAuth) → paginovaná galerie fotek subjektu
   `{photos,total,limit,offset,next_offset}` (newest-first, jen nearchivované, `limit`≤500). Mountuje
-  se osmým `server.WithAPI` (`buildPeopleAPI` v `cmd/kukatko/people.go`). Záznamy fotek subjektu
+  se `server.WithAPI` (`buildPeopleAPI` v `cmd/kukatko/people.go`). Záznamy fotek subjektu
   staví na `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markery → photo uid).
 - **Process API (`/api/v1`, `internal/processapi`, admin-only přes `RequireAdmin`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` pro fotky bez embeddingu),
@@ -179,7 +184,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `POST /process/clusters` → `{created}` (re-clustering nepřiřazených obličejů přes
   `cluster.Recluster`), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geokódu pro
   geotagované fotky bez místa přes `placesjob.BackfillPlaces`; 503 když není mapy.com klíč). Mountuje
-  se sedmým `server.WithAPI` (`buildJobs`).
+  se `server.WithAPI` (`buildJobs`).
 - **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **alba** `GET /albums`
   (RequireAuth) → `{albums:[{...album, photo_count, cover_uid?, taken_from?, taken_to?}]}`
   (`organize.AlbumSummary`): `cover_uid` je **efektivní obálka** — ručně zvolené

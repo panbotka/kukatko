@@ -42,7 +42,7 @@ interface NavGroup {
 /**
  * The always-visible destinations, in the order the library is actually browsed:
  * everything, then by album, then by label. Available to every signed-in role.
- * The library is the homepage, so its entry and the brand share a destination.
+ * The library is the homepage, so its entry points to the site root.
  */
 const PRIMARY_ITEMS: NavEntry[] = [
   { to: LIBRARY_PATH, labelKey: 'nav.library', titleKey: 'nav.titles.library', icon: 'images' },
@@ -135,7 +135,7 @@ function pathMatches(pathname: string, route: string): boolean {
 }
 
 /**
- * Application shell: a responsive top navbar (brand, navigation, and the
+ * Application shell: a responsive top navbar (navigation and the
  * signed-in user menu) above the routed page content, and the global
  * {@link Footer} below it.
  *

@@ -1170,11 +1170,38 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (8192), takže nepotřebuje externí goroutinu; mountuje se jako outermost middleware ahead-of-auth na
   `POST /upload` (ingest), `POST /photos/bulk` (bulkapi), `POST /import/*` (importapi) a
   `GET /map/tiles/...` (mapsapi) — limity z `ratelimit.*` configu; login a geocode mají vlastní
-  limitery), `internal/web/`
+  limitery), `internal/obs/`
+  (strukturované logování + request-scoped plumbing: slog **JSON** handler na konfigurovatelné
+  úrovni (`ParseLevel`/`NewLogger`/`Setup`, `log.level`, neplatná úroveň → chyba při startu),
+  **redakční `ReplaceAttr` hook** (`redactAttr`) škrtne hodnotu každého atributu, jehož klíč nese
+  tajemství (password/passwd/secret/token/apikey/access_key/secret_key/authorization/cookie/
+  credential/dsn) na `[REDACTED]` — i uvnitř skupin, takže secret nikdy neuteče do logu, ani když
+  ho někdo omylem zaloguje; **`AccessLog` middleware** vypíše jeden strukturovaný řádek na HTTP
+  request (request id z chi `RequestID`, method/path/route pattern/status/duration/bytes/remote IP
+  + autentizovaný uživatel, když je znám — auth middleware ho stampne přes `SetUser` do
+  request-scoped `fields` bagu sdíleného pointerem přes kontext, protože zápis hluboko v řetězu musí
+  vidět top-level logger); level dle statusu (5xx=error, 4xx=warn, jinak info), `/metrics` scrape se
+  přeskočí, request id se zrcadlí do hlavičky `X-Request-Id` i sdíleného route labelu metrik),
+  `internal/metrics/`
+  (Prometheus instrumentace HTTP serveru, workeru fronty a infra (pgx pool, embeddings sidecar,
+  importy, thumbnaily), namespace `kukatko`; **izolovaný `*prometheus.Registry`** místo
+  process-global `DefaultRegisterer`, takže testy staví nezávislé metric surface bez cross-test
+  leaku; `New()` → `Registry` zaregistruje HTTP (`kukatko_http_requests_total` counter + latency
+  histogram + inflight gauge, route label = **chi route pattern**, nikdy raw URL), job lifecycle
+  (started/finished counter + duration histogram by type/outcome), embeddings (duration histogram +
+  up gauge), import progress (gauge per source/outcome) a thumbnail duration + standardní
+  `go_`/`process_` kolektory; **pull-at-scrape kolektory** `RegisterDBPool` (živé pgx pool stats)
+  a `RegisterJobQueue` (hloubka fronty by_state/by_type přes `QueueDepthFunc`, `collectTimeout` 5 s,
+  aby pomalá DB neblokovala scrape) čtou data ve chvíli scrapu bez extra goroutin; `Handler()`
+  mountuje `serve` na `/metrics` (middleware ten path přeskočí, scrape neinstrumentuje sám sebe),
+  observační metody `JobStarted`/`JobFinished`/`ObserveEmbeddingCall`/`SetEmbeddingUp`/
+  `SetImportProgress`/`ObserveThumbnail` a `Middleware(routeOf)` se předají subsystémům, které
+  emitují události; zrcadlí lehký photo-sorter přístup — jeden namespace, omezené label sety;
+  tunables v `metrics.*` configu), `internal/web/`
   (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
   `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
   gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
-  frontendu). Detail: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+  frontendu). Detail: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md).
 
 - **Remote CLI klient (`internal/ctl`):** klientská polovina `kukatko ctl` — jediný kus stromu, který
   Kukátko volá **přes HTTP jako cizí server**, ne přes DB a disk. Nemá nic společného s `internal/config`
