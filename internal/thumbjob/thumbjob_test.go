@@ -45,15 +45,22 @@ func (f *fakePhotos) SetPhash(context.Context, photos.Phash) error {
 	return f.setErr
 }
 
-// fakeThumbs records GenerateAll calls.
+// fakeThumbs records GenerateAll and RegenerateAll calls.
 type fakeThumbs struct {
-	calls int
-	err   error
+	calls      int
+	regenCalls int
+	err        error
+	regenErr   error
 }
 
 func (f *fakeThumbs) GenerateAll(context.Context, photos.Photo) (map[string]string, error) {
 	f.calls++
 	return map[string]string{}, f.err
+}
+
+func (f *fakeThumbs) RegenerateAll(context.Context, photos.Photo) (map[string]string, error) {
+	f.regenCalls++
+	return map[string]string{"tile_500": "/cache/tile_500.jpg"}, f.regenErr
 }
 
 // fakeDecoder returns a fixed image and records whether it was invoked.
@@ -129,6 +136,60 @@ func TestRegenerateThumbnailError(t *testing.T) {
 	svc := newService(&fakePhotos{}, &fakeThumbs{err: errors.New("decode failed")}, &fakeDecoder{})
 	if err := svc.Regenerate(context.Background(), "ph1"); err == nil {
 		t.Error("Regenerate should propagate a thumbnail error")
+	}
+}
+
+// TestForceRegenerateRefreshesEvenWhenPhashPresent verifies the force path
+// overwrites the thumbnails and recomputes the pHash even when one already
+// exists (unlike the idempotent Regenerate), returning the regenerated sizes.
+func TestForceRegenerateRefreshesEvenWhenPhashPresent(t *testing.T) {
+	t.Parallel()
+	p := &fakePhotos{hasPhash: true}
+	th := &fakeThumbs{}
+	d := &fakeDecoder{}
+	svc := newService(p, th, d)
+
+	sizes, err := svc.ForceRegenerate(context.Background(), "ph1")
+	if err != nil {
+		t.Fatalf("ForceRegenerate: %v", err)
+	}
+	if th.regenCalls != 1 || th.calls != 0 {
+		t.Errorf("force path should call RegenerateAll (%d) not GenerateAll (%d)", th.regenCalls, th.calls)
+	}
+	if !d.called || !p.setCalled {
+		t.Errorf("force path should always decode (%v) and overwrite pHash (%v)", d.called, p.setCalled)
+	}
+	if len(sizes) != 1 || sizes[0] != "tile_500" {
+		t.Errorf("regenerated sizes = %v, want [tile_500]", sizes)
+	}
+}
+
+// TestForceRegenerateThumbnailErrorWrapped verifies a thumbnail failure (a
+// missing or undecodable original) is wrapped with ErrRegenerateFailed so the
+// HTTP layer can answer 422.
+func TestForceRegenerateThumbnailErrorWrapped(t *testing.T) {
+	t.Parallel()
+	th := &fakeThumbs{regenErr: errors.New("no embedded preview")}
+	svc := newService(&fakePhotos{}, th, &fakeDecoder{})
+
+	_, err := svc.ForceRegenerate(context.Background(), "ph1")
+	if !errors.Is(err, ErrRegenerateFailed) {
+		t.Errorf("err = %v, want wrapping ErrRegenerateFailed", err)
+	}
+}
+
+// TestForceRegeneratePhotoNotFound verifies a missing photo surfaces
+// photos.ErrPhotoNotFound (mapped to 404) and not ErrRegenerateFailed.
+func TestForceRegeneratePhotoNotFound(t *testing.T) {
+	t.Parallel()
+	svc := newService(&fakePhotos{getErr: photos.ErrPhotoNotFound}, &fakeThumbs{}, &fakeDecoder{})
+
+	_, err := svc.ForceRegenerate(context.Background(), "ph1")
+	if !errors.Is(err, photos.ErrPhotoNotFound) {
+		t.Errorf("err = %v, want photos.ErrPhotoNotFound", err)
+	}
+	if errors.Is(err, ErrRegenerateFailed) {
+		t.Error("a missing photo must not be reported as a regeneration failure")
 	}
 }
 

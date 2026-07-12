@@ -201,17 +201,28 @@ func (t *Thumbnailer) Remove(hash string) error {
 	return nil
 }
 
-// GenerateAll generates every registered size for photo. It is a thin wrapper
-// over Generate using SizeNames().
+// GenerateAll generates every registered size for photo, skipping any already
+// cached on disk. It is a thin wrapper over Generate using SizeNames().
 func (t *Thumbnailer) GenerateAll(ctx context.Context, photo photos.Photo) (map[string]string, error) {
 	return t.Generate(ctx, photo, SizeNames()...)
+}
+
+// RegenerateAll forces regeneration of every registered size for photo,
+// overwriting any already-cached sizes in place (and republishing them to the
+// object store on a publishing backend). Unlike GenerateAll it does not skip
+// sizes already present on disk, so it rebuilds a stale or corrupt cache from
+// the original; it backs the on-demand "regenerate thumbnail" service action.
+// Each size is written atomically, so a failure leaves the previous cache
+// intact. It returns the same size→path map and the same errors as Generate.
+func (t *Thumbnailer) RegenerateAll(ctx context.Context, photo photos.Photo) (map[string]string, error) {
+	return t.generate(ctx, photo, SizeNames(), true)
 }
 
 // Generate produces the requested thumbnail sizes for photo and returns a map
 // from each requested size name to its absolute cache path. Sizes already on
 // disk are kept untouched (idempotent skip); only the missing ones are encoded,
 // in parallel up to the configured concurrency, after decoding the original
-// exactly once.
+// exactly once. Use RegenerateAll to force-overwrite cached sizes instead.
 //
 // It returns ErrUnknownSize if any requested size is unregistered (before any
 // work is done), ErrInvalidHash for a malformed photo file hash, or a wrapped
@@ -219,11 +230,21 @@ func (t *Thumbnailer) GenerateAll(ctx context.Context, photo photos.Photo) (map[
 func (t *Thumbnailer) Generate(
 	ctx context.Context, photo photos.Photo, sizes ...string,
 ) (map[string]string, error) {
+	return t.generate(ctx, photo, sizes, false)
+}
+
+// generate is the shared implementation of Generate and RegenerateAll. When
+// force is true every requested size is (re)encoded even if a cache file already
+// exists, overwriting it in place; otherwise cached sizes are skipped. See
+// Generate for the returned map and error semantics.
+func (t *Thumbnailer) generate(
+	ctx context.Context, photo photos.Photo, sizes []string, force bool,
+) (map[string]string, error) {
 	if len(sizes) == 0 {
 		return map[string]string{}, nil
 	}
 
-	result, needed, err := t.planSizes(photo.FileHash, sizes)
+	result, needed, err := t.planSizes(photo.FileHash, sizes, force)
 	if err != nil {
 		return nil, err
 	}
@@ -270,9 +291,13 @@ func (t *Thumbnailer) Generate(
 }
 
 // planSizes validates every requested size and the hash, builds the full
-// size→absolute-path result map, and returns the subset of sizes whose cache
-// file is not yet present (in canonical order, deduplicated).
-func (t *Thumbnailer) planSizes(hash string, sizes []string) (result map[string]string, needed []string, err error) {
+// size→absolute-path result map, and returns the subset of sizes that must be
+// encoded (in canonical order, deduplicated). When force is false that subset is
+// the sizes whose cache file is not yet present; when force is true it is every
+// requested size, so an already-cached size is rebuilt in place.
+func (t *Thumbnailer) planSizes(
+	hash string, sizes []string, force bool,
+) (result map[string]string, needed []string, err error) {
 	result = make(map[string]string, len(sizes))
 	needed = make([]string, 0, len(sizes))
 	for _, name := range sizes {
@@ -287,7 +312,7 @@ func (t *Thumbnailer) planSizes(hash string, sizes []string) (result map[string]
 			continue
 		}
 		result[name] = abs
-		if !fileExists(abs) {
+		if force || !fileExists(abs) {
 			needed = append(needed, name)
 		}
 	}

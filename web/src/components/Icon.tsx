@@ -6,6 +6,7 @@
  */
 export type IconName =
   | 'activity'
+  | 'arrow-clockwise'
   | 'bookmarks'
   | 'box-arrow-in-down'
   | 'box-arrow-right'

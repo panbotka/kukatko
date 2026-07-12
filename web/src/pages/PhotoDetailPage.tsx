@@ -77,6 +77,9 @@ export function PhotoDetailPage() {
   const [searchParams] = useSearchParams()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [lightboxOpen, setLightboxOpen] = useState(false)
+  // Bumped after a thumbnail is regenerated: the derived image changed under a
+  // stable URL, so appending this counter forces the browser to refetch it.
+  const [thumbVersion, setThumbVersion] = useState(0)
   // The edits card carries its own preview image, so — like the old
   // `mountOnEnter` edit tab — it stays unmounted until the user opens it, keeping
   // the detail page at exactly one copy of the photo on first render.
@@ -232,8 +235,18 @@ export function PhotoDetailPage() {
   const setEdit = (updated: PhotoEdit) => {
     setState({ status: 'ready', photo, edit: updated })
   }
+  const onThumbnailRegenerated = () => {
+    setThumbVersion((v) => v + 1)
+  }
 
-  const poster = thumbUrl(photo.uid, 'fit_1920', downloadToken)
+  const basePoster = thumbUrl(photo.uid, 'fit_1920', downloadToken)
+  // The thumb URL is built from the UID (stable), so a regenerated thumbnail
+  // would otherwise be masked by the browser cache. Append a version once the
+  // user regenerates it, so the new image actually shows without a hard reload.
+  const poster =
+    thumbVersion > 0
+      ? `${basePoster}${basePoster.includes('?') ? '&' : '?'}v=${String(thumbVersion)}`
+      : basePoster
   const isStill = photo.media_type !== 'video' && photo.media_type !== 'live'
   // The overlay is only ever drawn over the still image: it positions its boxes
   // from normalised bboxes relative to its parent, and a video player's chrome is
@@ -447,7 +460,11 @@ export function PhotoDetailPage() {
               component owns its own expander). */}
           <Card className="mb-3">
             <Card.Body>
-              <TechnicalDetails photo={photo} />
+              <TechnicalDetails
+                photo={photo}
+                canWrite={canWrite}
+                onThumbnailRegenerated={onThumbnailRegenerated}
+              />
             </Card.Body>
           </Card>
 

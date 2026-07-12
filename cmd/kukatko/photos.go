@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
@@ -12,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
+	"github.com/panbotka/kukatko/internal/thumbjob"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -54,11 +56,21 @@ func buildPhotoAPI(
 	// the auth store; keep it behind photoapi.UserResolver so the package stays
 	// decoupled from auth's wiring.
 	userStore := auth.NewStore(db.Pool())
+	// The regenerate-thumbnail action reuses the thumbnail job's regeneration
+	// logic (thumbnailer + original decoder) so a stale/broken thumbnail can be
+	// rebuilt on demand without duplicating the pipeline.
+	regenerator := thumbjob.New(thumbjob.Config{
+		Photos:      photoStore,
+		Thumbnailer: thumbnailer,
+		Decoder:     thumbjob.NewStorageDecoder(store),
+	})
 
 	return photoapi.NewAPI(photoapi.Config{
 		Store:           photoStore,
 		Storage:         store,
 		Thumbnailer:     thumbnailer,
+		Regenerator:     regenerator,
+		Audit:           audit.NewStore(db.Pool()),
 		Similar:         similar,
 		Embedder:        embedder,
 		Faces:           faceSvc,

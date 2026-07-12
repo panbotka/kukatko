@@ -401,7 +401,13 @@ zapiš sem.
   **na první render zavřený** expander `aria-expanded`/`aria-controls`): camera/lens/clona/expozice/
   ohnisko/ISO/název souboru/rozměry **+ řádek Nahrál/a** (`photo.metadata.uploadedBy` z
   `photo.uploader.name`, fallback `—` `uploaderUnknown`) přes `MetaField` — read-only referenční
-  fakta. **4. Úpravy** (editor/admin, **na první render sbalená** karta úplně dole): `EditPanel` =
+  fakta. **Servisní akce zde** (jen editor/admin, `canWrite`): `RegenerateThumbnailButton`
+  (`components/photo/`) uvnitř rozbaleného expanderu volá `regenerateThumbnail(uid)` (POST
+  `/photos/{uid}/regenerate-thumbnail`), ukazuje **pending** (spinner + `disabled`), pak úspěch
+  nebo chybu (422 = „originál chybí nebo ho nelze dekódovat", jinak obecná hláška); po úspěchu
+  zavolá `onThumbnailRegenerated`, což v `PhotoDetailPage` **bumpne `thumbVersion`** a připojí
+  `?v=` k `poster` (thumb URL se staví z UID, tedy stabilní → cache-bust vynutí načtení nového
+  náhledu bez tvrdého reloadu). Viewer tlačítko nevidí. **4. Úpravy** (editor/admin, **na první render sbalená** karta úplně dole): `EditPanel` =
   rotace/jas/kontrast/crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`; karta se
   nasadí až po otevření (hlavička je toggle `aria-expanded`/`aria-controls`), aby jeho vlastní
   preview nepřidalo druhý `<img>` a stránka nesla jednu kopii fotky. Viewer vidí vše read-only
@@ -756,6 +762,9 @@ zapiš sem.
   `ratePhoto(uid,{rating?,flag?},signal)` nad `PUT /api/v1/photos/{uid}/rating` +
   `clearRating(uid,signal)` nad `DELETE …/rating` (per-user hvězdy 0–5 + osobní označení
   none|pick|reject|eye, 204, podklad `useRating`), typy `RatingUpdate`/`RatingFlag`,
+  `regenerateThumbnail(uid,signal)` nad `POST /api/v1/photos/{uid}/regenerate-thumbnail`
+  (editor/admin servisní akce, synchronní, `RegenerateThumbnailResult{status,sizes}`, 422 =
+  originál nedekódovatelný; podklad `RegenerateThumbnailButton`),
   **koš** `unarchivePhoto(uid)` (`POST …/unarchive` obnova), `purgePhoto(uid)` (`POST …/purge?confirm=true`
   trvalé mazání), `emptyTrash()` (`POST /trash/empty?confirm=true` → `PurgeResult{purged,failed}`),
   `fetchTrashInfo()` (`GET /trash/info` → `TrashInfo{retention_days}`),

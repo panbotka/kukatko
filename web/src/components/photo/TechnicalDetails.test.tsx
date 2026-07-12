@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { type PhotoDetail } from '../../services/photos'
@@ -40,10 +40,14 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
   }
 }
 
-function renderDetails(overrides: Partial<PhotoDetail> = {}) {
+function renderDetails(overrides: Partial<PhotoDetail> = {}, canWrite = false) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <TechnicalDetails photo={photo(overrides)} />
+      <TechnicalDetails
+        photo={photo(overrides)}
+        canWrite={canWrite}
+        onThumbnailRegenerated={vi.fn()}
+      />
     </I18nextProvider>,
   )
 }
@@ -115,6 +119,25 @@ describe('TechnicalDetails', () => {
     await user.click(screen.getByRole('button', { name: 'Technical details' }))
     const label = screen.getByText('Uploaded by')
     expect(label.nextElementSibling).toHaveTextContent('—')
+  })
+
+  it('shows the regenerate-thumbnail button to editors when expanded', async () => {
+    const user = userEvent.setup()
+    renderDetails({}, true)
+
+    // Hidden until the section is expanded — it is a maintenance action, not a
+    // primary control.
+    expect(screen.queryByRole('button', { name: /regenerate thumbnail/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Technical details' }))
+    expect(screen.getByRole('button', { name: /regenerate thumbnail/i })).toBeInTheDocument()
+  })
+
+  it('hides the regenerate-thumbnail button from viewers', async () => {
+    const user = userEvent.setup()
+    renderDetails({}, false)
+
+    await user.click(screen.getByRole('button', { name: 'Technical details' }))
+    expect(screen.queryByRole('button', { name: /regenerate thumbnail/i })).not.toBeInTheDocument()
   })
 
   it('omits rows a photo has no value for', async () => {
