@@ -152,6 +152,21 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   pro inline HTML5 přehrávání, resp. redirectuje na Worker, který Range obsluhuje přímo z R2 (odpadá
   požadavek na seekovatelný lokální soubor); volitelný on-the-fly transcode neweb-friendly codeců přes
   `video.transcode` config (default off) krmí `ffmpeg` rovnou podepsanou URL (`ffmpeg` čte http(s)).
+  **Hromadné stažení ZIP** (`internal/photoapi/zip.go`): `POST /photos/download-zip`
+  (session/`?t=` token — **stejná autorizace jako single download**, kdo smí stáhnout jednu, smí
+  víc) **streamuje ZIP originálů** rovnou na odpověď (`archive/zip`, metoda `Store` — originály jsou
+  už komprimované; nic se nebufferuje celé v RAM, `CGO_ENABLED=0`). Tělo `{photo_uids?, album_uid?,
+  name?, date?}`: `album_uid` se expanduje server-side na **živé** (nearchivované) fotky alba v
+  chronologickém pořadí (přes `photos.List` s `AlbumUIDs`, takže archivované ani neuvidí),
+  `photo_uids` je explicitní výběr v pořadí klienta (chybějící UID se **tiše přeskočí**, jako u single
+  downloadu); obě množiny se sloučí a deduplikují podle UID. `file_name` fotky je jméno položky,
+  kolidující jména se odliší příponou ` (2)`, ` (3)`… před koncovkou. Originál chybějící ve storage se
+  **přeskočí a zapíše** do textové položky `MISSING.txt` v archivu — nepřeruší celý ZIP. Jméno archivu:
+  `name` (např. titul alba) + `.zip`, jinak `kukatko-photos-<date>.zip` (`date` posílá klient, server
+  se na téhle cestě **vyhýbá wall-clocku**); mtime položek je `taken_at` fotky. Strop **1000 souborů**
+  na požadavek (`maxZipFiles`), nad ním **413** ještě před prvním bajtem archivu; požadavek bez fotek →
+  400. Vždy **streamuje přes `storage.Open`** (i na publikujícím backendu — jeden archiv nejde poskládat
+  z redirectů, na rozdíl od single `/download`).
   **Autorizace hlídá discovery:** podepsaná URL se razí jen do odpovědi, na kterou už caller měl
   právo, takže `private` fotku ani archiv nikdy neuvidí. Na rozdíl od dřívějšího návrhu s veřejným
   bucketem jsou `private` a archiv **skutečné bezpečnostní hranice** (viz doc comment `internal/mediaurl`).

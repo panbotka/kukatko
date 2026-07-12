@@ -160,6 +160,7 @@ func NewAPI(cfg Config) *API {
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
 //	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
 //	GET    /photos/{uid}/download     RequireDownload  original file (or 302)
+//	POST   /photos/download-zip       RequireDownload  ZIP of originals (selection/album)
 //	PUT    /photos/{uid}/favorite     RequireAuth      favorite (current user)
 //	DELETE /photos/{uid}/favorite     RequireAuth      unfavorite (current user)
 //	PUT    /photos/{uid}/rating       RequireAuth      set rating/flag (current user)
@@ -174,6 +175,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/trash/info", a.handleTrashInfo)
 	r.With(a.requireWrite).Post("/trash/empty", a.handleEmptyTrash)
 	r.Route("/photos", func(r chi.Router) {
+		r.With(a.requireDownload).Post("/download-zip", a.handleDownloadZip)
 		r.With(a.requireAuth).Get("/", a.handleList)
 		r.With(a.requireAuth).Get("/timeline", a.handleTimeline)
 		r.With(a.requireAuth).Get("/years", a.handleYears)

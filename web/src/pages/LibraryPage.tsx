@@ -13,6 +13,7 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { TimelineScrubber } from '../components/library/TimelineScrubber'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
+import { DownloadZipButton } from '../components/organize/DownloadZipButton'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SelectionStart } from '../components/organize/SelectionStart'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
@@ -226,6 +227,7 @@ export function LibraryPage() {
             {t('library.selectAll')}
           </Button>
           <BulkEditControl bulk={bulk} />
+          <DownloadZipButton photoUids={bulk.photoUids} variant="outline-secondary" />
         </SelectionBar>
       )}
 
