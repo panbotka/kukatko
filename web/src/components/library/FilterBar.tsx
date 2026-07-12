@@ -19,6 +19,8 @@ import {
   parseFilterList,
 } from '../../lib/libraryView'
 import { type SetUrlState } from '../../lib/urlState'
+import { ENTITY_STYLE } from '../entityStyle'
+import { Icon } from '../Icon'
 
 import { buildChips } from './filterChips'
 import { GridDensityControl } from './GridDensityControl'
@@ -201,19 +203,31 @@ export function FilterBar<T extends LibraryView>({
 
       {chips.length > 0 && (
         <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
-          {chips.map((chip) => (
-            <span key={chip.key} className="kukatko-filter-chip badge rounded-pill text-bg-primary">
-              {chip.label}
-              <button
-                type="button"
-                className="btn-close btn-close-white ms-2"
-                aria-label={t('library.filters.removeFilter', { name: chip.label })}
-                onClick={() => {
-                  push(chip.clear)
-                }}
-              />
-            </span>
-          ))}
+          {chips.map((chip) => {
+            // Album and tag chips carry a distinct hue + leading icon from the
+            // shared entity convention; every other filter keeps the neutral
+            // primary chip so colour stays reserved for "which entity is this".
+            const entity = chip.kind === undefined ? undefined : ENTITY_STYLE[chip.kind]
+            return (
+              <span
+                key={chip.key}
+                className={`kukatko-filter-chip badge rounded-pill ${
+                  entity === undefined ? 'text-bg-primary' : entity.className
+                }`}
+              >
+                {entity !== undefined && <Icon name={entity.icon} className="me-1" />}
+                {chip.label}
+                <button
+                  type="button"
+                  className="btn-close btn-close-white ms-2"
+                  aria-label={t('library.filters.removeFilter', { name: chip.label })}
+                  onClick={() => {
+                    push(chip.clear)
+                  }}
+                />
+              </span>
+            )
+          })}
         </div>
       )}
 

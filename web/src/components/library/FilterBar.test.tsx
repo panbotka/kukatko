@@ -313,6 +313,28 @@ describe('FilterBar facets', () => {
     renderBar({ ...LIBRARY_DEFAULTS, album: 'al_gone' }, vi.fn(), { facets: FACETS })
     expect(screen.getByText('Album: al_gone')).toBeInTheDocument()
   })
+
+  it('colours an album chip and a tag chip with different entity hues', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, album: 'al_1', label: 'lb_1' }, vi.fn(), { facets: FACETS })
+
+    const albumChip = screen.getByText('Album: Holidays')
+    const tagChip = screen.getByText('Label: Beach')
+
+    // Each carries its kind's hue class, so an album and a tag are told apart at
+    // a glance — and neither leaks into the other's colour.
+    expect(albumChip).toHaveClass('kk-entity-album')
+    expect(tagChip).toHaveClass('kk-entity-tag')
+    expect(albumChip).not.toHaveClass('kk-entity-tag')
+    expect(tagChip).not.toHaveClass('kk-entity-album')
+    // Entity chips drop the shared primary colour that used to mean "album or tag".
+    expect(albumChip).not.toHaveClass('text-bg-primary')
+    expect(tagChip).not.toHaveClass('text-bg-primary')
+  })
+
+  it('keeps the neutral primary colour for non-entity filter chips', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, min_rating: '4' }, vi.fn())
+    expect(screen.getByText('Rating: ≥ 4')).toHaveClass('text-bg-primary')
+  })
 })
 
 describe('FilterBar advanced controls', () => {

@@ -7,6 +7,7 @@ import {
   parseFilterList,
   removeFromFilterList,
 } from '../../lib/libraryView'
+import { type EntityKind } from '../entityStyle'
 
 /** A single active-filter descriptor, rendered as a removable chip. */
 export interface FilterChip {
@@ -16,6 +17,13 @@ export interface FilterChip {
   label: string
   /** The patch that clears just this filter. */
   clear: Partial<LibraryView>
+  /**
+   * The catalog entity this chip stands for, when it is one. Album and label
+   * chips carry a kind so the bar can colour and icon them per the shared
+   * entity convention; the remaining filters (year, rating, flag, …) leave it
+   * undefined and keep the neutral chip style.
+   */
+  kind?: EntityKind
 }
 
 /** Options for {@link buildChips}. */
@@ -71,6 +79,7 @@ export function buildChips(
       key: `album:${uid}`,
       label: `${t('library.filters.album')}: ${album?.title ?? uid}`,
       clear: { album: removeFromFilterList(view.album, uid) },
+      kind: 'album',
     })
   }
   for (const uid of parseFilterList(view.label)) {
@@ -79,6 +88,7 @@ export function buildChips(
       key: `label:${uid}`,
       label: `${t('library.filters.label')}: ${label?.name ?? uid}`,
       clear: { label: removeFromFilterList(view.label, uid) },
+      kind: 'tag',
     })
   }
   if (view.archived !== LIBRARY_DEFAULTS.archived) {
