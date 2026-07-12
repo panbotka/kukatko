@@ -226,7 +226,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg` (shard z hex SHA256), regenerovatelné +
   **idempotentní** (skip existujících) + atomický zápis temp+rename; `Thumbnailer` =
   `New(store,cacheDir,WithConcurrency(n))` s API `Generate(ctx,photo,sizes...)`/
-  `GenerateAll(ctx,photo)` (mapa size→abs cesta)/`Path(hash,size)`/`Open(hash,size)`;
+  `GenerateAll(ctx,photo)` (mapa size→abs cesta, skip existujících)/
+  `RegenerateAll(ctx,photo)` (**force** — přepíše všechny velikosti in-place atomickým
+  temp+rename, i republikuje na object store; podklad servisní akce „regenerate thumbnail")/
+  `Path(hash,size)`/`Open(hash,size)`;
   balíčkové `RelPath(hash,size)` vrací tentýž cache path relativně — je to zároveň **object key**
   náhledu ve vzdáleném backendu, proto se layout exportuje místo aby se odvozoval podruhé jinde;
   **publikace na object store**: po zápisu velikosti do cache ji `publishSize` nahraje `Put`em pod
@@ -331,6 +334,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (idempotentní clear přes `ClearRating` → 204); `RatingStore` interface (splňuje ho `organize.Store`,
   `SetRating`/`SetFlag`/`ClearRating`/`RatingsAmong`) je nil-safe (nezapojeno → rating 0 / flag `none`,
   rating endpointy 503);
+  **regenerace náhledu** (`thumbnail.go`): `POST /photos/{uid}/regenerate-thumbnail` (editor/admin přes
+  `RequireWrite`, `ThumbnailRegenerator` interface splněný `*thumbjob.Service`, nil-safe → 503) synchronně
+  přepíše náhledy + pHash přes `ForceRegenerate` a vrátí `{status,sizes}` (200), 404 chybějící fotka,
+  **422** `thumbjob.ErrRegenerateFailed` (originál chybí/nedekódovatelný); best-effort audit `photo.thumbnail`
+  přes `AuditRecorder` (`*audit.Store`, selhání se jen zaloguje — náhled je už přegenerován);
   `GET /photos/years` (`handleYears`, `years.go`) = **rok-histogram** pro year facet knihovny
   → `photos.Store.YearBuckets` → `{years:[{year,count}],total}`; bere tytéž filtry jako list
   (vč. per-user `FavoriteOf`/`RatedBy`), ale **`params.Year` sám nuluje** — facet nesmí zúžit
@@ -1122,7 +1130,12 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `Decoder` (`StorageDecoder` = `storage.Materialize`+`imgconvert.EnsureDecodable`, fakeovatelný) →
   unit-testovatelné bez disku; `Service` = `New(Config{Photos,Thumbnailer,Decoder})` (panika na nil),
   `Handle`=`worker.HandlerFunc` (payload `{photo_uid}`, prázdný → `ErrMissingPhotoUID` dead-letter),
-  `Regenerate(uid)`/`ensurePhash` idempotentní; registrovaný v `serve` na `jobs.TypeThumbnail`),
+  `Regenerate(uid)`/`ensurePhash` idempotentní; registrovaný v `serve` na `jobs.TypeThumbnail`.
+  **Force path** `ForceRegenerate(uid) ([]string,error)` je on-demand protějšek (podklad servisní
+  akce "regenerate thumbnail" v `photoapi`): **přepíše** všechny náhledy (`Thumbnailer.RegenerateAll`,
+  atomický overwrite) a **vždy** přepočítá pHash (`recomputePhash`, sdílené s `ensurePhash`), vrací
+  seřazené názvy velikostí; chybějící foto → `photos.ErrPhotoNotFound`, chybějící/nedekódovatelný
+  originál zabalen do `ErrRegenerateFailed` (HTTP 422)),
   `internal/maintenanceapi/`
   (admin-only HTTP API nad maintenance: rozhraní `Service` (Scan+Repair, splňuje `*maintenance.Service`,
   nil → 503); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes` mountuje `/maintenance`:

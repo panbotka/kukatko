@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"sort"
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/phash"
@@ -26,6 +27,14 @@ import (
 // ErrMissingPhotoUID indicates a thumbnail job payload carried no photo uid, a
 // permanent error so the job dead-letters rather than retrying forever.
 var ErrMissingPhotoUID = errors.New("thumbjob: job payload missing photo_uid")
+
+// ErrRegenerateFailed wraps a failure to rebuild a photo's thumbnails from its
+// original because the source cannot be used — the original is missing from
+// storage or its bytes cannot be decoded into an image. ForceRegenerate wraps
+// such failures with it (via %w) so the on-demand HTTP layer can answer "the
+// source cannot be turned into a thumbnail" (422 Unprocessable Entity)
+// distinctly from a missing photo (404) or an unexpected server error (500).
+var ErrRegenerateFailed = errors.New("thumbjob: thumbnail regeneration failed")
 
 // PhotoStore is the subset of the photo catalogue the handler needs: loading the
 // photo and reading/writing its perceptual hashes. It is satisfied by
@@ -41,11 +50,15 @@ type PhotoStore interface {
 
 // Thumbnailer renders a photo's derived images. It is satisfied by
 // *thumb.Thumbnailer; GenerateAll regenerates every registered size, skipping
-// those already cached.
+// those already cached, while RegenerateAll rebuilds them all, overwriting the
+// cache.
 type Thumbnailer interface {
 	// GenerateAll generates every registered thumbnail size for photo, returning a
-	// map from size name to its absolute cache path.
+	// map from size name to its absolute cache path, skipping sizes already cached.
 	GenerateAll(ctx context.Context, photo photos.Photo) (map[string]string, error)
+	// RegenerateAll forces regeneration of every registered thumbnail size for
+	// photo, overwriting any already-cached sizes, and returns the same map.
+	RegenerateAll(ctx context.Context, photo photos.Photo) (map[string]string, error)
 }
 
 // Decoder resolves a photo's stored original to a decoded image so the handler
@@ -121,6 +134,45 @@ func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
 	return s.ensurePhash(ctx, photo)
 }
 
+// ForceRegenerate unconditionally rebuilds the photo's derived data on demand: it
+// regenerates every thumbnail size — overwriting any already cached — and
+// recomputes and stores the perceptual hashes even when they already exist,
+// returning the regenerated size names (sorted) so the caller can report a clear
+// result. It is the counterpart to Regenerate (the idempotent repair path the
+// job handler runs): where Regenerate skips data already present, ForceRegenerate
+// rebuilds a stale or corrupt thumbnail/pHash from the original. The original
+// file is never modified.
+//
+// A missing photo is returned as photos.ErrPhotoNotFound (which the HTTP layer
+// maps to 404); a missing or undecodable original is wrapped with
+// ErrRegenerateFailed (mapped to 422); a storage/database failure is an ordinary
+// wrapped error (mapped to 500).
+func (s *Service) ForceRegenerate(ctx context.Context, photoUID string) ([]string, error) {
+	photo, err := s.photos.GetByUID(ctx, photoUID)
+	if err != nil {
+		return nil, fmt.Errorf("thumbjob: loading photo %s: %w", photoUID, err)
+	}
+	sizes, err := s.thumbs.RegenerateAll(ctx, photo)
+	if err != nil {
+		return nil, fmt.Errorf("%w: regenerating thumbnails for %s: %w", ErrRegenerateFailed, photoUID, err)
+	}
+	if err := s.recomputePhash(ctx, photo); err != nil {
+		return nil, err
+	}
+	return sortedSizeNames(sizes), nil
+}
+
+// sortedSizeNames returns the keys of a size→path map in sorted order, so a
+// regenerated-sizes result is deterministic regardless of map iteration order.
+func sortedSizeNames(sizes map[string]string) []string {
+	names := make([]string, 0, len(sizes))
+	for name := range sizes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // ensurePhash recomputes and stores the photo's perceptual hashes when they are
 // absent. A photo that already has a pHash is a no-op. The original is decoded
 // only when needed, so the common case (thumbnails missing but pHash present)
@@ -133,6 +185,14 @@ func (s *Service) ensurePhash(ctx context.Context, photo photos.Photo) error {
 	if !errors.Is(err, photos.ErrPhashNotFound) {
 		return fmt.Errorf("thumbjob: checking phash for %s: %w", photo.UID, err)
 	}
+	return s.recomputePhash(ctx, photo)
+}
+
+// recomputePhash decodes the photo's original, computes its perceptual hashes and
+// stores them, overwriting any hashes already present. It backs both the repair
+// path (ensurePhash, only when absent) and the force path (ForceRegenerate,
+// always), so the caller decides whether a recompute is needed.
+func (s *Service) recomputePhash(ctx context.Context, photo photos.Photo) error {
 	img, cleanup, err := s.decoder.DecodeOriginal(ctx, photo)
 	if err != nil {
 		return fmt.Errorf("thumbjob: decoding %s for phash: %w", photo.UID, err)

@@ -119,6 +119,16 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   vrací se v detailu i listu jako součást `photos.Photo` a je zahrnutý ve fulltextu (§ Vyhledávání);
   `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);
+  `POST /photos/{uid}/regenerate-thumbnail` (editor/admin) — **servisní akce** pro
+  chybějící/zastaralý náhled: znovu vygeneruje náhledy fotky a její perceptuální hashe
+  z originálu přes `thumbjob.Service.ForceRegenerate` (sdílí thumbnailer i job handler,
+  žádná duplicitní logika), **přepíše** existující cache náhledů i hashe (na rozdíl od
+  repair cesty `thumbnail` jobu, která present data přeskakuje), originál se **nikdy
+  nemění**. Běží **synchronně**, aby mohla vrátit jasný výsledek `{status:"regenerated",
+  sizes:[…]}` (200) nebo typovanou chybu: 404 chybí fotka, **422** originál chybí nebo ho
+  nelze dekódovat (`thumbjob.ErrRegenerateFailed`), 503 když regenerace není zapojená.
+  Idempotentní (bezpečné klikat opakovaně); zapisuje se do audit logu jako
+  `photo.thumbnail` se seznamem regenerovaných velikostí v details;
   **koš / trvalé mazání** (`trash.go`, backuje `internal/trash` přes rozhraní `Purger`, nil → 503):
   `POST /photos/{uid}/purge` (editor/admin, `?confirm=true` jinak 400, 404 chybí, 409 fotka není
   archivovaná → 204) a `POST /trash/empty` (editor/admin, `?confirm=true` → `{purged,failed}`)

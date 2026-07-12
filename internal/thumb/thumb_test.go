@@ -175,6 +175,52 @@ func TestGenerateAll_allSizesWithinBounds(t *testing.T) {
 	}
 }
 
+// TestRegenerateAll_overwritesStaleCache verifies RegenerateAll rebuilds a size
+// whose cache file already exists (here corrupted to simulate a stale/broken
+// thumbnail), where GenerateAll leaves a present size untouched. It underpins the
+// on-demand "regenerate thumbnail" action, which must overwrite the cache.
+func TestRegenerateAll_overwritesStaleCache(t *testing.T) {
+	th, store := newThumbnailer(t)
+	photo := storeJPEG(t, store, 800, 600, 0)
+	ctx := context.Background()
+
+	if _, err := th.GenerateAll(ctx, photo); err != nil {
+		t.Fatalf("GenerateAll: %v", err)
+	}
+	size := SizeNames()[0]
+	abs, err := th.Path(photo.FileHash, size)
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	if err := os.WriteFile(abs, []byte("stale"), 0o600); err != nil {
+		t.Fatalf("corrupt cache: %v", err)
+	}
+
+	// GenerateAll must leave the present (corrupt) file untouched (idempotent skip).
+	if _, err := th.GenerateAll(ctx, photo); err != nil {
+		t.Fatalf("GenerateAll (second): %v", err)
+	}
+	if data, _ := os.ReadFile(abs); string(data) != "stale" {
+		t.Fatal("GenerateAll must not overwrite a present size")
+	}
+
+	// RegenerateAll must rebuild it in place, replacing the stale bytes with a
+	// valid JPEG.
+	if _, err := th.RegenerateAll(ctx, photo); err != nil {
+		t.Fatalf("RegenerateAll: %v", err)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatalf("read regenerated: %v", err)
+	}
+	if string(data) == "stale" {
+		t.Fatal("RegenerateAll did not overwrite the stale cache file")
+	}
+	if _, err := jpeg.Decode(bytes.NewReader(data)); err != nil {
+		t.Fatalf("regenerated size is not a valid JPEG: %v", err)
+	}
+}
+
 // TestGenerate_orientation6 confirms EXIF orientation 6 (rotate 90 CW) swaps
 // the thumbnail's dimensions: an 800x600 landscape source becomes portrait.
 func TestGenerate_orientation6(t *testing.T) {

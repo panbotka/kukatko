@@ -35,6 +35,8 @@ type API struct {
 	// photo payload, and tells the media routes whether to redirect or stream.
 	media           *mediaurl.Builder
 	thumbnailer     *thumb.Thumbnailer
+	regenerator     ThumbnailRegenerator
+	audit           AuditRecorder
 	similar         SimilarSearcher
 	embedder        TextEmbedder
 	faces           FaceService
@@ -61,6 +63,13 @@ type Config struct {
 	Storage storage.Storage
 	// Thumbnailer serves (and generates on miss) cached thumbnails.
 	Thumbnailer *thumb.Thumbnailer
+	// Regenerator force-rebuilds a photo's thumbnails and perceptual hashes on
+	// demand for the regenerate-thumbnail service action. When nil that endpoint
+	// answers 503.
+	Regenerator ThumbnailRegenerator
+	// Audit records the regenerate-thumbnail action in the durable audit trail.
+	// When nil the action is not audited (the regeneration still runs).
+	Audit AuditRecorder
 	// Similar backs the similar-photos endpoint and the vector half of semantic
 	// and hybrid search. When nil those modes degrade to full-text search.
 	Similar SimilarSearcher
@@ -113,6 +122,8 @@ func NewAPI(cfg Config) *API {
 		storage:         cfg.Storage,
 		media:           mediaurl.NewBuilder(cfg.Storage),
 		thumbnailer:     cfg.Thumbnailer,
+		regenerator:     cfg.Regenerator,
+		audit:           cfg.Audit,
 		similar:         cfg.Similar,
 		embedder:        cfg.Embedder,
 		faces:           cfg.Faces,
@@ -145,6 +156,7 @@ func NewAPI(cfg Config) *API {
 //	PUT    /photos/{uid}/edit         RequireWrite     save non-destructive edit
 //	POST   /photos/{uid}/archive      RequireWrite     soft-delete
 //	POST   /photos/{uid}/unarchive    RequireWrite     restore
+//	POST   /photos/{uid}/regenerate-thumbnail RequireWrite  rebuild thumbnail + pHash
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
 //	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
 //	GET    /photos/{uid}/download     RequireDownload  original file (or 302)
@@ -178,6 +190,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Put("/{uid}/edit", a.handlePutEdit)
 		r.With(a.requireWrite).Post("/{uid}/archive", a.handleArchive)
 		r.With(a.requireWrite).Post("/{uid}/unarchive", a.handleUnarchive)
+		r.With(a.requireWrite).Post("/{uid}/regenerate-thumbnail", a.handleRegenerateThumbnail)
 		r.With(a.requireWrite).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
 		r.With(a.requireDownload).Get("/{uid}/video", a.handleVideo)

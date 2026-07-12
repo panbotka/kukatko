@@ -6,11 +6,19 @@ import { type PhotoDetail } from '../../services/photos'
 import { Icon } from '../Icon'
 
 import { MetaField } from './MetaField'
+import { RegenerateThumbnailButton } from './RegenerateThumbnailButton'
 
 /** Props for {@link TechnicalDetails}. */
 export interface TechnicalDetailsProps {
   /** The photo whose capture settings and file facts are listed. */
   photo: PhotoDetail
+  /**
+   * Whether the current user may run maintenance actions (editors/admins). Gates
+   * the regenerate-thumbnail service button; viewers never see it.
+   */
+  canWrite: boolean
+  /** Called after the thumbnail is regenerated so the page can reload the image. */
+  onThumbnailRegenerated: () => void
 }
 
 /** The DOM id of the collapsible region, referenced by `aria-controls`. */
@@ -22,7 +30,11 @@ const REGION_ID = 'photo-technical-details'
  * reference facts, so they stay out of the way of the organize block and caption
  * that lead the detail page — one click brings them back.
  */
-export function TechnicalDetails({ photo }: TechnicalDetailsProps) {
+export function TechnicalDetails({
+  photo,
+  canWrite,
+  onThumbnailRegenerated,
+}: TechnicalDetailsProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
 
@@ -72,6 +84,9 @@ export function TechnicalDetails({ photo }: TechnicalDetailsProps) {
                 : t('photo.metadata.uploaderUnknown')
             }
           />
+          {canWrite && (
+            <RegenerateThumbnailButton uid={photo.uid} onRegenerated={onThumbnailRegenerated} />
+          )}
         </div>
       )}
     </section>

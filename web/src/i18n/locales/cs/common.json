@@ -729,7 +729,12 @@
     },
     "technical": {
       "title": "Technické údaje",
-      "dimensions": "Rozměry"
+      "dimensions": "Rozměry",
+      "regenerateThumb": "Přegenerovat náhled",
+      "regeneratingThumb": "Přegenerovávám…",
+      "regenerateThumbSuccess": "Náhled přegenerován",
+      "regenerateThumbUndecodable": "Originál chybí nebo ho nelze dekódovat.",
+      "regenerateThumbError": "Náhled se nepodařilo přegenerovat."
     },
     "organize": {
       "albums": "Alba",

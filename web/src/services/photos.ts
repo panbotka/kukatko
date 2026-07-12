@@ -640,6 +640,41 @@ export async function favoritePhoto(
   }
 }
 
+/** The result of a successful thumbnail regeneration. Mirrors the backend
+ * `regenerateThumbnailResponse`. */
+export interface RegenerateThumbnailResult {
+  /** Fixed status marker (`"regenerated"`). */
+  status: string
+  /** The thumbnail size names that were rebuilt. */
+  sizes: string[]
+}
+
+/**
+ * Rebuilds a photo's cached thumbnails and perceptual hashes from its original
+ * via `POST /api/v1/photos/{uid}/regenerate-thumbnail`. It is a maintenance
+ * action for a missing or stale thumbnail: editors/admins only, idempotent, and
+ * it never touches the original file. It runs synchronously and resolves once the
+ * derived data has been rebuilt, so the caller can then cache-bust the displayed
+ * image.
+ *
+ * @throws ApiError with `status` 403 (viewer), 404 (no such photo), 422 (the
+ *   original is missing or cannot be decoded), 503 (regeneration unwired) or 5xx.
+ */
+export async function regenerateThumbnail(
+  uid: string,
+  signal?: AbortSignal,
+): Promise<RegenerateThumbnailResult> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/regenerate-thumbnail`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as RegenerateThumbnailResult
+}
+
 /**
  * A partial rating update for `PUT /api/v1/photos/{uid}/rating`: a star rating
  * (0–5) and/or a pick/reject flag. At least one must be present; an omitted key
