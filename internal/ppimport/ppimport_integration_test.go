@@ -57,7 +57,9 @@ type fakePPClient struct {
 	albums      []photoprism.Album
 	labels      []photoprism.Label
 	albumPhotos map[string][]photoprism.Photo
-	labelPhotos map[string][]photoprism.Photo
+	// queryPhotos answers a scoped listing by its exact q= expression (e.g.
+	// `label:"beach"`, `label:"beach" year:2023`).
+	queryPhotos map[string][]photoprism.Photo
 	files       map[string][]byte
 	failHash    string
 
@@ -65,13 +67,14 @@ type fakePPClient struct {
 	downloads int
 }
 
-// ListPhotos returns photos scoped by album, label query, or the watermark.
+// ListPhotos returns the photos scoped by album, by search query, or by the
+// incremental watermark.
 func (c *fakePPClient) ListPhotos(_ context.Context, p photoprism.PhotoListParams) ([]photoprism.Photo, error) {
 	switch {
 	case p.AlbumUID != "":
 		return c.albumPhotos[p.AlbumUID], nil
 	case p.Query != "":
-		return c.labelPhotos[p.Query], nil
+		return c.queryPhotos[p.Query], nil
 	default:
 		return filterByUpdated(c.photos, p.UpdatedSince), nil
 	}
@@ -283,7 +286,7 @@ func TestIntegration_firstImport(t *testing.T) {
 	client.albums = []photoprism.Album{{UID: "ppal1", Title: "Holiday", Type: "album"}}
 	client.albumPhotos = map[string][]photoprism.Photo{"ppal1": {p1, p2}}
 	client.labels = []photoprism.Label{{UID: "pplb1", Name: "Beach", Slug: "beach"}}
-	client.labelPhotos = map[string][]photoprism.Photo{`label:"beach"`: {p1}}
+	client.queryPhotos = map[string][]photoprism.Photo{`label:"beach"`: {p1}}
 
 	env := newEnv(t, client)
 	result, err := env.svc.Import(ctx)
@@ -538,6 +541,61 @@ func TestIntegration_perPhotoFailure(t *testing.T) {
 	}
 	if status != string(importer.StatusDone) {
 		t.Errorf("run status = %q, want done", status)
+	}
+}
+
+// TestIntegration_scopedImportLeavesWatermarkNull verifies the safety property of
+// a scoped run against the real import_runs table: a --label --year run imports
+// only its slice of the library, maps that label, and completes with a NULL
+// high_watermark — so the next full import still walks the whole catalogue.
+func TestIntegration_scopedImportLeavesWatermarkNull(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	tagged := client.addPhoto("pp1", t0.Add(time.Hour), "Beach", 10)
+	other := client.addPhoto("pp2", t0, "Sunset", 20)
+	client.photos = []photoprism.Photo{tagged, other}
+	client.labels = []photoprism.Label{{UID: "pplb1", Name: "Beach", Slug: "beach"}}
+	client.queryPhotos = map[string][]photoprism.Photo{
+		`label:"beach" year:2023`: {tagged},
+		`label:"beach"`:           {tagged},
+	}
+	env := newEnv(t, client)
+
+	result, err := env.svc.ImportScoped(ctx, ppimport.Scope{Label: "beach", Year: 2023})
+	if err != nil {
+		t.Fatalf("ImportScoped: %v", err)
+	}
+	if result.Counts.Imported != 1 {
+		t.Fatalf("imported = %d, want 1 (only the labelled photo)", result.Counts.Imported)
+	}
+	if result.Watermark != nil {
+		t.Errorf("watermark = %v, want nil", result.Watermark)
+	}
+	if _, err := env.photos.GetByPhotoprismUID(ctx, "pp2"); err == nil {
+		t.Error("pp2 was imported, but it is outside the scope")
+	}
+	assertLabelMembership(t, env)
+
+	var watermark *time.Time
+	if err := env.db.Pool().QueryRow(ctx,
+		"SELECT high_watermark FROM import_runs WHERE id = $1", result.RunID).Scan(&watermark); err != nil {
+		t.Fatalf("reading run: %v", err)
+	}
+	if watermark != nil {
+		t.Errorf("recorded high_watermark = %v, want NULL: a scoped run must not move the cursor", watermark)
+	}
+
+	// The next full import must still see pp2, which the scoped run never listed.
+	full, err := env.svc.Import(ctx)
+	if err != nil {
+		t.Fatalf("Import after the scoped run: %v", err)
+	}
+	if full.Counts.Imported != 1 {
+		t.Errorf("full run imported = %d, want 1 (pp2)", full.Counts.Imported)
+	}
+	if _, err := env.photos.GetByPhotoprismUID(ctx, "pp2"); err != nil {
+		t.Errorf("pp2 still missing after the full import: %v", err)
 	}
 }
 

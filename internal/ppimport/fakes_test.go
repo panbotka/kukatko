@@ -33,14 +33,18 @@ func hashBytes(b []byte) string {
 var errAlbumTypeRequired = errors.New("photoprism: album listing requires a type")
 
 // fakeClient is an in-memory PhotoPrismClient. It pages the incremental photo
-// listing (filtered by UpdatedSince), serves per-album and per-label scoped
-// listings, and streams stored originals keyed by their SHA1 file hash.
+// listing (filtered by UpdatedSince), serves scoped listings keyed by the album
+// uid and by the verbatim q= expression, and streams stored originals keyed by
+// their SHA1 file hash.
 type fakeClient struct {
 	photos      []photoprism.Photo
 	albums      []photoprism.Album
 	labels      []photoprism.Label
 	albumPhotos map[string][]photoprism.Photo
-	labelPhotos map[string][]photoprism.Photo
+	// queryPhotos answers a scoped listing by its exact q= expression (e.g.
+	// `label:"sdh"`, `year:1985`), so a test that keys it also pins the expression
+	// the importer sends to the source.
+	queryPhotos map[string][]photoprism.Photo
 	files       map[string][]byte
 	downloadErr map[string]error
 	listErr     error
@@ -49,20 +53,44 @@ type fakeClient struct {
 	downloads []string
 }
 
-// ListPhotos returns one page of photos, dispatching on whether the params scope
-// the listing to an album, a label query, or the incremental watermark.
+// ListPhotos returns one page of the photos the params select.
 func (c *fakeClient) ListPhotos(_ context.Context, p photoprism.PhotoListParams) ([]photoprism.Photo, error) {
 	if c.listErr != nil {
 		return nil, c.listErr
 	}
+	return page(c.selectPhotos(p), p.Offset, p.Count), nil
+}
+
+// selectPhotos resolves which photos a listing selects: the album's and the
+// query's photos intersected when both filters are set (the source applies s= and
+// q= together), either one alone, or the incrementally filtered catalogue when
+// neither is.
+func (c *fakeClient) selectPhotos(p photoprism.PhotoListParams) []photoprism.Photo {
 	switch {
+	case p.AlbumUID != "" && p.Query != "":
+		return intersectPhotos(c.albumPhotos[p.AlbumUID], c.queryPhotos[p.Query])
 	case p.AlbumUID != "":
-		return page(c.albumPhotos[p.AlbumUID], p.Offset, p.Count), nil
+		return c.albumPhotos[p.AlbumUID]
 	case p.Query != "":
-		return page(c.labelPhotos[p.Query], p.Offset, p.Count), nil
+		return c.queryPhotos[p.Query]
 	default:
-		return page(filterUpdated(c.photos, p.UpdatedSince), p.Offset, p.Count), nil
+		return filterUpdated(c.photos, p.UpdatedSince)
 	}
+}
+
+// intersectPhotos returns the photos present in both lists, in the order of a.
+func intersectPhotos(a, b []photoprism.Photo) []photoprism.Photo {
+	inB := make(map[string]struct{}, len(b))
+	for i := range b {
+		inB[b[i].UID] = struct{}{}
+	}
+	out := make([]photoprism.Photo, 0, len(a))
+	for i := range a {
+		if _, ok := inB[a[i].UID]; ok {
+			out = append(out, a[i])
+		}
+	}
+	return out
 }
 
 // ListAlbums returns one page of the albums of the requested type. It mirrors the

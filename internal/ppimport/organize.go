@@ -11,17 +11,31 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
+// mapScope maps the structure of the photos a scoped run imported, without
+// walking the whole source catalogue: the named album and the named label, each
+// of which resolves its membership from one bounded listing. The other filters
+// need no mapping — the people of a --person run are seeded per photo from their
+// face markers during the import itself, and a --year run carries no structure
+// beyond the capture dates already on the photos.
+func (s *Service) mapScope(ctx context.Context, scope Scope) error {
+	if scope.AlbumUID != "" {
+		if err := s.mapAlbum(ctx, scope.AlbumUID); err != nil {
+			return err
+		}
+	}
+	if scope.Label != "" {
+		return s.mapLabel(ctx, scope.Label)
+	}
+	return nil
+}
+
 // mapAlbums finds-or-creates a Kukátko album for every PhotoPrism album (by
 // title) and attaches the already-imported member photos. A per-album failure is
 // logged and skipped; only a listing failure is returned to fail the run.
 func (s *Service) mapAlbums(ctx context.Context) error {
-	existing, err := s.albums.ListAlbums(ctx)
+	byTitle, err := s.albumsByTitle(ctx)
 	if err != nil {
-		return fmt.Errorf("ppimport: listing kukatko albums: %w", err)
-	}
-	byTitle := make(map[string]string, len(existing))
-	for _, a := range existing {
-		byTitle[a.Title] = a.UID
+		return err
 	}
 	// The source rejects an album listing that names no type, so the catalogue is
 	// walked one type at a time.
@@ -61,13 +75,9 @@ func (s *Service) mapAlbumsOfType(ctx context.Context, albumType string, byTitle
 // the uid is found. An unknown uid is an error — a scoped run that imported
 // photos but silently mapped no album would look like a success.
 func (s *Service) mapAlbum(ctx context.Context, ppAlbumUID string) error {
-	existing, err := s.albums.ListAlbums(ctx)
+	byTitle, err := s.albumsByTitle(ctx)
 	if err != nil {
-		return fmt.Errorf("ppimport: listing kukatko albums: %w", err)
-	}
-	byTitle := make(map[string]string, len(existing))
-	for _, a := range existing {
-		byTitle[a.Title] = a.UID
+		return err
 	}
 	// A scoped uid may name an album of any type, so every type is searched — not
 	// just the ones a full run maps.
@@ -168,17 +178,41 @@ func (s *Service) attachAlbumMembers(ctx context.Context, ppAlbumUID, albumUID s
 	}
 }
 
-// mapLabels finds-or-creates a Kukátko label for every PhotoPrism label (by name)
-// and attaches the already-imported tagged photos. A per-label failure is logged
-// and skipped; only a listing failure is returned to fail the run.
-func (s *Service) mapLabels(ctx context.Context) error {
+// albumsByTitle indexes the existing Kukátko albums by title, the key the
+// importer finds-or-creates source albums on.
+func (s *Service) albumsByTitle(ctx context.Context) (map[string]string, error) {
+	existing, err := s.albums.ListAlbums(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ppimport: listing kukatko albums: %w", err)
+	}
+	byTitle := make(map[string]string, len(existing))
+	for _, a := range existing {
+		byTitle[a.Title] = a.UID
+	}
+	return byTitle, nil
+}
+
+// labelsByName indexes the existing Kukátko labels by name, the key the importer
+// finds-or-creates source labels on.
+func (s *Service) labelsByName(ctx context.Context) (map[string]string, error) {
 	existing, err := s.labels.ListLabels(ctx)
 	if err != nil {
-		return fmt.Errorf("ppimport: listing kukatko labels: %w", err)
+		return nil, fmt.Errorf("ppimport: listing kukatko labels: %w", err)
 	}
 	byName := make(map[string]string, len(existing))
 	for _, l := range existing {
 		byName[l.Name] = l.UID
+	}
+	return byName, nil
+}
+
+// mapLabels finds-or-creates a Kukátko label for every PhotoPrism label (by name)
+// and attaches the already-imported tagged photos. A per-label failure is logged
+// and skipped; only a listing failure is returned to fail the run.
+func (s *Service) mapLabels(ctx context.Context) error {
+	byName, err := s.labelsByName(ctx)
+	if err != nil {
+		return err
 	}
 	for offset := 0; ; {
 		page, err := s.client.ListLabels(ctx, photoprism.ListParams{Count: s.pageSize, Offset: offset})
@@ -190,6 +224,35 @@ func (s *Service) mapLabels(ctx context.Context) error {
 		}
 		if len(page) < s.pageSize {
 			return nil
+		}
+		offset += len(page)
+	}
+}
+
+// mapLabel maps a single source label (identified by its slug) and attaches its
+// tagged photos. It is the label-scoped counterpart of mapLabels: the source has
+// no get-label-by-slug endpoint, so the label catalogue is paged until the slug
+// is found — which lists labels, never the whole photo catalogue. An unknown slug
+// is an error: a scoped run that imported photos but silently mapped no label
+// would look like a success.
+func (s *Service) mapLabel(ctx context.Context, slug string) error {
+	byName, err := s.labelsByName(ctx)
+	if err != nil {
+		return err
+	}
+	for offset := 0; ; {
+		page, err := s.client.ListLabels(ctx, photoprism.ListParams{Count: s.pageSize, Offset: offset})
+		if err != nil {
+			return fmt.Errorf("ppimport: listing photoprism labels at offset %d: %w", offset, err)
+		}
+		for i := range page {
+			if strings.EqualFold(page[i].Slug, slug) {
+				s.mapOneLabel(ctx, page[i], byName)
+				return nil
+			}
+		}
+		if len(page) < s.pageSize {
+			return fmt.Errorf("%w: %s", ErrLabelNotFound, slug)
 		}
 		offset += len(page)
 	}
@@ -262,13 +325,15 @@ func (s *Service) lookupImported(ctx context.Context, ppUID string) (photos.Phot
 }
 
 // labelQuery builds the PhotoPrism photo-search expression that scopes a listing
-// to a label, preferring the label slug and falling back to its name.
+// to a label, preferring the label slug and falling back to its name. It renders
+// through Scope so a --label run and the membership listing that maps it ask the
+// source the very same question.
 func labelQuery(slug, name string) string {
 	term := strings.TrimSpace(slug)
 	if term == "" {
 		term = strings.TrimSpace(name)
 	}
-	return fmt.Sprintf("label:%q", term)
+	return Scope{Label: term}.Query()
 }
 
 // mapAlbumType maps a PhotoPrism album type onto Kukátko's album type, defaulting
