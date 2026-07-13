@@ -1006,12 +1006,19 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   backoff řeší klient, **watermark se nikdy neposune za nejstarší selhání** (`runState`); bezpečné
   re-runovat. **`Handle(ctx,job)`** = `worker.HandlerFunc` pro `pp_import` (ignoruje payload, volá
   `Import`), `JobPayload()` nese pevný sentinel `photo_uid` → dedup fronty pustí jen jeden import.
-  **`ImportAlbum(ctx, albumUID)`** = album-scoped běh (CLI `--album`): pageuje `ListPhotos(AlbumUID=…)`
-  **bez** watermarku (album se natáhne celé bez ohledu na stáří fotek), namapuje **jen** to album
-  (`mapAlbum` — hledá uid napříč `photoprism.AlbumTypes`, neznámé uid → `ErrAlbumNotFound`, prázdné →
-  `ErrEmptyAlbumUID`) a **`Complete` s `nil` watermarkem** — scoped běh vidí jen jedno album, takže
-  zapsat jeho nejnovější timestamp jako kurzor by přiměl další plný import přeskočit všechno starší.
-  Štítky nemapuje (jejich členství se zjišťuje procházením celého zdrojového katalogu).
+  **`ImportScoped(ctx, Scope{AlbumUID,Label,Person,Year})`** = scoped (částečný) běh (CLI
+  `--album`/`--label`/`--person`/`--year`, `scope.go`): `Scope.Query()` složí `q=` výraz —
+  `label:"<slug>"`, `person:"<jméno>"`, `year:<YYYY>`, termy oddělené mezerou (zdroj je ANDuje,
+  hodnoty v uvozovkách kvůli mezerám ve jméně), album jde zvlášť jako `s=` → flagy se **kombinují a
+  běh zužují**; pageuje `ListPhotos(AlbumUID=…, Query=…)` **bez** watermarku (řez se natáhne celý bez
+  ohledu na stáří fotek — `q=` má u klienta přednost před filtrem watermarku), namapuje **jen
+  strukturu importovaných fotek** (`mapScope`: jmenované album `mapAlbum` — hledá uid napříč
+  `photoprism.AlbumTypes`, neznámé uid → `ErrAlbumNotFound`; jmenovaný štítek `mapLabel` — hledá slug
+  v katalogu štítků, neznámý → `ErrLabelNotFound`; lidi seedují face markery fotek při importu, rok
+  mapovat nic nepotřebuje — celý zdrojový katalog fotek se **neprochází**) a **`Complete` s `nil`
+  watermarkem** — scoped běh vidí jen řez knihovny, takže zapsat jeho nejnovější timestamp jako
+  kurzor by přiměl další plný import přeskočit všechno starší. Prázdný scope → `ErrEmptyScope`
+  (na plný běh je `Import`), rok mimo 1826–9999 → `ErrInvalidYear`.
   Alba se listují **po typech** (`Config.AlbumTypes`, default `DefaultAlbumTypes` = album/folder/moment/state,
   bez `month` = 560 automatických kalendářních alb) — zdroj vyžaduje právě jeden typ na dotaz),
   `internal/photosorter/`

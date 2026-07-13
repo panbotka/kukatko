@@ -1046,6 +1046,13 @@ PhotoPrismu, sítě, DB i disku.
      scopnutý `ListPhotos` (`AlbumUID` / `label:"<slug>"`) → `AddPhoto` / `AttachLabel` (oboje
      idempotentní), jen pro už importované fotky.
   4. **Uzavření** — zapíše counts + nový watermark a běh `done`.
+- **Scoped běh** (`Service.ImportScoped`) — knihovnu jde migrovat **po řezech**:
+  `kukatko import photoprism --album <uid> --label <slug> --person "<jméno>" --year <YYYY>`. Flagy se
+  **kombinují** a běh zužují (album jde do `s=`, ostatní jako ANDované `q=` termy). Řez se natáhne
+  **celý, bez ohledu na stáří fotek** (watermark se ignoruje) a namapuje se jen struktura **těch**
+  fotek — jmenované album a jmenovaný štítek; lidi seedují face markery importovaných fotek.
+  Scoped běh je **částečný a nikdy neposune watermark**, takže pozdější plný import pořád vidí
+  všechny fotky (jinak by tichý posun kurzoru ztratil všechno starší). Bez flagů = plný běh.
 - **Robustnost** — per-fotka chyba se zaznamená do `counts.failed` a **nepřeruší běh** (jen
   infrastrukturní chyba — nelze listovat / DB — běh `fail`ne); 429 backoff řeší klient; **watermark
   se nikdy neposune za nejstarší selhání** (selhaná fotka se příště znovu nabere); celý import je

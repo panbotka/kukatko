@@ -33,15 +33,21 @@ const (
 // recorded in the run state and never aborts the walk.
 //
 // The listing is incremental (resuming from state.since) for a full run, and
-// scoped to state.albumUID for an album run — where the watermark is deliberately
-// not applied, so an album is imported whole however old its photos are.
+// narrowed by state.scope for a scoped run — the album filter and the search
+// expression the other filters render to. A scoped listing deliberately ignores
+// the watermark, so its slice of the library is imported whole however old its
+// photos are (the source's q= expression takes precedence over the watermark
+// filter, and an album-only scope carries no q= at all, so the zero state.since
+// of a scoped run keeps the listing unfiltered by time).
 func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState) error {
+	query := state.scope.Query()
 	for offset := 0; ; {
 		page, err := s.client.ListPhotos(ctx, photoprism.PhotoListParams{
 			Count:        s.pageSize,
 			Offset:       offset,
 			UpdatedSince: state.since,
-			AlbumUID:     state.albumUID,
+			AlbumUID:     state.scope.AlbumUID,
+			Query:        query,
 		})
 		if err != nil {
 			return fmt.Errorf("ppimport: listing photos at offset %d: %w", offset, err)

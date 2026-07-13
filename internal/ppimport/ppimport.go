@@ -28,7 +28,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/importer"
@@ -41,11 +40,17 @@ import (
 )
 
 var (
-	// ErrEmptyAlbumUID indicates ImportAlbum was called without an album uid.
-	ErrEmptyAlbumUID = errors.New("ppimport: empty album uid")
+	// ErrEmptyScope indicates ImportScoped was called with no filter set at all;
+	// the caller wants Import (a full incremental run) instead.
+	ErrEmptyScope = errors.New("ppimport: empty import scope")
+	// ErrInvalidYear indicates the scoped year lies outside the plausible range.
+	ErrInvalidYear = errors.New("ppimport: invalid year")
 	// ErrAlbumNotFound indicates the requested album does not exist in the source
 	// PhotoPrism instance.
 	ErrAlbumNotFound = errors.New("ppimport: album not found in photoprism")
+	// ErrLabelNotFound indicates the requested label does not exist in the source
+	// PhotoPrism instance.
+	ErrLabelNotFound = errors.New("ppimport: label not found in photoprism")
 )
 
 // DefaultPageSize is the listing page size used when Config.PageSize is left
@@ -325,29 +330,29 @@ func (s *Service) Import(ctx context.Context) (Result, error) {
 	return Result{RunID: run.ID, Counts: state.counts, Watermark: watermark}, nil
 }
 
-// ImportAlbum runs one album-scoped pass: it imports every photo of a single
-// PhotoPrism album — regardless of the incremental watermark — maps that one
-// album, and seeds the people found on those photos. It is how a single album is
-// pulled ahead of the full migration, and how the import is verified end to end
-// against a production PhotoPrism without walking the whole library.
+// ImportScoped runs one scoped pass: it imports every photo the Scope selects —
+// an album, a label, a person, a year, or any combination of them — regardless
+// of the incremental watermark, maps the structure of exactly those photos, and
+// seeds the people found on them. It is how the library is migrated in slices,
+// and how the import is verified end to end against a production PhotoPrism
+// without walking the whole catalogue. An empty scope is ErrEmptyScope: a full
+// run is Import.
 //
-// It deliberately does NOT advance the watermark. A scoped run sees one album's
-// photos only, so recording its newest timestamp as the resume cursor would make
-// the next full import skip every older photo in the library — the one way this
-// convenience could quietly lose data. Labels are not mapped either: label
-// membership is resolved by listing each label's photos, which would walk the
-// whole source catalogue for a single album.
-func (s *Service) ImportAlbum(ctx context.Context, albumUID string) (Result, error) {
-	albumUID = strings.TrimSpace(albumUID)
-	if albumUID == "" {
-		return Result{}, ErrEmptyAlbumUID
+// A scoped run deliberately does NOT advance the watermark. It sees a slice of
+// the library only, so recording its newest timestamp as the resume cursor would
+// make the next full import skip every older photo — the one way this
+// convenience could quietly lose data.
+func (s *Service) ImportScoped(ctx context.Context, scope Scope) (Result, error) {
+	scope = scope.normalized()
+	if err := scope.validate(); err != nil {
+		return Result{}, err
 	}
 	run, err := s.runs.Start(ctx, importer.SourcePhotoPrism)
 	if err != nil {
 		return Result{}, fmt.Errorf("ppimport: starting run: %w", err)
 	}
-	state := &runState{albumUID: albumUID}
-	if err := s.runAlbumImport(ctx, run.ID, state); err != nil {
+	state := &runState{scope: scope}
+	if err := s.runScopedImport(ctx, run.ID, state); err != nil {
 		if failErr := s.runs.Fail(ctx, run.ID, err.Error(), state.counts); failErr != nil {
 			s.log.Error("ppimport: marking run failed", "run", run.ID, "err", failErr)
 		}
@@ -359,13 +364,13 @@ func (s *Service) ImportAlbum(ctx context.Context, albumUID string) (Result, err
 	return Result{RunID: run.ID, Counts: state.counts}, nil
 }
 
-// runAlbumImport imports the scoped album's photos and maps that album. Any
+// runScopedImport imports the scoped photos and maps their structure. Any
 // returned error is an infrastructure failure that should fail the whole run.
-func (s *Service) runAlbumImport(ctx context.Context, runID int64, state *runState) error {
+func (s *Service) runScopedImport(ctx context.Context, runID int64, state *runState) error {
 	if err := s.importPhotos(ctx, runID, state); err != nil {
 		return err
 	}
-	return s.mapAlbum(ctx, state.albumUID)
+	return s.mapScope(ctx, state.scope)
 }
 
 // runImport drives the three import phases over the open run, resuming from the
@@ -393,9 +398,9 @@ func (s *Service) runImport(ctx context.Context, runID int64, state *runState) e
 // failure is always re-listed (inclusively) by the next incremental run.
 type runState struct {
 	since time.Time
-	// albumUID, when non-empty, scopes the photo listing to one source album and
-	// marks the run as partial (no watermark is recorded for it).
-	albumUID   string
+	// scope, when non-empty, narrows the photo listing to a slice of the source
+	// catalogue and marks the run as partial (no watermark is recorded for it).
+	scope      Scope
 	counts     importer.Counts
 	maxSuccess time.Time
 	minFailed  time.Time
