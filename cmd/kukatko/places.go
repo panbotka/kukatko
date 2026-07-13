@@ -40,8 +40,9 @@ func buildPlacesServiceOrNil(
 		return nil, nil //nolint:nilnil // (nil, nil) is the documented "not configured" signal.
 	}
 	client, err := mapy.New(mapy.Config{
-		BaseURL: cfg.Maps.BaseURL,
-		APIKey:  cfg.Maps.MapyAPIKey,
+		BaseURL:   cfg.Maps.BaseURL,
+		APIKey:    cfg.Maps.MapyAPIKey,
+		UserAgent: cfg.Maps.UserAgent,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialising mapy.com client for places: %w", err)

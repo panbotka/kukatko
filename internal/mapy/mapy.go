@@ -3,6 +3,10 @@
 // browser: the key is sent only in the X-Mapy-Api-Key request header and never
 // appears in a returned URL or error.
 //
+// Every request also carries a configurable User-Agent (Config.UserAgent). mapy.com
+// can restrict a key to one exact User-Agent, so that string is a credential too:
+// like the API key, it must never be logged or surfaced in an error.
+//
 // The client classifies upstream failures into sentinel errors (ErrUnauthorized,
 // ErrNotFound, ErrRateLimited, ErrUpstream, ErrUnavailable) so the HTTP layer can
 // map them to sane client-facing statuses without leaking provider internals.
@@ -150,6 +154,12 @@ type Config struct {
 	BaseURL string
 	// APIKey is the secret mapy.com key, sent only via the X-Mapy-Api-Key header.
 	APIKey string
+	// UserAgent is the exact User-Agent sent on every upstream request. mapy.com
+	// can restrict a key to one exact User-Agent, which makes the value a second
+	// secret: treat it like APIKey and never log it. Empty means "send no explicit
+	// header" — Go's default applies and the key must then be restricted otherwise
+	// (e.g. by source IP).
+	UserAgent string
 	// Lang is the reverse-geocoding language (default DefaultLang).
 	Lang string
 	// Timeout bounds a single request (default DefaultTimeout).
@@ -161,11 +171,12 @@ type Config struct {
 
 // HTTPClient is the production Client backed by the mapy.com REST API.
 type HTTPClient struct {
-	baseURL *url.URL
-	apiKey  string
-	lang    string
-	timeout time.Duration
-	client  *http.Client
+	baseURL   *url.URL
+	apiKey    string
+	userAgent string
+	lang      string
+	timeout   time.Duration
+	client    *http.Client
 }
 
 // compile-time assertion that HTTPClient satisfies Client.
@@ -200,7 +211,14 @@ func New(cfg Config) (*HTTPClient, error) {
 	if client == nil {
 		client = &http.Client{}
 	}
-	return &HTTPClient{baseURL: parsed, apiKey: cfg.APIKey, lang: lang, timeout: timeout, client: client}, nil
+	return &HTTPClient{
+		baseURL:   parsed,
+		apiKey:    cfg.APIKey,
+		userAgent: cfg.UserAgent,
+		lang:      lang,
+		timeout:   timeout,
+		client:    client,
+	}, nil
 }
 
 // Tile fetches a map tile from mapy.com, streaming its body back. It returns
@@ -296,15 +314,20 @@ func (c *HTTPClient) ReverseGeocode(ctx context.Context, lat, lng float64) (*Geo
 	}, nil
 }
 
-// do issues an authenticated GET to reqURL, attaching the API key header. It
-// returns the live response (whose body the caller must close) or a transport
-// error classified as ErrUnavailable. op is used only for error context.
+// do issues an authenticated GET to reqURL, attaching the API key header and, when
+// configured, the User-Agent. Every upstream call (tile and rgeocode alike) goes
+// through here, so no call site can forget either header. It returns the live
+// response (whose body the caller must close) or a transport error classified as
+// ErrUnavailable. op is used only for error context.
 func (c *HTTPClient) do(ctx context.Context, reqURL *url.URL, op string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: build request: %w", op, err)
 	}
 	req.Header.Set(apiKeyHeader, c.apiKey)
+	if c.userAgent != "" {
+		req.Header.Set("User-Agent", c.userAgent)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil && errors.Is(cerr, context.Canceled) {

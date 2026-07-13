@@ -373,6 +373,11 @@ type AuthConfig struct {
 // call.
 type MapsConfig struct {
 	MapyAPIKey string `mapstructure:"mapy_api_key"`
+	// UserAgent is the exact User-Agent the mapy.com client sends upstream. A
+	// mapy.com key can be restricted to one exact User-Agent, so this value is a
+	// credential in its own right (never log it, never commit it). Empty (the
+	// default) means no explicit header is sent.
+	UserAgent string `mapstructure:"user_agent"`
 	// BaseURL is the root of the mapy.com REST API; it is overridable mainly so
 	// tests can point the proxy at a fake server.
 	BaseURL string `mapstructure:"base_url"`
@@ -582,10 +587,12 @@ func setDefaults(v *viper.Viper) {
 }
 
 // setMapsDefaults registers the mapy.com proxy defaults: an empty API key (so the
-// proxy is disabled until configured), the public REST base URL, and the
-// reverse-geocode throttle backing the background places job.
+// proxy is disabled until configured), an empty User-Agent (Go's default is sent
+// until one is configured), the public REST base URL, and the reverse-geocode
+// throttle backing the background places job.
 func setMapsDefaults(v *viper.Viper) {
 	v.SetDefault("maps.mapy_api_key", "")
+	v.SetDefault("maps.user_agent", "")
 	v.SetDefault("maps.base_url", "https://api.mapy.com")
 	v.SetDefault("maps.geocode_rate_per_sec", 5.0)
 	v.SetDefault("maps.geocode_burst", 10)

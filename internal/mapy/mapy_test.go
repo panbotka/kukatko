@@ -222,6 +222,67 @@ func TestReverseGeocode_noMatch(t *testing.T) {
 	}
 }
 
+// TestUserAgent_sentOnEveryRequest checks the configured User-Agent reaches
+// mapy.com on both the tile and the rgeocode path, and that an empty
+// Config.UserAgent leaves Go's default header untouched.
+func TestUserAgent_sentOnEveryRequest(t *testing.T) {
+	t.Parallel()
+	const configuredUA = "Kukatko/1.0 (test-token)"
+
+	// call drives one client method against the fake upstream; the returned error
+	// is irrelevant here, only the header the upstream saw is.
+	calls := map[string]func(*mapy.HTTPClient) error{
+		"tile": func(c *mapy.HTTPClient) error {
+			res, err := c.Tile(context.Background(), mapy.TileParams{Mapset: "basic", Z: 1, X: 2, Y: 3})
+			if err == nil {
+				_ = res.Body.Close()
+			}
+			return err
+		},
+		"rgeocode": func(c *mapy.HTTPClient) error {
+			_, err := c.ReverseGeocode(context.Background(), 50.08, 14.42)
+			return err
+		},
+	}
+
+	for _, tt := range []struct {
+		name      string
+		userAgent string
+		configure bool
+	}{
+		{name: "configured user agent is sent", userAgent: configuredUA, configure: true},
+		{name: "empty user agent falls back to the Go default", userAgent: "", configure: false},
+	} {
+		for op, call := range calls {
+			t.Run(tt.name+"/"+op, func(t *testing.T) {
+				t.Parallel()
+				var gotUA string
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotUA = r.Header.Get("User-Agent")
+					_, _ = io.WriteString(w, `{"items":[{"name":"x"}]}`)
+				}))
+				t.Cleanup(srv.Close)
+				client, err := mapy.New(mapy.Config{BaseURL: srv.URL, APIKey: testKey, UserAgent: tt.userAgent})
+				if err != nil {
+					t.Fatalf("mapy.New: %v", err)
+				}
+				if err := call(client); err != nil {
+					t.Fatalf("%s: %v", op, err)
+				}
+				if tt.configure {
+					if gotUA != configuredUA {
+						t.Errorf("%s User-Agent = %q, want %q", op, gotUA, configuredUA)
+					}
+					return
+				}
+				if !strings.HasPrefix(gotUA, "Go-http-client/") {
+					t.Errorf("%s User-Agent = %q, want Go's default (no explicit header)", op, gotUA)
+				}
+			})
+		}
+	}
+}
+
 // TestReverseGeocode_statusClassification checks upstream errors are classified
 // and never leak the key.
 func TestReverseGeocode_statusClassification(t *testing.T) {

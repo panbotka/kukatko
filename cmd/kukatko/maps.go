@@ -23,8 +23,9 @@ func buildMapsAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) (*maps
 	var geocoder mapsapi.Geocoder
 	if cfg.Maps.MapyAPIKey != "" {
 		client, err := mapy.New(mapy.Config{
-			BaseURL: cfg.Maps.BaseURL,
-			APIKey:  cfg.Maps.MapyAPIKey,
+			BaseURL:   cfg.Maps.BaseURL,
+			APIKey:    cfg.Maps.MapyAPIKey,
+			UserAgent: cfg.Maps.UserAgent,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("initialising mapy.com client: %w", err)

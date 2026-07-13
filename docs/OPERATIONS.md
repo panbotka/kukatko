@@ -412,10 +412,37 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   proxy taky (`maps.*`).
 - **Maps/geocode klíče (`maps.*`, `internal/config`):** `mapy_api_key` (server-side, env
   `MAPY_API_KEY`; prázdný → tile/rgeocode proxy 503, `places` job se neregistruje a `/process/places`
-  vrací 503), `base_url` (default `https://api.mapy.com`), a throttle reverse-geokódu pro background
-  **`places` job** (cachuje lokalitu fotky): `geocode_rate_per_sec` (default 5, ≤ 0 vypne) +
-  `geocode_burst` (default 10) — chrání měsíční mapy.com kreditní budget, zpracovat pomalu je OK.
-  `KUKATKO_MAPS_GEOCODE_RATE_PER_SEC`/`_GEOCODE_BURST`.
+  vrací 503), `user_agent` (viz níže), `base_url` (default `https://api.mapy.com`), a throttle
+  reverse-geokódu pro background **`places` job** (cachuje lokalitu fotky): `geocode_rate_per_sec`
+  (default 5, ≤ 0 vypne) + `geocode_burst` (default 10) — chrání měsíční mapy.com kreditní budget,
+  zpracovat pomalu je OK. `KUKATKO_MAPS_GEOCODE_RATE_PER_SEC`/`_GEOCODE_BURST`.
+
+### `maps.user_agent` — restrikce mapy.com klíče na User-Agent
+
+`maps.user_agent` (env **`KUKATKO_MAPS_USER_AGENT`**, default **prázdný**) je přesný `User-Agent`,
+který klient `internal/mapy` posílá na **každý** požadavek nahoru — dlaždice i (r)geokód. Prázdná
+hodnota = neposílá se žádná explicitní hlavička (platí Go default `Go-http-client/2.0`), takže
+instance, která klíč nenastaví, funguje beze změny.
+
+Konzole mapy.com umí klíč omezit **buď** na zdrojové IP, **nebo** na User-Agent — vždy jen jeden typ
+restrikce naráz. IP restrikce je tady křehká (veřejná IPv4 i ISP-delegovaný IPv6 prefix se mění a
+klíč pak vrací `403` → šedé dlaždice), a protože je klíč čistě server-side, používáme **restrikci na
+User-Agent**. mapy.com vyžaduje **přesnou shodu** (žádné wildcardy).
+
+**Hodnota je druhé tajemství, ne kosmetika:** obsahuje náhodný token, takže samotný uniklý API klíč
+je bez správného User-Agentu k ničemu. Proto ji **nikdy** nelogujeme, necommitujeme a nedáváme do
+`config.example.yaml` (tam je jen placeholder) — stejný režim jako `mapy_api_key`. Reálná hodnota
+žije v gitignorovaném `.secrets/db.env`.
+
+Postup přepnutí (pořadí je důležité — restrikce se v konzoli přepíná atomicky):
+
+1. Nasadit build, který hlavičku posílá, a nastavit `KUKATKO_MAPS_USER_AGENT` v prostředí instance.
+2. Restartovat instanci (hodnota se čte při startu).
+3. Teprve pak v konzoli mapy.com přepnout klíč z IP restrikce na User-Agent restrikci se stejnou
+   hodnotou.
+
+Nepřidáváme `Referer` — mapy.com u něj ověřuje jen host+port hlavičky, kterou si sami posíláme; bez
+prohlížeče je to sebeprohlášení bez hodnoty.
 
 ### Rotace `url_signing_secret` (procedura přes dva repozitáře)
 
