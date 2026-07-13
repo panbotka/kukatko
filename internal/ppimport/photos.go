@@ -27,16 +27,21 @@ const (
 	outcomeSkipped
 )
 
-// importPhotos walks every page of the incremental photo listing, importing each
-// photo and checkpointing the run's counts after every page. A listing error is
-// an infrastructure failure (returned to fail the run); a per-photo failure is
+// importPhotos walks every page of the photo listing, importing each photo and
+// checkpointing the run's counts after every page. A listing error is an
+// infrastructure failure (returned to fail the run); a per-photo failure is
 // recorded in the run state and never aborts the walk.
+//
+// The listing is incremental (resuming from state.since) for a full run, and
+// scoped to state.albumUID for an album run — where the watermark is deliberately
+// not applied, so an album is imported whole however old its photos are.
 func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState) error {
 	for offset := 0; ; {
 		page, err := s.client.ListPhotos(ctx, photoprism.PhotoListParams{
 			Count:        s.pageSize,
 			Offset:       offset,
 			UpdatedSince: state.since,
+			AlbumUID:     state.albumUID,
 		})
 		if err != nil {
 			return fmt.Errorf("ppimport: listing photos at offset %d: %w", offset, err)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/ppimport"
 )
 
 // errImportNotConfigured indicates the PhotoPrism import was invoked without a
@@ -26,23 +27,29 @@ func newImportCmd() *cobra.Command {
 		Long:  "Import media into Kukátko from external catalogues (currently PhotoPrism).",
 		Args:  cobra.NoArgs,
 	}
-	importCmd.AddCommand(&cobra.Command{
+	ppCmd := &cobra.Command{
 		Use:   "photoprism",
 		Short: "Run a read-only, incremental PhotoPrism import",
 		Long: "Pull new and changed photos (plus albums, labels and people) from the " +
-			"configured PhotoPrism instance, resuming from the last successful watermark.",
+			"configured PhotoPrism instance, resuming from the last successful watermark.\n\n" +
+			"With --album, only that album's photos are imported (whole, however old they " +
+			"are) and only that album is mapped. Such a run does not advance the watermark, " +
+			"so a later full import still sees every photo.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runImportPhotoPrism(cmd)
 		},
-	})
+	}
+	ppCmd.Flags().String("album", "",
+		"import only this PhotoPrism album uid (partial run; leaves the watermark untouched)")
+	importCmd.AddCommand(ppCmd)
 	return importCmd
 }
 
 // runImportPhotoPrism loads the configuration, opens the database (applying
-// migrations), builds the import service and runs one full import pass, printing
-// the run id and counts. It returns errImportNotConfigured when the PhotoPrism
-// base URL is unset.
+// migrations), builds the import service and runs one import pass — full, or
+// scoped to the --album uid — printing the run id and counts. It returns
+// errImportNotConfigured when the PhotoPrism base URL is unset.
 func runImportPhotoPrism(cmd *cobra.Command) error {
 	cfg, err := loadConfigFromFlags(cmd)
 	if err != nil {
@@ -50,6 +57,10 @@ func runImportPhotoPrism(cmd *cobra.Command) error {
 	}
 	if cfg.Import.PhotoPrism.BaseURL == "" {
 		return errImportNotConfigured
+	}
+	album, err := cmd.Flags().GetString("album")
+	if err != nil {
+		return fmt.Errorf("reading --album: %w", err)
 	}
 
 	ctx := cmd.Context()
@@ -67,12 +78,20 @@ func runImportPhotoPrism(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	result, err := svc.Import(ctx)
+	var result ppimport.Result
+	if album != "" {
+		result, err = svc.ImportAlbum(ctx, album)
+	} else {
+		result, err = svc.Import(ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("running photoprism import: %w", err)
 	}
 	cmd.Printf("photoprism import run %d: imported=%d updated=%d skipped=%d failed=%d\n",
 		result.RunID, result.Counts.Imported, result.Counts.Updated,
 		result.Counts.Skipped, result.Counts.Failed)
+	if album != "" {
+		cmd.Printf("album %s only: the incremental watermark was left untouched\n", album)
+	}
 	return nil
 }

@@ -2,6 +2,7 @@ package ppimport
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"slices"
@@ -308,5 +309,102 @@ func TestImport_listErrorFailsRun(t *testing.T) {
 	}
 	if got := h.runs.last().Status; got != importer.StatusFailed {
 		t.Errorf("run status = %q, want failed", got)
+	}
+}
+
+// TestImportAlbum_scopedRunDoesNotAdvanceWatermark is the safety property of the
+// album-scoped import: it pulls one album whole, and leaves the incremental
+// cursor alone so a later full import still lists every photo in the library —
+// including the ones this run never saw.
+func TestImportAlbum_scopedRunDoesNotAdvanceWatermark(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Hour)
+	client := &fakeClient{}
+	inAlbum := client.makePhoto("pp1", t1, "Beach", photoprism.Marker{
+		Type: "face", Name: "Alice", X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Score: 90,
+	})
+	outside := client.makePhoto("pp2", t0, "Sunset")
+	client.photos = []photoprism.Photo{inAlbum, outside}
+	client.albums = []photoprism.Album{
+		{UID: "ppal1", Title: "Holiday", Type: "album"},
+		{UID: "ppal2", Title: "Other", Type: "album"},
+	}
+	client.albumPhotos = map[string][]photoprism.Photo{"ppal1": {inAlbum}, "ppal2": {outside}}
+
+	h := newHarness(client)
+	result, err := h.svc.ImportAlbum(context.Background(), "ppal1")
+	if err != nil {
+		t.Fatalf("ImportAlbum: %v", err)
+	}
+
+	if result.Counts.Imported != 1 {
+		t.Errorf("imported = %d, want 1 (only the album's photo)", result.Counts.Imported)
+	}
+	if _, ok := h.photos.byPPUID["pp2"]; ok {
+		t.Error("pp2 was imported, but it is outside the scoped album")
+	}
+	if result.Watermark != nil {
+		t.Errorf("watermark = %v, want nil: a scoped run must not move the cursor", result.Watermark)
+	}
+	run := h.runs.last()
+	if run.Status != importer.StatusDone {
+		t.Errorf("run status = %q, want done", run.Status)
+	}
+	if run.HighWatermark != nil {
+		t.Errorf("recorded watermark = %v, want nil", run.HighWatermark)
+	}
+	if len(h.albums.albums) != 1 || h.albums.albums[0].Title != "Holiday" {
+		t.Errorf("albums = %v, want only the scoped album mapped", h.albums.albums)
+	}
+	if _, err := h.people.GetSubjectBySlug(context.Background(), people.Slugify("Alice")); err != nil {
+		t.Errorf("marker on the scoped photo did not seed a subject: %v", err)
+	}
+
+	// The whole point: the next full import must still see pp2 (never imported)
+	// *and* re-list pp1 rather than resuming past it.
+	full, err := h.svc.Import(context.Background())
+	if err != nil {
+		t.Fatalf("Import after scoped run: %v", err)
+	}
+	if full.Counts.Imported != 1 {
+		t.Errorf("full run imported = %d, want 1 (pp2, which the scoped run skipped)", full.Counts.Imported)
+	}
+	if _, ok := h.photos.byPPUID["pp2"]; !ok {
+		t.Error("pp2 still missing after the full import: the scoped run poisoned the watermark")
+	}
+	if full.Watermark == nil || !full.Watermark.Equal(t1) {
+		t.Errorf("full-run watermark = %v, want %v", full.Watermark, t1)
+	}
+}
+
+// TestImportAlbum_unknownAlbum verifies an album uid the source does not know is
+// an error, not a silent no-op run.
+func TestImportAlbum_unknownAlbum(t *testing.T) {
+	t.Parallel()
+	client := &fakeClient{albums: []photoprism.Album{{UID: "ppal1", Title: "Holiday", Type: "album"}}}
+	h := newHarness(client)
+
+	_, err := h.svc.ImportAlbum(context.Background(), "nope")
+	if !errors.Is(err, ErrAlbumNotFound) {
+		t.Fatalf("ImportAlbum error = %v, want ErrAlbumNotFound", err)
+	}
+	if got := h.runs.last().Status; got != importer.StatusFailed {
+		t.Errorf("run status = %q, want failed", got)
+	}
+}
+
+// TestImportAlbum_emptyUID verifies an empty uid is rejected before a run is even
+// opened.
+func TestImportAlbum_emptyUID(t *testing.T) {
+	t.Parallel()
+	h := newHarness(&fakeClient{})
+
+	_, err := h.svc.ImportAlbum(context.Background(), "  ")
+	if !errors.Is(err, ErrEmptyAlbumUID) {
+		t.Fatalf("ImportAlbum error = %v, want ErrEmptyAlbumUID", err)
+	}
+	if h.runs.last() != nil {
+		t.Error("a run was opened for an empty album uid")
 	}
 }

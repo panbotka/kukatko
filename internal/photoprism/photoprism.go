@@ -136,18 +136,32 @@ func (p PhotoListParams) query() url.Values {
 	return q
 }
 
+// AlbumTypes are every album type PhotoPrism serves. The album listing takes
+// exactly one of them per request, so walking the whole album catalogue means
+// walking it type by type.
+var AlbumTypes = []string{"album", "folder", "moment", "state", "month"}
+
 // ListParams selects a page of a simple list endpoint (albums, labels,
 // subjects). Count is clamped to MaxCount; a non-positive Count uses MaxCount.
 type ListParams struct {
 	Count  int
 	Offset int
+	// Type scopes an album listing to one PhotoPrism album type (AlbumTypes).
+	// /api/v1/albums REQUIRES it: a listing without a type — or with more than one,
+	// comma-separated — is rejected with 400 "Permission denied". It is ignored by
+	// the label and subject listings, which take no type.
+	Type string
 }
 
-// query renders the params as count/offset query parameters.
+// query renders the params as count/offset (plus type, when set) query
+// parameters.
 func (p ListParams) query() url.Values {
 	q := url.Values{}
 	q.Set("count", strconv.Itoa(clampCount(p.Count)))
 	q.Set("offset", strconv.Itoa(max(0, p.Offset)))
+	if p.Type != "" {
+		q.Set("type", p.Type)
+	}
 	return q
 }
 

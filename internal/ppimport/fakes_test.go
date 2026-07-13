@@ -28,6 +28,10 @@ func hashBytes(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// errAlbumTypeRequired mirrors the real album endpoint rejecting a listing that
+// names no album type (it answers 400 "Permission denied").
+var errAlbumTypeRequired = errors.New("photoprism: album listing requires a type")
+
 // fakeClient is an in-memory PhotoPrismClient. It pages the incremental photo
 // listing (filtered by UpdatedSince), serves per-album and per-label scoped
 // listings, and streams stored originals keyed by their SHA1 file hash.
@@ -61,12 +65,24 @@ func (c *fakeClient) ListPhotos(_ context.Context, p photoprism.PhotoListParams)
 	}
 }
 
-// ListAlbums returns one page of albums.
+// ListAlbums returns one page of the albums of the requested type. It mirrors the
+// real endpoint, which serves exactly one album type per request and rejects a
+// listing that names none — the fake refuses that outright so a client that
+// forgets the type cannot pass the tests while failing against a real PhotoPrism.
 func (c *fakeClient) ListAlbums(_ context.Context, p photoprism.ListParams) ([]photoprism.Album, error) {
 	if c.listErr != nil {
 		return nil, c.listErr
 	}
-	return pageAlbums(c.albums, p.Offset, p.Count), nil
+	if p.Type == "" {
+		return nil, errAlbumTypeRequired
+	}
+	ofType := make([]photoprism.Album, 0, len(c.albums))
+	for _, a := range c.albums {
+		if a.Type == p.Type {
+			ofType = append(ofType, a)
+		}
+	}
+	return pageAlbums(ofType, p.Offset, p.Count), nil
 }
 
 // ListLabels returns one page of labels.
