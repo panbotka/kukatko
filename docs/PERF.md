@@ -155,9 +155,28 @@ right after an upload.
 
 Verified by an EXPLAIN integration test
 (`internal/photos/store_perf_integration_test.go`,
-`TestListQueryPlan_usesLiveIndexes`): with sequential and bitmap scans disabled
-(forcing an ordered scan), the plan for both orderings uses the matching index
-and contains no `Sort` node.
+`TestListQueryPlan_usesLiveIndexes`): the plan for both orderings uses the
+matching index and contains no `Sort` node — with **no planner overrides**, so
+the planner reaches that plan on cost alone.
+
+Two properties of that test's setup are load-bearing; do not "simplify" them away:
+
+- **It seeds thousands of live photos** (`liveTimelineRows`). The index earns its
+  keep only because `LIMIT 100` lets the scan stop early, so the seed must be well
+  above one page. The test originally seeded ~87 rows — fewer than the `LIMIT`, so
+  the early exit saved nothing and the planner picked between near-tied costs.
+- **It runs `ANALYZE photos` after seeding.** Integration tests share one database
+  and truncate between cases; `TRUNCATE` resets `pg_class` row counts but leaves
+  `pg_statistic` holding whatever the *previous* test left. Without `ANALYZE` the
+  planner costs this query from a foreign test's statistics.
+
+Together those made the assertion depend on state the test did not control: the
+same code planned `rows=1` on a fresh database, `rows=120` with one set of stale
+stats, and `rows=73` **plus a `Sort`** in CI — which is how this test came to be
+green locally and red on CI. The earlier `enable_seqscan`/`enable_bitmapscan`
+overrides masked this and are gone; at a realistic volume the plan is correct
+without them, and dropping the index now correctly turns the plan into a
+`Seq Scan` + `Sort`, so the assertion has teeth.
 
 ```
 go test -tags integration -run TestListQueryPlan_usesLiveIndexes ./internal/photos/
