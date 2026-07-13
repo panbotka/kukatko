@@ -26,7 +26,11 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   `psimport`; aplikuje DB migrace, pak `Service.Migrate`; potřebuje `import.photosorter.dsn`, jinak
   `errPSMigrateNotConfigured`; pro ops/cron bez běžícího serveru),
   `kukatko import photoprism` (synchronní read-only inkrementální import z PhotoPrismu — `ppimport`;
-  potřebuje `import.photoprism.base_url`, jinak chyba; pro ops/cron bez běžícího serveru),
+  potřebuje `import.photoprism.base_url`, jinak chyba; pro ops/cron bez běžícího serveru;
+  s `--album <photoprism-uid>` naimportuje **jen jedno album** — celé, bez ohledu na stáří fotek —
+  a namapuje jen to album. Takový běh **neposouvá watermark**, takže pozdější plný import pořád vidí
+  všechny fotky; štítky se u něj nemapují, protože jejich členství se zjišťuje procházením celého
+  zdrojového katalogu. Slouží k ověření importu proti produkci a k předtažení jednoho alba),
   `kukatko backup` (synchronní jednorázová **S3 záloha** — `internal/backup`; pg_dump + sync
   originálů + retence; potřebuje `backup.s3.{endpoint,bucket}`, jinak `errBackupNotConfigured`;
   při `storage.backend: r2` se originály **kopírují bucket→bucket server-side** a záloha do

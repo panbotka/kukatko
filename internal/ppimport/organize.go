@@ -23,16 +23,88 @@ func (s *Service) mapAlbums(ctx context.Context) error {
 	for _, a := range existing {
 		byTitle[a.Title] = a.UID
 	}
+	// The source rejects an album listing that names no type, so the catalogue is
+	// walked one type at a time.
+	for _, albumType := range s.albumTypes {
+		if err := s.mapAlbumsOfType(ctx, albumType, byTitle); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// mapAlbumsOfType maps every album of one PhotoPrism album type, paging the
+// source listing.
+func (s *Service) mapAlbumsOfType(ctx context.Context, albumType string, byTitle map[string]string) error {
 	for offset := 0; ; {
-		page, err := s.client.ListAlbums(ctx, photoprism.ListParams{Count: s.pageSize, Offset: offset})
+		page, err := s.client.ListAlbums(ctx, photoprism.ListParams{
+			Count:  s.pageSize,
+			Offset: offset,
+			Type:   albumType,
+		})
 		if err != nil {
-			return fmt.Errorf("ppimport: listing photoprism albums at offset %d: %w", offset, err)
+			return fmt.Errorf("ppimport: listing photoprism %s albums at offset %d: %w", albumType, offset, err)
 		}
 		for i := range page {
 			s.mapOneAlbum(ctx, page[i], byTitle)
 		}
 		if len(page) < s.pageSize {
 			return nil
+		}
+		offset += len(page)
+	}
+}
+
+// mapAlbum maps a single source album (identified by its PhotoPrism uid) and
+// attaches its members. It is the album-scoped counterpart of mapAlbums: the
+// source has no get-album-by-uid endpoint, so the album catalogue is paged until
+// the uid is found. An unknown uid is an error — a scoped run that imported
+// photos but silently mapped no album would look like a success.
+func (s *Service) mapAlbum(ctx context.Context, ppAlbumUID string) error {
+	existing, err := s.albums.ListAlbums(ctx)
+	if err != nil {
+		return fmt.Errorf("ppimport: listing kukatko albums: %w", err)
+	}
+	byTitle := make(map[string]string, len(existing))
+	for _, a := range existing {
+		byTitle[a.Title] = a.UID
+	}
+	// A scoped uid may name an album of any type, so every type is searched — not
+	// just the ones a full run maps.
+	for _, albumType := range photoprism.AlbumTypes {
+		found, err := s.findAlbumOfType(ctx, albumType, ppAlbumUID, byTitle)
+		if err != nil {
+			return err
+		}
+		if found {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s", ErrAlbumNotFound, ppAlbumUID)
+}
+
+// findAlbumOfType pages one album type looking for the uid, mapping it when
+// found. It reports whether the album was found.
+func (s *Service) findAlbumOfType(
+	ctx context.Context, albumType, ppAlbumUID string, byTitle map[string]string,
+) (bool, error) {
+	for offset := 0; ; {
+		page, err := s.client.ListAlbums(ctx, photoprism.ListParams{
+			Count:  s.pageSize,
+			Offset: offset,
+			Type:   albumType,
+		})
+		if err != nil {
+			return false, fmt.Errorf("ppimport: listing photoprism %s albums at offset %d: %w", albumType, offset, err)
+		}
+		for i := range page {
+			if page[i].UID == ppAlbumUID {
+				s.mapOneAlbum(ctx, page[i], byTitle)
+				return true, nil
+			}
+		}
+		if len(page) < s.pageSize {
+			return false, nil
 		}
 		offset += len(page)
 	}

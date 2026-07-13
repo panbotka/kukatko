@@ -24,9 +24,11 @@ package ppimport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/importer"
@@ -38,10 +40,25 @@ import (
 	"github.com/panbotka/kukatko/internal/video"
 )
 
+var (
+	// ErrEmptyAlbumUID indicates ImportAlbum was called without an album uid.
+	ErrEmptyAlbumUID = errors.New("ppimport: empty album uid")
+	// ErrAlbumNotFound indicates the requested album does not exist in the source
+	// PhotoPrism instance.
+	ErrAlbumNotFound = errors.New("ppimport: album not found in photoprism")
+)
+
 // DefaultPageSize is the listing page size used when Config.PageSize is left
 // zero. It matches PhotoPrism's hard cap so a full library is walked in the
 // fewest requests.
 const DefaultPageSize = photoprism.MaxCount
+
+// DefaultAlbumTypes are the PhotoPrism album types a full import maps when
+// Config.AlbumTypes is empty. PhotoPrism serves five (photoprism.AlbumTypes) and
+// generates most of them itself; "month" is left out because it holds one
+// auto-generated album per calendar month — 560 of them on the production
+// library — which Kukátko's timeline already covers.
+var DefaultAlbumTypes = []string{"album", "folder", "moment", "state"}
 
 // PhotoPrismClient is the read-only PhotoPrism contract the importer needs: photo
 // listing (incremental or scoped to an album/label) and original download, plus
@@ -182,6 +199,9 @@ type Config struct {
 	Prober VideoProber
 	// PageSize is the listing page size (default DefaultPageSize).
 	PageSize int
+	// AlbumTypes are the source album types a full import maps (default
+	// DefaultAlbumTypes). The source takes one type per listing request.
+	AlbumTypes []string
 	// TempDir is where downloads are staged before publishing ("" uses the OS
 	// temp directory).
 	TempDir string
@@ -207,6 +227,7 @@ type Service struct {
 	enqueuer    Enqueuer
 	prober      VideoProber
 	pageSize    int
+	albumTypes  []string
 	tempDir     string
 	maxFileSize int64
 	log         *slog.Logger
@@ -234,6 +255,10 @@ func New(cfg Config) *Service {
 	if metrics == nil {
 		metrics = importer.NopProgressObserver{}
 	}
+	albumTypes := cfg.AlbumTypes
+	if len(albumTypes) == 0 {
+		albumTypes = DefaultAlbumTypes
+	}
 	return &Service{
 		client:      cfg.Client,
 		runs:        cfg.Runs,
@@ -246,6 +271,7 @@ func New(cfg Config) *Service {
 		enqueuer:    cfg.Enqueuer,
 		prober:      prober,
 		pageSize:    pageSize,
+		albumTypes:  albumTypes,
 		tempDir:     cfg.TempDir,
 		maxFileSize: cfg.MaxFileSize,
 		log:         logger,
@@ -299,6 +325,49 @@ func (s *Service) Import(ctx context.Context) (Result, error) {
 	return Result{RunID: run.ID, Counts: state.counts, Watermark: watermark}, nil
 }
 
+// ImportAlbum runs one album-scoped pass: it imports every photo of a single
+// PhotoPrism album — regardless of the incremental watermark — maps that one
+// album, and seeds the people found on those photos. It is how a single album is
+// pulled ahead of the full migration, and how the import is verified end to end
+// against a production PhotoPrism without walking the whole library.
+//
+// It deliberately does NOT advance the watermark. A scoped run sees one album's
+// photos only, so recording its newest timestamp as the resume cursor would make
+// the next full import skip every older photo in the library — the one way this
+// convenience could quietly lose data. Labels are not mapped either: label
+// membership is resolved by listing each label's photos, which would walk the
+// whole source catalogue for a single album.
+func (s *Service) ImportAlbum(ctx context.Context, albumUID string) (Result, error) {
+	albumUID = strings.TrimSpace(albumUID)
+	if albumUID == "" {
+		return Result{}, ErrEmptyAlbumUID
+	}
+	run, err := s.runs.Start(ctx, importer.SourcePhotoPrism)
+	if err != nil {
+		return Result{}, fmt.Errorf("ppimport: starting run: %w", err)
+	}
+	state := &runState{albumUID: albumUID}
+	if err := s.runAlbumImport(ctx, run.ID, state); err != nil {
+		if failErr := s.runs.Fail(ctx, run.ID, err.Error(), state.counts); failErr != nil {
+			s.log.Error("ppimport: marking run failed", "run", run.ID, "err", failErr)
+		}
+		return Result{RunID: run.ID, Counts: state.counts}, err
+	}
+	if err := s.runs.Complete(ctx, run.ID, nil, state.counts); err != nil {
+		return Result{RunID: run.ID, Counts: state.counts}, fmt.Errorf("ppimport: completing run: %w", err)
+	}
+	return Result{RunID: run.ID, Counts: state.counts}, nil
+}
+
+// runAlbumImport imports the scoped album's photos and maps that album. Any
+// returned error is an infrastructure failure that should fail the whole run.
+func (s *Service) runAlbumImport(ctx context.Context, runID int64, state *runState) error {
+	if err := s.importPhotos(ctx, runID, state); err != nil {
+		return err
+	}
+	return s.mapAlbum(ctx, state.albumUID)
+}
+
 // runImport drives the three import phases over the open run, resuming from the
 // last successful watermark. Any returned error is an infrastructure failure that
 // should fail the whole run.
@@ -323,7 +392,10 @@ func (s *Service) runImport(ctx context.Context, runID int64, state *runState) e
 // photos, capped to never exceed the earliest failed photo's UpdatedAt, so a
 // failure is always re-listed (inclusively) by the next incremental run.
 type runState struct {
-	since      time.Time
+	since time.Time
+	// albumUID, when non-empty, scopes the photo listing to one source album and
+	// marks the run as partial (no watermark is recorded for it).
+	albumUID   string
 	counts     importer.Counts
 	maxSuccess time.Time
 	minFailed  time.Time

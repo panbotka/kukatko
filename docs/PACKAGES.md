@@ -962,7 +962,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `Photo.PrimaryFile()` vrátí primární soubor, `File.IsVideo()` (Video flag/`video/*` mime),
   `Photo.VideoFile()` (motion soubor video/live fotky) a `Photo.StillFile()` (still fotky);
   `ListAlbums`/`ListLabels`/`ListSubjects(ctx,ListParams
-  {Count,Offset})` → `GET /api/v1/{albums,labels,subjects}`, markery z `Files[].Markers[]`;
+  {Count,Offset,Type})` → `GET /api/v1/{albums,labels,subjects}`, markery z `Files[].Markers[]`;
+  **`Type` je u alb povinný** — `/api/v1/albums` bez typu (i s víc typy naráz, `album,folder`) vrací
+  **400 „Permission denied"**, takže katalog alb se prochází typ po typu (`AlbumTypes` =
+  album/folder/moment/state/month); štítky a subjekty typ neberou a ignorují ho;
   `DownloadOriginal(ctx,fileHash)` → `GET /api/v1/dl/{hash}?t=<download_token>` **streamuje** originál
   (`Download{Body,ContentType,ContentLength}`, tělo vlastní caller; nikdy celý v RAM přes
   `cancelReadCloser`), **download token** z create-session `POST /api/v1/session`
@@ -1002,7 +1005,15 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   zaznamená do `counts.failed` a **nepřeruší běh** (jen infrastrukturní chyba běh `Fail`ne), 429
   backoff řeší klient, **watermark se nikdy neposune za nejstarší selhání** (`runState`); bezpečné
   re-runovat. **`Handle(ctx,job)`** = `worker.HandlerFunc` pro `pp_import` (ignoruje payload, volá
-  `Import`), `JobPayload()` nese pevný sentinel `photo_uid` → dedup fronty pustí jen jeden import),
+  `Import`), `JobPayload()` nese pevný sentinel `photo_uid` → dedup fronty pustí jen jeden import.
+  **`ImportAlbum(ctx, albumUID)`** = album-scoped běh (CLI `--album`): pageuje `ListPhotos(AlbumUID=…)`
+  **bez** watermarku (album se natáhne celé bez ohledu na stáří fotek), namapuje **jen** to album
+  (`mapAlbum` — hledá uid napříč `photoprism.AlbumTypes`, neznámé uid → `ErrAlbumNotFound`, prázdné →
+  `ErrEmptyAlbumUID`) a **`Complete` s `nil` watermarkem** — scoped běh vidí jen jedno album, takže
+  zapsat jeho nejnovější timestamp jako kurzor by přiměl další plný import přeskočit všechno starší.
+  Štítky nemapuje (jejich členství se zjišťuje procházením celého zdrojového katalogu).
+  Alba se listují **po typech** (`Config.AlbumTypes`, default `DefaultAlbumTypes` = album/folder/moment/state,
+  bez `month` = 560 automatických kalendářních alb) — zdroj vyžaduje právě jeden typ na dotaz),
   `internal/photosorter/`
   (read-only klient k PostgreSQL DB **photo-sorteru** — datový zdroj přímé migrace (ARCHITECTURE.md
   §10), vše za `*Reader`: `New(ctx, Config{DSN,Schema,MaxConns})` otevře **vlastní** pgx pool
