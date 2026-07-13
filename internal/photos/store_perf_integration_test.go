@@ -3,22 +3,18 @@
 package photos_test
 
 import (
-	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/panbotka/kukatko/internal/photos"
 )
 
-// explainPlan returns the textual EXPLAIN output for query, run with sequential
-// and bitmap scans disabled inside a rolled-back transaction. Forcing an ordered
-// index scan reveals whether an index can serve the ORDER BY: a bitmap scan does
-// not preserve order (so on a tiny table the planner would otherwise bitmap-scan
-// and Sort), and if the chosen index does not match the ordering exactly a Sort
-// node still appears in the plan.
+// explainPlan returns the textual EXPLAIN output for query, run inside a
+// rolled-back transaction. It deliberately does NOT disable any plan types: the
+// point of the test is that the planner picks the ordered index scan on its own
+// merits, so the assertion would be vacuous if the alternatives were switched
+// off (with enable_sort = off, for instance, any index that matches the ordering
+// wins by default and the plan proves nothing).
 func explainPlan(t *testing.T, pool *pgxpool.Pool, query string) string {
 	t.Helper()
 	ctx := t.Context()
@@ -27,14 +23,6 @@ func explainPlan(t *testing.T, pool *pgxpool.Pool, query string) string {
 		t.Fatalf("Begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	for _, stmt := range []string{
-		"SET LOCAL enable_seqscan = off",
-		"SET LOCAL enable_bitmapscan = off",
-	} {
-		if _, err := tx.Exec(ctx, stmt); err != nil {
-			t.Fatalf("%s: %v", stmt, err)
-		}
-	}
 	rows, err := tx.Query(ctx, "EXPLAIN "+query)
 	if err != nil {
 		t.Fatalf("EXPLAIN: %v", err)
@@ -55,36 +43,59 @@ func explainPlan(t *testing.T, pool *pgxpool.Pool, query string) string {
 	return b.String()
 }
 
-// seedTimeline inserts n live photos with descending capture times, a handful of
-// archived photos, and a couple with no capture time, so the planner has a
-// representative live timeline to plan against.
-func seedTimeline(t *testing.T, store *photos.Store, n int) {
+// liveTimelineRows is the number of photos seeded for the query-plan test.
+//
+// The size is load-bearing, not arbitrary. The indexes from migration 0015 pay
+// off by letting a grid page stop after LIMIT rows instead of sorting the whole
+// live timeline, so the seed must be well above the 100-row page size for that
+// early exit to be worth anything. With the ~87 rows this test used to seed, the
+// LIMIT 100 never truncated the scan, the index's entire benefit vanished, and
+// the planner picked whatever was cheapest by a rounding error — which is how
+// this test came to assert a plan it did not actually control. Do not shrink it.
+const liveTimelineRows = 5000
+
+// seedTimeline bulk-inserts a realistic live timeline: liveTimelineRows photos
+// with descending capture and creation times, a scattering of photos with no
+// capture time (the NULLS LAST tail), and a minority of archived photos (which
+// the partial indexes must exclude). It inserts in a single statement because
+// pushing thousands of rows through Store.Create one by one would dominate the
+// package's runtime.
+//
+// The trailing ANALYZE is as load-bearing as the row count. The integration
+// tests share one database and truncate between cases, which resets the row
+// counts in pg_class but leaves pg_statistic populated with whatever the
+// previous test happened to leave behind. Without ANALYZE the planner therefore
+// costs this query from another test's statistics — that is what made this test
+// pass locally and fail in CI on identical code. ANALYZE pins the plan to the
+// data we actually seeded.
+func seedTimeline(t *testing.T, pool *pgxpool.Pool, n int) {
 	t.Helper()
-	base := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	for i := range n {
-		taken := base.Add(time.Duration(i) * time.Hour)
-		mustCreate(t, store, photos.Photo{
-			FileHash: fmt.Sprintf("perf-live-%04d", i), FilePath: fmt.Sprintf("p/%d.jpg", i),
-			FileName: fmt.Sprintf("%d.jpg", i), FileMime: "image/jpeg",
-			TakenAt: &taken, TakenAtSource: "exif",
-		})
+	ctx := t.Context()
+	const insert = `
+		INSERT INTO photos (
+			uid, file_hash, file_path, file_name, file_mime,
+			taken_at, taken_at_source, created_at, archived_at
+		)
+		SELECT
+			'perf' || lpad(i::text, 28, '0'),
+			'perf-hash-' || lpad(i::text, 54, '0'),
+			'p/' || i || '.jpg',
+			i || '.jpg',
+			'image/jpeg',
+			-- Every 33rd photo has an unknown capture time: the NULLS LAST tail.
+			CASE WHEN i % 33 = 0 THEN NULL
+			     ELSE timestamptz '2024-01-01 12:00:00Z' - (i || ' hours')::interval END,
+			CASE WHEN i % 33 = 0 THEN '' ELSE 'exif' END,
+			timestamptz '2024-01-01 12:00:00Z' - (i || ' minutes')::interval,
+			-- A minority of archived photos keeps the partial predicate honest:
+			-- they must stay out of both indexes and out of the live grid.
+			CASE WHEN i % 25 = 0 THEN timestamptz '2024-06-01 12:00:00Z' ELSE NULL END
+		FROM generate_series(1, $1) i`
+	if _, err := pool.Exec(ctx, insert, n); err != nil {
+		t.Fatalf("bulk insert %d photos: %v", n, err)
 	}
-	// A couple of photos with unknown capture time exercise the NULLS LAST tail.
-	for i := range 2 {
-		mustCreate(t, store, photos.Photo{
-			FileHash: fmt.Sprintf("perf-null-%d", i), FilePath: fmt.Sprintf("n/%d.jpg", i),
-			FileName: fmt.Sprintf("n%d.jpg", i), FileMime: "image/jpeg",
-		})
-	}
-	// Archived photos must stay out of the partial index and the live timeline.
-	for i := range 5 {
-		p := mustCreate(t, store, photos.Photo{
-			FileHash: fmt.Sprintf("perf-arch-%d", i), FilePath: fmt.Sprintf("a/%d.jpg", i),
-			FileName: fmt.Sprintf("a%d.jpg", i), FileMime: "image/jpeg",
-		})
-		if _, err := store.Archive(t.Context(), p.UID); err != nil {
-			t.Fatalf("Archive: %v", err)
-		}
+	if _, err := pool.Exec(ctx, "ANALYZE photos"); err != nil {
+		t.Fatalf("ANALYZE photos: %v", err)
 	}
 }
 
@@ -94,9 +105,9 @@ func seedTimeline(t *testing.T, store *photos.Store, n int) {
 // without a Sort node — the optimisation the perf pass added. The queries mirror
 // buildListQuery's WHERE/ORDER BY for those two sorts.
 func TestListQueryPlan_usesLiveIndexes(t *testing.T) {
-	store, db := newStore(t)
-	seedTimeline(t, store, 80)
+	_, db := newStore(t)
 	pool := db.Pool()
+	seedTimeline(t, pool, liveTimelineRows)
 
 	tests := []struct {
 		name      string
