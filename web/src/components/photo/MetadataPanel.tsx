@@ -22,7 +22,11 @@ export interface MetadataPanelProps {
   onUpdated: (photo: PhotoDetail) => void
 }
 
-/** Formats an ISO timestamp for the value of a `datetime-local` input. */
+/**
+ * Formats an ISO timestamp for the value of a `datetime-local` input, keeping the
+ * seconds — the field carries `step="1"` — so a capture time of `00:33:39` is not
+ * silently rewritten to `00:33:00` the first time the form is saved.
+ */
 function toLocalInput(iso: string | undefined): string {
   if (iso === undefined || iso === '') {
     return ''
@@ -31,9 +35,9 @@ function toLocalInput(iso: string | undefined): string {
   if (Number.isNaN(date.getTime())) {
     return ''
   }
-  // Shift to local time then trim to minutes (YYYY-MM-DDTHH:mm).
+  // Shift to local time then trim to seconds (YYYY-MM-DDTHH:mm:ss).
   const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+  return new Date(date.getTime() - offset).toISOString().slice(0, 19)
 }
 
 /** The canonical coordinate text for a photo, or empty when it has no location. */
@@ -114,14 +118,19 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
 
+  // The photo's own values, as the form renders them. A field still equal to its
+  // pristine value is left out of the PATCH entirely — see buildPatch.
+  const pristineTakenAt = toLocalInput(photo.taken_at)
+  const pristineCoords = initialCoordText(photo)
+
   const [title, setTitle] = useState(photo.title)
   const [description, setDescription] = useState(photo.description)
   const [notes, setNotes] = useState(photo.notes ?? '')
   const [aiNote, setAiNote] = useState(photo.ai_note ?? '')
-  const [takenAt, setTakenAt] = useState(toLocalInput(photo.taken_at))
+  const [takenAt, setTakenAt] = useState(pristineTakenAt)
   // The location lives as a single free-form coordinate string; it is parsed to
   // drive the map marker and, on save, the PATCH lat/lng.
-  const [coordText, setCoordText] = useState(() => initialCoordText(photo))
+  const [coordText, setCoordText] = useState(pristineCoords)
 
   const parsedCoords = useMemo(() => parseCoordinates(coordText), [coordText])
   const hasCoordText = coordText.trim() !== ''
@@ -135,8 +144,8 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
     setDescription(photo.description)
     setNotes(photo.notes ?? '')
     setAiNote(photo.ai_note ?? '')
-    setTakenAt(toLocalInput(photo.taken_at))
-    setCoordText(initialCoordText(photo))
+    setTakenAt(pristineTakenAt)
+    setCoordText(pristineCoords)
     setError(false)
     setEditing(true)
   }
@@ -147,43 +156,49 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   }
 
   /**
-   * Builds the PATCH payload, mapping empty coordinates to a cleared (null)
-   * location and refusing to build one while the coordinate text is invalid.
+   * Builds the PATCH payload. The capture time and the location are only sent when
+   * the user actually changed them: both fields are lossy round-trips, so resending
+   * an untouched value would quietly rewrite the catalogue — the capture time would
+   * flip `taken_at_source` from `exif` to `manual`, and the coordinate would be
+   * rounded to the six decimals the text field shows (`16.7083583333333` →
+   * `16.708358`). Unparseable coordinate text is left out too (the field reports it
+   * inline), so the rest of the form still saves.
    */
-  function buildPatch(): PhotoMetadataUpdate | null {
+  function buildPatch(): PhotoMetadataUpdate {
     const patch: PhotoMetadataUpdate = {
       title: title.trim(),
       description,
       notes,
       ai_note: aiNote,
-      taken_at: takenAt === '' ? null : new Date(takenAt).toISOString(),
     }
-    if (!hasCoordText) {
-      patch.lat = null
-      patch.lng = null
-    } else {
-      if (!parsedCoords.ok) {
-        return null
+    if (takenAt !== pristineTakenAt) {
+      patch.taken_at = takenAt === '' ? null : new Date(takenAt).toISOString()
+    }
+    if (coordText.trim() !== pristineCoords) {
+      if (!hasCoordText) {
+        patch.lat = null
+        patch.lng = null
+      } else if (parsedCoords.ok) {
+        patch.lat = parsedCoords.value.lat
+        patch.lng = parsedCoords.value.lng
       }
-      patch.lat = parsedCoords.value.lat
-      patch.lng = parsedCoords.value.lng
     }
     return patch
   }
 
   async function save(event: SyntheticEvent) {
     event.preventDefault()
-    const patch = buildPatch()
-    if (patch === null) {
-      setError(true)
-      return
-    }
     setSaving(true)
     setError(false)
     try {
-      const updated = await updatePhoto(photo.uid, patch)
+      const updated = await updatePhoto(photo.uid, buildPatch())
       onUpdated(updated)
-      setEditing(false)
+      // An unparseable coordinate was not part of the patch: keep the form open so
+      // its inline error stays visible and the user can see the location did not
+      // save — the other fields did.
+      if (!coordsInvalid) {
+        setEditing(false)
+      }
     } catch {
       setError(true)
     } finally {
@@ -251,6 +266,7 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
           </Form.Label>
           <Form.Control
             type="datetime-local"
+            step={1}
             value={takenAt}
             onChange={(event) => {
               setTakenAt(event.target.value)
@@ -311,7 +327,10 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
           />
         </div>
         <div className="d-flex gap-2">
-          <Button type="submit" variant="primary" size="sm" disabled={saving || coordsInvalid}>
+          {/* Saving stays available with an invalid coordinate: the location is
+              then left untouched (the field says so) rather than holding the
+              caption fields hostage to it. */}
+          <Button type="submit" variant="primary" size="sm" disabled={saving}>
             {t('photo.metadata.save')}
           </Button>
           <Button

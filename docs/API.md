@@ -119,7 +119,13 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   přes `photoedit.Apply`, pokud caller nedá `?original=true`);
   `PATCH /photos/{uid}` (editor/admin) částečná úprava
   metadat — `title/description/notes/ai_note/taken_at/lat/lng/private` (null maže nullable, validace
-  souřadnic); `ai_note` je volný text z externí AI klasifikace (píše ho i automat přes tuto routu),
+  souřadnic). **Odpověď má stejný tvar jako `GET /photos/{uid}`** — plný detail včetně `files`,
+  `albums`, `labels`, `is_favorite` a `uploader` (sdílený `writeDetail` v `internal/photoapi`), ne
+  holý `photos.Photo`: klient si detailem z odpovědi nahradí ten, co drží, takže chybějící pole by mu
+  z detailu zmizela (dřív padal na `albums.map` z `undefined`). Klient posílá jen **skutečně
+  změněná** pole: přeposlání nezměněného `taken_at` by přepnulo `taken_at_source` `exif` → `manual`,
+  přeposlání nezměněných souřadnic by je zaokrouhlilo na 6 desetinných míst z textového pole.
+  `ai_note` je volný text z externí AI klasifikace (píše ho i automat přes tuto routu),
   vrací se v detailu i listu jako součást `photos.Photo` a je zahrnutý ve fulltextu (§ Vyhledávání);
   `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);
