@@ -37,9 +37,11 @@ type updateBody struct {
 }
 
 // handleUpdate applies a partial metadata update to the photo named in the path
-// and returns the refreshed photo. Omitted fields are left unchanged; an explicit
-// null clears a nullable field. A malformed body or out-of-range coordinate is
-// answered with 400 and a missing photo with 404.
+// and returns the refreshed photo as the same full detail body GET /photos/{uid}
+// answers with — the client swaps the detail it holds for this response, so a bare
+// photo would strip its files, albums, labels and is_favorite flag. Omitted fields
+// are left unchanged; an explicit null clears a nullable field. A malformed body or
+// out-of-range coordinate is answered with 400 and a missing photo with 404.
 func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 
@@ -75,8 +77,7 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writePhotoError(w, err, "updating photo failed")
 		return
 	}
-	a.media.DecorateOne(&updated)
-	writeJSON(w, http.StatusOK, updated)
+	a.writeDetail(w, r, user.UID, updated)
 }
 
 // presentFields returns the sorted names of the metadata fields the caller sent,

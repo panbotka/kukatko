@@ -372,17 +372,29 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 		writePhotoError(w, err, "fetching photo failed")
 		return
 	}
-	files, err := a.store.ListFiles(r.Context(), uid)
+	a.writeDetail(w, r, user.UID, photo)
+}
+
+// writeDetail assembles and writes the full photoDetail body for photo: its stored
+// files, the caller's per-user annotations (is_favorite, rating, flag) and media
+// URLs, its album/label memberships and its resolved uploader.
+//
+// Every endpoint answering with a single photo the detail view then holds must go
+// through here, not write the bare photos.Photo: the client replaces the detail it
+// has with the response, so a body missing albums/labels/files would strip them
+// from the page. The metadata PATCH shares it for exactly that reason.
+func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string, photo photos.Photo) {
+	files, err := a.store.ListFiles(r.Context(), photo.UID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "fetching photo files failed")
 		return
 	}
-	views, err := a.annotate(r.Context(), user.UID, []photos.Photo{photo})
+	views, err := a.annotate(r.Context(), userUID, []photos.Photo{photo})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "annotating photo failed")
 		return
 	}
-	albums, labels, err := a.photoMemberships(r.Context(), uid)
+	albums, labels, err := a.photoMemberships(r.Context(), photo.UID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "fetching photo organization failed")
 		return

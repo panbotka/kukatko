@@ -413,8 +413,13 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `lib/coordinates` (`parseCoordinates`/`formatCoordinates`: desetinné stupně `49.1234, 16.5678`,
   DMS `49°7'24.2"N 16°34'12.5"E`, stupně-desetinné-minuty, hemisféry, axis reorder, range check)
   nad **`LeafletMap` picker módem** (`picker={position,onPick}`: draggable marker + click-to-place,
-  obousměrný sync text↔marker, **neplatný text = inline chyba + `disabled` Save**, vymazat polohu =
-  lat/lng null); read-only poloha = `PhotoLocation` (mini-mapa nad mapy.com proxy + on-demand
+  obousměrný sync text↔marker, vymazat polohu = lat/lng null). **PATCH nese jen skutečně změněná
+  pole**: nezměněný `taken_at` (pole je `step=1`, drží sekundy) by přepnul `taken_at_source`
+  `exif`→`manual`, nezměněné souřadnice by se zaokrouhlily na 6 desetinných míst textového pole —
+  obojí by tiše přepsalo katalog. **Neplatný text souřadnic = inline chyba u pole**, ne blokace
+  celého formuláře: ostatní pole se uloží, poloha zůstane beze změny a formulář zůstane otevřený
+  (Save se **nedisabluje**). Odpověď PATCHe je plný detail (`albums`/`labels`/`files`), kterým
+  stránka nahradí drženou fotku; read-only poloha = `PhotoLocation` (mini-mapa nad mapy.com proxy + on-demand
   `reverseGeocode`) **embedovaná** v tomto bloku. **3. Technické údaje** (`TechnicalDetails`,
   **na první render zavřený** expander `aria-expanded`/`aria-controls`): camera/lens/clona/expozice/
   ohnisko/ISO/název souboru/rozměry **+ řádek Nahrál/a** (`photo.metadata.uploadedBy` z
@@ -729,7 +734,9 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   → `{ok:true,value:{lat,lng}}` | `{ok:false,error:'empty'|'format'|'range'}` (desetinné stupně /
   DMS / stupně-desetinné-minuty, komma/mezera oddělovač, ±/hemisféry N/S/E/W, unicode primy/`''`,
   axis reorder dle hemisfér, range check ±90/±180) + `formatCoordinates({lat,lng},precision=6)` →
-  kanonický `"49.123400, 16.567800"` (round-tripuje parserem) — sdílí `MetadataPanel` picker;
+  kanonický `"49.123400, 16.567800"` (round-tripuje parserem, ale je to **zobrazovací, ztrátový**
+  formát — `16.7083583333333` → `16.708358`, proto se nezměněná souřadnice do PATCHe vůbec
+  neposílá) — sdílí `MetadataPanel` picker;
   `kenBurns.ts` = pure `kenBurnsMotion(uid,intervalMs)` → endpointy pomalého zoom+pan přes celý
   snímek (`durationMs` = interval, takže animace trvá přesně jeden slide) + `kenBurnsStyle(…)` →
   `--kb-*` custom properties pro `slideshow.css` + `panLimit(scale)`. Parametry (8 směrů × zoom

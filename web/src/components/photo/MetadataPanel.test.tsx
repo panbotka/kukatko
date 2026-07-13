@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
-import { type PhotoDetail } from '../../services/photos'
+import { type PhotoDetail, type PhotoMetadataUpdate } from '../../services/photos'
 
 import { MetadataPanel } from './MetadataPanel'
 
@@ -77,6 +78,65 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
   }
 }
 
+/**
+ * Stands in for the API: applies the patch to the photo and answers with the full
+ * detail body — files, albums, labels and all — which is exactly what
+ * `PATCH /photos/{uid}` returns (it shares the detail endpoint's body; the Go
+ * integration test pins that contract). The old mock returned a hand-made complete
+ * PhotoDetail whatever the endpoint really sent back, which is why a PATCH response
+ * that dropped `albums`/`labels`/`files` — and blanked the detail page — slipped
+ * through the suite.
+ */
+function apiResponse(current: PhotoDetail, patch: PhotoMetadataUpdate): PhotoDetail {
+  return {
+    ...current,
+    title: patch.title ?? current.title,
+    description: patch.description ?? current.description,
+    notes: patch.notes ?? current.notes,
+    ai_note: patch.ai_note ?? current.ai_note,
+    // A null clears the field; an absent key leaves it as it was.
+    taken_at: patch.taken_at === undefined ? current.taken_at : (patch.taken_at ?? undefined),
+    taken_at_source: patch.taken_at === undefined ? current.taken_at_source : 'manual',
+    lat: patch.lat === undefined ? current.lat : (patch.lat ?? undefined),
+    lng: patch.lng === undefined ? current.lng : (patch.lng ?? undefined),
+  }
+}
+
+/** Makes the mocked `updatePhoto` answer like the real endpoint does for `current`. */
+function mockApi(current: PhotoDetail) {
+  updatePhotoMock.mockImplementation((_uid, patch) => Promise.resolve(apiResponse(current, patch)))
+}
+
+/** The patch body of the single `updatePhoto` call the test made. */
+function sentPatch(): PhotoMetadataUpdate {
+  expect(updatePhotoMock).toHaveBeenCalledTimes(1)
+  return updatePhotoMock.mock.calls[0][1]
+}
+
+/**
+ * The detail page in miniature: it holds the photo in state and feeds `onUpdated`
+ * straight back in (the page's `setPhoto`), while — like the real OrganizePanel —
+ * mapping over `photo.albums` and `photo.labels`. A save whose response lacks those
+ * arrays throws here exactly as it did on the page, so the crash cannot come back
+ * unnoticed.
+ */
+function DetailHarness({ initial }: { initial: PhotoDetail }) {
+  const [current, setCurrent] = useState(initial)
+  return (
+    <>
+      <MetadataPanel photo={current} canWrite onUpdated={setCurrent} />
+      <ul aria-label="organization">
+        {current.albums.map((album) => (
+          <li key={album.uid}>{album.title}</li>
+        ))}
+        {current.labels.map((label) => (
+          <li key={label.uid}>{label.name}</li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
 function renderPanel(
   props: { photo?: PhotoDetail; onUpdated?: () => void; canWrite?: boolean } = {},
 ) {
@@ -87,6 +147,14 @@ function renderPanel(
         canWrite={props.canWrite ?? true}
         onUpdated={props.onUpdated ?? vi.fn()}
       />
+    </I18nextProvider>,
+  )
+}
+
+function renderHarness(initial: PhotoDetail) {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <DetailHarness initial={initial} />
     </I18nextProvider>,
   )
 }
@@ -140,27 +208,12 @@ describe('MetadataPanel location picker', () => {
     expect(Number(marker.getAttribute('data-lng'))).toBeCloseTo(16.5701, 3)
   })
 
-  it('shows a validation message and blocks saving on invalid coordinates', async () => {
-    const user = userEvent.setup()
-    renderPanel()
-    await startEditing(user)
-    const input = screen.getByLabelText('Coordinates')
-    await user.clear(input)
-    await user.type(input, 'nonsense')
-    expect(
-      screen.getByText(
-        'Unrecognised coordinates. Use decimal degrees, DMS or degrees-decimal-minutes.',
-      ),
-    ).toBeInTheDocument()
-    expect(screen.getByTestId('marker')).toHaveTextContent('none')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-  })
-
   it('writes the picked marker position back and PATCHes decimal degrees', async () => {
     const onUpdated = vi.fn()
-    updatePhotoMock.mockResolvedValue(photo({ lat: 51.5, lng: -0.12 }))
+    const current = photo()
+    mockApi(current)
     const user = userEvent.setup()
-    renderPanel({ onUpdated })
+    renderPanel({ photo: current, onUpdated })
     await startEditing(user)
 
     await user.click(screen.getByRole('button', { name: 'drop-marker' }))
@@ -177,9 +230,10 @@ describe('MetadataPanel location picker', () => {
   })
 
   it('clears the location and PATCHes null coordinates', async () => {
-    updatePhotoMock.mockResolvedValue(photo({ lat: undefined, lng: undefined }))
+    const current = photo()
+    mockApi(current)
     const user = userEvent.setup()
-    renderPanel()
+    renderPanel({ photo: current })
     await startEditing(user)
 
     await user.click(screen.getByRole('button', { name: 'Clear location' }))
@@ -230,9 +284,10 @@ describe('MetadataPanel per-field editing', () => {
 
   it('shows the AI note read-only and PATCHes an edited value from its own field', async () => {
     const onUpdated = vi.fn()
-    updatePhotoMock.mockResolvedValue(photo({ ai_note: 'detected: cat, sofa' }))
+    const current = photo({ ai_note: 'detected: dog, beach' })
+    mockApi(current)
     const user = userEvent.setup()
-    renderPanel({ photo: photo({ ai_note: 'detected: dog, beach' }), onUpdated })
+    renderPanel({ photo: current, onUpdated })
 
     // The read-only summary shows the AI note under its own label.
     expect(screen.getByText('AI note')).toBeInTheDocument()
@@ -253,5 +308,126 @@ describe('MetadataPanel per-field editing', () => {
       )
     })
     expect(onUpdated).toHaveBeenCalled()
+  })
+})
+
+describe('MetadataPanel saving', () => {
+  it('keeps the detail page alive, with its albums and labels, after a save', async () => {
+    const current = photo({
+      albums: [{ uid: 'al1', title: 'Trip' }],
+      labels: [{ uid: 'lb1', name: 'beach' }],
+    })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderHarness(current)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Description' }))
+    await user.type(screen.getByLabelText('Description'), 'Sunny day')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    // The page swaps in the PATCH response: it must still carry everything the
+    // detail view renders, or mapping over albums/labels throws and blanks it.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Edit Description' })).toHaveTextContent(
+        'Sunny day',
+      )
+    })
+    expect(screen.getByText('Trip')).toBeInTheDocument()
+    expect(screen.getByText('beach')).toBeInTheDocument()
+  })
+
+  it('leaves an untouched capture time and coordinate out of the patch', async () => {
+    // Resending them would rewrite the catalogue behind the user's back: taken_at
+    // would flip taken_at_source exif → manual and drop the seconds, and the
+    // coordinate would be rounded to the six decimals the text field shows.
+    const current = photo({
+      taken_at: '2026-01-02T00:33:39Z',
+      lat: 49.1234567891011,
+      lng: 16.7083583333333,
+    })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+
+    await startEditing(user)
+    await user.type(screen.getByLabelText('Description'), 'Sunny day')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    const patch = sentPatch()
+    expect(patch.description).toBe('Sunny day')
+    expect(patch).not.toHaveProperty('taken_at')
+    expect(patch).not.toHaveProperty('lat')
+    expect(patch).not.toHaveProperty('lng')
+  })
+
+  it('keeps the seconds of an edited capture time', async () => {
+    const current = photo({ taken_at: '2026-01-02T00:33:39Z' })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+
+    // The field itself carries seconds (it is step="1"), so editing the hour no
+    // longer truncates 00:33:39 to 00:33:00.
+    const field = screen.getByLabelText<HTMLInputElement>('Taken at')
+    expect(field.value).toMatch(/:39(\.\d+)?$/)
+    fireEvent.change(field, { target: { value: field.value.replace(/T\d\d:/, 'T05:') } })
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    const takenAt = sentPatch().taken_at
+    expect(typeof takenAt).toBe('string')
+    expect(new Date(String(takenAt)).getSeconds()).toBe(39)
+  })
+
+  it('reports an unparseable coordinate on the field and still saves the other fields', async () => {
+    const current = photo()
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+
+    const coords = screen.getByLabelText('Coordinates')
+    await user.clear(coords)
+    await user.type(coords, 'nonsense')
+    await user.type(screen.getByLabelText('Description'), 'Sunny day')
+
+    // The field says why, and the marker has nowhere to go…
+    expect(
+      screen.getByText(
+        'Unrecognised coordinates. Use decimal degrees, DMS or degrees-decimal-minutes.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('marker')).toHaveTextContent('none')
+
+    // …but the caption is not held hostage to it: it saves, the location does not,
+    // and no generic "saving failed" alert appears.
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    const patch = sentPatch()
+    expect(patch.description).toBe('Sunny day')
+    expect(patch).not.toHaveProperty('lat')
+    expect(patch).not.toHaveProperty('lng')
+    expect(screen.queryByText('Saving failed. Check the entered values.')).not.toBeInTheDocument()
+    // The form stays open with the offending coordinate still on screen.
+    expect(screen.getByLabelText('Coordinates')).toHaveValue('nonsense')
+  })
+
+  it('shows the save error when the API rejects the patch', async () => {
+    updatePhotoMock.mockRejectedValue(new Error('boom'))
+    const user = userEvent.setup()
+    renderPanel()
+    await startEditing(user)
+    await user.type(screen.getByLabelText('Description'), 'Sunny day')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Saving failed. Check the entered values.')).toBeInTheDocument()
   })
 })

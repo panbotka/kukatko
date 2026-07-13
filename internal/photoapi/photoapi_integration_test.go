@@ -117,6 +117,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Embedder:        embedder,
 		Favorites:       organizeStore,
 		Ratings:         organizeStore,
+		Organizer:       organizeStore,
 		Users:           authStore,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
@@ -666,6 +667,113 @@ func TestUpdateMetadata(t *testing.T) {
 			t.Errorf("status = %d, want 404", resp.StatusCode)
 		}
 	})
+}
+
+// TestUpdateMetadata_returnsFullDetail pins the PATCH response to the very body
+// the detail endpoint answers with. The client replaces the photo detail it holds
+// with this response, so a bare photo — no files, albums, labels or is_favorite —
+// blanks the organization panel and crashes the detail page.
+func TestUpdateMetadata_returnsFullDetail(t *testing.T) {
+	env := newEnv(t)
+	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	base := env.server.URL
+
+	seeded := env.seedPhoto(t, photos.Photo{
+		Title: "Before", Description: "old caption", TakenAtSource: "exif",
+	}, "detail-patch.jpg", 100, 110, 120)
+	url := base + "/api/v1/photos/" + seeded.UID
+
+	// The photo belongs to an album, carries a label and is favorited: exactly the
+	// state the buggy PATCH response used to drop.
+	album, err := env.organize.CreateAlbum(t.Context(), organize.Album{Title: "Trip"})
+	if err != nil {
+		t.Fatalf("CreateAlbum: %v", err)
+	}
+	if err := env.organize.AddPhoto(t.Context(), album.UID, seeded.UID); err != nil {
+		t.Fatalf("AddPhoto: %v", err)
+	}
+	label, err := env.organize.CreateLabel(t.Context(), organize.Label{Name: "beach"})
+	if err != nil {
+		t.Fatalf("CreateLabel: %v", err)
+	}
+	if err := env.organize.AttachLabel(
+		t.Context(), seeded.UID, label.UID, organize.SourceManual, 0,
+	); err != nil {
+		t.Fatalf("AttachLabel: %v", err)
+	}
+	fav := mustDo(t, editor, http.MethodPut, url+"/favorite", nil)
+	defer func() { _ = fav.Body.Close() }()
+	if fav.StatusCode != http.StatusOK && fav.StatusCode != http.StatusNoContent {
+		t.Fatalf("favorite status = %d, want 200/204", fav.StatusCode)
+	}
+
+	patched, patchedRaw := decodeDetail(t, editor, http.MethodPatch, url,
+		[]byte(`{"description":"new caption","notes":"shot at dusk"}`))
+
+	if patched.Description != "new caption" || patched.Notes != "shot at dusk" {
+		t.Errorf("patched metadata = %q/%q, want 'new caption'/'shot at dusk'",
+			patched.Description, patched.Notes)
+	}
+	if len(patched.Files) != 1 || !patched.Files[0].IsPrimary {
+		t.Errorf("patch files = %+v, want one primary file", patched.Files)
+	}
+	if len(patched.Albums) != 1 || patched.Albums[0].UID != album.UID || patched.Albums[0].Title != "Trip" {
+		t.Errorf("patch albums = %+v, want the photo's album", patched.Albums)
+	}
+	if len(patched.Labels) != 1 || patched.Labels[0].UID != label.UID || patched.Labels[0].Name != "beach" {
+		t.Errorf("patch labels = %+v, want the photo's label", patched.Labels)
+	}
+	if !patched.IsFavorite {
+		t.Error("patch is_favorite = false, want true")
+	}
+	if patched.ThumbURL == "" {
+		t.Error("patch thumb_url is empty, want the media URL stamped on")
+	}
+
+	// The strongest guarantee: PATCH and GET answer with the identical document,
+	// so the client can swap one for the other without losing a single field.
+	_, detailRaw := decodeDetail(t, editor, http.MethodGet, url, nil)
+	if !bytes.Equal(patchedRaw, detailRaw) {
+		t.Errorf("PATCH body differs from GET body:\n patch  = %s\n detail = %s", patchedRaw, detailRaw)
+	}
+}
+
+// detailResp mirrors the photo detail body shared by GET /photos/{uid} and the
+// metadata PATCH: the photo, its per-user annotation, files and memberships.
+type detailResp struct {
+	photos.Photo
+	IsFavorite bool               `json:"is_favorite"`
+	Files      []photos.PhotoFile `json:"files"`
+	Albums     []struct {
+		UID   string `json:"uid"`
+		Title string `json:"title"`
+	} `json:"albums"`
+	Labels []struct {
+		UID  string `json:"uid"`
+		Name string `json:"name"`
+	} `json:"labels"`
+}
+
+// decodeDetail performs the request, requires 200 and returns the decoded detail
+// body together with its raw JSON, so two responses can be compared byte for byte.
+func decodeDetail(
+	t *testing.T, client *http.Client, method, urlStr string, body []byte,
+) (detailResp, []byte) {
+	t.Helper()
+	resp := mustDo(t, client, method, urlStr, body)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("%s %s status = %d, want 200", method, urlStr, resp.StatusCode)
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s body: %v", method, err)
+	}
+	var out detailResp
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode %s body: %v", method, err)
+	}
+	return out, raw
 }
 
 // TestArchive verifies archiving hides a photo from the default listing, that it

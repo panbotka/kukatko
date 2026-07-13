@@ -167,6 +167,11 @@ export function parseCoordinates(input: string): CoordinateParseResult {
 /**
  * Formats a coordinate pair as canonical decimal degrees for the text field
  * after the marker moves, e.g. `49.123400, 16.567800`.
+ *
+ * This is a display format and it is lossy: six decimals are ~10 cm on the ground,
+ * but a stored `16.7083583333333` comes back as `16.708358`. Never round-trip the
+ * result into a PATCH for a coordinate the user did not touch — the metadata form
+ * therefore omits an unchanged coordinate from its payload entirely.
  */
 export function formatCoordinates(coords: Coordinates, precision = 6): string {
   return `${coords.lat.toFixed(precision)}, ${coords.lng.toFixed(precision)}`
