@@ -73,6 +73,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"worker.stale_scan_interval", cfg.Worker.StaleScanInterval, time.Minute},
 		{"bulk.max_batch_size", cfg.Bulk.MaxBatchSize, 1000},
 		{"maps.base_url", cfg.Maps.BaseURL, "https://api.mapy.com"},
+		{"maps.user_agent", cfg.Maps.UserAgent, ""},
 		{"maps.geocode_rate_per_sec", cfg.Maps.GeocodeRatePerSec, 5.0},
 		{"maps.geocode_burst", cfg.Maps.GeocodeBurst, 10},
 		{"backup.s3.path_style", cfg.Backup.S3.PathStyle, false},
@@ -236,6 +237,7 @@ func TestLoad_nestedKeyMapping(t *testing.T) {
 	t.Setenv("KUKATKO_BACKUP_S3_BUCKET", "kukatko-backups")
 	t.Setenv("KUKATKO_WEB_ALLOWED_ORIGINS", "https://a.example,https://b.example")
 	t.Setenv("MAPY_API_KEY", "mapy-secret")
+	t.Setenv("KUKATKO_MAPS_USER_AGENT", "Kukatko/1.0 (token)")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -250,6 +252,9 @@ func TestLoad_nestedKeyMapping(t *testing.T) {
 	}
 	if cfg.Maps.MapyAPIKey != "mapy-secret" {
 		t.Errorf("maps.mapy_api_key = %q, want mapy-secret", cfg.Maps.MapyAPIKey)
+	}
+	if want := "Kukatko/1.0 (token)"; cfg.Maps.UserAgent != want {
+		t.Errorf("maps.user_agent = %q, want %q", cfg.Maps.UserAgent, want)
 	}
 	wantOrigins := []string{"https://a.example", "https://b.example"}
 	if len(cfg.Web.AllowedOrigins) != len(wantOrigins) {
