@@ -56,8 +56,8 @@ type State =
  * saved non-destructive edit, with the detected faces drawn as a toggleable
  * overlay on top of it (never a second copy of the image) and prev/next
  * navigation that respects the originating list order. The photo spans the full
- * width of the content area; the control/info panels sit BELOW it, stacked in a
- * strict edit-first priority order that is identical on every viewport:
+ * width of the content area; the control/info panels sit BELOW it in a strict
+ * edit-first priority order:
  *   1. Organize (albums, tags, people) — the everyday action, always-on inline
  *      editing with no separate "edit mode";
  *   2. Caption & place (title, description, AI description, notes, taken-at,
@@ -66,6 +66,10 @@ type State =
  *      only, collapsed by default;
  *   4. Photo editing (crop/rotate/brightness/contrast) — rare, editor-only,
  *      collapsed at the very bottom so it never competes with Organize.
+ * From the `lg` breakpoint up, (1) and (2) share one row — Organize is the
+ * narrow 25 % rail beside the 75 % text-heavy Caption & place — and below it
+ * every panel stacks full width in exactly that order, so the same reading
+ * priority holds on a phone.
  * Every mutation is role-gated; viewers see a read-only page. The whole view is
  * deep-linkable and Back returns to the prior list view (the order/scope is
  * carried in the URL query).
@@ -459,31 +463,41 @@ export function PhotoDetailPage() {
         )}
       </div>
 
-      {/* Control/info panels below the photo, stacked in a strict edit-first
-          priority order that is identical on every viewport (a single readable
-          column, centred on wide screens): Organize first, then Caption & place,
-          Technical details, and finally Photo editing. */}
+      {/* Control/info panels below the photo, in a strict edit-first priority
+          order (a single readable column, centred on wide screens): Organize
+          first, then Caption & place, Technical details, and finally Photo
+          editing. From `lg` up the first two share one row (Organize 25 %,
+          Caption & place 75 %); below it they stack full width in the same
+          order, so the page stays usable on a phone. */}
       <Row className="justify-content-center mt-3">
         <Col xs={12} xl={9} xxl={8}>
-          {/* 1. Organize — the primary block: albums, tags and people, always
-              visible and directly editable for an editor (no separate edit mode). */}
-          <Card className="mb-3">
-            <Card.Header>{t('photo.sections.organize')}</Card.Header>
-            <Card.Body>
-              <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
-              <hr />
-              <PeoplePanel faces={faces} canWrite={canWrite} loading={loadingNext} />
-            </Card.Body>
-          </Card>
+          {/* `align-items-start` keeps both cards at their natural height: the
+              row must not stretch the shorter one into a tall empty box. */}
+          <Row className="align-items-start">
+            {/* 1. Organize — the primary block: albums, tags and people, always
+                visible and directly editable for an editor (no separate edit mode). */}
+            <Col xs={12} lg={3}>
+              <Card className="mb-3">
+                <Card.Header>{t('photo.sections.organize')}</Card.Header>
+                <Card.Body>
+                  <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
+                  <hr />
+                  <PeoplePanel faces={faces} canWrite={canWrite} loading={loadingNext} />
+                </Card.Body>
+              </Card>
+            </Col>
 
-          {/* 2. Caption & place — title/description/AI description/notes/taken-at/
-              location, read-only until an editor clicks a field to edit it. */}
-          <Card className="mb-3">
-            <Card.Header>{t('photo.sections.caption')}</Card.Header>
-            <Card.Body>
-              <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
-            </Card.Body>
-          </Card>
+            {/* 2. Caption & place — title/description/AI description/notes/taken-at/
+                location, read-only until an editor clicks a field to edit it. */}
+            <Col xs={12} lg={9}>
+              <Card className="mb-3">
+                <Card.Header>{t('photo.sections.caption')}</Card.Header>
+                <Card.Body>
+                  <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
 
           {/* 3. Technical details — reference only, collapsed by default (the
               component owns its own expander). */}

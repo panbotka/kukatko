@@ -391,8 +391,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   v bloku **Lidé**) otevře `FaceAssignPanel` v tom bloku;
   **ovládací/informační panely jsou POD fotkou** (ne vedle ní), naskládané do **jednoho
   čitelného sloupce** (`Row`/`Col` `col-12 col-xl-9 col-xxl-8`, na širokých obrazovkách
-  vycentrovaný) ve **striktním edit-first pořadí**, identickém na každém viewportu (na mobilu
-  se karty stackují ve stejném pořadí) — pruh `SimilarPhotos` je až pod nimi. Karty
+  vycentrovaný) ve **striktním edit-first pořadí** — pruh `SimilarPhotos` je až pod nimi.
+  První dvě karty sdílejí **od `lg` výš jeden řádek**: **Uspořádání 25 %** (úzký rail)
+  vedle **Popis a místo 75 %** (vnořený `Row` `align-items-start` + `Col` `lg={3}`/`lg={9}`;
+  `align-items-start` drží obě karty v jejich přirozené výšce, aby se kratší nenatáhla do
+  prázdné krabice). **Pod `lg` se stackují na plnou šířku ve stejném pořadí**, takže na
+  mobilu platí totéž čtecí pořadí. Karty
   (`components/photo/`): **1. Uspořádání** (`sections.organize`) = **primární blok, vždy
   viditelný a přímo editovatelný** (žádný „edit mód"): `OrganizePanel` (inline add/remove alb
   a štítků přes organize API) + `PeoplePanel` (lidé/obličeje jako **person-chips** nad stejným
