@@ -798,6 +798,10 @@ v `cmd/kukatko/maps.go`).
   bajty zpět s dlouhým `Cache-Control` (immutable). `mapset` je omezen na allowlist
   `basic|outdoor|aerial|winter` (jiný → 400, ještě před voláním mapy.com); retina `@2x` (sufix na `{y}`
   nebo `?retina=true`) se aplikuje jen pro `basic`/`outdoor`. Neplatné `z`/`x`/`y` → 400.
+  Úspěšné dlaždice se **cachují server-side** (bounded LRU + TTL, `maps.tile_cache_bytes`/
+  `maps.tile_cache_ttl`, default 64 MiB / 24 h) — free tier účtuje **1 kredit za dlaždici**, takže
+  projet už viděnou oblast znovu nestojí nic; hit/miss hlásí `X-Tile-Cache`. **Chyba se nikdy
+  necachuje** (jinak by výpadek zamrzl v mapě na celé TTL).
 - **`GET /api/v1/map/rgeocode?lat=&lng=`** — reverse geocode → zjednodušené
   `{name, location, regional_structure}`. **Cachuje se** (klíč = zaokrouhlená souřadnice) a uncached
   lookupy jsou **rate-limitované** kvůli kreditům (geocode = 4 kredity); přes limit → 429, bez shody → 404.
@@ -805,13 +809,22 @@ v `cmd/kukatko/maps.go`).
   souřadnice RFC 7946 `[lng, lat]`). Ctí standardní list filtry (`taken_after`/`taken_before`, `album`,
   `label`, `archived`); každá feature nese `uid`, `title`, `taken_at`, `media_type` a relativní
   `thumb` cestu pro markery/clustering.
-- **mapy.com chyby** (401/403/404/429/5xx) se mapují na rozumné statusy (bad key/upstream → 502,
-  nedostupné → 503, 404/429 propagovány) a **nikdy neprosakuje klíč** do odpovědí ani chyb. Bez
-  nakonfigurovaného klíče (`maps.mapy_api_key`) vrací tile/rgeocode 503, GeoJSON funguje dál.
+- **mapy.com chyby** (401/403/404/429/5xx) se mapují na rozumné statusy a **nikdy neprosakuje klíč**
+  do odpovědí ani chyb. **Odmítnutý klíč (401/403) má vlastní status `424`** — syrová 403 se ven
+  neposílá, protože request volajícího je v pořádku, vadný je *náš* klíč; upstream chyba → 502,
+  nedostupné → 503, 404/429 propagovány. Každý non-200 se **loguje WARN** se statusem a mapsetem.
+  Bez nakonfigurovaného klíče (`maps.mapy_api_key`) vrací tile/rgeocode 503, GeoJSON funguje dál.
+- **Když mapa zešedne** (typicky vypršelý / přečerpaný klíč) to appka **řekne**, místo aby ukázala
+  nevysvětlenou šedou mřížku: mapový pohled zobrazí zavíratelné varování („Mapové podklady se
+  nepodařilo načíst — mapový klíč byl odmítnut") a **fotky se kreslí dál** nad prázdným podkladem;
+  admin **Systém** (`/system`) hlásí mapový backend jako *degradovaný* (`maps.state = key_rejected`),
+  takže je to vidět i bez otevření mapy. Oprava je manuální — nový klíč v konzoli mapy.com.
 - **Vrstvy** — `mapy.Client` (HTTP klient k mapy.com za rozhraním, fakeovatelný; sentinely
-  `ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/`ErrUpstream`/`ErrUnavailable`/`ErrInvalidMapset`),
-  `mapsapi` dělá HTTP handlery + cache + rate-limit + parsing filtrů. Base URL je konfigurovatelná
-  (`maps.base_url`, default `https://api.mapy.com`) hlavně pro test double (httptest fake mapy.com).
+  `ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/`ErrUpstream`/`ErrUnavailable`/`ErrInvalidMapset`)
+  + `mapy.Health` (poslední pozorovaný stav upstreamu pro system status),
+  `mapsapi` dělá HTTP handlery + cache (dlaždice i geocode) + rate-limit + parsing filtrů. Base URL je
+  konfigurovatelná (`maps.base_url`, default `https://api.mapy.com`) hlavně pro test double
+  (httptest fake mapy.com).
 
 ### Places: reverse-geokódovaná lokalita fotky (`internal/places` + `internal/placesjob`)
 

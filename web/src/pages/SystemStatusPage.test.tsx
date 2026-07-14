@@ -60,6 +60,7 @@ function status(overrides: Partial<SystemStatus> = {}): SystemStatus {
       free_bytes: 2147483648,
       total_bytes: 4294967296,
     },
+    maps: { configured: true, state: 'ok', degraded: false },
     ...overrides,
   }
 }
@@ -215,5 +216,39 @@ describe('SystemStatusPage', () => {
     fetchMock.mockRejectedValue(new Error('boom'))
     renderPage()
     expect(await screen.findByText('Failed to load the system status.')).toBeInTheDocument()
+  })
+
+  it('reports a rejected mapy.com key as a degraded map backend', async () => {
+    fetchMock.mockResolvedValue(
+      status({
+        maps: {
+          configured: true,
+          state: 'key_rejected',
+          degraded: true,
+          detail: 'tile: mapy: upstream rejected the API key (status 403)',
+          checked_at: '2026-06-01T10:00:00Z',
+        },
+      }),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Key rejected')).toBeInTheDocument()
+    expect(screen.getByText(/rejecting the API key/)).toBeInTheDocument()
+  })
+
+  it('reports a healthy map backend without alarming the admin', async () => {
+    renderPage()
+
+    expect(await screen.findByText('Healthy')).toBeInTheDocument()
+    expect(screen.queryByText(/rejecting the API key/)).not.toBeInTheDocument()
+  })
+
+  it('reports maps as not configured when no mapy.com key is set', async () => {
+    fetchMock.mockResolvedValue(
+      status({ maps: { configured: false, state: 'unknown', degraded: false } }),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Not configured')).toBeInTheDocument()
   })
 })

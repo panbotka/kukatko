@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
@@ -18,6 +18,15 @@ import {
   viewportFromView,
 } from '../lib/mapView'
 import { useUrlState } from '../lib/urlState'
+import { probeTileFailure, type TileFailure } from '../services/map'
+
+/** The i18n key explaining each tile failure. */
+const TILE_FAILURE_MESSAGES = {
+  key_rejected: 'map.tiles.keyRejected',
+  rate_limited: 'map.tiles.rateLimited',
+  unavailable: 'map.tiles.unavailable',
+  error: 'map.tiles.error',
+} as const satisfies Record<TileFailure, string>
 
 /**
  * The map view: geotagged photos plotted as clustered markers over mapy.com
@@ -25,11 +34,23 @@ import { useUrlState } from '../lib/urlState'
  * The mapset, viewport and photo filters all live in the URL, so Back/Forward
  * restore the exact map and a shared link reproduces it. Panning/zooming updates
  * the URL without refetching; changing a filter refetches the GeoJSON feed.
+ *
+ * When the tiles fail to load — most likely because mapy.com is rejecting the
+ * server's API key — the page says so in a dismissible warning instead of showing
+ * an unexplained grey grid. The map itself stays up: the markers, clusters and
+ * popups all keep working over the empty background.
  */
 export function MapPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [view, setView] = useUrlState<MapView>(MAP_DEFAULTS)
+  const [tileFailure, setTileFailure] = useState<TileFailure | null>(null)
+  const [warningDismissed, setWarningDismissed] = useState(false)
+  // A failing map fires one tileerror per tile in the viewport, so keep the
+  // diagnosis to a single in-flight probe (and none at all once we know why).
+  const probeRef = useRef(false)
+  const tileFailureRef = useRef<TileFailure | null>(null)
+  tileFailureRef.current = tileFailure
 
   // Only the feed filters drive a refetch — memoise on those fields (not the
   // whole view) so panning (which writes lat/lng/zoom into the URL) does not
@@ -71,6 +92,32 @@ export function MapPage() {
     [navigate],
   )
 
+  // Leaflet only reports *that* a tile failed; ask the proxy why, so the warning
+  // can name the cause (a rejected key is the one an operator must act on).
+  const handleTileError = useCallback((tileUrl: string) => {
+    if (probeRef.current || tileFailureRef.current !== null) {
+      return
+    }
+    probeRef.current = true
+    void probeTileFailure(tileUrl)
+      .then((failure) => {
+        if (failure !== null) {
+          setTileFailure(failure)
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        probeRef.current = false
+      })
+  }, [])
+
+  // A mapset switch re-arms the warning: the new layer may well load, and a stale
+  // warning over a working map would be worse than none.
+  useEffect(() => {
+    setTileFailure(null)
+    setWarningDismissed(false)
+  }, [mapset])
+
   return (
     <>
       <h1 className="kk-page-title mb-3">{t('map.title')}</h1>
@@ -86,6 +133,19 @@ export function MapPage() {
         </Alert>
       ) : (
         <div className="position-relative">
+          {tileFailure !== null && !warningDismissed && (
+            <Alert
+              variant="warning"
+              dismissible
+              onClose={() => {
+                setWarningDismissed(true)
+              }}
+            >
+              <div>{t(TILE_FAILURE_MESSAGES[tileFailure])}</div>
+              <div className="small mb-0">{t('map.tiles.hint')}</div>
+            </Alert>
+          )}
+
           <LeafletMap
             features={features}
             mapset={mapset}
@@ -93,6 +153,7 @@ export function MapPage() {
             onViewportChange={handleViewportChange}
             onSelectPhoto={handleSelectPhoto}
             thumbAlt={t('map.thumbAlt')}
+            onTileError={handleTileError}
           />
 
           {status === 'loading' && (

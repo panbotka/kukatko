@@ -325,10 +325,12 @@ zapiš sem.
   znamená a zda je třeba jednat; sebe-gate na `isAdmin`,
   `SystemStatusPage` = `/system` (jen admin) **system-status dashboard**: auto-refresh (polling 5 s)
   `GET /system/status` → kartová mřížka (DB, embeddingy, fronta jobů, záloha, importy, úložiště,
-  verze) s **rychlými akcemi** — *znovu zařadit mrtvé úlohy* (`requeueDeadLetterJobs`: list dead →
+  **mapy**, verze) s **rychlými akcemi** — *znovu zařadit mrtvé úlohy* (`requeueDeadLetterJobs`: list dead →
   per-job `POST /jobs/{id}/requeue`), *spustit zálohu* (`POST /backup`), odkazy na flow importu
   (`/import`) a kontroly údržby (`/maintenance`); **box offline** + čekající embeddingy → zvýrazněná
-  hláška „doženou se po návratu"; karta fronty jobů nese sdílenou `JobStateLegend`
+  hláška „doženou se po návratu"; **karta Mapy** (`MapsCard` nad `status.maps`) ukazuje poslední
+  stav mapy.com — `key_rejected` červeně + co s tím (vyměnit klíč v konzoli mapy.com), degradace
+  žlutě, bez klíče „Nenastaveno"; karta fronty jobů nese sdílenou `JobStateLegend`
   (total/queued/running/failed/**dead**/**pending** = „Čeká na box") s plain-language vysvětlením
   každého stavu (`jobStates.*` + `system.jobs.intro`); loading/error/notice stavy, sebe-gate na `isAdmin`,
   `UsersPage` = `/users` (jen admin) **správa účtů**: tabulka uživatelů (jméno, celé jméno, role,
@@ -468,7 +470,11 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `MapPage` = `/map` mapový pohled: geotagované fotky jako shlukované markery nad mapy.com
   dlaždicemi (Leaflet), přepínač podkladu + filtry (datum/archiv/soukromé) v `MapFilterBar`,
   stav (mapset/viewport/filtry) v URL — posun/zoom zapisuje viewport bez refetche, změna filtru
-  dotáhne GeoJSON; klik na marker → detail fotky; loading/empty/error stavy,
+  dotáhne GeoJSON; klik na marker → detail fotky; loading/empty/error stavy; **selhání dlaždic**
+  (`onTileError` z `LeafletMap`) diagnostikuje `probeTileFailure` a vysvětlí **zavíratelným
+  varováním** (`map.tiles.*`, typicky „mapový klíč byl odmítnut") místo nevysvětlené šedé mřížky —
+  mapa zůstává použitelná, markery/shluky se kreslí dál nad prázdným podkladem; probe je
+  **debouncovaný** (celá dávka `tileerror` = jeden dotaz) a přepnutí mapsetu varování resetuje,
   `PlacesPage` = `/places` procházení knihovny dle lokality: jedním fetchem `fetchPlaces()` natáhne
   hierarchii zemí→měst s počty; **drill v URL** (`?country=&city=` přes `useUrlState` nad
   `PlacesView` = `LibraryView`+`country`/`city`, takže Zpět prochází úrovně) — úroveň 1 seznam zemí
@@ -543,7 +549,9 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   **povinné mapy.com prvky** — attribution „© Seznam.cz a.s. a další" → `/copyright` a klikatelné
   **logo** vlevo dole → `mapy.com`; `leaflet.markercluster` shluky (klik přibližuje), markery
   z GeoJSON, popup s náhledem → detail fotky; jednorázový setup, výměna URL dlaždic při změně
-  mapsetu, přestavba markerů při změně fotek, fit-bounds na markery), `MapFilterBar` (přepínač
+  mapsetu, přestavba markerů při změně fotek, fit-bounds na markery; volitelný **`onTileError`**
+  prop dostane URL dlaždice, kterou se nepodařilo načíst (Leaflet `tileerror`), aby rodič mohl
+  zjistit **proč** — fire per dlaždici, rodič debouncuje), `MapFilterBar` (přepínač
   podkladu basic/outdoor/aerial + datum od/do, archiv, soukromé, počet, zrušit filtry);
   `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`, `FaceThumb`
   (čtvercový výřez obličeje z thumbnailu fotky dle normalized bbox přes `faceCropStyle`),
@@ -888,9 +896,13 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (GeoJSON FeatureCollection geotagovaných fotek + `buildMapQuery`), `tileLayerUrl(mapset)` (Leaflet
   URL template na backend proxy, **bez API klíče**), `reverseGeocode(lat,lng,signal?)` nad
   `GET /api/v1/map/rgeocode` (on-demand reverse geocode pro detail fotky → `GeocodeResult`),
-  `toMapset`/`MAPSETS`; typy
+  **`probeTileFailure(tileUrl,signal?)`** (`<img>` status v JS nevidíš → dlaždice, kterou Leaflet
+  nenačetl, se přefetchne a status proxy se přeloží na `TileFailure`: **424 → `key_rejected`**
+  (mapy.com odmítá **náš** klíč), 429 → `rate_limited`, 503 → `unavailable`, jinak `error`;
+  200/404 → `null`, protože chybějící dlaždice mimo pokrytí je normální odpověď; síťová chyba →
+  `'error'`, abort probublá), `toMapset`/`MAPSETS`; typy
   `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`/
-  `GeocodeResult`/`RegionalItem`);
+  `TileFailure`/`GeocodeResult`/`RegionalItem`);
   `places.ts` = klient hierarchie míst: `fetchPlaces(country?,signal)` nad `GET /api/v1/places`
   → `PlaceCountry[]` (země s počty + nested `cities`, volitelné `country` drillne do měst jedné
   země); typy `PlaceCountry`/`PlaceCity`; procházení fotek lokality jde přes sdílené
@@ -908,8 +920,8 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   → `SystemStatus`, `triggerBackup(signal)` nad `POST /api/v1/backup` (409/503 → ApiError),
   `requeueDeadLetterJobs(signal)` (vylistuje `GET /jobs?state=dead` → per-job `POST /jobs/{id}/requeue`,
   vrací počet, 404/409 skip); typy `SystemStatus`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
-  `BackupStatus`/`ImportsStatus`/`StorageStatus`/`VersionInfo`; sdílí `ApiError` z `auth.ts` a `ImportRun`
-  z `import.ts`,
+  `BackupStatus`/`ImportsStatus`/`StorageStatus`/`MapsStatus`/`MapsState`/`VersionInfo`; sdílí
+  `ApiError` z `auth.ts` a `ImportRun` z `import.ts`,
   `users.ts` = admin klient správy účtů nad `/api/v1/admin/users`: `fetchUsers(signal)` → `AdminUser[]`
   (= `User` + `note`), `createUser(body,signal)` (`POST`, 409 = obsazený username, 400 = slabé heslo /
   neplatná role / dlouhá poznámka), `updateUser(uid,body,signal)` (`PATCH`, **replace** celého

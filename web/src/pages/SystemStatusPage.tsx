@@ -23,6 +23,8 @@ import {
   type EmbeddingsStatus,
   type ImportsStatus,
   type JobsStatus,
+  type MapsState,
+  type MapsStatus,
   type StorageStatus,
   type SystemStatus,
   type VersionInfo,
@@ -112,6 +114,69 @@ function EmbeddingsCard({
           <Alert variant="warning" className="mt-3 mb-0 small">
             {t('system.embeddings.offlineHint', { n: pending })}
           </Alert>
+        )}
+      </Card.Body>
+    </Card>
+  )
+}
+
+/** The badge variant per map-provider state: only a degradation is alarming. */
+const MAPS_BADGE = {
+  unknown: 'secondary',
+  ok: 'success',
+  key_rejected: 'danger',
+  rate_limited: 'warning',
+  unavailable: 'warning',
+  error: 'warning',
+} as const satisfies Record<MapsState, string>
+
+/** The i18n label per map-provider state. */
+const MAPS_LABEL = {
+  unknown: 'system.maps.unknown',
+  ok: 'system.maps.ok',
+  key_rejected: 'system.maps.keyRejected',
+  rate_limited: 'system.maps.rateLimited',
+  unavailable: 'system.maps.unavailable',
+  error: 'system.maps.error',
+} as const satisfies Record<MapsState, string>
+
+/**
+ * The map-provider card. A rejected mapy.com key is the failure that otherwise
+ * hides — the map view just goes grey — so it is called out here, in red, with
+ * what has to be done about it.
+ */
+function MapsCard({ maps }: { maps: MapsStatus }) {
+  const { t, i18n } = useTranslation()
+  if (!maps.configured) {
+    return (
+      <Card className="h-100">
+        <Card.Body>
+          <h2 className="kk-section-title mb-2">{t('system.maps.title')}</h2>
+          <Badge bg="secondary">{t('system.maps.notConfigured')}</Badge>
+        </Card.Body>
+      </Card>
+    )
+  }
+  const variant = MAPS_BADGE[maps.state]
+  return (
+    <Card className="h-100">
+      <Card.Body>
+        <h2 className="kk-section-title mb-2">{t('system.maps.title')}</h2>
+        <Badge bg={variant} text={variant === 'warning' ? 'dark' : undefined}>
+          {t(MAPS_LABEL[maps.state])}
+        </Badge>
+        {maps.checked_at !== undefined && (
+          <div className="text-secondary small mt-2">
+            {t('system.maps.checkedAt')}: {formatTimestamp(maps.checked_at, i18n.language)}
+          </div>
+        )}
+        {maps.state === 'key_rejected' && (
+          <Alert variant="danger" className="mt-3 mb-0 small">
+            {t('system.maps.keyRejectedHint')}
+          </Alert>
+        )}
+        {maps.degraded && maps.detail !== undefined && maps.detail !== '' && (
+          <div className="text-secondary small font-monospace text-break mt-2">{maps.detail}</div>
         )}
       </Card.Body>
     </Card>
@@ -316,10 +381,12 @@ function QuickActions() {
  * Admin-only system-status dashboard: a single, auto-refreshing view of the
  * running instance's operational health — database and embeddings-sidecar
  * reachability, job-queue depth and dead-letter backlog, the backup subsystem,
- * the last import per source, and on-disk storage usage — with quick actions to
- * requeue the dead-letter jobs, trigger a backup, and jump to the import and
- * maintenance flows. When the embeddings box is offline, the queued embedding
- * work is surfaced so it is clear the backlog resumes once the box returns.
+ * the last import per source, on-disk storage usage, and the map provider's
+ * state — with quick actions to requeue the dead-letter jobs, trigger a backup,
+ * and jump to the import and maintenance flows. When the embeddings box is
+ * offline, the queued embedding work is surfaced so it is clear the backlog
+ * resumes once the box returns; when mapy.com is rejecting the API key, that is
+ * called out here rather than left to show up as a grey map.
  */
 export function SystemStatusPage() {
   const { t } = useTranslation()
@@ -454,6 +521,9 @@ export function SystemStatusPage() {
             </Col>
             <Col>
               <StorageCard storage={state.data.storage} />
+            </Col>
+            <Col>
+              <MapsCard maps={state.data.maps} />
             </Col>
             <Col>
               <VersionCard version={state.data.version} />

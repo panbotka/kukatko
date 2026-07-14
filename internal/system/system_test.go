@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/backup"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/mapy"
 )
 
 // fakeDB is a DBPinger whose Ping returns the configured error.
@@ -68,10 +70,27 @@ type fakeBackup struct{ status backup.Status }
 // Status returns the configured backup status.
 func (f fakeBackup) Status() backup.Status { return f.status }
 
+// healthyMaps returns a maps health tracker that has last seen a successful
+// mapy.com call.
+func healthyMaps() *mapy.Health {
+	health := mapy.NewHealth()
+	health.Record(nil)
+	return health
+}
+
+// rejectedMaps returns a maps health tracker that has last seen mapy.com reject
+// the API key (its 403), i.e. the state that leaves the map grey.
+func rejectedMaps() *mapy.Health {
+	health := mapy.NewHealth()
+	health.Record(fmt.Errorf("tile: %w (status 403)", mapy.ErrUnauthorized))
+	return health
+}
+
 // healthyConfig builds a Config wired with healthy fakes over the given
 // originals directory, so individual tests can override single fields.
 func healthyConfig(originals string) Config {
 	return Config{
+		Maps:       healthyMaps(),
 		DB:         fakeDB{},
 		Embeddings: fakeHealth{online: true},
 		Jobs: fakeJobs{
@@ -129,6 +148,61 @@ func TestCollect_Aggregates(t *testing.T) {
 	}
 	if status.Storage.TotalBytes <= 0 {
 		t.Errorf("storage.total = %d, want positive", status.Storage.TotalBytes)
+	}
+	if !status.Maps.Configured || status.Maps.Degraded || status.Maps.State != string(mapy.HealthOK) {
+		t.Errorf("maps = %+v, want configured, healthy and not degraded", status.Maps)
+	}
+}
+
+// TestCollect_MapsKeyRejected verifies a mapy.com key the provider is rejecting
+// shows up as a degraded map backend, so the operator sees it on the dashboard
+// instead of only as a grey map. The detail must never carry the key itself.
+func TestCollect_MapsKeyRejected(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Maps = rejectedMaps()
+
+	status, err := New(cfg).Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if !status.Maps.Configured {
+		t.Error("maps.configured = false, want true (a key is configured, it is just rejected)")
+	}
+	if !status.Maps.Degraded {
+		t.Error("maps.degraded = false, want true (the provider is rejecting the key)")
+	}
+	if status.Maps.State != string(mapy.HealthKeyRejected) {
+		t.Errorf("maps.state = %q, want %q", status.Maps.State, mapy.HealthKeyRejected)
+	}
+	if status.Maps.Detail == "" {
+		t.Error("maps.detail is empty, want a sanitised explanation")
+	}
+	if status.Maps.CheckedAt == nil {
+		t.Error("maps.checked_at is nil, want the time of the observation")
+	}
+}
+
+// TestCollect_MapsNotConfigured verifies no mapy.com key reports the map backend
+// as absent rather than degraded — nothing is broken, maps are simply off.
+func TestCollect_MapsNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Maps = nil
+
+	status, err := New(cfg).Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if status.Maps.Configured || status.Maps.Degraded {
+		t.Errorf("maps = %+v, want not configured and not degraded", status.Maps)
+	}
+	if status.Maps.CheckedAt != nil {
+		t.Errorf("maps.checked_at = %v, want nil (nothing was ever observed)", status.Maps.CheckedAt)
 	}
 }
 

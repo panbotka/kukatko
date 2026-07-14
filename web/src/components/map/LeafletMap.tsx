@@ -79,6 +79,14 @@ export interface LeafletMapProps {
    * passes a smaller fixed height. */
   height?: string
   /**
+   * Called with the URL of a tile the layer failed to load. An `<img>` never
+   * exposes its response status to JavaScript, so the parent has to re-request
+   * the URL to learn *why* the tiles are missing (see `probeTileFailure`) and can
+   * then explain the empty map instead of leaving a silent grey grid. Fires once
+   * per failed tile, so the parent must debounce.
+   */
+  onTileError?: (tileUrl: string) => void
+  /**
    * When set, turns the map into an interactive location picker with a draggable
    * marker (used by the metadata editor to geotag a photo). Omitted for the
    * read-only cluster map. Whether picking is enabled is fixed for the map's
@@ -107,6 +115,7 @@ export function LeafletMap({
   thumbAlt,
   height = '70vh',
   picker,
+  onTileError,
 }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -131,6 +140,8 @@ export function LeafletMap({
   thumbAltRef.current = thumbAlt
   const onPickRef = useRef(picker?.onPick)
   onPickRef.current = picker?.onPick
+  const onTileErrorRef = useRef(onTileError)
+  onTileErrorRef.current = onTileError
   // Whether this map instance is a picker is fixed at mount (a page renders it in
   // one mode or the other), captured so the one-time setup effect can read it.
   const pickerEnabledRef = useRef(picker !== undefined)
@@ -161,6 +172,15 @@ export function LeafletMap({
       attribution: MAPY_ATTRIBUTION,
       detectRetina: true,
       maxZoom: MAX_ZOOM,
+    })
+    // A tile that fails to load leaves nothing but a grey square, and the <img>
+    // keeps its response status to itself — so hand the URL to the parent, which
+    // can ask the proxy what went wrong (a rejected mapy.com key, most likely).
+    tileLayer.on('tileerror', (event: L.TileErrorEvent) => {
+      const { tile } = event
+      if (tile instanceof HTMLImageElement && tile.src !== '') {
+        onTileErrorRef.current?.(tile.src)
+      }
     })
     tileLayer.addTo(map)
     tileLayerRef.current = tileLayer

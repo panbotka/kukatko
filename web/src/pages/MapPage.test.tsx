@@ -10,10 +10,14 @@ import { type MapFeature, type MapFeatureCollection } from '../services/map'
 
 import { MapPage } from './MapPage'
 
+/** The tile URL the fake map reports as failed when the test clicks "fail tile". */
+const FAILED_TILE_URL = '/api/v1/map/tiles/basic/7/70/44'
+
 // Stand in for the imperative Leaflet map: render each feature as a link so we
-// can assert markers reach the map and a marker click navigates to the detail.
+// can assert markers reach the map and a marker click navigates to the detail,
+// plus a button that fires a tile-load failure the way Leaflet's tileerror does.
 vi.mock('../components/map/LeafletMap', () => ({
-  LeafletMap: ({ features, mapset, onSelectPhoto }: LeafletMapProps) => (
+  LeafletMap: ({ features, mapset, onSelectPhoto, onTileError }: LeafletMapProps) => (
     <div data-testid="leaflet-map" data-mapset={mapset}>
       {features.map((f) => (
         <a
@@ -27,6 +31,14 @@ vi.mock('../components/map/LeafletMap', () => ({
           {f.properties.uid}
         </a>
       ))}
+      <button
+        type="button"
+        onClick={() => {
+          onTileError?.(FAILED_TILE_URL)
+        }}
+      >
+        fail tile
+      </button>
     </div>
   ),
 }))
@@ -165,5 +177,85 @@ describe('MapPage', () => {
     await screen.findByRole('link', { name: 'ph1' })
     expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-mapset', 'outdoor')
     expect(fetchMock.mock.calls[0][0].archived).toBe('only')
+  })
+})
+
+describe('MapPage tile failures', () => {
+  /** Stubs the tile probe's fetch with the given tile-proxy status. */
+  function stubTileProbe(status: number): ReturnType<typeof vi.fn> {
+    const probe = vi.fn().mockResolvedValue(new Response(null, { status }))
+    vi.stubGlobal('fetch', probe)
+    return probe
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('explains a rejected map key instead of leaving the tiles silently grey', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    stubTileProbe(424)
+    const user = userEvent.setup()
+    renderMap()
+
+    await user.click(await screen.findByRole('button', { name: 'fail tile' }))
+
+    expect(
+      await screen.findByText('Map tiles could not be loaded — the map key was rejected.'),
+    ).toBeInTheDocument()
+    // The map itself must stay usable: the markers still render on the empty
+    // background.
+    expect(screen.getByRole('link', { name: 'ph1' })).toBeInTheDocument()
+  })
+
+  it('dismisses the warning when the user closes it', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    stubTileProbe(424)
+    const user = userEvent.setup()
+    renderMap()
+
+    await user.click(await screen.findByRole('button', { name: 'fail tile' }))
+    const warning = await screen.findByText(
+      'Map tiles could not be loaded — the map key was rejected.',
+    )
+    expect(warning).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /close/i }))
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText('Map tiles could not be loaded — the map key was rejected.'),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('probes only once for a whole burst of failing tiles', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    const probe = stubTileProbe(424)
+    const user = userEvent.setup()
+    renderMap()
+
+    const failTile = await screen.findByRole('button', { name: 'fail tile' })
+    await user.click(failTile)
+    await screen.findByText('Map tiles could not be loaded — the map key was rejected.')
+    // A failing map fires one tileerror per tile in the viewport; the cause is
+    // already known, so none of them may cost another request.
+    await user.click(failTile)
+    await user.click(failTile)
+
+    expect(probe).toHaveBeenCalledTimes(1)
+  })
+
+  it('says nothing when the failing tile turns out to be fine', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    stubTileProbe(200)
+    const user = userEvent.setup()
+    renderMap()
+
+    await user.click(await screen.findByRole('button', { name: 'fail tile' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Map tiles could not be loaded/)).not.toBeInTheDocument()
+    })
   })
 })

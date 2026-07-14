@@ -20,6 +20,7 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/obs"
 	"github.com/panbotka/kukatko/internal/ppimport"
@@ -83,11 +84,16 @@ func runServe(cmd *cobra.Command) error {
 		return err
 	}
 
-	apis, bg, err := buildServices(cfg, db, authAPI, reg)
+	// One tracker shared by the maps proxy (which records every upstream outcome)
+	// and the system status (which reports it), so a rejected mapy.com key is
+	// visible on the admin dashboard and not only as a grey map.
+	mapsHealth := newMapsHealth(cfg)
+
+	apis, bg, err := buildServices(cfg, db, authAPI, reg, mapsHealth)
 	if err != nil {
 		return err
 	}
-	apis, backupSvc, err := appendOpsAPIs(cfg, db, authAPI, apis)
+	apis, backupSvc, err := appendOpsAPIs(cfg, db, authAPI, apis, mapsHealth)
 	if err != nil {
 		return err
 	}
@@ -189,6 +195,7 @@ func setupAuth(ctx context.Context, cmd *cobra.Command, cfg *config.Config, db *
 // (nil when not configured).
 func appendOpsAPIs(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, apis []server.Option,
+	mapsHealth *mapy.Health,
 ) ([]server.Option, *backup.Service, error) {
 	backupSvc, err := buildBackupService(cfg)
 	if err != nil {
@@ -202,7 +209,7 @@ func appendOpsAPIs(
 	}
 	apis = append(apis, server.WithAPI(restoreAPI.RegisterRoutes))
 
-	systemAPI, err := buildSystemAPI(cfg, db, authAPI, backupSvc)
+	systemAPI, err := buildSystemAPI(cfg, db, authAPI, backupSvc, mapsHealth)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -245,6 +252,7 @@ type backgroundServices struct {
 // routes plus the background services for the serve command to run.
 func buildServices(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, reg *metrics.Registry,
+	mapsHealth *mapy.Health,
 ) ([]server.Option, backgroundServices, error) {
 	jobStore := jobs.NewStore(db.Pool())
 	enqueuer := jobs.NewEnqueuer(jobStore)
@@ -272,7 +280,7 @@ func buildServices(
 	}
 	photoAPI := buildPhotoAPI(cfg, db, authAPI, mediaStore, vectorStore, embedClient, matchSvc, trashSvc, reg)
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, authAPI, matchSvc)
-	mapsAPI, err := buildMapsAPI(cfg, db, authAPI)
+	mapsAPI, err := buildMapsAPI(cfg, db, authAPI, mapsHealth)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}

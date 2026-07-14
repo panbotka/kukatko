@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/systemapi"
 )
@@ -21,6 +22,7 @@ import (
 // authAPI so systemapi stays decoupled from auth's wiring.
 func buildSystemAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, backupSvc *backup.Service,
+	mapsHealth *mapy.Health,
 ) (*systemapi.API, error) {
 	client, err := embedding.New(embedding.Config{
 		BaseURL:  cfg.Embedding.URL,
@@ -33,10 +35,15 @@ func buildSystemAPI(
 
 	// A nil *backup.Service must be passed as a nil interface, not a non-nil
 	// interface wrapping a nil pointer, so the status section reports
-	// not-configured rather than panicking.
+	// not-configured rather than panicking. The same holds for the maps health
+	// tracker, which is nil when no mapy.com key is configured.
 	var backupReporter system.BackupReporter
 	if backupSvc != nil {
 		backupReporter = backupSvc
+	}
+	var mapsReporter system.MapsReporter
+	if mapsHealth != nil {
+		mapsReporter = mapsHealth
 	}
 
 	pool := db.Pool()
@@ -46,6 +53,7 @@ func buildSystemAPI(
 		EmbeddingURL:  cfg.Embedding.URL,
 		Jobs:          jobs.NewStore(pool),
 		Backup:        backupReporter,
+		Maps:          mapsReporter,
 		Imports:       importer.NewStore(pool),
 		OriginalsPath: cfg.Storage.OriginalsPath,
 		CachePath:     cfg.Storage.CachePath,

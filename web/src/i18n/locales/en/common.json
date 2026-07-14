@@ -306,6 +306,13 @@
     "error": {
       "load": "Could not load the map.",
       "retry": "Try again"
+    },
+    "tiles": {
+      "keyRejected": "Map tiles could not be loaded — the map key was rejected.",
+      "rateLimited": "Map tiles could not be loaded — the map provider is throttling requests.",
+      "unavailable": "Map tiles could not be loaded — the map provider is unavailable.",
+      "error": "Map tiles could not be loaded.",
+      "hint": "Photos are still shown on the empty background."
     }
   },
   "similar": {
@@ -1124,6 +1131,18 @@
     "actions": {
       "title": "Quick actions:",
       "maintenance": "Maintenance scan"
+    },
+    "maps": {
+      "title": "Maps (mapy.com)",
+      "ok": "Healthy",
+      "notConfigured": "Not configured",
+      "keyRejected": "Key rejected",
+      "rateLimited": "Rate limited",
+      "unavailable": "Unavailable",
+      "error": "Error",
+      "unknown": "Not used yet",
+      "keyRejectedHint": "mapy.com is rejecting the API key (expired, revoked or out of credits). The map stays without tiles until the key is replaced in the mapy.com console.",
+      "checkedAt": "Last checked"
     }
   },
   "users": {

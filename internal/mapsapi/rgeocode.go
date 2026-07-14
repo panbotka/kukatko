@@ -43,6 +43,7 @@ func (a *API) handleReverseGeocode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := a.geocoder.ReverseGeocode(r.Context(), lat, lng)
+	a.health.Record(err)
 	if err != nil {
 		writeGeocodeError(w, err)
 		return
@@ -88,12 +89,15 @@ func geocodeKey(lat, lng float64) string {
 }
 
 // writeGeocodeError maps a mapy client error to a client-facing status without
-// leaking the API key: no match is 404, a hit rate limit 429, an unreachable
-// provider 503, and any other upstream problem 502.
+// leaking the API key: no match is 404, a rejected key StatusMapKeyRejected (our
+// key, not the caller's request, is the problem), a hit rate limit 429, an
+// unreachable provider 503, and any other upstream problem 502.
 func writeGeocodeError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, mapy.ErrNotFound):
 		writeError(w, http.StatusNotFound, "no location found for those coordinates")
+	case errors.Is(err, mapy.ErrUnauthorized):
+		writeError(w, StatusMapKeyRejected, "map provider rejected the server's API key")
 	case errors.Is(err, mapy.ErrRateLimited):
 		writeError(w, http.StatusTooManyRequests, "map provider rate limit exceeded")
 	case errors.Is(err, mapy.ErrUnavailable):

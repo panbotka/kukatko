@@ -429,6 +429,15 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   reverse-geokódu pro background **`places` job** (cachuje lokalitu fotky): `geocode_rate_per_sec`
   (default 5, ≤ 0 vypne) + `geocode_burst` (default 10) — chrání měsíční mapy.com kreditní budget,
   zpracovat pomalu je OK. `KUKATKO_MAPS_GEOCODE_RATE_PER_SEC`/`_GEOCODE_BURST`.
+- **Server-side cache dlaždic (`maps.tile_cache_bytes`, `maps.tile_cache_ttl`):** default **64 MiB**
+  (`67108864`) a **24h**; ≤ 0 u kteréhokoli z nich cache vypne. Free tier mapy.com účtuje **1 kredit
+  za dlaždici** (250k/měsíc), takže bez cache stojí každé opětovné projetí už viděné oblasti znovu.
+  Cachují se **jen úspěšné** dlaždice (chyba nikdy — jinak by odmítnutý klíč zamrzl v mapě na celé
+  TTL); hit/miss hlásí hlavička `X-Tile-Cache`. `KUKATKO_MAPS_TILE_CACHE_BYTES`/`_TILE_CACHE_TTL`.
+- **Mapa je šedá?** Podívej se na `GET /system/status` → `maps.state`: `key_rejected` znamená, že
+  mapy.com odmítá **náš** API klíč (vypršel / zrušen / došly kredity) — proxy to loguje WARN
+  (`mapy: tile request failed`, se statusem) a vrací **424**; frontend nad tím ukáže varování místo
+  šedé mřížky. Oprava je manuální: nový klíč v konzoli mapy.com → `MAPY_API_KEY`.
 
 ### `maps.user_agent` — restrikce mapy.com klíče na User-Agent
 

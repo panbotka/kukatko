@@ -11,6 +11,8 @@ const leaflet = vi.hoisted(() => {
     url: string
     options: Record<string, unknown>
     setUrl: ReturnType<typeof vi.fn>
+    /** Handlers the component subscribed to the layer with, by event name. */
+    handlers: Record<string, (event: unknown) => void>
   }
   interface RecordedMarker {
     latlng: [number, number]
@@ -67,10 +69,18 @@ const leaflet = vi.hoisted(() => {
   const L = {
     map: vi.fn(() => map),
     tileLayer: vi.fn((url: string, options: Record<string, unknown>) => {
-      const layer: RecordedTile & { addTo: (m: unknown) => unknown } = {
+      const layer: RecordedTile & {
+        addTo: (m: unknown) => unknown
+        on: (event: string, handler: (event: unknown) => void) => unknown
+      } = {
         url,
         options,
         setUrl: vi.fn(),
+        handlers: {},
+        on: vi.fn((event: string, handler: (event: unknown) => void) => {
+          layer.handlers[event] = handler
+          return layer
+        }),
         addTo: vi.fn(() => layer),
       }
       calls.tiles.push(layer)
@@ -165,6 +175,44 @@ describe('LeafletMap tile layer', () => {
       />,
     )
     expect(tile.setUrl).toHaveBeenCalledWith('/api/v1/map/tiles/aerial/{z}/{x}/{y}{r}')
+  })
+})
+
+describe('LeafletMap tile failures', () => {
+  it('reports the URL of a tile that failed to load, so the page can explain why', () => {
+    const onTileError = vi.fn()
+    render(
+      <LeafletMap
+        features={FEATURES}
+        mapset="basic"
+        viewport={null}
+        onViewportChange={vi.fn()}
+        onSelectPhoto={vi.fn()}
+        thumbAlt="Photo on the map"
+        onTileError={onTileError}
+      />,
+    )
+
+    const tile = leaflet.calls.tiles[0]
+    const img = document.createElement('img')
+    img.src = '/api/v1/map/tiles/basic/7/70/44'
+    tile.handlers.tileerror({ tile: img })
+
+    expect(onTileError).toHaveBeenCalledTimes(1)
+    expect(String(onTileError.mock.calls[0][0])).toContain('/api/v1/map/tiles/basic/7/70/44')
+  })
+
+  it('stays silent when no tile-error handler is given', () => {
+    renderMap()
+    const tile = leaflet.calls.tiles[0]
+    const img = document.createElement('img')
+    img.src = '/api/v1/map/tiles/basic/7/70/44'
+
+    // The map is also used without an error handler (the photo-detail mini-map);
+    // a failing tile there must not blow up.
+    expect(() => {
+      tile.handlers.tileerror({ tile: img })
+    }).not.toThrow()
   })
 })
 
