@@ -571,13 +571,15 @@ func TestImportScoped_detailFailureKeepsPhoto(t *testing.T) {
 	}
 }
 
-// TestImport_fullRunReadsDetailOnlyForNewPhotos pins the cost boundary of a full
-// run: albums and labels are mapped by walking the source catalogue, so the only
-// reason to read a per-photo detail is the people on it — PhotoPrism serves markers
-// nowhere else, and has no bulk marker endpoint. That is one request per NEW photo
-// (noise beside downloading its original) and none at all for a photo the run
-// skipped as unchanged, which is what keeps a re-import cheap.
-func TestImport_fullRunReadsDetailOnlyForNewPhotos(t *testing.T) {
+// TestImport_fullRunReadsDetailOnlyForChangedPhotos pins the cost boundary of a full
+// run. Albums and labels are mapped by walking the source catalogue, so the only
+// reason to read a per-photo detail is what PhotoPrism serves there and nowhere else
+// — the photo's credits and the people on it. That is one request per photo the run
+// WRITES, and one per photo the source has touched since the watermark (whose
+// details may be the only thing that changed). It is emphatically NOT one per listed
+// photo: the incremental listing re-serves the watermark's own photos every time, and
+// a photo nothing has happened to must cost nothing.
+func TestImport_fullRunReadsDetailOnlyForChangedPhotos(t *testing.T) {
 	t.Parallel()
 	h := newHarness(scopedFixture())
 
@@ -594,7 +596,48 @@ func TestImport_fullRunReadsDetailOnlyForNewPhotos(t *testing.T) {
 		t.Fatalf("second Import: %v", err)
 	}
 	if got := h.client.detailCount() - before; got != 0 {
-		t.Errorf("details requested by a re-run = %d, want 0 (nothing new was imported)", got)
+		t.Errorf("details requested by a re-run = %d, want 0 (nothing changed upstream)", got)
+	}
+}
+
+// TestImport_fullRunReadsDetailOfAnUpstreamEdit guards the hole the cost boundary
+// above could easily leave: editing a photo's copyright in PhotoPrism changes
+// nothing the LISTING carries — the credits live on the detail — but it does bump the
+// photo's UpdatedAt. A run that read a detail only for the photos its listing pass
+// found changed would classify that photo as unchanged and never look, and the edit
+// would never arrive. The photo's own timestamp, not the listing's verdict, decides.
+func TestImport_fullRunReadsDetailOfAnUpstreamEdit(t *testing.T) {
+	t.Parallel()
+	client := scopedFixture()
+	h := newHarness(client)
+
+	if _, err := h.svc.Import(context.Background()); err != nil {
+		t.Fatalf("first Import: %v", err)
+	}
+	before := h.client.detailCount()
+
+	// The copyright is edited upstream: the listing serves the same fields as before,
+	// only the photo's timestamp moves.
+	photo := client.photos[0]
+	photo.UpdatedAt = photo.UpdatedAt.Add(time.Hour)
+	client.photos[0] = photo
+	client.details[photo.UID] = photoprism.PhotoDetail{
+		Photo:   photo,
+		Details: photoprism.Details{Copyright: "© 2016 Jan Novák"},
+	}
+
+	result, err := h.svc.Import(context.Background())
+	if err != nil {
+		t.Fatalf("second Import: %v", err)
+	}
+	if got := h.client.detailCount() - before; got != 1 {
+		t.Fatalf("details requested = %d, want 1 (the photo the source touched)", got)
+	}
+	if result.Counts.Updated != 1 {
+		t.Errorf("counts = %+v, want updated 1: the detail carried a new copyright", result.Counts)
+	}
+	if got := h.photos.byUID[h.photos.byPPUID[photo.UID]].Copyright; got != "© 2016 Jan Novák" {
+		t.Errorf("copyright = %q, want the edit brought over", got)
 	}
 }
 

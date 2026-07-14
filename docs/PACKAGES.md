@@ -88,6 +88,19 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   opravdu doplnilo, takže no-op backfill je pro každého čtenáře neviditelný; `metadata_extracted_at`
   se stampuje vždy — soubor byl přečten, ať už řekl cokoli. Nic mimo `fileMetadataColumns` se
   nedotýká: titulky, `taken_at`, GPS, hodnocení a kurátorská data jsou mimo. `ErrPhotoNotFound`)/
+  **`ApplyImportMetadata(ctx,uid,ImportMetadata) (changed,error)`**
+  (zápisová strana **importu z cizího katalogu** (`internal/ppimport`: PhotoPrism `Details` blok +
+  file-technical pole z detailu fotky) na fotku, která už v katalogu je. Liší se od
+  `FillFileMetadata` **precedencí**: zdroj svá pole **vlastní**, takže neprázdná hodnota přebije to,
+  co je ve fotce (stejně jako camera/exposure od prvního importu) — `subject`/`keywords`/`artist`/
+  `copyright`/`license`/`software`/`camera_serial`/`color_profile`/`image_codec`/`projection`/
+  `original_name`. Co ale **nikdy** nesmí, je **zničit**: prázdná hodnota ze zdroje nechá neprázdný
+  sloupec být, `scan` se dá **nastavit, ne zhasnout**, a `notes` — Kukátkovo vlastní pole — se
+  **jen doplňuje do prázdna**, takže poznámku uživatele zdroj nepřepíše. SQL se staví jednou z
+  `importOwnedColumns` (`buildApplyImportMetadataSQL`) se stejným **self-join `o` subquery** trikem
+  jako fill; každý guard je zároveň podmínkou přiřazení → dvojí aplikace stejných metadat nezapíše
+  **nic** (ani `updated_at`), takže re-import je opravdový no-op. Nedotýká se titulků, `taken_at`,
+  GPS, hodnocení, oblíbených ani `ai_note`. `ErrPhotoNotFound`)/
   `Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/
   uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
   **album/label scope** `AlbumUID`/`LabelUID` korelovaným `EXISTS` nad `album_photos`/`photo_labels`
@@ -338,7 +351,13 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (comma-separated, trimované, **deduplikované, pořadí zachováno**; skalární tag se štěpí na `,`/`;`).
   `scan` se **nikdy neodvozuje** — je to ruční flag uživatele. Pure-Go fallback umí jen baseline
   TIFF/EXIF tagy (`Artist`/`Copyright`/`Software`/`ColorSpace` + kodek z MIME); IPTC/XMP segmenty
-  nečte, takže ostatní pole zůstanou **prázdná, ne špatná**), `internal/phash/`
+  nečte, takže ostatní pole zůstanou **prázdná, ne špatná**.
+  **Exportované normalizátory pro importéry**: `NormalizeKeywords(raw) string` (cizí comma/semicolon
+  seznam → přesně ten tvar, co ukládá vlastní extrakce: trim, junk pryč, dedup, pořadí zachováno,
+  spojeno čárkami) a `CodecToken(s) string` (jakýkoli zápis kodeku — `HEIC`, `image/x-canon-cr2`,
+  PhotoPrismí `jpeg` — → token pro `image_codec`, jinak prázdno). `internal/ppimport` je pouští přes
+  ně, aby importovaná fotka měla sloupce ve **stejném slovníku** jako extrahovaná — sloupec, co po
+  extrakci říká `jpeg` a po importu `JPEG`, nejsou jeden sloupec, ale dva), `internal/phash/`
   (perceptuální hashe, **CGO-free**: `Compute(img) Hashes{Phash,Dhash int64}` — **pHash** přes
   2-D DCT 32×32 → low-freq 8×8 blok s prahem medián-bez-DC, **dHash** gradientní 9×8; `Distance(a,b)`
   = Hammingova vzdálenost přes `bits.OnesCount64`; near-dup = malá vzdálenost), `internal/ingest/`
@@ -1107,20 +1126,28 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   pro **inkrementální** pull (UpdatedSince→filtr `updated:`, count ořez na `MaxCount` 1000, caller
   pageuje přes offset); **scope pro mapování členství**: `AlbumUID`→`s=<albumUID>` (fotky alba),
   `Query`→`q=` natvrdo (přebije watermark, pro `label:"<slug>"`); parsuje
-  UID/TakenAt/Lat/Lng/Altitude/Title/Description/Type/Width/Height/
-  OriginalName/Camera/Lens/EXIF + `Files[]` (UID, **Hash=SHA1**, Primary, Mime, `Video`/`Codec`,
-  `Markers[]`),
+  UID/TakenAt/Lat/Lng/Altitude/Title/**Caption**/Type/Width/Height/
+  OriginalName/**Scan**/**CameraSerial**/Camera/Lens/EXIF + `Files[]` (UID, **Hash=SHA1**, Primary,
+  Mime, `Video`/`Codec`/**`ColorProfile`**/**`Projection`**, `Markers[]`),
   `Photo.PrimaryFile()` vrátí primární soubor, `File.IsVideo()` (Video flag/`video/*` mime),
   `Photo.VideoFile()` (motion soubor video/live fotky) a `Photo.StillFile()` (still fotky);
+  **`Caption` je živé pole, `Description` mrtvé** — PP přejmenoval `photo_description` na
+  `photo_caption` (`description_src`→`caption_src`) a starý Go field má `gorm:"-"`, takže se
+  **neperzistuje a vždy přijde prázdný**; obojí je namodelováno (Caption = co odpoví dnešní instance,
+  Description = co stará) a importér bere první neprázdné;
   `ListAlbums`/`ListLabels`/`ListSubjects(ctx,ListParams
   {Count,Offset,Type})` → `GET /api/v1/{albums,labels,subjects}`, markery z `Files[].Markers[]`;
   **`GetPhoto(ctx,uid)`** → `GET /api/v1/photos/{uid}` vrací `PhotoDetail` = `Photo` +
-  **`Albums[]`** (všechna alba fotky, libovolného typu) + **`Labels[]`**
-  (`PhotoLabel{LabelSrc,Uncertainty,Label}`) — **výpis fotek ani jedno nenese, jen detail**, a totéž
-  platí pro **markery**: výpis vrací `Files[].Markers` **vždy prázdné**, jména lidí jsou jen v detailu
-  (PP nemá bulk marker endpoint). Stojí 1 request na fotku, takže ho volá **scoped import** pro každou
-  fotku (`ppimport.mapPhotoContext`) a plný import jen pro **nově importované** (`importPhotoPeople`);
-  prázdné uid → `ErrBadResponse`, neznámé → `ErrNotFound`;
+  **`Details`** (`{Keywords,Notes,Subject,Artist,Copyright,License,Software}` — IPTC/XMP kredity,
+  které PP drží ve vedlejší tabulce; fotka indexovaná starou verzí nemá `photo_details` řádek vůbec →
+  přijde `null` → zero value) + **`Albums[]`** (všechna alba fotky, libovolného typu) + **`Labels[]`**
+  (`PhotoLabel{LabelSrc,Uncertainty,Label}`). **Výpis fotek (`?merged=true`) je plochá search
+  struktura a nenese z toho NIC**: žádný `Details` objekt (tedy ani Subject/Artist/Copyright/License/
+  Keywords/Notes/Software), žádný `CameraSerial`, `Files[].Markers` **vždy prázdné** a
+  `Files[].Codec`/`ColorProfile`/`Projection` taky (`Caption`, `Scan` a `OriginalName` naopak
+  **ve výpisu jsou**). Stojí 1 request na fotku, takže ho volá **scoped import** pro každou fotku a
+  plný import jen pro fotky, které **zapisuje** nebo se kterými zdroj **hnul** po watermarku
+  (`ppimport.importPhotoDetail`); prázdné uid → `ErrBadResponse`, neznámé → `ErrNotFound`;
   **`Type` je u alb povinný** — `/api/v1/albums` bez typu (i s víc typy naráz, `album,folder`) vrací
   **400 „Permission denied"**, takže katalog alb se prochází typ po typu (`AlbumTypes` =
   album/folder/moment/state/month); štítky a subjekty typ neberou a ignorují ho;
@@ -1150,18 +1177,39 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `photos.SetPhotoprismRef`, žádná nová fotka), uloží originál, **probne video metadata**
   (`Prober.Probe` → `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`; u video z originálu,
   u live z motion klipu; best-effort, selhání → nulová pole), `photos.Create` s **PP metadaty**
-  (title/desc/taken_at/GPS/camera/EXIF) + media_type + video metadata + `photoprism_uid`/`photoprism_file_hash` + **EXIF orientace
+  (title/**caption**/taken_at/GPS/camera/EXIF) + media_type + video metadata + `photoprism_uid`/`photoprism_file_hash` + **EXIF orientace
   ze souboru** (PP ji nevystavuje — `exif.Extract` doplní geometrii/orientaci/MIME, PP přebije
   kurátorská pole), **u live** stáhne+uloží motion klip jako `RoleSidecar` photo_file (best-effort),
   náhledy (u videa **poster frame** přes thumbnailer/ffmpeg) a **enqueue `image_embed`** (na posteru)
   **+`face_detect`**; counts **checkpoint po každé
-  stránce** přes `UpdateCounts`; (2) **lidé** z `Files[].Markers[]` — **POZOR: markery nese jen
-  DETAIL fotky, výpis je vrací vždy jako prázdné pole** (na tomhle import dřív tiše nepřivezl
-  nikoho); proto se čtou z detailu: ve **scoped** běhu z toho, co si `mapPhotoContext` už stáhl
-  (zadarmo, pro **každou** fotku v scope → **re-run doplní lidi i k fotkám, které přivezl dřívější
-  běh**), v **plném** běhu jedním extra `GetPhoto` **na každou nově importovanou** fotku
-  (`importPhotoPeople`; proti stažení originálu je to šum, a jinak to nejde — PP nemá bulk marker
-  endpoint). Pojmenovaný validní face marker → find-or-create subjekt dle `Slugify` + přiřazený
+  stránce** přes `UpdateCounts`. **Popisek se bere z `Caption`, ne z `Description`** (`metadata.go`,
+  `caption()`): `photo_description` je v PP mrtvý sloupec (přejmenovaný na `photo_caption`, Go field
+  `gorm:"-"`), takže čtení `Description` tiše zahazovalo **každý** popisek v knihovně. Precedence
+  update patche: **PP vyhraje, když má hodnotu, ale prázdná PP hodnota nikdy nesmaže neprázdnou
+  Kukátkovou** (`UpdateMetadata` přepisuje celý řádek, takže titulek smazaný ve zdroji by jinak
+  zničil ten, co napsal uživatel); `notes`/`ai_note` a IPTC kredity se patchem **protahují beze
+  změny** (mapují se z detailu, ne z výpisu). **`Favorite` se záměrně NEMAPUJE**: Kukátkovy oblíbené
+  jsou **per-user** a import běžící jako job (nebo z CLI) nemá uživatele, komu ji připsat — a
+  `psimport` to nepřekládá taky (jeho `Favorite` je subjektův, ne fotčin);
+  (2) **detail fotky** (`details.go`, `importPhotoDetail`) — **POZOR: půlku toho, co PP o fotce ví,
+  servíruje JEN detail endpoint**, výpis je plochá search struktura bez `Details` objektu a s
+  **vždy prázdnými** `Files[].Markers` (na tomhle import dřív tiše nepřivezl nikoho). Z **jednoho**
+  `GetPhoto` se proto veze všechno najednou: **IPTC/XMP kredity** (`Details.Subject`/`Artist`/
+  `Copyright`/`License`/`Keywords`/`Software` + `Details.Notes` **jen do prázdna**), **file-technical**
+  (`Scan`, `CameraSerial`, `OriginalName`, primární `Files[].ColorProfile`/`Projection` a
+  `Files[].Codec` → `image_codec` **jen u stillů** — `video_codec`/`audio_codec` zůstávají ffprobu),
+  **markery** i (ve scoped běhu) alba a štítky. Mapuje `importMetadata` → `photos.ApplyImportMetadata`
+  (zdroj svá pole vlastní, ale prázdná hodnota nikdy nemaže; keywords se přeženou přes
+  `exif.NormalizeKeywords` a codec přes `exif.CodecToken`, aby importovaná fotka měla sloupce ve
+  **stejném slovníku** jako extrahovaná). Když detail něco přinesl, **skip se povýší na update**.
+  **Kdo detail dostane** (`wantsDetail`) je nákladová hranice importu: **scoped** běh každá fotka
+  (řez knihovny, 17 fotek = 17 requestů), **plný** běh jen fotka, kterou právě **zapsal**, nebo se
+  kterou zdroj **hnul po watermarku** (`UpdatedAt.After(since)` — editovaný copyright hne fotčiným
+  `UpdatedAt`, ale ve výpisu nezmění nic, takže běh, který se dívá jen na verdikt výpisu, by ho
+  **nikdy neuviděl**); rozhodně **ne** na každou vylistovanou fotku (inkrementální výpis servíruje
+  fotky watermarku pokaždé znovu a při prvním průchodu celou 20tis. knihovnu). Chyba detailu se
+  **jen zaloguje** (fotka zůstane importovaná, re-run to opraví). Pojmenovaný validní face marker →
+  find-or-create subjekt dle `Slugify` + přiřazený
   marker, který si **ponechá PhotoPrism UID** → import je idempotentní (`GetMarkerByUID` → skip) a
   identita markerů sedí s `psimport` (photo-sorterovy face řádky odkazují právě na tyhle UID, protože
   jeho markery JSOU PhotoPrismovy). Obličeje si k markerům dopáruje `facematch` přes IoU;
@@ -1181,7 +1229,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (`validateScope`, `organize.go`: album uid hledá napříč `photoprism.AlbumTypes` → neznámé
   `ErrAlbumNotFound`, slug štítku v katalogu štítků → neznámý `ErrLabelNotFound`; kontroluje se **před**
   stahováním, aby překlep nevypadal jako čistý běh) a pak **každá fotka přinese svůj celý kontext**
-  (`context.go`, `mapPhotoContext`: `client.GetPhoto(uid)` → **všechna** alba fotky (find-or-create dle
+  (`context.go`, `mapPhotoContext` nad detailem, který `importPhotoDetail` už stáhl → **všechna** alba
+  fotky (find-or-create dle
   názvu → `AddPhoto`) i **všechny** její štítky (find-or-create dle jména → `AttachLabel` se `source`
   a `uncertainty` ze zdroje: `manual`→`manual`, `image`→`ai`, ostatní (batch/keyword/location/…)
   →`import`) — **i ta alba a štítky, které scope nejmenoval**, takže fotka ze tří alb importovaná přes
@@ -1190,7 +1239,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   svých alb patří taky), vše je idempotentní (find-or-create + `AddPhoto`/`AttachLabel`), chyba detailu
   se **jen zaloguje** (fotka zůstane importovaná, kontext doplní re-run). Stojí to **1 request na
   fotku** — proto to plný běh nedělá (20 tis. fotek = 20 tis. requestů) a strukturu mapuje průchodem
-  katalogu alb/štítků (`mapAlbums`/`mapLabels`); lidi seedují face markery fotek při importu.
+  katalogu alb/štítků (`mapAlbums`/`mapLabels`); kredity, lidi a file-technical pole veze týž detail
+  (viz výš) → **scoped re-run je i cesta, jak knihovnu naimportovanou dřív dotáhnout na paritu**,
+  bez stažení jediného bajtu.
   Uzavře se **`Complete` s `nil` watermarkem** — scoped běh vidí jen řez knihovny, takže zapsat jeho
   nejnovější timestamp jako kurzor by přiměl další plný import přeskočit všechno starší. Prázdný scope
   → `ErrEmptyScope` (na plný běh je `Import`), rok mimo 1826–9999 → `ErrInvalidYear`.

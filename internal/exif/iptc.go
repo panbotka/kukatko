@@ -54,6 +54,26 @@ var jpegCompressions = map[string]string{"6": "jpeg", "7": "jpeg", "34892": "jpe
 // nobody can read, and yields nothing rather than a misleading digit.
 var colorSpaces = map[string]string{"1": "sRGB", "2": "Adobe RGB", "65535": "Uncalibrated"}
 
+// NormalizeKeywords renders a raw keyword string — a comma- or semicolon-separated
+// list as some other catalogue wrote it — in exactly the form this package's own
+// extraction stores in photos.keywords: trimmed, junk placeholders dropped,
+// de-duplicated, the writer's order preserved, joined with commas. An importer that
+// carries keywords over from another catalogue uses it so an imported photo's
+// keywords read the same as an extracted photo's; a column that says "beach,sunset"
+// when extracted and "beach, sunset " when imported is two columns, not one.
+func NormalizeKeywords(raw string) string {
+	return joinKeywords(splitKeywords(raw))
+}
+
+// CodecToken normalises any codec-ish spelling — a container name ("HEIC"), a MIME
+// type ("image/x-canon-cr2"), another catalogue's file codec ("jpeg") — onto the
+// short lowercase token stored in photos.image_codec, or "" when it recognises
+// nothing. It is exported for the same reason as NormalizeKeywords: an import must
+// write the vocabulary the extraction writes, not a second one beside it.
+func CodecToken(s string) string {
+	return codecToken(s)
+}
+
 // cleanText trims s and drops it when it carries no information — empty, or one of
 // the junk placeholders. It returns the cleaned value, or "" when there is nothing
 // worth storing.

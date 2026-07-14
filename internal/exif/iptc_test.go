@@ -342,3 +342,61 @@ func TestCleanText(t *testing.T) {
 		})
 	}
 }
+
+// TestNormalizeKeywords covers the exported entry point an importer carries another
+// catalogue's keyword string through, so an imported photo's keywords column reads
+// exactly like an extracted photo's: trimmed, junk dropped, de-duplicated, joined
+// with commas in the writer's own order.
+func TestNormalizeKeywords(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "stray whitespace", in: " masopust,  maska ", want: "masopust,maska"},
+		{name: "duplicates collapse", in: "masopust, maska ,masopust", want: "masopust,maska"},
+		{name: "semicolons too", in: "masopust; maska", want: "masopust,maska"},
+		{name: "junk dropped", in: "unknown, maska", want: "maska"},
+		{name: "empty", in: "  ,, ", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := NormalizeKeywords(tt.in); got != tt.want {
+				t.Errorf("NormalizeKeywords(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCodecToken_exported covers the exported entry point an importer normalises
+// another catalogue's codec spelling through — PhotoPrism answers "jpeg" on a still's
+// file, an exiftool FileType says "HEIC" — onto the one vocabulary image_codec holds.
+func TestCodecToken_exported(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "photoprism still codec", in: "jpeg", want: "jpeg"},
+		{name: "upper case", in: "JPEG", want: "jpeg"},
+		{name: "heif is heic", in: "HEIF", want: "heic"},
+		{name: "vendor raw collapses", in: "image/x-canon-cr2", want: "raw"},
+		{name: "a video codec is not a still codec", in: "avc1", want: ""},
+		{name: "empty", in: "", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := CodecToken(tt.in); got != tt.want {
+				t.Errorf("CodecToken(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

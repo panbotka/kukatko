@@ -14,8 +14,15 @@ type Photo struct {
 	UID string `json:"UID"`
 	// Type is the media kind (e.g. "image", "video", "live", "raw").
 	Type string `json:"Type"`
-	// Title and Description are user-facing metadata.
-	Title       string `json:"Title"`
+	// Title is the photo's headline.
+	Title string `json:"Title"`
+	// Caption is the photo's long description — the live field. PhotoPrism renamed
+	// photo_description to photo_caption; Description below is its dead predecessor,
+	// still serialised but no longer persisted (the Go field is gorm:"-"), so a
+	// caption read from Description is always empty on a current PhotoPrism. Both are
+	// modelled: Caption is what a current instance answers with, Description what an
+	// old one does, and the importer prefers the first non-empty of the two.
+	Caption     string `json:"Caption"`
 	Description string `json:"Description"`
 	// TakenAt is the capture time; TakenAtLocal is its local-zone rendering.
 	TakenAt      time.Time `json:"TakenAt"`
@@ -40,6 +47,11 @@ type Photo struct {
 	FNumber     float64 `json:"FNumber"`
 	Exposure    string  `json:"Exposure"`
 	FocalLength int     `json:"FocalLength"`
+	// CameraSerial is the camera body's serial number.
+	CameraSerial string `json:"CameraSerial"`
+	// Scan marks an image digitised from a physical print or negative rather than
+	// captured by a camera.
+	Scan bool `json:"Scan"`
 	// Favorite and Private mirror PhotoPrism's per-photo flags.
 	Favorite bool `json:"Favorite"`
 	Private  bool `json:"Private"`
@@ -48,17 +60,47 @@ type Photo struct {
 }
 
 // PhotoDetail is a single photo read from the photo *detail* endpoint. It is a
-// Photo plus the two relations the photo *listing* payload does not carry: every
-// album the photo belongs to and every label it is tagged with. A scoped import
-// reads it per photo so a photo migrated because it sits in one album still
-// arrives with the other albums and the labels it also carries.
+// Photo plus everything the photo *listing* payload does not carry: the two
+// relations (every album the photo belongs to and every label it is tagged with),
+// the Details block (the IPTC/XMP credit fields), and — on the photo's files — the
+// face markers and the per-file technicals. A scoped import reads it per photo so a
+// photo migrated because it sits in one album still arrives with the other albums,
+// the labels and the credits it also carries.
+//
+// The listing endpoint (`GET /photos?merged=true`) answers a flattened search
+// struct that has NO Details object at all: Subject, Artist, Copyright, License,
+// Keywords, Notes and Software exist ONLY here. Read them off a listed photo and
+// they are silently all empty.
 type PhotoDetail struct {
 	Photo
+	// Details are the IPTC/XMP credit fields. PhotoPrism keeps them in a side table
+	// and a photo indexed by an old version may have no details row at all, in which
+	// case the endpoint answers null and this is the zero value.
+	Details Details `json:"Details"`
 	// Albums is every album the photo is a member of, of any album type.
 	Albums []Album `json:"Albums"`
 	// Labels is every label attached to the photo, each with the source and
 	// uncertainty of its attachment.
 	Labels []PhotoLabel `json:"Labels"`
+}
+
+// Details is PhotoPrism's photo_details row: the IPTC/XMP credit metadata it keeps
+// beside a photo rather than on it. It is served on the photo detail endpoint only.
+type Details struct {
+	// Keywords is the IPTC keyword list as one comma-separated string.
+	Keywords string `json:"Keywords"`
+	// Notes is the free-text note field.
+	Notes string `json:"Notes"`
+	// Subject is the IPTC subject/headline — what the photo is about.
+	Subject string `json:"Subject"`
+	// Artist is who made the photo (IPTC By-line / XMP dc:creator).
+	Artist string `json:"Artist"`
+	// Copyright is the copyright notice.
+	Copyright string `json:"Copyright"`
+	// License is the licence the photo is published under.
+	License string `json:"License"`
+	// Software is what produced the image (camera firmware, an editor, a scanner).
+	Software string `json:"Software"`
 }
 
 // PhotoLabel is one label attached to a photo, together with where PhotoPrism
@@ -139,8 +181,16 @@ type File struct {
 	// Video marks the file as a playable video stream; PhotoPrism sets it on the
 	// motion file of a video or live photo.
 	Video bool `json:"Video"`
-	// Codec is the file's media codec (e.g. "avc1", "hvc1"); empty for stills.
+	// Codec is the file's media codec — "avc1"/"hvc1" for a video stream, the still
+	// image's compression ("jpeg", "heic") for an image. It is served on the photo
+	// detail only; a listed photo's files carry it empty.
 	Codec string `json:"Codec"`
+	// ColorProfile names the file's embedded ICC profile ("sRGB", "Display P3").
+	// Detail-only, like Codec.
+	ColorProfile string `json:"ColorProfile"`
+	// Projection is a panorama's projection ("equirectangular"), empty for an
+	// ordinary photo. Detail-only, like Codec.
+	Projection string `json:"Projection"`
 	// Markers are the face/label regions detected on this file.
 	Markers []Marker `json:"Markers"`
 }

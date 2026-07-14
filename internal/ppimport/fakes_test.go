@@ -423,17 +423,60 @@ func (s *fakePhotoStore) GetByPhotoprismUID(_ context.Context, ppUID string) (ph
 	return s.byUID[uid], nil
 }
 
-// UpdateMetadata applies m to the photo and returns it.
+// UpdateMetadata applies m to the photo and returns it. It overwrites every field
+// MetadataUpdate carries, exactly as the real store's whole-row UPDATE does — a
+// fake that quietly kept a field the update blanks would hide the very regression
+// metadataUpdate's carry-over exists to prevent.
 func (s *fakePhotoStore) UpdateMetadata(_ context.Context, uid string, m photos.MetadataUpdate) (photos.Photo, error) {
 	p, ok := s.byUID[uid]
 	if !ok {
 		return photos.Photo{}, photos.ErrPhotoNotFound
 	}
-	p.Title, p.Description, p.Notes = m.Title, m.Description, m.Notes
+	p.Title, p.Description, p.Notes, p.AiNote = m.Title, m.Description, m.Notes, m.AiNote
+	p.Subject, p.Keywords = m.Subject, m.Keywords
+	p.Artist, p.Copyright, p.License, p.Scan = m.Artist, m.Copyright, m.License, m.Scan
 	p.TakenAt, p.TakenAtSource = m.TakenAt, m.TakenAtSource
 	p.Lat, p.Lng, p.Altitude, p.Private = m.Lat, m.Lng, m.Altitude, m.Private
 	s.byUID[uid] = p
 	return p, nil
+}
+
+// ApplyImportMetadata mirrors photos.Store.ApplyImportMetadata: a non-empty source
+// value wins over the photo's, an empty one never erases it, notes is gap-filled
+// only, scan can be set but not cleared — and it reports whether anything actually
+// changed, which is what lets a test pin the import's idempotence.
+func (s *fakePhotoStore) ApplyImportMetadata(
+	_ context.Context, uid string, m photos.ImportMetadata,
+) (bool, error) {
+	p, ok := s.byUID[uid]
+	if !ok {
+		return false, photos.ErrPhotoNotFound
+	}
+	changed := false
+	owned := []struct {
+		column *string
+		value  string
+	}{
+		{&p.Subject, m.Subject}, {&p.Keywords, m.Keywords}, {&p.Artist, m.Artist},
+		{&p.Copyright, m.Copyright}, {&p.License, m.License}, {&p.Software, m.Software},
+		{&p.CameraSerial, m.CameraSerial}, {&p.ColorProfile, m.ColorProfile},
+		{&p.ImageCodec, m.ImageCodec}, {&p.Projection, m.Projection},
+		{&p.OriginalName, m.OriginalName},
+	}
+	for _, field := range owned {
+		if field.value != "" && *field.column != field.value {
+			*field.column = field.value
+			changed = true
+		}
+	}
+	if p.Notes == "" && m.Notes != "" {
+		p.Notes, changed = m.Notes, true
+	}
+	if m.Scan && !p.Scan {
+		p.Scan, changed = true, true
+	}
+	s.byUID[uid] = p
+	return changed, nil
 }
 
 // SetPhotoprismRef stamps the external IDs onto the photo and returns it.

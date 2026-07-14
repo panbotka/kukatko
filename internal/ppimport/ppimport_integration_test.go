@@ -61,9 +61,16 @@ type fakePPClient struct {
 	// queryPhotos answers a scoped listing by its exact q= expression (e.g.
 	// `label:"beach"`, `label:"beach" year:2023`).
 	queryPhotos map[string][]photoprism.Photo
-	// details answers the photo-detail endpoint, the only place the source serves
-	// a photo's albums and labels.
-	details  map[string]photoprism.PhotoDetail
+	// details answers the photo-detail endpoint, the only place the source serves a
+	// photo's albums, labels and IPTC/XMP credits.
+	details map[string]photoprism.PhotoDetail
+	// known indexes every registered photo by uid, so a photo with no explicit
+	// detail still HAS a detail — as it does in PhotoPrism, where only an unknown
+	// uid is a 404.
+	known map[string]photoprism.Photo
+	// markers holds each photo's face markers by uid. They are served ONLY on the
+	// detail, never on a listed photo — the same asymmetry PhotoPrism has.
+	markers  map[string][]photoprism.Marker
 	files    map[string][]byte
 	failHash string
 
@@ -84,23 +91,75 @@ func (c *fakePPClient) ListPhotos(_ context.Context, p photoprism.PhotoListParam
 	}
 }
 
-// GetPhoto returns the photo's registered detail: the albums it belongs to and
-// the labels it carries.
+// GetPhoto returns the photo's detail: its albums, its labels, its IPTC/XMP
+// credits AND its face markers, none of which the listing payload serves. A photo
+// with no registered context still has a detail, as it does in PhotoPrism; only an
+// unknown uid is a 404.
 func (c *fakePPClient) GetPhoto(_ context.Context, uid string) (photoprism.PhotoDetail, error) {
 	detail, ok := c.details[uid]
 	if !ok {
-		return photoprism.PhotoDetail{}, photoprism.ErrNotFound
+		photo, found := c.known[uid]
+		if !found {
+			return photoprism.PhotoDetail{}, photoprism.ErrNotFound
+		}
+		detail = photoprism.PhotoDetail{Photo: photo}
 	}
+	detail.Photo = c.withMarkers(detail.Photo)
 	return detail, nil
+}
+
+// withMarkers returns the photo with its face markers on the primary file. Only the
+// detail carries them: PhotoPrism's listing serves every file with an empty marker
+// array, so the fake keeps them out of the listed photos entirely — an importer that
+// reads markers off a listing imports nobody here, exactly as it does against a real
+// PhotoPrism.
+func (c *fakePPClient) withMarkers(p photoprism.Photo) photoprism.Photo {
+	markers := c.markers[p.UID]
+	if len(markers) == 0 {
+		return p
+	}
+	files := slices.Clone(p.Files)
+	for i := range files {
+		if files[i].Primary {
+			files[i].Markers = markers
+		}
+	}
+	p.Files = files
+	return p
+}
+
+// registerDetail records the detail the source answers for a photo, keeping the
+// photo in the known index so its listing and its detail stay the same photo.
+func (c *fakePPClient) registerDetail(detail photoprism.PhotoDetail) {
+	if c.details == nil {
+		c.details = map[string]photoprism.PhotoDetail{}
+	}
+	c.details[detail.UID] = detail
+	c.register(detail.Photo)
+}
+
+// register indexes a photo by uid so the detail endpoint knows it.
+func (c *fakePPClient) register(p photoprism.Photo) {
+	if c.known == nil {
+		c.known = map[string]photoprism.Photo{}
+	}
+	c.known[p.UID] = p
 }
 
 // setContext registers a photo's detail — its albums and labels — which the
 // listing payload does not carry.
 func (c *fakePPClient) setContext(p photoprism.Photo, albums []photoprism.Album, labels []photoprism.PhotoLabel) {
-	if c.details == nil {
-		c.details = map[string]photoprism.PhotoDetail{}
-	}
-	c.details[p.UID] = photoprism.PhotoDetail{Photo: p, Albums: albums, Labels: labels}
+	detail := c.details[p.UID]
+	detail.Photo, detail.Albums, detail.Labels = p, albums, labels
+	c.registerDetail(detail)
+}
+
+// setDetails registers the photo's Details block — the IPTC/XMP credits PhotoPrism
+// keeps in a side table and serves on the detail endpoint alone.
+func (c *fakePPClient) setDetails(p photoprism.Photo, details photoprism.Details) {
+	detail := c.details[p.UID]
+	detail.Photo, detail.Details = p, details
+	c.registerDetail(detail)
 }
 
 // ListAlbums returns all albums.
@@ -140,18 +199,28 @@ func (c *fakePPClient) downloadCount() int {
 	return c.downloads
 }
 
-// addPhoto registers a JPEG original of the given shade and returns the photo.
+// addPhoto registers a JPEG original of the given shade and returns the photo. Its
+// markers are stashed for the DETAIL endpoint to serve; the listed photo carries an
+// empty marker array, exactly as PhotoPrism's does.
 func (c *fakePPClient) addPhoto(uid string, updated time.Time, title string, shade uint8, markers ...photoprism.Marker) photoprism.Photo {
 	if c.files == nil {
 		c.files = map[string][]byte{}
 	}
+	if len(markers) > 0 {
+		if c.markers == nil {
+			c.markers = map[string][]photoprism.Marker{}
+		}
+		c.markers[uid] = markers
+	}
 	hash := "h-" + uid
 	c.files[hash] = jpegOf(shade)
-	return photoprism.Photo{
+	photo := photoprism.Photo{
 		UID: uid, Type: "image", Title: title, TakenAt: updated, UpdatedAt: updated,
 		Width: 8, Height: 8,
-		Files: []photoprism.File{{UID: "f-" + uid, Hash: hash, Primary: true, Mime: "image/jpeg", Markers: markers}},
+		Files: []photoprism.File{{UID: "f-" + uid, Hash: hash, Primary: true, Mime: "image/jpeg"}},
 	}
+	c.register(photo)
+	return photo
 }
 
 // addVideo registers the given MP4 sample as a video original and returns the
@@ -163,13 +232,15 @@ func (c *fakePPClient) addVideo(uid string, updated time.Time, title string, dat
 	}
 	hash := "h-" + uid
 	c.files[hash] = data
-	return photoprism.Photo{
+	photo := photoprism.Photo{
 		UID: uid, Type: "video", Title: title, TakenAt: updated, UpdatedAt: updated,
 		Width: 64, Height: 64,
 		Files: []photoprism.File{
 			{UID: "f-" + uid, Hash: hash, Primary: true, Video: true, Mime: "video/mp4", Name: uid + ".mp4"},
 		},
 	}
+	c.register(photo)
+	return photo
 }
 
 // addLive registers a JPEG still and the sample MP4 motion clip, returning the
@@ -182,7 +253,7 @@ func (c *fakePPClient) addLive(uid string, updated time.Time, title string, shad
 	motion := "hm-" + uid
 	c.files[still] = jpegOf(shade)
 	c.files[motion] = tinyMP4
-	return photoprism.Photo{
+	photo := photoprism.Photo{
 		UID: uid, Type: "live", Title: title, TakenAt: updated, UpdatedAt: updated,
 		Width: 8, Height: 8,
 		Files: []photoprism.File{
@@ -190,6 +261,8 @@ func (c *fakePPClient) addLive(uid string, updated time.Time, title string, shad
 			{UID: "fm-" + uid, Hash: motion, Video: true, Mime: "video/mp4", Name: uid + ".mov"},
 		},
 	}
+	c.register(photo)
+	return photo
 }
 
 // filterByUpdated returns photos updated at or after since (inclusive).
@@ -874,5 +947,196 @@ func assertWholeContext(t *testing.T, env *testEnv) {
 	}
 	if got := countRows(t, env, "labels"); got != 1 {
 		t.Errorf("labels in the catalogue = %d, want 1", got)
+	}
+}
+
+// ppDetails is the Details block the source serves for the detail-import tests: the
+// IPTC/XMP credits PhotoPrism keeps in a side table and answers on the photo detail
+// endpoint alone. The keywords carry the stray whitespace and the duplicate a real
+// library is full of.
+var ppDetails = photoprism.Details{
+	Keywords:  " masopust, maska ,masopust ",
+	Notes:     "Nalezeno v krabici po babičce.",
+	Subject:   "Masopustní průvod",
+	Artist:    "Jan Novák",
+	Copyright: "© 2016 Jan Novák",
+	License:   "CC BY-NC 4.0",
+	Software:  "Adobe Photoshop Lightroom",
+}
+
+// detailFixture registers one photo carrying the whole block of metadata this import
+// maps, split across the two payloads exactly as PhotoPrism splits it. The listing
+// serves the caption (its live field — Description is the dead column it renamed),
+// the scan flag and the original name. Everything else exists on the DETAIL alone:
+// the Details credits, the camera serial and the per-file codec, colour profile and
+// projection, which a listed photo's files never carry.
+func detailFixture(t0 time.Time) *fakePPClient {
+	client := &fakePPClient{}
+	photo := client.addPhoto("pp1", t0, "Ostatky", 10)
+	photo.Caption = "Masopust v Ostrovačicích"
+	photo.Scan = true
+	photo.OriginalName = "IMG_4821.JPG"
+	client.photos = []photoprism.Photo{photo}
+
+	detailed := photo
+	detailed.CameraSerial = "BX-40023199"
+	detailed.Files = []photoprism.File{{
+		UID: "f-pp1", Hash: "h-pp1", Primary: true, Mime: "image/jpeg",
+		Codec: "JPEG", ColorProfile: "Display P3", Projection: "equirectangular",
+	}}
+	client.setDetails(detailed, ppDetails)
+	return client
+}
+
+// TestIntegration_importsPhotoDetails verifies the whole block of metadata that
+// lives on PhotoPrism's photo DETAIL endpoint — and nowhere else — is carried over
+// on a first import: the credits, the technical fields, and the caption from the
+// live Caption field.
+func TestIntegration_importsPhotoDetails(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2016, 2, 9, 10, 0, 0, 0, time.UTC)
+	env := newEnv(t, detailFixture(t0))
+
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	photo, err := env.photos.GetByPhotoprismUID(ctx, "pp1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID: %v", err)
+	}
+	checks := []struct{ field, got, want string }{
+		{"subject", photo.Subject, "Masopustní průvod"},
+		{"keywords", photo.Keywords, "masopust,maska"},
+		{"artist", photo.Artist, "Jan Novák"},
+		{"copyright", photo.Copyright, "© 2016 Jan Novák"},
+		{"license", photo.License, "CC BY-NC 4.0"},
+		{"notes", photo.Notes, "Nalezeno v krabici po babičce."},
+		{"software", photo.Software, "Adobe Photoshop Lightroom"},
+		{"camera_serial", photo.CameraSerial, "BX-40023199"},
+		{"color_profile", photo.ColorProfile, "Display P3"},
+		{"image_codec", photo.ImageCodec, "jpeg"},
+		{"projection", photo.Projection, "equirectangular"},
+		{"original_name", photo.OriginalName, "IMG_4821.JPG"},
+		{"description", photo.Description, "Masopust v Ostrovačicích"},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.field, c.got, c.want)
+		}
+	}
+	if !photo.Scan {
+		t.Error("scan = false, want true")
+	}
+	if photo.VideoCodec != "" {
+		t.Errorf("video_codec = %q, want empty: a still's codec belongs in image_codec", photo.VideoCodec)
+	}
+}
+
+// TestIntegration_detailsRerunIsNoop verifies a re-import over an unchanged source
+// writes nothing at all — not one column, not even updated_at. The details are
+// applied by a second statement after the listing pass, so a careless one would
+// rewrite the row on every single run and count it as an update.
+func TestIntegration_detailsRerunIsNoop(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2016, 2, 9, 10, 0, 0, 0, time.UTC)
+	env := newEnv(t, detailFixture(t0))
+
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	before, err := env.photos.GetByPhotoprismUID(ctx, "pp1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID: %v", err)
+	}
+
+	result, err := env.svc.Import(ctx)
+	if err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+	if result.Counts.Skipped != 1 || result.Counts.Updated != 0 || result.Counts.Imported != 0 {
+		t.Errorf("counts = %+v, want skipped 1 and nothing else", result.Counts)
+	}
+	after, err := env.photos.GetByPhotoprismUID(ctx, "pp1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID: %v", err)
+	}
+	if !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Errorf("updated_at moved on a no-op re-run: %s -> %s", before.UpdatedAt, after.UpdatedAt)
+	}
+}
+
+// TestIntegration_detailsNeverClobberLocalEdits pins the precedence rule of the
+// import. PhotoPrism owns the fields it fills, so a value it carries wins on a
+// re-import; but it must never DESTROY. A field the source has nothing for keeps
+// what the user typed, and notes — Kukátko's own field — is gap-filled at most, so a
+// note the user wrote is never overwritten by the source's.
+func TestIntegration_detailsNeverClobberLocalEdits(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2016, 2, 9, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	photo := client.addPhoto("pp1", t0, "Ostatky", 10)
+	client.photos = []photoprism.Photo{photo}
+	// The source knows only the artist: everything else it has nothing to say about.
+	client.setDetails(photo, photoprism.Details{Artist: "PhotoPrism", Subject: "Ze zdroje"})
+
+	env := newEnv(t, client)
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	imported, err := env.photos.GetByPhotoprismUID(ctx, "pp1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID: %v", err)
+	}
+
+	// The user curates the photo in Kukátko: a licence and a note the source has
+	// nothing for, and a subject it disagrees with.
+	edit := photos.MetadataUpdate{
+		Title:         imported.Title,
+		Description:   imported.Description,
+		Notes:         "moje poznámka",
+		AiNote:        "detected: dav lidí",
+		Subject:       "Můj vlastní předmět",
+		Keywords:      "masopust",
+		Artist:        imported.Artist,
+		License:       "CC BY-NC 4.0",
+		Scan:          true,
+		TakenAt:       imported.TakenAt,
+		TakenAtSource: imported.TakenAtSource,
+	}
+	if _, err := env.photos.UpdateMetadata(ctx, imported.UID, edit); err != nil {
+		t.Fatalf("local edit: %v", err)
+	}
+
+	// Touch the photo upstream so the incremental run actually re-reads its detail.
+	client.photos[0].UpdatedAt = t0.Add(time.Hour)
+	client.photos[0].Title = "Ostatky 2016"
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("re-import: %v", err)
+	}
+
+	after, err := env.photos.GetByPhotoprismUID(ctx, "pp1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID: %v", err)
+	}
+	survived := []struct{ field, got, want string }{
+		{"license", after.License, "CC BY-NC 4.0"},
+		{"notes", after.Notes, "moje poznámka"},
+		{"ai_note", after.AiNote, "detected: dav lidí"},
+		{"keywords", after.Keywords, "masopust"},
+	}
+	for _, c := range survived {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q: the source has none, it must not erase one", c.field, c.got, c.want)
+		}
+	}
+	if !after.Scan {
+		t.Error("scan = false: the source can set the flag, never clear it")
+	}
+	if after.Subject != "Ze zdroje" {
+		t.Errorf("subject = %q, want the source's: PhotoPrism owns the fields it fills", after.Subject)
+	}
+	if after.Title != "Ostatky 2016" {
+		t.Errorf("title = %q, want the source's edit", after.Title)
 	}
 }
