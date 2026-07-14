@@ -78,6 +78,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/mapsapi` — tile proxy, reverse geocode, GeoJSON feed
 - `internal/mapy` — server-side mapy.com client; **the key never leaves the server**
 - `internal/mediaurl` — stamps `thumb_url`/`download_url` into payloads; signed URL, or an own route
+- `internal/metajob` — worker handler `metadata` + backfill: re-reads an original into the IPTC/XMP and file-technical columns; gap-filler only
 - `internal/metrics` — Prometheus registry + collectors (DB pool, queue depth)
 - `internal/obs` — structured logging (JSON slog to stderr)
 - `internal/organize` — albums, labels, **per-user** favorites and ratings

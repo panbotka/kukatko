@@ -80,7 +80,26 @@ func parseExiftoolJSON(data []byte) (Metadata, error) {
 	applyExiftoolGeometry(&meta, obj)
 	applyExiftoolGPS(&meta, obj)
 	applyExiftoolTime(&meta, obj)
+	// Runs last: the codec falls back to the MIME type, which the geometry pass sets.
+	applyExiftoolIPTC(&meta, obj)
 	return meta, nil
+}
+
+// applyExiftoolIPTC fills the IPTC/XMP credit fields and the file-technical
+// fields, each from the first tag of its fallback chain that carries a usable
+// value (see the helpers in iptc.go for the chains and the scalar-vs-list rule
+// that separates a Subject headline from a dc:subject keyword list).
+func applyExiftoolIPTC(meta *Metadata, obj map[string]any) {
+	meta.Subject = firstScalar(obj, "Subject", "Headline", "XPSubject", "ObjectName")
+	meta.Keywords = keywordsFrom(obj)
+	meta.Artist = firstText(obj, "Artist", "Creator", "By-line", "XPAuthor")
+	meta.Copyright = firstText(obj, "Copyright", "Rights", "CopyrightNotice")
+	meta.License = firstText(obj, "License", "UsageTerms", "WebStatement")
+	meta.Software = firstText(obj, "Software", "CreatorTool", "ProcessingSoftware")
+	meta.CameraSerial = firstText(obj, "SerialNumber", "BodySerialNumber", "InternalSerialNumber")
+	meta.ColorProfile = colorProfileFrom(obj)
+	meta.ImageCodec = codecFrom(obj, meta.Mime)
+	meta.Projection = firstText(obj, "ProjectionType")
 }
 
 // applyExiftoolCamera fills the camera/lens identity fields from the tag object.

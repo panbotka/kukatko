@@ -38,7 +38,7 @@ var photoInsertColumns = []string{
 	"camera_model", "lens_model", "camera_serial", "iso", "aperture", "exposure", "focal_length",
 	"software", "scan", "color_profile", "image_codec", "projection", "original_name",
 	"exif", "private", "archived_at", "uploaded_by", "photoprism_uid",
-	"photoprism_file_hash", "photosorter_uid",
+	"photoprism_file_hash", "photosorter_uid", "metadata_extracted_at",
 }
 
 // photoColumns is the canonical, ordered column list for photo reads (the insert
@@ -92,7 +92,8 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.CameraModel, &p.LensModel, &p.CameraSerial, &p.ISO, &p.Aperture, &p.Exposure, &p.FocalLength,
 		&p.Software, &p.Scan, &p.ColorProfile, &p.ImageCodec, &p.Projection, &p.OriginalName,
 		&exif, &p.Private, &p.ArchivedAt, &p.UploadedBy, &p.PhotoprismUID,
-		&p.PhotoprismFileHash, &p.PhotosorterUID, &p.CreatedAt, &p.UpdatedAt,
+		&p.PhotoprismFileHash, &p.PhotosorterUID, &p.MetadataExtractedAt,
+		&p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		return Photo{}, fmt.Errorf("photos: scanning photo: %w", err)
 	}
@@ -124,7 +125,7 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		p.CameraModel, p.LensModel, p.CameraSerial, p.ISO, p.Aperture, p.Exposure, p.FocalLength,
 		p.Software, p.Scan, p.ColorProfile, p.ImageCodec, p.Projection, p.OriginalName,
 		nilIfEmptyJSON(p.Exif), p.Private, p.ArchivedAt, p.UploadedBy, p.PhotoprismUID,
-		p.PhotoprismFileHash, p.PhotosorterUID,
+		p.PhotoprismFileHash, p.PhotosorterUID, p.MetadataExtractedAt,
 	}
 	created, err := scanPhoto(s.pool.QueryRow(ctx, insertPhotoSQL, args...))
 	if err != nil {

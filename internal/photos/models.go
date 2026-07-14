@@ -153,6 +153,15 @@ type Photo struct {
 
 	Exif json.RawMessage `json:"exif,omitempty"`
 
+	// MetadataExtractedAt records when the photo's own file was last read out into
+	// the columns above (the IPTC/XMP and file-technical fields). It is bookkeeping,
+	// not metadata: nil marks a photo whose original has never been read — a row
+	// created before extraction existed, or created by an importer that maps
+	// metadata from its source rather than from the file — which is exactly the set
+	// the metadata backfill schedules. The ingest pipeline stamps it as it
+	// catalogues a photo; the `metadata` job stamps it when it re-reads an original.
+	MetadataExtractedAt *time.Time `json:"metadata_extracted_at,omitempty"`
+
 	Private    bool       `json:"private"`
 	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 	UploadedBy *string    `json:"uploaded_by,omitempty"`

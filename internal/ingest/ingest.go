@@ -589,6 +589,7 @@ func buildPhoto(stored storage.StoredFile, media mediaMeta, filename, uploadedBy
 		kind = photos.MediaImage
 	}
 	mime := chooseMIME(meta.Mime, stored.MIME)
+	extracted := time.Now().UTC()
 	p := photos.Photo{
 		FileHash:        stored.Hash,
 		FilePath:        stored.RelPath,
@@ -611,10 +612,13 @@ func buildPhoto(stored storage.StoredFile, media mediaMeta, filename, uploadedBy
 		Aperture:        meta.Aperture,
 		Exposure:        meta.Exposure,
 		FocalLength:     meta.FocalLength,
-		ImageCodec:      imageCodec(kind, mime),
 		OriginalName:    originalName(filename),
 		Exif:            marshalExif(meta.Exif),
+		// The file's own metadata is read here and nowhere else in the pipeline, so
+		// this photo is done: the metadata backfill has nothing left to do for it.
+		MetadataExtractedAt: &extracted,
 	}
+	applyFileMetadata(&p, meta, kind, mime)
 	if media.video != nil {
 		p.DurationMs = media.video.durationMs
 		p.VideoCodec = media.video.videoCodec
@@ -632,6 +636,23 @@ func buildPhoto(stored storage.StoredFile, media mediaMeta, filename, uploadedBy
 		p.UploadedBy = &uploadedBy
 	}
 	return p
+}
+
+// applyFileMetadata stamps the IPTC/XMP credit fields and the file-technical
+// fields the extractor read out of the file onto p. They describe the file rather
+// than the user's view of it, so ingest is where they are written: nothing in the
+// upload flow can contradict what the file itself says.
+func applyFileMetadata(p *photos.Photo, meta exif.Metadata, kind photos.MediaType, mime string) {
+	p.Subject = meta.Subject
+	p.Keywords = meta.Keywords
+	p.Artist = meta.Artist
+	p.Copyright = meta.Copyright
+	p.License = meta.License
+	p.Software = meta.Software
+	p.CameraSerial = meta.CameraSerial
+	p.ColorProfile = meta.ColorProfile
+	p.Projection = meta.Projection
+	p.ImageCodec = imageCodec(kind, meta.ImageCodec, mime)
 }
 
 // chooseMIME prefers the EXIF-derived media type (often more specific, e.g.
@@ -654,13 +675,17 @@ func originalName(filename string) string {
 	return path.Base(filename)
 }
 
-// imageCodec derives the still image's compression from its MIME type
-// ("image/jpeg" → "jpeg"), which is all the ingest pipeline can know without a
-// deeper probe. A video's compression lives in video_codec, so it yields nothing
-// here; a live photo does, since its primary file is a still image.
-func imageCodec(kind photos.MediaType, mime string) string {
+// imageCodec settles the still image's compression: the token the extractor read
+// out of the file (already normalised — "jpeg", "heic", "raw"), falling back to
+// the MIME subtype for a format it did not recognise. A video's compression lives
+// in video_codec, so it yields nothing here; a live photo does, since its primary
+// file is a still image.
+func imageCodec(kind photos.MediaType, extracted, mime string) string {
 	if kind == photos.MediaVideo {
 		return ""
+	}
+	if extracted != "" {
+		return extracted
 	}
 	subtype, ok := strings.CutPrefix(mime, "image/")
 	if !ok {

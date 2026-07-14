@@ -65,6 +65,10 @@ const (
 	TypeThumbnail = "thumbnail"
 	// TypePlaces reverse-geocodes a photo's GPS coordinates into a place.
 	TypePlaces = "places"
+	// TypeMetadata re-reads a photo's original file and fills the metadata columns
+	// the file itself is the authority on (IPTC/XMP credit fields, image codec,
+	// colour profile, …). It runs locally.
+	TypeMetadata = "metadata"
 	// TypePPImport imports a batch from PhotoPrism.
 	TypePPImport = "pp_import"
 	// TypePSMigrate migrates data from photo-sorter.

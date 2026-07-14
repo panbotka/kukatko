@@ -237,7 +237,15 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   který `thumbnail` job počítá spolu s náhledem). Volitelné `?all=true` naplánuje **každou
   nearchivovanou fotku** (vynucený úplný re-run — dožene i chybějící velikost náhledu u fotky, která
   hash už má; job přeskočí velikosti již v cache, takže je běh levný a originál nikdy nemění).
-  Náhledy se generují **lokálně**, takže backfill funguje i když je box offline; fronta jobů
+  `POST /process/metadata` → `{enqueued}` (backfill `metadata` pro fotky, jejichž **soubor nikdy
+  nebyl přečten** do IPTC/XMP a file-technical sloupců, přes `metajob.BackfillMetadata`; „nepřečtený“
+  = `photos.metadata_extracted_at IS NULL`, což jsou řádky z PhotoPrism importu, photo-sorter migrace
+  a všechno nahrané před extrakcí). Volitelné `?all=true` naplánuje **každou nearchivovanou fotku**
+  (vynucené znovu-přečtení celé knihovny — tak se doženou pole, která se nový extraktor naučil číst).
+  Job je čistý **gap-filler**: doplní jen sloupce, které jsou pořád prázdné, takže prázdná extrakce
+  nikdy nepřepíše hodnotu, kterou napsal uživatel, a `taken_at`/GPS/titulků/kurátorských dat se
+  vůbec nedotkne. Chybějící originál se **zaloguje a přeskočí** (běh nepadá).
+  Náhledy i metadata se počítají **lokálně**, takže backfill funguje i když je box offline; fronta jobů
   deduplikuje, takže opakované spuštění je idempotentní. Mountuje se `server.WithAPI` (`buildJobs`).
 - **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **alba** `GET /albums`
   (RequireAuth) → `{albums:[{...album, photo_count, cover_uid?, taken_from?, taken_to?}]}`

@@ -16,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/maintenanceapi"
+	"github.com/panbotka/kukatko/internal/metajob"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -95,6 +96,29 @@ func buildThumbService(
 		Enqueuer:    enqueuer,
 	})
 	return svc, nil
+}
+
+// buildMetaService assembles the metadata job service: it re-reads a photo's
+// original file and fills the IPTC/XMP and file-technical columns that are still
+// empty (the `metadata` job handler), and — wired with the queue enqueuer and photo
+// lister — drives the admin metadata backfill behind POST /process/metadata. It
+// reads originals through the storage layer, so it covers both local and R2
+// libraries. The returned service exposes both Handle (for the worker registry) and
+// BackfillMetadata (for processapi).
+func buildMetaService(
+	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
+) (*metajob.Service, error) {
+	store, err := newStorage(cfg)
+	if err != nil {
+		return nil, err
+	}
+	photoStore := photos.NewStore(db.Pool())
+	return metajob.New(metajob.Config{
+		Photos:    photoStore,
+		Extractor: metajob.NewStorageExtractor(store),
+		Lister:    photoStore,
+		Enqueuer:  enqueuer,
+	}), nil
 }
 
 // buildMaintenanceService assembles the library-maintenance service over the

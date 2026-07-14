@@ -30,9 +30,10 @@ import (
 // registers the ps_migrate job. The places handler (nil when no mapy.com key is
 // configured) registers the `places` reverse-geocode job and backs the place
 // backfill. It also builds the thumbnail service (regenerating thumbnails/pHashes,
-// and backing the missing-thumbnail backfill) and the library-maintenance
-// service/API, since both are part of the job subsystem; a build failure for
-// either is returned as an error.
+// and backing the missing-thumbnail backfill), the metadata service (re-reading a
+// photo's original into the IPTC/XMP and file-technical columns, and backing the
+// metadata backfill) and the library-maintenance service/API, since all are part of
+// the job subsystem; a build failure for any of them is returned as an error.
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
@@ -46,11 +47,16 @@ func buildJobs(
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	metaSvc, err := buildMetaService(cfg, db, enqueuer)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	registry := worker.NewRegistry()
 	worker.RegisterBuiltins(registry)
 	registry.Register(jobs.TypeImageEmbed, embedSvc.Handle)
 	registry.Register(jobs.TypeFaceDetect, faceSvc.Handle)
 	registry.Register(jobs.TypeThumbnail, thumbSvc.Handle)
+	registry.Register(jobs.TypeMetadata, metaSvc.Handle)
 	if importSvc != nil {
 		registry.Register(jobs.TypePPImport, importSvc.Handle)
 	}
@@ -84,6 +90,7 @@ func buildJobs(
 		Reclusterer:         clusterSvc,
 		PlacesBackfiller:    placesBF,
 		ThumbnailBackfiller: thumbSvc,
+		MetadataBackfiller:  metaSvc,
 		RequireAdmin:        authAPI.RequireAdmin,
 	})
 	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, authAPI), nil

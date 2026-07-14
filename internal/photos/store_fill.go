@@ -2,8 +2,13 @@ package photos
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // MetadataFill is metadata an importer offers to a photo that is already in the
@@ -98,4 +103,110 @@ func (s *Store) FillMissingMetadata(ctx context.Context, uid string, fill Metada
 		return false, fmt.Errorf("photos: filling metadata of %s: %w", uid, err)
 	}
 	return tag.RowsAffected() > 0, nil
+}
+
+// FileMetadata is what re-reading a photo's original file says about it: the
+// IPTC/XMP credit fields and the file-technical fields, as internal/exif extracted
+// them. Every field is optional — a file that carries no IPTC at all yields the
+// zero value — and none of them ever overwrites a value the photo already has (see
+// Store.FillFileMetadata).
+type FileMetadata struct {
+	// Subject is the IPTC headline; Keywords the tag list, comma-separated.
+	Subject  string
+	Keywords string
+	// Artist, Copyright and License are the credit fields.
+	Artist    string
+	Copyright string
+	License   string
+	// Software, CameraSerial, ColorProfile, ImageCodec and Projection are the
+	// machine-derived technical fields. ImageCodec is empty for a video, whose
+	// compression lives in the untouched video_codec column.
+	Software     string
+	CameraSerial string
+	ColorProfile string
+	ImageCodec   string
+	Projection   string
+	// OriginalName is the name the file carried before it was ingested.
+	OriginalName string
+}
+
+// fileMetadataColumns are the columns FillFileMetadata fills, in the order their
+// values are passed as $2…$N. The SQL is built from this list (see
+// buildFillFileMetadataSQL), so a new extracted field is added here and in
+// FileMetadata.values — the statement cannot drift from the struct.
+var fileMetadataColumns = []string{
+	"subject", "keywords", "artist", "copyright", "license", "software",
+	"camera_serial", "color_profile", "image_codec", "projection", "original_name",
+}
+
+// values returns m's fields as query arguments in fileMetadataColumns order.
+func (m FileMetadata) values() []any {
+	return []any{
+		m.Subject, m.Keywords, m.Artist, m.Copyright, m.License, m.Software,
+		m.CameraSerial, m.ColorProfile, m.ImageCodec, m.Projection, m.OriginalName,
+	}
+}
+
+// fillFileMetadataSQL fills a photo's empty metadata columns from a fresh
+// extraction and stamps metadata_extracted_at, built once from
+// fileMetadataColumns.
+var fillFileMetadataSQL = buildFillFileMetadataSQL()
+
+// buildFillFileMetadataSQL assembles the fill statement. It self-joins the photo's
+// pre-update row (the `o` subquery, which sees the snapshot the statement started
+// from) so that both the guards and the RETURNING clause can read the *old* values
+// — a plain RETURNING would see the row it has just written and could never report
+// what changed.
+//
+// Every column is guarded: a value is written only where the column is still
+// empty, so an extracted blank never erases what the user typed and a second run
+// over the same photo writes nothing. updated_at is bumped only when a column is
+// genuinely filled, which keeps a no-op backfill invisible to every caller that
+// orders by it. metadata_extracted_at is always re-stamped: the file was read,
+// whatever it turned out to say.
+func buildFillFileMetadataSQL() string {
+	assignments := make([]string, 0, len(fileMetadataColumns)+2)
+	guards := make([]string, 0, len(fileMetadataColumns))
+	snapshot := make([]string, 0, len(fileMetadataColumns)+2)
+	for i, col := range fileMetadataColumns {
+		param := "$" + strconv.Itoa(i+2)
+		assignments = append(assignments,
+			fmt.Sprintf("%s = CASE WHEN o.%s = '' THEN %s ELSE o.%s END", col, col, param, col))
+		guards = append(guards, fmt.Sprintf("(o.%s = '' AND %s <> '')", col, param))
+		snapshot = append(snapshot, col)
+	}
+	filled := "(" + strings.Join(guards, "\n\t\tOR ") + ")"
+	assignments = append(assignments,
+		"metadata_extracted_at = now()",
+		"updated_at = CASE WHEN "+filled+" THEN now() ELSE o.updated_at END")
+	snapshot = append(snapshot, "uid", "updated_at")
+
+	return "UPDATE photos p SET\n\t" + strings.Join(assignments, ",\n\t") +
+		"\nFROM (SELECT " + strings.Join(snapshot, ", ") + " FROM photos WHERE uid = $1) o" +
+		"\nWHERE p.uid = o.uid\nRETURNING " + filled
+}
+
+// FillFileMetadata writes the metadata read out of a photo's original into the
+// catalogue and reports whether any column was actually filled. It backs both the
+// `metadata` job (which re-reads one photo's original) and, through it, the
+// metadata backfill over the photos that predate extraction.
+//
+// It only ever fills gaps. A column that already holds a value — a subject the
+// user typed, an artist an earlier extraction found — is left exactly as it is, so
+// an empty extraction can never erase a user's edit and running the job twice
+// changes nothing the second time (not even updated_at). Nothing outside
+// fileMetadataColumns is touched: the captions, the capture time, the GPS fix, the
+// ratings and every other piece of curation are none of this call's business.
+//
+// It returns ErrPhotoNotFound when no such photo exists.
+func (s *Store) FillFileMetadata(ctx context.Context, uid string, m FileMetadata) (bool, error) {
+	args := append([]any{uid}, m.values()...)
+	var filled bool
+	if err := s.pool.QueryRow(ctx, fillFileMetadataSQL, args...).Scan(&filled); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, ErrPhotoNotFound
+		}
+		return false, fmt.Errorf("photos: filling file metadata of %s: %w", uid, err)
+	}
+	return filled, nil
 }

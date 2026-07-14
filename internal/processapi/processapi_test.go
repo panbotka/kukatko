@@ -483,3 +483,137 @@ func TestBackfillThumbnails_forbidden(t *testing.T) {
 		t.Errorf("backfiller calls = %d, want 0 (guard should block)", tb.calls)
 	}
 }
+
+// fakeMetadataBackfiller models the metadata backfill: it "enqueues" a job per
+// candidate uid (the unread set, or the active set when all is true), recording
+// the last `all` flag and how many calls it saw.
+type fakeMetadataBackfiller struct {
+	unread  []string
+	active  []string
+	calls   int
+	lastAll bool
+	err     error
+}
+
+// BackfillMetadata schedules the appropriate candidate set and returns its size.
+func (f *fakeMetadataBackfiller) BackfillMetadata(_ context.Context, all bool) (int, error) {
+	f.calls++
+	f.lastAll = all
+	if f.err != nil {
+		return 0, f.err
+	}
+	if all {
+		return len(f.active), nil
+	}
+	return len(f.unread), nil
+}
+
+// newServerWithMetadata mounts the API with the given metadata backfiller (the
+// others are stubbed) behind the given admin guard.
+func newServerWithMetadata(
+	t *testing.T, mb MetadataBackfiller, guard func(http.Handler) http.Handler,
+) *httptest.Server {
+	t.Helper()
+	api := NewAPI(Config{
+		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
+		MetadataBackfiller: mb, RequireAdmin: guard,
+	})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestBackfillMetadata_ok enqueues a metadata job for every photo whose file has
+// never been read and reports the enqueued count.
+func TestBackfillMetadata_ok(t *testing.T) {
+	t.Parallel()
+
+	mb := &fakeMetadataBackfiller{unread: []string{"p1", "p2"}}
+	srv := newServerWithMetadata(t, mb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/metadata")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body backfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Enqueued != 2 {
+		t.Errorf("enqueued = %d, want 2", body.Enqueued)
+	}
+	if mb.calls != 1 || mb.lastAll {
+		t.Errorf("backfiller calls = %d, lastAll = %v, want 1 call with all=false", mb.calls, mb.lastAll)
+	}
+}
+
+// TestBackfillMetadata_all forwards ?all=true so the backfiller re-reads every
+// non-archived photo, not just the ones never read.
+func TestBackfillMetadata_all(t *testing.T) {
+	t.Parallel()
+
+	mb := &fakeMetadataBackfiller{unread: []string{"p1"}, active: []string{"p1", "p2", "p3"}}
+	srv := newServerWithMetadata(t, mb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/metadata?all=true")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body backfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Enqueued != 3 || !mb.lastAll {
+		t.Errorf("enqueued = %d, lastAll = %v, want 3 with all=true", body.Enqueued, mb.lastAll)
+	}
+}
+
+// TestBackfillMetadata_error maps a backfiller failure to 500.
+func TestBackfillMetadata_error(t *testing.T) {
+	t.Parallel()
+
+	mb := &fakeMetadataBackfiller{err: errors.New("boom")}
+	srv := newServerWithMetadata(t, mb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/metadata")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+// TestBackfillMetadata_unavailable answers 503 when no metadata backfiller is
+// wired.
+func TestBackfillMetadata_unavailable(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithMetadata(t, nil, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/metadata")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+// TestBackfillMetadata_forbidden verifies RequireAdmin guards the endpoint: a
+// non-admin caller is rejected with 403 and the backfiller is never invoked.
+func TestBackfillMetadata_forbidden(t *testing.T) {
+	t.Parallel()
+
+	mb := &fakeMetadataBackfiller{unread: []string{"p1"}}
+	srv := newServerWithMetadata(t, mb, forbid)
+
+	resp := postProcess(t, srv.URL+"/process/metadata")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", resp.StatusCode)
+	}
+	if mb.calls != 0 {
+		t.Errorf("backfiller calls = %d, want 0 (guard should block)", mb.calls)
+	}
+}

@@ -29,6 +29,9 @@ import (
 func extractWithFallback(path string) Metadata {
 	meta := Metadata{}
 	meta.Mime, meta.Width, meta.Height = fileMimeAndDims(path)
+	// The codec is readable from the sniffed MIME type alone, so a file with no
+	// EXIF block at all (a screenshot PNG) still gets one.
+	meta.ImageCodec = codecToken(meta.Mime)
 	decodeExifInto(&meta, path)
 	return meta
 }
@@ -77,7 +80,23 @@ func decodeExifInto(meta *Metadata, path string) {
 	exifGeometry(meta, decoded)
 	exifGPS(meta, decoded)
 	exifTime(meta, decoded)
+	exifIPTC(meta, decoded)
 	meta.Exif = walkExif(decoded)
+}
+
+// exifIPTC fills the credit and technical fields the pure-Go parser can actually
+// reach. goexif reads the baseline TIFF/EXIF tags only: it has no IPTC or XMP
+// segment parser, so the subject, keywords, licence, camera serial and projection
+// have no source here and are deliberately left empty rather than guessed at from
+// a neighbouring tag. Whatever the file really says about them is read on the
+// exiftool path (and by the metadata backfill, which re-runs it).
+func exifIPTC(meta *Metadata, x *exif.Exif) {
+	meta.Artist = cleanText(tagString(x, exif.Artist))
+	meta.Copyright = cleanText(tagString(x, exif.Copyright))
+	meta.Software = cleanText(tagString(x, exif.Software))
+	if space, ok := tagInt(x, exif.ColorSpace); ok {
+		meta.ColorProfile = colorSpaceName(strconv.Itoa(space))
+	}
 }
 
 // exifCamera fills the camera/lens identity from goexif string tags.
