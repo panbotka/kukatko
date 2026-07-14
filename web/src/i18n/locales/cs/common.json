@@ -550,6 +550,13 @@
     "error": {
       "load": "Mapu se nepodařilo načíst.",
       "retry": "Zkusit znovu"
+    },
+    "tiles": {
+      "keyRejected": "Mapové podklady se nepodařilo načíst — mapový klíč byl odmítnut.",
+      "rateLimited": "Mapové podklady se nepodařilo načíst — poskytovatel map dočasně omezil počet dotazů.",
+      "unavailable": "Mapové podklady se nepodařilo načíst — poskytovatel map je nedostupný.",
+      "error": "Mapové podklady se nepodařilo načíst.",
+      "hint": "Fotky se na prázdném podkladu zobrazují dál."
     }
   },
   "similar": {
@@ -1156,6 +1163,18 @@
     "actions": {
       "title": "Rychlé akce:",
       "maintenance": "Kontrola údržby"
+    },
+    "maps": {
+      "title": "Mapy (mapy.com)",
+      "ok": "V pořádku",
+      "notConfigured": "Nenastaveno",
+      "keyRejected": "Klíč odmítnut",
+      "rateLimited": "Vyčerpán limit",
+      "unavailable": "Nedostupné",
+      "error": "Chyba",
+      "unknown": "Zatím nevyužito",
+      "keyRejectedHint": "mapy.com odmítá API klíč (vypršel, byl zrušen, nebo došly kredity). Mapa zůstane bez podkladů, dokud klíč nevyměníš v konzoli mapy.com.",
+      "checkedAt": "Naposledy ověřeno"
     }
   },
   "users": {

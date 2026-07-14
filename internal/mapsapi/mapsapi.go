@@ -4,6 +4,13 @@
 // answers from mapy.com via the mapy client; the GeoJSON endpoint reads the photo
 // catalogue honouring the standard list filters. Route guarding is injected as
 // middleware so the package stays decoupled from the auth subsystem's wiring.
+//
+// Successful tiles are cached server-side (bounded, TTL'd, successes only), so a
+// second look at an area a user has already browsed costs no mapy.com credit;
+// upstream failures are never cached. Every upstream outcome is recorded on the
+// mapy.Health tracker, and a rejected API key is relayed as its own status
+// (StatusMapKeyRejected) rather than a generic upstream error, so the map view can
+// say why the tiles are missing instead of showing a silent grey grid.
 package mapsapi
 
 import (
@@ -24,6 +31,13 @@ const (
 	// defaultTileCacheMaxAge is how long browsers may cache a proxied tile. Tiles
 	// for a given z/x/y are effectively immutable, so this is long.
 	defaultTileCacheMaxAge = 24 * time.Hour
+	// defaultTileCacheTTL is how long a tile stays in the server-side cache. Tiles
+	// change rarely, and every cache hit is one mapy.com credit not spent.
+	defaultTileCacheTTL = 24 * time.Hour
+	// defaultTileCacheBytes is the server-side tile cache's memory budget. At the
+	// typical few tens of kilobytes per tile this holds a few thousand tiles, i.e.
+	// several full screens of every mapset a user has browsed.
+	defaultTileCacheBytes = 64 << 20
 	// defaultGeocodeCacheTTL is how long a reverse-geocode answer is reused before
 	// a coordinate is looked up again, conserving the 4-credit geocode cost.
 	defaultGeocodeCacheTTL = 24 * time.Hour
@@ -68,9 +82,12 @@ type API struct {
 	tiles           TileFetcher
 	geocoder        Geocoder
 	photos          PhotoLister
+	health          *mapy.Health
 	requireAuth     func(http.Handler) http.Handler
 	tileRateLimit   func(http.Handler) http.Handler
 	tileCacheMaxAge time.Duration
+	tileCacheTTL    time.Duration
+	tileCache       *tileCache
 	geocodeCacheTTL time.Duration
 	geocodeCache    *geocodeCache
 	geocodeLimiter  *rateLimiter
@@ -93,9 +110,19 @@ type Config struct {
 	// applied ahead of the auth check. A nil value disables throttling. The
 	// geocode proxy keeps its own credit-protecting limiter (GeocodeRatePerSec).
 	TileRateLimit func(http.Handler) http.Handler
+	// Health records the outcome of every upstream tile and geocode call, so the
+	// admin status dashboard can report a rejected key. Nil (the default) means
+	// no key is configured and nothing is tracked; the tracker is nil-safe.
+	Health *mapy.Health
 	// TileCacheMaxAge sets the Cache-Control max-age on proxied tiles (default
 	// defaultTileCacheMaxAge).
 	TileCacheMaxAge time.Duration
+	// TileCacheTTL sets how long a tile stays in the server-side cache (default
+	// defaultTileCacheTTL). A negative value disables the cache.
+	TileCacheTTL time.Duration
+	// TileCacheBytes is the server-side tile cache's memory budget in bytes
+	// (default defaultTileCacheBytes). A negative value disables the cache.
+	TileCacheBytes int64
 	// GeocodeCacheTTL sets how long reverse-geocode answers are cached (default
 	// defaultGeocodeCacheTTL). A non-positive value disables caching.
 	GeocodeCacheTTL time.Duration
@@ -135,13 +162,24 @@ func NewAPI(cfg Config) *API {
 	if tileRateLimit == nil {
 		tileRateLimit = passthroughMiddleware
 	}
+	tileTTL := defaultTileCacheTTL
+	if cfg.TileCacheTTL != 0 {
+		tileTTL = cfg.TileCacheTTL
+	}
+	tileBytes := int64(defaultTileCacheBytes)
+	if cfg.TileCacheBytes != 0 {
+		tileBytes = cfg.TileCacheBytes
+	}
 	return &API{
 		tiles:           cfg.Tiles,
 		geocoder:        cfg.Geocoder,
 		photos:          cfg.Photos,
+		health:          cfg.Health,
 		requireAuth:     cfg.RequireAuth,
 		tileRateLimit:   tileRateLimit,
 		tileCacheMaxAge: tileMaxAge,
+		tileCacheTTL:    tileTTL,
+		tileCache:       newTileCache(tileBytes),
 		geocodeCacheTTL: geoTTL,
 		geocodeCache:    newGeocodeCache(defaultGeocodeCacheSize),
 		geocodeLimiter:  newRateLimiter(ratePerSec, burst),

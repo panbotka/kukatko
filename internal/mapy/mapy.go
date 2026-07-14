@@ -10,8 +10,10 @@
 // The client classifies upstream failures into sentinel errors (ErrUnauthorized,
 // ErrNotFound, ErrRateLimited, ErrUpstream, ErrUnavailable) so the HTTP layer can
 // map them to sane client-facing statuses without leaking provider internals.
-// Tile bytes are streamed straight from the upstream response body, never
-// buffered whole in memory.
+// Every non-200 is also logged at WARN with its upstream status, so a rejected
+// key never shows up as nothing but a grey tile; Health folds those outcomes into
+// a state the admin status dashboard can report. Tile bytes are streamed straight
+// from the upstream response body, never buffered whole in memory.
 //
 // Everything sits behind the Client interface so the HTTP API and its tests can
 // substitute a fake without a real network or a real key.
@@ -23,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -246,6 +249,11 @@ func (c *HTTPClient) Tile(ctx context.Context, params TileParams) (*TileResult, 
 	}
 	if resp.StatusCode != http.StatusOK {
 		err := statusError("tile", resp.StatusCode)
+		// A grey tile in the browser is otherwise the only trace of an upstream
+		// failure, so carry the status and the mapset into the log.
+		slog.WarnContext(ctx, "mapy: tile request failed",
+			"status", resp.StatusCode, "mapset", params.Mapset,
+			"z", params.Z, "x", params.X, "y", params.Y, "error", err)
 		_ = resp.Body.Close()
 		cancel()
 		return nil, err
@@ -296,7 +304,14 @@ func (c *HTTPClient) ReverseGeocode(ctx context.Context, lat, lng float64) (*Geo
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, statusError("rgeocode", resp.StatusCode)
+		err := statusError("rgeocode", resp.StatusCode)
+		if resp.StatusCode != http.StatusNotFound {
+			// 404 is a normal "no place here" answer; anything else is a real
+			// upstream failure worth a line in the log with its status.
+			slog.WarnContext(ctx, "mapy: reverse geocode failed",
+				"status", resp.StatusCode, "error", err)
+		}
+		return nil, err
 	}
 
 	var decoded rgeocodeResponse

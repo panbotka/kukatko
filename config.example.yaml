@@ -204,6 +204,12 @@ maps:
   # processing slowly is fine. geocode_rate_per_sec <= 0 disables the throttle.
   geocode_rate_per_sec: 5
   geocode_burst: 10
+  # Server-side cache of proxied tiles. The free tier bills ONE CREDIT PER TILE
+  # (250k/month), so without it every pan over an already-seen area costs again.
+  # Only successful tiles are cached, never an error. Bounded by bytes (LRU
+  # eviction) and by age; <= 0 on either disables the cache entirely.
+  tile_cache_bytes: 67108864 # 64 MiB ≈ a few thousand tiles
+  tile_cache_ttl: 24h
 
 # Backup destination: a SECOND, INDEPENDENT bucket. It shares nothing with
 # storage.r2.* — its own endpoint, region, bucket and credentials — so it can

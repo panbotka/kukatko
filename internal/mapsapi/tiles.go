@@ -18,12 +18,29 @@ import (
 // nonsensical values before an upstream call.
 const maxTileZoom = 22
 
+// StatusMapKeyRejected is the status the tile and reverse-geocode proxies answer
+// with when mapy.com rejects *our* API key (its 401/403). The upstream status is
+// deliberately not passed through: a 401/403 would tell the browser the caller's
+// own request was unauthorised, when in truth the caller is fine and the server's
+// key is expired, revoked or over quota. 424 Failed Dependency says exactly that
+// — the request failed because a dependency of ours did — and gives the frontend
+// a status it can recognise to explain the empty map instead of rendering grey
+// tiles.
+const StatusMapKeyRejected = http.StatusFailedDependency
+
+// tileCacheHeader reports whether a tile came from the server-side cache ("hit")
+// or from mapy.com ("miss"). It exists for operators and tests; the browser
+// ignores it.
+const tileCacheHeader = "X-Tile-Cache"
+
 // handleTile proxies a single mapy.com map tile, adding the API key server-side
 // and streaming the bytes back with long-lived cache headers. The mapset is
 // validated against the allow-list and z/x/y must be in-range integers (otherwise
 // 400). The optional retina @2x variant is requested via a "@2x" suffix on the y
 // segment or a retina=true query parameter, and applied only where the mapset
-// supports it. Upstream failures map to sane statuses without leaking the key; an
+// supports it. A tile already in the server-side cache is served straight from
+// memory, costing no mapy.com credit. Upstream failures map to sane statuses
+// without leaking the key — a rejected key becomes StatusMapKeyRejected — and an
 // unconfigured proxy answers 503.
 func (a *API) handleTile(w http.ResponseWriter, r *http.Request) {
 	if a.tiles == nil {
@@ -36,24 +53,69 @@ func (a *API) handleTile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	key := tileCacheKey(params)
+	if entry, ok := a.tileCache.get(key); ok {
+		a.writeTileHeaders(w, entry.contentType, int64(len(entry.body)), "hit")
+		if _, err := w.Write(entry.body); err != nil {
+			log.Printf("mapsapi: writing cached tile: %v", err)
+		}
+		return
+	}
+
 	res, err := a.tiles.Tile(r.Context(), params)
+	a.health.Record(err)
 	if err != nil {
 		writeTileError(w, err)
 		return
 	}
 	defer func() { _ = res.Body.Close() }()
+	a.relayTile(w, key, res)
+}
 
-	w.Header().Set("Content-Type", res.ContentType)
-	if res.ContentLength >= 0 {
-		w.Header().Set("Content-Length", strconv.FormatInt(res.ContentLength, 10))
+// relayTile streams an upstream tile to the client, caching it on the way when it
+// is small enough to be worth holding. The body is read into memory only up to
+// maxCachedTileBytes: a tile above that limit is relayed as a stream and left
+// uncached, so an unexpectedly huge response can never be buffered whole.
+func (a *API) relayTile(w http.ResponseWriter, key string, res *mapy.TileResult) {
+	head, err := io.ReadAll(io.LimitReader(res.Body, maxCachedTileBytes+1))
+	if err != nil {
+		// Nothing has been written yet, so the failure is still reportable.
+		a.health.Record(fmt.Errorf("%w: reading tile body: %w", mapy.ErrUpstream, err))
+		writeError(w, http.StatusBadGateway, "map provider error")
+		return
+	}
+
+	if len(head) <= maxCachedTileBytes {
+		// The whole tile is in hand: cache it (successes only) and serve it.
+		a.tileCache.set(key, head, res.ContentType, a.tileCacheTTL)
+		a.writeTileHeaders(w, res.ContentType, int64(len(head)), "miss")
+		if _, err := w.Write(head); err != nil {
+			log.Printf("mapsapi: writing tile: %v", err)
+		}
+		return
+	}
+
+	a.writeTileHeaders(w, res.ContentType, res.ContentLength, "miss")
+	if _, err := w.Write(head); err == nil {
+		if _, err := io.Copy(w, res.Body); err != nil {
+			// The header and status are already sent, so we can only log a mid-stream
+			// failure (typically the client going away).
+			log.Printf("mapsapi: streaming tile: %v", err)
+		}
+	}
+}
+
+// writeTileHeaders writes the tile response headers and a 200 status: the image
+// content type, the byte count when known, the browser cache lifetime and the
+// server-side cache outcome.
+func (a *API) writeTileHeaders(w http.ResponseWriter, contentType string, length int64, cacheState string) {
+	w.Header().Set("Content-Type", contentType)
+	if length >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
 	}
 	w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d, immutable", int(a.tileCacheMaxAge.Seconds())))
+	w.Header().Set(tileCacheHeader, cacheState)
 	w.WriteHeader(http.StatusOK)
-	if _, err := io.Copy(w, res.Body); err != nil {
-		// The header and status are already sent, so we can only log a mid-stream
-		// failure (typically the client going away).
-		log.Printf("mapsapi: streaming tile: %v", err)
-	}
 }
 
 // parseTileParams extracts and validates the tile coordinates and retina flag from
@@ -111,22 +173,24 @@ func tileCoord(raw, name string) (int, error) {
 }
 
 // writeTileError maps a mapy client error to a client-facing status without
-// exposing the API key or provider internals: a bad key (a server-side
-// misconfiguration) and generic upstream failures become 502, an unreachable
-// provider 503, a missing tile 404, and a hit rate limit 429.
+// exposing the API key or provider internals: a rejected key (a server-side
+// misconfiguration the caller cannot fix) becomes StatusMapKeyRejected, other
+// upstream failures 502, an unreachable provider 503, a missing tile 404, and a
+// hit rate limit 429.
 func writeTileError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, mapy.ErrInvalidMapset):
 		writeError(w, http.StatusBadRequest, "unknown mapset")
 	case errors.Is(err, mapy.ErrNotFound):
 		writeError(w, http.StatusNotFound, "tile not found")
+	case errors.Is(err, mapy.ErrUnauthorized):
+		writeError(w, StatusMapKeyRejected, "map provider rejected the server's API key")
 	case errors.Is(err, mapy.ErrRateLimited):
 		writeError(w, http.StatusTooManyRequests, "map provider rate limit exceeded")
 	case errors.Is(err, mapy.ErrUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "map provider unavailable")
 	default:
-		// ErrUnauthorized and ErrUpstream both indicate an upstream problem the
-		// client cannot fix and must not see details of.
+		// ErrUpstream: a problem the client cannot fix and must not see details of.
 		writeError(w, http.StatusBadGateway, "map provider error")
 	}
 }

@@ -1,10 +1,11 @@
 // Package system aggregates the operational health of the running kukatko
 // instance into a single snapshot for the admin status dashboard: embeddings
 // sidecar reachability, job-queue depth and dead-letter backlog, the backup
-// subsystem state, the last import run per source, on-disk storage usage and
-// database reachability, plus the build version. It depends on small interfaces
-// so the aggregation is unit-testable with fakes, and the HTTP layer lives in
-// internal/systemapi.
+// subsystem state, the last import run per source, on-disk storage usage,
+// database reachability and the map provider's last observed state (so a
+// mapy.com key that is being rejected is visible without opening the map), plus
+// the build version. It depends on small interfaces so the aggregation is
+// unit-testable with fakes, and the HTTP layer lives in internal/systemapi.
 package system
 
 import (
@@ -15,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/backup"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/version"
 )
 
@@ -65,6 +67,14 @@ type BackupReporter interface {
 	Status() backup.Status
 }
 
+// MapsReporter reports the last observed outcome of a mapy.com call. It is
+// satisfied by *mapy.Health; a nil MapsReporter means no mapy.com key is
+// configured, so the map backend is reported as not configured.
+type MapsReporter interface {
+	// Snapshot returns the map provider's last observed health.
+	Snapshot() mapy.HealthStatus
+}
+
 // Database is the database-reachability section of the status snapshot.
 type Database struct {
 	// Reachable is true when the database answered a ping.
@@ -106,6 +116,25 @@ type Imports struct {
 	PhotoSorter *importer.Run `json:"photosorter"`
 }
 
+// Maps is the map-provider (mapy.com) section of the status snapshot. It reports
+// what the proxy last saw upstream, so a rejected API key — which otherwise shows
+// up only as a grey map — is visible from the dashboard.
+type Maps struct {
+	// Configured is true when a mapy.com API key is set. When false, the map view
+	// has no tiles at all and the rest of this section is meaningless.
+	Configured bool `json:"configured"`
+	// State is the last observed upstream outcome (ok, key_rejected, ...).
+	State string `json:"state"`
+	// Degraded is true when the last outcome means map data is currently broken,
+	// most notably when mapy.com is rejecting the API key.
+	Degraded bool `json:"degraded"`
+	// Detail is a short, sanitised description of the last failure (never carries
+	// the API key); empty while healthy.
+	Detail string `json:"detail,omitempty"`
+	// CheckedAt is when the last outcome was observed; nil when none has been.
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+}
+
 // Status is the full system-status snapshot returned by GET /system/status.
 type Status struct {
 	Version    version.Info  `json:"version"`
@@ -115,6 +144,7 @@ type Status struct {
 	Backup     backup.Status `json:"backup"`
 	Imports    Imports       `json:"imports"`
 	Storage    StorageUsage  `json:"storage"`
+	Maps       Maps          `json:"maps"`
 }
 
 // Config bundles the dependencies of New. Backup may be nil (no destination
@@ -130,6 +160,9 @@ type Config struct {
 	Jobs JobCounter
 	// Backup reports the backup subsystem state; nil when not configured.
 	Backup BackupReporter
+	// Maps reports the map provider's last observed health; nil when no mapy.com
+	// key is configured.
+	Maps MapsReporter
 	// Imports supplies the latest run per source.
 	Imports ImportLister
 	// OriginalsPath is the on-disk root of the stored originals.
@@ -150,6 +183,7 @@ type Service struct {
 	embeddingURL string
 	jobs         JobCounter
 	backup       BackupReporter
+	maps         MapsReporter
 	imports      ImportLister
 	storage      *storageCache
 }
@@ -162,6 +196,7 @@ func New(cfg Config) *Service {
 		embeddingURL: cfg.EmbeddingURL,
 		jobs:         cfg.Jobs,
 		backup:       cfg.Backup,
+		maps:         cfg.Maps,
 		imports:      cfg.Imports,
 		storage:      newStorageCache(cfg.OriginalsPath, cfg.CachePath, cfg.StorageTTL, cfg.Clock),
 	}
@@ -191,6 +226,7 @@ func (s *Service) Collect(ctx context.Context) (Status, error) {
 		Backup:     s.collectBackup(),
 		Imports:    imports,
 		Storage:    storageUsage,
+		Maps:       s.collectMaps(),
 	}, nil
 }
 
@@ -265,4 +301,25 @@ func (s *Service) collectBackup() backup.Status {
 		return backup.Status{Configured: false}
 	}
 	return s.backup.Status()
+}
+
+// collectMaps returns the map-provider status, reporting not-configured when no
+// mapy.com key is wired. The detail comes from the mapy client's sentinel errors,
+// which never carry the API key, so it is safe to surface to an admin.
+func (s *Service) collectMaps() Maps {
+	if s.maps == nil {
+		return Maps{Configured: false, State: string(mapy.HealthUnknown)}
+	}
+	snapshot := s.maps.Snapshot()
+	status := Maps{
+		Configured: true,
+		State:      string(snapshot.State),
+		Degraded:   snapshot.State.Degraded(),
+		Detail:     snapshot.Detail,
+	}
+	if !snapshot.CheckedAt.IsZero() {
+		checkedAt := snapshot.CheckedAt
+		status.CheckedAt = &checkedAt
+	}
+	return status
 }

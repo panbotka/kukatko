@@ -144,6 +144,61 @@ export function tileLayerUrl(mapset: Mapset): string {
   return `${API_BASE}/map/tiles/${mapset}/{z}/{x}/{y}{r}`
 }
 
+/**
+ * Why the tile layer is failing, as classified from the tile proxy's status.
+ * `key_rejected` is the one that needs a human: mapy.com is refusing the server's
+ * API key (expired, revoked or over quota), so no amount of retrying will help.
+ */
+export type TileFailure = 'key_rejected' | 'rate_limited' | 'unavailable' | 'error'
+
+/**
+ * The status the tile proxy answers with when mapy.com rejects *the server's* API
+ * key (`mapsapi.StatusMapKeyRejected`, 424 Failed Dependency). The upstream 401/403
+ * is deliberately not passed through: the caller's own request is fine, it is our
+ * dependency that failed.
+ */
+const STATUS_MAP_KEY_REJECTED = 424
+
+/**
+ * Asks the tile proxy why a tile failed, by re-requesting the tile Leaflet could
+ * not load (an `<img>` never exposes its response status to JavaScript, so the
+ * status has to be fetched). Returns the classified failure, or `null` when the
+ * tile is in fact fine — a transient hiccup, or a tile mapy.com simply does not
+ * have (404), which is a normal answer outside the covered area and no reason to
+ * warn anyone.
+ *
+ * A network failure is reported as `'error'` rather than thrown: the caller wants
+ * to explain the empty map, not handle an exception. An aborted probe still
+ * throws, so a caller that has gone away does not act on it.
+ */
+export async function probeTileFailure(
+  tileUrl: string,
+  signal?: AbortSignal,
+): Promise<TileFailure | null> {
+  let res: Response
+  try {
+    res = await fetch(tileUrl, { method: 'GET', credentials: 'same-origin', signal })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err
+    }
+    return 'error'
+  }
+  if (res.ok || res.status === 404) {
+    return null
+  }
+  switch (res.status) {
+    case STATUS_MAP_KEY_REJECTED:
+      return 'key_rejected'
+    case 429:
+      return 'rate_limited'
+    case 503:
+      return 'unavailable'
+    default:
+      return 'error'
+  }
+}
+
 /** One administrative level of a reverse-geocoded place (region, town, …). */
 export interface RegionalItem {
   name: string

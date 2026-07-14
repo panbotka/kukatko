@@ -877,14 +877,31 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `ErrUnauthorized` (401/403) / `ErrNotFound` (404 i prázdné items) / `ErrRateLimited` (429) /
   `ErrUpstream` (jiný status / nečitelná odpověď) / `ErrUnavailable` (transport / 502/503/504) /
   `ErrInvalidMapset` / `ErrInvalidURL`; `statusError` **nepřidává tělo** odpovědi do chyby, aby
-  klíč neprosákl ani když ho mapy.com echoují), `internal/mapsapi/`
+  klíč neprosákl ani když ho mapy.com echoují; každý non-200 se navíc **loguje WARN** se
+  statusem + mapsetem (`slog.WarnContext`, 404 z rgeocode ne — to je normální odpověď), takže
+  odmítnutý klíč nekončí jen jako šedá dlaždice; **`Health`** (`health.go`, nil-safe, concurrency-
+  safe) skládá výsledky volání do `HealthStatus{State,Detail,CheckedAt}`: `Record(err)` klasifikuje
+  sentinel → `HealthState` `ok|key_rejected|rate_limited|unavailable|error` (`ErrNotFound`/
+  `ErrInvalidMapset`/`context.Canceled` **ignoruje** — o zdraví upstreamu nic neříkají),
+  `Snapshot()` čte, `State.Degraded()` = vše kromě `ok`/`unknown`; `Detail` je z chyb klienta,
+  takže nikdy nenese klíč), `internal/mapsapi/`
   (HTTP API pro mapy — tile proxy, reverse geocode a GeoJSON feed; rozhraní `TileFetcher`/
   `Geocoder` (splňuje je `mapy.Client`, nil → 503) a `PhotoLister` (`photos.Store.List`) →
-  unit-testovatelné s faky; `NewAPI(Config{Tiles,Geocoder,Photos,RequireAuth,TileCacheMaxAge,
-  GeocodeCacheTTL,GeocodeRatePerSec,GeocodeRateBurst,MaxGeoPhotos})`+`RegisterRoutes` mountuje
+  unit-testovatelné s faky; `NewAPI(Config{Tiles,Geocoder,Photos,Health,RequireAuth,TileCacheMaxAge,
+  TileCacheTTL,TileCacheBytes,GeocodeCacheTTL,GeocodeRatePerSec,GeocodeRateBurst,MaxGeoPhotos})`+
+  `RegisterRoutes` mountuje
   `/map` za `RequireAuth`: `GET /map/tiles/{mapset}/{z}/{x}/{y}` (validuje mapset→400/retina ze
-  sufixu `@2x` na `{y}` nebo `?retina=true`, **streamuje** přes `io.Copy` s `Cache-Control:
-  public, max-age, immutable`; chyby přes `writeTileError` → 404/429/503/502), `GET /map/rgeocode
+  sufixu `@2x` na `{y}` nebo `?retina=true`, s `Cache-Control: public, max-age, immutable`;
+  **server-side cache** `tileCache` (`tilecache.go`: bounded na bajty + TTL, lazy expiry,
+  **LRU** eviction, klíč `mapset/z/x/y[@2x]`) — hit se servíruje z paměti bez volání mapy.com
+  (= ušetřený kredit, free tier 1 dlaždice = 1 kredit), miss se streamuje a **jen úspěch** se
+  uloží (chyba se **nikdy** necachuje, jinak by výpadek/odmítnutý klíč zamrzl v mapě na celé TTL);
+  dlaždice nad `maxCachedTileBytes` (512 KiB) se streamuje bez cachování, takže se nikdy nebufferuje
+  celá do RAM; outcome hlásí hlavička `X-Tile-Cache: hit|miss`; chyby přes `writeTileError` →
+  404/429/503/502 a **401/403 → `StatusMapKeyRejected` (424)**, tj. vlastní status pro *odmítnutý
+  náš klíč* (syrová 403 by lhala, že je špatný request volajícího) — frontend ho pozná a řekne
+  proč je mapa prázdná; každé volání upstreamu zapíše výsledek do `mapy.Health` (→ system status)),
+  `GET /map/rgeocode
   ?lat=&lng=` (parsuje+range-checkuje souřadnice→400, **TTL+capacity cache** `geocodeCache` klíč =
   souřadnice na 5 desetin, uncached lookup přes **token-bucket** `rateLimiter`→429 šetří kredity,
   odpověď zjednodušená + `Cache-Control: private`), `GET /map/photos` (GeoJSON
@@ -892,8 +909,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `album`/`label`/`archived`, `Limit=MaxGeoPhotos`, řazení taken_at desc; každá feature
   `Point` se souřadnicí RFC 7946 `[lng,lat]` a properties `uid`/`title`/`taken_at`/`media_type`/
   relativní `thumb` cesta `tile_224`, fotky bez obou souřadnic se přeskočí); defaulty cache 24h /
-  rate 5/s burst 10 / max 50000 features; mountuje se `server.WithAPI` (`buildMapsAPI` v
-  `cmd/kukatko/maps.go`, klient se staví jen když je `maps.mapy_api_key` nastaven)),
+  tile cache 64 MiB + 24h / rate 5/s burst 10 / max 50000 features; mountuje se `server.WithAPI`
+  (`buildMapsAPI` v `cmd/kukatko/maps.go`, klient i `mapy.Health` se staví jen když je
+  `maps.mapy_api_key` nastaven — `newMapsHealth`; stejný tracker dostane i `buildSystemAPI`)),
   `internal/places/`
   (DB vrstva pro **cache reverse-geocoded místa** fotky — country/region/city/place_name resolvnuté
   z GPS přes mapy.com a uložené, aby šla knihovna procházet/filtrovat dle lokality bez opakovaného
@@ -1231,14 +1249,18 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   sloučení existujících subsystémů; vše za malými rozhraními `DBPinger` (`database.DB`)/
   `EmbeddingHealth` (`embedding.Client.Healthy`)/`JobCounter`
   (`jobs.Store.CountsByState`/`CountsByType`/`CountPending`)/`ImportLister` (`importer.Store.LatestRun`)/
-  `BackupReporter` (`backup.Service.Status`, **nil = nenakonfigurováno**) → unit-testovatelné s faky
-  bez DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Imports,OriginalsPath,
+  `BackupReporter` (`backup.Service.Status`, **nil = nenakonfigurováno**)/`MapsReporter`
+  (`mapy.Health.Snapshot`, **nil = bez mapy.com klíče**) → unit-testovatelné s faky
+  bez DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Imports,OriginalsPath,
   CachePath,StorageTTL,Clock})`; **`Collect(ctx) (Status,error)`** sbírá `Status{Version,Database,
-  Embeddings,Jobs,Backup,Imports,Storage}`: embeddings online/offline, fronta (by_state/by_type/total/
+  Embeddings,Jobs,Backup,Imports,Storage,Maps}`: embeddings online/offline, fronta (by_state/by_type/total/
   dead_letter/pending_embeddings = queued+running `image_embed`/`face_detect`), backup stav+poslední
   výsledek, poslední import per zdroj, úložiště (velikost originálů+cache walkem, volné/celkové místo
   `statfs` přes `golang.org/x/sys/unix`, **memoizováno** `storageCache` na `defaultStorageTTL` 30 s aby
-  polling nepřecházel strom), DB reachability (`Ping`, **sanitizovaná** chyba), verze/commit; chyby
+  polling nepřecházel strom), DB reachability (`Ping`, **sanitizovaná** chyba), **maps**
+  (`Maps{Configured,State,Degraded,Detail,CheckedAt}` z `mapy.Health` — poslední pozorovaný stav
+  proxy, žádný vlastní probe/kredit; `key_rejected` = mapy.com odmítá klíč → `degraded`, vidět
+  na dashboardu bez otevření mapy), verze/commit; chyby
   čtení fronty/importů (vyžadují DB) → error (500), nedostupná DB a nečitelné úložiště inline
   best-effort), `internal/systemapi/`
   (admin-only HTTP API nad system stavem: rozhraní `StatusCollector` (`Collect`, splňuje

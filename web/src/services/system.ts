@@ -5,11 +5,12 @@ import type { ImportRun } from './import'
  * Admin system-status client, mirroring the backend JSON shapes from
  * `internal/systemapi` and `internal/system`. It powers the status dashboard:
  * one aggregated snapshot of embeddings reachability, job-queue depth, the
- * backup subsystem, the last import per source, storage usage and database
- * reachability, plus the quick actions (trigger a backup, requeue the
- * dead-letter jobs). The session cookie is sent automatically (same-origin);
- * every call throws {@link ApiError} on a non-OK response so callers can branch
- * on `status`.
+ * backup subsystem, the last import per source, storage usage, database
+ * reachability and the map provider's health (a rejected mapy.com key shows up
+ * here, not only as a grey map), plus the quick actions (trigger a backup,
+ * requeue the dead-letter jobs). The session cookie is sent automatically
+ * (same-origin); every call throws {@link ApiError} on a non-OK response so
+ * callers can branch on `status`.
  */
 
 const API_BASE = '/api/v1'
@@ -113,6 +114,22 @@ export interface VersionInfo {
   commit: string
 }
 
+/**
+ * The map provider's last observed state (`mapy.HealthState`). `key_rejected`
+ * means mapy.com is refusing the server's API key — the map has no tiles until a
+ * human replaces the key in the mapy.com console.
+ */
+export type MapsState = 'unknown' | 'ok' | 'key_rejected' | 'rate_limited' | 'unavailable' | 'error'
+
+/** Map-provider (mapy.com) section (`system.Maps`). */
+export interface MapsStatus {
+  configured: boolean
+  state: MapsState
+  degraded: boolean
+  detail?: string
+  checked_at?: string
+}
+
 /** The full system-status snapshot (`system.Status`). */
 export interface SystemStatus {
   version: VersionInfo
@@ -122,6 +139,7 @@ export interface SystemStatus {
   backup: BackupStatus
   imports: ImportsStatus
   storage: StorageStatus
+  maps: MapsStatus
 }
 
 /** One job from the admin listing (`jobs.Job`); only the id is needed here. */

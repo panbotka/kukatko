@@ -388,6 +388,13 @@ type MapsConfig struct {
 	// GeocodeBurst is the `places` job geocode limiter's bucket size (how many
 	// calls may burst before the per-second rate applies).
 	GeocodeBurst int `mapstructure:"geocode_burst"`
+	// TileCacheBytes is the memory budget of the server-side tile cache. Every hit
+	// is one mapy.com credit not spent (the free tier bills one credit per tile),
+	// so a re-visited area costs nothing. <= 0 disables the cache.
+	TileCacheBytes int64 `mapstructure:"tile_cache_bytes"`
+	// TileCacheTTL is how long a proxied tile stays in the server-side cache.
+	// <= 0 disables the cache.
+	TileCacheTTL time.Duration `mapstructure:"tile_cache_ttl"`
 }
 
 // BackupConfig holds the S3 destination, schedule and retention for in-process
@@ -588,14 +595,17 @@ func setDefaults(v *viper.Viper) {
 
 // setMapsDefaults registers the mapy.com proxy defaults: an empty API key (so the
 // proxy is disabled until configured), an empty User-Agent (Go's default is sent
-// until one is configured), the public REST base URL, and the reverse-geocode
-// throttle backing the background places job.
+// until one is configured), the public REST base URL, the reverse-geocode throttle
+// backing the background places job, and the server-side tile cache that keeps a
+// re-browsed area from costing mapy.com credits again.
 func setMapsDefaults(v *viper.Viper) {
 	v.SetDefault("maps.mapy_api_key", "")
 	v.SetDefault("maps.user_agent", "")
 	v.SetDefault("maps.base_url", "https://api.mapy.com")
 	v.SetDefault("maps.geocode_rate_per_sec", 5.0)
 	v.SetDefault("maps.geocode_burst", 10)
+	v.SetDefault("maps.tile_cache_bytes", 64<<20) // 64 MiB ≈ a few thousand tiles
+	v.SetDefault("maps.tile_cache_ttl", 24*time.Hour)
 }
 
 // setStorageDefaults registers the storage defaults: the local filesystem

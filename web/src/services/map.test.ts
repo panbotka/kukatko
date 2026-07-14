@@ -5,6 +5,7 @@ import {
   buildMapQuery,
   fetchMapPhotos,
   type MapFeatureCollection,
+  probeTileFailure,
   tileLayerUrl,
   toMapset,
 } from './map'
@@ -107,5 +108,56 @@ describe('fetchMapPhotos', () => {
       status: 400,
     })
     await expect(fetchMapPhotos({})).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('probeTileFailure', () => {
+  const TILE_URL = '/api/v1/map/tiles/basic/7/70/44'
+
+  /** Stubs fetch with a tile-proxy response of the given status. */
+  function stubTileStatus(status: number): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: status === 200 ? 200 : status })),
+    )
+  }
+
+  it('classifies the tile proxy status', async () => {
+    const cases: [number, string | null][] = [
+      // 424 Failed Dependency: mapy.com rejected *our* key (never its raw 403).
+      [424, 'key_rejected'],
+      [429, 'rate_limited'],
+      [503, 'unavailable'],
+      [502, 'error'],
+      // A tile mapy.com simply does not have is a normal answer, not a failure.
+      [404, null],
+      [200, null],
+    ]
+    for (const [status, want] of cases) {
+      stubTileStatus(status)
+      await expect(probeTileFailure(TILE_URL)).resolves.toBe(want)
+    }
+  })
+
+  it('reports a network failure as a generic error rather than throwing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network down')))
+    await expect(probeTileFailure(TILE_URL)).resolves.toBe('error')
+  })
+
+  it('rethrows an aborted probe so a caller that went away does not act on it', async () => {
+    const aborted = new DOMException('aborted', 'AbortError')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(aborted))
+    await expect(probeTileFailure(TILE_URL)).rejects.toBe(aborted)
+  })
+
+  it('sends the session cookie so the guarded tile route answers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 424 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await probeTileFailure(TILE_URL)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(TILE_URL)
+    expect(init.credentials).toBe('same-origin')
   })
 })

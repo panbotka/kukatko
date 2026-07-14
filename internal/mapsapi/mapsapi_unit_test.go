@@ -39,13 +39,14 @@ func passthroughAuth(next http.Handler) http.Handler {
 }
 
 // testServer wires a maps API (backed by a real mapy client pointed at fakeMapy)
-// behind an httptest server, returning the server, the fake upstream and the
-// photo lister so tests can drive and inspect them.
+// behind an httptest server, returning the server, the fake upstream, the photo
+// lister and the health tracker so tests can drive and inspect them.
 type testServer struct {
 	server    *httptest.Server
 	lister    *fakeLister
 	upstream  *httptest.Server
 	upstreamN *atomic.Int32
+	health    *mapy.Health
 }
 
 // newTestServer builds a maps API whose mapy client targets a fake upstream
@@ -64,17 +65,21 @@ func newTestServer(t *testing.T, lister *fakeLister, upstreamHandler http.Handle
 	if err != nil {
 		t.Fatalf("mapy.New: %v", err)
 	}
+	health := mapy.NewHealth()
 	api := mapsapi.NewAPI(mapsapi.Config{
 		Tiles:       client,
 		Geocoder:    client,
 		Photos:      lister,
+		Health:      health,
 		RequireAuth: passthroughAuth,
 	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
-	return &testServer{server: srv, lister: lister, upstream: upstream, upstreamN: &calls}
+	return &testServer{
+		server: srv, lister: lister, upstream: upstream, upstreamN: &calls, health: health,
+	}
 }
 
 // get performs a GET against the test server and returns the response.
@@ -194,8 +199,10 @@ func TestTileProxy_upstreamErrors(t *testing.T) {
 		upstream int
 		want     int
 	}{
-		{"bad key", http.StatusForbidden, http.StatusBadGateway},
+		{"bad key", http.StatusForbidden, mapsapi.StatusMapKeyRejected},
+		{"expired key", http.StatusUnauthorized, mapsapi.StatusMapKeyRejected},
 		{"missing tile", http.StatusNotFound, http.StatusNotFound},
+		{"unexpected upstream failure", http.StatusInternalServerError, http.StatusBadGateway},
 		{"rate limited", http.StatusTooManyRequests, http.StatusTooManyRequests},
 		{"provider down", http.StatusServiceUnavailable, http.StatusServiceUnavailable},
 	}

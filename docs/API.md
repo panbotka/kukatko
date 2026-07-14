@@ -301,14 +301,19 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   GeoJSON feed. `GET /map/tiles/{mapset}/{z}/{x}/{y}` — proxy dlaždice, **streamuje** s dlouhým
   immutable `Cache-Control`; `mapset` allowlist `basic|outdoor|aerial|winter` (jiný → 400, ještě
   před voláním), retina `@2x` (sufix na `{y}` nebo `?retina=true`) jen pro `basic`/`outdoor`,
-  neplatné `z`/`x`/`y` → 400. `GET /map/rgeocode?lat=&lng=` — reverse geocode → zjednodušené
-  `{name,location,regional_structure}`, **cachované** (klíč = zaokrouhlená souřadnice) a
-  **rate-limitované** (token-bucket, geocode = 4 kredity) → 429 přes limit, 404 bez shody.
-  `GET /map/photos` — **GeoJSON FeatureCollection** geotagovaných fotek (souřadnice `[lng,lat]`),
-  ctí filtry `taken_after`/`taken_before`/`album`/`label`/`archived`, feature nese
-  `uid`/`title`/`taken_at`/`media_type`/relativní `thumb`. mapy.com chyby (401/403→502, 404→404,
-  429→429, 5xx→502/503) **neprosakují klíč**; bez `maps.mapy_api_key` vrací tile/rgeocode 503,
-  GeoJSON funguje. Mountuje se `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).
+  neplatné `z`/`x`/`y` → 400. Úspěšné dlaždice se **cachují i server-side** (bounded LRU +
+  TTL, `maps.tile_cache_bytes`/`maps.tile_cache_ttl`) — hit neplatí kredit mapy.com a hlásí se
+  hlavičkou `X-Tile-Cache: hit|miss`; **chyba se nikdy necachuje**. `GET /map/rgeocode?lat=&lng=` —
+  reverse geocode → zjednodušené `{name,location,regional_structure}`, **cachované** (klíč =
+  zaokrouhlená souřadnice) a **rate-limitované** (token-bucket, geocode = 4 kredity) → 429 přes
+  limit, 404 bez shody. `GET /map/photos` — **GeoJSON FeatureCollection** geotagovaných fotek
+  (souřadnice `[lng,lat]`), ctí filtry `taken_after`/`taken_before`/`album`/`label`/`archived`,
+  feature nese `uid`/`title`/`taken_at`/`media_type`/relativní `thumb`. mapy.com chyby
+  (**401/403 → 424** `mapsapi.StatusMapKeyRejected` = odmítnutý *náš* klíč, syrová 403 se
+  neprosakuje ven — request volajícího je v pořádku; 404→404, 429→429, 5xx→502/503)
+  **neprosakují klíč**; každý výsledek se zapisuje do `mapy.Health` (→ `GET /system/status`
+  sekce `maps`). Bez `maps.mapy_api_key` vrací tile/rgeocode 503, GeoJSON funguje. Mountuje se
+  `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).
 - **Import API (`/api/v1`, `internal/importapi`, přes `RequireImport` = admin **nebo** ai):** triggery a
   historie read-only importů. `GET /import/runs` (**vždy registrovaný**) → `{runs,limit,offset,
   sources:{photoprism,photosorter}}` — stránka `import_runs` newest-started-first (query
@@ -371,7 +376,12 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `RequireAdmin`):** `GET /system/status` → jeden agregovaný snapshot provozního zdraví:
   `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,total,dead_letter,
   pending_embeddings},backup (=backup.Status),imports{photoprism,photosorter (=importer.Run|null)},
-  storage{originals_bytes,cache_bytes,free_bytes,total_bytes}}`. Sloučení existujících subsystémů
+  storage{originals_bytes,cache_bytes,free_bytes,total_bytes},
+  maps{configured,state,degraded,detail?,checked_at?}}`. `maps` = poslední pozorovaný stav mapy.com
+  z proxy (`mapy.Health`, bez vlastního probu): `state` ∈ `unknown|ok|key_rejected|rate_limited|
+  unavailable|error`, `degraded=true` u všech kromě `ok`/`unknown` — **odmítnutý klíč (403) je
+  vidět tady**, ne až jako šedá mapa; `detail` je sanitizovaný (klíč nikdy).
+  Sloučení existujících subsystémů
   (embeddings health, fronta jobů, backup stav, poslední import per zdroj přes
   `importer.Store.LatestRun`, využití disku, DB ping); úložiště memoizováno 30 s. Collect selže (DB
   pro fronту/importy) → 500; nedostupná DB/úložiště inline best-effort. Mountuje se **vždy**
