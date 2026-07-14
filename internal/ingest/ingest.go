@@ -46,6 +46,7 @@ import (
 	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/phash"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/sidecar"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/video"
@@ -153,40 +154,75 @@ func New(cfg Config) *Service {
 	}
 }
 
-// Ingest runs the full pipeline for one uploaded file read from src and returns
-// a per-file result. It never returns an error: every failure is captured in
-// the FileResult so batch callers can report mixed outcomes. uploadedBy is the
-// UID of the authenticated uploader (empty for anonymous/system imports).
+// Request describes one file handed to the pipeline.
+type Request struct {
+	// Filename is the name the file arrived under; it seeds the stored file name
+	// and, for a file with no EXIF date, the capture-time guess.
+	Filename string
+	// UploadedBy is the UID of the authenticated uploader (empty for
+	// anonymous/system imports).
+	UploadedBy string
+	// Sidecar is the metadata an export wrote *beside* the file (a Google Takeout
+	// JSON, an XMP), already read by the caller; nil when the file has none. It
+	// fills what the file's own EXIF does not carry — which, for a Takeout export
+	// whose EXIF was stripped in re-encoding, is the capture date, the caption and
+	// the GPS fix. See internal/sidecar for the precedence rules.
+	Sidecar *sidecar.Metadata
+}
+
+// Ingest runs the pipeline for one uploaded file with no sidecar — the plain
+// upload. See IngestFile for the full form.
 func (s *Service) Ingest(ctx context.Context, src io.Reader, filename, uploadedBy string) FileResult {
+	return s.IngestFile(ctx, src, Request{Filename: filename, UploadedBy: uploadedBy})
+}
+
+// IngestFile runs the full pipeline for one file read from src and returns a
+// per-file result. It never returns an error: every failure is captured in the
+// FileResult so batch callers can report mixed outcomes.
+func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) FileResult {
 	staged, err := s.stage(ctx, src)
 	if err != nil {
-		return errorResult(filename, err)
+		return errorResult(req.Filename, err)
 	}
 	defer staged.cleanup()
 
-	if dup, ok := s.existingDuplicate(ctx, filename, staged.hash); ok {
+	if dup, ok := s.existingDuplicate(ctx, req.Filename, staged.hash); ok {
 		return dup
 	}
 
-	media, err := extractMedia(ctx, staged.path, filename)
+	media, err := extractMedia(ctx, staged.path, req.Filename)
 	if err != nil {
-		return errorResult(filename, err)
+		return errorResult(req.Filename, err)
+	}
+	applySidecar(&media, req.Sidecar)
+
+	stored, err := s.storeOriginal(ctx, staged, req.Filename, media.shared.TakenAt)
+	if err != nil {
+		return errorResult(req.Filename, err)
 	}
 
-	stored, err := s.storeOriginal(ctx, staged, filename, media.shared.TakenAt)
+	photo, dup, err := s.catalogue(ctx, req.Filename, stored, media, req.UploadedBy)
 	if err != nil {
-		return errorResult(filename, err)
-	}
-
-	photo, dup, err := s.catalogue(ctx, filename, stored, media, uploadedBy)
-	if err != nil {
-		return errorResult(filename, err)
+		return errorResult(req.Filename, err)
 	}
 	if dup != nil {
 		return *dup
 	}
 
-	return createdResult(filename, photo.UID, s.postProcess(ctx, photo))
+	return createdResult(req.Filename, photo.UID, s.postProcess(ctx, photo))
+}
+
+// applySidecar folds the file's sidecar (when it has one) into the metadata read
+// from the file itself, before anything is stored: the merged capture time is
+// what decides the YYYY/MM the original is published under, so a Takeout photo
+// with stripped EXIF lands in the month it was taken rather than the month it
+// was imported.
+func applySidecar(media *mediaMeta, sc *sidecar.Metadata) {
+	if sc == nil {
+		return
+	}
+	media.sidecar = sc
+	sidecar.Apply(&media.shared, *sc)
 }
 
 // stagedFile is an upload streamed to a temp file, with its content hash and
@@ -445,10 +481,14 @@ type mediaMeta struct {
 	// kind is the media type written to photos.media_type.
 	kind photos.MediaType
 	// shared carries the fields common to images and videos (capture time, GPS,
-	// dimensions, MIME, raw metadata document).
+	// dimensions, MIME, raw metadata document). A sidecar has already been folded
+	// into it by applySidecar.
 	shared exif.Metadata
 	// video is non-nil only for videos and carries the video-only fields.
 	video *videoFields
+	// sidecar is the export metadata found beside the file, nil when there is
+	// none. It carries the caption fields, which have no EXIF counterpart here.
+	sidecar *sidecar.Metadata
 }
 
 // videoFields holds the video-only metadata probed from the container.
@@ -574,6 +614,12 @@ func buildPhoto(stored storage.StoredFile, media mediaMeta, uploadedBy string) p
 		p.AudioCodec = media.video.audioCodec
 		p.HasAudio = media.video.hasAudio
 		p.FPS = media.video.fps
+	}
+	if media.sidecar != nil {
+		// The caption fields exist nowhere else: an export's title and description
+		// are precisely what the media file itself no longer carries.
+		p.Title = media.sidecar.Title
+		p.Description = media.sidecar.Description
 	}
 	if uploadedBy != "" {
 		p.UploadedBy = &uploadedBy

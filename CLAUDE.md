@@ -103,6 +103,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/savedsearch` — per-user saved searches ("smart albums")
 - `internal/savedsearchapi` — `/saved-searches`, everything scoped to the owner (foreign → 404)
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
+- `internal/sidecar` — čte metadata vedle média (Google Takeout `.json`, Apple `.xmp`), páruje je se soubory a řeší precedenci vůči EXIF
 - `internal/storage` — storage of originals (`YYYY/MM`, SHA256): local `FS` or Cloudflare `R2` with signed URLs
 - `internal/storagemigrate` — resumable move of the library to object store; verify → commit the row → only then delete the original
 - `internal/system` — aggregation of instance operational state for the admin dashboard

@@ -65,7 +65,15 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (z dané množiny uid vrátí ty, co projdou strukturálními List filtry — ignoruje řazení,
   stránkování i `FullText`; companion k sémantickému hledání: caller drží kandidáty z
   embeddings indexu a profiltruje je list filtry, pořadí dle podobnosti si řadí sám)/
-  `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/
+  `UpdateMetadata`/**`FillMissingMetadata(ctx,uid,MetadataFill) (changed,error)`**
+  (doplní **jen prázdná** pole fotky, která už v katalogu je — z sidecaru importu:
+  `taken_at`+`taken_at_source` (jen když je `taken_at` NULL nebo je zdroj **slabý**, tj.
+  `unknown`/`filename` — `exif`/`manual` se nikdy nepřepíše), `lat`+`lng` (**jen jako pár**, půlka
+  fixu není poloha), `altitude`, `title`, `description`; jeden UPDATE, jehož WHERE opakuje všechny
+  guardy → fotka, kde není co doplnit, se **vůbec nezapíše** (ani `updated_at`) a druhý běh importu
+  je opravdový no-op; podklad `internal/dirimport` backfillu duplicit — složka naimportovaná
+  *před* čtením sidecarů se dá opravit re-runem, ne mazáním a znovu)/
+  `Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/
   uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
   **album/label scope** `AlbumUID`/`LabelUID` korelovaným `EXISTS` nad `album_photos`/`photo_labels`
   — podklad sdíleného scoped výpisu fotek alba/štítku přes `GET /photos?album=`/`?label=`,
@@ -298,10 +306,16 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   2-D DCT 32×32 → low-freq 8×8 blok s prahem medián-bez-DC, **dHash** gradientní 9×8; `Distance(a,b)`
   = Hammingova vzdálenost přes `bits.OnesCount64`; near-dup = malá vzdálenost), `internal/ingest/`
   (upload/ingest pipeline: `Service` = `New(Config{Storage,Photos,Thumbnailer,Enqueuer,Duplicate,
-  MaxFileSize,TempDir})` s `Ingest(ctx,src,filename,uploadedBy) FileResult` — streamuje do tempu +
+  MaxFileSize,TempDir})` s **`IngestFile(ctx,src,Request{Filename,UploadedBy,Sidecar})`** (plná forma;
+  `Ingest(ctx,src,filename,uploadedBy)` = tenký wrapper pro upload bez sidecaru) `→ FileResult`
+  — streamuje do tempu +
   SHA256, exact-dup check, metadata (`mediaMeta`: **foto** → EXIF; **video** dle `video.IsVideoPath`
   → `media_type=video` + `video.Probe`, vyžaduje `ffmpeg` jinak per-file error `ErrFFmpegMissing`,
-  `taken_at` fallback na původní jméno přes `exif.FilenameTakenAt`), `storage.Store` (`YYYY/MM`),
+  `taken_at` fallback na původní jméno přes `exif.FilenameTakenAt`),
+  **`applySidecar`** (má-li soubor sidecar — `internal/sidecar`, viz níže — zapracuje se **před**
+  uložením originálu: sloučené `taken_at` rozhoduje o `YYYY/MM`, takže Takeout fotka se stripnutým
+  EXIFem padne do měsíce, kdy **vznikla**, ne kdy se importovala; `Title`/`Description` z sidecaru
+  jdou do `photos` — v EXIFu ekvivalent nemají), `storage.Store` (`YYYY/MM`),
   insert `photos` (vč. video sloupců)+primární `photo_files`, pHash/dHash → `photo_phashes`
   (u videa z poster framu), náhledy (u videa poster), enqueue jobů (poster frame se účastní
   search/people); **per-file** `FileResult{Filename,Status,
@@ -311,19 +325,57 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   TODO hook `EnqueueImageEmbed`/`EnqueueFaceDetect`, default `NopEnqueuer` než vznikne fronta;
   `API` = `NewAPI(svc, requireWrite)` + `RegisterRoutes` mountuje `POST /upload` za `RequireWrite`;
   multipart se streamuje part-by-part, nikdy celý soubor v RAM),
+  `internal/sidecar/`
+  (**metadata vedle média** — čte to, co export napsal *do souboru vedle* fotky, ne do ní:
+  `Read(ctx,path) (Metadata,error)` dle přípony — **`.json`** = Google Photos (Takeout;
+  `photoTakenTime` → `TakenAt`, `description`, `geoData`/`geoDataExif` → `Lat`/`Lng`/`Altitude`,
+  `favorited`, `people[].name`; **přesná 0/0 znamená „neznámo"**, ne bod v Guinejském zálivu;
+  `title` je jméno souboru, **ne** popisek) a **`.xmp`** = Apple/Lightroom (přes **exiftool**,
+  tj. `exif.Extract` nad sidecarem: datum, GPS, `dc:title`/`dc:description`, `dc:subject` → `Keywords`,
+  `xmp:Rating` 0–5 (záporné „rejected" = 0), `dc:creator`/`Artist`); `.aae` je popis **editace**,
+  ne metadata → nikdy se nečte;
+  `Match(media,sidecars) Matches{Pairs,Orphans,Missing}` páruje **v rámci adresáře** a přežije celé
+  minové pole jmen z Takeoutu: `IMG.jpg.json`, `IMG.jpg.supplemental-metadata.json` (i **useknuté**
+  Googlem kvůli limitu délky jména: `…supplemental-me.json`, `IMG_1234.jp.json`), přesun copy-indexu
+  (`IMG_1234(1).jpg` ↔ `IMG_1234.jpg(1).json`), Apple `IMG.HEIC.xmp` i `IMG.xmp`; **přesná shoda má
+  přednost** před useknutou, **nejednoznačná** useknutá shoda nespáruje nic (raději nahlásit než
+  přišít historii jedné fotky k jiné), u Live Photo dvojice vyhrává **fotka nad videem**, u fotky
+  s JSON i XMP vyhrává JSON; Takeoutí vlastní `metadata.json` (album) není sidecar → **ignoruje se**
+  (a nehlásí se jako osiřelý), **alba se z exportu nikdy nezakládají**;
+  `Apply(*exif.Metadata, Metadata)` řeší **precedenci**: EXIF je primární, sidecar **doplňuje mezery**
+  — ale sidecar **vyhrává**, když EXIF datum chybí, je jen hádané ze jména (`SourceFilename`), nebo
+  leží **víc než 24 h za** sidecarem (to je datum *exportu*, které Takeout při re-encode zapsal do
+  `DateTimeOriginal`; okno je den, protože EXIF nenese zónu); zdroj se zapíše jako
+  **`exif.SourceSidecar`** (`taken_at_source = "sidecar"`); GPS se doplní **jen jako pár** a jen když
+  soubor žádné nemá; jména lidí a klíčová slova se **jen uloží** do EXIF dokumentu pod klíč `Sidecar`
+  — Google nemá face boxy, takže z nich **nesmí vzniknout subjekt ani marker**),
   `internal/dirimport/`
   (**import adresáře z disku** — `kukatko import dir <path>`; `Service` = `New(Config{Ingest,Runs,
-  Photos,Albums,Labels,Concurrency,Logger})` s `Import(ctx, Options{Root,Recursive,DryRun,Album,
-  Labels,UploadedBy,Progress}) (Result,error)`; **žádná druhá pipeline** — každý mediální soubor jde
-  přes `ingest.Ingest` úplně stejně jako upload (stream, SHA256 dedup, metadata, `YYYY/MM`, náhledy,
-  joby), vše za rozhraními `Ingester`/`RunStore`/`PhotoLookup`/`AlbumStore`/`LabelStore` → unit-testovatelné
-  s faky; **idempotentní** (identita = SHA256 → re-run hlásí duplicity a nic nezapíše) a
+  Photos,Filler,Curation,Albums,Labels,Concurrency,Logger})` s `Import(ctx, Options{Root,Recursive,
+  DryRun,NoSidecars,Album,Labels,UploadedBy,Progress}) (Result,error)`; **žádná druhá pipeline** —
+  každý mediální soubor jde
+  přes `ingest.IngestFile` úplně stejně jako upload (stream, SHA256 dedup, metadata, `YYYY/MM`, náhledy,
+  joby), vše za rozhraními `Ingester`/`RunStore`/`PhotoLookup`/`PhotoFiller`/`CurationStore`/
+  `AlbumStore`/`LabelStore` → unit-testovatelné
+  s faky; **sidecary** (`internal/sidecar`): `buildSidecarIndex` spáruje média se sousedními
+  `.json`/`.xmp` **před** prvním souborem, každý sidecar se čte ve workeru a jde s fotkou do
+  `ingest.Request.Sidecar`; **per-user značky** exportu jdou na importujícího uživatele
+  (Google `favorited` → `AddFavorite`, XMP rating → `SetRating`; **jen u nově založené fotky** —
+  re-import starého exportu nesmí vrátit oblíbenost, kterou uživatel mezitím zrušil); u **duplicity**
+  se zavolá `photos.FillMissingMetadata` → složka naimportovaná *dřív*, než se sidecary četly, se
+  opraví pouhým re-runem (nic se nezakládá, doplní se **jen mezery**, druhý běh nezapíše nic);
+  `Result.Sidecars` = `SidecarReport{Matched,Applied,Unreadable,Orphans,Missing}` — **co se nespárovalo,
+  se pojmenuje**: sidecar bez fotky, fotka bez sidecaru (jen v adresářích, kde nějaké sidecary jsou —
+  ve složce z foťáku by to byl jen šum) i sidecar, který nešel přečíst (fotka se **stejně**
+  naimportuje, přijde jen o datum); `--dry-run` sidecary spáruje **a přečte** (report je ten, který by
+  dal ostrý běh), `NoSidecars` je vypne; **idempotentní** (identita = SHA256 → re-run hlásí duplicity a nic nezapíše) a
   **resumovatelný** (každý soubor commitnutý zvlášť, pád/Ctrl-C nechá naimportované v knihovně,
   re-run dojede zbytek); originály se **kopírují, nikdy nepřesouvají ani nemění**;
   `plan()` projde strom lexikálně (deterministicky) a klasifikuje skip důvody: `SkipHidden` (tečkové),
   `SkipJunk` (`@eaDir`, `__MACOSX`, `Thumbs.db`, `.DS_Store`, `desktop.ini`, Picasa),
-  `SkipSidecar` (`.xmp`/`.json`/`.aae`/`.thm` — sidecary nejsou média; čtení metadat z nich je
-  samostatný úkol), `SkipUnsupported` (mimo `imgconvert.IsSupportedFormat`, tj. HEIC/RAW/video jdou dovnitř),
+  `SkipSidecar` (`.xmp`/`.json`/`.aae`/`.thm` — sidecary **nejsou média**, takže se neimportují;
+  metadata se z `.xmp`/`.json` **čtou** a připojí k sousední fotce, viz `internal/sidecar` výše),
+  `SkipUnsupported` (mimo `imgconvert.IsSupportedFormat`, tj. HEIC/RAW/video jdou dovnitř),
   `SkipSymlink` (**symlinky se přeskakují, nikdy nenásledují** → walk nemůže zacyklit; jen samotný
   root se rozbalí přes `EvalSymlinks`) a `SkipEmpty` (0 B); hidden/junk adresáře se prořezávají celé,
   `--no-recursive` prořeže vše pod rootem; per-file chyba padá do `Counts.Failed` a běh **pokračuje**

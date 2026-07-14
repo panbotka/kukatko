@@ -83,8 +83,42 @@ v knihovně a další běh dojede zbytek (přerušený běh se uzavře jako `fai
 se zaloguje a **pokračuje se dál**; příkaz skončí **nenulovým exit kódem**, když aspoň jeden soubor
 selhal, aby to skript poznal.
 
+#### Sidecary: Google Takeout (`.json`) a Apple (`.xmp`)
+
+Export z Google Photos (Takeout) nese metadata **vedle** fotky, ne v ní: exportovaný JPEG má EXIF
+zpravidla oříznutý při re-encode, takže skutečné datum pořízení, popisek i GPS žijí jen v `.json`
+souboru vedle. Naimportovat takovou složku naivně = přijít o všechno; proto import sidecary **čte**
+(vypne se `--no-sidecars`).
+
+- **Co se přenáší.** Takeout: `photoTakenTime` → `taken_at`, `description` → popis,
+  `geoData`/`geoDataExif` → `lat`/`lng`/`altitude` (**přesná 0/0 = neznámo**, ne bod v Guinejském
+  zálivu), `favorited` → oblíbená u **importujícího uživatele** (oblíbené jsou v Kukátku per-user),
+  `people[].name` → jen do metadat (Google nemá face boxy, **subjekt ani marker z nich nevznikne**).
+  Apple `.xmp` (přes `exiftool`): datum, GPS, titulek/popis, klíčová slova, hodnocení (per-user),
+  autor. `.AAE` je popis **editace**, ne metadata → ignoruje se.
+- **Precedence.** EXIF samotného souboru je primární a sidecar **doplňuje mezery** — s výjimkou, kvůli
+  které to celé existuje: když EXIF datum leží **víc než 24 h za** datem ze sidecaru, je to datum
+  *exportu* (Takeout ho při re-encode zapíše do `DateTimeOriginal`) a **vyhrává sidecar**. Sidecar
+  vyhrává i nad datem hádaným z názvu souboru. Zdroj se zapíše do `taken_at_source` jako `sidecar`.
+  **Co už uživatel v Kukátku upravil, se nikdy nepřepíše** — import doplňuje díry.
+- **Alba se z exportu nezakládají.** Struktura složek a `metadata.json` alba jsou plné
+  automaticky generovaného balastu z telefonu; členství v albu se řeší přes `--album`.
+- **Re-run opraví starý import.** Složku, která se naimportovala dřív, než se sidecary četly, stačí
+  naimportovat znovu: soubory se nahlásí jako duplicity, nic se nezaloží, ale **doplní se chybějící**
+  datum, popis a GPS. Třetí běh už nezapíše nic.
+- **Co se nespárovalo, se pojmenuje** — na konci běhu:
+  `sidecars: matched=… applied=… unreadable=… unmatched=… media-without-sidecar=…` a pod tím výpis
+  konkrétních cest (max 10, pak `… and N more`): sidecar, který nenašel fotku; fotka bez sidecaru
+  (hlásí se **jen v adresářích, kde nějaké sidecary jsou** — u složky z foťáku by to byl šum);
+  a sidecar, který nešel přečíst (fotka se **stejně** naimportuje, přijde jen o metadata).
+  Tichý nesoulad je způsob, jak přijít o desetiletí dat — proto se hlásí, nehádá se.
+  Párování jmen přežije všechny varianty Takeoutu (`IMG.jpg.json`,
+  `IMG.jpg.supplemental-metadata.json` i její useknuté formy, `IMG_1234.jp.json`,
+  `IMG_1234.jpg(1).json` ↔ `IMG_1234(1).jpg`); **nejednoznačná** useknutá shoda raději nespáruje nic.
+
 Přeskakuje (a počítá po důvodech, nikdy kvůli tomu neselže): tečkové soubory a adresáře, `@eaDir`,
-`__MACOSX`, `Thumbs.db`, `.DS_Store`, `desktop.ini`, sidecary (`.xmp`, `.json`, `.aae`, `.thm`),
+`__MACOSX`, `Thumbs.db`, `.DS_Store`, `desktop.ini`, sidecary (`.xmp`, `.json`, `.aae`, `.thm` — jako
+**média** se neimportují; metadata se z `.xmp`/`.json` čtou, viz výše),
 prázdné soubory a formáty, které nejsou podporovaný obrázek ani video (HEIC/RAW/video **podporované
 jsou**). **Symlinky se přeskakují, nenásledují se** (walk se tak nemůže zacyklit); rozbalí se jen
 samotný `<path>`, takže mířit příkazem na symlinkovaný adresář funguje. Soubor bez EXIF a bez data
@@ -100,12 +134,14 @@ a doberou se, až bude box zase dostupný — souhrn to tak i napíše.
 | `--labels <a,b,c>` | – | připojí štítky (podle názvu; co neexistuje, se založí) všem fotkám běhu |
 | `--recursive`, `-r` | `true` | projde i podadresáře |
 | `--no-recursive` | `false` | jen plochý adresář (s `--recursive` se **vylučuje**) |
-| `--dry-run` | `false` | jen ohlásí, co by udělal (nový / duplicita / přeskočeno + důvod) — **nezapíše nic**, ani `import_runs` |
+| `--dry-run` | `false` | jen ohlásí, co by udělal (nový / duplicita / přeskočeno + důvod, včetně **celého sidecar reportu**) — **nezapíše nic**, ani `import_runs` |
+| `--no-sidecars` | `false` | ignoruje metadata vedle médií (Takeout export pak přijde **bez dat a popisků**) |
 | `--concurrency N` | `3` | kolik souborů se nahrává paralelně; **strop 8** (thumbnailing velkých fotek je paměťově drahý a box má 16 GB sdílených se vším ostatním) |
 | `--uploader <user>` | bootstrap admin | uživatelské jméno vlastníka naimportovaných fotek; bez něj `auth.bootstrap_admin_username`, jinak první admin |
 
-Výpis: řádek na soubor (`[12/2000] imported 2014/IMG_0001.JPG`) a na konci souhrn
-`imported=… duplicates=… skipped=… failed=…` + rozpad přeskočených po důvodech a doba běhu.
+Výpis: řádek na soubor (`[12/2000] imported 2014/IMG_0001.JPG (sidecar: IMG_0001.JPG.json)`) a na
+konci souhrn `imported=… duplicates=… skipped=… failed=…` + rozpad přeskočených po důvodech,
+**sidecar report** (viz výše) a doba běhu.
 
 ### `kukatko storage migrate-to-r2`
 

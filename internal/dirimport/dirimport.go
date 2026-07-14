@@ -107,6 +107,12 @@ type FileResult struct {
 	Outcome Outcome
 	// Reason is the skip rule that fired; set only for OutcomeSkipped.
 	Reason SkipReason
+	// Sidecar is the metadata sidecar matched to this media file (relative to the
+	// import root), empty when it has none. SidecarErr says why a matched sidecar
+	// could not be read; the file is still imported, only without the metadata the
+	// sidecar held.
+	Sidecar    string
+	SidecarErr error
 	// PhotoUID identifies the photo created (OutcomeImported) or the photo that
 	// already holds this content (OutcomeDuplicate).
 	PhotoUID string
@@ -140,6 +146,30 @@ func (c Counts) Total() int {
 	return c.Imported + c.Duplicates + c.Skipped + c.Failed
 }
 
+// SidecarReport is what the run made of the metadata sidecars beside the media —
+// the Google Takeout JSON and Apple XMP files that carry the capture date, the
+// caption and the GPS of an export whose media files no longer do.
+//
+// Everything that did not pair is named, not counted away: a sidecar silently
+// matched to the wrong photo, or to none, is how somebody loses a decade of
+// dates without ever being told.
+type SidecarReport struct {
+	// Matched is how many media files a sidecar was paired with.
+	Matched int
+	// Applied is how many of those sidecars were read and folded into the photo.
+	Applied int
+	// Unreadable are the paths of sidecars that were paired but could not be
+	// parsed. Their media file is still imported, with whatever metadata it
+	// carries itself.
+	Unreadable []string
+	// Orphans are sidecars that describe no media file in their directory.
+	Orphans []string
+	// Missing are media files with no sidecar, reported only for directories that
+	// hold sidecars at all — in an export folder that is a photo about to lose its
+	// date; in an ordinary folder of camera files it is simply the normal case.
+	Missing []string
+}
+
 // Result is the outcome of one folder import.
 type Result struct {
 	// RunID is the import_runs row recording the run; 0 for a dry run, which
@@ -147,6 +177,8 @@ type Result struct {
 	RunID int64
 	// Counts is the final tally.
 	Counts Counts
+	// Sidecars is what became of the metadata sidecars beside the media files.
+	Sidecars SidecarReport
 	// DryRun echoes whether the run only reported what it would have done.
 	DryRun bool
 }
@@ -167,8 +199,13 @@ type Options struct {
 	// with no matching label is created.
 	Labels []string
 	// UploadedBy is the UID of the user who owns the imported photos; empty leaves
-	// photos.uploaded_by NULL.
+	// photos.uploaded_by NULL. It is also who an export's per-user marks land on:
+	// favourites and ratings belong to a user in Kukátko, not to a photo.
 	UploadedBy string
+	// NoSidecars ignores the metadata sidecars beside the media files. The default
+	// (false) reads them — a Google Takeout export imported without its JSON
+	// sidecars arrives with no dates and no captions at all.
+	NoSidecars bool
 	// Progress, when set, is called once per decided file with the running tally
 	// (done of total). It is called from the worker goroutines but serialised, so
 	// an implementation may write to a terminal without locking.
@@ -179,9 +216,10 @@ type Options struct {
 // internal/ingest, satisfied by *ingest.Service. Depending on the interface keeps
 // the walk testable without storage, a thumbnailer or a database.
 type Ingester interface {
-	// Ingest streams one file through the pipeline and reports its per-file
-	// outcome; it never returns an error, failures are carried in the result.
-	Ingest(ctx context.Context, src io.Reader, filename, uploadedBy string) ingest.FileResult
+	// IngestFile streams one file through the pipeline and reports its per-file
+	// outcome; it never returns an error, failures are carried in the result. The
+	// request carries the file's sidecar metadata, when it had one.
+	IngestFile(ctx context.Context, src io.Reader, req ingest.Request) ingest.FileResult
 }
 
 // RunStore records the run in import_runs, satisfied by *importer.Store.
@@ -205,6 +243,27 @@ type PhotoLookup interface {
 	GetByFileHash(ctx context.Context, hash string) (photos.Photo, error)
 	// GetByUID returns the photo with this UID.
 	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+}
+
+// PhotoFiller backfills the metadata gaps of a photo that is already catalogued,
+// satisfied by *photos.Store. It is what makes a re-import worth running: a
+// folder first imported without its sidecars comes back as a wall of duplicates,
+// and this is what still writes the dates and captions those duplicates never
+// got. It never overwrites a field the photo already has.
+type PhotoFiller interface {
+	// FillMissingMetadata fills only the empty fields of the photo and reports
+	// whether anything changed.
+	FillMissingMetadata(ctx context.Context, uid string, fill photos.MetadataFill) (bool, error)
+}
+
+// CurationStore records the per-user marks an export carries — Google's
+// "favorited" star, an XMP star rating. Both are per-user in Kukátko, so they
+// land on the importing user; satisfied by *organize.Store.
+type CurationStore interface {
+	// AddFavorite marks the photo as a favourite of this user (idempotent).
+	AddFavorite(ctx context.Context, userUID, photoUID string) error
+	// SetRating sets this user's star rating (0..5) for the photo.
+	SetRating(ctx context.Context, userUID, photoUID string, rating int) error
 }
 
 // AlbumStore is the album catalogue needed to place imported photos, satisfied by
@@ -241,6 +300,12 @@ type Config struct {
 	// Photos reads the catalogue for dry-run classification and duplicate
 	// reporting (required).
 	Photos PhotoLookup
+	// Filler backfills sidecar metadata onto photos that are already catalogued;
+	// nil leaves duplicates untouched.
+	Filler PhotoFiller
+	// Curation applies an export's favourites and ratings to the importing user;
+	// nil ignores them.
+	Curation CurationStore
 	// Albums resolves and populates --album (required only when --album is used).
 	Albums AlbumStore
 	// Labels resolves and attaches --labels (required only when --labels is used).
@@ -259,6 +324,8 @@ type Service struct {
 	ingest      Ingester
 	runs        RunStore
 	photos      PhotoLookup
+	filler      PhotoFiller
+	curation    CurationStore
 	albums      AlbumStore
 	labels      LabelStore
 	concurrency int
@@ -276,6 +343,8 @@ func New(cfg Config) *Service {
 		ingest:      cfg.Ingest,
 		runs:        cfg.Runs,
 		photos:      cfg.Photos,
+		filler:      cfg.Filler,
+		curation:    cfg.Curation,
 		albums:      cfg.Albums,
 		labels:      cfg.Labels,
 		concurrency: clampConcurrency(cfg.Concurrency),

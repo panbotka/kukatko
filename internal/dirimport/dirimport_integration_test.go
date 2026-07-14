@@ -75,6 +75,8 @@ func newEnv(t *testing.T) *testEnv {
 		}),
 		Runs:        importer.NewStore(pool),
 		Photos:      photoStore,
+		Filler:      photoStore,
+		Curation:    organizeStore,
 		Albums:      organizeStore,
 		Labels:      organizeStore,
 		Concurrency: 2,
