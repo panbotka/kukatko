@@ -35,10 +35,12 @@ function facesResult(overrides: Partial<UseFacesResult> = {}): UseFacesResult {
   }
 }
 
+const onEditFace = vi.fn()
+
 function renderPanel(faces: UseFacesResult, canWrite = true, loading = false) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <PeoplePanel faces={faces} canWrite={canWrite} loading={loading} />
+      <PeoplePanel faces={faces} canWrite={canWrite} loading={loading} onEditFace={onEditFace} />
     </I18nextProvider>,
   )
 }
@@ -68,19 +70,19 @@ describe('PeoplePanel', () => {
     expect(screen.getByRole('button', { name: 'Name unnamed face 2' })).toBeInTheDocument()
   })
 
-  it('selects a face when its chip is clicked', async () => {
-    const select = vi.fn()
+  it('hands a clicked chip to the faces panel instead of naming it here', async () => {
     const user = userEvent.setup()
-    renderPanel(facesResult({ faces: [faceView({ face_index: 0 })], select }))
+    renderPanel(facesResult({ faces: [faceView({ face_index: 0 })] }))
 
     await user.click(screen.getByRole('button', { name: 'Name unnamed face 1' }))
-    expect(select).toHaveBeenCalledWith(0)
+    // Assignment lives in exactly one place — the faces panel beside the photo.
+    expect(onEditFace).toHaveBeenCalledWith(0)
   })
 
-  it('opens the assign panel for the selected face', () => {
+  it('never names a face itself, not even for the selected one', () => {
     const selected = faceView({ face_index: 0 })
     renderPanel(facesResult({ faces: [selected], selected }))
-    expect(screen.getByLabelText('Name this face')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
   })
 
   it('shows only named people, read-only, to a viewer', () => {

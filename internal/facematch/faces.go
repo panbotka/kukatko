@@ -9,8 +9,9 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
-// PhotoFaces returns every stored face on the photo with its marker assignment and,
-// for unnamed faces, ranked subject suggestions. Faces are matched to the photo's
+// PhotoFaces returns every stored face on the photo with its marker assignment and
+// ranked subject suggestions — for an unnamed face the candidates to name it with,
+// for an assigned one the alternatives to reassign it to. Faces are matched to the photo's
 // markers by IoU and the best match (when it clears the threshold) is cached on the
 // face row. Markers that matched no detected face are appended so the detail UI can
 // render manually drawn regions too. A missing photo yields photos.ErrPhotoNotFound
@@ -49,7 +50,15 @@ func (s *Service) PhotoFaces(ctx context.Context, photoUID string) (FacesRespons
 
 // buildFaceView matches one stored face to the photo's markers, fills its
 // assignment and recommended action, caches the match on the face row, and adds
-// subject suggestions when the face is still unnamed.
+// subject suggestions.
+//
+// Suggestions are computed for an assigned face too, so the UI can offer a
+// reassignment. The face never suggests the person it already names: exclude holds
+// every subject assigned on this photo, its own included. Only an unnamed face
+// widens the search past the distance cutoff — for a correctly assigned face the
+// near neighbours are its own (excluded) subject, so an empty result is the honest
+// answer "no plausible alternative", while a misassigned one still surfaces the
+// right person from the primary pass.
 func (s *Service) buildFaceView(
 	ctx context.Context, face vectors.Face, markers []people.Marker,
 	names map[string]string, exclude map[string]bool, matched map[string]bool,
@@ -68,9 +77,7 @@ func (s *Service) buildFaceView(
 		applyMarkerAssignment(&view, *best, names)
 		s.cacheFaceMatch(ctx, face, *best, view.SubjectName)
 	}
-	if view.SubjectUID == "" {
-		view.Suggestions = s.suggestForFace(ctx, face, exclude)
-	}
+	view.Suggestions = s.suggestForFace(ctx, face, exclude, view.SubjectUID == "")
 	return view
 }
 
@@ -133,11 +140,15 @@ func appendUnmatchedMarkers(
 	return views
 }
 
-// suggestForFace ranks likely subjects for an unnamed face from its nearest face
-// neighbours, widening the search past the primary distance cutoff when the first
-// pass returns fewer than the limit. An empty embedding or any search error yields
+// suggestForFace ranks likely subjects for a face from its nearest face neighbours.
+// When widen is set and the primary pass returns fewer than the limit, the search is
+// repeated with no distance cutoff to fill the remaining slots — pass it only for an
+// unnamed face, which needs candidates at any distance; an assigned one only wants
+// alternatives that are genuinely close. An empty embedding or any search error yields
 // no suggestions (the box being offline must not fail the faces view).
-func (s *Service) suggestForFace(ctx context.Context, face vectors.Face, exclude map[string]bool) []Suggestion {
+func (s *Service) suggestForFace(
+	ctx context.Context, face vectors.Face, exclude map[string]bool, widen bool,
+) []Suggestion {
 	if len(face.Vector) == 0 {
 		return []Suggestion{}
 	}
@@ -146,7 +157,7 @@ func (s *Service) suggestForFace(ctx context.Context, face vectors.Face, exclude
 		return []Suggestion{}
 	}
 	suggestions := aggregateSuggestions(primary, face.PhotoUID, exclude, s.minFaceSize, s.suggestionLimit)
-	if len(suggestions) >= s.suggestionLimit {
+	if !widen || len(suggestions) >= s.suggestionLimit {
 		return suggestions
 	}
 	return s.fillSuggestions(ctx, face, exclude, suggestions)

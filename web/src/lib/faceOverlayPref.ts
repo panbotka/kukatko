@@ -4,8 +4,13 @@
  */
 const STORAGE_KEY = 'kukatko.faces.overlay'
 
-/** Faces are drawn by default — they are primary content on the photo detail. */
-export const FACE_OVERLAY_DEFAULT = true
+/**
+ * Faces are hidden by default: the photo is the content, and boxes drawn over
+ * every face get in the way of simply looking at it. They are opt-in per user —
+ * the toggle button or `m` brings up the boxes and the naming panel, and that
+ * choice is then remembered.
+ */
+export const FACE_OVERLAY_DEFAULT = false
 
 /**
  * Reads the persisted face-overlay preference, falling back to

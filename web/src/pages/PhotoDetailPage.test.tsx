@@ -261,42 +261,75 @@ describe('PhotoDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
   })
 
-  it('draws detected faces as an overlay on the single preview', async () => {
+  it('hides the faces until asked, even on a photo full of them', async () => {
+    fetchFacesMock.mockResolvedValue(facesResponse(2))
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    // The toggle proves the faces loaded — they are simply not drawn yet.
+    await screen.findByRole('button', { name: 'Show faces' })
+
+    expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
+    expect(screen.queryByText('Faces: 2')).not.toBeInTheDocument()
+  })
+
+  it('shows the boxes and the faces panel together, over the single preview', async () => {
+    const user = userEvent.setup()
     fetchFacesMock.mockResolvedValue(facesResponse(2))
     const { container } = renderPage()
-    await screen.findByRole('heading', { name: 'Beach' })
+    await user.click(await screen.findByRole('button', { name: 'Show faces' }))
 
-    expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
+    expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Unnamed face 2' })).toBeEnabled()
-    // Still exactly one image: the boxes are drawn over it.
+    // The panel appears beside the photo, listing the same faces.
+    expect(screen.getByText('Faces: 2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select face #1' })).toBeInTheDocument()
+    // Still exactly one image: the boxes are drawn over it, and the panel rows are
+    // text — the page never carries a second copy of the photo.
     expect(container.querySelectorAll('img')).toHaveLength(1)
-    expect(screen.queryByText('No faces detected in this photo.')).not.toBeInTheDocument()
   })
 
-  it('toggles the face overlay and remembers the choice', async () => {
+  it('shrinks the photo to make room for the faces panel, and only then', async () => {
     const user = userEvent.setup()
     fetchFacesMock.mockResolvedValue(facesResponse(1))
-    renderPage()
-    await screen.findByTestId('face-overlay')
+    const { container } = renderPage()
+    await screen.findByRole('button', { name: 'Show faces' })
 
-    await user.click(screen.getByRole('button', { name: 'Hide faces' }))
-    expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
-    // The choice is persisted, so it carries across photos and reloads.
-    expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('false')
+    const photoCol = container.querySelector('.row .col-12')
+    expect(photoCol).toHaveClass('col-lg-12')
 
     await user.click(screen.getByRole('button', { name: 'Show faces' }))
-    expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
-    expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('true')
+    expect(photoCol).toHaveClass('col-lg-8')
+    expect(screen.getByText('Faces: 1').closest('.col-12')).toHaveClass('col-lg-4')
   })
 
-  it('closes the naming panel when the overlay is hidden', async () => {
+  it('toggles the faces with the m key and remembers the choice', async () => {
     const user = userEvent.setup()
     fetchFacesMock.mockResolvedValue(facesResponse(1))
     renderPage()
-    await screen.findByTestId('face-overlay')
+    await screen.findByRole('button', { name: 'Show faces' })
 
-    await user.click(screen.getByRole('button', { name: 'Unnamed face 1' }))
+    fireEvent.keyDown(document, { key: 'm' })
+    expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
+    // The choice is persisted, so it carries across photos and reloads.
+    expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('true')
+
+    fireEvent.keyDown(document, { key: 'm' })
+    expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
+    expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('false')
+
+    // And the button does the same thing.
+    await user.click(screen.getByRole('button', { name: 'Show faces' }))
+    expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+  })
+
+  it('closes the naming panel when the faces are hidden', async () => {
+    const user = userEvent.setup()
+    fetchFacesMock.mockResolvedValue(facesResponse(1))
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+
+    // The first unnamed face is selected for you, so the naming panel is already up.
     expect(screen.getByLabelText('Name this face')).toBeInTheDocument()
 
     // Hiding the boxes must not leave an orphaned panel for an invisible face.
@@ -350,17 +383,17 @@ describe('PhotoDetailPage', () => {
     expect(screen.getByTestId('map')).toBeInTheDocument()
   })
 
-  it('puts Organize beside Caption & place (25/75) from the lg breakpoint up', async () => {
+  it('puts Organize beside Caption & place (4:8) from the lg breakpoint up', async () => {
     renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
 
-    // The two leading panels share one grid row — a 25 % Organize rail beside the
-    // 75 % text-heavy Caption & place — and both fall back to a full-width column
+    // The two leading panels share one grid row — a narrow Organize rail beside the
+    // text-heavy Caption & place, 4:8 — and both fall back to a full-width column
     // below `lg`, so a phone still gets the stacked order asserted above.
     const organizeCol = screen.getByText('Organize').closest('.col-12')
     const captionCol = screen.getByText('Caption & place').closest('.col-12')
-    expect(organizeCol).toHaveClass('col-lg-3')
-    expect(captionCol).toHaveClass('col-lg-9')
+    expect(organizeCol).toHaveClass('col-lg-4')
+    expect(captionCol).toHaveClass('col-lg-8')
     expect(organizeCol?.parentElement).toBe(captionCol?.parentElement)
 
     // Natural heights: the row must not stretch the shorter card into a tall
@@ -386,17 +419,22 @@ describe('PhotoDetailPage', () => {
     expect(await screen.findByRole('button', { name: 'Name unnamed face 1' })).toBeInTheDocument()
   })
 
-  it('names a face from a person chip in the Organize block', async () => {
+  it('names a face reached from a person chip in the Organize block', async () => {
     const user = userEvent.setup()
     fetchFacesMock.mockResolvedValue(facesResponse(1))
     renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
 
-    // Clicking the person chip opens the assign panel and naming PATCHes people.
+    // The chips answer "who is in this photo" with the faces still hidden; clicking
+    // one brings up the faces panel at that face — the one place people are named.
+    expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Name unnamed face 1' }))
+    expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
     expect(screen.getByLabelText('Name this face')).toBeInTheDocument()
+
+    // Typing a name nobody has yet and confirming it creates the person.
     await user.type(screen.getByLabelText('Name'), 'Alice')
-    await user.click(screen.getByRole('button', { name: 'Assign' }))
+    await user.click(await screen.findByRole('option', { name: /Alice/ }))
     await waitFor(() => {
       expect(assignFaceMock).toHaveBeenCalled()
     })
@@ -703,6 +741,7 @@ describe('PhotoDetailPage', () => {
   })
 
   it('shows a read-only page to viewers', async () => {
+    const user = userEvent.setup()
     fetchFacesMock.mockResolvedValue(facesResponse(1))
     renderPage(false)
     await screen.findByRole('heading', { name: 'Beach' })
@@ -715,10 +754,13 @@ describe('PhotoDetailPage', () => {
       screen.queryByRole('button', { name: 'Remove from album Holidays' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Add to album')).not.toBeInTheDocument()
-    // Viewers see the faces drawn on the photo, but cannot select one to name it,
-    // and album lists are not fetched.
-    expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
+    // A viewer may show the faces too, but cannot select one to name it — and the
+    // panel beside the photo offers no controls. Album lists are not fetched.
+    await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+    expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Select face #1' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
     expect(fetchAlbumsMock).not.toHaveBeenCalled()
     // Chips are still shown (read-only).
     const organize = screen.getByText('Holidays').closest('div')

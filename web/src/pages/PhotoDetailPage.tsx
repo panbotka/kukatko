@@ -24,6 +24,7 @@ import { PeoplePanel } from '../components/photo/PeoplePanel'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
 import { VideoPlayer } from '../components/photo/VideoPlayer'
 import { FaceOverlay } from '../components/people/FaceOverlay'
+import { FacesPanel } from '../components/people/FacesPanel'
 import { useFaces } from '../hooks/useFaces'
 import { useFavorite } from '../hooks/useFavorite'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
@@ -90,8 +91,12 @@ export function PhotoDetailPage() {
   // the detail page at exactly one copy of the photo on first render.
   const [editOpen, setEditOpen] = useState(false)
   // The face-overlay choice is read once from localStorage and written back on
-  // every toggle, so it carries across photos and reloads.
+  // every toggle, so it carries across photos and reloads. Faces are off by
+  // default: the photo is the content, the boxes and their panel are opt-in.
   const [facesVisible, setFacesVisible] = useState(readFaceOverlay)
+  // The face hovered on either side of the photo/panel pair, so hovering a box
+  // highlights its row and hovering a row highlights its box.
+  const [hoveredFace, setHoveredFace] = useState<number | null>(null)
   const faces = useFaces(uid)
 
   const view = useMemo(() => readUrlState(searchParams, DETAIL_DEFAULTS), [searchParams])
@@ -135,11 +140,47 @@ export function PhotoDetailPage() {
     state.status === 'ready' ? (state.photo.is_favorite ?? false) : false,
   )
 
+  // The face UI is derived here, above the loading/error guards below, because the
+  // `m` shortcut is registered before them and must see the same booleans the
+  // render does. `state` is read without destructuring so it stays legal up here.
+  const ready = state.status === 'ready' ? state.photo : null
+  // The overlay is only ever drawn over the still image: it positions its boxes from
+  // normalised bboxes relative to its parent, and a video player's chrome is not the
+  // photo. Faces are never detected on clips anyway.
+  const isStill = ready !== null && ready.media_type !== 'video' && ready.media_type !== 'live'
+  // While a neighbour loads the faces are keyed on the target photo, so they must
+  // not be drawn over the still-displayed previous one.
+  const loadingNext = ready !== null && ready.uid !== uid
+  const facesAvailable = isStill && !loadingNext && faces.faces.length > 0
+  // One boolean drives both the boxes and the side panel: they are the same feature
+  // and can never disagree.
+  const showFaces = facesAvailable && facesVisible
+
+  // Hiding the overlay also drops the selection: a naming panel for a box the user
+  // can no longer see would be orphaned UI.
+  const toggleFaces = () => {
+    const next = !facesVisible
+    setFacesVisible(next)
+    writeFaceOverlay(next)
+    if (!next) {
+      faces.select(null)
+    }
+  }
+
+  // Opens the faces panel at a given face — how the Organize person-chips reach the
+  // one place people are named.
+  const editFace = (faceIndex: number) => {
+    setFacesVisible(true)
+    writeFaceOverlay(true)
+    faces.select(faceIndex)
+  }
+
   // Detail shortcuts: ←/→ page to the previous/next photo, `f` toggles favorite,
-  // Escape returns to the originating list view. Rating keys (0–5, p/r) are handled
-  // by the separate effect above. The hook suppresses these while typing. They are
-  // disabled while the lightbox is open, which owns ←/→ (page the viewer) and Esc
-  // (close it).
+  // `m` shows/hides the faces, Escape steps back out (first the selected face, then
+  // to the originating list view). Rating keys (0–5, p/r) are handled by the separate
+  // effect above. The hook suppresses these while typing, which is what keeps `m`
+  // from firing into the name field. They are disabled while the lightbox is open,
+  // which owns ←/→ (page the viewer) and Esc (close it).
   useKeyboardShortcuts(
     {
       ArrowLeft: () => {
@@ -151,7 +192,16 @@ export function PhotoDetailPage() {
       f: () => {
         favorite.toggle()
       },
+      m: () => {
+        if (facesAvailable) {
+          toggleFaces()
+        }
+      },
       Escape: () => {
+        if (faces.selected !== null) {
+          faces.select(null)
+          return
+        }
         void navigate(backHref(view))
       },
     },
@@ -246,9 +296,9 @@ export function PhotoDetailPage() {
   // and fetch the next one in the background; the displayed photo only matches the
   // route `uid` once that fetch resolves. Until then a subtle overlay marks the
   // load, and the face UI — keyed on the target `uid`, not the shown photo — is
-  // held back so photo A never shows photo B's boxes. The prev/next arrows do
-  // track the target `uid` so rapid paging stays responsive (latest target wins).
-  const loadingNext = photo.uid !== uid
+  // held back so photo A never shows photo B's boxes (see `loadingNext` above).
+  // The prev/next arrows do track the target `uid` so rapid paging stays responsive
+  // (latest target wins).
 
   const setPhoto = (updated: PhotoDetail) => {
     setState({ status: 'ready', photo: updated, edit })
@@ -268,25 +318,6 @@ export function PhotoDetailPage() {
     thumbVersion > 0
       ? `${basePoster}${basePoster.includes('?') ? '&' : '?'}v=${String(thumbVersion)}`
       : basePoster
-  const isStill = photo.media_type !== 'video' && photo.media_type !== 'live'
-  // The overlay is only ever drawn over the still image: it positions its boxes
-  // from normalised bboxes relative to its parent, and a video player's chrome is
-  // not the photo. Faces are never detected on clips anyway. While a neighbour
-  // loads (`loadingNext`) the boxes are keyed on the target photo, so they must
-  // not be drawn over the still-displayed previous one.
-  const showFaceBoxes = isStill && facesVisible && faces.faces.length > 0 && !loadingNext
-
-  // Hiding the overlay also drops the selection: a naming panel for a box the user
-  // can no longer see would be orphaned UI.
-  const toggleFaces = () => {
-    const next = !facesVisible
-    setFacesVisible(next)
-    writeFaceOverlay(next)
-    if (!next) {
-      faces.select(null)
-    }
-  }
-
   // Render the main media by kind: a range-streaming player for videos, a
   // hover/hold motion preview for live photos, and the edit-reflecting still for
   // images. Non-destructive edits apply to images only (the backend never
@@ -342,11 +373,13 @@ export function PhotoDetailPage() {
             style={{ maxHeight: '80vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
           />
         </button>
-        {showFaceBoxes && (
+        {showFaces && (
           <FaceOverlay
             faces={faces.faces}
             selected={faces.selected?.face_index ?? null}
+            hovered={hoveredFace}
             onSelect={faces.select}
+            onHover={setHoveredFace}
             readOnly={!canWrite}
           />
         )}
@@ -397,69 +430,90 @@ export function PhotoDetailPage() {
         </div>
       </div>
 
-      {/* The photo spans the full width of the content area; the control/info
-          panels sit below it (see the grid further down). */}
-      <div className="position-relative bg-dark rounded overflow-hidden d-flex justify-content-center">
-        {renderMedia()}
-        {neighbors.prev !== null && (
-          <Link
-            to={neighborTo(neighbors.prev)}
-            replace
-            aria-label={t('photo.prev')}
-            className="btn btn-dark opacity-75 position-absolute top-50 start-0 translate-middle-y ms-2"
-          >
-            ‹
-          </Link>
-        )}
-        {neighbors.next !== null && (
-          <Link
-            to={neighborTo(neighbors.next)}
-            replace
-            aria-label={t('photo.next')}
-            className="btn btn-dark opacity-75 position-absolute top-50 end-0 translate-middle-y me-2"
-          >
-            ›
-          </Link>
-        )}
-        {/* Paging to a neighbour keeps the current photo visible; a small corner
-            spinner marks the background load instead of blanking the whole page
-            to a full-screen spinner. */}
-        {loadingNext && (
-          <div className="position-absolute top-0 end-0 m-2">
-            <Spinner animation="border" size="sm" variant="light" role="status">
-              <span className="visually-hidden">{t('photo.loadingNext')}</span>
-            </Spinner>
+      {/* The photo spans the full width of the content area — until the faces are
+          shown, when it yields a third of it to the faces panel beside it (below it
+          on a phone). `align-items-start` keeps both columns at their natural
+          height; crucially, nothing here may stretch the wrapper that `renderMedia`
+          shrink-wraps around the <img>, or the overlay's percentage-positioned
+          boxes would drift off the faces. The control/info panels sit below both
+          (see the grid further down). */}
+      <Row className="align-items-start g-3">
+        <Col xs={12} lg={showFaces ? 8 : 12}>
+          <div className="position-relative bg-dark rounded overflow-hidden d-flex justify-content-center">
+            {renderMedia()}
+            {neighbors.prev !== null && (
+              <Link
+                to={neighborTo(neighbors.prev)}
+                replace
+                aria-label={t('photo.prev')}
+                className="btn btn-dark opacity-75 position-absolute top-50 start-0 translate-middle-y ms-2"
+              >
+                ‹
+              </Link>
+            )}
+            {neighbors.next !== null && (
+              <Link
+                to={neighborTo(neighbors.next)}
+                replace
+                aria-label={t('photo.next')}
+                className="btn btn-dark opacity-75 position-absolute top-50 end-0 translate-middle-y me-2"
+              >
+                ›
+              </Link>
+            )}
+            {/* Paging to a neighbour keeps the current photo visible; a small corner
+                spinner marks the background load instead of blanking the whole page
+                to a full-screen spinner. */}
+            {loadingNext && (
+              <div className="position-absolute top-0 end-0 m-2">
+                <Spinner animation="border" size="sm" variant="light" role="status">
+                  <span className="visually-hidden">{t('photo.loadingNext')}</span>
+                </Spinner>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div className="d-flex gap-2 mt-2 flex-wrap">
-        <Button as="a" href={photo.download_url} variant="outline-secondary" size="sm" download>
-          {t('photo.download')}
-        </Button>
-        {!isIdentityEdit(edit) && (
-          <Button
-            as="a"
-            href={downloadUrl(photo.uid, { token: downloadToken })}
-            variant="outline-secondary"
-            size="sm"
-            download
-          >
-            {t('photo.downloadEdited')}
-          </Button>
+          <div className="d-flex gap-2 mt-2 flex-wrap">
+            <Button as="a" href={photo.download_url} variant="outline-secondary" size="sm" download>
+              {t('photo.download')}
+            </Button>
+            {!isIdentityEdit(edit) && (
+              <Button
+                as="a"
+                href={downloadUrl(photo.uid, { token: downloadToken })}
+                variant="outline-secondary"
+                size="sm"
+                download
+              >
+                {t('photo.downloadEdited')}
+              </Button>
+            )}
+            {facesAvailable && (
+              <Button
+                type="button"
+                variant={facesVisible ? 'secondary' : 'outline-secondary'}
+                size="sm"
+                aria-pressed={facesVisible}
+                onClick={toggleFaces}
+              >
+                {facesVisible ? t('faces.hide') : t('faces.toggle')}
+              </Button>
+            )}
+          </div>
+        </Col>
+
+        {showFaces && (
+          <Col xs={12} lg={4}>
+            <FacesPanel
+              faces={faces}
+              canWrite={canWrite}
+              hovered={hoveredFace}
+              onHover={setHoveredFace}
+              onClose={toggleFaces}
+            />
+          </Col>
         )}
-        {isStill && faces.faces.length > 0 && !loadingNext && (
-          <Button
-            type="button"
-            variant={facesVisible ? 'secondary' : 'outline-secondary'}
-            size="sm"
-            aria-pressed={facesVisible}
-            onClick={toggleFaces}
-          >
-            {facesVisible ? t('faces.hide') : t('faces.toggle')}
-          </Button>
-        )}
-      </div>
+      </Row>
 
       {/* Control/info panels below the photo, spanning the full page width, in a
           strict edit-first priority order: Organize first, then Caption & place,
@@ -477,7 +531,12 @@ export function PhotoDetailPage() {
             <Card.Body>
               <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
               <hr />
-              <PeoplePanel faces={faces} canWrite={canWrite} loading={loadingNext} />
+              <PeoplePanel
+                faces={faces}
+                canWrite={canWrite}
+                loading={loadingNext}
+                onEditFace={editFace}
+              />
             </Card.Body>
           </Card>
         </Col>

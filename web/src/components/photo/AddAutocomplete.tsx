@@ -10,6 +10,12 @@ export interface AutocompleteOption {
   uid: string
   /** Human-readable text shown and filtered against. */
   label: string
+  /**
+   * Secondary text shown muted at the end of the row (e.g. how many photos a
+   * person appears on). Not filtered against — the query only ever matches the
+   * label, so a hint can carry numbers without hijacking the search.
+   */
+  hint?: string
 }
 
 /** Props for {@link AddAutocomplete}. */
@@ -31,6 +37,11 @@ export interface AddAutocompleteProps {
   id: string
   /** Disables the field while a mutation is in flight. */
   disabled?: boolean
+  /**
+   * Focuses the field on mount. Set it where the field IS the task (naming the
+   * selected face), not where it is one control among many.
+   */
+  autoFocus?: boolean
 }
 
 /** Cap on rendered suggestions so hundreds of albums/labels stay responsive. */
@@ -59,6 +70,7 @@ export function AddAutocomplete({
   label,
   id,
   disabled,
+  autoFocus = false,
 }: AddAutocompleteProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
@@ -174,6 +186,9 @@ export function AddAutocomplete({
         aria-autocomplete="list"
         autoComplete="off"
         disabled={disabled}
+        // Opt-in, and only ever set where the field is the whole purpose of the
+        // panel that just opened (naming the selected face).
+        autoFocus={autoFocus}
         onFocus={() => {
           setOpen(true)
         }}
@@ -215,7 +230,10 @@ export function AddAutocomplete({
                   select(option)
                 }}
               >
-                {option.label}
+                <span className="text-truncate">{option.label}</span>
+                {option.hint !== undefined && (
+                  <span className="ms-auto ps-2 small text-secondary">{option.hint}</span>
+                )}
               </button>
             </li>
           ))}

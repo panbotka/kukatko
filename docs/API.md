@@ -101,8 +101,12 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   přihlášený, aspoň jedna hodnota → 204, 400 neplatná, 404 chybějící fotka, 503 bez backendu) +
   `DELETE /photos/{uid}/rating` (idempotentní clear → 204); `GET /photos/{uid}/faces` (přihlášený) — obličeje
   fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`)
-  a **návrhy** identit pro nepojmenované (face↔marker IoU matching, viz `internal/facematch`; 503
-  když face backend není zapojen); `POST /photos/{uid}/faces/assign` (editor/admin) — přiřazovací
+  a **návrhy** identit **pro každý obličej** s embeddingem — u nepojmenovaného kandidáti na
+  pojmenování, u přiřazeného **alternativy pro přeřazení** (osoba, kterou obličej už nese, i všichni
+  ostatní lidé na fotce jsou z návrhů vyloučeni, takže přiřazený obličej bez blízké alternativy
+  dostane prázdný seznam; rozšíření prahu bez cutoffu běží jen u nepojmenovaných). Face↔marker IoU
+  matching, viz `internal/facematch`; 503 když face backend není zapojen;
+  `POST /photos/{uid}/faces/assign` (editor/admin) — přiřazovací
   akce `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`
   (`create_marker`/`assign_person`/`unassign_person`), auto-create subjektu dle jména, drží `faces`
   cache + `marker.reviewed` konzistentní (400 validace, 404 chybějící foto/marker/subjekt);

@@ -517,7 +517,8 @@
     "detail": {
       "prevNext": "Předchozí / další fotka",
       "favorite": "Přepnout oblíbenou",
-      "back": "Zpět na seznam"
+      "back": "Zrušit výběr obličeje, poté zpět na seznam",
+      "faces": "Zobrazit / skrýt obličeje"
     }
   },
   "map": {
@@ -650,7 +651,19 @@
       "suggestions": "Návrhy",
       "nameLabel": "Jméno",
       "namePlaceholder": "Nové nebo existující jméno…",
-      "assign": "Přiřadit"
+      "assign": "Přiřadit",
+      "reassign": "Přeřadit",
+      "cancelReassign": "Zrušit přeřazení",
+      "closePanel": "Zavřít panel obličejů"
+    },
+    "count": "Obličejů: {{count}}",
+    "row": {
+      "label": "Obličej #{{number}}",
+      "select": "Vybrat obličej #{{number}}"
+    },
+    "state": {
+      "detected": "Nepojmenovaný",
+      "unassigned": "Bez osoby"
     }
   },
   "outliers": {

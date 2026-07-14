@@ -550,8 +550,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `invalid`), match při `IoU ≥ faces.iou_threshold` (default 0.1, mirror photo-sorteru);
   **`PhotoFaces(ctx,photoUID)`** (backing `GET /photos/{uid}/faces`) → pro každý uložený obličej
   spočítá nejlepší marker dle IoU, určí akci (`create_marker`/`assign_person`/`already_done`),
-  **zacachuje match na řádek obličeje** přes `vectors.UpdateFaceMarker`, a pro nepojmenované
-  obličeje přidá návrhy; markery bez odpovídajícího obličeje připojí (záporné `face_index`);
+  **zacachuje match na řádek obličeje** přes `vectors.UpdateFaceMarker`, a **každému** obličeji
+  s embeddingem přidá návrhy (nepojmenovanému kandidáty, přiřazenému alternativy pro přeřazení —
+  vlastní subjekt se vyfiltruje sám, protože `exclude` drží všechny osoby na fotce; rozšíření
+  prahu bez cutoffu běží jen u nepojmenovaných, aby přiřazený obličej bez blízké alternativy
+  dostal poctivě prázdný seznam); markery bez odpovídajícího obličeje připojí (záporné `face_index`);
   **návrhy** (`aggregateSuggestions`, čistá funkce) z `vectors.FindSimilarFaceCandidates`
   (HNSW cosine) agregují kandidáty dle subjektu, vyloučí obličeje na stejné fotce, subjekty už
   přiřazené na fotce (jiné osoby) a obličeje pod `faces.min_face_size`, řadí dle průměrné

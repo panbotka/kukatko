@@ -312,6 +312,43 @@ func TestFaces_suggestions(t *testing.T) {
 	}
 }
 
+// TestFaces_suggestionsForAssignedFace checks an already-assigned face carries the
+// alternatives a reassignment can pick from, and never the subject it already names —
+// that is what lets the UI fix a wrong assignment in one click.
+func TestFaces_suggestionsForAssignedFace(t *testing.T) {
+	env := newEnv(t)
+	client := env.login(t, "dave-admin", auth.RoleAdmin)
+
+	alice := env.createSubject(t, "Alice")
+	bob := env.createSubject(t, "Bob")
+
+	box := [4]float64{0.1, 0.1, 0.3, 0.3}
+
+	// Two neighbours equally close to the query face: Alice (the subject it already
+	// names) and Bob (a plausible alternative).
+	p2 := env.makePhoto(t, "neighbour_alice")
+	env.saveFace(t, p2, 0, faceVec(0), box, alice.UID, "Alice")
+	p3 := env.makePhoto(t, "neighbour_bob")
+	env.saveFace(t, p3, 0, faceVec(0), box, bob.UID, "Bob")
+
+	// Query photo: one face, assigned to Alice through an overlapping marker.
+	p1 := env.makePhoto(t, "query_assigned")
+	env.createMarker(t, p1, alice.UID, box)
+	env.saveFace(t, p1, 0, faceVec(0), box, alice.UID, "Alice")
+
+	resp := env.getFaces(t, client, p1)
+	if len(resp.Faces) != 1 {
+		t.Fatalf("got %d faces, want 1: %+v", len(resp.Faces), resp.Faces)
+	}
+	face := resp.Faces[0]
+	if face.Action != facematch.ActionAlreadyDone || face.SubjectUID != alice.UID {
+		t.Fatalf("face = %+v, want already_done assigned to Alice", face)
+	}
+	if len(face.Suggestions) != 1 || face.Suggestions[0].SubjectUID != bob.UID {
+		t.Errorf("suggestions = %+v, want only Bob (Alice already names this face)", face.Suggestions)
+	}
+}
+
 // TestAssign_createUnassignReuseSubject exercises the full state machine: create a
 // marker (auto-creating a subject), unassign it, then reassign by the same name and
 // confirm the subject is reused, not duplicated.

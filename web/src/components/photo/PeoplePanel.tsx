@@ -3,10 +3,9 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { type UseFacesResult } from '../../hooks/useFaces'
-import { type FaceView } from '../../services/people'
+import { isNamed } from '../../lib/faceState'
 import { ENTITY_STYLE } from '../entityStyle'
 import { Icon } from '../Icon'
-import { FaceAssignPanel } from '../people/FaceAssignPanel'
 
 /** Props for {@link PeoplePanel}. */
 export interface PeoplePanelProps {
@@ -20,29 +19,35 @@ export interface PeoplePanelProps {
    * than showing another photo's people.
    */
   loading?: boolean
-}
-
-/** Whether a detected face has been assigned to a named person. */
-function isNamed(face: FaceView): boolean {
-  return face.subject_name !== undefined && face.subject_name !== ''
+  /**
+   * Called with a face's `face_index` when an editor clicks its chip: the page
+   * shows the faces panel and selects that face there. Assignment lives in exactly
+   * one place, and these chips are the way to reach it without knowing about `m`.
+   */
+  onEditFace: (faceIndex: number) => void
 }
 
 /**
  * The People sub-block of the Organize card: the photo's detected faces as person
  * chips (rose, like every other person chip in the app), reusing the same
- * {@link useFaces} state machine that drives the on-image overlay so a face picked
- * on the photo and a chip picked here stay in sync. For an editor each chip is a
- * button that opens the {@link FaceAssignPanel} to assign, rename or remove the
- * person; a viewer sees the named people read-only. Named faces are rose chips,
- * unassigned detections are neutral chips an editor can still name.
+ * {@link useFaces} state machine that drives the on-image overlay. It answers "who
+ * is in this photo" without turning the face boxes on — they are off by default —
+ * and an editor's click on a chip opens the faces panel at that face. Named faces
+ * are rose chips, unassigned detections neutral chips an editor can still name; a
+ * viewer sees only the named people, read-only.
+ *
+ * Chips are numbered by position, matching the numbers on the boxes and in the
+ * faces panel: `face_index` is negative for markers with no detected face.
  */
-export function PeoplePanel({ faces, canWrite, loading = false }: PeoplePanelProps) {
+export function PeoplePanel({ faces, canWrite, loading = false, onEditFace }: PeoplePanelProps) {
   const { t } = useTranslation()
   const busyLoading = loading || faces.status === 'loading'
   const selected = faces.selected
   // Viewers only care about the people who have a name; an editor also sees the
   // unnamed detections so they can name them.
-  const visible = canWrite ? faces.faces : faces.faces.filter(isNamed)
+  const visible = faces.faces
+    .map((face, position) => ({ face, number: position + 1 }))
+    .filter(({ face }) => canWrite || isNamed(face))
 
   return (
     <div>
@@ -63,11 +68,9 @@ export function PeoplePanel({ faces, canWrite, loading = false }: PeoplePanelPro
           {visible.length === 0 && (
             <span className="text-secondary small">{t('photo.organize.noPeople')}</span>
           )}
-          {visible.map((face) => {
+          {visible.map(({ face, number }) => {
             const named = isNamed(face)
-            const text = named
-              ? (face.subject_name ?? '')
-              : t('faces.unnamed', { index: face.face_index + 1 })
+            const text = named ? (face.subject_name ?? '') : t('faces.unnamed', { index: number })
             const chipClass = `badge rounded-pill d-inline-flex align-items-center gap-1 ${
               named ? ENTITY_STYLE.person.className : 'text-bg-secondary'
             }`
@@ -88,10 +91,10 @@ export function PeoplePanel({ faces, canWrite, loading = false }: PeoplePanelPro
                 aria-label={
                   named
                     ? t('photo.organize.editPerson', { name: text })
-                    : t('photo.organize.namePerson', { index: face.face_index + 1 })
+                    : t('photo.organize.namePerson', { index: number })
                 }
                 onClick={() => {
-                  faces.select(face.face_index)
+                  onEditFace(face.face_index)
                 }}
               >
                 <Icon name={ENTITY_STYLE.person.icon} />
@@ -100,25 +103,6 @@ export function PeoplePanel({ faces, canWrite, loading = false }: PeoplePanelPro
             )
           })}
         </div>
-      )}
-
-      {canWrite && selected !== null && (
-        <FaceAssignPanel
-          face={selected}
-          busy={faces.busy}
-          onAcceptSuggestion={(suggestion) => {
-            faces.acceptSuggestion(selected, suggestion)
-          }}
-          onAssignName={(name) => {
-            faces.assignName(selected, name)
-          }}
-          onUnassign={() => {
-            faces.unassign(selected)
-          }}
-          onClose={() => {
-            faces.select(null)
-          }}
-        />
       )}
     </div>
   )

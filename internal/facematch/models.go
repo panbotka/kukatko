@@ -65,8 +65,10 @@ type FaceView struct {
 	SubjectName string `json:"subject_name,omitempty"`
 	// IoU is the overlap with the matched marker (0 when no marker matched).
 	IoU float64 `json:"iou,omitempty"`
-	// Suggestions lists likely subjects for an unnamed face (never nil; empty when
-	// the face is already assigned or the box is offline).
+	// Suggestions lists likely subjects for the face — candidates to name an unnamed
+	// face with, alternatives to reassign an assigned one to. Never nil; the subject
+	// the face already names (and everyone else on the photo) is excluded, so it is
+	// empty for a face with no plausible alternative, no embedding, or an offline box.
 	Suggestions []Suggestion `json:"suggestions"`
 }
 

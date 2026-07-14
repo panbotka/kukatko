@@ -1,25 +1,36 @@
-import { type SyntheticEvent, useState } from 'react'
+import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
-import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
-import { type FaceView, type Suggestion } from '../../services/people'
+import { isNamed } from '../../lib/faceState'
+import { type FaceView, type SubjectCount, type Suggestion } from '../../services/people'
+import { AddAutocomplete } from '../photo/AddAutocomplete'
+
+/** The identity an assignment names a face with. */
+export type SubjectChoice = Pick<Suggestion, 'subject_uid' | 'subject_name'>
 
 /** Props for {@link FaceAssignPanel}. */
 export interface FaceAssignPanelProps {
   /** The face being named. */
   face: FaceView
+  /** Every subject in the library, for the typeahead. */
+  subjects: SubjectCount[]
+  /** True while the subject list is still loading (the typeahead waits for it). */
+  subjectsLoading?: boolean
   /** True while an assignment request is in flight (disables the controls). */
   busy: boolean
-  /** Accepts a suggested identity with one tap. */
-  onAcceptSuggestion: (suggestion: Suggestion) => void
-  /** Assigns a free-text name (found or created server-side). */
+  /** Names the face with an existing subject — a ranked suggestion or a typeahead pick. */
+  onAcceptSuggestion: (subject: SubjectChoice) => void
+  /** Assigns a free-text name (the subject is found or created server-side). */
   onAssignName: (name: string) => void
   /** Clears the current assignment (only shown when the face is named). */
   onUnassign: () => void
-  /** Dismisses the panel. */
+  /** Dismisses the panel (deselects the face). */
   onClose: () => void
 }
+
+/** How many ranked suggestions to offer: past the third, confidence is guesswork. */
+const MAX_SUGGESTIONS = 3
 
 /** Formats a 0..1 confidence as a whole-percent string for display. */
 function confidencePct(confidence: number): string {
@@ -27,13 +38,19 @@ function confidencePct(confidence: number): string {
 }
 
 /**
- * The assignment controls for a single selected face: the current identity (with
- * an unassign action), one-tap suggestion buttons ranked by confidence, and a
- * free-text name field that finds or creates a subject. Touch-friendly — every
- * action is a full-size button.
+ * The assignment controls for a single selected face: one-tap suggestion buttons
+ * ranked by similarity to the faces already named in the library, and a typeahead
+ * that names it with an existing person or creates a new one.
+ *
+ * An assigned face shows who it names, and can be reassigned — the backend ranks
+ * alternatives for it too, with the person it already names excluded — or cleared.
+ * Reassignment is a mode rather than the default view, so a correct name is never
+ * one stray click from being replaced.
  */
 export function FaceAssignPanel({
   face,
+  subjects,
+  subjectsLoading = false,
   busy,
   onAcceptSuggestion,
   onAssignName,
@@ -41,20 +58,30 @@ export function FaceAssignPanel({
   onClose,
 }: FaceAssignPanelProps) {
   const { t } = useTranslation()
-  const [name, setName] = useState('')
+  const [reassigning, setReassigning] = useState(false)
 
-  function handleSubmit(event: SyntheticEvent) {
-    event.preventDefault()
-    const trimmed = name.trim()
-    if (trimmed !== '') {
-      onAssignName(trimmed)
-    }
-  }
-
-  const assigned = face.subject_name !== undefined && face.subject_name !== ''
+  const assigned = isNamed(face)
+  const naming = !assigned || reassigning
+  const suggestions = face.suggestions.slice(0, MAX_SUGGESTIONS)
 
   return (
-    <div className="border rounded p-3 mt-2" aria-label={t('faces.panel.title')}>
+    <div
+      className="border rounded p-3 mt-2"
+      aria-label={t('faces.panel.title')}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') {
+          return
+        }
+        // Escape backs out one step at a time: first out of reassignment (keeping
+        // the name that is already there), then out of the face itself.
+        event.stopPropagation()
+        if (reassigning) {
+          setReassigning(false)
+        } else {
+          onClose()
+        }
+      }}
+    >
       <div className="d-flex justify-content-between align-items-start mb-2">
         <strong>
           {assigned
@@ -72,58 +99,69 @@ export function FaceAssignPanel({
       </div>
 
       {assigned && (
-        <Button
-          variant="outline-danger"
-          size="sm"
-          className="mb-2"
-          disabled={busy}
-          onClick={onUnassign}
-        >
-          {t('faces.panel.unassign')}
-        </Button>
-      )}
-
-      {face.suggestions.length > 0 && (
-        <div className="mb-2">
-          <p className="small text-secondary mb-1">{t('faces.panel.suggestions')}</p>
-          <div className="d-flex flex-wrap gap-2">
-            {face.suggestions.map((suggestion) => (
-              <Button
-                key={suggestion.subject_uid}
-                variant="outline-primary"
-                size="sm"
-                disabled={busy}
-                onClick={() => {
-                  onAcceptSuggestion(suggestion)
-                }}
-              >
-                {suggestion.subject_name} · {confidencePct(suggestion.confidence)}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <Form onSubmit={handleSubmit}>
-        <Form.Label htmlFor="face-name-input" className="small text-secondary mb-1">
-          {t('faces.panel.nameLabel')}
-        </Form.Label>
-        <div className="d-flex gap-2">
-          <Form.Control
-            id="face-name-input"
-            type="text"
-            value={name}
-            placeholder={t('faces.panel.namePlaceholder')}
+        <div className="d-flex gap-2 mb-2">
+          <Button
+            variant="outline-primary"
+            size="sm"
             disabled={busy}
-            onChange={(event) => {
-              setName(event.target.value)
+            onClick={() => {
+              setReassigning(!reassigning)
             }}
-          />
-          <Button type="submit" variant="primary" disabled={busy || name.trim() === ''}>
-            {t('faces.panel.assign')}
+          >
+            {reassigning ? t('faces.panel.cancelReassign') : t('faces.panel.reassign')}
+          </Button>
+          <Button variant="outline-danger" size="sm" disabled={busy} onClick={onUnassign}>
+            {t('faces.panel.unassign')}
           </Button>
         </div>
-      </Form>
+      )}
+
+      {naming && (
+        <>
+          {suggestions.length > 0 && (
+            <div className="mb-2">
+              <p className="small text-secondary mb-1">{t('faces.panel.suggestions')}</p>
+              <div className="d-flex flex-wrap gap-2">
+                {suggestions.map((suggestion) => (
+                  <Button
+                    key={suggestion.subject_uid}
+                    variant="outline-primary"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      onAcceptSuggestion(suggestion)
+                    }}
+                  >
+                    {suggestion.subject_name} · {confidencePct(suggestion.confidence)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <AddAutocomplete
+            id={`face-name-${face.face_index}`}
+            label={t('faces.panel.nameLabel')}
+            autoFocus
+            disabled={busy || subjectsLoading}
+            options={subjects.map((subject) => ({
+              uid: subject.uid,
+              label: subject.name,
+              hint: String(subject.marker_count),
+            }))}
+            onAdd={(uid) => {
+              const subject = subjects.find((candidate) => candidate.uid === uid)
+              onAcceptSuggestion({ subject_uid: uid, subject_name: subject?.name ?? '' })
+            }}
+            onCreate={(name) => {
+              // The assignment is optimistic and its failure surfaces as the panel's
+              // error alert, so the field may clear right away.
+              onAssignName(name)
+              return Promise.resolve(true)
+            }}
+          />
+        </>
+      )}
     </div>
   )
 }
