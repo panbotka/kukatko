@@ -104,18 +104,52 @@ type Photo struct {
 	// other text fields it defaults to '' in SQL; it is user-editable and included
 	// in full-text search (weighted like Notes).
 	AiNote string `json:"ai_note"`
+	// Subject is the IPTC subject/headline — what the photo is about. It is
+	// user-editable and folds into full-text search at the description's weight.
+	Subject string `json:"subject"`
+	// Keywords are the IPTC keywords, comma-separated, kept verbatim as the source
+	// file wrote them. They are deliberately not labels: Kukátko's labels are its
+	// own curated taxonomy, this column preserves the original value. Included in
+	// full-text search at the notes' weight.
+	Keywords string `json:"keywords"`
+	// Artist, Copyright and License are the IPTC/XMP credit fields: who made the
+	// photo, the copyright notice and the licence text. All user-editable.
+	Artist    string `json:"artist"`
+	Copyright string `json:"copyright"`
+	License   string `json:"license"`
 
 	Lat      *float64 `json:"lat,omitempty"`
 	Lng      *float64 `json:"lng,omitempty"`
 	Altitude *float64 `json:"altitude,omitempty"`
 
-	CameraMake  string   `json:"camera_make"`
-	CameraModel string   `json:"camera_model"`
-	LensModel   string   `json:"lens_model"`
-	ISO         *int     `json:"iso,omitempty"`
-	Aperture    *float64 `json:"aperture,omitempty"`
-	Exposure    string   `json:"exposure"`
-	FocalLength *float64 `json:"focal_length,omitempty"`
+	CameraMake  string `json:"camera_make"`
+	CameraModel string `json:"camera_model"`
+	LensModel   string `json:"lens_model"`
+	// CameraSerial is the camera body's serial number.
+	CameraSerial string   `json:"camera_serial"`
+	ISO          *int     `json:"iso,omitempty"`
+	Aperture     *float64 `json:"aperture,omitempty"`
+	Exposure     string   `json:"exposure"`
+	FocalLength  *float64 `json:"focal_length,omitempty"`
+
+	// The machine-derived technical fields below are stored and served but never
+	// user-editable: they describe the file, not the user's view of it.
+	//
+	// Software is what produced the image (camera firmware, Lightroom, a scanner's
+	// driver) and Scan marks an image digitised from a physical print rather than
+	// captured by a camera. ColorProfile names the embedded ICC profile ("sRGB",
+	// "Apple Wide Color Sharing Profile"). ImageCodec is the still image's
+	// compression ("jpeg", "heic", "avif") — VideoCodec/AudioCodec above are
+	// separate and stay untouched. Projection is a panorama's projection
+	// ("equirectangular"), empty for an ordinary photo. OriginalName is the file
+	// name the photo carried before it was ingested; FileName is the name it has in
+	// the storage layout.
+	Software     string `json:"software"`
+	Scan         bool   `json:"scan"`
+	ColorProfile string `json:"color_profile"`
+	ImageCodec   string `json:"image_codec"`
+	Projection   string `json:"projection"`
+	OriginalName string `json:"original_name"`
 
 	Exif json.RawMessage `json:"exif,omitempty"`
 
@@ -187,12 +221,21 @@ type Edit struct {
 }
 
 // MetadataUpdate carries the user-editable metadata fields applied by
-// Store.UpdateMetadata. Pointer fields clear (set NULL) when nil.
+// Store.UpdateMetadata. Pointer fields clear (set NULL) when nil. The
+// machine-derived columns (software, color_profile, image_codec, camera_serial,
+// original_name, projection) are deliberately absent: they describe the file and
+// are written only by the ingest and import paths.
 type MetadataUpdate struct {
 	Title         string     `json:"title"`
 	Description   string     `json:"description"`
 	Notes         string     `json:"notes"`
 	AiNote        string     `json:"ai_note"`
+	Subject       string     `json:"subject"`
+	Keywords      string     `json:"keywords"`
+	Artist        string     `json:"artist"`
+	Copyright     string     `json:"copyright"`
+	License       string     `json:"license"`
+	Scan          bool       `json:"scan"`
 	TakenAt       *time.Time `json:"taken_at"`
 	TakenAtSource string     `json:"taken_at_source"`
 	Lat           *float64   `json:"lat"`

@@ -241,6 +241,42 @@ func TestMetadataUpdate_preservesNotes(t *testing.T) {
 	}
 }
 
+// TestMetadataUpdate_preservesKukatkoFields pins the carry-over of every editable
+// field this import does not map. Store.UpdateMetadata overwrites the whole row,
+// so a field left at its zero value here is not "unmapped" — it is *erased* on the
+// next incremental run, silently, from a photo the user had already curated.
+func TestMetadataUpdate_preservesKukatkoFields(t *testing.T) {
+	t.Parallel()
+	existing := photos.Photo{
+		Notes:     "shot at dusk",
+		AiNote:    "detected: dog, beach",
+		Subject:   "Sunset over the lagoon",
+		Keywords:  "beach,sunset,dog",
+		Artist:    "Jan Novák",
+		Copyright: "© 2024 Jan Novák",
+		License:   "CC BY-NC 4.0",
+		Scan:      true,
+	}
+	u := metadataUpdate(existing, photoprism.Photo{Title: "New title"})
+
+	if u.Notes != existing.Notes || u.AiNote != existing.AiNote {
+		t.Errorf("notes/ai_note not preserved: %q / %q", u.Notes, u.AiNote)
+	}
+	if u.Subject != existing.Subject || u.Keywords != existing.Keywords ||
+		u.Artist != existing.Artist || u.Copyright != existing.Copyright ||
+		u.License != existing.License || !u.Scan {
+		t.Errorf("IPTC credit fields not preserved: %+v", u)
+	}
+	// An import that changes nothing but the title is still detected as a change,
+	// and one that changes nothing at all as a no-op.
+	if metadataUnchanged(existing, u) {
+		t.Error("metadataUnchanged = true although the title changed")
+	}
+	if !metadataUnchanged(existing, metadataUpdate(existing, photoprism.Photo{})) {
+		t.Error("metadataUnchanged = false although only carried-over fields are in play")
+	}
+}
+
 // TestJobPayload verifies the singleton payload carries the dedup sentinel.
 func TestJobPayload(t *testing.T) {
 	t.Parallel()

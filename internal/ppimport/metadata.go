@@ -95,13 +95,26 @@ func applyCameraMeta(p *photos.Photo, pp photoprism.Photo, meta exif.Metadata) {
 }
 
 // metadataUpdate builds the metadata patch applied to an already-imported photo
-// from PhotoPrism's current values. Notes are preserved (PhotoPrism has no notes
-// concept), and the capture-time source mirrors buildPhoto.
+// from PhotoPrism's current values, and the capture-time source mirrors
+// buildPhoto.
+//
+// Store.UpdateMetadata overwrites the whole row, so every editable field this
+// import does not map has to be carried over from the photo as it stands, or an
+// incremental run would silently blank it. That is every Kukátko-only field —
+// notes and ai_note (PhotoPrism has no such concept) — plus the IPTC/XMP credits,
+// which PhotoPrism does keep but this import does not map yet (a separate task).
 func metadataUpdate(existing photos.Photo, pp photoprism.Photo) photos.MetadataUpdate {
 	update := photos.MetadataUpdate{
 		Title:         pp.Title,
 		Description:   pp.Description,
 		Notes:         existing.Notes,
+		AiNote:        existing.AiNote,
+		Subject:       existing.Subject,
+		Keywords:      existing.Keywords,
+		Artist:        existing.Artist,
+		Copyright:     existing.Copyright,
+		License:       existing.License,
+		Scan:          existing.Scan,
 		Private:       pp.Private,
 		TakenAt:       existing.TakenAt,
 		TakenAtSource: existing.TakenAtSource,
@@ -126,12 +139,37 @@ func metadataUpdate(existing photos.Photo, pp photoprism.Photo) photos.MetadataU
 }
 
 // metadataUnchanged reports whether applying update to existing would be a no-op,
-// so a re-imported photo can be counted as skipped rather than updated.
+// so a re-imported photo can be counted as skipped rather than updated. It
+// compares every field UpdateMetadata writes, the carried-over ones included: a
+// field that drops out of the comparison would make an update look like a no-op
+// even while it rewrites the row.
 func metadataUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool {
+	return captionsUnchanged(existing, update) &&
+		creditsUnchanged(existing, update) &&
+		placementUnchanged(existing, update)
+}
+
+// captionsUnchanged compares the caption-like text fields.
+func captionsUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool {
 	return existing.Title == update.Title &&
 		existing.Description == update.Description &&
 		existing.Notes == update.Notes &&
-		existing.Private == update.Private &&
+		existing.AiNote == update.AiNote
+}
+
+// creditsUnchanged compares the IPTC/XMP credit fields.
+func creditsUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool {
+	return existing.Subject == update.Subject &&
+		existing.Keywords == update.Keywords &&
+		existing.Artist == update.Artist &&
+		existing.Copyright == update.Copyright &&
+		existing.License == update.License &&
+		existing.Scan == update.Scan
+}
+
+// placementUnchanged compares the capture time, the GPS fix and the private flag.
+func placementUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool {
+	return existing.Private == update.Private &&
 		existing.TakenAtSource == update.TakenAtSource &&
 		timeEqual(existing.TakenAt, update.TakenAt) &&
 		floatEqual(existing.Lat, update.Lat) &&

@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -30,9 +33,28 @@ type updateBody struct {
 	Description *string    `json:"description"`
 	Notes       *string    `json:"notes"`
 	AiNote      *string    `json:"ai_note"`
+	Subject     *string    `json:"subject"`
+	Keywords    *string    `json:"keywords"`
+	Artist      *string    `json:"artist"`
+	Copyright   *string    `json:"copyright"`
+	License     *string    `json:"license"`
+	Scan        *bool      `json:"scan"`
 	TakenAt     *time.Time `json:"taken_at"`
 	Lat         *float64   `json:"lat"`
 	Lng         *float64   `json:"lng"`
+}
+
+// creditLimits caps each IPTC/XMP credit field a PATCH may set. The values are
+// free text with no syntax to validate, so length is the only guard — generous
+// enough for a real headline or a licence sentence, tight enough that the column
+// cannot be used as a blob store. Counted in runes, so a Czech caption is not cut
+// short by its accents' extra bytes.
+var creditLimits = map[string]int{
+	"subject":   1000,
+	"copyright": 1000,
+	"license":   1000,
+	"keywords":  2000,
+	"artist":    255,
 }
 
 // handleUpdate applies a partial metadata update to the photo named in the path
@@ -131,6 +153,12 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 		Description:   current.Description,
 		Notes:         current.Notes,
 		AiNote:        current.AiNote,
+		Subject:       current.Subject,
+		Keywords:      current.Keywords,
+		Artist:        current.Artist,
+		Copyright:     current.Copyright,
+		License:       current.License,
+		Scan:          current.Scan,
 		TakenAt:       current.TakenAt,
 		TakenAtSource: current.TakenAtSource,
 		Lat:           current.Lat,
@@ -143,6 +171,9 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 	}
 
 	applyScalars(&update, present, body)
+	if err := applyCredits(&update, present, body); err != nil {
+		return photos.MetadataUpdate{}, err
+	}
 	if _, ok := present["taken_at"]; ok {
 		applyTakenAt(&update, body.TakenAt)
 	}
@@ -160,6 +191,39 @@ func applyScalars(update *photos.MetadataUpdate, present map[string]struct{}, bo
 	applyPresentString(present, "description", body.Description, &update.Description)
 	applyPresentString(present, "notes", body.Notes, &update.Notes)
 	applyPresentString(present, "ai_note", body.AiNote, &update.AiNote)
+}
+
+// applyCredits overlays the present IPTC/XMP credit fields onto update. Each is
+// trimmed of surrounding whitespace and rejected when it exceeds its cap in
+// creditLimits, which the caller turns into a 400. The scan flag is a plain
+// boolean with nothing to validate. As with the other non-nullable columns, an
+// explicit JSON null is ignored.
+func applyCredits(update *photos.MetadataUpdate, present map[string]struct{}, body updateBody) error {
+	credits := []struct {
+		key   string
+		value *string
+		dst   *string
+	}{
+		{"subject", body.Subject, &update.Subject},
+		{"keywords", body.Keywords, &update.Keywords},
+		{"artist", body.Artist, &update.Artist},
+		{"copyright", body.Copyright, &update.Copyright},
+		{"license", body.License, &update.License},
+	}
+	for _, c := range credits {
+		if _, ok := present[c.key]; !ok || c.value == nil {
+			continue
+		}
+		trimmed := strings.TrimSpace(*c.value)
+		if limit := creditLimits[c.key]; utf8.RuneCountInString(trimmed) > limit {
+			return fmt.Errorf("%s must be at most %d characters", c.key, limit)
+		}
+		*c.dst = trimmed
+	}
+	if _, ok := present["scan"]; ok && body.Scan != nil {
+		update.Scan = *body.Scan
+	}
+	return nil
 }
 
 // applyPresentString copies value onto dst when key is present and value is

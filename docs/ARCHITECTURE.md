@@ -231,6 +231,17 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
   `lat/lng/altitude`, `camera_make/model`, `lens_model`, `iso/aperture/exposure/focal_length`,
   `exif JSONB`, `private` (**legacy** — píše ho už jen import z PhotoPrismu/photo-sorteru,
   aplikace ho nefiltruje ani needituje), `archived_at`, `uploaded_by`, časy.
+  - **IPTC/XMP + technická metadata souboru** (migrace `0027_photos_iptc_metadata.sql`, všechny
+    `NOT NULL DEFAULT ''`, resp. `false`): **editovatelné** `subject` (IPTC headline — o čem fotka
+    je; ve fulltextu váha B), `keywords` (IPTC klíčová slova **verbatim**, comma-separated dle tvaru
+    PhotoPrismu; ve fulltextu váha C — **nejsou to labely**, `internal/organize` zůstává beze změny),
+    `artist`, `copyright`, `license`, `scan` (`BOOLEAN` — sken papírové fotky, ne snímek fotoaparátem);
+    **strojově odvozené** (uloží se a servírují, ale needitují) `software` (firmware/Lightroom/skener),
+    `color_profile` (ICC), `image_codec` (komprese **stillu**: jpeg/heic/avif — `video_codec`/
+    `audio_codec` jsou samostatné), `camera_serial`, `original_name` (jméno souboru před importem;
+    `file_name` je jméno ve storage layoutu), `projection` (`equirectangular` u panoramat).
+    Plnění z EXIF a mapování z PhotoPrism importu jsou samostatné úkoly — stávající řádky mají
+    defaulty.
   **Nové sloupce pro Kukátko:**
   - `photoprism_uid VARCHAR(32)` — PhotoUID z PhotoPrismu (dedup + inkrement).
   - `photoprism_file_hash VARCHAR(40)` — SHA1 souboru z PhotoPrismu (download mapping).
@@ -332,8 +343,10 @@ Stejný jako photo-sorter (`EMBEDDING_URL`, default offline-aware). HTTP:
   ctí standardní list filtry (datum/GPS/…) i stránkování; odpověď má stejný tvar jako
   list + pole `mode` (efektivní mód) a `degraded` (viz níže).
 - **Fulltext:** PostgreSQL `tsvector` (dictionary `simple`, `unaccent` pro češtinu) nad
-  title(A) > description(B) > notes(C) = ai_note(C) > file_name(D). Diakritika necitlivá
-  („deti" = „Děti"). Řazení dle `ts_rank` (`photos.Store.Search`).
+  title(A) > description(B) = subject(B) > notes(C) = ai_note(C) = keywords(C) > file_name(D).
+  Diakritika necitlivá („deti" = „Děti"). Řazení dle `ts_rank` (`photos.Store.Search`).
+  Generovaný sloupec se přepisuje `ALTER COLUMN fts SET EXPRESSION` (naposledy
+  `0027_photos_iptc_metadata.sql`) — Postgres přepočítá vektor všem řádkům a přestaví GIN index sám.
 - **Sémantické (text→fotka):** text → sidecar `/embed/text` (768-dim CLIP) → HNSW cosine nad
   `embeddings` (`vectors.Store.FindSimilar`). Kandidáti se pak profiltrují list filtry přes
   `photos.Store.FilterUIDs` (strukturální filtry, ignoruje fulltext) a seřadí dle vzdálenosti.
