@@ -986,9 +986,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   {Count,Offset,Type})` → `GET /api/v1/{albums,labels,subjects}`, markery z `Files[].Markers[]`;
   **`GetPhoto(ctx,uid)`** → `GET /api/v1/photos/{uid}` vrací `PhotoDetail` = `Photo` +
   **`Albums[]`** (všechna alba fotky, libovolného typu) + **`Labels[]`**
-  (`PhotoLabel{LabelSrc,Uncertainty,Label}`) — **výpis fotek ani jedno nenese, jen detail**; stojí
-  1 request na fotku, takže ho volá **jen scoped import** (`ppimport.mapPhotoContext`); prázdné uid
-  → `ErrBadResponse`, neznámé → `ErrNotFound`;
+  (`PhotoLabel{LabelSrc,Uncertainty,Label}`) — **výpis fotek ani jedno nenese, jen detail**, a totéž
+  platí pro **markery**: výpis vrací `Files[].Markers` **vždy prázdné**, jména lidí jsou jen v detailu
+  (PP nemá bulk marker endpoint). Stojí 1 request na fotku, takže ho volá **scoped import** pro každou
+  fotku (`ppimport.mapPhotoContext`) a plný import jen pro **nově importované** (`importPhotoPeople`);
+  prázdné uid → `ErrBadResponse`, neznámé → `ErrNotFound`;
   **`Type` je u alb povinný** — `/api/v1/albums` bez typu (i s víc typy naráz, `album,folder`) vrací
   **400 „Permission denied"**, takže katalog alb se prochází typ po typu (`AlbumTypes` =
   album/folder/moment/state/month); štítky a subjekty typ neberou a ignorují ho;
@@ -1023,9 +1025,17 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   kurátorská pole), **u live** stáhne+uloží motion klip jako `RoleSidecar` photo_file (best-effort),
   náhledy (u videa **poster frame** přes thumbnailer/ffmpeg) a **enqueue `image_embed`** (na posteru)
   **+`face_detect`**; counts **checkpoint po každé
-  stránce** přes `UpdateCounts`; (2) **lidé** z `Files[].Markers[]` nově importovaných fotek
-  (pojmenovaný validní face marker → find-or-create subjekt dle `Slugify` + přiřazený marker; jen na
-  prvním importu, ať re-run neduplikuje); (3) **alba & štítky** find-or-create dle názvu (mapa z
+  stránce** přes `UpdateCounts`; (2) **lidé** z `Files[].Markers[]` — **POZOR: markery nese jen
+  DETAIL fotky, výpis je vrací vždy jako prázdné pole** (na tomhle import dřív tiše nepřivezl
+  nikoho); proto se čtou z detailu: ve **scoped** běhu z toho, co si `mapPhotoContext` už stáhl
+  (zadarmo, pro **každou** fotku v scope → **re-run doplní lidi i k fotkám, které přivezl dřívější
+  běh**), v **plném** běhu jedním extra `GetPhoto` **na každou nově importovanou** fotku
+  (`importPhotoPeople`; proti stažení originálu je to šum, a jinak to nejde — PP nemá bulk marker
+  endpoint). Pojmenovaný validní face marker → find-or-create subjekt dle `Slugify` + přiřazený
+  marker, který si **ponechá PhotoPrism UID** → import je idempotentní (`GetMarkerByUID` → skip) a
+  identita markerů sedí s `psimport` (photo-sorterovy face řádky odkazují právě na tyhle UID, protože
+  jeho markery JSOU PhotoPrismovy). Obličeje si k markerům dopáruje `facematch` přes IoU;
+  (3) **alba & štítky** find-or-create dle názvu (mapa z
   `ListAlbums`/`ListLabels`), členství přes scopnutý `ListPhotos` (`AlbumUID`/`label:"<slug>"`) →
   idempotentní `AddPhoto`/`AttachLabel`; pak běh `Complete` s watermarkem; **per-fotka chyba** se
   zaznamená do `counts.failed` a **nepřeruší běh** (jen infrastrukturní chyba běh `Fail`ne), 429

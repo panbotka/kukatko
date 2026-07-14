@@ -73,6 +73,10 @@ func (s *Service) mapPhotoContext(ctx context.Context, ppUID string, state *runS
 	for i := range detail.Labels {
 		s.attachPhotoLabel(ctx, photo.UID, detail.Labels[i], state.photoCtx)
 	}
+	// The people ride on this same detail — the listing's markers are always empty —
+	// and importing them here (rather than on first import only) is what lets a
+	// re-run backfill the photos an earlier, marker-blind run already brought over.
+	s.importMarkers(ctx, photo.UID, detail.Photo)
 }
 
 // attachPhotoToAlbum finds-or-creates the Kukátko album of one of the photo's

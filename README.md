@@ -1059,9 +1059,15 @@ PhotoPrismu, sítě, DB i disku.
      **u live** uloží i motion klip jako `RoleSidecar`, vyrenderuje náhledy (**u videa poster frame**
      přes ffmpeg) a **zařadí `image_embed`** (na posteru) **+ `face_detect`** joby. Counts se
      **checkpointují po každé stránce**.
-  2. **Lidé** — z `Files[].Markers[]` nově importované fotky: každý **pojmenovaný validní face
-     marker** find-or-create subjekt (dle `Slugify`) + Kukátko marker přiřazený subjektu (markery
-     jen při prvním importu, ať re-run neduplikuje).
+  2. **Lidé** — z `Files[].Markers[]`, ale **jen z DETAILU fotky**: výpis fotek vrací markery vždy
+     jako prázdné pole, takže kdo je čte z výpisu, nepřiveze nikoho (přesně tenhle bug import dřív
+     měl). Scoped běh je bere z detailu, který si stahuje tak jako tak — pro **každou** fotku ve
+     scope, takže **re-run doplní lidi i k dřív naimportovaným fotkám**. Plný běh si detail vyžádá
+     jedním extra requestem **na každou nově importovanou** fotku. Každý **pojmenovaný validní face
+     marker** → find-or-create subjekt (dle `Slugify`) + Kukátko marker přiřazený subjektu, který si
+     **ponechá PhotoPrism UID** (→ idempotence, žádné duplicitní osoby při re-runu). Obličeje se
+     k markerům dopárují přes IoU (`facematch`) — proto přiřazení „přežije" i to, že embeddingy
+     a obličeje počítá až Kukátko samo.
   3. **Alba & štítky** — find-or-create dle názvu (mapa z `ListAlbums`/`ListLabels`), členství přes
      scopnutý `ListPhotos` (`AlbumUID` / `label:"<slug>"`) → `AddPhoto` / `AttachLabel` (oboje
      idempotentní), jen pro už importované fotky.

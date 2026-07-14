@@ -10,11 +10,14 @@ import (
 	"github.com/panbotka/kukatko/internal/photoprism"
 )
 
-// importMarkers seeds people from a freshly imported photo's PhotoPrism face
-// markers: every named, valid face region finds-or-creates its subject and a
-// Kukátko marker assigned to it. Markers are imported only on first import (not on
-// metadata updates) so re-running never duplicates them. Per-marker failures are
-// logged and skipped; face detection re-runs later via the face_detect job.
+// importMarkers seeds people from a photo's PhotoPrism face markers: every named,
+// valid face region finds-or-creates its subject and a Kukátko marker assigned to
+// it. Per-marker failures are logged and skipped; face detection re-runs later via
+// the face_detect job, and matches the markers by IoU.
+//
+// The photo must come from the DETAIL endpoint. PhotoPrism's photo LISTING carries
+// its files with an always-empty `Markers` array — feed it a listing photo and this
+// silently imports nobody, which is exactly the bug this comment exists to prevent.
 func (s *Service) importMarkers(ctx context.Context, photoUID string, pp photoprism.Photo) {
 	primary, ok := pp.PrimaryFile()
 	if !ok {
@@ -31,15 +34,30 @@ func (s *Service) importMarkers(ctx context.Context, photoUID string, pp photopr
 	}
 }
 
-// importOneMarker finds-or-creates the subject named by a marker and creates a
-// face marker on the Kukátko photo assigned to that subject.
+// importOneMarker finds-or-creates the subject named by a marker and creates a face
+// marker on the Kukátko photo assigned to that subject.
+//
+// The marker keeps its PhotoPrism UID, which makes the import idempotent (a marker
+// already brought over is skipped, so a re-run neither duplicates people nor moves
+// them) and keeps marker identity the same across both importers — photo-sorter's
+// face rows reference these very UIDs, because its markers ARE PhotoPrism's.
 func (s *Service) importOneMarker(ctx context.Context, photoUID string, m photoprism.Marker) error {
+	if m.UID != "" {
+		_, err := s.people.GetMarkerByUID(ctx, m.UID)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, people.ErrMarkerNotFound) {
+			return fmt.Errorf("ppimport: looking up marker %s: %w", m.UID, err)
+		}
+	}
 	subject, err := s.findOrCreateSubject(ctx, m.Name)
 	if err != nil {
 		return err
 	}
 	subjectUID := subject.UID
 	if _, err := s.people.CreateMarker(ctx, people.Marker{
+		UID:        m.UID,
 		PhotoUID:   photoUID,
 		SubjectUID: &subjectUID,
 		Type:       people.MarkerFace,
