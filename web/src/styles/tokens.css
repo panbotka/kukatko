@@ -329,6 +329,60 @@
   }
 }
 
+/* ---- Back link --------------------------------------------------------- */
+
+/*
+ * The way back from a detail page to its list: a left arrow plus the
+ * destination's name. It reads as a link — quiet next to the page title, but
+ * underlined under the pointer and ringed under keyboard focus, so it is never
+ * mistaken for a label. `nowrap` keeps the arrow glued to its text when the
+ * header wraps.
+ */
+.kk-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-1);
+
+  /* Body size, not caption: the label is the page's primary way out, so it must
+     not read as a footnote beside the title. Colour keeps it quiet instead. */
+  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
+  font-size: var(--kk-font-size-body);
+  line-height: var(--kk-line-height-body);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.kk-back-link:hover,
+.kk-back-link:focus-visible {
+  color: var(--bs-link-hover-color, var(--bs-primary, #df691a));
+  text-decoration: underline;
+}
+
+.kk-back-link:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+  border-radius: var(--kk-radius-sm);
+}
+
+/* The arrow leans towards the destination on hover — the direction of travel,
+   made literal. Decorative, so reduced motion zeroes the duration token. */
+.kk-back-link__arrow {
+  transition: transform var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-back-link:hover .kk-back-link__arrow,
+.kk-back-link:focus-visible .kk-back-link__arrow {
+  transform: translateX(-2px);
+}
+
+/* A plain link is none of the elements the app-wide touch-target floor covers
+   (`.btn`, `.nav-link`, …), so it gets its own finger-friendly minimum. */
+@media (pointer: coarse) {
+  .kk-back-link {
+    min-height: 2.75rem;
+  }
+}
+
 /* ---- Chips ------------------------------------------------------------- */
 
 /*

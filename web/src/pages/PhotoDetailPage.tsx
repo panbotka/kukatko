@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { BackLink } from '../components/BackLink'
 import { Icon } from '../components/Icon'
 import { FavoriteToggle } from '../components/library/FavoriteButton'
 import { FlagControl } from '../components/library/FlagControl'
@@ -233,8 +234,9 @@ export function PhotoDetailPage() {
 
   if (state.status === 'error') {
     return (
-      <Alert variant="danger">
-        {t('photo.error')} <Link to={backHref(view)}>{t('photo.back')}</Link>
+      <Alert variant="danger" className="d-flex align-items-center gap-3 flex-wrap">
+        <span>{t('photo.error')}</span>
+        <BackLink to={backHref(view)} label={t('photo.back')} />
       </Alert>
     )
   }
@@ -366,13 +368,11 @@ export function PhotoDetailPage() {
   return (
     <>
       <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
-        {/* Back arrow + title stay grouped (min-width:0 lets the title truncate
+        {/* Back link + title stay grouped (min-width:0 lets the title truncate
             instead of pushing the controls off-screen); the controls wrap below
             as a block on narrow widths, so the title is never hidden. */}
         <div className="d-flex align-items-center gap-2 me-auto" style={{ minWidth: 0 }}>
-          <Link to={backHref(view)} className="text-decoration-none flex-shrink-0">
-            ← {t('photo.back')}
-          </Link>
+          <BackLink to={backHref(view)} label={t('photo.back')} className="flex-shrink-0" />
           <h1 className="kk-page-title mb-0 text-truncate">{title}</h1>
         </div>
         <div className="d-flex align-items-center gap-2 flex-wrap">

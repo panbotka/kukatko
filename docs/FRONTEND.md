@@ -48,6 +48,15 @@ zapiš sem.
   `Icon` (**jediná ikonová sada** aplikace: bootstrap-icons glyf jako `<i class="bi bi-{name}">`,
   font se importuje globálně v `main.tsx`; union `IconName` drží slovník použitých ikon, takže překlep
   je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),
+  `BackLink` (**sdílená cesta zpět** ze všech detailů (album, štítek, osoba, fotka) do seznamu,
+  ke kterému patří: šipka `arrow-left` přes `Icon` (dekorativní, `aria-hidden`) + **text pojmenující
+  cíl** („Zpět na alba" / „Zpět na štítky" / „Zpět na lidi"), který je zároveň přístupným jménem
+  odkazu — holá šipka nikomu neřekla, kam vede. Props `to` (celý href cíle **včetně query**, takže
+  stav seznamu — filtry/řazení/stránka — přežije návrat a **Zpět vždy funguje**; `PhotoDetailPage`
+  ho staví přes `backHref(view)`), `label` (už přeložený volajícím), `className?`. Rendruje router
+  `<Link>` — fokusovatelný z klávesnice, focus-ring + podtržení na hover přes `.kk-back-link`
+  (šipka se na hover nakloní k cíli, `prefers-reduced-motion` pohyb vypne), na coarse pointeru 44px
+  tap target; použitý i v error alertu těchže stránek. Testy: `BackLink.test.tsx`),
   `LanguageSwitcher` (button group cs/en, `aria-pressed` na aktivní; **nesedí v navbaru** —
   bydlí v sekci Jazyk na `AccountPage`, protože tuhle instanci používají jen Češi a trvalé
   místo v liště by bylo plýtvání. Volbu persistuje i18next language detector do localStorage),

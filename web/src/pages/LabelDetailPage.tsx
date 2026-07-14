@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 
+import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
@@ -22,6 +23,13 @@ import { fetchLabel, type Label } from '../services/organize'
 
 /** Fetch lifecycle of the label record. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; label: Label }
+
+/**
+ * Where the back link leads. The labels index keeps no view state of its own in
+ * the URL, so the bare route restores it exactly; should it ever grow filters,
+ * this is the one place that has to carry them.
+ */
+const LABELS_PATH = '/labels'
 
 /**
  * A label's page: the label name as a header above the photo grid scoped to that
@@ -77,8 +85,9 @@ export function LabelDetailPage() {
 
   if (state.status === 'error') {
     return (
-      <Alert variant="danger">
-        {t('labelDetail.error')} <Link to="/labels">{t('labelDetail.back')}</Link>
+      <Alert variant="danger" className="d-flex align-items-center gap-3 flex-wrap">
+        <span>{t('labelDetail.error')}</span>
+        <BackLink to={LABELS_PATH} label={t('labelDetail.back')} />
       </Alert>
     )
   }
@@ -90,9 +99,7 @@ export function LabelDetailPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <div className="d-flex align-items-center gap-2 flex-wrap">
-          <Link to="/labels" className="text-decoration-none">
-            ← {t('labelDetail.back')}
-          </Link>
+          <BackLink to={LABELS_PATH} label={t('labelDetail.back')} />
           <h1 className="kk-page-title mb-0">{title}</h1>
         </div>
         {!selection.active && hasPhotos && (

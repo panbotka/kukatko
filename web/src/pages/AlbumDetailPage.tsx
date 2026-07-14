@@ -3,9 +3,10 @@ import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
@@ -32,6 +33,13 @@ import {
 
 /** Fetch lifecycle of the album record. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; album: Album }
+
+/**
+ * Where the back link leads. The albums index keeps no view state of its own in
+ * the URL, so the bare route restores it exactly; should it ever grow filters,
+ * this is the one place that has to carry them.
+ */
+const ALBUMS_PATH = '/albums'
 
 /**
  * An album's detail page: a header (title, count, private badge, back link) with
@@ -152,8 +160,9 @@ export function AlbumDetailPage() {
 
   if (state.status === 'error') {
     return (
-      <Alert variant="danger">
-        {t('albumDetail.error')} <Link to="/albums">{t('albumDetail.back')}</Link>
+      <Alert variant="danger" className="d-flex align-items-center gap-3 flex-wrap">
+        <span>{t('albumDetail.error')}</span>
+        <BackLink to={ALBUMS_PATH} label={t('albumDetail.back')} />
       </Alert>
     )
   }
@@ -164,9 +173,7 @@ export function AlbumDetailPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <div className="d-flex align-items-center gap-2 flex-wrap">
-          <Link to="/albums" className="text-decoration-none">
-            ← {t('albumDetail.back')}
-          </Link>
+          <BackLink to={ALBUMS_PATH} label={t('albumDetail.back')} />
           <h1 className="kk-page-title mb-0">{album?.title ?? ''}</h1>
           {album?.private && <Badge bg="secondary">{t('albums.private')}</Badge>}
         </div>
