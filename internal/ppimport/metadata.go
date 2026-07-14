@@ -46,7 +46,7 @@ func buildPhoto(
 		FileOrientation:    orientationOrDefault(meta.Orientation),
 		MediaType:          mapMediaType(pp.Type),
 		Title:              pp.Title,
-		Description:        pp.Description,
+		Description:        caption(pp),
 		Private:            pp.Private,
 		Exif:               marshalExif(meta.Exif),
 		PhotoprismUID:      &ppUID,
@@ -55,6 +55,17 @@ func buildPhoto(
 	applyCaptureMeta(&p, pp, meta)
 	applyCameraMeta(&p, pp, meta)
 	return p
+}
+
+// caption returns the photo's long description. PhotoPrism renamed its
+// photo_description column to photo_caption (and description_src to caption_src);
+// the Description field it still serialises is backed by a Go field marked
+// gorm:"-", i.e. it is never loaded from the database and always arrives empty. So
+// Caption is the live value and Description only what an old instance answers with
+// — read Description alone and every caption in the library is silently dropped on
+// import.
+func caption(pp photoprism.Photo) string {
+	return firstNonEmpty(pp.Caption, pp.Description)
 }
 
 // applyCaptureMeta fills the capture time and GPS fields, preferring PhotoPrism's
@@ -98,15 +109,22 @@ func applyCameraMeta(p *photos.Photo, pp photoprism.Photo, meta exif.Metadata) {
 // from PhotoPrism's current values, and the capture-time source mirrors
 // buildPhoto.
 //
-// Store.UpdateMetadata overwrites the whole row, so every editable field this
-// import does not map has to be carried over from the photo as it stands, or an
-// incremental run would silently blank it. That is every Kukátko-only field —
-// notes and ai_note (PhotoPrism has no such concept) — plus the IPTC/XMP credits,
-// which PhotoPrism does keep but this import does not map yet (a separate task).
+// Store.UpdateMetadata overwrites the whole row, so every editable field this patch
+// does not carry has to be taken from the photo as it stands, or an incremental run
+// would silently blank it. That is every Kukátko-only field (notes, ai_note) plus
+// the IPTC/XMP credits — which the import DOES map, but off the photo detail rather
+// than the listing this patch is built from (see importPhotoDetail), so here they
+// are simply carried through untouched.
+//
+// The two fields it does map obey the import's precedence rule: PhotoPrism wins
+// when it has a value, but an empty PhotoPrism value never erases a non-empty
+// Kukátko one. A title cleared upstream therefore survives here — the alternative,
+// silently destroying a caption the user typed because the source has none, is the
+// far worse failure.
 func metadataUpdate(existing photos.Photo, pp photoprism.Photo) photos.MetadataUpdate {
 	update := photos.MetadataUpdate{
-		Title:         pp.Title,
-		Description:   pp.Description,
+		Title:         firstNonEmpty(pp.Title, existing.Title),
+		Description:   firstNonEmpty(caption(pp), existing.Description),
 		Notes:         existing.Notes,
 		AiNote:        existing.AiNote,
 		Subject:       existing.Subject,

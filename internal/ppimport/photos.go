@@ -70,12 +70,15 @@ func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState
 // importOnePhoto processes a single photo, translating its outcome (or failure)
 // into the run state. A failure is logged and tallied; it never propagates.
 //
-// A photo that made it into the catalogue then maps its whole context — every
-// album and label the source has it in — which a scoped run does per photo and a
-// full run not at all (mapPhotoContext). It runs for every outcome, not only for
-// a fresh import: a photo the run skipped as unchanged, or deduped by content
-// onto an existing row, still belongs in the albums and labels the source gives
-// it, and its memberships may be the very thing this run is meant to bring over.
+// A photo that made it into the catalogue then reads its detail — the only payload
+// carrying its credits, its face markers and (for a scoped run) the albums and
+// labels the source has it in — and brings all of that across too
+// (importPhotoDetail). That runs for every outcome, not only for a fresh import: a
+// photo the run skipped as unchanged, or deduped by content onto an existing row,
+// still carries the source's subject and copyright and still belongs in its albums,
+// and those may be the very thing this run is meant to bring over. Which is also why
+// the outcome is counted only afterwards — a photo the listing pass had nothing new
+// for, but whose detail did, is an update, not a skip.
 func (s *Service) importOnePhoto(ctx context.Context, pp photoprism.Photo, state *runState) {
 	result, err := s.processPhoto(ctx, pp)
 	if err != nil {
@@ -84,20 +87,13 @@ func (s *Service) importOnePhoto(ctx context.Context, pp photoprism.Photo, state
 		return
 	}
 	state.recordSuccess(pp.UpdatedAt)
-	switch result {
+	switch s.importPhotoDetail(ctx, pp, state, result) {
 	case outcomeImported:
 		state.counts.Imported++
 	case outcomeUpdated:
 		state.counts.Updated++
 	case outcomeSkipped:
 		state.counts.Skipped++
-	}
-	s.mapPhotoContext(ctx, pp.UID, state)
-	// A scoped run already brought the people over from the detail it fetched above.
-	// A full run never fetches one, so a newly imported photo gets its own lookup —
-	// the only way to see PhotoPrism's markers at all.
-	if state.photoCtx == nil && result == outcomeImported {
-		s.importPhotoPeople(ctx, pp.UID)
 	}
 }
 
@@ -252,33 +248,15 @@ func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, sto
 // undoes the import: a missing thumbnail or unqueued job is a degraded but
 // repairable state.
 //
-// People are NOT seeded here. Their markers live only on the photo detail, which
-// this path does not have (the listing's markers are always empty); they are
-// imported from the detail instead — per photo in a scoped run (mapPhotoContext),
-// and once per newly imported photo in a full one (importPhotoPeople).
+// Neither the credits nor the people are seeded here. Both live only on the photo
+// detail, which this path does not have (the listing carries no Details object and
+// its files' marker arrays are always empty); they are brought over from the detail
+// the caller reads afterwards instead (importPhotoDetail).
 func (s *Service) postProcess(ctx context.Context, photo photos.Photo) {
 	if _, err := s.thumbs.GenerateAll(ctx, photo); err != nil {
 		s.log.Warn("ppimport: thumbnails failed", "photo", photo.UID, "err", err)
 	}
 	s.enqueueJobs(ctx, photo.UID)
-}
-
-// importPhotoPeople brings a freshly imported photo's people over in a FULL run,
-// where nothing else reads the photo detail. It costs one extra request per NEW
-// photo — noise next to downloading the original — and is the only way to get them:
-// PhotoPrism's listing pages carry an empty marker array, and it has no bulk marker
-// endpoint. A scoped run does not come through here; it already holds the detail.
-func (s *Service) importPhotoPeople(ctx context.Context, ppUID string) {
-	photo, ok := s.lookupImported(ctx, ppUID)
-	if !ok {
-		return
-	}
-	detail, err := s.client.GetPhoto(ctx, ppUID)
-	if err != nil {
-		s.log.Warn("ppimport: reading photo detail for people", "pp_uid", ppUID, "err", err)
-		return
-	}
-	s.importMarkers(ctx, photo.UID, detail.Photo)
 }
 
 // enqueueJobs schedules the image_embed and face_detect jobs for a new photo so

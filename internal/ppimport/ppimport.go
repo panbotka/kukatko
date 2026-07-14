@@ -8,6 +8,17 @@
 // photoprism_file_hash), generates thumbnails and enqueues the image_embed and
 // face_detect jobs that compute embeddings and faces afterwards.
 //
+// Half of what PhotoPrism knows about a photo is served on the photo DETAIL
+// endpoint and nowhere else — its Details block (subject, artist, copyright,
+// licence, keywords, notes, software), its per-file technicals (still codec, colour
+// profile, projection) and its face markers — while the listing answers a flattened
+// search struct carrying none of them. A photo's detail is therefore read once and
+// everything on it carried over from that one request (importPhotoDetail).
+//
+// PhotoPrism's global Favorite flag is deliberately NOT mapped: Kukátko's
+// favourites are per-user, and an import that runs as a background job (or from the
+// CLI) has no user to attribute one to.
+//
 // On top of the photos it maps the surrounding structure: albums and labels are
 // found-or-created by name and their membership attached to the imported photos,
 // and named face markers seed people (subjects) and their markers. A full run
@@ -115,6 +126,10 @@ type PhotoStore interface {
 	GetByPhotoprismUID(ctx context.Context, ppUID string) (photos.Photo, error)
 	// UpdateMetadata applies changed metadata to an existing photo.
 	UpdateMetadata(ctx context.Context, uid string, m photos.MetadataUpdate) (photos.Photo, error)
+	// ApplyImportMetadata carries the source's credits and file-technical fields onto
+	// an existing photo, reporting whether anything changed. It never erases: an empty
+	// source value leaves a non-empty column alone.
+	ApplyImportMetadata(ctx context.Context, uid string, m photos.ImportMetadata) (bool, error)
 	// SetPhotoprismRef backfills the external IDs onto a SHA256-deduped photo.
 	SetPhotoprismRef(ctx context.Context, uid, ppUID, ppFileHash string) (photos.Photo, error)
 	// Delete removes a photo (used to roll back a half-created record).
