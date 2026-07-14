@@ -68,11 +68,17 @@ afterEach(() => {
 })
 
 describe('useFaces', () => {
-  it('loads the detections for the photo', async () => {
+  it('loads the detections and selects the first face left to name', async () => {
     const { result } = await renderReady()
 
     expect(fetchMock).toHaveBeenCalledWith('ph1', expect.anything())
     expect(result.current.faces).toHaveLength(1)
+    // Opening a photo puts the cursor on the work: the first unnamed face.
+    expect(result.current.selected?.face_index).toBe(0)
+  })
+
+  it('selects nothing when every face already has a name', async () => {
+    const { result } = await renderReady(namedResponse())
     expect(result.current.selected).toBeNull()
   })
 
@@ -214,5 +220,63 @@ describe('useFaces', () => {
     expect(result.current.busy).toBe(false)
     // One initial load plus the reconciling refetch.
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('advances to the next face left to name after naming one', async () => {
+    const two = facesResponse()
+    two.faces = [
+      two.faces[0],
+      { ...two.faces[0], face_index: 1, suggestions: [] },
+      { ...two.faces[0], face_index: 2, marker_uid: 'mk_2', subject_name: 'Zoe', suggestions: [] },
+    ]
+    const { result } = await renderReady(two)
+    expect(result.current.selected?.face_index).toBe(0)
+
+    act(() => {
+      result.current.assignName(result.current.faces[0], 'Bob')
+    })
+
+    // Straight on to face 1 — the next unnamed one. Face 2 is already Zoe, and
+    // face 0 was just named, so neither is a candidate.
+    expect(result.current.selected?.face_index).toBe(1)
+  })
+
+  it('clears the selection once no face is left to name', async () => {
+    const { result } = await renderReady()
+
+    act(() => {
+      result.current.assignName(result.current.faces[0], 'Bob')
+    })
+    expect(result.current.selected).toBeNull()
+  })
+
+  it('keeps an unassigned face selected, ready to be named again', async () => {
+    const { result } = await renderReady(namedResponse())
+
+    act(() => {
+      result.current.unassign(result.current.faces[0])
+    })
+    // Unassigning is how a wrong name gets fixed — do not walk away from the face.
+    expect(result.current.selected?.face_index).toBe(0)
+  })
+
+  it('names a face with a subject picked from the typeahead', async () => {
+    const { result } = await renderReady()
+
+    act(() => {
+      result.current.acceptSuggestion(result.current.faces[0], {
+        subject_uid: 'su_z',
+        subject_name: 'Zoe',
+      })
+    })
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith('ph1', {
+        action: 'create_marker',
+        bbox: [0.1, 0.2, 0.3, 0.4],
+        face_index: 0,
+        subject_uid: 'su_z',
+      })
+    })
   })
 })

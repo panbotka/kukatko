@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { isNamed } from '../lib/faceState'
 import {
   type AssignRequest,
   assignFace,
@@ -26,8 +27,14 @@ export interface UseFacesResult {
   actionError: boolean
   /** Opens (or, with null, closes) the naming panel for a face. */
   select: (faceIndex: number | null) => void
-  /** Names a face by accepting one of its ranked identity suggestions. */
-  acceptSuggestion: (face: FaceView, suggestion: Suggestion) => void
+  /**
+   * Names a face by accepting one of its ranked identity suggestions — or any
+   * subject picked from the typeahead, which is the same thing minus the ranking.
+   */
+  acceptSuggestion: (
+    face: FaceView,
+    subject: Pick<Suggestion, 'subject_uid' | 'subject_name'>,
+  ) => void
   /** Names a face with free text (the subject is found or created server-side). */
   assignName: (face: FaceView, name: string) => void
   /** Clears a face's current assignment. */
@@ -50,10 +57,36 @@ function buildAssign(
 }
 
 /**
+ * Returns the `face_index` of the first face nobody has named, or null when every
+ * face is named. Ordered by array position, never by `face_index`: markers with no
+ * detected face carry negative indexes.
+ */
+function firstUnnamed(faces: FaceView[]): number | null {
+  return faces.find((face) => !isNamed(face))?.face_index ?? null
+}
+
+/**
+ * Returns the `face_index` of the next face left to name after the one at
+ * `afterIndex`, wrapping to the start of the list, or null when none remains. Used
+ * to walk a group photo without going back to the mouse between people; the face
+ * just named is skipped even if the optimistic patch has not landed yet.
+ */
+function nextUnnamed(faces: FaceView[], afterIndex: number): number | null {
+  const at = faces.findIndex((face) => face.face_index === afterIndex)
+  const ordered = at < 0 ? faces : [...faces.slice(at + 1), ...faces.slice(0, at)]
+  return (
+    ordered.find((face) => face.face_index !== afterIndex && !isNamed(face))?.face_index ?? null
+  )
+}
+
+/**
  * Loads a photo's detected faces and owns the naming state machine: selection,
  * optimistic assignment, and the refetch that reconciles with the server. Split
  * out of the view so the photo detail can draw the boxes as an overlay on its one
  * image while rendering the naming panel elsewhere on the page.
+ *
+ * On load the first unnamed face is selected, and naming one advances to the next —
+ * so a photo full of people is worked through from the keyboard alone.
  */
 export function useFaces(photoUid: string): UseFacesResult {
   const [state, setState] = useState<State>({ status: 'loading' })
@@ -62,9 +95,12 @@ export function useFaces(photoUid: string): UseFacesResult {
   const [actionError, setActionError] = useState(false)
 
   const reload = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal, autoSelect = false) => {
       const data = await fetchFaces(photoUid, signal)
       setState({ status: 'ready', data })
+      if (autoSelect) {
+        setSelected(firstUnnamed(data.faces))
+      }
     },
     [photoUid],
   )
@@ -73,7 +109,9 @@ export function useFaces(photoUid: string): UseFacesResult {
     const controller = new AbortController()
     setState({ status: 'loading' })
     setSelected(null)
-    reload(controller.signal).catch((err: unknown) => {
+    // Only the initial load picks a face. The refetch that reconciles a mutation
+    // must not, or naming the last face would drag the selection back to the top.
+    reload(controller.signal, true).catch((err: unknown) => {
       if (err instanceof DOMException && err.name === 'AbortError') {
         return
       }
@@ -83,6 +121,10 @@ export function useFaces(photoUid: string): UseFacesResult {
       controller.abort()
     }
   }, [reload])
+
+  // The faces as of this render, for runAssign to compute the next target from
+  // without capturing a stale list in its closure.
+  const facesRef = useRef<FaceView[]>([])
 
   /** Optimistically updates the named face in place before the server confirms. */
   const applyOptimistic = useCallback((faceIndex: number, name: string | undefined) => {
@@ -98,11 +140,19 @@ export function useFaces(photoUid: string): UseFacesResult {
   }, [])
 
   const runAssign = useCallback(
-    async (face: FaceView, req: AssignRequest, optimisticName: string | undefined) => {
+    async (
+      face: FaceView,
+      req: AssignRequest,
+      optimisticName: string | undefined,
+      advance: boolean,
+    ) => {
       setBusy(true)
       setActionError(false)
       applyOptimistic(face.face_index, optimisticName)
-      setSelected(null)
+      // Naming a face moves on to the next one left to name. Unassigning keeps it
+      // selected: it has just become unnamed, and the reason to unassign is almost
+      // always to name it something else.
+      setSelected(advance ? nextUnnamed(facesRef.current, face.face_index) : face.face_index)
       try {
         await assignFace(photoUid, req)
         await reload()
@@ -117,11 +167,12 @@ export function useFaces(photoUid: string): UseFacesResult {
   )
 
   const acceptSuggestion = useCallback(
-    (face: FaceView, suggestion: Suggestion) => {
+    (face: FaceView, subject: Pick<Suggestion, 'subject_uid' | 'subject_name'>) => {
       void runAssign(
         face,
-        buildAssign(face, { subject_uid: suggestion.subject_uid }),
-        suggestion.subject_name,
+        buildAssign(face, { subject_uid: subject.subject_uid }),
+        subject.subject_name,
+        true,
       )
     },
     [runAssign],
@@ -129,7 +180,7 @@ export function useFaces(photoUid: string): UseFacesResult {
 
   const assignName = useCallback(
     (face: FaceView, name: string) => {
-      void runAssign(face, buildAssign(face, { subject_name: name }), name)
+      void runAssign(face, buildAssign(face, { subject_name: name }), name, true)
     },
     [runAssign],
   )
@@ -139,12 +190,18 @@ export function useFaces(photoUid: string): UseFacesResult {
       if (face.marker_uid === undefined || face.marker_uid === '') {
         return
       }
-      void runAssign(face, { action: 'unassign_person', marker_uid: face.marker_uid }, undefined)
+      void runAssign(
+        face,
+        { action: 'unassign_person', marker_uid: face.marker_uid },
+        undefined,
+        false,
+      )
     },
     [runAssign],
   )
 
   const faces = state.status === 'ready' ? state.data.faces : []
+  facesRef.current = faces
   return {
     status: state.status,
     faces,

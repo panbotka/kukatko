@@ -19,8 +19,8 @@ import (
 // an interface so photoapi depends on the behaviour, not facematch's wiring;
 // facematch.Service satisfies it.
 type FaceService interface {
-	// PhotoFaces returns the photo's faces with their marker assignment and, for
-	// unnamed faces, ranked subject suggestions.
+	// PhotoFaces returns the photo's faces with their marker assignment and ranked
+	// subject suggestions (to name an unnamed face, or to reassign an assigned one).
 	PhotoFaces(ctx context.Context, photoUID string) (facematch.FacesResponse, error)
 	// Apply runs one assignment-state transition (create_marker / assign_person /
 	// unassign_person), recording an audit entry stamped with meta in the same

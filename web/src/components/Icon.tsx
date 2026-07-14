@@ -44,6 +44,7 @@ export type IconName =
   | 'trash'
   | 'unlock'
   | 'wrench-adjustable'
+  | 'x-lg'
 
 /**
  * A decorative bootstrap-icons glyph. Icons only ever accompany a visible text

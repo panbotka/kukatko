@@ -3,6 +3,7 @@ package facematch
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/audit"
@@ -21,10 +22,13 @@ func (f *fakePhotos) GetByUID(_ context.Context, _ string) (photos.Photo, error)
 	return f.photo, f.err
 }
 
-// fakeFaces is an in-memory FaceStore recording the last UpdateFaceMarker call.
+// fakeFaces is an in-memory FaceStore recording the last UpdateFaceMarker call and
+// the distance cutoff of every candidate search, so a test can tell the primary pass
+// from the widening fallback (which searches with no cutoff, i.e. 0).
 type fakeFaces struct {
 	list        []vectors.Face
 	candidates  []vectors.FaceCandidate
+	searchDists []float64
 	lastMarker  string
 	lastSubject string
 	lastFaceIdx int
@@ -36,8 +40,9 @@ func (f *fakeFaces) ListFaces(_ context.Context, _ string) ([]vectors.Face, erro
 }
 
 func (f *fakeFaces) FindSimilarFaceCandidates(
-	_ context.Context, _ []float32, _ int, _ float64,
+	_ context.Context, _ []float32, _ int, maxDistance float64,
 ) ([]vectors.FaceCandidate, error) {
+	f.searchDists = append(f.searchDists, maxDistance)
 	return f.candidates, nil
 }
 
@@ -185,6 +190,84 @@ func TestPhotoFaces_createMarkerAndSuggestions(t *testing.T) {
 	}
 	if len(face.Suggestions) != 1 || face.Suggestions[0].SubjectUID != "su_bob" {
 		t.Errorf("suggestions = %+v, want one Bob suggestion", face.Suggestions)
+	}
+}
+
+// TestPhotoFaces_suggestionsForAssignedFace checks an assigned face also gets
+// suggestions — the alternatives a reassignment can pick from — and that the subject
+// it already names is not among them.
+func TestPhotoFaces_suggestionsForAssignedFace(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	box := [4]float64{0.1, 0.1, 0.3, 0.3}
+	subjUID := "su_alice"
+	fp := &fakePhotos{photo: photos.Photo{FileWidth: 100, FileHeight: 100, FileOrientation: 1}}
+	ff := &fakeFaces{
+		list: []vectors.Face{{FaceIndex: 0, Vector: make([]float32, vectors.FaceDim), BBox: box}},
+		// Alice is the face's own subject, Bob a nearby stranger: only Bob may be offered.
+		candidates: []vectors.FaceCandidate{
+			cand("p2", subjUID, "Alice", 0.1, 0.3),
+			cand("p3", "su_bob", "Bob", 0.2, 0.3),
+		},
+	}
+	pe := &fakePeople{
+		markers: []people.Marker{{
+			UID: "mk1", Type: people.MarkerFace, X: box[0], Y: box[1], W: box[2], H: box[3],
+			SubjectUID: &subjUID,
+		}},
+		subjectsByUID: map[string]people.Subject{subjUID: {UID: subjUID, Name: "Alice"}},
+	}
+	svc := newService(fp, ff, pe)
+
+	resp, err := svc.PhotoFaces(ctx, "p1")
+	if err != nil {
+		t.Fatalf("PhotoFaces: %v", err)
+	}
+	face := resp.Faces[0]
+	if face.Action != ActionAlreadyDone || face.SubjectName != "Alice" {
+		t.Fatalf("face = %+v, want already_done/Alice", face)
+	}
+	if len(face.Suggestions) != 1 || face.Suggestions[0].SubjectUID != "su_bob" {
+		t.Errorf("suggestions = %+v, want only Bob (Alice names the face already)", face.Suggestions)
+	}
+}
+
+// TestPhotoFaces_assignedFaceDoesNotWidenSearch checks an assigned face runs only the
+// primary, distance-capped search: widening to no cutoff would offer every named person
+// in the library as a "reassignment" for a face that has no close alternative.
+func TestPhotoFaces_assignedFaceDoesNotWidenSearch(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	box := [4]float64{0.1, 0.1, 0.3, 0.3}
+	subjUID := "su_alice"
+	fp := &fakePhotos{photo: photos.Photo{FileWidth: 100, FileHeight: 100, FileOrientation: 1}}
+	ff := &fakeFaces{
+		list: []vectors.Face{{FaceIndex: 0, Vector: make([]float32, vectors.FaceDim), BBox: box}},
+		// Only the face's own subject is near: the primary pass yields nothing, and the
+		// fallback must not run to fill the gap.
+		candidates: []vectors.FaceCandidate{cand("p2", subjUID, "Alice", 0.1, 0.3)},
+	}
+	pe := &fakePeople{
+		markers: []people.Marker{{
+			UID: "mk1", Type: people.MarkerFace, X: box[0], Y: box[1], W: box[2], H: box[3],
+			SubjectUID: &subjUID,
+		}},
+		subjectsByUID: map[string]people.Subject{subjUID: {UID: subjUID, Name: "Alice"}},
+	}
+	svc := newService(fp, ff, pe)
+
+	resp, err := svc.PhotoFaces(ctx, "p1")
+	if err != nil {
+		t.Fatalf("PhotoFaces: %v", err)
+	}
+	if got := resp.Faces[0].Suggestions; len(got) != 0 {
+		t.Errorf("suggestions = %+v, want none (no plausible alternative)", got)
+	}
+	want := []float64{DefaultSuggestionMaxDistance}
+	if !slices.Equal(ff.searchDists, want) {
+		t.Errorf("candidate searches ran with cutoffs %v, want exactly %v (no widening pass)", ff.searchDists, want)
 	}
 }
 

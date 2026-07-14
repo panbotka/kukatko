@@ -32,12 +32,19 @@ function faces(): FaceView[] {
 
 function renderOverlay(readOnly = false, selected: number | null = null) {
   const onSelect = vi.fn()
+  const onHover = vi.fn()
   const result = render(
     <I18nextProvider i18n={i18n}>
-      <FaceOverlay faces={faces()} selected={selected} onSelect={onSelect} readOnly={readOnly} />
+      <FaceOverlay
+        faces={faces()}
+        selected={selected}
+        onSelect={onSelect}
+        onHover={onHover}
+        readOnly={readOnly}
+      />
     </I18nextProvider>,
   )
-  return { ...result, onSelect }
+  return { ...result, onSelect, onHover }
 }
 
 beforeEach(async () => {
@@ -96,5 +103,44 @@ describe('FaceOverlay', () => {
     // The box does not swallow clicks meant for the image underneath it.
     expect(box).toHaveStyle({ pointerEvents: 'none' })
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('colours each box by how far its face has got through naming', () => {
+    renderOverlay()
+
+    // Red: a bare detection nobody has touched. Green: a named person.
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toHaveAttribute(
+      'data-face-state',
+      'unmatched',
+    )
+    expect(screen.getByRole('button', { name: 'Alice' })).toHaveAttribute(
+      'data-face-state',
+      'assigned',
+    )
+  })
+
+  it('numbers every box and labels the named ones, without stealing their clicks', () => {
+    renderOverlay()
+
+    const numbered = screen.getByRole('button', { name: 'Unnamed face 1' })
+    expect(numbered).toHaveTextContent('1')
+
+    // The name label rides on the box; if it caught pointer events, clicking the
+    // person's name would not select the face (and would kill the swipe gesture).
+    const named = screen.getByRole('button', { name: 'Alice' })
+    const label = screen.getByText('Alice')
+    expect(named).toContainElement(label)
+    expect(label).toHaveStyle({ pointerEvents: 'none' })
+  })
+
+  it('reports the hovered box so the panel can highlight its row', async () => {
+    const user = userEvent.setup()
+    const { onHover } = renderOverlay()
+
+    await user.hover(screen.getByRole('button', { name: 'Unnamed face 1' }))
+    expect(onHover).toHaveBeenCalledWith(0)
+
+    await user.unhover(screen.getByRole('button', { name: 'Unnamed face 1' }))
+    expect(onHover).toHaveBeenLastCalledWith(null)
   })
 })

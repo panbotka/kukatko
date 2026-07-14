@@ -549,7 +549,8 @@
     "detail": {
       "prevNext": "Previous / next photo",
       "favorite": "Toggle favorite",
-      "back": "Back to the list"
+      "back": "Clear the face selection, then back to the list",
+      "faces": "Show / hide faces"
     }
   },
   "people": {
@@ -634,7 +635,19 @@
       "suggestions": "Suggestions",
       "nameLabel": "Name",
       "namePlaceholder": "New or existing name…",
-      "assign": "Assign"
+      "assign": "Assign",
+      "reassign": "Reassign",
+      "cancelReassign": "Cancel reassign",
+      "closePanel": "Close the faces panel"
+    },
+    "count": "Faces: {{count}}",
+    "row": {
+      "label": "Face #{{number}}",
+      "select": "Select face #{{number}}"
+    },
+    "state": {
+      "detected": "Unnamed",
+      "unassigned": "No person"
     }
   },
   "outliers": {

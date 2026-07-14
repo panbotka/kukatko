@@ -74,6 +74,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     entries: [
       { keys: ['←', '→'], descriptionKey: 'shortcuts.detail.prevNext' },
       { keys: ['f'], descriptionKey: 'shortcuts.detail.favorite' },
+      { keys: ['m'], descriptionKey: 'shortcuts.detail.faces' },
       { keys: ['Esc'], descriptionKey: 'shortcuts.detail.back' },
     ],
   },

@@ -483,8 +483,10 @@ rozhraními (`PhotoStore`/`FaceStore`/`PeopleStore`), takže se unit-testuje s f
   photo-sorteru).
 - **`PhotoFaces(ctx, photoUID)`** (backing `GET /photos/{uid}/faces`): pro každý uložený obličej
   spočítá nejlepší marker dle IoU, určí akci (`create_marker` / `assign_person` / `already_done`),
-  **zacachuje match na řádek obličeje** (`UpdateFaceMarker`) a pro nepojmenované obličeje přidá
-  návrhy. Markery bez odpovídajícího obličeje se připojí (záporné `face_index`) pro detail UI.
+  **zacachuje match na řádek obličeje** (`UpdateFaceMarker`) a **každému** obličeji s embeddingem
+  přidá návrhy — nepojmenovanému kandidáty na pojmenování, přiřazenému **alternativy pro přeřazení**
+  (osobu, kterou už nese, nikdy nenavrhne). Markery bez odpovídajícího obličeje se připojí (záporné
+  `face_index`) pro detail UI.
 - **Návrhy** (`aggregateSuggestions`, čistá funkce): z nejbližších face embeddingů
   (`FindSimilarFaceCandidates`, HNSW cosine) agreguje kandidáty dle subjektu, vyloučí obličeje na
   stejné fotce, subjekty **už přiřazené na fotce** (jiné osoby) a obličeje **pod minimální
@@ -1372,7 +1374,7 @@ Endpointy pod `/api/v1` (JSON):
 | DELETE | `/photos/{uid}/rating` | přihlášený | zruší hodnocení i flag aktuálního uživatele (idempotentní) → 204 |
 | GET | `/favorites` | přihlášený | oblíbené aktuálního uživatele ve tvaru `/photos` (sdílí filtry/řazení/stránkování) |
 | GET | `/photos/{uid}/similar` | přihlášený | vizuálně podobné fotky dle cosine vzdálenosti embeddingu (`?limit`, default 24, max 100) → `{similar:[{…photo, distance}]}` |
-| GET | `/photos/{uid}/faces` | přihlášený | obličeje fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`) a **návrhy** identit pro nepojmenované — face↔marker IoU matching (viz `internal/facematch`) |
+| GET | `/photos/{uid}/faces` | přihlášený | obličeje fotky s bboxem, přiřazením (marker/subjekt), akcí (`create_marker`/`assign_person`/`already_done`) a **návrhy** identit pro každý obličej — u nepojmenovaného kandidáti, u přiřazeného alternativy pro přeřazení; face↔marker IoU matching (viz `internal/facematch`) |
 | POST | `/photos/{uid}/faces/assign` | editor/admin | přiřazovací akce `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`: `create_marker`/`assign_person`/`unassign_person`; auto-create subjektu dle jména; drží `faces` cache + `marker.reviewed` konzistentní |
 | GET | `/faces/clusters` | editor/admin | shluky nepřiřazených obličejů (auto-clustering) → `{clusters:[{uid,size,representative,examples,suggestion?}]}`; `suggestion` = nejbližší pojmenovaný subjekt (viz `internal/cluster`) |
 | POST | `/faces/clusters/{id}/assign` | editor/admin | přiřadí **celý shluk** jednomu subjektu `{subject_uid?,subject_name?}` (find-or-create dle jména) → markery pro všechny obličeje; shluk se spotřebuje |

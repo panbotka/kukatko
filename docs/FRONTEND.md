@@ -395,10 +395,20 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   **rating hotkeys** `0`–`5`/`p`/`r`/`v` na document (mimo
   psaní do inputu; `p`→👍, `r`→👎, `v`→👁), tlačítka **Stáhnout originál** /
   **Stáhnout upravenou** (`downloadUrl`); **stránka nese právě JEDEN obrázek fotky** — obličeje
-  jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad `useFaces`), nikdy druhá kopie snímku:
-  tlačítko **Zobrazit/Skrýt obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`)
-  a volba se pamatuje v localStorage (`lib/faceOverlayPref`); klik na box (nebo na person-chip
-  v bloku **Lidé**) otevře `FaceAssignPanel` v tom bloku;
+  jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad `useFaces`), nikdy druhá kopie snímku.
+  **Obličeje jsou defaultně VYPNUTÉ** (`FACE_OVERLAY_DEFAULT = false` v `lib/faceOverlayPref`,
+  volba se pamatuje v localStorage): fotka je obsah, boxy jsou opt-in. Zapne je tlačítko
+  **Zobrazit/Skrýt obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`) nebo klávesa
+  **`m`** (v registru zkratek, takže ji ukáže i nápověda `?`). Zapnutí **zmenší fotku na `lg={8}`
+  a vedle ní vysune `FacesPanel` (`lg={4}`)**; pod `lg` se panel stackuje pod fotku. Jeden boolean
+  (`showFaces`) řídí boxy i panel, takže se nemůžou rozejít. **Pozor — nosná invarianta:**
+  `FaceOverlay` pozicuje boxy v **procentech** obalu `position-relative d-inline-flex mw-100`, který
+  se smrskává přesně na `<img>`; kdyby ho sloupec roztáhl (`w-100`, `align-items: stretch`), obrázek
+  se uvnitř vycentruje s letterboxem a **rámečky se rozjedou** (jsdom to nechytí — ověřovat vizuálně).
+  Boxy jsou barevné dle stavu (`lib/faceState`: zelená přiřazený / žlutá marker bez osoby / červená
+  holá detekce), vybraný je primary + ring, každý nese **číslo `#N`** (dle pořadí, ne `face_index` —
+  markery bez detekce mají záporný) a přiřazený i **jméno pod boxem**; hover na boxu zvýrazní řádek
+  v panelu a naopak (`hovered`/`onHover` drží stránka). Klik na box i na řádek panelu = tentýž výběr;
   **ovládací/informační panely jsou POD fotkou** (ne vedle ní) a jdou **přes celou šířku
   obsahové oblasti** (žádný centrovaný užší sloupec) ve **striktním edit-first pořadí** —
   pruh `SimilarPhotos` je až pod nimi. První dvě karty sdílejí **od `lg` výš jeden řádek**
@@ -410,9 +420,10 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`components/photo/`): **1. Uspořádání** (`sections.organize`) = **primární blok, vždy
   viditelný a přímo editovatelný** (žádný „edit mód"): `OrganizePanel` (inline add/remove alb
   a štítků přes organize API) + `PeoplePanel` (lidé/obličeje jako **person-chips** nad stejným
-  `useFaces`, co drží overlay — chip i box na fotce jsou v syncu; editor kliknutím na chip otevře
-  `FaceAssignPanel` a přiřadí/přejmenuje/odebere osobu, viewer vidí pojmenované osoby read-only;
-  pojmenované = rose chip, nepojmenované detekce = neutrální chip); alba/štítky/lidé mají
+  `useFaces`, co drží overlay — odpovídá na „kdo je na fotce" i s vypnutými obličeji; **sám nic
+  nepřiřazuje**: editorův klik na chip volá `onEditFace` → stránka zapne obličeje a vybere ten
+  obličej ve `FacesPanel`, takže přiřazování žije právě na jednom místě. Viewer vidí pojmenované
+  osoby read-only; pojmenované = rose chip, nepojmenované detekce = neutrální chip); alba/štítky/lidé mají
   odlišnou barvu přes `ENTITY_STYLE` (`components/entityStyle`). Přidání jede přes
   **`AddAutocomplete`** (type-to-filter combobox nad react-bootstrap primitivy,
   **case/accent-insensitive** přes `lib/text` `foldedIncludes`, klávesnice ↑/↓/Enter/Esc + klik,
@@ -555,13 +566,19 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   podkladu basic/outdoor/aerial + datum od/do, archiv, soukromé, počet, zrušit filtry);
   `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`, `FaceThumb`
   (čtvercový výřez obličeje z thumbnailu fotky dle normalized bbox přes `faceCropStyle`),
-  `FaceOverlay`+`FaceAssignPanel` (`FaceOverlay` = **čistě prezentační** průhledná vrstva
+  `FaceOverlay`+`FacesPanel`+`FaceAssignPanel` (`FaceOverlay` = **čistě prezentační** průhledná vrstva
   klikatelných boxů z normalized bbox přes `faceBoxStyle`, **žádný vlastní obrázek ani fetch** —
   mountuje se jako poslední dítě `position-relative` obalu těsně kolem `<img>`; vrstva je
-  click-through, pointer events chytají jen boxy (a při `readOnly` ani ty). Data + stavový
-  automat pojmenování drží hook `useFaces`; klik → `FaceAssignPanel` s návrhy (one-tap accept)
-  + free-text jméno; optimistický update + refetch),
-  `ClusterCard`, `Outliers` (žebříček podezřelých obličejů s one-tap unassign);
+  click-through, pointer events chytají jen boxy (a při `readOnly` ani ty; číslo a jmenovka boxu mají
+  `pointer-events:none`, jinak by ukradly klik a rozbily swipe). Data + stavový automat pojmenování
+  drží hook `useFaces`. **`FacesPanel`** = pravý panel vedle fotky, jediné místo, kde se přiřazuje:
+  **textové řádky** `Obličej #N` + barevný chip stavu (žádné výřezy — jeden obrázek na stránku),
+  klik vybere/odvybere, hover se zrcadlí s boxem; pod vybraným řádkem se rozbalí `FaceAssignPanel`
+  (`key={face_index}` → reset stavu při změně výběru). **`FaceAssignPanel`** = top-3 návrhy
+  (`{jméno} · {confidence}%`, one-tap) + typeahead nad `useSubjects` (`AddAutocomplete` s `autoFocus`
+  a `hint` = počet fotek osoby); u přiřazeného obličeje **Přeřadit** (návrhy, které backend dodává
+  i pro přiřazené — vlastní osoba je z nich vyloučená) a **Odebrat**; Esc vyskočí nejdřív z přeřazení,
+  pak z výběru), `ClusterCard`, `Outliers` (žebříček podezřelých obličejů s one-tap unassign);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`/`canImport`; `ProtectedRoute` =
   `RequireAuth` + `RequireRole` + `RequireImport` route guardy), `hooks/` (`usePaginatedPhotos` = sdílený
@@ -651,7 +668,14 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `useFaces(photoUid)` = načte obličeje fotky (`fetchFaces`) a drží stavový automat pojmenování
   (výběr boxu, optimistické přiřazení, refetch smiřující se serverem, `busy`/`actionError`);
   vytažen z `FaceOverlay`, aby detail mohl kreslit boxy nad svým jediným obrázkem a panel
-  pojmenování renderovat jinde na stránce;
+  pojmenování renderovat jinde na stránce. **Po načtení vybere první nepojmenovaný obličej**
+  a **po přiřazení posune výběr na další nepojmenovaný** (`firstUnnamed`/`nextUnnamed`, řadí dle
+  **pořadí v poli**, ne `face_index`; `facesRef` proti stale closure) — skupinovou fotku tak projedeš
+  bez sahání po myši. `unassign` výběr **nechá** (obličej se právě uvolnil a typicky ho hned
+  přejmenováváš). Smiřovací refetch po mutaci auto-výběr **nespouští** (`reload(signal, autoSelect)`),
+  jinak by pojmenování posledního obličeje odskočilo zpátky nahoru;
+  `useSubjects()` = líný seznam všech subjektů pro typeahead (mountuje se až s `FacesPanel`,
+  takže prohlížení fotky ho nikdy nezaplatí; chyba = prázdný seznam, pole pak jen zakládá nové);
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
   `uid`/server stavu; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user
@@ -750,6 +774,9 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `mapViewToParams` (sanitizuje archived) + `viewportFromView`/`mapsetFromView`/`hasActiveMapFilters`
   — mapování URL stavu mapy na feed params; `mapPopup.ts` = pure `buildPopupElement` (náhled +
   odkaz na detail fotky jako popup element, plain klik → SPA navigace, modifikovaný klik projde);
+  `faceState.ts` = pure `faceState(face)` (`assigned`/`unassigned`/`unmatched` — čte přiřazení, ne
+  `face.action`, aby optimistický update držel box i řádek v syncu s právě provedeným klikem)
+  + `isNamed`; jeden zdroj pravdy pro barvy v overlayi, `FacesPanel` i `PeoplePanel`;
   `faceGeometry.ts` = pure `faceBoxStyle` (normalized bbox → absolutní `left/top/width/height`
   v %, pro overlay) + `faceCropStyle` (čtvercový výřez obličeje z thumbnailu přes
   background-position/-size, pro `FaceThumb`);
