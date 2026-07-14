@@ -26,6 +26,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -47,6 +48,7 @@ type env struct {
 	vectors  *vectors.Store
 	embedder *fakeEmbedder
 	organize *organize.Store
+	places   *places.Store
 }
 
 // fakeEmbedder is a controllable photoapi.TextEmbedder for the search tests: it
@@ -108,6 +110,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	store := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
 	organizeStore := organize.NewStore(db.Pool())
+	placeStore := places.NewStore(db.Pool())
 	embedder := &fakeEmbedder{byQuery: map[string][]float32{}}
 	api := photoapi.NewAPI(photoapi.Config{
 		Store:           store,
@@ -119,6 +122,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Ratings:         organizeStore,
 		Organizer:       organizeStore,
 		Users:           authStore,
+		Places:          placeStore,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,
@@ -134,6 +138,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	return &env{
 		server: server, authSvc: authSvc, store: store,
 		fs: fs, vectors: vectorStore, embedder: embedder, organize: organizeStore,
+		places: placeStore,
 	}
 }
 

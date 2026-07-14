@@ -523,7 +523,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   interface (splňuje ho `auth.Store.GetUserByUID`, drátuje `buildPhotoAPI`): `handleDetail`
   resolvuje `photo.UploadedBy` → `uploader{uid,name}` (`name` = `display_name`, fallback `username`),
   nil-safe (nezapojeno / bez uploadera / neresolvovatelný uživatel → `uploader` vynechán, jen na
-  detailu, žádné N+1 v listu); a `EditService`/`edit.go`+`media_edit.go`
+  detailu, žádné N+1 v listu); **místo detailu** (`place.go`) přes `PlaceResolver` interface
+  (splňuje ho `places.Store.GetPlace`): `writeDetail` přilepí `place{country,region,city,place_name}`
+  z cache `photo_places` — **jen čtení cache, detail nikdy negeokóduje** (kredity mapy.com jsou
+  měřené; on-demand lookup zůstává v `mapsapi`), nil-safe stejně jako uploader a vynechaný i pro
+  „processed" marker (řádek se všemi úrovněmi prázdnými); a `EditService`/`edit.go`+`media_edit.go`
   (`GET`/`PUT /photos/{uid}/edit`, download honoruje edit přes `internal/photoedit`)), `internal/photoedit/`
   (**CGO-free aplikace nedestruktivního editu** na dekódovaný obrázek pro download/preview: `Apply(img,
   photos.Edit) image.Image` aplikuje **crop** (normalizovaný `[x,y,w,h]` 0..1), **rotaci** 0/90/180/270

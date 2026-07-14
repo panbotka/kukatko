@@ -5,8 +5,13 @@ const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const
  * Formats a byte count as a short human-readable string using binary (1024)
  * units, e.g. `1536` → `"1.5 KB"`. Negative or non-finite inputs render as
  * `"0 B"`. Bytes show no decimals; larger units show one.
+ *
+ * Passing the active `locale` (e.g. the i18next language) localises the decimal
+ * separator — Czech writes `"1,5 KB"`. Omitting it keeps the plain dot, which is
+ * what the callers that render a size inside an otherwise unlocalised technical
+ * line already show.
  */
-export function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number, locale?: string): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return '0 B'
   }
@@ -17,7 +22,26 @@ export function formatBytes(bytes: number): string {
     unit += 1
   }
   const digits = unit === 0 ? 0 : 1
-  return `${value.toFixed(digits)} ${BYTE_UNITS[unit]}`
+  const formatted =
+    locale === undefined
+      ? value.toFixed(digits)
+      : new Intl.NumberFormat(locale, {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+        }).format(value)
+  return `${formatted} ${BYTE_UNITS[unit]}`
+}
+
+/**
+ * Formats an exact byte count with the locale's thousands grouping, e.g.
+ * `3145728` → `"3 145 728 B"` (Czech). It is the precise counterpart of
+ * {@link formatBytes}: the detail card shows the rounded, readable size and keeps
+ * this one in the tooltip, so the exact number is a hover away without cluttering
+ * the row. Negative or non-finite inputs render as `"0 B"`.
+ */
+export function formatByteCount(bytes: number, locale: string): string {
+  const value = Number.isFinite(bytes) && bytes > 0 ? bytes : 0
+  return `${new Intl.NumberFormat(locale).format(value)} B`
 }
 
 /**

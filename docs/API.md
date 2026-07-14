@@ -116,6 +116,13 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `UserResolver` (`auth.Store.GetUserByUID`; `name` = `display_name`, fallback `username`); vynechán
   (`omitempty`) u fotek bez `uploaded_by` (importy z PhotoPrism/photo-sorteru) i když uživatele nelze
   resolvnout — resoluce je **jen na detailu**, list/search per-fotku uploadera neřeší (žádné N+1);
+  a **`place`** `{country,region,city,place_name}` — **cachnuté** reverzní geokódování fotky z
+  `photo_places` (plní ho background job `places`), čtené přes rozhraní `PlaceResolver`
+  (`places.Store.GetPlace`). **Detail nikdy negeokóduje**: kredity mapy.com jsou měřené, takže
+  otevření fotky nesmí stát kredit — on-demand lookup zůstává výhradně v `GET /maps/reverse`, které
+  si vyžádá uživatel. Blok je `omitempty` a vynechá se u fotky, kterou job ještě nedošel, u fotky bez
+  GPS a i u „processed" markeru (řádek se všemi úrovněmi prázdnými); jednotlivé úrovně můžou být
+  prázdné, když geokodér nic přesnějšího neznal. Renderuje ho `TechnicalDetails` (skupina Poloha);
   **nedestruktivní edit** (`internal/photoedit` + `edit.go`/`media_edit.go`):
   `GET /photos/{uid}/edit` (přihlášený) → uložený `photos.Edit` (crop/rotace 0-90-180-270/jas/kontrast,
   neupravená fotka → neutrální edit) a `PUT /photos/{uid}/edit` (editor/admin) zapíše edit do
