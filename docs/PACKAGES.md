@@ -77,6 +77,17 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   guardy → fotka, kde není co doplnit, se **vůbec nezapíše** (ani `updated_at`) a druhý běh importu
   je opravdový no-op; podklad `internal/dirimport` backfillu duplicit — složka naimportovaná
   *před* čtením sidecarů se dá opravit re-runem, ne mazáním a znovu)/
+  **`FillFileMetadata(ctx,uid,FileMetadata) (filled,error)`**
+  (zápisová strana metadata backfillu, `internal/metajob`: doplní **jen prázdné** IPTC/XMP a
+  file-technical sloupce (`subject`/`keywords`/`artist`/`copyright`/`license`/`software`/
+  `camera_serial`/`color_profile`/`image_codec`/`projection`/`original_name`) z čerstvé extrakce
+  originálu a stampne `metadata_extracted_at = now()`. SQL se staví jednou z `fileMetadataColumns`
+  (`buildFillFileMetadataSQL`), takže statement nemůže odchýlit od struktury; **self-join přes `o`
+  subquery** dává guardům i `RETURNING` *staré* hodnoty (prostý `RETURNING` už vidí zapsaný řádek).
+  Prázdná extrakce nikdy nesmaže, co napsal uživatel; `updated_at` se hne **jen** když se něco
+  opravdu doplnilo, takže no-op backfill je pro každého čtenáře neviditelný; `metadata_extracted_at`
+  se stampuje vždy — soubor byl přečten, ať už řekl cokoli. Nic mimo `fileMetadataColumns` se
+  nedotýká: titulky, `taken_at`, GPS, hodnocení a kurátorská data jsou mimo. `ErrPhotoNotFound`)/
   `Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/
   uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
   **album/label scope** `AlbumUID`/`LabelUID` korelovaným `EXISTS` nad `album_photos`/`photo_labels`
@@ -125,8 +136,13 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   — podklad post-restore integritního reportu (`backup.PhotoCatalog`),
   maintenance listery (`store_maintenance.go`): `ListPrimaryFiles()`,
   `ListPhotosMissingPhash(limit)` (uid nearchivovaných fotek bez pHashe — podklad thumbnail
-  backfillu/oprav) a `ListActiveUIDs()` (uid všech nearchivovaných fotek — podklad vynuceného úplného
-  thumbnail backfillu `?all=true`), `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
+  backfillu/oprav), `ListPhotosMissingFileMetadata(limit)` (uid nearchivovaných fotek s
+  `metadata_extracted_at IS NULL`, tj. jejichž **soubor nikdy nebyl přečten** — podklad metadata
+  backfillu; predikát je *značka*, ne „sloupce jsou prázdné", takže backfill konverguje i pro fotky
+  bez IPTC tagů; kryje ho parciální index `idx_photos_metadata_pending` z migrace
+  `0028_photos_metadata_extracted.sql`, který je po vyčerpání backfillu prázdný) a `ListActiveUIDs()`
+  (uid všech nearchivovaných fotek — podklad vynuceného úplného thumbnail/metadata backfillu
+  `?all=true`), `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
   `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
   `photo_edits` (all-or-nothing crop, rotace 0/90/180/270); video sloupce v migraci
@@ -305,7 +321,24 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `rwcarlsen/goexif` (+ `image.DecodeConfig`/`http.DetectContentType` pro rozměry/MIME) když
   `exiftool` chybí/selže; GPS rational→desetinné stupně dle `N/S/E/W` refů, `GPSAltitudeRef=1`
   → záporná výška; `taken_at` z `DateTimeOriginal` (zóna-prosté = UTC), jinak z názvu souboru,
-  jinak `unknown`; soubor bez EXIF (PNG) = nulové hodnoty, **ne error**), `internal/phash/`
+  jinak `unknown`; soubor bez EXIF (PNG) = nulové hodnoty, **ne error**;
+  **IPTC/XMP + file-technical pole** (`iptc.go`, mapují se na stejnojmenné sloupce `photos`):
+  `Subject` ← `Subject`(skalár)/`Headline`/`XPSubject`/`ObjectName`, `Keywords` ←
+  `Keywords`/`Subject`(**list**)/`XPKeywords`, `Artist` ← `Artist`/`Creator`/`By-line`/`XPAuthor`,
+  `Copyright` ← `Copyright`/`Rights`/`CopyrightNotice`, `License` ←
+  `License`/`UsageTerms`/`WebStatement`, `Software` ← `Software`/`CreatorTool`/`ProcessingSoftware`,
+  `CameraSerial` ← `SerialNumber`/`BodySerialNumber`/`InternalSerialNumber`, `ColorProfile` ←
+  `ICCProfileName`/`ProfileDescription`/`ColorSpace` (číselný kód → jméno: `1`=sRGB, `2`=Adobe RGB,
+  `65535`=Uncalibrated; neznámý kód → prázdno, ne holá číslice), `ImageCodec` ←
+  `Compression`(JPEG kódy 6/7/34892)/`FileType`/`FileTypeExtension`/MIME → krátký lowercase token
+  (`jpeg`/`heic`/`png`/`webp`/`avif`/`tiff`/`gif`/`bmp`/`raw`, každý vendor RAW = `raw`; video →
+  prázdno), `Projection` ← `ProjectionType` (XMP GPano); v každém řetězci **vyhrává první neprázdná**
+  hodnota, vše trimované a junk (`""`/`unknown`/`0`) se zahazuje. **Skalár vs. list u `Subject`** je
+  jediná netriviální větev: skalár = IPTC headline → `Subject`, list = XMP `dc:subject` → `Keywords`
+  (comma-separated, trimované, **deduplikované, pořadí zachováno**; skalární tag se štěpí na `,`/`;`).
+  `scan` se **nikdy neodvozuje** — je to ruční flag uživatele. Pure-Go fallback umí jen baseline
+  TIFF/EXIF tagy (`Artist`/`Copyright`/`Software`/`ColorSpace` + kodek z MIME); IPTC/XMP segmenty
+  nečte, takže ostatní pole zůstanou **prázdná, ne špatná**), `internal/phash/`
   (perceptuální hashe, **CGO-free**: `Compute(img) Hashes{Phash,Dhash int64}` — **pHash** přes
   2-D DCT 32×32 → low-freq 8×8 blok s prahem medián-bez-DC, **dHash** gradientní 9×8; `Distance(a,b)`
   = Hammingova vzdálenost přes `bits.OnesCount64`; near-dup = malá vzdálenost), `internal/ingest/`
@@ -322,8 +355,12 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   jdou do `photos` — v EXIFu ekvivalent nemají), `storage.Store` (`YYYY/MM`),
   insert `photos` (vč. video sloupců; `buildPhoto` navíc plní `original_name` = base name jména,
   pod kterým upload dorazil — storage layout soubor přejmenuje, tohle je jediná stopa po původním
-  názvu — a `image_codec` ze subtypu výsledného MIME (`image/jpeg` → `jpeg`; u videa prázdné,
-  komprese klipu patří do `video_codec`))+primární `photo_files`, pHash/dHash → `photo_phashes`
+  názvu — a přes `applyFileMetadata` **IPTC/XMP a file-technical sloupce** z `exif.Metadata`
+  (`subject`/`keywords`/`artist`/`copyright`/`license`/`software`/`camera_serial`/`color_profile`/
+  `projection`; `image_codec` = token z extrakce, fallback subtyp MIME (`image/jpeg` → `jpeg`),
+  u videa prázdné — komprese klipu patří do `video_codec`) a **`metadata_extracted_at = now()`**:
+  soubor byl přečten, takže metadata backfill (`internal/metajob`) tuhle fotku už neplánuje)
+  +primární `photo_files`, pHash/dHash → `photo_phashes`
   (u videa z poster framu), náhledy (u videa poster), enqueue jobů (poster frame se účastní
   search/people); **per-file** `FileResult{Filename,Status,
   Outcome (created/duplicate/error),PhotoUID,Error,Warnings}` — nikdy nevrací error, vše v resultu;
@@ -506,9 +543,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   failed → queued, pro admin endpoint)/`List`(`ListOptions{State,Limit,Offset}`, řazení
   updated_at DESC, limit cap 500, pro admin výpis)/`Get`; sentinely
   `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrNotDead`; **typy jobů** `image_embed`/
-  `face_detect`/`thumbnail`/`places`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` = `NewEnqueuer(store)`
+  `face_detect`/`thumbnail`/`places`/`metadata`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
+  `NewEnqueuer(store)`
   implementuje `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`/`EnqueueThumbnail`/
-  `EnqueuePlaces`, `ErrDuplicate`=no-op)),
+  `EnqueuePlaces`/`EnqueueMetadata`, `ErrDuplicate`=no-op)),
   `internal/worker/`
   (in-process background worker runtime, **hlavní exekuční smyčka fronty**: `Registry` =
   `NewRegistry()`+`Register(type, HandlerFunc)`+`Handler`/`Types` (panika na prázdný typ/nil
@@ -689,7 +727,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `face_detect` pro každou nezpracovanou fotku (`ListPhotosMissingFaces`, dedup no-op), vrací
   počet), `internal/processapi/`
   (admin-only HTTP API pro hromadné zpracování: `NewAPI(Config{Backfiller,FaceBackfiller,
-  Reclusterer,PlacesBackfiller,ThumbnailBackfiller,RequireAdmin})`+`RegisterRoutes` mountuje `/process`;
+  Reclusterer,PlacesBackfiller,ThumbnailBackfiller,MetadataBackfiller,RequireAdmin})`+`RegisterRoutes`
+  mountuje `/process`;
   `POST /process/embeddings` →
   `{enqueued}` spustí `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued}` spustí
   `facejob.BackfillFaces`, `POST /process/clusters` → `{created}` spustí `cluster.Recluster`
@@ -699,7 +738,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `POST /process/thumbnails` → `{enqueued}` spustí `thumbjob.BackfillThumbnails(all)` (backfill
   `thumbnail` pro fotky bez náhledu = bez pHashe; `?all=true` naplánuje každou nearchivovanou fotku;
   `ThumbnailBackfiller` volitelný — nil → 503; lokální, funguje i s offline boxem; `queryFlag`
-  parsuje `?all`)), `internal/cluster/`
+  parsuje `?all`),
+  `POST /process/metadata` → `{enqueued}` spustí `metajob.BackfillMetadata(all)` (backfill `metadata`
+  pro fotky, jejichž soubor nikdy nebyl přečten = `metadata_extracted_at IS NULL`; `?all=true`
+  vynutí znovu-přečtení každé nearchivované fotky; `MetadataBackfiller` volitelný — nil → 503;
+  lokální, funguje i s offline boxem)), `internal/cluster/`
   (face auto-clustering: seskupuje **dosud nepřiřazené obličeje** (bez subjektu) do shluků téže
   osoby, aby šel celý shluk pojmenovat jedním tahem (klíčové UX zlepšení oproti per-face naming
   photo-sorteru); tabulka `face_clusters` (migrace `0010_face_clusters.sql`: `uid` PK prefix `fc`,
@@ -1301,6 +1344,36 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   nearchivovanou (`ListActiveUIDs`, dožene chybějící velikost i u fotky s pHashem); enqueue přes
   `Enqueuer.EnqueueThumbnail` (dedup no-op → idempotentní), vrací počet; `ErrBackfillUnavailable`
   když `Service` neměl `Lister`/`Enqueuer`),
+  `internal/metajob/`
+  (worker handler `metadata` jobu — **znovu přečte originál fotky** a doplní sloupce, jejichž
+  autoritou je sám soubor: IPTC/XMP kredit (`subject`/`keywords`/`artist`/`copyright`/`license`)
+  a file-technical (`software`/`color_profile`/`image_codec`/`camera_serial`/`projection`/
+  `original_name`). Existuje kvůli fotkám, které vznikly **dřív než extrakce**: řádky z PhotoPrism
+  importu, z photo-sorter migrace a všechno nahrané předtím, než `internal/exif` tyhle tagy uměl —
+  originály pořád leží ve storage, metadata se tedy pořád **dají** přečíst. Vše za rozhraními
+  `PhotoStore`/`Extractor`/`PhotoLister`/`Enqueuer` (`StorageExtractor` = `storage.Materialize` +
+  `exif.Extract`, funguje pro **lokální FS i R2**, temp kopii vždy uklidí) → unit-testovatelné bez
+  disku; `Service` = `New(Config{Photos,Extractor,Lister?,Enqueuer?,Logger?})` (panika na nil povinný
+  kolaborant; `Lister`/`Enqueuer` volitelné — zapnou backfill), `Handle` = `worker.HandlerFunc`
+  (payload `{photo_uid}`, prázdný → `ErrMissingPhotoUID` dead-letter), registrovaný v `serve` na
+  `jobs.TypeMetadata`. **`Reextract(uid)`** je **výhradně gap-filler**: zapisuje jen do sloupců, které
+  jsou pořád prázdné (`photos.FillFileMetadata`), takže prázdná extrakce nikdy nepřepíše hodnotu,
+  kterou napsal uživatel, a ničeho jiného se nedotkne (titulky, `taken_at`, GPS, hodnocení, alba jsou
+  mimo jeho dosah) → **idempotentní**, druhý běh nezmění nic (ani `updated_at`). Video: `image_codec`
+  zůstává prázdný (komprese klipu je ffprobe-derived `video_codec`, ten se netýká); `original_name` se
+  rekonstruuje z `photo.FileName` (storage drží originál pod jménem, se kterým přišel — blíž se
+  katalog nedostane, a stejně se píše jen do prázdného sloupce). **Chybějící originál** (`os.ErrNotExist`
+  z `Materialize`/`Extract`) se **zaloguje a přeskočí** (nil error): soubor je pryč, retry nikdy
+  neuspěje a dead-letter by jen rozbil celoknihovní běh; ostatní storage/DB chyby se vrací → fronta
+  retryuje. **Backfill** `BackfillMetadata(ctx,all) (int,error)` (podklad `POST /process/metadata`):
+  zařadí `metadata` job pro každou fotku, jejíž soubor **nikdy nebyl přečten**
+  (`PhotoLister.ListPhotosMissingFileMetadata` = `metadata_extracted_at IS NULL`), nebo — když `all` —
+  pro každou nearchivovanou (`ListActiveUIDs`, vynucené znovu-přečtení celé knihovny, tak se doženou
+  pole, která se nový extraktor naučil číst); enqueue přes `Enqueuer.EnqueueMetadata` (dedup no-op),
+  vrací počet; `ErrBackfillUnavailable` když `Service` neměl `Lister`/`Enqueuer`. **Konverguje a je
+  resumable**: značka se stampuje ve chvíli, kdy job doběhne, takže přerušený běh naváže přesně tam,
+  kde skončil, a druhý běh nad vyčerpanou knihovnou zařadí **nula** jobů — i pro fotku, jejíž soubor
+  žádné IPTC tagy nemá („podívali jsme se a nic tam nebylo" je hotová fotka, ne čekající)),
   `internal/maintenanceapi/`
   (admin-only HTTP API nad maintenance: rozhraní `Service` (Scan+Repair, splňuje `*maintenance.Service`,
   nil → 503); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes` mountuje `/maintenance`:

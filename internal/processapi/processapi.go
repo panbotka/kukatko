@@ -65,6 +65,19 @@ type ThumbnailBackfiller interface {
 	BackfillThumbnails(ctx context.Context, all bool) (int, error)
 }
 
+// MetadataBackfiller enqueues a `metadata` job for every photo whose original has
+// never been read out into the IPTC/XMP and file-technical columns. It is satisfied
+// by metajob.Service. When all is true it schedules every non-archived photo
+// instead (a forced full re-read). Metadata jobs run locally, so the backfill works
+// regardless of the embeddings box being offline. A nil MetadataBackfiller disables
+// the /process/metadata endpoint (it answers 503).
+type MetadataBackfiller interface {
+	// BackfillMetadata enqueues a `metadata` job for every photo whose file metadata
+	// has never been read (or, when all is true, for every non-archived photo) and
+	// returns how many were scheduled.
+	BackfillMetadata(ctx context.Context, all bool) (int, error)
+}
+
 // API exposes the processing endpoints over HTTP. The admin guard is supplied by
 // the caller (the auth subsystem) so this package depends on auth's behaviour,
 // not its wiring.
@@ -74,6 +87,7 @@ type API struct {
 	reclusterer      Reclusterer
 	placesBackfiller PlacesBackfiller
 	thumbBackfiller  ThumbnailBackfiller
+	metaBackfiller   MetadataBackfiller
 	requireAdmin     func(http.Handler) http.Handler
 }
 
@@ -91,6 +105,8 @@ type Config struct {
 	PlacesBackfiller PlacesBackfiller
 	// ThumbnailBackfiller runs the missing-thumbnail backfill.
 	ThumbnailBackfiller ThumbnailBackfiller
+	// MetadataBackfiller runs the file-metadata (IPTC/XMP) backfill.
+	MetadataBackfiller MetadataBackfiller
 	// RequireAdmin guards every endpoint for administrators only.
 	RequireAdmin func(http.Handler) http.Handler
 }
@@ -103,6 +119,7 @@ func NewAPI(cfg Config) *API {
 		reclusterer:      cfg.Reclusterer,
 		placesBackfiller: cfg.PlacesBackfiller,
 		thumbBackfiller:  cfg.ThumbnailBackfiller,
+		metaBackfiller:   cfg.MetadataBackfiller,
 		requireAdmin:     cfg.RequireAdmin,
 	}
 }
@@ -115,6 +132,7 @@ func NewAPI(cfg Config) *API {
 //	POST /process/clusters    RequireAdmin  rebuild face clusters from unassigned faces
 //	POST /process/places      RequireAdmin  backfill missing reverse-geocoded places
 //	POST /process/thumbnails  RequireAdmin  backfill missing thumbnails (?all=true forces a full re-run)
+//	POST /process/metadata    RequireAdmin  backfill unread file metadata (?all=true forces a full re-read)
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/process", func(r chi.Router) {
 		r.With(a.requireAdmin).Post("/embeddings", a.handleBackfillEmbeddings)
@@ -122,6 +140,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAdmin).Post("/clusters", a.handleRecluster)
 		r.With(a.requireAdmin).Post("/places", a.handleBackfillPlaces)
 		r.With(a.requireAdmin).Post("/thumbnails", a.handleBackfillThumbnails)
+		r.With(a.requireAdmin).Post("/metadata", a.handleBackfillMetadata)
 	})
 }
 
@@ -203,6 +222,24 @@ func (a *API) handleBackfillThumbnails(w http.ResponseWriter, r *http.Request) {
 	enqueued, err := a.thumbBackfiller.BackfillThumbnails(r.Context(), queryFlag(r, "all"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling thumbnails failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
+}
+
+// handleBackfillMetadata enqueues `metadata` jobs for all photos whose original
+// has never been read out into the IPTC/XMP and file-technical columns, and reports
+// how many were scheduled. With ?all=true it schedules every non-archived photo (a
+// forced full re-read, which is how the library picks up fields a newer extractor
+// learned to read). It answers 503 when no metadata backfiller is wired.
+func (a *API) handleBackfillMetadata(w http.ResponseWriter, r *http.Request) {
+	if a.metaBackfiller == nil {
+		writeError(w, http.StatusServiceUnavailable, "metadata backfill not available")
+		return
+	}
+	enqueued, err := a.metaBackfiller.BackfillMetadata(r.Context(), queryFlag(r, "all"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "backfilling metadata failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})

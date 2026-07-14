@@ -408,8 +408,8 @@ které se ztratí při restartu).
   stale-lock recovery. **Graceful shutdown** (SIGINT/SIGTERM) zastaví claiming a opuštěné
   in-flight joby nechá frontě k recovery. Stav fronty se čte přes **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); UI ho polluje.
-- **Typy jobů:** `thumbnail` (běží lokálně na Pi, hned), `image_embed`, `face_detect`
-  (vyžadují box), `pp_import`, `ps_migrate`, `backup`.
+- **Typy jobů:** `thumbnail`, `places`, `metadata` (běží lokálně na Pi, hned), `image_embed`,
+  `face_detect` (vyžadují box), `pp_import`, `ps_migrate`, `backup`.
 - **Box offline:** embeddings client před zpracováním ověří dostupnost sidecaru (health check).
   Když je box offline, joby `image_embed`/`face_detect` zůstanou `queued` s `run_after`
   posunutým (backoff), upload a prohlížení fungují bez omezení. Po naběhnutí boxu se fronta

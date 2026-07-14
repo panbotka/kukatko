@@ -53,6 +53,14 @@ func (e *Enqueuer) EnqueuePlaces(ctx context.Context, photoUID string) error {
 	return e.enqueuePhotoJob(ctx, TypePlaces, photoUID)
 }
 
+// EnqueueMetadata schedules a re-read of the photo's original file into the
+// metadata columns it is the authority on. A pre-existing active job for the same
+// photo is a no-op (nil error). It backs the metadata backfill over the photos that
+// were catalogued before the extractor could read those tags.
+func (e *Enqueuer) EnqueueMetadata(ctx context.Context, photoUID string) error {
+	return e.enqueuePhotoJob(ctx, TypeMetadata, photoUID)
+}
+
 // enqueuePhotoJob enqueues a job of jobType carrying {"photo_uid": photoUID},
 // swallowing ErrDuplicate so the call is idempotent per photo.
 func (e *Enqueuer) enqueuePhotoJob(ctx context.Context, jobType, photoUID string) error {

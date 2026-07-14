@@ -91,6 +91,35 @@ func (s *Store) ListActiveUIDs(ctx context.Context) ([]string, error) {
 	return s.queryUIDs(ctx, "listing active photos", listActiveUIDsSQL)
 }
 
+// listMissingFileMetadataSQL selects the uids of non-archived photos whose
+// original has never been read out into the metadata columns, newest first. The
+// trailing %s receives an optional LIMIT clause. It is served by
+// idx_photos_metadata_pending, the partial index over exactly this predicate.
+const listMissingFileMetadataSQL = `
+SELECT uid
+FROM photos
+WHERE metadata_extracted_at IS NULL AND archived_at IS NULL
+ORDER BY created_at DESC, uid DESC%s`
+
+// ListPhotosMissingFileMetadata returns the uids of non-archived photos whose own
+// file has never been read out into the IPTC/XMP and file-technical columns
+// (metadata_extracted_at IS NULL), newest first. A positive limit caps the result;
+// a non-positive limit returns every pending photo. It backs the metadata backfill,
+// which enqueues a `metadata` job per returned uid.
+//
+// The predicate is the extraction marker rather than "the columns are empty", so
+// the backfill converges: a photo whose file simply carries no IPTC tags is still
+// finished once it has been read, and is not re-scheduled on every run.
+func (s *Store) ListPhotosMissingFileMetadata(ctx context.Context, limit int) ([]string, error) {
+	query := fmt.Sprintf(listMissingFileMetadataSQL, "")
+	args := []any(nil)
+	if limit > 0 {
+		query = fmt.Sprintf(listMissingFileMetadataSQL, "\nLIMIT $1")
+		args = []any{limit}
+	}
+	return s.queryUIDs(ctx, "listing photos missing file metadata", query, args...)
+}
+
 // queryUIDs runs a single-column uid query and collects the results, wrapping any
 // failure with the given action for context. It is the shared scan loop behind
 // the uid-listing helpers.

@@ -75,6 +75,30 @@ type Metadata struct {
 	// Mime is the detected media type, e.g. "image/jpeg".
 	Mime string
 
+	// The IPTC/XMP descriptive and credit fields the file carries about itself.
+	// Each is read through a chain of equivalent tags (different writers use
+	// different ones) and is empty when the file says nothing. Subject is the IPTC
+	// headline — a sentence about the photo — while Keywords is the tag list,
+	// comma-separated, de-duplicated, in the writer's order.
+	Subject   string
+	Keywords  string
+	Artist    string
+	Copyright string
+	License   string
+
+	// The file-technical fields. Software is what produced the image (camera
+	// firmware, Lightroom, a scanner's driver); CameraSerial is the body's serial
+	// number; ColorProfile names the embedded ICC profile ("sRGB"); ImageCodec is
+	// the still image's compression as a short token ("jpeg", "heic", "raw"), empty
+	// for a video, whose compression belongs in video_codec; Projection is a
+	// panorama's XMP GPano projection ("equirectangular"), empty for an ordinary
+	// photo.
+	Software     string
+	CameraSerial string
+	ColorProfile string
+	ImageCodec   string
+	Projection   string
+
 	// Exif is the full, JSON-able EXIF document (every tag exiftool or the
 	// fallback parser surfaced), nil when the file has no EXIF at all.
 	Exif map[string]any
