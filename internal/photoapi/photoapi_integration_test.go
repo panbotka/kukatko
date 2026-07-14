@@ -309,8 +309,8 @@ func TestList_filters(t *testing.T) {
 	noGPS := env.seedPhoto(t, photos.Photo{
 		Title: "Studio", TakenAt: ptrTime(jan), TakenAtSource: "exif", CameraMake: "Nikon", CameraModel: "Z6",
 	}, "studio.jpg", 10, 200, 10)
-	privatePhoto := env.seedPhoto(t, photos.Photo{
-		Title: "Secret", TakenAt: ptrTime(jun), TakenAtSource: "exif", Private: true,
+	env.seedPhoto(t, photos.Photo{
+		Title: "Secret", TakenAt: ptrTime(jun), TakenAtSource: "exif",
 	}, "secret.jpg", 10, 10, 200)
 
 	t.Run("default returns all live", func(t *testing.T) {
@@ -343,10 +343,12 @@ func TestList_filters(t *testing.T) {
 			t.Errorf("lens=RF returned %v, want [%s]", uids(got.Photos), withGPS.UID)
 		}
 	})
-	t.Run("private filter", func(t *testing.T) {
+	t.Run("a stale private param is ignored", func(t *testing.T) {
+		// The private filter is gone. A bookmarked URL that still carries it must
+		// answer the unfiltered list rather than 400 on an unknown key.
 		got := getList(t, client, base, "private=true")
-		if got.Total != 1 || got.Photos[0].UID != privatePhoto.UID {
-			t.Errorf("private=true returned %v, want [%s]", uids(got.Photos), privatePhoto.UID)
+		if got.Total != 3 {
+			t.Errorf("private=true total=%d, want all 3 (the param is ignored)", got.Total)
 		}
 	})
 	t.Run("search filter", func(t *testing.T) {
@@ -989,7 +991,7 @@ func TestTimeline(t *testing.T) {
 		"deca.jpg", 200, 10, 10)
 	env.seedPhoto(t, photos.Photo{Title: "Dec B", TakenAt: ptrTime(dec), TakenAtSource: "exif"},
 		"decb.jpg", 10, 200, 10)
-	jun1 := env.seedPhoto(t, photos.Photo{Title: "Jun", TakenAt: ptrTime(jun), TakenAtSource: "exif", Private: true},
+	jun1 := env.seedPhoto(t, photos.Photo{Title: "Jun", TakenAt: ptrTime(jun), TakenAtSource: "exif"},
 		"jun.jpg", 10, 10, 200)
 	archived := env.seedPhoto(t, photos.Photo{Title: "Old", TakenAt: ptrTime(dec), TakenAtSource: "exif"},
 		"old.jpg", 30, 30, 30)
@@ -1016,15 +1018,16 @@ func TestTimeline(t *testing.T) {
 	})
 
 	t.Run("filter scopes the histogram like the list", func(t *testing.T) {
-		got := getTimeline(t, client, base, "private=true")
+		const juneOnly = "taken_after=2023-06-01&taken_before=2023-06-30"
+		got := getTimeline(t, client, base, juneOnly)
 		if got.Total != 1 || len(got.Buckets) != 1 {
-			t.Fatalf("private timeline = %+v total=%d, want the single June photo", got.Buckets, got.Total)
+			t.Fatalf("scoped timeline = %+v total=%d, want the single June photo", got.Buckets, got.Total)
 		}
 		if got.Buckets[0].Month != 6 || got.Buckets[0].Count != 1 {
 			t.Errorf("bucket = %+v, want 2023-06 count 1", got.Buckets[0])
 		}
 		// The scoped list agrees on the total and the single member.
-		list := getList(t, client, base, "private=true")
+		list := getList(t, client, base, juneOnly)
 		if list.Total != got.Total || len(list.Photos) != 1 || list.Photos[0].UID != jun1.UID {
 			t.Errorf("list total=%d photos=%v, want 1/[%s]", list.Total, uids(list.Photos), jun1.UID)
 		}

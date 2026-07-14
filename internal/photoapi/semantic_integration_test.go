@@ -4,6 +4,7 @@ package photoapi_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -48,26 +49,32 @@ func TestSearch_semanticOrdersByVector(t *testing.T) {
 }
 
 // TestSearch_semanticAppliesFilters verifies semantic mode honours the standard
-// list filters (here the private flag) alongside vector ranking.
+// list filters (here the capture-date range) alongside vector ranking.
 func TestSearch_semanticAppliesFilters(t *testing.T) {
 	env := newEnv(t)
 	client, _ := env.login(t, "sem-filter", auth.RoleViewer)
 	base := env.server.URL
 
-	pub := env.seedPhoto(t, photos.Photo{Title: "public"}, "pub.jpg", 12, 0, 0)
-	priv := env.seedPhoto(t, photos.Photo{Title: "private", Private: true}, "priv.jpg", 24, 0, 0)
+	jan := time.Date(2022, 1, 15, 12, 0, 0, 0, time.UTC)
+	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
+	recent := env.seedPhoto(t, photos.Photo{
+		Title: "recent", TakenAt: ptrTime(jun), TakenAtSource: "exif",
+	}, "recent.jpg", 12, 0, 0)
+	old := env.seedPhoto(t, photos.Photo{
+		Title: "old", TakenAt: ptrTime(jan), TakenAtSource: "exif",
+	}, "old.jpg", 24, 0, 0)
 
 	env.embedder.byQuery["holiday"] = imageVecAt(map[int]float32{0: 1})
-	saveVec(t, env, pub.UID, imageVecAt(map[int]float32{0: 1}))
-	saveVec(t, env, priv.UID, imageVecAt(map[int]float32{0: 1, 1: 0.02}))
+	saveVec(t, env, recent.UID, imageVecAt(map[int]float32{0: 1}))
+	saveVec(t, env, old.UID, imageVecAt(map[int]float32{0: 1, 1: 0.02}))
 
-	pubOnly := getSearch(t, client, base, "q=holiday&mode=semantic&private=false")
-	if pubOnly.Total != 1 || len(pubOnly.Photos) != 1 || pubOnly.Photos[0].UID != pub.UID {
-		t.Fatalf("semantic(private=false) = %v, want [%s]", uids(pubOnly.Photos), pub.UID)
+	recentOnly := getSearch(t, client, base, "q=holiday&mode=semantic&taken_after=2023-01-01")
+	if recentOnly.Total != 1 || len(recentOnly.Photos) != 1 || recentOnly.Photos[0].UID != recent.UID {
+		t.Fatalf("semantic(taken_after) = %v, want [%s]", uids(recentOnly.Photos), recent.UID)
 	}
-	privOnly := getSearch(t, client, base, "q=holiday&mode=semantic&private=true")
-	if privOnly.Total != 1 || len(privOnly.Photos) != 1 || privOnly.Photos[0].UID != priv.UID {
-		t.Fatalf("semantic(private=true) = %v, want [%s]", uids(privOnly.Photos), priv.UID)
+	oldOnly := getSearch(t, client, base, "q=holiday&mode=semantic&taken_before=2023-01-01")
+	if oldOnly.Total != 1 || len(oldOnly.Photos) != 1 || oldOnly.Photos[0].UID != old.UID {
+		t.Fatalf("semantic(taken_before) = %v, want [%s]", uids(oldOnly.Photos), old.UID)
 	}
 }
 

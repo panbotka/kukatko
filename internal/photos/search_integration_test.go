@@ -4,6 +4,7 @@ package photos_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -145,30 +146,35 @@ func TestSearch_fileNameToken(t *testing.T) {
 }
 
 // TestSearch_combinedWithFilter verifies a full-text query honours the list
-// filters: a private-only filter excludes a non-private match.
+// filters: a date-range filter excludes a match outside the range.
 func TestSearch_combinedWithFilter(t *testing.T) {
 	store, _ := newStore(t)
 	ctx := t.Context()
 
-	publicMatch, err := store.Create(ctx, textPhoto("c-1", "a.jpg", "beach holiday", "", ""))
+	jan := time.Date(2022, 1, 15, 12, 0, 0, 0, time.UTC)
+	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	recentPhoto := textPhoto("c-1", "a.jpg", "beach holiday", "", "")
+	recentPhoto.TakenAt, recentPhoto.TakenAtSource = &jun, "exif"
+	recentMatch, err := store.Create(ctx, recentPhoto)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	privatePhoto := textPhoto("c-2", "b.jpg", "beach sunset", "", "")
-	privatePhoto.Private = true
-	privateMatch, err := store.Create(ctx, privatePhoto)
+	oldPhoto := textPhoto("c-2", "b.jpg", "beach sunset", "", "")
+	oldPhoto.TakenAt, oldPhoto.TakenAtSource = &jan, "exif"
+	oldMatch, err := store.Create(ctx, oldPhoto)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	yes, no := true, false
-	if got := searchUIDs(t, store, photos.ListParams{FullText: "beach", Private: &yes}); len(got) != 1 ||
-		got[0] != privateMatch.UID {
-		t.Fatalf("Search(beach, private) = %v, want [%s]", got, privateMatch.UID)
+	boundary := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	if got := searchUIDs(t, store, photos.ListParams{FullText: "beach", TakenAfter: &boundary}); len(got) != 1 ||
+		got[0] != recentMatch.UID {
+		t.Fatalf("Search(beach, taken_after) = %v, want [%s]", got, recentMatch.UID)
 	}
-	if got := searchUIDs(t, store, photos.ListParams{FullText: "beach", Private: &no}); len(got) != 1 ||
-		got[0] != publicMatch.UID {
-		t.Fatalf("Search(beach, public) = %v, want [%s]", got, publicMatch.UID)
+	if got := searchUIDs(t, store, photos.ListParams{FullText: "beach", TakenBefore: &boundary}); len(got) != 1 ||
+		got[0] != oldMatch.UID {
+		t.Fatalf("Search(beach, taken_before) = %v, want [%s]", got, oldMatch.UID)
 	}
 }
 

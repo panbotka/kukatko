@@ -72,9 +72,6 @@ type ListParams struct {
 	// OnlyArchived restricts the result to archived photos. It takes precedence
 	// over IncludeArchived.
 	OnlyArchived bool
-	// Private, when non-nil, restricts the result to photos with the given
-	// private flag.
-	Private *bool
 	// UploadedBy, when non-empty, restricts the result to photos uploaded by the
 	// given user UID.
 	UploadedBy string
@@ -194,7 +191,7 @@ func (s *Store) List(ctx context.Context, params ListParams) ([]Photo, error) {
 // Search returns the photos whose search vector matches params.FullText,
 // ordered by full-text relevance (ts_rank, which weights title > description >
 // notes > file_name) with the UID as a stable tiebreaker. It honours every List
-// filter (date range, GPS, private, …) and the same limit/offset pagination, so
+// filter (date range, GPS, …) and the same limit/offset pagination, so
 // a search can be scoped exactly like a browse. params.FullText must be
 // non-empty; an empty query yields ErrEmptySearch rather than every photo. Pair
 // it with Count (which shares the filters) for the total. The slice is empty
@@ -225,7 +222,7 @@ func (s *Store) Search(ctx context.Context, params ListParams) ([]Photo, error) 
 }
 
 // FilterUIDs returns the photos among uids that pass params' structural filters
-// (archive state, private, uploader, date range, GPS, camera, lens, substring
+// (archive state, uploader, date range, GPS, camera, lens, substring
 // search), as a slice in unspecified order. It is the structural-filter
 // companion to a vector similarity search: the caller holds an ordered set of
 // candidate uids from the embeddings index and uses this to drop the ones a
@@ -427,13 +424,10 @@ func archivedClauses(params ListParams) []string {
 	}
 }
 
-// scalarClauses returns the equality and range filters (private, uploader, date
-// range), binding each value through bind.
+// scalarClauses returns the equality and range filters (uploader, date range),
+// binding each value through bind.
 func scalarClauses(params ListParams, bind func(any) string) []string {
 	var where []string
-	if params.Private != nil {
-		where = append(where, "private = "+bind(*params.Private))
-	}
 	if params.UploadedBy != "" {
 		where = append(where, "uploaded_by = "+bind(params.UploadedBy))
 	}

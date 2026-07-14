@@ -146,7 +146,6 @@ describe('BulkEditModal', () => {
 
     // Wait for the album/label options to load.
     await pick(user, 'Add to albums', 'Trips')
-    await user.selectOptions(screen.getByLabelText('Private'), 'true')
     await user.selectOptions(screen.getByLabelText('Description'), 'set')
     await user.type(await screen.findByLabelText('New description…'), 'Hello')
 
@@ -157,7 +156,6 @@ describe('BulkEditModal', () => {
     })
     expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], {
       add_to_albums: ['al1'],
-      set_private: true,
       set_description: 'Hello',
     })
 

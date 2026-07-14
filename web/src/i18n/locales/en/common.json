@@ -141,7 +141,6 @@
       "sort": "Sort",
       "archived": "Archived",
       "hasGps": "Location",
-      "private": "Private",
       "camera": "Camera",
       "cameraPlaceholder": "e.g. Canon",
       "takenAfter": "Taken from",
@@ -210,7 +209,6 @@
       "retry": "Try again"
     },
     "tile": {
-      "private": "Private",
       "unavailable": "Preview unavailable",
       "video": "Video",
       "live": "Live"
@@ -294,18 +292,12 @@
       "takenAfter": "Taken from",
       "takenBefore": "Taken until",
       "archived": "Archived",
-      "private": "Private",
       "clear": "Clear filters"
     },
     "archived": {
       "hide": "Hide archived",
       "show": "Include archived",
       "only": "Archived only"
-    },
-    "triState": {
-      "any": "Any",
-      "yes": "Yes",
-      "no": "No"
     },
     "empty": {
       "title": "No geotagged photos",
@@ -466,12 +458,6 @@
       "lng": "Longitude",
       "invalid": "Enter a valid latitude and longitude."
     },
-    "private": {
-      "label": "Private",
-      "noChange": "— no change —",
-      "yes": "Make private",
-      "no": "Make public"
-    },
     "archive": {
       "label": "Archive",
       "noChange": "— no change —",
@@ -498,8 +484,6 @@
       "clearDescription": "Clear the description",
       "setLocation": "Set the location to {{lat}}, {{lng}}",
       "clearLocation": "Clear the location",
-      "private": "Make private",
-      "notPrivate": "Make public",
       "archive": "Archive",
       "unarchive": "Unarchive",
       "favorite": "Add to favorites",
@@ -679,12 +663,6 @@
     "sections": {
       "organize": "Organize",
       "caption": "Caption & place"
-    },
-    "privacy": {
-      "private": "Private",
-      "public": "Public",
-      "makePrivate": "Make private",
-      "makePublic": "Make public"
     },
     "video": {
       "label": "Video player",

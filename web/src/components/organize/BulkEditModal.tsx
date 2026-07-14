@@ -56,7 +56,6 @@ interface FormState {
   locationMode: SetClearMode
   lat: string
   lng: string
-  privateMode: BoolMode
   archiveMode: '' | 'archive' | 'unarchive'
   favoriteMode: BoolMode
 }
@@ -71,7 +70,6 @@ const EMPTY_FORM: FormState = {
   locationMode: '',
   lat: '',
   lng: '',
-  privateMode: '',
   archiveMode: '',
   favoriteMode: '',
 }
@@ -123,9 +121,6 @@ function buildOperations(form: FormState): BulkOperations | 'invalid-coords' | '
   } else if (form.locationMode === 'clear') {
     ops.clear_location = true
   }
-  if (form.privateMode !== '') {
-    ops.set_private = form.privateMode === 'true'
-  }
   if (form.archiveMode === 'archive') {
     ops.archive = true
   } else if (form.archiveMode === 'unarchive') {
@@ -139,7 +134,7 @@ function buildOperations(form: FormState): BulkOperations | 'invalid-coords' | '
 
 /**
  * A modal bulk-edit dialog: applies a set of metadata operations (add/remove
- * albums, add/remove labels, set/clear description, set/clear location, private,
+ * albums, add/remove labels, set/clear description, set/clear location,
  * archive, favorite) to a multi-photo grid selection in one `POST /photos/bulk`
  * call, applied by the backend in one transaction.
  *
@@ -638,24 +633,6 @@ function BulkEditForm({
       <Section title={t('bulkEdit.sections.flags')} className="mb-0">
         <Row className="g-3">
           <Col xs={12} md={4}>
-            <Form.Group controlId="bulk-private">
-              <Form.Label className="kk-text-caption mb-1">
-                {t('bulkEdit.private.label')}
-              </Form.Label>
-              <Form.Select
-                value={form.privateMode}
-                disabled={busy}
-                onChange={(e) => {
-                  onChange({ privateMode: e.target.value as BoolMode })
-                }}
-              >
-                <option value="">{t('bulkEdit.private.noChange')}</option>
-                <option value="true">{t('bulkEdit.private.yes')}</option>
-                <option value="false">{t('bulkEdit.private.no')}</option>
-              </Form.Select>
-            </Form.Group>
-          </Col>
-          <Col xs={12} md={4}>
             <Form.Group controlId="bulk-archive">
               {/* Archiving is the one destructive flag: it takes the photos out of
                   the library. Only the archive choice — not unarchive — is toned. */}
@@ -796,16 +773,6 @@ function PendingChanges({
       id: 'location',
       text: t('bulkEdit.summary.clearLocation'),
       destructive: true,
-    })
-  }
-  if (form.privateMode !== '') {
-    lines.push({
-      id: 'private',
-      text:
-        form.privateMode === 'true'
-          ? t('bulkEdit.summary.private')
-          : t('bulkEdit.summary.notPrivate'),
-      destructive: false,
     })
   }
   if (form.archiveMode !== '') {

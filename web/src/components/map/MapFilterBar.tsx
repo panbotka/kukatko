@@ -21,7 +21,7 @@ export interface MapFilterBarProps {
 
 /**
  * Controls for the map view: the mapset switch (basic / outdoor / aerial) plus
- * the photo filters the GeoJSON feed honours (date range, archived, private).
+ * the photo filters the GeoJSON feed honours (date range, archived).
  * Every control writes through `onChange` into the URL, so Back/Forward and a
  * shared link reproduce the map. The mapset and filters push history entries;
  * the date inputs do too (they are discrete choices, not live-typed text).
@@ -92,22 +92,6 @@ export function MapFilterBar({ view, onChange, mapset, count }: MapFilterBarProp
             </Form.Select>
           </Form.Group>
         </Col>
-
-        <Col xs={6} sm={3} md={2}>
-          <Form.Group controlId="map-private">
-            <Form.Label className="small mb-1">{t('map.filters.private')}</Form.Label>
-            <Form.Select
-              value={view.private}
-              onChange={(e) => {
-                onChange({ private: e.target.value })
-              }}
-            >
-              <option value="">{t('map.triState.any')}</option>
-              <option value="true">{t('map.triState.yes')}</option>
-              <option value="false">{t('map.triState.no')}</option>
-            </Form.Select>
-          </Form.Group>
-        </Col>
       </Row>
 
       <div className="d-flex align-items-center justify-content-between mt-2">
@@ -125,7 +109,6 @@ export function MapFilterBar({ view, onChange, mapset, count }: MapFilterBarProp
                 taken_after: MAP_DEFAULTS.taken_after,
                 taken_before: MAP_DEFAULTS.taken_before,
                 archived: MAP_DEFAULTS.archived,
-                private: MAP_DEFAULTS.private,
                 album: MAP_DEFAULTS.album,
                 label: MAP_DEFAULTS.label,
               })

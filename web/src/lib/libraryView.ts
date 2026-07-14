@@ -21,7 +21,6 @@ export type LibraryView = {
   sort: string
   archived: string
   has_gps: string
-  private: string
   camera: string
   q: string
   /**
@@ -75,7 +74,6 @@ export const LIBRARY_DEFAULTS: LibraryView = {
   sort: 'newest',
   archived: 'false',
   has_gps: '',
-  private: '',
   camera: '',
   q: '',
   year: '',
@@ -176,7 +174,6 @@ export function viewToParams(view: LibraryView): PhotoListParams {
     sort: toSort(view.sort),
     archived: toArchived(view.archived),
     has_gps: view.has_gps,
-    private: view.private,
     camera: view.camera,
     q: view.q,
     year: toYear(view.year),
@@ -203,7 +200,6 @@ export function hasActiveFilters(
   return (
     view.archived !== LIBRARY_DEFAULTS.archived ||
     view.has_gps !== '' ||
-    view.private !== '' ||
     view.camera !== '' ||
     (!options.ignoreQuery && view.q !== '') ||
     view.year !== '' ||

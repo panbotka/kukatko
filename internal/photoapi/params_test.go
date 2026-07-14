@@ -110,14 +110,22 @@ func TestParseListParams_valid(t *testing.T) {
 			},
 		},
 		{
-			name:  "private and has_gps booleans",
-			query: "private=true&has_gps=false",
+			name:  "has_gps boolean",
+			query: "has_gps=false",
 			check: func(t *testing.T, p photos.ListParams) {
-				if p.Private == nil || !*p.Private {
-					t.Errorf("Private = %v, want true", p.Private)
-				}
 				if p.HasGPS == nil || *p.HasGPS {
 					t.Errorf("HasGPS = %v, want false", p.HasGPS)
+				}
+			},
+		},
+		{
+			// The private filter is gone; a stale param from a bookmarked URL is
+			// just an unknown key and must be ignored, not rejected.
+			name:  "stale private param is ignored",
+			query: "private=true&has_gps=true",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.HasGPS == nil || !*p.HasGPS {
+					t.Errorf("HasGPS = %v, want true", p.HasGPS)
 				}
 			},
 		},
@@ -324,7 +332,6 @@ func TestParseListParams_invalid(t *testing.T) {
 		{name: "unknown sort", query: "sort=color"},
 		{name: "unknown order", query: "order=sideways"},
 		{name: "unknown archived", query: "archived=maybe"},
-		{name: "non-bool private", query: "private=sometimes"},
 		{name: "non-bool has_gps", query: "has_gps=42"},
 		{name: "non-integer year", query: "year=nineteen"},
 		{name: "year below the four-digit range", query: "year=42"},

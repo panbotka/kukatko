@@ -113,14 +113,6 @@ export function PhotoTile({
           className="position-absolute top-0 start-0 m-1"
         />
       )}
-      {photo.private && (
-        <span
-          className="position-absolute top-0 end-0 m-1 badge text-bg-dark opacity-75"
-          aria-hidden="true"
-        >
-          {t('library.tile.private')}
-        </span>
-      )}
       {isPlayable(photo) && (
         <span
           className="position-absolute bottom-0 start-0 m-1 badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1"

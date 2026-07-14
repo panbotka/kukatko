@@ -33,7 +33,6 @@ type updateBody struct {
 	TakenAt     *time.Time `json:"taken_at"`
 	Lat         *float64   `json:"lat"`
 	Lng         *float64   `json:"lng"`
-	Private     *bool      `json:"private"`
 }
 
 // handleUpdate applies a partial metadata update to the photo named in the path
@@ -137,7 +136,10 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 		Lat:           current.Lat,
 		Lng:           current.Lng,
 		Altitude:      current.Altitude,
-		Private:       current.Private,
+		// The private column is no editable field any more, but the importers still
+		// write it, so it is carried over unchanged: UpdateMetadata overwrites the
+		// whole row and would otherwise clear an imported flag on every edit.
+		Private: current.Private,
 	}
 
 	applyScalars(&update, present, body)
@@ -151,16 +153,13 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 }
 
 // applyScalars overlays the present non-nullable scalar fields (title,
-// description, notes, ai_note, private) onto update. An explicit JSON null for
-// one of these is ignored, since the columns are not nullable.
+// description, notes, ai_note) onto update. An explicit JSON null for one of
+// these is ignored, since the columns are not nullable.
 func applyScalars(update *photos.MetadataUpdate, present map[string]struct{}, body updateBody) {
 	applyPresentString(present, "title", body.Title, &update.Title)
 	applyPresentString(present, "description", body.Description, &update.Description)
 	applyPresentString(present, "notes", body.Notes, &update.Notes)
 	applyPresentString(present, "ai_note", body.AiNote, &update.AiNote)
-	if _, ok := present["private"]; ok && body.Private != nil {
-		update.Private = *body.Private
-	}
 }
 
 // applyPresentString copies value onto dst when key is present and value is

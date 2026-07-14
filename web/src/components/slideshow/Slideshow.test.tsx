@@ -44,7 +44,6 @@ function photo(uid: string, name: string, title = '', mime = 'image/jpeg'): Phot
     camera_make: '',
     camera_model: '',
     lens_model: '',
-    private: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   }

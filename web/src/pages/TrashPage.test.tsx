@@ -50,7 +50,6 @@ function photo(uid: string, name: string, archivedDaysAgo: number): Photo {
     camera_make: '',
     camera_model: '',
     lens_model: '',
-    private: false,
     archived_at: new Date(Date.now() - archivedDaysAgo * DAY).toISOString(),
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',

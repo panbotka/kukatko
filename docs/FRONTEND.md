@@ -389,8 +389,7 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   který dlaždice nese v `detailQuery` odkazu (`lib/detailView` `backHref`/`detailToParams`/
   `detailQueryString`; hledání se pozná podle `mode` v query, oblíbené podle `favorite=true`),
   v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + osobní označení eye/👍/👎
-  nad `useRating`), `FavoriteButton` a pro editory **přepínač soukromí** (`PrivacyToggle` = zámek
-  u srdíčka, `updatePhoto({private})` — uzavírá smyčku s knihovním filtrem „soukromé"), plus
+  nad `useRating`) a `FavoriteButton`, plus
   **rating hotkeys** `0`–`5`/`p`/`r`/`v` na document (mimo
   psaní do inputu; `p`→👍, `r`→👎, `v`→👁), tlačítka **Stáhnout originál** /
   **Stáhnout upravenou** (`downloadUrl`); **stránka nese právě JEDEN obrázek fotky** — obličeje
@@ -857,7 +856,7 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult`; oddělené od
   photo `searchPhotos` (fulltext/semantic/hybrid), podklad `GlobalSearchSections`; `bulk.ts` =
   `bulkUpdatePhotos(uids,ops)` nad `POST /photos/bulk` (hromadná úprava výběru), typy
-  `BulkOperations` (add/remove alba+štítku, set/clear caption+popisu+polohy, set_private,
+  `BulkOperations` (add/remove alba+štítku, set/clear caption+popisu+polohy,
   archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `duplicates.ts` =
   `fetchDuplicates(params,signal)` nad `GET /api/v1/duplicates` (skupiny duplikátů →
   `DuplicatesResponse{groups,total,limit,offset,next_offset}`) + `mergeDuplicates(input,signal)` nad

@@ -30,7 +30,6 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
     aperture: 2.8,
     exposure: '1/250',
     focal_length: 50,
-    private: false,
     created_at: '2026-01-02T10:00:00Z',
     updated_at: '2026-01-02T10:00:00Z',
     files: [],

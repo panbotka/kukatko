@@ -80,7 +80,8 @@ func TestMergeUpdate(t *testing.T) {
 		TakenAtSource: "exif",
 		Lat:           new(10.0),
 		Lng:           new(20.0),
-		Private:       false,
+		// Only an importer writes this column now; the merge must carry it over.
+		Private: true,
 	}
 
 	t.Run("omitted fields are unchanged", func(t *testing.T) {
@@ -94,15 +95,20 @@ func TestMergeUpdate(t *testing.T) {
 		}
 	})
 
-	t.Run("title and private overwritten", func(t *testing.T) {
+	t.Run("title overwritten, the imported private flag carried over", func(t *testing.T) {
 		t.Parallel()
-		present := map[string]struct{}{"title": {}, "private": {}}
-		got, err := mergeUpdate(base, present, updateBody{Title: new("New"), Private: new(true)})
+		present := map[string]struct{}{"title": {}}
+		got, err := mergeUpdate(base, present, updateBody{Title: new("New")})
 		if err != nil {
 			t.Fatalf("mergeUpdate: %v", err)
 		}
-		if got.Title != "New" || !got.Private {
-			t.Errorf("title/private not applied: %+v", got)
+		if got.Title != "New" {
+			t.Errorf("title not applied: %+v", got)
+		}
+		// The update overwrites the whole row, so an edit must not clear the flag
+		// the importer set.
+		if !got.Private {
+			t.Errorf("private cleared by an unrelated edit: %+v", got)
 		}
 	})
 

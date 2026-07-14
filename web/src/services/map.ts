@@ -52,8 +52,6 @@ export interface MapPhotoParams {
   /** RFC3339 timestamp or YYYY-MM-DD date. */
   taken_before?: string
   archived?: ArchivedFilter
-  /** Tri-state filter: 'true', 'false', or '' / undefined for no filter. */
-  private?: string
   /** Scope the feed to photos in this album (`album` query param). */
   album?: string
   /** Scope the feed to photos carrying this label (`label` query param). */
@@ -94,7 +92,6 @@ export function buildMapQuery(params: MapPhotoParams): URLSearchParams {
   set('taken_after', params.taken_after)
   set('taken_before', params.taken_before)
   set('archived', params.archived)
-  set('private', params.private)
   set('album', params.album)
   set('label', params.label)
   return query

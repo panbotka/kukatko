@@ -1,7 +1,7 @@
 // Package bulk applies metadata changes to many photos in a single transaction.
 // One request lists the target photo UIDs and an operation set (album/label
-// membership, description/caption, location, private flag, archive state and the
-// caller's per-user favorite). The whole batch runs in one transaction together
+// membership, description/caption, location, archive state and the caller's
+// per-user favorite). The whole batch runs in one transaction together
 // with a durable audit_log entry, so it commits or rolls back atomically. Each
 // photo is reported individually (updated/skipped/error): a missing photo is
 // recorded as an error without aborting the valid ones, while a genuine database
@@ -67,7 +67,6 @@ type Operations struct {
 	Description   *string
 	Location      *Location
 	ClearLocation bool
-	Private       *bool
 	Archive       *bool
 	Favorite      *bool
 	Rating        *int
@@ -175,9 +174,6 @@ func (o Operations) addScalarSummary(summary map[string]any) {
 	}
 	if o.ClearLocation {
 		summary["clear_location"] = true
-	}
-	if o.Private != nil {
-		summary["private"] = *o.Private
 	}
 	if o.Archive != nil {
 		summary["archive"] = *o.Archive

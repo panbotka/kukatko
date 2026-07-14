@@ -68,7 +68,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `GET /photos/years` (přihlášený) — **rok-histogram** knihovny (podklad **year facetu** filtrů):
   přijímá **stejné filtry** jako `GET /photos` přes `parseListParams`, odpověď
   `{years:[{year,count}],total}`, buckety **nejnovější rok první**; ctí viditelnost volajícího
-  (`archived`/`private`) i per-user filtry (`favorite`, `min_rating`/`flag`) přesně jako list, takže
+  (`archived`) i per-user filtry (`favorite`, `min_rating`/`flag`) přesně jako list, takže
   count bucketu = přesně to, co mřížka ukáže po výběru toho roku. Filtr `year` je **jediný
   ignorovaný** — facet nesmí zúžit vlastní nabídku (jinak by po výběru 2019 zbyl v nabídce jen 2019);
   `sort`/`order` a stránkování se ignorují (vždy grupováno dle roku). `total` (přes `Count`) zahrnuje
@@ -118,7 +118,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `photo_edits` (validace bounds; originál se nikdy nemění — `GET …/download` ho **renderuje za běhu**
   přes `photoedit.Apply`, pokud caller nedá `?original=true`);
   `PATCH /photos/{uid}` (editor/admin) částečná úprava
-  metadat — `title/description/notes/ai_note/taken_at/lat/lng/private` (null maže nullable, validace
+  metadat — `title/description/notes/ai_note/taken_at/lat/lng` (null maže nullable, validace
   souřadnic). **Odpověď má stejný tvar jako `GET /photos/{uid}`** — plný detail včetně `files`,
   `albums`, `labels`, `is_favorite` a `uploader` (sdílený `writeDetail` v `internal/photoapi`), ne
   holý `photos.Photo`: klient si detailem z odpovědi nahradí ten, co drží, takže chybějící pole by mu
@@ -174,8 +174,8 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   400. Vždy **streamuje přes `storage.Open`** (i na publikujícím backendu — jeden archiv nejde poskládat
   z redirectů, na rozdíl od single `/download`).
   **Autorizace hlídá discovery:** podepsaná URL se razí jen do odpovědi, na kterou už caller měl
-  právo, takže `private` fotku ani archiv nikdy neuvidí. Na rozdíl od dřívějšího návrhu s veřejným
-  bucketem jsou `private` a archiv **skutečné bezpečnostní hranice** (viz doc comment `internal/mediaurl`).
+  právo, takže archivovanou fotku nikdy neuvidí. Na rozdíl od dřívějšího návrhu s veřejným
+  bucketem je archiv **skutečná bezpečnostní hranice** (viz doc comment `internal/mediaurl`).
   Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v `cmd/kukatko/photos.go`).
 - **Jobs API (`/api/v1`, `internal/jobsapi`, admin-only přes `RequireAdmin`):**
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
@@ -288,7 +288,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` aplikuje sadu operací na mnoho fotek
   **v jediné transakci** s audit-log záznamem. Operace (každá volitelná): `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
-  `set_description`/`clear_description`, `set_location {lat,lng}`/`clear_location`, `set_private`,
+  `set_description`/`clear_description`, `set_location {lat,lng}`/`clear_location`,
   `archive`/`unarchive`, `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
   (none/pick/reject/eye) (**per-user**, neplatná hodnota → 400). Odpověď `{results:[{photo_uid,status,
   error?}],counts:{total,updated,skipped,errored}}` (200 i při dílčích chybách): `updated`/
@@ -305,7 +305,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `{name,location,regional_structure}`, **cachované** (klíč = zaokrouhlená souřadnice) a
   **rate-limitované** (token-bucket, geocode = 4 kredity) → 429 přes limit, 404 bez shody.
   `GET /map/photos` — **GeoJSON FeatureCollection** geotagovaných fotek (souřadnice `[lng,lat]`),
-  ctí filtry `taken_after`/`taken_before`/`album`/`label`/`archived`/`private`, feature nese
+  ctí filtry `taken_after`/`taken_before`/`album`/`label`/`archived`, feature nese
   `uid`/`title`/`taken_at`/`media_type`/relativní `thumb`. mapy.com chyby (401/403→502, 404→404,
   429→429, 5xx→502/503) **neprosakují klíč**; bez `maps.mapy_api_key` vrací tile/rgeocode 503,
   GeoJSON funguje. Mountuje se `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).

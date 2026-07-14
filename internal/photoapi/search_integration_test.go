@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -98,15 +99,21 @@ func TestSearch_combinedFilter(t *testing.T) {
 	client, _ := env.login(t, "viewer2", auth.RoleViewer)
 	base := env.server.URL
 
-	publicMatch := env.seedPhoto(t, photos.Photo{Title: "beach holiday"}, "pub.jpg", 200, 10, 10)
-	private := env.seedPhoto(t, photos.Photo{Title: "beach sunset", Private: true}, "priv.jpg", 10, 200, 10)
+	jan := time.Date(2022, 1, 15, 12, 0, 0, 0, time.UTC)
+	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
+	recent := env.seedPhoto(t, photos.Photo{
+		Title: "beach holiday", TakenAt: ptrTime(jun), TakenAtSource: "exif",
+	}, "recent.jpg", 200, 10, 10)
+	old := env.seedPhoto(t, photos.Photo{
+		Title: "beach sunset", TakenAt: ptrTime(jan), TakenAtSource: "exif",
+	}, "old.jpg", 10, 200, 10)
 
-	pubOnly := getSearch(t, client, base, "q=beach&private=false")
-	if pubOnly.Total != 1 || len(pubOnly.Photos) != 1 || pubOnly.Photos[0].UID != publicMatch.UID {
-		t.Fatalf("search(beach, private=false) = %v, want [%s]", uids(pubOnly.Photos), publicMatch.UID)
+	recentOnly := getSearch(t, client, base, "q=beach&taken_after=2023-01-01")
+	if recentOnly.Total != 1 || len(recentOnly.Photos) != 1 || recentOnly.Photos[0].UID != recent.UID {
+		t.Fatalf("search(beach, taken_after) = %v, want [%s]", uids(recentOnly.Photos), recent.UID)
 	}
-	privOnly := getSearch(t, client, base, "q=beach&private=true")
-	if privOnly.Total != 1 || len(privOnly.Photos) != 1 || privOnly.Photos[0].UID != private.UID {
-		t.Fatalf("search(beach, private=true) = %v, want [%s]", uids(privOnly.Photos), private.UID)
+	oldOnly := getSearch(t, client, base, "q=beach&taken_before=2023-01-01")
+	if oldOnly.Total != 1 || len(oldOnly.Photos) != 1 || oldOnly.Photos[0].UID != old.UID {
+		t.Fatalf("search(beach, taken_before) = %v, want [%s]", uids(oldOnly.Photos), old.UID)
 	}
 }

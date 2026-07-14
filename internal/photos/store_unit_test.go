@@ -164,14 +164,14 @@ func TestBuildListQuery(t *testing.T) {
 		}
 	})
 
-	t.Run("private and uploader filters bind params", func(t *testing.T) {
+	t.Run("uploader filter binds params", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{Private: &yes, UploadedBy: "us123", Limit: 10, Offset: 5})
-		if !strings.Contains(query, "private = $1") || !strings.Contains(query, "uploaded_by = $2") {
+		query, args := buildListQuery(ListParams{UploadedBy: "us123", Limit: 10, Offset: 5})
+		if !strings.Contains(query, "uploaded_by = $1") {
 			t.Errorf("query missing bound filters: %q", query)
 		}
-		if len(args) != 4 || args[0] != true || args[1] != "us123" || args[2] != 10 || args[3] != 5 {
-			t.Errorf("args = %v, want [true us123 10 5]", args)
+		if len(args) != 3 || args[0] != "us123" || args[1] != 10 || args[2] != 5 {
+			t.Errorf("args = %v, want [us123 10 5]", args)
 		}
 	})
 
@@ -277,10 +277,9 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("scope applies after the other filters and keeps the archive guard", func(t *testing.T) {
 		t.Parallel()
-		yes := true
-		query, args := buildListQuery(ListParams{AlbumUIDs: []string{"al_2"}, Private: &yes})
-		if !strings.Contains(query, "private = $1") {
-			t.Errorf("query missing private filter: %q", query)
+		query, args := buildListQuery(ListParams{AlbumUIDs: []string{"al_2"}, UploadedBy: "us123"})
+		if !strings.Contains(query, "uploaded_by = $1") {
+			t.Errorf("query missing uploader filter: %q", query)
 		}
 		if !strings.Contains(query, "ap.album_uid = $2") {
 			t.Errorf("query missing bound album scope after filters: %q", query)
@@ -288,7 +287,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 		if !strings.Contains(query, "archived_at IS NULL") {
 			t.Errorf("query dropped the live-only guard: %q", query)
 		}
-		// private + album uid + limit + offset.
+		// uploader + album uid + limit + offset.
 		if len(args) != 4 {
 			t.Fatalf("args = %v, want 4 entries", args)
 		}
@@ -446,15 +445,14 @@ func TestBuildSearchQuery(t *testing.T) {
 
 	t.Run("keeps list filters alongside the full-text match", func(t *testing.T) {
 		t.Parallel()
-		yes := true
-		query, args := buildSearchQuery(ListParams{FullText: "beach", Private: &yes})
-		if !strings.Contains(query, "private = $1") {
-			t.Errorf("query missing private filter: %q", query)
+		query, args := buildSearchQuery(ListParams{FullText: "beach", UploadedBy: "us123"})
+		if !strings.Contains(query, "uploaded_by = $1") {
+			t.Errorf("query missing uploader filter: %q", query)
 		}
 		if !strings.Contains(query, "fts @@ websearch_to_tsquery('simple', immutable_unaccent($2))") {
 			t.Errorf("query missing bound full-text match after filters: %q", query)
 		}
-		// private + fts query (WHERE) + fts query (rank) + limit + offset.
+		// uploader + fts query (WHERE) + fts query (rank) + limit + offset.
 		if len(args) != 5 {
 			t.Fatalf("args = %v, want 5 entries", args)
 		}
@@ -475,19 +473,18 @@ func TestBuildSearchQuery(t *testing.T) {
 func TestBuildCountQuery(t *testing.T) {
 	t.Parallel()
 
-	yes := true
-	query, args := buildCountQuery(ListParams{Private: &yes, Limit: 10, Offset: 5})
+	query, args := buildCountQuery(ListParams{UploadedBy: "us123", Limit: 10, Offset: 5})
 	if !strings.HasPrefix(query, "SELECT count(*) FROM photos") {
 		t.Errorf("count query has wrong prefix: %q", query)
 	}
 	if strings.Contains(query, "ORDER BY") || strings.Contains(query, "LIMIT") || strings.Contains(query, "OFFSET") {
 		t.Errorf("count query must not order or paginate: %q", query)
 	}
-	if !strings.Contains(query, "private = $1") {
+	if !strings.Contains(query, "uploaded_by = $1") {
 		t.Errorf("count query missing filter: %q", query)
 	}
 	// Only the filter arg is bound; limit/offset are ignored by Count.
-	if len(args) != 1 || args[0] != true {
-		t.Errorf("args = %v, want [true]", args)
+	if len(args) != 1 || args[0] != "us123" {
+		t.Errorf("args = %v, want [us123]", args)
 	}
 }

@@ -4,8 +4,8 @@ import { ApiError } from './auth'
  * Bulk-metadata client for `POST /api/v1/photos/bulk` (`internal/bulkapi`):
  * applies one operation set to many photos in a single transaction. The UI uses
  * it from the grid-selection bulk-edit toolbar to add/remove albums and labels,
- * set or clear the description and location, change the private/archive state and
- * toggle the per-user favorite — all in one call — and to render the per-photo
+ * set or clear the description and location, change the archive state and toggle
+ * the per-user favorite — all in one call — and to render the per-photo
  * result summary the endpoint returns.
  */
 
@@ -60,8 +60,6 @@ export interface BulkOperations {
   set_location?: BulkLocation
   /** Clear the GPS location. */
   clear_location?: boolean
-  /** Set the private flag. */
-  set_private?: boolean
   /** Archive (soft-delete) the photos. */
   archive?: boolean
   /** Unarchive the photos. */

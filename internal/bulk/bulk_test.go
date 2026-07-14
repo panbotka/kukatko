@@ -46,13 +46,12 @@ func TestOperations_Summary(t *testing.T) {
 		RemoveLabels:  []string{"lb1"},
 		Description:   new("hi"),
 		ClearLocation: true,
-		Private:       new(true),
 		Rating:        new(5),
 		Flag:          new("reject"),
 	}
 	summary := ops.Summary()
 	for _, key := range []string{
-		"add_albums", "remove_labels", "description", "clear_location", "private", "rating", "flag",
+		"add_albums", "remove_labels", "description", "clear_location", "rating", "flag",
 	} {
 		if _, ok := summary[key]; !ok {
 			t.Errorf("Summary() missing key %q in %v", key, summary)
@@ -78,11 +77,11 @@ func TestOperations_photoColumnUpdate(t *testing.T) {
 	}{
 		{"no column ops", Operations{AddAlbums: []string{"al1"}}, false, 0, nil},
 		{
-			name:       "title and private",
-			ops:        Operations{Title: new("cap"), Private: new(true)},
+			name:       "title and description",
+			ops:        Operations{Title: new("cap"), Description: new("desc")},
 			wantOK:     true,
-			wantArgs:   3, // uid + title + private
-			wantSubstr: []string{"title = $2", "private = $3"},
+			wantArgs:   3, // uid + title + description
+			wantSubstr: []string{"title = $2", "description = $3"},
 		},
 		{
 			name:       "set location",

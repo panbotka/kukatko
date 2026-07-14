@@ -65,7 +65,7 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (z dané množiny uid vrátí ty, co projdou strukturálními List filtry — ignoruje řazení,
   stránkování i `FullText`; companion k sémantickému hledání: caller drží kandidáty z
   embeddings indexu a profiltruje je list filtry, pořadí dle podobnosti si řadí sám)/
-  `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/private/
+  `UpdateMetadata`/`Archive`/`Unarchive`/`Delete`/`List`+`Count` (filtry archived/
   uploader/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
   **album/label scope** `AlbumUID`/`LabelUID` korelovaným `EXISTS` nad `album_photos`/`photo_labels`
   — podklad sdíleného scoped výpisu fotek alba/štítku přes `GET /photos?album=`/`?label=`,
@@ -220,8 +220,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   routy percent-enkódují. Grid velikost je `thumb.GridSize` (`tile_500`) — jediná, kterou payload nese.
   **Autorizace hlídá discovery**: URL se razí jen do odpovědi, na kterou už caller měl právo; objekt
   pak hlídá podpis, který Worker ověřuje. Doc comment balíčku to říká výslovně, protože **starší návrh
-  s veřejným bucketem** dělal z `photos.private` a archivu jen prezentační filtr — to už **neplatí**,
-  jsou to reálné bezpečnostní hranice. Volají ho `photoapi` (`annotate`/`handleUpdate`/`runArchive`/
+  s veřejným bucketem** dělal z archivu jen prezentační filtr — to už **neplatí**,
+  je to reálná bezpečnostní hranice. Volají ho `photoapi` (`annotate`/`handleUpdate`/`runArchive`/
   `resolveSimilar` + media routy), `peopleapi` a `globalsearchapi`; storage jim předává
   `cmd/kukatko/serve.go` jako sdílený `mediaStore`),
   `internal/thumb/`
@@ -317,7 +317,7 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
   newest/oldest/taken_at/added/title/size**/rating** + `order` — **`album` scope obojí přebije**
   na `SortByChronology`+`asc` (album je vždy chronologické, defaulty ostatních pohledů se nemění),
-  `archived` false/true/only, `private`,
+  `archived` false/true/only,
   `has_gps`, `taken_after`/`taken_before`, `camera`, `lens`, `uploader`, `q`, **`year` (čtyřciferný
   1000–9999) → `Year`**, **`album`/`label`
   scope** → `AlbumUID`/`LabelUID`, **`person` scope (multi, AND)** → `SubjectUIDs`,
@@ -846,7 +846,7 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   photoUIDs, ops Operations) (Result, error)` — **celá dávka v jediné transakci** s audit
   záznamem; `Operations` = volitelná pole `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
   `Title`/`Description *string` (nil=beze změny, ""=clear), `Location *Location`+`ClearLocation`,
-  `Private`/`Archive`/`Favorite *bool`, **`Rating *int` (0–5) + `Flag *string` (none/pick/reject/eye)**;
+  `Archive`/`Favorite *bool`, **`Rating *int` (0–5) + `Flag *string` (none/pick/reject/eye)**;
   `Apply` validuje dávku (ErrNoPhotos/ErrNoOperations/
   ErrBatchTooLarge), ověří existenci alb/štítků v add operacích (ErrAlbumNotFound/ErrLabelNotFound),
   pak per-foto: duplicitní uid → `skipped`, neexistující fotka → `error` **bez abortu ostatních**,
@@ -889,7 +889,7 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   souřadnice na 5 desetin, uncached lookup přes **token-bucket** `rateLimiter`→429 šetří kredity,
   odpověď zjednodušená + `Cache-Control: private`), `GET /map/photos` (GeoJSON
   **FeatureCollection**, `parseGeoParams` vynutí `HasGPS=true` + ctí `taken_after`/`taken_before`/
-  `album`/`label`/`archived`/`private`, `Limit=MaxGeoPhotos`, řazení taken_at desc; každá feature
+  `album`/`label`/`archived`, `Limit=MaxGeoPhotos`, řazení taken_at desc; každá feature
   `Point` se souřadnicí RFC 7946 `[lng,lat]` a properties `uid`/`title`/`taken_at`/`media_type`/
   relativní `thumb` cesta `tile_224`, fotky bez obou souřadnic se přeskočí); defaulty cache 24h /
   rate 5/s burst 10 / max 50000 features; mountuje se `server.WithAPI` (`buildMapsAPI` v
