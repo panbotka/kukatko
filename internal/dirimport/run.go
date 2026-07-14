@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -52,33 +53,42 @@ func (s *Service) Import(ctx context.Context, opts Options) (Result, error) {
 // is reported as it was classified, and every media file is hashed and looked up
 // so it can be called new or duplicate. Hashing is the same SHA256 the real
 // ingest computes, so the verdict is the one the real run would reach.
+//
+// The sidecars are matched and read too, so the report a dry run prints — what
+// paired, what did not, what could not be parsed — is the one the real run would
+// produce, before a single byte is written.
 func (s *Service) dryRun(ctx context.Context, entries []planEntry, opts Options) Result {
-	tal := newTally(len(entries), opts.Progress)
+	idx := buildSidecarIndex(entries, opts)
+	tal := newTally(len(entries), opts.Progress, idx.report)
 	s.recordSkips(entries, tal)
 	s.process(ctx, candidates(entries), tal, 0, func(ctx context.Context, entry planEntry) FileResult {
-		return s.classifyAgainstCatalogue(ctx, entry)
+		return s.classifyAgainstCatalogue(ctx, entry, idx)
 	})
-	return Result{Counts: tal.snapshot(), DryRun: true}
+	counts, sidecars := tal.snapshot()
+	return Result{Counts: counts, Sidecars: sidecars, DryRun: true}
 }
 
 // classifyAgainstCatalogue hashes one media file and reports whether a real run
 // would create it or find it already catalogued. A file that cannot be read is
 // reported as failed — the real run would fail on it too.
-func (s *Service) classifyAgainstCatalogue(ctx context.Context, entry planEntry) FileResult {
+func (s *Service) classifyAgainstCatalogue(ctx context.Context, entry planEntry, idx sidecarIndex) FileResult {
+	_, res := s.readSidecar(ctx, entry, idx)
+	res.Path = entry.rel
+
 	hash, err := hashFile(entry.abs)
 	if err != nil {
-		return failedResult(entry.rel, err)
+		res.Outcome, res.Err = OutcomeFailed, err
+		return res
 	}
 	existing, err := s.photos.GetByFileHash(ctx, hash)
 	if err != nil {
-		return FileResult{Path: entry.rel, Outcome: OutcomeImported}
+		res.Outcome = OutcomeImported
+		return res
 	}
-	return FileResult{
-		Path:         entry.rel,
-		Outcome:      OutcomeDuplicate,
-		PhotoUID:     existing.UID,
-		ExistingPath: existing.FilePath,
-	}
+	res.Outcome = OutcomeDuplicate
+	res.PhotoUID = existing.UID
+	res.ExistingPath = existing.FilePath
+	return res
 }
 
 // run performs the real import: it opens an import_runs row, resolves the album
@@ -99,12 +109,13 @@ func (s *Service) run(ctx context.Context, entries []planEntry, opts Options) (R
 		return result, err
 	}
 
-	tal := newTally(len(entries), opts.Progress)
+	idx := buildSidecarIndex(entries, opts)
+	tal := newTally(len(entries), opts.Progress, idx.report)
 	s.recordSkips(entries, tal)
 	s.process(ctx, candidates(entries), tal, run.ID, func(ctx context.Context, entry planEntry) FileResult {
-		return s.ingestOne(ctx, entry, opts.UploadedBy, dest)
+		return s.ingestOne(ctx, entry, opts.UploadedBy, dest, idx)
 	})
-	result.Counts = tal.snapshot()
+	result.Counts, result.Sidecars = tal.snapshot()
 
 	if err := ctx.Err(); err != nil {
 		interrupted := fmt.Errorf("%w: %w", ErrInterrupted, err)
@@ -128,45 +139,60 @@ func (s *Service) fail(ctx context.Context, runID int64, cause error, counts Cou
 
 // ingestOne streams one media file through the ingest pipeline and maps its
 // per-file result onto a FileResult, filing the resulting photo under the album
-// and labels the run targets. A duplicate is resolved back to the photo already
-// holding those bytes so the user sees what the file collided with.
-func (s *Service) ingestOne(ctx context.Context, entry planEntry, uploadedBy string, dest target) FileResult {
+// and labels the run targets. The file's sidecar (a Google Takeout JSON, an XMP)
+// travels with it: for an export whose EXIF was stripped, that sidecar *is* the
+// photo's date, caption and location.
+//
+// A duplicate is resolved back to the photo already holding those bytes so the
+// user sees what the file collided with — and its metadata gaps are filled from
+// the sidecar, which is what makes re-importing a folder worth doing after the
+// sidecars were noticed.
+func (s *Service) ingestOne(
+	ctx context.Context, entry planEntry, uploadedBy string, dest target, idx sidecarIndex,
+) FileResult {
+	sc, res := s.readSidecar(ctx, entry, idx)
+	res.Path = entry.rel
+
 	file, err := os.Open(entry.abs)
 	if err != nil {
-		return failedResult(entry.rel, fmt.Errorf("dirimport: opening file: %w", err))
+		return res.failed(fmt.Errorf("dirimport: opening file: %w", err))
 	}
 	defer func() { _ = file.Close() }()
 
-	res := s.ingest.Ingest(ctx, file, filepath.Base(entry.abs), uploadedBy)
-	s.logWarnings(entry.rel, res.Warnings)
+	ingested := s.ingest.IngestFile(ctx, file, ingest.Request{
+		Filename:   filepath.Base(entry.abs),
+		UploadedBy: uploadedBy,
+		Sidecar:    sc,
+	})
+	s.logWarnings(entry.rel, ingested.Warnings)
 
-	switch res.Outcome {
+	switch ingested.Outcome {
 	case ingest.OutcomeCreated:
-		s.applyTarget(ctx, res.PhotoUID, dest)
-		return FileResult{
-			Path:     entry.rel,
-			Outcome:  OutcomeImported,
-			PhotoUID: res.PhotoUID,
-			Warnings: warningCodes(res.Warnings),
-		}
+		s.applyTarget(ctx, ingested.PhotoUID, dest)
+		s.applyCuration(ctx, ingested.PhotoUID, uploadedBy, sc)
+		res.Outcome = OutcomeImported
+		res.PhotoUID = ingested.PhotoUID
+		res.Warnings = warningCodes(ingested.Warnings)
+		return res
 	case ingest.OutcomeDuplicate:
-		s.applyTarget(ctx, res.PhotoUID, dest)
-		return FileResult{
-			Path:         entry.rel,
-			Outcome:      OutcomeDuplicate,
-			PhotoUID:     res.PhotoUID,
-			ExistingPath: s.libraryPath(ctx, res.PhotoUID),
-		}
+		s.applyTarget(ctx, ingested.PhotoUID, dest)
+		s.fillFromSidecar(ctx, ingested.PhotoUID, sc)
+		res.Outcome = OutcomeDuplicate
+		res.PhotoUID = ingested.PhotoUID
+		res.ExistingPath = s.libraryPath(ctx, ingested.PhotoUID)
+		return res
 	case ingest.OutcomeError:
-		return failedResult(entry.rel, errors.New(res.Error))
+		return res.failed(errors.New(ingested.Error))
 	}
-	return failedResult(entry.rel, fmt.Errorf("dirimport: unknown ingest outcome %q", res.Outcome))
+	return res.failed(fmt.Errorf("dirimport: unknown ingest outcome %q", ingested.Outcome))
 }
 
-// failedResult builds the result of a file that is media but could not be
-// ingested. The run records it and carries on.
-func failedResult(rel string, err error) FileResult {
-	return FileResult{Path: rel, Outcome: OutcomeFailed, Err: err}
+// failed marks a result as a per-file failure, keeping whatever the run already
+// knew about the file (its path, its sidecar). The run records it and carries on.
+func (r FileResult) failed(err error) FileResult {
+	r.Outcome = OutcomeFailed
+	r.Err = err
+	return r
 }
 
 // logWarnings reports the ingest pipeline's non-fatal per-file warnings (a failed
@@ -434,16 +460,20 @@ func hashFile(path string) (string, error) {
 type tally struct {
 	mu       sync.Mutex
 	counts   Counts
+	sidecars SidecarReport
 	total    int
 	done     int
 	progress func(res FileResult, done, total int)
 }
 
 // newTally returns a tally over total files, reporting to progress (which may be
-// nil).
-func newTally(total int, progress func(res FileResult, done, total int)) *tally {
+// nil). The sidecar report starts from what the matcher already knows — what
+// paired and what did not — and the workers add to it what each sidecar turned
+// out to be worth once read.
+func newTally(total int, progress func(res FileResult, done, total int), sidecars SidecarReport) *tally {
 	return &tally{
 		counts:   Counts{ByReason: make(map[SkipReason]int)},
+		sidecars: sidecars,
 		total:    total,
 		progress: progress,
 	}
@@ -467,23 +497,40 @@ func (t *tally) record(res FileResult) (Counts, bool) {
 	case OutcomeFailed:
 		t.counts.Failed++
 	}
+	t.recordSidecarLocked(res)
 	t.done++
 	if t.progress != nil {
 		t.progress(res, t.done, t.total)
 	}
-	return t.snapshotLocked(), t.done%checkpointEvery == 0
+	return t.countsLocked(), t.done%checkpointEvery == 0
 }
 
-// snapshot returns a copy of the tally, safe to read while workers are still
-// running.
-func (t *tally) snapshot() Counts {
+// recordSidecarLocked notes what became of one file's sidecar; the caller must
+// hold the mutex.
+func (t *tally) recordSidecarLocked(res FileResult) {
+	switch {
+	case res.Sidecar == "":
+	case res.SidecarErr != nil:
+		t.sidecars.Unreadable = append(t.sidecars.Unreadable, res.Sidecar)
+	default:
+		t.sidecars.Applied++
+	}
+}
+
+// snapshot returns a copy of the tally and of the sidecar report, safe to read
+// while workers are still running.
+func (t *tally) snapshot() (Counts, SidecarReport) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.snapshotLocked()
+	sidecars := t.sidecars
+	sidecars.Unreadable = slices.Sorted(slices.Values(t.sidecars.Unreadable))
+	sidecars.Orphans = slices.Clone(t.sidecars.Orphans)
+	sidecars.Missing = slices.Clone(t.sidecars.Missing)
+	return t.countsLocked(), sidecars
 }
 
-// snapshotLocked copies the tally; the caller must hold the mutex.
-func (t *tally) snapshotLocked() Counts {
+// countsLocked copies the tally; the caller must hold the mutex.
+func (t *tally) countsLocked() Counts {
 	counts := t.counts
 	counts.ByReason = maps.Clone(t.counts.ByReason)
 	return counts

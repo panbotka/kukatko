@@ -32,6 +32,12 @@ const (
 	SourceExif Source = "exif"
 	// SourceFilename means TakenAt was parsed from the file name (best effort).
 	SourceFilename Source = "filename"
+	// SourceSidecar means TakenAt came from a sidecar written beside the file by
+	// an export (a Google Takeout JSON, an XMP). It is the true capture time for
+	// an export whose EXIF was stripped or overwritten in re-encoding, so it
+	// outranks a filename guess — and outranks EXIF itself when EXIF's date is
+	// implausibly later (see internal/sidecar).
+	SourceSidecar Source = "sidecar"
 	// SourceUnknown means no capture time could be determined.
 	SourceUnknown Source = "unknown"
 )

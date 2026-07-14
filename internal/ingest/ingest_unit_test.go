@@ -9,9 +9,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/sidecar"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -270,3 +272,62 @@ func TestHandleUpload_rejectsNoFiles(t *testing.T) {
 
 // compile-time assertion that NopEnqueuer satisfies the JobEnqueuer interface.
 var _ JobEnqueuer = NopEnqueuer{}
+
+// TestApplySidecar_strippedExif is the Google Takeout case: the exported JPEG
+// carries no EXIF at all, so the sidecar beside it is the photo's whole history —
+// its capture time (which also decides the YYYY/MM the original is filed under),
+// its caption and its GPS.
+func TestApplySidecar_strippedExif(t *testing.T) {
+	t.Parallel()
+
+	taken := time.Date(2016, 6, 6, 18, 2, 22, 0, time.UTC)
+	media := mediaMeta{kind: photos.MediaImage, shared: exif.Metadata{TakenAtSource: exif.SourceUnknown}}
+	applySidecar(&media, &sidecar.Metadata{
+		Source:      sidecar.SourceGoogle,
+		TakenAt:     &taken,
+		Title:       "Lipno",
+		Description: "Sunset over Lipno",
+		Lat:         new(48.6417),
+		Lng:         new(14.0453),
+	})
+
+	if media.shared.TakenAt == nil || !media.shared.TakenAt.Equal(taken) {
+		t.Fatalf("TakenAt = %v, want %v", media.shared.TakenAt, taken)
+	}
+	if media.shared.TakenAtSource != exif.SourceSidecar {
+		t.Errorf("TakenAtSource = %q, want %q", media.shared.TakenAtSource, exif.SourceSidecar)
+	}
+
+	photo := buildPhoto(storage.StoredFile{RelPath: "2016/06/a.jpg", Hash: "h"}, media, "")
+	if photo.Title != "Lipno" || photo.Description != "Sunset over Lipno" {
+		t.Errorf("title = %q, description = %q, want the sidecar's caption fields",
+			photo.Title, photo.Description)
+	}
+	if photo.TakenAt == nil || !photo.TakenAt.Equal(taken) {
+		t.Errorf("photo taken_at = %v, want the sidecar's %v", photo.TakenAt, taken)
+	}
+	if photo.TakenAtSource != string(exif.SourceSidecar) {
+		t.Errorf("photo taken_at_source = %q, want sidecar", photo.TakenAtSource)
+	}
+	if photo.Lat == nil || *photo.Lat != 48.6417 {
+		t.Errorf("photo lat = %v, want the sidecar's fix", photo.Lat)
+	}
+}
+
+// TestApplySidecar_none leaves a plain upload exactly as the file described
+// itself.
+func TestApplySidecar_none(t *testing.T) {
+	t.Parallel()
+
+	taken := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	media := mediaMeta{
+		kind:   photos.MediaImage,
+		shared: exif.Metadata{TakenAt: &taken, TakenAtSource: exif.SourceExif},
+	}
+	applySidecar(&media, nil)
+
+	photo := buildPhoto(storage.StoredFile{RelPath: "2020/01/a.jpg", Hash: "h"}, media, "")
+	if photo.TakenAtSource != string(exif.SourceExif) || photo.Title != "" || photo.Description != "" {
+		t.Errorf("a file with no sidecar was changed: %+v", photo)
+	}
+}

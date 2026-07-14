@@ -41,6 +41,7 @@ type dirImportOptions struct {
 	labels      []string
 	recursive   bool
 	dryRun      bool
+	noSidecars  bool
 	concurrency int
 	uploader    string
 }
@@ -62,9 +63,16 @@ func newImportDirCmd() *cobra.Command {
 			"content hash, so a re-run skips everything already in the library (reporting it as a " +
 			"duplicate) and imports only what is new. A file that fails is logged and the run " +
 			"continues; the command exits non-zero if anything failed.\n\n" +
+			"Metadata sidecars are read: a Google Photos (Takeout) export carries the capture " +
+			"date, the caption and the GPS in a .json file next to a media file whose own EXIF was " +
+			"stripped in re-encoding, and Apple exports carry them in a .xmp. They are matched to " +
+			"their media file, folded into it (EXIF wins where it is plausible; the sidecar wins " +
+			"where EXIF is missing, guessed, or bogusly dated to the export), and every sidecar " +
+			"that matched nothing — and every media file that got none — is reported. No albums " +
+			"are ever created from an export: use --album. Pass --no-sidecars to ignore them.\n\n" +
 			"Dotfiles, @eaDir/__MACOSX, Thumbs.db/.DS_Store, sidecars (.xmp/.json/.aae/.thm) and " +
-			"unsupported formats are skipped and counted by reason. Symlinks are skipped, never " +
-			"followed. Use --dry-run to see what a run would do without writing anything.",
+			"unsupported formats are skipped as media and counted by reason. Symlinks are skipped, " +
+			"never followed. Use --dry-run to see what a run would do without writing anything.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runImportDir(cmd, args[0])
@@ -78,6 +86,8 @@ func newImportDirCmd() *cobra.Command {
 	cmd.Flags().Bool("no-recursive", false, "import only the named directory, not its subdirectories")
 	cmd.Flags().Bool("dry-run", false,
 		"report what would be imported (new / duplicate / skipped) without writing anything")
+	cmd.Flags().Bool("no-sidecars", false,
+		"ignore the metadata sidecars beside the media (a Takeout export then arrives with no dates)")
 	cmd.Flags().Int("concurrency", dirimport.DefaultConcurrency,
 		fmt.Sprintf("how many files to ingest in parallel (capped at %d — thumbnailing is memory-hungry)",
 			dirimport.MaxConcurrency))
@@ -112,6 +122,9 @@ func dirImportOptionsFromFlags(cmd *cobra.Command, root string) (dirImportOption
 	}
 	if opts.dryRun, err = flags.GetBool("dry-run"); err != nil {
 		return opts, fmt.Errorf("reading --dry-run: %w", err)
+	}
+	if opts.noSidecars, err = flags.GetBool("no-sidecars"); err != nil {
+		return opts, fmt.Errorf("reading --no-sidecars: %w", err)
 	}
 	if opts.concurrency, err = flags.GetInt("concurrency"); err != nil {
 		return opts, fmt.Errorf("reading --concurrency: %w", err)
@@ -174,6 +187,7 @@ func executeImportDir(
 		Root:       opts.root,
 		Recursive:  opts.recursive,
 		DryRun:     opts.dryRun,
+		NoSidecars: opts.noSidecars,
 		Album:      opts.album,
 		Labels:     opts.labels,
 		UploadedBy: uploader,
@@ -196,13 +210,27 @@ func printFileResult(cmd *cobra.Command, res dirimport.FileResult, done, total i
 	prefix := fmt.Sprintf("[%*d/%d] %-9s %s", len(strconv.Itoa(total)), done, total, res.Outcome, res.Path)
 	switch res.Outcome {
 	case dirimport.OutcomeDuplicate:
-		cmd.Printf("%s%s\n", prefix, duplicateSuffix(res.ExistingPath))
+		cmd.Printf("%s%s%s\n", prefix, duplicateSuffix(res.ExistingPath), sidecarSuffix(res))
 	case dirimport.OutcomeSkipped:
 		cmd.Printf("%s (%s)\n", prefix, res.Reason)
 	case dirimport.OutcomeFailed:
 		cmd.Printf("%s: %v\n", prefix, res.Err)
 	case dirimport.OutcomeImported:
-		cmd.Printf("%s%s\n", prefix, warningSuffix(res.Warnings))
+		cmd.Printf("%s%s%s\n", prefix, warningSuffix(res.Warnings), sidecarSuffix(res))
+	}
+}
+
+// sidecarSuffix names the metadata sidecar that travelled with a file — or says
+// why it did not, which is the difference between a photo that kept its date and
+// one that quietly lost it.
+func sidecarSuffix(res dirimport.FileResult) string {
+	switch {
+	case res.Sidecar == "":
+		return ""
+	case res.SidecarErr != nil:
+		return fmt.Sprintf(" (sidecar %s unreadable: %v)", res.Sidecar, res.SidecarErr)
+	default:
+		return fmt.Sprintf(" (sidecar: %s)", res.Sidecar)
 	}
 }
 
@@ -240,9 +268,43 @@ func printImportSummary(cmd *cobra.Command, result dirimport.Result, elapsed tim
 	if breakdown := skipBreakdown(counts.ByReason); breakdown != "" {
 		cmd.Printf("skipped: %s\n", breakdown)
 	}
+	printSidecarSummary(cmd, result.Sidecars)
 	if !result.DryRun && counts.Imported > 0 {
 		cmd.Println("embedding and face-detection jobs are queued in Postgres; " +
 			"they drain when the embedding service is reachable")
+	}
+}
+
+// maxListed caps how many paths a summary list prints before it says how many
+// more there are: a Takeout export with a thousand unmatched sidecars needs to
+// say so, not to say it a thousand times.
+const maxListed = 10
+
+// printSidecarSummary reports what became of the metadata sidecars: how many were
+// applied, and — file by file — every one that matched nothing, could not be read,
+// or was missing where its neighbours had one. Those three lists are the whole
+// point of reading sidecars at all: they are where a lost capture date shows up
+// while it can still be fixed, rather than years later in an empty timeline.
+func printSidecarSummary(cmd *cobra.Command, report dirimport.SidecarReport) {
+	if report.Matched == 0 && len(report.Orphans) == 0 && len(report.Missing) == 0 {
+		return
+	}
+	cmd.Printf("sidecars: matched=%d applied=%d unreadable=%d unmatched=%d media-without-sidecar=%d\n",
+		report.Matched, report.Applied, len(report.Unreadable), len(report.Orphans), len(report.Missing))
+	printPathList(cmd, "sidecar could not be read", report.Unreadable)
+	printPathList(cmd, "sidecar matched no media file", report.Orphans)
+	printPathList(cmd, "media file has no sidecar", report.Missing)
+}
+
+// printPathList prints up to maxListed paths under a label, then how many were
+// left unsaid.
+func printPathList(cmd *cobra.Command, label string, paths []string) {
+	for i, path := range paths {
+		if i == maxListed {
+			cmd.Printf("  %s: … and %d more\n", label, len(paths)-maxListed)
+			return
+		}
+		cmd.Printf("  %s: %s\n", label, path)
 	}
 }
 
@@ -313,6 +375,8 @@ func buildDirImportService(cfg *config.Config, db *database.DB, concurrency int)
 		Ingest:      ingestSvc,
 		Runs:        importer.NewStore(pool),
 		Photos:      photoStore,
+		Filler:      photoStore,
+		Curation:    organizeStore,
 		Albums:      organizeStore,
 		Labels:      organizeStore,
 		Concurrency: concurrency,

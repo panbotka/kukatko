@@ -11,8 +11,15 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - **Import z PhotoPrismu** přes API (+ stažení originálů) a **migrace dat z photo-sorteru**.
 - **Nahrání složky z disku:** `kukatko import dir <path>` — namíříš ho na adresář (skeny, karta
   z foťáku, starý backup) a projde ho rekurzivně stejnou pipeline jako upload z prohlížeče.
-  Originály jen **kopíruje**, junk a sidecary přeskakuje s důvodem, duplicity pozná podle SHA256 —
+  Originály jen **kopíruje**, junk přeskakuje s důvodem, duplicity pozná podle SHA256 —
   takže se **nebojíš pustit ho znovu** (a `--dry-run` napřed řekne, co by udělal).
+- **Import Google Photos exportu bez ztráty dat a popisků:** Takeout nese metadata **vedle** fotky —
+  exportovaný JPEG má EXIF oříznutý a skutečné datum pořízení, popisek i GPS leží v `.json` souboru
+  vedle něj. Kukátko je přečte a připojí ke správné fotce (přežije i celý bordel Googlích jmen:
+  `…supplemental-metadata.json` i useknuté varianty, přesunutý index kopie), stejně tak Apple `.xmp`.
+  Datum ze sidecaru vyhraje nad tím, které Takeout při re-encode falešně zapsal do EXIFu; **alba se
+  z exportu nezakládají** a co se nespárovalo, se **vypíše** — tichý nesoulad je způsob, jak přijít
+  o desetiletí dat. Složku naimportovanou dřív opraví prostý re-run (doplní jen díry).
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé

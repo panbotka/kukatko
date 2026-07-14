@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/sidecar"
 )
 
 // fakeIngester records what it was asked to ingest and replies from a scripted
@@ -25,33 +26,121 @@ import (
 // without storage, a thumbnailer or a database.
 type fakeIngester struct {
 	mu sync.Mutex
-	// seen is every filename handed to Ingest, in call order.
+	// seen is every filename handed to IngestFile, in call order.
 	seen []string
 	// script maps a filename to the outcome the pipeline should report; a filename
 	// that is absent is created.
 	script map[string]ingest.FileResult
 	// uploaders records the uploadedBy passed with each call.
 	uploaders []string
+	// sidecars records the sidecar metadata passed with each call, by filename.
+	sidecars map[string]*sidecar.Metadata
 }
 
-// Ingest records the call, drains the reader (as the real pipeline does) and
+// IngestFile records the call, drains the reader (as the real pipeline does) and
 // replies from the script.
-func (f *fakeIngester) Ingest(_ context.Context, src io.Reader, filename, uploadedBy string) ingest.FileResult {
+func (f *fakeIngester) IngestFile(_ context.Context, src io.Reader, req ingest.Request) ingest.FileResult {
 	_, _ = io.Copy(io.Discard, src)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.seen = append(f.seen, filename)
-	f.uploaders = append(f.uploaders, uploadedBy)
-	if res, ok := f.script[filename]; ok {
+	f.seen = append(f.seen, req.Filename)
+	f.uploaders = append(f.uploaders, req.UploadedBy)
+	if f.sidecars == nil {
+		f.sidecars = map[string]*sidecar.Metadata{}
+	}
+	f.sidecars[req.Filename] = req.Sidecar
+	if res, ok := f.script[req.Filename]; ok {
 		return res
 	}
 	return ingest.FileResult{
-		Filename: filename,
+		Filename: req.Filename,
 		Status:   http.StatusCreated,
 		Outcome:  ingest.OutcomeCreated,
-		PhotoUID: "uid-" + filename,
+		PhotoUID: "uid-" + req.Filename,
 	}
+}
+
+// sidecarFor returns the sidecar metadata the pipeline was handed for a file.
+func (f *fakeIngester) sidecarFor(filename string) *sidecar.Metadata {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.sidecars[filename]
+}
+
+// fakeFiller records the sidecar backfills applied to already-catalogued photos.
+type fakeFiller struct {
+	mu sync.Mutex
+	// filled maps a photo UID to the fill it received.
+	filled map[string]photos.MetadataFill
+}
+
+// FillMissingMetadata records the fill and reports it as a change.
+func (f *fakeFiller) FillMissingMetadata(
+	_ context.Context, uid string, fill photos.MetadataFill,
+) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.filled == nil {
+		f.filled = map[string]photos.MetadataFill{}
+	}
+	f.filled[uid] = fill
+	return true, nil
+}
+
+// fillFor returns the fill applied to a photo, and whether there was one.
+func (f *fakeFiller) fillFor(uid string) (photos.MetadataFill, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fill, ok := f.filled[uid]
+	return fill, ok
+}
+
+// fakeCuration records the per-user favourites and ratings an import applied.
+type fakeCuration struct {
+	mu sync.Mutex
+	// favorites maps a user UID to the photos favourited for them.
+	favorites map[string][]string
+	// ratings maps a user UID and photo UID to the stars set.
+	ratings map[string]int
+}
+
+// AddFavorite records a favourite.
+func (f *fakeCuration) AddFavorite(_ context.Context, userUID, photoUID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.favorites == nil {
+		f.favorites = map[string][]string{}
+	}
+	f.favorites[userUID] = append(f.favorites[userUID], photoUID)
+	return nil
+}
+
+// SetRating records a rating.
+func (f *fakeCuration) SetRating(_ context.Context, userUID, photoUID string, rating int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ratings == nil {
+		f.ratings = map[string]int{}
+	}
+	f.ratings[userUID+"/"+photoUID] = rating
+	return nil
+}
+
+// favoritesOf returns the photos favourited for a user, sorted.
+func (f *fakeCuration) favoritesOf(userUID string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := slices.Clone(f.favorites[userUID])
+	slices.Sort(out)
+	return out
+}
+
+// ratingOf returns the stars set for a user's photo.
+func (f *fakeCuration) ratingOf(userUID, photoUID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ratings[userUID+"/"+photoUID]
 }
 
 // ingested returns the filenames handed to Ingest, sorted for comparison (the
@@ -250,6 +339,8 @@ type testEnv struct {
 	runs      *fakeRuns
 	photos    *fakePhotos
 	organizer *fakeOrganize
+	filler    *fakeFiller
+	curation  *fakeCuration
 }
 
 // newEnv builds a Service over fresh fakes, with the ingest pipeline scripted by
@@ -261,13 +352,17 @@ func newEnv(t *testing.T, script map[string]ingest.FileResult) *testEnv {
 		runs:      &fakeRuns{},
 		photos:    &fakePhotos{byHash: map[string]photos.Photo{}, byUID: map[string]photos.Photo{}},
 		organizer: newFakeOrganize(),
+		filler:    &fakeFiller{},
+		curation:  &fakeCuration{},
 	}
 	env.svc = New(Config{
-		Ingest: env.ingester,
-		Runs:   env.runs,
-		Photos: env.photos,
-		Albums: env.organizer,
-		Labels: env.organizer,
+		Ingest:   env.ingester,
+		Runs:     env.runs,
+		Photos:   env.photos,
+		Filler:   env.filler,
+		Curation: env.curation,
+		Albums:   env.organizer,
+		Labels:   env.organizer,
 	})
 	return env
 }

@@ -63,6 +63,14 @@ func TestDirImportOptionsFromFlags(t *testing.T) {
 				concurrency: dirimport.DefaultConcurrency, uploader: "botka",
 			},
 		},
+		{
+			name: "sidecars are read by default and --no-sidecars turns them off",
+			args: []string{"--no-sidecars"},
+			want: dirImportOptions{
+				root: "/photos", recursive: true, noSidecars: true,
+				concurrency: dirimport.DefaultConcurrency,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
