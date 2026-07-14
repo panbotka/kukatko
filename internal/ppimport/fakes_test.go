@@ -49,7 +49,10 @@ type fakeClient struct {
 	// details answers the photo-detail endpoint by photo uid. Only the detail
 	// carries a photo's albums and labels — the listing does not, which is why the
 	// fake keeps them apart rather than deriving one from the other.
-	details     map[string]photoprism.PhotoDetail
+	details map[string]photoprism.PhotoDetail
+	// markers holds each photo's face markers by uid. They are served ONLY on the
+	// detail, never on a listed photo — the same asymmetry PhotoPrism has.
+	markers     map[string][]photoprism.Marker
 	detailErr   error
 	files       map[string][]byte
 	downloadErr map[string]error
@@ -100,8 +103,10 @@ func intersectPhotos(a, b []photoprism.Photo) []photoprism.Photo {
 	return out
 }
 
-// GetPhoto returns the photo's registered detail (its albums and labels),
-// recording the call so a test can pin who asks for a detail and who must not.
+// GetPhoto returns the photo's detail — its albums, its labels AND its markers,
+// none of which the listing payload serves — recording the call so a test can pin
+// who asks for a detail and who must not. A photo with no registered context still
+// has a detail, as it does in PhotoPrism; only an unknown uid is a 404.
 func (c *fakeClient) GetPhoto(_ context.Context, uid string) (photoprism.PhotoDetail, error) {
 	c.mu.Lock()
 	c.detailCalls = append(c.detailCalls, uid)
@@ -111,9 +116,45 @@ func (c *fakeClient) GetPhoto(_ context.Context, uid string) (photoprism.PhotoDe
 	}
 	detail, ok := c.details[uid]
 	if !ok {
-		return photoprism.PhotoDetail{}, photoprism.ErrNotFound
+		photo, found := c.photoByUID(uid)
+		if !found {
+			return photoprism.PhotoDetail{}, photoprism.ErrNotFound
+		}
+		detail = photoprism.PhotoDetail{Photo: photo}
 	}
+	detail.Photo = c.withMarkers(detail.Photo)
 	return detail, nil
+}
+
+// photoByUID finds a listed photo by uid.
+func (c *fakeClient) photoByUID(uid string) (photoprism.Photo, bool) {
+	for i := range c.photos {
+		if c.photos[i].UID == uid {
+			return c.photos[i], true
+		}
+	}
+	return photoprism.Photo{}, false
+}
+
+// withMarkers returns the photo with its face markers on the primary file. Only
+// the detail carries them: PhotoPrism's listing serves every file with an empty
+// marker array, so the fake keeps them out of the listed photos entirely — an
+// importer that reads markers off a listing imports nobody here, exactly as it
+// does against a real PhotoPrism.
+func (c *fakeClient) withMarkers(p photoprism.Photo) photoprism.Photo {
+	markers := c.markers[p.UID]
+	if len(markers) == 0 {
+		return p
+	}
+	files := make([]photoprism.File, len(p.Files))
+	copy(files, p.Files)
+	for i := range files {
+		if files[i].Primary {
+			files[i].Markers = markers
+		}
+	}
+	p.Files = files
+	return p
 }
 
 // detailCount reports how many photo details were requested.
@@ -574,12 +615,25 @@ func (s *fakePeopleStore) CreateSubject(_ context.Context, subj people.Subject) 
 	return subj, nil
 }
 
-// CreateMarker records a marker.
+// CreateMarker records a marker, keeping a preset UID (that is how the importer
+// carries PhotoPrism's marker identity over) and generating one otherwise.
 func (s *fakePeopleStore) CreateMarker(_ context.Context, m people.Marker) (people.Marker, error) {
 	s.seq++
-	m.UID = fmt.Sprintf("mk%08d", s.seq)
+	if m.UID == "" {
+		m.UID = fmt.Sprintf("mk%08d", s.seq)
+	}
 	s.markers = append(s.markers, m)
 	return m, nil
+}
+
+// GetMarkerByUID returns the recorded marker with the given UID.
+func (s *fakePeopleStore) GetMarkerByUID(_ context.Context, uid string) (people.Marker, error) {
+	for i := range s.markers {
+		if s.markers[i].UID == uid {
+			return s.markers[i], nil
+		}
+	}
+	return people.Marker{}, people.ErrMarkerNotFound
 }
 
 // fakeEnqueuer records the photo UIDs jobs were scheduled for.

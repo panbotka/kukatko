@@ -70,12 +70,21 @@ func newHarness(client *fakeClient) *harness {
 
 // makePhoto builds a PhotoPrism photo with a single primary file whose SHA1 hash
 // and stored bytes are registered on the client, plus optional markers.
+// makePhoto registers a photo the fake will list, and its face markers. The
+// returned LISTING photo carries no markers — PhotoPrism only serves them on the
+// detail — so they are stashed for GetPhoto to attach.
 func (c *fakeClient) makePhoto(uid string, updated time.Time, title string, markers ...photoprism.Marker) photoprism.Photo {
 	hash := "h-" + uid
 	if c.files == nil {
 		c.files = map[string][]byte{}
 	}
 	c.files[hash] = []byte("bytes-" + uid)
+	if len(markers) > 0 {
+		if c.markers == nil {
+			c.markers = map[string][]photoprism.Marker{}
+		}
+		c.markers[uid] = markers
+	}
 	return photoprism.Photo{
 		UID:       uid,
 		Type:      "image",
@@ -85,7 +94,7 @@ func (c *fakeClient) makePhoto(uid string, updated time.Time, title string, mark
 		Width:     100,
 		Height:    80,
 		Files: []photoprism.File{
-			{UID: "f-" + uid, Hash: hash, Primary: true, Mime: "image/jpeg", Markers: markers},
+			{UID: "f-" + uid, Hash: hash, Primary: true, Mime: "image/jpeg"},
 		},
 	}
 }
@@ -350,8 +359,10 @@ var scopedLabel = photoprism.PhotoLabel{
 // live on the photo *detail* only, exactly as the source serves them.
 func scopedFixture() *fakeClient {
 	client := &fakeClient{}
+	// The marker carries its PhotoPrism UID, as every real one does: that UID is
+	// what makes importing it idempotent across runs.
 	inScope := client.makePhoto("pp1", tScopedNew, "Beach", photoprism.Marker{
-		Type: "face", Name: scopedPerson, X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Score: 90,
+		UID: "ppmk1", Type: "face", Name: scopedPerson, X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Score: 90,
 	})
 	outside := client.makePhoto("pp2", tScopedOld, "Sunset")
 	client.photos = []photoprism.Photo{inScope, outside}
@@ -504,8 +515,11 @@ func TestImportScoped_rerunChangesNothing(t *testing.T) {
 	// The re-run still resolves the context of the photo it skipped, and mapping it
 	// a second time changes nothing.
 	assertWholeContextMapped(t, h)
+	// The people are re-read from the detail on every scoped run — that is what lets
+	// a re-run backfill photos an earlier run brought over — so the marker's source
+	// UID is the only thing standing between it and a duplicate person on the photo.
 	if len(h.people.markers) != 1 {
-		t.Errorf("markers = %d, want 1 (markers are seeded on first import only)", len(h.people.markers))
+		t.Errorf("markers = %d, want 1 (the marker's PhotoPrism UID dedups the re-run)", len(h.people.markers))
 	}
 }
 
@@ -557,18 +571,69 @@ func TestImportScoped_detailFailureKeepsPhoto(t *testing.T) {
 	}
 }
 
-// TestImport_fullRunReadsNoPhotoDetail pins the cost boundary: a full run maps
-// albums and labels by walking the source catalogue and must never ask for a
-// per-photo detail — 20k photos in the source would mean 20k extra requests.
-func TestImport_fullRunReadsNoPhotoDetail(t *testing.T) {
+// TestImport_fullRunReadsDetailOnlyForNewPhotos pins the cost boundary of a full
+// run: albums and labels are mapped by walking the source catalogue, so the only
+// reason to read a per-photo detail is the people on it — PhotoPrism serves markers
+// nowhere else, and has no bulk marker endpoint. That is one request per NEW photo
+// (noise beside downloading its original) and none at all for a photo the run
+// skipped as unchanged, which is what keeps a re-import cheap.
+func TestImport_fullRunReadsDetailOnlyForNewPhotos(t *testing.T) {
 	t.Parallel()
 	h := newHarness(scopedFixture())
 
-	if _, err := h.svc.Import(context.Background()); err != nil {
+	first, err := h.svc.Import(context.Background())
+	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	if got := h.client.detailCount(); got != 0 {
-		t.Errorf("photo details requested by a full run = %d, want 0", got)
+	if got := h.client.detailCount(); got != first.Counts.Imported {
+		t.Errorf("details requested = %d, want %d (one per newly imported photo)", got, first.Counts.Imported)
+	}
+
+	before := h.client.detailCount()
+	if _, err := h.svc.Import(context.Background()); err != nil {
+		t.Fatalf("second Import: %v", err)
+	}
+	if got := h.client.detailCount() - before; got != 0 {
+		t.Errorf("details requested by a re-run = %d, want 0 (nothing new was imported)", got)
+	}
+}
+
+// TestImportScoped_backfillsPeopleOntoAlreadyImportedPhotos guards the bug that
+// shipped: markers were read off the photo LISTING, whose marker array PhotoPrism
+// always serves empty, so every import silently brought over zero people while
+// reporting success. A scoped re-run over photos that are already in the catalogue
+// must therefore still seed them — which is exactly how a library imported by the
+// broken version gets its people back, without re-downloading a single byte.
+func TestImportScoped_backfillsPeopleOntoAlreadyImportedPhotos(t *testing.T) {
+	t.Parallel()
+	client := scopedFixture()
+	h := newHarness(client)
+	scope := Scope{AlbumUID: "ppal1"}
+
+	// Import the photo with its people invisible, as the broken version did.
+	markers := client.markers
+	client.markers = nil
+	if _, err := h.svc.ImportScoped(context.Background(), scope); err != nil {
+		t.Fatalf("first ImportScoped: %v", err)
+	}
+	if len(h.people.markers) != 0 {
+		t.Fatalf("markers = %d, want 0 — the fixture was meant to hide them", len(h.people.markers))
+	}
+	downloads := h.client.downloadCount()
+
+	// The people are visible now; a re-run must pick them up on the skipped photo.
+	client.markers = markers
+	if _, err := h.svc.ImportScoped(context.Background(), scope); err != nil {
+		t.Fatalf("re-run: %v", err)
+	}
+	if len(h.people.markers) != 1 {
+		t.Errorf("markers after backfill = %d, want 1", len(h.people.markers))
+	}
+	if _, err := h.people.GetSubjectBySlug(context.Background(), people.Slugify(scopedPerson)); err != nil {
+		t.Errorf("subject %q not created by the backfill: %v", scopedPerson, err)
+	}
+	if h.client.downloadCount() != downloads {
+		t.Errorf("backfill re-downloaded originals: %d -> %d", downloads, h.client.downloadCount())
 	}
 }
 

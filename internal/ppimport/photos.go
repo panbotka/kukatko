@@ -93,6 +93,12 @@ func (s *Service) importOnePhoto(ctx context.Context, pp photoprism.Photo, state
 		state.counts.Skipped++
 	}
 	s.mapPhotoContext(ctx, pp.UID, state)
+	// A scoped run already brought the people over from the detail it fetched above.
+	// A full run never fetches one, so a newly imported photo gets its own lookup —
+	// the only way to see PhotoPrism's markers at all.
+	if state.photoCtx == nil && result == outcomeImported {
+		s.importPhotoPeople(ctx, pp.UID)
+	}
 }
 
 // processPhoto dedups a photo by its PhotoPrism UID — updating an already-imported
@@ -167,7 +173,7 @@ func (s *Service) importNew(ctx context.Context, pp photoprism.Photo, sel mediaS
 	if motion != nil {
 		s.linkMotion(ctx, photo, *sel.motion, motion)
 	}
-	s.postProcess(ctx, photo, pp)
+	s.postProcess(ctx, photo)
 	return outcomeImported, nil
 }
 
@@ -242,15 +248,37 @@ func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, sto
 }
 
 // postProcess runs the regenerable side effects of a freshly imported photo —
-// thumbnails, background jobs and people markers — collecting failures as logged
-// warnings. None of them undo the import: a missing thumbnail, unqueued job or
-// skipped marker is a degraded but repairable state.
-func (s *Service) postProcess(ctx context.Context, photo photos.Photo, pp photoprism.Photo) {
+// thumbnails and background jobs — collecting failures as logged warnings. Neither
+// undoes the import: a missing thumbnail or unqueued job is a degraded but
+// repairable state.
+//
+// People are NOT seeded here. Their markers live only on the photo detail, which
+// this path does not have (the listing's markers are always empty); they are
+// imported from the detail instead — per photo in a scoped run (mapPhotoContext),
+// and once per newly imported photo in a full one (importPhotoPeople).
+func (s *Service) postProcess(ctx context.Context, photo photos.Photo) {
 	if _, err := s.thumbs.GenerateAll(ctx, photo); err != nil {
 		s.log.Warn("ppimport: thumbnails failed", "photo", photo.UID, "err", err)
 	}
 	s.enqueueJobs(ctx, photo.UID)
-	s.importMarkers(ctx, photo.UID, pp)
+}
+
+// importPhotoPeople brings a freshly imported photo's people over in a FULL run,
+// where nothing else reads the photo detail. It costs one extra request per NEW
+// photo — noise next to downloading the original — and is the only way to get them:
+// PhotoPrism's listing pages carry an empty marker array, and it has no bulk marker
+// endpoint. A scoped run does not come through here; it already holds the detail.
+func (s *Service) importPhotoPeople(ctx context.Context, ppUID string) {
+	photo, ok := s.lookupImported(ctx, ppUID)
+	if !ok {
+		return
+	}
+	detail, err := s.client.GetPhoto(ctx, ppUID)
+	if err != nil {
+		s.log.Warn("ppimport: reading photo detail for people", "pp_uid", ppUID, "err", err)
+		return
+	}
+	s.importMarkers(ctx, photo.UID, detail.Photo)
 }
 
 // enqueueJobs schedules the image_embed and face_detect jobs for a new photo so

@@ -168,6 +168,9 @@ type PeopleStore interface {
 	CreateSubject(ctx context.Context, subj people.Subject) (people.Subject, error)
 	// CreateMarker inserts a face/label marker, optionally assigning a subject.
 	CreateMarker(ctx context.Context, m people.Marker) (people.Marker, error)
+	// GetMarkerByUID finds a marker by UID (ErrMarkerNotFound), which is how an
+	// already-imported marker is recognised and skipped.
+	GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error)
 }
 
 // Enqueuer schedules the post-import background jobs. It is satisfied by
