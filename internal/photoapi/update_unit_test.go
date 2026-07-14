@@ -191,3 +191,85 @@ func TestMergeUpdate(t *testing.T) {
 		}
 	})
 }
+
+// TestMergeUpdate_credits verifies the IPTC/XMP credit fields: the present ones
+// are trimmed and applied, the absent ones carried over untouched, an over-long
+// value is rejected (the handler turns that into a 400), and the machine-derived
+// file metadata is never part of the update at all.
+func TestMergeUpdate_credits(t *testing.T) {
+	t.Parallel()
+
+	base := photos.Photo{
+		Subject:   "old subject",
+		Keywords:  "old,keywords",
+		Artist:    "Old Artist",
+		Copyright: "© old",
+		License:   "old licence",
+		Scan:      true,
+	}
+
+	t.Run("present fields are trimmed and applied", func(t *testing.T) {
+		t.Parallel()
+		present := map[string]struct{}{"subject": {}, "artist": {}, "scan": {}}
+		got, err := mergeUpdate(base, present, updateBody{
+			Subject: new("  Sunset over the lagoon  "), Artist: new(" Jan Novák "), Scan: new(false),
+		})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.Subject != "Sunset over the lagoon" || got.Artist != "Jan Novák" || got.Scan {
+			t.Errorf("credit fields not applied: %+v", got)
+		}
+		// The fields the caller did not send keep the photo's current values.
+		if got.Keywords != "old,keywords" || got.Copyright != "© old" || got.License != "old licence" {
+			t.Errorf("an absent credit field was cleared: %+v", got)
+		}
+	})
+
+	t.Run("over-long values are rejected", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name    string
+			present string
+			body    updateBody
+		}{
+			{"subject", "subject", updateBody{Subject: new(strings.Repeat("a", 1001))}},
+			{"keywords", "keywords", updateBody{Keywords: new(strings.Repeat("a", 2001))}},
+			{"artist", "artist", updateBody{Artist: new(strings.Repeat("a", 256))}},
+			{"copyright", "copyright", updateBody{Copyright: new(strings.Repeat("a", 1001))}},
+			{"license", "license", updateBody{License: new(strings.Repeat("a", 1001))}},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				present := map[string]struct{}{tc.present: {}}
+				if _, err := mergeUpdate(base, present, tc.body); err == nil {
+					t.Errorf("mergeUpdate(%s over the cap) = nil error, want rejection", tc.name)
+				}
+			})
+		}
+	})
+
+	t.Run("a value at the cap is accepted", func(t *testing.T) {
+		t.Parallel()
+		artist := strings.Repeat("a", 255)
+		got, err := mergeUpdate(base, map[string]struct{}{"artist": {}}, updateBody{Artist: &artist})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.Artist != artist {
+			t.Errorf("a value exactly at the cap was not applied")
+		}
+	})
+
+	t.Run("an explicit null leaves the NOT NULL column unchanged", func(t *testing.T) {
+		t.Parallel()
+		got, err := mergeUpdate(base, map[string]struct{}{"subject": {}}, updateBody{Subject: nil})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.Subject != "old subject" {
+			t.Errorf("subject = %q, want unchanged on an explicit null", got.Subject)
+		}
+	})
+}

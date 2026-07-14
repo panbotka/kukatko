@@ -55,7 +55,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   ne-Bearer schéma propadne na cookie), `internal/photos/`
   (jádro foto-katalogu: typované modely `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`
   (`Photo` nese i per-user anotační pole `Rating int`/`Flag string` — JSON `rating`/`flag`,
-  analogická `is_favorite`; neukládají se v `photos`, plní je HTTP handlery z `organize.Store`),
+  analogická `is_favorite`; neukládají se v `photos`, plní je HTTP handlery z `organize.Store`;
+  `Photo` dál nese **IPTC/XMP kredity** `Subject`/`Keywords`/`Artist`/`Copyright`/`License`/`Scan`
+  (editovatelné → jsou i v `MetadataUpdate`) a **strojově odvozená** `Software`/`ColorProfile`/
+  `ImageCodec`/`CameraSerial`/`OriginalName`/`Projection` (v `MetadataUpdate` **nejsou** — popisují
+  soubor, píše je ingest/import; sloupce viz `docs/ARCHITECTURE.md` §5.1)),
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generátor prefix `ph`,
   `Store` nad pgx s
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/`SetPhotoprismRef`
@@ -316,7 +320,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   uložením originálu: sloučené `taken_at` rozhoduje o `YYYY/MM`, takže Takeout fotka se stripnutým
   EXIFem padne do měsíce, kdy **vznikla**, ne kdy se importovala; `Title`/`Description` z sidecaru
   jdou do `photos` — v EXIFu ekvivalent nemají), `storage.Store` (`YYYY/MM`),
-  insert `photos` (vč. video sloupců)+primární `photo_files`, pHash/dHash → `photo_phashes`
+  insert `photos` (vč. video sloupců; `buildPhoto` navíc plní `original_name` = base name jména,
+  pod kterým upload dorazil — storage layout soubor přejmenuje, tohle je jediná stopa po původním
+  názvu — a `image_codec` ze subtypu výsledného MIME (`image/jpeg` → `jpeg`; u videa prázdné,
+  komprese klipu patří do `video_codec`))+primární `photo_files`, pHash/dHash → `photo_phashes`
   (u videa z poster framu), náhledy (u videa poster), enqueue jobů (poster frame se účastní
   search/people); **per-file** `FileResult{Filename,Status,
   Outcome (created/duplicate/error),PhotoUID,Error,Warnings}` — nikdy nevrací error, vše v resultu;

@@ -123,7 +123,12 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   přes `photoedit.Apply`, pokud caller nedá `?original=true`);
   `PATCH /photos/{uid}` (editor/admin) částečná úprava
   metadat — `title/description/notes/ai_note/taken_at/lat/lng` (null maže nullable, validace
-  souřadnic). **Odpověď má stejný tvar jako `GET /photos/{uid}`** — plný detail včetně `files`,
+  souřadnic) **+ IPTC/XMP kredity** `subject/artist/copyright/license/keywords/scan`: volný text,
+  ořízne se whitespace, délkový strop (`subject`/`copyright`/`license` 1000, `keywords` 2000,
+  `artist` 255 **znaků**, ne bajtů), delší = 400; `scan` je prostý bool. Strojově odvozená pole
+  (`software`, `color_profile`, `image_codec`, `camera_serial`, `original_name`, `projection`) se
+  **servírují, ale needitují** — dekodér je odmítne jako neznámý klíč (400), popisují soubor, ne
+  uživatelův pohled na něj. **Odpověď má stejný tvar jako `GET /photos/{uid}`** — plný detail včetně `files`,
   `albums`, `labels`, `is_favorite` a `uploader` (sdílený `writeDetail` v `internal/photoapi`), ne
   holý `photos.Photo`: klient si detailem z odpovědi nahradí ten, co drží, takže chybějící pole by mu
   z detailu zmizela (dřív padal na `albums.map` z `undefined`). Klient posílá jen **skutečně
@@ -131,6 +136,10 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   přeposlání nezměněných souřadnic by je zaokrouhlilo na 6 desetinných míst z textového pole.
   `ai_note` je volný text z externí AI klasifikace (píše ho i automat přes tuto routu),
   vrací se v detailu i listu jako součást `photos.Photo` a je zahrnutý ve fulltextu (§ Vyhledávání);
+  stejně tak všechna IPTC/XMP i technická pole výše — jsou součástí `photos.Photo`, takže je nese
+  **každá** odpověď s fotkou (detail, list, search), `subject` a `keywords` navíc padají do fulltextu
+  (váha B, resp. C). `keywords` je původní IPTC hodnota **verbatim** (comma-separated), **nejsou to
+  labely** — `/labels` zůstávají samostatná kurátorská taxonomie;
   `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete přes `archived_at` (archivované mimo výchozí list);
   `POST /photos/{uid}/regenerate-thumbnail` (editor/admin) — **servisní akce** pro

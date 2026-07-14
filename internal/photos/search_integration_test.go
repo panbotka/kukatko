@@ -263,3 +263,81 @@ func TestSearch_emptyQuery(t *testing.T) {
 		t.Fatal("Search with empty query returned nil error, want ErrEmptySearch")
 	}
 }
+
+// TestSearch_subjectAndKeywords verifies the fts rebuild of
+// 0027_photos_iptc_metadata: a photo is now found by a term that appears only in
+// its IPTC subject or only in its keywords, and — the regression the rebuild could
+// have caused — a title still matches exactly as before.
+func TestSearch_subjectAndKeywords(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	titled, err := store.Create(ctx, textPhoto("iptc-fts-1", "a.jpg", "Svatba Anežky", "", ""))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	subjectOnly := textPhoto("iptc-fts-2", "b.jpg", "", "", "")
+	subjectOnly.Subject = "Přistání balonem na louce"
+	subject, err := store.Create(ctx, subjectOnly)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	keywordOnly := textPhoto("iptc-fts-3", "c.jpg", "", "", "")
+	keywordOnly.Keywords = "vinobraní,hrozny,sklizeň"
+	keyword, err := store.Create(ctx, keywordOnly)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// The existing search behaviour is intact: a title still matches.
+	if got := searchUIDs(t, store, photos.ListParams{FullText: "svatba"}); len(got) != 1 || got[0] != titled.UID {
+		t.Fatalf("Search(svatba) = %v, want [%s] — the fts rebuild lost the title", got, titled.UID)
+	}
+
+	// A term only in the subject now matches (weight B, with the description).
+	if got := searchUIDs(t, store, photos.ListParams{FullText: "balonem"}); len(got) != 1 || got[0] != subject.UID {
+		t.Fatalf("Search(balonem) = %v, want [%s]", got, subject.UID)
+	}
+
+	// A single keyword out of the comma-separated list matches, diacritics and all.
+	if got := searchUIDs(t, store, photos.ListParams{FullText: "hrozny"}); len(got) != 1 || got[0] != keyword.UID {
+		t.Fatalf("Search(hrozny) = %v, want [%s]", got, keyword.UID)
+	}
+	if got := searchUIDs(t, store, photos.ListParams{FullText: "vinobrani"}); len(got) != 1 || got[0] != keyword.UID {
+		t.Fatalf("Search(vinobrani) = %v, want [%s] — keywords are not diacritics-insensitive",
+			got, keyword.UID)
+	}
+}
+
+// TestSearch_subjectOutranksKeywords verifies the weights the rebuild assigned: a
+// subject hit (weight B) ranks above a keyword hit (weight C) for the same term,
+// so a photo the term is genuinely *about* comes first.
+func TestSearch_subjectOutranksKeywords(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	subjectHit := textPhoto("iptc-w-1", "a.jpg", "", "", "")
+	subjectHit.Subject = "Kite surfing on the lagoon"
+	inSubject, err := store.Create(ctx, subjectHit)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	keywordHit := textPhoto("iptc-w-2", "b.jpg", "", "", "")
+	keywordHit.Keywords = "beach,kite,sand"
+	inKeywords, err := store.Create(ctx, keywordHit)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got := searchUIDs(t, store, photos.ListParams{FullText: "kite"})
+	if len(got) != 2 {
+		t.Fatalf("Search(kite) = %v, want 2 results", got)
+	}
+	if got[0] != inSubject.UID || got[1] != inKeywords.UID {
+		t.Fatalf("Search(kite) order = %v, want subject hit %s before keyword hit %s",
+			got, inSubject.UID, inKeywords.UID)
+	}
+}

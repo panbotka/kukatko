@@ -29,6 +29,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"strings"
 	"time"
 
 	// Register the pure-Go image decoders so image.Decode handles the formats
@@ -313,7 +314,7 @@ func (s *Service) storeOriginal(
 func (s *Service) catalogue(
 	ctx context.Context, filename string, stored storage.StoredFile, media mediaMeta, uploadedBy string,
 ) (photos.Photo, *FileResult, error) {
-	created, err := s.photos.Create(ctx, buildPhoto(stored, media, uploadedBy))
+	created, err := s.photos.Create(ctx, buildPhoto(stored, media, filename, uploadedBy))
 	if errors.Is(err, photos.ErrFileHashTaken) {
 		dup := s.resolveRace(ctx, filename, stored)
 		return photos.Photo{}, &dup, nil
@@ -577,19 +578,23 @@ func sharedFromVideo(vm video.Metadata, filename string) exif.Metadata {
 }
 
 // buildPhoto maps a stored file and its extracted metadata onto a photos.Photo
-// ready for insertion. The UID and timestamps are assigned by the database.
-func buildPhoto(stored storage.StoredFile, media mediaMeta, uploadedBy string) photos.Photo {
+// ready for insertion. filename is the name the upload arrived under, kept as the
+// photo's original_name: the storage layout renames the file, and that name is the
+// only trace of what the user (or the exporting app) called it. The UID and
+// timestamps are assigned by the database.
+func buildPhoto(stored storage.StoredFile, media mediaMeta, filename, uploadedBy string) photos.Photo {
 	meta := media.shared
 	kind := media.kind
 	if kind == "" {
 		kind = photos.MediaImage
 	}
+	mime := chooseMIME(meta.Mime, stored.MIME)
 	p := photos.Photo{
 		FileHash:        stored.Hash,
 		FilePath:        stored.RelPath,
 		FileName:        path.Base(stored.RelPath),
 		FileSize:        stored.Size,
-		FileMime:        chooseMIME(meta.Mime, stored.MIME),
+		FileMime:        mime,
 		FileWidth:       meta.Width,
 		FileHeight:      meta.Height,
 		FileOrientation: orientationOrDefault(meta.Orientation),
@@ -606,6 +611,8 @@ func buildPhoto(stored storage.StoredFile, media mediaMeta, uploadedBy string) p
 		Aperture:        meta.Aperture,
 		Exposure:        meta.Exposure,
 		FocalLength:     meta.FocalLength,
+		ImageCodec:      imageCodec(kind, mime),
+		OriginalName:    originalName(filename),
 		Exif:            marshalExif(meta.Exif),
 	}
 	if media.video != nil {
@@ -634,6 +641,32 @@ func chooseMIME(exifMime, storedMime string) string {
 		return exifMime
 	}
 	return storedMime
+}
+
+// originalName reduces the name an upload arrived under to its base name: a
+// folder import hands over a path, and only the file's own name belongs in
+// original_name. An unnamed upload (a bare stream) keeps the empty string rather
+// than path.Base's ".".
+func originalName(filename string) string {
+	if filename == "" {
+		return ""
+	}
+	return path.Base(filename)
+}
+
+// imageCodec derives the still image's compression from its MIME type
+// ("image/jpeg" → "jpeg"), which is all the ingest pipeline can know without a
+// deeper probe. A video's compression lives in video_codec, so it yields nothing
+// here; a live photo does, since its primary file is a still image.
+func imageCodec(kind photos.MediaType, mime string) string {
+	if kind == photos.MediaVideo {
+		return ""
+	}
+	subtype, ok := strings.CutPrefix(mime, "image/")
+	if !ok {
+		return ""
+	}
+	return subtype
 }
 
 // orientationOrDefault normalises an EXIF orientation to the valid 1..8 range,

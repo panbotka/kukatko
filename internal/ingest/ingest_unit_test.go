@@ -89,10 +89,18 @@ func TestBuildPhoto(t *testing.T) {
 		Width: 4000, Height: 3000, Orientation: 6, TakenAtSource: exif.SourceExif,
 		CameraMake: "Canon", ISO: &iso, Mime: "",
 	}
-	p := buildPhoto(stored, mediaMeta{kind: photos.MediaImage, shared: meta}, "ph_user")
+	p := buildPhoto(stored, mediaMeta{kind: photos.MediaImage, shared: meta}, "holiday/IMG_0042.JPG", "ph_user")
 
 	if p.FileName != "pic.jpg" {
 		t.Errorf("FileName = %q, want pic.jpg", p.FileName)
+	}
+	// The storage layout renamed the file; original_name keeps what it arrived as,
+	// reduced to its base name, and image_codec comes off the resolved MIME type.
+	if p.OriginalName != "IMG_0042.JPG" {
+		t.Errorf("OriginalName = %q, want IMG_0042.JPG", p.OriginalName)
+	}
+	if p.ImageCodec != "jpeg" {
+		t.Errorf("ImageCodec = %q, want jpeg", p.ImageCodec)
 	}
 	if p.FileHash != "abc123" || p.FilePath != "2024/05/pic.jpg" || p.FileSize != 999 {
 		t.Errorf("file fields mismatch: %+v", p)
@@ -124,10 +132,14 @@ func TestBuildPhoto_video(t *testing.T) {
 			durationMs: &dur, videoCodec: "h264", audioCodec: "aac", hasAudio: true, fps: &fps,
 		},
 	}
-	p := buildPhoto(stored, media, "")
+	p := buildPhoto(stored, media, "clip.mp4", "")
 
 	if p.MediaType != photos.MediaVideo {
 		t.Errorf("MediaType = %q, want video", p.MediaType)
+	}
+	// A video's compression belongs in video_codec; image_codec stays empty.
+	if p.ImageCodec != "" {
+		t.Errorf("ImageCodec = %q, want empty for a video", p.ImageCodec)
 	}
 	if p.FileMime != "video/mp4" || p.FileWidth != 1280 || p.FileHeight != 720 {
 		t.Errorf("file fields mismatch: %+v", p)
@@ -151,12 +163,16 @@ func TestBuildPhoto_video(t *testing.T) {
 // nil pointer (SQL NULL) rather than a pointer to "".
 func TestBuildPhoto_anonymousLeavesUploaderNil(t *testing.T) {
 	t.Parallel()
-	p := buildPhoto(storage.StoredFile{RelPath: "a/b.jpg"}, mediaMeta{}, "")
+	p := buildPhoto(storage.StoredFile{RelPath: "a/b.jpg"}, mediaMeta{}, "", "")
 	if p.UploadedBy != nil {
 		t.Errorf("UploadedBy = %v, want nil for anonymous upload", p.UploadedBy)
 	}
 	if p.MediaType != photos.MediaImage {
 		t.Errorf("MediaType = %q, want image (default)", p.MediaType)
+	}
+	// A bare stream has no name at all — the column stays empty rather than ".".
+	if p.OriginalName != "" {
+		t.Errorf("OriginalName = %q, want empty for an unnamed upload", p.OriginalName)
 	}
 }
 
@@ -298,7 +314,7 @@ func TestApplySidecar_strippedExif(t *testing.T) {
 		t.Errorf("TakenAtSource = %q, want %q", media.shared.TakenAtSource, exif.SourceSidecar)
 	}
 
-	photo := buildPhoto(storage.StoredFile{RelPath: "2016/06/a.jpg", Hash: "h"}, media, "")
+	photo := buildPhoto(storage.StoredFile{RelPath: "2016/06/a.jpg", Hash: "h"}, media, "a.jpg", "")
 	if photo.Title != "Lipno" || photo.Description != "Sunset over Lipno" {
 		t.Errorf("title = %q, description = %q, want the sidecar's caption fields",
 			photo.Title, photo.Description)
@@ -326,7 +342,7 @@ func TestApplySidecar_none(t *testing.T) {
 	}
 	applySidecar(&media, nil)
 
-	photo := buildPhoto(storage.StoredFile{RelPath: "2020/01/a.jpg", Hash: "h"}, media, "")
+	photo := buildPhoto(storage.StoredFile{RelPath: "2020/01/a.jpg", Hash: "h"}, media, "a.jpg", "")
 	if photo.TakenAtSource != string(exif.SourceExif) || photo.Title != "" || photo.Description != "" {
 		t.Errorf("a file with no sidecar was changed: %+v", photo)
 	}
