@@ -305,7 +305,7 @@
     }
   },
   "albumDetail": {
-    "back": "Alba",
+    "back": "Zpět na alba",
     "error": "Toto album se nepodařilo načíst.",
     "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
     "edit": "Upravit",
@@ -342,7 +342,7 @@
     }
   },
   "labelDetail": {
-    "back": "Štítky",
+    "back": "Zpět na štítky",
     "error": "Tento štítek se nepodařilo načíst.",
     "empty": {
       "title": "Žádné fotky s tímto štítkem",
@@ -592,7 +592,7 @@
   "subject": {
     "loading": "Načítání osoby…",
     "error": "Tuto osobu se nepodařilo načíst.",
-    "back": "Lidé",
+    "back": "Zpět na lidi",
     "editButton": "Upravit",
     "photos": "Fotky",
     "loadingPhotos": "Načítání fotek…",
@@ -678,7 +678,7 @@
     "loading": "Načítání fotky…",
     "loadingNext": "Načítání fotky…",
     "error": "Tuto fotku se nepodařilo načíst.",
-    "back": "Zpět",
+    "back": "Zpět na seznam",
     "prev": "Předchozí fotka",
     "next": "Další fotka",
     "download": "Stáhnout originál",

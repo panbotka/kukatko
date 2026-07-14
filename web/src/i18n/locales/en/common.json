@@ -346,7 +346,7 @@
     }
   },
   "albumDetail": {
-    "back": "Albums",
+    "back": "Back to albums",
     "error": "Could not load this album.",
     "actionError": "The action failed. Please try again.",
     "edit": "Edit",
@@ -383,7 +383,7 @@
     }
   },
   "labelDetail": {
-    "back": "Labels",
+    "back": "Back to labels",
     "error": "Could not load this label.",
     "empty": {
       "title": "No photos with this label",
@@ -578,7 +578,7 @@
   "subject": {
     "loading": "Loading person…",
     "error": "Could not load this person.",
-    "back": "People",
+    "back": "Back to people",
     "editButton": "Edit",
     "photos": "Photos",
     "loadingPhotos": "Loading photos…",
@@ -662,7 +662,7 @@
     "loading": "Loading photo…",
     "loadingNext": "Loading photo…",
     "error": "Could not load this photo.",
-    "back": "Back",
+    "back": "Back to the list",
     "prev": "Previous photo",
     "next": "Next photo",
     "download": "Download original",

@@ -4,9 +4,10 @@ import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
@@ -23,6 +24,13 @@ import { fetchSubject, type Subject, updateSubject } from '../services/people'
 
 /** The subject gallery breathes a little more than the library grid. */
 const GALLERY_GAP_PX = 8
+
+/**
+ * Where the back link leads. The people index keeps no view state of its own in
+ * the URL, so the bare route restores it exactly; should it ever grow filters,
+ * this is the one place that has to carry them.
+ */
+const PEOPLE_PATH = '/people'
 
 /** Fetch lifecycle of the subject record. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; subject: Subject }
@@ -117,8 +125,9 @@ export function SubjectPage() {
 
   if (state.status === 'error') {
     return (
-      <Alert variant="danger">
-        {t('subject.error')} <Link to="/people">{t('subject.back')}</Link>
+      <Alert variant="danger" className="d-flex align-items-center gap-3 flex-wrap">
+        <span>{t('subject.error')}</span>
+        <BackLink to={PEOPLE_PATH} label={t('subject.back')} />
       </Alert>
     )
   }
@@ -129,9 +138,7 @@ export function SubjectPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <div className="d-flex align-items-center gap-2">
-          <Link to="/people" className="text-decoration-none">
-            ← {t('subject.back')}
-          </Link>
+          <BackLink to={PEOPLE_PATH} label={t('subject.back')} />
           <h1 className="kk-page-title mb-0">{subject.name}</h1>
           <Badge bg="secondary">{t(`subject.type.${subject.type}`)}</Badge>
         </div>

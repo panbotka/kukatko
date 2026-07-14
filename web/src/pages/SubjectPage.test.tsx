@@ -136,6 +136,14 @@ afterEach(() => {
 })
 
 describe('SubjectPage', () => {
+  it('offers a back link that names the people list it returns to', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    const back = await screen.findByRole('link', { name: 'Back to people' })
+    expect(back).toHaveAttribute('href', '/people')
+  })
+
   it('keeps selection and bulk edit away from viewers', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     renderPage(false)

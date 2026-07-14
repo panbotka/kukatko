@@ -159,6 +159,27 @@ describe('AlbumDetailPage', () => {
     expect(fetchPhotosMock.mock.calls[0][0].album).toBe('al_1')
   })
 
+  it('offers a back link that names the album list it returns to', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    // An arrow alone said nothing; the label names the destination, and the
+    // arrow itself stays decorative so the link's accessible name is the text.
+    const back = await screen.findByRole('link', { name: 'Back to albums' })
+    expect(back).toHaveAttribute('href', '/albums')
+    expect(back.querySelector('.bi-arrow-left')).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('names the album list in the back link of the error state too', async () => {
+    fetchAlbumMock.mockRejectedValue(new Error('boom'))
+    fetchPhotosMock.mockResolvedValue(page([]))
+    renderPage()
+
+    const back = await screen.findByRole('link', { name: 'Back to albums' })
+    expect(back).toHaveAttribute('href', '/albums')
+  })
+
   it('links each tile to the detail page carrying the album scope', async () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))

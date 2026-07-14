@@ -167,6 +167,9 @@ implemented**, per the task's conservative-changes rule.
 - States/copy: friendly and complete.
 
 ### Album detail (`/albums/:uid`)
+- **Wayfinding:** The way out was a **bare arrow** (`←` + the destination's noun, "Alba") — a glyph
+  that named neither the action nor where it led. ✅ **Done:** the shared `BackLink` (see Subject)
+  renders an `arrow-left` icon plus a self-explanatory label ("Zpět na alba").
 - **Touch (worst offender):** Up to **4 controls** (Slideshow, Edit, Select, Delete) in
   one `d-flex gap-1 flex-wrap`, all `size="sm"` (was 5 — the Reorder button left with manual
   album ordering; albums are now always chronological). The coarse-pointer floor enlarges them ✅, but
@@ -178,6 +181,8 @@ implemented**, per the task's conservative-changes rule.
 ### Label detail (`/labels/:uid`)
 - Minimal and clear. No inline rename/delete (only on the index) — mild inconsistency with album
   detail. 📋 ⚪⚪
+- **Wayfinding:** Same bare arrow as album detail. ✅ **Done:** the shared `BackLink` ("Zpět na
+  štítky").
 
 ### Photo detail (`/photos/:uid`)
 - **Consistency:** Title was `h1.h4` (smaller than every other page). ✅ **Done:** now `h1.h3`.
@@ -206,8 +211,11 @@ implemented**, per the task's conservative-changes rule.
 - **States:** Error alert has **no retry** (must reload the page). 📋 Add retry. 🟡🟡
 
 ### Subject (`/people/:uid`)
-- **Touch:** Back is a **bare text link** (smallest target on the page); Edit + Load-more are
-  `size="sm"`. Coarse floor helps the buttons ✅. 📋 Make Back a padded control. 🟡⚪
+- **Touch / wayfinding:** Back was a **bare arrow + noun** ("← Lidé"), the smallest target on the
+  page; Edit + Load-more are `size="sm"`. Coarse floor helps the buttons ✅. ✅ **Done:** every
+  detail page (album, label, person, photo) now shares one `BackLink` — `arrow-left` icon (decorative)
+  plus a label naming the destination ("Zpět na lidi"), a real `<Link>` with a hover underline, a
+  focus ring, and a 44px minimum on coarse pointers.
 - **States:** "No photos" was a bare paragraph. ✅ **Done:** now the standard centered block.
   **Set-cover failure is silently swallowed** — no feedback, unlike the visible `actionError`
   elsewhere. 📋 Surface a toast/alert. 🟡🟡
