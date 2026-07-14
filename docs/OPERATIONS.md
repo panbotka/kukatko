@@ -41,6 +41,7 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   štítku → `ErrLabelNotFound` (ověřuje se **před** stahováním), nesmyslný rok → `ErrInvalidYear`, žádný
   flag → plný inkrementální běh. Je idempotentní — re-run nezaloží druhé album, štítek ani členství.
   Slouží k ověření importu proti produkci a k předtažení části knihovny),
+  **`kukatko import dir <path>`** (nahraje **adresář z disku** — `internal/dirimport`; viz níže),
   `kukatko backup` (synchronní jednorázová **S3 záloha** — `internal/backup`; pg_dump + sync
   originálů + retence; potřebuje `backup.s3.{endpoint,bucket}`, jinak `errBackupNotConfigured`;
   při `storage.backend: r2` se originály **kopírují bucket→bucket server-side** a záloha do
@@ -65,6 +66,46 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   který **nesahá na DB ani disk**, viz níže),
   `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
   `server.New(addr, server.WithAPI(register))` mountuje route-skupiny pod `/api/v1`.
+
+### `kukatko import dir <path>`
+
+Projde adresář na disku (rekurzivně) a nahraje každý mediální soubor do knihovny **přes stejnou
+pipeline jako upload z prohlížeče** (`internal/ingest`): stream + SHA256, metadata, originál do
+`YYYY/MM`, náhledy, joby `image_embed`/`face_detect` do fronty. Zdrojový adresář se **jen čte** —
+originály se kopírují, nikdy nepřesouvají ani nemění. Pro ops/cron bez běžícího serveru (aplikuje
+migrace a otevře DB sám); běh se zapisuje do `import_runs` jako zdroj `folder`, takže je vidět
+v `/import` i v `GET /import/runs` vedle PhotoPrism a photo-sorter běhů.
+
+**Je vždy bezpečné pustit ho znovu.** Identita je SHA256 obsahu: co už v knihovně je, se nahlásí
+jako duplicita (i pod jiným jménem — výpis ukáže obě cesty) a nic se nezapíše. Běh je i
+resumovatelný — každý soubor je commitnutý zvlášť, takže pád nebo Ctrl-C nechá naimportované fotky
+v knihovně a další běh dojede zbytek (přerušený běh se uzavře jako `failed`). Chyba jednoho souboru
+se zaloguje a **pokračuje se dál**; příkaz skončí **nenulovým exit kódem**, když aspoň jeden soubor
+selhal, aby to skript poznal.
+
+Přeskakuje (a počítá po důvodech, nikdy kvůli tomu neselže): tečkové soubory a adresáře, `@eaDir`,
+`__MACOSX`, `Thumbs.db`, `.DS_Store`, `desktop.ini`, sidecary (`.xmp`, `.json`, `.aae`, `.thm`),
+prázdné soubory a formáty, které nejsou podporovaný obrázek ani video (HEIC/RAW/video **podporované
+jsou**). **Symlinky se přeskakují, nenásledují se** (walk se tak nemůže zacyklit); rozbalí se jen
+samotný `<path>`, takže mířit příkazem na symlinkovaný adresář funguje. Soubor bez EXIF a bez data
+v názvu se naimportuje s `taken_at` = NULL — datum se **nikdy nedovozuje z mtime** (špatné datum je
+horší než žádné).
+
+Že je embedding sidecar (box) offline, je v pořádku a čekané: joby zůstanou ve frontě v Postgresu
+a doberou se, až bude box zase dostupný — souhrn to tak i napíše.
+
+| Flag | Default | Význam |
+| --- | --- | --- |
+| `--album <uid\|název>` | – | zařadí všechny fotky do alba; uid se použije, název se dohledá a **nenajde-li se, album se založí** (platí i pro duplicity → tak se opraví zapomenutý `--album`) |
+| `--labels <a,b,c>` | – | připojí štítky (podle názvu; co neexistuje, se založí) všem fotkám běhu |
+| `--recursive`, `-r` | `true` | projde i podadresáře |
+| `--no-recursive` | `false` | jen plochý adresář (s `--recursive` se **vylučuje**) |
+| `--dry-run` | `false` | jen ohlásí, co by udělal (nový / duplicita / přeskočeno + důvod) — **nezapíše nic**, ani `import_runs` |
+| `--concurrency N` | `3` | kolik souborů se nahrává paralelně; **strop 8** (thumbnailing velkých fotek je paměťově drahý a box má 16 GB sdílených se vším ostatním) |
+| `--uploader <user>` | bootstrap admin | uživatelské jméno vlastníka naimportovaných fotek; bez něj `auth.bootstrap_admin_username`, jinak první admin |
+
+Výpis: řádek na soubor (`[12/2000] imported 2014/IMG_0001.JPG`) a na konci souhrn
+`imported=… duplicates=… skipped=… failed=…` + rozpad přeskočených po důvodech a doba běhu.
 
 ### `kukatko storage migrate-to-r2`
 

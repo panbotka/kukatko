@@ -313,7 +313,10 @@ zapiš sem.
   (spinner + counts imported/updated/skipped/failed) a stav fronty na pozadí (`GET /jobs/stats`),
   plus tabulka **historie běhů** (`import_runs`: zdroj/začátek/konec/stav/počty/chyba); polluje
   `GET /import/runs` + `GET /jobs/stats` po 3 s, 409 → „už běží", confirm před prvním (velkým) během
-  zdroje, sebe-gate na `canImport`,
+  zdroje, sebe-gate na `canImport`. Historie ukazuje i běhy zdroje **`folder`** (`kukatko import dir`,
+  čte adresář na disku serveru → **nemá tlačítko**, jen se objeví v tabulce): v `services/import.ts`
+  je proto `RunSource` = `ImportSource | 'folder'` (spouštěcí sekce zůstávají `SOURCES` =
+  photoprism/photosorter), popisek `import.source.folder`,
   `MaintenancePage` = `/maintenance` (jen admin) konzole údržby knihovny: tlačítko **Spustit kontrolu**
   (`GET /maintenance/scan`) → souhrn totálů + tabulka nálezů (počet + vzorky per třída, nebo „knihovna
   konzistentní"), checkboxy oprav (náhledy/embeddingy/obličeje/hashe/import osiřelých — anotované

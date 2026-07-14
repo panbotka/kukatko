@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestSource_Valid checks that only the two known sources are accepted.
+// TestSource_Valid checks that only the known sources are accepted.
 func TestSource_Valid(t *testing.T) {
 	t.Parallel()
 
@@ -16,6 +16,7 @@ func TestSource_Valid(t *testing.T) {
 	}{
 		{name: "photoprism is valid", source: SourcePhotoPrism, want: true},
 		{name: "photosorter is valid", source: SourcePhotoSorter, want: true},
+		{name: "folder is valid", source: SourceFolder, want: true},
 		{name: "unknown is invalid", source: Source("flickr"), want: false},
 		{name: "empty is invalid", source: Source(""), want: false},
 	}

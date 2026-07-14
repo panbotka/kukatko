@@ -909,7 +909,8 @@
     "error": "Stav importu se nepodařilo načíst.",
     "source": {
       "photoprism": "PhotoPrism",
-      "photosorter": "Photo-sorter"
+      "photosorter": "Photo-sorter",
+      "folder": "Složka z disku"
     },
     "photoprismDesc": "Inkrementální import z běžící instance PhotoPrismu (fotky, metadata, alba, štítky, lidé).",
     "photosorterDesc": "Přímá migrace z databáze photo-sorteru (fotky, embeddingy, obličeje, alba, štítky).",

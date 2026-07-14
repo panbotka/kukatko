@@ -9,6 +9,10 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - **Sémantické i fulltextové hledání**, podobné fotky, **rozpoznávání obličejů/lidí**.
 - **Pi-first:** běží na Raspberry Pi, výpočet embeddingů deleguje na výkonný stroj (box s GPU).
 - **Import z PhotoPrismu** přes API (+ stažení originálů) a **migrace dat z photo-sorteru**.
+- **Nahrání složky z disku:** `kukatko import dir <path>` — namíříš ho na adresář (skeny, karta
+  z foťáku, starý backup) a projde ho rekurzivně stejnou pipeline jako upload z prohlížeče.
+  Originály jen **kopíruje**, junk a sidecary přeskakuje s důvodem, duplicity pozná podle SHA256 —
+  takže se **nebojíš pustit ho znovu** (a `--dry-run` napřed řekne, co by udělal).
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé
@@ -60,6 +64,8 @@ export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
 ./bin/kukatko import photoprism           # read-only inkrementální import z PhotoPrismu
 ./bin/kukatko import photoprism --album at8lq8ktxpl1thv4   # jen řez: fotky alba (+ --label/--person/--year),
                                           # každá fotka přijde i se všemi ostatními alby a štítky, které nese
+./bin/kukatko import dir /mnt/skeny --dry-run               # co by se z adresáře naimportovalo (nic nezapíše)
+./bin/kukatko import dir /mnt/skeny --album "Skeny 1985" --labels sken,rodina   # nahraje složku z disku
 ./bin/kukatko backup                      # jednorázová záloha (pg_dump + sync originálů) na S3
 ./bin/kukatko restore list                # vypíše dumpy dostupné v bucketu (nejnovější první)
 ./bin/kukatko restore db --yes            # obnoví DB z nejnovějšího dumpu (DESTRUKTIVNÍ) + migrace
