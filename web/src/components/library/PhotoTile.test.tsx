@@ -144,6 +144,22 @@ describe('PhotoTile video badge', () => {
   })
 })
 
+describe('PhotoTile capture date', () => {
+  // The tile shows no date of its own; the alt text is the one place it carries
+  // one, so that is where an estimate has to be marked as such.
+  it('marks an estimated date in the alt text', () => {
+    renderTile(photo({ taken_at: '1950-06-01T12:00:00Z', taken_at_estimated: true }))
+    const date = new Date('1950-06-01T12:00:00Z').toLocaleDateString('en')
+    expect(screen.getByRole('img', { name: `Clip — c. ${date}` })).toBeInTheDocument()
+  })
+
+  it('leaves a known date unmarked in the alt text', () => {
+    renderTile(photo({ taken_at: '1950-06-01T12:00:00Z' }))
+    const date = new Date('1950-06-01T12:00:00Z').toLocaleDateString('en')
+    expect(screen.getByRole('img', { name: `Clip — ${date}` })).toBeInTheDocument()
+  })
+})
+
 describe('PhotoTile curation controls', () => {
   // Star rating and pick/reject flagging were moved off the tile into the photo
   // detail view; the tile keeps only the favourite heart. Each case renders with

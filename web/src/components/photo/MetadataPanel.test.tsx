@@ -87,6 +87,8 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
  * through the suite.
  */
 function apiResponse(current: PhotoDetail, patch: PhotoMetadataUpdate): PhotoDetail {
+  const estimated = patch.taken_at_estimated ?? current.taken_at_estimated ?? false
+  const note = patch.taken_at_note ?? current.taken_at_note ?? ''
   return {
     ...current,
     title: patch.title ?? current.title,
@@ -96,6 +98,10 @@ function apiResponse(current: PhotoDetail, patch: PhotoMetadataUpdate): PhotoDet
     // A null clears the field; an absent key leaves it as it was.
     taken_at: patch.taken_at === undefined ? current.taken_at : (patch.taken_at ?? undefined),
     taken_at_source: patch.taken_at === undefined ? current.taken_at_source : 'manual',
+    taken_at_estimated: estimated,
+    // The backend keeps the dating note only while the flag is set — clearing the
+    // flag drops the note with it, whatever the photo held before.
+    taken_at_note: estimated ? note : '',
     lat: patch.lat === undefined ? current.lat : (patch.lat ?? undefined),
     lng: patch.lng === undefined ? current.lng : (patch.lng ?? undefined),
   }
@@ -307,6 +313,110 @@ describe('MetadataPanel per-field editing', () => {
       )
     })
     expect(onUpdated).toHaveBeenCalled()
+  })
+})
+
+describe('MetadataPanel approximate date', () => {
+  it('offers the dating note only once the date is marked an estimate', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    await startEditing(user)
+
+    // An empty note on a photo whose date is a fact means nothing, so the field is
+    // not there at all until the checkbox says otherwise.
+    expect(screen.queryByLabelText('Dating note')).not.toBeInTheDocument()
+    await user.click(screen.getByLabelText('Date is an estimate'))
+    expect(screen.getByLabelText('Dating note')).toBeInTheDocument()
+  })
+
+  it('PATCHes the estimate flag together with the dating note', async () => {
+    const current = photo({ taken_at: '1950-06-01T12:00:00Z' })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+
+    await user.click(screen.getByLabelText('Date is an estimate'))
+    await user.type(screen.getByLabelText('Dating note'), 'around 1950, before the wedding')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    const patch = sentPatch()
+    expect(patch.taken_at_estimated).toBe(true)
+    expect(patch.taken_at_note).toBe('around 1950, before the wedding')
+    // The date itself was not touched, so it stays out of the patch — resending it
+    // would flip taken_at_source to manual.
+    expect(patch).not.toHaveProperty('taken_at')
+  })
+
+  it('marks an estimated date with the circa marker, the note and an accessible title', () => {
+    renderPanel({
+      photo: photo({
+        taken_at: '1950-06-01T12:00:00Z',
+        taken_at_estimated: true,
+        taken_at_note: 'around 1950',
+      }),
+    })
+
+    const field = screen.getByRole('button', { name: 'Edit Taken at' })
+    expect(field).toHaveTextContent('c.')
+    expect(field).toHaveTextContent('around 1950')
+    // Not glyph- or colour-only: the marker carries the note in its title.
+    expect(screen.getByTitle('Estimated date, not an exact one: around 1950')).toBeInTheDocument()
+  })
+
+  it('marks an estimated date that has no capture time at all', () => {
+    // The photo is undated — the note carries the whole meaning.
+    renderPanel({
+      photo: photo({ taken_at_estimated: true, taken_at_note: 'sometime in the forties' }),
+    })
+
+    const field = screen.getByRole('button', { name: 'Edit Taken at' })
+    expect(field).toHaveTextContent('c.')
+    expect(field).toHaveTextContent('sometime in the forties')
+    expect(field).not.toHaveTextContent('Add…')
+  })
+
+  it('renders a known date without any circa marker', () => {
+    renderPanel({ photo: photo({ taken_at: '2026-01-02T00:33:39Z' }) })
+
+    const field = screen.getByRole('button', { name: 'Edit Taken at' })
+    expect(field).not.toHaveTextContent('c.')
+    expect(field).toHaveTextContent(new Date('2026-01-02T00:33:39Z').toLocaleString('en'))
+    expect(screen.queryByTitle(/Estimated date/)).not.toBeInTheDocument()
+  })
+
+  it('drops the dating note when the estimate is unchecked', async () => {
+    const current = photo({
+      taken_at: '1950-06-01T12:00:00Z',
+      taken_at_estimated: true,
+      taken_at_note: 'around 1950',
+    })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderHarness(current)
+
+    await startEditing(user)
+    // The note is in the form, prefilled, until the flag goes away.
+    expect(screen.getByLabelText('Dating note')).toHaveValue('around 1950')
+    await user.click(screen.getByLabelText('Date is an estimate'))
+    expect(screen.queryByLabelText('Dating note')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    const patch = sentPatch()
+    expect(patch.taken_at_estimated).toBe(false)
+    // The backend clears the note with the flag, so the form need not send one.
+    expect(patch).not.toHaveProperty('taken_at_note')
+
+    // And the refreshed photo shows a plain, unmarked date.
+    const field = await screen.findByRole('button', { name: 'Edit Taken at' })
+    expect(field).not.toHaveTextContent('c.')
+    expect(field).not.toHaveTextContent('around 1950')
   })
 })
 

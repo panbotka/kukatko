@@ -29,20 +29,28 @@ const maxUpdateBody = 1 << 20 // 1 MiB
 // from the decoded key set, not from the pointer being non-nil, so "set to null"
 // and "absent" are distinguished.
 type updateBody struct {
-	Title       *string    `json:"title"`
-	Description *string    `json:"description"`
-	Notes       *string    `json:"notes"`
-	AiNote      *string    `json:"ai_note"`
-	Subject     *string    `json:"subject"`
-	Keywords    *string    `json:"keywords"`
-	Artist      *string    `json:"artist"`
-	Copyright   *string    `json:"copyright"`
-	License     *string    `json:"license"`
-	Scan        *bool      `json:"scan"`
-	TakenAt     *time.Time `json:"taken_at"`
-	Lat         *float64   `json:"lat"`
-	Lng         *float64   `json:"lng"`
+	Title            *string    `json:"title"`
+	Description      *string    `json:"description"`
+	Notes            *string    `json:"notes"`
+	AiNote           *string    `json:"ai_note"`
+	Subject          *string    `json:"subject"`
+	Keywords         *string    `json:"keywords"`
+	Artist           *string    `json:"artist"`
+	Copyright        *string    `json:"copyright"`
+	License          *string    `json:"license"`
+	Scan             *bool      `json:"scan"`
+	TakenAt          *time.Time `json:"taken_at"`
+	TakenAtEstimated *bool      `json:"taken_at_estimated"`
+	TakenAtNote      *string    `json:"taken_at_note"`
+	Lat              *float64   `json:"lat"`
+	Lng              *float64   `json:"lng"`
 }
+
+// takenAtNoteLimit caps the free-text dating note ("kolem roku 1950", "podle
+// babičky někdy před svatbou"). It is a remark about one date, not a caption, so a
+// few sentences are plenty; counted in runes, so a Czech note is not cut short by
+// its accents' extra bytes.
+const takenAtNoteLimit = 500
 
 // creditLimits caps each IPTC/XMP credit field a PATCH may set. The values are
 // free text with no syntax to validate, so length is the only guard — generous
@@ -146,24 +154,27 @@ func decodeUpdate(r *http.Request) (map[string]struct{}, updateBody, error) {
 
 // mergeUpdate overlays the present fields of body onto the photo's current
 // metadata, producing the full MetadataUpdate the store overwrites with. It
-// validates coordinate ranges and keeps taken_at_source in step with taken_at.
+// validates coordinate ranges and the dating note's length, and keeps
+// taken_at_source in step with taken_at.
 func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateBody) (photos.MetadataUpdate, error) {
 	update := photos.MetadataUpdate{
-		Title:         current.Title,
-		Description:   current.Description,
-		Notes:         current.Notes,
-		AiNote:        current.AiNote,
-		Subject:       current.Subject,
-		Keywords:      current.Keywords,
-		Artist:        current.Artist,
-		Copyright:     current.Copyright,
-		License:       current.License,
-		Scan:          current.Scan,
-		TakenAt:       current.TakenAt,
-		TakenAtSource: current.TakenAtSource,
-		Lat:           current.Lat,
-		Lng:           current.Lng,
-		Altitude:      current.Altitude,
+		Title:            current.Title,
+		Description:      current.Description,
+		Notes:            current.Notes,
+		AiNote:           current.AiNote,
+		Subject:          current.Subject,
+		Keywords:         current.Keywords,
+		Artist:           current.Artist,
+		Copyright:        current.Copyright,
+		License:          current.License,
+		Scan:             current.Scan,
+		TakenAt:          current.TakenAt,
+		TakenAtSource:    current.TakenAtSource,
+		TakenAtEstimated: current.TakenAtEstimated,
+		TakenAtNote:      current.TakenAtNote,
+		Lat:              current.Lat,
+		Lng:              current.Lng,
+		Altitude:         current.Altitude,
 		// The private column is no editable field any more, but the importers still
 		// write it, so it is carried over unchanged: UpdateMetadata overwrites the
 		// whole row and would otherwise clear an imported flag on every edit.
@@ -176,6 +187,9 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 	}
 	if _, ok := present["taken_at"]; ok {
 		applyTakenAt(&update, body.TakenAt)
+	}
+	if err := applyTakenAtEstimate(&update, present, body); err != nil {
+		return photos.MetadataUpdate{}, err
 	}
 	if err := applyCoordinate(&update, present, body); err != nil {
 		return photos.MetadataUpdate{}, err
@@ -244,6 +258,39 @@ func applyTakenAt(update *photos.MetadataUpdate, takenAt *time.Time) {
 	} else {
 		update.TakenAtSource = "unknown"
 	}
+}
+
+// applyTakenAtEstimate overlays the approximate-date pair: the "this date is a
+// guess" flag and the free-text dating note. The note is trimmed and rejected
+// beyond takenAtNoteLimit runes, which the caller turns into a 400. As with the
+// other non-nullable columns, an explicit JSON null is ignored.
+//
+// It also enforces the pair's one invariant: a note only means something while the
+// date is flagged as an estimate, so a photo whose flag is false — because the
+// caller has just cleared it, or because it never was set — is stored without a
+// note. Unchecking the flag therefore drops the note as well, and no stale dating
+// remark can survive on a photo whose date is presented as a fact. The length is
+// still validated first, so an over-long note is reported rather than silently
+// discarded.
+//
+// The flag is deliberately independent of taken_at: a photo with no capture time at
+// all may carry an estimate whose note ("někdy ve 40. letech") is the whole
+// meaning, and it goes on behaving everywhere exactly like any other undated photo.
+func applyTakenAtEstimate(update *photos.MetadataUpdate, present map[string]struct{}, body updateBody) error {
+	if _, ok := present["taken_at_estimated"]; ok && body.TakenAtEstimated != nil {
+		update.TakenAtEstimated = *body.TakenAtEstimated
+	}
+	if _, ok := present["taken_at_note"]; ok && body.TakenAtNote != nil {
+		note := strings.TrimSpace(*body.TakenAtNote)
+		if utf8.RuneCountInString(note) > takenAtNoteLimit {
+			return fmt.Errorf("taken_at_note must be at most %d characters", takenAtNoteLimit)
+		}
+		update.TakenAtNote = note
+	}
+	if !update.TakenAtEstimated {
+		update.TakenAtNote = ""
+	}
+	return nil
 }
 
 // applyCoordinate sets or clears latitude and longitude from the present body

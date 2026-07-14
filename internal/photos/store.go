@@ -33,6 +33,7 @@ var photoInsertColumns = []string{
 	"uid", "file_hash", "file_path", "file_name", "file_size", "file_mime",
 	"file_width", "file_height", "file_orientation", "media_type", "duration_ms",
 	"video_codec", "audio_codec", "has_audio", "fps", "taken_at", "taken_at_source",
+	"taken_at_estimated", "taken_at_note",
 	"title", "description", "notes", "ai_note", "subject", "keywords", "artist",
 	"copyright", "license", "lat", "lng", "altitude", "camera_make",
 	"camera_model", "lens_model", "camera_serial", "iso", "aperture", "exposure", "focal_length",
@@ -87,6 +88,7 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.UID, &p.FileHash, &p.FilePath, &p.FileName, &p.FileSize, &p.FileMime,
 		&p.FileWidth, &p.FileHeight, &p.FileOrientation, &p.MediaType, &p.DurationMs,
 		&p.VideoCodec, &p.AudioCodec, &p.HasAudio, &p.FPS, &p.TakenAt, &p.TakenAtSource,
+		&p.TakenAtEstimated, &p.TakenAtNote,
 		&p.Title, &p.Description, &p.Notes, &p.AiNote, &p.Subject, &p.Keywords, &p.Artist,
 		&p.Copyright, &p.License, &p.Lat, &p.Lng, &p.Altitude, &p.CameraMake,
 		&p.CameraModel, &p.LensModel, &p.CameraSerial, &p.ISO, &p.Aperture, &p.Exposure, &p.FocalLength,
@@ -120,6 +122,7 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		p.UID, p.FileHash, p.FilePath, p.FileName, p.FileSize, p.FileMime,
 		p.FileWidth, p.FileHeight, p.FileOrientation, p.MediaType, p.DurationMs,
 		p.VideoCodec, p.AudioCodec, p.HasAudio, p.FPS, p.TakenAt, p.TakenAtSource,
+		p.TakenAtEstimated, p.TakenAtNote,
 		p.Title, p.Description, p.Notes, p.AiNote, p.Subject, p.Keywords, p.Artist,
 		p.Copyright, p.License, p.Lat, p.Lng, p.Altitude, p.CameraMake,
 		p.CameraModel, p.LensModel, p.CameraSerial, p.ISO, p.Aperture, p.Exposure, p.FocalLength,
@@ -263,12 +266,14 @@ func updateMetadataRow(ctx context.Context, q rowQuerier, uid string, m Metadata
 		title = $2, description = $3, notes = $4, ai_note = $5, taken_at = $6, taken_at_source = $7,
 		lat = $8, lng = $9, altitude = $10, private = $11,
 		subject = $12, keywords = $13, artist = $14, copyright = $15, license = $16, scan = $17,
+		taken_at_estimated = $18, taken_at_note = $19,
 		updated_at = now()
 		WHERE uid = $1 RETURNING ` + photoColumns
 	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid,
 		m.Title, m.Description, m.Notes, m.AiNote, m.TakenAt, m.TakenAtSource,
 		m.Lat, m.Lng, m.Altitude, m.Private,
-		m.Subject, m.Keywords, m.Artist, m.Copyright, m.License, m.Scan))
+		m.Subject, m.Keywords, m.Artist, m.Copyright, m.License, m.Scan,
+		m.TakenAtEstimated, m.TakenAtNote))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Photo{}, ErrPhotoNotFound

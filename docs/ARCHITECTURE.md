@@ -242,6 +242,16 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
     `file_name` je jméno ve storage layoutu), `projection` (`equirectangular` u panoramat).
     Plnění z EXIF a mapování z PhotoPrism importu jsou samostatné úkoly — stávající řádky mají
     defaulty.
+  - **Přibližné („cca") datum** (migrace `0029_photos_taken_at_estimate.sql`): `taken_at_estimated`
+    (`BOOLEAN NOT NULL DEFAULT false` — datum je **odhad**, ne fakt) + `taken_at_note`
+    (`TEXT NOT NULL DEFAULT ''` — volný text vlastními slovy: „kolem roku 1950", „za války").
+    Pro naskenované a zděděné fotky, kde přesné datum nikdo nezná. `taken_at` **zůstává jediná
+    kotva** pro řazení, timeline, grouping i datumové filtry — příznak je jen prezentace a
+    pravdivost (UI značí datum `cca`/`c.`), **není to druhá datumová osa** a nemění žádné pořadí
+    (proto ani nový index). `taken_at` NULL + příznak `true` je povolený stav: fotka se všude chová
+    jako každá jiná bez data a význam nese poznámka. Poznámka žije jen s příznakem — shodí-li se
+    příznak, `internal/photoapi` poznámku maže (nikdy nezůstane u data prezentovaného jako fakt).
+    Do fulltextu `photos.fts` **nepadá** (je to poznámka k datování, ne titulek).
   **Nové sloupce pro Kukátko:**
   - `photoprism_uid VARCHAR(32)` — PhotoUID z PhotoPrismu (dedup + inkrement).
   - `photoprism_file_hash VARCHAR(40)` — SHA1 souboru z PhotoPrismu (download mapping).

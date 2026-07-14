@@ -71,7 +71,14 @@ export function PhotoTile({
   const thumb = useThumbSrc(photo.uid, photo.thumb_url)
 
   const label = photo.title !== '' ? photo.title : photo.file_name
-  const taken = photo.taken_at ? formatDate(photo.taken_at, i18n.language) : ''
+  // The tile shows no date of its own; the only one it carries is in the alt text,
+  // and an estimated date is marked there too ("cca 1950") so it cannot be read as
+  // a known one. The grid itself goes on sorting by taken_at exactly as before.
+  const takenDate = photo.taken_at ? formatDate(photo.taken_at, i18n.language) : ''
+  const taken =
+    takenDate !== '' && photo.taken_at_estimated === true
+      ? `${t('photo.metadata.estimatedMarker')} ${takenDate}`
+      : takenDate
   const alt = taken !== '' ? `${label} — ${taken}` : label
 
   const inner = (
