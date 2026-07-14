@@ -461,82 +461,77 @@ export function PhotoDetailPage() {
         )}
       </div>
 
-      {/* Control/info panels below the photo, in a strict edit-first priority
-          order (a single readable column, centred on wide screens): Organize
-          first, then Caption & place, Technical details, and finally Photo
-          editing. From `lg` up the first two share one row (Organize 25 %,
-          Caption & place 75 %); below it they stack full width in the same
-          order, so the page stays usable on a phone. */}
-      <Row className="justify-content-center mt-3">
-        <Col xs={12} xl={9} xxl={8}>
-          {/* `align-items-start` keeps both cards at their natural height: the
-              row must not stretch the shorter one into a tall empty box. */}
-          <Row className="align-items-start">
-            {/* 1. Organize — the primary block: albums, tags and people, always
-                visible and directly editable for an editor (no separate edit mode). */}
-            <Col xs={12} lg={3}>
-              <Card className="mb-3">
-                <Card.Header>{t('photo.sections.organize')}</Card.Header>
-                <Card.Body>
-                  <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
-                  <hr />
-                  <PeoplePanel faces={faces} canWrite={canWrite} loading={loadingNext} />
-                </Card.Body>
-              </Card>
-            </Col>
-
-            {/* 2. Caption & place — title/description/AI description/notes/taken-at/
-                location, read-only until an editor clicks a field to edit it. */}
-            <Col xs={12} lg={9}>
-              <Card className="mb-3">
-                <Card.Header>{t('photo.sections.caption')}</Card.Header>
-                <Card.Body>
-                  <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
-                </Card.Body>
-              </Card>
-            </Col>
-          </Row>
-
-          {/* 3. Technical details — reference only, collapsed by default (the
-              component owns its own expander). */}
+      {/* Control/info panels below the photo, spanning the full page width, in a
+          strict edit-first priority order: Organize first, then Caption & place,
+          Technical details, and finally Photo editing. From `lg` up the first two
+          share one row (Organize 4/12, Caption & place 8/12); below it they stack
+          full width in the same order, so the page stays usable on a phone. */}
+      {/* `align-items-start` keeps both cards at their natural height: the row
+          must not stretch the shorter one into a tall empty box. */}
+      <Row className="align-items-start mt-3">
+        {/* 1. Organize — the primary block: albums, tags and people, always
+            visible and directly editable for an editor (no separate edit mode). */}
+        <Col xs={12} lg={4}>
           <Card className="mb-3">
+            <Card.Header>{t('photo.sections.organize')}</Card.Header>
             <Card.Body>
-              <TechnicalDetails
-                photo={photo}
-                canWrite={canWrite}
-                onThumbnailRegenerated={onThumbnailRegenerated}
-              />
+              <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
+              <hr />
+              <PeoplePanel faces={faces} canWrite={canWrite} loading={loadingNext} />
             </Card.Body>
           </Card>
+        </Col>
 
-          {/* 4. Photo editing — last, editor only, collapsed by default. The edits
-              card owns its own preview <img>; keeping it collapsed until opened
-              means the page still carries exactly one copy of the photo. */}
-          {canWrite && (
-            <Card className="mb-3">
-              <Card.Header className="p-0">
-                <Button
-                  variant="link"
-                  className="w-100 d-flex align-items-center justify-content-between text-decoration-none text-reset px-3 py-2"
-                  aria-expanded={editOpen}
-                  aria-controls="photo-edit-region"
-                  onClick={() => {
-                    setEditOpen(!editOpen)
-                  }}
-                >
-                  <span>{t('photo.edit.title')}</span>
-                  <Icon name={editOpen ? 'chevron-down' : 'chevron-right'} />
-                </Button>
-              </Card.Header>
-              {editOpen && (
-                <Card.Body id="photo-edit-region">
-                  <EditPanel uid={photo.uid} edit={edit} onSaved={setEdit} />
-                </Card.Body>
-              )}
-            </Card>
-          )}
+        {/* 2. Caption & place — title/description/AI description/notes/taken-at/
+            location, read-only until an editor clicks a field to edit it. */}
+        <Col xs={12} lg={8}>
+          <Card className="mb-3">
+            <Card.Header>{t('photo.sections.caption')}</Card.Header>
+            <Card.Body>
+              <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
+            </Card.Body>
+          </Card>
         </Col>
       </Row>
+
+      {/* 3. Technical details — reference only, collapsed by default (the
+          component owns its own expander). */}
+      <Card className="mb-3">
+        <Card.Body>
+          <TechnicalDetails
+            photo={photo}
+            canWrite={canWrite}
+            onThumbnailRegenerated={onThumbnailRegenerated}
+          />
+        </Card.Body>
+      </Card>
+
+      {/* 4. Photo editing — last, editor only, collapsed by default. The edits
+          card owns its own preview <img>; keeping it collapsed until opened
+          means the page still carries exactly one copy of the photo. */}
+      {canWrite && (
+        <Card className="mb-3">
+          <Card.Header className="p-0">
+            <Button
+              variant="link"
+              className="w-100 d-flex align-items-center justify-content-between text-decoration-none text-reset px-3 py-2"
+              aria-expanded={editOpen}
+              aria-controls="photo-edit-region"
+              onClick={() => {
+                setEditOpen(!editOpen)
+              }}
+            >
+              <span>{t('photo.edit.title')}</span>
+              <Icon name={editOpen ? 'chevron-down' : 'chevron-right'} />
+            </Button>
+          </Card.Header>
+          {editOpen && (
+            <Card.Body id="photo-edit-region">
+              <EditPanel uid={photo.uid} edit={edit} onSaved={setEdit} />
+            </Card.Body>
+          )}
+        </Card>
+      )}
 
       <div className="mt-4">
         <SimilarPhotos uid={photo.uid} />

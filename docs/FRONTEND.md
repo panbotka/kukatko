@@ -399,14 +399,14 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   tlačítko **Zobrazit/Skrýt obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`)
   a volba se pamatuje v localStorage (`lib/faceOverlayPref`); klik na box (nebo na person-chip
   v bloku **Lidé**) otevře `FaceAssignPanel` v tom bloku;
-  **ovládací/informační panely jsou POD fotkou** (ne vedle ní), naskládané do **jednoho
-  čitelného sloupce** (`Row`/`Col` `col-12 col-xl-9 col-xxl-8`, na širokých obrazovkách
-  vycentrovaný) ve **striktním edit-first pořadí** — pruh `SimilarPhotos` je až pod nimi.
-  První dvě karty sdílejí **od `lg` výš jeden řádek**: **Uspořádání 25 %** (úzký rail)
-  vedle **Popis a místo 75 %** (vnořený `Row` `align-items-start` + `Col` `lg={3}`/`lg={9}`;
-  `align-items-start` drží obě karty v jejich přirozené výšce, aby se kratší nenatáhla do
-  prázdné krabice). **Pod `lg` se stackují na plnou šířku ve stejném pořadí**, takže na
-  mobilu platí totéž čtecí pořadí. Karty
+  **ovládací/informační panely jsou POD fotkou** (ne vedle ní) a jdou **přes celou šířku
+  obsahové oblasti** (žádný centrovaný užší sloupec) ve **striktním edit-first pořadí** —
+  pruh `SimilarPhotos` je až pod nimi. První dvě karty sdílejí **od `lg` výš jeden řádek**
+  v poměru **4:8** — **Uspořádání** (užší rail) vedle **Popis a místo** (`Row`
+  `align-items-start` + `Col` `lg={4}`/`lg={8}`; `align-items-start` drží obě karty v jejich přirozené výšce, aby
+  se kratší nenatáhla do prázdné krabice). **Technické údaje** a **Úpravy** pod nimi jsou
+  samostatné karty na plnou šířku. **Pod `lg` se stackují na plnou šířku ve stejném pořadí**,
+  takže na mobilu platí totéž čtecí pořadí. Karty
   (`components/photo/`): **1. Uspořádání** (`sections.organize`) = **primární blok, vždy
   viditelný a přímo editovatelný** (žádný „edit mód"): `OrganizePanel` (inline add/remove alb
   a štítků přes organize API) + `PeoplePanel` (lidé/obličeje jako **person-chips** nad stejným
