@@ -288,8 +288,10 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
   )
   -- index na (state, run_after, priority); dedup unique na (type, payload->>'photo_uid') WHERE state IN (queued,running)
   ```
-- **`import_runs`** — historie importů: zdroj (`photoprism`/`photosorter`), high-watermark
-  (`updated:` timestamp pro inkrement), počty, čas. Idempotence inkrementálního importu.
+- **`import_runs`** — historie importů: zdroj (`photoprism`/`photosorter`/**`folder`** =
+  `kukatko import dir`, migrace `0026`), high-watermark
+  (`updated:` timestamp pro inkrement; `folder` běh ho nemá — složka nemá zdrojový čas, idempotenci
+  dělá SHA256 obsahu), počty, čas. Idempotence inkrementálního importu.
 
 ### 5.3 Mapování identit (kvůli importu/migraci)
 

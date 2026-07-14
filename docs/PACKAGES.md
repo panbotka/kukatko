@@ -310,7 +310,35 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   čistá duplicita; **near-dup warning** config-gated přes `photos.NearestPhash`; `JobEnqueuer` =
   TODO hook `EnqueueImageEmbed`/`EnqueueFaceDetect`, default `NopEnqueuer` než vznikne fronta;
   `API` = `NewAPI(svc, requireWrite)` + `RegisterRoutes` mountuje `POST /upload` za `RequireWrite`;
-  multipart se streamuje part-by-part, nikdy celý soubor v RAM), `internal/photoapi/`
+  multipart se streamuje part-by-part, nikdy celý soubor v RAM),
+  `internal/dirimport/`
+  (**import adresáře z disku** — `kukatko import dir <path>`; `Service` = `New(Config{Ingest,Runs,
+  Photos,Albums,Labels,Concurrency,Logger})` s `Import(ctx, Options{Root,Recursive,DryRun,Album,
+  Labels,UploadedBy,Progress}) (Result,error)`; **žádná druhá pipeline** — každý mediální soubor jde
+  přes `ingest.Ingest` úplně stejně jako upload (stream, SHA256 dedup, metadata, `YYYY/MM`, náhledy,
+  joby), vše za rozhraními `Ingester`/`RunStore`/`PhotoLookup`/`AlbumStore`/`LabelStore` → unit-testovatelné
+  s faky; **idempotentní** (identita = SHA256 → re-run hlásí duplicity a nic nezapíše) a
+  **resumovatelný** (každý soubor commitnutý zvlášť, pád/Ctrl-C nechá naimportované v knihovně,
+  re-run dojede zbytek); originály se **kopírují, nikdy nepřesouvají ani nemění**;
+  `plan()` projde strom lexikálně (deterministicky) a klasifikuje skip důvody: `SkipHidden` (tečkové),
+  `SkipJunk` (`@eaDir`, `__MACOSX`, `Thumbs.db`, `.DS_Store`, `desktop.ini`, Picasa),
+  `SkipSidecar` (`.xmp`/`.json`/`.aae`/`.thm` — sidecary nejsou média; čtení metadat z nich je
+  samostatný úkol), `SkipUnsupported` (mimo `imgconvert.IsSupportedFormat`, tj. HEIC/RAW/video jdou dovnitř),
+  `SkipSymlink` (**symlinky se přeskakují, nikdy nenásledují** → walk nemůže zacyklit; jen samotný
+  root se rozbalí přes `EvalSymlinks`) a `SkipEmpty` (0 B); hidden/junk adresáře se prořezávají celé,
+  `--no-recursive` prořeže vše pod rootem; per-file chyba padá do `Counts.Failed` a běh **pokračuje**
+  (jeden rozbitý JPEG nesmí shodit 2000-souborový běh); fan-out `DefaultConcurrency` 3 /
+  `MaxConcurrency` 8 (thumbnailing je paměťově drahý, 16 GB box sdílený se vším ostatním);
+  `--album`/`--labels` se **resolvují dopředu** (uid nebo název; co neexistuje, se založí — překlep
+  tak spadne hned, ne po dvou tisících souborech) a přiřazují i **duplicitám** (`AddPhoto`/`AttachLabel`
+  jsou idempotentní → re-run složky do alba je způsob, jak opravit zapomenutý `--album`);
+  běh se zapisuje přes `internal/importer` jako `importer.SourceFolder` (migrace
+  `0026_import_runs_folder.sql` rozšiřuje CHECK na `import_runs.source`), **bez watermarku** (složka
+  nemá zdrojový čas, dedup dělá SHA256), tally se checkpointuje každých 25 souborů;
+  `Counts{Imported,Duplicates,Skipped,Failed,ByReason}` → `importer.Counts` (duplicity i přeskočený
+  junk padají do `skipped`, `updated` je vždy 0); zrušený kontext → `ErrInterrupted` + běh uzavřen
+  jako `failed` (žádný věčně „running" řádek); `--dry-run` soubory jen **hashuje a hledá v katalogu**
+  (nový/duplicita) a **nezapíše vůbec nic** — ani `import_runs`), `internal/photoapi/`
   (read/curace HTTP API nad katalogem: `NewAPI(Config{Store,Storage,Thumbnailer,Similar,
   Embedder,Faces,Favorites,Ratings,RequireAuth,RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`
   **, `GET /photos/timeline`, **`GET /photos/years`**, `GET /search` a `GET /favorites`**; `parseListParams`

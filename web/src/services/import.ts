@@ -54,8 +54,16 @@ async function postJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await res.json()) as T
 }
 
-/** Import sources that can be triggered (`importer.Source`). */
+/** Import sources that can be triggered from the UI (`importer.Source`). */
 export type ImportSource = 'photoprism' | 'photosorter'
+
+/**
+ * Every source a recorded run can carry: the triggerable ones plus `folder`, a
+ * `kukatko import dir` run. A folder import is driven from the CLI (it reads a
+ * directory on the server's disk), so it has no start button — but its runs show
+ * up in the same history.
+ */
+export type RunSource = ImportSource | 'folder'
 
 /** Lifecycle state of an import run (`importer.Status`). */
 export type RunStatus = 'running' | 'done' | 'failed'
@@ -71,7 +79,7 @@ export interface ImportCounts {
 /** One import or migration run from the history (`importer.Run`). */
 export interface ImportRun {
   id: number
-  source: ImportSource
+  source: RunSource
   started_at: string
   finished_at: string | null
   status: RunStatus

@@ -893,7 +893,8 @@
     "error": "Failed to load import status.",
     "source": {
       "photoprism": "PhotoPrism",
-      "photosorter": "Photo-sorter"
+      "photosorter": "Photo-sorter",
+      "folder": "Folder on disk"
     },
     "photoprismDesc": "Incremental import from a running PhotoPrism instance (photos, metadata, albums, labels, people).",
     "photosorterDesc": "Direct migration from the photo-sorter database (photos, embeddings, faces, albums, labels).",

@@ -16,17 +16,20 @@ import (
 var errImportNotConfigured = errors.New(
 	"photoprism import not configured: set import.photoprism.base_url (and token)")
 
-// newImportCmd builds the "import" subcommand group and its photoprism child,
-// which runs a PhotoPrism import synchronously — full, or scoped to an album, a
-// label, a person and/or a year — and prints the resulting counts. It is the
-// ops/cron entry point that does not need the server running; the same full
-// import also runs as a background pp_import job triggered from the API.
+// newImportCmd builds the "import" subcommand group and its children: the
+// photoprism import, which runs a PhotoPrism import synchronously — full, or
+// scoped to an album, a label, a person and/or a year — and prints the resulting
+// counts, and the dir import, which ingests a directory of originals from disk.
+// It is the ops/cron entry point that does not need the server running; the same
+// full PhotoPrism import also runs as a background pp_import job triggered from
+// the API.
 func newImportCmd() *cobra.Command {
 	importCmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import media from external sources",
-		Long:  "Import media into Kukátko from external catalogues (currently PhotoPrism).",
-		Args:  cobra.NoArgs,
+		Long: "Import media into Kukátko from an external catalogue (PhotoPrism) " +
+			"or from a directory of files on disk.",
+		Args: cobra.NoArgs,
 	}
 	ppCmd := &cobra.Command{
 		Use:   "photoprism",
@@ -56,7 +59,7 @@ func newImportCmd() *cobra.Command {
 			"(partial run; leaves the watermark untouched)")
 	ppCmd.Flags().Int("year", 0,
 		"import only photos taken in this year, e.g. 1985 (partial run; leaves the watermark untouched)")
-	importCmd.AddCommand(ppCmd)
+	importCmd.AddCommand(ppCmd, newImportDirCmd())
 	return importCmd
 }
 

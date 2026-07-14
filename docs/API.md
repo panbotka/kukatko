@@ -322,7 +322,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   historie read-only importů. `GET /import/runs` (**vždy registrovaný**) → `{runs,limit,offset,
   sources:{photoprism,photosorter}}` — stránka `import_runs` newest-started-first (query
   `limit`≤200/`offset`, neplatný → 400) + `sources` flagy jaké zdroje jsou nakonfigurované (podklad
-  admin Import UI: zapnutí/vypnutí sekcí). `POST /import/photoprism` → `pp_import` a
+  admin Import UI: zapnutí/vypnutí sekcí). Historie nese i běhy zdroje **`folder`**
+  (`kukatko import dir`, `internal/dirimport`) — ty se spouštějí **jen z CLI** (čtou adresář na disku
+  serveru), takže nemají trigger endpoint ani flag v `sources`, ale v `runs` se objeví jako každý jiný běh. `POST /import/photoprism` → `pp_import` a
   `POST /import/photosorter` → `ps_migrate` (jen pro nakonfigurované zdroje, jinak 404) zařadí jeden
   singleton job → 202 `{job_id,status}`; `jobs.ErrDuplicate` (už běží) → 409, jiná chyba → 500.
   Celá API se mountuje vždy (`buildImportAPI` v `cmd/kukatko/import.go`), aby historie fungovala i

@@ -10,8 +10,8 @@ import { ApiError } from '../services/auth'
 import {
   type ImportRun,
   type ImportRunsResponse,
-  type ImportSource,
   type JobStats,
+  type RunSource,
   type RunStatus,
 } from '../services/import'
 
@@ -34,7 +34,7 @@ const startMock = vi.mocked(startImport)
 
 function run(
   id: number,
-  source: ImportSource,
+  source: RunSource,
   status: RunStatus,
   overrides: Partial<ImportRun> = {},
 ): ImportRun {
@@ -102,6 +102,14 @@ afterEach(() => {
 })
 
 describe('ImportPage', () => {
+  it('renders a CLI folder import in the history, next to the triggerable sources', async () => {
+    runsMock.mockResolvedValue(runsResponse([run(3, 'folder', 'done')]))
+    renderPage()
+
+    // `kukatko import dir` has no start button, but its run shows up in the history.
+    expect(await screen.findByText('Folder on disk')).toBeInTheDocument()
+  })
+
   it('renders the run-history table from polled status', async () => {
     runsMock.mockResolvedValue(
       runsResponse([

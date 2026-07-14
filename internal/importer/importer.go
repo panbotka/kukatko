@@ -32,11 +32,15 @@ const (
 	// SourcePhotoSorter is the one-off (optionally repeatable) migration from the
 	// photo-sorter database.
 	SourcePhotoSorter Source = "photosorter"
+	// SourceFolder is a `kukatko import dir` run: a directory of originals
+	// ingested from disk. It has no source timestamp to resume from and so never
+	// records a high-watermark; re-running is made safe by the SHA256 dedup.
+	SourceFolder Source = "folder"
 )
 
 // Valid reports whether s is a recognised import source.
 func (s Source) Valid() bool {
-	return s == SourcePhotoPrism || s == SourcePhotoSorter
+	return s == SourcePhotoPrism || s == SourcePhotoSorter || s == SourceFolder
 }
 
 // Status is the lifecycle state of an import run. The values mirror the status

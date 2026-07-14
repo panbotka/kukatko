@@ -57,6 +57,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/config` — typed configuration, Viper, `Load()`
 - `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON output
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
+- `internal/dirimport` — `kukatko import dir`: projde adresář na disku a nahraje média přes `internal/ingest`
 - `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only
 - `internal/duplicatesapi` — `GET /duplicates`, `POST /duplicates/merge`
 - `internal/dupmerge` — transactional resolve of a dup group: union albums/labels/people onto the keeper, fill gaps, archive copies
