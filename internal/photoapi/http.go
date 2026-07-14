@@ -44,6 +44,7 @@ type API struct {
 	ratings         RatingStore
 	organizer       PhotoOrganizer
 	users           UserResolver
+	places          PlaceResolver
 	purger          Purger
 	retentionDays   int
 	videoTranscode  bool
@@ -96,6 +97,10 @@ type Config struct {
 	// detail response's uploader object. When nil the detail response omits the
 	// uploader (the client shows a neutral fallback).
 	Users UserResolver
+	// Places reads the cached reverse-geocoded place for the detail response's
+	// place block. It is a cache read only — the detail endpoint never triggers a
+	// geocode. When nil the detail response omits the place.
+	Places PlaceResolver
 	// Purger backs the permanent-delete endpoints (purge one, empty trash). When
 	// nil those endpoints answer 503.
 	Purger Purger
@@ -131,6 +136,7 @@ func NewAPI(cfg Config) *API {
 		ratings:         cfg.Ratings,
 		organizer:       cfg.Organizer,
 		users:           cfg.Users,
+		places:          cfg.Places,
 		purger:          cfg.Purger,
 		retentionDays:   cfg.RetentionDays,
 		videoTranscode:  cfg.VideoTranscode,
@@ -347,15 +353,17 @@ type uploaderRef struct {
 // photoDetail is the JSON body returned by the detail endpoint: the photo (with
 // its metadata, EXIF, GPS and the current user's is_favorite flag), the list of
 // its stored files, its album/label memberships (empty when no organizer is
-// wired), and the resolved uploader (omitted for photos with no uploader — e.g.
-// imported items — or when no resolver is wired) so the detail view can show and
-// edit them inline.
+// wired), the resolved uploader (omitted for photos with no uploader — e.g.
+// imported items — or when no resolver is wired) and the cached reverse-geocoded
+// place (omitted when the photo has none) so the detail view can show and edit
+// them inline.
 type photoDetail struct {
 	photoView
 	Files    []photos.PhotoFile `json:"files"`
 	Albums   []albumRef         `json:"albums"`
 	Labels   []labelRef         `json:"labels"`
 	Uploader *uploaderRef       `json:"uploader,omitempty"`
+	Place    *placeRef          `json:"place,omitempty"`
 }
 
 // handleDetail returns a photo's full detail, including its file list and the
@@ -377,7 +385,7 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 
 // writeDetail assembles and writes the full photoDetail body for photo: its stored
 // files, the caller's per-user annotations (is_favorite, rating, flag) and media
-// URLs, its album/label memberships and its resolved uploader.
+// URLs, its album/label memberships, its resolved uploader and its cached place.
 //
 // Every endpoint answering with a single photo the detail view then holds must go
 // through here, not write the bare photos.Photo: the client replaces the detail it
@@ -402,6 +410,7 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 	writeJSON(w, http.StatusOK, photoDetail{
 		photoView: views[0], Files: files, Albums: albums, Labels: labels,
 		Uploader: a.resolveUploader(r.Context(), photo.UploadedBy),
+		Place:    a.resolvePlace(r.Context(), photo.UID),
 	})
 }
 

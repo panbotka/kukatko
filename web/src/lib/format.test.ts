@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  formatByteCount,
   formatBytes,
   formatCaptureRange,
   formatDate,
@@ -19,10 +20,29 @@ describe('formatBytes', () => {
     expect(formatBytes(5 * 1024 * 1024)).toBe('5.0 MB')
   })
 
+  it('localises the decimal separator when a locale is given', () => {
+    expect(formatBytes(1536, 'cs')).toBe('1,5 KB')
+    expect(formatBytes(1536, 'en')).toBe('1.5 KB')
+    expect(formatBytes(512, 'cs')).toBe('512 B')
+  })
+
   it('clamps non-positive and non-finite input to 0 B', () => {
     expect(formatBytes(0)).toBe('0 B')
     expect(formatBytes(-10)).toBe('0 B')
     expect(formatBytes(Number.NaN)).toBe('0 B')
+  })
+})
+
+describe('formatByteCount', () => {
+  it('groups the exact byte count in the active locale', () => {
+    // Czech groups with a narrow no-break space, so compare on the digits.
+    expect(formatByteCount(3145728, 'cs').replace(/\s/gu, ' ')).toBe('3 145 728 B')
+    expect(formatByteCount(3145728, 'en')).toBe('3,145,728 B')
+  })
+
+  it('clamps non-positive and non-finite input to 0 B', () => {
+    expect(formatByteCount(-1, 'en')).toBe('0 B')
+    expect(formatByteCount(Number.NaN, 'en')).toBe('0 B')
   })
 })
 

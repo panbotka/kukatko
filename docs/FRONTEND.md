@@ -474,10 +474,23 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (Save se **nedisabluje**). Odpověď PATCHe je plný detail (`albums`/`labels`/`files`), kterým
   stránka nahradí drženou fotku; read-only poloha = `PhotoLocation` (mini-mapa nad mapy.com proxy + on-demand
   `reverseGeocode`) **embedovaná** v tomto bloku. **3. Technické údaje** (`TechnicalDetails`,
-  **na první render zavřený** expander `aria-expanded`/`aria-controls`): camera/lens/clona/expozice/
-  ohnisko/ISO/název souboru/rozměry **+ řádek Nahrál/a** (`photo.metadata.uploadedBy` z
-  `photo.uploader.name`, fallback `—` `uploaderUnknown`) přes `MetaField` — read-only referenční
-  fakta. **Servisní akce zde** (jen editor/admin, `canWrite`): `RegenerateThumbnailButton`
+  **na první render zavřený** expander `aria-expanded`/`aria-controls`): **všechno, co appka o fotce
+  ví**, ve **skupinách** (`MetaGroup` = nadpis + `<dl className="row">`, dva sloupce na širokém
+  viewportu, jeden na úzkém; dlouhé hodnoty se lámou, nikdy neroztáhnou stránku):
+  **Fotografie** (camera/lens/clona/expozice/ohnisko/ISO, sériové číslo, software, zdroj data
+  pořízení, IPTC/XMP kredity `subject`/`artist`/`copyright`/`license`, `keywords` jako **chipy**
+  rozsekané na čárce, `projection` + badge řádek `private`/`scan`), **Soubor** (název, `original_name`
+  jen když se liší, formát z MIME, velikost — přesný počet bajtů v `title`, rozměry, **poměr stran**
+  a **Mpx** (dopočet), EXIF orientace 1–8 jako popisek, barevný profil, `image_codec`, zkrácený
+  SHA256 s plnou hodnotou v `title` a **copy-to-clipboard**, přidáno/změněno), **Poloha**
+  (souřadnice, `altitude`, + **cachnuté** `place` z detailu — země/region/město/místo; **žádné
+  on-demand geokódování**, to dělá jen `PhotoLocation` na vyžádání), **Video** (jen `media_type`
+  `video`/`live`: délka `m:ss`, kodeky, zvuk ano/ne, fps) a **Původ** (Nahrál/a
+  `photo.metadata.uploadedBy` z `photo.uploader.name`, fallback `—` `uploaderUnknown`, +
+  `photoprism_uid`/`photosorter_uid`). Vše **read-only** (editace patří do `MetadataPanel`);
+  **pole bez hodnoty se nerenderuje vůbec** (`MetaField` vrací `null`) a **prázdná skupina se
+  nerenderuje taky** — fotka s chudými metadaty není zeď pomlček. Čísla/datumy přes aktivní locale
+  (`i18n.language` → čeština má desetinnou čárku). **Servisní akce zde** (jen editor/admin, `canWrite`): `RegenerateThumbnailButton`
   (`components/photo/`) uvnitř rozbaleného expanderu volá `regenerateThumbnail(uid)` (POST
   `/photos/{uid}/regenerate-thumbnail`), ukazuje **pending** (spinner + `disabled`), pak úspěch
   nebo chybu (422 = „originál chybí nebo ho nelze dekódovat", jinak obecná hláška); po úspěchu
@@ -489,8 +502,15 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   preview nepřidalo druhý `<img>` a stránka nesla jednu kopii fotky. Viewer vidí vše read-only
   (žádná karta Úpravy, žádné edit/add/remove akce, žádný přepínač soukromí, `FaceOverlay` readOnly
   = boxy vidí, ale neklikne);
-  `components/photo/` dál nese `MetaField` (jeden read-only labelled řádek, prázdná hodnota =
-  nic; sdílí `MetadataPanel` i `TechnicalDetails`); `lib/photoEdit` = pure helpery
+  `components/photo/` dál nese `MetaField` (jeden read-only labelled řádek `<dt>`/`<dd>` uvnitř
+  `<dl className="row">` skupiny, prázdná hodnota = nic; volitelný `title` = tooltip nad zkrácenou
+  hodnotou a `children` = bohatá hodnota (chipy/badge/copy tlačítko), řádek s `children` se renderuje
+  vždy — o prázdnotě rozhoduje volající); `lib/photoFacts` = pure odvozená fakta o souboru
+  (`aspectRatio` — zlomek zkrácený přes gcd, decimal fallback `1,50 : 1` když se nezkrátí na čitelné
+  členy; `megapixels`; `formatMime` → `JPEG`/`MOV`; `orientation`/`takenAtSource` = zúžení na
+  literal union, aby `t()` klíč zůstal typovaný; `splitKeywords`; `shortHash`), `lib/format`
+  `formatBytes(bytes, locale?)` (locale = desetinná čárka) a `formatByteCount` (přesný počet bajtů
+  do tooltipu); `lib/photoEdit` = pure helpery
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
   `rotateRight`/`hasCrop`/`NEUTRAL_EDIT`),
   `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (cover/jméno/počet

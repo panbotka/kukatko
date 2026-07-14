@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
@@ -66,18 +67,22 @@ func buildPhotoAPI(
 	})
 
 	return photoapi.NewAPI(photoapi.Config{
-		Store:           photoStore,
-		Storage:         store,
-		Thumbnailer:     thumbnailer,
-		Regenerator:     regenerator,
-		Audit:           audit.NewStore(db.Pool()),
-		Similar:         similar,
-		Embedder:        embedder,
-		Faces:           faceSvc,
-		Favorites:       organizeStore,
-		Ratings:         organizeStore,
-		Organizer:       organizeStore,
-		Users:           userStore,
+		Store:       photoStore,
+		Storage:     store,
+		Thumbnailer: thumbnailer,
+		Regenerator: regenerator,
+		Audit:       audit.NewStore(db.Pool()),
+		Similar:     similar,
+		Embedder:    embedder,
+		Faces:       faceSvc,
+		Favorites:   organizeStore,
+		Ratings:     organizeStore,
+		Organizer:   organizeStore,
+		Users:       userStore,
+		// The detail response carries the photo's cached place. This is a read of
+		// the photo_places cache the `places` job fills — the detail endpoint never
+		// geocodes, so opening a photo costs no mapy.com credit.
+		Places:          places.NewStore(db.Pool()),
 		Purger:          purger,
 		RetentionDays:   cfg.Trash.RetentionDays,
 		VideoTranscode:  cfg.Video.Transcode,

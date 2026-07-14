@@ -14,6 +14,13 @@ export interface Photo {
   file_mime: string
   file_width: number
   file_height: number
+  /** The raw EXIF orientation tag (1–8); 0/absent when the file carried none. */
+  file_orientation?: number
+  /**
+   * The file name the photo carried before it was ingested. Only interesting when
+   * it differs from `file_name`, the name it has in the storage layout.
+   */
+  original_name?: string
   taken_at?: string
   taken_at_source: string
   /**
@@ -48,8 +55,32 @@ export interface Photo {
   aperture?: number
   exposure?: string
   focal_length?: number
+  /** The camera body's serial number, when the file recorded one. */
+  camera_serial?: string
   /** GPS altitude in metres, when geotagged with elevation. */
   altitude?: number
+  /**
+   * The IPTC/XMP credit block, as the source file wrote it. All user-editable
+   * (in `MetadataPanel`) and shown read-only on the detail card.
+   */
+  subject?: string
+  /** IPTC keywords, comma-separated and verbatim — not Kukátko's own labels. */
+  keywords?: string
+  artist?: string
+  copyright?: string
+  license?: string
+  /**
+   * Machine-derived file technicals, written by ingest/import and never editable:
+   * what produced the image, whether it is a scan of a physical print, the embedded
+   * ICC profile, the still image's compression and a panorama's projection.
+   */
+  software?: string
+  scan?: boolean
+  color_profile?: string
+  image_codec?: string
+  projection?: string
+  /** Whether the photo is private (hidden from the shared views). */
+  private?: boolean
   /** Media kind: `image`, `video` or `live`. Absent is treated as `image`. */
   media_type?: string
   /** Clip length in milliseconds for videos/live photos; absent for images. */
@@ -62,6 +93,13 @@ export interface Photo {
   has_audio?: boolean
   /** Average frame rate of the video; absent for images. */
   fps?: number
+  /**
+   * The source the photo was imported from, when it was: its UID in PhotoPrism or
+   * in photo-sorter. Provenance only — the detail card shows it so it is obvious
+   * where an imported photo came from.
+   */
+  photoprism_uid?: string
+  photosorter_uid?: string
   archived_at?: string
   created_at: string
   updated_at: string
@@ -388,15 +426,32 @@ export interface PhotoUploaderRef {
 }
 
 /**
+ * The photo's cached reverse-geocoded place on a detail response — the hierarchy
+ * the background `places` job resolved its coordinate into. It is a *cache* read:
+ * the detail endpoint never geocodes on demand (mapy.com credits are metered), so
+ * the block is absent for a photo the job has not reached, for one without usable
+ * coordinates, and for one with no GPS at all. Individual levels can be empty
+ * strings when the geocoder knew no better.
+ */
+export interface PhotoPlace {
+  country: string
+  region: string
+  city: string
+  place_name: string
+}
+
+/**
  * Full photo detail (`internal/photoapi` detail handler): a photo plus its
- * files, its album/label memberships (empty arrays when none), and the resolved
- * uploader (omitted when the photo has no uploader).
+ * files, its album/label memberships (empty arrays when none), the resolved
+ * uploader (omitted when the photo has no uploader) and its cached place (omitted
+ * when it has none).
  */
 export interface PhotoDetail extends Photo {
   files: PhotoFile[]
   albums: PhotoAlbumRef[]
   labels: PhotoLabelRef[]
   uploader?: PhotoUploaderRef
+  place?: PhotoPlace
 }
 
 /**
