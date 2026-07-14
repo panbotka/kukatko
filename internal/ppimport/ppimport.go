@@ -10,7 +10,12 @@
 //
 // On top of the photos it maps the surrounding structure: albums and labels are
 // found-or-created by name and their membership attached to the imported photos,
-// and named face markers seed people (subjects) and their markers.
+// and named face markers seed people (subjects) and their markers. A full run
+// maps that structure by walking the source's album and label catalogues; a
+// scoped run (ImportScoped) instead reads each imported photo's own detail, which
+// names every album it belongs to and every label it carries, so a migrated slice
+// arrives with each photo's whole context and not merely the one album or label
+// that selected it.
 //
 // Robustness is the point of this package: a per-photo failure is recorded in the
 // run's Failed tally and never aborts the whole run; the PhotoPrism client
@@ -66,12 +71,15 @@ const DefaultPageSize = photoprism.MaxCount
 var DefaultAlbumTypes = []string{"album", "folder", "moment", "state"}
 
 // PhotoPrismClient is the read-only PhotoPrism contract the importer needs: photo
-// listing (incremental or scoped to an album/label) and original download, plus
-// the album and label catalogues. It is the import-facing subset of
-// photoprism.Client.
+// listing (incremental or scoped to an album/label), the detail of one photo (its
+// albums and labels, which the listing omits) and original download, plus the
+// album and label catalogues. It is the import-facing subset of photoprism.Client.
 type PhotoPrismClient interface {
 	// ListPhotos returns one page of photos for the given params.
 	ListPhotos(ctx context.Context, params photoprism.PhotoListParams) ([]photoprism.Photo, error)
+	// GetPhoto returns one photo with its whole context: the albums it belongs to
+	// and the labels it carries. Only a scoped run calls it (one request per photo).
+	GetPhoto(ctx context.Context, uid string) (photoprism.PhotoDetail, error)
 	// ListAlbums returns one page of albums.
 	ListAlbums(ctx context.Context, params photoprism.ListParams) ([]photoprism.Album, error)
 	// ListLabels returns one page of labels.
@@ -332,11 +340,12 @@ func (s *Service) Import(ctx context.Context) (Result, error) {
 
 // ImportScoped runs one scoped pass: it imports every photo the Scope selects —
 // an album, a label, a person, a year, or any combination of them — regardless
-// of the incremental watermark, maps the structure of exactly those photos, and
-// seeds the people found on them. It is how the library is migrated in slices,
-// and how the import is verified end to end against a production PhotoPrism
-// without walking the whole catalogue. An empty scope is ErrEmptyScope: a full
-// run is Import.
+// of the incremental watermark, and brings each of those photos across whole: all
+// the albums it belongs to and all the labels it carries are mapped (not just the
+// one the scope named), and the people on it are seeded from its face markers. It
+// is how the library is migrated in slices, and how the import is verified end to
+// end against a production PhotoPrism without walking the whole catalogue. An
+// empty scope is ErrEmptyScope: a full run is Import.
 //
 // A scoped run deliberately does NOT advance the watermark. It sees a slice of
 // the library only, so recording its newest timestamp as the resume cursor would
@@ -364,13 +373,20 @@ func (s *Service) ImportScoped(ctx context.Context, scope Scope) (Result, error)
 	return Result{RunID: run.ID, Counts: state.counts}, nil
 }
 
-// runScopedImport imports the scoped photos and maps their structure. Any
+// runScopedImport checks the scope names something the source knows, then imports
+// the selected photos — each of which maps its own whole context as it goes
+// (mapPhotoContext), against the album and label indexes read once up front. Any
 // returned error is an infrastructure failure that should fail the whole run.
 func (s *Service) runScopedImport(ctx context.Context, runID int64, state *runState) error {
-	if err := s.importPhotos(ctx, runID, state); err != nil {
+	if err := s.validateScope(ctx, state.scope); err != nil {
 		return err
 	}
-	return s.mapScope(ctx, state.scope)
+	pctx, err := s.newPhotoContext(ctx)
+	if err != nil {
+		return err
+	}
+	state.photoCtx = pctx
+	return s.importPhotos(ctx, runID, state)
 }
 
 // runImport drives the three import phases over the open run, resuming from the
@@ -400,7 +416,11 @@ type runState struct {
 	since time.Time
 	// scope, when non-empty, narrows the photo listing to a slice of the source
 	// catalogue and marks the run as partial (no watermark is recorded for it).
-	scope      Scope
+	scope Scope
+	// photoCtx is set for a scoped run only: it carries the album and label
+	// indexes each imported photo maps its own context against. It is nil for a
+	// full run, which maps the structure by walking the source catalogue instead.
+	photoCtx   *photoContext
 	counts     importer.Counts
 	maxSuccess time.Time
 	minFailed  time.Time

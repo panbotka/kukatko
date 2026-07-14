@@ -32,12 +32,15 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   subjekt, např. `"Aleš Kozák"`), `--year <YYYY>` (fotky pořízené v tom roce). Flagy se **kombinují
   a běh zužují** (album jde do `s=`, ostatní do `q=` jako ANDované termy, ověřeno proti produkci:
   `--album X --year 1985`). Scoped běh natáhne svůj řez **celý, bez ohledu na stáří fotek**
-  (ignoruje watermark), namapuje jen strukturu **těch** fotek — jmenované album (`--album`) a
-  jmenovaný štítek (`--label`); lidi seedují face markery importovaných fotek, rok mapovat nic
-  nepotřebuje — a **neposouvá watermark**, takže pozdější plný import pořád vidí všechny fotky.
-  Neznámé uid alba → `ErrAlbumNotFound`, neznámý slug štítku → `ErrLabelNotFound`, nesmyslný rok →
-  `ErrInvalidYear`, žádný flag → plný inkrementální běh. Slouží k ověření importu proti produkci a
-  k předtažení části knihovny),
+  (ignoruje watermark) a **každou fotku přenese kompletní**: založí a připojí **všechna** alba, ve
+  kterých fotka je, i **všechny** její štítky (se `source`/`uncertainty` ze zdroje) — tedy i ta, která
+  scope nejmenoval, takže fotka ze tří alb importovaná přes `--album` na jedno skončí ve všech třech
+  (stojí to 1 request na detail fotky navíc; plný běh to nedělá a mapuje strukturu průchodem katalogu
+  alb/štítků). Lidi seedují face markery importovaných fotek. Běh **neposouvá watermark**, takže
+  pozdější plný import pořád vidí všechny fotky. Neznámé uid alba → `ErrAlbumNotFound`, neznámý slug
+  štítku → `ErrLabelNotFound` (ověřuje se **před** stahováním), nesmyslný rok → `ErrInvalidYear`, žádný
+  flag → plný inkrementální běh. Je idempotentní — re-run nezaloží druhé album, štítek ani členství.
+  Slouží k ověření importu proti produkci a k předtažení části knihovny),
   `kukatko backup` (synchronní jednorázová **S3 záloha** — `internal/backup`; pg_dump + sync
   originálů + retence; potřebuje `backup.s3.{endpoint,bucket}`, jinak `errBackupNotConfigured`;
   při `storage.backend: r2` se originály **kopírují bucket→bucket server-side** a záloha do

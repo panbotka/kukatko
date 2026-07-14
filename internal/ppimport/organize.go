@@ -11,20 +11,25 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
-// mapScope maps the structure of the photos a scoped run imported, without
-// walking the whole source catalogue: the named album and the named label, each
-// of which resolves its membership from one bounded listing. The other filters
-// need no mapping — the people of a --person run are seeded per photo from their
-// face markers during the import itself, and a --year run carries no structure
-// beyond the capture dates already on the photos.
-func (s *Service) mapScope(ctx context.Context, scope Scope) error {
+// validateScope rejects a scope naming an album or a label the source does not
+// know: such a run would list nothing, import nothing and still complete clean —
+// a mistyped uid or slug must not look like a success. It is checked before the
+// first photo is downloaded, so a typo costs one album/label listing and nothing
+// more. The other filters need no check: an unknown person or an empty year
+// simply selects no photos, and both are free-text queries the source resolves.
+//
+// The structure itself is not mapped here. Every photo a scoped run imports maps
+// its own whole context — all its albums, all its labels — as it is imported
+// (mapPhotoContext), which covers the scoped album and label as a matter of
+// course.
+func (s *Service) validateScope(ctx context.Context, scope Scope) error {
 	if scope.AlbumUID != "" {
-		if err := s.mapAlbum(ctx, scope.AlbumUID); err != nil {
+		if err := s.requireAlbum(ctx, scope.AlbumUID); err != nil {
 			return err
 		}
 	}
 	if scope.Label != "" {
-		return s.mapLabel(ctx, scope.Label)
+		return s.requireLabel(ctx, scope.Label)
 	}
 	return nil
 }
@@ -69,20 +74,13 @@ func (s *Service) mapAlbumsOfType(ctx context.Context, albumType string, byTitle
 	}
 }
 
-// mapAlbum maps a single source album (identified by its PhotoPrism uid) and
-// attaches its members. It is the album-scoped counterpart of mapAlbums: the
+// requireAlbum reports an error unless the source has an album with this uid. The
 // source has no get-album-by-uid endpoint, so the album catalogue is paged until
-// the uid is found. An unknown uid is an error — a scoped run that imported
-// photos but silently mapped no album would look like a success.
-func (s *Service) mapAlbum(ctx context.Context, ppAlbumUID string) error {
-	byTitle, err := s.albumsByTitle(ctx)
-	if err != nil {
-		return err
-	}
-	// A scoped uid may name an album of any type, so every type is searched — not
-	// just the ones a full run maps.
+// the uid turns up — over every album type (photoprism.AlbumTypes), since a
+// scoped uid may name an album of any type, not just the ones a full run maps.
+func (s *Service) requireAlbum(ctx context.Context, ppAlbumUID string) error {
 	for _, albumType := range photoprism.AlbumTypes {
-		found, err := s.findAlbumOfType(ctx, albumType, ppAlbumUID, byTitle)
+		found, err := s.albumExistsOfType(ctx, albumType, ppAlbumUID)
 		if err != nil {
 			return err
 		}
@@ -93,11 +91,9 @@ func (s *Service) mapAlbum(ctx context.Context, ppAlbumUID string) error {
 	return fmt.Errorf("%w: %s", ErrAlbumNotFound, ppAlbumUID)
 }
 
-// findAlbumOfType pages one album type looking for the uid, mapping it when
-// found. It reports whether the album was found.
-func (s *Service) findAlbumOfType(
-	ctx context.Context, albumType, ppAlbumUID string, byTitle map[string]string,
-) (bool, error) {
+// albumExistsOfType pages one album type looking for the uid, reporting whether
+// it is there.
+func (s *Service) albumExistsOfType(ctx context.Context, albumType, ppAlbumUID string) (bool, error) {
 	for offset := 0; ; {
 		page, err := s.client.ListAlbums(ctx, photoprism.ListParams{
 			Count:  s.pageSize,
@@ -109,7 +105,6 @@ func (s *Service) findAlbumOfType(
 		}
 		for i := range page {
 			if page[i].UID == ppAlbumUID {
-				s.mapOneAlbum(ctx, page[i], byTitle)
 				return true, nil
 			}
 		}
@@ -121,31 +116,44 @@ func (s *Service) findAlbumOfType(
 }
 
 // mapOneAlbum finds-or-creates the Kukátko album for a PhotoPrism album and
-// attaches its members. byTitle caches title→uid across the run so a created
-// album is reused for later references.
+// attaches its members.
 func (s *Service) mapOneAlbum(ctx context.Context, a photoprism.Album, byTitle map[string]string) {
-	title := strings.TrimSpace(a.Title)
-	if title == "" {
-		return
-	}
-	uid, ok := byTitle[title]
+	uid, ok := s.findOrCreateAlbum(ctx, a, byTitle)
 	if !ok {
-		created, err := s.albums.CreateAlbum(ctx, organize.Album{
-			Title:       title,
-			Description: a.Description,
-			Type:        mapAlbumType(a.Type),
-			Private:     a.Private,
-		})
-		if err != nil {
-			s.log.Warn("ppimport: creating album", "title", title, "err", err)
-			return
-		}
-		uid = created.UID
-		byTitle[title] = uid
+		return
 	}
 	if err := s.attachAlbumMembers(ctx, a.UID, uid); err != nil {
 		s.log.Warn("ppimport: attaching album members", "album", a.UID, "err", err)
 	}
+}
+
+// findOrCreateAlbum resolves the Kukátko album a PhotoPrism album maps onto,
+// keyed by title, creating it when it does not exist yet. byTitle caches
+// title→uid across the run so a created album is reused for later references. It
+// reports false for an untitled album (nothing to key on) and for a creation
+// failure, which is logged.
+func (s *Service) findOrCreateAlbum(
+	ctx context.Context, a photoprism.Album, byTitle map[string]string,
+) (string, bool) {
+	title := strings.TrimSpace(a.Title)
+	if title == "" {
+		return "", false
+	}
+	if uid, ok := byTitle[title]; ok {
+		return uid, true
+	}
+	created, err := s.albums.CreateAlbum(ctx, organize.Album{
+		Title:       title,
+		Description: a.Description,
+		Type:        mapAlbumType(a.Type),
+		Private:     a.Private,
+	})
+	if err != nil {
+		s.log.Warn("ppimport: creating album", "title", title, "err", err)
+		return "", false
+	}
+	byTitle[title] = created.UID
+	return created.UID, true
 }
 
 // attachAlbumMembers pages through a PhotoPrism album's photos and adds every
@@ -229,17 +237,10 @@ func (s *Service) mapLabels(ctx context.Context) error {
 	}
 }
 
-// mapLabel maps a single source label (identified by its slug) and attaches its
-// tagged photos. It is the label-scoped counterpart of mapLabels: the source has
-// no get-label-by-slug endpoint, so the label catalogue is paged until the slug
-// is found — which lists labels, never the whole photo catalogue. An unknown slug
-// is an error: a scoped run that imported photos but silently mapped no label
-// would look like a success.
-func (s *Service) mapLabel(ctx context.Context, slug string) error {
-	byName, err := s.labelsByName(ctx)
-	if err != nil {
-		return err
-	}
+// requireLabel reports an error unless the source has a label with this slug. The
+// source has no get-label-by-slug endpoint, so the label catalogue is paged until
+// the slug turns up — which lists labels, never the whole photo catalogue.
+func (s *Service) requireLabel(ctx context.Context, slug string) error {
 	for offset := 0; ; {
 		page, err := s.client.ListLabels(ctx, photoprism.ListParams{Count: s.pageSize, Offset: offset})
 		if err != nil {
@@ -247,7 +248,6 @@ func (s *Service) mapLabel(ctx context.Context, slug string) error {
 		}
 		for i := range page {
 			if strings.EqualFold(page[i].Slug, slug) {
-				s.mapOneLabel(ctx, page[i], byName)
 				return nil
 			}
 		}
@@ -259,25 +259,38 @@ func (s *Service) mapLabel(ctx context.Context, slug string) error {
 }
 
 // mapOneLabel finds-or-creates the Kukátko label for a PhotoPrism label and
-// attaches its tagged photos. byName caches name→uid across the run.
+// attaches its tagged photos.
 func (s *Service) mapOneLabel(ctx context.Context, l photoprism.Label, byName map[string]string) {
-	name := strings.TrimSpace(l.Name)
-	if name == "" {
+	uid, ok := s.findOrCreateLabel(ctx, l, byName)
+	if !ok {
 		return
 	}
-	uid, ok := byName[name]
-	if !ok {
-		created, err := s.labels.CreateLabel(ctx, organize.Label{Name: name, Priority: l.Priority})
-		if err != nil {
-			s.log.Warn("ppimport: creating label", "name", name, "err", err)
-			return
-		}
-		uid = created.UID
-		byName[name] = uid
+	if err := s.attachLabelMembers(ctx, l.Slug, l.Name, uid); err != nil {
+		s.log.Warn("ppimport: attaching label members", "label", l.Name, "err", err)
 	}
-	if err := s.attachLabelMembers(ctx, l.Slug, name, uid); err != nil {
-		s.log.Warn("ppimport: attaching label members", "label", name, "err", err)
+}
+
+// findOrCreateLabel resolves the Kukátko label a PhotoPrism label maps onto,
+// keyed by name, creating it when it does not exist yet. byName caches name→uid
+// across the run. It reports false for an unnamed label and for a creation
+// failure, which is logged.
+func (s *Service) findOrCreateLabel(
+	ctx context.Context, l photoprism.Label, byName map[string]string,
+) (string, bool) {
+	name := strings.TrimSpace(l.Name)
+	if name == "" {
+		return "", false
 	}
+	if uid, ok := byName[name]; ok {
+		return uid, true
+	}
+	created, err := s.labels.CreateLabel(ctx, organize.Label{Name: name, Priority: l.Priority})
+	if err != nil {
+		s.log.Warn("ppimport: creating label", "name", name, "err", err)
+		return "", false
+	}
+	byName[name] = created.UID
+	return created.UID, true
 }
 
 // attachLabelMembers pages through the photos tagged with a PhotoPrism label

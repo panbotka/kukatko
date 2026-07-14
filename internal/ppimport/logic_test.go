@@ -280,3 +280,47 @@ func TestNew_panicsOnNilCollaborator(t *testing.T) {
 	}()
 	_ = New(Config{})
 }
+
+// TestMapLabelSource verifies PhotoPrism's label sources map onto Kukátko's: a
+// hand-attached label stays manual, a vision-classified one becomes ai, and
+// everything PhotoPrism derived itself is recorded as coming from the import.
+func TestMapLabelSource(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		in   string
+		want organize.LabelSource
+	}{
+		{in: "manual", want: organize.SourceManual},
+		{in: " Manual ", want: organize.SourceManual},
+		{in: "image", want: organize.SourceAI},
+		{in: "batch", want: organize.SourceImport},
+		{in: "keyword", want: organize.SourceImport},
+		{in: "location", want: organize.SourceImport},
+		{in: "", want: organize.SourceImport},
+	}
+	for _, tt := range tests {
+		if got := mapLabelSource(tt.in); got != tt.want {
+			t.Errorf("mapLabelSource(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// TestClampUncertainty verifies the source's uncertainty is clamped into the
+// 0–100 percentage Kukátko stores.
+func TestClampUncertainty(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		in, want int
+	}{
+		{in: -1, want: 0},
+		{in: 0, want: 0},
+		{in: 42, want: 42},
+		{in: 100, want: 100},
+		{in: 1000, want: 100},
+	}
+	for _, tt := range tests {
+		if got := clampUncertainty(tt.in); got != tt.want {
+			t.Errorf("clampUncertainty(%d) = %d, want %d", tt.in, got, tt.want)
+		}
+	}
+}

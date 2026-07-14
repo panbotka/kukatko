@@ -34,8 +34,9 @@ var errAlbumTypeRequired = errors.New("photoprism: album listing requires a type
 
 // fakeClient is an in-memory PhotoPrismClient. It pages the incremental photo
 // listing (filtered by UpdatedSince), serves scoped listings keyed by the album
-// uid and by the verbatim q= expression, and streams stored originals keyed by
-// their SHA1 file hash.
+// uid and by the verbatim q= expression, answers the photo detail with the
+// photo's albums and labels, and streams stored originals keyed by their SHA1
+// file hash.
 type fakeClient struct {
 	photos      []photoprism.Photo
 	albums      []photoprism.Album
@@ -45,12 +46,18 @@ type fakeClient struct {
 	// `label:"sdh"`, `year:1985`), so a test that keys it also pins the expression
 	// the importer sends to the source.
 	queryPhotos map[string][]photoprism.Photo
+	// details answers the photo-detail endpoint by photo uid. Only the detail
+	// carries a photo's albums and labels — the listing does not, which is why the
+	// fake keeps them apart rather than deriving one from the other.
+	details     map[string]photoprism.PhotoDetail
+	detailErr   error
 	files       map[string][]byte
 	downloadErr map[string]error
 	listErr     error
 
-	mu        sync.Mutex
-	downloads []string
+	mu          sync.Mutex
+	downloads   []string
+	detailCalls []string
 }
 
 // ListPhotos returns one page of the photos the params select.
@@ -91,6 +98,38 @@ func intersectPhotos(a, b []photoprism.Photo) []photoprism.Photo {
 		}
 	}
 	return out
+}
+
+// GetPhoto returns the photo's registered detail (its albums and labels),
+// recording the call so a test can pin who asks for a detail and who must not.
+func (c *fakeClient) GetPhoto(_ context.Context, uid string) (photoprism.PhotoDetail, error) {
+	c.mu.Lock()
+	c.detailCalls = append(c.detailCalls, uid)
+	c.mu.Unlock()
+	if c.detailErr != nil {
+		return photoprism.PhotoDetail{}, c.detailErr
+	}
+	detail, ok := c.details[uid]
+	if !ok {
+		return photoprism.PhotoDetail{}, photoprism.ErrNotFound
+	}
+	return detail, nil
+}
+
+// detailCount reports how many photo details were requested.
+func (c *fakeClient) detailCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.detailCalls)
+}
+
+// setContext registers a photo's detail: the albums it belongs to and the labels
+// it carries, neither of which the listing payload serves.
+func (c *fakeClient) setContext(p photoprism.Photo, albums []photoprism.Album, labels []photoprism.PhotoLabel) {
+	if c.details == nil {
+		c.details = map[string]photoprism.PhotoDetail{}
+	}
+	c.details[p.UID] = photoprism.PhotoDetail{Photo: p, Albums: albums, Labels: labels}
 }
 
 // ListAlbums returns one page of the albums of the requested type. It mirrors the
@@ -457,16 +496,26 @@ func (s *fakeAlbumStore) AddPhoto(_ context.Context, albumUID, photoUID string) 
 	return nil
 }
 
+// labelAttachment is how a label was attached to a photo, so a test can pin the
+// source and uncertainty carried over from PhotoPrism.
+type labelAttachment struct {
+	source      organize.LabelSource
+	uncertainty int
+}
+
 // fakeLabelStore records labels and attachments in memory.
 type fakeLabelStore struct {
 	labels   []organize.LabelCount
 	attached map[string][]string
-	seq      int
+	// how records the current attachment per "labelUID|photoUID" pair, mirroring
+	// the real store's upsert of source and uncertainty.
+	how map[string]labelAttachment
+	seq int
 }
 
 // newFakeLabelStore returns an empty fakeLabelStore.
 func newFakeLabelStore() *fakeLabelStore {
-	return &fakeLabelStore{attached: map[string][]string{}}
+	return &fakeLabelStore{attached: map[string][]string{}, how: map[string]labelAttachment{}}
 }
 
 // ListLabels returns the recorded labels.
@@ -482,10 +531,12 @@ func (s *fakeLabelStore) CreateLabel(_ context.Context, l organize.Label) (organ
 	return l, nil
 }
 
-// AttachLabel records a label attachment idempotently.
+// AttachLabel records a label attachment idempotently, upserting its source and
+// uncertainty the way the real store does.
 func (s *fakeLabelStore) AttachLabel(
-	_ context.Context, photoUID, labelUID string, _ organize.LabelSource, _ int,
+	_ context.Context, photoUID, labelUID string, source organize.LabelSource, uncertainty int,
 ) error {
+	s.how[labelUID+"|"+photoUID] = labelAttachment{source: source, uncertainty: uncertainty}
 	if slices.Contains(s.attached[labelUID], photoUID) {
 		return nil
 	}

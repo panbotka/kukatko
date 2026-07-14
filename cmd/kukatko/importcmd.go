@@ -35,8 +35,9 @@ func newImportCmd() *cobra.Command {
 			"configured PhotoPrism instance, resuming from the last successful watermark.\n\n" +
 			"The --album, --label, --person and --year flags scope the run to a slice of the " +
 			"source library: only the photos they select are imported (whole, however old they " +
-			"are), and only the structure of those photos is mapped. Several flags combine and " +
-			"narrow the run together, e.g. --album <uid> --year 1985.\n\n" +
+			"are), and each of them arrives with its whole context — every album it belongs to " +
+			"and every label it carries, not merely the one the scope named. Several flags " +
+			"combine and narrow the run together, e.g. --album <uid> --year 1985.\n\n" +
 			"A scoped run is PARTIAL and does not advance the resume cursor: the incremental " +
 			"watermark is left untouched, so a later full import still sees every photo — " +
 			"including the ones the scoped run never listed.",

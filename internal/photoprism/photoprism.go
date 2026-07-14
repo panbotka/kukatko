@@ -1,7 +1,8 @@
 // Package photoprism is Kukátko's read-only HTTP client to a running PhotoPrism
 // instance. PhotoPrism stays the primary catalog during the migration, so this
-// client only ever reads: it lists photos incrementally, reads albums, labels
-// and subjects (people), and streams original files for re-import.
+// client only ever reads: it lists photos incrementally, reads a single photo's
+// whole context (its albums and labels, which the listing omits), reads albums,
+// labels and subjects (people), and streams original files for re-import.
 //
 // Authentication uses a long-lived app password / access token sent as an
 // Authorization: Bearer header on every request — never a per-request login,
@@ -186,6 +187,9 @@ type Client interface {
 	// when UpdatedSince is set). The caller paginates by advancing Offset until a
 	// page returns fewer than Count photos.
 	ListPhotos(ctx context.Context, params PhotoListParams) ([]Photo, error)
+	// GetPhoto returns one photo with the relations the listing omits: the albums
+	// it belongs to and the labels it carries. It costs one request per photo.
+	GetPhoto(ctx context.Context, uid string) (PhotoDetail, error)
 	// ListAlbums returns one page of albums.
 	ListAlbums(ctx context.Context, params ListParams) ([]Album, error)
 	// ListLabels returns one page of labels.
@@ -286,6 +290,24 @@ func (c *HTTPClient) ListPhotos(ctx context.Context, params PhotoListParams) ([]
 		return nil, err
 	}
 	return photos, nil
+}
+
+// GetPhoto returns the photo identified by uid together with the albums it
+// belongs to and the labels it carries — relations the photo listing does not
+// serve, however it is filtered. It is one request per photo, which is why only a
+// scoped import reads it: a full run maps the same structure by walking the album
+// and label catalogues instead, where a detail per photo would turn one listing
+// into as many requests as the source has photos.
+func (c *HTTPClient) GetPhoto(ctx context.Context, uid string) (PhotoDetail, error) {
+	if strings.TrimSpace(uid) == "" {
+		return PhotoDetail{}, fmt.Errorf("photo: %w: empty photo uid", ErrBadResponse)
+	}
+	reqURL := c.endpoint("photos", uid)
+	var detail PhotoDetail
+	if err := c.getJSON(ctx, reqURL.String(), "photo", &detail); err != nil {
+		return PhotoDetail{}, err
+	}
+	return detail, nil
 }
 
 // ListAlbums returns one page of albums.
