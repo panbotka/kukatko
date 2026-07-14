@@ -19,6 +19,7 @@ import { EditPanel } from '../components/photo/EditPanel'
 import { Lightbox } from '../components/photo/Lightbox'
 import { LivePhoto } from '../components/photo/LivePhoto'
 import { MetadataPanel } from '../components/photo/MetadataPanel'
+import { OrganizeBadges } from '../components/photo/OrganizeBadges'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
 import { PeoplePanel } from '../components/photo/PeoplePanel'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
@@ -429,6 +430,12 @@ export function PhotoDetailPage() {
           />
         </div>
       </div>
+
+      {/* What the photo is filed under, right under the title: the album/label
+          badges answer it at a glance instead of making the reader scroll to the
+          Organize card. Read-only and fed from the very same `photo` state the
+          Organize panel edits, so a change down there shows here at once. */}
+      <OrganizeBadges albums={photo.albums} labels={photo.labels} />
 
       {/* The photo spans the full width of the content area — until the faces are
           shown, when it yields a third of it to the faces panel beside it (below it
