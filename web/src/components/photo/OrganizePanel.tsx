@@ -4,7 +4,6 @@ import CloseButton from 'react-bootstrap/CloseButton'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
-import { EmptyState } from '../EmptyState'
 import { ENTITY_STYLE } from '../entityStyle'
 import { Icon } from '../Icon'
 
@@ -206,7 +205,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
       <div className="small text-secondary mb-1">{t('photo.organize.labels')}</div>
       <div className="d-flex flex-wrap gap-2 mb-2">
         {photo.labels.length === 0 && (
-          <EmptyState size="sm" title={t('photo.organize.noLabels')} className="w-100" />
+          <span className="text-secondary small">{t('photo.organize.noLabels')}</span>
         )}
         {photo.labels.map((label) => (
           <span

@@ -74,14 +74,17 @@ zapiš sem.
   Props `title` (povinné), `hint?`, `icon?` (default = obrys prázdného rámečku, `aria-hidden`),
   `action?` (obvykle stejné tlačítko, které nabízí naplněný pohled), `size?` `'md' | 'sm'`
   (kompaktní varianta pro dlaždici/úzký panel), `className?`. Titulky/hinty si **překládá volající**
-  (každá stránka má vlastní i18n klíč, aby copy byla konkrétní). Nahradil holé jednořádky
-  „Bez štítků." / „Bez náhledu" i všechny ručně skládané `text-center py-5` bloky napříč
+  (každá stránka má vlastní i18n klíč, aby copy byla konkrétní). Nahradil holý jednořádek
+  „Bez náhledu" i všechny ručně skládané `text-center py-5` bloky napříč
   stránkami (`LibraryPage`, `SearchPage`, `AlbumsPage`, `AlbumDetailPage`, `LabelsPage`,
   `LabelDetailPage`, `PeoplePage`, `SubjectPage`, `PlacesPage`, `MapPage`, `FavoritesPage`,
   `SavedSearchesPage`, `ClustersPage`, `DuplicatesPage`, `TrashPage`, `SlideshowPage` (s akcí
   „Zpět"), `ImportPage`) i v komponentách (`AlbumTile`/`SubjectTile` cover placeholder,
-  `OrganizePanel` bez štítků, `Outliers`). Bloky se objeví přes `.kk-appear`, které
-  `prefers-reduced-motion` vypne. Testy: `EmptyState.test.tsx`);
+  `Outliers`). **Ne každá prázdnota si ho zaslouží:** v hustém panelu, kde pod sebou sedí
+  několik krátkých seznamů (`OrganizePanel` — alba a štítky), by placeholder přerostl chipy,
+  které zastupuje, a panel by poskakoval, jak se jeden seznam plní a druhý zůstává prázdný —
+  tam zůstává tlumený jednořádkový popisek (`text-secondary small`). Bloky se objeví přes
+  `.kk-appear`, které `prefers-reduced-motion` vypne. Testy: `EmptyState.test.tsx`);
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
   `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
   `UploadProgressHeader` (**prominentní sticky** hlavička celé dávky: „done / total“, **jeden**

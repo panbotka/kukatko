@@ -260,6 +260,41 @@ describe('OrganizePanel autocomplete', () => {
   })
 })
 
+describe('OrganizePanel empty state', () => {
+  it('reads an empty album and an empty label list the same way', () => {
+    renderPanel({ canWrite: false })
+
+    const noAlbums = screen.getByText('Not in any album.')
+    const noLabels = screen.getByText('No labels.')
+
+    // Both absences are a small muted caption sitting where the chips would go.
+    // A full EmptyState here would tower over the chips it stands in for and
+    // shove the panel around as one list fills and the other stays empty.
+    expect(noAlbums).toHaveClass('text-secondary', 'small')
+    expect(noLabels).toHaveClass('text-secondary', 'small')
+    expect(noLabels.tagName).toBe(noAlbums.tagName)
+    expect(screen.queryByTestId('empty-state')).toBeNull()
+  })
+
+  it('keeps its own wording for each list, translated', async () => {
+    await i18n.changeLanguage('cs')
+    renderPanel({ canWrite: false })
+
+    expect(screen.getByText('V žádném albu.')).toBeInTheDocument()
+    expect(screen.getByText('Bez štítků.')).toBeInTheDocument()
+  })
+
+  it('drops the caption once the list carries a chip', () => {
+    renderPanel({
+      photo: photo({ labels: [{ uid: 'l1', name: 'sunset' }] }),
+      canWrite: false,
+    })
+
+    expect(screen.queryByText('No labels.')).toBeNull()
+    expect(screen.getByText('Not in any album.')).toBeInTheDocument()
+  })
+})
+
 describe('OrganizePanel label creation', () => {
   const created: Label = {
     uid: 'l9',

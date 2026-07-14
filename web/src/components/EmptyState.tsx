@@ -61,10 +61,15 @@ export interface EmptyStateProps {
  * The shared empty-collection placeholder: icon, short title, one-line hint and
  * an optional action button, centred in the space the collection would occupy.
  *
- * It replaces the bare one-liners ("Bez štítků.", "Bez náhledu") that used to
- * stand in for an empty list, so every empty screen in the app reads the same
- * way and points at the next step. The whole block fades up on mount, unless the
- * reader asked for reduced motion.
+ * It replaces the bare one-liners ("Bez náhledu") that used to stand in for an
+ * empty collection, so every empty screen in the app reads the same way and
+ * points at the next step. The whole block fades up on mount, unless the reader
+ * asked for reduced motion.
+ *
+ * Not every absence deserves it: inside a dense panel where several short lists
+ * sit under one another (the photo detail's albums/labels), a full placeholder
+ * would tower over the chips it stands in for and shove the panel around as the
+ * lists fill — those keep a muted one-line caption instead.
  */
 export function EmptyState({ title, hint, icon, action, size = 'md', className }: EmptyStateProps) {
   const classes = ['kk-empty-state', 'kk-appear']
