@@ -24,7 +24,6 @@ type bulkFlags struct {
 	location         string
 	clearLocation    bool
 
-	private   bool
 	favorite  bool
 	archive   bool
 	unarchive bool
@@ -103,7 +102,6 @@ func (f *bulkFlags) register(cmd *cobra.Command) {
 	flags.StringVar(&f.location, "location", "", `set the GPS position, as "lat,lng"`)
 	flags.BoolVar(&f.clearLocation, "clear-location", false, "remove the GPS position")
 
-	flags.BoolVar(&f.private, "private", false, "mark the photos private (--private=false unmarks them)")
 	flags.BoolVar(&f.favorite, "favorite", false, "favorite the photos (--favorite=false unfavorites them)")
 	flags.BoolVar(&f.archive, "archive", false, "move the photos to the trash")
 	flags.BoolVar(&f.unarchive, "unarchive", false, "restore the photos from the trash")
@@ -134,9 +132,6 @@ func (f *bulkFlags) operations(flags *pflag.FlagSet) (ctl.BulkOperations, error)
 	}
 	if flags.Changed("set-description") {
 		ops.SetDescription = &f.description
-	}
-	if flags.Changed("private") {
-		ops.SetPrivate = &f.private
 	}
 	if flags.Changed("favorite") {
 		ops.SetFavorite = &f.favorite

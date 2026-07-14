@@ -123,13 +123,6 @@ export function buildChips(
       clear: { has_gps: '' },
     })
   }
-  if (view.private !== '') {
-    chips.push({
-      key: 'private',
-      label: `${t('library.filters.private')}: ${bool(view.private)}`,
-      clear: { private: '' },
-    })
-  }
   if (view.camera !== '') {
     chips.push({
       key: 'camera',

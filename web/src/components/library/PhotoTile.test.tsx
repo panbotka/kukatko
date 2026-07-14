@@ -35,7 +35,6 @@ function photo(overrides: Partial<Photo> = {}): Photo {
     camera_make: '',
     camera_model: '',
     lens_model: '',
-    private: false,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     ...overrides,

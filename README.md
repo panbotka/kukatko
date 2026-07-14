@@ -103,8 +103,11 @@ Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
 
 - **`photos`** — jeden řádek na fotku/video; PK `uid` (app-generovaný, prefix `ph`),
   dedup na **SHA256** `file_hash` (UNIQUE), EXIF/kamera/GPS metadata, `exif` JSONB (GIN),
-  `archived_at`/`private`, `uploaded_by` (FK `users` `ON DELETE SET NULL`). Externí ID pro
+  `archived_at`, `uploaded_by` (FK `users` `ON DELETE SET NULL`). Externí ID pro
   import/migraci: `photoprism_uid`, `photoprism_file_hash` (SHA1), `photosorter_uid`.
+  Sloupec `private` je **legacy**: zůstává jen proto, aby import z PhotoPrismu/photo-sorteru
+  mohl dál zrcadlit jejich příznak. Aplikace ho nikde nefiltruje, needituje ani nezobrazuje —
+  nikdy to nebyla bezpečnostní hranice (soukromá fotka se servírovala jako každá jiná).
   **Video** (migrace `0004_video.sql`): `media_type` (`image`/`video`/`live`, default `image`,
   CHECK + partial index) + `duration_ms`, `video_codec`, `audio_codec`, `has_audio`, `fps`
   (vyplněné jen u videí). Live foto = still jako primární image + motion klip jako další
@@ -127,7 +130,7 @@ Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
 
 `photos.Store` (nad pgx poolem) nabízí `Create`, `GetByUID`/`GetByFileHash`/
 `GetByPhotoprismUID`/`GetByPhotosorterUID`, `UpdateMetadata`, `Archive`/`Unarchive`,
-`Delete`, `List`/`Count` (filtr archived/private/uploader, řazení, stránkování),
+`Delete`, `List`/`Count` (filtr archived/uploader, řazení, stránkování),
 `Search` (fulltext nad `fts` sloupcem, řazení dle `ts_rank`, ctí list filtry +
 stránkování; prázdný dotaz → `ErrEmptySearch`), `FilterUIDs` (z množiny uid vrátí ty,
 co projdou strukturálními list filtry — pro sémantické hledání: profiltruje vektorové
@@ -733,7 +736,7 @@ Podporované operace (každá volitelná, neuvedené pole = beze změny):
 - `add_to_albums`/`remove_from_albums` `[al…]`, `add_labels`/`remove_labels` `[lb…]` (idempotentní);
 - `set_caption`/`clear_caption` (→ `title`), `set_description`/`clear_description`;
 - `set_location {lat,lng}` (validace rozsahu) / `clear_location`;
-- `set_private` (bool), `archive` / `unarchive` (vzájemně se vylučují);
+- `archive` / `unarchive` (vzájemně se vylučují);
 - `set_favorite` (bool) — **per-user** oblíbená pro volajícího;
 - `set_rating` (0–5) / `set_flag` (`none`/`pick`/`reject`/`eye`) — **per-user** hodnocení pro volajícího
   (neplatná hodnota → **400**; řádek `user_ratings` se vyčistí, když spadne na rating 0 + flag `none`).
@@ -800,7 +803,7 @@ v `cmd/kukatko/maps.go`).
   lookupy jsou **rate-limitované** kvůli kreditům (geocode = 4 kredity); přes limit → 429, bez shody → 404.
 - **`GET /api/v1/map/photos`** — **GeoJSON FeatureCollection** geotagovaných fotek (jen ty s lat/lng;
   souřadnice RFC 7946 `[lng, lat]`). Ctí standardní list filtry (`taken_after`/`taken_before`, `album`,
-  `label`, `archived`, `private`); každá feature nese `uid`, `title`, `taken_at`, `media_type` a relativní
+  `label`, `archived`); každá feature nese `uid`, `title`, `taken_at`, `media_type` a relativní
   `thumb` cestu pro markery/clustering.
 - **mapy.com chyby** (401/403/404/429/5xx) se mapují na rozumné statusy (bad key/upstream → 502,
   nedostupné → 503, 404/429 propagovány) a **nikdy neprosakuje klíč** do odpovědí ani chyb. Bez
@@ -1385,7 +1388,7 @@ Endpointy pod `/api/v1` (JSON):
 | GET | `/photos?album={uid}` / `?label={uid}` | přihlášený | scoped výpis fotek alba/štítku přes sdílené `/photos` (ctí filtry/řazení/stránkování, stejný tvar) |
 | GET | `/places` | přihlášený | place hierarchie s počty `{places:[{country,count,cities:[{city,count}]}]}` nad nearchivovanými fotkami; `?country=` drillne do měst jedné země; řazení count desc/jméno |
 | GET | `/photos?country=&city=` | přihlášený | scoped výpis fotek dané lokality (exact match na cache `photo_places`) přes sdílené `/photos` (ctí ostatní filtry/řazení/stránkování) |
-| PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng/private` (null maže nullable pole) |
+| PATCH | `/photos/{uid}` | editor/admin | částečná úprava `title/description/notes/taken_at/lat/lng` (null maže nullable pole) |
 | POST | `/photos/{uid}/archive` | editor/admin | soft-delete (nastaví `archived_at`) → vrátí fotku |
 | POST | `/photos/{uid}/unarchive` | editor/admin | obnoví archivovanou fotku |
 | POST | `/photos/{uid}/purge` | editor/admin | **trvale** smaže archivovanou fotku (řádek+kaskáda, originál, náhledy, případně S3); vyžaduje `?confirm=true` → 204, 400 bez potvrzení, 404 chybí, 409 fotka není archivovaná |
@@ -1423,7 +1426,7 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
 
 - **Seznam** `GET /photos` — query parametry zrcadlitelné do URL (FE „Zpět vždy funguje"):
   - **Filtry:** `taken_after`/`taken_before` (RFC3339 nebo `YYYY-MM-DD`), `has_gps` (`true`/`false`),
-    `camera`, `lens`, `q` (fulltext title/description/notes), `private` (`true`/`false`),
+    `camera`, `lens`, `q` (fulltext title/description/notes),
     `uploader` (UID), `archived` (`false` výchozí = jen živé, `true` = včetně archivu, `only` =
     jen archiv), `year` (čtyřciferný kalendářní rok pořízení, 1000–9999; fotky bez `taken_at`
     nikdy nematchují), `favorite=true` (jen fotky, které **přihlášený uživatel** označil jako oblíbené —
@@ -1438,7 +1441,7 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
 - **Detail** `GET /photos/{uid}` — fotka + `files` (seznam `photo_files`) + `is_favorite`,
   `404` když chybí.
 - **Timeline** `GET /photos/timeline` (přihlášený) — měsíční date-histogram knihovny pro rychlý
-  rok/měsíc scrubber. Přijímá **stejné filtry** jako `GET /photos` (archived/private/has_gps/date
+  rok/měsíc scrubber. Přijímá **stejné filtry** jako `GET /photos` (archived/has_gps/date
   range/camera/lens/uploader/album/label/country/city/favorite/`q`) přes sdílený `parseListParams`,
   takže buckety odpovídají přesně tomu, co by seznam vrátil ve stejném pořadí. Odpověď
   `{buckets:[{year,month,count,cumulative}],total}` — buckety řazené **nejnovější první** (dle
@@ -1449,7 +1452,7 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   `photos.Store.TimelineBuckets` (sdílí `buildWhere` s `List`/`Count`). **Neplatný parametr → 400.**
 - **Roky** `GET /photos/years` (přihlášený) — rok-histogram knihovny, podklad **year facetu**
   filtrů. Přijímá **stejné filtry** jako `GET /photos` přes sdílený `parseListParams` a ctí
-  viditelnost volajícího (archived/private) i per-user filtry (favorite, rating/flag), takže count
+  viditelnost volajícího (archived) i per-user filtry (favorite, rating/flag), takže count
   roku je přesně to, co mřížka ukáže po jeho výběru. Odpověď `{years:[{year,count}],total}` —
   **nejnovější rok první**. Filtr `year` je **jediný ignorovaný**: facet nesmí zúžit vlastní
   nabídku, jinak by po výběru roku 2019 zbyl v nabídce jen 2019 a nešlo by přepnout.

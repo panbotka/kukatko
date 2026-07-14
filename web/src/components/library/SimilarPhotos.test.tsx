@@ -34,7 +34,6 @@ function similar(uid: string, name: string, distance: number): SimilarPhoto {
     camera_make: '',
     camera_model: '',
     lens_model: '',
-    private: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     distance,

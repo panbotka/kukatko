@@ -68,7 +68,6 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
     lens_model: '',
     lat: 50.08,
     lng: 14.42,
-    private: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     files: [],

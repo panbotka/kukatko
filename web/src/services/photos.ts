@@ -50,7 +50,6 @@ export interface Photo {
   has_audio?: boolean
   /** Average frame rate of the video; absent for images. */
   fps?: number
-  private: boolean
   archived_at?: string
   created_at: string
   updated_at: string
@@ -151,8 +150,6 @@ export interface PhotoListParams {
   archived?: ArchivedFilter
   /** Tri-state filter: 'true', 'false', or '' / undefined for no filter. */
   has_gps?: string
-  /** Tri-state filter: 'true', 'false', or '' / undefined for no filter. */
-  private?: string
   camera?: string
   q?: string
   /**
@@ -273,7 +270,6 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('sort', params.sort)
   set('archived', params.archived)
   set('has_gps', params.has_gps)
-  set('private', params.private)
   set('camera', params.camera)
   set('q', params.q)
   set('year', params.year)
@@ -404,7 +400,6 @@ export interface PhotoMetadataUpdate {
   taken_at?: string | null
   lat?: number | null
   lng?: number | null
-  private?: boolean
 }
 
 /**
@@ -983,7 +978,7 @@ export interface YearsResponse {
  * `GET /api/v1/photos/years` — the option list behind the library's year facet.
  *
  * It accepts the same filter params as {@link fetchPhotos}, and the counts respect
- * them (including the caller's archived/private visibility), so a year's count is
+ * them (including the caller's archived visibility), so a year's count is
  * what the grid will show once that year is selected. The backend deliberately
  * ignores `year` itself — a facet must not narrow its own options — so callers may
  * pass the whole view; sort/order and pagination are ignored as well.

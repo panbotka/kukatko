@@ -21,7 +21,6 @@ import { LivePhoto } from '../components/photo/LivePhoto'
 import { MetadataPanel } from '../components/photo/MetadataPanel'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
 import { PeoplePanel } from '../components/photo/PeoplePanel'
-import { PrivacyToggle } from '../components/photo/PrivacyToggle'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
 import { VideoPlayer } from '../components/photo/VideoPlayer'
 import { FaceOverlay } from '../components/people/FaceOverlay'
@@ -395,7 +394,6 @@ export function PhotoDetailPage() {
               favorite.toggle()
             }}
           />
-          {canWrite && <PrivacyToggle photo={photo} onUpdated={setPhoto} />}
         </div>
       </div>
 

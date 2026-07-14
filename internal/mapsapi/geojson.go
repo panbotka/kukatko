@@ -51,7 +51,7 @@ type featureProps struct {
 }
 
 // handlePhotos returns a GeoJSON FeatureCollection of geotagged photos, honouring
-// the standard list filters (date range, album/label scope, archived, private).
+// the standard list filters (date range, album/label scope, archived).
 // Only photos with both coordinates are included; the response is capped at
 // maxGeoPhotos features. Invalid filter values are answered with 400.
 func (a *API) handlePhotos(w http.ResponseWriter, r *http.Request) {
@@ -96,9 +96,9 @@ func toFeature(p *photos.Photo) (feature, bool) {
 }
 
 // parseGeoParams builds the photo list parameters for the GeoJSON feed from the
-// query: the date range, album/label scope, archived and private filters, with
-// has-GPS forced on and the page sized to the configured feature cap so the whole
-// map's markers come back in one response.
+// query: the date range, album/label scope and the archived filter, with has-GPS
+// forced on and the page sized to the configured feature cap so the whole map's
+// markers come back in one response.
 func (a *API) parseGeoParams(q url.Values) (photos.ListParams, error) {
 	params := photos.ListParams{
 		Limit: a.maxGeoPhotos,
@@ -119,11 +119,6 @@ func (a *API) parseGeoParams(q url.Values) (photos.ListParams, error) {
 	if err := applyArchivedFilter(q.Get("archived"), &params); err != nil {
 		return photos.ListParams{}, err
 	}
-	private, err := parseBool(q.Get("private"))
-	if err != nil {
-		return photos.ListParams{}, errors.New("private must be true or false")
-	}
-	params.Private = private
 
 	after, err := parseTime(q.Get("taken_after"))
 	if err != nil {
@@ -153,23 +148,6 @@ func applyArchivedFilter(raw string, params *photos.ListParams) error {
 		return fmt.Errorf("unknown archived %q (want true, false or only)", raw)
 	}
 	return nil
-}
-
-// parseBool parses an optional boolean query value, returning nil when absent.
-func parseBool(raw string) (*bool, error) {
-	if raw == "" {
-		return nil, nil //nolint:nilnil // absent optional filter: no value, no error
-	}
-	switch raw {
-	case "true":
-		b := true
-		return &b, nil
-	case "false":
-		b := false
-		return &b, nil
-	default:
-		return nil, fmt.Errorf("invalid boolean %q", raw)
-	}
 }
 
 // parseTime parses an optional timestamp query value (RFC3339 or YYYY-MM-DD),

@@ -38,29 +38,21 @@ func TestFilterUIDs_appliesFiltersAndIgnoresUnknown(t *testing.T) {
 		FileHash: "f-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg",
 		Title: "public", TakenAt: &jun, TakenAtSource: "exif",
 	})
-	priv := mustCreate(t, store, photos.Photo{
+	recent := mustCreate(t, store, photos.Photo{
 		FileHash: "f-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
-		Title: "private", Private: true, TakenAt: &jun, TakenAtSource: "exif",
+		Title: "recent", TakenAt: &jun, TakenAtSource: "exif",
 	})
 	old := mustCreate(t, store, photos.Photo{
 		FileHash: "f-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg",
 		Title: "old", TakenAt: &jan, TakenAtSource: "exif",
 	})
 
-	candidates := []string{pub.UID, priv.UID, old.UID, "ph_does_not_exist"}
+	candidates := []string{pub.UID, recent.UID, old.UID, "ph_does_not_exist"}
 
 	t.Run("no filter keeps all known candidates", func(t *testing.T) {
 		set := filterUIDSet(t, store, candidates, photos.ListParams{})
-		if len(set) != 3 || !set[pub.UID] || !set[priv.UID] || !set[old.UID] {
+		if len(set) != 3 || !set[pub.UID] || !set[recent.UID] || !set[old.UID] {
 			t.Fatalf("FilterUIDs(no filter) = %v, want the 3 known uids", set)
-		}
-	})
-
-	t.Run("private filter narrows the set", func(t *testing.T) {
-		no := false
-		set := filterUIDSet(t, store, candidates, photos.ListParams{Private: &no})
-		if len(set) != 2 || set[priv.UID] {
-			t.Fatalf("FilterUIDs(private=false) = %v, want pub+old", set)
 		}
 	})
 
@@ -68,7 +60,7 @@ func TestFilterUIDs_appliesFiltersAndIgnoresUnknown(t *testing.T) {
 		after := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 		set := filterUIDSet(t, store, candidates, photos.ListParams{TakenAfter: &after})
 		if len(set) != 2 || set[old.UID] {
-			t.Fatalf("FilterUIDs(taken_after 2023) = %v, want pub+priv", set)
+			t.Fatalf("FilterUIDs(taken_after 2023) = %v, want pub+recent", set)
 		}
 	})
 

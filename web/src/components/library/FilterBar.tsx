@@ -83,7 +83,7 @@ export interface FilterBarProps<T extends LibraryView> {
  * the count of active filters. Below it sits
  * the facet row — Year, Album, Label, Person — the ways photos are actually found;
  * it appears only when the page supplies `facets`. The remaining filters (date
- * range, camera, archived, favorites, location, private, min rating, flag) live in
+ * range, camera, archived, favorites, location, min rating, flag) live in
  * a collapsible panel on desktop and an offcanvas drawer on phones, so the resting
  * state stays uncluttered — the favorites toggle only when the page opts in via
  * `showFavorite`. Every active filter is echoed as a removable chip plus a single
@@ -473,7 +473,7 @@ function AdvancedFilters({
             <Form.Label className="small mb-1">{t('library.filters.favorite')}</Form.Label>
             {/* A two-state filter, not a tri-state: the backend only scopes on
                 "favorites only", so there is no meaningful "not favorited" value.
-                Presented as a select to line up with the archived/GPS/private
+                Presented as a select to line up with the archived/GPS
                 controls beside it. */}
             <Form.Select
               value={view.favorite}
@@ -495,17 +495,6 @@ function AdvancedFilters({
           value={view.has_gps}
           onChange={(value) => {
             push({ has_gps: value })
-          }}
-        />
-      </Col>
-
-      <Col xs={6} sm={6} lg={3}>
-        <TriStateSelect
-          id="library-private"
-          label={t('library.filters.private')}
-          value={view.private}
-          onChange={(value) => {
-            push({ private: value })
           }}
         />
       </Col>

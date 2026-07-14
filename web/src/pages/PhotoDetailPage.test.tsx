@@ -106,7 +106,6 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
     lat: 50.08,
     lng: 14.42,
     media_type: 'image',
-    private: false,
     is_favorite: false,
     created_at: '2026-01-02T10:00:00Z',
     updated_at: '2026-01-02T10:00:00Z',
@@ -497,22 +496,6 @@ describe('PhotoDetailPage', () => {
     expect(await screen.findByRole('heading', { name: 'Sunset beach' })).toBeInTheDocument()
   })
 
-  it('toggles the private/visibility flag for editors via the API', async () => {
-    const user = userEvent.setup()
-    updatePhotoMock.mockResolvedValue(photo({ private: true }))
-    renderPage()
-    await screen.findByRole('heading', { name: 'Beach' })
-
-    // The photo starts public; the header toggle flips the `private` field —
-    // closing the loop with the library's existing "private" filter.
-    await user.click(screen.getByRole('button', { name: 'Make private' }))
-    await waitFor(() => {
-      expect(updatePhotoMock).toHaveBeenCalledWith('b', { private: true })
-    })
-    // Once private, the toggle offers to make it public again.
-    expect(await screen.findByRole('button', { name: 'Make public' })).toBeInTheDocument()
-  })
-
   it('falls back to the file name in the header when the title is empty', async () => {
     fetchPhotoMock.mockResolvedValue(photo({ title: '', file_name: 'IMG_1234.jpg' }))
     renderPage()
@@ -724,11 +707,10 @@ describe('PhotoDetailPage', () => {
     renderPage(false)
     await screen.findByRole('heading', { name: 'Beach' })
 
-    // No edit affordances: neither the editor-only edits card, the per-field
-    // caption edit controls, nor the private/visibility toggle reach viewers.
+    // No edit affordances: neither the editor-only edits card nor the per-field
+    // caption edit controls reach viewers.
     expect(screen.queryByRole('button', { name: 'Edits' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit Title' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Make private' })).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Remove from album Holidays' }),
     ).not.toBeInTheDocument()

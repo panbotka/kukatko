@@ -35,8 +35,8 @@ const redirectCacheControl = "private, no-store"
 // application. It is only ever reached after the caller has been authorized to
 // see the photo — minting the URL is exactly the act of granting access to the
 // object, since the Worker will serve anyone who presents the signature. The
-// private flag and the archive are therefore real security boundaries here, not
-// presentation filters: see the mediaurl package doc.
+// archive is therefore a real security boundary here, not a presentation filter:
+// see the mediaurl package doc.
 func redirectToMedia(w http.ResponseWriter, r *http.Request, target string) {
 	w.Header().Set("Cache-Control", redirectCacheControl)
 	http.Redirect(w, r, target, http.StatusFound)

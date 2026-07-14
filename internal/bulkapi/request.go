@@ -37,7 +37,6 @@ type operationsInput struct {
 	ClearDescription bool           `json:"clear_description"`
 	SetLocation      *locationInput `json:"set_location"`
 	ClearLocation    bool           `json:"clear_location"`
-	SetPrivate       *bool          `json:"set_private"`
 	Archive          bool           `json:"archive"`
 	Unarchive        bool           `json:"unarchive"`
 	SetFavorite      *bool          `json:"set_favorite"`
@@ -67,7 +66,6 @@ func (in operationsInput) toOperations() (bulk.Operations, error) {
 		RemoveAlbums: in.RemoveFromAlbums,
 		AddLabels:    in.AddLabels,
 		RemoveLabels: in.RemoveLabels,
-		Private:      in.SetPrivate,
 		Favorite:     in.SetFavorite,
 	}
 	title, err := resolveText(in.SetCaption, in.ClearCaption, "caption")

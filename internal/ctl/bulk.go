@@ -56,7 +56,6 @@ type BulkOperations struct {
 	ClearDescription bool          `json:"clear_description,omitempty"`
 	SetLocation      *BulkLocation `json:"set_location,omitempty"`
 	ClearLocation    bool          `json:"clear_location,omitempty"`
-	SetPrivate       *bool         `json:"set_private,omitempty"`
 	Archive          bool          `json:"archive,omitempty"`
 	Unarchive        bool          `json:"unarchive,omitempty"`
 	SetFavorite      *bool         `json:"set_favorite,omitempty"`
@@ -75,7 +74,7 @@ func (o BulkOperations) IsEmpty() bool {
 	requested := []bool{
 		o.ClearCaption, o.ClearDescription, o.ClearLocation, o.Archive, o.Unarchive,
 		o.SetCaption != nil, o.SetDescription != nil, o.SetLocation != nil,
-		o.SetPrivate != nil, o.SetFavorite != nil, o.SetRating != nil, o.SetFlag != nil,
+		o.SetFavorite != nil, o.SetRating != nil, o.SetFlag != nil,
 	}
 	return !slices.Contains(requested, true)
 }

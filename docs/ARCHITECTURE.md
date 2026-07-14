@@ -229,7 +229,8 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
   `file_width/height/orientation`, `taken_at` + `taken_at_source`, `title/description/notes`,
   `ai_note` (volný text z externí AI klasifikace, `NOT NULL DEFAULT ''`, editovatelný, ve fulltextu),
   `lat/lng/altitude`, `camera_make/model`, `lens_model`, `iso/aperture/exposure/focal_length`,
-  `exif JSONB`, `private`, `archived_at`, `uploaded_by`, časy.
+  `exif JSONB`, `private` (**legacy** — píše ho už jen import z PhotoPrismu/photo-sorteru,
+  aplikace ho nefiltruje ani needituje), `archived_at`, `uploaded_by`, časy.
   **Nové sloupce pro Kukátko:**
   - `photoprism_uid VARCHAR(32)` — PhotoUID z PhotoPrismu (dedup + inkrement).
   - `photoprism_file_hash VARCHAR(40)` — SHA1 souboru z PhotoPrismu (download mapping).
@@ -326,7 +327,7 @@ Stejný jako photo-sorter (`EMBEDDING_URL`, default offline-aware). HTTP:
 
 - **Implementace:** jediný endpoint `GET /api/v1/search?q=…&mode=…` (`internal/photoapi`),
   parametr `mode` = `fulltext` | `semantic` | `hybrid` (**default `hybrid`**). Všechny módy
-  ctí standardní list filtry (datum/GPS/private/…) i stránkování; odpověď má stejný tvar jako
+  ctí standardní list filtry (datum/GPS/…) i stránkování; odpověď má stejný tvar jako
   list + pole `mode` (efektivní mód) a `degraded` (viz níže).
 - **Fulltext:** PostgreSQL `tsvector` (dictionary `simple`, `unaccent` pro češtinu) nad
   title(A) > description(B) > notes(C) = ai_note(C) > file_name(D). Diakritika necitlivá

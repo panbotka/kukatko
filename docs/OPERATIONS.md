@@ -297,13 +297,12 @@ holé pole objektů s `uid`, nebo prostý seznam oddělený bílými znaky. Uidy
 | `--set-caption` / `--clear-caption` | titulek fotky |
 | `--set-description` / `--clear-description` | popis |
 | `--location "lat,lng"` / `--clear-location` | GPS pozice |
-| `--private[=false]` | soukromá fotka |
 | `--favorite[=false]` | oblíbená (per-user) |
 | `--archive` / `--unarchive` | přesun do koše / zpět |
 | `--rating 0..5` | hvězdy (per-user) |
 | `--flag none\|pick\|reject` | cull flag (per-user) |
 
-Flagy, jejichž „nezadáno" je taky platná hodnota (`--private`, `--favorite`, `--rating`, `--flag`),
+Flagy, jejichž „nezadáno" je taky platná hodnota (`--favorite`, `--rating`, `--flag`),
 se posílají **jen když je vážně napíšeš** — jinak by `ctl bulk --add-label x` tiše odoblíbil všechno,
 čeho se dotkne, a shodil hodnocení na nulu. Vzájemně se vylučující dvojice (`--set-caption`
 + `--clear-caption`, `--archive` + `--unarchive`, …), rozsah hvězd, flag i souřadnice se ověřují

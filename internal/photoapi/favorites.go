@@ -74,7 +74,7 @@ type photoView struct {
 //
 // This is the one place a media URL enters a list response, and reaching it means
 // the caller was authorized to see these photos: see the mediaurl package doc on
-// why that makes the private flag and the archive real security boundaries.
+// why that makes the archive a real security boundary.
 func (a *API) annotate(
 	ctx context.Context, userUID string, list []photos.Photo,
 ) ([]photoView, error) {

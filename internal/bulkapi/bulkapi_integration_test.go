@@ -163,7 +163,7 @@ func TestBulk_appliesAlbumLabelAndLocation(t *testing.T) {
 			"add_to_albums": []string{album.UID},
 			"add_labels":    []string{label.UID},
 			"set_location":  map[string]float64{"lat": 50.1, "lng": 14.4},
-			"set_private":   true,
+			"set_caption":   "Trip 2024",
 		},
 	})
 	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
@@ -186,8 +186,8 @@ func TestBulk_appliesAlbumLabelAndLocation(t *testing.T) {
 		if photo.Lat == nil || *photo.Lat != 50.1 || photo.Lng == nil || *photo.Lng != 14.4 {
 			t.Errorf("%s location = (%v,%v), want (50.1,14.4)", uid, photo.Lat, photo.Lng)
 		}
-		if !photo.Private {
-			t.Errorf("%s private = false, want true", uid)
+		if photo.Title != "Trip 2024" {
+			t.Errorf("%s title = %q, want %q", uid, photo.Title, "Trip 2024")
 		}
 	}
 

@@ -193,7 +193,7 @@ func processPhoto(ctx context.Context, tx pgx.Tx, uid, actorUID string, ops Oper
 }
 
 // photoColumnUpdate builds the UPDATE photos statement for the column-level
-// operations (title, description, private, location, archive state). It returns
+// operations (title, description, location, archive state). It returns
 // ok=false when no column-level change is requested.
 func (o Operations) photoColumnUpdate(uid string) (string, []any, bool) {
 	set := []string{"updated_at = now()"}
@@ -207,9 +207,6 @@ func (o Operations) photoColumnUpdate(uid string) (string, []any, bool) {
 	}
 	if o.Description != nil {
 		appendSet("description", *o.Description)
-	}
-	if o.Private != nil {
-		appendSet("private", *o.Private)
 	}
 	if o.Location != nil {
 		appendSet("lat", o.Location.Lat)

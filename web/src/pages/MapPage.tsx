@@ -35,7 +35,7 @@ export function MapPage() {
   // whole view) so panning (which writes lat/lng/zoom into the URL) does not
   // reload every marker. Reconstructing from the primitive fields keeps the memo
   // callback free of the `view` object, so its dependency list is exact.
-  const { taken_after, taken_before, archived, private: privateFilter, album, label } = view
+  const { taken_after, taken_before, archived, album, label } = view
   const params = useMemo(
     () =>
       mapViewToParams({
@@ -43,11 +43,10 @@ export function MapPage() {
         taken_after,
         taken_before,
         archived,
-        private: privateFilter,
         album,
         label,
       }),
-    [taken_after, taken_before, archived, privateFilter, album, label],
+    [taken_after, taken_before, archived, album, label],
   )
   const { features, status, retry } = useMapPhotos(params)
 

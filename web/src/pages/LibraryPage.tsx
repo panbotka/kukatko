@@ -46,7 +46,7 @@ const NO_SCOPE: SlideshowScope = {}
  * pages through the API as the user scrolls. Every tile carries a favorite heart
  * (a personal toggle for all roles); editors can additionally enter selection
  * mode to bulk-edit a multi-photo selection (albums, labels, description,
- * location, private, archive, favorite) via the bulk API.
+ * location, archive, favorite) via the bulk API.
  */
 export function LibraryPage() {
   const { t } = useTranslation()

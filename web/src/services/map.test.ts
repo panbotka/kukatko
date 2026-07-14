@@ -43,14 +43,12 @@ describe('buildMapQuery', () => {
       taken_after: '2026-01-01',
       taken_before: '',
       archived: 'only',
-      private: undefined,
       album: 'al1',
     })
     expect(query.get('taken_after')).toBe('2026-01-01')
     expect(query.get('archived')).toBe('only')
     expect(query.get('album')).toBe('al1')
     expect(query.has('taken_before')).toBe(false)
-    expect(query.has('private')).toBe(false)
     expect(query.has('label')).toBe(false)
   })
 })

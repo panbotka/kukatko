@@ -78,7 +78,6 @@ function photo(uid: string, name: string): Photo {
     camera_make: '',
     camera_model: '',
     lens_model: '',
-    private: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   }
@@ -257,14 +256,13 @@ describe('AlbumDetailPage', () => {
 
     const fetchesBefore = fetchPhotosMock.mock.calls.length
     await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
-    // The filter bar carries a "Private" select of its own; take the dialog's.
     const dialog = await screen.findByRole('dialog')
-    await user.selectOptions(within(dialog).getByLabelText('Private'), 'true')
+    await user.selectOptions(within(dialog).getByLabelText('Favorite'), 'true')
     await user.click(within(dialog).getByRole('button', { name: 'Apply' }))
 
     // The two picked photos, not the three the album scope matches.
     await waitFor(() => {
-      expect(bulkMock).toHaveBeenCalledWith(['a', 'c'], { set_private: true })
+      expect(bulkMock).toHaveBeenCalledWith(['a', 'c'], { set_favorite: true })
     })
 
     await user.click(await screen.findByRole('button', { name: 'Done' }))

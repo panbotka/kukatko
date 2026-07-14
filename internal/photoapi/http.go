@@ -272,7 +272,7 @@ func pageResponse(params photos.ListParams, list []photoView, total int) listRes
 // yields 400). Full-text matching is Czech-aware and diacritics-insensitive;
 // semantic matching embeds the query via the sidecar and ranks by CLIP vector
 // similarity; hybrid fuses the two with Reciprocal Rank Fusion. Every list filter
-// (date range, GPS, private, camera, …) and the limit/offset pagination apply in
+// (date range, GPS, camera, …) and the limit/offset pagination apply in
 // all modes; the `sort`/`order` params are ignored because results are always
 // ranked. When the sidecar is unavailable, semantic and hybrid fall back to
 // full-text and the response sets `degraded: true`. The response otherwise

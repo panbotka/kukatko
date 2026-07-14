@@ -8,9 +8,9 @@ import (
 
 // handleTimeline returns the month-granularity date histogram of the photo
 // library. It accepts the same filter query parameters as GET /photos (archived,
-// private, has_gps, date range, camera, lens, uploader, album/label scope,
-// country/city place scope, favorite, min_rating/flag and the q substring
-// filter) via parseListParams, and the aggregation respects them so the buckets
+// has_gps, date range, camera, lens, uploader, album/label scope, country/city
+// place scope, favorite, min_rating/flag and the q substring filter) via
+// parseListParams, and the aggregation respects them so the buckets
 // match exactly what the list would return in the same order. Buckets are ordered
 // newest-first by capture time to mirror the default grid, and each carries the
 // running cumulative count of photos before it so a frontend scrubber can map a

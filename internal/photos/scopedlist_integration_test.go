@@ -40,7 +40,7 @@ func TestList_albumScope(t *testing.T) {
 	})
 	mid := mustCreate(t, store, photos.Photo{
 		FileHash: "a-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
-		Title: "mid", Private: true, TakenAt: &jun, TakenAtSource: "exif",
+		Title: "mid", TakenAt: &jun, TakenAtSource: "exif",
 	})
 	newer := mustCreate(t, store, photos.Photo{
 		FileHash: "a-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg",
@@ -78,14 +78,14 @@ func TestList_albumScope(t *testing.T) {
 	})
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
-		no := false
-		list, err := store.List(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}, Private: &no})
+		sep := time.Date(2023, 9, 1, 0, 0, 0, 0, time.UTC)
+		list, err := store.List(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}, TakenBefore: &sep})
 		if err != nil {
-			t.Fatalf("List(album, private=false): %v", err)
+			t.Fatalf("List(album, taken_before): %v", err)
 		}
 		set := uidSet(list)
-		if len(set) != 2 || set[mid.UID] {
-			t.Fatalf("album+private scope = %v, want older+newer", set)
+		if len(set) != 2 || set[newer.UID] {
+			t.Fatalf("album+date scope = %v, want older+mid", set)
 		}
 	})
 
@@ -189,12 +189,16 @@ func TestList_subjectScope(t *testing.T) {
 	ppl := people.NewStore(db.Pool())
 	ctx := t.Context()
 
+	jan := time.Date(2022, 1, 15, 12, 0, 0, 0, time.UTC)
+	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
+
 	withSubject := mustCreate(t, store, photos.Photo{
 		FileHash: "s-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "with",
+		TakenAt: &jun, TakenAtSource: "exif",
 	})
-	withSubjectPriv := mustCreate(t, store, photos.Photo{
+	withSubjectOld := mustCreate(t, store, photos.Photo{
 		FileHash: "s-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
-		Title: "with-private", Private: true,
+		Title: "with-old", TakenAt: &jan, TakenAtSource: "exif",
 	})
 	rejected := mustCreate(t, store, photos.Photo{
 		FileHash: "s-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "rejected",
@@ -208,7 +212,7 @@ func TestList_subjectScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	for _, uid := range []string{withSubject.UID, withSubjectPriv.UID} {
+	for _, uid := range []string{withSubject.UID, withSubjectOld.UID} {
 		mustMarker(t, ppl, uid, subject.UID, false)
 	}
 	// A rejected (invalid) marker must not make the photo match the person filter.
@@ -230,14 +234,14 @@ func TestList_subjectScope(t *testing.T) {
 	})
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
-		no := false
-		list, err := store.List(ctx, photos.ListParams{SubjectUIDs: []string{subject.UID}, Private: &no})
+		after := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+		list, err := store.List(ctx, photos.ListParams{SubjectUIDs: []string{subject.UID}, TakenAfter: &after})
 		if err != nil {
-			t.Fatalf("List(subject, private=false): %v", err)
+			t.Fatalf("List(subject, taken_after): %v", err)
 		}
 		set := uidSet(list)
 		if len(set) != 1 || !set[withSubject.UID] {
-			t.Fatalf("subject+private scope = %v, want only the public photo with the subject", set)
+			t.Fatalf("subject+date scope = %v, want only the recent photo with the subject", set)
 		}
 	})
 }
@@ -293,12 +297,16 @@ func TestList_labelScope(t *testing.T) {
 	org := organize.NewStore(db.Pool())
 	ctx := t.Context()
 
+	jan := time.Date(2022, 1, 15, 12, 0, 0, 0, time.UTC)
+	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
+
 	tagged := mustCreate(t, store, photos.Photo{
 		FileHash: "l-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "tagged",
+		TakenAt: &jun, TakenAtSource: "exif",
 	})
-	taggedPriv := mustCreate(t, store, photos.Photo{
+	taggedOld := mustCreate(t, store, photos.Photo{
 		FileHash: "l-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
-		Title: "tagged-private", Private: true,
+		Title: "tagged-old", TakenAt: &jan, TakenAtSource: "exif",
 	})
 	untagged := mustCreate(t, store, photos.Photo{
 		FileHash: "l-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "untagged",
@@ -308,7 +316,7 @@ func TestList_labelScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	for _, uid := range []string{tagged.UID, taggedPriv.UID} {
+	for _, uid := range []string{tagged.UID, taggedOld.UID} {
 		if err := org.AttachLabel(ctx, uid, label.UID, organize.SourceManual, 0); err != nil {
 			t.Fatalf("AttachLabel(%s): %v", uid, err)
 		}
@@ -330,14 +338,14 @@ func TestList_labelScope(t *testing.T) {
 	})
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
-		no := false
-		list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{label.UID}, Private: &no})
+		after := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+		list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{label.UID}, TakenAfter: &after})
 		if err != nil {
-			t.Fatalf("List(label, private=false): %v", err)
+			t.Fatalf("List(label, taken_after): %v", err)
 		}
 		set := uidSet(list)
 		if len(set) != 1 || !set[tagged.UID] {
-			t.Fatalf("label+private scope = %v, want only the public tagged photo", set)
+			t.Fatalf("label+date scope = %v, want only the recent tagged photo", set)
 		}
 	})
 }

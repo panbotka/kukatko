@@ -19,12 +19,11 @@
 //
 // This is worth stating plainly because an earlier draft of this design put the
 // objects in a *public* bucket and reasoned that an unguessable key was enough.
-// Under that design photos.private and the archive were presentation filters and
-// nothing more: anyone holding a key could read the object forever, whatever the
-// catalogue said. That is no longer true and must not be reintroduced. **The
-// private flag and the archive are real security boundaries.** A handler that
-// hands out a media URL for a photo the caller may not see has published the
-// photo, and no TTL makes that acceptable.
+// Under that design the archive was a presentation filter and nothing more:
+// anyone holding a key could read the object forever, whatever the catalogue
+// said. That is no longer true and must not be reintroduced. **The archive is a
+// real security boundary.** A handler that hands out a media URL for a photo the
+// caller may not see has published the photo, and no TTL makes that acceptable.
 package mediaurl
 
 import (

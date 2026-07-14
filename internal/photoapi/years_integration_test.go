@@ -67,8 +67,8 @@ func TestYears(t *testing.T) {
 
 	old := env.seedPhoto(t, photos.Photo{Title: "Old", TakenAt: ptrTime(y2021), TakenAtSource: "exif"},
 		"old.jpg", 200, 10, 10)
-	priv := env.seedPhoto(t,
-		photos.Photo{Title: "Jun", TakenAt: ptrTime(jun2023), TakenAtSource: "exif", Private: true},
+	junPhoto := env.seedPhoto(t,
+		photos.Photo{Title: "Jun", TakenAt: ptrTime(jun2023), TakenAtSource: "exif"},
 		"jun.jpg", 10, 200, 10)
 	env.seedPhoto(t, photos.Photo{Title: "Dec A", TakenAt: ptrTime(dec2023), TakenAtSource: "exif"},
 		"deca.jpg", 10, 10, 200)
@@ -117,16 +117,17 @@ func TestYears(t *testing.T) {
 	})
 
 	t.Run("other filters narrow the counts", func(t *testing.T) {
-		got := getYears(t, client, base, "private=true")
+		const juneOnly = "taken_after=2023-06-01&taken_before=2023-06-30"
+		got := getYears(t, client, base, juneOnly)
 		if got.Total != 1 || len(got.Years) != 1 {
-			t.Fatalf("private years = %+v total=%d, want the single 2023 photo", got.Years, got.Total)
+			t.Fatalf("scoped years = %+v total=%d, want the single 2023 photo", got.Years, got.Total)
 		}
 		if got.Years[0].Year != 2023 || got.Years[0].Count != 1 {
 			t.Errorf("bucket = %+v, want 2023 count 1", got.Years[0])
 		}
-		list := getList(t, client, base, "private=true&year=2023")
-		if list.Total != 1 || len(list.Photos) != 1 || list.Photos[0].UID != priv.UID {
-			t.Errorf("list total=%d photos=%v, want 1/[%s]", list.Total, uids(list.Photos), priv.UID)
+		list := getList(t, client, base, juneOnly+"&year=2023")
+		if list.Total != 1 || len(list.Photos) != 1 || list.Photos[0].UID != junPhoto.UID {
+			t.Errorf("list total=%d photos=%v, want 1/[%s]", list.Total, uids(list.Photos), junPhoto.UID)
 		}
 	})
 

@@ -85,7 +85,7 @@ func TestClient_Bulk_minimalBody(t *testing.T) {
 	if ops["archive"] != true {
 		t.Errorf("operations = %v, want archive true", ops)
 	}
-	for _, key := range []string{"set_rating", "set_favorite", "set_private", "unarchive", "clear_caption"} {
+	for _, key := range []string{"set_rating", "set_favorite", "set_flag", "unarchive", "clear_caption"} {
 		if _, set := ops[key]; set {
 			t.Errorf("operations = %v, want %q omitted rather than sent at its zero value", ops, key)
 		}

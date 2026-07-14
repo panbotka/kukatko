@@ -141,7 +141,6 @@
       "sort": "Řazení",
       "archived": "Archiv",
       "hasGps": "Poloha",
-      "private": "Soukromé",
       "camera": "Fotoaparát",
       "cameraPlaceholder": "např. Canon",
       "takenAfter": "Pořízeno od",
@@ -210,7 +209,6 @@
       "retry": "Zkusit znovu"
     },
     "tile": {
-      "private": "Soukromé",
       "unavailable": "Náhled není dostupný",
       "video": "Video",
       "live": "Živá fotka"
@@ -429,12 +427,6 @@
       "lng": "Zeměpisná délka",
       "invalid": "Zadej platnou zeměpisnou šířku a délku."
     },
-    "private": {
-      "label": "Soukromé",
-      "noChange": "— beze změny —",
-      "yes": "Nastavit jako soukromé",
-      "no": "Nastavit jako veřejné"
-    },
     "archive": {
       "label": "Archiv",
       "noChange": "— beze změny —",
@@ -463,8 +455,6 @@
       "clearDescription": "Vymazat popis",
       "setLocation": "Nastavit polohu na {{lat}}, {{lng}}",
       "clearLocation": "Vymazat polohu",
-      "private": "Nastavit jako soukromé",
-      "notPrivate": "Nastavit jako veřejné",
       "archive": "Archivovat",
       "unarchive": "Vrátit z archivu",
       "favorite": "Přidat mezi oblíbené",
@@ -546,18 +536,12 @@
       "takenAfter": "Pořízeno od",
       "takenBefore": "Pořízeno do",
       "archived": "Archiv",
-      "private": "Soukromé",
       "clear": "Zrušit filtry"
     },
     "archived": {
       "hide": "Skrýt archiv",
       "show": "Včetně archivu",
       "only": "Jen archiv"
-    },
-    "triState": {
-      "any": "Vše",
-      "yes": "Ano",
-      "no": "Ne"
     },
     "empty": {
       "title": "Žádné fotky s polohou",
@@ -695,12 +679,6 @@
     "sections": {
       "organize": "Uspořádání",
       "caption": "Popis a místo"
-    },
-    "privacy": {
-      "private": "Soukromé",
-      "public": "Veřejné",
-      "makePrivate": "Nastavit jako soukromé",
-      "makePublic": "Nastavit jako veřejné"
     },
     "video": {
       "label": "Přehrávač videa",

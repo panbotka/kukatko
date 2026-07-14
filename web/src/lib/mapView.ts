@@ -22,7 +22,6 @@ export type MapView = {
   taken_after: string
   taken_before: string
   archived: string
-  private: string
   album: string
   label: string
 }
@@ -40,7 +39,6 @@ export const MAP_DEFAULTS: MapView = {
   taken_after: '',
   taken_before: '',
   archived: 'false',
-  private: '',
   album: '',
   label: '',
 }
@@ -64,7 +62,6 @@ export function mapViewToParams(view: MapView): MapPhotoParams {
     taken_after: view.taken_after,
     taken_before: view.taken_before,
     archived: toArchived(view.archived),
-    private: view.private,
     album: view.album,
     label: view.label,
   }
@@ -105,7 +102,6 @@ export function hasActiveMapFilters(view: MapView): boolean {
     view.taken_after !== '' ||
     view.taken_before !== '' ||
     view.archived !== MAP_DEFAULTS.archived ||
-    view.private !== '' ||
     view.album !== '' ||
     view.label !== ''
   )
