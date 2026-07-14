@@ -351,6 +351,24 @@ describe('PhotoDetailPage', () => {
     expect(screen.getByTestId('map')).toBeInTheDocument()
   })
 
+  it('puts Organize beside Caption & place (25/75) from the lg breakpoint up', async () => {
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    // The two leading panels share one grid row — a 25 % Organize rail beside the
+    // 75 % text-heavy Caption & place — and both fall back to a full-width column
+    // below `lg`, so a phone still gets the stacked order asserted above.
+    const organizeCol = screen.getByText('Organize').closest('.col-12')
+    const captionCol = screen.getByText('Caption & place').closest('.col-12')
+    expect(organizeCol).toHaveClass('col-lg-3')
+    expect(captionCol).toHaveClass('col-lg-9')
+    expect(organizeCol?.parentElement).toBe(captionCol?.parentElement)
+
+    // Natural heights: the row must not stretch the shorter card into a tall
+    // empty box beside the taller one.
+    expect(organizeCol?.parentElement).toHaveClass('row', 'align-items-start')
+  })
+
   it('leads with the Organize block, editable inline without a global edit mode', async () => {
     fetchFacesMock.mockResolvedValue(facesResponse(1))
     renderPage()
