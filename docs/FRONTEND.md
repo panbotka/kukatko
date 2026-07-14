@@ -471,7 +471,23 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `exif`→`manual`, nezměněné souřadnice by se zaokrouhlily na 6 desetinných míst textového pole —
   obojí by tiše přepsalo katalog. **Neplatný text souřadnic = inline chyba u pole**, ne blokace
   celého formuláře: ostatní pole se uloží, poloha zůstane beze změny a formulář zůstane otevřený
-  (Save se **nedisabluje**). Odpověď PATCHe je plný detail (`albums`/`labels`/`files`), kterým
+  (Save se **nedisabluje**).
+  **IPTC/XMP kredity** (`credits` pod-sekce ve stejném formuláři, **na první render sbalená**,
+  chevron toggle `aria-expanded`/`aria-controls` jako `TechnicalDetails`) — patří na naskenované/zděděné
+  fotky, kde EXIF ani importy o autorovi/roce nic neví: textová pole **Předmět** (`subject`),
+  **Umělec** (`artist`), **Autorská práva** (`copyright`), **Licence** (`license`), chipové pole
+  **Klíčová slova** (`keywords`) a checkbox **Sken** (`scan`). Ukládá je **tentýž** `updatePhoto` PATCH
+  (žádné druhé tlačítko/formulář/request); `maxLength` polí zrcadlí backendový `creditLimits`
+  (subject/copyright/license 1000, artist 255). Klíčová slova = jeden comma-separated string v DB,
+  editovaný jako chipy přes `KeywordsInput` (sdílený `badge rounded-pill` + `ENTITY_STYLE.tag` look,
+  ale **ne** štítky — žádný link na `/labels/:uid`): Enter/čárka/vložení „a, b" přidá, click na křížek
+  ubere, Backspace v prázdném poli sundá poslední, blur zapíše rozepsané slovo; helpery
+  `addKeywords`/`joinKeywords`/`sameKeywords`/`splitKeywords` (`lib/photoFacts`) trimují,
+  de-duplikují a hlídají 2000-run strop na spojeném stringu (rune-count = Go `utf8.RuneCountInString`).
+  Kredity jdou do PATCHe **jen když se skutečně změnily** (form normalizuje: trim + rejoin, takže
+  nezměněné pole by přepsalo formulaci ze zdrojového souboru); vyprázdněné pole se pošle jako `""`
+  (smaže), neúspěšný PATCH **drží** rozepsané hodnoty a ukáže existující `saveError` alert.
+  Odpověď PATCHe je plný detail (`albums`/`labels`/`files`), kterým
   stránka nahradí drženou fotku; read-only poloha = `PhotoLocation` (mini-mapa nad mapy.com proxy + on-demand
   `reverseGeocode`) **embedovaná** v tomto bloku. **3. Technické údaje** (`TechnicalDetails`,
   **na první render zavřený** expander `aria-expanded`/`aria-controls`): **všechno, co appka o fotce

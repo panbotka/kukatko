@@ -6,10 +6,12 @@ import { useTranslation } from 'react-i18next'
 
 import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
 import { formatDateTime } from '../../lib/format'
+import { joinKeywords, sameKeywords, splitKeywords } from '../../lib/photoFacts'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
 import { Icon } from '../Icon'
 import { LeafletMap } from '../map/LeafletMap'
 
+import { KeywordsInput } from './KeywordsInput'
 import { PhotoLocation } from './PhotoLocation'
 
 /**
@@ -18,6 +20,21 @@ import { PhotoLocation } from './PhotoLocation'
  * be answered with a 400 cannot be typed in the first place.
  */
 const TAKEN_AT_NOTE_MAX = 500
+
+/**
+ * The IPTC/XMP credit fields' length caps, mirroring the backend's `creditLimits`
+ * (`internal/photoapi/update.go`) field for field: the inputs stop accepting more,
+ * so a value the PATCH would answer with a 400 cannot be typed in the first place.
+ */
+const SUBJECT_MAX = 1000
+const COPYRIGHT_MAX = 1000
+const LICENSE_MAX = 1000
+const ARTIST_MAX = 255
+/** The cap on the joined, comma-separated keyword string — not on one keyword. */
+const KEYWORDS_MAX = 2000
+
+/** The DOM id of the collapsible credit sub-section, referenced by `aria-controls`. */
+const CREDITS_REGION_ID = 'photo-credit-fields'
 
 /** Props for {@link MetadataPanel}. */
 export interface MetadataPanelProps {
@@ -159,9 +176,16 @@ function CaptureDate({ date, note }: CaptureDateProps) {
  * replaces the old single hidden "Edit" button so every caption field is
  * discoverably editable in place. Location reuses {@link PhotoLocation} read-only
  * (mini-map + on-demand reverse-geocode) and is set/changed/cleared through the
- * form's coordinate field and Leaflet map picker. Camera/lens/EXIF and the
- * uploader are deliberately absent — they live in the collapsed technical
- * details. All text is i18n.
+ * form's coordinate field and Leaflet map picker.
+ *
+ * The form also carries the IPTC/XMP credit block — subject, artist, copyright,
+ * licence, keywords (as chips, see {@link KeywordsInput}) and the "this is a scan"
+ * flag — in a sub-section that starts collapsed, saved by the very same PATCH. It
+ * is where a scanned or inherited photo is credited at all: EXIF and the importers
+ * know nothing about who took a print from 1950.
+ *
+ * Camera/lens/EXIF and the uploader are deliberately absent — they live in the
+ * collapsed technical details. All text is i18n.
  */
 export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps) {
   const { t, i18n } = useTranslation()
@@ -175,6 +199,12 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   const pristineEstimated = photo.taken_at_estimated === true
   const pristineNote = photo.taken_at_note ?? ''
   const pristineCoords = initialCoordText(photo)
+  const pristineSubject = photo.subject ?? ''
+  const pristineArtist = photo.artist ?? ''
+  const pristineCopyright = photo.copyright ?? ''
+  const pristineLicense = photo.license ?? ''
+  const pristineScan = photo.scan === true
+  const pristineKeywords = useMemo(() => splitKeywords(photo.keywords), [photo.keywords])
 
   const [title, setTitle] = useState(photo.title)
   const [description, setDescription] = useState(photo.description)
@@ -186,6 +216,17 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   // The location lives as a single free-form coordinate string; it is parsed to
   // drive the map marker and, on save, the PATCH lat/lng.
   const [coordText, setCoordText] = useState(pristineCoords)
+  // The IPTC/XMP credit block. It is secondary to the caption, so it lives behind a
+  // disclosure that starts closed — typing a title must not mean scrolling past six
+  // more inputs first. Keywords are held as the chip list the field edits and only
+  // joined back into the stored comma-separated string on save.
+  const [creditsOpen, setCreditsOpen] = useState(false)
+  const [subject, setSubject] = useState(pristineSubject)
+  const [artist, setArtist] = useState(pristineArtist)
+  const [copyright, setCopyright] = useState(pristineCopyright)
+  const [license, setLicense] = useState(pristineLicense)
+  const [scan, setScan] = useState(pristineScan)
+  const [keywords, setKeywords] = useState<string[]>(pristineKeywords)
 
   // The capture date as the read-only view shows it. captureDateText is its plain
   // text form — it decides whether the field counts as filled and is what a copy of
@@ -216,6 +257,13 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
     setTakenAtEstimated(pristineEstimated)
     setTakenAtNote(pristineNote)
     setCoordText(pristineCoords)
+    setSubject(pristineSubject)
+    setArtist(pristineArtist)
+    setCopyright(pristineCopyright)
+    setLicense(pristineLicense)
+    setScan(pristineScan)
+    setKeywords(pristineKeywords)
+    setCreditsOpen(false)
     setError(false)
     setEditing(true)
   }
@@ -237,6 +285,12 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
    * The dating note rides along only while the photo is (or has just become) an
    * estimate: unchecking the flag is enough on its own, since the backend drops the
    * note with it — a date presented as a fact never keeps a stale remark.
+   *
+   * The credit fields follow the same only-when-changed rule, for the same reason:
+   * the form normalises what it holds (each value trimmed, the keywords rejoined as
+   * "beach, sunset"), so resending an untouched field would rewrite the source
+   * file's own wording on a save the user made for something else. A field the user
+   * did empty is sent as "", which clears it.
    */
   function buildPatch(): PhotoMetadataUpdate {
     const patch: PhotoMetadataUpdate = {
@@ -244,6 +298,24 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
       description,
       notes,
       ai_note: aiNote,
+    }
+    if (subject.trim() !== pristineSubject) {
+      patch.subject = subject.trim()
+    }
+    if (artist.trim() !== pristineArtist) {
+      patch.artist = artist.trim()
+    }
+    if (copyright.trim() !== pristineCopyright) {
+      patch.copyright = copyright.trim()
+    }
+    if (license.trim() !== pristineLicense) {
+      patch.license = license.trim()
+    }
+    if (!sameKeywords(keywords, pristineKeywords)) {
+      patch.keywords = joinKeywords(keywords)
+    }
+    if (scan !== pristineScan) {
+      patch.scan = scan
     }
     if (takenAt !== pristineTakenAt) {
       patch.taken_at = takenAt === '' ? null : new Date(takenAt).toISOString()
@@ -381,6 +453,99 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             />
           </Form.Group>
         )}
+        {/* The IPTC/XMP credit block, behind a disclosure that starts closed: it
+            matters most on scans and inherited photos, where the automatic sources
+            know nothing — but it must not bury the common case of typing a title
+            and a description under six more inputs. */}
+        <div className="mb-2">
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="px-0 text-decoration-none"
+            aria-expanded={creditsOpen}
+            aria-controls={CREDITS_REGION_ID}
+            onClick={() => {
+              setCreditsOpen(!creditsOpen)
+            }}
+          >
+            <Icon name={creditsOpen ? 'chevron-down' : 'chevron-right'} className="me-1" />
+            {t('photo.metadata.credits')}
+          </Button>
+          {creditsOpen && (
+            <div id={CREDITS_REGION_ID} className="mt-2">
+              <Form.Group className="mb-2" controlId="photo-subject">
+                <Form.Label className="small text-secondary mb-1">
+                  {t('photo.metadata.subject')}
+                </Form.Label>
+                <Form.Control
+                  value={subject}
+                  maxLength={SUBJECT_MAX}
+                  onChange={(event) => {
+                    setSubject(event.target.value)
+                  }}
+                />
+              </Form.Group>
+              <Form.Group className="mb-2" controlId="photo-artist">
+                <Form.Label className="small text-secondary mb-1">
+                  {t('photo.metadata.artist')}
+                </Form.Label>
+                <Form.Control
+                  value={artist}
+                  maxLength={ARTIST_MAX}
+                  placeholder={t('photo.metadata.artistPlaceholder')}
+                  onChange={(event) => {
+                    setArtist(event.target.value)
+                  }}
+                />
+              </Form.Group>
+              <Form.Group className="mb-2" controlId="photo-copyright">
+                <Form.Label className="small text-secondary mb-1">
+                  {t('photo.metadata.copyright')}
+                </Form.Label>
+                <Form.Control
+                  value={copyright}
+                  maxLength={COPYRIGHT_MAX}
+                  onChange={(event) => {
+                    setCopyright(event.target.value)
+                  }}
+                />
+              </Form.Group>
+              <Form.Group className="mb-2" controlId="photo-license">
+                <Form.Label className="small text-secondary mb-1">
+                  {t('photo.metadata.license')}
+                </Form.Label>
+                <Form.Control
+                  value={license}
+                  maxLength={LICENSE_MAX}
+                  onChange={(event) => {
+                    setLicense(event.target.value)
+                  }}
+                />
+              </Form.Group>
+              <KeywordsInput
+                id="photo-keywords"
+                label={t('photo.metadata.keywords')}
+                value={keywords}
+                maxRunes={KEYWORDS_MAX}
+                onChange={setKeywords}
+              />
+              <Form.Group className="mb-2" controlId="photo-scan">
+                <Form.Check
+                  type="checkbox"
+                  label={t('photo.metadata.scan')}
+                  checked={scan}
+                  onChange={(event) => {
+                    setScan(event.target.checked)
+                  }}
+                />
+                <Form.Text className="text-secondary d-block">
+                  {t('photo.metadata.scanHelp')}
+                </Form.Text>
+              </Form.Group>
+            </div>
+          )}
+        </div>
         <Form.Group className="mb-2" controlId="photo-coordinates">
           <Form.Label className="small text-secondary mb-1">
             {t('photo.metadata.coordinates')}

@@ -70,11 +70,13 @@ export interface Photo {
   copyright?: string
   license?: string
   /**
-   * Machine-derived file technicals, written by ingest/import and never editable:
-   * what produced the image, whether it is a scan of a physical print, the embedded
-   * ICC profile, the still image's compression and a panorama's projection.
+   * File technicals written by ingest/import: what produced the image, the embedded
+   * ICC profile, the still image's compression and a panorama's projection. All
+   * machine-derived and read-only — the one exception is {@link Photo.scan}, which
+   * no file reliably states and the user therefore corrects in `MetadataPanel`.
    */
   software?: string
+  /** Whether the photo is a scan of a physical print rather than a camera capture. */
   scan?: boolean
   color_profile?: string
   image_codec?: string
@@ -469,6 +471,19 @@ export interface PhotoMetadataUpdate {
   taken_at_estimated?: boolean
   /** Free-text dating note, at most 500 characters (a longer one is answered 400). */
   taken_at_note?: string
+  /**
+   * The IPTC/XMP credit block. The backend trims each value and caps its length
+   * (`creditLimits`): 1000 characters for `subject`/`copyright`/`license`, 255 for
+   * `artist` and 2000 for the whole `keywords` string — a longer one is answered
+   * 400. `keywords` is one comma-separated string, not a list.
+   */
+  subject?: string
+  keywords?: string
+  artist?: string
+  copyright?: string
+  license?: string
+  /** Whether the photo is a scan of a physical print rather than a camera capture. */
+  scan?: boolean
   lat?: number | null
   lng?: number | null
 }
