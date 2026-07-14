@@ -25,6 +25,10 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   fotka se pak všude ukazuje s markerem **`cca`** a s tvou poznámkou, takže odhad nejde splést
   s jistým datem. Řazení, timeline i datumové filtry dál jedou podle `taken_at` beze změny, a fotka
   úplně bez data může být odhadem taky (význam nese poznámka).
+- **Popis a autorství naskenovaných fotek:** u zděděné nebo naskenované fotky, kde autor, rok a popis
+  žijí jen v něčí paměti (ne v souboru), doplníš na detailu fotky **předmět, umělce, autorská práva,
+  licenci a klíčová slova** (jako odklikávatelné chipy) a označíš, že jde o **sken** fyzické fotky.
+  Vše se ukládá jedním tlačítkem spolu s názvem a popisem.
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé

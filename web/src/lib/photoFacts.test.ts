@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  addKeywords,
   aspectRatio,
   formatMime,
+  joinKeywords,
   megapixels,
   orientation,
+  sameKeywords,
   shortHash,
   splitKeywords,
   takenAtSource,
@@ -105,6 +108,54 @@ describe('splitKeywords', () => {
   it('is empty when there are no keywords', () => {
     expect(splitKeywords('')).toEqual([])
     expect(splitKeywords(undefined)).toEqual([])
+  })
+})
+
+describe('joinKeywords', () => {
+  it('round-trips through splitKeywords', () => {
+    expect(joinKeywords(['beach', 'sunset'])).toBe('beach, sunset')
+    expect(splitKeywords(joinKeywords(['beach', 'sunset']))).toEqual(['beach', 'sunset'])
+  })
+
+  it('is empty for no keywords', () => {
+    expect(joinKeywords([])).toBe('')
+  })
+})
+
+describe('addKeywords', () => {
+  it('trims the added keyword', () => {
+    expect(addKeywords(['beach'], '  sunset ', 2000)).toEqual(['beach', 'sunset'])
+  })
+
+  it('splits a comma-separated value into several keywords', () => {
+    expect(addKeywords([], 'beach, sunset,', 2000)).toEqual(['beach', 'sunset'])
+  })
+
+  it('ignores blanks and keywords the photo already carries', () => {
+    expect(addKeywords(['beach'], 'beach', 2000)).toEqual(['beach'])
+    expect(addKeywords(['beach'], '   ', 2000)).toEqual(['beach'])
+  })
+
+  it('refuses a keyword that would push the joined string past the cap', () => {
+    // "beach, sunset" is 13 runes, so a cap of 12 leaves room for the first only.
+    expect(addKeywords([], 'beach, sunset', 12)).toEqual(['beach'])
+    expect(addKeywords([], 'beach, sunset', 13)).toEqual(['beach', 'sunset'])
+  })
+
+  it('counts the cap in runes, not UTF-16 units, as the backend does', () => {
+    // "🏖️" is 2 runes but 3 UTF-16 units, so a naive .length would refuse it here.
+    expect(addKeywords([], '🏖️', 2)).toEqual(['🏖️'])
+    expect(addKeywords([], '🏖️', 1)).toEqual([])
+    expect(addKeywords([], 'žluťoučký', 9)).toEqual(['žluťoučký'])
+  })
+})
+
+describe('sameKeywords', () => {
+  it('is true only for the same keywords in the same order', () => {
+    expect(sameKeywords(['beach', 'sunset'], ['beach', 'sunset'])).toBe(true)
+    expect(sameKeywords(['beach', 'sunset'], ['sunset', 'beach'])).toBe(false)
+    expect(sameKeywords(['beach'], ['beach', 'sunset'])).toBe(false)
+    expect(sameKeywords([], [])).toBe(true)
   })
 })
 

@@ -102,6 +102,12 @@ function apiResponse(current: PhotoDetail, patch: PhotoMetadataUpdate): PhotoDet
     // The backend keeps the dating note only while the flag is set — clearing the
     // flag drops the note with it, whatever the photo held before.
     taken_at_note: estimated ? note : '',
+    subject: patch.subject ?? current.subject,
+    artist: patch.artist ?? current.artist,
+    copyright: patch.copyright ?? current.copyright,
+    license: patch.license ?? current.license,
+    keywords: patch.keywords ?? current.keywords,
+    scan: patch.scan ?? current.scan,
     lat: patch.lat === undefined ? current.lat : (patch.lat ?? undefined),
     lng: patch.lng === undefined ? current.lng : (patch.lng ?? undefined),
   }
@@ -171,6 +177,14 @@ function renderHarness(initial: PhotoDetail) {
  */
 async function startEditing(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Edit Title' }))
+}
+
+/**
+ * Opens the credit sub-section of the already-open form. It starts collapsed, so
+ * the six credit inputs exist only once an editor asks for them.
+ */
+async function openCredits(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Credit and keywords' }))
 }
 
 beforeEach(async () => {
@@ -538,5 +552,177 @@ describe('MetadataPanel saving', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('Saving failed. Check the entered values.')).toBeInTheDocument()
+  })
+})
+
+describe('MetadataPanel credit fields', () => {
+  it('keeps the credit sub-section collapsed until it is asked for', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    await startEditing(user)
+
+    // Typing a title must not mean scrolling past six more inputs first.
+    expect(screen.queryByLabelText('Subject')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Keywords')).not.toBeInTheDocument()
+    const toggle = screen.getByRole('button', { name: 'Credit and keywords' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    await openCredits(user)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('Subject')).toBeInTheDocument()
+    expect(screen.getByLabelText('Artist')).toBeInTheDocument()
+    expect(screen.getByLabelText('Copyright')).toBeInTheDocument()
+    expect(screen.getByLabelText('Licence')).toBeInTheDocument()
+    expect(screen.getByLabelText('Keywords')).toBeInTheDocument()
+    expect(screen.getByLabelText('Scan')).toBeInTheDocument()
+  })
+
+  it('sends every edited credit field in the form’s single PATCH', async () => {
+    const current = photo()
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+    await openCredits(user)
+
+    await user.type(screen.getByLabelText('Subject'), 'Wedding at the mill')
+    await user.type(screen.getByLabelText('Artist'), 'Josef Kozák')
+    await user.type(screen.getByLabelText('Copyright'), '© Kozák family')
+    await user.type(screen.getByLabelText('Licence'), 'CC BY-SA 4.0')
+    await user.type(screen.getByLabelText('Keywords'), 'wedding{Enter}')
+    await user.click(screen.getByLabelText('Scan'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    // One PATCH, carrying the lot — no second form and no second request.
+    expect(sentPatch()).toMatchObject({
+      subject: 'Wedding at the mill',
+      artist: 'Josef Kozák',
+      copyright: '© Kozák family',
+      license: 'CC BY-SA 4.0',
+      keywords: 'wedding',
+      scan: true,
+    })
+  })
+
+  it('adds keyword chips on Enter and on a comma, de-duplicates and removes on click', async () => {
+    const current = photo({ keywords: 'beach' })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+    await openCredits(user)
+
+    // The photo's own keyword is already a chip.
+    expect(screen.getByRole('button', { name: 'Remove keyword beach' })).toBeInTheDocument()
+
+    const input = screen.getByLabelText('Keywords')
+    await user.type(input, 'sunset{Enter}')
+    await user.type(input, 'boat,')
+    // Already there — it does not become a second chip.
+    await user.type(input, 'beach{Enter}')
+    expect(screen.getAllByRole('button', { name: /^Remove keyword/ })).toHaveLength(3)
+    expect(input).toHaveValue('')
+
+    await user.click(screen.getByRole('button', { name: 'Remove keyword sunset' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    expect(sentPatch().keywords).toBe('beach, boat')
+  })
+
+  it('takes the last keyword back on backspace in an empty input', async () => {
+    const current = photo({ keywords: 'beach, sunset' })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+    await openCredits(user)
+
+    const input = screen.getByLabelText('Keywords')
+    input.focus()
+    await user.keyboard('{Backspace}')
+    expect(screen.queryByRole('button', { name: 'Remove keyword sunset' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    expect(sentPatch().keywords).toBe('beach')
+  })
+
+  it('commits a typed keyword that was never entered rather than dropping it', async () => {
+    const current = photo()
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+    await openCredits(user)
+
+    // Typed, then straight to Save — the field commits on blur, so the keyword lives.
+    await user.type(screen.getByLabelText('Keywords'), 'wedding')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    expect(sentPatch().keywords).toBe('wedding')
+  })
+
+  it('clears an emptied credit field and leaves the untouched ones out of the patch', async () => {
+    const current = photo({ subject: 'Wedding', artist: 'Josef Kozák', keywords: 'beach' })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+    await openCredits(user)
+
+    await user.clear(screen.getByLabelText('Subject'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+    const patch = sentPatch()
+    // An emptied field is cleared, not left as it was…
+    expect(patch.subject).toBe('')
+    // …and an untouched one is not resent, so the form's normalisation ("beach" →
+    // "beach") never rewrites what the source file wrote.
+    expect(patch).not.toHaveProperty('artist')
+    expect(patch).not.toHaveProperty('keywords')
+    expect(patch).not.toHaveProperty('scan')
+  })
+
+  it('keeps the typed credit values in the form when the PATCH fails', async () => {
+    updatePhotoMock.mockRejectedValue(new Error('boom'))
+    const user = userEvent.setup()
+    renderPanel()
+    await startEditing(user)
+    await openCredits(user)
+
+    await user.type(screen.getByLabelText('Artist'), 'Josef Kozák')
+    await user.type(screen.getByLabelText('Keywords'), 'wedding{Enter}')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    // The form's own error surface, and not a keystroke of the input thrown away.
+    expect(await screen.findByText('Saving failed. Check the entered values.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Artist')).toHaveValue('Josef Kozák')
+    expect(screen.getByRole('button', { name: 'Remove keyword wedding' })).toBeInTheDocument()
+  })
+
+  it('offers a viewer no credit editing UI at all', () => {
+    renderPanel({
+      canWrite: false,
+      photo: photo({ subject: 'Wedding', artist: 'Josef Kozák', keywords: 'beach' }),
+    })
+
+    expect(screen.queryByRole('button', { name: 'Credit and keywords' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Subject')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Keywords')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Scan')).not.toBeInTheDocument()
   })
 })

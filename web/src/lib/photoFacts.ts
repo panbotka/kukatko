@@ -175,6 +175,64 @@ export function splitKeywords(value: string | undefined): string[] {
     .filter((keyword) => keyword !== '')
 }
 
+/**
+ * The chip list written back into the single comma-separated string the column
+ * stores. The separator carries a space, so the value reads like the IPTC keyword
+ * lists the importers write ("beach, sunset") and round-trips through
+ * {@link splitKeywords} unchanged.
+ */
+export function joinKeywords(keywords: string[]): string {
+  return keywords.join(', ')
+}
+
+/**
+ * The number of Unicode code points in a string — the same unit Go's
+ * `utf8.RuneCountInString` counts, so a length compared here against a backend cap
+ * agrees with the backend rune for rune. Spreading a string yields its code points
+ * (unlike `.length`, which counts UTF-16 units and so double-counts an astral
+ * character); that decomposition is exactly the behaviour the disabled rule warns
+ * about and exactly the behaviour we want.
+ */
+function runeCount(value: string): number {
+  // eslint-disable-next-line @typescript-eslint/no-misused-spread -- code points match Go runes; see above
+  return [...value].length
+}
+
+/**
+ * Adds the keywords in `raw` — which may itself be a comma-separated list, so a
+ * pasted "beach, sunset" becomes two chips — to `keywords`, returning the new list.
+ * Each is trimmed, blanks are dropped, and a keyword already on the photo is not
+ * added a second time.
+ *
+ * `maxRunes` mirrors the backend's cap on the joined string (`creditLimits` in
+ * `internal/photoapi`): once the list would exceed it the rest is refused, so the
+ * editor stops accepting keywords instead of building a value the PATCH would
+ * answer with a 400. Runes, not UTF-16 units, because the backend counts runes.
+ */
+export function addKeywords(keywords: string[], raw: string, maxRunes: number): string[] {
+  const next = [...keywords]
+  for (const token of raw.split(',')) {
+    const keyword = token.trim()
+    if (keyword === '' || next.includes(keyword)) {
+      continue
+    }
+    if (runeCount(joinKeywords([...next, keyword])) > maxRunes) {
+      break
+    }
+    next.push(keyword)
+  }
+  return next
+}
+
+/**
+ * Whether two keyword lists hold the same keywords in the same order — what decides
+ * whether the editor's chips are still the photo's own, and so whether `keywords`
+ * belongs in the PATCH at all.
+ */
+export function sameKeywords(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((keyword, index) => keyword === b[index])
+}
+
 /** How many leading characters of a hash are shown before the ellipsis. */
 const HASH_PREFIX = 12
 
