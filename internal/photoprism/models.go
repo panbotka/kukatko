@@ -47,6 +47,33 @@ type Photo struct {
 	Files []File `json:"Files"`
 }
 
+// PhotoDetail is a single photo read from the photo *detail* endpoint. It is a
+// Photo plus the two relations the photo *listing* payload does not carry: every
+// album the photo belongs to and every label it is tagged with. A scoped import
+// reads it per photo so a photo migrated because it sits in one album still
+// arrives with the other albums and the labels it also carries.
+type PhotoDetail struct {
+	Photo
+	// Albums is every album the photo is a member of, of any album type.
+	Albums []Album `json:"Albums"`
+	// Labels is every label attached to the photo, each with the source and
+	// uncertainty of its attachment.
+	Labels []PhotoLabel `json:"Labels"`
+}
+
+// PhotoLabel is one label attached to a photo, together with where PhotoPrism
+// got the attachment from and how uncertain it is about it.
+type PhotoLabel struct {
+	// LabelSrc is PhotoPrism's source tag of the attachment ("manual" for a
+	// hand-attached label, "image" for a vision-classified one, and "batch",
+	// "keyword", "location", "meta"… for the ones PhotoPrism derived itself).
+	LabelSrc string `json:"LabelSrc"`
+	// Uncertainty is the classifier's uncertainty as a percentage (0 = certain).
+	Uncertainty int `json:"Uncertainty"`
+	// Label is the attached label itself.
+	Label Label `json:"Label"`
+}
+
 // PrimaryFile returns the photo's primary File and true, or a zero File and
 // false when no file is marked primary. The primary file's Hash is the SHA1 used
 // to download the original.

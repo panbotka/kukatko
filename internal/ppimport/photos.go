@@ -69,6 +69,13 @@ func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState
 
 // importOnePhoto processes a single photo, translating its outcome (or failure)
 // into the run state. A failure is logged and tallied; it never propagates.
+//
+// A photo that made it into the catalogue then maps its whole context — every
+// album and label the source has it in — which a scoped run does per photo and a
+// full run not at all (mapPhotoContext). It runs for every outcome, not only for
+// a fresh import: a photo the run skipped as unchanged, or deduped by content
+// onto an existing row, still belongs in the albums and labels the source gives
+// it, and its memberships may be the very thing this run is meant to bring over.
 func (s *Service) importOnePhoto(ctx context.Context, pp photoprism.Photo, state *runState) {
 	result, err := s.processPhoto(ctx, pp)
 	if err != nil {
@@ -85,6 +92,7 @@ func (s *Service) importOnePhoto(ctx context.Context, pp photoprism.Photo, state
 	case outcomeSkipped:
 		state.counts.Skipped++
 	}
+	s.mapPhotoContext(ctx, pp.UID, state)
 }
 
 // processPhoto dedups a photo by its PhotoPrism UID — updating an already-imported

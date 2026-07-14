@@ -963,6 +963,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `Photo.VideoFile()` (motion soubor video/live fotky) a `Photo.StillFile()` (still fotky);
   `ListAlbums`/`ListLabels`/`ListSubjects(ctx,ListParams
   {Count,Offset,Type})` → `GET /api/v1/{albums,labels,subjects}`, markery z `Files[].Markers[]`;
+  **`GetPhoto(ctx,uid)`** → `GET /api/v1/photos/{uid}` vrací `PhotoDetail` = `Photo` +
+  **`Albums[]`** (všechna alba fotky, libovolného typu) + **`Labels[]`**
+  (`PhotoLabel{LabelSrc,Uncertainty,Label}`) — **výpis fotek ani jedno nenese, jen detail**; stojí
+  1 request na fotku, takže ho volá **jen scoped import** (`ppimport.mapPhotoContext`); prázdné uid
+  → `ErrBadResponse`, neznámé → `ErrNotFound`;
   **`Type` je u alb povinný** — `/api/v1/albums` bez typu (i s víc typy naráz, `album,folder`) vrací
   **400 „Permission denied"**, takže katalog alb se prochází typ po typu (`AlbumTypes` =
   album/folder/moment/state/month); štítky a subjekty typ neberou a ignorují ho;
@@ -1011,14 +1016,23 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `label:"<slug>"`, `person:"<jméno>"`, `year:<YYYY>`, termy oddělené mezerou (zdroj je ANDuje,
   hodnoty v uvozovkách kvůli mezerám ve jméně), album jde zvlášť jako `s=` → flagy se **kombinují a
   běh zužují**; pageuje `ListPhotos(AlbumUID=…, Query=…)` **bez** watermarku (řez se natáhne celý bez
-  ohledu na stáří fotek — `q=` má u klienta přednost před filtrem watermarku), namapuje **jen
-  strukturu importovaných fotek** (`mapScope`: jmenované album `mapAlbum` — hledá uid napříč
-  `photoprism.AlbumTypes`, neznámé uid → `ErrAlbumNotFound`; jmenovaný štítek `mapLabel` — hledá slug
-  v katalogu štítků, neznámý → `ErrLabelNotFound`; lidi seedují face markery fotek při importu, rok
-  mapovat nic nepotřebuje — celý zdrojový katalog fotek se **neprochází**) a **`Complete` s `nil`
-  watermarkem** — scoped běh vidí jen řez knihovny, takže zapsat jeho nejnovější timestamp jako
-  kurzor by přiměl další plný import přeskočit všechno starší. Prázdný scope → `ErrEmptyScope`
-  (na plný běh je `Import`), rok mimo 1826–9999 → `ErrInvalidYear`.
+  ohledu na stáří fotek — `q=` má u klienta přednost před filtrem watermarku). Nejdřív **ověří scope**
+  (`validateScope`, `organize.go`: album uid hledá napříč `photoprism.AlbumTypes` → neznámé
+  `ErrAlbumNotFound`, slug štítku v katalogu štítků → neznámý `ErrLabelNotFound`; kontroluje se **před**
+  stahováním, aby překlep nevypadal jako čistý běh) a pak **každá fotka přinese svůj celý kontext**
+  (`context.go`, `mapPhotoContext`: `client.GetPhoto(uid)` → **všechna** alba fotky (find-or-create dle
+  názvu → `AddPhoto`) i **všechny** její štítky (find-or-create dle jména → `AttachLabel` se `source`
+  a `uncertainty` ze zdroje: `manual`→`manual`, `image`→`ai`, ostatní (batch/keyword/location/…)
+  →`import`) — **i ta alba a štítky, které scope nejmenoval**, takže fotka ze tří alb importovaná přes
+  scope na jedno album skončí ve všech třech. Indexy alb/štítků se čtou 1× na běh (`photoContext`),
+  mapuje se po **každém** úspěšném outcome (i skip — fotka nezměněná nebo deduplikovaná dle obsahu do
+  svých alb patří taky), vše je idempotentní (find-or-create + `AddPhoto`/`AttachLabel`), chyba detailu
+  se **jen zaloguje** (fotka zůstane importovaná, kontext doplní re-run). Stojí to **1 request na
+  fotku** — proto to plný běh nedělá (20 tis. fotek = 20 tis. requestů) a strukturu mapuje průchodem
+  katalogu alb/štítků (`mapAlbums`/`mapLabels`); lidi seedují face markery fotek při importu.
+  Uzavře se **`Complete` s `nil` watermarkem** — scoped běh vidí jen řez knihovny, takže zapsat jeho
+  nejnovější timestamp jako kurzor by přiměl další plný import přeskočit všechno starší. Prázdný scope
+  → `ErrEmptyScope` (na plný běh je `Import`), rok mimo 1826–9999 → `ErrInvalidYear`.
   Alba se listují **po typech** (`Config.AlbumTypes`, default `DefaultAlbumTypes` = album/folder/moment/state,
   bez `month` = 560 automatických kalendářních alb) — zdroj vyžaduje právě jeden typ na dotaz),
   `internal/photosorter/`

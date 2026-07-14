@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -60,8 +61,11 @@ type fakePPClient struct {
 	// queryPhotos answers a scoped listing by its exact q= expression (e.g.
 	// `label:"beach"`, `label:"beach" year:2023`).
 	queryPhotos map[string][]photoprism.Photo
-	files       map[string][]byte
-	failHash    string
+	// details answers the photo-detail endpoint, the only place the source serves
+	// a photo's albums and labels.
+	details  map[string]photoprism.PhotoDetail
+	files    map[string][]byte
+	failHash string
 
 	mu        sync.Mutex
 	downloads int
@@ -78,6 +82,25 @@ func (c *fakePPClient) ListPhotos(_ context.Context, p photoprism.PhotoListParam
 	default:
 		return filterByUpdated(c.photos, p.UpdatedSince), nil
 	}
+}
+
+// GetPhoto returns the photo's registered detail: the albums it belongs to and
+// the labels it carries.
+func (c *fakePPClient) GetPhoto(_ context.Context, uid string) (photoprism.PhotoDetail, error) {
+	detail, ok := c.details[uid]
+	if !ok {
+		return photoprism.PhotoDetail{}, photoprism.ErrNotFound
+	}
+	return detail, nil
+}
+
+// setContext registers a photo's detail — its albums and labels — which the
+// listing payload does not carry.
+func (c *fakePPClient) setContext(p photoprism.Photo, albums []photoprism.Album, labels []photoprism.PhotoLabel) {
+	if c.details == nil {
+		c.details = map[string]photoprism.PhotoDetail{}
+	}
+	c.details[p.UID] = photoprism.PhotoDetail{Photo: p, Albums: albums, Labels: labels}
 }
 
 // ListAlbums returns all albums.
@@ -560,6 +583,9 @@ func TestIntegration_scopedImportLeavesWatermarkNull(t *testing.T) {
 		`label:"beach" year:2023`: {tagged},
 		`label:"beach"`:           {tagged},
 	}
+	client.setContext(tagged, nil, []photoprism.PhotoLabel{
+		{LabelSrc: "image", Uncertainty: 10, Label: photoprism.Label{UID: "pplb1", Name: "Beach", Slug: "beach"}},
+	})
 	env := newEnv(t, client)
 
 	result, err := env.svc.ImportScoped(ctx, ppimport.Scope{Label: "beach", Year: 2023})
@@ -741,5 +767,112 @@ func assertLivePhotoFiles(t *testing.T, files []photos.PhotoFile) {
 	}
 	if sidecar != nil && !strings.HasPrefix(sidecar.FileMime, "video/") {
 		t.Errorf("sidecar mime = %q, want video/*", sidecar.FileMime)
+	}
+}
+
+// TestIntegration_scopedImportBringsWholeContext is the point of a scoped run: a
+// photo selected because it sits in one album is migrated with its whole context
+// — the two other albums it also lives in and the label it carries, with that
+// label's source and uncertainty — and a second run changes nothing.
+func TestIntegration_scopedImportBringsWholeContext(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	inScope := client.addPhoto("pp1", t0, "Ostatky", 10)
+	outside := client.addPhoto("pp2", t0.Add(time.Hour), "Sunset", 20)
+	client.photos = []photoprism.Photo{inScope, outside}
+	// The source knows four albums; only the first is named by the scope, and the
+	// last belongs to the photo the scope leaves out.
+	albums := []photoprism.Album{
+		{UID: "ppal1", Title: "Ostatky 2016", Type: "album", Description: "Masopust"},
+		{UID: "ppal2", Title: "Rodina", Type: "folder"},
+		{UID: "ppal3", Title: "Léto", Type: "moment"},
+	}
+	client.albums = append(slices.Clone(albums), photoprism.Album{UID: "ppal4", Title: "Other", Type: "album"})
+	client.albumPhotos = map[string][]photoprism.Photo{"ppal1": {inScope}, "ppal4": {outside}}
+	client.labels = []photoprism.Label{{UID: "pplb1", Name: "SDH", Slug: "sdh", Priority: 10}}
+	client.setContext(inScope, albums, []photoprism.PhotoLabel{
+		{LabelSrc: "image", Uncertainty: 20, Label: photoprism.Label{UID: "pplb1", Name: "SDH", Slug: "sdh", Priority: 10}},
+	})
+	env := newEnv(t, client)
+
+	result, err := env.svc.ImportScoped(ctx, ppimport.Scope{AlbumUID: "ppal1"})
+	if err != nil {
+		t.Fatalf("ImportScoped: %v", err)
+	}
+	if result.Counts.Imported != 1 {
+		t.Fatalf("imported = %d, want 1 (only the album's photo)", result.Counts.Imported)
+	}
+	assertWholeContext(t, env)
+
+	// A re-run re-reads the same context and creates no duplicate row.
+	rerun, err := env.svc.ImportScoped(ctx, ppimport.Scope{AlbumUID: "ppal1"})
+	if err != nil {
+		t.Fatalf("re-run: %v", err)
+	}
+	if rerun.Counts.Imported != 0 || rerun.Counts.Skipped != 1 {
+		t.Errorf("re-run counts = %+v, want the photo skipped", rerun.Counts)
+	}
+	assertWholeContext(t, env)
+	if got := countRows(t, env, "photos"); got != 1 {
+		t.Errorf("photos after re-run = %d, want 1", got)
+	}
+}
+
+// assertWholeContext checks the scoped photo carries all three of its source
+// albums and its label (with the source's own source and uncertainty), and that
+// nothing outside its context was mapped — the run must not have walked the
+// source catalogue.
+func assertWholeContext(t *testing.T, env *testEnv) {
+	t.Helper()
+	ctx := t.Context()
+	photo, err := env.photos.GetByPhotoprismUID(ctx, "pp1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID(pp1): %v", err)
+	}
+
+	rows, err := env.db.Pool().Query(ctx, `
+		SELECT a.title, a.type FROM albums a
+		JOIN album_photos ap ON ap.album_uid = a.uid
+		WHERE ap.photo_uid = $1 ORDER BY a.title`, photo.UID)
+	if err != nil {
+		t.Fatalf("reading album membership: %v", err)
+	}
+	defer rows.Close()
+	var titles, types []string
+	for rows.Next() {
+		var title, albumType string
+		if err := rows.Scan(&title, &albumType); err != nil {
+			t.Fatalf("scanning album: %v", err)
+		}
+		titles, types = append(titles, title), append(types, albumType)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating albums: %v", err)
+	}
+	if want := []string{"Léto", "Ostatky 2016", "Rodina"}; !slices.Equal(titles, want) {
+		t.Errorf("albums of the scoped photo = %v, want %v", titles, want)
+	}
+	if want := []string{"moment", "album", "folder"}; !slices.Equal(types, want) {
+		t.Errorf("album types = %v, want %v (every album type carried over)", types, want)
+	}
+	if got := countRows(t, env, "albums"); got != len(titles) {
+		t.Errorf("albums in the catalogue = %d, want %d: nothing outside the photo's context", got, len(titles))
+	}
+
+	var name, source string
+	var uncertainty int
+	err = env.db.Pool().QueryRow(ctx, `
+		SELECT l.name, pl.source, pl.uncertainty FROM labels l
+		JOIN photo_labels pl ON pl.label_uid = l.uid
+		WHERE pl.photo_uid = $1`, photo.UID).Scan(&name, &source, &uncertainty)
+	if err != nil {
+		t.Fatalf("reading the photo's label: %v", err)
+	}
+	if name != "SDH" || source != string(organize.SourceAI) || uncertainty != 20 {
+		t.Errorf("label = %q from %q uncertainty %d, want SDH/ai/20", name, source, uncertainty)
+	}
+	if got := countRows(t, env, "labels"); got != 1 {
+		t.Errorf("labels in the catalogue = %d, want 1", got)
 	}
 }

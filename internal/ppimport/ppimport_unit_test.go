@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/importer"
+	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoprism"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -323,11 +324,30 @@ var (
 // on the scoped photo, and is what a --person run filters on.
 const scopedPerson = "Aleš Kozák"
 
+// scopedAlbums are the three albums the scoped photo belongs to in the source.
+// Only the first is ever named by a scope; the other two are the context a scoped
+// run must bring along anyway.
+var scopedAlbums = []photoprism.Album{
+	{UID: "ppal1", Title: "Holiday", Type: "album"},
+	{UID: "ppal3", Title: "Family", Type: "folder"},
+	{UID: "ppal4", Title: "Summer 1985", Type: "moment"},
+}
+
+// scopedLabel is the label the scoped photo carries, classified by PhotoPrism's
+// vision model — so its source and uncertainty must survive the import.
+var scopedLabel = photoprism.PhotoLabel{
+	LabelSrc:    "image",
+	Uncertainty: 20,
+	Label:       photoprism.Label{UID: "pplb1", Name: "SDH", Slug: "sdh", Priority: 10},
+}
+
 // scopedFixture builds a source catalogue every scoped-run test shares: pp1 is
-// the photo each filter selects (it is in album ppal1, carries the "sdh" label,
-// shows scopedPerson — a named face marker — and was taken in 1985), while pp2 is
-// outside every scope. The scoped listings are keyed by the exact query the
-// importer is expected to send, so a wrong expression finds nothing.
+// the photo each filter selects (it lives in three albums — ppal1, ppal3, ppal4 —
+// carries the "sdh" label, shows scopedPerson as a named face marker, and was
+// taken in 1985), while pp2 is outside every scope and sits in its own album with
+// its own label. The scoped listings are keyed by the exact query the importer is
+// expected to send, so a wrong expression finds nothing; the albums and labels
+// live on the photo *detail* only, exactly as the source serves them.
 func scopedFixture() *fakeClient {
 	client := &fakeClient{}
 	inScope := client.makePhoto("pp1", tScopedNew, "Beach", photoprism.Marker{
@@ -335,13 +355,10 @@ func scopedFixture() *fakeClient {
 	})
 	outside := client.makePhoto("pp2", tScopedOld, "Sunset")
 	client.photos = []photoprism.Photo{inScope, outside}
-	client.albums = []photoprism.Album{
-		{UID: "ppal1", Title: "Holiday", Type: "album"},
-		{UID: "ppal2", Title: "Other", Type: "album"},
-	}
+	client.albums = append(slices.Clone(scopedAlbums), photoprism.Album{UID: "ppal2", Title: "Other", Type: "album"})
 	client.albumPhotos = map[string][]photoprism.Photo{"ppal1": {inScope}, "ppal2": {outside}}
 	client.labels = []photoprism.Label{
-		{UID: "pplb1", Name: "SDH", Slug: "sdh"},
+		scopedLabel.Label,
 		{UID: "pplb2", Name: "Sunset", Slug: "sunset"},
 	}
 	client.queryPhotos = map[string][]photoprism.Photo{
@@ -350,6 +367,9 @@ func scopedFixture() *fakeClient {
 		`person:"` + scopedPerson + `"`: {inScope},
 		"year:1985":                     {inScope},
 	}
+	client.setContext(inScope, scopedAlbums, []photoprism.PhotoLabel{scopedLabel})
+	client.setContext(outside, []photoprism.Album{{UID: "ppal2", Title: "Other", Type: "album"}},
+		[]photoprism.PhotoLabel{{LabelSrc: "manual", Label: photoprism.Label{UID: "pplb2", Name: "Sunset", Slug: "sunset"}}})
 	return client
 }
 
@@ -364,54 +384,12 @@ func TestImportScoped_leavesWatermarkUntouched(t *testing.T) {
 	tests := []struct {
 		name  string
 		scope Scope
-		check func(t *testing.T, h *harness)
 	}{
-		{
-			name:  "album",
-			scope: Scope{AlbumUID: "ppal1"},
-			check: func(t *testing.T, h *harness) {
-				t.Helper()
-				assertOnlyAlbumMapped(t, h, "Holiday")
-			},
-		},
-		{
-			name:  "label",
-			scope: Scope{Label: "sdh"},
-			check: func(t *testing.T, h *harness) {
-				t.Helper()
-				assertOnlyLabelMapped(t, h, "SDH")
-			},
-		},
-		{
-			name:  "person",
-			scope: Scope{Person: scopedPerson},
-			check: func(t *testing.T, h *harness) {
-				t.Helper()
-				// A person-scoped run maps no album and no label; the people it found
-				// are seeded from the imported photo's own face markers.
-				if len(h.albums.albums) != 0 || len(h.labels.labels) != 0 {
-					t.Errorf("albums = %v, labels = %v, want neither mapped", h.albums.albums, h.labels.labels)
-				}
-			},
-		},
-		{
-			name:  "year",
-			scope: Scope{Year: 1985},
-			check: func(t *testing.T, h *harness) {
-				t.Helper()
-				if len(h.albums.albums) != 0 || len(h.labels.labels) != 0 {
-					t.Errorf("albums = %v, labels = %v, want neither mapped", h.albums.albums, h.labels.labels)
-				}
-			},
-		},
-		{
-			name:  "album and year narrow together",
-			scope: Scope{AlbumUID: "ppal1", Year: 1985},
-			check: func(t *testing.T, h *harness) {
-				t.Helper()
-				assertOnlyAlbumMapped(t, h, "Holiday")
-			},
-		},
+		{name: "album", scope: Scope{AlbumUID: "ppal1"}},
+		{name: "label", scope: Scope{Label: "sdh"}},
+		{name: "person", scope: Scope{Person: scopedPerson}},
+		{name: "year", scope: Scope{Year: 1985}},
+		{name: "album and year narrow together", scope: Scope{AlbumUID: "ppal1", Year: 1985}},
 	}
 
 	for _, tt := range tests {
@@ -442,7 +420,8 @@ func TestImportScoped_leavesWatermarkUntouched(t *testing.T) {
 			if _, err := h.people.GetSubjectBySlug(context.Background(), people.Slugify(scopedPerson)); err != nil {
 				t.Errorf("marker on the scoped photo did not seed a subject: %v", err)
 			}
-			tt.check(t, h)
+			// However narrow the filter that selected it, the photo arrives whole.
+			assertWholeContextMapped(t, h)
 
 			// The whole point: the next full import must still see pp2 (never
 			// imported) *and* re-list pp1 rather than resuming past it.
@@ -463,35 +442,133 @@ func TestImportScoped_leavesWatermarkUntouched(t *testing.T) {
 	}
 }
 
-// assertOnlyAlbumMapped verifies the scoped run mapped exactly the named album —
-// and nothing else, so it never walked the source catalogue.
-func assertOnlyAlbumMapped(t *testing.T, h *harness, title string) {
+// assertWholeContextMapped verifies the scoped photo arrived with its whole
+// context: all three albums it belongs to (not merely the one a scope may have
+// named), each holding it, and its label attached with the source and uncertainty
+// PhotoPrism recorded — and nothing else, so the run never walked the source
+// catalogue (pp2's "Other" album and "Sunset" label must not exist).
+func assertWholeContextMapped(t *testing.T, h *harness) {
 	t.Helper()
-	if len(h.albums.albums) != 1 || h.albums.albums[0].Title != title {
-		t.Errorf("albums = %v, want only %q mapped", h.albums.albums, title)
+	photoUID := h.photos.byPPUID["pp1"]
+	titles := make([]string, 0, len(h.albums.albums))
+	for _, a := range h.albums.albums {
+		titles = append(titles, a.Title)
+		if members := h.albums.members[a.UID]; !slices.Equal(members, []string{photoUID}) {
+			t.Errorf("members of album %q = %v, want the scoped photo", a.Title, members)
+		}
 	}
-	if len(h.labels.labels) != 0 {
-		t.Errorf("labels = %v, want none mapped by an album-scoped run", h.labels.labels)
+	slices.Sort(titles)
+	want := []string{"Family", "Holiday", "Summer 1985"}
+	if !slices.Equal(titles, want) {
+		t.Errorf("albums = %v, want %v (every album the photo is in, and no other)", titles, want)
 	}
-	members := h.albums.members[h.albums.albums[0].UID]
-	if len(members) != 1 || members[0] != h.photos.byPPUID["pp1"] {
-		t.Errorf("album members = %v, want the scoped photo", members)
+	if len(h.labels.labels) != 1 || h.labels.labels[0].Name != "SDH" {
+		t.Fatalf("labels = %v, want only SDH mapped", h.labels.labels)
+	}
+	labelUID := h.labels.labels[0].UID
+	if attached := h.labels.attached[labelUID]; !slices.Equal(attached, []string{photoUID}) {
+		t.Errorf("label attachments = %v, want the scoped photo", attached)
+	}
+	got := h.labels.how[labelUID+"|"+photoUID]
+	if want := (labelAttachment{source: organize.SourceAI, uncertainty: 20}); got != want {
+		t.Errorf("label attached as %+v, want %+v (the source's own source/uncertainty)", got, want)
 	}
 }
 
-// assertOnlyLabelMapped verifies the scoped run mapped exactly the named label
-// and attached it to the imported photo — and mapped no album.
-func assertOnlyLabelMapped(t *testing.T, h *harness, name string) {
-	t.Helper()
-	if len(h.labels.labels) != 1 || h.labels.labels[0].Name != name {
-		t.Errorf("labels = %v, want only %q mapped", h.labels.labels, name)
+// TestImportScoped_rerunChangesNothing verifies a re-run of a scoped import is
+// idempotent: it re-reads each photo's context, re-downloads nothing, and creates
+// no second album, label or membership row.
+func TestImportScoped_rerunChangesNothing(t *testing.T) {
+	t.Parallel()
+	h := newHarness(scopedFixture())
+	scope := Scope{AlbumUID: "ppal1"}
+
+	if _, err := h.svc.ImportScoped(context.Background(), scope); err != nil {
+		t.Fatalf("first ImportScoped: %v", err)
+	}
+	downloads := h.client.downloadCount()
+
+	result, err := h.svc.ImportScoped(context.Background(), scope)
+	if err != nil {
+		t.Fatalf("re-run: %v", err)
+	}
+	if result.Counts.Imported != 0 || result.Counts.Skipped != 1 {
+		t.Errorf("re-run counts = %+v, want the scoped photo skipped", result.Counts)
+	}
+	if h.client.downloadCount() != downloads {
+		t.Errorf("re-run re-downloaded: %d -> %d", downloads, h.client.downloadCount())
+	}
+	if len(h.photos.byUID) != 1 {
+		t.Errorf("photos = %d, want 1", len(h.photos.byUID))
+	}
+	// The re-run still resolves the context of the photo it skipped, and mapping it
+	// a second time changes nothing.
+	assertWholeContextMapped(t, h)
+	if len(h.people.markers) != 1 {
+		t.Errorf("markers = %d, want 1 (markers are seeded on first import only)", len(h.people.markers))
+	}
+}
+
+// TestImportScoped_photoWithoutContext verifies a photo the source gives no
+// albums and no labels still imports cleanly — the scoped run simply maps nothing
+// for it.
+func TestImportScoped_photoWithoutContext(t *testing.T) {
+	t.Parallel()
+	client := &fakeClient{}
+	bare := client.makePhoto("pp1", tScopedNew, "Bare")
+	client.photos = []photoprism.Photo{bare}
+	client.queryPhotos = map[string][]photoprism.Photo{"year:1985": {bare}}
+	client.setContext(bare, nil, nil)
+	h := newHarness(client)
+
+	result, err := h.svc.ImportScoped(context.Background(), Scope{Year: 1985})
+	if err != nil {
+		t.Fatalf("ImportScoped: %v", err)
+	}
+	if result.Counts.Imported != 1 {
+		t.Errorf("imported = %d, want 1", result.Counts.Imported)
+	}
+	if len(h.albums.albums) != 0 || len(h.labels.labels) != 0 {
+		t.Errorf("albums = %v, labels = %v, want neither: the photo has no context", h.albums.albums, h.labels.labels)
+	}
+}
+
+// TestImportScoped_detailFailureKeepsPhoto verifies a photo whose detail cannot be
+// read is still imported: the context is a best effort a re-run repairs, not a
+// reason to fail (and lose) an already-downloaded photo.
+func TestImportScoped_detailFailureKeepsPhoto(t *testing.T) {
+	t.Parallel()
+	client := scopedFixture()
+	client.detailErr = photoprism.ErrUnavailable
+	h := newHarness(client)
+
+	result, err := h.svc.ImportScoped(context.Background(), Scope{Year: 1985})
+	if err != nil {
+		t.Fatalf("ImportScoped: %v", err)
+	}
+	if result.Counts.Imported != 1 || result.Counts.Failed != 0 {
+		t.Errorf("counts = %+v, want imported 1 failed 0", result.Counts)
+	}
+	if _, ok := h.photos.byPPUID["pp1"]; !ok {
+		t.Error("pp1 was not imported, but only its context was unreadable")
 	}
 	if len(h.albums.albums) != 0 {
-		t.Errorf("albums = %v, want none mapped by a label-scoped run", h.albums.albums)
+		t.Errorf("albums = %v, want none: the detail was unreadable", h.albums.albums)
 	}
-	attached := h.labels.attached[h.labels.labels[0].UID]
-	if len(attached) != 1 || attached[0] != h.photos.byPPUID["pp1"] {
-		t.Errorf("label members = %v, want the scoped photo", attached)
+}
+
+// TestImport_fullRunReadsNoPhotoDetail pins the cost boundary: a full run maps
+// albums and labels by walking the source catalogue and must never ask for a
+// per-photo detail — 20k photos in the source would mean 20k extra requests.
+func TestImport_fullRunReadsNoPhotoDetail(t *testing.T) {
+	t.Parallel()
+	h := newHarness(scopedFixture())
+
+	if _, err := h.svc.Import(context.Background()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if got := h.client.detailCount(); got != 0 {
+		t.Errorf("photo details requested by a full run = %d, want 0", got)
 	}
 }
 

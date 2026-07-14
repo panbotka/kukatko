@@ -58,6 +58,8 @@ export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
 ./bin/kukatko migrate                     # spustí pending DB migrace a skončí
 ./bin/kukatko migrate photosorter         # read-only inkrementální migrace dat z photo-sorteru
 ./bin/kukatko import photoprism           # read-only inkrementální import z PhotoPrismu
+./bin/kukatko import photoprism --album at8lq8ktxpl1thv4   # jen řez: fotky alba (+ --label/--person/--year),
+                                          # každá fotka přijde i se všemi ostatními alby a štítky, které nese
 ./bin/kukatko backup                      # jednorázová záloha (pg_dump + sync originálů) na S3
 ./bin/kukatko restore list                # vypíše dumpy dostupné v bucketu (nejnovější první)
 ./bin/kukatko restore db --yes            # obnoví DB z nejnovějšího dumpu (DESTRUKTIVNÍ) + migrace

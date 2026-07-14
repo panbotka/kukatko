@@ -547,3 +547,78 @@ func TestSend_transportFailure(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
 }
+
+// ppDetailBody is a trimmed real /api/v1/photos/{uid} response: the fields the
+// listing also carries, plus the two relations only the detail serves — the
+// albums the photo belongs to and the labels it carries, each label wrapped in
+// the attachment that records its source and uncertainty.
+const ppDetailBody = `{
+  "UID": "pt8jo1z2ye1q898u",
+  "Type": "image",
+  "Title": "Beach",
+  "TakenAt": "2016-02-06T13:11:22Z",
+  "UpdatedAt": "2026-01-14T10:37:16Z",
+  "Files": [{"UID":"ft1","Hash":"sha1hash","Primary":true,"Mime":"image/jpeg"}],
+  "Albums": [
+    {"UID":"at8jnyyx6xluwt56","Slug":"ostatky-2016","Type":"album","Title":"Ostatky 2016","Description":"Masopust"},
+    {"UID":"aq1","Slug":"rodina","Type":"folder","Title":"Rodina"}
+  ],
+  "Labels": [
+    {"LabelSrc":"image","Uncertainty":15,"Label":{"UID":"lt4l73hjorg9e6s8","Slug":"sdh","Name":"SDH","Priority":10}}
+  ]
+}`
+
+// TestGetPhoto_parsesAlbumsAndLabels verifies the detail endpoint is addressed by
+// uid and that the relations the listing omits — the photo's albums and its
+// labels with their source and uncertainty — are decoded.
+func TestGetPhoto_parsesAlbumsAndLabels(t *testing.T) {
+	t.Parallel()
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		writeJSON(w, ppDetailBody)
+	}))
+	defer srv.Close()
+
+	detail, err := newTestClient(t, srv.URL).GetPhoto(context.Background(), "pt8jo1z2ye1q898u")
+	if err != nil {
+		t.Fatalf("GetPhoto: %v", err)
+	}
+	if want := "/api/v1/photos/pt8jo1z2ye1q898u"; gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
+	}
+	if detail.UID != "pt8jo1z2ye1q898u" || detail.Title != "Beach" {
+		t.Errorf("photo fields = %q / %q, want the embedded photo decoded", detail.UID, detail.Title)
+	}
+	if len(detail.Files) != 1 || detail.Files[0].Hash != "sha1hash" {
+		t.Errorf("files = %+v, want the primary file decoded", detail.Files)
+	}
+	if len(detail.Albums) != 2 || detail.Albums[0].Title != "Ostatky 2016" || detail.Albums[1].Type != "folder" {
+		t.Fatalf("albums = %+v, want both albums of any type", detail.Albums)
+	}
+	if len(detail.Labels) != 1 {
+		t.Fatalf("labels = %+v, want 1", detail.Labels)
+	}
+	label := detail.Labels[0]
+	if label.Label.Name != "SDH" || label.LabelSrc != "image" || label.Uncertainty != 15 {
+		t.Errorf("label = %+v, want SDH from image with uncertainty 15", label)
+	}
+}
+
+// TestGetPhoto_errors verifies an empty uid never reaches the network and an
+// unknown uid is classified as ErrNotFound.
+func TestGetPhoto_errors(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv.URL)
+
+	if _, err := c.GetPhoto(context.Background(), "  "); !errors.Is(err, ErrBadResponse) {
+		t.Errorf("GetPhoto(empty uid) err = %v, want ErrBadResponse", err)
+	}
+	if _, err := c.GetPhoto(context.Background(), "nope"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetPhoto(unknown uid) err = %v, want ErrNotFound", err)
+	}
+}
