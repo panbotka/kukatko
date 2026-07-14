@@ -409,6 +409,15 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   holá detekce), vybraný je primary + ring, každý nese **číslo `#N`** (dle pořadí, ne `face_index` —
   markery bez detekce mají záporný) a přiřazený i **jméno pod boxem**; hover na boxu zvýrazní řádek
   v panelu a naopak (`hovered`/`onHover` drží stránka). Klik na box i na řádek panelu = tentýž výběr;
+  **mezi titulkem a fotkou** je **read-only pruh badgí** `OrganizeBadges` (`components/photo/`):
+  nejdřív alba, pak štítky fotky jako pill-badge (`ENTITY_STYLE` — fialová `album` / tyrkysová
+  `tag` + vodicí ikona, vzhled 1:1 s chipy v `OrganizePanel`), každá **odkazuje** na
+  `/albums/:uid`, resp. `/labels/:uid`. Odpovídá na „kam je fotka zařazená" bez scrollování dolů.
+  **Žádné ovládání** (bez remove/add/create) — přidávat a odebírat se dá dál **jen** v
+  `OrganizePanel`; oba čtou tentýž `photo.albums`/`photo.labels`, takže se pruh po editaci
+  aktualizuje **okamžitě a bez druhého fetche**. Badge se **zalamují** (`flex-wrap`, žádný
+  horizontální scroll), a když fotka není v žádném albu ani nemá štítek, **nevykreslí se nic**
+  (žádný nadpis, placeholder ani mezera). Viewer vidí přesně totéž co editor;
   **ovládací/informační panely jsou POD fotkou** (ne vedle ní) a jdou **přes celou šířku
   obsahové oblasti** (žádný centrovaný užší sloupec) ve **striktním edit-first pořadí** —
   pruh `SimilarPhotos` je až pod nimi. První dvě karty sdílejí **od `lg` výš jeden řádek**
@@ -1023,7 +1032,8 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   takže třída sedí na plain `.badge` i na `<Badge>` i na odkaz-pill). Mapování kind→třída+ikona je
   **jednou** v `components/entityStyle.ts` (`ENTITY_STYLE`) a čte ho každé místo, kde se entita
   zobrazí jako chip: aktivní filtr-chipy knihovny (`FilterBar`), organize panel fota
-  (`OrganizePanel`) a `GlobalSearchSections` — barevný jazyk je tak konzistentní, ne jednorázový.
+  (`OrganizePanel`), pruh badgí nad fotkou (`OrganizeBadges`) a `GlobalSearchSections` — barevný
+  jazyk je tak konzistentní, ne jednorázový.
   Barva je **jen doplněk**: chip vždy nese i textový popisek a vodicí ikonu (album `collection` /
   tag `tags` / osoba `person-circle`), aby rozlišení přežilo pro barvoslepé; bílý text má na navy
   kontrast ≥ 5:1. Neutrální filtry (rok, hodnocení, flag…) zůstávají `text-bg-primary`;

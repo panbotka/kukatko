@@ -556,7 +556,9 @@ describe('PhotoDetailPage', () => {
     await waitFor(() => {
       expect(addAlbumPhotosMock).toHaveBeenCalledWith('al_2', ['b'])
     })
-    expect(await screen.findByText('Trips')).toBeInTheDocument()
+    // The panel chip and the badge strip above the photo both show it — they read
+    // the same photo state, so the strip needs no reload of its own.
+    expect(await screen.findAllByText('Trips')).toHaveLength(2)
 
     // Remove an existing membership.
     await user.click(screen.getByRole('button', { name: 'Remove from album Holidays' }))
@@ -762,9 +764,70 @@ describe('PhotoDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Select face #1' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
     expect(fetchAlbumsMock).not.toHaveBeenCalled()
-    // Chips are still shown (read-only).
-    const organize = screen.getByText('Holidays').closest('div')
-    expect(within(organize as HTMLElement).getByText('Holidays')).toBeInTheDocument()
+    // Chips are still shown (read-only): in the Organize panel and — informative
+    // for every role — in the badge strip above the photo, which a viewer sees
+    // exactly as an editor does.
+    expect(screen.getAllByRole('link', { name: 'Holidays' })).toHaveLength(2)
+    const badges = within(screen.getByTestId('photo-badges'))
+    expect(badges.getByRole('link', { name: 'Holidays' })).toHaveAttribute('href', '/albums/al_1')
+    expect(badges.getByRole('link', { name: 'Sunset' })).toHaveAttribute('href', '/labels/lb_1')
+    expect(badges.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  describe('album/label badges', () => {
+    it('files the photo under its albums and labels right above the image', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const badges = within(screen.getByTestId('photo-badges'))
+      // Albums first, then labels — each linking to the same scoped list the
+      // Organize chips point at.
+      const links = badges.getAllByRole('link')
+      expect(links.map((link) => link.textContent)).toEqual(['Holidays', 'Sunset'])
+      expect(links[0]).toHaveAttribute('href', '/albums/al_1')
+      expect(links[1]).toHaveAttribute('href', '/labels/lb_1')
+
+      // The strip sits between the title row and the photo, and is purely
+      // informative: no remove, no add, no create.
+      const strip = screen.getByTestId('photo-badges')
+      const heading = screen.getByRole('heading', { name: 'Beach' })
+      const img = screen.getByRole('img', { name: 'Beach' })
+      expect(heading.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(strip.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(badges.queryByRole('button')).not.toBeInTheDocument()
+      expect(badges.queryByRole('combobox')).not.toBeInTheDocument()
+    })
+
+    it('renders no strip at all for a photo in no album and with no labels', async () => {
+      fetchPhotoMock.mockResolvedValue(photo({ albums: [], labels: [] }))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      // No heading, no placeholder, no empty gap — the strip is simply absent.
+      expect(screen.queryByTestId('photo-badges')).not.toBeInTheDocument()
+    })
+
+    it('follows an Organize edit without a reload', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      await waitFor(() => {
+        expect(fetchAlbumsMock).toHaveBeenCalled()
+      })
+
+      // Adding an album in the panel below shows up in the strip above…
+      await user.type(screen.getByRole('combobox', { name: 'Add to album' }), 'trips')
+      await user.click(await screen.findByRole('option', { name: 'Trips' }))
+      const badges = within(screen.getByTestId('photo-badges'))
+      expect(await badges.findByRole('link', { name: 'Trips' })).toBeInTheDocument()
+
+      // …and removing one there drops it here, both off the one photo state.
+      await user.click(screen.getByRole('button', { name: 'Remove from album Holidays' }))
+      await waitFor(() => {
+        expect(badges.queryByRole('link', { name: 'Holidays' })).not.toBeInTheDocument()
+      })
+      expect(badges.getByRole('link', { name: 'Sunset' })).toBeInTheDocument()
+    })
   })
 
   describe('fullscreen lightbox', () => {
