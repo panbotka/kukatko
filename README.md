@@ -20,6 +20,11 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   Datum ze sidecaru vyhraje nad tím, které Takeout při re-encode falešně zapsal do EXIFu; **alba se
   z exportu nezakládají** a co se nespárovalo, se **vypíše** — tichý nesoulad je způsob, jak přijít
   o desetiletí dat. Složku naimportovanou dřív opraví prostý re-run (doplní jen díry).
+- **Přibližné datum u historických fotek:** u naskenované fotky po babičce často víš jen „kolem roku
+  1950" nebo „za války". Zaškrtneš **„Datum je odhad"** a napíšeš vlastními slovy, o co se opíráš —
+  fotka se pak všude ukazuje s markerem **`cca`** a s tvou poznámkou, takže odhad nejde splést
+  s jistým datem. Řazení, timeline i datumové filtry dál jedou podle `taken_at` beze změny, a fotka
+  úplně bez data může být odhadem taky (význam nese poznámka).
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé
@@ -121,6 +126,10 @@ Jádro katalogu je v migraci `0003_photos.sql` a balíčku `internal/photos`:
   Sloupec `private` je **legacy**: zůstává jen proto, aby import z PhotoPrismu/photo-sorteru
   mohl dál zrcadlit jejich příznak. Aplikace ho nikde nefiltruje, needituje ani nezobrazuje —
   nikdy to nebyla bezpečnostní hranice (soukromá fotka se servírovala jako každá jiná).
+  **Přibližné datum** (migrace `0029_photos_taken_at_estimate.sql`): `taken_at_estimated`
+  (datum je odhad, ne fakt) + `taken_at_note` (volný text k datování, max 500 znaků). `taken_at`
+  zůstává jediná kotva řazení/timeline/filtrů; poznámka se drží jen u odhadu (shodíš příznak →
+  server poznámku smaže).
   **Video** (migrace `0004_video.sql`): `media_type` (`image`/`video`/`live`, default `image`,
   CHECK + partial index) + `duration_ms`, `video_codec`, `audio_codec`, `has_audio`, `fps`
   (vyplněné jen u videí). Live foto = still jako primární image + motion klip jako další

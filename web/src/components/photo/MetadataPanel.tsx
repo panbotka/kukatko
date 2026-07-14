@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useMemo, useState } from 'react'
+import { type ReactNode, type SyntheticEvent, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
@@ -11,6 +11,13 @@ import { Icon } from '../Icon'
 import { LeafletMap } from '../map/LeafletMap'
 
 import { PhotoLocation } from './PhotoLocation'
+
+/**
+ * The dating note's length cap, mirroring the backend's (`photoapi`'s
+ * `takenAtNoteLimit`): the input simply stops accepting more, so a note that would
+ * be answered with a 400 cannot be typed in the first place.
+ */
+const TAKEN_AT_NOTE_MAX = 500
 
 /** Props for {@link MetadataPanel}. */
 export interface MetadataPanelProps {
@@ -54,6 +61,13 @@ interface EditableFieldProps {
   label: string
   /** The current value, or empty/undefined for an unset field. */
   value: string | undefined
+  /**
+   * A richer rendering of the same value (the estimated capture date's `cca`
+   * marker and its dating note). It replaces the plain text when given; `value`
+   * still decides whether the field counts as filled, and stays the field's plain
+   * text form.
+   */
+  display?: ReactNode
   /** Whether the current user may edit (editor/admin). */
   canWrite: boolean
   /** Opens the caption edit form (shared by every field's affordance). */
@@ -67,9 +81,10 @@ interface EditableFieldProps {
  * placeholder invites filling an empty field. A viewer sees the value alone (and
  * an empty field renders nothing, so read-only panels stay free of blank rows).
  */
-function EditableField({ label, value, canWrite, onEdit }: EditableFieldProps) {
+function EditableField({ label, value, display, canWrite, onEdit }: EditableFieldProps) {
   const { t } = useTranslation()
   const hasValue = value !== undefined && value.trim() !== ''
+  const shown = display ?? value
 
   if (canWrite) {
     return (
@@ -82,7 +97,7 @@ function EditableField({ label, value, canWrite, onEdit }: EditableFieldProps) {
         <span className="small text-secondary d-block">{label}</span>
         <span className="d-flex justify-content-between align-items-start gap-2">
           <span className={hasValue ? 'text-break' : 'text-secondary fst-italic'}>
-            {hasValue ? value : t('photo.metadata.addPlaceholder')}
+            {hasValue ? shown : t('photo.metadata.addPlaceholder')}
           </span>
           <Icon name="pencil" className="text-secondary flex-shrink-0" />
         </span>
@@ -96,8 +111,44 @@ function EditableField({ label, value, canWrite, onEdit }: EditableFieldProps) {
   return (
     <div className="mb-2">
       <div className="small text-secondary">{label}</div>
-      <div className="text-break">{value}</div>
+      <div className="text-break">{shown}</div>
     </div>
+  )
+}
+
+/** Props for {@link CaptureDate}. */
+interface CaptureDateProps {
+  /** The formatted capture date, empty when the photo carries none. */
+  date: string
+  /** The dating note, empty when there is none. */
+  note: string
+}
+
+/**
+ * An estimated capture date: the date itself behind a `cca` (cs) / `c.` (en)
+ * marker, with the dating note beside it. The marker is a badge rather than a
+ * colour or a glyph, and it carries a title with the note, so "this date is a
+ * guess" survives both a glance and a screen reader — an estimate must never be
+ * mistakable for a known date.
+ *
+ * A photo with no `taken_at` at all can still be an estimate ("někdy ve 40.
+ * letech"); the marker and the note then stand alone.
+ */
+function CaptureDate({ date, note }: CaptureDateProps) {
+  const { t } = useTranslation()
+  const title =
+    note !== ''
+      ? t('photo.metadata.estimatedTitleNote', { note })
+      : t('photo.metadata.estimatedTitle')
+
+  return (
+    <span className="d-inline-flex flex-wrap align-items-baseline gap-1">
+      <span className="badge text-bg-secondary flex-shrink-0" title={title}>
+        {t('photo.metadata.estimatedMarker')}
+      </span>
+      {date !== '' && <span>{date}</span>}
+      {note !== '' && <span className="fst-italic text-secondary text-break">{note}</span>}
+    </span>
   )
 }
 
@@ -121,6 +172,8 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   // The photo's own values, as the form renders them. A field still equal to its
   // pristine value is left out of the PATCH entirely — see buildPatch.
   const pristineTakenAt = toLocalInput(photo.taken_at)
+  const pristineEstimated = photo.taken_at_estimated === true
+  const pristineNote = photo.taken_at_note ?? ''
   const pristineCoords = initialCoordText(photo)
 
   const [title, setTitle] = useState(photo.title)
@@ -128,9 +181,24 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   const [notes, setNotes] = useState(photo.notes ?? '')
   const [aiNote, setAiNote] = useState(photo.ai_note ?? '')
   const [takenAt, setTakenAt] = useState(pristineTakenAt)
+  const [takenAtEstimated, setTakenAtEstimated] = useState(pristineEstimated)
+  const [takenAtNote, setTakenAtNote] = useState(pristineNote)
   // The location lives as a single free-form coordinate string; it is parsed to
   // drive the map marker and, on save, the PATCH lat/lng.
   const [coordText, setCoordText] = useState(pristineCoords)
+
+  // The capture date as the read-only view shows it. captureDateText is its plain
+  // text form — it decides whether the field counts as filled and is what a copy of
+  // the row reads like — while an estimated date is *rendered* by CaptureDate, with
+  // the marker as a badge and the note beside it.
+  const takenAtText =
+    photo.taken_at !== undefined ? formatDateTime(photo.taken_at, i18n.language) : ''
+  const isEstimated = pristineEstimated
+  const captureDateText = isEstimated
+    ? [t('photo.metadata.estimatedMarker'), takenAtText, pristineNote]
+        .filter((part) => part !== '')
+        .join(' ')
+    : takenAtText
 
   const parsedCoords = useMemo(() => parseCoordinates(coordText), [coordText])
   const hasCoordText = coordText.trim() !== ''
@@ -145,6 +213,8 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
     setNotes(photo.notes ?? '')
     setAiNote(photo.ai_note ?? '')
     setTakenAt(pristineTakenAt)
+    setTakenAtEstimated(pristineEstimated)
+    setTakenAtNote(pristineNote)
     setCoordText(pristineCoords)
     setError(false)
     setEditing(true)
@@ -163,6 +233,10 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
    * rounded to the six decimals the text field shows (`16.7083583333333` →
    * `16.708358`). Unparseable coordinate text is left out too (the field reports it
    * inline), so the rest of the form still saves.
+   *
+   * The dating note rides along only while the photo is (or has just become) an
+   * estimate: unchecking the flag is enough on its own, since the backend drops the
+   * note with it — a date presented as a fact never keeps a stale remark.
    */
   function buildPatch(): PhotoMetadataUpdate {
     const patch: PhotoMetadataUpdate = {
@@ -173,6 +247,12 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
     }
     if (takenAt !== pristineTakenAt) {
       patch.taken_at = takenAt === '' ? null : new Date(takenAt).toISOString()
+    }
+    if (takenAtEstimated !== pristineEstimated) {
+      patch.taken_at_estimated = takenAtEstimated
+    }
+    if (takenAtEstimated && takenAtNote.trim() !== pristineNote) {
+      patch.taken_at_note = takenAtNote.trim()
     }
     if (coordText.trim() !== pristineCoords) {
       if (!hasCoordText) {
@@ -273,6 +353,34 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             }}
           />
         </Form.Group>
+        {/* The approximate date: the flag, and — only while it is set — the note
+            that says what the estimate rests on. An empty note on a photo whose
+            date is a fact means nothing, so the field is not offered there. */}
+        <Form.Group className="mb-2" controlId="photo-taken-at-estimated">
+          <Form.Check
+            type="checkbox"
+            label={t('photo.metadata.takenAtEstimated')}
+            checked={takenAtEstimated}
+            onChange={(event) => {
+              setTakenAtEstimated(event.target.checked)
+            }}
+          />
+        </Form.Group>
+        {takenAtEstimated && (
+          <Form.Group className="mb-2" controlId="photo-taken-at-note">
+            <Form.Label className="small text-secondary mb-1">
+              {t('photo.metadata.takenAtNote')}
+            </Form.Label>
+            <Form.Control
+              value={takenAtNote}
+              maxLength={TAKEN_AT_NOTE_MAX}
+              placeholder={t('photo.metadata.takenAtNotePlaceholder')}
+              onChange={(event) => {
+                setTakenAtNote(event.target.value)
+              }}
+            />
+          </Form.Group>
+        )}
         <Form.Group className="mb-2" controlId="photo-coordinates">
           <Form.Label className="small text-secondary mb-1">
             {t('photo.metadata.coordinates')}
@@ -371,9 +479,8 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
       />
       <EditableField
         label={t('photo.metadata.takenAt')}
-        value={
-          photo.taken_at !== undefined ? formatDateTime(photo.taken_at, i18n.language) : undefined
-        }
+        value={captureDateText}
+        display={isEstimated ? <CaptureDate date={takenAtText} note={pristineNote} /> : undefined}
         canWrite={canWrite}
         onEdit={startEditing}
       />

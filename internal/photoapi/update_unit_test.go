@@ -192,6 +192,92 @@ func TestMergeUpdate(t *testing.T) {
 	})
 }
 
+// TestMergeUpdate_takenAtEstimate verifies the approximate-date pair: the flag and
+// the trimmed note are applied, an over-long note is rejected (the handler turns
+// that into a 400), the note survives an unrelated edit, and a photo that is not
+// (or no longer) an estimate is never stored with a dating note.
+func TestMergeUpdate_takenAtEstimate(t *testing.T) {
+	t.Parallel()
+
+	base := photos.Photo{
+		Title:            "Babička",
+		TakenAtSource:    "manual",
+		TakenAtEstimated: true,
+		TakenAtNote:      "kolem roku 1950",
+	}
+
+	t.Run("flag and note are applied, the note trimmed", func(t *testing.T) {
+		t.Parallel()
+		present := map[string]struct{}{"taken_at_estimated": {}, "taken_at_note": {}}
+		got, err := mergeUpdate(photos.Photo{}, present, updateBody{
+			TakenAtEstimated: new(true), TakenAtNote: new("  za války  "),
+		})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if !got.TakenAtEstimated || got.TakenAtNote != "za války" {
+			t.Errorf("estimate not applied: %+v", got)
+		}
+	})
+
+	t.Run("an unrelated edit carries the estimate over", func(t *testing.T) {
+		t.Parallel()
+		got, err := mergeUpdate(base, map[string]struct{}{"title": {}}, updateBody{Title: new("New")})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if !got.TakenAtEstimated || got.TakenAtNote != "kolem roku 1950" {
+			t.Errorf("estimate lost by an unrelated edit: %+v", got)
+		}
+	})
+
+	t.Run("clearing the flag clears the note", func(t *testing.T) {
+		t.Parallel()
+		present := map[string]struct{}{"taken_at_estimated": {}}
+		got, err := mergeUpdate(base, present, updateBody{TakenAtEstimated: new(false)})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.TakenAtEstimated || got.TakenAtNote != "" {
+			t.Errorf("the note outlived the flag: %+v", got)
+		}
+	})
+
+	t.Run("a note on a non-estimated photo is not stored", func(t *testing.T) {
+		t.Parallel()
+		present := map[string]struct{}{"taken_at_note": {}}
+		got, err := mergeUpdate(photos.Photo{}, present, updateBody{TakenAtNote: new("kolem roku 1950")})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.TakenAtNote != "" {
+			t.Errorf("taken_at_note = %q, want empty on a photo that is no estimate", got.TakenAtNote)
+		}
+	})
+
+	t.Run("an over-long note is rejected", func(t *testing.T) {
+		t.Parallel()
+		present := map[string]struct{}{"taken_at_estimated": {}, "taken_at_note": {}}
+		body := updateBody{TakenAtEstimated: new(true), TakenAtNote: new(strings.Repeat("a", 501))}
+		if _, err := mergeUpdate(base, present, body); err == nil {
+			t.Error("mergeUpdate accepted a note over the cap")
+		}
+	})
+
+	t.Run("a note at the cap is accepted", func(t *testing.T) {
+		t.Parallel()
+		note := strings.Repeat("a", 500)
+		present := map[string]struct{}{"taken_at_note": {}}
+		got, err := mergeUpdate(base, present, updateBody{TakenAtNote: &note})
+		if err != nil {
+			t.Fatalf("mergeUpdate: %v", err)
+		}
+		if got.TakenAtNote != note {
+			t.Error("a note exactly at the cap was not applied")
+		}
+	})
+}
+
 // TestMergeUpdate_credits verifies the IPTC/XMP credit fields: the present ones
 // are trimmed and applied, the absent ones carried over untouched, an over-long
 // value is rejected (the handler turns that into a 400), and the machine-derived

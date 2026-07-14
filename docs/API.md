@@ -123,7 +123,14 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   přes `photoedit.Apply`, pokud caller nedá `?original=true`);
   `PATCH /photos/{uid}` (editor/admin) částečná úprava
   metadat — `title/description/notes/ai_note/taken_at/lat/lng` (null maže nullable, validace
-  souřadnic) **+ IPTC/XMP kredity** `subject/artist/copyright/license/keywords/scan`: volný text,
+  souřadnic) **+ přibližné datum** `taken_at_estimated` (bool — datum je odhad, ne fakt) a
+  `taken_at_note` (volný text k datování, ořízne se whitespace, **max 500 znaků**, delší = 400).
+  Poznámka platí jen u odhadu: jakmile je výsledný `taken_at_estimated` `false` (klient ho shodil,
+  nebo ho fotka nikdy neměla), server `taken_at_note` **vymaže** — u data prezentovaného jako fakt
+  nikdy nezůstane viset zastaralá poznámka (délka se přesto validuje první, takže příliš dlouhá
+  poznámka se ohlásí, ne tiše zahodí). `taken_at` NULL + `taken_at_estimated` `true` je legální
+  (význam nese poznámka) a na řazení/timeline/filtry nemá příznak žádný vliv
+  **+ IPTC/XMP kredity** `subject/artist/copyright/license/keywords/scan`: volný text,
   ořízne se whitespace, délkový strop (`subject`/`copyright`/`license` 1000, `keywords` 2000,
   `artist` 255 **znaků**, ne bajtů), delší = 400; `scan` je prostý bool. Strojově odvozená pole
   (`software`, `color_profile`, `image_codec`, `camera_serial`, `original_name`, `projection`) se
@@ -136,7 +143,8 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   přeposlání nezměněných souřadnic by je zaokrouhlilo na 6 desetinných míst z textového pole.
   `ai_note` je volný text z externí AI klasifikace (píše ho i automat přes tuto routu),
   vrací se v detailu i listu jako součást `photos.Photo` a je zahrnutý ve fulltextu (§ Vyhledávání);
-  stejně tak všechna IPTC/XMP i technická pole výše — jsou součástí `photos.Photo`, takže je nese
+  stejně tak všechna IPTC/XMP i technická pole výše **a dvojice `taken_at_estimated`/`taken_at_note`**
+  — jsou součástí `photos.Photo`, takže je nese
   **každá** odpověď s fotkou (detail, list, search), `subject` a `keywords` navíc padají do fulltextu
   (váha B, resp. C). `keywords` je původní IPTC hodnota **verbatim** (comma-separated), **nejsou to
   labely** — `/labels` zůstávají samostatná kurátorská taxonomie;

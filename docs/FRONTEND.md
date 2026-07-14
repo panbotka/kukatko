@@ -194,7 +194,9 @@ zapiš sem.
   zařízení, ne součást sdíleného pohledu; sedí v hlavičce `FilterBar`u, mění všechny
   foto-mřížky v appce najednou); `PhotoTile`+`PhotoGrid` podporují
   volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`;
-  heart se v selection módu skryje),
+  heart se v selection módu skryje); dlaždice **žádné datum nezobrazuje** — jediné, které nese, je
+  v `alt` textu, a i tam se **odhadované** datum značí (`cca 1950`), aby ho nešlo číst jako jisté;
+  řazení mřížky/timeline se nemění, dál je to `taken_at`,
   `components/organize/` = `AlbumTile` (karta alba: **efektivní obálka** `cover_uid`
   (ručně zvolená, jinak nejnovější fotka alba — počítá backend) / název / **rozsah let**
   přes `formatCaptureRange` (jen když album má datované fotky) / počet → `/albums/{uid}`;
@@ -448,8 +450,19 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`EditableField` = celý řádek je tlačítko „Upravit «pole»" s pencil ikonou a muted „Přidat…"
   placeholderem u prázdného pole), **žádné skryté globální „Upravit"** dole (to byl fix tohoto
   tasku — dohledatelnost editace title/description/AI popisu). Klik na kterékoli pole otevře jeden
-  sdílený formulář (title/description/ai_note/notes/taken_at + **vizuální location picker**), Save
-  `updatePhoto` PATCH, Cancel revert. Location picker = jedno tolerantní pole souřadnic parsované
+  sdílený formulář (title/description/ai_note/notes/taken_at + **přibližné datum** +
+  **vizuální location picker**), Save `updatePhoto` PATCH, Cancel revert.
+  **Přibližné („cca") datum** — pro naskenované/zděděné fotky, kde přesné datum nikdo nezná:
+  ve formuláři checkbox „Datum je odhad" (`taken_at_estimated`) a **jen když je zaškrtnutý** textové
+  pole „Poznámka k datování" (`taken_at_note`, `maxLength=500` zrcadlí backendový strop) — prázdná
+  poznámka u data-faktu nedává smysl, tak formulář nezaplevelí; obojí ukládá tentýž PATCH (žádné
+  vlastní tlačítko). Odškrtnutí odhadu nechá poznámku ve formuláři (kdyby si to rozmyslel), ale
+  posílá se jen `taken_at_estimated: false` — poznámku smaže server. Read-only se odhadované datum
+  renderuje přes `CaptureDate` (v `MetadataPanel.tsx`): badge `cca` (cs) / `c.` (en) + datum +
+  poznámka kurzívou, badge nese `title` s poznámkou (**ne** jen barva/glyf), takže odhad nelze
+  zaměnit za jisté datum ani letmým pohledem, ani ve screen readeru; fotka **bez** `taken_at` může
+  být odhad taky — pak stojí marker s poznámkou samy. `EditableField` proto bere volitelný
+  `display?: ReactNode` (bohatší render hodnoty, prostý `value` dál rozhoduje o „vyplněnosti"). Location picker = jedno tolerantní pole souřadnic parsované
   `lib/coordinates` (`parseCoordinates`/`formatCoordinates`: desetinné stupně `49.1234, 16.5678`,
   DMS `49°7'24.2"N 16°34'12.5"E`, stupně-desetinné-minuty, hemisféry, axis reorder, range check)
   nad **`LeafletMap` picker módem** (`picker={position,onPick}`: draggable marker + click-to-place,

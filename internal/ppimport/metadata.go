@@ -136,9 +136,14 @@ func metadataUpdate(existing photos.Photo, pp photoprism.Photo) photos.MetadataU
 		Private:       pp.Private,
 		TakenAt:       existing.TakenAt,
 		TakenAtSource: existing.TakenAtSource,
-		Lat:           existing.Lat,
-		Lng:           existing.Lng,
-		Altitude:      existing.Altitude,
+		// PhotoPrism has no notion of an approximate date, so the estimate flag and
+		// its dating note are Kukátko's alone: carried through untouched, never
+		// overwritten by an incremental run.
+		TakenAtEstimated: existing.TakenAtEstimated,
+		TakenAtNote:      existing.TakenAtNote,
+		Lat:              existing.Lat,
+		Lng:              existing.Lng,
+		Altitude:         existing.Altitude,
 	}
 	if !pp.TakenAt.IsZero() {
 		taken := pp.TakenAt
@@ -185,10 +190,13 @@ func creditsUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool 
 		existing.Scan == update.Scan
 }
 
-// placementUnchanged compares the capture time, the GPS fix and the private flag.
+// placementUnchanged compares the capture time (its estimate flag and dating note
+// included), the GPS fix and the private flag.
 func placementUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool {
 	return existing.Private == update.Private &&
 		existing.TakenAtSource == update.TakenAtSource &&
+		existing.TakenAtEstimated == update.TakenAtEstimated &&
+		existing.TakenAtNote == update.TakenAtNote &&
 		timeEqual(existing.TakenAt, update.TakenAt) &&
 		floatEqual(existing.Lat, update.Lat) &&
 		floatEqual(existing.Lng, update.Lng) &&

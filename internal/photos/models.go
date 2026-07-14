@@ -96,6 +96,15 @@ type Photo struct {
 
 	TakenAt       *time.Time `json:"taken_at,omitempty"`
 	TakenAtSource string     `json:"taken_at_source"`
+	// TakenAtEstimated marks TakenAt as a guess rather than a fact — the date of a
+	// scanned photo nobody can pin down. It is presentation and truthfulness, not a
+	// second date axis: TakenAt stays the single anchor for sorting, the timeline,
+	// grouping and the date filters. TakenAtNote records, in the user's own words,
+	// what the estimate rests on ("kolem roku 1950", "za války"). A photo with no
+	// TakenAt at all may still be estimated, in which case the note carries the whole
+	// meaning; the note is only kept while the flag is set.
+	TakenAtEstimated bool   `json:"taken_at_estimated"`
+	TakenAtNote      string `json:"taken_at_note"`
 
 	Title       string `json:"title"`
 	Description string `json:"description"`
@@ -235,20 +244,25 @@ type Edit struct {
 // original_name, projection) are deliberately absent: they describe the file and
 // are written only by the ingest and import paths.
 type MetadataUpdate struct {
-	Title         string     `json:"title"`
-	Description   string     `json:"description"`
-	Notes         string     `json:"notes"`
-	AiNote        string     `json:"ai_note"`
-	Subject       string     `json:"subject"`
-	Keywords      string     `json:"keywords"`
-	Artist        string     `json:"artist"`
-	Copyright     string     `json:"copyright"`
-	License       string     `json:"license"`
-	Scan          bool       `json:"scan"`
-	TakenAt       *time.Time `json:"taken_at"`
-	TakenAtSource string     `json:"taken_at_source"`
-	Lat           *float64   `json:"lat"`
-	Lng           *float64   `json:"lng"`
-	Altitude      *float64   `json:"altitude"`
-	Private       bool       `json:"private"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Notes       string `json:"notes"`
+	AiNote      string `json:"ai_note"`
+	Subject     string `json:"subject"`
+	Keywords    string `json:"keywords"`
+	Artist      string `json:"artist"`
+	Copyright   string `json:"copyright"`
+	License     string `json:"license"`
+	Scan        bool   `json:"scan"`
+	// TakenAtEstimated / TakenAtNote are the approximate-date pair. The note only
+	// means anything while the flag is set, so a non-estimated photo must never keep
+	// one (see photoapi's merge, which clears it).
+	TakenAt          *time.Time `json:"taken_at"`
+	TakenAtSource    string     `json:"taken_at_source"`
+	TakenAtEstimated bool       `json:"taken_at_estimated"`
+	TakenAtNote      string     `json:"taken_at_note"`
+	Lat              *float64   `json:"lat"`
+	Lng              *float64   `json:"lng"`
+	Altitude         *float64   `json:"altitude"`
+	Private          bool       `json:"private"`
 }

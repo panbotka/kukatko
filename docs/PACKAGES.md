@@ -59,7 +59,12 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `Photo` dál nese **IPTC/XMP kredity** `Subject`/`Keywords`/`Artist`/`Copyright`/`License`/`Scan`
   (editovatelné → jsou i v `MetadataUpdate`) a **strojově odvozená** `Software`/`ColorProfile`/
   `ImageCodec`/`CameraSerial`/`OriginalName`/`Projection` (v `MetadataUpdate` **nejsou** — popisují
-  soubor, píše je ingest/import; sloupce viz `docs/ARCHITECTURE.md` §5.1)),
+  soubor, píše je ingest/import; sloupce viz `docs/ARCHITECTURE.md` §5.1);
+  **přibližné datum** `TakenAtEstimated bool`/`TakenAtNote string` (JSON `taken_at_estimated`/
+  `taken_at_note`, editovatelné → jsou i v `MetadataUpdate`): datum je **odhad**, ne fakt, plus
+  volný text, o co se odhad opírá. `TakenAt` zůstává jediná kotva řazení/timeline/filtrů —
+  příznak je prezentace, ne druhá datumová osa; poznámka žije jen s příznakem
+  (`internal/photoapi` ji při shození maže)),
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generátor prefix `ph`,
   `Store` nad pgx s
   `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/`SetPhotoprismRef`
@@ -1188,7 +1193,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   update patche: **PP vyhraje, když má hodnotu, ale prázdná PP hodnota nikdy nesmaže neprázdnou
   Kukátkovou** (`UpdateMetadata` přepisuje celý řádek, takže titulek smazaný ve zdroji by jinak
   zničil ten, co napsal uživatel); `notes`/`ai_note` a IPTC kredity se patchem **protahují beze
-  změny** (mapují se z detailu, ne z výpisu). **`Favorite` se záměrně NEMAPUJE**: Kukátkovy oblíbené
+  změny** (mapují se z detailu, ne z výpisu), stejně tak `taken_at_estimated`/`taken_at_note` —
+  PhotoPrism přibližné datum vůbec nezná, je to Kukátkovo pole a inkrement ho nesmí přepsat. **`Favorite` se záměrně NEMAPUJE**: Kukátkovy oblíbené
   jsou **per-user** a import běžící jako job (nebo z CLI) nemá uživatele, komu ji připsat — a
   `psimport` to nepřekládá taky (jeho `Favorite` je subjektův, ne fotčin);
   (2) **detail fotky** (`details.go`, `importPhotoDetail`) — **POZOR: půlku toho, co PP o fotce ví,

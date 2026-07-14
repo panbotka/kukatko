@@ -16,6 +16,18 @@ export interface Photo {
   file_height: number
   taken_at?: string
   taken_at_source: string
+  /**
+   * Whether `taken_at` is an estimate rather than a known capture time — the
+   * scanned photo that is "somewhere in the forties". Presentation only: sorting,
+   * the timeline, grouping and the date filters go on using `taken_at` exactly as
+   * before.
+   */
+  taken_at_estimated?: boolean
+  /**
+   * The dating note in the user's own words ("kolem roku 1950", "za války"). Only
+   * kept while `taken_at_estimated` is set — the backend clears it with the flag.
+   */
+  taken_at_note?: string
   title: string
   description: string
   lat?: number
@@ -398,6 +410,10 @@ export interface PhotoMetadataUpdate {
   notes?: string
   ai_note?: string
   taken_at?: string | null
+  /** Marks `taken_at` a guess; clearing it also clears `taken_at_note` server-side. */
+  taken_at_estimated?: boolean
+  /** Free-text dating note, at most 500 characters (a longer one is answered 400). */
+  taken_at_note?: string
   lat?: number | null
   lng?: number | null
 }
