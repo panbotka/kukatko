@@ -11,12 +11,12 @@ import (
 // body or a missing identifier answers 400; a non-existent photo or subject
 // answers 404.
 func (a *API) handleFaceReject(w http.ResponseWriter, r *http.Request) {
-	in, err := decodeFaceRejection(r)
+	in, err := decodeFaceFeedback(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	key := in.toKey()
+	key := in.toRejectionKey()
 	entry := a.auditEntry(r, audit.ActionFaceReject, "subjects", key.SubjectUID, map[string]any{
 		"photo_uid": key.PhotoUID, "face_index": key.FaceIndex,
 	})
@@ -32,16 +32,59 @@ func (a *API) handleFaceReject(w http.ResponseWriter, r *http.Request) {
 // 204. Un-rejecting a pair that was never rejected is a no-op. A malformed body or a
 // missing identifier answers 400.
 func (a *API) handleFaceUnreject(w http.ResponseWriter, r *http.Request) {
-	in, err := decodeFaceRejection(r)
+	in, err := decodeFaceFeedback(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	key := in.toKey()
+	key := in.toRejectionKey()
 	entry := a.auditEntry(r, audit.ActionFaceUnreject, "subjects", key.SubjectUID, map[string]any{
 		"photo_uid": key.PhotoUID, "face_index": key.FaceIndex,
 	})
 	if err := a.store.UnrejectFace(r.Context(), key, entry); err != nil {
+		status, msg := rejectionStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleFaceConfirm records that the face in the request body really IS the given
+// subject and answers 204. Confirming the same pair twice is a no-op. A malformed
+// body or a missing identifier answers 400; a non-existent photo or subject
+// answers 404.
+func (a *API) handleFaceConfirm(w http.ResponseWriter, r *http.Request) {
+	in, err := decodeFaceFeedback(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := in.toConfirmationKey()
+	entry := a.auditEntry(r, audit.ActionFaceConfirm, "subjects", key.SubjectUID, map[string]any{
+		"photo_uid": key.PhotoUID, "face_index": key.FaceIndex,
+	})
+	if err := a.store.ConfirmFace(r.Context(), key, entry); err != nil {
+		status, msg := rejectionStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleFaceUnconfirm takes back the face confirmation in the request body and
+// answers 204. Un-confirming a pair that was never confirmed is a no-op. A
+// malformed body or a missing identifier answers 400.
+func (a *API) handleFaceUnconfirm(w http.ResponseWriter, r *http.Request) {
+	in, err := decodeFaceFeedback(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := in.toConfirmationKey()
+	entry := a.auditEntry(r, audit.ActionFaceUnconfirm, "subjects", key.SubjectUID, map[string]any{
+		"photo_uid": key.PhotoUID, "face_index": key.FaceIndex,
+	})
+	if err := a.store.UnconfirmFace(r.Context(), key, entry); err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return

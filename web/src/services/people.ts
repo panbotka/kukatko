@@ -346,21 +346,45 @@ export interface OutlierFace {
 /**
  * Response body of `GET /api/v1/subjects/{uid}/outliers`. `meaningful` is false
  * when too few faces exist to single any out (the faces are still returned,
- * ranked).
+ * ranked). `count` and `avg_distance` describe the full scored set even when a
+ * threshold/limit narrows `faces`; `no_embedding` is how many of the subject's
+ * assignments have no embedding and cannot be checked at all.
  */
 export interface OutlierResult {
   subject_uid: string
   count: number
   meaningful: boolean
+  avg_distance: number
+  no_embedding: number
   faces: OutlierFace[]
 }
 
-/** Fetches a subject's faces ranked most-suspicious first. */
+/** Optional narrowing of an outlier query; omitted values mean "everything". */
+export interface OutlierParams {
+  /** Minimum cosine distance from the centroid (0 = return everything). */
+  threshold?: number
+  /** Maximum number of faces returned (0 = all). */
+  limit?: number
+}
+
+/** Fetches a subject's faces ranked most-suspicious first, optionally narrowed. */
 export async function fetchOutliers(
   subjectUid: string,
+  params?: OutlierParams,
   signal?: AbortSignal,
 ): Promise<OutlierResult> {
-  return getJSON<OutlierResult>(`/subjects/${encodeURIComponent(subjectUid)}/outliers`, signal)
+  const query = new URLSearchParams()
+  if (params?.threshold !== undefined && params.threshold > 0) {
+    query.set('threshold', String(params.threshold))
+  }
+  if (params?.limit !== undefined && params.limit > 0) {
+    query.set('limit', String(params.limit))
+  }
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  return getJSON<OutlierResult>(
+    `/subjects/${encodeURIComponent(subjectUid)}/outliers${suffix}`,
+    signal,
+  )
 }
 
 /** Re-export so people views can render photos without importing two modules. */

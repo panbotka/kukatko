@@ -76,6 +76,37 @@ export async function unrejectFace(req: FaceRejection, signal?: AbortSignal): Pr
 }
 
 /**
+ * A "really this person" face confirmation (`feedbackapi.faceFeedbackInput`):
+ * the face (photo UID + index) and the subject the assignment is confirmed for.
+ * Recorded from the outlier review's ✗ ("no, this really is them") so a face a
+ * user vouched for is not offered as an outlier again. Note the polarity: this
+ * is the OPPOSITE of {@link rejectFace}, which records "this face is NOT this
+ * person".
+ */
+export interface FaceConfirmation {
+  photo_uid: string
+  face_index: number
+  subject_uid: string
+}
+
+/**
+ * Records a face confirmation via `POST /feedback/face-confirmations`. It is
+ * idempotent — confirming the same pair twice is a no-op — so the caller can
+ * fire it optimistically.
+ */
+export async function confirmFace(req: FaceConfirmation, signal?: AbortSignal): Promise<void> {
+  await send('POST', '/feedback/face-confirmations', req, signal)
+}
+
+/**
+ * Withdraws a face confirmation via `DELETE /feedback/face-confirmations`, the
+ * inverse of {@link confirmFace}. Also idempotent.
+ */
+export async function unconfirmFace(req: FaceConfirmation, signal?: AbortSignal): Promise<void> {
+  await send('DELETE', '/feedback/face-confirmations', req, signal)
+}
+
+/**
  * A "not this label" photo rejection (`feedbackapi.labelRejectionInput`): the
  * photo and the label it is rejected for. Recorded from the /expand page's
  * per-tile ✗ so the photo is never offered for that collection again.

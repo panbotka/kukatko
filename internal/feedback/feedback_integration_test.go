@@ -332,3 +332,110 @@ func TestRejectMissingTarget(t *testing.T) {
 		t.Fatalf("rows after failed rejects = %d, want 0", n)
 	}
 }
+
+// TestFaceConfirmationLifecycle checks idempotent confirming, the confirmed check,
+// taking a confirmation back (itself idempotent) and the audit row written in the
+// same transaction.
+func TestFaceConfirmationLifecycle(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	photo := f.makePhoto(t, "confirm_life")
+	subject := f.makeSubject(t, "Tomáš")
+	user := f.makeUser(t, "us_confirm", "confirmer")
+	key := feedback.FaceConfirmationKey{PhotoUID: photo, FaceIndex: 0, SubjectUID: subject}
+	entry := audit.Entry{
+		ActorUID: user, Action: audit.ActionFaceConfirm, TargetType: "subjects", TargetUID: subject,
+	}
+
+	if err := f.feedback.ConfirmFace(ctx, key, entry); err != nil {
+		t.Fatalf("ConfirmFace: %v", err)
+	}
+	// Confirming again is a no-op, not an error, and leaves exactly one row.
+	if err := f.feedback.ConfirmFace(ctx, key, entry); err != nil {
+		t.Fatalf("ConfirmFace (repeat): %v", err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM face_confirmations"); n != 1 {
+		t.Fatalf("row count after double confirm = %d, want 1", n)
+	}
+	if ok, err := f.feedback.IsFaceConfirmed(ctx, key); err != nil || !ok {
+		t.Fatalf("IsFaceConfirmed = %v, %v, want true, nil", ok, err)
+	}
+	if n := f.count(t,
+		"SELECT count(*) FROM face_confirmations WHERE confirmed_by = $1", user); n != 1 {
+		t.Fatalf("confirmed_by rows = %d, want 1", n)
+	}
+	if n := f.count(t,
+		"SELECT count(*) FROM audit_log WHERE action = $1", audit.ActionFaceConfirm); n != 2 {
+		t.Fatalf("audit rows = %d, want 2 (one per ConfirmFace call)", n)
+	}
+
+	if err := f.feedback.UnconfirmFace(ctx, key, entry); err != nil {
+		t.Fatalf("UnconfirmFace: %v", err)
+	}
+	if ok, _ := f.feedback.IsFaceConfirmed(ctx, key); ok {
+		t.Fatalf("IsFaceConfirmed after unconfirm = true, want false")
+	}
+	// Un-confirming what is not confirmed is a no-op, not an error.
+	if err := f.feedback.UnconfirmFace(ctx, key, entry); err != nil {
+		t.Fatalf("UnconfirmFace (repeat): %v", err)
+	}
+}
+
+// TestFaceConfirmationBulkLookup checks the exclusion-filter bulk read: every face
+// confirmed for a subject, scoped to that subject and deterministically ordered,
+// with an empty non-nil result when nothing is confirmed.
+func TestFaceConfirmationBulkLookup(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	p1, p2 := f.makePhoto(t, "cbulk1"), f.makePhoto(t, "cbulk2")
+	subject := f.makeSubject(t, "Anna")
+	other := f.makeSubject(t, "Eva")
+	entry := audit.Entry{Action: audit.ActionFaceConfirm}
+
+	confirm := func(photo string, idx int, subj string) {
+		key := feedback.FaceConfirmationKey{PhotoUID: photo, FaceIndex: idx, SubjectUID: subj}
+		if err := f.feedback.ConfirmFace(ctx, key, entry); err != nil {
+			t.Fatalf("ConfirmFace: %v", err)
+		}
+	}
+	confirm(p2, 1, subject)
+	confirm(p1, 0, subject)
+	confirm(p1, 0, other) // a different subject must not leak into the lookup
+
+	refs, err := f.feedback.FaceConfirmationsForSubject(ctx, subject)
+	if err != nil {
+		t.Fatalf("FaceConfirmationsForSubject: %v", err)
+	}
+	want := []feedback.FaceRef{{PhotoUID: p1, FaceIndex: 0}, {PhotoUID: p2, FaceIndex: 1}}
+	sortRefs(want)
+	if len(refs) != len(want) || refs[0] != want[0] || refs[1] != want[1] {
+		t.Fatalf("confirmed refs = %+v, want %+v (ordered by photo, index)", refs, want)
+	}
+
+	empty, err := f.feedback.FaceConfirmationsForSubject(ctx, f.makeSubject(t, "Nobody"))
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Fatalf("empty lookup = %+v, %v, want non-nil empty slice", empty, err)
+	}
+}
+
+// TestConfirmMissingTarget checks that confirming against a non-existent photo or
+// subject surfaces ErrTargetNotFound rather than a raw database error.
+func TestConfirmMissingTarget(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	photo := f.makePhoto(t, "cmissing")
+	subject := f.makeSubject(t, "Real")
+	entry := audit.Entry{Action: audit.ActionFaceConfirm}
+
+	badSubject := feedback.FaceConfirmationKey{PhotoUID: photo, FaceIndex: 0, SubjectUID: "no_such_subject"}
+	if err := f.feedback.ConfirmFace(ctx, badSubject, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+		t.Fatalf("ConfirmFace missing subject = %v, want ErrTargetNotFound", err)
+	}
+	badPhoto := feedback.FaceConfirmationKey{PhotoUID: "no_such_photo", FaceIndex: 0, SubjectUID: subject}
+	if err := f.feedback.ConfirmFace(ctx, badPhoto, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+		t.Fatalf("ConfirmFace missing photo = %v, want ErrTargetNotFound", err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM face_confirmations"); n != 0 {
+		t.Fatalf("rows after failed confirms = %d, want 0", n)
+	}
+}

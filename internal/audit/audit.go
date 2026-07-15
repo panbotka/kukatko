@@ -119,6 +119,16 @@ const (
 	// ActionFaceUnreject records a user taking back a face rejection. The face
 	// (photo UID + face index) is in the details, the subject UID is the target.
 	ActionFaceUnreject = "face.unreject"
+	// ActionFaceConfirm records a user confirming a face↔subject assignment
+	// ("yes, this face really is this person"). It records an opinion — nothing
+	// is assigned or mutated — so outlier review can exclude the face from
+	// future runs. The face (photo UID + face index) is in the details, the
+	// subject UID is the target.
+	ActionFaceConfirm = "face.confirm"
+	// ActionFaceUnconfirm records a user taking back a face confirmation. The
+	// face (photo UID + face index) is in the details, the subject UID is the
+	// target.
+	ActionFaceUnconfirm = "face.unconfirm"
 	// ActionSubjectCreate records creating a subject (person/pet/other).
 	ActionSubjectCreate = "subject.create"
 	// ActionSubjectUpdate records editing a subject's fields.
