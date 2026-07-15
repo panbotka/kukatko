@@ -52,6 +52,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/backupapi` — admin-only `GET`/`POST /backup`
 - `internal/bulk` — bulk metadata editing, the whole batch in one transaction
 - `internal/bulkapi` — `POST /photos/bulk`
+- `internal/candidates` — "find a person among untagged photos": per-exemplar kNN over unassigned faces + voting, rejection/negative-exemplar/size filters, action classification; read-only
+- `internal/candidatesapi` — `POST /subjects/{uid}/candidates` (RequireWrite)
 - `internal/cluster` — auto-clustering of unassigned faces (union-find over HNSW neighbors)
 - `internal/clusterapi` — `/faces/clusters` (list, assign, remove-face)
 - `internal/config` — typed configuration, Viper, `Load()`
