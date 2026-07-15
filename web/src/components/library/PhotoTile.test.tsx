@@ -144,6 +144,20 @@ describe('PhotoTile video badge', () => {
   })
 })
 
+describe('PhotoTile stack badge', () => {
+  it('shows the member-count badge for a stacked primary', () => {
+    renderTile(photo({ media_type: 'image', file_name: 'raw.jpg', stack_count: 3 }))
+    const badge = screen.getByRole('img', { name: '3 in stack' })
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveTextContent('3')
+  })
+
+  it('shows no stack badge for a standalone photo', () => {
+    renderTile(photo({ media_type: 'image', file_name: 'solo.jpg' }))
+    expect(screen.queryByRole('img', { name: /in stack/ })).not.toBeInTheDocument()
+  })
+})
+
 describe('PhotoTile capture date', () => {
   // The tile shows no date of its own; the alt text is the one place it carries
   // one, so that is where an estimate has to be marked as such.

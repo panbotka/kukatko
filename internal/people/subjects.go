@@ -179,14 +179,19 @@ func updateSubjectTx(ctx context.Context, tx pgx.Tx, uid string, upd SubjectUpda
 }
 
 // listSubjectsSQL reads every subject with its count of valid (non-invalid)
-// markers, ordered by name then uid for a stable people-index display. The
-// subject columns are alias-qualified because the markers join also exposes a
-// uid column.
+// markers that fall on a visible photo, ordered by name then uid for a stable
+// people-index display. The subject columns are alias-qualified because the
+// markers join also exposes a uid column. The photos join restricts the count to
+// visible members (not archived, not a non-primary stack member) so the badge
+// agrees with the subject's gallery: COUNT(p.uid) ignores the NULL rows a marker
+// on a hidden photo joins as.
 const listSubjectsSQL = `
 SELECT s.uid, s.slug, s.name, s.type, s.favorite, s.private, s.notes,
-       s.cover_photo_uid, s.created_at, s.updated_at, COUNT(m.uid) AS marker_count
+       s.cover_photo_uid, s.created_at, s.updated_at, COUNT(p.uid) AS marker_count
 FROM subjects s
 LEFT JOIN markers m ON m.subject_uid = s.uid AND m.invalid = FALSE
+LEFT JOIN photos p ON p.uid = m.photo_uid AND p.archived_at IS NULL
+    AND (p.stack_uid IS NULL OR p.stack_primary)
 GROUP BY s.uid
 ORDER BY s.name, s.uid`
 
@@ -219,13 +224,15 @@ func (s *Store) ListSubjects(ctx context.Context) ([]SubjectCount, error) {
 
 // listSubjectPhotoUIDsSQL returns the distinct photos that carry at least one
 // non-invalid marker assigned to a subject, newest first (by capture time, with
-// undated photos last), then by uid for a stable order. Archived photos are
-// excluded so a subject's gallery mirrors the default library view.
+// undated photos last), then by uid for a stable order. Archived photos and the
+// non-primary members of a stack are excluded so a subject's gallery mirrors the
+// default library view (only a stack's primary appears).
 const listSubjectPhotoUIDsSQL = `
 SELECT DISTINCT m.photo_uid, p.taken_at
 FROM markers m
 JOIN photos p ON p.uid = m.photo_uid
 WHERE m.subject_uid = $1 AND m.invalid = FALSE AND p.archived_at IS NULL
+  AND (p.stack_uid IS NULL OR p.stack_primary)
 ORDER BY p.taken_at DESC NULLS LAST, m.photo_uid`
 
 // ListPhotoUIDsBySubject returns the UIDs of every non-archived photo that has a

@@ -63,6 +63,11 @@ type photoView struct {
 	photos.Photo
 	// IsFavorite reports whether the current user has favorited this photo.
 	IsFavorite bool `json:"is_favorite"`
+	// StackCount is how many photos the stack has when this photo is a stacked
+	// primary (always ≥ 2), and 0 (omitted) otherwise. It drives the grid tile's
+	// member-count badge. Non-primary members are hidden from listings, so a photo
+	// carrying a count is always the one visible member of its stack.
+	StackCount int `json:"stack_count,omitempty"`
 }
 
 // annotate pairs each photo with the current user's per-user annotations —
@@ -96,7 +101,10 @@ func (a *API) annotate(
 	if err := a.applyFavorites(ctx, userUID, uids, views); err != nil {
 		return nil, err
 	}
-	return views, a.annotateRatings(ctx, userUID, uids, views)
+	if err := a.annotateRatings(ctx, userUID, uids, views); err != nil {
+		return nil, err
+	}
+	return views, a.annotateStacks(ctx, views)
 }
 
 // applyFavorites sets each view's IsFavorite flag from one FavoritedAmong query,

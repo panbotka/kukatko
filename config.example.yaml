@@ -262,6 +262,27 @@ duplicate:
   # Maximum embedding cosine distance to treat images as duplicates.
   embedding_max_dist: 0.05
 
+# Stacks: group the several files of one shot (RAW+JPEG, exported edits, an
+# iPhone Live Photo's still+clip) into one library item with a visible primary
+# and the rest hidden as variants. Detection runs via POST /api/v1/process/stacks.
+stacks:
+  # Master switch for the whole feature (automatic detection and manual stacking).
+  enabled: true
+  # Each detection rule is switched independently: they have very different
+  # false-positive rates. Rules only ever stack photos that plausibly ARE the same
+  # shot — a wrongly stacked photo is hidden, and an invisible photo is a lost one.
+  rules:
+    # Same base filename, different extension (IMG_1234.CR2 + IMG_1234.jpg). Safest.
+    base_name: true
+    # Copy / sequence / edit names (IMG_1234 (2).jpg, IMG_1234 copy.jpg,
+    # IMG_1234-edited.jpg) collapsed onto their original.
+    sequential_copy: true
+    # Same EXIF ImageUniqueID / XMP InstanceID. Very reliable where it exists.
+    unique_id: true
+    # Same capture second AND same GPS. The loosest rule: it wrongly stacks burst
+    # shots taken within one second, so it is OFF by default.
+    time_gps: false
+
 # Upload / ingest limits.
 upload:
   # Maximum size of a single uploaded file, in mebibytes. 0 disables the cap

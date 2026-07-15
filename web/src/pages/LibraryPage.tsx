@@ -16,6 +16,7 @@ import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { DownloadZipButton } from '../components/organize/DownloadZipButton'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SelectionStart } from '../components/organize/SelectionStart'
+import { StackSelectedControl } from '../components/organize/StackSelectedControl'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
@@ -227,6 +228,7 @@ export function LibraryPage() {
             {t('library.selectAll')}
           </Button>
           <BulkEditControl bulk={bulk} />
+          <StackSelectedControl bulk={bulk} />
           <DownloadZipButton photoUids={bulk.photoUids} variant="outline-secondary" />
         </SelectionBar>
       )}

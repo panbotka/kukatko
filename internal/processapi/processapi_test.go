@@ -314,6 +314,84 @@ func TestRecluster_unavailable(t *testing.T) {
 	}
 }
 
+// fakeStacksDetector is a StacksDetector stub returning canned values.
+type fakeStacksDetector struct {
+	created int
+	err     error
+	calls   int
+}
+
+// DetectStacks records the call and returns the canned result.
+func (f *fakeStacksDetector) DetectStacks(context.Context) (int, error) {
+	f.calls++
+	return f.created, f.err
+}
+
+// newServerWithStacks mounts the API with the given stacks detector behind a
+// passthrough guard.
+func newServerWithStacks(t *testing.T, sd StacksDetector) *httptest.Server {
+	t.Helper()
+	api := NewAPI(Config{
+		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
+		StacksDetector: sd, RequireAdmin: passthrough,
+	})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestDetectStacks_ok reports the created count on success.
+func TestDetectStacks_ok(t *testing.T) {
+	t.Parallel()
+
+	sd := &fakeStacksDetector{created: 4}
+	srv := newServerWithStacks(t, sd)
+
+	resp := postProcess(t, srv.URL+"/process/stacks")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body stacksResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Created != 4 {
+		t.Errorf("created = %d, want 4", body.Created)
+	}
+	if sd.calls != 1 {
+		t.Errorf("detector calls = %d, want 1", sd.calls)
+	}
+}
+
+// TestDetectStacks_error maps a detection failure to 500.
+func TestDetectStacks_error(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithStacks(t, &fakeStacksDetector{err: errors.New("boom")})
+
+	resp := postProcess(t, srv.URL+"/process/stacks")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+// TestDetectStacks_unavailable answers 503 when stacking is disabled.
+func TestDetectStacks_unavailable(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithStacks(t, nil)
+
+	resp := postProcess(t, srv.URL+"/process/stacks")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
 // TestBackfillPlaces_ok reports the enqueued count on success.
 func TestBackfillPlaces_ok(t *testing.T) {
 	t.Parallel()

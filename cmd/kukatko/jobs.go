@@ -91,7 +91,10 @@ func buildJobs(
 		PlacesBackfiller:    placesBF,
 		ThumbnailBackfiller: thumbSvc,
 		MetadataBackfiller:  metaSvc,
-		RequireAdmin:        authAPI.RequireAdmin,
+		// A nil interface (not a typed-nil pointer) disables /process/stacks when
+		// the stacking feature is off.
+		StacksDetector: stacksDetectorOrNil(cfg, db),
+		RequireAdmin:   authAPI.RequireAdmin,
 	})
 	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, authAPI), nil
 }

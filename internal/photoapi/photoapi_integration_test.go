@@ -27,6 +27,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/stacks"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -123,6 +124,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Organizer:       organizeStore,
 		Users:           authStore,
 		Places:          placeStore,
+		Stacker:         stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,

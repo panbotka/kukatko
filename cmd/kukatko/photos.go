@@ -65,6 +65,12 @@ func buildPhotoAPI(
 		Thumbnailer: thumbnailer,
 		Decoder:     thumbjob.NewStorageDecoder(store),
 	})
+	// A nil interface (not a typed nil pointer) when stacking is disabled, so the
+	// photoapi nil check answers 503 on the manual stacking routes.
+	var stacker photoapi.Stacker
+	if s := buildStacksServiceOrNil(cfg, db); s != nil {
+		stacker = s
+	}
 
 	return photoapi.NewAPI(photoapi.Config{
 		Store:       photoStore,
@@ -84,6 +90,7 @@ func buildPhotoAPI(
 		// geocodes, so opening a photo costs no mapy.com credit.
 		Places:          places.NewStore(db.Pool()),
 		Purger:          purger,
+		Stacker:         stacker,
 		RetentionDays:   cfg.Trash.RetentionDays,
 		VideoTranscode:  cfg.Video.Transcode,
 		RequireAuth:     authAPI.RequireAuth,

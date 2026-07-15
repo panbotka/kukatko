@@ -40,6 +40,7 @@ SELECT pp.country, pp.city, count(*)
 FROM photo_places pp
 JOIN photos p ON p.uid = pp.photo_uid
 WHERE p.archived_at IS NULL
+  AND (p.stack_uid IS NULL OR p.stack_primary)
   AND pp.country <> ''%s
 GROUP BY pp.country, pp.city`
 

@@ -22,6 +22,7 @@ import { MetadataPanel } from '../components/photo/MetadataPanel'
 import { OrganizeBadges } from '../components/photo/OrganizeBadges'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
 import { PeoplePanel } from '../components/photo/PeoplePanel'
+import { StackStrip } from '../components/photo/StackStrip'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
 import { VideoPlayer } from '../components/photo/VideoPlayer'
 import { FaceOverlay } from '../components/people/FaceOverlay'
@@ -44,7 +45,10 @@ import {
   fetchPhoto,
   type PhotoDetail,
   type PhotoEdit,
+  setStackPrimary,
   thumbUrl,
+  unstackAll,
+  unstackMember,
 } from '../services/photos'
 
 /** Fetch lifecycle of the photo detail (the photo and its stored edit). */
@@ -304,6 +308,24 @@ export function PhotoDetailPage() {
   const setPhoto = (updated: PhotoDetail) => {
     setState({ status: 'ready', photo: updated, edit })
   }
+  // Stack mutations always refresh the photo being viewed (not the member that was
+  // mutated), so the variants strip and the member-count reflect the change even
+  // when the acting member was a different variant in the strip.
+  const reloadPhoto = async () => {
+    setPhoto(await fetchPhoto(uid))
+  }
+  const handleSetStackPrimary = async (memberUid: string) => {
+    await setStackPrimary(memberUid)
+    await reloadPhoto()
+  }
+  const handleUnstackMember = async (memberUid: string) => {
+    await unstackMember(memberUid)
+    await reloadPhoto()
+  }
+  const handleUnstackAll = async () => {
+    await unstackAll(uid)
+    await reloadPhoto()
+  }
   const setEdit = (updated: PhotoEdit) => {
     setState({ status: 'ready', photo, edit: updated })
   }
@@ -521,6 +543,20 @@ export function PhotoDetailPage() {
           </Col>
         )}
       </Row>
+
+      {/* The variants strip: the several files of one shot grouped into a stack.
+          It renders nothing for an unstacked photo (fewer than two members). */}
+      {photo.stack_members !== undefined && photo.stack_members.length > 1 && (
+        <StackStrip
+          members={photo.stack_members}
+          currentUid={photo.uid}
+          canWrite={canWrite}
+          onSetPrimary={handleSetStackPrimary}
+          onUnstackMember={handleUnstackMember}
+          onUnstackAll={handleUnstackAll}
+          detailQuery={detailQuery}
+        />
+      )}
 
       {/* Control/info panels below the photo, spanning the full page width, in a
           strict edit-first priority order: Organize first, then Caption & place,

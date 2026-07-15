@@ -46,6 +46,7 @@ type API struct {
 	users           UserResolver
 	places          PlaceResolver
 	purger          Purger
+	stacker         Stacker
 	retentionDays   int
 	videoTranscode  bool
 	requireAuth     func(http.Handler) http.Handler
@@ -104,6 +105,10 @@ type Config struct {
 	// Purger backs the permanent-delete endpoints (purge one, empty trash). When
 	// nil those endpoints answer 503.
 	Purger Purger
+	// Stacker backs the manual stacking endpoints (stack a selection, set a
+	// primary, unstack a member or a whole stack). When nil — the stacking feature
+	// disabled in config — those endpoints answer 503.
+	Stacker Stacker
 	// RetentionDays is the trash retention window reported by the trash-info
 	// endpoint so the UI can show the auto-purge countdown.
 	RetentionDays int
@@ -138,6 +143,7 @@ func NewAPI(cfg Config) *API {
 		users:           cfg.Users,
 		places:          cfg.Places,
 		purger:          cfg.Purger,
+		stacker:         cfg.Stacker,
 		retentionDays:   cfg.RetentionDays,
 		videoTranscode:  cfg.VideoTranscode,
 		requireAuth:     cfg.RequireAuth,
@@ -162,6 +168,10 @@ func NewAPI(cfg Config) *API {
 //	PUT    /photos/{uid}/edit         RequireWrite     save non-destructive edit
 //	POST   /photos/{uid}/archive      RequireWrite     soft-delete
 //	POST   /photos/{uid}/unarchive    RequireWrite     restore
+//	POST   /photos/stack              RequireWrite     stack a selection (manual)
+//	POST   /photos/{uid}/stack/primary RequireWrite    make this member the primary
+//	POST   /photos/{uid}/unstack      RequireWrite     remove this member from its stack
+//	POST   /photos/{uid}/unstack-all  RequireWrite     dissolve the whole stack
 //	POST   /photos/{uid}/regenerate-thumbnail RequireWrite  rebuild thumbnail + pHash
 //	GET    /photos/{uid}/thumb/{size} RequireDownload  cached thumbnail (or 302)
 //	GET    /photos/{uid}/video        RequireDownload  video stream (range/206, or 302)
@@ -198,6 +208,10 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Put("/{uid}/edit", a.handlePutEdit)
 		r.With(a.requireWrite).Post("/{uid}/archive", a.handleArchive)
 		r.With(a.requireWrite).Post("/{uid}/unarchive", a.handleUnarchive)
+		r.With(a.requireWrite).Post("/stack", a.handleStackSelection)
+		r.With(a.requireWrite).Post("/{uid}/stack/primary", a.handleStackSetPrimary)
+		r.With(a.requireWrite).Post("/{uid}/unstack", a.handleUnstackMember)
+		r.With(a.requireWrite).Post("/{uid}/unstack-all", a.handleUnstackAll)
 		r.With(a.requireWrite).Post("/{uid}/regenerate-thumbnail", a.handleRegenerateThumbnail)
 		r.With(a.requireWrite).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
@@ -364,6 +378,9 @@ type photoDetail struct {
 	Labels   []labelRef         `json:"labels"`
 	Uploader *uploaderRef       `json:"uploader,omitempty"`
 	Place    *placeRef          `json:"place,omitempty"`
+	// StackMembers is the variants strip: every file of this photo's stack (this
+	// photo among them), the primary first. It is omitted for an unstacked photo.
+	StackMembers []stackMember `json:"stack_members,omitempty"`
 }
 
 // handleDetail returns a photo's full detail, including its file list and the
@@ -407,10 +424,16 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 		writeError(w, http.StatusInternalServerError, "fetching photo organization failed")
 		return
 	}
+	members, err := a.stackMembers(r.Context(), photo)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "fetching stack members failed")
+		return
+	}
 	writeJSON(w, http.StatusOK, photoDetail{
 		photoView: views[0], Files: files, Albums: albums, Labels: labels,
-		Uploader: a.resolveUploader(r.Context(), photo.UploadedBy),
-		Place:    a.resolvePlace(r.Context(), photo.UID),
+		Uploader:     a.resolveUploader(r.Context(), photo.UploadedBy),
+		Place:        a.resolvePlace(r.Context(), photo.UID),
+		StackMembers: members,
 	})
 }
 

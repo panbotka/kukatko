@@ -211,7 +211,8 @@
     "tile": {
       "unavailable": "Náhled není dostupný",
       "video": "Video",
-      "live": "Živá fotka"
+      "live": "Živá fotka",
+      "stackCount": "Ve skupině: {{count}}"
     },
     "timeline": {
       "label": "Časová osa",
@@ -496,7 +497,16 @@
     "count": "Vybráno: {{count}}",
     "enter": "Vybrat",
     "edit": "Hromadná úprava",
+    "stack": "Seskupit vybrané",
     "cancel": "Zrušit"
+  },
+  "stack": {
+    "title": "Skupina · {{count}} souborů",
+    "primary": "Hlavní",
+    "setPrimary": "Nastavit jako hlavní",
+    "unstack": "Vyjmout ze skupiny",
+    "unstackAll": "Zrušit skupinu",
+    "viewVariant": "Zobrazit {{name}}"
   },
   "shortcuts": {
     "open": "Klávesové zkratky",

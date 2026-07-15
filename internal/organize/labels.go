@@ -130,12 +130,17 @@ func (s *Store) UpdateLabel(ctx context.Context, uid string, upd LabelUpdate) (L
 }
 
 // listLabelsSQL reads every label with its photo count, ordered by priority
-// (highest first) then name then uid for a stable display.
+// (highest first) then name then uid for a stable display. The count joins photos
+// so it counts only the label's visible members (not archived, not a non-primary
+// stack member) — COUNT(p.uid) ignores the NULL rows hidden photos join as — so
+// the badge agrees with the grid the label filter shows.
 const listLabelsSQL = `
 SELECT l.uid, l.slug, l.name, l.priority, l.created_at, l.updated_at,
-       COUNT(pl.photo_uid) AS photo_count
+       COUNT(p.uid) AS photo_count
 FROM labels l
 LEFT JOIN photo_labels pl ON pl.label_uid = l.uid
+LEFT JOIN photos p ON p.uid = pl.photo_uid AND p.archived_at IS NULL
+    AND (p.stack_uid IS NULL OR p.stack_primary)
 GROUP BY l.uid
 ORDER BY l.priority DESC, l.name, l.uid`
 

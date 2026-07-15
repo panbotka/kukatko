@@ -82,6 +82,7 @@ type Config struct {
 	Backup    BackupConfig    `mapstructure:"backup"`
 	Trash     TrashConfig     `mapstructure:"trash"`
 	Duplicate DuplicateConfig `mapstructure:"duplicate"`
+	Stacks    StacksConfig    `mapstructure:"stacks"`
 	Upload    UploadConfig    `mapstructure:"upload"`
 	Video     VideoConfig     `mapstructure:"video"`
 	Worker    WorkerConfig    `mapstructure:"worker"`
@@ -430,6 +431,33 @@ type DuplicateConfig struct {
 	EmbeddingMaxDist float64 `mapstructure:"embedding_max_dist"`
 }
 
+// StacksConfig controls the stacking feature — grouping the several files of one
+// shot (RAW+JPEG, exported edits, …) into one library item. Enabled is the master
+// switch for the whole feature (auto-detection and manual stacking); Rules
+// selects which automatic detection rules the backfill runs.
+type StacksConfig struct {
+	Enabled bool             `mapstructure:"enabled"`
+	Rules   StackRulesConfig `mapstructure:"rules"`
+}
+
+// StackRulesConfig switches each stack-detection rule independently, because the
+// rules have very different false-positive rates.
+type StackRulesConfig struct {
+	// BaseName groups files that share a base filename but differ in extension
+	// (IMG_1234.CR2 + IMG_1234.jpg). The safest rule; on by default.
+	BaseName bool `mapstructure:"base_name"`
+	// SequentialCopy groups copy/edit derivatives onto their original by canonical
+	// name (IMG_1234 (2).jpg, IMG_1234 copy.jpg, IMG_1234-edited.jpg); on by default.
+	SequentialCopy bool `mapstructure:"sequential_copy"`
+	// UniqueID groups files carrying the same EXIF ImageUniqueID / XMP InstanceID;
+	// very reliable where present, on by default.
+	UniqueID bool `mapstructure:"unique_id"`
+	// TimeGPS groups files captured in the same second at the same GPS point. It is
+	// the loosest rule and will wrongly stack burst shots taken in one second, so
+	// it is OFF by default.
+	TimeGPS bool `mapstructure:"time_gps"`
+}
+
 // VideoConfig tunes video playback/streaming. Videos are always served with
 // HTTP range support so browsers can seek without downloading the whole file.
 type VideoConfig struct {
@@ -656,6 +684,13 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("duplicate.enabled", true)
 	v.SetDefault("duplicate.phash_max_diff", 8)
 	v.SetDefault("duplicate.embedding_max_dist", 0.05)
+
+	v.SetDefault("stacks.enabled", true)
+	v.SetDefault("stacks.rules.base_name", true)
+	v.SetDefault("stacks.rules.sequential_copy", true)
+	v.SetDefault("stacks.rules.unique_id", true)
+	// Off by default: the same-second+GPS rule wrongly stacks burst shots.
+	v.SetDefault("stacks.rules.time_gps", false)
 
 	v.SetDefault("upload.max_file_size_mb", 0) // 0 = unlimited
 

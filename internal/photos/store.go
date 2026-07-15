@@ -40,6 +40,7 @@ var photoInsertColumns = []string{
 	"software", "scan", "color_profile", "image_codec", "projection", "original_name",
 	"exif", "private", "archived_at", "uploaded_by", "photoprism_uid",
 	"photoprism_file_hash", "photosorter_uid", "metadata_extracted_at",
+	"stack_uid", "stack_primary",
 }
 
 // photoColumns is the canonical, ordered column list for photo reads (the insert
@@ -95,6 +96,7 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.Software, &p.Scan, &p.ColorProfile, &p.ImageCodec, &p.Projection, &p.OriginalName,
 		&exif, &p.Private, &p.ArchivedAt, &p.UploadedBy, &p.PhotoprismUID,
 		&p.PhotoprismFileHash, &p.PhotosorterUID, &p.MetadataExtractedAt,
+		&p.StackUID, &p.StackPrimary,
 		&p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		return Photo{}, fmt.Errorf("photos: scanning photo: %w", err)
@@ -129,6 +131,7 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		p.Software, p.Scan, p.ColorProfile, p.ImageCodec, p.Projection, p.OriginalName,
 		nilIfEmptyJSON(p.Exif), p.Private, p.ArchivedAt, p.UploadedBy, p.PhotoprismUID,
 		p.PhotoprismFileHash, p.PhotosorterUID, p.MetadataExtractedAt,
+		p.StackUID, p.StackPrimary,
 	}
 	created, err := scanPhoto(s.pool.QueryRow(ctx, insertPhotoSQL, args...))
 	if err != nil {
