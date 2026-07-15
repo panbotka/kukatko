@@ -96,6 +96,14 @@ const (
 	// ActionLabelDetach records detaching a label from a photo; the photo UID is
 	// recorded in the entry's details.
 	ActionLabelDetach = "label.detach"
+	// ActionLabelReject records a user rejecting a label for a photo ("this photo
+	// should NOT have this label"). It records an opinion — the label itself is not
+	// detached — so a later suggestion can exclude the pair. The photo UID is in the
+	// details, the label UID is the target.
+	ActionLabelReject = "label.reject"
+	// ActionLabelUnreject records a user taking back a label rejection. The photo
+	// UID is in the details, the label UID is the target.
+	ActionLabelUnreject = "label.unreject"
 	// ActionFaceAssign records assigning a face to a subject — either by pointing
 	// an existing marker at the subject or by creating a new face marker already
 	// naming it. The affected marker, subject and photo are listed in the details.
@@ -103,6 +111,14 @@ const (
 	// ActionFaceUnassign records clearing a marker's subject (unassigning a face);
 	// the affected marker and photo are listed in the details.
 	ActionFaceUnassign = "face.unassign"
+	// ActionFaceReject records a user rejecting a face↔subject guess ("this face is
+	// NOT this person"). It records an opinion — the face is not unassigned or
+	// deleted — so a later search can exclude it. The face (photo UID + face index)
+	// is in the details, the subject UID is the target.
+	ActionFaceReject = "face.reject"
+	// ActionFaceUnreject records a user taking back a face rejection. The face
+	// (photo UID + face index) is in the details, the subject UID is the target.
+	ActionFaceUnreject = "face.unreject"
 	// ActionSubjectCreate records creating a subject (person/pet/other).
 	ActionSubjectCreate = "subject.create"
 	// ActionSubjectUpdate records editing a subject's fields.

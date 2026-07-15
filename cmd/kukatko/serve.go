@@ -325,6 +325,7 @@ func readAPIOptions(db *database.DB, authAPI *auth.API, mediaStore storage.Stora
 		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPeopleAPI(db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildOrganizeAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildFeedbackAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPlacesAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes),

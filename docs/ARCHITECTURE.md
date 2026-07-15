@@ -341,6 +341,20 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
   `kukatko import dir`, migrace `0026`), high-watermark
   (`updated:` timestamp pro inkrement; `folder` běh ho nemá — složka nemá zdrojový čas, idempotenci
   dělá SHA256 obsahu), počty, čas. Idempotence inkrementálního importu.
+- **`face_rejections` / `label_rejections`** — persistované **negativní feedback** (migrace
+  `0031_feedback_rejections.sql`, balíček `internal/feedback`). Trvalé uživatelské „ne": *tento
+  obličej NENÍ tato osoba* (`face_rejections`: `photo_uid`+`face_index`+`subject_uid`) a *tato fotka
+  NEMÁ mít tento label* (`label_rejections`: `photo_uid`+`label_uid`). Obojí nese `rejected_by`
+  (FK users `ON DELETE SET NULL`) a `rejected_at`; **UNIQUE natural key** (zamítnout dvakrát je no-op,
+  ne chyba); FK na photos/subjects/labels `ON DELETE CASCADE` uklidí po smazání. **Návrhové
+  rozhodnutí, které příští iterace nesmí vrátit zpět:** photo-sorter zamítnutí **nikdy neuchovával**,
+  takže tentýž špatný obličej se nabízel donekonečna a review práce nikdy neubývala — Kukátko ho
+  ukládá durabilně, aby ho každá review/search feature mohla vyloučit. **Zamítnutí je NÁZOR, ne
+  mutace** — nikdy nesmaže obličej, neodpojí marker ani neodebere label. `face_rejections`
+  **schválně nemá FK na `faces`**: faces se při re-detekci mažou a znovu vkládají, kaskáda by
+  zamítnutí smazala; `(photo_uid, face_index)` je přes re-detekci stabilní a mazání fotky ho uklidí.
+  Bulk lookupy (`FaceRejectionsForSubject`, `LabelRejectionsForLabel`) slouží search cestám jako
+  exclusion filtr **bez N+1**.
 
 ### 5.3 Mapování identit (kvůli importu/migraci)
 
@@ -400,6 +414,23 @@ Stejný jako photo-sorter (`EMBEDDING_URL`, default offline-aware). HTTP:
   „duplikáty" (~0.05) i „podobné" (vyšší práh).
 - **Parametry HNSW:** `m=16`, `ef_construction=200`, dotaz `SET LOCAL hnsw.ef_search=100`
   (nikdy ≥400 — planner spadne na seq scan). Metrika cosine (embeddingy jsou L2-normalizované).
+- **Hledání jen mezi nepřiřazenými obličeji** (`vectors.FindSimilarUnassignedFaceCandidates`,
+  podklad pro hledání osoby mezi neotagovanými, recognition sweep, expanzi alba/labelu a review hru):
+  jako kandidátní hledání, ale `WHERE subject_uid IS NULL` a s **exclusion setem** (už zamítnuté
+  obličeje pro daný subjekt) odfiltrovaným **v SQL** (anti-join přes `unnest`). Filtruje se **před**
+  `LIMIT` a dotaz běží pod `SET LOCAL hnsw.iterative_scan = strict_order` (pgvector ≥ 0.8), takže
+  volající dostane počet kandidátů, o který požádal, i když rejections seberou nejbližší sousedy —
+  **filtrování až po HNSW limitu by výsledek tiše zmenšilo** (list 50, ze kterého rejections uberou
+  30, musí přesto vrátit 50 dobrých kandidátů). To je návrhové rozhodnutí, ne detail implementace.
+- **Pravidlo negativního exempláře** (`vectors.IsNegativeExemplar`, sdílené pro obličeje i labely):
+  aby zamítnutí **učilo**, ne jen schovalo jeden řádek. Pro kandidáta *C* a subjekt *S*: spočti
+  vzdálenost *C* k nejbližšímu **přijatému** exempláři *S* (obličeje už přiřazené / fotky nesoucí
+  label) a k nejbližšímu **zamítnutému** (rejections pro *S*). Když je *C* blíž zamítnutému než
+  přijatému, je **negativní** → vypadne. Je to nearest-neighbour margin test: bez tréninku, bez
+  učených vah, levný (vektory už jsou v ruce) a triviálně vysvětlitelný v UI („vypadá spíš jako něco,
+  cos už odmítl"). Bez rejections **no-op, který nic nestojí**; shoda vzdáleností přežívá
+  (deterministicky, „striktně blíž zamítnutému" vypadne). **Nestavět nic těžšího** — žádné fitování
+  modelu, žádné učené váhy.
 
 ---
 

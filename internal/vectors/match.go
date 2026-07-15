@@ -81,6 +81,88 @@ func (s *Store) FindSimilarFaceCandidates(
 	return candidates, nil
 }
 
+// findSimilarUnassignedFaceCandidatesSQL ranks the face embeddings that are not yet
+// assigned to any subject (subject_uid IS NULL) by cosine distance to the query
+// vector, keeping only those within $2 and excluding any (photo_uid, face_index)
+// pair present in the exclusion arrays ($4 photo uids, $5 face indexes), then
+// returning the $3 nearest. The exclusion is a NOT EXISTS anti-join over the two
+// parallel arrays unnested into rows, so it filters in SQL — before the LIMIT — and
+// an empty exclusion set unnests to no rows (matching everything). Run under an
+// iterative HNSW scan (see withFilteredReadTx), the LIMIT is filled from rows that
+// pass the filters instead of shrinking to whatever survives the first ef_search
+// candidates.
+const findSimilarUnassignedFaceCandidatesSQL = `
+SELECT photo_uid, face_index, embedding <=> $1 AS distance, bbox,
+       subject_uid, subject_name, marker_uid
+FROM faces
+WHERE subject_uid IS NULL
+  AND (embedding <=> $1) <= $2
+  AND NOT EXISTS (
+      SELECT 1
+      FROM unnest($4::text[], $5::int[]) AS ex(photo_uid, face_index)
+      WHERE ex.photo_uid = faces.photo_uid AND ex.face_index = faces.face_index)
+ORDER BY embedding <=> $1
+LIMIT $3`
+
+// FindSimilarUnassignedFaceCandidates returns the faces whose embedding is closest
+// to vec by cosine distance, nearest first, restricted to faces not yet assigned to
+// any subject (subject_uid IS NULL) and with every face in exclude filtered out. It
+// is the search every review feature needs: "find the nearest faces nobody has named
+// yet", minus the ones already rejected for the subject being searched. limit and
+// maxDistance behave as in FindSimilarFaceCandidates. Both filters are applied in
+// SQL before the LIMIT and the query runs with pgvector's iterative index scan, so
+// the caller gets the number of candidates it asked for even when the exclusion set
+// eats into the nearest neighbours — filtering after the HNSW limit would silently
+// shrink the result set, a real bug. It returns ErrDimMismatch if vec is not FaceDim
+// long.
+func (s *Store) FindSimilarUnassignedFaceCandidates(
+	ctx context.Context, vec []float32, limit int, maxDistance float64, exclude []FaceKey,
+) ([]FaceCandidate, error) {
+	if len(vec) != FaceDim {
+		return nil, fmt.Errorf("%w: got %d, want %d", ErrDimMismatch, len(vec), FaceDim)
+	}
+	excludePhotos, excludeIndexes := splitFaceKeys(exclude)
+	var candidates []FaceCandidate
+	err := s.withFilteredReadTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, findSimilarUnassignedFaceCandidatesSQL,
+			ToHalfVec(vec), normalizeMaxDistance(maxDistance), normalizeLimit(limit),
+			excludePhotos, excludeIndexes)
+		if err != nil {
+			return fmt.Errorf("querying similar unassigned face candidates: %w", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			candidate, scanErr := scanFaceCandidate(rows)
+			if scanErr != nil {
+				return scanErr
+			}
+			candidates = append(candidates, candidate)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return candidates, nil
+}
+
+// splitFaceKeys unzips an exclusion set into the two parallel arrays the SQL
+// anti-join binds: photo uids and face indexes at matching positions. It always
+// returns non-nil slices so an empty exclusion set binds as empty arrays (which
+// unnest to no rows) rather than SQL NULL. The indexes stay []int (bound as
+// bigint[] and cast to int[] by the query's $5::int[]), avoiding a narrowing
+// conversion.
+func splitFaceKeys(keys []FaceKey) ([]string, []int) {
+	photos := make([]string, len(keys))
+	indexes := make([]int, len(keys))
+	for i, key := range keys {
+		photos[i] = key.PhotoUID
+		indexes[i] = key.FaceIndex
+	}
+	return photos, indexes
+}
+
 // scanFaceCandidate reads one row of findSimilarFaceCandidatesSQL, decoding the
 // bounding-box array into the fixed-size BBox field.
 func scanFaceCandidate(rows pgx.Rows) (FaceCandidate, error) {

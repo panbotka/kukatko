@@ -644,6 +644,13 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   face_index)` — podklad pro outlier detekci; sdílí `queryFaces`/`scanFace` se `ListFaces`)/
   `DeleteFaces`/`FindSimilarFaces`/`FindSimilarFaceCandidates` (jako `FindSimilarFaces`, ale
   vrací i cache `subject_uid`/`subject_name`/`marker_uid` + `bbox` — podklad pro návrhy identit)/
+  `FindSimilarUnassignedFaceCandidates(vec,limit,maxDistance,exclude)` (jako předchozí, ale jen
+  **nepřiřazené** obličeje `subject_uid IS NULL` a s **exclusion setem** `[]FaceKey` odfiltrovaným
+  přímo v SQL (anti-join přes `unnest` dvou paralelních polí) — podklad pro hledání osoby mezi
+  neotagovanými fotkami, recognition sweep i review hru; filtruje **před** `LIMIT` a běží pod
+  `hnsw.iterative_scan = strict_order`, takže volající dostane `limit` kandidátů, i když rejections
+  seberou nejbližší sousedy — filtrování až po HNSW limitu by výsledek tiše zmenšilo, což je reálný
+  bug)/
   `UpdateFaceMarker(photoUID,faceIndex,markerUID,subjectUID,subjectName)` (zapíše cache sloupce na
   jeden obličej, prázdný marker/subject → `NULL`; tudy se cachuje IoU match) pro 512-dim face
   embeddingy + cache sloupce
@@ -655,7 +662,13 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   nekladný `maxDistance` filtr vypne; helpery `ToHalfVec`/`FromHalfVec` (`[]float32` ↔
   `pgvector.HalfVector`) a **sdílená vektorová matematika** `Centroid`(L2-normalizovaný
   element-wise průměr)/`Normalize`/`CosineDistance` v `math.go` (jediná implementace, kterou
-  znovupoužívá i `internal/cluster` i `internal/outliers`); sentinely
+  znovupoužívá i `internal/cluster` i `internal/outliers`) a **pravidlo negativního exempláře**
+  `IsNegativeExemplar(candidate,accepted,rejected)`/`NearestDistance(v,set)` v `negative.go`
+  (nearest-neighbour margin test: kandidát bližší k některému **zamítnutému** exempláři než ke svému
+  nejbližšímu **přijatému** je „negativní" a vypadne z výsledků; bez rejections **no-op za O(1)**;
+  shoda vzdáleností = přežije (deterministické, „striktně blíž zamítnutému" vypadne); sdílená
+  scoring helper pro obličeje (ArcFace) i labely (CLIP), aby feature balíčky rejection nejen
+  neschovaly jeden řádek, ale učil něco); sentinely
   `ErrEmbeddingNotFound`/`ErrDimMismatch` (validace 768/512)/
   `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(limit)` =
   uid nearchivovaných fotek bez embeddingu (LEFT JOIN, nejnovější první, `limit<=0`=vše) pro
@@ -937,6 +950,36 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   jede přes sdílené `GET /photos` scopnuté `?album={uid}`/`?label={uid}` (viz `photos.ListParams`
   `AlbumUID`/`LabelUID` + `photoapi` `parseListParams`); mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`, sdílí jednu `organize.Store` pro alba i štítky)),
+  `internal/feedback/`
+  (DB vrstva pro **persistované rejections** (negativní feedback) — trvalé uživatelské „ne" k odhadu
+  obličej↔subjekt nebo fotka↔label; uzavírá mezeru photo-sorteru, kde se zamítnutí neuchovávalo a tentýž
+  špatný obličej se nabízel donekonečna, takže review práce nikdy neubývala; tabulky `face_rejections`/
+  `label_rejections` v migraci `0031_feedback_rejections.sql`: `face_rejections` klíčováno identitou
+  obličeje (`photo_uid`+`face_index`, jako `internal/facematch` a tabulka `faces`) + `subject_uid`,
+  `label_rejections` klíčováno `photo_uid`+`label_uid`; obojí nese `rejected_by` (FK users
+  `ON DELETE SET NULL`) a `rejected_at`, **UNIQUE natural key** (zamítnout dvakrát = no-op přes
+  `ON CONFLICT DO NOTHING`), FK photos/subjects/labels `ON DELETE CASCADE`; **`face_rejections`
+  schválně NEmá FK na `faces`** — faces se při re-detekci mažou a znovu vkládají, takže by kaskáda
+  rejection smazala (musí ho přežít); `Store` = `NewStore(pool)`: `RejectFace`/`RejectLabel`
+  (idempotentní audited insert, `rejected_by` z `entry.ActorUID`, FK violation → `ErrTargetNotFound`),
+  `UnrejectFace`/`UnrejectLabel` (vzít zpět, audited, no-op když nic není), `IsFaceRejected`/
+  `IsLabelRejected` (kontrola páru), **bulk lookupy** `FaceRejectionsForSubject(subjectUID)` (→ `[]FaceRef`
+  = `photo_uid`+`face_index` exclusion klíče) a `LabelRejectionsForLabel(labelUID)` (→ `[]photoUID`) jako
+  exclusion filtr search cest **bez N+1**; každý zápis jde přes `audit.Write` **ve stejné transakci** jako
+  mutace (sdílený `inAuditedTx`, konvence `internal/organize`); **rejection je názor — nikdy nemutuje**
+  podkladová data (nesmaže obličej, neodpojí marker, neodebere label); sentinely `ErrEmptyKey`(→400)/
+  `ErrTargetNotFound`(→404)),
+  `internal/feedbackapi/`
+  (HTTP API nad rejections — rozhraní `Store` (podmnožina `feedback.Store`) → unit-testovatelné s faky;
+  `NewAPI(Config{Store,RequireWrite})`+`RegisterRoutes` mountuje subrouter `/feedback`:
+  `POST /feedback/face-rejections` `{photo_uid,face_index,subject_uid}` (RequireWrite → 204),
+  `DELETE /feedback/face-rejections` (vzít zpět → 204), `POST /feedback/label-rejections`
+  `{photo_uid,label_uid}` (→ 204), `DELETE /feedback/label-rejections` (→ 204) — i DELETE nese tělo
+  (jako label-detach); body decode `DisallowUnknownFields` + 64 KiB, chybějící id → 400, záporný
+  `face_index` → 400; **každá mutace píše audit záznam ve stejné transakci** (aktor z
+  `auth.UserFromContext` + `audit.FromRequest`, akce `face.reject`/`face.unreject`/`label.reject`/
+  `label.unreject`, `entry.ActorUID` je zároveň `rejected_by`); `ErrTargetNotFound`→404, `ErrEmptyKey`→400,
+  jinak 500; mountuje se dalším `server.WithAPI` (`buildFeedbackAPI` v `cmd/kukatko/feedback.go`)),
   `internal/savedsearch/`
   (DB vrstva pro **per-user uložená hledání** ("smart albums") — pojmenovaná, vlastníkova soukromá
   definice filtru/hledání, kterou si uživatel znovu otevře; zrcadlí per-user vlastnictví

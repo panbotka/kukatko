@@ -31,6 +31,17 @@ const (
 // for better recall; SET LOCAL scopes it to the current transaction only.
 var efSearchStmt = "SET LOCAL hnsw.ef_search = " + strconv.Itoa(efSearch)
 
+// iterativeScanStmt enables pgvector's iterative HNSW index scan for the current
+// transaction. With it, a WHERE-filtered similarity search keeps visiting graph
+// neighbours until LIMIT rows pass the filter instead of stopping at the first
+// ef_search candidates; strict_order preserves exact distance ordering. SET LOCAL
+// scopes it to the current transaction only. It is what lets the unassigned-face
+// search still return the requested number of candidates when the subject_uid IS
+// NULL filter and the rejection exclusion set remove many of the nearest
+// neighbours — the "silent shrink" bug the design forbids. Requires pgvector >= 0.8
+// (the deployment ships 0.8.1).
+var iterativeScanStmt = "SET LOCAL hnsw.iterative_scan = strict_order"
+
 // Store is the database access layer for embeddings and faces. It owns no
 // connection; it borrows the shared pgx pool supplied at construction.
 type Store struct {
@@ -152,6 +163,25 @@ func (s *Store) queryPhotoUIDs(ctx context.Context, tmpl string, limit int) ([]s
 // SET LOCAL never leaks beyond the call. Errors from fn are returned unwrapped so
 // callers can attribute them to the query itself.
 func (s *Store) withReadTx(ctx context.Context, fn func(pgx.Tx) error) error {
+	return s.withTunedReadTx(ctx, false, fn)
+}
+
+// withFilteredReadTx runs fn inside a read-only transaction that, on top of the
+// hnsw.ef_search tuning, enables pgvector's iterative HNSW index scan. Use it for a
+// similarity search with a selective WHERE filter (for example subject_uid IS NULL
+// plus a rejection exclusion set), so the LIMIT is filled from rows that pass the
+// filter rather than silently shrinking to whatever survives the first ef_search
+// candidates.
+func (s *Store) withFilteredReadTx(ctx context.Context, fn func(pgx.Tx) error) error {
+	return s.withTunedReadTx(ctx, true, fn)
+}
+
+// withTunedReadTx opens a read-only transaction, applies the HNSW tuning (always
+// hnsw.ef_search; hnsw.iterative_scan too when iterative is true) and runs fn. The
+// transaction is always rolled back (queries make no changes), so the SET LOCAL
+// settings never leak beyond the call. Errors from fn are returned unwrapped so
+// callers can attribute them to the query itself.
+func (s *Store) withTunedReadTx(ctx context.Context, iterative bool, fn func(pgx.Tx) error) error {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return fmt.Errorf("begin read transaction: %w", err)
@@ -160,6 +190,11 @@ func (s *Store) withReadTx(ctx context.Context, fn func(pgx.Tx) error) error {
 
 	if _, err := tx.Exec(ctx, efSearchStmt); err != nil {
 		return fmt.Errorf("setting hnsw.ef_search: %w", err)
+	}
+	if iterative {
+		if _, err := tx.Exec(ctx, iterativeScanStmt); err != nil {
+			return fmt.Errorf("setting hnsw.iterative_scan: %w", err)
+		}
 	}
 	return fn(tx)
 }
