@@ -209,6 +209,36 @@ sweep:
   # capped rather than silently truncating. Set to 0 (or below) for the default.
   max_subjects: 500
 
+expand:
+  # "Expand a collection": for an album or a label, find the photos most like its
+  # members that are not in it yet, so a half-tagged library can be finished
+  # (GET /api/v1/albums/{uid}/similar and /labels/{uid}/similar, editor-only). It
+  # votes each member's embedding neighbours together — not a mean-of-the-collection
+  # vector — and never writes: adding the found photos goes through POST /photos/bulk.
+  #
+  # Default maximum cosine distance a candidate may sit from a source photo, shown in
+  # the UI as 1 - distance (0.30 → 70 % similarity). A request may send its own
+  # threshold; this is the fallback and the baseline the vote rule scales against.
+  # Set to 0 (or below) to fall back to the default.
+  max_distance: 0.30
+  # Default number of candidates returned when a request omits ?limit. Set to 0 (or
+  # below) to fall back to the default.
+  limit: 50
+  # Cap on a request's own ?limit, so one call cannot ask for an unbounded
+  # neighbourhood. Set to 0 (or below) to fall back to the default.
+  max_limit: 200
+  # How many nearest photos each source photo's kNN returns before voting merges
+  # them. Over-fetches so the later filters do not starve. Set to 0 (or below) to
+  # fall back to the default.
+  search_limit: 200
+  # Cap on how many member photos are used as query vectors. A larger album is
+  # sampled deterministically (spread across its members) and the truncation reported
+  # rather than running thousands of kNN queries. Set to 0 (or below) for the default.
+  source_cap: 500
+  # How many per-source kNN searches run at once. Set to 0 (or below) to fall back to
+  # the default.
+  concurrency: 8
+
 auth:
   # Credentials used to create the initial admin account on first run.
   bootstrap_admin_username: ""

@@ -548,6 +548,18 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   (dle jména) a výsledek označí `capped` místo tichého ořezu. Nekladná hodnota → default. Sweep
   **nikdy neautoconfirmuje** — jistota jen zužuje seznam. Env: `KUKATKO_SWEEP_CONCURRENCY`,
   `_MAX_SUBJECTS`.
+- **Expand klíče (`expand.*`, `internal/config` + `internal/expand`):** ladí **expanzi sbírky**
+  „najdi fotky podobné albu / štítku" (`GET /albums/{uid}/similar`, `GET /labels/{uid}/similar`).
+  `max_distance` (**default 0.30**, UI ukazuje jako 70 % podobnost) — výchozí max kosinová vzdálenost
+  kandidáta od zdrojové fotky, když ji request nepošle, **a** baseline pro vote rule; `limit` (**default
+  50**) — výchozí počet vrácených kandidátů; `max_limit` (**default 200**) — strop na `?limit` requestu;
+  `search_limit` (**default 200**) — kolik nejbližších fotek vrátí kNN každé zdrojové fotky před
+  hlasováním (over-fetch, aby pozdější filtry nehladověly); `source_cap` (**default 500**) — strop kolik
+  členů se použije jako dotazové vektory, obří album se **navzorkuje** (deterministicky, rovnoměrně přes
+  členy) a cap se **hlásí** (`source_capped`) místo tichého ořezu; `concurrency` (**default 8**) — kolik
+  kNN na zdroj běží naráz. Nekladná hodnota u kteréhokoli klíče spadne na default. Expanze je
+  **read-only** — přidání nalezených fotek jde přes `POST /photos/bulk`. Env:
+  `KUKATKO_EXPAND_MAX_DISTANCE`, `_LIMIT`, `_MAX_LIMIT`, `_SEARCH_LIMIT`, `_SOURCE_CAP`, `_CONCURRENCY`.
 
 ### `maps.user_agent` — restrikce mapy.com klíče na User-Agent
 
