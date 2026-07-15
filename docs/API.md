@@ -287,6 +287,27 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   **před** prvním řádkem (výpis subjektů selhal) → čisté 500 JSON; chyba **uprostřed** streamu (klient
   odpojen) už jen zaloguje (200 je odeslané). 503 bez backendu. Mountuje se `server.WithAPI`
   (`buildSweepAPI` v `cmd/kukatko/sweep.go`), sdílí `candidates.Service` s candidates endpointem.
+- **Expand-a-collection API (`/api/v1`, `internal/expandapi`, editor/admin přes `RequireWrite`):**
+  „najdi fotky podobné celému albu / štítku" — dotažení polotagované sbírky. `GET /albums/{uid}/similar`
+  a `GET /labels/{uid}/similar` s query `?threshold=&limit=` (`threshold` = max kosinová vzdálenost,
+  default `expand.max_distance` = 0.30, tj. 70 % podobnost; `limit` default `expand.limit`, strop
+  `expand.max_limit`; nečíselné / záporné → 400). Členství se řeší **nativně** (`internal/organize`),
+  **žádné volání PhotoPrism**. Odpověď `{kind,collection_uid,source_photo_count,source_photos_sampled,
+  source_photos_with_embedding,source_capped,source_cap,min_match_count,threshold,limit,result_count,
+  reason?,candidates:[{photo,distance,similarity,match_count}]}`. Algoritmus: **per-foto kNN + hlasování**
+  (ne průměr embeddingů sbírky — sbírka není jeden vizuální koncept); `match_count` = kolik zdrojových
+  fotek kandidáta vrátilo, `distance` = **minimum** přes ně. Vypadnou fotky **už ve sbírce** (to je celý
+  smysl), pod `min_match_count` (vote rule škálovaný počtem zdrojů a prahem, clamp 1..5, vrací se pro
+  UI), zamítnuté pro daný štítek (`internal/feedback`) a ty, co tripnou pravidlo negativního exempláře.
+  **Albumy nemají model zamítnutí** — rejection/negative-exemplar filtry platí jen pro štítky (asymetrie,
+  ne opomenutí). Řazení `match_count` DESC, pak `distance` ASC (shoda víc zdrojů poráží jednu silnou),
+  truncate na `limit`. Fotky **s** embeddingem se **počítají a hlásí** (box bývá offline → sbírka může
+  být napůl embedovaná a výsledky tenké). Obří album se **navzorkuje** (deterministicky, rovnoměrně přes
+  členy) na `expand.source_cap` a **cap se hlásí** (`source_capped`), ne tiše. Prázdné album/štítek nebo
+  sbírka bez embeddingů → **non-error** prázdný výsledek s `reason` `"empty_collection"` /
+  `"no_source_embeddings"`. Sbírka o **jedné** fotce degeneruje na per-foto podobnost. **Read-only** —
+  přidání nalezených fotek jde přes existující `POST /photos/bulk`. 503 bez backendu, 404 chybějící
+  album/štítek. Mountuje se `server.WithAPI` (`buildExpandAPI` v `cmd/kukatko/expand.go`).
 - **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
   `{subjects:[{...subject, marker_count}]}` (řazení dle jména, počty non-invalid markerů);
   `POST /subjects` (RequireWrite) → 201 vytvoří subjekt z `{name,type,favorite,private,notes,

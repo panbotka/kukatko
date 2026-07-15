@@ -79,6 +79,7 @@ type Config struct {
 	Cluster    ClusterConfig    `mapstructure:"cluster"`
 	Candidates CandidatesConfig `mapstructure:"candidates"`
 	Sweep      SweepConfig      `mapstructure:"sweep"`
+	Expand     ExpandConfig     `mapstructure:"expand"`
 	Auth       AuthConfig       `mapstructure:"auth"`
 	Maps       MapsConfig       `mapstructure:"maps"`
 	Backup     BackupConfig     `mapstructure:"backup"`
@@ -393,6 +394,36 @@ type SweepConfig struct {
 	MaxSubjects int `mapstructure:"max_subjects"`
 }
 
+// ExpandConfig tunes the "expand a collection" search: for an album or a label it
+// votes each member photo's CLIP-embedding neighbours together and surfaces the
+// photos several members agree on that are not in the collection yet, so a
+// half-tagged library can be finished.
+type ExpandConfig struct {
+	// MaxDistance is the default maximum cosine distance a candidate may sit from a
+	// source photo (the UI shows this as 1 - distance, so 0.30 reads as 70 %
+	// similarity). It is the fallback when a request omits its own threshold, and the
+	// baseline the vote rule scales against. A non-positive value falls back to the
+	// default.
+	MaxDistance float64 `mapstructure:"max_distance"`
+	// Limit is the default number of candidates returned when a request omits its own
+	// limit. A non-positive value falls back to the default.
+	Limit int `mapstructure:"limit"`
+	// MaxLimit caps a request's own limit so one call cannot ask for an unbounded
+	// neighbourhood. A non-positive value falls back to the default.
+	MaxLimit int `mapstructure:"max_limit"`
+	// SearchLimit is how many nearest photos each source photo's kNN returns before
+	// voting merges them, over-fetching so the later filters do not starve. A
+	// non-positive value falls back to the default.
+	SearchLimit int `mapstructure:"search_limit"`
+	// SourceCap bounds how many member photos are used as query vectors, so a
+	// thousands-strong album is sampled (and the truncation reported) rather than
+	// queried in full. A non-positive value falls back to the default.
+	SourceCap int `mapstructure:"source_cap"`
+	// Concurrency bounds how many per-source kNN searches run at once. A non-positive
+	// value falls back to the default.
+	Concurrency int `mapstructure:"concurrency"`
+}
+
 // AuthConfig holds the credentials used to bootstrap the initial admin account
 // plus the session and login rate-limiting policy.
 type AuthConfig struct {
@@ -650,6 +681,7 @@ func setDefaults(v *viper.Viper) {
 
 	setCandidatesDefaults(v)
 	setSweepDefaults(v)
+	setExpandDefaults(v)
 
 	v.SetDefault("auth.bootstrap_admin_username", "")
 	v.SetDefault("auth.bootstrap_admin_password", "")
@@ -687,6 +719,20 @@ func setCandidatesDefaults(v *viper.Viper) {
 func setSweepDefaults(v *viper.Viper) {
 	v.SetDefault("sweep.concurrency", 4)
 	v.SetDefault("sweep.max_subjects", 500)
+}
+
+// setExpandDefaults registers the "expand a collection" search defaults: the
+// fallback cosine distance (0.30, shown as 70 % similarity), the default and
+// maximum result counts, the per-source kNN over-fetch, the source-set cap that
+// keeps a huge album from running thousands of kNN queries, and the concurrency
+// bound on per-source searches.
+func setExpandDefaults(v *viper.Viper) {
+	v.SetDefault("expand.max_distance", 0.30)
+	v.SetDefault("expand.limit", 50)
+	v.SetDefault("expand.max_limit", 200)
+	v.SetDefault("expand.search_limit", 200)
+	v.SetDefault("expand.source_cap", 500)
+	v.SetDefault("expand.concurrency", 8)
 }
 
 func setMapsDefaults(v *viper.Viper) {

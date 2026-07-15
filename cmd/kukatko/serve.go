@@ -302,6 +302,7 @@ func buildServices(
 		server.WithAPI(buildBulkAPI(cfg, db, authAPI).RegisterRoutes),
 		server.WithAPI(buildCandidatesAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildSweepAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
+		server.WithAPI(buildExpandAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes),
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),

@@ -66,6 +66,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/embedding` — HTTP client of the inference sidecar on the box; offline-aware typed errors
 - `internal/embedjob` — worker handler `image_embed` + backfill
 - `internal/exif` — EXIF/GPS extraction (exiftool, pure-Go fallback)
+- `internal/expand` — "expand a collection": photos similar to an album/label (per-photo kNN + voting, exclude members, vote rule, label rejections/negative-exemplar); read-only, **never writes**
+- `internal/expandapi` — `GET /albums/{uid}/similar`, `GET /labels/{uid}/similar` (RequireWrite)
 - `internal/facejob` — worker handler `face_detect` + backfill
 - `internal/facematch` — face↔marker IoU matching, identity suggestions, assignment state machine
 - `internal/feedback` — persisted rejections (negative feedback): "not this person" / "not this label", idempotent, audited, never mutates; bulk exclusion lookups

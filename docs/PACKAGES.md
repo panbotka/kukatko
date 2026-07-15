@@ -902,6 +902,40 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   **flushuje** po každém (`http.Flusher`, propaguje se přes `internal/metrics` `statusRecorder.Flush`);
   chyba před prvním řádkem → 500 JSON, mid-stream → jen log; 503 bez backendu; mountuje se v `serve`
   (`buildSweepAPI` v `cmd/kukatko/sweep.go`, sdílí `candidates.Service` přes `buildCandidatesService`)),
+  `internal/expand/`
+  (**„najdi fotky podobné albu / štítku"** — dotažení polotagované sbírky, protipól per-foto
+  `GET /photos/{uid}/similar`: pro album nebo štítek najde fotky podobné jeho členům, které v něm
+  ještě nejsou; vše za rozhraními `VectorStore` (`vectors.Store`), `OrganizeStore` (`organize.Store`),
+  `FeedbackStore` (`feedback.Store`) a `PhotoStore` (`photos.Store`) → unit-testovatelné s faky bez DB;
+  `Service` = `New(Config{Vectors,Organize,Feedback,Photos,Media,MaxDistance,Limit,MaxLimit,SearchLimit,
+  SourceCap,Concurrency})`, tunables default přes `Default*` konstanty (0.30/50/200/200/500/8), nil
+  store→panika, nil `Media` je OK. **`Album(ctx,uid,Request)`** / **`Label(ctx,uid,Request)`** sdílí
+  jedno jádro `find`, liší se jen resolucí zdrojové množiny (validace přes `GetAlbumByUID`/
+  `GetLabelByUID` → `organize.ErrAlbumNotFound`/`ErrLabelNotFound`; členství přes `ListPhotoUIDs`/
+  `ListPhotoUIDsByLabel` — **nativně, žádný PhotoPrism**; štítek navíc `LabelRejectionsForLabel`).
+  Jádro: **navzorkuje** zdroje na `SourceCap` (`sampleSource`, deterministický rovnoměrný stride, hlásí
+  `source_capped`); načte embeddingy vzorku (`GetEmbedding`, `ErrEmbeddingNotFound` se **přeskočí a
+  spočítá**, ne error — box bývá offline); pro každý zdroj `FindSimilar` s **omezenou konkurencí**
+  (`errgroup.SetLimit`); **sloučí s hlasováním** (`match_count` = počet zdrojů, `distance` = **minimum**);
+  **vyloučí členy sbírky** (celý smysl); **vote rule** `min_match_count` (`computeMinMatchCount`,
+  `√sourceCount * threshold/base / 2`, **clamp 1..5**, vrací se); u štítků vypadnou **zamítnuté** UID a
+  **pravidlo negativního exempláře** (`vectors.IsNegativeExemplar` — **no-op bez rejections**; albumy
+  nemají model zamítnutí → asymetrie); hydratace (`ListByUIDs` + `mediaurl.DecorateOne`, non-primary
+  stack member se přeskočí); řazení **`match_count` DESC pak `distance` ASC**, ořez na `Limit`. `Result` =
+  `{kind,collection_uid,source_photo_count,source_photos_sampled,source_photos_with_embedding,
+  source_capped,source_cap,min_match_count,threshold,limit,result_count,reason?,candidates:[Candidate{
+  photo,distance,similarity,match_count}]}`; `similarity` = `1 - distance`. **Edge cases**: prázdná
+  sbírka → `reason:"empty_collection"`, sbírka bez embeddingů → `reason:"no_source_embeddings"` (obojí
+  non-error prázdný `Candidates:[]`); jedna fotka degeneruje na per-foto podobnost. **Read-only** —
+  přidání jde přes `POST /photos/bulk`. Unit testy s faky + integrační test nad reálnými embeddingy+DB),
+  `internal/expandapi/`
+  (editor/admin HTTP API nad expanzí sbírky: `Service` rozhraní (splňuje `*expand.Service`) se dvěma
+  metodami `Album`/`Label`, `NewAPI(Config{Service,RequireWrite})` + `RegisterRoutes` mountuje
+  `GET /albums/{uid}/similar` a `GET /labels/{uid}/similar` za `RequireWrite`; oba sdílí `respond` +
+  `finder`, liší se jen not-found sentinelem; `parseRequest` čte query `?threshold=&limit=` (prázdné →
+  default, nečíselné / záporné → 400); 503 bez backendu, 404 chybějící album/štítek
+  (`organize.ErrAlbumNotFound`/`ErrLabelNotFound`); mountuje se v `serve` (`buildExpandAPI` v
+  `cmd/kukatko/expand.go`, bere `mediaStore` pro stamping URL)),
   `internal/peopleapi/`
   (read/curace HTTP API nad subjekty (osoby/zvířata/jiné) — podklad People UI: rozhraní
   `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubjectAudited`/
