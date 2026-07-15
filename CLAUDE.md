@@ -66,6 +66,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/exif` — EXIF/GPS extraction (exiftool, pure-Go fallback)
 - `internal/facejob` — worker handler `face_detect` + backfill
 - `internal/facematch` — face↔marker IoU matching, identity suggestions, assignment state machine
+- `internal/feedback` — persisted rejections (negative feedback): "not this person" / "not this label", idempotent, audited, never mutates; bulk exclusion lookups
+- `internal/feedbackapi` — `POST`/`DELETE /feedback/{face,label}-rejections` (RequireWrite)
 - `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity)
 - `internal/imgconvert` — HEIC/RAW/video → decodable JPEG (shell-out)
 - `internal/importapi` — admin-only import triggers + run history

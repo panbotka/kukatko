@@ -142,6 +142,17 @@ type FaceCandidate struct {
 	MarkerUID *string
 }
 
+// FaceKey identifies a face by the (photo, per-photo slot) identity Kukátko uses
+// throughout — the same key internal/feedback records a rejection against. It is
+// the element of the exclusion set FindSimilarUnassignedFaceCandidates filters out
+// in SQL, so a search can drop already-rejected faces without an N+1.
+type FaceKey struct {
+	// PhotoUID is the owning photo's uid.
+	PhotoUID string
+	// FaceIndex is the per-photo face slot (faces.face_index).
+	FaceIndex int
+}
+
 // ToHalfVec wraps a []float32 as a pgvector.HalfVector so it can be bound as a
 // halfvec query parameter or column value.
 func ToHalfVec(vec []float32) pgvector.HalfVector {

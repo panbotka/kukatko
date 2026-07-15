@@ -306,6 +306,21 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   Každá mutace (create/update/delete alba i štítku, add/remove fotek, attach/detach) píše audit záznam
   (`album.*`/`label.*`) **ve stejné transakci** jako změna — odpovědi se nemění. Mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
+- **Feedback / Rejections API (`/api/v1`, `internal/feedbackapi`):** persistované negativní feedback —
+  uživatelské „ne" k odhadu obličej↔subjekt nebo fotka↔label, a jeho vzetí zpět. **Zamítnutí je
+  názor — nikdy nemutuje** podkladová data (neodpojí marker, neodebere label). Čtyři endpointy, všechny
+  **RequireWrite** (editor/admin, viewer 403): `POST /feedback/face-rejections`
+  `{photo_uid,face_index,subject_uid}` → 204 (zamítne „tento obličej NENÍ tato osoba"),
+  `DELETE /feedback/face-rejections` (stejné tělo) → 204 (vezme zpět); `POST /feedback/label-rejections`
+  `{photo_uid,label_uid}` → 204 (zamítne „tato fotka NEMÁ mít tento label"),
+  `DELETE /feedback/label-rejections` (stejné tělo) → 204 (vezme zpět) — i DELETE nese tělo (jako
+  label-detach). **Idempotentní**: dvojí POST i DELETE něčeho, co nebylo zamítnuto, vrací 204.
+  Body `DisallowUnknownFields` + 64 KiB; chybějící `photo_uid`/`subject_uid`/`label_uid` nebo záporný
+  `face_index` → 400; neexistující fotka/subjekt/label → 404 (`ErrTargetNotFound`). Každá mutace píše
+  audit záznam **ve stejné transakci** jako zamítnutí (akce `face.reject`/`face.unreject`/`label.reject`/
+  `label.unreject`; aktor = `rejected_by`). Mountuje se dalším `server.WithAPI` (`buildFeedbackAPI` v
+  `cmd/kukatko/feedback.go`). Konzumenti (hledání osoby mezi neotagovanými, recognition sweep, review hra)
+  přijdou v dalších taskách.
 - **Places API (`/api/v1`, `internal/placesapi`, přihlášený přes `RequireAuth`):** procházení
   reverse-geokódované place hierarchie + scoping výpisu fotek na lokalitu. `GET /places` →
   `{places:[{country, count, cities:[{city, count}]}]}` — počty agregované přes **nearchivované**
