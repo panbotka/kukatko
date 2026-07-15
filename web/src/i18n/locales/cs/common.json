@@ -32,6 +32,7 @@
     "upload": "Nahrát",
     "import": "Import",
     "maintenance": "Údržba",
+    "faceSearch": "Najít osobu",
     "duplicates": "Duplikáty",
     "account": "Můj účet",
     "logout": "Odhlásit se",
@@ -51,6 +52,7 @@
       "search": "Hledat mezi fotkami",
       "upload": "Nahrát nové fotky",
       "tools": "Zobrazit nástroje",
+      "faceSearch": "Najít osobu mezi neotagovanými fotkami",
       "duplicates": "Zkontrolovat duplikáty",
       "trash": "Zobrazit koš",
       "admin": "Zobrazit správu",
@@ -515,7 +517,8 @@
     "helpHint": "Kdykoli stiskni ? pro zobrazení této nápovědy.",
     "groups": {
       "grid": "Mřížka fotek",
-      "detail": "Detail fotky"
+      "detail": "Detail fotky",
+      "faceSearch": "Hledání osoby"
     },
     "grid": {
       "move": "Přesun výběru mezi fotkami",
@@ -529,6 +532,11 @@
       "favorite": "Přepnout oblíbenou",
       "back": "Zrušit výběr obličeje, poté zpět na seznam",
       "faces": "Zobrazit / skrýt obličeje"
+    },
+    "faceSearch": {
+      "move": "Přesun zaměření mezi kartami",
+      "confirm": "Potvrdit zaměřenou kartu",
+      "reject": "Zamítnout zaměřenou kartu"
     }
   },
   "map": {
@@ -643,6 +651,100 @@
     "nameLabel": "Pojmenuj tuto skupinu",
     "namePlaceholder": "Nové nebo existující jméno…",
     "name": "Pojmenovat skupinu"
+  },
+  "faceSearch": {
+    "title": "Najít osobu",
+    "subtitle": "Najdi tuhle osobu na fotkách, kde ještě není označená, a rychle potvrzuj nebo zamítej.",
+    "loading": "Prohledávám fotky… může to chvíli trvat.",
+    "tabEmpty": "V téhle záložce nic není.",
+    "idle": {
+      "title": "Vyber osobu a spusť hledání",
+      "hint": "Vyber osobu nahoře a klikni na Hledat — najdeme obličeje, které se jí podobají, ale nejsou pojmenované."
+    },
+    "noFaces": {
+      "title": "Tahle osoba zatím nemá obličeje",
+      "hint": "Nejdřív u téhle osoby pojmenuj pár obličejů, ať je podle čeho hledat."
+    },
+    "noEmbeddings": {
+      "title": "Chybí otisky obličejů",
+      "hint": "Obličeje téhle osoby zatím nemají spočítaný otisk (box byl offline). Až doběhne zpracování, hledání se rozjede."
+    },
+    "zero": {
+      "title": "Žádné nové obličeje",
+      "hint": "Nic dalšího se nenašlo. Zkus snížit práh shody — hledání se tím rozšíří."
+    },
+    "form": {
+      "subjectHeading": "Osoba",
+      "subjectLabel": "Vyber osobu k hledání",
+      "subjectHint_one": "{{count}} fotka",
+      "subjectHint_few": "{{count}} fotky",
+      "subjectHint_many": "{{count}} fotky",
+      "subjectHint_other": "{{count}} fotek",
+      "subjectNone": "Vyber osobu, kterou chceš hledat.",
+      "subjectSelected": "Hledá se: {{name}}",
+      "thresholdLabel": "Práh shody",
+      "thresholdValue": "{{percent}} %",
+      "thresholdMore": "Více výsledků",
+      "thresholdBetter": "Lepší shody",
+      "limitLabel": "Limit",
+      "limitHint": "0 = bez limitu",
+      "search": "Hledat"
+    },
+    "tabs": {
+      "label": "Filtr výsledků",
+      "all": "Vše",
+      "new": "Nové",
+      "assign": "Přiřadit",
+      "done": "Hotovo"
+    },
+    "legend": {
+      "label": "Význam barev",
+      "new": "Nový obličej",
+      "assign": "Přiřadit osobu",
+      "done": "Hotovo"
+    },
+    "stats": {
+      "sourcePhotos": "Zdrojové fotky",
+      "sourceFaces": "Zdrojové obličeje",
+      "matches": "Nalezené shody",
+      "alreadyDone": "Už hotovo",
+      "minMatch": "Min. shod",
+      "minMatchExplain_one": "Fotka musí odpovídat aspoň {{count}} zdrojové fotce.",
+      "minMatchExplain_few": "Fotka musí odpovídat aspoň {{count}} zdrojovým fotkám.",
+      "minMatchExplain_many": "Fotka musí odpovídat aspoň {{count}} zdrojovým fotkám.",
+      "minMatchExplain_other": "Fotka musí odpovídat aspoň {{count}} zdrojovým fotkám.",
+      "noEmbeddingNote_one": "{{count}} obličej téhle osoby nemá otisk, hledá se bez něj.",
+      "noEmbeddingNote_few": "{{count}} obličeje téhle osoby nemají otisk, hledá se bez nich.",
+      "noEmbeddingNote_many": "{{count}} obličejů téhle osoby nemá otisk, hledá se bez nich.",
+      "noEmbeddingNote_other": "{{count}} obličejů téhle osoby nemá otisk, hledá se bez nich."
+    },
+    "card": {
+      "photoAlt": "Fotka s kandidátským obličejem",
+      "match": "{{percent}} % shoda",
+      "matchTitle": "Jak moc se obličej podobá téhle osobě",
+      "votes_one": "{{count}} hlas",
+      "votes_few": "{{count}} hlasy",
+      "votes_many": "{{count}} hlasu",
+      "votes_other": "{{count}} hlasů",
+      "votesTitle": "Kolik zdrojových fotek pro tenhle obličej hlasovalo",
+      "confirm": "Potvrdit — je to tahle osoba",
+      "reject": "Zamítnout — není to tahle osoba",
+      "doneLabel": "Hotovo",
+      "failed": "Nepovedlo se"
+    },
+    "confirmAll": {
+      "idle": "Potvrdit vše ({{n}})",
+      "progress": "Potvrzuji {{current}} / {{total}} — zrušit"
+    },
+    "error": {
+      "search": "Hledání se nepodařilo. Zkus to prosím znovu.",
+      "confirm": "Potvrzení se nepodařilo. Zkus to prosím znovu.",
+      "reject": "Zamítnutí se nepodařilo. Zkus to prosím znovu.",
+      "confirmAll_one": "{{count}} potvrzení se nepodařilo.",
+      "confirmAll_few": "{{count}} potvrzení se nepodařila.",
+      "confirmAll_many": "{{count}} potvrzení se nepodařilo.",
+      "confirmAll_other": "{{count}} potvrzení se nepodařilo."
+    }
   },
   "faces": {
     "title": "Obličeje",

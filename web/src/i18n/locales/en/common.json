@@ -32,6 +32,7 @@
     "upload": "Upload",
     "import": "Import",
     "maintenance": "Maintenance",
+    "faceSearch": "Find a person",
     "duplicates": "Duplicates",
     "account": "My account",
     "logout": "Sign out",
@@ -51,6 +52,7 @@
       "search": "Search the photos",
       "upload": "Upload new photos",
       "tools": "Show the tools",
+      "faceSearch": "Find a person among untagged photos",
       "duplicates": "Review the duplicates",
       "trash": "Show the trash",
       "admin": "Show the administration",
@@ -547,7 +549,8 @@
     "helpHint": "Press ? anytime to open this help.",
     "groups": {
       "grid": "Photo grid",
-      "detail": "Photo detail"
+      "detail": "Photo detail",
+      "faceSearch": "Person search"
     },
     "grid": {
       "move": "Move focus between photos",
@@ -561,6 +564,11 @@
       "favorite": "Toggle favorite",
       "back": "Clear the face selection, then back to the list",
       "faces": "Show / hide faces"
+    },
+    "faceSearch": {
+      "move": "Move focus between cards",
+      "confirm": "Confirm the focused card",
+      "reject": "Reject the focused card"
     }
   },
   "people": {
@@ -627,6 +635,90 @@
     "nameLabel": "Name this group",
     "namePlaceholder": "New or existing name…",
     "name": "Name group"
+  },
+  "faceSearch": {
+    "title": "Find a person",
+    "subtitle": "Find this person in photos where they aren't tagged yet, and confirm or reject fast.",
+    "loading": "Searching photos… this can take a moment.",
+    "tabEmpty": "Nothing in this tab.",
+    "idle": {
+      "title": "Pick a person and search",
+      "hint": "Choose a person above and hit Search — we'll find faces that look like them but aren't named yet."
+    },
+    "noFaces": {
+      "title": "This person has no faces yet",
+      "hint": "Name a few faces for this person first, so there's something to search from."
+    },
+    "noEmbeddings": {
+      "title": "No face embeddings yet",
+      "hint": "This person's faces have no embedding yet (the box was offline). Search will work once processing catches up."
+    },
+    "zero": {
+      "title": "No new faces",
+      "hint": "Nothing else turned up. Try lowering the match threshold to widen the search."
+    },
+    "form": {
+      "subjectHeading": "Person",
+      "subjectLabel": "Pick a person to search for",
+      "subjectHint_one": "{{count}} photo",
+      "subjectHint_other": "{{count}} photos",
+      "subjectNone": "Pick the person you want to find.",
+      "subjectSelected": "Searching for: {{name}}",
+      "thresholdLabel": "Match threshold",
+      "thresholdValue": "{{percent}}%",
+      "thresholdMore": "More results",
+      "thresholdBetter": "Better matches",
+      "limitLabel": "Limit",
+      "limitHint": "0 = no limit",
+      "search": "Search"
+    },
+    "tabs": {
+      "label": "Filter results",
+      "all": "All",
+      "new": "New",
+      "assign": "Assign",
+      "done": "Done"
+    },
+    "legend": {
+      "label": "Colour key",
+      "new": "New face",
+      "assign": "Assign person",
+      "done": "Done"
+    },
+    "stats": {
+      "sourcePhotos": "Source photos",
+      "sourceFaces": "Source faces",
+      "matches": "Matches found",
+      "alreadyDone": "Already done",
+      "minMatch": "Min. matches",
+      "minMatchExplain_one": "A photo must match at least {{count}} source photo.",
+      "minMatchExplain_other": "A photo must match at least {{count}} source photos.",
+      "noEmbeddingNote_one": "{{count}} of this person's faces has no embedding; searching without it.",
+      "noEmbeddingNote_other": "{{count}} of this person's faces have no embedding; searching without them."
+    },
+    "card": {
+      "photoAlt": "Photo with the candidate face",
+      "match": "{{percent}}% match",
+      "matchTitle": "How closely the face resembles this person",
+      "votes_one": "{{count}} vote",
+      "votes_other": "{{count}} votes",
+      "votesTitle": "How many source photos voted for this face",
+      "confirm": "Confirm — it's this person",
+      "reject": "Reject — not this person",
+      "doneLabel": "Done",
+      "failed": "Failed"
+    },
+    "confirmAll": {
+      "idle": "Confirm all ({{n}})",
+      "progress": "Confirming {{current}} / {{total}} — cancel"
+    },
+    "error": {
+      "search": "The search failed. Please try again.",
+      "confirm": "Couldn't confirm. Please try again.",
+      "reject": "Couldn't reject. Please try again.",
+      "confirmAll_one": "{{count}} confirmation failed.",
+      "confirmAll_other": "{{count}} confirmations failed."
+    }
   },
   "faces": {
     "title": "Faces",

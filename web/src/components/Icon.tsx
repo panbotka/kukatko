@@ -36,6 +36,7 @@ export type IconName =
   | 'map'
   | 'pencil'
   | 'people'
+  | 'person-bounding-box'
   | 'person-circle'
   | 'person-gear'
   | 'plus-lg'

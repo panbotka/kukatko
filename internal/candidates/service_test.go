@@ -366,13 +366,23 @@ func TestFind_actionClassification(t *testing.T) {
 		t.Fatalf("Find: %v", err)
 	}
 	byPhoto := map[string]Action{}
+	markerByPhoto := map[string]string{}
 	for _, c := range res.Candidates {
 		byPhoto[c.Photo.UID] = c.Action
+		markerByPhoto[c.Photo.UID] = c.MarkerUID
 	}
 	want := map[string]Action{"none": ActionCreateMarker, "other": ActionAssignPerson, "mine": ActionAlreadyDone}
 	for uid, wantAction := range want {
 		if byPhoto[uid] != wantAction {
 			t.Errorf("action for %s = %q, want %q", uid, byPhoto[uid], wantAction)
+		}
+	}
+	// The overlapping marker is surfaced so the UI can route the assign call; an
+	// unmarked face (create_marker) carries no marker.
+	wantMarker := map[string]string{"none": "", "other": "mk_other", "mine": "mk_mine"}
+	for uid, want := range wantMarker {
+		if markerByPhoto[uid] != want {
+			t.Errorf("marker_uid for %s = %q, want %q", uid, markerByPhoto[uid], want)
 		}
 	}
 	if res.Counts != (Counts{CreateMarker: 1, AssignPerson: 1, AlreadyDone: 1}) {
