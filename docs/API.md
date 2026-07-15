@@ -245,6 +245,24 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `POST /photos/{uid}/faces/assign` (`unassign_person`), tahle vrstva nemutuje; 503 bez backendu,
   404 chybějící subjekt. Mountuje se `server.WithAPI` (`buildOutlierAPI` v
   `cmd/kukatko/outliers.go`).
+- **Candidates API (`/api/v1`, `internal/candidatesapi`, editor/admin přes `RequireWrite`):**
+  „najdi osobu mezi neotagovanými fotkami". `POST /subjects/{uid}/candidates` s **volitelným** tělem
+  `{threshold?,limit?}` (`threshold` = max kosinová vzdálenost, default `candidates.max_distance`;
+  `limit` 0 = vše; `DisallowUnknownFields` + 64 KiB, záporné hodnoty → 400) →
+  `{subject_uid,source_photo_count,source_face_count,faces_without_embedding,min_match_count,threshold,
+  reason?,counts:{create_marker,assign_person,already_done},candidates:[{photo,face_index,
+  bbox:{relative:[x,y,w,h],pixel:[x,y,w,h]},distance,match_count,action}]}`. Pro subjekt najde
+  **nepřiřazené** obličeje, které se podobají jeho vlastním otagovaným (kNN per exemplár nad
+  `subject_uid IS NULL` + hlasování; `min_match_count` je vote rule škálovaný počtem exemplárů a
+  prahem, clamp 1..5, vrací se, aby UI filtr vysvětlilo). Vypadnou už zamítnuté obličeje
+  (`internal/feedback`) i ty, co tripnou pravidlo negativního exempláře, a moc malé obličeje
+  (relativní `faces.min_face_size` + absolutní `candidates.min_face_px`). `action` říká, co
+  potvrzení udělá (`create_marker`/`assign_person`/`already_done`) — **potvrzuje se přes existující**
+  `POST /photos/{uid}/faces/assign`, tahle vrstva **nemutuje**. `bbox` je relativní 0..1 **i** pixely
+  (ctí EXIF orientaci). Prázdný **non-error** výsledek s `reason` `"no_faces"` (subjekt bez obličejů)
+  nebo `"no_embeddings"` (otagovaný, ale obličeje bez embeddingu — box byl offline); box offline
+  jinak nevadí (čte vektory už v DB). 503 bez backendu, 404 chybějící subjekt. Mountuje se
+  `server.WithAPI` (`buildCandidatesAPI` v `cmd/kukatko/candidates.go`).
 - **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
   `{subjects:[{...subject, marker_count}]}` (řazení dle jména, počty non-invalid markerů);
   `POST /subjects` (RequireWrite) → 201 vytvoří subjekt z `{name,type,favorite,private,notes,

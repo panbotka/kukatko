@@ -651,6 +651,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `hnsw.iterative_scan = strict_order`, takže volající dostane `limit` kandidátů, i když rejections
   seberou nejbližší sousedy — filtrování až po HNSW limitu by výsledek tiše zmenšilo, což je reálný
   bug)/
+  `FacesByKeys(keys)` (dávkové načtení řádků `faces` dle `[]FaceKey` `(photo_uid,face_index)` jedním
+  dotazem přes `JOIN unnest` — **včetně embeddingů**; klíče bez řádku (obličej smazaný re-detekcí)
+  ve výsledku chybí, pořadí nedefinované, prázdný vstup → `nil`; podklad pro `internal/candidates`,
+  kde pravidlo negativního exempláře potřebuje embeddingy filtrovaného setu kandidátů bez N+1)/
   `UpdateFaceMarker(photoUID,faceIndex,markerUID,subjectUID,subjectName)` (zapíše cache sloupce na
   jeden obličej, prázdný marker/subject → `NULL`; tudy se cachuje IoU match) pro 512-dim face
   embeddingy + cache sloupce
@@ -840,7 +844,43 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (editor/admin HTTP API nad outlier detekcí: `Service` rozhraní (splňuje ho `outliers.Service`),
   `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mountuje `GET /subjects/{uid}/outliers`
   za `RequireWrite`; 503 bez backendu, 404 chybějící subjekt; mountuje se v `serve`
-  (`buildOutlierAPI` v `cmd/kukatko/outliers.go`)), `internal/peopleapi/`
+  (`buildOutlierAPI` v `cmd/kukatko/outliers.go`)), `internal/candidates/`
+  (**„najdi osobu mezi neotagovanými fotkami"**: pro pojmenovaný subjekt najde **nepřiřazené**
+  obličeje, které se mu podobají — protipól k `GET /photos?person=`, doplňuje i clustering, který
+  osamocený nepojmenovaný obličej dobře známé osoby neukáže; vše za rozhraními `FaceStore`
+  (`vectors.Store`), `PeopleStore` (`people.Store`), `FeedbackStore` (`feedback.Store`) a `PhotoStore`
+  (`photos.Store`) → unit-testovatelné s faky bez DB; `Service` = `New(Config{Faces,People,Feedback,
+  Photos,Media,MaxDistance,SearchLimit,MinFacePx,Concurrency,MinFaceRel})`, tunables default přes
+  `Default*` konstanty (0.5/1000/32/8). **`Find(ctx,subjectUID,Request{Threshold,Limit})`**: ověří
+  subjekt (`people.ErrSubjectNotFound`); načte `ListFacesBySubject` a **deduplikuje exempláře na
+  jeden na zdrojovou fotku** (nejvyšší `det_score`, tie nejnižší `face_index`), takže fotka s třemi
+  obličeji té osoby nehlasuje třikrát; pro každý exemplár spustí `FindSimilarUnassignedFaceCandidates`
+  s **omezenou konkurencí** (`errgroup.SetLimit`) a exclusion setem už zamítnutých obličejů
+  (`feedback.FaceRejectionsForSubject`); **sloučí kandidáty s hlasováním** (`match_count` = počet
+  různých exemplárů, `distance` = **minimum** přes hlasy); **vote rule** `min_match_count`
+  (`computeMinMatchCount`, škáluje `√exemplarCount * threshold/base / 2`, **clamp 1..5** a ≤ počet
+  exemplárů — jednoobličejový subjekt vždy 1; vrací se v odpovědi, aby UI filtr vysvětlilo); pak
+  **relativní size floor** (`bbox[2] ≥ MinFaceRel`, sdílí `faces.min_face_size`); přeživší se
+  hydratují (`photos.ListByUIDs` + `mediaurl.Decorate`), aplikuje se **absolutní pixel floor**
+  (`MinFacePx`) a **pravidlo negativního exempláře** (`vectors.IsNegativeExemplar` nad embeddingy z
+  `FacesByKeys` — **no-op bez rejections**, embeddingy se pak vůbec nenačítají); nakonec **klasifikace
+  akce** (`create_marker` bez markeru / `assign_person` marker bez (jiného) subjektu / `already_done`
+  marker už míří na tento subjekt = stale cache, přes `GetMarkerByUID` s cache), řazení dle vzdálenosti
+  a ořez na `Limit` (0 = vše). `Result` = `{subject_uid,source_photo_count,source_face_count,
+  faces_without_embedding,min_match_count,threshold,reason?,counts{create_marker,assign_person,
+  already_done},candidates:[Candidate{photo,face_index,bbox{relative,pixel},distance,match_count,
+  action}]}`; `bbox` nese **relativní 0..1 i pixely** ctící EXIF orientaci (`displayDims` swapuje
+  W/H pro orientace 5–8). **Edge cases**: subjekt bez obličejů → prázdný **non-error** result s
+  `reason:"no_faces"`; subjekt s markery ale bez embeddovaných obličejů → `reason:"no_embeddings"` +
+  `faces_without_embedding`; box offline nevadí — čtou se vektory už v Postgresu. **Read-only** —
+  potvrzení jde přes existující assign path; sweep přes všechny osoby může volat `Find` per subjekt
+  bez reimplementace), `internal/candidatesapi/`
+  (editor/admin HTTP API nad hledáním kandidátů: `Service` rozhraní (splňuje ho `candidates.Service`),
+  `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mountuje `POST /subjects/{uid}/candidates`
+  za `RequireWrite`; tělo `{threshold?,limit?}` je **volitelné** (prázdné → defaulty),
+  `DisallowUnknownFields` + 64 KiB, záporný `threshold`/`limit` → 400; 503 bez backendu, 404 chybějící
+  subjekt (`people.ErrSubjectNotFound`); mountuje se v `serve` (`buildCandidatesAPI` v
+  `cmd/kukatko/candidates.go`, bere `mediaStore` pro stamping URL)), `internal/peopleapi/`
   (read/curace HTTP API nad subjekty (osoby/zvířata/jiné) — podklad People UI: rozhraní
   `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubjectAudited`/
   `UpdateSubjectAudited`/`DeleteSubjectAudited`/`ListPhotoUIDsBySubject` — každá mutace bere `audit.Entry`

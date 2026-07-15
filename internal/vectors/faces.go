@@ -40,6 +40,18 @@ FROM faces
 WHERE subject_uid = $1
 ORDER BY photo_uid, face_index`
 
+// facesByKeysSQL selects the face rows identified by the two parallel arrays of
+// photo uids and face indexes, joined via unnest so a whole batch of keys is
+// fetched in one round-trip. Keys with no matching row simply produce no output
+// row, so the result may be shorter than the input and its order is unspecified.
+const facesByKeysSQL = `
+SELECT f.id, f.photo_uid, f.face_index, f.embedding, f.bbox, f.det_score, f.model, f.dim,
+       f.created_at, f.marker_uid, f.subject_uid, f.subject_name,
+       f.photo_width, f.photo_height, f.orientation
+FROM faces f
+JOIN unnest($1::text[], $2::int[]) AS k(photo_uid, face_index)
+  ON k.photo_uid = f.photo_uid AND k.face_index = f.face_index`
+
 // SaveFaces replaces all faces of photoUID with the supplied set, atomically:
 // existing rows are deleted and the new ones inserted in one transaction, so
 // re-running face detection for a photo is idempotent. Each vector is validated
@@ -190,6 +202,39 @@ func (s *Store) ListFaces(ctx context.Context, photoUID string) ([]Face, error) 
 // which ranks these faces by distance from their centroid.
 func (s *Store) ListFacesBySubject(ctx context.Context, subjectUID string) ([]Face, error) {
 	return s.queryFaces(ctx, listFacesBySubjectSQL, subjectUID)
+}
+
+// FacesByKeys returns the face rows identified by the given (photo_uid, face_index)
+// keys, in an unspecified order. Keys with no matching row — for example a face
+// removed by a later re-detection — are simply absent from the result, so the
+// caller must tolerate a slice shorter than keys and index it by key rather than by
+// position. An empty keys slice yields a nil slice and a nil error. It backs the
+// untagged-person candidate search, which needs the embeddings of an already
+// filtered candidate set to apply the negative-exemplar rule in one query instead
+// of an N+1 of per-photo lookups.
+func (s *Store) FacesByKeys(ctx context.Context, keys []FaceKey) ([]Face, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	photoUIDs, indexes := splitFaceKeys(keys)
+	rows, err := s.pool.Query(ctx, facesByKeysSQL, photoUIDs, indexes)
+	if err != nil {
+		return nil, fmt.Errorf("listing faces by keys: %w", err)
+	}
+	defer rows.Close()
+
+	var faces []Face
+	for rows.Next() {
+		face, scanErr := scanFace(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		faces = append(faces, face)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating faces by keys: %w", err)
+	}
+	return faces, nil
 }
 
 // queryFaces runs a face-listing query with a single argument and scans every row

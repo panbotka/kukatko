@@ -70,27 +70,28 @@ var (
 
 // Config is the fully resolved, typed configuration for a kukatko process.
 type Config struct {
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Storage   StorageConfig   `mapstructure:"storage"`
-	Thumb     ThumbConfig     `mapstructure:"thumb"`
-	Web       WebConfig       `mapstructure:"web"`
-	Embedding EmbeddingConfig `mapstructure:"embedding"`
-	Faces     FacesConfig     `mapstructure:"faces"`
-	Cluster   ClusterConfig   `mapstructure:"cluster"`
-	Auth      AuthConfig      `mapstructure:"auth"`
-	Maps      MapsConfig      `mapstructure:"maps"`
-	Backup    BackupConfig    `mapstructure:"backup"`
-	Trash     TrashConfig     `mapstructure:"trash"`
-	Duplicate DuplicateConfig `mapstructure:"duplicate"`
-	Stacks    StacksConfig    `mapstructure:"stacks"`
-	Upload    UploadConfig    `mapstructure:"upload"`
-	Video     VideoConfig     `mapstructure:"video"`
-	Worker    WorkerConfig    `mapstructure:"worker"`
-	Bulk      BulkConfig      `mapstructure:"bulk"`
-	Import    ImportConfig    `mapstructure:"import"`
-	Log       LogConfig       `mapstructure:"log"`
-	Metrics   MetricsConfig   `mapstructure:"metrics"`
-	RateLimit RateLimitConfig `mapstructure:"ratelimit"`
+	Database   DatabaseConfig   `mapstructure:"database"`
+	Storage    StorageConfig    `mapstructure:"storage"`
+	Thumb      ThumbConfig      `mapstructure:"thumb"`
+	Web        WebConfig        `mapstructure:"web"`
+	Embedding  EmbeddingConfig  `mapstructure:"embedding"`
+	Faces      FacesConfig      `mapstructure:"faces"`
+	Cluster    ClusterConfig    `mapstructure:"cluster"`
+	Candidates CandidatesConfig `mapstructure:"candidates"`
+	Auth       AuthConfig       `mapstructure:"auth"`
+	Maps       MapsConfig       `mapstructure:"maps"`
+	Backup     BackupConfig     `mapstructure:"backup"`
+	Trash      TrashConfig      `mapstructure:"trash"`
+	Duplicate  DuplicateConfig  `mapstructure:"duplicate"`
+	Stacks     StacksConfig     `mapstructure:"stacks"`
+	Upload     UploadConfig     `mapstructure:"upload"`
+	Video      VideoConfig      `mapstructure:"video"`
+	Worker     WorkerConfig     `mapstructure:"worker"`
+	Bulk       BulkConfig       `mapstructure:"bulk"`
+	Import     ImportConfig     `mapstructure:"import"`
+	Log        LogConfig        `mapstructure:"log"`
+	Metrics    MetricsConfig    `mapstructure:"metrics"`
+	RateLimit  RateLimitConfig  `mapstructure:"ratelimit"`
 }
 
 // RateLimitConfig configures per-client-IP rate limiting on resource-intensive
@@ -351,6 +352,30 @@ type ClusterConfig struct {
 	SuggestionMaxDistance float64 `mapstructure:"suggestion_max_distance"`
 }
 
+// CandidatesConfig tunes the "find a person among untagged photos" search: for a
+// named subject it runs a kNN over unassigned faces from each of the subject's
+// exemplars and surfaces the untagged faces that resemble them.
+type CandidatesConfig struct {
+	// MaxDistance is the default maximum cosine distance a candidate face may sit
+	// from an exemplar to count. It is the fallback used when a request omits its
+	// own threshold, and the baseline the vote rule scales against. A non-positive
+	// value falls back to the default.
+	MaxDistance float64 `mapstructure:"max_distance"`
+	// SearchLimit caps how many nearest unassigned faces each exemplar's kNN returns
+	// before voting merges them, bounding the per-exemplar fan-out. A non-positive
+	// value falls back to the default.
+	SearchLimit int `mapstructure:"search_limit"`
+	// MinFacePx is the minimum face width in display pixels a candidate must have to
+	// be reviewable; tiny faces in a crowd cannot be judged. It complements the
+	// relative floor reused from faces.min_face_size. A non-positive value disables
+	// the absolute-pixel floor.
+	MinFacePx int `mapstructure:"min_face_px"`
+	// Concurrency bounds how many exemplar kNN searches run at once, so searching a
+	// person with hundreds of photos does not fan out unboundedly. A non-positive
+	// value falls back to the default.
+	Concurrency int `mapstructure:"concurrency"`
+}
+
 // AuthConfig holds the credentials used to bootstrap the initial admin account
 // plus the session and login rate-limiting policy.
 type AuthConfig struct {
@@ -606,6 +631,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("cluster.min_size", 2)
 	v.SetDefault("cluster.suggestion_max_distance", 0.5)
 
+	setCandidatesDefaults(v)
+
 	v.SetDefault("auth.bootstrap_admin_username", "")
 	v.SetDefault("auth.bootstrap_admin_password", "")
 	v.SetDefault("auth.session_ttl", "168h")          // 7-day sliding idle window
@@ -626,6 +653,16 @@ func setDefaults(v *viper.Viper) {
 // until one is configured), the public REST base URL, the reverse-geocode throttle
 // backing the background places job, and the server-side tile cache that keeps a
 // re-browsed area from costing mapy.com credits again.
+// setCandidatesDefaults registers the untagged-person candidate-search defaults:
+// the fallback cosine distance, the per-exemplar kNN cap, the minimum reviewable
+// face width in pixels, and the concurrency bound on exemplar searches.
+func setCandidatesDefaults(v *viper.Viper) {
+	v.SetDefault("candidates.max_distance", 0.5)
+	v.SetDefault("candidates.search_limit", 1000)
+	v.SetDefault("candidates.min_face_px", 32)
+	v.SetDefault("candidates.concurrency", 8)
+}
+
 func setMapsDefaults(v *viper.Viper) {
 	v.SetDefault("maps.mapy_api_key", "")
 	v.SetDefault("maps.user_agent", "")

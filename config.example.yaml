@@ -171,6 +171,29 @@ cluster:
   # suggestion. Set to 0 (or below) to fall back to the default.
   suggestion_max_distance: 0.5
 
+candidates:
+  # "Find a person among untagged photos": for a named subject, search the
+  # unassigned faces that resemble the subject's own tagged faces
+  # (POST /api/v1/subjects/{uid}/candidates). Purely a search — confirming a
+  # candidate goes through the normal POST /photos/{uid}/faces/assign path.
+  #
+  # Default maximum cosine distance a candidate face may sit from an exemplar. A
+  # request may send its own threshold; this is the fallback and the baseline the
+  # vote rule scales against. Set to 0 (or below) to fall back to the default.
+  max_distance: 0.5
+  # How many nearest unassigned faces each exemplar's kNN returns before voting
+  # merges them. Bounds the per-exemplar fan-out. Set to 0 (or below) to fall back
+  # to the default.
+  search_limit: 1000
+  # Minimum face width in display pixels for a candidate to be reviewable — a
+  # 20-pixel face in a crowd cannot be judged. Complements the relative floor
+  # reused from faces.min_face_size. Set to 0 (or below) to disable the pixel floor.
+  min_face_px: 32
+  # How many exemplar kNN searches run at once, so searching a person with hundreds
+  # of tagged photos does not fan out unboundedly. Set to 0 (or below) to fall back
+  # to the default.
+  concurrency: 8
+
 auth:
   # Credentials used to create the initial admin account on first run.
   bootstrap_admin_username: ""

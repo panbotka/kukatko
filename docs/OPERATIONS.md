@@ -529,6 +529,17 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   /process/stacks` (jako ostatní `/process/*`) proběhne detekci nad celou knihovnou přes
   `stacks.Service.DetectStacks` a vrátí `{created}`; kandidáty jsou jen dosud nestacknuté nearchivované
   fotky, takže re-run je idempotentní. Při `stacks.enabled: false` odpovídá 503.
+- **Candidates klíče (`candidates.*`, `internal/config` + `internal/candidates`):** ladí hledání
+  „osoba mezi neotagovanými fotkami" (`POST /subjects/{uid}/candidates`). `max_distance` (**default
+  0.5**) — výchozí max kosinová vzdálenost kandidáta od exempláře, když ji request nepošle, **a**
+  baseline, proti němuž se škáluje vote rule; `search_limit` (**default 1000**) — kolik nejbližších
+  nepřiřazených obličejů vrátí kNN každého exempláře před hlasováním (omezuje fan-out na exemplár);
+  `min_face_px` (**default 32**) — minimální šířka obličeje v **display pixelech**, aby byl
+  recenzovatelný (drobný obličej v davu nejde posoudit; doplňuje relativní floor převzatý z
+  `faces.min_face_size`); `concurrency` (**default 8**) — kolik kNN exemplárů běží naráz, aby hledání
+  osoby se stovkami fotek nefanoutovalo neomezeně. Nekladná hodnota u kteréhokoli klíče spadne na
+  default (u `min_face_px` vypne absolutní floor). Env: `KUKATKO_CANDIDATES_MAX_DISTANCE`,
+  `_SEARCH_LIMIT`, `_MIN_FACE_PX`, `_CONCURRENCY`.
 
 ### `maps.user_agent` — restrikce mapy.com klíče na User-Agent
 
