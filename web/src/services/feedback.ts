@@ -74,3 +74,30 @@ export async function rejectFace(req: FaceRejection, signal?: AbortSignal): Prom
 export async function unrejectFace(req: FaceRejection, signal?: AbortSignal): Promise<void> {
   await send('DELETE', '/feedback/face-rejections', req, signal)
 }
+
+/**
+ * A "not this label" photo rejection (`feedbackapi.labelRejectionInput`): the
+ * photo and the label it is rejected for. Recorded from the /expand page's
+ * per-tile ✗ so the photo is never offered for that collection again.
+ */
+export interface LabelRejection {
+  photo_uid: string
+  label_uid: string
+}
+
+/**
+ * Records a label rejection via `POST /feedback/label-rejections`. It is
+ * idempotent — rejecting the same pair twice is a no-op — so the caller can fire
+ * it optimistically.
+ */
+export async function rejectLabel(req: LabelRejection, signal?: AbortSignal): Promise<void> {
+  await send('POST', '/feedback/label-rejections', req, signal)
+}
+
+/**
+ * Withdraws a label rejection via `DELETE /feedback/label-rejections`, the
+ * inverse of {@link rejectLabel}. Also idempotent.
+ */
+export async function unrejectLabel(req: LabelRejection, signal?: AbortSignal): Promise<void> {
+  await send('DELETE', '/feedback/label-rejections', req, signal)
+}

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import { useAuth } from '../auth/AuthContext'
 import { type PhotoGridSelection } from '../components/library/PhotoGrid'
+import { type BulkEditOutcome } from '../components/organize/BulkEditModal'
 
 import { useSelection, type UseSelectionResult } from './useSelection'
 
@@ -11,8 +12,11 @@ export interface UseBulkEditOptions {
    * Called after a successful apply, once the selection has been cleared. A bulk
    * edit changes what the current filters — and an album/label scope — match, so
    * the page has to refetch its list rather than keep showing the pre-edit one.
+   * The outcome (the operations applied and the per-photo results) rides along
+   * for pages that can update in place instead — e.g. /expand drops just the
+   * photos that were added to the collection, keeping the scroll position.
    */
-  onEdited?: () => void
+  onEdited?: (outcome?: BulkEditOutcome) => void
 }
 
 /** Selection state plus the bulk-edit dialog wiring for one photo list. */
@@ -32,7 +36,7 @@ export interface UseBulkEditResult {
   /** Dismisses the dialog, leaving the selection intact (e.g. a failed apply). */
   close: () => void
   /** Closes the dialog after a successful apply: clears selection, then reloads. */
-  finish: () => void
+  finish: (outcome?: BulkEditOutcome) => void
 }
 
 /**
@@ -61,20 +65,28 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
     setEditing(false)
   }, [])
 
-  const finish = useCallback(() => {
-    setEditing(false)
-    selection.clear()
-    onEdited?.()
-  }, [selection, onEdited])
+  const finish = useCallback(
+    (outcome?: BulkEditOutcome) => {
+      setEditing(false)
+      selection.clear()
+      onEdited?.(outcome)
+    },
+    [selection, onEdited],
+  )
 
   const photoUids = useMemo(() => [...selection.selected], [selection.selected])
 
   const gridSelection = useMemo<PhotoGridSelection | undefined>(
     () =>
       selection.active
-        ? { active: true, selected: selection.selected, onToggle: selection.toggle }
+        ? {
+            active: true,
+            selected: selection.selected,
+            onToggle: selection.toggle,
+            onToggleRange: selection.toggleRange,
+          }
         : undefined,
-    [selection.active, selection.selected, selection.toggle],
+    [selection.active, selection.selected, selection.toggle, selection.toggleRange],
   )
 
   return useMemo(

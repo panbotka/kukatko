@@ -9,6 +9,7 @@ import { AlbumsPage } from './pages/AlbumsPage'
 import { AuditPage } from './pages/AuditPage'
 import { ClustersPage } from './pages/ClustersPage'
 import { DuplicatesPage } from './pages/DuplicatesPage'
+import { ExpandPage } from './pages/ExpandPage'
 import { FacesPage } from './pages/FacesPage'
 import { FavoritesPage } from './pages/FavoritesPage'
 import { ImportPage } from './pages/ImportPage'
@@ -70,6 +71,8 @@ export function AppRoutes() {
             <Route path="/people/clusters" element={<ClustersPage />} />
             {/* Finding a person among untagged photos assigns faces: a write action. */}
             <Route path="/faces" element={<FacesPage />} />
+            {/* Growing an album/label with similar photos adds members: a write action. */}
+            <Route path="/expand" element={<ExpandPage />} />
             {/* The recognition sweep confirms faces across everyone: a write action. */}
             <Route path="/recognition" element={<RecognitionPage />} />
             {/* Duplicate review archives photos in bulk: editors and admins only. */}

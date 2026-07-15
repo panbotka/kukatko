@@ -33,6 +33,7 @@ export type IconName =
   | 'heart'
   | 'images'
   | 'lock-fill'
+  | 'magic'
   | 'map'
   | 'pencil'
   | 'people'

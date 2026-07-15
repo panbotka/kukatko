@@ -22,6 +22,31 @@ import {
 } from '../../services/organize'
 import { MultiSelect, type MultiSelectOption } from '../MultiSelect'
 
+/**
+ * What a successful apply actually did: the operations that were sent (after
+ * pending creations resolved to real UIDs) and the backend's per-photo results.
+ * Handed to {@link BulkEditModalProps.onDone} so a page can update its list in
+ * place — e.g. /expand removes just the photos that joined the collection.
+ */
+export interface BulkEditOutcome {
+  /** The operation set the batch was applied with. */
+  operations: BulkOperations
+  /** The per-photo results and aggregate counts the endpoint returned. */
+  result: BulkResult
+}
+
+/**
+ * Form values pre-selected when the dialog opens, for a page where one target
+ * is the obvious default — /expand pre-fills the collection being expanded, so
+ * "add these to it" is one click while everything else stays editable.
+ */
+export interface BulkEditPrefill {
+  /** Album UIDs pre-selected in the add-to-albums field. */
+  addAlbums?: string[]
+  /** Label UIDs pre-selected in the add-labels field. */
+  addLabels?: string[]
+}
+
 /** Props for {@link BulkEditModal}. */
 export interface BulkEditModalProps {
   /** Whether the modal is visible. */
@@ -31,7 +56,13 @@ export interface BulkEditModalProps {
   /** Dismisses the modal without applying (also used to close the result view). */
   onHide: () => void
   /** Called after a successful apply, so the caller can clear the selection. */
-  onDone: () => void
+  onDone: (outcome?: BulkEditOutcome) => void
+  /**
+   * Pre-selected form values applied every time the dialog opens. Keep the
+   * object referentially stable (memoised) — a new object per render would
+   * reset the form mid-edit.
+   */
+  prefill?: BulkEditPrefill
 }
 
 /** Fetch lifecycle of the album/label option lists. */
@@ -150,7 +181,7 @@ function buildOperations(form: FormState): BulkOperations | 'invalid-coords' | '
  * Only editors/admins reach it (the caller gates the trigger), except the favorite
  * operation which is itself per-user.
  */
-export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModalProps) {
+export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: BulkEditModalProps) {
   const { t } = useTranslation()
   const { canWrite } = useAuth()
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
@@ -158,7 +189,7 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<BulkResult | null>(null)
+  const [outcome, setOutcome] = useState<BulkEditOutcome | null>(null)
 
   useEffect(() => {
     if (!show) {
@@ -166,10 +197,14 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
     }
     const controller = new AbortController()
     setLoad({ status: 'loading' })
-    setForm(EMPTY_FORM)
+    setForm({
+      ...EMPTY_FORM,
+      addAlbums: prefill?.addAlbums ?? [],
+      addLabels: prefill?.addLabels ?? [],
+    })
     setConfirming(false)
     setError(null)
-    setResult(null)
+    setOutcome(null)
     Promise.all([fetchAlbums(controller.signal), fetchLabels(controller.signal)])
       .then(([albums, labels]) => {
         setLoad({ status: 'ready', albums, labels })
@@ -183,7 +218,7 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
     return () => {
       controller.abort()
     }
-  }, [show])
+  }, [show, prefill])
 
   function update(patch: Partial<FormState>) {
     setForm((prev) => ({ ...prev, ...patch }))
@@ -272,7 +307,7 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
         return
       }
       try {
-        setResult(await bulkUpdatePhotos(photoUids, ops))
+        setOutcome({ operations: ops, result: await bulkUpdatePhotos(photoUids, ops) })
       } catch (err: unknown) {
         // The backend rejects a bad batch with a reason the reader can act on
         // (conflicting operations, too many photos); a generic failure would
@@ -310,12 +345,12 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
     <Modal show={show} onHide={onHide} centered scrollable fullscreen="sm-down">
       <Modal.Header closeButton>
         <Modal.Title>
-          {result ? t('bulkEdit.result.title') : t('bulkEdit.title', { count: photoUids.length })}
+          {outcome ? t('bulkEdit.result.title') : t('bulkEdit.title', { count: photoUids.length })}
         </Modal.Title>
       </Modal.Header>
       <Modal.Body>
-        {result ? (
-          <ResultSummary result={result} />
+        {outcome ? (
+          <ResultSummary result={outcome.result} />
         ) : (
           <>
             {error !== null && (
@@ -384,11 +419,11 @@ export function BulkEditModal({ show, photoUids, onHide, onDone }: BulkEditModal
         )}
       </Modal.Body>
       <Modal.Footer>
-        {result ? (
+        {outcome ? (
           <Button
             variant="primary"
             onClick={() => {
-              onDone()
+              onDone(outcome)
             }}
           >
             {t('bulkEdit.result.done')}

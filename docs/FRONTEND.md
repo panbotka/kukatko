@@ -10,7 +10,8 @@ zapiš sem.
   knihovna reálně prochází — po albu, po štítku, po roce**: **Knihovna** `/` (= úvodní stránka;
   `NavLink` má `end`, jinak by se rozsvítila na každé routě),
   **Alba** `/albums` a **Štítky** `/labels` jsou vždy viditelné top-level položky
-  (registr `PRIMARY_ITEMS`); zbylé browse cíle sdružuje dropdown **Procházet** (`nav.browse`,
+  (registr `PRIMARY_ITEMS`); hned za nimi **Rozšířit** `/expand` (`EXPAND_ITEM`, gate `canWrite`) —
+  sedí u alb/štítků, protože přesně ty rozšiřuje; zbylé browse cíle sdružuje dropdown **Procházet** (`nav.browse`,
   `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`, **Místa** `/places`, **Mapa**
   `/map`; **Nahrát** `/upload` je top-level (gate `canWrite`); editorský dropdown **Nástroje**
   (`nav.tools`, `TOOLS_GROUP`, celý gate `canWrite`) sdružuje **Duplikáty** `/duplicates` + **Koš**
@@ -87,7 +88,7 @@ zapiš sem.
   „Bez náhledu" i všechny ručně skládané `text-center py-5` bloky napříč
   stránkami (`LibraryPage`, `SearchPage`, `AlbumsPage`, `AlbumDetailPage`, `LabelsPage`,
   `LabelDetailPage`, `PeoplePage`, `SubjectPage`, `PlacesPage`, `MapPage`, `FavoritesPage`,
-  `SavedSearchesPage`, `ClustersPage`, `FacesPage`, `DuplicatesPage`, `TrashPage`, `SlideshowPage` (s akcí
+  `SavedSearchesPage`, `ClustersPage`, `FacesPage`, `ExpandPage`, `DuplicatesPage`, `TrashPage`, `SlideshowPage` (s akcí
   „Zpět"), `ImportPage`) i v komponentách (`AlbumTile`/`SubjectTile` cover placeholder,
   `Outliers`). **Ne každá prázdnota si ho zaslouží:** v hustém panelu, kde pod sebou sedí
   několik krátkých seznamů (`OrganizePanel` — alba a štítky), by placeholder přerostl chipy,
@@ -196,7 +197,14 @@ zapiš sem.
   zařízení, ne součást sdíleného pohledu; sedí v hlavičce `FilterBar`u, mění všechny
   foto-mřížky v appce najednou); `PhotoTile`+`PhotoGrid` podporují
   volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`;
-  heart se v selection módu skryje); dlaždice **žádné datum nezobrazuje** — jediné, které nese, je
+  heart se v selection módu skryje); **Shift+klik vybere souvislý rozsah**: `onToggleSelect` nese
+  `shiftKey` kliknutí, `PhotoGrid` ho s vlastním pořadím fotek přesměruje na volitelný
+  `selection.onToggleRange(uid, orderedUids)` (bez něj zůstává plain toggle) — kotvu drží
+  `useSelection`, takže rozsah funguje v každé mřížce bez wiringu na stránce; `PhotoTile` má
+  volitelný slot **`extras`** (resp. `PhotoGrid` prop `tileExtras(photo)`) pro overlaye stránky —
+  badge/akce jako **sibling** linku/tlačítka v relative wrapperu (interaktivní extra nenaviguje,
+  netoggluje; badge s `pe-none` nekrade klik) — používá `/expand` pro % podobnosti a ✗;
+  dlaždice **žádné datum nezobrazuje** — jediné, které nese, je
   v `alt` textu, a i tam se **odhadované** datum značí (`cca 1950`), aby ho nešlo číst jako jisté;
   řazení mřížky/timeline se nemění, dál je to `taken_at`,
   `components/organize/` = `AlbumTile` (karta alba: **efektivní obálka** `cover_uid`
@@ -208,7 +216,7 @@ zapiš sem.
   akce + zrušit), `BulkEditControl` (**znovupoužitelný spouštěč** hromadné úpravy: tlačítko
   (`selection.edit`) + `BulkEditModal`, řízené výhradně výsledkem `useBulkEdit`; **viewerovi se
   nevykreslí vůbec**, při nulovém výběru je disabled — stačí ho vložit do `SelectionBar`, stránka
-  nedrží žádný stav dialogu), `SelectionStart` (**protějšek** `BulkEditControl`: tlačítko
+  nedrží žádný stav dialogu; volitelný prop `prefill` protéká do modalu), `SelectionStart` (**protějšek** `BulkEditControl`: tlačítko
   `selection.enter`, které zapne režim výběru; viewerovi ani už zapnutému výběru se nevykreslí,
   `onEnter` přebije akci pro stránku, která musí nejdřív opustit jiný režim),
   `DownloadZipButton` (**stažení výběru nebo celého alba jako ZIP** originálů: volá
@@ -244,7 +252,11 @@ zapiš sem.
   odvolá**. Klientská validace souřadnic + „aspoň jedna změna" zůstává; po aplikaci
   **per-foto result summary** z odpovědi. Neúspěšný request **vypíše hlášku serveru**
   (`ApiError.message` — konfliktní operace, příliš velká dávka), jinak generický `bulkEdit.applyError`;
-  výběr zůstává nedotčený, ať se dá apply zopakovat),
+  výběr zůstává nedotčený, ať se dá apply zopakovat. Volitelný prop **`prefill`**
+  (`BulkEditPrefill{addAlbums?,addLabels?}`, memoizovaný — nová reference by resetla formulář)
+  předvyplní add pole při každém otevření (`/expand` tam dá rozšiřovanou sbírku); `onDone` dostává
+  **`BulkEditOutcome{operations,result}`** — co apply skutečně poslal a per-foto výsledky — takže
+  stránka může seznam upravit na místě, místo refetche),
   `pages/` (`LoginPage`, `AccountPage` = identita/role, **sekce Jazyk** (`LanguageSwitcher` +
   hint, `account.language*`) a změna vlastního hesla, **plus technický stav aplikace**
   (`GET /healthz` badge + verze, bez commit hashe) v malém ztlumeném řádku dole — status i jazyk
@@ -582,6 +594,29 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `useKeyboardShortcuts` + `shortcuts.groups.faceSearch`); globální statistiky (k vyřízení / už
   přiřazené / lidé se shodami) ze `summary`, `capped` upozornění, **čistý prázdný stav** po scanu bez
   shod („všechny obličeje jsou přiřazené"); config (jistota/limit) v URL; **nikdy neautoconfirmuje**,
+  `ExpandPage` = `/expand` (editor/admin, top-level odkaz **Rozšířit** u alb/štítků) „rozšiř album
+  nebo štítek o vizuálně podobné fotky": config panel `ExpandSearchForm` (přepínač **Album|Štítek**
+  (`ToggleButtonGroup`), výběr sbírky přes `AddAutocomplete` — options z `lib/expandSearch`
+  `expandSources` **seřazené dle počtu fotek sestupně, prázdné sbírky vynechané**, počet v `hint` —,
+  práh v **procentech** 20–80 % step 5 **default 70 %** s bookendy „Více výsledků"↔„Lepší shody"
+  (rozsah/konverze sdílené s `lib/faceThreshold`, `expandThresholdDistance` řeže float šum pro URL),
+  limit 1–200 default 50 (`clampExpandLimit`), tlačítko Hledat — hledání **explicitní**, ne
+  live-on-drag); volá `searchSimilar()` (`services/expand`); výsledky = `ExpandResults`: summary
+  řádek (zdrojové fotky / s embeddingem / min. shod / nalezeno) + **vysvětlení vote rule**
+  („Fotka musí odpovídat alespoň {{n}} zdrojovým fotkám" + „Řazeno podle počtu shod, pak podle
+  podobnosti", u `source_capped` i vzorek) nad **standardní `PhotoGrid`** (žádný fork mřížky);
+  dlaždice nese přes `tileExtras` **% podobnosti** a při `match_count > 1` badge **počtu shod**,
+  klik otevírá detail fotky jako v knihovně; **výběr = knihovní model** (`useBulkEdit` +
+  `SelectionStart`/`SelectionBar`/„Vybrat vše"/Shift+klik rozsah/Esc), `BulkEditControl`
+  s **`prefill` = rozšiřovaná sbírka**, takže Apply rovnou přidá; po úspěchu přes
+  `BulkEditOutcome` **přidané fotky opustí mřížku na místě** (bez refetche a skoku scrollu,
+  errored zůstávají; jiná bulk operace mřížku nemění) a summary počty se aktualizují; ✗ na dlaždici
+  (jen **štítky** — alba rejection model nemají, tak se nenabízí) **trvale zamítne** přes
+  `rejectLabel` (`services/feedback`) optimisticky s rollbackem + alertem při selhání; **klávesnice**
+  jako knihovna (`useGridKeyboardNavigation`: šipky/`hjkl`, Enter otevře, `x` vybere, Esc čistí
+  výběr); config (typ/sbírka/práh/limit) v URL (Back/refresh obnoví hledání); stavy
+  idle/loading/error/**bez-embeddingů** (vlastní hláška — embeddingy se počítají, až je box online;
+  odlišená od nula-shod)/prázdná-sbírka/nula-shod (poraď snížit práh)/vše-vyřízeno,
   `MapPage` = `/map` mapový pohled: geotagované fotky jako shlukované markery nad mapy.com
   dlaždicemi (Leaflet), přepínač podkladu + filtry (datum/archiv/soukromé) v `MapFilterBar`,
   stav (mapset/viewport/filtry) v URL — posun/zoom zapisuje viewport bez refetche, změna filtru
@@ -638,6 +673,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   akce **Ponechat nejlepší a sloučit** (`onResolve` → náhled) / **Není duplikát**, busy stav) +
   `MergeConfirmModal` (potvrzovací dialog: shrnutí co se přesune na keepera + kolik kopií se archivuje,
   Potvrdit/Zrušit, busy spinner);
+  `components/expand/` = `ExpandSearchForm` (config panel `/expand`: přepínač Album|Štítek,
+  `AddAutocomplete` picker sbírky s počtem fotek v hintu, procentní posuvník prahu s bookendy,
+  limit, submit tlačítko Hledat — čistě controlled, stav drží stránka) + `ExpandResults`
+  (summary řádek s vote-rule vysvětlením nad `PhotoGrid`; per-dlaždicové overlaye přes `tileExtras`:
+  badge % podobnosti (`pe-none`), badge počtu shod při `match_count > 1`, ✗ tlačítko jen když
+  volající dodá `onReject`; po vyprázdnění mřížky uživatelem hlášky „vše zpracováno");
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
   velikosti `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exportováno** — stránka musí přednačítat přesně
   tuhle URL), ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
@@ -735,11 +776,16 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   infinite-scroll kurzorem (nebo clampne na poslední načtené, když už další stránky nejsou) —
   podklad skoku časové osy na měsíc před načtenou částí; `useSelection` = multi-výběr fotek v mřížce
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
+  poslední `toggle` drží **kotvu** a `toggleRange(uid, orderedUids)` (Shift+klik) vybere souvislý
+  rozsah mezi kotvou a `uid` — jen **přidává**, bez kotvy nebo s kotvou mimo pořadí degraduje na
+  `toggle`, `clear`/`disable` kotvu shodí;
   `useBulkEdit({onEdited?})` = **znovupoužitelná hromadná úprava** libovolného foto-seznamu:
   `useSelection` + role gate (`canBulkEdit` = `canWrite`) + stav dialogu
   (`editing`/`open`/`close`/`finish`), k tomu `photoUids` (**přesně vybrané**, nikdy celý filtrovaný
-  výsledek) a `gridSelection` rovnou do `PhotoGrid`. `finish` = zavřít dialog → `selection.clear()`
-  → `onEdited()` (refetch); režim výběru přežije, takže po úspěchu jde hned vybírat dál a žádné
+  výsledek) a `gridSelection` rovnou do `PhotoGrid` (vč. `onToggleRange` → Shift+klik rozsah zdarma
+  v každé mřížce). `finish(outcome?)` = zavřít dialog → `selection.clear()`
+  → `onEdited(outcome?)` (refetch; `outcome` = `BulkEditOutcome` pro stránky, které umí seznam
+  upravit na místě — `/expand`); režim výběru přežije, takže po úspěchu jde hned vybírat dál a žádné
   zastaralé UID v něm nezůstane. Neúspěšný apply výběr **nechá být**. Stránka wiruje jen
   `gridSelection` a `SelectionStart`, zbytek obstará `BulkEditControl`;
   `useReloadKey()` = `[key, reload]`, string čítač do `reloadKey` foto-seznamu — jedno `reload()`
@@ -908,6 +954,11 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   krok 1, default 75) + `clampConfidencePercent`, `PersonState`, `personActionableCount`/`hasActionable`
   (karta osoby zmizí, když `hasActionable` je false), a **plochá klávesová fokus sekvence** napříč
   osobami (`FocusEntry`, `focusKey`, `focusSequence` = jen akční karty, `nextFocusKey`);
+  `expandSearch.ts` = pure logika `/expand`: default prahu **70 %** (`EXPAND_THRESHOLD_DEFAULT_PERCENT`,
+  rozsah/krok sdílí `faceThreshold`) + `clampExpandThresholdPercent`, `expandThresholdDistance`
+  (procenta → vzdálenost, `toFixed(4)` řeže float šum pro URL), limit 1–200 default 50
+  (`clampExpandLimit`), `ExpandSource` + `expandSources` (picker: bez prázdných sbírek, řazený dle
+  počtu fotek sestupně, tiebreak jménem) a `similarityPercent` (podobnost kandidáta → celá %);
   `coordinates.ts` = pure tolerantní parser souřadnic pro location picker: `parseCoordinates(input)`
   → `{ok:true,value:{lat,lng}}` | `{ok:false,error:'empty'|'format'|'range'}` (desetinné stupně /
   DMS / stupně-desetinné-minuty, komma/mezera oddělovač, ±/hemisféry N/S/E/W, unicode primy/`''`,
@@ -1059,8 +1110,16 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `CandidateSearchRequest`/`CandidateResult`/`Candidate`/`FaceBox`/`CandidateCounts`/`CandidateAction`
   (`create_marker`/`assign_person`/`already_done`)/`CandidateReason`; potvrzení jde přes `assignFace`
   z `people.ts`, zamítnutí přes `feedback.ts`; `feedback.ts` = perzistentní zpětná vazba (nemutuje,
-  jen drží zamítnutý obličej mimo příští hledání): `rejectFace(req,signal)`/`unrejectFace(req,signal)`
-  nad `POST`/`DELETE /feedback/face-rejections`, typ `FaceRejection` `{photo_uid,face_index,subject_uid}`;
+  jen drží zamítnutý obličej/fotku mimo příští hledání): `rejectFace(req,signal)`/`unrejectFace(req,signal)`
+  nad `POST`/`DELETE /feedback/face-rejections`, typ `FaceRejection` `{photo_uid,face_index,subject_uid}`,
+  a `rejectLabel(req,signal)`/`unrejectLabel(req,signal)` nad `POST`/`DELETE /feedback/label-rejections`,
+  typ `LabelRejection` `{photo_uid,label_uid}` (vše idempotentní → jde volat optimisticky);
+  `expand.ts` = klient rozšiřování sbírky: `searchSimilar(kind,uid,{threshold,limit},signal)` nad
+  `GET /albums/{uid}/similar` / `GET /labels/{uid}/similar` (`threshold` = **kosinová vzdálenost**,
+  převod z procent dělá volající přes `lib/expandSearch`), typy `ExpandKind`/`ExpandCandidate`
+  (`photo` má `thumb_url` už oražené)/`ExpandResult` (summary počty + `min_match_count` +
+  `reason?` `empty_collection`/`no_source_embeddings`)/`ExpandReason`/`ExpandSearchRequest`;
+  přidávání jde přes `bulk.ts` (`POST /photos/bulk`), zamítnutí přes `feedback.ts`;
   `recognition.ts` = klient recognition sweepu: `streamSweep(params,onMessage,signal)` nad
   `GET /faces/sweep` **streamuje NDJSON** (`fetch`+`ReadableStream`, řádkuje ručně, `onMessage` dostane
   jen kompletní řádky), typy `SweepParams` `{confidence,limit}` (`confidence` = **procenta**, backend

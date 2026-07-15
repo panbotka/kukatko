@@ -64,8 +64,10 @@
       "users": "Spravovat uživatelské účty",
       "audit": "Zobrazit auditní log",
       "account": "Spravovat vlastní účet",
-      "logout": "Odhlásit se z Kukátka"
-    }
+      "logout": "Odhlásit se z Kukátka",
+      "expand": "Rozšířit album nebo štítek o podobné fotky"
+    },
+    "expand": "Rozšířit"
   },
   "language": {
     "cs": "Čeština",
@@ -1560,6 +1562,77 @@
       "range": "Zobrazeno {{from}}–{{to}} z {{total}}",
       "prev": "Předchozí",
       "next": "Další"
+    }
+  },
+  "expand": {
+    "title": "Rozšíření sbírky",
+    "subtitle": "Najděte fotky podobné těm, které už v albu nebo na štítku jsou, a rovnou je přidejte.",
+    "form": {
+      "sourceHeading": "Sbírka k rozšíření",
+      "kindAlbum": "Album",
+      "kindLabel": "Štítek",
+      "sourceLabelAlbum": "Vybrat album",
+      "sourceLabelLabel": "Vybrat štítek",
+      "sourceHint_one": "{{count}} fotka",
+      "sourceHint_few": "{{count}} fotky",
+      "sourceHint_many": "{{count}} fotky",
+      "sourceHint_other": "{{count}} fotek",
+      "sourceNone": "Zatím není vybráno.",
+      "sourceSelected": "Vybráno: {{name}}",
+      "sourcesError": "Alba a štítky se nepodařilo načíst.",
+      "thresholdLabel": "Práh podobnosti",
+      "thresholdValue": "{{percent}} %",
+      "thresholdMore": "Více výsledků",
+      "thresholdBetter": "Lepší shody",
+      "limitLabel": "Limit",
+      "limitHint": "1–200 výsledků",
+      "search": "Hledat"
+    },
+    "loading": "Hledám podobné fotky…",
+    "error": {
+      "search": "Hledání podobných fotek se nezdařilo. Zkuste to prosím znovu.",
+      "reject": "Zamítnutí se nepodařilo uložit, fotka zůstává ve výsledcích."
+    },
+    "idle": {
+      "title": "Vyberte sbírku k rozšíření",
+      "hint": "Zvolte album nebo štítek a Kukátko najde fotky, které vypadají jako jeho současný obsah — a rovnou je můžete přidat."
+    },
+    "empty": {
+      "noEmbeddings": {
+        "title": "Fotky sbírky zatím nemají embeddingy",
+        "hint": "Sbírka fotky má, ale žádná z nich zatím nemá spočítaný embedding. Embeddingy se počítají, jakmile je výpočetní box online — zkuste to pak znovu."
+      },
+      "emptyCollection": {
+        "title": "Sbírka je prázdná",
+        "hint": "Vybrané album nebo štítek nemá žádné fotky, takže není z čeho podobnost počítat."
+      },
+      "noResults": {
+        "title": "Žádné podobné fotky",
+        "hint": "Přes práh podobnosti nic neprošlo. Zkuste práh snížit a hledat znovu."
+      }
+    },
+    "summary": {
+      "sourcePhotos": "Zdrojové fotky: {{count}}",
+      "withEmbedding": "S embeddingem: {{count}}",
+      "minMatch": "Min. shod: {{count}}",
+      "results": "Nalezeno: {{count}}",
+      "sampled": "Použit vzorek {{sampled}} z {{count}} zdrojových fotek.",
+      "voteRule_one": "Fotka musí odpovídat alespoň {{count}} zdrojové fotce.",
+      "voteRule_few": "Fotka musí odpovídat alespoň {{count}} zdrojovým fotkám.",
+      "voteRule_many": "Fotka musí odpovídat alespoň {{count}} zdrojovým fotkám.",
+      "voteRule_other": "Fotka musí odpovídat alespoň {{count}} zdrojovým fotkám.",
+      "ordering": "Řazeno podle počtu shod, pak podle podobnosti.",
+      "allHandled": "Všechny nalezené fotky jsou zpracované — spusťte hledání znovu pro další."
+    },
+    "tile": {
+      "similarity": "Podobnost {{percent}} %",
+      "similarityValue": "{{percent}} %",
+      "matches_one": "Odpovídá {{count}} zdrojové fotce",
+      "matches_few": "Odpovídá {{count}} zdrojovým fotkám",
+      "matches_many": "Odpovídá {{count}} zdrojovým fotkám",
+      "matches_other": "Odpovídá {{count}} zdrojovým fotkám",
+      "matchesValue": "{{count}}×",
+      "reject": "Nenabízet pro tento štítek"
     }
   }
 }
