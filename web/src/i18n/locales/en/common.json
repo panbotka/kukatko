@@ -33,6 +33,7 @@
     "import": "Import",
     "maintenance": "Maintenance",
     "faceSearch": "Find a person",
+    "recognition": "Recognition",
     "duplicates": "Duplicates",
     "account": "My account",
     "logout": "Sign out",
@@ -53,6 +54,7 @@
       "upload": "Upload new photos",
       "tools": "Show the tools",
       "faceSearch": "Find a person among untagged photos",
+      "recognition": "Scan everyone for matches among unnamed faces",
       "duplicates": "Review the duplicates",
       "trash": "Show the trash",
       "admin": "Show the administration",
@@ -635,6 +637,56 @@
     "nameLabel": "Name this group",
     "namePlaceholder": "New or existing name…",
     "name": "Name group"
+  },
+  "recognition": {
+    "title": "Recognition sweep",
+    "subtitle": "Scan every named person for confident matches among unnamed faces, and clear the work list person by person.",
+    "form": {
+      "confidenceLabel": "Confidence",
+      "confidenceValue": "{{percent}} %",
+      "confidenceMore": "more matches",
+      "confidenceBetter": "surer matches",
+      "limitLabel": "Per person",
+      "limitHint": "Most candidates per person (0 = all).",
+      "scan": "Scan",
+      "cancel": "Cancel"
+    },
+    "progress": {
+      "scanning": "Scanning {{name}}…",
+      "count": "{{current}} / {{total}}"
+    },
+    "stats": {
+      "actionable_one": "{{count}} to confirm",
+      "actionable_other": "{{count}} to confirm",
+      "people_one": "{{count}} person with matches",
+      "people_other": "{{count}} people with matches",
+      "alreadyDone_one": "{{count}} already assigned",
+      "alreadyDone_other": "{{count}} already assigned",
+      "capped": "Showing {{shown}} of {{total}} people — narrow the confidence or rerun."
+    },
+    "person": {
+      "actionable_one": "{{count}} to confirm",
+      "actionable_other": "{{count}} to confirm",
+      "confirmAll_one": "Confirm all ({{count}})",
+      "confirmAll_other": "Confirm all ({{count}})",
+      "confirmingProgress": "Confirming {{current}} / {{total}}…",
+      "cancelConfirmAll": "Stop"
+    },
+    "idle": {
+      "title": "Scan for matches",
+      "hint": "Set how sure the matches must be and start the scan — every person is checked for lookalikes among the unnamed faces."
+    },
+    "empty": {
+      "title": "Nothing left to confirm",
+      "hint": "Every face is already assigned at this confidence."
+    },
+    "error": {
+      "scan": "The scan failed. Try again.",
+      "confirm": "Confirming the face failed.",
+      "reject": "Rejecting the face failed.",
+      "confirmAll_one": "{{count}} confirmation failed.",
+      "confirmAll_other": "{{count}} confirmations failed."
+    }
   },
   "faceSearch": {
     "title": "Find a person",

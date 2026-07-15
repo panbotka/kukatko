@@ -880,7 +880,29 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   za `RequireWrite`; tělo `{threshold?,limit?}` je **volitelné** (prázdné → defaulty),
   `DisallowUnknownFields` + 64 KiB, záporný `threshold`/`limit` → 400; 503 bez backendu, 404 chybějící
   subjekt (`people.ErrSubjectNotFound`); mountuje se v `serve` (`buildCandidatesAPI` v
-  `cmd/kukatko/candidates.go`, bere `mediaStore` pro stamping URL)), `internal/peopleapi/`
+  `cmd/kukatko/candidates.go`, bere `mediaStore` pro stamping URL)), `internal/sweep/`
+  (**recognition sweep** — skládá per-subject kandidátské hledání přes **všechny** pojmenované
+  subjekty najednou: rozhraní `Finder` (splňuje `*candidates.Service`) a `SubjectLister` (splňuje
+  `*people.Store`), `New(Config{Subjects,Finder,Concurrency,MaxSubjects,Log})` (defaulty 4/500, nil
+  Log→`slog.Default()`, nil store→panika), `Sweep(ctx, Params{Threshold,Limit}, emit func(Event) error)`;
+  vylistuje subjekty s `MarkerCount>0`, zastropuje na `MaxSubjects` (`capped`+`SubjectsTotal`
+  v summary), scan běží v **bounded worker poolu** (`errgroup.SetLimit`) a výsledky **funneluje**
+  jedním konzumentem, takže `emit` je vždy volané **sériově** (handler ho píše přímo do
+  odpovědi); `emit` vrací error → sweep se zastaví a workeři se čistě odblokují (žádný leak);
+  chyba `Find` jednoho subjektu se zaloguje a přeskočí (`emitResult`), fatální je jen výpis
+  subjektů; `already_done` kandidáti se z pracovního seznamu vyfiltrují (`actionableCandidates`),
+  počítají se ale do `TotalAlreadyDone`; **nikdy neautoconfirmuje**. `Event` = `{type,progress?,
+  person?,summary?}` (`events.go`). Unit testy s faky (souběžnost/cap/filtr/omit-empty/emit-fail),
+  integrační test nad reálným candidates+DB), `internal/sweepapi/`
+  (editor/admin HTTP API nad sweepem: `Service` rozhraní (splňuje `*sweep.Service`),
+  `NewAPI(Config{Service,RequireWrite})` (nil RequireWrite → pass-through) + `RegisterRoutes` mountuje
+  `GET /faces/sweep` za `RequireWrite`; `parseConfidence` (percent-or-distance → vzdálenost, floor
+  `0.01`, default 75 %) + `parseLimit`, chyby → 400; streamuje **NDJSON** přes `stream` helper, který
+  nastaví hlavičky (`application/x-ndjson`, `Cache-Control: no-store`) **líně** až na prvním řádku a
+  **flushuje** po každém (`http.Flusher`, propaguje se přes `internal/metrics` `statusRecorder.Flush`);
+  chyba před prvním řádkem → 500 JSON, mid-stream → jen log; 503 bez backendu; mountuje se v `serve`
+  (`buildSweepAPI` v `cmd/kukatko/sweep.go`, sdílí `candidates.Service` přes `buildCandidatesService`)),
+  `internal/peopleapi/`
   (read/curace HTTP API nad subjekty (osoby/zvířata/jiné) — podklad People UI: rozhraní
   `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubjectAudited`/
   `UpdateSubjectAudited`/`DeleteSubjectAudited`/`ListPhotoUIDsBySubject` — každá mutace bere `audit.Entry`

@@ -194,6 +194,21 @@ candidates:
   # to the default.
   concurrency: 8
 
+sweep:
+  # Recognition sweep: scan every named person for confident matches among unnamed
+  # faces at once, grouped by person (GET /api/v1/faces/sweep, editor-only). It
+  # composes the candidates search above; it never auto-assigns — confidence only
+  # narrows the list, every confirm still needs a human.
+  #
+  # How many subjects are scanned at once. This stacks on candidates.concurrency
+  # (per-subject exemplar searches), so keep it small on a RAM-constrained box. Set
+  # to 0 (or below) to fall back to the default.
+  concurrency: 4
+  # Cap on how many subjects one sweep scans. When more subjects have faces than
+  # this, the sweep scans the first max_subjects (by name) and marks the result
+  # capped rather than silently truncating. Set to 0 (or below) for the default.
+  max_subjects: 500
+
 auth:
   # Credentials used to create the initial admin account on first run.
   bootstrap_admin_username: ""

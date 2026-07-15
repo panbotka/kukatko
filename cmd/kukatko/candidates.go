@@ -22,7 +22,21 @@ import (
 func buildCandidatesAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 ) *candidatesapi.API {
-	svc := candidates.New(candidates.Config{
+	return candidatesapi.NewAPI(candidatesapi.Config{
+		Service:      buildCandidatesService(cfg, db, mediaStore),
+		RequireWrite: authAPI.RequireWrite,
+	})
+}
+
+// buildCandidatesService assembles the read-only untagged-face candidate search over
+// the shared pool: the four stores plus the media builder, tuned from cfg.Candidates
+// (with the relative face-size floor reused from cfg.Faces). The recognition sweep
+// reuses the same service as its per-subject finder, so building it here keeps the
+// two call sites from drifting.
+func buildCandidatesService(
+	cfg *config.Config, db *database.DB, mediaStore storage.Storage,
+) *candidates.Service {
+	return candidates.New(candidates.Config{
 		Faces:       vectors.NewStore(db.Pool()),
 		People:      people.NewStore(db.Pool()),
 		Feedback:    feedback.NewStore(db.Pool()),
@@ -33,9 +47,5 @@ func buildCandidatesAPI(
 		MinFacePx:   cfg.Candidates.MinFacePx,
 		Concurrency: cfg.Candidates.Concurrency,
 		MinFaceRel:  cfg.Faces.MinFaceSize,
-	})
-	return candidatesapi.NewAPI(candidatesapi.Config{
-		Service:      svc,
-		RequireWrite: authAPI.RequireWrite,
 	})
 }
