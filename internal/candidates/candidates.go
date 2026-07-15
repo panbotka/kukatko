@@ -205,6 +205,11 @@ type Candidate struct {
 	MatchCount int `json:"match_count"`
 	// Action is what confirming this candidate would do.
 	Action Action `json:"action"`
+	// MarkerUID is the existing marker overlapping this face, when there is one
+	// (the assign_person and already_done cases). Empty for an unmarked face
+	// (create_marker). The UI routes the follow-up assign call with it: a present
+	// marker means assign_person on that marker, an absent one create_marker.
+	MarkerUID string `json:"marker_uid,omitempty"`
 }
 
 // Counts is the number of candidates per action, for a summary the UI can show

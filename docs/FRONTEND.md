@@ -87,7 +87,7 @@ zapiš sem.
   „Bez náhledu" i všechny ručně skládané `text-center py-5` bloky napříč
   stránkami (`LibraryPage`, `SearchPage`, `AlbumsPage`, `AlbumDetailPage`, `LabelsPage`,
   `LabelDetailPage`, `PeoplePage`, `SubjectPage`, `PlacesPage`, `MapPage`, `FavoritesPage`,
-  `SavedSearchesPage`, `ClustersPage`, `DuplicatesPage`, `TrashPage`, `SlideshowPage` (s akcí
+  `SavedSearchesPage`, `ClustersPage`, `FacesPage`, `DuplicatesPage`, `TrashPage`, `SlideshowPage` (s akcí
   „Zpět"), `ImportPage`) i v komponentách (`AlbumTile`/`SubjectTile` cover placeholder,
   `Outliers`). **Ne každá prázdnota si ho zaslouží:** v hustém panelu, kde pod sebou sedí
   několik krátkých seznamů (`OrganizePanel` — alba a štítky), by placeholder přerostl chipy,
@@ -550,6 +550,23 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `ClustersPage` = `/people/clusters` (editor/admin) review fronta nepojmenovaných shluků:
   `ClusterCard` (reprezentant + ukázky + odebrání zatoulaného obličeje + jednorázové pojmenování
   celého shluku) v `Row`/`Col` mřížce, optimistické odebrání po pojmenování,
+  `FacesPage` = `/faces` (editor/admin, odkaz v „Nástrojích") „najdi osobu mezi neotagovanými
+  fotkami": config panel `CandidateSearchForm` (výběr osoby přes `AddAutocomplete` s počtem fotek
+  v `hint`, práh v **procentech** 20–80 % s bookendy „Více výsledků"↔„Lepší shody", limit, tlačítko
+  Hledat — hledání je **explicitní**, ne live-on-drag), volá `searchCandidates()` (převod procent→
+  vzdálenost přes `percentToDistance` z `lib/faceThreshold`), `CandidateStats` ukáže zdrojové fotky/
+  obličeje, nalezené shody, hotovo i **spočítaný `min_match_count`** s vysvětlením; `CandidateFilterTabs`
+  (Vše/Nové/Přiřadit/Hotovo s počty, scopne i „Potvrdit vše"), `CandidateLegend` + `CandidateCard`
+  (`CandidateFaceImage` = **plný `fit_720` náhled** s obličejem jako **barevný obdélník** přes
+  `faceBoxStyle`, ne oříznutý čip; barva/badge/obdélník sdílí jeden kód přes bucket `new`/`assign`/
+  `done` v `lib/candidateReview`); ✓ potvrdí (`assignFace`, `create_marker` vs `assign_person` dle
+  `marker_uid` kandidáta) **optimisticky na místě** (karta se překlopí, mřížka se nereloadne), ✗
+  **trvale zamítne** přes `rejectFace` (`services/feedback`) a kartu odebere; **klávesnice** (šipky/
+  `jkhl` posun, `y`/`Enter` potvrdit, `n` zamítnout, fokus skáče na další akční kartu — registrováno
+  v `?` nápovědě přes `shortcuts.groups.faceSearch`), „Potvrdit vše (n)" projde akční karty aktivní
+  záložky sekvenčně s live `current/total`, zrušitelně, **částečné selhání neroluje zpět** a nahlásí
+  co selhalo — stav review drží `useCandidateReview`; config (osoba/práh/limit/záložka) v URL,
+  stavy prázdno/bez-obličejů/bez-embeddingů/nula-shod/loading,
   `MapPage` = `/map` mapový pohled: geotagované fotky jako shlukované markery nad mapy.com
   dlaždicemi (Leaflet), přepínač podkladu + filtry (datum/archiv/soukromé) v `MapFilterBar`,
   stav (mapset/viewport/filtry) v URL — posun/zoom zapisuje viewport bez refetche, změna filtru
@@ -748,6 +765,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   jinak by pojmenování posledního obličeje odskočilo zpátky nahoru;
   `useSubjects()` = líný seznam všech subjektů pro typeahead (mountuje se až s `FacesPanel`,
   takže prohlížení fotky ho nikdy nezaplatí; chyba = prázdný seznam, pole pak jen zakládá nové);
+  `useCandidateReview(subjectUid,candidates)` = stavový stroj review mřížky `/faces`: naseeduje
+  pracovní seznam z čerstvého hledání a aplikuje ✓/✗ **optimisticky** (mřížka se nereloadne);
+  `confirm` překlopí kartu na `done` a zavolá `assignFace` (chyba → `error` k retry, sousedů se
+  nedotkne), `reject` kartu odebere + `rejectFace` (při chybě vrátí zpět), `confirmAll(tab)` projde
+  akční karty jedné záložky sekvenčně s `confirmAllState` `{running,current,total,failed}`,
+  zrušitelně (`cancelConfirmAll`), částečné selhání neroluje zpět a nahlásí přes `actionError`;
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
   `uid`/server stavu; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user
@@ -852,6 +875,14 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `faceGeometry.ts` = pure `faceBoxStyle` (normalized bbox → absolutní `left/top/width/height`
   v %, pro overlay) + `faceCropStyle` (čtvercový výřez obličeje z thumbnailu přes
   background-position/-size, pro `FaceThumb`);
+  `faceThreshold.ts` = pure převod prahu hledání osoby mezi **procenty** (UI) a **kosinovou
+  vzdáleností** (backend): `percentToDistance` (`1 - p/100`)/`distanceToPercent` (inverzní,
+  zaokrouhlený — i „match %" na kartě)/`clampThresholdPercent` + konstanty rozsahu (20–80, krok 5,
+  default 50); `candidateReview.ts` = pure model review mřížky `/faces`: `ReviewItem`/`CandidateStatus`
+  (`pending`/`done`/`error`), bucket `new`/`assign`/`done` (`bucketOf`, sdílený barevný kód přes
+  `BUCKET_VARIANT`), `FilterTab`/`FILTER_TABS`/`matchesTab`/`tabCounts`, `isActionable`,
+  `buildAssignRequest` (zrcadlí `useFaces`: existující `marker_uid` → `assign_person`, jinak
+  `create_marker` s bboxem — nikdy nevyrobí duplicitní marker) a `buildRejection`;
   `coordinates.ts` = pure tolerantní parser souřadnic pro location picker: `parseCoordinates(input)`
   → `{ok:true,value:{lat,lng}}` | `{ok:false,error:'empty'|'format'|'range'}` (desetinné stupně /
   DMS / stupně-desetinné-minuty, komma/mezera oddělovač, ±/hemisféry N/S/E/W, unicode primy/`''`,
@@ -998,6 +1029,13 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `SubjectInput`/`SubjectType`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
   `ClusterView`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/
   `OutlierFace`; sdílí `ApiError`+`buildPhotoQuery` z `auth.ts`/`photos.ts`);
+  `faces.ts` = klient hledání „najdi osobu mezi neotagovanými fotkami":
+  `searchCandidates(subjectUid,{threshold,limit},signal)` nad `POST /subjects/{uid}/candidates`; typy
+  `CandidateSearchRequest`/`CandidateResult`/`Candidate`/`FaceBox`/`CandidateCounts`/`CandidateAction`
+  (`create_marker`/`assign_person`/`already_done`)/`CandidateReason`; potvrzení jde přes `assignFace`
+  z `people.ts`, zamítnutí přes `feedback.ts`; `feedback.ts` = perzistentní zpětná vazba (nemutuje,
+  jen drží zamítnutý obličej mimo příští hledání): `rejectFace(req,signal)`/`unrejectFace(req,signal)`
+  nad `POST`/`DELETE /feedback/face-rejections`, typ `FaceRejection` `{photo_uid,face_index,subject_uid}`;
   `map.ts` = mapový klient: `fetchMapPhotos(params,signal)` nad `GET /api/v1/map/photos`
   (GeoJSON FeatureCollection geotagovaných fotek + `buildMapQuery`), `tileLayerUrl(mapset)` (Leaflet
   URL template na backend proxy, **bez API klíče**), `reverseGeocode(lat,lng,signal?)` nad
@@ -1145,7 +1183,7 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`replace` redirect na `/` se zachovaným query stringem),
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/photos/:uid`, `/people`,
-  `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/trash` a `/duplicates`
+  `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/faces`, `/trash` a `/duplicates`
   navíc pod `RequireRole role="editor"` = write-only, `/import` pod `RequireImport`
   (admin **nebo** ai — mimo žebříček rolí, řídí `canImport`), `/maintenance`, `/system`,
   `/users` a `/audit` pod `RequireRole role="admin"` = admin-only). Konfig:

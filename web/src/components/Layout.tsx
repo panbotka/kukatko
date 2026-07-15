@@ -77,6 +77,12 @@ const TOOLS_GROUP: NavGroup = {
   icon: 'tools',
   items: [
     {
+      to: '/faces',
+      labelKey: 'nav.faceSearch',
+      titleKey: 'nav.titles.faceSearch',
+      icon: 'person-bounding-box',
+    },
+    {
       to: '/duplicates',
       labelKey: 'nav.duplicates',
       titleKey: 'nav.titles.duplicates',

@@ -173,6 +173,7 @@ func (s *Service) assemble(
 			Distance:   candidate.distance,
 			MatchCount: candidate.matchCount,
 			Action:     action,
+			MarkerUID:  derefMarker(candidate.markerUID),
 		})
 	}
 	return out, nil
@@ -234,6 +235,15 @@ func faceBox(bbox [4]float64, photo photos.Photo) FaceBox {
 			int(math.Round(bbox[3] * float64(displayHeight))),
 		},
 	}
+}
+
+// derefMarker returns the marker UID a candidate carries, or the empty string when
+// the face has no overlapping marker (the create_marker case).
+func derefMarker(markerUID *string) string {
+	if markerUID == nil {
+		return ""
+	}
+	return *markerUID
 }
 
 // displayDims returns the photo's pixel dimensions in display (EXIF-oriented) space:

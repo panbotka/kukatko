@@ -9,6 +9,7 @@ import { AlbumsPage } from './pages/AlbumsPage'
 import { AuditPage } from './pages/AuditPage'
 import { ClustersPage } from './pages/ClustersPage'
 import { DuplicatesPage } from './pages/DuplicatesPage'
+import { FacesPage } from './pages/FacesPage'
 import { FavoritesPage } from './pages/FavoritesPage'
 import { ImportPage } from './pages/ImportPage'
 import { LabelDetailPage } from './pages/LabelDetailPage'
@@ -66,6 +67,8 @@ export function AppRoutes() {
           <Route element={<RequireRole role="editor" />}>
             <Route path="/upload" element={<UploadPage />} />
             <Route path="/people/clusters" element={<ClustersPage />} />
+            {/* Finding a person among untagged photos assigns faces: a write action. */}
+            <Route path="/faces" element={<FacesPage />} />
             {/* Duplicate review archives photos in bulk: editors and admins only. */}
             <Route path="/duplicates" element={<DuplicatesPage />} />
             {/* Trash management (restore / permanent delete) is a write action. */}

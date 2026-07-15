@@ -40,6 +40,14 @@ if (typeof Element !== 'undefined') {
   proto.hasPointerCapture ??= () => false
 }
 
+// jsdom does not implement scrollIntoView, which keyboard-driven grids call to keep
+// the focused item on screen. Provide an inert stub so that production code can call
+// it unconditionally.
+if (typeof Element !== 'undefined') {
+  const proto = Element.prototype as unknown as { scrollIntoView?: () => void }
+  proto.scrollIntoView ??= () => undefined
+}
+
 // React Testing Library does not auto-clean between tests under Vitest's
 // default config, so unmount rendered trees after each test to avoid leakage.
 afterEach(() => {

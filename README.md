@@ -34,6 +34,12 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   **seskupí** za jednu viditelnou fotku — ostatní varianty zůstanou dostupné v pruhu na jejím detailu —,
   a to buď automatickou detekcí (admin akce nad celou knihovnou), nebo ručně z výběru. **Nic se
   neslévá ani nemaže:** každý soubor si drží vlastní řádek, takže (od)seskupení je kdykoli vratné.
+- **Najdi osobu mezi neotagovanými fotkami** (`/faces`, editoři): vybereš člověka a Kukátko projde
+  fotky, kde ještě není označený, a najde obličeje, které se mu podobají. Práh nastavuješ v **procentech**
+  (kompromis „více výsledků" ↔ „lepší shody"), kandidát se ukazuje jako **barevný obdélník přes celou
+  fotku** (vidíš kontext, ne oříznutý čip). Potvrzuješ **na místě jedním klikem** nebo **klávesnicí**
+  (`y`/`n`, šipky) — a **zamítnutí je trvalé**, takže se špatný tip příště nevrátí. „Potvrdit vše"
+  projede celou dávku. Na rozdíl od photo-sorteru, kde zamítnutí zmizelo a obličej se vracel dokola.
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé
