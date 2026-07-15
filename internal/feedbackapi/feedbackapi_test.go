@@ -21,11 +21,12 @@ func passthrough(next http.Handler) http.Handler { return next }
 // handler test can assert the key, the audit entry and the status mapping without a
 // database.
 type fakeStore struct {
-	err      error
-	called   string
-	faceKey  feedback.FaceRejectionKey
-	labelKey feedback.LabelRejectionKey
-	entry    audit.Entry
+	err        error
+	called     string
+	faceKey    feedback.FaceRejectionKey
+	labelKey   feedback.LabelRejectionKey
+	confirmKey feedback.FaceConfirmationKey
+	entry      audit.Entry
 }
 
 func (f *fakeStore) RejectFace(_ context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error {
@@ -45,6 +46,16 @@ func (f *fakeStore) RejectLabel(_ context.Context, key feedback.LabelRejectionKe
 
 func (f *fakeStore) UnrejectLabel(_ context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error {
 	f.called, f.labelKey, f.entry = "UnrejectLabel", key, entry
+	return f.err
+}
+
+func (f *fakeStore) ConfirmFace(_ context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error {
+	f.called, f.confirmKey, f.entry = "ConfirmFace", key, entry
+	return f.err
+}
+
+func (f *fakeStore) UnconfirmFace(_ context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error {
+	f.called, f.confirmKey, f.entry = "UnconfirmFace", key, entry
 	return f.err
 }
 
@@ -102,6 +113,50 @@ func TestHandleFaceUnreject(t *testing.T) {
 	}
 }
 
+// TestHandleFaceConfirm checks a valid confirmation answers 204 and forwards the
+// key and an audit entry describing the face and subject.
+func TestHandleFaceConfirm(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{}
+	rec := serve(store, http.MethodPost, "/api/v1/feedback/face-confirmations",
+		`{"photo_uid":"ph1","face_index":2,"subject_uid":"su1"}`)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if store.called != "ConfirmFace" {
+		t.Fatalf("store call = %q, want ConfirmFace", store.called)
+	}
+	want := feedback.FaceConfirmationKey{PhotoUID: "ph1", FaceIndex: 2, SubjectUID: "su1"}
+	if store.confirmKey != want {
+		t.Errorf("confirmation key = %+v, want %+v", store.confirmKey, want)
+	}
+	if store.entry.Action != audit.ActionFaceConfirm || store.entry.TargetUID != "su1" {
+		t.Errorf("audit entry = %+v, want face.confirm targeting su1", store.entry)
+	}
+	if store.entry.Details["photo_uid"] != "ph1" || store.entry.Details["face_index"] != 2 {
+		t.Errorf("audit details = %+v, want photo_uid ph1, face_index 2", store.entry.Details)
+	}
+}
+
+// TestHandleFaceUnconfirm checks the take-back route answers 204 and calls
+// UnconfirmFace.
+func TestHandleFaceUnconfirm(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{}
+	rec := serve(store, http.MethodDelete, "/api/v1/feedback/face-confirmations",
+		`{"photo_uid":"ph1","face_index":0,"subject_uid":"su1"}`)
+
+	if rec.Code != http.StatusNoContent || store.called != "UnconfirmFace" {
+		t.Fatalf("status = %d, call = %q, want 204 UnconfirmFace", rec.Code, store.called)
+	}
+	if store.entry.Action != audit.ActionFaceUnconfirm {
+		t.Errorf("audit action = %q, want face.unconfirm", store.entry.Action)
+	}
+}
+
 // TestHandleLabelRejectAndUnreject checks both label routes forward the key and the
 // matching audit action.
 func TestHandleLabelRejectAndUnreject(t *testing.T) {
@@ -150,6 +205,10 @@ func TestHandleReject_errors(t *testing.T) {
 		{"malformed json", "/api/v1/feedback/label-rejections", `{`, nil, 400, false},
 		{"missing label", "/api/v1/feedback/label-rejections", `{"photo_uid":"ph1"}`, nil, 400, false},
 		{"target not found", "/api/v1/feedback/face-rejections",
+			`{"photo_uid":"ph1","face_index":0,"subject_uid":"su1"}`, feedback.ErrTargetNotFound, 404, true},
+		{"confirm missing subject", "/api/v1/feedback/face-confirmations",
+			`{"photo_uid":"ph1","face_index":0}`, nil, 400, false},
+		{"confirm target not found", "/api/v1/feedback/face-confirmations",
 			`{"photo_uid":"ph1","face_index":0,"subject_uid":"su1"}`, feedback.ErrTargetNotFound, 404, true},
 		{"store failure", "/api/v1/feedback/label-rejections",
 			`{"photo_uid":"ph1","label_uid":"lb1"}`, errors.New("boom"), 500, true},

@@ -204,6 +204,30 @@ func (s *Store) ListFacesBySubject(ctx context.Context, subjectUID string) ([]Fa
 	return s.queryFaces(ctx, listFacesBySubjectSQL, subjectUID)
 }
 
+// countMarkersWithoutFaceSQL counts a subject's valid markers that no embedded
+// face row points back at — the assignments that exist as markers but have no
+// embedding to score. The anti-join is on marker_uid: a face matched to the
+// marker carries its uid, so a marker with no such face was never covered by
+// face detection (for example while the embedding sidecar was offline).
+const countMarkersWithoutFaceSQL = `
+SELECT COUNT(*)
+FROM markers m
+WHERE m.subject_uid = $1 AND m.invalid = FALSE
+  AND NOT EXISTS (SELECT 1 FROM faces f WHERE f.marker_uid = m.uid)`
+
+// CountMarkersWithoutFace returns how many of subjectUID's valid markers have no
+// embedded face row, i.e. how many of the subject's assigned faces cannot be
+// scored against the centroid because no embedding exists for them. Outlier
+// review reports the number so unscorable faces are named rather than silently
+// omitted.
+func (s *Store) CountMarkersWithoutFace(ctx context.Context, subjectUID string) (int, error) {
+	var count int
+	if err := s.pool.QueryRow(ctx, countMarkersWithoutFaceSQL, subjectUID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting markers without a face for %s: %w", subjectUID, err)
+	}
+	return count, nil
+}
+
 // FacesByKeys returns the face rows identified by the given (photo_uid, face_index)
 // keys, in an unspecified order. Keys with no matching row — for example a face
 // removed by a later re-detection — are simply absent from the result, so the

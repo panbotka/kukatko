@@ -19,8 +19,9 @@ func TestEmptyKeyValidation(t *testing.T) {
 	ctx := context.Background()
 	entry := audit.Entry{Action: audit.ActionFaceReject}
 
-	faceKey := feedback.FaceRejectionKey{FaceIndex: 0} // no photo/subject UID
-	labelKey := feedback.LabelRejectionKey{}           // no photo/label UID
+	faceKey := feedback.FaceRejectionKey{FaceIndex: 0}       // no photo/subject UID
+	labelKey := feedback.LabelRejectionKey{}                 // no photo/label UID
+	confirmKey := feedback.FaceConfirmationKey{FaceIndex: 0} // no photo/subject UID
 
 	checks := []struct {
 		name string
@@ -30,6 +31,8 @@ func TestEmptyKeyValidation(t *testing.T) {
 		{"UnrejectFace", store.UnrejectFace(ctx, faceKey, entry)},
 		{"RejectLabel", store.RejectLabel(ctx, labelKey, entry)},
 		{"UnrejectLabel", store.UnrejectLabel(ctx, labelKey, entry)},
+		{"ConfirmFace", store.ConfirmFace(ctx, confirmKey, entry)},
+		{"UnconfirmFace", store.UnconfirmFace(ctx, confirmKey, entry)},
 	}
 	for _, c := range checks {
 		if !errors.Is(c.err, feedback.ErrEmptyKey) {
@@ -43,8 +46,14 @@ func TestEmptyKeyValidation(t *testing.T) {
 	if _, err := store.IsLabelRejected(ctx, labelKey); !errors.Is(err, feedback.ErrEmptyKey) {
 		t.Errorf("IsLabelRejected empty key = %v, want ErrEmptyKey", err)
 	}
+	if _, err := store.IsFaceConfirmed(ctx, confirmKey); !errors.Is(err, feedback.ErrEmptyKey) {
+		t.Errorf("IsFaceConfirmed empty key = %v, want ErrEmptyKey", err)
+	}
 	if _, err := store.FaceRejectionsForSubject(ctx, ""); !errors.Is(err, feedback.ErrEmptyKey) {
 		t.Errorf("FaceRejectionsForSubject empty = %v, want ErrEmptyKey", err)
+	}
+	if _, err := store.FaceConfirmationsForSubject(ctx, ""); !errors.Is(err, feedback.ErrEmptyKey) {
+		t.Errorf("FaceConfirmationsForSubject empty = %v, want ErrEmptyKey", err)
 	}
 	if _, err := store.LabelRejectionsForLabel(ctx, ""); !errors.Is(err, feedback.ErrEmptyKey) {
 		t.Errorf("LabelRejectionsForLabel empty = %v, want ErrEmptyKey", err)

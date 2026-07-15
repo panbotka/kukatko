@@ -1,10 +1,11 @@
-// Package feedbackapi exposes the persisted-rejection endpoints over HTTP: a user
+// Package feedbackapi exposes the persisted-feedback endpoints over HTTP: a user
 // telling Kukátko "no, this face is not this person" or "no, this photo should not
-// have this label", and taking either back. The four endpoints all mutate, so they
+// have this label" (rejections), "yes, this face really is this person" (a
+// confirmation), and taking any of them back. The endpoints all mutate, so they
 // are guarded by the editor/admin write guard; each write is recorded in the audit
-// log in the same transaction as the rejection. Recording a rejection is an opinion
+// log in the same transaction as the change. Recording feedback is an opinion
 // only — it never unassigns a face or detaches a label — and it is idempotent, so a
-// double POST or a DELETE of something never rejected both answer 204.
+// double POST or a DELETE of something never recorded both answer 204.
 //
 // The store is an interface and the write guard is injected, so the package stays
 // decoupled from the persistence and auth wiring and is unit-testable with fakes.
@@ -38,6 +39,11 @@ type Store interface {
 	RejectLabel(ctx context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error
 	// UnrejectLabel takes a label rejection back, idempotently and audited.
 	UnrejectLabel(ctx context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error
+	// ConfirmFace records that a face really IS a subject, idempotently and
+	// audited.
+	ConfirmFace(ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error
+	// UnconfirmFace takes a face confirmation back, idempotently and audited.
+	UnconfirmFace(ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error
 }
 
 // API exposes the rejection endpoints over HTTP. The write guard is supplied by the
@@ -64,10 +70,12 @@ func NewAPI(cfg Config) *API {
 // RegisterRoutes mounts the rejection endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
-//	POST   /feedback/face-rejections    RequireWrite  reject a face↔subject guess
-//	DELETE /feedback/face-rejections    RequireWrite  take a face rejection back
-//	POST   /feedback/label-rejections   RequireWrite  reject a photo↔label guess
-//	DELETE /feedback/label-rejections   RequireWrite  take a label rejection back
+//	POST   /feedback/face-rejections     RequireWrite  reject a face↔subject guess
+//	DELETE /feedback/face-rejections     RequireWrite  take a face rejection back
+//	POST   /feedback/label-rejections    RequireWrite  reject a photo↔label guess
+//	DELETE /feedback/label-rejections    RequireWrite  take a label rejection back
+//	POST   /feedback/face-confirmations  RequireWrite  confirm a face↔subject assignment
+//	DELETE /feedback/face-confirmations  RequireWrite  take a face confirmation back
 //
 // The face and the label are named in the request body rather than the path, so a
 // DELETE carries a body the same way the label-detach endpoint does.
@@ -77,6 +85,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Delete("/face-rejections", a.handleFaceUnreject)
 		r.With(a.requireWrite).Post("/label-rejections", a.handleLabelReject)
 		r.With(a.requireWrite).Delete("/label-rejections", a.handleLabelUnreject)
+		r.With(a.requireWrite).Post("/face-confirmations", a.handleFaceConfirm)
+		r.With(a.requireWrite).Delete("/face-confirmations", a.handleFaceUnconfirm)
 	})
 }
 
