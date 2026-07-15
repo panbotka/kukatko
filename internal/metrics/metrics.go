@@ -232,3 +232,13 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	}
 	return n, nil
 }
+
+// Flush forwards to the wrapped writer when it supports flushing, so streaming
+// handlers (for example the recognition sweep's newline-delimited JSON) can push each
+// line to the client as it is produced instead of having the whole response buffered.
+// Without this the status-recording wrapper would hide the underlying http.Flusher.
+func (s *statusRecorder) Flush() {
+	if flusher, ok := s.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}

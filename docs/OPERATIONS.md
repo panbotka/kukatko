@@ -540,6 +540,14 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   osoby se stovkami fotek nefanoutovalo neomezeně. Nekladná hodnota u kteréhokoli klíče spadne na
   default (u `min_face_px` vypne absolutní floor). Env: `KUKATKO_CANDIDATES_MAX_DISTANCE`,
   `_SEARCH_LIMIT`, `_MIN_FACE_PX`, `_CONCURRENCY`.
+- **Sweep klíče (`sweep.*`, `internal/config` + `internal/sweep`):** ladí **recognition sweep**
+  (`GET /faces/sweep`), který skládá candidates hledání přes všechny osoby najednou. `concurrency`
+  (**default 4**) — kolik subjektů se skenuje **naráz**; **stohuje se** na `candidates.concurrency`
+  (kNN exemplárů na subjekt), takže na RAM-limitovaném boxu se drží malé. `max_subjects` (**default
+  500**) — strop kolik subjektů jeden sweep proskenuje; při přesahu skenuje prvních `max_subjects`
+  (dle jména) a výsledek označí `capped` místo tichého ořezu. Nekladná hodnota → default. Sweep
+  **nikdy neautoconfirmuje** — jistota jen zužuje seznam. Env: `KUKATKO_SWEEP_CONCURRENCY`,
+  `_MAX_SUBJECTS`.
 
 ### `maps.user_agent` — restrikce mapy.com klíče na User-Agent
 

@@ -65,6 +65,8 @@ func TestLoad_defaults(t *testing.T) {
 		{"candidates.search_limit", cfg.Candidates.SearchLimit, 1000},
 		{"candidates.min_face_px", cfg.Candidates.MinFacePx, 32},
 		{"candidates.concurrency", cfg.Candidates.Concurrency, 8},
+		{"sweep.concurrency", cfg.Sweep.Concurrency, 4},
+		{"sweep.max_subjects", cfg.Sweep.MaxSubjects, 500},
 		{"trash.retention_days", cfg.Trash.RetentionDays, 30},
 		{"duplicate.enabled", cfg.Duplicate.Enabled, true},
 		{"duplicate.phash_max_diff", cfg.Duplicate.PhashMaxDiff, 8},

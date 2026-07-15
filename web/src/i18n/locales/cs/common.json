@@ -33,6 +33,7 @@
     "import": "Import",
     "maintenance": "Údržba",
     "faceSearch": "Najít osobu",
+    "recognition": "Rozpoznávání",
     "duplicates": "Duplikáty",
     "account": "Můj účet",
     "logout": "Odhlásit se",
@@ -53,6 +54,7 @@
       "upload": "Nahrát nové fotky",
       "tools": "Zobrazit nástroje",
       "faceSearch": "Najít osobu mezi neotagovanými fotkami",
+      "recognition": "Projít všechny a najít shody mezi neoznačenými obličeji",
       "duplicates": "Zkontrolovat duplikáty",
       "trash": "Zobrazit koš",
       "admin": "Zobrazit správu",
@@ -651,6 +653,68 @@
     "nameLabel": "Pojmenuj tuto skupinu",
     "namePlaceholder": "Nové nebo existující jméno…",
     "name": "Pojmenovat skupinu"
+  },
+  "recognition": {
+    "title": "Rozpoznávání",
+    "subtitle": "Projdi všechny pojmenované osoby a najdi jisté shody mezi neoznačenými obličeji — pak seznam odbavuj osobu po osobě.",
+    "form": {
+      "confidenceLabel": "Jistota",
+      "confidenceValue": "{{percent}} %",
+      "confidenceMore": "více shod",
+      "confidenceBetter": "jistější shody",
+      "limitLabel": "Na osobu",
+      "limitHint": "Nejvíc kandidátů na osobu (0 = vše).",
+      "scan": "Prohledat",
+      "cancel": "Zrušit"
+    },
+    "progress": {
+      "scanning": "Prohledávám: {{name}}…",
+      "count": "{{current}} / {{total}}"
+    },
+    "stats": {
+      "actionable_one": "{{count}} k potvrzení",
+      "actionable_few": "{{count}} k potvrzení",
+      "actionable_many": "{{count}} k potvrzení",
+      "actionable_other": "{{count}} k potvrzení",
+      "people_one": "{{count}} osoba se shodami",
+      "people_few": "{{count}} osoby se shodami",
+      "people_many": "{{count}} osoby se shodami",
+      "people_other": "{{count}} osob se shodami",
+      "alreadyDone_one": "{{count}} už přiřazen",
+      "alreadyDone_few": "{{count}} už přiřazené",
+      "alreadyDone_many": "{{count}} už přiřazených",
+      "alreadyDone_other": "{{count}} už přiřazených",
+      "capped": "Zobrazeno {{shown}} z {{total}} osob — zpřísni jistotu nebo spusť znovu."
+    },
+    "person": {
+      "actionable_one": "{{count}} k potvrzení",
+      "actionable_few": "{{count}} k potvrzení",
+      "actionable_many": "{{count}} k potvrzení",
+      "actionable_other": "{{count}} k potvrzení",
+      "confirmAll_one": "Potvrdit vše ({{count}})",
+      "confirmAll_few": "Potvrdit vše ({{count}})",
+      "confirmAll_many": "Potvrdit vše ({{count}})",
+      "confirmAll_other": "Potvrdit vše ({{count}})",
+      "confirmingProgress": "Potvrzuji {{current}} / {{total}}…",
+      "cancelConfirmAll": "Zastavit"
+    },
+    "idle": {
+      "title": "Spusť prohledání",
+      "hint": "Nastav, jak jisté shody chceš, a spusť prohledání — u každé osoby se hledají podobné tváře mezi neoznačenými obličeji."
+    },
+    "empty": {
+      "title": "Není co potvrzovat",
+      "hint": "Při této jistotě jsou všechny obličeje přiřazené."
+    },
+    "error": {
+      "scan": "Prohledání selhalo. Zkus to znovu.",
+      "confirm": "Potvrzení obličeje selhalo.",
+      "reject": "Zamítnutí obličeje selhalo.",
+      "confirmAll_one": "{{count}} potvrzení se nepodařilo.",
+      "confirmAll_few": "{{count}} potvrzení se nepodařila.",
+      "confirmAll_many": "{{count}} potvrzení se nepodařilo.",
+      "confirmAll_other": "{{count}} potvrzení se nepodařilo."
+    }
   },
   "faceSearch": {
     "title": "Najít osobu",

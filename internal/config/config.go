@@ -78,6 +78,7 @@ type Config struct {
 	Faces      FacesConfig      `mapstructure:"faces"`
 	Cluster    ClusterConfig    `mapstructure:"cluster"`
 	Candidates CandidatesConfig `mapstructure:"candidates"`
+	Sweep      SweepConfig      `mapstructure:"sweep"`
 	Auth       AuthConfig       `mapstructure:"auth"`
 	Maps       MapsConfig       `mapstructure:"maps"`
 	Backup     BackupConfig     `mapstructure:"backup"`
@@ -376,6 +377,22 @@ type CandidatesConfig struct {
 	Concurrency int `mapstructure:"concurrency"`
 }
 
+// SweepConfig tunes the recognition sweep — the "scan every named person for
+// confident matches among unnamed faces" work list, which composes the per-subject
+// candidate search across all subjects at once. It never auto-assigns: confidence
+// only narrows the list, every write still needs a human.
+type SweepConfig struct {
+	// Concurrency bounds how many subjects are scanned at once. It stacks on top of
+	// candidates.concurrency (per-subject exemplar searches), so it is kept small on a
+	// RAM-constrained box. A non-positive value falls back to the default.
+	Concurrency int `mapstructure:"concurrency"`
+	// MaxSubjects caps how many subjects a single sweep scans. When more subjects have
+	// faces than this, the sweep scans the first MaxSubjects (by name) and marks the
+	// result capped rather than silently truncating. A non-positive value falls back to
+	// the default.
+	MaxSubjects int `mapstructure:"max_subjects"`
+}
+
 // AuthConfig holds the credentials used to bootstrap the initial admin account
 // plus the session and login rate-limiting policy.
 type AuthConfig struct {
@@ -632,6 +649,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("cluster.suggestion_max_distance", 0.5)
 
 	setCandidatesDefaults(v)
+	setSweepDefaults(v)
 
 	v.SetDefault("auth.bootstrap_admin_username", "")
 	v.SetDefault("auth.bootstrap_admin_password", "")
@@ -661,6 +679,14 @@ func setCandidatesDefaults(v *viper.Viper) {
 	v.SetDefault("candidates.search_limit", 1000)
 	v.SetDefault("candidates.min_face_px", 32)
 	v.SetDefault("candidates.concurrency", 8)
+}
+
+// setSweepDefaults registers the recognition-sweep defaults: a small worker pool of
+// subjects scanned at once (it stacks on candidates.concurrency, so it stays low on
+// this RAM-constrained box) and a cap on how many subjects one sweep scans.
+func setSweepDefaults(v *viper.Viper) {
+	v.SetDefault("sweep.concurrency", 4)
+	v.SetDefault("sweep.max_subjects", 500)
 }
 
 func setMapsDefaults(v *viper.Viper) {

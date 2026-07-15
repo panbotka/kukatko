@@ -83,6 +83,12 @@ const TOOLS_GROUP: NavGroup = {
       icon: 'person-bounding-box',
     },
     {
+      to: '/recognition',
+      labelKey: 'nav.recognition',
+      titleKey: 'nav.titles.recognition',
+      icon: 'person-check',
+    },
+    {
       to: '/duplicates',
       labelKey: 'nav.duplicates',
       titleKey: 'nav.titles.duplicates',

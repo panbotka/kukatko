@@ -567,6 +567,21 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   záložky sekvenčně s live `current/total`, zrušitelně, **částečné selhání neroluje zpět** a nahlásí
   co selhalo — stav review drží `useCandidateReview`; config (osoba/práh/limit/záložka) v URL,
   stavy prázdno/bez-obličejů/bez-embeddingů/nula-shod/loading,
+  `RecognitionPage` = `/recognition` (editor/admin, odkaz v „Nástrojích") **recognition sweep**
+  „projdi všechny a najdi shody mezi neoznačenými obličeji": config panel (posuvník **jistoty** v
+  procentech 50–95 %, step 1, **default 75 %** — těsný, tahle stránka je pro snadné výhry; limit na
+  osobu; tlačítko Prohledat) volá **stream** `streamSweep()` (`services/recognition`, NDJSON přes
+  `fetch`+`ReadableStream`); během scanu **živý pruh** `current/total` + jméno právě prohledávaného
+  a **zrušení** (`cancel`→`AbortController`), karty se objevují **osobu po osobě** jak přicházejí, ne
+  až na konci; jedna `PersonSweepCard` na osobu = hlavička (jméno + počet k vyřízení + **„Potvrdit vše
+  (n)"**) nad **stejnou** bbox mřížkou co `/faces` (**reuse `CandidateCard`**, žádný fork); ✓ potvrdí
+  (`assignFace`), ✗ **trvale zamítne** (`rejectFace`); **když se vyřídí poslední kandidát osoby, celá
+  karta zmizí** (list se zmenšuje = odměna) — stav řídí `useSweepReview` (`people` filtruje na ty s
+  akčními kartami přes `hasActionable`); **klávesnice** stejná jako `/faces` (šipky/`jkhl` posun přes
+  plochou `focusSequence` napříč osobami, `y`/`Enter` potvrdit, `n` zamítnout — reuse
+  `useKeyboardShortcuts` + `shortcuts.groups.faceSearch`); globální statistiky (k vyřízení / už
+  přiřazené / lidé se shodami) ze `summary`, `capped` upozornění, **čistý prázdný stav** po scanu bez
+  shod („všechny obličeje jsou přiřazené"); config (jistota/limit) v URL; **nikdy neautoconfirmuje**,
   `MapPage` = `/map` mapový pohled: geotagované fotky jako shlukované markery nad mapy.com
   dlaždicemi (Leaflet), přepínač podkladu + filtry (datum/archiv/soukromé) v `MapFilterBar`,
   stav (mapset/viewport/filtry) v URL — posun/zoom zapisuje viewport bez refetche, změna filtru
@@ -771,6 +786,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   nedotkne), `reject` kartu odebere + `rejectFace` (při chybě vrátí zpět), `confirmAll(tab)` projde
   akční karty jedné záložky sekvenčně s `confirmAllState` `{running,current,total,failed}`,
   zrušitelně (`cancelConfirmAll`), částečné selhání neroluje zpět a nahlásí přes `actionError`;
+  `useSweepReview()` = orchestrátor `/recognition` sweepu (multi-osoba varianta review): streamuje
+  přes `streamSweep`, sbírá jednu `PersonState` na osobu s matchi jak přicházejí (`progress`/`person`/
+  `summary`), `confirm`/`reject`/`confirmAllForPerson` aplikuje **optimisticky** stejnými pravidly
+  (`buildAssignRequest`/`buildRejection` z `candidateReview`), `people` vrací jen osoby s akčními
+  kartami (osoba zmizí, když se vyřídí poslední); `cancel`→`AbortController`, jeden `confirmAll` běží
+  naráz; nikdy neautoconfirmuje;
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
   `uid`/server stavu; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user
@@ -883,6 +904,10 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `BUCKET_VARIANT`), `FilterTab`/`FILTER_TABS`/`matchesTab`/`tabCounts`, `isActionable`,
   `buildAssignRequest` (zrcadlí `useFaces`: existující `marker_uid` → `assign_person`, jinak
   `create_marker` s bboxem — nikdy nevyrobí duplicitní marker) a `buildRejection`;
+  `recognitionSweep.ts` = pure helpery `/recognition` sweepu: konstanty posuvníku jistoty (50–95,
+  krok 1, default 75) + `clampConfidencePercent`, `PersonState`, `personActionableCount`/`hasActionable`
+  (karta osoby zmizí, když `hasActionable` je false), a **plochá klávesová fokus sekvence** napříč
+  osobami (`FocusEntry`, `focusKey`, `focusSequence` = jen akční karty, `nextFocusKey`);
   `coordinates.ts` = pure tolerantní parser souřadnic pro location picker: `parseCoordinates(input)`
   → `{ok:true,value:{lat,lng}}` | `{ok:false,error:'empty'|'format'|'range'}` (desetinné stupně /
   DMS / stupně-desetinné-minuty, komma/mezera oddělovač, ±/hemisféry N/S/E/W, unicode primy/`''`,
@@ -1036,6 +1061,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   z `people.ts`, zamítnutí přes `feedback.ts`; `feedback.ts` = perzistentní zpětná vazba (nemutuje,
   jen drží zamítnutý obličej mimo příští hledání): `rejectFace(req,signal)`/`unrejectFace(req,signal)`
   nad `POST`/`DELETE /feedback/face-rejections`, typ `FaceRejection` `{photo_uid,face_index,subject_uid}`;
+  `recognition.ts` = klient recognition sweepu: `streamSweep(params,onMessage,signal)` nad
+  `GET /faces/sweep` **streamuje NDJSON** (`fetch`+`ReadableStream`, řádkuje ručně, `onMessage` dostane
+  jen kompletní řádky), typy `SweepParams` `{confidence,limit}` (`confidence` = **procenta**, backend
+  si je přeloží na vzdálenost) a `SweepMessage` = `progress`|`person`|`summary` (`SweepPerson` nese
+  `candidates`/`counts`/`actionable` ve stejném tvaru jako `faces.ts`); abort přes `signal` = `AbortError`
+  (volající ignoruje); potvrzení jde přes `assignFace`, zamítnutí přes `rejectFace`;
   `map.ts` = mapový klient: `fetchMapPhotos(params,signal)` nad `GET /api/v1/map/photos`
   (GeoJSON FeatureCollection geotagovaných fotek + `buildMapQuery`), `tileLayerUrl(mapset)` (Leaflet
   URL template na backend proxy, **bez API klíče**), `reverseGeocode(lat,lng,signal?)` nad
@@ -1183,8 +1214,8 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`replace` redirect na `/` se zachovaným query stringem),
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/photos/:uid`, `/people`,
-  `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/faces`, `/trash` a `/duplicates`
-  navíc pod `RequireRole role="editor"` = write-only, `/import` pod `RequireImport`
+  `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` a
+  `/duplicates` navíc pod `RequireRole role="editor"` = write-only, `/import` pod `RequireImport`
   (admin **nebo** ai — mimo žebříček rolí, řídí `canImport`), `/maintenance`, `/system`,
   `/users` a `/audit` pod `RequireRole role="admin"` = admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy

@@ -23,6 +23,7 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PlacesPage } from './pages/PlacesPage'
+import { RecognitionPage } from './pages/RecognitionPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
 import { SearchPage } from './pages/SearchPage'
 import { SlideshowPage } from './pages/SlideshowPage'
@@ -69,6 +70,8 @@ export function AppRoutes() {
             <Route path="/people/clusters" element={<ClustersPage />} />
             {/* Finding a person among untagged photos assigns faces: a write action. */}
             <Route path="/faces" element={<FacesPage />} />
+            {/* The recognition sweep confirms faces across everyone: a write action. */}
+            <Route path="/recognition" element={<RecognitionPage />} />
             {/* Duplicate review archives photos in bulk: editors and admins only. */}
             <Route path="/duplicates" element={<DuplicatesPage />} />
             {/* Trash management (restore / permanent delete) is a write action. */}

@@ -265,6 +265,28 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   nebo `"no_embeddings"` (otagovaný, ale obličeje bez embeddingu — box byl offline); box offline
   jinak nevadí (čte vektory už v DB). 503 bez backendu, 404 chybějící subjekt. Mountuje se
   `server.WithAPI` (`buildCandidatesAPI` v `cmd/kukatko/candidates.go`).
+- **Recognition sweep API (`/api/v1`, `internal/sweepapi`, editor/admin přes `RequireWrite`):**
+  „projdi všechny pojmenované osoby a najdi jisté shody mezi neoznačenými obličeji" — server-side
+  fan-out přes **kandidátské hledání** (`internal/candidates`) nad všemi subjekty, ne client-side.
+  `GET /faces/sweep?confidence=<percent-or-distance>&limit=<per-person>`. `confidence`: hodnota
+  `>1` (max 100) je **procento jistoty** → mapuje se na kosinovou vzdálenost `1 - percent/100`
+  (floor `0.01`), hodnota `≤1` je **přímá vzdálenost**, prázdné = default 75 % (0.25); záporné /
+  `>100` / nečíselné → 400. `limit` = strop kandidátů na osobu (0 = vše; záporné → 400). Iteruje
+  subjekty s `marker_count > 0` (tj. mají obličej), scan každého běží s **vysokou jistotou** (těsná
+  vzdálenost) a **omezenou souběžností** (worker pool, `sweep.concurrency`); počet subjektů je
+  zastropován (`sweep.max_subjects`), přesah je **viditelný** (`capped`), ne tiše zahozený. Odpověď
+  je **stream NDJSON** (`application/x-ndjson`), řádek = jedna JSON zpráva `{type,...}`: `progress`
+  `{scanned,total,name}` po každém dokončeném subjektu (hýbe pruhem), `person`
+  `{subject,candidates,counts,actionable}` jen pro subjekty s **akceschopnými** kandidáty (`candidates`
+  ve stejném tvaru jako per-subject endpoint; `already_done` se z pracovního seznamu **vyfiltruje**),
+  a jeden závěrečný `summary` `{people_scanned,people_with_matches,total_actionable,total_already_done,
+  capped,subjects_total}`. Subjekt s **nula** akceschopnými kandidáty se do seznamu vůbec nedostane;
+  subjekt bez obličejů se **přeskočí** (ne error); chyba scanu jednoho subjektu se zaloguje a přeskočí,
+  celý sweep nepadá. **Nikdy neautoconfirmuje** — jistota jen zužuje seznam, každé potvrzení jde pořád
+  přes `POST /photos/{uid}/faces/assign`, zamítnutí přes `POST /feedback/face-rejections`. Chyba
+  **před** prvním řádkem (výpis subjektů selhal) → čisté 500 JSON; chyba **uprostřed** streamu (klient
+  odpojen) už jen zaloguje (200 je odeslané). 503 bez backendu. Mountuje se `server.WithAPI`
+  (`buildSweepAPI` v `cmd/kukatko/sweep.go`), sdílí `candidates.Service` s candidates endpointem.
 - **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
   `{subjects:[{...subject, marker_count}]}` (řazení dle jména, počty non-invalid markerů);
   `POST /subjects` (RequireWrite) → 201 vytvoří subjekt z `{name,type,favorite,private,notes,

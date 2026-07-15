@@ -40,6 +40,12 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   fotku** (vidíš kontext, ne oříznutý čip). Potvrzuješ **na místě jedním klikem** nebo **klávesnicí**
   (`y`/`n`, šipky) — a **zamítnutí je trvalé**, takže se špatný tip příště nevrátí. „Potvrdit vše"
   projede celou dávku. Na rozdíl od photo-sorteru, kde zamítnutí zmizelo a obličej se vracel dokola.
+- **Rozpoznávací sweep** (`/recognition`, editoři): totéž, ale **pro všechny lidi najednou** a při
+  **vysoké jistotě** — Kukátko projede každou pojmenovanou osobu a najde jisté shody mezi neoznačenými
+  obličeji, seskupené po lidech. Výsledky se streamují a objevují **osobu po osobě** (živý pruh
+  s postupem, zrušitelné), pracovní seznam se **viditelně zmenšuje**, jak ho odbavuješ — když vyřídíš
+  poslední kartu osoby, zmizí celá. „Potvrdit vše" odbaví jednoho člověka naráz, klávesnice funguje
+  stejně jako u „Najdi osobu". **Nikdy nic nepřiřadí sám** — jistota jen zužuje seznam, potvrzuje člověk.
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé

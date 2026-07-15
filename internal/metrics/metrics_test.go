@@ -102,6 +102,41 @@ func TestMiddleware_recordsRequest(t *testing.T) {
 	}
 }
 
+// TestMiddleware_preservesFlusher verifies the status-recording wrapper stays
+// transparent to http.Flusher, so streaming handlers (the recognition sweep) can push
+// each line instead of buffering the whole response.
+func TestMiddleware_preservesFlusher(t *testing.T) {
+	t.Parallel()
+
+	router := chi.NewRouter()
+	router.Use(New().Middleware(RouteLabel))
+	reached := false
+	router.Get("/probe", func(w http.ResponseWriter, _ *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("handler ResponseWriter is not an http.Flusher through the metrics middleware")
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte("chunk")); err != nil {
+			t.Errorf("write: %v", err)
+		}
+		flusher.Flush()
+		reached = true
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/probe", nil)
+	router.ServeHTTP(rec, req)
+
+	if !reached {
+		t.Fatal("handler did not reach the flush")
+	}
+	if !rec.Flushed {
+		t.Error("recorder was not flushed through the middleware")
+	}
+}
+
 // TestMiddleware_skipsMetricsPath verifies a scrape of /metrics is not itself
 // counted as an HTTP request.
 func TestMiddleware_skipsMetricsPath(t *testing.T) {
