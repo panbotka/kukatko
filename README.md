@@ -46,11 +46,15 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   s postupem, zrušitelné), pracovní seznam se **viditelně zmenšuje**, jak ho odbavuješ — když vyřídíš
   poslední kartu osoby, zmizí celá. „Potvrdit vše" odbaví jednoho člověka naráz, klávesnice funguje
   stejně jako u „Najdi osobu". **Nikdy nic nepřiřadí sám** — jistota jen zužuje seznam, potvrzuje člověk.
-- **Rozšíření sbírky** („najdi fotky podobné albu / štítku", editoři): pro celé album nebo štítek najde
-  fotky, které vypadají jako ty už v něm, ale ještě v něm nejsou — nejrychlejší způsob, jak dotáhnout
-  polotagovanou knihovnu („ukaž fotky jako na štítku *Ostatky*, ať přidám ty, co jsem minul"). Hledá
-  **per-foto** a hlasuje (ne průměr celé sbírky, ta není jeden vizuální koncept), fotky už ve sbírce i
-  zamítnuté vynechá, přidání jde přes hromadnou editaci. *(API hotové; stránka je samostatný úkol.)*
+- **Rozšíření sbírky** (`/expand`, editoři): pro celé album nebo štítek najde fotky, které vypadají
+  jako ty už v něm, ale ještě v něm nejsou — nejrychlejší způsob, jak dotáhnout polotagovanou knihovnu
+  („ukaž fotky jako na štítku *Ostatky*, ať přidám ty, co jsem minul"). Hledá **per-foto** a hlasuje
+  (ne průměr celé sbírky, ta není jeden vizuální koncept), fotky už ve sbírce i zamítnuté vynechá.
+  Stránka: vybereš album/štítek (řazené podle počtu fotek), práh nastavíš v **procentech** („více
+  výsledků" ↔ „lepší shody", default 70 %), každá dlaždice nese **% podobnosti** a **počet zdrojových
+  fotek**, kterým odpovídá — a vote rule je vypsané, ne černá skříňka. Vybrané kandidáty přidáš běžnou
+  **hromadnou editací předvyplněnou rozšiřovanou sbírkou** (přidané fotky hned zmizí z výsledků),
+  u štítku ✗ fotku **trvale zamítne**, takže se příště nenabídne a opakované průchody konvergují.
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé

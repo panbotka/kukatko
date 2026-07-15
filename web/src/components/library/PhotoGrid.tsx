@@ -99,6 +99,12 @@ export interface PhotoGridSelection {
   selected: Set<string>
   /** Toggles a photo's selection. */
   onToggle: (uid: string) => void
+  /**
+   * Selects the contiguous range between the selection anchor and `uid`
+   * (Shift+click), given the grid's current photo order. When omitted a
+   * Shift+click behaves as a plain toggle.
+   */
+  onToggleRange?: (uid: string, orderedUids: string[]) => void
 }
 
 /** Props for {@link PhotoGrid}. */
@@ -135,6 +141,12 @@ export interface PhotoGridProps {
    * Drives the visible highlight for arrow/`hjkl` grid navigation.
    */
   focusedIndex?: number
+  /**
+   * Per-photo overlays stamped onto each tile (see `PhotoTileProps.extras`) —
+   * e.g. the /expand page's similarity badge and reject button. Called for every
+   * rendered tile; return null for photos that need none.
+   */
+  tileExtras?: (photo: Photo) => React.ReactNode
 }
 
 /**
@@ -155,7 +167,20 @@ export function PhotoGrid({
   gridRef,
   onRangeChanged,
   focusedIndex = -1,
+  tileExtras,
 }: PhotoGridProps) {
+  // Shift+click selects the contiguous range between the anchor and the clicked
+  // tile; the grid supplies its own photo order so pages need no extra wiring.
+  const toggleSelect = (uid: string, shiftKey?: boolean) => {
+    if (shiftKey === true && selection?.onToggleRange !== undefined) {
+      selection.onToggleRange(
+        uid,
+        photos.map((p) => p.uid),
+      )
+      return
+    }
+    selection?.onToggle(uid)
+  }
   return (
     <VirtuosoGrid
       ref={gridRef}
@@ -170,10 +195,11 @@ export function PhotoGrid({
           photo={photo}
           selectable={selection?.active ?? false}
           selected={selection?.selected.has(photo.uid) ?? false}
-          onToggleSelect={selection?.onToggle}
+          onToggleSelect={selection === undefined ? undefined : toggleSelect}
           favoritable={favoritable}
           detailQuery={detailQuery}
           focused={index === focusedIndex}
+          extras={tileExtras?.(photo)}
         />
       )}
       computeItemKey={(_index, photo) => photo.uid}

@@ -26,8 +26,12 @@ export interface PhotoTileProps {
   selectable?: boolean
   /** Whether this tile is currently selected (only meaningful when selectable). */
   selected?: boolean
-  /** Toggles this tile's selection (only meaningful when selectable). */
-  onToggleSelect?: (uid: string) => void
+  /**
+   * Toggles this tile's selection (only meaningful when selectable). The click's
+   * Shift state rides along so the grid can turn Shift+click into a contiguous
+   * range selection.
+   */
+  onToggleSelect?: (uid: string, shiftKey?: boolean) => void
   /**
    * When true a favorite heart overlay is shown (a personal toggle available to
    * every user). It is hidden in selection mode so the tile stays a clean
@@ -45,6 +49,14 @@ export interface PhotoTileProps {
    * grid's arrow/`hjkl` navigation. Purely visual; it does not steal DOM focus.
    */
   focused?: boolean
+  /**
+   * Page-supplied overlays stamped onto the tile (badges, per-tile actions such
+   * as the /expand page's similarity percentage and reject button). Rendered as
+   * siblings of the link/button inside the tile's relative wrapper — never
+   * nested inside it, since interactive content cannot nest — so an interactive
+   * extra never navigates or toggles selection.
+   */
+  extras?: React.ReactNode
 }
 
 /**
@@ -63,6 +75,7 @@ export function PhotoTile({
   favoritable = false,
   detailQuery,
   focused = false,
+  extras,
 }: PhotoTileProps) {
   const { t, i18n } = useTranslation()
   const [loaded, setLoaded] = useState(false)
@@ -154,8 +167,8 @@ export function PhotoTile({
       aria-pressed={selected}
       aria-label={label}
       title={label}
-      onClick={() => {
-        onToggleSelect?.(photo.uid)
+      onClick={(event) => {
+        onToggleSelect?.(photo.uid, event.shiftKey)
       }}
       className={`kk-tile__media btn p-0 border-0 d-block w-100${
         selected ? ' ring ring-primary' : ''
@@ -194,6 +207,7 @@ export function PhotoTile({
       data-focused={focused ? 'true' : undefined}
     >
       {base}
+      {extras}
       {favoritable && !selectable && (
         <FavoriteButton
           uid={photo.uid}

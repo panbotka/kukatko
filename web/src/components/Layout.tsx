@@ -117,6 +117,17 @@ const ADMIN_GROUP: NavGroup = {
   ],
 }
 
+/**
+ * The write-gated expand entry, kept next to Albums/Štítky because it grows
+ * exactly those collections — an editor reaches it from where they curate.
+ */
+const EXPAND_ITEM: NavEntry = {
+  to: '/expand',
+  labelKey: 'nav.expand',
+  titleKey: 'nav.titles.expand',
+  icon: 'magic',
+}
+
 /** The write-gated upload entry, kept top-level so adding photos stays one click away. */
 const UPLOAD_ITEM: NavEntry = {
   to: '/upload',
@@ -250,6 +261,8 @@ export function Layout() {
               {/* Library (the homepage), Albums and Labels are the everyday
                   entry points: never hidden. */}
               {PRIMARY_ITEMS.map(renderLink)}
+              {/* Expanding albums/labels sits right next to them; editors only. */}
+              {canWrite && renderLink(EXPAND_ITEM)}
               {/* The remaining browse destinations, one level down. */}
               {renderGroup(BROWSE_GROUP)}
               {/* Upload is a write action: hidden from viewers. */}

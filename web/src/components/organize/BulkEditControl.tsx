@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
 
-import { BulkEditModal } from './BulkEditModal'
+import { BulkEditModal, type BulkEditPrefill } from './BulkEditModal'
 
 /** Props for {@link BulkEditControl}. */
 export interface BulkEditControlProps {
@@ -11,6 +11,8 @@ export interface BulkEditControlProps {
   bulk: UseBulkEditResult
   /** Bootstrap button variant of the trigger. Defaults to `primary`. */
   variant?: string
+  /** Form values pre-selected when the dialog opens (see `BulkEditPrefill`). */
+  prefill?: BulkEditPrefill
 }
 
 /**
@@ -24,7 +26,7 @@ export interface BulkEditControlProps {
  * nothing to apply to. The dialog always submits exactly the selected UIDs, never
  * the filtered result set behind them.
  */
-export function BulkEditControl({ bulk, variant = 'primary' }: BulkEditControlProps) {
+export function BulkEditControl({ bulk, variant = 'primary', prefill }: BulkEditControlProps) {
   const { t } = useTranslation()
   if (!bulk.canBulkEdit) {
     return null
@@ -39,6 +41,7 @@ export function BulkEditControl({ bulk, variant = 'primary' }: BulkEditControlPr
         photoUids={bulk.photoUids}
         onHide={bulk.close}
         onDone={bulk.finish}
+        prefill={prefill}
       />
     </>
   )

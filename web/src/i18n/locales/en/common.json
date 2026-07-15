@@ -64,8 +64,10 @@
       "users": "Manage user accounts",
       "audit": "View the audit log",
       "account": "Manage your own account",
-      "logout": "Sign out of Kukátko"
-    }
+      "logout": "Sign out of Kukátko",
+      "expand": "Grow an album or a label with similar photos"
+    },
+    "expand": "Expand"
   },
   "language": {
     "cs": "Čeština",
@@ -1506,6 +1508,71 @@
       "range": "Showing {{from}}–{{to}} of {{total}}",
       "prev": "Previous",
       "next": "Next"
+    }
+  },
+  "expand": {
+    "title": "Expand a collection",
+    "subtitle": "Find photos that look like the ones already in an album or on a label, and add them in one step.",
+    "form": {
+      "sourceHeading": "Collection to expand",
+      "kindAlbum": "Album",
+      "kindLabel": "Label",
+      "sourceLabelAlbum": "Pick an album",
+      "sourceLabelLabel": "Pick a label",
+      "sourceHint_one": "{{count}} photo",
+      "sourceHint_other": "{{count}} photos",
+      "sourceNone": "Nothing picked yet.",
+      "sourceSelected": "Selected: {{name}}",
+      "sourcesError": "Albums and labels failed to load.",
+      "thresholdLabel": "Similarity threshold",
+      "thresholdValue": "{{percent}} %",
+      "thresholdMore": "More results",
+      "thresholdBetter": "Better matches",
+      "limitLabel": "Limit",
+      "limitHint": "1–200 results",
+      "search": "Search"
+    },
+    "loading": "Searching for similar photos…",
+    "error": {
+      "search": "The similarity search failed. Please try again.",
+      "reject": "The rejection could not be saved; the photo stays in the results."
+    },
+    "idle": {
+      "title": "Pick a collection to expand",
+      "hint": "Choose an album or a label and Kukátko finds photos that look like its current members — ready to be added."
+    },
+    "empty": {
+      "noEmbeddings": {
+        "title": "The collection's photos have no embeddings yet",
+        "hint": "The collection has photos, but none of them has an embedding computed yet. Embeddings are computed while the compute box is online — try again later."
+      },
+      "emptyCollection": {
+        "title": "The collection is empty",
+        "hint": "The chosen album or label holds no photos, so there is nothing to be similar to."
+      },
+      "noResults": {
+        "title": "No similar photos",
+        "hint": "Nothing cleared the similarity threshold. Try lowering it and searching again."
+      }
+    },
+    "summary": {
+      "sourcePhotos": "Source photos: {{count}}",
+      "withEmbedding": "With an embedding: {{count}}",
+      "minMatch": "Min. matches: {{count}}",
+      "results": "Found: {{count}}",
+      "sampled": "A sample of {{sampled}} of {{count}} source photos was used.",
+      "voteRule_one": "A photo must match at least {{count}} source photo.",
+      "voteRule_other": "A photo must match at least {{count}} source photos.",
+      "ordering": "Sorted by match count, then by similarity.",
+      "allHandled": "Every found photo has been handled — run the search again for more."
+    },
+    "tile": {
+      "similarity": "Similarity {{percent}} %",
+      "similarityValue": "{{percent}} %",
+      "matches_one": "Matches {{count}} source photo",
+      "matches_other": "Matches {{count}} source photos",
+      "matchesValue": "{{count}}×",
+      "reject": "Never offer for this label"
     }
   }
 }
