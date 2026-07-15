@@ -9,6 +9,10 @@ import (
 const (
 	// photoUIDPrefix marks UIDs that identify photo rows.
 	photoUIDPrefix = "ph"
+	// stackUIDPrefix marks UIDs that identify a stack (a group of photo rows that
+	// are the several files of one shot). It is distinct from photoUIDPrefix so a
+	// stack_uid can never be mistaken for a photo uid.
+	stackUIDPrefix = "st"
 	// uidSuffixLen is the number of random characters appended after the prefix.
 	// At ~5 bits per character this yields ~120 bits of entropy, and with the
 	// two-character prefix the total length stays at 26 — within VARCHAR(32).
@@ -25,6 +29,13 @@ const (
 // system random source fails.
 func newPhotoUID() (string, error) {
 	return newUID(photoUIDPrefix)
+}
+
+// newStackUID returns a fresh UID for a stack, of the form "st" followed by
+// uidSuffixLen random base32 characters. It returns a wrapped error only if the
+// system random source fails.
+func newStackUID() (string, error) {
+	return newUID(stackUIDPrefix)
 }
 
 // newUID returns a UID of the form prefix + uidSuffixLen random base32 chars. It

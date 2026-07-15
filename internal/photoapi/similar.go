@@ -122,6 +122,11 @@ func (a *API) resolveSimilar(
 		if !ok {
 			continue // raced delete between search and load; skip it
 		}
+		// A non-primary stack member is hidden everywhere else, so keep it out of
+		// the similar strip too — only its stack's primary should surface.
+		if photo.StackUID != nil && !photo.StackPrimary {
+			continue
+		}
 		a.media.DecorateOne(&photo)
 		out = append(out, similarPhoto{Photo: photo, Distance: m.Distance})
 	}

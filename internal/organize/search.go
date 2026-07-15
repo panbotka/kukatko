@@ -17,9 +17,11 @@ const defaultSearchLimit = 8
 const searchAlbumsSQL = `
 SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
        a.private, a.created_by, a.created_at, a.updated_at,
-       COUNT(ap.photo_uid) AS photo_count
+       COUNT(p.uid) AS photo_count
 FROM albums a
 LEFT JOIN album_photos ap ON ap.album_uid = a.uid
+LEFT JOIN photos p ON p.uid = ap.photo_uid AND p.archived_at IS NULL
+    AND (p.stack_uid IS NULL OR p.stack_primary)
 WHERE immutable_unaccent(a.title) ILIKE immutable_unaccent($1)
    OR immutable_unaccent(a.description) ILIKE immutable_unaccent($1)
 GROUP BY a.uid
@@ -58,9 +60,11 @@ func (s *Store) SearchAlbums(ctx context.Context, q string, limit int) ([]AlbumC
 // limit. The pattern in $1 is a pre-escaped "contains" ILIKE pattern.
 const searchLabelsSQL = `
 SELECT l.uid, l.slug, l.name, l.priority, l.created_at, l.updated_at,
-       COUNT(pl.photo_uid) AS photo_count
+       COUNT(p.uid) AS photo_count
 FROM labels l
 LEFT JOIN photo_labels pl ON pl.label_uid = l.uid
+LEFT JOIN photos p ON p.uid = pl.photo_uid AND p.archived_at IS NULL
+    AND (p.stack_uid IS NULL OR p.stack_primary)
 WHERE immutable_unaccent(l.name) ILIKE immutable_unaccent($1)
 GROUP BY l.uid
 ORDER BY l.priority DESC, l.name, l.uid

@@ -252,6 +252,34 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
     jako každá jiná bez data a význam nese poznámka. Poznámka žije jen s příznakem — shodí-li se
     příznak, `internal/photoapi` poznámku maže (nikdy nezůstane u data prezentovaného jako fakt).
     Do fulltextu `photos.fts` **nepadá** (je to poznámka k datování, ne titulek).
+  - **Stacky (skupiny souborů jednoho snímku)** (migrace `0030_photo_stacks.sql`): dva sloupce —
+    `stack_uid VARCHAR(32)` (sdílené každým členem jednoho stacku, **NULL = fotka není ve stacku**)
+    a `stack_primary BOOLEAN NOT NULL DEFAULT false` (právě jeden `true` na stack — ten viditelný
+    člen). Omezení: CHECK `ck_photos_stack_primary_has_uid` (primary musí mít `stack_uid`),
+    parciální UNIQUE `idx_photos_stack_primary ON photos(stack_uid) WHERE stack_primary` (jeden
+    primary na stack) a parciální `idx_photos_stack_uid … WHERE stack_uid IS NOT NULL` (lookup členů).
+    **Stack seskupuje, nesluje.** Každý člen (RAW + jeho JPEG, exportovaná úprava, kopie/sekvenční
+    jméno) si drží **vlastní řádek** — vlastní rozměry, EXIF, embedding, obličeje i náhledy —, takže
+    (od)stackování je čistě **reverzibilní** bookkeeping (nastav / vymaž sloupec) a nikdy nic
+    neztratí. Ta reverzibilita je celý důvod, proč uživatel může nechat běžet automatickou detekci
+    nad celou knihovnou. **Nezjednodušovat na merge:** `internal/dupmerge` schválně slévá jeden řádek
+    do druhého u **skutečných duplicit** (poražený je nadbytečný) — členové stacku nadbyteční
+    **nejsou**, drží se schválně. `photo_files` (role original/sidecar/edited) je **jiný pojem** —
+    soubory **jednoho** řádku (still + motion klip live fotky); stack seskupuje celé řádky,
+    nezaměňovat. Live foto je už teď jeden řádek (still + MOV jako `photo_files`), a proto zůstalo
+    beze změny — stack model jen zobecňuje na úroveň řádků to, co `media_type='live'` dělá na úrovni
+    souborů. **Viditelnost:** nesekundární členové jsou všude skrytí predikátem
+    `(stack_uid IS NULL OR stack_primary)`, přidaným do sdílených `whereClauses`
+    (`internal/photos/store_list.go`, kryje `List`/`Count`/`Search`/`FilterUIDs`/`YearBuckets`/
+    `TimelineBuckets` → mřížka, oblíbené, hodnocení, mapový GeoJSON, globální i uložené hledání, každý
+    paginovaný total) i do ručních count dotazů (počty alb/štítků, počet markerů subjektu + jeho
+    galerie, place facet) a do `ListActivePhashes` (univerzum duplicit — RAW a jeho JPEG se tak nikdy
+    nenabídnou jako near-duplicita) i similar stripu. `ListParams.IncludeStackMembers` predikát zvedne
+    pro callery, co chtějí všechny členy (výpis variant jednoho stacku). Tyhle úpravy zároveň
+    **narovnaly počty**: počty alb/štítků/subjektů teď počítají `p.uid` přes join na `photos` s
+    predikátem „viditelná + nearchivovaná", takže count vždy sedí s mřížkou, kterou popisuje (dřív
+    zahrnoval i archivované). Detekci vede `internal/stacks` (synchronní, idempotentní, inkrementální
+    globální seskupení, spouští ho admin `POST /process/stacks`).
   **Nové sloupce pro Kukátko:**
   - `photoprism_uid VARCHAR(32)` — PhotoUID z PhotoPrismu (dedup + inkrement).
   - `photoprism_file_hash VARCHAR(40)` — SHA1 souboru z PhotoPrismu (download mapping).

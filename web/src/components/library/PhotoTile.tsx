@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom'
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDate, formatDuration } from '../../lib/format'
 import { type Photo } from '../../services/photos'
+import { Icon } from '../Icon'
 
 import { FavoriteButton } from './FavoriteButton'
 
@@ -132,6 +133,16 @@ export function PhotoTile({
           {photo.duration_ms !== undefined && photo.duration_ms > 0 && (
             <span>{formatDuration(photo.duration_ms)}</span>
           )}
+        </span>
+      )}
+      {photo.stack_count !== undefined && photo.stack_count > 1 && (
+        <span
+          className="position-absolute top-0 end-0 m-1 badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1"
+          role="img"
+          aria-label={t('library.tile.stackCount', { count: photo.stack_count })}
+        >
+          <Icon name="images" />
+          <span>{photo.stack_count}</span>
         </span>
       )}
     </>

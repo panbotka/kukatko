@@ -29,6 +29,11 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   žijí jen v něčí paměti (ne v souboru), doplníš na detailu fotky **předmět, umělce, autorská práva,
   licenci a klíčová slova** (jako odklikávatelné chipy) a označíš, že jde o **sken** fyzické fotky.
   Vše se ukládá jedním tlačítkem spolu s názvem a popisem.
+- **Skupiny souborů jednoho snímku (stacky):** foťák v režimu RAW+JPEG (a exportované úpravy nebo
+  kopie) dělá z jednoho snímku dvě tři dlaždice v mřížce a dvojí započítání v každém albu. Kukátko je
+  **seskupí** za jednu viditelnou fotku — ostatní varianty zůstanou dostupné v pruhu na jejím detailu —,
+  a to buď automatickou detekcí (admin akce nad celou knihovnou), nebo ručně z výběru. **Nic se
+  neslévá ani nemaže:** každý soubor si drží vlastní řádek, takže (od)seskupení je kdykoli vratné.
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé

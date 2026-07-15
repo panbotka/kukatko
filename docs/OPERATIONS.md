@@ -515,6 +515,20 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   mapy.com odmítá **náš** API klíč (vypršel / zrušen / došly kredity) — proxy to loguje WARN
   (`mapy: tile request failed`, se statusem) a vrací **424**; frontend nad tím ukáže varování místo
   šedé mřížky. Oprava je manuální: nový klíč v konzoli mapy.com → `MAPY_API_KEY`.
+- **Stacks klíče (`stacks.*`, `internal/config` + `internal/stacks`):** seskupování více souborů
+  jednoho snímku (RAW+JPEG, exportovaná úprava, kopie) pod jednu viditelnou fotku. `enabled` (bool,
+  **default true**) je **master switch celé funkce** — automatické detekce **i** ručního stackování;
+  při `false` vrací detekční endpoint i ruční stack endpointy **503**. `rules.*` zapíná jednotlivá
+  detekční pravidla nezávisle (mají velmi různou míru falešných shod): `base_name` (**default true** —
+  stejné jméno, jiná přípona; nejbezpečnější), `sequential_copy` (**default true** — jména kopií/
+  sekvencí/úprav `IMG_1234 (2).jpg` / `copy` / `-edited` složená na originál), `unique_id`
+  (**default true** — stejné EXIF `ImageUniqueID` / XMP `InstanceID`; velmi spolehlivé, kde existuje)
+  a `time_gps` (**default false** — stejná vteřina pořízení A stejné GPS; nejvolnější, mylně slévá
+  sériové snímky). Env: `KUKATKO_STACKS_ENABLED`, `KUKATKO_STACKS_RULES_BASE_NAME`,
+  `_RULES_SEQUENTIAL_COPY`, `_RULES_UNIQUE_ID`, `_RULES_TIME_GPS`. **Admin backfill** `POST
+  /process/stacks` (jako ostatní `/process/*`) proběhne detekci nad celou knihovnou přes
+  `stacks.Service.DetectStacks` a vrátí `{created}`; kandidáty jsou jen dosud nestacknuté nearchivované
+  fotky, takže re-run je idempotentní. Při `stacks.enabled: false` odpovídá 503.
 
 ### `maps.user_agent` — restrikce mapy.com klíče na User-Agent
 

@@ -106,6 +106,19 @@ export interface Photo {
   created_at: string
   updated_at: string
   /**
+   * The stack this photo belongs to, when it is stacked (grouped with the other
+   * files of the same shot). Absent for a standalone photo. Only a stack's
+   * visible primary ever appears in listings, so a photo carrying this is that
+   * primary. See {@link Photo.stack_count} and {@link PhotoDetail.stack_members}.
+   */
+  stack_uid?: string
+  /**
+   * How many files the stack holds when this photo is a stacked primary (always
+   * ≥ 2); absent/0 for a standalone photo. Drives the grid tile's member-count
+   * badge.
+   */
+  stack_count?: number
+  /**
    * Whether the current user has favorited this photo. Present on list, search
    * and detail responses (`internal/photoapi` annotates each photo for the
    * acting user); absent (treated as false) when the favorites backend is
@@ -448,12 +461,36 @@ export interface PhotoPlace {
  * uploader (omitted when the photo has no uploader) and its cached place (omitted
  * when it has none).
  */
+/**
+ * One member of a stack, as listed in the detail page's variants strip. Each
+ * member is its own photo row (a RAW, its JPEG, an exported edit); this is the
+ * photo's own `uid`, format and dimensions, with its grid thumbnail and original.
+ * Distinct from {@link PhotoFile}, which is a file *within* one photo row.
+ */
+export interface StackMember {
+  uid: string
+  file_name: string
+  media_type: string
+  file_mime: string
+  file_width: number
+  file_height: number
+  file_size: number
+  is_primary: boolean
+  thumb_url?: string
+  download_url?: string
+}
+
 export interface PhotoDetail extends Photo {
   files: PhotoFile[]
   albums: PhotoAlbumRef[]
   labels: PhotoLabelRef[]
   uploader?: PhotoUploaderRef
   place?: PhotoPlace
+  /**
+   * The stack's variants strip: every file of this photo's stack (this photo
+   * among them), the primary first. Absent/empty for an unstacked photo.
+   */
+  stack_members?: StackMember[]
 }
 
 /**
@@ -917,6 +954,70 @@ export async function unarchivePhoto(uid: string, signal?: AbortSignal): Promise
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorMessage(res))
   }
+}
+
+/**
+ * Groups the given photos into one new stack via `POST /api/v1/photos/stack`
+ * (manual stacking, for the cases automatic detection misses) and returns the
+ * new stack's primary detail. Editor/admin only.
+ *
+ * @throws ApiError with `status` 400 (fewer than two photos), 404 (one is
+ *   missing), 403 (not an editor), 503 (stacking disabled) or 5xx.
+ */
+export async function stackPhotos(photoUids: string[], signal?: AbortSignal): Promise<PhotoDetail> {
+  const res = await fetch(`${API_BASE}/photos/stack`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photo_uids: photoUids }),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PhotoDetail
+}
+
+/**
+ * Makes the photo the primary of its stack via
+ * `POST /api/v1/photos/{uid}/stack/primary` and returns the refreshed detail.
+ * Editor/admin only.
+ *
+ * @throws ApiError with `status` 404 (no such photo), 409 (not stacked), 403
+ *   (not an editor), 503 (stacking disabled) or 5xx.
+ */
+export async function setStackPrimary(uid: string, signal?: AbortSignal): Promise<PhotoDetail> {
+  return postStackMutation(`${API_BASE}/photos/${encodeURIComponent(uid)}/stack/primary`, signal)
+}
+
+/**
+ * Removes the photo from its stack via `POST /api/v1/photos/{uid}/unstack`,
+ * turning it back into a standalone photo, and returns its refreshed detail.
+ * Editor/admin only.
+ */
+export async function unstackMember(uid: string, signal?: AbortSignal): Promise<PhotoDetail> {
+  return postStackMutation(`${API_BASE}/photos/${encodeURIComponent(uid)}/unstack`, signal)
+}
+
+/**
+ * Dissolves the whole stack the photo belongs to via
+ * `POST /api/v1/photos/{uid}/unstack-all` and returns its refreshed detail.
+ * Editor/admin only.
+ */
+export async function unstackAll(uid: string, signal?: AbortSignal): Promise<PhotoDetail> {
+  return postStackMutation(`${API_BASE}/photos/${encodeURIComponent(uid)}/unstack-all`, signal)
+}
+
+/**
+ * postStackMutation POSTs to a body-less stack endpoint and returns the refreshed
+ * photo detail, shared by the set-primary and unstack actions.
+ */
+async function postStackMutation(url: string, signal?: AbortSignal): Promise<PhotoDetail> {
+  const res = await fetch(url, { method: 'POST', credentials: 'same-origin', signal })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PhotoDetail
 }
 
 /**

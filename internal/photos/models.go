@@ -34,6 +34,12 @@ var (
 	// ErrEmptySearch indicates Search was called without a full-text query, which
 	// would otherwise rank every photo with a zero score.
 	ErrEmptySearch = errors.New("photos: empty full-text search query")
+	// ErrStackTooSmall indicates an attempt to form a stack from fewer than two
+	// distinct photos; a single photo is not a stack.
+	ErrStackTooSmall = errors.New("photos: a stack needs at least two members")
+	// ErrPhotoNotStacked indicates a stack operation (set-primary, unstack) was
+	// asked of a photo that is not a member of any stack.
+	ErrPhotoNotStacked = errors.New("photos: photo is not stacked")
 )
 
 // MediaType classifies what kind of media a photo row holds, mirrored by the
@@ -178,6 +184,16 @@ type Photo struct {
 	PhotoprismUID      *string `json:"photoprism_uid,omitempty"`
 	PhotoprismFileHash *string `json:"photoprism_file_hash,omitempty"`
 	PhotosorterUID     *string `json:"photosorter_uid,omitempty"`
+
+	// StackUID and StackPrimary group the several files of one shot (RAW+JPEG, an
+	// exported edit, …) into a single library item. StackUID is shared by every
+	// member of a stack and nil when the photo is not stacked; StackPrimary marks
+	// the one member shown in grids, albums, search and counts (exactly one per
+	// stack). Non-primary members keep their full row but are hidden from the
+	// default views. See migration 0030 and internal/stacks — this is grouping,
+	// never merging, so stacking and unstacking are lossless and reversible.
+	StackUID     *string `json:"stack_uid,omitempty"`
+	StackPrimary bool    `json:"stack_primary,omitempty"`
 
 	// Rating and Flag are the current user's per-user star rating (0–5) and
 	// pick/reject flag ("none"/"pick"/"reject"), analogous to is_favorite. They are

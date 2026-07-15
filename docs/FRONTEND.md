@@ -106,7 +106,9 @@ zapiš sem.
   mobilu), `UploadOrganize` (dva vyhledávatelné `MultiSelect` pro **alba**
   a **štítky** platné pro celou dávku, s inline vytvořením nové položky přes `onCreate`; prázdné
   by default, řízené `useUploadOrganize`); `components/library/` = `PhotoTile`
-  (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, **play badge + délka** u
+  (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, **stack badge** (počet členů
+  skupiny vpravo nahoře — ikona `images` + `stack_count`, `library.tile.stackCount`, jen když
+  `stack_count > 1`), **play badge + délka** u
   videa/live fotky (`▶` + `formatDuration`), placeholder bez
   layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`
   (hodnocení hvězdami a pick/reject flag žijí **jen v detailu fotky**, ne na dlaždici);
@@ -214,6 +216,9 @@ zapiš sem.
   (`download.zipTooMany`), jinak obecná (`download.zipError`); `photoUids` = aktuální výběr,
   `albumUid` (+ `name` = titul alba) = celé album; **dostupné i viewerovi** (stažení není zápis),
   disabled, když není co stáhnout. Vkládá se do `SelectionBar` knihovny a do hlavičky alba),
+  `StackSelectedControl` (**NOVÝ**: tlačítko **Seskupit vybrané** (`selection.stack`) v selection baru
+  knihovny (`LibraryPage`), **jen editor/admin**, disabled dokud nejsou vybrané **≥ 2** fotky; volá
+  `stackPhotos`, po úspěchu vyčistí výběr a znovunačte mřížku),
   `BulkEditModal` (**hromadná úprava** výběru přes `POST /photos/bulk`, celá dávka
   jednou transakcí na backendu; formulář je rozdělený na **čtyři sekce** (`.kk-text-eyebrow`
   nadpisy): **Zařazení** (add/remove alb, add/remove štítků — čtyři `MultiSelect`y, takže jeden
@@ -518,6 +523,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   preview nepřidalo druhý `<img>` a stránka nesla jednu kopii fotky. Viewer vidí vše read-only
   (žádná karta Úpravy, žádné edit/add/remove akce, žádný přepínač soukromí, `FaceOverlay` readOnly
   = boxy vidí, ale neklikne);
+  `StackStrip` (`components/photo/`, **NOVÝ**) = **pruh variant stacku** pod fotkou na detailu: vypíše
+  každého člena (náhled, jméno, rozměry, velikost), označí **primárního** (`stack.primary`) a linkuje na
+  kteroukoli variantu (`stack.viewVariant`); editorovi per-člen tlačítka **Nastavit jako hlavní**
+  (`stack.setPrimary` → `setStackPrimary`) / **Vyjmout ze skupiny** (`stack.unstack` → `unstackMember`)
+  a **Zrušit skupinu** (`stack.unstackAll` → `unstackAll`). Renderuje ho `PhotoDetailPage` **pod řádkem
+  s médiem**, jen když `stack_members` má **≥ 2** položky; jeho akce znovunačtou zobrazenou fotku;
   `components/photo/` dál nese `MetaField` (jeden read-only labelled řádek `<dt>`/`<dd>` uvnitř
   `<dl className="row">` skupiny, prázdná hodnota = nic; volitelný `title` = tooltip nad zkrácenou
   hodnotou a `children` = bohatá hodnota (chipy/badge/copy tlačítko), řádek s `children` se renderuje
@@ -931,7 +942,8 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `<video>`; při R2 backendu routa **302** redirectne na Workera, `<video>` redirect následuje
   při každém requestu, takže seek jede vždy proti čerstvému podpisu), `GRID_THUMB_SIZE`,
   typy `Photo` (vč. `is_favorite` + per-user `rating`/`flag` + video pole
-  `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` + **`thumb_url`/`download_url`**)/`PhotoListParams`
+  `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` + **`thumb_url`/`download_url`** +
+  **`stack_uid`/`stack_count`**)/`PhotoListParams`
   (vč. `album`/`label` scope + **`person` scope** (čárkou spojené UID subjektů → opakované `?person=`, AND)
   + **`country`/`city` place scope** + `favorite` filtr + `min_rating`/`flag` filtry)/`PhotoSort`
   (vč. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`.
@@ -972,7 +984,13 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `downloadPhotosZip({photoUids?,albumUid?,name?})` (**hromadné stažení ZIP**: `POST
   …/download-zip`, přečte odpověď jako `Blob` a stáhne ji přes dočasnou object URL — jméno
   archivu skládá klient (`name`.zip nebo `kukatko-photos-<date>.zip`, `date` počítá klient a
-  posílá i serveru), hází `ApiError` (413 = přes strop); typ `ZipDownloadRequest`); typy `PhotoDetail`/`PhotoAlbumRef`/
+  posílá i serveru), hází `ApiError` (413 = přes strop); typ `ZipDownloadRequest`),
+  **stacky** `stackPhotos(photoUids,signal)` (`POST …/photos/stack` — ruční seskupení výběru → `PhotoDetail`
+  nového primárního), `setStackPrimary(uid,signal)` (`POST …/{uid}/stack/primary`),
+  `unstackMember(uid,signal)` (`POST …/{uid}/unstack`) a `unstackAll(uid,signal)`
+  (`POST …/{uid}/unstack-all`) — všechny vracejí refreshnutý `PhotoDetail`; typy `PhotoDetail` (navíc
+  `stack_members?: StackMember[]` — pruh variant, primary první)/`StackMember`
+  `{uid,file_name,media_type,file_mime,file_width,file_height,file_size,is_primary,thumb_url?,download_url?}`/`PhotoAlbumRef`/
   `PhotoLabelRef`/`PhotoUploaderRef`/`PhotoMetadataUpdate`/`PhotoEdit`; `people.ts` = People/face klient: subjekty
   `fetchSubjects`/`fetchSubject`/`createSubject`/`updateSubject`/`deleteSubject`/
   `fetchSubjectPhotos`, obličeje `fetchFaces`/`assignFace`, shluky `fetchClusters`/

@@ -160,7 +160,13 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   bez IPTC tagů; kryje ho parciální index `idx_photos_metadata_pending` z migrace
   `0028_photos_metadata_extracted.sql`, který je po vyčerpání backfillu prázdný) a `ListActiveUIDs()`
   (uid všech nearchivovaných fotek — podklad vynuceného úplného thumbnail/metadata backfillu
-  `?all=true`), `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
+  `?all=true`), **stack metody** (`store_stacks.go`, viz `docs/ARCHITECTURE.md` §5.1):
+  `ListStackCandidates` (dosud nestacknuté nearchivované fotky pro detekci)/`StackInfoByUIDs`/
+  `ListStackMembers` (členové stacku, **primary první** — pruh variant)/`StackCounts` (počet členů
+  per `stack_uid` — badge dlaždice)/`CreateStack`/`SetStackPrimary`/`UnstackMember`/`UnstackAll`
+  (reverzibilní bookkeeping nad `stack_uid`/`stack_primary`), plus `ListParams.IncludeStackMembers`
+  (zvedne sdílený viditelnostní predikát `(stack_uid IS NULL OR stack_primary)` pro callera, co chce
+  **všechny** členy), `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup na SHA256 `file_hash` + externí ID
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tabulky v migraci
   `0003_photos.sql`: `photos`, `photo_files` (jeden primary/foto), `photo_phashes`,
   `photo_edits` (all-or-nothing crop, rotace 0/90/180/270); video sloupce v migraci
@@ -1478,7 +1484,27 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   → 500; merge: chybná skupina → 400, neexistující keeper → 404, actor z `auth.UserFromContext`);
   mountuje se v `serve` (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`, `Merge` vždy, `Service` při
   `duplicate.enabled=false` nil)),
-  `internal/system/`
+  `internal/stacks/`
+  (**detekce a správa stacků** — seskupení více souborů jednoho snímku (RAW+JPEG, exportovaná úprava,
+  kopie) pod jednu viditelnou **primární** fotku, **bez slévání řádků** (protějšek `dupmerge`, který
+  slévá skutečné duplicity — členové stacku se drží schválně; viz `docs/ARCHITECTURE.md` §5.1 + migrace
+  `0030_photo_stacks.sql`); `Config{Enabled,Rules RuleSet}` + `Store` rozhraní (splňuje `*photos.Store`,
+  fake v unit testech: `ListStackCandidates`/`StackInfoByUIDs`/`CreateStack`/`SetStackPrimary`/
+  `UnstackMember`/`UnstackAll`); `Service = New(store,cfg)` (panika na nil store):
+  **`DetectStacks(ctx) (created,error)`** (backing `POST /process/stacks`) seskupí **dosud nestacknuté
+  nearchivované** fotky enabled pravidly — synchronní, inkrementální a **idempotentní**: re-run nad
+  usazenou knihovnou nevytvoří nic a nesáhne na existující/ruční stack; no-op (0) když je funkce nebo
+  každé pravidlo vyplé; **`StackSelection(ctx,uids)`** ručně seskupí výběr (`photos.ErrStackTooSmall`
+  < 2 distinct, `photos.ErrPhotoNotFound` chybí/archivovaná), **`SetPrimary`/`Unstack`/`UnstackWhole`**
+  delegují na store; **čistá detekce** (`rules.go`): čtyři nezávisle přepínatelná pravidla
+  (`RuleSet{BaseName,SequentialCopy,UniqueID,TimeGPS}`, každé jiná míra falešných shod — špatně
+  stacknutá fotka je neviditelná, takže pravidla linkují jen fotky, co **plausibilně jsou** tentýž
+  snímek) klíčují kandidáty (`baseNameKey` bare stem / `canonicalNameKey` strhne trailing
+  `(2)`/`copy`/`-edited` / `uniqueIDKey` = ImageUniqueID/InstanceID / `timeGPSKey` = vteřina+GPS),
+  `Group` je slije **union-findem** (`unionfind.go`) do souvislých komponent ≥ 2, deterministicky pro
+  fixní pořadí vstupu; **výběr primárního** (`primary.go` `PickPrimary`): still před videem (live
+  pairing ukáže fotku, ne klip), rendrovaný obraz (JPEG/HEIC) před camera RAW (`rawExtensions`), pak
+  vyšší rozlišení, pak větší soubor, tie-break menší uid), `internal/system/`
   (agregace provozního stavu instance pro admin **system-status dashboard** — žádná nová data, jen
   sloučení existujících subsystémů; vše za malými rozhraními `DBPinger` (`database.DB`)/
   `EmbeddingHealth` (`embedding.Client.Healthy`)/`JobCounter`

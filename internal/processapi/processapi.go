@@ -78,6 +78,18 @@ type MetadataBackfiller interface {
 	BackfillMetadata(ctx context.Context, all bool) (int, error)
 }
 
+// StacksDetector groups the several files of one shot (RAW+JPEG, exported edits,
+// …) into stacks by the enabled detection rules. It is satisfied by
+// stacks.Service and runs synchronously like the reclusterer (the grouping is a
+// couple of indexed queries). A nil StacksDetector — the feature disabled in
+// config — makes the /process/stacks endpoint answer 503.
+type StacksDetector interface {
+	// DetectStacks groups the currently unstacked photos and returns how many
+	// stacks were created. It is idempotent: a re-run over a settled library
+	// creates nothing.
+	DetectStacks(ctx context.Context) (int, error)
+}
+
 // API exposes the processing endpoints over HTTP. The admin guard is supplied by
 // the caller (the auth subsystem) so this package depends on auth's behaviour,
 // not its wiring.
@@ -88,6 +100,7 @@ type API struct {
 	placesBackfiller PlacesBackfiller
 	thumbBackfiller  ThumbnailBackfiller
 	metaBackfiller   MetadataBackfiller
+	stacksDetector   StacksDetector
 	requireAdmin     func(http.Handler) http.Handler
 }
 
@@ -107,6 +120,8 @@ type Config struct {
 	ThumbnailBackfiller ThumbnailBackfiller
 	// MetadataBackfiller runs the file-metadata (IPTC/XMP) backfill.
 	MetadataBackfiller MetadataBackfiller
+	// StacksDetector runs the automatic stack-detection pass.
+	StacksDetector StacksDetector
 	// RequireAdmin guards every endpoint for administrators only.
 	RequireAdmin func(http.Handler) http.Handler
 }
@@ -120,6 +135,7 @@ func NewAPI(cfg Config) *API {
 		placesBackfiller: cfg.PlacesBackfiller,
 		thumbBackfiller:  cfg.ThumbnailBackfiller,
 		metaBackfiller:   cfg.MetadataBackfiller,
+		stacksDetector:   cfg.StacksDetector,
 		requireAdmin:     cfg.RequireAdmin,
 	}
 }
@@ -133,6 +149,7 @@ func NewAPI(cfg Config) *API {
 //	POST /process/places      RequireAdmin  backfill missing reverse-geocoded places
 //	POST /process/thumbnails  RequireAdmin  backfill missing thumbnails (?all=true forces a full re-run)
 //	POST /process/metadata    RequireAdmin  backfill unread file metadata (?all=true forces a full re-read)
+//	POST /process/stacks      RequireAdmin  detect and form stacks over the library
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/process", func(r chi.Router) {
 		r.With(a.requireAdmin).Post("/embeddings", a.handleBackfillEmbeddings)
@@ -141,6 +158,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAdmin).Post("/places", a.handleBackfillPlaces)
 		r.With(a.requireAdmin).Post("/thumbnails", a.handleBackfillThumbnails)
 		r.With(a.requireAdmin).Post("/metadata", a.handleBackfillMetadata)
+		r.With(a.requireAdmin).Post("/stacks", a.handleDetectStacks)
 	})
 }
 
@@ -154,6 +172,28 @@ type backfillResponse struct {
 type reclusterResponse struct {
 	// Created is the number of clusters formed by this call.
 	Created int `json:"created"`
+}
+
+// stacksResponse is the JSON body returned by the stack-detection endpoint.
+type stacksResponse struct {
+	// Created is the number of stacks formed by this call.
+	Created int `json:"created"`
+}
+
+// handleDetectStacks groups the currently unstacked photos into stacks by the
+// enabled rules and reports how many stacks were created. It answers 503 when the
+// stacking feature is disabled.
+func (a *API) handleDetectStacks(w http.ResponseWriter, r *http.Request) {
+	if a.stacksDetector == nil {
+		writeError(w, http.StatusServiceUnavailable, "stacking not available")
+		return
+	}
+	created, err := a.stacksDetector.DetectStacks(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "detecting stacks failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, stacksResponse{Created: created})
 }
 
 // handleRecluster groups the currently unassigned, unclustered faces into

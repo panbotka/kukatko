@@ -72,6 +72,10 @@ type ListParams struct {
 	// OnlyArchived restricts the result to archived photos. It takes precedence
 	// over IncludeArchived.
 	OnlyArchived bool
+	// IncludeStackMembers returns the non-primary members of a stack alongside the
+	// primaries when true. By default (false) only a stack's primary is returned,
+	// so the several files of one shot occupy a single tile in every listing.
+	IncludeStackMembers bool
 	// UploadedBy, when non-empty, restricts the result to photos uploaded by the
 	// given user UID.
 	UploadedBy string
@@ -292,6 +296,7 @@ func buildWhere(params ListParams) (where []string, args []any) {
 // ordering), so the filter set stays identical across list, count and search.
 func whereClauses(params ListParams, bind func(any) string) []string {
 	where := archivedClauses(params)
+	where = append(where, stackClauses(params)...)
 	where = append(where, scalarClauses(params, bind)...)
 	where = append(where, yearClauses(params, bind)...)
 	where = append(where, gpsClauses(params)...)
@@ -422,6 +427,21 @@ func archivedClauses(params ListParams) []string {
 	default:
 		return nil
 	}
+}
+
+// stackClauses returns the stack-visibility filter that hides the non-primary
+// members of a stack from the default views: a photo is shown when it is not
+// stacked (stack_uid IS NULL) or it is the stack's primary. This is what gets
+// the RAW+JPEG duplicates out of the grid while keeping every member's row. It
+// is a pure photos.* predicate (no bind), the natural sibling of archivedClauses,
+// so adding it here propagates to List, Count, Search, FilterUIDs, YearBuckets
+// and TimelineBuckets at once. IncludeStackMembers lifts it for the callers that
+// deliberately want every member (e.g. listing a single stack's variants).
+func stackClauses(params ListParams) []string {
+	if params.IncludeStackMembers {
+		return nil
+	}
+	return []string{"(stack_uid IS NULL OR stack_primary)"}
 }
 
 // scalarClauses returns the equality and range filters (uploader, date range),

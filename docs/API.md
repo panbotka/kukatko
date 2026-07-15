@@ -204,6 +204,20 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   **Autorizace hlídá discovery:** podepsaná URL se razí jen do odpovědi, na kterou už caller měl
   právo, takže archivovanou fotku nikdy neuvidí. Na rozdíl od dřívějšího návrhu s veřejným
   bucketem je archiv **skutečná bezpečnostní hranice** (viz doc comment `internal/mediaurl`).
+  **Stacky** (`internal/photoapi/stacks.go`, `Stacker` rozhraní = `stacks.Service`, **nil → 503**):
+  `POST /photos/stack` (editor/admin) tělo `{photo_uids:["…","…"]}` ručně seskupí výběr (**≥ 2**),
+  primárního člena vybere podle pravidla a vrátí **detail nového primárního** — 400 (< 2 fotky),
+  404 (fotka chybí/archivovaná), 503 (vypnuto); `POST /photos/{uid}/stack/primary` (editor/admin) udělá
+  `{uid}` primárním svého stacku → refreshnutý detail `{uid}` (404 chybí, 409 není ve stacku, 503);
+  `POST /photos/{uid}/unstack` (editor/admin) vyjme `{uid}` ze stacku (osamostatní se; dvoučlenný stack
+  se tím rozpadne, stack, který přijde o primárního, si nového zvolí) → refreshnutý detail (409 když
+  není ve stacku); `POST /photos/{uid}/unstack-all` (editor/admin) rozpustí celý stack, do kterého
+  `{uid}` patří → refreshnutý detail. **Pole v odpovědích:** každá fotka v list/search/detail může nést
+  `stack_uid` (string) a `stack_count` (int; **≥ 2 jen u stacknutého primárního**, jinak vynecháno —
+  pohání badge dlaždice); detail (`GET /photos/{uid}`) navíc `stack_members` — pole (primary první)
+  `{uid, file_name, media_type, file_mime, file_width, file_height, file_size, is_primary, thumb_url,
+  download_url}` (pruh variant), u nestacknuté fotky vynecháno (odlišné od `files`, což jsou
+  `photo_files` jednoho řádku).
   Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v `cmd/kukatko/photos.go`).
 - **Jobs API (`/api/v1`, `internal/jobsapi`, admin-only přes `RequireAdmin`):**
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
@@ -260,6 +274,10 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   Job je čistý **gap-filler**: doplní jen sloupce, které jsou pořád prázdné, takže prázdná extrakce
   nikdy nepřepíše hodnotu, kterou napsal uživatel, a `taken_at`/GPS/titulků/kurátorských dat se
   vůbec nedotkne. Chybějící originál se **zaloguje a přeskočí** (běh nepadá).
+  `POST /process/stacks` → `{created}` (detekce a seskupení fotek do stacků nad celou knihovnou přes
+  `stacks.Service.DetectStacks`; **synchronní**, kandidáty jsou **jen dosud nestacknuté nearchivované**
+  fotky, takže re-run je idempotentní a nerozbije ruční ani existující stack; **503** když
+  `stacks.enabled: false`).
   Náhledy i metadata se počítají **lokálně**, takže backfill funguje i když je box offline; fronta jobů
   deduplikuje, takže opakované spuštění je idempotentní. Mountuje se `server.WithAPI` (`buildJobs`).
 - **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **alba** `GET /albums`

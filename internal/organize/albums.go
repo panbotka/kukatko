@@ -187,12 +187,13 @@ func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (A
 // Three joins carry the derived columns, all of them per album, none of them
 // fetching an album's photos into the process:
 //
-//   - album_photos gives photo_count, which stays a count of membership rows.
-//   - photos, joined through that membership and restricted to the live
-//     catalogue, gives MIN/MAX of taken_at. An archived photo joins as a NULL
-//     row, so it is counted but cannot move the range; a photo with an unknown
-//     capture time drops out of MIN/MAX the same way.
-//   - the LATERAL picks the fallback cover: the album's newest live photo, with
+//   - photos, joined through album_photos and restricted to the live catalogue's
+//     visible members (not archived, and not a non-primary stack member), gives
+//     photo_count = COUNT(p.uid) and MIN/MAX of taken_at. Counting p.uid rather
+//     than the membership row makes the badge agree with the grid: a hidden photo
+//     joins as a NULL row, so it neither counts nor moves the range. A photo with
+//     an unknown capture time drops out of MIN/MAX the same way.
+//   - the LATERAL picks the fallback cover: the album's newest visible photo, with
 //     an unknown capture time sorted last (such a photo becomes the cover only
 //     when nothing else can) and uid breaking ties. Both keys are total, so the
 //     same album returns the same cover on every request. COALESCE lets a
@@ -200,18 +201,20 @@ func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (A
 const listAlbumsSQL = `
 SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
        a.private, a.created_by, a.created_at, a.updated_at,
-       COUNT(ap.photo_uid) AS photo_count,
+       COUNT(p.uid) AS photo_count,
        COALESCE(a.cover_photo_uid, cover.photo_uid) AS cover_uid,
        MIN(p.taken_at) AS taken_from,
        MAX(p.taken_at) AS taken_to
 FROM albums a
 LEFT JOIN album_photos ap ON ap.album_uid = a.uid
 LEFT JOIN photos p ON p.uid = ap.photo_uid AND p.archived_at IS NULL
+    AND (p.stack_uid IS NULL OR p.stack_primary)
 LEFT JOIN LATERAL (
     SELECT ap2.photo_uid
     FROM album_photos ap2
     JOIN photos p2 ON p2.uid = ap2.photo_uid
     WHERE ap2.album_uid = a.uid AND p2.archived_at IS NULL
+      AND (p2.stack_uid IS NULL OR p2.stack_primary)
     ORDER BY p2.taken_at DESC NULLS LAST, p2.uid
     LIMIT 1
 ) cover ON TRUE

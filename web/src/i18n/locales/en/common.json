@@ -211,7 +211,8 @@
     "tile": {
       "unavailable": "Preview unavailable",
       "video": "Video",
-      "live": "Live"
+      "live": "Live",
+      "stackCount": "{{count}} in stack"
     },
     "timeline": {
       "label": "Timeline",
@@ -528,7 +529,16 @@
     "count": "{{count}} selected",
     "enter": "Select",
     "edit": "Bulk edit",
+    "stack": "Stack selected",
     "cancel": "Cancel"
+  },
+  "stack": {
+    "title": "Stack · {{count}} files",
+    "primary": "Primary",
+    "setPrimary": "Set as primary",
+    "unstack": "Unstack",
+    "unstackAll": "Unstack all",
+    "viewVariant": "View {{name}}"
   },
   "shortcuts": {
     "open": "Keyboard shortcuts",
