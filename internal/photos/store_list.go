@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/query"
 )
 
 // SortField names a column the photo list may be ordered by. Only the values
@@ -102,6 +104,17 @@ type ListParams struct {
 	// Search, when non-empty, keeps photos whose title, description or notes
 	// contain it (case-insensitive substring match).
 	Search string
+	// SearchNot excludes photos whose title, description or notes contain any
+	// of the given substrings — the '-term' free-text negations of the search
+	// query language on the substring path. The full-text path does not use
+	// it; websearch_to_tsquery handles '-' natively there.
+	SearchNot []string
+	// QueryFilters are the structured key:value conditions parsed from the
+	// search query language (internal/query); each compiles to one AND-ed,
+	// fully parameterised WHERE clause. The per-user filters among them
+	// (favorite:, rating:, flag:) are scoped to RatedBy and stay inert when it
+	// is nil.
+	QueryFilters []query.Filter
 	// FullText, when non-empty, keeps photos whose search vector (title,
 	// description, notes, normalised file_name) matches it as a Czech-aware,
 	// diacritics-insensitive full-text query. It is used by Search, where it also
@@ -307,6 +320,7 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 	where = append(where, placeClauses(params, bind)...)
 	where = append(where, favoriteClauses(params, bind)...)
 	where = append(where, ratingClauses(params, bind)...)
+	where = append(where, queryClauses(params, bind)...)
 	return where
 }
 
@@ -417,11 +431,15 @@ func placeClauses(params ListParams, bind func(any) string) []string {
 
 // archivedClauses returns the archive-state filter: live-only by default,
 // archived-only when requested (which takes precedence), or none when archived
-// photos are explicitly included.
+// photos are explicitly included. When the search query language carries its
+// own archived: condition, the default yields to it — otherwise archived:yes
+// would fight the live-only clause and never match anything.
 func archivedClauses(params ListParams) []string {
 	switch {
 	case params.OnlyArchived:
 		return []string{"archived_at IS NOT NULL"}
+	case queryHasFilter(params.QueryFilters, query.KeyArchived):
+		return nil
 	case !params.IncludeArchived:
 		return []string{"archived_at IS NULL"}
 	default:

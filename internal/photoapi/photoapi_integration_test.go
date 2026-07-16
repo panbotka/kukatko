@@ -62,6 +62,9 @@ type fakeEmbedder struct {
 	byQuery map[string][]float32
 	// unavailable, when true, makes TextEmbedding report the sidecar offline.
 	unavailable bool
+	// calls counts every TextEmbedding invocation, so a test can assert the
+	// sidecar was (not) consulted — e.g. a pure filter query must never embed.
+	calls int
 }
 
 // TextEmbedding returns the configured vector for text, or an error wrapping
@@ -70,6 +73,7 @@ type fakeEmbedder struct {
 func (f *fakeEmbedder) TextEmbedding(
 	_ context.Context, text string,
 ) ([]float32, string, string, error) {
+	f.calls++
 	if f.unavailable {
 		return nil, "", "", fmt.Errorf("fake sidecar offline: %w", embedding.ErrUnavailable)
 	}
@@ -264,13 +268,14 @@ func mustDo(t *testing.T, client *http.Client, method, urlStr string, body []byt
 // listResp mirrors the list and search endpoints' JSON body. Mode and Degraded
 // are only populated by the search endpoint.
 type listResp struct {
-	Photos     []photos.Photo `json:"photos"`
-	Total      int            `json:"total"`
-	Limit      int            `json:"limit"`
-	Offset     int            `json:"offset"`
-	NextOffset *int           `json:"next_offset"`
-	Mode       string         `json:"mode"`
-	Degraded   bool           `json:"degraded"`
+	Photos        []photos.Photo `json:"photos"`
+	Total         int            `json:"total"`
+	Limit         int            `json:"limit"`
+	Offset        int            `json:"offset"`
+	NextOffset    *int           `json:"next_offset"`
+	Mode          string         `json:"mode"`
+	Degraded      bool           `json:"degraded"`
+	UnknownTokens []string       `json:"unknown_tokens"`
 }
 
 // getList fetches the list endpoint with the given query and decodes the body.

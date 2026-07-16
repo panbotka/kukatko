@@ -6,16 +6,34 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/query"
 )
 
-// parse is a test helper turning a raw query string into list parameters.
+// parse is a test helper turning a raw query string into list parameters,
+// dropping the unknown-token report (parseUnknown covers it).
 func parse(t *testing.T, query string) (photos.ListParams, error) {
 	t.Helper()
 	q, err := url.ParseQuery(query)
 	if err != nil {
 		t.Fatalf("ParseQuery(%q): %v", query, err)
 	}
-	return parseListParams(q)
+	params, _, err := parseListParams(q)
+	return params, err
+}
+
+// parseUnknown is a test helper returning the unknown q-token report of
+// parseListParams for a raw query string.
+func parseUnknown(t *testing.T, query string) []string {
+	t.Helper()
+	q, err := url.ParseQuery(query)
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", query, err)
+	}
+	_, unknown, err := parseListParams(q)
+	if err != nil {
+		t.Fatalf("parseListParams(%q) error: %v", query, err)
+	}
+	return unknown
 }
 
 // TestParseListParams_valid verifies that each recognised filter, sort and
@@ -351,4 +369,72 @@ func TestParseListParams_invalid(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestParseListParams_queryLanguage verifies that the free-form q parameter is
+// parsed through the search query language: filters become structured
+// conditions, the residual free text keeps the substring behaviour, negations
+// become exclusions, and tokens that were not understood are reported.
+func TestParseListParams_queryLanguage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("filters and free text split", func(t *testing.T) {
+		t.Parallel()
+		p, err := parse(t, "q="+url.QueryEscape(`beach iso:100-400 label:cat|dog -blurry`))
+		if err != nil {
+			t.Fatalf("parseListParams error: %v", err)
+		}
+		if p.Search != "beach" {
+			t.Errorf("Search = %q, want %q", p.Search, "beach")
+		}
+		if len(p.SearchNot) != 1 || p.SearchNot[0] != "blurry" {
+			t.Errorf("SearchNot = %v, want [blurry]", p.SearchNot)
+		}
+		if len(p.QueryFilters) != 2 {
+			t.Fatalf("QueryFilters = %v, want iso and label", p.QueryFilters)
+		}
+		if p.QueryFilters[0].Key != query.KeyISO || p.QueryFilters[1].Key != query.KeyLabel {
+			t.Errorf("QueryFilters keys = %s/%s, want iso/label",
+				p.QueryFilters[0].Key, p.QueryFilters[1].Key)
+		}
+		if len(p.QueryFilters[1].Values) != 2 {
+			t.Errorf("label alternatives = %v, want two", p.QueryFilters[1].Values)
+		}
+	})
+
+	t.Run("plain q keeps the substring behaviour", func(t *testing.T) {
+		t.Parallel()
+		p, err := parse(t, "q=red+car")
+		if err != nil {
+			t.Fatalf("parseListParams error: %v", err)
+		}
+		if p.Search != "red car" {
+			t.Errorf("Search = %q, want %q", p.Search, "red car")
+		}
+		if len(p.QueryFilters) != 0 || len(p.SearchNot) != 0 {
+			t.Errorf("plain text produced filters: %+v", p)
+		}
+	})
+
+	t.Run("unknown token degrades to free text and is reported", func(t *testing.T) {
+		t.Parallel()
+		p, err := parse(t, "q="+url.QueryEscape("cat color:red"))
+		if err != nil {
+			t.Fatalf("parseListParams error: %v", err)
+		}
+		if p.Search != "cat color:red" {
+			t.Errorf("Search = %q, want the token kept as free text", p.Search)
+		}
+		unknown := parseUnknown(t, "q="+url.QueryEscape("cat color:red"))
+		if len(unknown) != 1 || unknown[0] != "color:red" {
+			t.Errorf("unknown = %v, want [color:red]", unknown)
+		}
+	})
+
+	t.Run("no q reports nothing", func(t *testing.T) {
+		t.Parallel()
+		if unknown := parseUnknown(t, "camera=Canon"); len(unknown) != 0 {
+			t.Errorf("unknown = %v, want empty", unknown)
+		}
+	})
 }

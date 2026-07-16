@@ -105,6 +105,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/ppimport` — incremental **idempotent** import from PhotoPrism
 - `internal/processapi` — admin-only `/process/*` backfills (embeddings, faces, clusters, places)
 - `internal/psimport` — incremental **idempotent** direct migration from photo-sorter
+- `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
 - `internal/restoreapi` — admin-only **read-only** `/restore/*` (destructive restore only via CLI)
 - `internal/review` — the review game: one-question-at-a-time queue of face/label candidates from the uncertainty band; answers reuse existing write paths

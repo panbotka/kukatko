@@ -37,7 +37,8 @@ function ConfidenceHint({ confidence }: { confidence: number }) {
 
 /** The question sentence with the person/label name as the emphasised part. */
 function QuestionText({ question }: { question: ReviewQuestion }) {
-  const name = question.kind === 'face' ? (question.subject?.name ?? '') : (question.label?.name ?? '')
+  const name =
+    question.kind === 'face' ? (question.subject?.name ?? '') : (question.label?.name ?? '')
   return (
     <h1 className="review-game__question" data-testid="review-question" aria-live="polite">
       <Trans

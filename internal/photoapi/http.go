@@ -21,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/query"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -236,6 +237,12 @@ type listResponse struct {
 	// because the embeddings sidecar was unavailable, so the UI can tell the user
 	// that semantic ranking was skipped. Omitted when false.
 	Degraded bool `json:"degraded,omitempty"`
+	// UnknownTokens lists the filter-shaped tokens of the q query language the
+	// server did not understand (unknown key or malformed value). They degraded
+	// to free text, so the result is still meaningful; the UI shows a gentle
+	// hint instead of the query silently narrowing to nothing. Omitted when
+	// every token parsed.
+	UnknownTokens []string `json:"unknown_tokens,omitempty"`
 }
 
 // handleList parses the query filters, returns the matching page of photos (each
@@ -244,7 +251,7 @@ type listResponse struct {
 // the caller's own favorites. Invalid filter, sort or pagination values are answered
 // with 400.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
-	params, err := parseListParams(r.URL.Query())
+	params, unknown, err := parseListParams(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -262,7 +269,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	if favorite {
 		params.FavoriteOf = user.UID
 	}
-	a.writeFavoritePage(w, r, user.UID, params)
+	a.writeFavoritePage(w, r, user.UID, params, unknown)
 }
 
 // pageResponse builds the paginated listResponse for a page of photo views,
@@ -289,23 +296,27 @@ func pageResponse(params photos.ListParams, list []photoView, total int) listRes
 // handleSearch searches the photo catalogue in one of three modes selected by
 // the `mode` query parameter — `fulltext`, `semantic` or `hybrid` (the default).
 // The `q` parameter carries the search text (required; empty or whitespace-only
-// yields 400). Full-text matching is Czech-aware and diacritics-insensitive;
-// semantic matching embeds the query via the sidecar and ranks by CLIP vector
-// similarity; hybrid fuses the two with Reciprocal Rank Fusion. Every list filter
-// (date range, GPS, camera, …) and the limit/offset pagination apply in
-// all modes; the `sort`/`order` params are ignored because results are always
-// ranked. When the sidecar is unavailable, semantic and hybrid fall back to
-// full-text and the response sets `degraded: true`. The response otherwise
-// mirrors the list endpoint (photos, total, limit, offset, next_offset) plus the
-// effective `mode`.
+// yields 400) in the search query language: free text mixed with key:value
+// filters. Full-text matching of the free text is Czech-aware and diacritics-
+// insensitive; semantic matching embeds it via the sidecar and ranks by CLIP
+// vector similarity; hybrid fuses the two with Reciprocal Rank Fusion. The
+// parsed filters constrain the result set in every mode, alongside every list
+// filter (date range, GPS, camera, …) and the limit/offset pagination; the
+// `sort`/`order` params are ignored because results are always ranked. A query
+// with filters but no free text is a pure filter query: it runs the plain list
+// path (reported as mode `filter`) and never touches the embedding sidecar.
+// When the sidecar is unavailable, semantic and hybrid fall back to full-text
+// and the response sets `degraded: true`. The response otherwise mirrors the
+// list endpoint (photos, total, limit, offset, next_offset) plus the effective
+// `mode` and the `unknown_tokens` the query language did not understand.
 func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
-	params, err := parseListParams(r.URL.Query())
+	params, unknown, err := parseListParams(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if query == "" {
+	raw := strings.TrimSpace(r.URL.Query().Get("q"))
+	if raw == "" {
 		writeError(w, http.StatusBadRequest, "q is required")
 		return
 	}
@@ -319,18 +330,44 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	// q is the full-text query here, not the list's substring filter.
-	params.FullText = query
-	params.Search = ""
-	// Scope the per-user rating filters and the rating sort to the caller.
+	// Scope the per-user rating filters, the query language's per-user filters
+	// and the rating sort to the caller.
 	params.RatedBy = &user.UID
+	// The ranked search matches free text through the full-text vector; the
+	// substring filter and its negations belong to the list path only.
+	parsed := query.Parse(raw)
+	params.Search = ""
+	params.SearchNot = nil
 
-	result, err := a.runSearch(r.Context(), mode, query, params)
+	free := parsed.FreeText()
+	if strings.TrimSpace(free) == "" {
+		a.writeFilterPage(w, r, user.UID, params, unknown)
+		return
+	}
+	// q's free text is the full-text query here, not the list's substring
+	// filter; the embedding sidecar gets the plain positive terms.
+	params.FullText = free
+	plain := parsed.PlainText()
+	if plain == "" {
+		// Only negated terms remain: nothing to embed, rank by full text alone.
+		mode = modeFulltext
+	}
+	a.writeRankedSearch(w, r, user.UID, mode, plain, params, unknown)
+}
+
+// writeRankedSearch runs the ranked search in the given mode and writes the
+// annotated page, stamping the effective mode, the degraded flag and the
+// unknown query-language tokens onto the response.
+func (a *API) writeRankedSearch(
+	w http.ResponseWriter, r *http.Request, userUID string,
+	mode searchMode, plain string, params photos.ListParams, unknown []string,
+) {
+	result, err := a.runSearch(r.Context(), mode, plain, params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "searching photos failed")
 		return
 	}
-	views, err := a.annotate(r.Context(), user.UID, result.photos)
+	views, err := a.annotate(r.Context(), userUID, result.photos)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "annotating photos failed")
 		return
@@ -338,6 +375,35 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	resp := pageResponse(params, views, result.total)
 	resp.Mode = string(mode)
 	resp.Degraded = result.degraded
+	resp.UnknownTokens = unknown
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// writeFilterPage answers a search whose query holds only filters (no free
+// text): it runs the plain list path — default ordering, every parsed filter
+// applied — and deliberately never touches the embedding sidecar, since there
+// is no text to embed or rank. The response reports mode `filter`.
+func (a *API) writeFilterPage(
+	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams, unknown []string,
+) {
+	list, err := a.store.List(r.Context(), params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "listing photos failed")
+		return
+	}
+	total, err := a.store.Count(r.Context(), params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "counting photos failed")
+		return
+	}
+	views, err := a.annotate(r.Context(), userUID, list)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "annotating photos failed")
+		return
+	}
+	resp := pageResponse(params, views, total)
+	resp.Mode = string(modeFilter)
+	resp.UnknownTokens = unknown
 	writeJSON(w, http.StatusOK, resp)
 }
 

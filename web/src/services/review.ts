@@ -143,9 +143,5 @@ export async function answerReview(
   answer: ReviewAnswer,
   signal?: AbortSignal,
 ): Promise<ReviewAnswerResult> {
-  return postJSON<ReviewAnswerResult>(
-    '/review/answer',
-    { question_id: questionId, answer },
-    signal,
-  )
+  return postJSON<ReviewAnswerResult>('/review/answer', { question_id: questionId, answer }, signal)
 }

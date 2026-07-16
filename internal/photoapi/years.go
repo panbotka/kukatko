@@ -24,7 +24,9 @@ import (
 // are ignored — the aggregation is always grouped by year. An invalid filter
 // value yields 400.
 func (a *API) handleYears(w http.ResponseWriter, r *http.Request) {
-	params, err := parseListParams(r.URL.Query())
+	// The unknown q tokens are dropped: an aggregation has no place to report
+	// them, and the paginated list the facet accompanies already does.
+	params, _, err := parseListParams(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

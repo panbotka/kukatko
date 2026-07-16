@@ -125,7 +125,14 @@ beforeEach(async () => {
   albumsMock.mockReset()
   labelsMock.mockReset()
   fetchSubjectMock.mockResolvedValue(subject())
-  outliersMock.mockResolvedValue({ subject_uid: 'sj_1', count: 0, meaningful: false, faces: [] })
+  outliersMock.mockResolvedValue({
+    subject_uid: 'sj_1',
+    count: 0,
+    meaningful: false,
+    avg_distance: 0,
+    no_embedding: 0,
+    faces: [],
+  })
   albumsMock.mockResolvedValue([])
   labelsMock.mockResolvedValue([])
 })

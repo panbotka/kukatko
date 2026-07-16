@@ -49,7 +49,7 @@ export function Outliers({ subjectUid }: OutliersProps) {
   useEffect(() => {
     const controller = new AbortController()
     setState({ status: 'loading' })
-    fetchOutliers(subjectUid, controller.signal)
+    fetchOutliers(subjectUid, undefined, controller.signal)
       .then((result) => {
         setState({ status: 'ready', result })
       })

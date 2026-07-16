@@ -1701,7 +1701,24 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `GET /system/status` za `RequireAdmin` (snapshot; collect selže → 500); mountuje se vždy
   (`buildSystemAPI` v `cmd/kukatko/system.go`, staví vlastní bezstavový embeddings klient jen pro
   Healthy probe, sdílí pool pro job/import stores, backup služba předaná nil-safe; mountuje se
-  v `appendOpsAPIs` vedle backup/restore)), `internal/ratelimit/`
+  v `appendOpsAPIs` vedle backup/restore)), `internal/query/`
+  (čistý **parser vyhledávacího jazyka** `q=` — volný text + `klíč:hodnota` filtry v jednom stringu
+  (`dovolená camera:"Canon EOS R6" iso:100-400 faces:2`), žádné I/O: `Parse(input) Query` **nikdy
+  neselže** — tokenizer respektuje uvozovky a `\` escapy, operátory `|` (OR mezi alternativami
+  hodnoty), `!` (NOT per alternativa), `-` (NOT volného textu), rozsahy `lo-hi` s otevřenými konci
+  (`800-`, `-200`), `*` wildcard v textu; registr filtrů `specs` (Key → Kind
+  text/number/date/bool/enum/id/count + validace mezí: rating 0–5, month 1–12, year 1000–9999, …)
+  s aliasy `subject:`→`person:`, `keyword:`→`keywords:`; **neznámý klíč nebo nevalidní hodnota
+  degraduje celý token na volný text** a hlásí se v `Query.Unknown` (UI z toho staví hint,
+  API `unknown_tokens`). AST: `Query{Terms,Filters,Unknown}`, `Term{Text,Phrase,Not}`,
+  `Filter{Key,Values}`, `Value{Not,Text,Bool,Min,Max,From,Until}` (číselné meze / half-open
+  datumové intervaly); renderingy `FreeText()` (websearch syntax pro FTS vč. frází a `-` negací),
+  `PlainText()` (pozitivní termy pro ILIKE substring a embedding dotazu), `NotTerms()`,
+  `HasFilter(key)`. Do SQL AST kompiluje `internal/photos/store_query.go` (`queryClauses` — mapa
+  builderů per klíč, vše přes bind parametry; per-user filtry scopnuté na `RatedBy`, `near:`
+  sférická vzdálenost s poloměrem `dist:` default 5 km, `faces:` počítá ne-invalid face markery,
+  exact fractional match ±0.005 kvůli float4). Uživatelská gramatika: docs/API.md
+  „Vyhledávací jazyk (q=)“), `internal/ratelimit/`
   (znovupoužitelný **per-key token-bucket rate limiter** + HTTP middleware pro náročné endpointy:
   `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, per-klíč bucket) / `Cleanup`/`RunMaintenance`
   (úklid plně doplněných bucketů) / `Middleware` (chi-kompatibilní, keyuje **client IP** přes

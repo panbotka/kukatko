@@ -84,6 +84,13 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   **Reciprocal Rank Fusion (k=60)**, dedup. Všechny módy ctí ostatní list filtry + stránkování,
   odpověď jako list + `mode` + `degraded`; `q` povinný (prázdný → 400); **box offline** →
   `semantic`/`hybrid` graceful fallback na fulltext s `degraded: true`;
+  **`q` mluví vyhledávacím jazykem** (viz [Vyhledávací jazyk](#vyhledávací-jazyk-q) níže): volný
+  text + `klíč:hodnota` filtry v jednom stringu — filtry zužují výsledek ve všech módech, na
+  ranking volného textu se nesahá. Dotaz **jen z filtrů** (žádný volný text) běží po plain-list
+  cestě (řazení dle data), odpověď hlásí `mode: "filter"` a **nikdy nevolá embedding sidecar**;
+  `q` jen ze záporných termů (`-slovo`) se vynutí do `fulltext` (není co embedovat). Filtrům,
+  kterým jazyk nerozuměl, se nic nestane (hledají se jako text) a odpověď je vrací v
+  `unknown_tokens: []string` (i na `GET /photos`), aby UI umělo jemně napovědět;
   list i search nesou per-fotku `is_favorite` **+ per-user `rating`/`flag`** pro aktuálního uživatele,
   `?favorite=true` scopne list na jeho oblíbené, **`?min_rating=n` / `?flag=pick|reject|eye` / `?sort=rating`**
   scopnuté na něj (fotka bez řádku = rating 0 / flag `none`);
@@ -549,3 +556,75 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   pro fronту/importy) → 500; nedostupná DB/úložiště inline best-effort. Mountuje se **vždy**
   (`buildSystemAPI` v `cmd/kukatko/system.go`). Admin UI **Systém** (`/system`, `SystemStatusPage`)
   polluje po 5 s a nabízí rychlé akce (requeue dead-letter, trigger backup, odkazy na import/údržbu).
+
+## Vyhledávací jazyk (q=)
+
+Parametr `q` na `GET /photos` i `GET /search` (a skrz `parseListParams` i na `/photos/timeline`,
+`/photos/years` a `GET /favorites`) přijímá **vyhledávací jazyk**: volný text a `klíč:hodnota`
+filtry smíchané v jednom stringu. Parsuje ho `internal/query` (čistý parser → AST), do SQL ho
+kompiluje `internal/photos` (`store_query.go`) — **všechno přes pgx parametry**, žádná konkatenace
+uživatelských hodnot.
+
+```
+dovolená camera:"Canon EOS R6" iso:100-400 faces:2
+```
+
+**Sémantika volného textu se nemění:** na `GET /photos` je zbylý volný text substring filtr
+(ILIKE nad title/description/notes), na `GET /search` jde do fulltext/semantic/hybrid rankingu.
+Filtry výsledek jen zužují (AND). Dotaz **bez volného textu** je čistý filtrový dotaz — `/search`
+ho vyřídí po list cestě (`mode: "filter"`) a **nedotkne se embedding sidecaru**.
+
+### Operátory
+
+| Zápis | Význam |
+| --- | --- |
+| mezera mezi filtry | AND — `iso:100-400 faces:2` |
+| `\|` uvnitř hodnoty | OR — `label:cat\|dog` |
+| `!` před hodnotou | NOT — `label:!blurry`; jde kombinovat per-alternativa: `label:cat\|!dog` |
+| `-` před slovem | NOT pro volný text — `-rozmazané` |
+| `lo-hi` | rozsah čísel, obě strany volitelné — `iso:200-400`, `iso:800-`, `iso:-200` |
+| `*` | zástupný znak v textové hodnotě — `filename:IMG_*`; bez `*` se matchuje substring |
+| `"…"` | hodnota s mezerami — `camera:"Canon EOS R6"`; text v uvozovkách je doslovný |
+| `\` | escapuje operátor (svislítko, `!`, `-`, `"`, `:`), takže se matchuje doslovně |
+
+Příklad escapu: `label:a\|b` (zpětné lomítko před svislítkem) hledá štítek s doslovným
+svislítkem `a|b` místo OR dvou alternativ; stejně `iso:100\-400` už není rozsah, a proto
+degraduje na volný text. Klíče jsou case-insensitive (`ISO:100` = `iso:100`). **Neznámý klíč nebo nevalidní hodnota není
+chyba**: celý token se hledá jako obyčejný text (takže `foo:bar` v popisku fotku pořád najde)
+a odpověď ho vrátí v `unknown_tokens`, aby UI ukázalo nápovědu. Přesná fractional shoda
+(`f:1.8`) se toleruje ±0.005 kvůli zaokrouhlení single-precision EXIF sloupců.
+
+### Filtry
+
+| Filtr | Hodnota | Matchuje |
+| --- | --- | --- |
+| `title:` `description:` `notes:` | text | příslušný sloupec fotky (substring, `*` wildcard) |
+| `filename:` | text | název souboru |
+| `keywords:` (alias `keyword:`) | text | IPTC klíčová slova |
+| `album:` | text | členství v albu dle **názvu** (substring) nebo přesného UID |
+| `label:` | text | štítek dle **názvu** nebo UID |
+| `person:` (alias `subject:`) | text | subjekt dle **jména** nebo UID, přes ne-invalid markery |
+| `favorite:` `private:` `archived:` | `yes\|no` | per-user oblíbené / soukromé / archivované; `archived:` **zruší výchozí live-only scope** |
+| `rating:` | `0-5`, rozsahy | hodnocení aktuálního uživatele; bez řádku = 0, takže `rating:0` najde nehodnocené |
+| `flag:` | `pick\|reject\|eye` | příznak aktuálního uživatele |
+| `year:` `month:` `day:` | číslo, rozsahy | rok (1000–9999) / měsíc (1–12) / den (1–31) pořízení |
+| `taken:` `added:` | `RRRR`, `RRRR-MM`, `RRRR-MM-DD` | datum pořízení / vložení do katalogu (celý den/měsíc/rok) |
+| `before:` / `after:` | datum jako výše | pořízeno **před** začátkem data / **od** začátku data |
+| `country:` `city:` | text | země/město z reverse geokódování (`photo_places`) |
+| `geo:` | `yes\|no` | má/nemá GPS souřadnice |
+| `alt:` | číslo (m), rozsahy | nadmořská výška (jen nezáporná — `-` je range operátor) |
+| `near:` | UID fotky | fotky do `dist:` km od dané fotky (sférická vzdálenost; referenční fotka matchuje taky) |
+| `dist:` | km | poloměr pro `near:` (default **5 km**); sám o sobě nefiltruje |
+| `camera:` | text | výrobce **nebo** model fotoaparátu |
+| `lens:` | text | model objektivu |
+| `iso:` `f:` `mm:` `mp:` | číslo, rozsahy | ISO / clona / ohnisko / megapixely (`šířka×výška/10⁶`) |
+| `type:` | `image\|video\|live` | typ média |
+| `codec:` | text | image **nebo** video kodek (`hevc`, `jpeg`, …) |
+| `portrait:` `landscape:` `square:` `panorama:` | `yes\|no` | orientace dle efektivních rozměrů (EXIF orientace 5–8 prohazuje strany); panorama = poměr ≥ 1.9 |
+| `faces:` | `yes\|no`, číslo, rozsah | počet ne-invalid face **markerů**; holé číslo = **minimum** (`faces:3` ≥ 3), rozsah omezuje obě strany |
+| `face:new` | enum | fotka má detekovanou, zatím **nepřiřazenou** tvář (`faces.subject_uid IS NULL`) |
+
+Booleany berou `yes/no`, `true/false` i `1/0`. Per-user filtry (`favorite:`, `rating:`, `flag:`)
+jsou vždy scopnuté na volajícího (`RatedBy`); bez přihlášeného uživatele jsou inertní.
+Strukturované query params (`?album=`, `?label=`, `?year=`, …) **fungují dál beze změny** —
+jazyk je čistě aditivní a saved searches zůstávají kompatibilní.

@@ -33,6 +33,10 @@ const (
 	modeSemantic searchMode = "semantic"
 	// modeHybrid fuses the full-text and semantic rankings with RRF (the default).
 	modeHybrid searchMode = "hybrid"
+	// modeFilter is the effective mode reported for a pure filter query (no
+	// free text): the plain list path ran and no ranking or embedding took
+	// place. It is an output value only; parseSearchMode does not accept it.
+	modeFilter searchMode = "filter"
 )
 
 const (
