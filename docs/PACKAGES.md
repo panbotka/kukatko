@@ -936,6 +936,40 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   default, nečíselné / záporné → 400); 503 bez backendu, 404 chybějící album/štítek
   (`organize.ErrAlbumNotFound`/`ErrLabelNotFound`); mountuje se v `serve` (`buildExpandAPI` v
   `cmd/kukatko/expand.go`, bere `mediaStore` pro stamping URL)),
+  `internal/review/`
+  (**review hra** — fronta otázek „jedna po druhé" nad **pásmem nejistoty** a aplikace odpovědí;
+  **skládá existující kusy, nic nereimplementuje**: face otázky přes rozhraní `Sweeper` (splňuje
+  `*sweep.Service` → per-subject kandidátské hledání se všemi jeho filtry: unassigned-only,
+  rejections, negativní exemplář, min. velikost obličeje), label otázky přes `Expander` (splňuje
+  `*expand.Service` → vylučuje členy a zamítnuté), zápisy přes `Assigner` (`*facematch.Service`),
+  `OrganizeStore.AttachLabelAudited` a `FeedbackStore.RejectFace/RejectLabel`; `New(Config{...,BandMin,
+  BandMax,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,Now})` (nevalidní pásmo → default pár
+  0.45/0.75, `Now` = test hook). **`Queue(ctx,userUID,limit)`**: kandidáti s confidence
+  (= 1 − vzdálenost) v `[BandMin,BandMax)` — sweep běží s `Threshold: 1−BandMin` a horní hranu ořeže
+  review (nad ní patří kandidát na `/recognition`/expand, ne do hry); štítky s `PhotoCount>0`
+  (strop `MaxLabels`, fan-out `errgroup.SetLimit(LabelConcurrency)`, chyba jednoho štítku se
+  zaloguje a přeskočí); řazení dle **vzdálenosti od středu pásma** (tie-break stabilní id), druhy se
+  **prokládají** deterministicky (porovnání celočíselných zlomků, žádný `rand`); fronta se **cachuje
+  per user** (`CacheTTL`) a session drží `answered`/`skipped` sety + čítač (in-memory, idle prune po
+  12 h; skip je **záměrně** jen session-scoped — „nevím" není „ne"). Prázdná knihovna → `reason:
+  "no_people_no_labels"`, prázdné pásmo → `"no_candidates"` (obojí non-error). **`Answer(ctx,userUID,
+  questionID,answer,meta)`**: id je **content-derived** (`face:<photo>:<idx>:<subject>` /
+  `label:<photo>:<label>`) → endpoint je bezstavový; yes na face si **znovu přečte** aktuální řádek
+  obličeje (`FacesByKeys`) a odvodí akci (marker → `assign_person`, jinak `create_marker` s uloženým
+  bboxem; obličej už nesoucí subjekt → short-circuit, žádný duplicitní marker), yes na label
+  `AttachLabelAudited` (idempotentní upsert), no → `RejectFace`/`RejectLabel` (trvalé, idempotentní,
+  auditované v transakci mutace); zmizelý cíl (`ErrPhotoNotFound`/`ErrMarkerNotFound`/
+  `ErrSubjectNotFound`/`ErrLabelNotFound`/`ErrTargetNotFound`) → `result:"gone"`, ne error; nevalidní
+  vstup → `ErrInvalidQuestion`/`ErrInvalidAnswer`. Unit testy s faky (pásmo, řazení, proklad,
+  determinismus, cache TTL, skip, idempotence, gone), integrační testy nad reálným
+  sweep+candidates+expand+facematch+feedback+DB), `internal/reviewapi/`
+  (editor/admin HTTP API nad review hrou: `Service` rozhraní (splňuje `*review.Service`),
+  `NewAPI(Config{Service,RequireWrite})` (nil RequireWrite → pass-through) + `RegisterRoutes` mountuje
+  `GET /review/queue` a `POST /review/answer` za `RequireWrite`; queue čte `?limit=` (prázdné → default,
+  nečíselné/záporné → 400), answer dekóduje `{question_id,answer}` (`DisallowUnknownFields`, 64 KiB,
+  prázdná pole → 400) a staví `audit.Meta` přes `audit.FromRequest` + `auth.UserFromContext`;
+  `ErrInvalidQuestion`/`ErrInvalidAnswer` → 400, jiná chyba → 500, `result:"gone"` zůstává 200;
+  503 bez backendu; mountuje se v `serve` (`buildReviewAPI` v `cmd/kukatko/review.go`)),
   `internal/peopleapi/`
   (read/curace HTTP API nad subjekty (osoby/zvířata/jiné) — podklad People UI: rozhraní
   `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubjectAudited`/

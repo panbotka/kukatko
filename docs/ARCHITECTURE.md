@@ -462,6 +462,20 @@ Job `face_detect` (`internal/facejob`) je **idempotentní** přes tabulku `face_
 nezpracované (`faces` může mít nula řádků). Slabé detekce filtruje práh `faces.min_det_score`.
 Admin backfill: `POST /api/v1/process/faces`.
 
+**Review hra a pásmo nejistoty (`internal/review`, obličeje i štítky):** vedle hromadných stránek
+(`/recognition`, expand) existuje režim „jedna otázka po druhé" — a jeho návrhové rozhodnutí je
+**pásmo nejistoty**. Kandidáti se dělí podle confidence (= 1 − kosinová vzdálenost) na tři zóny:
+nad `review.band_max` je systém v podstatě rozhodnutý a potvrzení patří do hromadného UI (ptát se
+po jednom by plýtvalo časem), pod `review.band_min` je odhad šum a otázka demoralizuje; **jen
+prostřední pásmo** (default 0.45–0.75, konfigurovatelné) se stává otázkami, protože lidská odpověď
+u hranice rozhodování naučí systém nejvíc — „ne" se ukládá jako trvalé zamítnutí do
+`internal/feedback` a přes pravidlo negativního exempláře zabíjí i podobné kandidáty, takže hra
+konverguje. Fronta **skládá existující služby** (sweep/candidates pro obličeje, expand pro štítky),
+řadí dle vzdálenosti od středu pásma, druhy otázek deterministicky prokládá (bez `rand` — testy
+i reprodukce vyžadují stejnou frontu pro stejný stav knihovny) a cachuje se per user
+(`review.cache_ttl`). Odpovědi jdou **výhradně existujícími write paths** (assign state machine,
+`AttachLabelAudited`, feedback) — review nemá vlastní zápisovou cestu.
+
 ---
 
 ## 8. Asynchronní joby a „box offline"

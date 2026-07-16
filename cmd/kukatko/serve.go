@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/backup"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/metrics"
@@ -300,9 +301,6 @@ func buildServices(
 		server.WithAPI(photoAPI.RegisterRoutes),
 		server.WithAPI(clusterAPI.RegisterRoutes),
 		server.WithAPI(buildBulkAPI(cfg, db, authAPI).RegisterRoutes),
-		server.WithAPI(buildCandidatesAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
-		server.WithAPI(buildSweepAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
-		server.WithAPI(buildExpandAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes),
 		server.WithAPI(mapsAPI.RegisterRoutes),
 		server.WithAPI(jobAPI.RegisterRoutes),
@@ -310,7 +308,7 @@ func buildServices(
 		server.WithAPI(maintenanceAPI.RegisterRoutes),
 		// Import history is always mounted (import triggers self-gate).
 		server.WithAPI(buildImportAPI(cfg, db, jobStore, authAPI).RegisterRoutes),
-	}, readAPIOptions(db, authAPI, mediaStore))
+	}, discoveryAPIOptions(cfg, db, authAPI, mediaStore, matchSvc), readAPIOptions(db, authAPI, mediaStore))
 	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
 }
 
@@ -323,6 +321,24 @@ func buildServices(
 //
 // The groups that return photo records take mediaStore, which decides where their
 // clients fetch each photo's thumbnail and original.
+// discoveryAPIOptions builds the server options for the editor-only discovery
+// APIs riding the vector indexes: per-subject candidates, the recognition
+// sweep, collection expansion and the review game. They share the config, the
+// pool, the write guard and the media store; the review game additionally
+// reuses the photo API's facematch service so face confirmations go through
+// the one assign state machine.
+func discoveryAPIOptions(
+	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
+	matchSvc *facematch.Service,
+) []server.Option {
+	return []server.Option{
+		server.WithAPI(buildCandidatesAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
+		server.WithAPI(buildSweepAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
+		server.WithAPI(buildExpandAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
+		server.WithAPI(buildReviewAPI(cfg, db, authAPI, mediaStore, matchSvc).RegisterRoutes),
+	}
+}
+
 func readAPIOptions(db *database.DB, authAPI *auth.API, mediaStore storage.Storage) []server.Option {
 	return []server.Option{
 		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),

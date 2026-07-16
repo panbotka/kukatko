@@ -80,6 +80,7 @@ type Config struct {
 	Candidates CandidatesConfig `mapstructure:"candidates"`
 	Sweep      SweepConfig      `mapstructure:"sweep"`
 	Expand     ExpandConfig     `mapstructure:"expand"`
+	Review     ReviewConfig     `mapstructure:"review"`
 	Auth       AuthConfig       `mapstructure:"auth"`
 	Maps       MapsConfig       `mapstructure:"maps"`
 	Backup     BackupConfig     `mapstructure:"backup"`
@@ -424,6 +425,34 @@ type ExpandConfig struct {
 	Concurrency int `mapstructure:"concurrency"`
 }
 
+// ReviewConfig tunes the review game: one question at a time over candidates
+// the system is genuinely unsure about. Confidence is 1 - cosine distance;
+// only candidates inside [BandMin, BandMax) become questions — below the band
+// the guess is noise, at or above BandMax the /recognition and /expand pages
+// confirm in bulk instead.
+type ReviewConfig struct {
+	// BandMin is the inclusive lower confidence bound of the uncertainty band.
+	// Out-of-range values fall back to the default pair.
+	BandMin float64 `mapstructure:"band_min"`
+	// BandMax is the exclusive upper confidence bound of the uncertainty band.
+	// Out-of-range values fall back to the default pair.
+	BandMax float64 `mapstructure:"band_max"`
+	// QueueSize is the default number of questions per queue batch, sized so the
+	// UI can prefetch. A non-positive value falls back to the default.
+	QueueSize int `mapstructure:"queue_size"`
+	// CacheTTL is how long a built queue is served from the per-user cache
+	// before the expensive candidate searches run again. A non-positive value
+	// falls back to the default.
+	CacheTTL time.Duration `mapstructure:"cache_ttl"`
+	// MaxLabels caps how many labels one queue rebuild scans. A non-positive
+	// value falls back to the default.
+	MaxLabels int `mapstructure:"max_labels"`
+	// LabelConcurrency bounds concurrent label-similarity searches during a
+	// rebuild (each already fans out internally; the box is RAM-constrained). A
+	// non-positive value falls back to the default.
+	LabelConcurrency int `mapstructure:"label_concurrency"`
+}
+
 // AuthConfig holds the credentials used to bootstrap the initial admin account
 // plus the session and login rate-limiting policy.
 type AuthConfig struct {
@@ -679,9 +708,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("cluster.min_size", 2)
 	v.SetDefault("cluster.suggestion_max_distance", 0.5)
 
-	setCandidatesDefaults(v)
-	setSweepDefaults(v)
-	setExpandDefaults(v)
+	setDiscoveryDefaults(v)
 
 	v.SetDefault("auth.bootstrap_admin_username", "")
 	v.SetDefault("auth.bootstrap_admin_password", "")
@@ -703,6 +730,16 @@ func setDefaults(v *viper.Viper) {
 // until one is configured), the public REST base URL, the reverse-geocode throttle
 // backing the background places job, and the server-side tile cache that keeps a
 // re-browsed area from costing mapy.com credits again.
+// setDiscoveryDefaults registers the defaults of the discovery features riding
+// the vector indexes: per-subject candidates, the recognition sweep, collection
+// expansion and the review game.
+func setDiscoveryDefaults(v *viper.Viper) {
+	setCandidatesDefaults(v)
+	setSweepDefaults(v)
+	setExpandDefaults(v)
+	setReviewDefaults(v)
+}
+
 // setCandidatesDefaults registers the untagged-person candidate-search defaults:
 // the fallback cosine distance, the per-exemplar kNN cap, the minimum reviewable
 // face width in pixels, and the concurrency bound on exemplar searches.
@@ -733,6 +770,18 @@ func setExpandDefaults(v *viper.Viper) {
 	v.SetDefault("expand.search_limit", 200)
 	v.SetDefault("expand.source_cap", 500)
 	v.SetDefault("expand.concurrency", 8)
+}
+
+// setReviewDefaults registers the review game defaults: the uncertainty band
+// (roughly "the system is 45–75 % sure"), the batch size the UI prefetches, the
+// per-user queue cache window, and the bounds on the label fan-out.
+func setReviewDefaults(v *viper.Viper) {
+	v.SetDefault("review.band_min", 0.45)
+	v.SetDefault("review.band_max", 0.75)
+	v.SetDefault("review.queue_size", 20)
+	v.SetDefault("review.cache_ttl", "60s")
+	v.SetDefault("review.max_labels", 200)
+	v.SetDefault("review.label_concurrency", 2)
 }
 
 func setMapsDefaults(v *viper.Viper) {

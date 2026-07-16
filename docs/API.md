@@ -308,6 +308,34 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `"no_source_embeddings"`. Sbírka o **jedné** fotce degeneruje na per-foto podobnost. **Read-only** —
   přidání nalezených fotek jde přes existující `POST /photos/bulk`. 503 bez backendu, 404 chybějící
   album/štítek. Mountuje se `server.WithAPI` (`buildExpandAPI` v `cmd/kukatko/expand.go`).
+- **Review game API (`/api/v1`, `internal/reviewapi`, editor/admin přes `RequireWrite`):** „hra" na
+  úklid knihovny — jedna otázka po druhé („Je tohle Tomáš?", „Má tahle fotka mít štítek Ostatky?"),
+  odpověď yes/no/skip. Otázky se berou z **pásma nejistoty** (`review.band_min ≤ confidence <
+  review.band_max`, confidence = 1 − kosinová vzdálenost, default 0.45–0.75) — pod pásmem je to šum,
+  nad ním se potvrzuje hromadně na `/recognition` resp. přes expand. `GET /review/queue?limit=N`
+  (prázdné/0 → `review.queue_size`, strop 100, nečíselné/záporné → 400) → `{questions:[{id,kind:
+  "face"|"label",confidence,photo,subject?,face_index?,bbox?{relative,pixel},action?
+  ("create_marker"|"assign_person"),marker_uid?,label?}],answered,remaining,reason?}`; `id` je
+  **stabilní, odvozené z obsahu** (`face:<photo>:<index>:<subject>` / `label:<photo>:<label>`),
+  `bbox` relativní 0..1 **i** pixely (ctí EXIF orientaci), fronta je **deterministická** pro daný stav
+  knihovny (řazení dle vzdálenosti od středu pásma, tie-break id; face/label otázky se **prokládají**
+  proporčně, žádný `rand`). Fronta se **cachuje per user** (`review.cache_ttl`, default 60 s) — batch
+  fetch nepřepočítává drahá vektorová hledání; `remaining`/`answered` jsou levné session čítače.
+  Prázdná knihovna (žádné pojmenované osoby ani štítky) → **non-error** prázdná fronta s `reason:
+  "no_people_no_labels"`; zdroje existují, ale pásmo je prázdné → `reason:"no_candidates"`.
+  `POST /review/answer` s `{question_id,answer:"yes"|"no"|"skip"}` → `{result,answered,remaining}`.
+  **yes** na face jde přes **existující** assign state machine (stejná cesta jako
+  `POST /photos/{uid}/faces/assign`; akce se odvodí z aktuálního stavu obličeje — marker existuje →
+  `assign_person`, jinak `create_marker` s uloženým bboxem), yes na label přes `AttachLabelAudited`
+  (source `manual`); **no** zapíše **trvalé zamítnutí** do `internal/feedback` (otázka se už nikdy
+  nevrátí a pravidlo negativního exempláře zabíjí podobné kandidáty); **skip** = „nevím" — otázka se
+  v této session už nenabídne, ale **nezapisuje se** (restart ji smí vrátit; skip není zamítnutí).
+  Odpovědi jsou **idempotentní** (`result:"already_answered"`, žádný druhý zápis ani duplicitní
+  marker) a auditované ve stejné transakci jako mutace (přes reusnuté write paths). Smazané
+  foto/obličej/štítek mezi fetch a answer → 200 s `result:"gone"` (UI jde dál), **ne** 500; nevalidní
+  `question_id`/`answer` → 400. Mountuje se `server.WithAPI` (`buildReviewAPI` v
+  `cmd/kukatko/review.go`, sdílí facematch service s photoapi a candidates/expand služby se sweep a
+  expand endpointy).
 - **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
   `{subjects:[{...subject, marker_count}]}` (řazení dle jména, počty non-invalid markerů);
   `POST /subjects` (RequireWrite) → 201 vytvoří subjekt z `{name,type,favorite,private,notes,

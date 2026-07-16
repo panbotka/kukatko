@@ -239,6 +239,31 @@ expand:
   # the default.
   concurrency: 8
 
+review:
+  # The review game (GET /api/v1/review/queue + POST /api/v1/review/answer,
+  # editor-only): one question at a time — "is this face person X?", "should this
+  # photo carry label Y?" — picked from the uncertainty band where a human answer
+  # teaches the system the most. Confidence is 1 - cosine distance; only candidates
+  # with band_min <= confidence < band_max become questions. Below the band the
+  # guess is noise; at or above band_max the /recognition and /expand pages confirm
+  # in bulk instead. Out-of-range values fall back to the default band.
+  band_min: 0.45
+  band_max: 0.75
+  # Default number of questions per queue batch (the UI prefetches to stay instant
+  # between answers). Set to 0 (or below) to fall back to the default.
+  queue_size: 20
+  # How long a built queue is served from the per-user cache before the expensive
+  # candidate searches run again. Answers update the cached queue in place, so the
+  # session counter stays cheap. Set to 0 (or below) to fall back to the default.
+  cache_ttl: 60s
+  # At most this many labels are scanned per queue rebuild. Set to 0 (or below) to
+  # fall back to the default.
+  max_labels: 200
+  # How many label-similarity searches run at once during a rebuild (each already
+  # fans out internally; keep low on a RAM-constrained box). Set to 0 (or below) to
+  # fall back to the default.
+  label_concurrency: 2
+
 auth:
   # Credentials used to create the initial admin account on first run.
   bootstrap_admin_username: ""

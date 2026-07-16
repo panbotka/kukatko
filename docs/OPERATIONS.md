@@ -560,6 +560,21 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   kNN na zdroj běží naráz. Nekladná hodnota u kteréhokoli klíče spadne na default. Expanze je
   **read-only** — přidání nalezených fotek jde přes `POST /photos/bulk`. Env:
   `KUKATKO_EXPAND_MAX_DISTANCE`, `_LIMIT`, `_MAX_LIMIT`, `_SEARCH_LIMIT`, `_SOURCE_CAP`, `_CONCURRENCY`.
+- **Review klíče (`review.*`, `internal/config` + `internal/review`):** ladí **review hru**
+  (`GET /review/queue`, `POST /review/answer`) — otázky jedna po druhé nad kandidáty, kterými si
+  systém není jistý. `band_min` / `band_max` (**default 0.45 / 0.75**) — **pásmo nejistoty**:
+  otázkou se stane jen kandidát s confidence (= 1 − kosinová vzdálenost) v `[band_min, band_max)`;
+  pod pásmem je odhad šum, od `band_max` výš se potvrzuje hromadně na `/recognition` / přes expand.
+  Nevalidní pásmo (mimo (0,1), min ≥ max) spadne na default **pár**. `queue_size` (**default 20**) —
+  výchozí velikost batchu, UI si přednačítá; request smí poslat vlastní `?limit` (strop 100).
+  `cache_ttl` (**default 60s**) — jak dlouho se postavená fronta servíruje z per-user cache, než se
+  drahá vektorová hledání spustí znova (odpovědi frontu upravují in-place, čítač session je levný).
+  `max_labels` (**default 200**) — strop kolik štítků jeden rebuild proskenuje. `label_concurrency`
+  (**default 2**) — kolik label-similarity hledání běží naráz (každé už interně fan-outuje; na
+  RAM-limitovaném boxu držet nízko). Face stranu si review nebere vlastními klíči — jede přes
+  sweep/candidates a jejich `sweep.*`/`candidates.*` limity. Nekladná hodnota u kteréhokoli klíče
+  spadne na default. Env: `KUKATKO_REVIEW_BAND_MIN`, `_BAND_MAX`, `_QUEUE_SIZE`, `_CACHE_TTL`,
+  `_MAX_LABELS`, `_LABEL_CONCURRENCY`.
 
 ### `maps.user_agent` — restrikce mapy.com klíče na User-Agent
 

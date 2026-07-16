@@ -107,6 +107,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/psimport` — incremental **idempotent** direct migration from photo-sorter
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
 - `internal/restoreapi` — admin-only **read-only** `/restore/*` (destructive restore only via CLI)
+- `internal/review` — the review game: one-question-at-a-time queue of face/label candidates from the uncertainty band; answers reuse existing write paths
+- `internal/reviewapi` — `GET /review/queue`, `POST /review/answer` (RequireWrite)
 - `internal/savedsearch` — per-user saved searches ("smart albums")
 - `internal/savedsearchapi` — `/saved-searches`, everything scoped to the owner (foreign → 404)
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
