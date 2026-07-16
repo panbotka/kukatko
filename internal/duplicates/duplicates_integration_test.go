@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/duplicates"
+	"github.com/panbotka/kukatko/internal/feedback"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -18,27 +20,41 @@ import (
 
 // fixture bundles the real stores and a Service over a freshly truncated DB.
 type fixture struct {
-	svc     *duplicates.Service
-	photos  *photos.Store
-	vectors *vectors.Store
+	svc      *duplicates.Service
+	photos   *photos.Store
+	vectors  *vectors.Store
+	feedback *feedback.Store
 }
 
-// newFixture wires real photos/vectors stores and a duplicates.Service with the
-// default thresholds.
+// newFixture wires real photos/vectors/feedback stores and a duplicates.Service
+// with the default thresholds. The feedback store is real rather than faked so the
+// dismissal path is exercised end to end, through the actual table.
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 	ps := photos.NewStore(db.Pool())
 	vs := vectors.NewStore(db.Pool())
+	fs := feedback.NewStore(db.Pool())
 	svc := duplicates.New(duplicates.Config{
 		Photos:           ps,
 		Phashes:          ps,
 		Embeddings:       vs,
+		Feedback:         fs,
 		PhashMaxDiff:     8,
 		EmbeddingMaxDist: 0.05,
 	})
-	return fixture{svc: svc, photos: ps, vectors: vs}
+	return fixture{svc: svc, photos: ps, vectors: vs, feedback: fs}
+}
+
+// dismiss records a "these two are not duplicates" decision for the pair.
+func (f fixture) dismiss(t *testing.T, a, b string) {
+	t.Helper()
+	key := feedback.DuplicateDismissalKey{PhotoUID: a, OtherUID: b}
+	entry := audit.Entry{Action: audit.ActionDuplicateDismiss, TargetType: "photos", TargetUID: a}
+	if err := f.feedback.DismissDuplicate(t.Context(), key, entry); err != nil {
+		t.Fatalf("DismissDuplicate(%s, %s): %v", a, b, err)
+	}
 }
 
 // addPhoto creates a photo with the given dimensions and returns its uid.
@@ -186,4 +202,79 @@ func TestService_pagination(t *testing.T) {
 // pairHash builds a distinct file hash for member m of group gi.
 func pairHash(gi int, m string) string {
 	return "pg-" + string(rune('a'+gi)) + "-" + m
+}
+
+// TestService_dismissedPairStaysGoneAcrossRescan is the durability check the whole
+// dismissal feature exists for: a pair settled as "not a duplicate" must be absent
+// from the very next scan and from every scan after it. Detection is derived state
+// recomputed from scratch each call, so this can only hold if the decision is read
+// back out of the database — an in-memory or client-side dismissal passes a single
+// assertion and fails this one.
+func TestService_dismissedPairStaysGoneAcrossRescan(t *testing.T) {
+	f := newFixture(t)
+	small := f.addPhoto(t, "d-small", 100, 100, 10)
+	big := f.addPhoto(t, "d-big", 400, 400, 80)
+	f.setPhash(t, small, 0)
+	f.setPhash(t, big, 0b111) // 3 bits apart -> grouped
+
+	// The pair is offered before the user says anything.
+	res, err := f.svc.FindGroups(t.Context(), 0, 0)
+	if err != nil {
+		t.Fatalf("FindGroups (before): %v", err)
+	}
+	if res.Total != 1 {
+		t.Fatalf("groups before dismissal = %d, want 1", res.Total)
+	}
+
+	f.dismiss(t, small, big)
+
+	// Every subsequent scan is a full re-scan, so running twice proves the
+	// exclusion is re-read rather than cached from the first call.
+	for i, label := range []string{"first re-scan", "second re-scan"} {
+		res, err = f.svc.FindGroups(t.Context(), 0, 0)
+		if err != nil {
+			t.Fatalf("FindGroups (%s): %v", label, err)
+		}
+		if res.Total != 0 || len(res.Groups) != 0 {
+			t.Fatalf("%s (run %d): got %d groups, want 0 — the dismissed pair came back",
+				label, i+1, res.Total)
+		}
+	}
+}
+
+// TestService_dismissalIsIdempotentAndReversible checks that dismissing twice is a
+// no-op and that taking the dismissal back re-offers the pair, so a mis-click is
+// recoverable rather than a permanent hole in the review queue.
+func TestService_dismissalIsIdempotentAndReversible(t *testing.T) {
+	f := newFixture(t)
+	a := f.addPhoto(t, "r-a", 100, 100, 10)
+	b := f.addPhoto(t, "r-b", 400, 400, 80)
+	f.setPhash(t, a, 0)
+	f.setPhash(t, b, 0b111)
+
+	f.dismiss(t, a, b)
+	// Dismissing again, with the uids the other way round, must stay one decision.
+	f.dismiss(t, b, a)
+
+	res, err := f.svc.FindGroups(t.Context(), 0, 0)
+	if err != nil {
+		t.Fatalf("FindGroups (dismissed): %v", err)
+	}
+	if res.Total != 0 {
+		t.Fatalf("groups while dismissed = %d, want 0", res.Total)
+	}
+
+	key := feedback.DuplicateDismissalKey{PhotoUID: b, OtherUID: a}
+	entry := audit.Entry{Action: audit.ActionDuplicateUndismiss, TargetType: "photos", TargetUID: b}
+	if err := f.feedback.UndismissDuplicate(t.Context(), key, entry); err != nil {
+		t.Fatalf("UndismissDuplicate: %v", err)
+	}
+
+	res, err = f.svc.FindGroups(t.Context(), 0, 0)
+	if err != nil {
+		t.Fatalf("FindGroups (undismissed): %v", err)
+	}
+	if res.Total != 1 {
+		t.Fatalf("groups after undismiss = %d, want 1 — the pair did not come back", res.Total)
+	}
 }

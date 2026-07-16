@@ -26,6 +26,7 @@ type fakeStore struct {
 	faceKey    feedback.FaceRejectionKey
 	labelKey   feedback.LabelRejectionKey
 	confirmKey feedback.FaceConfirmationKey
+	dupKey     feedback.DuplicateDismissalKey
 	entry      audit.Entry
 }
 
@@ -56,6 +57,20 @@ func (f *fakeStore) ConfirmFace(_ context.Context, key feedback.FaceConfirmation
 
 func (f *fakeStore) UnconfirmFace(_ context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error {
 	f.called, f.confirmKey, f.entry = "UnconfirmFace", key, entry
+	return f.err
+}
+
+func (f *fakeStore) DismissDuplicate(
+	_ context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry,
+) error {
+	f.called, f.dupKey, f.entry = "DismissDuplicate", key, entry
+	return f.err
+}
+
+func (f *fakeStore) UndismissDuplicate(
+	_ context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry,
+) error {
+	f.called, f.dupKey, f.entry = "UndismissDuplicate", key, entry
 	return f.err
 }
 
@@ -248,5 +263,94 @@ func TestRejectionStatus(t *testing.T) {
 				t.Errorf("rejectionStatus(%v) = %d, want %d", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestHandleDuplicateDismiss checks a valid dismissal answers 204 and forwards the
+// pair plus an audit entry naming both photos.
+func TestHandleDuplicateDismiss(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{}
+	rec := serve(store, http.MethodPost, "/api/v1/feedback/duplicate-dismissals",
+		`{"photo_uid":"ph1","other_uid":"ph2"}`)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if store.called != "DismissDuplicate" {
+		t.Fatalf("store call = %q, want DismissDuplicate", store.called)
+	}
+	want := feedback.DuplicateDismissalKey{PhotoUID: "ph1", OtherUID: "ph2"}
+	if store.dupKey != want {
+		t.Errorf("dismissal key = %+v, want %+v", store.dupKey, want)
+	}
+	if store.entry.Action != audit.ActionDuplicateDismiss || store.entry.TargetUID != "ph1" {
+		t.Errorf("audit entry = %+v, want duplicate.dismiss targeting ph1", store.entry)
+	}
+	if store.entry.Details["other_uid"] != "ph2" {
+		t.Errorf("audit details = %+v, want other_uid ph2", store.entry.Details)
+	}
+}
+
+// TestHandleDuplicateUndismiss checks the take-back route answers 204 and calls
+// UndismissDuplicate.
+func TestHandleDuplicateUndismiss(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{}
+	rec := serve(store, http.MethodDelete, "/api/v1/feedback/duplicate-dismissals",
+		`{"photo_uid":"ph1","other_uid":"ph2"}`)
+
+	if rec.Code != http.StatusNoContent || store.called != "UndismissDuplicate" {
+		t.Fatalf("status = %d, call = %q, want 204 UndismissDuplicate", rec.Code, store.called)
+	}
+	if store.entry.Action != audit.ActionDuplicateUndismiss {
+		t.Errorf("audit action = %q, want duplicate.undismiss", store.entry.Action)
+	}
+}
+
+// TestHandleDuplicateDismissMissingOther checks a body naming only one photo is
+// refused with 400 before the store is touched.
+func TestHandleDuplicateDismissMissingOther(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{}
+	rec := serve(store, http.MethodPost, "/api/v1/feedback/duplicate-dismissals",
+		`{"photo_uid":"ph1"}`)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if store.called != "" {
+		t.Errorf("store call = %q, want none", store.called)
+	}
+}
+
+// TestHandleDuplicateDismissSamePhoto checks the store's ErrSamePhoto maps to 400:
+// a photo is never a duplicate of itself, and that is a caller mistake, not a 500.
+func TestHandleDuplicateDismissSamePhoto(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{err: feedback.ErrSamePhoto}
+	rec := serve(store, http.MethodPost, "/api/v1/feedback/duplicate-dismissals",
+		`{"photo_uid":"ph1","other_uid":"ph1"}`)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestHandleDuplicateDismissUnknownPhoto checks a pair naming a photo that does not
+// exist answers 404 rather than a generic failure.
+func TestHandleDuplicateDismissUnknownPhoto(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{err: feedback.ErrTargetNotFound}
+	rec := serve(store, http.MethodPost, "/api/v1/feedback/duplicate-dismissals",
+		`{"photo_uid":"ph1","other_uid":"ph2"}`)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }

@@ -92,6 +92,49 @@ func (a *API) handleFaceUnconfirm(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDuplicateDismiss records that the two photos in the request body are NOT
+// duplicates of each other and answers 204. The pair is unordered and the write is
+// idempotent, so dismissing it twice — in either argument order — is a no-op. A
+// malformed body or a missing identifier answers 400, as does a pair naming the
+// same photo twice; a non-existent photo answers 404.
+func (a *API) handleDuplicateDismiss(w http.ResponseWriter, r *http.Request) {
+	in, err := decodeDuplicateDismissal(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := in.toKey()
+	entry := a.auditEntry(r, audit.ActionDuplicateDismiss, "photos", key.PhotoUID,
+		map[string]any{"other_uid": key.OtherUID})
+	if err := a.store.DismissDuplicate(r.Context(), key, entry); err != nil {
+		status, msg := rejectionStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDuplicateUndismiss takes back the duplicate dismissal in the request body
+// and answers 204, letting the pair be offered for review again. Un-dismissing a
+// pair that was never dismissed is a no-op. A malformed body or a missing
+// identifier answers 400.
+func (a *API) handleDuplicateUndismiss(w http.ResponseWriter, r *http.Request) {
+	in, err := decodeDuplicateDismissal(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := in.toKey()
+	entry := a.auditEntry(r, audit.ActionDuplicateUndismiss, "photos", key.PhotoUID,
+		map[string]any{"other_uid": key.OtherUID})
+	if err := a.store.UndismissDuplicate(r.Context(), key, entry); err != nil {
+		status, msg := rejectionStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleLabelReject records that the photo in the request body should NOT have the
 // given label and answers 204. Rejecting the same pair twice is a no-op. A malformed
 // body or a missing identifier answers 400; a non-existent photo or label answers

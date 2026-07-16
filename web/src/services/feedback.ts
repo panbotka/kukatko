@@ -132,3 +132,41 @@ export async function rejectLabel(req: LabelRejection, signal?: AbortSignal): Pr
 export async function unrejectLabel(req: LabelRejection, signal?: AbortSignal): Promise<void> {
   await send('DELETE', '/feedback/label-rejections', req, signal)
 }
+
+/**
+ * A "these two are genuinely different" duplicate dismissal
+ * (`feedbackapi.duplicateDismissalInput`): the two photos of the pair. Recorded
+ * from the compare view's "keep both" so the detector stops linking the pair.
+ *
+ * The pair is unordered — the backend normalises it — so which uid goes in which
+ * field does not matter, and dismissing (A,B) then (B,A) stays one decision.
+ */
+export interface DuplicateDismissal {
+  photo_uid: string
+  other_uid: string
+}
+
+/**
+ * Records a duplicate dismissal via `POST /feedback/duplicate-dismissals`, so the
+ * pair is dropped from every later `GET /duplicates` scan rather than being offered
+ * forever. Nothing is archived or merged: it records only the opinion. It is
+ * idempotent, so the caller can fire it optimistically.
+ */
+export async function dismissDuplicate(
+  req: DuplicateDismissal,
+  signal?: AbortSignal,
+): Promise<void> {
+  await send('POST', '/feedback/duplicate-dismissals', req, signal)
+}
+
+/**
+ * Withdraws a duplicate dismissal via `DELETE /feedback/duplicate-dismissals`, the
+ * inverse of {@link dismissDuplicate}, putting the pair back in the review queue.
+ * Also idempotent.
+ */
+export async function undismissDuplicate(
+  req: DuplicateDismissal,
+  signal?: AbortSignal,
+): Promise<void> {
+  await send('DELETE', '/feedback/duplicate-dismissals', req, signal)
+}

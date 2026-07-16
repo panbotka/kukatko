@@ -572,7 +572,8 @@
       "detail": "Detail fotky",
       "faceSearch": "Hledání osoby",
       "outliers": "Možné chyby",
-      "review": "Třídění"
+      "review": "Třídění",
+      "compare": "Porovnání duplikátů"
     },
     "grid": {
       "move": "Přesun výběru mezi fotkami",
@@ -606,6 +607,12 @@
       "skip": "Nevím — přeskočit otázku",
       "undo": "Vrátit poslední odpověď",
       "leave": "Ukončit třídění"
+    },
+    "compare": {
+      "keepLeft": "Ponechat levou fotku (pravá se archivuje)",
+      "keepRight": "Ponechat pravou fotku (levá se archivuje)",
+      "keepBoth": "Nechat obě — nejsou to duplikáty",
+      "leave": "Zpět na seznam duplikátů"
     }
   },
   "map": {
@@ -1505,7 +1512,51 @@
       "title": "Žádné duplikáty",
       "hint": "Momentálně nic nevypadá jako téměř duplicitní."
     },
-    "loadMore": "Načíst další"
+    "loadMore": "Načíst další",
+    "compare": {
+      "title": "Porovnání duplikátů",
+      "back": "Zpět na seznam",
+      "left": "Vlevo",
+      "right": "Vpravo",
+      "suggested": "Doporučeno ponechat",
+      "progress": "Dvojice {{current}} z {{total}}",
+      "groupNote": "Dvojice {{current}} z {{total}} v této skupině — každá kopie se porovnává s doporučenou fotkou.",
+      "keepLeft": "Nechat levou",
+      "keepRight": "Nechat pravou",
+      "keepBoth": "Nechat obě",
+      "archiveNote": "Neponechaná kopie se archivuje do koše, nikdy nemaže. Trvale ji odstraníte jen ručně z /trash.",
+      "pairError": "Načtení této dvojice se nezdařilo.",
+      "zoomIn": "Přiblížit",
+      "zoomOut": "Oddálit",
+      "zoomReset": "Zobrazit celé",
+      "open": "Porovnat vedle sebe",
+      "diff": {
+        "field": "Údaj",
+        "summary_one": "Liší se {{count}} údaj",
+        "summary_few": "Liší se {{count}} údaje",
+        "summary_many": "Liší se {{count}} údaje",
+        "summary_other": "Liší se {{count}} údajů",
+        "onlyDifferences": "Jen rozdíly",
+        "differs": "liší se",
+        "identical": "Fotky mají všechny porovnávané údaje shodné.",
+        "empty": "Neuvedeno",
+        "dimensions": "Rozměry",
+        "fileSize": "Velikost souboru",
+        "format": "Formát",
+        "takenAt": "Datum pořízení",
+        "camera": "Fotoaparát",
+        "lens": "Objektiv",
+        "fileName": "Název souboru",
+        "location": "Místo",
+        "albums": "Alba",
+        "labels": "Štítky",
+        "people": "Osoby"
+      },
+      "done": {
+        "title": "Hotovo",
+        "hint": "Všechny nalezené dvojice máte vyřešené."
+      }
+    }
   },
   "jobStates": {
     "labels": {

@@ -124,7 +124,7 @@ func TestPhashUnion(t *testing.T) {
 		{idx: 3, phash: 0b1},        // 1 bit from node 0
 	}
 	uf := newUnionFind(4)
-	matched := phashUnion(entries, 8, uf)
+	matched := phashUnion(entries, 8, uf, nil)
 
 	if uf.find(0) != uf.find(1) || uf.find(0) != uf.find(3) {
 		t.Errorf("near hashes were not unioned: roots %d %d %d", uf.find(0), uf.find(1), uf.find(3))
@@ -147,7 +147,7 @@ func TestPhashUnion_disabled(t *testing.T) {
 	t.Parallel()
 	entries := []phashEntry{{idx: 0, phash: 0}, {idx: 1, phash: 0}}
 	uf := newUnionFind(2)
-	matched := phashUnion(entries, -1, uf)
+	matched := phashUnion(entries, -1, uf, nil)
 	if uf.find(0) == uf.find(1) {
 		t.Errorf("disabled pHash union linked identical hashes")
 	}

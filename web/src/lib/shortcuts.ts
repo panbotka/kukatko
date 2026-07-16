@@ -104,6 +104,15 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     ],
   },
   {
+    titleKey: 'shortcuts.groups.compare',
+    entries: [
+      { keys: ['←'], descriptionKey: 'shortcuts.compare.keepLeft' },
+      { keys: ['→'], descriptionKey: 'shortcuts.compare.keepRight' },
+      { keys: ['b'], descriptionKey: 'shortcuts.compare.keepBoth' },
+      { keys: ['Esc'], descriptionKey: 'shortcuts.compare.leave' },
+    ],
+  },
+  {
     titleKey: 'shortcuts.groups.review',
     entries: [
       { keys: ['→', 'y'], descriptionKey: 'shortcuts.review.yes' },

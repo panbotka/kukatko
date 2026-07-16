@@ -44,6 +44,12 @@ type Store interface {
 	ConfirmFace(ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error
 	// UnconfirmFace takes a face confirmation back, idempotently and audited.
 	UnconfirmFace(ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error
+	// DismissDuplicate records that two photos are NOT duplicates of each other,
+	// idempotently and audited.
+	DismissDuplicate(ctx context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry) error
+	// UndismissDuplicate takes a duplicate dismissal back, idempotently and
+	// audited.
+	UndismissDuplicate(ctx context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry) error
 }
 
 // API exposes the rejection endpoints over HTTP. The write guard is supplied by the
@@ -74,11 +80,13 @@ func NewAPI(cfg Config) *API {
 //	DELETE /feedback/face-rejections     RequireWrite  take a face rejection back
 //	POST   /feedback/label-rejections    RequireWrite  reject a photo↔label guess
 //	DELETE /feedback/label-rejections    RequireWrite  take a label rejection back
-//	POST   /feedback/face-confirmations  RequireWrite  confirm a face↔subject assignment
-//	DELETE /feedback/face-confirmations  RequireWrite  take a face confirmation back
+//	POST   /feedback/face-confirmations    RequireWrite  confirm a face↔subject assignment
+//	DELETE /feedback/face-confirmations    RequireWrite  take a face confirmation back
+//	POST   /feedback/duplicate-dismissals  RequireWrite  settle a pair as not duplicates
+//	DELETE /feedback/duplicate-dismissals  RequireWrite  take a duplicate dismissal back
 //
-// The face and the label are named in the request body rather than the path, so a
-// DELETE carries a body the same way the label-detach endpoint does.
+// The face, the label and the pair are named in the request body rather than the
+// path, so a DELETE carries a body the same way the label-detach endpoint does.
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/feedback", func(r chi.Router) {
 		r.With(a.requireWrite).Post("/face-rejections", a.handleFaceReject)
@@ -87,6 +95,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Delete("/label-rejections", a.handleLabelUnreject)
 		r.With(a.requireWrite).Post("/face-confirmations", a.handleFaceConfirm)
 		r.With(a.requireWrite).Delete("/face-confirmations", a.handleFaceUnconfirm)
+		r.With(a.requireWrite).Post("/duplicate-dismissals", a.handleDuplicateDismiss)
+		r.With(a.requireWrite).Delete("/duplicate-dismissals", a.handleDuplicateUndismiss)
 	})
 }
 
@@ -107,11 +117,11 @@ func (a *API) auditEntry(
 }
 
 // rejectionStatus maps a store error to an HTTP status and client message: an
-// incomplete key is 400, a missing referenced photo/subject/label is 404, and
-// anything else is a 500 with a generic message.
+// incomplete key or an impossible pair is 400, a missing referenced
+// photo/subject/label is 404, and anything else is a 500 with a generic message.
 func rejectionStatus(err error) (int, string) {
 	switch {
-	case errors.Is(err, feedback.ErrEmptyKey):
+	case errors.Is(err, feedback.ErrEmptyKey), errors.Is(err, feedback.ErrSamePhoto):
 		return http.StatusBadRequest, err.Error()
 	case errors.Is(err, feedback.ErrTargetNotFound):
 		return http.StatusNotFound, err.Error()

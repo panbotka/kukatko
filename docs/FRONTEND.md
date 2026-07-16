@@ -706,7 +706,29 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   archivovány"); po potvrzení `mergeDuplicates()` sloučí (keeper zdědí alba/štítky/osoby + doplní gapy,
   kopie do koše — vratné) → skupina zmizí + success alert (`duplicates.merged`), nebo skupinu **odmítne**
   („není duplikát", jen lokálně skryje); chyby přes `duplicates.actionError`/503 „nedostupné", loading
-  přes `GridSkeleton`, error s retry,
+  přes `GridSkeleton`, error s retry; každá karta nabízí **„Porovnat vedle sebe"** → `DupComparePage`,
+  protože 224px dlaždice stačí skupinu poznat, ne se v ní rozhodnout,
+  `DupComparePage` = `/duplicates/compare?pair=<levá>|<pravá>` (editor/admin, **fullscreen mimo
+  `Layout`** jako `/review` — dvě fotky s navbarem okolo jsou dvě moc malé fotky) rozhodnutí „kterou
+  z těch dvou": z `fetchDuplicates` (jedna stránka skupin) postaví `buildPairQueue` **frontu dvojic** —
+  vícečlenná skupina se porovnává **po dvojicích proti doporučenému keeperovi** (`[K,A,B]` → `(K,A)`,
+  `(K,B)`, nikdy `(A,B)`), stránka to říká v `duplicates.compare.groupNote` („Dvojice 1 z 2 v této
+  skupině"), žádný člen se nezamlčí; `useComparePair` načte pro aktuální dvojici `fetchPhoto` ×2 +
+  `fetchFaces` ×2 (osoby nejsou na fotce, ale na faces endpointu — a „která kopie nese tvou kurátorskou
+  práci" je přesně ta otázka, kvůli které stránka existuje); `CompareStage` ukáže obě fotky vedle sebe
+  (pod `md` pod sebou) s **jedním sdíleným zoomem** (`useSyncZoom` + `lib/compareZoom`): jeden
+  `ZoomView`, obě `<img>` ho renderují, takže se nemůžou rozejít — kolečko zoomuje k kurzoru, tažení
+  posouvá, dvojklik přepíná fit ↔ 3×, `?pair=` drží pozici přes reload; `DiffTable` (`buildDiffRows`)
+  porovná rozměry+Mpx, velikost, formát, datum, fotoaparát, objektiv, název, místo, alba, štítky, osoby
+  a **odliší jen řádky, které se liší** (rámeček + tučně + `visually-hidden` „liší se" — nikdy jen
+  barvou), přepínač `duplicates.compare.diff.onlyDifferences` schová shodné; tři akce —
+  **Nechat levou/pravou** → `mergeDuplicates(dry_run:true)` → `MergeConfirmModal` s `note`
+  (`duplicates.compare.archiveNote`: archivuje se, nemaže) → `mergeDuplicates()` **jen nad tou
+  dvojicí** (`member_uids:[keeper,loser]`, ne nad celou skupinou — třetí člen nebyl na obrazovce),
+  **Nechat obě** → `dismissDuplicate()` (persistentní, `POST /feedback/duplicate-dismissals`);
+  po rozhodnutí se **jde na další dvojici**, ne zpět na seznam (dvojice archivované fotky vypadnou
+  přes `dropPairsTouching`), na konci `EmptyState` `duplicates.compare.done`; klávesy `←`/`→`/`b`/`Esc`
+  (v `SHORTCUT_GROUPS` jako `shortcuts.groups.compare`), `KeyboardShortcutsHelp` si mountuje sama,
   `OutliersPage` = `/outliers` (editor/admin, odkaz **Možné chyby** v „Nástrojích") „které obličeje
   téhle osoby nejspíš nejsou ona": **protějšek panelu na stránce osoby, který zůstává** — panel je
   správný, když si osobu zrovna prohlížíš, tahle stránka, když chceš cíleně lovit (a panel na ni
@@ -778,7 +800,13 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   rozměry/velikostí/`taken_at`/vzdálenostmi, radio výběr keepera (default navržený), badge `reason`,
   akce **Ponechat nejlepší a sloučit** (`onResolve` → náhled) / **Není duplikát**, busy stav) +
   `MergeConfirmModal` (potvrzovací dialog: shrnutí co se přesune na keepera + kolik kopií se archivuje,
-  Potvrdit/Zrušit, busy spinner);
+  volitelný `note` pod tím — `DupComparePage` jím říká, že se kopie archivuje a nemaže, Potvrdit/Zrušit,
+  busy spinner) + `CompareStage` (dvě fotky vedle sebe, pod `md` pod sebou; obě renderují **týž**
+  `SyncZoom.view`, takže zoom je synchronní z konstrukce; kurzor `zoom-in`/`grab`/`grabbing` říká,
+  co gesto udělá; viewport klipuje, `object-fit: contain` nikdy neořízne) + `DiffTable` (rozdílová
+  tabulka: řádek, který se liší, je označený **rámečkem + tučně + `visually-hidden` „liší se"** —
+  nikdy jen barvou; `onlyDifferences` schová shodné, prázdná hodnota je „—", vše shodné → hláška
+  místo tabulky) + `compare.css`;
   `components/expand/` = `ExpandSearchForm` (config panel `/expand`: přepínač Album|Štítek,
   `AddAutocomplete` picker sbírky s počtem fotek v hintu, procentní posuvník prahu s bookendy,
   limit, submit tlačítko Hledat — čistě controlled, stav drží stránka) + `ExpandResults`
@@ -943,6 +971,17 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (pinch) a když **začne na interaktivním prvku** (`button`/`a`/form) bez `data-swipe-surface` — takže
   ťuknutí na obličejový box/šipku nelistuje, jen samotný obrázek (jeho tlačítko ten atribut nese). Myš
   na desktopu sem nechodí, gesto je čistě aditivní pro dotyk;
+  `useSyncZoom({resetKey})` → `{view,zoomed,dragging,handlers,zoomIn,zoomOut,reset}` = **jeden**
+  zoom/pan stav pro **obě** fotky v `DupComparePage`: obě `<img>` renderují týž `ZoomView`, takže
+  jsou synchronní **z konstrukce** — není co kopírovat mezi panely, není kde se rozejít. Kolečko
+  zoomuje k kurzoru, tažení posouvá (jen když je přiblíženo), dvojklik přepíná fit ↔ 3×, změna
+  `resetKey` (id dvojice) vrátí fit, takže další dvojice nezdědí přiblížení. **Není to
+  `usePinchZoom`:** ten je touch-only a měří proti `window` (obrázek vyplňuje viewport), tady jde
+  o myš ve dvou půlkách obrazovky, takže box se předává dovnitř; čistá matematika je v
+  `lib/compareZoom`,
+  `useComparePair(pair)` → `{data,loading,error}` = načte obě strany porovnání (`fetchPhoto` ×2 +
+  `fetchFaces` ×2, paralelně, `AbortController`); selže-li kterákoli, selže celá dvojice — půlka
+  diff tabulky by lhala mlčením,
   `usePinchZoom({onSwipe,resetKey,enabled?})` →
   `{scale,translateX,translateY,isZoomed,gesturing,handlers,reset}` = **pinch/dvojklik zoom** fullscreen
   lightboxu s **pan** při přiblížení a swipe listováním v klidu: dva prsty škálují (`pinchScale`, clamp
@@ -1055,6 +1094,20 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `swipeAction(dx,dy,{threshold,ratio})` → `'prev'|'next'|null` (vlevo = next, vpravo = prev, práh +
   dominantní vodorovná složka), `touchDistance`/`touchMidpoint`, `pinchScale`/`clampScale`
   (clamp `[MIN_SCALE=1,MAX_SCALE=4]`, `DOUBLE_TAP_SCALE`), `isDoubleTap(dt,dist)` a `clampPan`;
+  `compareZoom.ts` = **pure zoom/pan matematika** synchronního plátna v `DupComparePage` (a proto
+  unit-testovatelná bez DOM): `ZoomView{scale,x,y}`, `IDENTITY_VIEW`, `MIN_SCALE=1`/`MAX_SCALE=8`/
+  `ZOOM_STEP`, `zoomAt(view,factor,px,py,box)` (bod pod kurzorem zůstane pod kurzorem), `zoomCentre`,
+  `panBy`, `clampView` (pan se drží v `(scale-1)*box/2`, takže obrázek nejde vytáhnout z panelu),
+  `isZoomed`, `viewTransform`; oddělené od `gestures.ts` schválně — ten je touch-only a měří proti
+  viewportu;
+  `duplicateCompare.ts` = **pure logika porovnání dvojic**: `buildPairQueue(groups)` → `ComparePair[]`
+  (vícečlenná skupina **po dvojicích proti keeperovi**, nikdy člen-člen; skupina s keeperem mimo
+  members se přeskočí, ne uhodne), `pairId(a,b)` (neuspořádané, jako backend), `pairsInGroup`/
+  `pairIndexInGroup` (popisek „dvojice i z n"), `dropPairsTouching(pairs,uid)` (po merge zmizí
+  dvojice archivované fotky), `buildDiffRows(left,right,fmt)` → `DiffRow{key,left,right,differs}` —
+  `differs` se počítá z **porovnávacího klíče, ne z formátovaného textu** (dva časy ve stejné minutě
+  se pořád liší), jména se porovnávají jako **množina** (pořadí z API nic neznamená); `fmt` se
+  injektuje, takže testy nezávisí na locale; `countDiffering(rows)`;
   `urlState.ts` = hook `useUrlState` +
   pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
   funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag`, přepínače `favorite` a facetů
@@ -1285,7 +1338,11 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `{photo_uid,face_index,subject_uid}` — **opačná polarita než `rejectFace`**: zapisuje „tenhle
   obličej **JE** tahle osoba" (✗ v outlier review = „ne, fakt je to on"), backend pak potvrzený
   obličej z dalších outlier výsledků vyloučí; zaměnit ji za `rejectFace` znamená uložit pravý opak
-  toho, co uživatel řekl (vše idempotentní → jde volat optimisticky);
+  toho, co uživatel řekl; **`dismissDuplicate(req,signal)`/`undismissDuplicate(req,signal)`** nad
+  `POST`/`DELETE /feedback/duplicate-dismissals`, typ `DuplicateDismissal` `{photo_uid,other_uid}` —
+  „tyhle dvě fotky NEJSOU duplikáty" z `DupComparePage` („Nechat obě"); dvojice je **neuspořádaná**
+  (backend normalizuje), nic se nearchivuje ani neslučuje, jen se zapíše názor a `GET /duplicates`
+  pak tu hranu na každém dalším scanu zahodí (vše idempotentní → jde volat optimisticky);
   `expand.ts` = klient rozšiřování sbírky: `searchSimilar(kind,uid,{threshold,limit},signal)` nad
   `GET /albums/{uid}/similar` / `GET /labels/{uid}/similar` (`threshold` = **kosinová vzdálenost**,
   převod z procent dělá volající přes `lib/expandSearch`), typy `ExpandKind`/`ExpandCandidate`
@@ -1450,7 +1507,8 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/photos/:uid`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` a
-  `/duplicates` navíc pod `RequireRole role="editor"` = write-only, `/import` pod `RequireImport`
+  `/duplicates` navíc pod `RequireRole role="editor"` = write-only (a `/duplicates/compare` tamtéž,
+  ale **mimo `Layout`** — fullscreen jako `/review`), `/import` pod `RequireImport`
   (admin **nebo** ai — mimo žebříček rolí, řídí `canImport`), `/maintenance`, `/system`,
   `/users` a `/audit` pod `RequireRole role="admin"` = admin-only). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy

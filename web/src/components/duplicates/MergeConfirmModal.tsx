@@ -11,6 +11,12 @@ interface MergeConfirmModalProps {
   preview: MergeResult | null
   /** Whether the confirmed merge is in flight (disables the buttons). */
   busy: boolean
+  /**
+   * An extra, already-translated line under the preview — used by the compare view
+   * to spell out that the losing copy is archived and never deleted, since there the
+   * user is choosing a single photo's fate rather than tidying a group.
+   */
+  note?: string
   /** Perform the merge the user confirmed. */
   onConfirm: () => void
   /** Close the modal without merging. */
@@ -40,17 +46,18 @@ function mergeMoves(preview: MergeResult, t: TFunction): string | null {
 }
 
 /** The body of the confirmation modal: what will move plus what will be archived. */
-function MergePreviewBody({ preview }: { preview: MergeResult }) {
+function MergePreviewBody({ preview, note }: { preview: MergeResult; note?: string }) {
   const { t } = useTranslation()
   const moves = mergeMoves(preview, t)
   return (
     <>
       <p className="mb-2">{t('duplicates.merge.body')}</p>
-      <p className="mb-0">
+      <p className={note === undefined ? 'mb-0' : 'mb-2'}>
         <strong>{moves ?? t('duplicates.merge.nothingMoves')}</strong>
         {' · '}
         {t('duplicates.merge.archived', { count: preview.archived })}
       </p>
+      {note !== undefined && <p className="small text-secondary mb-0">{note}</p>}
     </>
   )
 }
@@ -60,14 +67,22 @@ function MergePreviewBody({ preview }: { preview: MergeResult }) {
  * what the merge will move onto the keeper and how many copies will be archived,
  * then asks the user to confirm. It is rendered whenever a preview is present.
  */
-export function MergeConfirmModal({ preview, busy, onConfirm, onCancel }: MergeConfirmModalProps) {
+export function MergeConfirmModal({
+  preview,
+  busy,
+  note,
+  onConfirm,
+  onCancel,
+}: MergeConfirmModalProps) {
   const { t } = useTranslation()
   return (
     <Modal show={preview !== null} onHide={onCancel} centered>
       <Modal.Header closeButton>
         <Modal.Title>{t('duplicates.merge.title')}</Modal.Title>
       </Modal.Header>
-      <Modal.Body>{preview !== null && <MergePreviewBody preview={preview} />}</Modal.Body>
+      <Modal.Body>
+        {preview !== null && <MergePreviewBody preview={preview} note={note} />}
+      </Modal.Body>
       <Modal.Footer>
         <Button variant="outline-secondary" onClick={onCancel} disabled={busy}>
           {t('duplicates.merge.cancel')}

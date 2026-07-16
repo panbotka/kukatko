@@ -605,7 +605,8 @@
       "detail": "Photo detail",
       "faceSearch": "Person search",
       "outliers": "Possible mistakes",
-      "review": "Review"
+      "review": "Review",
+      "compare": "Duplicate compare"
     },
     "grid": {
       "move": "Move focus between photos",
@@ -639,6 +640,12 @@
       "skip": "Skip — I don't know",
       "undo": "Undo the last answer",
       "leave": "Leave the review game"
+    },
+    "compare": {
+      "keepLeft": "Keep the left photo (the right one is archived)",
+      "keepRight": "Keep the right photo (the left one is archived)",
+      "keepBoth": "Keep both — they are not duplicates",
+      "leave": "Back to the duplicates list"
     }
   },
   "people": {
@@ -1443,7 +1450,49 @@
       "title": "No duplicates found",
       "hint": "Nothing looks like a near-duplicate right now."
     },
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "compare": {
+      "title": "Compare duplicates",
+      "back": "Back to the list",
+      "left": "Left",
+      "right": "Right",
+      "suggested": "Suggested keeper",
+      "progress": "Pair {{current}} of {{total}}",
+      "groupNote": "Pair {{current}} of {{total}} in this group — each copy is compared against the suggested keeper.",
+      "keepLeft": "Keep left",
+      "keepRight": "Keep right",
+      "keepBoth": "Keep both",
+      "archiveNote": "The copy you do not keep is archived to the trash, never deleted. Removing it for good is a separate, manual act from /trash.",
+      "pairError": "Failed to load this pair.",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "zoomReset": "Fit to view",
+      "open": "Compare side by side",
+      "diff": {
+        "field": "Field",
+        "summary_one": "{{count}} field differs",
+        "summary_other": "{{count}} fields differ",
+        "onlyDifferences": "Differences only",
+        "differs": "differs",
+        "identical": "Every compared field is identical on both photos.",
+        "empty": "Not set",
+        "dimensions": "Dimensions",
+        "fileSize": "File size",
+        "format": "Format",
+        "takenAt": "Capture date",
+        "camera": "Camera",
+        "lens": "Lens",
+        "fileName": "File name",
+        "location": "Location",
+        "albums": "Albums",
+        "labels": "Tags",
+        "people": "People"
+      },
+      "done": {
+        "title": "All done",
+        "hint": "You have resolved every pair we found."
+      }
+    }
   },
   "jobStates": {
     "labels": {

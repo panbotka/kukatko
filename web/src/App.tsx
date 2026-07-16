@@ -8,6 +8,7 @@ import { AlbumDetailPage } from './pages/AlbumDetailPage'
 import { AlbumsPage } from './pages/AlbumsPage'
 import { AuditPage } from './pages/AuditPage'
 import { ClustersPage } from './pages/ClustersPage'
+import { DupComparePage } from './pages/DupComparePage'
 import { DuplicatesPage } from './pages/DuplicatesPage'
 import { ExpandPage } from './pages/ExpandPage'
 import { FacesPage } from './pages/FacesPage'
@@ -53,6 +54,10 @@ export function AppRoutes() {
             screen — and it writes, so it is editors and admins only. */}
         <Route element={<RequireRole role="editor" />}>
           <Route path="/review" element={<ReviewPage />} />
+          {/* Comparing two duplicates needs the whole viewport — the decision is
+              made by looking at the pixels — and it merges/archives, so it is
+              editors and admins only, like the list it is reached from. */}
+          <Route path="/duplicates/compare" element={<DupComparePage />} />
         </Route>
         <Route element={<Layout />}>
           {/* The photo library is the homepage: the catalog is what the app is

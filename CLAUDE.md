@@ -70,7 +70,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/expandapi` — `GET /albums/{uid}/similar`, `GET /labels/{uid}/similar` (RequireWrite)
 - `internal/facejob` — worker handler `face_detect` + backfill
 - `internal/facematch` — face↔marker IoU matching, identity suggestions, assignment state machine
-- `internal/feedback` — persisted rejections (negative feedback): "not this person" / "not this label", idempotent, audited, never mutates; bulk exclusion lookups
+- `internal/feedback` — persisted opinions: "not this person" / "not this label" / "not duplicates", idempotent, audited, never mutates; bulk exclusion lookups
 - `internal/feedbackapi` — `POST`/`DELETE /feedback/{face,label}-rejections` (RequireWrite)
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`
 - `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity)

@@ -56,6 +56,14 @@ const (
 	// the target; the archived copies and the counts of what moved (albums,
 	// labels, people, filled scalar fields) are listed in the entry's details.
 	ActionPhotosMerge = "photos.merge"
+	// ActionDuplicateDismiss records a user settling a duplicate pair as "these
+	// two are genuinely different". It records an opinion — neither photo is
+	// touched — so the detector stops linking the pair on later scans. The
+	// canonical pair is the target and the details; nothing is archived.
+	ActionDuplicateDismiss = "duplicate.dismiss"
+	// ActionDuplicateUndismiss records a user taking a duplicate dismissal back,
+	// letting the pair be offered for review again.
+	ActionDuplicateUndismiss = "duplicate.undismiss"
 	// ActionPhotoUpdate records a single-photo metadata edit (PATCH).
 	ActionPhotoUpdate = "photo.update"
 	// ActionPhotoArchive records moving a photo to the trash (soft delete).
