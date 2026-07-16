@@ -13,6 +13,15 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   `-`), rozsahy (`800-`, `-200`), wildcard `*`, uvozovky; neznámý filtr se hledá jako text
   a UI ho jemně ohlásí; čistě filtrový dotaz nikdy nesahá na embedding sidecar. V UI nápověda
   (`?` u vyhledávacího pole) a autocomplete klíčů. Gramatika: `docs/API.md`.
+- **Knihovna pro AI agenta (MCP server):** Kukátko umí sebe sama vystavit jako **MCP server**
+  (`POST /api/v1/mcp`), takže s knihovnou pracuje AI agent přímo — hledá, čte, organizuje. Není to
+  hračka: *„najdi všechny fotky babičky ze šedesátých a dej je do alba"* je způsob, jakým se tahle
+  knihovna reálně udržuje. **Vypnuté by default** (jeden klíč), agent se hlásí **existujícím API
+  tokenem** (`kkt_…`) a platí na něj **existující RBAC** — viewer token čte a na každém zápisu dostane
+  přes prsty; role `ai` umí zapisovat. **Nic destruktivního není vystavené**: žádné mazání, koš,
+  archivace, restore, backup ani správa uživatelů — agent fotky smazat nemůže. Každá jeho změna se
+  zapíše do **auditu** ve stejné transakci, takže je dohledatelná jako změna od člověka. Detaily:
+  [`docs/MCP.md`](docs/MCP.md).
 - **Pi-first:** běží na Raspberry Pi, výpočet embeddingů deleguje na výkonný stroj (box s GPU).
 - **Import z PhotoPrismu** přes API (+ stažení originálů) a **migrace dat z photo-sorteru**.
 - **Nahrání složky z disku:** `kukatko import dir <path>` — namíříš ho na adresář (skeny, karta
@@ -117,6 +126,7 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architektura, datový model, milníky |
 | [`docs/PACKAGES.md`](docs/PACKAGES.md) | Referenční přehled Go balíčků |
 | [`docs/API.md`](docs/API.md) | Referenční přehled HTTP endpointů |
+| [`docs/MCP.md`](docs/MCP.md) | MCP server pro AI agenta — tooly, auth, co záměrně chybí |
 | [`docs/FRONTEND.md`](docs/FRONTEND.md) | Referenční přehled frontendu |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | CLI, konfigurační klíče, `make`, CI |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Lokální vývoj a build |

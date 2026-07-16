@@ -94,6 +94,7 @@ type Config struct {
 	Trash      TrashConfig      `mapstructure:"trash"`
 	Duplicate  DuplicateConfig  `mapstructure:"duplicate"`
 	Stacks     StacksConfig     `mapstructure:"stacks"`
+	MCP        MCPConfig        `mapstructure:"mcp"`
 
 	LocationEstimate LocationEstimateConfig `mapstructure:"location_estimate"`
 
@@ -543,6 +544,18 @@ type DuplicateConfig struct {
 	EmbeddingMaxDist float64 `mapstructure:"embedding_max_dist"`
 }
 
+// MCPConfig controls the Model Context Protocol server, which lets an AI agent
+// drive the library over the existing HTTP server. Enabled is the master switch
+// and defaults to false: the endpoint is a new attack surface, so it is opt-in
+// and its route is not mounted at all until it is turned on. PageSize and
+// MaxPageSize bound how many rows a single tool call may return, because an
+// agent's context window — not the database — is the scarce resource here.
+type MCPConfig struct {
+	Enabled     bool `mapstructure:"enabled"`
+	PageSize    int  `mapstructure:"page_size"`
+	MaxPageSize int  `mapstructure:"max_page_size"`
+}
+
 // StacksConfig controls the stacking feature — grouping the several files of one
 // shot (RAW+JPEG, exported edits, …) into one library item. Enabled is the master
 // switch for the whole feature (auto-detection and manual stacking); Rules
@@ -863,6 +876,29 @@ func setThumbDefaults(v *viper.Viper) {
 	v.SetDefault("thumb.concurrency", 0) // non-positive falls back to GOMAXPROCS
 }
 
+// setStacksDefaults registers the stacking defaults. It is split out of
+// setOpsDefaults to keep each function within the length budget.
+func setStacksDefaults(v *viper.Viper) {
+	v.SetDefault("stacks.enabled", true)
+	v.SetDefault("stacks.rules.base_name", true)
+	v.SetDefault("stacks.rules.sequential_copy", true)
+	v.SetDefault("stacks.rules.unique_id", true)
+	// Off by default: the same-second+GPS rule wrongly stacks burst shots.
+	v.SetDefault("stacks.rules.time_gps", false)
+}
+
+// setMCPDefaults registers the defaults of the MCP server — the endpoint that
+// lets an AI agent drive the library. It is split out of setOpsDefaults to keep
+// each function within the length budget.
+func setMCPDefaults(v *viper.Viper) {
+	// Off by default: the endpoint hands an AI agent the library, so it is opt-in
+	// and its route is not mounted at all until it is asked for.
+	v.SetDefault("mcp.enabled", false)
+	// The page sizes keep a tool call inside an agent's context window.
+	v.SetDefault("mcp.page_size", 25)
+	v.SetDefault("mcp.max_page_size", 100)
+}
+
 // setOpsDefaults registers defaults for the backup, trash, duplicate, upload and
 // worker subsystems. It is split out of setDefaults to keep each function focused
 // and within the length budget.
@@ -882,12 +918,8 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("duplicate.phash_max_diff", 8)
 	v.SetDefault("duplicate.embedding_max_dist", 0.05)
 
-	v.SetDefault("stacks.enabled", true)
-	v.SetDefault("stacks.rules.base_name", true)
-	v.SetDefault("stacks.rules.sequential_copy", true)
-	v.SetDefault("stacks.rules.unique_id", true)
-	// Off by default: the same-second+GPS rule wrongly stacks burst shots.
-	v.SetDefault("stacks.rules.time_gps", false)
+	setStacksDefaults(v)
+	setMCPDefaults(v)
 
 	// Inferring a missing location from photos taken within ±6h, trusted only if
 	// they all sit within 5 km of each other. On by default; set enabled to false

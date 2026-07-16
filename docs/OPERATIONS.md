@@ -529,6 +529,25 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   /process/stacks` (jako ostatní `/process/*`) proběhne detekci nad celou knihovnou přes
   `stacks.Service.DetectStacks` a vrátí `{created}`; kandidáty jsou jen dosud nestacknuté nearchivované
   fotky, takže re-run je idempotentní. Při `stacks.enabled: false` odpovídá 503.
+- **MCP klíče (`mcp.*`, `internal/config` + `internal/mcpapi`):** **MCP server** — knihovna vystavená
+  AI agentovi (Model Context Protocol) na `POST /api/v1/mcp`, aby v ní uměl hledat, číst a organizovat
+  („najdi všechny fotky babičky ze šedesátých a dej je do alba"). `enabled` (bool, **default false**) je
+  **master switch a je záměrně vypnutý**: endpoint je nový útočný povrch, takže je **opt-in** — a při
+  `false` se route **vůbec nemountuje** (`RegisterRoutes` neregistruje nic), takže cesta **neexistuje**,
+  ne že by vracela 403; 403 by pořád prozradilo, že tam endpoint je. `page_size` (**default 25**) —
+  kolik řádků vrátí list tool, když agent limit neřekne; `max_page_size` (**default 100**) — tvrdý strop
+  na argument `limit` (větší požadavek se **ořízne**, neodmítne). Obojí je schválně malé: vzácný zdroj
+  je **kontextové okno agenta**, ne databáze. Nekladná hodnota u obou spadne na default. Env:
+  `KUKATKO_MCP_ENABLED`, `KUKATKO_MCP_PAGE_SIZE`, `KUKATKO_MCP_MAX_PAGE_SIZE`.
+  **Auth:** žádný nový mechanismus — sedí za stejným `RequireAuth` a stejným RBAC jako zbytek `/api/v1`;
+  agent se autentizuje **API tokenem** (`Authorization: Bearer kkt_…`) a rozhoduje **role jeho
+  vlastníka** (token vlastní roli nemá): `viewer` = jen čtení, `editor`/`admin`/**`ai`** = i zápis.
+  **Token pro agenta** si uživatel razí **sám pro sebe** — admin založí uživatele s rolí `ai`
+  (`POST /api/v1/admin/users`), ten se přihlásí (`POST /api/v1/auth/login`) a vyrazí si token
+  (`POST /api/v1/auth/tokens`); plaintext `kkt_…` se ukáže **jednou**. **Nic destruktivního není
+  vystavené** (žádné mazání, purge, koš, archivace, restore, backup, správa uživatelů) a **každá mutace
+  píše audit řádek ve své transakci**, s `"via": "mcp"` v details. Celý seznam toolů, auth model
+  a co záměrně chybí: [`docs/MCP.md`](MCP.md).
 - **Location estimate klíče (`location_estimate.*`, `internal/config` + `internal/geoestimate`):**
   odhad polohy fotek bez GPS z fotek pořízených blízko v čase. `enabled` (bool, **default true** — plná
   mapa a použitelná hierarchie míst je to, co většina knihoven chce; vypnutí je jeden klíč daleko,

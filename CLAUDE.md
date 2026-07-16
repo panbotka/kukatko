@@ -31,6 +31,7 @@ Open **one** document based on what you're touching. Don't read them all preempt
 | --- | --- |
 | A Go package (`internal/*`, `cmd/*`) | [`docs/PACKAGES.md`](docs/PACKAGES.md) |
 | An HTTP endpoint under `/api/v1` | [`docs/API.md`](docs/API.md) |
+| The MCP server — tools, auth model, what is deliberately not exposed | [`docs/MCP.md`](docs/MCP.md) |
 | Frontend (`web/`) — component, hook, page, service | [`docs/FRONTEND.md`](docs/FRONTEND.md) |
 | A CLI command, config key, `make` target, CI/packaging | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) |
 | Architecture, data model, milestones, testing strategy | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
@@ -84,6 +85,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/maintenanceapi` — admin-only `/maintenance` (scan, repair)
 - `internal/mapsapi` — tile proxy, geocode (reverse + place search), GeoJSON feed
 - `internal/mapy` — server-side mapy.com client; **the key never leaves the server**
+- `internal/mcpapi` — MCP server for an AI agent, `POST /mcp` (RequireAuth + per-tool RBAC); off by default, nothing destructive exposed
 - `internal/mediaurl` — stamps `thumb_url`/`download_url` into payloads; signed URL, or an own route
 - `internal/metajob` — worker handler `metadata` + backfill: re-reads an original into the IPTC/XMP and file-technical columns; gap-filler only
 - `internal/metrics` — Prometheus registry + collectors (DB pool, queue depth)

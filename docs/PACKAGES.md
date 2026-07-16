@@ -947,6 +947,43 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   default, nečíselné / záporné → 400); 503 bez backendu, 404 chybějící album/štítek
   (`organize.ErrAlbumNotFound`/`ErrLabelNotFound`); mountuje se v `serve` (`buildExpandAPI` v
   `cmd/kukatko/expand.go`, bere `mediaStore` pro stamping URL)),
+  `internal/mcpapi/`
+  (**MCP server** — knihovna vystavená AI agentovi přes Model Context Protocol na `POST /api/v1/mcp`;
+  `NewAPI(Config{Enabled,Photos,Organize,People,Bulk,Similar,Media,RequireAuth,PageSize,MaxPageSize})`
+  + `RegisterRoutes`. **`Enabled:false` → `RegisterRoutes` neregistruje nic a servery se ani nestaví**
+  (route neexistuje, ne že by vracela 403 — 403 by prozradilo, že tam endpoint je; v celém binárce pak
+  cesta spadne do SPA catch-all a vrátí `index.html`, v testech 404, protože jejich router fallback
+  nemá); to je odklon od zdejšího „nil service → 503" idiomu a je záměrný, endpoint je opt-in útočný
+  povrch. Transport:
+  `github.com/modelcontextprotocol/go-sdk` (čisté Go, drží `CGO_ENABLED=0`), `NewStreamableHTTPHandler`
+  se `Stateless:true` (každý POST samostatný → žádný session stav **a** context requestu doteče do
+  handlerů toolů), `JSONResponse:true` (tooly neproudí) a `DisableLocalhostProtection:true`
+  (DNS-rebinding guard odmítá loopback+ne-loopback `Host`, tj. reverzní proxy; chrání neautentizované
+  lokální servery, tenhle vyžaduje principala). **Auth: nic nového** — za `RequireAuth` (agent posílá
+  `Bearer kkt_…`), roli má **vlastník tokenu**. Hranice **dvojitá**: `buildHandler` staví **dva servery**
+  (read-only a write) a `getServer(*http.Request)` vybere podle `auth.UserFromContext(...).Role.CanWrite()`
+  → viewer write tooly nevidí ani v `tools/list`; **a** každý write handler volá `writerFromContext`
+  (registrace = UX, check = bezpečnostní hranice). `withCaller` middleware sestaví `caller{user, meta}`
+  (`audit.FromRequest`) do contextu, protože handler toolu vidí jen `ctx`, ne `*http.Request` — bez
+  principala **fail-closed 401**. Tooly (`tools_search.go` / `tools_collections.go` / `tools_write.go` /
+  `tools_bulk.go`): čtení `search_photos` (`query.Parse` → `ListParams.QueryFilters` + `RatedBy` =
+  volající, takže `favorite:`/`rating:`/`flag:` znamenají jeho; volný text → `FullText` a **ranked path**
+  `Store.Search`, jen když nepřišel explicitní `sort`, jinak `Store.List`), `get_photo`,
+  `find_similar_photos` (kNN, `limit+1` protože fotka je svůj nejbližší soused; bez embeddingu
+  **prázdný non-error**), `list_/get_` alba/štítky/lidé, `library_stats`; zápis `create_album`,
+  `add_/remove_photos_from_album`, `create_label`, `attach_/detach_label` (`SourceManual`, uncertainty 0),
+  `set_photo_metadata` (**read-modify-write** přes `metadataOf` — store dělá full-record replace, takže
+  naivní „nastav title" by vynulovalo popis, datum i polohu; pointerová pole = vynechat vs. smazat),
+  `set_photo_rating` (jede přes `internal/bulk`, protože ten si **audit řádek v transakci píše sám** —
+  rating store audited variantu nemá) a `bulk_edit_photos`. `shape.go` je **allow-list**, ne kopie:
+  `photoSummary` = `{uid,title,taken_at,media_type,thumb_url}`, `photoDetail` kurátorované sloupce,
+  **`exif` blob nikde**; `page()` hlásí `total`/`offset`/`remaining` (clamp na 0). **Nic destruktivního**
+  — žádný purge/koš/**archivace**/restore/backup/users; `bulkEditIn` proto vynechává `Archive`
+  (archivace → koš → retention purge = mazání na splátky) i `Location`. `jsonschema` tagy nesou popisy
+  toolových argumentů → `//nolint:lll` (tag je jeden nezalomitelný token a je to reálné rozhraní agenta).
+  Unit testy bez DB (helpery, RBAC, `exif` neproteče, disabled route) + integrační testy nad **reálným
+  MCP transportem**, reálnou auth a reálnými `kkt_` tokeny; mountuje se v `serve`
+  (`buildMCPAPI` v `cmd/kukatko/mcp.go`, v `discoveryAPIOptions`). Viz `docs/MCP.md`),
   `internal/review/`
   (**review hra** — fronta otázek „jedna po druhé" nad **pásmem nejistoty** a aplikace odpovědí;
   **skládá existující kusy, nic nereimplementuje**: face otázky přes rozhraní `Sweeper` (splňuje

@@ -376,6 +376,38 @@ stacks:
     # shots taken within one second, so it is OFF by default.
     time_gps: false
 
+# MCP server — expose the library to an AI agent (Model Context Protocol), so it
+# can search, read and organise it directly: "find every photo of grandma from the
+# sixties and put them in an album" is how this library is actually maintained.
+#
+# It is mounted at POST /api/v1/mcp on this same HTTP server, behind the SAME auth
+# and the SAME RBAC as every other route: an agent authenticates with a long-lived
+# API token (Authorization: Bearer kkt_...), and the role of the token's owner
+# decides what it may do. A viewer token can read and is refused every write; the
+# "ai" role exists for exactly this kind of automation (write + import, no admin).
+#
+# Nothing destructive is exposed — no delete, no purge, no empty-trash, no archive,
+# no restore, no backup, no user administration. That is deliberate and permanent.
+# Every change an agent makes writes an audit row in the mutation's transaction.
+#
+# Minting a token for an agent, and the full tool list: docs/MCP.md.
+mcp:
+  # Master switch, OFF by default: this endpoint hands an AI agent the library, so
+  # it is opt-in. false = the route is not mounted at all, so /api/v1/mcp does not
+  # exist rather than existing and answering 403 (a 403 would still tell an
+  # attacker the endpoint is there). Mind that an unmounted path then falls through
+  # to the frontend's catch-all like any unknown URL, so curl sees index.html
+  # rather than a 404; an MCP client gets HTML and fails. KUKATKO_MCP_ENABLED.
+  enabled: false
+  # Default number of rows a list tool returns when the agent does not say. Small
+  # on purpose: an agent's context window, not the database, is the scarce resource
+  # here. Set to 0 (or below) to fall back to the default. KUKATKO_MCP_PAGE_SIZE.
+  page_size: 25
+  # Hard cap on a tool's limit argument. A larger request is trimmed to this rather
+  # than refused. Set to 0 (or below) to fall back to the default.
+  # KUKATKO_MCP_MAX_PAGE_SIZE.
+  max_page_size: 100
+
 # Estimating a missing location from photos taken near it in time. A photo with a
 # known date but no GPS was very often taken the same day, in the same place, as
 # photos that do have coordinates; reusing their location fills the map and makes
