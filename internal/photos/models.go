@@ -136,6 +136,16 @@ type Photo struct {
 	Lat      *float64 `json:"lat,omitempty"`
 	Lng      *float64 `json:"lng,omitempty"`
 	Altitude *float64 `json:"altitude,omitempty"`
+	// LocationSource records where Lat/Lng came from, mirroring TakenAtSource:
+	// "exif" (the file's GPS), "manual" (the user decided), "estimate" (inferred
+	// from photos taken nearby in time) or "" (unknown — legacy rows and photos
+	// nobody has decided about). It exists so an inferred location can never pass
+	// itself off as a measured one: "estimate" is the only value the UI marks, the
+	// only one the estimator may overwrite, and the only one accept/clear act on.
+	//
+	// "manual" with a nil Lat/Lng is not a contradiction but a tombstone: the user
+	// deleted the location on purpose, and the estimator must not hand it back.
+	LocationSource string `json:"location_source"`
 
 	CameraMake  string `json:"camera_make"`
 	CameraModel string `json:"camera_model"`
@@ -280,5 +290,9 @@ type MetadataUpdate struct {
 	Lat              *float64   `json:"lat"`
 	Lng              *float64   `json:"lng"`
 	Altitude         *float64   `json:"altitude"`
-	Private          bool       `json:"private"`
+	// LocationSource is the provenance of Lat/Lng. It is written on every metadata
+	// update, so a caller that moves or clears a location must set it to match (see
+	// photoapi's merge, which stamps "manual" whenever the user touches either).
+	LocationSource string `json:"location_source"`
+	Private        bool   `json:"private"`
 }

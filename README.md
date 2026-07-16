@@ -40,6 +40,14 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   **seskupí** za jednu viditelnou fotku — ostatní varianty zůstanou dostupné v pruhu na jejím detailu —,
   a to buď automatickou detekcí (admin akce nad celou knihovnou), nebo ručně z výběru. **Nic se
   neslévá ani nemaže:** každý soubor si drží vlastní řádek, takže (od)seskupení je kdykoli vratné.
+- **Odhad polohy u fotek bez GPS:** spousta fotek souřadnice nemá (foťák bez přijímače, sken, ořezaný
+  export), ale byly pořízené tentýž den na tomtéž místě jako fotky, které je mají — Kukátko je z nich
+  **odhadne**, a tím zaplní mapu i hierarchii míst. **Poctivě:** odhad vznikne, jen když se sousední
+  fotky opravdu shodnou na jednom místě (do pár kilometrů). Když den vede z Prahy do Vídně, poctivá
+  odpověď neexistuje a Kukátko **radši nenapíše nic** — špatná poloha je horší než žádná, protože se
+  tváří stejně jistě jako změřená a tiše otráví mapu i hledání. Odhad je **vždycky vidět, že je odhad**
+  (štítek na detailu, jinak kreslený špendlík na mapě) a jedním klikem ho **potvrdíš**, nebo
+  **zahodíš** — a zahozený se ti už nikdy nevrátí. Celé se to dá vypnout jedním klíčem v konfiguraci.
 - **Najdi osobu mezi neotagovanými fotkami** (`/faces`, editoři): vybereš člověka a Kukátko projde
   fotky, kde ještě není označený, a najde obličeje, které se mu podobají. Práh nastavuješ v **procentech**
   (kompromis „více výsledků" ↔ „lepší shody"), kandidát se ukazuje jako **barevný obdélník přes celou

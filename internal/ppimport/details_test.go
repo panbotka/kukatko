@@ -192,3 +192,83 @@ func TestMetadataUpdate_emptyNeverClobbers(t *testing.T) {
 		t.Errorf("update = %q / %q, want PhotoPrism's values", won.Title, won.Description)
 	}
 }
+
+// TestMetadataUpdate_locationSource covers the carry-through that matters most:
+// UpdateMetadata overwrites the whole row, so a patch that forgot location_source
+// would blank it on every incremental run — quietly turning an estimated location
+// into one that looks measured, and reviving a location the user had cleared (an
+// empty source with no coordinates is exactly what the estimator refills).
+func TestMetadataUpdate_locationSource(t *testing.T) {
+	t.Parallel()
+
+	lat, lng := 50.09, 14.40
+	tests := []struct {
+		name     string
+		existing photos.Photo
+		pp       photoprism.Photo
+		want     string
+	}{
+		{
+			name:     "an estimate survives a sync that brings no coordinates",
+			existing: photos.Photo{Lat: &lat, Lng: &lng, LocationSource: photos.LocationSourceEstimate},
+			pp:       photoprism.Photo{},
+			want:     photos.LocationSourceEstimate,
+		},
+		{
+			// The tombstone: "manual" with no coordinates records that the user threw
+			// the location away. Blank it and the backfill hands the guess back.
+			name:     "a cleared location stays cleared",
+			existing: photos.Photo{LocationSource: photos.LocationSourceManual},
+			pp:       photoprism.Photo{},
+			want:     photos.LocationSourceManual,
+		},
+		{
+			name:     "a user's own location is not relabelled",
+			existing: photos.Photo{Lat: &lat, Lng: &lng, LocationSource: photos.LocationSourceManual},
+			pp:       photoprism.Photo{},
+			want:     photos.LocationSourceManual,
+		},
+		{
+			// PhotoPrism knows where the photo was and we were guessing: a real fix
+			// legitimately replaces the estimate, provenance and all.
+			name:     "upstream coordinates promote an estimate to exif",
+			existing: photos.Photo{Lat: &lat, Lng: &lng, LocationSource: photos.LocationSourceEstimate},
+			pp:       photoprism.Photo{Lat: 48.2082, Lng: 16.3738},
+			want:     photos.LocationSourceExif,
+		},
+		{
+			name:     "an unknown provenance is left unknown",
+			existing: photos.Photo{Lat: &lat, Lng: &lng},
+			pp:       photoprism.Photo{},
+			want:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := metadataUpdate(tt.existing, tt.pp).LocationSource; got != tt.want {
+				t.Errorf("location_source = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestMetadataUnchanged_locationSource checks the no-op comparison sees the
+// column: a run that rewrites the provenance must be reported as an update, not
+// counted as skipped.
+func TestMetadataUnchanged_locationSource(t *testing.T) {
+	t.Parallel()
+
+	lat, lng := 50.09, 14.40
+	existing := photos.Photo{Lat: &lat, Lng: &lng, LocationSource: photos.LocationSourceEstimate}
+	update := metadataUpdate(existing, photoprism.Photo{})
+	if !metadataUnchanged(existing, update) {
+		t.Errorf("a sync that changes nothing was reported as an update")
+	}
+
+	update.LocationSource = photos.LocationSourceExif
+	if metadataUnchanged(existing, update) {
+		t.Errorf("a sync that rewrites location_source was reported as a no-op")
+	}
+}

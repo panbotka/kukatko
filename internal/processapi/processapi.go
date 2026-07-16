@@ -90,6 +90,18 @@ type StacksDetector interface {
 	DetectStacks(ctx context.Context) (int, error)
 }
 
+// LocationEstimator infers a location for photos that have none from photos
+// taken near them in time. It is satisfied by geoestimate.Service and runs
+// synchronously (it is a query per candidate, and it enqueues the metered
+// geocoding rather than doing it). A nil LocationEstimator — the feature
+// disabled in config — makes the /process/locations endpoint answer 503.
+type LocationEstimator interface {
+	// BackfillLocations estimates a location for every eligible photo and returns
+	// how many it filled in. It is idempotent: an estimated photo stops being a
+	// candidate, and one whose estimate the user cleared is never estimated again.
+	BackfillLocations(ctx context.Context) (int, error)
+}
+
 // API exposes the processing endpoints over HTTP. The admin guard is supplied by
 // the caller (the auth subsystem) so this package depends on auth's behaviour,
 // not its wiring.
@@ -101,6 +113,7 @@ type API struct {
 	thumbBackfiller  ThumbnailBackfiller
 	metaBackfiller   MetadataBackfiller
 	stacksDetector   StacksDetector
+	locationEstim    LocationEstimator
 	requireAdmin     func(http.Handler) http.Handler
 }
 
@@ -122,6 +135,8 @@ type Config struct {
 	MetadataBackfiller MetadataBackfiller
 	// StacksDetector runs the automatic stack-detection pass.
 	StacksDetector StacksDetector
+	// LocationEstimator runs the missing-location estimation pass.
+	LocationEstimator LocationEstimator
 	// RequireAdmin guards every endpoint for administrators only.
 	RequireAdmin func(http.Handler) http.Handler
 }
@@ -136,6 +151,7 @@ func NewAPI(cfg Config) *API {
 		thumbBackfiller:  cfg.ThumbnailBackfiller,
 		metaBackfiller:   cfg.MetadataBackfiller,
 		stacksDetector:   cfg.StacksDetector,
+		locationEstim:    cfg.LocationEstimator,
 		requireAdmin:     cfg.RequireAdmin,
 	}
 }
@@ -150,6 +166,7 @@ func NewAPI(cfg Config) *API {
 //	POST /process/thumbnails  RequireAdmin  backfill missing thumbnails (?all=true forces a full re-run)
 //	POST /process/metadata    RequireAdmin  backfill unread file metadata (?all=true forces a full re-read)
 //	POST /process/stacks      RequireAdmin  detect and form stacks over the library
+//	POST /process/locations   RequireAdmin  estimate missing locations from same-day photos
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/process", func(r chi.Router) {
 		r.With(a.requireAdmin).Post("/embeddings", a.handleBackfillEmbeddings)
@@ -159,6 +176,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAdmin).Post("/thumbnails", a.handleBackfillThumbnails)
 		r.With(a.requireAdmin).Post("/metadata", a.handleBackfillMetadata)
 		r.With(a.requireAdmin).Post("/stacks", a.handleDetectStacks)
+		r.With(a.requireAdmin).Post("/locations", a.handleEstimateLocations)
 	})
 }
 
@@ -194,6 +212,30 @@ func (a *API) handleDetectStacks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stacksResponse{Created: created})
+}
+
+// locationsResponse is the JSON body returned by the location-estimate endpoint.
+type locationsResponse struct {
+	// Estimated is the number of photos given a location by this call. Photos whose
+	// neighbours were missing or disagreed are not counted and not errors: refusing
+	// is the normal outcome.
+	Estimated int `json:"estimated"`
+}
+
+// handleEstimateLocations infers a location for the photos that have none from
+// photos taken near them in time, and reports how many it filled in. It answers
+// 503 when location estimation is disabled in config.
+func (a *API) handleEstimateLocations(w http.ResponseWriter, r *http.Request) {
+	if a.locationEstim == nil {
+		writeError(w, http.StatusServiceUnavailable, "location estimation not available")
+		return
+	}
+	estimated, err := a.locationEstim.BackfillLocations(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "estimating locations failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, locationsResponse{Estimated: estimated})
 }
 
 // handleRecluster groups the currently unassigned, unclustered faces into

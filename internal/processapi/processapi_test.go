@@ -695,3 +695,111 @@ func TestBackfillMetadata_forbidden(t *testing.T) {
 		t.Errorf("backfiller calls = %d, want 0 (guard should block)", mb.calls)
 	}
 }
+
+// fakeLocationEstimator is a LocationEstimator stub returning canned values.
+type fakeLocationEstimator struct {
+	estimated int
+	err       error
+	calls     int
+}
+
+// BackfillLocations records the call and returns the canned result.
+func (f *fakeLocationEstimator) BackfillLocations(context.Context) (int, error) {
+	f.calls++
+	return f.estimated, f.err
+}
+
+// newServerWithLocations mounts the API with the given location estimator behind
+// a passthrough guard.
+func newServerWithLocations(t *testing.T, le LocationEstimator) *httptest.Server {
+	t.Helper()
+	api := NewAPI(Config{
+		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
+		LocationEstimator: le, RequireAdmin: passthrough,
+	})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestEstimateLocations_ok reports the estimated count on success.
+func TestEstimateLocations_ok(t *testing.T) {
+	t.Parallel()
+
+	le := &fakeLocationEstimator{estimated: 7}
+	srv := newServerWithLocations(t, le)
+
+	res := postProcess(t, srv.URL+"/process/locations")
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	var body locationsResponse
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if body.Estimated != 7 {
+		t.Errorf("estimated = %d, want 7", body.Estimated)
+	}
+	if le.calls != 1 {
+		t.Errorf("BackfillLocations called %d times, want 1", le.calls)
+	}
+}
+
+// TestEstimateLocations_error answers 500 when the estimator fails.
+func TestEstimateLocations_error(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithLocations(t, &fakeLocationEstimator{err: errors.New("boom")})
+
+	res := postProcess(t, srv.URL+"/process/locations")
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", res.StatusCode)
+	}
+}
+
+// TestEstimateLocations_unavailable answers 503 when the feature is switched off
+// (a nil estimator), rather than pretending it estimated nothing.
+func TestEstimateLocations_unavailable(t *testing.T) {
+	t.Parallel()
+
+	srv := newServerWithLocations(t, nil)
+
+	res := postProcess(t, srv.URL+"/process/locations")
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", res.StatusCode)
+	}
+}
+
+// TestEstimateLocations_forbidden checks the endpoint sits behind the admin
+// guard: inventing coordinates across the library is not a viewer's call.
+func TestEstimateLocations_forbidden(t *testing.T) {
+	t.Parallel()
+
+	le := &fakeLocationEstimator{estimated: 7}
+	api := NewAPI(Config{
+		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
+		LocationEstimator: le, RequireAdmin: forbid,
+	})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	res := postProcess(t, srv.URL+"/process/locations")
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", res.StatusCode)
+	}
+	if le.calls != 0 {
+		t.Errorf("BackfillLocations called %d times, want 0 behind a closed guard", le.calls)
+	}
+}

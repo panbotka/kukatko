@@ -252,6 +252,26 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
     jako každá jiná bez data a význam nese poznámka. Poznámka žije jen s příznakem — shodí-li se
     příznak, `internal/photoapi` poznámku maže (nikdy nezůstane u data prezentovaného jako fakt).
     Do fulltextu `photos.fts` **nepadá** (je to poznámka k datování, ne titulek).
+  - **Původ polohy** (migrace `0033_photos_location_source.sql`): `location_source`
+    (`TEXT NOT NULL DEFAULT ''`, slovník zrcadlí `taken_at_source` — `exif` / `manual` / `estimate` /
+    prázdno), plus parciální index `idx_photos_location_estimate_candidates ON photos(taken_at) WHERE
+    lat IS NULL AND lng IS NULL AND location_source = ''` pro sken kandidátů odhadovače (parciální,
+    takže indexuje jen zmenšující se backlog, ne celou tabulku).
+    Existuje, protože fotka bez GPS se dá **odhadnout** z fotek pořízených blízko v čase
+    (`internal/geoestimate`), a `lat/lng` samy o sobě nedokážou říct, jestli je souřadnice změřená
+    nebo domyšlená. **Pravidlo poctivosti: špatná poloha je horší než žádná** — nejen že vypadá blbě
+    na detailu, ale tiše otráví mapu, hierarchii míst i každé `near:` hledání nad nimi, a tváří se
+    přitom stejně důvěryhodně jako změřená souřadnice. Proto: odhad se zapisuje **jen** na fotku, co
+    polohu vůbec nemá (EXIF ani uživatelovu polohu nemůže přepsat **z definice** kandidátské množiny),
+    vždy označený `estimate`, a UI ho **označuje** (badge + věta na detailu, jiný **tvar** špendlíku na
+    mapě) — neoznačený odhad je lež, kterou appka uživateli říká.
+    `manual` **bez souřadnic není spor, ale náhrobek**: zaznamenává rozhodnutí „tahle fotka polohu
+    nemá" (uživatel odhad zahodil, nebo smazal EXIF polohu), a je to jediné, co brání nočnímu backfillu
+    vracet stejný tip pořád dokola. Proto smazání polohy — na rozdíl od smazání `taken_at`, které vrací
+    `taken_at_source` na `unknown` — původ **nevrací** na prázdno. Prázdno = „nevíme" a je vyhrazené
+    pro řádky, o kterých nikdo nic nerozhodl; legacy řádky se schválně **nebackfillovaly** na `exif`
+    (migrace nedokáže rozlišit souřadnici ze souboru od té, co kdysi někdo naťukal, a napsat `exif`
+    přes všechny by byla sebejistá lež přesně v tom sloupci, jehož jediná práce je být poctivý).
   - **Stacky (skupiny souborů jednoho snímku)** (migrace `0030_photo_stacks.sql`): dva sloupce —
     `stack_uid VARCHAR(32)` (sdílené každým členem jednoho stacku, **NULL = fotka není ve stacku**)
     a `stack_primary BOOLEAN NOT NULL DEFAULT false` (právě jeden `true` na stack — ten viditelný

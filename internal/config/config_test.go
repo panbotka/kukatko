@@ -88,6 +88,9 @@ func TestLoad_defaults(t *testing.T) {
 		{"stacks.rules.sequential_copy", cfg.Stacks.Rules.SequentialCopy, true},
 		{"stacks.rules.unique_id", cfg.Stacks.Rules.UniqueID, true},
 		{"stacks.rules.time_gps", cfg.Stacks.Rules.TimeGPS, false},
+		{"location_estimate.enabled", cfg.LocationEstimate.Enabled, true},
+		{"location_estimate.window", cfg.LocationEstimate.Window, 6 * time.Hour},
+		{"location_estimate.radius_meters", cfg.LocationEstimate.RadiusMeters, 5000.0},
 		{"upload.max_file_size_mb", cfg.Upload.MaxFileSizeMB, 0},
 		{"video.transcode", cfg.Video.Transcode, false},
 		{"worker.count", cfg.Worker.Count, 2},
@@ -749,5 +752,69 @@ func TestLoad_importPhotoPrismEnvOverride(t *testing.T) {
 	}
 	if cfg.Import.PhotoPrism.Token != "secret-app-token" {
 		t.Errorf("token = %q", cfg.Import.PhotoPrism.Token)
+	}
+}
+
+// TestLoad_locationEstimateEnvOverride verifies the location_estimate keys can be
+// supplied via the KUKATKO_ environment, including switching the feature off.
+func TestLoad_locationEstimateEnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_LOCATION_ESTIMATE_ENABLED", "false")
+	t.Setenv("KUKATKO_LOCATION_ESTIMATE_WINDOW", "90m")
+	t.Setenv("KUKATKO_LOCATION_ESTIMATE_RADIUS_METERS", "1500.5")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.LocationEstimate.Enabled {
+		t.Errorf("location_estimate.enabled = true, want false")
+	}
+	if cfg.LocationEstimate.Window != 90*time.Minute {
+		t.Errorf("location_estimate.window = %v, want 90m", cfg.LocationEstimate.Window)
+	}
+	if cfg.LocationEstimate.RadiusMeters != 1500.5 {
+		t.Errorf("location_estimate.radius_meters = %v, want 1500.5", cfg.LocationEstimate.RadiusMeters)
+	}
+}
+
+// TestLoad_locationEstimateValidation checks that an enabled estimator with a
+// nonsensical window or radius fails startup rather than silently never
+// producing an estimate, while a disabled one is left unchecked.
+func TestLoad_locationEstimateValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled string
+		window  string
+		radius  string
+		wantErr bool
+	}{
+		{name: "defaults are valid", enabled: "true", window: "6h", radius: "5000", wantErr: false},
+		{name: "zero window rejected", enabled: "true", window: "0s", radius: "5000", wantErr: true},
+		{name: "negative window rejected", enabled: "true", window: "-1h", radius: "5000", wantErr: true},
+		{name: "zero radius rejected", enabled: "true", window: "6h", radius: "0", wantErr: true},
+		{name: "negative radius rejected", enabled: "true", window: "6h", radius: "-5", wantErr: true},
+		// A switched-off estimator never reads either value, so nonsense in them is
+		// not a reason to refuse to boot.
+		{name: "disabled ignores nonsense", enabled: "false", window: "0s", radius: "0", wantErr: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			t.Setenv("KUKATKO_LOCATION_ESTIMATE_ENABLED", tt.enabled)
+			t.Setenv("KUKATKO_LOCATION_ESTIMATE_WINDOW", tt.window)
+			t.Setenv("KUKATKO_LOCATION_ESTIMATE_RADIUS_METERS", tt.radius)
+
+			_, err := Load("")
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidLocationEstimate) {
+					t.Fatalf("Load error = %v, want ErrInvalidLocationEstimate", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load returned error: %v", err)
+			}
+		})
 	}
 }

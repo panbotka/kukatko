@@ -605,6 +605,7 @@ func buildPhoto(stored storage.StoredFile, media mediaMeta, filename, uploadedBy
 		Lat:             meta.Lat,
 		Lng:             meta.Lng,
 		Altitude:        meta.Altitude,
+		LocationSource:  locationSource(meta.Lat, meta.Lng),
 		CameraMake:      meta.CameraMake,
 		CameraModel:     meta.CameraModel,
 		LensModel:       meta.LensModel,
@@ -710,6 +711,20 @@ func takenAtSource(src exif.Source) string {
 		return string(exif.SourceUnknown)
 	}
 	return string(src)
+}
+
+// locationSource returns the provenance of a freshly extracted GPS fix: "exif"
+// when the file carried one, empty when it did not.
+//
+// Both halves must be present. Half a fix is not a location, and stamping "exif"
+// on a photo that has only a latitude would claim provenance for a coordinate
+// that does not exist — and, worse, would take that photo out of the estimator's
+// reach for a location it never actually got.
+func locationSource(lat, lng *float64) string {
+	if lat == nil || lng == nil {
+		return ""
+	}
+	return photos.LocationSourceExif
 }
 
 // marshalExif serialises the EXIF document to JSON for the jsonb column,

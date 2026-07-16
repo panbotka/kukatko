@@ -645,7 +645,8 @@
       "unavailable": "Mapové podklady se nepodařilo načíst — poskytovatel map je nedostupný.",
       "error": "Mapové podklady se nepodařilo načíst.",
       "hint": "Fotky se na prázdném podkladu zobrazují dál."
-    }
+    },
+    "estimatedTitle": "Odhadovaná poloha podle fotek z téhož dne"
   },
   "similar": {
     "title": "Podobné fotky",
@@ -1067,7 +1068,15 @@
       "edit": "Upravit",
       "save": "Uložit",
       "cancel": "Zrušit",
-      "saveError": "Uložení se nezdařilo. Zkontroluj zadané hodnoty."
+      "saveError": "Uložení se nezdařilo. Zkontroluj zadané hodnoty.",
+      "locationEstimatedMarker": "odhad",
+      "locationEstimatedTitle": "Odhad podle fotek z téhož dne, ne změřená poloha",
+      "locationEstimatedHelp": "Odhad podle fotek z téhož dne.",
+      "acceptLocation": "Potvrdit odhad",
+      "acceptLocationHelp": "Označí polohu za tvoje rozhodnutí, přestane se zobrazovat jako odhad.",
+      "discardLocation": "Zahodit odhad",
+      "discardLocationHelp": "Fotka zůstane bez polohy a odhad se už znovu nedoplní.",
+      "locationActionFailed": "Polohu se nepodařilo uložit. Zkus to prosím znovu."
     },
     "technical": {
       "title": "Technické údaje",

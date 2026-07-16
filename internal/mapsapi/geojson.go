@@ -41,13 +41,23 @@ type pointGeometry struct {
 }
 
 // featureProps carries the per-photo marker metadata: the UID, a title, the
-// capture time, the media type and a ready-to-use thumbnail path.
+// capture time, the media type, a ready-to-use thumbnail path and whether the
+// pin's position is an estimate.
 type featureProps struct {
 	UID       string           `json:"uid"`
 	Title     string           `json:"title,omitempty"`
 	TakenAt   *time.Time       `json:"taken_at,omitempty"`
 	MediaType photos.MediaType `json:"media_type,omitempty"`
 	Thumb     string           `json:"thumb"`
+	// LocationEstimated marks a pin whose coordinates were inferred from photos
+	// taken nearby in time rather than measured. Estimated photos are on the map by
+	// default — putting them there is the point of estimating them — but a pin that
+	// looks identical to a measured one is the map quietly lying, so the marker
+	// carries the distinction and the client renders it differently.
+	//
+	// Emitted only when true: an absent key means "not an estimate", which is the
+	// overwhelmingly common case and the same default an older client assumes.
+	LocationEstimated bool `json:"location_estimated,omitempty"`
 }
 
 // handlePhotos returns a GeoJSON FeatureCollection of geotagged photos, honouring
@@ -86,11 +96,12 @@ func toFeature(p *photos.Photo) (feature, bool) {
 		Type:     "Feature",
 		Geometry: pointGeometry{Type: "Point", Coordinates: [2]float64{*p.Lng, *p.Lat}},
 		Properties: featureProps{
-			UID:       p.UID,
-			Title:     p.Title,
-			TakenAt:   p.TakenAt,
-			MediaType: p.MediaType,
-			Thumb:     thumbPathPrefix + url.PathEscape(p.UID) + "/thumb/" + geoThumbSize,
+			UID:               p.UID,
+			Title:             p.Title,
+			TakenAt:           p.TakenAt,
+			MediaType:         p.MediaType,
+			Thumb:             thumbPathPrefix + url.PathEscape(p.UID) + "/thumb/" + geoThumbSize,
+			LocationEstimated: p.LocationSource == photos.LocationSourceEstimate,
 		},
 	}, true
 }

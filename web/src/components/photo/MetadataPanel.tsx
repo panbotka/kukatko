@@ -133,6 +133,88 @@ function EditableField({ label, value, display, canWrite, onEdit }: EditableFiel
   )
 }
 
+/** Props for {@link EstimatedLocation}. */
+interface EstimatedLocationProps {
+  /** Whether the current user may accept or discard the estimate. */
+  canWrite: boolean
+  /** Whether an accept/discard request is in flight. */
+  busy: boolean
+  /** Whether the last accept/discard failed. */
+  failed: boolean
+  /** Promotes the estimate to the user's own decision. */
+  onAccept: () => void
+  /** Throws the estimate away for good. */
+  onDiscard: () => void
+}
+
+/**
+ * The banner shown above an estimated location: a badge naming it an estimate, a
+ * one-line explanation of where it came from, and — for an editor — the two ways
+ * out of it.
+ *
+ * An estimated location that looks identical to a real one is a lie the app tells
+ * the user, so this is a labelled badge and a sentence rather than a subtler
+ * shade: colour alone says nothing to a screen reader, and a pin that merely
+ * looks a bit different is not a claim anyone would read as "we guessed this".
+ *
+ * The two actions are deliberately not symmetric in tone. Accepting is a normal
+ * confirmation. Discarding is permanent in a way worth knowing about — the
+ * backfill will not offer the estimate again — so its help text says so rather
+ * than leaving the user to discover it by it never coming back.
+ */
+function EstimatedLocation({
+  canWrite,
+  busy,
+  failed,
+  onAccept,
+  onDiscard,
+}: EstimatedLocationProps) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="mb-1">
+      <span className="d-inline-flex flex-wrap align-items-baseline gap-1">
+        <span
+          className="badge text-bg-secondary flex-shrink-0"
+          title={t('photo.metadata.locationEstimatedTitle')}
+        >
+          {t('photo.metadata.locationEstimatedMarker')}
+        </span>
+        <span className="small text-secondary">{t('photo.metadata.locationEstimatedHelp')}</span>
+      </span>
+      {canWrite && (
+        <div className="d-flex flex-wrap gap-2 mt-1">
+          <Button
+            type="button"
+            variant="outline-success"
+            size="sm"
+            className="kukatko-tap-target"
+            disabled={busy}
+            title={t('photo.metadata.acceptLocationHelp')}
+            onClick={onAccept}
+          >
+            {t('photo.metadata.acceptLocation')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline-secondary"
+            size="sm"
+            className="kukatko-tap-target"
+            disabled={busy}
+            title={t('photo.metadata.discardLocationHelp')}
+            onClick={onDiscard}
+          >
+            {t('photo.metadata.discardLocation')}
+          </Button>
+        </div>
+      )}
+      {failed && (
+        <div className="text-danger small mt-1">{t('photo.metadata.locationActionFailed')}</div>
+      )}
+    </div>
+  )
+}
+
 /** Props for {@link CaptureDate}. */
 interface CaptureDateProps {
   /** The formatted capture date, empty when the photo carries none. */
@@ -192,6 +274,11 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
+  // Accepting or discarding an estimated location is its own one-click request,
+  // separate from the edit form's save: both are answers to a question the app
+  // asked, not an edit the user came here to make.
+  const [locationBusy, setLocationBusy] = useState(false)
+  const [locationFailed, setLocationFailed] = useState(false)
 
   // The photo's own values, as the form renders them. A field still equal to its
   // pristine value is left out of the PATCH entirely — see buildPatch.
@@ -204,6 +291,10 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   const pristineCopyright = photo.copyright ?? ''
   const pristineLicense = photo.license ?? ''
   const pristineScan = photo.scan === true
+  // Read from the photo rather than form state: the estimate is a fact about the
+  // stored row, and accepting or discarding it round-trips through the API, so it
+  // is never something the open form is holding an unsaved opinion about.
+  const isLocationEstimated = photo.location_source === 'estimate'
   const pristineKeywords = useMemo(() => splitKeywords(photo.keywords), [photo.keywords])
 
   const [title, setTitle] = useState(photo.title)
@@ -356,6 +447,41 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
     } finally {
       setSaving(false)
     }
+  }
+
+  /**
+   * Answers the estimated-location question with `patch` and feeds the refreshed
+   * photo back, so the badge and its buttons disappear on their own once the
+   * estimate is gone.
+   */
+  async function resolveEstimate(patch: PhotoMetadataUpdate) {
+    setLocationBusy(true)
+    setLocationFailed(false)
+    try {
+      onUpdated(await updatePhoto(photo.uid, patch))
+    } catch {
+      setLocationFailed(true)
+    } finally {
+      setLocationBusy(false)
+    }
+  }
+
+  /**
+   * Accepts the estimate: `location_source` alone, never the coordinates. Echoing
+   * lat/lng back would round them to the six decimals the form renders, quietly
+   * moving the pin a few centimetres as the price of agreeing with it.
+   */
+  function acceptEstimate() {
+    void resolveEstimate({ location_source: 'manual' })
+  }
+
+  /**
+   * Discards the estimate. Clearing the coordinates is what the backend records as
+   * a decision ("manual" with no location), which is what keeps the backfill from
+   * handing the same guess back tomorrow.
+   */
+  function discardEstimate() {
+    void resolveEstimate({ lat: null, lng: null })
   }
 
   if (editing) {
@@ -673,6 +799,15 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             </Button>
           )}
         </div>
+        {isLocationEstimated && (
+          <EstimatedLocation
+            canWrite={canWrite}
+            busy={locationBusy}
+            failed={locationFailed}
+            onAccept={acceptEstimate}
+            onDiscard={discardEstimate}
+          />
+        )}
         <PhotoLocation photo={photo} canWrite={false} onUpdated={onUpdated} />
       </div>
     </div>

@@ -44,6 +44,17 @@ type updateBody struct {
 	TakenAtNote      *string    `json:"taken_at_note"`
 	Lat              *float64   `json:"lat"`
 	Lng              *float64   `json:"lng"`
+	// LocationSource accepts exactly one value, "manual", and exists for one
+	// action: accepting an estimated location, promoting it to a decision the user
+	// owns. Sending the coordinates back instead would work but would round them to
+	// whatever precision the client rendered, so accepting is its own key.
+	//
+	// The other values are not settable. "estimate" is the estimator's to write, and
+	// letting a client claim "exif" would let it forge the provenance of a
+	// coordinate it typed in — which is precisely what this column exists to
+	// prevent. Clearing is done by sending lat/lng null, which stamps "manual" on
+	// its own.
+	LocationSource *string `json:"location_source"`
 }
 
 // takenAtNoteLimit caps the free-text dating note ("kolem roku 1950", "podle
@@ -175,6 +186,7 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 		Lat:              current.Lat,
 		Lng:              current.Lng,
 		Altitude:         current.Altitude,
+		LocationSource:   current.LocationSource,
 		// The private column is no editable field any more, but the importers still
 		// write it, so it is carried over unchanged: UpdateMetadata overwrites the
 		// whole row and would otherwise clear an imported flag on every edit.
@@ -249,6 +261,10 @@ func applyPresentString(present map[string]struct{}, key string, value *string, 
 	}
 }
 
+// locationSourceManual is the only location_source a client may set, and the one
+// stamped on any user edit of the coordinates.
+const locationSourceManual = photos.LocationSourceManual
+
 // applyTakenAt sets or clears the capture time and tracks its source: a provided
 // time is marked "manual", clearing it resets the source to "unknown".
 func applyTakenAt(update *photos.MetadataUpdate, takenAt *time.Time) {
@@ -294,19 +310,66 @@ func applyTakenAtEstimate(update *photos.MetadataUpdate, present map[string]stru
 }
 
 // applyCoordinate sets or clears latitude and longitude from the present body
-// fields, validating that any supplied value is within the geographic range.
+// fields, validating that any supplied value is within the geographic range, and
+// keeps location_source in step with the coordinates it describes.
+//
+// Touching either coordinate stamps the location "manual", whether it moved or
+// was cleared. Clearing deliberately does NOT reset the source to "" the way
+// applyTakenAt resets an emptied date to "unknown": an empty location with no
+// source is what the estimator considers fair game, so resetting it would have
+// the backfill hand back the very estimate the user just threw away, every night,
+// forever. "manual" with no coordinates is the tombstone that says "the user
+// decided this photo has no location" — a decision, not a gap.
 func applyCoordinate(update *photos.MetadataUpdate, present map[string]struct{}, body updateBody) error {
-	if _, ok := present["lat"]; ok {
+	touched, err := applyLatLng(update, present, body)
+	if err != nil {
+		return err
+	}
+	if touched {
+		update.LocationSource = locationSourceManual
+	}
+	return applyLocationSource(update, present, body)
+}
+
+// applyLatLng overlays the present coordinates onto update after range-checking
+// them, reporting whether either was touched (moved or cleared) so the caller can
+// keep the provenance in step.
+func applyLatLng(update *photos.MetadataUpdate, present map[string]struct{}, body updateBody) (bool, error) {
+	_, latPresent := present["lat"]
+	_, lngPresent := present["lng"]
+	if latPresent {
 		if body.Lat != nil && (*body.Lat < -90 || *body.Lat > 90) {
-			return errors.New("lat must be between -90 and 90")
+			return false, errors.New("lat must be between -90 and 90")
 		}
 		update.Lat = body.Lat
 	}
-	if _, ok := present["lng"]; ok {
+	if lngPresent {
 		if body.Lng != nil && (*body.Lng < -180 || *body.Lng > 180) {
-			return errors.New("lng must be between -180 and 180")
+			return false, errors.New("lng must be between -180 and 180")
 		}
 		update.Lng = body.Lng
 	}
+	return latPresent || lngPresent, nil
+}
+
+// applyLocationSource handles accepting an estimated location: promoting it to
+// "manual", the user's own. It rejects any other value, and rejects accepting a
+// location that is not there — "the user vouches for this coordinate" is
+// meaningless without a coordinate to vouch for.
+//
+// It runs after the coordinates so that a request touching both still ends up
+// "manual" either way, and so the presence of a location is judged on the merged
+// result rather than on what was already in the row.
+func applyLocationSource(update *photos.MetadataUpdate, present map[string]struct{}, body updateBody) error {
+	if _, ok := present["location_source"]; !ok {
+		return nil
+	}
+	if body.LocationSource == nil || *body.LocationSource != locationSourceManual {
+		return fmt.Errorf("location_source may only be set to %q", locationSourceManual)
+	}
+	if update.Lat == nil || update.Lng == nil {
+		return errors.New("location_source cannot be set on a photo with no location")
+	}
+	update.LocationSource = locationSourceManual
 	return nil
 }

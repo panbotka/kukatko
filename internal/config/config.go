@@ -66,6 +66,13 @@ var (
 	// storage.r2.* key is missing or storage.r2.url_ttl is non-positive. The error
 	// names the offending keys and never their values.
 	ErrIncompleteR2Config = errors.New("config: storage.backend is \"r2\" but its configuration is incomplete")
+	// ErrInvalidLocationEstimate indicates location_estimate is enabled with a
+	// nonsensical window or radius. A negative radius would make every set of
+	// neighbours incoherent and a negative window would search backwards, so both
+	// silently turn the feature off — better to refuse to start than to look
+	// enabled and never produce anything.
+	ErrInvalidLocationEstimate = errors.New(
+		"config: location_estimate.window and location_estimate.radius_meters must be positive")
 )
 
 // Config is the fully resolved, typed configuration for a kukatko process.
@@ -87,14 +94,17 @@ type Config struct {
 	Trash      TrashConfig      `mapstructure:"trash"`
 	Duplicate  DuplicateConfig  `mapstructure:"duplicate"`
 	Stacks     StacksConfig     `mapstructure:"stacks"`
-	Upload     UploadConfig     `mapstructure:"upload"`
-	Video      VideoConfig      `mapstructure:"video"`
-	Worker     WorkerConfig     `mapstructure:"worker"`
-	Bulk       BulkConfig       `mapstructure:"bulk"`
-	Import     ImportConfig     `mapstructure:"import"`
-	Log        LogConfig        `mapstructure:"log"`
-	Metrics    MetricsConfig    `mapstructure:"metrics"`
-	RateLimit  RateLimitConfig  `mapstructure:"ratelimit"`
+
+	LocationEstimate LocationEstimateConfig `mapstructure:"location_estimate"`
+
+	Upload    UploadConfig    `mapstructure:"upload"`
+	Video     VideoConfig     `mapstructure:"video"`
+	Worker    WorkerConfig    `mapstructure:"worker"`
+	Bulk      BulkConfig      `mapstructure:"bulk"`
+	Import    ImportConfig    `mapstructure:"import"`
+	Log       LogConfig       `mapstructure:"log"`
+	Metrics   MetricsConfig   `mapstructure:"metrics"`
+	RateLimit RateLimitConfig `mapstructure:"ratelimit"`
 }
 
 // RateLimitConfig configures per-client-IP rate limiting on resource-intensive
@@ -560,6 +570,35 @@ type StackRulesConfig struct {
 	TimeGPS bool `mapstructure:"time_gps"`
 }
 
+// LocationEstimateConfig controls inferring a photo's missing location from
+// photos taken near it in time. It is on by default because the result — a
+// fuller map and a useful places hierarchy — is what most libraries want, and
+// off is one key away because inferring data is exactly the kind of helpfulness
+// some people want no part of.
+//
+// The two knobs trade coverage against honesty, and both err towards refusing:
+// a narrower window and a tighter radius estimate fewer photos and are wrong
+// less often, which is the right side to be on when a bad guess silently
+// poisons the map and every near: search built on it.
+type LocationEstimateConfig struct {
+	// Enabled is the master switch. When false no estimate is ever produced and
+	// the /process/locations endpoint answers 503; locations already estimated stay
+	// as they are, marked, for the user to accept or clear.
+	Enabled bool `mapstructure:"enabled"`
+	// Window is the half-width of the time window neighbours are drawn from: a
+	// photo is estimated from photos taken within ±window of it. The same calendar
+	// day is the obvious choice, but a few hours is a better one — a day that
+	// starts in Brno and ends in Vienna is exactly where a same-day estimate goes
+	// wrong. Non-positive means the package default (6h).
+	Window time.Duration `mapstructure:"window"`
+	// RadiusMeters is the coherence radius: the neighbours are only trusted if
+	// every one of them lies within this distance of their centroid. Widen it and
+	// pins start landing in the wrong town; there is no value at which a day
+	// spanning two cities becomes honest. Non-positive means the package default
+	// (5000).
+	RadiusMeters float64 `mapstructure:"radius_meters"`
+}
+
 // VideoConfig tunes video playback/streaming. Videos are always served with
 // HTTP range support so browsers can seek without downloading the whole file.
 type VideoConfig struct {
@@ -850,6 +889,13 @@ func setOpsDefaults(v *viper.Viper) {
 	// Off by default: the same-second+GPS rule wrongly stacks burst shots.
 	v.SetDefault("stacks.rules.time_gps", false)
 
+	// Inferring a missing location from photos taken within ±6h, trusted only if
+	// they all sit within 5 km of each other. On by default; set enabled to false
+	// to never invent a coordinate.
+	v.SetDefault("location_estimate.enabled", true)
+	v.SetDefault("location_estimate.window", "6h")
+	v.SetDefault("location_estimate.radius_meters", 5000.0)
+
 	v.SetDefault("upload.max_file_size_mb", 0) // 0 = unlimited
 
 	v.SetDefault("video.transcode", false) // on-the-fly HEVC→H.264 transcode is opt-in
@@ -898,6 +944,12 @@ func (c *Config) Validate() error {
 	if c.Embedding.ImageDim < 1 || c.Embedding.FaceDim < 1 {
 		return ErrInvalidEmbeddingDim
 	}
+	return c.validateSections()
+}
+
+// validateSections runs the per-section validators. It is split out of Validate
+// to keep each function within the complexity budget.
+func (c *Config) validateSections() error {
 	if err := c.Embedding.Wake.validate(); err != nil {
 		return err
 	}
@@ -907,7 +959,23 @@ func (c *Config) Validate() error {
 	if err := c.Storage.validate(); err != nil {
 		return err
 	}
+	if err := c.LocationEstimate.validate(); err != nil {
+		return err
+	}
 	return c.Auth.validate()
+}
+
+// validate checks that an enabled location estimator has a usable window and
+// radius. A disabled one is never consulted, so its values are not checked.
+func (l LocationEstimateConfig) validate() error {
+	if !l.Enabled {
+		return nil
+	}
+	if l.Window <= 0 || l.RadiusMeters <= 0 {
+		return fmt.Errorf("%w: got window %v, radius_meters %v",
+			ErrInvalidLocationEstimate, l.Window, l.RadiusMeters)
+	}
+	return nil
 }
 
 // validate checks the storage backend selection and, when the R2 backend is

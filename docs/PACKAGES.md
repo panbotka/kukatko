@@ -1762,6 +1762,34 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   request-scoped `fields` bagu sdíleného pointerem přes kontext, protože zápis hluboko v řetězu musí
   vidět top-level logger); level dle statusu (5xx=error, 4xx=warn, jinak info), `/metrics` scrape se
   přeskočí, request id se zrcadlí do hlavičky `X-Request-Id` i sdíleného route labelu metrik),
+  `internal/geoestimate/`
+  (**odhad chybějící polohy z fotek pořízených blízko v čase** — fotka bez GPS (foťák bez přijímače,
+  sken, ořezaný export) byla velmi často pořízená tentýž den na tomtéž místě jako fotky, které
+  souřadnice mají; balík stojí na jediném pravidle: **špatná poloha je horší než žádná** — nejen že
+  vypadá blbě na detailu, ale tiše otráví mapu, hierarchii míst i každé `near:` hledání nad nimi, a to
+  se tváří stejně důvěryhodně jako změřená souřadnice, takže odhadovač **mnohem raději odmítá než
+  hádá**; **čisté jádro** (`estimate.go`, bez DB): `Point{Lat,Lng}`, **`Estimate(neighbours,
+  radiusMeters) (Point,bool)`** = těžiště sousedů + kontrola, že **každý** z nich je do `radiusMeters`
+  od něj (jediný odlehlý bod shodí celou množinu — zamýšlené selhání: cena za odmítnutí je prázdné
+  pole, cena za špatný tip je lež, kterou uživatel nemá důvod zpochybnit; **žádné** clusterování ani
+  hlasování, protože „většina souhlasí“ je jiné a mnohem slabší tvrzení, než jaké by za ně UI dělalo),
+  **`DistanceMeters`** (haversine); množina přes ±180° dostane těžiště uprostřed Pacifiku → nesoudržná
+  → nic, což je správná odpověď ze špatného důvodu a nechává se být; **služba** (`service.go`):
+  `Config{Store,Enqueuer,Window,RadiusMeters}` (non-positive → `DefaultWindow` 6h /
+  `DefaultRadiusMeters` 5000 — 6h drží fotku uvnitř jednoho výletu, ne jednoho kalendářního dne, což je
+  přesně ten případ (Brno ráno, Vídeň večer), kdy je same-day odhad špatně), `Store` rozhraní (splňuje
+  `*photos.Store`: `ListLocationCandidates`/`ListLocatedNeighbours`/`SetEstimatedLocation`), `Enqueuer`
+  (splňuje `*jobs.Enqueuer`, **smí být nil** = odhady se uloží, ale negeokódují);
+  **`BackfillLocations(ctx) (estimated,error)`** (backing `POST /process/locations`): pro každého
+  kandidáta načte sousedy v okně, zavolá `Estimate`, a při shodě zapíše přes `SetEstimatedLocation`
+  (**guarded UPDATE** — když fotka mezitím polohu získala nebo ji uživatel rozhodl, odhad **prohraje**
+  a zahodí se) + naplánuje `places` job **až po zápisu**, aby `placesjob` viděl nové souřadnice a
+  nepřeskočil geokód jako „už aktuální“; sousedé bez odhadu (`location_source <> 'estimate'`), aby
+  jeden tip nepropagoval knihovnou, kde každý skok vypadá stejně sebejistě jako minulý; fotka bez
+  sousedů / s nesoudržnými sousedy = `(false, nil)`, **ne chyba** — odmítnutí je normální výsledek;
+  idempotentní a resumable **bez kurzoru** (množina kandidátů se prací zmenšuje, takže re-run *je* ten
+  resume), wiring `cmd/kukatko/geoestimate.go` (`buildGeoEstimateServiceOrNil` /
+  `locationEstimatorOrNil` — nil **interface**, ne typed-nil pointer, aby processapi vrátilo 503)),
   `internal/metrics/`
   (Prometheus instrumentace HTTP serveru, workeru fronty a infra (pgx pool, embeddings sidecar,
   importy, thumbnaily), namespace `kukatko`; **izolovaný `*prometheus.Registry`** místo
