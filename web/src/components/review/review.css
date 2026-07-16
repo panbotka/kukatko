@@ -1,0 +1,183 @@
+/* Fullscreen review game: one photo, one question, three answers. The screen
+   is a fixed column — header, hairline progress, photo stage, prompt, actions —
+   rendered outside the layout shell so nothing competes with the photo. */
+
+.review-game {
+  position: fixed;
+  inset: 0;
+  z-index: 1080;
+  display: flex;
+  flex-direction: column;
+  background: var(--bs-body-bg);
+  overflow-y: auto;
+  /* Estimated height of everything that is not the photo (header, progress,
+     question, actions). The photo frame caps itself against the remainder. */
+  --review-chrome: 10rem;
+  --review-stage-h: calc(100dvh - var(--review-chrome));
+}
+
+.review-game__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.review-game__progress-text {
+  font-size: 0.875rem;
+  text-align: center;
+  min-width: 0;
+}
+
+/* The hairline session progress under the header: present, not loud. */
+.review-game__progressbar {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.review-game__progressbar > div {
+  height: 100%;
+  background: var(--bs-info);
+  transition: width 0.2s ease;
+}
+
+.review-game__stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+}
+
+/* Centering column for the loading / error / empty bodies. */
+.review-game__center {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+/* Width-driven frame: `aspect-ratio` derives the height from the width, and an
+   inline max-width caps the frame against the stage height, so the ratio (and
+   with it the normalised face box) is always exact. */
+.review-photo {
+  position: relative;
+  width: 100%;
+  margin-inline: auto;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.review-photo__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* The padded face rectangle; the huge shadow gently dims everything outside it
+   (clipped by the frame's overflow: hidden). */
+.review-photo__box {
+  position: absolute;
+  border: 3px solid var(--bs-info);
+  border-radius: 0.25rem;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 0 0 9999px rgba(0, 0, 0, 0.35);
+}
+
+.review-game__prompt {
+  text-align: center;
+  padding: 0.5rem 1rem 0;
+}
+
+.review-game__question {
+  font-size: clamp(1.35rem, 3.5vw, 2.1rem);
+  margin-bottom: 0.25rem;
+}
+
+.review-game__name {
+  color: var(--bs-info);
+}
+
+.review-game__face-hint {
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0.25rem;
+}
+
+/* The system's confidence: honest, quiet context under the question. */
+.review-game__confidence {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0;
+}
+
+.review-game__confidence-bar {
+  display: inline-block;
+  width: 7.5rem;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.review-game__confidence-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--bs-info);
+}
+
+.review-game__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.review-game__actions .btn {
+  min-width: 8.5rem;
+}
+
+.review-game__kbd {
+  opacity: 0.6;
+  font-size: 0.7em;
+  margin-left: 0.4rem;
+}
+
+.review-game__alert {
+  margin: 0.5rem 1rem 0;
+}
+
+/* On touch screens the buttons carry the whole interaction: make them fill the
+   bottom of the screen thumb-reachably, and drop the keyboard hints. */
+@media (max-width: 576px) {
+  .review-game {
+    --review-chrome: 13rem;
+  }
+
+  .review-game__actions .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+}
+
+@media (hover: none) {
+  .review-game__kbd {
+    display: none;
+  }
+}
