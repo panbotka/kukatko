@@ -66,10 +66,12 @@
       "account": "Spravovat vlastní účet",
       "logout": "Odhlásit se z Kukátka",
       "expand": "Rozšířit album nebo štítek o podobné fotky",
-      "review": "Projít návrhy jeden po druhém"
+      "review": "Projít návrhy jeden po druhém",
+      "outliers": "Najít obličeje přiřazené omylem"
     },
     "expand": "Rozšířit",
-    "review": "Třídění"
+    "review": "Třídění",
+    "outliers": "Možné chyby"
   },
   "language": {
     "cs": "Čeština",
@@ -569,6 +571,7 @@
       "grid": "Mřížka fotek",
       "detail": "Detail fotky",
       "faceSearch": "Hledání osoby",
+      "outliers": "Možné chyby",
       "review": "Třídění"
     },
     "grid": {
@@ -588,6 +591,14 @@
       "move": "Přesun zaměření mezi kartami",
       "confirm": "Potvrdit zaměřenou kartu",
       "reject": "Zamítnout zaměřenou kartu"
+    },
+    "outliers": {
+      "move": "Přesun zaměření mezi kartami",
+      "unassign": "Ano, je to chyba — odebrat obličej",
+      "confirm": "Ne, je to ta osoba — potvrdit",
+      "select": "Vybrat / zrušit výběr zaměřené karty",
+      "selectAll": "Vybrat všechny obličeje",
+      "escape": "Zrušit výběr, poté zaměření"
     },
     "review": {
       "yes": "Ano — potvrdit otázku",
@@ -908,7 +919,78 @@
     "unassignError": "Obličej se nepodařilo odebrat. Zkus to prosím znovu.",
     "faceLabel": "Obličej (vzdálenost {{distance}})",
     "openPhoto": "Otevřít fotku",
-    "unassign": "Není to tato osoba"
+    "unassign": "Není to tato osoba",
+    "reviewAll": "Projít všechny"
+  },
+  "outliersPage": {
+    "title": "Možné chyby",
+    "subtitle": "Vyber osobu a Kukátko seřadí její obličeje od nejpodezřelejšího. Rozhoduješ ty — samo nikdy nic neodebere.",
+    "loading": "Načítání obličejů…",
+    "selectAll": "Vybrat vše",
+    "bulkUnassign_one": "Odebrat {{count}} obličej",
+    "bulkUnassign_few": "Odebrat {{count}} obličeje",
+    "bulkUnassign_many": "Odebrat {{count}} obličeje",
+    "bulkUnassign_other": "Odebrat {{count}} obličejů",
+    "bulkProgress": "Odebírám {{current}} z {{total}}…",
+    "bulkCancel": "Zastavit",
+    "form": {
+      "subjectHeading": "Osoba",
+      "subjectLabel": "Vyber osobu",
+      "subjectHint_one": "{{count}} obličej",
+      "subjectHint_few": "{{count}} obličeje",
+      "subjectHint_many": "{{count}} obličeje",
+      "subjectHint_other": "{{count}} obličejů",
+      "subjectNone": "Zatím není vybraná žádná osoba.",
+      "subjectSelected": "Vybráno: {{name}}",
+      "thresholdLabel": "Práh podezřelosti",
+      "thresholdValue": "{{percent}} %",
+      "thresholdAll": "Zobrazit vše",
+      "thresholdExtreme": "Pouze extrémní"
+    },
+    "stats": {
+      "total": "Obličejů celkem",
+      "avgDistance": "Průměrná vzdálenost",
+      "shown": "Zobrazeno",
+      "percent": "{{percent}} %",
+      "explanation": "Seřazeno podle vzdálenosti od centroidu, nejpodezřelejší první.",
+      "noEmbedding_one": "{{count}} obličej nemá embedding, a tak ho nelze zkontrolovat — byl rozpoznaný, když byl výpočetní stroj offline. V tomhle seznamu není.",
+      "noEmbedding_few": "{{count}} obličeje nemají embedding, a tak je nelze zkontrolovat — byly rozpoznané, když byl výpočetní stroj offline. V tomhle seznamu nejsou.",
+      "noEmbedding_many": "{{count}} obličejů nemá embedding, a tak je nelze zkontrolovat — byly rozpoznané, když byl výpočetní stroj offline. V tomhle seznamu nejsou.",
+      "noEmbedding_other": "{{count}} obličejů nemá embedding, a tak je nelze zkontrolovat — byly rozpoznané, když byl výpočetní stroj offline. V tomhle seznamu nejsou.",
+      "capped": "Zobrazeno je prvních {{count}} nejpodezřelejších. Zvyš práh, ať se seznam zúží.",
+      "notMeaningful": "Příliš málo obličejů pro spolehlivé seřazení — z pár obličejů žádný nevyčnívá."
+    },
+    "card": {
+      "photoAlt": "Fotka s posuzovaným obličejem",
+      "distance": "Vzdálenost {{percent}} %",
+      "distanceTitle": "Vzdálenost od průměrné podoby této osoby — čím víc, tím podezřelejší",
+      "select": "Vybrat obličej",
+      "openPhoto": "Otevřít fotku",
+      "question": "Je to chyba?",
+      "removed": "Odebráno",
+      "confirmed": "Potvrzeno jako správné",
+      "failed": "Nepodařilo se uložit. Zkus to znovu.",
+      "unassign": "Ano, odebrat",
+      "confirm": "Ne, je to {{name}}",
+      "noMarker": "Tenhle obličej není navázaný na značku, takže ho nelze odebrat."
+    },
+    "idle": {
+      "title": "Vyber osobu",
+      "hint": "Vyber člověka a uvidíš jeho obličeje seřazené od nejpodezřelejšího."
+    },
+    "empty": {
+      "title": "Nic podezřelého",
+      "hint": "Při tomhle prahu žádný obličej nevyčnívá. Sniž práh, ať uvidíš víc."
+    },
+    "error": {
+      "load": "Obličeje se nepodařilo načíst.",
+      "unassign": "Obličej se nepodařilo odebrat. Zkus to prosím znovu.",
+      "confirm": "Potvrzení se nepodařilo uložit. Zkus to prosím znovu.",
+      "bulk_one": "{{count}} obličej se nepodařilo odebrat.",
+      "bulk_few": "{{count}} obličeje se nepodařilo odebrat.",
+      "bulk_many": "{{count}} obličejů se nepodařilo odebrat.",
+      "bulk_other": "{{count}} obličejů se nepodařilo odebrat."
+    }
   },
   "photo": {
     "loading": "Načítání fotky…",

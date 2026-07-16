@@ -21,6 +21,7 @@ import { LoginPage } from './pages/LoginPage'
 import { MaintenancePage } from './pages/MaintenancePage'
 import { MapPage } from './pages/MapPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { OutliersPage } from './pages/OutliersPage'
 import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PlacesPage } from './pages/PlacesPage'
@@ -81,6 +82,8 @@ export function AppRoutes() {
             <Route path="/expand" element={<ExpandPage />} />
             {/* The recognition sweep confirms faces across everyone: a write action. */}
             <Route path="/recognition" element={<RecognitionPage />} />
+            {/* Reviewing a person's outliers unassigns faces: a write action. */}
+            <Route path="/outliers" element={<OutliersPage />} />
             {/* Duplicate review archives photos in bulk: editors and admins only. */}
             <Route path="/duplicates" element={<DuplicatesPage />} />
             {/* Trash management (restore / permanent delete) is a write action. */}

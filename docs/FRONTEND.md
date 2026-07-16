@@ -16,7 +16,9 @@ zapiš sem.
   `/map`; **Třídění** `/review` (`REVIEW_ITEM`, gate `canWrite`) je top-level, ne v „Nástrojích" —
   uklízení knihovny po jedné otázce je nejpoužívanější kurátorská smyčka a hra, kterou nikdo
   nenajde, je hra, kterou nikdo nehraje; **Nahrát** `/upload` je top-level (gate `canWrite`); editorský dropdown **Nástroje**
-  (`nav.tools`, `TOOLS_GROUP`, celý gate `canWrite`) sdružuje **Duplikáty** `/duplicates` + **Koš**
+  (`nav.tools`, `TOOLS_GROUP`, celý gate `canWrite`) sdružuje **Najít osobu** `/faces` +
+  **Rozpoznávání** `/recognition` + **Možné chyby** `/outliers` (u ostatních lidských nástrojů,
+  protože je to taky práce s obličeji) + **Duplikáty** `/duplicates` + **Koš**
   `/trash`; **Import** `/import` (`IMPORT_ITEM`) je top-level s gate `canImport` (admin **nebo** ai);
   adminský dropdown **Správa** (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje
   **Údržba** `/maintenance` + **Systém** `/system` + **Uživatelé** `/users` + **Audit** `/audit`.
@@ -668,6 +670,36 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   kopie do koše — vratné) → skupina zmizí + success alert (`duplicates.merged`), nebo skupinu **odmítne**
   („není duplikát", jen lokálně skryje); chyby přes `duplicates.actionError`/503 „nedostupné", loading
   přes `GridSkeleton`, error s retry,
+  `OutliersPage` = `/outliers` (editor/admin, odkaz **Možné chyby** v „Nástrojích") „které obličeje
+  téhle osoby nejspíš nejsou ona": **protějšek panelu na stránce osoby, který zůstává** — panel je
+  správný, když si osobu zrovna prohlížíš, tahle stránka, když chceš cíleně lovit (a panel na ni
+  odkazuje přes `/outliers?subject={uid}`, takže dorazí s předvybraným člověkem); `OutlierControls`
+  (picker osoby přes `AddAutocomplete` s počtem obličejů v hintu + **procentní** posuvník prahu
+  0–100 % step 5 **default 0 = zobrazit vše**, bookendy „Zobrazit vše"↔„Pouze extrémní"; **bez
+  tlačítka Hledat** — dotaz je levné indexované čtení, tak výběr osoby prostě ukáže) → `fetchOutliers`
+  s `{threshold: outlierThresholdDistance(percent), limit: OUTLIER_LIMIT}`; posuvník je **živý**
+  (vidíš seznam se zužovat), ale query se **debouncuje** (`THRESHOLD_DEBOUNCE_MS = 250`) + běží přes
+  `AbortController`, jinak by jeden tah vystřelil dotaz na každý krok; config (osoba/práh) v URL,
+  do historie se píše až **commitnutá** hodnota (tah v ní neskončí); `OutlierStats` (oskórovaných
+  celkem / průměrná vzdálenost / zobrazeno + jednořádkové vysvětlení řazení, **`no_embedding`
+  hláška** (obličej rozpoznaný při offline boxu zkontrolovat nejde a v seznamu **není** — říct to
+  nahlas, jinak prázdný seznam čte jako „čisto"), capped hláška při `OUTLIER_LIMIT`,
+  `meaningful:false` hláška); mřížka **velkých** `OutlierCard` (`minmax(20rem, 1fr)`): **kontextový
+  výřez** = bbox zvětšený o 30 % na každou stranu přes `padBbox` + `cropImageStyle`, uvnitř něj
+  rámeček obličeje přes `boxWithinCrop` (vše `lib/faceGeometry`, `aspect-ratio` nese geometrii →
+  žádné měření pixelů), badge vzdálenosti v **%**, otázka „Je to chyba?" a na ni dvě **opačné**
+  odpovědi: **✓ „Ano, odebrat"** → `assignFace` `unassign_person`, **✗ „Ne, je to {{name}}"** →
+  `confirmFace` (`services/feedback`) — **pozor na polaritu, není to `rejectFace`**; obě flipnou
+  kartu **na místě** (karta nemizí → mřížka se pod kurzorem nepřeskládá); **výběr** přes
+  `useSelection` (Shift+klik rozsah, **Ctrl/Cmd+A** bindnuté zvlášť — sdílený hook modifikátory
+  ignoruje — a jen když mřížka vlastní stránku, ať nesebere prohlížeči select-all v poli) +
+  `SelectionBar` s **hromadným odebráním**, které jde sekvenčně a **přizná částečné selhání**
+  (progress + počet chyb, hotové zůstanou hotové); **klávesnice** (`shortcuts.groups.outliers`):
+  šipky/`hjkl` posun, `y`/Enter odebrat, `n` potvrdit, `x` vybrat, Esc čistí výběr→zaměření —
+  a **zaměření se po verdiktu posune na další nerozhodnutou kartu** (`nextActionableIndex`; reset
+  zaměření proto visí na **odpovědi**, ne na pracovním seznamu, který se mění každým verdiktem —
+  jinak by se posun po každém rozhodnutí zahodil); stavy idle („vyber osobu")/loading/error/
+  prázdno („nic podezřelého, sniž práh"); testy `OutliersPage.test.tsx` + `lib/outlierReview.test.ts`,
   `ReviewPage` = `/review` (editor/admin, top-level odkaz **Třídění** hned vedle Nahrát) **hra na
   třídění**: jedna otázka („Je na fotce **Tomáš Kozák**?" / „Sedí k fotce štítek **Ostatky**?")
   přes **celou obrazovku** — stránka je **mimo `Layout`** (bez navbaru, jako `/slideshow`), protože
@@ -777,7 +809,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`{jméno} · {confidence}%`, one-tap) + typeahead nad `useSubjects` (`AddAutocomplete` s `autoFocus`
   a `hint` = počet fotek osoby); u přiřazeného obličeje **Přeřadit** (návrhy, které backend dodává
   i pro přiřazené — vlastní osoba je z nich vyloučená) a **Odebrat**; Esc vyskočí nejdřív z přeřazení,
-  pak z výběru), `ClusterCard`, `Outliers` (žebříček podezřelých obličejů s one-tap unassign);
+  pak z výběru), `ClusterCard`, `Outliers` (žebříček podezřelých obličejů s one-tap unassign na
+  stránce osoby + odkaz **Projít všechny** na `/outliers?subject={uid}`, kde je plná sweep verze),
+  `OutlierCard`/`OutlierControls`/`OutlierStats` (stavební bloky `/outliers`: karta s **kontextovým
+  výřezem** (30 % kolem bboxu, `padBbox`+`cropImageStyle`+`boxWithinCrop`), otázkou „Je to chyba?"
+  a dvěma opačnými verdikty (✓ odebrat / ✗ potvrdit), výběrovým checkboxem a focus ringem; config
+  strip s pickerem osoby a procentním prahem; statistiky včetně **`no_embedding`** hlášky);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`/`canImport`; `ProtectedRoute` =
   `RequireAuth` + `RequireRole` + `RequireImport` route guardy), `hooks/` (`usePaginatedPhotos` = sdílený
@@ -892,6 +929,16 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`buildAssignRequest`/`buildRejection` z `candidateReview`), `people` vrací jen osoby s akčními
   kartami (osoba zmizí, když se vyřídí poslední); `cancel`→`AbortController`, jeden `confirmAll` běží
   naráz; nikdy neautoconfirmuje;
+  `useOutlierReview(subjectUid,faces)` = stavový stroj mřížky `/outliers`: naseeduje pracovní seznam
+  z čerstvého dotazu a aplikuje oba verdikty **optimisticky a na místě** — karta flipne, kde stojí,
+  mřížka se nereloadne a scroll neuteče kurátorovi uprostřed dlouhého seznamu. Verdikty jsou
+  **opačné a míří na opačné endpointy**: ✓ `unassign` odpojí osobu přes běžný assign automat,
+  ✗ `confirm` zapíše **trvalé potvrzení** (`confirmFace`), které backend z dalších outlier dotazů
+  vyloučí — seznam, co dokola nabízí tytéž plané poplachy, je přesně ten problém, co tahle stránka
+  řeší. Selhaný zápis označí **vlastní** kartu `error` a sousedů se nedotkne. `unassignMany` jde
+  výběrem **sekvenčně** a **přizná částečné selhání** (`bulkState{running,current,total,failed}`,
+  cancelovatelné): už odebrané zůstanou odebrané, chyby se spočítají a řeknou, nerollbackují se
+  ani nespolknou. Nové `faces` (jiná osoba/práh) resetují vše a opustí běžící run;
   `useReviewGame()` = engine hry na třídění (`/review`): lokální fronta otázek plněná **na pozadí**
   (`fetchReviewQueue`; refill jakmile klesne na `REFILL_AT = 3`, deduplikace proti **všem** už
   viděným id, takže hranice batche je neviditelná), **optimistické** odpovědi (`answer` posune UI
@@ -1026,6 +1073,15 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (procenta → vzdálenost, `toFixed(4)` řeže float šum pro URL), limit 1–200 default 50
   (`clampExpandLimit`), `ExpandSource` + `expandSources` (picker: bez prázdných sbírek, řazený dle
   počtu fotek sestupně, tiebreak jménem) a `similarityPercent` (podobnost kandidáta → celá %);
+  `outlierReview.ts` = pure model `/outliers`: lifecycle `pending`→`removed`/`confirmed`/`error`
+  (`OutlierItem`, `outlierKey` = `photo_uid:face_index`, `toOutlierItems`, `isActionable` — errored
+  karta se **počítá**, její zápis selhal, takže je pořád nerozhodnutá —, `canUnassign` = má marker,
+  jinak není co odpojit) + aritmetika prahu: **UI mluví v procentech, endpoint v kosinové
+  vzdálenosti**, `outlierThresholdDistance` (0 % → 0 = „vrať vše", 100 % → `OUTLIER_MAX_DISTANCE`=1,
+  protože dva **různí** lidé sedí kolem 1.0 a dál není co schovávat; `toFixed(4)` řeže float šum pro
+  URL), `clampOutlierThresholdPercent` (default **0 = zobrazit vše**; nenulový default by tiše
+  schovával obličeje), `distancePercent` (schválně **ne** podobnost — na téhle stránce větší číslo
+  znamená „dál od člověka", což je ta souzená veličina) a `OUTLIER_LIMIT`=200;
   `coordinates.ts` = pure tolerantní parser souřadnic pro location picker: `parseCoordinates(input)`
   → `{ok:true,value:{lat,lng}}` | `{ok:false,error:'empty'|'format'|'range'}` (desetinné stupně /
   DMS / stupně-desetinné-minuty, komma/mezera oddělovač, ±/hemisféry N/S/E/W, unicode primy/`''`,
@@ -1180,7 +1236,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   jen drží zamítnutý obličej/fotku mimo příští hledání): `rejectFace(req,signal)`/`unrejectFace(req,signal)`
   nad `POST`/`DELETE /feedback/face-rejections`, typ `FaceRejection` `{photo_uid,face_index,subject_uid}`,
   a `rejectLabel(req,signal)`/`unrejectLabel(req,signal)` nad `POST`/`DELETE /feedback/label-rejections`,
-  typ `LabelRejection` `{photo_uid,label_uid}` (vše idempotentní → jde volat optimisticky);
+  typ `LabelRejection` `{photo_uid,label_uid}`; **`confirmFace(req,signal)`/`unconfirmFace(req,signal)`**
+  nad `POST`/`DELETE /feedback/face-confirmations`, typ `FaceConfirmation`
+  `{photo_uid,face_index,subject_uid}` — **opačná polarita než `rejectFace`**: zapisuje „tenhle
+  obličej **JE** tahle osoba" (✗ v outlier review = „ne, fakt je to on"), backend pak potvrzený
+  obličej z dalších outlier výsledků vyloučí; zaměnit ji za `rejectFace` znamená uložit pravý opak
+  toho, co uživatel řekl (vše idempotentní → jde volat optimisticky);
   `expand.ts` = klient rozšiřování sbírky: `searchSimilar(kind,uid,{threshold,limit},signal)` nad
   `GET /albums/{uid}/similar` / `GET /labels/{uid}/similar` (`threshold` = **kosinová vzdálenost**,
   převod z procent dělá volající přes `lib/expandSearch`), typy `ExpandKind`/`ExpandCandidate`

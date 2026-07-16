@@ -89,6 +89,12 @@ const TOOLS_GROUP: NavGroup = {
       icon: 'person-check',
     },
     {
+      to: '/outliers',
+      labelKey: 'nav.outliers',
+      titleKey: 'nav.titles.outliers',
+      icon: 'exclamation-triangle',
+    },
+    {
       to: '/duplicates',
       labelKey: 'nav.duplicates',
       titleKey: 'nav.titles.duplicates',

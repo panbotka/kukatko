@@ -66,10 +66,12 @@
       "account": "Manage your own account",
       "logout": "Sign out of Kukátko",
       "expand": "Grow an album or a label with similar photos",
-      "review": "Go through the suggestions one at a time"
+      "review": "Go through the suggestions one at a time",
+      "outliers": "Find faces assigned by mistake"
     },
     "expand": "Expand",
-    "review": "Review"
+    "review": "Review",
+    "outliers": "Possible mistakes"
   },
   "language": {
     "cs": "Čeština",
@@ -601,6 +603,7 @@
       "grid": "Photo grid",
       "detail": "Photo detail",
       "faceSearch": "Person search",
+      "outliers": "Possible mistakes",
       "review": "Review"
     },
     "grid": {
@@ -620,6 +623,14 @@
       "move": "Move focus between cards",
       "confirm": "Confirm the focused card",
       "reject": "Reject the focused card"
+    },
+    "outliers": {
+      "move": "Move focus between cards",
+      "unassign": "Yes, it is a mistake — remove the face",
+      "confirm": "No, it is that person — confirm",
+      "select": "Select / deselect the focused card",
+      "selectAll": "Select every face",
+      "escape": "Clear selection, then focus"
     },
     "review": {
       "yes": "Yes — confirm the question",
@@ -870,7 +881,70 @@
     "unassignError": "Could not remove the face. Please try again.",
     "faceLabel": "Face (distance {{distance}})",
     "openPhoto": "Open photo",
-    "unassign": "Not this person"
+    "unassign": "Not this person",
+    "reviewAll": "Review all"
+  },
+  "outliersPage": {
+    "title": "Possible mistakes",
+    "subtitle": "Pick a person and Kukátko ranks their faces, most suspicious first. You decide — it never removes anything on its own.",
+    "loading": "Loading faces…",
+    "selectAll": "Select all",
+    "bulkUnassign_one": "Remove {{count}} face",
+    "bulkUnassign_other": "Remove {{count}} faces",
+    "bulkProgress": "Removing {{current}} of {{total}}…",
+    "bulkCancel": "Stop",
+    "form": {
+      "subjectHeading": "Person",
+      "subjectLabel": "Pick a person",
+      "subjectHint_one": "{{count}} face",
+      "subjectHint_other": "{{count}} faces",
+      "subjectNone": "No person picked yet.",
+      "subjectSelected": "Selected: {{name}}",
+      "thresholdLabel": "Suspicion threshold",
+      "thresholdValue": "{{percent}} %",
+      "thresholdAll": "Show all",
+      "thresholdExtreme": "Only extreme"
+    },
+    "stats": {
+      "total": "Faces scored",
+      "avgDistance": "Average distance",
+      "shown": "Shown",
+      "percent": "{{percent}} %",
+      "explanation": "Ranked by distance from the centroid, most suspicious first.",
+      "noEmbedding_one": "{{count}} face has no embedding and cannot be checked — it was detected while the compute box was offline. It is not in this list.",
+      "noEmbedding_other": "{{count}} faces have no embedding and cannot be checked — they were detected while the compute box was offline. They are not in this list.",
+      "capped": "Showing the {{count}} most suspicious. Raise the threshold to narrow the list.",
+      "notMeaningful": "Too few faces to rank reliably — none stands out from so few."
+    },
+    "card": {
+      "photoAlt": "Photo with the face under review",
+      "distance": "Distance {{percent}} %",
+      "distanceTitle": "Distance from this person's average look — the higher, the more suspicious",
+      "select": "Select face",
+      "openPhoto": "Open photo",
+      "question": "Is this a mistake?",
+      "removed": "Removed",
+      "confirmed": "Confirmed as correct",
+      "failed": "Could not save. Try again.",
+      "unassign": "Yes, remove",
+      "confirm": "No, that is {{name}}",
+      "noMarker": "This face is not tied to a marker, so it cannot be removed."
+    },
+    "idle": {
+      "title": "Pick a person",
+      "hint": "Pick someone to see their faces ranked, most suspicious first."
+    },
+    "empty": {
+      "title": "Nothing suspicious",
+      "hint": "No face stands out at this threshold. Lower it to see more."
+    },
+    "error": {
+      "load": "Could not load the faces.",
+      "unassign": "Could not remove the face. Please try again.",
+      "confirm": "Could not save the confirmation. Please try again.",
+      "bulk_one": "{{count}} face could not be removed.",
+      "bulk_other": "{{count}} faces could not be removed."
+    }
   },
   "photo": {
     "loading": "Loading photo…",
