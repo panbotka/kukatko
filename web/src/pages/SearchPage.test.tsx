@@ -228,6 +228,59 @@ describe('SearchPage', () => {
     expect(screen.getByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
   })
 
+  it('hints at query-language tokens the server did not understand', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')], { unknown_tokens: ['color:red'] }))
+    renderSearch('/search?q=color:red')
+
+    expect(await screen.findByText(/i don't understand these filters/i)).toBeInTheDocument()
+    expect(screen.getByText('color:red')).toBeInTheDocument()
+    // The results still render alongside the hint (the token degraded to text).
+    expect(screen.getByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+  })
+
+  it('opens the query-language help listing filters and operators', async () => {
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.click(screen.getByRole('button', { name: 'Search query language help' }))
+
+    expect(await screen.findByText('Search query language')).toBeInTheDocument()
+    // The example appears in the operators table and again in the filter list.
+    expect(screen.getAllByText('label:cat|dog').length).toBeGreaterThan(0)
+    expect(screen.getByText(/a space between filters means and/i)).toBeInTheDocument()
+  })
+
+  it('autocompletes filter keys in the query box', async () => {
+    searchMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderSearch()
+
+    const input = screen.getByLabelText('Search term')
+    await user.type(input, 'ca')
+
+    const option = await screen.findByRole('option', { name: 'camera:' })
+    await user.click(option)
+
+    expect(input).toHaveValue('camera:')
+    // Accepting a key closes the dropdown until the user types again.
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('accepts a suggested key with the keyboard', async () => {
+    searchMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderSearch()
+
+    const input = screen.getByLabelText('Search term')
+    await user.type(input, 'c')
+    await screen.findByRole('listbox', { name: 'Filter suggestions' })
+
+    // ArrowDown moves from camera: to city:, Enter accepts it (not submit).
+    await user.keyboard('{ArrowDown}{Enter}')
+
+    expect(input).toHaveValue('city:')
+  })
+
   it('shows the empty state when nothing matches', async () => {
     searchMock.mockResolvedValue(page([]))
     renderSearch('/search?q=nothing')

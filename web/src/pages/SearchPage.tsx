@@ -16,6 +16,8 @@ import { SelectionStart } from '../components/organize/SelectionStart'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SavedSearchesDropdown } from '../components/savedsearch/SavedSearchesDropdown'
 import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
+import { SearchQueryHelp } from '../components/search/SearchQueryHelp'
+import { SearchQueryInput } from '../components/search/SearchQueryInput'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
@@ -61,8 +63,17 @@ export function SearchPage() {
     [view, mode],
   )
   const [reloadKey, reload] = useReloadKey()
-  const { photos, total, status, degraded, loadingMore, moreError, loadMore, retry } =
-    usePhotoSearch(params, mode, { reloadKey })
+  const {
+    photos,
+    total,
+    status,
+    degraded,
+    unknownTokens,
+    loadingMore,
+    moreError,
+    loadMore,
+    retry,
+  } = usePhotoSearch(params, mode, { reloadKey })
 
   const bulk = useBulkEdit({ onEdited: reload })
   const selection = bulk.selection
@@ -148,15 +159,17 @@ export function SearchPage() {
         <Row className="g-2 align-items-end">
           <Col xs={12} md={8} lg={9}>
             <Form.Group controlId="search-query">
-              <Form.Label className="small mb-1">{t('search.queryLabel')}</Form.Label>
-              <Form.Control
-                type="search"
+              <div className="d-flex align-items-center gap-2 mb-1">
+                <Form.Label className="small mb-0">{t('search.queryLabel')}</Form.Label>
+                {/* The query language's discoverability: filters + operators. */}
+                <SearchQueryHelp />
+              </div>
+              <SearchQueryInput
+                id="search-query"
                 value={text}
                 autoFocus
                 placeholder={t('search.placeholder')}
-                onChange={(e) => {
-                  setText(e.target.value)
-                }}
+                onChange={setText}
               />
             </Form.Group>
           </Col>
@@ -185,6 +198,18 @@ export function SearchPage() {
       {degraded && (
         <Alert variant="warning" className="py-2">
           {t('search.degraded')}
+        </Alert>
+      )}
+
+      {unknownTokens.length > 0 && (
+        <Alert variant="info" className="py-2">
+          {t('search.unknownTokens')}{' '}
+          {unknownTokens.map((token, i) => (
+            <span key={token + String(i)}>
+              {i > 0 && ', '}
+              <code>{token}</code>
+            </span>
+          ))}
         </Alert>
       )}
 

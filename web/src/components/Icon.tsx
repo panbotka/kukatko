@@ -7,6 +7,7 @@
 export type IconName =
   | 'activity'
   | 'arrow-clockwise'
+  | 'arrow-counterclockwise'
   | 'arrow-left'
   | 'bookmarks'
   | 'box-arrow-in-down'
@@ -42,6 +43,7 @@ export type IconName =
   | 'person-circle'
   | 'person-gear'
   | 'plus-lg'
+  | 'question-circle'
   | 'search'
   | 'sliders'
   | 'tags'

@@ -7,6 +7,12 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - **Jeden spustitelný binár** (Go) včetně embedovaného frontendu (React + Bootstrap/Superhero).
 - **PostgreSQL + pgvector** jako jediný zdroj pravdy pro metadata i vektory.
 - **Sémantické i fulltextové hledání**, podobné fotky, **rozpoznávání obličejů/lidí**.
+- **Vyhledávací jazyk**: volný text + `klíč:hodnota` filtry v jednom dotazu —
+  `dovolená camera:"Canon EOS R6" iso:100-400 faces:2`, `label:cat|dog`, `label:!blurry`,
+  `near:<uid> dist:2`, `taken:2024-05`, `type:video`, `face:new`… Operátory OR (`|`), NOT (`!`,
+  `-`), rozsahy (`800-`, `-200`), wildcard `*`, uvozovky; neznámý filtr se hledá jako text
+  a UI ho jemně ohlásí; čistě filtrový dotaz nikdy nesahá na embedding sidecar. V UI nápověda
+  (`?` u vyhledávacího pole) a autocomplete klíčů. Gramatika: `docs/API.md`.
 - **Pi-first:** běží na Raspberry Pi, výpočet embeddingů deleguje na výkonný stroj (box s GPU).
 - **Import z PhotoPrismu** přes API (+ stažení originálů) a **migrace dat z photo-sorteru**.
 - **Nahrání složky z disku:** `kukatko import dir <path>` — namíříš ho na adresář (skeny, karta

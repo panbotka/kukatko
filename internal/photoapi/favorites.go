@@ -191,21 +191,23 @@ func (a *API) handleFavorites(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	params, err := parseListParams(r.URL.Query())
+	params, unknown, err := parseListParams(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	params.FavoriteOf = user.UID
-	a.writeFavoritePage(w, r, user.UID, params)
+	a.writeFavoritePage(w, r, user.UID, params, unknown)
 }
 
 // writeFavoritePage runs the favorites-scoped list and writes the annotated page.
 // It is shared by GET /favorites and the favorite=true branch of GET /photos. It
 // scopes the per-user rating filters and the rating sort to the caller by binding
 // RatedBy here, so min_rating/flag and sort=rating apply for any list request.
+// unknown carries the q query-language tokens that were not understood, reported
+// back on the page so the UI can hint at them.
 func (a *API) writeFavoritePage(
-	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams,
+	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams, unknown []string,
 ) {
 	params.RatedBy = &userUID
 	list, err := a.store.List(r.Context(), params)
@@ -223,7 +225,9 @@ func (a *API) writeFavoritePage(
 		writeError(w, http.StatusInternalServerError, "annotating photos failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, pageResponse(params, views, total))
+	resp := pageResponse(params, views, total)
+	resp.UnknownTokens = unknown
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // writeFavoriteError maps a favorites store error to an HTTP response: 404 for a

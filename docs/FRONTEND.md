@@ -306,7 +306,16 @@ zapiš sem.
   `SearchPage` = sémantické/hybridní/fulltext hledání: prominentní debouncované (350 ms)
   vyhledávací pole + přepínač režimu (`q`+`mode` v URL), stejná virtualizovaná mřížka jako
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
-  (sidecar offline), idle/loading/empty/error stavy; dlaždice nesou scope hledání v detail odkazu
+  (sidecar offline), idle/loading/empty/error stavy; pole mluví **vyhledávacím jazykem**
+  (`q` = volný text + `klíč:hodnota` filtry, gramatika v docs/API.md „Vyhledávací jazyk (q=)“;
+  parsuje výhradně backend): vstup je `SearchQueryInput` (`components/search/`) — combobox
+  s **autocomplete klíčů filtrů** (návrhy ze `lib/queryLanguage.ts` `suggestFilterKeys`/
+  `applyFilterKey` + `FILTER_KEYS`; šipky + Enter/Tab přijmou `klíč:`, Esc zavře, hodnoty se
+  nikdy nedoplňují), vedle labelu `SearchQueryHelp` (`?` tlačítko → modal s operátory a filtry
+  s příklady, řádky z `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texty `search.help.*` cs+en),
+  a `unknown_tokens` z odpovědi (`PhotoListResponse.unknown_tokens` → `usePaginatedPhotos`
+  vrací `unknownTokens`) → neblokující info hint „těmto filtrům nerozumím“ nad mřížkou;
+  čistě filtrový dotaz vrací `mode: "filter"` (`EffectiveSearchMode`); dlaždice nesou scope hledání v detail odkazu
   (`detailQuery` s `q`+`mode`) → Esc/Zpět z fotky se vrací k hledání (řazené výsledky, ne knihovna s `q`
   jako podstring) a prev/next pageuje stejné výsledky, plus nad mřížkou **cross-entity sekce**
   (`GlobalSearchSections`) s chipy shodných alb/lidí/štítků (grouped `GET /search/global`), aby

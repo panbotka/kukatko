@@ -229,7 +229,7 @@
     "title": "Hledání",
     "formLabel": "Hledat fotky",
     "queryLabel": "Hledaný výraz",
-    "placeholder": "Hledat fotky…",
+    "placeholder": "Hledat… např. pláž iso:100-400",
     "modeLabel": "Režim",
     "mode": {
       "hybrid": "Hybridní",
@@ -244,6 +244,50 @@
     },
     "error": {
       "load": "Vyhledávání se nezdařilo."
+    },
+    "unknownTokens": "Těmto filtrům nerozumím (hledám je jako obyčejný text):",
+    "keySuggestions": "Návrhy filtrů",
+    "help": {
+      "open": "Nápověda k vyhledávacímu jazyku",
+      "close": "Zavřít",
+      "title": "Vyhledávací jazyk",
+      "intro": "Volný text lze kombinovat s filtry klíč:hodnota v jednom dotazu. Neznámému filtru se nic nestane — hledá se jako obyčejný text a vyhledávání na něj upozorní.",
+      "example": "dovolená camera:\"Canon EOS R6\" iso:100-400 faces:2",
+      "operatorsTitle": "Operátory",
+      "filtersTitle": "Filtry",
+      "op": {
+        "and": "Mezera mezi filtry znamená A ZÁROVEŇ.",
+        "or": "Svislítko uvnitř hodnoty znamená NEBO.",
+        "not": "Vykřičník neguje hodnotu (fotky bez štítku).",
+        "notText": "Minus před slovem vyloučí volný text.",
+        "range": "Rozsahy pomlčkou; jedna strana může chybět.",
+        "quotes": "Uvozovky pro hodnoty s mezerami; \\ escapuje |, ! a -.",
+        "wildcard": "Hvězdička je zástupný znak v textové hodnotě."
+      },
+      "desc": {
+        "text": "Název, popis a poznámky fotky.",
+        "filename": "Název souboru.",
+        "keywords": "Klíčová slova z IPTC.",
+        "album": "Fotky v albu (podle názvu nebo UID).",
+        "label": "Fotky se štítkem (podle názvu nebo UID).",
+        "person": "Fotky s osobou (podle jména nebo UID).",
+        "state": "Oblíbené, soukromé a archivované (yes/no).",
+        "rating": "Vaše hodnocení hvězdičkami, 0–5.",
+        "flag": "Váš příznak: pick, reject nebo eye.",
+        "date": "Rok, měsíc a den pořízení.",
+        "takenAdded": "Datum pořízení / přidání do katalogu: RRRR, RRRR-MM nebo RRRR-MM-DD.",
+        "beforeAfter": "Pořízeno před datem / od data.",
+        "place": "Země a město (podle zpětného geokódování).",
+        "geo": "Fotky s GPS souřadnicemi, nebo bez nich.",
+        "alt": "Nadmořská výška v metrech.",
+        "near": "Fotky geograficky poblíž dané fotky; dist: je poloměr v km (výchozí 5).",
+        "camera": "Výrobce či model fotoaparátu a objektiv.",
+        "optics": "ISO, clona, ohnisko v mm a megapixely.",
+        "type": "Typ média: image, video nebo live.",
+        "codec": "Kodek obrázku či videa.",
+        "orientation": "Na výšku, na šířku, čtverec, panorama (yes/no).",
+        "faces": "Počet tváří (faces:3 = aspoň tři); face:new = zatím nepřiřazená tvář."
+      }
     }
   },
   "globalSearch": {
@@ -1633,6 +1677,56 @@
       "matches_other": "Odpovídá {{count}} zdrojovým fotkám",
       "matchesValue": "{{count}}×",
       "reject": "Nenabízet pro tento štítek"
+    }
+  },
+  "review": {
+    "question": {
+      "face": "Je na fotce <strong>{{name}}</strong>?",
+      "label": "Sedí k fotce štítek <strong>{{name}}</strong>?"
+    },
+    "confidence": "Jistota {{percent}} %",
+    "photoAlt": "Posuzovaná fotka",
+    "faceHint": "Posuzovaná tvář je zvýrazněná rámečkem.",
+    "actions": {
+      "yes": "Ano",
+      "no": "Ne",
+      "skip": "Nevím",
+      "undo": "Zpět"
+    },
+    "keys": {
+      "space": "mezerník"
+    },
+    "loading": "Načítám otázky…",
+    "close": "Ukončit hru",
+    "progress": {
+      "answered_one": "{{count}} zodpovězená",
+      "answered_few": "{{count}} zodpovězené",
+      "answered_many": "{{count}} zodpovězené",
+      "answered_other": "{{count}} zodpovězených",
+      "remaining_one": "{{count}} zbývá",
+      "remaining_few": "{{count}} zbývají",
+      "remaining_many": "{{count}} zbývá",
+      "remaining_other": "{{count}} zbývá"
+    },
+    "empty": {
+      "libraryTitle": "Není co posuzovat",
+      "libraryHint": "Zatím tu nejsou žádní pojmenovaní lidé ani štítky, ze kterých by šly otázky skládat.",
+      "people": "Lidé",
+      "labels": "Štítky",
+      "queueTitle": "Vše posouzeno",
+      "queueHint": "Teď tu žádné otázky nejsou. Nové se objeví, jakmile přibudou fotky nebo návrhy.",
+      "checkAgain": "Zkusit znovu"
+    },
+    "errors": {
+      "load": "Frontu otázek se nepodařilo načíst.",
+      "retry": "Zkusit znovu",
+      "answer_one": "{{count}} odpověď se nepodařilo uložit.",
+      "answer_few": "{{count}} odpovědi se nepodařilo uložit.",
+      "answer_many": "{{count}} odpovědi se nepodařilo uložit.",
+      "answer_other": "{{count}} odpovědí se nepodařilo uložit.",
+      "retryAnswers": "Uložit znovu",
+      "dismiss": "Zahodit",
+      "undo": "Odpověď se nepodařilo vrátit."
     }
   }
 }

@@ -175,13 +175,20 @@ export interface PhotoListResponse {
   offset: number
   next_offset: number | null
   /** Effective search mode, only present on `GET /search` responses. */
-  mode?: SearchMode
+  mode?: EffectiveSearchMode
   /**
    * True when a semantic or hybrid search fell back to full-text because the
    * embeddings sidecar was unavailable, so the UI can tell the user semantic
    * ranking was skipped. Absent (treated as false) on list responses.
    */
   degraded?: boolean
+  /**
+   * Filter-shaped `q` tokens the search query language did not understand
+   * (unknown key or malformed value). They degraded to free text server-side,
+   * so results are still meaningful; the UI shows a gentle hint. Absent when
+   * every token parsed.
+   */
+  unknown_tokens?: string[]
 }
 
 /**
@@ -191,6 +198,13 @@ export interface PhotoListResponse {
  * Fusion.
  */
 export type SearchMode = 'fulltext' | 'semantic' | 'hybrid'
+
+/**
+ * The mode a search response reports back: one of the requestable modes, or
+ * `filter` when the query held only filters (no free text) and the backend ran
+ * the plain list path without ranking or embedding.
+ */
+export type EffectiveSearchMode = SearchMode | 'filter'
 
 /**
  * Public sort aliases accepted by the list endpoint (`internal/photoapi`).

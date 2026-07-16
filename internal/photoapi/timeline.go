@@ -18,7 +18,9 @@ import (
 // always grouped by date and the scrubber assumes the default date sort. An
 // invalid filter value yields 400.
 func (a *API) handleTimeline(w http.ResponseWriter, r *http.Request) {
-	params, err := parseListParams(r.URL.Query())
+	// The unknown q tokens are dropped: an aggregation has no place to report
+	// them, and the paginated list the histogram accompanies already does.
+	params, _, err := parseListParams(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

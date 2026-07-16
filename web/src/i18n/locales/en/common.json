@@ -229,7 +229,7 @@
     "title": "Search",
     "formLabel": "Search photos",
     "queryLabel": "Search term",
-    "placeholder": "Search photos…",
+    "placeholder": "Search… e.g. beach iso:100-400",
     "modeLabel": "Mode",
     "mode": {
       "hybrid": "Hybrid",
@@ -244,6 +244,50 @@
     },
     "error": {
       "load": "Search failed."
+    },
+    "unknownTokens": "I don't understand these filters (searching them as plain text):",
+    "keySuggestions": "Filter suggestions",
+    "help": {
+      "open": "Search query language help",
+      "close": "Close",
+      "title": "Search query language",
+      "intro": "Mix free text with key:value filters in one query. An unknown filter does no harm — it is searched as plain text and the search points it out.",
+      "example": "dovolená camera:\"Canon EOS R6\" iso:100-400 faces:2",
+      "operatorsTitle": "Operators",
+      "filtersTitle": "Filters",
+      "op": {
+        "and": "A space between filters means AND.",
+        "or": "A pipe inside a value means OR.",
+        "not": "An exclamation mark negates a value (photos without the label).",
+        "notText": "A minus before a word excludes free text.",
+        "range": "Ranges with a dash; either side may be open.",
+        "quotes": "Quotes for values with spaces; \\ escapes |, ! and -.",
+        "wildcard": "An asterisk is a wildcard inside a text value."
+      },
+      "desc": {
+        "text": "The photo's title, description and notes.",
+        "filename": "The file name.",
+        "keywords": "IPTC keywords.",
+        "album": "Photos in an album (by title or UID).",
+        "label": "Photos carrying a label (by name or UID).",
+        "person": "Photos with a person (by name or UID).",
+        "state": "Favorites, private and archived (yes/no).",
+        "rating": "Your star rating, 0–5.",
+        "flag": "Your flag: pick, reject or eye.",
+        "date": "Capture year, month and day.",
+        "takenAdded": "Capture date / date added to the catalogue: YYYY, YYYY-MM or YYYY-MM-DD.",
+        "beforeAfter": "Taken before a date / on or after a date.",
+        "place": "Country and city (from reverse geocoding).",
+        "geo": "Photos with GPS coordinates, or without them.",
+        "alt": "GPS altitude in metres.",
+        "near": "Photos geographically near the given photo; dist: is the km radius (default 5).",
+        "camera": "Camera make or model, and the lens.",
+        "optics": "ISO, aperture, focal length in mm and megapixels.",
+        "type": "Media type: image, video or live.",
+        "codec": "Image or video codec.",
+        "orientation": "Portrait, landscape, square, panorama (yes/no).",
+        "faces": "Face count (faces:3 = at least three); face:new = a face nobody named yet."
+      }
     }
   },
   "globalSearch": {
@@ -1573,6 +1617,50 @@
       "matches_other": "Matches {{count}} source photos",
       "matchesValue": "{{count}}×",
       "reject": "Never offer for this label"
+    }
+  },
+  "review": {
+    "question": {
+      "face": "Is <strong>{{name}}</strong> in this photo?",
+      "label": "Does the label <strong>{{name}}</strong> fit this photo?"
+    },
+    "confidence": "Confidence {{percent}} %",
+    "photoAlt": "Photo under review",
+    "faceHint": "The face under review is highlighted with a frame.",
+    "actions": {
+      "yes": "Yes",
+      "no": "No",
+      "skip": "Skip",
+      "undo": "Undo"
+    },
+    "keys": {
+      "space": "space"
+    },
+    "loading": "Loading questions…",
+    "close": "Leave the game",
+    "progress": {
+      "answered_one": "{{count}} answered",
+      "answered_other": "{{count}} answered",
+      "remaining_one": "{{count}} remaining",
+      "remaining_other": "{{count}} remaining"
+    },
+    "empty": {
+      "libraryTitle": "Nothing to review",
+      "libraryHint": "There are no named people or labels yet to build questions from.",
+      "people": "People",
+      "labels": "Labels",
+      "queueTitle": "All reviewed",
+      "queueHint": "No questions right now. New ones appear as photos or suggestions arrive.",
+      "checkAgain": "Check again"
+    },
+    "errors": {
+      "load": "The question queue failed to load.",
+      "retry": "Try again",
+      "answer_one": "{{count}} answer failed to save.",
+      "answer_other": "{{count}} answers failed to save.",
+      "retryAnswers": "Save again",
+      "dismiss": "Dismiss",
+      "undo": "The answer could not be undone."
     }
   }
 }

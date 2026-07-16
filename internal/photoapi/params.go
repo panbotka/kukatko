@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/query"
 )
 
 // maxListLimit caps the number of photos a single page may request, bounding the
@@ -45,24 +46,28 @@ var sortAliases = map[string]sortSpec{
 // parseListParams turns the request's query string into validated photos.List
 // parameters. Every recognised filter, sort and pagination value is range- and
 // type-checked; the first invalid value yields a descriptive error so the caller
-// can answer 400. Unknown query keys are ignored.
-func parseListParams(q url.Values) (photos.ListParams, error) {
+// can answer 400. Unknown query keys are ignored. The free-form q parameter is
+// parsed through the search query language; the returned string slice lists the
+// filter-shaped q tokens that were not understood (they degraded to free text),
+// so the response can report them to the UI.
+func parseListParams(q url.Values) (photos.ListParams, []string, error) {
 	var params photos.ListParams
 	if err := applyPagination(q, &params); err != nil {
-		return photos.ListParams{}, err
+		return photos.ListParams{}, nil, err
 	}
 	if err := applySort(q, &params); err != nil {
-		return photos.ListParams{}, err
+		return photos.ListParams{}, nil, err
 	}
 	if err := applyArchived(q, &params); err != nil {
-		return photos.ListParams{}, err
+		return photos.ListParams{}, nil, err
 	}
 	if err := applyFilters(q, &params); err != nil {
-		return photos.ListParams{}, err
+		return photos.ListParams{}, nil, err
 	}
 	if err := applyRatingFilters(q, &params); err != nil {
-		return photos.ListParams{}, err
+		return photos.ListParams{}, nil, err
 	}
+	unknown := applyQuery(q, &params)
 	// An album scope is always presented chronologically, oldest first, whatever
 	// sort or order the query carries. The override lives here — where the album
 	// scope enters the shared list path — so the endpoint's defaults stay
@@ -74,7 +79,21 @@ func parseListParams(q url.Values) (photos.ListParams, error) {
 		params.Sort = photos.SortByChronology
 		params.Order = photos.OrderAsc
 	}
-	return params, nil
+	return params, unknown, nil
+}
+
+// applyQuery parses the free-form q parameter through the search query
+// language (internal/query): recognised key:value filters become structured
+// conditions, the residual free text keeps the substring behaviour of q, and
+// its '-term' negations become exclusions. It returns the raw filter-shaped
+// tokens that were not understood; they already degraded to free text, this
+// list only feeds the UI hint.
+func applyQuery(q url.Values, params *photos.ListParams) []string {
+	parsed := query.Parse(q.Get("q"))
+	params.Search = parsed.PlainText()
+	params.SearchNot = parsed.NotTerms()
+	params.QueryFilters = parsed.Filters
+	return parsed.Unknown
 }
 
 // applyRatingFilters validates and applies the per-user rating filters: min_rating
@@ -169,10 +188,11 @@ func applyArchived(q url.Values, params *photos.ListParams) error {
 }
 
 // applyFilters validates and applies the metadata filters: has-GPS, capture
-// year, date range, camera, lens, uploader and free-text search, plus the album,
-// label and person scope filters and the country/city place scope filters that
-// restrict the list to one album's, one label's, one subject's or one place's
-// photos so the same endpoint serves a scoped grid.
+// year, date range, camera, lens and uploader, plus the album, label and
+// person scope filters and the country/city place scope filters that restrict
+// the list to one album's, one label's, one subject's or one place's photos so
+// the same endpoint serves a scoped grid. The free-form q parameter is handled
+// separately by applyQuery (the search query language).
 func applyFilters(q url.Values, params *photos.ListParams) error {
 	hasGPS, err := boolParam(q, "has_gps")
 	if err != nil {
@@ -201,7 +221,6 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 	params.Camera = q.Get("camera")
 	params.Lens = q.Get("lens")
 	params.UploadedBy = q.Get("uploader")
-	params.Search = q.Get("q")
 	// Album and label are multi-valued: repeated params (?album=a&album=b) select
 	// several, combined with AND downstream. A single value still yields a
 	// one-element slice, so the historical ?album=<uid> form keeps working.

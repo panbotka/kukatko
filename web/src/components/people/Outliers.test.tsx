@@ -24,6 +24,8 @@ function outliers(): OutlierResult {
     subject_uid: 'su_a',
     count: 2,
     meaningful: true,
+    avg_distance: 0.3,
+    no_embedding: 0,
     faces: [
       {
         photo_uid: 'p1',
@@ -96,7 +98,14 @@ describe('Outliers', () => {
   })
 
   it('shows the empty state once every face has been reviewed', async () => {
-    fetchMock.mockResolvedValue({ subject_uid: 'su_a', count: 0, meaningful: false, faces: [] })
+    fetchMock.mockResolvedValue({
+      subject_uid: 'su_a',
+      count: 0,
+      meaningful: false,
+      avg_distance: 0,
+      no_embedding: 0,
+      faces: [],
+    })
     renderOutliers()
     expect(await screen.findByText('No assigned faces to review.')).toBeInTheDocument()
   })
