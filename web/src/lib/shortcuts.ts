@@ -89,4 +89,14 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['n'], descriptionKey: 'shortcuts.faceSearch.reject' },
     ],
   },
+  {
+    titleKey: 'shortcuts.groups.review',
+    entries: [
+      { keys: ['→', 'y'], descriptionKey: 'shortcuts.review.yes' },
+      { keys: ['←', 'n'], descriptionKey: 'shortcuts.review.no' },
+      { keys: ['Space', '↓'], descriptionKey: 'shortcuts.review.skip' },
+      { keys: ['z', 'Ctrl+Z'], descriptionKey: 'shortcuts.review.undo' },
+      { keys: ['Esc'], descriptionKey: 'shortcuts.review.leave' },
+    ],
+  },
 ]

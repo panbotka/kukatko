@@ -25,6 +25,7 @@ import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PlacesPage } from './pages/PlacesPage'
 import { RecognitionPage } from './pages/RecognitionPage'
+import { ReviewPage } from './pages/ReviewPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
 import { SearchPage } from './pages/SearchPage'
 import { SlideshowPage } from './pages/SlideshowPage'
@@ -47,6 +48,11 @@ export function AppRoutes() {
       <Route element={<RequireAuth />}>
         {/* Fullscreen slideshow lives outside the layout shell (no navbar). */}
         <Route path="/slideshow" element={<SlideshowPage />} />
+        {/* The review game is fullscreen too — one question must own the whole
+            screen — and it writes, so it is editors and admins only. */}
+        <Route element={<RequireRole role="editor" />}>
+          <Route path="/review" element={<ReviewPage />} />
+        </Route>
         <Route element={<Layout />}>
           {/* The photo library is the homepage: the catalog is what the app is
               for, so it greets the user rather than hiding one click away. */}

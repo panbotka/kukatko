@@ -49,6 +49,7 @@ export type IconName =
   | 'tags'
   | 'tools'
   | 'trash'
+  | 'ui-checks'
   | 'unlock'
   | 'wrench-adjustable'
   | 'x-lg'

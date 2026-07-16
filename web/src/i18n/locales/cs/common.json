@@ -65,9 +65,11 @@
       "audit": "Zobrazit auditní log",
       "account": "Spravovat vlastní účet",
       "logout": "Odhlásit se z Kukátka",
-      "expand": "Rozšířit album nebo štítek o podobné fotky"
+      "expand": "Rozšířit album nebo štítek o podobné fotky",
+      "review": "Projít návrhy jeden po druhém"
     },
-    "expand": "Rozšířit"
+    "expand": "Rozšířit",
+    "review": "Třídění"
   },
   "language": {
     "cs": "Čeština",
@@ -566,7 +568,8 @@
     "groups": {
       "grid": "Mřížka fotek",
       "detail": "Detail fotky",
-      "faceSearch": "Hledání osoby"
+      "faceSearch": "Hledání osoby",
+      "review": "Třídění"
     },
     "grid": {
       "move": "Přesun výběru mezi fotkami",
@@ -585,6 +588,13 @@
       "move": "Přesun zaměření mezi kartami",
       "confirm": "Potvrdit zaměřenou kartu",
       "reject": "Zamítnout zaměřenou kartu"
+    },
+    "review": {
+      "yes": "Ano — potvrdit otázku",
+      "no": "Ne — zamítnout otázku",
+      "skip": "Nevím — přeskočit otázku",
+      "undo": "Vrátit poslední odpověď",
+      "leave": "Ukončit třídění"
     }
   },
   "map": {
