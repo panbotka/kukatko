@@ -128,6 +128,18 @@ const EXPAND_ITEM: NavEntry = {
   icon: 'magic',
 }
 
+/**
+ * The write-gated review game. Top-level rather than buried in "Nástroje":
+ * tidying the library one question at a time is the app's most-used curation
+ * loop, and a game nobody can find is a game nobody plays.
+ */
+const REVIEW_ITEM: NavEntry = {
+  to: '/review',
+  labelKey: 'nav.review',
+  titleKey: 'nav.titles.review',
+  icon: 'ui-checks',
+}
+
 /** The write-gated upload entry, kept top-level so adding photos stays one click away. */
 const UPLOAD_ITEM: NavEntry = {
   to: '/upload',
@@ -265,6 +277,8 @@ export function Layout() {
               {canWrite && renderLink(EXPAND_ITEM)}
               {/* The remaining browse destinations, one level down. */}
               {renderGroup(BROWSE_GROUP)}
+              {/* The review game: editors only, and kept in plain sight. */}
+              {canWrite && renderLink(REVIEW_ITEM)}
               {/* Upload is a write action: hidden from viewers. */}
               {canWrite && renderLink(UPLOAD_ITEM)}
               {/* Editor-only tools; the whole group is hidden from viewers. */}

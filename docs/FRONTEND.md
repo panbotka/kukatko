@@ -13,7 +13,9 @@ zapiš sem.
   (registr `PRIMARY_ITEMS`); hned za nimi **Rozšířit** `/expand` (`EXPAND_ITEM`, gate `canWrite`) —
   sedí u alb/štítků, protože přesně ty rozšiřuje; zbylé browse cíle sdružuje dropdown **Procházet** (`nav.browse`,
   `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`, **Místa** `/places`, **Mapa**
-  `/map`; **Nahrát** `/upload` je top-level (gate `canWrite`); editorský dropdown **Nástroje**
+  `/map`; **Třídění** `/review` (`REVIEW_ITEM`, gate `canWrite`) je top-level, ne v „Nástrojích" —
+  uklízení knihovny po jedné otázce je nejpoužívanější kurátorská smyčka a hra, kterou nikdo
+  nenajde, je hra, kterou nikdo nehraje; **Nahrát** `/upload` je top-level (gate `canWrite`); editorský dropdown **Nástroje**
   (`nav.tools`, `TOOLS_GROUP`, celý gate `canWrite`) sdružuje **Duplikáty** `/duplicates` + **Koš**
   `/trash`; **Import** `/import` (`IMPORT_ITEM`) je top-level s gate `canImport` (admin **nebo** ai);
   adminský dropdown **Správa** (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje
@@ -665,7 +667,33 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   archivovány"); po potvrzení `mergeDuplicates()` sloučí (keeper zdědí alba/štítky/osoby + doplní gapy,
   kopie do koše — vratné) → skupina zmizí + success alert (`duplicates.merged`), nebo skupinu **odmítne**
   („není duplikát", jen lokálně skryje); chyby přes `duplicates.actionError`/503 „nedostupné", loading
-  přes `GridSkeleton`, error s retry, `NotFoundPage`),
+  přes `GridSkeleton`, error s retry,
+  `ReviewPage` = `/review` (editor/admin, top-level odkaz **Třídění** hned vedle Nahrát) **hra na
+  třídění**: jedna otázka („Je na fotce **Tomáš Kozák**?" / „Sedí k fotce štítek **Ostatky**?")
+  přes **celou obrazovku** — stránka je **mimo `Layout`** (bez navbaru, jako `/slideshow`), protože
+  o pozornost nemá soupeřit nic než fotka; stav řídí `useReviewGame`, fotku kreslí `ReviewPhoto`
+  (`REVIEW_PREVIEW_SIZE = fit_1280`, tedy **celý snímek**, ne čtvercová dlaždice — bbox je relativní
+  k plnému rámu; rámeček obličeje přes `padBbox`+`faceBoxStyle` z `lib/faceGeometry` s **~30 %
+  polstrováním**, protože z těsného výřezu obličej nepoznáš, + jemné ztmavení okolí), otázku
+  `QuestionText` (`Trans` s `<strong>` kolem jména/štítku — i18n **šablona**, ne skládání řetězců)
+  a jistotu `ConfidenceHint` (tlumené % + proužek: kontext, ne odpověď); tři akce **Ano · Ne ·
+  Nevím** jsou skutečná tlačítka (velká, dole, palcem dosažitelná na dotyku), **klávesnice je ale
+  primární rozhraní**: `→`/`y` ano, `←`/`n` ne, **mezerník**/`↓` nevím, `z` i **Ctrl/Cmd+Z** undo
+  (chord se váže mimo `useKeyboardShortcuts`, ten modifikátory ignoruje záměrně), `Esc` konec (nechá
+  `Esc` otevřenému modalu nápovědy) — vše registrované v `?` overlayi přes
+  `shortcuts.groups.review`; odpovědi jsou **optimistické** (UI jede dál, request doběhne vzadu) a
+  další karta je **vždy už v paměti** (`useReviewGame` refilluje na pozadí, `useImagePreloader`
+  dekóduje `PRELOAD_AHEAD = 4` fotky dopředu), takže mezi kartami **nikdy nebliká spinner**;
+  neuložená odpověď se neztratí — sedí v alertu s **Uložit znovu**/**Zahodit**, undo má vlastní
+  alert s retry; sezení ukazuje **počítadlo zodpovězených + zbývajících** a tenký progress proužek
+  (žádné skóre, streaky ani konfety — odměna je uklizená knihovna); stavy: **prázdná knihovna**
+  (`no_people_no_labels` → „nejdřív pojmenuj lidi / založ štítky" s odkazy na `/people` a
+  `/labels`) je **odlišená od prázdné fronty** (`no_candidates` → „vše posouzeno" + Zkusit znovu),
+  plus loading prvního batche a **offline/chyba** s retry; testy `ReviewPage.test.tsx` (polstrovaný
+  bbox, jméno/štítek v otázce, →/←/mezerník posílají správný verdikt a posouvají, **žádný fetch
+  mezi kartami uvnitř batche**, undo přes správný inverzní endpoint, selhaná odpověď neztratí
+  místo, oba prázdné stavy odlišně),
+  `NotFoundPage`),
   `components/savedsearch/` = `SaveSearchModal` (modal pro pojmenování při uložení nového pohledu
   i přejmenování existujícího uloženého hledání) + `SavedSearchesDropdown` (dropdown v hlavičce
   `SearchPage` — **ne v navbaru**; lazy fetch při otevření, položky otevírají uložený pohled přes
@@ -688,6 +716,23 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (summary řádek s vote-rule vysvětlením nad `PhotoGrid`; per-dlaždicové overlaye přes `tileExtras`:
   badge % podobnosti (`pe-none`), badge počtu shod při `match_count > 1`, ✗ tlačítko jen když
   volající dodá `onReject`; po vyprázdnění mřížky uživatelem hlášky „vše zpracováno");
+  `components/review/` = `ReviewPhoto` (stage hry na třídění: **celý snímek** v
+  `REVIEW_PREVIEW_SIZE` (`fit_1280`, **exportováno** — stránka přednačítá přesně tuhle URL) tak
+  velký, jak dovolí viewport; rám je **width-driven** přes `aspectRatio` + `maxWidth: min(100%,
+  var(--review-stage-h) * ratio)`, takže normalizovaný bbox sedí **bez měření pixelů**;
+  `displayAspect` počítá poměr v **display** (EXIF-orientovaném) prostoru — orientace 5–8 prohazují
+  šířku/výšku —, fallback 3:2, ať stage nikdy nezkolabuje; rámeček obličeje = `padBbox` (~30 %) →
+  `faceBoxStyle`, `pointer-events: none` + `aria-hidden`, rozbitý náhled degraduje na ikonu)
+  + `review.css` (fullscreen layout, `--review-stage-h`, rámeček, progress proužek, `kbd` odznaky);
+  `components/review/` = `ReviewPhoto` (stage hry na třídění: **celý rám** fotky v
+  `REVIEW_PREVIEW_SIZE` (`fit_1280`, **exportováno** — stránka přednačítá přesně tuhle URL) tak
+  velký, jak dovolí viewport; rám je **width-driven** přes `aspect-ratio` (`displayAspect` počítá
+  poměr v **display** prostoru, orientace 5–8 prohazuje strany) a stropí se o výšku stage přes
+  `maxWidth: min(100%, var(--review-stage-h) * ratio)`, takže normalizovaný bbox sedí **bez měření
+  pixelů**; obličej pod otázkou dostane `padBbox` rámeček (~30 %) a okolí jemný dim; selhaný load
+  spadne na placeholder ikonu, nová fotka flag resetuje) + `review.css` (fullscreen grid layout
+  `review-game` (top bar / stage / prompt / akce), `--review-stage-h` pro strop rámu,
+  `review-photo__box` rámeček, progress proužek, dotyková varianta akcí);
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
   velikosti `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exportováno** — stránka musí přednačítat přesně
   tuhle URL), ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
@@ -847,6 +892,19 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`buildAssignRequest`/`buildRejection` z `candidateReview`), `people` vrací jen osoby s akčními
   kartami (osoba zmizí, když se vyřídí poslední); `cancel`→`AbortController`, jeden `confirmAll` běží
   naráz; nikdy neautoconfirmuje;
+  `useReviewGame()` = engine hry na třídění (`/review`): lokální fronta otázek plněná **na pozadí**
+  (`fetchReviewQueue`; refill jakmile klesne na `REFILL_AT = 3`, deduplikace proti **všem** už
+  viděným id, takže hranice batche je neviditelná), **optimistické** odpovědi (`answer` posune UI
+  hned a request doběhne vzadu; selhání spadne do `failed` k explicitnímu retry — nikdy neblokuje
+  rytmus ani tiše neztratí verdikt) a **jednokrokové undo**. Fronta má **zdroj pravdy v refu**, ne
+  ve stavu: dvě odpovědi se vejdou do jednoho renderu (šipky v rychlosti) a čtení hlavy ze stavu by
+  tutéž kartu zodpovědělo dvakrát. `undo` jde přes **inverzní** zápisové cesty (`unassign_person`,
+  DELETE feedback-rejection, detach štítku), protože `POST /review/answer` je **idempotentní per
+  otázka** — a ze stejného důvodu se **znovu**-odpověď na vrácenou otázku posílá přímými cestami
+  (`sendDirect`), jinak by no-opla jako `already_answered`; undo nejdřív **počká na in-flight**
+  request, aby inverze nepředběhla odpověď, kterou vrací, a `create_marker`-ano dohledá vzniklý
+  marker přes `fetchFaces`, takže případné pozdější re-ano je `assign_person` na **týž** marker,
+  ne duplikát;
   `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
   `uid`/server stavu; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user

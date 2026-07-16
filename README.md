@@ -61,6 +61,15 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   fotek**, kterým odpovídá — a vote rule je vypsané, ne černá skříňka. Vybrané kandidáty přidáš běžnou
   **hromadnou editací předvyplněnou rozšiřovanou sbírkou** (přidané fotky hned zmizí z výsledků),
   u štítku ✗ fotku **trvale zamítne**, takže se příště nenabídne a opakované průchody konvergují.
+- **Třídění — hra na jednu otázku** (`/review`, editoři): Kukátko ti ukáže jednu fotku a zeptá se
+  jednu věc — *„Je na fotce **Tomáš Kozák**?"* nebo *„Sedí k fotce štítek **Ostatky**?"*. Odpovíš,
+  objeví se další. Otázky míří **do pásma nejistoty** (tam, kde stroj neví a člověk ano), takže
+  každá odpověď se vyplatí. Fotka je **přes celou obrazovku** a obličej má rámeček **s odstupem** —
+  z těsného výřezu člověka nepoznáš. **Klávesnice je hlavní ovládání**: `→` ano, `←` ne,
+  **mezerník** nevím, `z` vrátí poslední odpověď (překlep při rychlosti je nevyhnutelný). Další
+  karta je **vždy už načtená**, takže se mezi otázkami nečeká — jede to jako listování kartami, ne
+  jako vyplňování formuláře. Sezení ukazuje **kolik jsi zvládl a kolik zbývá**, a nic víc: žádné
+  skóre, streaky ani konfety. Odměna je uklizená knihovna.
 - **Přehrávání videí** (HTTP range streaming + HTML5 přehrávač, live fotky), mapy
   ([mapy.com](https://mapy.com)), procházení dle míst (země/město), slideshow, alba, štítky, hromadná editace metadat,
   **vícesouborové nahrávání** (drag-and-drop / galerie / fotoaparát, s volitelným přiřazením celé

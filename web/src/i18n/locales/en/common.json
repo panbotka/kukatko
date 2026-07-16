@@ -65,9 +65,11 @@
       "audit": "View the audit log",
       "account": "Manage your own account",
       "logout": "Sign out of Kukátko",
-      "expand": "Grow an album or a label with similar photos"
+      "expand": "Grow an album or a label with similar photos",
+      "review": "Go through the suggestions one at a time"
     },
-    "expand": "Expand"
+    "expand": "Expand",
+    "review": "Review"
   },
   "language": {
     "cs": "Čeština",
@@ -598,7 +600,8 @@
     "groups": {
       "grid": "Photo grid",
       "detail": "Photo detail",
-      "faceSearch": "Person search"
+      "faceSearch": "Person search",
+      "review": "Review"
     },
     "grid": {
       "move": "Move focus between photos",
@@ -617,6 +620,13 @@
       "move": "Move focus between cards",
       "confirm": "Confirm the focused card",
       "reject": "Reject the focused card"
+    },
+    "review": {
+      "yes": "Yes — confirm the question",
+      "no": "No — reject the question",
+      "skip": "Skip — I don't know",
+      "undo": "Undo the last answer",
+      "leave": "Leave the review game"
     }
   },
   "people": {
