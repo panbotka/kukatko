@@ -88,6 +88,11 @@ func TestLoad_defaults(t *testing.T) {
 		{"stacks.rules.sequential_copy", cfg.Stacks.Rules.SequentialCopy, true},
 		{"stacks.rules.unique_id", cfg.Stacks.Rules.UniqueID, true},
 		{"stacks.rules.time_gps", cfg.Stacks.Rules.TimeGPS, false},
+		// The MCP server hands an AI agent the library, so its default is the
+		// off switch — this pins that, not just the key's existence.
+		{"mcp.enabled", cfg.MCP.Enabled, false},
+		{"mcp.page_size", cfg.MCP.PageSize, 25},
+		{"mcp.max_page_size", cfg.MCP.MaxPageSize, 100},
 		{"location_estimate.enabled", cfg.LocationEstimate.Enabled, true},
 		{"location_estimate.window", cfg.LocationEstimate.Window, 6 * time.Hour},
 		{"location_estimate.radius_meters", cfg.LocationEstimate.RadiusMeters, 5000.0},
@@ -136,6 +141,8 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	t.Setenv("KUKATKO_DUPLICATE_ENABLED", "false")
 	t.Setenv("KUKATKO_DUPLICATE_EMBEDDING_MAX_DIST", "0.1")
 	t.Setenv("KUKATKO_BACKUP_S3_PATH_STYLE", "true")
+	t.Setenv("KUKATKO_MCP_ENABLED", "true")
+	t.Setenv("KUKATKO_MCP_PAGE_SIZE", "5")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -162,6 +169,14 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	}
 	if !cfg.Backup.S3.PathStyle {
 		t.Error("backup.s3.path_style = false, want true")
+	}
+	// Turning the MCP server on is the one thing an operator does to this key,
+	// and a key with no registered default would silently ignore its env var.
+	if !cfg.MCP.Enabled {
+		t.Error("mcp.enabled = false, want true from KUKATKO_MCP_ENABLED")
+	}
+	if cfg.MCP.PageSize != 5 {
+		t.Errorf("mcp.page_size = %d, want 5", cfg.MCP.PageSize)
 	}
 }
 

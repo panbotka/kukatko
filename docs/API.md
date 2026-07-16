@@ -333,6 +333,35 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `"no_source_embeddings"`. Sbírka o **jedné** fotce degeneruje na per-foto podobnost. **Read-only** —
   přidání nalezených fotek jde přes existující `POST /photos/bulk`. 503 bez backendu, 404 chybějící
   album/štítek. Mountuje se `server.WithAPI` (`buildExpandAPI` v `cmd/kukatko/expand.go`).
+- **MCP server (`POST /api/v1/mcp`, `internal/mcpapi`, přes `RequireAuth` + RBAC per tool):** knihovna
+  vystavená **AI agentovi** přes **Model Context Protocol** — hledá, čte, organizuje („najdi všechny
+  fotky babičky ze šedesátých a dej je do alba"). Transport **Streamable HTTP, stateless**, odpověď
+  `application/json` (ne SSE), tělo je JSON-RPC 2.0 (`initialize`, `tools/list`, `tools/call`, `ping`);
+  klient musí poslat `Content-Type: application/json` a `Accept: application/json, text/event-stream`.
+  Knihovna `github.com/modelcontextprotocol/go-sdk` (čisté Go, drží `CGO_ENABLED=0`); DNS-rebinding
+  guard SDK je **vypnutý**, protože odmítá i legitimní request z reverzní proxy a endpoint je
+  autentizovaný. **Vypnuto by default** (`mcp.enabled: false`) — a při `false` se route **vůbec
+  nemountuje** (`RegisterRoutes` neregistruje nic), takže cesta **neexistuje**, ne že by vracela 403;
+  v celém binárce pak spadne do SPA catch-all a vrátí `index.html` jako každá neznámá cesta (v access
+  logu chybí `"route":"/api/v1/mcp"`). **Volá service layer in-process**, ne vlastní HTTP API, takže si drží
+  transakční hranice. **Auth: žádný nový mechanismus** — `RequireAuth` jako všude, agent posílá
+  `Authorization: Bearer kkt_…`, roli má **vlastník tokenu** (`viewer` = jen čtení; `editor`/`admin`/`ai`
+  = i zápis). Hranice je **dvojitá**: write tooly se read-only volajícímu **vůbec neregistrují** (nevidí
+  je v `tools/list` — staví se dva servery a `getServer` vybírá podle principala) **a** každý write
+  handler roli znovu ověří. Tooly — čtení: `search_photos` (volný text + **vyhledávací jazyk** +
+  scope `album_uid`/`label_uid`/`person_uid` + `sort`/`order`/`limit`/`offset`), `get_photo`,
+  `find_similar_photos`, `list_albums`/`get_album`, `list_labels`/`get_label`,
+  `list_subjects`/`get_subject`, `library_stats`; zápis: `create_album`, `add_photos_to_album`,
+  `remove_photos_from_album`, `create_label`, `attach_label`, `detach_label`, `set_photo_metadata`,
+  `set_photo_rating`, `bulk_edit_photos`. Fotky alba/štítku/osoby se čtou přes `search_photos` se
+  scope — je to tentýž list path, takže platí i ostatní filtry a stránkování. **Tvar odpovědí je
+  kompaktní**: seznamy vrací jen `{uid,title,taken_at,media_type,thumb_url}` + `total`/`offset`/
+  **`remaining`**, **syrový `exif` blob nevrací žádný tool** (kontext agenta je ten vzácný zdroj).
+  **Každá mutace píše audit řádek ve své transakci** s `"via": "mcp"`. **Nic destruktivního není
+  vystavené** — žádné mazání, purge, koš, **archivace** (archivace = cesta do koše, který se purguje
+  podle retention), restore, backup, správa uživatelů ani admin povrch; `bulk_edit_photos` proto
+  vynechává i `Archive` a `Location`, které bulk service jinak umí. Mountuje se `server.WithAPI`
+  (`buildMCPAPI` v `cmd/kukatko/mcp.go`). Detailně: [`docs/MCP.md`](MCP.md).
 - **Review game API (`/api/v1`, `internal/reviewapi`, editor/admin přes `RequireWrite`):** „hra" na
   úklid knihovny — jedna otázka po druhé („Je tohle Tomáš?", „Má tahle fotka mít štítek Ostatky?"),
   odpověď yes/no/skip. Otázky se berou z **pásma nejistoty** (`review.band_min ≤ confidence <
