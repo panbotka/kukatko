@@ -439,3 +439,119 @@ func TestConfirmMissingTarget(t *testing.T) {
 		t.Fatalf("rows after failed confirms = %d, want 0", n)
 	}
 }
+
+// TestDuplicateDismissalLifecycle checks the pair dismissal round-trip: it is
+// idempotent, unordered, reversible, and readable back in bulk.
+func TestDuplicateDismissalLifecycle(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	a := f.makePhoto(t, "dup_a")
+	b := f.makePhoto(t, "dup_b")
+	key := feedback.DuplicateDismissalKey{PhotoUID: a, OtherUID: b}
+	entry := audit.Entry{Action: audit.ActionDuplicateDismiss, TargetType: "photos", TargetUID: a}
+
+	if err := f.feedback.DismissDuplicate(ctx, key, entry); err != nil {
+		t.Fatalf("DismissDuplicate: %v", err)
+	}
+	// Dismissing again — and in the reverse order — is a no-op, not an error, and
+	// leaves exactly one row: the pair is unordered and normalised on the way in.
+	if err := f.feedback.DismissDuplicate(ctx, key, entry); err != nil {
+		t.Fatalf("DismissDuplicate (repeat): %v", err)
+	}
+	reversed := feedback.DuplicateDismissalKey{PhotoUID: b, OtherUID: a}
+	if err := f.feedback.DismissDuplicate(ctx, reversed, entry); err != nil {
+		t.Fatalf("DismissDuplicate (reversed): %v", err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM duplicate_dismissals"); n != 1 {
+		t.Fatalf("row count after three dismissals = %d, want 1", n)
+	}
+	// Either argument order reads the same decision back.
+	for _, k := range []feedback.DuplicateDismissalKey{key, reversed} {
+		if ok, err := f.feedback.IsDuplicateDismissed(ctx, k); err != nil || !ok {
+			t.Fatalf("IsDuplicateDismissed(%v) = %v, %v, want true, nil", k, ok, err)
+		}
+	}
+
+	pairs, err := f.feedback.DismissedDuplicatePairs(ctx)
+	if err != nil {
+		t.Fatalf("DismissedDuplicatePairs: %v", err)
+	}
+	if len(pairs) != 1 {
+		t.Fatalf("bulk lookup returned %d pairs, want 1", len(pairs))
+	}
+	// The row is stored canonically, smaller uid first, whatever order it came in.
+	lo, hi := a, b
+	if hi < lo {
+		lo, hi = hi, lo
+	}
+	if pairs[0].PhotoUID != lo || pairs[0].OtherUID != hi {
+		t.Fatalf("bulk pair = (%s, %s), want the canonical (%s, %s)",
+			pairs[0].PhotoUID, pairs[0].OtherUID, lo, hi)
+	}
+
+	if err := f.feedback.UndismissDuplicate(ctx, reversed, entry); err != nil {
+		t.Fatalf("UndismissDuplicate: %v", err)
+	}
+	if ok, _ := f.feedback.IsDuplicateDismissed(ctx, key); ok {
+		t.Fatalf("IsDuplicateDismissed after undismiss = true, want false")
+	}
+	// Un-dismissing what was never dismissed is a no-op, not an error.
+	if err := f.feedback.UndismissDuplicate(ctx, key, entry); err != nil {
+		t.Fatalf("UndismissDuplicate (repeat): %v", err)
+	}
+}
+
+// TestDuplicateDismissalRejectsBadKeys checks the two impossible keys are refused
+// with the sentinels the HTTP layer maps to 400/404, rather than writing a row.
+func TestDuplicateDismissalRejectsBadKeys(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	photo := f.makePhoto(t, "dup_bad")
+	entry := audit.Entry{Action: audit.ActionDuplicateDismiss, TargetType: "photos", TargetUID: photo}
+
+	// A photo is not a duplicate of itself.
+	same := feedback.DuplicateDismissalKey{PhotoUID: photo, OtherUID: photo}
+	if err := f.feedback.DismissDuplicate(ctx, same, entry); !errors.Is(err, feedback.ErrSamePhoto) {
+		t.Fatalf("DismissDuplicate(self) = %v, want ErrSamePhoto", err)
+	}
+	// An incomplete key never reaches the database.
+	partial := feedback.DuplicateDismissalKey{PhotoUID: photo}
+	if err := f.feedback.DismissDuplicate(ctx, partial, entry); !errors.Is(err, feedback.ErrEmptyKey) {
+		t.Fatalf("DismissDuplicate(partial) = %v, want ErrEmptyKey", err)
+	}
+	// A pair naming a photo that does not exist trips the foreign key.
+	ghost := feedback.DuplicateDismissalKey{PhotoUID: photo, OtherUID: "ph_nonexistent00000000000"}
+	if err := f.feedback.DismissDuplicate(ctx, ghost, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+		t.Fatalf("DismissDuplicate(ghost) = %v, want ErrTargetNotFound", err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM duplicate_dismissals"); n != 0 {
+		t.Fatalf("row count after rejected keys = %d, want 0", n)
+	}
+}
+
+// TestDuplicateDismissalAudited checks the dismissal and its audit row are written
+// together, so a settled pair is always traceable to who settled it.
+func TestDuplicateDismissalAudited(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	a := f.makePhoto(t, "dup_audit_a")
+	b := f.makePhoto(t, "dup_audit_b")
+	user := f.makeUser(t, "usr_dupdismiss000000000", "dupdismisser")
+	key := feedback.DuplicateDismissalKey{PhotoUID: a, OtherUID: b}
+	entry := audit.Entry{
+		Action: audit.ActionDuplicateDismiss, TargetType: "photos", TargetUID: a, ActorUID: user,
+	}
+
+	if err := f.feedback.DismissDuplicate(ctx, key, entry); err != nil {
+		t.Fatalf("DismissDuplicate: %v", err)
+	}
+	n := f.count(t, "SELECT count(*) FROM audit_log WHERE action = $1", audit.ActionDuplicateDismiss)
+	if n != 1 {
+		t.Fatalf("audit rows for a dismissal = %d, want 1", n)
+	}
+	// entry.ActorUID doubles as dismissed_by, so the row itself names the user.
+	n = f.count(t, "SELECT count(*) FROM duplicate_dismissals WHERE dismissed_by = $1", user)
+	if n != 1 {
+		t.Fatalf("dismissals attributed to the actor = %d, want 1", n)
+	}
+}

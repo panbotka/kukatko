@@ -103,13 +103,17 @@ type phashEntry struct {
 }
 
 // phashUnion connects, via uf, every pair of entries whose perceptual hashes are
-// within maxDiff bits. It uses banded LSH to avoid an O(n^2) all-pairs scan:
-// entries are bucketed by exact-band agreement, then only the (usually tiny)
-// candidate pairs inside each bucket are verified with the full Hamming
-// distance. It returns the set of node indices that gained at least one pHash
-// edge, so callers can record why a group was formed. maxDiff < 0 disables pHash
-// grouping entirely.
-func phashUnion(entries []phashEntry, maxDiff int, uf *unionFind) map[int]bool {
+// within maxDiff bits and which dismissed does not name. It uses banded LSH to
+// avoid an O(n^2) all-pairs scan: entries are bucketed by exact-band agreement,
+// then only the (usually tiny) candidate pairs inside each bucket are verified
+// with the full Hamming distance. It returns the set of node indices that gained
+// at least one pHash edge, so callers can record why a group was formed. maxDiff
+// < 0 disables pHash grouping entirely.
+//
+// dismissed is keyed by orderedPair of NODE indices (entry.idx), not by entry
+// position, so it is the same key space the rest of the graph uses; a nil map
+// dismisses nothing.
+func phashUnion(entries []phashEntry, maxDiff int, uf *unionFind, dismissed map[[2]int]bool) map[int]bool {
 	matched := make(map[int]bool)
 	if maxDiff < 0 {
 		return matched
@@ -117,7 +121,7 @@ func phashUnion(entries []phashEntry, maxDiff int, uf *unionFind) map[int]bool {
 	buckets := bandBuckets(entries, bandCount(maxDiff))
 	seen := make(map[[2]int]bool)
 	for _, members := range buckets {
-		unionBucket(entries, members, maxDiff, uf, seen, matched)
+		unionBucket(entries, members, maxDiff, uf, seen, matched, dismissed)
 	}
 	return matched
 }
@@ -136,11 +140,16 @@ func bandBuckets(entries []phashEntry, bands int) map[uint64][]int {
 }
 
 // unionBucket verifies each candidate pair in one band bucket with the full
-// Hamming distance, unioning and marking those within maxDiff. seen de-duplicates
-// pairs that share more than one band so each pair is checked once.
+// Hamming distance, unioning and marking those within maxDiff that the user has
+// not dismissed. seen de-duplicates pairs that share more than one band so each
+// pair is checked once.
+//
+// seen is keyed by entry position while dismissed is keyed by node index; the two
+// are different key spaces, which is why the dismissal lookup translates through
+// entries[i].idx rather than reusing pair.
 func unionBucket(
 	entries []phashEntry, members []int, maxDiff int,
-	uf *unionFind, seen map[[2]int]bool, matched map[int]bool,
+	uf *unionFind, seen map[[2]int]bool, matched map[int]bool, dismissed map[[2]int]bool,
 ) {
 	for a := range members {
 		for b := a + 1; b < len(members); b++ {
@@ -150,6 +159,9 @@ func unionBucket(
 				continue
 			}
 			seen[pair] = true
+			if dismissed[orderedPair(entries[i].idx, entries[j].idx)] {
+				continue
+			}
 			if hamming(entries[i].phash, entries[j].phash) <= maxDiff {
 				uf.union(entries[i].idx, entries[j].idx)
 				matched[entries[i].idx] = true

@@ -8,6 +8,12 @@
 // oldest) and lists its members with enough detail to compare them. The package
 // never mutates anything; cleanup happens through the bulk/archive APIs after the
 // user confirms a choice.
+//
+// Detection is derived state — it re-runs from scratch on every call — so a user's
+// "these two are genuinely different" cannot live in the result and must be read
+// back in on each scan. Pairs dismissed via internal/feedback are dropped as edges
+// before the components are built, which is why a dismissed two-photo group
+// disappears for good while a larger group survives on its remaining edges.
 package duplicates
 
 import (
@@ -15,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/feedback"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -53,8 +60,18 @@ type EmbeddingSource interface {
 	FindDuplicatePairs(ctx context.Context, neighbours int, maxDist float64) ([]vectors.DuplicatePair, error)
 }
 
+// FeedbackStore is the subset of feedback.Store the service reads: the photo pairs
+// a user has settled as "not duplicates", which are dropped as edges before the
+// groups are built. *feedback.Store satisfies it. A nil FeedbackStore disables
+// dismissal filtering (every detected edge stands).
+type FeedbackStore interface {
+	// DismissedDuplicatePairs returns every pair a user dismissed as not a
+	// duplicate.
+	DismissedDuplicatePairs(ctx context.Context) ([]feedback.DuplicateDismissalKey, error)
+}
+
 // Config bundles the dependencies and thresholds of a Service. Photos and Phashes
-// are required; Embeddings is optional.
+// are required; Embeddings and Feedback are optional.
 type Config struct {
 	// Photos fetches member metadata.
 	Photos PhotoSource
@@ -63,6 +80,9 @@ type Config struct {
 	// Embeddings finds near-duplicate pairs by embedding distance; nil disables
 	// embedding grouping.
 	Embeddings EmbeddingSource
+	// Feedback supplies the pairs a user settled as "not duplicates"; nil keeps
+	// every detected edge.
+	Feedback FeedbackStore
 	// PhashMaxDiff is the maximum pHash Hamming distance (in bits) for two photos
 	// to be linked. A negative value disables pHash grouping.
 	PhashMaxDiff int
@@ -169,7 +189,9 @@ func (s *Service) FindGroups(ctx context.Context, limit, offset int) (Result, er
 }
 
 // buildGraph loads the pHash entries and embedding pairs and links them into a
-// union-find, returning the populated graph.
+// union-find, returning the populated graph. The user's dismissed pairs are
+// registered before either linking step, so a dismissed edge is never drawn in the
+// first place rather than being unpicked afterwards — a union cannot be undone.
 func (s *Service) buildGraph(ctx context.Context) (*graph, error) {
 	hashes, err := s.cfg.Phashes.ListActivePhashes(ctx)
 	if err != nil {
@@ -177,6 +199,12 @@ func (s *Service) buildGraph(ctx context.Context) (*graph, error) {
 	}
 	g := newGraph()
 	g.addPhashes(hashes)
+
+	dismissed, err := s.dismissedPairs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	g.addDismissals(dismissed)
 
 	pairs, err := s.embeddingPairs(ctx)
 	if err != nil {
@@ -186,6 +214,19 @@ func (s *Service) buildGraph(ctx context.Context) (*graph, error) {
 
 	g.runPhash(s.cfg.PhashMaxDiff)
 	return g, nil
+}
+
+// dismissedPairs returns the pairs the user settled as "not duplicates", or nil
+// when no feedback store is wired.
+func (s *Service) dismissedPairs(ctx context.Context) ([]feedback.DuplicateDismissalKey, error) {
+	if s.cfg.Feedback == nil {
+		return nil, nil
+	}
+	pairs, err := s.cfg.Feedback.DismissedDuplicatePairs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("duplicates: listing dismissed pairs: %w", err)
+	}
+	return pairs, nil
 }
 
 // embeddingPairs returns the near-duplicate embedding pairs, or nil when

@@ -436,14 +436,23 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
 - **Feedback / Rejections API (`/api/v1`, `internal/feedbackapi`):** persistovaný feedback —
   uživatelské „ne" (a nově i „ano") k odhadu obličej↔subjekt nebo fotka↔label, a jeho vzetí zpět.
-  **Feedback je názor — nikdy nemutuje** podkladová data (neodpojí marker, neodebere label). Šest
-  endpointů, všechny **RequireWrite** (editor/admin, viewer 403): `POST /feedback/face-rejections`
+  **Feedback je názor — nikdy nemutuje** podkladová data (neodpojí marker, neodebere label, nic
+  nearchivuje). Osm endpointů, všechny **RequireWrite** (editor/admin, viewer 403): `POST /feedback/face-rejections`
   `{photo_uid,face_index,subject_uid}` → 204 (zamítne „tento obličej NENÍ tato osoba"),
   `DELETE /feedback/face-rejections` (stejné tělo) → 204 (vezme zpět); `POST /feedback/label-rejections`
   `{photo_uid,label_uid}` → 204 (zamítne „tato fotka NEMÁ mít tento label"),
   `DELETE /feedback/label-rejections` (stejné tělo) → 204 (vezme zpět) — i DELETE nese tělo (jako
   label-detach); `POST /feedback/face-confirmations` `{photo_uid,face_index,subject_uid}` → 204
-  a `DELETE /feedback/face-confirmations` (stejné tělo) → 204.
+  a `DELETE /feedback/face-confirmations` (stejné tělo) → 204;
+  `POST /feedback/duplicate-dismissals` `{photo_uid,other_uid}` → 204 („tyhle dvě fotky NEJSOU
+  duplikáty") a `DELETE /feedback/duplicate-dismissals` (stejné tělo) → 204 (vezme zpět).
+  Dvojice je **neuspořádaná** — backend ji normalizuje (menší uid první), takže na pořadí uid
+  nezáleží a `(A,B)` i `(B,A)` je jedno rozhodnutí; obě fotky stejné → 400 (`ErrSamePhoto`),
+  neexistující fotka → 404. `GET /duplicates` zamítnuté dvojice **zahodí jako hrany** grafu
+  ještě před sestavením komponent (`internal/duplicates`), takže dvoučlenná skupina zmizí
+  natrvalo, kdežto větší skupina přežije na zbývajících hranách — zamítnutí „A není B" není
+  tvrzení o C. Bez toho by se stejná dvojice nabízela donekonečna: detekce se počítá při každém
+  volání znovu, názor v odpovědi nepřežije.
   **Pozor na polaritu:** confirmation je **opak** rejection — říká „tenhle obličej **JE** tahle
   osoba, přiřazení je správné". Slouží outlier review (✗ = „ne, fakt je to on"): potvrzený obličej
   `internal/outliers` z dalších výsledků vyloučí, takže se stejný planý poplach nenabízí dokola.

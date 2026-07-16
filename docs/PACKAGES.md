@@ -1120,7 +1120,21 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `face.unconfirm`), `IsFaceConfirmed`, bulk `FaceConfirmationsForSubject(subjectUID)` (→ `[]FaceRef`).
   **Proč to existuje:** outlier review potřebuje zaznamenat „ne, tohle je fakt on" — a použít na to
   `RejectFace` by zapsalo **pravý opak** toho, co uživatel řekl. `internal/outliers` potvrzené
-  obličeje vylučuje, takže seznam, který dokola nabízí tytéž plané poplachy, konverguje),
+  obličeje vylučuje, takže seznam, který dokola nabízí tytéž plané poplachy, konverguje).
+  **Duplicate dismissals** (`dismissals.go`, tabulka `duplicate_dismissals`, migrace
+  `0034_duplicate_dismissals.sql`) jsou třetí druh názoru: „tyhle dvě fotky **NEJSOU** duplikáty".
+  Klíčováno **neuspořádanou dvojicí** `photo_uid`+`other_uid`, kterou store normalizuje (menší uid
+  první) a DB si to vynutí `CHECK (photo_uid < other_uid)` — teprve to dělá z `UNIQUE` „jeden řádek
+  na dvojici" místo „jeden na směr"; obě uid FK photos `ON DELETE CASCADE`, `dismissed_by` FK users
+  `ON DELETE SET NULL`. **Klíčuje se dvojice, ne skupina:** skupina je komponenta souvislosti a není
+  stabilní (přidání jedné fotky slije dvě skupiny), kdežto dvojice je hrana, kterou detektor opravdu
+  nakreslil. `DismissDuplicate`/`UndismissDuplicate` (idempotentní audited insert/delete, akce
+  `duplicate.dismiss`/`duplicate.undismiss`), `IsDuplicateDismissed`, bulk
+  `DismissedDuplicatePairs()` (→ `[]DuplicateDismissalKey`, celá tabulka jedním dotazem — detekce
+  skenuje katalog v jednom průchodu a potřebuje celý exclusion set dopředu); sentinel `ErrSamePhoto`
+  (→400, fotka není duplikát sama sebe). **Proč to existuje:** detekce duplikátů je odvozený stav,
+  počítá se při každém `GET /duplicates` znovu z hashů a embeddingů, které se uživatelovým
+  nesouhlasem nemění — bez persistence by se táž dvojice nabízela navěky),
   `internal/feedbackapi/`
   (HTTP API nad rejections — rozhraní `Store` (podmnožina `feedback.Store`) → unit-testovatelné s faky;
   `NewAPI(Config{Store,RequireWrite})`+`RegisterRoutes` mountuje subrouter `/feedback`:
@@ -1668,9 +1682,18 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   buckety (`bandCount`=`maxDiff+1` pásem dle pigeonhole garantuje sdílený bucket pro páry do prahu,
   kandidáti se ověří plnou Hammingovou vzdáleností), embeddingy přes HNSW (`vectors.FindDuplicatePairs`).
   Vše za rozhraními `PhotoSource` (`ListByUIDs`)/`PhashSource` (`ListActivePhashes`)/`EmbeddingSource`
-  (`FindDuplicatePairs`, nil vypne embedding grouping) → unit-testovatelné s faky; `Service` =
-  `New(Config{Photos,Phashes,Embeddings,PhashMaxDiff,EmbeddingMaxDist,Neighbours})` (panika na nil
+  (`FindDuplicatePairs`, nil vypne embedding grouping)/`FeedbackStore` (`DismissedDuplicatePairs`,
+  nil nechá všechny hrany) → unit-testovatelné s faky; `Service` =
+  `New(Config{Photos,Phashes,Embeddings,Feedback,PhashMaxDiff,EmbeddingMaxDist,Neighbours})` (panika na nil
   Photos/Phashes; `PhashMaxDiff<0` vypne pHash, `EmbeddingMaxDist<=0` vypne embedding);
+  **Zamítnuté dvojice** (`feedback.DismissedDuplicatePairs`, „nechat obě" z compare view) se v
+  `buildGraph` registrují (`graph.addDismissals`) **po `addPhashes` a před `addEmbedPairs`/`runPhash`**
+  a oba linkovací kroky je přeskočí — union-find neumí hranu odebrat, takže se dismissed pár musí
+  potlačit ve chvíli, kdy by hrana vznikla, ne rozplétat potom. Důsledek je záměrný: dvoučlenná
+  skupina po zamítnutí zmizí (bez hrany jsou to singletony, ty se zahazují), **větší skupina přežije
+  na zbývajících hranách** — „A není B" není tvrzení o C. Dvojice s uid, které scan nezná (archivovaná
+  /purgnutá fotka), se ignoruje; pár se skenuje na **indexech uzlů**, kdežto `seen` v `unionBucket` na
+  **pozicích entries** — jsou to různé prostory klíčů, proto se dismissal hledá přes `entries[i].idx`;
   **`FindGroups(ctx,limit,offset)`** (backing `GET /duplicates`) → `Result{Groups,Total,Limit,Offset,
   NextOffset}`; každá `Group{ID (nejmenší uid),Reason (phash/embedding/both),KeeperUID,Members}`,
   `Member` nese rozměry/velikost/`taken_at`/media_type + `is_keeper` + `phash_distance`/

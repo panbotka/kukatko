@@ -9,11 +9,24 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { formatBytes, formatDate } from '../../lib/format'
+import { pairId } from '../../lib/duplicateCompare'
 import { type DuplicateGroup, type DuplicateMember } from '../../services/duplicates'
 import { thumbUrl } from '../../services/photos'
+import { Icon } from '../Icon'
 
 /** Thumbnail size used for the side-by-side comparison tiles. */
 const COMPARE_THUMB_SIZE = 'tile_224'
+
+/**
+ * The pair the compare view should open on for this group: the suggested keeper
+ * against the first other member, i.e. the first pair the compare queue would
+ * offer for this group anyway. It is a starting position, not a filter — the
+ * compare view builds its own queue over every group.
+ */
+function comparePairId(group: DuplicateGroup): string {
+  const other = group.members.find((m) => m.uid !== group.keeper_uid)
+  return pairId(group.keeper_uid, other?.uid ?? group.keeper_uid)
+}
 
 interface DuplicateGroupCardProps {
   /** The group of likely-duplicate photos to review. */
@@ -70,7 +83,17 @@ export function DuplicateGroupCard({ group, busy, onResolve, onDismiss }: Duplic
           ))}
         </Row>
       </Card.Body>
-      <Card.Footer className="d-flex justify-content-end">
+      <Card.Footer className="d-flex justify-content-end gap-2">
+        {/* The tiles above are 224px squares — enough to spot a group, not enough
+            to choose within one. The compare view is where the decision is made,
+            so it is offered right next to the shortcut that skips it. */}
+        <Link
+          to={`/duplicates/compare?pair=${encodeURIComponent(comparePairId(group))}`}
+          className="btn btn-outline-secondary btn-sm"
+        >
+          <Icon name="arrows-angle-expand" className="me-1" />
+          {t('duplicates.compare.open')}
+        </Link>
         <Button
           variant="primary"
           size="sm"

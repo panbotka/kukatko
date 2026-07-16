@@ -7,6 +7,7 @@ import (
 	"github.com/panbotka/kukatko/internal/duplicates"
 	"github.com/panbotka/kukatko/internal/duplicatesapi"
 	"github.com/panbotka/kukatko/internal/dupmerge"
+	"github.com/panbotka/kukatko/internal/feedback"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -16,8 +17,10 @@ import (
 // the merge (resolve) route always works — it only needs the pool, not the
 // detector, so a group discovered while detection was on can still be resolved.
 // Embedding-based grouping reads vectors already stored in Postgres, so it works
-// even while the embeddings box is offline. The write guard is supplied via
-// authAPI so duplicatesapi stays decoupled from auth's wiring.
+// even while the embeddings box is offline. The feedback store supplies the pairs
+// the user settled as "not duplicates", which the scan drops so a dismissed pair
+// stays gone across re-scans. The write guard is supplied via authAPI so
+// duplicatesapi stays decoupled from auth's wiring.
 func buildDuplicatesAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, vectorStore *vectors.Store,
 ) *duplicatesapi.API {
@@ -32,6 +35,7 @@ func buildDuplicatesAPI(
 		Photos:           photoStore,
 		Phashes:          photoStore,
 		Embeddings:       vectorStore,
+		Feedback:         feedback.NewStore(db.Pool()),
 		PhashMaxDiff:     cfg.Duplicate.PhashMaxDiff,
 		EmbeddingMaxDist: cfg.Duplicate.EmbeddingMaxDist,
 	})

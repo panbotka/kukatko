@@ -1616,6 +1616,25 @@ z auth subsystému, takže balíček nezná jeho wiring). Endpointy montuje `bui
   skupiny vedle sebe, uživatel vybere fotku k zachování, **„Ponechat nejlepší a sloučit"** ukáže náhled
   (co se přesune + kolik kopií se archivuje) k potvrzení a pak zavolá merge, nebo skupinu **odmítne**
   jako „není duplikát" (zmizí z pohledu). Žádné auto-mazání, vždy potvrzení uživatelem.
+- **Porovnání dvou duplikátů vedle sebe** (`/duplicates/compare`, editor/admin) — seznam duplikátů umí
+  říct, že jsou dvě fotky skoro stejné; **neumí pomoct rozhodnout, kterou nechat**. To, co o tom
+  rozhoduje — jedna má 12 Mpx a druhá 2, jedna má správné datum, jedna přišla z fotoaparátu a druhá
+  z WhatsAppu, a hlavně: **ta „horší" je někdy ta, na které visí všechna tvoje alba a osoby** — není
+  vidět, dokud obě neotevřeš vedle sebe. Compare view je fullscreen, obě fotky vedle sebe (na úzkém
+  displeji pod sebou) pod **jedním synchronizovaným zoomem** (kolečko přibližuje ke kurzoru, tažení
+  posouvá, dvojklik přepíná) — teprve to ukáže, že jedna je měkký JPEG re-encode té druhé.
+  **Rozdílová tabulka** porovná rozměry+megapixely, velikost, formát, datum pořízení, fotoaparát,
+  objektiv, název souboru, místo a alba/štítky/osoby, a **označí jen řádky, které se liší** (shodné
+  jsou šum); přepínač umí ty shodné úplně schovat. Tři akce: **Nechat levou / Nechat pravou** →
+  dry-run náhled (co merge přenese) → potvrzení → `POST /duplicates/merge` **jen nad tou dvojicí**
+  (třetí člen skupiny nebyl na obrazovce, takže se ho rozhodnutí netýká); **Nechat obě** →
+  `POST /feedback/duplicate-dismissals`, tedy **trvalé** „tyhle dvě jsou fakt různé" — detekce se
+  počítá při každém volání znovu, takže bez uložení by se ta samá dvojice nabízela navěky. Skupiny
+  o víc než dvou členech se porovnávají **po dvojicích proti navrženému keeperovi** a UI to říká
+  („Dvojice 1 z 2 v této skupině"); žádný člen se nezamlčí. Po rozhodnutí se jde **na další dvojici**,
+  ne zpět na seznam — je to fronta. Klávesy `←` / `→` / `b` / `Esc` (v `?` overlayi). **Bezpečnost:**
+  neponechaná kopie se **archivuje do koše, nikdy nemaže** — trvalé odstranění je samostatný, ruční
+  úkon z `/trash`; potvrzovací dialog to říká.
 - **Média** `GET /photos/{uid}/thumb/{size}` a `/download` — **streamují** se (`io.Copy`, nikdy
   celý soubor v RAM), s `Cache-Control`/`ETag` (a `304` na `If-None-Match`). Přístup přes session
   cookie **nebo** `download_token` v query parametru `?t=…` (`RequireAuthOrDownloadToken`), takže

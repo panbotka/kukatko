@@ -1,0 +1,141 @@
+/*
+ * The duplicate compare view. Fullscreen, like the review game and the slideshow:
+ * the decision is "which of these two", and two photos shown small enough to fit a
+ * navbar and a sidebar around them do not answer it.
+ */
+
+.kk-compare {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background-color: var(--bs-body-bg);
+}
+
+/*
+ * Both wrap: on a phone the header's controls and the three answer buttons are
+ * wider than the viewport, and an answer button the user cannot reach is an
+ * answer they cannot give.
+ */
+.kk-compare__header,
+.kk-compare__footer {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  padding: 0.5rem 1rem;
+}
+
+/*
+ * The stage takes whatever the header and footer leave. min-height: 0 is what makes
+ * that true: without it a flex item refuses to shrink below its content, and the
+ * images push the footer off-screen.
+ */
+.kk-compare__stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 1rem;
+}
+
+/*
+ * The metadata table is capped so a long album list cannot eat the stage, and
+ * scrolls on both axes: three columns of album/people names do not fit a phone,
+ * and a silently clipped value is a value the user is asked to compare blind.
+ */
+.kk-compare__diff {
+  flex: 0 0 auto;
+  max-height: 32vh;
+  overflow: auto;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--bs-border-color);
+}
+
+.kk-compare-stage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  height: 100%;
+}
+
+.kk-compare-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  margin: 0;
+}
+
+.kk-compare-pane__caption {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding-bottom: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--bs-secondary-color);
+}
+
+/*
+ * The viewport clips the magnified image to its pane, so zooming in never spills a
+ * photo over its neighbour. touch-action: none hands touch drags to the pointer
+ * handlers instead of scrolling the page.
+ */
+.kk-compare-pane__viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  background-color: #000;
+  touch-action: none;
+}
+
+.kk-compare-pane__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* contain, so the pane never crops the photo or lies about its aspect ratio. */
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* A differing row is marked by border, weight and (in the label) an icon — never
+   by colour alone. */
+.kk-diff-table__row--differs > * {
+  background-color: rgba(var(--bs-warning-rgb), 0.08);
+}
+
+.kk-diff-table__row--differs > :first-child {
+  box-shadow: inset 3px 0 0 0 var(--bs-warning);
+}
+
+.kk-diff-table__field {
+  width: 12rem;
+  white-space: nowrap;
+}
+
+/*
+ * Below the md breakpoint the panes stack. Side by side on a phone gives two
+ * columns barely wider than a thumbnail each, which compares nothing; stacked, each
+ * photo is at least full-width, and the synchronised zoom still ties them together.
+ */
+@media (max-width: 767.98px) {
+  .kk-compare-stage {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+
+  .kk-compare__diff {
+    max-height: 40vh;
+  }
+
+  .kk-diff-table__field {
+    width: auto;
+    white-space: normal;
+  }
+
+  /* Keep the two value columns readable rather than squeezing them to nothing;
+     the container scrolls sideways if they overflow. */
+  .kk-diff-table {
+    min-width: 32rem;
+  }
+}

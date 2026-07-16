@@ -1,18 +1,20 @@
 // Package feedback is Kukátko's store for persisted review feedback: a user's
-// durable "no" to a face↔subject guess or a photo↔label guess (a rejection), and
-// the durable "yes, this really is them" to a face↔subject assignment (a
-// confirmation). It exists to close photo-sorter's gap where an opinion was never
-// persisted, so the very same wrong face was offered again on the next search
-// forever and the review work never shrank (see docs/ARCHITECTURE.md and
-// migrations 0031 and 0032).
+// durable "no" to a face↔subject guess or a photo↔label guess (a rejection), the
+// durable "yes, this really is them" to a face↔subject assignment (a
+// confirmation), and the durable "these two photos are genuinely different" to a
+// duplicate pair (a dismissal). It exists to close photo-sorter's gap where an
+// opinion was never persisted, so the very same wrong face was offered again on
+// the next search forever and the review work never shrank (see
+// docs/ARCHITECTURE.md and migrations 0031, 0032 and 0034).
 //
 // Feedback records an OPINION; it never mutates the data it is about. Rejecting
 // a face does not unassign a marker or delete the face; rejecting a label does not
-// detach the label; confirming a face assigns nothing. The review features read
-// these opinions to exclude what a user has already settled (the unassigned-face
-// search takes a face rejection set as an exclusion filter; label expansion takes
-// a label rejection set; outlier review takes a face confirmation set), and the
-// negative-exemplar rule in internal/vectors turns a rejection into a
+// detach the label; confirming a face assigns nothing; dismissing a duplicate pair
+// archives nothing. The review features read these opinions to exclude what a user
+// has already settled (the unassigned-face search takes a face rejection set as an
+// exclusion filter; label expansion takes a label rejection set; outlier review
+// takes a face confirmation set; duplicate detection drops the dismissed edges),
+// and the negative-exemplar rule in internal/vectors turns a rejection into a
 // nearest-neighbour margin test rather than just hiding one row.
 //
 // Every write is audited in the same transaction as the mutation, matching the
@@ -36,6 +38,12 @@ var ErrEmptyKey = errors.New("feedback: rejection key is incomplete")
 // subject or label that does not exist (a foreign-key violation). The HTTP layer
 // maps it to 404.
 var ErrTargetNotFound = errors.New("feedback: referenced photo, subject or label not found")
+
+// ErrSamePhoto is returned when a duplicate-dismissal key names the same photo
+// twice. A photo is not a duplicate of itself, so the pair can never exist; it is
+// a caller mistake rather than a transient failure, and the HTTP layer maps it to
+// 400.
+var ErrSamePhoto = errors.New("feedback: a duplicate pair needs two different photos")
 
 // FaceRejectionKey identifies a single "this face is NOT this person" rejection:
 // the face by the identity Kukátko already uses for a face (photo UID + per-photo
@@ -90,6 +98,39 @@ type LabelRejectionKey struct {
 // valid reports whether the key has both identifiers a label rejection needs.
 func (k LabelRejectionKey) valid() bool {
 	return k.PhotoUID != "" && k.LabelUID != ""
+}
+
+// DuplicateDismissalKey identifies a single "these two photos are genuinely
+// different" decision about an unordered pair of photos.
+//
+// It keys the pair, not the duplicate group. A group is a connected component of
+// the similarity graph and is not stable — adding one photo can merge two groups —
+// so a group-level opinion would be meaningless the moment the library changes. A
+// pair is the edge the detector actually drew, so dismissing a pair suppresses
+// that edge on every later scan. See migration 0034.
+type DuplicateDismissalKey struct {
+	// PhotoUID is one photo of the pair.
+	PhotoUID string
+	// OtherUID is the photo it was dismissed against.
+	OtherUID string
+}
+
+// valid reports whether the key names two photos. It does not check that they
+// differ; that is ErrSamePhoto's job, so callers can tell an incomplete key from
+// an impossible pair.
+func (k DuplicateDismissalKey) valid() bool {
+	return k.PhotoUID != "" && k.OtherUID != ""
+}
+
+// normalized returns the key with the lexicographically smaller uid first, the
+// canonical form the table stores and its CHECK constraint enforces. The pair is
+// unordered, so normalising on the way in is what makes dismissing (A,B) and
+// (B,A) the same idempotent decision rather than two rows.
+func (k DuplicateDismissalKey) normalized() DuplicateDismissalKey {
+	if k.PhotoUID <= k.OtherUID {
+		return k
+	}
+	return DuplicateDismissalKey{PhotoUID: k.OtherUID, OtherUID: k.PhotoUID}
 }
 
 // FaceRef is a face identified by (photo UID, face index) with no subject — the

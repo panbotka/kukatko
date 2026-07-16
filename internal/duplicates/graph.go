@@ -1,13 +1,15 @@
 package duplicates
 
 import (
+	"github.com/panbotka/kukatko/internal/feedback"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
 // graph accumulates the duplicate links among photos and resolves them into
 // connected components. Nodes are dense integer ids assigned per uid; edges come
-// from pHash banding (runPhash) and embedding pairs (addEmbedPairs).
+// from pHash banding (runPhash) and embedding pairs (addEmbedPairs), minus the
+// pairs the user dismissed (addDismissals).
 type graph struct {
 	nodes        []string       // node index -> uid
 	index        map[string]int // uid -> node index
@@ -17,6 +19,7 @@ type graph struct {
 	phashMatched map[int]bool       // nodes that gained a pHash edge
 	embedMatched map[int]bool       // nodes that gained an embedding edge
 	embedDist    map[[2]int]float64 // node pair -> embedding cosine distance
+	dismissed    map[[2]int]bool    // node pairs the user settled as "not duplicates"
 }
 
 // newGraph returns an empty graph ready to accept hashes and pairs.
@@ -27,6 +30,7 @@ func newGraph() *graph {
 		phashMatched: make(map[int]bool),
 		embedMatched: make(map[int]bool),
 		embedDist:    make(map[[2]int]float64),
+		dismissed:    make(map[[2]int]bool),
 	}
 }
 
@@ -56,10 +60,30 @@ func (g *graph) addPhashes(hashes []photos.Phash) {
 	}
 }
 
+// addDismissals registers the pairs a user settled as "not duplicates" so neither
+// linking step draws them. It must be called after addPhashes (the node set is
+// established there) and before addEmbedPairs/runPhash: the union-find has no
+// "remove edge" operation, so a dismissed pair has to be suppressed at the moment
+// the edge would be drawn, not unpicked afterwards.
+//
+// A pair naming a uid this scan does not know — an archived photo, or one purged
+// since the dismissal — is ignored: it cannot form an edge anyway.
+func (g *graph) addDismissals(pairs []feedback.DuplicateDismissalKey) {
+	for _, p := range pairs {
+		ia, okA := g.index[p.PhotoUID]
+		ib, okB := g.index[p.OtherUID]
+		if !okA || !okB || ia == ib {
+			continue
+		}
+		g.dismissed[orderedPair(ia, ib)] = true
+	}
+}
+
 // addEmbedPairs links each near-duplicate embedding pair whose both endpoints are
-// known nodes (i.e. non-archived, hashed photos). It records the edge for the
-// union, the per-pair distance (keeping the smallest seen), and that both
-// endpoints were embedding-matched. Pairs touching an unknown uid are ignored.
+// known nodes (i.e. non-archived, hashed photos) and which the user has not
+// dismissed. It records the edge for the union, the per-pair distance (keeping the
+// smallest seen), and that both endpoints were embedding-matched. Pairs touching an
+// unknown uid are ignored.
 func (g *graph) addEmbedPairs(pairs []vectors.DuplicatePair) {
 	if g.uf == nil {
 		g.uf = newUnionFind(len(g.nodes))
@@ -67,7 +91,7 @@ func (g *graph) addEmbedPairs(pairs []vectors.DuplicatePair) {
 	for _, p := range pairs {
 		ia, okA := g.index[p.A]
 		ib, okB := g.index[p.B]
-		if !okA || !okB || ia == ib {
+		if !okA || !okB || ia == ib || g.dismissed[orderedPair(ia, ib)] {
 			continue
 		}
 		g.uf.union(ia, ib)
@@ -80,13 +104,13 @@ func (g *graph) addEmbedPairs(pairs []vectors.DuplicatePair) {
 	}
 }
 
-// runPhash performs the banded pHash union over all registered entries, recording
-// which nodes gained a pHash edge.
+// runPhash performs the banded pHash union over all registered entries, skipping
+// the dismissed pairs and recording which nodes gained a pHash edge.
 func (g *graph) runPhash(maxDiff int) {
 	if g.uf == nil {
 		g.uf = newUnionFind(len(g.nodes))
 	}
-	g.phashMatched = phashUnion(g.entries, maxDiff, g.uf)
+	g.phashMatched = phashUnion(g.entries, maxDiff, g.uf, g.dismissed)
 }
 
 // components groups node indices by their union-find root, returning only the

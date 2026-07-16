@@ -27,6 +27,10 @@ var errNoLabelUID = errors.New("label_uid is required")
 // face index, which can never identify a real face slot.
 var errNegativeFaceIndex = errors.New("face_index must not be negative")
 
+// errNoOtherUID is returned when a duplicate-dismissal body omits the second photo
+// of the pair.
+var errNoOtherUID = errors.New("other_uid is required")
+
 // faceFeedbackInput is the JSON body accepted by the face-rejection and
 // face-confirmation endpoints: the face (photo UID + face index) and the subject
 // the opinion is about.
@@ -41,6 +45,14 @@ type faceFeedbackInput struct {
 type labelRejectionInput struct {
 	PhotoUID string `json:"photo_uid"`
 	LabelUID string `json:"label_uid"`
+}
+
+// duplicateDismissalInput is the JSON body accepted by the duplicate-dismissal
+// endpoints: the two photos of the pair. The pair is unordered, so which uid goes
+// in which field does not matter — the store normalises it.
+type duplicateDismissalInput struct {
+	PhotoUID string `json:"photo_uid"`
+	OtherUID string `json:"other_uid"`
 }
 
 // decodeJSON reads dst from the JSON request body, rejecting unknown fields and an
@@ -114,4 +126,28 @@ func (in faceFeedbackInput) toConfirmationKey() feedback.FaceConfirmationKey {
 // toKey converts the request input into a feedback.LabelRejectionKey.
 func (in labelRejectionInput) toKey() feedback.LabelRejectionKey {
 	return feedback.LabelRejectionKey{PhotoUID: in.PhotoUID, LabelUID: in.LabelUID}
+}
+
+// decodeDuplicateDismissal decodes and validates a duplicate-dismissal body,
+// requiring both photo UIDs. Whether the two name the same photo is left to the
+// store (ErrSamePhoto), so the "impossible pair" rule lives in exactly one place.
+func decodeDuplicateDismissal(r *http.Request) (duplicateDismissalInput, error) {
+	var in duplicateDismissalInput
+	if err := decodeJSON(r, &in); err != nil {
+		return duplicateDismissalInput{}, err
+	}
+	in.PhotoUID = strings.TrimSpace(in.PhotoUID)
+	in.OtherUID = strings.TrimSpace(in.OtherUID)
+	switch {
+	case in.PhotoUID == "":
+		return duplicateDismissalInput{}, errNoPhotoUID
+	case in.OtherUID == "":
+		return duplicateDismissalInput{}, errNoOtherUID
+	}
+	return in, nil
+}
+
+// toKey converts the request input into a feedback.DuplicateDismissalKey.
+func (in duplicateDismissalInput) toKey() feedback.DuplicateDismissalKey {
+	return feedback.DuplicateDismissalKey{PhotoUID: in.PhotoUID, OtherUID: in.OtherUID}
 }
