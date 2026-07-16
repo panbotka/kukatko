@@ -48,6 +48,7 @@ type API struct {
 	places          PlaceResolver
 	purger          Purger
 	stacker         Stacker
+	sidecar         SidecarEnqueuer
 	retentionDays   int
 	videoTranscode  bool
 	requireAuth     func(http.Handler) http.Handler
@@ -110,6 +111,9 @@ type Config struct {
 	// primary, unstack a member or a whole stack). When nil — the stacking feature
 	// disabled in config — those endpoints answer 503.
 	Stacker Stacker
+	// Sidecar schedules a rewrite of a photo's metadata sidecar after an edit. When
+	// nil no sidecar is scheduled and the edit still succeeds.
+	Sidecar SidecarEnqueuer
 	// RetentionDays is the trash retention window reported by the trash-info
 	// endpoint so the UI can show the auto-purge countdown.
 	RetentionDays int
@@ -145,6 +149,7 @@ func NewAPI(cfg Config) *API {
 		places:          cfg.Places,
 		purger:          cfg.Purger,
 		stacker:         cfg.Stacker,
+		sidecar:         cfg.Sidecar,
 		retentionDays:   cfg.RetentionDays,
 		videoTranscode:  cfg.VideoTranscode,
 		requireAuth:     cfg.RequireAuth,
@@ -586,6 +591,7 @@ func (a *API) runArchive(
 		writePhotoError(w, err, failMsg)
 		return
 	}
+	a.enqueueSidecar(r.Context(), uid)
 	a.media.DecorateOne(&photo)
 	writeJSON(w, http.StatusOK, photo)
 }

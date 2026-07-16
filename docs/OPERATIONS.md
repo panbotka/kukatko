@@ -60,6 +60,17 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   `maintenance repair` s flagy `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
   (každá opt-in; thumbnails/phashes zařadí `thumbnail` joby drainované workerem běžícího serveru,
   embeddings/faces backfill, orphan import synchronně přes upload pipeline; bez flagu no-op),
+  **`kukatko sidecar`** (metadatové sidecary — `internal/sidecarjob`; terminálový vstup do exportu,
+  který dělá kurátorská data nezávislá na databázi): `sidecar backfill` zařadí `sidecar` job pro
+  každou fotku s **chybějícím nebo zastaralým** sidecarem, `--all` vynutí úplný re-run nad každou
+  nearchivovanou fotkou (tím se doženou změny mimo řádek fotky — členství v albu, štítek).
+  Jen **zařadí**; soubory zapisuje worker běžícího serveru (stejná fronta, stejný handler, stejný
+  dedup jako u živých editů, takže backfill nemůže závodit s uživatelem), proto vypisuje počet
+  naplánovaných jobů. Idempotentní — nad knihovnou s aktuálními sidecary naplánuje nulu — takže se
+  dá pouštět z cronu a hlavně **před každou riskantní operací** (migrace, upgrade, zkouška obnovy),
+  což je přesně chvíle, kdy je člověk v terminálu. Když je `sidecar.enabled: false`, příkaz
+  **selže** místo tichého „0 naplánováno“. Formát celý v [`docs/RESTORE.md`](RESTORE.md),
+  HTTP protějšek `POST /api/v1/process/sidecars`,
   **`kukatko storage`** (operace nad úložištěm originálů — `internal/storagemigrate`):
   `storage migrate-to-r2` (jednorázový **resumovatelný** přesun knihovny do R2, viz níže),
   **`kukatko ctl`** (vzdálený klient nad HTTP API běžící instance — `internal/ctl`; jediný subkomand,
@@ -529,6 +540,22 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   /process/stacks` (jako ostatní `/process/*`) proběhne detekci nad celou knihovnou přes
   `stacks.Service.DetectStacks` a vrátí `{created}`; kandidáty jsou jen dosud nestacknuté nearchivované
   fotky, takže re-run je idempotentní. Při `stacks.enabled: false` odpovídá 503.
+- **Sidecar klíče (`sidecar.*`, `internal/config` + `internal/sidecarexport`/`internal/sidecarjob`):**
+  **Metadatové sidecary** — YAML soubor na fotku vedle originálů ve storage (`sidecars/<klíč
+  originálu>.yml`) s jejími metadaty a kurátorskými daty (titulek, popis, kdo je na fotce i s
+  rámečkem obličeje, alba, štítky, per-user oblíbené a hodnocení, nedestruktivní úprava). Existuje,
+  aby knihovna **přežila ztrátu databáze**: kurátorská data jinak žijí na jediném místě, v Postgresu,
+  a S3 záloha je jediný mechanismus — zálohu, která tři měsíce tiše padá, objevíš v den, kdy ji
+  potřebuješ. `enabled` (bool, **default true**) je master switch a je **schválně zapnutý**:
+  mechanismus obnovy, který nikdo nezapnul, žádný mechanismus není. Při `false` se nic nezapisuje ani
+  nemaže, nezařadí se žádný `sidecar` job (handler není registrovaný, takže by job navěky visel ve
+  frontě) a `POST /process/sidecars` odpovídá 503; **sidecary už ve storage zůstanou přesně jak
+  jsou** — vypnout export není žádost o zničení toho, co už zapsal, a zastaralý sidecar má větší
+  cenu než žádný. Vypni to, když ti to I/O nestojí za to: je to jeden malý zápis na fotku na edit,
+  proti úložišti, které si možná účtuje za request. Env: `KUKATKO_SIDECAR_ENABLED`. Nesouvisí s
+  `internal/sidecar`, které čte *cizí* sidecary (Google Takeout, Apple XMP) při importu. **Formát
+  celý v [`docs/RESTORE.md`](RESTORE.md)**; backfill `kukatko sidecar backfill [--all]` nebo
+  admin-only `POST /process/sidecars`.
 - **MCP klíče (`mcp.*`, `internal/config` + `internal/mcpapi`):** **MCP server** — knihovna vystavená
   AI agentovi (Model Context Protocol) na `POST /api/v1/mcp`, aby v ní uměl hledat, číst a organizovat
   („najdi všechny fotky babičky ze šedesátých a dej je do alba"). `enabled` (bool, **default false**) je

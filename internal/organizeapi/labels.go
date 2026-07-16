@@ -110,6 +110,7 @@ func (a *API) handleLabelAttach(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
+	a.enqueueSidecar(r.Context(), in.PhotoUID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -134,5 +135,6 @@ func (a *API) handleLabelDetach(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "detaching label failed")
 		return
 	}
+	a.enqueueSidecar(r.Context(), in.PhotoUID)
 	w.WriteHeader(http.StatusNoContent)
 }

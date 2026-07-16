@@ -123,6 +123,8 @@ func (a *API) handleStackSelection(w http.ResponseWriter, r *http.Request) {
 		writeStackError(w, err, "stacking photos failed")
 		return
 	}
+	// Every member's stack membership changed, so every member's sidecar is stale.
+	a.enqueueSidecars(r.Context(), req.PhotoUIDs)
 	a.writePrimaryDetail(w, r, user.UID, stackUID)
 }
 
@@ -166,6 +168,7 @@ func (a *API) runStackMutation(
 		writeStackError(w, err, failMsg)
 		return
 	}
+	a.enqueueSidecar(r.Context(), uid)
 	photo, err := a.store.GetByUID(r.Context(), uid)
 	if err != nil {
 		writePhotoError(w, err, failMsg)

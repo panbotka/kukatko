@@ -124,6 +124,7 @@ func (a *API) handleAlbumAddPhotos(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
+	a.enqueueSidecars(r.Context(), in.PhotoUIDs)
 	a.writeMembership(w, r, uid)
 }
 
@@ -145,6 +146,7 @@ func (a *API) handleAlbumRemovePhotos(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "removing album photo failed")
 		return
 	}
+	a.enqueueSidecars(r.Context(), in.PhotoUIDs)
 	a.writeMembership(w, r, uid)
 }
 

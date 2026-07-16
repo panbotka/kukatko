@@ -1674,6 +1674,48 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   nearchivovanou (`ListActiveUIDs`, dožene chybějící velikost i u fotky s pHashem); enqueue přes
   `Enqueuer.EnqueueThumbnail` (dedup no-op → idempotentní), vrací počet; `ErrBackfillUnavailable`
   když `Service` neměl `Lister`/`Enqueuer`),
+  `internal/sidecarexport/`
+  (**formát** metadatového sidecaru + jeho atomický zápis do storage — YAML soubor na fotku vedle
+  originálů, aby šla knihovna obnovit **jen ze storage**: originály + sidecary, bez databáze.
+  Neplest s `internal/sidecar`, které čte *cizí* sidecary (Google Takeout `.json`, Apple `.xmp`) při
+  importu — tenhle balík jen **zapisuje**, a jen vlastní formát. `Document` = verzované, seskupené
+  schéma (`version`/`generated_at`/`identity`/`descriptive`/`temporal`/`spatial`/`technical`/
+  `curation`/`edit`), `Version = 1`; `Build(Input) Document` je **čistá funkce** (bez I/O, bez
+  hodin — kolaboranty sbírá volající), `Marshal`/`Unmarshal` přidávají/ignorují hlavičkový komentář,
+  který vysvětluje, **proč v souboru nejsou embeddingy** (velké, binární, levné přepočítat z
+  originálu — od toho jsou backfill joby), aby to nikdo „neopravil“. `KeyFor(fileKey)` = paralelní
+  strom `sidecars/<klíč>.yml` (přípona se **přidává**, ne nahrazuje → `IMG_1.jpg` a `IMG_1.png`
+  nekolidují; `ErrEmptyKey` na řádek bez cesty). `Writer` = `NewWriter(ObjectStore)` nad úzkým
+  rozhraním (`Put`/`Delete`, splňuje ho `storage.Storage`) → funguje **na FS i R2**;
+  `Write(ctx,fileKey,doc)` marshaluje do paměti (pár kB), spočítá SHA256 a předá storage přesnou
+  velikost+digest, takže **atomicitu** garantuje storage (FS temp+rename, R2 verifikace+smazání při
+  neshodě) — polovičatý YAML není horší sidecar, je nečitelný; `Delete` je idempotentní (chybějící
+  sidecar není chyba). **Round-trip test** (`TestRoundTrip` + `TestDocument_fixtureIsExhaustive`,
+  který reflexí hlídá, že fixture nemá ani jedno nulové pole) je smlouva formátu a podklad budoucího
+  `restore --from-sidecars`),
+  `internal/sidecarjob/`
+  (worker handler `sidecar` jobu + backfill — **plánovaná** polovina `sidecarexport`: ten umí formát
+  a zápis, tenhle ví *kdy*. Job zařadí každá mutace metadat/kurátorských dat; handler fotku
+  **znovu přečte** a přepíše soubor, takže je **idempotentní a bezstavový** (dvakrát = stejné bajty,
+  pozdě = aktuální stav) — proto je per-photo dedup fronty bezpečný **debounce**, ne zahozený update.
+  Vše za rozhraními `PhotoStore`/`Organizer`/`PeopleStore`/`PlaceStore`/`UserStore`/`SidecarWriter`/
+  `PhotoLister`/`Enqueuer` → unit-testovatelné bez DB i disku; `Service` =
+  `New(Config{Photos,Organize,People,Writer,Places?,Users?,Lister?,Enqueuer?,Logger?})` (panika na
+  nil povinný kolaborant; `Places`/`Users` volitelné — skupina se vynechá, `Lister`/`Enqueuer`
+  zapnou backfill), `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, prázdný →
+  `ErrMissingPhotoUID` dead-letter), registrovaný v `serve` na `jobs.TypeSidecar` (jen když
+  `sidecar.enabled`). `Export(uid)` posbírá kurátorská data, zapíše a **až potom** orazítkuje
+  `MarkSidecarWritten` — když zápis selže, fotka zůstane pending a backfill ji dožene; **chybějící
+  fotka je logovaný skip** (purge mezi enqueue a během je race, který fronta má prohrát elegantně),
+  ale **selhání čtení kurátorských dat je chyba** (soubor, co tvrdí „žádná alba“, protože dotaz
+  spadl, je horší než žádný — vypadá autoritativně); neresolvnutelný uploader stojí jméno, ne
+  sidecar. `Remove(fileKey)` maže sidecar při purge (sidecar, co přežije fotku, je přesně ten
+  soubor, ze kterého by obnova vzkřísila smazanou fotku). **Backfill** `BackfillSidecars(ctx,all)
+  (int,error)` (podklad `POST /process/sidecars` a `kukatko sidecar backfill`): zařadí job pro každou
+  fotku s chybějícím/zastaralým sidecarem (`ListPhotosMissingSidecar`), nebo — když `all` — pro
+  každou nearchivovanou (`ListActiveUIDs`, dožene kurátorská data mimo řádek fotky); idempotentní a
+  resumable **bez vlastní evidence** (dedup fronty + self-clearing predikát);
+  `ErrBackfillUnavailable` bez `Lister`/`Enqueuer`),
   `internal/metajob/`
   (worker handler `metadata` jobu — **znovu přečte originál fotky** a doplní sloupce, jejichž
   autoritou je sám soubor: IPTC/XMP kredit (`subject`/`keywords`/`artist`/`copyright`/`license`)

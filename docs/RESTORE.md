@@ -266,6 +266,237 @@ kukatko backup
 # backup complete: dump=db/kukatko-... originals uploaded=0 skipped=48213 dumps pruned=0
 ```
 
+## Metadata sidecars — the format
+
+Everything a user builds in Kukátko — titles, descriptions, who is in the photo, which album it
+belongs to, the rating — otherwise exists in exactly one place: Postgres. The backup above is good,
+but it is a **single mechanism**, and a backup that has been quietly failing for three months is
+discovered on the day you need it.
+
+A **sidecar** is a second mechanism of a different kind. It is a YAML file per photo, written next
+to the originals in storage, holding that photo's metadata and curation in plain text any tool can
+read. The curation lives *next to the photo it describes*, on the same storage that holds the
+original — so the index can be thrown away and rebuilt from the originals plus the sidecars.
+
+This section is the format's reference. It is here, rather than in an architecture document,
+because this is where you will look when the database is gone.
+
+### Where they live
+
+Sidecars form a **parallel tree** under the `sidecars/` prefix of the storage root, mirroring the
+originals' layout:
+
+| Original | Sidecar |
+| --- | --- |
+| `2024/05/IMG_1234.jpg` | `sidecars/2024/05/IMG_1234.jpg.yml` |
+| `2019/12/VID_0001.mp4` | `sidecars/2019/12/VID_0001.mp4.yml` |
+
+The mapping is total and reversible: strip the `sidecars/` prefix and the trailing `.yml` and you
+have the original's storage key. Three consequences worth knowing:
+
+- **The extension is appended, not replaced.** `IMG_1.jpg` and `IMG_1.png` are two different photos
+  and get two different sidecars. Replacing the extension would collide them onto one file, and each
+  would silently overwrite the other's curation.
+- **A parallel tree, not a file beside the original.** The originals tree stays purely media, so the
+  importers and integrity scanners that walk it never have to learn to ignore a second kind of file.
+  The whole export is one prefix, so it can be listed, `rsync`ed or discarded as a unit.
+- **Same storage as the originals.** It works identically on the `fs` and `r2` backends, and the
+  backup's originals sync copies the sidecars into the backup bucket along with the photos — the
+  curation travels with the photos, which is the point.
+
+### The file
+
+Every sidecar opens with a header comment explaining what it is and what is deliberately missing,
+then the YAML document. Comments are ignored by any parser, so the file round-trips.
+
+```yaml
+# Kukátko metadata sidecar.
+#
+# This file holds one photo's metadata and curation: what it is, when and where it
+# was taken, who is in it, which albums and labels it carries, how it was rated.
+# ...
+# NOT in this file, deliberately, and please do not "fix" it: the image embedding
+# and the face vectors. ...
+version: 1
+generated_at: 2026-07-17T12:00:00Z
+identity:
+    uid: pht000000000001
+    sha256: abababab...
+    file_name: IMG_1234.jpg
+    file_path: 2024/05/IMG_1234.jpg
+    original_name: DSC_0001.JPG
+    media_type: image
+    uploaded_by: pan.botka
+    external:
+        photoprism_uid: ppuid123
+descriptive:
+    title: Svatba
+    description: Obřad na zahradě
+    keywords: svatba,zahrada,rodina
+    artist: Jan Novák
+temporal:
+    taken_at: 2024-05-17T14:30:00Z
+    taken_at_source: exif
+spatial:
+    lat: 50.0755
+    lng: 14.4378
+    source: exif
+    place:
+        country: Česko
+        city: Praha
+        geocoded_at: 2024-05-18T09:00:00Z
+technical:
+    camera_make: NIKON CORPORATION
+    camera_model: NIKON D750
+    iso: 400
+    aperture: 1.8
+    exposure: 1/250
+    width: 6016
+    height: 4016
+curation:
+    albums:
+        - uid: alb001
+          slug: svatba
+          title: Svatba
+          type: album
+    labels:
+        - uid: lbl001
+          name: Portrét
+          source: ai
+          uncertainty: 12
+    people:
+        - marker_uid: mrk001
+          subject_uid: sub001
+          name: Jana Nováková
+          subject_type: person
+          type: face
+          box: {x: 0.25, y: 0.1, w: 0.2, h: 0.3}
+          score: 88
+    favorites:
+        - user: pan.botka
+          user_uid: usr001
+    ratings:
+        - user: pan.botka
+          stars: 4
+          flag: pick
+edit:
+    crop: {x: 0.1, y: 0.2, w: 0.6, h: 0.5}
+    rotation: 90
+```
+
+Every group and key is omitted when empty, so a photo nobody has touched yields a short file.
+
+### The groups
+
+| Group | Holds | Notes |
+| --- | --- | --- |
+| `version` | Schema version (currently `1`) | First key, so a reader can dispatch before parsing. A reader that meets a version it does not know should **refuse the file**, not guess. |
+| `generated_at` | When the file was written | Provenance: it tells you how current the file is, the first thing you want to know when rebuilding. |
+| `identity` | `uid`, `sha256`, `file_name`, `file_path`, `original_name`, `media_type`, `uploaded_by`, `external` | `sha256` is the durable link to the original: paths move, content does not. `external` carries `photoprism_uid` / `photoprism_file_hash` (PhotoPrism's SHA1, not Kukátko's SHA256) / `photosorter_uid` so a re-import recognises what it already has. |
+| `descriptive` | `title`, `description`, `notes`, `ai_note`, `subject`, `keywords`, `artist`, `copyright`, `license` | `keywords` are the IPTC keywords verbatim, comma-separated. They are **not** labels — labels are Kukátko's own taxonomy and live under `curation`. |
+| `temporal` | `taken_at`, `taken_at_source`, `estimated`, `note` | `estimated: true` marks the date as a guess and `note` records what it rests on ("kolem roku 1950"). A photo with no `taken_at` may still be estimated, the note then carrying the whole meaning. |
+| `spatial` | `lat`, `lng`, `altitude`, `source`, `place` | `source` is `exif` / `manual` / `estimate` / empty. **It matters:** an inferred location must never be rebuilt as a measured one. `source: manual` with no coordinates is not a contradiction but a **tombstone** — the user deleted the location on purpose, and a rebuild must not hand it back. `place` is the cached reverse-geocode (geocoding costs credits; recording it means a rebuild does not pay twice). |
+| `technical` | Camera, lens, exposure, dimensions, file, `video` | Mostly recomputable from the original, recorded anyway: it is small, and a sidecar readable on its own is worth more than the saved bytes. `video` is present only for videos and live photos. |
+| `curation` | `albums`, `labels`, `people`, `favorites`, `ratings`, `private`, `archived_at`, `stack` | **The group that exists nowhere else.** Everything above can in the last resort be re-derived from the original; none of this can. |
+| `edit` | `crop`, `rotation`, `brightness`, `contrast` | The non-destructive edit. Originals are never modified, so a lost edit is a visible change silently reverted. Omitted when the edit is a no-op. Crop is normalised `0..1`; brightness/contrast are CSS-filter-style, meaningful in `[-1, 1]`, `0` neutral. |
+
+Details inside `curation` that a rebuild must not drop:
+
+- **`people[].box`** is the face rectangle in `0..1` **display space** (EXIF-aware — relative to the
+  upright image the user sees, not the raw stored pixels). *A marker without its box cannot be
+  rebuilt*, so the box is written even for a face nobody has named.
+- **`people[]` includes the unnamed and the rejected.** An unnamed face is work in progress;
+  `invalid: true` is a decision the user made. Writing only the named ones loses both — and a
+  rebuild would resurrect every face the user already said no to.
+- **`labels[].uncertainty`** is the classifier's uncertainty as an integer percentage where **`0`
+  means certain** — not a confidence. It is recorded as stored rather than inverted, because
+  inverting it here would invent precision. A manual attachment is always `0`. `source` is
+  `manual` / `ai` / `import`, and it matters: a hand-attached label is a fact, an AI one is a
+  suggestion.
+- **`favorites` and `ratings` are per-user**, so every user's are recorded — these are personal in
+  Kukátko, not a single value on the photo. `user` (the username) is the half that survives a
+  rebuild; `user_uid` is this database's identifier and will not mean anything in a new one.
+- **`archived_at`** marks a photo in the trash awaiting purge. **A rebuild should honour it** — a
+  photo the user deleted, silently resurrected, is the worst kind of restore bug.
+- **`uid`/`slug` on albums and labels, `subject_uid` on people** are this database's identifiers. A
+  rebuild should match on the **name/title/slug**; UIDs are regenerated.
+
+### What is deliberately NOT written
+
+**The image embedding and the face vectors.** This is not an oversight — please do not "fix" it:
+
+- They are large and binary. They would dwarf everything else and make the file unreadable, which
+  defeats the purpose of a format a human can open cold.
+- They are **cheap to recompute from the original**. That is exactly what the `image_embed` and
+  `face_detect` backfill jobs are for (`POST /api/v1/process/embeddings`, `/process/faces`).
+
+What cannot be recomputed is what a **person decided**, and that is all here. The same reasoning
+excludes the raw EXIF blob: it is in the original, and `kukatko` re-reads it via the `metadata` job.
+
+The file header says all of this, so the next person to open one is told before they get ideas.
+
+### When they are written
+
+- **On every change.** A `sidecar` job is enqueued whenever a photo's metadata or curation changes
+  (an edit, a rating, a favorite, an album, a label, a face assignment, a stack, a bulk edit) and
+  when a photo is first catalogued. The job re-reads the photo and rewrites the file.
+- **Debounced.** The queue's per-photo dedup index keeps at most one queued `sidecar` job per photo
+  and the job waits ~5s before running, so a burst of edits collapses into one file write. A
+  500-photo bulk edit enqueues 500 small rows and returns; the worker writes the files.
+- **Atomically.** The bytes are streamed to a temp file and renamed (`fs`), or verified and removed
+  on mismatch (`r2`). A reader never sees a half-written sidecar — a truncated YAML document is not
+  a slightly worse sidecar, it is an unparseable one.
+- **Idempotently.** The handler writes the current truth, not a delta. Running it twice writes the
+  same bytes; running it late writes the current state. That is why a coalesced or lost job costs
+  nothing but staleness.
+- **Never at the user's expense.** A failed write is logged and retried by the queue; it never fails
+  the edit. The edit is safely in Postgres either way.
+- **Removed on purge.** Permanently deleting a photo deletes its sidecar, because one left behind is
+  precisely the file a rebuild reads to resurrect a photo the user deleted.
+
+### Backfilling the whole library
+
+Run this before anything risky — a migration, an upgrade, a restore rehearsal:
+
+```bash
+kukatko sidecar backfill          # every photo whose sidecar is missing or stale
+kukatko sidecar backfill --all    # forced full re-run over every non-archived photo
+```
+
+Or, admin-only, over HTTP: `POST /api/v1/process/sidecars` (`?all=true` for the full re-run).
+
+Both **enqueue** jobs; the running server's worker writes the files, so the command returns as soon
+as the work is scheduled and prints the count. It is idempotent — a run over a library whose
+sidecars are current schedules nothing — and resumable, since an interrupted run just leaves the
+rest pending.
+
+Use `--all` when curation changed without the photo row changing (an album membership, a label) and
+an enqueue was lost: the default predicate keys on `photos.updated_at`, which those do not touch.
+
+### Switching it off
+
+`sidecar.enabled: false` (or `KUKATKO_SIDECAR_ENABLED=false`) stops all of it: nothing is written or
+deleted, no job is enqueued, and `/process/sidecars` answers 503. Sidecars already in storage are
+**left exactly as they are** — turning the export off is not a request to destroy what it already
+wrote, and a stale sidecar is worth more than none. See `config.example.yaml`.
+
+### Known limitations
+
+- **Rebuilding the catalogue from sidecars is not implemented yet.** This is the export half. The
+  format is designed to be sufficient for a future `kukatko restore --from-sidecars`, and the
+  round-trip test in `internal/sidecarexport` is what pins that sufficiency — it serialises a
+  fully-populated photo, parses it back and asserts every field survives. That test is what the
+  importer will be built against.
+- **The backup's incremental sync compares key and size only.** Originals are immutable, so that was
+  always safe; sidecars are not. A sidecar edited to the *same byte length* (`rating: 3` →
+  `rating: 4`) may be skipped and not re-uploaded to the backup bucket, leaving the backup's copy
+  stale. The sidecars on the **primary** storage are always current — they are the authoritative
+  copy — and a `--all` backfill after a size-neutral edit forces a rewrite. Fixing this properly
+  means comparing mtime or ETag in `internal/backup`.
+- **Sidecars are excluded from the integrity scan.** `kukatko maintenance scan` defines an orphan as
+  "on disk but not in the catalogue", which every sidecar is by construction. They are filtered out,
+  so the scan neither counts them as orphans nor offers them to `repair --import-orphans`.
+
 ## Admin API (read-only)
 
 A running server exposes two **admin-only**, read-only restore endpoints under `/api/v1` (useful to

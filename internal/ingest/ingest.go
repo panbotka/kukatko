@@ -116,6 +116,10 @@ type Config struct {
 	Thumbnailer *thumb.Thumbnailer
 	// Enqueuer schedules background jobs; nil means NopEnqueuer (no queue yet).
 	Enqueuer JobEnqueuer
+	// Sidecar schedules the freshly catalogued photo's metadata sidecar. A nil
+	// Sidecar — the export switched off — schedules none, and the upload still
+	// succeeds.
+	Sidecar SidecarEnqueuer
 	// Duplicate gates and tunes near-duplicate warnings.
 	Duplicate config.DuplicateConfig
 	// MaxFileSize caps a single uploaded file in bytes; 0 means unlimited.
@@ -133,6 +137,7 @@ type Service struct {
 	photos      *photos.Store
 	thumbs      *thumb.Thumbnailer
 	enqueuer    JobEnqueuer
+	sidecar     SidecarEnqueuer
 	dup         config.DuplicateConfig
 	maxFileSize int64
 	tempDir     string
@@ -149,6 +154,7 @@ func New(cfg Config) *Service {
 		photos:      cfg.Photos,
 		thumbs:      cfg.Thumbnailer,
 		enqueuer:    enq,
+		sidecar:     cfg.Sidecar,
 		dup:         cfg.Duplicate,
 		maxFileSize: cfg.MaxFileSize,
 		tempDir:     cfg.TempDir,
@@ -461,9 +467,16 @@ func (s *Service) generateThumbnails(ctx context.Context, photo photos.Photo) []
 	return nil
 }
 
-// enqueueJobs schedules the image-embedding and face-detection jobs, reporting
-// a warning per failed enqueue. With the default NopEnqueuer both always
-// succeed and this is a no-op hook the jobs milestone fills in.
+// enqueueJobs schedules the image-embedding, face-detection and metadata-sidecar
+// jobs, reporting a warning per failed enqueue. With the default NopEnqueuer the
+// first two always succeed; a nil Sidecar skips the third.
+//
+// The sidecar is scheduled for a photo that has no curation yet on purpose: it
+// gives the photo a file from the moment it is catalogued, so a library that is
+// imported and never touched again is still described on disk rather than only in
+// a database. The alternative — wait for the first edit — leaves exactly the
+// never-edited photos, the ones nobody would notice were undescribed, with
+// nothing.
 func (s *Service) enqueueJobs(ctx context.Context, photoUID string) []Warning {
 	var warnings []Warning
 	if err := s.enqueuer.EnqueueImageEmbed(ctx, photoUID); err != nil {
@@ -471,6 +484,11 @@ func (s *Service) enqueueJobs(ctx context.Context, photoUID string) []Warning {
 	}
 	if err := s.enqueuer.EnqueueFaceDetect(ctx, photoUID); err != nil {
 		warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
+	}
+	if s.sidecar != nil {
+		if err := s.sidecar.EnqueueSidecar(ctx, photoUID); err != nil {
+			warnings = append(warnings, Warning{Code: warnEnqueueFailed, Message: err.Error()})
+		}
 	}
 	return warnings
 }

@@ -94,6 +94,7 @@ type Config struct {
 	Trash      TrashConfig      `mapstructure:"trash"`
 	Duplicate  DuplicateConfig  `mapstructure:"duplicate"`
 	Stacks     StacksConfig     `mapstructure:"stacks"`
+	Sidecar    SidecarConfig    `mapstructure:"sidecar"`
 	MCP        MCPConfig        `mapstructure:"mcp"`
 
 	LocationEstimate LocationEstimateConfig `mapstructure:"location_estimate"`
@@ -612,6 +613,27 @@ type LocationEstimateConfig struct {
 	RadiusMeters float64 `mapstructure:"radius_meters"`
 }
 
+// SidecarConfig controls the metadata sidecar export — the YAML file written
+// next to the originals holding each photo's metadata and curation, so the
+// catalogue can be rebuilt from storage alone. See internal/sidecarexport and
+// docs/RESTORE.md.
+//
+// It is on by default because the whole point is to be running before the day it
+// is needed: a disaster-recovery mechanism nobody switched on is not one. Off is
+// one key away because on a large library it is real I/O — one small write per
+// photo per edit, against an object store that may be charging per request.
+//
+// It does not control internal/sidecar, which reads other software's sidecars
+// (Google Takeout, Apple XMP) on import and is unaffected.
+type SidecarConfig struct {
+	// Enabled is the master switch. When false no sidecar is written or deleted,
+	// no sidecar job is enqueued, and the /process/sidecars endpoint answers 503.
+	// Sidecars already in storage stay exactly as they are — turning the export off
+	// is not a request to destroy what it already wrote, and stale is worth more
+	// than gone.
+	Enabled bool `mapstructure:"enabled"`
+}
+
 // VideoConfig tunes video playback/streaming. Videos are always served with
 // HTTP range support so browsers can seek without downloading the whole file.
 type VideoConfig struct {
@@ -920,6 +942,11 @@ func setOpsDefaults(v *viper.Viper) {
 
 	setStacksDefaults(v)
 	setMCPDefaults(v)
+
+	// Writing each photo's metadata and curation to a YAML sidecar in storage, so
+	// the catalogue survives losing the database. On by default: a recovery
+	// mechanism switched on after the disaster is no mechanism at all.
+	v.SetDefault("sidecar.enabled", true)
 
 	// Inferring a missing location from photos taken within ±6h, trusted only if
 	// they all sit within 5 km of each other. On by default; set enabled to false

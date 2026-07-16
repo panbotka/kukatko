@@ -90,8 +90,19 @@ type LabelStore interface {
 type API struct {
 	albums       AlbumStore
 	labels       LabelStore
+	sidecar      SidecarEnqueuer
 	requireAuth  func(http.Handler) http.Handler
 	requireWrite func(http.Handler) http.Handler
+}
+
+// SidecarEnqueuer schedules a rewrite of a photo's metadata sidecar — the YAML
+// file in storage holding its metadata and curation. Album membership and labels
+// are exactly the kind of curation that exists nowhere but the database, so a
+// change to either makes a photo's sidecar stale. It is satisfied by
+// jobs.Enqueuer; a nil SidecarEnqueuer disables the scheduling.
+type SidecarEnqueuer interface {
+	// EnqueueSidecar schedules a sidecar write for photoUID.
+	EnqueueSidecar(ctx context.Context, photoUID string) error
 }
 
 // Config bundles the dependencies of NewAPI.
@@ -100,6 +111,9 @@ type Config struct {
 	Albums AlbumStore
 	// Labels backs the label reads, mutations and attachment management.
 	Labels LabelStore
+	// Sidecar schedules a sidecar rewrite for the photos whose membership or labels
+	// changed. When nil no sidecar is scheduled and the mutation still succeeds.
+	Sidecar SidecarEnqueuer
 	// RequireAuth guards the read endpoints for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireWrite guards the mutating endpoints for editors and admins.
@@ -111,6 +125,7 @@ func NewAPI(cfg Config) *API {
 	return &API{
 		albums:       cfg.Albums,
 		labels:       cfg.Labels,
+		sidecar:      cfg.Sidecar,
 		requireAuth:  cfg.RequireAuth,
 		requireWrite: cfg.RequireWrite,
 	}

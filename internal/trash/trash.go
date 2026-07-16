@@ -22,6 +22,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -262,13 +263,16 @@ func (s *Service) purgeOne(ctx context.Context, uid string, meta audit.Meta, sou
 	return nil
 }
 
-// deleteArtifacts removes the on-disk original, the cached thumbnails and (when
-// configured) the remote backup object for a single stored file. A missing
-// original is ignored; a malformed sidecar hash skips thumbnail removal rather
-// than failing the purge.
+// deleteArtifacts removes the on-disk original, its metadata sidecar, the cached
+// thumbnails and (when configured) the remote backup object for a single stored
+// file. A missing original is ignored; a malformed sidecar hash skips thumbnail
+// removal rather than failing the purge.
 func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile) error {
 	if err := s.storage.Delete(ctx, file.FilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("deleting original %s: %w", file.FilePath, err)
+	}
+	if err := s.deleteSidecar(ctx, file.FilePath); err != nil {
+		return err
 	}
 	if err := s.thumbnailer.Remove(file.FileHash); err != nil && !errors.Is(err, thumb.ErrInvalidHash) {
 		return fmt.Errorf("removing thumbnails for %s: %w", file.FileHash, err)
@@ -277,6 +281,30 @@ func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile) er
 		if err := s.remote.Remove(ctx, file.FilePath); err != nil {
 			return fmt.Errorf("removing remote object %s: %w", file.FilePath, err)
 		}
+	}
+	return nil
+}
+
+// deleteSidecar removes the purged original's metadata sidecar — the YAML file
+// under the sidecars/ prefix holding its curation (see internal/sidecarexport).
+//
+// It is unconditional, deliberately: it runs even when the export is switched
+// off, because what must be cleaned up is what is *there*, not what the current
+// config would write. A sidecar left behind by a photo that no longer exists is
+// not an untidy leftover but an active hazard — it is precisely the file a
+// rebuild reads, and a rebuild that reads it resurrects a photo the user chose to
+// delete permanently.
+//
+// A sidecar that is already absent is the normal case (the export may never have
+// run) and is not an error.
+func (s *Service) deleteSidecar(ctx context.Context, fileKey string) error {
+	key, err := sidecarexport.KeyFor(fileKey)
+	if err != nil {
+		// A row with no file path has no sidecar either; nothing to clean up.
+		return nil //nolint:nilerr // a keyless file is not a purge failure
+	}
+	if err := s.storage.Delete(ctx, key); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("deleting sidecar %s: %w", key, err)
 	}
 	return nil
 }

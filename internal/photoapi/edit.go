@@ -87,6 +87,7 @@ func (a *API) handlePutEdit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "saving edit failed")
 		return
 	}
+	a.enqueueSidecar(r.Context(), uid)
 
 	stored, err := a.store.GetEdit(r.Context(), uid)
 	if err != nil {
