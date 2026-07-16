@@ -33,9 +33,18 @@ type Service interface {
 	Apply(ctx context.Context, actorUID string, photoUIDs []string, ops bulk.Operations) (bulk.Result, error)
 }
 
+// SidecarEnqueuer schedules a rewrite of a photo's metadata sidecar — the YAML
+// file in storage holding its metadata and curation. It is satisfied by
+// jobs.Enqueuer. A nil SidecarEnqueuer disables the scheduling.
+type SidecarEnqueuer interface {
+	// EnqueueSidecar schedules a sidecar write for photoUID.
+	EnqueueSidecar(ctx context.Context, photoUID string) error
+}
+
 // API exposes the bulk endpoint over HTTP.
 type API struct {
 	service      Service
+	sidecar      SidecarEnqueuer
 	requireWrite func(http.Handler) http.Handler
 	rateLimit    func(http.Handler) http.Handler
 }
@@ -44,6 +53,9 @@ type API struct {
 type Config struct {
 	// Service applies the bulk operations.
 	Service Service
+	// Sidecar schedules a sidecar rewrite per updated photo. When nil no sidecar is
+	// scheduled and the batch still succeeds.
+	Sidecar SidecarEnqueuer
 	// RequireWrite guards the endpoint for editors and admins.
 	RequireWrite func(http.Handler) http.Handler
 	// RateLimit is an optional per-client-IP throttle applied ahead of the auth
@@ -57,7 +69,12 @@ func NewAPI(cfg Config) *API {
 	if rateLimit == nil {
 		rateLimit = passthroughMiddleware
 	}
-	return &API{service: cfg.Service, requireWrite: cfg.RequireWrite, rateLimit: rateLimit}
+	return &API{
+		service:      cfg.Service,
+		sidecar:      cfg.Sidecar,
+		requireWrite: cfg.RequireWrite,
+		rateLimit:    rateLimit,
+	}
 }
 
 // passthroughMiddleware is a no-op middleware used when no rate limiter is configured.
@@ -100,7 +117,34 @@ func (a *API) handleBulk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
+	a.enqueueSidecars(r.Context(), result)
 	writeJSON(w, http.StatusOK, result)
+}
+
+// enqueueSidecars schedules a sidecar rewrite for each photo the batch actually
+// changed, and is best-effort: a failure is logged and swallowed, never returned.
+//
+// This is where the spec's "500 photos must enqueue 500 cheap jobs, not write 500
+// files inside the request" is honoured. Each enqueue is one small INSERT; the
+// files are written later by the worker. The queue's per-photo dedup index
+// collapses repeats, so a photo edited twice in quick succession still yields one
+// write.
+//
+// Only the updated photos are scheduled: a skipped or errored photo did not
+// change, so its sidecar is still current and rewriting it would be pure I/O for
+// nothing.
+func (a *API) enqueueSidecars(ctx context.Context, result bulk.Result) {
+	if a.sidecar == nil {
+		return
+	}
+	for _, res := range result.Results {
+		if res.Status != bulk.StatusUpdated {
+			continue
+		}
+		if err := a.sidecar.EnqueueSidecar(ctx, res.PhotoUID); err != nil {
+			log.Printf("bulkapi: enqueuing sidecar for %s: %v", res.PhotoUID, err)
+		}
+	}
 }
 
 // bulkStatus maps a bulk apply error to an HTTP status and client message.

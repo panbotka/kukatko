@@ -117,6 +117,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/savedsearchapi` — `/saved-searches`, everything scoped to the owner (foreign → 404)
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
 - `internal/sidecar` — čte metadata vedle média (Google Takeout `.json`, Apple `.xmp`), páruje je se soubory a řeší precedenci vůči EXIF
+- `internal/sidecarexport` — **writes** the metadata sidecar: the versioned YAML format + its atomic write to storage, so the catalogue survives losing the DB. Not `internal/sidecar` (that reads foreign ones)
+- `internal/sidecarjob` — worker handler `sidecar` + backfill: rewrites a photo's sidecar whenever its metadata/curation changes; idempotent, debounced by the queue's dedup
 - `internal/stacks` — group RAW+JPEG / edited variants of one shot into a stack (detection rules + manual stack/unstack/set-primary); **grouping, never merging**
 - `internal/storage` — storage of originals (`YYYY/MM`, SHA256): local `FS` or Cloudflare `R2` with signed URLs
 - `internal/storagemigrate` — resumable move of the library to object store; verify → commit the row → only then delete the original

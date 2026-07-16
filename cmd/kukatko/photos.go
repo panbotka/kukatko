@@ -48,7 +48,7 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 func buildPhotoAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, store storage.Storage,
 	similar photoapi.SimilarSearcher, embedder photoapi.TextEmbedder, faceSvc *facematch.Service,
-	purger photoapi.Purger, reg *metrics.Registry,
+	purger photoapi.Purger, sidecar sidecarScheduler, reg *metrics.Registry,
 ) *photoapi.API {
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...)
 	photoStore := photos.NewStore(db.Pool())
@@ -77,6 +77,7 @@ func buildPhotoAPI(
 		Storage:     store,
 		Thumbnailer: thumbnailer,
 		Regenerator: regenerator,
+		Sidecar:     sidecar,
 		Audit:       audit.NewStore(db.Pool()),
 		Similar:     similar,
 		Embedder:    embedder,

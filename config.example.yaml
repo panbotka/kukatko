@@ -383,6 +383,44 @@ stacks:
 # It is mounted at POST /api/v1/mcp on this same HTTP server, behind the SAME auth
 # and the SAME RBAC as every other route: an agent authenticates with a long-lived
 # API token (Authorization: Bearer kkt_...), and the role of the token's owner
+# Metadata sidecars: a YAML file per photo, written next to the originals in
+# storage, holding everything a human created or a machine derived about it —
+# title, description, who is in the photo (with the face box), which albums and
+# labels it carries, per-user favourites and ratings, the non-destructive edit.
+#
+# It exists so this library survives losing the database. Everything above
+# otherwise lives in exactly one place: Postgres. There is an S3 backup, and that
+# is good, but it is a single mechanism — and a backup that has been quietly
+# failing for three months is discovered on the day you need it. A sidecar is a
+# second mechanism of a different kind: the curation lives next to the photo it
+# describes, in a plain-text file any tool can read, on the same storage as the
+# original.
+#
+# Sidecars live in a parallel tree under the "sidecars/" prefix of the storage
+# root: the original 2024/05/IMG_1234.jpg has its sidecar at
+# sidecars/2024/05/IMG_1234.jpg.yml. The originals tree stays purely media, and
+# the sidecars still travel with the originals into the S3 backup.
+#
+# Written by the `sidecar` job, enqueued whenever a photo's metadata or curation
+# changes. Backfill the whole library with `kukatko sidecar backfill` or the
+# admin-only POST /api/v1/process/sidecars. Deliberately NOT written: the image
+# embedding and the face vectors — large, binary, and cheap to recompute from the
+# original, which is what the embedding/face backfills are for.
+#
+# The format, in full: docs/RESTORE.md.
+sidecar:
+  # Master switch, ON by default: a disaster-recovery mechanism nobody switched on
+  # is not one, so it defaults to running before the day it is needed. false = no
+  # sidecar is written or deleted, no sidecar job is enqueued, and
+  # /process/sidecars answers 503. Sidecars already in storage are left exactly as
+  # they are — turning the export off is not a request to destroy what it already
+  # wrote, and a stale sidecar is worth more than no sidecar.
+  #
+  # Turn it off if the I/O is not worth it to you: it is one small write per photo
+  # per edit, against a store that may charge per request.
+  # KUKATKO_SIDECAR_ENABLED.
+  enabled: true
+
 # decides what it may do. A viewer token can read and is refused every write; the
 # "ai" role exists for exactly this kind of automation (write + import, no admin).
 #

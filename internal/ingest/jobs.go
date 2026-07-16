@@ -19,6 +19,19 @@ type JobEnqueuer interface {
 	EnqueueFaceDetect(ctx context.Context, photoUID string) error
 }
 
+// SidecarEnqueuer schedules the metadata sidecar of a freshly catalogued photo —
+// the YAML file in storage holding its metadata and curation. It is separate from
+// JobEnqueuer because it is separately switchable: the sidecar export has its own
+// config key, and when it is off no `sidecar` handler is registered, so a job
+// enqueued anyway would sit in the queue forever. A nil SidecarEnqueuer is how
+// that off state reaches the pipeline.
+//
+// It is satisfied by jobs.Enqueuer.
+type SidecarEnqueuer interface {
+	// EnqueueSidecar schedules a sidecar write for photoUID.
+	EnqueueSidecar(ctx context.Context, photoUID string) error
+}
+
 // NopEnqueuer is the no-op JobEnqueuer used until the persistent job queue
 // exists. Both methods succeed without doing anything, so the pipeline runs
 // end to end (stream, dedup, store, catalogue, thumbnails) with the embedding

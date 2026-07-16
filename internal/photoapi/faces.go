@@ -72,6 +72,7 @@ func (a *API) handleFaceAssign(w http.ResponseWriter, r *http.Request) {
 		writeFaceError(w, err, "applying face assignment failed")
 		return
 	}
+	a.enqueueSidecar(r.Context(), req.PhotoUID)
 	writeJSON(w, http.StatusOK, result)
 }
 

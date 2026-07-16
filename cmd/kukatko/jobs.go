@@ -13,9 +13,13 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/jobsapi"
 	"github.com/panbotka/kukatko/internal/maintenanceapi"
+	"github.com/panbotka/kukatko/internal/metajob"
 	"github.com/panbotka/kukatko/internal/metrics"
+	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/processapi"
+	"github.com/panbotka/kukatko/internal/sidecarjob"
+	"github.com/panbotka/kukatko/internal/thumbjob"
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
@@ -32,8 +36,11 @@ import (
 // backfill. It also builds the thumbnail service (regenerating thumbnails/pHashes,
 // and backing the missing-thumbnail backfill), the metadata service (re-reading a
 // photo's original into the IPTC/XMP and file-technical columns, and backing the
-// metadata backfill) and the library-maintenance service/API, since all are part of
-// the job subsystem; a build failure for any of them is returned as an error.
+// metadata backfill), the metadata sidecar export service (nil when the export is
+// switched off; it registers the `sidecar` job that writes each photo's curation
+// to a YAML file in storage and backs the sidecar backfill) and the
+// library-maintenance service/API, since all are part of the job subsystem; a
+// build failure for any of them is returned as an error.
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
@@ -51,21 +58,14 @@ func buildJobs(
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	registry := worker.NewRegistry()
-	worker.RegisterBuiltins(registry)
-	registry.Register(jobs.TypeImageEmbed, embedSvc.Handle)
-	registry.Register(jobs.TypeFaceDetect, faceSvc.Handle)
-	registry.Register(jobs.TypeThumbnail, thumbSvc.Handle)
-	registry.Register(jobs.TypeMetadata, metaSvc.Handle)
-	if importSvc != nil {
-		registry.Register(jobs.TypePPImport, importSvc.Handle)
+	sidecarSvc, err := buildSidecarServiceOrNil(cfg, db, enqueuer)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
-	if psMigrate != nil {
-		registry.Register(jobs.TypePSMigrate, psMigrate)
-	}
-	if placesSvc != nil {
-		registry.Register(jobs.TypePlaces, placesSvc.Handle)
-	}
+	registry := buildRegistry(registryServices{
+		embed: embedSvc, face: faceSvc, thumb: thumbSvc, meta: metaSvc,
+		imp: importSvc, psMigrate: psMigrate, places: placesSvc, sidecar: sidecarSvc,
+	})
 
 	w := worker.New(worker.Config{
 		Queue:             store,
@@ -91,6 +91,9 @@ func buildJobs(
 		PlacesBackfiller:    placesBF,
 		ThumbnailBackfiller: thumbSvc,
 		MetadataBackfiller:  metaSvc,
+		// A nil interface (not a typed-nil pointer) disables /process/sidecars when
+		// the metadata sidecar export is off.
+		SidecarBackfiller: sidecarBackfillerOrNil(sidecarSvc),
 		// A nil interface (not a typed-nil pointer) disables /process/stacks when
 		// the stacking feature is off.
 		StacksDetector: stacksDetectorOrNil(cfg, db),
@@ -100,6 +103,46 @@ func buildJobs(
 		RequireAdmin:      authAPI.RequireAdmin,
 	})
 	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, authAPI), nil
+}
+
+// registryServices bundles the job handlers buildRegistry wires, so the
+// registration list is one parameter rather than eight.
+type registryServices struct {
+	embed     *embedjob.Service
+	face      *facejob.Service
+	thumb     *thumbjob.Service
+	meta      *metajob.Service
+	imp       *ppimport.Service
+	psMigrate worker.HandlerFunc
+	places    *placesjob.Service
+	sidecar   *sidecarjob.Service
+}
+
+// buildRegistry returns the worker registry with every configured handler
+// registered. The always-available handlers register unconditionally; the
+// config-gated ones (import, photo-sorter migration, places, sidecar) register
+// only when their service was built, because an unregistered type is never
+// claimed — so a job of a type with no handler would sit queued forever.
+func buildRegistry(svc registryServices) *worker.Registry {
+	registry := worker.NewRegistry()
+	worker.RegisterBuiltins(registry)
+	registry.Register(jobs.TypeImageEmbed, svc.embed.Handle)
+	registry.Register(jobs.TypeFaceDetect, svc.face.Handle)
+	registry.Register(jobs.TypeThumbnail, svc.thumb.Handle)
+	registry.Register(jobs.TypeMetadata, svc.meta.Handle)
+	if svc.imp != nil {
+		registry.Register(jobs.TypePPImport, svc.imp.Handle)
+	}
+	if svc.psMigrate != nil {
+		registry.Register(jobs.TypePSMigrate, svc.psMigrate)
+	}
+	if svc.places != nil {
+		registry.Register(jobs.TypePlaces, svc.places.Handle)
+	}
+	if svc.sidecar != nil {
+		registry.Register(jobs.TypeSidecar, svc.sidecar.Handle)
+	}
+	return registry
 }
 
 // startWorker runs w in the background, tied to ctx so it stops on shutdown. A

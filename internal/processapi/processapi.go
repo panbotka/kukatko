@@ -78,6 +78,21 @@ type MetadataBackfiller interface {
 	BackfillMetadata(ctx context.Context, all bool) (int, error)
 }
 
+// SidecarBackfiller enqueues a sidecar job for every photo whose metadata sidecar
+// is missing or stale. It is satisfied by sidecarjob.Service. When all is true it
+// schedules every non-archived photo instead (a forced full re-run), which is how
+// curation that changed without touching the photo row — an album membership, a
+// label — is recovered. Sidecar jobs run locally, so the backfill works
+// regardless of the embeddings box being offline. A nil SidecarBackfiller
+// disables the /process/sidecars endpoint (it answers 503), which is what the
+// sidecar.enabled config switch turns off.
+type SidecarBackfiller interface {
+	// BackfillSidecars enqueues a sidecar job for every photo whose sidecar is
+	// missing or stale (or, when all is true, for every non-archived photo) and
+	// returns how many were scheduled.
+	BackfillSidecars(ctx context.Context, all bool) (int, error)
+}
+
 // StacksDetector groups the several files of one shot (RAW+JPEG, exported edits,
 // …) into stacks by the enabled detection rules. It is satisfied by
 // stacks.Service and runs synchronously like the reclusterer (the grouping is a
@@ -112,6 +127,7 @@ type API struct {
 	placesBackfiller PlacesBackfiller
 	thumbBackfiller  ThumbnailBackfiller
 	metaBackfiller   MetadataBackfiller
+	sidecarBackfill  SidecarBackfiller
 	stacksDetector   StacksDetector
 	locationEstim    LocationEstimator
 	requireAdmin     func(http.Handler) http.Handler
@@ -133,6 +149,8 @@ type Config struct {
 	ThumbnailBackfiller ThumbnailBackfiller
 	// MetadataBackfiller runs the file-metadata (IPTC/XMP) backfill.
 	MetadataBackfiller MetadataBackfiller
+	// SidecarBackfiller runs the metadata-sidecar export backfill.
+	SidecarBackfiller SidecarBackfiller
 	// StacksDetector runs the automatic stack-detection pass.
 	StacksDetector StacksDetector
 	// LocationEstimator runs the missing-location estimation pass.
@@ -150,6 +168,7 @@ func NewAPI(cfg Config) *API {
 		placesBackfiller: cfg.PlacesBackfiller,
 		thumbBackfiller:  cfg.ThumbnailBackfiller,
 		metaBackfiller:   cfg.MetadataBackfiller,
+		sidecarBackfill:  cfg.SidecarBackfiller,
 		stacksDetector:   cfg.StacksDetector,
 		locationEstim:    cfg.LocationEstimator,
 		requireAdmin:     cfg.RequireAdmin,
@@ -165,6 +184,7 @@ func NewAPI(cfg Config) *API {
 //	POST /process/places      RequireAdmin  backfill missing reverse-geocoded places
 //	POST /process/thumbnails  RequireAdmin  backfill missing thumbnails (?all=true forces a full re-run)
 //	POST /process/metadata    RequireAdmin  backfill unread file metadata (?all=true forces a full re-read)
+//	POST /process/sidecars    RequireAdmin  backfill missing metadata sidecars (?all=true forces a full re-run)
 //	POST /process/stacks      RequireAdmin  detect and form stacks over the library
 //	POST /process/locations   RequireAdmin  estimate missing locations from same-day photos
 func (a *API) RegisterRoutes(r chi.Router) {
@@ -175,6 +195,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAdmin).Post("/places", a.handleBackfillPlaces)
 		r.With(a.requireAdmin).Post("/thumbnails", a.handleBackfillThumbnails)
 		r.With(a.requireAdmin).Post("/metadata", a.handleBackfillMetadata)
+		r.With(a.requireAdmin).Post("/sidecars", a.handleBackfillSidecars)
 		r.With(a.requireAdmin).Post("/stacks", a.handleDetectStacks)
 		r.With(a.requireAdmin).Post("/locations", a.handleEstimateLocations)
 	})
@@ -196,6 +217,23 @@ type reclusterResponse struct {
 type stacksResponse struct {
 	// Created is the number of stacks formed by this call.
 	Created int `json:"created"`
+}
+
+// handleBackfillSidecars enqueues sidecar jobs for every photo whose metadata
+// sidecar is missing or stale and reports how many were scheduled. With ?all=true
+// it schedules every non-archived photo (a forced full re-run). It answers 503
+// when the sidecar export is switched off.
+func (a *API) handleBackfillSidecars(w http.ResponseWriter, r *http.Request) {
+	if a.sidecarBackfill == nil {
+		writeError(w, http.StatusServiceUnavailable, "sidecar backfill not available")
+		return
+	}
+	enqueued, err := a.sidecarBackfill.BackfillSidecars(r.Context(), queryFlag(r, "all"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "backfilling sidecars failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
 }
 
 // handleDetectStacks groups the currently unstacked photos into stacks by the

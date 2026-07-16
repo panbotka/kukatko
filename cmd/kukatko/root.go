@@ -32,7 +32,8 @@ func newRootCmd(argv0 string) *cobra.Command {
 	root.PersistentFlags().String("config", "",
 		"path to the YAML config file (default: $KUKATKO_CONFIG or config.yaml)")
 	root.AddCommand(newServeCmd(), newMigrateCmd(), newImportCmd(), newBackupCmd(),
-		newRestoreCmd(), newMaintenanceCmd(), newStorageCmd(), newCtlCmd(), newVersionCmd())
+		newRestoreCmd(), newMaintenanceCmd(), newSidecarCmd(), newStorageCmd(), newCtlCmd(),
+		newVersionCmd())
 	return root
 }
 

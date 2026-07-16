@@ -511,8 +511,8 @@ které se ztratí při restartu).
   stale-lock recovery. **Graceful shutdown** (SIGINT/SIGTERM) zastaví claiming a opuštěné
   in-flight joby nechá frontě k recovery. Stav fronty se čte přes **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); UI ho polluje.
-- **Typy jobů:** `thumbnail`, `places`, `metadata` (běží lokálně na Pi, hned), `image_embed`,
-  `face_detect` (vyžadují box), `pp_import`, `ps_migrate`, `backup`.
+- **Typy jobů:** `thumbnail`, `places`, `metadata`, `sidecar` (běží lokálně na Pi, hned),
+  `image_embed`, `face_detect` (vyžadují box), `pp_import`, `ps_migrate`, `backup`.
 - **Box offline:** embeddings client před zpracováním ověří dostupnost sidecaru (health check).
   Když je box offline, joby `image_embed`/`face_detect` zůstanou `queued` s `run_after`
   posunutým (backoff), upload a prohlížení fungují bez omezení. Po naběhnutí boxu se fronta
@@ -534,6 +534,48 @@ které se ztratí při restartu).
   volitelně raw Ethernet rámec na `embedding.wake.interface` (vyžaduje CAP_NET_RAW). **Defaultně
   vypnuto** (`embedding.wake.enabled=false`), plně inertní; ruční zapnutí boxu stačí. Uspávání
   boxu je mimo rozsah.
+
+### 8.1 Metadatové sidecary — kurátorská data nezávislá na databázi
+
+**Rozhodnutí:** ke každé fotce zapisovat **YAML sidecar** vedle originálů ve storage
+(`sidecars/<klíč originálu>.yml`) s jejími metadaty a kurátorskými daty, aby šel katalog obnovit
+**jen ze storage** — originály + sidecary, bez databáze. Balíky `internal/sidecarexport` (formát +
+atomický zápis) a `internal/sidecarjob` (job handler + backfill). **Formát celý v
+[`RESTORE.md`](RESTORE.md)** — tam ho někdo bude hledat, až databáze nebude.
+
+**Proč:** všechno, co uživatel vytvoří — titulky, kdo je na fotce, alba, hodnocení — jinak existuje
+na **jediném místě**: v Postgresu. S3 záloha je dobrá, ale je to **jeden mechanismus**, a zálohu,
+která tři měsíce tiše padá, objevíš v den, kdy ji potřebuješ. Sidecar je druhý mechanismus **jiného
+druhu**: kurátorská data leží *vedle fotky, kterou popisují*, v textovém souboru, který přečte
+libovolný nástroj, na tomtéž úložišti jako originál. Odpověď PhotoPrismu na týž problém.
+
+**Klíčová rozhodnutí:**
+
+- **Paralelní strom, ne soubor vedle originálu.** Strom originálů zůstane čistě médii — importéry a
+  integritní scan, které ho procházejí, se nemusí učit ignorovat druhý druh souboru — a celý export
+  je jedna předpona, takže se dá vypsat, rsyncnout nebo zahodit jako celek. Pořád je to **tatáž
+  storage** jako originály (FS i R2), takže sidecary cestují s fotkami i do zálohy.
+- **Přípona se přidává, ne nahrazuje** (`IMG_1.jpg.yml`): `IMG_1.jpg` a `IMG_1.png` jsou dvě fotky a
+  nesmí kolidovat na jednom sidecaru.
+- **Záměrně se nezapisují embeddingy ani face vektory.** Jsou velké, binární, zavalily by čitelnost
+  souboru — a **levně se přepočítají z originálu**, od toho jsou backfill joby. Co se přepočítat
+  nedá, je co rozhodl **člověk**, a to tam je celé. Hlavička souboru to říká nahlas, aby to nikdo
+  „neopravil“.
+- **Zápis je asynchronní a debouncovaný.** Job zařadí každá mutace; dedup index fronty drží nejvýš
+  jeden čekající `sidecar` job na fotku a job má ~5s `run_after`, takže dávková editace 500 fotek
+  zařadí 500 levných řádků a vrátí se — soubory zapíše worker, jeden na fotku. Handler je
+  **idempotentní a bezstavový** (přečte fotku a zapíše aktuální pravdu), proto je slitý nebo ztracený
+  job jen zastaralost, ne ztracený update.
+- **Nikdy na účet uživatele.** Selhaný zápis se zaloguje a fronta ho zopakuje; edit nikdy neshodí —
+  edit je bezpečně v Postgresu tak jako tak, a záchranná síť nesmí být to, co tě shodí.
+- **Sidecar se maže při purge.** Sidecar, který přežije fotku, je přesně ten soubor, ze kterého by
+  obnova vzkřísila trvale smazanou fotku.
+- **Sidecary jsou vyloučené z integritního scanu** (`maintenance scan`): jeho definice orphanu je „na
+  disku, ne v katalogu“, což je každý sidecar z podstaty. Filtr sedí v adaptéru v `cmd/kukatko`, ne
+  v `backup.DiskOriginals` — ten samý průchod totiž krmí i S3 sync, který sidecary kopírovat **má**.
+- **Čtení zpět (`restore --from-sidecars`) zatím není.** Tohle je exportní polovina; formát je
+  navržený, aby na to stačil, a **round-trip test** v `internal/sidecarexport` je to, co tu
+  dostatečnost drží (a co budoucí importér dostane jako zadání).
 
 ---
 

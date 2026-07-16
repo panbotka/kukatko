@@ -419,6 +419,16 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   Job je čistý **gap-filler**: doplní jen sloupce, které jsou pořád prázdné, takže prázdná extrakce
   nikdy nepřepíše hodnotu, kterou napsal uživatel, a `taken_at`/GPS/titulků/kurátorských dat se
   vůbec nedotkne. Chybějící originál se **zaloguje a přeskočí** (běh nepadá).
+  `POST /process/sidecars` → `{enqueued}` (backfill `sidecar` pro fotky, jejichž **metadatový
+  sidecar chybí nebo je zastaralý**, přes `sidecarjob.BackfillSidecars`; „chybí/zastaralý“ =
+  `photos.sidecar_written_at IS NULL OR sidecar_written_at < updated_at`). Sidecar je YAML soubor
+  vedle originálů ve storage (`sidecars/<klíč originálu>.yml`) s metadaty a kurátorskými daty fotky
+  — existuje, aby knihovna přežila ztrátu databáze; formát celý v `docs/RESTORE.md`. Volitelné
+  `?all=true` naplánuje **každou nearchivovanou fotku** (vynucený úplný re-run — tak se doženou
+  kurátorská data, která se změnila **bez** dotyku řádku fotky: členství v albu, štítek, a proto
+  nevypadají zastarale). Endpoint jen **zařadí** joby, soubory zapisuje worker; běh je idempotentní
+  (nad knihovnou s aktuálními sidecary naplánuje nulu) a přerušený běh se dožene. **503** když
+  `sidecar.enabled: false`. CLI protějšek: `kukatko sidecar backfill [--all]`.
   `POST /process/stacks` → `{created}` (detekce a seskupení fotek do stacků nad celou knihovnou přes
   `stacks.Service.DetectStacks`; **synchronní**, kandidáty jsou **jen dosud nestacknuté nearchivované**
   fotky, takže re-run je idempotentní a nerozbije ruční ani existující stack; **503** když

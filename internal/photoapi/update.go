@@ -117,6 +117,7 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writePhotoError(w, err, "updating photo failed")
 		return
 	}
+	a.enqueueSidecar(r.Context(), uid)
 	a.writeDetail(w, r, user.UID, updated)
 }
 

@@ -69,6 +69,10 @@ const (
 	// the file itself is the authority on (IPTC/XMP credit fields, image codec,
 	// colour profile, …). It runs locally.
 	TypeMetadata = "metadata"
+	// TypeSidecar writes a photo's metadata sidecar — the YAML file next to the
+	// originals that holds its metadata and curation, so the catalogue can be
+	// rebuilt from storage alone. It runs locally. See internal/sidecarexport.
+	TypeSidecar = "sidecar"
 	// TypePPImport imports a batch from PhotoPrism.
 	TypePPImport = "pp_import"
 	// TypePSMigrate migrates data from photo-sorter.

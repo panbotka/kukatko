@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/backup"
@@ -19,6 +20,7 @@ import (
 	"github.com/panbotka/kukatko/internal/metajob"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
@@ -26,22 +28,46 @@ import (
 )
 
 // maintenanceDisk adapts backup.DiskOriginals (which walks the originals root) to
-// maintenance.DiskScanner, converting its LocalOriginal entries to DiskFile.
+// maintenance.DiskScanner, converting its LocalOriginal entries to DiskFile and
+// dropping the metadata sidecars.
 type maintenanceDisk struct {
 	disk *backup.DiskOriginals
 }
 
-// List walks the originals root and returns every file as a maintenance.DiskFile.
+// List walks the originals root and returns every file that is an original as a
+// maintenance.DiskFile.
+//
+// It filters out the metadata sidecar tree, and that filter is the whole reason
+// this is not a straight conversion. The integrity scan defines an orphan as "on
+// disk but not in the catalogue", which every sidecar is by construction — they
+// describe photos, they are not photos, and no row will ever point at one.
+// Without this the scan would report one orphan per photo forever, Report.Clean
+// would never be true again, and `maintenance repair --import-orphans` would try
+// to ingest every YAML file in the library.
+//
+// The filter lives here rather than in backup.DiskOriginals deliberately: that
+// walk also feeds the S3 backup sync, which *should* copy sidecars — the curation
+// travelling with the originals into the backup bucket is the point. The two
+// callers want different lists, so they diverge at the adapter.
 func (d maintenanceDisk) List(ctx context.Context) ([]maintenance.DiskFile, error) {
 	originals, err := d.disk.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing originals on disk: %w", err)
 	}
-	files := make([]maintenance.DiskFile, len(originals))
-	for i, o := range originals {
-		files[i] = maintenance.DiskFile{Key: o.Key, Size: o.Size}
+	files := make([]maintenance.DiskFile, 0, len(originals))
+	for _, o := range originals {
+		if isSidecarKey(o.Key) {
+			continue
+		}
+		files = append(files, maintenance.DiskFile{Key: o.Key, Size: o.Size})
 	}
 	return files, nil
+}
+
+// isSidecarKey reports whether key names a metadata sidecar rather than an
+// original.
+func isSidecarKey(key string) bool {
+	return strings.HasPrefix(key, sidecarexport.Prefix+"/")
 }
 
 // orphanImporter adapts the upload pipeline to maintenance.OrphanImporter: it

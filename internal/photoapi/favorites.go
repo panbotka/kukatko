@@ -174,6 +174,7 @@ func (a *API) runFavoriteToggle(
 		writeFavoriteError(w, err)
 		return
 	}
+	a.enqueueSidecar(r.Context(), uid)
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -133,6 +133,7 @@ func (a *API) handleSetRating(w http.ResponseWriter, r *http.Request) {
 		writeRatingError(w, err)
 		return
 	}
+	a.enqueueSidecar(r.Context(), uid)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -154,6 +155,7 @@ func (a *API) handleClearRating(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "clearing rating failed")
 		return
 	}
+	a.enqueueSidecar(r.Context(), uid)
 	w.WriteHeader(http.StatusNoContent)
 }
 

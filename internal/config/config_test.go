@@ -93,6 +93,10 @@ func TestLoad_defaults(t *testing.T) {
 		{"mcp.enabled", cfg.MCP.Enabled, false},
 		{"mcp.page_size", cfg.MCP.PageSize, 25},
 		{"mcp.max_page_size", cfg.MCP.MaxPageSize, 100},
+		// The sidecar export is the "curation survives losing the database" mechanism,
+		// and one switched on after the disaster is no mechanism at all — so this pins
+		// the default is on, not merely that the key exists.
+		{"sidecar.enabled", cfg.Sidecar.Enabled, true},
 		{"location_estimate.enabled", cfg.LocationEstimate.Enabled, true},
 		{"location_estimate.window", cfg.LocationEstimate.Window, 6 * time.Hour},
 		{"location_estimate.radius_meters", cfg.LocationEstimate.RadiusMeters, 5000.0},
@@ -139,6 +143,7 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	t.Setenv("KUKATKO_DATABASE_MAX_OPEN_CONNS", "50")
 	t.Setenv("KUKATKO_EMBEDDING_URL", "http://box:9000")
 	t.Setenv("KUKATKO_DUPLICATE_ENABLED", "false")
+	t.Setenv("KUKATKO_SIDECAR_ENABLED", "false")
 	t.Setenv("KUKATKO_DUPLICATE_EMBEDDING_MAX_DIST", "0.1")
 	t.Setenv("KUKATKO_BACKUP_S3_PATH_STYLE", "true")
 	t.Setenv("KUKATKO_MCP_ENABLED", "true")
@@ -163,6 +168,9 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	}
 	if cfg.Duplicate.Enabled {
 		t.Error("duplicate.enabled = true, want false")
+	}
+	if cfg.Sidecar.Enabled {
+		t.Error("sidecar.enabled = true, want false")
 	}
 	if cfg.Duplicate.EmbeddingMaxDist != 0.1 {
 		t.Errorf("duplicate.embedding_max_dist = %v, want 0.1", cfg.Duplicate.EmbeddingMaxDist)
