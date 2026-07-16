@@ -269,7 +269,7 @@ export function useReviewGame(): ReviewGame {
 
   const answer = useCallback(
     (verdict: ReviewAnswer) => {
-      const q = queueRef.current[0]
+      const q = queueRef.current.at(0)
       if (q === undefined || undoingRef.current) {
         return
       }
