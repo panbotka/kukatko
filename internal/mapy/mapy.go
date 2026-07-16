@@ -1,7 +1,8 @@
 // Package mapy is Kukátko's server-side HTTP client to the mapy.com REST API. It
-// proxies map tiles and reverse geocoding so the API key never reaches the
-// browser: the key is sent only in the X-Mapy-Api-Key request header and never
-// appears in a returned URL or error.
+// proxies map tiles, reverse geocoding (coordinate → place) and forward geocoding
+// (place name → coordinates) so the API key never reaches the browser: the key is
+// sent only in the X-Mapy-Api-Key request header and never appears in a returned
+// URL or error.
 //
 // Every request also carries a configurable User-Agent (Config.UserAgent). mapy.com
 // can restrict a key to one exact User-Agent, so that string is a credential too:
@@ -49,6 +50,15 @@ const (
 	// tileSize is the standard tile edge in pixels; retina doubles it as a "@2x"
 	// suffix.
 	tileSize = "256"
+	// DefaultGeocodeLimit is how many forward-geocoding suggestions are asked for
+	// when a caller names no limit: enough to disambiguate the several Veselís,
+	// short enough to read at a glance.
+	DefaultGeocodeLimit = 5
+	// MaxGeocodeLimit caps the suggestions one forward-geocoding call may ask for.
+	// Each call costs mapy.com credits regardless of the count, but a typeahead
+	// has no use for a hundred rows and the cap keeps one caller from demanding
+	// them.
+	MaxGeocodeLimit = 15
 )
 
 // Sentinel errors classifying an upstream outcome. They never carry the API key
@@ -58,6 +68,10 @@ var (
 	ErrInvalidURL = errors.New("mapy: invalid base URL")
 	// ErrInvalidMapset indicates a tile was requested for an unsupported mapset.
 	ErrInvalidMapset = errors.New("mapy: unsupported mapset")
+	// ErrEmptyQuery indicates forward geocoding was asked for a blank place name.
+	// It is caught before any upstream call, so an empty typeahead never costs a
+	// credit.
+	ErrEmptyQuery = errors.New("mapy: empty geocode query")
 	// ErrUnauthorized indicates mapy.com rejected the API key (HTTP 401/403). It
 	// is a server-side configuration problem, not a client one.
 	ErrUnauthorized = errors.New("mapy: upstream rejected the API key")
@@ -138,8 +152,48 @@ type GeocodeResult struct {
 	RegionalStructure []RegionalItem `json:"regional_structure"`
 }
 
-// Client is the mapy.com proxy contract: stream a tile and reverse-geocode a
-// coordinate. It is an interface so the HTTP API and tests can substitute a fake.
+// Place is one forward-geocoding suggestion: a place mapy.com matched a name to,
+// with everything needed to tell it from its namesakes and to drop a pin on it.
+// Provider-internal fields (bbox, zip, the regional breakdown) are dropped.
+type Place struct {
+	// Name is the place's own name, e.g. "Veselí nad Moravou".
+	Name string `json:"name"`
+	// Label is the localised name of the kind of place, as mapy.com writes it in
+	// the requested language, e.g. "Město" / "Zámek". It is display text, not a
+	// value to branch on — see Type for that.
+	Label string `json:"label"`
+	// Type is mapy.com's machine-readable kind, e.g. "regional.municipality",
+	// "regional.street", "regional.region" or "poi".
+	Type string `json:"type"`
+	// Location disambiguates the name by naming what contains it, from the
+	// narrowest upwards, e.g. "Veselí nad Moravou, okres Hodonín, Jihomoravský
+	// kraj, Česko". It is empty for a place with nothing above it (a country).
+	Location string `json:"location"`
+	// Lat is the suggestion's latitude in decimal degrees.
+	Lat float64 `json:"lat"`
+	// Lng is the suggestion's longitude in decimal degrees.
+	Lng float64 `json:"lng"`
+}
+
+// ClampGeocodeLimit bounds a requested suggestion count to [1, MaxGeocodeLimit],
+// mapping a non-positive limit to DefaultGeocodeLimit. Callers at the HTTP
+// boundary use it to normalise a query parameter (so an absurd limit is answered,
+// not rejected) and it is applied again inside Geocode, so no call site can drive
+// an unbounded count upstream.
+func ClampGeocodeLimit(limit int) int {
+	switch {
+	case limit <= 0:
+		return DefaultGeocodeLimit
+	case limit > MaxGeocodeLimit:
+		return MaxGeocodeLimit
+	default:
+		return limit
+	}
+}
+
+// Client is the mapy.com proxy contract: stream a tile, reverse-geocode a
+// coordinate and forward-geocode a place name. It is an interface so the HTTP API
+// and tests can substitute a fake.
 type Client interface {
 	// Tile fetches the tile named by params and returns its streamed body and
 	// metadata, or a classified sentinel error. The caller must close the result
@@ -148,6 +202,10 @@ type Client interface {
 	// ReverseGeocode resolves lat/lng to a simplified location, or a classified
 	// sentinel error. It returns ErrNotFound when mapy.com has no match.
 	ReverseGeocode(ctx context.Context, lat, lng float64) (*GeocodeResult, error)
+	// Geocode resolves a free-text place name to at most limit ranked
+	// suggestions, best match first, or a classified sentinel error. A name it
+	// matches nothing for yields an empty slice, not an error.
+	Geocode(ctx context.Context, query string, limit int) ([]Place, error)
 }
 
 // Config configures an HTTPClient. APIKey is required for live use; BaseURL falls
@@ -327,6 +385,85 @@ func (c *HTTPClient) ReverseGeocode(ctx context.Context, lat, lng float64) (*Geo
 		Location:          item.Location,
 		RegionalStructure: item.RegionalStructure,
 	}, nil
+}
+
+// geocodeResponse is the subset of the mapy.com /v1/geocode response the proxy
+// reads: an ordered list of matches, best first.
+type geocodeResponse struct {
+	Items []geocodeItem `json:"items"`
+}
+
+// geocodeItem is one forward-geocode match; only the fields surfaced in Place are
+// decoded.
+type geocodeItem struct {
+	Name     string          `json:"name"`
+	Label    string          `json:"label"`
+	Type     string          `json:"type"`
+	Location string          `json:"location"`
+	Position geocodePosition `json:"position"`
+}
+
+// geocodePosition is a match's coordinate as mapy.com spells it (lon before lat).
+type geocodePosition struct {
+	Lon float64 `json:"lon"`
+	Lat float64 `json:"lat"`
+}
+
+// Geocode resolves a free-text place name to ranked coordinate suggestions via
+// the mapy.com /v1/geocode endpoint, asking for at most ClampGeocodeLimit(limit)
+// of them in the client's configured language. A blank query returns ErrEmptyQuery
+// without an upstream call, so an empty typeahead never spends a credit.
+//
+// A name mapy.com matches nothing for is an empty slice and a nil error, not
+// ErrNotFound: "no suggestions yet" is the normal answer to a half-typed name, and
+// the caller must not treat it as a failure.
+func (c *HTTPClient) Geocode(ctx context.Context, query string, limit int) ([]Place, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, ErrEmptyQuery
+	}
+	reqURL := c.baseURL.JoinPath("v1", "geocode")
+	q := url.Values{}
+	q.Set("query", query)
+	q.Set("lang", c.lang)
+	q.Set("limit", strconv.Itoa(ClampGeocodeLimit(limit)))
+	reqURL.RawQuery = q.Encode()
+
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.do(ctx, reqURL, "geocode")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		err := statusError("geocode", resp.StatusCode)
+		if resp.StatusCode != http.StatusNotFound {
+			// 404 is a normal "no such place"; anything else is a real upstream
+			// failure worth a line in the log with its status. The query is left
+			// out: it is the user's own text, and the status is what explains the
+			// failure.
+			slog.WarnContext(ctx, "mapy: geocode failed", "status", resp.StatusCode, "error", err)
+		}
+		return nil, err
+	}
+
+	var decoded geocodeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return nil, fmt.Errorf("geocode: %w: decoding response: %w", ErrUpstream, err)
+	}
+	places := make([]Place, 0, len(decoded.Items))
+	for _, item := range decoded.Items {
+		places = append(places, Place{
+			Name:     item.Name,
+			Label:    item.Label,
+			Type:     item.Type,
+			Location: item.Location,
+			Lat:      item.Position.Lat,
+			Lng:      item.Position.Lon,
+		})
+	}
+	return places, nil
 }
 
 // do issues an authenticated GET to reqURL, attaching the API key header and, when

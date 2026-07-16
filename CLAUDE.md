@@ -82,7 +82,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/jobsapi` — admin-only `/jobs` (stats, list, requeue)
 - `internal/maintenance` — library integrity check & repair; **never deletes originals**
 - `internal/maintenanceapi` — admin-only `/maintenance` (scan, repair)
-- `internal/mapsapi` — tile proxy, reverse geocode, GeoJSON feed
+- `internal/mapsapi` — tile proxy, geocode (reverse + place search), GeoJSON feed
 - `internal/mapy` — server-side mapy.com client; **the key never leaves the server**
 - `internal/mediaurl` — stamps `thumb_url`/`download_url` into payloads; signed URL, or an own route
 - `internal/metajob` — worker handler `metadata` + backfill: re-reads an original into the IPTC/XMP and file-technical columns; gap-filler only

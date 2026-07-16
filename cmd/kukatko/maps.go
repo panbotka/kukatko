@@ -26,17 +26,19 @@ func newMapsHealth(cfg *config.Config) *mapy.Health {
 
 // buildMapsAPI assembles the maps subsystem: the mapy.com proxy client (built
 // only when an API key is configured, so the key stays server-side) backing the
-// tile and reverse-geocode endpoints, and the photo store backing the GeoJSON
-// feed. Read access reuses the auth subsystem's RequireAuth guard. When no key is
-// configured the tile and reverse-geocode endpoints answer 503 while the GeoJSON
-// feed (which needs no key) keeps working. Proxied tiles are cached server-side
-// so a re-browsed area costs no mapy.com credits, and every upstream outcome is
-// recorded on the shared health tracker.
+// tile, reverse-geocode and place-search endpoints, and the photo store backing
+// the GeoJSON feed. Read access reuses the auth subsystem's RequireAuth guard.
+// When no key is configured those three endpoints answer 503 while the GeoJSON
+// feed (which needs no key) keeps working. Proxied tiles and geocode answers are
+// cached server-side so a re-browsed area or a repeated place search costs no
+// mapy.com credits, and every upstream outcome is recorded on the shared health
+// tracker.
 func buildMapsAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, health *mapy.Health,
 ) (*mapsapi.API, error) {
 	var tiles mapsapi.TileFetcher
 	var geocoder mapsapi.Geocoder
+	var places mapsapi.PlaceSearcher
 	if cfg.Maps.MapyAPIKey != "" {
 		client, err := mapy.New(mapy.Config{
 			BaseURL:   cfg.Maps.BaseURL,
@@ -46,13 +48,14 @@ func buildMapsAPI(
 		if err != nil {
 			return nil, fmt.Errorf("initialising mapy.com client: %w", err)
 		}
-		tiles, geocoder = client, client
+		tiles, geocoder, places = client, client, client
 	}
 
 	tileLimit := ratelimit.New(cfg.RateLimit.Tiles.RatePerSec, cfg.RateLimit.Tiles.Burst)
 	return mapsapi.NewAPI(mapsapi.Config{
 		Tiles:          tiles,
 		Geocoder:       geocoder,
+		Places:         places,
 		Photos:         photos.NewStore(db.Pool()),
 		Health:         health,
 		RequireAuth:    authAPI.RequireAuth,

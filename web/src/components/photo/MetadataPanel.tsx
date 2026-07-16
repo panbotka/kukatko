@@ -7,12 +7,14 @@ import { useTranslation } from 'react-i18next'
 import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
 import { formatDateTime } from '../../lib/format'
 import { joinKeywords, sameKeywords, splitKeywords } from '../../lib/photoFacts'
+import { type Place } from '../../services/map'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
 import { Icon } from '../Icon'
 import { LeafletMap } from '../map/LeafletMap'
 
 import { KeywordsInput } from './KeywordsInput'
 import { PhotoLocation } from './PhotoLocation'
+import { PlaceSearch } from './PlaceSearch'
 
 /**
  * The dating note's length cap, mirroring the backend's (`photoapi`'s
@@ -258,7 +260,9 @@ function CaptureDate({ date, note }: CaptureDateProps) {
  * replaces the old single hidden "Edit" button so every caption field is
  * discoverably editable in place. Location reuses {@link PhotoLocation} read-only
  * (mini-map + on-demand reverse-geocode) and is set/changed/cleared through the
- * form's coordinate field and Leaflet map picker.
+ * form's three ways in — a {@link PlaceSearch} by name, the coordinate field, and
+ * the Leaflet map picker — all of which write the one coordinate field the save
+ * reads, so they never disagree about what the location is.
  *
  * The form also carries the IPTC/XMP credit block — subject, artist, copyright,
  * licence, keywords (as chips, see {@link KeywordsInput}) and the "this is a scan"
@@ -362,6 +366,16 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   /** Rewrites the coordinate text in canonical decimal degrees after a map move. */
   function pickLocation(lat: number, lng: number) {
     setCoordText(formatCoordinates({ lat, lng }))
+  }
+
+  /**
+   * Takes a searched-for place's coordinates. It writes the same field a map
+   * click does, so the map recentres on the point and the save path stays the one
+   * that was already there — a place search is a third way to fill the coordinate
+   * in, not a fourth kind of location.
+   */
+  function pickPlace(place: Place) {
+    pickLocation(place.lat, place.lng)
   }
 
   /**
@@ -672,6 +686,9 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             </div>
           )}
         </div>
+        {/* The three ways to set a location, in the order they are reached for:
+            name it, type/paste the numbers, or click the map. */}
+        <PlaceSearch id="photo-place-search" onPick={pickPlace} disabled={saving} />
         <Form.Group className="mb-2" controlId="photo-coordinates">
           <Form.Label className="small text-secondary mb-1">
             {t('photo.metadata.coordinates')}

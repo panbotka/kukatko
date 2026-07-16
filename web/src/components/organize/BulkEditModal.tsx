@@ -21,6 +21,7 @@ import {
   type LabelCount,
 } from '../../services/organize'
 import { MultiSelect, type MultiSelectOption } from '../MultiSelect'
+import { PlaceSearch } from '../photo/PlaceSearch'
 
 /**
  * What a successful apply actually did: the operations that were sent (after
@@ -634,34 +635,46 @@ function BulkEditForm({
           </Form.Select>
         </Form.Group>
         {form.locationMode === 'set' && (
-          <Row className="g-2 mt-1">
-            <Col xs={6}>
-              <Form.Control
-                type="number"
-                step="any"
-                value={form.lat}
-                disabled={busy}
-                aria-label={t('bulkEdit.location.lat')}
-                placeholder={t('bulkEdit.location.lat')}
-                onChange={(e) => {
-                  onChange({ lat: e.target.value })
-                }}
-              />
-            </Col>
-            <Col xs={6}>
-              <Form.Control
-                type="number"
-                step="any"
-                value={form.lng}
-                disabled={busy}
-                aria-label={t('bulkEdit.location.lng')}
-                placeholder={t('bulkEdit.location.lng')}
-                onChange={(e) => {
-                  onChange({ lng: e.target.value })
-                }}
-              />
-            </Col>
-          </Row>
+          <>
+            {/* The same picker as the photo detail's location editor: naming the
+                place is usually easier than knowing its numbers, and it just
+                fills the two fields below. */}
+            <PlaceSearch
+              id="bulk-place-search"
+              disabled={busy}
+              onPick={(place) => {
+                onChange({ lat: String(place.lat), lng: String(place.lng) })
+              }}
+            />
+            <Row className="g-2 mt-1">
+              <Col xs={6}>
+                <Form.Control
+                  type="number"
+                  step="any"
+                  value={form.lat}
+                  disabled={busy}
+                  aria-label={t('bulkEdit.location.lat')}
+                  placeholder={t('bulkEdit.location.lat')}
+                  onChange={(e) => {
+                    onChange({ lat: e.target.value })
+                  }}
+                />
+              </Col>
+              <Col xs={6}>
+                <Form.Control
+                  type="number"
+                  step="any"
+                  value={form.lng}
+                  disabled={busy}
+                  aria-label={t('bulkEdit.location.lng')}
+                  placeholder={t('bulkEdit.location.lng')}
+                  onChange={(e) => {
+                    onChange({ lng: e.target.value })
+                  }}
+                />
+              </Col>
+            </Row>
+          </>
         )}
       </Section>
 

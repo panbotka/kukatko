@@ -80,6 +80,19 @@ zapiš sem.
   nenabídne duplikát; Enter bez zvýraznění vytváří, jen když nic jiného neodpovídá. Co založení
   znamená, řeší volající (typicky zaregistruje jméno a vybere pro něj hodnotu přes
   `options`+`selected`); pro čtenáře bez práva zápisu se `onCreate` prostě nepředá),
+  `photo/PlaceSearch` (**našeptávač míst podle názvu** = třetí cesta k poloze fotky vedle
+  souřadnic a kliku do mapy — u naskenované fotky víš *Veselí nad Moravou*, ne čísla, a hledat
+  ten bod pananím mapy je otrava. `{id,onPick,disabled?}`, `onPick(place)` dostane `Place` a
+  volající si sám rozhodne, kam souřadnice zapíše: `MetadataPanel` je píše do svého pole
+  souřadnic (marker i mapa se překreslí samy), `BulkEditModal` do `lat`/`lng` u `set_location`.
+  Každý řádek nese **název + druh místa (`label`) + `location`** — rozlišení je celý smysl (Veselí
+  je město, zámek i část obce, tři stejně vypadající řádky by byly k ničemu). Psaní jede přes
+  `usePlaceSearch` (debounce + rušení in-flight); pole drží **dvě** stavové hodnoty — co je vidět
+  (`query`) a co se hledá (`term`) — aby vybrání návrhu nechalo jméno v poli jako potvrzení, ale
+  hned ho znovu nehledalo. Klávesnice Up/Down/Enter (bez zvýraznění bere nejlepší shodu)/Esc,
+  combobox/listbox ARIA, ~44px tap targety — je to formulářový prvek a chová se tak. Nedostupné
+  vyhledávání (bez klíče, poskytovatel dole) = **jeden řádek textu**, zbytek editoru polohy jede
+  dál. Testy: `PlaceSearch.test.tsx`),
   `KeyboardShortcutsHelp` (v navbaru: ikonka klávesnice + **modal nápovědy zkratek** — otevře se
   `?` (Shift+/) kdekoli nebo klikem, vypíše všechny zkratky seskupené dle kontextu (Mřížka / Detail)
   ze `lib/shortcuts.ts` `SHORTCUT_GROUPS`, zavře Escapem/křížkem),
@@ -246,7 +259,9 @@ zapiš sem.
   (`bulkEdit.createError`) a dávku neodešle, výběr zůstává; když se dávka nepovede až po založení,
   `bulkEdit.createdButApplyFailed` řekne, že položky už existují a selhalo jen přiřazení),
   **Metadata** (set/clear popisu), **Poloha**
-  (set/clear souřadnic) a **Příznaky** (soukromé, archiv, oblíbené); set/clear páry zůstávají
+  (set/clear souřadnic; nad poli `lat`/`lng` sedí u `set` **tentýž `PlaceSearch`** jako v editoru
+  detailu — vyplní jen ty dvě pole, takže odeslaná dávka je stejná, jako by souřadnice někdo
+  napsal ručně) a **Příznaky** (soukromé, archiv, oblíbené); set/clear páry zůstávají
   samostatné módy. **Destruktivní volby** (odebrání z alba/štítku, archivace) jsou v danger klíči
   (`destructive` chipy, `text-danger` label, `border-danger` select). Pod formulářem je
   **`PendingChanges`** — `.kk-surface` panel, který větou po větě říká, co apply udělá, a **kolik
@@ -492,11 +507,13 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   poznámka kurzívou, badge nese `title` s poznámkou (**ne** jen barva/glyf), takže odhad nelze
   zaměnit za jisté datum ani letmým pohledem, ani ve screen readeru; fotka **bez** `taken_at` může
   být odhad taky — pak stojí marker s poznámkou samy. `EditableField` proto bere volitelný
-  `display?: ReactNode` (bohatší render hodnoty, prostý `value` dál rozhoduje o „vyplněnosti"). Location picker = jedno tolerantní pole souřadnic parsované
+  `display?: ReactNode` (bohatší render hodnoty, prostý `value` dál rozhoduje o „vyplněnosti"). Location picker = **tři cesty dovnitř** v pořadí, jak po nich člověk sáhne:
+  **`PlaceSearch`** (najdi místo podle názvu), jedno tolerantní pole souřadnic parsované
   `lib/coordinates` (`parseCoordinates`/`formatCoordinates`: desetinné stupně `49.1234, 16.5678`,
   DMS `49°7'24.2"N 16°34'12.5"E`, stupně-desetinné-minuty, hemisféry, axis reorder, range check)
-  nad **`LeafletMap` picker módem** (`picker={position,onPick}`: draggable marker + click-to-place,
-  obousměrný sync text↔marker, vymazat polohu = lat/lng null). **PATCH nese jen skutečně změněná
+  a **`LeafletMap` picker mód** (`picker={position,onPick}`: draggable marker + click-to-place,
+  obousměrný sync text↔marker, vymazat polohu = lat/lng null). Všechny tři **zapisují totéž jedno
+  pole souřadnic**, které čte save — nemají tedy jak si o poloze protiřečit. **PATCH nese jen skutečně změněná
   pole**: nezměněný `taken_at` (pole je `step=1`, drží sekundy) by přepnul `taken_at_source`
   `exif`→`manual`, nezměněné souřadnice by se zaokrouhlily na 6 desetinných míst textového pole —
   obojí by tiše přepsalo katalog. **Neplatný text souřadnic = inline chyba u pole**, ne blokace
@@ -881,7 +898,14 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGlobalSearch(query,
   debounceMs?)` = debouncovaný (default 250 ms) grouped global-search loader nad `globalSearch`
   (`status` idle/loading/ready/error + `result`, prázdný dotaz → idle bez requestu, ruší in-flight +
-  ignoruje stale — podklad `GlobalSearchSections`); `useGridJump({gridRef,
+  ignoruje stale — podklad `GlobalSearchSections`); `usePlaceSearch(query,debounceMs?)` =
+  debouncovaný (default 300 ms) loader našeptávače míst nad `searchPlaces` (`status`
+  idle/loading/ready/**error**/**unavailable** + `places`, ruší in-flight + ignoruje stale —
+  podklad `PlaceSearch`); zrcadlí `useGlobalSearch` s dvěma rozdíly, které plynou z toho, že
+  lookup **stojí kredit**: dotaz kratší než 2 znaky je `idle` **bez requestu** (jedno písmeno není
+  název místa, jen klávesa na cestě k němu) a statusy 424/502/503 dostanou vlastní stav
+  `unavailable` (rozbitá je strana poskytovatele, opakovat nemá smysl) proti `error` (zbytek,
+  vč. 429 — zkusit znovu dává smysl); `useGridJump({gridRef,
   loadedCount,hasMore,loadingMore,loadMore})` = vrátí `jumpTo(index)`, který skočí mřížkou na foto
   index přes `VirtuosoGridHandle.scrollToIndex` a **nejdřív donačte stránky**, když cíl leží za
   infinite-scroll kurzorem (nebo clampne na poslední načtené, když už další stránky nejsou) —
@@ -1278,13 +1302,17 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (GeoJSON FeatureCollection geotagovaných fotek + `buildMapQuery`), `tileLayerUrl(mapset)` (Leaflet
   URL template na backend proxy, **bez API klíče**), `reverseGeocode(lat,lng,signal?)` nad
   `GET /api/v1/map/rgeocode` (on-demand reverse geocode pro detail fotky → `GeocodeResult`),
+  `searchPlaces(query,limit?,signal?)` nad `GET /api/v1/map/geocode` (**forward** geocode pro
+  editor polohy → `Place[]` = `{name,label,type,location,lat,lng}` od nejlepší shody; žádná shoda
+  = **prázdné pole**, ne chyba; volající **musí debouncovat** — backend sice cachuje a
+  rate-limituje, ale request na klávesu je jak vypálit měsíční kredit za odpoledne),
   **`probeTileFailure(tileUrl,signal?)`** (`<img>` status v JS nevidíš → dlaždice, kterou Leaflet
   nenačetl, se přefetchne a status proxy se přeloží na `TileFailure`: **424 → `key_rejected`**
   (mapy.com odmítá **náš** klíč), 429 → `rate_limited`, 503 → `unavailable`, jinak `error`;
   200/404 → `null`, protože chybějící dlaždice mimo pokrytí je normální odpověď; síťová chyba →
   `'error'`, abort probublá), `toMapset`/`MAPSETS`; typy
   `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`/
-  `TileFailure`/`GeocodeResult`/`RegionalItem`);
+  `TileFailure`/`GeocodeResult`/`RegionalItem`/`Place`);
   `places.ts` = klient hierarchie míst: `fetchPlaces(country?,signal)` nad `GET /api/v1/places`
   → `PlaceCountry[]` (země s počty + nested `cities`, volitelné `country` drillne do měst jedné
   země); typy `PlaceCountry`/`PlaceCity`; procházení fotek lokality jde přes sdílené
