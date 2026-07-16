@@ -1234,7 +1234,13 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `/v1/maptiles/{mapset}/256[@2x]/{z}/{x}/{y}`, **streamuje** body přes `cancelReadCloser` který
   na Close zruší request ctx — nikdy nedrží dlaždici v RAM), `ReverseGeocode(ctx,lat,lng)
   (*GeocodeResult,error)` (`/v1/rgeocode?lon=&lat=&lang=cs` → zjednodušený první `item` na
-  `{Name,Location,RegionalStructure}`); allowlist `basic|outdoor|aerial|winter`
+  `{Name,Location,RegionalStructure}`), `Geocode(ctx,query,limit) ([]Place,error)` (**forward**,
+  `/v1/geocode?query=&lang=cs&limit=` → `[]Place{Name,Label,Type,Location,Lat,Lng}` v pořadí od
+  nejlepší shody; mapuje `position.lon/lat` → `Lng/Lat` a zahazuje bbox/zip/regionalStructure;
+  prázdný dotaz = `ErrEmptyQuery` **bez volání nahoru**, žádná shoda = **prázdný slice + nil**,
+  ne `ErrNotFound` — nedopsaný název není chyba; `ClampGeocodeLimit` ořízne na
+  1–`MaxGeocodeLimit` (15), ≤0 → `DefaultGeocodeLimit` (5), a volá se i uvnitř `Geocode`, takže
+  žádné call-site nepošle nahoru neomezený počet); allowlist `basic|outdoor|aerial|winter`
   (`IsValidMapset`), retina jen `basic`/`outdoor` (`RetinaSupported`); sentinely
   `ErrUnauthorized` (401/403) / `ErrNotFound` (404 i prázdné items) / `ErrRateLimited` (429) /
   `ErrUpstream` (jiný status / nečitelná odpověď) / `ErrUnavailable` (transport / 502/503/504) /
@@ -1247,9 +1253,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `ErrInvalidMapset`/`context.Canceled` **ignoruje** — o zdraví upstreamu nic neříkají),
   `Snapshot()` čte, `State.Degraded()` = vše kromě `ok`/`unknown`; `Detail` je z chyb klienta,
   takže nikdy nenese klíč), `internal/mapsapi/`
-  (HTTP API pro mapy — tile proxy, reverse geocode a GeoJSON feed; rozhraní `TileFetcher`/
-  `Geocoder` (splňuje je `mapy.Client`, nil → 503) a `PhotoLister` (`photos.Store.List`) →
-  unit-testovatelné s faky; `NewAPI(Config{Tiles,Geocoder,Photos,Health,RequireAuth,TileCacheMaxAge,
+  (HTTP API pro mapy — tile proxy, reverse geocode, place search a GeoJSON feed; rozhraní
+  `TileFetcher`/`Geocoder`/`PlaceSearcher` (splňuje je `mapy.Client`, nil → 503) a `PhotoLister`
+  (`photos.Store.List`) →
+  unit-testovatelné s faky; `NewAPI(Config{Tiles,Geocoder,Places,Photos,Health,RequireAuth,TileCacheMaxAge,
   TileCacheTTL,TileCacheBytes,GeocodeCacheTTL,GeocodeRatePerSec,GeocodeRateBurst,MaxGeoPhotos})`+
   `RegisterRoutes` mountuje
   `/map` za `RequireAuth`: `GET /map/tiles/{mapset}/{z}/{x}/{y}` (validuje mapset→400/retina ze
@@ -1264,9 +1271,19 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   náš klíč* (syrová 403 by lhala, že je špatný request volajícího) — frontend ho pozná a řekne
   proč je mapa prázdná; každé volání upstreamu zapíše výsledek do `mapy.Health` (→ system status)),
   `GET /map/rgeocode
-  ?lat=&lng=` (parsuje+range-checkuje souřadnice→400, **TTL+capacity cache** `geocodeCache` klíč =
-  souřadnice na 5 desetin, uncached lookup přes **token-bucket** `rateLimiter`→429 šetří kredity,
-  odpověď zjednodušená + `Cache-Control: private`), `GET /map/photos` (GeoJSON
+  ?lat=&lng=` (parsuje+range-checkuje souřadnice→400, **TTL+capacity cache** `ttlCache[GeocodeResult]`
+  klíč = souřadnice na 5 desetin, uncached lookup přes **token-bucket** `rateLimiter`→429 šetří kredity,
+  odpověď zjednodušená + `Cache-Control: private`), `GET /map/geocode?q=&limit=` (`geocode.go`:
+  našeptávač pro editor polohy; pořadí guardů je dané cenou — prázdné/>200 znaků `q` → 400 **před**
+  voláním, pak `ttlCache[[]Place]` (klíč = `limit` + casefoldnutý dotaz se sraženými mezerami,
+  **diakritika zůstává** — `veseli`/`veselí` jsou nahoře různé dotazy), a teprve zbytek jde na
+  **stejný `rateLimiter` jako rgeocode** (jeden kreditový rozpočet = jeden limiter) → 429; klient
+  navíc debouncuje, tohle je půlka škrtiče, kterou nejde obejít. `limit` se **ořízne**
+  (`mapy.ClampGeocodeLimit`), ne 400. `mapy.ErrNotFound` (404 nahoře) se překlápí na **prázdný
+  `items` + 200**; jinak `writeGeocodeError` jako u rgeocode. Cache `ttlCache` (`cache.go`,
+  generická: TTL + capacity, lazy expiry, evikce nejdřív-expirujícího — schválně **ne LRU**, na
+  rozdíl od `tileCache`, protože všechny záznamy jsou stejně drahé), default 2000 záznamů),
+  `GET /map/photos` (GeoJSON
   **FeatureCollection**, `parseGeoParams` vynutí `HasGPS=true` + ctí `taken_after`/`taken_before`/
   `album`/`label`/`archived`, `Limit=MaxGeoPhotos`, řazení taken_at desc; každá feature
   `Point` se souřadnicí RFC 7946 `[lng,lat]` a properties `uid`/`title`/`taken_at`/`media_type`/

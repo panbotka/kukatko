@@ -69,6 +69,7 @@ func newTestServer(t *testing.T, lister *fakeLister, upstreamHandler http.Handle
 	api := mapsapi.NewAPI(mapsapi.Config{
 		Tiles:       client,
 		Geocoder:    client,
+		Places:      client,
 		Photos:      lister,
 		Health:      health,
 		RequireAuth: passthroughAuth,

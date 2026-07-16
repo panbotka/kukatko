@@ -248,3 +248,66 @@ export async function reverseGeocode(
   }
   return (await res.json()) as GeocodeResult
 }
+
+/**
+ * One place-search suggestion (`internal/mapy` Place): a named place a query
+ * matched, with the coordinates to pin it and enough context to tell it from its
+ * namesakes — there are several *Veselí*s.
+ */
+export interface Place {
+  /** The place's own name, e.g. "Veselí nad Moravou". */
+  name: string
+  /**
+   * The localised name of the *kind* of place, as mapy.com writes it in the UI
+   * language ("Město", "Zámek"). Display text — branch on {@link Place.type}.
+   */
+  label: string
+  /** mapy.com's machine kind: `regional.municipality`, `regional.street`, `poi`, … */
+  type: string
+  /**
+   * What contains the place, narrowest first ("Veselí nad Moravou, okres
+   * Hodonín, Jihomoravský kraj, Česko"). Empty for a place with nothing above it.
+   */
+  location: string
+  lat: number
+  lng: number
+}
+
+/** The place-search response envelope (`internal/mapsapi` placesBody). */
+interface PlacesBody {
+  items: Place[]
+}
+
+/**
+ * Searches places by name via the backend proxy
+ * `GET /api/v1/map/geocode?q=&limit=` (the mapy.com key stays server-side), for
+ * turning "Veselí nad Moravou" into a coordinate. The backend caches and
+ * rate-limits the upstream call to conserve credits; callers must still debounce,
+ * since a typeahead would otherwise fire a request per keystroke.
+ *
+ * A query matching nothing resolves to an empty array — the normal answer to a
+ * half-typed name, not an error.
+ *
+ * @throws ApiError with `status` 400 (blank/over-long query), 429 (rate limited),
+ *   424/502/503 (the provider or our key is the problem) so the caller can show
+ *   the right message.
+ */
+export async function searchPlaces(
+  query: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<Place[]> {
+  const params = new URLSearchParams({ q: query })
+  if (limit !== undefined) {
+    params.set('limit', String(limit))
+  }
+  const res = await fetch(`${API_BASE}/map/geocode?${params.toString()}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return ((await res.json()) as PlacesBody).items
+}

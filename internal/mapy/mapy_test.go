@@ -299,3 +299,161 @@ func TestReverseGeocode_statusClassification(t *testing.T) {
 		t.Errorf("error leaks API key: %v", err)
 	}
 }
+
+// TestClampGeocodeLimit verifies the suggestion count is bounded, with a
+// non-positive limit meaning "the default" rather than "none".
+func TestClampGeocodeLimit(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   int
+		want int
+	}{
+		{"zero means default", 0, mapy.DefaultGeocodeLimit},
+		{"negative means default", -3, mapy.DefaultGeocodeLimit},
+		{"in range is kept", 3, 3},
+		{"at the cap is kept", mapy.MaxGeocodeLimit, mapy.MaxGeocodeLimit},
+		{"above the cap is clamped", 500, mapy.MaxGeocodeLimit},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := mapy.ClampGeocodeLimit(tt.in); got != tt.want {
+				t.Errorf("ClampGeocodeLimit(%d) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestGeocode_mapsItemsAndRequest checks a place search sends the query, the
+// language and a clamped limit upstream with the key in the header, and maps the
+// mapy.com items onto Place — including the lon/lat swap, which is the one place
+// a silent bug would drop pins in the wrong hemisphere.
+func TestGeocode_mapsItemsAndRequest(t *testing.T) {
+	t.Parallel()
+	const payload = `{"items":[
+		{"name":"Veselí nad Moravou","label":"Město","type":"regional.municipality",
+		 "location":"Česko","position":{"lon":17.37649,"lat":48.95363},
+		 "bbox":[17.3,48.9,17.4,48.9],"zip":"69801"}],"locality":[]}`
+	var gotPath, gotKey string
+	var gotQuery map[string][]string
+	client, _ := newFakeMapy(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotKey, gotQuery = r.URL.Path, r.Header.Get("X-Mapy-Api-Key"), r.URL.Query()
+		_, _ = io.WriteString(w, payload)
+	})
+
+	places, err := client.Geocode(context.Background(), "  Veselí nad Moravou  ", 500)
+	if err != nil {
+		t.Fatalf("Geocode: %v", err)
+	}
+	if len(places) != 1 {
+		t.Fatalf("places = %d, want 1", len(places))
+	}
+	want := mapy.Place{
+		Name: "Veselí nad Moravou", Label: "Město", Type: "regional.municipality",
+		Location: "Česko", Lat: 48.95363, Lng: 17.37649,
+	}
+	if places[0] != want {
+		t.Errorf("place = %+v, want %+v", places[0], want)
+	}
+	if gotPath != "/v1/geocode" {
+		t.Errorf("path = %q, want /v1/geocode", gotPath)
+	}
+	if gotKey != testKey {
+		t.Errorf("key header = %q, want %q", gotKey, testKey)
+	}
+	if got := gotQuery["query"][0]; got != "Veselí nad Moravou" {
+		t.Errorf("query = %q, want the trimmed, accented name", got)
+	}
+	if got := gotQuery["lang"][0]; got != mapy.DefaultLang {
+		t.Errorf("lang = %q, want %q", got, mapy.DefaultLang)
+	}
+	if got := gotQuery["limit"][0]; got != "15" {
+		t.Errorf("limit = %q, want 15 (clamped from 500)", got)
+	}
+	if _, ok := gotQuery["apikey"]; ok {
+		t.Error("query carries the API key; it must stay in the header")
+	}
+}
+
+// TestGeocode_emptyQuery checks a blank name never reaches mapy.com: an empty
+// typeahead must not cost a credit.
+func TestGeocode_emptyQuery(t *testing.T) {
+	t.Parallel()
+	var calls int
+	client, _ := newFakeMapy(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = io.WriteString(w, `{"items":[]}`)
+	})
+	for _, query := range []string{"", "   ", "\t\n"} {
+		if _, err := client.Geocode(context.Background(), query, 5); !errors.Is(err, mapy.ErrEmptyQuery) {
+			t.Errorf("Geocode(%q) error = %v, want ErrEmptyQuery", query, err)
+		}
+	}
+	if calls != 0 {
+		t.Errorf("upstream calls = %d, want 0", calls)
+	}
+}
+
+// TestGeocode_noItems checks a name mapy.com matches nothing for is an empty
+// slice and no error — the normal answer to a half-typed name.
+func TestGeocode_noItems(t *testing.T) {
+	t.Parallel()
+	client, _ := newFakeMapy(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"items":[],"locality":[]}`)
+	})
+	places, err := client.Geocode(context.Background(), "qqqq", 5)
+	if err != nil {
+		t.Fatalf("Geocode: %v", err)
+	}
+	if len(places) != 0 {
+		t.Errorf("places = %v, want none", places)
+	}
+}
+
+// TestGeocode_upstreamErrors checks each upstream status becomes its sentinel, so
+// the HTTP layer can classify a failure without reading a body that might echo
+// the key.
+func TestGeocode_upstreamErrors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		status  int
+		wantErr error
+	}{
+		{"rejected key", http.StatusForbidden, mapy.ErrUnauthorized},
+		{"expired key", http.StatusUnauthorized, mapy.ErrUnauthorized},
+		{"unplaceable name", http.StatusNotFound, mapy.ErrNotFound},
+		{"out of credits", http.StatusTooManyRequests, mapy.ErrRateLimited},
+		{"provider down", http.StatusServiceUnavailable, mapy.ErrUnavailable},
+		{"unexpected failure", http.StatusInternalServerError, mapy.ErrUpstream},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client, _ := newFakeMapy(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = io.WriteString(w, "key "+testKey+" refused")
+			})
+			_, err := client.Geocode(context.Background(), "Brno", 5)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Geocode error = %v, want %v", err, tt.wantErr)
+			}
+			if strings.Contains(err.Error(), testKey) {
+				t.Errorf("error leaks the API key: %v", err)
+			}
+		})
+	}
+}
+
+// TestGeocode_badBody checks an unparseable answer is an upstream error rather
+// than a panic or a silent empty list.
+func TestGeocode_badBody(t *testing.T) {
+	t.Parallel()
+	client, _ := newFakeMapy(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "not json at all")
+	})
+	if _, err := client.Geocode(context.Background(), "Brno", 5); !errors.Is(err, mapy.ErrUpstream) {
+		t.Fatalf("Geocode error = %v, want ErrUpstream", err)
+	}
+}

@@ -512,7 +512,15 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   hlavičkou `X-Tile-Cache: hit|miss`; **chyba se nikdy necachuje**. `GET /map/rgeocode?lat=&lng=` —
   reverse geocode → zjednodušené `{name,location,regional_structure}`, **cachované** (klíč =
   zaokrouhlená souřadnice) a **rate-limitované** (token-bucket, geocode = 4 kredity) → 429 přes
-  limit, 404 bez shody. `GET /map/photos` — **GeoJSON FeatureCollection** geotagovaných fotek
+  limit, 404 bez shody. `GET /map/geocode?q=&limit=` — **forward** geocode (název → souřadnice)
+  pro editor polohy → `{items:[{name,label,type,location,lat,lng}]}` seřazené od nejlepší shody
+  (`label` = lokalizovaný druh místa „Město“/„Zámek“, `type` = strojové `regional.municipality`/
+  `poi`/…, `location` = co místo obsahuje, kvůli rozlišení několika *Veselí*). Prázdné/dlouhé `q`
+  (>200 znaků) → 400 **před** voláním nahoru, `limit` se **ořízne** na 1–15 (default 5), ne 400.
+  **Bez shody = `items: []` a 200**, ne 404 (i když mapy.com odpoví 404) — nedopsaný název je
+  normální stav našeptávače, ne chyba. Sdílí cache i rate-limiter s `rgeocode` (jeden kreditový
+  rozpočet = jeden limiter); klíč cache = casefoldnutý dotaz + `limit`, **diakritika se
+  zachovává** (`veseli` a `veselí` jsou nahoře různé dotazy). `GET /map/photos` — **GeoJSON FeatureCollection** geotagovaných fotek
   (souřadnice `[lng,lat]`), ctí filtry `taken_after`/`taken_before`/`album`/`label`/`archived`,
   feature nese `uid`/`title`/`taken_at`/`media_type`/relativní `thumb` a u odhadnuté polohy
   `location_estimated: true` (jinak se klíč **vůbec neposílá**). Odhadnuté fotky jsou ve feedu
@@ -521,8 +529,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   (**401/403 → 424** `mapsapi.StatusMapKeyRejected` = odmítnutý *náš* klíč, syrová 403 se
   neprosakuje ven — request volajícího je v pořádku; 404→404, 429→429, 5xx→502/503)
   **neprosakují klíč**; každý výsledek se zapisuje do `mapy.Health` (→ `GET /system/status`
-  sekce `maps`). Bez `maps.mapy_api_key` vrací tile/rgeocode 503, GeoJSON funguje. Mountuje se
-  `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).
+  sekce `maps`). Bez `maps.mapy_api_key` vrací tile/rgeocode/geocode 503 (editor polohy to ukáže
+  jako „vyhledávání míst není dostupné“ a jede dál na souřadnicích a kliku do mapy), GeoJSON
+  funguje. Mountuje se `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).
 - **Import API (`/api/v1`, `internal/importapi`, přes `RequireImport` = admin **nebo** ai):** triggery a
   historie read-only importů. `GET /import/runs` (**vždy registrovaný**) → `{runs,limit,offset,
   sources:{photoprism,photosorter}}` — stránka `import_runs` newest-started-first (query

@@ -5,6 +5,8 @@ import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
+import { ApiError } from '../../services/auth'
+import { type Place } from '../../services/map'
 import { type PhotoDetail, type PhotoMetadataUpdate } from '../../services/photos'
 
 import { MetadataPanel } from './MetadataPanel'
@@ -45,9 +47,25 @@ vi.mock('../../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/photos')>()
   return { ...actual, updatePhoto: vi.fn() }
 })
+vi.mock('../../services/map', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/map')>()
+  return { ...actual, searchPlaces: vi.fn() }
+})
 
 const { updatePhoto } = await import('../../services/photos')
 const updatePhotoMock = vi.mocked(updatePhoto)
+const { searchPlaces } = await import('../../services/map')
+const searchPlacesMock = vi.mocked(searchPlaces)
+
+/** The place the scanned-photo case is named after: you know the name, not the numbers. */
+const VESELI: Place = {
+  name: 'Veselí nad Moravou',
+  label: 'Town',
+  type: 'regional.municipality',
+  location: 'Czechia',
+  lat: 48.95363,
+  lng: 17.37649,
+}
 
 function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
   return {
@@ -253,6 +271,59 @@ describe('MetadataPanel location picker', () => {
       )
     })
     expect(onUpdated).toHaveBeenCalled()
+  })
+
+  it('fills the coordinates and moves the map from a searched-for place name', async () => {
+    searchPlacesMock.mockResolvedValue([VESELI])
+    const current = photo()
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+
+    await user.type(screen.getByLabelText('Find a place by name'), 'Veselí')
+    await user.click(await screen.findByRole('option', { name: /Veselí nad Moravou/ }))
+
+    // The search writes the same field the map click does, so both the coordinate
+    // text and the marker follow from one pick.
+    expect(screen.getByLabelText('Coordinates')).toHaveValue('48.953630, 17.376490')
+    expect(screen.getByTestId('marker')).toHaveTextContent('48.95363,17.37649')
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalledWith(
+        'b',
+        expect.objectContaining({ lat: 48.95363, lng: 17.37649 }),
+      )
+    })
+  })
+
+  it('keeps the rest of the location editor working when place search is down', async () => {
+    searchPlacesMock.mockRejectedValue(new ApiError(503, 'place search is not configured'))
+    const current = photo()
+    mockApi(current)
+    const user = userEvent.setup()
+    renderPanel({ photo: current })
+    await startEditing(user)
+
+    await user.type(screen.getByLabelText('Find a place by name'), 'Veselí')
+    expect(
+      await screen.findByText(
+        'Place search is unavailable. You can still type coordinates or click the map.',
+      ),
+    ).toBeInTheDocument()
+
+    // A dead place search is one line of text, not a broken editor: the map click
+    // still sets a location and the form still saves it.
+    await user.click(screen.getByRole('button', { name: 'drop-marker' }))
+    expect(screen.getByLabelText('Coordinates')).toHaveValue('51.500000, -0.120000')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalledWith(
+        'b',
+        expect.objectContaining({ lat: 51.5, lng: -0.12 }),
+      )
+    })
   })
 
   it('clears the location and PATCHes null coordinates', async () => {

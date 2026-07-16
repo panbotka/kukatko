@@ -25,10 +25,16 @@ vi.mock('../../services/organize', async (importOriginal) => {
     createLabel: vi.fn(),
   }
 })
+vi.mock('../../services/map', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/map')>()
+  return { ...actual, searchPlaces: vi.fn() }
+})
 
 const { bulkUpdatePhotos } = await import('../../services/bulk')
 const { fetchAlbums, fetchLabels, createAlbum, createLabel } =
   await import('../../services/organize')
+const { searchPlaces } = await import('../../services/map')
+const searchPlacesMock = vi.mocked(searchPlaces)
 const bulkMock = vi.mocked(bulkUpdatePhotos)
 const albumsMock = vi.mocked(fetchAlbums)
 const labelsMock = vi.mocked(fetchLabels)
@@ -424,5 +430,37 @@ describe('BulkEditModal', () => {
     const listbox = screen.getByRole('listbox', { name: 'Add to albums' })
     expect(within(listbox).queryByRole('option', { name: /^Create/ })).not.toBeInTheDocument()
     expect(within(listbox).getByText('No matches.')).toBeInTheDocument()
+  })
+
+  it('fills the set-location coordinates from a searched-for place name', async () => {
+    searchPlacesMock.mockResolvedValue([
+      {
+        name: 'Veselí nad Moravou',
+        label: 'Town',
+        type: 'regional.municipality',
+        location: 'Czechia',
+        lat: 48.95363,
+        lng: 17.37649,
+      },
+    ])
+    bulkMock.mockResolvedValue(result({ total: 2, updated: 2 }))
+    const user = userEvent.setup()
+    renderModal()
+
+    await user.selectOptions(await screen.findByLabelText('Location'), 'set')
+    await user.type(screen.getByRole('combobox', { name: 'Find a place by name' }), 'Veselí')
+    await user.click(await screen.findByRole('option', { name: /Veselí nad Moravou/ }))
+
+    // The picker only fills the very fields that were already there, so the batch
+    // it applies is the same one a typed coordinate would have produced.
+    expect(screen.getByLabelText('Latitude')).toHaveValue(48.95363)
+    expect(screen.getByLabelText('Longitude')).toHaveValue(17.37649)
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], {
+        set_location: { lat: 48.95363, lng: 17.37649 },
+      })
+    })
   })
 })

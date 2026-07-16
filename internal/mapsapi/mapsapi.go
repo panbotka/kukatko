@@ -1,16 +1,21 @@
-// Package mapsapi exposes the maps HTTP API: a mapy.com tile proxy and reverse-
-// geocode proxy (so the API key never reaches the browser) plus a GeoJSON feed of
+// Package mapsapi exposes the maps HTTP API: a mapy.com tile proxy, a reverse-
+// geocode proxy (coordinate → place) and a place-search proxy (name →
+// coordinates), so the API key never reaches the browser, plus a GeoJSON feed of
 // geotagged photos for the map view. The tile and geocode endpoints stream/relay
 // answers from mapy.com via the mapy client; the GeoJSON endpoint reads the photo
 // catalogue honouring the standard list filters. Route guarding is injected as
 // middleware so the package stays decoupled from the auth subsystem's wiring.
 //
-// Successful tiles are cached server-side (bounded, TTL'd, successes only), so a
-// second look at an area a user has already browsed costs no mapy.com credit;
-// upstream failures are never cached. Every upstream outcome is recorded on the
-// mapy.Health tracker, and a rejected API key is relayed as its own status
-// (StatusMapKeyRejected) rather than a generic upstream error, so the map view can
-// say why the tiles are missing instead of showing a silent grey grid.
+// Everything mapy.com answers is metered in credits, so every proxied endpoint is
+// cached server-side (bounded, TTL'd, successes only; failures are never cached)
+// and the two geocode directions additionally share one rate limiter, because they
+// share one monthly budget. That is what makes a second look at an already-browsed
+// area, or a typeahead firing as someone types a place name, cost nothing.
+//
+// Every upstream outcome is recorded on the mapy.Health tracker, and a rejected
+// API key is relayed as its own status (StatusMapKeyRejected) rather than a
+// generic upstream error, so the map view can say why the tiles are missing
+// instead of showing a silent grey grid.
 package mapsapi
 
 import (
@@ -48,6 +53,12 @@ const (
 	defaultGeocodeRateBurst = 10
 	// defaultGeocodeCacheSize bounds the reverse-geocode cache entry count.
 	defaultGeocodeCacheSize = 10000
+	// defaultPlacesCacheSize bounds the place-search cache entry count. A place
+	// search is typed, so the distinct-query space is far smaller than the
+	// coordinate space a reverse-geocode cache has to cover — and every prefix of
+	// a name someone is typing is a key of its own, which is exactly what makes
+	// caching pay here.
+	defaultPlacesCacheSize = 2000
 	// defaultMaxGeoPhotos caps how many geotagged photos one GeoJSON response may
 	// carry, bounding the work a single request can demand.
 	defaultMaxGeoPhotos = 50000
@@ -68,6 +79,13 @@ type Geocoder interface {
 	ReverseGeocode(ctx context.Context, lat, lng float64) (*mapy.GeocodeResult, error)
 }
 
+// PlaceSearcher forward-geocodes a place name to ranked coordinate suggestions.
+// mapy.Client satisfies it; a test fake can stand in.
+type PlaceSearcher interface {
+	// Geocode resolves a free-text place name to at most limit suggestions.
+	Geocode(ctx context.Context, query string, limit int) ([]mapy.Place, error)
+}
+
 // PhotoLister is the subset of the photos repository the GeoJSON endpoint needs:
 // listing photos under a set of filters. photos.Store satisfies it.
 type PhotoLister interface {
@@ -81,6 +99,7 @@ type PhotoLister interface {
 type API struct {
 	tiles           TileFetcher
 	geocoder        Geocoder
+	places          PlaceSearcher
 	photos          PhotoLister
 	health          *mapy.Health
 	requireAuth     func(http.Handler) http.Handler
@@ -89,7 +108,8 @@ type API struct {
 	tileCacheTTL    time.Duration
 	tileCache       *tileCache
 	geocodeCacheTTL time.Duration
-	geocodeCache    *geocodeCache
+	geocodeCache    *ttlCache[mapy.GeocodeResult]
+	placesCache     *ttlCache[[]mapy.Place]
 	geocodeLimiter  *rateLimiter
 	maxGeoPhotos    int
 }
@@ -102,6 +122,10 @@ type Config struct {
 	Tiles TileFetcher
 	// Geocoder backs the reverse-geocode proxy. When nil that endpoint answers 503.
 	Geocoder Geocoder
+	// Places backs the place-search (forward-geocode) proxy. When nil that
+	// endpoint answers 503, which the location editor shows as "place search
+	// unavailable" while its coordinate and map-click paths keep working.
+	Places PlaceSearcher
 	// Photos backs the GeoJSON endpoint.
 	Photos PhotoLister
 	// RequireAuth guards every endpoint for authenticated users.
@@ -123,11 +147,13 @@ type Config struct {
 	// TileCacheBytes is the server-side tile cache's memory budget in bytes
 	// (default defaultTileCacheBytes). A negative value disables the cache.
 	TileCacheBytes int64
-	// GeocodeCacheTTL sets how long reverse-geocode answers are cached (default
-	// defaultGeocodeCacheTTL). A non-positive value disables caching.
+	// GeocodeCacheTTL sets how long geocode answers — both directions — are cached
+	// (default defaultGeocodeCacheTTL). A non-positive value disables caching.
 	GeocodeCacheTTL time.Duration
-	// GeocodeRatePerSec caps reverse-geocode lookups to mapy.com per second
-	// (default defaultGeocodeRatePerSec). A non-positive value disables the limiter.
+	// GeocodeRatePerSec caps geocode lookups to mapy.com per second (default
+	// defaultGeocodeRatePerSec). A non-positive value disables the limiter. Both
+	// geocode directions draw on this one bucket: they are billed from the same
+	// monthly credit budget, so one budget is one limiter.
 	GeocodeRatePerSec float64
 	// GeocodeRateBurst is the geocode rate limiter's burst (default
 	// defaultGeocodeRateBurst).
@@ -173,6 +199,7 @@ func NewAPI(cfg Config) *API {
 	return &API{
 		tiles:           cfg.Tiles,
 		geocoder:        cfg.Geocoder,
+		places:          cfg.Places,
 		photos:          cfg.Photos,
 		health:          cfg.Health,
 		requireAuth:     cfg.RequireAuth,
@@ -181,7 +208,8 @@ func NewAPI(cfg Config) *API {
 		tileCacheTTL:    tileTTL,
 		tileCache:       newTileCache(tileBytes),
 		geocodeCacheTTL: geoTTL,
-		geocodeCache:    newGeocodeCache(defaultGeocodeCacheSize),
+		geocodeCache:    newTTLCache[mapy.GeocodeResult](defaultGeocodeCacheSize),
+		placesCache:     newTTLCache[[]mapy.Place](defaultPlacesCacheSize),
 		geocodeLimiter:  newRateLimiter(ratePerSec, burst),
 		maxGeoPhotos:    maxGeo,
 	}
@@ -195,11 +223,13 @@ func passthroughMiddleware(next http.Handler) http.Handler { return next }
 //
 //	GET /map/tiles/{mapset}/{z}/{x}/{y} proxied mapy.com tile (key added server-side)
 //	GET /map/rgeocode?lat=&lng=         reverse geocode (cached, rate-limited)
+//	GET /map/geocode?q=&limit=          place search (cached, rate-limited)
 //	GET /map/photos                     GeoJSON FeatureCollection of geotagged photos
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/map", func(r chi.Router) {
 		r.With(a.tileRateLimit, a.requireAuth).Get("/tiles/{mapset}/{z}/{x}/{y}", a.handleTile)
 		r.With(a.requireAuth).Get("/rgeocode", a.handleReverseGeocode)
+		r.With(a.requireAuth).Get("/geocode", a.handleGeocode)
 		r.With(a.requireAuth).Get("/photos", a.handlePhotos)
 	})
 }
