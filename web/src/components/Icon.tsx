@@ -21,6 +21,7 @@ export type IconName =
   | 'collection'
   | 'compass'
   | 'dash-lg'
+  | 'exclamation-triangle'
   | 'eye'
   | 'eye-fill'
   | 'files'

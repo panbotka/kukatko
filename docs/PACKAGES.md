@@ -832,14 +832,25 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (per-osoba outlier detekce obličejů: odhalí pravděpodobně **špatně přiřazené obličeje**
   seřazením dle vzdálenosti od centroidu embeddingů osoby, mirror photo-sorteru; vše za rozhraními
   `FaceStore` (podmnožina `vectors.Store`) a `PeopleStore` (podmnožina `people.Store`) →
-  unit-testovatelné s faky bez DB; `Service` = `New(Config{Faces,People})`;
-  **`Outliers(ctx,subjectUID)`** (backing `GET /subjects/{uid}/outliers`) ověří subjekt
-  (`people.ErrSubjectNotFound`), načte `vectors.ListFacesBySubject`, spočítá centroid
-  (`vectors.Centroid`), ohodnotí každý obličej `vectors.CosineDistance` od centroidu a vrátí je
-  **sestupně** (nejpodezřelejší první, tie-break `photo_uid`/`face_index`); `Result` =
-  `{subject_uid,count,meaningful,faces:[OutlierFace{photo_uid,face_index,bbox,det_score,distance,
-  marker_uid?,width,height,orientation}]}`; **malé množiny** (< `MinMeaningful`=3 obličeje) →
-  `meaningful:false` (žádný se nevyčlení), obličeje se přesto vrátí seřazené; žádná mutace — wrong
+  unit-testovatelné s faky bez DB; `Service` = `New(Config{Faces,People,Feedback})`;
+  **`Outliers(ctx,subjectUID,opts)`** (backing `GET /subjects/{uid}/outliers`) ověří subjekt
+  (`people.ErrSubjectNotFound`), načte `vectors.ListFacesBySubject`, spočítá **trimovaný centroid**
+  a ohodnotí každý obličej `vectors.CosineDistance` od něj, sestupně (nejpodezřelejší první,
+  tie-break `photo_uid`/`face_index`); **trimování je jádro věci:** prostý centroid se počítá i
+  z outlierů samotných, takže tři blbě přiřazené obličeje si centroid **táhnou k sobě** a maskují
+  přesně to, co hledáš — proto: spočti centroid, zahoď nejvzdálenější decil (`trimCount(n)` =
+  `(n+9)/10`, zaokrouhleno nahoru, ale **podlaha** `MinMeaningful`, aby člověk se 4 obličeji přišel
+  o 1, ne o půlku; množina ≤ `MinMeaningful` se netrimuje vůbec), přepočti a skóruj proti
+  trimovanému — **skórují se všechny obličeje včetně těch, co trim vyřadil z centroidu**, jinak by
+  se outlier schoval sám před sebou; deterministické, žádný clustering krok; `Options{Threshold,Limit}` zúží výsledek
+  (0/0 = historické „vše, seřazené"), **potvrzené obličeje** (`feedback.FaceConfirmationsForSubject`)
+  se vyloučí ještě před filtrem; `Result` = `{subject_uid,count,meaningful,avg_distance,no_embedding,
+  faces:[OutlierFace{photo_uid,face_index,bbox,det_score,distance,marker_uid?,width,height,
+  orientation}]}`, kde `count`/`meaningful`/`avg_distance` popisují **celou oskórovanou množinu**
+  (před threshold/limit), takže statistiky nelžou při zúženém seznamu, a `no_embedding` počítá
+  přiřazení bez embeddingu, která zkontrolovat **nejde** (sidecar byl offline) a v `faces` nejsou —
+  klient je má přiznat; **malé množiny** (< `MinMeaningful`=3 obličeje) → `meaningful:false` (žádný
+  se nevyčlení), obličeje se přesto vrátí seřazené; žádná mutace — wrong
   obličej se odpojí přes existující assign API), `internal/outlierapi/`
   (editor/admin HTTP API nad outlier detekcí: `Service` rozhraní (splňuje ho `outliers.Service`),
   `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mountuje `GET /subjects/{uid}/outliers`
@@ -1098,7 +1109,18 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   exclusion filtr search cest **bez N+1**; každý zápis jde přes `audit.Write` **ve stejné transakci** jako
   mutace (sdílený `inAuditedTx`, konvence `internal/organize`); **rejection je názor — nikdy nemutuje**
   podkladová data (nesmaže obličej, neodpojí marker, neodebere label); sentinely `ErrEmptyKey`(→400)/
-  `ErrTargetNotFound`(→404)),
+  `ErrTargetNotFound`(→404);
+  **Confirmations** (`confirmations.go`, tabulka `face_confirmations`, migrace
+  `0032_face_confirmations.sql`) jsou **opačná polarita**: „tenhle obličej **JE** tahle osoba,
+  přiřazení je správné". Stejný tvar i pravidla jako `face_rejections` (klíč
+  `photo_uid`+`face_index`+`subject_uid`, `UNIQUE natural key` → dvojí potvrzení = no-op,
+  `confirmed_by` FK users `ON DELETE SET NULL`, FK photos/subjects `ON DELETE CASCADE`, **žádné FK
+  na `faces`** ze stejného důvodu — re-detekce obličeje maže a znovu vkládá);
+  `ConfirmFace`/`UnconfirmFace` (idempotentní audited insert/delete, akce `face.confirm`/
+  `face.unconfirm`), `IsFaceConfirmed`, bulk `FaceConfirmationsForSubject(subjectUID)` (→ `[]FaceRef`).
+  **Proč to existuje:** outlier review potřebuje zaznamenat „ne, tohle je fakt on" — a použít na to
+  `RejectFace` by zapsalo **pravý opak** toho, co uživatel řekl. `internal/outliers` potvrzené
+  obličeje vylučuje, takže seznam, který dokola nabízí tytéž plané poplachy, konverguje),
   `internal/feedbackapi/`
   (HTTP API nad rejections — rozhraní `Store` (podmnožina `feedback.Store`) → unit-testovatelné s faky;
   `NewAPI(Config{Store,RequireWrite})`+`RegisterRoutes` mountuje subrouter `/feedback`:

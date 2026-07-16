@@ -145,6 +145,17 @@ export function Outliers({ subjectUid }: OutliersProps) {
           )
         })}
       </div>
+      {/* This panel is the right tool when you are already looking at a person;
+          the full page is the one for a proper sweep — threshold, context crops,
+          bulk and keyboard. Hand the person over so it opens ready to work. */}
+      <div className="mt-3">
+        <Link
+          to={`/outliers?subject=${encodeURIComponent(subjectUid)}`}
+          className="btn btn-sm btn-outline-secondary"
+        >
+          {t('outliers.reviewAll')}
+        </Link>
+      </div>
     </section>
   )
 }

@@ -61,6 +61,15 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
   fotek**, kterým odpovídá — a vote rule je vypsané, ne černá skříňka. Vybrané kandidáty přidáš běžnou
   **hromadnou editací předvyplněnou rozšiřovanou sbírkou** (přidané fotky hned zmizí z výsledků),
   u štítku ✗ fotku **trvale zamítne**, takže se příště nenabídne a opakované průchody konvergují.
+- **Možné chyby** (`/outliers`, editoři): opačná úloha — ne „koho jsem minul", ale **„koho tu mám
+  omylem"**. Vybereš osobu a Kukátko seřadí její obličeje od toho, který se jí podobá nejmíň.
+  Centroid se počítá **robustně** (nejvzdálenější obličeje se před výpočtem zahodí) — jinak by si
+  tři blbě přiřazené obličeje průměr přitáhly k sobě a zamaskovaly přesně to, co hledáš. Každá
+  karta ukazuje **výřez s okolím** (obličej + kus fotky kolem, z těsného výřezu člověka nepoznáš)
+  a ptá se „je to chyba?": **✓ odebere**, **✗ potvrdí, že je to fakt on** — a potvrzený obličej se
+  už příště nenabídne, takže opakované průchody konvergují místo dokola stejných planých poplachů.
+  Práh, hromadné odebrání i klávesnice (`y`/`n`, šipky, Ctrl+A). Kukátko **samo nikdy nic
+  neodebere** — jen seřadí a zeptá se.
 - **Třídění — hra na jednu otázku** (`/review`, editoři): Kukátko ti ukáže jednu fotku a zeptá se
   jednu věc — *„Je na fotce **Tomáš Kozák**?"* nebo *„Sedí k fotce štítek **Ostatky**?"*. Odpovíš,
   objeví se další. Otázky míří **do pásma nejistoty** (tam, kde stroj neví a člověk ano), takže

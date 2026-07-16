@@ -90,6 +90,20 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     ],
   },
   {
+    titleKey: 'shortcuts.groups.outliers',
+    entries: [
+      {
+        keys: ['↑', '↓', '←', '→', 'j', 'k', 'h', 'l'],
+        descriptionKey: 'shortcuts.outliers.move',
+      },
+      { keys: ['y', 'Enter'], descriptionKey: 'shortcuts.outliers.unassign' },
+      { keys: ['n'], descriptionKey: 'shortcuts.outliers.confirm' },
+      { keys: ['x'], descriptionKey: 'shortcuts.outliers.select' },
+      { keys: ['Ctrl+A'], descriptionKey: 'shortcuts.outliers.selectAll' },
+      { keys: ['Esc'], descriptionKey: 'shortcuts.outliers.escape' },
+    ],
+  },
+  {
     titleKey: 'shortcuts.groups.review',
     entries: [
       { keys: ['→', 'y'], descriptionKey: 'shortcuts.review.yes' },

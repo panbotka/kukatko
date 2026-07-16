@@ -245,13 +245,22 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   pojmenováním → refreshnutý shluk (nebo `null` když osiří); 503 bez backendu, 400/404/409 dle
   sentinelů. Mountuje se čtvrtým `server.WithAPI` (`buildClusterAPI` v `cmd/kukatko/clusters.go`).
 - **Outliers API (`/api/v1`, `internal/outlierapi`, editor/admin přes `RequireWrite`):**
-  `GET /subjects/{uid}/outliers` → `{subject_uid,count,meaningful,faces:[{photo_uid,face_index,
-  bbox,det_score,distance,marker_uid?,width,height,orientation}]}` (obličeje osoby seřazené
-  sestupně dle kosinové vzdálenosti od centroidu jejích embeddingů — nejpravděpodobněji špatně
-  přiřazené první); 1–2 obličeje → `meaningful:false`; špatný obličej se odpojí přes existující
-  `POST /photos/{uid}/faces/assign` (`unassign_person`), tahle vrstva nemutuje; 503 bez backendu,
-  404 chybějící subjekt. Mountuje se `server.WithAPI` (`buildOutlierAPI` v
-  `cmd/kukatko/outliers.go`).
+  `GET /subjects/{uid}/outliers` → `{subject_uid,count,meaningful,avg_distance,no_embedding,
+  faces:[{photo_uid,face_index,bbox,det_score,distance,marker_uid?,width,height,orientation}]}`
+  (obličeje osoby seřazené sestupně dle kosinové vzdálenosti od **trimovaného** centroidu jejích
+  embeddingů — nejpravděpodobněji špatně přiřazené první); 1–2 obličeje → `meaningful:false`;
+  špatný obličej se odpojí přes existující `POST /photos/{uid}/faces/assign` (`unassign_person`),
+  tahle vrstva nemutuje; 503 bez backendu, 404 chybějící subjekt.
+  **Volitelné query parametry** `threshold` (minimální kosinová vzdálenost od centroidu, 0–2,
+  default **0 = vrať vše**) a `limit` (max. počet obličejů, default **0 = všechny**) zužují seznam,
+  aby stránka nemusela tahat všechny obličeje dobře otagovaného člověka; nečíselný, záporný nebo
+  `threshold > 2` → 400. Historické chování („vše, seřazené") zůstává defaultem.
+  `count`/`meaningful`/`avg_distance` popisují **celou oskórovanou množinu** (před filtrem), takže
+  statistiky nelžou, když práh seznam zúží; `no_embedding` je počet přiřazení **bez embeddingu**,
+  která zkontrolovat nejde (obličej rozpoznaný, když byl sidecar offline) a v `faces` **nejsou** —
+  klient je má přiznat, ne tiše vynechat. **Obličeje potvrzené uživatelem** (viz Feedback API níže)
+  jsou z výsledku vyloučené, takže opakované průchody konvergují místo dokola nabízených planých
+  poplachů. Mountuje se `server.WithAPI` (`buildOutlierAPI` v `cmd/kukatko/outliers.go`).
 - **Candidates API (`/api/v1`, `internal/candidatesapi`, editor/admin přes `RequireWrite`):**
   „najdi osobu mezi neotagovanými fotkami". `POST /subjects/{uid}/candidates` s **volitelným** tělem
   `{threshold?,limit?}` (`threshold` = max kosinová vzdálenost, default `candidates.max_distance`;
@@ -404,19 +413,28 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   Každá mutace (create/update/delete alba i štítku, add/remove fotek, attach/detach) píše audit záznam
   (`album.*`/`label.*`) **ve stejné transakci** jako změna — odpovědi se nemění. Mountuje se dalším `server.WithAPI`
   (`buildOrganizeAPI` v `cmd/kukatko/organize.go`).
-- **Feedback / Rejections API (`/api/v1`, `internal/feedbackapi`):** persistované negativní feedback —
-  uživatelské „ne" k odhadu obličej↔subjekt nebo fotka↔label, a jeho vzetí zpět. **Zamítnutí je
-  názor — nikdy nemutuje** podkladová data (neodpojí marker, neodebere label). Čtyři endpointy, všechny
-  **RequireWrite** (editor/admin, viewer 403): `POST /feedback/face-rejections`
+- **Feedback / Rejections API (`/api/v1`, `internal/feedbackapi`):** persistovaný feedback —
+  uživatelské „ne" (a nově i „ano") k odhadu obličej↔subjekt nebo fotka↔label, a jeho vzetí zpět.
+  **Feedback je názor — nikdy nemutuje** podkladová data (neodpojí marker, neodebere label). Šest
+  endpointů, všechny **RequireWrite** (editor/admin, viewer 403): `POST /feedback/face-rejections`
   `{photo_uid,face_index,subject_uid}` → 204 (zamítne „tento obličej NENÍ tato osoba"),
   `DELETE /feedback/face-rejections` (stejné tělo) → 204 (vezme zpět); `POST /feedback/label-rejections`
   `{photo_uid,label_uid}` → 204 (zamítne „tato fotka NEMÁ mít tento label"),
   `DELETE /feedback/label-rejections` (stejné tělo) → 204 (vezme zpět) — i DELETE nese tělo (jako
-  label-detach). **Idempotentní**: dvojí POST i DELETE něčeho, co nebylo zamítnuto, vrací 204.
+  label-detach); `POST /feedback/face-confirmations` `{photo_uid,face_index,subject_uid}` → 204
+  a `DELETE /feedback/face-confirmations` (stejné tělo) → 204.
+  **Pozor na polaritu:** confirmation je **opak** rejection — říká „tenhle obličej **JE** tahle
+  osoba, přiřazení je správné". Slouží outlier review (✗ = „ne, fakt je to on"): potvrzený obličej
+  `internal/outliers` z dalších výsledků vyloučí, takže se stejný planý poplach nenabízí dokola.
+  Zaměnit ji za `face-rejections` znamená zapsat pravý opak toho, co uživatel řekl.
+  Tabulka `face_confirmations` (migrace `0032`) má přirozený `UNIQUE (photo_uid, face_index,
+  subject_uid)` a FK s `ON DELETE CASCADE` na fotku i subjekt (`confirmed_by` → `SET NULL`).
+  **Idempotentní**: dvojí POST i DELETE něčeho, co nebylo zamítnuto/potvrzeno, vrací 204.
   Body `DisallowUnknownFields` + 64 KiB; chybějící `photo_uid`/`subject_uid`/`label_uid` nebo záporný
   `face_index` → 400; neexistující fotka/subjekt/label → 404 (`ErrTargetNotFound`). Každá mutace píše
-  audit záznam **ve stejné transakci** jako zamítnutí (akce `face.reject`/`face.unreject`/`label.reject`/
-  `label.unreject`; aktor = `rejected_by`). Mountuje se dalším `server.WithAPI` (`buildFeedbackAPI` v
+  audit záznam **ve stejné transakci** jako zápis (akce `face.reject`/`face.unreject`/`label.reject`/
+  `label.unreject`/`face.confirm`/`face.unconfirm`; aktor = `rejected_by`/`confirmed_by`).
+  Mountuje se dalším `server.WithAPI` (`buildFeedbackAPI` v
   `cmd/kukatko/feedback.go`). Konzumenti (hledání osoby mezi neotagovanými, recognition sweep, review hra)
   přijdou v dalších taskách.
 - **Places API (`/api/v1`, `internal/placesapi`, přihlášený přes `RequireAuth`):** procházení
