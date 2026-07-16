@@ -368,7 +368,8 @@
       "unavailable": "Map tiles could not be loaded — the map provider is unavailable.",
       "error": "Map tiles could not be loaded.",
       "hint": "Photos are still shown on the empty background."
-    }
+    },
+    "estimatedTitle": "Estimated location, from photos taken the same day"
   },
   "similar": {
     "title": "Similar photos",
@@ -1021,7 +1022,15 @@
       "edit": "Edit",
       "save": "Save",
       "cancel": "Cancel",
-      "saveError": "Saving failed. Check the entered values."
+      "saveError": "Saving failed. Check the entered values.",
+      "locationEstimatedMarker": "estimate",
+      "locationEstimatedTitle": "Estimated from photos taken the same day, not a measured position",
+      "locationEstimatedHelp": "Estimated from photos taken the same day.",
+      "acceptLocation": "Accept estimate",
+      "acceptLocationHelp": "Marks the location your own decision; it stops being shown as an estimate.",
+      "discardLocation": "Discard estimate",
+      "discardLocationHelp": "The photo stays without a location and the estimate is never added back.",
+      "locationActionFailed": "The location could not be saved. Please try again."
     },
     "technical": {
       "title": "Technical details",

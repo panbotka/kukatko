@@ -376,6 +376,31 @@ stacks:
     # shots taken within one second, so it is OFF by default.
     time_gps: false
 
+# Estimating a missing location from photos taken near it in time. A photo with a
+# known date but no GPS was very often taken the same day, in the same place, as
+# photos that do have coordinates; reusing their location fills the map and makes
+# the places hierarchy useful. Estimates are stored marked (location_source =
+# "estimate"), shown as estimates in the UI, and the user can accept or clear each
+# one. Only run by the admin-only POST /process/locations backfill; nothing is
+# estimated on upload (a fresh photo has no same-day neighbours yet).
+location_estimate:
+  # Master switch. false = no coordinate is ever inferred and /process/locations
+  # answers 503. Already-estimated locations are left alone, marked, for the user
+  # to accept or clear. KUKATKO_LOCATION_ESTIMATE_ENABLED.
+  enabled: true
+  # Half-width of the neighbour window: a photo is estimated from photos taken
+  # within ±window of it. The same calendar day is the obvious choice, a few hours
+  # is a better one — a day that starts in Brno and ends in Vienna is exactly where
+  # a same-day estimate goes wrong. KUKATKO_LOCATION_ESTIMATE_WINDOW.
+  window: 6h
+  # Coherence radius: the neighbours are only trusted if EVERY one of them lies
+  # within this distance (metres) of their centroid; otherwise the photo is left
+  # with no location at all. A wrong location is worse than none — it silently
+  # poisons the map, the places hierarchy and every near: search built on them —
+  # so widening this past the size of one outing is a bad trade.
+  # KUKATKO_LOCATION_ESTIMATE_RADIUS_METERS.
+  radius_meters: 5000
+
 # Upload / ingest limits.
 upload:
   # Maximum size of a single uploaded file, in mebibytes. 0 disables the cap

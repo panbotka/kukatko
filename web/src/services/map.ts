@@ -22,6 +22,15 @@ export interface MapFeatureProperties {
   taken_at?: string
   media_type: string
   thumb: string
+  /**
+   * Whether the pin's position was inferred from photos taken nearby in time
+   * rather than measured. Estimated photos are on the map by default — putting
+   * them there is the point of estimating them — but a pin that looks identical to
+   * a measured one is the map quietly lying, so it is drawn differently.
+   *
+   * Absent means "not an estimate": the backend only emits the key when true.
+   */
+  location_estimated?: boolean
 }
 
 /** A single GeoJSON `Feature`: a point plus its marker properties. */

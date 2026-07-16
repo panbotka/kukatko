@@ -85,6 +85,11 @@ func applyCaptureMeta(p *photos.Photo, pp photoprism.Photo, meta exif.Metadata) 
 	} else {
 		p.Lat, p.Lng = meta.Lat, meta.Lng
 	}
+	// Either way the fix came out of a file, so it is "exif" — and it must be
+	// stamped here as well as in metadataUpdate, or the first incremental re-sync
+	// after this column existed would see '' turn into 'exif' and report every
+	// photo in the library as updated.
+	p.LocationSource = locationSource(p.Lat, p.Lng)
 	if pp.Altitude != 0 {
 		alt := float64(pp.Altitude)
 		p.Altitude = &alt
@@ -144,6 +149,11 @@ func metadataUpdate(existing photos.Photo, pp photoprism.Photo) photos.MetadataU
 		Lat:              existing.Lat,
 		Lng:              existing.Lng,
 		Altitude:         existing.Altitude,
+		// Carried through, and it matters more than most: blanking it would turn an
+		// estimated location into one that looks measured, and would revive a
+		// location the user deliberately cleared (an empty source with no
+		// coordinates is exactly what the estimator treats as fair game).
+		LocationSource: existing.LocationSource,
 	}
 	if !pp.TakenAt.IsZero() {
 		taken := pp.TakenAt
@@ -153,6 +163,11 @@ func metadataUpdate(existing photos.Photo, pp photoprism.Photo) photos.MetadataU
 	if pp.Lat != 0 || pp.Lng != 0 {
 		lat, lng := pp.Lat, pp.Lng
 		update.Lat, update.Lng = &lat, &lng
+		// The coordinates came out of the file upstream, so their provenance follows
+		// them — the same rule the capture time above obeys. It also means a
+		// re-import legitimately promotes an estimate to a measured fix, which is an
+		// improvement: PhotoPrism knows where the photo was and we were guessing.
+		update.LocationSource = string(exif.SourceExif)
 	}
 	if pp.Altitude != 0 {
 		alt := float64(pp.Altitude)
@@ -191,10 +206,11 @@ func creditsUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool 
 }
 
 // placementUnchanged compares the capture time (its estimate flag and dating note
-// included), the GPS fix and the private flag.
+// included), the GPS fix with its provenance, and the private flag.
 func placementUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool {
 	return existing.Private == update.Private &&
 		existing.TakenAtSource == update.TakenAtSource &&
+		existing.LocationSource == update.LocationSource &&
 		existing.TakenAtEstimated == update.TakenAtEstimated &&
 		existing.TakenAtNote == update.TakenAtNote &&
 		timeEqual(existing.TakenAt, update.TakenAt) &&
@@ -262,4 +278,16 @@ func takenAtSource(src exif.Source) string {
 		return string(exif.SourceUnknown)
 	}
 	return string(src)
+}
+
+// locationSource returns the provenance of an imported GPS fix: "exif" when the
+// photo has one (PhotoPrism's curated value or the file's own — both come out of
+// a file), empty when it has none. Both halves must be present: half a fix is not
+// a location, and claiming provenance for it would also take the photo out of the
+// estimator's reach for a location it never got.
+func locationSource(lat, lng *float64) string {
+	if lat == nil || lng == nil {
+		return ""
+	}
+	return photos.LocationSourceExif
 }

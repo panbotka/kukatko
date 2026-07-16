@@ -153,6 +153,7 @@ export function MapPage() {
             onViewportChange={handleViewportChange}
             onSelectPhoto={handleSelectPhoto}
             thumbAlt={t('map.thumbAlt')}
+            estimatedTitle={t('map.estimatedTitle')}
             onTileError={handleTileError}
           />
 

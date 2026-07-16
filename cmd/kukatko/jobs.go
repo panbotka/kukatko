@@ -94,7 +94,10 @@ func buildJobs(
 		// A nil interface (not a typed-nil pointer) disables /process/stacks when
 		// the stacking feature is off.
 		StacksDetector: stacksDetectorOrNil(cfg, db),
-		RequireAdmin:   authAPI.RequireAdmin,
+		// Likewise a nil interface disables /process/locations when location
+		// estimation is switched off.
+		LocationEstimator: locationEstimatorOrNil(cfg, db, enqueuer),
+		RequireAdmin:      authAPI.RequireAdmin,
 	})
 	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, authAPI), nil
 }

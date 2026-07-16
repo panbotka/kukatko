@@ -144,6 +144,15 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   nikdy nezůstane viset zastaralá poznámka (délka se přesto validuje první, takže příliš dlouhá
   poznámka se ohlásí, ne tiše zahodí). `taken_at` NULL + `taken_at_estimated` `true` je legální
   (význam nese poznámka) a na řazení/timeline/filtry nemá příznak žádný vliv
+  **+ původ polohy** `location_source` (`exif`/`manual`/`estimate`/`""`, viz `internal/geoestimate`):
+  v payloadu **read-only informace**, v PATCH jediná povolená hodnota `"manual"` a jen na fotce, která
+  polohu má — tím se **přijme odhad** (povýší na uživatelovo rozhodnutí), aniž by se posílaly zpět
+  souřadnice a zaokrouhlily na to, co klient vykreslil. Cokoli jiného = 400: `exif`/`estimate` píše
+  server, klient si původ souřadnice, kterou sám zadal, vymyslet nesmí. **Jakýkoli dotyk `lat`/`lng`**
+  (posun i smazání) sám o sobě zapíše `location_source: "manual"`; smazání tedy **nevrací** původ na
+  prázdný jako u `taken_at` → `unknown` — `"manual"` bez souřadnic je záměrný **náhrobek** („uživatel
+  rozhodl, že tahle fotka polohu nemá“), díky kterému backfill odhad, který uživatel zahodil, nikdy
+  nevrátí zpět
   **+ IPTC/XMP kredity** `subject/artist/copyright/license/keywords/scan`: volný text,
   ořízne se whitespace, délkový strop (`subject`/`copyright`/`license` 1000, `keywords` 2000,
   `artist` 255 **znaků**, ne bajtů), delší = 400; `scan` je prostý bool. Strojově odvozená pole
@@ -385,6 +394,18 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `stacks.Service.DetectStacks`; **synchronní**, kandidáty jsou **jen dosud nestacknuté nearchivované**
   fotky, takže re-run je idempotentní a nerozbije ruční ani existující stack; **503** když
   `stacks.enabled: false`).
+  `POST /process/locations` → `{estimated}` (odhad polohy pro fotky bez GPS z fotek pořízených blízko
+  v čase, přes `geoestimate.BackfillLocations`; **synchronní**, **503** když
+  `location_estimate.enabled: false`). Kandidáti jsou jen fotky **bez souřadnic** s prázdným
+  `location_source`, se **známým a neodhadnutým** `taken_at`, které nejsou sken ani archivované.
+  Sousedy jsou fotky se **změřenou** polohou (`location_source <> 'estimate'`) v okně
+  ±`location_estimate.window`; odhad vznikne **jen když jsou soudržné** — všechny do
+  `location_estimate.radius_meters` od svého těžiště. Jinak se **nevytvoří nic**: den mezi Prahou a
+  Vídní žádnou poctivou odpověď nemá. Zapsaná poloha je vždy označená `location_source: "estimate"` a
+  fotka dostane `places` job, takže se odhad propíše do hierarchie míst (geokód sám je metrovaný a jede
+  přes stávající `maps.geocode_rate_per_sec` limiter). Re-run je idempotentní: odhadnutá fotka
+  přestává být kandidát a **uživatelem smazaný odhad se nikdy nevrátí** (smazání zapíše
+  `location_source: "manual"` bez souřadnic — náhrobek, ne mezera).
   Náhledy i metadata se počítají **lokálně**, takže backfill funguje i když je box offline; fronta jobů
   deduplikuje, takže opakované spuštění je idempotentní. Mountuje se `server.WithAPI` (`buildJobs`).
 - **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **alba** `GET /albums`
@@ -493,7 +514,10 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   zaokrouhlená souřadnice) a **rate-limitované** (token-bucket, geocode = 4 kredity) → 429 přes
   limit, 404 bez shody. `GET /map/photos` — **GeoJSON FeatureCollection** geotagovaných fotek
   (souřadnice `[lng,lat]`), ctí filtry `taken_after`/`taken_before`/`album`/`label`/`archived`,
-  feature nese `uid`/`title`/`taken_at`/`media_type`/relativní `thumb`. mapy.com chyby
+  feature nese `uid`/`title`/`taken_at`/`media_type`/relativní `thumb` a u odhadnuté polohy
+  `location_estimated: true` (jinak se klíč **vůbec neposílá**). Odhadnuté fotky jsou ve feedu
+  **defaultně** — od toho odhad je — ale špendlík, který vypadá stejně jako změřený, je tichá lež, tak
+  je klient kreslí **jiným tvarem** (čárkovaný, ne jen jiná barva) + `title`. mapy.com chyby
   (**401/403 → 424** `mapsapi.StatusMapKeyRejected` = odmítnutý *náš* klíč, syrová 403 se
   neprosakuje ven — request volajícího je v pořádku; 404→404, 429→429, 5xx→502/503)
   **neprosakují klíč**; každý výsledek se zapisuje do `mapy.Health` (→ `GET /system/status`

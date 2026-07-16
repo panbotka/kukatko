@@ -38,6 +38,24 @@ const markerIcon = L.divIcon({
 })
 
 /**
+ * The pin for a photo whose location is an estimate rather than a measurement.
+ *
+ * It is deliberately a different SHAPE, not just a different colour: hollow and
+ * dashed rather than solid. Estimated pins belong on the map, but one that looks
+ * identical to a measured pin makes the map claim a precision it does not have,
+ * and colour alone would not survive a colour-blind glance or a greyscale print.
+ * The title carries the same fact in words for a screen reader.
+ */
+const estimatedMarkerIcon = L.divIcon({
+  className: 'kukatko-map-pin kukatko-map-pin-estimated',
+  html:
+    '<span style="display:block;width:14px;height:14px;border-radius:50%;' +
+    'background:transparent;border:2px dashed #0d6efd;box-shadow:0 0 2px rgba(0,0,0,.6)"></span>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+})
+
+/**
  * A larger, high-contrast pin for the location picker's draggable marker: big
  * enough to be an easy touch drag target on a phone.
  */
@@ -75,6 +93,12 @@ export interface LeafletMapProps {
   onSelectPhoto: (uid: string) => void
   /** Alt text for a thumbnail without its own title. */
   thumbAlt: string
+  /**
+   * Tooltip for a pin whose position is an estimate, naming it as one in words.
+   * The dashed pin says it at a glance; this says it to a screen reader and on
+   * hover. Optional: a map with no estimated pins never needs it.
+   */
+  estimatedTitle?: string
   /** CSS height of the map container. Defaults to `70vh`; a detail mini-map
    * passes a smaller fixed height. */
   height?: string
@@ -113,6 +137,7 @@ export function LeafletMap({
   onViewportChange,
   onSelectPhoto,
   thumbAlt,
+  estimatedTitle,
   height = '70vh',
   picker,
   onTileError,
@@ -138,6 +163,8 @@ export function LeafletMap({
   onSelectRef.current = onSelectPhoto
   const thumbAltRef = useRef(thumbAlt)
   thumbAltRef.current = thumbAlt
+  const estimatedTitleRef = useRef(estimatedTitle)
+  estimatedTitleRef.current = estimatedTitle
   const onPickRef = useRef(picker?.onPick)
   onPickRef.current = picker?.onPick
   const onTileErrorRef = useRef(onTileError)
@@ -247,7 +274,11 @@ export function LeafletMap({
     const points: [number, number][] = []
     for (const feature of features) {
       const [lng, lat] = feature.geometry.coordinates
-      const marker = L.marker([lat, lng], { icon: markerIcon })
+      const estimated = feature.properties.location_estimated === true
+      const marker = L.marker([lat, lng], {
+        icon: estimated ? estimatedMarkerIcon : markerIcon,
+        title: estimated ? estimatedTitleRef.current : undefined,
+      })
       // Lazy popup content: built only when the marker is opened.
       marker.bindPopup(() => buildPopupElement(feature, onSelectRef.current, thumbAltRef.current))
       cluster.addLayer(marker)

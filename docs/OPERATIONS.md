@@ -529,6 +529,28 @@ dlouhoběžící a patří na stroj, kde instance běží — zůstávají tedy 
   /process/stacks` (jako ostatní `/process/*`) proběhne detekci nad celou knihovnou přes
   `stacks.Service.DetectStacks` a vrátí `{created}`; kandidáty jsou jen dosud nestacknuté nearchivované
   fotky, takže re-run je idempotentní. Při `stacks.enabled: false` odpovídá 503.
+- **Location estimate klíče (`location_estimate.*`, `internal/config` + `internal/geoestimate`):**
+  odhad polohy fotek bez GPS z fotek pořízených blízko v čase. `enabled` (bool, **default true** — plná
+  mapa a použitelná hierarchie míst je to, co většina knihoven chce; vypnutí je jeden klíč daleko,
+  protože domýšlení dat je přesně ten druh ochoty, o který někdo nestojí): při `false` se **nikdy**
+  neodhaduje nic a `POST /process/locations` vrací **503**; už odhadnuté polohy zůstávají, označené, aby
+  je uživatel přijal nebo smazal. `window` (duration, **default 6h**) je **poloviční šířka** okna
+  sousedů — fotka se odhaduje z fotek pořízených ±window od ní; stejný kalendářní den je nasnadě, pár
+  hodin je lepší (den, co začne v Brně a skončí ve Vídni, je přesně ten případ, kdy je same-day odhad
+  špatně). `radius_meters` (float, **default 5000**) je **radius soudržnosti**: sousedům se věří, jen
+  když **každý** z nich leží do téhle vzdálenosti od jejich těžiště — jinak fotka zůstane bez polohy.
+  Obě páky **chybují směrem k odmítnutí** a je to tak správně: špatná poloha tiše otráví mapu,
+  hierarchii míst i každé `near:` hledání nad nimi, a rozšiřování radiusu za velikost jednoho výletu je
+  špatný obchod (neexistuje hodnota, při které se den mezi Prahou a Vídní stane poctivým). Zapnutý
+  odhadovač s nekladným `window`/`radius_meters` **neprojde startem** (`ErrInvalidLocationEstimate`) —
+  lepší odmítnout naběhnout než vypadat zapnutě a nikdy nic nevyprodukovat; u vypnutého se hodnoty
+  nekontrolují. Env: `KUKATKO_LOCATION_ESTIMATE_ENABLED`, `_WINDOW`, `_RADIUS_METERS`. **Admin
+  backfill** `POST /process/locations` → `{estimated}` je jediná cesta, jak odhad vzniká (při uploadu se
+  neodhaduje — čerstvá fotka ještě žádné sousedy z téhož dne nemá). Každý nový odhad dostane `places`
+  job, takže se propíše do hierarchie míst; **geokód je metrovaný**, jede přes stávající
+  `maps.geocode_rate_per_sec` limiter, takže velký backfill geokodér krmí po kapkách místo aby ho
+  zavalil — počítej s **1 kreditem mapy.com na odhadnutou fotku**. Re-run je idempotentní a
+  **uživatelem smazaný odhad se nikdy nevrátí**.
 - **Candidates klíče (`candidates.*`, `internal/config` + `internal/candidates`):** ladí hledání
   „osoba mezi neotagovanými fotkami" (`POST /subjects/{uid}/candidates`). `max_distance` (**default
   0.5**) — výchozí max kosinová vzdálenost kandidáta od exempláře, když ji request nepošle, **a**

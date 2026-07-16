@@ -502,6 +502,21 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   obojí by tiše přepsalo katalog. **Neplatný text souřadnic = inline chyba u pole**, ne blokace
   celého formuláře: ostatní pole se uloží, poloha zůstane beze změny a formulář zůstane otevřený
   (Save se **nedisabluje**).
+  **Odhadnutá poloha** (`location_source === 'estimate'`, viz `internal/geoestimate`) se v read-only
+  řádku Poloha renderuje přes `EstimatedLocation` (v `MetadataPanel.tsx`): badge `odhad` (cs) /
+  `estimate` (en) s `title` „Odhad podle fotek z téhož dne, ne změřená poloha" + jednořádkové
+  vysvětlení, odkud se vzala — **labelovaný badge a věta, ne jemnější odstín**: odhadnutá poloha, co
+  vypadá stejně jako skutečná, je lež, kterou appka uživateli říká, a barva sama o sobě neřekne
+  screen readeru nic. Editor pod tím dostane **dvě cesty ven** (viewer vidí jen marker — i on má vědět,
+  že špendlík je tip): **Potvrdit odhad** pošle `{location_source:'manual'}` — jen původ, **nikdy** ne
+  souřadnice zpět (ty by se zaokrouhlily na 6 desetinných míst, co vykreslil formulář, a špendlík by se
+  posunul jako cena za souhlas) — a **Zahodit odhad** pošle `{lat:null,lng:null}`, což si backend
+  zapíše jako rozhodnutí (`manual` bez souřadnic) a **stejný tip už znovu nenabídne** (help text to
+  říká rovnou, místo aby to uživatel zjistil tím, že se to nikdy nevrátí). Obojí je vlastní one-click
+  request (`resolveEstimate`, vlastní busy/failed stav) mimo formulářový Save — je to odpověď na otázku,
+  kterou položila appka, ne editace, kvůli které uživatel přišel; `location_source` se čte z `photo`,
+  ne z form state, protože jde o fakt o uloženém řádku. Poloha z EXIF ani ta s **neznámým** původem
+  (`''`, starší řádky) se **neoznačuje** — „nevíme" není „hádali jsme".
   **IPTC/XMP kredity** (`credits` pod-sekce ve stejném formuláři, **na první render sbalená**,
   chevron toggle `aria-expanded`/`aria-controls` jako `TechnicalDetails`) — patří na naskenované/zděděné
   fotky, kde EXIF ani importy o autorovi/roce nic neví: textová pole **Předmět** (`subject`),
@@ -637,7 +652,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`onTileError` z `LeafletMap`) diagnostikuje `probeTileFailure` a vysvětlí **zavíratelným
   varováním** (`map.tiles.*`, typicky „mapový klíč byl odmítnut") místo nevysvětlené šedé mřížky —
   mapa zůstává použitelná, markery/shluky se kreslí dál nad prázdným podkladem; probe je
-  **debouncovaný** (celá dávka `tileerror` = jeden dotaz) a přepnutí mapsetu varování resetuje,
+  **debouncovaný** (celá dávka `tileerror` = jeden dotaz) a přepnutí mapsetu varování resetuje;
+  fotky s **odhadnutou polohou** (`location_estimated` na feature) jsou v mapě **defaultně** — od toho
+  odhad je — ale kreslí se **jiným tvarem** špendlíku (`estimatedMarkerIcon` v `LeafletMap`: dutý
+  čárkovaný kroužek, **ne** jen jiná barva — ta nepřežije barvoslepý pohled ani černobílý tisk) plus
+  `title` z `estimatedTitle` propu, který totéž řekne slovy screen readeru; špendlík, co vypadá stejně
+  jako změřený, by mapu nechal tvrdit přesnost, kterou nemá,
   `PlacesPage` = `/places` procházení knihovny dle lokality: jedním fetchem `fetchPlaces()` natáhne
   hierarchii zemí→měst s počty; **drill v URL** (`?country=&city=` přes `useUrlState` nad
   `PlacesView` = `LibraryView`+`country`/`city`, takže Zpět prochází úrovně) — úroveň 1 seznam zemí

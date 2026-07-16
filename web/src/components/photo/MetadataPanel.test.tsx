@@ -110,6 +110,13 @@ function apiResponse(current: PhotoDetail, patch: PhotoMetadataUpdate): PhotoDet
     scan: patch.scan ?? current.scan,
     lat: patch.lat === undefined ? current.lat : (patch.lat ?? undefined),
     lng: patch.lng === undefined ? current.lng : (patch.lng ?? undefined),
+    // Provenance follows the coordinates: touching either stamps the location the
+    // user's own, whether they moved it or cleared it. Clearing deliberately keeps
+    // "manual" rather than reverting to unknown — that is the tombstone that stops
+    // the backfill re-estimating what the user threw away.
+    location_source:
+      patch.location_source ??
+      (patch.lat === undefined && patch.lng === undefined ? current.location_source : 'manual'),
   }
 }
 
@@ -724,5 +731,127 @@ describe('MetadataPanel credit fields', () => {
     expect(screen.queryByLabelText('Subject')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Keywords')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Scan')).not.toBeInTheDocument()
+  })
+})
+
+describe('MetadataPanel estimated location', () => {
+  it('marks an estimated location distinctly, with an explanation', async () => {
+    const current = photo({ lat: 50.09, lng: 14.4, location_source: 'estimate' })
+    mockApi(current)
+    renderPanel({ photo: current })
+
+    // A badge in words, not a shade or a glyph: the marker has to survive both a
+    // glance and a screen reader.
+    const badge = await screen.findByTitle(
+      'Estimated from photos taken the same day, not a measured position',
+    )
+    expect(badge).toHaveTextContent('estimate')
+    expect(screen.getByText('Estimated from photos taken the same day.')).toBeInTheDocument()
+  })
+
+  it('leaves a measured location unmarked', () => {
+    const current = photo({ lat: 50.09, lng: 14.4, location_source: 'exif' })
+    mockApi(current)
+    renderPanel({ photo: current })
+
+    expect(screen.queryByText('Estimated from photos taken the same day.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Accept estimate' })).not.toBeInTheDocument()
+  })
+
+  it('leaves a location of unknown provenance unmarked', () => {
+    // An older row carries no source. It is not an estimate, so it must not be
+    // labelled one — "we don't know" is not "we guessed".
+    const current = photo({ lat: 50.09, lng: 14.4, location_source: '' })
+    mockApi(current)
+    renderPanel({ photo: current })
+
+    expect(screen.queryByText('Estimated from photos taken the same day.')).not.toBeInTheDocument()
+  })
+
+  it('offers accept and discard to an editor', () => {
+    const current = photo({ lat: 50.09, lng: 14.4, location_source: 'estimate' })
+    mockApi(current)
+    renderPanel({ photo: current })
+
+    expect(screen.getByRole('button', { name: 'Accept estimate' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Discard estimate' })).toBeInTheDocument()
+  })
+
+  it('offers neither to a viewer, who may not decide', () => {
+    const current = photo({ lat: 50.09, lng: 14.4, location_source: 'estimate' })
+    mockApi(current)
+    renderPanel({ photo: current, canWrite: false })
+
+    // The marker still shows — a viewer deserves to know the pin is a guess — but
+    // the actions do not.
+    expect(screen.getByText('Estimated from photos taken the same day.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Accept estimate' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Discard estimate' })).not.toBeInTheDocument()
+  })
+
+  it('accepts the estimate by promoting the source, never resending coordinates', async () => {
+    const current = photo({ lat: 50.09, lng: 14.4, location_source: 'estimate' })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderHarness(current)
+
+    await user.click(screen.getByRole('button', { name: 'Accept estimate' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+
+    const patch = sentPatch()
+    expect(patch.location_source).toBe('manual')
+    // Echoing the coordinates back would round them to the six decimals the form
+    // renders, moving the pin as the price of agreeing with it.
+    expect(patch).not.toHaveProperty('lat')
+    expect(patch).not.toHaveProperty('lng')
+
+    // And the accepted location is a plain one: no badge, no buttons.
+    await waitFor(() => {
+      expect(
+        screen.queryByText('Estimated from photos taken the same day.'),
+      ).not.toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: 'Accept estimate' })).not.toBeInTheDocument()
+  })
+
+  it('discards the estimate by clearing the coordinates', async () => {
+    const current = photo({ lat: 50.09, lng: 14.4, location_source: 'estimate' })
+    mockApi(current)
+    const user = userEvent.setup()
+    renderHarness(current)
+
+    await user.click(screen.getByRole('button', { name: 'Discard estimate' }))
+    await waitFor(() => {
+      expect(updatePhotoMock).toHaveBeenCalled()
+    })
+
+    const patch = sentPatch()
+    expect(patch.lat).toBeNull()
+    expect(patch.lng).toBeNull()
+
+    // The backend records the clear as a decision ("manual", no coordinates), which
+    // is what stops the backfill offering the same guess again tomorrow.
+    await waitFor(() => {
+      expect(
+        screen.queryByText('Estimated from photos taken the same day.'),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('reports a failed accept instead of pretending it worked', async () => {
+    const current = photo({ lat: 50.09, lng: 14.4, location_source: 'estimate' })
+    updatePhotoMock.mockRejectedValue(new Error('nope'))
+    const user = userEvent.setup()
+    renderHarness(current)
+
+    await user.click(screen.getByRole('button', { name: 'Accept estimate' }))
+
+    expect(
+      await screen.findByText('The location could not be saved. Please try again.'),
+    ).toBeInTheDocument()
+    // The estimate is still an estimate, and still actionable.
+    expect(screen.getByRole('button', { name: 'Accept estimate' })).toBeEnabled()
   })
 })

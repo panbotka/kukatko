@@ -39,6 +39,18 @@ export interface Photo {
   description: string
   lat?: number
   lng?: number
+  /**
+   * Where `lat`/`lng` came from: `'exif'` (the file's GPS), `'manual'` (the user
+   * decided), `'estimate'` (inferred from photos taken nearby in time) or `''`
+   * (unknown — an older row nobody has decided about).
+   *
+   * Only `'estimate'` is marked in the UI. An estimated location looking identical
+   * to a measured one is a lie the app tells the user, so anything rendering a
+   * position must consult this. `'manual'` with no coordinates is not a
+   * contradiction: it records that the user cleared the location on purpose, which
+   * is what stops the backfill re-adding a guess they threw away.
+   */
+  location_source?: string
   camera_make: string
   camera_model: string
   lens_model: string
@@ -537,6 +549,17 @@ export interface PhotoMetadataUpdate {
   scan?: boolean
   lat?: number | null
   lng?: number | null
+  /**
+   * Accepts an estimated location, promoting it to the user's own decision. The
+   * only accepted value is `'manual'`, and only on a photo that has a location —
+   * `'exif'` and `'estimate'` are the server's to write, not a client's to claim.
+   *
+   * Sending the coordinates back would work too, but would round them to whatever
+   * precision the form rendered, so accepting has its own key. To clear an
+   * estimate, send `lat: null, lng: null` instead; that stamps `'manual'` on its
+   * own and is remembered as a decision.
+   */
+  location_source?: 'manual'
 }
 
 /**
