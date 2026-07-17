@@ -50,6 +50,13 @@ CREATE TABLE ` + psSchema + `.photos (
 	exposure         TEXT NOT NULL DEFAULT '',
 	focal_length     DOUBLE PRECISION,
 	exif             JSONB,
+	keywords         TEXT[] NOT NULL DEFAULT '{}',
+	exif_artist      TEXT NOT NULL DEFAULT '',
+	exif_copyright   TEXT NOT NULL DEFAULT '',
+	exif_license     TEXT NOT NULL DEFAULT '',
+	exif_software    TEXT NOT NULL DEFAULT '',
+	scan             BOOLEAN NOT NULL DEFAULT false,
+	panorama         BOOLEAN NOT NULL DEFAULT false,
 	private          BOOLEAN NOT NULL DEFAULT false,
 	archived_at      TIMESTAMPTZ,
 	updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -179,6 +186,15 @@ type psPhoto struct {
 	title     string
 	takenAt   time.Time
 	updatedAt time.Time
+	// Credit/tag columns migration 036 added to photo-sorter; a zero value keeps
+	// the schema default so existing callers stay unaffected.
+	keywords  []string
+	artist    string
+	copyright string
+	license   string
+	software  string
+	scan      bool
+	panorama  bool
 }
 
 // setupFixtureSchema (re)creates the fake photo-sorter schema and its tables,
@@ -191,13 +207,21 @@ func setupFixtureSchema(t *testing.T, pool *pgxpool.Pool) {
 	}
 }
 
-// seedPSPhoto inserts a fake photo-sorter photos row.
+// seedPSPhoto inserts a fake photo-sorter photos row, carrying the credit/tag
+// columns too so the migration's mapping of them can be asserted. A nil keywords
+// slice is stored as the empty array the NOT NULL column requires.
 func seedPSPhoto(t *testing.T, pool *pgxpool.Pool, p psPhoto) {
 	t.Helper()
+	keywords := p.keywords
+	if keywords == nil {
+		keywords = []string{}
+	}
 	const q = `INSERT INTO ` + psSchema + `.photos
-		(uid, file_hash, file_path, file_name, file_mime, title, taken_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
-	exec(t, pool, q, p.uid, p.fileHash, p.filePath, p.fileName, p.fileMime, p.title, p.takenAt, p.updatedAt)
+		(uid, file_hash, file_path, file_name, file_mime, title, taken_at, updated_at,
+		 keywords, exif_artist, exif_copyright, exif_license, exif_software, scan, panorama)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
+	exec(t, pool, q, p.uid, p.fileHash, p.filePath, p.fileName, p.fileMime, p.title, p.takenAt, p.updatedAt,
+		keywords, p.artist, p.copyright, p.license, p.software, p.scan, p.panorama)
 }
 
 // seedPSEmbedding inserts a fake photo-sorter CLIP embedding row.

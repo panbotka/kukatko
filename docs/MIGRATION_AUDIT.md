@@ -449,9 +449,14 @@ dokument. Takový test promění tichou regresi v červený `make check`.
   obličeje, subjekty/lidé, markery, alba a členství, štítky a členství,
   perceptuální hashe a nedestruktivní editace.
 - **Účel:** dát jistotu, že migrace z photo-sorteru — jediná cesta, kterou tato
-  knihovna vstupuje do nové databáze — nic tiše neztrácí. Tento dokument **pouze
-  popisuje**, nemění chování importu; doporučené opravy jsou zapsané, ne
-  implementované.
+  knihovna vstupuje do nové databáze — nic tiše neztrácí. Sedm mezer na úrovni
+  sloupců `photos` (IPTC kredity `exif_artist`/`copyright`/`license`/`software`,
+  `keywords`, `scan`, `panorama`) je od commitu tohoto úkolu **vyřešeno
+  (MAPPED)**; `albums.category` a volný text migrace 037 (`subjects.bio`/`about`/
+  `alias`, `labels.description`/`categories`, `albums.location`/`notes`) jsou
+  **WAIVED (produktové rozhodnutí — bez cíle v Kukátku)**; `photo_files` a
+  `cover_photo_uid` (subjektů i alb) zůstávají **GAP** — jejich oprava je větší
+  než oprava pole (viz „Rozsah a co zůstává GAP“). Řádky níže to odrážejí.
 
 Auditovaný kód: `internal/photosorter/` (read-only pgx čtečka: `models.go`,
 `photos.go`, `vectors.go`, `organize.go`, `people.go`, `extras.go`),
@@ -471,16 +476,17 @@ Audit má **dvě vrstvy**, protože ztráty u photo-sorteru neleží v maperech,
 v tom, co čtečka vůbec načte:
 
 **Vrstva A — pole modelů `internal/photosorter/models.go`** (to, co čtečka do
-Kukátka přinese). Auditováno **90 polí** napříč 11 strukturami (`Photo`,
+Kukátka přinese). Auditováno **97 polí** napříč 11 strukturami (`Photo`,
 `Embedding`, `Face`, `Subject`, `Marker`, `Album`, `AlbumPhoto`, `Label`,
-`PhotoLabel`, `Phash`, `Edit`):
+`PhotoLabel`, `Phash`, `Edit`); 7 z nich (IPTC kredity, `keywords`, `scan`,
+`panorama`) přidal na `Photo` tento úkol:
 
 | Verdikt | Počet |
 | --- | --- |
-| **MAPPED** | 82 |
+| **MAPPED** | 89 |
 | **WAIVED** | 8 |
 | **GAP** | 0 |
-| **Celkem** | 90 |
+| **Celkem** | 97 |
 
 Na této vrstvě **nic nechybí**: každé pole, které čtečka vystaví, mapery přenesou
 1:1 (embeddingy, obličeje a markery se kopírují včetně UID a subjekt se jen
@@ -495,37 +501,53 @@ existuje. Přehled (detail v sekci „Co čtečka zahazuje na hranici DB“):
 
 | | Počet |
 | --- | --- |
-| Nečtené tabulky bucketu katalogu | **1 GAP** (`photo_files`) + 1 WAIVED (`era_embeddings`) |
-| Zahozené sloupce `photos` | **7 GAP** + 6 WAIVED |
-| Zahozené extra sloupce `subjects`/`labels`/`albums` (migrace 037 photo-sorteru) | **10 GAP** + 5 WAIVED |
+| Nečtené tabulky bucketu katalogu | **1 GAP** (`photo_files`, ponechán) + 1 WAIVED (`era_embeddings`) |
+| Zahozené sloupce `photos` | **0 GAP** (7 nově MAPPED tímto úkolem) + 6 WAIVED |
+| Zahozené extra sloupce `subjects`/`labels`/`albums` (migrace 037 photo-sorteru) | **2 GAP** (`cover_photo_uid` subjektů i alb, ponechány) + 13 WAIVED |
 
-**Nejzávažnější mezery (GAP), sestupně podle dopadu:**
+**Původní mezery (GAP) a jejich stav po commitu tohoto úkolu, sestupně podle
+dopadu:**
 
-1. **`photo_files` — celá tabulka fyzických souborů se nečte.** photo-sorter drží
-   RAW+JPEG stacky, HEIC+JPEG sidecary a editované varianty v `photo_files`
-   (role `original`/`sidecar`/`edited`). Migrace zkopíruje **jen primární
-   originál** (jeden `photo_files` řádek v Kukátku); sourozenecké soubory jednoho
-   snímku (RAW k JPEGu, motion část live-photo, editovaná varianta) se **ztrácejí**.
-   Kukátko má vlastní `photo_files` + `internal/stacks`, kam by patřily. Celá
-   nečtená tabulka je horší ztráta než kterékoli jednotlivé pole (indicie č. 1).
-2. **IPTC/XMP kredity fotky — 6 sloupců.** `photos.exif_artist`, `exif_copyright`,
-   `exif_license`, `exif_software`, `keywords` (TEXT[]) a `scan` v photo-sorteru
-   **existují** a Kukátko má pro ně sloupce (`artist`/`copyright`/`license`/
-   `software`/`keywords`/`scan`, migrace `0027`). Čtečka je nečte, takže fotka
-   z photo-sorteru dorazí s prázdnými kredity, i když je v původní knihovně měla
-   (indicie č. 3).
-3. **`photos.panorama`** (bool) → Kukátkovo `projection` — panorama se ztrácí
-   (částečný GAP, nesoulad typů bool↔string).
-4. **`subjects.cover_photo_uid`, `albums.cover_photo_uid`** — vybraná titulní fotka
-   člověka i alba se zahazuje; cílové sloupce v Kukátku existují (vyžadovaly by
-   přemapování photo-UID).
-5. **`albums.category`** — kategorie alba nemá kam přijít (stejný GAP jako u
-   PhotoPrism importu).
-6. **Extra volný text migrace 037** — `subjects.bio`/`about`/`alias`,
-   `labels.description`/`categories`, `albums.location`/`notes` — o rozhodnutí je
-   zahodit nikdo explicitně nerozhodl; **GAP, pokud jsou v produkci vyplněné**.
-   Doporučení u každého: buď přidat cílový sloupec a namapovat, nebo — je-li pole
-   v produkční knihovně prázdné — formálně WAIVED.
+1. **`photo_files` — celá tabulka fyzických souborů se nečte. → PONECHÁNO GAP.**
+   photo-sorter drží RAW+JPEG stacky, HEIC+JPEG sidecary a editované varianty
+   v `photo_files` (role `original`/`sidecar`/`edited`). Migrace zkopíruje **jen
+   primární originál** (jeden `photo_files` řádek v Kukátku); sourozenecké soubory
+   jednoho snímku (RAW k JPEGu, motion část live-photo, editovaná varianta) se
+   **ztrácejí**. Kukátko má vlastní `photo_files` + `internal/stacks`, kam by
+   patřily. Oprava je **celá tabulka, ne pole** (listování `photo_files` ve čtečce
+   + kopie sekundárních souborů + seskupení `internal/stacks`) — vědomě ponecháno
+   jako GAP, viz „Rozsah a co zůstává GAP“ (indicie č. 1).
+2. **IPTC/XMP kredity + `keywords`/`scan` — 6 sloupců. → OPRAVENO (MAPPED).**
+   `photos.exif_artist`, `exif_copyright`, `exif_license`, `exif_software`,
+   `keywords` (TEXT[]) a `scan` v photo-sorteru **existují** a Kukátko má pro ně
+   sloupce (`artist`/`copyright`/`license`/`software`/`keywords`/`scan`, migrace
+   `0027`). Čtečka je teď čte (`photoColumns`) a `buildPhoto` je mapuje; `keywords`
+   se z TEXT[] spojí a znormalizuje (`exif.NormalizeKeywords`) do čárkou odděleného
+   sloupce (indicie č. 3).
+3. **`photos.panorama` (bool) → Kukátkovo `projection`. → OPRAVENO (MAPPED).**
+   Čtečka `panorama` čte a `buildPhoto` ho přes `panoramaProjection` mapuje na
+   `projection` (`true`→`equirectangular`, jinak prázdno) — jediná projekce, kterou
+   Kukátko modeluje.
+4. **`subjects.cover_photo_uid`, `albums.cover_photo_uid`. → PONECHÁNO GAP.**
+   Vybraná titulní fotka člověka i alba se zahazuje; cílové sloupce v Kukátku
+   existují, ale oprava vyžaduje **přemapování photo-UID až po importu fotek**:
+   subjekty/alba se zakládají v `buildMappings` **před** foto-smyčkou, takže titulní
+   fotka ještě neexistuje. Správná oprava je nový idempotentní dopisovací průchod po
+   foto-smyčce, ne přidání pole — proto ponecháno GAP, viz „Rozsah a co zůstává GAP“.
+5. **`albums.category`. → WAIVED (produktové rozhodnutí).** Kategorie alba nemá
+   v Kukátku kam přijít (žádný sloupec, UI ani dotaz) — **stejné rozhodnutí jako
+   `Album.Category` v sekci PhotoPrism výše**. Přidat zapisovací sloupec, který nikdo
+   nečte, by byl mrtvý sloupec, ne oprava.
+6. **Extra volný text migrace 037. → WAIVED (produktové rozhodnutí).**
+   `subjects.bio`/`about`/`alias`, `labels.description`/`categories`,
+   `albums.location`/`notes` nemají v Kukátku cílový sloupec (subjekt má jen `notes`,
+   mapované ze `Subject.Notes`; štítek jen `slug`/`name`/`priority`; album jen
+   `title`/`description`/`private`/`type`). Modelovat bio/alias osoby, popis štítku
+   či lokalitu/poznámku alba je **produktová funkce, ne oprava migrace**; přidat
+   zapisovací sloupec bez čtenáře by byl mrtvý sloupec (stejný standard jako
+   `albums.category`). WAIVED, dokud Kukátko takovou funkci nezavede — pak řádek
+   znovu otevřít. `cover_photo_uid` z téhož bucketu je oproti tomu skutečný GAP
+   (cíl existuje), viz #4.
 
 Kromě GAPů je několik **vědomých kompromisů** (per-user oblíbené, zahozené pořadí,
 neexistence video sloupců na straně zdroje) v sekci „Rizika a vědomé kompromisy“.
@@ -578,12 +600,21 @@ jsou totožné s photo-sorterem (stejný obsah, stejný SHA256).
 | `Photo.Exposure` | `exposure` | **MAPPED** | |
 | `Photo.FocalLength` | `focal_length` | **MAPPED** | Ukazatel. |
 | `Photo.Exif` | `exif` | **MAPPED** | Syrový JSON EXIF se kopíruje **beze změny** (asymetrie: ppimport EXIF znovu extrahuje ze staženého souboru). |
+| `Photo.Keywords` | `keywords` | **MAPPED** | Zdrojové TEXT[] `keywords` spojeno a znormalizováno (`exif.NormalizeKeywords`) do Kukátkova čárkou odděleného sloupce. **Nově čteno tímto úkolem** (byl GAP). |
+| `Photo.Artist` | `artist` | **MAPPED** | IPTC kredit `exif_artist`. **Nově čteno** (byl GAP). |
+| `Photo.Copyright` | `copyright` | **MAPPED** | `exif_copyright`. **Nově čteno** (byl GAP). |
+| `Photo.License` | `license` | **MAPPED** | `exif_license`. **Nově čteno** (byl GAP). |
+| `Photo.Software` | `software` | **MAPPED** | `exif_software`. **Nově čteno** (byl GAP). |
+| `Photo.Scan` | `scan` | **MAPPED** | Příznak „sken z fyzického originálu“. **Nově čteno** (byl GAP). |
+| `Photo.Panorama` | `projection` | **MAPPED** | Bool→string přes `panoramaProjection` (`true`→`equirectangular`, jinak prázdno). **Nově čteno** (byl GAP). |
 | `Photo.Private` | `private` | **MAPPED** | |
 | `Photo.ArchivedAt` | `archived_at` | **MAPPED** | Archivační stav se **zachová** (asymetrie: ppimport `archived_at` nepřenáší). |
 | `Photo.UpdatedAt` | — (bez sloupce) | **WAIVED** | Řídí inkrementální watermark (paging `ORDER BY updated_at`, resume), není sloupcem fotky; `photos.updated_at` je čas vlastní mutace. |
 
-**27 MAPPED, 1 WAIVED, 0 GAP** na úrovni modelu. Skutečné ztráty fotky leží ve
-sloupcích, které čtečka nečte — viz „Co čtečka zahazuje na hranici DB“.
+**34 MAPPED, 1 WAIVED, 0 GAP** na úrovni modelu (7 polí IPTC kreditů/`keywords`/
+`scan`/`panorama` přidáno do modelu i maperu tímto úkolem). Zbylé ztráty fotky
+leží ve sloupcích, které čtečka nadále nečte — viz „Co čtečka zahazuje na hranici
+DB“.
 
 ## Embeddingy — struktura `Embedding`
 
@@ -761,29 +792,33 @@ Ostatní nečtené tabulky (`users`, `sessions`, `photo_books`, `book_sections`,
 nepřenášené, žádná ztráta knihovních dat. Tím je indicie č. 1 potvrzena: jediná
 nečtená tabulka s daty knihovny je `photo_files`.
 
-### Sloupce `photos`, které čtečka nečte (indicie č. 3)
+### Sloupce `photos`: dřívějších 7 GAP nyní čteno (indicie č. 3)
 
-`photoColumns` (čtečka) bere 28 sloupců. Schéma `photos` (po migracích `032`, `035`,
-`036`) jich má víc. Zahozené:
+`photoColumns` (čtečka) po tomto úkolu bere **35 sloupců** (bylo 28); 7 dříve
+zahozených kreditů/`keywords`/`scan`/`panorama` je nyní čteno a `buildPhoto` je
+mapuje. Schéma `photos` (po migracích `032`, `035`, `036`) má stále víc:
 
 | Sloupec photo-sorteru | Cíl v Kukátku | Verdikt | Poznámka |
 | --- | --- | --- | --- |
-| `exif_artist` | `photos.artist` | **GAP** | Cílový sloupec existuje (`0027`); autor fotky dorazí prázdný. |
-| `exif_copyright` | `photos.copyright` | **GAP** | dtto. |
-| `exif_license` | `photos.license` | **GAP** | dtto. |
-| `exif_software` | `photos.software` | **GAP** | dtto. |
-| `keywords` (TEXT[]) | `photos.keywords` | **GAP** | Cílový sloupec existuje; klíčová slova se ztrácejí. |
-| `scan` (bool) | `photos.scan` | **GAP** | Cílový sloupec existuje; příznak „sken“ se ztrácí. |
-| `panorama` (bool) | `photos.projection` | **GAP** | Částečný — bool by mohl nastavit `projection` (např. `equirectangular`), teď se zahodí. |
+| `exif_artist` | `photos.artist` | **MAPPED** | Cílový sloupec (`0027`); nově čteno a mapováno tímto úkolem. |
+| `exif_copyright` | `photos.copyright` | **MAPPED** | dtto. |
+| `exif_license` | `photos.license` | **MAPPED** | dtto. |
+| `exif_software` | `photos.software` | **MAPPED** | dtto. |
+| `keywords` (TEXT[]) | `photos.keywords` | **MAPPED** | TEXT[] spojen a znormalizován (`exif.NormalizeKeywords`) do čárkou odděleného sloupce. Nově čteno. |
+| `scan` (bool) | `photos.scan` | **MAPPED** | Nově čteno. |
+| `panorama` (bool) | `photos.projection` | **MAPPED** | Bool→string přes `panoramaProjection` (`true`→`equirectangular`). Nově čteno. |
 | `favorite` (bool) | (per-user `user_favorites`) | **WAIVED** | Oblíbené jsou v Kukátku **per-user** — migrace `0011` explicitně: „per-user favorites that **replace** photo-sorter's global `photos.favorite` flag“. Job nemá komu příznak přiřadit (stejné jako `Photo.Favorite` u PhotoPrism). |
 | `quality` (smallint) | — | **WAIVED** | Přepočítatelné skóre kvality; Kukátko ho nemodeluje. |
 | `time_zone` / `taken_at_offset` | — | **WAIVED** | Kukátko drží kanonický `taken_at` (timestamptz, absolutní okamžik); jako `TakenAtLocal` u PhotoPrism. Drobná ztráta věrnosti při rekonstrukci lokálního času (viz Rizika). |
 | `uploaded_by` / `created_at` | — | **WAIVED** | Interní/DB-spravované, ne obsah knihovny. |
 
-**Oprava GAPů kreditů:** rozšířit `photoColumns` o `exif_artist/copyright/license/
-software`, `keywords`, `scan`, `panorama` a v `buildPhoto` je namapovat na
-existující sloupce (kredity by měly ctít precedenci „prázdno nemaže“, jako
-`ppimport.ApplyImportMetadata`). Půjde o čistě aditivní změnu čtečky + `buildPhoto`.
+**Oprava GAPů kreditů — implementováno.** `photoColumns` čtečky je rozšířen o
+`exif_artist/copyright/license/software`, `keywords`, `scan`, `panorama`; do
+`photosorter.Photo` přibyla odpovídající pole a `buildPhoto` je mapuje na existující
+Kukátkovy sloupce (`keywords` přes `exif.NormalizeKeywords`, `panorama` přes
+`panoramaProjection`). Čistě aditivní změna čtečky + `buildPhoto`. Pozn.: `psimport`
+zapisuje metadata jen při **založení** fotky (`createPhoto`); re-run fotku spárovanou
+přes `photosorter_uid` přeskočí, takže kredity Kukátko-side edit nepřepíší.
 
 **Video sloupce** (`media_type`, `duration_ms`, `video_codec`, `audio_codec`,
 `has_audio`, `fps`; indicie č. 4): photo-sorterův `photos` je **jen obrazový** —
@@ -799,12 +834,12 @@ Migrace `037` přidala photo-sorteru bohatší metadata subjektů, štítků a a
 
 | Sloupec photo-sorteru | Cíl v Kukátku | Verdikt | Poznámka |
 | --- | --- | --- | --- |
-| `subjects.cover_photo_uid` | `subjects.cover_photo_uid` | **GAP** | Cílový sloupec existuje; titulní fotka člověka se ztrácí (vyžaduje přemapování photo-UID). |
-| `subjects.bio` / `about` / `alias` | — | **GAP** | Volný text o osobě bez cíle v Kukátku (které má jen `notes`, to je mapované ze `Subject.Notes`). **GAP, pokud vyplněno.** Oprava: přidat sloupce a namapovat, nebo je-li produkce nepoužívá, formálně WAIVED. |
-| `albums.cover_photo_uid` | `albums.cover_photo_uid` | **GAP** | Cílový sloupec existuje; titulní fotka alba se ztrácí (přemapování photo-UID). |
-| `albums.category` | — (bez sloupce) | **GAP** | Kategorie alba nemá v Kukátku kam přijít (stejný GAP jako `Album.Category` u PhotoPrism). Oprava: přidat nullable `albums.category`, nebo WAIVED je-li nepoužito. |
-| `albums.location` / `notes` | — | **GAP** | Volný text/lokalita alba bez cíle. **GAP, pokud vyplněno.** |
-| `labels.description` / `categories` | — | **GAP** | Popis/kategorie štítku bez cíle v Kukátku (`labels` má jen `slug, name, priority`). **GAP, pokud vyplněno.** |
+| `subjects.cover_photo_uid` | `subjects.cover_photo_uid` | **GAP** (ponecháno) | Cílový sloupec existuje, ale oprava vyžaduje přemapování photo-UID **po importu fotek** (subjekty vznikají v `buildMappings` před foto-smyčkou) — nový dopisovací průchod, ne oprava pole. Viz „Rozsah a co zůstává GAP“. |
+| `subjects.bio` / `about` / `alias` | — | **WAIVED** | Volný text o osobě bez cíle v Kukátku (které má jen `notes`, mapované ze `Subject.Notes`). Modelovat bio/alias osoby je **produktová funkce, ne oprava migrace**; zapisovací sloupec bez čtenáře = mrtvý sloupec (standard `albums.category`). WAIVED, dokud taková funkce nevznikne. |
+| `albums.cover_photo_uid` | `albums.cover_photo_uid` | **GAP** (ponecháno) | Jako `subjects.cover_photo_uid` — přemapování photo-UID po importu fotek. |
+| `albums.category` | — (bez sloupce) | **WAIVED** | Kategorie alba nemá v Kukátku kam přijít (žádný sloupec, UI ani dotaz) — **stejné produktové rozhodnutí jako `Album.Category` u PhotoPrism**. Přidat zapisovací sloupec, který nikdo nečte, by byl mrtvý sloupec. |
+| `albums.location` / `notes` | — | **WAIVED** | Volný text/lokalita alba bez cíle v Kukátku. Produktová funkce, ne oprava migrace; WAIVED (standard `albums.category`). |
+| `labels.description` / `categories` | — | **WAIVED** | Popis/kategorie štítku bez cíle v Kukátku (`labels` má jen `slug, name, priority`). Produktová funkce, ne oprava migrace; WAIVED (standard `albums.category`). |
 | `albums.filter` | (`internal/savedsearch`) | **WAIVED** | photo-sorterův „smart album“ jako filtr; Kukátko má chytrá alba samostatně (`saved_searches`), album se migruje jako statické. |
 | `albums.album_order` / `order_by` | — | **WAIVED** | Pořadí/řazení alba — Kukátko řadí chronologicky (`0022`). |
 | `albums.favorite` / `labels.favorite` | — | **WAIVED** | Kukátkova `albums`/`labels` sloupec `favorite` nemají (koncept oblíbeného alba/štítku není). |
@@ -819,14 +854,15 @@ DB-interní a přenášet se nemají — **WAIVED** (neuvádím jako samostatné
 
 Pro prokazatelnost oběma směry: každý z 55 vkládaných sloupců `photos`
 (`photoInsertColumns`) je buď namapovaný z pole photo-sorteru (výše), nebo
-Kukátkem-generovaný/vlastní. `buildPhoto` nastaví 27 sloupců + `uid` (DB) a
-`media_type` (default `image` v `Create`). Neplněné (default/prázdno):
+Kukátkem-generovaný/vlastní. `buildPhoto` nastaví 34 sloupců + `uid` (DB) a
+`media_type` (default `image` v `Create`). `artist`, `copyright`, `license`,
+`software`, `keywords`, `scan` a `projection` jsou **nově plněné** tímto úkolem
+(byly GAP). Neplněné (default/prázdno):
 
 | Sloupec | Původ | Pozn. |
 | --- | --- | --- |
 | `duration_ms`, `video_codec`, `audio_codec`, `has_audio`, `fps` | — | Video; zdroj je jen obrazový, `psimport` ffprobe nespouští. |
-| `subject`, `color_profile`, `image_codec`, `camera_serial`, `original_name`, `projection` | — | Zdrojový sloupec neexistuje (`subject`/`color_profile`/`image_codec`/`camera_serial`/`original_name`), nebo je nečtený (`projection`←`panorama`, GAP). `file_name` nese jméno souboru. |
-| `artist`, `copyright`, `license`, `software`, `keywords`, `scan` | (dropnuto) | Zdroj **existuje**, ale čtečka ho nečte → **GAP** (viz výše). |
+| `subject`, `color_profile`, `image_codec`, `camera_serial`, `original_name` | — | Zdrojový sloupec neexistuje. `file_name` nese jméno souboru. |
 | `location_source` | Nerazítkováno | `psimport` plní `lat`/`lng`, ale provenienci polohy nechá prázdnou (asymetrie: ppimport razítkuje `exif`). Ne ztráta dat, jen prázdná provenience. |
 | `taken_at_estimated`, `taken_at_note`, `ai_note` | Kukátko-only | Zdroj nemá; default. |
 | `uploaded_by` | — | Job nemá uživatele. |
@@ -847,27 +883,27 @@ Nečtené: **`photo_files`** (fyzické soubory / stacky — reálná ztráta, GA
 `era_embeddings` (referenční, WAIVED). `photo_files` je největší jednotlivá mezera
 celého auditu — celá tabulka s daty knihovny nevstoupí do modelů.
 
-### 2. `TestBuildPhoto` je tenký — **potvrzeno, 20 z 27 mapovaných polí bez testu**
+### 2. `TestBuildPhoto` byl tenký — **VYŘEŠENO: test rozšířen na všechna pole**
 
-`TestBuildPhoto` (`helpers_test.go`) ověřuje jen **7** polí: `FileHash`, `FilePath`,
-`FileSize`, `Title`, `Private`, `FileOrientation`, `PhotosorterUID`. `buildPhoto`
-mapuje **27** sloupců, takže **20 nemá test** prokazující, že přežijí:
+Původně `TestBuildPhoto` (`helpers_test.go`) ověřoval jen **7** polí: `FileHash`,
+`FilePath`, `FileSize`, `Title`, `Private`, `FileOrientation`, `PhotosorterUID` —
+z 27 mapovaných tedy 20 bez testu. **Oprava (implementováno):** `TestBuildPhoto`
+teď sestaví plně vyplněnou `photosorter.Photo` a porovná **celý** výstup `buildPhoto`
+proti očekávané `photos.Photo` (`reflect.DeepEqual`), takže každé mapované pole
+(všech 34 včetně nových kreditů/`keywords`/`scan`/`projection`) je pokryto a nově
+přidané/vynechané pole shodí test — completeness guardrail, který audit doporučoval.
+Zbývá druhá úroveň (reflexní test nad modely + „čtečka vs. schéma zdroje“) — viz
+„Riziko pokrytí testy“.
 
-> `FileName`, `FileMime`, `FileWidth`, `FileHeight`, `TakenAt`, `TakenAtSource`,
-> `Description`, `Notes`, `Lat`, `Lng`, `Altitude`, `CameraMake`, `CameraModel`,
-> `LensModel`, `ISO`, `Aperture`, `Exposure`, `FocalLength`, `Exif`, `ArchivedAt`.
-
-Stálé riziko: přejmenování/vynechání kteréhokoli z těchto 20 při refaktoru projde
-zeleně. **Doporučení** je stejné jako u PhotoPrism sekce — completeness test přes
-reflexi (viz „Riziko pokrytí testy“).
-
-### 3. IPTC/XMP sloupce — **potvrzeno GAP (6 kreditů + `scan`)**
+### 3. IPTC/XMP sloupce — **VYŘEŠENO (MAPPED)**
 
 photo-sorter data **drží** (`exif_artist`/`copyright`/`license`/`software`,
-`keywords`, `scan`), Kukátko má cílové sloupce (`0027`), ale čtečka je nečte →
-fotka dorazí s prázdnými kredity. GAP, viz „Co čtečka zahazuje“. (`subject`,
-`color_profile`, `image_codec`, `camera_serial`, `original_name` v photo-sorteru
-neexistují — tam není co ztratit; `projection`←`panorama` je částečný GAP.)
+`keywords`, `scan`, `panorama`), Kukátko má cílové sloupce (`0027`). Čtečka je nyní
+**čte** (`photoColumns`) a `buildPhoto` je mapuje (`keywords` přes
+`exif.NormalizeKeywords`, `panorama`→`projection` přes `panoramaProjection`). Fotka
+z photo-sorteru tak dorazí s kredity i tagy. (`subject`, `color_profile`,
+`image_codec`, `camera_serial`, `original_name` v photo-sorteru neexistují — tam
+nebylo co ztratit.)
 
 ### 4. Video sloupce — **potvrzeno: zdroj video nemodeluje, `psimport` neplní**
 
@@ -916,13 +952,16 @@ box nemůže tiše „ujet“. Kukátkovo `vectors.Face` má odpovídající slo
 
 ---
 
-## Riziko pokrytí testy (stálé)
+## Riziko pokrytí testy (částečně vyřešeno)
 
-`psimport` má integrační testy přenosu (embeddingy, obličeje, markery, členství) a
-`TestBuildPhoto`, ale **žádný completeness test**: nic netvrdí, že každé pole
-`photosorter.models` někam padne nebo je vědomě vynecháno, ani že čtečka čte každý
-relevantní sloupec zdroje. Právě proto zůstaly nezachyceny mezery vrstvy B — čtečka
-tiše nečte IPTC sloupce, `photo_files` i extra metadata `037`.
+`psimport` má integrační testy přenosu (embeddingy, obličeje, markery, členství).
+`TestBuildPhoto` je nově **completeness test** pro `buildPhoto`: porovnává celý
+výstup proti očekávané `photos.Photo`, takže žádné mapované pole fotky neprojde
+tiše (indicie č. 2). Nový integrační test `TestIntegration_photoMetadataSurvives`
+navíc ověřuje, že kredity/tagy přežijí čerstvou migraci i re-run. Co **stále chybí**:
+completeness test nad *ostatními* modely (`Face`/`Subject`/`Marker`/…) a test
+„čtečka vs. schéma zdroje“ — právě tam vznikly mezery vrstvy B (`photo_files`,
+dřívější IPTC).
 
 **Doporučení (dvě úrovně):**
 
@@ -936,15 +975,18 @@ tiše nečte IPTC sloupce, `photo_files` i extra metadata `037`.
 
 ## Rizika a vědomé kompromisy
 
-1. **`photo_files` se nemigruje** — snímek se stackem (RAW+JPEG, sidecar, editovaná
-   varianta) dorazí jako osamocený originál; sekundární soubory se ztrácejí.
-   Největší strukturální ztráta, viz GAP č. 1.
-2. **IPTC kredity + `keywords`/`scan`/`panorama` se zahazují na hranici čtečky** —
-   data v photo-sorteru jsou, cílové sloupce v Kukátku jsou, jen se nečtou. Aditivní
-   oprava, viz GAP č. 2–3.
-3. **Extra metadata `037`** (bio/alias/kategorie/lokalita/popis subjektů, štítků a
-   alb, titulní fotky) — GAP jen pokud jsou v produkci vyplněné; jinak formálně
-   WAIVED. Doporučeno ověřit využití v produkční knihovně a rozhodnout.
+1. **`photo_files` se nemigruje (ponecháno GAP)** — snímek se stackem (RAW+JPEG,
+   sidecar, editovaná varianta) dorazí jako osamocený originál; sekundární soubory se
+   ztrácejí. Největší strukturální ztráta; oprava je celá tabulka, ne pole — viz
+   „Rozsah a co zůstává GAP“.
+2. **IPTC kredity + `keywords`/`scan`/`panorama` — OPRAVENO (MAPPED)** tímto úkolem:
+   čtečka je čte a `buildPhoto` je mapuje. Dřívější tichá ztráta na hranici čtečky je
+   pryč.
+3. **Extra metadata `037`** — `bio`/`about`/`alias`, `description`/`categories`,
+   `location`/`notes` **WAIVED** (produktové rozhodnutí — bez cíle v Kukátku;
+   modelovat je je funkce, ne oprava migrace). `cover_photo_uid` subjektů i alb je
+   naopak skutečný **GAP** (cíl existuje) ponechaný na dopisovací průchod — viz
+   „Rozsah a co zůstává GAP“.
 4. **Existující subjekt se nepřepisuje** — `findOrCreateSubject` nastaví
    `type`/`favorite`/`private`/`notes` jen při založení. Byl-li subjekt zaseto dřív
    (ppimportem jako holý `person`, nebo předchozím během), photo-sorterův bohatší
@@ -960,3 +1002,40 @@ tiše nečte IPTC sloupce, `photo_files` i extra metadata `037`.
 8. **Párování subjektů/alb/štítků podle jména/titulku** — dva různí lidé téhož jména
    splynou do jednoho subjektu (a naopak). Stejné chování jako ppimport; vlastnost,
    ne záruka identity.
+
+## Rozsah a co zůstává GAP
+
+Tento úkol opravil GAPy na úrovni sloupců `photos`, jejichž oprava je čistě aditivní
+a jejichž cíl v Kukátku existuje. Ostatní GAPy jsou buď produktové rozhodnutí
+(vyřešené jako WAIVED), nebo změny větší než oprava pole (ponechané jako GAP, aby
+zůstaly viditelné).
+
+**Opraveno (GAP → MAPPED):** `photos.exif_artist`→`artist`,
+`exif_copyright`→`copyright`, `exif_license`→`license`, `exif_software`→`software`,
+`keywords`→`keywords` (TEXT[] spojeno + `exif.NormalizeKeywords`), `scan`→`scan`,
+`panorama`→`projection` (přes `panoramaProjection`). Čtečka (`photoColumns` +
+`scanPhoto`), model (`photosorter.Photo`) i maper (`buildPhoto`) rozšířeny; pokryto
+unit testem `TestBuildPhoto` (celý řádek) a integračním
+`TestIntegration_photoMetadataSurvives` (čerstvá migrace + re-run).
+
+**Vyřešeno jako WAIVED (produktové rozhodnutí, bez cíle v Kukátku):**
+`albums.category` (stejně jako `Album.Category` u PhotoPrism), a volný text migrace
+037 `subjects.bio`/`about`/`alias`, `labels.description`/`categories`,
+`albums.location`/`notes`. Přidat zapisovací sloupec bez čtenáře by byl mrtvý sloupec;
+modelovat tyto koncepty je produktová funkce, ne oprava migrace. Otevřít znovu, až
+Kukátko takovou funkci zavede (nebo produkční audit ukáže hojné využití).
+
+**Ponecháno jako GAP (větší než oprava pole — vědomě odloženo):**
+
+- **`photo_files` (celá tabulka).** Oprava = listovat `photo_files` ve čtečce +
+  v `psimport` zkopírovat sekundární soubory (role `sidecar`/`edited`) jako další
+  `photo_files` řádky + nechat `internal/stacks` je seskupit. To je nová tabulková
+  cesta, ne přidání pole; půl-migrovat ji (jen část souborů) by bylo horší než
+  ponechat GAP viditelný. Doporučeno jako samostatný úkol.
+- **`subjects.cover_photo_uid`, `albums.cover_photo_uid`.** Cíl existuje, ale titulní
+  fotka je photo-sorterův photo-UID, který se musí přemapovat na Kukátkův **až po
+  importu fotek**. Subjekty/alba se zakládají v `buildMappings` **před** foto-smyčkou,
+  takže v tu chvíli titulní fotka ještě neexistuje. Správná oprava je nový,
+  idempotentní dopisovací průchod po foto-smyčce (pro každý subjekt/album dohledat
+  Kukátkovu fotku podle `photosorter_uid` a nastavit cover) — strukturální přírůstek,
+  ne oprava pole. Doporučeno jako samostatný úkol.

@@ -1563,7 +1563,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `mapCatalogue`); (2) pageuje `ListPhotos(UpdatedSince=watermark)` — per fotka match dle
   `photosorter_uid` (skip), jinak dle **`file_hash`** (backfill `photos.SetPhotosorterRef`, žádné
   kopírování), jinak **zkopíruje originál** z `file_path` (SHA256, náhledy) a `photos.Create` s PS
-  metadaty + `photosorter_uid`; (3) **satelity** — embedding (768) a faces (512 + bbox + det_score +
+  metadaty (vč. IPTC kreditů `artist`/`copyright`/`license`/`software`, `keywords` normalizovaných
+  přes `exif.NormalizeKeywords`, `scan` a `panorama`→`projection` přes `panoramaProjection`) +
+  `photosorter_uid`; (3) **satelity** — embedding (768) a faces (512 + bbox + det_score +
   cache) vloží **1:1** přes `vectors.SaveEmbedding`/`RecordFaceDetection` (zachová model/pretrained,
   remapuje subjekt, zachová marker_uid), fotka **bez** PS embeddingu/detekce dostane Kukátko
   `image_embed`/`face_detect` job; markery (pod původním UID), album/label členství, phash a edit
