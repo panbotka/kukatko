@@ -378,6 +378,13 @@ export function PhotoDetailPage() {
     setState({ status: 'ready', photo, edit: saved })
     setEditDraft(null)
   }
+  // The panel reports an updater, not a finished edit, so adjustments made in the
+  // same React batch compose instead of overwriting each other (see EditPanelProps
+  // `onChange`). The first one has no draft to build on yet, so it starts from the
+  // stored edit — the very thing the photo is previewing at that moment.
+  const applyEdit = (update: (prev: PhotoEdit) => PhotoEdit) => {
+    setEditDraft((prev) => update(prev ?? edit))
+  }
   const onThumbnailRegenerated = () => {
     setThumbVersion((v) => v + 1)
   }
@@ -612,7 +619,7 @@ export function PhotoDetailPage() {
             <EditPanel
               uid={photo.uid}
               edit={previewEdit}
-              onChange={setEditDraft}
+              onChange={applyEdit}
               onSaved={onEditSaved}
               onClose={toggleEdit}
             />

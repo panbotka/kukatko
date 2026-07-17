@@ -15,8 +15,14 @@ export interface EditPanelProps {
   uid: string
   /** The in-progress edit the controls show — and the photo beside them previews. */
   edit: PhotoEdit
-  /** Reports every adjustment, so the page can preview it on the photo. */
-  onChange: (edit: PhotoEdit) => void
+  /**
+   * Reports every adjustment, so the page can preview it on the photo. It hands up
+   * an updater rather than a finished edit on purpose: two controls changed within
+   * one React batch would both read the same not-yet-re-rendered `edit` prop, so
+   * building the next value here would silently drop the earlier change. Deriving
+   * it from `prev` instead keeps every adjustment.
+   */
+  onChange: (update: (prev: PhotoEdit) => PhotoEdit) => void
   /** Called with the persisted edit after a successful save. */
   onSaved: (edit: PhotoEdit) => void
   /** Closes the panel, discarding whatever is unsaved. */
@@ -67,11 +73,11 @@ export function EditPanel({ uid, edit, onChange, onSaved, onClose }: EditPanelPr
   const cropOn = hasCrop(edit)
 
   function toggleCrop(enabled: boolean) {
-    onChange(enabled ? { ...edit, ...DEFAULT_CROP } : withoutCrop(edit))
+    onChange((prev) => (enabled ? { ...prev, ...DEFAULT_CROP } : withoutCrop(prev)))
   }
 
   function setCrop(field: 'crop_x' | 'crop_y' | 'crop_w' | 'crop_h', value: number) {
-    onChange({ ...edit, [field]: value })
+    onChange((prev) => ({ ...prev, [field]: value }))
   }
 
   async function persist(next: PhotoEdit) {
@@ -114,7 +120,7 @@ export function EditPanel({ uid, edit, onChange, onSaved, onClose }: EditPanelPr
             variant="outline-secondary"
             size="sm"
             onClick={() => {
-              onChange({ ...edit, rotation: rotateRight(edit.rotation) })
+              onChange((prev) => ({ ...prev, rotation: rotateRight(prev.rotation) }))
             }}
           >
             {t('photo.edit.rotateRight')}
@@ -133,7 +139,8 @@ export function EditPanel({ uid, edit, onChange, onSaved, onClose }: EditPanelPr
             value={edit.brightness}
             aria-label={t('photo.edit.brightness')}
             onChange={(event) => {
-              onChange({ ...edit, brightness: Number(event.target.value) })
+              const brightness = Number(event.target.value)
+              onChange((prev) => ({ ...prev, brightness }))
             }}
           />
         </Form.Group>
@@ -147,7 +154,8 @@ export function EditPanel({ uid, edit, onChange, onSaved, onClose }: EditPanelPr
             value={edit.contrast}
             aria-label={t('photo.edit.contrast')}
             onChange={(event) => {
-              onChange({ ...edit, contrast: Number(event.target.value) })
+              const contrast = Number(event.target.value)
+              onChange((prev) => ({ ...prev, contrast }))
             }}
           />
         </Form.Group>

@@ -599,7 +599,11 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   rovnou zpátky = 400 „malformed JSON body" (tohle uložení dřív shodilo; chybějící crop pole se
   prostě vynechá, což API čte jako „bez cropu"). **Vlastní `<img>` nemá** — je to **controlled
   komponenta**: rozpracovaný edit drží stránka (`editDraft`, `null` = nic neuloženého), panel ho
-  hlásí přes `onChange` nahoru a **preview je ta JEDNA originální fotka nahoře**
+  hlásí přes `onChange` nahoru — a to **jako updater `(prev) => next`, ne hotovou hodnotu**: dvě
+  ovládání změněná v jednom Reactím batchi čtou týž ještě nepřerenderovaný `edit` prop, takže
+  poskládat next value v panelu = **tiše zahodit tu první změnu** (stránka updater aplikuje přes
+  `applyEdit`, první změna staví na `state.edit`, protože draft ještě není) — a **preview je ta
+  JEDNA originální fotka nahoře**
   (`editPreviewStyle(previewEdit)`, `previewEdit = editDraft ?? state.edit`) — proto zůstává celou
   dobu vidět a mění se živě pod rukama. Zavření i skok na souseda (`uid` efekt) draft zahodí
   (fotka se vrátí k uloženému stavu), úspěšný save ho vymění za `state.edit` bez bliknutí.

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -632,6 +632,35 @@ describe('PhotoDetailPage', () => {
         transform: 'rotate(90deg)',
       })
     })
+  })
+
+  it('composes adjustments made in one batch instead of dropping the earlier one', async () => {
+    // React has not re-rendered between these two, so both handlers see the same
+    // `edit` prop. Building the next edit from that prop would make the slider
+    // overwrite the rotation; the panel reports an updater precisely so it cannot.
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    await user.click(screen.getByRole('button', { name: 'Edits' }))
+
+    // One act() = one batch: React renders once, at the end, so both handlers ran
+    // against the same `edit` prop. Two fireEvent calls would not do — each flushes
+    // a render of its own, which is exactly what hides this.
+    const main = screen.getByRole('img', { name: 'Beach' })
+    const brightness = screen.getByLabelText('Brightness')
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Rotate right' }))
+      fireEvent.change(brightness, { target: { value: '0.5' } })
+    })
+
+    expect(main).toHaveStyle({ transform: 'rotate(90deg)', filter: 'brightness(1.5)' })
+
+    saveEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90, brightness: 0.5 })
+    await user.click(screen.getByRole('button', { name: 'Save edits' }))
+    await waitFor(() => {
+      expect(saveEditMock).toHaveBeenCalled()
+    })
+    expect(saveEditMock.mock.calls[0][1]).toMatchObject({ rotation: 90, brightness: 0.5 })
   })
 
   it('opens the edit panel beside the photo and shrinks it to make room', async () => {
