@@ -5,7 +5,7 @@ import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
 import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
-import { formatDateTime } from '../../lib/format'
+import { formatDateTimeMinutes } from '../../lib/format'
 import { joinKeywords, sameKeywords, splitKeywords } from '../../lib/photoFacts'
 import { type Place } from '../../services/map'
 import { type PhotoDetail, type PhotoMetadataUpdate, updatePhoto } from '../../services/photos'
@@ -78,6 +78,12 @@ function initialCoordText(photo: PhotoDetail): string {
 interface EditableFieldProps {
   /** The (already translated) field label. */
   label: string
+  /**
+   * The (already translated) prompt shown in place of an empty value: what this
+   * field is for, or an example of what belongs in it. It must not restate the
+   * label — a row reading "Description / Add…" has said the same nothing twice.
+   */
+  prompt: string
   /** The current value, or empty/undefined for an unset field. */
   value: string | undefined
   /**
@@ -95,12 +101,21 @@ interface EditableFieldProps {
 
 /**
  * One caption field in read-only form. For an editor the whole row is a button —
- * so the field itself is the edit affordance, with a pencil cue and an accessible
- * "Edit «label»" name — that opens the shared caption form; a muted "add…"
- * placeholder invites filling an empty field. A viewer sees the value alone (and
- * an empty field renders nothing, so read-only panels stay free of blank rows).
+ * so the field itself is the edit affordance, with an accessible "Edit «label»"
+ * name — that opens the shared caption form. A viewer sees the value alone (and an
+ * empty field renders nothing, so read-only panels stay free of blank rows).
+ *
+ * The pencil sits against the label rather than out at the right margin. Parked at
+ * the margin it was a column of identical glyphs metres from the thing each one
+ * edits, and the reader had to trace a line across the card to pair them up;
+ * beside the label it is unambiguous which field it belongs to.
+ *
+ * An empty field shows its own prompt, not a generic "add…". Four fields sharing
+ * one placeholder is a column of identical grey text that tells the reader nothing
+ * about what any of them is for or why they would fill it in — which is exactly
+ * the moment they most need telling.
  */
-function EditableField({ label, value, display, canWrite, onEdit }: EditableFieldProps) {
+function EditableField({ label, prompt, value, display, canWrite, onEdit }: EditableFieldProps) {
   const { t } = useTranslation()
   const hasValue = value !== undefined && value.trim() !== ''
   const shown = display ?? value
@@ -113,12 +128,12 @@ function EditableField({ label, value, display, canWrite, onEdit }: EditableFiel
         aria-label={t('photo.metadata.editField', { field: label })}
         onClick={onEdit}
       >
-        <span className="small text-secondary d-block">{label}</span>
-        <span className="d-flex justify-content-between align-items-start gap-2">
-          <span className={hasValue ? 'text-break' : 'text-secondary fst-italic'}>
-            {hasValue ? shown : t('photo.metadata.addPlaceholder')}
-          </span>
-          <Icon name="pencil" className="text-secondary flex-shrink-0" />
+        <span className="small text-secondary d-flex align-items-center gap-1">
+          {label}
+          <Icon name="pencil" />
+        </span>
+        <span className={hasValue ? 'd-block text-break' : 'd-block text-secondary fst-italic'}>
+          {hasValue ? shown : prompt}
         </span>
       </button>
     )
@@ -323,12 +338,15 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   const [scan, setScan] = useState(pristineScan)
   const [keywords, setKeywords] = useState<string[]>(pristineKeywords)
 
-  // The capture date as the read-only view shows it. captureDateText is its plain
-  // text form — it decides whether the field counts as filled and is what a copy of
-  // the row reads like — while an estimated date is *rendered* by CaptureDate, with
-  // the marker as a badge and the note beside it.
+  // The capture date as the read-only view shows it: to the minute, because the
+  // second a photo was taken on is noise in a line answering "when was this?" (the
+  // exact stored value is in the technical details, and the edit form below still
+  // keeps its seconds). captureDateText is its plain text form — it decides whether
+  // the field counts as filled and is what a copy of the row reads like — while an
+  // estimated date is *rendered* by CaptureDate, with the marker as a badge and the
+  // note beside it.
   const takenAtText =
-    photo.taken_at !== undefined ? formatDateTime(photo.taken_at, i18n.language) : ''
+    photo.taken_at !== undefined ? formatDateTimeMinutes(photo.taken_at, i18n.language) : ''
   const isEstimated = pristineEstimated
   const captureDateText = isEstimated
     ? [t('photo.metadata.estimatedMarker'), takenAtText, pristineNote]
@@ -769,24 +787,28 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
     <div>
       <EditableField
         label={t('photo.metadata.title')}
+        prompt={t('photo.metadata.titlePrompt')}
         value={photo.title}
         canWrite={canWrite}
         onEdit={startEditing}
       />
       <EditableField
         label={t('photo.metadata.description')}
+        prompt={t('photo.metadata.descriptionPrompt')}
         value={photo.description}
         canWrite={canWrite}
         onEdit={startEditing}
       />
       <EditableField
         label={t('photo.metadata.aiNote')}
+        prompt={t('photo.metadata.aiNotePrompt')}
         value={photo.ai_note}
         canWrite={canWrite}
         onEdit={startEditing}
       />
       <EditableField
         label={t('photo.metadata.takenAt')}
+        prompt={t('photo.metadata.takenAtPrompt')}
         value={captureDateText}
         display={isEstimated ? <CaptureDate date={takenAtText} note={pristineNote} /> : undefined}
         canWrite={canWrite}
@@ -794,6 +816,7 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
       />
       <EditableField
         label={t('photo.metadata.notes')}
+        prompt={t('photo.metadata.notesPrompt')}
         value={photo.notes}
         canWrite={canWrite}
         onEdit={startEditing}
@@ -802,13 +825,16 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
       {/* Location: the read-only mini-map + place lookup (editing coordinates is
           done in the shared form, so the embedded view stays read-only). */}
       <div className="mb-1">
-        <div className="small text-secondary d-flex justify-content-between align-items-center">
+        {/* The pencil sits against the label, like every field above it: at the
+            right margin it was a glyph the width of the card away from the thing
+            it edits. */}
+        <div className="small text-secondary d-flex align-items-center gap-1">
           <span>{t('photo.metadata.location')}</span>
           {canWrite && (
             <Button
               variant="link"
               size="sm"
-              className="p-0 text-decoration-none"
+              className="p-0 text-decoration-none lh-1"
               aria-label={t('photo.metadata.editField', { field: t('photo.metadata.location') })}
               onClick={startEditing}
             >

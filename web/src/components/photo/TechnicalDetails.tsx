@@ -92,6 +92,11 @@ export function TechnicalDetails({
   const source = takenAtSource(photo.taken_at_source)
   const sourceLabel =
     source === undefined ? undefined : t(`photo.technical.takenAtSourceValue.${source}`)
+  // The capture time to the second. The caption card shows it to the minute — the
+  // seconds are noise in the line that answers "when was this?" — so this is where
+  // the exact stored value stays readable.
+  const takenAtExact =
+    photo.taken_at !== undefined ? formatDateTime(photo.taken_at, i18n.language) : undefined
   const keywords = splitKeywords(photo.keywords)
   const flagged = photo.private === true || photo.scan === true
 
@@ -151,6 +156,7 @@ export function TechnicalDetails({
       iso,
       photo.camera_serial,
       photo.software,
+      takenAtExact,
       sourceLabel,
       photo.subject,
       photo.artist,
@@ -229,6 +235,7 @@ export function TechnicalDetails({
               <MetaField label={t('photo.metadata.iso')} value={iso} />
               <MetaField label={t('photo.technical.cameraSerial')} value={photo.camera_serial} />
               <MetaField label={t('photo.technical.software')} value={photo.software} />
+              <MetaField label={t('photo.technical.takenAtExact')} value={takenAtExact} />
               <MetaField label={t('photo.technical.takenAtSource')} value={sourceLabel} />
               <MetaField label={t('photo.technical.subject')} value={photo.subject} />
               {keywords.length > 0 && (

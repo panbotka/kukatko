@@ -24,6 +24,7 @@ function facesResult(overrides: Partial<UseFacesResult> = {}): UseFacesResult {
   return {
     status: 'ready',
     faces: [],
+    frame: { width: 4000, height: 3000 },
     selected: null,
     busy: false,
     actionError: false,
@@ -40,7 +41,13 @@ const onEditFace = vi.fn()
 function renderPanel(faces: UseFacesResult, canWrite = true, loading = false) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <PeoplePanel faces={faces} canWrite={canWrite} loading={loading} onEditFace={onEditFace} />
+      <PeoplePanel
+        photoUid="photo1"
+        faces={faces}
+        canWrite={canWrite}
+        loading={loading}
+        onEditFace={onEditFace}
+      />
     </I18nextProvider>,
   )
 }

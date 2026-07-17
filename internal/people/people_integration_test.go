@@ -28,13 +28,25 @@ func newStores(t *testing.T) (*people.Store, *photos.Store, *vectors.Store, *dat
 		vectors.NewStore(db.Pool()), db
 }
 
-// makePhoto inserts a minimal photo with the given file hash and returns its uid.
+// makePhoto inserts a photo with the given file hash and a 4000x3000 frame — the
+// cover-face pick skips a photo with no dimensions, so a minimal row would make
+// every face test silently vacuous — and returns its uid.
 func makePhoto(t *testing.T, store *photos.Store, hash string) string {
 	t.Helper()
+	return makeSizedPhoto(t, store, hash, 4000, 3000)
+}
+
+// makeSizedPhoto inserts a photo with the given file hash and pixel dimensions,
+// returning its uid. The dimensions ride along on the cover face, so a test that
+// cares what the tile crops from sets them explicitly.
+func makeSizedPhoto(t *testing.T, store *photos.Store, hash string, width, height int) string {
+	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
-		FileHash: hash,
-		FilePath: "2024/01/" + hash + ".jpg",
-		FileName: hash + ".jpg",
+		FileHash:   hash,
+		FilePath:   "2024/01/" + hash + ".jpg",
+		FileName:   hash + ".jpg",
+		FileWidth:  width,
+		FileHeight: height,
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", hash, err)
@@ -182,6 +194,160 @@ func TestListSubjectsCounts(t *testing.T) {
 	}
 	if list[1].UID != bob.UID || list[1].MarkerCount != 0 {
 		t.Errorf("subject[1] = %+v, want Bob count 0", list[1])
+	}
+}
+
+// mkFace inserts a face marker for the subject with an explicit box and score,
+// returning its uid. It is mkMarker's variant for the cover-face pick, which is
+// decided entirely by the box's area and the score.
+func mkFace(
+	t *testing.T, store *people.Store, photoUID, subjectUID string,
+	box [4]float64, score int, invalid bool,
+) string {
+	t.Helper()
+	m, err := store.CreateMarker(t.Context(), people.Marker{
+		PhotoUID:   photoUID,
+		SubjectUID: &subjectUID,
+		Type:       people.MarkerFace,
+		X:          box[0], Y: box[1], W: box[2], H: box[3],
+		Score:   score,
+		Invalid: invalid,
+	})
+	if err != nil {
+		t.Fatalf("CreateMarker: %v", err)
+	}
+	return m.UID
+}
+
+// firstSubject returns the single subject ListSubjects reports, failing the test
+// unless there is exactly one.
+func firstSubject(t *testing.T, store *people.Store) people.SubjectCount {
+	t.Helper()
+	list, err := store.ListSubjects(t.Context())
+	if err != nil {
+		t.Fatalf("ListSubjects: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("ListSubjects len = %d, want 1", len(list))
+	}
+	return list[0]
+}
+
+// TestListSubjectsCoverFaceBiggestWins checks the primary term of the pick: the
+// face with the largest box wins, because it is the one with enough pixels behind
+// it to survive being blown up into a tile.
+func TestListSubjectsCoverFaceBiggestWins(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+	photoUID := makeSizedPhoto(t, photoStore, "cover_big", 4000, 3000)
+
+	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	// The small face is the more confident one: score must not outrank area, or a
+	// pin-sharp speck would take the tile from a large, merely good face.
+	mkFace(t, store, photoUID, alice.UID, [4]float64{0.8, 0.8, 0.05, 0.05}, 99, false)
+	big := mkFace(t, store, photoUID, alice.UID, [4]float64{0.1, 0.2, 0.3, 0.4}, 50, false)
+
+	got := firstSubject(t, store)
+	if got.CoverFace == nil {
+		t.Fatalf("CoverFace = nil, want the big face %s", big)
+	}
+	if got.CoverFace.W != 0.3 || got.CoverFace.H != 0.4 {
+		t.Errorf("CoverFace box = %+v, want the 0.3x0.4 face", got.CoverFace)
+	}
+	if got.CoverFace.PhotoUID != photoUID {
+		t.Errorf("CoverFace.PhotoUID = %q, want %q", got.CoverFace.PhotoUID, photoUID)
+	}
+	if got.CoverFace.Width != 4000 || got.CoverFace.Height != 3000 {
+		t.Errorf("CoverFace frame = %dx%d, want 4000x3000",
+			got.CoverFace.Width, got.CoverFace.Height)
+	}
+}
+
+// TestListSubjectsCoverFaceScoreBreaksTies checks the secondary term: between two
+// boxes of the same area the more confident detection wins.
+func TestListSubjectsCoverFaceScoreBreaksTies(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+	photoUID := makePhoto(t, photoStore, "cover_score")
+
+	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	mkFace(t, store, photoUID, alice.UID, [4]float64{0.1, 0.1, 0.2, 0.2}, 40, false)
+	mkFace(t, store, photoUID, alice.UID, [4]float64{0.5, 0.5, 0.2, 0.2}, 90, false)
+
+	got := firstSubject(t, store)
+	if got.CoverFace == nil {
+		t.Fatal("CoverFace = nil, want the high-score face")
+	}
+	if got.CoverFace.X != 0.5 || got.CoverFace.Y != 0.5 {
+		t.Errorf("CoverFace box = %+v, want the score-90 face at 0.5,0.5", got.CoverFace)
+	}
+}
+
+// TestListSubjectsCoverFaceSkipsInvalid checks that a face the user rejected is
+// never offered back as a tile, even when it is the biggest one.
+func TestListSubjectsCoverFaceSkipsInvalid(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+	photoUID := makePhoto(t, photoStore, "cover_invalid")
+
+	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	mkFace(t, store, photoUID, alice.UID, [4]float64{0, 0, 0.9, 0.9}, 99, true)
+	mkFace(t, store, photoUID, alice.UID, [4]float64{0.1, 0.1, 0.2, 0.2}, 10, false)
+
+	got := firstSubject(t, store)
+	if got.CoverFace == nil {
+		t.Fatal("CoverFace = nil, want the small valid face")
+	}
+	if got.CoverFace.W != 0.2 {
+		t.Errorf("CoverFace = %+v, want the valid 0.2 face, not the invalid 0.9 one", got.CoverFace)
+	}
+}
+
+// TestListSubjectsCoverFaceNone checks that a subject with nothing usable gets no
+// cover face at all, so the client keeps its placeholder rather than inventing a
+// face: a subject with no markers, one whose only face is invalid, one carrying
+// only a drawn label box, and one whose face sits on an archived photo.
+func TestListSubjectsCoverFaceNone(t *testing.T) {
+	store, photoStore, _, db := newStores(t)
+	ctx := t.Context()
+
+	// A subject with no markers whatsoever.
+	if _, err := store.CreateSubject(ctx, people.Subject{Name: "Bare"}); err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+
+	invalidOnly, _ := store.CreateSubject(ctx, people.Subject{Name: "InvalidOnly"})
+	mkFace(t, store, makePhoto(t, photoStore, "none_invalid"), invalidOnly.UID,
+		[4]float64{0.1, 0.1, 0.3, 0.3}, 90, true)
+
+	labelOnly, _ := store.CreateSubject(ctx, people.Subject{Name: "LabelOnly"})
+	labelPhoto := makePhoto(t, photoStore, "none_label")
+	if _, err := store.CreateMarker(ctx, people.Marker{
+		PhotoUID: labelPhoto, SubjectUID: &labelOnly.UID, Type: people.MarkerLabel,
+		X: 0.1, Y: 0.1, W: 0.5, H: 0.5, Score: 90,
+	}); err != nil {
+		t.Fatalf("CreateMarker label: %v", err)
+	}
+
+	archivedOnly, _ := store.CreateSubject(ctx, people.Subject{Name: "ArchivedOnly"})
+	archivedPhoto := makePhoto(t, photoStore, "none_archived")
+	mkFace(t, store, archivedPhoto, archivedOnly.UID, [4]float64{0.1, 0.1, 0.3, 0.3}, 90, false)
+	if _, err := db.Pool().Exec(ctx,
+		"UPDATE photos SET archived_at = now() WHERE uid = $1", archivedPhoto); err != nil {
+		t.Fatalf("archiving photo: %v", err)
+	}
+
+	list, err := store.ListSubjects(ctx)
+	if err != nil {
+		t.Fatalf("ListSubjects: %v", err)
+	}
+	if len(list) != 4 {
+		t.Fatalf("ListSubjects len = %d, want 4", len(list))
+	}
+	for _, sc := range list {
+		if sc.CoverFace != nil {
+			t.Errorf("subject %q CoverFace = %+v, want nil", sc.Name, sc.CoverFace)
+		}
 	}
 }
 

@@ -32,6 +32,7 @@ function facesResult(overrides: Partial<UseFacesResult> = {}): UseFacesResult {
   return {
     status: 'ready',
     faces: [],
+    frame: { width: 4000, height: 3000 },
     selected: null,
     busy: false,
     actionError: false,

@@ -179,25 +179,105 @@ func updateSubjectTx(ctx context.Context, tx pgx.Tx, uid string, upd SubjectUpda
 }
 
 // listSubjectsSQL reads every subject with its count of valid (non-invalid)
-// markers that fall on a visible photo, ordered by name then uid for a stable
-// people-index display. The subject columns are alias-qualified because the
-// markers join also exposes a uid column. The photos join restricts the count to
-// visible members (not archived, not a non-primary stack member) so the badge
-// agrees with the subject's gallery: COUNT(p.uid) ignores the NULL rows a marker
-// on a hidden photo joins as.
+// markers that fall on a visible photo plus the face that illustrates it, ordered
+// by name then uid for a stable people-index display. The subject columns are
+// alias-qualified because the markers join also exposes a uid column. The photos
+// join restricts the count to visible members (not archived, not a non-primary
+// stack member) so the badge agrees with the subject's gallery: COUNT(p.uid)
+// ignores the NULL rows a marker on a hidden photo joins as.
+//
+// The best_face CTE picks the one face per subject the tile is cropped to. The
+// ordering is the whole rule, so it is worth saying why each term is there:
+//
+//   - w * h DESC — a tile is a small square blown up out of a crop of a cached
+//     thumbnail, so the pixels behind the face are what decide whether it reads as
+//     a person or as mush. The biggest box of that person wins; nothing else comes
+//     close to mattering as much.
+//   - score DESC — the detector's confidence, which only separates boxes of the
+//     same size. Leading with it instead would hand the tile to a tiny, immaculate
+//     face over a large, merely good one, which is exactly backwards for a crop.
+//   - uid — makes the choice deterministic, so the same face wins on every request
+//     and the page does not reshuffle itself between reloads.
+//
+// The filters carry the rest: invalid = FALSE drops the faces a user rejected
+// (a tile is no place to re-show a false positive), type = 'face' drops manually
+// drawn label boxes, which are regions but not faces, and the w/h and file
+// dimension guards drop degenerate rows the crop maths cannot use. The photos
+// join mirrors the count's visibility rule so a tile never points at an archived
+// photo or a stack member the library hides.
 const listSubjectsSQL = `
+WITH best_face AS (
+    SELECT DISTINCT ON (m.subject_uid)
+           m.subject_uid, m.photo_uid, m.x, m.y, m.w, m.h,
+           p.file_width, p.file_height, p.file_orientation
+    FROM markers m
+    JOIN photos p ON p.uid = m.photo_uid
+    WHERE m.subject_uid IS NOT NULL
+      AND m.type = 'face'
+      AND m.invalid = FALSE
+      AND m.w > 0 AND m.h > 0
+      AND p.archived_at IS NULL
+      AND (p.stack_uid IS NULL OR p.stack_primary)
+      AND p.file_width > 0 AND p.file_height > 0
+    ORDER BY m.subject_uid, m.w * m.h DESC, m.score DESC, m.uid
+)
 SELECT s.uid, s.slug, s.name, s.type, s.favorite, s.private, s.notes,
-       s.cover_photo_uid, s.created_at, s.updated_at, COUNT(p.uid) AS marker_count
+       s.cover_photo_uid, s.created_at, s.updated_at, COUNT(p.uid) AS marker_count,
+       bf.photo_uid, bf.x, bf.y, bf.w, bf.h,
+       bf.file_width, bf.file_height, bf.file_orientation
 FROM subjects s
 LEFT JOIN markers m ON m.subject_uid = s.uid AND m.invalid = FALSE
 LEFT JOIN photos p ON p.uid = m.photo_uid AND p.archived_at IS NULL
     AND (p.stack_uid IS NULL OR p.stack_primary)
-GROUP BY s.uid
+LEFT JOIN best_face bf ON bf.subject_uid = s.uid
+GROUP BY s.uid, bf.photo_uid, bf.x, bf.y, bf.w, bf.h,
+         bf.file_width, bf.file_height, bf.file_orientation
 ORDER BY s.name, s.uid`
 
+// scanSubjectCount reads one listSubjectsSQL row into a SubjectCount. The cover
+// face's columns all come from the same LEFT JOIN, so they are NULL together for
+// a subject with no usable face; photoUID being NULL is what says so, and the
+// subject then carries no CoverFace at all rather than a zeroed one.
+func scanSubjectCount(row pgx.Row) (SubjectCount, error) {
+	var sc SubjectCount
+	var face SubjectFace
+	var photoUID *string
+	var x, y, w, h *float64
+	var width, height, orientation *int
+	if err := row.Scan(
+		&sc.UID, &sc.Slug, &sc.Name, &sc.Type, &sc.Favorite, &sc.Private,
+		&sc.Notes, &sc.CoverPhotoUID, &sc.CreatedAt, &sc.UpdatedAt, &sc.MarkerCount,
+		&photoUID, &x, &y, &w, &h, &width, &height, &orientation,
+	); err != nil {
+		return SubjectCount{}, fmt.Errorf("people: scanning subject count: %w", err)
+	}
+	if photoUID == nil {
+		return sc, nil
+	}
+	face = SubjectFace{
+		PhotoUID: *photoUID,
+		X:        deref(x), Y: deref(y), W: deref(w), H: deref(h),
+		Width: deref(width), Height: deref(height), Orientation: deref(orientation),
+	}
+	sc.CoverFace = &face
+	return sc, nil
+}
+
+// deref returns the value ptr points at, or the type's zero value when it is nil.
+// The cover-face columns are NOT NULL in their own tables and only become
+// nullable by riding on a LEFT JOIN, so a nil here means "no face row", which the
+// caller has already decided by looking at the photo uid.
+func deref[T any](ptr *T) T {
+	if ptr == nil {
+		var zero T
+		return zero
+	}
+	return *ptr
+}
+
 // ListSubjects returns every subject together with how many non-invalid markers
-// reference it, ordered by name then uid. A store with no subjects yields an
-// empty slice and a nil error.
+// reference it and the face picked to illustrate it, ordered by name then uid. A
+// store with no subjects yields an empty slice and a nil error.
 func (s *Store) ListSubjects(ctx context.Context) ([]SubjectCount, error) {
 	rows, err := s.pool.Query(ctx, listSubjectsSQL)
 	if err != nil {
@@ -207,12 +287,9 @@ func (s *Store) ListSubjects(ctx context.Context) ([]SubjectCount, error) {
 
 	out := make([]SubjectCount, 0)
 	for rows.Next() {
-		var sc SubjectCount
-		if err := rows.Scan(
-			&sc.UID, &sc.Slug, &sc.Name, &sc.Type, &sc.Favorite, &sc.Private,
-			&sc.Notes, &sc.CoverPhotoUID, &sc.CreatedAt, &sc.UpdatedAt, &sc.MarkerCount,
-		); err != nil {
-			return nil, fmt.Errorf("people: scanning subject count: %w", err)
+		sc, err := scanSubjectCount(rows)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, sc)
 	}

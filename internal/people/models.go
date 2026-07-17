@@ -94,12 +94,39 @@ type Subject struct {
 	UpdatedAt     time.Time   `json:"updated_at"`
 }
 
+// SubjectFace is the face automatically picked to illustrate a subject on the
+// people index, so a page about people shows people rather than placeholders. It
+// names a photo and the normalised box of the subject's face within it; the
+// caller crops the photo's cached thumbnail to that box itself, since there is no
+// face-thumbnail endpoint. See listSubjectsSQL for which of a subject's faces
+// wins and why.
+type SubjectFace struct {
+	// PhotoUID is the photo the face was found on.
+	PhotoUID string `json:"photo_uid"`
+	// X, Y, W and H are the marker's normalised box in 0..1 display space.
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
+	// Width, Height and Orientation are the source photo's stored frame, reported
+	// exactly as GET /photos/{uid}/faces reports them: the box is normalised, so a
+	// crop that keeps the face's proportions needs to know the frame's.
+	Width       int `json:"width"`
+	Height      int `json:"height"`
+	Orientation int `json:"orientation"`
+}
+
 // SubjectCount is a subject paired with how many valid (non-invalid) markers
 // reference it, as returned by ListSubjects.
 type SubjectCount struct {
 	Subject
 	// MarkerCount is the number of non-invalid markers assigned to the subject.
 	MarkerCount int `json:"marker_count"`
+	// CoverFace is the subject's automatically picked face, nil when none of its
+	// markers is usable. It is a fallback the client uses only when the subject has
+	// no CoverPhotoUID: an explicitly chosen cover is a decision, and this is a
+	// guess, so the guess never overrides it.
+	CoverFace *SubjectFace `json:"cover_face,omitempty"`
 }
 
 // SubjectUpdate carries the user-editable fields applied by Store.UpdateSubject.

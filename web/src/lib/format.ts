@@ -81,6 +81,30 @@ export function formatDateTime(value: string | number | Date, locale: string): s
 }
 
 /**
+ * Formats a timestamp as a locale-aware date and time to the minute, dropping the
+ * seconds `toLocaleString` includes by default: "10. 7. 2026 23:03" rather than
+ * "10. 7. 2026 23:03:40". Nobody reading when a photo was taken needs the second
+ * it was taken on — it is noise in the one line that answers "when was this?" —
+ * and the exact stored value is still shown, in the technical details.
+ *
+ * Invalid inputs render as the original string (or empty for non-strings), like
+ * the rest of this module.
+ */
+export function formatDateTimeMinutes(value: string | number | Date, locale: string): string {
+  const date = toDate(value)
+  if (date === null) {
+    return typeof value === 'string' ? value : ''
+  }
+  return date.toLocaleString(locale, {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+/**
  * Formats a 1-based calendar month (`year`, `month` in 1–12) as a locale-aware
  * short month name plus the year, e.g. `2026, 1, 'en'` → `"Jan 2026"` and
  * `'cs'` → `"led 2026"`. Used by the timeline scrubber to label its month

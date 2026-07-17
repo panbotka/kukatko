@@ -94,9 +94,36 @@ export interface Subject {
   updated_at: string
 }
 
+/**
+ * The face the backend picked to illustrate a subject (`people.SubjectFace`): a
+ * photo, the normalised `[x, y, w, h]` box of the subject's face on it, and that
+ * photo's stored frame. There is no face-thumbnail endpoint, so the client crops
+ * a cached thumbnail to the box itself — which needs the frame, since a
+ * normalised box says nothing about its own proportions.
+ */
+export interface SubjectFace {
+  photo_uid: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** The source photo's stored pixel width (before EXIF orientation). */
+  width: number
+  /** The source photo's stored pixel height (before EXIF orientation). */
+  height: number
+  /** The raw EXIF orientation tag (1–8), 0 when absent. */
+  orientation: number
+}
+
 /** A subject paired with its non-invalid marker count (`people.SubjectCount`). */
 export interface SubjectCount extends Subject {
   marker_count: number
+  /**
+   * The automatically picked face, absent when the subject has no usable marker.
+   * It is a *fallback* for a subject with no `cover_photo_uid` and never overrides
+   * one — see `subjectTileImage`, which owns that rule.
+   */
+  cover_face?: SubjectFace
 }
 
 /** Response body of `GET /api/v1/subjects`. */
