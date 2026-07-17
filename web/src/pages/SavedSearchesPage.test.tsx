@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
@@ -98,15 +98,16 @@ describe('SavedSearchesPage', () => {
     expect(await screen.findByText('Holiday')).toBeInTheDocument()
   })
 
-  it('optimistically deletes a saved search after confirmation', async () => {
+  it('optimistically deletes a saved search after confirming in the dialog', async () => {
     fetchMock.mockResolvedValue([saved('ss_1', 'Trip', { sort: 'oldest' })])
     deleteMock.mockResolvedValue(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Trip')
     await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete saved search' }))
 
     await waitFor(() => {
       expect(screen.queryByText('Trip')).not.toBeInTheDocument()
@@ -117,12 +118,13 @@ describe('SavedSearchesPage', () => {
   it('restores the row and shows an error when deletion fails', async () => {
     fetchMock.mockResolvedValue([saved('ss_1', 'Trip', { sort: 'oldest' })])
     deleteMock.mockRejectedValue(new Error('boom'))
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Trip')
     await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete saved search' }))
 
     // The row comes back and the action error surfaces.
     expect(await screen.findByText('The action failed. Please try again.')).toBeInTheDocument()

@@ -35,17 +35,92 @@ body {
   overflow-x: clip;
 }
 
-/* Native form-control chrome must match the control's painted surface. The app
-   runs `color-scheme: dark` (dark page, dark scrollbars), but Bootswatch Superhero
-   paints every `.form-control`/`.form-select` with a white background and dark
-   text regardless of theme. Left to the page's dark scheme the browser draws the
-   native bits — a `type=date` field's placeholder text and calendar-picker glyph,
-   a `<select>`'s dropdown — light, i.e. invisible on that white surface. Pinning
-   the controls to the light scheme makes those native parts render dark-on-white,
-   matching the white field. */
+/*
+ * Form controls on the dark theme.
+ *
+ * Bootswatch Superhero compiles `.form-control`/`.form-select` with a hardcoded
+ * white fill and near-black text (`background-color: #fff; color: #212529`) plus a
+ * dark select-arrow SVG — values baked into its stylesheet, not `--bs-*` variables.
+ * Left alone, every field renders as a blinding white rectangle punched into the
+ * navy page; on the library the four empty filter selects become the loudest thing
+ * on a page whose whole job is showing photographs.
+ *
+ * A previous attempt pinned the controls to `color-scheme: light` (recorded as a
+ * deliberate rejection in `docs/UX_AUDIT.md`): with the fill still white, the
+ * page-level `color-scheme: dark` made the browser draw the NATIVE bits — a
+ * `type=date` field's calendar glyph, an unstyled `<select>`'s list — light-on-white,
+ * i.e. invisible. Pinning to light kept them dark-on-white. That fix was correct
+ * *given a white fill*.
+ *
+ * Here we remove the white fill instead. Each control gets a real dark surface —
+ * `--kk-surface-sunken`, the same navy-derived well a thumbnail loads into, so a
+ * field sits BELOW the photographs in weight — with a subtle slate hairline so it
+ * still reads as a control rather than a hole. Because the fill is now dark we can,
+ * and must, put the controls back on `color-scheme: dark`: fill and scheme finally
+ * agree, so every native glyph renders light-on-dark and stays visible. The single
+ * non-native affordance, the `.form-select` chevron, is a Bootstrap background image
+ * (untouched by `color-scheme`), so we opt in narrowly at the `--bs-*` level and
+ * swap `--bs-form-select-bg-img` for a light-stroked copy of the same chevron. */
 .form-control,
 .form-select {
-  color-scheme: light;
+  color-scheme: dark;
+  color: var(--bs-body-color);
+  background-color: var(--kk-surface-sunken);
+  /* A hairline in the token spirit (the navy background lightened toward white) so
+     the field's edge reads on both the navy page and its own sunken fill. */
+  border-color: color-mix(in srgb, var(--bs-body-bg) 76%, #fff 24%);
+}
+
+.form-select {
+  --bs-form-select-bg-img: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23ebebeb' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+}
+
+/* Placeholder text: clearly dimmer than a real value so an empty field reads as
+   empty, yet kept readable — a shade lighter than Superhero's #868e96, not muddier
+   (the audit already flags muted-text contrast as an open gap; do not widen it). */
+.form-control::placeholder {
+  color: color-mix(in srgb, var(--bs-body-color) 62%, transparent);
+  opacity: 1;
+}
+
+/* Focus keeps the field dark — Superhero's `:focus` rule would otherwise flip it
+   back to white — and trades Superhero's orange box-shadow glow for the app-wide
+   focus ring: the info-cyan `outline` (never a box-shadow, so it survives an
+   ancestor's `overflow: hidden`) already shared by tiles and links. */
+.form-control:focus,
+.form-select:focus {
+  color: var(--bs-body-color);
+  background-color: var(--kk-surface-sunken);
+  border-color: color-mix(in srgb, var(--bs-body-bg) 60%, #fff 40%);
+  box-shadow: none;
+}
+
+.form-control:focus-visible,
+.form-select:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+/* Autofilled fields: browsers paint their own light chip over the control. Repaint
+   it with the field's own surface (the inset box-shadow trick — the only handle on
+   the UA autofill layer) and force the text/caret colour, so an autofilled login
+   field matches an empty one instead of flashing white. */
+.form-control:-webkit-autofill,
+.form-control:-webkit-autofill:hover,
+.form-control:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--bs-body-color);
+  -webkit-box-shadow: 0 0 0 100rem var(--kk-surface-sunken) inset;
+  caret-color: var(--bs-body-color);
+}
+
+/* Disabled controls read as inert: Superhero paints them light-grey (#ebebeb) —
+   another pale block on the navy page. Give them a flatter, translucent dark fill
+   and muted text so they recede clearly below the active fields. */
+.form-control:disabled,
+.form-select:disabled {
+  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
+  background-color: color-mix(in srgb, var(--kk-surface-sunken) 55%, transparent);
+  border-color: transparent;
 }
 
 /* Honour side notches in landscape by padding the navbar and the main content

@@ -3,6 +3,9 @@
     "name": "Kukátko",
     "tagline": "Self-hosted photo & video library"
   },
+  "confirmModal": {
+    "cancel": "Cancel"
+  },
   "footer": {
     "operator": "Operated by SDH Veselice",
     "github": "GitHub",
@@ -313,7 +316,9 @@
     "loading": "Loading saved searches…",
     "error": "Could not load saved searches.",
     "actionError": "The action failed. Please try again.",
+    "confirmTitle": "Delete saved search?",
     "confirmDelete": "Delete the saved search \"{{name}}\"?",
+    "deleteConfirm": "Delete saved search",
     "empty": {
       "title": "No saved searches yet",
       "hint": "Save the current view to jump back to it in one click."
@@ -408,7 +413,9 @@
     "delete": "Delete",
     "setCover": "Set as cover",
     "removeSelected": "Remove from album",
+    "confirmTitle": "Delete album?",
     "confirmDelete": "Delete the album \"{{name}}\"? The photos themselves are kept.",
+    "deleteConfirm": "Delete album",
     "empty": {
       "title": "This album has no photos",
       "hint": "Add photos from the library by selecting them and choosing this album."
@@ -422,7 +429,9 @@
     "loading": "Loading labels…",
     "error": "Could not load labels.",
     "actionError": "The action failed. Please try again.",
+    "confirmTitle": "Delete label?",
     "confirmDelete": "Delete the label \"{{name}}\"?",
+    "deleteConfirm": "Delete label",
     "empty": {
       "title": "No labels yet",
       "hint": "Create a label to start tagging your photos."
@@ -1280,6 +1289,7 @@
     "title": "Import & migration",
     "intro": "PhotoPrism stays the primary store. Imports are read-only, incremental and repeatable — it is safe to run them again and they resume where they left off.",
     "warnFirstRun": "A first run can take a while and pull in a large number of photos. Subsequent runs only process new changes.",
+    "confirmFirstRunTitle": "First import run",
     "confirmFirstRun": "This is the first run for this source and may take a while. Start the import?",
     "adminOnly": "This page is available to administrators only.",
     "loading": "Loading imports…",

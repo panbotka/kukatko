@@ -3,6 +3,9 @@
     "name": "Kukátko",
     "tagline": "Samostatná správa fotek a videí"
   },
+  "confirmModal": {
+    "cancel": "Zrušit"
+  },
   "footer": {
     "operator": "Provozuje SDH Veselice",
     "github": "GitHub",
@@ -313,7 +316,9 @@
     "loading": "Načítání uložených hledání…",
     "error": "Uložená hledání se nepodařilo načíst.",
     "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "confirmTitle": "Smazat uložené hledání?",
     "confirmDelete": "Smazat uložené hledání „{{name}}“?",
+    "deleteConfirm": "Smazat uložené hledání",
     "empty": {
       "title": "Zatím žádná uložená hledání",
       "hint": "Ulož si aktuální pohled a rychle se k němu vrátíš."
@@ -365,7 +370,9 @@
     "delete": "Smazat",
     "setCover": "Nastavit jako náhled",
     "removeSelected": "Odebrat z alba",
+    "confirmTitle": "Smazat album?",
     "confirmDelete": "Smazat album „{{name}}“? Samotné fotky zůstanou zachovány.",
+    "deleteConfirm": "Smazat album",
     "empty": {
       "title": "Toto album nemá žádné fotky",
       "hint": "Přidej fotky z knihovny tak, že je vybereš a zvolíš toto album."
@@ -379,7 +386,9 @@
     "loading": "Načítání štítků…",
     "error": "Štítky se nepodařilo načíst.",
     "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "confirmTitle": "Smazat štítek?",
     "confirmDelete": "Smazat štítek „{{name}}“?",
+    "deleteConfirm": "Smazat štítek",
     "empty": {
       "title": "Zatím žádné štítky",
       "hint": "Vytvoř štítek a začni označovat své fotky."
@@ -1326,6 +1335,7 @@
     "title": "Import a migrace",
     "intro": "PhotoPrism zůstává primární úložiště. Import je pouze pro čtení, inkrementální a opakovatelný — bezpečně ho můžeš spustit znovu a naváže tam, kde skončil.",
     "warnFirstRun": "První spuštění může být dlouhé a stáhne velké množství fotek. Další běhy už zpracují jen novinky.",
+    "confirmFirstRunTitle": "První běh importu",
     "confirmFirstRun": "Tohle je první běh pro tento zdroj a může chvíli trvat. Spustit import?",
     "adminOnly": "Tato stránka je dostupná jen administrátorům.",
     "loading": "Načítání importů…",

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
@@ -136,15 +136,18 @@ describe('LabelsPage', () => {
     expect(await screen.findByText('Sundown')).toBeInTheDocument()
   })
 
-  it('deletes a label after confirmation and drops it from the list', async () => {
+  it('deletes a label after confirming in the styled dialog and drops it from the list', async () => {
     fetchMock.mockResolvedValue([label('lb_1', 'Sunset')])
     deleteMock.mockResolvedValue(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Sunset')
+    // The row control opens the dialog; nothing is deleted until it is confirmed.
     await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(deleteMock).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Delete label' }))
 
     await waitFor(() => {
       expect(deleteMock).toHaveBeenCalledWith('lb_1')

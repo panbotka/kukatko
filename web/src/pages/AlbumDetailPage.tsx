@@ -7,6 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
@@ -60,6 +61,7 @@ export function AlbumDetailPage() {
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState(false)
   const [reloadKey, reload] = useReloadKey()
   const [actionError, setActionError] = useState(false)
 
@@ -146,9 +148,6 @@ export function AlbumDetailPage() {
     if (state.status !== 'ready') {
       return
     }
-    if (!window.confirm(t('albumDetail.confirmDelete', { name: state.album.title }))) {
-      return
-    }
     setActionError(false)
     try {
       await deleteAlbum(state.album.uid)
@@ -156,7 +155,7 @@ export function AlbumDetailPage() {
     } catch {
       setActionError(true)
     }
-  }, [state, navigate, t])
+  }, [state, navigate])
 
   if (state.status === 'error') {
     return (
@@ -195,7 +194,13 @@ export function AlbumDetailPage() {
                   {t('albumDetail.edit')}
                 </Button>
                 <SelectionStart bulk={bulk} />
-                <Button variant="outline-danger" size="sm" onClick={() => void removeAlbum()}>
+                <Button
+                  variant="outline-danger"
+                  size="sm"
+                  onClick={() => {
+                    setPendingDelete(true)
+                  }}
+                >
                   {t('albumDetail.delete')}
                 </Button>
               </>
@@ -271,6 +276,23 @@ export function AlbumDetailPage() {
             setEditing(false)
           }}
         />
+      )}
+
+      {canWrite && album && (
+        <ConfirmModal
+          show={pendingDelete}
+          title={t('albumDetail.confirmTitle')}
+          confirmLabel={t('albumDetail.deleteConfirm')}
+          onCancel={() => {
+            setPendingDelete(false)
+          }}
+          onConfirm={() => {
+            setPendingDelete(false)
+            void removeAlbum()
+          }}
+        >
+          {t('albumDetail.confirmDelete', { name: album.title })}
+        </ConfirmModal>
       )}
     </>
   )

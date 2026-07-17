@@ -52,10 +52,11 @@ vi.mock('../services/bulk', async (importOriginal) => {
 
 const { fetchPhotos } = await import('../services/photos')
 const { bulkUpdatePhotos } = await import('../services/bulk')
-const { fetchAlbum, removeAlbumPhotos, fetchAlbums, fetchLabels } =
+const { fetchAlbum, deleteAlbum, removeAlbumPhotos, fetchAlbums, fetchLabels } =
   await import('../services/organize')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchAlbumMock = vi.mocked(fetchAlbum)
+const deleteAlbumMock = vi.mocked(deleteAlbum)
 const removeMock = vi.mocked(removeAlbumPhotos)
 const bulkMock = vi.mocked(bulkUpdatePhotos)
 const albumsMock = vi.mocked(fetchAlbums)
@@ -132,6 +133,7 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchPhotosMock.mockReset()
   fetchAlbumMock.mockReset()
+  deleteAlbumMock.mockReset()
   removeMock.mockReset()
   bulkMock.mockReset()
   albumsMock.mockReset()
@@ -216,6 +218,44 @@ describe('AlbumDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
+  })
+
+  it('deletes the album through the styled confirm dialog, not a native prompt', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    deleteAlbumMock.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    // The row control opens the dialog; nothing is deleted until it is confirmed.
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Delete the album "Holidays"/)).toBeInTheDocument()
+    expect(deleteAlbumMock).not.toHaveBeenCalled()
+
+    // The confirm button carries the action itself, never "OK".
+    await user.click(within(dialog).getByRole('button', { name: 'Delete album' }))
+    await waitFor(() => {
+      expect(deleteAlbumMock).toHaveBeenCalledWith('al_1')
+    })
+  })
+
+  it('closes the confirm dialog without deleting when cancelled', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(deleteAlbumMock).not.toHaveBeenCalled()
   })
 
   it('offers bulk edit alongside the album actions in selection mode', async () => {

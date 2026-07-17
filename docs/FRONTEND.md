@@ -111,7 +111,19 @@ zapiš sem.
   několik krátkých seznamů (`OrganizePanel` — alba a štítky), by placeholder přerostl chipy,
   které zastupuje, a panel by poskakoval, jak se jeden seznam plní a druhý zůstává prázdný —
   tam zůstává tlumený jednořádkový popisek (`text-secondary small`). Bloky se objeví přes
-  `.kk-appear`, které `prefers-reduced-motion` vypne. Testy: `EmptyState.test.tsx`);
+  `.kk-appear`, které `prefers-reduced-motion` vypne. Testy: `EmptyState.test.tsx`),
+  `ConfirmModal` (**jediný sdílený potvrzovací dialog** — nahradil nativní `window.confirm`
+  na čtyřech místech: `AlbumDetailPage` (smazání alba), `LabelsPage` (smazání štítku),
+  `SavedSearchesPage` (smazání uloženého hledání) a `ImportPage` (potvrzení prvního běhu importu).
+  Podle vzoru stylovaného modálu na `TrashPage` — jediný pattern místo grey OS dialogu: **potvrzovací
+  tlačítko nese samotnou akci** („Smazat album" / „Spustit import"), nikdy „OK", a čte se stejně jako
+  ovládací prvek, který dialog otevřel — akce si drží jedno jméno v celém toku. Props `show`, `title`
+  (krátká otázka), `children` (důsledek — co a s čím se stane), `confirmLabel`, `cancelLabel?` (default
+  sdílené `confirmModal.cancel`), `variant?` `'danger' | 'primary'` (default `danger` obarví potvrzení
+  červeně; nedestruktivní `primary`), `busy?` (zamkne obě tlačítka i křížek/backdrop po dobu běhu
+  akce), `onConfirm`, `onCancel`. **Destruktivní tlačítko není default Enteru**: po otevření sedí fokus
+  na Zrušit, takže náhodný Enter ruší, ne maže; Escape/křížek/backdrop ruší; react-bootstrap vrátí
+  fokus na spouštěč. Copy překládá volající — žádné napevno psané řetězce. Testy: `ConfirmModal.test.tsx`);
   `components/upload/` = `DropZone` (drag-and-drop zóna + file input `multiple`
   `accept="image/*,video/*"` → mobilní galerie + tlačítko **Vyfotit** `capture="environment"`),
   `UploadProgressHeader` (**prominentní sticky** hlavička celé dávky: „done / total“, **jeden**
