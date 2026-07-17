@@ -6,6 +6,7 @@ import {
   formatCaptureRange,
   formatDate,
   formatDateTime,
+  formatDateTimeMinutes,
   formatDuration,
   formatMonth,
 } from './format'
@@ -67,6 +68,42 @@ describe('formatDate / formatDateTime', () => {
   it('returns the original string for an unparseable value', () => {
     expect(formatDate('not-a-date', 'cs')).toBe('not-a-date')
     expect(formatDateTime('', 'en')).toBe('')
+  })
+})
+
+describe('formatDateTimeMinutes', () => {
+  // A second's worth of precision no reader wants, so the difference from
+  // formatDateTime is visible in every assertion below.
+  const iso = '2026-03-09T14:05:40Z'
+
+  it('drops the seconds that formatDateTime keeps', () => {
+    // Stated as the contrast rather than a literal, so the pair cannot silently
+    // drift apart and neither pins one locale's punctuation.
+    expect(formatDateTime(iso, 'cs')).toMatch(/:\d\d:\d\d/)
+    expect(formatDateTimeMinutes(iso, 'cs')).not.toMatch(/:\d\d:\d\d/)
+  })
+
+  it('keeps the date, the hour and the minute', () => {
+    const short = formatDateTimeMinutes(iso, 'cs')
+    expect(short).toContain('2026')
+    expect(short).toMatch(/\d{1,2}:\d\d/)
+  })
+
+  it('follows the requested locale rather than the host default', () => {
+    expect(formatDateTimeMinutes(iso, 'cs')).not.toBe(formatDateTimeMinutes(iso, 'en-US'))
+  })
+
+  it('does not round a time up to the next minute', () => {
+    // The dropped :40 must truncate, not round — 05 stays 05. The expected minute
+    // comes from Date rather than the literal, because the output is in the host's
+    // timezone and only the hour of it shifts.
+    const minute = String(new Date(iso).getMinutes()).padStart(2, '0')
+    expect(formatDateTimeMinutes(iso, 'cs')).toContain(`:${minute}`)
+  })
+
+  it('returns the original string for an unparseable value', () => {
+    expect(formatDateTimeMinutes('not-a-date', 'cs')).toBe('not-a-date')
+    expect(formatDateTimeMinutes('', 'en')).toBe('')
   })
 })
 
