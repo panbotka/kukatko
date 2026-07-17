@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { LabelEditModal } from '../components/organize/LabelEditModal'
 import { deleteLabel, fetchLabels, type Label, type LabelCount } from '../services/organize'
@@ -26,6 +27,7 @@ export function LabelsPage() {
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState<Label | null>(null)
   const [creating, setCreating] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<Label | null>(null)
   const [actionError, setActionError] = useState(false)
 
   useEffect(() => {
@@ -47,9 +49,6 @@ export function LabelsPage() {
   }, [])
 
   async function remove(label: Label) {
-    if (!window.confirm(t('labels.confirmDelete', { name: label.name }))) {
-      return
-    }
     setActionError(false)
     try {
       await deleteLabel(label.uid)
@@ -137,7 +136,7 @@ export function LabelsPage() {
                     variant="outline-danger"
                     size="sm"
                     onClick={() => {
-                      void remove(label)
+                      setPendingDelete(label)
                     }}
                   >
                     {t('labels.delete')}
@@ -174,6 +173,24 @@ export function LabelsPage() {
           }}
         />
       )}
+
+      <ConfirmModal
+        show={pendingDelete !== null}
+        title={t('labels.confirmTitle')}
+        confirmLabel={t('labels.deleteConfirm')}
+        onCancel={() => {
+          setPendingDelete(null)
+        }}
+        onConfirm={() => {
+          const label = pendingDelete
+          setPendingDelete(null)
+          if (label) {
+            void remove(label)
+          }
+        }}
+      >
+        {pendingDelete && t('labels.confirmDelete', { name: pendingDelete.name })}
+      </ConfirmModal>
     </>
   )
 }

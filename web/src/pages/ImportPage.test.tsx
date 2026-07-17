@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
@@ -144,12 +144,11 @@ describe('ImportPage', () => {
     expect(screen.getAllByText('Updated: 2').length).toBeGreaterThan(0)
   })
 
-  it('starts an import: calls the API and reflects in-progress', async () => {
+  it('starts an import: confirms the first run in the dialog, calls the API, reflects in-progress', async () => {
     runsMock
       .mockResolvedValueOnce(runsResponse([]))
       .mockResolvedValue(runsResponse([run(4, 'photoprism', 'running')]))
     startMock.mockResolvedValue({ job_id: 4, status: 'queued' })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     renderPage()
 
@@ -157,6 +156,12 @@ describe('ImportPage', () => {
     // Two sections, two start buttons; the first is PhotoPrism.
     const startButtons = screen.getAllByRole('button', { name: 'Start import' })
     await user.click(startButtons[0])
+
+    // A first run (nothing completed yet) is confirmed through the shared dialog,
+    // whose confirm button carries the same action as the control that opened it.
+    const dialog = await screen.findByRole('dialog')
+    expect(startMock).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Start import' }))
 
     await waitFor(() => {
       expect(startMock).toHaveBeenCalledWith('photoprism')

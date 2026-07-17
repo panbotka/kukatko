@@ -10,6 +10,7 @@ import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
@@ -238,6 +239,8 @@ export function ImportPage() {
   const [jobStats, setJobStats] = useState<JobStats | null>(null)
   const [starting, setStarting] = useState<ImportSource | null>(null)
   const [notice, setNotice] = useState<{ source: ImportSource; kind: NoticeKind } | null>(null)
+  // The source awaiting first-run confirmation, or null when no dialog is open.
+  const [pendingSource, setPendingSource] = useState<ImportSource | null>(null)
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const runsResp = await fetchImportRuns(signal)
@@ -270,12 +273,7 @@ export function ImportPage() {
     }
   }, [canImport, refresh])
 
-  async function handleStart(source: ImportSource) {
-    const runs = state.status === 'ready' ? state.runs : []
-    const hasCompleted = runs.some((run) => run.source === source && run.status === 'done')
-    if (!hasCompleted && !window.confirm(t('import.confirmFirstRun'))) {
-      return
-    }
+  async function doStart(source: ImportSource) {
     setStarting(source)
     setNotice(null)
     try {
@@ -288,6 +286,18 @@ export function ImportPage() {
     } finally {
       setStarting(null)
     }
+  }
+
+  // A first run of a source (nothing completed yet) can be large, so confirm it
+  // through the shared dialog; later runs only process new changes and start at once.
+  function handleStart(source: ImportSource) {
+    const runs = state.status === 'ready' ? state.runs : []
+    const hasCompleted = runs.some((run) => run.source === source && run.status === 'done')
+    if (!hasCompleted) {
+      setPendingSource(source)
+      return
+    }
+    void doStart(source)
   }
 
   if (!canImport) {
@@ -324,7 +334,7 @@ export function ImportPage() {
                   starting={starting === source}
                   notice={notice?.source === source ? notice.kind : null}
                   onStart={(src) => {
-                    void handleStart(src)
+                    handleStart(src)
                   }}
                 />
               </Col>
@@ -337,6 +347,25 @@ export function ImportPage() {
           <RunHistoryTable runs={state.runs} />
         </>
       )}
+
+      <ConfirmModal
+        show={pendingSource !== null}
+        variant="primary"
+        title={t('import.confirmFirstRunTitle')}
+        confirmLabel={t('import.start')}
+        onCancel={() => {
+          setPendingSource(null)
+        }}
+        onConfirm={() => {
+          const source = pendingSource
+          setPendingSource(null)
+          if (source) {
+            void doStart(source)
+          }
+        }}
+      >
+        {t('import.confirmFirstRun')}
+      </ConfirmModal>
     </>
   )
 }

@@ -139,8 +139,8 @@ implemented**, per the task's conservative-changes rule.
   ✅, but 📋 widen the gap and separate Delete. 🟡⚪
 - **Readability:** Row link uses `text-decoration-none` → tappable saved-search names don't look
   tappable. 📋 Add an affordance (icon or hover underline). 🟡⚪
-- **Consistency:** Delete uses a native `window.confirm` — unstyled vs. the app's own modals.
-  📋 See cross-cutting item below. 🟡🟡
+- **Consistency:** Delete used a native `window.confirm` — unstyled vs. the app's own modals.
+  ✅ **Done:** now routes through the shared `ConfirmModal` (see cross-cutting item 3).
 
 ### Places (`/places`)
 - **Clarity/Touch:** Country/city rows are large full-width `ListGroup.Item action` targets —
@@ -175,8 +175,9 @@ implemented**, per the task's conservative-changes rule.
   album ordering; albums are now always chronological). The coarse-pointer floor enlarges them ✅, but
   📋 consider collapsing the editor actions into an **overflow "⋯" menu** on small screens to cut
   clutter. 🟡🟡
-- **Intimidation:** Delete uses native `window.confirm` (reassuring copy, but unstyled). 📋 See
-  cross-cutting item. 🟡🟡
+- **Intimidation:** Delete used a native `window.confirm` (reassuring copy, but unstyled).
+  ✅ **Done:** now the shared `ConfirmModal`, whose confirm button reads "Smazat album" (see
+  cross-cutting item 3).
 
 ### Label detail (`/labels/:uid`)
 - Minimal and clear. No inline rename/delete (only on the index) — mild inconsistency with album
@@ -249,8 +250,9 @@ on unexplained jargon that even a non-developer admin will struggle with.
   sanitize-everything approach everywhere else. 📋 Truncate + wrap in a friendly "Import failed —
   details" disclosure. 🔴🟡 Jargon: "dead jobs", "embeddings", "photo-sorter migration",
   "background processing queue". 📋 Add plain-language explanations / tooltips. 🟡🟡
-- **Consistency:** first-run confirmation uses a native `window.confirm` with un-localized
-  OK/Cancel, vs. Trash's styled modal. 📋 🟡🟡
+- **Consistency:** first-run confirmation used a native `window.confirm` with un-localized
+  OK/Cancel, vs. Trash's styled modal. ✅ **Done:** now the shared `ConfirmModal`; its confirm
+  button carries "Spustit import" (non-destructive, so `primary`, not `danger`).
 
 ### Maintenance (`/maintenance`)
 - **Most jargon-dense page:** "embeddings", "perceptual hashes", "orphan files/originals", "face
@@ -280,7 +282,9 @@ on unexplained jargon that even a non-developer admin will struggle with.
    for visually identical controls. 📋 Standardize on `<Button as={Link}>`. 🟡⚪
 3. **Native `window.confirm` for destructive actions** (Album detail, Labels, Saved searches,
    Import first-run) — unstyled, un-localized OK/Cancel, jarring vs. Trash's styled modal.
-   📋 Introduce **one shared `<ConfirmModal>`** and route all destructive confirms through it. 🔴🟡
+   ✅ **Done:** one shared `ConfirmModal` (modelled on Trash) now covers all four call sites; its
+   confirm button carries the action ("Smazat album" / "Spustit import"), destructive confirms are
+   `danger` and never the default Enter target, and focus/Escape/restore are handled.
 4. **Missing retry on error states** (People, Subject, Clusters) — user must reload. 📋 Add a retry
    button (they already have the fetch logic). 🟡🟡
 5. **Silent failures** (Subject set-cover) contradict the visible-error pattern used elsewhere.
@@ -303,7 +307,7 @@ Ordered by impact-to-effort. 🔴/🟡/⚪ = impact, then effort.
 | # | Item | Impact | Effort | Notes |
 |---|------|:---:|:---:|-------|
 | 1 | Plain-language **search modes** ("Smart / By text / By meaning") + hide selector behind "advanced" | 🔴 | 🟡 | Search is a core flow; mode names are the last scary copy there. |
-| 2 | Shared **`<ConfirmModal>`**; replace all `window.confirm` (Album/Labels/Saved/Import) | 🔴 | 🟡 | Consistency + localization + polish for destructive actions. |
+| 2 | ✅ **Done** — shared **`ConfirmModal`** replaces all `window.confirm` (Album/Labels/Saved/Import) | 🔴 | 🟡 | One dialog modelled on Trash: confirm button carries the action, `danger` by default and not the Enter target, focus/Escape/restore handled, cs+en. |
 | 3 | **Import**: stop rendering `run.last_error` verbatim; friendly "details" disclosure | 🔴 | 🟡 | Only raw-error leak in the app. |
 | 4 | **Maintenance/Import/Duplicates/System**: plain-language explainers/tooltips for jargon (embeddings, hashes, orphans, dead jobs, box) | 🔴 | 🟡 | Admin pages, but still meant to be usable. |
 | 5 | Add **retry** to People / Subject / Clusters error states | 🟡 | ⚪ | They already have the fetch logic. |

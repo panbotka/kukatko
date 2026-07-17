@@ -6,6 +6,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { savedSearchHref } from '../lib/savedSearchView'
@@ -27,6 +28,7 @@ export function SavedSearchesPage() {
   const { t } = useTranslation()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState<SavedSearch | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<SavedSearch | null>(null)
   const [actionError, setActionError] = useState(false)
 
   useEffect(() => {
@@ -48,9 +50,6 @@ export function SavedSearchesPage() {
   }, [])
 
   async function remove(search: SavedSearch) {
-    if (!window.confirm(t('savedSearches.confirmDelete', { name: search.name }))) {
-      return
-    }
     setActionError(false)
     // Optimistically drop the row, remembering the prior list to restore on error.
     let previous: SavedSearch[] = []
@@ -126,7 +125,7 @@ export function SavedSearchesPage() {
                   variant="outline-danger"
                   size="sm"
                   onClick={() => {
-                    void remove(search)
+                    setPendingDelete(search)
                   }}
                 >
                   {t('savedSearches.delete')}
@@ -148,6 +147,24 @@ export function SavedSearchesPage() {
           setEditing(null)
         }}
       />
+
+      <ConfirmModal
+        show={pendingDelete !== null}
+        title={t('savedSearches.confirmTitle')}
+        confirmLabel={t('savedSearches.deleteConfirm')}
+        onCancel={() => {
+          setPendingDelete(null)
+        }}
+        onConfirm={() => {
+          const search = pendingDelete
+          setPendingDelete(null)
+          if (search) {
+            void remove(search)
+          }
+        }}
+      >
+        {pendingDelete && t('savedSearches.confirmDelete', { name: pendingDelete.name })}
+      </ConfirmModal>
     </>
   )
 }
