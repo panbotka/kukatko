@@ -1503,7 +1503,12 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   find-or-create subjekt dle `Slugify` + přiřazený
   marker, který si **ponechá PhotoPrism UID** → import je idempotentní (`GetMarkerByUID` → skip) a
   identita markerů sedí s `psimport` (photo-sorterovy face řádky odkazují právě na tyhle UID, protože
-  jeho markery JSOU PhotoPrismovy). Obličeje si k markerům dopáruje `facematch` přes IoU;
+  jeho markery JSOU PhotoPrismovy). **Nově zakládaný subjekt se obohatí o `type`/`favorite`/`private`
+  z PP subjektu** (`loadSubjectIndex` přečte `ListSubjects` jednou za běh — best-effort, selhání jen
+  neobohatí — a marker svůj subjekt najde přes `Marker.SubjUID`, fallback slug jména; `newSubject` +
+  `mapSubjectType`). Obohacení **jen při založení**: existující (třeba editovaný) subjekt zůstane beze
+  změny, takže re-run nepřepíše lokální úpravu (symetrie s `psimport`). Obličeje si k markerům dopáruje
+  `facematch` přes IoU;
   (3) **alba & štítky** find-or-create dle názvu (mapa z
   `ListAlbums`/`ListLabels`), členství přes scopnutý `ListPhotos` (`AlbumUID`/`label:"<slug>"`) →
   idempotentní `AddPhoto`/`AttachLabel`; pak běh `Complete` s watermarkem; **per-fotka chyba** se

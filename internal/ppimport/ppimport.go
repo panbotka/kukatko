@@ -95,6 +95,10 @@ type PhotoPrismClient interface {
 	ListAlbums(ctx context.Context, params photoprism.ListParams) ([]photoprism.Album, error)
 	// ListLabels returns one page of labels.
 	ListLabels(ctx context.Context, params photoprism.ListParams) ([]photoprism.Label, error)
+	// ListSubjects returns one page of subjects (people). It is the source of a
+	// subject's type and its favorite/private flags — the data a face marker, which
+	// carries only a name, does not have.
+	ListSubjects(ctx context.Context, params photoprism.ListParams) ([]photoprism.Subject, error)
 	// DownloadOriginal streams the original identified by its SHA1 file hash.
 	DownloadOriginal(ctx context.Context, fileHash string) (*photoprism.Download, error)
 }
@@ -438,7 +442,13 @@ type runState struct {
 	// photoCtx is set for a scoped run only: it carries the album and label
 	// indexes each imported photo maps its own context against. It is nil for a
 	// full run, which maps the structure by walking the source catalogue instead.
-	photoCtx   *photoContext
+	photoCtx *photoContext
+	// subjects resolves a face marker to the source subject it names, so a person
+	// seeded from a marker carries the source's type and its favorite/private flags
+	// rather than defaulting to a plain, public person. It is read once per run
+	// (importPhotos) for both a full and a scoped run, and is best effort: nil or
+	// empty simply falls back to the pre-enrichment default.
+	subjects   *subjectIndex
 	counts     importer.Counts
 	maxSuccess time.Time
 	minFailed  time.Time

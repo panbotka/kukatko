@@ -40,6 +40,10 @@ const (
 // filter, and an album-only scope carries no q= at all, so the zero state.since
 // of a scoped run keeps the listing unfiltered by time).
 func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState) error {
+	// Read the source's subjects once so the people seeded from this run's face
+	// markers carry their type and favorite/private flags. Best effort: a failure
+	// leaves the index empty and subjects fall back to a plain public person.
+	state.subjects = s.loadSubjectIndex(ctx)
 	query := state.scope.Query()
 	for offset := 0; ; {
 		page, err := s.client.ListPhotos(ctx, photoprism.PhotoListParams{

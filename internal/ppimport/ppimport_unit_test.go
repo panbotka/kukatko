@@ -742,3 +742,120 @@ func TestImportScoped_rejectsUnusableScope(t *testing.T) {
 		})
 	}
 }
+
+// TestImport_subjectFlagsAndType verifies a subject seeded from a named face
+// marker carries the source subject's type and its favorite/private flags — the
+// three fields the PhotoPrism import used to drop, seeding every subject as a
+// plain, public person — on a fresh import, and that a re-run leaves an existing
+// subject (a user's edit included) exactly as it is.
+func TestImport_subjectFlagsAndType(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakeClient{}
+	// Rex resolves by the marker's subject UID; Alice by the slug of her name (her
+	// marker carries no SubjUID), exercising both lookup paths through the import.
+	rex := client.makePhoto("pp1", t0, "Dog", photoprism.Marker{
+		UID: "mk-rex", Type: "face", Name: "Rex", SubjUID: "sp-rex", X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
+	})
+	alice := client.makePhoto("pp2", t0.Add(time.Hour), "Portrait", photoprism.Marker{
+		UID: "mk-alice", Type: "face", Name: "Alice", X: 0.3, Y: 0.3, W: 0.2, H: 0.2,
+	})
+	client.photos = []photoprism.Photo{rex, alice}
+	client.subjects = []photoprism.Subject{
+		{UID: "sp-rex", Type: "pet", Name: "Rex", Favorite: true, Private: true},
+		{UID: "sp-alice", Type: "person", Name: "Alice"},
+	}
+
+	h := newHarness(client)
+	if _, err := h.svc.Import(context.Background()); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	assertSubjectFlags(t, h, "Rex", people.SubjectPet, true, true)
+	assertSubjectFlags(t, h, "Alice", people.SubjectPerson, false, false)
+
+	// A user un-privates and un-favorites Rex in Kukátko between runs.
+	editSubject(t, h, "Rex", func(s *people.Subject) { s.Favorite = false; s.Private = false })
+
+	if _, err := h.svc.Import(context.Background()); err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+	// The re-run neither blanks the flags it set nor re-applies them over the edit:
+	// Rex keeps the user's change, Alice stays a plain public person.
+	assertSubjectFlags(t, h, "Rex", people.SubjectPet, false, false)
+	assertSubjectFlags(t, h, "Alice", people.SubjectPerson, false, false)
+	if got := len(h.people.bySlug); got != 2 {
+		t.Errorf("subjects = %d, want 2 (no duplicate on re-run)", got)
+	}
+}
+
+// TestFindOrCreateSubject_enrichesOnCreateOnly verifies enrichment happens when a
+// subject is CREATED and never afterwards: re-resolving the same marker returns
+// the existing subject untouched, so a re-run cannot clobber a local edit even
+// when the source subject still carries the original flags.
+func TestFindOrCreateSubject_enrichesOnCreateOnly(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	h := newHarness(&fakeClient{})
+	src := photoprism.Subject{UID: "sp-rex", Type: "pet", Name: "Rex", Favorite: true, Private: true}
+	idx := &subjectIndex{
+		byUID:  map[string]photoprism.Subject{src.UID: src},
+		bySlug: map[string]photoprism.Subject{people.Slugify(src.Name): src},
+	}
+	marker := photoprism.Marker{Type: "face", Name: "Rex", SubjUID: "sp-rex"}
+
+	created, err := h.svc.findOrCreateSubject(ctx, marker, idx)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if created.Type != people.SubjectPet || !created.Favorite || !created.Private {
+		t.Fatalf("created subject not enriched: %+v", created)
+	}
+
+	// A user clears the flags. Re-resolving the same (still pet/favorite/private)
+	// source subject must return the edited subject, not re-enrich it.
+	editSubject(t, h, "Rex", func(s *people.Subject) {
+		s.Type = people.SubjectPerson
+		s.Favorite = false
+		s.Private = false
+	})
+	got, err := h.svc.findOrCreateSubject(ctx, marker, idx)
+	if err != nil {
+		t.Fatalf("re-resolve: %v", err)
+	}
+	if got.Type != people.SubjectPerson || got.Favorite || got.Private {
+		t.Errorf("existing subject re-enriched on re-run: %+v", got)
+	}
+}
+
+// assertSubjectFlags checks a seeded subject's type and favorite/private flags.
+func assertSubjectFlags(
+	t *testing.T, h *harness, name string, wantType people.SubjectType, wantFav, wantPriv bool,
+) {
+	t.Helper()
+	subj, err := h.people.GetSubjectBySlug(context.Background(), people.Slugify(name))
+	if err != nil {
+		t.Fatalf("subject %q not created: %v", name, err)
+	}
+	if subj.Type != wantType {
+		t.Errorf("subject %q type = %q, want %q", name, subj.Type, wantType)
+	}
+	if subj.Favorite != wantFav {
+		t.Errorf("subject %q favorite = %v, want %v", name, subj.Favorite, wantFav)
+	}
+	if subj.Private != wantPriv {
+		t.Errorf("subject %q private = %v, want %v", name, subj.Private, wantPriv)
+	}
+}
+
+// editSubject mutates a stored subject in place, standing in for a user's edit
+// made in Kukátko between imports.
+func editSubject(t *testing.T, h *harness, name string, edit func(*people.Subject)) {
+	t.Helper()
+	slug := people.Slugify(name)
+	subj, ok := h.people.bySlug[slug]
+	if !ok {
+		t.Fatalf("subject %q not found to edit", name)
+	}
+	edit(&subj)
+	h.people.bySlug[slug] = subj
+}

@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoprism"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -102,6 +103,111 @@ func TestLabelQuery(t *testing.T) {
 	}
 	if got := labelQuery("", "Sea Side"); got != `label:"Sea Side"` {
 		t.Errorf("labelQuery name fallback = %q", got)
+	}
+}
+
+// TestMapSubjectType verifies the PhotoPrism subject-type mapping, with a person
+// default for unknown, empty or whitespace/case-variant values.
+func TestMapSubjectType(t *testing.T) {
+	t.Parallel()
+	cases := map[string]people.SubjectType{
+		"pet": people.SubjectPet, "other": people.SubjectOther, "person": people.SubjectPerson,
+		"PET": people.SubjectPet, "  Other  ": people.SubjectOther,
+		"": people.SubjectPerson, "alien": people.SubjectPerson,
+	}
+	for in, want := range cases {
+		if got := mapSubjectType(in); got != want {
+			t.Errorf("mapSubjectType(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestSubjectIndex_lookup verifies a marker resolves to its source subject by
+// subject UID first and by the slug of its name second, and reports no match for
+// an unknown marker or a nil index.
+func TestSubjectIndex_lookup(t *testing.T) {
+	t.Parallel()
+	rex := photoprism.Subject{UID: "sp-rex", Type: "pet", Name: "Rex", Favorite: true}
+	alice := photoprism.Subject{UID: "sp-alice", Type: "person", Name: "Alice", Private: true}
+	idx := &subjectIndex{
+		byUID:  map[string]photoprism.Subject{rex.UID: rex, alice.UID: alice},
+		bySlug: map[string]photoprism.Subject{people.Slugify(rex.Name): rex, people.Slugify(alice.Name): alice},
+	}
+	tests := []struct {
+		name   string
+		idx    *subjectIndex
+		marker photoprism.Marker
+		want   photoprism.Subject
+		wantOK bool
+	}{
+		{name: "by subject uid", idx: idx, marker: photoprism.Marker{SubjUID: "sp-rex", Name: "Mislabelled"}, want: rex, wantOK: true},
+		{name: "by name slug when uid absent", idx: idx, marker: photoprism.Marker{Name: "Alice"}, want: alice, wantOK: true},
+		{name: "uid wins over name", idx: idx, marker: photoprism.Marker{SubjUID: "sp-rex", Name: "Alice"}, want: rex, wantOK: true},
+		{name: "unknown uid falls back to name", idx: idx, marker: photoprism.Marker{SubjUID: "ghost", Name: "Alice"}, want: alice, wantOK: true},
+		{name: "unknown marker", idx: idx, marker: photoprism.Marker{SubjUID: "ghost", Name: "Nobody"}, wantOK: false},
+		{name: "empty marker", idx: idx, marker: photoprism.Marker{}, wantOK: false},
+		{name: "nil index", idx: nil, marker: photoprism.Marker{Name: "Alice"}, wantOK: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := tt.idx.lookup(tt.marker)
+			if ok != tt.wantOK {
+				t.Fatalf("lookup ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok && got != tt.want {
+				t.Errorf("lookup = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestNewSubject verifies a seeded subject is enriched with the resolved source
+// subject's type and flags, and falls back to a plain public person when the
+// marker resolves to nothing or the index is nil.
+func TestNewSubject(t *testing.T) {
+	t.Parallel()
+	pet := photoprism.Subject{UID: "sp-rex", Type: "pet", Name: "Rex", Favorite: true, Private: true}
+	idx := &subjectIndex{
+		byUID:  map[string]photoprism.Subject{pet.UID: pet},
+		bySlug: map[string]photoprism.Subject{people.Slugify(pet.Name): pet},
+	}
+	tests := []struct {
+		name   string
+		in     string
+		marker photoprism.Marker
+		idx    *subjectIndex
+		want   people.Subject
+	}{
+		{
+			name:   "enriched from resolved subject",
+			in:     "Rex",
+			marker: photoprism.Marker{SubjUID: "sp-rex", Name: "Rex"},
+			idx:    idx,
+			want:   people.Subject{Name: "Rex", Type: people.SubjectPet, Favorite: true, Private: true},
+		},
+		{
+			name:   "plain public person when unresolved",
+			in:     "Ghost",
+			marker: photoprism.Marker{Name: "Ghost"},
+			idx:    idx,
+			want:   people.Subject{Name: "Ghost", Type: people.SubjectPerson},
+		},
+		{
+			name:   "plain public person when index nil",
+			in:     "Rex",
+			marker: photoprism.Marker{SubjUID: "sp-rex", Name: "Rex"},
+			idx:    nil,
+			want:   people.Subject{Name: "Rex", Type: people.SubjectPerson},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := newSubject(tt.in, tt.marker, tt.idx); got != tt.want {
+				t.Errorf("newSubject = %+v, want %+v", got, tt.want)
+			}
+		})
 	}
 }
 

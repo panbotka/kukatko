@@ -59,7 +59,7 @@ func (s *Service) importPhotoDetail(
 	// The people ride on this same detail — the listing's markers are always empty —
 	// and importing them on every scoped run (rather than on first import only) is
 	// what lets a re-run backfill the photos an earlier, marker-blind run brought over.
-	s.importMarkers(ctx, photo.UID, detail.Photo)
+	s.importMarkers(ctx, photo.UID, detail.Photo, state.subjects)
 	return result
 }
 
