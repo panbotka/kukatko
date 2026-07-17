@@ -10,7 +10,6 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
-import { Icon } from '../components/Icon'
 import { FavoriteToggle } from '../components/library/FavoriteButton'
 import { FlagControl } from '../components/library/FlagControl'
 import { RatingStars } from '../components/library/RatingStars'
@@ -35,7 +34,7 @@ import { useRating } from '../hooks/useRating'
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
-import { editPreviewStyle, isIdentityEdit } from '../lib/photoEdit'
+import { editPreviewStyle, isIdentityEdit, NEUTRAL_EDIT } from '../lib/photoEdit'
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { toMode } from '../lib/searchView'
 import { readUrlState } from '../lib/urlState'
@@ -58,20 +57,28 @@ type State =
   | { status: 'ready'; photo: PhotoDetail; edit: PhotoEdit }
 
 /**
+ * The panel showing beside the photo, or null for none. Faces and edits both want
+ * that one column, so this single choice — rather than a boolean each — is what
+ * makes two panels fighting over it unrepresentable: the photo has exactly two
+ * layouts (full width, or `lg={8}` with a panel beside it), never a third.
+ */
+type SidePanel = 'faces' | 'edit' | null
+
+/**
  * The rich photo detail page: exactly ONE preview of the photo, reflecting the
- * saved non-destructive edit, with the detected faces drawn as a toggleable
- * overlay on top of it (never a second copy of the image) and prev/next
- * navigation that respects the originating list order. The photo spans the full
- * width of the content area; the control/info panels sit BELOW it in a strict
- * edit-first priority order:
+ * saved non-destructive edit (or, while the edit panel is open, the adjustments
+ * in progress), with the detected faces drawn as a toggleable overlay on top of
+ * it (never a second copy of the image) and prev/next navigation that respects
+ * the originating list order. The photo spans the full width of the content area
+ * until a side panel opens beside it — the faces list or the edit controls, one
+ * at a time.
+ * The control/info panels sit BELOW it in a strict edit-first priority order:
  *   1. Organize (albums, tags, people) — the everyday action, always-on inline
  *      editing with no separate "edit mode";
  *   2. Caption & place (title, description, AI description, notes, taken-at,
  *      location) — read-only until an editor clicks a field to reveal the form;
  *   3. Technical details (camera/lens/EXIF, file facts, uploader) — reference
- *      only, collapsed by default;
- *   4. Photo editing (crop/rotate/brightness/contrast) — rare, editor-only,
- *      collapsed at the very bottom so it never competes with Organize.
+ *      only, collapsed by default.
  * From the `lg` breakpoint up, (1) and (2) share one row — Organize is the
  * narrow 25 % rail beside the 75 % text-heavy Caption & place — and below it
  * every panel stacks full width in exactly that order, so the same reading
@@ -91,14 +98,15 @@ export function PhotoDetailPage() {
   // Bumped after a thumbnail is regenerated: the derived image changed under a
   // stable URL, so appending this counter forces the browser to refetch it.
   const [thumbVersion, setThumbVersion] = useState(0)
-  // The edits card carries its own preview image, so — like the old
-  // `mountOnEnter` edit tab — it stays unmounted until the user opens it, keeping
-  // the detail page at exactly one copy of the photo on first render.
-  const [editOpen, setEditOpen] = useState(false)
-  // The face-overlay choice is read once from localStorage and written back on
-  // every toggle, so it carries across photos and reloads. Faces are off by
+  // Which panel — if any — is beside the photo. Seeded from the stored
+  // face-overlay choice, which is read once from localStorage and written back on
+  // every faces toggle, so it carries across photos and reloads. Faces are off by
   // default: the photo is the content, the boxes and their panel are opt-in.
-  const [facesVisible, setFacesVisible] = useState(readFaceOverlay)
+  const [sidePanel, setSidePanel] = useState<SidePanel>(() => (readFaceOverlay() ? 'faces' : null))
+  // The adjustments the edit panel is working on, or null for "nothing unsaved".
+  // The page owns them because the preview surface is the ONE photo at the top:
+  // the panel reports every slider move up here, and the photo re-renders with it.
+  const [editDraft, setEditDraft] = useState<PhotoEdit | null>(null)
   // The face hovered on either side of the photo/panel pair, so hovering a box
   // highlights its row and hovering a row highlights its box.
   const [hoveredFace, setHoveredFace] = useState<number | null>(null)
@@ -149,6 +157,10 @@ export function PhotoDetailPage() {
   // `m` shortcut is registered before them and must see the same booleans the
   // render does. `state` is read without destructuring so it stays legal up here.
   const ready = state.status === 'ready' ? state.photo : null
+  // What the one photo previews: the adjustments in progress while the edit panel
+  // is open, otherwise the stored edit. Derived up here with the rest of the face
+  // UI, which reads it (see `facesAvailable`) and must see what the render does.
+  const previewEdit = editDraft ?? (state.status === 'ready' ? state.edit : NEUTRAL_EDIT)
   // The overlay is only ever drawn over the still image: it positions its boxes from
   // normalised bboxes relative to its parent, and a video player's chrome is not the
   // photo. Faces are never detected on clips anyway.
@@ -156,28 +168,59 @@ export function PhotoDetailPage() {
   // While a neighbour loads the faces are keyed on the target photo, so they must
   // not be drawn over the still-displayed previous one.
   const loadingNext = ready !== null && ready.uid !== uid
-  const facesAvailable = isStill && !loadingNext && faces.faces.length > 0
-  // One boolean drives both the boxes and the side panel: they are the same feature
-  // and can never disagree.
+  // A non-identity preview rules the whole face UI out. `FaceOverlay` places its
+  // boxes in percentages of the wrapper that shrink-wraps the <img>, while the
+  // preview's `clip-path`/`transform` move the rendered pixels underneath them —
+  // so the boxes would simply miss the faces. Rather than draw them wrong, the
+  // faces stand down (toggle and `m` included) until the preview is neutral again.
+  const facesAvailable =
+    isStill && !loadingNext && faces.faces.length > 0 && isIdentityEdit(previewEdit)
+  const facesVisible = sidePanel === 'faces'
+  // One value drives the boxes and the panel: they are the same feature and can
+  // never disagree.
   const showFaces = facesAvailable && facesVisible
+  // Edits are for stills only — the backend never re-renders a video edit, and the
+  // player carries no preview surface to apply them to.
+  const showEdit = canWrite && isStill && sidePanel === 'edit'
+
+  // Faces and edits share the one column beside the photo, so showing either one
+  // closes the other. The unsaved draft goes with it: the boxes are positioned for
+  // the stored photo, so they may only ever be drawn over it.
+  const openFaces = () => {
+    setSidePanel('faces')
+    writeFaceOverlay(true)
+    setEditDraft(null)
+  }
 
   // Hiding the overlay also drops the selection: a naming panel for a box the user
   // can no longer see would be orphaned UI.
   const toggleFaces = () => {
-    const next = !facesVisible
-    setFacesVisible(next)
-    writeFaceOverlay(next)
-    if (!next) {
+    if (facesVisible) {
+      setSidePanel(null)
+      writeFaceOverlay(false)
       faces.select(null)
+      return
     }
+    openFaces()
   }
 
   // Opens the faces panel at a given face — how the Organize person-chips reach the
   // one place people are named.
   const editFace = (faceIndex: number) => {
-    setFacesVisible(true)
-    writeFaceOverlay(true)
+    openFaces()
     faces.select(faceIndex)
+  }
+
+  // Opening the edits takes the column from the faces panel and the boxes with it
+  // (they cannot be drawn over an edited preview), so the selection is dropped too.
+  // The stored overlay preference is deliberately NOT written: hiding the faces
+  // here is a consequence of opening the edits, not a choice about faces, so it
+  // survives to the next photo. Closing discards whatever is unsaved, returning
+  // the photo to showing exactly what is stored.
+  const toggleEdit = () => {
+    setSidePanel((prev) => (prev === 'edit' ? null : 'edit'))
+    setEditDraft(null)
+    faces.select(null)
   }
 
   // Detail shortcuts: ←/→ page to the previous/next photo, `f` toggles favorite,
@@ -259,6 +302,9 @@ export function PhotoDetailPage() {
     // on `uid` change still cancels the superseded request, so the latest target
     // always wins.
     setState((prev) => (prev.status === 'ready' ? prev : { status: 'loading' }))
+    // A draft belongs to the photo it was made on: paging to a neighbour drops it,
+    // so the incoming photo is never previewed through the previous one's edit.
+    setEditDraft(null)
     Promise.all([fetchPhoto(uid, controller.signal), fetchEdit(uid, controller.signal)])
       .then(([photo, edit]) => {
         setState({ status: 'ready', photo, edit })
@@ -326,8 +372,11 @@ export function PhotoDetailPage() {
     await unstackAll(uid)
     await reloadPhoto()
   }
-  const setEdit = (updated: PhotoEdit) => {
-    setState({ status: 'ready', photo, edit: updated })
+  // A saved edit becomes the stored one and clears the draft, so the photo keeps
+  // previewing the very same adjustments — now from `state` rather than in flight.
+  const onEditSaved = (saved: PhotoEdit) => {
+    setState({ status: 'ready', photo, edit: saved })
+    setEditDraft(null)
   }
   const onThumbnailRegenerated = () => {
     setThumbVersion((v) => v + 1)
@@ -393,7 +442,7 @@ export function PhotoDetailPage() {
             src={poster}
             alt={title}
             className="mw-100"
-            style={{ maxHeight: '80vh', objectFit: 'contain', ...editPreviewStyle(edit) }}
+            style={{ maxHeight: '80vh', objectFit: 'contain', ...editPreviewStyle(previewEdit) }}
           />
         </button>
         {showFaces && (
@@ -459,15 +508,16 @@ export function PhotoDetailPage() {
           Organize panel edits, so a change down there shows here at once. */}
       <OrganizeBadges albums={photo.albums} labels={photo.labels} />
 
-      {/* The photo spans the full width of the content area — until the faces are
-          shown, when it yields a third of it to the faces panel beside it (below it
-          on a phone). `align-items-start` keeps both columns at their natural
-          height; crucially, nothing here may stretch the wrapper that `renderMedia`
-          shrink-wraps around the <img>, or the overlay's percentage-positioned
-          boxes would drift off the faces. The control/info panels sit below both
-          (see the grid further down). */}
+      {/* The photo spans the full width of the content area — until a side panel is
+          shown, when it yields a third of it to the faces list or the edit controls
+          beside it (below it on a phone). Both panels reflow the same one grid,
+          with no animation, and `sidePanel` lets only one of them have it.
+          `align-items-start` keeps both columns at their natural height; crucially,
+          nothing here may stretch the wrapper that `renderMedia` shrink-wraps around
+          the <img>, or the overlay's percentage-positioned boxes would drift off the
+          faces. The control/info panels sit below both (see the grid further down). */}
       <Row className="align-items-start g-3">
-        <Col xs={12} lg={showFaces ? 8 : 12}>
+        <Col xs={12} lg={showFaces || showEdit ? 8 : 12}>
           <div className="position-relative bg-dark rounded overflow-hidden d-flex justify-content-center">
             {renderMedia()}
             {neighbors.prev !== null && (
@@ -528,6 +578,20 @@ export function PhotoDetailPage() {
                 {facesVisible ? t('faces.hide') : t('faces.toggle')}
               </Button>
             )}
+            {/* The edits open right here, beside the photo they edit — the whole
+                point of the panel: the original stays in view and previews every
+                adjustment live. */}
+            {canWrite && isStill && (
+              <Button
+                type="button"
+                variant={showEdit ? 'secondary' : 'outline-secondary'}
+                size="sm"
+                aria-pressed={showEdit}
+                onClick={toggleEdit}
+              >
+                {t('photo.edit.title')}
+              </Button>
+            )}
           </div>
         </Col>
 
@@ -539,6 +603,18 @@ export function PhotoDetailPage() {
               hovered={hoveredFace}
               onHover={setHoveredFace}
               onClose={toggleFaces}
+            />
+          </Col>
+        )}
+
+        {showEdit && (
+          <Col xs={12} lg={4}>
+            <EditPanel
+              uid={photo.uid}
+              edit={previewEdit}
+              onChange={setEditDraft}
+              onSaved={onEditSaved}
+              onClose={toggleEdit}
             />
           </Col>
         )}
@@ -560,9 +636,11 @@ export function PhotoDetailPage() {
 
       {/* Control/info panels below the photo, spanning the full page width, in a
           strict edit-first priority order: Organize first, then Caption & place,
-          Technical details, and finally Photo editing. From `lg` up the first two
-          share one row (Organize 4/12, Caption & place 8/12); below it they stack
-          full width in the same order, so the page stays usable on a phone. */}
+          and finally Technical details. (Photo editing is no longer among them: it
+          belongs beside the photo it edits, so it opens as a side panel above.)
+          From `lg` up the first two share one row (Organize 4/12, Caption & place
+          8/12); below it they stack full width in the same order, so the page stays
+          usable on a phone. */}
       {/* `align-items-start` keeps both cards at their natural height: the row
           must not stretch the shorter one into a tall empty box. */}
       <Row className="align-items-start mt-3">
@@ -607,33 +685,6 @@ export function PhotoDetailPage() {
           />
         </Card.Body>
       </Card>
-
-      {/* 4. Photo editing — last, editor only, collapsed by default. The edits
-          card owns its own preview <img>; keeping it collapsed until opened
-          means the page still carries exactly one copy of the photo. */}
-      {canWrite && (
-        <Card className="mb-3">
-          <Card.Header className="p-0">
-            <Button
-              variant="link"
-              className="w-100 d-flex align-items-center justify-content-between text-decoration-none text-reset px-3 py-2"
-              aria-expanded={editOpen}
-              aria-controls="photo-edit-region"
-              onClick={() => {
-                setEditOpen(!editOpen)
-              }}
-            >
-              <span>{t('photo.edit.title')}</span>
-              <Icon name={editOpen ? 'chevron-down' : 'chevron-right'} />
-            </Button>
-          </Card.Header>
-          {editOpen && (
-            <Card.Body id="photo-edit-region">
-              <EditPanel uid={photo.uid} edit={edit} onSaved={setEdit} />
-            </Card.Body>
-          )}
-        </Card>
-      )}
 
       <div className="mt-4">
         <SimilarPhotos uid={photo.uid} />

@@ -629,6 +629,12 @@ export async function fetchEdit(uid: string, signal?: AbortSignal): Promise<Phot
  * and returns the persisted edit. The original file is never modified; downloads
  * honour the edit. Editor/admin only.
  *
+ * Only the edit itself goes on the wire. `PhotoEdit` doubles as the GET response,
+ * which also carries `photo_uid`/`updated_at` — and the PUT body is decoded
+ * strictly, so echoing an edit straight back (as the edit panel does) would be
+ * rejected as malformed. An absent crop field is simply omitted, which is how the
+ * API is told there is no crop.
+ *
  * @throws ApiError with `status` 400 (invalid edit), 403 (viewer), 404 (no such
  *   photo) or 5xx.
  */
@@ -637,11 +643,20 @@ export async function saveEdit(
   edit: PhotoEdit,
   signal?: AbortSignal,
 ): Promise<PhotoEdit> {
+  const body = {
+    crop_x: edit.crop_x,
+    crop_y: edit.crop_y,
+    crop_w: edit.crop_w,
+    crop_h: edit.crop_h,
+    rotation: edit.rotation,
+    brightness: edit.brightness,
+    contrast: edit.contrast,
+  }
   const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/edit`, {
     method: 'PUT',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(edit),
+    body: JSON.stringify(body),
     signal,
   })
   if (!res.ok) {

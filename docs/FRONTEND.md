@@ -448,13 +448,23 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   **rating hotkeys** `0`–`5`/`p`/`r`/`v` na document (mimo
   psaní do inputu; `p`→👍, `r`→👎, `v`→👁), tlačítka **Stáhnout originál** /
   **Stáhnout upravenou** (`downloadUrl`); **stránka nese právě JEDEN obrázek fotky** — obličeje
-  jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad `useFaces`), nikdy druhá kopie snímku.
+  jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad `useFaces`), nikdy druhá kopie snímku,
+  a **i panel Úprav edituje právě tenhle jeden snímek** (viz níž), takže druhý `<img>` nepřidá
+  ani on.
   **Obličeje jsou defaultně VYPNUTÉ** (`FACE_OVERLAY_DEFAULT = false` v `lib/faceOverlayPref`,
   volba se pamatuje v localStorage): fotka je obsah, boxy jsou opt-in. Zapne je tlačítko
   **Zobrazit/Skrýt obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`) nebo klávesa
   **`m`** (v registru zkratek, takže ji ukáže i nápověda `?`). Zapnutí **zmenší fotku na `lg={8}`
-  a vedle ní vysune `FacesPanel` (`lg={4}`)**; pod `lg` se panel stackuje pod fotku. Jeden boolean
-  (`showFaces`) řídí boxy i panel, takže se nemůžou rozejít. **Pozor — nosná invarianta:**
+  a vedle ní se nasadí `FacesPanel` (`lg={4}`)** — prostý reflow gridu, **žádná animace ani
+  Offcanvas**; pod `lg` se panel stackuje pod fotku. Vedle fotky je **jeden sloupec pro jeden
+  panel**: `sidePanel: 'faces' | 'edit' | null` (jediný stav, ne boolean na každý panel) dělá
+  stav „dva panely vedle sebe" **nereprezentovatelný** — otevření jednoho zavře druhý a fotka má
+  právě dva layouty (plná šířka / `lg={8}` s panelem), nikdy třetí. Týž `sidePanel` řídí boxy i
+  panel obličejů, takže se nemůžou rozejít. **Obličejové UI stojí celé (tlačítko i `m`) jen když
+  je preview identita** (`isIdentityEdit(previewEdit)` v `facesAvailable`): `clip-path`/`transform`
+  živého i uloženého editu posunou vykreslené pixely pod boxy, které se pozicují v procentech
+  obalu — rámečky by prostě minuly obličeje, tak se radši nekreslí (a vrátí se, jakmile je preview
+  zase neutrální). **Pozor — nosná invarianta:**
   `FaceOverlay` pozicuje boxy v **procentech** obalu `position-relative d-inline-flex mw-100`, který
   se smrskává přesně na `<img>`; kdyby ho sloupec roztáhl (`w-100`, `align-items: stretch`), obrázek
   se uvnitř vycentruje s letterboxem a **rámečky se rozjedou** (jsdom to nechytí — ověřovat vizuálně).
@@ -476,8 +486,9 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   pruh `SimilarPhotos` je až pod nimi. První dvě karty sdílejí **od `lg` výš jeden řádek**
   v poměru **4:8** — **Uspořádání** (užší rail) vedle **Popis a místo** (`Row`
   `align-items-start` + `Col` `lg={4}`/`lg={8}`; `align-items-start` drží obě karty v jejich přirozené výšce, aby
-  se kratší nenatáhla do prázdné krabice). **Technické údaje** a **Úpravy** pod nimi jsou
-  samostatné karty na plnou šířku. **Pod `lg` se stackují na plnou šířku ve stejném pořadí**,
+  se kratší nenatáhla do prázdné krabice). **Technické údaje** pod nimi jsou
+  samostatná karta na plnou šířku (**Úpravy** už mezi kartami nejsou — jsou panel vedle fotky,
+  viz níž). **Pod `lg` se stackují na plnou šířku ve stejném pořadí**,
   takže na mobilu platí totéž čtecí pořadí. Karty
   (`components/photo/`): **1. Uspořádání** (`sections.organize`) = **primární blok, vždy
   viditelný a přímo editovatelný** (žádný „edit mód"): `OrganizePanel` (inline add/remove alb
@@ -577,11 +588,25 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   nebo chybu (422 = „originál chybí nebo ho nelze dekódovat", jinak obecná hláška); po úspěchu
   zavolá `onThumbnailRegenerated`, což v `PhotoDetailPage` **bumpne `thumbVersion`** a připojí
   `?v=` k `poster` (thumb URL se staví z UID, tedy stabilní → cache-bust vynutí načtení nového
-  náhledu bez tvrdého reloadu). Viewer tlačítko nevidí. **4. Úpravy** (editor/admin, **na první render sbalená** karta úplně dole): `EditPanel` =
-  rotace/jas/kontrast/crop s živým CSS preview, `PUT /photos/{uid}/edit` přes `saveEdit`; karta se
-  nasadí až po otevření (hlavička je toggle `aria-expanded`/`aria-controls`), aby jeho vlastní
-  preview nepřidalo druhý `<img>` a stránka nesla jednu kopii fotky. Viewer vidí vše read-only
-  (žádná karta Úpravy, žádné edit/add/remove akce, žádný přepínač soukromí, `FaceOverlay` readOnly
+  náhledu bez tvrdého reloadu). Viewer tlačítko nevidí. **Úpravy už mezi kartami pod fotkou
+  nejsou** — patří k fotce, kterou upravují, takže `EditPanel` (editor/admin, jen still) je
+  **panel VEDLE fotky**, přesně jako `FacesPanel`: otevře ho tlačítko **Úpravy** (`aria-pressed`)
+  v řádku ovládání pod snímkem, fotka se zmenší na `lg={8}`, panel se nasadí na `lg={4}` (pod `lg`
+  pod ni), hlavička nese název + zavírací **`x-lg`** (`photo.edit.closePanel`). Rotace/jas/kontrast/
+  crop, `PUT /photos/{uid}/edit` přes `saveEdit` — ten posílá **jen samotný edit** (`rotation`/
+  `brightness`/`contrast`/`crop_*`): typ `PhotoEdit` slouží i jako odpověď GETu a nese navíc
+  `photo_uid`/`updated_at`, jenže PUT tělo dekóduje **striktně**, takže poslat vrácený objekt
+  rovnou zpátky = 400 „malformed JSON body" (tohle uložení dřív shodilo; chybějící crop pole se
+  prostě vynechá, což API čte jako „bez cropu"). **Vlastní `<img>` nemá** — je to **controlled
+  komponenta**: rozpracovaný edit drží stránka (`editDraft`, `null` = nic neuloženého), panel ho
+  hlásí přes `onChange` nahoru a **preview je ta JEDNA originální fotka nahoře**
+  (`editPreviewStyle(previewEdit)`, `previewEdit = editDraft ?? state.edit`) — proto zůstává celou
+  dobu vidět a mění se živě pod rukama. Zavření i skok na souseda (`uid` efekt) draft zahodí
+  (fotka se vrátí k uloženému stavu), úspěšný save ho vymění za `state.edit` bez bliknutí.
+  Otevření Úprav navíc **sundá obličeje** (jeden sloupec = jeden panel) i výběr obličeje, ale
+  **uloženou volbu overlaye nepřepíše** — skrytí je důsledek otevření Úprav, ne rozhodnutí o
+  obličejích, takže přežije na další fotku. Viewer vidí vše read-only
+  (žádné tlačítko Úpravy, žádné edit/add/remove akce, žádný přepínač soukromí, `FaceOverlay` readOnly
   = boxy vidí, ale neklikne);
   `StackStrip` (`components/photo/`, **NOVÝ**) = **pruh variant stacku** pod fotkou na detailu: vypíše
   každého člena (náhled, jméno, rozměry, velikost), označí **primárního** (`stack.primary`) a linkuje na

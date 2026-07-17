@@ -1142,7 +1142,7 @@
     },
     "edit": {
       "title": "Edits",
-      "previewAlt": "Edit preview",
+      "closePanel": "Close the edits panel",
       "rotation": "Rotation",
       "rotateRight": "Rotate right",
       "brightness": "Brightness",

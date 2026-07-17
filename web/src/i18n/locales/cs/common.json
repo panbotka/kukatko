@@ -1188,7 +1188,7 @@
     },
     "edit": {
       "title": "Úpravy",
-      "previewAlt": "Náhled úprav",
+      "closePanel": "Zavřít panel úprav",
       "rotation": "Otočení",
       "rotateRight": "Otočit doprava",
       "brightness": "Jas",
