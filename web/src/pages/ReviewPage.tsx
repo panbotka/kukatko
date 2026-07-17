@@ -52,8 +52,9 @@ function QuestionText({ question }: { question: ReviewQuestion }) {
 
 /**
  * The review game (`/review`, editors only): a fullscreen one-question-at-a-time
- * card flow — the photo as large as the viewport allows, one plain-language
- * question, and Ano / Ne / Nevím. The keyboard is the primary interface
+ * card flow — one plain-language question, the photo under it as large as the
+ * room left over allows, and Ano / Ne / Nevím. The question and the buttons
+ * always fit; the photo is what shrinks. The keyboard is the primary interface
  * (← no, → yes, Space/↓ skip, y/n, z undo, Esc leave); the buttons are the
  * fallback and the touch interface. Answers are optimistic and the next
  * question is always already in memory, so the rhythm is never broken by a
@@ -141,13 +142,6 @@ export function ReviewPage() {
   if (question !== undefined) {
     body = (
       <>
-        <main className="review-game__stage">
-          <ReviewPhoto
-            photo={question.photo}
-            bbox={question.kind === 'face' ? question.bbox?.relative : undefined}
-            alt={t('review.photoAlt')}
-          />
-        </main>
         <section className="review-game__prompt">
           <QuestionText question={question} />
           {question.kind === 'face' && question.bbox !== undefined && (
@@ -155,6 +149,13 @@ export function ReviewPage() {
           )}
           <ConfidenceHint confidence={question.confidence} />
         </section>
+        <main className="review-game__stage">
+          <ReviewPhoto
+            photo={question.photo}
+            bbox={question.kind === 'face' ? question.bbox?.relative : undefined}
+            alt={t('review.photoAlt')}
+          />
+        </main>
         <footer className="review-game__actions">
           <Button
             variant="outline-danger"

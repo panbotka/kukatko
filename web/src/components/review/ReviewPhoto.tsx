@@ -42,12 +42,13 @@ function displayAspect(orientation: number, fileWidth: number, fileHeight: numbe
 }
 
 /**
- * The review game's photo stage: the full frame as large as the viewport
- * allows, with the face under question marked by a generously padded rectangle
- * and a gentle dim over everything outside it. The frame is width-driven with
- * `aspect-ratio` and capped against the stage height, so the normalised box
- * lines up with no pixel measurement (the {@link CandidateFaceImage} approach,
- * scaled to a full screen).
+ * The review game's photo stage: the full frame as large as the space left
+ * under the question allows, with the face under question marked by a
+ * generously padded rectangle and a gentle dim over everything outside it. The
+ * frame is width-driven with `aspect-ratio` and capped against the stage's own
+ * height in container-query units, so the normalised box lines up with no pixel
+ * measurement (the {@link CandidateFaceImage} approach, scaled to a full
+ * screen).
  */
 export function ReviewPhoto({ photo, bbox, alt }: ReviewPhotoProps) {
   const [failed, setFailed] = useState(false)
@@ -58,9 +59,12 @@ export function ReviewPhoto({ photo, bbox, alt }: ReviewPhotoProps) {
   }, [photo.uid])
 
   const ratio = displayAspect(photo.file_orientation ?? 0, photo.file_width, photo.file_height)
+  // `100cqh` is the stage's real height (it is a size container), so the frame
+  // caps itself against the room that is actually left after the question and
+  // the buttons — never against an estimate that drifts when they grow.
   const frameStyle = {
     aspectRatio: String(ratio),
-    maxWidth: `min(100%, calc(var(--review-stage-h) * ${String(ratio)}))`,
+    maxWidth: `min(100%, calc(100cqh * ${String(ratio)}))`,
   }
 
   return (

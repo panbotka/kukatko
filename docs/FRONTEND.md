@@ -762,7 +762,10 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `ReviewPage` = `/review` (editor/admin, top-level odkaz **Třídění** hned vedle Nahrát) **hra na
   třídění**: jedna otázka („Je na fotce **Tomáš Kozák**?" / „Sedí k fotce štítek **Ostatky**?")
   přes **celou obrazovku** — stránka je **mimo `Layout`** (bez navbaru, jako `/slideshow`), protože
-  o pozornost nemá soupeřit nic než fotka; stav řídí `useReviewGame`, fotku kreslí `ReviewPhoto`
+  o pozornost nemá soupeřit nic než fotka; pořadí je **otázka nad fotkou** (header/progress →
+  otázka + hint + jistota → fotka → akce) a celé se to **vždy vejde do viewportu**: nescrolluje se
+  na výšku ani na šířku, na krátkém displeji (ležící telefon) se zmenší **fotka** — text a tlačítka
+  vyhrávají, k Ne/Nevím/Ano se nikdy nemusí scrollovat; stav řídí `useReviewGame`, fotku kreslí `ReviewPhoto`
   (`REVIEW_PREVIEW_SIZE = fit_1280`, tedy **celý snímek**, ne čtvercová dlaždice — bbox je relativní
   k plnému rámu; rámeček obličeje přes `padBbox`+`faceBoxStyle` z `lib/faceGeometry` s **~30 %
   polstrováním**, protože z těsného výřezu obličej nepoznáš, + jemné ztmavení okolí), otázku
@@ -813,23 +816,23 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (summary řádek s vote-rule vysvětlením nad `PhotoGrid`; per-dlaždicové overlaye přes `tileExtras`:
   badge % podobnosti (`pe-none`), badge počtu shod při `match_count > 1`, ✗ tlačítko jen když
   volající dodá `onReject`; po vyprázdnění mřížky uživatelem hlášky „vše zpracováno");
-  `components/review/` = `ReviewPhoto` (stage hry na třídění: **celý snímek** v
-  `REVIEW_PREVIEW_SIZE` (`fit_1280`, **exportováno** — stránka přednačítá přesně tuhle URL) tak
-  velký, jak dovolí viewport; rám je **width-driven** přes `aspectRatio` + `maxWidth: min(100%,
-  var(--review-stage-h) * ratio)`, takže normalizovaný bbox sedí **bez měření pixelů**;
-  `displayAspect` počítá poměr v **display** (EXIF-orientovaném) prostoru — orientace 5–8 prohazují
-  šířku/výšku —, fallback 3:2, ať stage nikdy nezkolabuje; rámeček obličeje = `padBbox` (~30 %) →
-  `faceBoxStyle`, `pointer-events: none` + `aria-hidden`, rozbitý náhled degraduje na ikonu)
-  + `review.css` (fullscreen layout, `--review-stage-h`, rámeček, progress proužek, `kbd` odznaky);
   `components/review/` = `ReviewPhoto` (stage hry na třídění: **celý rám** fotky v
   `REVIEW_PREVIEW_SIZE` (`fit_1280`, **exportováno** — stránka přednačítá přesně tuhle URL) tak
-  velký, jak dovolí viewport; rám je **width-driven** přes `aspect-ratio` (`displayAspect` počítá
-  poměr v **display** prostoru, orientace 5–8 prohazuje strany) a stropí se o výšku stage přes
-  `maxWidth: min(100%, var(--review-stage-h) * ratio)`, takže normalizovaný bbox sedí **bez měření
-  pixelů**; obličej pod otázkou dostane `padBbox` rámeček (~30 %) a okolí jemný dim; selhaný load
-  spadne na placeholder ikonu, nová fotka flag resetuje) + `review.css` (fullscreen grid layout
-  `review-game` (top bar / stage / prompt / akce), `--review-stage-h` pro strop rámu,
-  `review-photo__box` rámeček, progress proužek, dotyková varianta akcí);
+  velký, jak dovolí **místo zbylé pod otázkou**; rám je **width-driven** přes `aspectRatio` +
+  `maxWidth: min(100%, calc(100cqh * ratio))`, kde `100cqh` je **skutečná** výška stage (je to
+  `container-type: size` kontejner) — rám se tedy stropí o reálný zbytek sloupce, **ne o odhad**,
+  drží proto přesný poměr a normalizovaný bbox sedí **bez měření pixelů**; `displayAspect` počítá
+  poměr v **display** (EXIF-orientovaném) prostoru — orientace 5–8 prohazují šířku/výšku —,
+  fallback 3:2, ať stage nikdy nezkolabuje; rámeček obličeje = `padBbox` (~30 %) → `faceBoxStyle`,
+  `pointer-events: none` + `aria-hidden`, okolí jemný dim; rozbitý náhled degraduje na ikonu, nová
+  fotka flag resetuje) + `review.css` (fullscreen **flex sloupec** `review-game`: top bar /
+  progress / **otázka** / stage / akce — text **nad** fotkou; stage je `flex: 1 1 0` +
+  `container-type: size` + `overflow: hidden`, takže jeho výška **je** zbytek po chrome (basis 0 →
+  fotka uvnitř nemůže nic vytlačit) a přetečení fotky na text je **strukturálně nemožné**, ať
+  chrome naroste čímkoli — alert, zalomené dlouhé jméno, `pointer: coarse` tlačítka; `@media
+  (max-height: 500px)` utahuje paddingy na **ležícím telefonu** (široký → žádný width dotaz ho
+  nechytí, a přitom má nejmíň místa) a `clamp(…, min(3.5vw, 5dvh), …)` u otázky drží totéž pro
+  písmo; `review-photo__box` rámeček, progress proužek, `kbd` odznaky, dotyková varianta akcí);
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
   velikosti `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exportováno** — stránka musí přednačítat přesně
   tuhle URL), ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
