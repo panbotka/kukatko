@@ -39,6 +39,7 @@ Open **one** document based on what you're touching. Don't read them all preempt
 | Performance (thumbnails, vips, HNSW `ef_search`, indexes) | [`docs/PERF.md`](docs/PERF.md) |
 | Restore from backup / disaster recovery | [`docs/RESTORE.md`](docs/RESTORE.md) |
 | UX decisions and audit | [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md) |
+| The PhotoPrism import field mapping — what migrates, what's dropped | [`docs/MIGRATION_AUDIT.md`](docs/MIGRATION_AUDIT.md) |
 | Security audit — findings, severities, attack scenarios | [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) |
 
 ## Package map
