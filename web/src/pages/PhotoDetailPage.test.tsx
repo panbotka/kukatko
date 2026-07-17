@@ -359,24 +359,28 @@ describe('PhotoDetailPage', () => {
     await screen.findByRole('heading', { name: 'Beach' })
 
     // The panels sit below the full-width photo in a strict top-to-bottom
-    // priority order: Organize → Caption & place → Technical → Photo editing.
+    // priority order: Organize → Caption & place → Technical details.
     const img = screen.getByRole('img', { name: 'Beach' })
     const organize = screen.getByText('Organize')
     const caption = screen.getByText('Caption & place')
     const technical = screen.getByRole('button', { name: 'Technical details' })
-    const editing = screen.getByRole('button', { name: 'Edits' })
 
     // Everything sits below the photo (document order), not beside it.
     expect(img.compareDocumentPosition(organize) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Organize precedes Caption, which precedes Technical, which precedes editing.
+    // Organize precedes Caption, which precedes Technical.
     expect(
       organize.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(
       caption.compareDocumentPosition(technical) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+
+    // The edits are no longer a card at the bottom: their toggle sits with the
+    // photo's own controls, above every panel, because the panel it opens edits
+    // the photo right beside it.
+    const editing = screen.getByRole('button', { name: 'Edits' })
     expect(
-      technical.compareDocumentPosition(editing) & Node.DOCUMENT_POSITION_FOLLOWING,
+      editing.compareDocumentPosition(organize) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
 
     // The location map is embedded in the Caption & place block (read-only).
@@ -598,18 +602,22 @@ describe('PhotoDetailPage', () => {
     })
   })
 
-  it('writes a non-destructive edit and reflects it in the preview', async () => {
+  it('writes a non-destructive edit and previews it live on the original photo', async () => {
     const user = userEvent.setup()
-    renderPage()
+    const { container } = renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
 
-    // The edits card is collapsed by default (it owns a second preview image);
-    // opening it mounts the EditPanel below the photo.
+    // The panel is not up until asked for, and the photo has the page to itself.
+    expect(screen.queryByRole('button', { name: 'Rotate right' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Edits' }))
-    // Rotating updates the live edit preview immediately.
+
+    // The point of the panel: the ORIGINAL photo at the top is the preview surface,
+    // so an adjustment shows on it at once — and the page still carries exactly one
+    // copy of the photo, because the panel brings no image of its own.
+    const main = screen.getByRole('img', { name: 'Beach' })
     await user.click(screen.getByRole('button', { name: 'Rotate right' }))
-    const editPreview = screen.getByLabelText('Edit preview')
-    expect(editPreview).toHaveStyle({ transform: 'rotate(90deg)' })
+    expect(main).toHaveStyle({ transform: 'rotate(90deg)' })
+    expect(container.querySelectorAll('img')).toHaveLength(1)
 
     saveEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90 })
     await user.click(screen.getByRole('button', { name: 'Save edits' }))
@@ -618,11 +626,98 @@ describe('PhotoDetailPage', () => {
       expect(saveEditMock).toHaveBeenCalled()
     })
     expect(saveEditMock.mock.calls[0][1]).toMatchObject({ rotation: 90 })
-    // The main preview now reflects the saved edit.
-    const main = screen.getByRole('img', { name: 'Beach' })
+    // The saved edit takes over from the draft without the preview flickering back.
     await waitFor(() => {
-      expect(main).toHaveStyle({ transform: 'rotate(90deg)' })
+      expect(screen.getByRole('img', { name: 'Beach' })).toHaveStyle({
+        transform: 'rotate(90deg)',
+      })
     })
+  })
+
+  it('opens the edit panel beside the photo and shrinks it to make room', async () => {
+    const user = userEvent.setup()
+    const { container } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    const photoCol = container.querySelector('.row .col-12')
+    expect(photoCol).toHaveClass('col-lg-12')
+
+    await user.click(screen.getByRole('button', { name: 'Edits' }))
+
+    // Same reflow the faces panel does: the photo yields a third of the row, and
+    // the panel takes it. Below `lg` both columns are `col-12` and it stacks under
+    // the photo instead.
+    expect(photoCol).toHaveClass('col-lg-8')
+    const panelCol = screen.getByRole('button', { name: 'Rotate right' }).closest('.col-12')
+    expect(panelCol).toHaveClass('col-lg-4')
+    expect(panelCol?.parentElement).toBe(photoCol?.parentElement)
+  })
+
+  it('closes the edit panel from its header, discarding what was not saved', async () => {
+    const user = userEvent.setup()
+    const { container } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    await user.click(screen.getByRole('button', { name: 'Edits' }))
+    await user.click(screen.getByRole('button', { name: 'Rotate right' }))
+    expect(screen.getByRole('img', { name: 'Beach' })).toHaveStyle({ transform: 'rotate(90deg)' })
+
+    await user.click(screen.getByRole('button', { name: 'Close the edits panel' }))
+
+    // The panel is gone, the photo has the row back, and — nothing having been
+    // saved — it shows the stored photo again rather than the abandoned rotation.
+    expect(screen.queryByRole('button', { name: 'Rotate right' })).not.toBeInTheDocument()
+    expect(container.querySelector('.row .col-12')).toHaveClass('col-lg-12')
+    expect(saveEditMock).not.toHaveBeenCalled()
+    expect(screen.getByRole('img', { name: 'Beach' })).not.toHaveStyle({
+      transform: 'rotate(90deg)',
+    })
+  })
+
+  it('never lets the faces and the edits fight over the one column beside the photo', async () => {
+    const user = userEvent.setup()
+    fetchFacesMock.mockResolvedValue(facesResponse(2))
+    const { container } = renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+    expect(screen.getByText('Faces: 2')).toBeInTheDocument()
+
+    // Opening the edits takes the column from the faces panel — the photo must
+    // never end up with two panels beside it, nor be squeezed into a third layout.
+    await user.click(screen.getByRole('button', { name: 'Edits' }))
+    expect(screen.getByRole('button', { name: 'Rotate right' })).toBeInTheDocument()
+    expect(screen.queryByText('Faces: 2')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
+    expect(container.querySelector('.row .col-12')).toHaveClass('col-lg-8')
+
+    // And showing the faces again closes the edits, the same way round.
+    await user.click(screen.getByRole('button', { name: 'Show faces' }))
+    expect(screen.getByText('Faces: 2')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Rotate right' })).not.toBeInTheDocument()
+    expect(container.querySelector('.row .col-12')).toHaveClass('col-lg-8')
+  })
+
+  it('stands the faces down while the preview is edited, and brings them back', async () => {
+    const user = userEvent.setup()
+    fetchFacesMock.mockResolvedValue(facesResponse(2))
+    // A photo that is stored rotated: the boxes are placed in percentages of the
+    // upright image, so over this preview they would simply miss the faces. The
+    // face UI is offered at all only while the preview is untouched.
+    fetchEditMock.mockResolvedValue({ ...NEUTRAL, rotation: 90 })
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+    await screen.findByRole('button', { name: 'Edits' })
+
+    expect(screen.queryByRole('button', { name: 'Show faces' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
+    // The `m` key cannot bring them back either — it is the same one gate.
+    fireEvent.keyDown(document, { key: 'm' })
+    expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
+
+    // Reset the photo to the original and the faces are on offer again.
+    saveEditMock.mockResolvedValue(NEUTRAL)
+    await user.click(screen.getByRole('button', { name: 'Edits' }))
+    await user.click(screen.getByRole('button', { name: 'Reset to original' }))
+    expect(await screen.findByRole('button', { name: 'Show faces' })).toBeInTheDocument()
   })
 
   it('pages to the next photo with the right arrow key', async () => {

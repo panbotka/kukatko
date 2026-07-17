@@ -7,6 +7,7 @@ import {
   fetchSimilar,
   fetchTimeline,
   type PhotoListResponse,
+  saveEdit,
   searchPhotos,
   type SimilarResponse,
   type Timeline,
@@ -46,6 +47,19 @@ function jsonResponse(body: unknown, status: number): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+/**
+ * The parsed JSON body a recorded `fetch` call was made with. `BodyInit` also
+ * covers Blob/FormData, so the string check is what makes reading it back safe —
+ * and a non-JSON body fails the test loudly instead of stringifying to junk.
+ */
+function sentBody(init: RequestInit | undefined): unknown {
+  const body = init?.body
+  if (typeof body !== 'string') {
+    throw new Error(`expected a JSON string body, got ${typeof body}`)
+  }
+  return JSON.parse(body)
 }
 
 afterEach(() => {
@@ -227,5 +241,62 @@ describe('thumbUrl', () => {
   it('omits the token when null or empty', () => {
     expect(thumbUrl('ph1', 'tile_500', null)).toBe('/api/v1/photos/ph1/thumb/tile_500')
     expect(thumbUrl('ph1', 'tile_500', '')).toBe('/api/v1/photos/ph1/thumb/tile_500')
+  })
+})
+
+describe('saveEdit', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('sends only the edit itself, never the fields the GET adds', async () => {
+    // The edit panel hands back what `fetchEdit` returned, which also carries
+    // `photo_uid`/`updated_at`. The PUT body is decoded strictly, so echoing
+    // those back is rejected as malformed — they must not reach the wire.
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(jsonResponse({ photo_uid: 'ph1', rotation: 90 }, 200))
+
+    await saveEdit('ph1', {
+      photo_uid: 'ph1',
+      updated_at: '2026-01-01T00:00:00Z',
+      rotation: 90,
+      brightness: 0.5,
+      contrast: 0,
+    })
+
+    expect(sentBody(fetchMock.mock.calls[0][1])).toEqual({
+      rotation: 90,
+      brightness: 0.5,
+      contrast: 0,
+    })
+  })
+
+  it('carries a crop when there is one, and omits it when there is not', async () => {
+    // A fresh Response per call: a body can only be read once.
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(jsonResponse({ rotation: 0 }, 200)))
+
+    const crop = { crop_x: 0.1, crop_y: 0.1, crop_w: 0.8, crop_h: 0.8 }
+    await saveEdit('ph1', { ...crop, rotation: 0, brightness: 0, contrast: 0 })
+    expect(sentBody(fetchMock.mock.calls[0][1])).toMatchObject(crop)
+
+    // No crop = the fields are simply absent, which is how the API is told so.
+    await saveEdit('ph1', { rotation: 0, brightness: 0, contrast: 0 })
+    expect(sentBody(fetchMock.mock.calls[1][1])).toEqual({
+      rotation: 0,
+      brightness: 0,
+      contrast: 0,
+    })
+  })
+
+  it('raises an ApiError when the API rejects the edit', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ error: 'invalid rotation' }, 400),
+    )
+    await expect(
+      saveEdit('ph1', { rotation: 45, brightness: 0, contrast: 0 }),
+    ).rejects.toBeInstanceOf(ApiError)
   })
 })

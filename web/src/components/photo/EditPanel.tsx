@@ -1,20 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
+import Card from 'react-bootstrap/Card'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
-import { editPreviewStyle, hasCrop, NEUTRAL_EDIT, rotateRight } from '../../lib/photoEdit'
-import { type PhotoEdit, saveEdit, thumbUrl } from '../../services/photos'
+import { hasCrop, NEUTRAL_EDIT, rotateRight } from '../../lib/photoEdit'
+import { type PhotoEdit, saveEdit } from '../../services/photos'
+import { Icon } from '../Icon'
 
 /** Props for {@link EditPanel}. */
 export interface EditPanelProps {
   /** The photo being edited. */
   uid: string
-  /** The currently stored edit (seeds the controls). */
+  /** The in-progress edit the controls show — and the photo beside them previews. */
   edit: PhotoEdit
+  /** Reports every adjustment, so the page can preview it on the photo. */
+  onChange: (edit: PhotoEdit) => void
   /** Called with the persisted edit after a successful save. */
   onSaved: (edit: PhotoEdit) => void
+  /** Closes the panel, discarding whatever is unsaved. */
+  onClose: () => void
 }
 
 /** A sensible default crop (a centred 80% box) when crop is first enabled. */
@@ -43,30 +49,29 @@ function withoutCrop(edit: PhotoEdit): PhotoEdit {
 
 /**
  * The non-destructive edit panel: rotate (quarter turns), brightness, contrast
- * and an optional normalised crop, with a live preview that reflects the
- * in-progress adjustments via CSS (matching how the backend renders the download).
- * Saving writes to `photo_edits` via the edit API; the original file is never
- * modified. Editor/admin only (the page gates rendering).
+ * and an optional normalised crop. Saving writes to `photo_edits` via the edit
+ * API; the original file is never modified. Editor/admin only (the page gates
+ * rendering).
+ *
+ * It sits beside the photo (below it on a phone) exactly like `FacesPanel`, whose
+ * shape it mirrors: a card whose header names it and carries the close button.
+ * Crucially it renders NO image of its own — it is a controlled component, and
+ * the page previews the reported edit on the one photo the detail already shows,
+ * live and CSS-only (matching how the backend renders the download).
  */
-export function EditPanel({ uid, edit, onSaved }: EditPanelProps) {
+export function EditPanel({ uid, edit, onChange, onSaved, onClose }: EditPanelProps) {
   const { t } = useTranslation()
-  const [working, setWorking] = useState<PhotoEdit>(edit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
 
-  // Re-seed when the stored edit changes (e.g. after a save or photo switch).
-  useEffect(() => {
-    setWorking(edit)
-  }, [edit])
-
-  const cropOn = hasCrop(working)
+  const cropOn = hasCrop(edit)
 
   function toggleCrop(enabled: boolean) {
-    setWorking((prev) => (enabled ? { ...prev, ...DEFAULT_CROP } : withoutCrop(prev)))
+    onChange(enabled ? { ...edit, ...DEFAULT_CROP } : withoutCrop(edit))
   }
 
   function setCrop(field: 'crop_x' | 'crop_y' | 'crop_w' | 'crop_h', value: number) {
-    setWorking((prev) => ({ ...prev, [field]: value }))
+    onChange({ ...edit, [field]: value })
   }
 
   async function persist(next: PhotoEdit) {
@@ -83,111 +88,114 @@ export function EditPanel({ uid, edit, onSaved }: EditPanelProps) {
   }
 
   return (
-    <div aria-label={t('photo.edit.title')}>
-      <div
-        className="rounded overflow-hidden mb-3 bg-dark d-flex justify-content-center"
-        style={{ maxHeight: '40vh' }}
-      >
-        <img
-          src={thumbUrl(uid, 'fit_1280')}
-          alt={t('photo.edit.previewAlt')}
-          aria-label={t('photo.edit.previewAlt')}
-          className="mw-100"
-          style={{ objectFit: 'contain', maxHeight: '40vh', ...editPreviewStyle(working) }}
-        />
-      </div>
-
-      {error && (
-        <Alert variant="danger" className="py-2 small">
-          {t('photo.edit.error')}
-        </Alert>
-      )}
-
-      <div className="d-flex align-items-center gap-2 mb-3">
-        <span className="small text-secondary">{t('photo.edit.rotation')}</span>
+    <Card>
+      <Card.Header className="d-flex justify-content-between align-items-center">
+        <span>{t('photo.edit.title')}</span>
         <Button
-          variant="outline-secondary"
+          variant="link"
           size="sm"
-          onClick={() => {
-            setWorking((prev) => ({ ...prev, rotation: rotateRight(prev.rotation) }))
-          }}
+          className="p-0 text-reset text-decoration-none"
+          aria-label={t('photo.edit.closePanel')}
+          onClick={onClose}
         >
-          {t('photo.edit.rotateRight')}
+          <Icon name="x-lg" />
         </Button>
-        <span className="small">{working.rotation}°</span>
-      </div>
+      </Card.Header>
+      <Card.Body style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+        {error && (
+          <Alert variant="danger" className="py-2 small">
+            {t('photo.edit.error')}
+          </Alert>
+        )}
 
-      <Form.Group className="mb-3" controlId="photo-edit-brightness">
-        <Form.Label className="small text-secondary mb-1">{t('photo.edit.brightness')}</Form.Label>
-        <Form.Range
-          min={-1}
-          max={1}
-          step={0.05}
-          value={working.brightness}
-          aria-label={t('photo.edit.brightness')}
-          onChange={(event) => {
-            setWorking((prev) => ({ ...prev, brightness: Number(event.target.value) }))
-          }}
-        />
-      </Form.Group>
-
-      <Form.Group className="mb-3" controlId="photo-edit-contrast">
-        <Form.Label className="small text-secondary mb-1">{t('photo.edit.contrast')}</Form.Label>
-        <Form.Range
-          min={-1}
-          max={1}
-          step={0.05}
-          value={working.contrast}
-          aria-label={t('photo.edit.contrast')}
-          onChange={(event) => {
-            setWorking((prev) => ({ ...prev, contrast: Number(event.target.value) }))
-          }}
-        />
-      </Form.Group>
-
-      <Form.Check
-        type="checkbox"
-        id="photo-edit-crop"
-        className="mb-2"
-        label={t('photo.edit.crop')}
-        checked={cropOn}
-        onChange={(event) => {
-          toggleCrop(event.target.checked)
-        }}
-      />
-      {cropOn && (
-        <div className="row g-2 mb-3">
-          {CROP_FIELDS.map(({ field, label }) => (
-            <div className="col-6" key={field}>
-              <Form.Label className="small text-secondary mb-1">{t(label)}</Form.Label>
-              <Form.Range
-                min={0}
-                max={1}
-                step={0.01}
-                value={working[field] ?? 0}
-                aria-label={t(label)}
-                onChange={(event) => {
-                  setCrop(field, Number(event.target.value))
-                }}
-              />
-            </div>
-          ))}
+        <div className="d-flex align-items-center gap-2 mb-3">
+          <span className="small text-secondary">{t('photo.edit.rotation')}</span>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={() => {
+              onChange({ ...edit, rotation: rotateRight(edit.rotation) })
+            }}
+          >
+            {t('photo.edit.rotateRight')}
+          </Button>
+          <span className="small">{edit.rotation}°</span>
         </div>
-      )}
 
-      <div className="d-flex gap-2">
-        <Button variant="primary" size="sm" disabled={saving} onClick={() => void persist(working)}>
-          {t('photo.edit.save')}
-        </Button>
-        <Button
-          variant="outline-secondary"
-          size="sm"
-          disabled={saving}
-          onClick={() => void persist(NEUTRAL_EDIT)}
-        >
-          {t('photo.edit.reset')}
-        </Button>
-      </div>
-    </div>
+        <Form.Group className="mb-3" controlId="photo-edit-brightness">
+          <Form.Label className="small text-secondary mb-1">
+            {t('photo.edit.brightness')}
+          </Form.Label>
+          <Form.Range
+            min={-1}
+            max={1}
+            step={0.05}
+            value={edit.brightness}
+            aria-label={t('photo.edit.brightness')}
+            onChange={(event) => {
+              onChange({ ...edit, brightness: Number(event.target.value) })
+            }}
+          />
+        </Form.Group>
+
+        <Form.Group className="mb-3" controlId="photo-edit-contrast">
+          <Form.Label className="small text-secondary mb-1">{t('photo.edit.contrast')}</Form.Label>
+          <Form.Range
+            min={-1}
+            max={1}
+            step={0.05}
+            value={edit.contrast}
+            aria-label={t('photo.edit.contrast')}
+            onChange={(event) => {
+              onChange({ ...edit, contrast: Number(event.target.value) })
+            }}
+          />
+        </Form.Group>
+
+        <Form.Check
+          type="checkbox"
+          id="photo-edit-crop"
+          className="mb-2"
+          label={t('photo.edit.crop')}
+          checked={cropOn}
+          onChange={(event) => {
+            toggleCrop(event.target.checked)
+          }}
+        />
+        {cropOn && (
+          <div className="row g-2 mb-3">
+            {CROP_FIELDS.map(({ field, label }) => (
+              <div className="col-6" key={field}>
+                <Form.Label className="small text-secondary mb-1">{t(label)}</Form.Label>
+                <Form.Range
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={edit[field] ?? 0}
+                  aria-label={t(label)}
+                  onChange={(event) => {
+                    setCrop(field, Number(event.target.value))
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="d-flex gap-2">
+          <Button variant="primary" size="sm" disabled={saving} onClick={() => void persist(edit)}>
+            {t('photo.edit.save')}
+          </Button>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            disabled={saving}
+            onClick={() => void persist(NEUTRAL_EDIT)}
+          >
+            {t('photo.edit.reset')}
+          </Button>
+        </div>
+      </Card.Body>
+    </Card>
   )
 }
