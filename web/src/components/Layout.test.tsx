@@ -173,6 +173,36 @@ describe('Layout navbar', () => {
     expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
   })
 
+  it('makes Upload the bar’s single filled call-to-action', () => {
+    renderLayout(auth({ canWrite: true }))
+    // Adding photos is the everyday loop's payoff, so it reads as a button rather
+    // than one more link at the same volume as Import.
+    expect(screen.getByRole('link', { name: 'Upload' })).toHaveClass('kukatko-nav-cta')
+    // No other top-level entry borrows the call-to-action styling.
+    expect(screen.getByRole('link', { name: 'Albums' })).not.toHaveClass('kukatko-nav-cta')
+  })
+
+  it('tucks the expand tool inside the Tools group instead of shouting at top level', async () => {
+    const user = userEvent.setup()
+    renderLayout(auth({ canWrite: true }))
+
+    // Expand is a power-user tool, so it is not one of the always-visible links…
+    expect(screen.queryByRole('link', { name: 'Expand' })).not.toBeInTheDocument()
+    // …it lives one level down, inside the Tools dropdown.
+    await user.click(screen.getByRole('button', { name: 'Tools' }))
+    expect(screen.getByRole('link', { name: 'Expand' })).toHaveAttribute('href', '/expand')
+  })
+
+  it('omits the tools/admin divider for a viewer who has nothing past it', () => {
+    const { container } = renderLayout(auth())
+    expect(container.querySelector('.kukatko-nav-divider')).toBeNull()
+  })
+
+  it('fences the quieter tools/admin cluster off with a divider when one exists', () => {
+    const { container } = renderLayout(auth({ canWrite: true }))
+    expect(container.querySelector('.kukatko-nav-divider')).not.toBeNull()
+  })
+
   it('shows curation, Tools and Import to the ai agent but hides the Admin group', () => {
     // The ai agent has editor write powers plus import, but is not an admin.
     renderLayout(auth({ canWrite: true, isAdmin: false, canImport: true, role: 'ai' }))

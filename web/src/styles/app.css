@@ -138,6 +138,58 @@ body {
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* Navbar hierarchy. The bar is not a flat row of equals: the everyday actions
+   lead, one call-to-action stands out, and a divider fences off the quieter
+   tools/admin cluster. These rules add only what Bootstrap utilities cannot. */
+
+/* The single call-to-action (Upload). A filled primary pill so a non-technical
+   reader's eye lands on "add photos" instead of treating it as one more link
+   beside Import. It keeps the shared icon + visible label and the app-wide focus
+   ring; only its resting fill and shape set it apart. */
+.kukatko-nav-cta.nav-link {
+  color: #fff;
+  background-color: var(--bs-primary, #df691a);
+  border-radius: var(--kk-radius-pill);
+  padding-inline: var(--kk-space-3);
+  transition: background-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kukatko-nav-cta.nav-link:hover,
+.kukatko-nav-cta.nav-link:focus,
+.kukatko-nav-cta.nav-link.active {
+  color: #fff;
+  background-color: color-mix(in srgb, var(--bs-primary, #df691a) 82%, #000 18%);
+}
+
+.kukatko-nav-cta.nav-link:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+/* The rule dividing the everyday cluster from the quieter tools/admin one: a
+   vertical hairline while the bar is a horizontal row (>= md), a horizontal one
+   once it collapses into the stacked hamburger menu (< md). `align-self: stretch`
+   lets one element serve both axes; only the main-axis size flips per breakpoint. */
+.kukatko-nav-divider {
+  align-self: stretch;
+  background-color: var(--bs-border-color, rgb(255 255 255 / 15%));
+}
+
+@media (min-width: 768px) {
+  .kukatko-nav-divider {
+    width: 1px;
+    margin-block: var(--kk-space-2);
+    margin-inline: var(--kk-space-1);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .kukatko-nav-divider {
+    height: 1px;
+    margin-block: var(--kk-space-2);
+  }
+}
+
 /* In-page sticky toolbars (selection bar, future filter bars) rest just below
    the sticky navbar — including any top safe-area inset — rather than sliding
    under it. The navbar keeps a higher stacking context (Bootstrap `.sticky-top`
@@ -202,13 +254,19 @@ body {
    below the sticky navbar. It overlays the viewport (does not take grid space),
    so a loading/empty timeline renders nothing without shifting the grid. Ticks
    are absolutely positioned inside by their cumulative fraction. `touch-action`
-   lets us handle a vertical drag without the page scrolling underneath. */
+   lets us handle a vertical drag without the page scrolling underneath.
+
+   The width is sized to fully contain a year tick (a 4-digit label plus its mark).
+   A narrower rail let the year text spill past its left edge into the lane the
+   current-month bubble sits in (see `.kukatko-timeline-current`), which is how the
+   two came to overlap; with the label kept inside the rail, the bubble's lane
+   stays clear. */
 .kukatko-timeline {
   position: fixed;
   top: calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px) + 1rem);
   right: env(safe-area-inset-right, 0px);
   bottom: 1rem;
-  width: 3.25rem;
+  width: 4.25rem;
   z-index: 1018;
   touch-action: none;
   user-select: none;
@@ -257,12 +315,18 @@ body {
   font-weight: 600;
 }
 
-/* Floating label showing the month currently under the visible grid range. */
+/* Floating label showing the month currently under the visible grid range. It
+   lives in its own lane to the LEFT of the rail (`right: 100%`), while the year
+   ticks live inside the rail — the two lanes must not meet. Now that the rail is
+   wide enough to hold a year label (see `.kukatko-timeline`), the label no longer
+   spills into this lane, and this margin then opens a clear gap between the rail's
+   left edge and the bubble. Together they make the bubble and the year ticks
+   incapable of overlapping, even at a year boundary where both fall on one row. */
 .kukatko-timeline-current {
   position: absolute;
   right: 100%;
   transform: translateY(-50%);
-  margin-right: 0.3rem;
+  margin-right: var(--kk-space-3);
   padding: 0.05rem 0.45rem;
   border-radius: var(--kk-radius-sm);
   background: var(--bs-primary, #df691a);

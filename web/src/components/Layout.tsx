@@ -69,13 +69,21 @@ const BROWSE_GROUP: NavGroup = {
   ],
 }
 
-/** The editor-only "Nástroje" (Tools) group, gated behind `canWrite`. */
+/**
+ * The editor-only "Nástroje" (Tools) group, gated behind `canWrite`. It gathers
+ * the power-user curation tools that a day-to-day browser rarely reaches for —
+ * starting with "Rozšířit" (expand), which grows an album or label with similar
+ * photos. Keeping expand here, rather than shouting for attention next to Alba /
+ * Štítky, is the whole point of Part 3: the everyday loop stays uncluttered while
+ * the tools remain one visible dropdown away.
+ */
 const TOOLS_GROUP: NavGroup = {
   id: 'nav-tools',
   labelKey: 'nav.tools',
   titleKey: 'nav.titles.tools',
   icon: 'tools',
   items: [
+    { to: '/expand', labelKey: 'nav.expand', titleKey: 'nav.titles.expand', icon: 'magic' },
     {
       to: '/faces',
       labelKey: 'nav.faceSearch',
@@ -124,17 +132,6 @@ const ADMIN_GROUP: NavGroup = {
 }
 
 /**
- * The write-gated expand entry, kept next to Albums/Štítky because it grows
- * exactly those collections — an editor reaches it from where they curate.
- */
-const EXPAND_ITEM: NavEntry = {
-  to: '/expand',
-  labelKey: 'nav.expand',
-  titleKey: 'nav.titles.expand',
-  icon: 'magic',
-}
-
-/**
  * The write-gated review game. Top-level rather than buried in "Nástroje":
  * tidying the library one question at a time is the app's most-used curation
  * loop, and a game nobody can find is a game nobody plays.
@@ -146,7 +143,12 @@ const REVIEW_ITEM: NavEntry = {
   icon: 'ui-checks',
 }
 
-/** The write-gated upload entry, kept top-level so adding photos stays one click away. */
+/**
+ * The write-gated upload entry. Adding photos is the everyday loop's payoff, so
+ * it is not just top-level but the bar's one call-to-action: rendered as a filled
+ * pill (see `renderLink`'s `cta` option) so a non-technical user's eye lands on
+ * "add photos" instead of treating it as just another link beside Import.
+ */
 const UPLOAD_ITEM: NavEntry = {
   to: '/upload',
   labelKey: 'nav.upload',
@@ -180,14 +182,18 @@ function pathMatches(pathname: string, route: string): boolean {
  * signed-in user menu) above the routed page content, and the global
  * {@link Footer} below it.
  *
- * The bar is ordered around how the library is browsed: **Knihovna**, **Alba**
- * and **Štítky** are always visible, the remaining browse destinations collapse
- * into "Procházet", and the role-gated "Nástroje"/"Správa" groups are hidden
- * entirely from roles that cannot use any of their children. Searching is not in
- * the bar — it lives on the library page and on `/search`. Neither is the
- * language switcher: this instance is Czech, so the setting sits on the account
- * page rather than spending prime bar space. Every entry pairs an icon (for
- * daily recognition) with a `title` describing the action it performs.
+ * The bar carries a deliberate hierarchy rather than one flat row of equals. The
+ * everyday loop leads: **Knihovna**, **Alba**, **Štítky**, the "Procházet" browse
+ * dropdown, the "Třídění" review game, and — as the one filled call-to-action —
+ * **Nahrát**. A thin divider then sets off the quieter power-user and admin
+ * cluster: the "Nástroje" tools dropdown (which now also holds the expand tool),
+ * the "Import" trigger, and the "Správa" admin dropdown. The role-gated groups
+ * are hidden entirely from roles that cannot use any of their children, and the
+ * divider only appears when at least one item follows it. Searching is not in the
+ * bar — it lives on the library page and on `/search`. Neither is the language
+ * switcher: this instance is Czech, so the setting sits on the account page rather
+ * than spending prime bar space. Every entry pairs an icon (for daily recognition)
+ * with a `title` describing the action it performs.
  */
 export function Layout() {
   const { t } = useTranslation()
@@ -208,9 +214,10 @@ export function Layout() {
   /**
    * Renders a top-level nav link: icon, visible label, action tooltip. The root
    * entry (the library) is matched exactly — without `end` its highlight would
-   * be a prefix match and light up on every route.
+   * be a prefix match and light up on every route. Passing `cta` styles the link
+   * as the bar's single filled call-to-action (used for Upload).
    */
-  function renderLink(entry: NavEntry) {
+  function renderLink(entry: NavEntry, { cta = false }: { cta?: boolean } = {}) {
     return (
       <Nav.Link
         key={entry.to}
@@ -218,7 +225,9 @@ export function Layout() {
         to={entry.to}
         end={entry.to === LIBRARY_PATH}
         title={t(entry.titleKey)}
-        className="kukatko-tap-target d-flex align-items-center gap-2"
+        className={`kukatko-tap-target d-flex align-items-center gap-2${
+          cta ? ' kukatko-nav-cta' : ''
+        }`}
       >
         <Icon name={entry.icon} />
         {t(entry.labelKey)}
@@ -276,18 +285,25 @@ export function Layout() {
           <Navbar.Toggle aria-controls="main-navbar" />
           <Navbar.Collapse id="main-navbar">
             <Nav className="me-auto">
-              {/* Library (the homepage), Albums and Labels are the everyday
-                  entry points: never hidden. */}
-              {PRIMARY_ITEMS.map(renderLink)}
-              {/* Expanding albums/labels sits right next to them; editors only. */}
-              {canWrite && renderLink(EXPAND_ITEM)}
+              {/* The everyday loop, loudest first. Library (the homepage), Albums
+                  and Labels are the always-visible entry points. */}
+              {PRIMARY_ITEMS.map((entry) => renderLink(entry))}
               {/* The remaining browse destinations, one level down. */}
               {renderGroup(BROWSE_GROUP)}
               {/* The review game: editors only, and kept in plain sight. */}
               {canWrite && renderLink(REVIEW_ITEM)}
-              {/* Upload is a write action: hidden from viewers. */}
-              {canWrite && renderLink(UPLOAD_ITEM)}
-              {/* Editor-only tools; the whole group is hidden from viewers. */}
+              {/* Adding photos is the loop's payoff: the bar's one filled CTA,
+                  hidden from viewers. */}
+              {canWrite && renderLink(UPLOAD_ITEM, { cta: true })}
+
+              {/* A divider fences off the quieter power-user / admin cluster, but
+                  only when the current role actually has something below it. */}
+              {(canWrite || canImport || isAdmin) && (
+                <div className="kukatko-nav-divider" aria-hidden="true" />
+              )}
+
+              {/* Editor-only tools (expand, faces, duplicates, …); hidden from
+                  viewers. */}
               {canWrite && renderGroup(TOOLS_GROUP)}
               {/* Import is reachable by admins and the ai agent. */}
               {canImport && renderLink(IMPORT_ITEM)}

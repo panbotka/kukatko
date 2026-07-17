@@ -80,14 +80,17 @@ export interface FilterBarProps<T extends LibraryView> {
  * visual anchor, matching title and description as you type), the sort selector,
  * the grid-density picker (how many photos sit side by side — a per-device
  * display preference, not part of the view), and a "Filters" toggle badged with
- * the count of active filters. Below it sits
- * the facet row — Year, Album, Label, Person — the ways photos are actually found;
- * it appears only when the page supplies `facets`. The remaining filters (date
- * range, camera, archived, favorites, location, min rating, flag) live in
- * a collapsible panel on desktop and an offcanvas drawer on phones, so the resting
- * state stays uncluttered — the favorites toggle only when the page opts in via
- * `showFavorite`. Every active filter is echoed as a removable chip plus a single
- * clear-all action.
+ * the count of active filters. On desktop the facet row — Year, Album, Label,
+ * Person, the ways photos are actually found — sits below the header in its own
+ * always-visible four-across row (only when the page supplies `facets`). On a
+ * phone that row would stack into four full-width blocks that push the photos off
+ * the first screen, so there the facets fold into the same disclosure surface as
+ * the rest of the filters. The remaining filters (date range, camera, archived,
+ * favorites, location, min rating, flag) live in a collapsible panel on desktop
+ * and an offcanvas drawer on phones, so the resting state stays uncluttered — the
+ * favorites toggle only when the page opts in via `showFavorite`. Every active
+ * filter — facets included — is echoed as a removable chip plus a single clear-all
+ * action, so a filtered set is never a mystery even while the drawer is shut.
  *
  * The quick filter is a substring match, not a search: `searchHref` puts a
  * labelled link to `/search` beside it, which is where full-text and semantic
@@ -132,8 +135,20 @@ export function FilterBar<T extends LibraryView>({
     push({ ...LIBRARY_DEFAULTS, sort: view.sort, ...(showSearch ? {} : { q: view.q }) })
   }
 
+  // On a phone the facet pickers fold in here, above the advanced filters, so
+  // they no longer sit between the search box and the photos; on desktop they
+  // keep their own always-visible row (rendered below the header) and this panel
+  // holds only the advanced filters.
   const panel = (
-    <AdvancedFilters view={view} push={push} replace={replace} showFavorite={showFavorite} />
+    <>
+      {facets && narrow && (
+        <>
+          <FacetRow view={view} facets={facets} push={push} />
+          <hr className="my-3" />
+        </>
+      )}
+      <AdvancedFilters view={view} push={push} replace={replace} showFavorite={showFavorite} />
+    </>
   )
 
   return (
@@ -211,7 +226,11 @@ export function FilterBar<T extends LibraryView>({
         </div>
       )}
 
-      {facets && <FacetRow view={view} facets={facets} push={push} />}
+      {/* Desktop keeps the facet pickers in a persistent four-across row; on a
+          phone they move into the filters drawer (see `panel` above) so the
+          photos start near the top of the screen instead of below four stacked
+          selects. */}
+      {facets && !narrow && <FacetRow view={view} facets={facets} push={push} />}
 
       {chips.length > 0 && (
         <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
