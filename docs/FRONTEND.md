@@ -629,8 +629,12 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   do tooltipu); `lib/photoEdit` = pure helpery
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
   `rotateRight`/`hasCrop`/`NEUTRAL_EDIT`),
-  `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (cover/jméno/počet
-  fotek), editorům odkaz na review shluků,
+  `PeoplePage` = `/people` index osob: responzivní mřížka `SubjectTile` (obrázek/jméno/počet
+  fotek), editorům odkaz na review shluků; dlaždice ukazuje **obličej té osoby** — co přesně,
+  rozhoduje pure `lib/subjectTile.ts` `subjectTileImage` → `{kind:'cover'|'face'|'none'}`:
+  explicitní `cover_photo_uid` vyhrává vždy (rozhodnutí přebíjí odhad), jinak `cover_face` z API
+  (výběr markeru viz `listSubjectsSQL`) `padBbox(0.3)` + `squareCrop` → `FaceCrop`, a bez
+  použitelného obličeje zůstává placeholder (`people.noCover`) — appka si obličej nevymýšlí,
   `SubjectPage` = `/people/:uid` stránka osoby: hlavička (jméno/typ + edit přes
   `SubjectEditModal`), paginovaná galerie (`useSubjectPhotos` + `SubjectPhotoTile` se
   „set as cover" akcí editorům), a sekce `Outliers` (jen editor/admin); editoři můžou v galerii
@@ -895,8 +899,17 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   prop dostane URL dlaždice, kterou se nepodařilo načíst (Leaflet `tileerror`), aby rodič mohl
   zjistit **proč** — fire per dlaždici, rodič debouncuje), `MapFilterBar` (přepínač
   podkladu basic/outdoor/aerial + datum od/do, archiv, soukromé, počet, zrušit filtry);
-  `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`, `FaceThumb`
-  (čtvercový výřez obličeje z thumbnailu fotky dle normalized bbox přes `faceCropStyle`),
+  `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`,
+  `FaceCrop` (**preferovaný** výřez obličeje: `<img>` s `fit_*` zdrojem z `lib/faceSource.ts`
+  `faceSourceSize` (celý rám — `tile_*` je centrovaný čtverec, na kterém by výřez minul obličej;
+  velikost se **škáluje podle toho, jak malý obličej je**: pevná by dala 13px šmouhu místo
+  člověka u obličeje přes 2 % rámu, žebřík 720/1280/1920 se zastavuje u 1920, protože dál už ty
+  pixely v originále nejsou) v `overflow:hidden` kontejneru,
+  `cropImageStyle` v %, `aspect-ratio` ze skutečných pixelových proporcí výřezu → **nic se
+  nedeformuje**; `size` = pevná šířka v px, jinak vyplní rodiče (`w-100 h-100`); `label=""` =
+  dekorativní, když jméno stojí vedle. Potřebuje rozměry rámu),
+  `FaceThumb` (**legacy** čtvercový výřez přes `faceCropStyle` — deformuje a čte `tile_*`; zůstává
+  jen pro cluster preview, jejichž payload rám nenese),
   `FaceOverlay`+`FacesPanel`+`FaceAssignPanel` (`FaceOverlay` = **čistě prezentační** průhledná vrstva
   klikatelných boxů z normalized bbox přes `faceBoxStyle`, **žádný vlastní obrázek ani fetch** —
   mountuje se jako poslední dítě `position-relative` obalu těsně kolem `<img>`; vrstva je
@@ -1186,8 +1199,13 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `face.action`, aby optimistický update držel box i řádek v syncu s právě provedeným klikem)
   + `isNamed`; jeden zdroj pravdy pro barvy v overlayi, `FacesPanel` i `PeoplePanel`;
   `faceGeometry.ts` = pure `faceBoxStyle` (normalized bbox → absolutní `left/top/width/height`
-  v %, pro overlay) + `faceCropStyle` (čtvercový výřez obličeje z thumbnailu přes
-  background-position/-size, pro `FaceThumb`);
+  v %, pro overlay) + `padBbox`/`boxWithinCrop`/`cropImageStyle` + `displayFrame` (uložené
+  rozměry + EXIF orientace → **zobrazený** rám; orientace 5–8 prohazuje strany, protože bbox je v
+  display space) + `squareCrop` (bbox → výřez **čtvercový v pixelech**, ne v normalized
+  jednotkách — to je to, co brání deformaci: „čtverec" v normalized rámu 4000×3000 je v pixelech
+  obdélník a ve čtvercové dlaždici by obličej rozmáčkl; roste kratší pixelovou stranu ze středu a
+  zasune výřez zpátky do rámu) + `faceCropStyle` (**legacy**, škáluje osy nezávisle → deformuje, a
+  čte `tile_*`, což je centrovaný čtverec, ne celý rám; jen pro `FaceThumb`);
   `faceThreshold.ts` = pure převod prahu hledání osoby mezi **procenty** (UI) a **kosinovou
   vzdáleností** (backend): `percentToDistance` (`1 - p/100`)/`distanceToPercent` (inverzní,
   zaokrouhlený — i „match %" na kartě)/`clampThresholdPercent` + konstanty rozsahu (20–80, krok 5,

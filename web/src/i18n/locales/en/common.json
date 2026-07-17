@@ -989,7 +989,7 @@
       "title": "Title",
       "description": "Description",
       "notes": "Notes",
-      "aiNote": "AI note",
+      "aiNote": "Automatic description",
       "takenAt": "Taken at",
       "takenAtEstimated": "Date is an estimate",
       "takenAtNote": "Dating note",
@@ -1032,7 +1032,6 @@
       "clearLocation": "Clear location",
       "location": "Location",
       "editField": "Edit {{field}}",
-      "addPlaceholder": "Add…",
       "edit": "Edit",
       "save": "Save",
       "cancel": "Cancel",
@@ -1044,7 +1043,12 @@
       "acceptLocationHelp": "Marks the location your own decision; it stops being shown as an estimate.",
       "discardLocation": "Discard estimate",
       "discardLocationHelp": "The photo stays without a location and the estimate is never added back.",
-      "locationActionFailed": "The location could not be saved. Please try again."
+      "locationActionFailed": "The location could not be saved. Please try again.",
+      "titlePrompt": "For example “Christmas at Grandma's”",
+      "descriptionPrompt": "What is happening here, and why it is worth remembering",
+      "notesPrompt": "Anything you want to jot down about this photo",
+      "aiNotePrompt": "A description the computer added to the photo by itself",
+      "takenAtPrompt": "For example 24 December 1998 — even a guess beats nothing"
     },
     "technical": {
       "title": "Technical details",
@@ -1115,7 +1119,8 @@
       "regeneratingThumb": "Regenerating…",
       "regenerateThumbSuccess": "Thumbnail regenerated",
       "regenerateThumbUndecodable": "The original is missing or cannot be decoded.",
-      "regenerateThumbError": "Could not regenerate the thumbnail."
+      "regenerateThumbError": "Could not regenerate the thumbnail.",
+      "takenAtExact": "Exact capture time"
     },
     "organize": {
       "albums": "Albums",
@@ -1155,7 +1160,8 @@
       "save": "Save edits",
       "reset": "Reset to original",
       "error": "Could not save the edits."
-    }
+    },
+    "untitled": "Untitled"
   },
   "upload": {
     "title": "Upload",

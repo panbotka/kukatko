@@ -700,7 +700,16 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   poolem: **subjekty** `CreateSubject`(generuje uid + **unikátní slug z name** — `Slugify`
   bez diakritiky/ASCII, kolize → číselný sufix `name-2`)/`GetSubjectByUID`/`GetSubjectBySlug`/
   `UpdateSubject`(přeslugování + refresh `faces.subject_name` cache)/`ListSubjects` (s počty
-  nearchivovaných... resp. **non-invalid** markerů per subjekt, řazení dle jména)/
+  nearchivovaných... resp. **non-invalid** markerů per subjekt, řazení dle jména; navíc
+  `CoverFace *SubjectFace` = obličej, kterým se subjekt ilustruje v mřížce lidí, když nemá
+  `cover_photo_uid` — CTE `best_face` v `listSubjectsSQL` bere per subjekt `DISTINCT ON` s
+  pořadím **`w*h DESC, score DESC, uid`**: dlaždice je čtvereček vyzoomovaný z výřezu cache
+  thumbnailu, takže o čitelnosti rozhoduje počet pixelů za obličejem → vyhrává největší box,
+  `score` jen rozsekává shodu velikostí (opačné pořadí by dalo dlaždici drobnému ostrému
+  ksichtíku před velkým slušným) a `uid` drží výběr deterministický; filtry: `type='face'`
+  (kreslené label boxy nejsou obličeje), `invalid=FALSE` (odmítnuté false-positivy se nevrací),
+  nenulový box i rozměry fotky, a viditelná fotka jako u počtu. Nese i `width/height/orientation`
+  fotky — klient si výřez ořezává sám a bez rámu by ho zdeformoval)/
   `DeleteSubject` (FK odpojí markery, vyčistí faces cache)/`ListPhotoUIDsBySubject` (distinct
   uid nearchivovaných fotek s non-invalid markerem subjektu, newest-first — podklad galerie
   subjektu v `peopleapi`)/`SearchSubjects(q,limit)` (accent/case-insensitive ILIKE nad

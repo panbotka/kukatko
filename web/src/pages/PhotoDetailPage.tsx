@@ -34,7 +34,9 @@ import { useRating } from '../hooks/useRating'
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
+import { formatDateTimeMinutes } from '../lib/format'
 import { editPreviewStyle, isIdentityEdit, NEUTRAL_EDIT } from '../lib/photoEdit'
+import { photoDisplayTitle, photoTitleText, titleSource } from '../lib/photoTitle'
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { toMode } from '../lib/searchView'
 import { readUrlState } from '../lib/urlState'
@@ -88,7 +90,7 @@ type SidePanel = 'faces' | 'edit' | null
  * carried in the URL query).
  */
 export function PhotoDetailPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { uid = '' } = useParams<{ uid: string }>()
   const { canWrite, downloadToken } = useAuth()
   const navigate = useNavigate()
@@ -342,7 +344,15 @@ export function PhotoDetailPage() {
   }
 
   const { photo, edit } = state
-  const title = photo.title !== '' ? photo.title : photo.file_name
+  // What the photo is called, as a person would say it: its title, or the facts it
+  // carries (when, and where). Never the filename — that is the camera's name for
+  // it and lives in the technical details. See photoDisplayTitle for the rule.
+  const captureDate =
+    photo.taken_at !== undefined ? formatDateTimeMinutes(photo.taken_at, i18n.language) : ''
+  const displayTitle = photoDisplayTitle(titleSource(photo), captureDate)
+  // The one-string form, for the places only text will do: alt text, the video and
+  // live-photo players' titles, the lightbox caption.
+  const title = photoTitleText(displayTitle, t('photo.untitled'))
   // While paging to a neighbour we keep the current photo (and its edit) mounted
   // and fetch the next one in the background; the displayed photo only matches the
   // route `uid` once that fetch resolves. Until then a subtle overlay marks the
@@ -484,7 +494,25 @@ export function PhotoDetailPage() {
             as a block on narrow widths, so the title is never hidden. */}
         <div className="d-flex align-items-center gap-2 me-auto" style={{ minWidth: 0 }}>
           <BackLink to={backHref(view)} label={t('photo.back')} className="flex-shrink-0" />
-          <h1 className="kk-page-title mb-0 text-truncate">{title}</h1>
+          {/* A titled photo is its title. An untitled one is its facts — the date
+              carries the line and the place trails it, quieter, because "when"
+              identifies a photo before "where" does. Both are one <h1>: it is one
+              name for one thing, however many parts it is assembled from. */}
+          <h1 className="kk-page-title mb-0 text-truncate">
+            {displayTitle.kind === 'facts' ? (
+              <>
+                {displayTitle.date !== '' && <span>{displayTitle.date}</span>}
+                {displayTitle.place !== '' && (
+                  <span className="text-secondary">
+                    {displayTitle.date !== '' && <span aria-hidden="true"> · </span>}
+                    {displayTitle.place}
+                  </span>
+                )}
+              </>
+            ) : (
+              title
+            )}
+          </h1>
         </div>
         <div className="d-flex align-items-center gap-2 flex-wrap">
           <RatingStars
@@ -660,6 +688,7 @@ export function PhotoDetailPage() {
               <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
               <hr />
               <PeoplePanel
+                photoUid={photo.uid}
                 faces={faces}
                 canWrite={canWrite}
                 loading={loadingNext}

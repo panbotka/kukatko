@@ -1035,7 +1035,7 @@
       "title": "Název",
       "description": "Popis",
       "notes": "Poznámky",
-      "aiNote": "Poznámka AI",
+      "aiNote": "Automatický popis",
       "takenAt": "Datum pořízení",
       "takenAtEstimated": "Datum je odhad",
       "takenAtNote": "Poznámka k datování",
@@ -1078,7 +1078,6 @@
       "clearLocation": "Vymazat polohu",
       "location": "Poloha",
       "editField": "Upravit: {{field}}",
-      "addPlaceholder": "Přidat…",
       "edit": "Upravit",
       "save": "Uložit",
       "cancel": "Zrušit",
@@ -1090,7 +1089,12 @@
       "acceptLocationHelp": "Označí polohu za tvoje rozhodnutí, přestane se zobrazovat jako odhad.",
       "discardLocation": "Zahodit odhad",
       "discardLocationHelp": "Fotka zůstane bez polohy a odhad se už znovu nedoplní.",
-      "locationActionFailed": "Polohu se nepodařilo uložit. Zkus to prosím znovu."
+      "locationActionFailed": "Polohu se nepodařilo uložit. Zkus to prosím znovu.",
+      "titlePrompt": "Třeba „Vánoce u babičky“",
+      "descriptionPrompt": "Co se na fotce děje a proč stojí za zapamatování",
+      "notesPrompt": "Cokoli, co si k fotce chcete poznamenat",
+      "aiNotePrompt": "Popis, který k fotce sám doplnil počítač",
+      "takenAtPrompt": "Třeba 24. 12. 1998 — i odhad je lepší než nic"
     },
     "technical": {
       "title": "Technické údaje",
@@ -1161,7 +1165,8 @@
       "regeneratingThumb": "Přegenerovávám…",
       "regenerateThumbSuccess": "Náhled přegenerován",
       "regenerateThumbUndecodable": "Originál chybí nebo ho nelze dekódovat.",
-      "regenerateThumbError": "Náhled se nepodařilo přegenerovat."
+      "regenerateThumbError": "Náhled se nepodařilo přegenerovat.",
+      "takenAtExact": "Přesný čas pořízení"
     },
     "organize": {
       "albums": "Alba",
@@ -1201,7 +1206,8 @@
       "save": "Uložit úpravy",
       "reset": "Obnovit originál",
       "error": "Úpravy se nepodařilo uložit."
-    }
+    },
+    "untitled": "Bez názvu"
   },
   "upload": {
     "title": "Nahrát",

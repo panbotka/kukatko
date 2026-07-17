@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { displayFrame, type Frame } from '../lib/faceGeometry'
 import { isNamed } from '../lib/faceState'
 import {
   type AssignRequest,
@@ -19,6 +20,13 @@ export interface UseFacesResult {
   status: 'loading' | 'error' | 'ready'
   /** The detected faces; empty while loading, on error, or when none were found. */
   faces: FaceView[]
+  /**
+   * The photo's display frame (its pixel dimensions with the EXIF orientation
+   * applied), null until the detections are ready. Face bboxes are normalised
+   * against it, so anything cropping to one — the people chips — needs it to keep
+   * the face's proportions.
+   */
+  frame: Frame | null
   /** The face whose naming panel is open, or null when none is selected. */
   selected: FaceView | null
   /** True while an assignment request is in flight. */
@@ -205,6 +213,10 @@ export function useFaces(photoUid: string): UseFacesResult {
   return {
     status: state.status,
     faces,
+    frame:
+      state.status === 'ready'
+        ? displayFrame(state.data.width, state.data.height, state.data.orientation)
+        : null,
     selected: faces.find((face) => face.face_index === selected) ?? null,
     busy,
     actionError,

@@ -391,7 +391,14 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `cmd/kukatko/review.go`, sdílí facematch service s photoapi a candidates/expand služby se sweep a
   expand endpointy).
 - **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
-  `{subjects:[{...subject, marker_count}]}` (řazení dle jména, počty non-invalid markerů);
+  `{subjects:[{...subject, marker_count, cover_face?}]}` (řazení dle jména, počty non-invalid
+  markerů). `cover_face` = `{photo_uid,x,y,w,h,width,height,orientation}` — obličej, kterým se
+  subjekt ilustruje v mřížce lidí, když **nemá** `cover_photo_uid`; chybí, když subjekt nemá
+  použitelný marker. Vybírá ho `listSubjectsSQL` (největší box, pak `score`, pak `uid`; jen
+  `type='face'`, non-invalid, na viditelné fotce). `width`/`height`/`orientation` jsou uložený rám
+  fotky — klient si výřez ořezává sám z cache thumbnailu (endpoint na face thumbnail neexistuje) a
+  bez rámu by ho zdeformoval. **Explicitní `cover_photo_uid` vždy vyhrává**, `cover_face` je jen
+  fallback;
   `POST /subjects` (RequireWrite) → 201 vytvoří subjekt z `{name,type,favorite,private,notes,
   cover_photo_uid?}` (prázdné jméno / neznámý typ → 400); `GET /subjects/{uid}` (RequireAuth) →
   subjekt (404); `PATCH /subjects/{uid}` (RequireWrite) → editace stejných polí (404/400);

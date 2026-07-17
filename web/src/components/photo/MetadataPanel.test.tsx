@@ -355,17 +355,30 @@ describe('MetadataPanel per-field editing', () => {
 
     expect(screen.getByRole('button', { name: 'Edit Title' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit Description' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Edit AI note' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Automatic description' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit Location' })).toBeInTheDocument()
     // No single global "Edit" button remains.
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })
 
-  it('shows a muted "add…" placeholder for an empty field', () => {
+  it('prompts an empty field with what that field is for, not a generic "add…"', () => {
     renderPanel({ photo: photo({ title: 'Beach', description: '' }) })
-    // Title carries a value; the empty description invites adding one.
-    expect(screen.getByRole('button', { name: 'Edit Description' })).toHaveTextContent('Add…')
+    // Title carries a value; the empty description invites adding one — in words
+    // about descriptions.
+    const description = screen.getByRole('button', { name: 'Edit Description' })
+    expect(description).toHaveTextContent('What is happening here, and why it is worth remembering')
+    expect(description).not.toHaveTextContent('Add…')
     expect(screen.getByRole('button', { name: 'Edit Title' })).toHaveTextContent('Beach')
+  })
+
+  it('gives every empty field its own prompt rather than one repeated placeholder', () => {
+    // The regression this guards: four fields sharing one "Add…" is a column of
+    // identical grey text that says nothing about any of them.
+    renderPanel({ photo: photo({ title: '', description: '', ai_note: '', notes: '' }) })
+    const prompts = (['Title', 'Description', 'Automatic description', 'Notes'] as const).map(
+      (field) => screen.getByRole('button', { name: `Edit ${field}` }).textContent,
+    )
+    expect(new Set(prompts).size).toBe(prompts.length)
   })
 
   it('shows values read-only to a viewer with no edit affordances', () => {
@@ -386,13 +399,13 @@ describe('MetadataPanel per-field editing', () => {
     const user = userEvent.setup()
     renderPanel({ photo: current, onUpdated })
 
-    // The read-only summary shows the AI note under its own label.
-    expect(screen.getByText('AI note')).toBeInTheDocument()
+    // The read-only summary shows the automatic description under its own label.
+    expect(screen.getByText('Automatic description')).toBeInTheDocument()
     expect(screen.getByText('detected: dog, beach')).toBeInTheDocument()
 
     // Its own inline affordance opens the shared form.
-    await user.click(screen.getByRole('button', { name: 'Edit AI note' }))
-    const field = screen.getByLabelText('AI note')
+    await user.click(screen.getByRole('button', { name: 'Edit Automatic description' }))
+    const field = screen.getByLabelText('Automatic description')
     expect(field).toHaveValue('detected: dog, beach')
     await user.clear(field)
     await user.type(field, 'detected: cat, sofa')
@@ -468,15 +481,25 @@ describe('MetadataPanel approximate date', () => {
     const field = screen.getByRole('button', { name: 'Edit Taken at' })
     expect(field).toHaveTextContent('c.')
     expect(field).toHaveTextContent('sometime in the forties')
-    expect(field).not.toHaveTextContent('Add…')
+    expect(field).not.toHaveTextContent('For example 24 December 1998')
   })
 
-  it('renders a known date without any circa marker', () => {
+  it('renders a known date to the minute, without any circa marker or seconds', () => {
     renderPanel({ photo: photo({ taken_at: '2026-01-02T00:33:39Z' }) })
 
     const field = screen.getByRole('button', { name: 'Edit Taken at' })
     expect(field).not.toHaveTextContent('c.')
-    expect(field).toHaveTextContent(new Date('2026-01-02T00:33:39Z').toLocaleString('en'))
+    expect(field).toHaveTextContent(
+      new Date('2026-01-02T00:33:39Z').toLocaleString('en', {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+    )
+    // Nobody needs the second a photo was taken on; it stays in technical details.
+    expect(field).not.toHaveTextContent(':39')
     expect(screen.queryByTitle(/Estimated date/)).not.toBeInTheDocument()
   })
 

@@ -284,9 +284,14 @@ describe('PhotoDetailPage', () => {
     // The panel appears beside the photo, listing the same faces.
     expect(screen.getByText('Faces: 2')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Select face #1' })).toBeInTheDocument()
-    // Still exactly one image: the boxes are drawn over it, and the panel rows are
-    // text — the page never carries a second copy of the photo.
-    expect(container.querySelectorAll('img')).toHaveLength(1)
+    // Still exactly one *preview*: the boxes are drawn over it and the panel rows
+    // are text — the page never carries a second copy of the photo. The people
+    // chips' face crops are images too, but each is a 24px crop of one face, so the
+    // invariant is counted in full-size previews, not in <img> tags.
+    const previews = [...container.querySelectorAll('img')].filter((img) =>
+      img.getAttribute('src')?.includes('fit_1920'),
+    )
+    expect(previews).toHaveLength(1)
   })
 
   it('shrinks the photo to make room for the faces panel, and only then', async () => {
@@ -538,12 +543,49 @@ describe('PhotoDetailPage', () => {
     expect(await screen.findByRole('heading', { name: 'Sunset beach' })).toBeInTheDocument()
   })
 
-  it('falls back to the file name in the header when the title is empty', async () => {
+  it('never titles the page with the file name', async () => {
+    // The filename is the camera's name for the photo, not the user's. It has a
+    // home — the technical details — and the <h1> is not it.
     fetchPhotoMock.mockResolvedValue(photo({ title: '', file_name: 'IMG_1234.jpg' }))
     renderPage()
 
-    // With no title, the heading beside the back arrow shows the original file name.
-    expect(await screen.findByRole('heading', { name: 'IMG_1234.jpg' })).toBeInTheDocument()
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.queryByRole('heading', { name: 'IMG_1234.jpg' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 }).textContent).not.toContain('IMG_1234')
+  })
+
+  it('falls back to the capture date and place when the photo has no title', async () => {
+    fetchPhotoMock.mockResolvedValue(
+      photo({
+        title: '',
+        file_name: 'IMG_1234.jpg',
+        taken_at: '2026-01-02T10:00:00Z',
+        place: { country: 'Czechia', region: 'South Moravia', city: 'Brno', place_name: '' },
+      }),
+    )
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { level: 1 })
+    // What the photo actually is: when, and where. Both, in one heading.
+    expect(heading.textContent).toContain('Brno')
+    expect(heading.textContent).toContain(
+      new Date('2026-01-02T10:00:00Z').toLocaleString('en', {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+    )
+  })
+
+  it('says a photo with no title, date or place is untitled rather than naming its file', async () => {
+    fetchPhotoMock.mockResolvedValue(
+      photo({ title: '', file_name: 'IMG_1234.jpg', taken_at: undefined }),
+    )
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Untitled' })).toBeInTheDocument()
   })
 
   it('adds and removes album memberships inline', async () => {
