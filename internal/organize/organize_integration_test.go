@@ -5,6 +5,7 @@ package organize_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -55,6 +56,32 @@ func makePhotoAt(t *testing.T, store *photos.Store, hash string, takenAt time.Ti
 		t.Fatalf("creating photo %s: %v", hash, err)
 	}
 	return created.UID
+}
+
+// addPhotos puts every given photo into the album, failing the test on the first
+// membership that cannot be written.
+func addPhotos(t *testing.T, store *organize.Store, albumUID string, photoUIDs ...string) {
+	t.Helper()
+	for _, photoUID := range photoUIDs {
+		if err := store.AddPhoto(context.Background(), albumUID, photoUID); err != nil {
+			t.Fatalf("adding photo %s to album %s: %v", photoUID, albumUID, err)
+		}
+	}
+}
+
+// albumByUID returns the listed summary of the album with the given uid, failing
+// the test when the listing does not carry it. Tests that care about an album's
+// columns rather than its position look it up this way, so the listing order
+// stays the ordering tests' concern alone.
+func albumByUID(t *testing.T, list []organize.AlbumSummary, uid string) organize.AlbumSummary {
+	t.Helper()
+	for _, album := range list {
+		if album.UID == uid {
+			return album
+		}
+	}
+	t.Fatalf("album %q missing from the listing", uid)
+	return organize.AlbumSummary{}
 }
 
 // makeUser inserts a viewer account with the given uid/username and returns the uid.
@@ -211,8 +238,7 @@ func TestAlbumMembershipMissing(t *testing.T) {
 	}
 }
 
-// TestAlbumListCounts checks that ListAlbums reports the photo count per album,
-// ordered by title.
+// TestAlbumListCounts checks that ListAlbums reports the photo count per album.
 func TestAlbumListCounts(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
@@ -231,11 +257,102 @@ func TestAlbumListCounts(t *testing.T) {
 	if len(list) != 2 {
 		t.Fatalf("ListAlbums len = %d, want 2", len(list))
 	}
-	if list[0].UID != a1.UID || list[0].PhotoCount != 2 {
-		t.Errorf("album[0] = %+v, want Alps count 2", list[0])
+	// Neither album carries a capture time, so both rank NULL and the uid tiebreak
+	// decides their order. That is TestAlbumListOrder's business; look them up by
+	// uid so this test only asserts the counts.
+	if got := albumByUID(t, list, a1.UID); got.PhotoCount != 2 {
+		t.Errorf("Alps count = %d, want 2", got.PhotoCount)
 	}
-	if list[1].UID != b1.UID || list[1].PhotoCount != 0 {
-		t.Errorf("album[1] = %+v, want Beach count 0", list[1])
+	if got := albumByUID(t, list, b1.UID); got.PhotoCount != 0 {
+		t.Errorf("Beach count = %d, want 0", got.PhotoCount)
+	}
+}
+
+// TestAlbumListOrder checks that ListAlbums ranks albums by their newest photo,
+// newest first: an archived photo never lifts an album, and albums with nothing
+// to date — undated photos only, or no photos at all — sort last.
+func TestAlbumListOrder(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+
+	oldest := makePhotoAt(t, photoStore, "or1", time.Date(2001, 3, 4, 9, 0, 0, 0, time.UTC))
+	newest := makePhotoAt(t, photoStore, "or2", time.Date(2020, 6, 7, 8, 0, 0, 0, time.UTC))
+	middle := makePhotoAt(t, photoStore, "or3", time.Date(2005, 1, 2, 3, 0, 0, 0, time.UTC))
+	future := makePhotoAt(t, photoStore, "or4", time.Date(2050, 1, 1, 0, 0, 0, 0, time.UTC))
+	if _, err := photoStore.Archive(ctx, future); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	undatedPhoto := makePhoto(t, photoStore, "or5")
+
+	// The titles run counter to the wanted order, so a leftover alphabetical sort
+	// cannot pass this test by accident.
+	oldAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Old"})
+	recentAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "B Recent"})
+	decoyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "C Archived Decoy"})
+	undatedAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Undated"})
+	emptyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "E Empty"})
+
+	addPhotos(t, store, oldAlbum.UID, oldest)
+	addPhotos(t, store, recentAlbum.UID, newest)
+	// The 2050 photo is the decoy's newest, but it is archived: the album must rank
+	// on its live 2005 photo and land between the 2020 and 2001 albums.
+	addPhotos(t, store, decoyAlbum.UID, middle, future)
+	addPhotos(t, store, undatedAlbum.UID, undatedPhoto)
+
+	list, err := store.ListAlbums(ctx)
+	if err != nil {
+		t.Fatalf("ListAlbums: %v", err)
+	}
+	if len(list) != 5 {
+		t.Fatalf("ListAlbums len = %d, want 5", len(list))
+	}
+
+	gotDated := []string{list[0].UID, list[1].UID, list[2].UID}
+	wantDated := []string{recentAlbum.UID, decoyAlbum.UID, oldAlbum.UID}
+	if !slices.Equal(gotDated, wantDated) {
+		t.Errorf("dated albums ordered %v, want newest first %v", gotDated, wantDated)
+	}
+
+	// Both tail albums rank NULL, so only the uid tiebreak separates them.
+	gotTail := []string{list[3].UID, list[4].UID}
+	wantTail := []string{undatedAlbum.UID, emptyAlbum.UID}
+	slices.Sort(wantTail)
+	if !slices.Equal(gotTail, wantTail) {
+		t.Errorf("undated tail = %v, want the undated and empty albums last, in uid order %v",
+			gotTail, wantTail)
+	}
+}
+
+// TestAlbumListOrderTieBreak checks that two albums whose newest photo shares a
+// capture time fall back to the uid tiebreak, identically on every call.
+func TestAlbumListOrderTieBreak(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+
+	shot := time.Date(2012, 12, 12, 12, 0, 0, 0, time.UTC)
+	first := makePhotoAt(t, photoStore, "tb1", shot)
+	second := makePhotoAt(t, photoStore, "tb2", shot)
+
+	one, _ := store.CreateAlbum(ctx, organize.Album{Title: "Z Title"})
+	two, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Title"})
+	addPhotos(t, store, one.UID, first)
+	addPhotos(t, store, two.UID, second)
+
+	want := []string{one.UID, two.UID}
+	slices.Sort(want)
+
+	for call := range 2 {
+		list, err := store.ListAlbums(ctx)
+		if err != nil {
+			t.Fatalf("ListAlbums call %d: %v", call, err)
+		}
+		if len(list) != 2 {
+			t.Fatalf("ListAlbums call %d len = %d, want 2", call, len(list))
+		}
+		got := []string{list[0].UID, list[1].UID}
+		if !slices.Equal(got, want) {
+			t.Fatalf("call %d order = %v, want uid order %v", call, got, want)
+		}
 	}
 }
 
@@ -257,7 +374,7 @@ func TestAlbumListCoverAndRange(t *testing.T) {
 
 	ranged, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Ranged"})
 	pinned, _ := store.CreateAlbum(ctx, organize.Album{Title: "B Pinned"})
-	_, _ = store.CreateAlbum(ctx, organize.Album{Title: "C Empty"})
+	emptyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "C Empty"})
 	undatedAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Undated"})
 	for _, uid := range []string{oldest, newest, archived} {
 		if err := store.AddPhoto(ctx, ranged.UID, uid); err != nil {
@@ -284,30 +401,33 @@ func TestAlbumListCoverAndRange(t *testing.T) {
 
 	// A Ranged: no hand-picked cover, so the newest live photo stands in. The
 	// archived photo neither becomes the cover nor stretches the range to 2030.
-	if got := list[0]; got.CoverUID == nil || *got.CoverUID != newest {
-		t.Errorf("ranged cover = %v, want fallback %q", got.CoverUID, newest)
+	rangedGot := albumByUID(t, list, ranged.UID)
+	if rangedGot.CoverUID == nil || *rangedGot.CoverUID != newest {
+		t.Errorf("ranged cover = %v, want fallback %q", rangedGot.CoverUID, newest)
 	}
-	assertRange(t, "ranged", list[0],
+	assertRange(t, "ranged", rangedGot,
 		time.Date(1998, 5, 1, 10, 0, 0, 0, time.UTC),
 		time.Date(1999, 8, 2, 11, 0, 0, 0, time.UTC))
 
 	// B Pinned: same photos, but a hand-picked cover wins over the fallback.
-	if got := list[1]; got.CoverUID == nil || *got.CoverUID != oldest {
+	if got := albumByUID(t, list, pinned.UID); got.CoverUID == nil || *got.CoverUID != oldest {
 		t.Errorf("pinned cover = %v, want hand-picked %q", got.CoverUID, oldest)
 	}
 
 	// C Empty: nothing to draw and nothing to date.
-	if got := list[2]; got.CoverUID != nil || got.TakenFrom != nil || got.TakenTo != nil {
+	if got := albumByUID(t, list, emptyAlbum.UID); got.CoverUID != nil ||
+		got.TakenFrom != nil || got.TakenTo != nil {
 		t.Errorf("empty album = %+v, want no cover and no range", got)
 	}
 
 	// D Undated: a photo with an unknown capture time still covers the album, but
 	// contributes no range.
-	if got := list[3]; got.CoverUID == nil || *got.CoverUID != undated {
-		t.Errorf("undated cover = %v, want %q", got.CoverUID, undated)
+	undatedGot := albumByUID(t, list, undatedAlbum.UID)
+	if undatedGot.CoverUID == nil || *undatedGot.CoverUID != undated {
+		t.Errorf("undated cover = %v, want %q", undatedGot.CoverUID, undated)
 	}
-	if got := list[3]; got.TakenFrom != nil || got.TakenTo != nil {
-		t.Errorf("undated album range = %v–%v, want none", got.TakenFrom, got.TakenTo)
+	if undatedGot.TakenFrom != nil || undatedGot.TakenTo != nil {
+		t.Errorf("undated album range = %v–%v, want none", undatedGot.TakenFrom, undatedGot.TakenTo)
 	}
 
 	// The fallback must be deterministic: the same album, the same cover, always.
@@ -315,9 +435,9 @@ func TestAlbumListCoverAndRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAlbums again: %v", err)
 	}
-	if *again[0].CoverUID != *list[0].CoverUID {
+	if got := albumByUID(t, again, ranged.UID); *got.CoverUID != *rangedGot.CoverUID {
 		t.Errorf("fallback cover changed between calls: %q then %q",
-			*list[0].CoverUID, *again[0].CoverUID)
+			*rangedGot.CoverUID, *got.CoverUID)
 	}
 }
 

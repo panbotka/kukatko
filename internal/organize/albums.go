@@ -180,9 +180,15 @@ func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (A
 }
 
 // listAlbumsSQL reads every album with its photo count, its effective cover and
-// the capture-time span of its photos, ordered by title then uid for a stable
-// index display. The album columns are alias-qualified because the album_photos
-// join also exposes uid-shaped columns.
+// the capture-time span of its photos, newest album first. The album columns are
+// alias-qualified because the album_photos join also exposes uid-shaped columns.
+//
+// The ORDER BY ranks an album by MAX(p.taken_at) — the capture time of its newest
+// visible photo — so the album holding the most recent photo leads the index. An
+// album whose photos all lack a capture time, and an empty album, aggregate to
+// NULL and sort last; uid breaks ties into a total, stable order. Deliberately no
+// COALESCE onto created_at: that fallback suits a single photo, but here it would
+// date an undated album by when it was uploaded and float it to the top.
 //
 // Three joins carry the derived columns, all of them per album, none of them
 // fetching an album's photos into the process:
@@ -219,12 +225,13 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) cover ON TRUE
 GROUP BY a.uid, cover.photo_uid
-ORDER BY a.title, a.uid`
+ORDER BY MAX(p.taken_at) DESC NULLS LAST, a.uid`
 
 // ListAlbums returns every album together with how many photos it contains, the
-// cover to render for it and the span of capture times across its photos,
-// ordered by title then uid. A store with no albums yields an empty slice and a
-// nil error.
+// cover to render for it and the span of capture times across its photos, newest
+// album first: albums are ranked by their newest photo's capture time, with
+// undated and empty albums last and uid breaking ties. A store with no albums
+// yields an empty slice and a nil error.
 //
 // Only live (non-archived) photos supply the fallback cover and the capture-time
 // span, so the index describes exactly the photos the album's grid shows. A
