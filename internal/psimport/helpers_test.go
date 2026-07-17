@@ -1,10 +1,13 @@
 package psimport
 
 import (
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/photosorter"
 	"github.com/panbotka/kukatko/internal/storage"
 )
@@ -134,27 +137,60 @@ func TestFaceModel(t *testing.T) {
 	}
 }
 
-// TestBuildPhoto maps the curated metadata and stamps photosorter_uid; the file
-// identity comes from the stored original.
+// TestBuildPhoto asserts buildPhoto carries every photo-sorter field onto the
+// Kukátko photo record. The whole struct is compared, so a newly mapped (or
+// silently dropped) field fails the test until it is reflected in want — the
+// completeness guardrail the migration audit calls for. The file identity
+// (hash/path/size) comes from the stored original, not the source row.
 func TestBuildPhoto(t *testing.T) {
 	t.Parallel()
+	takenAt := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	archivedAt := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	lat, lng, altitude := 1.5, 2.5, 10.0
+	iso := 100
+	aperture, focalLength := 1.8, 50.0
 	ps := photosorter.Photo{
-		UID: "ps123", FileHash: "wronghash", FileWidth: 800, FileHeight: 600,
-		FileOrientation: 6, Title: "Sunset", Private: true, TakenAtSource: "exif",
+		UID: "ps123", FileHash: "wronghash", FilePath: "/orig/psp.jpg",
+		FileName: "psp.jpg", FileSize: 999, FileMime: "image/jpeg",
+		FileWidth: 800, FileHeight: 600, FileOrientation: 6,
+		TakenAt: &takenAt, TakenAtSource: "exif",
+		Title: "Sunset", Description: "Golden hour", Notes: "keep",
+		Keywords: []string{"beach", "sunset", "beach"},
+		Artist:   "Ansel", Copyright: "(c) 2023", License: "CC-BY", Software: "Lightroom",
+		Scan: true, Panorama: true,
+		Lat: &lat, Lng: &lng, Altitude: &altitude,
+		CameraMake: "Canon", CameraModel: "R5", LensModel: "RF50",
+		ISO: &iso, Aperture: &aperture, Exposure: "1/200", FocalLength: &focalLength,
+		Exif: []byte(`{"k":"v"}`), Private: true, ArchivedAt: &archivedAt,
+		UpdatedAt: takenAt,
 	}
-	stored := storage.StoredFile{Hash: "realhash", RelPath: "2024/01/x.jpg", Size: 42, MIME: "image/jpeg"}
+	stored := storage.StoredFile{Hash: "realhash", RelPath: "2024/01/x.jpg", Size: 42, MIME: "image/png"}
+	psUID := "ps123"
+	want := photos.Photo{
+		FileHash: "realhash", FilePath: "2024/01/x.jpg", FileName: "psp.jpg",
+		FileSize: 42, FileMime: "image/jpeg", FileWidth: 800, FileHeight: 600,
+		FileOrientation: 6, TakenAt: &takenAt, TakenAtSource: "exif",
+		Title: "Sunset", Description: "Golden hour", Notes: "keep",
+		Keywords: "beach,sunset", Artist: "Ansel", Copyright: "(c) 2023",
+		License: "CC-BY", Software: "Lightroom", Scan: true, Projection: "equirectangular",
+		Lat: &lat, Lng: &lng, Altitude: &altitude, CameraMake: "Canon", CameraModel: "R5",
+		LensModel: "RF50", ISO: &iso, Aperture: &aperture, Exposure: "1/200",
+		FocalLength: &focalLength, Exif: []byte(`{"k":"v"}`), Private: true,
+		ArchivedAt: &archivedAt, PhotosorterUID: &psUID,
+	}
+	if got := buildPhoto(ps, stored); !reflect.DeepEqual(got, want) {
+		t.Errorf("buildPhoto mismatch:\n got = %+v\nwant = %+v", got, want)
+	}
+}
 
-	got := buildPhoto(ps, stored)
-	if got.FileHash != "realhash" {
-		t.Errorf("FileHash = %q, want realhash (from stored)", got.FileHash)
+// TestPanoramaProjection maps the boolean panorama flag onto the projection
+// string.
+func TestPanoramaProjection(t *testing.T) {
+	t.Parallel()
+	if got := panoramaProjection(true); got != "equirectangular" {
+		t.Errorf("panorama true = %q, want equirectangular", got)
 	}
-	if got.FilePath != "2024/01/x.jpg" || got.FileSize != 42 {
-		t.Errorf("file identity = %q/%d, want stored values", got.FilePath, got.FileSize)
-	}
-	if got.Title != "Sunset" || !got.Private || got.FileOrientation != 6 {
-		t.Errorf("metadata not carried: %+v", got)
-	}
-	if got.PhotosorterUID == nil || *got.PhotosorterUID != "ps123" {
-		t.Errorf("PhotosorterUID = %v, want ps123", got.PhotosorterUID)
+	if got := panoramaProjection(false); got != "" {
+		t.Errorf("panorama false = %q, want empty", got)
 	}
 }

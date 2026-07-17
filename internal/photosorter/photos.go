@@ -13,8 +13,9 @@ import (
 const photoColumns = `uid, file_hash, file_path, file_name, file_size, file_mime,
 	file_width, file_height, file_orientation, taken_at, taken_at_source,
 	title, description, notes, lat, lng, altitude, camera_make, camera_model,
-	lens_model, iso, aperture, exposure, focal_length, exif, private,
-	archived_at, updated_at`
+	lens_model, iso, aperture, exposure, focal_length, exif, keywords,
+	exif_artist, exif_copyright, exif_license, exif_software, scan, panorama,
+	private, archived_at, updated_at`
 
 // listPhotosSQL pages photos ordered by updated_at (then uid for a stable
 // tie-break) so the migration can resume from a watermark. The $1 lower bound is
@@ -76,7 +77,9 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.FileWidth, &p.FileHeight, &p.FileOrientation, &p.TakenAt, &p.TakenAtSource,
 		&p.Title, &p.Description, &p.Notes, &p.Lat, &p.Lng, &p.Altitude,
 		&p.CameraMake, &p.CameraModel, &p.LensModel, &p.ISO, &p.Aperture,
-		&p.Exposure, &p.FocalLength, &exif, &p.Private, &p.ArchivedAt, &p.UpdatedAt,
+		&p.Exposure, &p.FocalLength, &exif, &p.Keywords,
+		&p.Artist, &p.Copyright, &p.License, &p.Software, &p.Scan, &p.Panorama,
+		&p.Private, &p.ArchivedAt, &p.UpdatedAt,
 	); err != nil {
 		return Photo{}, fmt.Errorf("photosorter: scanning photo: %w", err)
 	}

@@ -77,9 +77,21 @@ type Photo struct {
 	Exposure        string
 	FocalLength     *float64
 	Exif            []byte
-	Private         bool
-	ArchivedAt      *time.Time
-	UpdatedAt       time.Time
+	// Keywords is the IPTC keyword list, stored as a TEXT[] in photo-sorter; the
+	// migration joins and normalises it into Kukátko's comma-separated column.
+	Keywords []string
+	// Artist, Copyright, License and Software are the IPTC/XMP credit fields.
+	Artist    string
+	Copyright string
+	License   string
+	Software  string
+	// Scan marks an image digitised from a physical print; Panorama flags a
+	// panoramic image (mapped to Kukátko's projection column).
+	Scan       bool
+	Panorama   bool
+	Private    bool
+	ArchivedAt *time.Time
+	UpdatedAt  time.Time
 }
 
 // Embedding is one row of photo-sorter's embeddings table: a CLIP image vector

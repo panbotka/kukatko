@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/photosorter"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -137,6 +139,8 @@ func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, sto
 // photo record, carrying the curated metadata across 1:1 and stamping
 // photosorter_uid for future dedup. The content hash, path, size and MIME come
 // from the freshly stored file so they describe the bytes actually on disk.
+// IPTC credits, keywords, the scan flag and the panorama projection are carried
+// too, so the migrated photo keeps the credits/tags the source held.
 func buildPhoto(ps photosorter.Photo, stored storage.StoredFile) photos.Photo {
 	psUID := ps.UID
 	return photos.Photo{
@@ -153,6 +157,13 @@ func buildPhoto(ps photosorter.Photo, stored storage.StoredFile) photos.Photo {
 		Title:           ps.Title,
 		Description:     ps.Description,
 		Notes:           ps.Notes,
+		Keywords:        exif.NormalizeKeywords(strings.Join(ps.Keywords, ",")),
+		Artist:          ps.Artist,
+		Copyright:       ps.Copyright,
+		License:         ps.License,
+		Software:        ps.Software,
+		Scan:            ps.Scan,
+		Projection:      panoramaProjection(ps.Panorama),
 		Lat:             ps.Lat,
 		Lng:             ps.Lng,
 		Altitude:        ps.Altitude,
@@ -168,6 +179,18 @@ func buildPhoto(ps photosorter.Photo, stored storage.StoredFile) photos.Photo {
 		ArchivedAt:      ps.ArchivedAt,
 		PhotosorterUID:  &psUID,
 	}
+}
+
+// panoramaProjection maps photo-sorter's boolean panorama flag onto Kukátko's
+// projection string: an equirectangular projection when set, empty otherwise.
+// photo-sorter only records that a photo is a panorama (a bool), so
+// equirectangular — the only projection Kukátko models — is the faithful
+// translation.
+func panoramaProjection(panorama bool) string {
+	if panorama {
+		return "equirectangular"
+	}
+	return ""
 }
 
 // originalName resolves the best original file name for a photo-sorter photo,

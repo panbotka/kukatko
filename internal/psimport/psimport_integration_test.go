@@ -389,6 +389,65 @@ func snapshotCounts(t *testing.T, env *psEnv) map[string]int {
 	return counts
 }
 
+// TestIntegration_photoMetadataSurvives verifies the IPTC credits, keyword list,
+// scan flag and panorama projection carried by buildPhoto are written on a fresh
+// migration and are not clobbered by an idempotent re-run.
+func TestIntegration_photoMetadataSurvives(t *testing.T) {
+	env := newPSEnv(t)
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	path1, hash1 := env.writeOriginal(t, "meta.jpg", 60)
+	seedPSPhoto(t, env.pool, psPhoto{
+		uid: "psm1", fileHash: hash1, filePath: path1, fileName: "meta.jpg",
+		fileMime: "image/jpeg", title: "Meta", takenAt: t0, updatedAt: t0,
+		keywords: []string{"beach", "sunset"}, artist: "Ansel",
+		copyright: "(c) 2023", license: "CC-BY", software: "Lightroom",
+		scan: true, panorama: true,
+	})
+
+	if _, err := env.svc.Migrate(ctx); err != nil {
+		t.Fatalf("first migration: %v", err)
+	}
+	assertPhotoMetadata(t, env, "psm1")
+
+	// Bump past the watermark so the re-run re-lists and re-matches the photo.
+	exec(t, env.pool, `UPDATE `+psSchema+`.photos SET updated_at = now() WHERE uid = 'psm1'`)
+	if _, err := env.svc.Migrate(ctx); err != nil {
+		t.Fatalf("re-run migration: %v", err)
+	}
+	assertPhotoMetadata(t, env, "psm1")
+	if got := env.countRows(t, "photos"); got != 1 {
+		t.Errorf("photos = %d, want 1 (idempotent re-run)", got)
+	}
+}
+
+// assertPhotoMetadata checks the migrated photo carries every credit/tag field
+// buildPhoto maps: keywords are normalised to Kukátko's comma-separated form and
+// the panorama flag becomes an equirectangular projection.
+func assertPhotoMetadata(t *testing.T, env *psEnv, psUID string) {
+	t.Helper()
+	photo, err := photos.NewStore(env.pool).GetByPhotosorterUID(t.Context(), psUID)
+	if err != nil {
+		t.Fatalf("GetByPhotosorterUID(%s): %v", psUID, err)
+	}
+	checks := []struct{ field, got, want string }{
+		{"keywords", photo.Keywords, "beach,sunset"},
+		{"artist", photo.Artist, "Ansel"},
+		{"copyright", photo.Copyright, "(c) 2023"},
+		{"license", photo.License, "CC-BY"},
+		{"software", photo.Software, "Lightroom"},
+		{"projection", photo.Projection, "equirectangular"},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.field, c.got, c.want)
+		}
+	}
+	if !photo.Scan {
+		t.Errorf("scan = false, want true")
+	}
+}
+
 // TestIntegration_perPhotoFailure verifies a photo whose original is missing is
 // tallied as failed without aborting the run, the healthy photo still migrates,
 // and the run is recorded as done.
