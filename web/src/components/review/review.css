@@ -1,6 +1,15 @@
 /* Fullscreen review game: one photo, one question, three answers. The screen
-   is a fixed column — header, hairline progress, photo stage, prompt, actions —
-   rendered outside the layout shell so nothing competes with the photo. */
+   is a fixed column — header, hairline progress, question, photo stage,
+   actions — rendered outside the layout shell so nothing competes with the
+   photo.
+
+   The whole view must always fit the viewport: the text and the buttons take
+   the room they need, the photo takes only what is left. That is structural,
+   not estimated — the stage is `flex: 1 1 0`, so its height IS the remainder
+   after the chrome, whatever the chrome happens to measure. `container-type:
+   size` then exposes that remainder to the frame as `cqh`, so the frame can cap
+   itself against the real height instead of a guess that drifts every time a
+   font or a button grows. */
 
 .review-game {
   position: fixed;
@@ -9,11 +18,8 @@
   display: flex;
   flex-direction: column;
   background: var(--bs-body-bg);
-  overflow-y: auto;
-  /* Estimated height of everything that is not the photo (header, progress,
-     question, actions). The photo frame caps itself against the remainder. */
-  --review-chrome: 10rem;
-  --review-stage-h: calc(100dvh - var(--review-chrome));
+  /* Nothing may scroll here: the answer buttons must always be on screen. */
+  overflow: hidden;
 }
 
 .review-game__top {
@@ -42,28 +48,38 @@
   transition: width 0.2s ease;
 }
 
+/* The photo's box: `flex: 1 1 0` makes its height the remainder of the column
+   (the basis is 0, so the photo inside can never push the chrome off-screen),
+   and size containment turns that remainder into `cqh` for the frame below.
+   `overflow: hidden` is the belt to that braces — the maths already fits. */
 .review-game__stage {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 1rem;
+  overflow: hidden;
+  container-type: size;
 }
 
-/* Centering column for the loading / error / empty bodies. */
+/* Centering column for the loading / error / empty bodies. No photo to cap
+   here, so a short viewport may scroll rather than clip the retry button. */
 .review-game__center {
   flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  overflow-y: auto;
 }
 
 /* Width-driven frame: `aspect-ratio` derives the height from the width, and an
-   inline max-width caps the frame against the stage height, so the ratio (and
-   with it the normalised face box) is always exact. */
+   inline max-width caps the frame against the stage's real height (`100cqh`),
+   so the frame is exactly "contain" and the ratio — and with it the normalised
+   face box — is always exact. */
 .review-photo {
   position: relative;
   width: 100%;
@@ -93,13 +109,18 @@
     0 0 0 9999px rgba(0, 0, 0, 0.35);
 }
 
+/* The question sits above the photo: it is the point of the screen, and above
+   the fold it can never be pushed off by the image. */
 .review-game__prompt {
   text-align: center;
-  padding: 0.5rem 1rem 0;
+  padding: 0.25rem 1rem 0;
 }
 
+/* The `dvh` term only bites on a short viewport (a landscape phone), where a
+   width-derived size would eat the room the photo needs; the floor keeps the
+   question readable there. */
 .review-game__question {
-  font-size: clamp(1.35rem, 3.5vw, 2.1rem);
+  font-size: clamp(1.35rem, min(3.5vw, 5dvh), 2.1rem);
   margin-bottom: 0.25rem;
 }
 
@@ -144,7 +165,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  padding: 0.75rem 1rem 1rem;
+  padding: 0.5rem 1rem 0.75rem;
 }
 
 .review-game__actions .btn {
@@ -164,15 +185,40 @@
 /* On touch screens the buttons carry the whole interaction: make them fill the
    bottom of the screen thumb-reachably, and drop the keyboard hints. */
 @media (max-width: 576px) {
-  .review-game {
-    --review-chrome: 13rem;
-  }
-
   .review-game__actions .btn {
     flex: 1 1 0;
     min-width: 0;
     padding-top: 0.75rem;
     padding-bottom: 0.75rem;
+  }
+}
+
+/* A short viewport — a landscape phone is the sharp case: wide enough to dodge
+   every width-based query, and with the least vertical room of anything. Trade
+   chrome padding for photo; the photo shrinks on its own, the text cannot. */
+@media (max-height: 500px) {
+  .review-game__top {
+    padding: 0.25rem 0.75rem;
+  }
+
+  .review-game__prompt {
+    padding: 0.15rem 1rem 0;
+  }
+
+  .review-game__question {
+    margin-bottom: 0.1rem;
+  }
+
+  .review-game__face-hint {
+    margin-bottom: 0.1rem;
+  }
+
+  .review-game__stage {
+    padding: 0.35rem 1rem;
+  }
+
+  .review-game__actions {
+    padding: 0.35rem 1rem 0.5rem;
   }
 }
 
