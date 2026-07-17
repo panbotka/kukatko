@@ -6,22 +6,25 @@ zapiš sem.
 
 <!-- BODY BEGIN -->
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
-  (`Layout` = navbar shell s user-menu/logout + role-gated nav, **vyvážená kolem toho, jak se
-  knihovna reálně prochází — po albu, po štítku, po roce**: **Knihovna** `/` (= úvodní stránka;
-  `NavLink` má `end`, jinak by se rozsvítila na každé routě),
-  **Alba** `/albums` a **Štítky** `/labels` jsou vždy viditelné top-level položky
-  (registr `PRIMARY_ITEMS`); hned za nimi **Rozšířit** `/expand` (`EXPAND_ITEM`, gate `canWrite`) —
-  sedí u alb/štítků, protože přesně ty rozšiřuje; zbylé browse cíle sdružuje dropdown **Procházet** (`nav.browse`,
-  `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`, **Místa** `/places`, **Mapa**
-  `/map`; **Třídění** `/review` (`REVIEW_ITEM`, gate `canWrite`) je top-level, ne v „Nástrojích" —
-  uklízení knihovny po jedné otázce je nejpoužívanější kurátorská smyčka a hra, kterou nikdo
-  nenajde, je hra, kterou nikdo nehraje; **Nahrát** `/upload` je top-level (gate `canWrite`); editorský dropdown **Nástroje**
-  (`nav.tools`, `TOOLS_GROUP`, celý gate `canWrite`) sdružuje **Najít osobu** `/faces` +
-  **Rozpoznávání** `/recognition` + **Možné chyby** `/outliers` (u ostatních lidských nástrojů,
-  protože je to taky práce s obličeji) + **Duplikáty** `/duplicates` + **Koš**
-  `/trash`; **Import** `/import` (`IMPORT_ITEM`) je top-level s gate `canImport` (admin **nebo** ai);
-  adminský dropdown **Správa** (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje
-  **Údržba** `/maintenance` + **Systém** `/system` + **Uživatelé** `/users` + **Audit** `/audit`.
+  (`Layout` = navbar shell s user-menu/logout + role-gated nav s **viditelnou hierarchií podle toho,
+  jak často položku běžný člověk používá**: každodenní smyčka (procházení, třídění, přidání fotek) je
+  hlasitá a hned, admin/power-user nářadí je přítomné, ale tišší. Vede **Knihovna** `/` (= úvodní
+  stránka; `NavLink` má `end`, jinak by se rozsvítila na každé routě), **Alba** `/albums` a **Štítky**
+  `/labels` (vždy viditelné top-level, registr `PRIMARY_ITEMS`); zbylé browse cíle sdružuje dropdown
+  **Procházet** (`nav.browse`, `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`,
+  **Místa** `/places`, **Mapa** `/map`; **Třídění** `/review` (`REVIEW_ITEM`, gate `canWrite`) zůstává
+  top-level, ne v „Nástrojích" — uklízení knihovny po jedné otázce je nejpoužívanější kurátorská
+  smyčka a hra, kterou nikdo nenajde, je hra, kterou nikdo nehraje; **Nahrát** `/upload` (gate
+  `canWrite`) je **jediná call-to-action** baru — vyplněná pilulka (`kukatko-nav-cta`, prop `cta`
+  v `renderLink`), aby přidání fotek bilo do očí. Za ním **oddělovač** (`kukatko-nav-divider` — svislá
+  vlásková linka v řádkovém baru ≥ md, vodorovná ve sbaleném burger menu; kreslí se jen když za ním
+  role něco má) odděluje tišší power-user/admin cluster: editorský dropdown **Nástroje** (`nav.tools`,
+  `TOOLS_GROUP`, celý gate `canWrite`) teď vede **Rozšířit** `/expand` (power-user nástroj, dřív
+  křičel top-level u alb/štítků) + **Najít osobu** `/faces` + **Rozpoznávání** `/recognition` +
+  **Možné chyby** `/outliers` + **Duplikáty** `/duplicates` + **Koš** `/trash`; **Import** `/import`
+  (`IMPORT_ITEM`) je top-level s gate `canImport` (admin **nebo** ai); adminský dropdown **Správa**
+  (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje **Údržba** `/maintenance` + **Systém**
+  `/system` + **Uživatelé** `/users` + **Audit** `/audit`.
   **V navbaru není hledání**
   (ani odkaz, ani živé pole ani uložená hledání) — hledá se z knihovny a ze stránky `/search`.
   Každá položka i každý dropdown toggle nese **ikonu** (`Icon`) a **`title` popisující akci**, ne
@@ -155,9 +158,12 @@ zapiš sem.
   histogram přes `useTimeline(params)` (refetch při změně filtrů), každý měsíc = klikací tick
   umístěný proporčně dle `cumulative/total`, měsíční popisky přes `lib/format` `formatMonth`;
   klik/tažení skočí na měsíc přes `onJump(bucket.cumulative)`, aktivní měsíc se zvýrazní dle
-  `activeIndex` (start viditelného rozsahu); overlay `position: fixed`, takže loading/prázdný
-  timeline nerendruje nic a neposouvá layout, na malých šířkách se skryje přes `styles/app.css`
-  `.kukatko-timeline*`; jen pro výchozí newest řazení), `FilterBar`
+  `activeIndex` (start viditelného rozsahu) plovoucí oranžovou bublinou (`.kukatko-timeline-current`)
+  ve vlastní dráze **vlevo od lišty**; lišta je dost široká, aby roční tick (`.kukatko-timeline-year`)
+  držel uvnitř, takže se bublina a roční popisky **nikdy nepřekryjí** ani na hranici roku (kde padnou
+  na jeden řádek); overlay `position: fixed`, takže loading/prázdný timeline nerendruje nic a
+  neposouvá layout, na malých šířkách se skryje přes `styles/app.css` `.kukatko-timeline*`; jen pro
+  výchozí newest řazení), `FilterBar`
   (**redesign pro klidný výchozí stav + progresivní odhalení**: v hlavičce jen prominentní
   vyhledávací pole (vizuální kotva, největší prvek), řazení (vč. **dle hodnocení**),
   `GridDensityControl` a tlačítko
@@ -178,8 +184,12 @@ zapiš sem.
   kombinovat „oblíbené + album + rok" v hlavní mřížce, stránka Oblíbené ne — už je scopnutá)
   (chipy/panel/zrušit fungují dál); tap-targety ~44 px přes `styles/app.css`
   `.kukatko-filter-*`;
-  **čtyři facety, kterými se fotky reálně hledají** (prop `facets` z `useLibraryFacets`) jsou
-  **vždy viditelné** pod hlavičkou, ne schované v panelu: **Rok** = prostý `<select>`
+  **čtyři facety, kterými se fotky reálně hledají** (prop `facets` z `useLibraryFacets`): na
+  **desktopu** vlastní vždy viditelný řádek čtyř pod hlavičkou, na **telefonu** (dle
+  `useIsNarrowViewport`) se **složí do stejného filtračního `Offcanvas`u** jako pokročilé filtry —
+  jinak by čtyři sloupce naskládané pod sebe odstrčily fotky pod první obrazovku; aktivní facet
+  přesto zůstává vidět jako **chip**, takže filtrovaná sada není záhada ani se zavřenou zásuvkou:
+  **Rok** = prostý `<select>`
   („Libovolný rok" + `{{year}} ({{n}})` z `GET /photos/years`, katalog má vždy jen hrstku let),
   **Album**, **Štítek** a **Osoba** = `SearchableSelect` (všechny kolekce rostou bez omezení;
   osoby z `GET /subjects` s `marker_count`), **multi-výběr**: každá volba se **přidá** k aktuální

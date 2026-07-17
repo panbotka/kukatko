@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type LibraryFacets } from '../../hooks/useLibraryFacets'
 import i18n from '../../i18n'
@@ -402,6 +402,59 @@ describe('FilterBar facets', () => {
   it('keeps the neutral primary colour for non-entity filter chips', () => {
     renderBar({ ...LIBRARY_DEFAULTS, min_rating: '4' }, vi.fn())
     expect(screen.getByText('Rating: ≥ 4')).toHaveClass('text-bg-primary')
+  })
+})
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer. The shared test
+ * setup stubs a non-matching (desktop) `matchMedia`; a phone-width test overrides
+ * it so the bar takes its narrow branch.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
+describe('FilterBar narrow viewport (phone)', () => {
+  afterEach(() => {
+    // Restore the shared desktop default so later tests never inherit a phone.
+    mockViewport(false)
+  })
+
+  it('keeps the facet pickers out of the resting layout, echoing an active one as a chip', () => {
+    mockViewport(true)
+    renderBar({ ...LIBRARY_DEFAULTS, year: '2023' }, vi.fn(), { facets: FACETS })
+
+    // The four facet selects no longer stack between the search box and the
+    // photos — they have folded into the (shut) filters drawer…
+    expect(screen.queryByLabelText('Year')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Album')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Label')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Person')).not.toBeInTheDocument()
+    // …yet an active facet stays visible as a chip, so the filtered set is never a
+    // mystery even with the drawer closed.
+    expect(screen.getByText('Year: 2023')).toBeInTheDocument()
+  })
+
+  it('reveals the facet pickers inside the filters drawer once it is opened', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
+
+    expect(screen.queryByLabelText('Year')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Filters/ }))
+    // The same progressive-disclosure surface the advanced filters already used
+    // now carries the facets too.
+    expect(await screen.findByLabelText('Year')).toBeInTheDocument()
+    expect(screen.getByLabelText('Album')).toBeInTheDocument()
   })
 })
 
