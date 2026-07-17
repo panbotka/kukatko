@@ -6,9 +6,11 @@
   PhotoPrism plní katalog Kukátka — fotky a jejich metadata, alba, štítky,
   subjekty/lidé, markery/obličeje, místa, hodnocení a oblíbené.
 - **Účel:** dát jistotu, že migrace z PhotoPrismu — jediná cesta, kterou historie
-  knihovny vstupuje do nové databáze — nic tiše neztrácí. Tento dokument **pouze
-  popisuje**, nemění chování importu; doporučené opravy jsou zapsané, ne
-  implementované.
+  knihovny vstupuje do nové databáze — nic tiše neztrácí. Dokument původně **pouze
+  popisoval**; jeho čtyři mezery (GAP) v sekci „PhotoPrism → Kukátko“ **už jsou
+  vyřešené** — tři subjektové (`Subject.Type`/`Favorite`/`Private`) jako MAPPED,
+  `Album.Category` jako WAIVED — a řádky níže to odrážejí. Sekce
+  „photo-sorter → Kukátko“ dále popisuje a její doporučené opravy zapsané zůstávají.
 
 Auditovaný kód: `internal/photoprism/` (zdrojové struktury `models.go` a endpointy
 `photoprism.go` + `download.go`), `internal/ppimport/` (mapery), `internal/photos/`
@@ -32,28 +34,30 @@ Auditováno **89 zdrojových polí** definovaných v `internal/photoprism/models
 
 | Verdikt | Počet |
 | --- | --- |
-| **MAPPED** | 58 |
-| **WAIVED** | 27 |
-| **GAP** | 4 |
+| **MAPPED** | 61 |
+| **WAIVED** | 28 |
+| **GAP** | 0 |
 | **Celkem** | 89 |
 
-**Čtyři skutečné mezery (GAP):**
+**Stav mezer — všechny čtyři vyřešeny (commit tohoto úkolu):**
 
-1. **`Subject.Private` → `subjects.private`** — člověk, kterého PhotoPrism označil jako
-   soukromého, se po importu stane veřejným (viz „Subjekty“). Nejzávažnější: má
-   dopad na soukromí.
-2. **`Subject.Favorite` → `subjects.favorite`** — příznak oblíbeného člověka se
-   ztrácí.
-3. **`Subject.Type` → `subjects.type`** — každý subjekt založený importem je
-   natvrdo `person`; zvíře (`pet`) nebo jiná entita (`other`) přijde o svůj typ.
-4. **`Album.Category` → (bez sloupce)** — kategorie alba (skupinování alb podle
-   tématu) nemá v Kukátku kam přijít a zahazuje se.
+1. **`Subject.Private` → `subjects.private`** — **OPRAVENO (MAPPED).** Soukromý
+   člověk z PhotoPrismu zůstává po importu soukromý. Byla to nejzávažnější mezera:
+   měla dopad na soukromí.
+2. **`Subject.Favorite` → `subjects.favorite`** — **OPRAVENO (MAPPED).** Příznak
+   oblíbeného člověka se přenáší.
+3. **`Subject.Type` → `subjects.type`** — **OPRAVENO (MAPPED).** Zvíře (`pet`) nebo
+   jiná entita (`other`) si zachová svůj typ; už není každý subjekt natvrdo `person`.
+4. **`Album.Category` → (bez sloupce)** — **WAIVED (produktové rozhodnutí).** Kukátko
+   nemá koncept kategorie alba (žádný sloupec, žádné UI, žádný dotaz) — přidat
+   zapisovací sloupec, který nikdo nečte, by byl mrtvý sloupec. Viz „Alba“ a
+   ověřená indicie č. 5.
 
-Mezery 1–3 mají společnou příčinu i společnou opravu, viz sekce „Subjekty“ a
+Mezery 1–3 měly společnou příčinu i společnou opravu — viz sekce „Subjekty“ a
 ověřená indicie č. 4 níže.
-Kromě těchto čtyř existuje několik **vědomě vynechaných** položek s netriviálním
-dopadem (nepojmenované/neplatné obličejové markery, alba typu `month` při plném
-běhu) — jsou popsané v „Rizika a vědomé kompromisy“.
+Kromě těchto (nyní vyřešených) čtyř existuje několik **vědomě vynechaných** položek
+s netriviálním dopadem (nepojmenované/neplatné obličejové markery, alba typu `month`
+při plném běhu) — jsou popsané v „Rizika a vědomé kompromisy“.
 
 ## Jak import plní řádek fotky (kontext k tabulkám)
 
@@ -189,28 +193,28 @@ PhotoPrismovy).
 ## Subjekty / lidé — struktura `Subject`
 
 Cíl je tabulka `subjects` (migrace `0008`: `uid, slug, name, type, favorite,
-private, notes, cover_photo_uid, …`; žádný sloupec `file_count`). **Klíčové
-zjištění:** `photoprism.Subject` i klient `ListSubjects` jsou **mrtvý kód** vůči
-importu — importní rozhraní `ppimport.PhotoPrismClient` `ListSubjects` vůbec
-nedeklaruje (viz ověřená indicie č. 4 níže),
-takže **žádné pole PP subjektu se nečte**. Subjekty vznikají výhradně ze jmen
-markerů (`findOrCreateSubject` → `people.Subject{Name, Type: person}`).
+private, notes, cover_photo_uid, …`; žádný sloupec `file_count`). **Dřívější
+zjištění** (nyní vyřešené): `photoprism.Subject` i klient `ListSubjects` byly vůči
+importu **mrtvý kód** — importní rozhraní `ppimport.PhotoPrismClient` `ListSubjects`
+nedeklarovalo, takže žádné pole PP subjektu se nečetlo a subjekty vznikaly natvrdo
+jako `person`. **Oprava (implementováno):** `ppimport.PhotoPrismClient` teď
+`ListSubjects` deklaruje; `Service.loadSubjectIndex` přečte subjekty jednou za běh
+(best-effort) do indexu podle UID i slugu jména, a `findOrCreateSubject` →
+`newSubject` obohatí **nově zakládaný** subjekt o `type`/`favorite`/`private` z PP
+subjektu, který marker pojmenovává (párování přes `Marker.SubjUID`, fallback slug
+jména). Obohacení se děje **jen při založení** — existující (třeba v Kukátku
+editovaný) subjekt zůstane beze změny, takže přeběh je idempotentní a nepřepíše
+lokální úpravu (stejné chování jako `psimport`).
 
 | Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
 | --- | --- | --- | --- |
 | `Subject.Name` | `subjects.name` | **WAIVED** | Redundantní: jméno dorazí přes `Marker.Name`, samotné pole `Subject.Name` se nečte — o hodnotu se nepřichází. |
-| `Subject.UID` | — | **WAIVED** | PP subject UID se neukládá; subjekt se páruje slugem jména. |
-| `Subject.Slug` | `subjects.slug` | **WAIVED** | Slug si Kukátko generuje z jména (`people.Slugify`). |
+| `Subject.UID` | (index `SubjUID`→subjekt) | **MAPPED** | Neukládá se jako sloupec, ale `loadSubjectIndex` ho použije jako klíč, přes který marker (`Marker.SubjUID`) najde svůj PP subjekt pro obohacení `type`/`favorite`/`private`. Kukátkovo `subjects.uid` se dál generuje vlastní. |
+| `Subject.Slug` | `subjects.slug` | **WAIVED** | Slug si Kukátko generuje z jména (`people.Slugify`); slug PP subjektu slouží jen jako fallback klíč indexu. |
 | `Subject.FileCount` | — (bez sloupce) | **WAIVED** | Kukátko počítá markery živě (`ListSubjects`/`SubjectCount`), necachuje. |
-| `Subject.Type` | `subjects.type` | **GAP** | Každý importem založený subjekt je natvrdo `person`; PP `pet`/`other` přijde o typ. `psimport` typ mapuje (`mapSubjectType`). Bije při zvířatech: pes se v Kukátku ukáže jako člověk. **Oprava:** viz níže. |
-| `Subject.Favorite` | `subjects.favorite` | **GAP** | Cílový sloupec existuje (default `false`) a `psimport` ho plní; ppimport ho nechá `false`. Oblíbený člověk ztrácí příznak. |
-| `Subject.Private` | `subjects.private` | **GAP** | **Nejzávažnější.** Soukromá osoba z PP se stane veřejnou (sloupec je globální, ne per-user). `psimport` `Private` zachovává. |
-
-**Společná oprava mezer u subjektů:** buď (a) přidat `ListSubjects` do
-`ppimport.PhotoPrismClient` a při seji subjektu obohatit `type`/`favorite`/`private`
-z PP subjektu, nebo (b) z markeru přečíst `SubjUID` a subjekt dohledat. Varianta
-(a) je čistší a odstraní všechny tři GAPy naráz. Do vyřešení je bezpečnější
-importovat lidi z `psimport` (photo-sorter), který tato pole nese.
+| `Subject.Type` | `subjects.type` | **MAPPED** | `mapSubjectType` (`pet`/`other`/default `person`), stejně jako `psimport`. Zvíře si zachová typ; nastaveno při založení subjektu. |
+| `Subject.Favorite` | `subjects.favorite` | **MAPPED** | Přeneseno při založení subjektu (`newSubject`); globální sloupec, ne per-user. |
+| `Subject.Private` | `subjects.private` | **MAPPED** | Soukromá osoba z PP zůstane soukromá. Nastaveno při založení subjektu. |
 
 ## Alba — struktura `Album`
 
@@ -231,7 +235,7 @@ všechny typy).
 | `Album.Favorite` | — (bez sloupce) | **WAIVED** | `albums` nemá `favorite` — koncept oblíbeného alba v Kukátku není. |
 | `Album.CreatedAt` | — | **WAIVED** | `albums.created_at` je DB `now()`. |
 | `Album.UpdatedAt` | — | **WAIVED** | dtto. |
-| `Album.Category` | — (bez sloupce) | **GAP** | Kategorie alba (skupinování podle tématu) nemá v Kukátku kam přijít a zahazuje se. Bije uživatele, kteří alba do kategorií třídili. **Oprava:** přidat nullable `albums.category` a namapovat, nebo — je-li produkční knihovna nepoužívá — formálně WAIVED. |
+| `Album.Category` | — (bez sloupce) | **WAIVED** | Kategorie alba (skupinování podle tématu) nemá v Kukátku kam přijít. **Produktové rozhodnutí:** Kukátko koncept kategorie alba **nemá** — žádný sloupec, žádné UI, žádný dotaz nad ním (grep celého repa: jediné „category“ jsou CLDR plurály). Přidat zapisovací `albums.category`, který nikdo nečte, by byl mrtvý sloupec, ne oprava; proto formálně WAIVED (stejné rozhodnutí jako u photo-sorter importu, kde `albums.category` zůstává GAP jen dokud se o něm nerozhodne — tady rozhodnuto: bez domova). |
 
 **Členství v albu** (`album_photos`): PhotoPrismí pořadí ve výpisu se nepřenáší —
 Kukátko alba řadí **chronologicky** (`0022` zahodilo `sort_order`). `AddPhoto` je
@@ -273,8 +277,8 @@ z PhotoPrismu. Souřadnice (`lat`/`lng`) se tedy migrují (viz „Fotky“), ná
   „Fotky“).
 - **Oblíbená alba / štítky:** cílové sloupce neexistují → **WAIVED** (viz „Alba“,
   „Štítky“).
-- **Oblíbení / soukromí lidé:** `Subject.Favorite`/`Private` → **GAP** (globální
-  sloupce existují, import je neplní; viz „Subjekty“).
+- **Oblíbení / soukromí lidé:** `Subject.Favorite`/`Private` → **MAPPED** (globální
+  sloupce, import je nyní plní při založení subjektu; viz „Subjekty“).
 
 ## Cílová strana — sloupce `photos`, které import neplní z PP
 
@@ -334,22 +338,26 @@ z porovnání nevypadává, takže skutečný přepis se nemůže tvářit jako 
   univerzální konvence pro „negeotagováno“ a reálná fotka tam prakticky nevznikne;
   přijatelné.
 
-### 4. `photoprism.Subject` a `ListSubjects` jsou mrtvý kód — **potvrzeno, včetně asymetrie s `psimport`**
+### 4. `photoprism.Subject` a `ListSubjects` byly mrtvý kód — **potvrzeno; VYŘEŠENO**
 
-`ListSubjects` a `photoprism.Subject` jsou definované na `photoprism.Client` a
-implementované, ale **mimo vlastní testy je nikdo nevolá** (grep: jediné výskyty
-`photoprism.Subject`/`ListSubjects` v importní vrstvě jsou v `photoprism_test.go`).
-Importní rozhraní `ppimport.PhotoPrismClient` metodu vůbec neuvádí. Subjekty tedy
-vznikají jen nepřímo ze jmen markerů, a PP subject `Favorite`/`Private`/`Type`
-nedorazí do `subjects`, přestože sloupce existují a `psimport` je plní
-(`people.Subject{Favorite: ps.Favorite, Private: ps.Private, Type: mapSubjectType(...)}`).
-`Slug`/`FileCount` cíl nemají (slug se generuje, počet se počítá živě). Tato
-asymetrie je zdrojem GAPů 1–3 ze souhrnu.
+`ListSubjects` a `photoprism.Subject` byly definované na `photoprism.Client`, ale
+importní rozhraní `ppimport.PhotoPrismClient` je nedeklarovalo, takže je import
+nevolal a PP subject `Favorite`/`Private`/`Type` nedorazil do `subjects`, přestože
+sloupce existují a `psimport` je plní. To byl zdroj GAPů 1–3 ze souhrnu.
+**Oprava (implementováno):** `ppimport.PhotoPrismClient` `ListSubjects` deklaruje;
+`loadSubjectIndex` je za běh přečte (best-effort, selhání nezmaří import — jen se
+neobohatí) do indexu podle `SubjUID` i slugu jména; `newSubject` obohatí nově
+zakládaný subjekt o `type`/`favorite`/`private` (párování markeru `SubjUID`,
+fallback slug). Symetrické s `psimport`. `Slug`/`FileCount` cíl nadále nemají (slug
+se generuje, počet se počítá živě).
 
-### 5. `Album.Category` — **potvrzeno bez domova → GAP**
+### 5. `Album.Category` — **potvrzeno bez domova → WAIVED (produktové rozhodnutí)**
 
 `findOrCreateAlbum` čte jen `Title`/`Description`/`Type`/`Private`. `Category` se
-nečte a `albums` sloupec nemá. Viz „Alba“.
+nečte a `albums` sloupec pro ni není. Grep celého repa: Kukátko nemá žádný koncept
+kategorie alba (sloupec, UI ani dotaz) — jediné „category“ jsou CLDR plurály v i18n.
+Přidat zapisovací sloupec, který nic nečte, by byl mrtvý sloupec, ne oprava; proto
+formálně **WAIVED**, nikoli vymýšlení sloupce. Viz „Alba“.
 
 ### 6. `markers.invalid` — **vědomé rozhodnutí (WAIVED) s asymetrií vůči `psimport`**
 
@@ -407,10 +415,13 @@ majitel o nich má vědět:
    Vědomé (560 auto-generovaných měsíčních alb, pokrývá je časová osa). Scoped běh je
    ale namapuje, takže výsledek závisí na způsobu importu — konzistentní zdokumentovat.
 3. **Nadmořská výška 0 a „Null Island“** — okrajové hrany nulové pasti (indicie 3).
-4. **PP subject UID se zahazuje** — lidé se páruji slugem jména, takže dva různí lidé
-   se stejným jménem v PhotoPrismu splynou do jednoho Kukátkova subjektu (a naopak
-   přejmenování v PP založí nového). `psimport` páruje také slugem jména, takže obě
-   cesty se chovají stejně — ale je to vlastnost, ne záruka identity.
+4. **Subjekty se párují slugem jména** — `Marker.SubjUID` se nově čte pro obohacení
+   (najít správný PP subjekt pro `type`/`favorite`/`private`), ale samotný Kukátkův
+   subjekt se dál zakládá podle slugu jména, takže dva různí lidé se stejným jménem
+   v PhotoPrismu splynou do jednoho Kukátkova subjektu (a naopak přejmenování v PP
+   založí nového). `psimport` páruje také slugem jména, takže obě cesty se chovají
+   stejně — ale je to vlastnost, ne záruka identity. Hrana obohacení: u splývajícího
+   jména vyhraje ten PP subjekt, jehož marker založí Kukátkův subjekt jako první.
 
 ## Riziko pokrytí testy (stálé)
 
@@ -418,8 +429,9 @@ Existující testy ověřují **precedenci, ne pokrytost**: `ppimport/logic_test
 `TestBuildPhoto_precedence`, `details_test.go`, `ppimport_integration_test.go`
 kontrolují, že PP vyhrává nad EXIF a že prázdno nemaže — ale **nic netvrdí, že každé
 zdrojové pole někam padne nebo je vědomě vynecháno**. Bez completeness testu může
-příští přidané pole `photoprism.models` propadnout tiše, přesně jako dnes
-`Album.Category` nebo `Subject.Private`.
+příští přidané pole `photoprism.models` propadnout tiše, přesně jako kdysi
+`Album.Category` nebo `Subject.Private` (obě mezery jsou dnes vyřešené, ale objevil
+je až tento audit, ne test).
 
 **Doporučení:** tabulkový test, který přes reflexi projde pole `photoprism.Photo` /
 `File` / `Marker` / `Album` / `Label` / `Subject` a selže, dokud každé není buď

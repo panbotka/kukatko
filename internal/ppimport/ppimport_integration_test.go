@@ -57,6 +57,7 @@ type fakePPClient struct {
 	photos      []photoprism.Photo
 	albums      []photoprism.Album
 	labels      []photoprism.Label
+	subjects    []photoprism.Subject
 	albumPhotos map[string][]photoprism.Photo
 	// queryPhotos answers a scoped listing by its exact q= expression (e.g.
 	// `label:"beach"`, `label:"beach" year:2023`).
@@ -170,6 +171,12 @@ func (c *fakePPClient) ListAlbums(_ context.Context, _ photoprism.ListParams) ([
 // ListLabels returns all labels.
 func (c *fakePPClient) ListLabels(_ context.Context, _ photoprism.ListParams) ([]photoprism.Label, error) {
 	return c.labels, nil
+}
+
+// ListSubjects returns all subjects — the source of a person's type and
+// favorite/private flags, which the face markers do not carry.
+func (c *fakePPClient) ListSubjects(_ context.Context, _ photoprism.ListParams) ([]photoprism.Subject, error) {
+	return c.subjects, nil
 }
 
 // DownloadOriginal streams the stored bytes for a file hash, or fails the
@@ -1138,5 +1145,88 @@ func TestIntegration_detailsNeverClobberLocalEdits(t *testing.T) {
 	}
 	if after.Title != "Ostatky 2016" {
 		t.Errorf("title = %q, want the source's edit", after.Title)
+	}
+}
+
+// TestIntegration_subjectFlagsAndType verifies a person seeded from a named face
+// marker carries the source subject's type and its favorite/private flags — the
+// three fields the PhotoPrism import historically dropped — into the real subjects
+// table on a fresh import, and that a second run leaves them (and a user's edit)
+// exactly as they are.
+func TestIntegration_subjectFlagsAndType(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	// Rex resolves by the marker's subject UID; Alice by the slug of her name.
+	rex := client.addPhoto("pp1", t0, "Dog", 10, photoprism.Marker{
+		UID: "mk-rex", Type: "face", Name: "Rex", SubjUID: "sp-rex", X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
+	})
+	alice := client.addPhoto("pp2", t0.Add(time.Hour), "Portrait", 20, photoprism.Marker{
+		UID: "mk-alice", Type: "face", Name: "Alice", X: 0.3, Y: 0.3, W: 0.2, H: 0.2,
+	})
+	client.photos = []photoprism.Photo{rex, alice}
+	client.subjects = []photoprism.Subject{
+		{UID: "sp-rex", Type: "pet", Name: "Rex", Favorite: true, Private: true},
+		{UID: "sp-alice", Type: "person", Name: "Alice"},
+	}
+
+	env := newEnv(t, client)
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	assertDBSubjectFlags(t, env, "Rex", people.SubjectPet, true, true)
+	assertDBSubjectFlags(t, env, "Alice", people.SubjectPerson, false, false)
+
+	// A user un-privates and un-favorites Rex in Kukátko between runs.
+	clearDBSubjectFlags(t, env, "Rex")
+
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+	// The re-run neither blanks the flags it set nor re-applies them over the edit.
+	assertDBSubjectFlags(t, env, "Rex", people.SubjectPet, false, false)
+	assertDBSubjectFlags(t, env, "Alice", people.SubjectPerson, false, false)
+}
+
+// assertDBSubjectFlags checks a subject's type and favorite/private columns in the
+// real subjects table.
+func assertDBSubjectFlags(
+	t *testing.T, env *testEnv, name string, wantType people.SubjectType, wantFav, wantPriv bool,
+) {
+	t.Helper()
+	store := people.NewStore(env.db.Pool())
+	subj, err := store.GetSubjectBySlug(t.Context(), people.Slugify(name))
+	if err != nil {
+		t.Fatalf("subject %q not created: %v", name, err)
+	}
+	if subj.Type != wantType {
+		t.Errorf("subject %q type = %q, want %q", name, subj.Type, wantType)
+	}
+	if subj.Favorite != wantFav {
+		t.Errorf("subject %q favorite = %v, want %v", name, subj.Favorite, wantFav)
+	}
+	if subj.Private != wantPriv {
+		t.Errorf("subject %q private = %v, want %v", name, subj.Private, wantPriv)
+	}
+}
+
+// clearDBSubjectFlags un-favorites and un-privates a subject, standing in for a
+// user's edit made in Kukátko between imports.
+func clearDBSubjectFlags(t *testing.T, env *testEnv, name string) {
+	t.Helper()
+	store := people.NewStore(env.db.Pool())
+	subj, err := store.GetSubjectBySlug(t.Context(), people.Slugify(name))
+	if err != nil {
+		t.Fatalf("subject %q not found to edit: %v", name, err)
+	}
+	if _, err := store.UpdateSubject(t.Context(), subj.UID, people.SubjectUpdate{
+		Name:          subj.Name,
+		Type:          subj.Type,
+		Favorite:      false,
+		Private:       false,
+		Notes:         subj.Notes,
+		CoverPhotoUID: subj.CoverPhotoUID,
+	}); err != nil {
+		t.Fatalf("updating subject %q: %v", name, err)
 	}
 }

@@ -41,6 +41,7 @@ type fakeClient struct {
 	photos      []photoprism.Photo
 	albums      []photoprism.Album
 	labels      []photoprism.Label
+	subjects    []photoprism.Subject
 	albumPhotos map[string][]photoprism.Photo
 	// queryPhotos answers a scoped listing by its exact q= expression (e.g.
 	// `label:"sdh"`, `year:1985`), so a test that keys it also pins the expression
@@ -201,6 +202,15 @@ func (c *fakeClient) ListLabels(_ context.Context, p photoprism.ListParams) ([]p
 	return pageLabels(c.labels, p.Offset, p.Count), nil
 }
 
+// ListSubjects returns one page of subjects — the source of a person's type and
+// favorite/private flags, which the face markers do not carry.
+func (c *fakeClient) ListSubjects(_ context.Context, p photoprism.ListParams) ([]photoprism.Subject, error) {
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	return pageSubjects(c.subjects, p.Offset, p.Count), nil
+}
+
 // DownloadOriginal streams the stored original for a SHA1 file hash, recording
 // the request and honouring any configured per-hash error.
 func (c *fakeClient) DownloadOriginal(_ context.Context, fileHash string) (*photoprism.Download, error) {
@@ -257,6 +267,12 @@ func pageAlbums(in []photoprism.Album, offset, count int) []photoprism.Album {
 
 // pageLabels slices a label list into [offset, offset+count).
 func pageLabels(in []photoprism.Label, offset, count int) []photoprism.Label {
+	lo, hi := bounds(len(in), offset, count)
+	return in[lo:hi]
+}
+
+// pageSubjects slices a subject list into [offset, offset+count).
+func pageSubjects(in []photoprism.Subject, offset, count int) []photoprism.Subject {
 	lo, hi := bounds(len(in), offset, count)
 	return in[lo:hi]
 }
