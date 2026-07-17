@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { AlbumTile } from '../components/organize/AlbumTile'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { type AlbumSummary, fetchAlbums } from '../services/organize'
 
 /** Fetch lifecycle of the albums list. */
@@ -18,19 +19,21 @@ type State =
 
 /**
  * The albums index: a responsive grid of album cards (cover, title, count), each
- * linking to its detail page. Editors and admins get a create button; the modal
- * adds the new album to the grid on success. Mutation controls are hidden from
- * viewers.
+ * linking to its detail page, newest album first as the server ranks them.
+ * Editors and admins get a create button; the modal refetches the grid on
+ * success. Mutation controls are hidden from viewers.
  */
 export function AlbumsPage() {
   const { t } = useTranslation()
   const { canWrite } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [creating, setCreating] = useState(false)
+  const [reloadKey, reload] = useReloadKey()
 
   useEffect(() => {
     const controller = new AbortController()
-    setState({ status: 'loading' })
+    // No reset to 'loading' here: the initial state already is, and on a reload
+    // the grid stays up until the fresh list arrives instead of flashing a spinner.
     fetchAlbums(controller.signal)
       .then((albums) => {
         setState({ status: 'ready', albums })
@@ -44,7 +47,7 @@ export function AlbumsPage() {
     return () => {
       controller.abort()
     }
-  }, [])
+  }, [reloadKey])
 
   return (
     <>
@@ -96,12 +99,12 @@ export function AlbumsPage() {
           onHide={() => {
             setCreating(false)
           }}
-          onSaved={(album) => {
-            setState((prev) =>
-              prev.status === 'ready'
-                ? { status: 'ready', albums: [...prev.albums, { ...album, photo_count: 0 }] }
-                : prev,
-            )
+          onSaved={() => {
+            // Refetch rather than appending the new album: the server ranks albums
+            // by their newest photo, and a fresh (empty) one ranks with the undated
+            // ones at the end, where random uids decide the order among them. Only
+            // the server knows where it lands, so ask it instead of guessing.
+            reload()
             setCreating(false)
           }}
         />

@@ -454,7 +454,12 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   LAST, uid`); `taken_from`/`taken_to` je **rozsah `taken_at`** přes fotky alba. Obojí agreguje
   jediný SQL dotaz (LEFT JOIN + LATERAL, bez migrace) a počítá **jen s živými fotkami** —
   archivovaná fotka se započítá do `photo_count`, ale obálku nedodá ani rozsah neposune. Chybí,
-  když album nemá co ukázat / žádná fotka nemá známý `taken_at`. `POST /albums`
+  když album nemá co ukázat / žádná fotka nemá známý `taken_at`. **Pořadí seznamu** je vždy
+  **od nejnovějšího alba**: řadí se podle **nejnovější živé fotky alba** (`MAX(taken_at) DESC
+  NULLS LAST`, `uid` jako tiebreak pro totální a stabilní pořadí). Alba, kterým se nedá přiřadit
+  datum — žádná fotka nemá `taken_at`, nebo je album prázdné — jsou **na konci**; archivovaná
+  fotka pořadí neovlivní. Řazení **není volba uživatele**: endpoint nemá žádný `sort`/`order`
+  parametr a frontend pořadí serveru nemění. `POST /albums`
   (RequireWrite) → 201 z `{title,description?,type?,cover_photo_uid?,private?}` (prázdný
   title / neplatný typ → 400); `GET /albums/{uid}` (RequireAuth, 404); `PATCH /albums/{uid}`
   (RequireWrite) edituje title/description/cover_photo_uid/private (**`type` se zachová**,

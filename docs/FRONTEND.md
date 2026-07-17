@@ -308,7 +308,10 @@ zapiš sem.
   dlaždice nesou scope v detail odkazu (`detailQuery` s `favorite=true`) → Esc/Zpět/prev-next z fotky se vrací sem,
   pro editory **režim výběru** → `BulkEditControl`; hromadné odebrání z oblíbených fotku ze seznamu
   vyhodí (výběr se čistí **před** refetchem, takže v něm nezůstane fotka, která zmizela z mřížky),
-  `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin),
+  `AlbumsPage` = `/albums` mřížka karet alb + `Nové album` (editor/admin) — pořadí **od
+  nejnovějšího alba** (dle nejnovější fotky, nedatovaná/prázdná na konci) **vynucuje backend**,
+  stránka nepřeřazuje a nemá selektor řazení; po vytvoření alba **přenačte seznam**
+  (`useReloadKey`) místo lokálního připojení na konec — kam nové album patří, ví jen server,
   `AlbumDetailPage` = `/albums/:uid` hlavička + tlačítko **Promítání** (všem) + editorské akce
   (upravit/smazat/vybrat) nad
   fotomřížkou scopnutou na album (`useScopedPhotos` + `FilterBar showSort={false}` + URL stav) —

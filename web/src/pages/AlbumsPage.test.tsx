@@ -86,8 +86,18 @@ describe('AlbumsPage', () => {
     expect(await screen.findByText('No albums yet')).toBeInTheDocument()
   })
 
-  it('creates an album: calls the API and adds it to the grid', async () => {
-    fetchMock.mockResolvedValue([])
+  it('renders albums in the order the server returns, without re-sorting', async () => {
+    // The server ranks by newest photo, so "Zebra" leading is a valid order that
+    // any client-side sort by title would destroy.
+    fetchMock.mockResolvedValue([album('al_2', 'Zebra'), album('al_1', 'Alps')])
+    renderPage()
+
+    await screen.findByText('Zebra')
+    const titles = screen.getAllByRole('link').map((link) => link.getAttribute('aria-label'))
+    expect(titles).toEqual(['Zebra', 'Alps'])
+  })
+
+  it('creates an album: calls the API and refetches the grid in server order', async () => {
     const created: Album = {
       uid: 'al_new',
       slug: 'trip',
@@ -98,6 +108,9 @@ describe('AlbumsPage', () => {
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     }
+    // The fresh album only reaches the grid through a refetch: the page never
+    // appends it locally, because only the server knows where it ranks.
+    fetchMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ ...created, photo_count: 0 }])
     createMock.mockResolvedValue(created)
     const user = userEvent.setup()
     renderPage()
@@ -111,6 +124,7 @@ describe('AlbumsPage', () => {
       expect(createMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'Trip' }))
     })
     expect(await screen.findByText('Trip')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('hides the create control from viewers', async () => {

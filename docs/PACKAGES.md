@@ -1057,8 +1057,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   nedefaultní hodnotu (store maže řádek, který spadne na rating 0 + flag `none`), takže fotka bez
   řádku = rating 0 / flag `none`;
   `Store` = `NewStore(pool)` nad sdíleným pgx poolem: **alba** `CreateAlbum`/`GetAlbumByUID`/
-  `GetAlbumBySlug`/`UpdateAlbum` (re-slug z title)/`ListAlbums` → `[]AlbumSummary` (řazení dle
-  title; `AlbumCount` + `CoverUID`/`TakenFrom`/`TakenTo` — vše dopočtené **v jednom SQL**, bez
+  `GetAlbumBySlug`/`UpdateAlbum` (re-slug z title)/`ListAlbums` → `[]AlbumSummary` (řazení **od
+  nejnovějšího alba**: `MAX(p.taken_at) DESC NULLS LAST, a.uid` — nedatovaná i prázdná alba
+  agregují NULL a jdou na konec, `uid` dělá pořadí totální a stabilní; **žádný COALESCE na
+  `created_at`** — u alba by to nedatovanému albu dalo čas uploadu a vyneslo ho nahoru;
+  `AlbumCount` + `CoverUID`/`TakenFrom`/`TakenTo` — vše dopočtené **v jednom SQL**, bez
   migrace: `photo_count` z LEFT JOIN `album_photos`, `MIN`/`MAX(taken_at)` z LEFT JOINu na `photos`
   s `archived_at IS NULL`, fallback obálka z `LEFT JOIN LATERAL … ORDER BY taken_at DESC NULLS LAST,
   uid LIMIT 1`; `CoverUID = COALESCE(cover_photo_uid, fallback)` → ručně zvolená obálka vyhrává,
