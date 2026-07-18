@@ -555,10 +555,16 @@ zapiš sem.
   zkratek, takže ji ukáže i nápověda `?`). Když si localStorage pamatuje **zapnuté obličeje**, zásuvka
   se při načtení **sama otevře na panelu obličejů** (efekt na hraně `facesAvailable`, jednou), aby
   uložená volba ukázala i panel, ne jen boxy nad zavřenou zásuvkou; pozdější ruční zavření se respektuje
-  a stav otevření se dál nese v `info` paramu. Vedle fotky/zásuvky drží **jeden lead slot**
-  `sidePanel: 'faces' | 'edit' | null` (jediný stav, ne boolean na každý panel) — otevření jednoho
-  zavře druhý, takže obličeje a editace se nikdy neperou; zapnutí obličejů i editu **otevře zásuvku**.
-  Týž `sidePanel` řídí boxy i panel obličejů, takže se nemůžou rozejít. **Obličejové UI stojí celé
+  a stav otevření se dál nese v `info` paramu. Zásuvka je **jeden panel se třemi vzájemně výlučnými
+  pohledy** — obličeje, úpravy, nebo metadata („Informace") — řízenými `sidePanel: 'faces' | 'edit' |
+  null` (`showInfo = !showFaces && !showEdit`): **obličeje a úpravy jsou samostatné pohledy, metadata
+  patří jen do info pohledu**, takže zapnutí obličejů/úprav **nevytáhne s sebou celý info panel** (dřív
+  se metadata kreslila pod ně — nahlášený bug). Tlačítko **Informace** z obličejů/úprav **přepne** na
+  metadata (zahodí lead i overlay/výběr), z už zobrazených metadat zásuvku **zavře**. **Vypnutí**
+  obličejů/úprav zásuvku **zavře** (není to „ukaž metadata"). V pohledu obličejů/úprav nese hlavičku
+  jeho vlastní panel (`FacesPanel`/`EditPanel` mají titulek + zavření), takže generická hlavička
+  „Informace" (`.kk-viewer__panel-head`) svítí **jen v info pohledu**. Týž `sidePanel` řídí boxy i panel
+  obličejů, takže se nemůžou rozejít. **Obličejové UI stojí celé
   (tlačítko i `m`) jen když je preview identita** (`isIdentityEdit(previewEdit)` ve `facesAvailable`):
   transform živého i uloženého editu posune vykreslené pixely pod boxy pozicované v procentech obalu
   — rámečky by minuly obličeje, tak se radši nekreslí a vrátí se, jakmile je preview zase neutrální.

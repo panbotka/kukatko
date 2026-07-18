@@ -203,15 +203,23 @@ export function PhotoDetailPage() {
   // not be drawn over the still-displayed previous one.
   const loadingNext = ready !== null && ready.uid !== uid
   // A non-identity preview rules the whole face UI out: FaceOverlay places its
-  // boxes in percentages of the figure that shrink-wraps the <img>, while the
-  // preview's transform moves the rendered pixels underneath them — so the boxes
-  // would miss the faces. Rather than draw them wrong, the faces stand down.
+  // boxes in percentages of the (aspect-ratio-framed) figure, while the preview's
+  // transform moves the rendered pixels underneath them — so the boxes would miss
+  // the faces. Rather than draw them wrong, the faces stand down.
   const facesAvailable =
     isStill && !loadingNext && faces.faces.length > 0 && isIdentityEdit(previewEdit)
   const showFaces = facesAvailable && sidePanel === 'faces'
   // Edits are for stills only — the backend never re-renders a video edit, and the
   // player carries no preview surface to apply them to.
   const showEdit = canWrite && isStill && sidePanel === 'edit'
+  // The drawer is ONE panel showing ONE of three mutually-exclusive views: faces,
+  // edits, or the metadata ("Informace"). Faces and edits are their own focused
+  // views — the metadata belongs to the info view alone, so activating faces or
+  // edits must NOT drag the whole info panel in with them. Info is simply "neither
+  // lead is active"; a `sidePanel` stuck on faces with no faces available (e.g.
+  // after paging to a photo with none) falls through to info rather than an empty
+  // drawer.
+  const showInfo = !showFaces && !showEdit
 
   // Faces and edits share the drawer's lead slot, so showing either one closes the
   // other; opening either opens the drawer (their panels live inside it).
@@ -222,13 +230,16 @@ export function PhotoDetailPage() {
     setPanelOpen(true)
   }
 
-  // Hiding the faces drops the selection and the overlay, but leaves the drawer
-  // open on the metadata — turning faces off is not "close everything".
+  // Hiding the faces closes their view: it drops the selection, the overlay and the
+  // remembered preference, and shuts the drawer. Faces are their own view, not a
+  // section of the info panel, so turning them off reveals the photo — not the
+  // metadata (the info button is how you reach that).
   const toggleFaces = (): void => {
     if (sidePanel === 'faces') {
       setSidePanel(null)
       writeFaceOverlay(false)
       faces.select(null)
+      setPanelOpen(false)
       return
     }
     openFaces()
@@ -242,28 +253,35 @@ export function PhotoDetailPage() {
   }
 
   // Opening the edits takes the lead slot from the faces (their boxes cannot be
-  // drawn over an edited preview), so the selection is dropped too. Closing
-  // discards whatever is unsaved, returning the photo to showing exactly what is
+  // drawn over an edited preview), so the selection is dropped too. Closing the
+  // edits shuts the drawer — like faces, edits are their own view, not part of the
+  // info panel — discarding whatever is unsaved so the photo shows exactly what is
   // stored.
   const toggleEdit = (): void => {
-    setSidePanel((prev) => (prev === 'edit' ? null : 'edit'))
+    if (sidePanel === 'edit') {
+      setSidePanel(null)
+      setEditDraft(null)
+      setPanelOpen(false)
+      return
+    }
+    setSidePanel('edit')
     setEditDraft(null)
     faces.select(null)
     setPanelOpen(true)
   }
 
-  // The info button toggles the drawer. Closing it resets the lead slot so a
-  // reopened drawer starts on the metadata, and drops the face overlay/selection
-  // that only made sense with the panel open.
+  // The info button opens the metadata view. From faces or edits it SWITCHES to the
+  // info view (drops the lead, and with it the overlay/selection that only made
+  // sense there); from the info view already showing, it toggles the drawer shut.
   const togglePanel = (): void => {
-    if (panelOpen) {
+    if (panelOpen && sidePanel === null) {
       setPanelOpen(false)
-      setSidePanel(null)
-      setEditDraft(null)
-      faces.select(null)
-    } else {
-      setPanelOpen(true)
+      return
     }
+    setSidePanel(null)
+    setEditDraft(null)
+    faces.select(null)
+    setPanelOpen(true)
   }
 
   // Honour the remembered "show faces" preference on load: once this photo's faces
@@ -759,19 +777,23 @@ export function PhotoDetailPage() {
         aria-label={t('photo.viewer.info')}
         aria-hidden={!panelOpen}
       >
-        <div className="kk-viewer__panel-head">
-          <h2 className="kk-viewer__panel-title">{t('photo.viewer.info')}</h2>
-          <button
-            type="button"
-            className="kk-viewer__btn kk-viewer__btn--icon"
-            aria-label={t('photo.viewer.closeInfo')}
-            onClick={() => {
-              setPanelOpen(false)
-            }}
-          >
-            <Icon name="x-lg" />
-          </button>
-        </div>
+        {/* The generic drawer header belongs to the info view; the faces and edit
+            panels carry their own header + close, so it would only duplicate them. */}
+        {showInfo && (
+          <div className="kk-viewer__panel-head">
+            <h2 className="kk-viewer__panel-title">{t('photo.viewer.info')}</h2>
+            <button
+              type="button"
+              className="kk-viewer__btn kk-viewer__btn--icon"
+              aria-label={t('photo.viewer.closeInfo')}
+              onClick={() => {
+                setPanelOpen(false)
+              }}
+            >
+              <Icon name="x-lg" />
+            </button>
+          </div>
+        )}
         <div className="kk-viewer__panel-body">
           {showEdit && (
             <section className="kk-viewer__section">
@@ -797,66 +819,78 @@ export function PhotoDetailPage() {
             </section>
           )}
 
-          <section className="kk-viewer__section">
-            <p className="kk-text-eyebrow mb-2">{t('photo.sections.caption')}</p>
-            <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
-          </section>
+          {/* The metadata IS the info view — kept out of the faces/edit views so
+              activating those never drags the whole "Informace" panel in with them. */}
+          {showInfo && (
+            <>
+              <section className="kk-viewer__section">
+                <p className="kk-text-eyebrow mb-2">{t('photo.sections.caption')}</p>
+                <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
+              </section>
 
-          <section className="kk-viewer__section">
-            <p className="kk-text-eyebrow mb-2">{t('photo.sections.organize')}</p>
-            <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
-            <hr />
-            <PeoplePanel
-              photoUid={photo.uid}
-              faces={faces}
-              canWrite={canWrite}
-              loading={loadingNext}
-              onEditFace={editFace}
-            />
-          </section>
+              <section className="kk-viewer__section">
+                <p className="kk-text-eyebrow mb-2">{t('photo.sections.organize')}</p>
+                <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
+                <hr />
+                <PeoplePanel
+                  photoUid={photo.uid}
+                  faces={faces}
+                  canWrite={canWrite}
+                  loading={loadingNext}
+                  onEditFace={editFace}
+                />
+              </section>
 
-          {photo.stack_members !== undefined && photo.stack_members.length > 1 && (
-            <section className="kk-viewer__section">
-              <StackStrip
-                members={photo.stack_members}
-                currentUid={photo.uid}
-                canWrite={canWrite}
-                onSetPrimary={handleSetStackPrimary}
-                onUnstackMember={handleUnstackMember}
-                onUnstackAll={handleUnstackAll}
-                detailQuery={detailQuery}
-              />
-            </section>
+              {photo.stack_members !== undefined && photo.stack_members.length > 1 && (
+                <section className="kk-viewer__section">
+                  <StackStrip
+                    members={photo.stack_members}
+                    currentUid={photo.uid}
+                    canWrite={canWrite}
+                    onSetPrimary={handleSetStackPrimary}
+                    onUnstackMember={handleUnstackMember}
+                    onUnstackAll={handleUnstackAll}
+                    detailQuery={detailQuery}
+                  />
+                </section>
+              )}
+
+              <section className="kk-viewer__section">
+                <TechnicalDetails
+                  photo={photo}
+                  canWrite={canWrite}
+                  onThumbnailRegenerated={onThumbnailRegenerated}
+                />
+              </section>
+
+              <section className="kk-viewer__section d-flex gap-2 flex-wrap">
+                <Button
+                  as="a"
+                  href={photo.download_url}
+                  variant="outline-secondary"
+                  size="sm"
+                  download
+                >
+                  {t('photo.download')}
+                </Button>
+                {!isIdentityEdit(edit) && (
+                  <Button
+                    as="a"
+                    href={downloadUrl(photo.uid, { token: downloadToken })}
+                    variant="outline-secondary"
+                    size="sm"
+                    download
+                  >
+                    {t('photo.downloadEdited')}
+                  </Button>
+                )}
+              </section>
+
+              <section className="kk-viewer__section">
+                <SimilarPhotos uid={photo.uid} />
+              </section>
+            </>
           )}
-
-          <section className="kk-viewer__section">
-            <TechnicalDetails
-              photo={photo}
-              canWrite={canWrite}
-              onThumbnailRegenerated={onThumbnailRegenerated}
-            />
-          </section>
-
-          <section className="kk-viewer__section d-flex gap-2 flex-wrap">
-            <Button as="a" href={photo.download_url} variant="outline-secondary" size="sm" download>
-              {t('photo.download')}
-            </Button>
-            {!isIdentityEdit(edit) && (
-              <Button
-                as="a"
-                href={downloadUrl(photo.uid, { token: downloadToken })}
-                variant="outline-secondary"
-                size="sm"
-                download
-              >
-                {t('photo.downloadEdited')}
-              </Button>
-            )}
-          </section>
-
-          <section className="kk-viewer__section">
-            <SimilarPhotos uid={photo.uid} />
-          </section>
         </div>
       </aside>
     </div>
