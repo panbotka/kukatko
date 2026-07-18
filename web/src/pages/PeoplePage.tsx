@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
-import Alert from 'react-bootstrap/Alert'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { SubjectTile } from '../components/people/SubjectTile'
 import { TileGridSkeleton } from '../components/Skeleton'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { fetchSubjects, type SubjectCount } from '../services/people'
 
 /** Fetch lifecycle of the people list. */
@@ -25,6 +26,7 @@ export function PeoplePage() {
   const { t } = useTranslation()
   const { canWrite } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
+  const [reloadKey, reload] = useReloadKey()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -42,7 +44,7 @@ export function PeoplePage() {
     return () => {
       controller.abort()
     }
-  }, [])
+  }, [reloadKey])
 
   return (
     <>
@@ -59,7 +61,7 @@ export function PeoplePage() {
         <TileGridSkeleton label={t('people.loading')} minTile={140} captionLines={1} />
       )}
 
-      {state.status === 'error' && <Alert variant="danger">{t('people.error')}</Alert>}
+      {state.status === 'error' && <ErrorState title={t('people.error')} onRetry={reload} />}
 
       {state.status === 'ready' && state.subjects.length === 0 && (
         <EmptyState title={t('people.empty.title')} hint={t('people.empty.hint')} />

@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { ErrorState } from '../components/ErrorState'
 import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
 import { formatBytes, formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
@@ -483,7 +484,14 @@ export function SystemStatusPage() {
         </div>
       )}
 
-      {state.status === 'error' && <Alert variant="danger">{t('system.error')}</Alert>}
+      {state.status === 'error' && (
+        <ErrorState
+          title={t('system.error')}
+          onRetry={() => {
+            void refresh()
+          }}
+        />
+      )}
 
       {state.status === 'ready' && (
         <>

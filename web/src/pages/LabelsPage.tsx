@@ -9,8 +9,10 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { LabelEditModal } from '../components/organize/LabelEditModal'
 import { ListSkeleton } from '../components/Skeleton'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { deleteLabel, fetchLabels, type Label, type LabelCount } from '../services/organize'
 
 /** Fetch lifecycle of the labels list. */
@@ -29,6 +31,7 @@ export function LabelsPage() {
   const [creating, setCreating] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Label | null>(null)
   const [actionError, setActionError] = useState(false)
+  const [reloadKey, reload] = useReloadKey()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -46,7 +49,7 @@ export function LabelsPage() {
     return () => {
       controller.abort()
     }
-  }, [])
+  }, [reloadKey])
 
   async function remove(label: Label) {
     setActionError(false)
@@ -96,7 +99,7 @@ export function LabelsPage() {
 
       {state.status === 'loading' && <ListSkeleton label={t('labels.loading')} />}
 
-      {state.status === 'error' && <Alert variant="danger">{t('labels.error')}</Alert>}
+      {state.status === 'error' && <ErrorState title={t('labels.error')} onRetry={reload} />}
 
       {state.status === 'ready' && state.labels.length === 0 && (
         <EmptyState title={t('labels.empty.title')} hint={t('labels.empty.hint')} />

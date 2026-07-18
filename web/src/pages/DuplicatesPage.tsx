@@ -6,6 +6,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { DuplicateGroupCard } from '../components/duplicates/DuplicateGroupCard'
 import { MergeConfirmModal } from '../components/duplicates/MergeConfirmModal'
 import { GridSkeleton } from '../components/library/GridSkeleton'
@@ -188,19 +189,13 @@ export function DuplicatesPage() {
       {status === 'unavailable' && <Alert variant="warning">{t('duplicates.unavailable')}</Alert>}
 
       {status === 'error' && (
-        <Alert variant="danger" className="d-flex align-items-center justify-content-between">
-          <span>{t('duplicates.error')}</span>
-          <Button
-            variant="outline-light"
-            size="sm"
-            onClick={() => {
-              setStatus('loading')
-              void load(0)
-            }}
-          >
-            {t('library.error.retry')}
-          </Button>
-        </Alert>
+        <ErrorState
+          title={t('duplicates.error')}
+          onRetry={() => {
+            setStatus('loading')
+            void load(0)
+          }}
+        />
       )}
 
       {status === 'ready' && groups.length === 0 && (

@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { CompareStage } from '../components/duplicates/CompareStage'
@@ -18,6 +19,7 @@ import '../components/duplicates/compare.css'
 import { useAuth } from '../auth/AuthContext'
 import { useComparePair } from '../hooks/useComparePair'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { useSyncZoom } from '../hooks/useSyncZoom'
 import { formatBytes, formatDateTime } from '../lib/format'
 import {
@@ -84,6 +86,8 @@ export function DupComparePage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [status, setStatus] = useState<Status>('loading')
+  // Bumped to re-run the mount-only queue fetch after a failed load.
+  const [reloadKey, reloadQueue] = useReloadKey()
   const [pairs, setPairs] = useState<ComparePair[]>([])
   const [index, setIndex] = useState(0)
   const [pending, setPending] = useState<PendingMerge | null>(null)
@@ -101,6 +105,7 @@ export function DupComparePage() {
   useEffect(() => {
     const controller = new AbortController()
     const startAt = searchParams.get('pair')
+    setStatus('loading')
     fetchDuplicates({ limit: PAGE_SIZE, offset: 0 }, controller.signal)
       .then((res) => {
         const queue = buildPairQueue(res.groups)
@@ -118,10 +123,11 @@ export function DupComparePage() {
     return () => {
       controller.abort()
     }
-    // Deliberately mount-only: `searchParams` is read for the initial position and
-    // then written by this page, so depending on it would refetch on every advance.
+    // Runs on mount and on an explicit retry (`reloadKey`). `searchParams` is read
+    // for the initial position and then written by this page, so depending on it
+    // would refetch on every advance — hence it is intentionally omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [reloadKey])
 
   // Keep the URL pointing at the pair on screen, replacing rather than pushing: the
   // queue is one task, and Back should leave it, not walk back through every answer.
@@ -318,9 +324,15 @@ export function DupComparePage() {
 
       {status === 'error' && (
         <CompareCentre>
-          <Alert variant="danger" className="mb-0">
-            {t('duplicates.error')}
-          </Alert>
+          <ErrorState
+            title={t('duplicates.error')}
+            onRetry={reloadQueue}
+            action={
+              <Button variant="outline-secondary" onClick={exit}>
+                {t('duplicates.compare.back')}
+              </Button>
+            }
+          />
         </CompareCentre>
       )}
 

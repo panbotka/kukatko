@@ -59,15 +59,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((toast) => (
           <Toast
             key={toast.id}
-            bg={toast.variant}
+            className={`kk-toast kk-toast--${toast.variant}`}
             autohide
             delay={TOAST_DELAY_MS}
             onClose={() => {
               dismiss(toast.id)
             }}
           >
-            <Toast.Body className="d-flex align-items-center gap-2 text-white">
-              <Icon name={ICONS[toast.variant]} />
+            <Toast.Body className="d-flex align-items-center gap-2">
+              <Icon name={ICONS[toast.variant]} className="kk-toast__icon" />
               <span className="me-auto">{toast.message}</span>
               <button
                 type="button"

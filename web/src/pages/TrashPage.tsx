@@ -8,6 +8,7 @@ import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { SelectionBar } from '../components/organize/SelectionBar'
@@ -207,14 +208,7 @@ export function TrashPage() {
 
       {status === 'loading' && <GridSkeleton />}
 
-      {status === 'error' && (
-        <Alert variant="danger" className="d-flex align-items-center justify-content-between">
-          <span>{t('library.error.load')}</span>
-          <Button variant="outline-light" size="sm" onClick={retry}>
-            {t('library.error.retry')}
-          </Button>
-        </Alert>
-      )}
+      {status === 'error' && <ErrorState title={t('library.error.load')} onRetry={retry} />}
 
       {status === 'ready' && photos.length === 0 && (
         <EmptyState title={t('trash.empty.title')} hint={t('trash.empty.hint')} />

@@ -8,7 +8,9 @@ import { Link } from 'react-router-dom'
 
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { savedSearchHref } from '../lib/savedSearchView'
 import { deleteSavedSearch, fetchSavedSearches, type SavedSearch } from '../services/savedSearches'
 
@@ -30,6 +32,7 @@ export function SavedSearchesPage() {
   const [editing, setEditing] = useState<SavedSearch | null>(null)
   const [pendingDelete, setPendingDelete] = useState<SavedSearch | null>(null)
   const [actionError, setActionError] = useState(false)
+  const [reloadKey, reload] = useReloadKey()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -47,7 +50,7 @@ export function SavedSearchesPage() {
     return () => {
       controller.abort()
     }
-  }, [])
+  }, [reloadKey])
 
   async function remove(search: SavedSearch) {
     setActionError(false)
@@ -92,7 +95,7 @@ export function SavedSearchesPage() {
         </div>
       )}
 
-      {state.status === 'error' && <Alert variant="danger">{t('savedSearches.error')}</Alert>}
+      {state.status === 'error' && <ErrorState title={t('savedSearches.error')} onRetry={reload} />}
 
       {state.status === 'ready' && state.searches.length === 0 && (
         <EmptyState title={t('savedSearches.empty.title')} hint={t('savedSearches.empty.hint')} />

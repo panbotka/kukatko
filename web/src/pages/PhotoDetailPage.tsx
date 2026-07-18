@@ -1,11 +1,11 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
-import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { FavoriteToggle } from '../components/library/FavoriteButton'
 import { FlagControl } from '../components/library/FlagControl'
@@ -424,12 +424,14 @@ export function PhotoDetailPage() {
     return (
       <div className="kk-viewer" data-chrome="visible">
         <div className="kk-viewer__stage">
-          <Alert variant="danger" className="d-flex align-items-center gap-3 flex-wrap m-0">
-            <span>{t('photo.error')}</span>
-            <Button variant="outline-light" size="sm" onClick={close}>
-              {t('photo.back')}
-            </Button>
-          </Alert>
+          <ErrorState
+            title={t('photo.error')}
+            action={
+              <Button variant="outline-light" size="sm" onClick={close}>
+                {t('photo.back')}
+              </Button>
+            }
+          />
         </div>
       </div>
     )

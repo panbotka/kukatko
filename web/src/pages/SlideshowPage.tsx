@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo } from 'react'
-import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { Slideshow, SLIDESHOW_PREVIEW_SIZE } from '../components/slideshow/Slideshow'
 import { useImagePreloader } from '../hooks/useImagePreloader'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
@@ -133,15 +133,15 @@ export function SlideshowPage() {
   if (status === 'error') {
     return (
       <div className="slideshow d-flex align-items-center justify-content-center p-4">
-        <Alert variant="danger" className="d-flex align-items-center gap-3 mb-0">
-          <span>{t('slideshow.error.load')}</span>
-          <Button variant="outline-light" size="sm" onClick={retry}>
-            {t('slideshow.error.retry')}
-          </Button>
-          <Button variant="outline-light" size="sm" onClick={exit}>
-            {t('slideshow.back')}
-          </Button>
-        </Alert>
+        <ErrorState
+          title={t('slideshow.error.load')}
+          onRetry={retry}
+          action={
+            <Button variant="outline-light" size="sm" onClick={exit}>
+              {t('slideshow.back')}
+            </Button>
+          }
+        />
       </div>
     )
   }

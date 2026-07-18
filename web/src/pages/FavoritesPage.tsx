@@ -1,9 +1,8 @@
 import { useMemo } from 'react'
-import Alert from 'react-bootstrap/Alert'
-import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -69,14 +68,7 @@ export function FavoritesPage() {
 
       {status === 'loading' && <GridSkeleton />}
 
-      {status === 'error' && (
-        <Alert variant="danger" className="d-flex align-items-center justify-content-between">
-          <span>{t('library.error.load')}</span>
-          <Button variant="outline-light" size="sm" onClick={retry}>
-            {t('library.error.retry')}
-          </Button>
-        </Alert>
-      )}
+      {status === 'error' && <ErrorState title={t('library.error.load')} onRetry={retry} />}
 
       {status === 'ready' && photos.length === 0 && (
         <EmptyState title={t('favorites.empty.title')} hint={t('favorites.empty.hint')} />

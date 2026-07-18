@@ -9,6 +9,7 @@ import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -159,10 +160,10 @@ export function AlbumDetailPage() {
 
   if (state.status === 'error') {
     return (
-      <Alert variant="danger" className="d-flex align-items-center gap-3 flex-wrap">
-        <span>{t('albumDetail.error')}</span>
-        <BackLink to={ALBUMS_PATH} label={t('albumDetail.back')} />
-      </Alert>
+      <ErrorState
+        title={t('albumDetail.error')}
+        action={<BackLink to={ALBUMS_PATH} label={t('albumDetail.back')} />}
+      />
     )
   }
 
@@ -239,14 +240,7 @@ export function AlbumDetailPage() {
 
       {status === 'loading' && <GridSkeleton />}
 
-      {status === 'error' && (
-        <Alert variant="danger" className="d-flex align-items-center justify-content-between">
-          <span>{t('library.error.load')}</span>
-          <Button variant="outline-light" size="sm" onClick={retry}>
-            {t('library.error.retry')}
-          </Button>
-        </Alert>
-      )}
+      {status === 'error' && <ErrorState title={t('library.error.load')} onRetry={retry} />}
 
       {status === 'ready' && photos.length === 0 && (
         <EmptyState title={t('albumDetail.empty.title')} hint={t('albumDetail.empty.hint')} />
