@@ -166,24 +166,22 @@ export function PhotoTile({
     </>
   )
 
-  // When the tile is selection-first the whole media box toggles selection; when
-  // it is not (a plain grid, or a selectable grid with nothing yet picked) it
-  // stays a link to the detail page and only the corner checkmark selects.
-  const base = selectFirst ? (
-    <button
-      type="button"
-      aria-pressed={selected}
-      aria-label={label}
-      title={label}
-      onClick={(event) => {
-        onToggleSelect?.(photo.uid, event.shiftKey)
-      }}
-      className="kk-tile__media btn p-0 border-0 d-block w-100"
-      style={{ aspectRatio: '1 / 1' }}
-    >
-      {inner}
-    </button>
-  ) : (
+  // The tile root is ALWAYS a <Link> so its element TYPE never changes when the
+  // grid flips into selection-first mode (selection going empty↔non-empty). Were
+  // the root swapped between <a> and <button>, React would unmount the whole tile
+  // subtree and mount a fresh <img> — re-running the load-in fade on every visible
+  // tile at once (the reported whole-grid flicker). Keeping one element means only
+  // its click behaviour and ARIA role change, and the <img> stays mounted.
+  //
+  // When selection-first the whole media box toggles this tile's selection: it is
+  // exposed as a toggle button (role="button" + aria-pressed) and navigation is
+  // suppressed (preventDefault, which react-router honours — it runs our handler
+  // first and skips its own navigation when the event is defaultPrevented). A
+  // native <a> already activates on Enter (→ a click we intercept), but not on
+  // Space, so Space is handled explicitly to keep it operable as a button. When
+  // not selection-first it is a plain link to the detail page and only the corner
+  // checkmark selects.
+  const base = (
     <Link
       to={
         detailQuery !== undefined && detailQuery !== ''
@@ -194,13 +192,33 @@ export function PhotoTile({
       style={{ aspectRatio: '1 / 1' }}
       aria-label={label}
       title={label}
+      role={selectFirst ? 'button' : undefined}
+      aria-pressed={selectFirst ? selected : undefined}
+      onClick={
+        selectFirst
+          ? (event) => {
+              event.preventDefault()
+              onToggleSelect?.(photo.uid, event.shiftKey)
+            }
+          : undefined
+      }
+      onKeyDown={
+        selectFirst
+          ? (event) => {
+              if (event.key === ' ') {
+                event.preventDefault()
+                onToggleSelect?.(photo.uid, event.shiftKey)
+              }
+            }
+          : undefined
+      }
     >
       {inner}
     </Link>
   )
 
   // The checkmark control and the favorite heart both sit in a relative wrapper
-  // as siblings of the link/button (never nested inside it — interactive content
+  // as siblings of the tile link (never nested inside it — interactive content
   // cannot nest), so toggling selection or a favorite never navigates. The
   // checkmark is shown while the tile is selectable; the heart is hidden once the
   // tile is a selection target so it stays a clean pick. Star rating and
