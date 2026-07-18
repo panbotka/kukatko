@@ -61,11 +61,16 @@ zapiš sem.
   je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),
   `components/toast/` = **app-wide toast** (`ToastContext` drží context + hook `useToast()` +
   typy; `ToastProvider` je komponenta) — jediný provider **v `App` kolem `AppRoutes`**, hostí
-  `ToastContainer` (react-bootstrap, `position="top-center"`, nad chrome i viewerem) s
-  auto-dismiss (5 s) + ručním zavřením (`toast.close`). `useToast().show({message, variant?})`
-  (`success`/`danger`/`info`, glyf `Icon` dle tónu); **mimo provider vrací no-op** (default
-  context), takže focused unit testy nepotřebují wrapper. První uživatel: `BatchActionBar`
-  (úspěch/selhání hromadné akce). Testy jedou přes `BatchActionBar.test`,
+  `ToastContainer` (react-bootstrap, `position="top-center"`, `.kk-toast-stack` `z-index:1100`
+  nad chrome i viewerem) s auto-dismiss (5 s) + ručním zavřením (`toast.close`).
+  `useToast().show({message, variant?})` (`success`/`danger`/`info`, glyf `Icon` dle tónu);
+  **jedno místo pro umístění, dobu i styl** — místo Bootstrap `bg-*` (plná zelená/červená)
+  nese každý toast **vlastní povrch z tokenů**: `.kk-toast` = `--kk-surface-overlay` + jemný
+  `--kk-surface-border` + `--kk-shadow-3` + `--kk-radius-md`, s **barevnou accent lištou** vlevo
+  a obarveným glyfem podle tónu (`.kk-toast--{success,danger,info}` přes `--kk-toast-accent` z
+  `--bs-success`/`--bs-danger`/`--kk-accent`), text v `--bs-body-color`. **Mimo provider vrací
+  no-op** (default context), takže focused unit testy nepotřebují wrapper. První uživatel:
+  `BatchActionBar` (úspěch/selhání hromadné akce). Testy jedou přes `BatchActionBar.test`,
   `BackLink` (**sdílená cesta zpět** ze všech detailů (album, štítek, osoba, fotka) do seznamu,
   ke kterému patří: šipka `arrow-left` přes `Icon` (dekorativní, `aria-hidden`) + **text pojmenující
   cíl** („Zpět na alba" / „Zpět na štítky" / „Zpět na lidi"), který je zároveň přístupným jménem
@@ -125,6 +130,23 @@ zapiš sem.
   které zastupuje, a panel by poskakoval, jak se jeden seznam plní a druhý zůstává prázdný —
   tam zůstává tlumený jednořádkový popisek (`text-secondary small`). Bloky se objeví přes
   `.kk-appear`, které `prefers-reduced-motion` vypne. Testy: `EmptyState.test.tsx`),
+  `ErrorState` (**sdílený placeholder selhaného načtení** = chybové dvojče `EmptyState`u:
+  stejný vycentrovaný sloupec (třídy `.kk-empty-state*`), ale medailonek je obarvený `danger`
+  (`.kk-empty-state--error`) a nese ikonu `exclamation-triangle` přes `Icon`, plus `role="alert"`,
+  aby se selhání nikdy nečetlo jako záměrná prázdná kolekce a nikdy neukázalo syrový text chyby.
+  Props `title` (povinné, krátká hláška, překládá volající), `hint?`, `onRetry?` (vykreslí tlačítko
+  **Zkusit znovu** — ikona `arrow-clockwise` + sdílený klíč `errors.retry` —, které znovu spustí
+  načtení), `retryLabel?` (přebije label), `action?` (další/alternativní akce vedle Retry — typicky
+  `BackLink` na detailu, který nenačetl entitu), `size?` `'md' | 'sm'`, `className?`. Nahradil
+  ručně skládané `Alert variant="danger"` (holé i s inline Retry tlačítkem) napříč **všemi**
+  datovými pohledy: mřížky (`LibraryPage`, `SearchPage`, `FavoritesPage`, `AlbumDetailPage`,
+  `LabelDetailPage`, `SubjectPage`, `PlacesPage`, `TrashPage`, `MapPage`, `SlideshowPage`,
+  `ExpandPage`, `DupComparePage`), seznamy (`AlbumsPage`, `LabelsPage`, `PeoplePage`,
+  `SavedSearchesPage`, `ClustersPage`) — ty, co dřív retry neměly, ho dostaly přes `useReloadKey`
+  —, i admin/power pohledy (`FacesPage`, `OutliersPage`, `ImportPage`, `SystemStatusPage`,
+  `AuditPage`, `UsersPage`, `DuplicatesPage`) a detail fotky (`PhotoDetailPage`, akce Zpět).
+  Retry volá buď `retry` z paginačního hooku, nebo re-fetch přes `useReloadKey`/`load()`/`refresh()`.
+  Testy: `ErrorState.test.tsx`),
   `FadeInImage` (**sdílený náhledový `<img>`, který se po dekódování prolne a nepatrně dosedne**
   místo skoku: startuje průhledný a o chlup zmenšený (`scale(0.98)`, nikdy zvětšený, takže nepřeteče
   box) nad placeholder povrchem, který dá kontejner (sunken jáma), a stav `is-loaded` (z vlastního
@@ -409,7 +431,9 @@ zapiš sem.
   `SearchPage` = sémantické/hybridní/fulltext hledání: prominentní debouncované (350 ms)
   vyhledávací pole + přepínač režimu (`q`+`mode` v URL), stejná virtualizovaná mřížka jako
   knihovna + sdílený `FilterBar` (bez dotazu/řazení), `degraded` → neblokující upozornění
-  (sidecar offline), idle/loading/empty/error stavy; pole mluví **vyhledávacím jazykem**
+  (sidecar offline), idle/loading/empty/error stavy (prázdný výsledek **zopakuje dotaz** —
+  `search.empty.hintQuery` „Pro «dotaz» jsme nic nenašli…“ — a radí zúžení uvolnit; error je
+  `ErrorState` s Retry); pole mluví **vyhledávacím jazykem**
   (`q` = volný text + `klíč:hodnota` filtry, gramatika v docs/API.md „Vyhledávací jazyk (q=)“;
   parsuje výhradně backend): vstup je `SearchQueryInput` (`components/search/`) — combobox
   s **autocomplete klíčů filtrů** (návrhy ze `lib/queryLanguage.ts` `suggestFilterKeys`/

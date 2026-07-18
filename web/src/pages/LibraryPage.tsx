@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
@@ -7,6 +6,7 @@ import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { buildChips } from '../components/library/filterChips'
 import { GridSkeleton } from '../components/library/GridSkeleton'
@@ -225,14 +225,7 @@ export function LibraryPage() {
 
       {status === 'loading' && <GridSkeleton />}
 
-      {status === 'error' && (
-        <Alert variant="danger" className="d-flex align-items-center justify-content-between">
-          <span>{t('library.error.load')}</span>
-          <Button variant="outline-light" size="sm" onClick={retry}>
-            {t('library.error.retry')}
-          </Button>
-        </Alert>
-      )}
+      {status === 'error' && <ErrorState title={t('library.error.load')} onRetry={retry} />}
 
       {noResults && !catalogEmpty && (
         <EmptyState

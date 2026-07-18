@@ -6,6 +6,9 @@
   "confirmModal": {
     "cancel": "Zrušit"
   },
+  "errors": {
+    "retry": "Zkusit znovu"
+  },
   "footer": {
     "operator": "Provozuje SDH Veselice",
     "github": "GitHub",
@@ -247,7 +250,8 @@
     "prompt": "Zadejte hledaný výraz.",
     "empty": {
       "title": "Nic nenalezeno",
-      "hint": "Zkuste jiný výraz nebo upravte filtry."
+      "hint": "Zkuste jiný výraz nebo upravte filtry.",
+      "hintQuery": "Pro „{{query}}“ jsme nic nenašli. Zkuste obecnější výraz nebo méně filtrů."
     },
     "error": {
       "load": "Vyhledávání se nezdařilo."

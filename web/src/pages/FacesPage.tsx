@@ -7,6 +7,7 @@ import { useSearchParams } from 'react-router-dom'
 import { CandidateResults } from '../components/faces/CandidateResults'
 import { CandidateSearchForm } from '../components/faces/CandidateSearchForm'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { useCandidateReview } from '../hooks/useCandidateReview'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
@@ -298,7 +299,9 @@ export function FacesPage() {
         </div>
       )}
 
-      {state.status === 'error' && <Alert variant="danger">{t('faceSearch.error.search')}</Alert>}
+      {state.status === 'error' && (
+        <ErrorState title={t('faceSearch.error.search')} onRetry={handleSearch} />
+      )}
 
       {result !== null && (
         <CandidateResults

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { AlbumTile } from '../components/organize/AlbumTile'
 import { TileGridSkeleton } from '../components/Skeleton'
@@ -69,7 +69,7 @@ export function AlbumsPage() {
         <TileGridSkeleton label={t('albums.loading')} minTile={160} captionLines={2} />
       )}
 
-      {state.status === 'error' && <Alert variant="danger">{t('albums.error')}</Alert>}
+      {state.status === 'error' && <ErrorState title={t('albums.error')} onRetry={reload} />}
 
       {state.status === 'ready' && state.albums.length === 0 && (
         <EmptyState title={t('albums.empty.title')} hint={t('albums.empty.hint')} />

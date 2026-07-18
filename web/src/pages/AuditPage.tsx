@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import {
   AUDIT_DEFAULTS,
   type AuditFilters,
@@ -278,20 +279,12 @@ export function AuditPage() {
           )}
 
           {state.status === 'error' && (
-            <Alert variant="danger" role="alert" className="mb-0">
-              <div className="d-flex justify-content-between align-items-center gap-3 flex-wrap">
-                <span>{t('audit.error')}</span>
-                <Button
-                  variant="outline-light"
-                  size="sm"
-                  onClick={() => {
-                    setReloadKey((key) => key + 1)
-                  }}
-                >
-                  {t('audit.retry')}
-                </Button>
-              </div>
-            </Alert>
+            <ErrorState
+              title={t('audit.error')}
+              onRetry={() => {
+                setReloadKey((key) => key + 1)
+              }}
+            />
           )}
 
           {state.status === 'ready' && state.data.entries.length === 0 && (

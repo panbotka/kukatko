@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
-import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { LeafletMap } from '../components/map/LeafletMap'
 import { MapFilterBar } from '../components/map/MapFilterBar'
 import { useMapPhotos } from '../hooks/useMapPhotos'
@@ -125,12 +125,7 @@ export function MapPage() {
       <MapFilterBar view={view} onChange={setView} mapset={mapset} count={features.length} />
 
       {status === 'error' ? (
-        <Alert variant="danger" className="d-flex align-items-center justify-content-between">
-          <span>{t('map.error.load')}</span>
-          <Button variant="outline-light" size="sm" onClick={retry}>
-            {t('map.error.retry')}
-          </Button>
-        </Alert>
+        <ErrorState title={t('map.error.load')} onRetry={retry} />
       ) : (
         <div className="position-relative">
           {tileFailure !== null && !warningDismissed && (

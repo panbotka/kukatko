@@ -939,3 +939,62 @@
   background-color: transparent;
   box-shadow: none;
 }
+
+/*
+ * The error skin of the shared state pattern (used by `ErrorState`): the same
+ * centred column, but the medallion is tinted `danger` and carries a warning
+ * glyph, so a failed load never reads as an intentional empty collection.
+ */
+.kk-empty-state--error .kk-empty-state__icon {
+  border-color: color-mix(in srgb, var(--bs-danger) 40%, var(--kk-surface-border));
+  background-color: color-mix(in srgb, var(--bs-danger) 14%, var(--kk-surface-raised));
+  color: var(--bs-danger);
+}
+
+.kk-empty-state--error.kk-empty-state--sm .kk-empty-state__icon {
+  /* The compact medallion drops its surface, so tint the glyph alone. */
+  background-color: transparent;
+  color: var(--bs-danger);
+}
+
+/* ---- Toasts ------------------------------------------------------------ */
+
+/*
+ * The app-wide toast surface. Instead of Bootstrap's flat, loud contextual
+ * background (solid green/red), a toast reads as one of the app's own raised
+ * surfaces — dark, softly bordered, elevated — with a coloured accent rail and
+ * icon carrying the tone. One placement, one duration and this one styling for
+ * every toast, so success and failure feel like the same system.
+ */
+.kk-toast-stack {
+  /* Above every layer of chrome, including the immersive viewer. */
+  z-index: 1100;
+}
+
+.kk-toast {
+  --kk-toast-accent: var(--kk-accent);
+
+  color: var(--bs-body-color, #fff);
+  background-color: var(--kk-surface-overlay);
+  border: 1px solid var(--kk-surface-border);
+  border-inline-start: 3px solid var(--kk-toast-accent);
+  border-radius: var(--kk-radius-md);
+  box-shadow: var(--kk-shadow-3);
+}
+
+.kk-toast--success {
+  --kk-toast-accent: var(--bs-success);
+}
+
+.kk-toast--danger {
+  --kk-toast-accent: var(--bs-danger);
+}
+
+.kk-toast--info {
+  --kk-toast-accent: var(--kk-accent);
+}
+
+/* The leading glyph carries the tone; the message stays in the body colour. */
+.kk-toast__icon {
+  color: var(--kk-toast-accent);
+}

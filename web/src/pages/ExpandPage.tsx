@@ -7,6 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { type VirtuosoGridHandle } from 'react-virtuoso'
 
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { ExpandResults } from '../components/expand/ExpandResults'
 import { ExpandSearchForm } from '../components/expand/ExpandSearchForm'
 import { Icon } from '../components/Icon'
@@ -378,7 +379,9 @@ export function ExpandPage() {
         </div>
       )}
 
-      {state.status === 'error' && <Alert variant="danger">{t('expand.error.search')}</Alert>}
+      {state.status === 'error' && (
+        <ErrorState title={t('expand.error.search')} onRetry={handleSearch} />
+      )}
 
       {/* A collection whose photos have no embeddings yet is the common
           confusing case: a generic "no results" would send the user hunting a

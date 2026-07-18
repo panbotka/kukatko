@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import Alert from 'react-bootstrap/Alert'
-import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 
 import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -85,10 +84,10 @@ export function LabelDetailPage() {
 
   if (state.status === 'error') {
     return (
-      <Alert variant="danger" className="d-flex align-items-center gap-3 flex-wrap">
-        <span>{t('labelDetail.error')}</span>
-        <BackLink to={LABELS_PATH} label={t('labelDetail.back')} />
-      </Alert>
+      <ErrorState
+        title={t('labelDetail.error')}
+        action={<BackLink to={LABELS_PATH} label={t('labelDetail.back')} />}
+      />
     )
   }
 
@@ -120,14 +119,7 @@ export function LabelDetailPage() {
 
       {status === 'loading' && <GridSkeleton />}
 
-      {status === 'error' && (
-        <Alert variant="danger" className="d-flex align-items-center justify-content-between">
-          <span>{t('library.error.load')}</span>
-          <Button variant="outline-light" size="sm" onClick={retry}>
-            {t('library.error.retry')}
-          </Button>
-        </Alert>
-      )}
+      {status === 'error' && <ErrorState title={t('library.error.load')} onRetry={retry} />}
 
       {status === 'ready' && photos.length === 0 && (
         <EmptyState title={t('labelDetail.empty.title')} hint={t('labelDetail.empty.hint')} />

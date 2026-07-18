@@ -6,6 +6,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { ClusterCard } from '../components/people/ClusterCard'
 import {
   assignCluster,
@@ -121,7 +122,14 @@ export function ClustersPage() {
         </div>
       )}
 
-      {state.status === 'error' && <Alert variant="danger">{t('clusters.error')}</Alert>}
+      {state.status === 'error' && (
+        <ErrorState
+          title={t('clusters.error')}
+          onRetry={() => {
+            load()
+          }}
+        />
+      )}
 
       {state.status === 'ready' && state.clusters.length === 0 && (
         <EmptyState title={t('clusters.empty.title')} hint={t('clusters.empty.hint')} />

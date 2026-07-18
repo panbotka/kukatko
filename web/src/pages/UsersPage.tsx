@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { formatDate, formatDateTime } from '../lib/format'
 import { ApiError, MIN_PASSWORD_LENGTH, type Role } from '../services/auth'
 import {
@@ -700,20 +701,12 @@ export function UsersPage() {
           {state.status === 'loading' && <UsersSkeleton />}
 
           {state.status === 'error' && (
-            <Alert variant="danger" role="alert" className="mb-0">
-              <div className="d-flex justify-content-between align-items-center gap-3 flex-wrap">
-                <span>{t('users.error')}</span>
-                <Button
-                  variant="outline-light"
-                  size="sm"
-                  onClick={() => {
-                    load()
-                  }}
-                >
-                  {t('users.retry')}
-                </Button>
-              </div>
-            </Alert>
+            <ErrorState
+              title={t('users.error')}
+              onRetry={() => {
+                load()
+              }}
+            />
           )}
 
           {/* Unreachable in practice — the bootstrap admin always exists — but a

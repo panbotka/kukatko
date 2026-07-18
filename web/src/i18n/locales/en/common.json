@@ -6,6 +6,9 @@
   "confirmModal": {
     "cancel": "Cancel"
   },
+  "errors": {
+    "retry": "Try again"
+  },
   "footer": {
     "operator": "Operated by SDH Veselice",
     "github": "GitHub",
@@ -247,7 +250,8 @@
     "prompt": "Enter a search term.",
     "empty": {
       "title": "Nothing found",
-      "hint": "Try a different term or adjust the filters."
+      "hint": "Try a different term or adjust the filters.",
+      "hintQuery": "Nothing matches “{{query}}”. Try a broader term or fewer filters."
     },
     "error": {
       "load": "Search failed."

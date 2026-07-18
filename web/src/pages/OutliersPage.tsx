@@ -6,12 +6,14 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { OutlierCard } from '../components/people/OutlierCard'
 import { OutlierControls } from '../components/people/OutlierControls'
 import { OutlierStats } from '../components/people/OutlierStats'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { useOutlierReview } from '../hooks/useOutlierReview'
 import { useSelection } from '../hooks/useSelection'
 import { useSubjects } from '../hooks/useSubjects'
@@ -102,6 +104,7 @@ export function OutliersPage() {
   }, [thresholdPercent, committedThreshold])
 
   const [state, setState] = useState<State>({ status: 'idle' })
+  const [reloadKey, reloadOutliers] = useReloadKey()
 
   useEffect(() => {
     if (subjectUid === null || subjectUid === '') {
@@ -127,7 +130,7 @@ export function OutliersPage() {
     return () => {
       controller.abort()
     }
-  }, [subjectUid, committedThreshold])
+  }, [subjectUid, committedThreshold, reloadKey])
 
   // Mirror the committed config into the URL: view state lives there, so Back
   // always works. Writing the *committed* value keeps a drag out of history.
@@ -376,7 +379,9 @@ export function OutliersPage() {
         </div>
       )}
 
-      {state.status === 'error' && <Alert variant="danger">{t('outliersPage.error.load')}</Alert>}
+      {state.status === 'error' && (
+        <ErrorState title={t('outliersPage.error.load')} onRetry={reloadOutliers} />
+      )}
 
       {result !== null && (
         <>

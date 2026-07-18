@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../auth/AuthContext'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
 import {
@@ -320,7 +321,14 @@ export function ImportPage() {
         </div>
       )}
 
-      {state.status === 'error' && <Alert variant="danger">{t('import.error')}</Alert>}
+      {state.status === 'error' && (
+        <ErrorState
+          title={t('import.error')}
+          onRetry={() => {
+            void refresh()
+          }}
+        />
+      )}
 
       {state.status === 'ready' && (
         <>

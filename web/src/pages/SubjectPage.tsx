@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
@@ -8,6 +7,7 @@ import { useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
@@ -56,7 +56,9 @@ export function SubjectPage() {
   const [coverBusy, setCoverBusy] = useState(false)
 
   const [reloadKey, reload] = useReloadKey()
-  const { photos, status, hasMore, loadingMore, loadMore } = useSubjectPhotos(uid, { reloadKey })
+  const { photos, status, hasMore, loadingMore, loadMore, retry } = useSubjectPhotos(uid, {
+    reloadKey,
+  })
 
   const bulk = useBulkEdit({ onEdited: reload })
   const selection = bulk.selection
@@ -131,10 +133,10 @@ export function SubjectPage() {
 
   if (state.status === 'error') {
     return (
-      <Alert variant="danger" className="d-flex align-items-center gap-3 flex-wrap">
-        <span>{t('subject.error')}</span>
-        <BackLink to={PEOPLE_PATH} label={t('subject.back')} />
-      </Alert>
+      <ErrorState
+        title={t('subject.error')}
+        action={<BackLink to={PEOPLE_PATH} label={t('subject.back')} />}
+      />
     )
   }
 
@@ -174,6 +176,7 @@ export function SubjectPage() {
 
       <h2 className="kk-section-title">{t('subject.photos')}</h2>
       {status === 'loading' && <GridSkeleton label={t('subject.loadingPhotos')} />}
+      {status === 'error' && <ErrorState title={t('library.error.load')} onRetry={retry} />}
       {status === 'ready' && photos.length === 0 && <EmptyState title={t('subject.noPhotos')} />}
       {photos.length > 0 && (
         <>
