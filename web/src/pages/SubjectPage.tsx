@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
@@ -20,6 +20,7 @@ import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useGridDensity } from '../hooks/useGridDensity'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useSubjectPhotos } from '../hooks/useSubjectPhotos'
+import { DETAIL_DEFAULTS, detailQueryString } from '../lib/detailView'
 import { gridTemplateColumns } from '../lib/gridDensity'
 import { fetchSubject, type Subject, updateSubject } from '../services/people'
 
@@ -59,6 +60,13 @@ export function SubjectPage() {
   const { photos, status, hasMore, loadingMore, loadMore, retry } = useSubjectPhotos(uid, {
     reloadKey,
   })
+
+  // Each tile carries this subject's scope in the detail link (`person=<uid>`), so
+  // opening a photo pages prev/next through `GET /photos?person=<uid>` — this
+  // person's photos in the same order the gallery shows — instead of the whole
+  // library. The gallery has no filters/sort of its own (the subject-photos
+  // endpoint is always newest-first), so the scope is the sole non-default facet.
+  const detailQuery = useMemo(() => detailQueryString({ ...DETAIL_DEFAULTS, person: uid }), [uid])
 
   const bulk = useBulkEdit({ onEdited: reload })
   const selection = bulk.selection
@@ -200,6 +208,7 @@ export function SubjectPage() {
                 selectable={selection.active}
                 selected={selection.selected.has(photo.uid)}
                 onToggleSelect={selection.toggle}
+                detailQuery={detailQuery}
               />
             ))}
           </div>
