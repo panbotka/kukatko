@@ -472,7 +472,10 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   jako `failed` (žádný věčně „running" řádek); `--dry-run` soubory jen **hashuje a hledá v katalogu**
   (nový/duplicita) a **nezapíše vůbec nic** — ani `import_runs`), `internal/photoapi/`
   (read/curace HTTP API nad katalogem: `NewAPI(Config{Store,Storage,Thumbnailer,Similar,
-  Embedder,Faces,Favorites,Ratings,RequireAuth,RequireWrite,RequireDownload})` + `RegisterRoutes` mountuje `/photos`
+  Embedder,Faces,Favorites,Ratings,RequireAuth,RequireWrite,RequireAdmin,RequireDownload})`
+  — **`RequireAdmin` hlídá jen nevratné operace koše** (`POST /trash/empty`, per-fotka
+  `POST /photos/{uid}/purge` mažou originály, proto zpřísněno z write na admin); archivace
+  (vratné soft-delete) zůstává `RequireWrite`, `GET /trash/info` `RequireAuth` — `RegisterRoutes` mountuje `/photos`
   **, `GET /photos/timeline`, **`GET /photos/years`**, `GET /search` a `GET /favorites`**; `parseListParams`
   validuje query → `photos.ListParams` (`limit`≤500/`offset`, `sort`
   newest/oldest/taken_at/added/title/size**/rating** + `order` — **`album` scope obojí přebije**
@@ -621,7 +624,7 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   jobů**; chyby se jen logují, nikdy nevrací; defaulty `MinQueue` 1 / `Cooldown` 5 min /
   `GracePeriod` 30 s; tunables v `embedding.wake.*` configu),
   `internal/jobsapi/`
-  (admin-only HTTP API nad frontou: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
+  (maintainer-only HTTP API nad frontou: `NewAPI(Config{Store,RequireMaintainer})`+`RegisterRoutes`
   mountuje `/jobs`; `GET /jobs/stats` (counts by_state/by_type+total), `GET /jobs`
   (recent/dead-letter výpis, query `state`/`limit`≤500/`offset`, neplatný → 400),
   `POST /jobs/{id}/requeue` (dead/failed → queued; 404 missing, 409 ne-requeueable);
@@ -792,8 +795,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   zaznamená), **box offline** → `worker.RetryAfter(5 min)`; `BackfillFaces(ctx)` zařadí
   `face_detect` pro každou nezpracovanou fotku (`ListPhotosMissingFaces`, dedup no-op), vrací
   počet), `internal/processapi/`
-  (admin-only HTTP API pro hromadné zpracování: `NewAPI(Config{Backfiller,FaceBackfiller,
-  Reclusterer,PlacesBackfiller,ThumbnailBackfiller,MetadataBackfiller,RequireAdmin})`+`RegisterRoutes`
+  (maintainer-only HTTP API pro hromadné zpracování: `NewAPI(Config{Backfiller,FaceBackfiller,
+  Reclusterer,PlacesBackfiller,ThumbnailBackfiller,MetadataBackfiller,RequireMaintainer})`+`RegisterRoutes`
   mountuje `/process`;
   `POST /process/embeddings` →
   `{enqueued}` spustí `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued}` spustí
@@ -1580,8 +1583,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   se nikdy neposune za nejstarší selhání** (`runState`); bezpečné re-runovat. **`Handle(ctx,job)`** =
   `worker.HandlerFunc` pro `ps_migrate` (ignoruje payload, volá `Migrate`), `JobPayload()` nese pevný
   sentinel → dedup fronty pustí jen jednu migraci), `internal/importapi/`
-  (HTTP API importů za `RequireImport` (admin **nebo** ai): rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`) a `RunLister`
-  (List, splňuje `*importer.Store`); `NewAPI(Config{Queue,Runs,RequireImport,EnablePhotoPrism,
+  (maintainer-only HTTP API importů za `RequireMaintainer`: rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`) a `RunLister`
+  (List, splňuje `*importer.Store`); `NewAPI(Config{Queue,Runs,RequireMaintainer,EnablePhotoPrism,
   EnablePhotoSorter})`+`RegisterRoutes` mountuje **vždy** `GET /import/runs` (historie + `sources`
   flagy jaké zdroje jsou nakonfigurované) a — **jen pro nakonfigurované zdroje** —
   `POST /import/photoprism` → `pp_import` a `POST /import/photosorter` → `ps_migrate` job (sdílený
@@ -1648,14 +1651,14 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   (`PGHOST`/`PGPORT`/`PGUSER`/**`PGPASSWORD`**/`PGDATABASE` přes `pgx.ParseConfig`) → heslo **nikdy
   v argv**; `PgRestoreAvailable`, sentinely `ErrPgRestoreMissing`/`ErrInvalidDSN`; tajemství nikam
   neprosáknou), `internal/backupapi/`
-  (admin-only HTTP API nad zálohou: rozhraní `Service` (Status+Trigger, splňuje ho `*backup.Service`,
-  fakeovatelné, **nil = nenakonfigurováno**); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes`
+  (maintainer-only HTTP API nad zálohou: rozhraní `Service` (Status+Trigger, splňuje ho `*backup.Service`,
+  fakeovatelné, **nil = nenakonfigurováno**); `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes`
   mountuje `GET /backup` (stav + poslední běh, nil service → `configured:false`) a `POST /backup`
   (spustí `Trigger` na pozadí → 202 `{status:"started"}`, `ErrAlreadyRunning` → 409, nil service →
   503); mountuje se v `serve` vždy (`buildBackupAPI` v `cmd/kukatko/backup.go`)), `internal/restoreapi/`
-  (admin-only HTTP API nad obnovou, **jen read-only operace**: rozhraní `Service`
+  (maintainer-only HTTP API nad obnovou, **jen read-only operace**: rozhraní `Service`
   (`ListDumps`+`Verify`, splňuje ho `*backup.RestoreService`, fakeovatelné, **nil = nenakonfigurováno**);
-  `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes` mountuje `GET /restore/dumps` (seznam dumpů,
+  `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes` mountuje `GET /restore/dumps` (seznam dumpů,
   503 bez konfigurace, 502 při chybě S3) a `POST /restore/verify` (integritní report, 503 bez
   konfigurace); **destruktivní obnova DB se přes HTTP záměrně neexponuje** (podtrhla by tabulky
   běžícímu serveru — patří do CLI při zastaveném serveru); mountuje se v `serve` vždy
@@ -1772,8 +1775,8 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   kde skončil, a druhý běh nad vyčerpanou knihovnou zařadí **nula** jobů — i pro fotku, jejíž soubor
   žádné IPTC tagy nemá („podívali jsme se a nic tam nebylo" je hotová fotka, ne čekající)),
   `internal/maintenanceapi/`
-  (admin-only HTTP API nad maintenance: rozhraní `Service` (Scan+Repair, splňuje `*maintenance.Service`,
-  nil → 503); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes` mountuje `/maintenance`:
+  (maintainer-only HTTP API nad maintenance: rozhraní `Service` (Scan+Repair, splňuje `*maintenance.Service`,
+  nil → 503); `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes` mountuje `/maintenance`:
   `GET /maintenance/scan` (integritní report) a `POST /maintenance/repair` (tělo `RepairOptions`,
   `DisallowUnknownFields`, prázdný výběr → 400, `ErrOrphanImportUnavailable` → 503, jinak `RepairResult`);
   mountuje se v `serve` (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go`, service staví
@@ -1862,9 +1865,9 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   na dashboardu bez otevření mapy), verze/commit; chyby
   čtení fronty/importů (vyžadují DB) → error (500), nedostupná DB a nečitelné úložiště inline
   best-effort), `internal/systemapi/`
-  (admin-only HTTP API nad system stavem: rozhraní `StatusCollector` (`Collect`, splňuje
-  `*system.Service`, fakeovatelné); `NewAPI(Config{Service,RequireAdmin})`+`RegisterRoutes` mountuje
-  `GET /system/status` za `RequireAdmin` (snapshot; collect selže → 500); mountuje se vždy
+  (maintainer-only HTTP API nad system stavem: rozhraní `StatusCollector` (`Collect`, splňuje
+  `*system.Service`, fakeovatelné); `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes` mountuje
+  `GET /system/status` za `RequireMaintainer` (snapshot; collect selže → 500); mountuje se vždy
   (`buildSystemAPI` v `cmd/kukatko/system.go`, staví vlastní bezstavový embeddings klient jen pro
   Healthy probe, sdílí pool pro job/import stores, backup služba předaná nil-safe; mountuje se
   v `appendOpsAPIs` vedle backup/restore)), `internal/query/`

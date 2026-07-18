@@ -49,20 +49,20 @@ func (f *fakeRuns) List(_ context.Context, limit, offset int) ([]importer.Run, e
 }
 
 // newServer mounts the import API (both triggers enabled) with a pass-through
-// import guard over a fresh chi router, returning a test server.
+// maintainer guard over a fresh chi router, returning a test server.
 func newServer(t *testing.T, q Queue) *httptest.Server {
 	t.Helper()
 	return newServerWithRuns(t, q, &fakeRuns{})
 }
 
 // newServerWithRuns mounts the import API with the given queue and run lister
-// (both triggers enabled) behind a pass-through import guard.
+// (both triggers enabled) behind a pass-through maintainer guard.
 func newServerWithRuns(t *testing.T, q Queue, runs RunLister) *httptest.Server {
 	t.Helper()
 	api := NewAPI(Config{
 		Queue:             q,
 		Runs:              runs,
-		RequireImport:     passthrough,
+		RequireMaintainer: passthrough,
 		EnablePhotoPrism:  true,
 		EnablePhotoSorter: true,
 	})
@@ -73,7 +73,7 @@ func newServerWithRuns(t *testing.T, q Queue, runs RunLister) *httptest.Server {
 	return srv
 }
 
-// passthrough is an import guard that allows every request.
+// passthrough is a maintainer guard that allows every request.
 func passthrough(next http.Handler) http.Handler { return next }
 
 // post issues a POST to the server path and returns the response.
@@ -190,7 +190,7 @@ func TestImportPhotoSorter_conflict(t *testing.T) {
 func TestRegisterRoutes_gating(t *testing.T) {
 	t.Parallel()
 	api := NewAPI(Config{
-		Queue: &fakeQueue{}, Runs: &fakeRuns{}, RequireImport: passthrough, EnablePhotoPrism: true,
+		Queue: &fakeQueue{}, Runs: &fakeRuns{}, RequireMaintainer: passthrough, EnablePhotoPrism: true,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -287,7 +287,7 @@ func TestNewAPI_panicsOnNilQueue(t *testing.T) {
 			t.Error("NewAPI did not panic on nil queue")
 		}
 	}()
-	_ = NewAPI(Config{Runs: &fakeRuns{}, RequireImport: passthrough})
+	_ = NewAPI(Config{Runs: &fakeRuns{}, RequireMaintainer: passthrough})
 }
 
 // TestNewAPI_panicsOnNilRuns verifies a missing run store is a startup panic.
@@ -298,5 +298,5 @@ func TestNewAPI_panicsOnNilRuns(t *testing.T) {
 			t.Error("NewAPI did not panic on nil runs")
 		}
 	}()
-	_ = NewAPI(Config{Queue: &fakeQueue{}, RequireImport: passthrough})
+	_ = NewAPI(Config{Queue: &fakeQueue{}, RequireMaintainer: passthrough})
 }

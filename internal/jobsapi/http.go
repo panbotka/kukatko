@@ -1,9 +1,9 @@
-// Package jobsapi exposes the admin-only HTTP API over the persistent job queue:
-// aggregate counts for the dashboard, a recent/dead-letter job listing, and a
-// requeue action for failed or dead-lettered jobs. The frontend polls these
-// endpoints (there is no SSE dependency). It depends on the jobs store for data
-// and on the auth subsystem only for the admin route guard, injected as
-// middleware.
+// Package jobsapi exposes the maintainer-only HTTP API over the persistent job
+// queue: aggregate counts for the dashboard, a recent/dead-letter job listing,
+// and a requeue action for failed or dead-lettered jobs. The frontend polls these
+// endpoints (there is no SSE dependency). Job administration is an operations
+// capability, so it depends on the jobs store for data and on the auth subsystem
+// only for the maintainer route guard, injected as middleware.
 package jobsapi
 
 import (
@@ -22,43 +22,44 @@ import (
 // listing; the store clamps too, but rejecting here yields a clear 400.
 const maxListLimit = 500
 
-// API exposes the job queue over HTTP. The admin route guard is supplied by the
-// caller (the auth subsystem) so this package depends on auth for the caller's
-// identity, not its wiring.
+// API exposes the job queue over HTTP. The maintainer route guard is supplied by
+// the caller (the auth subsystem) so this package depends on auth for the
+// caller's identity, not its wiring.
 type API struct {
-	store        *jobs.Store
-	requireAdmin func(http.Handler) http.Handler
+	store             *jobs.Store
+	requireMaintainer func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Every field is required.
 type Config struct {
 	// Store is the persistent job queue backing reads and the requeue action.
 	Store *jobs.Store
-	// RequireAdmin guards every endpoint: job administration is admin-only.
-	RequireAdmin func(http.Handler) http.Handler
+	// RequireMaintainer guards every endpoint: job administration is a maintainer
+	// operation.
+	RequireMaintainer func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{store: cfg.Store, requireAdmin: cfg.RequireAdmin}
+	return &API{store: cfg.Store, requireMaintainer: cfg.RequireMaintainer}
 }
 
 // RegisterRoutes mounts the job endpoints onto r, which the caller has scoped
-// under the API base path (for example /api/v1). Every route is admin-only:
+// under the API base path (for example /api/v1). Every route requires maintainer:
 //
 //	GET  /jobs/stats        aggregate counts by state and type
 //	GET  /jobs              recent jobs (optionally filtered by state)
 //	POST /jobs/{id}/requeue requeue a failed or dead-lettered job
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/jobs", func(r chi.Router) {
-		r.With(a.requireAdmin).Get("/stats", a.handleStats)
-		r.With(a.requireAdmin).Get("/", a.handleList)
-		r.With(a.requireAdmin).Post("/{id}/requeue", a.handleRequeue)
+		r.With(a.requireMaintainer).Get("/stats", a.handleStats)
+		r.With(a.requireMaintainer).Get("/", a.handleList)
+		r.With(a.requireMaintainer).Post("/{id}/requeue", a.handleRequeue)
 	})
 }
 
 // statsResponse is the JSON body of the stats endpoint: per-state and per-type
-// counts plus the grand total, for the admin queue dashboard.
+// counts plus the grand total, for the operations queue dashboard.
 type statsResponse struct {
 	ByState map[jobs.State]int `json:"by_state"`
 	ByType  map[string]int     `json:"by_type"`

@@ -1,7 +1,8 @@
-// Package backupapi exposes the admin-only HTTP API over the S3 backup
+// Package backupapi exposes the maintainer-only HTTP API over the S3 backup
 // subsystem: a status/last-run readout and an on-demand trigger that starts a
-// backup in the background. It depends on the backup service for the work and on
-// the auth subsystem only for the admin route guard, injected as middleware.
+// backup in the background. Backups are an operations capability, so it depends
+// on the backup service for the work and on the auth subsystem only for the
+// maintainer route guard, injected as middleware.
 //
 // When no backup destination is configured the service is nil: the status
 // endpoint reports configured=false and the trigger returns 503, so the API can
@@ -32,36 +33,36 @@ type Service interface {
 	Trigger(ctx context.Context, ts time.Time) error
 }
 
-// API exposes the backup subsystem over HTTP. The admin route guard is supplied
-// by the caller (the auth subsystem).
+// API exposes the backup subsystem over HTTP. The maintainer route guard is
+// supplied by the caller (the auth subsystem).
 type API struct {
-	svc          Service
-	requireAdmin func(http.Handler) http.Handler
+	svc               Service
+	requireMaintainer func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Service may be nil (no backup
-// destination configured); RequireAdmin is required.
+// destination configured); RequireMaintainer is required.
 type Config struct {
 	// Service runs and reports backups; nil when no destination is configured.
 	Service Service
-	// RequireAdmin guards every endpoint: backups are admin-only.
-	RequireAdmin func(http.Handler) http.Handler
+	// RequireMaintainer guards every endpoint: backups are a maintainer operation.
+	RequireMaintainer func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{svc: cfg.Service, requireAdmin: cfg.RequireAdmin}
+	return &API{svc: cfg.Service, requireMaintainer: cfg.RequireMaintainer}
 }
 
 // RegisterRoutes mounts the backup endpoints onto r, which the caller has scoped
-// under the API base path (for example /api/v1). Both routes are admin-only:
+// under the API base path (for example /api/v1). Both routes require maintainer:
 //
 //	GET  /backup  status and last-run readout
 //	POST /backup  trigger a backup in the background
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/backup", func(r chi.Router) {
-		r.With(a.requireAdmin).Get("/", a.handleStatus)
-		r.With(a.requireAdmin).Post("/", a.handleTrigger)
+		r.With(a.requireMaintainer).Get("/", a.handleStatus)
+		r.With(a.requireMaintainer).Post("/", a.handleTrigger)
 	})
 }
 

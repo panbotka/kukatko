@@ -7,11 +7,11 @@
 // flight is reported as a conflict, not a second run. Only the endpoints whose
 // source is configured are registered.
 //
-// The triggers are guarded by an injected import guard, which admits only the
-// maintainer role (see auth.RequireImport); imports are an operations capability
-// at the top of the role ladder. The package depends only on a Queue behaviour
-// and that guard, so it stays decoupled from the job store, the importers'
-// wiring, and auth's role model.
+// The triggers are guarded by an injected maintainer guard, which admits only
+// the maintainer role (see auth.RequireMaintainer); imports are an operations
+// capability at the top of the role ladder. The package depends only on a Queue
+// behaviour and that guard, so it stays decoupled from the job store, the
+// importers' wiring, and auth's role model.
 package importapi
 
 import (
@@ -48,7 +48,7 @@ type Queue interface {
 	Enqueue(ctx context.Context, jobType string, payload json.RawMessage, opts jobs.EnqueueOptions) (jobs.Job, error)
 }
 
-// RunLister reads the import-run history for the admin history view. It is the
+// RunLister reads the import-run history for the run-history view. It is the
 // import-facing subset of importer.Store, satisfied by *importer.Store.
 type RunLister interface {
 	// List returns a page of import runs across every source, most recently
@@ -56,28 +56,28 @@ type RunLister interface {
 	List(ctx context.Context, limit, offset int) ([]importer.Run, error)
 }
 
-// API exposes the import triggers over HTTP. The import guard is supplied by the
-// caller (the auth subsystem) so this package depends on auth's behaviour, not
-// its wiring.
+// API exposes the import triggers over HTTP. The maintainer guard is supplied by
+// the caller (the auth subsystem) so this package depends on auth's behaviour,
+// not its wiring.
 type API struct {
 	queue             Queue
 	runs              RunLister
-	requireImport     func(http.Handler) http.Handler
+	requireMaintainer func(http.Handler) http.Handler
 	rateLimit         func(http.Handler) http.Handler
 	enablePhotoPrism  bool
 	enablePhotoSorter bool
 }
 
-// Config bundles the dependencies of NewAPI. Queue, Runs and RequireImport are
+// Config bundles the dependencies of NewAPI. Queue, Runs and RequireMaintainer are
 // required; the Enable* flags select which source triggers are registered.
 type Config struct {
 	// Queue is the job queue the triggers enqueue jobs onto.
 	Queue Queue
 	// Runs reads the import-run history for the history endpoint.
 	Runs RunLister
-	// RequireImport guards the endpoints for callers permitted to import (the
+	// RequireMaintainer guards the endpoints for callers permitted to import (the
 	// maintainer role only); imports are an operations capability.
-	RequireImport func(http.Handler) http.Handler
+	RequireMaintainer func(http.Handler) http.Handler
 	// RateLimit is an optional per-client-IP throttle applied to the POST trigger
 	// routes ahead of the import check. A nil value disables throttling.
 	RateLimit func(http.Handler) http.Handler
@@ -96,7 +96,7 @@ func NewAPI(cfg Config) *API {
 	return &API{
 		queue:             cfg.queueOrPanic(),
 		runs:              cfg.runsOrPanic(),
-		requireImport:     cfg.RequireImport,
+		requireMaintainer: cfg.RequireMaintainer,
 		rateLimit:         rateLimit,
 		enablePhotoPrism:  cfg.EnablePhotoPrism,
 		enablePhotoSorter: cfg.EnablePhotoSorter,
@@ -126,24 +126,24 @@ func (c Config) runsOrPanic() RunLister {
 
 // RegisterRoutes mounts the import endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1). The history endpoint is always
-// registered so the admin UI can render past runs even when no source is
+// registered so the operations UI can render past runs even when no source is
 // configured; the triggers are registered only for configured sources. Every
-// route is behind the import guard (maintainer only):
+// route is behind the maintainer guard:
 //
-//	GET  /import/runs         RequireImport  recent import-run history + enabled sources
-//	POST /import/photoprism   RequireImport  enqueue a PhotoPrism import job
-//	POST /import/photosorter  RequireImport  enqueue a photo-sorter migration job
+//	GET  /import/runs         RequireMaintainer  recent import-run history + enabled sources
+//	POST /import/photoprism   RequireMaintainer  enqueue a PhotoPrism import job
+//	POST /import/photosorter  RequireMaintainer  enqueue a photo-sorter migration job
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireImport).Get("/import/runs", a.handleListRuns)
+	r.With(a.requireMaintainer).Get("/import/runs", a.handleListRuns)
 	if a.enablePhotoPrism {
-		r.With(a.rateLimit, a.requireImport).Post("/import/photoprism", a.handleImportPhotoPrism)
+		r.With(a.rateLimit, a.requireMaintainer).Post("/import/photoprism", a.handleImportPhotoPrism)
 	}
 	if a.enablePhotoSorter {
-		r.With(a.rateLimit, a.requireImport).Post("/import/photosorter", a.handleImportPhotoSorter)
+		r.With(a.rateLimit, a.requireMaintainer).Post("/import/photosorter", a.handleImportPhotoSorter)
 	}
 }
 
-// sources reports which import sources are configured, so the admin UI can show
+// sources reports which import sources are configured, so the operations UI can show
 // or disable each section.
 type sources struct {
 	PhotoPrism  bool `json:"photoprism"`

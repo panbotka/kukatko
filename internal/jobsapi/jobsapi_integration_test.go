@@ -48,7 +48,7 @@ func newEnv(t *testing.T) *env {
 	authAPI := auth.NewAPI(auth.APIConfig{Service: authSvc, Limiter: auth.NewLimiter(100, time.Minute)})
 
 	store := jobs.NewStore(db.Pool())
-	api := jobsapi.NewAPI(jobsapi.Config{Store: store, RequireAdmin: authAPI.RequireAdmin})
+	api := jobsapi.NewAPI(jobsapi.Config{Store: store, RequireMaintainer: authAPI.RequireMaintainer})
 
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
@@ -118,15 +118,15 @@ func (e *env) deadLetter(t *testing.T, uid string) jobs.Job {
 }
 
 // TestStatsEndpoint verifies GET /jobs/stats returns per-state, per-type and
-// total counts, and is admin-only.
+// total counts, and requires the maintainer role (jobs are an operations surface).
 func TestStatsEndpoint(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	maint := env.login(t, "maint", auth.RoleMaintainer)
 	env.enqueue(t, jobs.TypeImageEmbed, "a", jobs.EnqueueOptions{})
 	env.enqueue(t, jobs.TypeImageEmbed, "b", jobs.EnqueueOptions{})
 	env.enqueue(t, jobs.TypeFaceDetect, "a", jobs.EnqueueOptions{})
 
-	resp := do(t, admin, http.MethodGet, env.baseURL+"/api/v1/jobs/stats", nil)
+	resp := do(t, maint, http.MethodGet, env.baseURL+"/api/v1/jobs/stats", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("stats status = %d, want 200", resp.StatusCode)
@@ -145,36 +145,50 @@ func TestStatsEndpoint(t *testing.T) {
 	}
 }
 
-// TestStatsForbiddenForNonAdmin verifies a viewer cannot read queue stats.
-func TestStatsForbiddenForNonAdmin(t *testing.T) {
+// TestStatsForbiddenBelowMaintainer verifies queue stats are an operations
+// surface reserved to maintainers: every lesser role — including a plain admin —
+// is refused. This pins the maintainer/admin split, where admin (governance) does
+// not carry operations.
+func TestStatsForbiddenBelowMaintainer(t *testing.T) {
 	env := newEnv(t)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
-	resp := do(t, viewer, http.MethodGet, env.baseURL+"/api/v1/jobs/stats", nil)
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("stats status for viewer = %d, want 403", resp.StatusCode)
+	for _, tc := range []struct {
+		user string
+		role auth.Role
+	}{
+		{"viewer", auth.RoleViewer},
+		{"editor", auth.RoleEditor},
+		{"admin", auth.RoleAdmin},
+	} {
+		t.Run(string(tc.role), func(t *testing.T) {
+			client := env.login(t, tc.user, tc.role)
+			resp := do(t, client, http.MethodGet, env.baseURL+"/api/v1/jobs/stats", nil)
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusForbidden {
+				t.Errorf("stats status for %s = %d, want 403", tc.role, resp.StatusCode)
+			}
+		})
 	}
 }
 
 // TestListEndpoint verifies GET /jobs lists jobs and filters by state.
 func TestListEndpoint(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	maint := env.login(t, "maint", auth.RoleMaintainer)
 	env.enqueue(t, jobs.TypeImageEmbed, "a", jobs.EnqueueOptions{})
 	env.enqueue(t, jobs.TypeImageEmbed, "b", jobs.EnqueueOptions{})
 	env.deadLetter(t, "c")
 
-	all := listJobs(t, admin, env.baseURL+"/api/v1/jobs")
+	all := listJobs(t, maint, env.baseURL+"/api/v1/jobs")
 	if len(all) != 3 {
 		t.Errorf("unfiltered list len = %d, want 3", len(all))
 	}
-	dead := listJobs(t, admin, env.baseURL+"/api/v1/jobs?state=dead")
+	dead := listJobs(t, maint, env.baseURL+"/api/v1/jobs?state=dead")
 	if len(dead) != 1 || dead[0].State != jobs.StateDead {
 		t.Errorf("dead list = %+v, want one dead job", dead)
 	}
 
 	// An invalid filter is rejected with 400.
-	resp := do(t, admin, http.MethodGet, env.baseURL+"/api/v1/jobs?state=bogus", nil)
+	resp := do(t, maint, http.MethodGet, env.baseURL+"/api/v1/jobs?state=bogus", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("invalid state status = %d, want 400", resp.StatusCode)
@@ -185,10 +199,10 @@ func TestListEndpoint(t *testing.T) {
 // answers 404/409 for missing and non-requeueable jobs.
 func TestRequeueEndpoint(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	maint := env.login(t, "maint", auth.RoleMaintainer)
 	dead := env.deadLetter(t, "c")
 
-	resp := do(t, admin, http.MethodPost,
+	resp := do(t, maint, http.MethodPost,
 		env.baseURL+"/api/v1/jobs/"+strconv.FormatInt(dead.ID, 10)+"/requeue", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -201,14 +215,14 @@ func TestRequeueEndpoint(t *testing.T) {
 	}
 
 	// Missing job -> 404.
-	missing := do(t, admin, http.MethodPost, env.baseURL+"/api/v1/jobs/999999/requeue", nil)
+	missing := do(t, maint, http.MethodPost, env.baseURL+"/api/v1/jobs/999999/requeue", nil)
 	defer func() { _ = missing.Body.Close() }()
 	if missing.StatusCode != http.StatusNotFound {
 		t.Errorf("requeue missing status = %d, want 404", missing.StatusCode)
 	}
 
 	// Now-queued job is not requeueable -> 409.
-	conflict := do(t, admin, http.MethodPost,
+	conflict := do(t, maint, http.MethodPost,
 		env.baseURL+"/api/v1/jobs/"+strconv.FormatInt(dead.ID, 10)+"/requeue", nil)
 	defer func() { _ = conflict.Body.Close() }()
 	if conflict.StatusCode != http.StatusConflict {
@@ -216,7 +230,7 @@ func TestRequeueEndpoint(t *testing.T) {
 	}
 }
 
-// listJobs GETs url as admin and returns the decoded jobs slice.
+// listJobs GETs url with the given client and returns the decoded jobs slice.
 func listJobs(t *testing.T, client *http.Client, url string) []jobs.Job {
 	t.Helper()
 	resp := do(t, client, http.MethodGet, url, nil)

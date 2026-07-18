@@ -15,11 +15,12 @@ import (
 	"github.com/panbotka/kukatko/internal/systemapi"
 )
 
-// buildSystemAPI assembles the admin-only system-status API. It builds a fresh,
-// stateless embeddings client (only used for its cheap Healthy probe) and reuses
-// the shared pool for the job-queue and import-run stores; the optional backup
-// service drives the backup section (nil-safe). The admin guard is supplied via
-// authAPI so systemapi stays decoupled from auth's wiring.
+// buildSystemAPI assembles the maintainer-only system-status API. It builds a
+// fresh, stateless embeddings client (only used for its cheap Healthy probe) and
+// reuses the shared pool for the job-queue and import-run stores; the optional
+// backup service drives the backup section (nil-safe). System status is an
+// operations view, so the maintainer guard is supplied via authAPI (systemapi
+// stays decoupled from auth's wiring).
 func buildSystemAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, backupSvc *backup.Service,
 	mapsHealth *mapy.Health,
@@ -59,7 +60,7 @@ func buildSystemAPI(
 		CachePath:     cfg.Storage.CachePath,
 	})
 	return systemapi.NewAPI(systemapi.Config{
-		Service:      svc,
-		RequireAdmin: authAPI.RequireAdmin,
+		Service:           svc,
+		RequireMaintainer: authAPI.RequireMaintainer,
 	}), nil
 }

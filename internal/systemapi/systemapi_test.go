@@ -24,14 +24,15 @@ func (f fakeCollector) Collect(context.Context) (system.Status, error) {
 	return f.status, f.err
 }
 
-// passThrough is a no-op admin guard so the handler logic can be tested without
-// the auth subsystem; the admin gate itself is covered by the integration test.
+// passThrough is a no-op maintainer guard so the handler logic can be tested
+// without the auth subsystem; the maintainer gate is covered by the integration
+// test.
 func passThrough(next http.Handler) http.Handler { return next }
 
 // newRouter mounts the system API with the given collector behind a pass-through
 // guard, returning the router ready for httptest requests.
 func newRouter(collector StatusCollector) chi.Router {
-	api := NewAPI(Config{Service: collector, RequireAdmin: passThrough})
+	api := NewAPI(Config{Service: collector, RequireMaintainer: passThrough})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 	return r

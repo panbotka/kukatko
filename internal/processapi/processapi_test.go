@@ -110,7 +110,7 @@ func (f *fakeThumbnailBackfiller) BackfillThumbnails(_ context.Context, all bool
 func passthrough(next http.Handler) http.Handler { return next }
 
 // forbid is an admin guard that rejects every request with 403, standing in for
-// RequireAdmin denying a non-admin caller.
+// RequireMaintainer denying a non-admin caller.
 func forbid(http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -125,7 +125,7 @@ func newServerWithThumbnails(
 	t.Helper()
 	api := NewAPI(Config{
 		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
-		ThumbnailBackfiller: tb, RequireAdmin: guard,
+		ThumbnailBackfiller: tb, RequireMaintainer: guard,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -137,7 +137,7 @@ func newServerWithThumbnails(
 // newServer mounts the API with the given backfillers behind a passthrough guard.
 func newServer(t *testing.T, bf Backfiller, ff FaceBackfiller) *httptest.Server {
 	t.Helper()
-	api := NewAPI(Config{Backfiller: bf, FaceBackfiller: ff, RequireAdmin: passthrough})
+	api := NewAPI(Config{Backfiller: bf, FaceBackfiller: ff, RequireMaintainer: passthrough})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
 	srv := httptest.NewServer(r)
@@ -151,7 +151,7 @@ func newServerWithRecluster(t *testing.T, rc Reclusterer) *httptest.Server {
 	t.Helper()
 	api := NewAPI(Config{
 		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
-		Reclusterer: rc, RequireAdmin: passthrough,
+		Reclusterer: rc, RequireMaintainer: passthrough,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -166,7 +166,7 @@ func newServerWithPlaces(t *testing.T, pb PlacesBackfiller) *httptest.Server {
 	t.Helper()
 	api := NewAPI(Config{
 		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
-		PlacesBackfiller: pb, RequireAdmin: passthrough,
+		PlacesBackfiller: pb, RequireMaintainer: passthrough,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -333,7 +333,7 @@ func newServerWithStacks(t *testing.T, sd StacksDetector) *httptest.Server {
 	t.Helper()
 	api := NewAPI(Config{
 		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
-		StacksDetector: sd, RequireAdmin: passthrough,
+		StacksDetector: sd, RequireMaintainer: passthrough,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -544,7 +544,7 @@ func TestBackfillThumbnails_unavailable(t *testing.T) {
 	}
 }
 
-// TestBackfillThumbnails_forbidden verifies RequireAdmin guards the endpoint: a
+// TestBackfillThumbnails_forbidden verifies RequireMaintainer guards the endpoint: a
 // non-admin caller is rejected with 403 and the backfiller is never invoked.
 func TestBackfillThumbnails_forbidden(t *testing.T) {
 	t.Parallel()
@@ -594,7 +594,7 @@ func newServerWithMetadata(
 	t.Helper()
 	api := NewAPI(Config{
 		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
-		MetadataBackfiller: mb, RequireAdmin: guard,
+		MetadataBackfiller: mb, RequireMaintainer: guard,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -678,7 +678,7 @@ func TestBackfillMetadata_unavailable(t *testing.T) {
 	}
 }
 
-// TestBackfillMetadata_forbidden verifies RequireAdmin guards the endpoint: a
+// TestBackfillMetadata_forbidden verifies RequireMaintainer guards the endpoint: a
 // non-admin caller is rejected with 403 and the backfiller is never invoked.
 func TestBackfillMetadata_forbidden(t *testing.T) {
 	t.Parallel()
@@ -715,7 +715,7 @@ func newServerWithLocations(t *testing.T, le LocationEstimator) *httptest.Server
 	t.Helper()
 	api := NewAPI(Config{
 		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
-		LocationEstimator: le, RequireAdmin: passthrough,
+		LocationEstimator: le, RequireMaintainer: passthrough,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -786,7 +786,7 @@ func TestEstimateLocations_forbidden(t *testing.T) {
 	le := &fakeLocationEstimator{estimated: 7}
 	api := NewAPI(Config{
 		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
-		LocationEstimator: le, RequireAdmin: forbid,
+		LocationEstimator: le, RequireMaintainer: forbid,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)

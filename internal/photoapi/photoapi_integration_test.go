@@ -30,6 +30,7 @@ import (
 	"github.com/panbotka/kukatko/internal/stacks"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
+	"github.com/panbotka/kukatko/internal/trash"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -118,19 +119,25 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 	placeStore := places.NewStore(db.Pool())
 	embedder := &fakeEmbedder{byQuery: map[string][]float32{}}
 	api := photoapi.NewAPI(photoapi.Config{
-		Store:           store,
-		Storage:         mediaStore,
-		Thumbnailer:     thumb.New(fs, t.TempDir()),
-		Similar:         vectorStore,
-		Embedder:        embedder,
-		Favorites:       organizeStore,
-		Ratings:         organizeStore,
-		Organizer:       organizeStore,
-		Users:           authStore,
-		Places:          placeStore,
-		Stacker:         stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
+		Store:       store,
+		Storage:     mediaStore,
+		Thumbnailer: thumb.New(fs, t.TempDir()),
+		Similar:     vectorStore,
+		Embedder:    embedder,
+		Favorites:   organizeStore,
+		Ratings:     organizeStore,
+		Organizer:   organizeStore,
+		Users:       authStore,
+		Places:      placeStore,
+		Stacker:     stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
+		Purger: trash.New(trash.Config{
+			Photos:      store,
+			Storage:     fs,
+			Thumbnailer: thumb.New(fs, t.TempDir()),
+		}),
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
+		RequireAdmin:    authAPI.RequireAdmin,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,
 	})
 
@@ -839,6 +846,73 @@ func TestArchive(t *testing.T) {
 		def := getList(t, editor, base, "")
 		if def.Total != 2 {
 			t.Errorf("after unarchive default total = %d, want 2", def.Total)
+		}
+	})
+}
+
+// TestTrashPurgeRBAC pins the maintainer/admin split on the trash surface: the
+// permanent, irreversible operations (purge one photo, empty the whole trash) are
+// tightened to admin, while the reversible archive (soft delete) stays a write
+// (editor) operation and the read-only trash-info stays open to any authenticated
+// user. An admin is authorized to purge; the ladder gives a maintainer the same.
+func TestTrashPurgeRBAC(t *testing.T) {
+	env := newEnv(t)
+	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	admin, _ := env.login(t, "admin", auth.RoleAdmin)
+	base := env.server.URL
+	ctx := t.Context()
+
+	// One archived photo the editor is refused permission to purge, and one the
+	// admin purges successfully.
+	forEditor := env.seedPhoto(t, photos.Photo{Title: "A", TakenAtSource: "unknown"}, "a.jpg", 5, 5, 200)
+	forAdmin := env.seedPhoto(t, photos.Photo{Title: "B", TakenAtSource: "unknown"}, "b.jpg", 6, 6, 200)
+	if _, err := env.store.Archive(ctx, forEditor.UID); err != nil {
+		t.Fatalf("archive %s: %v", forEditor.UID, err)
+	}
+	if _, err := env.store.Archive(ctx, forAdmin.UID); err != nil {
+		t.Fatalf("archive %s: %v", forAdmin.UID, err)
+	}
+
+	t.Run("editor can archive (soft delete)", func(t *testing.T) {
+		live := env.seedPhoto(t, photos.Photo{Title: "C", TakenAtSource: "unknown"}, "c.jpg", 7, 7, 200)
+		resp := mustDo(t, editor, http.MethodPost, base+"/api/v1/photos/"+live.UID+"/archive", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("editor archive status = %d, want 200", resp.StatusCode)
+		}
+	})
+
+	t.Run("editor cannot purge one", func(t *testing.T) {
+		resp := mustDo(t, editor, http.MethodPost,
+			base+"/api/v1/photos/"+forEditor.UID+"/purge?confirm=true", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("editor purge status = %d, want 403", resp.StatusCode)
+		}
+	})
+
+	t.Run("editor cannot empty the trash", func(t *testing.T) {
+		resp := mustDo(t, editor, http.MethodPost, base+"/api/v1/trash/empty?confirm=true", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("editor empty-trash status = %d, want 403", resp.StatusCode)
+		}
+	})
+
+	t.Run("editor can read trash info", func(t *testing.T) {
+		resp := mustDo(t, editor, http.MethodGet, base+"/api/v1/trash/info", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("editor trash-info status = %d, want 200", resp.StatusCode)
+		}
+	})
+
+	t.Run("admin can purge", func(t *testing.T) {
+		resp := mustDo(t, admin, http.MethodPost,
+			base+"/api/v1/photos/"+forAdmin.UID+"/purge?confirm=true", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("admin purge status = %d, want 204", resp.StatusCode)
 		}
 	})
 }

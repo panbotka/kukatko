@@ -105,10 +105,11 @@ func sameBucket(dst config.S3Config, primary config.R2Config) bool {
 	return dst.Bucket == primary.Bucket && strings.EqualFold(dst.Endpoint, primary.Endpoint)
 }
 
-// buildBackupAPI assembles the admin-only backup HTTP API. A nil service (no
+// buildBackupAPI assembles the maintainer-only backup HTTP API. A nil service (no
 // destination configured) yields an API whose status endpoint reports
-// configured=false and whose trigger returns 503. The admin guard is supplied
-// via authAPI so backupapi stays decoupled from auth's wiring.
+// configured=false and whose trigger returns 503. Backups are an operations
+// capability, so the maintainer guard is supplied via authAPI (backupapi stays
+// decoupled from auth's wiring).
 func buildBackupAPI(svc *backup.Service, authAPI *auth.API) *backupapi.API {
 	var service backupapi.Service
 	// A nil *backup.Service must be passed as a nil interface, not a non-nil
@@ -117,8 +118,8 @@ func buildBackupAPI(svc *backup.Service, authAPI *auth.API) *backupapi.API {
 		service = svc
 	}
 	return backupapi.NewAPI(backupapi.Config{
-		Service:      service,
-		RequireAdmin: authAPI.RequireAdmin,
+		Service:           service,
+		RequireMaintainer: authAPI.RequireMaintainer,
 	})
 }
 

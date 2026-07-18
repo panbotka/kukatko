@@ -31,13 +31,13 @@ func (f *fakeService) Verify(context.Context) (backup.VerifyReport, error) {
 	return f.report, f.verifyErr
 }
 
-// passthrough is an admin guard that allows every request (auth is tested in the
-// auth package; here we only test the restore handlers).
+// passthrough is a maintainer guard that allows every request (auth is tested in
+// the auth package; here we only test the restore handlers).
 func passthrough(next http.Handler) http.Handler { return next }
 
 // newRouter mounts the API under /api/v1 with the given service.
 func newRouter(svc Service) http.Handler {
-	api := NewAPI(Config{Service: svc, RequireAdmin: passthrough})
+	api := NewAPI(Config{Service: svc, RequireMaintainer: passthrough})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 	return r

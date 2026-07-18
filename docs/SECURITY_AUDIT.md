@@ -296,15 +296,19 @@ Silence is not evidence; these areas were examined and are clean.
   and subjects are **intentionally shared** (household model), all mutations `RequireWrite`-gated
   — not an IDOR. Since the "private photo" feature was removed, the catalog has no per-photo
   ownership, so all authenticated users legitimately see all photos.
-- **RBAC — clean.** Every mutating route across all 21 `RegisterRoutes` is guarded: writes by
-  `RequireWrite`; admin surfaces (`/admin/users`, `/jobs`, `/process`, `/maintenance`,
-  `/backup`, `/restore`, `/system`, `/audit`) by `RequireAdmin` (admin or maintainer); imports by
-  `RequireImport` (maintainer only); media by `RequireAuthOrDownloadToken`. No under-guarded
-  mutating route; a nil
-  middleware would panic at wiring, not silently pass. No editor/viewer can reach an admin
-  surface; no viewer can reach a mutation. The only unauthenticated routes are `/healthz`,
-  `/metrics` (SEC-013), and the SPA static handler. No `pprof`/`expvar`/`/debug` endpoints
-  exist.
+- **RBAC — clean.** Every mutating route across all 21 `RegisterRoutes` is guarded, split along the
+  role ladder: writes by `RequireWrite`; **operations surfaces** (`/jobs`, `/process`,
+  `/maintenance`, `/backup`, `/restore`, `/system`, and the import triggers `/import/*`) by
+  `RequireMaintainer` (maintainer only — a plain admin is refused); **governance surfaces**
+  (`/admin/users`, `/audit`) by `RequireAdmin` (admin or maintainer via the ladder); the
+  permanent trash operations (`POST /trash/empty` and the per-photo `POST /photos/{uid}/purge`)
+  tightened from write to `RequireAdmin` because they destroy originals irreversibly — the
+  reversible archive (soft delete) stays `RequireWrite` and `GET /trash/info` stays `RequireAuth`;
+  media by `RequireAuthOrDownloadToken`. No under-guarded mutating route; a nil middleware would
+  panic at wiring, not silently pass. No editor/viewer can reach a governance or operations
+  surface, and a plain admin cannot reach an operations surface; no viewer can reach a mutation.
+  The only unauthenticated routes are `/healthz`, `/metrics` (SEC-013), and the SPA static
+  handler. No `pprof`/`expvar`/`/debug` endpoints exist.
 - **Auth primitives — clean.** bcrypt cost **12** (`internal/auth/password.go:13`); session and
   download tokens are 256-bit from `crypto/rand`, independently generated
   (`internal/auth/token.go`, `internal/auth/service.go:80-96`); API-token secret is 256-bit,

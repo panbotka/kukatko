@@ -37,7 +37,9 @@ func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 // buildPhotoAPI assembles the photo browse/curation subsystem: the configured
 // original store and thumbnailer (for media serving), the photo repository, and
 // the HTTP API. Read endpoints reuse the auth subsystem's RequireAuth guard,
-// metadata and archive endpoints its RequireWrite guard, and media endpoints its
+// metadata and archive endpoints its RequireWrite guard, the permanent trash
+// operations (purge one, empty the trash) its RequireAdmin guard (destroying
+// originals is tightened above write), and media endpoints its
 // RequireAuthOrDownloadToken guard (cookie or download token) — all supplied via
 // authAPI so the photoapi package stays decoupled from auth's wiring. similar is
 // the shared vector store backing the similar-photos endpoint and the semantic
@@ -96,6 +98,7 @@ func buildPhotoAPI(
 		VideoTranscode:  cfg.Video.Transcode,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
+		RequireAdmin:    authAPI.RequireAdmin,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,
 	})
 }

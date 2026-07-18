@@ -121,11 +121,12 @@ func restoreConfig(cmd *cobra.Command) (*config.Config, error) {
 	return cfg, nil
 }
 
-// buildRestoreAPI assembles the admin-only restore HTTP API (list dumps + run
-// the integrity check). When no S3 destination is configured the service is nil,
-// so the endpoints report 503; otherwise the service is wired over the bucket,
-// the catalogue and the on-disk originals. The destructive database restore is
-// intentionally not exposed over HTTP — it lives only in `kukatko restore db`.
+// buildRestoreAPI assembles the maintainer-only restore HTTP API (list dumps +
+// run the integrity check). When no S3 destination is configured the service is
+// nil, so the endpoints report 503; otherwise the service is wired over the
+// bucket, the catalogue and the on-disk originals. The destructive database
+// restore is intentionally not exposed over HTTP — it lives only in
+// `kukatko restore db`.
 func buildRestoreAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) (*restoreapi.API, error) {
 	var svc restoreapi.Service
 	if backupConfigured(cfg) {
@@ -140,8 +141,8 @@ func buildRestoreAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) (*r
 		})
 	}
 	return restoreapi.NewAPI(restoreapi.Config{
-		Service:      svc,
-		RequireAdmin: authAPI.RequireAdmin,
+		Service:           svc,
+		RequireMaintainer: authAPI.RequireMaintainer,
 	}), nil
 }
 

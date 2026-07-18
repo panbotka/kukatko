@@ -1,9 +1,9 @@
-// Package systemapi exposes the admin-only HTTP endpoint over the aggregated
+// Package systemapi exposes the maintainer-only HTTP endpoint over the aggregated
 // system status (internal/system): GET /system/status returns one snapshot of
 // embeddings reachability, job-queue depth, the backup subsystem state, the last
 // import per source, storage usage, database reachability and the build version.
 // It depends on the system service for data and on the auth subsystem only for
-// the admin route guard, injected as middleware. The dashboard polls this
+// the maintainer route guard, injected as middleware. The dashboard polls this
 // endpoint; quick actions reuse the existing jobs/backup/import/maintenance APIs.
 package systemapi
 
@@ -25,34 +25,35 @@ type StatusCollector interface {
 	Collect(ctx context.Context) (system.Status, error)
 }
 
-// API exposes the system status over HTTP. The admin route guard is supplied by
-// the caller (the auth subsystem) so this package depends on auth for the
-// caller's identity, not its wiring.
+// API exposes the system status over HTTP. The maintainer route guard is
+// supplied by the caller (the auth subsystem) so this package depends on auth for
+// the caller's identity, not its wiring.
 type API struct {
-	service      StatusCollector
-	requireAdmin func(http.Handler) http.Handler
+	service           StatusCollector
+	requireMaintainer func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Every field is required.
 type Config struct {
 	// Service aggregates the system status.
 	Service StatusCollector
-	// RequireAdmin guards the endpoint: the status dashboard is admin-only.
-	RequireAdmin func(http.Handler) http.Handler
+	// RequireMaintainer guards the endpoint: the status dashboard is a maintainer
+	// operation.
+	RequireMaintainer func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, requireAdmin: cfg.RequireAdmin}
+	return &API{service: cfg.Service, requireMaintainer: cfg.RequireMaintainer}
 }
 
 // RegisterRoutes mounts the system endpoint onto r, which the caller has scoped
-// under the API base path (for example /api/v1). The route is admin-only:
+// under the API base path (for example /api/v1). The route requires maintainer:
 //
 //	GET /system/status  aggregated operational status snapshot
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/system", func(r chi.Router) {
-		r.With(a.requireAdmin).Get("/status", a.handleStatus)
+		r.With(a.requireMaintainer).Get("/status", a.handleStatus)
 	})
 }
 

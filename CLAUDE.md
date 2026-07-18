@@ -51,7 +51,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/auditapi` — admin-only `GET /audit` (read-only listing)
 - `internal/auth` — viewer/editor/admin/maintainer roles (strict ladder), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer)
 - `internal/backup` — S3 backup (pg_dump + sync of originals + retention) **and** restore
-- `internal/backupapi` — admin-only `GET`/`POST /backup`
+- `internal/backupapi` — maintainer-only `GET`/`POST /backup`
 - `internal/bulk` — bulk metadata editing, the whole batch in one transaction
 - `internal/bulkapi` — `POST /photos/bulk`
 - `internal/candidates` — "find a person among untagged photos": per-exemplar kNN over unassigned faces + voting, rejection/negative-exemplar/size filters, action classification; read-only
@@ -77,13 +77,13 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`
 - `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity)
 - `internal/imgconvert` — HEIC/RAW/video → decodable JPEG (shell-out)
-- `internal/importapi` — admin-only import triggers + run history
+- `internal/importapi` — maintainer-only import triggers + run history
 - `internal/importer` — bookkeeping of import/migration runs + high-watermarks
 - `internal/ingest` — upload pipeline: stream, SHA256 dedup, metadata, thumbnails, enqueue jobs
 - `internal/jobs` — persistent job queue in Postgres (retry, dedup, backoff, `Defer`)
-- `internal/jobsapi` — admin-only `/jobs` (stats, list, requeue)
+- `internal/jobsapi` — maintainer-only `/jobs` (stats, list, requeue)
 - `internal/maintenance` — library integrity check & repair; **never deletes originals**
-- `internal/maintenanceapi` — admin-only `/maintenance` (scan, repair)
+- `internal/maintenanceapi` — maintainer-only `/maintenance` (scan, repair)
 - `internal/mapsapi` — tile proxy, geocode (reverse + place search), GeoJSON feed
 - `internal/mapy` — server-side mapy.com client; **the key never leaves the server**
 - `internal/mcpapi` — MCP server for an AI agent, `POST /mcp` (RequireAuth + per-tool RBAC); off by default, nothing destructive exposed
@@ -107,11 +107,11 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/placesapi` — `GET /places` (hierarchy of countries → cities with counts)
 - `internal/placesjob` — worker handler `places` (reverse geocode, rate-limited due to credits)
 - `internal/ppimport` — incremental **idempotent** import from PhotoPrism
-- `internal/processapi` — admin-only `/process/*` backfills (embeddings, faces, clusters, places)
+- `internal/processapi` — maintainer-only `/process/*` backfills (embeddings, faces, clusters, places)
 - `internal/psimport` — incremental **idempotent** direct migration from photo-sorter
 - `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
-- `internal/restoreapi` — admin-only **read-only** `/restore/*` (destructive restore only via CLI)
+- `internal/restoreapi` — maintainer-only **read-only** `/restore/*` (destructive restore only via CLI)
 - `internal/review` — the review game: one-question-at-a-time queue of face/label candidates from the uncertainty band; answers reuse existing write paths
 - `internal/reviewapi` — `GET /review/queue`, `POST /review/answer` (RequireWrite)
 - `internal/savedsearch` — per-user saved searches ("smart albums")
@@ -126,7 +126,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/sweep` — recognition sweep: runs the per-subject candidate search across **all** named subjects at a high confidence, bounded worker pool, streams a per-person work list; read-only, **never auto-assigns**
 - `internal/sweepapi` — `GET /faces/sweep` (RequireWrite) streaming NDJSON
 - `internal/system` — aggregation of instance operational state for the admin dashboard
-- `internal/systemapi` — admin-only `GET /system/status`
+- `internal/systemapi` — maintainer-only `GET /system/status`
 - `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
 - `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes)
 - `internal/trash` — permanent deletion (purge) of archived photos + scheduled retention

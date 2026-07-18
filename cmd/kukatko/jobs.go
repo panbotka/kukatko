@@ -25,12 +25,12 @@ import (
 
 // buildJobs assembles the background job subsystem: the in-process worker (with
 // the built-in handlers plus the image_embed and face_detect handlers registered)
-// that drains the shared queue store, the admin HTTP API exposing queue
-// stats/listings/requeue, and the admin processing API (embedding, face and
-// thumbnail backfills plus the face-clustering trigger). The worker is returned
-// to the serve command to run for the process lifetime; both APIs mount their
-// admin-guarded routes via authAPI so the api packages stay decoupled from
-// auth's wiring. The psMigrate handler (nil when photo-sorter is not configured)
+// that drains the shared queue store, the maintainer-only HTTP API exposing queue
+// stats/listings/requeue, and the maintainer-only processing API (embedding, face
+// and thumbnail backfills plus the face-clustering trigger). The worker is
+// returned to the serve command to run for the process lifetime; both APIs are
+// operations surfaces, so they mount their maintainer-guarded routes via authAPI
+// (the api packages stay decoupled from auth's wiring). The psMigrate handler (nil when photo-sorter is not configured)
 // registers the ps_migrate job. The places handler (nil when no mapy.com key is
 // configured) registers the `places` reverse-geocode job and backs the place
 // backfill. It also builds the thumbnail service (regenerating thumbnails/pHashes,
@@ -77,7 +77,7 @@ func buildJobs(
 		Metrics:           workerObserver(reg),
 	})
 
-	jobAPI := jobsapi.NewAPI(jobsapi.Config{Store: store, RequireAdmin: authAPI.RequireAdmin})
+	jobAPI := jobsapi.NewAPI(jobsapi.Config{Store: store, RequireMaintainer: authAPI.RequireMaintainer})
 	// Pass the places backfiller as a nil interface (not a typed nil pointer) when
 	// it is not configured, so processapi's nil check disables /process/places.
 	var placesBF processapi.PlacesBackfiller
@@ -100,7 +100,7 @@ func buildJobs(
 		// Likewise a nil interface disables /process/locations when location
 		// estimation is switched off.
 		LocationEstimator: locationEstimatorOrNil(cfg, db, enqueuer),
-		RequireAdmin:      authAPI.RequireAdmin,
+		RequireMaintainer: authAPI.RequireMaintainer,
 	})
 	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, authAPI), nil
 }
