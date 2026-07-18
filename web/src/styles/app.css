@@ -42,8 +42,8 @@ body {
  * white fill and near-black text (`background-color: #fff; color: #212529`) plus a
  * dark select-arrow SVG — values baked into its stylesheet, not `--bs-*` variables.
  * Left alone, every field renders as a blinding white rectangle punched into the
- * navy page; on the library the four empty filter selects become the loudest thing
- * on a page whose whole job is showing photographs.
+ * near-black page; on the library the four empty filter selects become the loudest
+ * thing on a page whose whole job is showing photographs.
  *
  * A previous attempt pinned the controls to `color-scheme: light` (recorded as a
  * deliberate rejection in `docs/UX_AUDIT.md`): with the fill still white, the
@@ -53,9 +53,9 @@ body {
  * *given a white fill*.
  *
  * Here we remove the white fill instead. Each control gets a real dark surface —
- * `--kk-surface-sunken`, the same navy-derived well a thumbnail loads into, so a
- * field sits BELOW the photographs in weight — with a subtle slate hairline so it
- * still reads as a control rather than a hole. Because the fill is now dark we can,
+ * `--kk-surface-sunken`, the same warm well a thumbnail loads into, so a field sits
+ * BELOW the photographs in weight — with a subtle warm hairline so it still reads
+ * as a control rather than a hole. Because the fill is now dark we can,
  * and must, put the controls back on `color-scheme: dark`: fill and scheme finally
  * agree, so every native glyph renders light-on-dark and stays visible. The single
  * non-native affordance, the `.form-select` chevron, is a Bootstrap background image
@@ -72,7 +72,7 @@ body {
 }
 
 .form-select {
-  --bs-form-select-bg-img: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23ebebeb' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+  --bs-form-select-bg-img: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23eceae5' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
 }
 
 /* Placeholder text: clearly dimmer than a real value so an empty field reads as
@@ -123,6 +123,92 @@ body {
   border-color: transparent;
 }
 
+/*
+ * Accent — the azure identity applied to every control Bootswatch bakes with a
+ * literal orange fill. Its compiled CSS hardcodes `#df6919` here instead of
+ * reading `--bs-primary`, so the theme-root re-pin in `tokens.css` cannot reach
+ * these; we point each control back at the accent tokens. The solid deep tone
+ * (`--kk-accent-solid`) carries white text at AA on its fill; the light tone
+ * (`--kk-accent`) reads as text/border on the dark surfaces. Base-style re-point
+ * only — no component markup changes.
+ */
+
+/* The primary action: filled azure with a white label; hover/active step darker.
+   Bootswatch flattens the resting fill with a direct `.btn-primary{background-
+   color:#df6919}` rule (not the `--bs-btn-bg` var), so the fill is set directly
+   too; hover/active/border still resolve from the `--bs-btn-*` vars below. */
+.btn-primary {
+  background-color: var(--kk-accent-solid);
+  --bs-btn-bg: var(--kk-accent-solid);
+  --bs-btn-border-color: var(--kk-accent-solid);
+  --bs-btn-hover-bg: var(--kk-accent-solid-hover);
+  --bs-btn-hover-border-color: var(--kk-accent-solid-hover);
+  --bs-btn-active-bg: var(--kk-accent-solid-hover);
+  --bs-btn-active-border-color: var(--kk-accent-solid-hover);
+  --bs-btn-disabled-bg: var(--kk-accent-solid);
+  --bs-btn-disabled-border-color: var(--kk-accent-solid);
+  --bs-btn-focus-shadow-rgb: 95, 176, 242;
+}
+
+/* The secondary action as an outline: azure text + border at rest, filling solid
+   azure with a white label on hover/active. */
+.btn-outline-primary {
+  --bs-btn-color: var(--kk-accent);
+  --bs-btn-border-color: var(--kk-accent);
+  --bs-btn-hover-bg: var(--kk-accent-solid);
+  --bs-btn-hover-border-color: var(--kk-accent-solid);
+  --bs-btn-active-bg: var(--kk-accent-solid);
+  --bs-btn-active-border-color: var(--kk-accent-solid);
+  --bs-btn-disabled-color: var(--kk-accent);
+  --bs-btn-disabled-border-color: var(--kk-accent);
+  --bs-btn-focus-shadow-rgb: 95, 176, 242;
+}
+
+/* Checkbox / radio in the checked state (and checkbox indeterminate) — baked
+   literals, so set the fill and border directly. The white glyph stays legible. */
+.form-check-input:checked,
+.form-check-input[type='checkbox']:indeterminate {
+  background-color: var(--kk-accent-solid);
+  border-color: var(--kk-accent-solid);
+}
+
+/* Range slider thumb (photo-edit sliders): baked-literal fill on both engines,
+   plus the lighter pressed state. */
+.form-range::-webkit-slider-thumb {
+  background-color: var(--kk-accent-solid);
+}
+
+.form-range::-moz-range-thumb {
+  background-color: var(--kk-accent-solid);
+}
+
+.form-range::-webkit-slider-thumb:active {
+  background-color: var(--kk-accent);
+}
+
+.form-range::-moz-range-thumb:active {
+  background-color: var(--kk-accent);
+}
+
+/* Progress bar (upload): the bar takes the accent, the track reads as a well. */
+.progress,
+.progress-stacked {
+  --bs-progress-bg: var(--kk-surface-sunken);
+  --bs-progress-bar-bg: var(--kk-accent-solid);
+}
+
+/* Dropdown menu: a warm overlay surface with the active item on the accent. */
+.dropdown-menu {
+  --bs-dropdown-bg: var(--kk-surface-overlay);
+  --bs-dropdown-link-active-bg: var(--kk-accent-solid);
+}
+
+/* The selected list-group row takes the accent fill (its white label stays AA). */
+.list-group {
+  --bs-list-group-active-bg: var(--kk-accent-solid);
+  --bs-list-group-active-border-color: var(--kk-accent-solid);
+}
+
 /* Honour side notches in landscape by padding the navbar and the main content
    container into the safe area. `env()` is 0 on devices without insets, so this
    is a no-op on desktop. */
@@ -142,13 +228,23 @@ body {
    lead, one call-to-action stands out, and a divider fences off the quieter
    tools/admin cluster. These rules add only what Bootstrap utilities cannot. */
 
+/* The active nav item wears the accent (the "you are here" signal). Bootstrap
+   sets `--bs-navbar-active-color` on the navbar itself — and `.navbar[data-bs-
+   theme=dark]` (specificity 0,2,0) pins it to white — so the match here is
+   `.navbar.kukatko-navbar` (also 0,2,0) to win on source order, and it covers
+   the `.navbar-dark` variant too. The filled CTA keeps its white label via its
+   own, more specific rule below. */
+.navbar.kukatko-navbar {
+  --bs-navbar-active-color: var(--kk-accent);
+}
+
 /* The single call-to-action (Upload). A filled primary pill so a non-technical
    reader's eye lands on "add photos" instead of treating it as one more link
    beside Import. It keeps the shared icon + visible label and the app-wide focus
    ring; only its resting fill and shape set it apart. */
 .kukatko-nav-cta.nav-link {
-  color: #fff;
-  background-color: var(--bs-primary, #df691a);
+  color: var(--kk-on-accent);
+  background-color: var(--bs-primary, var(--kk-accent-solid));
   border-radius: var(--kk-radius-pill);
   padding-inline: var(--kk-space-3);
   transition: background-color var(--kk-duration-fast) var(--kk-ease-standard);
@@ -157,8 +253,8 @@ body {
 .kukatko-nav-cta.nav-link:hover,
 .kukatko-nav-cta.nav-link:focus,
 .kukatko-nav-cta.nav-link.active {
-  color: #fff;
-  background-color: color-mix(in srgb, var(--bs-primary, #df691a) 82%, #000 18%);
+  color: var(--kk-on-accent);
+  background-color: var(--kk-accent-solid-hover);
 }
 
 .kukatko-nav-cta.nav-link:focus-visible {
@@ -329,8 +425,8 @@ body {
   margin-right: var(--kk-space-3);
   padding: 0.05rem 0.45rem;
   border-radius: var(--kk-radius-sm);
-  background: var(--bs-primary, #df691a);
-  color: #fff;
+  background: var(--bs-primary, var(--kk-accent-solid));
+  color: var(--kk-on-accent);
   font-size: var(--kk-font-size-caption);
   white-space: nowrap;
   pointer-events: none;
