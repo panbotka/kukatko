@@ -65,9 +65,12 @@ function status(overrides: Partial<SystemStatus> = {}): SystemStatus {
   }
 }
 
-// auth builds an AuthContext value with the given admin flag.
-function auth(isAdmin: boolean): AuthContextValue {
-  const role = isAdmin ? 'admin' : 'viewer'
+// auth builds an AuthContext value for the given role. System status is an
+// operations capability, so the dashboard is gated on `isMaintainer`.
+function auth(opts: { isMaintainer?: boolean; role?: string } = {}): AuthContextValue {
+  const { isMaintainer = false } = opts
+  const role = opts.role ?? (isMaintainer ? 'maintainer' : 'viewer')
+  const isAdmin = role === 'admin' || role === 'maintainer'
   return {
     status: 'authenticated',
     user: { uid: 'u1', username: 'u', display_name: 'U', role },
@@ -75,6 +78,7 @@ function auth(isAdmin: boolean): AuthContextValue {
     downloadToken: null,
     canWrite: isAdmin,
     isAdmin,
+    isMaintainer,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
@@ -82,10 +86,10 @@ function auth(isAdmin: boolean): AuthContextValue {
 }
 
 // renderPage renders the dashboard within auth + i18n + router providers.
-function renderPage(isAdmin = true) {
+function renderPage(value: AuthContextValue = auth({ isMaintainer: true })) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(isAdmin)}>
+      <AuthContext.Provider value={value}>
         <MemoryRouter>
           <SystemStatusPage />
         </MemoryRouter>
@@ -109,11 +113,15 @@ afterEach(() => {
 })
 
 describe('SystemStatusPage', () => {
-  it('denies access to non-admins and never fetches', async () => {
-    renderPage(false)
-    expect(
-      await screen.findByText('This page is available to administrators only.'),
-    ).toBeInTheDocument()
+  it('denies access to non-maintainers (viewer and plain admin) and never fetches', async () => {
+    // System status is operations: an admin is governance-only, so it is denied too.
+    for (const value of [auth(), auth({ role: 'admin' })]) {
+      const { unmount } = renderPage(value)
+      expect(
+        await screen.findByText('This page is available to system maintainers only.'),
+      ).toBeInTheDocument()
+      unmount()
+    }
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

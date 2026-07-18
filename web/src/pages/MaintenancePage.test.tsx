@@ -60,8 +60,10 @@ function repairResult(overrides: Partial<RepairResult> = {}): RepairResult {
 
 const emptyStats: JobStats = { by_state: {}, by_type: {}, total: 0 }
 
-function auth(isAdmin: boolean): AuthContextValue {
-  const role = isAdmin ? 'admin' : 'viewer'
+function auth(opts: { isMaintainer?: boolean; role?: string } = {}): AuthContextValue {
+  const { isMaintainer = false } = opts
+  const role = opts.role ?? (isMaintainer ? 'maintainer' : 'viewer')
+  const isAdmin = role === 'admin' || role === 'maintainer'
   return {
     status: 'authenticated',
     user: { uid: 'u1', username: 'u', display_name: 'U', role },
@@ -69,16 +71,17 @@ function auth(isAdmin: boolean): AuthContextValue {
     downloadToken: null,
     canWrite: isAdmin,
     isAdmin,
+    isMaintainer,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
   } as unknown as AuthContextValue
 }
 
-function renderPage(isAdmin = true) {
+function renderPage(value: AuthContextValue = auth({ isMaintainer: true })) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(isAdmin)}>
+      <AuthContext.Provider value={value}>
         <MemoryRouter>
           <MaintenancePage />
         </MemoryRouter>
@@ -100,10 +103,16 @@ afterEach(() => {
 })
 
 describe('MaintenancePage', () => {
-  it('denies access to non-admins', () => {
-    renderPage(false)
-    expect(screen.getByText('This page is available to administrators only.')).toBeInTheDocument()
-    expect(screen.queryByText('Library maintenance')).not.toBeInTheDocument()
+  it('denies access to non-maintainers, including a plain admin', () => {
+    // Maintenance is operations: hidden from a viewer and from an admin alike.
+    for (const value of [auth(), auth({ role: 'admin' })]) {
+      const { unmount } = renderPage(value)
+      expect(
+        screen.getByText('This page is available to system maintainers only.'),
+      ).toBeInTheDocument()
+      expect(screen.queryByText('Library maintenance')).not.toBeInTheDocument()
+      unmount()
+    }
     expect(scanMock).not.toHaveBeenCalled()
   })
 

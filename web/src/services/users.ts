@@ -90,10 +90,11 @@ export interface UpdateUserBody {
 }
 
 /**
- * The assignable roles (`auth.Role`), most privileged first, with the automated
- * `ai` agent last since it is the special-purpose, token-only role.
+ * The assignable roles (`auth.Role`) in ascending ladder order,
+ * `viewer < editor < admin < maintainer`. Granting `maintainer` is restricted to
+ * maintainers on the backend, so the UI only offers it to a maintainer actor.
  */
-export const ROLES: readonly Role[] = ['admin', 'editor', 'viewer', 'ai']
+export const ROLES: readonly Role[] = ['viewer', 'editor', 'admin', 'maintainer']
 
 /** Maximum length of a user note in characters (`auth.MaxNoteLen`). */
 export const MAX_NOTE_LENGTH = 1000

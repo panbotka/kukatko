@@ -19,16 +19,20 @@ vi.mock('../services/import', async (importOriginal) => {
 const { fetchJobStats } = await import('../services/import')
 const statsMock = vi.mocked(fetchJobStats)
 
-/** Builds an auth context value with the given role capabilities. */
-function auth(isAdmin: boolean): AuthContextValue {
-  const role = isAdmin ? 'admin' : 'viewer'
+type TestRole = 'viewer' | 'editor' | 'admin' | 'maintainer'
+
+/** Builds an auth context value for the given role. */
+function auth(role: TestRole): AuthContextValue {
+  const isMaintainer = role === 'maintainer'
+  const isAdmin = role === 'admin' || role === 'maintainer'
   return {
     status: 'authenticated',
     user: { uid: 'u1', username: 'u', display_name: 'User', role },
     role,
     downloadToken: null,
-    canWrite: isAdmin,
+    canWrite: isAdmin || role === 'editor',
     isAdmin,
+    isMaintainer,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
@@ -41,10 +45,10 @@ function stats(byState: Record<string, number>): JobStats {
   return { by_state: byState, by_type: {}, total }
 }
 
-function renderBadges(isAdmin: boolean) {
+function renderBadges(role: TestRole) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(isAdmin)}>
+      <AuthContext.Provider value={auth(role)}>
         <JobQueueBadges />
       </AuthContext.Provider>
     </I18nextProvider>,
@@ -61,16 +65,21 @@ afterEach(() => {
 })
 
 describe('JobQueueBadges', () => {
-  it('renders nothing and issues no request for a non-admin', () => {
+  it('renders nothing and issues no request for a non-maintainer (viewer or admin)', () => {
+    // The /jobs stats endpoint is a maintainer-only operations capability, so even
+    // a governance admin sees nothing and triggers no request.
     statsMock.mockResolvedValue(stats({ queued: 3 }))
-    const { container } = renderBadges(false)
-    expect(container).toBeEmptyDOMElement()
+    for (const role of ['viewer', 'admin'] as const) {
+      const { container, unmount } = renderBadges(role)
+      expect(container).toBeEmptyDOMElement()
+      unmount()
+    }
     expect(statsMock).not.toHaveBeenCalled()
   })
 
-  it('renders one badge per non-empty state for an admin', async () => {
+  it('renders one badge per non-empty state for a maintainer', async () => {
     statsMock.mockResolvedValue(stats({ queued: 3, running: 1, failed: 2, done: 500 }))
-    renderBadges(true)
+    renderBadges('maintainer')
     // done is deliberately excluded; queued/running/failed each render a badge.
     expect(await screen.findByText('queued 3')).toBeInTheDocument()
     expect(screen.getByText('running 1')).toBeInTheDocument()
@@ -80,21 +89,21 @@ describe('JobQueueBadges', () => {
 
   it('styles a non-zero failed count with danger styling', async () => {
     statsMock.mockResolvedValue(stats({ failed: 4 }))
-    renderBadges(true)
+    renderBadges('maintainer')
     const badge = await screen.findByText('failed 4')
     expect(badge).toHaveClass('bg-danger')
   })
 
   it('shows a single idle badge when every state is zero', async () => {
     statsMock.mockResolvedValue(stats({}))
-    renderBadges(true)
+    renderBadges('maintainer')
     expect(await screen.findByText('idle')).toBeInTheDocument()
     expect(screen.queryByText(/queued/)).not.toBeInTheDocument()
   })
 
   it('hides the badges silently when the request rejects', async () => {
     statsMock.mockRejectedValue(new Error('boom'))
-    const { container } = renderBadges(true)
+    const { container } = renderBadges('maintainer')
     // The rejected request is awaited so the effect settles; nothing is rendered
     // and no error escapes to break the footer.
     await waitFor(() => {

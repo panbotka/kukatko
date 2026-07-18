@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 
-import { canImport, canWrite, type Role, type User } from '../services/auth'
+import { canImport, canWrite, isAdmin, isMaintainer, type Role, type User } from '../services/auth'
 
 /** Lifecycle of the auth session: still loading, signed in, or signed out. */
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
@@ -12,11 +12,19 @@ export interface AuthContextValue {
   role: Role | null
   /** Opaque token for authorizing media downloads; null when signed out. */
   downloadToken: string | null
-  /** True when the current user may perform write actions. */
+  /** True when the current user may perform write actions (editor and above). */
   canWrite: boolean
-  /** True when the current user is an administrator. */
+  /**
+   * True when the current user holds governance privileges — admin or higher. A
+   * maintainer inherits every admin power, so it qualifies too.
+   */
   isAdmin: boolean
-  /** True when the current user may trigger imports (admin or the ai agent). */
+  /**
+   * True when the current user holds operations privileges — maintainer only:
+   * imports, maintenance, system status, backup, restore, jobs and processing.
+   */
+  isMaintainer: boolean
+  /** True when the current user may trigger imports (maintainer only). */
   canImport: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -40,4 +48,4 @@ export function useAuth(): AuthContextValue {
 }
 
 /** Helper re-exports so consumers can derive capabilities from a role. */
-export { canWrite, canImport }
+export { canWrite, canImport, isAdmin, isMaintainer }

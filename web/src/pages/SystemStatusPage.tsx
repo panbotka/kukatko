@@ -391,7 +391,7 @@ function QuickActions() {
  */
 export function SystemStatusPage() {
   const { t } = useTranslation()
-  const { isAdmin } = useAuth()
+  const { isMaintainer } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [notice, setNotice] = useState<ActionNotice | null>(null)
   const [requeuing, setRequeuing] = useState(false)
@@ -403,7 +403,7 @@ export function SystemStatusPage() {
   }, [])
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!isMaintainer) {
       return
     }
     const controller = new AbortController()
@@ -421,7 +421,7 @@ export function SystemStatusPage() {
       controller.abort()
       window.clearInterval(id)
     }
-  }, [isAdmin, refresh])
+  }, [isMaintainer, refresh])
 
   const handleRequeue = useCallback(async () => {
     setRequeuing(true)
@@ -455,8 +455,8 @@ export function SystemStatusPage() {
     }
   }, [refresh, t])
 
-  if (!isAdmin) {
-    return <Alert variant="danger">{t('system.adminOnly')}</Alert>
+  if (!isMaintainer) {
+    return <Alert variant="danger">{t('system.maintainerOnly')}</Alert>
   }
 
   return (

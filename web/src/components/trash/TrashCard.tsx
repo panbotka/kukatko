@@ -25,6 +25,11 @@ export interface TrashCardProps {
   onRestore: (uid: string) => void
   /** Permanently deletes this photo (the caller confirms first). */
   onDelete: (uid: string) => void
+  /**
+   * Whether the signed-in user may permanently delete. Purging is an admin-only
+   * action on the backend, so an editor sees Restore but not Delete forever.
+   */
+  canPurge: boolean
 }
 
 /**
@@ -41,6 +46,7 @@ export function TrashCard({
   onToggleSelect,
   onRestore,
   onDelete,
+  canPurge,
 }: TrashCardProps) {
   const { t } = useTranslation()
   const thumb = useThumbSrc(photo.uid, photo.thumb_url)
@@ -107,17 +113,19 @@ export function TrashCard({
         >
           {t('trash.restore')}
         </Button>
-        <Button
-          variant="outline-danger"
-          size="sm"
-          className="flex-fill"
-          disabled={busy}
-          onClick={() => {
-            onDelete(photo.uid)
-          }}
-        >
-          {t('trash.deleteForever')}
-        </Button>
+        {canPurge && (
+          <Button
+            variant="outline-danger"
+            size="sm"
+            className="flex-fill"
+            disabled={busy}
+            onClick={() => {
+              onDelete(photo.uid)
+            }}
+          >
+            {t('trash.deleteForever')}
+          </Button>
+        )}
       </Card.Body>
     </Card>
   )

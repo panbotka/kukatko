@@ -18,6 +18,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
     downloadToken: null,
     canWrite: false,
     isAdmin: false,
+    isMaintainer: false,
     canImport: false,
     login: vi.fn(),
     logout: vi.fn(),

@@ -27,6 +27,7 @@
     "browse": "Procházet",
     "tools": "Nástroje",
     "admin": "Správa",
+    "operations": "Provoz",
     "library": "Knihovna",
     "favorites": "Oblíbené",
     "albums": "Alba",
@@ -64,6 +65,7 @@
       "duplicates": "Zkontrolovat duplikáty",
       "trash": "Zobrazit koš",
       "admin": "Zobrazit správu",
+      "operations": "Zobrazit provozní nástroje",
       "import": "Spustit import fotek",
       "maintenance": "Spustit údržbu knihovny",
       "system": "Zobrazit stav systému",
@@ -85,10 +87,10 @@
     "switch": "Přepnout jazyk"
   },
   "roles": {
-    "admin": "Správce",
-    "editor": "Editor",
     "viewer": "Prohlížeč",
-    "ai": "AI agent"
+    "editor": "Editor",
+    "admin": "Správce",
+    "maintainer": "Správce systému"
   },
   "auth": {
     "loading": "Načítání…"
@@ -1392,7 +1394,7 @@
     "warnFirstRun": "První spuštění může být dlouhé a stáhne velké množství fotek. Další běhy už zpracují jen novinky.",
     "confirmFirstRunTitle": "První běh importu",
     "confirmFirstRun": "Tohle je první běh pro tento zdroj a může chvíli trvat. Spustit import?",
-    "adminOnly": "Tato stránka je dostupná jen administrátorům.",
+    "maintainerOnly": "Tato stránka je dostupná pouze správcům systému.",
     "loading": "Načítání importů…",
     "error": "Stav importu se nepodařilo načíst.",
     "source": {
@@ -1475,7 +1477,7 @@
   "maintenance": {
     "title": "Údržba knihovny",
     "subtitle": "Kontrola integrity mezi katalogem a soubory na disku a oprava odvozených dat. Originály se nikdy nemažou.",
-    "adminOnly": "Tato stránka je dostupná pouze administrátorům.",
+    "maintainerOnly": "Tato stránka je dostupná pouze správcům systému.",
     "loading": "Načítání…",
     "scan": {
       "run": "Spustit kontrolu",
@@ -1650,7 +1652,7 @@
   "system": {
     "title": "Stav systému",
     "subtitle": "Provozní zdraví běžící instance — databáze, embeddingy, fronta úloh, zálohy, importy a úložiště.",
-    "adminOnly": "Tato stránka je dostupná pouze administrátorům.",
+    "maintainerOnly": "Tato stránka je dostupná pouze správcům systému.",
     "loading": "Načítání stavu…",
     "error": "Stav systému se nepodařilo načíst.",
     "version": {
@@ -1737,6 +1739,7 @@
     "disable": "Zakázat",
     "never": "Nikdy",
     "selfDisableHint": "Vlastní účet zakázat nelze.",
+    "maintainerManageHint": "Účet správce systému může spravovat jen jiný správce systému.",
     "empty": {
       "title": "Žádní uživatelé",
       "hint": "Vytvořte první účet tlačítkem „Nový uživatel“."

@@ -30,17 +30,18 @@ const BADGE_STATES: BadgeState[] = [
 
 /**
  * The right-hand footer status area: compact badges summarising the background
- * job queue for administrators. Non-admins see nothing and — because
- * {@link useJobStats} only polls when enabled — issue no request. A failing
+ * job queue for maintainers. The `/jobs` stats endpoint is a maintainer-only
+ * operations capability, so everyone below sees nothing and — because
+ * {@link useJobStats} only polls when enabled — issues no request. A failing
  * request hides the badges silently. When every tracked state is empty a single
  * quiet "idle" badge stands in for a row of zeros.
  */
 export function JobQueueBadges() {
   const { t } = useTranslation()
-  const { isAdmin } = useAuth()
-  const stats = useJobStats(isAdmin)
+  const { isMaintainer } = useAuth()
+  const stats = useJobStats(isMaintainer)
 
-  if (!isAdmin || stats === null) {
+  if (!isMaintainer || stats === null) {
     return null
   }
 

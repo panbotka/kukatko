@@ -268,19 +268,19 @@ function emptySelection(): Record<RepairKey, boolean> {
  * catalogue/disk drift (missing originals, orphan files, missing thumbnails,
  * embeddings, faces and pHashes) with counts and samples, and triggers the opt-in
  * repairs. Repairs run in the background through the job queue, so the page polls
- * the queue stats to show progress. Every action is admin-only, safe and
- * idempotent; originals are never deleted.
+ * the queue stats to show progress. Maintenance is an operations capability, so
+ * every action is maintainer-only, safe and idempotent; originals are never deleted.
  */
 export function MaintenancePage() {
   const { t } = useTranslation()
-  const { isAdmin } = useAuth()
+  const { isMaintainer } = useAuth()
   const [scan, setScan] = useState<ScanState>({ status: 'idle' })
   const [repair, setRepair] = useState<RepairState>({ status: 'idle' })
   const [selection, setSelection] = useState<Record<RepairKey, boolean>>(emptySelection)
   const [jobStats, setJobStats] = useState<JobStats | null>(null)
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!isMaintainer) {
       return
     }
     let cancelled = false
@@ -299,7 +299,7 @@ export function MaintenancePage() {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [isAdmin])
+  }, [isMaintainer])
 
   const handleScan = useCallback(async () => {
     setScan({ status: 'loading' })
@@ -328,7 +328,7 @@ export function MaintenancePage() {
       }
     } catch (err) {
       // 503 (orphan import not configured) and any other failure surface the same
-      // generic repair error; the selection stays so the admin can retry.
+      // generic repair error; the selection stays so the maintainer can retry.
       void (err instanceof ApiError)
       setRepair({ status: 'error' })
     }
@@ -338,8 +338,8 @@ export function MaintenancePage() {
     setSelection((prev) => ({ ...prev, [key]: !prev[key] }))
   }, [])
 
-  if (!isAdmin) {
-    return <Alert variant="danger">{t('maintenance.adminOnly')}</Alert>
+  if (!isMaintainer) {
+    return <Alert variant="danger">{t('maintenance.maintainerOnly')}</Alert>
   }
 
   return (

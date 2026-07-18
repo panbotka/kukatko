@@ -7,6 +7,7 @@ import Modal from 'react-bootstrap/Modal'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 
+import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
@@ -51,9 +52,15 @@ function actionMessage(err: unknown, t: TFunction): string {
  * supports bulk restore and bulk permanent delete, and an Empty trash action
  * purges everything at once. All permanent deletions go through an explicit
  * confirmation dialog. The view state (filters, sort) lives in the URL.
+ *
+ * The page itself stays editor-visible so an editor can restore archived photos,
+ * but every permanent-delete (purge) control — Empty trash, bulk Delete selected,
+ * per-card Delete forever — is shown only to admin-or-higher, mirroring the
+ * backend, which now guards purge and empty-trash with RequireAdmin.
  */
 export function TrashPage() {
   const { t } = useTranslation()
+  const { isAdmin } = useAuth()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const selection = useSelection()
 
@@ -143,16 +150,18 @@ export function TrashPage() {
               {t('selection.enter')}
             </Button>
           )}
-          <Button
-            variant="outline-danger"
-            size="sm"
-            disabled={pending || (status === 'ready' && photos.length === 0)}
-            onClick={() => {
-              setConfirm({ mode: 'empty' })
-            }}
-          >
-            {t('trash.emptyTrash')}
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outline-danger"
+              size="sm"
+              disabled={pending || (status === 'ready' && photos.length === 0)}
+              onClick={() => {
+                setConfirm({ mode: 'empty' })
+              }}
+            >
+              {t('trash.emptyTrash')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -178,16 +187,18 @@ export function TrashPage() {
           >
             {t('trash.restoreSelected')}
           </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            disabled={pending || selection.count === 0}
-            onClick={() => {
-              setConfirm({ mode: 'bulk', uids: selected })
-            }}
-          >
-            {t('trash.deleteSelected')}
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={pending || selection.count === 0}
+              onClick={() => {
+                setConfirm({ mode: 'bulk', uids: selected })
+              }}
+            >
+              {t('trash.deleteSelected')}
+            </Button>
+          )}
         </SelectionBar>
       )}
 
@@ -224,6 +235,7 @@ export function TrashPage() {
                   retentionDays={retentionDays}
                   selected={selection.selected.has(photo.uid)}
                   busy={pending}
+                  canPurge={isAdmin}
                   onToggleSelect={selection.toggle}
                   onRestore={(uid) => {
                     void restore([uid])

@@ -47,8 +47,11 @@ function user(overrides: Partial<AdminUser> = {}): AdminUser {
   }
 }
 
-function auth(isAdmin: boolean): AuthContextValue {
-  const role = isAdmin ? 'admin' : 'viewer'
+function auth(opts: { isAdmin?: boolean; isMaintainer?: boolean } = {}): AuthContextValue {
+  const { isMaintainer = false } = opts
+  // A maintainer is admin-or-higher, so it satisfies isAdmin too.
+  const isAdmin = opts.isAdmin ?? isMaintainer
+  const role = isMaintainer ? 'maintainer' : isAdmin ? 'admin' : 'viewer'
   return {
     status: 'authenticated',
     user: { uid: ME, username: 'root', display_name: 'Root', role },
@@ -56,16 +59,17 @@ function auth(isAdmin: boolean): AuthContextValue {
     downloadToken: null,
     canWrite: isAdmin,
     isAdmin,
+    isMaintainer,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
   } as unknown as AuthContextValue
 }
 
-function renderPage(isAdmin = true) {
+function renderPage(value: AuthContextValue = auth({ isAdmin: true })) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(isAdmin)}>
+      <AuthContext.Provider value={value}>
         <MemoryRouter>
           <UsersPage />
         </MemoryRouter>
@@ -88,11 +92,53 @@ afterEach(() => {
 
 describe('UsersPage', () => {
   it('denies access to non-admins and never fetches the roster', () => {
-    renderPage(false)
+    renderPage(auth())
 
     expect(screen.getByText('This page is available to administrators only.')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Users' })).not.toBeInTheDocument()
     expect(fetchUsersMock).not.toHaveBeenCalled()
+  })
+
+  it('offers the maintainer role only to a maintainer', async () => {
+    fetchUsersMock.mockResolvedValue([])
+    const actor = userEvent.setup()
+
+    // A plain admin cannot grant maintainer, so the role select omits it.
+    const adminView = renderPage(auth({ isAdmin: true }))
+    await actor.click(screen.getByRole('button', { name: 'New user' }))
+    const adminDialog = await screen.findByRole('dialog')
+    const adminSelect = within(adminDialog).getByLabelText('Role')
+    expect(within(adminSelect).getByRole('option', { name: 'Administrator' })).toBeInTheDocument()
+    expect(within(adminSelect).queryByRole('option', { name: 'Maintainer' })).toBeNull()
+    adminView.unmount()
+
+    // A maintainer sees the maintainer option and can assign it.
+    renderPage(auth({ isMaintainer: true }))
+    await actor.click(screen.getByRole('button', { name: 'New user' }))
+    const maintainerDialog = await screen.findByRole('dialog')
+    const maintainerSelect = within(maintainerDialog).getByLabelText('Role')
+    expect(within(maintainerSelect).getByRole('option', { name: 'Maintainer' })).toBeInTheDocument()
+  })
+
+  it('locks a maintainer account against a non-maintainer admin', async () => {
+    fetchUsersMock.mockResolvedValue([user({ uid: 'u9', username: 'ops', role: 'maintainer' })])
+    renderPage(auth({ isAdmin: true }))
+
+    expect(await screen.findByText('ops')).toBeInTheDocument()
+    const row = screen.getByText('ops').closest('tr') as HTMLElement
+    // A non-maintainer cannot edit, reset the password of, or disable a maintainer.
+    expect(within(row).getByRole('button', { name: 'Edit' })).toBeDisabled()
+    expect(within(row).getByRole('button', { name: 'Change password' })).toBeDisabled()
+    expect(within(row).getByRole('button', { name: 'Disable' })).toBeDisabled()
+  })
+
+  it('lets a maintainer manage another maintainer account', async () => {
+    fetchUsersMock.mockResolvedValue([user({ uid: 'u9', username: 'ops', role: 'maintainer' })])
+    renderPage(auth({ isMaintainer: true }))
+
+    expect(await screen.findByText('ops')).toBeInTheDocument()
+    const row = screen.getByText('ops').closest('tr') as HTMLElement
+    expect(within(row).getByRole('button', { name: 'Edit' })).toBeEnabled()
   })
 
   it('renders the table from the fetched users', async () => {
