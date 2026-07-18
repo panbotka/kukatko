@@ -185,6 +185,24 @@
     rgb(0 0 0 / 0%) 62%
   );
 
+  /* ---- Immersive viewer ----------------------------------------------
+     The full-bleed photo viewer floats one image over a warm near-black — a
+     step past `sunken`, so the darkest UI surface still reads as a surface and
+     the viewer reads as "the room lights off, the photo lit". The chrome scrim
+     is a top-down darkening wash that lets white controls sit legibly over an
+     unknown photograph without a hard bar; the panel scrim dims the stage
+     behind the sliding info drawer on a phone. `z` layers the viewer above the
+     app shell (Bootstrap's modal backdrop is 1040/1050, so this clears them). */
+  --kk-viewer-backdrop: #0a0806;
+  --kk-viewer-chrome-scrim: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 62%) 0%,
+    rgb(0 0 0 / 24%) 55%,
+    rgb(0 0 0 / 0%) 100%
+  );
+  --kk-viewer-panel-scrim: rgb(0 0 0 / 55%);
+  --kk-viewer-z: 1080;
+
   /* ---- Motion ---------------------------------------------------------
      Three durations. `fast` for a colour/opacity swap under the pointer,
      `base` for a lift or a panel toggle, `slow` for an element appearing.

@@ -50,6 +50,9 @@ export function AppRoutes() {
       <Route element={<RequireAuth />}>
         {/* Fullscreen slideshow lives outside the layout shell (no navbar). */}
         <Route path="/slideshow" element={<SlideshowPage />} />
+        {/* The photo viewer is immersive full-bleed — the image owns the whole
+            viewport — so it lives outside the shell too (no navbar/footer). */}
+        <Route path="/photos/:uid" element={<PhotoDetailPage />} />
         {/* The review game is fullscreen too — one question must own the whole
             screen — and it writes, so it is editors and admins only. */}
         <Route element={<RequireRole role="editor" />}>
@@ -74,7 +77,6 @@ export function AppRoutes() {
           <Route path="/saved" element={<SavedSearchesPage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/places" element={<PlacesPage />} />
-          <Route path="/photos/:uid" element={<PhotoDetailPage />} />
           <Route path="/people" element={<PeoplePage />} />
           <Route path="/people/:uid" element={<SubjectPage />} />
           {/* Uploading and cluster review are write actions: editors and admins only. */}
