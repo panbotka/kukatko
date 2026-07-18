@@ -87,7 +87,7 @@ func TestWriterFromContextEnforcesRole(t *testing.T) {
 		{role: auth.RoleViewer, wantErr: true},
 		{role: auth.RoleEditor, wantErr: false},
 		{role: auth.RoleAdmin, wantErr: false},
-		{role: auth.RoleAI, wantErr: false},
+		{role: auth.RoleMaintainer, wantErr: false},
 	} {
 		t.Run(string(tc.role), func(t *testing.T) {
 			_, err := writerFromContext(callerCtx(tc.role))

@@ -25,7 +25,7 @@ photo-sorter se obtížně používá.
 - Design dle [Bootswatch Superhero](https://bootswatch.com/superhero/), důraz na použitelnost.
 - Slideshow na štítcích/albech — nastavitelný efekt přechodu a rychlost.
 - Spolehlivé „zpět" (i na filtr).
-- Uživatelé admin/editor/viewer, bcrypt hesla.
+- Uživatelé viewer/editor/admin/maintainer (přísný žebříček), bcrypt hesla.
 - Mapy přes [mapy.com](https://mapy.com).
 - Hromadná editace metadat (alba, štítky, popisky, lokalita).
 - Per-user oblíbené fotky.
@@ -120,7 +120,7 @@ Každý subsystém má jeden účel, jasné rozhraní a jde testovat samostatně
 | S7 | **People** | Detekce/embedding obličejů, IoU matching markerů, subjekty, návrhy, auto-clustering, outliers. |
 | S8 | **Organization** | Alba, štítky, hromadná editace metadat, per-user oblíbené. |
 | S9 | **Maps** | mapy.com proxy (tile + reverse geocode), GeoJSON pro mapu, clustering na klientu. |
-| S10 | **Auth** | Uživatelé admin/editor/viewer, bcrypt, sliding sessions, rate-limit, audit. |
+| S10 | **Auth** | Uživatelé viewer/editor/admin/maintainer (žebříček), bcrypt, sliding sessions, rate-limit, audit. |
 | S11 | **Import (PhotoPrism)** | API import + stažení originálů + inkrementální re-import; mapování PP UID. |
 | S12 | **Migration (photo-sorter)** | Přímé čtení DB photo-sorteru; 1:1 přenos embeddingů/obličejů; mapování PS UID. |
 | S13 | **Backup** | S3-kompatibilní záloha originálů + `pg_dump`, plánovaná, v procesu. |
@@ -325,7 +325,7 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
 - **`albums`** + **`album_photos`** — `type IN (album|folder|moment|state|month)`; album je vždy
   chronologické (ruční `sort_order` i volbu řazení `order_by` odstranila migrace 0022).
 - **`labels`** + **`photo_labels`** — `source IN (manual|ai|import)`, `uncertainty`.
-- **`users`** — `role IN (admin|editor|viewer)`, `password_hash` (bcrypt cost 12), `disabled`.
+- **`users`** — `role IN (viewer|editor|admin|maintainer)`, `password_hash` (bcrypt cost 12), `disabled`.
 - **`sessions`** — viz [§11](#11-auth-a-bezpečnost) (přidáno sliding expiry).
 - **`audit_log`** — durable, zapisuje se **ve stejné transakci** jako mutace (migrace
   `0012_audit_log.sql` + `0014_audit_request.sql` přidává `ip`/`user_agent` a index
@@ -640,7 +640,8 @@ naseedovanému fake photo-sorter schématu.
 
 ## 11. Auth a bezpečnost
 
-- **Uživatelé:** role admin/editor/viewer; `editor`+`admin` mají write. Bcrypt cost 12.
+- **Uživatelé:** role viewer/editor/admin/maintainer (přísný žebříček, každá dědí nižší); write od
+  `editor` výš, `maintainer` je vrchol (provoz: importy/údržba/backup/…). Bcrypt cost 12.
   Bootstrap admina přes env (`BOOTSTRAP_ADMIN_*`) na čistou instalaci.
 - **Sessions:** opaque token v HttpOnly + SameSite=Strict cookie; oddělený `download_token`.
   **Vylepšení proti photo-sorteru:**

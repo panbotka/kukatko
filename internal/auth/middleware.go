@@ -17,16 +17,25 @@ func (a *API) RequireWrite(next http.Handler) http.Handler {
 	return a.requireRole(requireWrite, next)
 }
 
-// RequireAdmin wraps next so it runs only for authenticated admins. Non-admins
-// get 403; unauthenticated requests get 401.
+// RequireAdmin wraps next so it runs only for authenticated admins — or
+// maintainers, who inherit every admin power up the ladder. Lesser roles get
+// 403; unauthenticated requests get 401.
 func (a *API) RequireAdmin(next http.Handler) http.Handler {
 	return a.requireRole(requireAdmin, next)
 }
 
+// RequireMaintainer wraps next so it runs only for authenticated maintainers,
+// the top of the role ladder. It guards the operations surfaces — imports,
+// maintenance, system status, backup, restore, jobs and processing backfills.
+// Lesser roles get 403; unauthenticated requests get 401.
+func (a *API) RequireMaintainer(next http.Handler) http.Handler {
+	return a.requireRole(requireMaintain, next)
+}
+
 // RequireImport wraps next so it runs only for callers permitted to trigger
-// imports (admin or the ai agent). Other roles get 403; unauthenticated requests
-// get 401. It guards the import/migration triggers, which the ai role may reach
-// even though every other admin-gated surface stays admin-only.
+// imports. Imports are an operations capability, so this now resolves to the
+// maintainer role: other roles (including plain admins) get 403 and
+// unauthenticated requests get 401. It guards the import/migration triggers.
 func (a *API) RequireImport(next http.Handler) http.Handler {
 	return a.requireRole(requireImport, next)
 }

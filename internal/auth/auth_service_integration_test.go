@@ -344,7 +344,7 @@ func TestBootstrap_outcomes(t *testing.T) {
 		}
 	})
 
-	t.Run("creates admin on empty table", func(t *testing.T) {
+	t.Run("creates maintainer on empty table", func(t *testing.T) {
 		outcome, err := env.svc.Bootstrap(t.Context(), "root", "bootstrap-password")
 		if err != nil {
 			t.Fatalf("Bootstrap: %v", err)
@@ -356,11 +356,11 @@ func TestBootstrap_outcomes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetUserByUsername: %v", err)
 		}
-		if user.Role != auth.RoleAdmin {
-			t.Errorf("bootstrap user role = %q, want admin", user.Role)
+		if user.Role != auth.RoleMaintainer {
+			t.Errorf("bootstrap user role = %q, want maintainer", user.Role)
 		}
 		if _, _, err := env.svc.Login(t.Context(), "root", "bootstrap-password"); err != nil {
-			t.Errorf("login as bootstrap admin: %v", err)
+			t.Errorf("login as bootstrap maintainer: %v", err)
 		}
 	})
 

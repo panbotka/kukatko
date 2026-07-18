@@ -12,15 +12,21 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   embedded migration runner `Migrate`, pgvector typy registrované na každém spojení;
   SQL migrace v `internal/database/migrations/*.sql`), `internal/database/dbtest/`
   (integrační test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/auth/`
-  (autentizace/autorizace: `Role` admin/editor/viewer/ai + `authorize`, bcrypt cost 12
+  (autentizace/autorizace: `Role` viewer/editor/admin/maintainer + `authorize`, bcrypt cost 12
   `HashPassword`/`CheckPassword`, UID/token generátory, sliding-window `Limiter`,
   `Store` nad pgx, `Service` orchestrace login/session/bootstrap/správa uživatelů,
-  `API` = HTTP handlery + RBAC middleware `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireImport` +
+  `API` = HTTP handlery + RBAC middleware
+  `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer`/`RequireImport` +
   `RegisterRoutes`; session a users v migraci `0002_auth.sql`.
-  **Role `ai`** (migrace `0023_role_ai.sql` rozšiřuje CHECK na `users.role`) = automatizovaný agent
-  přihlašovaný API tokenem: `CanWrite()`=true (jako editor) a `CanImport()`=true, ale `IsAdmin()`=false.
-  Import je jediná jinak admin-only akce, kterou `ai` smí — proto samostatný predikát `requireImport`/
-  middleware `RequireImport` (admin **nebo** ai); ostatní admin moduly drží `RequireAdmin` (jen admin).
+  **Přísný žebříček rolí** viewer < editor < admin < maintainer (migrace `0036_role_maintainer.sql`
+  redefinuje CHECK na `users.role` a ruší roli `ai`, kterou dřív přidala `0023_role_ai.sql`; `ai` účty
+  povyšuje na maintainera): každá role dědí práva nižších. `viewer` jen čte; `editor` píše média/metadata;
+  `admin` přidává správu (uživatelé, audit, koš); `maintainer` je vrchol — provoz (importy, údržba, stav,
+  backup/restore, joby, processing). Predikáty: `CanWrite()` = editor+, `IsAdmin()` = admin **nebo**
+  maintainer (dědičnost), `CanMaintain()`/`CanImport()` = jen maintainer. Import je proto provozní akce
+  jen pro maintainera (`requireImport`/`RequireImport`). **Jen maintainer** smí založit/povýšit na roli
+  `maintainer` nebo měnit maintainer účet — jinak `ErrMaintainerRequired` (403); role actora se do
+  create/update validace předává z kontextu. Bootstrap zakládá prvního uživatele jako **maintainera**.
   **Admin poznámka u uživatele** (`note`, migrace `0021_user_note.sql`, nullable TEXT →
   `COALESCE(note,'')` v `userColumns`): `User.Note` je `json:"-"`, takže neuteče přes
   `loginResponse` (`/auth/login`, `/auth/me`); admin endpointy ho přidávají zpět přes

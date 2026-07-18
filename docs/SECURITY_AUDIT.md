@@ -298,8 +298,9 @@ Silence is not evidence; these areas were examined and are clean.
   ownership, so all authenticated users legitimately see all photos.
 - **RBAC — clean.** Every mutating route across all 21 `RegisterRoutes` is guarded: writes by
   `RequireWrite`; admin surfaces (`/admin/users`, `/jobs`, `/process`, `/maintenance`,
-  `/backup`, `/restore`, `/system`, `/audit`) by `RequireAdmin`; imports by `RequireImport`
-  (admin or ai); media by `RequireAuthOrDownloadToken`. No under-guarded mutating route; a nil
+  `/backup`, `/restore`, `/system`, `/audit`) by `RequireAdmin` (admin or maintainer); imports by
+  `RequireImport` (maintainer only); media by `RequireAuthOrDownloadToken`. No under-guarded
+  mutating route; a nil
   middleware would panic at wiring, not silently pass. No editor/viewer can reach an admin
   surface; no viewer can reach a mutation. The only unauthenticated routes are `/healthz`,
   `/metrics` (SEC-013), and the SPA static handler. No `pprof`/`expvar`/`/debug` endpoints

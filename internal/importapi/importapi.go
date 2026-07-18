@@ -7,11 +7,11 @@
 // flight is reported as a conflict, not a second run. Only the endpoints whose
 // source is configured are registered.
 //
-// The triggers are guarded by an injected import guard, which admits the admin
-// and ai roles (see auth.RequireImport); imports are the one otherwise
-// admin-gated action the ai agent may reach. The package depends only on a Queue
-// behaviour and that guard, so it stays decoupled from the job store, the
-// importers' wiring, and auth's role model.
+// The triggers are guarded by an injected import guard, which admits only the
+// maintainer role (see auth.RequireImport); imports are an operations capability
+// at the top of the role ladder. The package depends only on a Queue behaviour
+// and that guard, so it stays decoupled from the job store, the importers'
+// wiring, and auth's role model.
 package importapi
 
 import (
@@ -76,7 +76,7 @@ type Config struct {
 	// Runs reads the import-run history for the history endpoint.
 	Runs RunLister
 	// RequireImport guards the endpoints for callers permitted to import (the
-	// admin and ai roles); every other admin surface stays admin-only.
+	// maintainer role only); imports are an operations capability.
 	RequireImport func(http.Handler) http.Handler
 	// RateLimit is an optional per-client-IP throttle applied to the POST trigger
 	// routes ahead of the import check. A nil value disables throttling.
@@ -128,7 +128,7 @@ func (c Config) runsOrPanic() RunLister {
 // under the API base path (for example /api/v1). The history endpoint is always
 // registered so the admin UI can render past runs even when no source is
 // configured; the triggers are registered only for configured sources. Every
-// route is behind the import guard (admin or ai):
+// route is behind the import guard (maintainer only):
 //
 //	GET  /import/runs         RequireImport  recent import-run history + enabled sources
 //	POST /import/photoprism   RequireImport  enqueue a PhotoPrism import job

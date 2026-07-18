@@ -20,8 +20,12 @@ var (
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 	// ErrSessionExpired indicates the session existed but has passed its expiry.
 	ErrSessionExpired = errors.New("auth: session expired")
-	// ErrInvalidRole indicates a role value outside admin/editor/viewer/ai.
+	// ErrInvalidRole indicates a role value outside viewer/editor/admin/maintainer.
 	ErrInvalidRole = errors.New("auth: invalid role")
+	// ErrMaintainerRequired indicates a non-maintainer tried to grant the
+	// maintainer role or to modify an account that already holds it. Only a
+	// maintainer may create, promote to, or alter a maintainer account.
+	ErrMaintainerRequired = errors.New("auth: only a maintainer may manage the maintainer role")
 	// ErrUserDisabled indicates the account is disabled.
 	ErrUserDisabled = errors.New("auth: user is disabled")
 	// ErrNoteTooLong indicates the user note exceeds MaxNoteLen characters. Its

@@ -93,8 +93,9 @@ func (a *API) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	actor, _ := UserFromContext(r.Context())
 	entry := adminAuditMeta(r).Entry(audit.ActionUserCreate, userTargetType, "", nil)
-	user, err := a.svc.CreateUserAudited(r.Context(), CreateUserInput(req), entry)
+	user, err := a.svc.CreateUserAudited(r.Context(), CreateUserInput(req), actor.Role, entry)
 	if err != nil {
 		writeCreateUserError(w, err)
 		return
@@ -107,8 +108,10 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrUsernameTaken):
 		writeError(w, http.StatusConflict, "username already taken")
+	case errors.Is(err, ErrMaintainerRequired):
+		writeError(w, http.StatusForbidden, ErrMaintainerRequired.Error())
 	case errors.Is(err, ErrInvalidRole):
-		writeError(w, http.StatusBadRequest, "invalid role (want admin, editor, viewer, or ai)")
+		writeError(w, http.StatusBadRequest, "invalid role (want viewer, editor, admin, or maintainer)")
 	case errors.Is(err, ErrPasswordTooShort):
 		writeError(w, http.StatusBadRequest, ErrPasswordTooShort.Error())
 	case errors.Is(err, ErrNoteTooLong):
@@ -128,9 +131,10 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	actor, _ := UserFromContext(r.Context())
 	entry := adminAuditMeta(r).Entry(audit.ActionUserUpdate, userTargetType, uid,
 		map[string]any{"role": string(req.Role), "disabled": req.Disabled})
-	user, err := a.svc.UpdateUserAudited(r.Context(), uid, UpdateUserInput(req), entry)
+	user, err := a.svc.UpdateUserAudited(r.Context(), uid, UpdateUserInput(req), actor.Role, entry)
 	if err != nil {
 		writeUserMutationError(w, err, "could not update user")
 		return
@@ -141,9 +145,10 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 // handleDisableUser disables a user and invalidates their sessions (admin only).
 func (a *API) handleDisableUser(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
+	actor, _ := UserFromContext(r.Context())
 	entry := adminAuditMeta(r).Entry(audit.ActionUserDisable, userTargetType, uid,
 		map[string]any{"disabled": true})
-	user, err := a.svc.SetUserDisabledAudited(r.Context(), uid, true, entry)
+	user, err := a.svc.SetUserDisabledAudited(r.Context(), uid, true, actor.Role, entry)
 	if err != nil {
 		writeUserMutationError(w, err, "could not disable user")
 		return
@@ -161,11 +166,14 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	actor, _ := UserFromContext(r.Context())
 	entry := adminAuditMeta(r).Entry(audit.ActionUserPassword, userTargetType, uid, nil)
-	err := a.svc.ResetPasswordAudited(r.Context(), uid, req.NewPassword, entry)
+	err := a.svc.ResetPasswordAudited(r.Context(), uid, req.NewPassword, actor.Role, entry)
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, ErrMaintainerRequired):
+		writeError(w, http.StatusForbidden, ErrMaintainerRequired.Error())
 	case errors.Is(err, ErrPasswordTooShort):
 		writeError(w, http.StatusBadRequest, ErrPasswordTooShort.Error())
 	case errors.Is(err, ErrUserNotFound):
@@ -180,8 +188,10 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 // 500 message.
 func writeUserMutationError(w http.ResponseWriter, err error, fallback string) {
 	switch {
+	case errors.Is(err, ErrMaintainerRequired):
+		writeError(w, http.StatusForbidden, ErrMaintainerRequired.Error())
 	case errors.Is(err, ErrInvalidRole):
-		writeError(w, http.StatusBadRequest, "invalid role (want admin, editor, viewer, or ai)")
+		writeError(w, http.StatusBadRequest, "invalid role (want viewer, editor, admin, or maintainer)")
 	case errors.Is(err, ErrNoteTooLong):
 		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
 	case errors.Is(err, ErrUserNotFound):

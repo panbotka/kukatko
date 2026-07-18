@@ -291,7 +291,7 @@ func (r callResult) decode(t *testing.T, dst any) {
 // Either way nothing of the MCP server is on the router — which is the claim.
 func TestMCPDisabledRouteIsNotMounted(t *testing.T) {
 	e := newEnvWith(t, false)
-	bearer := e.token(t, "agent-off", auth.RoleAI)
+	bearer := e.token(t, "agent-off", auth.RoleMaintainer)
 
 	status, _ := e.rpc(t, bearer, "tools/list", nil)
 	if status != http.StatusNotFound {
@@ -319,7 +319,7 @@ func TestMCPRequiresAuthentication(t *testing.T) {
 // that the server announces its tools capability.
 func TestMCPInitializeHandshake(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-init", auth.RoleAI)
+	bearer := e.token(t, "agent-init", auth.RoleMaintainer)
 
 	status, resp := e.rpc(t, bearer, "initialize", map[string]any{
 		"protocolVersion": "2025-06-18",
@@ -541,7 +541,7 @@ func setTaken(t *testing.T, e *env, uid string, at time.Time) {
 // trail attributed to the agent's own user.
 func TestMCPWriteTokenCanOrganize(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-rw", auth.RoleAI)
+	bearer := e.token(t, "agent-rw", auth.RoleMaintainer)
 	actor := e.userUID(t, "agent-rw")
 	photoUID := e.seedPhoto(t, "dd01")
 
@@ -866,7 +866,7 @@ func TestMCPBulkEditIsAtomic(t *testing.T) {
 // A tool nobody described is a tool the agent will misuse.
 func TestMCPToolDescriptionsAreWritten(t *testing.T) {
 	e := newEnv(t)
-	tools := e.listTools(t, e.token(t, "agent-desc", auth.RoleAI))
+	tools := e.listTools(t, e.token(t, "agent-desc", auth.RoleMaintainer))
 	if len(tools) < 15 {
 		t.Fatalf("a write token sees %d tools, want the full set", len(tools))
 	}
