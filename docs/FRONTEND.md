@@ -552,21 +552,32 @@ zapiš sem.
   **Obličeje jsou defaultně VYPNUTÉ** (`FACE_OVERLAY_DEFAULT = false` v `lib/faceOverlayPref`, volba
   se pamatuje v localStorage): fotka je obsah, boxy jsou opt-in. Zapne je tlačítko **Zobrazit/Skrýt
   obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`) nebo klávesa **`m`** (v registru
-  zkratek, takže ji ukáže i nápověda `?`). Vedle fotky/zásuvky drží **jeden lead slot**
+  zkratek, takže ji ukáže i nápověda `?`). Když si localStorage pamatuje **zapnuté obličeje**, zásuvka
+  se při načtení **sama otevře na panelu obličejů** (efekt na hraně `facesAvailable`, jednou), aby
+  uložená volba ukázala i panel, ne jen boxy nad zavřenou zásuvkou; pozdější ruční zavření se respektuje
+  a stav otevření se dál nese v `info` paramu. Vedle fotky/zásuvky drží **jeden lead slot**
   `sidePanel: 'faces' | 'edit' | null` (jediný stav, ne boolean na každý panel) — otevření jednoho
   zavře druhý, takže obličeje a editace se nikdy neperou; zapnutí obličejů i editu **otevře zásuvku**.
   Týž `sidePanel` řídí boxy i panel obličejů, takže se nemůžou rozejít. **Obličejové UI stojí celé
   (tlačítko i `m`) jen když je preview identita** (`isIdentityEdit(previewEdit)` ve `facesAvailable`):
   transform živého i uloženého editu posune vykreslené pixely pod boxy pozicované v procentech obalu
   — rámečky by minuly obličeje, tak se radši nekreslí a vrátí se, jakmile je preview zase neutrální.
-  **Pozor — nosná invarianta:** `FaceOverlay` pozicuje boxy v **procentech** obalu `.kk-viewer__figure`
-  (`display: inline-flex`), který se smrskává přesně na `<img>`; kdyby ho něco roztáhlo, obrázek se
-  uvnitř vycentruje s letterboxem a **rámečky se rozjedou** (jsdom to nechytí — ověřovat vizuálně).
+  **Pozor — nosná invarianta:** `FaceOverlay` pozicuje boxy v **procentech** obalu `.kk-viewer__figure`,
+  jehož box **musí přesně sedět na vykreslený obrázek**. Proto figura dostává **inline `aspect-ratio`**
+  z uložených rozměrů fotky (`displayFrame(file_width, file_height, file_orientation)` — orientace 5–8
+  prohodí strany) a `data-framed='true'`: takto se do stage vejde přes „contain", ale její box je
+  **přesně obrázek** (žádné letterbox pruhy, do kterých by procentní boxy ujely), a to ve width- i
+  height-limitovaném fitu. Kdyby rozměry chyběly (`data-framed` se nenastaví), spadne se na holé
+  `inline-flex` smrsknutí — bezrámová fotka stejně nenese geometrii obličejů. (jsdom letterbox nechytí
+  — geometrii ověřovat vizuálně; dřív se figura jen smrskávala na `<img>` a při zúžení stage panelem
+  se roztáhla, takže se **rámečky rozjížděly**.)
   Boxy jsou barevné dle stavu (`lib/faceState`), vybraný je primary + ring, nesou **číslo `#N`** a
   přiřazené i **jméno pod boxem**; hover na boxu zvýrazní řádek v panelu a naopak (`hovered`/`onHover`
   drží stránka). Klik na box i na řádek panelu = tentýž výběr (a otevře zásuvku).
   **Informace jedou v zásuvce** (`.kk-viewer__panel`), která **vjede zboku na vyžádání** (na telefonu
-  přes celou šířku se scrimem, na ≥ md se **stage zúží** vlevo, aby fotka nezmizela za panelem) —
+  přes celou šířku se scrimem, na ≥ md se **stage zúží** vlevo, aby fotka nezmizela za panelem; spolu
+  se stage uhne o šířku zásuvky (`--kk-viewer-panel-w`) i **horní lišta a `›` šipka**, takže přepínače
+  panelů i listování zůstanou vedle zásuvky **viditelné, ne pod ní**) —
   výchozí stav je jen fotka. Její obsah jsou **tytéž komponenty jako dřív, jen v zásuvce místo pod
   fotkou** (`OrganizeBadges` „filed under" pruh nad fotkou zanikl — alba/štítky jsou v Uspořádání).
   **Sekce zásuvky**

@@ -31,6 +31,7 @@ import { usePinchZoom } from '../hooks/usePinchZoom'
 import { useRating } from '../hooks/useRating'
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
+import { displayFrame } from '../lib/faceGeometry'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { formatDateTimeMinutes } from '../lib/format'
 import { editPreviewStyle, editTransform, isIdentityEdit, NEUTRAL_EDIT } from '../lib/photoEdit'
@@ -264,6 +265,28 @@ export function PhotoDetailPage() {
       setPanelOpen(true)
     }
   }
+
+  // Honour the remembered "show faces" preference on load: once this photo's faces
+  // are known to be available, bring their panel up (the overlay and its naming
+  // panel are a pair), so the stored choice opens the panel too — not just the
+  // boxes over a shut drawer. It fires once, on the availability edge; the user
+  // closing the drawer afterwards is respected (`sidePanel` clears), and paging
+  // carries the drawer's open state onward in the URL.
+  const facesAutoOpenedRef = useRef(false)
+  useEffect(() => {
+    if (facesAutoOpenedRef.current || !facesAvailable || sidePanel !== 'faces' || panelOpen) {
+      return
+    }
+    facesAutoOpenedRef.current = true
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set('info', '1')
+        return next
+      },
+      { replace: true },
+    )
+  }, [facesAvailable, sidePanel, panelOpen, setSearchParams])
 
   // The chrome (top bar + arrows) melts away after a short idle and returns on any
   // activity — except while the drawer is open, when the actions beside it (and
@@ -529,6 +552,13 @@ export function PhotoDetailPage() {
         </div>
       )
     }
+    // Give the figure the photo's display aspect ratio (after EXIF orientation)
+    // so it fits the stage by "contain" while its box stays exactly the rendered
+    // image — the only thing that keeps the percentage face overlay on the faces
+    // instead of drifting into a letterbox gap. Absent dimensions fall back to the
+    // bare shrink-wrap (no `data-framed`), which a frameless photo never needs.
+    const frame = displayFrame(photo.file_width, photo.file_height, photo.file_orientation ?? 0)
+    const framed = frame.width > 0 && frame.height > 0
     return (
       <div
         // Keyed on the DISPLAYED photo (not the route uid): while a neighbour
@@ -536,6 +566,10 @@ export function PhotoDetailPage() {
         // fade/scale replays only once the new photo actually swaps in.
         key={photo.uid}
         className="kk-viewer__figure"
+        data-framed={framed ? 'true' : undefined}
+        style={
+          framed ? { aspectRatio: `${String(frame.width)} / ${String(frame.height)}` } : undefined
+        }
         data-swipe-surface=""
         onTouchStart={(event) => {
           zoom.handlers.onTouchStart(event)
