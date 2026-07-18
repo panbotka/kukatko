@@ -951,3 +951,43 @@ body {
     display: none;
   }
 }
+
+/* ── Leaderboard ─────────────────────────────────────────────────────────────
+   The sorting competition standings (`LeaderboardPage`). The rank column is
+   narrow and centred so the podium medals and the plain numbers below them line
+   up; the caller's own row wears the same barely-there accent tint the app uses
+   for a "current" listbox option, so it is findable at a glance without relying
+   on colour alone (a "you" badge carries the same meaning for assistive tech). */
+.kk-leaderboard__rank {
+  width: 3.5rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.kk-leaderboard-row--me > td {
+  background-color: var(--kk-accent-subtle);
+  font-weight: 500;
+}
+
+/* The podium medals: one glyph, three metal tones. Decorative — the rank number
+   sits beside each (visually hidden on the podium rows), so screen readers still
+   hear the placing. */
+.kk-medal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.kk-medal--gold {
+  color: #f4c430;
+}
+
+.kk-medal--silver {
+  color: #c0c7d0;
+}
+
+.kk-medal--bronze {
+  color: #cd7f32;
+}

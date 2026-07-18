@@ -75,11 +75,44 @@
       "logout": "Odhlásit se z Kukátka",
       "expand": "Rozšířit album nebo štítek o podobné fotky",
       "review": "Projít návrhy jeden po druhém",
-      "outliers": "Najít obličeje přiřazené omylem"
+      "outliers": "Najít obličeje přiřazené omylem",
+      "leaderboard": "Zobrazit žebříček třídění"
     },
     "expand": "Rozšířit",
     "review": "Třídění",
-    "outliers": "Možné chyby"
+    "outliers": "Možné chyby",
+    "leaderboard": "Žebříček"
+  },
+  "leaderboard": {
+    "title": "Žebříček",
+    "subtitle": "Kdo v třídění rozhodl nejvíc. Za každé Ano i Ne si připíšete bod.",
+    "window": {
+      "label": "Časové období",
+      "all": "Za celou dobu",
+      "week": "Posledních 7 dní",
+      "today": "Dnes"
+    },
+    "columns": {
+      "rank": "Pořadí",
+      "player": "Hráč",
+      "yes": "Ano",
+      "no": "Ne",
+      "total": "Celkem"
+    },
+    "you": "Vy",
+    "loading": "Načítám žebříček…",
+    "empty": {
+      "title": "Zatím žádná rozhodnutí",
+      "hint": "Buďte první, kdo bude třídit.",
+      "action": "Začít třídit"
+    },
+    "error": {
+      "title": "Žebříček se nepodařilo načíst"
+    },
+    "notOnBoard": {
+      "hint": "Zatím nejste na žebříčku.",
+      "action": "Začněte třídit"
+    }
   },
   "language": {
     "cs": "Čeština",

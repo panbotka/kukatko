@@ -145,3 +145,55 @@ export async function answerReview(
 ): Promise<ReviewAnswerResult> {
   return postJSON<ReviewAnswerResult>('/review/answer', { question_id: questionId, answer }, signal)
 }
+
+/**
+ * The time span the leaderboard aggregates over (`review.LeaderboardWindow`):
+ * all-time, the rolling last seven days, or since midnight today. These literal
+ * values are the `window` query parameter the backend accepts.
+ */
+export type LeaderboardWindow = 'all' | '7d' | 'today'
+
+/** The ordered set of windows, in the order the toggle presents them. */
+export const LEADERBOARD_WINDOWS: readonly LeaderboardWindow[] = ['all', '7d', 'today']
+
+/**
+ * One user's review-decision tally on the leaderboard, mirroring
+ * `reviewapi.leaderboardEntry` (a `review.LeaderboardEntry` plus `is_me`). Total
+ * is always `yes_count + no_count`, so the board ranks on it directly.
+ */
+export interface LeaderboardEntry {
+  /** The acting user's uid, so the caller's own row is findable. */
+  user_uid: string
+  /** The user's display name, falling back to their username when blank. */
+  display_name: string
+  /** Confirmations recorded through the game (face assign + label attach). */
+  yes_count: number
+  /** Rejections recorded through the game (face reject + label reject). */
+  no_count: number
+  /** `yes_count + no_count`, the value the board is ranked on. */
+  total: number
+  /** True for the authenticated caller's own row. */
+  is_me: boolean
+}
+
+/** Response body of `GET /review/leaderboard` (`reviewapi.leaderboardResponse`). */
+export interface Leaderboard {
+  /** The window that was applied ("all", "7d" or "today"). */
+  window: LeaderboardWindow
+  /** The caller's uid, so their row is locatable even with no entries yet. */
+  caller_uid: string
+  /** The ranked board, highest total first; never null. */
+  entries: LeaderboardEntry[]
+}
+
+/**
+ * Fetches the review competition standings for a window. Any signed-in user may
+ * read the board (the backend gates it behind RequireAuth, not RequireWrite),
+ * so viewers can watch the game too.
+ */
+export async function fetchLeaderboard(
+  window: LeaderboardWindow,
+  signal?: AbortSignal,
+): Promise<Leaderboard> {
+  return getJSON<Leaderboard>(`/review/leaderboard?window=${encodeURIComponent(window)}`, signal)
+}

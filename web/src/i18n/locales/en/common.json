@@ -75,11 +75,44 @@
       "logout": "Sign out of Kukátko",
       "expand": "Grow an album or a label with similar photos",
       "review": "Go through the suggestions one at a time",
-      "outliers": "Find faces assigned by mistake"
+      "outliers": "Find faces assigned by mistake",
+      "leaderboard": "Show the sorting leaderboard"
     },
     "expand": "Expand",
     "review": "Review",
-    "outliers": "Possible mistakes"
+    "outliers": "Possible mistakes",
+    "leaderboard": "Leaderboard"
+  },
+  "leaderboard": {
+    "title": "Leaderboard",
+    "subtitle": "Who has sorted the most. Every Yes and No counts for a point.",
+    "window": {
+      "label": "Time window",
+      "all": "All time",
+      "week": "Last 7 days",
+      "today": "Today"
+    },
+    "columns": {
+      "rank": "Rank",
+      "player": "Player",
+      "yes": "Yes",
+      "no": "No",
+      "total": "Total"
+    },
+    "you": "You",
+    "loading": "Loading the leaderboard…",
+    "empty": {
+      "title": "No decisions yet",
+      "hint": "Be the first to sort.",
+      "action": "Start sorting"
+    },
+    "error": {
+      "title": "Couldn't load the leaderboard"
+    },
+    "notOnBoard": {
+      "hint": "You're not on the board yet.",
+      "action": "Start sorting"
+    }
   },
   "language": {
     "cs": "Čeština",
