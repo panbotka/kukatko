@@ -25,8 +25,11 @@ zapiš sem.
   (`IMPORT_ITEM`) je top-level s gate `canImport` (admin **nebo** ai); adminský dropdown **Správa**
   (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje **Údržba** `/maintenance` + **Systém**
   `/system` + **Uživatelé** `/users` + **Audit** `/audit`.
-  **V navbaru není hledání**
-  (ani odkaz, ani živé pole ani uložená hledání) — hledá se z knihovny a ze stránky `/search`.
+  **Bar vede globální hledání** `SearchCommand` (`components/search/`) — pole-jako spouštěč vlevo,
+  **mimo collapse** (na mobilu tak zůstává vidět, když se nav složí do burgeru), otevírá **command
+  paletu** dosažitelnou odkudkoli přes `/` nebo Cmd/Ctrl-K (nezabírá psaní — viz `SearchCommand`
+  níže). Stará plná stránka `/search` a uložená hledání zůstávají; jen v navbaru už není samostatný
+  odkaz „Hledat" ani filtrační pole knihovny.
   Každá položka i každý dropdown toggle nese **ikonu** (`Icon`) a **`title` popisující akci**, ne
   podstatné jméno („Zobrazit alba", ne „Alba"; klíče `nav.titles.*`); ikony jsou dekorativní
   (`aria-hidden`) vedle viditelného textového labelu. Dropdown se skryje celý, když má uživatel
@@ -833,7 +836,17 @@ zapiš sem.
   search stránky: přes `useGlobalSearch(query)` natáhne grouped `GET /search/global` a vyrenderuje
   chipy shodných **alb/lidí/štítků** odkazující na entitu; nezávislé na photo fulltext/semantic
   hledání pod ním, nerendruje nic dokud nepřijde aspoň jedna nefotková shoda — prázdný dotaz /
-  probíhající hledání / jen-fotky shoda nepřidá žádné chrome);
+  probíhající hledání / jen-fotky shoda nepřidá žádné chrome) +
+  `SearchCommand` (**globální command paleta** v navbaru: pole-jako spouštěč (`kukatko-search-trigger`
+  s hintem klávesy) otevře přes `react-bootstrap` `Modal` top-anchored konzoli — živý input (combobox
+  s `aria-activedescendant`), seskupené **klávesnicí ovladatelné** výsledky z `useGlobalSearch`
+  (řádky Fotky/Lidé/Alba/Štítky + vždy vedoucí akce „Hledat vše" → `/search?q=`) a patičkovou legendu
+  kláves. Šipky ↑/↓ posouvají (obtékají), Enter otevře aktivní řádek, Esc zavře, klik otevře. Otevírá
+  se `/` (potlačeno při psaní / otevřeném form-modalu přes `isTypingElement`+`isFormModalOpen`) nebo
+  Cmd/Ctrl-K (chord, funguje i při psaní); **stav open/closed a dotaz žijí jen v komponentě, ne v URL**,
+  takže Back zůstává nedotčený. Skupiny `Místa` backend `/search/global` nevrací, takže paleta je
+  neukazuje. Klíče `searchCommand.*`, `globalSearch.groups.*`; v nápovědě zkratek skupina
+  `shortcuts.groups.global`);
   `components/trash/` = `TrashCard` (dlaždice archivované fotky: náhled + odpočet do auto-purge přes
   `trashCountdown` + restore/delete akce + výběr v selection módu);
   `components/duplicates/` = `DuplicateGroupCard` (karta skupiny: členové vedle sebe s náhledem/
@@ -1507,7 +1520,10 @@ zapiš sem.
   oranžová: tři entitní odstíny jsou obsazené, `danger` je červená, tak zbývá jeden nezabraný hue, a
   chladný akcent na teplém chromu se nepere s fotkami); **povrchy + elevace** — warm-near-black ramp
   `--kk-surface-page`/`-1`/`-raised`/`-overlay` + `--kk-surface-sunken` (jáma) a `--kk-surface-border`
-  (vlásková linka); elevace se čte z **úrovně povrchu + vlásková linka**, ne z těžkého stínu
+  (vlásková linka); **průsvitná hlavička** `--kk-header-bg` (tón stránky na 72 %), `--kk-header-blur`
+  (14px) a `--kk-header-border` — pro slim navbar sedící nad scrollujícím foto-wallem (viz `app.css`,
+  s `@supports` fallbackem na plný `--kk-surface-1`); elevace se čte z **úrovně povrchu + vlásková
+  linka**, ne z těžkého stínu
   (`--kk-shadow-0..3` jsou proto lehké — jen jemné ukotvení + `inset 0 1px 0` horní highlight; `3` je
   výjimka pro zvednutou dlaždici/overlay); **text** `--kk-text`/`--kk-text-muted` (teplá bílá, muted
   nad Superhero baseline kontrastem); **spacing** `--kk-space-1..7` (4px škála), **rádiusy**
@@ -1576,6 +1592,18 @@ zapiš sem.
   `.btn-primary`/`.btn-outline-primary`, `.form-check-input:checked`/indeterminate, `.form-range`
   thumb, `.progress-bar` (+ track jako jáma), `.dropdown-menu` (warm overlay + aktivní položka),
   `.list-group` aktivní řádek a `.navbar.kukatko-navbar` aktivní odkaz;
+  **slim průsvitný navbar** `.kukatko-navbar` (sedí NAD scrollujícím obsahem: výplň `--kk-header-bg`
+  = tón stránky na 72 % + `backdrop-filter: blur(--kk-header-blur)` frostí, co pod ním scrolluje,
+  vlásková spodní linka `--kk-header-border`; `@supports not (backdrop-filter…)` fallback na plný
+  `--kk-surface-1`, aby lišta nikdy nebyla průhledná bez blur; ztenčené `padding-block`, na fine
+  pointeru se `.nav-link` tap-target uvolní na 2.25rem — proto je `--kukatko-navbar-height` 3.25rem,
+  dimenzované na vyšší touch případ); **klidnější nav** — neaktivní `.nav-link` tlumené, aktivní
+  route nese jeden akcentový stav = pilulka `--kk-accent-subtle` + akcentový text (mimo CTA);
+  **global command paleta** `.kukatko-search-trigger` (pole-jako spouštěč vedoucí bar, na fine
+  pointeru slim, na coarse 44px, na mobilu roste) + `.kukatko-search-dialog`/`-panel` (top-anchored
+  konzole na `--kk-surface-overlay`) + `.kukatko-search-option` (řádek: náhled/glyf + text + počet,
+  aktivní řádek `--kk-accent-subtle` + inset akcentová lišta) + `.kukatko-search-legend` (patičková
+  legenda kláves, na telefonu skrytá) — podklad komponenta `SearchCommand`;
   **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
   okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
   none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`

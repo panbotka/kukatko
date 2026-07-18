@@ -60,6 +60,10 @@ export interface ShortcutGroup {
  */
 export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   {
+    titleKey: 'shortcuts.groups.global',
+    entries: [{ keys: ['/', 'Ctrl+K'], descriptionKey: 'shortcuts.global.search' }],
+  },
+  {
     titleKey: 'shortcuts.groups.grid',
     entries: [
       { keys: ['↑', '↓', '←', '→', 'j', 'k', 'h', 'l'], descriptionKey: 'shortcuts.grid.move' },

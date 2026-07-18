@@ -301,9 +301,26 @@
     "sectionsLabel": "Odpovídající alba, štítky a lidé",
     "untitled": "Bez názvu",
     "groups": {
+      "photos": "Fotky",
       "albums": "Alba",
       "labels": "Štítky",
       "people": "Lidé"
+    }
+  },
+  "searchCommand": {
+    "open": "Hledat",
+    "triggerLabel": "Hledat…",
+    "placeholder": "Hledat fotky, lidi, alba, štítky",
+    "shortcutHint": "/",
+    "dialogLabel": "Globální hledání",
+    "clear": "Vymazat hledání",
+    "idle": "Začni psát a prohledej celou knihovnu.",
+    "error": "Hledání selhalo. Zkus to prosím znovu.",
+    "seeAll": "Hledat „{{query}}“ mezi všemi fotkami",
+    "legend": {
+      "navigate": "Pohyb",
+      "open": "Otevřít",
+      "close": "Zavřít"
     }
   },
   "savedSearches": {
@@ -577,12 +594,16 @@
     "close": "Zavřít",
     "helpHint": "Kdykoli stiskni ? pro zobrazení této nápovědy.",
     "groups": {
+      "global": "Globální",
       "grid": "Mřížka fotek",
       "detail": "Detail fotky",
       "faceSearch": "Hledání osoby",
       "outliers": "Možné chyby",
       "review": "Třídění",
       "compare": "Porovnání duplikátů"
+    },
+    "global": {
+      "search": "Otevřít globální hledání"
     },
     "grid": {
       "move": "Přesun výběru mezi fotkami",

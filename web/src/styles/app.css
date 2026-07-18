@@ -16,9 +16,14 @@
  */
 
 :root {
-  /* Approximate height of the collapsed top navbar (Bootstrap default padding +
-     brand line-height). Used to offset in-page sticky toolbars. */
-  --kukatko-navbar-height: 3.5rem;
+  /* Approximate height of the slim collapsed top navbar: the tap-target link
+     height (2.25rem on a fine pointer, the touch floor of 2.75rem on a coarse
+     one) plus the bar's reduced vertical padding. Used to offset in-page sticky
+     toolbars and the timeline rail so they come to rest just below the bar; sized
+     to the taller (touch) case so a sticky toolbar never tucks under the bar on a
+     phone, at the cost of a hair of clearance on desktop. Keep in sync with
+     `.kukatko-navbar`'s padding and the nav-link sizing below. */
+  --kukatko-navbar-height: 3.25rem;
 }
 
 html {
@@ -209,13 +214,72 @@ body {
   --bs-list-group-active-border-color: var(--kk-accent-solid);
 }
 
-/* Honour side notches in landscape by padding the navbar and the main content
-   container into the safe area. `env()` is 0 on devices without insets, so this
-   is a no-op on desktop. */
+/* The slim, translucent top bar. It sits OVER the scrolling photo wall rather
+   than on an opaque plate: the page tone at reduced alpha (`--kk-header-bg`) plus
+   a `backdrop-filter` blur frost whatever scrolls under it into a calm backdrop,
+   so the library feels continuous beneath the bar, and a hairline underline keeps
+   its lower edge legible over an arbitrary photo. `padding-block` is tightened to
+   `--kk-space-1` (the bar's bulk now comes from the tap-target links alone), with
+   the top edge additionally honouring a notch; the side insets keep the earlier
+   safe-area behaviour. `env()` is 0 without insets, so the notch handling is a
+   no-op on desktop. */
 .kukatko-navbar {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-block: var(--kk-space-1);
+  padding-top: calc(var(--kk-space-1) + env(safe-area-inset-top, 0px));
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
+
+  background-color: var(--kk-header-bg);
+  backdrop-filter: blur(var(--kk-header-blur));
+  -webkit-backdrop-filter: blur(var(--kk-header-blur));
+  border-bottom: 1px solid var(--kk-header-border);
+}
+
+/* Where `backdrop-filter` is unsupported, a see-through bar with no frosting
+   would let sharp photo detail read straight through the chrome, so fall back to
+   the solid warm plate (`--kk-surface-1`) — the bar Superhero-minus-navy tone it
+   had before translucency. Guard on both the prefixed and unprefixed properties
+   so Safari (WebKit-only support) still gets the blurred bar. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .kukatko-navbar {
+    background-color: var(--kk-surface-1);
+  }
+}
+
+/* Cleaner nav: inactive items are quiet (muted text, no fill); hover/focus lifts
+   them to full-strength text; the current route wears one clear accent state — an
+   accent-tinted pill (`--kk-accent-subtle`, the token minted for exactly this) with
+   accent text. Applies to both the top-level links and the group toggles, so
+   "you are here" reads the same whichever it is; the filled Upload CTA opts out
+   (`:not(.kukatko-nav-cta)`) and keeps its own solid-accent styling below. The
+   `.kukatko-navbar` scope wins over Superhero's own `.navbar .nav-link` colours. */
+.kukatko-navbar .nav-link {
+  color: var(--kk-text-muted);
+  border-radius: var(--kk-radius-pill);
+  transition:
+    color var(--kk-duration-fast) var(--kk-ease-standard),
+    background-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kukatko-navbar .nav-link:hover,
+.kukatko-navbar .nav-link:focus-visible {
+  color: var(--kk-text);
+}
+
+.kukatko-navbar .nav-link.active:not(.kukatko-nav-cta),
+.kukatko-navbar .nav-link.show:not(.kukatko-nav-cta) {
+  color: var(--kk-accent);
+  background-color: var(--kk-accent-subtle);
+}
+
+/* On a fine pointer the 44px touch floor makes the links needlessly tall, so the
+   bar can be slimmer there: relax the nav-link tap-target minimum to 2.25rem.
+   Coarse pointers keep the full 2.75rem finger target (see the touch-floor block
+   above), which is why `--kukatko-navbar-height` is sized to that taller case. */
+@media (pointer: fine) {
+  .kukatko-navbar .nav-link.kukatko-tap-target {
+    min-height: 2.25rem;
+  }
 }
 
 .kukatko-main,
@@ -490,4 +554,290 @@ body {
 .kukatko-filter-chip .btn-close {
   padding: 0.4rem;
   font-size: 0.6rem;
+}
+
+/* ---- Global search command --------------------------------------------- */
+
+/*
+ * The header search trigger: a field-shaped button that reads as "a place to
+ * type" without actually being an input, so it is a single tab stop that opens
+ * the command palette. It borrows the form-control language — the sunken well,
+ * the hairline — with a muted placeholder label, a leading magnifier and a
+ * trailing keycap hinting the shortcut. It leads the bar (search-first), growing
+ * to fill the row next to the hamburger on a phone and settling to a fixed width
+ * on desktop.
+ */
+.kukatko-search-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 22rem;
+  min-height: 2.25rem;
+  padding-inline: var(--kk-space-3);
+  padding-block: var(--kk-space-1);
+  color: var(--kk-text-muted);
+  background-color: var(--kk-surface-sunken);
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-pill);
+  text-align: start;
+  transition:
+    color var(--kk-duration-fast) var(--kk-ease-standard),
+    border-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kukatko-search-trigger:hover,
+.kukatko-search-trigger:focus-visible {
+  color: var(--kk-text);
+  border-color: color-mix(in srgb, var(--kk-surface-border) 40%, var(--kk-accent) 60%);
+}
+
+.kukatko-search-trigger:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+/* The placeholder-like label fills the middle and truncates rather than pushing
+   the keycap off the pill on a narrow bar. */
+.kukatko-search-trigger__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--kk-font-size-caption);
+}
+
+/* The shortcut keycap is a hint, not a control: it recedes and drops off the
+   narrowest bars so the label + magnifier always fit. */
+.kukatko-search-trigger__hint {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.05rem 0.4rem;
+  background-color: var(--kk-surface-raised);
+  border-radius: var(--kk-radius-sm);
+  color: var(--kk-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+@media (min-width: 768px) {
+  .kukatko-search-trigger {
+    flex: 0 0 auto;
+    width: 16rem;
+    margin-inline-end: var(--kk-space-3);
+  }
+}
+
+/* Below the pill's comfortable width the keycap is the first thing to go. */
+@media (max-width: 22rem) {
+  .kukatko-search-trigger__hint {
+    display: none;
+  }
+}
+
+/* The trigger keeps the slim 2.25rem height on a fine pointer but grows to the
+   44px finger target on touch, matching the nav links it sits beside. */
+@media (pointer: coarse) {
+  .kukatko-search-trigger {
+    min-height: 2.75rem;
+  }
+}
+
+/*
+ * The command palette dialog. Anchored high on the viewport (Spotlight-style)
+ * rather than vertically centred, on the warm overlay surface with the lifted
+ * shadow, so it reads as a floating console over the dimmed library.
+ */
+.kukatko-search-dialog {
+  max-width: 40rem;
+  margin-top: 9vh;
+}
+
+.kukatko-search-panel {
+  background-color: var(--kk-surface-overlay);
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-lg);
+  box-shadow: var(--kk-shadow-3);
+  overflow: hidden;
+}
+
+/* The prompt row: a magnifier, the live query input, and a quiet clear button.
+   A hairline fences it off from the results beneath. */
+.kukatko-search-field {
+  display: flex;
+  align-items: center;
+  gap: var(--kk-space-3);
+  padding: var(--kk-space-3) var(--kk-space-4);
+  border-bottom: 1px solid var(--kk-surface-border);
+  color: var(--kk-text-muted);
+}
+
+/* A borderless input — the panel itself is obviously the focused surface, so the
+   field carries no second box or ring; only the caret and the highlighted option
+   move. */
+.kukatko-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  color: var(--kk-text);
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-size: var(--kk-font-size-page-title);
+  line-height: 1.4;
+}
+
+.kukatko-search-input::placeholder {
+  color: var(--kk-text-muted);
+  opacity: 1;
+}
+
+.kukatko-search-results {
+  max-height: min(60vh, 30rem);
+  overflow-y: auto;
+  padding: var(--kk-space-2);
+}
+
+.kukatko-search-group + .kukatko-search-group {
+  margin-top: var(--kk-space-2);
+}
+
+/* The group heading is an eyebrow: a quiet, wide-tracked label the eye skims. */
+.kukatko-search-group__heading {
+  padding: var(--kk-space-1) var(--kk-space-2);
+  margin: 0;
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+  font-weight: 600;
+  letter-spacing: var(--kk-tracking-wide);
+  text-transform: uppercase;
+}
+
+/* One result row. The active row (moved by the arrow keys, tracked via
+   aria-activedescendant) wears the accent-subtle fill plus an inset accent bar
+   at its leading edge — the palette's "cursor". Hover mirrors it lightly so the
+   pointer and the keyboard agree on what "current" looks like. */
+.kukatko-search-option {
+  display: flex;
+  align-items: center;
+  gap: var(--kk-space-3);
+  width: 100%;
+  padding: var(--kk-space-2);
+  /* Reset the <button>'s UA chrome (grey face, border, centred text) so the row
+     reads as a list item, not a button, at rest. */
+  border: 0;
+  border-radius: var(--kk-radius-sm);
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.kukatko-search-option:hover {
+  background-color: color-mix(in srgb, var(--kk-surface-overlay) 82%, var(--kk-accent) 18%);
+}
+
+.kukatko-search-option.active {
+  background-color: var(--kk-accent-subtle);
+  box-shadow: inset 3px 0 0 var(--kk-accent);
+}
+
+/* A square thumbnail / circular avatar for entity rows, or a glyph medallion
+   where an entity has no cover. All share the sunken well so an image and a glyph
+   sit at the same weight. */
+.kukatko-search-option__thumb,
+.kukatko-search-option__icon {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--kk-radius-sm);
+  background-color: var(--kk-surface-sunken);
+}
+
+.kukatko-search-option__thumb {
+  object-fit: cover;
+}
+
+.kukatko-search-option__thumb--circle {
+  border-radius: var(--kk-radius-pill);
+}
+
+.kukatko-search-option__icon {
+  display: grid;
+  place-items: center;
+  color: var(--kk-text-muted);
+}
+
+/* The text column truncates rather than wrapping, so a long title never grows a
+   row out of the console. */
+.kukatko-search-option__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kukatko-search-option__primary,
+.kukatko-search-option__secondary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kukatko-search-option__secondary {
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+}
+
+.kukatko-search-option__count {
+  flex-shrink: 0;
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The idle / loading / empty / error line — a calm, centred message where the
+   results would be, never an alarm. */
+.kukatko-search-status {
+  padding: var(--kk-space-5) var(--kk-space-4);
+  color: var(--kk-text-muted);
+  text-align: center;
+}
+
+/* The footer key legend — the palette's signature. A persistent, quiet strip
+   spelling out the keyboard contract (move / open / close) with real keycaps, so
+   the console announces itself as keyboard-first. */
+.kukatko-search-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kk-space-4);
+  padding: var(--kk-space-2) var(--kk-space-4);
+  border-top: 1px solid var(--kk-surface-border);
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+}
+
+.kukatko-search-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-1);
+}
+
+/* The legend keycaps are decorative hints, so they stay compact and quiet next to
+   the full-size ones the shortcuts help renders. */
+.kukatko-search-legend kbd {
+  padding: 0.05rem 0.35rem;
+  font-size: 0.7rem;
+}
+
+/* On a phone the legend's open/close hints are redundant (there is no physical
+   keyboard to advertise), and vertical room is scarce — hide it there. */
+@media (max-width: 575.98px) {
+  .kukatko-search-legend {
+    display: none;
+  }
 }
