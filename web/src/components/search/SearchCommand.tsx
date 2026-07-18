@@ -9,6 +9,7 @@ import { isTypingElement } from '../../lib/ratingHotkeys'
 import { isFormModalOpen } from '../../lib/shortcuts'
 import { thumbUrl } from '../../services/photos'
 import { type GlobalSearchResult } from '../../services/search'
+import { FadeInImage } from '../FadeInImage'
 import { Icon, type IconName } from '../Icon'
 
 /** Thumbnail size for the small entity avatars in the palette rows. */
@@ -173,10 +174,9 @@ function buildGroups(
 function ResultMedia({ item }: { item: SearchItem }) {
   if (item.thumbUid !== undefined && item.thumbUid !== '') {
     return (
-      <img
+      <FadeInImage
         src={thumbUrl(item.thumbUid, RESULT_THUMB_SIZE)}
         alt=""
-        loading="lazy"
         className={`kukatko-search-option__thumb${
           item.circle === true ? ' kukatko-search-option__thumb--circle' : ''
         }`}

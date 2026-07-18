@@ -45,7 +45,7 @@
 .review-game__progressbar > div {
   height: 100%;
   background: var(--bs-info);
-  transition: width 0.2s ease;
+  transition: width var(--kk-duration-base) var(--kk-ease-standard);
 }
 
 /* The photo's box: `flex: 1 1 0` makes its height the remainder of the column

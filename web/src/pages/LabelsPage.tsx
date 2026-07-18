@@ -3,7 +3,6 @@ import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import ListGroup from 'react-bootstrap/ListGroup'
-import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
@@ -11,6 +10,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { LabelEditModal } from '../components/organize/LabelEditModal'
+import { ListSkeleton } from '../components/Skeleton'
 import { deleteLabel, fetchLabels, type Label, type LabelCount } from '../services/organize'
 
 /** Fetch lifecycle of the labels list. */
@@ -94,13 +94,7 @@ export function LabelsPage() {
 
       {actionError && <Alert variant="danger">{t('labels.actionError')}</Alert>}
 
-      {state.status === 'loading' && (
-        <div className="d-flex justify-content-center py-5">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">{t('labels.loading')}</span>
-          </Spinner>
-        </div>
-      )}
+      {state.status === 'loading' && <ListSkeleton label={t('labels.loading')} />}
 
       {state.status === 'error' && <Alert variant="danger">{t('labels.error')}</Alert>}
 

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { fetchSimilar, type SimilarPhoto } from '../../services/photos'
+import { FadeInImage } from '../FadeInImage'
 
 /** Props for {@link SimilarPhotos}. */
 export interface SimilarPhotosProps {
@@ -92,11 +93,9 @@ export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
               aria-label={label}
               title={label}
             >
-              <img
+              <FadeInImage
                 src={photo.thumb_url}
                 alt={label}
-                loading="lazy"
-                decoding="async"
                 className="w-100 h-100"
                 style={{ objectFit: 'cover' }}
               />

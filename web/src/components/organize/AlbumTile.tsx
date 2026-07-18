@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { EmptyState } from '../EmptyState'
+import { FadeInImage } from '../FadeInImage'
 
 import { formatCaptureRange } from '../../lib/format'
 import { type AlbumSummary } from '../../services/organize'
@@ -39,11 +40,9 @@ export function AlbumTile({ album }: AlbumTileProps) {
         style={{ aspectRatio: '1 / 1' }}
       >
         {cover !== undefined && cover !== '' ? (
-          <img
+          <FadeInImage
             src={thumbUrl(cover, GRID_THUMB_SIZE)}
             alt={album.title}
-            loading="lazy"
-            decoding="async"
             className="w-100 h-100"
             style={{ objectFit: 'cover' }}
           />

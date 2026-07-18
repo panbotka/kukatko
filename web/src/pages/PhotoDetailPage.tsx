@@ -497,7 +497,9 @@ export function PhotoDetailPage() {
   if (isStill && !showFaces && !showEdit) {
     const rotation = editTransform(previewEdit)
     stillStyle.transform = `translate(${String(zoom.translateX)}px, ${String(zoom.translateY)}px) scale(${String(zoom.scale)})${rotation === 'none' ? '' : ` ${rotation}`}`
-    stillStyle.transition = zoom.gesturing ? 'none' : 'transform 0.18s ease-out'
+    stillStyle.transition = zoom.gesturing
+      ? 'none'
+      : 'transform var(--kk-duration-base) var(--kk-ease-standard)'
     stillStyle.cursor = zoom.isZoomed ? 'grab' : 'default'
   }
 

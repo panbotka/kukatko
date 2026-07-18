@@ -6,6 +6,7 @@ import { useGlobalSearch } from '../../hooks/useGlobalSearch'
 import { thumbUrl } from '../../services/photos'
 import { hasEntityMatches } from '../../services/search'
 import { ENTITY_STYLE } from '../entityStyle'
+import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
 
 /** Thumbnail size used for the small album/person avatars in the sections. */
@@ -24,10 +25,9 @@ function ChipThumb({ uid, circle }: { uid?: string; circle?: boolean }) {
     )
   }
   return (
-    <img
+    <FadeInImage
       src={thumbUrl(uid, SECTION_THUMB_SIZE)}
       alt=""
-      loading="lazy"
       className={`flex-shrink-0 object-fit-cover ${shape}`}
       style={{ width: 28, height: 28 }}
     />

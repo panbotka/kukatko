@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { subjectTileImage } from '../../lib/subjectTile'
 import { EmptyState } from '../EmptyState'
+import { FadeInImage } from '../FadeInImage'
 
 import { type SubjectCount } from '../../services/people'
 import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
@@ -41,11 +42,9 @@ export function SubjectTile({ subject }: SubjectTileProps) {
         style={{ aspectRatio: '1 / 1' }}
       >
         {image.kind === 'cover' && (
-          <img
+          <FadeInImage
             src={thumbUrl(image.photoUid, GRID_THUMB_SIZE)}
             alt={subject.name}
-            loading="lazy"
-            decoding="async"
             className="w-100 h-100"
             style={{ objectFit: 'cover' }}
           />

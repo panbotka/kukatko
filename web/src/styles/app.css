@@ -487,6 +487,39 @@ body {
   border-radius: var(--kk-radius-tile);
 }
 
+/* ---- Media load-in -----------------------------------------------------
+ *
+ * A thumbnail / cover <img> that fades and subtly settles in once the browser
+ * has decoded it, instead of snapping into place. It starts transparent and a
+ * hair smaller — never larger, so it can never spill its box — over whatever
+ * placeholder surface its container provides (the sunken thumbnail well), so
+ * there is no layout shift as images stream in. The `is-loaded` state, toggled
+ * by the image's own load event (see the `FadeInImage` component), settles it to
+ * full opacity and 1:1. Built entirely on the motion tokens, so under
+ * `prefers-reduced-motion` the durations collapse and the image simply appears
+ * the instant it decodes. Only opacity and transform move, so the entrance stays
+ * on the compositor.
+ *
+ * The transform is shared with the library wall's hover zoom: that rule
+ * (`.kukatko-photo-grid … img { transform: scale(1.05) }`) is more specific, so
+ * a settled tile still zooms under the pointer — this only owns the transform
+ * while the image is arriving.
+ */
+.kk-media-img {
+  transition:
+    opacity var(--kk-duration-base) var(--kk-ease-standard),
+    transform var(--kk-duration-slow) var(--kk-ease-standard);
+}
+
+.kk-media-img:not(.is-loaded) {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.kk-media-img.is-loaded {
+  opacity: 1;
+}
+
 /* Timeline scrubber: a thin, fixed vertical date rail pinned to the right edge,
    below the sticky navbar. It overlays the viewport (does not take grid space),
    so a loading/empty timeline renders nothing without shifting the grid. Ticks

@@ -81,7 +81,9 @@ function ComparePaneView({ pane, zoom }: { pane: ComparePane; zoom: SyncZoom }) 
             transform: viewTransform(zoom.view),
             // A transition would lag a drag behind the cursor; it only helps the
             // discrete wheel/button steps.
-            transition: zoom.dragging ? 'none' : 'transform 0.12s ease-out',
+            transition: zoom.dragging
+              ? 'none'
+              : 'transform var(--kk-duration-fast) var(--kk-ease-standard)',
           }}
         />
       </div>

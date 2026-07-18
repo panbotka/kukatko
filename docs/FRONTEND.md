@@ -125,6 +125,24 @@ zapiš sem.
   které zastupuje, a panel by poskakoval, jak se jeden seznam plní a druhý zůstává prázdný —
   tam zůstává tlumený jednořádkový popisek (`text-secondary small`). Bloky se objeví přes
   `.kk-appear`, které `prefers-reduced-motion` vypne. Testy: `EmptyState.test.tsx`),
+  `FadeInImage` (**sdílený náhledový `<img>`, který se po dekódování prolne a nepatrně dosedne**
+  místo skoku: startuje průhledný a o chlup zmenšený (`scale(0.98)`, nikdy zvětšený, takže nepřeteče
+  box) nad placeholder povrchem, který dá kontejner (sunken jáma), a stav `is-loaded` (z vlastního
+  `onLoad`, plus kontrola `complete` pro už nacachované obrázky) ho dorovná na plnou průhlednost a
+  1:1. Vše na motion tokenech přes třídu `.kk-media-img`, takže pod `prefers-reduced-motion` se
+  přechod zhroutí na okamžitý swap; hýbe se jen `opacity`+`transform` (GPU). Default `loading="lazy"`
+  + `decoding="async"` (přepsatelné), zbytek atributů (`src`/`alt`/`style`/`onError`/`className`)
+  protéká. Nahradil ruční `loaded` fade v `PhotoTile`/`TrashCard` a doplnil prolnutí na cover/náhled:
+  `AlbumTile`, `SubjectTile`, `SubjectPhotoTile`, `SimilarPhotos`, `StackStrip`,
+  `DuplicateGroupCard`, `GlobalSearchSections`, `SearchCommand`. Testy: `FadeInImage.test.tsx`),
+  `Skeleton` / `TileGridSkeleton` / `ListSkeleton` (**sdílené skeleton placeholdery** místo
+  celostránkových spinnerů na hlavních datových pohledech: `Skeleton` je jeden shimmer blok
+  (`.kk-skeleton`, warm surface-1 + přejíždějící lesk, `aria-hidden`, props size/circle/radius);
+  `TileGridSkeleton` je mřížka karet (čtvercový cover + 1–2 řádky captionu) se stejným responzivním
+  `minmax` jako reálná mřížka — `AlbumsPage` (minTile 160, 2 řádky) a `PeoplePage` (140, 1 řádek);
+  `ListSkeleton` je stoh řádků (`LabelsPage`). Kontejner nese `role="status"` + `aria-busy` a jednu
+  lokalizovanou hlášku (existující klíče `*.loading`); shimmer je jediný pohyb → pod
+  `prefers-reduced-motion` se vypne a zůstane statický tón. Testy: `Skeleton.test.tsx`),
   `ConfirmModal` (**jediný sdílený potvrzovací dialog** — nahradil nativní `window.confirm`
   na čtyřech místech: `AlbumDetailPage` (smazání alba), `LabelsPage` (smazání štítku),
   `SavedSearchesPage` (smazání uloženého hledání) a `ImportPage` (potvrzení prvního běhu importu).
@@ -238,8 +256,12 @@ zapiš sem.
   **osobní označení** — tři neutrální stavy přes `Icon` bootstrap-icons: 👁 eye (`text-info`),
   👍 thumbs-up (stored `pick`, `text-success`), 👎 thumbs-down (stored `reject`, `text-danger`);
   klik na aktivní stav maže na `none`; bez `onFlag` read-only; sibling linku → klik nenaviguje),
-  `GridSkeleton` (placeholder mřížka při prvním načtení; zrcadlí i zvolenou hustotu, takže po
-  načtení fotek nenaskočí layout),
+  `GridSkeleton` (placeholder mřížka fotek při prvním načtení; zrcadlí i zvolenou hustotu, takže po
+  načtení fotek nenaskočí layout. Dlaždice jsou `Skeleton` bloky (sdílený `.kk-skeleton` shimmer, ne
+  Bootstrap `.placeholder`); prop `label?` lokalizuje `role="status"` hlášku (galerie osoby říká
+  „načítám fotky osoby", knihovna „načítám fotky"). Konzumují ho `LibraryPage`, `FavoritesPage`,
+  `AlbumDetailPage`, `LabelDetailPage`, `PlacesPage`, `TrashPage`, `DuplicatesPage`, `SearchPage`
+  a `SubjectPage`),
   `GridDensityControl` (kompaktní zoom stepper **Dlaždic na řádek**: `−` / prostřední čip / `+`;
   `−` krokuje k **jedné fotce na řádek** (méně, větší dlaždice) až na podlahu 1, `+` připne víc
   sloupců až po 8, prostřední čip ukazuje stav — `A`, nebo počet sloupců (i `1`) — a kliknutím
@@ -1599,10 +1621,19 @@ zapiš sem.
   tag `tags` / osoba `person-circle`), aby rozlišení přežilo pro barvoslepé; bílý text má na
   near-black pozadí kontrast ≥ 5:1. Neutrální filtry (rok, hodnocení, flag…) zůstávají `text-bg-primary`;
   **appear** `.kk-appear` (jednorázový fade-up).
-  **Focus outline se nikdy neodstraňuje** — `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible`
-  kreslí `outline` (přežije `overflow: hidden` náhledu). **`prefers-reduced-motion`**: token
-  durations spadnou na `1ms`, lift (`transform`) a `.kk-appear` se vypnou úplně; spinnery
-  a progress bary animují dál, protože nesou význam),
+  **Motion tokeny:** tři durations `--kk-duration-fast/base/slow` (120/200/320 ms) + jedna křivka
+  `--kk-ease-standard` (decelerate) nesou všechny hover/focus/open-close mikrointerakce; ruční `ms`
+  hodnoty rozházené po komponentách jsou svedené na ně (`PhotoTile`, `TrashCard`, `LivePhoto`,
+  `CompareStage`, `PhotoDetailPage` still-zoom, `review.css` progress). Načítání obrázků a skeletonů
+  má dvě sdílené třídy: **`.kk-media-img`** (fade + `scale(0.98)` dosednutí po dekódování; sdílí
+  `transform` přechod s hover zoomem knihovní zdi, který má vyšší specificitu) a **`.kk-skeleton`**
+  (shimmer lesk přejíždějící warm surface-1 blok, perioda `--kk-duration-skeleton` = 1400 ms,
+  `linear infinite`). **Focus outline se nikdy neodstraňuje** —
+  `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible` kreslí `outline` (přežije `overflow:
+  hidden` náhledu). **`prefers-reduced-motion`**: token durations spadnou na `1ms`, takže lift
+  (`transform`), `.kk-appear` i `.kk-media-img` prolnutí se stanou okamžité; skeleton shimmer
+  (`--kk-duration-skeleton` do kolapsu nepatří) se místo toho vypne přímo a zůstane statický blok;
+  spinnery a progress bary animují dál, protože nesou význam),
   `styles/app.css` (**global responzivní polish vrstva** importovaná v `main.tsx` hned za
   `tokens.css` — jen cross-cutting mobil/touch věci, které Bootstrap utility neumí: **safe-area
   insety** přes `env(safe-area-inset-*)` (fungují díky `viewport-fit=cover` v `index.html`) na
