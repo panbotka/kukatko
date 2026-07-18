@@ -293,13 +293,12 @@ zapiš sem.
   a `SubjectPage`),
   `GridDensityControl` (kompaktní zoom stepper **Dlaždic na řádek**: `−` / prostřední čip / `+`;
   `−` krokuje k **jedné fotce na řádek** (méně, větší dlaždice) až na podlahu 1, `+` připne víc
-  sloupců až po 8, prostřední čip ukazuje stav — `A`, nebo počet sloupců (i `1`) — a kliknutím
-  resetuje na `Automaticky`; krokuje po žebříčku `stepDensity` (podlaha 1…8; z `auto` vstoupí na
-  nejmenší **vícesloupcové** rozvržení 2, ne na 1 sloupec); ikony přes `Icon`
-  (`dash-lg`/`grid-3x3-gap-fill`/`plus-lg`), `−` je disabled na `auto` i na 1 (jedna fotka na
-  řádek), `+` na 8; čte/píše `useGridDensity`, tedy localStorage, **ne URL** — je to preference
-  zařízení, ne součást sdíleného pohledu; sedí v hlavičce `FilterBar`u, mění všechny
-  foto-mřížky v appce najednou); `PhotoTile`+`PhotoGrid` podporují
+  sloupců až po 10, prostřední čip je **jen readonly ukazatel** aktuálního počtu sloupců (1…10) —
+  žádný „auto" režim ani resetovací tlačítko (`pointer-events: none`, není to button); krokuje po
+  žebříčku `stepDensity` v mezích 1…10; ikony přes `Icon` (`dash-lg`/`grid-3x3-gap-fill`/`plus-lg`),
+  `−` je disabled na 1 (jedna fotka na řádek), `+` na 10; čte/píše `useGridDensity`, tedy
+  localStorage, **ne URL** — je to preference zařízení, ne součást sdíleného pohledu; sedí v hlavičce
+  `FilterBar`u, mění všechny foto-mřížky v appce najednou); `PhotoTile`+`PhotoGrid` podporují
   **moderní multi-select po vzoru foto-appek** (props `selectable`/`selectFirst`/`selected`/
   `anySelected`/`onToggleSelect`, resp. `selection`): každá dlaždice nese **kulaté zaškrtávací
   kolečko** v rohu (`.kk-tile__check`, sibling linku/tlačítka jako srdíčko — klik **vybere, aniž
@@ -1304,16 +1303,16 @@ zapiš sem.
   ve stavu → `statusOf` mění identitu při každém dosednutí, takže na něm jde záviset efektem;
   `useSlideshowSettings` = persistentní efekt+rychlost přes
   `lib/slideshowSettings` (read once on mount, setteri zapisují do localStorage, sanitizace);
-  `useGridDensity()` → `{density,setDensity}` = hustota foto-mřížky (1–8 sloupců nebo `'auto'`)
-  přes `useSyncExternalStore` nad `lib/gridDensity`. localStorage je **jediný zdroj pravdy** (žádná
-  in-memory kopie): snapshot je primitivum (počet sloupců, `'auto'`, nebo `null` = nic uloženo),
-  takže Reactí `Object.is` porovnání nikdy nezacyklí. **Dokud si uživatel hustotu nezvolí**, je
-  efektivní hodnota viewport-aware — `defaultDensityForViewport` přes sdílený `useIsNarrowViewport`:
-  na telefonu **jedna fotka na řádek** (1 sloupec), na širším displeji `auto`; jakmile je volba
-  uložena, vyhrává na **všech** viewportech (per-device preference vždy přežije).
-  `subscribe` poslouchá i `storage` event → všechny záložky na zařízení drží stejný počet sloupců;
-  `setGridDensity` sanitizuje, zapíše a překreslí **všechny** mřížky naráz, bez contextu a bez
-  providera (takže i testy stránek fungují bez wrapperu);
+  `useGridDensity()` → `{density,setDensity}` = hustota foto-mřížky (**vždy konkrétní počet sloupců
+  1…10**, žádný `'auto'` režim) přes `useSyncExternalStore` nad `lib/gridDensity`. localStorage je
+  **jediný zdroj pravdy** (žádná in-memory kopie): snapshot je primitivum (počet sloupců, nebo `null`
+  = nic použitelného uloženo), takže Reactí `Object.is` porovnání nikdy nezacyklí. **Při prvním
+  použití** (prázdné úložiště nebo starší `'auto'`/rozbitá hodnota k migraci) se hustota **jednou**
+  naseeduje z šířky viewportu (`initialColumns`) a uloží — auto už jen seeduje první hodnotu, pak je
+  to natvrdo uživatelova volba a pozdější resize s ní **nehne**. `subscribe` poslouchá i `storage`
+  event → všechny záložky na zařízení drží stejný počet sloupců; `setGridDensity` sanitizuje, zapíše
+  a překreslí **všechny** mřížky naráz, bez contextu a bez providera (takže i testy stránek fungují
+  bez wrapperu);
   `useIsNarrowViewport()` = sdílený hook nad `matchMedia` (`(max-width: 767.98px)`, Bootstrap `md`;
   odebírá `change`, chybějící/rozbité `matchMedia` → „široký"; jeden zdroj pravdy pro offcanvas
   filtrů i výchozí hustotu mřížky);
@@ -1434,22 +1433,20 @@ zapiš sem.
   in/out × 5 hloubek) se derivují **deterministicky** z FNV-1a hashe `uid`, takže stejné album
   vypadá při každém přehrání stejně. Oba endpointy drží offset do `panLimit` svého scale a scale
   i offset se interpolují lineárně → **obraz nikdy neodkryje okraj** scény;
-  `gridDensity.ts` = typ `GridDensity` (`'auto'` | 1…8) + `GRID_COLUMNS_MIN` (**1** = jedna fotka
-  na řádek) / `MAX` / `GRID_COLUMN_CHOICES` (1…8) / `GRID_TILE_MIN_PX` (140) / `GRID_GAP_PX` (**3** — hairline
-  mezera pro hustou hero-first zeď) /
-  `GRID_DENSITY_DEFAULT` (`'auto'` = dnešní width-driven mřížka) + pure
-  `readStoredDensity`/`writeDensity`/`sanitizeDensity`/`stepDensity` (localStorage
-  `kukatko.grid.density`, holý skalár v JSON; číslo se zaokrouhlí a **oklampuje do 1…8**;
-  `readStoredDensity` vrací `null`, když **nic není uloženo** — prázdné/nedostupné úložiště nebo
-  rozbitý JSON —, aby volající mohl zvolit viewport-aware default) +
-  `defaultDensityForViewport(isNarrow)` (úzký → 1 sloupec, jinak `'auto'`) +
-  pure `gridTemplateColumns(density, gapPx?)`. Pro `1` vrací `minmax(0, 1fr)` = **jeden sloupec
-  přes celou šířku** (žádná podlaha dlaždice, není kam ustoupit). Pro N≥2 trik „přesně N sloupců na
-  desktopu, míň (nikdy víc) na úzkém displeji": `repeat(auto-fill, minmax(max(140px, calc((100% -
-  Gpx) / N)), 1fr))` — dokud se ideální šířka sloupce vejde nad práh 140 px, `auto-fill` naskládá
-  přesně N; pod prahem se stopy přestanou zmenšovat a vejde se jich méně. `G` = `(N-1)*gap + 1`, ten
-  pixel navíc je rezerva proti sub-pixel zaokrouhlení, které by jinak poslední sloupec shodilo na
-  nový řádek. Ověřeno v headless Chromiu pro N=2…8 na šířkách 300–1600 px;
+  `gridDensity.ts` = typ `GridDensity` (**prosté `number`**, počet sloupců) + `GRID_COLUMNS_MIN`
+  (**1** = jedna fotka na řádek) / `GRID_COLUMNS_MAX` (**10**) / `GRID_COLUMN_CHOICES` (1…10) /
+  `GRID_TILE_MIN_PX` (140, cílová šířka dlaždice **jen pro seed**) / `GRID_GAP_PX` (**3** — hairline
+  mezera pro hustou hero-first zeď) / `GRID_DENSITY_DEFAULT` (**5** — konkrétní fallback, když nejde
+  změřit šířka viewportu) + pure `readStoredDensity`/`writeDensity`/`sanitizeDensity`/`stepDensity`
+  (localStorage `kukatko.grid.density`, holý skalár v JSON; číslo se zaokrouhlí a **oklampuje do
+  1…10**; `sanitizeDensity` skládá i starší `'auto'`/nečíselné hodnoty na konkrétní počet seedovaný
+  z šířky; `readStoredDensity` vrací `null`, když **není uloženo použitelné číslo** — prázdné/
+  nedostupné úložiště, rozbitý JSON nebo starší `'auto'` —, aby volající naseedoval z šířky a hodnotu
+  zmigroval) + `initialColumnsForWidth(width)` (kolik ~140px dlaždic se vejde přes šířku, oklampnuto
+  1…10; úzký → 1, telefon → 1–2, hodně široko → 10) + `initialColumns()` (seed pro aktuální viewport)
+  + pure `gridTemplateColumns(density)` → **vždy `repeat(N, 1fr)`** = přesně N stejných sloupců na
+  každém viewportu (žádný `auto-fill` fallback, protože uživatel vždy volí konkrétní číslo); mezeru
+  mezi dlaždicemi řeší odděleně `gap` na kontejneru;
   `slideshowSettings.ts` = typ `SlideshowSettings{effect,intervalMs}` + `SlideshowEffect`
   (`fade`/`slide`/`kenburns`/`none`) + nabídky `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` (1/2/3/5/10/15/30 s)
   + `SLIDESHOW_DEFAULTS` (`fade`, 5 s)

@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
-  defaultDensityForViewport,
   GRID_COLUMN_CHOICES,
   GRID_COLUMNS_MAX,
   GRID_COLUMNS_MIN,
   GRID_DENSITY_DEFAULT,
   gridTemplateColumns,
+  initialColumns,
+  initialColumnsForWidth,
   readStoredDensity,
   sanitizeDensity,
   stepDensity,
@@ -15,30 +16,32 @@ import {
 
 const STORAGE_KEY = 'kukatko.grid.density'
 
+/** Pins the jsdom viewport width so width-derived counts are deterministic. */
+function setViewportWidth(px: number): void {
+  Object.defineProperty(window, 'innerWidth', { value: px, writable: true, configurable: true })
+}
+
 beforeEach(() => {
   window.localStorage.clear()
+  setViewportWidth(1024)
 })
 
 afterEach(() => {
   window.localStorage.clear()
+  setViewportWidth(1024)
 })
 
 describe('GRID_COLUMN_CHOICES', () => {
   it('offers every column count from one-per-row to the maximum inclusive', () => {
-    expect(GRID_COLUMN_CHOICES).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+    expect(GRID_COLUMN_CHOICES).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     expect(GRID_COLUMN_CHOICES.at(0)).toBe(GRID_COLUMNS_MIN)
     expect(GRID_COLUMNS_MIN).toBe(1)
+    expect(GRID_COLUMNS_MAX).toBe(10)
     expect(GRID_COLUMN_CHOICES.at(-1)).toBe(GRID_COLUMNS_MAX)
   })
 })
 
 describe('stepDensity', () => {
-  it('enters the pinned range from auto at the smallest multi-column count', () => {
-    // Never one-per-row: "more tiles per row" from the responsive default must
-    // add columns, not collapse to a single one.
-    expect(stepDensity('auto', 1)).toBe(2)
-  })
-
   it('steps up one column at a time and clamps at the maximum', () => {
     expect(stepDensity(4, 1)).toBe(5)
     expect(stepDensity(GRID_COLUMNS_MAX, 1)).toBe(GRID_COLUMNS_MAX)
@@ -56,17 +59,12 @@ describe('stepDensity', () => {
     expect(stepDensity(GRID_COLUMNS_MIN, -1)).toBe(GRID_COLUMNS_MIN)
   })
 
-  it('clamps at auto when stepping below it', () => {
-    expect(stepDensity('auto', -1)).toBe('auto')
-  })
-
   it('leaves the density untouched for a zero step', () => {
     expect(stepDensity(3, 0)).toBe(3)
-    expect(stepDensity('auto', 0)).toBe('auto')
   })
 
   it('snaps a tampered value onto the ladder before stepping', () => {
-    // 42 sanitizes to the max, so stepping up clamps and stepping down is 7.
+    // 42 sanitizes to the max, so stepping up clamps and stepping down is 9.
     expect(stepDensity(42, 1)).toBe(GRID_COLUMNS_MAX)
     expect(stepDensity(42, -1)).toBe(GRID_COLUMNS_MAX - 1)
   })
@@ -79,11 +77,11 @@ describe('sanitizeDensity', () => {
     }
   })
 
-  it('clamps out-of-range counts into 1..8', () => {
+  it('clamps out-of-range counts into 1..10', () => {
     expect(sanitizeDensity(0)).toBe(1)
     expect(sanitizeDensity(-4)).toBe(1)
-    expect(sanitizeDensity(9)).toBe(8)
-    expect(sanitizeDensity(1000)).toBe(8)
+    expect(sanitizeDensity(11)).toBe(10)
+    expect(sanitizeDensity(1000)).toBe(10)
   })
 
   it('rounds a fractional count to the nearest column', () => {
@@ -93,19 +91,32 @@ describe('sanitizeDensity', () => {
     expect(sanitizeDensity(3.6)).toBe(4)
   })
 
-  it('falls back to the responsive default for anything that is not a finite number', () => {
-    expect(sanitizeDensity('auto')).toBe(GRID_DENSITY_DEFAULT)
-    expect(sanitizeDensity('4')).toBe(GRID_DENSITY_DEFAULT)
-    expect(sanitizeDensity(undefined)).toBe(GRID_DENSITY_DEFAULT)
-    expect(sanitizeDensity(null)).toBe(GRID_DENSITY_DEFAULT)
-    expect(sanitizeDensity(Number.NaN)).toBe(GRID_DENSITY_DEFAULT)
-    expect(sanitizeDensity(Number.POSITIVE_INFINITY)).toBe(GRID_DENSITY_DEFAULT)
-    expect(sanitizeDensity({ columns: 4 })).toBe(GRID_DENSITY_DEFAULT)
+  it('coerces a legacy "auto" to a concrete count seeded from the viewport width', () => {
+    setViewportWidth(1024)
+    // 1024px fits seven ~140px tiles, so legacy 'auto' resolves to that count.
+    expect(sanitizeDensity('auto')).toBe(initialColumnsForWidth(1024))
+    expect(sanitizeDensity('auto')).toBe(7)
+  })
+
+  it('coerces anything that is not a finite number to an in-range count', () => {
+    for (const bad of [
+      '4',
+      undefined,
+      null,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      { columns: 4 },
+    ]) {
+      const n = sanitizeDensity(bad)
+      expect(Number.isInteger(n)).toBe(true)
+      expect(n).toBeGreaterThanOrEqual(GRID_COLUMNS_MIN)
+      expect(n).toBeLessThanOrEqual(GRID_COLUMNS_MAX)
+    }
   })
 })
 
 describe('readStoredDensity', () => {
-  it('returns null when nothing is persisted, so a viewport default can apply', () => {
+  it('returns null when nothing is persisted, so a viewport seed can apply', () => {
     expect(readStoredDensity()).toBeNull()
   })
 
@@ -121,11 +132,6 @@ describe('readStoredDensity', () => {
     expect(readStoredDensity()).toBe(GRID_COLUMNS_MIN)
   })
 
-  it('round-trips the responsive default as an explicit stored choice', () => {
-    writeDensity('auto')
-    expect(readStoredDensity()).toBe('auto')
-  })
-
   it('clamps an out-of-range persisted value instead of honouring it', () => {
     window.localStorage.setItem(STORAGE_KEY, '99')
     expect(readStoredDensity()).toBe(GRID_COLUMNS_MAX)
@@ -136,53 +142,65 @@ describe('readStoredDensity', () => {
     expect(readStoredDensity()).toBeNull()
   })
 
-  it('treats a well-formed but nonsensical stored value as the responsive default', () => {
+  it('treats a legacy "auto" string as no numeric preference (so it is re-seeded)', () => {
+    window.localStorage.setItem(STORAGE_KEY, '"auto"')
+    expect(readStoredDensity()).toBeNull()
+  })
+
+  it('treats a well-formed but nonsensical stored value as no preference', () => {
     window.localStorage.setItem(STORAGE_KEY, '{"columns":4}')
-    expect(readStoredDensity()).toBe(GRID_DENSITY_DEFAULT)
+    expect(readStoredDensity()).toBeNull()
   })
 })
 
-describe('defaultDensityForViewport', () => {
-  it('starts at one photo per row on a narrow (phone-width) viewport', () => {
-    expect(defaultDensityForViewport(true)).toBe(GRID_COLUMNS_MIN)
-    expect(defaultDensityForViewport(true)).toBe(1)
+describe('initialColumnsForWidth', () => {
+  it('starts at one photo per row on a very narrow viewport', () => {
+    expect(initialColumnsForWidth(200)).toBe(1)
+    expect(initialColumnsForWidth(120)).toBe(1)
   })
 
-  it('keeps the responsive multi-column default on a wide viewport', () => {
-    expect(defaultDensityForViewport(false)).toBe(GRID_DENSITY_DEFAULT)
+  it('gives a phone one or two columns', () => {
+    expect(initialColumnsForWidth(375)).toBe(2)
+  })
+
+  it('fits more tiles as the viewport widens', () => {
+    expect(initialColumnsForWidth(768)).toBe(5)
+    expect(initialColumnsForWidth(1024)).toBe(7)
+  })
+
+  it('caps a very wide viewport at the maximum column count', () => {
+    expect(initialColumnsForWidth(1440)).toBe(GRID_COLUMNS_MAX)
+    expect(initialColumnsForWidth(4000)).toBe(GRID_COLUMNS_MAX)
+  })
+
+  it('falls back to the concrete default when the width is unusable', () => {
+    expect(initialColumnsForWidth(0)).toBe(GRID_DENSITY_DEFAULT)
+    expect(initialColumnsForWidth(-100)).toBe(GRID_DENSITY_DEFAULT)
+    expect(initialColumnsForWidth(Number.NaN)).toBe(GRID_DENSITY_DEFAULT)
+  })
+
+  it('reads the current viewport width via initialColumns', () => {
+    setViewportWidth(375)
+    expect(initialColumns()).toBe(2)
+    setViewportWidth(1440)
+    expect(initialColumns()).toBe(GRID_COLUMNS_MAX)
   })
 })
 
 describe('gridTemplateColumns', () => {
-  it('leaves the template width-driven for the responsive default', () => {
-    expect(gridTemplateColumns('auto')).toBe('repeat(auto-fill, minmax(140px, 1fr))')
+  it('emits exactly the chosen number of equal tracks', () => {
+    for (const n of GRID_COLUMN_CHOICES) {
+      expect(gridTemplateColumns(n)).toBe(`repeat(${String(n)}, 1fr)`)
+    }
   })
 
   it('collapses to a single full-width column at one photo per row', () => {
-    expect(gridTemplateColumns(GRID_COLUMNS_MIN)).toBe('minmax(0, 1fr)')
-    expect(gridTemplateColumns(1)).toBe('minmax(0, 1fr)')
+    expect(gridTemplateColumns(GRID_COLUMNS_MIN)).toBe('repeat(1, 1fr)')
+    expect(gridTemplateColumns(1)).toBe('repeat(1, 1fr)')
   })
 
-  it('sizes the tracks so exactly the chosen number of columns fits', () => {
-    // 4 columns, 3 gaps of 3px, plus 1px of sub-pixel slack => 10px.
-    expect(gridTemplateColumns(4)).toBe(
-      'repeat(auto-fill, minmax(max(140px, calc((100% - 10px) / 4)), 1fr))',
-    )
-  })
-
-  it('accounts for a wider gap', () => {
-    // 3 columns, 2 gaps of 8px, plus 1px of slack => 17px.
-    expect(gridTemplateColumns(3, 8)).toBe(
-      'repeat(auto-fill, minmax(max(140px, calc((100% - 17px) / 3)), 1fr))',
-    )
-  })
-
-  it('keeps the tile floor so a narrow viewport falls back to fewer columns', () => {
-    // The `max()` floor is what stops eight columns from becoming eight stamps on
-    // a phone: below the floor the tracks stop shrinking and auto-fill fits fewer.
-    // One-per-row is exempt — a single full-width column has nothing to fall back to.
-    for (const n of GRID_COLUMN_CHOICES.filter((c) => c > 1)) {
-      expect(gridTemplateColumns(n)).toContain('max(140px,')
-    }
+  it('clamps an out-of-range count before templating', () => {
+    expect(gridTemplateColumns(99)).toBe('repeat(10, 1fr)')
+    expect(gridTemplateColumns(0)).toBe('repeat(1, 1fr)')
   })
 })

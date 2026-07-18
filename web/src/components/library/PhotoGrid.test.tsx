@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
-import { gridTemplateColumns } from '../../lib/gridDensity'
+import { gridTemplateColumns, initialColumns } from '../../lib/gridDensity'
 import type { Photo } from '../../services/photos'
 
 import { GridDensityControl } from './GridDensityControl'
@@ -78,11 +78,14 @@ afterEach(() => {
 })
 
 describe('PhotoGrid', () => {
-  it('stays width-driven when no density is persisted', () => {
+  it('seeds a concrete column count when no density is persisted', () => {
     renderGrid()
     const grid = gridElement()
-    expect(grid).toHaveAttribute('data-density', 'auto')
-    expect(grid.style.gridTemplateColumns).toBe(gridTemplateColumns('auto'))
+    // First use resolves the width-based seed to a concrete number — never 'auto'.
+    const seeded = initialColumns()
+    expect(grid).toHaveAttribute('data-density', String(seeded))
+    expect(grid.style.gridTemplateColumns).toBe(gridTemplateColumns(seeded))
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(String(seeded))
   })
 
   it('renders the persisted number of columns', () => {
@@ -90,10 +93,8 @@ describe('PhotoGrid', () => {
     renderGrid()
     const grid = gridElement()
     expect(grid).toHaveAttribute('data-density', '5')
-    // Five equal tracks, each at least a usable tile wide (4 gaps of 3px + 1px slack).
-    expect(grid.style.gridTemplateColumns).toBe(
-      'repeat(auto-fill, minmax(max(140px, calc((100% - 13px) / 5)), 1fr))',
-    )
+    // Five equal tracks, honoured on every viewport.
+    expect(grid.style.gridTemplateColumns).toBe('repeat(5, 1fr)')
   })
 
   it('renders one photo per row when pinned to a single column', () => {
@@ -101,35 +102,35 @@ describe('PhotoGrid', () => {
     renderGrid()
     const grid = gridElement()
     expect(grid).toHaveAttribute('data-density', '1')
-    // A single full-width column — the existing tile at full width.
-    expect(grid.style.gridTemplateColumns).toBe(gridTemplateColumns(1))
+    expect(grid.style.gridTemplateColumns).toBe('repeat(1, 1fr)')
   })
 
-  it('clamps a corrupt persisted value back to the responsive default', () => {
+  it('seeds a concrete count when the persisted value is corrupt', () => {
     window.localStorage.setItem(STORAGE_KEY, '{{{')
     renderGrid()
-    expect(gridElement()).toHaveAttribute('data-density', 'auto')
+    expect(gridElement()).toHaveAttribute('data-density', String(initialColumns()))
   })
 
   it('follows the density control without remounting the grid', async () => {
+    window.localStorage.setItem(STORAGE_KEY, '2')
     const user = userEvent.setup()
     renderGrid(true)
 
     const before = gridElement()
-    expect(before).toHaveAttribute('data-density', 'auto')
+    expect(before).toHaveAttribute('data-density', '2')
 
-    // The stepper walks auto → 2 → 3; each press restyles the live grid.
+    // The stepper walks 2 → 3 → 4; each press restyles the live grid.
     const more = screen.getByRole('button', { name: 'More tiles per row' })
     await user.click(more)
     await user.click(more)
 
     await waitFor(() => {
-      expect(gridElement()).toHaveAttribute('data-density', '3')
+      expect(gridElement()).toHaveAttribute('data-density', '4')
     })
     // The very same DOM node is restyled rather than replaced: virtuoso keeps its
     // scroll position and mounted tiles, so a selection the page holds survives.
     expect(gridElement()).toBe(before)
-    expect(gridElement().style.gridTemplateColumns).toBe(gridTemplateColumns(3))
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('3')
+    expect(gridElement().style.gridTemplateColumns).toBe(gridTemplateColumns(4))
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('4')
   })
 })

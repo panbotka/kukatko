@@ -628,9 +628,9 @@ body {
   min-width: 9rem;
 }
 
-/* The density stepper's centre chip shows the current setting (A, or a column
-   count). A stable min-width plus tabular figures stop the stepper — and the
-   controls beside it — from twitching sideways as the value changes. */
+/* The density stepper's centre chip shows the current column count. A stable
+   min-width plus tabular figures stop the stepper — and the controls beside it —
+   from twitching sideways as the value changes. */
 .kukatko-grid-density-value {
   min-width: 3rem;
   font-variant-numeric: tabular-nums;

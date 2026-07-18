@@ -1,65 +1,65 @@
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { GRID_COLUMNS_MAX, GRID_COLUMNS_MIN, GRID_DENSITY_DEFAULT } from '../lib/gridDensity'
+import { GRID_COLUMNS_MAX, GRID_COLUMNS_MIN, initialColumnsForWidth } from '../lib/gridDensity'
 
 import { useGridDensity } from './useGridDensity'
 
 const STORAGE_KEY = 'kukatko.grid.density'
 
-/**
- * Points `window.matchMedia` at a fixed narrow/wide answer so the viewport-aware
- * default is deterministic. The shared test setup stubs a non-matching (wide)
- * `matchMedia`; this overrides it for a single test.
- */
-function mockViewport(narrow: boolean): void {
-  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-    matches: narrow,
-    media: query,
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  }))
+/** Pins the jsdom viewport width so the width-derived seed is deterministic. */
+function setViewportWidth(px: number): void {
+  Object.defineProperty(window, 'innerWidth', { value: px, writable: true, configurable: true })
 }
 
 beforeEach(() => {
   window.localStorage.clear()
+  setViewportWidth(1024)
 })
 
 afterEach(() => {
   window.localStorage.clear()
-  // Restore the shared setup's wide default so tests never leak a narrow viewport.
-  mockViewport(false)
+  setViewportWidth(1024)
 })
 
 describe('useGridDensity', () => {
-  it('starts from the responsive default on a wide viewport when nothing is persisted', () => {
-    mockViewport(false)
+  it('seeds a concrete count from the viewport width and persists it on first use', () => {
+    setViewportWidth(1024)
     const { result } = renderHook(() => useGridDensity())
-    expect(result.current.density).toBe(GRID_DENSITY_DEFAULT)
+
+    // A wide viewport fits several tiles; the effective density is that concrete
+    // number, not an "auto" mode.
+    expect(result.current.density).toBe(initialColumnsForWidth(1024))
+    expect(result.current.density).toBe(7)
+    // And it really went to localStorage, so it stays put across a later resize.
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('7')
   })
 
-  it('defaults to one photo per row on a narrow viewport when nothing is persisted', () => {
-    mockViewport(true)
+  it('seeds fewer columns on a narrow (phone-width) viewport', () => {
+    setViewportWidth(375)
     const { result } = renderHook(() => useGridDensity())
-    expect(result.current.density).toBe(GRID_COLUMNS_MIN)
+
+    expect(result.current.density).toBe(2)
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('2')
   })
 
-  it('honours a stored preference over the narrow-viewport default', () => {
-    mockViewport(true)
+  it('uses a stored number verbatim without re-seeding from width', () => {
+    setViewportWidth(1024)
     window.localStorage.setItem(STORAGE_KEY, '4')
     const { result } = renderHook(() => useGridDensity())
     expect(result.current.density).toBe(4)
+    // The stored choice is untouched — width never overrides it.
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('4')
   })
 
-  it('honours an explicit auto choice even on a narrow viewport', () => {
-    mockViewport(true)
+  it('resolves a legacy "auto" to a concrete number and migrates storage', () => {
+    setViewportWidth(1024)
     window.localStorage.setItem(STORAGE_KEY, '"auto"')
     const { result } = renderHook(() => useGridDensity())
-    expect(result.current.density).toBe('auto')
+
+    expect(result.current.density).toBe(7)
+    // The legacy string is replaced by the concrete count, so it never recomputes.
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('7')
   })
 
   it('round-trips a valid value and survives a remount', () => {
@@ -73,12 +73,11 @@ describe('useGridDensity', () => {
     // A fresh hook (e.g. after a reload) reads the persisted preference back.
     const second = renderHook(() => useGridDensity())
     expect(second.result.current.density).toBe(6)
-
-    // And it really went to localStorage.
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('6')
   })
 
-  it('clamps an out-of-range value into 1..8 on the way in', () => {
+  it('clamps an out-of-range value into 1..10 on the way in', () => {
+    window.localStorage.setItem(STORAGE_KEY, '4')
     const { result } = renderHook(() => useGridDensity())
 
     act(() => {
@@ -93,6 +92,7 @@ describe('useGridDensity', () => {
   })
 
   it('pins one photo per row when asked', () => {
+    window.localStorage.setItem(STORAGE_KEY, '4')
     const { result } = renderHook(() => useGridDensity())
 
     act(() => {
@@ -108,22 +108,11 @@ describe('useGridDensity', () => {
     expect(result.current.density).toBe(GRID_COLUMNS_MIN)
   })
 
-  it('ignores corrupt stored JSON instead of throwing', () => {
+  it('seeds a number instead of throwing on corrupt stored JSON', () => {
     window.localStorage.setItem(STORAGE_KEY, 'not-json-at-all')
     const { result } = renderHook(() => useGridDensity())
-    expect(result.current.density).toBe(GRID_DENSITY_DEFAULT)
-  })
-
-  it('goes back to the responsive default when the user picks auto', () => {
-    const { result } = renderHook(() => useGridDensity())
-
-    act(() => {
-      result.current.setDensity(3)
-    })
-    act(() => {
-      result.current.setDensity('auto')
-    })
-    expect(result.current.density).toBe(GRID_DENSITY_DEFAULT)
+    expect(result.current.density).toBe(initialColumnsForWidth(window.innerWidth))
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('7')
   })
 
   it('re-renders every subscriber, so all grids on the page agree', () => {
@@ -131,9 +120,9 @@ describe('useGridDensity', () => {
     const b = renderHook(() => useGridDensity())
 
     act(() => {
-      a.result.current.setDensity(7)
+      a.result.current.setDensity(9)
     })
 
-    expect(b.result.current.density).toBe(7)
+    expect(b.result.current.density).toBe(9)
   })
 })

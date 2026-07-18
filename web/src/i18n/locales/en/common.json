@@ -246,12 +246,9 @@
     },
     "density": {
       "label": "Tiles per row",
-      "auto": "Automatic",
-      "autoShort": "A",
       "columns": "{{n}} per row",
       "fewer": "Fewer tiles per row",
-      "more": "More tiles per row",
-      "reset": "Reset to automatic (now {{n}} per row)"
+      "more": "More tiles per row"
     },
     "sort": {
       "newest": "Newest",
