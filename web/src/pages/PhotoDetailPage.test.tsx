@@ -459,6 +459,50 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.getByTestId('location')).not.toHaveTextContent('info=1')
     })
 
+    it('shows the faces on their own — activating them does not drag in the info panel', async () => {
+      const user = userEvent.setup()
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+
+      // The faces view: the boxes and their naming panel, and NOTHING of the
+      // metadata ("Informace") — that belongs to the info view alone.
+      expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+      expect(screen.getByText('Faces: 2')).toBeInTheDocument()
+      expect(screen.queryByText('Caption & place')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Technical details' })).not.toBeInTheDocument()
+      expect(screen.queryByTestId('similar')).not.toBeInTheDocument()
+    })
+
+    it('the info button switches from the faces view to the metadata', async () => {
+      const user = userEvent.setup()
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+      expect(screen.getByText('Faces: 2')).toBeInTheDocument()
+
+      // Info does not close on top of the faces — it swaps the drawer to the
+      // metadata, dropping the boxes and the faces panel.
+      await user.click(screen.getByRole('button', { name: 'Info' }))
+      expect(screen.getByText('Caption & place')).toBeInTheDocument()
+      expect(screen.queryByText('Faces: 2')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
+    })
+
+    it('hiding the faces closes the drawer rather than revealing the metadata', async () => {
+      const user = userEvent.setup()
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      const { container } = renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+      // The faces view was open; turning them off shuts the drawer (data-panel), it
+      // does not leave it open on the metadata — the info panel is a separate view.
+      expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+
+      await user.click(screen.getByRole('button', { name: 'Hide faces' }))
+      expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
+      expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
+    })
+
     it('toggles the faces with the m key and remembers the choice', async () => {
       const user = userEvent.setup()
       fetchFacesMock.mockResolvedValue(facesResponse(1))
@@ -908,6 +952,18 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.getByRole('img', { name: 'Beach' })).not.toHaveStyle({
         transform: 'rotate(90deg)',
       })
+    })
+
+    it('shows the edits on their own — activating them does not drag in the info panel', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      await user.click(screen.getByRole('button', { name: 'Edits' }))
+      expect(screen.getByRole('button', { name: 'Rotate right' })).toBeInTheDocument()
+      // The edit view carries none of the metadata sections.
+      expect(screen.queryByText('Caption & place')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Technical details' })).not.toBeInTheDocument()
     })
 
     it('never lets the faces and the edits both lead the drawer', async () => {
