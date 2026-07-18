@@ -413,7 +413,8 @@ zapiš sem.
   plus pro editory **moderní multi-select** — `useBulkEdit({hoverSelect:true})`: každá dlaždice má
   rohové zaškrtávátko (hover; Shift+klik rozsah), **žádné tlačítko „Vybrat"** už není potřeba, a
   jakmile je něco vybráno, vyjede **`BatchActionBar`** (plovoucí spodní lišta: album/štítky/oblíbené/
-  archiv/stažení/seskupit/další úpravy přes bulk API + toasty; po úspěchu `reloadKey`). Esc čistí výběr,
+  archiv/stažení/seskupit/další úpravy přes bulk API + toasty; po úspěchu `reloadKey` = **pozadí
+  refetch, mřížka neblikne do skeletonu**). Esc čistí výběr,
   plus tlačítko **Uložit pohled** (`SaveSearchModal` →
   `createSavedSearch` s aktuálním view objektem jako `params`),
   `SavedSearchesPage` = `/saved` (jakýkoli přihlášený) „Moje uložená hledání": seznam uložených
@@ -1097,12 +1098,17 @@ zapiš sem.
   vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`; `ProtectedRoute` =
   `RequireAuth` + `RequireRole` + `RequireImport` route guardy), `hooks/` (`usePaginatedPhotos` = sdílený
   paginovaný infinite-scroll loader nad libovolným `PageFetcher`: akumuluje stránky,
-  `loadMore`/`retry`, reset+refetch při změně dotazu/`key`/`enabled`, ruší in-flight requesty
-  a ignoruje stale odpovědi, vystavuje i `mode`/`degraded`; `enabled:false` → `idle` stav bez
-  requestu; `usePhotoLibrary(params,{reloadKey?})` = tenká obálka nad ním nad `fetchPhotos`
-  (`reloadKey` refetchne mřížku po mutaci, stejně jako u `useScopedPhotos`); `usePhotoSearch(params,mode,{reloadKey?})` =
-  obálka nad `searchPhotos` s injektovaným `mode`, vypnutá při prázdném `q` (idle), `reloadKey`
-  přehraje hledání po mutaci;
+  `loadMore`/`retry`, reset+refetch **se skeletonem** při změně dotazu/`key`/`enabled`, ruší
+  in-flight requesty a ignoruje stale odpovědi, vystavuje i `mode`/`degraded`; `enabled:false`
+  → `idle` stav bez requestu. **`reloadKey` (oddělené od `key`) je _pozadí_ refetch první stránky
+  při nezměněném dotazu: aktuální fotky zůstanou připnuté, `status` zůstane `ready` (žádný
+  skeleton, žádné znovunačtení náhledů), takže hromadná úprava (favorite/archiv) se projeví
+  v místě bez bliknutí mřížky; `reloading` je po dobu refreshe true, neúspěšný refresh je tichý
+  (seznam zůstane).** `usePhotoLibrary(params,{reloadKey?})` = tenká obálka nad ním nad
+  `fetchPhotos` (`reloadKey` přehraje mřížku na pozadí po mutaci, stejně jako u `useScopedPhotos`);
+  `usePhotoSearch(params,mode,{reloadKey?})` = obálka nad `searchPhotos` s injektovaným `mode`
+  (jde do `key` → změna módu resetuje se skeletonem), vypnutá při prázdném `q` (idle), `reloadKey`
+  přehraje hledání na pozadí po mutaci;
   `useUploadQueue` = fronta uploadu: `addFiles` (dedup jméno+velikost+mtime)/`removeItem`/
   `start`/`retry`/`retryFailed`/`clear`, konkurenční strop `MAX_CONCURRENT_UPLOADS` (3),
   per-file status+progress, souhrn počtů + `progress` (**celková** frakce dávky 0–1 vážená
@@ -1116,9 +1122,10 @@ zapiš sem.
   čekající alba/štítky a pak jedním `POST /photos/bulk` (`add_to_albums`+`add_labels`) přiřadí;
   stav `idle`/`assigning`/`done`/`error`, `retryAssign` re-poslání téže dávky, `resetAssign`;
   `useSubjectPhotos(uid,{reloadKey?})` = obálka nad `usePaginatedPhotos` nad
-  `GET /subjects/{uid}/photos` (galerie osoby, reset+reload při změně `uid` nebo `reloadKey`); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
+  `GET /subjects/{uid}/photos` (galerie osoby, `uid` jde do `key` → reset se skeletonem při změně
+  osoby, `reloadKey` je pozadí refetch po mutaci); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
   nad `GET /photos` scopnutým na album/štítek/**lokalitu** (`PhotoScope` `{album?,label?,country?,city?}`
-  + filtry/sort z URL, options `{reloadKey?,enabled?}` — `reloadKey` pro refetch po mutaci, `enabled:false`
+  + filtry/sort z URL, options `{reloadKey?,enabled?}` — `reloadKey` pro pozadí refetch po mutaci, `enabled:false`
   → idle bez fetche, např. Places před výběrem města); `useMapPhotos` = jednorázový (nestránkovaný) loader
   GeoJSON feedu geotagovaných fotek nad `fetchMapPhotos` (`status` loading/ready/error, `retry`,
   ruší in-flight + ignoruje stale při změně filtrů);
@@ -1168,8 +1175,8 @@ zapiš sem.
   zastaralé UID v něm nezůstane. Neúspěšný apply výběr **nechá být**. Stránka wiruje jen
   `gridSelection` a `SelectionStart`, zbytek obstará `BulkEditControl`;
   `useReloadKey()` = `[key, reload]`, string čítač do `reloadKey` foto-seznamu — jedno `reload()`
-  resetne seznam a natáhne ho od první stránky; `reload` je stabilní, jde rovnou do
-  `useBulkEdit({onEdited})`;
+  přehraje seznam **na pozadí** (refetch první stránky bez blanknutí do skeletonu, fotky zůstanou
+  připnuté); `reload` je stabilní, jde rovnou do `useBulkEdit({onEdited})`;
   `useKeyboardShortcuts(handlers,{enabled?})` = sdílené plumbing všech klávesových zkratek: jeden
   document-level `keydown` listener dispatchuje dle normalizovaného `shortcutToken(event.key)` na
   `handlers` (přes refy, bind jednou a vždy vidí aktuální closury), matched key `preventDefault`;

@@ -32,5 +32,7 @@ export function useSubjectPhotos(
     (params: PhotoListParams, signal: AbortSignal) => fetchSubjectPhotos(uid, params, signal),
     [uid],
   )
-  return usePaginatedPhotos(NO_PARAMS, fetcher, { key: `${uid} ${options.reloadKey ?? ''}` })
+  // `uid` discriminates the query (switching subject reloads with the skeleton);
+  // `reloadKey` refetches in the background to reflect a bulk edit in place.
+  return usePaginatedPhotos(NO_PARAMS, fetcher, { key: uid, reloadKey: options.reloadKey })
 }

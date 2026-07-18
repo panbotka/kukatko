@@ -41,8 +41,11 @@ export function usePhotoSearch(
     [mode],
   )
   const enabled = (params.q ?? '').trim() !== ''
+  // `mode` discriminates the query (switching it re-runs the search with the
+  // skeleton); `reloadKey` refetches in the background to reflect a bulk edit.
   return usePaginatedPhotos(params, fetcher, {
     enabled,
-    key: `${mode} ${options.reloadKey ?? ''}`,
+    key: mode,
+    reloadKey: options.reloadKey,
   })
 }
