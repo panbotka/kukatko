@@ -221,6 +221,24 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('MetadataPanel edit form', () => {
+  it('keeps Save and Cancel together in the pinned actions bar', async () => {
+    // The bar is sticky (kk-viewer__panel-actions) so it stays at the bottom of
+    // the drawer while the long form scrolls — a quick edit needs no scroll to
+    // reach Save. jsdom can't see the pinning; this guards that the actions live
+    // in that bar rather than loose at the end of the form.
+    const user = userEvent.setup()
+    const { container } = renderPanel()
+    await startEditing(user)
+
+    const actions = container.querySelector('.kk-viewer__panel-actions')
+    expect(actions).not.toBeNull()
+    expect(actions?.querySelector('button[type="submit"]')).not.toBeNull()
+    expect(actions?.textContent).toContain('Save')
+    expect(actions?.textContent).toContain('Cancel')
+  })
+})
+
 describe('MetadataPanel location picker', () => {
   it('prefills the coordinate field in canonical decimal degrees', async () => {
     const user = userEvent.setup()

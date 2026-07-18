@@ -607,7 +607,10 @@ zapiš sem.
   placeholderem u prázdného pole), **žádné skryté globální „Upravit"** dole (to byl fix tohoto
   tasku — dohledatelnost editace title/description/AI popisu). Klik na kterékoli pole otevře jeden
   sdílený formulář (title/description/ai_note/notes/taken_at + **přibližné datum** +
-  **vizuální location picker**), Save `updatePhoto` PATCH, Cancel revert.
+  **vizuální location picker**), Save `updatePhoto` PATCH, Cancel revert. **Save/Cancel jsou přišpendlené**
+  na spodek zásuvky (`.kk-viewer__panel-actions`, `position: sticky; bottom`): formulář je dlouhý (mapa
+  260 px), takže bez toho by rychlá úprava popisku znamenala scroll až dolů k tlačítku. Lišta ruší
+  spodní padding těla zásuvky (`--kk-panel-pad-b`), aby seděla flush u hrany, a obsah scrolluje pod ní.
   **Přibližné („cca") datum** — pro naskenované/zděděné fotky, kde přesné datum nikdo nezná:
   ve formuláři checkbox „Datum je odhad" (`taken_at_estimated`) a **jen když je zaškrtnutý** textové
   pole „Poznámka k datování" (`taken_at_note`, `maxLength=500` zrcadlí backendový strop) — prázdná
