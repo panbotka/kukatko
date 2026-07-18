@@ -395,6 +395,19 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `question_id`/`answer` → 400. Mountuje se `server.WithAPI` (`buildReviewAPI` v
   `cmd/kukatko/review.go`, sdílí facematch service s photoapi a candidates/expand služby se sweep a
   expand endpointy).
+  **Leaderboard** `GET /review/leaderboard?window=all|7d|today` (default `all`, jiná hodnota → 400)
+  gate **`RequireAuth`** — vrací jen agregované počty + jména, takže ho vidí **každý přihlášený**
+  (i viewer), ne jen editor. Žebříčkuje hráče podle počtu **rozhodnutí** v review hře, zdrojem jsou
+  durable audit řádky s `details.via = "review"`: **yes** = `face.assign` + `label.attach`, **no** =
+  `face.reject` + `label.reject`; **skip** nic nezapisuje, takže se z principu nepočítá. Kvůli tomu
+  review potvrzení obličeje (`face.assign`) nově nese `via:review` (dosud jako jediná ze čtyř akcí
+  chybělo — jde přes facematch `Service.Apply`, který si audit skládá sám; běžné assignmenty zůstávají
+  neoznačené). Odpověď `{window,caller_uid,entries:[{user_uid,display_name,yes_count,no_count,total,
+  is_me}]}` je řazená (total desc → yes desc → display_name), jen uživatelé s ≥1 rozhodnutím v okně
+  (nula = chybí), NULL actor (smazaný uživatel) se vynechává, `is_me`/`caller_uid` označí vlastní
+  řádek. Okna se počítají z `created_at` (7 d = klouzavých 7×24 h, dnes = půlnoc dne). Obsluhuje
+  `review.LeaderboardStore` nad sdíleným poolem; parciální index `idx_audit_log_review_actor`
+  (migrace `0037`) drží scan levný.
 - **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
   `{subjects:[{...subject, marker_count, cover_face?}]}` (řazení dle jména, počty non-invalid
   markerů). `cover_face` = `{photo_uid,x,y,w,h,width,height,orientation}` — obličej, kterým se

@@ -18,6 +18,12 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
+// viaReview is the details.via marker stamped onto every decisive review answer's
+// audit entry (label attach, face assign, face/label reject). It is what the
+// leaderboard aggregation filters on to distinguish review-game decisions from
+// ordinary recognition or curation actions.
+const viaReview = "review"
+
 // Answer applies the player's verdict on one question and returns the updated
 // session counters. It is idempotent: repeating an answered question reports
 // already_answered without a second write, and the underlying paths tolerate
@@ -83,6 +89,7 @@ func (s *Service) applyFaceYes(ctx context.Context, ref questionRef, meta audit.
 		PhotoUID:   ref.PhotoUID,
 		SubjectUID: ref.SubjectUID,
 		FaceIndex:  &ref.FaceIndex,
+		Via:        viaReview,
 	}
 	if face.MarkerUID != nil && *face.MarkerUID != "" {
 		req.Action = facematch.ActionAssignPerson
@@ -105,7 +112,7 @@ func (s *Service) applyFaceYes(ctx context.Context, ref questionRef, meta audit.
 // path (idempotent upsert), audited in the same transaction.
 func (s *Service) applyLabelYes(ctx context.Context, ref questionRef, meta audit.Meta) (string, error) {
 	entry := meta.Entry(audit.ActionLabelAttach, "labels", ref.LabelUID, map[string]any{
-		"photo_uid": ref.PhotoUID, "source": string(organize.SourceManual), "via": "review",
+		"photo_uid": ref.PhotoUID, "source": string(organize.SourceManual), "via": viaReview,
 	})
 	err := s.organize.AttachLabelAudited(ctx, ref.PhotoUID, ref.LabelUID, organize.SourceManual, 0, entry)
 	if err != nil {
@@ -127,13 +134,13 @@ func (s *Service) applyNo(ctx context.Context, ref questionRef, meta audit.Meta)
 			PhotoUID: ref.PhotoUID, FaceIndex: ref.FaceIndex, SubjectUID: ref.SubjectUID,
 		}
 		entry := meta.Entry(audit.ActionFaceReject, "subjects", ref.SubjectUID, map[string]any{
-			"photo_uid": ref.PhotoUID, "face_index": ref.FaceIndex, "via": "review",
+			"photo_uid": ref.PhotoUID, "face_index": ref.FaceIndex, "via": viaReview,
 		})
 		err = s.feedback.RejectFace(ctx, key, entry)
 	} else {
 		key := feedback.LabelRejectionKey{PhotoUID: ref.PhotoUID, LabelUID: ref.LabelUID}
 		entry := meta.Entry(audit.ActionLabelReject, "labels", ref.LabelUID, map[string]any{
-			"photo_uid": ref.PhotoUID, "via": "review",
+			"photo_uid": ref.PhotoUID, "via": viaReview,
 		})
 		err = s.feedback.RejectLabel(ctx, key, entry)
 	}

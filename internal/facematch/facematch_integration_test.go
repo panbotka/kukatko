@@ -73,6 +73,7 @@ func newEnv(t *testing.T) *env {
 		Faces:           faceSvc,
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,
+		RequireAdmin:    authAPI.RequireAdmin,
 		RequireDownload: authAPI.RequireAuthOrDownloadToken,
 	})
 

@@ -496,6 +496,16 @@ i reprodukce vyžadují stejnou frontu pro stejný stav knihovny) a cachuje se p
 (`review.cache_ttl`). Odpovědi jdou **výhradně existujícími write paths** (assign state machine,
 `AttachLabelAudited`, feedback) — review nemá vlastní zápisovou cestu.
 
+Každá **rozhodná** odpověď (yes/no na obličej i štítek) přitom píše durable audit řádek označený
+`details.via = "review"` ve stejné transakci jako mutace; review potvrzení obličeje (`face.assign`)
+tuto značku nově dostává i skrz facematch `Service.Apply` (přes `AssignRequest.Via`), takže jsou
+všechny čtyři akce konzistentní a běžné recognition assignmenty zůstávají neoznačené. Nad těmito
+řádky staví **leaderboard** (`internal/review` `LeaderboardStore`, `GET /review/leaderboard`): per
+`actor_uid` počítá yes (`face.assign`+`label.attach`) a no (`face.reject`+`label.reject`) rozhodnutí,
+skip se nepočítá (nic nezapisuje), NULL actor (smazaný uživatel) se vynechává, s okny all-time /
+7 dní / dnes. Parciální index `idx_audit_log_review_actor` (migrace `0037`) na `details->>'via'`
+drží agregaci levnou.
+
 ---
 
 ## 8. Asynchronní joby a „box offline"

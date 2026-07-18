@@ -117,6 +117,9 @@ func assignDetails(req AssignRequest, subject people.Subject) map[string]any {
 	if req.FaceIndex != nil {
 		details["face_index"] = *req.FaceIndex
 	}
+	if req.Via != "" {
+		details["via"] = req.Via
+	}
 	return details
 }
 
