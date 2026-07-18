@@ -594,8 +594,9 @@
     "detail": {
       "prevNext": "Předchozí / další fotka",
       "favorite": "Přepnout oblíbenou",
-      "back": "Zrušit výběr obličeje, poté zpět na seznam",
-      "faces": "Zobrazit / skrýt obličeje"
+      "faces": "Zobrazit / skrýt obličeje",
+      "info": "Zobrazit / skrýt informace",
+      "back": "Krok zpět: výběr, poté informační panel, poté ven na seznam"
     },
     "faceSearch": {
       "move": "Přesun zaměření mezi kartami",
@@ -1018,10 +1019,10 @@
     "next": "Další fotka",
     "download": "Stáhnout originál",
     "downloadEdited": "Stáhnout upravenou",
-    "lightbox": {
-      "open": "Zobrazit na celou obrazovku",
-      "close": "Zavřít",
-      "label": "Prohlížeč fotek na celou obrazovku"
+    "viewer": {
+      "label": "Prohlížeč fotek",
+      "info": "Informace",
+      "closeInfo": "Zavřít informace"
     },
     "tabs": {
       "info": "Informace",

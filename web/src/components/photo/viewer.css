@@ -1,0 +1,334 @@
+/* Immersive full-bleed photo viewer. The detail route IS the viewer: a single
+   image owns the whole viewport over a warm near-black backdrop, the chrome
+   (top bar + prev/next arrows) melts away after a short idle and returns on any
+   pointer move or tap, and a metadata drawer slides in from the side on demand.
+   Replaces the old click-to-open lightbox. All surfaces/accents/radii come from
+   the design tokens; motion is built on the duration tokens, which collapse to
+   ~0 under prefers-reduced-motion, so reduced-motion users get instant swaps. */
+
+.kk-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--kk-viewer-z);
+  background: var(--kk-viewer-backdrop);
+  overflow: hidden;
+  color: var(--kk-text);
+  /* The stage owns every touch gesture (pinch/zoom/pan/swipe), so the browser
+     must not scroll the page, pinch-zoom it, or fire its edge back-swipe. */
+  touch-action: none;
+  /* Opening: the viewer materialises rather than snapping in. */
+  animation: kk-viewer-in var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+@keyframes kk-viewer-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- Stage (the image area) ------------------------------------------ */
+
+.kk-viewer__stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3.5rem 0.5rem;
+  /* When the drawer opens on a wide screen the stage yields the space it takes,
+     so the photo re-centres in what is left rather than hiding behind it. */
+  transition: right var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+/* The figure shrink-wraps the rendered image so the face overlay's percentage
+   geometry lands on the faces; it carries the between-photos fade/scale. Keyed
+   on the photo UID in JSX so a new node replays the animation on navigation. */
+.kk-viewer__figure {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  max-height: 100%;
+  animation: kk-viewer-photo-in var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+@keyframes kk-viewer-photo-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.kk-viewer__image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/* The video/live players carry their own chrome; give them room to breathe. */
+.kk-viewer__media {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.kk-viewer__media > * {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Corner spinner while a neighbour loads (the current photo stays on screen). */
+.kk-viewer__loading {
+  position: absolute;
+  top: calc(0.75rem + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* ---- Chrome (auto-hiding) -------------------------------------------- */
+
+/* The top bar + nav arrows fade together when the viewer is idle. The
+   persistent close button is deliberately NOT in this group — it stays. */
+.kk-viewer__chrome,
+.kk-viewer__nav {
+  transition:
+    opacity var(--kk-duration-base) var(--kk-ease-standard),
+    transform var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+.kk-viewer[data-chrome='hidden'] .kk-viewer__chrome {
+  opacity: 0;
+  transform: translateY(-0.5rem);
+  pointer-events: none;
+}
+
+.kk-viewer[data-chrome='hidden'] .kk-viewer__nav {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kk-viewer__chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--kk-space-3);
+  padding: calc(0.6rem + env(safe-area-inset-top, 0px))
+    calc(0.75rem + env(safe-area-inset-right, 0px)) 2.5rem
+    calc(0.75rem + env(safe-area-inset-left, 0px));
+  background: var(--kk-viewer-chrome-scrim);
+}
+
+/* Title block: left of the actions, truncates instead of shoving them off. */
+.kk-viewer__heading {
+  min-width: 0;
+  flex: 1 1 auto;
+  /* Clear the persistent close button that floats at the top-left. */
+  padding-left: 3rem;
+}
+
+.kk-viewer__title {
+  margin: 0;
+  font-size: var(--kk-font-size-section-title, 1.05rem);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 55%);
+}
+
+.kk-viewer__title .kk-viewer__title-muted {
+  color: var(--kk-text-muted);
+  font-weight: 400;
+}
+
+.kk-viewer__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Round control buttons on the stage (close, prev/next, chrome toggles). Solid
+   enough to read over any photo, with a real focus ring from the tokens. */
+.kk-viewer__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: var(--kk-radius-pill);
+  background: rgb(0 0 0 / 42%);
+  color: var(--kk-text);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--kk-duration-fast) var(--kk-ease-standard),
+    border-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-viewer__btn:hover {
+  background: rgb(0 0 0 / 62%);
+  border-color: rgb(255 255 255 / 24%);
+  color: var(--kk-text);
+}
+
+.kk-viewer__btn:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+.kk-viewer__btn[aria-pressed='true'] {
+  background: var(--kk-accent-solid);
+  border-color: var(--kk-accent);
+  color: var(--kk-on-accent, #fff);
+}
+
+.kk-viewer__btn--icon {
+  padding: 0;
+}
+
+/* The persistent close button: top-left, always reachable (never fades with the
+   chrome), so Esc has a visible twin the pointer can always find. */
+.kk-viewer__close {
+  position: absolute;
+  top: calc(0.6rem + env(safe-area-inset-top, 0px));
+  left: calc(0.75rem + env(safe-area-inset-left, 0px));
+  z-index: 5;
+  opacity: 0.85;
+}
+
+.kk-viewer__close:hover,
+.kk-viewer__close:focus-visible {
+  opacity: 1;
+}
+
+/* ---- Prev / next ----------------------------------------------------- */
+
+.kk-viewer__nav {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  width: 3.25rem;
+  height: 3.25rem;
+  min-width: 3.25rem;
+  transform: translateY(-50%);
+  font-size: 1.5rem;
+}
+
+.kk-viewer[data-chrome='hidden'] .kk-viewer__nav {
+  /* Keep the vertical centring while fading. */
+  transform: translateY(-50%);
+}
+
+.kk-viewer__nav--prev {
+  left: calc(0.75rem + env(safe-area-inset-left, 0px));
+}
+
+.kk-viewer__nav--next {
+  right: calc(0.75rem + env(safe-area-inset-right, 0px));
+}
+
+/* ---- Info drawer ----------------------------------------------------- */
+
+.kk-viewer__panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: min(26rem, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--kk-surface-1);
+  border-left: 1px solid var(--kk-surface-border);
+  box-shadow: var(--kk-shadow-3);
+  transform: translateX(100%);
+  transition: transform var(--kk-duration-base) var(--kk-ease-standard);
+  /* The drawer scrolls its own content; keep that scroll from chaining to the
+     locked page underneath. */
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+.kk-viewer__panel.is-open {
+  transform: translateX(0);
+}
+
+.kk-viewer__panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+  padding: var(--kk-space-3) var(--kk-space-4);
+  border-bottom: 1px solid var(--kk-surface-border);
+  background: var(--kk-surface-1);
+}
+
+.kk-viewer__panel-title {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: var(--kk-font-size-section-title, 1.05rem);
+  font-weight: 600;
+}
+
+.kk-viewer__panel-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--kk-space-4);
+  padding-bottom: calc(var(--kk-space-6) + env(safe-area-inset-bottom, 0px));
+}
+
+.kk-viewer__section + .kk-viewer__section {
+  margin-top: var(--kk-space-5);
+}
+
+/* The scrim dims the stage behind the drawer on a phone (where the drawer
+   overlays instead of shrinking the stage). Tap it to close. */
+.kk-viewer__panel-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 0;
+  padding: 0;
+  background: var(--kk-viewer-panel-scrim);
+  cursor: pointer;
+  animation: kk-viewer-in var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+/* Wide screens: the drawer sits beside the photo and the stage makes room, so
+   the image is never hidden behind the panel and no scrim is needed. */
+@media (min-width: 768px) {
+  .kk-viewer[data-panel='open'] .kk-viewer__stage {
+    right: min(26rem, 100%);
+  }
+
+  .kk-viewer__panel-scrim {
+    display: none;
+  }
+}

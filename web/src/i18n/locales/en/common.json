@@ -627,8 +627,9 @@
     "detail": {
       "prevNext": "Previous / next photo",
       "favorite": "Toggle favorite",
-      "back": "Clear the face selection, then back to the list",
-      "faces": "Show / hide faces"
+      "faces": "Show / hide faces",
+      "info": "Show / hide info",
+      "back": "Step back: the selection, then the info panel, then out to the list"
     },
     "faceSearch": {
       "move": "Move focus between cards",
@@ -972,10 +973,10 @@
     "next": "Next photo",
     "download": "Download original",
     "downloadEdited": "Download edited",
-    "lightbox": {
-      "open": "Open fullscreen",
-      "close": "Close",
-      "label": "Fullscreen photo viewer"
+    "viewer": {
+      "label": "Photo viewer",
+      "info": "Info",
+      "closeInfo": "Close info"
     },
     "tabs": {
       "info": "Info",

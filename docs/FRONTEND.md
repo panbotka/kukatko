@@ -36,7 +36,7 @@ zapiš sem.
   spotřebuje prop `title` na obsah toggle, takže by nezbyl na tooltip); položky v mobilním burger
   menu expandují inline s tap-targety (`kukatko-tap-target`),
   `Footer` (**globální patička** pod `<main>` na každé stránce v `Layout` — fullscreen
-  `/slideshow` běží mimo shell, takže ji nemá: „Provozuje SDH Veselice“ + odkaz na zdrojový kód
+  `/slideshow` i immersivní `/photos/:uid` běží mimo shell, takže ji nemají: „Provozuje SDH Veselice“ + odkaz na zdrojový kód
   <https://github.com/panbotka/kukatko> v novém tabu s `rel="noopener noreferrer"` a dekorativní
   ikonou `github` (`aria-hidden`); texty `footer.*` (cs/en). Rendruje se v normálním toku — na
   krátké stránce prostě následuje obsah, nic nepřekrývá ani nefloatuje. Uvnitř je space-between
@@ -434,88 +434,63 @@ zapiš sem.
   Jména aktérů se dotahují z rosteru **best-effort** (fallback na UID, resp. `—` u systémové akce),
   nikdy neblokují render tabulky. Loading/empty/error (retry přes `reloadKey`) stavy, sebe-gate na
   `isAdmin`,
-  `PhotoDetailPage` = `/photos/:uid` **bohatý detail fotky**: velký náhled **na celou šířku
-  obsahové oblasti** (`fit_1920`, still až `maxHeight:80vh`)
-  reflektující uložený nedestruktivní edit (CSS) — u **videa** místo obrázku `VideoPlayer`
-  (`components/photo/`, HTML5 `<video controls>` nad range endpointem `…/video`, poster `fit_1920`,
-  klávesy/fullscreen/touch zdarma, fallback na stažení když codec prohlížeč neumí), u **live fotky**
-  `LivePhoto` (still + „Live" badge, motion klip se přehraje při hover/podržení/focusu); **klik na
-  still náhled otevře fullscreen lightbox** (`Lightbox` v `components/photo/` + `lightbox.css`):
-  fotka na celou obrazovku (contain) na tmavém pozadí s uloženým editem, **velké šipky vlevo/vpravo**
-  listující stejné pořadí/scope jako detail (vlastní `usePhotoNeighbors` nad `neighborParams` + `mode`
-  pro hledání, stop na koncích), klávesy ←/→ + Esc, **dotyková gesta** (`usePinchZoom`): pinch a dvojklik
-zoom s posunem (pan) při přiblížení a horizontální swipe pro listování, když přiblíženo není (zoom se
-**resetuje při změně fotky i zavření**); close křížkem (44px tap-target) i klikem na **pozadí** — klik do
-samotného obrázku už nezavírá (obrázek má `pointer-events`/`touch-action:none`, aby gesta i dvojklik
-fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknutím na pozadí, ne na obrázek"),
-  přednačtení sousedů (`new Image()` na `fit_1920`), fetch title+editu zobrazené fotky při navigaci;
-  lightbox si listuje **interně bez změny URL** a při zavření předá aktuální uid zpět → detail obnoví
-  URL (`navigate` replace), takže Zpět vždy funguje; video/live neotevírá image-lightbox (mají vlastní
-  nativní fullscreen), a **detailové klávesové zkratky (←/→/Esc/rating hotkeys) jsou při otevřeném
-  lightboxu vypnuté** (`useKeyboardShortcuts({enabled:!lightboxOpen})`), aby je ovládal lightbox;
-  **prev/next navigace** respektující pořadí
-  zdrojového výpisu (`usePhotoNeighbors` pageuje `GET /photos` se scope+filtry z URL — nebo `GET /search`,
-  když detail vznikl z hledání, aby prev/next drželo stejné řazené výsledky); **na dotyku i horizontální
-  swipe přes obrázek** (`useSwipeNavigation`) volá tutéž navigaci jako šipky/klávesy — vertikální tah
-  scrolluje (nikdy nelistuje), gesto se ignoruje na interaktivních prvcích (obličejové boxy, ‹/› šipky),
-  protože jen obrázkové tlačítko nese `data-swipe-surface`;
-  **listování bez fullpage flickeru** — jen **první** načtení ukáže velký spinner, při skoku na souseda
-  zůstane aktuální fotka namontovaná a nová se dotáhne na pozadí (`setState` nereaguje na `loading`, když
-  už je `ready`), pak se **swapne na místě**; nad snímkem přitom svítí nenápadný rohový spinner
-  (`photo.loadingNext`). Dokud běží načítání souseda (`loadingNext = photo.uid !== uid`), jsou obličeje/„bez
-  obličejů"/toggle keyed na cílový uid **potlačené**, aby se boxy fotky B nekreslily nad fotkou A; abort na
-  změnu `uid` ruší předběhnutý request (poslední cíl vyhrává), chyba načtení souseda spadne do error stavu
-  (nenechá tiše starou fotku),
-  deep-linkovatelný + **Zpět** na zdrojový pohled — album/štítek/oblíbené/hledání/knihovnu podle scope,
-  který dlaždice nese v `detailQuery` odkazu (`lib/detailView` `backHref`/`detailToParams`/
-  `detailQueryString`; hledání se pozná podle `mode` v query, oblíbené podle `favorite=true`),
-  v hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + osobní označení eye/👍/👎
-  nad `useRating`) a `FavoriteButton`, plus
-  **rating hotkeys** `0`–`5`/`p`/`r`/`v` na document (mimo
-  psaní do inputu; `p`→👍, `r`→👎, `v`→👁), tlačítka **Stáhnout originál** /
-  **Stáhnout upravenou** (`downloadUrl`); **stránka nese právě JEDEN obrázek fotky** — obličeje
-  jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad `useFaces`), nikdy druhá kopie snímku,
-  a **i panel Úprav edituje právě tenhle jeden snímek** (viz níž), takže druhý `<img>` nepřidá
-  ani on.
-  **Obličeje jsou defaultně VYPNUTÉ** (`FACE_OVERLAY_DEFAULT = false` v `lib/faceOverlayPref`,
-  volba se pamatuje v localStorage): fotka je obsah, boxy jsou opt-in. Zapne je tlačítko
-  **Zobrazit/Skrýt obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`) nebo klávesa
-  **`m`** (v registru zkratek, takže ji ukáže i nápověda `?`). Zapnutí **zmenší fotku na `lg={8}`
-  a vedle ní se nasadí `FacesPanel` (`lg={4}`)** — prostý reflow gridu, **žádná animace ani
-  Offcanvas**; pod `lg` se panel stackuje pod fotku. Vedle fotky je **jeden sloupec pro jeden
-  panel**: `sidePanel: 'faces' | 'edit' | null` (jediný stav, ne boolean na každý panel) dělá
-  stav „dva panely vedle sebe" **nereprezentovatelný** — otevření jednoho zavře druhý a fotka má
-  právě dva layouty (plná šířka / `lg={8}` s panelem), nikdy třetí. Týž `sidePanel` řídí boxy i
-  panel obličejů, takže se nemůžou rozejít. **Obličejové UI stojí celé (tlačítko i `m`) jen když
-  je preview identita** (`isIdentityEdit(previewEdit)` v `facesAvailable`): `clip-path`/`transform`
-  živého i uloženého editu posunou vykreslené pixely pod boxy, které se pozicují v procentech
-  obalu — rámečky by prostě minuly obličeje, tak se radši nekreslí (a vrátí se, jakmile je preview
-  zase neutrální). **Pozor — nosná invarianta:**
-  `FaceOverlay` pozicuje boxy v **procentech** obalu `position-relative d-inline-flex mw-100`, který
-  se smrskává přesně na `<img>`; kdyby ho sloupec roztáhl (`w-100`, `align-items: stretch`), obrázek
-  se uvnitř vycentruje s letterboxem a **rámečky se rozjedou** (jsdom to nechytí — ověřovat vizuálně).
-  Boxy jsou barevné dle stavu (`lib/faceState`: zelená přiřazený / žlutá marker bez osoby / červená
-  holá detekce), vybraný je primary + ring, každý nese **číslo `#N`** (dle pořadí, ne `face_index` —
-  markery bez detekce mají záporný) a přiřazený i **jméno pod boxem**; hover na boxu zvýrazní řádek
-  v panelu a naopak (`hovered`/`onHover` drží stránka). Klik na box i na řádek panelu = tentýž výběr;
-  **mezi titulkem a fotkou** je **read-only pruh badgí** `OrganizeBadges` (`components/photo/`):
-  nejdřív alba, pak štítky fotky jako pill-badge (`ENTITY_STYLE` — fialová `album` / tyrkysová
-  `tag` + vodicí ikona, vzhled 1:1 s chipy v `OrganizePanel`), každá **odkazuje** na
-  `/albums/:uid`, resp. `/labels/:uid`. Odpovídá na „kam je fotka zařazená" bez scrollování dolů.
-  **Žádné ovládání** (bez remove/add/create) — přidávat a odebírat se dá dál **jen** v
-  `OrganizePanel`; oba čtou tentýž `photo.albums`/`photo.labels`, takže se pruh po editaci
-  aktualizuje **okamžitě a bez druhého fetche**. Badge se **zalamují** (`flex-wrap`, žádný
-  horizontální scroll), a když fotka není v žádném albu ani nemá štítek, **nevykreslí se nic**
-  (žádný nadpis, placeholder ani mezera). Viewer vidí přesně totéž co editor;
-  **ovládací/informační panely jsou POD fotkou** (ne vedle ní) a jdou **přes celou šířku
-  obsahové oblasti** (žádný centrovaný užší sloupec) ve **striktním edit-first pořadí** —
-  pruh `SimilarPhotos` je až pod nimi. První dvě karty sdílejí **od `lg` výš jeden řádek**
-  v poměru **4:8** — **Uspořádání** (užší rail) vedle **Popis a místo** (`Row`
-  `align-items-start` + `Col` `lg={4}`/`lg={8}`; `align-items-start` drží obě karty v jejich přirozené výšce, aby
-  se kratší nenatáhla do prázdné krabice). **Technické údaje** pod nimi jsou
-  samostatná karta na plnou šířku (**Úpravy** už mezi kartami nejsou — jsou panel vedle fotky,
-  viz níž). **Pod `lg` se stackují na plnou šířku ve stejném pořadí**,
-  takže na mobilu platí totéž čtecí pořadí. Karty
+  `PhotoDetailPage` = `/photos/:uid` **immersivní prohlížeč na celé plátno** (a sama ta routa;
+  **mimo `Layout`**, jako `/slideshow` — fotka vlastní celý viewport, bez navbaru/patičky).
+  Fotka je centrovaná, `object-fit: contain` na **největší fit bez ořezu** nad **teplým near-black
+  pozadím** (`--kk-viewer-backdrop`), reflektuje uložený nedestruktivní edit (za otevřeného panelu
+  Úprav živý draft) — u **videa** místo obrázku `VideoPlayer`, u **live fotky** `LivePhoto` (obě mají
+  vlastní nativní fullscreen; obrázkový prohlížeč se pro ně neotvírá). Styl je ve
+  `components/photo/viewer.css`, tokeny `--kk-viewer-*` (backdrop, chrome/panel scrim, z-index) v
+  `tokens.css`. **Nahradil starý klik-otevře-lightbox** — `Lightbox` a `lightbox.css` byly odstraněny
+  a pohlceny sem.
+  **Mizející chrome:** horní akční lišta (titulek + kurátorská smyčka + přepínače) a **‹/› šipky** se
+  po krátké nečinnosti **ztlumí do ztracena** a vrátí se při pohybu myší / tapnutí / klávese
+  (`useAutoHideChrome` — idle timer + globální wake, `paused` když je zásuvka otevřená, aby ovládání
+  pod rukou nezmizelo); přechody jedou na duration tokenech, takže `prefers-reduced-motion` je
+  vypne. **Trvalé zavření ✕** (kolečko vlevo nahoře, `photo.back`, **nemizí** s chrome) i **Esc**
+  vždy funguje a vrací **na přesnou předchozí pozici scrollu**: `navigate(-1)` když se sem přišlo z
+  mřížky (prohlížeč obnoví scroll), jinak (přímý odkaz/refresh — zachyceno `location.key === 'default'`
+  při mountu) `backHref(view)` rekonstruuje URL seznamu. **Klávesy:** ←/→ listuje sousedy, `f`
+  oblíbená, `m` obličeje, `i` zásuvka, Esc **krok zpět** (nejdřív vybraný obličej, pak zásuvka, pak
+  ven); rating hotkeys `0`–`5`/`p`/`r`/`v` na document (mimo psaní do inputu).
+  **prev/next** = `<Link replace>` `‹`/`›` nesoucí scope+filtry z URL (`detailQuery`) **i `info`**,
+  respektující pořadí zdrojového výpisu (`usePhotoNeighbors` nad `neighborParams`+`mode` — `GET
+  /photos`, nebo `GET /search`, když detail vznikl z hledání; stop na koncích); **dotyk**:
+  `usePinchZoom` (pinch/dvojklik zoom + pan + swipe u čistého stillu) nebo `useSwipeNavigation`
+  (swipe u zapnutých obličejů/editu, kde je zoom vypnutý, aby transform neposunul boxy/preview);
+  přednačtení sousedů (`new Image()` na `fit_1920`). **Listování bez fullpage flickeru** — jen první
+  načtení ukáže velký spinner, jinak zůstane aktuální fotka namontovaná (klíč `<img>`/figury na
+  **zobrazeném** `photo.uid`, ne na route `uid`) a nová se dotáhne na pozadí, pak se **swapne na
+  místě** s fade/scale; nad snímkem svítí rohový spinner (`photo.loadingNext`). Dokud běží načítání
+  souseda (`loadingNext = photo.uid !== uid`), jsou obličeje potlačené (boxy fotky B se nekreslí nad
+  A); abort na změnu `uid` ruší předběhnutý request (poslední cíl vyhrává).
+  **Deep-linkovatelný:** otevřená fotka je v routě, **stav zásuvky v `info` query paramu** (mimo
+  `DetailView`/`DETAIL_DEFAULTS`, takže neleze do sousedů ani do `backHref`), scope v query — Zpět i
+  refresh tedy sedí. V hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + osobní označení
+  eye/👍/👎 nad `useRating`) a `FavoriteButton` (sdílí optimistický toggle s `f`). **Prohlížeč nese
+  právě JEDEN obrázek fotky** — obličeje jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad
+  `useFaces`), nikdy druhá kopie snímku, a i panel **Úprav** edituje právě tenhle jeden snímek.
+  **Obličeje jsou defaultně VYPNUTÉ** (`FACE_OVERLAY_DEFAULT = false` v `lib/faceOverlayPref`, volba
+  se pamatuje v localStorage): fotka je obsah, boxy jsou opt-in. Zapne je tlačítko **Zobrazit/Skrýt
+  obličeje** (jen u stillu s aspoň jedním obličejem, `aria-pressed`) nebo klávesa **`m`** (v registru
+  zkratek, takže ji ukáže i nápověda `?`). Vedle fotky/zásuvky drží **jeden lead slot**
+  `sidePanel: 'faces' | 'edit' | null` (jediný stav, ne boolean na každý panel) — otevření jednoho
+  zavře druhý, takže obličeje a editace se nikdy neperou; zapnutí obličejů i editu **otevře zásuvku**.
+  Týž `sidePanel` řídí boxy i panel obličejů, takže se nemůžou rozejít. **Obličejové UI stojí celé
+  (tlačítko i `m`) jen když je preview identita** (`isIdentityEdit(previewEdit)` ve `facesAvailable`):
+  transform živého i uloženého editu posune vykreslené pixely pod boxy pozicované v procentech obalu
+  — rámečky by minuly obličeje, tak se radši nekreslí a vrátí se, jakmile je preview zase neutrální.
+  **Pozor — nosná invarianta:** `FaceOverlay` pozicuje boxy v **procentech** obalu `.kk-viewer__figure`
+  (`display: inline-flex`), který se smrskává přesně na `<img>`; kdyby ho něco roztáhlo, obrázek se
+  uvnitř vycentruje s letterboxem a **rámečky se rozjedou** (jsdom to nechytí — ověřovat vizuálně).
+  Boxy jsou barevné dle stavu (`lib/faceState`), vybraný je primary + ring, nesou **číslo `#N`** a
+  přiřazené i **jméno pod boxem**; hover na boxu zvýrazní řádek v panelu a naopak (`hovered`/`onHover`
+  drží stránka). Klik na box i na řádek panelu = tentýž výběr (a otevře zásuvku).
+  **Informace jedou v zásuvce** (`.kk-viewer__panel`), která **vjede zboku na vyžádání** (na telefonu
+  přes celou šířku se scrimem, na ≥ md se **stage zúží** vlevo, aby fotka nezmizela za panelem) —
+  výchozí stav je jen fotka. Její obsah jsou **tytéž komponenty jako dřív, jen v zásuvce místo pod
+  fotkou** (`OrganizeBadges` „filed under" pruh nad fotkou zanikl — alba/štítky jsou v Uspořádání).
+  **Sekce zásuvky**
   (`components/photo/`): **1. Uspořádání** (`sections.organize`) = **primární blok, vždy
   viditelný a přímo editovatelný** (žádný „edit mód"): `OrganizePanel` (inline add/remove alb
   a štítků přes organize API) + `PeoplePanel` (lidé/obličeje jako **person-chips** nad stejným
@@ -614,11 +589,11 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   nebo chybu (422 = „originál chybí nebo ho nelze dekódovat", jinak obecná hláška); po úspěchu
   zavolá `onThumbnailRegenerated`, což v `PhotoDetailPage` **bumpne `thumbVersion`** a připojí
   `?v=` k `poster` (thumb URL se staví z UID, tedy stabilní → cache-bust vynutí načtení nového
-  náhledu bez tvrdého reloadu). Viewer tlačítko nevidí. **Úpravy už mezi kartami pod fotkou
-  nejsou** — patří k fotce, kterou upravují, takže `EditPanel` (editor/admin, jen still) je
-  **panel VEDLE fotky**, přesně jako `FacesPanel`: otevře ho tlačítko **Úpravy** (`aria-pressed`)
-  v řádku ovládání pod snímkem, fotka se zmenší na `lg={8}`, panel se nasadí na `lg={4}` (pod `lg`
-  pod ni), hlavička nese název + zavírací **`x-lg`** (`photo.edit.closePanel`). Rotace/jas/kontrast/
+  náhledu bez tvrdého reloadu). Viewer tlačítko nevidí. **Úpravy jsou lead slot zásuvky** — patří
+  k fotce, kterou upravují, takže `EditPanel` (editor/admin, jen still) otevře tlačítko **Úpravy**
+  (`aria-pressed`) v akční liště; zapnutí **otevře zásuvku** a nasadí panel do jejího čela (týž
+  jeden `sidePanel` jako obličeje, viz výš), hlavička nese název + zavírací **`x-lg`**
+  (`photo.edit.closePanel`). Rotace/jas/kontrast/
   crop, `PUT /photos/{uid}/edit` přes `saveEdit` — ten posílá **jen samotný edit** (`rotation`/
   `brightness`/`contrast`/`crop_*`): typ `PhotoEdit` slouží i jako odpověď GETu a nese navíc
   `photo_uid`/`updated_at`, jenže PUT tělo dekóduje **striktně**, takže poslat vrácený objekt
@@ -633,17 +608,17 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`editPreviewStyle(previewEdit)`, `previewEdit = editDraft ?? state.edit`) — proto zůstává celou
   dobu vidět a mění se živě pod rukama. Zavření i skok na souseda (`uid` efekt) draft zahodí
   (fotka se vrátí k uloženému stavu), úspěšný save ho vymění za `state.edit` bez bliknutí.
-  Otevření Úprav navíc **sundá obličeje** (jeden sloupec = jeden panel) i výběr obličeje, ale
+  Otevření Úprav navíc **sundá obličeje** (jeden lead slot) i výběr obličeje, ale
   **uloženou volbu overlaye nepřepíše** — skrytí je důsledek otevření Úprav, ne rozhodnutí o
   obličejích, takže přežije na další fotku. Viewer vidí vše read-only
   (žádné tlačítko Úpravy, žádné edit/add/remove akce, žádný přepínač soukromí, `FaceOverlay` readOnly
   = boxy vidí, ale neklikne);
-  `StackStrip` (`components/photo/`, **NOVÝ**) = **pruh variant stacku** pod fotkou na detailu: vypíše
+  `StackStrip` (`components/photo/`, **NOVÝ**) = **pruh variant stacku** v zásuvce prohlížeče: vypíše
   každého člena (náhled, jméno, rozměry, velikost), označí **primárního** (`stack.primary`) a linkuje na
   kteroukoli variantu (`stack.viewVariant`); editorovi per-člen tlačítka **Nastavit jako hlavní**
   (`stack.setPrimary` → `setStackPrimary`) / **Vyjmout ze skupiny** (`stack.unstack` → `unstackMember`)
-  a **Zrušit skupinu** (`stack.unstackAll` → `unstackAll`). Renderuje ho `PhotoDetailPage` **pod řádkem
-  s médiem**, jen když `stack_members` má **≥ 2** položky; jeho akce znovunačtou zobrazenou fotku;
+  a **Zrušit skupinu** (`stack.unstackAll` → `unstackAll`). Renderuje ho `PhotoDetailPage` **v zásuvce**,
+  jen když `stack_members` má **≥ 2** položky; jeho akce znovunačtou zobrazenou fotku;
   `components/photo/` dál nese `MetaField` (jeden read-only labelled řádek `<dt>`/`<dd>` uvnitř
   `<dl className="row">` skupiny, prázdná hodnota = nic; volitelný `title` = tooltip nad zkrácenou
   hodnotou a `children` = bohatá hodnota (chipy/badge/copy tlačítko), řádek s `children` se renderuje
@@ -941,7 +916,7 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   mountuje se jako poslední dítě `position-relative` obalu těsně kolem `<img>`; vrstva je
   click-through, pointer events chytají jen boxy (a při `readOnly` ani ty; číslo a jmenovka boxu mají
   `pointer-events:none`, jinak by ukradly klik a rozbily swipe). Data + stavový automat pojmenování
-  drží hook `useFaces`. **`FacesPanel`** = pravý panel vedle fotky, jediné místo, kde se přiřazuje:
+  drží hook `useFaces`. **`FacesPanel`** = panel v zásuvce prohlížeče, jediné místo, kde se přiřazuje:
   **textové řádky** `Obličej #N` + barevný chip stavu (žádné výřezy — jeden obrázek na stránku),
   klik vybere/odvybere, hover se zrcadlí s boxem; pod vybraným řádkem se rozbalí `FaceAssignPanel`
   (`key={face_index}` → reset stavu při změně výběru). **`FaceAssignPanel`** = top-3 návrhy
@@ -1032,7 +1007,15 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   document-level `keydown` listener dispatchuje dle normalizovaného `shortcutToken(event.key)` na
   `handlers` (přes refy, bind jednou a vždy vidí aktuální closury), matched key `preventDefault`;
   **nikdy nevystřelí** při držení Ctrl/Meta/Alt, při psaní (`isTypingElement`) ani při otevřeném
-  form-modalu (`isFormModalOpen`); `useGridKeyboardNavigation({count,enabled,resetKey,getColumns,
+  form-modalu (`isFormModalOpen`);
+  `useAutoHideChrome({idleMs?,paused?})` → `{visible,wake}` = **mizející chrome** immersivního
+  prohlížeče (`PhotoDetailPage`): ovládání startuje viditelné, po `idleMs` (default 2600 ms) bez
+  aktivity se ztlumí a vrátí se při další aktivitě. Aktivitu hlídá **globálně** (pointer move/down,
+  key, touch), viditelnost drží přes ref a do stavu commituje **jen na skutečnou změnu**, takže
+  záplava `pointermove` nepřerenderovává každý frame; `paused` chrome **připne viditelné** a timer
+  nespustí (když je zásuvka otevřená). Rozhoduje jen *jestli* se chrome ukáže — *jak* animuje řeší
+  CSS přechod na duration tokenech (pod `prefers-reduced-motion` ~0);
+  `useGridKeyboardNavigation({count,enabled,resetKey,getColumns,
   scrollToIndex,onOpen,onToggleSelect,onToggleFavorite,hasSelection,onClearSelection})` = navigace
   mřížky nad `useKeyboardShortcuts`: drží `focusedIndex` (zvýraznění), šipky + `j`/`k`/`h`/`l` posouvají
   (vlevo/vpravo o 1, nahoru/dolů o řádek dle živého počtu sloupců) a dorolují dlaždici do view, `Enter`
@@ -1603,12 +1586,13 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   můžou přepsat pro simulaci telefonu).
   Routing v `App.tsx`: tabulka rout žije v exportované `AppRoutes` (aby ji šlo v testech mountnout
   do `MemoryRouter` a ověřit samotné drátování — `App.test.tsx`), `App` ji jen obalí
-  `BrowserRouter`+`AuthProvider`. `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` je pod
-  `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru), zbytek pod `Layout`
+  `BrowserRouter`+`AuthProvider`. `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` a
+  immersivní `/photos/:uid` jsou pod `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru),
+  zbytek pod `Layout`
   (**`/` = `LibraryPage`** — knihovna je úvodní stránka; `/library` → `LibraryRedirect`
   (`replace` redirect na `/` se zachovaným query stringem),
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
-  `/places`, `/photos/:uid`, `/people`,
+  `/places`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` a
   `/duplicates` navíc pod `RequireRole role="editor"` = write-only (a `/duplicates/compare` tamtéž,
   ale **mimo `Layout`** — fullscreen jako `/review`), `/import` pod `RequireImport`
