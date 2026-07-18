@@ -39,6 +39,8 @@ export type IconName =
   | 'hand-thumbs-up'
   | 'hand-thumbs-up-fill'
   | 'heart'
+  | 'image'
+  | 'image-fill'
   | 'images'
   | 'info-circle'
   | 'lock-fill'

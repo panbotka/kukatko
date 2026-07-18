@@ -680,6 +680,85 @@
   }
 }
 
+/* ---- Subject cover affordance -----------------------------------------
+ * The people/subject gallery's "set as cover" action, quietened from a loud
+ * labelled button on every tile to a small icon-only disc in the tile's
+ * bottom-start corner (clear of the top-start selection checkbox). Like the
+ * grid's selection check it is hidden at rest and revealed on hover/focus of
+ * the tile; the current cover keeps its filled accent disc shown as a marker,
+ * and on touch — where there is no hover — every disc stays visible so the
+ * action is still reachable.
+ */
+.kk-cover-btn {
+  position: absolute;
+  bottom: var(--kk-space-1);
+  left: var(--kk-space-1);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: 2px solid rgb(255 255 255 / 92%);
+  border-radius: 50%;
+  background-color: rgb(0 0 0 / 38%);
+  color: #fff;
+  line-height: 1;
+  opacity: 0;
+  transition:
+    opacity var(--kk-duration-fast) var(--kk-ease-standard),
+    background-color var(--kk-duration-fast) var(--kk-ease-standard),
+    transform var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-cover-btn .bi {
+  font-size: 0.9rem;
+}
+
+/* Reveal on hover/focus of the tile, or when the control itself is focused. */
+.kk-subject-tile:hover .kk-cover-btn,
+.kk-subject-tile:focus-within .kk-cover-btn,
+.kk-cover-btn:focus-visible {
+  opacity: 1;
+}
+
+.kk-cover-btn:not(:disabled):hover {
+  transform: scale(1.08);
+  background-color: rgb(0 0 0 / 55%);
+}
+
+.kk-cover-btn:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+/* The current cover: a filled accent disc, always shown as the tile's marker. */
+.kk-cover-btn--on {
+  opacity: 1;
+  border-color: var(--kk-accent);
+  background-color: var(--kk-accent-solid);
+  color: var(--kk-on-accent);
+}
+
+/* Touch devices cannot hover — keep the (quiet) disc visible so the action
+   stays reachable there. */
+@media (hover: none) {
+  .kk-cover-btn {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-cover-btn {
+    transition: none;
+  }
+
+  .kk-cover-btn:not(:disabled):hover {
+    transform: none;
+  }
+}
+
 /* ---- Back link --------------------------------------------------------- */
 
 /*
