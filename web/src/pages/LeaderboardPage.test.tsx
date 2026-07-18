@@ -35,15 +35,17 @@ function board(entries: LeaderboardEntry[], window: Leaderboard['window'] = 'all
   return { window, caller_uid: 'u2', entries }
 }
 
-/** A signed-in user; `uid` decides which board row is highlighted as "you". */
-function auth(uid: string): AuthContextValue {
+/** A signed-in user; `uid` decides which board row is highlighted as "you" and
+ * `isAdmin` whether the per-user decision click-through is offered. */
+function auth(uid: string, isAdmin = false): AuthContextValue {
+  const role = isAdmin ? 'admin' : 'viewer'
   return {
     status: 'authenticated',
-    user: { uid, username: 'me', display_name: 'Me', role: 'viewer' },
-    role: 'viewer',
+    user: { uid, username: 'me', display_name: 'Me', role },
+    role,
     downloadToken: null,
     canWrite: false,
-    isAdmin: false,
+    isAdmin,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
@@ -56,10 +58,10 @@ function WindowProbe() {
   return <span data-testid="window-probe">{params.get('window') ?? ''}</span>
 }
 
-function renderPage(uid = 'u2') {
+function renderPage(uid = 'u2', isAdmin = false) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(uid)}>
+      <AuthContext.Provider value={auth(uid, isAdmin)}>
         <MemoryRouter initialEntries={['/leaderboard']}>
           <WindowProbe />
           <LeaderboardPage />
@@ -146,6 +148,24 @@ describe('LeaderboardPage', () => {
     expect(screen.getByText('No decisions yet')).toBeInTheDocument()
     // The empty state invites the reader into the review game.
     expect(screen.getByRole('link', { name: /start sorting/i })).toHaveAttribute('href', '/review')
+  })
+
+  it('links each player to their decision history for an admin', async () => {
+    fetchMock.mockResolvedValue(board([entry('u1', 'Alice', 10, 2), entry('u2', 'Bob', 5, 1)]))
+    renderPage('u2', true)
+
+    const aliceRow = await screen.findByTestId('leaderboard-row-u1')
+    const link = within(aliceRow).getByRole('link', { name: /Alice/i })
+    expect(link).toHaveAttribute('href', '/audit/reviews?user=u1')
+  })
+
+  it('shows plain player names to a non-admin, with no click-through', async () => {
+    fetchMock.mockResolvedValue(board([entry('u1', 'Alice', 10, 2)]))
+    renderPage('u2')
+
+    const aliceRow = await screen.findByTestId('leaderboard-row-u1')
+    expect(within(aliceRow).queryByRole('link')).toBeNull()
+    expect(within(aliceRow).getByText('Alice')).toBeInTheDocument()
   })
 
   it('hints the way in when the caller has no row yet', async () => {

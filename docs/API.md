@@ -642,7 +642,11 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   durable audit trailu. `GET /audit` → `{entries,total,limit,offset,next_offset}` (entry =
   `{id,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}`, newest-first)
   s filtry `?user=`/`?entity_type=`/`?entity_uid=`/`?action=`/`?since=`/`?until=` (RFC3339) a
-  stránkováním `?limit=`(≤500)/`?offset=`; neplatný čas/číslo → 400. Audit záznamy se **nezapisují
+  stránkováním `?limit=`(≤500)/`?offset=`; neplatný čas/číslo → 400. Navíc **filtry pro admin
+  přehled rozhodnutí jednoho uživatele v review hře**: `?via=review` (jen review rozhodnutí —
+  `details.via='review'`, tj. akce `face.assign`/`label.attach`/`face.reject`/`label.reject`;
+  literál sedí na partial index z migrace 0037) a `?decision=yes|no` (kbelík Ano = assign+attach /
+  Ne = reject); jiná hodnota `via`/`decision` → 400. Audit záznamy se **nezapisují
   přes HTTP** — vznikají uvnitř mutačních transakcí (in-tx `audit.Write`, viz `internal/audit`
   konvence). Mountuje se vždy (`buildAuditAPI` v `cmd/kukatko/audit.go`).
 - **Maintenance API (`/api/v1`, `internal/maintenanceapi`, maintainer-only přes `RequireMaintainer`):**

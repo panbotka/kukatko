@@ -112,6 +112,47 @@
     "notOnBoard": {
       "hint": "Zatím nejste na žebříčku.",
       "action": "Začněte třídit"
+    },
+    "viewDecisions": "Zobrazit rozhodnutí hráče {{name}}"
+  },
+  "reviewDecisions": {
+    "title": "Rozhodnutí v třídění",
+    "subtitle": "Každé Ano/Ne, které tento uživatel zaznamenal ve hře třídění.",
+    "adminOnly": "Tento pohled je dostupný pouze administrátorům.",
+    "back": "Zpět na žebříček",
+    "loading": "Načítám rozhodnutí…",
+    "error": "Rozhodnutí se nepodařilo načíst.",
+    "total": "Celkem",
+    "noUser": {
+      "title": "Není vybrán žádný uživatel",
+      "hint": "Otevřete hráče z žebříčku a zobrazte jeho rozhodnutí."
+    },
+    "filter": {
+      "label": "Filtrovat rozhodnutí",
+      "all": "Vše"
+    },
+    "decision": {
+      "yes": "Ano",
+      "no": "Ne"
+    },
+    "kind": {
+      "face": "Osoba",
+      "label": "Štítek"
+    },
+    "columns": {
+      "photo": "Fotka",
+      "decision": "Rozhodnutí",
+      "subject": "Osoba nebo štítek",
+      "when": "Kdy"
+    },
+    "empty": {
+      "title": "Žádná rozhodnutí",
+      "hint": "Tento uživatel nemá žádná zaznamenaná rozhodnutí pro aktuální filtr."
+    },
+    "pagination": {
+      "range": "Zobrazeno {{from}}–{{to}} z {{total}}",
+      "prev": "Předchozí",
+      "next": "Další"
     }
   },
   "language": {

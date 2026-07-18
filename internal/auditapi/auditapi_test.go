@@ -44,6 +44,33 @@ func TestParseFilter(t *testing.T) {
 		}
 	})
 
+	t.Run("maps the review and decision filters", func(t *testing.T) {
+		t.Parallel()
+		yes, err := parseFilter(url.Values{"via": {"review"}, "decision": {"yes"}})
+		if err != nil {
+			t.Fatalf("parseFilter(via=review,decision=yes) error = %v, want nil", err)
+		}
+		if !yes.ReviewOnly {
+			t.Errorf("ReviewOnly = false, want true")
+		}
+		wantYes := []string{audit.ActionFaceAssign, audit.ActionLabelAttach}
+		if len(yes.Actions) != 2 || yes.Actions[0] != wantYes[0] || yes.Actions[1] != wantYes[1] {
+			t.Errorf("Actions = %v, want %v", yes.Actions, wantYes)
+		}
+
+		no, err := parseFilter(url.Values{"decision": {"no"}})
+		if err != nil {
+			t.Fatalf("parseFilter(decision=no) error = %v, want nil", err)
+		}
+		wantNo := []string{audit.ActionFaceReject, audit.ActionLabelReject}
+		if no.ReviewOnly {
+			t.Errorf("ReviewOnly = true, want false without via")
+		}
+		if len(no.Actions) != 2 || no.Actions[0] != wantNo[0] || no.Actions[1] != wantNo[1] {
+			t.Errorf("Actions = %v, want %v", no.Actions, wantNo)
+		}
+	})
+
 	t.Run("rejects bad values", func(t *testing.T) {
 		t.Parallel()
 		bad := []url.Values{
@@ -52,6 +79,8 @@ func TestParseFilter(t *testing.T) {
 			{"limit": {"-1"}},
 			{"limit": {"abc"}},
 			{"offset": {"-5"}},
+			{"via": {"import"}},
+			{"decision": {"maybe"}},
 		}
 		for _, q := range bad {
 			if _, err := parseFilter(q); err == nil {

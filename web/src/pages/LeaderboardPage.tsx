@@ -59,7 +59,7 @@ function parseWindow(raw: string | null): LeaderboardWindow {
  */
 export function LeaderboardPage() {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [reloadKey, reload] = useReloadKey()
 
@@ -176,7 +176,16 @@ export function LeaderboardPage() {
                     )}
                   </td>
                   <td>
-                    {entry.display_name}
+                    {isAdmin ? (
+                      <Link
+                        to={`/audit/reviews?user=${encodeURIComponent(entry.user_uid)}`}
+                        aria-label={t('leaderboard.viewDecisions', { name: entry.display_name })}
+                      >
+                        {entry.display_name}
+                      </Link>
+                    ) : (
+                      entry.display_name
+                    )}
                     {isMe && (
                       <Badge bg="primary" className="ms-2">
                         {t('leaderboard.you')}

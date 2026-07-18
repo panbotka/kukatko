@@ -112,6 +112,47 @@
     "notOnBoard": {
       "hint": "You're not on the board yet.",
       "action": "Start sorting"
+    },
+    "viewDecisions": "View {{name}}'s decisions"
+  },
+  "reviewDecisions": {
+    "title": "Review decisions",
+    "subtitle": "Every Yes/No this user recorded in the review game.",
+    "adminOnly": "This view is available to administrators only.",
+    "back": "Back to the leaderboard",
+    "loading": "Loading decisions…",
+    "error": "The decisions could not be loaded.",
+    "total": "Total",
+    "noUser": {
+      "title": "No user selected",
+      "hint": "Open a player from the leaderboard to see their decisions."
+    },
+    "filter": {
+      "label": "Filter decisions",
+      "all": "All"
+    },
+    "decision": {
+      "yes": "Yes",
+      "no": "No"
+    },
+    "kind": {
+      "face": "Person",
+      "label": "Label"
+    },
+    "columns": {
+      "photo": "Photo",
+      "decision": "Decision",
+      "subject": "Person or label",
+      "when": "When"
+    },
+    "empty": {
+      "title": "No decisions",
+      "hint": "This user has no recorded decisions for the current filter."
+    },
+    "pagination": {
+      "range": "Showing {{from}}–{{to}} of {{total}}",
+      "prev": "Previous",
+      "next": "Next"
     }
   },
   "language": {
