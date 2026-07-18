@@ -1,48 +1,141 @@
 /*
- * Design token layer — the single source of truth for spacing, radii, elevation,
- * motion and the typography scale.
+ * Design token layer — the single source of truth for the colour surfaces, the
+ * accent, spacing, radii, elevation, motion and the typography scale.
  *
- * Bootswatch Superhero stays the base theme (a binding rule). This file is a
- * *layer on top of it*: it never redefines Bootstrap's own `--bs-*` variables
- * except where a component opts in, so upgrading Bootswatch stays safe. Every
- * value is exposed as a `--kk-*` custom property; components consume the tokens
- * (or the semantic classes below) instead of hard-coding pixels.
+ * Bootswatch Superhero is still the base stylesheet we compile against, but the
+ * visual identity here is deliberately NOT stock Superhero. Superhero paints its
+ * whole chrome in a saturated navy; a photo library must do the opposite — the
+ * only saturated thing on screen should be a photograph. So this layer repaints
+ * the app chrome as a calm, slightly-warm near-black ramp and reserves a single
+ * cool accent for interaction, so photos pop against a desaturated frame. Every
+ * value is exposed as a `--kk-*` custom property (or a semantic class below);
+ * components consume the tokens, never raw colours or pixels.
  *
- * Imported once, at the app root (`main.tsx`), before `app.css` so the polish
- * layer can consume the tokens.
- *
- * Why the shadows look the way they do: Superhero is a dark theme, and a plain
- * dark drop shadow is nearly invisible against a dark navy surface. Elevation is
- * therefore expressed as a *pair* — a darker-than-background drop shadow plus a
- * 1px top highlight ring (`inset 0 1px 0`) that catches the imaginary light and
- * gives the surface an edge without a heavy border.
+ * The layer sits ON TOP of Bootstrap: it never redefines `--bs-*` variables
+ * globally, with one sanctioned exception — the *theme root* below, where the
+ * app's colour identity (page / surface tokens + the accent) is pinned. Imported
+ * once, at the app root (`main.tsx`), before `app.css` so the polish layer can
+ * consume the tokens.
  */
 
 /*
- * Theme root — keep Superhero's navy under Bootstrap's dark scheme.
+ * Theme root — the app's colour identity.
  *
- * The app runs with `data-bs-theme="dark"` on <html> (set in index.html) so that
- * Bootstrap's *dark* surface tokens apply everywhere — without it Superhero leaves
- * `--bs-tertiary-bg`, `--bs-secondary-bg(-subtle)` and `--bs-emphasis-color` at
- * light values on `:root`, which paints `.bg-body-tertiary` panels and skeletons
- * near-white while the body text is also near-white (invisible labels; the library
- * filter panel bug). But Superhero's `[data-bs-theme=dark]` block also swaps the
- * page background from its signature navy (#0f2537) to a neutral charcoal (#212529)
- * and dims the body text. We want the dark *surfaces* without losing the navy
- * *identity*, so re-pin just the page background and body colour back to Superhero's
- * root values. This keeps every already-correct screen — and the navy-derived
- * `--kk-surface-*` color-mixes below — pixel-identical, while the broken light
- * surfaces finally resolve dark. Specificity (`:root[...]`) beats Bootstrap's own
- * `[data-bs-theme=dark]`.
+ * The app runs with `data-bs-theme="dark"` on <html> (set in index.html) so
+ * Bootstrap's *dark* surface tokens apply everywhere — without it Superhero
+ * leaves `--bs-tertiary-bg`, `--bs-secondary-bg(-subtle)` and
+ * `--bs-emphasis-color` at light values on `:root`, painting `.bg-body-tertiary`
+ * panels and skeletons near-white under near-white text (invisible labels; the
+ * library filter-panel bug). But Superhero's own dark block is a cool charcoal
+ * and its light block a saturated navy — neither is the neutral, photo-first
+ * surface we want. So this block re-pins the handful of Bootstrap surface +
+ * accent variables that carry the identity to the warm near-black ramp and cool
+ * accent defined as `--kk-*` tokens below. Specificity (`:root[...]`) beats
+ * Bootstrap's own `[data-bs-theme=dark]`. Every re-pin points at a token so the
+ * palette lives in exactly one place; the `-rgb` triples (which Bootstrap needs
+ * for its `rgba(var(--…-rgb), α)` utilities and cannot read from a hex var)
+ * mirror the matching hex token by hand.
  */
 :root[data-bs-theme='dark'] {
-  --bs-body-bg: #0f2537;
-  --bs-body-bg-rgb: 15, 37, 55;
-  --bs-body-color: #ebebeb;
-  --bs-body-color-rgb: 235, 235, 235;
+  /* Page background + body text. */
+  --bs-body-bg: var(--kk-surface-page);
+  --bs-body-bg-rgb: 21, 19, 15;
+  --bs-body-color: var(--kk-text);
+  --bs-body-color-rgb: 236, 234, 229;
+  --bs-secondary-color: var(--kk-text-muted);
+
+  /* Surface roles → the warm elevation ramp. `.bg-body-tertiary` panels take
+     surface-1; `.bg-body-secondary`, cards and popovers the raised level;
+     skeletons the deepest sunken tone. */
+  --bs-tertiary-bg: var(--kk-surface-1);
+  --bs-tertiary-bg-rgb: 31, 27, 22;
+  --bs-secondary-bg: var(--kk-surface-raised);
+  --bs-secondary-bg-subtle: #1a1712;
+  --bs-card-bg: var(--kk-surface-raised);
+  --bs-border-color: var(--kk-surface-border);
+  --bs-border-color-rgb: 66, 59, 49;
+
+  /* The navbar renders `bg="dark"` (i.e. `--bs-dark`); point it at surface-1 so
+     the bar reads as warm chrome resting just above the page rather than
+     Superhero's stray navy. */
+  --bs-dark: var(--kk-surface-1);
+  --bs-dark-rgb: 31, 27, 22;
+
+  /* The one accent. Links, active nav and the focus ring use the light tint
+     (`--kk-accent`, legible as text on the near-black surfaces); solid fills
+     (`.btn-primary`, `.bg-primary`/`.text-bg-primary`, the nav CTA) use the
+     deeper `--kk-accent-solid`, which carries white text at AA. Bootswatch bakes
+     `.btn-primary`'s colours in as literals, so that one control is re-pointed
+     in `app.css`; everything else follows these variables. */
+  --bs-primary: var(--kk-accent-solid);
+  --bs-primary-rgb: 44, 111, 178;
+  --bs-link-color: var(--kk-accent);
+  --bs-link-color-rgb: 95, 176, 242;
+  --bs-link-hover-color: var(--kk-accent-hover);
+  --bs-link-hover-color-rgb: 134, 196, 245;
+  --bs-navbar-active-color: var(--kk-accent);
+
+  /* Bootstrap's derived primary tints (`.text-primary-emphasis`,
+     `.bg-primary-subtle`, `.alert-primary`, …). Superhero derives these from
+     orange; re-point them at the azure family so no primary-tinted surface
+     leaks the old hue. */
+  --bs-primary-text-emphasis: var(--kk-accent);
+  --bs-primary-bg-subtle: var(--kk-accent-subtle);
+  --bs-primary-border-subtle: color-mix(
+    in srgb,
+    var(--kk-accent-solid) 55%,
+    var(--kk-surface-page)
+  );
 }
 
 :root {
+  /* ---- Accent ---------------------------------------------------------
+     One cool azure, spent sparingly — links, active nav, the primary action —
+     and nowhere else, so photographs stay the only saturated thing on screen.
+     Azure is a deliberate pick, not Superhero's orange and not a default acid
+     hue: the three entity hues are already spoken for (violet = album,
+     teal = tag, rose = person), red is `danger`, orange is the rejected
+     default — azure is the one clear, unclaimed hue. A *cool* accent on *warm*
+     chrome also reads unmistakably as "interface" and never blends into
+     (warm-leaning) photo content.
+
+     Two tones keep both roles at WCAG AA: `--kk-accent` (light) is legible as
+     text on the near-black surfaces; `--kk-accent-solid` (deep) carries white
+     text as a fill. `--kk-accent-subtle` is a barely-there tint for a resting
+     accent surface (an active nav pill). */
+  --kk-accent: #5fb0f2;
+  --kk-accent-hover: #86c4f5;
+  --kk-accent-solid: #2c6fb2;
+  --kk-accent-solid-hover: #255f99;
+  --kk-accent-subtle: color-mix(in srgb, var(--kk-accent-solid) 18%, var(--kk-surface-page));
+  --kk-on-accent: #fff;
+
+  /* ---- Surfaces & elevation ------------------------------------------
+     A slightly-warm near-black ramp. Elevation is expressed as a background
+     LEVEL plus a hairline border — not a heavy drop shadow, which is nearly
+     invisible on near-black anyway. Four levels above a sunken well:
+       page     — the app background                         (elevation 0)
+       1        — a panel resting on the page                (elevation 1)
+       raised   — a card or row above a panel; the card fill (elevation 2)
+       overlay  — a popover / menu / lightbox chrome         (elevation 3)
+       sunken   — below the page: a thumbnail well, a field
+     The warmth is a whisper of amber (R > G > B by a hair) — enough to keep the
+     black off a dead-LCD blue-grey, not enough to read as brown. `border` is the
+     hairline that separates one level from the next. */
+  --kk-surface-page: #15130f;
+  --kk-surface-1: #1f1b16;
+  --kk-surface-raised: #2a251e;
+  --kk-surface-overlay: #363028;
+  --kk-surface-sunken: #100e0b;
+  --kk-surface-border: #423b31;
+
+  /* ---- Text -----------------------------------------------------------
+     A warm off-white, kept in the same temperature family as the chrome.
+     `muted` is that colour at reduced alpha; it stays above the Superhero muted
+     baseline for contrast (the audit's open muted-text gap must not widen). */
+  --kk-text: #eceae5;
+  --kk-text-muted: rgb(236 234 229 / 72%);
+
   /* ---- Spacing scale -------------------------------------------------
      A 4px-based scale. Use these for gaps, padding and margins that
      Bootstrap's own `p-*`/`m-*`/`gap-*` utilities cannot express (grid gaps,
@@ -56,34 +149,25 @@
   --kk-space-7: 3rem; /* 48px — hero / empty-state breathing room */
 
   /* ---- Border radii ---------------------------------------------------
-     `sm` for controls and chips, `md` for cards/tiles, `lg` for panels and
-     modals, `pill` for badges and toggles. */
-  --kk-radius-sm: 0.375rem;
-  --kk-radius-md: 0.625rem;
+     One coherent corner. `md` is the canonical radius for cards, tiles and
+     panels; `sm` for controls and chips; `lg` for large modals; `pill` for
+     badges and toggles. A simple 8 / 12 / 16 rhythm — softer and more
+     deliberate than Bootstrap's default 0.375rem. */
+  --kk-radius-sm: 0.5rem;
+  --kk-radius-md: 0.75rem;
   --kk-radius-lg: 1rem;
   --kk-radius-pill: 62.5rem;
 
-  /* ---- Elevation ------------------------------------------------------
-     Four steps, each a drop shadow + top highlight. `0` is the flat resting
-     state, `1` is a card at rest, `2` a card under the pointer, `3` a lifted
-     tile or an overlay. Above `3` use Bootstrap's own modal/backdrop chrome. */
+  /* ---- Elevation shadows ---------------------------------------------
+     Kept intentionally light: elevation is carried by the surface ramp and the
+     hairline border, so the shadow only adds a soft grounding plus a 1px top
+     highlight (`inset 0 1px 0`) that catches an imaginary light. `0` is flat,
+     `1` a card at rest, `2` a card under the pointer; `3` is the exception — a
+     lifted tile or a floating overlay earns a real cast shadow. */
   --kk-shadow-0: none;
-  --kk-shadow-1:
-    0 1px 2px rgb(0 0 0 / 24%), 0 2px 6px rgb(0 0 0 / 16%), inset 0 1px 0 rgb(255 255 255 / 4%);
-  --kk-shadow-2:
-    0 2px 4px rgb(0 0 0 / 28%), 0 6px 16px rgb(0 0 0 / 22%), inset 0 1px 0 rgb(255 255 255 / 6%);
-  --kk-shadow-3:
-    0 4px 8px rgb(0 0 0 / 32%), 0 12px 28px rgb(0 0 0 / 28%), inset 0 1px 0 rgb(255 255 255 / 8%);
-
-  /* ---- Surfaces -------------------------------------------------------
-     Both are derived from the page background so they follow the theme.
-     `raised` is a panel or row sitting above the page. It is deliberately NOT
-     Superhero's card colour (`#4e5d6c`): that colour is also `secondary`, so an
-     `outline-secondary` button placed on it becomes invisible — its border and
-     label are exactly the surface. `sunken` is the well a thumbnail loads into,
-     so an unloaded tile reads as a quiet hole rather than a bright block. */
-  --kk-surface-raised: color-mix(in srgb, var(--bs-body-bg) 90%, #fff 10%);
-  --kk-surface-sunken: color-mix(in srgb, var(--bs-body-bg) 88%, #000 12%);
+  --kk-shadow-1: 0 1px 2px rgb(0 0 0 / 30%), inset 0 1px 0 rgb(255 255 255 / 4%);
+  --kk-shadow-2: 0 2px 6px rgb(0 0 0 / 34%), inset 0 1px 0 rgb(255 255 255 / 6%);
+  --kk-shadow-3: 0 10px 28px rgb(0 0 0 / 46%), inset 0 1px 0 rgb(255 255 255 / 8%);
 
   /* ---- Motion ---------------------------------------------------------
      Three durations. `fast` for a colour/opacity swap under the pointer,
@@ -95,10 +179,11 @@
   --kk-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- Focus ring -----------------------------------------------------
-     Keyboard focus is never traded away for looks. The ring is the theme's
-     `info` cyan, which reads clearly against both the navy page and an
-     arbitrary photo thumbnail. */
-  --kk-focus-ring-color: var(--bs-info, #5bc0de);
+     One ring, used everywhere a control takes keyboard focus. It is the accent
+     azure: bright enough to read against both the near-black chrome and an
+     arbitrary photo thumbnail, and the offset keeps a clear gap so the ring
+     survives even on an element that is already accent-coloured (active nav). */
+  --kk-focus-ring-color: var(--kk-accent);
   --kk-focus-ring-width: 3px;
   --kk-focus-ring-offset: 2px;
 
@@ -110,10 +195,9 @@
      of painting every album/label chip in Superhero's primary orange, which
      made albums and tags indistinguishable ("it just adds orange boxes").
 
-     The three hues — violet / teal / rose — are clearly apart from one another
-     and from the roles already reserved on this theme: orange (`primary`),
-     cyan (`info`/focus) and red (`danger`, the chip's close affordance). Each
-     background is dark enough to carry white text at ≥ 5:1 contrast on the navy
+     The three hues — violet / teal / rose — are clearly apart from one another,
+     from the cool azure accent, and from `danger` red (a chip's close
+     affordance). Each background carries white text at ≥ 5:1 on the near-black
      page. Colour is only ever an aid: every entity chip also keeps its text
      label and a leading icon (see `components/entityStyle.ts`), so the
      distinction survives for colour-blind readers. */
@@ -123,17 +207,22 @@
   --kk-entity-fg: #fff;
 
   /* ---- Typography scale -----------------------------------------------
-     Exactly three text roles plus a caption. Components use the classes below
-     and never set `font-size` themselves. */
-  --kk-font-size-page-title: 1.75rem;
+     A small modular scale (~1.2–1.25 per step): display / page-title /
+     section-title / body / caption. Components use the classes below and never
+     set `font-size` themselves. Headings are tracked slightly tight so they
+     read as considered rather than shouted; the eyebrow is tracked wide. */
+  --kk-font-size-display: 1.875rem;
+  --kk-line-height-display: 1.15;
+  --kk-font-size-page-title: 1.5rem;
   --kk-line-height-page-title: 1.2;
-  --kk-font-size-section-title: 1.125rem;
-  --kk-line-height-section-title: 1.35;
+  --kk-font-size-section-title: 1.25rem;
+  --kk-line-height-section-title: 1.3;
   --kk-font-size-body: 1rem;
   --kk-line-height-body: 1.55;
   --kk-font-size-caption: 0.8125rem;
   --kk-line-height-caption: 1.4;
   --kk-tracking-tight: -0.01em;
+  --kk-tracking-display: -0.02em;
   --kk-tracking-wide: 0.04em;
 }
 
@@ -152,6 +241,18 @@
 }
 
 /* ---- Typography ------------------------------------------------------- */
+
+/*
+ * The display size — the largest step, for a hero numeral or a single big
+ * figure (a count on an empty state, a stat). Reach for it deliberately; a
+ * route still opens on `.kk-page-title`, not this.
+ */
+.kk-display {
+  font-size: var(--kk-font-size-display);
+  line-height: var(--kk-line-height-display);
+  font-weight: 600;
+  letter-spacing: var(--kk-tracking-display);
+}
 
 /*
  * The page title. Exactly one per route, on the `<h1>`. Replaces the ad-hoc
@@ -203,13 +304,15 @@
 /* ---- Surfaces and elevation ------------------------------------------- */
 
 /*
- * Cards trade their border for elevation, keeping Superhero's card colour.
- * Bootstrap draws the card border from `--bs-card-border-color`, so overriding
- * that variable (rather than the `border` shorthand) leaves `.border-primary`
- * and friends free to paint an intentional, semantic border on top.
+ * Cards read as elevation via the raised surface fill plus a hairline border,
+ * with only a soft grounding shadow. Bootstrap draws the card border from
+ * `--bs-card-border-color`, so pointing that variable at the hairline (rather
+ * than the `border` shorthand) leaves `.border-primary` and friends — which set
+ * `border-color` with `!important` — free to paint an intentional, semantic
+ * border on top.
  */
 .card {
-  --bs-card-border-color: transparent;
+  --bs-card-border-color: var(--kk-surface-border);
   --bs-card-border-radius: var(--kk-radius-md);
   --bs-card-inner-border-radius: calc(var(--kk-radius-md) - 1px);
 
@@ -219,10 +322,11 @@
 
 /*
  * A generic raised surface for panels that are not `.card` (sidebars, inline
- * detail panels).
+ * detail panels): the raised fill, the hairline, the coherent corner.
  */
 .kk-surface {
   background-color: var(--kk-surface-raised);
+  border: 1px solid var(--kk-surface-border);
   border-radius: var(--kk-radius-md);
   box-shadow: var(--kk-shadow-1);
 }
@@ -237,6 +341,7 @@
  * `.kk-tile` goes on the interactive element (a link, a button, a list item);
  * `.kk-tile__media` on the thumbnail box it contains. Splitting the two keeps
  * the lift on the whole tile while the shadow hugs the image's rounded corners.
+ * The media box carries no hairline — a photograph defines its own edge.
  */
 .kk-tile {
   border-radius: var(--kk-radius-md);
@@ -290,11 +395,13 @@
  * in a stack has nowhere to lift to without colliding with its neighbours.
  */
 .kk-tile-row {
-  /* Rendered as a `.list-group-item`, whose border is drawn from this variable;
-     zeroing it (rather than the `border` shorthand) also disables Bootstrap's
-     adjacent-sibling border collapsing, so gapped rows keep a uniform box. */
+  /* Rendered as a `.list-group-item`, whose own border is drawn from this
+     variable; zeroing it (rather than the `border` shorthand) also disables
+     Bootstrap's adjacent-sibling border collapsing, so gapped rows keep a
+     uniform box. The hairline is then re-added explicitly below. */
   --bs-list-group-border-width: 0;
 
+  border: 1px solid var(--kk-surface-border);
   border-radius: var(--kk-radius-md);
   background-color: var(--kk-surface-raised);
   box-shadow: var(--kk-shadow-1);
@@ -354,7 +461,7 @@
 
 .kk-back-link:hover,
 .kk-back-link:focus-visible {
-  color: var(--bs-link-hover-color, var(--bs-primary, #df691a));
+  color: var(--bs-link-hover-color, var(--kk-accent-hover));
   text-decoration: underline;
 }
 
@@ -492,6 +599,7 @@
   width: 4rem;
   height: 4rem;
   margin-bottom: var(--kk-space-1);
+  border: 1px solid var(--kk-surface-border);
   border-radius: var(--kk-radius-pill);
   background-color: var(--kk-surface-raised);
   box-shadow: var(--kk-shadow-1);
@@ -501,7 +609,7 @@
 /*
  * `--bs-emphasis-color` is `#000` at Superhero's root (the theme only flips it
  * inside `[data-bs-theme="dark"]`), so the title takes the body colour instead
- * — otherwise it renders black on the navy page.
+ * — otherwise it renders black on the near-black page.
  */
 .kk-empty-state__title {
   margin: 0;
@@ -534,6 +642,7 @@
 
   /* Inside a tile's sunken well or a floating overlay the medallion would read
      as a second surface; the glyph alone is enough at this size. */
+  border: 0;
   background-color: transparent;
   box-shadow: none;
 }

@@ -1507,23 +1507,35 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   **světlých** hodnotách na `:root` a do tmy je překlápí až uvnitř `[data-bs-theme=dark]`, takže
   `.bg-body-tertiary` panely (advanced-filtr knihovny, `SelectionBar`, detail řádek auditu) i
   skeletony (`.bg-secondary-subtle`) se malovaly skoro bílé pod skoro bílým `--bs-body-color` =
-  neviditelné popisky (white-on-white). Protože Superhero v dark bloku zároveň mění navy pozadí
-  `#0f2537` na neutrální charcoal `#212529`, `:root[data-bs-theme='dark']` v `tokens.css` **re-pinuje
-  `--bs-body-bg`/`--bs-body-color` zpět na navy** — tmavé *povrchy* bez ztráty navy *identity*
-  (a `--kk-surface-*` color-mixy z `--bs-body-bg` zůstanou beze změny). Obsah: **spacing** `--kk-space-1..7` (4px
-  škála), **rádiusy** `--kk-radius-sm/md/lg/pill`, **elevace** `--kk-shadow-0..3` (na tmavém tématu
-  vždy dvojice: drop shadow + `inset 0 1px 0` horní highlight, jinak by stín na navy pozadí zanikl),
-  **povrchy** `--kk-surface-raised` (odvozený z `--bs-body-bg`; **záměrně není** Superhero
-  `--bs-card-bg` `#4e5d6c` — ta barva je zároveň `secondary`, takže `outline-secondary` tlačítko
-  na ní zmizí) a `--kk-surface-sunken` (jáma pod náhledem), **motion** `--kk-duration-fast/
-  base/slow` + `--kk-ease-standard`, **focus ring** `--kk-focus-ring-*`, **typografie**
-  `--kk-font-size-*`/`--kk-line-height-*`/`--kk-tracking-*`.
-  Sémantické třídy: **typografická škála** `.kk-page-title` (jedna na route, na `<h1>`),
-  `.kk-section-title` (nadpis panelu/sekce, `<h2>`/`<h3>`), `.kk-text-body`, `.kk-text-caption`,
-  `.kk-text-eyebrow` — komponenty **nenastavují vlastní `font-size`** (žádné `h3`/`h5`/`fs-5`
-  utility na nadpisech, žádné inline `fontSize`); **povrchy** `.card` (ztrácí těžký okraj přes
-  `--bs-card-border-color: transparent`, dostává `--kk-shadow-1`; `.border-primary` apod. stále
-  fungují) a `.kk-surface`; **dlaždice** `.kk-tile` + `.kk-tile__media` (bez okraje, elevace,
+  neviditelné popisky (white-on-white). Superhero navíc barví celý chrome do syté navy; foto-appka
+  musí opak — jediné syté na obrazovce má být fotka. `:root[data-bs-theme='dark']` v `tokens.css`
+  proto **re-pinuje hrstku `--bs-*` proměnných na vlastní identitu**: teple-neutrální **near-black**
+  ramp (`--bs-body-bg`/`-color`, `--bs-tertiary-`/`secondary-bg`, `--bs-card-bg`, `--bs-border-color`
+  a `--bs-dark` pro navbar) a **jeden chladný azurový akcent** (`--bs-primary`, `--bs-link-color`,
+  `--bs-navbar-active-color` + `--bs-primary-*-subtle/emphasis`). Každý re-pin míří na `--kk-*` token,
+  takže paleta žije na jednom místě. Obsah: **akcent** `--kk-accent` (světlý — text/link/focus na
+  tmavých povrchech), `--kk-accent-hover`, `--kk-accent-solid` (tmavší — výplň s bílým textem v AA),
+  `--kk-accent-solid-hover`, `--kk-accent-subtle`, `--kk-on-accent` (azura je záměrná volba, ne
+  oranžová: tři entitní odstíny jsou obsazené, `danger` je červená, tak zbývá jeden nezabraný hue, a
+  chladný akcent na teplém chromu se nepere s fotkami); **povrchy + elevace** — warm-near-black ramp
+  `--kk-surface-page`/`-1`/`-raised`/`-overlay` + `--kk-surface-sunken` (jáma) a `--kk-surface-border`
+  (vlásková linka); elevace se čte z **úrovně povrchu + vlásková linka**, ne z těžkého stínu
+  (`--kk-shadow-0..3` jsou proto lehké — jen jemné ukotvení + `inset 0 1px 0` horní highlight; `3` je
+  výjimka pro zvednutou dlaždici/overlay); **text** `--kk-text`/`--kk-text-muted` (teplá bílá, muted
+  nad Superhero baseline kontrastem); **spacing** `--kk-space-1..7` (4px škála), **rádiusy**
+  `--kk-radius-sm/md/lg/pill` (jeden souvislý roh, 8/12/16 rytmus; `md` je kanonický), **motion**
+  `--kk-duration-fast/base/slow` + `--kk-ease-standard`, **focus ring** `--kk-focus-ring-*` (barva =
+  azurový akcent, jeden viditelný prstenec všude), **typografie** modulární škála (~1.2–1.25 krok)
+  `--kk-font-size-display`/`-page-title`/`-section-title`/`-body`/`-caption` + `--kk-line-height-*`/
+  `--kk-tracking-*`.
+  Sémantické třídy: **typografická škála** `.kk-display` (největší krok — hero číslo/statistika),
+  `.kk-page-title` (jedna na route, na `<h1>`), `.kk-section-title` (nadpis panelu/sekce,
+  `<h2>`/`<h3>`), `.kk-text-body`, `.kk-text-caption`, `.kk-text-eyebrow` — komponenty **nenastavují
+  vlastní `font-size`** (žádné `h3`/`h5`/`fs-5` utility na nadpisech, žádné inline `fontSize`);
+  **povrchy** `.card` (elevace přes raised výplň + vlásková linka `--bs-card-border-color:
+  var(--kk-surface-border)` a `--kk-shadow-1`; `.border-primary` apod. stále fungují) a `.kk-surface`
+  (raised + linka); **dlaždice** `.kk-tile` + `.kk-tile__media` (bez okraje — fotka má vlastní hranu,
+  elevace,
   hover/focus lift na `--kk-shadow-3` — používají `AlbumTile`, `SubjectTile`, `PhotoTile`;
   `:focus-within` pokrývá `PhotoTile`, kde je fokusovatelný až vnitřní odkaz) a `.kk-tile-row`
   (řádková varianta pro seznam štítků — místo liftu se zvýrazní pozadím, protože řádek v sloupci
@@ -1541,8 +1553,8 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (`OrganizePanel`), pruh badgí nad fotkou (`OrganizeBadges`) a `GlobalSearchSections` — barevný
   jazyk je tak konzistentní, ne jednorázový.
   Barva je **jen doplněk**: chip vždy nese i textový popisek a vodicí ikonu (album `collection` /
-  tag `tags` / osoba `person-circle`), aby rozlišení přežilo pro barvoslepé; bílý text má na navy
-  kontrast ≥ 5:1. Neutrální filtry (rok, hodnocení, flag…) zůstávají `text-bg-primary`;
+  tag `tags` / osoba `person-circle`), aby rozlišení přežilo pro barvoslepé; bílý text má na
+  near-black pozadí kontrast ≥ 5:1. Neutrální filtry (rok, hodnocení, flag…) zůstávají `text-bg-primary`;
   **appear** `.kk-appear` (jednorázový fade-up).
   **Focus outline se nikdy neodstraňuje** — `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible`
   kreslí `outline` (přežije `overflow: hidden` náhledu). **`prefers-reduced-motion`**: token
@@ -1561,10 +1573,15 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link` + větší `.form-check-input`,
   bez zásahu do desktop (fine-pointer) layoutu a bez per-komponentových změn (systémová oprava
   všudypřítomných `size="sm"` ovládání);
-  **native form chrome** `.form-control`/`.form-select { color-scheme: light }` — Superhero maluje
-  form-controly bíle bez ohledu na téma, takže pod `color-scheme: dark` stránky by prohlížeč kreslil
-  jejich nativní části (placeholder a glyf kalendáře u `type=date`, dropdown selectu) světle =
-  neviditelné na bílém poli; připnutí ovládacích prvků na světlé schéma je vykreslí tmavě-na-bílém;
+  **native form chrome** — Superhero peče `.form-control`/`.form-select` bíle (`#fff`) bez ohledu na
+  téma; místo připnutí na světlé schéma jim dáváme reálný tmavý povrch `--kk-surface-sunken` s
+  vláskovou linkou a `color-scheme: dark` (výplň i schéma souhlasí, takže nativní glyfy — kalendář
+  `type=date`, list selectu — jsou světlé-na-tmavém a viditelné); chevron selectu je světle tažená
+  kopie přes `--bs-form-select-bg-img`; **akcent na bake-nutých ovládáních** — Bootswatch peče
+  oranžovou výplň napřímo (ne přes `--bs-primary`), tak ji `app.css` přepisuje na azuru:
+  `.btn-primary`/`.btn-outline-primary`, `.form-check-input:checked`/indeterminate, `.form-range`
+  thumb, `.progress-bar` (+ track jako jáma), `.dropdown-menu` (warm overlay + aktivní položka),
+  `.list-group` aktivní řádek a `.navbar.kukatko-navbar` aktivní odkaz;
   **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
   okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
   none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`
