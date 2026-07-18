@@ -1,8 +1,10 @@
 // Package auditapi exposes the admin-only HTTP API over the durable audit trail
 // (internal/audit). It serves a single read endpoint, GET /audit, that lists
 // audit entries newest-first with optional filters (acting user, entity type and
-// UID, action, created-at date range) and limit/offset pagination, plus the
-// total matching count so the admin UI can page. The audit log is write-only
+// UID, action, review-game decisions via=review, Ano/Ne bucket decision=yes|no,
+// created-at date range) and limit/offset pagination, plus the total matching
+// count so the admin UI can page. The via=review and decision filters back the
+// admin per-user review-decision view. The audit log is write-only
 // from the application's side — entries are appended within mutation
 // transactions elsewhere — so this package never mutates it.
 package auditapi
@@ -107,16 +109,31 @@ const (
 	maxLimit     = 500
 )
 
+// Review decision buckets accepted by the decision query parameter. "yes" maps
+// to the confirmations (face.assign + label.attach), "no" to the rejections
+// (face.reject + label.reject). They partition the four review actions the
+// via=review filter admits, so the admin decision view can page Ano/Ne server-side.
+const (
+	decisionYes = "yes"
+	decisionNo  = "no"
+)
+
 // parseFilter builds an audit.Filter from the request query parameters,
 // validating the date range (RFC 3339) and the numeric pagination. Recognised
-// parameters: user, entity_type, entity_uid, action, since, until, limit,
-// offset. It returns an error for a malformed value.
+// parameters: user, entity_type, entity_uid, action, via, decision, since,
+// until, limit, offset. The via parameter accepts only "review" (restricting to
+// the review game's decisions); the decision parameter accepts "yes" or "no"
+// (the Ano/Ne action buckets); any other non-empty value is rejected. It returns
+// an error for a malformed value.
 func parseFilter(q queryValues) (audit.Filter, error) {
 	filter := audit.Filter{
 		ActorUID:   q.Get("user"),
 		TargetType: q.Get("entity_type"),
 		TargetUID:  q.Get("entity_uid"),
 		Action:     q.Get("action"),
+	}
+	if err := parseReviewFilter(q, &filter); err != nil {
+		return audit.Filter{}, err
 	}
 	since, err := parseTime(q.Get("since"))
 	if err != nil {
@@ -135,6 +152,29 @@ func parseFilter(q queryValues) (audit.Filter, error) {
 		return audit.Filter{}, errors.New("offset must be a non-negative integer")
 	}
 	return filter, nil
+}
+
+// parseReviewFilter applies the review-decision filters onto filter: via=review
+// restricts to the review game's decisions and decision=yes|no to the Ano/Ne
+// action bucket. It returns an error for an unsupported via or decision value.
+func parseReviewFilter(q queryValues, filter *audit.Filter) error {
+	switch via := q.Get("via"); via {
+	case "":
+	case "review":
+		filter.ReviewOnly = true
+	default:
+		return errors.New("via filter only supports 'review'")
+	}
+	switch decision := q.Get("decision"); decision {
+	case "":
+	case decisionYes:
+		filter.Actions = []string{audit.ActionFaceAssign, audit.ActionLabelAttach}
+	case decisionNo:
+		filter.Actions = []string{audit.ActionFaceReject, audit.ActionLabelReject}
+	default:
+		return errors.New("decision filter only supports 'yes' or 'no'")
+	}
+	return nil
 }
 
 // queryValues is the subset of url.Values parseFilter needs, so it can be tested

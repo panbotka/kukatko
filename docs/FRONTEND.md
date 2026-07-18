@@ -954,9 +954,24 @@ zapiš sem.
   `ListSkeleton` při načítání, `ErrorState` s retry (`useReloadKey`), **prázdný stav** (`EmptyState`
   „Zatím žádná rozhodnutí" + CTA na `/review`); je-li přihlášený mimo žebříček, tichý hint „Zatím
   nejste na žebříčku" s odkazem na `/review`. Board je malý (řádek na uživatele), takže **plain
-  tabulka bez virtualizace**. i18n `leaderboard.*` (cs/en). Testy: `LeaderboardPage.test.tsx` (řazené
-  standings + Ano/Ne split, zvýraznění vlastního řádku, přepnutí okna mění query param a refetchuje,
-  prázdný stav s odkazem na `/review`, top-3 medaile, not-on-board hint),
+  tabulka bez virtualizace**. **Pro admina (`isAdmin`) je jméno hráče odkaz** na jeho přehled
+  rozhodnutí (`/audit/reviews?user=…`, aria-label `leaderboard.viewDecisions`) → `ReviewDecisionsPage`;
+  non-admin vidí jen jméno bez prokliku. i18n `leaderboard.*` (cs/en). Testy: `LeaderboardPage.test.tsx`
+  (řazené standings + Ano/Ne split, zvýraznění vlastního řádku, přepnutí okna mění query param a
+  refetchuje, prázdný stav s odkazem na `/review`, top-3 medaile, not-on-board hint, **admin proklik /
+  non-admin plain jméno**),
+  `ReviewDecisionsPage` = `/audit/reviews` (admin **nebo** maintainer, `RequireRole role="admin"`)
+  **přehled review rozhodnutí jednoho uživatele** (dostupný proklikem z žebříčku): nad `GET /audit`
+  s `?via=review&user=…` (`fetchAuditLog`). Nahoře jméno uživatele + jeho **Ano/Ne/Celkem** tally
+  (dohledané z `fetchLeaderboard('all')`), pod tím **filtr Ano/Ne** (`ButtonGroup`, drží se v URL
+  query `decision`, `viewToAuditParams` mapuje na backend), tabulka **Fotka · Rozhodnutí · Osoba
+  nebo štítek · Kdy**: `thumbUrl(photo_uid,'tile_100')` přes `FadeInImage` (fallback prázdný well),
+  Ano/Ne `Badge` (`check-lg`/`x-lg`), jméno subjektu/štítku přeložené přes rostery
+  (`fetchSubjects`/`fetchLabels`, best-effort). Stránkování prev/next nad `offset`/`next_offset`
+  (limit 60), stav v URL (`user`/`decision`/`offset` — „Zpět vždy funguje"). Prázdný stav když
+  uživatel nemá rozhodnutí; bez vybraného uživatele hint zpět na žebříček; sebe-gate na `isAdmin`.
+  i18n `reviewDecisions.*` (cs/en). Testy: `ReviewDecisionsPage.test.tsx` (Ano/Ne split + thumbnaily,
+  tally z leaderboardu, filtr mění URL a refetchuje, prázdný stav, non-admin alert),
   `NotFoundPage`),
   `components/savedsearch/` = `SaveSearchModal` (modal pro pojmenování při uložení nového pohledu
   i přejmenování existujícího uloženého hledání) + `SavedSearchesDropdown` (dropdown v hlavičce
@@ -1342,6 +1357,12 @@ zapiš sem.
   + `AUDIT_PAGE_SIZE` (100) + `pickFilters` (view bez offsetu) + `viewToParams` (mapuje na
   `AuditListParams`, `since`/`until` z `YYYY-MM-DD` rozšíří na RFC 3339 hranice dne v UTC) — podklad
   `AuditPage`;
+  `reviewDecisions.ts` = view-model pro `ReviewDecisionsPage`: typ `ReviewDecisionsView`
+  (`user`/`decision`/`offset`, string-only pro URL) + `REVIEW_DECISIONS_DEFAULTS`
+  + `REVIEW_DECISIONS_PAGE_SIZE` (60) + `viewToAuditParams` (vždy `via:'review'` + `decision`)
+  + `toReviewDecision(record, subjects, labels)` mapuje audit záznam na `ReviewDecision`
+  (`verdict` Ano/Ne z akce, `kind` face/label, `photoUid`/`faceIndex`, cíl přeložený na jméno —
+  `subject_name` z details, jinak roster mapa, fallback UID) + `parseDecisionFilter`;
   `savedSearchView.ts` = pure `isSearchParams(params)` (přítomnost `mode` rozlišuje search od library
   pohledu) + `savedSearchHref(params)` (složí `pathname?query` na `LIBRARY_PATH` nebo `/search`, minimálně
   zakóduje uložené params proti defaultům přes `writeUrlState`, ignoruje neznámé/zastaralé klíče) —
@@ -1621,7 +1642,8 @@ zapiš sem.
   `audit.ts` = admin auditní klient nad `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
   `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializuje filtry
   (prázdné/nulový offset vynechá); typy `AuditRecord` (nullable `actor_uid`/`target_uid`/`ip`/
-  `user_agent`/`details`)/`AuditListParams`; sdílí `ApiError` z `auth.ts`. Pozor na názvosloví:
+  `user_agent`/`details`)/`AuditListParams` (vč. `via:'review'` + `decision:'yes'|'no'` pro admin
+  přehled review rozhodnutí); sdílí `ApiError` z `auth.ts`. Pozor na názvosloví:
   query params používají jména endpointu (`user`/`entity_type`/`entity_uid`), záznamy sloupce
   (`actor_uid`/`target_type`/`target_uid`),
   `i18n/` (i18next init — options jsou exportované jako `initOptions`, ať si je test může nabootit

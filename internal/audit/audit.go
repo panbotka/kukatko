@@ -329,6 +329,15 @@ type Filter struct {
 	TargetUID string
 	// Action restricts to one action label.
 	Action string
+	// Actions restricts to a set of action labels (action = ANY). An empty slice
+	// imposes no restriction; combined with Action both apply. It lets a caller
+	// select several related actions at once, such as the Ano bucket
+	// (face.assign + label.attach) of the review decision view.
+	Actions []string
+	// ReviewOnly restricts to the review game's decisive answers: audit rows
+	// tagged details.via = "review" (face.assign, label.attach, face.reject,
+	// label.reject). It backs the admin per-user decision view.
+	ReviewOnly bool
 	// Since restricts to entries created at or after this instant.
 	Since *time.Time
 	// Until restricts to entries created at or before this instant.
@@ -363,6 +372,16 @@ func (f Filter) buildWhere() (string, []any) {
 	}
 	if f.Action != "" {
 		add("action = $%d", f.Action)
+	}
+	if len(f.Actions) > 0 {
+		add("action = ANY($%d)", f.Actions)
+	}
+	if f.ReviewOnly {
+		// A literal predicate (not a bound parameter) so it matches the partial
+		// index idx_audit_log_review_actor character-for-character and the planner
+		// can use it. The 'review' marker must stay in step with viaReview in
+		// internal/review/answer.go and the predicate in migration 0037.
+		clauses = append(clauses, "details ->> 'via' = 'review'")
 	}
 	if f.Since != nil {
 		add("created_at >= $%d", *f.Since)

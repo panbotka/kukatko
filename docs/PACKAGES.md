@@ -1287,8 +1287,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `inAuditedTx` (auth); další domény (alba/štítky/lidé) následují stejnou konvenci), `internal/auditapi/`
   (admin-only HTTP API nad audit trailem: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
   mountuje `GET /audit` za `RequireAdmin`; `parseFilter` z query `user`/`entity_type`/`entity_uid`/
-  `action`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (neplatný čas/číslo → 400),
-  vrací `{entries,total,limit,offset,next_offset}` newest-first; jen čtení — zápisy jdou přes
+  `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (neplatný
+  čas/číslo/`via`/`decision` → 400), vrací `{entries,total,limit,offset,next_offset}` newest-first;
+  **`via=review`** → `Filter.ReviewOnly` (literál `details ->> 'via' = 'review'`, sedí na partial
+  index 0037), **`decision=yes|no`** → `Filter.Actions` (Ano = `face.assign`+`label.attach` / Ne =
+  `face.reject`+`label.reject`) — podklad pro admin per-user přehled review rozhodnutí; jen čtení — zápisy jdou přes
   mutační transakce jinde; mountuje se vždy posledním `server.WithAPI` (`buildAuditAPI` v
   `cmd/kukatko/audit.go`)), `internal/bulk/`
   (hromadná editace metadat: `Service` = `NewService(pool, maxBatch)` s `Apply(ctx, actorUID,

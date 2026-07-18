@@ -98,4 +98,32 @@ func TestFilterBuildWhere(t *testing.T) {
 			t.Errorf("buildWhere() args = %v, want [us-1 %s %v]", args, ActionPhotoArchive, since)
 		}
 	})
+
+	t.Run("review-only appends the literal via predicate", func(t *testing.T) {
+		t.Parallel()
+		where, args := Filter{ActorUID: "us-1", ReviewOnly: true}.buildWhere()
+		wantWhere := " WHERE actor_uid = $1 AND details ->> 'via' = 'review'"
+		if where != wantWhere {
+			t.Errorf("buildWhere() where = %q, want %q", where, wantWhere)
+		}
+		// The via predicate is a literal, not a bound parameter, so it matches the
+		// partial index idx_audit_log_review_actor and adds no argument.
+		if len(args) != 1 || args[0] != "us-1" {
+			t.Errorf("buildWhere() args = %v, want [us-1]", args)
+		}
+	})
+
+	t.Run("action set builds an ANY clause", func(t *testing.T) {
+		t.Parallel()
+		actions := []string{ActionFaceAssign, ActionLabelAttach}
+		where, args := Filter{ReviewOnly: true, Actions: actions}.buildWhere()
+		wantWhere := " WHERE action = ANY($1) AND details ->> 'via' = 'review'"
+		if where != wantWhere {
+			t.Errorf("buildWhere() where = %q, want %q", where, wantWhere)
+		}
+		got, ok := args[0].([]string)
+		if len(args) != 1 || !ok || len(got) != 2 || got[0] != ActionFaceAssign || got[1] != ActionLabelAttach {
+			t.Errorf("buildWhere() args = %v, want [[face.assign label.attach]]", args)
+		}
+	})
 }

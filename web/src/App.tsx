@@ -29,6 +29,7 @@ import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PlacesPage } from './pages/PlacesPage'
 import { RecognitionPage } from './pages/RecognitionPage'
+import { ReviewDecisionsPage } from './pages/ReviewDecisionsPage'
 import { ReviewPage } from './pages/ReviewPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
 import { SearchPage } from './pages/SearchPage'
@@ -115,6 +116,9 @@ export function AppRoutes() {
           <Route element={<RequireRole role="admin" />}>
             <Route path="/users" element={<UsersPage />} />
             <Route path="/audit" element={<AuditPage />} />
+            {/* One user's review decisions, reached by clicking a player on the
+                leaderboard: inspecting who sorted what is governance, admin only. */}
+            <Route path="/audit/reviews" element={<ReviewDecisionsPage />} />
           </Route>
           <Route path="/account" element={<AccountPage />} />
           <Route path="*" element={<NotFoundPage />} />

@@ -86,6 +86,10 @@ export interface AuditListParams {
   action?: string
   entity_type?: string
   entity_uid?: string
+  /** Restricts to the review game's decisions (audit rows tagged via=review). */
+  via?: 'review'
+  /** Restricts to the Ano (`yes`) or Ne (`no`) review-decision bucket. */
+  decision?: 'yes' | 'no'
   since?: string
   until?: string
   limit?: number
@@ -107,6 +111,8 @@ function buildAuditQuery(params: AuditListParams): string {
   setString('action', params.action)
   setString('entity_type', params.entity_type)
   setString('entity_uid', params.entity_uid)
+  setString('via', params.via)
+  setString('decision', params.decision)
   setString('since', params.since)
   setString('until', params.until)
   if (params.limit !== undefined) {

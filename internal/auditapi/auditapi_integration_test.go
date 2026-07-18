@@ -70,6 +70,19 @@ func (e *env) seed(t *testing.T, entries ...audit.Entry) {
 	}
 }
 
+// createUser creates a user with the given role and returns its UID, so a seeded
+// audit row can be attributed to it (audit_log.actor_uid references users.uid).
+func (e *env) createUser(t *testing.T, username string, role auth.Role) string {
+	t.Helper()
+	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
+		Username: username, Password: testPassword, Role: role,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser(%s): %v", username, err)
+	}
+	return user.UID
+}
+
 // login creates a user with the given role and returns a cookie-bearing client.
 func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
 	t.Helper()
@@ -158,6 +171,104 @@ func TestListFiltersAndPagination(t *testing.T) {
 	defer func() { _ = bad.Body.Close() }()
 	if bad.StatusCode != http.StatusBadRequest {
 		t.Errorf("invalid since status = %d, want 400", bad.StatusCode)
+	}
+}
+
+// reviewRows returns the four review-game decisions (two Ano, two Ne) attributed
+// to actorUID, tagged details.via = "review" as the answer path stamps them.
+func reviewRows(actorUID string) []audit.Entry {
+	return []audit.Entry{
+		{ActorUID: actorUID, Action: audit.ActionFaceAssign, TargetType: "markers", TargetUID: "mk-1",
+			Details: map[string]any{
+				"via": "review", "photo_uid": "ph-1", "subject_uid": "su-1", "subject_name": "Alice", "face_index": 0,
+			}},
+		{ActorUID: actorUID, Action: audit.ActionLabelAttach, TargetType: "labels", TargetUID: "lb-1",
+			Details: map[string]any{"via": "review", "photo_uid": "ph-2", "source": "manual"}},
+		{ActorUID: actorUID, Action: audit.ActionFaceReject, TargetType: "subjects", TargetUID: "su-2",
+			Details: map[string]any{"via": "review", "photo_uid": "ph-3", "face_index": 1}},
+		{ActorUID: actorUID, Action: audit.ActionLabelReject, TargetType: "labels", TargetUID: "lb-2",
+			Details: map[string]any{"via": "review", "photo_uid": "ph-4"}},
+	}
+}
+
+// TestReviewDecisionFilter verifies the admin endpoint can isolate one user's
+// review-game decisions, split them into the Ano/Ne buckets, page them, and stays
+// admin-only. It seeds review and non-review rows for two users so the filter's
+// selectivity (by actor and by via=review) is exercised.
+func TestReviewDecisionFilter(t *testing.T) {
+	env := newEnv(t)
+	admin := env.login(t, "admin", auth.RoleAdmin)
+	actorA := env.createUser(t, "actor-a", auth.RoleEditor)
+	actorB := env.createUser(t, "actor-b", auth.RoleEditor)
+
+	seed := reviewRows(actorA)
+	// Non-review noise for A: an ordinary edit and a non-review face assign (no
+	// via marker) must both be excluded by via=review.
+	seed = append(seed,
+		audit.Entry{ActorUID: actorA, Action: audit.ActionPhotoUpdate, TargetType: "photos", TargetUID: "ph-9"},
+		audit.Entry{ActorUID: actorA, Action: audit.ActionFaceAssign, TargetType: "markers", TargetUID: "mk-9",
+			Details: map[string]any{"photo_uid": "ph-9", "subject_uid": "su-9"}},
+	)
+	// B's review rows must not leak into A's view.
+	seed = append(seed, reviewRows(actorB)...)
+	env.seed(t, seed...)
+
+	// Only A's four via=review rows, newest-first, nothing from B or the noise.
+	got := list(t, admin, env.baseURL+"/api/v1/audit?user="+actorA+"&via=review")
+	if got.Total != 4 || len(got.Entries) != 4 {
+		t.Fatalf("review filter total/len = %d/%d, want 4/4", got.Total, len(got.Entries))
+	}
+	for _, e := range got.Entries {
+		if e.ActorUID == nil || *e.ActorUID != actorA {
+			t.Errorf("entry actor = %v, want %s", e.ActorUID, actorA)
+		}
+		if e.Details["via"] != "review" {
+			t.Errorf("entry %s via = %v, want review", e.Action, e.Details["via"])
+		}
+	}
+	// The confirmation carries enough to render: the resolved subject and photo.
+	newest := got.Entries[0]
+	if newest.Action != audit.ActionLabelReject || newest.Details["photo_uid"] != "ph-4" {
+		t.Errorf("newest = %s/%v, want label.reject/ph-4", newest.Action, newest.Details["photo_uid"])
+	}
+
+	// Ano bucket: face.assign + label.attach.
+	yes := list(t, admin, env.baseURL+"/api/v1/audit?user="+actorA+"&via=review&decision=yes")
+	if yes.Total != 2 {
+		t.Errorf("decision=yes total = %d, want 2", yes.Total)
+	}
+	for _, e := range yes.Entries {
+		if e.Action != audit.ActionFaceAssign && e.Action != audit.ActionLabelAttach {
+			t.Errorf("decision=yes action = %s, want assign/attach", e.Action)
+		}
+	}
+	// Ne bucket: face.reject + label.reject.
+	no := list(t, admin, env.baseURL+"/api/v1/audit?user="+actorA+"&via=review&decision=no")
+	if no.Total != 2 {
+		t.Errorf("decision=no total = %d, want 2", no.Total)
+	}
+	for _, e := range no.Entries {
+		if e.Action != audit.ActionFaceReject && e.Action != audit.ActionLabelReject {
+			t.Errorf("decision=no action = %s, want reject", e.Action)
+		}
+	}
+
+	// Paging over the four rows: first page carries a next offset, second does not.
+	page1 := list(t, admin, env.baseURL+"/api/v1/audit?user="+actorA+"&via=review&limit=2&offset=0")
+	if len(page1.Entries) != 2 || page1.NextOffset == nil || *page1.NextOffset != 2 {
+		t.Errorf("page1 entries/next = %d/%v, want 2 / 2", len(page1.Entries), page1.NextOffset)
+	}
+	page2 := list(t, admin, env.baseURL+"/api/v1/audit?user="+actorA+"&via=review&limit=2&offset=2")
+	if len(page2.Entries) != 2 || page2.NextOffset != nil {
+		t.Errorf("page2 entries/next = %d/%v, want 2 / nil", len(page2.Entries), page2.NextOffset)
+	}
+
+	// Admin-only: an editor is forbidden, an admin is served (list() asserts 200).
+	editor := env.login(t, "editor", auth.RoleEditor)
+	forbidden := do(t, editor, http.MethodGet, env.baseURL+"/api/v1/audit?user="+actorA+"&via=review", nil)
+	defer func() { _ = forbidden.Body.Close() }()
+	if forbidden.StatusCode != http.StatusForbidden {
+		t.Errorf("editor review filter status = %d, want 403", forbidden.StatusCode)
 	}
 }
 
