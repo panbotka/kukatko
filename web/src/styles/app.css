@@ -360,6 +360,83 @@ body {
   z-index: 1019;
 }
 
+/* Floating batch action bar: a frosted command bar that rises from the bottom
+   edge while a grid selection is active — the same translucent-glass recipe as
+   the top nav, echoing the command-style search. It floats over the photo wall
+   (fixed, centred) rather than pushing it, and layers above the grid but below
+   the immersive viewer (1080) and Bootstrap modals (1040/1050). The dock is a
+   transparent column so its gap passes clicks through to the photos beneath;
+   each child re-enables pointer events. */
+.kk-batch-dock {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--kk-space-4));
+  transform: translateX(-50%);
+  z-index: 1030;
+  width: min(100% - 2 * var(--kk-space-3), 56rem);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--kk-space-2);
+  pointer-events: none;
+}
+
+.kk-batch-dock > * {
+  pointer-events: auto;
+}
+
+.kk-batch-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--kk-space-2);
+  padding: var(--kk-space-2) var(--kk-space-3);
+  border-radius: var(--kk-radius-pill);
+  background-color: var(--kk-header-bg);
+  border: 1px solid var(--kk-header-border);
+  box-shadow: var(--kk-shadow-3);
+  color: var(--kk-text);
+  animation: kk-batch-rise var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+/* Where the browser can frost the backdrop, do; otherwise fall back to the
+   solid warm plate so the bar is never see-through without the blur that makes
+   translucency legible over an arbitrary photo. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .kk-batch-bar {
+    backdrop-filter: blur(var(--kk-header-blur));
+    -webkit-backdrop-filter: blur(var(--kk-header-blur));
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .kk-batch-bar {
+    background-color: var(--kk-surface-1);
+  }
+}
+
+.kk-batch-count {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes kk-batch-rise {
+  from {
+    transform: translateY(0.75rem);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-batch-bar {
+    animation: none;
+  }
+}
+
 /* Icon-only controls (e.g. the favorite heart overlay) need a finger-friendly
    hit area even when their glyph is small. 44px is the common touch-target
    minimum. */

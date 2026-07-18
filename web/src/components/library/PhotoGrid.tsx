@@ -91,10 +91,21 @@ const gridComponents: GridComponents<GridContext> = {
   Footer: GridFooter,
 }
 
-/** Selection wiring for a grid in selection mode. */
+/** Selection wiring for a grid that offers multi-select. */
 export interface PhotoGridSelection {
-  /** When true, tiles become selection targets instead of detail links. */
+  /**
+   * Explicit selection mode: every tile is a selection target from the outset
+   * (the "Select" flow used by the album/label/search grids). When false the
+   * grid may still be selectable on hover — see {@link PhotoGridSelection.hoverSelect}.
+   */
   active: boolean
+  /**
+   * Hover-select mode: tiles stay links but reveal a corner checkmark on hover,
+   * and the moment anything is selected the grid behaves selection-first (tiles
+   * toggle, checkmarks stay shown). The library uses this so multi-select needs
+   * no explicit "enter selection mode" step.
+   */
+  hoverSelect?: boolean
   /** The currently selected photo UIDs. */
   selected: Set<string>
   /** Toggles a photo's selection. */
@@ -181,6 +192,14 @@ export function PhotoGrid({
     }
     selection?.onToggle(uid)
   }
+  // Whether the grid offers selection at all (a corner checkmark), and whether a
+  // tile-body click toggles rather than navigates. In hover-select mode the tile
+  // stays a link until the first pick, then turns selection-first so a run can be
+  // gathered quickly; in explicit mode it is selection-first throughout.
+  const anySelected = selection !== undefined && selection.selected.size > 0
+  const selectable = selection !== undefined && (selection.active || selection.hoverSelect === true)
+  const selectFirst =
+    selection !== undefined && (selection.active || (selection.hoverSelect === true && anySelected))
   return (
     <VirtuosoGrid
       ref={gridRef}
@@ -193,8 +212,10 @@ export function PhotoGrid({
       itemContent={(index, photo) => (
         <PhotoTile
           photo={photo}
-          selectable={selection?.active ?? false}
+          selectable={selectable}
+          selectFirst={selectFirst}
           selected={selection?.selected.has(photo.uid) ?? false}
+          anySelected={anySelected}
           onToggleSelect={selection === undefined ? undefined : toggleSelect}
           favoritable={favoritable}
           detailQuery={detailQuery}

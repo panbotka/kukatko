@@ -12,11 +12,7 @@ import { buildChips } from '../components/library/filterChips'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { TimelineScrubber } from '../components/library/TimelineScrubber'
-import { BulkEditControl } from '../components/organize/BulkEditControl'
-import { DownloadZipButton } from '../components/organize/DownloadZipButton'
-import { SelectionBar } from '../components/organize/SelectionBar'
-import { SelectionStart } from '../components/organize/SelectionStart'
-import { StackSelectedControl } from '../components/organize/StackSelectedControl'
+import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
@@ -45,9 +41,11 @@ const NO_SCOPE: SlideshowScope = {}
  * thumbnail grid. The entire view (filters, sort) lives in the URL, so Back /
  * Forward restore the exact view and sharing the URL reproduces it. The grid
  * pages through the API as the user scrolls. Every tile carries a favorite heart
- * (a personal toggle for all roles); editors can additionally enter selection
- * mode to bulk-edit a multi-photo selection (albums, labels, description,
- * location, archive, favorite) via the bulk API.
+ * (a personal toggle for all roles); an editor additionally gets a modern
+ * multi-select — a corner checkmark on each tile (hover to reveal, Shift+click for
+ * a range) and a floating batch action bar that rises once anything is picked, for
+ * add-to-album, add/remove-label, favorite, archive, download and the full editor
+ * via the bulk API. Escape clears the selection and hides the bar.
  */
 export function LibraryPage() {
   const { t } = useTranslation()
@@ -67,7 +65,10 @@ export function LibraryPage() {
   const { photos, total, status, loadingMore, moreError, hasMore, loadMore, retry } =
     usePhotoLibrary(params, { reloadKey })
   const facets = useLibraryFacets(params)
-  const bulk = useBulkEdit({ onEdited: reload })
+  // Hover-select: every tile carries a corner checkmark for a writer, with no
+  // explicit "enter selection mode" step, and the floating batch bar rises the
+  // moment anything is picked.
+  const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
 
   // Optimistic per-photo favorite overrides for the `f` keyboard shortcut on the
@@ -105,7 +106,7 @@ export function LibraryPage() {
   const onRangeChanged = useCallback((range: ListRange) => {
     setRangeStart(range.startIndex)
   }, [])
-  const showScrubber = view.sort === LIBRARY_DEFAULTS.sort && !selection.active
+  const showScrubber = view.sort === LIBRARY_DEFAULTS.sort && selection.count === 0
 
   // Keyboard navigation over the grid: a visible focus highlight moved by the
   // arrow keys / hjkl, with Enter/x/f/Escape acting on the focused tile. Row-wise
@@ -141,13 +142,14 @@ export function LibraryPage() {
       if (!p || !canWrite) {
         return
       }
-      if (!selection.active) {
-        selection.enable()
-      }
       selection.toggle(p.uid)
     },
     [displayPhotos, canWrite, selection],
   )
+  // Select every loaded tile in view (only what has paged in, not every match).
+  const selectAllInView = useCallback(() => {
+    selection.selectMany(displayPhotos.map((p) => p.uid))
+  }, [displayPhotos, selection])
   const toggleFavorite = useCallback(
     (index: number) => {
       const p = displayPhotos.at(index)
@@ -196,42 +198,21 @@ export function LibraryPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="kk-page-title mb-0">{t('library.title')}</h1>
-        {!selection.active && (
-          <div className="d-flex gap-1 flex-wrap">
-            {status === 'ready' && photos.length > 0 && (
-              <SlideshowStart scope={NO_SCOPE} view={view} count={total} />
-            )}
-            <Button
-              variant="outline-secondary"
-              size="sm"
-              onClick={() => {
-                setSavingView(true)
-              }}
-            >
-              {t('savedSearches.saveView')}
-            </Button>
-            <SelectionStart bulk={bulk} />
-          </div>
-        )}
-      </div>
-
-      {selection.active && (
-        <SelectionBar count={selection.count} onCancel={selection.disable}>
+        <div className="d-flex gap-1 flex-wrap">
+          {status === 'ready' && photos.length > 0 && (
+            <SlideshowStart scope={NO_SCOPE} view={view} count={total} />
+          )}
           <Button
             variant="outline-secondary"
             size="sm"
-            disabled={photos.length === 0}
             onClick={() => {
-              selection.selectMany(displayPhotos.map((p) => p.uid))
+              setSavingView(true)
             }}
           >
-            {t('library.selectAll')}
+            {t('savedSearches.saveView')}
           </Button>
-          <BulkEditControl bulk={bulk} />
-          <StackSelectedControl bulk={bulk} />
-          <DownloadZipButton photoUids={bulk.photoUids} variant="outline-secondary" />
-        </SelectionBar>
-      )}
+        </div>
+      </div>
 
       <FilterBar
         view={view}
@@ -283,7 +264,12 @@ export function LibraryPage() {
 
       {status === 'ready' && photos.length > 0 && (
         <>
-          <div ref={gridWrapRef}>
+          <div
+            ref={gridWrapRef}
+            // Keep the last rows scrollable clear of the floating bar while a
+            // selection is active, so nothing hides behind it.
+            style={{ paddingBottom: selection.count > 0 ? '6rem' : undefined }}
+          >
             <PhotoGrid
               photos={displayPhotos}
               loadingMore={loadingMore}
@@ -291,7 +277,7 @@ export function LibraryPage() {
               onEndReached={loadMore}
               onRetry={retry}
               selection={bulk.gridSelection}
-              favoritable={!selection.active}
+              favoritable
               detailQuery={detailQuery}
               gridRef={gridRef}
               onRangeChanged={onRangeChanged}
@@ -302,6 +288,10 @@ export function LibraryPage() {
             <TimelineScrubber params={params} activeIndex={rangeStart} onJump={jumpTo} />
           )}
         </>
+      )}
+
+      {bulk.canBulkEdit && selection.count > 0 && (
+        <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} />
       )}
 
       <SaveSearchModal

@@ -10,6 +10,7 @@ export type IconName =
   | 'arrow-counterclockwise'
   | 'arrow-left'
   | 'arrow-right'
+  | 'archive'
   | 'arrows-angle-contract'
   | 'arrows-angle-expand'
   | 'bookmarks'

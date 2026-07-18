@@ -59,6 +59,13 @@ zapiš sem.
   `Icon` (**jediná ikonová sada** aplikace: bootstrap-icons glyf jako `<i class="bi bi-{name}">`,
   font se importuje globálně v `main.tsx`; union `IconName` drží slovník použitých ikon, takže překlep
   je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),
+  `components/toast/` = **app-wide toast** (`ToastContext` drží context + hook `useToast()` +
+  typy; `ToastProvider` je komponenta) — jediný provider **v `App` kolem `AppRoutes`**, hostí
+  `ToastContainer` (react-bootstrap, `position="top-center"`, nad chrome i viewerem) s
+  auto-dismiss (5 s) + ručním zavřením (`toast.close`). `useToast().show({message, variant?})`
+  (`success`/`danger`/`info`, glyf `Icon` dle tónu); **mimo provider vrací no-op** (default
+  context), takže focused unit testy nepotřebují wrapper. První uživatel: `BatchActionBar`
+  (úspěch/selhání hromadné akce). Testy jedou přes `BatchActionBar.test`,
   `BackLink` (**sdílená cesta zpět** ze všech detailů (album, štítek, osoba, fotka) do seznamu,
   ke kterému patří: šipka `arrow-left` přes `Icon` (dekorativní, `aria-hidden`) + **text pojmenující
   cíl** („Zpět na alba" / „Zpět na štítky" / „Zpět na lidi"), který je zároveň přístupným jménem
@@ -242,8 +249,17 @@ zapiš sem.
   řádek), `+` na 8; čte/píše `useGridDensity`, tedy localStorage, **ne URL** — je to preference
   zařízení, ne součást sdíleného pohledu; sedí v hlavičce `FilterBar`u, mění všechny
   foto-mřížky v appce najednou); `PhotoTile`+`PhotoGrid` podporují
-  volitelný **selection mód** (props `selectable`/`selected`/`onToggleSelect`, resp. `selection`;
-  heart se v selection módu skryje); **Shift+klik vybere souvislý rozsah**: `onToggleSelect` nese
+  **moderní multi-select po vzoru foto-appek** (props `selectable`/`selectFirst`/`selected`/
+  `anySelected`/`onToggleSelect`, resp. `selection`): každá dlaždice nese **kulaté zaškrtávací
+  kolečko** v rohu (`.kk-tile__check`, sibling linku/tlačítka jako srdíčko — klik **vybere, aniž
+  by otevřel fotku**), které se ukáže na hoveru a **zůstává vidět, jakmile je něco vybráno**
+  (`kk-tile--checks`); vybraná dlaždice dostane **accent ring** (`kk-tile--selected` → inset
+  `::after` z `--kk-accent`) a **ztlumený obrázek**, aby výběr byl na husté zdi nepřehlédnutelný.
+  Selection mode je buď **explicitní** (`selection.active` — dlaždice jsou terče výběru od začátku,
+  browse mřížky alb/štítků/hledání přes `SelectionStart`), nebo **hover-select** (`selection.hoverSelect`,
+  knihovna): dlaždice zůstává linkem, dokud se nic nevybere, a **teprve prvním výběrem** se celá stane
+  terčem (`selectFirst`), takže běh dlaždic jde vybrat rychle bez „vstupu do režimu"; heart se v
+  selectFirst skryje. **Shift+klik vybere souvislý rozsah**: `onToggleSelect` nese
   `shiftKey` kliknutí, `PhotoGrid` ho s vlastním pořadím fotek přesměruje na volitelný
   `selection.onToggleRange(uid, orderedUids)` (bez něj zůstává plain toggle) — kotvu drží
   `useSelection`, takže rozsah funguje v každé mřížce bez wiringu na stránce; `PhotoTile` má
@@ -259,7 +275,19 @@ zapiš sem.
   `EmptyState` až pro album bez fotek),
   `AlbumEditModal` (create/rename alba: název/popis/soukromé), `LabelEditModal` (create/rename
   štítku: jméno/priorita), `SelectionBar` (sticky toolbar výběru: počet +
-  akce + zrušit), `BulkEditControl` (**znovupoužitelný spouštěč** hromadné úpravy: tlačítko
+  akce + zrušit — používají ho browse mřížky mimo knihovnu),
+  `BatchActionBar` (**NOVÝ**: plovoucí spodní **hromadná akční lišta** knihovny — mrazová
+  (`--kk-header-bg` + `backdrop-filter: blur(--kk-header-blur))`, `--kk-shadow-3`, `.kk-batch-*`
+  v `app.css`) `position: fixed` vycentrovaná dole, **vyjede při ≥ 1 vybrané fotce**, nese živý
+  počet (`aria-live`), **Vybrat vše** (`onSelectAll`), zavření (✕ = `selection.clear`) a akce
+  **Přidat do alba** / **Štítky** (add+remove, oba přes `MultiSelect` v malém `Modal`u, options
+  lazy z `fetchAlbums`/`fetchLabels`), **Oblíbené**, **Archivovat**, **Stáhnout**
+  (`DownloadZipButton`), **Seskupit** (`StackSelectedControl`) a **Další úpravy** (celý
+  `BulkEditModal`); každá metadatová akce jede **jedním `POST /photos/bulk`** přes `bulkUpdatePhotos`,
+  úspěch/selhání hlásí **toast** (`useToast`): úspěch výběr vyčistí a mřížku přenačte (`bulk.finish`),
+  **selhání výběr nechá** (dá se zopakovat). Řízená `useBulkEdit({hoverSelect:true})`; Esc čistí
+  výběr přes grid keyboard nav. **Jen editor/admin** (`bulk.canBulkEdit`), i18n `batch.*`),
+  `BulkEditControl` (**znovupoužitelný spouštěč** hromadné úpravy: tlačítko
   (`selection.edit`) + `BulkEditModal`, řízené výhradně výsledkem `useBulkEdit`; **viewerovi se
   nevykreslí vůbec**, při nulovém výběru je disabled — stačí ho vložit do `SelectionBar`, stránka
   nedrží žádný stav dialogu; volitelný prop `prefill` protéká do modalu), `SelectionStart` (**protějšek** `BulkEditControl`: tlačítko
@@ -324,9 +352,11 @@ zapiš sem.
   zachovaným `search`+`hash` (staré záložky a odkazy fungují, `replace` zabrání odskočení Zpět),
   plus **časová osa** (`TimelineScrubber`) vedle mřížky pro rychlé skoky na měsíc — mřížka
   vystaví `gridRef`+`onRangeChanged`, skok jede přes `useGridJump` (donačte stránky, když měsíc
-  leží za načtenou částí), zobrazí se jen pro výchozí newest řazení a mimo režim výběru,
-  plus pro editory **režim výběru** (`Vybrat`/`Vybrat vše`) → `useBulkEdit` + `BulkEditControl`
-  (hromadná úprava metadat přes bulk API; po úspěchu se mřížka přenačte přes `reloadKey`),
+  leží za načtenou částí), zobrazí se jen pro výchozí newest řazení a mimo výběr (`selection.count === 0`),
+  plus pro editory **moderní multi-select** — `useBulkEdit({hoverSelect:true})`: každá dlaždice má
+  rohové zaškrtávátko (hover; Shift+klik rozsah), **žádné tlačítko „Vybrat"** už není potřeba, a
+  jakmile je něco vybráno, vyjede **`BatchActionBar`** (plovoucí spodní lišta: album/štítky/oblíbené/
+  archiv/stažení/seskupit/další úpravy přes bulk API + toasty; po úspěchu `reloadKey`). Esc čistí výběr,
   plus tlačítko **Uložit pohled** (`SaveSearchModal` →
   `createSavedSearch` s aktuálním view objektem jako `params`),
   `SavedSearchesPage` = `/saved` (jakýkoli přihlášený) „Moje uložená hledání": seznam uložených
@@ -1004,11 +1034,14 @@ zapiš sem.
   poslední `toggle` drží **kotvu** a `toggleRange(uid, orderedUids)` (Shift+klik) vybere souvislý
   rozsah mezi kotvou a `uid` — jen **přidává**, bez kotvy nebo s kotvou mimo pořadí degraduje na
   `toggle`, `clear`/`disable` kotvu shodí;
-  `useBulkEdit({onEdited?})` = **znovupoužitelná hromadná úprava** libovolného foto-seznamu:
+  `useBulkEdit({onEdited?, hoverSelect?})` = **znovupoužitelná hromadná úprava** libovolného foto-seznamu:
   `useSelection` + role gate (`canBulkEdit` = `canWrite`) + stav dialogu
   (`editing`/`open`/`close`/`finish`), k tomu `photoUids` (**přesně vybrané**, nikdy celý filtrovaný
   výsledek) a `gridSelection` rovnou do `PhotoGrid` (vč. `onToggleRange` → Shift+klik rozsah zdarma
-  v každé mřížce). `finish(outcome?)` = zavřít dialog → `selection.clear()`
+  v každé mřížce). **`hoverSelect:true`** (knihovna): `gridSelection` je pro editora **vždy** definované
+  s `hoverSelect` (žádný explicitní vstup do režimu — rohové zaškrtávátko na hoveru); bez něj (ostatní
+  mřížky) je `gridSelection` definované až po `enable()`. Viewer dostane vždy `undefined`.
+  `finish(outcome?)` = zavřít dialog → `selection.clear()`
   → `onEdited(outcome?)` (refetch; `outcome` = `BulkEditOutcome` pro stránky, které umí seznam
   upravit na místě — `/expand`); režim výběru přežije, takže po úspěchu jde hned vybírat dál a žádné
   zastaralé UID v něm nezůstane. Neúspěšný apply výběr **nechá být**. Stránka wiruje jen

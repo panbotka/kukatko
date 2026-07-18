@@ -518,24 +518,22 @@ describe('LibraryPage', () => {
     expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
   })
 
-  it('lets an editor enter selection mode and multi-select photos', async () => {
+  it('lets an editor hover-select a tile, raising the floating batch bar', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
     const user = userEvent.setup()
     renderLibraryAs(editorAuth)
 
-    await user.click(await screen.findByRole('button', { name: 'Select' }))
+    // With nothing selected the tiles are still links; each carries a corner
+    // checkmark control that selects without opening the photo.
+    expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
 
-    // Tiles become selection targets (buttons) rather than links.
-    const tileA = screen.getByRole('button', { name: 'a.jpg' })
-    expect(tileA).toHaveAttribute('aria-pressed', 'false')
-
-    // Bulk edit is disabled until something is selected.
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
-
-    await user.click(tileA)
-    expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
+    // The floating batch bar appears with the live count and the batch actions,
+    // and the picked tile is now a selected selection-target button.
     expect(screen.getByText('1 selected')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Add to album' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Favorite' })).toBeInTheDocument()
   })
 
   it('select-all selects every photo in view', async () => {
@@ -543,7 +541,9 @@ describe('LibraryPage', () => {
     const user = userEvent.setup()
     renderLibraryAs(editorAuth)
 
-    await user.click(await screen.findByRole('button', { name: 'Select' }))
+    await screen.findByRole('link', { name: 'a.jpg' })
+    // Pick one tile via its checkmark to raise the bar, then select all in view.
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     await user.click(screen.getByRole('button', { name: 'Select all' }))
 
     expect(screen.getByText('2 selected')).toBeInTheDocument()
