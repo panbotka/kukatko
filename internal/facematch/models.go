@@ -95,6 +95,12 @@ type AssignRequest struct {
 	SubjectUID  string      `json:"subject_uid,omitempty"`
 	SubjectName string      `json:"subject_name,omitempty"`
 	BBox        *[4]float64 `json:"bbox,omitempty"`
+	// Via, when set, stamps details.via onto the assignment's audit entry,
+	// marking where the confirmation originated (for example "review" for the
+	// review game). It is a server-internal marker set by the calling service,
+	// never accepted from the request body (json:"-"), so ordinary recognition
+	// assignments stay untagged.
+	Via string `json:"-"`
 }
 
 // AssignResult is the body returned by a successful assignment: the effective

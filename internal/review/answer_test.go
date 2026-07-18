@@ -38,6 +38,27 @@ func TestAnswer_yesFaceCreatesMarker(t *testing.T) {
 	}
 }
 
+func TestAnswer_yesFaceTagsViaReview(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, func(f *fixture) {
+		f.faces.faces[vectors.FaceKey{PhotoUID: "photo1", FaceIndex: 0}] = vectors.Face{
+			PhotoUID: "photo1", FaceIndex: 0, BBox: [4]float64{0.1, 0.2, 0.3, 0.4},
+		}
+	})
+	id := faceQuestionID("photo1", 0, "subj1")
+	if _, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{}); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if len(f.assigner.reqs) != 1 {
+		t.Fatalf("assigner calls = %d, want 1", len(f.assigner.reqs))
+	}
+	// The review path must tag the assignment so its face.assign audit row is
+	// distinguishable from an ordinary recognition assignment.
+	if got := f.assigner.reqs[0].Via; got != "review" {
+		t.Errorf("assign request Via = %q, want review", got)
+	}
+}
+
 func TestAnswer_yesFaceAssignsExistingMarker(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {

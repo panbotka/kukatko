@@ -10,6 +10,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/candidates"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/expand"
 	"github.com/panbotka/kukatko/internal/facematch"
@@ -30,6 +31,7 @@ import (
 // reviewHarness bundles real stores and the composed services over a freshly
 // truncated database, mirroring cmd/kukatko's wiring.
 type reviewHarness struct {
+	db       *database.DB
 	photos   *photos.Store
 	people   *people.Store
 	vectors  *vectors.Store
@@ -43,6 +45,7 @@ func newReviewHarness(t *testing.T) *reviewHarness {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 	return &reviewHarness{
+		db:       db,
 		photos:   photos.NewStore(db.Pool()),
 		people:   people.NewStore(db.Pool()),
 		vectors:  vectors.NewStore(db.Pool()),
@@ -306,6 +309,68 @@ func TestReviewAnswer_faceYesAssignsAndConvergesDB(t *testing.T) {
 	// The assigned face is gone from a rebuilt queue (unassigned-only search).
 	if ids := queueIDs(t, h.service()); len(ids) != 0 {
 		t.Errorf("queue after assign = %v, want empty", ids)
+	}
+}
+
+// TestReviewAnswer_faceYesTagsAuditViaReview proves the closed attribution gap:
+// confirming a face in the review game writes a face.assign audit row tagged
+// details.via = "review", while an ordinary assignment through the same state
+// machine stays untagged — so the leaderboard counts only review decisions.
+func TestReviewAnswer_faceYesTagsAuditViaReview(t *testing.T) {
+	h := newReviewHarness(t)
+	h.namedSubject(t, "Alice", "alice-src", vec(map[int]float32{0: 1}))
+	h.face(t, "band", vectors.Face{FaceIndex: 0, Vector: bandFace(), DetScore: 0.9})
+
+	svc := h.service()
+	res, err := svc.Queue(context.Background(), "tester", 100)
+	if err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	if len(res.Questions) != 1 {
+		t.Fatalf("questions = %d, want 1", len(res.Questions))
+	}
+	if _, err := svc.Answer(context.Background(), "tester", res.Questions[0].ID, review.AnswerYes, audit.Meta{}); err != nil {
+		t.Fatalf("Answer yes: %v", err)
+	}
+
+	auditStore := audit.NewStore(h.db.Pool())
+	assigns, err := auditStore.List(context.Background(), audit.Filter{Action: audit.ActionFaceAssign, Limit: 50})
+	if err != nil {
+		t.Fatalf("List face.assign: %v", err)
+	}
+	if len(assigns) != 1 {
+		t.Fatalf("face.assign rows = %d, want 1 (only the review confirmation)", len(assigns))
+	}
+	if assigns[0].Details["via"] != "review" {
+		t.Errorf("review face.assign details[via] = %v, want review", assigns[0].Details["via"])
+	}
+
+	// An ordinary assignment through the same facematch state machine must NOT
+	// carry the via marker.
+	matchSvc := facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people})
+	bob, err := h.people.CreateSubject(context.Background(), people.Subject{Name: "Bob"})
+	if err != nil {
+		t.Fatalf("CreateSubject(Bob): %v", err)
+	}
+	plainPhoto := h.face(t, "plain", vectors.Face{FaceIndex: 0, Vector: vec(map[int]float32{3: 1}), DetScore: 0.9})
+	faceIdx, box := 0, reviewableBox
+	if _, err := matchSvc.Apply(context.Background(), facematch.AssignRequest{
+		PhotoUID: plainPhoto, Action: facematch.ActionCreateMarker,
+		SubjectUID: bob.UID, FaceIndex: &faceIdx, BBox: &box,
+	}, audit.Meta{}); err != nil {
+		t.Fatalf("plain Apply: %v", err)
+	}
+
+	assigns, err = auditStore.List(context.Background(), audit.Filter{Action: audit.ActionFaceAssign, Limit: 50})
+	if err != nil {
+		t.Fatalf("List face.assign again: %v", err)
+	}
+	if len(assigns) != 2 {
+		t.Fatalf("face.assign rows = %d, want 2", len(assigns))
+	}
+	// List is newest-first, so the plain (non-review) assignment is assigns[0].
+	if via, tagged := assigns[0].Details["via"]; tagged {
+		t.Errorf("non-review face.assign details[via] = %v, want absent", via)
 	}
 }
 

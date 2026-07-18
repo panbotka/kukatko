@@ -22,8 +22,9 @@ import (
 // tuned to the uncertainty band from cfg.Review. The answer side reuses the
 // photo API's facematch service (matchSvc) so face confirmations go through
 // the one assign state machine, the organize store for label attaches and the
-// feedback store for rejections. The write guard is supplied via authAPI so
-// reviewapi stays decoupled from auth's wiring.
+// feedback store for rejections. The leaderboard aggregates the review-tagged
+// audit rows straight from the shared pool. The write and auth guards are
+// supplied via authAPI so reviewapi stays decoupled from auth's wiring.
 func buildReviewAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 	matchSvc *facematch.Service,
@@ -50,6 +51,8 @@ func buildReviewAPI(
 	})
 	return reviewapi.NewAPI(reviewapi.Config{
 		Service:      svc,
+		Leaderboard:  review.NewLeaderboardStore(db.Pool()),
 		RequireWrite: authAPI.RequireWrite,
+		RequireAuth:  authAPI.RequireAuth,
 	})
 }

@@ -1028,14 +1028,29 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `ErrSubjectNotFound`/`ErrLabelNotFound`/`ErrTargetNotFound`) → `result:"gone"`, ne error; nevalidní
   vstup → `ErrInvalidQuestion`/`ErrInvalidAnswer`. Unit testy s faky (pásmo, řazení, proklad,
   determinismus, cache TTL, skip, idempotence, gone), integrační testy nad reálným
-  sweep+candidates+expand+facematch+feedback+DB), `internal/reviewapi/`
-  (editor/admin HTTP API nad review hrou: `Service` rozhraní (splňuje `*review.Service`),
-  `NewAPI(Config{Service,RequireWrite})` (nil RequireWrite → pass-through) + `RegisterRoutes` mountuje
-  `GET /review/queue` a `POST /review/answer` za `RequireWrite`; queue čte `?limit=` (prázdné → default,
+  sweep+candidates+expand+facematch+feedback+DB. Navíc **`LeaderboardStore`** (`NewLeaderboardStore(
+  pool)`, oddělené od `Service` — jen čte) agreguje **review žebříček** přímo z `audit_log`: per
+  `actor_uid` počítá rozhodnutí označená `details.via = "review"` — yes = `face.assign`+`label.attach`,
+  no = `face.reject`+`label.reject`; skip nic nezapisuje, tak se nepočítá — s okny `WindowAllTime`/
+  `WindowWeek`/`WindowToday` (`ParseWindow` mapuje `?window=`, prázdné → all, jiné → `ErrInvalidWindow`;
+  `windowCutoff` počítá mez z `created_at`), NULL actor vynechává, řadí total desc → yes desc →
+  `display_name` (fallback na `username`); aby do žebříčku spadlo i review potvrzení obličeje,
+  `applyFaceYes` posílá `AssignRequest.Via = "review"` do facematch `Service.Apply` (dosud jediná
+  neoznačená ze čtyř akcí). Unit testy `ParseWindow`/`windowCutoff` + integrační test oken, yes/no
+  splitu, řazení, NULL-actor/non-review exkluzí; parciální index viz migrace `0037`),
+  `internal/reviewapi/`
+  (HTTP API nad review hrou: rozhraní `Service` (splňuje `*review.Service`) a `Leaderboarder`
+  (splňuje `*review.LeaderboardStore`), `NewAPI(Config{Service,Leaderboard,RequireWrite,RequireAuth})`
+  (nil guardy → pass-through) + `RegisterRoutes` mountuje `GET /review/queue` a `POST /review/answer`
+  za **`RequireWrite`** (editor/admin — mutují knihovnu) a `GET /review/leaderboard` za **`RequireAuth`**
+  (jen agregáty → každý přihlášený, i viewer); queue čte `?limit=` (prázdné → default,
   nečíselné/záporné → 400), answer dekóduje `{question_id,answer}` (`DisallowUnknownFields`, 64 KiB,
   prázdná pole → 400) a staví `audit.Meta` přes `audit.FromRequest` + `auth.UserFromContext`;
   `ErrInvalidQuestion`/`ErrInvalidAnswer` → 400, jiná chyba → 500, `result:"gone"` zůstává 200;
-  503 bez backendu; mountuje se v `serve` (`buildReviewAPI` v `cmd/kukatko/review.go`)),
+  leaderboard čte `?window=all|7d|today` (default all, `ParseWindow` → 400 na jiné) a přes
+  `buildLeaderboardResponse` vrací `{window,caller_uid,entries:[…is_me]}` (caller z `auth.
+  UserFromContext`, `is_me` na vlastním řádku, entries nikdy null); 503 bez backendu; mountuje se
+  v `serve` (`buildReviewAPI` v `cmd/kukatko/review.go`)),
   `internal/peopleapi/`
   (read/curace HTTP API nad subjekty (osoby/zvířata/jiné) — podklad People UI: rozhraní
   `SubjectStore` (podmnožina `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubjectAudited`/
