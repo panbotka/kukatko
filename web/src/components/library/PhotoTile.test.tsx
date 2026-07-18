@@ -223,3 +223,77 @@ describe('PhotoTile curation controls', () => {
     expect(screen.getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
   })
 })
+
+describe('PhotoTile selection-mode rendering stability', () => {
+  const p = photo({ media_type: 'image', thumb_url: '/thumb/ph1' })
+
+  /** A selectable tile at the given selection-first state (label resolves to 'Clip'). */
+  function tile(selectFirst: boolean, selected: boolean, onToggleSelect = vi.fn()) {
+    return (
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <PhotoTile
+            photo={p}
+            selectable
+            selectFirst={selectFirst}
+            selected={selected}
+            anySelected={selectFirst}
+            onToggleSelect={onToggleSelect}
+          />
+        </MemoryRouter>
+      </I18nextProvider>
+    )
+  }
+
+  // The reported bug: selecting the FIRST photo flips every tile into
+  // selection-first mode at once, and swapping each tile's root element between
+  // <a> and <button> remounted its <img>, re-running the load-in fade across the
+  // whole grid. The tile now keeps a single <Link> root, so the transition must
+  // not replace the root element nor the image, nor reset an already-loaded image.
+  it('keeps the same root element and <img> when selection goes empty→non-empty', () => {
+    const { rerender } = render(tile(false, false))
+
+    const rootBefore = screen.getByRole('link', { name: 'Clip' })
+    const imgBefore = screen.getByRole('img', { name: 'Clip' })
+    expect(rootBefore.tagName).toBe('A')
+
+    // Mark the image as decoded — the FadeInImage 'is-loaded' state must survive
+    // the transition; a remount would drop it back to the unloaded (faded) start.
+    fireEvent.load(imgBefore)
+    expect(imgBefore).toHaveClass('is-loaded')
+    const srcBefore = imgBefore.getAttribute('src')
+
+    // The grid turns selection-first the instant the first photo is picked.
+    rerender(tile(true, false))
+
+    // The root is now exposed as a toggle button, but it is the SAME anchor node —
+    // only its role/handlers changed, so nothing under it unmounted or re-faded.
+    const rootAfter = screen.getByRole('button', { name: 'Clip' })
+    const imgAfter = screen.getByRole('img', { name: 'Clip' })
+    expect(rootAfter).toBe(rootBefore)
+    expect(imgAfter).toBe(imgBefore)
+    expect(rootAfter.tagName).toBe('A')
+    // The already-loaded image keeps its src and loaded state — no reset.
+    expect(imgAfter.getAttribute('src')).toBe(srcBefore)
+    expect(imgAfter).toHaveClass('is-loaded')
+  })
+
+  it('toggles selection on a selection-first tile click instead of navigating', () => {
+    const onToggleSelect = vi.fn()
+    render(tile(true, false, onToggleSelect))
+    fireEvent.click(screen.getByRole('button', { name: 'Clip' }))
+    expect(onToggleSelect).toHaveBeenCalledWith('ph1', false)
+  })
+
+  it('carries the Shift state so a range selection still works from the tile body', () => {
+    const onToggleSelect = vi.fn()
+    render(tile(true, false, onToggleSelect))
+    fireEvent.click(screen.getByRole('button', { name: 'Clip' }), { shiftKey: true })
+    expect(onToggleSelect).toHaveBeenCalledWith('ph1', true)
+  })
+
+  it('stays a navigable link to the detail page when not selecting', () => {
+    render(tile(false, false))
+    expect(screen.getByRole('link', { name: 'Clip' })).toHaveAttribute('href', '/photos/ph1')
+  })
+})

@@ -308,9 +308,13 @@ zapiš sem.
   `::after` z `--kk-accent`) a **ztlumený obrázek**, aby výběr byl na husté zdi nepřehlédnutelný.
   Selection mode je buď **explicitní** (`selection.active` — dlaždice jsou terče výběru od začátku,
   browse mřížky alb/štítků/hledání přes `SelectionStart`), nebo **hover-select** (`selection.hoverSelect`,
-  knihovna): dlaždice zůstává linkem, dokud se nic nevybere, a **teprve prvním výběrem** se celá stane
-  terčem (`selectFirst`), takže běh dlaždic jde vybrat rychle bez „vstupu do režimu"; heart se v
-  selectFirst skryje. **Shift+klik vybere souvislý rozsah**: `onToggleSelect` nese
+  knihovna): dlaždice je v obou režimech **pořád stejný `<Link>` element** — kořen se **nikdy nepřepíná**
+  mezi `<a>` a `<button>` (to by při přechodu výběru 0↔1 remountovalo celou mřížku a spustilo load-in
+  fade všech obrázků naráz — blikání celé zdi). **Teprve prvním výběrem** se celá stane terčem
+  (`selectFirst`): klik ji **přepne místo navigace** (`role="button"` + `aria-pressed`, navigace potlačená
+  `event.preventDefault()`, který react-router respektuje; Space obslouženo ručně, Enter přes nativní
+  aktivaci odkazu), takže běh dlaždic jde vybrat rychle bez „vstupu do režimu"; heart se v selectFirst
+  skryje. **Shift+klik vybere souvislý rozsah**: `onToggleSelect` nese
   `shiftKey` kliknutí, `PhotoGrid` ho s vlastním pořadím fotek přesměruje na volitelný
   `selection.onToggleRange(uid, orderedUids)` (bez něj zůstává plain toggle) — kotvu drží
   `useSelection`, takže rozsah funguje v každé mřížce bez wiringu na stránce; `PhotoTile` má
