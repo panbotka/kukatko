@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
-import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { SubjectTile } from '../components/people/SubjectTile'
+import { TileGridSkeleton } from '../components/Skeleton'
 import { fetchSubjects, type SubjectCount } from '../services/people'
 
 /** Fetch lifecycle of the people list. */
@@ -56,11 +56,7 @@ export function PeoplePage() {
       </div>
 
       {state.status === 'loading' && (
-        <div className="d-flex justify-content-center py-5">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">{t('people.loading')}</span>
-          </Spinner>
-        </div>
+        <TileGridSkeleton label={t('people.loading')} minTile={140} captionLines={1} />
       )}
 
       {state.status === 'error' && <Alert variant="danger">{t('people.error')}</Alert>}

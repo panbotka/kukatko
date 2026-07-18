@@ -1,10 +1,10 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDate, formatDuration } from '../../lib/format'
 import { type Photo } from '../../services/photos'
+import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
 
 import { FavoriteButton } from './FavoriteButton'
@@ -93,7 +93,6 @@ export function PhotoTile({
   extras,
 }: PhotoTileProps) {
   const { t, i18n } = useTranslation()
-  const [loaded, setLoaded] = useState(false)
   // The thumbnail address comes from the payload, not from the UID: only the
   // server can sign it. A signed URL expires, so a failed load gets one retry
   // with a freshly fetched one before the tile gives up.
@@ -113,26 +112,14 @@ export function PhotoTile({
   const inner = (
     <>
       {!thumb.failed && (
-        <img
+        // The load-in fade + settle and the hover zoom (its target scale lives in
+        // the `.kukatko-photo-grid` CSS) both ride the `.kk-media-img` transition.
+        <FadeInImage
           src={thumb.src}
           alt={alt}
-          loading="lazy"
-          decoding="async"
-          onLoad={() => {
-            setLoaded(true)
-          }}
           onError={thumb.onError}
           className="w-100 h-100"
-          style={{
-            objectFit: 'cover',
-            opacity: loaded ? 1 : 0,
-            // Two transitions on the one element: the load-in fade, and the
-            // hover zoom whose target scale lives in `.kukatko-photo-grid` CSS.
-            // Declaring both here keeps the inline `transition` from shadowing
-            // the stylesheet's, which would make the zoom snap instead of glide.
-            transition:
-              'opacity var(--kk-duration-base) var(--kk-ease-standard), transform var(--kk-duration-slow) var(--kk-ease-standard)',
-          }}
+          style={{ objectFit: 'cover' }}
         />
       )}
       {taken !== '' && (

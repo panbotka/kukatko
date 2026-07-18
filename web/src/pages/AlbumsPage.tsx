@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
-import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { AlbumTile } from '../components/organize/AlbumTile'
+import { TileGridSkeleton } from '../components/Skeleton'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { type AlbumSummary, fetchAlbums } from '../services/organize'
 
@@ -66,11 +66,7 @@ export function AlbumsPage() {
       </div>
 
       {state.status === 'loading' && (
-        <div className="d-flex justify-content-center py-5">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">{t('albums.loading')}</span>
-          </Spinner>
-        </div>
+        <TileGridSkeleton label={t('albums.loading')} minTile={160} captionLines={2} />
       )}
 
       {state.status === 'error' && <Alert variant="danger">{t('albums.error')}</Alert>}

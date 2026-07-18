@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
@@ -9,6 +8,7 @@ import { Link } from 'react-router-dom'
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { purgeCountdown } from '../../lib/trashCountdown'
 import { type Photo } from '../../services/photos'
+import { FadeInImage } from '../FadeInImage'
 
 /** Props for {@link TrashCard}. */
 export interface TrashCardProps {
@@ -43,7 +43,6 @@ export function TrashCard({
   onDelete,
 }: TrashCardProps) {
   const { t } = useTranslation()
-  const [loaded, setLoaded] = useState(false)
   const thumb = useThumbSrc(photo.uid, photo.thumb_url)
 
   const label = photo.title !== '' ? photo.title : photo.file_name
@@ -62,21 +61,12 @@ export function TrashCard({
           title={label}
         >
           {!thumb.failed && (
-            <img
+            <FadeInImage
               src={thumb.src}
               alt={label}
-              loading="lazy"
-              decoding="async"
-              onLoad={() => {
-                setLoaded(true)
-              }}
               onError={thumb.onError}
               className="w-100 h-100"
-              style={{
-                objectFit: 'cover',
-                opacity: loaded ? 1 : 0,
-                transition: 'opacity 0.2s ease-in',
-              }}
+              style={{ objectFit: 'cover' }}
             />
           )}
           {thumb.failed && (

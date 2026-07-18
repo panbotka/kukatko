@@ -2,19 +2,20 @@ import { useCallback, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
-import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
+import { GridSkeleton } from '../components/library/GridSkeleton'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SelectionStart } from '../components/organize/SelectionStart'
 import { Outliers } from '../components/people/Outliers'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
 import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
+import { Skeleton } from '../components/Skeleton'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useGridDensity } from '../hooks/useGridDensity'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -114,12 +115,17 @@ export function SubjectPage() {
   )
 
   if (state.status === 'loading') {
+    // Hold the page's shape while the record loads: a header placeholder over the
+    // gallery skeleton, so the layout does not jump when the subject arrives.
     return (
-      <div className="d-flex justify-content-center py-5">
-        <Spinner animation="border" role="status">
-          <span className="visually-hidden">{t('subject.loading')}</span>
-        </Spinner>
-      </div>
+      <>
+        <div className="d-flex align-items-center gap-2 mb-3" aria-hidden="true">
+          <Skeleton width="10rem" height="1.75rem" radius="var(--kk-radius-sm)" />
+          <Skeleton width="4rem" height="1.375rem" radius="var(--kk-radius-pill)" />
+        </div>
+        <h2 className="kk-section-title">{t('subject.photos')}</h2>
+        <GridSkeleton label={t('subject.loadingPhotos')} />
+      </>
     )
   }
 
@@ -167,13 +173,7 @@ export function SubjectPage() {
       )}
 
       <h2 className="kk-section-title">{t('subject.photos')}</h2>
-      {status === 'loading' && (
-        <div className="d-flex justify-content-center py-4">
-          <Spinner animation="border" role="status" size="sm">
-            <span className="visually-hidden">{t('subject.loadingPhotos')}</span>
-          </Spinner>
-        </div>
-      )}
+      {status === 'loading' && <GridSkeleton label={t('subject.loadingPhotos')} />}
       {status === 'ready' && photos.length === 0 && <EmptyState title={t('subject.noPhotos')} />}
       {photos.length > 0 && (
         <>

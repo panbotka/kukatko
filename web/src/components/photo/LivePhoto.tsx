@@ -84,7 +84,7 @@ export function LivePhoto({ uid, title, poster, token }: LivePhotoProps) {
         style={{
           objectFit: 'contain',
           opacity: playing ? 1 : 0,
-          transition: 'opacity 0.15s ease-in',
+          transition: 'opacity var(--kk-duration-fast) var(--kk-ease-standard)',
         }}
       />
       <span className="position-absolute top-0 start-0 m-1 badge text-bg-dark opacity-75">

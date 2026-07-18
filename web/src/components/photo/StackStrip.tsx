@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 
 import { formatBytes } from '../../lib/format'
 import { type StackMember } from '../../services/photos'
+import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
 
 /** Props for {@link StackStrip}. */
@@ -95,12 +96,11 @@ export function StackStrip({
               aria-label={t('stack.viewVariant', { name: member.file_name })}
             >
               {member.thumb_url !== undefined && member.thumb_url !== '' ? (
-                <img
+                <FadeInImage
                   src={member.thumb_url}
                   alt={member.file_name}
                   width={64}
                   height={64}
-                  loading="lazy"
                   className="rounded"
                   style={{ objectFit: 'cover', width: 64, height: 64 }}
                 />

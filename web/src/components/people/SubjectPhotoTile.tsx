@@ -3,6 +3,8 @@ import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { FadeInImage } from '../FadeInImage'
+
 import { type Photo } from '../../services/people'
 
 /** Props for {@link SubjectPhotoTile}. */
@@ -53,11 +55,9 @@ export function SubjectPhotoTile({
 
   const inner = (
     <>
-      <img
+      <FadeInImage
         src={photo.thumb_url}
         alt={label}
-        loading="lazy"
-        decoding="async"
         className="w-100 h-100"
         style={{ objectFit: 'cover' }}
       />

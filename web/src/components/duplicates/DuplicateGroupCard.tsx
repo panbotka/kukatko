@@ -12,6 +12,7 @@ import { formatBytes, formatDate } from '../../lib/format'
 import { pairId } from '../../lib/duplicateCompare'
 import { type DuplicateGroup, type DuplicateMember } from '../../services/duplicates'
 import { thumbUrl } from '../../services/photos'
+import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
 
 /** Thumbnail size used for the side-by-side comparison tiles. */
@@ -123,10 +124,9 @@ function DuplicateMemberTile({ member, selected, groupId, onSelect }: DuplicateM
   return (
     <div className={`border rounded p-2 h-100 ${selected ? 'border-primary border-2' : ''}`}>
       <Link to={`/photos/${member.uid}`} className="d-block mb-2">
-        <img
+        <FadeInImage
           src={thumbUrl(member.uid, COMPARE_THUMB_SIZE)}
           alt={label}
-          loading="lazy"
           className="w-100 rounded"
           style={{ aspectRatio: '1 / 1', objectFit: 'cover' }}
         />

@@ -219,10 +219,15 @@
   /* ---- Motion ---------------------------------------------------------
      Three durations. `fast` for a colour/opacity swap under the pointer,
      `base` for a lift or a panel toggle, `slow` for an element appearing.
-     The easing curve decelerates hard: things arrive, they do not coast. */
+     The easing curve decelerates hard: things arrive, they do not coast.
+     `skeleton` is the odd one out — the period of a loading shimmer, an
+     ongoing "something is happening" heartbeat rather than a one-shot
+     transition, so it is intentionally slow and is NOT collapsed under
+     reduced motion (the shimmer is dropped there instead, see `.kk-skeleton`). */
   --kk-duration-fast: 120ms;
   --kk-duration-base: 200ms;
   --kk-duration-slow: 320ms;
+  --kk-duration-skeleton: 1400ms;
   --kk-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- Focus ring -----------------------------------------------------
@@ -810,6 +815,55 @@
 
 @media (prefers-reduced-motion: reduce) {
   .kk-appear {
+    animation: none;
+  }
+}
+
+/* ---- Skeletons --------------------------------------------------------- */
+
+/*
+ * A skeleton placeholder: a low-cost block shaped like the content it stands in
+ * for, so a loading view reads as "this is on its way" instead of a bare
+ * spinner. The block is the warm surface-1 tone; a faint translucent band sweeps
+ * across it left to right to signal life. That sweep is the only motion here, so
+ * it is dropped entirely under `prefers-reduced-motion` — the static tinted
+ * block, plus the container's `role="status"`/`aria-busy` label, still says
+ * "loading". Callers size and shape the block (the `Skeleton` component); this
+ * only paints and animates it.
+ */
+.kk-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--kk-surface-1);
+  border-radius: var(--kk-radius-sm);
+}
+
+.kk-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* One translucent band that slides across the block. Transform-only, so it
+     rides the compositor and never triggers layout. `linear` keeps the sweep
+     even across its infinite loop (the decelerate curve is for one-shot
+     arrivals, not a repeating heartbeat). */
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 255 / 6%) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: kk-skeleton-sheen var(--kk-duration-skeleton) linear infinite;
+}
+
+@keyframes kk-skeleton-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-skeleton::after {
     animation: none;
   }
 }
