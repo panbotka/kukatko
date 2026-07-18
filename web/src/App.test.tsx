@@ -37,6 +37,7 @@ const viewerAuth = {
   downloadToken: null,
   canWrite: false,
   isAdmin: false,
+  isMaintainer: false,
   login: vi.fn(),
   logout: vi.fn(),
   refresh: vi.fn(),

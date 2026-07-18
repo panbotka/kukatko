@@ -58,11 +58,13 @@ function runsResponse(runs: ImportRun[]): ImportRunsResponse {
 const emptyStats: JobStats = { by_state: {}, by_type: {}, total: 0 }
 
 function auth(
-  opts: { isAdmin?: boolean; canImport?: boolean; role?: string } = {},
+  opts: { isMaintainer?: boolean; canImport?: boolean; role?: string } = {},
 ): AuthContextValue {
-  const { isAdmin = false } = opts
-  const canImport = opts.canImport ?? isAdmin
-  const role = opts.role ?? (isAdmin ? 'admin' : 'viewer')
+  const { isMaintainer = false } = opts
+  // Import is an operations capability: it tracks the maintainer role.
+  const canImport = opts.canImport ?? isMaintainer
+  const role = opts.role ?? (isMaintainer ? 'maintainer' : 'viewer')
+  const isAdmin = role === 'admin' || role === 'maintainer'
   return {
     status: 'authenticated',
     user: { uid: 'u1', username: 'u', display_name: 'U', role },
@@ -70,6 +72,7 @@ function auth(
     downloadToken: null,
     canWrite: isAdmin || canImport,
     isAdmin,
+    isMaintainer: canImport,
     canImport,
     login: vi.fn(),
     logout: vi.fn(),
@@ -77,7 +80,7 @@ function auth(
   } as unknown as AuthContextValue
 }
 
-function renderPage(value: AuthContextValue = auth({ isAdmin: true })) {
+function renderPage(value: AuthContextValue = auth({ isMaintainer: true })) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
@@ -186,15 +189,24 @@ describe('ImportPage', () => {
   it('denies access to users without import permission', async () => {
     renderPage(auth())
     expect(
-      await screen.findByText('This page is available to administrators only.'),
+      await screen.findByText('This page is available to system maintainers only.'),
     ).toBeInTheDocument()
     expect(screen.queryByText('Import & migration')).not.toBeInTheDocument()
     expect(runsMock).not.toHaveBeenCalled()
   })
 
-  it('lets the ai agent (import permission, not admin) use the page', async () => {
+  it('denies a plain admin: import is operations, which needs maintainer', async () => {
+    renderPage(auth({ role: 'admin' }))
+    expect(
+      await screen.findByText('This page is available to system maintainers only.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Import & migration')).not.toBeInTheDocument()
+    expect(runsMock).not.toHaveBeenCalled()
+  })
+
+  it('lets a maintainer use the page', async () => {
     runsMock.mockResolvedValue(runsResponse([run(2, 'photoprism', 'done')]))
-    renderPage(auth({ isAdmin: false, canImport: true, role: 'ai' }))
+    renderPage(auth({ isMaintainer: true }))
 
     expect(await screen.findByText('Run history')).toBeInTheDocument()
     expect(runsMock).toHaveBeenCalled()

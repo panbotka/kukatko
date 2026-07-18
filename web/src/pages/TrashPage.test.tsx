@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -60,12 +61,32 @@ function page(photos: Photo[]): PhotoListResponse {
   return { photos, total: photos.length, limit: 100, offset: 0, next_offset: null }
 }
 
-function renderTrash() {
+// auth builds an AuthContext value. The trash is editor-visible, but its purge
+// controls (empty, delete forever) are admin-or-higher, so the flag drives them.
+function auth(isAdmin: boolean): AuthContextValue {
+  const role = isAdmin ? 'admin' : 'editor'
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role },
+    role,
+    downloadToken: null,
+    canWrite: true,
+    isAdmin,
+    isMaintainer: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+  } as unknown as AuthContextValue
+}
+
+function renderTrash(value: AuthContextValue = auth(true)) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/trash']}>
-        <TrashPage />
-      </MemoryRouter>
+      <AuthContext.Provider value={value}>
+        <MemoryRouter initialEntries={['/trash']}>
+          <TrashPage />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -156,5 +177,17 @@ describe('TrashPage', () => {
     fetchMock.mockResolvedValue(page([]))
     renderTrash()
     expect(await screen.findByText('Trash is empty')).toBeInTheDocument()
+  })
+
+  it('withholds every purge control from a non-admin editor', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg', 1)]))
+    renderTrash(auth(false))
+    await screen.findByRole('link', { name: 'a.jpg' })
+
+    // Restore stays — an editor curates the trash — but purging is admin-only:
+    // no Empty trash, and no per-card Delete forever.
+    expect(screen.getByRole('button', { name: 'Restore' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Empty trash' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete forever' })).not.toBeInTheDocument()
   })
 })

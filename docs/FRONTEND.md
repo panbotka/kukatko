@@ -21,10 +21,13 @@ zapiš sem.
   role něco má) odděluje tišší power-user/admin cluster: editorský dropdown **Nástroje** (`nav.tools`,
   `TOOLS_GROUP`, celý gate `canWrite`) teď vede **Rozšířit** `/expand` (power-user nástroj, dřív
   křičel top-level u alb/štítků) + **Najít osobu** `/faces` + **Rozpoznávání** `/recognition` +
-  **Možné chyby** `/outliers` + **Duplikáty** `/duplicates` + **Koš** `/trash`; **Import** `/import`
-  (`IMPORT_ITEM`) je top-level s gate `canImport` (admin **nebo** ai); adminský dropdown **Správa**
-  (`nav.admin`, `ADMIN_GROUP`, celý gate `isAdmin`) sdružuje **Údržba** `/maintenance` + **Systém**
-  `/system` + **Uživatelé** `/users` + **Audit** `/audit`.
+  **Možné chyby** `/outliers` + **Duplikáty** `/duplicates` + **Koš** `/trash`; provozní dropdown
+  **Provoz** (`nav.operations`, `OPERATIONS_GROUP`, celý gate `isMaintainer`) sdružuje **Import**
+  `/import` (dřív samostatná top-level položka; import je teď provozní schopnost — patří maintainerovi,
+  ne mimo žebříček) + **Údržba** `/maintenance` + **Systém** `/system`; governance dropdown **Správa**
+  (`nav.admin`, `GOVERNANCE_GROUP`, celý gate `isAdmin` = admin **nebo** maintainer) sdružuje
+  **Uživatelé** `/users` + **Audit** `/audit`. Role model je striktní žebřík
+  `viewer < editor < admin < maintainer` (viz `services/auth.ts` níže).
   **Bar vede globální hledání** `SearchCommand` (`components/search/`) — pole-jako spouštěč vlevo,
   **mimo collapse** (na mobilu tak zůstává vidět, když se nav složí do burgeru), otevírá **command
   paletu** dosažitelnou odkudkoli přes `/` nebo Cmd/Ctrl-K (nezabírá psaní — viz `SearchCommand`
@@ -45,8 +48,9 @@ zapiš sem.
   krátké stránce prostě následuje obsah, nic nepřekrývá ani nefloatuje. Uvnitř je space-between
   flex řádek: operátor + GitHub vlevo, pravou stranu vyplňuje `children` (dnes admin badge stav
   fronty jobů); `.kukatko-footer` sdílí safe-area padding s `.kukatko-main`),
-  `JobQueueBadges` (pravá strana patičky: kompaktní badge se stavem fronty jobů **jen pro adminy**;
-  přes `useAuth().isAdmin` + `useJobStats` — neadmin nic nerendruje a **nedělá žádný request**.
+  `JobQueueBadges` (pravá strana patičky: kompaktní badge se stavem fronty jobů **jen pro maintainery**
+  — endpoint `/jobs` je maintainer-only provozní schopnost; přes `useAuth().isMaintainer` +
+  `useJobStats` — kdo není maintainer, nic nerendruje a **nedělá žádný request**.
   Jeden badge na neprázdný stav `queued`/`running`/`failed`/`dead` z `by_state` (terminální `done`
   se záměrně vynechává), `failed`/`dead` mají `bg="danger"`, aby padly do oka; když je vše nulové,
   jediný tichý badge `idle`. Selhání requestu badge tiše skryje — patička nikdy nespadne; texty
@@ -463,25 +467,25 @@ zapiš sem.
   všech souborů se **všechny** rozpoznané fotky (nové **i** duplicitní `resolvedUids`) přiřadí
   jedním `POST /photos/bulk` (stav „přiřazuji…“, úspěch, nebo **opakovatelná** chyba — fotky jsou
   nahrané, selhalo jen přiřazení); bez výběru se žádné volání nedělá,
-  `ImportPage` = `/import` (admin **nebo** ai) konzole importu/migrace: dvě sekce (PhotoPrism,
+  `ImportPage` = `/import` (jen maintainer) konzole importu/migrace: dvě sekce (PhotoPrism,
   photo-sorter) s tlačítkem **Spustit import** (gate na `sources` flagy), živý průběh běžícího běhu
   (spinner + counts imported/updated/skipped/failed) a stav fronty na pozadí (`GET /jobs/stats`),
   plus tabulka **historie běhů** (`import_runs`: zdroj/začátek/konec/stav/počty/chyba); polluje
   `GET /import/runs` + `GET /jobs/stats` po 3 s, 409 → „už běží", confirm před prvním (velkým) během
-  zdroje, sebe-gate na `canImport`. Historie ukazuje i běhy zdroje **`folder`** (`kukatko import dir`,
+  zdroje, sebe-gate na `canImport` (= maintainer). Historie ukazuje i běhy zdroje **`folder`** (`kukatko import dir`,
   čte adresář na disku serveru → **nemá tlačítko**, jen se objeví v tabulce): v `services/import.ts`
   je proto `RunSource` = `ImportSource | 'folder'` (spouštěcí sekce zůstávají `SOURCES` =
   photoprism/photosorter), popisek `import.source.folder`,
-  `MaintenancePage` = `/maintenance` (jen admin) konzole údržby knihovny: tlačítko **Spustit kontrolu**
+  `MaintenancePage` = `/maintenance` (jen maintainer) konzole údržby knihovny: tlačítko **Spustit kontrolu**
   (`GET /maintenance/scan`) → souhrn totálů + tabulka nálezů (počet + vzorky per třída, nebo „knihovna
   konzistentní"), checkboxy oprav (náhledy/embeddingy/obličeje/hashe/import osiřelých — anotované
   zbývajícím počtem z poslední kontroly) → **Spustit opravy** (`POST /maintenance/repair`) s výsledným
   souhrnem, plus stav fronty na pozadí (`GET /jobs/stats` polluje po 3 s) jako progress; **každý nález,
   souhrnný „drift" řádek i každý stav fronty nese tiché plain-language vysvětlení** (bez najetí myší) —
   `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint`, `maintenance.jobs.intro`
-  a sdílená `JobStateLegend` (total/queued/running/failed/**dead**) — aby admin poznal, co počet
-  znamená a zda je třeba jednat; sebe-gate na `isAdmin`,
-  `SystemStatusPage` = `/system` (jen admin) **system-status dashboard**: auto-refresh (polling 5 s)
+  a sdílená `JobStateLegend` (total/queued/running/failed/**dead**) — aby maintainer poznal, co počet
+  znamená a zda je třeba jednat; sebe-gate na `isMaintainer`,
+  `SystemStatusPage` = `/system` (jen maintainer) **system-status dashboard**: auto-refresh (polling 5 s)
   `GET /system/status` → kartová mřížka (DB, embeddingy, fronta jobů, záloha, importy, úložiště,
   **mapy**, verze) s **rychlými akcemi** — *znovu zařadit mrtvé úlohy* (`requeueDeadLetterJobs`: list dead →
   per-job `POST /jobs/{id}/requeue`), *spustit zálohu* (`POST /backup`), odkazy na flow importu
@@ -490,20 +494,24 @@ zapiš sem.
   stav mapy.com — `key_rejected` červeně + co s tím (vyměnit klíč v konzoli mapy.com), degradace
   žlutě, bez klíče „Nenastaveno"; karta fronty jobů nese sdílenou `JobStateLegend`
   (total/queued/running/failed/**dead**/**pending** = „Čeká na box") s plain-language vysvětlením
-  každého stavu (`jobStates.*` + `system.jobs.intro`); loading/error/notice stavy, sebe-gate na `isAdmin`,
-  `UsersPage` = `/users` (jen admin) **správa účtů**: tabulka uživatelů (jméno, celé jméno, role,
+  každého stavu (`jobStates.*` + `system.jobs.intro`); loading/error/notice stavy, sebe-gate na `isMaintainer`,
+  `UsersPage` = `/users` (admin **nebo** maintainer, `isAdmin`) **správa účtů**: tabulka uživatelů (jméno, celé jméno, role,
   stav, poznámka, poslední přihlášení, vytvořen) nad `GET /admin/users`, dialogy **Nový uživatel**
   (username/heslo/role/jméno/poznámka) a **Upravit** (role/jméno/poznámka; username je `readOnly`
   `plaintext` — backend ho měnit neumí), **Změnit heslo** jinému uživateli (odhlásí ho ze všech
   zařízení; hash se nikdy nikam nevykresluje) a **Povolit/Zakázat** za potvrzovacím dialogem
   (`setUserDisabled`); **vlastní řádek má toggle `disabled`** + krátké vysvětlení proč
   (`users.selfDisableHint`), **mazání se nenabízí** — účet se vyřazuje zakázáním, aby historie
-  (fotky, hodnocení, audit) zůstala celá. Validační chyby API se mapují na konkrétní pole
+  (fotky, hodnocení, audit) zůstala celá. **Maintainer hranice** (zrcadlí backend
+  `authorizeUserManagement`): roli **maintainer** smí udělit jen maintainer — nemaintainerovi ji role
+  `<select>` vůbec nenabídne (`ROLES.filter`, prop `isMaintainer`) — a účet maintainera nesmí
+  nemaintainer upravit / přehesovat / zakázat, takže jeho tři řádkové akce jsou `disabled` s hintem
+  `users.maintainerManageHint` (`canManage = isMaintainer || role !== 'maintainer'`). Validační chyby API se mapují na konkrétní pole
   (`fieldErrorFor`: 409 → username, 400 podle klíčového slova → password/role/note, jinak
   form-level alert), ne na obecný banner. Stavy: **skeleton** (`Placeholder` v tabulce) při načítání,
   error alert s **Zkusit znovu**, prázdný stav (`EmptyState`, prakticky nedosažitelný — bootstrap
   admin vždy existuje, ale nesmí spadnout); sebe-gate na `isAdmin`,
-  `AuditPage` = `/audit` (jen admin) **auditní log**: read-only tabulka záznamů z `GET /audit`
+  `AuditPage` = `/audit` (admin **nebo** maintainer, `isAdmin`) **auditní log**: read-only tabulka záznamů z `GET /audit`
   od nejnovějších (kdy/kdo/akce/cíl/IP), `details` JSON přes rozbalovací řádek (`aria-expanded`,
   ukáže i `user_agent`). Filtry (aktér = `<select>` nad rosterem přes `fetchUsers`, akce, typ+UID
   entity, rozsah dat `od`/`do`) v **draft** formuláři → **Filtrovat** je zapíše do URL a resetuje
@@ -835,10 +843,12 @@ zapiš sem.
   (`prime` v efektu), jehož `statusOf` jde zpátky do `useSlideshow` jako `readiness`, takže
   auto-advance počká, než je další snímek dekódovaný; exit → `navigate(-1)`
   (fallback na zdrojový pohled — album/štítek/`searchHref`/knihovna), takže Zpět funguje,
-  `TrashPage` = `/trash` (editor/admin) koš: archivované fotky (`useScopedPhotos`-style listing přes
+  `TrashPage` = `/trash` (editor+ vidí stránku) koš: archivované fotky (`useScopedPhotos`-style listing přes
   `usePaginatedPhotos` scopnutý `archived=only`) v mřížce `TrashCard` s `FilterBar`, **obnova**
-  (`unarchivePhoto`) a **trvalé mazání** (`purgePhoto`) jednotlivě i hromadně (`useSelection`
-  `SelectionBar`), **Vyprázdnit koš** (`emptyTrash`), každá trvalá akce přes potvrzovací `Modal`;
+  (`unarchivePhoto`) je editor akce; **trvalé mazání** (`purgePhoto`) jednotlivě i hromadně (`useSelection`
+  `SelectionBar`) a **Vyprázdnit koš** (`emptyTrash`) jsou **jen admin+** (backend guard `RequireAdmin`),
+  takže editor vidí u karty i v baru jen Obnovit — purge ovládací prvky se renderují za `isAdmin`
+  (`TrashCard` prop `canPurge`); každá trvalá akce přes potvrzovací `Modal`;
   `fetchTrashInfo` dotáhne retenci pro odpočet na kartách,
   `DuplicatesPage` = `/duplicates` (editor/admin) kontrola a **řešení** duplikátů: stránkovaný seznam
   skupin (`fetchDuplicates`, „načíst další" přes `next_offset`) v `DuplicateGroupCard`; per skupina
@@ -1044,7 +1054,7 @@ zapiš sem.
   a dvěma opačnými verdikty (✓ odebrat / ✗ potvrdit), výběrovým checkboxem a focus ringem; config
   strip s pickerem osoby a procentním prahem; statistiky včetně **`no_embedding`** hlášky);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
-  vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin`/`canImport`; `ProtectedRoute` =
+  vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`; `ProtectedRoute` =
   `RequireAuth` + `RequireRole` + `RequireImport` route guardy), `hooks/` (`usePaginatedPhotos` = sdílený
   paginovaný infinite-scroll loader nad libovolným `PageFetcher`: akumuluje stránky,
   `loadMore`/`retry`, reset+refetch při změně dotazu/`key`/`enabled`, ruší in-flight requesty
@@ -1420,8 +1430,10 @@ zapiš sem.
   jazykem prohlížeče; neparseovatelný vstup → původní string; používá PhotoTile/DuplicateGroupCard/
   MetadataPanel/Import/System pro datumy v cs/en formátu))),
   `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
-  `User`/`Role` (admin/editor/viewer/ai)/`AuthSession`, `ApiError` se statusem, `canWrite`/`canImport`/`roleAtLeast`,
-  `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
+  `User`/`Role` (striktní žebřík `viewer < editor < admin < maintainer`)/`AuthSession`, `ApiError` se
+  statusem, `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) a
+  `canImport` (= maintainer; import je provozní schopnost) — vše přes `ROLE_RANK` zrcadlící backend
+  `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
   (filtry/řazení/stránkování → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
   `searchPhotos(params,mode?,signal)` nad `GET /api/v1/search` (mód
   `fulltext`/`semantic`/`hybrid`, odpověď navíc `mode`+`degraded`),
@@ -1575,7 +1587,8 @@ zapiš sem.
   mutovatelného profilu → posílej i pole, která dialog nenabízí), `setUserDisabled(user,disabled,signal)`
   (zakázat → dedikovaný `POST /{uid}/disable`, který nepotřebuje profil a nepřepíše souběžnou editaci;
   povolit → `PATCH` s `disabled:false`, vlastní endpoint neexistuje) a `resetUserPassword(uid,pwd,signal)`
-  (`POST /{uid}/password`, 204, odhlásí všechny session cíle); konstanty `ROLES`/`MAX_NOTE_LENGTH`,
+  (`POST /{uid}/password`, 204, odhlásí všechny session cíle); konstanty `ROLES`
+  (`viewer`/`editor`/`admin`/`maintainer`, vzestupně po žebříku)/`MAX_NOTE_LENGTH`,
   typy `AdminUser`/`CreateUserBody`/`UpdateUserBody`; hash hesla nemá kam uniknout — backend ho
   neserializuje a žádný typ pro něj nemá pole,
   `audit.ts` = admin auditní klient nad `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
@@ -1736,9 +1749,10 @@ zapiš sem.
   `/places`, `/people`,
   `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` a
   `/duplicates` navíc pod `RequireRole role="editor"` = write-only (a `/duplicates/compare` tamtéž,
-  ale **mimo `Layout`** — fullscreen jako `/review`), `/import` pod `RequireImport`
-  (admin **nebo** ai — mimo žebříček rolí, řídí `canImport`), `/maintenance`, `/system`,
-  `/users` a `/audit` pod `RequireRole role="admin"` = admin-only). Konfig:
+  ale **mimo `Layout`** — fullscreen jako `/review`), `/import` pod `RequireImport` (= maintainer,
+  `canImport`), `/maintenance` a `/system` pod `RequireRole role="maintainer"` = provoz (jen
+  maintainer), `/users` a `/audit` pod `RequireRole role="admin"` = governance (admin **nebo**
+  maintainer)). Konfig:
   `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.

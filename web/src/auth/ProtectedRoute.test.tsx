@@ -10,14 +10,18 @@ import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthConte
 import { RequireAuth, RequireImport, RequireRole } from './ProtectedRoute'
 
 function authValue(status: AuthStatus, role: Role | null = null): AuthContextValue {
+  const isAdmin = role === 'admin' || role === 'maintainer'
+  const isMaintainer = role === 'maintainer'
   return {
     status,
     user: role ? ({ role } as AuthContextValue['user']) : null,
     role,
     downloadToken: null,
-    canWrite: role === 'editor' || role === 'admin' || role === 'ai',
-    isAdmin: role === 'admin',
-    canImport: role === 'admin' || role === 'ai',
+    canWrite: role === 'editor' || isAdmin,
+    isAdmin,
+    isMaintainer,
+    // Import is an operations capability: maintainer only.
+    canImport: isMaintainer,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
@@ -89,20 +93,16 @@ describe('RequireRole', () => {
 })
 
 describe('RequireImport', () => {
-  it('renders the content for admins', () => {
-    renderApp(authValue('authenticated', 'admin'), 'import')
+  it('renders the content for maintainers', () => {
+    renderApp(authValue('authenticated', 'maintainer'), 'import')
 
     expect(screen.getByText('secret content')).toBeInTheDocument()
   })
 
-  it('renders the content for the ai agent', () => {
-    renderApp(authValue('authenticated', 'ai'), 'import')
-
-    expect(screen.getByText('secret content')).toBeInTheDocument()
-  })
-
-  it('redirects editors and viewers to home', () => {
-    for (const role of ['editor', 'viewer'] as const) {
+  it('redirects admins, editors and viewers to home', () => {
+    // Import is now an operations capability: only a maintainer holds it, so even
+    // an admin (governance, not operations) is sent home.
+    for (const role of ['admin', 'editor', 'viewer'] as const) {
       const { unmount } = renderApp(authValue('authenticated', role), 'import')
       expect(screen.getByText('home page')).toBeInTheDocument()
       expect(screen.queryByText('secret content')).not.toBeInTheDocument()

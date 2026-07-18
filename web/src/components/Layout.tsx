@@ -113,13 +113,25 @@ const TOOLS_GROUP: NavGroup = {
   ],
 }
 
-/** The admin-only "Správa" (Admin) group, gated behind `isAdmin`. */
-const ADMIN_GROUP: NavGroup = {
-  id: 'nav-admin',
-  labelKey: 'nav.admin',
-  titleKey: 'nav.titles.admin',
+/**
+ * The maintainer-only "Provoz" (Operations) group, gated behind `isMaintainer`.
+ * It gathers the operational tools at the top of the role ladder — import,
+ * library maintenance and system status. Import lives here rather than top-level:
+ * it is no longer an off-ladder capability, it needs the maintainer role like the
+ * rest of operations.
+ */
+const OPERATIONS_GROUP: NavGroup = {
+  id: 'nav-operations',
+  labelKey: 'nav.operations',
+  titleKey: 'nav.titles.operations',
   icon: 'sliders',
   items: [
+    {
+      to: '/import',
+      labelKey: 'nav.import',
+      titleKey: 'nav.titles.import',
+      icon: 'box-arrow-in-down',
+    },
     {
       to: '/maintenance',
       labelKey: 'nav.maintenance',
@@ -127,6 +139,20 @@ const ADMIN_GROUP: NavGroup = {
       icon: 'wrench-adjustable',
     },
     { to: '/system', labelKey: 'nav.system', titleKey: 'nav.titles.system', icon: 'activity' },
+  ],
+}
+
+/**
+ * The governance "Správa" (Admin) group, gated behind `isAdmin` (admin or
+ * higher). It holds the account and audit administration — the powers an admin
+ * has that stop short of operations.
+ */
+const GOVERNANCE_GROUP: NavGroup = {
+  id: 'nav-governance',
+  labelKey: 'nav.admin',
+  titleKey: 'nav.titles.admin',
+  icon: 'shield-lock',
+  items: [
     { to: '/users', labelKey: 'nav.users', titleKey: 'nav.titles.users', icon: 'person-gear' },
     { to: '/audit', labelKey: 'nav.audit', titleKey: 'nav.titles.audit', icon: 'clock-history' },
   ],
@@ -158,18 +184,6 @@ const UPLOAD_ITEM: NavEntry = {
 }
 
 /**
- * The import trigger, kept top-level and gated behind `canImport` rather than
- * `isAdmin`: the ai agent may import without being an administrator, so it lives
- * outside the admin-only group.
- */
-const IMPORT_ITEM: NavEntry = {
-  to: '/import',
-  labelKey: 'nav.import',
-  titleKey: 'nav.titles.import',
-  icon: 'box-arrow-in-down',
-}
-
-/**
  * Reports whether `pathname` matches the given nav route, treating a route as
  * active for its detail sub-paths too (e.g. `/albums/ab12` activates `/albums`).
  * Used to light up the parent dropdown when any of its children is current.
@@ -188,9 +202,10 @@ function pathMatches(pathname: string, route: string): boolean {
  * dropdown, the "Třídění" review game, and — as the one filled call-to-action —
  * **Nahrát**. A thin divider then sets off the quieter power-user and admin
  * cluster: the "Nástroje" tools dropdown (which now also holds the expand tool),
- * the "Import" trigger, and the "Správa" admin dropdown. The role-gated groups
- * are hidden entirely from roles that cannot use any of their children, and the
- * divider only appears when at least one item follows it. Leading the bar is the
+ * the maintainer-only "Provoz" operations dropdown (import, maintenance, system),
+ * and the admin-or-higher "Správa" governance dropdown (users, audit). The
+ * role-gated groups are hidden entirely from roles that cannot use any of their
+ * children, and the divider only appears when at least one item follows it. Leading the bar is the
  * global {@link SearchCommand} — a field-shaped trigger that opens a keyboard-first
  * command palette (`/` or Cmd/Ctrl-K), kept outside the collapse so it stays
  * visible on a phone while the nav folds into the hamburger. The language switcher
@@ -200,7 +215,7 @@ function pathMatches(pathname: string, route: string): boolean {
  */
 export function Layout() {
   const { t } = useTranslation()
-  const { user, canWrite, isAdmin, canImport, logout } = useAuth()
+  const { user, canWrite, isAdmin, isMaintainer, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
 
@@ -298,17 +313,15 @@ export function Layout() {
 
               {/* A divider fences off the quieter power-user / admin cluster, but
                   only when the current role actually has something below it. */}
-              {(canWrite || canImport || isAdmin) && (
-                <div className="kukatko-nav-divider" aria-hidden="true" />
-              )}
+              {(canWrite || isAdmin) && <div className="kukatko-nav-divider" aria-hidden="true" />}
 
               {/* Editor-only tools (expand, faces, duplicates, …); hidden from
                   viewers. */}
               {canWrite && renderGroup(TOOLS_GROUP)}
-              {/* Import is reachable by admins and the ai agent. */}
-              {canImport && renderLink(IMPORT_ITEM)}
-              {/* Admin-only administration; hidden from non-admins. */}
-              {isAdmin && renderGroup(ADMIN_GROUP)}
+              {/* Maintainer-only operations (import, maintenance, system). */}
+              {isMaintainer && renderGroup(OPERATIONS_GROUP)}
+              {/* Governance (users, audit); admin or higher. */}
+              {isAdmin && renderGroup(GOVERNANCE_GROUP)}
             </Nav>
             <Nav className="align-items-center">
               <KeyboardShortcutsHelp />

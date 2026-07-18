@@ -6,9 +6,12 @@ import {
   canWrite,
   changePassword,
   fetchMe,
+  isAdmin,
+  isMaintainer,
   login,
   logout,
   roleAtLeast,
+  type Role,
 } from './auth'
 
 const SESSION = {
@@ -113,30 +116,54 @@ describe('changePassword', () => {
 })
 
 describe('role helpers', () => {
-  it('roleAtLeast respects the privilege ordering', () => {
+  // The four roles in ascending ladder order: viewer < editor < admin < maintainer.
+  const ROLES: Role[] = ['viewer', 'editor', 'admin', 'maintainer']
+
+  it('roleAtLeast respects the strict ladder ordering', () => {
+    expect(roleAtLeast('maintainer', 'admin')).toBe(true)
     expect(roleAtLeast('admin', 'editor')).toBe(true)
     expect(roleAtLeast('editor', 'editor')).toBe(true)
     expect(roleAtLeast('viewer', 'editor')).toBe(false)
+    // A lower role never meets a higher threshold.
+    expect(roleAtLeast('admin', 'maintainer')).toBe(false)
+    expect(roleAtLeast('editor', 'admin')).toBe(false)
   })
 
-  it('canWrite is true for editor, admin and the ai agent', () => {
-    expect(canWrite('admin')).toBe(true)
-    expect(canWrite('editor')).toBe(true)
-    expect(canWrite('ai')).toBe(true)
-    expect(canWrite('viewer')).toBe(false)
+  it('canWrite is true for editor and above', () => {
+    const expected: Record<Role, boolean> = {
+      viewer: false,
+      editor: true,
+      admin: true,
+      maintainer: true,
+    }
+    for (const role of ROLES) {
+      expect(canWrite(role)).toBe(expected[role])
+    }
   })
 
-  it('ranks the ai agent alongside editor but below admin', () => {
-    // ai holds editor's write powers...
-    expect(roleAtLeast('ai', 'editor')).toBe(true)
-    // ...but is not an administrator.
-    expect(roleAtLeast('ai', 'admin')).toBe(false)
+  it('isAdmin is admin-or-higher (admin and maintainer)', () => {
+    const expected: Record<Role, boolean> = {
+      viewer: false,
+      editor: false,
+      admin: true,
+      maintainer: true,
+    }
+    for (const role of ROLES) {
+      expect(isAdmin(role)).toBe(expected[role])
+    }
   })
 
-  it('canImport is true for admin and the ai agent only', () => {
-    expect(canImport('admin')).toBe(true)
-    expect(canImport('ai')).toBe(true)
-    expect(canImport('editor')).toBe(false)
-    expect(canImport('viewer')).toBe(false)
+  it('the maintainer/import capability is maintainer-only', () => {
+    const expected: Record<Role, boolean> = {
+      viewer: false,
+      editor: false,
+      admin: false,
+      maintainer: true,
+    }
+    for (const role of ROLES) {
+      // Import is an operations capability, so it tracks isMaintainer exactly.
+      expect(isMaintainer(role)).toBe(expected[role])
+      expect(canImport(role)).toBe(expected[role])
+    }
   })
 })

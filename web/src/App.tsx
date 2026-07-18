@@ -97,14 +97,18 @@ export function AppRoutes() {
             {/* Trash management (restore / permanent delete) is a write action. */}
             <Route path="/trash" element={<TrashPage />} />
           </Route>
-          {/* Import/migration is reachable by admins and the ai agent. */}
+          {/* Import/migration is an operations capability: maintainer only. */}
           <Route element={<RequireImport />}>
             <Route path="/import" element={<ImportPage />} />
           </Route>
-          {/* Upkeep and account administration are admin-only. */}
-          <Route element={<RequireRole role="admin" />}>
+          {/* Operations — library upkeep and system status — are maintainer only,
+              the top of the role ladder. */}
+          <Route element={<RequireRole role="maintainer" />}>
             <Route path="/maintenance" element={<MaintenancePage />} />
             <Route path="/system" element={<SystemStatusPage />} />
+          </Route>
+          {/* Governance — user management and the audit log — is admin or higher. */}
+          <Route element={<RequireRole role="admin" />}>
             <Route path="/users" element={<UsersPage />} />
             <Route path="/audit" element={<AuditPage />} />
           </Route>

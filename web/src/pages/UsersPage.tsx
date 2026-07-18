@@ -131,6 +131,11 @@ function UsersSkeleton() {
 interface UserFormModalProps {
   /** The row being edited, or null to create a new user. */
   user: AdminUser | null
+  /**
+   * Whether the signed-in actor is a maintainer. Only a maintainer may grant the
+   * `maintainer` role, so a non-maintainer's role selector omits that option.
+   */
+  isMaintainer: boolean
   onHide: () => void
   onSaved: (user: AdminUser) => void
 }
@@ -143,9 +148,15 @@ interface UserFormModalProps {
  * Validation errors from the API land next to the input that caused them rather
  * than in a banner, so the reader does not have to guess which field to fix.
  */
-function UserFormModal({ user, onHide, onSaved }: UserFormModalProps) {
+function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalProps) {
   const { t } = useTranslation()
   const creating = user === null
+
+  // Granting the top-of-ladder maintainer role is a maintainer-only power
+  // (mirrors the backend `authorizeUserManagement`); everyone else is offered
+  // viewer/editor/admin. Editing a maintainer's account is blocked upstream, so
+  // this filtered list never has to represent a role the select cannot show.
+  const availableRoles = isMaintainer ? ROLES : ROLES.filter((value) => value !== 'maintainer')
 
   const [username, setUsername] = useState(user?.username ?? '')
   const [password, setPassword] = useState('')
@@ -282,7 +293,7 @@ function UserFormModal({ user, onHide, onSaved }: UserFormModalProps) {
               }}
               disabled={submitting}
             >
-              {ROLES.map((value) => (
+              {availableRoles.map((value) => (
                 <option key={value} value={value}>
                   {t(`roles.${value}`)}
                 </option>
@@ -521,6 +532,12 @@ interface UserRowProps {
   user: AdminUser
   /** True when the row is the signed-in administrator's own account. */
   self: boolean
+  /**
+   * True when the signed-in actor may manage this account. A non-maintainer
+   * cannot touch a maintainer's account (edit, reset password or disable), so its
+   * three actions are disabled — mirroring the backend `guardMaintainerBoundary`.
+   */
+  canManage: boolean
   locale: string
   onEdit: () => void
   onPassword: () => void
@@ -528,7 +545,7 @@ interface UserRowProps {
 }
 
 /** One user: profile columns, then the three per-row actions. */
-function UserRow({ user, self, locale, onEdit, onPassword, onToggle }: UserRowProps) {
+function UserRow({ user, self, canManage, locale, onEdit, onPassword, onToggle }: UserRowProps) {
   const { t } = useTranslation()
   return (
     <tr>
@@ -553,23 +570,44 @@ function UserRow({ user, self, locale, onEdit, onPassword, onToggle }: UserRowPr
       <td className="text-nowrap">{formatDate(user.created_at, locale)}</td>
       <td>
         <div className="d-flex gap-1 flex-wrap">
-          <Button variant="outline-secondary" size="sm" onClick={onEdit}>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            disabled={!canManage}
+            title={canManage ? undefined : t('users.maintainerManageHint')}
+            onClick={onEdit}
+          >
             {t('users.edit')}
           </Button>
-          <Button variant="outline-secondary" size="sm" onClick={onPassword}>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            disabled={!canManage}
+            title={canManage ? undefined : t('users.maintainerManageHint')}
+            onClick={onPassword}
+          >
             {t('users.changePassword')}
           </Button>
           <Button
             variant={user.disabled ? 'outline-success' : 'outline-danger'}
             size="sm"
-            disabled={self}
-            title={self ? t('users.selfDisableHint') : undefined}
+            disabled={self || !canManage}
+            title={
+              self
+                ? t('users.selfDisableHint')
+                : canManage
+                  ? undefined
+                  : t('users.maintainerManageHint')
+            }
             onClick={onToggle}
           >
             {user.disabled ? t('users.enable') : t('users.disable')}
           </Button>
         </div>
         {self && <div className="text-secondary small mt-1">{t('users.selfDisableHint')}</div>}
+        {!self && !canManage && (
+          <div className="text-secondary small mt-1">{t('users.maintainerManageHint')}</div>
+        )}
       </td>
     </tr>
   )
@@ -588,7 +626,7 @@ function UserRow({ user, self, locale, onEdit, onPassword, onToggle }: UserRowPr
  */
 export function UsersPage() {
   const { t, i18n } = useTranslation()
-  const { isAdmin, user: me } = useAuth()
+  const { isAdmin, isMaintainer, user: me } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })
   const [toggling, setToggling] = useState(false)
@@ -735,6 +773,7 @@ export function UsersPage() {
                     key={user.uid}
                     user={user}
                     self={user.uid === me?.uid}
+                    canManage={isMaintainer || user.role !== 'maintainer'}
                     locale={i18n.language}
                     onEdit={() => {
                       setDialog({ kind: 'edit', user })
@@ -756,6 +795,7 @@ export function UsersPage() {
       {(dialog.kind === 'create' || dialog.kind === 'edit') && (
         <UserFormModal
           user={dialog.kind === 'edit' ? dialog.user : null}
+          isMaintainer={isMaintainer}
           onHide={close}
           onSaved={(saved) => {
             upsert(saved)

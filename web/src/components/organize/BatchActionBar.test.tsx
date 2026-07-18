@@ -80,6 +80,7 @@ const editorAuth: AuthContextValue = {
   downloadToken: null,
   canWrite: true,
   isAdmin: false,
+  isMaintainer: false,
   canImport: false,
   login: vi.fn(),
   logout: vi.fn(),

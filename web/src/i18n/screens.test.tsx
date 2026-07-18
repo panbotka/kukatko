@@ -10,15 +10,20 @@ import type { AlbumSummary } from '../services/organize'
 
 import i18n from './index'
 
-/** An admin auth context so role-gated nav links all render and get translated. */
-function adminAuth(): AuthContextValue {
+/**
+ * A maintainer auth context — the top of the ladder — so every role-gated nav
+ * group renders (Tools, the maintainer Operations group, and the governance Admin
+ * group) and all of their labels get translated.
+ */
+function maintainerAuth(): AuthContextValue {
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'admin', display_name: 'Admin', role: 'admin' },
-    role: 'admin',
+    user: { uid: 'u1', username: 'ops', display_name: 'Ops', role: 'maintainer' },
+    role: 'maintainer',
     downloadToken: null,
     canWrite: true,
     isAdmin: true,
+    isMaintainer: true,
     canImport: true,
     login: vi.fn(),
     logout: vi.fn(),
@@ -48,7 +53,7 @@ function album(count: number): AlbumSummary {
 function renderScreens(instance: typeof i18n) {
   return render(
     <I18nextProvider i18n={instance}>
-      <AuthContext.Provider value={adminAuth()}>
+      <AuthContext.Provider value={maintainerAuth()}>
         <MemoryRouter initialEntries={['/']}>
           <Layout />
           <AlbumTile album={album(1)} />
@@ -113,7 +118,7 @@ describe('language switch updates all visible text', () => {
     await i18n.changeLanguage('en')
     rerender(
       <I18nextProvider i18n={i18n}>
-        <AuthContext.Provider value={adminAuth()}>
+        <AuthContext.Provider value={maintainerAuth()}>
           <MemoryRouter initialEntries={['/']}>
             <Layout />
             <AlbumTile album={album(1)} />

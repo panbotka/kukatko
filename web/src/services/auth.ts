@@ -1,9 +1,12 @@
 /**
- * User roles mirrored from the backend (`internal/auth/role.go`). `ai` is an
- * automated agent (API token) with an editor's write powers plus permission to
- * trigger imports, but no other administrative capability.
+ * User roles mirrored from the backend (`internal/auth/role.go`), on a strict
+ * ladder `viewer < editor < admin < maintainer` where each role inherits every
+ * permission of the ones below it. viewer is read-only; editor adds write access
+ * to media and metadata; admin adds governance (user management, audit, emptying
+ * the trash); maintainer adds operations (imports, maintenance, system status,
+ * backup, restore, jobs, processing) and is the most powerful role.
  */
-export type Role = 'admin' | 'editor' | 'viewer' | 'ai'
+export type Role = 'viewer' | 'editor' | 'admin' | 'maintainer'
 
 /** Authenticated user, mirroring the backend `auth.User` JSON shape. */
 export interface User {
@@ -144,17 +147,15 @@ export async function changePassword(
 export const MIN_PASSWORD_LENGTH = 8
 
 /**
- * Relative rank of each role on the read/write/admin ladder; higher means more
- * privileges. The `ai` agent sits alongside `editor` (same write access) and is
- * deliberately below `admin`: it is not an administrator. Import access, which
- * `ai` also holds, is off this ladder and expressed by {@link canImport}, not by
- * rank.
+ * Relative rank of each role on the strict privilege ladder; higher means more
+ * privileges. Every capability below is expressed as a threshold on this rank,
+ * so the ladder is the single source of truth for "at least this role".
  */
 const ROLE_RANK: Record<Role, number> = {
   viewer: 0,
   editor: 1,
-  ai: 1,
   admin: 2,
+  maintainer: 3,
 }
 
 /** Reports whether `role` meets or exceeds the `required` role. */
@@ -162,16 +163,35 @@ export function roleAtLeast(role: Role, required: Role): boolean {
   return ROLE_RANK[role] >= ROLE_RANK[required]
 }
 
-/** Reports whether a role may perform write actions (editor, admin or ai). */
+/** Reports whether a role may perform write actions (editor and above). */
 export function canWrite(role: Role): boolean {
   return roleAtLeast(role, 'editor')
 }
 
 /**
- * Reports whether a role may trigger imports/migrations. Admins and the `ai`
- * agent can; editors and viewers cannot. This mirrors the backend
- * `Role.CanImport` and guards the `/import` route and nav entry.
+ * Reports whether a role holds the governance privileges — user management, the
+ * audit log, emptying/purging the trash. This is admin-or-higher: a maintainer
+ * inherits every admin power, so it qualifies too. Mirrors backend `Role.IsAdmin`.
+ */
+export function isAdmin(role: Role): boolean {
+  return roleAtLeast(role, 'admin')
+}
+
+/**
+ * Reports whether a role holds the operations privileges at the top of the
+ * ladder: imports, maintenance, system status, backup, restore, jobs and
+ * processing backfills. Only a maintainer qualifies. Mirrors backend
+ * `Role.CanMaintain`.
+ */
+export function isMaintainer(role: Role): boolean {
+  return roleAtLeast(role, 'maintainer')
+}
+
+/**
+ * Reports whether a role may trigger imports/migrations. Import is an operations
+ * capability, so only a maintainer qualifies. Mirrors backend `Role.CanImport`
+ * and guards the `/import` route and nav entry.
  */
 export function canImport(role: Role): boolean {
-  return role === 'admin' || role === 'ai'
+  return isMaintainer(role)
 }

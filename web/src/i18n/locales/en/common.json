@@ -27,6 +27,7 @@
     "browse": "Browse",
     "tools": "Tools",
     "admin": "Admin",
+    "operations": "Operations",
     "library": "Library",
     "favorites": "Favorites",
     "albums": "Albums",
@@ -64,6 +65,7 @@
       "duplicates": "Review the duplicates",
       "trash": "Show the trash",
       "admin": "Show the administration",
+      "operations": "Show the operations tools",
       "import": "Run a photo import",
       "maintenance": "Run library maintenance",
       "system": "Show the system status",
@@ -85,10 +87,10 @@
     "switch": "Switch language"
   },
   "roles": {
-    "admin": "Administrator",
-    "editor": "Editor",
     "viewer": "Viewer",
-    "ai": "AI agent"
+    "editor": "Editor",
+    "admin": "Administrator",
+    "maintainer": "Maintainer"
   },
   "auth": {
     "loading": "Loading…"
@@ -1344,7 +1346,7 @@
     "warnFirstRun": "A first run can take a while and pull in a large number of photos. Subsequent runs only process new changes.",
     "confirmFirstRunTitle": "First import run",
     "confirmFirstRun": "This is the first run for this source and may take a while. Start the import?",
-    "adminOnly": "This page is available to administrators only.",
+    "maintainerOnly": "This page is available to system maintainers only.",
     "loading": "Loading imports…",
     "error": "Failed to load import status.",
     "source": {
@@ -1425,7 +1427,7 @@
   "maintenance": {
     "title": "Library maintenance",
     "subtitle": "Check integrity between the catalogue and the files on disk, and repair derived data. Originals are never deleted.",
-    "adminOnly": "This page is available to administrators only.",
+    "maintainerOnly": "This page is available to system maintainers only.",
     "loading": "Loading…",
     "scan": {
       "run": "Run scan",
@@ -1584,7 +1586,7 @@
   "system": {
     "title": "System status",
     "subtitle": "Operational health of the running instance — database, embeddings, job queue, backups, imports and storage.",
-    "adminOnly": "This page is available to administrators only.",
+    "maintainerOnly": "This page is available to system maintainers only.",
     "loading": "Loading status…",
     "error": "Failed to load the system status.",
     "version": {
@@ -1671,6 +1673,7 @@
     "disable": "Disable",
     "never": "Never",
     "selfDisableHint": "You cannot disable your own account.",
+    "maintainerManageHint": "Only a system maintainer can manage this account.",
     "empty": {
       "title": "No users",
       "hint": "Create the first account with the “New user” button."

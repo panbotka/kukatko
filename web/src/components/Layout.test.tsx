@@ -11,18 +11,23 @@ import { Layout } from './Layout'
 
 /** Builds an auth context value with the given capabilities. */
 function auth(
-  opts: { canWrite?: boolean; isAdmin?: boolean; canImport?: boolean; role?: string } = {},
+  opts: { canWrite?: boolean; isAdmin?: boolean; isMaintainer?: boolean; role?: string } = {},
 ): AuthContextValue {
-  const { canWrite = false, isAdmin = false, canImport = isAdmin } = opts
-  const role = opts.role ?? (isAdmin ? 'admin' : canWrite ? 'editor' : 'viewer')
+  const { canWrite = false, isMaintainer = false } = opts
+  // A maintainer is admin-or-higher, so it satisfies isAdmin too.
+  const isAdmin = opts.isAdmin ?? isMaintainer
+  const role =
+    opts.role ?? (isMaintainer ? 'maintainer' : isAdmin ? 'admin' : canWrite ? 'editor' : 'viewer')
   return {
     status: 'authenticated',
     user: { uid: 'u1', username: 'u', display_name: 'User One', role },
     role,
     downloadToken: null,
-    canWrite,
+    canWrite: canWrite || isAdmin,
     isAdmin,
-    canImport,
+    isMaintainer,
+    // Import is an operations capability: maintainer only.
+    canImport: isMaintainer,
     login: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
@@ -140,7 +145,7 @@ describe('Layout navbar', () => {
     }
   })
 
-  it('hides the Tools/Admin groups and Upload from viewers', async () => {
+  it('hides the Tools/Operations/Admin groups and Upload from viewers', async () => {
     const user = userEvent.setup()
     renderLayout(auth({ canWrite: false, isAdmin: false }))
 
@@ -148,31 +153,51 @@ describe('Layout navbar', () => {
     await user.click(screen.getByRole('button', { name: 'Browse' }))
     expect(screen.getByRole('link', { name: 'Favorites' })).toBeInTheDocument()
 
-    // Neither the editor Tools group nor the admin Admin group is rendered,
-    // the write-only Upload entry stays hidden, and Import (admin/ai only) too.
+    // None of the role-gated groups render, and the write-only Upload entry — plus
+    // Import, which now lives inside the maintainer Operations group — stay hidden.
     expect(screen.queryByRole('button', { name: 'Tools' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Operations' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Upload' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
   })
 
-  it('shows the Tools group to editors and the Admin group plus Import to admins', async () => {
+  it('gives an admin governance (Users/Audit) but withholds the maintainer Operations group', async () => {
     const user = userEvent.setup()
+    // An admin is not a maintainer, so operations stay out of reach.
     renderLayout(auth({ canWrite: true, isAdmin: true }))
 
-    // Upload and Import are prominent as top-level links.
+    // Upload is a prominent top-level CTA for any writer.
     expect(screen.getByRole('link', { name: 'Upload' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Import' })).toHaveAttribute('href', '/import')
 
-    // The editor-only Tools dropdown groups Duplicates and Trash.
+    // The editor Tools dropdown is present.
     await user.click(screen.getByRole('button', { name: 'Tools' }))
     expect(screen.getByRole('link', { name: 'Trash' })).toBeInTheDocument()
 
-    // The admin-only Admin dropdown groups Maintenance, System and Users —
-    // Import has moved out to its own top-level link.
+    // The governance Admin dropdown groups Users and Audit — nothing operational.
     await user.click(screen.getByRole('button', { name: 'Admin' }))
-    expect(screen.getByRole('link', { name: 'System' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Audit' })).toBeInTheDocument()
+
+    // The operations dropdown (import, maintenance, system) is maintainer-only.
+    expect(screen.queryByRole('button', { name: 'Operations' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
+  })
+
+  it('shows the maintainer Operations group with import, maintenance and system', async () => {
+    const user = userEvent.setup()
+    renderLayout(auth({ canWrite: true, isMaintainer: true }))
+
+    // Import is no longer a top-level link; it lives inside Operations.
+    expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Operations' }))
+    expect(screen.getByRole('link', { name: 'Import' })).toHaveAttribute('href', '/import')
+    expect(screen.getByRole('link', { name: 'Maintenance' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'System' })).toBeInTheDocument()
+
+    // A maintainer is admin-or-higher, so governance stays available too.
+    expect(screen.getByRole('button', { name: 'Admin' })).toBeInTheDocument()
   })
 
   it('makes Upload the bar’s single filled call-to-action', () => {
@@ -203,22 +228,6 @@ describe('Layout navbar', () => {
   it('fences the quieter tools/admin cluster off with a divider when one exists', () => {
     const { container } = renderLayout(auth({ canWrite: true }))
     expect(container.querySelector('.kukatko-nav-divider')).not.toBeNull()
-  })
-
-  it('shows curation, Tools and Import to the ai agent but hides the Admin group', () => {
-    // The ai agent has editor write powers plus import, but is not an admin.
-    renderLayout(auth({ canWrite: true, isAdmin: false, canImport: true, role: 'ai' }))
-
-    // Curation surfaces and the write-gated Upload/Tools stay visible.
-    expect(screen.getByRole('link', { name: 'Albums' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Upload' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Tools' })).toBeInTheDocument()
-
-    // Import is reachable...
-    expect(screen.getByRole('link', { name: 'Import' })).toHaveAttribute('href', '/import')
-
-    // ...but the admin-only administration group is not rendered at all.
-    expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeInTheDocument()
   })
 
   it('marks a top-level link active on its detail sub-paths', () => {

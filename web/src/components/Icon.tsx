@@ -52,6 +52,7 @@ export type IconName =
   | 'plus-lg'
   | 'question-circle'
   | 'search'
+  | 'shield-lock'
   | 'sliders'
   | 'tags'
   | 'tools'

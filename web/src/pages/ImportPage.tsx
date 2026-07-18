@@ -233,8 +233,8 @@ function RunHistoryTable({ runs }: { runs: ImportRun[] }) {
  */
 export function ImportPage() {
   const { t } = useTranslation()
-  // Import is reachable by admins and the ai agent (see RequireImport); this
-  // in-page gate is a defensive fallback behind that route guard.
+  // Import is an operations capability, reachable by maintainers only (see
+  // RequireImport); this in-page gate is a defensive fallback behind that guard.
   const { canImport } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [jobStats, setJobStats] = useState<JobStats | null>(null)
@@ -302,7 +302,7 @@ export function ImportPage() {
   }
 
   if (!canImport) {
-    return <Alert variant="danger">{t('import.adminOnly')}</Alert>
+    return <Alert variant="danger">{t('import.maintainerOnly')}</Alert>
   }
 
   return (
