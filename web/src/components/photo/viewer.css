@@ -10,6 +10,10 @@
   position: fixed;
   inset: 0;
   z-index: var(--kk-viewer-z);
+  /* The width the metadata drawer takes on the right; shared by the drawer, the
+     stage's shrink, and the chrome/next-arrow shift that keeps them out from
+     under it, so the three can never drift apart. */
+  --kk-viewer-panel-w: min(26rem, 100%);
   background: var(--kk-viewer-backdrop);
   overflow: hidden;
   color: var(--kk-text);
@@ -43,15 +47,33 @@
   transition: right var(--kk-duration-base) var(--kk-ease-standard);
 }
 
-/* The figure shrink-wraps the rendered image so the face overlay's percentage
-   geometry lands on the faces; it carries the between-photos fade/scale. Keyed
-   on the photo UID in JSX so a new node replays the animation on navigation. */
+/* The figure wraps the rendered image so the face overlay's percentage geometry
+   lands on the faces; it carries the between-photos fade/scale. Keyed on the photo
+   UID in JSX so a new node replays the animation on navigation. This bare form is
+   the fallback for a photo whose display size is unknown — the image sizes itself
+   by "contain" and the box is only approximately tight (a frameless photo carries
+   no face geometry to place anyway). */
 .kk-viewer__figure {
   position: relative;
   display: inline-flex;
   max-width: 100%;
   max-height: 100%;
   animation: kk-viewer-photo-in var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+/* When the photo's display dimensions are known, JSX stamps the figure with that
+   exact aspect ratio inline (data-framed) so it fits the stage by "contain" while
+   its box stays PRECISELY the rendered image — no letterbox bars inside a too-wide
+   element box for the percentage overlay to drift into. That is what lands the face
+   boxes on the faces at any size, whether the fit is limited by width or by height.
+   min-*: 0 lifts the flex min-content floor so a wide photo can shrink inside a
+   narrow stage; margin: auto centres it. The image (max-width/height: 100%) fills
+   this correctly-shaped box, so object-fit no longer has any bars to add. */
+.kk-viewer__figure[data-framed='true'] {
+  display: block;
+  margin: auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 @keyframes kk-viewer-photo-in {
@@ -109,7 +131,8 @@
 .kk-viewer__nav {
   transition:
     opacity var(--kk-duration-base) var(--kk-ease-standard),
-    transform var(--kk-duration-base) var(--kk-ease-standard);
+    transform var(--kk-duration-base) var(--kk-ease-standard),
+    right var(--kk-duration-base) var(--kk-ease-standard);
 }
 
 .kk-viewer[data-chrome='hidden'] .kk-viewer__chrome {
@@ -262,7 +285,7 @@
   right: 0;
   bottom: 0;
   z-index: 4;
-  width: min(26rem, 100%);
+  width: var(--kk-viewer-panel-w);
   display: flex;
   flex-direction: column;
   background: var(--kk-surface-1);
@@ -325,7 +348,19 @@
    the image is never hidden behind the panel and no scrim is needed. */
 @media (min-width: 768px) {
   .kk-viewer[data-panel='open'] .kk-viewer__stage {
-    right: min(26rem, 100%);
+    right: var(--kk-viewer-panel-w);
+  }
+
+  /* The drawer is the topmost surface on the right; without this the top action
+     bar (its panel toggles) and the › next arrow would fall UNDER it and be lost.
+     So while the drawer is open they yield its width on the right, staying in the
+     visible stage — every toggle and both arrows remain reachable beside it. */
+  .kk-viewer[data-panel='open'] .kk-viewer__chrome {
+    right: var(--kk-viewer-panel-w);
+  }
+
+  .kk-viewer[data-panel='open'] .kk-viewer__nav--next {
+    right: calc(var(--kk-viewer-panel-w) + 0.75rem + env(safe-area-inset-right, 0px));
   }
 
   .kk-viewer__panel-scrim {

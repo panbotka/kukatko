@@ -284,6 +284,34 @@ describe('PhotoDetailPage — immersive viewer', () => {
     expect(screen.getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
   })
 
+  describe('stage geometry', () => {
+    it('stamps the figure with the photo’s display aspect ratio so the overlay lands true', async () => {
+      // The figure is given the exact frame ratio inline, so its box IS the
+      // rendered image (no letterbox for the percentage face boxes to drift into).
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const figure = container.querySelector<HTMLElement>('.kk-viewer__figure')
+      expect(figure).not.toBeNull()
+      expect(figure).toHaveAttribute('data-framed', 'true')
+      expect(figure).toHaveStyle({ aspectRatio: '4000 / 3000' })
+    })
+
+    it('swaps the framed ratio for a quarter-turn EXIF orientation', async () => {
+      // Orientations 5–8 rotate the image a quarter turn; the thumbnailer bakes
+      // that in and markers live in that display space, so the figure must too.
+      fetchPhotoMock.mockResolvedValue(
+        photo({ file_width: 4000, file_height: 3000, file_orientation: 6 }),
+      )
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(container.querySelector<HTMLElement>('.kk-viewer__figure')).toHaveStyle({
+        aspectRatio: '3000 / 4000',
+      })
+    })
+  })
+
   describe('metadata drawer', () => {
     it('is shut by default and slides in on demand, tracked in the URL', async () => {
       const user = userEvent.setup()
@@ -397,6 +425,38 @@ describe('PhotoDetailPage — immersive viewer', () => {
         img.getAttribute('src')?.includes('fit_1920'),
       )
       expect(previews).toHaveLength(1)
+    })
+
+    it('opens the faces panel on load when the stored preference asks for faces', async () => {
+      // A remembered "show faces" must bring up the boxes AND their naming panel,
+      // not leave the boxes over a shut drawer: the drawer opens itself on the
+      // faces once they are known to be available, even without info in the URL.
+      window.localStorage.setItem('kukatko.faces.overlay', 'true')
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      const { container } = renderPage(true, '/photos/b?sort=oldest')
+
+      await screen.findByRole('heading', { name: 'Beach' })
+      await waitFor(() => {
+        expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+      })
+      expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+      expect(screen.getByText('Faces: 2')).toBeInTheDocument()
+      // Opening it pins the drawer state into the URL, so Back/refresh behave.
+      expect(screen.getByTestId('location')).toHaveTextContent('info=1')
+    })
+
+    it('leaves the drawer shut when faces are preferred but the photo has none', async () => {
+      // The preference cannot conjure a panel out of nothing: with no faces to
+      // show, the drawer stays shut rather than opening on an empty face list.
+      window.localStorage.setItem('kukatko.faces.overlay', 'true')
+      fetchFacesMock.mockResolvedValue(facesResponse(0))
+      const { container } = renderPage(true, '/photos/b?sort=oldest')
+
+      await screen.findByRole('heading', { name: 'Beach' })
+      // Give the faces fetch time to resolve before asserting the drawer is shut.
+      await screen.findByRole('button', { name: 'Info' })
+      expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
+      expect(screen.getByTestId('location')).not.toHaveTextContent('info=1')
     })
 
     it('toggles the faces with the m key and remembers the choice', async () => {
