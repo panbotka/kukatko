@@ -578,7 +578,36 @@
     "enter": "Vybrat",
     "edit": "Hromadná úprava",
     "stack": "Seskupit vybrané",
-    "cancel": "Zrušit"
+    "cancel": "Zrušit",
+    "toggle": "Vybrat {{name}}"
+  },
+  "batch": {
+    "bar": "Hromadné akce",
+    "clear": "Zrušit výběr",
+    "selectAll": "Vybrat vše",
+    "album": "Přidat do alba",
+    "albumField": "Přidat do alb",
+    "albumPlaceholder": "Pište pro filtrování alb…",
+    "label": "Štítky",
+    "labelAddField": "Přidat štítky",
+    "labelRemoveField": "Odebrat štítky",
+    "labelPlaceholder": "Pište pro filtrování štítků…",
+    "favorite": "Oblíbené",
+    "archive": "Archivovat",
+    "download": "Stáhnout",
+    "more": "Další úpravy",
+    "apply": "Použít",
+    "cancel": "Zrušit",
+    "optionsError": "Seznam se nepodařilo načíst. Zkuste to prosím znovu.",
+    "retry": "Zkusit znovu",
+    "applied_one": "Použito na {{count}} fotku",
+    "applied_few": "Použito na {{count}} fotky",
+    "applied_many": "Použito na {{count}} fotky",
+    "applied_other": "Použito na {{count}} fotek",
+    "error": "Změnu se nepodařilo použít. Zkuste to prosím znovu."
+  },
+  "toast": {
+    "close": "Zavřít"
   },
   "stack": {
     "title": "Skupina · {{count}} souborů",

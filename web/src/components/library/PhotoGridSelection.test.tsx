@@ -86,3 +86,50 @@ describe('PhotoGrid selection', () => {
     expect(onToggle).toHaveBeenCalledWith('c')
   })
 })
+
+/** Renders the grid in hover-select mode with the given selection set. */
+function renderHoverGrid(selected: Set<string>, onToggle: (uid: string) => void) {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter>
+        <PhotoGrid
+          photos={PHOTOS}
+          loadingMore={false}
+          moreError={false}
+          onEndReached={vi.fn()}
+          onRetry={vi.fn()}
+          selection={{ active: false, hoverSelect: true, selected, onToggle }}
+        />
+      </MemoryRouter>
+    </I18nextProvider>,
+  )
+}
+
+describe('PhotoGrid hover-select', () => {
+  it('keeps tiles as links but offers a corner checkmark before anything is picked', () => {
+    const onToggle = vi.fn()
+    renderHoverGrid(new Set(), onToggle)
+
+    // The tile body still navigates to the detail page…
+    expect(screen.getByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+    // …while the corner checkmark selects it without opening the photo.
+    fireEvent.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    expect(onToggle).toHaveBeenCalledWith('a')
+  })
+
+  it('turns tiles into selection targets once anything is selected', () => {
+    const onToggle = vi.fn()
+    renderHoverGrid(new Set(['a']), onToggle)
+
+    // With a selection active the whole tile toggles instead of navigating.
+    expect(screen.queryByRole('link', { name: 'a.jpg' })).toBeNull()
+    const tileB = screen.getByRole('button', { name: 'b.jpg' })
+    fireEvent.click(tileB)
+    expect(onToggle).toHaveBeenCalledWith('b')
+    // The selected tile reflects its pressed state on the corner control.
+    expect(screen.getByRole('button', { name: 'Select a.jpg' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+})

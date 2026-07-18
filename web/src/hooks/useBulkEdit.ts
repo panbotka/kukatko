@@ -17,6 +17,13 @@ export interface UseBulkEditOptions {
    * photos that were added to the collection, keeping the scroll position.
    */
   onEdited?: (outcome?: BulkEditOutcome) => void
+  /**
+   * Opt into hover-select: the grid is always selectable (a corner checkmark on
+   * every tile) for a writer, with no explicit "enter selection mode" step, and
+   * turns selection-first the moment anything is picked. The library uses this
+   * to drive the floating batch bar; other grids keep the explicit mode.
+   */
+  hoverSelect?: boolean
 }
 
 /** Selection state plus the bulk-edit dialog wiring for one photo list. */
@@ -52,7 +59,7 @@ export interface UseBulkEditResult {
  * selection so the reader can retry without re-picking every tile.
  */
 export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult {
-  const { onEdited } = options
+  const { onEdited, hoverSelect = false } = options
   const { canWrite } = useAuth()
   const selection = useSelection()
   const [editing, setEditing] = useState(false)
@@ -76,18 +83,38 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
 
   const photoUids = useMemo(() => [...selection.selected], [selection.selected])
 
-  const gridSelection = useMemo<PhotoGridSelection | undefined>(
-    () =>
-      selection.active
-        ? {
-            active: true,
-            selected: selection.selected,
-            onToggle: selection.toggle,
-            onToggleRange: selection.toggleRange,
-          }
-        : undefined,
-    [selection.active, selection.selected, selection.toggle, selection.toggleRange],
-  )
+  const gridSelection = useMemo<PhotoGridSelection | undefined>(() => {
+    // A viewer never selects, so the grid stays a plain link grid for them.
+    if (!canWrite) {
+      return undefined
+    }
+    // Hover-select is always on for a writer (no explicit mode to enter); the
+    // plain mode only wires the grid once selection mode is entered.
+    if (hoverSelect) {
+      return {
+        active: selection.active,
+        hoverSelect: true,
+        selected: selection.selected,
+        onToggle: selection.toggle,
+        onToggleRange: selection.toggleRange,
+      }
+    }
+    return selection.active
+      ? {
+          active: true,
+          selected: selection.selected,
+          onToggle: selection.toggle,
+          onToggleRange: selection.toggleRange,
+        }
+      : undefined
+  }, [
+    canWrite,
+    hoverSelect,
+    selection.active,
+    selection.selected,
+    selection.toggle,
+    selection.toggleRange,
+  ])
 
   return useMemo(
     () => ({

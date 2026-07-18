@@ -611,7 +611,34 @@
     "enter": "Select",
     "edit": "Bulk edit",
     "stack": "Stack selected",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "toggle": "Select {{name}}"
+  },
+  "batch": {
+    "bar": "Batch actions",
+    "clear": "Clear selection",
+    "selectAll": "Select all",
+    "album": "Add to album",
+    "albumField": "Add to albums",
+    "albumPlaceholder": "Type to filter albums…",
+    "label": "Labels",
+    "labelAddField": "Add labels",
+    "labelRemoveField": "Remove labels",
+    "labelPlaceholder": "Type to filter labels…",
+    "favorite": "Favorite",
+    "archive": "Archive",
+    "download": "Download",
+    "more": "More edits",
+    "apply": "Apply",
+    "cancel": "Cancel",
+    "optionsError": "Could not load the list. Please try again.",
+    "retry": "Try again",
+    "applied_one": "Applied to {{count}} photo",
+    "applied_other": "Applied to {{count}} photos",
+    "error": "The change could not be applied. Please try again."
+  },
+  "toast": {
+    "close": "Dismiss"
   },
   "stack": {
     "title": "Stack · {{count}} files",

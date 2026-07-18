@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
@@ -19,13 +18,27 @@ function isPlayable(photo: Photo): boolean {
 export interface PhotoTileProps {
   photo: Photo
   /**
-   * When true the tile is a selection target: clicking toggles selection (via
-   * {@link PhotoTileProps.onToggleSelect}) instead of navigating to the detail
-   * page, and a checkbox overlay reflects {@link PhotoTileProps.selected}.
+   * When true the tile offers selection: a circular checkmark control appears in
+   * a corner on hover (and always once anything in the grid is selected), and
+   * clicking it toggles this tile's selection (via
+   * {@link PhotoTileProps.onToggleSelect}) without opening the photo.
    */
   selectable?: boolean
+  /**
+   * When true the whole tile is a selection target — clicking anywhere on it
+   * toggles selection instead of navigating. The grid sets this once a selection
+   * exists (or in an explicit selection mode) so a run of tiles can be picked
+   * quickly, mirroring modern photo apps. When false the tile still navigates and
+   * only the corner checkmark toggles.
+   */
+  selectFirst?: boolean
   /** Whether this tile is currently selected (only meaningful when selectable). */
   selected?: boolean
+  /**
+   * Whether any tile in the grid is selected. Keeps every tile's checkmark shown
+   * (not just on hover) so the selection is visible and reversible at a glance.
+   */
+  anySelected?: boolean
   /**
    * Toggles this tile's selection (only meaningful when selectable). The click's
    * Shift state rides along so the grid can turn Shift+click into a contiguous
@@ -70,7 +83,9 @@ export interface PhotoTileProps {
 export function PhotoTile({
   photo,
   selectable = false,
+  selectFirst = false,
   selected = false,
+  anySelected = false,
   onToggleSelect,
   favoritable = false,
   detailQuery,
@@ -134,16 +149,6 @@ export function PhotoTile({
           {t('library.tile.unavailable')}
         </span>
       )}
-      {selectable && (
-        <Form.Check
-          type="checkbox"
-          checked={selected}
-          readOnly
-          tabIndex={-1}
-          aria-hidden="true"
-          className="position-absolute top-0 start-0 m-1"
-        />
-      )}
       {isPlayable(photo) && (
         <span
           // Top-end, not bottom-start: the hover date owns the bottom reading
@@ -174,7 +179,10 @@ export function PhotoTile({
     </>
   )
 
-  const base = selectable ? (
+  // When the tile is selection-first the whole media box toggles selection; when
+  // it is not (a plain grid, or a selectable grid with nothing yet picked) it
+  // stays a link to the detail page and only the corner checkmark selects.
+  const base = selectFirst ? (
     <button
       type="button"
       aria-pressed={selected}
@@ -183,13 +191,8 @@ export function PhotoTile({
       onClick={(event) => {
         onToggleSelect?.(photo.uid, event.shiftKey)
       }}
-      className={`kk-tile__media btn p-0 border-0 d-block w-100${
-        selected ? ' ring ring-primary' : ''
-      }`}
-      style={{
-        aspectRatio: '1 / 1',
-        outline: selected ? '3px solid var(--bs-primary)' : undefined,
-      }}
+      className="kk-tile__media btn p-0 border-0 d-block w-100"
+      style={{ aspectRatio: '1 / 1' }}
     >
       {inner}
     </button>
@@ -209,19 +212,37 @@ export function PhotoTile({
     </Link>
   )
 
-  // The favorite heart sits in a relative wrapper as a sibling of the link/button
-  // (never nested inside it — interactive content cannot nest), so toggling a
-  // favorite never navigates or toggles selection. Hidden in selection mode so the
-  // tile stays a clean selection target. Star rating and pick/reject flagging are
-  // deliberately absent from the tile; they live on the photo detail page.
+  // The checkmark control and the favorite heart both sit in a relative wrapper
+  // as siblings of the link/button (never nested inside it — interactive content
+  // cannot nest), so toggling selection or a favorite never navigates. The
+  // checkmark is shown while the tile is selectable; the heart is hidden once the
+  // tile is a selection target so it stays a clean pick. Star rating and
+  // pick/reject flagging are deliberately absent from the tile — they live on the
+  // photo detail page.
   return (
     <div
-      className={`kk-tile position-relative${focused ? ' kukatko-tile-focused' : ''}`}
+      className={`kk-tile position-relative${selected ? ' kk-tile--selected' : ''}${
+        anySelected ? ' kk-tile--checks' : ''
+      }${focused ? ' kukatko-tile-focused' : ''}`}
       data-focused={focused ? 'true' : undefined}
     >
       {base}
+      {selectable && (
+        <button
+          type="button"
+          className={`kk-tile__check${selected ? ' kk-tile__check--on' : ''}`}
+          aria-pressed={selected}
+          aria-label={t('selection.toggle', { name: label })}
+          title={t('selection.toggle', { name: label })}
+          onClick={(event) => {
+            onToggleSelect?.(photo.uid, event.shiftKey)
+          }}
+        >
+          {selected && <Icon name="check-lg" />}
+        </button>
+      )}
       {extras}
-      {favoritable && !selectable && (
+      {favoritable && !selectFirst && (
         <FavoriteButton
           uid={photo.uid}
           favorite={photo.is_favorite ?? false}
