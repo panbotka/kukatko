@@ -489,6 +489,29 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
     })
 
+    it('lights only the active view’s toggle — not the info button alongside faces', async () => {
+      const user = userEvent.setup()
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Show faces' }))
+
+      // Faces view: the faces toggle is pressed, the info toggle is NOT — the drawer
+      // merely being open must not read as "info active".
+      expect(screen.getByRole('button', { name: 'Hide faces' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      expect(screen.getByRole('button', { name: 'Info' })).toHaveAttribute('aria-pressed', 'false')
+
+      // Switching to info flips it: info pressed, the faces toggle back to unpressed.
+      await user.click(screen.getByRole('button', { name: 'Info' }))
+      expect(screen.getByRole('button', { name: 'Info' })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByRole('button', { name: 'Show faces' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+    })
+
     it('hiding the faces closes the drawer rather than revealing the metadata', async () => {
       const user = userEvent.setup()
       fetchFacesMock.mockResolvedValue(facesResponse(2))

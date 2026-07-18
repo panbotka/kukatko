@@ -220,6 +220,11 @@ export function PhotoDetailPage() {
   // after paging to a photo with none) falls through to info rather than an empty
   // drawer.
   const showInfo = !showFaces && !showEdit
+  // The info view is actually on screen only when the drawer is open on it — used
+  // for the info toggle's pressed state, so exactly one of the three view toggles
+  // (faces / edits / info) reads as active at a time, never the info button lit
+  // alongside faces or edits just because the drawer happens to be open.
+  const infoActive = panelOpen && showInfo
 
   // Faces and edits share the drawer's lead slot, so showing either one closes the
   // other; opening either opens the drawer (their panels live inside it).
@@ -711,7 +716,7 @@ export function PhotoDetailPage() {
           <button
             type="button"
             className="kk-viewer__btn kk-viewer__btn--icon"
-            aria-pressed={panelOpen}
+            aria-pressed={infoActive}
             aria-label={t('photo.viewer.info')}
             onClick={togglePanel}
           >
