@@ -66,8 +66,8 @@ func buildImportService(
 // (always registered) and the pp_import/ps_migrate triggers, which are
 // registered only for configured sources. Triggers enqueue onto the shared queue
 // store; history reads the import_runs table over the shared pool. The import
-// guard (admin or ai) is supplied via authAPI so importapi stays decoupled from
-// auth's wiring; every other admin surface keeps requiring admin.
+// guard (maintainer only) is supplied via authAPI so importapi stays decoupled
+// from auth's wiring; imports are an operations capability at the top of the ladder.
 func buildImportAPI(cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API) *importapi.API {
 	importLimit := ratelimit.New(cfg.RateLimit.Import.RatePerSec, cfg.RateLimit.Import.Burst)
 	return importapi.NewAPI(importapi.Config{

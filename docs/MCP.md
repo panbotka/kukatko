@@ -38,8 +38,10 @@ jako každá jiná route:
 
 - Agent se autentizuje **API tokenem** (`Authorization: Bearer kkt_…`), viz `internal/auth`.
 - **Roli má uživatel, ne token** — token dědí roli svého vlastníka v okamžiku autentizace.
-- Role rozhoduje o zápisu přes `Role.CanWrite()`: `viewer` → jen čtení; `editor`, `admin` a **`ai`**
-  → čtení i zápis. Role `ai` v projektu existuje přesně pro tenhle druh automatizace.
+- Role rozhoduje o zápisu přes `Role.CanWrite()`: `viewer` → jen čtení; `editor`, `admin` a
+  **`maintainer`** → čtení i zápis. Pro čistě zapisujícího agenta stačí `editor` (nejnižší role se
+  zápisem); dřívější role `ai` byla zrušena (migrace `0036`), jejím nástupcem na vrcholu žebříčku je
+  `maintainer`.
 
 Hranice je **dvojitá**, schválně:
 
@@ -137,15 +139,15 @@ vracela 403 — 403 by útočníkovi pořád prozradilo, že tam endpoint je.
 opravdu neexistuje, je vidět v access logu: chybí pole `"route":"/api/v1/mcp"`. Testy vidí `404`,
 protože jejich router SPA fallback nemá; to je ten čistý signál „na routeru nic není".
 
-Token pro agenta (role `ai` = zápis + import, ale **žádný admin**). Token si razí **uživatel sám pro
-sebe** — `POST /auth/tokens` ho vždycky vystaví volajícímu principalovi, admin ho za někoho jiného
-udělat nemůže. Takže dva kroky:
+Token pro agenta (nejnižší role se zápisem je `editor`; `admin`/`maintainer` píšou taky). Token si razí
+**uživatel sám pro sebe** — `POST /auth/tokens` ho vždycky vystaví volajícímu principalovi, admin ho za
+někoho jiného udělat nemůže. Takže dva kroky:
 
 ```bash
-# 1) admin založí uživatele s rolí ai
+# 1) admin založí uživatele s rolí editor
 curl -X POST https://<host>/api/v1/admin/users \
   -b admin-session.txt -H 'Content-Type: application/json' \
-  -d '{"username":"agent","password":"…","role":"ai"}'
+  -d '{"username":"agent","password":"…","role":"editor"}'
 
 # 2) ten uživatel se přihlásí a vyrazí si token
 curl -X POST https://<host>/api/v1/auth/login -c agent.txt \

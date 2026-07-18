@@ -19,7 +19,7 @@ const (
 	// BootstrapSkippedNoCredentials means the table was empty but no bootstrap
 	// username/password was configured; nothing done (caller should warn).
 	BootstrapSkippedNoCredentials
-	// BootstrapCreated means the initial admin account was created.
+	// BootstrapCreated means the initial maintainer account was created.
 	BootstrapCreated
 )
 
@@ -61,10 +61,13 @@ func validateNote(note string) error {
 	return nil
 }
 
-// Bootstrap creates the first admin account when the users table is empty and a
-// username and password are both provided. It returns BootstrapSkippedHasUsers
-// when users already exist, BootstrapSkippedNoCredentials when credentials are
-// missing, or BootstrapCreated on success; errors are returned wrapped.
+// Bootstrap creates the first account when the users table is empty and a
+// username and password are both provided. The account is created as a
+// maintainer — the top of the role ladder — so the instance always has a root
+// that can grant the maintainer role to others. It returns
+// BootstrapSkippedHasUsers when users already exist,
+// BootstrapSkippedNoCredentials when credentials are missing, or
+// BootstrapCreated on success; errors are returned wrapped.
 func (s *Service) Bootstrap(ctx context.Context, username, password string) (BootstrapOutcome, error) {
 	count, err := s.store.CountUsers(ctx)
 	if err != nil {
@@ -80,11 +83,50 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (Boo
 		Username:    username,
 		Password:    password,
 		DisplayName: username,
-		Role:        RoleAdmin,
+		Role:        RoleMaintainer,
 	}); err != nil {
 		return BootstrapSkippedNoCredentials, err
 	}
 	return BootstrapCreated, nil
+}
+
+// authorizeUserManagement enforces the maintainer boundary on a user-management
+// action taken by an actor of role actor: granting the maintainer role (newRole
+// is maintainer) or touching an account that already holds it (current is
+// maintainer) is reserved to maintainers, while every other viewer/editor/admin
+// action is allowed. A zero current ("") means a creation, where only newRole
+// matters. It returns ErrMaintainerRequired when the boundary is crossed.
+func authorizeUserManagement(actor, current, newRole Role) error {
+	if actor.CanMaintain() {
+		return nil
+	}
+	if newRole == RoleMaintainer || current == RoleMaintainer {
+		return ErrMaintainerRequired
+	}
+	return nil
+}
+
+// guardMaintainerBoundary applies authorizeUserManagement for an action by actor
+// against the existing account uid, which the action would leave with role
+// newRole. It is a no-op for a maintainer actor (who may manage any role); for a
+// lower actor it loads the target's current role and rejects touching or
+// granting the maintainer role. A zero uid ("") means a creation, so no lookup
+// happens and only newRole is checked. A newRole that is not RoleMaintainer (for
+// example when disabling or resetting a password) leaves the check to rest on the
+// target's current role alone. Store errors (including ErrUserNotFound) propagate.
+func (s *Service) guardMaintainerBoundary(ctx context.Context, actor Role, uid string, newRole Role) error {
+	if actor.CanMaintain() {
+		return nil
+	}
+	var current Role
+	if uid != "" {
+		existing, err := s.store.GetUserByUID(ctx, uid)
+		if err != nil {
+			return err
+		}
+		current = existing.Role
+	}
+	return authorizeUserManagement(actor, current, newRole)
 }
 
 // CreateUser validates and inserts a new user, hashing the supplied password. It
@@ -107,8 +149,15 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, err
 // CreateUserAudited creates a user like CreateUser and writes a user.create audit
 // entry attributed to entry's actor in the same transaction as the insert (see
 // internal/audit). The created user's username and role are recorded in the
-// entry's details, and its UID becomes the entry's target.
-func (s *Service) CreateUserAudited(ctx context.Context, in CreateUserInput, entry audit.Entry) (User, error) {
+// entry's details, and its UID becomes the entry's target. actor is the role of
+// the account performing the creation: only a maintainer may create an account
+// with the maintainer role, so a lower actor granting it gets ErrMaintainerRequired.
+func (s *Service) CreateUserAudited(
+	ctx context.Context, in CreateUserInput, actor Role, entry audit.Entry,
+) (User, error) {
+	if err := s.guardMaintainerBoundary(ctx, actor, "", in.Role); err != nil {
+		return User{}, err
+	}
 	user, err := s.prepareNewUser(in)
 	if err != nil {
 		return User{}, err
@@ -182,10 +231,16 @@ func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput
 
 // UpdateUserAudited updates a user's profile fields like UpdateUser and writes a
 // user.update audit entry attributed to entry's actor in the same transaction as
-// the change (see internal/audit).
+// the change (see internal/audit). actor is the role of the account performing
+// the update: only a maintainer may promote an account to, or modify an account
+// that already holds, the maintainer role, so a lower actor doing so gets
+// ErrMaintainerRequired.
 func (s *Service) UpdateUserAudited(
-	ctx context.Context, uid string, in UpdateUserInput, entry audit.Entry,
+	ctx context.Context, uid string, in UpdateUserInput, actor Role, entry audit.Entry,
 ) (User, error) {
+	if err := s.guardMaintainerBoundary(ctx, actor, uid, in.Role); err != nil {
+		return User{}, err
+	}
 	if err := validateUserUpdate(in); err != nil {
 		return User{}, err
 	}
@@ -222,10 +277,15 @@ func (s *Service) SetUserDisabled(ctx context.Context, uid string, disabled bool
 
 // SetUserDisabledAudited enables or disables a user like SetUserDisabled and
 // writes a user.disable audit entry attributed to entry's actor in the same
-// transaction as the change (see internal/audit).
+// transaction as the change (see internal/audit). actor is the role of the
+// account performing the change: only a maintainer may disable or re-enable a
+// maintainer account, so a lower actor gets ErrMaintainerRequired.
 func (s *Service) SetUserDisabledAudited(
-	ctx context.Context, uid string, disabled bool, entry audit.Entry,
+	ctx context.Context, uid string, disabled bool, actor Role, entry audit.Entry,
 ) (User, error) {
+	if err := s.guardMaintainerBoundary(ctx, actor, uid, ""); err != nil {
+		return User{}, err
+	}
 	user, err := s.store.SetUserDisabledAudited(ctx, uid, disabled, entry)
 	if err != nil {
 		return User{}, err
@@ -263,8 +323,15 @@ func (s *Service) ResetPassword(ctx context.Context, uid, newPassword string) er
 
 // ResetPasswordAudited sets a new password like ResetPassword and writes a
 // user.password audit entry attributed to entry's actor in the same transaction
-// as the change (see internal/audit).
-func (s *Service) ResetPasswordAudited(ctx context.Context, uid, newPassword string, entry audit.Entry) error {
+// as the change (see internal/audit). actor is the role of the account
+// performing the reset: only a maintainer may reset a maintainer account's
+// password, so a lower actor gets ErrMaintainerRequired.
+func (s *Service) ResetPasswordAudited(
+	ctx context.Context, uid, newPassword string, actor Role, entry audit.Entry,
+) error {
+	if err := s.guardMaintainerBoundary(ctx, actor, uid, ""); err != nil {
+		return err
+	}
 	hash, err := HashPassword(newPassword)
 	if err != nil {
 		return err

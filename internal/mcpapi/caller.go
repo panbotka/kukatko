@@ -21,7 +21,7 @@ var errNoCaller = errors.New("kukatko: no authenticated caller on this request")
 // It names the roles that would work, because the agent's next move is to tell
 // its human which token to mint.
 var errReadOnly = errors.New(
-	"this token is read-only: writing to the library needs a token owned by an editor, admin or ai user",
+	"this token is read-only: writing to the library needs a token owned by an editor, admin or maintainer user",
 )
 
 // viaMCP is stamped into every audit entry this package writes. The actor UID

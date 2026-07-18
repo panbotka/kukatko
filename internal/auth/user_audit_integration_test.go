@@ -66,7 +66,7 @@ func TestUserAudit_mutationsRecordRows(t *testing.T) {
 
 	created, err := env.svc.CreateUserAudited(ctx, auth.CreateUserInput{
 		Username: "newuser", Password: testPassword, Role: auth.RoleViewer,
-	}, meta.Entry(audit.ActionUserCreate, "users", "", nil))
+	}, admin.Role, meta.Entry(audit.ActionUserCreate, "users", "", nil))
 	if err != nil {
 		t.Fatalf("CreateUserAudited: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestUserAudit_mutationsRecordRows(t *testing.T) {
 
 	if _, err := env.svc.UpdateUserAudited(ctx, created.UID, auth.UpdateUserInput{
 		DisplayName: "New Name", Role: auth.RoleEditor,
-	}, meta.Entry(audit.ActionUserUpdate, "users", created.UID,
+	}, admin.Role, meta.Entry(audit.ActionUserUpdate, "users", created.UID,
 		map[string]any{"role": "editor", "disabled": false})); err != nil {
 		t.Fatalf("UpdateUserAudited: %v", err)
 	}
@@ -89,14 +89,14 @@ func TestUserAudit_mutationsRecordRows(t *testing.T) {
 		t.Errorf("update details role = %v, want editor", upd.Details["role"])
 	}
 
-	if _, err := env.svc.SetUserDisabledAudited(ctx, created.UID, true,
+	if _, err := env.svc.SetUserDisabledAudited(ctx, created.UID, true, admin.Role,
 		meta.Entry(audit.ActionUserDisable, "users", created.UID,
 			map[string]any{"disabled": true})); err != nil {
 		t.Fatalf("SetUserDisabledAudited: %v", err)
 	}
 	requireOneUserAudit(t, ctx, auditStore, audit.ActionUserDisable, admin.UID, created.UID)
 
-	if err := env.svc.ResetPasswordAudited(ctx, created.UID, "another-strong-pass",
+	if err := env.svc.ResetPasswordAudited(ctx, created.UID, "another-strong-pass", admin.Role,
 		meta.Entry(audit.ActionUserPassword, "users", created.UID, nil)); err != nil {
 		t.Fatalf("ResetPasswordAudited: %v", err)
 	}
@@ -114,14 +114,14 @@ func TestUserAudit_rollbackWritesNoAudit(t *testing.T) {
 	meta := audit.Meta{ActorUID: admin.UID}
 
 	_, err := env.svc.UpdateUserAudited(ctx, "usr_missing", auth.UpdateUserInput{Role: auth.RoleViewer},
-		meta.Entry(audit.ActionUserUpdate, "users", "usr_missing", nil))
+		admin.Role, meta.Entry(audit.ActionUserUpdate, "users", "usr_missing", nil))
 	if !errors.Is(err, auth.ErrUserNotFound) {
 		t.Fatalf("UpdateUserAudited(missing) err = %v, want ErrUserNotFound", err)
 	}
 	requireNoUserAudit(t, ctx, auditStore, audit.ActionUserUpdate)
 
 	err = env.svc.ResetPasswordAudited(ctx, "usr_missing", "another-strong-pass",
-		meta.Entry(audit.ActionUserPassword, "users", "usr_missing", nil))
+		admin.Role, meta.Entry(audit.ActionUserPassword, "users", "usr_missing", nil))
 	if !errors.Is(err, auth.ErrUserNotFound) {
 		t.Fatalf("ResetPasswordAudited(missing) err = %v, want ErrUserNotFound", err)
 	}

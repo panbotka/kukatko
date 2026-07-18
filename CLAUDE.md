@@ -49,7 +49,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `web/` — Vite + React 19 + TS frontend, builds into `internal/web/static/dist`
 - `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
 - `internal/auditapi` — admin-only `GET /audit` (read-only listing)
-- `internal/auth` — admin/editor/viewer roles, bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer)
+- `internal/auth` — viewer/editor/admin/maintainer roles (strict ladder), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer)
 - `internal/backup` — S3 backup (pg_dump + sync of originals + retention) **and** restore
 - `internal/backupapi` — admin-only `GET`/`POST /backup`
 - `internal/bulk` — bulk metadata editing, the whole batch in one transaction
