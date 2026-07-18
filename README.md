@@ -7,6 +7,8 @@ z PhotoPrismu a z [photo-sorteru](https://github.com/kozaktomas/photo-sorter), a
 - **Jeden spustitelný binár** (Go) včetně embedovaného frontendu (React + Bootstrap/Superhero).
 - **PostgreSQL + pgvector** jako jediný zdroj pravdy pro metadata i vektory.
 - **Sémantické i fulltextové hledání**, podobné fotky, **rozpoznávání obličejů/lidí**.
+- **Globální hledání jako command paleta**: z libovolné stránky přes `/` nebo Cmd/Ctrl-K —
+  klávesnicí ovladatelné seskupené výsledky (fotky, lidé, alba, štítky) v překryvné konzoli.
 - **Vyhledávací jazyk**: volný text + `klíč:hodnota` filtry v jednom dotazu —
   `dovolená camera:"Canon EOS R6" iso:100-400 faces:2`, `label:cat|dog`, `label:!blurry`,
   `near:<uid> dist:2`, `taken:2024-05`, `type:video`, `face:new`… Operátory OR (`|`), NOT (`!`,

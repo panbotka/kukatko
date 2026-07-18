@@ -301,9 +301,26 @@
     "sectionsLabel": "Matching albums, labels and people",
     "untitled": "Untitled",
     "groups": {
+      "photos": "Photos",
       "albums": "Albums",
       "labels": "Labels",
       "people": "People"
+    }
+  },
+  "searchCommand": {
+    "open": "Search",
+    "triggerLabel": "Search…",
+    "placeholder": "Search photos, people, albums, labels",
+    "shortcutHint": "/",
+    "dialogLabel": "Global search",
+    "clear": "Clear search",
+    "idle": "Start typing to search across your library.",
+    "error": "Search failed. Try again.",
+    "seeAll": "Search all photos for “{{query}}”",
+    "legend": {
+      "navigate": "Navigate",
+      "open": "Open",
+      "close": "Close"
     }
   },
   "savedSearches": {
@@ -610,12 +627,16 @@
     "close": "Close",
     "helpHint": "Press ? anytime to open this help.",
     "groups": {
+      "global": "Global",
       "grid": "Photo grid",
       "detail": "Photo detail",
       "faceSearch": "Person search",
       "outliers": "Possible mistakes",
       "review": "Review",
       "compare": "Duplicate compare"
+    },
+    "global": {
+      "search": "Open global search"
     },
     "grid": {
       "move": "Move focus between photos",

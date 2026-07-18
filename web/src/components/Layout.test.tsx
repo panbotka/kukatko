@@ -73,12 +73,14 @@ describe('Layout navbar', () => {
     expect(screen.getByRole('link', { name: 'Labels' })).toHaveAttribute('href', '/labels')
   })
 
-  it('no longer offers a search link, a search box or a saved-searches menu', () => {
+  it('leads the bar with a global command-search trigger, not the old search link', () => {
     renderLayout(auth())
 
-    // Searching is reached from the library page and from /search directly.
+    // Search is promoted to a command palette opened from a field-shaped trigger
+    // button (named by its action). The old plain "Search" nav link and the
+    // saved-searches dropdown are gone.
+    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Search' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('search')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Saved searches' })).not.toBeInTheDocument()
   })
 

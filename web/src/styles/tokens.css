@@ -129,6 +129,19 @@
   --kk-surface-sunken: #100e0b;
   --kk-surface-border: #423b31;
 
+  /* ---- Translucent header --------------------------------------------
+     The sticky top bar sits OVER scrolling photographs rather than on an
+     opaque plate, so the wall reads as continuous beneath it. The fill is the
+     page tone at reduced alpha plus a `backdrop-filter` blur, so whatever
+     scrolls under it is frosted into a calm backdrop instead of a distracting
+     smear; the hairline underline keeps the bar's lower edge legible against an
+     arbitrary photo. Where `backdrop-filter` is unsupported the bar falls back
+     to the solid `--kk-surface-1` plate (see `app.css`), so it is never
+     see-through without the blur that makes translucency legible. */
+  --kk-header-bg: rgb(21 19 15 / 72%);
+  --kk-header-blur: 14px;
+  --kk-header-border: rgb(66 59 49 / 70%);
+
   /* ---- Text -----------------------------------------------------------
      A warm off-white, kept in the same temperature family as the chrome.
      `muted` is that colour at reduced alpha; it stays above the Superhero muted

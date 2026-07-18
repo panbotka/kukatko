@@ -16,6 +16,7 @@ import { Footer } from './Footer'
 import { Icon, type IconName } from './Icon'
 import { JobQueueBadges } from './JobQueueBadges'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
+import { SearchCommand } from './search/SearchCommand'
 
 /**
  * A single navigable destination. `titleKey` names the *action* the entry
@@ -189,11 +190,13 @@ function pathMatches(pathname: string, route: string): boolean {
  * cluster: the "Nástroje" tools dropdown (which now also holds the expand tool),
  * the "Import" trigger, and the "Správa" admin dropdown. The role-gated groups
  * are hidden entirely from roles that cannot use any of their children, and the
- * divider only appears when at least one item follows it. Searching is not in the
- * bar — it lives on the library page and on `/search`. Neither is the language
- * switcher: this instance is Czech, so the setting sits on the account page rather
- * than spending prime bar space. Every entry pairs an icon (for daily recognition)
- * with a `title` describing the action it performs.
+ * divider only appears when at least one item follows it. Leading the bar is the
+ * global {@link SearchCommand} — a field-shaped trigger that opens a keyboard-first
+ * command palette (`/` or Cmd/Ctrl-K), kept outside the collapse so it stays
+ * visible on a phone while the nav folds into the hamburger. The language switcher
+ * is not in the bar: this instance is Czech, so the setting sits on the account
+ * page rather than spending prime bar space. Every entry pairs an icon (for daily
+ * recognition) with a `title` describing the action it performs.
  */
 export function Layout() {
   const { t } = useTranslation()
@@ -273,16 +276,13 @@ export function Layout() {
 
   return (
     <>
-      <Navbar
-        expand="md"
-        bg="dark"
-        variant="dark"
-        sticky="top"
-        collapseOnSelect
-        className="kukatko-navbar"
-      >
+      <Navbar expand="md" variant="dark" sticky="top" collapseOnSelect className="kukatko-navbar">
         <Container>
           <Navbar.Toggle aria-controls="main-navbar" />
+          {/* Search leads the bar and stays outside the collapse, so it is always
+              visible — on a phone it fills the row beside the hamburger while the
+              nav folds away. */}
+          <SearchCommand />
           <Navbar.Collapse id="main-navbar">
             <Nav className="me-auto">
               {/* The everyday loop, loudest first. Library (the homepage), Albums
