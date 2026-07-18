@@ -1197,8 +1197,11 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   **Duplicate dismissals** (`dismissals.go`, tabulka `duplicate_dismissals`, migrace
   `0034_duplicate_dismissals.sql`) jsou třetí druh názoru: „tyhle dvě fotky **NEJSOU** duplikáty".
   Klíčováno **neuspořádanou dvojicí** `photo_uid`+`other_uid`, kterou store normalizuje (menší uid
-  první) a DB si to vynutí `CHECK (photo_uid < other_uid)` — teprve to dělá z `UNIQUE` „jeden řádek
-  na dvojici" místo „jeden na směr"; obě uid FK photos `ON DELETE CASCADE`, `dismissed_by` FK users
+  první, **bajtově** jako Go `<`) a DB si to vynutí `CHECK (photo_uid COLLATE "C" < other_uid COLLATE
+  "C")` — teprve to dělá z `UNIQUE` „jeden řádek na dvojici" místo „jeden na směr". `COLLATE "C"`
+  (migrace `0038`) musí sedět na bajtové řazení `normalized()`; default `en_US.utf8` řadí `_` jinak,
+  takže bez něj by uid s podtržítkem shodil CHECK místo očekávaného FK/`ErrTargetNotFound`. Obě uid
+  FK photos `ON DELETE CASCADE`, `dismissed_by` FK users
   `ON DELETE SET NULL`. **Klíčuje se dvojice, ne skupina:** skupina je komponenta souvislosti a není
   stabilní (přidání jedné fotky slije dvě skupiny), kdežto dvojice je hrana, kterou detektor opravdu
   nakreslil. `DismissDuplicate`/`UndismissDuplicate` (idempotentní audited insert/delete, akce
