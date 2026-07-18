@@ -607,10 +607,15 @@ zapiš sem.
   placeholderem u prázdného pole), **žádné skryté globální „Upravit"** dole (to byl fix tohoto
   tasku — dohledatelnost editace title/description/AI popisu). Klik na kterékoli pole otevře jeden
   sdílený formulář (title/description/ai_note/notes/taken_at + **přibližné datum** +
-  **vizuální location picker**), Save `updatePhoto` PATCH, Cancel revert. **Save/Cancel jsou přišpendlené**
-  na spodek zásuvky (`.kk-viewer__panel-actions`, `position: sticky; bottom`): formulář je dlouhý (mapa
-  260 px), takže bez toho by rychlá úprava popisku znamenala scroll až dolů k tlačítku. Lišta ruší
-  spodní padding těla zásuvky (`--kk-panel-pad-b`), aby seděla flush u hrany, a obsah scrolluje pod ní.
+  **vizuální location picker**), Save `updatePhoto` PATCH, Cancel revert. **Save/Cancel jsou vždy dole:**
+  formulář je dlouhý (mapa 260 px), takže by rychlá úprava popisku jinak znamenala scroll až k tlačítku.
+  `MetadataPanel` proto lištu akcí (`.kk-viewer__panel-actions`) **portáluje** (`createPortal`) do
+  **nescrollujícího footeru zásuvky** — `.kk-viewer__panel-foot` (`flex: none`) vedle scrollujícího
+  `.kk-viewer__panel-body`; `PhotoDetailPage` mu ten uzel předá propem `footer`. Tlačítka volají
+  `save`/`setEditing(false)` přímo (ne submit formuláře, ten by portálované tlačítko nedosáhlo), takže
+  fungují i mimo `<form>`. **Ne `position: sticky`** — ta pin­uje jen, dokud se scrolluje její vlastní
+  sekce, takže na vysokém (4K) monitoru, kde se celý formulář vejde, nikdy nepin­ovala; footer pin­uje
+  vždy. Bez footeru (panel mimo prohlížeč) lišta spadne inline na konec formuláře.
   **Přibližné („cca") datum** — pro naskenované/zděděné fotky, kde přesné datum nikdo nezná:
   ve formuláři checkbox „Datum je odhad" (`taken_at_estimated`) a **jen když je zaškrtnutý** textové
   pole „Poznámka k datování" (`taken_at_note`, `maxLength=500` zrcadlí backendový strop) — prázdná

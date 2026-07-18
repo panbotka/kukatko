@@ -222,20 +222,45 @@ afterEach(() => {
 })
 
 describe('MetadataPanel edit form', () => {
-  it('keeps Save and Cancel together in the pinned actions bar', async () => {
-    // The bar is sticky (kk-viewer__panel-actions) so it stays at the bottom of
-    // the drawer while the long form scrolls — a quick edit needs no scroll to
-    // reach Save. jsdom can't see the pinning; this guards that the actions live
-    // in that bar rather than loose at the end of the form.
+  it('keeps Save and Cancel together in the actions bar', async () => {
+    // The actions live in kk-viewer__panel-actions so the viewer can pin them to
+    // the drawer's footer while the long form scrolls — a quick edit needs no
+    // scroll to reach Save. Without a footer node (here) the bar renders inline;
+    // this guards that the two controls live in that bar, not loose in the form.
     const user = userEvent.setup()
     const { container } = renderPanel()
     await startEditing(user)
 
     const actions = container.querySelector('.kk-viewer__panel-actions')
     expect(actions).not.toBeNull()
-    expect(actions?.querySelector('button[type="submit"]')).not.toBeNull()
+    // Buttons drive save/cancel directly (not a form submit) so they still work
+    // when portaled out of the form into the footer.
+    expect(actions?.querySelectorAll('button')).toHaveLength(2)
     expect(actions?.textContent).toContain('Save')
     expect(actions?.textContent).toContain('Cancel')
+  })
+
+  it('portals the actions into a provided footer node', async () => {
+    // With a footer node the bar renders THERE (pinned outside the scroll body),
+    // not inline in the form — this is what keeps Save reachable on a tall screen.
+    const user = userEvent.setup()
+    const footer = document.createElement('div')
+    document.body.append(footer)
+    try {
+      const { container } = render(
+        <I18nextProvider i18n={i18n}>
+          <MetadataPanel photo={photo()} canWrite onUpdated={vi.fn()} footer={footer} />
+        </I18nextProvider>,
+      )
+      await user.click(screen.getByRole('button', { name: 'Edit Title' }))
+
+      expect(footer.querySelector('.kk-viewer__panel-actions')).not.toBeNull()
+      expect(footer.textContent).toContain('Save')
+      // The form itself no longer carries the actions bar when they are portaled out.
+      expect(container.querySelector('.kk-viewer__panel-actions')).toBeNull()
+    } finally {
+      footer.remove()
+    }
   })
 })
 

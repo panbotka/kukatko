@@ -1,4 +1,5 @@
 import { type ReactNode, type SyntheticEvent, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
@@ -46,6 +47,14 @@ export interface MetadataPanelProps {
   canWrite: boolean
   /** Called with the refreshed photo after a successful save. */
   onUpdated: (photo: PhotoDetail) => void
+  /**
+   * A non-scrolling footer node to render the edit form's Save/Cancel bar into,
+   * so it stays pinned to the bottom of the drawer while editing rather than
+   * scrolling away below the long form. When absent (the panel used outside the
+   * viewer, or before the node mounts) the bar falls back to inline at the form's
+   * end.
+   */
+  footer?: HTMLElement | null
 }
 
 /**
@@ -288,7 +297,7 @@ function CaptureDate({ date, note }: CaptureDateProps) {
  * Camera/lens/EXIF and the uploader are deliberately absent — they live in the
  * collapsed technical details. All text is i18n.
  */
-export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps) {
+export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPanelProps) {
   const { t, i18n } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -517,7 +526,38 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
   }
 
   if (editing) {
-    return (
+    // The Save/Cancel bar. It reads component state (never the form DOM), so it
+    // works the same whether rendered inline or portaled out of the form into the
+    // drawer's footer — the buttons drive `save`/cancel directly rather than a
+    // form submit, which a portaled control could not reach.
+    const actions = (
+      <div className="kk-viewer__panel-actions">
+        {/* Saving stays available with an invalid coordinate: the location is
+            then left untouched (the field says so) rather than holding the
+            caption fields hostage to it. */}
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          disabled={saving}
+          onClick={(event) => void save(event)}
+        >
+          {t('photo.metadata.save')}
+        </Button>
+        <Button
+          type="button"
+          variant="outline-secondary"
+          size="sm"
+          disabled={saving}
+          onClick={() => {
+            setEditing(false)
+          }}
+        >
+          {t('photo.metadata.cancel')}
+        </Button>
+      </div>
+    )
+    const form = (
       <Form onSubmit={(event) => void save(event)} aria-label={t('photo.metadata.formLabel')}>
         {error && (
           <Alert variant="danger" className="py-2 small">
@@ -760,29 +800,19 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             picker={{ position: markerPosition, onPick: pickLocation }}
           />
         </div>
-        {/* Pinned to the bottom of the drawer while the form is open, so Save/Cancel
-            never scroll out of reach behind the long caption form and its map — a
-            quick description tweak is one click, not a scroll to the very bottom. */}
-        <div className="kk-viewer__panel-actions">
-          {/* Saving stays available with an invalid coordinate: the location is
-              then left untouched (the field says so) rather than holding the
-              caption fields hostage to it. */}
-          <Button type="submit" variant="primary" size="sm" disabled={saving}>
-            {t('photo.metadata.save')}
-          </Button>
-          <Button
-            type="button"
-            variant="outline-secondary"
-            size="sm"
-            disabled={saving}
-            onClick={() => {
-              setEditing(false)
-            }}
-          >
-            {t('photo.metadata.cancel')}
-          </Button>
-        </div>
+        {/* Actions pin to the drawer's footer while editing so they never scroll
+            out of reach behind the long form and its map. When there is no footer
+            to portal into (panel used outside the viewer) they fall back inline. */}
+        {footer == null && actions}
       </Form>
+    )
+    return footer == null ? (
+      form
+    ) : (
+      <>
+        {form}
+        {createPortal(actions, footer)}
+      </>
     )
   }
 

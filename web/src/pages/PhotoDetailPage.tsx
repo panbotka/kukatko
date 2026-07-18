@@ -109,6 +109,10 @@ export function PhotoDetailPage() {
   // The face hovered on either side of the photo/panel pair, so hovering a box
   // highlights its row and hovering a row highlights its box.
   const [hoveredFace, setHoveredFace] = useState<number | null>(null)
+  // The drawer's non-scrolling footer node. The metadata edit form portals its
+  // Save/Cancel bar in here so it stays pinned to the drawer's bottom while editing
+  // — a footer beside the scrolling body, not a sticky bar that only pins mid-scroll.
+  const [panelFoot, setPanelFoot] = useState<HTMLDivElement | null>(null)
   const faces = useFaces(uid)
 
   const view = useMemo(() => readUrlState(searchParams, DETAIL_DEFAULTS), [searchParams])
@@ -830,7 +834,12 @@ export function PhotoDetailPage() {
             <>
               <section className="kk-viewer__section">
                 <p className="kk-text-eyebrow mb-2">{t('photo.sections.caption')}</p>
-                <MetadataPanel photo={photo} canWrite={canWrite} onUpdated={setPhoto} />
+                <MetadataPanel
+                  photo={photo}
+                  canWrite={canWrite}
+                  onUpdated={setPhoto}
+                  footer={panelFoot}
+                />
               </section>
 
               <section className="kk-viewer__section">
@@ -897,6 +906,10 @@ export function PhotoDetailPage() {
             </>
           )}
         </div>
+        {/* Non-scrolling footer beside the scrolling body: the metadata edit form
+            portals its Save/Cancel here so they stay pinned to the drawer's bottom
+            at any height. Empty (and zero-height) whenever nothing is editing. */}
+        <div className="kk-viewer__panel-foot" ref={setPanelFoot} />
       </aside>
     </div>
   )

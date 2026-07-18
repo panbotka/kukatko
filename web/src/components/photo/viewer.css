@@ -324,35 +324,29 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--kk-space-4);
-  /* Named so the sticky edit-actions bar can cancel exactly this inset and pin
-     flush to the drawer's bottom instead of floating above the padding. */
-  --kk-panel-pad-b: calc(var(--kk-space-6) + env(safe-area-inset-bottom, 0px));
-  padding-bottom: var(--kk-panel-pad-b);
+  padding-bottom: calc(var(--kk-space-6) + env(safe-area-inset-bottom, 0px));
 }
 
 .kk-viewer__section + .kk-viewer__section {
   margin-top: var(--kk-space-5);
 }
 
-/* The metadata edit form's action bar, pinned to the bottom of the drawer while
-   the form is open so Save/Cancel never scroll out of reach behind the long
-   caption form and its map — a quick description tweak stays one click. The form
-   scrolls under it; a solid surface and a hairline keep it legible over whatever
-   is behind. The negative inline margins span the panel body's padding so it reads
-   as a full-width toolbar, and the extra bottom padding clears the phone safe-area. */
+/* The metadata edit form's actions live in a NON-scrolling footer of the drawer
+   (portaled here from MetadataPanel), so Save/Cancel stay pinned to the drawer's
+   bottom edge while editing — at any screen height and scroll position. A sticky
+   bar only pins while its own section is being scrolled, so on a tall screen where
+   the whole form fits it never pinned (the bug this replaces); a flex footer always
+   does. The footer is flex: none below the flex: 1 scrolling body, and collapses to
+   nothing when empty (not editing). */
+.kk-viewer__panel-foot {
+  flex: 0 0 auto;
+}
+
 .kk-viewer__panel-actions {
-  position: sticky;
-  /* Cancel the panel body's bottom padding so the bar pins flush to the drawer's
-     bottom edge (bottom: 0 alone would leave it floating one padding above, with
-     form content peeking beneath). */
-  bottom: calc(-1 * var(--kk-panel-pad-b));
-  z-index: 2;
   display: flex;
   gap: var(--kk-space-2);
-  margin: var(--kk-space-3) calc(-1 * var(--kk-space-4)) 0;
   padding: var(--kk-space-3) var(--kk-space-4);
-  /* Own bottom padding keeps the buttons off the very edge and clears the phone
-     safe-area now that the body's own bottom inset has been cancelled above. */
+  /* Extra bottom padding clears the phone safe-area at the drawer's edge. */
   padding-bottom: calc(var(--kk-space-3) + env(safe-area-inset-bottom, 0px));
   background: var(--kk-surface-1);
   border-top: 1px solid var(--kk-surface-border);
