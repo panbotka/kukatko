@@ -164,9 +164,9 @@ describe('gridTemplateColumns', () => {
   })
 
   it('sizes the tracks so exactly the chosen number of columns fits', () => {
-    // 4 columns, 3 gaps of 6px, plus 1px of sub-pixel slack => 19px.
+    // 4 columns, 3 gaps of 3px, plus 1px of sub-pixel slack => 10px.
     expect(gridTemplateColumns(4)).toBe(
-      'repeat(auto-fill, minmax(max(140px, calc((100% - 19px) / 4)), 1fr))',
+      'repeat(auto-fill, minmax(max(140px, calc((100% - 10px) / 4)), 1fr))',
     )
   })
 

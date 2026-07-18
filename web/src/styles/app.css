@@ -343,7 +343,7 @@ body {
 .kukatko-tile-focused {
   outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
   outline-offset: -1px;
-  border-radius: var(--kk-radius-md);
+  border-radius: var(--kk-radius-tile);
 }
 
 /* Timeline scrubber: a thin, fixed vertical date rail pinned to the right edge,

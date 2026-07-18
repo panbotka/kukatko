@@ -111,9 +111,19 @@ export function PhotoTile({
           style={{
             objectFit: 'cover',
             opacity: loaded ? 1 : 0,
-            transition: 'opacity var(--kk-duration-base) var(--kk-ease-standard)',
+            // Two transitions on the one element: the load-in fade, and the
+            // hover zoom whose target scale lives in `.kukatko-photo-grid` CSS.
+            // Declaring both here keeps the inline `transition` from shadowing
+            // the stylesheet's, which would make the zoom snap instead of glide.
+            transition:
+              'opacity var(--kk-duration-base) var(--kk-ease-standard), transform var(--kk-duration-slow) var(--kk-ease-standard)',
           }}
         />
+      )}
+      {taken !== '' && (
+        <span className="kk-tile__caption" aria-hidden="true">
+          {taken}
+        </span>
       )}
       {thumb.failed && (
         <span
@@ -136,7 +146,10 @@ export function PhotoTile({
       )}
       {isPlayable(photo) && (
         <span
-          className="position-absolute bottom-0 start-0 m-1 badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1"
+          // Top-end, not bottom-start: the hover date owns the bottom reading
+          // corner now, and a video is never part of a RAW+JPEG stack, so this
+          // never collides with the stack badge sharing the corner.
+          className="position-absolute top-0 end-0 m-1 badge text-bg-dark opacity-75 d-inline-flex align-items-center gap-1"
           role="img"
           aria-label={
             photo.media_type === 'live' ? t('library.tile.live') : t('library.tile.video')

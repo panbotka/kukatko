@@ -139,14 +139,18 @@ zapiš sem.
   mobilu), `UploadOrganize` (dva vyhledávatelné `MultiSelect` pro **alba**
   a **štítky** platné pro celou dávku, s inline vytvořením nové položky přes `onCreate`; prázdné
   by default, řízené `useUploadOrganize`); `components/library/` = `PhotoTile`
-  (čtvercová lazy-load dlaždice → `/photos/{uid}`, badge soukromé, **stack badge** (počet členů
-  skupiny vpravo nahoře — ikona `images` + `stack_count`, `library.tile.stackCount`, jen když
-  `stack_count > 1`), **play badge + délka** u
-  videa/live fotky (`▶` + `formatDuration`), placeholder bez
-  layout-shiftu; volitelný **favorite heart** overlay `favoritable` → `FavoriteButton`
-  (hodnocení hvězdami a pick/reject flag žijí **jen v detailu fotky**, ne na dlaždici);
-  heart se v selection módu skryje; `src` bere **`photo.thumb_url` z payloadu** přes `useThumbSrc` a
-  **nikdy** ho neskládá z UID),
+  (čtvercová lazy-load dlaždice → `/photos/{uid}` v **hero-first** stylu: bez rámečku, stínu a
+  s minimálním rádiusem `--kk-radius-tile`, aby knihovna byla hustá zeď obrázků; **stack badge**
+  (počet členů skupiny vpravo nahoře — ikona `images` + `stack_count`, `library.tile.stackCount`,
+  jen když `stack_count > 1`), **play badge + délka** u videa/live fotky (`▶` + `formatDuration`,
+  **vpravo nahoře** — datum si vzalo dolní čtecí roh; s videem se stack nikdy nepotká), placeholder bez
+  layout-shiftu; **hover date caption** `.kk-tile__caption` (datum pořízení nad spodním scrimem
+  `--kk-tile-scrim`, jen na hoveru/fokusu, `aria-hidden` protože stejné datum už nese alt obrázku,
+  na dotyku se nezobrazí — bez data se nerenderuje); na hoveru se **obrázek** decentně přiblíží
+  (`scale`, uvnitř `overflow:hidden`, žádný layout-shift); volitelný **favorite heart** overlay
+  `favoritable` → `FavoriteButton` (hodnocení hvězdami a pick/reject flag žijí **jen v detailu
+  fotky**, ne na dlaždici); heart se v selection módu skryje; `src` bere **`photo.thumb_url`
+  z payloadu** přes `useThumbSrc` a **nikdy** ho neskládá z UID),
   `PhotoGrid` (virtualizovaný **`react-virtuoso` `VirtuosoGrid`**,
   window-scroll, `endReached` → další stránka, footer spinner/retry; prop `favoritable`
   prosákne srdíčko na dlaždice; volitelný `gridRef` (imperativní `scrollToIndex`
@@ -1268,7 +1272,8 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   vypadá při každém přehrání stejně. Oba endpointy drží offset do `panLimit` svého scale a scale
   i offset se interpolují lineárně → **obraz nikdy neodkryje okraj** scény;
   `gridDensity.ts` = typ `GridDensity` (`'auto'` | 1…8) + `GRID_COLUMNS_MIN` (**1** = jedna fotka
-  na řádek) / `MAX` / `GRID_COLUMN_CHOICES` (1…8) / `GRID_TILE_MIN_PX` (140) / `GRID_GAP_PX` (6) /
+  na řádek) / `MAX` / `GRID_COLUMN_CHOICES` (1…8) / `GRID_TILE_MIN_PX` (140) / `GRID_GAP_PX` (**3** — hairline
+  mezera pro hustou hero-first zeď) /
   `GRID_DENSITY_DEFAULT` (`'auto'` = dnešní width-driven mřížka) + pure
   `readStoredDensity`/`writeDensity`/`sanitizeDensity`/`stepDensity` (localStorage
   `kukatko.grid.density`, holý skalár v JSON; číslo se zaokrouhlí a **oklampuje do 1…8**;
@@ -1537,7 +1542,13 @@ fungovaly; odpovídá to původnímu záměru komentáře „zavřít jen kliknu
   (raised + linka); **dlaždice** `.kk-tile` + `.kk-tile__media` (bez okraje — fotka má vlastní hranu,
   elevace,
   hover/focus lift na `--kk-shadow-3` — používají `AlbumTile`, `SubjectTile`, `PhotoTile`;
-  `:focus-within` pokrývá `PhotoTile`, kde je fokusovatelný až vnitřní odkaz) a `.kk-tile-row`
+  `:focus-within` pokrývá `PhotoTile`, kde je fokusovatelný až vnitřní odkaz).
+  **Hero-first foto zeď**: dlaždice **uvnitř `.kukatko-photo-grid`** (jen ty — album/label/people
+  tiles si nechávají kartu) shazují stín i lift a rádius zmenší na `--kk-radius-tile` (2px); hover
+  místo liftu **přiblíží obrázek** (`scale(1.05)` v `overflow:hidden`, bez layout-shiftu), spodní
+  `.kk-tile__caption` odkryje datum nad scrimem `--kk-tile-scrim`, a fokus-ring se kreslí **dovnitř**
+  (`outline-offset` záporný), aby na husté zdi nepřetekl přes hairline mezeru k sousedům.
+  A `.kk-tile-row`
   (řádková varianta pro seznam štítků — místo liftu se zvýrazní pozadím, protože řádek v sloupci
   nemá kam vyskočit); `.kk-tile__placeholder`; **chip** `.kk-chip` (odebíratelný token nad
   Bootstrap `.badge` — jen to, co badge nemá: box kolem koncového `.btn-close` a strop šířky,

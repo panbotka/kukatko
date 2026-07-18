@@ -24,8 +24,12 @@ export const GRID_COLUMN_CHOICES: readonly number[] = Array.from(
  */
 export const GRID_TILE_MIN_PX = 140
 
-/** The gap between tiles in the photo grid, in pixels. */
-export const GRID_GAP_PX = 6
+/**
+ * The gap between tiles in the photo grid, in pixels. Kept to a hairline so the
+ * library reads as a dense, edge-to-edge wall of images rather than a page of
+ * spaced-out cards — the photographs, not the gutters, are the hero.
+ */
+export const GRID_GAP_PX = 3
 
 /** Nothing pinned: the grid stays width-driven, exactly as it always has been. */
 export const GRID_DENSITY_DEFAULT: GridDensity = 'auto'
