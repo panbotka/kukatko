@@ -17,6 +17,7 @@ import { FavoritesPage } from './pages/FavoritesPage'
 import { ImportPage } from './pages/ImportPage'
 import { LabelDetailPage } from './pages/LabelDetailPage'
 import { LabelsPage } from './pages/LabelsPage'
+import { LeaderboardPage } from './pages/LeaderboardPage'
 import { LibraryPage } from './pages/LibraryPage'
 import { LibraryRedirect } from './pages/LibraryRedirect'
 import { LoginPage } from './pages/LoginPage'
@@ -80,6 +81,9 @@ export function AppRoutes() {
           <Route path="/places" element={<PlacesPage />} />
           <Route path="/people" element={<PeoplePage />} />
           <Route path="/people/:uid" element={<SubjectPage />} />
+          {/* The sorting competition standings: read-only aggregate counts, so
+              any signed-in role may watch the game — no write gate. */}
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
           {/* Uploading and cluster review are write actions: editors and admins only. */}
           <Route element={<RequireRole role="editor" />}>
             <Route path="/upload" element={<UploadPage />} />

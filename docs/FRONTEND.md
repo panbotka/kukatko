@@ -14,7 +14,10 @@ zapiš sem.
   **Procházet** (`nav.browse`, `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`,
   **Místa** `/places`, **Mapa** `/map`; **Třídění** `/review` (`REVIEW_ITEM`, gate `canWrite`) zůstává
   top-level, ne v „Nástrojích" — uklízení knihovny po jedné otázce je nejpoužívanější kurátorská
-  smyčka a hra, kterou nikdo nenajde, je hra, kterou nikdo nehraje; **Nahrát** `/upload` (gate
+  smyčka a hra, kterou nikdo nenajde, je hra, kterou nikdo nehraje; **Žebříček** `/leaderboard`
+  (`LEADERBOARD_ITEM`, ikona `trophy`) sedí hned vedle Třídění jako jeho scoreboard a je **bez
+  role-gate** — soutěžní stav je jen agregát počtů, takže ho vidí **každý přihlášený** (i viewer),
+  ne jen editor; **Nahrát** `/upload` (gate
   `canWrite`) je **jediná call-to-action** baru — vyplněná pilulka (`kukatko-nav-cta`, prop `cta`
   v `renderLink`), aby přidání fotek bilo do očí. Za ním **oddělovač** (`kukatko-nav-divider` — svislá
   vlásková linka v řádkovém baru ≥ md, vodorovná ve sbaleném burger menu; kreslí se jen když za ním
@@ -938,6 +941,22 @@ zapiš sem.
   bbox, jméno/štítek v otázce, →/←/mezerník posílají správný verdikt a posouvají, **žádný fetch
   mezi kartami uvnitř batche**, undo přes správný inverzní endpoint, selhaná odpověď neztratí
   místo, oba prázdné stavy odlišně),
+  `LeaderboardPage` = `/leaderboard` (**jakýkoli přihlášený** — čtení agregátů není zápis, takže
+  top-level odkaz **Žebříček** vidí i viewer, hned vedle **Třídění**; **uvnitř `Layout`u**, ne
+  fullscreen) **soutěžní žebříček třídění** nad `GET /review/leaderboard` (`fetchLeaderboard(window)`):
+  kdo v review hře rozhodl nejvíc. Řazená tabulka (`react-bootstrap` `Table`) **Pořadí · Hráč · Ano ·
+  Ne · Celkem**, top 3 nesou **medaili** (`Icon` `trophy-fill`/`award-fill` + barevná třída
+  `kk-medal--{gold,silver,bronze}` v `app.css`, dekorativní — pořadové číslo je vedle přes
+  `visually-hidden`, takže screen reader placing slyší), **řádek přihlášeného uživatele je zvýrazněný**
+  (match na `useAuth().user.uid`; `kk-leaderboard-row--me` = `--kk-accent-subtle` tint + badge „Vy",
+  ne jen barvou). **Přepínač okna** Za celou dobu / Posledních 7 dní / Dnes drží volbu v **URL query
+  paramu** `window` (`useSearchParams`, replace — „Zpět vždy funguje"), změna okna refetchuje.
+  `ListSkeleton` při načítání, `ErrorState` s retry (`useReloadKey`), **prázdný stav** (`EmptyState`
+  „Zatím žádná rozhodnutí" + CTA na `/review`); je-li přihlášený mimo žebříček, tichý hint „Zatím
+  nejste na žebříčku" s odkazem na `/review`. Board je malý (řádek na uživatele), takže **plain
+  tabulka bez virtualizace**. i18n `leaderboard.*` (cs/en). Testy: `LeaderboardPage.test.tsx` (řazené
+  standings + Ano/Ne split, zvýraznění vlastního řádku, přepnutí okna mění query param a refetchuje,
+  prázdný stav s odkazem na `/review`, top-3 medaile, not-on-board hint),
   `NotFoundPage`),
   `components/savedsearch/` = `SaveSearchModal` (modal pro pojmenování při uložení nového pohledu
   i přejmenování existujícího uloženého hledání) + `SavedSearchesDropdown` (dropdown v hlavičce
@@ -1547,6 +1566,14 @@ zapiš sem.
   si je přeloží na vzdálenost) a `SweepMessage` = `progress`|`person`|`summary` (`SweepPerson` nese
   `candidates`/`counts`/`actionable` ve stejném tvaru jako `faces.ts`); abort přes `signal` = `AbortError`
   (volající ignoruje); potvrzení jde přes `assignFace`, zamítnutí přes `rejectFace`;
+  `review.ts` = klient review hry: `fetchReviewQueue(limit?,signal)` nad `GET /review/queue`,
+  `answerReview(questionId,answer,signal)` nad `POST /review/answer` (idempotentní; typy
+  `ReviewQuestion`/`ReviewQueue`/`ReviewAnswer`; podklad `useReviewGame`), a **žebříček**
+  `fetchLeaderboard(window,signal)` nad `GET /review/leaderboard?window=all|7d|today` →
+  `Leaderboard{window,caller_uid,entries:LeaderboardEntry[]}` (`LeaderboardEntry` =
+  `{user_uid,display_name,yes_count,no_count,total,is_me}`, řazeno backendem podle `total`),
+  typ `LeaderboardWindow` = `'all'|'7d'|'today'` + `LEADERBOARD_WINDOWS` (pořadí přepínače);
+  podklad `LeaderboardPage`;
   `map.ts` = mapový klient: `fetchMapPhotos(params,signal)` nad `GET /api/v1/map/photos`
   (GeoJSON FeatureCollection geotagovaných fotek + `buildMapQuery`), `tileLayerUrl(mapset)` (Leaflet
   URL template na backend proxy, **bez API klíče**), `reverseGeocode(lat,lng,signal?)` nad

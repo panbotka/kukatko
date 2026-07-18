@@ -171,6 +171,19 @@ const REVIEW_ITEM: NavEntry = {
 }
 
 /**
+ * The sorting leaderboard — the review game's competition standings. Visible to
+ * every signed-in role (viewer and up): reading the aggregate counts is not a
+ * write action, so it is not gated behind a role group. It sits top-level next
+ * to the review game it summarizes, so the game's scoreboard is one click away.
+ */
+const LEADERBOARD_ITEM: NavEntry = {
+  to: '/leaderboard',
+  labelKey: 'nav.leaderboard',
+  titleKey: 'nav.titles.leaderboard',
+  icon: 'trophy',
+}
+
+/**
  * The write-gated upload entry. Adding photos is the everyday loop's payoff, so
  * it is not just top-level but the bar's one call-to-action: rendered as a filled
  * pill (see `renderLink`'s `cta` option) so a non-technical user's eye lands on
@@ -307,6 +320,8 @@ export function Layout() {
               {renderGroup(BROWSE_GROUP)}
               {/* The review game: editors only, and kept in plain sight. */}
               {canWrite && renderLink(REVIEW_ITEM)}
+              {/* The review game's scoreboard: visible to every signed-in role. */}
+              {renderLink(LEADERBOARD_ITEM)}
               {/* Adding photos is the loop's payoff: the bar's one filled CTA,
                   hidden from viewers. */}
               {canWrite && renderLink(UPLOAD_ITEM, { cta: true })}
