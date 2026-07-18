@@ -74,7 +74,7 @@ export function TrashPage() {
   // on top. The reload key forces a refetch after a restore or purge mutates the set.
   const params = useMemo(() => ({ ...viewToParams(view), archived: 'only' as const }), [view])
   const { photos, total, status, loadingMore, moreError, hasMore, loadMore, retry } =
-    usePaginatedPhotos(params, fetchPhotos, { key: String(reloadKey) })
+    usePaginatedPhotos(params, fetchPhotos, { reloadKey: String(reloadKey) })
 
   useEffect(() => {
     const controller = new AbortController()

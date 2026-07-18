@@ -142,4 +142,130 @@ describe('usePhotoLibrary', () => {
     expect(lastCall.sort).toBe('oldest')
     expect(lastCall.offset).toBe(0)
   })
+
+  it('shows the loading skeleton while the query change is in flight', async () => {
+    fetchMock.mockResolvedValue(page([photo('a')], 1, null))
+
+    const { result, rerender } = renderHook((props: PhotoListParams) => usePhotoLibrary(props), {
+      initialProps: { sort: 'newest' },
+    })
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready')
+    })
+
+    // A genuine query change must blank to the skeleton (status 'loading', the
+    // previous query's photos cleared) — this is the behavior the reload fix must
+    // NOT regress.
+    fetchMock.mockResolvedValue(page([photo('z')], 1, null))
+    rerender({ sort: 'oldest' })
+    expect(result.current.status).toBe('loading')
+    expect(result.current.photos).toEqual([])
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready')
+    })
+  })
+
+  describe('background reload (reloadKey)', () => {
+    it('does not blank the grid to a skeleton on a reload-key bump', async () => {
+      fetchMock.mockResolvedValue(page([photo('a'), photo('b')], 2, null))
+
+      const { result, rerender } = renderHook(
+        (props: { reloadKey: string }) =>
+          usePhotoLibrary({ sort: 'newest' }, { reloadKey: props.reloadKey }),
+        { initialProps: { reloadKey: '0' } },
+      )
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      expect(result.current.photos.map((p) => p.uid)).toEqual(['a', 'b'])
+
+      // A batch archive removed 'a'; the reload should reflect it in the
+      // background — without ever dropping to 'loading' or clearing the list.
+      fetchMock.mockResolvedValue(page([photo('b')], 1, null))
+      rerender({ reloadKey: '1' })
+
+      // Synchronously after the bump the current photos stay mounted and the
+      // status is still 'ready' — the grid is never swapped for the skeleton.
+      expect(result.current.status).toBe('ready')
+      expect(result.current.photos.map((p) => p.uid)).toEqual(['a', 'b'])
+      expect(result.current.reloading).toBe(true)
+
+      await waitFor(() => {
+        expect(result.current.photos.map((p) => p.uid)).toEqual(['b'])
+      })
+      expect(result.current.status).toBe('ready')
+      expect(result.current.reloading).toBe(false)
+    })
+
+    it('refetches the first page on a reload-key bump', async () => {
+      fetchMock.mockResolvedValue(page([photo('a')], 1, null))
+
+      const { result, rerender } = renderHook(
+        (props: { reloadKey: string }) =>
+          usePhotoLibrary({ sort: 'newest' }, { reloadKey: props.reloadKey }),
+        { initialProps: { reloadKey: '0' } },
+      )
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      rerender({ reloadKey: '1' })
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+      })
+      // The refetch is the first page, in the background — not a load-more.
+      const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0]
+      expect(lastCall.offset).toBe(0)
+    })
+
+    it('reflects a batch favorite in place after a reload-key bump', async () => {
+      fetchMock.mockResolvedValue(page([{ ...photo('a'), is_favorite: false }], 1, null))
+
+      const { result, rerender } = renderHook(
+        (props: { reloadKey: string }) =>
+          usePhotoLibrary({ sort: 'newest' }, { reloadKey: props.reloadKey }),
+        { initialProps: { reloadKey: '0' } },
+      )
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      expect(result.current.photos[0].is_favorite).toBe(false)
+
+      fetchMock.mockResolvedValue(page([{ ...photo('a'), is_favorite: true }], 1, null))
+      rerender({ reloadKey: '1' })
+      // No skeleton flash while the favorite state refreshes.
+      expect(result.current.status).toBe('ready')
+
+      await waitFor(() => {
+        expect(result.current.photos[0].is_favorite).toBe(true)
+      })
+      expect(result.current.status).toBe('ready')
+    })
+
+    it('keeps the current list when a background reload fails', async () => {
+      fetchMock.mockResolvedValue(page([photo('a'), photo('b')], 2, null))
+
+      const { result, rerender } = renderHook(
+        (props: { reloadKey: string }) =>
+          usePhotoLibrary({ sort: 'newest' }, { reloadKey: props.reloadKey }),
+        { initialProps: { reloadKey: '0' } },
+      )
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+
+      // A failed background refresh must not blank the grid to the error state:
+      // the already-loaded photos stay visible.
+      fetchMock.mockRejectedValueOnce(new Error('boom'))
+      rerender({ reloadKey: '1' })
+
+      await waitFor(() => {
+        expect(result.current.reloading).toBe(false)
+      })
+      expect(result.current.status).toBe('ready')
+      expect(result.current.photos.map((p) => p.uid)).toEqual(['a', 'b'])
+    })
+  })
 })

@@ -38,5 +38,5 @@ export function usePhotoLibrary(
   params: PhotoListParams,
   options: UsePhotoLibraryOptions = {},
 ): UsePhotoLibraryResult {
-  return usePaginatedPhotos(params, fetchPhotos, { key: options.reloadKey })
+  return usePaginatedPhotos(params, fetchPhotos, { reloadKey: options.reloadKey })
 }

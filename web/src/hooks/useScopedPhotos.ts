@@ -68,7 +68,7 @@ export function useScopedPhotos(
     [],
   )
   return usePaginatedPhotos(scoped, fetcher, {
-    key: options.reloadKey,
+    reloadKey: options.reloadKey,
     enabled: options.enabled,
   })
 }
