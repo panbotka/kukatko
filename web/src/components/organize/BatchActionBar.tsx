@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Modal from 'react-bootstrap/Modal'
 import Spinner from 'react-bootstrap/Spinner'
@@ -92,20 +92,31 @@ export function BatchActionBar({ bulk, onSelectAll }: BatchActionBarProps) {
   const [busy, setBusy] = useState(false)
   const [picker, setPicker] = useState<Picker>(null)
   const [options, setOptions] = useState<OptionsState>({ status: 'idle' })
+  // True once the option lists have loaded successfully; kept in a ref so the
+  // effect below can reuse the cache without depending on `options` (see the
+  // effect comment). A retry via `reloadOptions` re-runs the fetch.
+  const optionsLoaded = useRef(false)
+  const [reloadOptions, setReloadOptions] = useState(0)
   const [addAlbums, setAddAlbums] = useState<string[]>([])
   const [addLabels, setAddLabels] = useState<string[]>([])
   const [removeLabels, setRemoveLabels] = useState<string[]>([])
 
-  // Load albums and labels the first time a picker opens; keep them cached for
-  // the session. A retry resets the state to `idle`, which re-runs this effect.
+  // Load albums and labels the first time a picker opens and cache them for the
+  // session. Keyed on `picker` (and the retry counter) — deliberately NOT on
+  // `options.status` — so writing the `loading`/`ready` result never re-runs
+  // this effect and aborts its own in-flight fetch. Reading the "already
+  // loaded" guard from `optionsLoaded.current` keeps that state out of the deps
+  // too, mirroring OrganizePanel / BulkEditModal. The cleanup still aborts the
+  // fetch on a genuine unmount or picker close.
   useEffect(() => {
-    if (picker === null || options.status !== 'idle') {
+    if (picker === null || optionsLoaded.current) {
       return
     }
     const controller = new AbortController()
     setOptions({ status: 'loading' })
     Promise.all([fetchAlbums(controller.signal), fetchLabels(controller.signal)])
       .then(([albums, labels]) => {
+        optionsLoaded.current = true
         setOptions({
           status: 'ready',
           albums: albums.map(albumOption),
@@ -121,7 +132,13 @@ export function BatchActionBar({ bulk, onSelectAll }: BatchActionBarProps) {
     return () => {
       controller.abort()
     }
-  }, [picker, options.status])
+  }, [picker, reloadOptions])
+
+  // Retry after a load error: `optionsLoaded` is still false (only a success
+  // sets it), so bumping the counter re-runs the effect and fetches again.
+  const reloadPickerOptions = useCallback(() => {
+    setReloadOptions((n) => n + 1)
+  }, [])
 
   const resetPickerFields = useCallback(() => {
     setAddAlbums([])
@@ -255,13 +272,7 @@ export function BatchActionBar({ bulk, onSelectAll }: BatchActionBarProps) {
           {options.status === 'error' && (
             <div className="d-flex align-items-center justify-content-between gap-2">
               <span className="text-danger">{t('batch.optionsError')}</span>
-              <Button
-                variant="outline-secondary"
-                size="sm"
-                onClick={() => {
-                  setOptions({ status: 'idle' })
-                }}
-              >
+              <Button variant="outline-secondary" size="sm" onClick={reloadPickerOptions}>
                 {t('batch.retry')}
               </Button>
             </div>

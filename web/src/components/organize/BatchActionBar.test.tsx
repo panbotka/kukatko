@@ -9,7 +9,7 @@ import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
 import i18n from '../../i18n'
 import { ApiError } from '../../services/auth'
 import { type BulkResult } from '../../services/bulk'
-import { type AlbumCount } from '../../services/organize'
+import { type AlbumCount, type LabelCount } from '../../services/organize'
 import { ToastProvider } from '../toast/ToastProvider'
 
 import { BatchActionBar } from './BatchActionBar'
@@ -34,6 +34,32 @@ function result(updated: number): BulkResult {
   return { results: [], counts: { total: updated, updated, skipped: 0, errored: 0 } }
 }
 
+/**
+ * A `fetchAlbums`/`fetchLabels` stub that honours the AbortSignal exactly as the
+ * real service does: it rejects with an `AbortError` the moment the signal
+ * aborts, and otherwise resolves with `value` on a later tick. This reproduces
+ * the self-aborting-effect bug — a stub that ignored the signal (plain
+ * `mockResolvedValue`) would pass even against the broken effect, because the
+ * abort the effect triggered on itself would never take effect.
+ */
+function abortable<T>(value: T): (signal?: AbortSignal) => Promise<T> {
+  return (signal) =>
+    new Promise<T>((resolve, reject) => {
+      const abortError = () => new DOMException('The operation was aborted.', 'AbortError')
+      if (signal?.aborted === true) {
+        reject(abortError())
+        return
+      }
+      const timer = setTimeout(() => {
+        resolve(value)
+      }, 0)
+      signal?.addEventListener('abort', () => {
+        clearTimeout(timer)
+        reject(abortError())
+      })
+    })
+}
+
 function album(uid: string, title: string): AlbumCount {
   return {
     uid,
@@ -42,6 +68,18 @@ function album(uid: string, title: string): AlbumCount {
     description: '',
     type: 'album',
     private: false,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    photo_count: 0,
+  }
+}
+
+function label(uid: string, name: string): LabelCount {
+  return {
+    uid,
+    slug: name.toLowerCase(),
+    name,
+    priority: 0,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     photo_count: 0,
@@ -167,8 +205,10 @@ describe('BatchActionBar', () => {
 
   it('opens the album picker, loading its options, with apply gated on a choice', async () => {
     const bulk = makeBulk()
-    albumsMock.mockResolvedValue([{ ...album('al1', 'Trip'), photo_count: 3 }])
-    labelsMock.mockResolvedValue([])
+    // The stubs honour the AbortSignal, so if the effect aborted its own fetch
+    // (the bug) the options would never load and this test would hang.
+    albumsMock.mockImplementation(abortable([{ ...album('al1', 'Trip'), photo_count: 3 }]))
+    labelsMock.mockImplementation(abortable([]))
     const user = userEvent.setup()
     renderBar(bulk)
 
@@ -179,5 +219,52 @@ describe('BatchActionBar', () => {
     expect(await screen.findByLabelText('Add to albums')).toBeInTheDocument()
     expect(albumsMock).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+  })
+
+  it('opens the label picker, loading add and remove fields', async () => {
+    const bulk = makeBulk()
+    albumsMock.mockImplementation(abortable([]))
+    labelsMock.mockImplementation(abortable([label('la1', 'Beach')]))
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Labels' }))
+
+    // Both the add and the remove label fields render once the labels load.
+    expect(await screen.findByLabelText('Add labels')).toBeInTheDocument()
+    expect(screen.getByLabelText('Remove labels')).toBeInTheDocument()
+    expect(labelsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the options error state, not an endless spinner, on a load failure', async () => {
+    const bulk = makeBulk()
+    // A genuine (non-abort) rejection must surface the error state.
+    albumsMock.mockRejectedValue(new ApiError(500, 'boom'))
+    labelsMock.mockResolvedValue([])
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+
+    expect(
+      await screen.findByText('Could not load the list. Please try again.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('retries the option load after an error', async () => {
+    const bulk = makeBulk()
+    albumsMock.mockRejectedValueOnce(new ApiError(500, 'boom'))
+    albumsMock.mockResolvedValueOnce([{ ...album('al1', 'Trip'), photo_count: 3 }])
+    labelsMock.mockResolvedValue([])
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+    // The second attempt succeeds and the picker renders its options.
+    expect(await screen.findByLabelText('Add to albums')).toBeInTheDocument()
+    expect(albumsMock).toHaveBeenCalledTimes(2)
   })
 })

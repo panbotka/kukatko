@@ -332,7 +332,9 @@ zapiš sem.
   v `app.css`) `position: fixed` vycentrovaná dole, **vyjede při ≥ 1 vybrané fotce**, nese živý
   počet (`aria-live`), **Vybrat vše** (`onSelectAll`), zavření (✕ = `selection.clear`) a akce
   **Přidat do alba** / **Štítky** (add+remove, oba přes `MultiSelect` v malém `Modal`u, options
-  lazy z `fetchAlbums`/`fetchLabels`), **Oblíbené**, **Archivovat**, **Stáhnout**
+  lazy z `fetchAlbums`/`fetchLabels` — efekt klíčuje **jen na `picker`** (+ retry čítač), nikdy na
+  `options.status`, jinak by zápis `loading`/`ready` znovuspustil efekt a **abortoval vlastní fetch**;
+  „už načteno" drží `useRef`, retry po chybě bumpne čítač, cache na session), **Oblíbené**, **Archivovat**, **Stáhnout**
   (`DownloadZipButton`), **Seskupit** (`StackSelectedControl`) a **Další úpravy** (celý
   `BulkEditModal`); každá metadatová akce jede **jedním `POST /photos/bulk`** přes `bulkUpdatePhotos`,
   úspěch/selhání hlásí **toast** (`useToast`): úspěch výběr vyčistí a mřížku přenačte (`bulk.finish`),
