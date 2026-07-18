@@ -246,12 +246,9 @@
     },
     "density": {
       "label": "Dlaždic na řádek",
-      "auto": "Automaticky",
-      "autoShort": "A",
       "columns": "{{n}} na řádek",
       "fewer": "Méně dlaždic na řádek",
-      "more": "Více dlaždic na řádek",
-      "reset": "Zpět na automatické (teď {{n}} na řádek)"
+      "more": "Více dlaždic na řádek"
     },
     "sort": {
       "newest": "Nejnovější",

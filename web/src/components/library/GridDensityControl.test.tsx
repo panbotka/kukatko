@@ -30,66 +30,57 @@ afterEach(() => {
 })
 
 describe('GridDensityControl', () => {
-  it('starts on auto with only the "more" step available', () => {
+  it('shows the current column count as a read-only readout', () => {
+    window.localStorage.setItem(STORAGE_KEY, '4')
     renderControl()
-    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeDisabled()
-    // The centre chip announces the auto state and cannot reset what is already auto.
-    expect(screen.getByRole('button', { name: 'Automatic' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'More tiles per row' })).toBeEnabled()
+    expect(screen.getByText('4')).toBeInTheDocument()
   })
 
-  it('enters the pinned range from auto and persists the column count', async () => {
+  it('offers only fewer/more steps — no auto or reset control', () => {
+    window.localStorage.setItem(STORAGE_KEY, '5')
+    renderControl()
+    // Exactly two buttons: the − and + steppers. The centre readout is not a button.
+    const buttons = screen.getAllByRole('button')
+    expect(buttons).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: /automatic/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /reset/i })).not.toBeInTheDocument()
+  })
+
+  it('steps up one column at a time and persists the count', async () => {
+    window.localStorage.setItem(STORAGE_KEY, '4')
     const user = userEvent.setup()
     renderControl()
 
     await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
 
-    // 'auto' steps to the minimum pinned count, which really reaches localStorage.
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('2')
-    expect(screen.getByText('2')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeEnabled()
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('5')
+    expect(screen.getByText('5')).toBeInTheDocument()
   })
 
-  it('steps down to one photo per row and disables the fewer button there', async () => {
-    window.localStorage.setItem(STORAGE_KEY, '2')
+  it('steps down one column at a time and persists the count', async () => {
+    window.localStorage.setItem(STORAGE_KEY, '4')
     const user = userEvent.setup()
     renderControl()
 
     await user.click(screen.getByRole('button', { name: 'Fewer tiles per row' }))
 
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('1')
-    expect(screen.getByText('1')).toBeInTheDocument()
-    // One photo per row is the floor: there is nothing fewer to step to.
-    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeDisabled()
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('3')
+    expect(screen.getByText('3')).toBeInTheDocument()
   })
 
-  it('steps back up from one photo per row', async () => {
+  it('disables the fewer button at one photo per row', () => {
     window.localStorage.setItem(STORAGE_KEY, '1')
-    const user = userEvent.setup()
     renderControl()
-
+    expect(screen.getByText('1')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
-
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('2')
-    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'More tiles per row' })).toBeEnabled()
   })
 
-  it('cannot step past the maximum column count', () => {
-    window.localStorage.setItem(STORAGE_KEY, '8')
+  it('disables the more button at the maximum column count', () => {
+    window.localStorage.setItem(STORAGE_KEY, '10')
     renderControl()
+    expect(screen.getByText('10')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'More tiles per row' })).toBeDisabled()
-  })
-
-  it('resets a pinned density to auto from the centre chip', async () => {
-    window.localStorage.setItem(STORAGE_KEY, '5')
-    const user = userEvent.setup()
-    renderControl()
-
-    // The centre chip doubles as the reset control; its name states the current count.
-    await user.click(screen.getByRole('button', { name: 'Reset to automatic (now 5 per row)' }))
-
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('"auto"')
-    expect(screen.getByRole('button', { name: 'Automatic' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Fewer tiles per row' })).toBeEnabled()
   })
 })

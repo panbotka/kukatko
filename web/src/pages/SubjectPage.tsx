@@ -183,7 +183,7 @@ export function SubjectPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: gridTemplateColumns(density, GALLERY_GAP_PX),
+              gridTemplateColumns: gridTemplateColumns(density),
               gap: `${GALLERY_GAP_PX}px`,
             }}
           >

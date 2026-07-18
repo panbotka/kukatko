@@ -1,14 +1,12 @@
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 
 import {
-  defaultDensityForViewport,
   type GridDensity,
+  initialColumns,
   readStoredDensity,
   sanitizeDensity,
   writeDensity,
 } from '../lib/gridDensity'
-
-import { useIsNarrowViewport } from './useIsNarrowViewport'
 
 /** Components currently subscribed to the density, re-rendered on every change. */
 const listeners = new Set<() => void>()
@@ -30,16 +28,16 @@ function subscribe(onStoreChange: () => void): () => void {
 /**
  * localStorage is the single source of truth — no in-memory copy to keep in
  * sync. That is safe for `useSyncExternalStore` only because the snapshot is a
- * primitive (a column count, `'auto'`, or `null` when nothing is stored): React
+ * primitive (a column count, or `null` when nothing usable is stored): React
  * compares snapshots with `Object.is`, so re-reading the same value never looks
  * like a change and never loops.
  */
-function getSnapshot(): GridDensity | null {
+function getSnapshot(): number | null {
   return readStoredDensity()
 }
 
-/** Pins the grid to a column count (or `'auto'`), persists it and re-renders every grid. */
-export function setGridDensity(density: GridDensity): void {
+/** Pins the grid to a column count, persists it and re-renders every grid. */
+export function setGridDensity(density: number): void {
   writeDensity(sanitizeDensity(density))
   for (const listener of listeners) {
     listener()
@@ -48,10 +46,10 @@ export function setGridDensity(density: GridDensity): void {
 
 /** Result of {@link useGridDensity}: the current density plus its setter. */
 export interface UseGridDensityResult {
-  /** The persisted column count, or `'auto'` for the responsive default. */
+  /** The current column count, always a concrete number in 1..GRID_COLUMNS_MAX. */
   density: GridDensity
   /** Pins a new column count and persists it. */
-  setDensity: (density: GridDensity) => void
+  setDensity: (density: number) => void
 }
 
 /**
@@ -59,14 +57,27 @@ export interface UseGridDensityResult {
  * per device. It is deliberately *not* URL state: it is a display preference
  * about this screen, not part of the view a link reproduces.
  *
- * Until the user picks a density, the effective value is viewport-aware — one
- * photo per row on a phone, the responsive multi-column default on wider
- * screens — via {@link defaultDensityForViewport}. The moment a choice is stored
- * it wins on every viewport, so the per-device preference always survives.
+ * On first use — nothing usable stored, or a legacy `'auto'` to migrate — the
+ * value is seeded once from the current viewport width and persisted, so it is
+ * stable from then on and a later window resize never moves it. After that the
+ * value is exactly what the user set with the control. A cross-tab `storage`
+ * event keeps every open tab on the same count.
  */
 export function useGridDensity(): UseGridDensityResult {
   const stored = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
-  const narrow = useIsNarrowViewport()
-  const density = stored ?? defaultDensityForViewport(narrow)
+
+  // First use on this device: no numeric preference yet (empty storage or a
+  // legacy `'auto'`). Seed it once from the current viewport width — auto's only
+  // remaining job — and persist it so the count stays put across resizes.
+  useEffect(() => {
+    if (readStoredDensity() === null) {
+      setGridDensity(initialColumns())
+    }
+  }, [])
+
+  // Until that seed lands (the effect runs after the first paint) the effective
+  // value is the same width-derived count, so the very first render already
+  // shows it and there is no flash to a placeholder default.
+  const density = stored ?? initialColumns()
   return { density, setDensity: setGridDensity }
 }

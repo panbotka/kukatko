@@ -24,9 +24,9 @@ interface GridContext {
 
 /**
  * CSS-grid list honouring the user's density preference: it renders exactly the
- * chosen number of columns wherever they fit, and falls back to fewer (never
- * more) on a viewport too narrow for usable tiles. Left on `auto` the tile count
- * per row simply follows the available width, as it always did.
+ * chosen number of columns (`repeat(n, 1fr)`) on every viewport — the user picks
+ * a concrete count in 1..GRID_COLUMNS_MAX, so there is no width-driven "auto"
+ * fallback to defer to.
  *
  * Changing the density only restyles this element — virtuoso re-measures the
  * resized tiles and keeps the scroll position, and the page keeps its selection.
@@ -41,9 +41,8 @@ const List = forwardRef<
       ref={ref}
       {...props}
       // The class lets the page measure the live column count (for row-wise
-      // keyboard navigation) from the rendered grid's computed `grid-template`;
-      // reading it back beats trusting the preference, which a narrow viewport
-      // may have overridden downwards.
+      // keyboard navigation) from the rendered grid's computed `grid-template`,
+      // which now always resolves to exactly the chosen number of columns.
       className={`kukatko-photo-grid${className ? ` ${className}` : ''}`}
       data-density={String(density)}
       style={{
