@@ -1,9 +1,9 @@
-// Package maintenanceapi exposes the admin-only HTTP endpoints for library
+// Package maintenanceapi exposes the maintainer-only HTTP endpoints for library
 // maintenance: an integrity scan that reports catalogue/disk drift and a repair
 // trigger that schedules the opt-in fixes. It depends only on a Service behaviour
-// and an admin guard, both injected, so it stays decoupled from the maintenance
-// and auth wiring. A nil Service answers 503 on every endpoint, so the routes
-// mount unconditionally even when maintenance is not wired.
+// and a maintainer guard, both injected, so it stays decoupled from the
+// maintenance and auth wiring. A nil Service answers 503 on every endpoint, so
+// the routes mount unconditionally even when maintenance is not wired.
 package maintenanceapi
 
 import (
@@ -32,35 +32,35 @@ type Service interface {
 	Repair(ctx context.Context, opts maintenance.RepairOptions) (maintenance.RepairResult, error)
 }
 
-// API exposes the maintenance endpoints over HTTP behind an admin guard.
+// API exposes the maintenance endpoints over HTTP behind a maintainer guard.
 type API struct {
-	service      Service
-	requireAdmin func(http.Handler) http.Handler
+	service           Service
+	requireMaintainer func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service is valid (the
-// endpoints answer 503); RequireAdmin is required.
+// endpoints answer 503); RequireMaintainer is required.
 type Config struct {
 	// Service runs scans and repairs; nil means maintenance is not configured.
 	Service Service
-	// RequireAdmin guards every endpoint for administrators only.
-	RequireAdmin func(http.Handler) http.Handler
+	// RequireMaintainer guards every endpoint for maintainers only.
+	RequireMaintainer func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, requireAdmin: cfg.RequireAdmin}
+	return &API{service: cfg.Service, requireMaintainer: cfg.RequireMaintainer}
 }
 
 // RegisterRoutes mounts the maintenance endpoints onto r, which the caller has
 // scoped under the API base path (for example /api/v1):
 //
-//	GET  /maintenance/scan    RequireAdmin  run an integrity scan
-//	POST /maintenance/repair  RequireAdmin  run the selected repairs
+//	GET  /maintenance/scan    RequireMaintainer  run an integrity scan
+//	POST /maintenance/repair  RequireMaintainer  run the selected repairs
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/maintenance", func(r chi.Router) {
-		r.With(a.requireAdmin).Get("/scan", a.handleScan)
-		r.With(a.requireAdmin).Post("/repair", a.handleRepair)
+		r.With(a.requireMaintainer).Get("/scan", a.handleScan)
+		r.With(a.requireMaintainer).Post("/repair", a.handleRepair)
 	})
 }
 

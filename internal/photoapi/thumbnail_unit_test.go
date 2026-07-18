@@ -123,6 +123,7 @@ func TestRegenerateThumbnailRBAC(t *testing.T) {
 			regenerator:     fake,
 			requireAuth:     regenPass,
 			requireWrite:    regenDeny,
+			requireAdmin:    regenPass,
 			requireDownload: regenPass,
 		}
 		r := chi.NewRouter()
@@ -145,6 +146,7 @@ func TestRegenerateThumbnailRBAC(t *testing.T) {
 			regenerator:     fake,
 			requireAuth:     regenPass,
 			requireWrite:    regenPass,
+			requireAdmin:    regenPass,
 			requireDownload: regenPass,
 		}
 		r := chi.NewRouter()

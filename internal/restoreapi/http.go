@@ -1,4 +1,4 @@
-// Package restoreapi exposes a small, admin-only HTTP API over the restore /
+// Package restoreapi exposes a small, maintainer-only HTTP API over the restore /
 // disaster-recovery subsystem: listing the database dumps available in the
 // backup bucket and running the catalogue-vs-originals integrity check. Both are
 // read-only and safe to call against a running server.
@@ -33,37 +33,37 @@ type Service interface {
 	Verify(ctx context.Context) (backup.VerifyReport, error)
 }
 
-// API exposes the restore subsystem over HTTP. The admin route guard is supplied
-// by the caller (the auth subsystem).
+// API exposes the restore subsystem over HTTP. The maintainer route guard is
+// supplied by the caller (the auth subsystem).
 type API struct {
-	svc          Service
-	requireAdmin func(http.Handler) http.Handler
+	svc               Service
+	requireMaintainer func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Service may be nil (no backup
-// destination configured); RequireAdmin is required.
+// destination configured); RequireMaintainer is required.
 type Config struct {
 	// Service lists dumps and verifies integrity; nil when no destination exists.
 	Service Service
-	// RequireAdmin guards every endpoint: restore operations are admin-only.
-	RequireAdmin func(http.Handler) http.Handler
+	// RequireMaintainer guards every endpoint: restore is a maintainer operation.
+	RequireMaintainer func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{svc: cfg.Service, requireAdmin: cfg.RequireAdmin}
+	return &API{svc: cfg.Service, requireMaintainer: cfg.RequireMaintainer}
 }
 
 // RegisterRoutes mounts the restore endpoints onto r, which the caller has
-// scoped under the API base path (for example /api/v1). Both routes are
-// admin-only:
+// scoped under the API base path (for example /api/v1). Both routes require
+// maintainer:
 //
 //	GET  /restore/dumps   list available database dumps
 //	POST /restore/verify  run the catalogue/originals integrity check
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/restore", func(r chi.Router) {
-		r.With(a.requireAdmin).Get("/dumps", a.handleListDumps)
-		r.With(a.requireAdmin).Post("/verify", a.handleVerify)
+		r.With(a.requireMaintainer).Get("/dumps", a.handleListDumps)
+		r.With(a.requireMaintainer).Post("/verify", a.handleVerify)
 	})
 }
 

@@ -33,13 +33,13 @@ func (f *fakeService) Repair(_ context.Context, opts maintenance.RepairOptions) 
 	return f.result, f.repairErr
 }
 
-// passthrough is a no-op admin guard for tests.
+// passthrough is a no-op maintainer guard for tests.
 func passthrough(next http.Handler) http.Handler { return next }
 
 // newRouter mounts the API (over svc, which may be nil) on a chi router.
 func newRouter(svc Service) http.Handler {
 	r := chi.NewRouter()
-	NewAPI(Config{Service: svc, RequireAdmin: passthrough}).RegisterRoutes(r)
+	NewAPI(Config{Service: svc, RequireMaintainer: passthrough}).RegisterRoutes(r)
 	return r
 }
 

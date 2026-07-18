@@ -13,8 +13,10 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   řetězec. `note` delší než **1000 znaků** (runy, ne bajty) → 400 se zprávou pojmenující pole.
   `PATCH` má u `note` **partial-update** sémantiku: vynechaný klíč nechá uloženou poznámku beze
   změny, `""` ji smaže. **`note` čte jen admin** — nikdy není v payloadu `POST /auth/login` ani
-  `GET /auth/me`. Role: admin/editor/viewer/ai (editor+admin+ai write; `ai` = automat na API token
-  s editorskými právy zápisu **plus** import, ale bez ostatních admin práv). **Sliding session expiry**
+  `GET /auth/me`. Role: **striktní žebřík** viewer < editor < admin < maintainer (každá dědí práva
+  nižších): viewer read-only, editor přidává zápis médií/metadat, admin governance (správa
+  uživatelů, audit log, trvalé mazání/vyprázdnění koše), maintainer provoz (importy, maintenance,
+  system, backup/restore, jobs, process). **Sliding session expiry**
   (`auth.session_ttl` do cap `auth.session_max_lifetime`), **login rate-limit**
   (`auth.login_rate_limit`/`auth.login_rate_window` → 429), **bootstrap admin** z
   `auth.bootstrap_admin_username/password`. Middleware navíc `RequireAuthOrDownloadToken`
@@ -32,8 +34,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   mutaci.
 - **Bearer autentizace:** `authenticateRequest` bere `Authorization: Bearer kkt_<id>_<secret>`
   **vedle** session cookie (cookie cesta beze změny). Token **dědí roli svého uživatele** → žádný
-  druhý permission systém, `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireImport` platí beze
-  změny (typicky token role `ai`: write + import, zbytek admin-only vrací 403). Špatný
+  druhý permission systém, `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer` platí beze
+  změny (např. token role maintainer projde všemi guardy; plain admin narazí na 403 u provozních
+  `RequireMaintainer` surfaces). Špatný
   bearer je **finální** (nezkouší se cookie téhož requestu); jiné schéma než Bearer propadne na
   cookie. Revokovaný / expirovaný / neznámý / poškozený token i token zakázaného uživatele → vždy
   **401** (nikdy 403) se **stejným tělem** — nelze rozlišit, který případ nastal. `last_used_at` se
@@ -184,9 +187,11 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   Idempotentní (bezpečné klikat opakovaně); zapisuje se do audit logu jako
   `photo.thumbnail` se seznamem regenerovaných velikostí v details;
   **koš / trvalé mazání** (`trash.go`, backuje `internal/trash` přes rozhraní `Purger`, nil → 503):
-  `POST /photos/{uid}/purge` (editor/admin, `?confirm=true` jinak 400, 404 chybí, 409 fotka není
-  archivovaná → 204) a `POST /trash/empty` (editor/admin, `?confirm=true` → `{purged,failed}`)
-  trvale mažou archivované fotky, `GET /trash/info` (přihlášený) vrací `{retention_days}` pro odpočet
+  `POST /photos/{uid}/purge` (**admin** přes `RequireAdmin`, `?confirm=true` jinak 400, 404 chybí,
+  409 fotka není archivovaná → 204) a `POST /trash/empty` (**admin** přes `RequireAdmin`,
+  `?confirm=true` → `{purged,failed}`) trvale a nevratně mažou archivované fotky, takže jsou
+  zpřísněné z write na admin; archivace (vratné soft-delete) zůstává `RequireWrite` a
+  `GET /trash/info` (přihlášený) vrací `{retention_days}` pro odpočet
   do auto-purge; seznam koše jede přes sdílené `GET /photos?archived=only`;
   **adresy médií v payloadu** (`internal/mediaurl`): každá vrácená fotka nese `thumb_url`
   (grid náhled `tile_500`) a `download_url` (originál, `?original=true` sémantika — nikdy rendering
@@ -235,7 +240,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   download_url}` (pruh variant), u nestacknuté fotky vynecháno (odlišné od `files`, což jsou
   `photo_files` jednoho řádku).
   Mountuje se třetím `server.WithAPI` (`buildPhotoAPI` v `cmd/kukatko/photos.go`).
-- **Jobs API (`/api/v1`, `internal/jobsapi`, admin-only přes `RequireAdmin`):**
+- **Jobs API (`/api/v1`, `internal/jobsapi`, maintainer-only přes `RequireMaintainer`):**
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
   (recent/dead-letter výpis, query `state`/`limit`/`offset`, neplatný → 400);
   `POST /jobs/{id}/requeue` → refreshnutý job (dead/failed → queued; 404 missing, 409
@@ -407,7 +412,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `{photos,total,limit,offset,next_offset}` (newest-first, jen nearchivované, `limit`≤500). Mountuje
   se `server.WithAPI` (`buildPeopleAPI` v `cmd/kukatko/people.go`). Záznamy fotek subjektu
   staví na `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markery → photo uid).
-- **Process API (`/api/v1`, `internal/processapi`, admin-only přes `RequireAdmin`):**
+- **Process API (`/api/v1`, `internal/processapi`, maintainer-only přes `RequireMaintainer`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` pro fotky bez embeddingu),
   `POST /process/faces` → `{enqueued}` (backfill `face_detect` pro fotky bez detekce obličejů),
   `POST /process/clusters` → `{created}` (re-clustering nepřiřazených obličejů přes
@@ -592,7 +597,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   sekce `maps`). Bez `maps.mapy_api_key` vrací tile/rgeocode/geocode 503 (editor polohy to ukáže
   jako „vyhledávání míst není dostupné“ a jede dál na souřadnicích a kliku do mapy), GeoJSON
   funguje. Mountuje se `server.WithAPI` (`buildMapsAPI` v `cmd/kukatko/maps.go`).
-- **Import API (`/api/v1`, `internal/importapi`, přes `RequireImport` = admin **nebo** ai):** triggery a
+- **Import API (`/api/v1`, `internal/importapi`, maintainer-only přes `RequireMaintainer`):** triggery a
   historie read-only importů. `GET /import/runs` (**vždy registrovaný**) → `{runs,limit,offset,
   sources:{photoprism,photosorter}}` — stránka `import_runs` newest-started-first (query
   `limit`≤200/`offset`, neplatný → 400) + `sources` flagy jaké zdroje jsou nakonfigurované (podklad
@@ -603,7 +608,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   singleton job → 202 `{job_id,status}`; `jobs.ErrDuplicate` (už běží) → 409, jiná chyba → 500.
   Celá API se mountuje vždy (`buildImportAPI` v `cmd/kukatko/import.go`), aby historie fungovala i
   bez konfigurovaného zdroje. Frontend (`ImportPage`) polluje `GET /import/runs` + `GET /jobs/stats`.
-- **Backup API (`/api/v1`, `internal/backupapi`, admin-only přes `RequireAdmin`):** stav a trigger
+- **Backup API (`/api/v1`, `internal/backupapi`, maintainer-only přes `RequireMaintainer`):** stav a trigger
   S3 zálohy. `GET /backup` → stav + poslední běh (`{configured,running,last_started_at,
   last_finished_at,last_error,last_result}`; bez konfigurace `configured:false`); `POST /backup`
   spustí zálohu na **pozadí** (`Trigger`) → 202 `{status:"started"}`, `backup.ErrAlreadyRunning` →
@@ -612,7 +617,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `backup.Service`. Konfig klíče `backup.s3.{endpoint,region,bucket,access_key,secret_key,
   path_style}`, `backup.schedule` (cron), `backup.retention` (kolik posledních dumpů nechat; ≤ 0 =
   vše). Runtime dep `pg_dump` (`postgresql-client`). Tajemství (`access_key`/`secret_key`) přes env.
-- **Restore API (`/api/v1`, `internal/restoreapi`, admin-only přes `RequireAdmin`):** **jen
+- **Restore API (`/api/v1`, `internal/restoreapi`, maintainer-only přes `RequireMaintainer`):** **jen
   read-only** operace nad obnovou. `GET /restore/dumps` → `{dumps:[{key,size}]}` (dumpy v bucketu,
   nejnovější první; 503 bez konfigurace, 502 při chybě S3); `POST /restore/verify` → `VerifyReport`
   (fotky v DB vs originály na disku + nesoulady; 503 bez konfigurace). **Destruktivní obnova DB se
@@ -627,7 +632,7 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   stránkováním `?limit=`(≤500)/`?offset=`; neplatný čas/číslo → 400. Audit záznamy se **nezapisují
   přes HTTP** — vznikají uvnitř mutačních transakcí (in-tx `audit.Write`, viz `internal/audit`
   konvence). Mountuje se vždy (`buildAuditAPI` v `cmd/kukatko/audit.go`).
-- **Maintenance API (`/api/v1`, `internal/maintenanceapi`, admin-only přes `RequireAdmin`):**
+- **Maintenance API (`/api/v1`, `internal/maintenanceapi`, maintainer-only přes `RequireMaintainer`):**
   integritní kontrola & opravy knihovny. `GET /maintenance/scan` → `Report` (counts + vzorky:
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
   `missing_phashes` + totály `photos`/`files_in_db`/`originals_on_disk`); `POST /maintenance/repair`
@@ -652,8 +657,8 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `photos.merge` do auditu. Idempotentní (opětovné spuštění na vyřešené skupině = no-op); `dry_run:true`
   jen spočítá náhled bez změn. Neplatná skupina → 400, neexistující keeper → 404, `merge=nil` → 503.
   Route `merge` běží i při vypnuté detekci. Mount vždy `buildDuplicatesAPI` (`cmd/kukatko/duplicates.go`).
-- **System status API (`/api/v1`, `internal/systemapi` + `internal/system`, admin-only přes
-  `RequireAdmin`):** `GET /system/status` → jeden agregovaný snapshot provozního zdraví:
+- **System status API (`/api/v1`, `internal/systemapi` + `internal/system`, maintainer-only přes
+  `RequireMaintainer`):** `GET /system/status` → jeden agregovaný snapshot provozního zdraví:
   `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,total,dead_letter,
   pending_embeddings},backup (=backup.Status),imports{photoprism,photosorter (=importer.Run|null)},
   storage{originals_bytes,cache_bytes,free_bytes,total_bytes},

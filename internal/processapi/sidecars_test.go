@@ -37,7 +37,7 @@ func newServerWithSidecars(
 	t.Helper()
 	api := NewAPI(Config{
 		Backfiller: &fakeBackfiller{}, FaceBackfiller: &fakeFaceBackfiller{},
-		SidecarBackfiller: sb, RequireAdmin: guard,
+		SidecarBackfiller: sb, RequireMaintainer: guard,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)

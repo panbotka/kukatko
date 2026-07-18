@@ -203,12 +203,12 @@ func buildMaintenanceAndThumb(
 	return thumbSvc, maintenanceSvc, nil
 }
 
-// buildMaintenanceAPI assembles the admin-only maintenance HTTP API over svc. The
-// admin guard is supplied via authAPI so maintenanceapi stays decoupled from
-// auth's wiring.
+// buildMaintenanceAPI assembles the maintainer-only maintenance HTTP API over
+// svc. Library maintenance is an operations capability, so the maintainer guard
+// is supplied via authAPI (maintenanceapi stays decoupled from auth's wiring).
 func buildMaintenanceAPI(svc *maintenance.Service, authAPI *auth.API) *maintenanceapi.API {
 	return maintenanceapi.NewAPI(maintenanceapi.Config{
-		Service:      svc,
-		RequireAdmin: authAPI.RequireAdmin,
+		Service:           svc,
+		RequireMaintainer: authAPI.RequireMaintainer,
 	})
 }

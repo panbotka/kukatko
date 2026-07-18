@@ -53,6 +53,7 @@ type API struct {
 	videoTranscode  bool
 	requireAuth     func(http.Handler) http.Handler
 	requireWrite    func(http.Handler) http.Handler
+	requireAdmin    func(http.Handler) http.Handler
 	requireDownload func(http.Handler) http.Handler
 }
 
@@ -123,8 +124,13 @@ type Config struct {
 	VideoTranscode bool
 	// RequireAuth guards read endpoints for any authenticated user.
 	RequireAuth func(http.Handler) http.Handler
-	// RequireWrite guards metadata and archive endpoints for editors and admins.
+	// RequireWrite guards metadata and archive endpoints for editors and above.
+	// Archiving (a reversible soft delete) is a write operation, so it stays here.
 	RequireWrite func(http.Handler) http.Handler
+	// RequireAdmin guards the permanent, irreversible trash operations (purge a
+	// single archived photo, empty the whole trash). Emptying the trash destroys
+	// originals, so it is tightened above write to admins (and maintainers).
+	RequireAdmin func(http.Handler) http.Handler
 	// RequireDownload guards media endpoints, accepting a session cookie or a
 	// download token so cookie-less <img>/<video> tags work.
 	RequireDownload func(http.Handler) http.Handler
@@ -154,6 +160,7 @@ func NewAPI(cfg Config) *API {
 		videoTranscode:  cfg.VideoTranscode,
 		requireAuth:     cfg.RequireAuth,
 		requireWrite:    cfg.RequireWrite,
+		requireAdmin:    cfg.RequireAdmin,
 		requireDownload: cfg.RequireDownload,
 	}
 }
@@ -187,15 +194,15 @@ func NewAPI(cfg Config) *API {
 //	DELETE /photos/{uid}/favorite     RequireAuth      unfavorite (current user)
 //	PUT    /photos/{uid}/rating       RequireAuth      set rating/flag (current user)
 //	DELETE /photos/{uid}/rating       RequireAuth      clear rating/flag (current user)
-//	POST   /photos/{uid}/purge        RequireWrite     permanent delete (confirm)
+//	POST   /photos/{uid}/purge        RequireAdmin     permanent delete (confirm)
 //	GET    /favorites                 RequireAuth      current user's favorites
 //	GET    /trash/info                RequireAuth      retention window (countdown)
-//	POST   /trash/empty               RequireWrite     permanent delete all (confirm)
+//	POST   /trash/empty               RequireAdmin     permanent delete all (confirm)
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/search", a.handleSearch)
 	r.With(a.requireAuth).Get("/favorites", a.handleFavorites)
 	r.With(a.requireAuth).Get("/trash/info", a.handleTrashInfo)
-	r.With(a.requireWrite).Post("/trash/empty", a.handleEmptyTrash)
+	r.With(a.requireAdmin).Post("/trash/empty", a.handleEmptyTrash)
 	r.Route("/photos", func(r chi.Router) {
 		r.With(a.requireDownload).Post("/download-zip", a.handleDownloadZip)
 		r.With(a.requireAuth).Get("/", a.handleList)
@@ -219,7 +226,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Post("/{uid}/unstack", a.handleUnstackMember)
 		r.With(a.requireWrite).Post("/{uid}/unstack-all", a.handleUnstackAll)
 		r.With(a.requireWrite).Post("/{uid}/regenerate-thumbnail", a.handleRegenerateThumbnail)
-		r.With(a.requireWrite).Post("/{uid}/purge", a.handlePurge)
+		r.With(a.requireAdmin).Post("/{uid}/purge", a.handlePurge)
 		r.With(a.requireDownload).Get("/{uid}/thumb/{size}", a.handleThumb)
 		r.With(a.requireDownload).Get("/{uid}/video", a.handleVideo)
 		r.With(a.requireDownload).Get("/{uid}/download", a.handleDownload)

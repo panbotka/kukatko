@@ -78,7 +78,7 @@ func newEnv(t *testing.T) *env {
 		OriginalsPath: originals,
 		CachePath:     filepath.Join(originals, "missing-cache"),
 	})
-	api := systemapi.NewAPI(systemapi.Config{Service: svc, RequireAdmin: authAPI.RequireAdmin})
+	api := systemapi.NewAPI(systemapi.Config{Service: svc, RequireMaintainer: authAPI.RequireMaintainer})
 
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
@@ -118,7 +118,7 @@ func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client 
 // into one snapshot.
 func TestSystemStatus_Aggregates(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	maint := env.login(t, "maint", auth.RoleMaintainer)
 	ctx := t.Context()
 
 	// Two queued image_embed jobs (pending embedding work) and one dead-lettered.
@@ -141,7 +141,7 @@ func TestSystemStatus_Aggregates(t *testing.T) {
 		t.Fatalf("complete run: %v", err)
 	}
 
-	resp := do(t, admin, http.MethodGet, env.baseURL+"/api/v1/system/status", nil)
+	resp := do(t, maint, http.MethodGet, env.baseURL+"/api/v1/system/status", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
@@ -181,15 +181,27 @@ func TestSystemStatus_Aggregates(t *testing.T) {
 	}
 }
 
-// TestSystemStatus_ForbiddenForNonAdmin verifies a viewer cannot read the status.
-func TestSystemStatus_ForbiddenForNonAdmin(t *testing.T) {
+// TestSystemStatus_ForbiddenBelowMaintainer verifies the status dashboard is an
+// operations surface reserved to maintainers: every lesser role — including a
+// plain admin — is refused, pinning the maintainer/admin split.
+func TestSystemStatus_ForbiddenBelowMaintainer(t *testing.T) {
 	env := newEnv(t)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
-
-	resp := do(t, viewer, http.MethodGet, env.baseURL+"/api/v1/system/status", nil)
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("status for viewer = %d, want 403", resp.StatusCode)
+	for _, tc := range []struct {
+		user string
+		role auth.Role
+	}{
+		{"viewer", auth.RoleViewer},
+		{"editor", auth.RoleEditor},
+		{"admin", auth.RoleAdmin},
+	} {
+		t.Run(string(tc.role), func(t *testing.T) {
+			client := env.login(t, tc.user, tc.role)
+			resp := do(t, client, http.MethodGet, env.baseURL+"/api/v1/system/status", nil)
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusForbidden {
+				t.Errorf("status for %s = %d, want 403", tc.role, resp.StatusCode)
+			}
+		})
 	}
 }
 

@@ -1,9 +1,9 @@
-// Package processapi exposes admin-only HTTP endpoints that kick off bulk
+// Package processapi exposes maintainer-only HTTP endpoints that kick off bulk
 // catalogue processing. Its first action is the embedding backfill, which
 // enqueues an image_embed job for every photo that still lacks an embedding —
 // the recovery path for photos uploaded while the embeddings box was offline or
 // imported before embeddings existed. It depends only on a Backfiller behaviour
-// and an admin guard, both injected, so it stays decoupled from the job and
+// and a maintainer guard, both injected, so it stays decoupled from the job and
 // vector layers.
 package processapi
 
@@ -117,24 +117,24 @@ type LocationEstimator interface {
 	BackfillLocations(ctx context.Context) (int, error)
 }
 
-// API exposes the processing endpoints over HTTP. The admin guard is supplied by
-// the caller (the auth subsystem) so this package depends on auth's behaviour,
-// not its wiring.
+// API exposes the processing endpoints over HTTP. The maintainer guard is
+// supplied by the caller (the auth subsystem) so this package depends on auth's
+// behaviour, not its wiring.
 type API struct {
-	backfiller       Backfiller
-	faceBackfiller   FaceBackfiller
-	reclusterer      Reclusterer
-	placesBackfiller PlacesBackfiller
-	thumbBackfiller  ThumbnailBackfiller
-	metaBackfiller   MetadataBackfiller
-	sidecarBackfill  SidecarBackfiller
-	stacksDetector   StacksDetector
-	locationEstim    LocationEstimator
-	requireAdmin     func(http.Handler) http.Handler
+	backfiller        Backfiller
+	faceBackfiller    FaceBackfiller
+	reclusterer       Reclusterer
+	placesBackfiller  PlacesBackfiller
+	thumbBackfiller   ThumbnailBackfiller
+	metaBackfiller    MetadataBackfiller
+	sidecarBackfill   SidecarBackfiller
+	stacksDetector    StacksDetector
+	locationEstim     LocationEstimator
+	requireMaintainer func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Backfiller, FaceBackfiller and
-// RequireAdmin are required; Reclusterer and PlacesBackfiller are optional (a nil
+// RequireMaintainer are required; Reclusterer and PlacesBackfiller are optional (a nil
 // value disables the corresponding endpoint, which answers 503).
 type Config struct {
 	// Backfiller runs the embedding backfill.
@@ -155,49 +155,49 @@ type Config struct {
 	StacksDetector StacksDetector
 	// LocationEstimator runs the missing-location estimation pass.
 	LocationEstimator LocationEstimator
-	// RequireAdmin guards every endpoint for administrators only.
-	RequireAdmin func(http.Handler) http.Handler
+	// RequireMaintainer guards every endpoint for maintainers only.
+	RequireMaintainer func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
 	return &API{
-		backfiller:       cfg.Backfiller,
-		faceBackfiller:   cfg.FaceBackfiller,
-		reclusterer:      cfg.Reclusterer,
-		placesBackfiller: cfg.PlacesBackfiller,
-		thumbBackfiller:  cfg.ThumbnailBackfiller,
-		metaBackfiller:   cfg.MetadataBackfiller,
-		sidecarBackfill:  cfg.SidecarBackfiller,
-		stacksDetector:   cfg.StacksDetector,
-		locationEstim:    cfg.LocationEstimator,
-		requireAdmin:     cfg.RequireAdmin,
+		backfiller:        cfg.Backfiller,
+		faceBackfiller:    cfg.FaceBackfiller,
+		reclusterer:       cfg.Reclusterer,
+		placesBackfiller:  cfg.PlacesBackfiller,
+		thumbBackfiller:   cfg.ThumbnailBackfiller,
+		metaBackfiller:    cfg.MetadataBackfiller,
+		sidecarBackfill:   cfg.SidecarBackfiller,
+		stacksDetector:    cfg.StacksDetector,
+		locationEstim:     cfg.LocationEstimator,
+		requireMaintainer: cfg.RequireMaintainer,
 	}
 }
 
 // RegisterRoutes mounts the processing endpoints onto r, which the caller has
 // scoped under the API base path (for example /api/v1):
 //
-//	POST /process/embeddings  RequireAdmin  backfill missing image embeddings
-//	POST /process/faces       RequireAdmin  backfill missing face detections
-//	POST /process/clusters    RequireAdmin  rebuild face clusters from unassigned faces
-//	POST /process/places      RequireAdmin  backfill missing reverse-geocoded places
-//	POST /process/thumbnails  RequireAdmin  backfill missing thumbnails (?all=true forces a full re-run)
-//	POST /process/metadata    RequireAdmin  backfill unread file metadata (?all=true forces a full re-read)
-//	POST /process/sidecars    RequireAdmin  backfill missing metadata sidecars (?all=true forces a full re-run)
-//	POST /process/stacks      RequireAdmin  detect and form stacks over the library
-//	POST /process/locations   RequireAdmin  estimate missing locations from same-day photos
+//	POST /process/embeddings  RequireMaintainer  backfill missing image embeddings
+//	POST /process/faces       RequireMaintainer  backfill missing face detections
+//	POST /process/clusters    RequireMaintainer  rebuild face clusters from unassigned faces
+//	POST /process/places      RequireMaintainer  backfill missing reverse-geocoded places
+//	POST /process/thumbnails  RequireMaintainer  backfill missing thumbnails (?all=true forces a full re-run)
+//	POST /process/metadata    RequireMaintainer  backfill unread file metadata (?all=true forces a full re-read)
+//	POST /process/sidecars    RequireMaintainer  backfill missing metadata sidecars (?all=true forces a full re-run)
+//	POST /process/stacks      RequireMaintainer  detect and form stacks over the library
+//	POST /process/locations   RequireMaintainer  estimate missing locations from same-day photos
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/process", func(r chi.Router) {
-		r.With(a.requireAdmin).Post("/embeddings", a.handleBackfillEmbeddings)
-		r.With(a.requireAdmin).Post("/faces", a.handleBackfillFaces)
-		r.With(a.requireAdmin).Post("/clusters", a.handleRecluster)
-		r.With(a.requireAdmin).Post("/places", a.handleBackfillPlaces)
-		r.With(a.requireAdmin).Post("/thumbnails", a.handleBackfillThumbnails)
-		r.With(a.requireAdmin).Post("/metadata", a.handleBackfillMetadata)
-		r.With(a.requireAdmin).Post("/sidecars", a.handleBackfillSidecars)
-		r.With(a.requireAdmin).Post("/stacks", a.handleDetectStacks)
-		r.With(a.requireAdmin).Post("/locations", a.handleEstimateLocations)
+		r.With(a.requireMaintainer).Post("/embeddings", a.handleBackfillEmbeddings)
+		r.With(a.requireMaintainer).Post("/faces", a.handleBackfillFaces)
+		r.With(a.requireMaintainer).Post("/clusters", a.handleRecluster)
+		r.With(a.requireMaintainer).Post("/places", a.handleBackfillPlaces)
+		r.With(a.requireMaintainer).Post("/thumbnails", a.handleBackfillThumbnails)
+		r.With(a.requireMaintainer).Post("/metadata", a.handleBackfillMetadata)
+		r.With(a.requireMaintainer).Post("/sidecars", a.handleBackfillSidecars)
+		r.With(a.requireMaintainer).Post("/stacks", a.handleDetectStacks)
+		r.With(a.requireMaintainer).Post("/locations", a.handleEstimateLocations)
 	})
 }
 
