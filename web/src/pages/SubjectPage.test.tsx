@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { GRID_COLUMNS_MAX } from '../lib/gridDensity'
 import { type Subject } from '../services/people'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -117,6 +118,9 @@ function renderPage(canWrite = true) {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  // The grid density lives in localStorage; clear it so the seeded column count
+  // is deterministic per test and one density test never leaks into another.
+  window.localStorage.clear()
   fetchSubjectMock.mockReset()
   fetchPhotosMock.mockReset()
   updateSubjectMock.mockReset()
@@ -278,5 +282,74 @@ describe('SubjectPage', () => {
     // In selection mode the tile is one selection target, so the overlay is gone.
     await user.click(screen.getByRole('button', { name: 'Select' }))
     expect(screen.queryByRole('button', { name: 'Cover' })).not.toBeInTheDocument()
+  })
+
+  it('exposes the images-per-row control to every viewer and re-columns the grid', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    // A plain viewer: the density control is a view preference, not write-gated.
+    renderPage(false)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    // The shared stepper is present (its group carries the "Tiles per row" label).
+    expect(screen.getByRole('group', { name: 'Tiles per row' })).toBeInTheDocument()
+
+    const grid = document.querySelector('[data-density]')
+    expect(grid).not.toBeNull()
+    const before = Number(grid?.getAttribute('data-density'))
+
+    // Stepping the control re-columns the very same grid: the density attribute
+    // and the inline `grid-template-columns` both follow the shared state.
+    if (before < GRID_COLUMNS_MAX) {
+      await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
+      const after = document.querySelector('[data-density]')
+      expect(after).toHaveAttribute('data-density', String(before + 1))
+      expect(after).toHaveStyle({ gridTemplateColumns: `repeat(${before + 1}, 1fr)` })
+    } else {
+      await user.click(screen.getByRole('button', { name: 'Fewer tiles per row' }))
+      const after = document.querySelector('[data-density]')
+      expect(after).toHaveAttribute('data-density', String(before - 1))
+      expect(after).toHaveStyle({ gridTemplateColumns: `repeat(${before - 1}, 1fr)` })
+    }
+  })
+
+  it('offers set-cover as a quiet icon-only control that still calls the handler', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    updateSubjectMock.mockResolvedValue({ ...subject(), cover_photo_uid: 'a' })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    const cover = screen.getByRole('button', { name: 'Set as cover' })
+    // Quiet: a hover/focus-revealed icon-only disc, not a loud always-on labelled
+    // button — it carries no visible text, only the icon glyph.
+    expect(cover).toHaveClass('kk-cover-btn')
+    expect(cover.textContent).toBe('')
+
+    // Behaviour is unchanged: the same handler still issues the cover PATCH.
+    await user.click(cover)
+    await waitFor(() => {
+      expect(updateSubjectMock).toHaveBeenCalledWith(
+        'sj_1',
+        expect.objectContaining({ cover_photo_uid: 'a' }),
+      )
+    })
+  })
+
+  it('marks the current cover with a filled indicator on its tile', async () => {
+    fetchSubjectMock.mockResolvedValue({ ...subject(), cover_photo_uid: 'a' })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    const current = screen.getByRole('button', { name: 'Cover' })
+    // The current cover reads as such: a filled disc, and inert so it cannot be
+    // re-set onto itself.
+    expect(current).toHaveClass('kk-cover-btn--on')
+    expect(current).toBeDisabled()
+    expect(current.querySelector('.bi-image-fill')).not.toBeNull()
+
+    // Every other photo still offers the plain (settable) affordance.
+    expect(screen.getByRole('button', { name: 'Set as cover' })).toBeInTheDocument()
   })
 })

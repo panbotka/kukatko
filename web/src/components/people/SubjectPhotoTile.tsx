@@ -1,9 +1,9 @@
-import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { FadeInImage } from '../FadeInImage'
+import { Icon } from '../Icon'
 
 import { type Photo } from '../../services/people'
 
@@ -42,11 +42,12 @@ export interface SubjectPhotoTileProps {
 
 /**
  * A square photo tile for a subject's gallery: links to the photo detail and,
- * for editors, overlays a "set as cover" action (marked when this photo is
- * already the cover). Touch-friendly — the action is an always-visible button on
- * small screens rather than a hover-only affordance. In selection mode the tile
- * becomes a checkbox target instead, so a batch of the person's photos can be
- * bulk-edited.
+ * for editors, overlays a quiet "set as cover" action — a small icon-only disc
+ * in the bottom-start corner, revealed on hover/focus of the tile rather than a
+ * loud labelled button on every one. The current cover keeps its (filled) disc
+ * shown as a marker, and on touch (no hover) every disc stays visible so the
+ * action is still reachable. In selection mode the tile becomes a checkbox
+ * target instead, so a batch of the person's photos can be bulk-edited.
  */
 export function SubjectPhotoTile({
   photo,
@@ -116,24 +117,32 @@ export function SubjectPhotoTile({
     </Link>
   )
 
+  const coverLabel = isCover ? t('subject.cover.current') : t('subject.cover.set')
+
   return (
-    <div className="position-relative">
+    <div className="kk-subject-tile position-relative">
       {media}
       {/* The cover action is a sibling of the link/button (interactive content
           cannot nest), and is hidden in selection mode so the tile stays a clean
-          selection target — as the library tile hides its heart and stars. */}
+          selection target — as the library tile hides its heart and stars. It is
+          a quiet icon-only disc revealed on hover/focus of the tile (kept always
+          visible on touch, and for the current cover as its marker), rather than
+          a loud labelled button on every tile. Same handler and PATCH as before —
+          only the prominence and the reveal change. */}
       {canSetCover && !selectable && (
-        <Button
-          variant={isCover ? 'success' : 'dark'}
-          size="sm"
-          className="position-absolute bottom-0 start-0 m-1 opacity-75"
+        <button
+          type="button"
+          className={`kk-cover-btn${isCover ? ' kk-cover-btn--on' : ''}`}
+          aria-pressed={isCover}
+          aria-label={coverLabel}
+          title={coverLabel}
           disabled={busy || isCover}
           onClick={() => {
             onSetCover(photo.uid)
           }}
         >
-          {isCover ? t('subject.cover.current') : t('subject.cover.set')}
-        </Button>
+          <Icon name={isCover ? 'image-fill' : 'image'} />
+        </button>
       )}
     </div>
   )

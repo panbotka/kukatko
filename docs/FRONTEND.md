@@ -298,7 +298,9 @@ zapiš sem.
   žebříčku `stepDensity` v mezích 1…10; ikony přes `Icon` (`dash-lg`/`grid-3x3-gap-fill`/`plus-lg`),
   `−` je disabled na 1 (jedna fotka na řádek), `+` na 10; čte/píše `useGridDensity`, tedy
   localStorage, **ne URL** — je to preference zařízení, ne součást sdíleného pohledu; sedí v hlavičce
-  `FilterBar`u, mění všechny foto-mřížky v appce najednou); `PhotoTile`+`PhotoGrid` podporují
+  `FilterBar`u i v hlavičce `SubjectPage` (galerie osoby), mění všechny foto-mřížky v appce
+  najednou — a protože je to jen pohledová preference, **není gated na zápis** (vidí ho i viewer);
+  `PhotoTile`+`PhotoGrid` podporují
   **moderní multi-select po vzoru foto-appek** (props `selectable`/`selectFirst`/`selected`/
   `anySelected`/`onToggleSelect`, resp. `selection`): každá dlaždice nese **kulaté zaškrtávací
   kolečko** v rohu (`.kk-tile__check`, sibling linku/tlačítka jako srdíčko — klik **vybere, aniž
@@ -758,8 +760,14 @@ zapiš sem.
   (výběr markeru viz `listSubjectsSQL`) `padBbox(0.3)` + `squareCrop` → `FaceCrop`, a bez
   použitelného obličeje zůstává placeholder (`people.noCover`) — appka si obličej nevymýšlí,
   `SubjectPage` = `/people/:uid` stránka osoby: hlavička (jméno/typ + edit přes
-  `SubjectEditModal`), paginovaná galerie (`useSubjectPhotos` + `SubjectPhotoTile` se
-  „set as cover" akcí editorům), a sekce `Outliers` (jen editor/admin); dlaždice nesou **person
+  `SubjectEditModal` + sdílený `GridDensityControl` **Dlaždic na řádek** — pohledová preference
+  otevřená každému, kdo stránku vidí, ne jen editorům; mřížka nese `data-density` pro testy a
+  drží sdílený `GRID_GAP_PX` jako ostatní galerie), paginovaná galerie (`useSubjectPhotos` +
+  `SubjectPhotoTile` se „set as cover" akcí editorům — nově **tichý icon-only disk** v rohu
+  dlaždice: skrytý v klidu, odhalí se na hoveru/fokusu (na dotyku, kde není hover, zůstává vidět),
+  aktuální náhled drží vyplněný accent disk jako značku (`.kk-cover-btn`/`--on`, `image`/
+  `image-fill`); chování beze změny — stejný `onSetCover` handler a `PATCH /subjects/{uid}`), a
+  sekce `Outliers` (jen editor/admin); dlaždice nesou **person
   scope** v detail odkazu (`detailQuery` s `person=uid`, `DETAIL_DEFAULTS` + jen ten facet) → prev/next
   ve vieweru pageuje fotky téhle osoby (`GET /photos?person=uid`), ne celou knihovnu; galerie
   (`GET /subjects/:uid/photos`) i person facet řadí **shodně** — `taken_at DESC NULLS LAST, uid DESC`

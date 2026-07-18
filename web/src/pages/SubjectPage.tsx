@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { GridDensityControl } from '../components/library/GridDensityControl'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
@@ -21,11 +22,8 @@ import { useGridDensity } from '../hooks/useGridDensity'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useSubjectPhotos } from '../hooks/useSubjectPhotos'
 import { DETAIL_DEFAULTS, detailQueryString } from '../lib/detailView'
-import { gridTemplateColumns } from '../lib/gridDensity'
+import { GRID_GAP_PX, gridTemplateColumns } from '../lib/gridDensity'
 import { fetchSubject, type Subject, updateSubject } from '../services/people'
-
-/** The subject gallery breathes a little more than the library grid. */
-const GALLERY_GAP_PX = 8
 
 /**
  * Where the back link leads. The people index keeps no view state of its own in
@@ -38,10 +36,11 @@ const PEOPLE_PATH = '/people'
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; subject: Subject }
 
 /**
- * A subject's page: header (name, type, edit), the photo gallery (with a
- * set-cover action for editors), and — for editors — the outlier review section
- * to spot and detach mis-assigned faces. The gallery pages through
- * `GET /subjects/{uid}/photos` with a load-more control.
+ * A subject's page: header (name, type, edit, and the shared images-per-row
+ * density control — a view preference open to everyone who can see the page),
+ * the photo gallery (with a set-cover action for editors), and — for editors —
+ * the outlier review section to spot and detach mis-assigned faces. The gallery
+ * pages through `GET /subjects/{uid}/photos` with a load-more control.
  *
  * Editors can also select photos in the gallery and bulk-edit them; the gallery
  * refetches afterwards, since the edit may have taken photos out of it. The
@@ -159,7 +158,11 @@ export function SubjectPage() {
           <Badge bg="secondary">{t(`subject.type.${subject.type}`)}</Badge>
         </div>
         {!selection.active && (
-          <div className="d-flex gap-1 flex-wrap">
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            {/* A view preference, not a write action: shown to every viewer so
+                anyone can re-column the gallery, exactly as the other galleries
+                expose it through the FilterBar. */}
+            <GridDensityControl />
             {canWrite && (
               <Button
                 variant="outline-secondary"
@@ -189,10 +192,11 @@ export function SubjectPage() {
       {photos.length > 0 && (
         <>
           <div
+            data-density={String(density)}
             style={{
               display: 'grid',
               gridTemplateColumns: gridTemplateColumns(density),
-              gap: `${GALLERY_GAP_PX}px`,
+              gap: `${GRID_GAP_PX}px`,
             }}
           >
             {photos.map((photo) => (
