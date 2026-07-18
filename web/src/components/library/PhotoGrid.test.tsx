@@ -90,9 +90,9 @@ describe('PhotoGrid', () => {
     renderGrid()
     const grid = gridElement()
     expect(grid).toHaveAttribute('data-density', '5')
-    // Five equal tracks, each at least a usable tile wide.
+    // Five equal tracks, each at least a usable tile wide (4 gaps of 3px + 1px slack).
     expect(grid.style.gridTemplateColumns).toBe(
-      'repeat(auto-fill, minmax(max(140px, calc((100% - 25px) / 5)), 1fr))',
+      'repeat(auto-fill, minmax(max(140px, calc((100% - 13px) / 5)), 1fr))',
     )
   })
 

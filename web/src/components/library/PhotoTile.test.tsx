@@ -172,6 +172,28 @@ describe('PhotoTile capture date', () => {
     const date = new Date('1950-06-01T12:00:00Z').toLocaleDateString('en')
     expect(screen.getByRole('img', { name: `Clip — ${date}` })).toBeInTheDocument()
   })
+
+  // The hero-first tile keeps no always-on date; the scrim reveals one on hover.
+  it('reveals the capture date in a hover caption over the tile', () => {
+    renderTile(photo({ taken_at: '1950-06-01T12:00:00Z' }))
+    const date = new Date('1950-06-01T12:00:00Z').toLocaleDateString('en')
+    const caption = document.querySelector('.kk-tile__caption')
+    expect(caption).toHaveTextContent(date)
+    // The alt text already carries the date for assistive tech, so the visible
+    // caption is decorative and must not be announced a second time.
+    expect(caption).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('marks an estimated date in the hover caption too', () => {
+    renderTile(photo({ taken_at: '1950-06-01T12:00:00Z', taken_at_estimated: true }))
+    const date = new Date('1950-06-01T12:00:00Z').toLocaleDateString('en')
+    expect(document.querySelector('.kk-tile__caption')).toHaveTextContent(`c. ${date}`)
+  })
+
+  it('renders no caption for a photo with no known date', () => {
+    renderTile(photo({ media_type: 'image', file_name: 'undated.jpg' }))
+    expect(document.querySelector('.kk-tile__caption')).toBeNull()
+  })
 })
 
 describe('PhotoTile curation controls', () => {

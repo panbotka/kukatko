@@ -157,6 +157,10 @@
   --kk-radius-md: 0.75rem;
   --kk-radius-lg: 1rem;
   --kk-radius-pill: 62.5rem;
+  /* `tile` is the exception: a hair of a corner for the dense library photo
+     wall, where near-square tiles pack edge to edge and a card-sized radius
+     would carve visible notches into the mosaic. */
+  --kk-radius-tile: 0.125rem; /* 2px */
 
   /* ---- Elevation shadows ---------------------------------------------
      Kept intentionally light: elevation is carried by the surface ramp and the
@@ -168,6 +172,18 @@
   --kk-shadow-1: 0 1px 2px rgb(0 0 0 / 30%), inset 0 1px 0 rgb(255 255 255 / 4%);
   --kk-shadow-2: 0 2px 6px rgb(0 0 0 / 34%), inset 0 1px 0 rgb(255 255 255 / 6%);
   --kk-shadow-3: 0 10px 28px rgb(0 0 0 / 46%), inset 0 1px 0 rgb(255 255 255 / 8%);
+
+  /* ---- Scrim ----------------------------------------------------------
+     A bottom-up wash that floats caption text over an unknown photograph. It
+     is a darkening layer, not a theme colour, so it stays black regardless of
+     the surface ramp — anchored opaque at the base, gone by the upper third so
+     it never dims the image itself. Used under the library tile's hover date. */
+  --kk-tile-scrim: linear-gradient(
+    to top,
+    rgb(0 0 0 / 72%) 0%,
+    rgb(0 0 0 / 40%) 26%,
+    rgb(0 0 0 / 0%) 62%
+  );
 
   /* ---- Motion ---------------------------------------------------------
      Three durations. `fast` for a colour/opacity swap under the pointer,
@@ -432,6 +448,104 @@
   .kk-tile:hover,
   .kk-tile:focus-visible,
   .kk-tile:focus-within {
+    transform: none;
+  }
+}
+
+/* ---- Library photo wall ----------------------------------------------- */
+
+/*
+ * The main library grid is a hero-first wall of photographs — edge-to-edge,
+ * chrome-free, tiles parted only by a hairline gap. Only the photo-grid tiles
+ * get this treatment: album, label and people tiles keep the elevated card look
+ * of `.kk-tile` above. Scoping under `.kukatko-photo-grid` (the grid container
+ * every `PhotoTile` renders inside, and nowhere else) is what draws that line.
+ *
+ * The chrome comes off in three cuts: the card radius shrinks to a hair, the
+ * resting and hover shadows go entirely, and the whole-tile lift is dropped.
+ * What replaces the lift is a gesture on the image itself — see below.
+ */
+.kukatko-photo-grid .kk-tile {
+  border-radius: var(--kk-radius-tile);
+}
+
+.kukatko-photo-grid .kk-tile__media {
+  border-radius: var(--kk-radius-tile);
+  box-shadow: none;
+}
+
+.kukatko-photo-grid .kk-tile:hover,
+.kukatko-photo-grid .kk-tile:focus-visible,
+.kukatko-photo-grid .kk-tile:focus-within {
+  transform: none;
+}
+
+.kukatko-photo-grid .kk-tile:hover .kk-tile__media,
+.kukatko-photo-grid .kk-tile:focus-visible .kk-tile__media,
+.kukatko-photo-grid .kk-tile:focus-within .kk-tile__media {
+  box-shadow: none;
+}
+
+/*
+ * The hover gesture: the photograph lifts toward the viewer by scaling up a
+ * touch inside its fixed square. `overflow: hidden` on the media box clips the
+ * overflow, so the tile never grows and the grid never reflows — the image just
+ * fills a little more of the frame. The transition is declared inline on the
+ * `<img>` (alongside its load-in fade); only the target value lives here.
+ */
+.kukatko-photo-grid .kk-tile:hover .kk-tile__media img,
+.kukatko-photo-grid .kk-tile:focus-within .kk-tile__media img {
+  transform: scale(1.05);
+}
+
+/*
+ * On a dense wall an outward focus ring would bleed across the hairline gap onto
+ * its neighbours, so the ring is drawn inset instead — it hugs the inside of the
+ * focused tile's edge, unmistakable but self-contained.
+ */
+.kukatko-photo-grid .kk-tile:focus-visible,
+.kukatko-photo-grid .kk-tile__media:focus-visible {
+  outline-offset: calc(-1 * var(--kk-focus-ring-width));
+}
+
+/*
+ * Hover metadata: a quiet date, floated over the scrim at the tile's foot. It
+ * rides the same reading corner (bottom-start) the eye already lands on, leaves
+ * the top clear for the selection checkbox, and is hidden from assistive tech
+ * (`aria-hidden`) because the image's alt text already carries the same date.
+ * Pointer devices reveal it on hover/focus; touch simply never sees it, which
+ * the spec allows. It sits inside the media box so the scrim is clipped to the
+ * tile's corner and the badges layered above it stay legible.
+ */
+.kk-tile__caption {
+  /* No `z-index`: staying at the auto level lets the favourite heart — a later
+     sibling in the tile — keep painting above the scrim, while DOM order still
+     floats the caption above the image beneath it. */
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  padding: var(--kk-space-5) var(--kk-space-2) var(--kk-space-1);
+  background-image: var(--kk-tile-scrim);
+  color: var(--kk-text);
+  font-size: var(--kk-font-size-caption);
+  line-height: var(--kk-line-height-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity var(--kk-duration-base) var(--kk-ease-standard);
+  pointer-events: none;
+}
+
+.kukatko-photo-grid .kk-tile:hover .kk-tile__caption,
+.kukatko-photo-grid .kk-tile:focus-within .kk-tile__caption {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The zoom is decorative; the scrim + date reveal alone still signal hover. */
+  .kukatko-photo-grid .kk-tile:hover .kk-tile__media img,
+  .kukatko-photo-grid .kk-tile:focus-within .kk-tile__media img {
     transform: none;
   }
 }
