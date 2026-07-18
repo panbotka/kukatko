@@ -30,6 +30,14 @@ export interface SubjectPhotoTileProps {
   selected?: boolean
   /** Toggles this tile's selection (only meaningful when selectable). */
   onToggleSelect?: (uid: string) => void
+  /**
+   * Query string (without the leading `?`) appended to the detail link so the
+   * viewer inherits this subject's scope and order for prev/next and Back — the
+   * subject gallery scopes it to `person=<subjectUid>`. Mirrors
+   * {@link import('../library/PhotoTile').PhotoTileProps.detailQuery}.
+   * Empty/undefined links to the bare detail route.
+   */
+  detailQuery?: string
 }
 
 /**
@@ -49,6 +57,7 @@ export function SubjectPhotoTile({
   selectable = false,
   selected = false,
   onToggleSelect,
+  detailQuery,
 }: SubjectPhotoTileProps) {
   const { t } = useTranslation()
   const label = photo.title !== '' ? photo.title : photo.file_name
@@ -93,7 +102,11 @@ export function SubjectPhotoTile({
     </button>
   ) : (
     <Link
-      to={`/photos/${photo.uid}`}
+      to={
+        detailQuery !== undefined && detailQuery !== ''
+          ? `/photos/${photo.uid}?${detailQuery}`
+          : `/photos/${photo.uid}`
+      }
       className="d-block bg-secondary-subtle overflow-hidden rounded"
       style={{ aspectRatio: '1 / 1' }}
       aria-label={label}

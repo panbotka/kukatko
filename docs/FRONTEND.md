@@ -759,7 +759,12 @@ zapiš sem.
   použitelného obličeje zůstává placeholder (`people.noCover`) — appka si obličej nevymýšlí,
   `SubjectPage` = `/people/:uid` stránka osoby: hlavička (jméno/typ + edit přes
   `SubjectEditModal`), paginovaná galerie (`useSubjectPhotos` + `SubjectPhotoTile` se
-  „set as cover" akcí editorům), a sekce `Outliers` (jen editor/admin); editoři můžou v galerii
+  „set as cover" akcí editorům), a sekce `Outliers` (jen editor/admin); dlaždice nesou **person
+  scope** v detail odkazu (`detailQuery` s `person=uid`, `DETAIL_DEFAULTS` + jen ten facet) → prev/next
+  ve vieweru pageuje fotky téhle osoby (`GET /photos?person=uid`), ne celou knihovnu; galerie
+  (`GET /subjects/:uid/photos`) i person facet řadí **shodně** — `taken_at DESC NULLS LAST, uid DESC`
+  (backend sjednotil tiebreaker `internal/people/subjects.go`), takže viewer krokuje přesně v pořadí
+  mřížky i mezi fotkami se stejným/žádným datem; editoři můžou v galerii
   **vybírat** → `BulkEditControl` (po úspěchu refetch galerie) — v režimu výběru je dlaždice jeden
   selection target, takže „set as cover" ustoupí, jako srdíčko/hvězdy na dlaždici knihovny,
   `ClustersPage` = `/people/clusters` (editor/admin) review fronta nepojmenovaných shluků:

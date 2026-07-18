@@ -150,6 +150,17 @@ describe('SubjectPage', () => {
     expect(back).toHaveAttribute('href', '/people')
   })
 
+  it('scopes each photo tile to this subject so the viewer pages the person set', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    const tile = await screen.findByRole('link', { name: 'a.jpg' })
+    // The detail link carries `person=<subjectUid>`, so opening the photo and
+    // paging prev/next walks GET /photos?person=sj_1 — this person's photos —
+    // rather than falling back to the whole library.
+    expect(tile).toHaveAttribute('href', '/photos/a?person=sj_1')
+  })
+
   it('keeps selection and bulk edit away from viewers', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     renderPage(false)

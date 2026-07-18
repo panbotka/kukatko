@@ -5,6 +5,7 @@ package people_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/database"
@@ -382,6 +383,55 @@ func TestListPhotoUIDsBySubject(t *testing.T) {
 	}
 	if len(uids) != 2 || !got[p1] || !got[p2] || got[p3] {
 		t.Errorf("uids = %v, want exactly {%s, %s}", uids, p1, p2)
+	}
+}
+
+// TestSubjectPhotosMatchLibraryPersonFacet asserts that the subject gallery
+// (ListPhotoUIDsBySubject, backing GET /subjects/{uid}/photos) and the library
+// person facet (photos.Store.List with SubjectUIDs, backing
+// GET /photos?person=<uid>&sort=newest) return the same photos in the same order.
+// The subject-detail photo viewer pages prev/next through the person facet, so the
+// two must agree down to the uid tiebreaker or the viewer would step through the
+// person's photos in a different order than the gallery shows. Every photo here is
+// undated, so all rows tie on the primary taken_at sort and the whole order is
+// decided by the tiebreaker — the exact case an ASC/DESC mismatch would expose.
+func TestSubjectPhotosMatchLibraryPersonFacet(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+
+	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+
+	// Five undated photos, each carrying a non-invalid marker for Alice.
+	hashes := []string{"match_p0", "match_p1", "match_p2", "match_p3", "match_p4"}
+	for _, hash := range hashes {
+		uid := makePhoto(t, photoStore, hash)
+		mkMarker(t, store, uid, &alice.UID, false)
+	}
+
+	gallery, err := store.ListPhotoUIDsBySubject(ctx, alice.UID)
+	if err != nil {
+		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
+	}
+
+	// The person facet with the default (newest) sort — exactly what the viewer's
+	// neighbours hook pages when a photo is opened from the subject gallery.
+	list, err := photoStore.List(ctx, photos.ListParams{
+		SubjectUIDs: []string{alice.UID},
+		Limit:       100,
+	})
+	if err != nil {
+		t.Fatalf("photos.List person facet: %v", err)
+	}
+	facet := make([]string, len(list))
+	for i, p := range list {
+		facet[i] = p.UID
+	}
+
+	if len(gallery) != len(hashes) {
+		t.Fatalf("subject gallery returned %d photos, want %d", len(gallery), len(hashes))
+	}
+	if !slices.Equal(gallery, facet) {
+		t.Errorf("subject gallery order %v != library person facet order %v", gallery, facet)
 	}
 }
 

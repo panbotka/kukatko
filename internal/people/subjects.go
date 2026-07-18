@@ -301,16 +301,23 @@ func (s *Store) ListSubjects(ctx context.Context) ([]SubjectCount, error) {
 
 // listSubjectPhotoUIDsSQL returns the distinct photos that carry at least one
 // non-invalid marker assigned to a subject, newest first (by capture time, with
-// undated photos last), then by uid for a stable order. Archived photos and the
-// non-primary members of a stack are excluded so a subject's gallery mirrors the
-// default library view (only a stack's primary appears).
+// undated photos last), then by uid DESC for a stable order. Archived photos and
+// the non-primary members of a stack are excluded so a subject's gallery mirrors
+// the default library view (only a stack's primary appears).
+//
+// The tiebreaker is uid DESC, not ASC, to match the library list's default order
+// (photos.orderClause emits `taken_at DESC NULLS LAST, uid DESC` for the newest
+// sort). The subject-detail photo viewer pages prev/next through
+// `GET /photos?person=<uid>&sort=newest`, so the two must agree down to the
+// tiebreaker or the viewer would step through photos sharing a capture time — or
+// with none — in the reverse of the order this gallery shows.
 const listSubjectPhotoUIDsSQL = `
 SELECT DISTINCT m.photo_uid, p.taken_at
 FROM markers m
 JOIN photos p ON p.uid = m.photo_uid
 WHERE m.subject_uid = $1 AND m.invalid = FALSE AND p.archived_at IS NULL
   AND (p.stack_uid IS NULL OR p.stack_primary)
-ORDER BY p.taken_at DESC NULLS LAST, m.photo_uid`
+ORDER BY p.taken_at DESC NULLS LAST, m.photo_uid DESC`
 
 // ListPhotoUIDsBySubject returns the UIDs of every non-archived photo that has a
 // non-invalid marker assigned to the subject identified by subjectUID, ordered

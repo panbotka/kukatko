@@ -637,6 +637,27 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.getByTestId('location')).toHaveTextContent('sort=oldest')
     })
 
+    it('pages prev/next within a subject when opened from a person gallery', async () => {
+      // A subject-gallery tile links to /photos/b?person=su_a, so the viewer must
+      // page GET /photos scoped to that person — this person's photos in the same
+      // order the gallery shows — not the whole library.
+      renderPage(true, '/photos/b?person=su_a')
+
+      await screen.findByRole('heading', { name: 'Beach' })
+      await waitFor(() => {
+        expect(fetchPhotosMock).toHaveBeenCalled()
+      })
+      // The neighbours are paged from the person-scoped list, never the bare one.
+      expect(fetchPhotosMock.mock.calls[0][0]).toMatchObject({ person: 'su_a' })
+
+      const prev = await screen.findByRole('link', { name: 'Previous photo' })
+      const next = await screen.findByRole('link', { name: 'Next photo' })
+      expect(prev).toHaveAttribute('href', expect.stringContaining('/photos/a'))
+      expect(next).toHaveAttribute('href', expect.stringContaining('/photos/c'))
+      // The scope rides along so stepping keeps paging the subject set.
+      expect(next.getAttribute('href')).toContain('person=su_a')
+    })
+
     it('pages prev/next through the search and returns to it when opened from search', async () => {
       const user = userEvent.setup()
       renderPage(true, '/photos/b?q=beach&mode=semantic')
