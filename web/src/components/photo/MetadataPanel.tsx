@@ -760,7 +760,10 @@ export function MetadataPanel({ photo, canWrite, onUpdated }: MetadataPanelProps
             picker={{ position: markerPosition, onPick: pickLocation }}
           />
         </div>
-        <div className="d-flex gap-2">
+        {/* Pinned to the bottom of the drawer while the form is open, so Save/Cancel
+            never scroll out of reach behind the long caption form and its map — a
+            quick description tweak is one click, not a scroll to the very bottom. */}
+        <div className="kk-viewer__panel-actions">
           {/* Saving stays available with an invalid coordinate: the location is
               then left untouched (the field says so) rather than holding the
               caption fields hostage to it. */}
