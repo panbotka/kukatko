@@ -334,6 +334,12 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
   (`POST /api/v1/photos/bulk`) a foto PATCH/archive/unarchive (audited varianty `photos.Store`).
   Admin čtení: `GET /api/v1/audit` (`internal/auditapi`, filtry user/entity/action/datum +
   stránkování, admin-only). Další mutační domény přebírají in-tx audit konvenci postupně.
+  **Payload editací** (`ChangeSet` v `internal/audit/changes.go`): `details` editační akce nese pod
+  klíčem `changes` mapu `{"<pole>":{"old":…,"new":…}}` **jen se změněnými poli** (starý → nový),
+  aby log ukázal např. změnu popisku. Používají ji foto PATCH (`photo.update` přes HTTP i MCP),
+  album/label/subjekt update. **Hromadná editace (`internal/bulk`) je z konvence vyňatá** — jeden
+  `UPDATE` nad mnoha fotkami bez načtení starých řádků, per-foto SELECT-před-UPDATE by zdvojnásobil
+  příkazy na dávku; ponechává si dosavadní souhrnné details.
 
 ### 5.2 Nové tabulky v Kukátku
 

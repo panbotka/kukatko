@@ -82,17 +82,27 @@ func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUpdate rewrites the editable fields of the subject identified by the path
-// UID and returns the refreshed subject. A malformed body or invalid type answers
-// 400; a missing subject answers 404.
+// UID and returns the refreshed subject. The subject is loaded first (like the
+// delete handler) so the audit entry can record each changed field's old→new
+// transition and so a missing subject answers 404 before any mutation. A
+// malformed body or invalid type answers 400.
 func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	uid := chi.URLParam(r, "uid")
+	existing, err := a.subjects.GetSubjectByUID(r.Context(), uid)
+	if err != nil {
+		status, msg := subjectStatus(err)
+		writeError(w, status, msg)
+		return
+	}
 	in, err := decodeSubjectInput(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	uid := chi.URLParam(r, "uid")
 	upd := in.toUpdate()
-	entry := a.auditEntry(r, audit.ActionSubjectUpdate, uid, subjectDetails(upd.Name, upd.Type))
+	details := subjectDetails(upd.Name, upd.Type)
+	subjectChanges(existing, upd).StampInto(details)
+	entry := a.auditEntry(r, audit.ActionSubjectUpdate, uid, details)
 	subj, err := a.subjects.UpdateSubjectAudited(r.Context(), uid, upd, entry)
 	if err != nil {
 		status, msg := subjectStatus(err)
@@ -100,6 +110,22 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, subj)
+}
+
+// subjectChanges builds the old→new diff for a subject edit, comparing the
+// subject before the edit (before) against the update the store will apply
+// (after) and recording only the editable fields whose value changed. The type
+// is compared as its string form so the recorded values read plainly. The result
+// is stamped under the audit "changes" key (see internal/audit ChangeSet).
+func subjectChanges(before people.Subject, after people.SubjectUpdate) *audit.ChangeSet {
+	changes := audit.NewChangeSet()
+	changes.Add("name", before.Name, after.Name)
+	changes.Add("type", string(before.Type), string(after.Type))
+	changes.Add("favorite", before.Favorite, after.Favorite)
+	changes.Add("private", before.Private, after.Private)
+	changes.Add("notes", before.Notes, after.Notes)
+	changes.Add("cover_photo_uid", before.CoverPhotoUID, after.CoverPhotoUID)
+	return changes
 }
 
 // handleDelete removes the subject identified by the path UID, answering 204 on

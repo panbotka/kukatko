@@ -109,9 +109,9 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry := audit.FromRequest(r, user.UID).Entry(
-		audit.ActionPhotoUpdate, "photos", uid, map[string]any{"fields": presentFields(present)},
-	)
+	details := map[string]any{"fields": presentFields(present)}
+	metadataChanges(current, update).StampInto(details)
+	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionPhotoUpdate, "photos", uid, details)
 	updated, err := a.store.UpdateMetadataAudited(r.Context(), uid, update, entry)
 	if err != nil {
 		writePhotoError(w, err, "updating photo failed")
@@ -119,6 +119,35 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	a.enqueueSidecar(r.Context(), uid)
 	a.writeDetail(w, r, user.UID, updated)
+}
+
+// metadataChanges builds the old→new diff for a photo metadata edit, comparing
+// the row before the edit (before) against the merged update the store will
+// apply (after) and recording only the user-editable fields whose value changed.
+// Because after is built from before overlaid with the request's present fields,
+// a field the caller did not touch is byte-for-byte the old value and is skipped,
+// so no `present` set is needed here. The result is stamped under the audit
+// "changes" key so the trail shows each field's previous value beside its new one
+// (see internal/audit ChangeSet).
+func metadataChanges(before photos.Photo, after photos.MetadataUpdate) *audit.ChangeSet {
+	changes := audit.NewChangeSet()
+	changes.Add("title", before.Title, after.Title)
+	changes.Add("description", before.Description, after.Description)
+	changes.Add("notes", before.Notes, after.Notes)
+	changes.Add("ai_note", before.AiNote, after.AiNote)
+	changes.Add("subject", before.Subject, after.Subject)
+	changes.Add("keywords", before.Keywords, after.Keywords)
+	changes.Add("artist", before.Artist, after.Artist)
+	changes.Add("copyright", before.Copyright, after.Copyright)
+	changes.Add("license", before.License, after.License)
+	changes.Add("scan", before.Scan, after.Scan)
+	changes.Add("taken_at", before.TakenAt, after.TakenAt)
+	changes.Add("taken_at_estimated", before.TakenAtEstimated, after.TakenAtEstimated)
+	changes.Add("taken_at_note", before.TakenAtNote, after.TakenAtNote)
+	changes.Add("lat", before.Lat, after.Lat)
+	changes.Add("lng", before.Lng, after.Lng)
+	changes.Add("location_source", before.LocationSource, after.LocationSource)
+	return changes
 }
 
 // presentFields returns the sorted names of the metadata fields the caller sent,

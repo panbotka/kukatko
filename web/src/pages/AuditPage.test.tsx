@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -201,6 +201,41 @@ describe('AuditPage', () => {
     await user.click(screen.getByRole('button', { name: 'Show details' }))
 
     expect(screen.getByText(/"field": "title"/)).toBeInTheDocument()
+  })
+
+  it('renders a details.changes map as an old → new table', async () => {
+    const user = userEvent.setup()
+    fetchAuditMock.mockResolvedValue(
+      response([
+        record({
+          details: {
+            fields: ['title', 'lat'],
+            changes: {
+              title: { old: 'stary popisek', new: 'novy popisek' },
+              lat: { old: 50.1, new: null },
+            },
+          },
+        }),
+      ]),
+    )
+    renderPage()
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Show details' }))
+
+    // A dedicated old → new table replaces the raw-JSON dump for an edit record.
+    const table = screen.getByTestId('audit-changes')
+    expect(within(table).getByText('Field')).toBeInTheDocument()
+    expect(within(table).getByText('Old')).toBeInTheDocument()
+    expect(within(table).getByText('New')).toBeInTheDocument()
+    // Both the previous and the new caption are shown for the title field.
+    expect(within(table).getByText('stary popisek')).toBeInTheDocument()
+    expect(within(table).getByText('novy popisek')).toBeInTheDocument()
+    // A cleared field (lat → null) shows its old value and a muted em-dash for the
+    // new one, not the literal "null".
+    expect(within(table).getByText('50.1')).toBeInTheDocument()
+    expect(within(table).getByText('—')).toBeInTheDocument()
+    expect(table.querySelector('pre')).toBeNull()
   })
 
   it('shows the empty state when no entries match', async () => {
