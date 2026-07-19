@@ -73,109 +73,109 @@ objects is unusable. Hence:
 - Everything paginates: `total`, `offset` and **`remaining`** (how many are still left).
 - Page sizes are held by `mcp.page_size` / `mcp.max_page_size`.
 
-## Tooly
+## Tools
 
-### Čtení (dostane každý token)
+### Reading (available to every token)
 
-| Tool | Co dělá |
+| Tool | What it does |
 | --- | --- |
-| `search_photos` | Hlavní vstupní bod. Volný text + **vyhledávací jazyk** (`person:babicka year:1960-1969 -album:dovolena`), plus přesné scope `album_uid` / `label_uid` / `person_uid`, `sort`, `order`, `limit`, `offset`. Vrací kompaktní stránku + `total` + `remaining`. |
-| `get_photo` | Jedna fotka v detailu: texty, datum, poloha, expozice, favorite/rating volajícího + **alba, štítky a lidé**, které nese. |
-| `find_similar_photos` | Vizuálně podobné fotky (kNN nad embeddingy) i se vzdáleností. Bez embeddingů to řekne. |
-| `list_albums`, `list_labels`, `list_subjects` | Katalogy s počty, volitelně filtr `name`. Slouží k převodu **jména, které řekl člověk, na `uid`**, které chtějí ostatní tooly. |
-| `get_album`, `get_label`, `get_subject` | Jeden záznam podle `uid` **nebo `slug`**. |
-| `library_stats` | Počty v jednom volání: fotky, z toho videa, archivované, s GPS, oblíbené volajícího, alba, štítky, lidé. Odpověď na „kolik…" bez stránkování. |
+| `search_photos` | The main entry point. Free text + the **search language** (`person:babicka year:1960-1969 -album:dovolena`), plus exact scoping via `album_uid` / `label_uid` / `person_uid`, `sort`, `order`, `limit`, `offset`. Returns a compact page + `total` + `remaining`. |
+| `get_photo` | A single photo in detail: texts, date, location, exposure, the caller's favorite/rating + **the albums, labels and people** it carries. |
+| `find_similar_photos` | Visually similar photos (kNN over embeddings), with the distance. If embeddings are missing it says so. |
+| `list_albums`, `list_labels`, `list_subjects` | Catalogs with counts, optionally filtered by `name`. Used to turn **a name a human said into the `uid`** the other tools want. |
+| `get_album`, `get_label`, `get_subject` | A single record by `uid` **or `slug`**. |
+| `library_stats` | Counts in a single call: photos, of which videos, archived, with GPS, the caller's favorites, albums, labels, people. The answer to "how many…" without pagination. |
 
-**Fotky alba / štítku / osoby** se čtou přes `search_photos` s `album_uid` / `label_uid` /
-`person_uid` — je to ten samý list path, takže platí i všechny ostatní filtry, řazení a stránkování.
-Samostatné tooly na to schválně nejsou.
+**An album's / label's / person's photos** are read through `search_photos` with `album_uid` / `label_uid` /
+`person_uid` — it is the same list path, so all the other filters, sorting and pagination apply too.
+There are deliberately no separate tools for it.
 
-### Zápis (jen tokeny s právem zápisu)
+### Writing (write-capable tokens only)
 
-| Tool | Co dělá |
+| Tool | What it does |
 | --- | --- |
-| `create_album` | Založí prázdné album, vrátí `uid`. |
-| `add_photos_to_album`, `remove_photos_from_album` | Dávka v jedné transakci; přidání je idempotentní. |
-| `create_label` | Založí štítek, vrátí `uid`. |
-| `attach_label`, `detach_label` | Štítek na jednu fotku (`SourceManual`, uncertainty 0). |
-| `set_photo_metadata` | Název / popis / poznámky. **Pointerová sémantika:** vynechané pole se nemění, prázdný řetězec maže. Uvnitř read-modify-write, protože store dělá full-record replace. |
-| `set_photo_rating` | Favorite / hvězdy 0–5 / flag. **Per-user** — názor vlastníka tokenu, ne fakt o knihovně. |
-| `bulk_edit_photos` | Jedna sada změn na mnoho fotek **v jedné transakci**. Preferovaný nástroj pro dávky — agent, který volá single-photo tooly ve smyčce, je pomalý a umí změnu aplikovat z poloviny. |
+| `create_album` | Creates an empty album, returns its `uid`. |
+| `add_photos_to_album`, `remove_photos_from_album` | A batch in a single transaction; adding is idempotent. |
+| `create_label` | Creates a label, returns its `uid`. |
+| `attach_label`, `detach_label` | A label on a single photo (`SourceManual`, uncertainty 0). |
+| `set_photo_metadata` | Title / description / notes. **Pointer semantics:** an omitted field is left unchanged, an empty string clears it. Internally read-modify-write, because the store does a full-record replace. |
+| `set_photo_rating` | Favorite / 0–5 stars / flag. **Per-user** — the opinion of the token's owner, not a fact about the library. |
+| `bulk_edit_photos` | One set of changes applied to many photos **in a single transaction**. The preferred tool for batches — an agent that calls the single-photo tools in a loop is slow and can end up applying a change only halfway. |
 
-## Co záměrně vystavené NENÍ
+## What is deliberately NOT exposed
 
-**Nic destruktivního ani nevratného.** Tohle není mezera v seznamu toolů, kterou má někdo příště
-„doplnit" — je to rozhodnutí o tom, co smí autonomní agent udělat s cizími rodinnými fotkami:
+**Nothing destructive or irreversible.** This is not a gap in the tool list for someone to "fill in"
+later — it is a decision about what an autonomous agent may do to someone else's family photos:
 
-- **Žádné mazání fotky.** Ani purge, ani vysypání koše, ani retention.
-- **Žádné archivování.** Archivace je cesta do koše a koš se **purguje podle retention** —
-  agent, který umí archivovat, umí s trochou trpělivosti mazat. Proto `bulk_edit_photos`
-  vynechává i `Archive`, který bulk service jinak umí.
-- **Žádný restore ani backup.**
-- **Žádná správa uživatelů ani tokenů.**
-- **Žádný admin povrch** — jobs, maintenance, process backfilly, import.
-- **Žádné nastavování polohy.** Souřadnice, kterou si agent vymyslel, je po zápisu k nerozeznání od
-  změřené; na odhad polohy má knihovna vlastní, poctivě označkovanou cestu (`internal/geoestimate`).
-  Proto `bulk_edit_photos` vynechává i `Location` / `ClearLocation`.
+- **No deleting a photo.** No purge, no emptying the trash, no retention.
+- **No archiving.** Archiving is the path into the trash, and the trash is **purged by retention** —
+  an agent that can archive can, with a little patience, delete. That is why `bulk_edit_photos`
+  leaves out `Archive` too, which the bulk service otherwise supports.
+- **No restore and no backup.**
+- **No user or token management.**
+- **No admin surface** — jobs, maintenance, process backfills, import.
+- **No setting the location.** A coordinate an agent made up is, once written, indistinguishable from
+  a measured one; for estimating a location the library has its own, honestly-labeled path (`internal/geoestimate`).
+  That is why `bulk_edit_photos` leaves out `Location` / `ClearLocation` too.
 
-Test `TestMCPDestructiveToolsAreNotExposed` to hlídá **podle záměru, ne podle seznamu jmen**: sáhne po
-nejvyšší roli, projde `tools/list` a spadne na jakémkoli toolu, jehož jméno obsahuje `delete`, `purge`,
-`trash`, `archive`, `restore`, `backup`, `user` nebo `empty`.
+The `TestMCPDestructiveToolsAreNotExposed` test guards this **by intent, not by a list of names**: it takes
+the highest role, walks `tools/list` and fails on any tool whose name contains `delete`, `purge`,
+`trash`, `archive`, `restore`, `backup`, `user` or `empty`.
 
-## Zapnutí a připojení agenta
+## Enabling it and connecting an agent
 
-Viz [`docs/OPERATIONS.md`](OPERATIONS.md) → `mcp.*` klíče. Stručně:
+See [`docs/OPERATIONS.md`](OPERATIONS.md) → the `mcp.*` keys. In brief:
 
 ```yaml
 mcp:
   enabled: true
 ```
 
-Vypnuto = **route se vůbec nemountuje** (`RegisterRoutes` neregistruje nic). Ne že by existovala a
-vracela 403 — 403 by útočníkovi pořád prozradilo, že tam endpoint je.
+Disabled = **the route is not mounted at all** (`RegisterRoutes` registers nothing). Not that it exists and
+returns 403 — a 403 would still tell an attacker that the endpoint is there.
 
-**Pozor při ručním ověřování curlem:** v celém binárce pak `/api/v1/mcp` spadne do **SPA catch-all**
-(`server.routes()` má `router.NotFound(web.Handler())`) jako každá jiná neznámá cesta, takže vrátí
-**`200` a `index.html`**, ne 404 — MCP klient dostane HTML, neparsuje ho a spojení neustaví. Že route
-opravdu neexistuje, je vidět v access logu: chybí pole `"route":"/api/v1/mcp"`. Testy vidí `404`,
-protože jejich router SPA fallback nemá; to je ten čistý signál „na routeru nic není".
+**Careful when verifying by hand with curl:** in the full binary `/api/v1/mcp` then falls into the **SPA catch-all**
+(`server.routes()` has `router.NotFound(web.Handler())`) like any other unknown path, so it returns
+**`200` and `index.html`**, not 404 — the MCP client gets HTML, does not parse it and never opens the connection. That the route
+truly does not exist is visible in the access log: the `"route":"/api/v1/mcp"` field is missing. The tests see `404`,
+because their router has no SPA fallback; that is the clean signal that "there is nothing on the router".
 
-Token pro agenta (nejnižší role se zápisem je `editor`; `admin`/`maintainer` píšou taky). Token si razí
-**uživatel sám pro sebe** — `POST /auth/tokens` ho vždycky vystaví volajícímu principalovi, admin ho za
-někoho jiného udělat nemůže. Takže dva kroky:
+A token for the agent (the lowest write-capable role is `editor`; `admin`/`maintainer` write too). A token is minted
+**by a user for themselves** — `POST /auth/tokens` always issues it to the calling principal, an admin cannot create
+one on someone else's behalf. So two steps:
 
 ```bash
-# 1) admin založí uživatele s rolí editor
+# 1) an admin creates a user with the editor role
 curl -X POST https://<host>/api/v1/admin/users \
   -b admin-session.txt -H 'Content-Type: application/json' \
   -d '{"username":"agent","password":"…","role":"editor"}'
 
-# 2) ten uživatel se přihlásí a vyrazí si token
+# 2) that user logs in and mints a token for themselves
 curl -X POST https://<host>/api/v1/auth/login -c agent.txt \
   -H 'Content-Type: application/json' -d '{"username":"agent","password":"…"}'
 curl -X POST https://<host>/api/v1/auth/tokens -b agent.txt \
   -H 'Content-Type: application/json' -d '{"name":"claude"}'
 ```
 
-Odpověď nese `secret` — **plaintext `kkt_…` se ukáže jen jednou**, uložit hned. Pro read-only agenta
-založ uživatele s rolí `viewer`; token dědí roli svého vlastníka, vlastní roli nemá.
+The response carries `secret` — **the plaintext `kkt_…` is shown only once**, save it right away. For a read-only agent
+create a user with the `viewer` role; a token inherits its owner's role, it has none of its own.
 
-Připojení klienta (Claude Code):
+Connecting a client (Claude Code):
 
 ```bash
 claude mcp add --transport http kukatko https://<host>/api/v1/mcp \
   --header "Authorization: Bearer kkt_…"
 ```
 
-## Testy
+## Tests
 
-`internal/mcpapi/mcpapi_integration_test.go` (tag `integration`) jede přes **skutečný MCP transport**,
-skutečnou auth middleware a skutečné `kkt_` tokeny proti `KUKATKO_TEST_DATABASE_URL`. Pokrývá:
-vypnutý server nemountuje route (404, ne 403) · endpoint chce auth · `initialize` handshake ·
-viewer vidí jen read tooly · viewer je odmítnut na **každém** write toolu a nic se nezměnilo ·
-destruktivní tooly nejsou vystavené · search vrací kompaktní tvar bez EXIFu a se stránkováním ·
-vyhledávací jazyk funguje · write token založí album a připne štítek · **každá mutace píše audit
-řádek** · částečná editace nevynuluje ostatní pole · bulk je atomický · popisy toolů jsou napsané.
+`internal/mcpapi/mcpapi_integration_test.go` (tag `integration`) runs over the **real MCP transport**,
+real auth middleware and real `kkt_` tokens against `KUKATKO_TEST_DATABASE_URL`. It covers:
+a disabled server does not mount the route (404, not 403) · the endpoint requires auth · the `initialize` handshake ·
+a viewer sees only the read tools · a viewer is rejected on **every** write tool and nothing changed ·
+destructive tools are not exposed · search returns the compact shape without EXIF and with pagination ·
+the search language works · a write token creates an album and attaches a label · **every mutation writes an audit
+row** · a partial edit does not null out the other fields · bulk is atomic · the tool descriptions are written.
 
-Unit testy (`mcpapi_test.go`, běží v `make check` bez DB) drží čisté helpery, RBAC check a to, že
-`exif` neproteče do žádného payloadu.
+Unit tests (`mcpapi_test.go`, run in `make check` without a DB) hold the pure helpers, the RBAC check and that
+`exif` does not leak into any payload.

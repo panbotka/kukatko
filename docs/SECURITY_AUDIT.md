@@ -269,7 +269,7 @@ vulnerabilities). Nothing here required a code change — this report only docum
 
 ---
 
-## Areas checked — no finding ("prověřeno, bez nálezu")
+## Areas checked — no finding ("reviewed, no findings")
 
 Silence is not evidence; these areas were examined and are clean.
 
