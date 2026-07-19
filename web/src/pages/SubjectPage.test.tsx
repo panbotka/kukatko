@@ -175,6 +175,22 @@ describe('SubjectPage', () => {
     expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
   })
 
+  it('offers the on-page similarity-candidate section to editors', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage(true)
+    // Editors get the on-page candidate search (a write action gated exactly like the
+    // outlier review below it); the expensive search waits for the button, not mount.
+    expect(await screen.findByRole('button', { name: /Find suggestions/i })).toBeInTheDocument()
+  })
+
+  it('hides the similarity-candidate section from viewers', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage(false)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByRole('button', { name: /Find suggestions/i })).not.toBeInTheDocument()
+  })
+
   it('disables the bulk-edit trigger until a photo is picked', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()
