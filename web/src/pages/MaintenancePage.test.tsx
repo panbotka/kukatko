@@ -14,6 +14,7 @@ import { MaintenancePage } from './MaintenancePage'
 vi.mock('../services/maintenance', () => ({
   fetchMaintenanceScan: vi.fn(),
   runMaintenanceRepair: vi.fn(),
+  purgeAuditLog: vi.fn(),
 }))
 
 vi.mock('../services/import', async (importOriginal) => {
@@ -21,10 +22,12 @@ vi.mock('../services/import', async (importOriginal) => {
   return { ...actual, fetchJobStats: vi.fn() }
 })
 
-const { fetchMaintenanceScan, runMaintenanceRepair } = await import('../services/maintenance')
+const { fetchMaintenanceScan, runMaintenanceRepair, purgeAuditLog } =
+  await import('../services/maintenance')
 const { fetchJobStats } = await import('../services/import')
 const scanMock = vi.mocked(fetchMaintenanceScan)
 const repairMock = vi.mocked(runMaintenanceRepair)
+const purgeMock = vi.mocked(purgeAuditLog)
 const statsMock = vi.mocked(fetchJobStats)
 
 /** Builds a scan report, defaulting every finding to empty unless overridden. */
@@ -94,6 +97,7 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   scanMock.mockReset()
   repairMock.mockReset()
+  purgeMock.mockReset()
   statsMock.mockReset()
   statsMock.mockResolvedValue(emptyStats)
 })
@@ -111,9 +115,12 @@ describe('MaintenancePage', () => {
         screen.getByText('This page is available to system maintainers only.'),
       ).toBeInTheDocument()
       expect(screen.queryByText('Library maintenance')).not.toBeInTheDocument()
+      // The destructive audit-log purge is hidden along with the rest of the page.
+      expect(screen.queryByText('Purge audit log')).not.toBeInTheDocument()
       unmount()
     }
     expect(scanMock).not.toHaveBeenCalled()
+    expect(purgeMock).not.toHaveBeenCalled()
   })
 
   it('runs a scan and renders the findings table with counts and samples', async () => {
@@ -179,6 +186,70 @@ describe('MaintenancePage', () => {
     await user.click(screen.getByRole('button', { name: 'Run repairs' }))
 
     expect(await screen.findByText('The repair failed.')).toBeInTheDocument()
+  })
+
+  it('purges the audit log only after a confirmation step and shows the count', async () => {
+    purgeMock.mockResolvedValue({
+      deleted: 42,
+      older_than_days: 365,
+      cutoff: '2025-07-19T00:00:00Z',
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    // Clicking Purge asks for confirmation first — the service is not called yet.
+    await user.click(screen.getByRole('button', { name: 'Purge audit log' }))
+    expect(purgeMock).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(/permanently deletes every audit entry older than 365 days/),
+    ).toBeInTheDocument()
+
+    // Confirming runs the purge with the default retention (1 year = 365 days).
+    await user.click(screen.getByRole('button', { name: 'Yes, delete them' }))
+    await waitFor(() => {
+      expect(purgeMock).toHaveBeenCalledWith(365)
+    })
+    expect(await screen.findByText('Deleted 42 audit entries.')).toBeInTheDocument()
+  })
+
+  it('purges with a custom retention window entered in days', async () => {
+    purgeMock.mockResolvedValue({ deleted: 3, older_than_days: 30, cutoff: '2025-06-19T00:00:00Z' })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.selectOptions(screen.getByLabelText('Delete entries older than'), 'custom')
+    const daysInput = screen.getByLabelText('Days to keep')
+    await user.clear(daysInput)
+    await user.type(daysInput, '30')
+
+    await user.click(screen.getByRole('button', { name: 'Purge audit log' }))
+    await user.click(screen.getByRole('button', { name: 'Yes, delete them' }))
+    await waitFor(() => {
+      expect(purgeMock).toHaveBeenCalledWith(30)
+    })
+    expect(await screen.findByText('Deleted 3 audit entries.')).toBeInTheDocument()
+  })
+
+  it('lets the maintainer cancel the purge without deleting anything', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Purge audit log' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(purgeMock).not.toHaveBeenCalled()
+    // The confirmation prompt is gone and the Purge button is back.
+    expect(screen.queryByRole('button', { name: 'Yes, delete them' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Purge audit log' })).toBeInTheDocument()
+  })
+
+  it('shows an error when the purge fails', async () => {
+    purgeMock.mockRejectedValue(new Error('boom'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Purge audit log' }))
+    await user.click(screen.getByRole('button', { name: 'Yes, delete them' }))
+    expect(await screen.findByText('The purge failed.')).toBeInTheDocument()
   })
 
   it('polls and renders the background job-queue stats with a legend', async () => {

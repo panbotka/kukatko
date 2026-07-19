@@ -1624,6 +1624,28 @@
       "running": "Běží",
       "failed": "Selhalo",
       "dead": "Mrtvé"
+    },
+    "auditPurge": {
+      "title": "Vymazat starý audit log",
+      "hint": "Trvale smaže záznamy auditu starší než zvolené období uchování. Tuto akci nelze vrátit. Samotné vymazání se zapíše do auditu, aby zůstalo dohledatelné.",
+      "retention": "Smazat záznamy starší než",
+      "presets": {
+        "3m": "3 měsíce",
+        "6m": "6 měsíců",
+        "1y": "1 rok",
+        "2y": "2 roky",
+        "custom": "Vlastní…"
+      },
+      "customDays": "Kolik dní ponechat",
+      "customDaysHint": "Záznamy starší než tento počet dní se smažou.",
+      "run": "Vymazat audit log",
+      "running": "Mažu…",
+      "confirm": "Trvale smaže všechny záznamy auditu starší než {{days}} dní. Tuto akci nelze vrátit.",
+      "confirmRun": "Ano, smazat",
+      "cancel": "Zrušit",
+      "invalid": "Zadejte kladný počet dní.",
+      "error": "Vymazání se nezdařilo.",
+      "result": "Smazáno {{deleted}} záznamů auditu."
     }
   },
   "duplicates": {

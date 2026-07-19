@@ -97,3 +97,32 @@ export async function runMaintenanceRepair(
   }
   return (await res.json()) as RepairResult
 }
+
+/** Outcome of an audit-log retention purge (`maintenanceapi` audit purge). */
+export interface AuditPurgeResult {
+  deleted: number
+  older_than_days: number
+  cutoff: string
+}
+
+/**
+ * Purges audit-log entries older than the given retention window (in days),
+ * returning how many were deleted. Destructive and maintainer-only; the purge is
+ * self-audited on the backend.
+ */
+export async function purgeAuditLog(
+  olderThanDays: number,
+  signal?: AbortSignal,
+): Promise<AuditPurgeResult> {
+  const res = await fetch(`${API_BASE}/maintenance/audit/purge`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ older_than_days: olderThanDays }),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as AuditPurgeResult
+}

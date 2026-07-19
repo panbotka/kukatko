@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/backup"
 	"github.com/panbotka/kukatko/internal/config"
@@ -204,11 +205,13 @@ func buildMaintenanceAndThumb(
 }
 
 // buildMaintenanceAPI assembles the maintainer-only maintenance HTTP API over
-// svc. Library maintenance is an operations capability, so the maintainer guard
-// is supplied via authAPI (maintenanceapi stays decoupled from auth's wiring).
-func buildMaintenanceAPI(svc *maintenance.Service, authAPI *auth.API) *maintenanceapi.API {
+// svc and the audit store (for the retention purge of old audit entries).
+// Library maintenance is an operations capability, so the maintainer guard is
+// supplied via authAPI (maintenanceapi stays decoupled from auth's wiring).
+func buildMaintenanceAPI(svc *maintenance.Service, db *database.DB, authAPI *auth.API) *maintenanceapi.API {
 	return maintenanceapi.NewAPI(maintenanceapi.Config{
 		Service:           svc,
+		Audit:             audit.NewStore(db.Pool()),
 		RequireMaintainer: authAPI.RequireMaintainer,
 	})
 }
