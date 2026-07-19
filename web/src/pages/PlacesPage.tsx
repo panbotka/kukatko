@@ -11,7 +11,6 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
-import { SelectionStart } from '../components/organize/SelectionStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
@@ -53,7 +52,8 @@ type State =
  * drill. The country → city hierarchy is fetched once; the grid loads only once a
  * city is chosen.
  *
- * Editors can enter selection mode over that grid and bulk-edit the picked
+ * Editors can multi-select over that grid straight away — the corner checkmark is
+ * offered from the outset, as on the library — and bulk-edit the picked
  * photos, after which it refetches — an edit can move a photo's location, and so
  * out of the place being browsed. Walking the drill leaves selection mode, since
  * every place is its own list.
@@ -79,7 +79,9 @@ export function PlacesPage() {
     { enabled: gridEnabled, reloadKey: photosKey },
   )
 
-  const bulk = useBulkEdit({ onEdited: reloadPhotos })
+  // Hover-select: a writer's tiles carry the corner checkmark from the outset,
+  // so the toolbar below keys off what is picked rather than an explicit mode.
+  const bulk = useBulkEdit({ onEdited: reloadPhotos, hoverSelect: true })
   const selection = bulk.selection
   const hasPhotos = gridEnabled && status === 'ready' && photos.length > 0
 
@@ -137,7 +139,6 @@ export function PlacesPage() {
     <>
       <div className="d-flex justify-content-between align-items-center gap-2 mb-3 flex-wrap">
         <h1 className="kk-page-title mb-0">{t('places.title')}</h1>
-        {hasPhotos && <SelectionStart bulk={bulk} />}
       </div>
 
       {/* Breadcrumb drill: Places / Country / City, each level clickable. */}
@@ -227,7 +228,7 @@ export function PlacesPage() {
           {/* Level 3: the photo grid scoped to the selected place. */}
           {gridEnabled && (
             <>
-              {selection.active && (
+              {selection.count > 0 && (
                 <SelectionBar count={selection.count} onCancel={selection.disable}>
                   <BulkEditControl bulk={bulk} />
                 </SelectionBar>

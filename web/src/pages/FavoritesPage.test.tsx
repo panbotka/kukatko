@@ -155,20 +155,23 @@ describe('FavoritesPage', () => {
     renderFavorites(false)
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
   })
 
-  it('disables the bulk-edit trigger until a photo is picked', async () => {
+  it('offers a select checkmark on every tile, with no selection mode to enter', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()
     renderFavorites()
 
-    await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
+    // No "Select" step: the tile is a link that already carries its checkmark,
+    // exactly as on the library.
+    expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
 
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    // Picking raises the selection bar, with the trigger now applicable.
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
   })
 
@@ -184,8 +187,7 @@ describe('FavoritesPage', () => {
     renderFavorites()
 
     await screen.findByRole('link', { name: 'b.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'b.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
 
     await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
     await user.selectOptions(await screen.findByLabelText('Favorite'), 'false')
@@ -199,11 +201,11 @@ describe('FavoritesPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Done' }))
 
     // The list refreshed without `b`, and nothing is left selected — least of all
-    // the photo that just left the view.
+    // the photo that just left the view, so the selection bar is gone again.
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'b.jpg' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: 'b.jpg' })).not.toBeInTheDocument()
     })
-    expect(screen.getByRole('button', { name: 'a.jpg' })).toBeInTheDocument()
-    expect(screen.getByText('0 selected')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
   })
 })

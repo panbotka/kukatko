@@ -212,7 +212,7 @@ describe('PlacesPage bulk edit', () => {
 
     await screen.findByRole('button', { name: /Czechia/ })
     // Only the place grid can be selected, and it is not on screen yet.
-    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
   })
 
   it('keeps selection and bulk edit away from viewers', async () => {
@@ -221,21 +221,23 @@ describe('PlacesPage bulk edit', () => {
     renderPage('/places?country=Italy&city=Rome', false)
 
     await screen.findByTestId('grid')
-    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
   })
 
-  it('disables the bulk-edit trigger until a photo is picked', async () => {
+  it('offers a select checkmark on every tile, with no selection mode to enter', async () => {
     fetchPlacesMock.mockResolvedValue(HIERARCHY)
     fetchPhotosMock.mockResolvedValue(page([photo('a')]))
     const user = userEvent.setup()
     renderPage('/places?country=Italy&city=Rome')
 
-    await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
+    // No "Select" step: the tile is a link that already carries its checkmark,
+    // exactly as on the library.
+    expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
 
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
   })
 
@@ -250,8 +252,7 @@ describe('PlacesPage bulk edit', () => {
     renderPage('/places?country=Czechia&city=Prague')
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'b.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
 
     const fetchesBefore = fetchPhotosMock.mock.calls.length
     await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
@@ -264,21 +265,21 @@ describe('PlacesPage bulk edit', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Done' }))
 
-    expect(screen.getByText('0 selected')).toBeInTheDocument()
+    // The selection is cleared, so the bar steps back out of the way.
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
     })
   })
 
-  it('leaves selection mode when the drill moves to another place', async () => {
+  it('drops the selection when the drill moves to another place', async () => {
     fetchPlacesMock.mockResolvedValue(HIERARCHY)
     fetchPhotosMock.mockResolvedValue(page([photo('a')]))
     const user = userEvent.setup()
     renderPage('/places?country=Czechia&city=Prague')
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
 
     // Step back up to the country: a Prague photo must not stay selected.

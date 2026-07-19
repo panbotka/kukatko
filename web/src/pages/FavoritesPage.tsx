@@ -8,7 +8,6 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
-import { SelectionStart } from '../components/organize/SelectionStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -23,7 +22,8 @@ import { useUrlState } from '../lib/urlState'
  * be unfavorited in place (the change is optimistic; it reappears on the next
  * reload if the request failed). The view state lives in the URL like the library.
  *
- * Editors can also enter selection mode and bulk-edit the picked photos. Since
+ * Editors can also multi-select tiles — the corner checkmark is offered straight
+ * away, as on the library — and bulk-edit the picked photos. Since
  * the list *is* the favorites filter, a bulk edit that clears the favorite flag
  * takes those photos out of the view: the selection is cleared before the refetch,
  * so no photo that just left the grid stays selected.
@@ -47,18 +47,17 @@ export function FavoritesPage() {
     { reloadKey },
   )
 
-  const bulk = useBulkEdit({ onEdited: reload })
+  // Hover-select: a writer's tiles carry the corner checkmark from the outset,
+  // so the toolbar below keys off what is picked rather than an explicit mode.
+  const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
   const hasPhotos = status === 'ready' && photos.length > 0
 
   return (
     <>
-      <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h1 className="kk-page-title mb-0">{t('favorites.title')}</h1>
-        {hasPhotos && <SelectionStart bulk={bulk} />}
-      </div>
+      <h1 className="kk-page-title mb-3">{t('favorites.title')}</h1>
 
-      {selection.active && (
+      {selection.count > 0 && (
         <SelectionBar count={selection.count} onCancel={selection.disable}>
           <BulkEditControl bulk={bulk} />
         </SelectionBar>

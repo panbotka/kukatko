@@ -12,7 +12,6 @@ import { GridDensityControl } from '../components/library/GridDensityControl'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
-import { SelectionStart } from '../components/organize/SelectionStart'
 import { Candidates } from '../components/people/Candidates'
 import { Outliers } from '../components/people/Outliers'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
@@ -46,8 +45,10 @@ type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; su
  * with a load-more control.
  *
  * Editors can also select photos in the gallery and bulk-edit them; the gallery
- * refetches afterwards, since the edit may have taken photos out of it. The
- * set-cover action lives on the tiles and is untouched outside selection mode.
+ * refetches afterwards, since the edit may have taken photos out of it. Every
+ * tile carries the library's corner selection checkmark from the outset (no
+ * "enter selection mode" step), and the set-cover action only steps aside once
+ * a pick has turned the tiles into selection targets.
  */
 export function SubjectPage() {
   const { t } = useTranslation()
@@ -70,8 +71,14 @@ export function SubjectPage() {
   // endpoint is always newest-first), so the scope is the sole non-default facet.
   const detailQuery = useMemo(() => detailQueryString({ ...DETAIL_DEFAULTS, person: uid }), [uid])
 
-  const bulk = useBulkEdit({ onEdited: reload })
+  // Hover-select: a writer's tiles carry the corner checkmark from the outset,
+  // so the toolbar below keys off what is picked rather than an explicit mode.
+  // `gridSelection` is the role gate — it is undefined for a viewer, who never
+  // selects, exactly as the shared photo grids read it.
+  const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
+  const selectable = bulk.gridSelection !== undefined
+  const selecting = selection.count > 0
 
   useEffect(() => {
     const controller = new AbortController()
@@ -160,7 +167,9 @@ export function SubjectPage() {
           <h1 className="kk-page-title mb-0">{subject.name}</h1>
           <Badge bg="secondary">{t(`subject.type.${subject.type}`)}</Badge>
         </div>
-        {!selection.active && (
+        {/* The subject's own actions step aside while a selection is being made:
+            the selection bar below is then the page's only toolbar. */}
+        {!selecting && (
           <div className="d-flex align-items-center gap-2 flex-wrap">
             {/* A view preference, not a write action: shown to every viewer so
                 anyone can re-column the gallery, exactly as the other galleries
@@ -177,12 +186,11 @@ export function SubjectPage() {
                 {t('subject.editButton')}
               </Button>
             )}
-            {photos.length > 0 && <SelectionStart bulk={bulk} />}
           </div>
         )}
       </div>
 
-      {selection.active && (
+      {selecting && (
         <SelectionBar count={selection.count} onCancel={selection.disable}>
           <BulkEditControl bulk={bulk} />
         </SelectionBar>
@@ -212,8 +220,10 @@ export function SubjectPage() {
                 onSetCover={(photoUid) => {
                   void setCover(photoUid)
                 }}
-                selectable={selection.active}
+                selectable={selectable}
+                selectFirst={selectable && selecting}
                 selected={selection.selected.has(photo.uid)}
+                anySelected={selecting}
                 onToggleSelect={selection.toggle}
                 detailQuery={detailQuery}
               />

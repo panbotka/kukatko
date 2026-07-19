@@ -20,8 +20,11 @@ export interface UseBulkEditOptions {
   /**
    * Opt into hover-select: the grid is always selectable (a corner checkmark on
    * every tile) for a writer, with no explicit "enter selection mode" step, and
-   * turns selection-first the moment anything is picked. The library uses this
-   * to drive the floating batch bar; other grids keep the explicit mode.
+   * turns selection-first the moment anything is picked. Every photo-list page
+   * uses this, so multi-select works the same way everywhere; a page then shows
+   * its selection toolbar on `selection.count > 0` rather than on
+   * `selection.active`. The explicit mode is left for the non-list grids (the
+   * /expand candidate review), which still gate selection behind a button.
    */
   hoverSelect?: boolean
 }
@@ -50,8 +53,9 @@ export interface UseBulkEditResult {
  * Bundles everything a photo list needs to offer bulk metadata editing: the grid
  * selection, the role gate, and the open/close state of the bulk-edit dialog.
  * Pair it with `BulkEditControl`, which renders the trigger and the dialog from
- * this result, so a page only wires `gridSelection` into its `PhotoGrid` and a
- * button that calls `selection.enable()`.
+ * this result, so a page only wires `gridSelection` into its `PhotoGrid` and
+ * shows its selection toolbar once something is picked (or, in the explicit
+ * mode, a button that calls `selection.enable()`).
  *
  * Selection mode survives an apply — only the selection itself is cleared — so a
  * second batch can be picked straight away, and no identifier of a photo the

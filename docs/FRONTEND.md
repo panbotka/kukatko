@@ -322,8 +322,9 @@ here.
   (`kk-tile--checks`); a selected tile gets an **accent ring** (`kk-tile--selected` → inset
   `::after` from `--kk-accent`) and a **dimmed image**, so the selection is unmissable on the dense wall.
   Selection mode is either **explicit** (`selection.active` — tiles are selection targets from the start,
-  the album/label/search browse grids via `SelectionStart`), or **hover-select** (`selection.hoverSelect`,
-  the library): in both modes the tile is **always the same `<Link>` element** — the root **never switches**
+  only the /expand candidate review via `SelectionStart`), or **hover-select** (`selection.hoverSelect`,
+  **every photo-list page**: library, album/label detail, favorites, search, places, subject gallery):
+  in both modes the tile is **always the same `<Link>` element** — the root **never switches**
   between `<a>` and `<button>` (that would remount the whole grid on a 0↔1 selection transition and trigger the load-in
   fade of all images at once — a flicker of the whole wall). **Only the first selection** makes the whole thing a target
   (`selectFirst`): a click **toggles it instead of navigating** (`role="button"` + `aria-pressed`, navigation suppressed by
@@ -345,7 +346,8 @@ here.
   `EmptyState` only for an album with no photos),
   `AlbumEditModal` (create/rename an album: name/description/private), `LabelEditModal` (create/rename
   a label: name/priority), `SelectionBar` (a sticky selection toolbar: count +
-  actions + clear — used by browse grids outside the library),
+  actions + clear — used by browse grids outside the library, shown at
+  `selection.count > 0` since those grids are hover-select too),
   `BatchActionBar` (**NEW**: the library's floating bottom **bulk action bar** — frosted
   (`--kk-header-bg` + `backdrop-filter: blur(--kk-header-blur))`, `--kk-shadow-3`, `.kk-batch-*`
   in `app.css`) `position: fixed` centered at the bottom, **slides up at ≥ 1 selected photo**, carries a live
@@ -801,7 +803,10 @@ here.
   `SubjectPhotoTile` with a „set as cover" action for editors — now a **quiet icon-only disk** in the corner
   of the tile: hidden at rest, revealed on hover/focus (on touch, where there is no hover, it stays visible),
   the current cover is marked by a filled accent disk (`.kk-cover-btn`/`--on`, `image`/
-  `image-fill`); behavior unchanged — the same `onSetCover` handler and `PATCH /subjects/{uid}`), and
+  `image-fill`); behavior unchanged — the same `onSetCover` handler and `PATCH /subjects/{uid}`.
+  The tile also carries the library's **corner selection checkmark** (`.kk-tile__check`, props
+  `selectable`/`selectFirst`/`selected`/`anySelected`) from the outset for an editor, and the
+  cover disk only steps aside at `selectFirst` — i.e. once something is picked), and
   two review sections for editors only: `Candidates` („Možná je i zde" — untagged photos where the person
   is present by face resemblance, to confirm/reject; the search is **explicit** via a button, not
   on-load) and below it `Outliers` (suspicious assignments); the tiles carry a **person
@@ -1235,14 +1240,16 @@ here.
   `useSelection` + role gate (`canBulkEdit` = `canWrite`) + stav dialogu
   (`editing`/`open`/`close`/`finish`), k tomu `photoUids` (**přesně vybrané**, nikdy celý filtrovaný
   výsledek) a `gridSelection` rovnou do `PhotoGrid` (vč. `onToggleRange` → Shift+klik rozsah zdarma
-  v každé mřížce). **`hoverSelect:true`** (knihovna): `gridSelection` je pro editora **vždy** definované
-  s `hoverSelect` (žádný explicitní vstup do režimu — rohové zaškrtávátko na hoveru); bez něj (ostatní
-  mřížky) je `gridSelection` definované až po `enable()`. Viewer dostane vždy `undefined`.
+  v každé mřížce). **`hoverSelect:true`** (**všechny foto-seznamy**: knihovna, detail alba/štítku,
+  oblíbené, hledání, místa, galerie osoby): `gridSelection` je pro editora **vždy** definované
+  s `hoverSelect` (žádný explicitní vstup do režimu — rohové zaškrtávátko na hoveru) a stránka
+  ukazuje `SelectionBar` na `selection.count > 0`, ne na `selection.active`; bez něj (jen /expand)
+  je `gridSelection` definované až po `enable()`. Viewer dostane vždy `undefined`.
   `finish(outcome?)` = zavřít dialog → `selection.clear()`
   → `onEdited(outcome?)` (refetch; `outcome` = `BulkEditOutcome` pro stránky, které umí seznam
   upravit na místě — `/expand`); režim výběru přežije, takže po úspěchu jde hned vybírat dál a žádné
   zastaralé UID v něm nezůstane. Neúspěšný apply výběr **nechá být**. Stránka wiruje jen
-  `gridSelection` a `SelectionStart`, zbytek obstará `BulkEditControl`;
+  `gridSelection` (a v explicitním režimu `SelectionStart`), zbytek obstará `BulkEditControl`;
   `useReloadKey()` = `[key, reload]`, string čítač do `reloadKey` foto-seznamu — jedno `reload()`
   přehraje seznam **na pozadí** (refetch první stránky bez blanknutí do skeletonu, fotky zůstanou
   připnuté); `reload` je stabilní, jde rovnou do `useBulkEdit({onEdited})`;

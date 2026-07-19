@@ -13,7 +13,6 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
-import { SelectionStart } from '../components/organize/SelectionStart'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SavedSearchesDropdown } from '../components/savedsearch/SavedSearchesDropdown'
 import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
@@ -46,9 +45,10 @@ const SEARCH_DEBOUNCE_MS = 350
  * This page also owns saved searches: the header pairs a "save this view" button
  * with the {@link SavedSearchesDropdown} that lists, applies and manages them.
  *
- * Editors can enter selection mode over the results and bulk-edit the picked
- * photos; the search re-runs afterwards, since an edit can change what the query
- * and filters match.
+ * Editors can multi-select results straight away — the corner checkmark is
+ * offered from the outset, as on the library — and bulk-edit the picked photos;
+ * the search re-runs afterwards, since an edit can change what the query and
+ * filters match.
  */
 export function SearchPage() {
   const { t } = useTranslation()
@@ -76,8 +76,11 @@ export function SearchPage() {
     retry,
   } = usePhotoSearch(params, mode, { reloadKey })
 
-  const bulk = useBulkEdit({ onEdited: reload })
+  // Hover-select: a writer's tiles carry the corner checkmark from the outset,
+  // so the toolbar below keys off what is picked rather than an explicit mode.
+  const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
+  const selecting = selection.count > 0
   const hasResults = status === 'ready' && photos.length > 0
 
   // Local, debounced mirror of the URL query so typing stays responsive but the
@@ -120,7 +123,7 @@ export function SearchPage() {
         <h1 className="kk-page-title mb-0">{t('search.title')}</h1>
         {/* The search's own actions step aside while a selection is being made,
             as on the library: the selection bar below is then the only toolbar. */}
-        {!selection.active && (
+        {!selecting && (
           <div className="d-flex align-items-center gap-2 flex-wrap">
             {hasResults && <SlideshowStart scope={{ mode }} view={view} count={total} />}
             {/* Saved searches live here rather than in the navbar: they are a
@@ -136,12 +139,11 @@ export function SearchPage() {
             >
               {t('savedSearches.saveView')}
             </Button>
-            {hasResults && <SelectionStart bulk={bulk} />}
           </div>
         )}
       </div>
 
-      {selection.active && (
+      {selecting && (
         <SelectionBar count={selection.count} onCancel={selection.disable}>
           <BulkEditControl bulk={bulk} />
         </SelectionBar>
