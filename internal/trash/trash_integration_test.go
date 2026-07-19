@@ -215,6 +215,62 @@ func TestEmptyTrash_removesAllArchived(t *testing.T) {
 	}
 }
 
+// TestPurgeOlderThan_removesOnlyOlder confirms the admin age-bounded purge
+// deletes archived photos older than the cutoff (now - days) while leaving
+// more-recently archived photos and live photos untouched.
+func TestPurgeOlderThan_removesOnlyOlder(t *testing.T) {
+	env := newPurgeEnv(t)
+	now := time.Now()
+	old := now.Add(-200 * 24 * time.Hour) // ~200 days ago → older than a 100-day cutoff
+	recent := now.Add(-10 * 24 * time.Hour)
+
+	oldPhoto, oldOrig, oldThumb := env.seedPhoto(t, "old", &old)
+	recentPhoto, _, _ := env.seedPhoto(t, "recent", &recent)
+	livePhoto, _, _ := env.seedPhoto(t, "live", nil)
+
+	res, err := env.svc.PurgeOlderThan(t.Context(), 100, audit.Meta{})
+	if err != nil {
+		t.Fatalf("PurgeOlderThan: %v", err)
+	}
+	if res.Purged != 1 || res.Failed != 0 {
+		t.Fatalf("result = %+v, want {Purged:1 Failed:0}", res)
+	}
+	env.assertGone(t, oldPhoto, oldOrig, oldThumb)
+
+	if _, err := env.store.GetByUID(t.Context(), recentPhoto.UID); err != nil {
+		t.Errorf("recently archived photo (within the cutoff) was purged: %v", err)
+	}
+	if _, err := env.store.GetByUID(t.Context(), livePhoto.UID); err != nil {
+		t.Errorf("live photo was purged: %v", err)
+	}
+}
+
+// TestPurgeOlderThan_zeroDaysEmptiesTrash confirms days=0 purges every archived
+// photo (cutoff == now), matching the empty-trash behaviour, while leaving live
+// photos alone.
+func TestPurgeOlderThan_zeroDaysEmptiesTrash(t *testing.T) {
+	env := newPurgeEnv(t)
+	now := time.Now()
+	recent := now.Add(-time.Hour)
+
+	a, aOrig, aThumb := env.seedPhoto(t, "a", &recent)
+	b, bOrig, bThumb := env.seedPhoto(t, "b", &recent)
+	livePhoto, _, _ := env.seedPhoto(t, "live", nil)
+
+	res, err := env.svc.PurgeOlderThan(t.Context(), 0, audit.Meta{})
+	if err != nil {
+		t.Fatalf("PurgeOlderThan: %v", err)
+	}
+	if res.Purged != 2 || res.Failed != 0 {
+		t.Fatalf("result = %+v, want {Purged:2 Failed:0}", res)
+	}
+	env.assertGone(t, a, aOrig, aThumb)
+	env.assertGone(t, b, bOrig, bThumb)
+	if _, err := env.store.GetByUID(t.Context(), livePhoto.UID); err != nil {
+		t.Errorf("live photo was purged by PurgeOlderThan(0): %v", err)
+	}
+}
+
 // TestPurgePhoto_singleArchived confirms the manual single purge removes one
 // archived photo and rejects a live one with ErrNotArchived.
 func TestPurgePhoto_singleArchived(t *testing.T) {

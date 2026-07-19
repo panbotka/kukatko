@@ -934,7 +934,7 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("backup.schedule", "")
 	v.SetDefault("backup.retention", 7)
 
-	v.SetDefault("trash.retention_days", 30)
+	v.SetDefault("trash.retention_days", 365) // one year
 
 	v.SetDefault("duplicate.enabled", true)
 	v.SetDefault("duplicate.phash_max_diff", 8)

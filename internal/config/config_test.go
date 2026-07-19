@@ -79,7 +79,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"review.cache_ttl", cfg.Review.CacheTTL, 60 * time.Second},
 		{"review.max_labels", cfg.Review.MaxLabels, 200},
 		{"review.label_concurrency", cfg.Review.LabelConcurrency, 2},
-		{"trash.retention_days", cfg.Trash.RetentionDays, 30},
+		{"trash.retention_days", cfg.Trash.RetentionDays, 365},
 		{"duplicate.enabled", cfg.Duplicate.Enabled, true},
 		{"duplicate.phash_max_diff", cfg.Duplicate.PhashMaxDiff, 8},
 		{"duplicate.embedding_max_dist", cfg.Duplicate.EmbeddingMaxDist, 0.05},

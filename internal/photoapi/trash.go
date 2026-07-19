@@ -3,7 +3,9 @@ package photoapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -23,6 +25,10 @@ type Purger interface {
 	PurgePhoto(ctx context.Context, uid string, meta audit.Meta) error
 	// EmptyTrash permanently deletes every archived photo and reports the counts.
 	EmptyTrash(ctx context.Context, meta audit.Meta) (trash.Result, error)
+	// PurgeOlderThan permanently deletes every archived photo older than the given
+	// number of days (days == 0 purges the whole trash) and reports the counts,
+	// attributing each purge to the calling admin.
+	PurgeOlderThan(ctx context.Context, days int, meta audit.Meta) (trash.Result, error)
 }
 
 // trashInfo is the JSON body of the trash-info endpoint, carrying the retention
@@ -93,6 +99,52 @@ func (a *API) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
 	res, err := a.purger.EmptyTrash(r.Context(), purgeAuditMeta(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "emptying trash failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// parseDays parses the required days query parameter for the age-bounded purge:
+// it must be a non-negative integer. An empty, non-numeric or negative value is
+// rejected (the caller maps it to 400). days == 0 is valid and means "every
+// archived photo" (equivalent to emptying the trash).
+func parseDays(raw string) (int, error) {
+	if raw == "" {
+		return 0, errors.New("days is required")
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("days must be an integer, got %q", raw)
+	}
+	if days < 0 {
+		return 0, fmt.Errorf("days must be >= 0, got %d", days)
+	}
+	return days, nil
+}
+
+// handlePurgeOlder permanently deletes every archived photo whose archived_at is
+// older than the given number of days. It requires the explicit confirm=true
+// query parameter (400 otherwise) and a non-negative integer days parameter (400
+// otherwise); days=0 purges the whole trash. It returns the purged and failed
+// counts. Without a purge backend it answers 503, mirroring the other purge
+// endpoints. The purge is attributed in the audit trail to the calling admin.
+func (a *API) handlePurgeOlder(w http.ResponseWriter, r *http.Request) {
+	if a.purger == nil {
+		writeError(w, http.StatusServiceUnavailable, "trash purge is not available")
+		return
+	}
+	if !confirmed(r) {
+		writeError(w, http.StatusBadRequest, "confirmation required (confirm=true)")
+		return
+	}
+	days, err := parseDays(r.URL.Query().Get("days"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	res, err := a.purger.PurgeOlderThan(r.Context(), days, purgeAuditMeta(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "purging trash failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, res)

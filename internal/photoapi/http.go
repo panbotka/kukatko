@@ -198,11 +198,13 @@ func NewAPI(cfg Config) *API {
 //	GET    /favorites                 RequireAuth      current user's favorites
 //	GET    /trash/info                RequireAuth      retention window (countdown)
 //	POST   /trash/empty               RequireAdmin     permanent delete all (confirm)
+//	POST   /trash/purge-older         RequireAdmin     permanent delete older than N days (confirm)
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/search", a.handleSearch)
 	r.With(a.requireAuth).Get("/favorites", a.handleFavorites)
 	r.With(a.requireAuth).Get("/trash/info", a.handleTrashInfo)
 	r.With(a.requireAdmin).Post("/trash/empty", a.handleEmptyTrash)
+	r.With(a.requireAdmin).Post("/trash/purge-older", a.handlePurgeOlder)
 	r.Route("/photos", func(r chi.Router) {
 		r.With(a.requireDownload).Post("/download-zip", a.handleDownloadZip)
 		r.With(a.requireAuth).Get("/", a.handleList)

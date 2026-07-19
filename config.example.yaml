@@ -343,8 +343,10 @@ backup:
   retention: 7
 
 trash:
-  # Days a soft-deleted item is retained before permanent deletion.
-  retention_days: 30
+  # Days a soft-deleted item is retained before permanent deletion. Default is
+  # 365 (one year); a value <= 0 disables the scheduled retention purge (manual
+  # purge, empty-trash and the admin purge-older endpoint still work).
+  retention_days: 365
 
 duplicate:
   # Enable duplicate detection.

@@ -22,6 +22,10 @@ type fakePurger struct {
 	emptyRes   trash.Result
 	emptyErr   error
 	emptyCalls int
+	olderRes   trash.Result
+	olderErr   error
+	olderCalls int
+	olderDays  int
 }
 
 // PurgePhoto records the uid and returns the configured error.
@@ -36,12 +40,21 @@ func (f *fakePurger) EmptyTrash(_ context.Context, _ audit.Meta) (trash.Result, 
 	return f.emptyRes, f.emptyErr
 }
 
+// PurgeOlderThan records the days it was called with (so a test can assert the
+// parsed query parameter reached it) and returns the configured result/error.
+func (f *fakePurger) PurgeOlderThan(_ context.Context, days int, _ audit.Meta) (trash.Result, error) {
+	f.olderCalls++
+	f.olderDays = days
+	return f.olderRes, f.olderErr
+}
+
 // trashRouter mounts only the trash handlers (no auth middleware: the guards are
 // injected separately and unit tests exercise the handler logic directly).
 func trashRouter(api *API) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/trash/info", api.handleTrashInfo)
 	r.Post("/trash/empty", api.handleEmptyTrash)
+	r.Post("/trash/purge-older", api.handlePurgeOlder)
 	r.Post("/photos/{uid}/purge", api.handlePurge)
 	return r
 }
@@ -173,4 +186,101 @@ func TestHandleEmptyTrash(t *testing.T) {
 			t.Fatalf("status = %d, want 500", rec.Code)
 		}
 	})
+}
+
+func TestHandlePurgeOlder(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		purger     *fakePurger
+		url        string
+		wantStatus int
+		wantCalled bool
+		wantDays   int
+	}{
+		{name: "no backend", purger: nil, url: "/trash/purge-older?days=30&confirm=true", wantStatus: 503},
+		{
+			name:       "missing confirm does not purge",
+			purger:     &fakePurger{},
+			url:        "/trash/purge-older?days=30",
+			wantStatus: 400,
+		},
+		{
+			name:       "missing days",
+			purger:     &fakePurger{},
+			url:        "/trash/purge-older?confirm=true",
+			wantStatus: 400,
+		},
+		{
+			name:       "non-numeric days",
+			purger:     &fakePurger{},
+			url:        "/trash/purge-older?days=abc&confirm=true",
+			wantStatus: 400,
+		},
+		{
+			name:       "negative days",
+			purger:     &fakePurger{},
+			url:        "/trash/purge-older?days=-1&confirm=true",
+			wantStatus: 400,
+		},
+		{
+			name:       "internal error",
+			purger:     &fakePurger{olderErr: errors.New("boom")},
+			url:        "/trash/purge-older?days=30&confirm=true",
+			wantStatus: 500,
+			wantCalled: true,
+			wantDays:   30,
+		},
+		{
+			name:       "zero days allowed",
+			purger:     &fakePurger{olderRes: trash.Result{Purged: 5}},
+			url:        "/trash/purge-older?days=0&confirm=true",
+			wantStatus: 200,
+			wantCalled: true,
+			wantDays:   0,
+		},
+		{
+			name:       "success returns counts",
+			purger:     &fakePurger{olderRes: trash.Result{Purged: 3, Failed: 1}},
+			url:        "/trash/purge-older?days=180&confirm=true",
+			wantStatus: 200,
+			wantCalled: true,
+			wantDays:   180,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			api := &API{}
+			if tt.purger != nil {
+				api.purger = tt.purger
+			}
+			rec := httptest.NewRecorder()
+			trashRouter(api).ServeHTTP(rec, req(http.MethodPost, tt.url))
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if tt.purger == nil {
+				return
+			}
+			called := tt.purger.olderCalls > 0
+			if called != tt.wantCalled {
+				t.Errorf("PurgeOlderThan called = %v, want %v", called, tt.wantCalled)
+			}
+			if tt.wantCalled && tt.purger.olderDays != tt.wantDays {
+				t.Errorf("PurgeOlderThan days = %d, want %d", tt.purger.olderDays, tt.wantDays)
+			}
+			if tt.wantStatus == http.StatusOK {
+				var body trash.Result
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					t.Fatalf("decode: %v", err)
+				}
+				if body != tt.purger.olderRes {
+					t.Errorf("result = %+v, want %+v", body, tt.purger.olderRes)
+				}
+			}
+		})
+	}
 }

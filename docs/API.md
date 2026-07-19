@@ -190,7 +190,12 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   `POST /photos/{uid}/purge` (**admin** přes `RequireAdmin`, `?confirm=true` jinak 400, 404 chybí,
   409 fotka není archivovaná → 204) a `POST /trash/empty` (**admin** přes `RequireAdmin`,
   `?confirm=true` → `{purged,failed}`) trvale a nevratně mažou archivované fotky, takže jsou
-  zpřísněné z write na admin; archivace (vratné soft-delete) zůstává `RequireWrite` a
+  zpřísněné z write na admin; `POST /trash/purge-older` (**admin** přes `RequireAdmin`,
+  `?days=N&confirm=true`; `N` = celé číslo ≥ 0, jinak 400, chybějící `confirm` → 400, nil purger →
+  503) trvale maže každou fotku archivovanou déle než `now − N dní` **stejnou** purge cestou jako
+  empty-trash (`{purged,failed}`); `N=0` = celý koš (ekvivalent empty-trash). V audit logu je
+  odlišené přes `details.source=purge_older` a připsané volajícímu adminovi (ne systémovému aktoru
+  retence `source=retention`); archivace (vratné soft-delete) zůstává `RequireWrite` a
   `GET /trash/info` (přihlášený) vrací `{retention_days}` pro odpočet
   do auto-purge; seznam koše jede přes sdílené `GET /photos?archived=only`;
   **adresy médií v payloadu** (`internal/mediaurl`): každá vrácená fotka nese `thumb_url`
