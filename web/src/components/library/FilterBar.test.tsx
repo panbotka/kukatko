@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { CapabilitiesContext } from '../../capabilities/CapabilitiesContext'
 import { type LibraryFacets } from '../../hooks/useLibraryFacets'
 import i18n from '../../i18n'
 import { LIBRARY_DEFAULTS, type LibraryView } from '../../lib/libraryView'
@@ -23,13 +24,18 @@ function renderBar(
     facets?: LibraryFacets
     showFavorite?: boolean
     searchHref?: string
+    /** The `semantic_search` capability the bar reads; defaults to available. */
+    semanticSearch?: boolean
   } = {},
 ) {
+  const { semanticSearch = true, ...barProps } = props
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter>
-        <FilterBar view={view} onChange={onChange} total={0} {...props} />
-      </MemoryRouter>
+      <CapabilitiesContext.Provider value={{ semantic_search: semanticSearch }}>
+        <MemoryRouter>
+          <FilterBar view={view} onChange={onChange} total={0} {...barProps} />
+        </MemoryRouter>
+      </CapabilitiesContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -159,6 +165,32 @@ describe('FilterBar header', () => {
   it('omits the search link when the page does not offer one', () => {
     renderBar(LIBRARY_DEFAULTS, vi.fn())
     expect(screen.queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
+  })
+
+  it('hides the semantic-search link when the embeddings box is offline, keeping the filter help', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'sunset' }, vi.fn(), {
+      searchHref: '/search?q=sunset',
+      semanticSearch: false,
+    })
+
+    // The link that promises semantic search is gone — full-text still works,
+    // but there is no point advertising semantics while the box is unreachable.
+    expect(screen.queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
+    // …while the quick-filter help text (unrelated to embeddings) stays put.
+    expect(screen.getByText('Filters title and description.')).toBeInTheDocument()
+  })
+
+  it('shows the semantic-search link and the filter help when the box is reachable', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'sunset' }, vi.fn(), {
+      searchHref: '/search?q=sunset',
+      semanticSearch: true,
+    })
+
+    expect(screen.getByText('Filters title and description.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Full-text & semantic search/ })).toHaveAttribute(
+      'href',
+      '/search?q=sunset',
+    )
   })
 
   it('toggles the advanced panel open and closed', async () => {

@@ -258,9 +258,12 @@ zapiš sem.
   vybrané osoby), select je čistý „add-picker" (drží se placeholderu „libovolné", vybrané
   položky ze svých options vypustí, aby nešly přidat dvakrát), už vybraná alba/štítky/osoby visí jako
   odebratelné chipy (jeden na UID) níž.
-  Inline pole **„filtrovat dle názvu/popisu"** (`q`) zůstává rychlým zúžením mřížky; vedle něj
-  **zřetelný odkaz na `/search`** pro skutečný fulltext + sémantické hledání (`searchHref` nese
-  aktuální `q`) — režimy hledání se tu **nezdvojují**), `SearchableSelect`
+  Inline pole **„filtrovat dle názvu/popisu"** (`q`) zůstává rychlým zúžením mřížky; nápovědný text
+  „Filtruje název a popis." (popisuje `q`, s embeddingy nesouvisí) je **vždy vidět**, ale
+  **odkaz na `/search`** pro fulltext + sémantické hledání se ukáže **jen když je dostupné sémantické
+  hledání** — `FilterBar` čte `useCapabilities().semantic_search` a při offline embeddings boxu odkaz
+  skryje (fulltext funguje dál, ale jeho label slibuje sémantiku); `searchHref` nese aktuální `q`,
+  režimy hledání se tu **nezdvojují**), `SearchableSelect`
   (`components/library/`, jednovýběrový facet, do kterého se dá psát: v klidu ukazuje volbu,
   focus otevře celý seznam, psaní ho zúží **case- i diakritika-insensitive** přes `lib/text`
   `foldedIncludes` (`namesti` najde `Náměstí`, stejně jako backendový `immutable_unaccent`);
@@ -1116,7 +1119,13 @@ zapiš sem.
   strip s pickerem osoby a procentním prahem; statistiky včetně **`no_embedding`** hlášky);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`; `ProtectedRoute` =
-  `RequireAuth` + `RequireRole` + `RequireImport` route guardy), `hooks/` (`usePaginatedPhotos` = sdílený
+  `RequireAuth` + `RequireRole` + `RequireImport` route guardy),
+  `capabilities/` (`CapabilitiesContext`/`useCapabilities` + `CapabilitiesProvider` = instanční
+  feature-flagy `{semantic_search}` z `GET /api/v1/capabilities`; provider je uvnitř `AuthProvider`,
+  fetchuje při mountu + po 60 s + na `visibilitychange` (stejný vzor jako `useJobStats`), selhaný
+  fetch drží poslední stav; **na rozdíl od `useAuth` hook nehází** — kontext má bezpečný default
+  `{semantic_search:false}`, takže komponenta mimo provider jen skryje volitelnou nabídku místo pádu.
+  Čte ho `FilterBar` pro odkaz na sémantické hledání), `hooks/` (`usePaginatedPhotos` = sdílený
   paginovaný infinite-scroll loader nad libovolným `PageFetcher`: akumuluje stránky,
   `loadMore`/`retry`, reset+refetch **se skeletonem** při změně dotazu/`key`/`enabled`, ruší
   in-flight requesty a ignoruje stale odpovědi, vystavuje i `mode`/`degraded`; `enabled:false`
@@ -1500,7 +1509,8 @@ zapiš sem.
   `toLocaleDateString`/`toLocaleString` s **aktivním jazykem UI** `i18n.language`, ne výchozím
   jazykem prohlížeče; neparseovatelný vstup → původní string; používá PhotoTile/DuplicateGroupCard/
   MetadataPanel/Import/System pro datumy v cs/en formátu))),
-  `services/` (`health.ts`, `auth.ts` = login/logout/me/changePassword, typy
+  `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` nad `GET /api/v1/capabilities`
+  → `Capabilities{semantic_search}` (posílá session cookie, `credentials:'same-origin'`), `auth.ts` = login/logout/me/changePassword, typy
   `User`/`Role` (striktní žebřík `viewer < editor < admin < maintainer`)/`AuthSession`, `ApiError` se
   statusem, `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) a
   `canImport` (= maintainer; import je provozní schopnost) — vše přes `ROLE_RANK` zrcadlící backend
@@ -1820,7 +1830,8 @@ zapiš sem.
   můžou přepsat pro simulaci telefonu).
   Routing v `App.tsx`: tabulka rout žije v exportované `AppRoutes` (aby ji šlo v testech mountnout
   do `MemoryRouter` a ověřit samotné drátování — `App.test.tsx`), `App` ji jen obalí
-  `BrowserRouter`+`AuthProvider`. `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` a
+  `BrowserRouter`+`AuthProvider`+`CapabilitiesProvider` (kapabilit-provider je uvnitř auth-provideru,
+  protože `/capabilities` je za `RequireAuth`). `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` a
   immersivní `/photos/:uid` jsou pod `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru),
   zbytek pod `Layout`
   (**`/` = `LibraryPage`** — knihovna je úvodní stránka; `/library` → `LibraryRedirect`

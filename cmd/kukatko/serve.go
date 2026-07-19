@@ -25,6 +25,7 @@ import (
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/obs"
 	"github.com/panbotka/kukatko/internal/ppimport"
+	"github.com/panbotka/kukatko/internal/reachability"
 	"github.com/panbotka/kukatko/internal/server"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -94,12 +95,12 @@ func runServe(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	apis, backupSvc, err := appendOpsAPIs(cfg, db, authAPI, apis, mapsHealth)
+	apis, backupSvc, reachChecker, err := appendOpsAPIs(cfg, db, authAPI, apis, mapsHealth)
 	if err != nil {
 		return err
 	}
 
-	if err := startBackgroundServices(ctx, cfg, db, bg, backupSvc); err != nil {
+	if err := startBackgroundServices(ctx, cfg, db, bg, backupSvc, reachChecker); err != nil {
 		return err
 	}
 
@@ -118,10 +119,12 @@ func runServe(cmd *cobra.Command) error {
 // startBackgroundServices builds the optional Wake-on-LAN auto-wake service and
 // launches every background goroutine tied to ctx so they stop on shutdown: the
 // job worker, the trash retention purge, the auto-wake check loop (inert when
-// disabled), and — when configured — the scheduled S3 backup.
+// disabled), the embeddings-reachability probe loop (inert when no embedding URL
+// is configured) that backs GET /capabilities, and — when configured — the
+// scheduled S3 backup.
 func startBackgroundServices(
 	ctx context.Context, cfg *config.Config, db *database.DB,
-	bg backgroundServices, backupSvc *backup.Service,
+	bg backgroundServices, backupSvc *backup.Service, reachChecker *reachability.Checker,
 ) error {
 	wakeSvc, err := buildWakeService(cfg, db)
 	if err != nil {
@@ -130,6 +133,7 @@ func startBackgroundServices(
 	startWorker(ctx, bg.worker)
 	go bg.trash.RunPurge(ctx, trashPurgeInterval)
 	go wakeSvc.Run(ctx, wakeCheckInterval)
+	go reachChecker.Run(ctx, capabilitiesCheckInterval)
 	if backupSvc != nil {
 		go backupSvc.RunSchedule(ctx, cfg.Backup.Schedule)
 	}
@@ -190,32 +194,40 @@ func setupAuth(ctx context.Context, cmd *cobra.Command, cfg *config.Config, db *
 	return authAPI, nil
 }
 
-// appendOpsAPIs mounts the always-on backup and restore APIs onto apis. The
-// backup API self-reports "not configured" and the restore service is nil (503)
-// when no destination is set; the returned backup service drives the scheduler
-// (nil when not configured).
+// appendOpsAPIs mounts the always-on backup, restore, system-status and
+// capabilities APIs onto apis. The backup API self-reports "not configured" and
+// the restore service is nil (503) when no destination is set; the returned
+// backup service drives the scheduler (nil when not configured). It also builds
+// the embeddings-reachability checker that both backs GET /capabilities and the
+// caller starts as a background loop, returning it for that purpose.
 func appendOpsAPIs(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, apis []server.Option,
 	mapsHealth *mapy.Health,
-) ([]server.Option, *backup.Service, error) {
+) ([]server.Option, *backup.Service, *reachability.Checker, error) {
 	backupSvc, err := buildBackupService(cfg)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	apis = append(apis, server.WithAPI(buildBackupAPI(backupSvc, authAPI).RegisterRoutes))
 
 	restoreAPI, err := buildRestoreAPI(cfg, db, authAPI)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	apis = append(apis, server.WithAPI(restoreAPI.RegisterRoutes))
 
 	systemAPI, err := buildSystemAPI(cfg, db, authAPI, backupSvc, mapsHealth)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	apis = append(apis, server.WithAPI(systemAPI.RegisterRoutes))
-	return apis, backupSvc, nil
+
+	reachChecker, err := buildReachabilityChecker(cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	apis = append(apis, server.WithAPI(buildCapabilitiesAPI(reachChecker, authAPI).RegisterRoutes))
+	return apis, backupSvc, reachChecker, nil
 }
 
 // observabilityOptions builds the server options that install observability: the

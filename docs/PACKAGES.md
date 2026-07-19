@@ -623,6 +623,17 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   plánovaná smyčka (hned + každý interval) ve vlastní goroutině — **nikdy neblokuje zpracování
   jobů**; chyby se jen logují, nikdy nevrací; defaulty `MinQueue` 1 / `Cooldown` 5 min /
   `GracePeriod` 30 s; tunables v `embedding.wake.*` configu),
+  `internal/reachability/`
+  (malý **background checker dosažitelnosti** embeddings sidecaru, který cacheuje výsledek v
+  `atomic.Bool`, aby ho HTTP handler mohl číst bez živého probu — box je často offline, takže probe
+  na každý request by byl pomalý; struktura zrcadlí `internal/wake` ticker. `HealthChecker`
+  (`Healthy(ctx)` — splňuje `embedding.Client`); `New(Config{Health,Enabled,Logger}) → *Checker`;
+  `Reachable() bool` (nikdy neblokuje, false před prvním probem i pro disabled checker); `Tick(ctx)`
+  = jeden probe + uložení výsledku (loguje jen změnu stavu, no-op pro disabled, takže nikdy nesáhne
+  na nil Health); `Run(ctx,interval)` = hned + každý interval ve vlastní goroutině, disabled → hned
+  vrátí. **Disabled** = `Enabled:false` (staví se když `embedding.url` je prázdné) → vždy
+  unreachable, žádný probe. Používá ho `internal/capabilitiesapi` jako zdroj `semantic_search`;
+  spouští `cmd/kukatko/capabilities.go` po 60 s vedle ostatních background služeb),
   `internal/jobsapi/`
   (maintainer-only HTTP API nad frontou: `NewAPI(Config{Store,RequireMaintainer})`+`RegisterRoutes`
   mountuje `/jobs`; `GET /jobs/stats` (counts by_state/by_type+total), `GET /jobs`
@@ -1891,7 +1902,14 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   `GET /system/status` za `RequireMaintainer` (snapshot; collect selže → 500); mountuje se vždy
   (`buildSystemAPI` v `cmd/kukatko/system.go`, staví vlastní bezstavový embeddings klient jen pro
   Healthy probe, sdílí pool pro job/import stores, backup služba předaná nil-safe; mountuje se
-  v `appendOpsAPIs` vedle backup/restore)), `internal/query/`
+  v `appendOpsAPIs` vedle backup/restore)), `internal/capabilitiesapi/`
+  (all-authenticated HTTP API instančních feature-flagů: rozhraní `Reachability` (`Reachable() bool`,
+  splňuje `*reachability.Checker`, fakeovatelné); `NewAPI(Config{Embeddings,RequireAuth})`+
+  `RegisterRoutes` mountuje `GET /capabilities` za `RequireAuth` → `{semantic_search:bool}` čtený
+  z cache-ovaného flagu (nikdy živý probe, takže levné a smí ho číst každý přihlášený — na rozdíl od
+  maintainer-only `/system/status`); tvar záměrně otevřený pro budoucí flagy; mountuje se **vždy**
+  (`buildCapabilitiesAPI`+`buildReachabilityChecker` v `cmd/kukatko/capabilities.go`)),
+  `internal/query/`
   (čistý **parser vyhledávacího jazyka** `q=` — volný text + `klíč:hodnota` filtry v jednom stringu
   (`dovolená camera:"Canon EOS R6" iso:100-400 faces:2`), žádné I/O: `Parse(input) Query` **nikdy
   neselže** — tokenizer respektuje uvozovky a `\` escapy, operátory `|` (OR mezi alternativami
