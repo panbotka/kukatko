@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth, RequireImport, RequireRole } from './auth/ProtectedRoute'
+import { CapabilitiesProvider } from './capabilities/CapabilitiesProvider'
 import { Layout } from './components/Layout'
 import { ToastProvider } from './components/toast/ToastProvider'
 import { AccountPage } from './pages/AccountPage'
@@ -128,13 +129,17 @@ export function AppRoutes() {
   )
 }
 
-/** Root component: provides auth state, then wires client-side routing. */
+/** Root component: provides auth and capability state, then wires client-side routing. */
 export function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
         <AuthProvider>
-          <AppRoutes />
+          {/* Capabilities are only meaningful once authenticated (the endpoint is
+              behind auth), so the provider sits inside AuthProvider. */}
+          <CapabilitiesProvider>
+            <AppRoutes />
+          </CapabilitiesProvider>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

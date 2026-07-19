@@ -10,6 +10,7 @@ import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { useCapabilities } from '../../capabilities/CapabilitiesContext'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { type LibraryFacets } from '../../hooks/useLibraryFacets'
 import {
@@ -118,6 +119,9 @@ export function FilterBar<T extends LibraryView>({
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const narrow = useIsNarrowViewport()
+  // Only advertise semantic search when the embeddings box is reachable; the
+  // plain quick-filter help below is unrelated and stays regardless.
+  const { semantic_search: semanticSearch } = useCapabilities()
 
   const push = (patch: Partial<LibraryView>) => {
     onChange(patch as Partial<T>)
@@ -216,13 +220,19 @@ export function FilterBar<T extends LibraryView>({
 
       {/* The hint sits below the alignment row, not inside the search field's flex
           item: kept a sibling of that item it would stretch the search column and
-          the row's centre alignment would push the sort selector down. */}
+          the row's centre alignment would push the sort selector down. The plain
+          help text describes the quick filter and always shows; the link to
+          real full-text/semantic search only appears when semantic search is
+          actually available (the embeddings box is reachable), since full-text
+          alone already works and the link's own label promises semantics. */}
       {showSearch && searchHref !== undefined && (
         <div className="form-text mt-1">
           {t('library.filters.searchHint')}{' '}
-          <Link to={searchHref} className="text-decoration-none">
-            {t('library.filters.fullSearchLink')}
-          </Link>
+          {semanticSearch && (
+            <Link to={searchHref} className="text-decoration-none">
+              {t('library.filters.fullSearchLink')}
+            </Link>
+          )}
         </div>
       )}
 

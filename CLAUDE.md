@@ -56,6 +56,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/bulkapi` — `POST /photos/bulk`
 - `internal/candidates` — "find a person among untagged photos": per-exemplar kNN over unassigned faces + voting, rejection/negative-exemplar/size filters, action classification; read-only
 - `internal/candidatesapi` — `POST /subjects/{uid}/candidates` (RequireWrite)
+- `internal/capabilitiesapi` — all-authenticated `GET /capabilities` (instance feature flags, e.g. `semantic_search`)
 - `internal/cluster` — auto-clustering of unassigned faces (union-find over HNSW neighbors)
 - `internal/clusterapi` — `/faces/clusters` (list, assign, remove-face)
 - `internal/config` — typed configuration, Viper, `Load()`
@@ -111,6 +112,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/psimport` — incremental **idempotent** direct migration from photo-sorter
 - `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
+- `internal/reachability` — cached background probe of the embeddings sidecar (atomic flag for `/capabilities`)
 - `internal/restoreapi` — maintainer-only **read-only** `/restore/*` (destructive restore only via CLI)
 - `internal/review` — the review game: one-question-at-a-time queue of face/label candidates from the uncertainty band; answers reuse existing write paths
 - `internal/reviewapi` — `GET /review/queue`, `POST /review/answer` (RequireWrite)

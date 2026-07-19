@@ -689,6 +689,14 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   pro fronту/importy) → 500; nedostupná DB/úložiště inline best-effort. Mountuje se **vždy**
   (`buildSystemAPI` v `cmd/kukatko/system.go`). Admin UI **Systém** (`/system`, `SystemStatusPage`)
   polluje po 5 s a nabízí rychlé akce (requeue dead-letter, trigger backup, odkazy na import/údržbu).
+- **Capabilities API (`/api/v1`, `internal/capabilitiesapi`, přihlášený přes `RequireAuth`):**
+  `GET /capabilities` → `{semantic_search:bool}` — malý objekt instančních feature-flagů, který smí
+  číst **každý přihlášený** (na rozdíl od maintainer-only `/system/status`). `semantic_search` je
+  **cache-ovaný** stav dosažitelnosti embeddings sidecaru (ne živý probe): plní ho background loop
+  `internal/reachability` (probe po 60 s, `cmd/kukatko/capabilities.go`); když `embedding.url` není
+  nastavené, je vždy `false`. Tvar je **záměrně otevřený** pro budoucí flagy (např. maps-configured).
+  Frontend (`CapabilitiesProvider`) ho polluje a podle něj skrývá odkaz na sémantické hledání ve
+  `FilterBar`, když je box offline (fulltext funguje dál). Mountuje se **vždy**.
 
 ## Vyhledávací jazyk (q=)
 

@@ -544,6 +544,15 @@ které se ztratí při restartu).
   volitelně raw Ethernet rámec na `embedding.wake.interface` (vyžaduje CAP_NET_RAW). **Defaultně
   vypnuto** (`embedding.wake.enabled=false`), plně inertní; ruční zapnutí boxu stačí. Uspávání
   boxu je mimo rozsah.
+- **Dosažitelnost embeddings sidecaru pro UI (`internal/reachability`):** malá background smyčka
+  (stejná struktura jako auto-wake, `capabilitiesCheckInterval` = 1 min) probne `embedding.Client.Healthy`
+  a **cacheuje** výsledek v `atomic.Bool`, aby ho HTTP handler přečetl bez živého probu — box je
+  často offline, takže probe na každý request by byl pomalý. Flag vystavuje all-authenticated
+  `GET /api/v1/capabilities` (`internal/capabilitiesapi`, `{semantic_search}`), který frontend polluje,
+  aby ukázal/skryl nabídku sémantického hledání podle toho, jestli je box online. Je **čistě
+  prezentační**: vyhledávání degraduje na fulltext samo (`degraded=true`), takže bezpečný default
+  „nedostupné" jen skryje nabídku, nikdy nerozbije tok. Když `embedding.url` není nastavené, smyčka
+  je inertní a flag je vždy `false`.
 
 ### 8.1 Metadatové sidecary — kurátorská data nezávislá na databázi
 
