@@ -35,6 +35,8 @@ vi.mock('../services/photos', async (importOriginal) => {
     favoritePhoto: vi.fn(),
     fetchPhotos: vi.fn(),
     searchPhotos: vi.fn(),
+    archivePhoto: vi.fn(),
+    unarchivePhoto: vi.fn(),
   }
 })
 
@@ -56,8 +58,17 @@ vi.mock('../services/people', async (importOriginal) => {
   return { ...actual, fetchFaces: vi.fn(), assignFace: vi.fn() }
 })
 
-const { fetchPhoto, fetchEdit, saveEdit, updatePhoto, favoritePhoto, fetchPhotos, searchPhotos } =
-  await import('../services/photos')
+const {
+  fetchPhoto,
+  fetchEdit,
+  saveEdit,
+  updatePhoto,
+  favoritePhoto,
+  fetchPhotos,
+  searchPhotos,
+  archivePhoto,
+  unarchivePhoto,
+} = await import('../services/photos')
 const { fetchAlbums, fetchLabels, addAlbumPhotos, removeAlbumPhotos, attachLabel, detachLabel } =
   await import('../services/organize')
 const { fetchFaces, assignFace } = await import('../services/people')
@@ -71,6 +82,8 @@ const updatePhotoMock = vi.mocked(updatePhoto)
 const favoritePhotoMock = vi.mocked(favoritePhoto)
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const searchPhotosMock = vi.mocked(searchPhotos)
+const archivePhotoMock = vi.mocked(archivePhoto)
+const unarchivePhotoMock = vi.mocked(unarchivePhoto)
 const fetchAlbumsMock = vi.mocked(fetchAlbums)
 const fetchLabelsMock = vi.mocked(fetchLabels)
 const addAlbumPhotosMock = vi.mocked(addAlbumPhotos)
@@ -246,6 +259,8 @@ beforeEach(async () => {
   attachLabelMock.mockResolvedValue(undefined)
   detachLabelMock.mockResolvedValue(undefined)
   favoritePhotoMock.mockResolvedValue(undefined)
+  archivePhotoMock.mockResolvedValue(undefined)
+  unarchivePhotoMock.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -282,6 +297,49 @@ describe('PhotoDetailPage — immersive viewer', () => {
     expect(screen.getByRole('button', { name: 'Thumbs up' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
+  })
+
+  describe('archive control', () => {
+    it('archives the open photo and swaps the control to Restore', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      // An editor sees Archive; clicking it calls the archive service for this
+      // photo and, on success, keeps the user on the page with the control now
+      // offering Restore (the photo is in the trash).
+      await user.click(screen.getByRole('button', { name: 'Archive' }))
+      await waitFor(() => {
+        expect(archivePhotoMock).toHaveBeenCalledWith('b')
+      })
+      expect(await screen.findByRole('button', { name: 'Restore' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+    })
+
+    it('hides the archive control from a viewer', async () => {
+      // Archiving is an editor+ action; a viewer gets the read-only viewer.
+      renderPage(false)
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument()
+    })
+
+    it('shows Restore for an already-archived photo and unarchives on click', async () => {
+      // Opened from the Trash page: the photo arrives archived, so the same
+      // control leads with Restore and calls unarchive, swapping back to Archive.
+      const user = userEvent.setup()
+      fetchPhotoMock.mockResolvedValue(photo({ archived_at: '2026-01-01T00:00:00Z' }))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Restore' }))
+      await waitFor(() => {
+        expect(unarchivePhotoMock).toHaveBeenCalledWith('b')
+      })
+      expect(await screen.findByRole('button', { name: 'Archive' })).toBeInTheDocument()
+    })
   })
 
   describe('stage geometry', () => {
