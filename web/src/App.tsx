@@ -15,6 +15,7 @@ import { DuplicatesPage } from './pages/DuplicatesPage'
 import { ExpandPage } from './pages/ExpandPage'
 import { FacesPage } from './pages/FacesPage'
 import { FavoritesPage } from './pages/FavoritesPage'
+import { HelpPage } from './pages/HelpPage'
 import { ImportPage } from './pages/ImportPage'
 import { LabelDetailPage } from './pages/LabelDetailPage'
 import { LabelsPage } from './pages/LabelsPage'
@@ -122,6 +123,8 @@ export function AppRoutes() {
             <Route path="/audit/reviews" element={<ReviewDecisionsPage />} />
           </Route>
           <Route path="/account" element={<AccountPage />} />
+          {/* End-user help: no role guard — visible to any authenticated user. */}
+          <Route path="/help" element={<HelpPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>

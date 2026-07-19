@@ -242,6 +242,20 @@ describe('Layout navbar', () => {
     expect(screen.getByRole('button', { name: 'Browse' })).toHaveClass('active')
   })
 
+  it('offers a Help item in the user menu, linking to the help page', async () => {
+    const user = userEvent.setup()
+    renderLayout(auth())
+
+    // The user menu is a dropdown labelled by the signed-in display name.
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+
+    // Help sits alongside the account item (above the sign-out divider).
+    expect(screen.getByRole('link', { name: 'My account' })).toBeInTheDocument()
+    const help = screen.getByRole('link', { name: 'Help' })
+    expect(help).toHaveAttribute('href', '/help')
+    expect(help).toHaveAttribute('title', 'Show help')
+  })
+
   it('renders the global footer below the routed content', () => {
     renderLayout(auth())
     // Every page under the layout shell gets the operator/source-code footer.
