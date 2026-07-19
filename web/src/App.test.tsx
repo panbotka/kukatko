@@ -93,6 +93,13 @@ describe('routing', () => {
     expect(fetchPhotosMock).toHaveBeenCalled()
   })
 
+  it('renders the help page at /help for any authenticated user', async () => {
+    // The help route carries no role guard, so a plain viewer reaches it.
+    renderRoutes(['/help'])
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Help' })).toBeInTheDocument()
+  })
+
   it('redirects /library?year=2024 to /?year=2024, preserving the query', async () => {
     renderRoutes(['/library?year=2024'])
 

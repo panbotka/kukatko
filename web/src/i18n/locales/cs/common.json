@@ -43,6 +43,7 @@
     "recognition": "Rozpoznávání",
     "duplicates": "Duplikáty",
     "account": "Můj účet",
+    "help": "Nápověda",
     "logout": "Odhlásit se",
     "trash": "Koš",
     "system": "Systém",
@@ -72,6 +73,7 @@
       "users": "Spravovat uživatelské účty",
       "audit": "Zobrazit auditní log",
       "account": "Spravovat vlastní účet",
+      "help": "Zobrazit nápovědu",
       "logout": "Odhlásit se z Kukátka",
       "expand": "Rozšířit album nebo štítek o podobné fotky",
       "review": "Projít návrhy jeden po druhém",
@@ -82,6 +84,69 @@
     "review": "Třídění",
     "outliers": "Možné chyby",
     "leaderboard": "Žebříček"
+  },
+  "help": {
+    "title": "Nápověda",
+    "intro": "Kukátko je vaše fotogalerie – místo, kde svoje fotky a videa najdete, uspořádáte a znovu objevíte. Níže je stručný přehled toho, co aplikace umí a jak jednotlivé funkce fungují. Co přesně můžete dělat, závisí na vaší roli (viz sekce Uživatelské role).",
+    "tocTitle": "Obsah",
+    "sections": {
+      "browsing": {
+        "title": "Procházení fotek",
+        "body": "Úvodní stránka je vaše knihovna – všechny fotky seřazené od nejnovějších, s nekonečným posouváním. U filtrů si nastavíte, kolik dlaždic se vejde na řádek (ovladač „Dlaždic na řádek“), takže si zobrazení přizpůsobíte od velkých náhledů po hustou mřížku. Kliknutím na fotku ji otevřete přes celou obrazovku, kde uvidíte podrobnosti a další akce.\nStav prohlížení – filtry, řazení i pozici – si aplikace pamatuje v adrese stránky, takže tlačítko Zpět vždy funguje a odkaz na aktuální pohled můžete sdílet."
+      },
+      "search": {
+        "title": "Hledání",
+        "body": "Rychlý filtr nad knihovnou prohledává názvy a popisy fotek – hodí se, když víte, jak je fotka pojmenovaná. Úplné hledání (přes lištu hledání nahoře nebo klávesu „/“) navíc umí vyhledávat podle obsahu: napíšete, co má být na fotce, a Kukátko najde vizuálně odpovídající snímky, i když u nich není nic napsané.\nHledání podle obsahu závisí na AI službě. Když je zrovna nedostupná, běžné hledání podle názvu a popisu funguje dál."
+      },
+      "albums": {
+        "title": "Alba",
+        "body": "Alba slouží k ručnímu seskupení fotek, které patří k sobě – výlet, oslava, jeden rok. Fotku přidáte do alba z jejího detailu nebo hromadně z výběru v knihovně. Funkce „Rozšířit“ pak k albu dohledá další podobné fotky z celé knihovny, takže na nic nezapomenete. Alba spravují editoři."
+      },
+      "labels": {
+        "title": "Štítky",
+        "body": "Štítky (tagy) popisují, co na fotce je – „západ slunce“, „pes“, „rodina“. Jedna fotka jich může mít víc a slouží k rychlému filtrování a hledání. Přidávání a správu štítků zvládnou editoři; i u štítků funguje „Rozšířit“, které dohledá další fotky, kam by se štítek hodil."
+      },
+      "favorites": {
+        "title": "Oblíbené a hodnocení",
+        "body": "Srdíčko na fotce ji přidá mezi vaše oblíbené, hvězdičkami jí dáte hodnocení. Oblíbené i hodnocení jsou vaše osobní – každý má vlastní a navzájem se nevidí ani neovlivňují. V knihovně si pak snadno zobrazíte jen to, co jste si sami označili."
+      },
+      "people": {
+        "title": "Lidé a obličeje",
+        "body": "Kukátko samo najde obličeje na fotkách. Obličej přiřadíte k osobě a od té chvíle aplikace navrhuje, kde všude by ještě mohla být („tato osoba tu možná také je“) podle vizuální podobnosti – jen potvrzujete návrhy, nehledáte ručně.\nTřídění je hra na jednu otázku: aplikace se ptá „Je na fotce Jana?“ a vy odpovíte Ano, Ne, nebo Nevím. Takhle projdete i velkou hromadu rychle a bez přemýšlení. V žebříčku vidíte, kdo vytřídil nejvíc – za každé Ano i Ne si připíšete bod.\nKdyž se něco splete, snadno to opravíte: obličej přeřadíte k jiné osobě nebo přiřazení zrušíte. Sekce „Možné chyby“ upozorní na obličeje, které do dané osoby nejspíš nepatří."
+      },
+      "duplicates": {
+        "title": "Duplikáty",
+        "body": "Kukátko umí najít téměř shodné fotky – stejný záběr nahraný víckrát nebo drobné varianty. Skupinu duplikátů si porovnáte vedle sebe a sloučíte: jeden snímek zůstane a ostatní se uklidí, přičemž alba, štítky i přiřazené osoby se přenesou na ten ponechaný. Slučování provádějí editoři."
+      },
+      "stacks": {
+        "title": "Varianty jednoho snímku",
+        "body": "Stoh seskupí varianty téhož záběru – například RAW a JPEG z jednoho stisku spouště nebo upravenou verzi vedle originálu – pod jednu fotku. V knihovně tak nevidíte pětkrát skoro totéž; varianty zůstanou pohromadě a jednu z nich určíte jako hlavní. Nic se nemaže, jen se to seskupí."
+      },
+      "map": {
+        "title": "Mapa a místa",
+        "body": "Fotky s údajem o poloze se zobrazí na mapě, takže vidíte, kde jste je pořídili. V sekci Místa jsou pak seskupené podle zemí a měst. U některých fotek Kukátko polohu odhadne z jiných snímků pořízených poblíž ve stejnou dobu – takový údaj je vždy označený jako odhad."
+      },
+      "deleting": {
+        "title": "Mazání a koš",
+        "body": "Mazání má dva stupně. Archivace je vratná – fotka se přesune do koše a kdykoli ji odtud vrátíte. Trvalé smazání fotku odstraní nadobro. Archivované fotky se navíc po uplynutí retenční doby z koše automaticky smažou, takže se koš sám udržuje.\nTrvalé mazání a vysypání koše je vyhrazené správcům (adminům)."
+      },
+      "import": {
+        "title": "Import knihovny",
+        "body": "Fotky do Kukátka přicházejí importem ze stávající knihovny. Import je přírůstkový a nedestruktivní – přidává jen nové položky a s originály nijak nehýbe. Spouštějí ho správci systému (maintaineři)."
+      },
+      "roles": {
+        "title": "Uživatelské role",
+        "body": "Co v Kukátku můžete dělat, závisí na vaší roli. Role tvoří žebříček – každá vyšší umí všechno, co ta nižší, a něco navíc:",
+        "viewer": "Prohlíží fotky, alba, štítky, mapu i žebříček. Nic nemění.",
+        "editor": "Navíc upravuje fotky a jejich údaje, třídí obličeje a spravuje alba i štítky.",
+        "admin": "Navíc spravuje uživatele, vidí auditní log a může trvale mazat.",
+        "maintainer": "Navíc spouští importy a údržbu, sleduje stav systému a spravuje zálohy."
+      },
+      "account": {
+        "title": "Váš účet",
+        "body": "V sekci Můj účet (v menu vpravo nahoře pod vaším jménem) změníte heslo, přepnete jazyk aplikace a uvidíte svoji roli. Je to i místo, kde zjistíte, jestli aplikace běží v pořádku."
+      }
+    }
   },
   "leaderboard": {
     "title": "Žebříček",

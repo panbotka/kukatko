@@ -6,7 +6,8 @@ zapiš sem.
 
 <!-- BODY BEGIN -->
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
-  (`Layout` = navbar shell s user-menu/logout + role-gated nav s **viditelnou hierarchií podle toho,
+  (`Layout` = navbar shell s user-menu (Můj účet, **Nápověda** `/help`, Odhlásit se) + role-gated
+  nav s **viditelnou hierarchií podle toho,
   jak často položku běžný člověk používá**: každodenní smyčka (procházení, třídění, přidání fotek) je
   hlasitá a hned, admin/power-user nářadí je přítomné, ale tišší. Vede **Knihovna** `/` (= úvodní
   stránka; `NavLink` má `end`, jinak by se rozsvítila na každé routě), **Alba** `/albums` a **Štítky**
@@ -409,6 +410,12 @@ zapiš sem.
   (`GET /healthz` badge + verze, bez commit hashe) v malém ztlumeném řádku dole — status i jazyk
   sem přišly odjinud (z úvodní stránky, resp. z navbaru): patří tam, kde je uživatel hledá, ne
   před fotky ani do prime místa v liště,
+  `HelpPage` = **uživatelská nápověda** (routa `/help`, **bez role-gate** — vidí ji každý přihlášený;
+  odkaz je v user-menu pod jménem, položka „Nápověda" s ikonou `question-circle`): čtecí sloupec
+  s krátkým **obsahem** nahoře a `Accordion` (rozbalovací sekce, defaultně otevřené), který prostou
+  řečí vysvětlí procházení, hledání, alba, štítky, oblíbené/hodnocení, lidi a obličeje, duplikáty,
+  varianty snímku (stohy), mapu a místa, mazání+koš, import a **role** (co která role smí). Texty
+  v novém top-level namespace `help.*` (cs/en); první uživatel `Accordion` v appce,
   `LibraryPage` = hlavní foto-knihovna **a zároveň úvodní stránka aplikace** (routa `/`):
   `FilterBar` nad virtualizovanou nekonečně-scrollující
   mřížkou, loading/empty/error stavy, celý pohled (filtry+řazení) v URL, srdíčka
@@ -1876,7 +1883,7 @@ zapiš sem.
   (`replace` redirect na `/` se zachovaným query stringem),
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/people`,
-  `/people/:uid`, `/account`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` a
+  `/people/:uid`, `/account`, `/help`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` a
   `/duplicates` navíc pod `RequireRole role="editor"` = write-only (a `/duplicates/compare` tamtéž,
   ale **mimo `Layout`** — fullscreen jako `/review`), `/import` pod `RequireImport` (= maintainer,
   `canImport`), `/maintenance` a `/system` pod `RequireRole role="maintainer"` = provoz (jen

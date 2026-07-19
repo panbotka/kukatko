@@ -43,6 +43,7 @@
     "recognition": "Recognition",
     "duplicates": "Duplicates",
     "account": "My account",
+    "help": "Help",
     "logout": "Sign out",
     "trash": "Trash",
     "system": "System",
@@ -72,6 +73,7 @@
       "users": "Manage user accounts",
       "audit": "View the audit log",
       "account": "Manage your own account",
+      "help": "Show help",
       "logout": "Sign out of Kukátko",
       "expand": "Grow an album or a label with similar photos",
       "review": "Go through the suggestions one at a time",
@@ -82,6 +84,69 @@
     "review": "Review",
     "outliers": "Possible mistakes",
     "leaderboard": "Leaderboard"
+  },
+  "help": {
+    "title": "Help",
+    "intro": "Kukátko is your photo gallery – a place to find, organise and rediscover your photos and videos. Below is a short tour of what the app does and how each feature behaves. What exactly you can do depends on your role (see the User roles section).",
+    "tocTitle": "Contents",
+    "sections": {
+      "browsing": {
+        "title": "Browsing photos",
+        "body": "The home page is your library – every photo newest-first, with endless scrolling. In the filters you choose how many tiles fit on a row (the “Tiles per row” control), so you can go from large previews to a dense grid. Click a photo to open it full-screen, where you'll see its details and more actions.\nThe app remembers your browsing state – filters, sorting and position – in the page address, so the Back button always works and you can share a link to the current view."
+      },
+      "search": {
+        "title": "Search",
+        "body": "The quick filter above the library searches photo titles and descriptions – handy when you know what a photo is called. Full search (from the search bar at the top or the “/” key) can also search by content: type what should be in the photo and Kukátko finds visually matching shots, even when nothing is written about them.\nSearch by content depends on the AI service. When it happens to be offline, ordinary search by title and description keeps working."
+      },
+      "albums": {
+        "title": "Albums",
+        "body": "Albums group photos that belong together by hand – a trip, a party, a year. Add a photo to an album from its detail view or in bulk from a selection in the library. The “Expand” tool then finds more similar photos across the whole library, so nothing gets left out. Albums are managed by editors."
+      },
+      "labels": {
+        "title": "Labels",
+        "body": "Labels (tags) describe what's in a photo – “sunset”, “dog”, “family”. A photo can have several, and they make filtering and searching quick. Adding and managing labels is for editors; labels also support “Expand”, which finds more photos a label would suit."
+      },
+      "favorites": {
+        "title": "Favourites & ratings",
+        "body": "The heart on a photo adds it to your favourites, and the stars give it a rating. Favourites and ratings are personal – everyone has their own, and they don't see or affect each other. You can then easily show just what you marked yourself."
+      },
+      "people": {
+        "title": "People & faces",
+        "body": "Kukátko finds faces in your photos on its own. Assign a face to a person and from then on the app suggests where else they might appear (“this person may also be here”) by visual similarity – you just confirm suggestions instead of searching by hand.\nSorting is a one-question game: the app asks “Is this Jane?” and you answer Yes, No, or Not sure. That way you get through a big pile fast and without overthinking. The leaderboard shows who sorted the most – every Yes and No earns you a point.\nWhen something goes wrong it's easy to fix: reassign a face to a different person or remove the assignment. The “Possible mistakes” section flags faces that probably don't belong to a given person."
+      },
+      "duplicates": {
+        "title": "Duplicates",
+        "body": "Kukátko can find near-identical photos – the same shot uploaded more than once, or small variations. You compare a group of duplicates side by side and merge them: one photo stays and the rest are tidied away, with albums, labels and assigned people carried over to the one you keep. Merging is done by editors."
+      },
+      "stacks": {
+        "title": "Variants of one shot",
+        "body": "A stack groups variants of the same shot – for example a RAW and a JPEG from one press of the shutter, or an edited version next to the original – under a single photo. So you don't see almost the same thing five times in the library; the variants stay together and you pick one as the main one. Nothing is deleted, it is only grouped."
+      },
+      "map": {
+        "title": "Map & places",
+        "body": "Photos with location data appear on a map, so you can see where you took them. The Places section then groups them by country and city. For some photos Kukátko estimates the location from other shots taken nearby at the same time – such a value is always marked as an estimate."
+      },
+      "deleting": {
+        "title": "Deleting & the trash",
+        "body": "Deleting has two steps. Archiving is reversible – the photo moves to the trash and you can restore it any time. Permanent deletion removes the photo for good. Archived photos are also removed from the trash automatically once the retention period passes, so the trash keeps itself tidy.\nPermanent deletion and emptying the trash are reserved for admins."
+      },
+      "import": {
+        "title": "Importing the library",
+        "body": "Photos come into Kukátko by importing from your existing library. The import is incremental and non-destructive – it only adds new items and never touches the originals. It is run by maintainers."
+      },
+      "roles": {
+        "title": "User roles",
+        "body": "What you can do in Kukátko depends on your role. Roles form a ladder – each higher one can do everything the one below can, plus more:",
+        "viewer": "Views photos, albums, labels, the map and the leaderboard. Changes nothing.",
+        "editor": "Additionally edits photos and their details, sorts faces, and manages albums and labels.",
+        "admin": "Additionally manages users, sees the audit log, and can delete permanently.",
+        "maintainer": "Additionally runs imports and maintenance, watches system status, and manages backups."
+      },
+      "account": {
+        "title": "Your account",
+        "body": "In My account (in the menu at the top right under your name) you change your password, switch the app language, and see your role. It is also where you can check whether the app is running fine."
+      }
+    }
   },
   "leaderboard": {
     "title": "Leaderboard",

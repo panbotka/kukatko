@@ -354,6 +354,15 @@ export function Layout() {
                     <Icon name="person-circle" />
                     {t('nav.account')}
                   </NavDropdown.Item>
+                  <NavDropdown.Item
+                    as={Link}
+                    to="/help"
+                    title={t('nav.titles.help')}
+                    className="d-flex align-items-center gap-2"
+                  >
+                    <Icon name="question-circle" />
+                    {t('nav.help')}
+                  </NavDropdown.Item>
                   <NavDropdown.Divider />
                   <NavDropdown.Item
                     title={t('nav.titles.logout')}
