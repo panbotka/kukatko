@@ -659,9 +659,11 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   přehled rozhodnutí jednoho uživatele v review hře**: `?via=review` (jen review rozhodnutí —
   `details.via='review'`, tj. akce `face.assign`/`label.attach`/`face.reject`/`label.reject`;
   literál sedí na partial index z migrace 0037) a `?decision=yes|no` (kbelík Ano = assign+attach /
-  Ne = reject); jiná hodnota `via`/`decision` → 400. Audit záznamy se **nezapisují
+  Ne = reject); jiná hodnota `via`/`decision` → 400. Audit záznamy se **nepřidávají
   přes HTTP** — vznikají uvnitř mutačních transakcí (in-tx `audit.Write`, viz `internal/audit`
-  konvence). Mountuje se vždy (`buildAuditAPI` v `cmd/kukatko/audit.go`).
+  konvence); jediná HTTP mutace trailu je maintainer-only **retenční purge**
+  (`POST /maintenance/audit/purge`, viz Maintenance API), který maže staré záznamy a sám se auditne.
+  Mountuje se vždy (`buildAuditAPI` v `cmd/kukatko/audit.go`).
 - **Maintenance API (`/api/v1`, `internal/maintenanceapi`, maintainer-only přes `RequireMaintainer`):**
   integritní kontrola & opravy knihovny. `GET /maintenance/scan` → `Report` (counts + vzorky:
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
@@ -670,7 +672,13 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   počty (`*_enqueued` + `orphans_imported/skipped/failed`); `DisallowUnknownFields`, prázdný výběr →
   400, orphan import bez importéru → 503 (`ErrOrphanImportUnavailable`). Opravy jsou idempotentní a
   jedou přes frontu jobů (thumbnail/pHash přes `thumbnail` job, embeddingy/faces backfill), **nikdy
-  nemažou originály**. Mountuje se vždy (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go`).
+  nemažou originály**. `POST /maintenance/audit/purge` `{older_than_days}` (kladné celé číslo dní,
+  1..36500) smaže audit záznamy starší než `now − older_than_days` (`audit.Store.PurgeOlderThan`,
+  jeden `DELETE` přes `idx_audit_log_created_at`) → `{deleted,older_than_days,cutoff}`;
+  chybějící/nekladné/přílišné okno nebo neznámé pole → 400, nezapojený audit store → 503. Samotný
+  purge se **auditne** (`audit.purge` s cutoffem, oknem a počtem smazaných; záznam je čerstvý, takže
+  purge přežije) — mazání trailu zůstává dohledatelné. Mountuje se vždy (`buildMaintenanceAPI`
+  v `cmd/kukatko/maintenance.go`).
 - **Duplicates API (`/api/v1`, `internal/duplicatesapi` + `internal/duplicates`, editor/admin přes
   `RequireWrite`):** `GET /duplicates?limit=&offset=` → `{groups,total,limit,offset,next_offset}`
   skupiny pravděpodobných duplikátů z pHash Hammingovy vzdálenosti (`duplicate.phash_max_diff`,

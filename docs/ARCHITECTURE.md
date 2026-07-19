@@ -333,7 +333,11 @@ Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 ro
   `pgx.Tx`; handler konvence `FromRequest`→`Meta`→`Entry`). Konzumenti: hromadná editace metadat
   (`POST /api/v1/photos/bulk`) a foto PATCH/archive/unarchive (audited varianty `photos.Store`).
   Admin čtení: `GET /api/v1/audit` (`internal/auditapi`, filtry user/entity/action/datum +
-  stránkování, admin-only). Další mutační domény přebírají in-tx audit konvenci postupně.
+  stránkování, admin-only). Trail je jinak **append-only**; jedinou výjimkou je **maintainer-only
+  retenční purge** `POST /api/v1/maintenance/audit/purge` (`audit.Store.PurgeOlderThan`, jeden
+  `DELETE ... WHERE created_at < cutoff` přes `idx_audit_log_created_at`, `older_than_days`), který
+  smaže staré záznamy a **sám se auditne** (`audit.purge` s cutoffem a počtem — čerstvý záznam purge
+  přežije, takže mazání trailu zůstává dohledatelné). Další mutační domény přebírají in-tx audit konvenci postupně.
   **Payload editací** (`ChangeSet` v `internal/audit/changes.go`): `details` editační akce nese pod
   klíčem `changes` mapu `{"<pole>":{"old":…,"new":…}}` **jen se změněnými poli** (starý → nový),
   aby log ukázal např. změnu popisku. Používají ji foto PATCH (`photo.update` přes HTTP i MCP),

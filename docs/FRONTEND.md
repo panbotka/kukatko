@@ -508,7 +508,10 @@ zapiš sem.
   souhrnný „drift" řádek i každý stav fronty nese tiché plain-language vysvětlení** (bez najetí myší) —
   `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint`, `maintenance.jobs.intro`
   a sdílená `JobStateLegend` (total/queued/running/failed/**dead**) — aby maintainer poznal, co počet
-  znamená a zda je třeba jednat; sebe-gate na `isMaintainer`,
+  znamená a zda je třeba jednat; navíc destruktivní karta **`AuditPurgeCard`** (**Vymazat audit log**)
+  s výběrem retence (presety 3/6 měsíců, 1/2 roky nebo vlastní počet dní), **potvrzovacím krokem**
+  (nevratné mazání) a výsledkovým `Alert` s počtem smazaných (`purgeAuditLog(olderThanDays)` →
+  `POST /maintenance/audit/purge`); sebe-gate na `isMaintainer`,
   `SystemStatusPage` = `/system` (jen maintainer) **system-status dashboard**: auto-refresh (polling 5 s)
   `GET /system/status` → kartová mřížka (DB, embeddingy, fronta jobů, záloha, importy, úložiště,
   **mapy**, verze) s **rychlými akcemi** — *znovu zařadit mrtvé úlohy* (`requeueDeadLetterJobs`: list dead →
@@ -1686,8 +1689,10 @@ zapiš sem.
   `StartImportResult`/`JobStats`),
   `maintenance.ts` = admin maintenance klient: `fetchMaintenanceScan(signal)` nad
   `GET /api/v1/maintenance/scan` → `ScanReport`, `runMaintenanceRepair(options,signal)` nad
-  `POST /api/v1/maintenance/repair` → `RepairResult`; typy `Finding`/`ScanReport`/`RepairOptions`/
-  `RepairResult`; sdílí `ApiError` z `auth.ts` a `fetchJobStats` z `import.ts` pro progress,
+  `POST /api/v1/maintenance/repair` → `RepairResult`, `purgeAuditLog(olderThanDays,signal)` nad
+  `POST /api/v1/maintenance/audit/purge` → `AuditPurgeResult` (`{deleted,older_than_days,cutoff}`);
+  typy `Finding`/`ScanReport`/`RepairOptions`/`RepairResult`/`AuditPurgeResult`; sdílí `ApiError`
+  z `auth.ts` a `fetchJobStats` z `import.ts` pro progress,
   `system.ts` = admin system-status klient: `fetchSystemStatus(signal)` nad `GET /api/v1/system/status`
   → `SystemStatus`, `triggerBackup(signal)` nad `POST /api/v1/backup` (409/503 → ApiError),
   `requeueDeadLetterJobs(signal)` (vylistuje `GET /jobs?state=dead` → per-job `POST /jobs/{id}/requeue`,

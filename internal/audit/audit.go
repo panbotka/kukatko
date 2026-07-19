@@ -163,6 +163,12 @@ const (
 	// ActionAnnouncementClear records a maintainer clearing the instance-wide
 	// announcement banner, taking it down for all users.
 	ActionAnnouncementClear = "announcement.clear"
+	// ActionAuditPurge records a maintainer purging old audit entries by retention
+	// (deleting rows older than a cutoff). The applied cutoff, the retention window
+	// in days and the number of deleted rows are recorded in the entry's details.
+	// The record is written after the delete and is itself recent, so it survives
+	// the purge — deleting the audit trail stays traceable.
+	ActionAuditPurge = "audit.purge"
 )
 
 // insertSQL appends one audit entry. It is shared by Store.Record and the
@@ -469,6 +475,20 @@ func (s *Store) Count(ctx context.Context, f Filter) (int, error) {
 		return 0, fmt.Errorf("audit: counting entries: %w", err)
 	}
 	return total, nil
+}
+
+// PurgeOlderThan deletes every audit entry created strictly before cutoff and
+// returns how many rows were removed. It is a single DELETE over the
+// idx_audit_log_created_at index and backs the maintainer-triggered retention
+// purge (POST /maintenance/audit/purge). Deleting the audit trail is sensitive,
+// so the caller should write a recent self-audit record for the purge itself
+// (ActionAuditPurge); that record post-dates the cutoff and survives the delete.
+func (s *Store) PurgeOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
+	tag, err := s.pool.Exec(ctx, "DELETE FROM audit_log WHERE created_at < $1", cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("audit: purging entries before %s: %w", cutoff.Format(time.RFC3339), err)
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 // List paging bounds.

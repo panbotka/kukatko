@@ -14,6 +14,7 @@ import { ApiError } from '../services/auth'
 import { fetchJobStats, type JobStats } from '../services/import'
 import {
   fetchMaintenanceScan,
+  purgeAuditLog,
   runMaintenanceRepair,
   type Finding,
   type RepairOptions,
@@ -264,6 +265,161 @@ function emptySelection(): Record<RepairKey, boolean> {
 }
 
 /**
+ * Retention presets for the audit-log purge, in display order. Each key is both
+ * the i18n suffix (`maintenance.auditPurge.presets.<key>`) and maps to a whole
+ * number of days; the day counts are deliberately approximate (a purge does not
+ * need calendar precision).
+ */
+const RETENTION_PRESETS = [
+  { key: '3m', days: 90 },
+  { key: '6m', days: 180 },
+  { key: '1y', days: 365 },
+  { key: '2y', days: 730 },
+] as const
+
+/** A retention preset key, or 'custom' for a user-entered number of days. */
+type RetentionKey = (typeof RETENTION_PRESETS)[number]['key'] | 'custom'
+
+/** Returns the day count for a retention preset key, or 0 for 'custom'. */
+function presetDays(key: RetentionKey): number {
+  return RETENTION_PRESETS.find((preset) => preset.key === key)?.days ?? 0
+}
+
+/** Lifecycle of the audit-log purge, including the destructive-confirm step. */
+type PurgeState =
+  | { status: 'idle' }
+  | { status: 'confirm' }
+  | { status: 'running' }
+  | { status: 'error' }
+  | { status: 'done'; deleted: number }
+
+/**
+ * The destructive audit-log retention purge: pick a retention window (a preset or
+ * a custom number of days), confirm the irreversible delete, and remove every
+ * audit entry older than that. The purge is maintainer-only and self-audited on
+ * the backend; the result reports how many entries were removed. A confirmation
+ * step guards the delete, mirroring the page's async-action + Alert feedback.
+ */
+function AuditPurgeCard() {
+  const { t } = useTranslation()
+  const [retention, setRetention] = useState<RetentionKey>('1y')
+  const [customDays, setCustomDays] = useState('365')
+  const [state, setState] = useState<PurgeState>({ status: 'idle' })
+
+  const days = retention === 'custom' ? Number(customDays) : presetDays(retention)
+  const validDays = Number.isInteger(days) && days >= 1
+  const running = state.status === 'running'
+
+  // Any change to the retention selection resets the confirm/result state, so a
+  // stale confirmation can never run against a window the maintainer just changed.
+  const reset = useCallback(() => {
+    setState({ status: 'idle' })
+  }, [])
+
+  const run = useCallback(async () => {
+    if (!validDays) {
+      return
+    }
+    setState({ status: 'running' })
+    try {
+      const result = await purgeAuditLog(days)
+      setState({ status: 'done', deleted: result.deleted })
+    } catch {
+      setState({ status: 'error' })
+    }
+  }, [days, validDays])
+
+  return (
+    <Card className="mb-4">
+      <Card.Body>
+        <h2 className="kk-section-title mb-1">{t('maintenance.auditPurge.title')}</h2>
+        <p className="text-secondary small">{t('maintenance.auditPurge.hint')}</p>
+        <Form>
+          <Form.Group className="mb-3" controlId="audit-purge-retention">
+            <Form.Label>{t('maintenance.auditPurge.retention')}</Form.Label>
+            <Form.Select
+              value={retention}
+              onChange={(e) => {
+                setRetention(e.target.value as RetentionKey)
+                reset()
+              }}
+            >
+              {RETENTION_PRESETS.map((preset) => (
+                <option key={preset.key} value={preset.key}>
+                  {t(`maintenance.auditPurge.presets.${preset.key}`)}
+                </option>
+              ))}
+              <option value="custom">{t('maintenance.auditPurge.presets.custom')}</option>
+            </Form.Select>
+          </Form.Group>
+          {retention === 'custom' && (
+            <Form.Group className="mb-3" controlId="audit-purge-days">
+              <Form.Label>{t('maintenance.auditPurge.customDays')}</Form.Label>
+              <Form.Control
+                type="number"
+                min={1}
+                value={customDays}
+                onChange={(e) => {
+                  setCustomDays(e.target.value)
+                  reset()
+                }}
+              />
+              <Form.Text className="text-secondary">
+                {t('maintenance.auditPurge.customDaysHint')}
+              </Form.Text>
+            </Form.Group>
+          )}
+        </Form>
+        {state.status !== 'confirm' && (
+          <Button
+            variant="danger"
+            disabled={!validDays || running}
+            onClick={() => {
+              setState({ status: 'confirm' })
+            }}
+          >
+            {running && <Spinner animation="border" size="sm" role="status" className="me-2" />}
+            {running ? t('maintenance.auditPurge.running') : t('maintenance.auditPurge.run')}
+          </Button>
+        )}
+        {!validDays && (
+          <p className="text-secondary small mt-2 mb-0">{t('maintenance.auditPurge.invalid')}</p>
+        )}
+        {state.status === 'confirm' && (
+          <Alert variant="warning" className="mt-3 mb-0">
+            <p className="mb-2">{t('maintenance.auditPurge.confirm', { days })}</p>
+            <div className="d-flex gap-2">
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  void run()
+                }}
+              >
+                {t('maintenance.auditPurge.confirmRun')}
+              </Button>
+              <Button variant="outline-secondary" size="sm" onClick={reset}>
+                {t('maintenance.auditPurge.cancel')}
+              </Button>
+            </div>
+          </Alert>
+        )}
+        {state.status === 'error' && (
+          <Alert variant="danger" className="mt-3 mb-0">
+            {t('maintenance.auditPurge.error')}
+          </Alert>
+        )}
+        {state.status === 'done' && (
+          <Alert variant="success" className="mt-3 mb-0">
+            {t('maintenance.auditPurge.result', { deleted: state.deleted })}
+          </Alert>
+        )}
+      </Card.Body>
+    </Card>
+  )
+}
+
+/**
  * Admin-only library-maintenance console: runs an integrity scan that reports
  * catalogue/disk drift (missing originals, orphan files, missing thumbnails,
  * embeddings, faces and pHashes) with counts and samples, and triggers the opt-in
@@ -387,6 +543,8 @@ export function MaintenancePage() {
         }}
         state={repair}
       />
+
+      <AuditPurgeCard />
 
       {jobStats && <JobStatsBar stats={jobStats} />}
     </>

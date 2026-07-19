@@ -1574,6 +1574,28 @@
       "running": "Running",
       "failed": "Failed",
       "dead": "Dead"
+    },
+    "auditPurge": {
+      "title": "Purge audit log",
+      "hint": "Permanently delete audit-log entries older than the chosen retention window. This is irreversible. The purge itself is recorded in the audit log so the deletion stays traceable.",
+      "retention": "Delete entries older than",
+      "presets": {
+        "3m": "3 months",
+        "6m": "6 months",
+        "1y": "1 year",
+        "2y": "2 years",
+        "custom": "Custom…"
+      },
+      "customDays": "Days to keep",
+      "customDaysHint": "Entries older than this many days are deleted.",
+      "run": "Purge audit log",
+      "running": "Purging…",
+      "confirm": "This permanently deletes every audit entry older than {{days}} days. This cannot be undone.",
+      "confirmRun": "Yes, delete them",
+      "cancel": "Cancel",
+      "invalid": "Enter a positive number of days.",
+      "error": "The purge failed.",
+      "result": "Deleted {{deleted}} audit entries."
     }
   },
   "duplicates": {

@@ -97,6 +97,67 @@ func TestWrite_rollsBackWithTransaction(t *testing.T) {
 	}
 }
 
+// TestStore_PurgeOlderThan seeds audit rows at varied created_at instants and
+// confirms PurgeOlderThan deletes only the rows strictly older than the cutoff,
+// returns their count, and leaves the newer rows (including one exactly at the
+// cutoff) untouched.
+func TestStore_PurgeOlderThan(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	store := audit.NewStore(db.Pool())
+	ctx := t.Context()
+
+	now := time.Now()
+	// Seed rows with explicit created_at: two clearly old, one exactly at the
+	// cutoff (kept — the delete is strictly-less-than), and one recent.
+	seed := []struct {
+		action    string
+		createdAt time.Time
+	}{
+		{"old.one", now.Add(-400 * 24 * time.Hour)},
+		{"old.two", now.Add(-366 * 24 * time.Hour)},
+		{"boundary", now.Add(-365 * 24 * time.Hour)},
+		{"recent", now.Add(-1 * time.Hour)},
+	}
+	for _, s := range seed {
+		if _, err := db.Pool().Exec(ctx,
+			"INSERT INTO audit_log (action, target_type, created_at) VALUES ($1, 'test', $2)",
+			s.action, s.createdAt); err != nil {
+			t.Fatalf("seeding %s: %v", s.action, err)
+		}
+	}
+
+	cutoff := now.Add(-365 * 24 * time.Hour)
+	deleted, err := store.PurgeOlderThan(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("PurgeOlderThan: %v", err)
+	}
+	if deleted != 2 {
+		t.Errorf("deleted = %d, want 2 (old.one + old.two)", deleted)
+	}
+
+	remaining, err := store.List(ctx, audit.Filter{Limit: 50})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("remaining = %d rows, want 2 (boundary + recent)", len(remaining))
+	}
+	survivors := map[string]bool{remaining[0].Action: true, remaining[1].Action: true}
+	if !survivors["boundary"] || !survivors["recent"] {
+		t.Errorf("survivors = %v, want boundary + recent", survivors)
+	}
+
+	// A second purge at the same cutoff is a no-op (idempotent by construction).
+	again, err := store.PurgeOlderThan(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("PurgeOlderThan (repeat): %v", err)
+	}
+	if again != 0 {
+		t.Errorf("repeat purge deleted = %d, want 0", again)
+	}
+}
+
 // withTx runs fn inside a transaction on db's pool and then commits when commit
 // is true or rolls back otherwise, so a test can assert what survives.
 func withTx(t *testing.T, db *database.DB, fn func(tx pgx.Tx), commit bool) {

@@ -59,7 +59,12 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
   `maintenance scan` (read-only integritní report — disk↔DB drift + chybějící odvozená data) a
   `maintenance repair` s flagy `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
   (každá opt-in; thumbnails/phashes zařadí `thumbnail` joby drainované workerem běžícího serveru,
-  embeddings/faces backfill, orphan import synchronně přes upload pipeline; bez flagu no-op),
+  embeddings/faces backfill, orphan import synchronně přes upload pipeline; bez flagu no-op;
+  **retenční purge starých audit logů** je zvlášť jen přes HTTP/UI, ne CLI — maintainer volá
+  `POST /api/v1/maintenance/audit/purge` `{older_than_days}` (`internal/maintenanceapi`), smaže audit
+  záznamy starší než `now − older_than_days` a **sám se auditne** (`audit.purge`, aby mazání trailu
+  zůstalo dohledatelné); admin UI má na stránce Údržba kartu „Vymazat audit log" s presety
+  (3/6 měsíců, 1/2 roky) nebo vlastním počtem dní a potvrzením),
   **`kukatko sidecar`** (metadatové sidecary — `internal/sidecarjob`; terminálový vstup do exportu,
   který dělá kurátorská data nezávislá na databázi): `sidecar backfill` zařadí `sidecar` job pro
   každou fotku s **chybějícím nebo zastaralým** sidecarem, `--all` vynutí úplný re-run nad každou

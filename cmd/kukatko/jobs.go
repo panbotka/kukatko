@@ -102,7 +102,7 @@ func buildJobs(
 		LocationEstimator: locationEstimatorOrNil(cfg, db, enqueuer),
 		RequireMaintainer: authAPI.RequireMaintainer,
 	})
-	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, authAPI), nil
+	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, db, authAPI), nil
 }
 
 // registryServices bundles the job handlers buildRegistry wires, so the

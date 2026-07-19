@@ -1315,10 +1315,13 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   vynechaná** (jeden `UPDATE` nad mnoha fotkami bez načtení starých řádků — SELECT-před-UPDATE by
   zdvojnásobil dotazy na dávku), ponechává si původní souhrn v details; action konstanty `ActionPhotosBulk`/`ActionPhoto{Update,Archive,Unarchive,Purge}`/
   `ActionAlbum{Create,Update,Delete}`/`ActionLabel{Create,Update,Delete}`/`ActionFaceAssign`/
-  `ActionUser{Create,Update,Disable,Password}`; `Store` = `NewStore(pool)` se `Record(ctx,Entry)`
+  `ActionUser{Create,Update,Disable,Password}`/`ActionAuditPurge`; `Store` = `NewStore(pool)` se `Record(ctx,Entry)`
   (vlastní spojení) a **filtrovaným čtením** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ActorUID,
   TargetType,TargetUID,Action,Since,Until,Limit,Offset}`, newest-first, limit cap 500/default 100)
-  pro admin výpis. **Zapojené in-tx mutace**: bulk (`internal/bulk`) + foto PATCH/archive/unarchive
+  pro admin výpis; **retenční purge** `PurgeOlderThan(ctx, cutoff) (int, error)` = jeden
+  `DELETE FROM audit_log WHERE created_at < $1` přes `idx_audit_log_created_at`, vrací počet smazaných
+  (maintainer-only přes `internal/maintenanceapi`, action `audit.purge`, sám se auditne — čerstvý
+  záznam purge přežije). **Zapojené in-tx mutace**: bulk (`internal/bulk`) + foto PATCH/archive/unarchive
   přes audited varianty `photos.Store.{UpdateMetadata,Archive,Unarchive}Audited`, **trvalý purge**
   `photos.Store.DeleteAudited` (`internal/trash` → `photo.purge`, systémový actor u plánované retence)
   a **správa uživatelů** `auth.Store.{CreateUser,UpdateUserProfile,SetUserDisabled,SetPasswordHash}Audited`
@@ -1833,11 +1836,16 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   žádné IPTC tagy nemá („podívali jsme se a nic tam nebylo" je hotová fotka, ne čekající)),
   `internal/maintenanceapi/`
   (maintainer-only HTTP API nad maintenance: rozhraní `Service` (Scan+Repair, splňuje `*maintenance.Service`,
-  nil → 503); `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes` mountuje `/maintenance`:
-  `GET /maintenance/scan` (integritní report) a `POST /maintenance/repair` (tělo `RepairOptions`,
-  `DisallowUnknownFields`, prázdný výběr → 400, `ErrOrphanImportUnavailable` → 503, jinak `RepairResult`);
-  mountuje se v `serve` (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go`, service staví
-  `buildMaintenanceAndThumb` sdílený s registrací `thumbnail` handleru v `buildJobs`)),
+  nil → 503) a `AuditPurger` (`PurgeOlderThan`+`Record`, splňuje `*audit.Store`, nil → 503);
+  `NewAPI(Config{Service,Audit,RequireMaintainer})`+`RegisterRoutes` mountuje `/maintenance`:
+  `GET /maintenance/scan` (integritní report), `POST /maintenance/repair` (tělo `RepairOptions`,
+  `DisallowUnknownFields`, prázdný výběr → 400, `ErrOrphanImportUnavailable` → 503, jinak `RepairResult`)
+  a `POST /maintenance/audit/purge` (tělo `{older_than_days}` 1..36500, cutoff = `now − older_than_days`,
+  `audit.Store.PurgeOlderThan` → `{deleted,older_than_days,cutoff}`; chybějící/nekladné/přílišné okno
+  nebo neznámé pole → 400; **self-audit** `audit.purge` s cutoffem/oknem/počtem přes `Record` — čerstvý
+  záznam přežije purge, takže mazání trailu je dohledatelné, actor z `auth.UserFromContext`);
+  mountuje se v `serve` (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go` injektuje `audit.NewStore`,
+  service staví `buildMaintenanceAndThumb` sdílený s registrací `thumbnail` handleru v `buildJobs`)),
   `internal/duplicates/`
   (**review surface pro near-duplicate fotky** nad rámec upload-time varování: linkuje fotky dvěma
   signály — pHash Hammingova vzdálenost do `duplicate.phash_max_diff` a embedding cosine vzdálenost
