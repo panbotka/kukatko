@@ -1554,6 +1554,15 @@
     "selectItem": "Vybrat {{name}}",
     "actionError": "Akce se nezdařila.",
     "unavailable": "Trvalé mazání je v konfiguraci serveru vypnuté.",
+    "olderThan": {
+      "button": "Smazat starší než…",
+      "days": "dní",
+      "inputLabel": "Smazat fotky starší než, ve dnech",
+      "success_one": "Smazána {{count}} fotka",
+      "success_few": "Smazány {{count}} fotky",
+      "success_many": "Smazáno {{count}} fotky",
+      "success_other": "Smazáno {{count}} fotek"
+    },
     "countdown": {
       "days": "za {{count}} d",
       "due": "ke smazání"
@@ -1566,6 +1575,10 @@
       "bulk_many": "{{count}} fotky budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
       "bulk_other": "{{count}} fotek bude nenávratně smazáno včetně originálů. Tuto akci nelze vrátit.",
       "empty": "Všechny fotky v koši budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
+      "older_one": "Všechny fotky v koši starší než {{count}} den budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
+      "older_few": "Všechny fotky v koši starší než {{count}} dny budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
+      "older_many": "Všechny fotky v koši starší než {{count}} dne budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
+      "older_other": "Všechny fotky v koši starší než {{count}} dní budou nenávratně smazány včetně originálů. Tuto akci nelze vrátit.",
       "confirm": "Smazat navždy",
       "cancel": "Zrušit"
     }

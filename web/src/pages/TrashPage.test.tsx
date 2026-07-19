@@ -5,6 +5,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { ToastProvider } from '../components/toast/ToastProvider'
 import i18n from '../i18n'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -20,16 +21,18 @@ vi.mock('../services/photos', async (importOriginal) => {
     unarchivePhoto: vi.fn(),
     purgePhoto: vi.fn(),
     emptyTrash: vi.fn(),
+    purgeTrashOlderThan: vi.fn(),
   }
 })
 
-const { fetchPhotos, fetchTrashInfo, unarchivePhoto, purgePhoto, emptyTrash } =
+const { fetchPhotos, fetchTrashInfo, unarchivePhoto, purgePhoto, emptyTrash, purgeTrashOlderThan } =
   await import('../services/photos')
 const fetchMock = vi.mocked(fetchPhotos)
 const infoMock = vi.mocked(fetchTrashInfo)
 const unarchiveMock = vi.mocked(unarchivePhoto)
 const purgeMock = vi.mocked(purgePhoto)
 const emptyMock = vi.mocked(emptyTrash)
+const olderMock = vi.mocked(purgeTrashOlderThan)
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -83,9 +86,11 @@ function renderTrash(value: AuthContextValue = auth(true)) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
-        <MemoryRouter initialEntries={['/trash']}>
-          <TrashPage />
-        </MemoryRouter>
+        <ToastProvider>
+          <MemoryRouter initialEntries={['/trash']}>
+            <TrashPage />
+          </MemoryRouter>
+        </ToastProvider>
       </AuthContext.Provider>
     </I18nextProvider>,
   )
@@ -98,6 +103,7 @@ beforeEach(async () => {
   unarchiveMock.mockReset()
   purgeMock.mockReset()
   emptyMock.mockReset()
+  olderMock.mockReset()
   infoMock.mockResolvedValue({ retention_days: 30 })
 })
 
@@ -173,6 +179,46 @@ describe('TrashPage', () => {
     })
   })
 
+  it('offers the delete-older-than control to an admin, defaulting to 180 days', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg', 1)]))
+    renderTrash()
+    await screen.findByRole('link', { name: 'a.jpg' })
+
+    expect(screen.getByRole('button', { name: 'Delete older than…' })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton')).toHaveValue(180)
+  })
+
+  it('purges items older than the entered day count after confirmation, then toasts and reloads', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg', 1)]))
+    olderMock.mockResolvedValue({ purged: 3, failed: 0 })
+    renderTrash()
+    await screen.findByRole('link', { name: 'a.jpg' })
+
+    // Change the age from the 180-day default to 30 days.
+    const input = screen.getByRole('spinbutton')
+    await user.clear(input)
+    await user.type(input, '30')
+
+    await user.click(screen.getByRole('button', { name: 'Delete older than…' }))
+    // The mutation does not fire until the dialog is confirmed.
+    expect(olderMock).not.toHaveBeenCalled()
+
+    const dialog = await screen.findByRole('dialog')
+    // The confirmation states the concrete age the admin typed.
+    expect(within(dialog).getByText(/older than 30 days/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Delete forever' }))
+
+    await waitFor(() => {
+      expect(olderMock).toHaveBeenCalledWith(30)
+    })
+    // Success toast reports the deleted count and the listing refreshes.
+    expect(await screen.findByText('Deleted 3 photos')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
+    })
+  })
+
   it('shows an empty state when the trash has no photos', async () => {
     fetchMock.mockResolvedValue(page([]))
     renderTrash()
@@ -185,9 +231,11 @@ describe('TrashPage', () => {
     await screen.findByRole('link', { name: 'a.jpg' })
 
     // Restore stays — an editor curates the trash — but purging is admin-only:
-    // no Empty trash, and no per-card Delete forever.
+    // no Empty trash, no per-card Delete forever, and no delete-older-than control.
     expect(screen.getByRole('button', { name: 'Restore' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Empty trash' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete forever' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete older than…' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
   })
 })

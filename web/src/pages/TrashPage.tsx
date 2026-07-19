@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Col from 'react-bootstrap/Col'
+import Form from 'react-bootstrap/Form'
+import InputGroup from 'react-bootstrap/InputGroup'
 import Modal from 'react-bootstrap/Modal'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
@@ -13,6 +15,7 @@ import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { SelectionBar } from '../components/organize/SelectionBar'
+import { useToast } from '../components/toast/ToastContext'
 import { TrashCard } from '../components/trash/TrashCard'
 import { usePaginatedPhotos } from '../hooks/usePaginatedPhotos'
 import { useSelection } from '../hooks/useSelection'
@@ -24,14 +27,22 @@ import {
   fetchPhotos,
   fetchTrashInfo,
   purgePhoto,
+  purgeTrashOlderThan,
   unarchivePhoto,
 } from '../services/photos'
 
-/** A pending permanent-delete confirmation: one photo, the selection, or all. */
+/** Default age for the "delete older than" control, in days (ad-hoc, not persisted). */
+const DEFAULT_OLDER_THAN_DAYS = 180
+
+/**
+ * A pending permanent-delete confirmation: one photo, the selection, all, or
+ * everything older than `days` days.
+ */
 type Confirm =
   | { mode: 'single'; uid: string }
   | { mode: 'bulk'; uids: string[] }
   | { mode: 'empty' }
+  | { mode: 'older'; days: number }
 
 /**
  * Resolves a failed mutation to a localized, user-facing message. Raw server
@@ -61,6 +72,7 @@ function actionMessage(err: unknown, t: TFunction): string {
 export function TrashPage() {
   const { t } = useTranslation()
   const { isAdmin } = useAuth()
+  const toast = useToast()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const selection = useSelection()
 
@@ -69,6 +81,11 @@ export function TrashPage() {
   const [pending, setPending] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
+  // The "delete older than" age. Kept as the raw input string so the field can be
+  // cleared and retyped; the derived integer is what the action uses. It is an
+  // ad-hoc value the admin sets each time, never persisted to config.
+  const [olderDaysInput, setOlderDaysInput] = useState(String(DEFAULT_OLDER_THAN_DAYS))
+  const olderDays = Math.max(0, Math.floor(Number(olderDaysInput) || 0))
 
   // Always scope the listing to archived photos; the remaining filters/sort apply
   // on top. The reload key forces a refetch after a restore or purge mutates the set.
@@ -120,6 +137,26 @@ export function TrashPage() {
     }
     const pendingConfirm = confirm
     setConfirm(null)
+    if (pendingConfirm.mode === 'older') {
+      setPending(true)
+      setActionError(null)
+      try {
+        const result = await purgeTrashOlderThan(pendingConfirm.days)
+        selection.clear()
+        reload()
+        toast.show({
+          message: t('trash.olderThan.success', { count: result.purged }),
+          variant: 'success',
+        })
+      } catch (err) {
+        // Surface the same 503-aware message as Empty trash, but as a toast so
+        // the count-bearing success and the failure report the same way.
+        toast.show({ message: actionMessage(err, t), variant: 'danger' })
+      } finally {
+        setPending(false)
+      }
+      return
+    }
     if (pendingConfirm.mode === 'empty') {
       setPending(true)
       setActionError(null)
@@ -149,6 +186,38 @@ export function TrashPage() {
             <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
               {t('selection.enter')}
             </Button>
+          )}
+          {isAdmin && (
+            <div className="d-flex align-items-center gap-1">
+              <InputGroup size="sm" style={{ width: 'auto' }}>
+                <Form.Control
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  value={olderDaysInput}
+                  disabled={pending}
+                  aria-label={t('trash.olderThan.inputLabel')}
+                  onChange={(e) => {
+                    // Digits only — the backend requires an integer ≥ 0; an empty
+                    // field is allowed (it derives to 0) so it can be retyped.
+                    setOlderDaysInput(e.currentTarget.value.replace(/\D/g, ''))
+                  }}
+                  style={{ maxWidth: '5rem' }}
+                />
+                <InputGroup.Text>{t('trash.olderThan.days')}</InputGroup.Text>
+              </InputGroup>
+              <Button
+                variant="outline-danger"
+                size="sm"
+                disabled={pending || (status === 'ready' && photos.length === 0)}
+                onClick={() => {
+                  setConfirm({ mode: 'older', days: olderDays })
+                }}
+              >
+                {t('trash.olderThan.button')}
+              </Button>
+            </div>
           )}
           {isAdmin && (
             <Button
@@ -278,6 +347,7 @@ export function TrashPage() {
           {confirm?.mode === 'empty' && t('trash.confirm.empty')}
           {confirm?.mode === 'single' && t('trash.confirm.single')}
           {confirm?.mode === 'bulk' && t('trash.confirm.bulk', { count: confirm.uids.length })}
+          {confirm?.mode === 'older' && t('trash.confirm.older', { count: confirm.days })}
         </Modal.Body>
         <Modal.Footer>
           <Button

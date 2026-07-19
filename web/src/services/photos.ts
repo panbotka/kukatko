@@ -1117,6 +1117,32 @@ export async function emptyTrash(signal?: AbortSignal): Promise<PurgeResult> {
   return (await res.json()) as PurgeResult
 }
 
+/**
+ * Permanently deletes every archived photo older than `days` days via
+ * `POST /api/v1/trash/purge-older?days=<days>&confirm=true` and returns how many
+ * were purged and failed. `days` must be an integer ≥ 0; `days = 0` purges the
+ * whole trash. Irreversible; admin only (backend guard `RequireAdmin`), and the
+ * explicit `confirm=true` mirrors the server's requirement.
+ *
+ * @throws ApiError with `status` 400 (missing/invalid `days`), 503 (purge backend
+ *   unwired) or 5xx.
+ */
+export async function purgeTrashOlderThan(
+  days: number,
+  signal?: AbortSignal,
+): Promise<PurgeResult> {
+  const query = new URLSearchParams({ days: String(days), confirm: 'true' })
+  const res = await fetch(`${API_BASE}/trash/purge-older?${query.toString()}`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as PurgeResult
+}
+
 /** The trash retention window, used to show each item's auto-purge countdown. */
 export interface TrashInfo {
   retention_days: number

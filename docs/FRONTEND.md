@@ -893,9 +893,13 @@ zapiš sem.
   `TrashPage` = `/trash` (editor+ vidí stránku) koš: archivované fotky (`useScopedPhotos`-style listing přes
   `usePaginatedPhotos` scopnutý `archived=only`) v mřížce `TrashCard` s `FilterBar`, **obnova**
   (`unarchivePhoto`) je editor akce; **trvalé mazání** (`purgePhoto`) jednotlivě i hromadně (`useSelection`
-  `SelectionBar`) a **Vyprázdnit koš** (`emptyTrash`) jsou **jen admin+** (backend guard `RequireAdmin`),
-  takže editor vidí u karty i v baru jen Obnovit — purge ovládací prvky se renderují za `isAdmin`
-  (`TrashCard` prop `canPurge`); každá trvalá akce přes potvrzovací `Modal`;
+  `SelectionBar`), **Vyprázdnit koš** (`emptyTrash`) i **Smazat starší než…** jsou **jen admin+**
+  (backend guard `RequireAdmin`), takže editor vidí u karty i v baru jen Obnovit — purge ovládací prvky
+  se renderují za `isAdmin` (`TrashCard` prop `canPurge`); každá trvalá akce přes potvrzovací `Modal`;
+  **Smazat starší než…** je číselné pole ve dnech (výchozí 180, ad-hoc, celé číslo ≥ 0, nikam se neukládá)
+  + tlačítko → potvrzovací modal (`trash.confirm.older` s konkrétním počtem dní) → `purgeTrashOlderThan(days)`
+  (`POST /trash/purge-older?days=N&confirm=true`), po úspěchu `useToast` success s počtem smazaných
+  (`trash.olderThan.success`) + reload seznamu, při chybě error toast (503 → `trash.unavailable`);
   `fetchTrashInfo` dotáhne retenci pro odpočet na kartách,
   `DuplicatesPage` = `/duplicates` (editor/admin) kontrola a **řešení** duplikátů: stránkovaný seznam
   skupin (`fetchDuplicates`, „načíst další" přes `next_offset`) v `DuplicateGroupCard`; per skupina
