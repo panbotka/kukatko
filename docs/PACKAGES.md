@@ -1,42 +1,42 @@
-# Balíčky backendu
+# Backend packages
 
-Popisný referenční přehled Go balíčků. **Nejsou to pravidla** — pravidla jsou
-v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný balíček zapiš sem a přidej mu
-jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
+A descriptive reference overview of the Go packages. **These are not rules** — the rules live
+in [`CLAUDE.md`](../CLAUDE.md). Record a new or changed package here and add one line for it
+to `## Package map` in `CLAUDE.md`.
 
 <!-- BODY BEGIN -->
-- **Layout:** `cmd/kukatko/` (tenký Cobra entrypoint: root + `serve` + `migrate` + `version`),
+- **Layout:** `cmd/kukatko/` (thin Cobra entrypoint: root + `serve` + `migrate` + `version`),
   `internal/server/` (chi HTTP server, graceful shutdown), `internal/version/`
-  (ldflags-injectable `Version`/`Commit`), `internal/config/` (typovaná konfigurace,
-  Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` s `Ping`/`Close`/`Pool`,
-  embedded migration runner `Migrate`, pgvector typy registrované na každém spojení;
-  SQL migrace v `internal/database/migrations/*.sql`), `internal/database/dbtest/`
-  (integrační test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/auth/`
-  (autentizace/autorizace: `Role` viewer/editor/admin/maintainer + `authorize`, bcrypt cost 12
-  `HashPassword`/`CheckPassword`, UID/token generátory, sliding-window `Limiter`,
-  `Store` nad pgx, `Service` orchestrace login/session/bootstrap/správa uživatelů,
-  `API` = HTTP handlery + RBAC middleware
+  (ldflags-injectable `Version`/`Commit`), `internal/config/` (typed configuration,
+  Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` with `Ping`/`Close`/`Pool`,
+  embedded migration runner `Migrate`, pgvector types registered on every connection;
+  SQL migrations in `internal/database/migrations/*.sql`), `internal/database/dbtest/`
+  (integration test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/auth/`
+  (authentication/authorization: `Role` viewer/editor/admin/maintainer + `authorize`, bcrypt cost 12
+  `HashPassword`/`CheckPassword`, UID/token generators, sliding-window `Limiter`,
+  `Store` over pgx, `Service` orchestrating login/session/bootstrap/user management,
+  `API` = HTTP handlers + RBAC middleware
   `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer`/`RequireImport` +
-  `RegisterRoutes`; session a users v migraci `0002_auth.sql`.
-  **Přísný žebříček rolí** viewer < editor < admin < maintainer (migrace `0036_role_maintainer.sql`
-  redefinuje CHECK na `users.role` a ruší roli `ai`, kterou dřív přidala `0023_role_ai.sql`; `ai` účty
-  povyšuje na maintainera): každá role dědí práva nižších. `viewer` jen čte; `editor` píše média/metadata;
-  `admin` přidává správu (uživatelé, audit, koš); `maintainer` je vrchol — provoz (importy, údržba, stav,
-  backup/restore, joby, processing). Predikáty: `CanWrite()` = editor+, `IsAdmin()` = admin **nebo**
-  maintainer (dědičnost), `CanMaintain()`/`CanImport()` = jen maintainer. Import je proto provozní akce
-  jen pro maintainera (`requireImport`/`RequireImport`). **Jen maintainer** smí založit/povýšit na roli
-  `maintainer` nebo měnit maintainer účet — jinak `ErrMaintainerRequired` (403); role actora se do
-  create/update validace předává z kontextu. Bootstrap zakládá prvního uživatele jako **maintainera**.
-  **Admin poznámka u uživatele** (`note`, migrace `0021_user_note.sql`, nullable TEXT →
-  `COALESCE(note,'')` v `userColumns`): `User.Note` je `json:"-"`, takže neuteče přes
-  `loginResponse` (`/auth/login`, `/auth/me`); admin endpointy ho přidávají zpět přes
-  `adminUserResponse` (embedded `User` + `note`). Validace `validateNote` → `ErrNoteTooLong`
-  (`MaxNoteLen` = 1000 **run**) → 400. `UpdateUserInput.Note` je `*string`: `nil` = nech být,
-  `""` = smaž (SQL `note = COALESCE($6::text, note)`).
-  **Audit správy uživatelů** (`store_user_audit.go`): admin handlery volají auditované varianty
+  `RegisterRoutes`; sessions and users in migration `0002_auth.sql`.
+  **Strict role ladder** viewer < editor < admin < maintainer (migration `0036_role_maintainer.sql`
+  redefines the CHECK on `users.role` and drops the `ai` role that `0023_role_ai.sql` had added earlier; `ai`
+  accounts are promoted to maintainer): every role inherits the rights of the lower ones. `viewer` only reads; `editor` writes media/metadata;
+  `admin` adds management (users, audit, trash); `maintainer` is the top — operations (imports, maintenance, status,
+  backup/restore, jobs, processing). Predicates: `CanWrite()` = editor+, `IsAdmin()` = admin **or**
+  maintainer (inheritance), `CanMaintain()`/`CanImport()` = maintainer only. Import is therefore an operational action
+  for maintainers only (`requireImport`/`RequireImport`). **Only a maintainer** may create/promote to the
+  `maintainer` role or modify a maintainer account — otherwise `ErrMaintainerRequired` (403); the actor's role is passed into
+  the create/update validation from the context. Bootstrap creates the first user as a **maintainer**.
+  **Admin note on a user** (`note`, migration `0021_user_note.sql`, nullable TEXT →
+  `COALESCE(note,'')` in `userColumns`): `User.Note` is `json:"-"`, so it never leaks through
+  `loginResponse` (`/auth/login`, `/auth/me`); admin endpoints add it back via
+  `adminUserResponse` (embedded `User` + `note`). Validation `validateNote` → `ErrNoteTooLong`
+  (`MaxNoteLen` = 1000 **runes**) → 400. `UpdateUserInput.Note` is a `*string`: `nil` = leave as is,
+  `""` = clear (SQL `note = COALESCE($6::text, note)`).
+  **User-management audit** (`store_user_audit.go`): admin handlers call the audited variants
   `Service.CreateUserAudited`/`UpdateUserAudited`/`SetUserDisabledAudited`/`ResetPasswordAudited`,
-  které přes `Store.CreateUserAudited`/`UpdateUserProfileAudited`/`SetUserDisabledAudited`/
-  `SetPasswordHashAudited` zapíšou `user.create`/`user.update`/`user.disable`/`user.password` audit
+  which via `Store.CreateUserAudited`/`UpdateUserProfileAudited`/`SetUserDisabledAudited`/
+  `SetPasswordHashAudited` write a `user.create`/`user.update`/`user.disable`/`user.password` audit
   řádek `inAuditedTx` — **ve stejné transakci** jako změna (rollback ⇒ žádný audit řádek). Neaudito­
   vané `CreateUser`/`UpdateUser`/`SetUserDisabled`/`ResetPassword` zůstávají pro bootstrap a test
   seeding (sdílejí jádro `prepareNewUser`/`validateUserUpdate`/`invalidateIfDisabled`). Handler bere

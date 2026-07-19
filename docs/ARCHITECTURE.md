@@ -1,80 +1,80 @@
-# Kukátko — návrh architektury
+# Kukátko — architecture design
 
-**Verze:** 0.1 (návrh) · **Datum:** 2026-06-25 · **Stav:** implementováno, v aktivním vývoji (M0–M7)
+**Version:** 0.1 (draft) · **Date:** 2026-06-25 · **Status:** implemented, in active development (M0–M7)
 
-Tento dokument je závazný návrh systému Kukátko. Vychází z design docu (feature list),
-z analýzy referenčního projektu **photo-sorter** (autor je tentýž) a z ověřené rešerše
-reálných rozhraní (PhotoPrism API, mapy.com REST API, pgvector na ARM, inference sidecar).
-Citované zdroje jsou v sekci [§17 Reference](#17-reference).
-
----
-
-## 1. Účel a rozsah
-
-Kukátko je samostatná aplikace pro správu osobní/rodinné knihovny fotografií. Má nahradit
-PhotoPrism a zároveň přinést „chytré" funkce z photo-sorteru (embeddings, obličeje,
-sémantické hledání, podobné fotky) — ale s **lepší použitelností a robustností**, protože
-photo-sorter se obtížně používá.
-
-**Co je v rozsahu (z design docu):**
-
-- Jednoduché ukládání: originály + zmenšeniny na disk, pgvector jako relační DB.
-- Plná metadata jako v PhotoPrismu: GPS, štítky, alba, lidé.
-- Import z PhotoPrismu + **inkrementální** doimport.
-- Embeddings obrázků a obličejů (jako photo-sorter).
-- Design dle [Bootswatch Superhero](https://bootswatch.com/superhero/), důraz na použitelnost.
-- Slideshow na štítcích/albech — nastavitelný efekt přechodu a rychlost.
-- Spolehlivé „zpět" (i na filtr).
-- Uživatelé viewer/editor/admin/maintainer (přísný žebříček), bcrypt hesla.
-- Mapy přes [mapy.com](https://mapy.com).
-- Hromadná editace metadat (alba, štítky, popisky, lokalita).
-- Per-user oblíbené fotky.
-- Vše jako jeden spustitelný binár včetně frontendu.
-- Zálohování na S3 (originály + dump DB) jako součást běžícího procesu.
-- Konfigurace přes YAML + env proměnné.
-- Hledání textem (sémantické i fulltext) jako photo-sorter.
-- Rozpoznávání lidí + podobné fotky (jako sorter, lepší UX).
-- Funkční multiupload včetně nahrání z mobilní galerie.
-- Dvojjazyčnost: čeština (default) + angličtina.
-- Plná podpora telefon/tablet.
-- Filtry a řazení všude (knihovna, alba, štítky).
-- Detail fotky = kombinace PhotoPrism + photo-sorter (metadata/editace, obličeje, podobné).
-- **Videa** (mp4/mov/live photos jako v PhotoPrismu) — ukládání, poster + náhledy přes `ffmpeg`,
-  přehrávání/streamování (range requests), import videí z PhotoPrismu. Embedding na poster snímku
-  (videa jsou tím i vyhledatelná).
-- **Správa duplikátů** — review podobných/duplicitních fotek (pHash + embedding) a hromadný úklid.
-
-**Co je mimo rozsah:**
-
-- **Tvorba fotoknihy** (z photo-sorteru se vědomě nepřebírá — LaTeX stack, komplexita).
-- Veřejné sdílení / share-linky nejsou prioritou (lze přidat později; PhotoPrism je nemá jako cíl).
+This document is the binding design of the Kukátko system. It draws on the design doc (feature
+list), on an analysis of the reference project **photo-sorter** (by the same author), and on a
+verified survey of the real interfaces (PhotoPrism API, mapy.com REST API, pgvector on ARM, the
+inference sidecar). Cited sources are in section [§17 Reference](#17-reference).
 
 ---
 
-## 2. Vodící principy
+## 1. Purpose and scope
 
-1. **Inspirace, ne kopie.** Z photo-sorteru přebíráme osvědčené kontrakty a datové schéma,
-   ale opravujeme jeho bolesti (viz [§15](#15-co-delame-jinak-nez-photo-sorter)).
-2. **PhotoPrism zůstává primární** až do ostrého cutoveru. Import je read-only a opakovatelný;
-   Kukátko běží paralelně a PhotoPrism nenarušuje.
-3. **Pi-first, box jako akcelerátor.** Aplikace běží na Raspberry Pi (ARM64, omezená RAM).
-   Výpočetně náročná inference (CLIP, obličeje) běží na výkonném stroji (box s NVIDIA GPU,
-   na Tailscale), který **není pořád zapnutý**. Vše musí fungovat i když je box offline.
-4. **Brzy viditelné.** Milníky jsou seřazené tak, aby co nejdřív vznikla použitelná UI,
-   na které se dál iteruje.
-5. **Robustnost > featur navíc.** Persistentní stav, idempotence, graceful degradace,
-   žádné ztráty dat při restartu/výpadku boxu.
-6. **YAGNI.** Žádné spekulativní featury. Jednoduché, testovatelné, ohraničené moduly.
-7. **Testovatelnost a kvalita od začátku.** Každá změna má unit a (kde dává smysl) integrační
-   testy. Přísný `golangci-lint` a testy jsou **tvrdá brána** (`make check`). Nic se nemerguje
-   s červeným lintem nebo testy. Cíl: rozšiřitelná aplikace, kterou další iterace nerozbije.
-   Detail viz [§19 Kvalita, testování a linting](#19-kvalita-testovani-a-linting).
+Kukátko is a standalone application for managing a personal/family photo library. It is meant to
+replace PhotoPrism while also bringing over the "smart" features from photo-sorter (embeddings,
+faces, semantic search, similar photos) — but with **better usability and robustness**, because
+photo-sorter is hard to use.
+
+**What is in scope (from the design doc):**
+
+- Simple storage: originals + thumbnails on disk, pgvector as the relational DB.
+- Full metadata as in PhotoPrism: GPS, labels, albums, people.
+- Import from PhotoPrism + **incremental** re-import.
+- Image and face embeddings (like photo-sorter).
+- Design per [Bootswatch Superhero](https://bootswatch.com/superhero/), with a focus on usability.
+- Slideshow on labels/albums — configurable transition effect and speed.
+- Reliable "back" (including on a filter).
+- Users viewer/editor/admin/maintainer (a strict ladder), bcrypt passwords.
+- Maps via [mapy.com](https://mapy.com).
+- Bulk metadata editing (albums, labels, captions, location).
+- Per-user favorite photos.
+- Everything as a single executable binary, frontend included.
+- Backup to S3 (originals + DB dump) as part of the running process.
+- Configuration via YAML + env variables.
+- Text search (both semantic and full-text) like photo-sorter.
+- People recognition + similar photos (like the sorter, better UX).
+- Working multi-upload, including uploads from the mobile gallery.
+- Bilingual: Czech (default) + English.
+- Full phone/tablet support.
+- Filters and sorting everywhere (library, albums, labels).
+- Photo detail = a combination of PhotoPrism + photo-sorter (metadata/editing, faces, similar).
+- **Videos** (mp4/mov/live photos as in PhotoPrism) — storage, poster + thumbnails via `ffmpeg`,
+  playback/streaming (range requests), video import from PhotoPrism. Embedding on the poster frame
+  (which also makes videos searchable).
+- **Duplicate management** — review of similar/duplicate photos (pHash + embedding) and bulk cleanup.
+
+**What is out of scope:**
+
+- **Photo book creation** (deliberately not carried over from photo-sorter — LaTeX stack, complexity).
+- Public sharing / share links are not a priority (can be added later; PhotoPrism doesn't target them either).
 
 ---
 
-## 3. Architektura — přehled
+## 2. Guiding principles
 
-### 3.1 Topologie nasazení
+1. **Inspiration, not a copy.** From photo-sorter we take the proven contracts and data schema,
+   but we fix its pain points (see [§15](#15-what-we-do-differently-from-photo-sorter)).
+2. **PhotoPrism stays primary** until the hard cutover. Import is read-only and repeatable;
+   Kukátko runs in parallel and does not disturb PhotoPrism.
+3. **Pi-first, the box as an accelerator.** The app runs on a Raspberry Pi (ARM64, limited RAM).
+   Compute-heavy inference (CLIP, faces) runs on a powerful machine (the box with an NVIDIA GPU,
+   on Tailscale), which **is not always powered on**. Everything must work even when the box is offline.
+4. **Visible early.** The milestones are ordered so that a usable UI appears as soon as possible,
+   which is then iterated on.
+5. **Robustness > extra features.** Persistent state, idempotency, graceful degradation,
+   no data loss on restart / box outage.
+6. **YAGNI.** No speculative features. Simple, testable, well-bounded modules.
+7. **Testability and quality from the start.** Every change has unit and (where it makes sense)
+   integration tests. A strict `golangci-lint` and the tests are a **hard gate** (`make check`).
+   Nothing is merged with red lint or tests. Goal: an extensible application that the next
+   iteration won't break. Details in [§19 Quality, testing and linting](#19-quality-testing-and-linting).
+
+---
+
+## 3. Architecture — overview
+
+### 3.1 Deployment topology
 
 ```
 ┌──────────────────────────── Raspberry Pi (ARM64) ────────────────────────────┐

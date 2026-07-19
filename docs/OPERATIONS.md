@@ -1,111 +1,111 @@
-# Provoz: CLI, konfigurace, build a CI
+# Operations: CLI, configuration, build, and CI
 
-Popisný referenční přehled příkazů, konfiguračních klíčů, `make` cílů a balíčkování.
-**Nejsou to pravidla** — pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový
-konfigurační klíč zapiš sem **a** do `config.example.yaml`.
+A descriptive reference overview of commands, configuration keys, `make` targets, and packaging.
+**These are not rules** — the rules live in [`CLAUDE.md`](../CLAUDE.md). Write a new
+configuration key both here **and** into `config.example.yaml`.
 
 ## CLI
 
 <!-- BODY CLI -->
-- **CLI:** `kukatko serve` (načte config, **spustí migrace**, **bootstrapne admina**, spustí
-  hodinové čištění expirovaných session, **background worker** (`internal/worker`) na
-  zpracování fronty jobů a **plánovaný úklid koše** (`internal/trash` `RunPurge`, každých 6 h —
-  trvale maže fotky archivované déle než `trash.retention_days`, výchozí **365 dní (1 rok)**;
-  retence ≤ 0 ho vypne),
-  **plánovanou S3 zálohu** (`internal/backup` `RunSchedule` na `backup.schedule`; jen je-li
-  `backup.s3.{endpoint,bucket}` nakonfigurováno) a **volitelný Wake-on-LAN auto-wake boxu**
-  (`internal/wake` `Run`, každou minutu; jen je-li `embedding.wake.enabled`, jinak plně inertní),
-  pak poslouchá na `web.host:web.port`, default
+- **CLI:** `kukatko serve` (loads the config, **runs migrations**, **bootstraps the admin**, starts
+  the hourly cleanup of expired sessions, the **background worker** (`internal/worker`) that
+  processes the job queue, and the **scheduled trash cleanup** (`internal/trash` `RunPurge`, every 6 h —
+  permanently deletes photos archived longer than `trash.retention_days`, default **365 days (1 year)**;
+  retention ≤ 0 disables it),
+  the **scheduled S3 backup** (`internal/backup` `RunSchedule` on `backup.schedule`; only if
+  `backup.s3.{endpoint,bucket}` is configured), and the **optional Wake-on-LAN auto-wake of the box**
+  (`internal/wake` `Run`, every minute; only if `embedding.wake.enabled`, otherwise fully inert),
+  then listens on `web.host:web.port`, default
   `0.0.0.0:8080`; `GET /healthz` → 200 JSON `{"status":"ok","version":{…}}`, **`GET /metrics`**
-  Prometheus (mimo `/api/v1`, bez autentizace; jen když `metrics.enabled`), auth/admin API
-  pod `/api/v1` — viz níže, ostatní cesty servíruje **embedované SPA** s fallbackem na
-  `index.html`; `serve` navíc nastaví **strukturované logování** (`obs.Setup`, JSON slog na
-  stderr, level `log.level`) a — když `metrics.enabled` — postaví `metrics.Registry`, zaregistruje
-  DB-pool + job-queue-depth kolektory a vloží request-metriky + access-log middleware přes
-  `server.WithMiddleware`/`WithMetricsHandler`), `kukatko migrate` (spustí pending migrace samostatně a skončí),
-  `kukatko migrate photosorter` (synchronní read-only inkrementální **migrace dat z photo-sorteru** —
-  `psimport`; aplikuje DB migrace, pak `Service.Migrate`; potřebuje `import.photosorter.dsn`, jinak
-  `errPSMigrateNotConfigured`; pro ops/cron bez běžícího serveru),
-  `kukatko import photoprism` (synchronní read-only inkrementální import z PhotoPrismu — `ppimport`;
-  potřebuje `import.photoprism.base_url`, jinak chyba; pro ops/cron bez běžícího serveru;
-  **scoped běh** = knihovna se dá migrovat po řezech: `--album <photoprism-uid>` (fotky alba),
-  `--label <slug>` (fotky s tím štítkem, např. `sdh`), `--person <jméno>` (fotky, na kterých je daný
-  subjekt, např. `"Aleš Kozák"`), `--year <YYYY>` (fotky pořízené v tom roce). Flagy se **kombinují
-  a běh zužují** (album jde do `s=`, ostatní do `q=` jako ANDované termy, ověřeno proti produkci:
-  `--album X --year 1985`). Scoped běh natáhne svůj řez **celý, bez ohledu na stáří fotek**
-  (ignoruje watermark) a **každou fotku přenese kompletní**: založí a připojí **všechna** alba, ve
-  kterých fotka je, i **všechny** její štítky (se `source`/`uncertainty` ze zdroje) — tedy i ta, která
-  scope nejmenoval, takže fotka ze tří alb importovaná přes `--album` na jedno skončí ve všech třech
-  (stojí to 1 request na detail fotky navíc; plný běh to nedělá a mapuje strukturu průchodem katalogu
-  alb/štítků). Lidi seedují face markery importovaných fotek. Běh **neposouvá watermark**, takže
-  pozdější plný import pořád vidí všechny fotky. Neznámé uid alba → `ErrAlbumNotFound`, neznámý slug
-  štítku → `ErrLabelNotFound` (ověřuje se **před** stahováním), nesmyslný rok → `ErrInvalidYear`, žádný
-  flag → plný inkrementální běh. Je idempotentní — re-run nezaloží druhé album, štítek ani členství.
-  Slouží k ověření importu proti produkci a k předtažení části knihovny),
-  **`kukatko import dir <path>`** (nahraje **adresář z disku** — `internal/dirimport`; viz níže),
-  `kukatko backup` (synchronní jednorázová **S3 záloha** — `internal/backup`; pg_dump + sync
-  originálů + retence; potřebuje `backup.s3.{endpoint,bucket}`, jinak `errBackupNotConfigured`;
-  při `storage.backend: r2` se originály **kopírují bucket→bucket server-side** a záloha do
-  **téhož** bucketu, ve kterém leží knihovna, skončí `errBackupSameBucket`;
-  pro ops/cron bez běžícího serveru),
-  **`kukatko restore`** (strom obnovy/disaster recovery — `internal/backup`; sdílí `backup.s3.*`,
-  jinak `errRestoreNotConfigured`; pro ops/cron bez běžícího serveru): `restore list` (dumpy v
-  bucketu), `restore db [--dump KEY] [--yes] [--verify]` (**destruktivní** obnova DB přes
-  `pg_restore` streamovaný z S3 + idempotentní re-migrace; bez `--yes` → `errRestoreNotConfirmed`),
-  `restore originals` (stáhne chybějící originály, skip dle klíče+velikosti, resumovatelné),
-  `restore verify` (integritní report fotek v DB vs originálů na disku); runbook
+  Prometheus (outside `/api/v1`, unauthenticated; only when `metrics.enabled`), the auth/admin API
+  under `/api/v1` — see below, and all other paths are served by the **embedded SPA** with a fallback to
+  `index.html`; `serve` additionally sets up **structured logging** (`obs.Setup`, JSON slog to
+  stderr, level `log.level`) and — when `metrics.enabled` — builds the `metrics.Registry`, registers
+  the DB-pool + job-queue-depth collectors, and inserts the request-metrics + access-log middleware via
+  `server.WithMiddleware`/`WithMetricsHandler`), `kukatko migrate` (runs pending migrations on their own and exits),
+  `kukatko migrate photosorter` (synchronous read-only incremental **data migration from photo-sorter** —
+  `psimport`; applies DB migrations, then `Service.Migrate`; needs `import.photosorter.dsn`, otherwise
+  `errPSMigrateNotConfigured`; for ops/cron without a running server),
+  `kukatko import photoprism` (synchronous read-only incremental import from PhotoPrism — `ppimport`;
+  needs `import.photoprism.base_url`, otherwise an error; for ops/cron without a running server;
+  a **scoped run** = the library can be migrated in slices: `--album <photoprism-uid>` (an album's photos),
+  `--label <slug>` (photos with that label, e.g. `sdh`), `--person <jméno>` (photos the given
+  subject appears in, e.g. `"Aleš Kozák"`), `--year <YYYY>` (photos taken in that year). Flags **combine
+  and narrow the run** (the album goes into `s=`, the rest into `q=` as ANDed terms, verified against production:
+  `--album X --year 1985`). A scoped run pulls its slice in **full, regardless of photo age**
+  (it ignores the watermark) and **transfers each photo complete**: it creates and attaches **all** the albums the
+  photo is in, plus **all** its labels (with `source`/`uncertainty` from the source) — including the ones the
+  scope did not name, so a photo from three albums imported via `--album` into one ends up in all three
+  (this costs 1 extra photo-detail request; a full run does not do this and maps the structure by walking the
+  album/label catalog). People seed the face markers of imported photos. The run **does not advance the watermark**, so
+  a later full import still sees all photos. An unknown album uid → `ErrAlbumNotFound`, an unknown label
+  slug → `ErrLabelNotFound` (verified **before** downloading), a nonsensical year → `ErrInvalidYear`, no
+  flag → a full incremental run. It is idempotent — a re-run does not create a second album, label, or membership.
+  Used to verify the import against production and to pre-pull part of the library),
+  **`kukatko import dir <path>`** (uploads a **directory from disk** — `internal/dirimport`; see below),
+  `kukatko backup` (synchronous one-off **S3 backup** — `internal/backup`; pg_dump + sync of
+  originals + retention; needs `backup.s3.{endpoint,bucket}`, otherwise `errBackupNotConfigured`;
+  under `storage.backend: r2` the originals are **copied bucket→bucket server-side** and a backup into
+  the **same** bucket the library lives in fails with `errBackupSameBucket`;
+  for ops/cron without a running server),
+  **`kukatko restore`** (the restore/disaster-recovery tree — `internal/backup`; shares `backup.s3.*`,
+  otherwise `errRestoreNotConfigured`; for ops/cron without a running server): `restore list` (dumps in
+  the bucket), `restore db [--dump KEY] [--yes] [--verify]` (**destructive** DB restore via
+  `pg_restore` streamed from S3 + idempotent re-migration; without `--yes` → `errRestoreNotConfirmed`),
+  `restore originals` (downloads missing originals, skips by key+size, resumable),
+  `restore verify` (integrity report of photos in the DB vs originals on disk); runbook
   [`docs/RESTORE.md`](RESTORE.md),
-  **`kukatko maintenance`** (integritní kontrola & opravy knihovny — `internal/maintenance`; pro
-  ops/cron bez běžícího serveru, aplikuje migrace a postaví službu sdílenou s admin API):
-  `maintenance scan` (read-only integritní report — disk↔DB drift + chybějící odvozená data) a
-  `maintenance repair` s flagy `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
-  (každá opt-in; thumbnails/phashes zařadí `thumbnail` joby drainované workerem běžícího serveru,
-  embeddings/faces backfill, orphan import synchronně přes upload pipeline; bez flagu no-op;
-  **retenční purge starých audit logů** je zvlášť jen přes HTTP/UI, ne CLI — maintainer volá
-  `POST /api/v1/maintenance/audit/purge` `{older_than_days}` (`internal/maintenanceapi`), smaže audit
-  záznamy starší než `now − older_than_days` a **sám se auditne** (`audit.purge`, aby mazání trailu
-  zůstalo dohledatelné); admin UI má na stránce Údržba kartu „Vymazat audit log" s presety
-  (3/6 měsíců, 1/2 roky) nebo vlastním počtem dní a potvrzením),
-  **`kukatko sidecar`** (metadatové sidecary — `internal/sidecarjob`; terminálový vstup do exportu,
-  který dělá kurátorská data nezávislá na databázi): `sidecar backfill` zařadí `sidecar` job pro
-  každou fotku s **chybějícím nebo zastaralým** sidecarem, `--all` vynutí úplný re-run nad každou
-  nearchivovanou fotkou (tím se doženou změny mimo řádek fotky — členství v albu, štítek).
-  Jen **zařadí**; soubory zapisuje worker běžícího serveru (stejná fronta, stejný handler, stejný
-  dedup jako u živých editů, takže backfill nemůže závodit s uživatelem), proto vypisuje počet
-  naplánovaných jobů. Idempotentní — nad knihovnou s aktuálními sidecary naplánuje nulu — takže se
-  dá pouštět z cronu a hlavně **před každou riskantní operací** (migrace, upgrade, zkouška obnovy),
-  což je přesně chvíle, kdy je člověk v terminálu. Když je `sidecar.enabled: false`, příkaz
-  **selže** místo tichého „0 naplánováno“. Formát celý v [`docs/RESTORE.md`](RESTORE.md),
-  HTTP protějšek `POST /api/v1/process/sidecars`,
-  **`kukatko storage`** (operace nad úložištěm originálů — `internal/storagemigrate`):
-  `storage migrate-to-r2` (jednorázový **resumovatelný** přesun knihovny do R2, viz níže),
-  **`kukatko ctl`** (vzdálený klient nad HTTP API běžící instance — `internal/ctl`; jediný subkomand,
-  který **nesahá na DB ani disk**, viz níže),
-  `kukatko version` (verze + commit). Persistentní flag `--config <path>` určuje YAML config.
-  `server.New(addr, server.WithAPI(register))` mountuje route-skupiny pod `/api/v1`.
+  **`kukatko maintenance`** (library integrity check & repair — `internal/maintenance`; for
+  ops/cron without a running server, applies migrations and builds a service shared with the admin API):
+  `maintenance scan` (read-only integrity report — disk↔DB drift + missing derived data) and
+  `maintenance repair` with the flags `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
+  (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
+  embeddings/faces backfill, orphan import synchronously via the upload pipeline; a no-op without any flag;
+  the **retention purge of old audit logs** is separate, only via HTTP/UI, not the CLI — the maintainer calls
+  `POST /api/v1/maintenance/audit/purge` `{older_than_days}` (`internal/maintenanceapi`), which deletes audit
+  entries older than `now − older_than_days` and **audits itself** (`audit.purge`, so that deleting the trail
+  stays traceable); the admin UI has a „Vymazat audit log" card on the Údržba page with presets
+  (3/6 months, 1/2 years) or a custom number of days plus a confirmation),
+  **`kukatko sidecar`** (metadata sidecars — `internal/sidecarjob`; the terminal entry point into the export
+  that makes curation data independent of the database): `sidecar backfill` enqueues a `sidecar` job for
+  every photo with a **missing or stale** sidecar, `--all` forces a full re-run over every
+  unarchived photo (this catches up changes outside the photo's own row — album membership, a label).
+  It only **enqueues**; the files are written by a running server's worker (the same queue, same handler, same
+  dedup as for live edits, so the backfill cannot race the user), which is why it prints the number of
+  scheduled jobs. Idempotent — over a library with up-to-date sidecars it schedules zero — so it
+  can be run from cron and, above all, **before any risky operation** (a migration, upgrade, restore drill),
+  which is exactly the moment a person is at the terminal. When `sidecar.enabled: false`, the command
+  **fails** instead of a silent “0 scheduled”. The full format is in [`docs/RESTORE.md`](RESTORE.md),
+  the HTTP counterpart is `POST /api/v1/process/sidecars`,
+  **`kukatko storage`** (operations over the storage of originals — `internal/storagemigrate`):
+  `storage migrate-to-r2` (a one-off **resumable** move of the library to R2, see below),
+  **`kukatko ctl`** (a remote client over the HTTP API of a running instance — `internal/ctl`; the only subcommand
+  that **touches neither the DB nor disk**, see below),
+  `kukatko version` (version + commit). The persistent `--config <path>` flag selects the YAML config.
+  `server.New(addr, server.WithAPI(register))` mounts the route groups under `/api/v1`.
 
 ### `kukatko import dir <path>`
 
-Projde adresář na disku (rekurzivně) a nahraje každý mediální soubor do knihovny **přes stejnou
-pipeline jako upload z prohlížeče** (`internal/ingest`): stream + SHA256, metadata, originál do
-`YYYY/MM`, náhledy, joby `image_embed`/`face_detect` do fronty. Zdrojový adresář se **jen čte** —
-originály se kopírují, nikdy nepřesouvají ani nemění. Pro ops/cron bez běžícího serveru (aplikuje
-migrace a otevře DB sám); běh se zapisuje do `import_runs` jako zdroj `folder`, takže je vidět
-v `/import` i v `GET /import/runs` vedle PhotoPrism a photo-sorter běhů.
+Walks a directory on disk (recursively) and uploads every media file into the library **through the same
+pipeline as a browser upload** (`internal/ingest`): stream + SHA256, metadata, the original into
+`YYYY/MM`, thumbnails, `image_embed`/`face_detect` jobs onto the queue. The source directory is **read only** —
+originals are copied, never moved or modified. For ops/cron without a running server (it applies
+migrations and opens the DB itself); the run is recorded in `import_runs` as source `folder`, so it is visible
+in `/import` and in `GET /import/runs` alongside PhotoPrism and photo-sorter runs.
 
-**Je vždy bezpečné pustit ho znovu.** Identita je SHA256 obsahu: co už v knihovně je, se nahlásí
-jako duplicita (i pod jiným jménem — výpis ukáže obě cesty) a nic se nezapíše. Běh je i
-resumovatelný — každý soubor je commitnutý zvlášť, takže pád nebo Ctrl-C nechá naimportované fotky
-v knihovně a další běh dojede zbytek (přerušený běh se uzavře jako `failed`). Chyba jednoho souboru
-se zaloguje a **pokračuje se dál**; příkaz skončí **nenulovým exit kódem**, když aspoň jeden soubor
-selhal, aby to skript poznal.
+**It is always safe to run again.** Identity is the SHA256 of the content: anything already in the library is reported
+as a duplicate (even under a different name — the listing shows both paths) and nothing is written. The run is also
+resumable — each file is committed separately, so a crash or Ctrl-C leaves the already-imported photos
+in the library and the next run finishes the rest (an interrupted run is closed as `failed`). An error on a single file
+is logged and **processing continues**; the command exits with a **nonzero exit code** when at least one file
+failed, so a script can tell.
 
-#### Sidecary: Google Takeout (`.json`) a Apple (`.xmp`)
+#### Sidecars: Google Takeout (`.json`) and Apple (`.xmp`)
 
-Export z Google Photos (Takeout) nese metadata **vedle** fotky, ne v ní: exportovaný JPEG má EXIF
-zpravidla oříznutý při re-encode, takže skutečné datum pořízení, popisek i GPS žijí jen v `.json`
-souboru vedle. Naimportovat takovou složku naivně = přijít o všechno; proto import sidecary **čte**
-(vypne se `--no-sidecars`).
+A Google Photos (Takeout) export carries metadata **next to** the photo, not inside it: the exported JPEG
+usually has its EXIF stripped on re-encode, so the real capture date, caption, and GPS live only in the `.json`
+file beside it. Importing such a folder naively = losing everything; that is why the import **reads** sidecars
+(disable with `--no-sidecars`).
 
 - **Co se přenáší.** Takeout: `photoTakenTime` → `taken_at`, `description` → popis,
   `geoData`/`geoDataExif` → `lat`/`lng`/`altitude` (**přesná 0/0 = neznámo**, ne bod v Guinejském

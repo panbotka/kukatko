@@ -1,76 +1,77 @@
-# MCP server — knihovna pro AI agenta
+# MCP server — the library for an AI agent
 
-Kukátko umí vystavit svou knihovnu jako **MCP server** (Model Context Protocol), takže s ní AI agent
-pracuje přímo: hledá, čte, organizuje, odpovídá na otázky. Motivace není hračička — tahle knihovna se
-takhle reálně udržuje: *„najdi všechny fotky babičky ze šedesátých let a dej je do alba"* je běžný
-pracovní postup, ne demo.
+Kukátko can expose its library as an **MCP server** (Model Context Protocol) so that an AI agent works
+with it directly: it searches, reads, organizes, answers questions. The motivation is no gimmick — this
+is genuinely how the library gets maintained: *"find all of grandma's photos from the sixties and drop
+them into an album"* is an everyday workflow, not a demo.
 
-Implementace: [`internal/mcpapi`](../internal/mcpapi), wiring `buildMCPAPI` v `cmd/kukatko/mcp.go`.
+Implementation: [`internal/mcpapi`](../internal/mcpapi), wiring `buildMCPAPI` in `cmd/kukatko/mcp.go`.
 
 ---
 
-## Endpoint a transport
+## Endpoint and transport
 
 | | |
 | --- | --- |
-| **Cesta** | `POST /api/v1/mcp` |
-| **Transport** | Streamable HTTP, **stateless**, odpověď `application/json` (ne SSE) |
-| **Guard** | `RequireAuth` (stejná auth jako zbytek `/api/v1`) |
-| **Default** | **vypnuto** — `mcp.enabled: false` |
-| **Knihovna** | [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) — čisté Go, drží `CGO_ENABLED=0` |
+| **Path** | `POST /api/v1/mcp` |
+| **Transport** | Streamable HTTP, **stateless**, `application/json` response (not SSE) |
+| **Guard** | `RequireAuth` (the same auth as the rest of `/api/v1`) |
+| **Default** | **disabled** — `mcp.enabled: false` |
+| **Library** | [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) — pure Go, keeps `CGO_ENABLED=0` |
 
-Cesta je `/api/v1/mcp`, protože **všechny** route Kukátka jedou pod `/api/v1` (`server.WithAPI`
-mountuje do jednoho subrouteru). Nemá vlastní top-level `/mcp`.
+The path is `/api/v1/mcp` because **all** of Kukátko's routes live under `/api/v1` (`server.WithAPI`
+mounts into a single subrouter). It has no top-level `/mcp` of its own.
 
-**Stateless** znamená, že každý POST je samostatný: žádná `Mcp-Session-Id`, žádný stav na serveru,
-který by šel unést nebo který by expiroval. Endpoint tím zůstává obyčejná autentizovaná route a
-context requestu (principal + audit metadata) doteče až do handlerů toolů.
+**Stateless** means every POST stands on its own: no `Mcp-Session-Id`, no server-side state that could
+be hijacked or that could expire. That keeps the endpoint an ordinary authenticated route, and the
+request context (principal + audit metadata) reaches all the way down into the tool handlers.
 
-DNS-rebinding guard SDK je **vypnutý** (`DisableLocalhostProtection`): odmítá request, který přijde
-po loopbacku s ne-loopback `Host` hlavičkou, což je přesně to, co dělá reverzní proxy před Kukátkem.
-Guard chrání *neautentizované* lokální servery; tenhle endpoint vyžaduje platného principala, takže
-by rozbil jen reálné nasazení.
+The SDK's DNS-rebinding guard is **off** (`DisableLocalhostProtection`): it rejects a request that comes
+in over loopback with a non-loopback `Host` header, which is exactly what a reverse proxy in front of
+Kukátko does. The guard protects *unauthenticated* local servers; this endpoint requires a valid
+principal, so it would only break a real deployment.
 
-## Auth model — žádný nový mechanismus
+## Auth model — no new mechanism
 
-Endpoint **nepřidává vlastní auth ani žádný bypass**. Sedí za stejným `RequireAuth` a stejným RBAC
-jako každá jiná route:
+The endpoint **adds no auth of its own and no bypass**. It sits behind the same `RequireAuth` and the
+same RBAC as every other route:
 
-- Agent se autentizuje **API tokenem** (`Authorization: Bearer kkt_…`), viz `internal/auth`.
-- **Roli má uživatel, ne token** — token dědí roli svého vlastníka v okamžiku autentizace.
-- Role rozhoduje o zápisu přes `Role.CanWrite()`: `viewer` → jen čtení; `editor`, `admin` a
-  **`maintainer`** → čtení i zápis. Pro čistě zapisujícího agenta stačí `editor` (nejnižší role se
-  zápisem); dřívější role `ai` byla zrušena (migrace `0036`), jejím nástupcem na vrcholu žebříčku je
-  `maintainer`.
+- The agent authenticates with an **API token** (`Authorization: Bearer kkt_…`), see `internal/auth`.
+- **The role belongs to the user, not the token** — a token inherits its owner's role at the moment of
+  authentication.
+- The role decides write access via `Role.CanWrite()`: `viewer` → read-only; `editor`, `admin` and
+  **`maintainer`** → read and write. A purely writing agent only needs `editor` (the lowest role with
+  write access); the former `ai` role was removed (migration `0036`), and its successor at the top of
+  the ladder is `maintainer`.
 
-Hranice je **dvojitá**, schválně:
+The boundary is **doubled**, on purpose:
 
-1. **Write tooly se read-only volajícímu vůbec neregistrují.** Server se staví dvakrát (read-only a
-   write) a `getServer` podle principala requestu vybere. Viewer je v `tools/list` ani neuvidí —
-   agent nemá koukat na nářadí, které nesmí použít.
-2. **Každý write handler roli znovu ověří** (`writerFromContext`). To je ta bezpečnostní hranice;
-   bod 1 je UX. Hranice, která žije na jednom místě, se rozpadne, jakmile někdo upraví to druhé.
+1. **Write tools are never even registered for a read-only caller.** The server is built twice
+   (read-only and write) and `getServer` picks based on the request's principal. A viewer will not
+   so much as see them in `tools/list` — an agent has no business looking at tools it must not use.
+2. **Every write handler re-checks the role** (`writerFromContext`). That is the security boundary;
+   point 1 is UX. A boundary that lives in a single place falls apart the moment someone edits the other.
 
 ## Audit
 
-Každá **mutace** projde `internal/audit` **ve stejné transakci** jako změna sama — přesně jako
-u člověka. To je celý důvod, proč audit trail existuje. Do `details` se navíc razítkuje `"via": "mcp"`:
-*kdo* to udělal a *kterými dveřmi* jsou dvě různé otázky, a ta druhá je po vypuštění agenta na
-knihovnu ta zajímavější.
+Every **mutation** passes through `internal/audit` **in the same transaction** as the change itself —
+exactly as it does for a human. That is the whole reason the audit trail exists. On top of that,
+`"via": "mcp"` is stamped into `details`: *who* did it and *through which door* are two different
+questions, and once an agent is turned loose on the library the second one is the more interesting.
 
-`set_photo_rating` schválně jede přes `internal/bulk` (a ne přes rating store napřímo), protože bulk
-si audit řádek v transakci píše sám — HTTP endpoint pro hodnocení audit nepíše, ale agentovo hodnocení
-má být dohledatelné jako každá jiná jeho změna.
+`set_photo_rating` deliberately goes through `internal/bulk` (and not the rating store directly), because
+bulk writes its own audit row inside the transaction — the HTTP rating endpoint writes no audit entry,
+but an agent's rating should be traceable like every other change it makes.
 
-## Tvar odpovědí — kontext agenta je ten vzácný zdroj
+## Response shape — the agent's context is the scarce resource
 
-`photos.Photo` má ~60 polí včetně **syrového `exif` JSONB blobu**. Search, který vrátí 50 takových
-objektů, je nepoužitelný. Proto:
+`photos.Photo` has ~60 fields, including the **raw `exif` JSONB blob**. A search that returns 50 such
+objects is unusable. Hence:
 
-- Seznamy vrací `photoSummary`: `uid`, `title`, `taken_at`, `media_type`, `thumb_url`. Nic víc.
-- Detail (`get_photo`) vrací kurátorovaný výběr sloupců — **`exif` blob nikdy, z žádného toolu**.
-- Vše stránkuje: `total`, `offset` a **`remaining`** (kolik jich ještě zbývá).
-- Velikosti stránky drží `mcp.page_size` / `mcp.max_page_size`.
+- Lists return `photoSummary`: `uid`, `title`, `taken_at`, `media_type`, `thumb_url`. Nothing more.
+- The detail (`get_photo`) returns a curated selection of columns — **never the `exif` blob, from any tool**.
+- Everything paginates: `total`, `offset` and **`remaining`** (how many are still left).
+- Page sizes are held by `mcp.page_size` / `mcp.max_page_size`.
 
 ## Tooly
 

@@ -64,7 +64,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/config` — typed configuration, Viper, `Load()`
 - `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON output
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
-- `internal/dirimport` — `kukatko import dir`: projde adresář na disku a nahraje média přes `internal/ingest`
+- `internal/dirimport` — `kukatko import dir`: walks a directory on disk and uploads its media via `internal/ingest`
 - `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only
 - `internal/duplicatesapi` — `GET /duplicates`, `POST /duplicates/merge`
 - `internal/dupmerge` — transactional resolve of a dup group: union albums/labels/people onto the keeper, fill gaps, archive copies
@@ -121,7 +121,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/savedsearch` — per-user saved searches ("smart albums")
 - `internal/savedsearchapi` — `/saved-searches`, everything scoped to the owner (foreign → 404)
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
-- `internal/sidecar` — čte metadata vedle média (Google Takeout `.json`, Apple `.xmp`), páruje je se soubory a řeší precedenci vůči EXIF
+- `internal/sidecar` — reads metadata next to the media (Google Takeout `.json`, Apple `.xmp`), pairs it with files and resolves precedence vs. EXIF
 - `internal/sidecarexport` — **writes** the metadata sidecar: the versioned YAML format + its atomic write to storage, so the catalogue survives losing the DB. Not `internal/sidecar` (that reads foreign ones)
 - `internal/sidecarjob` — worker handler `sidecar` + backfill: rewrites a photo's sidecar whenever its metadata/curation changes; idempotent, debounced by the queue's dedup
 - `internal/stacks` — group RAW+JPEG / edited variants of one shot into a stack (detection rules + manual stack/unstack/set-primary); **grouping, never merging**
