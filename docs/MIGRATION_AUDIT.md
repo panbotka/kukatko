@@ -1,1041 +1,1016 @@
-# Migrační audit — PhotoPrism → Kukátko
+# Migration audit — PhotoPrism → Kukátko
 
-- **Datum auditu:** 2026-07-17
-- **Auditovaný commit:** `6e2600e` (větev `main`)
-- **Rozsah:** kompletní mapování pole-po-poli, kterým import z běžící instance
-  PhotoPrism plní katalog Kukátka — fotky a jejich metadata, alba, štítky,
-  subjekty/lidé, markery/obličeje, místa, hodnocení a oblíbené.
-- **Účel:** dát jistotu, že migrace z PhotoPrismu — jediná cesta, kterou historie
-  knihovny vstupuje do nové databáze — nic tiše neztrácí. Dokument původně **pouze
-  popisoval**; jeho čtyři mezery (GAP) v sekci „PhotoPrism → Kukátko“ **už jsou
-  vyřešené** — tři subjektové (`Subject.Type`/`Favorite`/`Private`) jako MAPPED,
-  `Album.Category` jako WAIVED — a řádky níže to odrážejí. Sekce
-  „photo-sorter → Kukátko“ dále popisuje a její doporučené opravy zapsané zůstávají.
+- **Audit date:** 2026-07-17
+- **Audited commit:** `6e2600e` (branch `main`)
+- **Scope:** the complete field-by-field mapping by which the import from a running
+  PhotoPrism instance populates the Kukátko catalog — photos and their metadata, albums,
+  labels, subjects/people, markers/faces, places, ratings and favorites.
+- **Purpose:** to give confidence that the migration from PhotoPrism — the only path by
+  which the library's history enters the new database — loses nothing silently. The document
+  was originally **descriptive only**; its four gaps (GAP) in the "PhotoPrism → Kukátko"
+  section **are now resolved** — three subject ones (`Subject.Type`/`Favorite`/`Private`) as
+  MAPPED, `Album.Category` as WAIVED — and the rows below reflect that. The
+  "photo-sorter → Kukátko" section goes on to describe the rest, and its recommended fixes
+  remain as written.
 
-Auditovaný kód: `internal/photoprism/` (zdrojové struktury `models.go` a endpointy
-`photoprism.go` + `download.go`), `internal/ppimport/` (mapery), `internal/photos/`
-(cílové sloupce a INSERT/UPDATE cesty), migrace `internal/database/migrations/`.
-Srovnávacím importérem je `internal/psimport/` (přímá migrace z photo-sorteru), na
-který se na několika místech odkazuje asymetrie.
+Audited code: `internal/photoprism/` (source structs `models.go` and the endpoints
+`photoprism.go` + `download.go`), `internal/ppimport/` (the mappers), `internal/photos/`
+(target columns and the INSERT/UPDATE paths), migrations `internal/database/migrations/`.
+The comparison importer is `internal/psimport/` (the direct migration from photo-sorter), to
+which the asymmetry refers in several places.
 
-## Legenda verdiktů
+## Verdict legend
 
-- **MAPPED** — hodnota se přenáší do sloupce. U polí s precedencí/fallbackem je
-  pravidlo v poznámce.
-- **WAIVED** — vědomě nepřenášeno, vždy s důvodem.
-- **GAP** — skutečná ztráta, o které nikdo nerozhodl. Poznámka říká, co se ztrácí,
-  kdy to zabolí a doporučenou opravu.
+- **MAPPED** — the value is carried into a column. For fields with precedence/fallback the
+  rule is in the note.
+- **WAIVED** — deliberately not carried, always with a reason.
+- **GAP** — a real loss that nobody decided on. The note says what is lost, when it hurts, and
+  the recommended fix.
 
-## Souhrn
+## Summary
 
-Auditováno **89 zdrojových polí** definovaných v `internal/photoprism/models.go`
-(včetně 6 kontejnerových/relačních polí — `Photo.Files`, `PhotoDetail.Albums`,
-`PhotoDetail.Labels`, `File.Markers` a odkazů na `Details`):
+Audited **89 source fields** defined in `internal/photoprism/models.go` (including 6
+container/relational fields — `Photo.Files`, `PhotoDetail.Albums`, `PhotoDetail.Labels`,
+`File.Markers` and references to `Details`):
 
-| Verdikt | Počet |
+| Verdict | Count |
 | --- | --- |
 | **MAPPED** | 61 |
 | **WAIVED** | 28 |
 | **GAP** | 0 |
-| **Celkem** | 89 |
+| **Total** | 89 |
 
-**Stav mezer — všechny čtyři vyřešeny (commit tohoto úkolu):**
+**Gap status — all four resolved (this task's commit):**
 
-1. **`Subject.Private` → `subjects.private`** — **OPRAVENO (MAPPED).** Soukromý
-   člověk z PhotoPrismu zůstává po importu soukromý. Byla to nejzávažnější mezera:
-   měla dopad na soukromí.
-2. **`Subject.Favorite` → `subjects.favorite`** — **OPRAVENO (MAPPED).** Příznak
-   oblíbeného člověka se přenáší.
-3. **`Subject.Type` → `subjects.type`** — **OPRAVENO (MAPPED).** Zvíře (`pet`) nebo
-   jiná entita (`other`) si zachová svůj typ; už není každý subjekt natvrdo `person`.
-4. **`Album.Category` → (bez sloupce)** — **WAIVED (produktové rozhodnutí).** Kukátko
-   nemá koncept kategorie alba (žádný sloupec, žádné UI, žádný dotaz) — přidat
-   zapisovací sloupec, který nikdo nečte, by byl mrtvý sloupec. Viz „Alba“ a
-   ověřená indicie č. 5.
+1. **`Subject.Private` → `subjects.private`** — **FIXED (MAPPED).** A person marked private in
+   PhotoPrism stays private after import. This was the most serious gap: it had a privacy
+   impact.
+2. **`Subject.Favorite` → `subjects.favorite`** — **FIXED (MAPPED).** The favorite-person flag
+   is carried over.
+3. **`Subject.Type` → `subjects.type`** — **FIXED (MAPPED).** An animal (`pet`) or other entity
+   (`other`) keeps its type; no longer is every subject hard-coded to `person`.
+4. **`Album.Category` → (no column)** — **WAIVED (product decision).** Kukátko has no concept
+   of an album category (no column, no UI, no query) — adding a write-only column that nobody
+   reads would be a dead column. See "Albums" and verified clue #5.
 
-Mezery 1–3 měly společnou příčinu i společnou opravu — viz sekce „Subjekty“ a
-ověřená indicie č. 4 níže.
-Kromě těchto (nyní vyřešených) čtyř existuje několik **vědomě vynechaných** položek
-s netriviálním dopadem (nepojmenované/neplatné obličejové markery, alba typu `month`
-při plném běhu) — jsou popsané v „Rizika a vědomé kompromisy“.
+Gaps 1–3 shared a common cause and a common fix — see the "Subjects" section and verified
+clue #4 below.
+Besides these (now resolved) four, there are several **deliberately omitted** items with a
+non-trivial impact (unnamed/invalid face markers, `month`-type albums on a full run) — they
+are described in "Risks and deliberate trade-offs".
 
-## Jak import plní řádek fotky (kontext k tabulkám)
+## How the import fills a photo row (context for the tables)
 
-PhotoPrism dělí data fotky mezi **dva endpointy**, a audit proto musí sledovat obě
-poloviny:
+PhotoPrism splits a photo's data between **two endpoints**, so the audit has to track both
+halves:
 
-- **Výpis** `GET /photos?merged=true` (`ListPhotos`) vrací plochou vyhledávací
-  strukturu `Photo`. Nese kmenová metadata (titulek, popisek, čas, GPS, kamera),
-  ale **žádný blok `Details`**, soubory s **vždy prázdným polem `Markers`** a bez
-  per-file kodeku/barevného profilu.
-- **Detail** `GET /photos/{uid}` (`GetPhoto`) vrací `PhotoDetail` = `Photo` + blok
-  `Details` (IPTC/XMP kredity) + technická pole souboru + **obličejové markery** +
-  relace **alba** a **štítky**. Vše, co je „detail-only“, se přenáší z tohoto
-  jediného požadavku (`ppimport.importPhotoDetail` → `importMetadata` /
-  `importMarkers` / `mapPhotoContext`).
+- **The listing** `GET /photos?merged=true` (`ListPhotos`) returns a flat search structure
+  `Photo`. It carries the core metadata (title, caption, time, GPS, camera), but **no
+  `Details` block**, files with an **always-empty `Markers` field**, and no per-file
+  codec/color profile.
+- **The detail** `GET /photos/{uid}` (`GetPhoto`) returns `PhotoDetail` = `Photo` + the
+  `Details` block (IPTC/XMP credits) + the file's technical fields + the **face markers** + the
+  **albums** and **labels** relations. Everything that is "detail-only" is carried from this
+  single request (`ppimport.importPhotoDetail` → `importMetadata` / `importMarkers` /
+  `mapPhotoContext`).
 
-Vkládací cesta: `buildPhoto` (`metadata.go`) sestaví řádek z výpisu a vlastního
-EXIF staženého originálu, `videoFields.apply` (`video.go`) dolije video sloupce
-z ffprobe, `photos.Store.Create` (`store.go`, `photoInsertColumns`) vloží řádek.
-Detailová pole pak dopisuje `photos.Store.ApplyImportMetadata`
-(`store_import.go`) s pravidlem „zdroj vlastní kredity, prázdno nikdy nemaže“.
-Inkrementální přeběh mění metadata přes `metadataUpdate` → `UpdateMetadata`.
+The insert path: `buildPhoto` (`metadata.go`) assembles the row from the listing and the
+original's own downloaded EXIF, `videoFields.apply` (`video.go`) tops up the video columns
+from ffprobe, and `photos.Store.Create` (`store.go`, `photoInsertColumns`) inserts the row.
+The detail fields are then written by `photos.Store.ApplyImportMetadata`
+(`store_import.go`) with the rule "the source owns the credits, empty never erases". An
+incremental pass changes metadata via `metadataUpdate` → `UpdateMetadata`.
 
 ---
 
-## Fotky — struktura `Photo` (výpis)
+## Photos — the `Photo` structure (listing)
 
-Cíl je tabulka `photos` (migrace `0003`, `0004`, `0024`, `0027`, `0028`, `0029`,
-`0030`, `0033`). Precedence u kurátorských polí: **PhotoPrism vyhrává, když má
-hodnotu; prázdno spadne na vlastní EXIF souboru** (`applyCameraMeta`,
-`applyCaptureMeta`).
+The target is the `photos` table (migrations `0003`, `0004`, `0024`, `0027`, `0028`, `0029`,
+`0030`, `0033`). Precedence for the curatorial fields: **PhotoPrism wins when it has a value;
+empty falls back to the file's own EXIF** (`applyCameraMeta`, `applyCaptureMeta`).
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Photo.UID` | `photoprism_uid` | **MAPPED** | Stabilní klíč importu a deduplikace (`GetByPhotoprismUID`). |
-| `Photo.Type` | `media_type` | **MAPPED** | `mapMediaType`: `video`/`animated`→video, `live`→live, zbytek→image. Rozhoduje ale i skutečný stažený soubor (`selectMedia`): video bez streamu degraduje na image. |
-| `Photo.Title` | `title` | **MAPPED** | Vklad přímo; inkrement `firstNonEmpty(pp.Title, existing.Title)` — smazaný titulek nahoře nepřepíše vyplněný. |
-| `Photo.Caption` | `description` | **MAPPED** | Primární zdroj popisku; `caption() = firstNonEmpty(Caption, Description)`. |
-| `Photo.Description` | `description` | **MAPPED** | Fallback v `caption()`. Na současném PhotoPrismu je pole mrtvé (`gorm:"-"`, vždy prázdné), ale modelované kvůli starší instanci; precedence je správně (živý `Caption` první) a popisek nemůže spadnout pod stůl. |
-| `Photo.TakenAt` | `taken_at` (+ `taken_at_source='exif'`) | **MAPPED** | `applyCaptureMeta`; při nulovém čase fallback na EXIF souboru s jeho zdrojem. |
-| `Photo.TakenAtLocal` | — | **WAIVED** | Kukátko drží jediný kanonický `taken_at` (timestamptz); lokální vykreslení je odvozené na výstupu, `TakenAt` už nese okamžik. |
-| `Photo.UpdatedAt` | — (bez sloupce) | **WAIVED** | Řídí inkrementální high-watermark v `import_runs` (max `UpdatedAt` za běh), není sloupcem fotky; `photos.updated_at` je čas vlastní mutace řádku. |
-| `Photo.CreatedAt` | — (bez sloupce) | **WAIVED** | `photos.created_at` = kdy byla fotka založena lokálně (DB `now()`). Čas indexace v PhotoPrismu není historií knihovny. |
-| `Photo.Lat` | `lat` (+ `location_source`) | **MAPPED** | Přenos jen když `Lat != 0 || Lng != 0`; provenience `exif`. Hrana: přesně `(0,0)` „Null Island“ se bere jako bez polohy (univerzální konvence), viz Rizika. |
-| `Photo.Lng` | `lng` | **MAPPED** | Viz `Lat`. |
-| `Photo.Altitude` | `altitude` | **MAPPED** | Přenos jen když `Altitude != 0`, jinak EXIF. Hrana: nadmořská výška `0` = hladina moře spadne na EXIF/nil (viz Rizika, „nulová past“). |
+| `Photo.UID` | `photoprism_uid` | **MAPPED** | Stable import and dedup key (`GetByPhotoprismUID`). |
+| `Photo.Type` | `media_type` | **MAPPED** | `mapMediaType`: `video`/`animated`→video, `live`→live, the rest→image. But the actual downloaded file also decides (`selectMedia`): a video with no stream degrades to image. |
+| `Photo.Title` | `title` | **MAPPED** | Inserted directly; incremental `firstNonEmpty(pp.Title, existing.Title)` — a title deleted upstream won't overwrite a filled one. |
+| `Photo.Caption` | `description` | **MAPPED** | The primary source of the caption; `caption() = firstNonEmpty(Caption, Description)`. |
+| `Photo.Description` | `description` | **MAPPED** | Fallback in `caption()`. On the current PhotoPrism the field is dead (`gorm:"-"`, always empty), but modeled for an older instance; the precedence is right (the live `Caption` first) and a caption cannot slip through the cracks. |
+| `Photo.TakenAt` | `taken_at` (+ `taken_at_source='exif'`) | **MAPPED** | `applyCaptureMeta`; on a zero time, falls back to the file's EXIF with its source. |
+| `Photo.TakenAtLocal` | — | **WAIVED** | Kukátko keeps a single canonical `taken_at` (timestamptz); local rendering is derived on output, `TakenAt` already carries the instant. |
+| `Photo.UpdatedAt` | — (no column) | **WAIVED** | Drives the incremental high-watermark in `import_runs` (max `UpdatedAt` per run), it is not a photo column; `photos.updated_at` is the time of the row's own mutation. |
+| `Photo.CreatedAt` | — (no column) | **WAIVED** | `photos.created_at` = when the photo was created locally (DB `now()`). PhotoPrism's indexing time is not the library's history. |
+| `Photo.Lat` | `lat` (+ `location_source`) | **MAPPED** | Carried only when `Lat != 0 || Lng != 0`; provenance `exif`. Edge: exactly `(0,0)` "Null Island" is treated as no location (a universal convention), see Risks. |
+| `Photo.Lng` | `lng` | **MAPPED** | See `Lat`. |
+| `Photo.Altitude` | `altitude` | **MAPPED** | Carried only when `Altitude != 0`, otherwise EXIF. Edge: altitude `0` = sea level falls back to EXIF/nil (see Risks, "the zero trap"). |
 | `Photo.Width` | `file_width` | **MAPPED** | `firstPositive(pp.Width, meta.Width)`. |
 | `Photo.Height` | `file_height` | **MAPPED** | `firstPositive(pp.Height, meta.Height)`. |
-| `Photo.OriginalName` | `original_name` | **MAPPED** | Přes `ImportMetadata` z detailu; zároveň řídí jméno v úložišti (`originalName()`). |
+| `Photo.OriginalName` | `original_name` | **MAPPED** | Via `ImportMetadata` from the detail; also drives the name in storage (`originalName()`). |
 | `Photo.CameraMake` | `camera_make` | **MAPPED** | `firstNonEmpty(pp, meta)`. |
-| `Photo.CameraModel` | `camera_model` | **MAPPED** | dtto. |
-| `Photo.LensModel` | `lens_model` | **MAPPED** | dtto. |
-| `Photo.Iso` | `iso` | **MAPPED** | `firstIntPtr`: jen kladné vyhrává, ISO `0` = neznámé → fallback na EXIF (správně, ISO 0 není reálná hodnota). |
-| `Photo.FNumber` | `aperture` | **MAPPED** | `firstFloatPtr`: jen kladné; `f/0` neexistuje → fallback (správně). |
+| `Photo.CameraModel` | `camera_model` | **MAPPED** | ditto. |
+| `Photo.LensModel` | `lens_model` | **MAPPED** | ditto. |
+| `Photo.Iso` | `iso` | **MAPPED** | `firstIntPtr`: only positive wins, ISO `0` = unknown → fallback to EXIF (correct, ISO 0 is not a real value). |
+| `Photo.FNumber` | `aperture` | **MAPPED** | `firstFloatPtr`: only positive; `f/0` does not exist → fallback (correct). |
 | `Photo.Exposure` | `exposure` | **MAPPED** | `firstNonEmpty`. |
 | `Photo.FocalLength` | `focal_length` | **MAPPED** | `firstFloatPtr(float64(pp.FocalLength), …)`; `0` → fallback. |
-| `Photo.CameraSerial` | `camera_serial` | **MAPPED** | Přes `ImportMetadata` z detailu (`detail.CameraSerial`). |
-| `Photo.Scan` | `scan` | **MAPPED** | Přes `ImportMetadata` z detailu; pravidlo „true-wins“ (lze nastavit, ne zrušit). |
-| `Photo.Favorite` | — | **WAIVED** | Oblíbené jsou v Kukátku **per-user** záměrně (`ppimport.go` ~ř. 18–20); import běžící jako job/CLI nemá komu příznak přiřadit. |
-| `Photo.Private` | `private` | **MAPPED** | `buildPhoto` i `metadataUpdate`. |
-| `Photo.Files` | → tabulka `File` | **MAPPED** | Kontejner souborů; viz sekce „Soubory“. |
+| `Photo.CameraSerial` | `camera_serial` | **MAPPED** | Via `ImportMetadata` from the detail (`detail.CameraSerial`). |
+| `Photo.Scan` | `scan` | **MAPPED** | Via `ImportMetadata` from the detail; a "true-wins" rule (can be set, not cleared). |
+| `Photo.Favorite` | — | **WAIVED** | Favorites in Kukátko are **per-user** by design (`ppimport.go` ~ll. 18–20); an import running as a job/CLI has nobody to attribute the flag to. |
+| `Photo.Private` | `private` | **MAPPED** | `buildPhoto` and `metadataUpdate`. |
+| `Photo.Files` | → the `File` table | **MAPPED** | The files container; see the "Files" section. |
 
-**`PhotoDetail` — relace nad rámec `Photo`** (obálka detailového endpointu):
+**`PhotoDetail` — relations beyond `Photo`** (the detail endpoint's envelope):
 
-| Zdrojové pole | Cíl | Verdikt | Poznámka |
+| Source field | Target | Verdict | Note |
 | --- | --- | --- | --- |
-| `PhotoDetail.Details` | → tabulka `Details` | **MAPPED** | IPTC/XMP kredity, viz níže. |
-| `PhotoDetail.Albums` | `album_photos` + `albums` | **MAPPED** | U scoped běhu se z detailu mapuje **každé** album fotky (`mapPhotoContext`), ne jen to, které ji vybralo. |
-| `PhotoDetail.Labels` | `photo_labels` + `labels` | **MAPPED** | dtto pro štítky; viz „Štítky“. |
+| `PhotoDetail.Details` | → the `Details` table | **MAPPED** | IPTC/XMP credits, see below. |
+| `PhotoDetail.Albums` | `album_photos` + `albums` | **MAPPED** | On a scoped run, **every** album of the photo is mapped from the detail (`mapPhotoContext`), not just the one that selected it. |
+| `PhotoDetail.Labels` | `photo_labels` + `labels` | **MAPPED** | ditto for labels; see "Labels". |
 
-## Fotky — blok `Details` (detail, IPTC/XMP kredity)
+## Photos — the `Details` block (detail, IPTC/XMP credits)
 
-Zapisuje `ApplyImportMetadata`: neprázdná hodnota zdroje vyhrává nad aktuální
-(stejná precedence jako kamera), prázdno nikdy nemaže. `notes` je výjimka —
-Kukátkovo vlastní pole, jen **gap-fill** (nikdy nepřepíše uživatelovu poznámku).
+Written by `ApplyImportMetadata`: a non-empty source value wins over the current one (the same
+precedence as the camera), empty never erases. `notes` is the exception — it is Kukátko's own
+field, **gap-fill** only (it never overwrites the user's note).
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Details.Subject` | `subject` | **MAPPED** | Trimováno. |
-| `Details.Keywords` | `keywords` | **MAPPED** | `exif.NormalizeKeywords` — čte jako nativně extrahované. |
-| `Details.Notes` | `notes` | **MAPPED** | Jen gap-fill (prázdné `notes` → vyplní; jinak ponechá). |
+| `Details.Subject` | `subject` | **MAPPED** | Trimmed. |
+| `Details.Keywords` | `keywords` | **MAPPED** | `exif.NormalizeKeywords` — read as if natively extracted. |
+| `Details.Notes` | `notes` | **MAPPED** | Gap-fill only (empty `notes` → filled; otherwise left alone). |
 | `Details.Artist` | `artist` | **MAPPED** | |
 | `Details.Copyright` | `copyright` | **MAPPED** | |
 | `Details.License` | `license` | **MAPPED** | |
 | `Details.Software` | `software` | **MAPPED** | |
 
-## Soubory — struktura `File`
+## Files — the `File` structure
 
-Kukátko nemá katalog PhotoPrismích souborů 1:1; z primárního souboru bere obsah
-(hash na stažení + reference), z detailu technická pole. Ostatní jsou buď interní
-pro PhotoPrism, nebo redundantní s poli fotky.
+Kukátko does not keep a 1:1 catalog of PhotoPrism files; from the primary file it takes the
+content (the download hash + a reference), and the technical fields from the detail. The rest
+are either internal to PhotoPrism or redundant with the photo's fields.
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `File.Hash` | `photoprism_file_hash` | **MAPPED** | SHA1 primárního souboru; zároveň klíč stažení (`/dl/<Hash>`). |
+| `File.Hash` | `photoprism_file_hash` | **MAPPED** | SHA1 of the primary file; also the download key (`/dl/<Hash>`). |
 | `File.Mime` | `file_mime` | **MAPPED** | `firstNonEmpty(primary.Mime, meta.Mime, stored.MIME)`. |
-| `File.Name` | `original_name` (fallback) / jméno v úložišti | **MAPPED** | `originalName()` použije `Photo.OriginalName`, jinak `path.Base(File.Name)`; `companionName()` pojmenuje motion klip. |
-| `File.Primary` | (výběr primárního souboru) | **MAPPED** | Chování `PrimaryFile()`; primární soubor je originál. |
-| `File.Video` | (výběr média / `IsVideo`) | **MAPPED** | Rozliší still od motion klipu a spolurozhoduje `media_type`. |
-| `File.Codec` | `image_codec` (jen stills) | **MAPPED** | `exif.CodecToken`; kodek videa (`avc1`/`hvc1`) se **záměrně nebere z PP** — `video_codec` vlastní ffprobe. |
+| `File.Name` | `original_name` (fallback) / name in storage | **MAPPED** | `originalName()` uses `Photo.OriginalName`, otherwise `path.Base(File.Name)`; `companionName()` names the motion clip. |
+| `File.Primary` | (selection of the primary file) | **MAPPED** | The `PrimaryFile()` behavior; the primary file is the original. |
+| `File.Video` | (media selection / `IsVideo`) | **MAPPED** | Distinguishes a still from a motion clip and co-decides `media_type`. |
+| `File.Codec` | `image_codec` (stills only) | **MAPPED** | `exif.CodecToken`; the video codec (`avc1`/`hvc1`) is **deliberately not taken from PP** — `video_codec` is owned by ffprobe. |
 | `File.ColorProfile` | `color_profile` | **MAPPED** | Detail-only. |
 | `File.Projection` | `projection` | **MAPPED** | Detail-only (panorama). |
-| `File.Markers` | → tabulka `Marker` | **MAPPED** | Jen z detailu (výpis má prázdné); viz „Markery“. |
-| `File.UID` | — | **WAIVED** | Kukátkovy soubory se klíčují `photo_uid` + cesta; UID souboru z PP není potřeba. |
-| `File.Root` | — | **WAIVED** | Interní tag úložného rootu PhotoPrismu. |
-| `File.Width` | — | **WAIVED** | Redundantní — geometrie se bere z `Photo.Width` (viz výše). |
-| `File.Height` | — | **WAIVED** | dtto. |
-| `File.FileType` | — | **WAIVED** | Typ nese `file_mime` + `image_codec`; textový tag se neukládá. |
+| `File.Markers` | → the `Marker` table | **MAPPED** | Only from the detail (the listing's is empty); see "Markers". |
+| `File.UID` | — | **WAIVED** | Kukátko's files are keyed by `photo_uid` + path; the PP file UID is not needed. |
+| `File.Root` | — | **WAIVED** | PhotoPrism's internal storage-root tag. |
+| `File.Width` | — | **WAIVED** | Redundant — the geometry is taken from `Photo.Width` (see above). |
+| `File.Height` | — | **WAIVED** | ditto. |
+| `File.FileType` | — | **WAIVED** | The type is carried by `file_mime` + `image_codec`; the text tag is not stored. |
 
-## Markery / obličeje — struktura `Marker`
+## Markers / faces — the `Marker` structure
 
-Cíl je tabulka `markers` (migrace `0008`). `importMarkers` seje **pouze
-pojmenované, platné obličejové** markery (`isNamedFaceMarker`: `Type=="face"` &&
-`!Invalid` && `Name != ""`); z jména se najde/založí subjekt (`findOrCreateSubject`)
-a marker se k němu přiřadí. Marker si **ponechá PhotoPrism UID** → import je
-idempotentní a identita markerů je sdílená s `psimport` (jehož markery JSOU
-PhotoPrismovy).
+The target is the `markers` table (migration `0008`). `importMarkers` seeds **only named,
+valid face** markers (`isNamedFaceMarker`: `Type=="face"` && `!Invalid` && `Name != ""`); the
+subject is found/created from the name (`findOrCreateSubject`) and the marker is attached to
+it. The marker **keeps its PhotoPrism UID** → the import is idempotent and marker identity is
+shared with `psimport` (whose markers ARE PhotoPrism's).
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Marker.UID` | `markers.uid` | **MAPPED** | Idempotence (`GetMarkerByUID`) a sdílená identita napříč importéry. |
-| `Marker.Name` | `subjects.name` (nepřímo) | **MAPPED** | Seje subjekt jménem (`findOrCreateSubject`). Marker sám bez jména se nepřenese. |
-| `Marker.X` / `Y` / `W` / `H` | `markers.x/y/w/h` | **MAPPED** | Normalizovaný bbox (0..1). |
-| `Marker.Score` | `markers.score` | **MAPPED** | Pozn.: `score` je import-provenience, ne kvalita (0 = nezaznamenáno); nikdy podle něj neřadit obličeje. |
+| `Marker.UID` | `markers.uid` | **MAPPED** | Idempotence (`GetMarkerByUID`) and shared identity across importers. |
+| `Marker.Name` | `subjects.name` (indirectly) | **MAPPED** | Seeds the subject by name (`findOrCreateSubject`). A marker with no name is not carried over. |
+| `Marker.X` / `Y` / `W` / `H` | `markers.x/y/w/h` | **MAPPED** | Normalized bbox (0..1). |
+| `Marker.Score` | `markers.score` | **MAPPED** | Note: `score` is import provenance, not quality (0 = unrecorded); never rank faces by it. |
 | `Marker.Review` | `markers.reviewed` | **MAPPED** | `Reviewed = !Review`. |
-| `Marker.Type` | (filtr: jen `face`) | **WAIVED** | Přenáší se jen `face`; **label markery se zahazují** — Kukátkovy štítky pocházejí z relace `Labels`, ne z label markerů. |
-| `Marker.Invalid` | `markers.invalid` (nikdy nenastaveno) | **WAIVED** | `isNamedFaceMarker` neplatné markery vyfiltruje; sloupec zůstane `false`. **Asymetrie:** `psimport` `Invalid` zachovává. Vědomé rozhodnutí (Kukátkovo `face_detect` regiony znovu objeví), ale má cenu — viz Rizika. |
-| `Marker.FileUID` | — | **WAIVED** | Kukátkovy markery odkazují `photo_uid`, ne soubor. |
-| `Marker.FileHash` | — | **WAIVED** | dtto. |
-| `Marker.SubjUID` | — | **WAIVED** | Vazba na subjekt se **znovu odvozuje ze jména**, ne z PP subject UID; PP subjekty se vůbec nečtou (viz „Subjekty“). |
-| `Marker.SubjSrc` | — | **WAIVED** | dtto. |
+| `Marker.Type` | (filter: `face` only) | **WAIVED** | Only `face` is carried; **label markers are discarded** — Kukátko's labels come from the `Labels` relation, not from label markers. |
+| `Marker.Invalid` | `markers.invalid` (never set) | **WAIVED** | `isNamedFaceMarker` filters out invalid markers; the column stays `false`. **Asymmetry:** `psimport` preserves `Invalid`. A deliberate decision (Kukátko's `face_detect` rediscovers the regions), but it has a cost — see Risks. |
+| `Marker.FileUID` | — | **WAIVED** | Kukátko's markers reference `photo_uid`, not the file. |
+| `Marker.FileHash` | — | **WAIVED** | ditto. |
+| `Marker.SubjUID` | — | **WAIVED** | The subject link is **re-derived from the name**, not from the PP subject UID; PP subjects are not read at all (see "Subjects"). |
+| `Marker.SubjSrc` | — | **WAIVED** | ditto. |
 
-## Subjekty / lidé — struktura `Subject`
+## Subjects / people — the `Subject` structure
 
-Cíl je tabulka `subjects` (migrace `0008`: `uid, slug, name, type, favorite,
-private, notes, cover_photo_uid, …`; žádný sloupec `file_count`). **Dřívější
-zjištění** (nyní vyřešené): `photoprism.Subject` i klient `ListSubjects` byly vůči
-importu **mrtvý kód** — importní rozhraní `ppimport.PhotoPrismClient` `ListSubjects`
-nedeklarovalo, takže žádné pole PP subjektu se nečetlo a subjekty vznikaly natvrdo
-jako `person`. **Oprava (implementováno):** `ppimport.PhotoPrismClient` teď
-`ListSubjects` deklaruje; `Service.loadSubjectIndex` přečte subjekty jednou za běh
-(best-effort) do indexu podle UID i slugu jména, a `findOrCreateSubject` →
-`newSubject` obohatí **nově zakládaný** subjekt o `type`/`favorite`/`private` z PP
-subjektu, který marker pojmenovává (párování přes `Marker.SubjUID`, fallback slug
-jména). Obohacení se děje **jen při založení** — existující (třeba v Kukátku
-editovaný) subjekt zůstane beze změny, takže přeběh je idempotentní a nepřepíše
-lokální úpravu (stejné chování jako `psimport`).
+The target is the `subjects` table (migration `0008`: `uid, slug, name, type, favorite,
+private, notes, cover_photo_uid, …`; no `file_count` column). **An earlier finding** (now
+resolved): both `photoprism.Subject` and the `ListSubjects` client were **dead code** as far as
+the import was concerned — the import interface `ppimport.PhotoPrismClient` did not declare
+`ListSubjects`, so no field of the PP subject was read and subjects were created hard-coded as
+`person`. **Fix (implemented):** `ppimport.PhotoPrismClient` now declares `ListSubjects`;
+`Service.loadSubjectIndex` reads the subjects once per run (best-effort) into an index by both
+UID and name slug, and `findOrCreateSubject` → `newSubject` enriches a **newly created**
+subject with `type`/`favorite`/`private` from the PP subject that the marker names (paired via
+`Marker.SubjUID`, falling back to the name slug). The enrichment happens **only on creation** —
+an existing subject (possibly edited in Kukátko) is left unchanged, so the pass is idempotent
+and does not overwrite a local edit (the same behavior as `psimport`).
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Subject.Name` | `subjects.name` | **WAIVED** | Redundantní: jméno dorazí přes `Marker.Name`, samotné pole `Subject.Name` se nečte — o hodnotu se nepřichází. |
-| `Subject.UID` | (index `SubjUID`→subjekt) | **MAPPED** | Neukládá se jako sloupec, ale `loadSubjectIndex` ho použije jako klíč, přes který marker (`Marker.SubjUID`) najde svůj PP subjekt pro obohacení `type`/`favorite`/`private`. Kukátkovo `subjects.uid` se dál generuje vlastní. |
-| `Subject.Slug` | `subjects.slug` | **WAIVED** | Slug si Kukátko generuje z jména (`people.Slugify`); slug PP subjektu slouží jen jako fallback klíč indexu. |
-| `Subject.FileCount` | — (bez sloupce) | **WAIVED** | Kukátko počítá markery živě (`ListSubjects`/`SubjectCount`), necachuje. |
-| `Subject.Type` | `subjects.type` | **MAPPED** | `mapSubjectType` (`pet`/`other`/default `person`), stejně jako `psimport`. Zvíře si zachová typ; nastaveno při založení subjektu. |
-| `Subject.Favorite` | `subjects.favorite` | **MAPPED** | Přeneseno při založení subjektu (`newSubject`); globální sloupec, ne per-user. |
-| `Subject.Private` | `subjects.private` | **MAPPED** | Soukromá osoba z PP zůstane soukromá. Nastaveno při založení subjektu. |
+| `Subject.Name` | `subjects.name` | **WAIVED** | Redundant: the name arrives via `Marker.Name`, the `Subject.Name` field itself is not read — nothing of value is lost. |
+| `Subject.UID` | (index `SubjUID`→subject) | **MAPPED** | Not stored as a column, but `loadSubjectIndex` uses it as the key through which a marker (`Marker.SubjUID`) finds its PP subject to enrich `type`/`favorite`/`private`. Kukátko's `subjects.uid` is still generated on its own. |
+| `Subject.Slug` | `subjects.slug` | **WAIVED** | Kukátko generates the slug from the name (`people.Slugify`); the PP subject's slug only serves as a fallback index key. |
+| `Subject.FileCount` | — (no column) | **WAIVED** | Kukátko counts markers live (`ListSubjects`/`SubjectCount`), it does not cache. |
+| `Subject.Type` | `subjects.type` | **MAPPED** | `mapSubjectType` (`pet`/`other`/default `person`), same as `psimport`. An animal keeps its type; set when the subject is created. |
+| `Subject.Favorite` | `subjects.favorite` | **MAPPED** | Carried when the subject is created (`newSubject`); a global column, not per-user. |
+| `Subject.Private` | `subjects.private` | **MAPPED** | A private person from PP stays private. Set when the subject is created. |
 
-## Alba — struktura `Album`
+## Albums — the `Album` structure
 
-Cíl je tabulka `albums` (migrace `0011`; `0022` odstranilo `order_by`/`sort_order`).
-`findOrCreateAlbum` páruje/zakládá album **podle titulku**. Plný běh mapuje typy
-`album/folder/moment/state` (default `DefaultAlbumTypes`, `month` vynechán); scoped
-běh mapuje jakýkoli typ alba fotky (`mapPhotoContext`, `requireAlbum` prochází
-všechny typy).
+The target is the `albums` table (migration `0011`; `0022` removed `order_by`/`sort_order`).
+`findOrCreateAlbum` matches/creates an album **by title**. A full run maps the types
+`album/folder/moment/state` (default `DefaultAlbumTypes`, `month` omitted); a scoped run maps
+any album type of the photo (`mapPhotoContext`, `requireAlbum` walks all types).
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Album.Title` | `albums.title` | **MAPPED** | Klíč find-or-create; prázdný titulek = album se přeskočí. |
+| `Album.Title` | `albums.title` | **MAPPED** | Find-or-create key; an empty title = the album is skipped. |
 | `Album.Description` | `albums.description` | **MAPPED** | |
-| `Album.Type` | `albums.type` | **MAPPED** | `mapAlbumType`; neznámé/prázdné → `album`. Pozn.: `month` alba (560 auto-generovaných) plný běh nemapuje — viz Rizika. |
+| `Album.Type` | `albums.type` | **MAPPED** | `mapAlbumType`; unknown/empty → `album`. Note: `month` albums (560 auto-generated) are not mapped by a full run — see Risks. |
 | `Album.Private` | `albums.private` | **MAPPED** | |
-| `Album.UID` | — | **WAIVED** | Slouží jen k výpisu členů; Kukátko generuje vlastní `uid`. |
-| `Album.Slug` | `albums.slug` | **WAIVED** | Regeneruje se z titulku. |
-| `Album.Favorite` | — (bez sloupce) | **WAIVED** | `albums` nemá `favorite` — koncept oblíbeného alba v Kukátku není. |
-| `Album.CreatedAt` | — | **WAIVED** | `albums.created_at` je DB `now()`. |
-| `Album.UpdatedAt` | — | **WAIVED** | dtto. |
-| `Album.Category` | — (bez sloupce) | **WAIVED** | Kategorie alba (skupinování podle tématu) nemá v Kukátku kam přijít. **Produktové rozhodnutí:** Kukátko koncept kategorie alba **nemá** — žádný sloupec, žádné UI, žádný dotaz nad ním (grep celého repa: jediné „category“ jsou CLDR plurály). Přidat zapisovací `albums.category`, který nikdo nečte, by byl mrtvý sloupec, ne oprava; proto formálně WAIVED (stejné rozhodnutí jako u photo-sorter importu, kde `albums.category` zůstává GAP jen dokud se o něm nerozhodne — tady rozhodnuto: bez domova). |
+| `Album.UID` | — | **WAIVED** | Only used to list members; Kukátko generates its own `uid`. |
+| `Album.Slug` | `albums.slug` | **WAIVED** | Regenerated from the title. |
+| `Album.Favorite` | — (no column) | **WAIVED** | `albums` has no `favorite` — there is no concept of a favorite album in Kukátko. |
+| `Album.CreatedAt` | — | **WAIVED** | `albums.created_at` is DB `now()`. |
+| `Album.UpdatedAt` | — | **WAIVED** | ditto. |
+| `Album.Category` | — (no column) | **WAIVED** | An album category (grouping by theme) has nowhere to land in Kukátko. **Product decision:** Kukátko **has no** album-category concept — no column, no UI, no query over it (grep of the whole repo: the only "category" hits are CLDR plurals). Adding a write-only `albums.category` that nobody reads would be a dead column, not a fix; hence formally WAIVED (the same decision as for the photo-sorter import, where `albums.category` stays a GAP only until it is decided — here decided: no home). |
 
-**Členství v albu** (`album_photos`): PhotoPrismí pořadí ve výpisu se nepřenáší —
-Kukátko alba řadí **chronologicky** (`0022` zahodilo `sort_order`). `AddPhoto` je
-idempotentní. Členy, které ještě nejsou importované, přeskočí.
+**Album membership** (`album_photos`): PhotoPrism's ordering in the listing is not carried —
+Kukátko sorts albums **chronologically** (`0022` dropped `sort_order`). `AddPhoto` is
+idempotent. Members not yet imported are skipped.
 
-## Štítky — struktury `Label` a `PhotoLabel`
+## Labels — the `Label` and `PhotoLabel` structures
 
-Cíl jsou tabulky `labels` (`uid, slug, name, priority`) a připojení `photo_labels`
-(`source`, `uncertainty`), obě migrace `0011`. `findOrCreateLabel` páruje/zakládá
-**podle jména**.
+The targets are the `labels` table (`uid, slug, name, priority`) and the `photo_labels` join
+(`source`, `uncertainty`), both migration `0011`. `findOrCreateLabel` matches/creates **by
+name**.
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Label.Name` | `labels.name` | **MAPPED** | Klíč find-or-create. |
+| `Label.Name` | `labels.name` | **MAPPED** | Find-or-create key. |
 | `Label.Priority` | `labels.priority` | **MAPPED** | |
-| `Label.UID` | — | **WAIVED** | Vlastní `uid`. |
-| `Label.Slug` | `labels.slug` | **WAIVED** | Slouží k dotazu na členy (`label:"<slug>"`); ukládaný slug se regeneruje. |
-| `Label.Favorite` | — (bez sloupce) | **WAIVED** | `labels` nemá `favorite`. |
-| `PhotoLabel.LabelSrc` | `photo_labels.source` | **MAPPED** | `mapLabelSource`: `manual`→manual, `image`→ai, ostatní (`batch`/`keyword`/`location`/`meta`…)→import. |
-| `PhotoLabel.Uncertainty` | `photo_labels.uncertainty` | **MAPPED** | `clampUncertainty` na 0–100. |
-| `PhotoLabel.Label` | `labels` | **MAPPED** | Vnořený štítek, viz výše. |
+| `Label.UID` | — | **WAIVED** | Its own `uid`. |
+| `Label.Slug` | `labels.slug` | **WAIVED** | Used to query members (`label:"<slug>"`); the stored slug is regenerated. |
+| `Label.Favorite` | — (no column) | **WAIVED** | `labels` has no `favorite`. |
+| `PhotoLabel.LabelSrc` | `photo_labels.source` | **MAPPED** | `mapLabelSource`: `manual`→manual, `image`→ai, others (`batch`/`keyword`/`location`/`meta`…)→import. |
+| `PhotoLabel.Uncertainty` | `photo_labels.uncertainty` | **MAPPED** | `clampUncertainty` to 0–100. |
+| `PhotoLabel.Label` | `labels` | **MAPPED** | The nested label, see above. |
 
-## Místa
+## Places
 
-PhotoPrism v importovaných strukturách **žádná místní pole nemá** (`Country`,
-`PlaceLabel` apod. se do `photoprism.models` nečtou). Kukátkova tabulka
-`photo_places` (migrace `0018`: `country, region, city, place_name, lat, lng,
-geocoded_at`) je **cache reverzní geokódace** plněná jobem `places` z GPS fotky, ne
-z PhotoPrismu. Souřadnice (`lat`/`lng`) se tedy migrují (viz „Fotky“), názvy míst se
-**dopočítají znovu**. Pro tento audit: bez zdrojového pole, odvozeno v Kukátku
-(**WAIVED**, žádná ztráta — vzniká z migrované polohy).
+PhotoPrism has **no place fields** in the imported structures (`Country`, `PlaceLabel` and the
+like are not read into `photoprism.models`). Kukátko's `photo_places` table (migration `0018`:
+`country, region, city, place_name, lat, lng, geocoded_at`) is a **reverse-geocoding cache**
+filled by the `places` job from the photo's GPS, not from PhotoPrism. The coordinates
+(`lat`/`lng`) are therefore migrated (see "Photos"), while the place names are **recomputed**.
+For this audit: no source field, derived in Kukátko (**WAIVED**, no loss — it arises from the
+migrated location).
 
-## Hodnocení a oblíbené
+## Ratings and favorites
 
-- **Hvězdičkové hodnocení:** PhotoPrism ho nemá, není co migrovat. Kukátkovo
-  `user_ratings` (`rating` 0–5, `flag` `none/pick/reject/eye`; migrace `0016`,
-  `0025`) je **per-user** a po importu startuje na nule.
-- **Oblíbené fotky:** `Photo.Favorite` → **WAIVED** (per-user `user_favorites`, viz
-  „Fotky“).
-- **Oblíbená alba / štítky:** cílové sloupce neexistují → **WAIVED** (viz „Alba“,
-  „Štítky“).
-- **Oblíbení / soukromí lidé:** `Subject.Favorite`/`Private` → **MAPPED** (globální
-  sloupce, import je nyní plní při založení subjektu; viz „Subjekty“).
+- **Star ratings:** PhotoPrism does not have them, there is nothing to migrate. Kukátko's
+  `user_ratings` (`rating` 0–5, `flag` `none/pick/reject/eye`; migrations `0016`, `0025`) is
+  **per-user** and starts at zero after import.
+- **Favorite photos:** `Photo.Favorite` → **WAIVED** (per-user `user_favorites`, see
+  "Photos").
+- **Favorite albums / labels:** the target columns do not exist → **WAIVED** (see "Albums",
+  "Labels").
+- **Favorite / private people:** `Subject.Favorite`/`Private` → **MAPPED** (global columns, the
+  import now fills them when the subject is created; see "Subjects").
 
-## Cílová strana — sloupce `photos`, které import neplní z PP
+## The target side — `photos` columns the import does not fill from PP
 
-Aby byla pokrytost prokazatelná oběma směry: každý z 56 vkládaných sloupců
-`photos` (`photoInsertColumns`) je buď namapovaný z pole PP (výše), nebo **odvozený Kukátkem** ze staženého
-originálu, nebo **výhradně Kukátkův** (import je nechává na defaultu). Odvozené a
-vlastní sloupce, které tedy *nemají* zdrojové PP pole:
+To make coverage provable in both directions: each of the 56 inserted `photos` columns
+(`photoInsertColumns`) is either mapped from a PP field (above), or **derived by Kukátko** from
+the downloaded original, or **Kukátko's own** (the import leaves it at its default). The
+derived and own columns, which therefore *have no* source PP field:
 
-| Sloupec | Původ | Pozn. |
+| Column | Origin | Note |
 | --- | --- | --- |
-| `uid`, `created_at`, `updated_at` | DB | Generováno při vložení. |
-| `file_hash`, `file_path`, `file_name`, `file_size` | Úložiště | SHA256 a layout staženého originálu. |
-| `file_orientation`, `exif` | EXIF souboru | PhotoPrism orientaci nevrací. |
-| `taken_at_source`, `location_source` | Odvozeno | `exif`/`unknown`/`""` podle původu času a GPS. |
-| `duration_ms`, `video_codec`, `audio_codec`, `has_audio`, `fps` | ffprobe | Video sloupce z `videoFields`, ne z PP. |
-| `taken_at_estimated`, `taken_at_note` | Kukátko-only | PhotoPrism přibližné datum nezná; inkrement je nese beze změny. |
-| `ai_note` | Kukátko-only | Externí AI průchod. |
-| `archived_at`, `uploaded_by` | Kukátko-only | Import nenastavuje (job nemá uživatele). |
-| `stack_uid`, `stack_primary` | Kukátko-only | Detekce stacků (`internal/stacks`). |
-| `metadata_extracted_at` | Kukátko-only | Import nechá `nil` (mapuje ze zdroje, ne ze souboru) → naplánuje ho `metadata` backfill. |
-| `photosorter_uid` | jiný import | Plní jen `psimport`. |
+| `uid`, `created_at`, `updated_at` | DB | Generated on insert. |
+| `file_hash`, `file_path`, `file_name`, `file_size` | Storage | SHA256 and the layout of the downloaded original. |
+| `file_orientation`, `exif` | file EXIF | PhotoPrism does not return orientation. |
+| `taken_at_source`, `location_source` | Derived | `exif`/`unknown`/`""` depending on the origin of the time and GPS. |
+| `duration_ms`, `video_codec`, `audio_codec`, `has_audio`, `fps` | ffprobe | Video columns from `videoFields`, not from PP. |
+| `taken_at_estimated`, `taken_at_note` | Kukátko-only | PhotoPrism has no approximate date; the incremental pass carries them through unchanged. |
+| `ai_note` | Kukátko-only | An external AI pass. |
+| `archived_at`, `uploaded_by` | Kukátko-only | Not set by the import (the job has no user). |
+| `stack_uid`, `stack_primary` | Kukátko-only | Stack detection (`internal/stacks`). |
+| `metadata_extracted_at` | Kukátko-only | The import leaves it `nil` (it maps from the source, not from the file) → the `metadata` backfill schedules it. |
+| `photosorter_uid` | another import | Filled only by `psimport`. |
 
 ---
 
-## Ověření konkrétních indicií ze zadání
+## Verification of specific clues from the brief
 
-### 1. Úplnost `metadataUpdate` vs. 19 přepisovaných sloupců — **potvrzeno správné (ne bug)**
+### 1. Completeness of `metadataUpdate` vs. the 19 overwritten columns — **confirmed correct (not a bug)**
 
-`UpdateMetadata` (`store.go` ~ř. 268–274) přepisuje celý řádek — 19 sloupců:
+`UpdateMetadata` (`store.go` ~ll. 268–274) overwrites the whole row — 19 columns:
 `title, description, notes, ai_note, taken_at, taken_at_source, lat, lng, altitude,
 private, subject, keywords, artist, copyright, license, scan, taken_at_estimated,
-taken_at_note, location_source`. `metadataUpdate` (`metadata.go` ~ř. 129) **nese
-všechny**: mapovaná pole z PP (`Title`, `Description`, `Private`, podmíněně
-`TakenAt`/GPS/`Altitude`), zbytek **prokazatelně přenáší z `existing`** (`Notes`,
+taken_at_note, location_source`. `metadataUpdate` (`metadata.go` ~l. 129) **carries all of
+them**: the fields mapped from PP (`Title`, `Description`, `Private`, conditionally
+`TakenAt`/GPS/`Altitude`), and the rest are **provably carried from `existing`** (`Notes`,
 `AiNote`, `Subject`, `Keywords`, `Artist`, `Copyright`, `License`, `Scan`,
-`TakenAtEstimated`, `TakenAtNote`, `LocationSource`). Žádný editovatelný sloupec se
-inkrementálním během tiše nevynuluje. Kredity mění samostatně `ApplyImportMetadata`
-z detailu; `metadataUpdate` je jen „přenese beze změny“, aby je hromadný přepis
-nesmazal. **Indicie o tichém mazání je vyvrácená.**
+`TakenAtEstimated`, `TakenAtNote`, `LocationSource`). No editable column is silently zeroed by
+the incremental run. Credits are changed separately by `ApplyImportMetadata` from the detail;
+`metadataUpdate` only "carries them through unchanged" so the bulk overwrite does not erase
+them. **The clue about silent erasure is refuted.**
 
-### 2. Symetrie `metadataUnchanged` — **potvrzeno symetrické**
+### 2. Symmetry of `metadataUnchanged` — **confirmed symmetric**
 
-`metadataUnchanged` (`captionsUnchanged` + `creditsUnchanged` + `placementUnchanged`)
-porovnává přesně těchže 19 polí, která `UpdateMetadata` zapisuje. Žádné pole
-z porovnání nevypadává, takže skutečný přepis se nemůže tvářit jako no-op.
+`metadataUnchanged` (`captionsUnchanged` + `creditsUnchanged` + `placementUnchanged`) compares
+exactly the same 19 fields that `UpdateMetadata` writes. No field drops out of the comparison,
+so a real overwrite cannot masquerade as a no-op.
 
-### 3. Nulová past (`firstPositive`/`firstFloatPtr`, GPS) — **z větší části neškodná, jedna reálná hrana**
+### 3. The zero trap (`firstPositive`/`firstFloatPtr`, GPS) — **mostly harmless, one real edge**
 
-- `Iso`, `FNumber`, `FocalLength`: `firstIntPtr`/`firstFloatPtr` berou jen **striktně
-  kladné**. Nula u těchto veličin je sentinel „neznámo“ (ISO 0, `f/0`, ohnisko 0
-  reálně neexistují), takže fallback na EXIF je **správný**, ne ztráta.
-- `Altitude`: `if pp.Altitude != 0`. Nadmořská výška **0 = hladina moře je legitimní**
-  a spadne na EXIF/nil. Reálná (byť okrajová) ztráta věrnosti pro fotky přesně na
-  hladině moře, kde PP mělo 0 a EXIF ne. Nízký dopad.
-- GPS `if pp.Lat != 0 || pp.Lng != 0`: rovník či nultý poledník samotné projdou (OR),
-  problém je **jen přesně `(0,0)` „Null Island“** — bere se jako bez polohy. To je
-  univerzální konvence pro „negeotagováno“ a reálná fotka tam prakticky nevznikne;
-  přijatelné.
+- `Iso`, `FNumber`, `FocalLength`: `firstIntPtr`/`firstFloatPtr` take only **strictly
+  positive** values. Zero for these quantities is the sentinel for "unknown" (ISO 0, `f/0`,
+  focal length 0 do not really exist), so the fallback to EXIF is **correct**, not a loss.
+- `Altitude`: `if pp.Altitude != 0`. An altitude of **0 = sea level is legitimate** and falls
+  back to EXIF/nil. A real (if marginal) fidelity loss for photos exactly at sea level, where
+  PP had 0 and EXIF did not. Low impact.
+- GPS `if pp.Lat != 0 || pp.Lng != 0`: the equator or the prime meridian alone pass (OR), the
+  problem is **only exactly `(0,0)` "Null Island"** — treated as no location. This is the
+  universal convention for "not geotagged" and a real photo practically never originates there;
+  acceptable.
 
-### 4. `photoprism.Subject` a `ListSubjects` byly mrtvý kód — **potvrzeno; VYŘEŠENO**
+### 4. `photoprism.Subject` and `ListSubjects` were dead code — **confirmed; RESOLVED**
 
-`ListSubjects` a `photoprism.Subject` byly definované na `photoprism.Client`, ale
-importní rozhraní `ppimport.PhotoPrismClient` je nedeklarovalo, takže je import
-nevolal a PP subject `Favorite`/`Private`/`Type` nedorazil do `subjects`, přestože
-sloupce existují a `psimport` je plní. To byl zdroj GAPů 1–3 ze souhrnu.
-**Oprava (implementováno):** `ppimport.PhotoPrismClient` `ListSubjects` deklaruje;
-`loadSubjectIndex` je za běh přečte (best-effort, selhání nezmaří import — jen se
-neobohatí) do indexu podle `SubjUID` i slugu jména; `newSubject` obohatí nově
-zakládaný subjekt o `type`/`favorite`/`private` (párování markeru `SubjUID`,
-fallback slug). Symetrické s `psimport`. `Slug`/`FileCount` cíl nadále nemají (slug
-se generuje, počet se počítá živě).
+`ListSubjects` and `photoprism.Subject` were defined on `photoprism.Client`, but the import
+interface `ppimport.PhotoPrismClient` did not declare them, so the import never called them and
+the PP subject's `Favorite`/`Private`/`Type` never reached `subjects`, even though the columns
+exist and `psimport` fills them. This was the source of gaps 1–3 from the summary.
+**Fix (implemented):** `ppimport.PhotoPrismClient` declares `ListSubjects`;
+`loadSubjectIndex` reads them once per run (best-effort, a failure does not spoil the import —
+it just skips enrichment) into an index by both `SubjUID` and the name slug; `newSubject`
+enriches a newly created subject with `type`/`favorite`/`private` (pairing on the marker's
+`SubjUID`, falling back to the slug). Symmetric with `psimport`. `Slug`/`FileCount` still have
+no target (the slug is generated, the count is computed live).
 
-### 5. `Album.Category` — **potvrzeno bez domova → WAIVED (produktové rozhodnutí)**
+### 5. `Album.Category` — **confirmed homeless → WAIVED (product decision)**
 
-`findOrCreateAlbum` čte jen `Title`/`Description`/`Type`/`Private`. `Category` se
-nečte a `albums` sloupec pro ni není. Grep celého repa: Kukátko nemá žádný koncept
-kategorie alba (sloupec, UI ani dotaz) — jediné „category“ jsou CLDR plurály v i18n.
-Přidat zapisovací sloupec, který nic nečte, by byl mrtvý sloupec, ne oprava; proto
-formálně **WAIVED**, nikoli vymýšlení sloupce. Viz „Alba“.
+`findOrCreateAlbum` reads only `Title`/`Description`/`Type`/`Private`. `Category` is not read
+and `albums` has no column for it. Grep of the whole repo: Kukátko has no album-category
+concept whatsoever (column, UI, or query) — the only "category" hits are CLDR plurals in i18n.
+Adding a write-only column that nothing reads would be a dead column, not a fix; hence formally
+**WAIVED**, not inventing a column. See "Albums".
 
-### 6. `markers.invalid` — **vědomé rozhodnutí (WAIVED) s asymetrií vůči `psimport`**
+### 6. `markers.invalid` — **a deliberate decision (WAIVED) with an asymmetry vs. `psimport`**
 
-`ppimport` neplatné markery vyfiltruje (`isNamedFaceMarker`) a sloupec `invalid`
-nikdy nenastaví; `psimport` `Invalid` zachovává (`people.Marker{Invalid: m.Invalid,
-…}`). Navíc `ppimport` zahazuje **i nepojmenované** obličeje (`Name == ""`) a **label
-markery**. Není to omyl — komentář i architektura říkají, že nepojmenované/neplatné
-regiony si znovu najde Kukátkovo `face_detect` (párování přes IoU). Cena rozhodnutí
-je ale reálná, viz Rizika.
+`ppimport` filters out invalid markers (`isNamedFaceMarker`) and never sets the `invalid`
+column; `psimport` preserves `Invalid` (`people.Marker{Invalid: m.Invalid, …}`). On top of
+that, `ppimport` also discards **unnamed** faces (`Name == ""`) and **label markers**. This is
+not a mistake — both the comment and the architecture say that unnamed/invalid regions will be
+rediscovered by Kukátko's `face_detect` (paired via IoU). But the cost of the decision is real,
+see Risks.
 
-### 7. Klasifikace vyjmenovaných polí
+### 7. Classification of the enumerated fields
 
-| Pole | Verdikt | Kde v dokumentu |
+| Field | Verdict | Where in the document |
 | --- | --- | --- |
-| `Photo.TakenAtLocal` | **WAIVED** | Fotky (jediný kanonický `taken_at`). |
-| `Photo.CreatedAt` | **WAIVED** | Fotky (lokální čas založení). |
-| `Photo.UpdatedAt` | **WAIVED** | Fotky (řídí high-watermark, ne sloupec). |
-| `File.UID` | **WAIVED** | Soubory. |
-| `File.Root` | **WAIVED** | Soubory (interní PP). |
-| `File.FileType` | **WAIVED** | Soubory (nese mime + `image_codec`). |
-| `File.Width` / `File.Height` | **WAIVED** | Soubory (redundantní s `Photo.Width/Height`). |
-| `Marker.FileUID` | **WAIVED** | Markery (odkaz na `photo_uid`). |
-| `Marker.SubjUID` | **WAIVED** | Markery (vazba znovu ze jména). |
-| `Marker.SubjSrc` | **WAIVED** | Markery. |
-| `Marker.Type == label` | **WAIVED** | Markery (jen `face`; štítky z relace). |
-| `Album.Slug` | **WAIVED** | Alba (regenerováno). |
-| `Album.Favorite` | **WAIVED** | Alba (cíl neexistuje). |
-| `Album.CreatedAt` / `UpdatedAt` | **WAIVED** | Alba (DB časy). |
-| `Label.Favorite` | **WAIVED** | Štítky (cíl neexistuje). |
+| `Photo.TakenAtLocal` | **WAIVED** | Photos (single canonical `taken_at`). |
+| `Photo.CreatedAt` | **WAIVED** | Photos (local creation time). |
+| `Photo.UpdatedAt` | **WAIVED** | Photos (drives the high-watermark, not a column). |
+| `File.UID` | **WAIVED** | Files. |
+| `File.Root` | **WAIVED** | Files (internal PP). |
+| `File.FileType` | **WAIVED** | Files (carried by mime + `image_codec`). |
+| `File.Width` / `File.Height` | **WAIVED** | Files (redundant with `Photo.Width/Height`). |
+| `Marker.FileUID` | **WAIVED** | Markers (reference to `photo_uid`). |
+| `Marker.SubjUID` | **WAIVED** | Markers (link re-derived from the name). |
+| `Marker.SubjSrc` | **WAIVED** | Markers. |
+| `Marker.Type == label` | **WAIVED** | Markers (`face` only; labels from the relation). |
+| `Album.Slug` | **WAIVED** | Albums (regenerated). |
+| `Album.Favorite` | **WAIVED** | Albums (no target). |
+| `Album.CreatedAt` / `UpdatedAt` | **WAIVED** | Albums (DB times). |
+| `Label.Favorite` | **WAIVED** | Labels (no target). |
 
-### 8. `Photo.Caption` vs. `Photo.Description` — **potvrzeno správné**
+### 8. `Photo.Caption` vs. `Photo.Description` — **confirmed correct**
 
-`caption() = firstNonEmpty(pp.Caption, pp.Description)`. `Caption` je živé pole
-(PhotoPrism přejmenoval `photo_description` → `photo_caption`); `Description` je
-mrtvý předchůdce (`gorm:"-"`, ze současné instance vždy prázdný). Precedence je
-správná: `Caption` první, `Description` jen fallback pro starou instanci. Reálný
-popisek nemůže spadnout pod stůl.
-
----
-
-## Rizika a vědomé kompromisy
-
-Položky, které nejsou „GAP“ (buď je o nich rozhodnuto, nebo je dopad okrajový), ale
-majitel o nich má vědět:
-
-1. **Nepojmenované a neplatné obličejové markery se nepřenášejí** (`isNamedFaceMarker`).
-   Největší behaviorální rozdíl na straně lidí. Přenesou se jen **pojmenované platné**
-   obličeje; zbytek si má znovu najít `face_detect`. Dvě ceny: (a) dokud je box
-   offline, tyto obličeje v knihovně **nejsou** (job čeká ve frontě); (b) obličej,
-   který člověk v PhotoPrismu ručně označil jako **neplatný** (`Invalid`), může
-   `face_detect` znovu vytáhnout — lidské „ne“ se ztrácí. `psimport` tento problém
-   nemá (markery kopíruje včetně `Invalid`). Zvážit, zda pro PP import nezachovat
-   aspoň `Invalid` regiony jako neplatné markery.
-2. **Alba typu `month` se při plném běhu nemapují** (`DefaultAlbumTypes` je vynechává).
-   Vědomé (560 auto-generovaných měsíčních alb, pokrývá je časová osa). Scoped běh je
-   ale namapuje, takže výsledek závisí na způsobu importu — konzistentní zdokumentovat.
-3. **Nadmořská výška 0 a „Null Island“** — okrajové hrany nulové pasti (indicie 3).
-4. **Subjekty se párují slugem jména** — `Marker.SubjUID` se nově čte pro obohacení
-   (najít správný PP subjekt pro `type`/`favorite`/`private`), ale samotný Kukátkův
-   subjekt se dál zakládá podle slugu jména, takže dva různí lidé se stejným jménem
-   v PhotoPrismu splynou do jednoho Kukátkova subjektu (a naopak přejmenování v PP
-   založí nového). `psimport` páruje také slugem jména, takže obě cesty se chovají
-   stejně — ale je to vlastnost, ne záruka identity. Hrana obohacení: u splývajícího
-   jména vyhraje ten PP subjekt, jehož marker založí Kukátkův subjekt jako první.
-
-## Riziko pokrytí testy (stálé)
-
-Existující testy ověřují **precedenci, ne pokrytost**: `ppimport/logic_test.go`
-`TestBuildPhoto_precedence`, `details_test.go`, `ppimport_integration_test.go`
-kontrolují, že PP vyhrává nad EXIF a že prázdno nemaže — ale **nic netvrdí, že každé
-zdrojové pole někam padne nebo je vědomě vynecháno**. Bez completeness testu může
-příští přidané pole `photoprism.models` propadnout tiše, přesně jako kdysi
-`Album.Category` nebo `Subject.Private` (obě mezery jsou dnes vyřešené, ale objevil
-je až tento audit, ne test).
-
-**Doporučení:** tabulkový test, který přes reflexi projde pole `photoprism.Photo` /
-`File` / `Marker` / `Album` / `Label` / `Subject` a selže, dokud každé není buď
-v mapovací funkci, nebo na explicitním allow-listu „WAIVED“ s odkazem na tento
-dokument. Takový test promění tichou regresi v červený `make check`.
+`caption() = firstNonEmpty(pp.Caption, pp.Description)`. `Caption` is the live field
+(PhotoPrism renamed `photo_description` → `photo_caption`); `Description` is the dead
+predecessor (`gorm:"-"`, always empty from the current instance). The precedence is correct:
+`Caption` first, `Description` only a fallback for an old instance. A real caption cannot slip
+through the cracks.
 
 ---
 
-# Migrační audit — photo-sorter → Kukátko
+## Risks and deliberate trade-offs
 
-- **Datum auditu:** 2026-07-17
-- **Auditovaný commit:** `3d6a51e` (větev `main`)
-- **Rozsah:** kompletní mapování pole-po-poli, kterým přímá migrace z photo-sorteru
-  (`internal/psimport`) plní katalog Kukátka — fotky a metadata, embeddingy,
-  obličeje, subjekty/lidé, markery, alba a členství, štítky a členství,
-  perceptuální hashe a nedestruktivní editace.
-- **Účel:** dát jistotu, že migrace z photo-sorteru — jediná cesta, kterou tato
-  knihovna vstupuje do nové databáze — nic tiše neztrácí. Sedm mezer na úrovni
-  sloupců `photos` (IPTC kredity `exif_artist`/`copyright`/`license`/`software`,
-  `keywords`, `scan`, `panorama`) je od commitu tohoto úkolu **vyřešeno
-  (MAPPED)**; `albums.category` a volný text migrace 037 (`subjects.bio`/`about`/
-  `alias`, `labels.description`/`categories`, `albums.location`/`notes`) jsou
-  **WAIVED (produktové rozhodnutí — bez cíle v Kukátku)**; `photo_files` a
-  `cover_photo_uid` (subjektů i alb) zůstávají **GAP** — jejich oprava je větší
-  než oprava pole (viz „Rozsah a co zůstává GAP“). Řádky níže to odrážejí.
+Items that are not a "GAP" (either decided on, or with a marginal impact), but which the owner
+should know about:
 
-Auditovaný kód: `internal/photosorter/` (read-only pgx čtečka: `models.go`,
-`photos.go`, `vectors.go`, `organize.go`, `people.go`, `extras.go`),
-`internal/psimport/` (mapery: `photos.go` `buildPhoto`, `mappings.go`,
-`vectors.go`, `satellites.go`, `helpers.go`), `internal/photos/`,
-`internal/vectors/`, `internal/people/`, `internal/organize/` (cílové sloupce)
-a migrace `internal/database/migrations/`. Skutečné schéma zdroje ověřeno proti
-migracím photo-sorteru (`…/postgres/migrations/001–045`, ne proti produkční DB —
-DSN se do dokumentu nepíše).
+1. **Unnamed and invalid face markers are not carried** (`isNamedFaceMarker`). The biggest
+   behavioral difference on the people side. Only **named, valid** faces are carried; the rest
+   is to be rediscovered by `face_detect`. Two costs: (a) while the box is offline, these faces
+   are **not** in the library (the job waits in the queue); (b) a face that a person manually
+   marked as **invalid** in PhotoPrism (`Invalid`) may be pulled back in by `face_detect` — the
+   human "no" is lost. `psimport` does not have this problem (it copies markers including
+   `Invalid`). Consider preserving at least the `Invalid` regions as invalid markers for the PP
+   import.
+2. **`month`-type albums are not mapped on a full run** (`DefaultAlbumTypes` omits them).
+   Deliberate (560 auto-generated monthly albums, covered by the timeline). A scoped run does
+   map them, though, so the result depends on how the import is run — worth documenting for
+   consistency.
+3. **Altitude 0 and "Null Island"** — the marginal edges of the zero trap (clue 3).
+4. **Subjects are paired by name slug** — `Marker.SubjUID` is now read for enrichment (to find
+   the right PP subject for `type`/`favorite`/`private`), but the Kukátko subject itself is
+   still created by the name slug, so two different people with the same name in PhotoPrism
+   merge into one Kukátko subject (and conversely, a rename in PP creates a new one). `psimport`
+   also pairs by name slug, so both paths behave the same — but it is a property, not an
+   identity guarantee. Enrichment edge: for a merged name, the PP subject whose marker creates
+   the Kukátko subject first wins.
 
-**Legenda verdiktů** je stejná jako u sekce PhotoPrism výše (MAPPED / WAIVED /
-GAP).
+## Test-coverage risk (standing)
 
-## Souhrn
+The existing tests verify **precedence, not coverage**: `ppimport/logic_test.go`
+`TestBuildPhoto_precedence`, `details_test.go`, `ppimport_integration_test.go` check that PP
+wins over EXIF and that empty does not erase — but **nothing asserts that every source field
+lands somewhere or is deliberately omitted**. Without a completeness test, the next field added
+to `photoprism.models` can slip through silently, exactly as `Album.Category` or
+`Subject.Private` once did (both gaps are resolved today, but this audit — not a test — found
+them).
 
-Audit má **dvě vrstvy**, protože ztráty u photo-sorteru neleží v maperech, ale
-v tom, co čtečka vůbec načte:
+**Recommendation:** a table test that reflectively walks the fields of `photoprism.Photo` /
+`File` / `Marker` / `Album` / `Label` / `Subject` and fails until each is either in a mapping
+function or on an explicit "WAIVED" allow-list referencing this document. Such a test turns a
+silent regression into a red `make check`.
 
-**Vrstva A — pole modelů `internal/photosorter/models.go`** (to, co čtečka do
-Kukátka přinese). Auditováno **97 polí** napříč 11 strukturami (`Photo`,
-`Embedding`, `Face`, `Subject`, `Marker`, `Album`, `AlbumPhoto`, `Label`,
-`PhotoLabel`, `Phash`, `Edit`); 7 z nich (IPTC kredity, `keywords`, `scan`,
-`panorama`) přidal na `Photo` tento úkol:
+---
 
-| Verdikt | Počet |
+# Migration audit — photo-sorter → Kukátko
+
+- **Audit date:** 2026-07-17
+- **Audited commit:** `3d6a51e` (branch `main`)
+- **Scope:** the complete field-by-field mapping by which the direct migration from
+  photo-sorter (`internal/psimport`) populates the Kukátko catalog — photos and metadata,
+  embeddings, faces, subjects/people, markers, albums and membership, labels and membership,
+  perceptual hashes and non-destructive edits.
+- **Purpose:** to give confidence that the migration from photo-sorter — the only path by which
+  this library enters the new database — loses nothing silently. Seven gaps at the `photos`
+  column level (IPTC credits `exif_artist`/`copyright`/`license`/`software`, `keywords`, `scan`,
+  `panorama`) are **resolved (MAPPED)** as of this task's commit; `albums.category` and the free
+  text of migration 037 (`subjects.bio`/`about`/`alias`, `labels.description`/`categories`,
+  `albums.location`/`notes`) are **WAIVED (product decision — no target in Kukátko)**;
+  `photo_files` and `cover_photo_uid` (of subjects and albums) remain **GAP** — their fix is
+  larger than a field fix (see "Scope and what remains GAP"). The rows below reflect that.
+
+Audited code: `internal/photosorter/` (the read-only pgx reader: `models.go`, `photos.go`,
+`vectors.go`, `organize.go`, `people.go`, `extras.go`), `internal/psimport/` (the mappers:
+`photos.go` `buildPhoto`, `mappings.go`, `vectors.go`, `satellites.go`, `helpers.go`),
+`internal/photos/`, `internal/vectors/`, `internal/people/`, `internal/organize/` (the target
+columns) and migrations `internal/database/migrations/`. The actual source schema was verified
+against the photo-sorter migrations (`…/postgres/migrations/001–045`, not against the production
+DB — the DSN is not written into the document).
+
+**The verdict legend** is the same as the PhotoPrism section above (MAPPED / WAIVED / GAP).
+
+## Summary
+
+The audit has **two layers**, because the losses with photo-sorter do not lie in the mappers
+but in what the reader loads at all:
+
+**Layer A — the fields of the `internal/photosorter/models.go` models** (what the reader brings
+into Kukátko). Audited **97 fields** across 11 structures (`Photo`, `Embedding`, `Face`,
+`Subject`, `Marker`, `Album`, `AlbumPhoto`, `Label`, `PhotoLabel`, `Phash`, `Edit`); 7 of them
+(IPTC credits, `keywords`, `scan`, `panorama`) were added to `Photo` by this task:
+
+| Verdict | Count |
 | --- | --- |
 | **MAPPED** | 89 |
 | **WAIVED** | 8 |
 | **GAP** | 0 |
-| **Celkem** | 97 |
+| **Total** | 97 |
 
-Na této vrstvě **nic nechybí**: každé pole, které čtečka vystaví, mapery přenesou
-1:1 (embeddingy, obličeje a markery se kopírují včetně UID a subjekt se jen
-přeznačí). Osm WAIVED jsou identifikátory a slugy, které si Kukátko generuje samo
-(`Subject/Album/Label.UID`+`Slug`), pořadí v albu (`AlbumPhoto.SortOrder`) a
-watermark (`Photo.UpdatedAt`).
+At this layer **nothing is missing**: every field the reader exposes is carried 1:1 by the
+mappers (embeddings, faces and markers are copied including their UIDs, and the subject is
+merely re-pointed). The eight WAIVED are identifiers and slugs that Kukátko generates on its own
+(`Subject/Album/Label.UID`+`Slug`), album ordering (`AlbumPhoto.SortOrder`), and the watermark
+(`Photo.UpdatedAt`).
 
-**Vrstva B — sloupce a tabulky photo-sorteru, které čtečka NIKDY nečte.** Tady jsou
-skutečné mezery. Čtečka `SELECT`uje jen podmnožinu sloupců a jen 12 z 28 tabulek;
-data, která do modelů nevstoupí, se do Kukátka nedostanou, i když cílový sloupec
-existuje. Přehled (detail v sekci „Co čtečka zahazuje na hranici DB“):
+**Layer B — photo-sorter columns and tables the reader NEVER reads.** This is where the real
+gaps are. The reader `SELECT`s only a subset of columns and only 12 of 28 tables; data that does
+not enter the models cannot reach Kukátko, even if the target column exists. Overview (detail in
+the section "What the reader drops at the DB boundary"):
 
-| | Počet |
+| | Count |
 | --- | --- |
-| Nečtené tabulky bucketu katalogu | **1 GAP** (`photo_files`, ponechán) + 1 WAIVED (`era_embeddings`) |
-| Zahozené sloupce `photos` | **0 GAP** (7 nově MAPPED tímto úkolem) + 6 WAIVED |
-| Zahozené extra sloupce `subjects`/`labels`/`albums` (migrace 037 photo-sorteru) | **2 GAP** (`cover_photo_uid` subjektů i alb, ponechány) + 13 WAIVED |
+| Unread catalog-bucket tables | **1 GAP** (`photo_files`, retained) + 1 WAIVED (`era_embeddings`) |
+| Dropped `photos` columns | **0 GAP** (7 newly MAPPED by this task) + 6 WAIVED |
+| Dropped extra `subjects`/`labels`/`albums` columns (photo-sorter migration 037) | **2 GAP** (`cover_photo_uid` of both subjects and albums, retained) + 13 WAIVED |
 
-**Původní mezery (GAP) a jejich stav po commitu tohoto úkolu, sestupně podle
-dopadu:**
+**The original gaps (GAP) and their status after this task's commit, in descending order of
+impact:**
 
-1. **`photo_files` — celá tabulka fyzických souborů se nečte. → PONECHÁNO GAP.**
-   photo-sorter drží RAW+JPEG stacky, HEIC+JPEG sidecary a editované varianty
-   v `photo_files` (role `original`/`sidecar`/`edited`). Migrace zkopíruje **jen
-   primární originál** (jeden `photo_files` řádek v Kukátku); sourozenecké soubory
-   jednoho snímku (RAW k JPEGu, motion část live-photo, editovaná varianta) se
-   **ztrácejí**. Kukátko má vlastní `photo_files` + `internal/stacks`, kam by
-   patřily. Oprava je **celá tabulka, ne pole** (listování `photo_files` ve čtečce
-   + kopie sekundárních souborů + seskupení `internal/stacks`) — vědomě ponecháno
-   jako GAP, viz „Rozsah a co zůstává GAP“ (indicie č. 1).
-2. **IPTC/XMP kredity + `keywords`/`scan` — 6 sloupců. → OPRAVENO (MAPPED).**
-   `photos.exif_artist`, `exif_copyright`, `exif_license`, `exif_software`,
-   `keywords` (TEXT[]) a `scan` v photo-sorteru **existují** a Kukátko má pro ně
-   sloupce (`artist`/`copyright`/`license`/`software`/`keywords`/`scan`, migrace
-   `0027`). Čtečka je teď čte (`photoColumns`) a `buildPhoto` je mapuje; `keywords`
-   se z TEXT[] spojí a znormalizuje (`exif.NormalizeKeywords`) do čárkou odděleného
-   sloupce (indicie č. 3).
-3. **`photos.panorama` (bool) → Kukátkovo `projection`. → OPRAVENO (MAPPED).**
-   Čtečka `panorama` čte a `buildPhoto` ho přes `panoramaProjection` mapuje na
-   `projection` (`true`→`equirectangular`, jinak prázdno) — jediná projekce, kterou
-   Kukátko modeluje.
-4. **`subjects.cover_photo_uid`, `albums.cover_photo_uid`. → PONECHÁNO GAP.**
-   Vybraná titulní fotka člověka i alba se zahazuje; cílové sloupce v Kukátku
-   existují, ale oprava vyžaduje **přemapování photo-UID až po importu fotek**:
-   subjekty/alba se zakládají v `buildMappings` **před** foto-smyčkou, takže titulní
-   fotka ještě neexistuje. Správná oprava je nový idempotentní dopisovací průchod po
-   foto-smyčce, ne přidání pole — proto ponecháno GAP, viz „Rozsah a co zůstává GAP“.
-5. **`albums.category`. → WAIVED (produktové rozhodnutí).** Kategorie alba nemá
-   v Kukátku kam přijít (žádný sloupec, UI ani dotaz) — **stejné rozhodnutí jako
-   `Album.Category` v sekci PhotoPrism výše**. Přidat zapisovací sloupec, který nikdo
-   nečte, by byl mrtvý sloupec, ne oprava.
-6. **Extra volný text migrace 037. → WAIVED (produktové rozhodnutí).**
-   `subjects.bio`/`about`/`alias`, `labels.description`/`categories`,
-   `albums.location`/`notes` nemají v Kukátku cílový sloupec (subjekt má jen `notes`,
-   mapované ze `Subject.Notes`; štítek jen `slug`/`name`/`priority`; album jen
-   `title`/`description`/`private`/`type`). Modelovat bio/alias osoby, popis štítku
-   či lokalitu/poznámku alba je **produktová funkce, ne oprava migrace**; přidat
-   zapisovací sloupec bez čtenáře by byl mrtvý sloupec (stejný standard jako
-   `albums.category`). WAIVED, dokud Kukátko takovou funkci nezavede — pak řádek
-   znovu otevřít. `cover_photo_uid` z téhož bucketu je oproti tomu skutečný GAP
-   (cíl existuje), viz #4.
+1. **`photo_files` — the whole physical-files table is not read. → LEFT AS GAP.**
+   photo-sorter keeps RAW+JPEG stacks, HEIC+JPEG sidecars and edited variants in `photo_files`
+   (roles `original`/`sidecar`/`edited`). The migration copies **only the primary original**
+   (one `photo_files` row in Kukátko); the sibling files of a single shot (the RAW next to the
+   JPEG, the motion part of a live photo, the edited variant) are **lost**. Kukátko has its own
+   `photo_files` + `internal/stacks` where they would belong. The fix is **a whole table, not a
+   field** (listing `photo_files` in the reader + copying the secondary files + grouping via
+   `internal/stacks`) — deliberately left as a GAP, see "Scope and what remains GAP" (clue #1).
+2. **IPTC/XMP credits + `keywords`/`scan` — 6 columns. → FIXED (MAPPED).**
+   `photos.exif_artist`, `exif_copyright`, `exif_license`, `exif_software`, `keywords` (TEXT[])
+   and `scan` **exist** in photo-sorter and Kukátko has columns for them
+   (`artist`/`copyright`/`license`/`software`/`keywords`/`scan`, migration `0027`). The reader
+   now reads them (`photoColumns`) and `buildPhoto` maps them; `keywords` is joined from the
+   TEXT[] and normalized (`exif.NormalizeKeywords`) into the comma-separated column (clue #3).
+3. **`photos.panorama` (bool) → Kukátko's `projection`. → FIXED (MAPPED).**
+   The reader reads `panorama` and `buildPhoto` maps it via `panoramaProjection` onto
+   `projection` (`true`→`equirectangular`, otherwise empty) — the only projection Kukátko
+   models.
+4. **`subjects.cover_photo_uid`, `albums.cover_photo_uid`. → LEFT AS GAP.**
+   The chosen cover photo of both a person and an album is discarded; the target columns exist in
+   Kukátko, but the fix requires **remapping the photo UID only after the photos are imported**:
+   subjects/albums are created in `buildMappings` **before** the photo loop, so the cover photo
+   does not yet exist. The correct fix is a new idempotent write-back pass after the photo loop,
+   not adding a field — hence left as a GAP, see "Scope and what remains GAP".
+5. **`albums.category`. → WAIVED (product decision).** An album category has nowhere to land in
+   Kukátko (no column, UI, or query) — **the same decision as `Album.Category` in the PhotoPrism
+   section above**. Adding a write-only column that nobody reads would be a dead column, not a
+   fix.
+6. **The extra free text of migration 037. → WAIVED (product decision).**
+   `subjects.bio`/`about`/`alias`, `labels.description`/`categories`, `albums.location`/`notes`
+   have no target column in Kukátko (a subject has only `notes`, mapped from `Subject.Notes`; a
+   label only `slug`/`name`/`priority`; an album only `title`/`description`/`private`/`type`).
+   Modeling a person's bio/alias, a label's description, or an album's location/note is a
+   **product feature, not a migration fix**; adding a write-only column with no reader would be a
+   dead column (the same standard as `albums.category`). WAIVED until Kukátko introduces such a
+   feature — then reopen the row. `cover_photo_uid` from the same bucket is, by contrast, a real
+   GAP (the target exists), see #4.
 
-Kromě GAPů je několik **vědomých kompromisů** (per-user oblíbené, zahozené pořadí,
-neexistence video sloupců na straně zdroje) v sekci „Rizika a vědomé kompromisy“.
+Beyond the gaps there are several **deliberate trade-offs** (per-user favorites, dropped
+ordering, the absence of video columns on the source side) in the section "Risks and deliberate
+trade-offs".
 
-## Jak import plní řádek (kontext k tabulkám)
+## How the import fills a row (context for the tables)
 
-Na rozdíl od PhotoPrism importu (dva HTTP endpointy) je photo-sorter **přímá kopie
-DB→DB**. `resolvePhoto` fotku dohledá podle `photosorter_uid` (už migrovaná) nebo
-`file_hash` (už v katalogu, např. z PhotoPrism — jen doplní `photosorter_uid`),
-jinak `createPhoto` zkopíruje originál z `FilePath` do úložiště pod měsícem pořízení
-a `buildPhoto` sestaví řádek. **Photo-sorter i Kukátko používají SHA256**, takže
-dedup přes `file_hash` funguje napříč importéry. Satelity (`transferSatellites`)
-se přenášejí za fotkou: embedding a obličeje jsou jádrový 1:1 přenos (selhání
-zopakuje celou fotku), hashe/editace/markery/členství jsou best-effort (chyba se
-loguje). Embeddingy (CLIP 768) a obličeje (InsightFace 512) sdílejí modely s
-Kukátkem, takže se kopírují **bez přepočtu**.
+Unlike the PhotoPrism import (two HTTP endpoints), photo-sorter is a **direct DB→DB copy**.
+`resolvePhoto` finds a photo by `photosorter_uid` (already migrated) or `file_hash` (already in
+the catalog, e.g. from PhotoPrism — it just fills in `photosorter_uid`), otherwise `createPhoto`
+copies the original from `FilePath` into storage under the capture month and `buildPhoto`
+assembles the row. **Both photo-sorter and Kukátko use SHA256**, so dedup via `file_hash` works
+across importers. The satellites (`transferSatellites`) are carried along with the photo: the
+embedding and faces are a core 1:1 transfer (a failure retries the whole photo), while
+hashes/edits/markers/membership are best-effort (an error is logged). Embeddings (CLIP 768) and
+faces (InsightFace 512) share models with Kukátko, so they are copied **without recomputation**.
 
-## Fotky — struktura `Photo`
+## Photos — the `Photo` structure
 
-Cíl je tabulka `photos` (migrace `0003`, `0004`, `0027`). `buildPhoto` mapuje
-kmenová i kurátorská pole **1:1 — stejné názvy sloupců na obou stranách**.
-Obsahová identita (`file_hash`/`file_path`/`file_size`) pochází z **čerstvě
-uloženého** souboru (`stored`), takže popisuje bajty skutečně na disku; hodnoty
-jsou totožné s photo-sorterem (stejný obsah, stejný SHA256).
+The target is the `photos` table (migrations `0003`, `0004`, `0027`). `buildPhoto` maps both the
+core and the curatorial fields **1:1 — the same column names on both sides**. The content
+identity (`file_hash`/`file_path`/`file_size`) comes from the **freshly stored** file
+(`stored`), so it describes the bytes actually on disk; the values are identical to
+photo-sorter's (same content, same SHA256).
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Photo.UID` | `photosorter_uid` | **MAPPED** | Klíč idempotence (`GetByPhotosorterUID`) a dedup; uloženo přes ukazatel. |
-| `Photo.FileHash` | `file_hash` | **MAPPED** | SHA256; dedup klíč (`resolvePhoto`→`GetByFileHash`). `file_hash` = `stored.Hash` týchž bajtů. |
-| `Photo.FilePath` | (zdroj kopie) → `file_path` | **MAPPED** | Cesta k originálu, ze které se čtou bajty (`copyOriginal`); do `file_path` jde nový layout úložiště. Zároveň fallback pro jméno (`originalName`). |
-| `Photo.FileName` | `file_name` | **MAPPED** | `originalName(ps)`; při prázdném jménu `path.Base(FilePath)`, jinak UID. |
-| `Photo.FileSize` | `file_size` | **MAPPED** | `file_size` = `stored.Size` zkopírovaných bajtů (týž obsah); pole `ps.FileSize` samo se nečte, ale je rovné. |
-| `Photo.FileMime` | `file_mime` | **MAPPED** | `photoMime`: preferuje `ps.FileMime`, jinak MIME nasniffovaný z uložených bajtů. |
+| `Photo.UID` | `photosorter_uid` | **MAPPED** | Idempotence key (`GetByPhotosorterUID`) and dedup; stored via a pointer. |
+| `Photo.FileHash` | `file_hash` | **MAPPED** | SHA256; dedup key (`resolvePhoto`→`GetByFileHash`). `file_hash` = `stored.Hash` of the same bytes. |
+| `Photo.FilePath` | (copy source) → `file_path` | **MAPPED** | The path to the original from which the bytes are read (`copyOriginal`); the new storage layout goes into `file_path`. Also a fallback for the name (`originalName`). |
+| `Photo.FileName` | `file_name` | **MAPPED** | `originalName(ps)`; on an empty name, `path.Base(FilePath)`, otherwise the UID. |
+| `Photo.FileSize` | `file_size` | **MAPPED** | `file_size` = `stored.Size` of the copied bytes (the same content); the `ps.FileSize` field itself is not read, but it is equal. |
+| `Photo.FileMime` | `file_mime` | **MAPPED** | `photoMime`: prefers `ps.FileMime`, otherwise the MIME sniffed from the stored bytes. |
 | `Photo.FileWidth` | `file_width` | **MAPPED** | |
 | `Photo.FileHeight` | `file_height` | **MAPPED** | |
 | `Photo.FileOrientation` | `file_orientation` | **MAPPED** | |
-| `Photo.TakenAt` | `taken_at` | **MAPPED** | Zároveň řídí měsíc v úložišti (`Store(..., takenAt, ...)`). |
-| `Photo.TakenAtSource` | `taken_at_source` | **MAPPED** | Přenáší se **přímo** ze zdroje (asymetrie: ppimport `taken_at_source` natvrdo razítkuje `exif`). |
+| `Photo.TakenAt` | `taken_at` | **MAPPED** | Also drives the month in storage (`Store(..., takenAt, ...)`). |
+| `Photo.TakenAtSource` | `taken_at_source` | **MAPPED** | Carried **directly** from the source (asymmetry: ppimport hard-stamps `taken_at_source` as `exif`). |
 | `Photo.Title` | `title` | **MAPPED** | |
-| `Photo.Description` | `description` | **MAPPED** | Přímý přenos (photo-sorter má jediné pole `description`). |
-| `Photo.Notes` | `notes` | **MAPPED** | Vlastní poznámka; přenáší se přímo. |
-| `Photo.Lat` | `lat` | **MAPPED** | Přenos bez „nulové pasti“ — GPS jde přímo (i `(0,0)`), viz indicie č. 3. `location_source` se ale nerazítkuje (viz cílová strana). |
+| `Photo.Description` | `description` | **MAPPED** | A direct transfer (photo-sorter has a single `description` field). |
+| `Photo.Notes` | `notes` | **MAPPED** | The user's own note; carried directly. |
+| `Photo.Lat` | `lat` | **MAPPED** | Transferred without the "zero trap" — GPS goes through directly (even `(0,0)`), see clue #3. But `location_source` is not stamped (see the target side). |
 | `Photo.Lng` | `lng` | **MAPPED** | |
-| `Photo.Altitude` | `altitude` | **MAPPED** | Ukazatel — `nil` = neznámo, `0` = hladina moře se zachová (na rozdíl od ppimport, kde `0` spadne na EXIF). |
+| `Photo.Altitude` | `altitude` | **MAPPED** | A pointer — `nil` = unknown, `0` = sea level is preserved (unlike ppimport, where `0` falls back to EXIF). |
 | `Photo.CameraMake` | `camera_make` | **MAPPED** | |
 | `Photo.CameraModel` | `camera_model` | **MAPPED** | |
 | `Photo.LensModel` | `lens_model` | **MAPPED** | |
-| `Photo.ISO` | `iso` | **MAPPED** | Ukazatel; `nil` = neznámo (bez „nulové pasti“). |
-| `Photo.Aperture` | `aperture` | **MAPPED** | Ukazatel. |
+| `Photo.ISO` | `iso` | **MAPPED** | A pointer; `nil` = unknown (no "zero trap"). |
+| `Photo.Aperture` | `aperture` | **MAPPED** | A pointer. |
 | `Photo.Exposure` | `exposure` | **MAPPED** | |
-| `Photo.FocalLength` | `focal_length` | **MAPPED** | Ukazatel. |
-| `Photo.Exif` | `exif` | **MAPPED** | Syrový JSON EXIF se kopíruje **beze změny** (asymetrie: ppimport EXIF znovu extrahuje ze staženého souboru). |
-| `Photo.Keywords` | `keywords` | **MAPPED** | Zdrojové TEXT[] `keywords` spojeno a znormalizováno (`exif.NormalizeKeywords`) do Kukátkova čárkou odděleného sloupce. **Nově čteno tímto úkolem** (byl GAP). |
-| `Photo.Artist` | `artist` | **MAPPED** | IPTC kredit `exif_artist`. **Nově čteno** (byl GAP). |
-| `Photo.Copyright` | `copyright` | **MAPPED** | `exif_copyright`. **Nově čteno** (byl GAP). |
-| `Photo.License` | `license` | **MAPPED** | `exif_license`. **Nově čteno** (byl GAP). |
-| `Photo.Software` | `software` | **MAPPED** | `exif_software`. **Nově čteno** (byl GAP). |
-| `Photo.Scan` | `scan` | **MAPPED** | Příznak „sken z fyzického originálu“. **Nově čteno** (byl GAP). |
-| `Photo.Panorama` | `projection` | **MAPPED** | Bool→string přes `panoramaProjection` (`true`→`equirectangular`, jinak prázdno). **Nově čteno** (byl GAP). |
+| `Photo.FocalLength` | `focal_length` | **MAPPED** | A pointer. |
+| `Photo.Exif` | `exif` | **MAPPED** | The raw EXIF JSON is copied **unchanged** (asymmetry: ppimport re-extracts EXIF from the downloaded file). |
+| `Photo.Keywords` | `keywords` | **MAPPED** | The source TEXT[] `keywords` is joined and normalized (`exif.NormalizeKeywords`) into Kukátko's comma-separated column. **Newly read by this task** (was a GAP). |
+| `Photo.Artist` | `artist` | **MAPPED** | IPTC credit `exif_artist`. **Newly read** (was a GAP). |
+| `Photo.Copyright` | `copyright` | **MAPPED** | `exif_copyright`. **Newly read** (was a GAP). |
+| `Photo.License` | `license` | **MAPPED** | `exif_license`. **Newly read** (was a GAP). |
+| `Photo.Software` | `software` | **MAPPED** | `exif_software`. **Newly read** (was a GAP). |
+| `Photo.Scan` | `scan` | **MAPPED** | The "scan of a physical original" flag. **Newly read** (was a GAP). |
+| `Photo.Panorama` | `projection` | **MAPPED** | bool→string via `panoramaProjection` (`true`→`equirectangular`, otherwise empty). **Newly read** (was a GAP). |
 | `Photo.Private` | `private` | **MAPPED** | |
-| `Photo.ArchivedAt` | `archived_at` | **MAPPED** | Archivační stav se **zachová** (asymetrie: ppimport `archived_at` nepřenáší). |
-| `Photo.UpdatedAt` | — (bez sloupce) | **WAIVED** | Řídí inkrementální watermark (paging `ORDER BY updated_at`, resume), není sloupcem fotky; `photos.updated_at` je čas vlastní mutace. |
+| `Photo.ArchivedAt` | `archived_at` | **MAPPED** | The archive state is **preserved** (asymmetry: ppimport does not carry `archived_at`). |
+| `Photo.UpdatedAt` | — (no column) | **WAIVED** | Drives the incremental watermark (paging `ORDER BY updated_at`, resume), it is not a photo column; `photos.updated_at` is the time of the row's own mutation. |
 
-**34 MAPPED, 1 WAIVED, 0 GAP** na úrovni modelu (7 polí IPTC kreditů/`keywords`/
-`scan`/`panorama` přidáno do modelu i maperu tímto úkolem). Zbylé ztráty fotky
-leží ve sloupcích, které čtečka nadále nečte — viz „Co čtečka zahazuje na hranici
-DB“.
+**34 MAPPED, 1 WAIVED, 0 GAP** at the model level (7 fields of IPTC credits/`keywords`/`scan`/
+`panorama` added to the model and the mapper by this task). The remaining photo losses lie in the
+columns the reader still does not read — see "What the reader drops at the DB boundary".
 
-## Embeddingy — struktura `Embedding`
+## Embeddings — the `Embedding` structure
 
-Cíl je tabulka `embeddings` (migrace `0006`, `halfvec` + HNSW). `transferEmbedding`
-kopíruje vektor 1:1; když photo-sorter embedding nemá, zařadí se Kukátkův
-`image_embed` job.
+The target is the `embeddings` table (migration `0006`, `halfvec` + HNSW). `transferEmbedding`
+copies the vector 1:1; when photo-sorter has no embedding, Kukátko's `image_embed` job is
+enqueued.
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Embedding.PhotoUID` | `embeddings.photo_uid` (kk) | **MAPPED** | Přeznačeno na Kukátkovo UID fotky. |
-| `Embedding.Vector` | `embeddings.embedding` | **MAPPED** | CLIP 768, 1:1 bez přepočtu (stejné modely). |
+| `Embedding.PhotoUID` | `embeddings.photo_uid` (kk) | **MAPPED** | Re-pointed to Kukátko's photo UID. |
+| `Embedding.Vector` | `embeddings.embedding` | **MAPPED** | CLIP 768, 1:1 without recomputation (the same models). |
 | `Embedding.Model` | `embeddings.model` | **MAPPED** | |
 | `Embedding.Pretrained` | `embeddings.pretrained` | **MAPPED** | |
 
-## Obličeje — struktura `Face`
+## Faces — the `Face` structure
 
-Cíl je tabulka `faces` (migrace `0009`/`0010`). `transferFaces` + `convertFace`
-kopírují každý obličej 1:1, přeznačí `SubjectUID` a **zachovají `MarkerUID`**
-(marker migruje se stejným UID). `RecordFaceDetection` zapíše detekci i pro nulový
-počet obličejů, aby se fotka znovu nedetekovala; fotku, kterou photo-sorter nikdy
-nezpracoval (`faces_processed` chybí), předá Kukátkovu `face_detect`.
+The target is the `faces` table (migrations `0009`/`0010`). `transferFaces` + `convertFace`
+copy each face 1:1, re-point `SubjectUID` and **preserve `MarkerUID`** (the marker migrates with
+the same UID). `RecordFaceDetection` records a detection even for a zero face count so the photo
+is not re-detected; a photo that photo-sorter never processed (`faces_processed` missing) is
+handed to Kukátko's `face_detect`.
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Face.PhotoUID` | `faces.photo_uid` (kk) | **MAPPED** | Přeznačeno na Kukátkovo UID. |
+| `Face.PhotoUID` | `faces.photo_uid` (kk) | **MAPPED** | Re-pointed to Kukátko's UID. |
 | `Face.FaceIndex` | `faces.face_index` | **MAPPED** | |
 | `Face.Vector` | `faces.embedding` | **MAPPED** | InsightFace 512, 1:1. |
-| `Face.BBox` | `faces.bbox` | **MAPPED** | Normalizovaný `[x,y,w,h]` (0..1). |
+| `Face.BBox` | `faces.bbox` | **MAPPED** | Normalized `[x,y,w,h]` (0..1). |
 | `Face.DetScore` | `faces.det_score` | **MAPPED** | |
-| `Face.Model` | `faces.model` | **MAPPED** | Zároveň `faceModel()` určí model detekce. |
-| `Face.MarkerUID` | `faces.marker_uid` | **MAPPED** | **Zachováno** — markery migrují se stejným UID, cache zůstane platná. |
-| `Face.SubjectUID` | `faces.subject_uid` | **MAPPED** | `remapSubject`: přeznačeno na Kukátkův subjekt; neznámý subjekt → `nil`. |
-| `Face.SubjectName` | `faces.subject_name` | **MAPPED** | Denormalizovaný render-hint. |
-| `Face.PhotoWidth` | `faces.photo_width` | **MAPPED** | Referenční rámec bboxu — viz indicie č. 7. |
-| `Face.PhotoHeight` | `faces.photo_height` | **MAPPED** | dtto. |
-| `Face.Orientation` | `faces.orientation` | **MAPPED** | dtto; přenáší se s bboxem, takže re-orientace box neposune. |
+| `Face.Model` | `faces.model` | **MAPPED** | Also `faceModel()` determines the detection model. |
+| `Face.MarkerUID` | `faces.marker_uid` | **MAPPED** | **Preserved** — markers migrate with the same UID, the cache stays valid. |
+| `Face.SubjectUID` | `faces.subject_uid` | **MAPPED** | `remapSubject`: re-pointed to Kukátko's subject; an unknown subject → `nil`. |
+| `Face.SubjectName` | `faces.subject_name` | **MAPPED** | A denormalized render hint. |
+| `Face.PhotoWidth` | `faces.photo_width` | **MAPPED** | The bbox reference frame — see clue #7. |
+| `Face.PhotoHeight` | `faces.photo_height` | **MAPPED** | ditto. |
+| `Face.Orientation` | `faces.orientation` | **MAPPED** | ditto; carried with the bbox, so re-orientation does not shift the box. |
 
-Vše MAPPED. `faces_processed.face_count` čtečka čte, ale `transferFaces` ho
-**zahazuje** (bere `len(faces)`) — viz indicie č. 8.
+Everything MAPPED. The reader reads `faces_processed.face_count`, but `transferFaces` **drops**
+it (it uses `len(faces)`) — see clue #8.
 
-## Subjekty / lidé — struktura `Subject`
+## Subjects / people — the `Subject` structure
 
-Cíl je tabulka `subjects` (migrace `0008`: `uid, slug, name, type, favorite,
-private, notes, cover_photo_uid`). `findOrCreateSubject` páruje existující subjekt
-**podle slugu jména** (`people.Slugify`), jinak zakládá nový a **zachová typ i
-příznaky**.
+The target is the `subjects` table (migration `0008`: `uid, slug, name, type, favorite,
+private, notes, cover_photo_uid`). `findOrCreateSubject` matches an existing subject **by name
+slug** (`people.Slugify`), otherwise creates a new one and **preserves the type and the flags**.
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Subject.Name` | `subjects.name` | **MAPPED** | Klíč find-or-create. |
-| `Subject.Type` | `subjects.type` | **MAPPED** | `mapSubjectType` (`pet`/`other`/default `person`). **Zvíře si typ zachová** (na rozdíl od ppimport, kde je vše `person`). |
-| `Subject.Favorite` | `subjects.favorite` | **MAPPED** | `subjects.favorite` je **skutečný sloupec subjektu (globální)**, ne per-user starost jako u fotek — proto se plní (viz indicie č. 6). |
-| `Subject.Private` | `subjects.private` | **MAPPED** | Soukromá osoba zůstane soukromá (na rozdíl od ppimport, kde se ztrácí). |
+| `Subject.Name` | `subjects.name` | **MAPPED** | Find-or-create key. |
+| `Subject.Type` | `subjects.type` | **MAPPED** | `mapSubjectType` (`pet`/`other`/default `person`). **An animal keeps its type** (unlike ppimport, where everything is `person`). |
+| `Subject.Favorite` | `subjects.favorite` | **MAPPED** | `subjects.favorite` is a **real subject column (global)**, not a per-user concern as with photos — hence it is filled (see clue #6). |
+| `Subject.Private` | `subjects.private` | **MAPPED** | A private person stays private (unlike ppimport, where it is lost). |
 | `Subject.Notes` | `subjects.notes` | **MAPPED** | |
-| `Subject.UID` | — | **WAIVED** | Kukátko generuje vlastní `uid`; subjekt se páruje slugem. |
-| `Subject.Slug` | `subjects.slug` | **WAIVED** | Přegeneruje se z jména (`people.Slugify`). |
+| `Subject.UID` | — | **WAIVED** | Kukátko generates its own `uid`; the subject is paired by slug. |
+| `Subject.Slug` | `subjects.slug` | **WAIVED** | Regenerated from the name (`people.Slugify`). |
 
-**5 MAPPED, 2 WAIVED.** Pozor: `type`/`favorite`/`private`/`notes` se nastaví jen
-při **založení**. Existující subjekt (spárovaný slugem — např. dřív zaseto ppimportem
-jako holý `person`) se převezme **beze změny**; photo-sorterův bohatší typ/příznak
-ho nepřepíše (viz Rizika). Extra pole `subjects.bio`/`about`/`alias`/`cover_photo_uid`
-čtečka nečte — viz „Co čtečka zahazuje“.
+**5 MAPPED, 2 WAIVED.** Caution: `type`/`favorite`/`private`/`notes` are set only on
+**creation**. An existing subject (paired by slug — e.g. seeded earlier by ppimport as a bare
+`person`) is taken **unchanged**; photo-sorter's richer type/flag does not overwrite it (see
+Risks). The reader does not read the extra fields
+`subjects.bio`/`about`/`alias`/`cover_photo_uid` — see "What the reader drops".
 
-## Markery — struktura `Marker`
+## Markers — the `Marker` structure
 
-Cíl je tabulka `markers` (migrace `0008`). `transferMarkers` migruje **každý**
-marker (idempotentně přes zachované UID); `mapMarkerType` mapuje typ, subjekt se
-přeznačí. **Klíčová asymetrie vůči ppimport:** protože jde o kopii DB, přenáší se
-markery *všechny* — pojmenované i nepojmenované, platné i neplatné, `face` i
-`label` — ne jen pojmenované platné obličeje.
+The target is the `markers` table (migration `0008`). `transferMarkers` migrates **every**
+marker (idempotently via the preserved UID); `mapMarkerType` maps the type, and the subject is
+re-pointed. **A key asymmetry vs. ppimport:** because this is a DB copy, *all* markers are
+carried — named and unnamed, valid and invalid, `face` and `label` — not just named valid faces.
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Marker.UID` | `markers.uid` | **MAPPED** | **Zachováno** — idempotence (`GetMarkerByUID`) a sdílená identita s `faces.marker_uid`. |
-| `Marker.PhotoUID` | `markers.photo_uid` (kk) | **MAPPED** | Přeznačeno. |
+| `Marker.UID` | `markers.uid` | **MAPPED** | **Preserved** — idempotence (`GetMarkerByUID`) and shared identity with `faces.marker_uid`. |
+| `Marker.PhotoUID` | `markers.photo_uid` (kk) | **MAPPED** | Re-pointed. |
 | `Marker.SubjectUID` | `markers.subject_uid` | **MAPPED** | `remapSubject`. |
-| `Marker.Type` | `markers.type` | **MAPPED** | `mapMarkerType` (`label`/default `face`); **label markery se zachovají** (ppimport je zahazuje). |
-| `Marker.X` / `Y` / `W` / `H` | `markers.x/y/w/h` | **MAPPED** | Normalizovaný bbox (0..1). |
-| `Marker.Score` | `markers.score` | **MAPPED** | Import-provenience, ne kvalita (0 = nezaznamenáno); neřadit podle něj obličeje. |
-| `Marker.Invalid` | `markers.invalid` | **MAPPED** | **Zachováno** — lidské „to není obličej“ přežije (asymetrie: ppimport `Invalid` filtruje pryč). |
-| `Marker.Reviewed` | `markers.reviewed` | **MAPPED** | Přímý přenos (ppimport odvozuje `Reviewed = !Review`). |
+| `Marker.Type` | `markers.type` | **MAPPED** | `mapMarkerType` (`label`/default `face`); **label markers are preserved** (ppimport discards them). |
+| `Marker.X` / `Y` / `W` / `H` | `markers.x/y/w/h` | **MAPPED** | Normalized bbox (0..1). |
+| `Marker.Score` | `markers.score` | **MAPPED** | Import provenance, not quality (0 = unrecorded); do not rank faces by it. |
+| `Marker.Invalid` | `markers.invalid` | **MAPPED** | **Preserved** — the human "this is not a face" survives (asymmetry: ppimport filters `Invalid` out). |
+| `Marker.Reviewed` | `markers.reviewed` | **MAPPED** | A direct transfer (ppimport derives `Reviewed = !Review`). |
 
-Vše MAPPED (11 polí).
+Everything MAPPED (11 fields).
 
-## Alba — struktury `Album` a `AlbumPhoto`
+## Albums — the `Album` and `AlbumPhoto` structures
 
-Cíl je tabulka `albums` (migrace `0011`; `0022` odstranilo `order_by`/`sort_order`)
-a připojení `album_photos`. `findOrCreateAlbum` páruje/zakládá album **podle
-titulku**; prázdný titulek → album se přeskočí. `mapAlbumType` mapuje **všechny**
-typy včetně `month` (na rozdíl od ppimportova `DefaultAlbumTypes`, kde `month`
-vypadává).
+The target is the `albums` table (migration `0011`; `0022` removed `order_by`/`sort_order`) and
+the `album_photos` join. `findOrCreateAlbum` matches/creates an album **by title**; an empty
+title → the album is skipped. `mapAlbumType` maps **all** types including `month` (unlike
+ppimport's `DefaultAlbumTypes`, where `month` drops out).
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Album.Title` | `albums.title` | **MAPPED** | Klíč find-or-create. |
+| `Album.Title` | `albums.title` | **MAPPED** | Find-or-create key. |
 | `Album.Description` | `albums.description` | **MAPPED** | |
-| `Album.Type` | `albums.type` | **MAPPED** | `mapAlbumType`; neznámé/prázdné → `album` (manual). Včetně `month`. |
+| `Album.Type` | `albums.type` | **MAPPED** | `mapAlbumType`; unknown/empty → `album` (manual). Including `month`. |
 | `Album.Private` | `albums.private` | **MAPPED** | |
-| `Album.UID` | — | **WAIVED** | Kukátko generuje vlastní `uid`; album se páruje titulkem. |
-| `Album.Slug` | `albums.slug` | **WAIVED** | Přegeneruje se z titulku. |
-| `AlbumPhoto.AlbumUID` | (klíč, přemapován) | **MAPPED** | Přes `maps.albums`. |
-| `AlbumPhoto.PhotoUID` | (klíč → kk UID) | **MAPPED** | `AddPhoto` idempotentní; nenaimportovaný člen se přeskočí. |
-| `AlbumPhoto.SortOrder` | — | **WAIVED** | Kukátko řadí alba **chronologicky** (`0022` zahodilo `album_photos.sort_order`). |
+| `Album.UID` | — | **WAIVED** | Kukátko generates its own `uid`; the album is paired by title. |
+| `Album.Slug` | `albums.slug` | **WAIVED** | Regenerated from the title. |
+| `AlbumPhoto.AlbumUID` | (key, remapped) | **MAPPED** | Via `maps.albums`. |
+| `AlbumPhoto.PhotoUID` | (key → kk UID) | **MAPPED** | `AddPhoto` idempotent; a non-imported member is skipped. |
+| `AlbumPhoto.SortOrder` | — | **WAIVED** | Kukátko sorts albums **chronologically** (`0022` dropped `album_photos.sort_order`). |
 
-**Album: 4 MAPPED, 2 WAIVED. AlbumPhoto: 2 MAPPED, 1 WAIVED.** Extra sloupce alba
-(`category`, `cover_photo_uid`, `location`, `notes`, `filter`, `favorite`,
-`album_order`/`order_by`) čtečka nečte — viz „Co čtečka zahazuje“.
+**Album: 4 MAPPED, 2 WAIVED. AlbumPhoto: 2 MAPPED, 1 WAIVED.** The reader does not read the extra
+album columns (`category`, `cover_photo_uid`, `location`, `notes`, `filter`, `favorite`,
+`album_order`/`order_by`) — see "What the reader drops".
 
-## Štítky — struktury `Label` a `PhotoLabel`
+## Labels — the `Label` and `PhotoLabel` structures
 
-Cíl jsou tabulky `labels` (`uid, slug, name, priority`) a `photo_labels`
-(`source, uncertainty`), migrace `0011`. `findOrCreateLabel` páruje **podle jména**.
+The targets are the `labels` table (`uid, slug, name, priority`) and `photo_labels`
+(`source, uncertainty`), migration `0011`. `findOrCreateLabel` matches **by name**.
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `Label.Name` | `labels.name` | **MAPPED** | Klíč find-or-create. |
+| `Label.Name` | `labels.name` | **MAPPED** | Find-or-create key. |
 | `Label.Priority` | `labels.priority` | **MAPPED** | |
-| `Label.UID` | — | **WAIVED** | Vlastní `uid`. |
-| `Label.Slug` | `labels.slug` | **WAIVED** | Přegeneruje se z jména. |
-| `PhotoLabel.PhotoUID` | (klíč → kk UID) | **MAPPED** | |
-| `PhotoLabel.LabelUID` | (klíč, přemapován) | **MAPPED** | Přes `maps.labels`; `AttachLabel` idempotentní. |
-| `PhotoLabel.Source` | `photo_labels.source` | **MAPPED** | `mapLabelSource`: `manual`→manual, `ai`→ai, ostatní→import. |
-| `PhotoLabel.Uncertainty` | `photo_labels.uncertainty` | **MAPPED** | Přímý přenos. |
+| `Label.UID` | — | **WAIVED** | Its own `uid`. |
+| `Label.Slug` | `labels.slug` | **WAIVED** | Regenerated from the name. |
+| `PhotoLabel.PhotoUID` | (key → kk UID) | **MAPPED** | |
+| `PhotoLabel.LabelUID` | (key, remapped) | **MAPPED** | Via `maps.labels`; `AttachLabel` idempotent. |
+| `PhotoLabel.Source` | `photo_labels.source` | **MAPPED** | `mapLabelSource`: `manual`→manual, `ai`→ai, others→import. |
+| `PhotoLabel.Uncertainty` | `photo_labels.uncertainty` | **MAPPED** | A direct transfer. |
 
-**Label: 2 MAPPED, 2 WAIVED. PhotoLabel: 4 MAPPED.** Extra `labels.description`/
-`categories`/`favorite` čtečka nečte — viz „Co čtečka zahazuje“.
+**Label: 2 MAPPED, 2 WAIVED. PhotoLabel: 4 MAPPED.** The reader does not read the extra
+`labels.description`/`categories`/`favorite` — see "What the reader drops".
 
-## Perceptuální hashe — struktura `Phash`
+## Perceptual hashes — the `Phash` structure
 
-Cíl je `photo_phashes`. `transferPhash` je idempotentní upsert (best-effort).
+The target is `photo_phashes`. `transferPhash` is an idempotent upsert (best-effort).
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
 | `Phash.PhotoUID` | `photo_phashes.photo_uid` (kk) | **MAPPED** | |
 | `Phash.Phash` | `photo_phashes.phash` | **MAPPED** | pHash (DCT). |
 | `Phash.Dhash` | `photo_phashes.dhash` | **MAPPED** | dHash (gradient). |
 
-## Editace — struktura `Edit`
+## Edits — the `Edit` structure
 
-Cíl je `photo_edits`. `transferEdit` je idempotentní upsert (best-effort).
-Nedestruktivní crop/rotace/tón se přenášejí 1:1.
+The target is `photo_edits`. `transferEdit` is an idempotent upsert (best-effort). The
+non-destructive crop/rotation/tone are carried 1:1.
 
-| Zdrojové pole | Cílový sloupec | Verdikt | Poznámka |
+| Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
 | `Edit.PhotoUID` | `photo_edits.photo_uid` (kk) | **MAPPED** | |
-| `Edit.CropX` / `CropY` / `CropW` / `CropH` | `photo_edits.crop_x/y/w/h` | **MAPPED** | Ukazatele — `nil` = bez ořezu. |
+| `Edit.CropX` / `CropY` / `CropW` / `CropH` | `photo_edits.crop_x/y/w/h` | **MAPPED** | Pointers — `nil` = no crop. |
 | `Edit.Rotation` | `photo_edits.rotation` | **MAPPED** | 0/90/180/270. |
 | `Edit.Brightness` | `photo_edits.brightness` | **MAPPED** | |
 | `Edit.Contrast` | `photo_edits.contrast` | **MAPPED** | |
 
-Vše MAPPED (8 polí).
+Everything MAPPED (8 fields).
 
 ---
 
-## Co čtečka zahazuje na hranici DB (indicie č. 1 a 3)
+## What the reader drops at the DB boundary (clues #1 and #3)
 
-Toto je jádro auditu. `internal/photosorter` je jediná brána mezi photo-sorterem a
-Kukátkem; co její `SELECT`y nenačtou, do modelů nevstoupí a mapery nemají co
-přenést. Skutečné schéma photo-sorteru (migrace `001–045`) obsahuje **28 tabulek**;
-čtečka `SELECT`uje z **12** a i z nich bere jen podmnožinu sloupců.
+This is the core of the audit. `internal/photosorter` is the only gateway between photo-sorter
+and Kukátko; what its `SELECT`s do not load does not enter the models, and the mappers have
+nothing to carry. photo-sorter's actual schema (migrations `001–045`) contains **28 tables**;
+the reader `SELECT`s from **12** and even from those it takes only a subset of columns.
 
-### Tabulky, které nikdo nečte
+### Tables nobody reads
 
-Bucket katalogu (tabulky s daty knihovny) má **14 tabulek**; čtečka čte 12. Zbývají:
+The catalog bucket (tables with library data) has **14 tables**; the reader reads 12. Remaining:
 
-| Tabulka | Verdikt | Co se ztrácí / proč ne |
+| Table | Verdict | What is lost / why not |
 | --- | --- | --- |
-| `photo_files` | **GAP** | **Nejzávažnější.** Fyzické soubory snímku — RAW+JPEG stacky, HEIC+JPEG sidecary, editované varianty (`role` `original`/`sidecar`/`edited`). Migrace zkopíruje jen primární originál a založí **jeden** `photo_files` řádek v Kukátku; sourozenecké soubory se ztrácejí. **Bije** uživatele se stacky (RAW vedle JPEGu, live-photo klip). Kukátko má vlastní `photo_files` + `internal/stacks`. **Oprava:** ve čtečce přidat listování `photo_files` a v `psimport` zkopírovat i sekundární soubory (role `sidecar`/`edited`) jako další `photo_files` řádky a nechat `internal/stacks` je seskupit. |
-| `era_embeddings` | **WAIVED** | Referenční CLIP centroidy „ér“ pro odhad období — odvozená/přepočítatelná data, ne obsah knihovny; Kukátko funkci „ér“ nemá. |
+| `photo_files` | **GAP** | **The most serious.** The physical files of a shot — RAW+JPEG stacks, HEIC+JPEG sidecars, edited variants (`role` `original`/`sidecar`/`edited`). The migration copies only the primary original and creates **one** `photo_files` row in Kukátko; the sibling files are lost. **Hits** users with stacks (RAW next to JPEG, a live-photo clip). Kukátko has its own `photo_files` + `internal/stacks`. **Fix:** add listing of `photo_files` in the reader and, in `psimport`, copy the secondary files (roles `sidecar`/`edited`) as additional `photo_files` rows and let `internal/stacks` group them. |
+| `era_embeddings` | **WAIVED** | Reference CLIP centroids of "eras" for period estimation — derived/recomputable data, not library content; Kukátko has no "eras" feature. |
 
-Ostatní nečtené tabulky (`users`, `sessions`, `photo_books`, `book_sections`,
+The other unread tables (`users`, `sessions`, `photo_books`, `book_sections`,
 `section_photos`, `book_pages`, `page_slots`, `book_chapters`, `text_versions`,
-`text_check_results`, `album_share_links`, `smart_albums`, `audit_log`,
-`api_tokens`) jsou **mimo rozsah** (fotokniha, sdílení, účty, audit) — vědomě
-nepřenášené, žádná ztráta knihovních dat. Tím je indicie č. 1 potvrzena: jediná
-nečtená tabulka s daty knihovny je `photo_files`.
+`text_check_results`, `album_share_links`, `smart_albums`, `audit_log`, `api_tokens`) are
+**out of scope** (photo book, sharing, accounts, audit) — deliberately not carried, no loss of
+library data. This confirms clue #1: the only unread table with library data is `photo_files`.
 
-### Sloupce `photos`: dřívějších 7 GAP nyní čteno (indicie č. 3)
+### `photos` columns: the earlier 7 GAPs now read (clue #3)
 
-`photoColumns` (čtečka) po tomto úkolu bere **35 sloupců** (bylo 28); 7 dříve
-zahozených kreditů/`keywords`/`scan`/`panorama` je nyní čteno a `buildPhoto` je
-mapuje. Schéma `photos` (po migracích `032`, `035`, `036`) má stále víc:
+`photoColumns` (the reader) now takes **35 columns** after this task (was 28); the 7 previously
+dropped credits/`keywords`/`scan`/`panorama` are now read and `buildPhoto` maps them. The
+`photos` schema (after migrations `032`, `035`, `036`) still has more:
 
-| Sloupec photo-sorteru | Cíl v Kukátku | Verdikt | Poznámka |
+| photo-sorter column | Target in Kukátko | Verdict | Note |
 | --- | --- | --- | --- |
-| `exif_artist` | `photos.artist` | **MAPPED** | Cílový sloupec (`0027`); nově čteno a mapováno tímto úkolem. |
-| `exif_copyright` | `photos.copyright` | **MAPPED** | dtto. |
-| `exif_license` | `photos.license` | **MAPPED** | dtto. |
-| `exif_software` | `photos.software` | **MAPPED** | dtto. |
-| `keywords` (TEXT[]) | `photos.keywords` | **MAPPED** | TEXT[] spojen a znormalizován (`exif.NormalizeKeywords`) do čárkou odděleného sloupce. Nově čteno. |
-| `scan` (bool) | `photos.scan` | **MAPPED** | Nově čteno. |
-| `panorama` (bool) | `photos.projection` | **MAPPED** | Bool→string přes `panoramaProjection` (`true`→`equirectangular`). Nově čteno. |
-| `favorite` (bool) | (per-user `user_favorites`) | **WAIVED** | Oblíbené jsou v Kukátku **per-user** — migrace `0011` explicitně: „per-user favorites that **replace** photo-sorter's global `photos.favorite` flag“. Job nemá komu příznak přiřadit (stejné jako `Photo.Favorite` u PhotoPrism). |
-| `quality` (smallint) | — | **WAIVED** | Přepočítatelné skóre kvality; Kukátko ho nemodeluje. |
-| `time_zone` / `taken_at_offset` | — | **WAIVED** | Kukátko drží kanonický `taken_at` (timestamptz, absolutní okamžik); jako `TakenAtLocal` u PhotoPrism. Drobná ztráta věrnosti při rekonstrukci lokálního času (viz Rizika). |
-| `uploaded_by` / `created_at` | — | **WAIVED** | Interní/DB-spravované, ne obsah knihovny. |
+| `exif_artist` | `photos.artist` | **MAPPED** | Target column (`0027`); newly read and mapped by this task. |
+| `exif_copyright` | `photos.copyright` | **MAPPED** | ditto. |
+| `exif_license` | `photos.license` | **MAPPED** | ditto. |
+| `exif_software` | `photos.software` | **MAPPED** | ditto. |
+| `keywords` (TEXT[]) | `photos.keywords` | **MAPPED** | TEXT[] joined and normalized (`exif.NormalizeKeywords`) into the comma-separated column. Newly read. |
+| `scan` (bool) | `photos.scan` | **MAPPED** | Newly read. |
+| `panorama` (bool) | `photos.projection` | **MAPPED** | bool→string via `panoramaProjection` (`true`→`equirectangular`). Newly read. |
+| `favorite` (bool) | (per-user `user_favorites`) | **WAIVED** | Favorites in Kukátko are **per-user** — migration `0011` explicitly: "per-user favorites that **replace** photo-sorter's global `photos.favorite` flag". The job has nobody to attribute the flag to (same as `Photo.Favorite` for PhotoPrism). |
+| `quality` (smallint) | — | **WAIVED** | A recomputable quality score; Kukátko does not model it. |
+| `time_zone` / `taken_at_offset` | — | **WAIVED** | Kukátko keeps a canonical `taken_at` (timestamptz, an absolute instant); like `TakenAtLocal` for PhotoPrism. A minor fidelity loss when reconstructing local time (see Risks). |
+| `uploaded_by` / `created_at` | — | **WAIVED** | Internal/DB-managed, not library content. |
 
-**Oprava GAPů kreditů — implementováno.** `photoColumns` čtečky je rozšířen o
-`exif_artist/copyright/license/software`, `keywords`, `scan`, `panorama`; do
-`photosorter.Photo` přibyla odpovídající pole a `buildPhoto` je mapuje na existující
-Kukátkovy sloupce (`keywords` přes `exif.NormalizeKeywords`, `panorama` přes
-`panoramaProjection`). Čistě aditivní změna čtečky + `buildPhoto`. Pozn.: `psimport`
-zapisuje metadata jen při **založení** fotky (`createPhoto`); re-run fotku spárovanou
-přes `photosorter_uid` přeskočí, takže kredity Kukátko-side edit nepřepíší.
+**Credit-GAP fix — implemented.** The reader's `photoColumns` is extended with
+`exif_artist/copyright/license/software`, `keywords`, `scan`, `panorama`; the corresponding
+fields were added to `photosorter.Photo` and `buildPhoto` maps them onto the existing Kukátko
+columns (`keywords` via `exif.NormalizeKeywords`, `panorama` via `panoramaProjection`). A purely
+additive change to the reader + `buildPhoto`. Note: `psimport` writes metadata only when a photo
+is **created** (`createPhoto`); a re-run skips a photo paired via `photosorter_uid`, so the
+credits do not overwrite a Kukátko-side edit.
 
-**Video sloupce** (`media_type`, `duration_ms`, `video_codec`, `audio_codec`,
-`has_audio`, `fps`; indicie č. 4): photo-sorterův `photos` je **jen obrazový** —
-žádný video sloupec neexistuje. `psimport` je tedy neplní a **nemá z čeho** (ani
-nespouští ffprobe). `media_type` defaultuje na `image`. Není to ztráta (zdroj video
-nemodeluje), ale je to omezení: pronikne-li do photo-sorteru přece jen video, dorazí
-jako obrázek bez trvání/kodeku (viz Rizika).
+**Video columns** (`media_type`, `duration_ms`, `video_codec`, `audio_codec`, `has_audio`,
+`fps`; clue #4): photo-sorter's `photos` is **image-only** — no video column exists. `psimport`
+therefore does not fill them and **has nothing to fill them from** (nor does it run ffprobe).
+`media_type` defaults to `image`. This is not a loss (the source does not model video), but it is
+a limitation: if a video does slip into photo-sorter, it arrives as an image without
+duration/codec (see Risks).
 
-### Extra sloupce `subjects` / `labels` / `albums` (migrace 037 photo-sorteru)
+### Extra `subjects` / `labels` / `albums` columns (photo-sorter migration 037)
 
-Migrace `037` přidala photo-sorteru bohatší metadata subjektů, štítků a alb; čtečka
-(`people.go`, `organize.go`) z nich čte jen jádro.
+Migration `037` added richer subject, label and album metadata to photo-sorter; the reader
+(`people.go`, `organize.go`) reads only the core of it.
 
-| Sloupec photo-sorteru | Cíl v Kukátku | Verdikt | Poznámka |
+| photo-sorter column | Target in Kukátko | Verdict | Note |
 | --- | --- | --- | --- |
-| `subjects.cover_photo_uid` | `subjects.cover_photo_uid` | **GAP** (ponecháno) | Cílový sloupec existuje, ale oprava vyžaduje přemapování photo-UID **po importu fotek** (subjekty vznikají v `buildMappings` před foto-smyčkou) — nový dopisovací průchod, ne oprava pole. Viz „Rozsah a co zůstává GAP“. |
-| `subjects.bio` / `about` / `alias` | — | **WAIVED** | Volný text o osobě bez cíle v Kukátku (které má jen `notes`, mapované ze `Subject.Notes`). Modelovat bio/alias osoby je **produktová funkce, ne oprava migrace**; zapisovací sloupec bez čtenáře = mrtvý sloupec (standard `albums.category`). WAIVED, dokud taková funkce nevznikne. |
-| `albums.cover_photo_uid` | `albums.cover_photo_uid` | **GAP** (ponecháno) | Jako `subjects.cover_photo_uid` — přemapování photo-UID po importu fotek. |
-| `albums.category` | — (bez sloupce) | **WAIVED** | Kategorie alba nemá v Kukátku kam přijít (žádný sloupec, UI ani dotaz) — **stejné produktové rozhodnutí jako `Album.Category` u PhotoPrism**. Přidat zapisovací sloupec, který nikdo nečte, by byl mrtvý sloupec. |
-| `albums.location` / `notes` | — | **WAIVED** | Volný text/lokalita alba bez cíle v Kukátku. Produktová funkce, ne oprava migrace; WAIVED (standard `albums.category`). |
-| `labels.description` / `categories` | — | **WAIVED** | Popis/kategorie štítku bez cíle v Kukátku (`labels` má jen `slug, name, priority`). Produktová funkce, ne oprava migrace; WAIVED (standard `albums.category`). |
-| `albums.filter` | (`internal/savedsearch`) | **WAIVED** | photo-sorterův „smart album“ jako filtr; Kukátko má chytrá alba samostatně (`saved_searches`), album se migruje jako statické. |
-| `albums.album_order` / `order_by` | — | **WAIVED** | Pořadí/řazení alba — Kukátko řadí chronologicky (`0022`). |
-| `albums.favorite` / `labels.favorite` | — | **WAIVED** | Kukátkova `albums`/`labels` sloupec `favorite` nemají (koncept oblíbeného alba/štítku není). |
+| `subjects.cover_photo_uid` | `subjects.cover_photo_uid` | **GAP** (retained) | The target column exists, but the fix requires remapping the photo UID **after the photos are imported** (subjects are created in `buildMappings` before the photo loop) — a new write-back pass, not a field fix. See "Scope and what remains GAP". |
+| `subjects.bio` / `about` / `alias` | — | **WAIVED** | Free text about the person with no target in Kukátko (which has only `notes`, mapped from `Subject.Notes`). Modeling a person's bio/alias is a **product feature, not a migration fix**; a write-only column with no reader = a dead column (the `albums.category` standard). WAIVED until such a feature exists. |
+| `albums.cover_photo_uid` | `albums.cover_photo_uid` | **GAP** (retained) | Like `subjects.cover_photo_uid` — remapping the photo UID after the photos are imported. |
+| `albums.category` | — (no column) | **WAIVED** | An album category has nowhere to land in Kukátko (no column, UI, or query) — **the same product decision as `Album.Category` for PhotoPrism**. Adding a write-only column that nobody reads would be a dead column. |
+| `albums.location` / `notes` | — | **WAIVED** | An album's free text/location with no target in Kukátko. A product feature, not a migration fix; WAIVED (the `albums.category` standard). |
+| `labels.description` / `categories` | — | **WAIVED** | A label's description/category with no target in Kukátko (`labels` has only `slug, name, priority`). A product feature, not a migration fix; WAIVED (the `albums.category` standard). |
+| `albums.filter` | (`internal/savedsearch`) | **WAIVED** | photo-sorter's "smart album" as a filter; Kukátko has smart albums separately (`saved_searches`), the album is migrated as static. |
+| `albums.album_order` / `order_by` | — | **WAIVED** | Album ordering/sorting — Kukátko sorts chronologically (`0022`). |
+| `albums.favorite` / `labels.favorite` | — | **WAIVED** | Kukátko's `albums`/`labels` have no `favorite` column (there is no favorite-album/label concept). |
 
-Interní sloupce (`faces.id`/`dim`/`file_uid`, `embeddings.dim`/`created_at`, časy
-`created_at`/`updated_at`, `album_photos.added_at`, `photo_labels.created_at`) jsou
-DB-interní a přenášet se nemají — **WAIVED** (neuvádím jako samostatné řádky).
+Internal columns (`faces.id`/`dim`/`file_uid`, `embeddings.dim`/`created_at`, the
+`created_at`/`updated_at` times, `album_photos.added_at`, `photo_labels.created_at`) are
+DB-internal and are not meant to be carried — **WAIVED** (not listed as separate rows).
 
 ---
 
-## Cílová strana — sloupce `photos`, které `psimport` neplní
+## The target side — `photos` columns `psimport` does not fill
 
-Pro prokazatelnost oběma směry: každý z 55 vkládaných sloupců `photos`
-(`photoInsertColumns`) je buď namapovaný z pole photo-sorteru (výše), nebo
-Kukátkem-generovaný/vlastní. `buildPhoto` nastaví 34 sloupců + `uid` (DB) a
-`media_type` (default `image` v `Create`). `artist`, `copyright`, `license`,
-`software`, `keywords`, `scan` a `projection` jsou **nově plněné** tímto úkolem
-(byly GAP). Neplněné (default/prázdno):
+For provability in both directions: each of the 55 inserted `photos` columns
+(`photoInsertColumns`) is either mapped from a photo-sorter field (above), or
+Kukátko-generated/own. `buildPhoto` sets 34 columns + `uid` (DB) and `media_type` (default
+`image` in `Create`). `artist`, `copyright`, `license`, `software`, `keywords`, `scan` and
+`projection` are **newly filled** by this task (they were GAPs). Not filled (default/empty):
 
-| Sloupec | Původ | Pozn. |
+| Column | Origin | Note |
 | --- | --- | --- |
-| `duration_ms`, `video_codec`, `audio_codec`, `has_audio`, `fps` | — | Video; zdroj je jen obrazový, `psimport` ffprobe nespouští. |
-| `subject`, `color_profile`, `image_codec`, `camera_serial`, `original_name` | — | Zdrojový sloupec neexistuje. `file_name` nese jméno souboru. |
-| `location_source` | Nerazítkováno | `psimport` plní `lat`/`lng`, ale provenienci polohy nechá prázdnou (asymetrie: ppimport razítkuje `exif`). Ne ztráta dat, jen prázdná provenience. |
-| `taken_at_estimated`, `taken_at_note`, `ai_note` | Kukátko-only | Zdroj nemá; default. |
-| `uploaded_by` | — | Job nemá uživatele. |
-| `photoprism_uid`, `photoprism_file_hash` | jiný import | Plní jen `ppimport`. |
-| `metadata_extracted_at` | Kukátko-only | `nil` → naplánuje `metadata` backfill. |
-| `stack_uid`, `stack_primary` | Kukátko-only | Detekce stacků (`internal/stacks`). |
-| `uid`, `created_at`, `updated_at` | DB | Generováno při vložení. |
+| `duration_ms`, `video_codec`, `audio_codec`, `has_audio`, `fps` | — | Video; the source is image-only, `psimport` does not run ffprobe. |
+| `subject`, `color_profile`, `image_codec`, `camera_serial`, `original_name` | — | The source column does not exist. `file_name` carries the file name. |
+| `location_source` | Not stamped | `psimport` fills `lat`/`lng`, but leaves the location provenance empty (asymmetry: ppimport stamps `exif`). Not a data loss, just an empty provenance. |
+| `taken_at_estimated`, `taken_at_note`, `ai_note` | Kukátko-only | The source has none; default. |
+| `uploaded_by` | — | The job has no user. |
+| `photoprism_uid`, `photoprism_file_hash` | another import | Filled only by `ppimport`. |
+| `metadata_extracted_at` | Kukátko-only | `nil` → schedules the `metadata` backfill. |
+| `stack_uid`, `stack_primary` | Kukátko-only | Stack detection (`internal/stacks`). |
+| `uid`, `created_at`, `updated_at` | DB | Generated on insert. |
 
 ---
 
-## Ověření konkrétních indicií ze zadání
+## Verification of specific clues from the brief
 
-### 1. Tabulky, které nikdo nečte — **potvrzeno: jediná je `photo_files` (GAP)**
+### 1. Tables nobody reads — **confirmed: the only one is `photo_files` (GAP)**
 
-Schéma photo-sorteru má 28 tabulek; 14 je mimo rozsah (fotokniha/sdílení/účty/
-audit/smart-alba), vědomě nepřenášených. Z 14 katalogových tabulek čtečka čte 12.
-Nečtené: **`photo_files`** (fyzické soubory / stacky — reálná ztráta, GAP) a
-`era_embeddings` (referenční, WAIVED). `photo_files` je největší jednotlivá mezera
-celého auditu — celá tabulka s daty knihovny nevstoupí do modelů.
+photo-sorter's schema has 28 tables; 14 are out of scope (photo book/sharing/accounts/
+audit/smart albums), deliberately not carried. Of the 14 catalog tables the reader reads 12.
+Unread: **`photo_files`** (physical files / stacks — a real loss, GAP) and `era_embeddings`
+(reference, WAIVED). `photo_files` is the biggest single gap of the whole audit — a whole table
+of library data does not enter the models.
 
-### 2. `TestBuildPhoto` byl tenký — **VYŘEŠENO: test rozšířen na všechna pole**
+### 2. `TestBuildPhoto` was thin — **RESOLVED: the test extended to all fields**
 
-Původně `TestBuildPhoto` (`helpers_test.go`) ověřoval jen **7** polí: `FileHash`,
-`FilePath`, `FileSize`, `Title`, `Private`, `FileOrientation`, `PhotosorterUID` —
-z 27 mapovaných tedy 20 bez testu. **Oprava (implementováno):** `TestBuildPhoto`
-teď sestaví plně vyplněnou `photosorter.Photo` a porovná **celý** výstup `buildPhoto`
-proti očekávané `photos.Photo` (`reflect.DeepEqual`), takže každé mapované pole
-(všech 34 včetně nových kreditů/`keywords`/`scan`/`projection`) je pokryto a nově
-přidané/vynechané pole shodí test — completeness guardrail, který audit doporučoval.
-Zbývá druhá úroveň (reflexní test nad modely + „čtečka vs. schéma zdroje“) — viz
-„Riziko pokrytí testy“.
+Originally `TestBuildPhoto` (`helpers_test.go`) verified only **7** fields: `FileHash`,
+`FilePath`, `FileSize`, `Title`, `Private`, `FileOrientation`, `PhotosorterUID` — so 20 of the
+27 mapped were untested. **Fix (implemented):** `TestBuildPhoto` now assembles a fully populated
+`photosorter.Photo` and compares the **whole** output of `buildPhoto` against the expected
+`photos.Photo` (`reflect.DeepEqual`), so every mapped field (all 34 including the new
+credits/`keywords`/`scan`/`projection`) is covered and a newly added/omitted field fails the
+test — the completeness guardrail the audit recommended. The second level remains (a reflective
+test over the models + "reader vs. source schema") — see "Test-coverage risk".
 
-### 3. IPTC/XMP sloupce — **VYŘEŠENO (MAPPED)**
+### 3. IPTC/XMP columns — **RESOLVED (MAPPED)**
 
-photo-sorter data **drží** (`exif_artist`/`copyright`/`license`/`software`,
-`keywords`, `scan`, `panorama`), Kukátko má cílové sloupce (`0027`). Čtečka je nyní
-**čte** (`photoColumns`) a `buildPhoto` je mapuje (`keywords` přes
-`exif.NormalizeKeywords`, `panorama`→`projection` přes `panoramaProjection`). Fotka
-z photo-sorteru tak dorazí s kredity i tagy. (`subject`, `color_profile`,
-`image_codec`, `camera_serial`, `original_name` v photo-sorteru neexistují — tam
-nebylo co ztratit.)
+photo-sorter **holds** the data (`exif_artist`/`copyright`/`license`/`software`, `keywords`,
+`scan`, `panorama`), Kukátko has the target columns (`0027`). The reader now **reads** them
+(`photoColumns`) and `buildPhoto` maps them (`keywords` via `exif.NormalizeKeywords`,
+`panorama`→`projection` via `panoramaProjection`). A photo from photo-sorter thus arrives with
+credits and tags. (`subject`, `color_profile`, `image_codec`, `camera_serial`, `original_name`
+do not exist in photo-sorter — there was nothing to lose there.)
 
-### 4. Video sloupce — **potvrzeno: zdroj video nemodeluje, `psimport` neplní**
+### 4. Video columns — **confirmed: the source does not model video, `psimport` does not fill**
 
-photo-sorterův `photos` nemá žádný video sloupec (`media_type`/`duration_ms`/
-`video_codec`/`audio_codec`/`has_audio`/`fps`). `psimport` je nemá z čeho plnit a
-ffprobe nespouští; `media_type` defaultuje na `image`. Není ztráta (jen obrazový
-zdroj), viz Rizika ohledně případného videa v photo-sorteru.
+photo-sorter's `photos` has no video column (`media_type`/`duration_ms`/`video_codec`/
+`audio_codec`/`has_audio`/`fps`). `psimport` has nothing to fill them from and does not run
+ffprobe; `media_type` defaults to `image`. Not a loss (an image-only source), see Risks about a
+possible video in photo-sorter.
 
-### 5. `Marker.Invalid` a `Marker.Reviewed` — **potvrzeno: `psimport` je zachovává**
+### 5. `Marker.Invalid` and `Marker.Reviewed` — **confirmed: `psimport` preserves them**
 
-`transferOneMarker` mapuje `Invalid: m.Invalid` i `Reviewed: m.Reviewed` přímo.
-Navíc `psimport` přenáší **všechny** markery (i nepojmenované a `label`), protože
-kopíruje DB. **Asymetrie vůči ppimport**, který neplatné/nepojmenované/`label`
-markery filtruje (`isNamedFaceMarker`) a `Invalid` nikdy nenastaví. Pro migraci lidí
-je tedy `psimport` věrnější — lidské „to není obličej“ (`Invalid`) i ruční regiony
-přežijí.
+`transferOneMarker` maps both `Invalid: m.Invalid` and `Reviewed: m.Reviewed` directly. On top
+of that, `psimport` carries **all** markers (including unnamed and `label` ones) because it
+copies the DB. **An asymmetry vs. ppimport**, which filters out invalid/unnamed/`label` markers
+(`isNamedFaceMarker`) and never sets `Invalid`. For migrating people, `psimport` is therefore
+more faithful — the human "this is not a face" (`Invalid`) and the manual regions both survive.
 
-### 6. `Subject.Favorite` — **skutečný sloupec subjektu, ne per-user (MAPPED)**
+### 6. `Subject.Favorite` — **a real subject column, not per-user (MAPPED)**
 
-`subjects.favorite` je globální BOOLEAN sloupec tabulky `subjects` (migrace `0008`),
-ne per-user starost jako `Photo.Favorite` (to má `user_favorites`). `findOrCreateSubject`
-ho plní (`people.Subject{Favorite: ps.Favorite, ...}`), stejně `Private`, `Type`,
-`Notes`. Rozdíl proti fotkám: oblíbenost **osoby** je vlastnost subjektu, oblíbenost
-**fotky** je vztah uživatel↔fotka. Proto `Subject.Favorite` = MAPPED, kdežto
+`subjects.favorite` is a global BOOLEAN column of the `subjects` table (migration `0008`), not a
+per-user concern like `Photo.Favorite` (which has `user_favorites`). `findOrCreateSubject` fills
+it (`people.Subject{Favorite: ps.Favorite, ...}`), likewise `Private`, `Type`, `Notes`. The
+difference from photos: a **person's** favorite-ness is a property of the subject, a **photo's**
+favorite-ness is a user↔photo relation. Hence `Subject.Favorite` = MAPPED, whereas
 `Photo.Favorite`/`photos.favorite` = WAIVED.
 
-### 7. Geometrie obličeje (`photo_width`/`height`/`orientation`) — **potvrzeno bezpečné**
+### 7. Face geometry (`photo_width`/`height`/`orientation`) — **confirmed safe**
 
-`convertFace` kopíruje `BBox` (normalizovaný 0..1) **spolu s** `PhotoWidth`,
-`PhotoHeight` a `Orientation` — celý referenční rámec boxu. Protože se přenáší
-normalizovaný box i jeho rámec 1:1 (žádné přepočítání rozměrů ani re-orientace),
-box nemůže tiše „ujet“. Kukátkovo `vectors.Face` má odpovídající sloupce
-(`bbox`, `photo_width`, `photo_height`, `orientation`). Bez ztráty.
+`convertFace` copies `BBox` (normalized 0..1) **together with** `PhotoWidth`, `PhotoHeight` and
+`Orientation` — the whole reference frame of the box. Because the normalized box and its frame
+are carried 1:1 (no recomputation of dimensions or re-orientation), the box cannot silently
+"drift". Kukátko's `vectors.Face` has the corresponding columns (`bbox`, `photo_width`,
+`photo_height`, `orientation`). No loss.
 
-### 8. Klasifikace vyjmenovaných polí
+### 8. Classification of the enumerated fields
 
-| Pole | Verdikt | Kde v dokumentu |
+| Field | Verdict | Where in the document |
 | --- | --- | --- |
-| `AlbumPhoto.SortOrder` | **WAIVED** | Alba (chronologické řazení, `0022`). |
-| `Album.Slug` | **WAIVED** | Alba (přegenerováno). |
-| `Label.Slug` | **WAIVED** | Štítky (přegenerováno). |
-| `Subject.Slug` | **WAIVED** | Subjekty (přegenerováno). |
-| `ps.UpdatedAt` (`Photo.UpdatedAt`) | **WAIVED** | Fotky (watermark, ne sloupec). |
-| `faces_processed.face_count` | **WAIVED** | Obličeje — čtečka ho čte (`FacesProcessed`), ale `transferFaces` ho zahodí a použije `len(faces)`; detekce se zapíše ze skutečných obličejů. |
-| `PhotoLabel.Source` / `Uncertainty` | **MAPPED** | Štítky (`mapLabelSource` / přímý přenos). |
+| `AlbumPhoto.SortOrder` | **WAIVED** | Albums (chronological ordering, `0022`). |
+| `Album.Slug` | **WAIVED** | Albums (regenerated). |
+| `Label.Slug` | **WAIVED** | Labels (regenerated). |
+| `Subject.Slug` | **WAIVED** | Subjects (regenerated). |
+| `ps.UpdatedAt` (`Photo.UpdatedAt`) | **WAIVED** | Photos (watermark, not a column). |
+| `faces_processed.face_count` | **WAIVED** | Faces — the reader reads it (`FacesProcessed`), but `transferFaces` drops it and uses `len(faces)`; the detection is recorded from the actual faces. |
+| `PhotoLabel.Source` / `Uncertainty` | **MAPPED** | Labels (`mapLabelSource` / direct transfer). |
 
 ---
 
-## Riziko pokrytí testy (částečně vyřešeno)
+## Test-coverage risk (partially resolved)
 
-`psimport` má integrační testy přenosu (embeddingy, obličeje, markery, členství).
-`TestBuildPhoto` je nově **completeness test** pro `buildPhoto`: porovnává celý
-výstup proti očekávané `photos.Photo`, takže žádné mapované pole fotky neprojde
-tiše (indicie č. 2). Nový integrační test `TestIntegration_photoMetadataSurvives`
-navíc ověřuje, že kredity/tagy přežijí čerstvou migraci i re-run. Co **stále chybí**:
-completeness test nad *ostatními* modely (`Face`/`Subject`/`Marker`/…) a test
-„čtečka vs. schéma zdroje“ — právě tam vznikly mezery vrstvy B (`photo_files`,
-dřívější IPTC).
+`psimport` has integration tests for the transfer (embeddings, faces, markers, membership).
+`TestBuildPhoto` is now a **completeness test** for `buildPhoto`: it compares the whole output
+against the expected `photos.Photo`, so no mapped photo field passes silently (clue #2). The new
+integration test `TestIntegration_photoMetadataSurvives` additionally verifies that credits/tags
+survive a fresh migration and a re-run. What **still remains** missing: a completeness test over
+the *other* models (`Face`/`Subject`/`Marker`/…) and a "reader vs. source schema" test — which
+is exactly where the layer-B gaps arose (`photo_files`, the earlier IPTC).
 
-**Doporučení (dvě úrovně):**
+**Recommendation (two levels):**
 
-1. **Reflexní tabulkový test nad modely** (jako u PhotoPrism sekce): projde pole
-   `photosorter.Photo`/`Face`/`Marker`/`Subject`/`Album`/`Label`/`PhotoLabel`/
-   `Phash`/`Edit` a selže, dokud každé není buď v maperu, nebo na explicitním
-   allow-listu „WAIVED“ s odkazem na tento dokument. Chrání vrstvu A.
-2. **Test „čtečka vs. schéma zdroje“**: porovná sloupce, které čtečka `SELECT`uje,
-   s aktuálním schématem photo-sorteru (nebo aspoň allow-list vědomě nečtených
-   sloupců/tabulek). Chrání vrstvu B — právě tam dnes ztráty jsou.
+1. **A reflective table test over the models** (as in the PhotoPrism section): it walks the
+   fields of `photosorter.Photo`/`Face`/`Marker`/`Subject`/`Album`/`Label`/`PhotoLabel`/
+   `Phash`/`Edit` and fails until each is either in a mapper or on an explicit "WAIVED"
+   allow-list referencing this document. Protects layer A.
+2. **A "reader vs. source schema" test**: it compares the columns the reader `SELECT`s with the
+   current photo-sorter schema (or at least an allow-list of deliberately unread columns/tables).
+   Protects layer B — which is exactly where the losses are today.
 
-## Rizika a vědomé kompromisy
+## Risks and deliberate trade-offs
 
-1. **`photo_files` se nemigruje (ponecháno GAP)** — snímek se stackem (RAW+JPEG,
-   sidecar, editovaná varianta) dorazí jako osamocený originál; sekundární soubory se
-   ztrácejí. Největší strukturální ztráta; oprava je celá tabulka, ne pole — viz
-   „Rozsah a co zůstává GAP“.
-2. **IPTC kredity + `keywords`/`scan`/`panorama` — OPRAVENO (MAPPED)** tímto úkolem:
-   čtečka je čte a `buildPhoto` je mapuje. Dřívější tichá ztráta na hranici čtečky je
-   pryč.
-3. **Extra metadata `037`** — `bio`/`about`/`alias`, `description`/`categories`,
-   `location`/`notes` **WAIVED** (produktové rozhodnutí — bez cíle v Kukátku;
-   modelovat je je funkce, ne oprava migrace). `cover_photo_uid` subjektů i alb je
-   naopak skutečný **GAP** (cíl existuje) ponechaný na dopisovací průchod — viz
-   „Rozsah a co zůstává GAP“.
-4. **Existující subjekt se nepřepisuje** — `findOrCreateSubject` nastaví
-   `type`/`favorite`/`private`/`notes` jen při založení. Byl-li subjekt zaseto dřív
-   (ppimportem jako holý `person`, nebo předchozím během), photo-sorterův bohatší
-   typ/příznak ho nedožene. Doporučení: při shodě slugu doplnit chybějící pole.
-5. **`location_source` se nerazítkuje** — migrované fotky mají `lat`/`lng`, ale
-   prázdnou provenienci polohy (ppimport razítkuje `exif`). Kosmetické, ale
-   nekonzistentní.
-6. **`time_zone`/`taken_at_offset` se ztrácí** — Kukátko drží absolutní `taken_at`;
-   rekonstrukce původního lokálního času (offsetu pořízení) není možná. Nízký dopad.
-7. **Video v obrazovém zdroji** — pronikne-li do photo-sorteru video, `psimport` ho
-   uloží jako `image` bez trvání/kodeku (ffprobe se nespouští). Zdroj video
-   nemodeluje, takže v praxi okrajové.
-8. **Párování subjektů/alb/štítků podle jména/titulku** — dva různí lidé téhož jména
-   splynou do jednoho subjektu (a naopak). Stejné chování jako ppimport; vlastnost,
-   ne záruka identity.
+1. **`photo_files` is not migrated (left as GAP)** — a shot with a stack (RAW+JPEG, sidecar, an
+   edited variant) arrives as a lone original; the secondary files are lost. The biggest
+   structural loss; the fix is a whole table, not a field — see "Scope and what remains GAP".
+2. **IPTC credits + `keywords`/`scan`/`panorama` — FIXED (MAPPED)** by this task: the reader
+   reads them and `buildPhoto` maps them. The earlier silent loss at the reader boundary is
+   gone.
+3. **The extra metadata of `037`** — `bio`/`about`/`alias`, `description`/`categories`,
+   `location`/`notes` are **WAIVED** (a product decision — no target in Kukátko; modeling them is
+   a feature, not a migration fix). `cover_photo_uid` of subjects and albums is, by contrast, a
+   real **GAP** (the target exists) left for a write-back pass — see "Scope and what remains
+   GAP".
+4. **An existing subject is not overwritten** — `findOrCreateSubject` sets
+   `type`/`favorite`/`private`/`notes` only on creation. If the subject was seeded earlier (by
+   ppimport as a bare `person`, or by a previous run), photo-sorter's richer type/flag does not
+   catch it up. Recommendation: on a slug match, fill in the missing fields.
+5. **`location_source` is not stamped** — migrated photos have `lat`/`lng` but an empty location
+   provenance (ppimport stamps `exif`). Cosmetic, but inconsistent.
+6. **`time_zone`/`taken_at_offset` are lost** — Kukátko keeps an absolute `taken_at`;
+   reconstructing the original local time (the capture offset) is not possible. Low impact.
+7. **Video in an image source** — if a video slips into photo-sorter, `psimport` stores it as
+   `image` without duration/codec (ffprobe is not run). The source does not model video, so this
+   is marginal in practice.
+8. **Pairing subjects/albums/labels by name/title** — two different people of the same name
+   merge into one subject (and conversely). The same behavior as ppimport; a property, not an
+   identity guarantee.
 
-## Rozsah a co zůstává GAP
+## Scope and what remains GAP
 
-Tento úkol opravil GAPy na úrovni sloupců `photos`, jejichž oprava je čistě aditivní
-a jejichž cíl v Kukátku existuje. Ostatní GAPy jsou buď produktové rozhodnutí
-(vyřešené jako WAIVED), nebo změny větší než oprava pole (ponechané jako GAP, aby
-zůstaly viditelné).
+This task fixed the gaps at the `photos` column level whose fix is purely additive and whose
+target exists in Kukátko. The other gaps are either a product decision (resolved as WAIVED) or
+changes larger than a field fix (left as GAP so they stay visible).
 
-**Opraveno (GAP → MAPPED):** `photos.exif_artist`→`artist`,
-`exif_copyright`→`copyright`, `exif_license`→`license`, `exif_software`→`software`,
-`keywords`→`keywords` (TEXT[] spojeno + `exif.NormalizeKeywords`), `scan`→`scan`,
-`panorama`→`projection` (přes `panoramaProjection`). Čtečka (`photoColumns` +
-`scanPhoto`), model (`photosorter.Photo`) i maper (`buildPhoto`) rozšířeny; pokryto
-unit testem `TestBuildPhoto` (celý řádek) a integračním
-`TestIntegration_photoMetadataSurvives` (čerstvá migrace + re-run).
+**Fixed (GAP → MAPPED):** `photos.exif_artist`→`artist`, `exif_copyright`→`copyright`,
+`exif_license`→`license`, `exif_software`→`software`, `keywords`→`keywords` (TEXT[] joined +
+`exif.NormalizeKeywords`), `scan`→`scan`, `panorama`→`projection` (via `panoramaProjection`).
+The reader (`photoColumns` + `scanPhoto`), the model (`photosorter.Photo`) and the mapper
+(`buildPhoto`) were extended; covered by the unit test `TestBuildPhoto` (the whole row) and the
+integration test `TestIntegration_photoMetadataSurvives` (a fresh migration + a re-run).
 
-**Vyřešeno jako WAIVED (produktové rozhodnutí, bez cíle v Kukátku):**
-`albums.category` (stejně jako `Album.Category` u PhotoPrism), a volný text migrace
-037 `subjects.bio`/`about`/`alias`, `labels.description`/`categories`,
-`albums.location`/`notes`. Přidat zapisovací sloupec bez čtenáře by byl mrtvý sloupec;
-modelovat tyto koncepty je produktová funkce, ne oprava migrace. Otevřít znovu, až
-Kukátko takovou funkci zavede (nebo produkční audit ukáže hojné využití).
+**Resolved as WAIVED (product decision, no target in Kukátko):** `albums.category` (as with
+`Album.Category` for PhotoPrism), and the free text of migration 037
+`subjects.bio`/`about`/`alias`, `labels.description`/`categories`, `albums.location`/`notes`.
+Adding a write-only column with no reader would be a dead column; modeling these concepts is a
+product feature, not a migration fix. Reopen once Kukátko introduces such a feature (or a
+production audit shows heavy use).
 
-**Ponecháno jako GAP (větší než oprava pole — vědomě odloženo):**
+**Left as GAP (larger than a field fix — deliberately deferred):**
 
-- **`photo_files` (celá tabulka).** Oprava = listovat `photo_files` ve čtečce +
-  v `psimport` zkopírovat sekundární soubory (role `sidecar`/`edited`) jako další
-  `photo_files` řádky + nechat `internal/stacks` je seskupit. To je nová tabulková
-  cesta, ne přidání pole; půl-migrovat ji (jen část souborů) by bylo horší než
-  ponechat GAP viditelný. Doporučeno jako samostatný úkol.
-- **`subjects.cover_photo_uid`, `albums.cover_photo_uid`.** Cíl existuje, ale titulní
-  fotka je photo-sorterův photo-UID, který se musí přemapovat na Kukátkův **až po
-  importu fotek**. Subjekty/alba se zakládají v `buildMappings` **před** foto-smyčkou,
-  takže v tu chvíli titulní fotka ještě neexistuje. Správná oprava je nový,
-  idempotentní dopisovací průchod po foto-smyčce (pro každý subjekt/album dohledat
-  Kukátkovu fotku podle `photosorter_uid` a nastavit cover) — strukturální přírůstek,
-  ne oprava pole. Doporučeno jako samostatný úkol.
+- **`photo_files` (the whole table).** The fix = list `photo_files` in the reader + copy the
+  secondary files (roles `sidecar`/`edited`) as additional `photo_files` rows in `psimport` +
+  let `internal/stacks` group them. That is a new table path, not adding a field; half-migrating
+  it (only some files) would be worse than leaving the GAP visible. Recommended as a separate
+  task.
+- **`subjects.cover_photo_uid`, `albums.cover_photo_uid`.** The target exists, but the cover
+  photo is a photo-sorter photo UID that must be remapped to Kukátko's **only after the photos
+  are imported**. Subjects/albums are created in `buildMappings` **before** the photo loop, so at
+  that moment the cover photo does not yet exist. The correct fix is a new, idempotent write-back
+  pass after the photo loop (for each subject/album, find the Kukátko photo by `photosorter_uid`
+  and set the cover) — a structural addition, not a field fix. Recommended as a separate task.

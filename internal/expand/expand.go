@@ -1,6 +1,6 @@
 // Package expand finds the photos most like the ones already in a collection — an
 // album or a label — so a half-tagged library can be finished by adding the ones
-// that were missed ("show me photos that look like the ones already on the štítek
+// that were missed ("show me photos that look like the ones already on the label
 // Ostatky"). It is the collection-level counterpart of the per-photo similarity
 // endpoint GET /photos/{uid}/similar: instead of one query vector it votes over
 // every member's CLIP image embedding, unions the neighbours, and returns the

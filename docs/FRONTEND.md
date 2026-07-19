@@ -1,137 +1,137 @@
 # Frontend
 
-Popisný referenční přehled frontendu (`web/`). **Nejsou to pravidla** — pravidla
-jsou v [`CLAUDE.md`](../CLAUDE.md). Novou komponentu, hook, stránku nebo službu
-zapiš sem.
+A descriptive reference overview of the frontend (`web/`). **These are not rules** — the rules
+live in [`CLAUDE.md`](../CLAUDE.md). Record any new component, hook, page, or service
+here.
 
 <!-- BODY BEGIN -->
-- **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` s `components/`
-  (`Layout` = navbar shell s user-menu (Můj účet, **Nápověda** `/help`, Odhlásit se) + role-gated
-  nav s **viditelnou hierarchií podle toho,
-  jak často položku běžný člověk používá**: každodenní smyčka (procházení, třídění, přidání fotek) je
-  hlasitá a hned, admin/power-user nářadí je přítomné, ale tišší. Vede **Knihovna** `/` (= úvodní
-  stránka; `NavLink` má `end`, jinak by se rozsvítila na každé routě), **Alba** `/albums` a **Štítky**
-  `/labels` (vždy viditelné top-level, registr `PRIMARY_ITEMS`); zbylé browse cíle sdružuje dropdown
-  **Procházet** (`nav.browse`, `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`,
-  **Místa** `/places`, **Mapa** `/map`; **Třídění** `/review` (`REVIEW_ITEM`, gate `canWrite`) zůstává
-  top-level, ne v „Nástrojích" — uklízení knihovny po jedné otázce je nejpoužívanější kurátorská
-  smyčka a hra, kterou nikdo nenajde, je hra, kterou nikdo nehraje; **Žebříček** `/leaderboard`
-  (`LEADERBOARD_ITEM`, ikona `trophy`) sedí hned vedle Třídění jako jeho scoreboard a je **bez
-  role-gate** — soutěžní stav je jen agregát počtů, takže ho vidí **každý přihlášený** (i viewer),
-  ne jen editor; **Nahrát** `/upload` (gate
-  `canWrite`) je **jediná call-to-action** baru — vyplněná pilulka (`kukatko-nav-cta`, prop `cta`
-  v `renderLink`), aby přidání fotek bilo do očí. Za ním **oddělovač** (`kukatko-nav-divider` — svislá
-  vlásková linka v řádkovém baru ≥ md, vodorovná ve sbaleném burger menu; kreslí se jen když za ním
-  role něco má) odděluje tišší power-user/admin cluster: editorský dropdown **Nástroje** (`nav.tools`,
-  `TOOLS_GROUP`, celý gate `canWrite`) teď vede **Rozšířit** `/expand` (power-user nástroj, dřív
-  křičel top-level u alb/štítků) + **Najít osobu** `/faces` + **Rozpoznávání** `/recognition` +
-  **Možné chyby** `/outliers` + **Duplikáty** `/duplicates` + **Koš** `/trash`; provozní dropdown
-  **Provoz** (`nav.operations`, `OPERATIONS_GROUP`, celý gate `isMaintainer`) sdružuje **Import**
-  `/import` (dřív samostatná top-level položka; import je teď provozní schopnost — patří maintainerovi,
-  ne mimo žebříček) + **Údržba** `/maintenance` + **Systém** `/system`; governance dropdown **Správa**
-  (`nav.admin`, `GOVERNANCE_GROUP`, celý gate `isAdmin` = admin **nebo** maintainer) sdružuje
-  **Uživatelé** `/users` + **Audit** `/audit`. Role model je striktní žebřík
-  `viewer < editor < admin < maintainer` (viz `services/auth.ts` níže).
-  **Bar vede globální hledání** `SearchCommand` (`components/search/`) — pole-jako spouštěč vlevo,
-  **mimo collapse** (na mobilu tak zůstává vidět, když se nav složí do burgeru), otevírá **command
-  paletu** dosažitelnou odkudkoli přes `/` nebo Cmd/Ctrl-K (nezabírá psaní — viz `SearchCommand`
-  níže). Stará plná stránka `/search` a uložená hledání zůstávají; jen v navbaru už není samostatný
-  odkaz „Hledat" ani filtrační pole knihovny.
-  Každá položka i každý dropdown toggle nese **ikonu** (`Icon`) a **`title` popisující akci**, ne
-  podstatné jméno („Zobrazit alba", ne „Alba"; klíče `nav.titles.*`); ikony jsou dekorativní
-  (`aria-hidden`) vedle viditelného textového labelu. Dropdown se skryje celý, když má uživatel
-  skryté všechny jeho položky (Tools/Admin u viewera); rodičovské menu má **active stav** (`active`
-  prop), když je aktuální route některé z jeho dětí (`pathMatches` ctí i detail sub-cesty jako
-  `/albums/{uid}`) — skládá se z `Dropdown`+`Dropdown.Toggle as={NavLink}` (ne `NavDropdown`, ten
-  spotřebuje prop `title` na obsah toggle, takže by nezbyl na tooltip); položky v mobilním burger
-  menu expandují inline s tap-targety (`kukatko-tap-target`),
-  `Footer` (**globální patička** pod `<main>` na každé stránce v `Layout` — fullscreen
-  `/slideshow` i immersivní `/photos/:uid` běží mimo shell, takže ji nemají: „Provozuje SDH Veselice“ + odkaz na zdrojový kód
-  <https://github.com/panbotka/kukatko> v novém tabu s `rel="noopener noreferrer"` a dekorativní
-  ikonou `github` (`aria-hidden`); texty `footer.*` (cs/en). Rendruje se v normálním toku — na
-  krátké stránce prostě následuje obsah, nic nepřekrývá ani nefloatuje. Uvnitř je space-between
-  flex řádek: operátor + GitHub vlevo, pravou stranu vyplňuje `children` (dnes admin badge stav
-  fronty jobů); `.kukatko-footer` sdílí safe-area padding s `.kukatko-main`),
-  `JobQueueBadges` (pravá strana patičky: kompaktní badge se stavem fronty jobů **jen pro maintainery**
-  — endpoint `/jobs` je maintainer-only provozní schopnost; přes `useAuth().isMaintainer` +
-  `useJobStats` — kdo není maintainer, nic nerendruje a **nedělá žádný request**.
-  Jeden badge na neprázdný stav `queued`/`running`/`failed`/`dead` z `by_state` (terminální `done`
-  se záměrně vynechává), `failed`/`dead` mají `bg="danger"`, aby padly do oka; když je vše nulové,
-  jediný tichý badge `idle`. Selhání requestu badge tiše skryje — patička nikdy nespadne; texty
+- **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` with `components/`
+  (`Layout` = navbar shell with a user menu (Můj účet, **Nápověda** `/help`, Odhlásit se) + role-gated
+  nav with a **visible hierarchy based on
+  how often an ordinary person uses an item**: the everyday loop (browsing, sorting, adding photos) is
+  loud and immediate, while admin/power-user tooling is present but quieter. It leads with **Knihovna** `/` (= the home
+  page; `NavLink` has `end`, otherwise it would light up on every route), **Alba** `/albums` and **Štítky**
+  `/labels` (always visible top-level, the `PRIMARY_ITEMS` registry); the remaining browse targets are gathered by the
+  **Procházet** dropdown (`nav.browse`, `BROWSE_GROUP`): **Oblíbené** `/favorites`, **Lidé** `/people`,
+  **Místa** `/places`, **Mapa** `/map`; **Třídění** `/review` (`REVIEW_ITEM`, gated on `canWrite`) stays
+  top-level, not under „Nástroje" — tidying the library one question at a time is the most-used curatorial
+  loop, and a game nobody finds is a game nobody plays; **Žebříček** `/leaderboard`
+  (`LEADERBOARD_ITEM`, `trophy` icon) sits right next to Třídění as its scoreboard and has **no
+  role gate** — the competitive standing is just an aggregate of counts, so **every logged-in user** sees it (even a viewer),
+  not just editors; **Nahrát** `/upload` (gated on
+  `canWrite`) is the bar's **single call-to-action** — a filled pill (`kukatko-nav-cta`, prop `cta`
+  in `renderLink`) so adding photos stands out. After it a **divider** (`kukatko-nav-divider` — a vertical
+  hairline in the inline bar ≥ md, horizontal in the collapsed burger menu; drawn only when a role
+  actually has something behind it) separates the quieter power-user/admin cluster: the editor dropdown **Nástroje** (`nav.tools`,
+  `TOOLS_GROUP`, entirely gated on `canWrite`) now leads with **Rozšířit** `/expand` (a power-user tool that used to
+  shout top-level next to albums/labels) + **Najít osobu** `/faces` + **Rozpoznávání** `/recognition` +
+  **Možné chyby** `/outliers` + **Duplikáty** `/duplicates` + **Koš** `/trash`; the operations dropdown
+  **Provoz** (`nav.operations`, `OPERATIONS_GROUP`, entirely gated on `isMaintainer`) gathers **Import**
+  `/import` (formerly a standalone top-level item; import is now an operational capability — it belongs to the maintainer,
+  not out in the open) + **Údržba** `/maintenance` + **Systém** `/system`; the governance dropdown **Správa**
+  (`nav.admin`, `GOVERNANCE_GROUP`, entirely gated on `isAdmin` = admin **or** maintainer) gathers
+  **Uživatelé** `/users` + **Audit** `/audit`. The role model is a strict ladder
+  `viewer < editor < admin < maintainer` (see `services/auth.ts` below).
+  **The bar leads with global search** `SearchCommand` (`components/search/`) — a field-as-trigger on the left,
+  **outside the collapse** (so on mobile it stays visible when the nav folds into the burger), opening a **command
+  palette** reachable from anywhere via `/` or Cmd/Ctrl-K (it doesn't steal typing — see `SearchCommand`
+  below). The old full `/search` page and saved searches remain; only the navbar no longer has a standalone
+  „Hledat" link or the library's filter field.
+  Every item and every dropdown toggle carries an **icon** (`Icon`) and a **`title` describing the action**, not
+  the noun („Zobrazit alba", not „Alba"; keys `nav.titles.*`); icons are decorative
+  (`aria-hidden`) beside the visible text label. A dropdown is hidden entirely when the user has
+  all of its items hidden (Tools/Admin for a viewer); the parent menu has an **active state** (`active`
+  prop) when the current route is one of its children (`pathMatches` also honors a detail sub-path like
+  `/albums/{uid}`) — it is built from `Dropdown`+`Dropdown.Toggle as={NavLink}` (not `NavDropdown`, which
+  consumes the `title` prop for the toggle's content, leaving none for the tooltip); items in the mobile burger
+  menu expand inline with tap-targets (`kukatko-tap-target`),
+  `Footer` (**global footer** below `<main>` on every page in `Layout` — the fullscreen
+  `/slideshow` and the immersive `/photos/:uid` run outside the shell, so they don't have it: „Provozuje SDH Veselice“ + a link to the source code
+  <https://github.com/panbotka/kukatko> in a new tab with `rel="noopener noreferrer"` and a decorative
+  `github` icon (`aria-hidden`); texts `footer.*` (cs/en). It renders in normal flow — on a
+  short page it simply follows the content, overlapping and floating nothing. Inside is a space-between
+  flex row: operator + GitHub on the left, `children` fills the right side (today the admin job-queue
+  badge); `.kukatko-footer` shares safe-area padding with `.kukatko-main`),
+  `JobQueueBadges` (right side of the footer: a compact badge with the job-queue state **for maintainers only**
+  — the `/jobs` endpoint is a maintainer-only operational capability; via `useAuth().isMaintainer` +
+  `useJobStats` — a non-maintainer renders nothing and **makes no request**.
+  One badge per non-empty `queued`/`running`/`failed`/`dead` state from `by_state` (the terminal `done`
+  is deliberately omitted), `failed`/`dead` carry `bg="danger"` so they catch the eye; when everything is zero,
+  a single quiet `idle` badge. A failed request silently hides the badge — the footer never breaks; texts
   `footer.jobs.*` (cs/en)),
-  `AnnouncementBanner` (**instance-wide oznámení nahoře v obsahu**: v `Layout` hned **před `<Outlet/>`**,
-  takže ho vidí každý přihlášený uživatel na každé stránce **uvnitř shellu**; routes **mimo `Layout`**
-  (`/photos/:uid`, `/slideshow`, `/review`, `/duplicates/compare`) banner nemají — immersivní pohledy,
-  přijatelné. Přes `useAnnouncement` (fetch on-mount + **polling ~60 s**, takže čerstvě zveřejněná zpráva
-  naskočí bez reloadu) + dismissible `<Alert>` s variantou dle `level` (`info`→ikona `info-circle`,
-  `warning`→`exclamation-triangle`, dekorativní `Icon`). **Per-user dismiss klíčovaný na `updated_at`**
-  v localStorage (`lib/announcementDismissal.ts`: `readDismissedAnnouncement`/`writeDismissedAnnouncement`,
-  zrcadlí `faceOverlayPref.ts`) — skrytí schová aktuální zprávu, ale nově zveřejněná (nové `updated_at`) se
-  **znovu ukáže** (ne prostý boolean); prázdná zpráva / loading / už zavřená → nerendruje nic; texty
+  `AnnouncementBanner` (**instance-wide announcement at the top of the content**: in `Layout` right **before `<Outlet/>`**,
+  so every logged-in user sees it on every page **inside the shell**; routes **outside `Layout`**
+  (`/photos/:uid`, `/slideshow`, `/review`, `/duplicates/compare`) have no banner — immersive views,
+  acceptable. Via `useAnnouncement` (fetch on-mount + **polling ~60 s**, so a freshly published message
+  appears without a reload) + a dismissible `<Alert>` with a variant per `level` (`info`→`info-circle`
+  icon, `warning`→`exclamation-triangle`, decorative `Icon`). **Per-user dismiss keyed on `updated_at`**
+  in localStorage (`lib/announcementDismissal.ts`: `readDismissedAnnouncement`/`writeDismissedAnnouncement`,
+  mirrors `faceOverlayPref.ts`) — dismissing hides the current message, but a newly published one (new `updated_at`)
+  **shows again** (not a plain boolean); empty message / loading / already dismissed → renders nothing; texts
   `announcement.*` (cs/en)),
-  `JobStateLegend` (**sdílená legenda stavů fronty jobů**: kompaktní `dl` s tučným termem + tichým
-  jednovětým vysvětlením každého stavu, aby admin rozuměl bez najetí myší; popisky i vysvětlení ze
-  sdíleného i18n bloku `jobStates.labels.*`/`jobStates.descriptions.*`, takže znění je totožné na
-  `MaintenancePage` i `SystemStatusPage`; prop `states` řídí pořadí a výběr — Maintenance vynechává
-  `pending`, System ho přidává. Testy: `JobStateLegend.test.tsx`),
-  `Icon` (**jediná ikonová sada** aplikace: bootstrap-icons glyf jako `<i class="bi bi-{name}">`,
-  font se importuje globálně v `main.tsx`; union `IconName` drží slovník použitých ikon, takže překlep
-  je chyba překladu; vždy `aria-hidden` vedle viditelného labelu),
-  `components/toast/` = **app-wide toast** (`ToastContext` drží context + hook `useToast()` +
-  typy; `ToastProvider` je komponenta) — jediný provider **v `App` kolem `AppRoutes`**, hostí
+  `JobStateLegend` (**shared legend of job-queue states**: a compact `dl` with a bold term + a quiet
+  one-sentence explanation of each state, so an admin understands without hovering; both the labels and the explanations come from a
+  shared i18n block `jobStates.labels.*`/`jobStates.descriptions.*`, so the wording is identical on
+  `MaintenancePage` and `SystemStatusPage`; the `states` prop controls order and selection — Maintenance omits
+  `pending`, System adds it. Tests: `JobStateLegend.test.tsx`),
+  `Icon` (**the app's single icon set**: a bootstrap-icons glyph as `<i class="bi bi-{name}">`,
+  the font is imported globally in `main.tsx`; the `IconName` union holds the dictionary of used icons, so a typo
+  is a compile error; always `aria-hidden` beside a visible label),
+  `components/toast/` = **app-wide toast** (`ToastContext` holds the context + hook `useToast()` +
+  types; `ToastProvider` is the component) — a single provider **in `App` around `AppRoutes`**, hosting
   `ToastContainer` (react-bootstrap, `position="top-center"`, `.kk-toast-stack` `z-index:1100`
-  nad chrome i viewerem) s auto-dismiss (5 s) + ručním zavřením (`toast.close`).
-  `useToast().show({message, variant?})` (`success`/`danger`/`info`, glyf `Icon` dle tónu);
-  **jedno místo pro umístění, dobu i styl** — místo Bootstrap `bg-*` (plná zelená/červená)
-  nese každý toast **vlastní povrch z tokenů**: `.kk-toast` = `--kk-surface-overlay` + jemný
-  `--kk-surface-border` + `--kk-shadow-3` + `--kk-radius-md`, s **barevnou accent lištou** vlevo
-  a obarveným glyfem podle tónu (`.kk-toast--{success,danger,info}` přes `--kk-toast-accent` z
-  `--bs-success`/`--bs-danger`/`--kk-accent`), text v `--bs-body-color`. **Mimo provider vrací
-  no-op** (default context), takže focused unit testy nepotřebují wrapper. První uživatel:
-  `BatchActionBar` (úspěch/selhání hromadné akce). Testy jedou přes `BatchActionBar.test`,
-  `BackLink` (**sdílená cesta zpět** ze všech detailů (album, štítek, osoba, fotka) do seznamu,
-  ke kterému patří: šipka `arrow-left` přes `Icon` (dekorativní, `aria-hidden`) + **text pojmenující
-  cíl** („Zpět na alba" / „Zpět na štítky" / „Zpět na lidi"), který je zároveň přístupným jménem
-  odkazu — holá šipka nikomu neřekla, kam vede. Props `to` (celý href cíle **včetně query**, takže
-  stav seznamu — filtry/řazení/stránka — přežije návrat a **Zpět vždy funguje**; `PhotoDetailPage`
-  ho staví přes `backHref(view)`), `label` (už přeložený volajícím), `className?`. Rendruje router
-  `<Link>` — fokusovatelný z klávesnice, focus-ring + podtržení na hover přes `.kk-back-link`
-  (šipka se na hover nakloní k cíli, `prefers-reduced-motion` pohyb vypne), na coarse pointeru 44px
-  tap target; použitý i v error alertu těchže stránek. Testy: `BackLink.test.tsx`),
-  `LanguageSwitcher` (button group cs/en, `aria-pressed` na aktivní; **nesedí v navbaru** —
-  bydlí v sekci Jazyk na `AccountPage`, protože tuhle instanci používají jen Češi a trvalé
-  místo v liště by bylo plýtvání. Volbu persistuje i18next language detector do localStorage),
-  `MultiSelect` (**sdílený vyhledávatelný multi-select** pro kolekce, které rostou bez omezení —
-  alba a štítky: psaní zúží nabídku **case- i diakritika-insensitive** přes `lib/text`
-  `foldedIncludes`, každá volba se **přidá** (nenahradí), vybraná položka **zmizí ze seznamu**
-  a objeví se pod polem jako odebíratelný chip (`.kk-chip`), takže dlouhý seznam zůstává krátký
-  a výběr čitelný bez sloupce s fajfkami. Klávesnice Up/Down/Enter (bez zvýraznění bere nejlepší
-  shodu), **Backspace nad prázdným dotazem odebere poslední chip**, Esc zavře; combobox/listbox
-  ARIA (`aria-multiselectable`), strop `MAX_SUGGESTIONS` (50) rendrovaných návrhů, ~44px tap
-  targety. Prop `destructive` obarví label i chipy do danger klíče, aby odebrání nikdy nevypadalo
-  jako přidání. Defaultně **nezakládá položky** — jen vybírá z těch, které dostane (zrcadlí
-  `AddAutocomplete` a `SearchableSelect`); s volitelným `onCreate(name)` přidá na konec seznamu
-  řádek **„Vytvořit «dotaz»“**, jen když neprázdný trimovaný dotaz fold-insensitive (case,
-  diakritika, okrajové mezery) neodpovídá **žádné** option — vybrané včetně — takže nikdy
-  nenabídne duplikát; Enter bez zvýraznění vytváří, jen když nic jiného neodpovídá. Co založení
-  znamená, řeší volající (typicky zaregistruje jméno a vybere pro něj hodnotu přes
-  `options`+`selected`); pro čtenáře bez práva zápisu se `onCreate` prostě nepředá),
-  `photo/PlaceSearch` (**našeptávač míst podle názvu** = třetí cesta k poloze fotky vedle
-  souřadnic a kliku do mapy — u naskenované fotky víš *Veselí nad Moravou*, ne čísla, a hledat
-  ten bod pananím mapy je otrava. `{id,onPick,disabled?}`, `onPick(place)` dostane `Place` a
-  volající si sám rozhodne, kam souřadnice zapíše: `MetadataPanel` je píše do svého pole
-  souřadnic (marker i mapa se překreslí samy), `BulkEditModal` do `lat`/`lng` u `set_location`.
-  Každý řádek nese **název + druh místa (`label`) + `location`** — rozlišení je celý smysl (Veselí
-  je město, zámek i část obce, tři stejně vypadající řádky by byly k ničemu). Psaní jede přes
-  `usePlaceSearch` (debounce + rušení in-flight); pole drží **dvě** stavové hodnoty — co je vidět
-  (`query`) a co se hledá (`term`) — aby vybrání návrhu nechalo jméno v poli jako potvrzení, ale
-  hned ho znovu nehledalo. Klávesnice Up/Down/Enter (bez zvýraznění bere nejlepší shodu)/Esc,
-  combobox/listbox ARIA, ~44px tap targety — je to formulářový prvek a chová se tak. Nedostupné
-  vyhledávání (bez klíče, poskytovatel dole) = **jeden řádek textu**, zbytek editoru polohy jede
-  dál. Testy: `PlaceSearch.test.tsx`),
-  `KeyboardShortcutsHelp` (v navbaru: ikonka klávesnice + **modal nápovědy zkratek** — otevře se
-  `?` (Shift+/) kdekoli nebo klikem, vypíše všechny zkratky seskupené dle kontextu (Mřížka / Detail)
-  ze `lib/shortcuts.ts` `SHORTCUT_GROUPS`, zavře Escapem/křížkem),
+  above chrome and the viewer) with auto-dismiss (5 s) + manual close (`toast.close`).
+  `useToast().show({message, variant?})` (`success`/`danger`/`info`, an `Icon` glyph by tone);
+  **one place for placement, duration, and style** — instead of Bootstrap `bg-*` (solid green/red)
+  each toast carries **its own surface from tokens**: `.kk-toast` = `--kk-surface-overlay` + a subtle
+  `--kk-surface-border` + `--kk-shadow-3` + `--kk-radius-md`, with a **colored accent bar** on the left
+  and a glyph tinted by tone (`.kk-toast--{success,danger,info}` via `--kk-toast-accent` from
+  `--bs-success`/`--bs-danger`/`--kk-accent`), text in `--bs-body-color`. **Outside the provider it returns a
+  no-op** (default context), so focused unit tests need no wrapper. First user:
+  `BatchActionBar` (success/failure of a bulk action). Tests run via `BatchActionBar.test`,
+  `BackLink` (**shared way back** from every detail (album, label, person, photo) to the list
+  it belongs to: an `arrow-left` arrow via `Icon` (decorative, `aria-hidden`) + **text naming the
+  target** („Zpět na alba" / „Zpět na štítky" / „Zpět na lidi"), which is also the link's accessible
+  name — a bare arrow told no one where it leads. Props `to` (the target's full href **including query**, so the
+  list state — filters/sort/page — survives the return and **Back always works**; `PhotoDetailPage`
+  builds it via `backHref(view)`), `label` (already translated by the caller), `className?`. Renders a router
+  `<Link>` — keyboard-focusable, focus-ring + underline on hover via `.kk-back-link`
+  (the arrow leans toward the target on hover, `prefers-reduced-motion` turns the motion off), a 44px
+  tap target on a coarse pointer; also used in the error alert of the same pages. Tests: `BackLink.test.tsx`),
+  `LanguageSwitcher` (cs/en button group, `aria-pressed` on the active one; **it does not sit in the navbar** —
+  it lives in the Jazyk section on `AccountPage`, because only Czechs use this instance and a permanent
+  spot in the bar would be a waste. The i18next language detector persists the choice to localStorage),
+  `MultiSelect` (**shared searchable multi-select** for collections that grow without limit —
+  albums and labels: typing narrows the offering **case- and diacritic-insensitive** via `lib/text`
+  `foldedIncludes`, each choice is **added** (not replaced), the selected item **disappears from the list**
+  and appears below the field as a removable chip (`.kk-chip`), so a long list stays short
+  and the selection readable without a column of checkmarks. Keyboard Up/Down/Enter (with nothing highlighted it takes the best
+  match), **Backspace over an empty query removes the last chip**, Esc closes; combobox/listbox
+  ARIA (`aria-multiselectable`), a `MAX_SUGGESTIONS` (50) cap on rendered suggestions, ~44px tap
+  targets. The `destructive` prop tints the label and chips into the danger key, so a removal never looks
+  like an addition. By default it **creates no items** — it only picks from those it receives (mirrors
+  `AddAutocomplete` and `SearchableSelect`); with an optional `onCreate(name)` it appends a
+  **„Vytvořit «dotaz»“** row to the list, only when a non-empty trimmed query fold-insensitively (case,
+  diacritics, edge whitespace) matches **no** option — selected ones included — so it never
+  offers a duplicate; Enter with nothing highlighted creates only when nothing else matches. What creating
+  means is up to the caller (typically it registers the name and picks the value for it via
+  `options`+`selected`); for a reader without write permission, `onCreate` is simply not passed),
+  `photo/PlaceSearch` (**place autocomplete by name** = the third route to a photo's location alongside
+  coordinates and a map click — for a scanned photo you know *Veselí nad Moravou*, not the numbers, and hunting
+  that point by panning the map is a nuisance. `{id,onPick,disabled?}`, `onPick(place)` receives a `Place` and
+  the caller decides where to write the coordinates: `MetadataPanel` writes them into its own coordinate
+  field (the marker and the map redraw themselves), `BulkEditModal` into `lat`/`lng` for `set_location`.
+  Each row carries **name + place kind (`label`) + `location`** — the distinction is the whole point (Veselí
+  is a town, a château, and a village district; three identical-looking rows would be useless). Typing goes through
+  `usePlaceSearch` (debounce + cancelling in-flight); the field holds **two** state values — what is visible
+  (`query`) and what is being searched (`term`) — so picking a suggestion leaves the name in the field as confirmation but
+  does not immediately search for it again. Keyboard Up/Down/Enter (with nothing highlighted it takes the best match)/Esc,
+  combobox/listbox ARIA, ~44px tap targets — it is a form control and behaves like one. Unavailable
+  search (no key, provider down) = **a single line of text**, the rest of the location editor carries
+  on. Tests: `PlaceSearch.test.tsx`),
+  `KeyboardShortcutsHelp` (in the navbar: a keyboard icon + **shortcuts help modal** — opens with
+  `?` (Shift+/) anywhere or by click, lists all shortcuts grouped by context (Grid / Detail)
+  from `lib/shortcuts.ts` `SHORTCUT_GROUPS`, closes with Escape/the close button),
   `EmptyState` (**sdílený placeholder prázdné kolekce**: ikona v kulaté jámě, krátký titulek,
   jednořádkový hint a volitelné akční tlačítko, vycentrované v prostoru, který by kolekce zabrala.
   Props `title` (povinné), `hint?`, `icon?` (default = obrys prázdného rámečku, `aria-hidden`),

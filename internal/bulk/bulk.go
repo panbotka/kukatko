@@ -5,7 +5,7 @@
 // with a durable audit_log entry, so it commits or rolls back atomically. Each
 // photo is reported individually (updated/skipped/error): a missing photo is
 // recorded as an error without aborting the valid ones, while a genuine database
-// failure rolls the whole batch back. See ARCHITECTURE.md §1 (hromadná úprava).
+// failure rolls the whole batch back. See ARCHITECTURE.md §1 (bulk editing).
 package bulk
 
 import (
