@@ -795,6 +795,34 @@ přejmenováním/optimistickým mazáním + empty state) a **dropdown v hlavičc
 na `/saved`). Uložená hledání se ovládají **jen ze stránky `/search`**, ne z navbaru; route `/saved`
 (jakýkoli přihlášený) v `App.tsx`.
 
+### Oznámení pro všechny uživatele (`internal/announcement` + `internal/announcementapi`)
+
+Jediné **instance-wide oznámení**: správce (maintainer) zveřejní krátkou zprávu (např. „dnes ve
+22:00–23:00 očekávejte výpadek") z admin sekce a **každý přihlášený uživatel** ji pak vidí jako **banner
+nahoře v aplikaci**. Jednořádková tabulka `announcements` v migraci `0039_announcement.sql`
+(`id BOOLEAN PK DEFAULT true CHECK (id)` → publish je **upsert**, `message TEXT NOT NULL`,
+`level TEXT NOT NULL DEFAULT 'info' CHECK (info|warning)`, `author_uid VARCHAR(32)` FK users
+`ON DELETE SET NULL`, `updated_at TIMESTAMPTZ`).
+
+- **`internal/announcement`** — `Store` nad sdíleným pgx poolem: `Get(ctx)` (sentinel `ErrNotFound` když
+  nic), `Set(ctx,message,level,authorUID,entry)` (upsert; prázdná zpráva → `ErrEmptyMessage`, neznámý level
+  → `ErrInvalidLevel`, prázdný → `info`), `Clear(ctx,entry)`; **publish i clear se auditují**
+  (`announcement.set`/`announcement.clear`) ve **stejné transakci** jako změnu (zrcadlí `internal/organize`).
+- **`internal/announcementapi`** — `NewAPI(Config{Store,RequireAuth,RequireMaintainer})` + `RegisterRoutes`
+  pod `/api/v1`: `GET /announcement` za `RequireAuth` (kdokoli přihlášený čte; když nic → **200
+  `{"message":""}`** místo 404), `PUT /announcement` `{message,level}` a `DELETE /announcement` za
+  `RequireMaintainer` (publish/clear, `author_uid` = aktér). Tělo `DisallowUnknownFields` + 16 KiB limit,
+  validace → 400. Mountuje se `server.WithAPI` (`buildAnnouncementAPI` v `cmd/kukatko/announcement.go`).
+
+**Frontend (oznámení):** klient `web/src/services/announcement.ts` (`fetchAnnouncement`/`setAnnouncement`/
+`clearAnnouncement`, typy `Announcement`/`AnnouncementLevel`). Banner `AnnouncementBanner` v `Layout` hned
+před `<Outlet/>` — přes `useAnnouncement` (fetch + polling ~60 s) a dismissible `<Alert>` s variantou dle
+`level`. **Per-user dismiss klíčovaný na `updated_at`** v localStorage (`lib/announcementDismissal.ts`):
+skrytí schová aktuální zprávu, ale nově zveřejněná (nové `updated_at`) se **znovu ukáže**. Routes mimo
+`Layout` (`/photos/:uid`, `/slideshow`, `/review`, `/duplicates/compare`) banner nemají (immersivní pohledy).
+Compose ovládání (maintainer) je **karta Oznámení** na `SystemStatusPage` (textarea + úroveň +
+Zveřejnit/Zrušit). Texty `announcement.*` (cs default, en).
+
 ### Globální hledání (`internal/globalsearchapi`)
 
 Jeden **grouped cross-entity** endpoint **`GET /api/v1/search/global?q=`** (přihlášený přes

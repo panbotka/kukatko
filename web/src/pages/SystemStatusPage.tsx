@@ -4,6 +4,7 @@ import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import Col from 'react-bootstrap/Col'
+import Form from 'react-bootstrap/Form'
 import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
@@ -13,6 +14,12 @@ import { useAuth } from '../auth/AuthContext'
 import { ErrorState } from '../components/ErrorState'
 import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
 import { formatBytes, formatDateTime } from '../lib/format'
+import {
+  clearAnnouncement,
+  fetchAnnouncement,
+  setAnnouncement,
+  type AnnouncementLevel,
+} from '../services/announcement'
 import { ApiError } from '../services/auth'
 import type { ImportRun, ImportSource } from '../services/import'
 import {
@@ -379,6 +386,141 @@ function QuickActions() {
 }
 
 /**
+ * The maintainer compose control for the instance-wide announcement banner. It
+ * loads the current message on mount (so an existing announcement can be edited
+ * in place), and lets a maintainer publish a new/updated message at an info or
+ * warning level, or clear it for everyone. Feedback uses the same dismissible
+ * {@link ActionNotice} `<Alert>` pattern as the page's other quick actions. It is
+ * self-contained — it owns its own form and notice state — and is only rendered
+ * inside the already maintainer-gated {@link SystemStatusPage}.
+ */
+function AnnouncementCard() {
+  const { t } = useTranslation()
+  const [message, setMessage] = useState('')
+  const [level, setLevel] = useState<AnnouncementLevel>('info')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<ActionNotice | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    // Prefill from whatever is currently published; a failure just leaves the
+    // form blank (the maintainer can still publish a fresh message).
+    fetchAnnouncement(controller.signal)
+      .then((current) => {
+        setMessage(current.message)
+        if (current.level !== undefined) {
+          setLevel(current.level)
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      controller.abort()
+    }
+  }, [])
+
+  const handlePublish = useCallback(async () => {
+    setBusy(true)
+    setNotice(null)
+    try {
+      const saved = await setAnnouncement(message.trim(), level)
+      setMessage(saved.message)
+      if (saved.level !== undefined) {
+        setLevel(saved.level)
+      }
+      setNotice({ kind: 'success', message: t('announcement.compose.published') })
+    } catch {
+      setNotice({ kind: 'error', message: t('announcement.compose.publishError') })
+    } finally {
+      setBusy(false)
+    }
+  }, [level, message, t])
+
+  const handleClear = useCallback(async () => {
+    setBusy(true)
+    setNotice(null)
+    try {
+      await clearAnnouncement()
+      setMessage('')
+      setLevel('info')
+      setNotice({ kind: 'success', message: t('announcement.compose.cleared') })
+    } catch {
+      setNotice({ kind: 'error', message: t('announcement.compose.clearError') })
+    } finally {
+      setBusy(false)
+    }
+  }, [t])
+
+  return (
+    <Card className="mb-4">
+      <Card.Body>
+        <h2 className="kk-section-title mb-1">{t('announcement.compose.title')}</h2>
+        <p className="text-secondary small">{t('announcement.compose.intro')}</p>
+        {notice && (
+          <Alert
+            variant={notice.kind === 'success' ? 'success' : 'danger'}
+            dismissible
+            onClose={() => {
+              setNotice(null)
+            }}
+          >
+            {notice.message}
+          </Alert>
+        )}
+        <Form.Group className="mb-3" controlId="announcement-message">
+          <Form.Label>{t('announcement.compose.messageLabel')}</Form.Label>
+          <Form.Control
+            as="textarea"
+            rows={2}
+            value={message}
+            placeholder={t('announcement.compose.messagePlaceholder')}
+            disabled={busy}
+            onChange={(event) => {
+              setMessage(event.target.value)
+            }}
+          />
+        </Form.Group>
+        <Form.Group className="mb-3" controlId="announcement-level">
+          <Form.Label>{t('announcement.compose.levelLabel')}</Form.Label>
+          <Form.Select
+            value={level}
+            disabled={busy}
+            onChange={(event) => {
+              setLevel(event.target.value as AnnouncementLevel)
+            }}
+          >
+            <option value="info">{t('announcement.compose.level.info')}</option>
+            <option value="warning">{t('announcement.compose.level.warning')}</option>
+          </Form.Select>
+        </Form.Group>
+        <div className="d-flex gap-2 flex-wrap">
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={busy || message.trim() === ''}
+            onClick={() => {
+              void handlePublish()
+            }}
+          >
+            {busy && <Spinner animation="border" size="sm" role="status" className="me-2" />}
+            {t('announcement.compose.publish')}
+          </Button>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              void handleClear()
+            }}
+          >
+            {t('announcement.compose.clear')}
+          </Button>
+        </div>
+      </Card.Body>
+    </Card>
+  )
+}
+
+/**
  * Admin-only system-status dashboard: a single, auto-refreshing view of the
  * running instance's operational health — database and embeddings-sidecar
  * reachability, job-queue depth and dead-letter backlog, the backup subsystem,
@@ -475,6 +617,8 @@ export function SystemStatusPage() {
           {notice.message}
         </Alert>
       )}
+
+      <AnnouncementCard />
 
       {state.status === 'loading' && (
         <div className="d-flex justify-content-center py-5">

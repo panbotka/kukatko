@@ -12,6 +12,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useAuth } from '../auth/AuthContext'
 import { LIBRARY_PATH } from '../lib/libraryView'
 
+import { AnnouncementBanner } from './AnnouncementBanner'
 import { Footer } from './Footer'
 import { Icon, type IconName } from './Icon'
 import { JobQueueBadges } from './JobQueueBadges'
@@ -371,6 +372,7 @@ export function Layout() {
         </Container>
       </Navbar>
       <Container as="main" className="py-4 kukatko-main">
+        <AnnouncementBanner />
         <Outlet />
       </Container>
       <Footer>

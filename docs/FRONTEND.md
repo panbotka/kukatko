@@ -58,6 +58,16 @@ zapiš sem.
   se záměrně vynechává), `failed`/`dead` mají `bg="danger"`, aby padly do oka; když je vše nulové,
   jediný tichý badge `idle`. Selhání requestu badge tiše skryje — patička nikdy nespadne; texty
   `footer.jobs.*` (cs/en)),
+  `AnnouncementBanner` (**instance-wide oznámení nahoře v obsahu**: v `Layout` hned **před `<Outlet/>`**,
+  takže ho vidí každý přihlášený uživatel na každé stránce **uvnitř shellu**; routes **mimo `Layout`**
+  (`/photos/:uid`, `/slideshow`, `/review`, `/duplicates/compare`) banner nemají — immersivní pohledy,
+  přijatelné. Přes `useAnnouncement` (fetch on-mount + **polling ~60 s**, takže čerstvě zveřejněná zpráva
+  naskočí bez reloadu) + dismissible `<Alert>` s variantou dle `level` (`info`→ikona `info-circle`,
+  `warning`→`exclamation-triangle`, dekorativní `Icon`). **Per-user dismiss klíčovaný na `updated_at`**
+  v localStorage (`lib/announcementDismissal.ts`: `readDismissedAnnouncement`/`writeDismissedAnnouncement`,
+  zrcadlí `faceOverlayPref.ts`) — skrytí schová aktuální zprávu, ale nově zveřejněná (nové `updated_at`) se
+  **znovu ukáže** (ne prostý boolean); prázdná zpráva / loading / už zavřená → nerendruje nic; texty
+  `announcement.*` (cs/en)),
   `JobStateLegend` (**sdílená legenda stavů fronty jobů**: kompaktní `dl` s tučným termem + tichým
   jednovětým vysvětlením každého stavu, aby admin rozuměl bez najetí myší; popisky i vysvětlení ze
   sdíleného i18n bloku `jobStates.labels.*`/`jobStates.descriptions.*`, takže znění je totožné na
@@ -508,7 +518,10 @@ zapiš sem.
   stav mapy.com — `key_rejected` červeně + co s tím (vyměnit klíč v konzoli mapy.com), degradace
   žlutě, bez klíče „Nenastaveno"; karta fronty jobů nese sdílenou `JobStateLegend`
   (total/queued/running/failed/**dead**/**pending** = „Čeká na box") s plain-language vysvětlením
-  každého stavu (`jobStates.*` + `system.jobs.intro`); loading/error/notice stavy, sebe-gate na `isMaintainer`,
+  každého stavu (`jobStates.*` + `system.jobs.intro`); dále nese **kartu Oznámení** (`AnnouncementCard`,
+  gate `isMaintainer`) — textarea + `<select>` úrovně (info/warning) + **Zveřejnit**/**Zrušit oznámení**
+  nad `setAnnouncement`/`clearAnnouncement`, prefill aktuální zprávy přes `fetchAnnouncement`, feedback přes
+  stejný dismissible `ActionNotice` `<Alert>` vzor; loading/error/notice stavy, sebe-gate na `isMaintainer`,
   `UsersPage` = `/users` (admin **nebo** maintainer, `isAdmin`) **správa účtů**: tabulka uživatelů (jméno, celé jméno, role,
   stav, poznámka, poslední přihlášení, vytvořen) nad `GET /admin/users`, dialogy **Nový uživatel**
   (username/heslo/role/jméno/poznámka) a **Upravit** (role/jméno/poznámka; username je `readOnly`
@@ -1162,6 +1175,10 @@ zapiš sem.
   v patičce: fetchuje **jen když `enabled`** (admin), refetch po ~30 s, **pauzuje při skryté záložce**
   (`visibilitychange`/`document.hidden`) a při návratu hned refreshne; selhání spolkne a vrátí `null`
   (badge se skryje), na unmountu/`enabled→false` ruší timer i in-flight request — nic ho nepřežije;
+  `useAnnouncement()` = poller instance-wide oznámení nad `fetchAnnouncement` (`GET /announcement`) pro
+  `AnnouncementBanner`: fetch on-mount + refetch po ~60 s, **pauzuje při skryté záložce** a při návratu hned
+  refreshne, selhání spolkne a vrátí `null` (banner se skryje), na unmountu ruší timer i in-flight (zrcadlí
+  `useJobStats`);
 
   `useLibraryFacets(params)` = loader nabídek facetů knihovny → `LibraryFacets{years,albums,labels,subjects}`:
   roky přes `fetchPhotoYears` **refetchuje při změně filtrů** (rok drží méně fotek, jakmile přibude
@@ -1558,7 +1575,10 @@ zapiš sem.
   `savedSearches.ts` = uložená hledání klient: `fetchSavedSearches`/`createSavedSearch(name,params)`/
   `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` nad `/api/v1/saved-searches`, typy
   `SavedSearch`/`SavedSearchParams` (= verbatim URL view-state `Record<string,string>`)/
-  `SavedSearchUpdate`; `search.ts` = grouped **global search** klient: `globalSearch(q,signal)` nad
+  `SavedSearchUpdate`; `announcement.ts` = instance-wide oznámení klient: `fetchAnnouncement()`/
+  `setAnnouncement(message,level)`/`clearAnnouncement()` nad `/api/v1/announcement`, typy `Announcement`
+  (`{message, level?, author_uid?, updated_at?}`, prázdný `message` = nic zveřejněno)/`AnnouncementLevel`
+  (`'info'|'warning'`); `search.ts` = grouped **global search** klient: `globalSearch(q,signal)` nad
   `GET /api/v1/search/global` → `GlobalSearchResult{query,albums,labels,people,photos}` (top-N per
   skupina, každá vždy pole) + pure helpery `hasEntityMatches`/`isEmptyResult`, typy
   `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult`; oddělené od

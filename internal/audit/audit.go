@@ -156,6 +156,13 @@ const (
 	ActionAPITokenCreate = "api_token.create"
 	// ActionAPITokenRevoke records revoking a long-lived API token.
 	ActionAPITokenRevoke = "api_token.revoke"
+	// ActionAnnouncementSet records a maintainer publishing (or replacing) the
+	// instance-wide announcement banner. The published message and level are
+	// recorded in the entry's details.
+	ActionAnnouncementSet = "announcement.set"
+	// ActionAnnouncementClear records a maintainer clearing the instance-wide
+	// announcement banner, taking it down for all users.
+	ActionAnnouncementClear = "announcement.clear"
 )
 
 // insertSQL appends one audit entry. It is shared by Store.Record and the
