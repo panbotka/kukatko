@@ -2057,5 +2057,25 @@
       "dismiss": "Zahodit",
       "undo": "Odpověď se nepodařilo vrátit."
     }
+  },
+  "announcement": {
+    "dismiss": "Skrýt oznámení",
+    "compose": {
+      "title": "Oznámení",
+      "intro": "Zveřejněte krátkou zprávu, kterou uvidí jako pruh v horní části aplikace každý přihlášený uživatel (např. plánovaná odstávka).",
+      "messageLabel": "Zpráva",
+      "messagePlaceholder": "Např. dnes ve 22:00–23:00 očekávejte výpadek",
+      "levelLabel": "Úroveň",
+      "level": {
+        "info": "Informace",
+        "warning": "Varování"
+      },
+      "publish": "Zveřejnit",
+      "clear": "Zrušit oznámení",
+      "published": "Oznámení bylo zveřejněno.",
+      "cleared": "Oznámení bylo zrušeno.",
+      "publishError": "Oznámení se nepodařilo zveřejnit.",
+      "clearError": "Oznámení se nepodařilo zrušit."
+    }
   }
 }

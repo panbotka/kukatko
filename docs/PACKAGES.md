@@ -1254,7 +1254,25 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   jméno → 400), `DELETE /saved-searches/{uid}` → 204; **vlastnická izolace** — sdílený helper
   `ownedSearch` načte řádek a porovná `owner_uid` s aktérem, cizí (i neexistující) → **404** (nikdy
   neprozradí cizí hledání); tělo `DisallowUnknownFields` + 1 MiB limit, sentinel `ErrNotFound`→404;
-  mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`)), `internal/globalsearchapi/`
+  mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`)), `internal/announcement/`
+  (DB vrstva pro **jediné instance-wide oznámení** — krátká zpráva, kterou správce zveřejní a každý
+  přihlášený uživatel ji vidí jako banner nahoře; jednořádková tabulka `announcements` v migraci
+  `0039_announcement.sql`: `id BOOLEAN PK DEFAULT true CHECK (id)` (jednořádkový invariant → publish je
+  **upsert**), `message TEXT NOT NULL`, `level TEXT NOT NULL DEFAULT 'info' CHECK (info|warning)`,
+  `author_uid VARCHAR(32)` FK users `ON DELETE SET NULL` (ztráta autora nesmí sundat živé oznámení),
+  `updated_at TIMESTAMPTZ`; `Store` = `NewStore(pool)`: `Get(ctx)` (→ sentinel `ErrNotFound` když nic),
+  `Set(ctx,message,level,authorUID,entry)` (upsert + validace: prázdná/whitespace zpráva → `ErrEmptyMessage`,
+  neznámý level → `ErrInvalidLevel`, prázdný level → `info`), `Clear(ctx,entry)` (delete); **publish i clear
+  píšou audit** (`announcement.set`/`announcement.clear`, do details message/level) ve **stejné transakci**
+  jako změnu (zrcadlí `internal/organize`)), `internal/announcementapi/`
+  (dual-guard HTTP API nad oznámením: rozhraní `Store` (podmnožina `announcement.Store`) → unit-testovatelné
+  s fakem; `NewAPI(Config{Store,RequireAuth,RequireMaintainer})`+`RegisterRoutes` mountuje `/announcement`:
+  `GET /` za `RequireAuth` (kdokoli přihlášený čte; když nic zveřejněno → **200 `{"message":""}`** místo 404,
+  přívětivější pro polling banner klienta), `PUT /` a `DELETE /` za `RequireMaintainer` (publish/clear,
+  `author_uid` = aktér z auth kontextu); tělo `{message,level}` s `DisallowUnknownFields` + 16 KiB limit,
+  `ErrEmptyMessage`/`ErrInvalidLevel` → 400, response `{message, level?, author_uid?, updated_at?}`
+  (`updated_at` RFC3339, jinak vynecháno); mountuje se `server.WithAPI` (`buildAnnouncementAPI` v
+  `cmd/kukatko/announcement.go`)), `internal/globalsearchapi/`
   (grouped **global search** HTTP API napříč entitami — podklad navbar quick-results i cross-entity sekce
   search stránky: malá rozhraní `Organizer` (`SearchAlbums`/`SearchLabels`, splňuje `organize.Store`),
   `PeopleSearcher` (`SearchSubjects`, splňuje `people.Store`) a `PhotoSearcher` (`Search`, splňuje

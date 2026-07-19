@@ -558,6 +558,17 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   kontextu — uložené hledání cizího vlastníka se **vždy hlásí jako 404** (nikdy se neprozradí), tělo
   `DisallowUnknownFields` + 1 MiB limit. Tabulka `saved_searches` (migrace `0017_saved_searches.sql`).
   Mountuje se `server.WithAPI` (`buildSavedSearchAPI` v `cmd/kukatko/savedsearch.go`).
+- **Announcement API (`/api/v1`, `internal/announcementapi` + `internal/announcement`, dual-guard):**
+  jediné **instance-wide oznámení** (banner pro všechny přihlášené). `GET /announcement` za `RequireAuth`
+  (kdokoli přihlášený čte) → `{message, level?, author_uid?, updated_at?}`; **když nic zveřejněno vrací
+  `200 {"message":""}`** (ne 404 — přívětivější pro polling banner klienta). `PUT /announcement`
+  `{message,level}` za `RequireMaintainer` → 200 s uloženým záznamem (upsert; prázdná zpráva nebo neznámý
+  `level` (mimo `info`/`warning`) → 400, prázdný level → `info`); `DELETE /announcement` za
+  `RequireMaintainer` → 204 (sundá oznámení všem). Tělo `DisallowUnknownFields` + 16 KiB limit, `updated_at`
+  je RFC3339. **Publish i clear se auditují** (`announcement.set`/`announcement.clear`) ve stejné transakci
+  jako změnu; `author_uid` = aktér z auth kontextu. Jednořádková tabulka `announcements` (migrace
+  `0039_announcement.sql`). Mountuje se `server.WithAPI` (`buildAnnouncementAPI` v
+  `cmd/kukatko/announcement.go`).
 - **Global Search API (`/api/v1`, `internal/globalsearchapi`, přihlášený přes `RequireAuth`):**
   grouped **cross-entity search** pro navbar quick-results a search stránku. `GET /search/global?q=` →
   `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],

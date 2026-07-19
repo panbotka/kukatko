@@ -1979,5 +1979,25 @@
       "dismiss": "Dismiss",
       "undo": "The answer could not be undone."
     }
+  },
+  "announcement": {
+    "dismiss": "Dismiss announcement",
+    "compose": {
+      "title": "Announcement",
+      "intro": "Publish a short message shown as a banner at the top of the app to every signed-in user (for example planned downtime).",
+      "messageLabel": "Message",
+      "messagePlaceholder": "e.g. expected downtime tonight 22:00–23:00",
+      "levelLabel": "Level",
+      "level": {
+        "info": "Info",
+        "warning": "Warning"
+      },
+      "publish": "Publish",
+      "clear": "Clear announcement",
+      "published": "Announcement published.",
+      "cleared": "Announcement cleared.",
+      "publishError": "Failed to publish the announcement.",
+      "clearError": "Failed to clear the announcement."
+    }
   }
 }
