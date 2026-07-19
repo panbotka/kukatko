@@ -588,7 +588,12 @@ zapiš sem.
   **Deep-linkovatelný:** otevřená fotka je v routě, **stav zásuvky v `info` query paramu** (mimo
   `DetailView`/`DETAIL_DEFAULTS`, takže neleze do sousedů ani do `backHref`), scope v query — Zpět i
   refresh tedy sedí. V hlavičce `RatingStars`+`FlagControl` (per-user hvězdy 0–5 + osobní označení
-  eye/👍/👎 nad `useRating`) a `FavoriteButton` (sdílí optimistický toggle s `f`). **Prohlížeč nese
+  eye/👍/👎 nad `useRating`) a `FavoriteButton` (sdílí optimistický toggle s `f`). Vedle je
+  **Archivovat/Vrátit z koše** (jen editor+ dle `canWrite`, jako u hromadné archivace): `archivePhoto`
+  pošle otevřenou fotku do koše, `unarchivePhoto` ji vrátí (fotka otevřená z `/trash` přijde už
+  archivovaná); **zůstává se na stránce** — `archived_at` se přepne na místě (ikona se přehodí
+  `archive` ⇄ `arrow-counterclockwise`, popisek Archivovat ⇄ Vrátit z koše) a výsledek hlásí toast.
+  **Prohlížeč nese
   právě JEDEN obrázek fotky** — obličeje jsou **přepínatelný overlay** nad ním (`FaceOverlay` nad
   `useFaces`), nikdy druhá kopie snímku, a i panel **Úprav** edituje právě tenhle jeden snímek.
   **Obličeje jsou defaultně VYPNUTÉ** (`FACE_OVERLAY_DEFAULT = false` v `lib/faceOverlayPref`, volba

@@ -22,6 +22,7 @@ import { VideoPlayer } from '../components/photo/VideoPlayer'
 import './../components/photo/viewer.css'
 import { FaceOverlay } from '../components/people/FaceOverlay'
 import { FacesPanel } from '../components/people/FacesPanel'
+import { useToast } from '../components/toast/ToastContext'
 import { useAutoHideChrome } from '../hooks/useAutoHideChrome'
 import { useFaces } from '../hooks/useFaces'
 import { useFavorite } from '../hooks/useFavorite'
@@ -40,6 +41,7 @@ import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { toMode } from '../lib/searchView'
 import { readUrlState } from '../lib/urlState'
 import {
+  archivePhoto,
   downloadUrl,
   fetchEdit,
   fetchPhoto,
@@ -47,6 +49,7 @@ import {
   type PhotoEdit,
   setStackPrimary,
   thumbUrl,
+  unarchivePhoto,
   unstackAll,
   unstackMember,
 } from '../services/photos'
@@ -88,6 +91,7 @@ type SidePanel = 'faces' | 'edit' | null
  */
 export function PhotoDetailPage() {
   const { t, i18n } = useTranslation()
+  const toast = useToast()
   const { uid = '' } = useParams<{ uid: string }>()
   const { canWrite, downloadToken } = useAuth()
   const navigate = useNavigate()
@@ -113,6 +117,9 @@ export function PhotoDetailPage() {
   // Save/Cancel bar in here so it stays pinned to the drawer's bottom while editing
   // — a footer beside the scrolling body, not a sticky bar that only pins mid-scroll.
   const [panelFoot, setPanelFoot] = useState<HTMLDivElement | null>(null)
+  // In flight while the archive/restore (trash) mutation runs, so its button is
+  // disabled and cannot be double-fired.
+  const [archivePending, setArchivePending] = useState(false)
   const faces = useFaces(uid)
 
   const view = useMemo(() => readUrlState(searchParams, DETAIL_DEFAULTS), [searchParams])
@@ -505,6 +512,35 @@ export function PhotoDetailPage() {
   const reloadPhoto = async (): Promise<void> => {
     setPhoto(await fetchPhoto(uid))
   }
+
+  // Whether the open photo is currently in the trash (soft-deleted). Drives the
+  // header control between Archive (send to trash) and Restore (bring back) — a
+  // photo opened from the Trash page arrives already archived.
+  const archived = photo.archived_at !== undefined && photo.archived_at !== ''
+
+  // Archive the open photo, or restore it when it is already in the trash. Like
+  // every other detail mutation the page stays put and reflects the new state in
+  // place: the archived flag flips (so the button swaps Archive ⇄ Restore) rather
+  // than navigating away. Both endpoints answer 204, so the flag is toggled
+  // locally instead of refetched, and the result is reported with a toast.
+  const toggleArchive = async (): Promise<void> => {
+    setArchivePending(true)
+    try {
+      if (archived) {
+        await unarchivePhoto(photo.uid)
+        setPhoto({ ...photo, archived_at: undefined })
+        toast.show({ message: t('photo.archive.restored'), variant: 'success' })
+      } else {
+        await archivePhoto(photo.uid)
+        setPhoto({ ...photo, archived_at: new Date().toISOString() })
+        toast.show({ message: t('photo.archive.archived'), variant: 'success' })
+      }
+    } catch {
+      toast.show({ message: t('photo.archive.error'), variant: 'danger' })
+    } finally {
+      setArchivePending(false)
+    }
+  }
   const handleSetStackPrimary = async (memberUid: string): Promise<void> => {
     await setStackPrimary(memberUid)
     await reloadPhoto()
@@ -695,6 +731,19 @@ export function PhotoDetailPage() {
               favorite.toggle()
             }}
           />
+          {canWrite && (
+            <button
+              type="button"
+              className="kk-viewer__btn kk-viewer__btn--icon"
+              aria-label={archived ? t('photo.archive.restore') : t('batch.archive')}
+              disabled={archivePending}
+              onClick={() => {
+                void toggleArchive()
+              }}
+            >
+              <Icon name={archived ? 'arrow-counterclockwise' : 'archive'} />
+            </button>
+          )}
           {facesAvailable && (
             <button
               type="button"

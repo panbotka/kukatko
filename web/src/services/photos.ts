@@ -991,6 +991,25 @@ export async function clearRating(uid: string, signal?: AbortSignal): Promise<vo
 }
 
 /**
+ * Archives a photo via `POST /api/v1/photos/{uid}/archive`, setting its
+ * `archived_at` so it is soft-deleted: it leaves the library and moves to the
+ * trash, from where it can be restored (see {@link unarchivePhoto}) or later
+ * purged. Editor/admin only.
+ *
+ * @throws ApiError with `status` 404 (no such photo), 403 (not an editor) or 5xx.
+ */
+export async function archivePhoto(uid: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/archive`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+}
+
+/**
  * Restores an archived photo via `POST /api/v1/photos/{uid}/unarchive`, clearing
  * its `archived_at` so it leaves the trash and reappears in the library. Editor/
  * admin only.
