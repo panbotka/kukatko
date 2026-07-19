@@ -323,9 +323,9 @@ func (a *API) handleSetPhotoMetadata(
 	applyString(&upd.Description, in.Description)
 	applyString(&upd.Notes, in.Notes)
 
-	entry := c.entry(audit.ActionPhotoUpdate, "photos", uid, map[string]any{
-		"fields": changedFields(in), "via": viaMCP,
-	})
+	details := map[string]any{"fields": changedFields(in), "via": viaMCP}
+	metadataChanges(current, upd).StampInto(details)
+	entry := c.entry(audit.ActionPhotoUpdate, "photos", uid, details)
 	updated, err := a.photos.UpdateMetadataAudited(ctx, uid, upd, entry)
 	if err != nil {
 		return nil, photoText{}, fmt.Errorf("updating the photo: %w", err)
@@ -345,6 +345,19 @@ type photoText struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Notes       string `json:"notes"`
+}
+
+// metadataChanges builds the old→new diff for the MCP metadata edit, comparing
+// the row before the edit against the update to be applied. The tool can only set
+// title, description and notes, so only those are compared; the ChangeSet skips
+// any that did not change, matching the "changes" convention the HTTP PATCH path
+// records (see internal/audit ChangeSet).
+func metadataChanges(before photos.Photo, after photos.MetadataUpdate) *audit.ChangeSet {
+	changes := audit.NewChangeSet()
+	changes.Add("title", before.Title, after.Title)
+	changes.Add("description", before.Description, after.Description)
+	changes.Add("notes", before.Notes, after.Notes)
+	return changes
 }
 
 // changedFields names the fields a metadata call actually touched, for the audit

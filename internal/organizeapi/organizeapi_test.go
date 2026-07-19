@@ -190,6 +190,31 @@ func do(t *testing.T, h http.Handler, method, target, body string) *httptest.Res
 	return rec
 }
 
+// changeMap extracts the details.changes map recorded on an audit entry, failing
+// the test when it is absent or not a map. The entry is inspected before any JSON
+// round-trip, so each value is still an audit.Change rather than a decoded map.
+func changeMap(t *testing.T, entry audit.Entry) map[string]any {
+	t.Helper()
+	raw, ok := entry.Details["changes"].(map[string]any)
+	if !ok {
+		t.Fatalf("audit details has no changes map: %v", entry.Details)
+	}
+	return raw
+}
+
+// assertChange fails unless the changes map records field's transition from old
+// to want under the {old,new} convention.
+func assertChange(t *testing.T, changes map[string]any, field string, old, want any) {
+	t.Helper()
+	change, ok := changes[field].(audit.Change)
+	if !ok {
+		t.Fatalf("changes[%q] type = %T, want audit.Change", field, changes[field])
+	}
+	if change.Old != old || change.New != want {
+		t.Errorf("changes[%q] = %+v, want {old:%v new:%v}", field, change, old, want)
+	}
+}
+
 // --- Albums -----------------------------------------------------------------
 
 // TestAlbumList_ok returns the albums with their counts, the effective cover and
@@ -309,6 +334,46 @@ func TestAlbumUpdate_preservesType(t *testing.T) {
 	}
 	if albums.lastUpdate.Type != organize.AlbumMoment {
 		t.Errorf("update input mismatch: %+v", albums.lastUpdate)
+	}
+}
+
+// TestAlbumUpdate_recordsChanges records old→new for the fields the edit changed
+// (title, private) and omits the unchanged description under details.changes.
+func TestAlbumUpdate_recordsChanges(t *testing.T) {
+	t.Parallel()
+	albums := &fakeAlbums{
+		album: organize.Album{
+			UID: "al_a", Title: "Trip", Description: "same", Type: organize.AlbumMoment, Private: false,
+		},
+		updated: organize.Album{UID: "al_a", Title: "Trip II"},
+	}
+	rec := do(t, newServer(albums, &fakeLabels{}), http.MethodPatch, "/albums/al_a",
+		`{"title":"Trip II","description":"same","private":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	changes := changeMap(t, albums.lastEntry)
+	assertChange(t, changes, "title", "Trip", "Trip II")
+	assertChange(t, changes, "private", false, true)
+	if _, ok := changes["description"]; ok {
+		t.Errorf("unchanged description present in changes: %v", changes)
+	}
+}
+
+// TestAlbumUpdate_noChangesOmitsChangesKey verifies an edit that alters nothing
+// records no details.changes key at all.
+func TestAlbumUpdate_noChangesOmitsChangesKey(t *testing.T) {
+	t.Parallel()
+	albums := &fakeAlbums{
+		album:   organize.Album{UID: "al_a", Title: "Trip", Type: organize.AlbumMoment},
+		updated: organize.Album{UID: "al_a", Title: "Trip"},
+	}
+	rec := do(t, newServer(albums, &fakeLabels{}), http.MethodPatch, "/albums/al_a", `{"title":"Trip"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if _, ok := albums.lastEntry.Details["changes"]; ok {
+		t.Errorf("no-op album edit recorded a changes key: %v", albums.lastEntry.Details)
 	}
 }
 
@@ -480,6 +545,37 @@ func TestLabelUpdate_ok(t *testing.T) {
 	}
 	if labels.lastUpdate.Name != "Sea" || labels.lastUpdate.Priority != 2 {
 		t.Errorf("update input mismatch: %+v", labels.lastUpdate)
+	}
+}
+
+// TestLabelUpdate_recordsChanges loads the existing label and records old→new for
+// the fields the edit changed (name, priority) under details.changes.
+func TestLabelUpdate_recordsChanges(t *testing.T) {
+	t.Parallel()
+	labels := &fakeLabels{
+		label:   organize.Label{UID: "lb_a", Name: "Beach", Priority: 1},
+		updated: organize.Label{UID: "lb_a", Name: "Sea"},
+	}
+	rec := do(t, newServer(&fakeAlbums{}, labels), http.MethodPatch, "/labels/lb_a",
+		`{"name":"Sea","priority":5}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	changes := changeMap(t, labels.lastEntry)
+	assertChange(t, changes, "name", "Beach", "Sea")
+	// Numeric JSON values decode to float64, but here the entry is inspected before
+	// any JSON round-trip, so priority stays an int.
+	assertChange(t, changes, "priority", 1, 5)
+}
+
+// TestLabelUpdate_notFound maps a missing label to 404 (the handler now loads the
+// label first to capture its old values).
+func TestLabelUpdate_notFound(t *testing.T) {
+	t.Parallel()
+	labels := &fakeLabels{getErr: organize.ErrLabelNotFound}
+	rec := do(t, newServer(&fakeAlbums{}, labels), http.MethodPatch, "/labels/lb_x", `{"name":"X"}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
 

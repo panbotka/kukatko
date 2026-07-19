@@ -1931,6 +1931,13 @@
       "payload": "Detaily",
       "userAgent": "User agent"
     },
+    "changes": {
+      "title": "Změny",
+      "field": "Pole",
+      "old": "Původní",
+      "new": "Nová",
+      "empty": "—"
+    },
     "pagination": {
       "range": "Zobrazeno {{from}}–{{to}} z {{total}}",
       "prev": "Předchozí",

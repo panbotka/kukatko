@@ -61,20 +61,39 @@ func (a *API) handleLabelGet(w http.ResponseWriter, r *http.Request) {
 // missing label answers 404.
 func (a *API) handleLabelUpdate(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
+	existing, err := a.labels.GetLabelByUID(r.Context(), uid)
+	if err != nil {
+		status, msg := labelStatus(err)
+		writeError(w, status, msg)
+		return
+	}
 	in, err := decodeLabelInput(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	entry := a.auditEntry(r, audit.ActionLabelUpdate, "labels", uid,
-		map[string]any{"name": in.Name, "priority": in.Priority})
-	label, err := a.labels.UpdateLabelAudited(r.Context(), uid, in.toUpdate(), entry)
+	upd := in.toUpdate()
+	details := map[string]any{"name": in.Name, "priority": in.Priority}
+	labelChanges(existing, upd).StampInto(details)
+	entry := a.auditEntry(r, audit.ActionLabelUpdate, "labels", uid, details)
+	label, err := a.labels.UpdateLabelAudited(r.Context(), uid, upd, entry)
 	if err != nil {
 		status, msg := labelStatus(err)
 		writeError(w, status, msg)
 		return
 	}
 	writeJSON(w, http.StatusOK, label)
+}
+
+// labelChanges builds the old→new diff for a label edit, comparing the label
+// before the edit (before) against the update the store will apply (after) and
+// recording only the editable fields (name, priority) whose value changed. The
+// result is stamped under the audit "changes" key (see internal/audit ChangeSet).
+func labelChanges(before organize.Label, after organize.LabelUpdate) *audit.ChangeSet {
+	changes := audit.NewChangeSet()
+	changes.Add("name", before.Name, after.Name)
+	changes.Add("priority", before.Priority, after.Priority)
+	return changes
 }
 
 // handleLabelDelete removes the label identified by the path UID, answering 204

@@ -47,9 +47,28 @@ async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
 }
 
 /**
+ * One field's before/after values in an edit's `details.changes` map (the
+ * `internal/audit` ChangeSet convention). A cleared field (date, coordinate,
+ * cover) serializes its side as JSON `null`. Only edit actions carry this shape,
+ * and only for the fields that actually changed.
+ */
+export interface AuditChange {
+  old: unknown
+  new: unknown
+}
+
+/**
+ * The `details.changes` map an edit records: field name → its old/new values.
+ * Legacy rows and non-edit actions have no `changes` key, so consumers must
+ * treat it as optional.
+ */
+export type AuditChanges = Record<string, AuditChange>
+
+/**
  * One audit entry (`audit.Record`). The nullable columns serialize as JSON
  * `null`: `actor_uid`/`target_uid`/`ip`/`user_agent` when absent, and `details`
- * when the mutation recorded no structured payload.
+ * when the mutation recorded no structured payload. An edit's `details` may carry
+ * a `changes` map ({@link AuditChanges}) alongside its other keys.
  */
 export interface AuditRecord {
   id: number

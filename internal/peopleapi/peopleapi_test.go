@@ -216,6 +216,86 @@ func TestHandleUpdate_ok(t *testing.T) {
 	}
 }
 
+// TestHandleUpdate_recordsChanges loads the existing subject and records old→new
+// for the fields the edit changed (name, type, favorite) under details.changes,
+// omitting the unchanged ones.
+func TestHandleUpdate_recordsChanges(t *testing.T) {
+	t.Parallel()
+	subjects := &fakeSubjects{
+		subject: people.Subject{
+			UID: "su_a", Name: "Alice", Type: people.SubjectPerson, Favorite: false, Notes: "same",
+		},
+		updated: people.Subject{UID: "su_a", Name: "Alice II"},
+	}
+	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPatch, "/subjects/su_a",
+		`{"name":"Alice II","type":"pet","favorite":true,"notes":"same"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	changes := changeMap(t, subjects.lastEntry)
+	assertChange(t, changes, "name", "Alice", "Alice II")
+	assertChange(t, changes, "type", "person", "pet")
+	assertChange(t, changes, "favorite", false, true)
+	if _, ok := changes["notes"]; ok {
+		t.Errorf("unchanged notes present in changes: %v", changes)
+	}
+}
+
+// TestHandleUpdate_noChangesOmitsChangesKey verifies an edit that alters nothing
+// records no details.changes key at all.
+func TestHandleUpdate_noChangesOmitsChangesKey(t *testing.T) {
+	t.Parallel()
+	subjects := &fakeSubjects{
+		subject: people.Subject{UID: "su_a", Name: "Alice", Type: people.SubjectPerson},
+		updated: people.Subject{UID: "su_a", Name: "Alice"},
+	}
+	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPatch, "/subjects/su_a",
+		`{"name":"Alice","type":"person"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if _, ok := subjects.lastEntry.Details["changes"]; ok {
+		t.Errorf("no-op subject edit recorded a changes key: %v", subjects.lastEntry.Details)
+	}
+}
+
+// TestHandleUpdate_notFound maps a missing subject to 404 before mutating (the
+// handler now loads the subject first to capture its old values).
+func TestHandleUpdate_notFound(t *testing.T) {
+	t.Parallel()
+	subjects := &fakeSubjects{getErr: people.ErrSubjectNotFound}
+	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPatch, "/subjects/su_x",
+		`{"name":"X","type":"person"}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+// changeMap extracts the details.changes map recorded on an audit entry, failing
+// the test when it is absent or not a map. The entry is inspected before any JSON
+// round-trip, so each value is still an audit.Change rather than a decoded map.
+func changeMap(t *testing.T, entry audit.Entry) map[string]any {
+	t.Helper()
+	raw, ok := entry.Details["changes"].(map[string]any)
+	if !ok {
+		t.Fatalf("audit details has no changes map: %v", entry.Details)
+	}
+	return raw
+}
+
+// assertChange fails unless the changes map records field's transition from old
+// to want under the {old,new} convention.
+func assertChange(t *testing.T, changes map[string]any, field string, old, want any) {
+	t.Helper()
+	change, ok := changes[field].(audit.Change)
+	if !ok {
+		t.Fatalf("changes[%q] type = %T, want audit.Change", field, changes[field])
+	}
+	if change.Old != old || change.New != want {
+		t.Errorf("changes[%q] = %+v, want {old:%v new:%v}", field, change, old, want)
+	}
+}
+
 // TestHandleUpdate_invalidType maps the type sentinel to 400.
 func TestHandleUpdate_invalidType(t *testing.T) {
 	t.Parallel()

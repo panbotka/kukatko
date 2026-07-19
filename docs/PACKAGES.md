@@ -1306,7 +1306,14 @@ jeden řádek do `## Mapa balíčků` v `CLAUDE.md`.
   UserAgent}` (prázdné UID/IP/UA → SQL NULL, nil details → `{}`); **konvence pro handlery**
   `Meta` + `FromRequest(r, actorUID)` (actor z auth kontextu, IP z `X-Forwarded-For`/`X-Real-IP`/
   `RemoteAddr`, UA z hlavičky) → `(Meta).Entry(action, targetType, targetUID, details)` staví
-  ostatní entry; action konstanty `ActionPhotosBulk`/`ActionPhoto{Update,Archive,Unarchive,Purge}`/
+  ostatní entry; **konvence `changes` pro editace** (`changes.go`): `ChangeSet` = `NewChangeSet()` +
+  `Add(field, old, new)` (přeskočí neměněná pole přes `reflect.DeepEqual`, ukazatele porovná
+  hodnotou) → `Map()`/`StampInto(details)` zapíše pod klíč `ChangesKey` (`"changes"`) mapu
+  `{"<pole>":{"old":…,"new":…}}` **jen se skutečně změněnými poli** (nil ukazatel → JSON `null`);
+  používají ji všechny editační cesty (foto PATCH + MCP `photo.update`, album/label/subjekt update),
+  aby log ukázal `stary popisek` → `novy popisek`; **hromadná editace `internal/bulk` je záměrně
+  vynechaná** (jeden `UPDATE` nad mnoha fotkami bez načtení starých řádků — SELECT-před-UPDATE by
+  zdvojnásobil dotazy na dávku), ponechává si původní souhrn v details; action konstanty `ActionPhotosBulk`/`ActionPhoto{Update,Archive,Unarchive,Purge}`/
   `ActionAlbum{Create,Update,Delete}`/`ActionLabel{Create,Update,Delete}`/`ActionFaceAssign`/
   `ActionUser{Create,Update,Disable,Password}`; `Store` = `NewStore(pool)` se `Record(ctx,Entry)`
   (vlastní spojení) a **filtrovaným čtením** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ActorUID,

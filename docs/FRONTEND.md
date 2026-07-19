@@ -540,7 +540,11 @@ zapiš sem.
   admin vždy existuje, ale nesmí spadnout); sebe-gate na `isAdmin`,
   `AuditPage` = `/audit` (admin **nebo** maintainer, `isAdmin`) **auditní log**: read-only tabulka záznamů z `GET /audit`
   od nejnovějších (kdy/kdo/akce/cíl/IP), `details` JSON přes rozbalovací řádek (`aria-expanded`,
-  ukáže i `user_agent`). Filtry (aktér = `<select>` nad rosterem přes `fetchUsers`, akce, typ+UID
+  ukáže i `user_agent`). Nese-li `details` mapu `changes` (konvence editací `internal/audit`, viz
+  `AuditChange`/`AuditChanges` v `services/audit.ts`), vykreslí ji `readChanges`+`ChangesTable` jako
+  kompaktní tabulku **pole / původní / nová** (`data-testid="audit-changes"`, vymazané pole =
+  `null`/`""` → tlumená pomlčka přes `ChangeValue`); záznamy bez `changes` (legacy, needitační akce)
+  spadnou zpět na dosavadní `JSON.stringify`. Filtry (aktér = `<select>` nad rosterem přes `fetchUsers`, akce, typ+UID
   entity, rozsah dat `od`/`do`) v **draft** formuláři → **Filtrovat** je zapíše do URL a resetuje
   stránku, **Zrušit filtry** vyčistí; datumy se v `viewToParams` rozšíří na RFC 3339 hranice dne
   (UTC). Stránkování prev/next nad `offset`/`next_offset` (limit 100) s počtem `od–do z total`;

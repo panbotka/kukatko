@@ -1865,6 +1865,13 @@
       "payload": "Details",
       "userAgent": "User agent"
     },
+    "changes": {
+      "title": "Changes",
+      "field": "Field",
+      "old": "Old",
+      "new": "New",
+      "empty": "—"
+    },
     "pagination": {
       "range": "Showing {{from}}–{{to}} of {{total}}",
       "prev": "Previous",

@@ -651,7 +651,9 @@ pravidla jsou v [`CLAUDE.md`](../CLAUDE.md). Nový nebo změněný endpoint zapi
   (`postgresql-client`, stejný balík jako pg_dump). Runbook: `docs/RESTORE.md`.
 - **Audit API (`/api/v1`, `internal/auditapi`, admin-only přes `RequireAdmin`):** read-only výpis
   durable audit trailu. `GET /audit` → `{entries,total,limit,offset,next_offset}` (entry =
-  `{id,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}`, newest-first)
+  `{id,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}`, newest-first;
+  u editačních akcí `details.changes` = `{"<pole>":{"old":…,"new":…}}` jen se změněnými poli — viz
+  `internal/audit` konvence; hromadná editace `photos.bulk` ji nemá)
   s filtry `?user=`/`?entity_type=`/`?entity_uid=`/`?action=`/`?since=`/`?until=` (RFC3339) a
   stránkováním `?limit=`(≤500)/`?offset=`; neplatný čas/číslo → 400. Navíc **filtry pro admin
   přehled rozhodnutí jednoho uživatele v review hře**: `?via=review` (jen review rozhodnutí —

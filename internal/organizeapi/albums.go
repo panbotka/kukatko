@@ -81,14 +81,31 @@ func (a *API) handleAlbumUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	entry := a.auditEntry(r, audit.ActionAlbumUpdate, "albums", uid, map[string]any{"title": in.Title})
-	album, err := a.albums.UpdateAlbumAudited(r.Context(), uid, in.toUpdate(existing.Type), entry)
+	upd := in.toUpdate(existing.Type)
+	details := map[string]any{"title": in.Title}
+	albumChanges(existing, upd).StampInto(details)
+	entry := a.auditEntry(r, audit.ActionAlbumUpdate, "albums", uid, details)
+	album, err := a.albums.UpdateAlbumAudited(r.Context(), uid, upd, entry)
 	if err != nil {
 		status, msg := albumStatus(err)
 		writeError(w, status, msg)
 		return
 	}
 	writeJSON(w, http.StatusOK, album)
+}
+
+// albumChanges builds the old→new diff for an album edit, comparing the album
+// before the edit (before) against the update the store will apply (after) and
+// recording only the user-editable fields whose value changed. The structural
+// type is not compared because it is not user-editable. The result is stamped
+// under the audit "changes" key (see internal/audit ChangeSet).
+func albumChanges(before organize.Album, after organize.AlbumUpdate) *audit.ChangeSet {
+	changes := audit.NewChangeSet()
+	changes.Add("title", before.Title, after.Title)
+	changes.Add("description", before.Description, after.Description)
+	changes.Add("cover_photo_uid", before.CoverPhotoUID, after.CoverPhotoUID)
+	changes.Add("private", before.Private, after.Private)
+	return changes
 }
 
 // handleAlbumDelete removes the album identified by the path UID, answering 204

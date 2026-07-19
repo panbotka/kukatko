@@ -21,7 +21,13 @@ import {
 } from '../lib/auditView'
 import { formatDateTime } from '../lib/format'
 import { useUrlState } from '../lib/urlState'
-import { type AuditListResponse, type AuditRecord, fetchAuditLog } from '../services/audit'
+import {
+  type AuditChange,
+  type AuditChanges,
+  type AuditListResponse,
+  type AuditRecord,
+  fetchAuditLog,
+} from '../services/audit'
 import { type AdminUser, fetchUsers } from '../services/users'
 
 /** The columns the table renders — kept in one place so the expanded row spans them. */
@@ -39,6 +45,26 @@ function isExpandable(record: AuditRecord): boolean {
     record.user_agent !== null ||
     (record.details !== null && Object.keys(record.details).length > 0)
   )
+}
+
+/**
+ * Narrows an entry's `details.changes` to a well-formed old→new map, or null when
+ * it is absent or malformed (legacy rows, non-edit actions). A value counts only
+ * when it is an object carrying both `old` and `new`, so a stray `changes` key of
+ * another shape safely falls back to the raw-JSON rendering.
+ */
+function readChanges(details: Record<string, unknown> | null): AuditChanges | null {
+  const raw = details?.changes
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+  const out: AuditChanges = {}
+  for (const [field, value] of Object.entries(raw)) {
+    if (value !== null && typeof value === 'object' && 'old' in value && 'new' in value) {
+      out[field] = value as AuditChange
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null
 }
 
 /**
@@ -377,6 +403,7 @@ function AuditEntryRow({ record, users, locale, expanded, onToggle }: AuditEntry
   const { t } = useTranslation()
   const expandable = isExpandable(record)
   const detailsId = `audit-details-${String(record.id)}`
+  const changes = readChanges(record.details)
   return (
     <>
       <tr>
@@ -413,9 +440,15 @@ function AuditEntryRow({ record, users, locale, expanded, onToggle }: AuditEntry
             <dl className="row mb-0 small">
               {record.details !== null && Object.keys(record.details).length > 0 && (
                 <>
-                  <dt className="col-sm-2">{t('audit.details.payload')}</dt>
+                  <dt className="col-sm-2">
+                    {changes ? t('audit.changes.title') : t('audit.details.payload')}
+                  </dt>
                   <dd className="col-sm-10 mb-2">
-                    <pre className="mb-0">{JSON.stringify(record.details, null, 2)}</pre>
+                    {changes ? (
+                      <ChangesTable changes={changes} />
+                    ) : (
+                      <pre className="mb-0">{JSON.stringify(record.details, null, 2)}</pre>
+                    )}
                   </dd>
                 </>
               )}
@@ -431,4 +464,60 @@ function AuditEntryRow({ record, users, locale, expanded, onToggle }: AuditEntry
       )}
     </>
   )
+}
+
+/**
+ * Renders an edit's `details.changes` map as a compact old → new table (field,
+ * old value, new value), one row per changed field, sorted by field name so the
+ * order is stable. Used in place of the raw-JSON dump for edit actions.
+ */
+function ChangesTable({ changes }: { changes: AuditChanges }) {
+  const { t } = useTranslation()
+  const rows = Object.entries(changes).sort(([a], [b]) => a.localeCompare(b))
+  return (
+    <Table size="sm" bordered className="mb-0 align-middle" data-testid="audit-changes">
+      <thead>
+        <tr>
+          <th>{t('audit.changes.field')}</th>
+          <th>{t('audit.changes.old')}</th>
+          <th>{t('audit.changes.new')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(([field, change]) => (
+          <tr key={field}>
+            <td className="text-break">
+              <code>{field}</code>
+            </td>
+            <td className="text-break">
+              <ChangeValue value={change.old} />
+            </td>
+            <td className="text-break">
+              <ChangeValue value={change.new} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/**
+ * Renders one side of a change. A null/undefined/empty-string value (a cleared
+ * field) shows a muted placeholder; an object is JSON-stringified; everything
+ * else renders as its string form.
+ */
+function ChangeValue({ value }: { value: unknown }) {
+  const { t } = useTranslation()
+  if (value === null || value === undefined || value === '') {
+    return <span className="text-secondary">{t('audit.changes.empty')}</span>
+  }
+  if (typeof value === 'string') {
+    return <>{value}</>
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return <>{String(value)}</>
+  }
+  // Objects, arrays and any exotic value render as compact JSON.
+  return <code>{JSON.stringify(value)}</code>
 }
