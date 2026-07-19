@@ -308,20 +308,22 @@ describe('SearchPage bulk edit', () => {
     renderSearch('/search?q=beach', false)
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
   })
 
-  it('disables the bulk-edit trigger until a photo is picked', async () => {
+  it('offers a select checkmark on every result, with no selection mode to enter', async () => {
     searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()
     renderSearch('/search?q=beach')
 
-    await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
+    // No "Select" step: the result is a link that already carries its checkmark,
+    // exactly as on the library.
+    expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
 
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
   })
 
@@ -335,8 +337,7 @@ describe('SearchPage bulk edit', () => {
     renderSearch('/search?q=beach')
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'b.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
 
     const searchesBefore = searchMock.mock.calls.length
     await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
@@ -349,20 +350,20 @@ describe('SearchPage bulk edit', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Done' }))
 
-    expect(screen.getByText('0 selected')).toBeInTheDocument()
+    // The selection is cleared, so the bar steps back out of the way.
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(searchMock.mock.calls.length).toBeGreaterThan(searchesBefore)
     })
   })
 
-  it('leaves selection mode when the query changes, so no result of the old search stays picked', async () => {
+  it('drops the selection when the query changes, so no result of the old search stays picked', async () => {
     searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()
     renderSearch('/search?q=beach')
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('Mode'), 'fulltext')
@@ -370,6 +371,7 @@ describe('SearchPage bulk edit', () => {
     await waitFor(() => {
       expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
     })
-    expect(await screen.findByRole('button', { name: 'Select' })).toBeInTheDocument()
+    // The search's own actions are handed back the header.
+    expect(await screen.findByRole('button', { name: 'Save view' })).toBeInTheDocument()
   })
 })

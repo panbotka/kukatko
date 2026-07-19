@@ -171,7 +171,7 @@ describe('SubjectPage', () => {
 
     await screen.findByRole('heading', { name: 'Jana' })
     await screen.findByRole('link', { name: 'a.jpg' })
-    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
   })
 
@@ -191,16 +191,18 @@ describe('SubjectPage', () => {
     expect(screen.queryByRole('button', { name: /Find suggestions/i })).not.toBeInTheDocument()
   })
 
-  it('disables the bulk-edit trigger until a photo is picked', async () => {
+  it('offers a select checkmark on every tile, with no selection mode to enter', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()
     renderPage()
 
-    await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
+    // No "Select" step: the gallery tile is a link that already carries its
+    // checkmark, exactly as on the library.
+    expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
 
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
   })
 
@@ -214,8 +216,7 @@ describe('SubjectPage', () => {
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'b.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
 
     const fetchesBefore = fetchPhotosMock.mock.calls.length
     await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
@@ -228,7 +229,8 @@ describe('SubjectPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Done' }))
 
-    expect(screen.getByText('0 selected')).toBeInTheDocument()
+    // The selection is cleared, so the bar steps back out of the way.
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
     })
@@ -242,8 +244,7 @@ describe('SubjectPage', () => {
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
     await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
@@ -257,14 +258,13 @@ describe('SubjectPage', () => {
     expect(screen.getByText('1 selected')).toBeInTheDocument()
   })
 
-  it('leaves selection mode when another person is opened', async () => {
+  it('drops the selection when another person is opened', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: 'next person' }))
@@ -276,7 +276,7 @@ describe('SubjectPage', () => {
     expect(fetchSubjectMock).toHaveBeenLastCalledWith('sj_2', expect.anything())
   })
 
-  it('the set-cover action keeps working, and steps aside in selection mode', async () => {
+  it('the set-cover action keeps working, and steps aside once a photo is picked', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     updateSubjectMock.mockResolvedValue({ ...subject(), cover_photo_uid: 'a' })
     const user = userEvent.setup()
@@ -295,8 +295,9 @@ describe('SubjectPage', () => {
     })
     expect(await screen.findByRole('button', { name: 'Cover' })).toBeInTheDocument()
 
-    // In selection mode the tile is one selection target, so the overlay is gone.
-    await user.click(screen.getByRole('button', { name: 'Select' }))
+    // Once something is picked the tile is a selection target, so the overlay
+    // steps aside — but only then, not merely because the tile is selectable.
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.queryByRole('button', { name: 'Cover' })).not.toBeInTheDocument()
   })
 

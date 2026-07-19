@@ -10,7 +10,6 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
-import { SelectionStart } from '../components/organize/SelectionStart'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -36,8 +35,9 @@ const LABELS_PATH = '/labels'
  * urlState), so the scoped view round-trips through the URL exactly like the main
  * library and Back/Forward restore it.
  *
- * Editors can enter selection mode and bulk-edit the picked photos — dropping
- * this very label among other things — after which the grid refetches, since the
+ * Editors can multi-select tiles straight away — the corner checkmark is offered
+ * from the outset, as on the library — and bulk-edit the picked photos, dropping
+ * this very label among other things, after which the grid refetches, since the
  * edit may have taken photos out of the label.
  */
 export function LabelDetailPage() {
@@ -61,8 +61,11 @@ export function LabelDetailPage() {
     { reloadKey },
   )
 
-  const bulk = useBulkEdit({ onEdited: reload })
+  // Hover-select: a writer's tiles carry the corner checkmark from the outset,
+  // so the toolbar below keys off what is picked rather than an explicit mode.
+  const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
+  const selecting = selection.count > 0
 
   useEffect(() => {
     const controller = new AbortController()
@@ -101,15 +104,16 @@ export function LabelDetailPage() {
           <BackLink to={LABELS_PATH} label={t('labelDetail.back')} />
           <h1 className="kk-page-title mb-0">{title}</h1>
         </div>
-        {!selection.active && hasPhotos && (
+        {/* The label's own actions step aside while a selection is being made:
+            the selection bar below is then the page's only toolbar. */}
+        {!selecting && hasPhotos && (
           <div className="d-flex gap-1 flex-wrap">
             <SlideshowStart scope={scope} view={view} count={total} />
-            <SelectionStart bulk={bulk} />
           </div>
         )}
       </div>
 
-      {selection.active && (
+      {selecting && (
         <SelectionBar count={selection.count} onCancel={selection.disable}>
           <BulkEditControl bulk={bulk} />
         </SelectionBar>

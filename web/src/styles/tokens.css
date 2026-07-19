@@ -623,9 +623,13 @@
 }
 
 /* Reveal the control on hover/focus of the tile, and keep every control shown
-   once the grid holds a selection, so the reader can see and undo every pick. */
+   once the grid holds a selection, so the reader can see and undo every pick.
+   The subject gallery builds its own tile (`.kk-subject-tile`, with the cover
+   disc) instead of `.kk-tile`, but offers the very same selection control. */
 .kk-tile:hover .kk-tile__check,
 .kk-tile:focus-within .kk-tile__check,
+.kk-subject-tile:hover .kk-tile__check,
+.kk-subject-tile:focus-within .kk-tile__check,
 .kk-tile--checks .kk-tile__check {
   opacity: 1;
 }

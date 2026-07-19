@@ -216,7 +216,7 @@ describe('AlbumDetailPage', () => {
     await screen.findByRole('heading', { name: 'Holidays' })
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
   })
 
@@ -258,22 +258,22 @@ describe('AlbumDetailPage', () => {
     expect(deleteAlbumMock).not.toHaveBeenCalled()
   })
 
-  it('offers bulk edit alongside the album actions in selection mode', async () => {
+  it('offers a select checkmark on every tile, with no selection mode to enter', async () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()
     renderPage()
 
-    await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
+    // No "Select" step: the tile is a link that already carries its checkmark,
+    // exactly as on the library, and the selection bar is still out of the way.
+    expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
 
-    // Bulk edit is added to the album's own actions, it does not replace them.
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+
+    // Picking raises the selection bar with the album's selection actions.
     expect(screen.getByRole('button', { name: 'Set as cover' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove from album' })).toBeInTheDocument()
-    // Nothing is selected yet, so nothing can be applied to anything.
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
-
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
     expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
   })
 
@@ -290,9 +290,8 @@ describe('AlbumDetailPage', () => {
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
-    await user.click(screen.getByRole('button', { name: 'c.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select c.jpg' }))
 
     const fetchesBefore = fetchPhotosMock.mock.calls.length
     await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
@@ -306,7 +305,8 @@ describe('AlbumDetailPage', () => {
     })
 
     await user.click(await screen.findByRole('button', { name: 'Done' }))
-    expect(screen.getByText('0 selected')).toBeInTheDocument()
+    // The selection is cleared, so the bar steps back out of the way.
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
     })
@@ -319,17 +319,17 @@ describe('AlbumDetailPage', () => {
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    await user.click(screen.getByRole('button', { name: 'a.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     await user.click(screen.getByRole('button', { name: 'Remove from album' }))
 
     await waitFor(() => {
       expect(removeMock).toHaveBeenCalledWith('al_1', ['a'])
     })
-    // Selection mode is left, so no removed UID lingers in the selection.
+    // The selection is dropped, so no removed UID lingers in it — and with it
+    // the bar, handing the header back to the album's own actions.
     await waitFor(() => {
       expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
     })
-    expect(screen.getByRole('button', { name: 'Select' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
   })
 })

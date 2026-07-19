@@ -194,8 +194,24 @@ describe('LabelDetailPage', () => {
     renderPage('/labels/lb_1', false)
 
     await screen.findByRole('heading', { name: 'Sunset' })
-    expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
+  })
+
+  it('offers a select checkmark on every tile, with no selection mode to enter', async () => {
+    fetchLabelMock.mockResolvedValue(label())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    // No "Select" step: the tile is a link that already carries its checkmark,
+    // exactly as on the library.
+    expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
   })
 
   it('bulk-edits exactly the selected photos, then reloads the grid', async () => {
@@ -209,10 +225,7 @@ describe('LabelDetailPage', () => {
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeDisabled()
-
-    await user.click(screen.getByRole('button', { name: 'b.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
     const fetchesBefore = fetchPhotosMock.mock.calls.length
     await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
     await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
@@ -223,7 +236,8 @@ describe('LabelDetailPage', () => {
     })
 
     await user.click(await screen.findByRole('button', { name: 'Done' }))
-    expect(screen.getByText('0 selected')).toBeInTheDocument()
+    // The selection is cleared, so the bar steps back out of the way.
+    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
     })

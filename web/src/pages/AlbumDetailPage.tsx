@@ -17,7 +17,6 @@ import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { DownloadZipButton } from '../components/organize/DownloadZipButton'
 import { SelectionBar } from '../components/organize/SelectionBar'
-import { SelectionStart } from '../components/organize/SelectionStart'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -45,7 +44,7 @@ const ALBUMS_PATH = '/albums'
 
 /**
  * An album's detail page: a header (title, count, private badge, back link) with
- * editor controls (rename/delete via modal, select), above the photo grid
+ * editor controls (rename/delete via modal), above the photo grid
  * scoped to the album. An album is always presented chronologically (oldest
  * capture first, upload time standing in for undated photos), so the page
  * renders no sort selector; filters live in the URL (shared {@link FilterBar} +
@@ -53,7 +52,9 @@ const ALBUMS_PATH = '/albums'
  * cover or bulk-edit their metadata, and rename or delete the album. Mutation
  * controls are hidden from viewers.
  *
- * The page is either browsing or selecting (`selection.active`).
+ * The page is either browsing or selecting: a writer's tiles offer the corner
+ * checkmark from the outset (hover-select, as on the library), and picking the
+ * first photo swaps the album's own actions for the selection toolbar.
  */
 export function AlbumDetailPage() {
   const { t } = useTranslation()
@@ -81,8 +82,11 @@ export function AlbumDetailPage() {
     { reloadKey },
   )
 
-  const bulk = useBulkEdit({ onEdited: reload })
+  // Hover-select: a writer's tiles carry the corner checkmark from the outset,
+  // so the toolbar below keys off what is picked rather than an explicit mode.
+  const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
+  const selecting = selection.count > 0
 
   useEffect(() => {
     const controller = new AbortController()
@@ -177,7 +181,7 @@ export function AlbumDetailPage() {
           <h1 className="kk-page-title mb-0">{album?.title ?? ''}</h1>
           {album?.private && <Badge bg="secondary">{t('albums.private')}</Badge>}
         </div>
-        {album && !selection.active && (
+        {album && !selecting && (
           <div className="d-flex gap-1 flex-wrap">
             {photos.length > 0 && <SlideshowStart scope={scope} view={view} count={total} />}
             {total > 0 && (
@@ -194,7 +198,6 @@ export function AlbumDetailPage() {
                 >
                   {t('albumDetail.edit')}
                 </Button>
-                <SelectionStart bulk={bulk} />
                 <Button
                   variant="outline-danger"
                   size="sm"
@@ -212,7 +215,7 @@ export function AlbumDetailPage() {
 
       {actionError && <Alert variant="danger">{t('albumDetail.actionError')}</Alert>}
 
-      {selection.active && (
+      {selecting && (
         <SelectionBar count={selection.count} onCancel={leaveMode}>
           <Button
             variant="outline-secondary"
