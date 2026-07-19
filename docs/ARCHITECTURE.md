@@ -79,20 +79,20 @@ photo-sorter is hard to use.
 ```
 ┌──────────────────────────── Raspberry Pi (ARM64) ────────────────────────────┐
 │                                                                                │
-│   kukatko (jeden Go binár)                                                      │
+│   kukatko (a single Go binary)                                                  │
 │   ├─ HTTP server (chi) + embedded SPA (React/Bootstrap)                         │
 │   ├─ REST API /api/v1/...                                                       │
-│   ├─ Worker (job runner) ── čte persistentní frontu z Postgresu                │
+│   ├─ Worker (job runner) ── reads the persistent queue from Postgres           │
 │   ├─ Thumbnailer (pure-Go + shell-out heif-convert/exiftool)                   │
-│   ├─ Scheduler (záloha S3, čištění koše, expirace sessions)                    │
-│   └─ Mapy.com proxy (skrývá API klíč)                                          │
+│   ├─ Scheduler (S3 backup, trash cleanup, session expiry)                      │
+│   └─ Mapy.com proxy (hides the API key)                                        │
 │            │                          │                         │              │
 │   ┌────────▼─────────┐      ┌─────────▼─────────┐     ┌─────────▼──────────┐  │
-│   │ Disk: originály   │      │ shared-postgres   │     │ (lokální cache      │  │
-│   │ + cache náhledů   │      │ + pgvector (HNSW) │     │  náhledů na disku)  │  │
+│   │ Disk: originals   │      │ shared-postgres   │     │ (local cache        │  │
+│   │ + thumbnail cache │      │ + pgvector (HNSW) │     │  thumbnails on disk)│  │
 │   └───────────────────┘      └───────────────────┘     └────────────────────┘  │
 └───────────────────────────────────┬────────────────────────────────────────────┘
-                                     │ Tailscale (HTTP), jen když je box zapnutý
+                                     │ Tailscale (HTTP), only when the box is powered on
                           ┌──────────▼───────────┐
                           │ box (x86, RTX GPU)    │
                           │ embeddings sidecar    │  /embed/image  (CLIP 768)
@@ -100,719 +100,719 @@ photo-sorter is hard to use.
                           │                       │  /embed/face   (InsightFace 512)
                           └───────────────────────┘
 
-       Import (read-only, paralelní provoz, jednorázově/inkrementálně):
+       Import (read-only, parallel operation, one-off/incremental):
        PhotoPrism (MariaDB, :2342)  ──API──▶  kukatko import
-       photo-sorter (Postgres)      ──přímé čtení DB──▶  kukatko migrace
+       photo-sorter (Postgres)      ──direct DB read──▶  kukatko migrate
 ```
 
-### 3.2 Komponenty (subsystémy)
+### 3.2 Components (subsystems)
 
-Každý subsystém má jeden účel, jasné rozhraní a jde testovat samostatně.
+Each subsystem has one purpose, a clear interface, and can be tested independently.
 
-| # | Subsystém | Odpovědnost |
+| # | Subsystem | Responsibility |
 |---|-----------|-------------|
-| S1 | **Storage** | Layout originálů + odvozenin na disku; hashování; integrita. |
-| S2 | **Ingest/upload** | Multiupload (vč. mobilu), dedup (SHA256 + pHash), EXIF/GPS, zápis fotky, zařazení jobů. |
-| S3 | **Thumbnailer** | Generování náhledů na Pi (pure-Go + shell-out pro HEIC/RAW). |
-| S4 | **Job queue** | Persistentní fronta v Postgresu; retry; přežije restart; graceful při offline boxu. |
-| S5 | **Embeddings client** | HTTP klient k sidecaru (image/text/face); detekce dostupnosti; backoff. |
-| S6 | **Search** | Fulltext (tsvector+unaccent) + sémantické (CLIP) hybrid; filtry/řazení; podobné fotky. |
-| S7 | **People** | Detekce/embedding obličejů, IoU matching markerů, subjekty, návrhy, auto-clustering, outliers. |
-| S8 | **Organization** | Alba, štítky, hromadná editace metadat, per-user oblíbené. |
-| S9 | **Maps** | mapy.com proxy (tile + reverse geocode), GeoJSON pro mapu, clustering na klientu. |
-| S10 | **Auth** | Uživatelé viewer/editor/admin/maintainer (žebříček), bcrypt, sliding sessions, rate-limit, audit. |
-| S11 | **Import (PhotoPrism)** | API import + stažení originálů + inkrementální re-import; mapování PP UID. |
-| S12 | **Migration (photo-sorter)** | Přímé čtení DB photo-sorteru; 1:1 přenos embeddingů/obličejů; mapování PS UID. |
-| S13 | **Backup** | S3-kompatibilní záloha originálů + `pg_dump`, plánovaná, v procesu. |
-| S14 | **Frontend (SPA)** | React/Bootstrap Superhero, i18n, mobil/tablet, back/history, slideshow, detail. |
-| S15 | **Config & ops** | YAML+env konfigurace, Prometheus metriky, audit log, CLI (Cobra). |
+| S1 | **Storage** | Layout of originals + derivatives on disk; hashing; integrity. |
+| S2 | **Ingest/upload** | Multi-upload (incl. mobile), dedup (SHA256 + pHash), EXIF/GPS, photo write, job enqueue. |
+| S3 | **Thumbnailer** | Thumbnail generation on the Pi (pure-Go + shell-out for HEIC/RAW). |
+| S4 | **Job queue** | Persistent queue in Postgres; retry; survives restart; graceful when the box is offline. |
+| S5 | **Embeddings client** | HTTP client for the sidecar (image/text/face); availability detection; backoff. |
+| S6 | **Search** | Full-text (tsvector+unaccent) + semantic (CLIP) hybrid; filters/sorting; similar photos. |
+| S7 | **People** | Face detection/embedding, IoU marker matching, subjects, suggestions, auto-clustering, outliers. |
+| S8 | **Organization** | Albums, labels, bulk metadata editing, per-user favorites. |
+| S9 | **Maps** | mapy.com proxy (tile + reverse geocode), GeoJSON for the map, client-side clustering. |
+| S10 | **Auth** | Users viewer/editor/admin/maintainer (ladder), bcrypt, sliding sessions, rate-limit, audit. |
+| S11 | **Import (PhotoPrism)** | API import + download of originals + incremental re-import; PP UID mapping. |
+| S12 | **Migration (photo-sorter)** | Direct read of the photo-sorter DB; 1:1 transfer of embeddings/faces; PS UID mapping. |
+| S13 | **Backup** | S3-compatible backup of originals + `pg_dump`, scheduled, in-process. |
+| S14 | **Frontend (SPA)** | React/Bootstrap Superhero, i18n, mobile/tablet, back/history, slideshow, detail. |
+| S15 | **Config & ops** | YAML+env configuration, Prometheus metrics, audit log, CLI (Cobra). |
 
 ---
 
 ## 4. Tech stack
 
-Volby vycházejí z photo-sorteru (osvědčené) a z rešerše ([§17](#17-reference)).
+The choices draw on photo-sorter (proven) and on research ([§17](#17-reference)).
 
 ### Backend
-- **Go**, jeden statický binár, **`CGO_ENABLED=0`** (jako photo-sorter — zachová jednoduchý
-  deploy, shell-out na CLI nástroje pro HEIC/RAW místo CGO knihoven).
-- HTTP router **chi/v5**; CLI **Cobra**; konfigurace **Viper** (YAML + env — photo-sorter má
-  jen env, Kukátko přidává YAML dle požadavku).
-- DB přístup: `pgx` (pool) + `pgvector-go`.
+- **Go**, a single static binary, **`CGO_ENABLED=0`** (like photo-sorter — keeps deployment
+  simple, shell-out to CLI tools for HEIC/RAW instead of CGO libraries).
+- HTTP router **chi/v5**; CLI **Cobra**; configuration **Viper** (YAML + env — photo-sorter has
+  only env, Kukátko adds YAML per the requirement).
+- DB access: `pgx` (pool) + `pgvector-go`.
 
-### Databáze
-- **PostgreSQL + pgvector.** Použít sdílený **`shared-postgres`** (vlastní DB + uživatel dle
-  konvence v CLAUDE.md, nepouštět vlastní kontejner). **Ověřit dostupnost extension `vector`**
-  v shared-postgresu — pokud chybí, je to první úkol M0 (`CREATE EXTENSION vector`).
-- **Vektory: `halfvec` (float16) + HNSW + `vector_cosine_ops`.** Half-precision půlí paměť
-  indexu při <1 % ztrátě recall na normalizovaných embeddinzích — zásadní na Pi.
-- Migrace: SQL soubory v `embed.FS`, auto-apply na startu v lexikografickém pořadí
-  (převzato z photo-sorteru).
+### Database
+- **PostgreSQL + pgvector.** Use the shared **`shared-postgres`** (own DB + user per the
+  convention in CLAUDE.md, don't launch a separate container). **Verify the `vector` extension is available**
+  in shared-postgres — if it's missing, that's the first M0 task (`CREATE EXTENSION vector`).
+- **Vectors: `halfvec` (float16) + HNSW + `vector_cosine_ops`.** Half-precision halves the index
+  memory at <1 % recall loss on normalized embeddings — crucial on the Pi.
+- Migrations: SQL files in `embed.FS`, auto-applied at startup in lexicographic order
+  (adopted from photo-sorter).
 
 ### Frontend
-- **React 19 + TypeScript + Vite**, embedováno do binárky přes `//go:embed all:dist/*`,
-  SPA fallback na `index.html` (jako photo-sorter).
-- **react-bootstrap + Bootswatch Superhero** téma (dark). Bohaté interakce (slideshow, crop,
-  infinite scroll) → React je oproti vanilla Bootstrapu nutný.
-- **i18next** (cz default, en). **Leaflet** + `Leaflet.markercluster` pro mapu.
-  `react-virtuoso` pro virtualizovaný grid.
+- **React 19 + TypeScript + Vite**, embedded into the binary via `//go:embed all:dist/*`,
+  SPA fallback to `index.html` (like photo-sorter).
+- **react-bootstrap + Bootswatch Superhero** theme (dark). Rich interactions (slideshow, crop,
+  infinite scroll) → React is necessary over vanilla Bootstrap.
+- **i18next** (cz default, en). **Leaflet** + `Leaflet.markercluster` for the map.
+  `react-virtuoso` for the virtualized grid.
 
-### Zpracování obrázků (na Pi, bez CGO)
+### Image processing (on the Pi, without CGO)
 - JPEG/PNG/WebP/**BMP/GIF/TIFF**: pure-Go (`disintegration/imaging` + `golang.org/x/image/{bmp,tiff}`
-  + stdlib `image/gif`), paralelně přes goroutines. EXIF orientace `imaging.AutoOrientation`;
-  animovaný GIF se náhleduje z prvního snímku.
-- **HEIC:** shell-out `heif-convert` (apt `libheif-examples`) → JPEG → resize v Go.
-- **RAW** (cr2/cr3/nef/nrw/arw/srf/dng/raf/orf/rw2/pef/srw/3fr/iiq/x3f/kdc/mrw/mef): vytáhnout
-  embedded JPEG preview (`exiftool -b -PreviewImage` / `dcraw -e`), ne plný demosaic. TIFF magic
-  neunese RAW — RAW přípona má přednost, protože RAW kontejnery jsou většinou TIFF-based.
+  + stdlib `image/gif`), in parallel via goroutines. EXIF orientation `imaging.AutoOrientation`;
+  an animated GIF is thumbnailed from its first frame.
+- **HEIC:** shell-out `heif-convert` (apt `libheif-examples`) → JPEG → resize in Go.
+- **RAW** (cr2/cr3/nef/nrw/arw/srf/dng/raf/orf/rw2/pef/srw/3fr/iiq/x3f/kdc/mrw/mef): extract
+  the embedded JPEG preview (`exiftool -b -PreviewImage` / `dcraw -e`), not a full demosaic. TIFF magic
+  can't carry RAW — the RAW extension takes precedence, because RAW containers are mostly TIFF-based.
 - EXIF metadata: `exiftool` (subprocess) + pure-Go fallback.
-- (Volitelně později: shell-out na `vipsthumbnail` pro velké soubory kvůli paměti — ~200 MB
-  vs GB díky shrink-on-load. Default je pure-Go.)
+- (Optionally later: shell-out to `vipsthumbnail` for large files for memory reasons — ~200 MB
+  vs GB thanks to shrink-on-load. The default is pure-Go.)
 
-### Inference sidecar (na boxu)
-- **Reuse existující služby na boxu.** Kukátko nestaví nový sidecar — volá **existující
-  embeddings službu běžící na boxu** (stejné modely jako photo-sorter → 1:1 kompatibilita).
-  Adresa je v konfiguraci (`embedding.url`); když je box offline, joby čekají ve frontě
-  (viz [§8](#8-asynchronni-joby--box-offline)). Kontrakt viz [§6.1](#61-kontrakt-sidecaru).
-- Modely (stejné jako photo-sorter): **CLIP ViT-L/14** (image+text, 768-dim),
-  **InsightFace `buffalo_l`** (ArcFace, 512-dim). Pozn.: pretrained packy jsou typicky
-  *non-commercial/research* — pro osobní použití OK.
+### Inference sidecar (on the box)
+- **Reuse the existing service on the box.** Kukátko doesn't build a new sidecar — it calls the **existing
+  embeddings service running on the box** (same models as photo-sorter → 1:1 compatibility).
+  The address is in the configuration (`embedding.url`); when the box is offline, jobs wait in the queue
+  (see [§8](#8-asynchronni-joby--box-offline)). For the contract see [§6.1](#61-kontrakt-sidecaru).
+- Models (same as photo-sorter): **CLIP ViT-L/14** (image+text, 768-dim),
+  **InsightFace `buffalo_l`** (ArcFace, 512-dim). Note: pretrained packs are typically
+  *non-commercial/research* — OK for personal use.
 
-### Úložiště originálů (`storage.backend`)
-- **Dva backendy za jedním rozhraním `storage.Storage`**, přepínané jediným konfiguračním
-  klíčem `storage.backend`; nad rozhraním žádný balíček rozdíl nepozná.
-  - **`fs`** (default) — originály na lokálním disku, publikace atomickým hard-linkem.
-    Existující nasazení i celá testovací sada tím zůstávají nedotčené.
-  - **`r2`** — **privátní** Cloudflare R2 bucket (S3-kompatibilní, klient je **stejné
-    `minio-go/v7`** jako u záloh; žádná nová závislost). Pro VPS, jehož disk knihovnu
-    (~120 GB) neunese.
-- **Object key = `photos.file_path` / `photo_files.file_path` doslova.** Ta hodnota už v Postgresu
-  je a neodvozuje se; klíč tedy *je* ona → **žádný nový sloupec a žádná migrace klíčů**. Náhledy si
-  nechávají svůj hash-derived cache layout, který se rovnou stává klíčem. Klíč **není tajemství**:
-  request bez platného podpisu odmítne Worker dřív, než se k objektu dostane.
-- **Podepsané URL:** `https://<media_base_url>/<key>?exp=<unix>&sig=<hex HMAC-SHA256>`, podpis kryje
-  klíč i expiraci. Ověřují se **dvě tajemství naráz** (současné + předchozí), takže rotace nemá okno
-  rozbitých URL. Default TTL 1 h; každá API odpověď nese čerstvě podepsané URL.
-- **Worker není součástí téhle repo.** Bucket, zdroják Workeru, jeho bindingy i hostname
-  (`kukatko-media.panbotka.cz`) žijí v **infra repu** (`/home/pi/projects/infra`, root modul
-  `cloudflare-r2/`) a nasazuje je tam Terraform. Kukátko URL **razí** (`internal/storage/sign.go`),
-  Worker je **ověřuje** — dvě implementace ve dvou repech a dvou jazycích, jejichž rozejití by
-  žádný build nezachytil (jeden bajt navíc v podepisované zprávě = 403 na každou fotku).
-- **Kontrakt drží golden vektory:** `internal/storage/testdata/url_signature_vectors.json` (secret,
-  klíč, expirace → očekávaný podpis; včetně předchozího tajemství a záměrně špatného podpisu).
-  Testuje se proti nim **obojí** — Go signer i Worker v infra repu. Změna algoritmu = regenerace
-  souboru, což změnu zviditelní v review a vynutí souběžnou úpravu Workeru.
-- **Hard-link nemá v object storage ekvivalent a není potřeba:** `PutObject` je atomický a
-  katalogový dedup drží unique constraint na `photos.file_hash`. Uploady i stahování streamují —
-  soubor nikdy nedrží celý v RAM; `r2` je stageuje přes `storage.temp_path`, protože klíč závisí na
-  obsahu (bez SHA256 nelze odlišit re-upload od stejnojmenného jiného souboru) a protože
-  `Materialize` musí externím nástrojům podat **reálný lokální soubor**. Temp soubor se maže vždy,
-  i na error path.
-- Detaily (metadata `x-amz-meta-sha256`, konfigurační klíče, rotace tajemství) v
-  [`docs/PACKAGES.md`](PACKAGES.md) a [`docs/OPERATIONS.md`](OPERATIONS.md); rozhodnutí a cenové
-  srovnání proti DO Spaces v `docs/superpowers/specs/2026-07-09-s3-storage-design.md`.
+### Storage of originals (`storage.backend`)
+- **Two backends behind one `storage.Storage` interface**, switched by a single configuration
+  key `storage.backend`; above the interface no package notices the difference.
+  - **`fs`** (default) — originals on the local disk, published via an atomic hard-link.
+    Existing deployments and the whole test suite stay untouched by it.
+  - **`r2`** — a **private** Cloudflare R2 bucket (S3-compatible, the client is the **same
+    `minio-go/v7`** as for backups; no new dependency). For a VPS whose disk can't hold the
+    library (~120 GB).
+- **Object key = `photos.file_path` / `photo_files.file_path` verbatim.** That value is already in Postgres
+  and is not derived; the key therefore *is* it → **no new column and no key migration**. Thumbnails
+  keep their hash-derived cache layout, which becomes the key directly. The key is **not a secret**:
+  a request without a valid signature is rejected by the Worker before it ever reaches the object.
+- **Signed URL:** `https://<media_base_url>/<key>?exp=<unix>&sig=<hex HMAC-SHA256>`, the signature covers
+  both the key and the expiry. **Two secrets are verified at once** (current + previous), so rotation has no window
+  of broken URLs. Default TTL 1 h; every API response carries a freshly signed URL.
+- **The Worker is not part of this repo.** The bucket, the Worker source, its bindings and hostname
+  (`kukatko-media.panbotka.cz`) live in the **infra repo** (`/home/pi/projects/infra`, root module
+  `cloudflare-r2/`) and Terraform deploys them there. Kukátko **stamps** the URL (`internal/storage/sign.go`),
+  the Worker **verifies** it — two implementations in two repos and two languages, whose divergence
+  no build would catch (one extra byte in the signed message = 403 on every photo).
+- **The contract is held by golden vectors:** `internal/storage/testdata/url_signature_vectors.json` (secret,
+  key, expiry → expected signature; including the previous secret and a deliberately wrong signature).
+  **Both** are tested against them — the Go signer and the Worker in the infra repo. Changing the algorithm = regenerating
+  the file, which makes the change visible in review and forces a simultaneous update of the Worker.
+- **A hard-link has no equivalent in object storage and isn't needed:** `PutObject` is atomic and
+  catalog dedup is held by the unique constraint on `photos.file_hash`. Uploads and downloads stream —
+  a file is never held entirely in RAM; `r2` stages them via `storage.temp_path`, because the key depends on
+  the content (without SHA256 a re-upload can't be told apart from a different same-named file) and because
+  `Materialize` must hand external tools a **real local file**. The temp file is always deleted,
+  even on the error path.
+- Details (`x-amz-meta-sha256` metadata, configuration keys, secret rotation) in
+  [`docs/PACKAGES.md`](PACKAGES.md) and [`docs/OPERATIONS.md`](OPERATIONS.md); the decision and a price
+  comparison against DO Spaces in `docs/superpowers/specs/2026-07-09-s3-storage-design.md`.
 
-### Zálohování
-- **`minio-go/v7`** (generický S3 endpoint, path-style, stream `objectSize=-1`).
+### Backup
+- **`minio-go/v7`** (generic S3 endpoint, path-style, stream `objectSize=-1`).
 
 ---
 
-## 5. Datový model
+## 5. Data model
 
-Schéma navazuje na photo-sorter (kompatibilita pro migraci) s úpravami pro Kukátko.
-UID = `VARCHAR(32)`, generované aplikací (prefix + náhodný suffix). `file_hash` = SHA256 hex.
-Originály v layoutu `YYYY/MM/<filename>` — na disku cesta pod rootem, v R2 rovnou object key.
+The schema follows on from photo-sorter (compatibility for migration) with changes for Kukátko.
+UID = `VARCHAR(32)`, generated by the application (prefix + random suffix). `file_hash` = SHA256 hex.
+Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, in R2 the object key directly.
 
-### 5.1 Klíčové tabulky (převzaté z photo-sorteru, upravené)
+### 5.1 Key tables (adopted from photo-sorter, modified)
 
 - **`photos`** — `uid PK`, `file_hash UNIQUE` (SHA256), `file_path`, `file_name/size/mime`,
   `file_width/height/orientation`, `taken_at` + `taken_at_source`, `title/description/notes`,
-  `ai_note` (volný text z externí AI klasifikace, `NOT NULL DEFAULT ''`, editovatelný, ve fulltextu),
+  `ai_note` (free text from external AI classification, `NOT NULL DEFAULT ''`, editable, in full-text),
   `lat/lng/altitude`, `camera_make/model`, `lens_model`, `iso/aperture/exposure/focal_length`,
-  `exif JSONB`, `private` (**legacy** — píše ho už jen import z PhotoPrismu/photo-sorteru,
-  aplikace ho nefiltruje ani needituje), `archived_at`, `uploaded_by`, časy.
-  - **IPTC/XMP + technická metadata souboru** (migrace `0027_photos_iptc_metadata.sql`, všechny
-    `NOT NULL DEFAULT ''`, resp. `false`): **editovatelné** `subject` (IPTC headline — o čem fotka
-    je; ve fulltextu váha B), `keywords` (IPTC klíčová slova **verbatim**, comma-separated dle tvaru
-    PhotoPrismu; ve fulltextu váha C — **nejsou to labely**, `internal/organize` zůstává beze změny),
-    `artist`, `copyright`, `license`, `scan` (`BOOLEAN` — sken papírové fotky, ne snímek fotoaparátem);
-    **strojově odvozené** (uloží se a servírují, ale needitují) `software` (firmware/Lightroom/skener),
-    `color_profile` (ICC), `image_codec` (komprese **stillu**: jpeg/heic/avif — `video_codec`/
-    `audio_codec` jsou samostatné), `camera_serial`, `original_name` (jméno souboru před importem;
-    `file_name` je jméno ve storage layoutu), `projection` (`equirectangular` u panoramat).
-    Plnění z EXIF a mapování z PhotoPrism importu jsou samostatné úkoly — stávající řádky mají
-    defaulty.
-  - **Přibližné („cca") datum** (migrace `0029_photos_taken_at_estimate.sql`): `taken_at_estimated`
-    (`BOOLEAN NOT NULL DEFAULT false` — datum je **odhad**, ne fakt) + `taken_at_note`
-    (`TEXT NOT NULL DEFAULT ''` — volný text vlastními slovy: „kolem roku 1950", „za války").
-    Pro naskenované a zděděné fotky, kde přesné datum nikdo nezná. `taken_at` **zůstává jediná
-    kotva** pro řazení, timeline, grouping i datumové filtry — příznak je jen prezentace a
-    pravdivost (UI značí datum `cca`/`c.`), **není to druhá datumová osa** a nemění žádné pořadí
-    (proto ani nový index). `taken_at` NULL + příznak `true` je povolený stav: fotka se všude chová
-    jako každá jiná bez data a význam nese poznámka. Poznámka žije jen s příznakem — shodí-li se
-    příznak, `internal/photoapi` poznámku maže (nikdy nezůstane u data prezentovaného jako fakt).
-    Do fulltextu `photos.fts` **nepadá** (je to poznámka k datování, ne titulek).
-  - **Původ polohy** (migrace `0033_photos_location_source.sql`): `location_source`
-    (`TEXT NOT NULL DEFAULT ''`, slovník zrcadlí `taken_at_source` — `exif` / `manual` / `estimate` /
-    prázdno), plus parciální index `idx_photos_location_estimate_candidates ON photos(taken_at) WHERE
-    lat IS NULL AND lng IS NULL AND location_source = ''` pro sken kandidátů odhadovače (parciální,
-    takže indexuje jen zmenšující se backlog, ne celou tabulku).
-    Existuje, protože fotka bez GPS se dá **odhadnout** z fotek pořízených blízko v čase
-    (`internal/geoestimate`), a `lat/lng` samy o sobě nedokážou říct, jestli je souřadnice změřená
-    nebo domyšlená. **Pravidlo poctivosti: špatná poloha je horší než žádná** — nejen že vypadá blbě
-    na detailu, ale tiše otráví mapu, hierarchii míst i každé `near:` hledání nad nimi, a tváří se
-    přitom stejně důvěryhodně jako změřená souřadnice. Proto: odhad se zapisuje **jen** na fotku, co
-    polohu vůbec nemá (EXIF ani uživatelovu polohu nemůže přepsat **z definice** kandidátské množiny),
-    vždy označený `estimate`, a UI ho **označuje** (badge + věta na detailu, jiný **tvar** špendlíku na
-    mapě) — neoznačený odhad je lež, kterou appka uživateli říká.
-    `manual` **bez souřadnic není spor, ale náhrobek**: zaznamenává rozhodnutí „tahle fotka polohu
-    nemá" (uživatel odhad zahodil, nebo smazal EXIF polohu), a je to jediné, co brání nočnímu backfillu
-    vracet stejný tip pořád dokola. Proto smazání polohy — na rozdíl od smazání `taken_at`, které vrací
-    `taken_at_source` na `unknown` — původ **nevrací** na prázdno. Prázdno = „nevíme" a je vyhrazené
-    pro řádky, o kterých nikdo nic nerozhodl; legacy řádky se schválně **nebackfillovaly** na `exif`
-    (migrace nedokáže rozlišit souřadnici ze souboru od té, co kdysi někdo naťukal, a napsat `exif`
-    přes všechny by byla sebejistá lež přesně v tom sloupci, jehož jediná práce je být poctivý).
-  - **Stacky (skupiny souborů jednoho snímku)** (migrace `0030_photo_stacks.sql`): dva sloupce —
-    `stack_uid VARCHAR(32)` (sdílené každým členem jednoho stacku, **NULL = fotka není ve stacku**)
-    a `stack_primary BOOLEAN NOT NULL DEFAULT false` (právě jeden `true` na stack — ten viditelný
-    člen). Omezení: CHECK `ck_photos_stack_primary_has_uid` (primary musí mít `stack_uid`),
-    parciální UNIQUE `idx_photos_stack_primary ON photos(stack_uid) WHERE stack_primary` (jeden
-    primary na stack) a parciální `idx_photos_stack_uid … WHERE stack_uid IS NOT NULL` (lookup členů).
-    **Stack seskupuje, nesluje.** Každý člen (RAW + jeho JPEG, exportovaná úprava, kopie/sekvenční
-    jméno) si drží **vlastní řádek** — vlastní rozměry, EXIF, embedding, obličeje i náhledy —, takže
-    (od)stackování je čistě **reverzibilní** bookkeeping (nastav / vymaž sloupec) a nikdy nic
-    neztratí. Ta reverzibilita je celý důvod, proč uživatel může nechat běžet automatickou detekci
-    nad celou knihovnou. **Nezjednodušovat na merge:** `internal/dupmerge` schválně slévá jeden řádek
-    do druhého u **skutečných duplicit** (poražený je nadbytečný) — členové stacku nadbyteční
-    **nejsou**, drží se schválně. `photo_files` (role original/sidecar/edited) je **jiný pojem** —
-    soubory **jednoho** řádku (still + motion klip live fotky); stack seskupuje celé řádky,
-    nezaměňovat. Live foto je už teď jeden řádek (still + MOV jako `photo_files`), a proto zůstalo
-    beze změny — stack model jen zobecňuje na úroveň řádků to, co `media_type='live'` dělá na úrovni
-    souborů. **Viditelnost:** nesekundární členové jsou všude skrytí predikátem
-    `(stack_uid IS NULL OR stack_primary)`, přidaným do sdílených `whereClauses`
-    (`internal/photos/store_list.go`, kryje `List`/`Count`/`Search`/`FilterUIDs`/`YearBuckets`/
-    `TimelineBuckets` → mřížka, oblíbené, hodnocení, mapový GeoJSON, globální i uložené hledání, každý
-    paginovaný total) i do ručních count dotazů (počty alb/štítků, počet markerů subjektu + jeho
-    galerie, place facet) a do `ListActivePhashes` (univerzum duplicit — RAW a jeho JPEG se tak nikdy
-    nenabídnou jako near-duplicita) i similar stripu. `ListParams.IncludeStackMembers` predikát zvedne
-    pro callery, co chtějí všechny členy (výpis variant jednoho stacku). Tyhle úpravy zároveň
-    **narovnaly počty**: počty alb/štítků/subjektů teď počítají `p.uid` přes join na `photos` s
-    predikátem „viditelná + nearchivovaná", takže count vždy sedí s mřížkou, kterou popisuje (dřív
-    zahrnoval i archivované). Detekci vede `internal/stacks` (synchronní, idempotentní, inkrementální
-    globální seskupení, spouští ho admin `POST /process/stacks`).
-  **Nové sloupce pro Kukátko:**
-  - `photoprism_uid VARCHAR(32)` — PhotoUID z PhotoPrismu (dedup + inkrement).
-  - `photoprism_file_hash VARCHAR(40)` — SHA1 souboru z PhotoPrismu (download mapping).
-  - `photosorter_uid VARCHAR(32)` — UID z photo-sorteru (migrace).
-  - **Video** (migrace `0004_video.sql`): `media_type IN (image|video|live)` (default `image`,
-    partial index pro „jen videa"), `duration_ms`, `video_codec`, `audio_codec`, `has_audio`,
-    `fps`. Naplněné u videí přes `internal/video.Probe` (ffprobe → exiftool fallback);
-    poster frame (`internal/video.ExtractPoster`, ffmpeg) jde do thumbnaileru/pHash i embed/face
-    jobů. Live foto = still jako primární image + motion klip jako další `photo_files` řádek.
-  - generovaný `fts tsvector` sloupec (GIN index) — viz [§6.2](#62-hledani).
-  - `favorite` se **přesouvá** do per-user tabulky (viz níže).
-- **`photo_files`** — originály + odvozeniny, `role IN (original|sidecar|edited)`, `is_primary`.
-- **`photo_phashes`** — `phash/dhash BIGINT` (near-duplicate detekce).
-- **`photo_edits`** — nedestruktivní úpravy (crop/rotation/brightness/contrast), 0..1 souřadnice.
+  `exif JSONB`, `private` (**legacy** — only the PhotoPrism/photo-sorter import still writes it,
+  the application neither filters nor edits it), `archived_at`, `uploaded_by`, timestamps.
+  - **IPTC/XMP + technical file metadata** (migration `0027_photos_iptc_metadata.sql`, all
+    `NOT NULL DEFAULT ''`, or `false` respectively): **editable** `subject` (IPTC headline — what the photo
+    is about; full-text weight B), `keywords` (IPTC keywords **verbatim**, comma-separated per PhotoPrism's
+    format; full-text weight C — **these are not labels**, `internal/organize` stays unchanged),
+    `artist`, `copyright`, `license`, `scan` (`BOOLEAN` — a scan of a paper photo, not a camera shot);
+    **machine-derived** (stored and served, but not edited) `software` (firmware/Lightroom/scanner),
+    `color_profile` (ICC), `image_codec` (**still** compression: jpeg/heic/avif — `video_codec`/
+    `audio_codec` are separate), `camera_serial`, `original_name` (the file name before import;
+    `file_name` is the name in the storage layout), `projection` (`equirectangular` for panoramas).
+    Populating from EXIF and mapping from the PhotoPrism import are separate tasks — existing rows have
+    defaults.
+  - **Approximate ("circa") date** (migration `0029_photos_taken_at_estimate.sql`): `taken_at_estimated`
+    (`BOOLEAN NOT NULL DEFAULT false` — the date is an **estimate**, not a fact) + `taken_at_note`
+    (`TEXT NOT NULL DEFAULT ''` — free text in one's own words: "around 1950", "during the war").
+    For scanned and inherited photos where nobody knows the exact date. `taken_at` **remains the only
+    anchor** for sorting, the timeline, grouping and date filters — the flag is only presentation and
+    truthfulness (the UI marks the date `cca`/`c.`), **it is not a second date axis** and changes no ordering
+    (hence no new index). `taken_at` NULL + the flag `true` is an allowed state: the photo behaves everywhere
+    like any other one without a date and the meaning is carried by the note. The note lives only with the flag — if the
+    flag is cleared, `internal/photoapi` deletes the note (it never stays with a date presented as a fact).
+    It does **not** fall into the `photos.fts` full-text (it's a dating note, not a title).
+  - **Location source** (migration `0033_photos_location_source.sql`): `location_source`
+    (`TEXT NOT NULL DEFAULT ''`, the vocabulary mirrors `taken_at_source` — `exif` / `manual` / `estimate` /
+    empty), plus a partial index `idx_photos_location_estimate_candidates ON photos(taken_at) WHERE
+    lat IS NULL AND lng IS NULL AND location_source = ''` for scanning estimator candidates (partial,
+    so it indexes only the shrinking backlog, not the whole table).
+    It exists because a photo without GPS can be **estimated** from photos taken close in time
+    (`internal/geoestimate`), and `lat/lng` on their own can't tell whether a coordinate was measured
+    or guessed. **The honesty rule: a wrong location is worse than none** — not only does it look bad
+    on the detail view, it quietly poisons the map, the place hierarchy and every `near:` search over them, and looks
+    just as trustworthy as a measured coordinate. Hence: an estimate is written **only** onto a photo that
+    has no location at all (it can overwrite neither EXIF nor the user's location **by definition** of the candidate set),
+    always marked `estimate`, and the UI **flags** it (a badge + a sentence on the detail view, a different pin **shape** on
+    the map) — an unflagged estimate is a lie the app tells the user.
+    `manual` **without coordinates is not a contradiction but a headstone**: it records the decision "this photo has no
+    location" (the user discarded the estimate, or deleted the EXIF location), and it is the only thing that stops the nightly backfill
+    from returning the same tip over and over. That's why deleting a location — unlike deleting `taken_at`, which resets
+    `taken_at_source` to `unknown` — does **not** reset the source to empty. Empty = "we don't know" and is reserved
+    for rows nobody has decided anything about; legacy rows were deliberately **not backfilled** to `exif`
+    (a migration can't tell a coordinate from the file apart from one someone once typed in, and writing `exif`
+    across all of them would be a confident lie in exactly the column whose only job is to be honest).
+  - **Stacks (groups of files of one shot)** (migration `0030_photo_stacks.sql`): two columns —
+    `stack_uid VARCHAR(32)` (shared by every member of a single stack, **NULL = the photo is not in a stack**)
+    and `stack_primary BOOLEAN NOT NULL DEFAULT false` (exactly one `true` per stack — the visible
+    member). Constraints: CHECK `ck_photos_stack_primary_has_uid` (a primary must have a `stack_uid`),
+    partial UNIQUE `idx_photos_stack_primary ON photos(stack_uid) WHERE stack_primary` (one
+    primary per stack) and partial `idx_photos_stack_uid … WHERE stack_uid IS NOT NULL` (member lookup).
+    **A stack groups, it does not merge.** Every member (a RAW + its JPEG, an exported edit, a copy/sequential
+    name) keeps its **own row** — its own dimensions, EXIF, embedding, faces and thumbnails —, so
+    (un)stacking is purely **reversible** bookkeeping (set / clear the column) and never loses
+    anything. That reversibility is the whole reason the user can let automatic detection run
+    over the entire library. **Do not simplify to a merge:** `internal/dupmerge` deliberately merges one row
+    into another for **real duplicates** (the loser is redundant) — stack members are **not**
+    redundant, they are kept on purpose. `photo_files` (role original/sidecar/edited) is a **different concept** —
+    the files of a **single** row (still + the motion clip of a live photo); a stack groups whole rows,
+    don't conflate them. A live photo is already a single row today (still + MOV as `photo_files`), which is why it stayed
+    unchanged — the stack model just generalizes to the row level what `media_type='live'` does at the file
+    level. **Visibility:** non-secondary members are hidden everywhere by the predicate
+    `(stack_uid IS NULL OR stack_primary)`, added to the shared `whereClauses`
+    (`internal/photos/store_list.go`, covers `List`/`Count`/`Search`/`FilterUIDs`/`YearBuckets`/
+    `TimelineBuckets` → grid, favorites, ratings, map GeoJSON, global and saved search, every
+    paginated total) and to manual count queries (album/label counts, a subject's marker count + its
+    gallery, the place facet) and to `ListActivePhashes` (the duplicate universe — a RAW and its JPEG are thus never
+    offered as a near-duplicate) and the similar strip. `ListParams.IncludeStackMembers` lifts the predicate
+    for callers that want all members (listing the variants of a single stack). These changes also
+    **straightened out the counts**: album/label/subject counts now count `p.uid` via a join to `photos` with
+    the predicate "visible + not archived", so the count always matches the grid it describes (previously
+    it also included archived ones). Detection is driven by `internal/stacks` (synchronous, idempotent, incremental
+    global grouping, triggered by the admin `POST /process/stacks`).
+  **New columns for Kukátko:**
+  - `photoprism_uid VARCHAR(32)` — PhotoUID from PhotoPrism (dedup + increment).
+  - `photoprism_file_hash VARCHAR(40)` — file SHA1 from PhotoPrism (download mapping).
+  - `photosorter_uid VARCHAR(32)` — UID from photo-sorter (migration).
+  - **Video** (migration `0004_video.sql`): `media_type IN (image|video|live)` (default `image`,
+    partial index for "videos only"), `duration_ms`, `video_codec`, `audio_codec`, `has_audio`,
+    `fps`. Populated for videos via `internal/video.Probe` (ffprobe → exiftool fallback);
+    the poster frame (`internal/video.ExtractPoster`, ffmpeg) feeds the thumbnailer/pHash and the embed/face
+    jobs. A live photo = still as the primary image + a motion clip as another `photo_files` row.
+  - a generated `fts tsvector` column (GIN index) — see [§6.2](#62-hledani).
+  - `favorite` is **moved** into a per-user table (see below).
+- **`photo_files`** — originals + derivatives, `role IN (original|sidecar|edited)`, `is_primary`.
+- **`photo_phashes`** — `phash/dhash BIGINT` (near-duplicate detection).
+- **`photo_edits`** — non-destructive edits (crop/rotation/brightness/contrast), 0..1 coordinates.
 - **`embeddings`** — `photo_uid PK`, `embedding halfvec(768)`, `model`, `pretrained`, `dim`;
   HNSW `halfvec_cosine_ops` (m=16, ef_construction=200).
 - **`faces`** — `id BIGSERIAL`, `photo_uid`, `face_index`, `embedding halfvec(512)`,
-  `bbox float8[4]` (normalizované [x,y,w,h] 0..1), `det_score`, cache `marker_uid/subject_uid/
+  `bbox float8[4]` (normalized [x,y,w,h] 0..1), `det_score`, cache `marker_uid/subject_uid/
   subject_name/photo_width/height/orientation`; HNSW `halfvec_cosine_ops`.
-- **`subjects`** — osoby/zvířata (`type IN (person|pet|other)`), `name`, `slug`, `cover_photo_uid`.
-- **`markers`** — `type IN (face|label)`, normalizovaný bbox (x,y,w,h 0..1), `subject_uid`,
+- **`subjects`** — people/animals (`type IN (person|pet|other)`), `name`, `slug`, `cover_photo_uid`.
+- **`markers`** — `type IN (face|label)`, normalized bbox (x,y,w,h 0..1), `subject_uid`,
   `score`, `invalid`, `reviewed`.
-- **`albums`** + **`album_photos`** — `type IN (album|folder|moment|state|month)`; album je vždy
-  chronologické (ruční `sort_order` i volbu řazení `order_by` odstranila migrace 0022).
+- **`albums`** + **`album_photos`** — `type IN (album|folder|moment|state|month)`; an album is always
+  chronological (migration 0022 removed both the manual `sort_order` and the `order_by` sort choice).
 - **`labels`** + **`photo_labels`** — `source IN (manual|ai|import)`, `uncertainty`.
 - **`users`** — `role IN (viewer|editor|admin|maintainer)`, `password_hash` (bcrypt cost 12), `disabled`.
-- **`sessions`** — viz [§11](#11-auth-a-bezpečnost) (přidáno sliding expiry).
-- **`audit_log`** — durable, zapisuje se **ve stejné transakci** jako mutace (migrace
-  `0012_audit_log.sql` + `0014_audit_request.sql` přidává `ip`/`user_agent` a index
-  `(target_type, target_uid)`, balík `internal/audit`: `Write(ctx, exec, Entry)` přes pool **i**
-  `pgx.Tx`; handler konvence `FromRequest`→`Meta`→`Entry`). Konzumenti: hromadná editace metadat
-  (`POST /api/v1/photos/bulk`) a foto PATCH/archive/unarchive (audited varianty `photos.Store`).
-  Admin čtení: `GET /api/v1/audit` (`internal/auditapi`, filtry user/entity/action/datum +
-  stránkování, admin-only). Trail je jinak **append-only**; jedinou výjimkou je **maintainer-only
-  retenční purge** `POST /api/v1/maintenance/audit/purge` (`audit.Store.PurgeOlderThan`, jeden
-  `DELETE ... WHERE created_at < cutoff` přes `idx_audit_log_created_at`, `older_than_days`), který
-  smaže staré záznamy a **sám se auditne** (`audit.purge` s cutoffem a počtem — čerstvý záznam purge
-  přežije, takže mazání trailu zůstává dohledatelné). Další mutační domény přebírají in-tx audit konvenci postupně.
-  **Payload editací** (`ChangeSet` v `internal/audit/changes.go`): `details` editační akce nese pod
-  klíčem `changes` mapu `{"<pole>":{"old":…,"new":…}}` **jen se změněnými poli** (starý → nový),
-  aby log ukázal např. změnu popisku. Používají ji foto PATCH (`photo.update` přes HTTP i MCP),
-  album/label/subjekt update. **Hromadná editace (`internal/bulk`) je z konvence vyňatá** — jeden
-  `UPDATE` nad mnoha fotkami bez načtení starých řádků, per-foto SELECT-před-UPDATE by zdvojnásobil
-  příkazy na dávku; ponechává si dosavadní souhrnné details.
+- **`sessions`** — see [§11](#11-auth-a-bezpečnost) (sliding expiry added).
+- **`audit_log`** — durable, written **in the same transaction** as the mutation (migrations
+  `0012_audit_log.sql` + `0014_audit_request.sql` add `ip`/`user_agent` and an index
+  `(target_type, target_uid)`, package `internal/audit`: `Write(ctx, exec, Entry)` over the pool **and**
+  a `pgx.Tx`; handler convention `FromRequest`→`Meta`→`Entry`). Consumers: bulk metadata editing
+  (`POST /api/v1/photos/bulk`) and photo PATCH/archive/unarchive (audited variants of `photos.Store`).
+  Admin read: `GET /api/v1/audit` (`internal/auditapi`, user/entity/action/date filters +
+  pagination, admin-only). The trail is otherwise **append-only**; the only exception is the **maintainer-only
+  retention purge** `POST /api/v1/maintenance/audit/purge` (`audit.Store.PurgeOlderThan`, a single
+  `DELETE ... WHERE created_at < cutoff` over `idx_audit_log_created_at`, `older_than_days`), which
+  deletes old records and **audits itself** (`audit.purge` with the cutoff and the count — the fresh purge record
+  survives, so deleting the trail stays traceable). Other mutation domains adopt the in-tx audit convention gradually.
+  **The edit payload** (`ChangeSet` in `internal/audit/changes.go`): the `details` of an edit action carries under
+  the key `changes` a map `{"<field>":{"old":…,"new":…}}` **with only the changed fields** (old → new),
+  so the log shows e.g. a caption change. It is used by photo PATCH (`photo.update` over HTTP and MCP),
+  album/label/subject update. **Bulk editing (`internal/bulk`) is exempt from the convention** — a single
+  `UPDATE` over many photos without loading the old rows, a per-photo SELECT-before-UPDATE would double
+  the statements per batch; it keeps its existing summary details.
 
-### 5.2 Nové tabulky v Kukátku
+### 5.2 New tables in Kukátko
 
-- **`user_favorites`** — per-user oblíbené: `(user_uid, photo_uid) PK`, `added_at`.
-  Nahrazuje globální `photos.favorite`.
-- **`jobs`** — persistentní fronta (viz [§8](#8-asynchronni-joby--box-offline)):
+- **`user_favorites`** — per-user favorites: `(user_uid, photo_uid) PK`, `added_at`.
+  Replaces the global `photos.favorite`.
+- **`jobs`** — persistent queue (see [§8](#8-asynchronni-joby--box-offline)):
   ```
   jobs(
     id BIGSERIAL PK,
     type        TEXT,          -- image_embed | face_detect | thumbnail | pp_import | ...
     state       TEXT,          -- queued | running | done | failed | dead
     priority    INT DEFAULT 0,
-    payload     JSONB,         -- např. {"photo_uid": "..."}
+    payload     JSONB,         -- e.g. {"photo_uid": "..."}
     attempts    INT DEFAULT 0,
     max_attempts INT DEFAULT 5,
     last_error  TEXT,
-    run_after   TIMESTAMPTZ,   -- backoff / odložení
-    locked_by   TEXT,          -- worker id (pro SELECT … FOR UPDATE SKIP LOCKED)
+    run_after   TIMESTAMPTZ,   -- backoff / deferral
+    locked_by   TEXT,          -- worker id (for SELECT … FOR UPDATE SKIP LOCKED)
     locked_at   TIMESTAMPTZ,
     created_at, updated_at TIMESTAMPTZ
   )
-  -- index na (state, run_after, priority); dedup unique na (type, payload->>'photo_uid') WHERE state IN (queued,running)
+  -- index on (state, run_after, priority); dedup unique on (type, payload->>'photo_uid') WHERE state IN (queued,running)
   ```
-- **`import_runs`** — historie importů: zdroj (`photoprism`/`photosorter`/**`folder`** =
-  `kukatko import dir`, migrace `0026`), high-watermark
-  (`updated:` timestamp pro inkrement; `folder` běh ho nemá — složka nemá zdrojový čas, idempotenci
-  dělá SHA256 obsahu), počty, čas. Idempotence inkrementálního importu.
-- **`face_rejections` / `label_rejections`** — persistované **negativní feedback** (migrace
-  `0031_feedback_rejections.sql`, balíček `internal/feedback`). Trvalé uživatelské „ne": *tento
-  obličej NENÍ tato osoba* (`face_rejections`: `photo_uid`+`face_index`+`subject_uid`) a *tato fotka
-  NEMÁ mít tento label* (`label_rejections`: `photo_uid`+`label_uid`). Obojí nese `rejected_by`
-  (FK users `ON DELETE SET NULL`) a `rejected_at`; **UNIQUE natural key** (zamítnout dvakrát je no-op,
-  ne chyba); FK na photos/subjects/labels `ON DELETE CASCADE` uklidí po smazání. **Návrhové
-  rozhodnutí, které příští iterace nesmí vrátit zpět:** photo-sorter zamítnutí **nikdy neuchovával**,
-  takže tentýž špatný obličej se nabízel donekonečna a review práce nikdy neubývala — Kukátko ho
-  ukládá durabilně, aby ho každá review/search feature mohla vyloučit. **Zamítnutí je NÁZOR, ne
-  mutace** — nikdy nesmaže obličej, neodpojí marker ani neodebere label. `face_rejections`
-  **schválně nemá FK na `faces`**: faces se při re-detekci mažou a znovu vkládají, kaskáda by
-  zamítnutí smazala; `(photo_uid, face_index)` je přes re-detekci stabilní a mazání fotky ho uklidí.
-  Bulk lookupy (`FaceRejectionsForSubject`, `LabelRejectionsForLabel`) slouží search cestám jako
-  exclusion filtr **bez N+1**.
+- **`import_runs`** — import history: source (`photoprism`/`photosorter`/**`folder`** =
+  `kukatko import dir`, migration `0026`), high-watermark
+  (`updated:` timestamp for the increment; the `folder` run has none — a folder has no source time, idempotency
+  is done by the content SHA256), counts, time. Idempotency of the incremental import.
+- **`face_rejections` / `label_rejections`** — persisted **negative feedback** (migration
+  `0031_feedback_rejections.sql`, package `internal/feedback`). A permanent user "no": *this
+  face is NOT this person* (`face_rejections`: `photo_uid`+`face_index`+`subject_uid`) and *this photo
+  should NOT have this label* (`label_rejections`: `photo_uid`+`label_uid`). Both carry `rejected_by`
+  (FK users `ON DELETE SET NULL`) and `rejected_at`; **UNIQUE natural key** (rejecting twice is a no-op,
+  not an error); FK to photos/subjects/labels `ON DELETE CASCADE` cleans up after deletion. **A design
+  decision the next iteration must not undo:** photo-sorter **never kept** rejections,
+  so the same wrong face was offered forever and review work never shrank — Kukátko stores it
+  durably, so that every review/search feature can exclude it. **A rejection is an OPINION, not
+  a mutation** — it never deletes a face, detaches a marker, or removes a label. `face_rejections`
+  **deliberately has no FK to `faces`**: faces are deleted and re-inserted on re-detection, a cascade would
+  delete the rejection; `(photo_uid, face_index)` is stable across re-detection and deleting the photo cleans it up.
+  Bulk lookups (`FaceRejectionsForSubject`, `LabelRejectionsForLabel`) serve the search paths as an
+  exclusion filter **without N+1**.
 
-### 5.3 Mapování identit (kvůli importu/migraci)
+### 5.3 Identity mapping (for import/migration)
 
-| Zdroj | Klíč ve zdroji | Uložení v Kukátku | Účel |
+| Source | Key in the source | Storage in Kukátko | Purpose |
 |-------|----------------|-------------------|------|
-| PhotoPrism | PhotoUID (16 znaků) | `photos.photoprism_uid` | dedup, inkrement |
-| PhotoPrism | Files[].Hash (SHA1) | `photos.photoprism_file_hash` | stažení originálu `/dl/:hash` |
-| photo-sorter | `photos.uid` | `photos.photosorter_uid` | 1:1 migrace embeddingů/obličejů |
+| PhotoPrism | PhotoUID (16 chars) | `photos.photoprism_uid` | dedup, increment |
+| PhotoPrism | Files[].Hash (SHA1) | `photos.photoprism_file_hash` | download the original `/dl/:hash` |
+| photo-sorter | `photos.uid` | `photos.photosorter_uid` | 1:1 migration of embeddings/faces |
 
-> **Pozor:** PhotoPrism používá pro hash souboru **SHA1**, Kukátko **SHA256**. Po stažení
-> originálu z PhotoPrismu si Kukátko spočítá vlastní SHA256 (dedup) a uloží PP SHA1 jen pro
-> dohledání. Migrace z photo-sorteru naopak SHA256 sdílí, takže dedup je přímý.
+> **Note:** PhotoPrism uses **SHA1** for the file hash, Kukátko uses **SHA256**. After downloading
+> the original from PhotoPrism, Kukátko computes its own SHA256 (dedup) and stores the PP SHA1 only for
+> lookup. The migration from photo-sorter, by contrast, shares SHA256, so dedup is direct.
 
 ---
 
-## 6. Embeddings a vektorové hledání
+## 6. Embeddings and vector search
 
-### 6.1 Kontrakt sidecaru
+### 6.1 Sidecar contract
 
-Stejný jako photo-sorter (`EMBEDDING_URL`, default offline-aware). HTTP:
+Same as photo-sorter (`EMBEDDING_URL`, offline-aware by default). HTTP:
 
-- **`POST /embed/image`** — multipart, pole `file`. Odpověď:
+- **`POST /embed/image`** — multipart, field `file`. Response:
   `{ "dim": 768, "embedding": [float32×768], "model": "...", "pretrained": "ViT-L-14" }`
-- **`POST /embed/text`** — JSON `{ "text": "..." }`. Odpověď jako výše (768-dim, sdílený prostor).
-- **`POST /embed/face`** — multipart, pole `file`. Odpověď:
+- **`POST /embed/text`** — JSON `{ "text": "..." }`. Response as above (768-dim, shared space).
+- **`POST /embed/face`** — multipart, field `file`. Response:
   ```
   { "faces_count": N, "model": "...",
     "faces": [ { "face_index": 0, "dim": 512, "embedding": [float32×512],
                  "bbox": [x1,y1,x2,y2] /*px*/, "det_score": 0.0..1.0 } ] }
   ```
-  Pixelové `[x1,y1,x2,y2]` se při zápisu převedou na normalizované `[x,y,w,h]` (0..1) dle
-  rozměrů a EXIF orientace (logika převzatá z photo-sorteru).
+  Pixel `[x1,y1,x2,y2]` are converted on write to normalized `[x,y,w,h]` (0..1) according to
+  the dimensions and EXIF orientation (logic adopted from photo-sorter).
 
-### 6.2 Hledání
+### 6.2 Search
 
-- **Implementace:** jediný endpoint `GET /api/v1/search?q=…&mode=…` (`internal/photoapi`),
-  parametr `mode` = `fulltext` | `semantic` | `hybrid` (**default `hybrid`**). Všechny módy
-  ctí standardní list filtry (datum/GPS/…) i stránkování; odpověď má stejný tvar jako
-  list + pole `mode` (efektivní mód) a `degraded` (viz níže).
-- **Fulltext:** PostgreSQL `tsvector` (dictionary `simple`, `unaccent` pro češtinu) nad
+- **Implementation:** a single endpoint `GET /api/v1/search?q=…&mode=…` (`internal/photoapi`),
+  the `mode` parameter = `fulltext` | `semantic` | `hybrid` (**default `hybrid`**). All modes
+  honor the standard list filters (date/GPS/…) and pagination; the response has the same shape as
+  the list + a `mode` field (the effective mode) and `degraded` (see below).
+- **Full-text:** PostgreSQL `tsvector` (dictionary `simple`, `unaccent` for Czech) over
   title(A) > description(B) = subject(B) > notes(C) = ai_note(C) = keywords(C) > file_name(D).
-  Diakritika necitlivá („deti" = „Děti"). Řazení dle `ts_rank` (`photos.Store.Search`).
-  Generovaný sloupec se přepisuje `ALTER COLUMN fts SET EXPRESSION` (naposledy
-  `0027_photos_iptc_metadata.sql`) — Postgres přepočítá vektor všem řádkům a přestaví GIN index sám.
-- **Sémantické (text→fotka):** text → sidecar `/embed/text` (768-dim CLIP) → HNSW cosine nad
-  `embeddings` (`vectors.Store.FindSimilar`). Kandidáti se pak profiltrují list filtry přes
-  `photos.Store.FilterUIDs` (strukturální filtry, ignoruje fulltext) a seřadí dle vzdálenosti.
-- **Hybrid:** fulltextový a sémantický ranking se sloučí **Reciprocal Rank Fusion (RRF)** —
-  skóre položky = Σ 1/(k + rank) přes oba seznamy, konstanta **k = 60** (původní RRF paper,
-  Cormack et al. 2009). Výsledek je deduplikovaný (sjednocení obou seznamů), seřazený dle
-  fúzního skóre (tie-break dle uid sestupně).
-- **Box offline → graceful degradace:** když sidecar nedostane embedding dotazu
-  (`embedding.IsUnavailable`, nebo embedder/vector store nezapojen), `semantic`/`hybrid`
-  spadnou na čistý fulltext a odpověď nastaví `degraded: true` (UI o tom informuje uživatele).
-  Upload i prohlížení fungují bez boxu dál.
-- **Podobné fotky:** HNSW nad `embeddings` (`embedding <=> $vec`), práh vzdálenosti pro
-  „duplikáty" (~0.05) i „podobné" (vyšší práh).
-- **Parametry HNSW:** `m=16`, `ef_construction=200`, dotaz `SET LOCAL hnsw.ef_search=100`
-  (nikdy ≥400 — planner spadne na seq scan). Metrika cosine (embeddingy jsou L2-normalizované).
-- **Hledání jen mezi nepřiřazenými obličeji** (`vectors.FindSimilarUnassignedFaceCandidates`,
-  podklad pro hledání osoby mezi neotagovanými, recognition sweep, expanzi alba/labelu a review hru):
-  jako kandidátní hledání, ale `WHERE subject_uid IS NULL` a s **exclusion setem** (už zamítnuté
-  obličeje pro daný subjekt) odfiltrovaným **v SQL** (anti-join přes `unnest`). Filtruje se **před**
-  `LIMIT` a dotaz běží pod `SET LOCAL hnsw.iterative_scan = strict_order` (pgvector ≥ 0.8), takže
-  volající dostane počet kandidátů, o který požádal, i když rejections seberou nejbližší sousedy —
-  **filtrování až po HNSW limitu by výsledek tiše zmenšilo** (list 50, ze kterého rejections uberou
-  30, musí přesto vrátit 50 dobrých kandidátů). To je návrhové rozhodnutí, ne detail implementace.
-- **Pravidlo negativního exempláře** (`vectors.IsNegativeExemplar`, sdílené pro obličeje i labely):
-  aby zamítnutí **učilo**, ne jen schovalo jeden řádek. Pro kandidáta *C* a subjekt *S*: spočti
-  vzdálenost *C* k nejbližšímu **přijatému** exempláři *S* (obličeje už přiřazené / fotky nesoucí
-  label) a k nejbližšímu **zamítnutému** (rejections pro *S*). Když je *C* blíž zamítnutému než
-  přijatému, je **negativní** → vypadne. Je to nearest-neighbour margin test: bez tréninku, bez
-  učených vah, levný (vektory už jsou v ruce) a triviálně vysvětlitelný v UI („vypadá spíš jako něco,
-  cos už odmítl"). Bez rejections **no-op, který nic nestojí**; shoda vzdáleností přežívá
-  (deterministicky, „striktně blíž zamítnutému" vypadne). **Nestavět nic těžšího** — žádné fitování
-  modelu, žádné učené váhy.
+  Diacritic-insensitive ("deti" = "Děti"). Sorted by `ts_rank` (`photos.Store.Search`).
+  The generated column is rewritten by `ALTER COLUMN fts SET EXPRESSION` (most recently
+  `0027_photos_iptc_metadata.sql`) — Postgres recomputes the vector for all rows and rebuilds the GIN index itself.
+- **Semantic (text→photo):** text → sidecar `/embed/text` (768-dim CLIP) → HNSW cosine over
+  `embeddings` (`vectors.Store.FindSimilar`). The candidates are then filtered by the list filters via
+  `photos.Store.FilterUIDs` (structural filters, ignores full-text) and sorted by distance.
+- **Hybrid:** the full-text and semantic rankings are merged by **Reciprocal Rank Fusion (RRF)** —
+  an item's score = Σ 1/(k + rank) over both lists, constant **k = 60** (the original RRF paper,
+  Cormack et al. 2009). The result is deduplicated (the union of both lists), sorted by the
+  fusion score (tie-break by uid descending).
+- **Box offline → graceful degradation:** when the sidecar doesn't get the query embedding
+  (`embedding.IsUnavailable`, or the embedder/vector store not wired in), `semantic`/`hybrid`
+  fall back to plain full-text and the response sets `degraded: true` (the UI informs the user of this).
+  Upload and browsing keep working without the box.
+- **Similar photos:** HNSW over `embeddings` (`embedding <=> $vec`), a distance threshold for
+  "duplicates" (~0.05) and "similar" (a higher threshold).
+- **HNSW parameters:** `m=16`, `ef_construction=200`, query `SET LOCAL hnsw.ef_search=100`
+  (never ≥400 — the planner falls back to a seq scan). Cosine metric (embeddings are L2-normalized).
+- **Search among unassigned faces only** (`vectors.FindSimilarUnassignedFaceCandidates`,
+  the basis for finding a person among untagged photos, the recognition sweep, album/label expansion and the review game):
+  like a candidate search, but `WHERE subject_uid IS NULL` and with an **exclusion set** (faces already rejected
+  for the given subject) filtered out **in SQL** (an anti-join via `unnest`). Filtering happens **before**
+  the `LIMIT` and the query runs under `SET LOCAL hnsw.iterative_scan = strict_order` (pgvector ≥ 0.8), so
+  the caller gets the number of candidates it asked for even when rejections take away the nearest neighbors —
+  **filtering only after the HNSW limit would quietly shrink the result** (a list of 50 from which rejections remove
+  30 must still return 50 good candidates). This is a design decision, not an implementation detail.
+- **The negative-exemplar rule** (`vectors.IsNegativeExemplar`, shared for faces and labels):
+  so that a rejection **teaches**, not just hides one row. For a candidate *C* and a subject *S*: compute
+  the distance from *C* to the nearest **accepted** exemplar of *S* (faces already assigned / photos carrying
+  the label) and to the nearest **rejected** one (rejections for *S*). When *C* is closer to the rejected than
+  to the accepted, it is **negative** → dropped. It's a nearest-neighbour margin test: no training, no
+  learned weights, cheap (the vectors are already in hand) and trivially explainable in the UI ("looks more like something
+  you've already rejected"). Without rejections it's a **no-op that costs nothing**; a distance tie survives
+  (deterministically, "strictly closer to the rejected one" is dropped). **Don't build anything heavier** — no model
+  fitting, no learned weights.
 
 ---
 
-## 7. Lidé a obličeje
+## 7. People and faces
 
-Workflow (vylepšené UX oproti photo-sorteru):
+Workflow (improved UX over photo-sorter):
 
-1. Po importu/uploadu job `face_detect` → sidecar `/embed/face` → uložení do `faces`.
-2. **Auto-clustering:** podobné obličeje se vektorově seskupí (HNSW + práh / souvislé komponenty),
-   uživateli se nabízejí celé shluky k jednorázovému pojmenování — méně klikání než per-face.
-3. **IoU matching** (práh 0.1) propojí detekovaný obličej s existujícím markerem.
-4. **Návrhy:** pro nepojmenovaný obličej se hledají podobné už pojmenované (HNSW), s filtrem
-   (min. velikost obličeje, vyloučit jiné osoby), limit ~5.
-5. **Přiřazení:** stavy `create_marker` / `assign_person` / `unassign_person` / `already_done`.
-6. **Outlier detekce:** pro každou osobu spočítat centroid a seřadit obličeje dle vzdálenosti
-   → odhalí špatně přiřazené. Implementace: `internal/outliers` (`Outliers(subjectUID)` nad
-   `vectors.ListFacesBySubject` + sdílené `vectors.Centroid`/`CosineDistance`) za endpointem
-   `GET /api/v1/subjects/{uid}/outliers` (editor/admin, `internal/outlierapi`); malé množiny
-   (< 3 obličeje) se vrátí s `meaningful:false`. Wrong obličej se odpojí přes existující assign
-   API — outlier vrstva nemutuje.
-7. **Stránky osob:** přehled, cover, počty, výskyty.
+1. After import/upload the `face_detect` job → sidecar `/embed/face` → save into `faces`.
+2. **Auto-clustering:** similar faces are grouped by vector (HNSW + threshold / connected components),
+   whole clusters are offered to the user for one-shot naming — fewer clicks than per-face.
+3. **IoU matching** (threshold 0.1) links a detected face to an existing marker.
+4. **Suggestions:** for an unnamed face, similar already-named ones are searched (HNSW), with a filter
+   (min. face size, exclude other people), limit ~5.
+5. **Assignment:** states `create_marker` / `assign_person` / `unassign_person` / `already_done`.
+6. **Outlier detection:** for each person compute the centroid and sort faces by distance
+   → reveals the mis-assigned ones. Implementation: `internal/outliers` (`Outliers(subjectUID)` over
+   `vectors.ListFacesBySubject` + shared `vectors.Centroid`/`CosineDistance`) behind the endpoint
+   `GET /api/v1/subjects/{uid}/outliers` (editor/admin, `internal/outlierapi`); small sets
+   (< 3 faces) are returned with `meaningful:false`. A wrong face is detached via the existing assign
+   API — the outlier layer does not mutate.
+7. **People pages:** overview, cover, counts, occurrences.
 
-Souřadnice: `faces.bbox` normalizované [x,y,w,h] (0..1, display space, EXIF-aware);
-`markers` taktéž 0..1. Převod z pixelů sidecaru řeší helper (`facejob.normalizeBBox`) se swapem
-stran pro orientaci 5–8 (sidecar/InsightFace rotuje obraz dle EXIF, takže `face_detect` posílá
-**originál v plném rozlišení**, ne náhled, aby měřítko bboxu odpovídalo uloženým rozměrům).
-Job `face_detect` (`internal/facejob`) je **idempotentní** přes tabulku `face_detections`
-(migrace 0009): jeden řádek na zpracovanou fotku odliší fotku bez obličejů od dosud
-nezpracované (`faces` může mít nula řádků). Slabé detekce filtruje práh `faces.min_det_score`.
+Coordinates: `faces.bbox` normalized [x,y,w,h] (0..1, display space, EXIF-aware);
+`markers` likewise 0..1. Conversion from the sidecar's pixels is handled by a helper (`facejob.normalizeBBox`) with a side swap
+for orientation 5–8 (the sidecar/InsightFace rotates the image per EXIF, so `face_detect` sends
+the **full-resolution original**, not a thumbnail, so that the bbox scale matches the stored dimensions).
+The `face_detect` job (`internal/facejob`) is **idempotent** via the `face_detections` table
+(migration 0009): one row per processed photo distinguishes a photo with no faces from one not yet
+processed (`faces` may have zero rows). Weak detections are filtered by the `faces.min_det_score` threshold.
 Admin backfill: `POST /api/v1/process/faces`.
 
-**Review hra a pásmo nejistoty (`internal/review`, obličeje i štítky):** vedle hromadných stránek
-(`/recognition`, expand) existuje režim „jedna otázka po druhé" — a jeho návrhové rozhodnutí je
-**pásmo nejistoty**. Kandidáti se dělí podle confidence (= 1 − kosinová vzdálenost) na tři zóny:
-nad `review.band_max` je systém v podstatě rozhodnutý a potvrzení patří do hromadného UI (ptát se
-po jednom by plýtvalo časem), pod `review.band_min` je odhad šum a otázka demoralizuje; **jen
-prostřední pásmo** (default 0.45–0.75, konfigurovatelné) se stává otázkami, protože lidská odpověď
-u hranice rozhodování naučí systém nejvíc — „ne" se ukládá jako trvalé zamítnutí do
-`internal/feedback` a přes pravidlo negativního exempláře zabíjí i podobné kandidáty, takže hra
-konverguje. Fronta **skládá existující služby** (sweep/candidates pro obličeje, expand pro štítky),
-řadí dle vzdálenosti od středu pásma, druhy otázek deterministicky prokládá (bez `rand` — testy
-i reprodukce vyžadují stejnou frontu pro stejný stav knihovny) a cachuje se per user
-(`review.cache_ttl`). Odpovědi jdou **výhradně existujícími write paths** (assign state machine,
-`AttachLabelAudited`, feedback) — review nemá vlastní zápisovou cestu.
+**The review game and the uncertainty band (`internal/review`, faces and labels):** alongside the bulk pages
+(`/recognition`, expand) there is a "one question at a time" mode — and its design decision is
+**the uncertainty band**. Candidates are split by confidence (= 1 − cosine distance) into three zones:
+above `review.band_max` the system is essentially decided and confirmation belongs in the bulk UI (asking
+one by one would waste time), below `review.band_min` the guess is noise and the question demoralizes; **only
+the middle band** (default 0.45–0.75, configurable) becomes questions, because a human answer
+at the decision boundary teaches the system the most — a "no" is stored as a permanent rejection in
+`internal/feedback` and, via the negative-exemplar rule, also kills similar candidates, so the game
+converges. The queue **composes existing services** (sweep/candidates for faces, expand for labels),
+sorts by distance from the middle of the band, interleaves question kinds deterministically (no `rand` — tests
+and reproduction require the same queue for the same library state) and is cached per user
+(`review.cache_ttl`). Answers go **exclusively through the existing write paths** (the assign state machine,
+`AttachLabelAudited`, feedback) — review has no write path of its own.
 
-Každá **rozhodná** odpověď (yes/no na obličej i štítek) přitom píše durable audit řádek označený
-`details.via = "review"` ve stejné transakci jako mutace; review potvrzení obličeje (`face.assign`)
-tuto značku nově dostává i skrz facematch `Service.Apply` (přes `AssignRequest.Via`), takže jsou
-všechny čtyři akce konzistentní a běžné recognition assignmenty zůstávají neoznačené. Nad těmito
-řádky staví **leaderboard** (`internal/review` `LeaderboardStore`, `GET /review/leaderboard`): per
-`actor_uid` počítá yes (`face.assign`+`label.attach`) a no (`face.reject`+`label.reject`) rozhodnutí,
-skip se nepočítá (nic nezapisuje), NULL actor (smazaný uživatel) se vynechává, s okny all-time /
-7 dní / dnes. Parciální index `idx_audit_log_review_actor` (migrace `0037`) na `details->>'via'`
-drží agregaci levnou.
-
----
-
-## 8. Asynchronní joby a „box offline"
-
-Toto je hlavní robustnostní vylepšení proti photo-sorteru (ten má in-memory joby + SSE,
-které se ztratí při restartu).
-
-- **Persistentní fronta v Postgresu** (`jobs`). Worker bere práci přes
-  `SELECT … FOR UPDATE SKIP LOCKED`, ať více workerů/instancí nekoliduje.
-- **Worker runtime** (`internal/worker`) běží **v procesu `kukatko serve`**: konfigurovatelný
-  počet goroutin pollujících `Claim` s omezenou souběžností, dispatch na handler z **registru**
-  (`Register(type, HandlerFunc)`) podle `job.Type`, `Complete`/`Fail` dle výsledku, plus
-  stale-lock recovery. **Graceful shutdown** (SIGINT/SIGTERM) zastaví claiming a opuštěné
-  in-flight joby nechá frontě k recovery. Stav fronty se čte přes **admin Jobs API**
-  (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); UI ho polluje.
-- **Typy jobů:** `thumbnail`, `places`, `metadata`, `sidecar` (běží lokálně na Pi, hned),
-  `image_embed`, `face_detect` (vyžadují box), `pp_import`, `ps_migrate`, `backup`.
-- **Box offline:** embeddings client před zpracováním ověří dostupnost sidecaru (health check).
-  Když je box offline, joby `image_embed`/`face_detect` zůstanou `queued` s `run_after`
-  posunutým (backoff), upload a prohlížení fungují bez omezení. Po naběhnutí boxu se fronta
-  sama dožene.
-- **Idempotence:** dedup na `(type, photo_uid)` v aktivních stavech; `filterUnprocessedPhotos`
-  přeskočí už hotové.
-- **Retry & dead-letter:** `attempts < max_attempts`, exponenciální backoff přes `run_after`,
-  pak `state=dead` + `last_error` (viditelné v adminu).
-- **Progress:** UI dostává stav z DB (polling / SSE jen jako tenká vrstva nad DB stavem).
-- **Auto-wake boxu (volitelné, `internal/wake`):** balík `wake` periodicky kontroluje frontu
-  (každou minutu, `wakeCheckInterval`) a když je nakonfigurovaně **zapnuto** a počet čekajících
-  `image_embed`/`face_detect` jobů dosáhne `embedding.wake.min_queue` **a zároveň** health check
-  sidecaru hlásí offline, pošle Wake-on-LAN magic packet na lokální LAN (knihovna `mdlayher/wol`).
-  **Cooldown** (`embedding.wake.cooldown`) brání spamování spícího boxu; po **grace period** se
-  zdraví překontroluje a zaloguje, jestli box naběhl, jinak se backoffne do dalšího cooldownu.
-  Smyčka běží ve vlastní goroutině v `serve` — **nikdy neblokuje zpracování jobů**. WoL
-  **nefunguje přímo přes Tailscale** (L3 overlay bez L2 broadcastu) — host musí být na stejné
-  fyzické síti jako box; defaultní cesta je UDP broadcast na `embedding.wake.broadcast_addr`,
-  volitelně raw Ethernet rámec na `embedding.wake.interface` (vyžaduje CAP_NET_RAW). **Defaultně
-  vypnuto** (`embedding.wake.enabled=false`), plně inertní; ruční zapnutí boxu stačí. Uspávání
-  boxu je mimo rozsah.
-- **Dosažitelnost embeddings sidecaru pro UI (`internal/reachability`):** malá background smyčka
-  (stejná struktura jako auto-wake, `capabilitiesCheckInterval` = 1 min) probne `embedding.Client.Healthy`
-  a **cacheuje** výsledek v `atomic.Bool`, aby ho HTTP handler přečetl bez živého probu — box je
-  často offline, takže probe na každý request by byl pomalý. Flag vystavuje all-authenticated
-  `GET /api/v1/capabilities` (`internal/capabilitiesapi`, `{semantic_search}`), který frontend polluje,
-  aby ukázal/skryl nabídku sémantického hledání podle toho, jestli je box online. Je **čistě
-  prezentační**: vyhledávání degraduje na fulltext samo (`degraded=true`), takže bezpečný default
-  „nedostupné" jen skryje nabídku, nikdy nerozbije tok. Když `embedding.url` není nastavené, smyčka
-  je inertní a flag je vždy `false`.
-
-### 8.1 Metadatové sidecary — kurátorská data nezávislá na databázi
-
-**Rozhodnutí:** ke každé fotce zapisovat **YAML sidecar** vedle originálů ve storage
-(`sidecars/<klíč originálu>.yml`) s jejími metadaty a kurátorskými daty, aby šel katalog obnovit
-**jen ze storage** — originály + sidecary, bez databáze. Balíky `internal/sidecarexport` (formát +
-atomický zápis) a `internal/sidecarjob` (job handler + backfill). **Formát celý v
-[`RESTORE.md`](RESTORE.md)** — tam ho někdo bude hledat, až databáze nebude.
-
-**Proč:** všechno, co uživatel vytvoří — titulky, kdo je na fotce, alba, hodnocení — jinak existuje
-na **jediném místě**: v Postgresu. S3 záloha je dobrá, ale je to **jeden mechanismus**, a zálohu,
-která tři měsíce tiše padá, objevíš v den, kdy ji potřebuješ. Sidecar je druhý mechanismus **jiného
-druhu**: kurátorská data leží *vedle fotky, kterou popisují*, v textovém souboru, který přečte
-libovolný nástroj, na tomtéž úložišti jako originál. Odpověď PhotoPrismu na týž problém.
-
-**Klíčová rozhodnutí:**
-
-- **Paralelní strom, ne soubor vedle originálu.** Strom originálů zůstane čistě médii — importéry a
-  integritní scan, které ho procházejí, se nemusí učit ignorovat druhý druh souboru — a celý export
-  je jedna předpona, takže se dá vypsat, rsyncnout nebo zahodit jako celek. Pořád je to **tatáž
-  storage** jako originály (FS i R2), takže sidecary cestují s fotkami i do zálohy.
-- **Přípona se přidává, ne nahrazuje** (`IMG_1.jpg.yml`): `IMG_1.jpg` a `IMG_1.png` jsou dvě fotky a
-  nesmí kolidovat na jednom sidecaru.
-- **Záměrně se nezapisují embeddingy ani face vektory.** Jsou velké, binární, zavalily by čitelnost
-  souboru — a **levně se přepočítají z originálu**, od toho jsou backfill joby. Co se přepočítat
-  nedá, je co rozhodl **člověk**, a to tam je celé. Hlavička souboru to říká nahlas, aby to nikdo
-  „neopravil“.
-- **Zápis je asynchronní a debouncovaný.** Job zařadí každá mutace; dedup index fronty drží nejvýš
-  jeden čekající `sidecar` job na fotku a job má ~5s `run_after`, takže dávková editace 500 fotek
-  zařadí 500 levných řádků a vrátí se — soubory zapíše worker, jeden na fotku. Handler je
-  **idempotentní a bezstavový** (přečte fotku a zapíše aktuální pravdu), proto je slitý nebo ztracený
-  job jen zastaralost, ne ztracený update.
-- **Nikdy na účet uživatele.** Selhaný zápis se zaloguje a fronta ho zopakuje; edit nikdy neshodí —
-  edit je bezpečně v Postgresu tak jako tak, a záchranná síť nesmí být to, co tě shodí.
-- **Sidecar se maže při purge.** Sidecar, který přežije fotku, je přesně ten soubor, ze kterého by
-  obnova vzkřísila trvale smazanou fotku.
-- **Sidecary jsou vyloučené z integritního scanu** (`maintenance scan`): jeho definice orphanu je „na
-  disku, ne v katalogu“, což je každý sidecar z podstaty. Filtr sedí v adaptéru v `cmd/kukatko`, ne
-  v `backup.DiskOriginals` — ten samý průchod totiž krmí i S3 sync, který sidecary kopírovat **má**.
-- **Čtení zpět (`restore --from-sidecars`) zatím není.** Tohle je exportní polovina; formát je
-  navržený, aby na to stačil, a **round-trip test** v `internal/sidecarexport` je to, co tu
-  dostatečnost drží (a co budoucí importér dostane jako zadání).
+Every **decisive** answer (yes/no on a face or a label) meanwhile writes a durable audit row marked
+`details.via = "review"` in the same transaction as the mutation; a review face confirmation (`face.assign`)
+newly gets this marker through facematch `Service.Apply` too (via `AssignRequest.Via`), so all
+four actions are consistent and ordinary recognition assignments stay unmarked. On top of these
+rows sits a **leaderboard** (`internal/review` `LeaderboardStore`, `GET /review/leaderboard`): per
+`actor_uid` it counts yes (`face.assign`+`label.attach`) and no (`face.reject`+`label.reject`) decisions,
+skip is not counted (it writes nothing), a NULL actor (a deleted user) is omitted, with all-time /
+7-day / today windows. The partial index `idx_audit_log_review_actor` (migration `0037`) on `details->>'via'`
+keeps the aggregation cheap.
 
 ---
 
-## 9. Import z PhotoPrismu (S11)
+## 8. Asynchronous jobs and "box offline"
 
-PhotoPrism běží paralelně a zůstává primární. Import je **read-only, opakovatelný, inkrementální**.
+This is the main robustness improvement over photo-sorter (which has in-memory jobs + SSE,
+lost on restart).
 
-- **Autentizace:** dlouhožijící **app password / access token** (ne login na každý request —
-  login je nejtvrději rate-limited). Vytvoření na straně PP:
-  `photoprism auth add -n Kukatko -s "photos albums"`. Token v `Authorization: Bearer`.
-- **Výpis fotek:** `GET /api/v1/photos?count=1000&offset=N&merged=true&order=updated&q=updated:"<RFC3339>"`.
-  Stránkování `count`≤1000 + `offset`. Pole: UID, TakenAt, Lat/Lng/Altitude, Title/Description,
+- **Persistent queue in Postgres** (`jobs`). The worker takes work via
+  `SELECT … FOR UPDATE SKIP LOCKED`, so that multiple workers/instances don't collide.
+- **Worker runtime** (`internal/worker`) runs **in the `kukatko serve` process**: a configurable
+  number of goroutines polling `Claim` with bounded concurrency, dispatch to a handler from a **registry**
+  (`Register(type, HandlerFunc)`) by `job.Type`, `Complete`/`Fail` per the result, plus
+  stale-lock recovery. **Graceful shutdown** (SIGINT/SIGTERM) stops claiming and leaves abandoned
+  in-flight jobs to the queue for recovery. The queue state is read via the **admin Jobs API**
+  (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
+- **Job types:** `thumbnail`, `places`, `metadata`, `sidecar` (run locally on the Pi, immediately),
+  `image_embed`, `face_detect` (require the box), `pp_import`, `ps_migrate`, `backup`.
+- **Box offline:** the embeddings client checks the sidecar's availability before processing (health check).
+  When the box is offline, `image_embed`/`face_detect` jobs stay `queued` with `run_after`
+  pushed out (backoff), upload and browsing work without restriction. Once the box comes up the queue
+  catches up on its own.
+- **Idempotency:** dedup on `(type, photo_uid)` in active states; `filterUnprocessedPhotos`
+  skips already-done ones.
+- **Retry & dead-letter:** `attempts < max_attempts`, exponential backoff via `run_after`,
+  then `state=dead` + `last_error` (visible in the admin).
+- **Progress:** the UI gets the state from the DB (polling / SSE only as a thin layer over the DB state).
+- **Box auto-wake (optional, `internal/wake`):** the `wake` package periodically checks the queue
+  (every minute, `wakeCheckInterval`) and when configured **on** and the number of pending
+  `image_embed`/`face_detect` jobs reaches `embedding.wake.min_queue` **and at the same time** the sidecar
+  health check reports offline, it sends a Wake-on-LAN magic packet onto the local LAN (the `mdlayher/wol` library).
+  A **cooldown** (`embedding.wake.cooldown`) prevents spamming a sleeping box; after a **grace period** it
+  re-checks health and logs whether the box came up, otherwise it backs off until the next cooldown.
+  The loop runs in its own goroutine in `serve` — it **never blocks job processing**. WoL
+  **does not work directly over Tailscale** (an L3 overlay without L2 broadcast) — the host must be on the same
+  physical network as the box; the default path is a UDP broadcast to `embedding.wake.broadcast_addr`,
+  optionally a raw Ethernet frame on `embedding.wake.interface` (requires CAP_NET_RAW). **Off by
+  default** (`embedding.wake.enabled=false`), fully inert; waking the box by hand is enough. Putting
+  the box to sleep is out of scope.
+- **Embeddings-sidecar reachability for the UI (`internal/reachability`):** a small background loop
+  (same structure as auto-wake, `capabilitiesCheckInterval` = 1 min) probes `embedding.Client.Healthy`
+  and **caches** the result in an `atomic.Bool`, so the HTTP handler reads it without a live probe — the box is
+  often offline, so a probe on every request would be slow. The flag is exposed by the all-authenticated
+  `GET /api/v1/capabilities` (`internal/capabilitiesapi`, `{semantic_search}`), which the frontend polls
+  to show/hide the semantic-search option depending on whether the box is online. It is **purely
+  presentational**: search degrades to full-text on its own (`degraded=true`), so the safe default
+  "unavailable" only hides the option, it never breaks the flow. When `embedding.url` is not set, the loop
+  is inert and the flag is always `false`.
+
+### 8.1 Metadata sidecars — curation data independent of the database
+
+**Decision:** for every photo, write a **YAML sidecar** next to the originals in storage
+(`sidecars/<original key>.yml`) with its metadata and curation data, so the catalog can be restored
+**from storage alone** — originals + sidecars, without the database. Packages `internal/sidecarexport` (format +
+atomic write) and `internal/sidecarjob` (job handler + backfill). **The whole format is in
+[`RESTORE.md`](RESTORE.md)** — that's where someone will look for it once the database is gone.
+
+**Why:** everything the user creates — titles, who is in the photo, albums, ratings — otherwise exists
+in **one single place**: in Postgres. The S3 backup is good, but it is **one mechanism**, and a backup
+that quietly fails for three months you discover on the day you need it. The sidecar is a second mechanism of a **different
+kind**: curation data sits *next to the photo it describes*, in a text file that any tool can read,
+on the same storage as the original. PhotoPrism's answer to the same problem.
+
+**Key decisions:**
+
+- **A parallel tree, not a file next to the original.** The tree of originals stays purely media — importers and
+  the integrity scan that walk it don't have to learn to ignore a second kind of file — and the whole export
+  is one prefix, so it can be listed, rsynced or discarded as a whole. It's still the **same
+  storage** as the originals (both FS and R2), so sidecars travel with the photos into the backup too.
+- **The extension is added, not replaced** (`IMG_1.jpg.yml`): `IMG_1.jpg` and `IMG_1.png` are two photos and
+  must not collide on one sidecar.
+- **Embeddings and face vectors are deliberately not written.** They are large, binary, would swamp the file's
+  readability — and they are **cheaply recomputed from the original**, that's what the backfill jobs are for. What can't
+  be recomputed is what a **human** decided, and all of that is there. The file header says so out loud, so that nobody
+  "fixes" it.
+- **The write is asynchronous and debounced.** Every mutation enqueues a job; the queue's dedup index keeps at most
+  one pending `sidecar` job per photo and the job has a ~5s `run_after`, so a bulk edit of 500 photos
+  enqueues 500 cheap rows and returns — the files are written by the worker, one per photo. The handler is
+  **idempotent and stateless** (it reads the photo and writes the current truth), which is why a coalesced or lost
+  job is only staleness, not a lost update.
+- **Never at the user's expense.** A failed write is logged and the queue retries it; an edit never fails —
+  the edit is safely in Postgres anyway, and the safety net must not be the thing that trips you.
+- **The sidecar is deleted on purge.** A sidecar that outlives the photo is exactly the file from which
+  a restore would resurrect a permanently deleted photo.
+- **Sidecars are excluded from the integrity scan** (`maintenance scan`): its definition of an orphan is "on
+  disk, not in the catalog", which every sidecar is by nature. The filter sits in the adapter in `cmd/kukatko`, not
+  in `backup.DiskOriginals` — because the same pass also feeds the S3 sync, which **is** supposed to copy sidecars.
+- **Reading back (`restore --from-sidecars`) does not exist yet.** This is the export half; the format is
+  designed to be sufficient for it, and the **round-trip test** in `internal/sidecarexport` is what holds that
+  sufficiency (and what a future importer will get as its spec).
+
+---
+
+## 9. Import from PhotoPrism (S11)
+
+PhotoPrism runs in parallel and stays primary. The import is **read-only, repeatable, incremental**.
+
+- **Authentication:** a long-lived **app password / access token** (not a login on every request —
+  login is the most heavily rate-limited). Creating it on the PP side:
+  `photoprism auth add -n Kukatko -s "photos albums"`. Token in `Authorization: Bearer`.
+- **Listing photos:** `GET /api/v1/photos?count=1000&offset=N&merged=true&order=updated&q=updated:"<RFC3339>"`.
+  Pagination `count`≤1000 + `offset`. Fields: UID, TakenAt, Lat/Lng/Altitude, Title/Description,
   Type, Width/Height, OriginalName, Camera/Lens/EXIF, `Files[]` (UID, Hash=SHA1, Primary, Mime,
   Video/Codec, Markers[]).
-- **Videa & live photos:** PP `Type` video/animated → stáhne se **samotný video soubor**
-  (`Files[]` s `Video=true`), uloží s `media_type=video` a **probnutými** video metadaty
-  (`duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` přes `internal/video.Probe`), poster +
-  náhledy přes ffmpeg, embedding běží na posteru. PP `Type` live → **still** jako primární originál +
-  **motion klip** jako `sidecar` photo_file (`media_type=live`), video metadata z motion klipu. Vše
-  ostatní jako u obrázků (dedup, externí ID, alba/labely/lidé, inkrement).
-- **Inkrement:** ukládat high-watermark `max(UpdatedAt)` do `import_runs`; další běh táhne jen
-  `updated:` ≥ watermark. (Empiricky ověřit, zda `updated:` zachytí i změny metadat; jinak
-  fallback na `added:` + watermark.)
-- **Stažení originálu:** `GET /api/v1/dl/<Files[].Hash>?t=<download_token>` (download token
-  z create-session; může rotovat — číst `X-Download-Token` z odpovědí). Po stažení spočítat
-  SHA256 → dedup proti `photos.file_hash`; uložit `photoprism_uid` + `photoprism_file_hash`.
-- **Metadata navíc:** alba `GET /api/v1/albums` (+ `s=<albumUID>` pro obsah), labely
-  `GET /api/v1/labels`, osoby `GET /api/v1/subjects`, obličeje `GET /api/v1/faces`, markery
-  z `Files[].Markers[]`, GPS přímo na fotce (případně `GET /api/v1/geo`).
-- **Embeddings/obličeje:** PhotoPrism je nevystavuje použitelně → po importu se v Kukátku
-  **dopočítají** jobem (na boxu). (Pro fotky, které jsou i v photo-sorteru, je převezme migrace —
-  viz §10, ušetří přepočet.)
-- **Úskalí (ošetřit):** API nemá deprecation policy (zafixovat verzi PP, otestovat po upgradu);
-  rate-limit 429 → backoff; `Content-Type: application/json` u JSON endpointů.
+- **Videos & live photos:** PP `Type` video/animated → the **video file itself** is downloaded
+  (`Files[]` with `Video=true`), stored with `media_type=video` and **probed** video metadata
+  (`duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` via `internal/video.Probe`), poster +
+  thumbnails via ffmpeg, embedding runs on the poster. PP `Type` live → **still** as the primary original +
+  **motion clip** as a `sidecar` photo_file (`media_type=live`), video metadata from the motion clip. Everything
+  else as for images (dedup, external ID, albums/labels/people, increment).
+- **Increment:** store the high-watermark `max(UpdatedAt)` in `import_runs`; the next run pulls only
+  `updated:` ≥ watermark. (Verify empirically whether `updated:` also catches metadata changes; otherwise
+  fall back to `added:` + watermark.)
+- **Downloading the original:** `GET /api/v1/dl/<Files[].Hash>?t=<download_token>` (the download token
+  from create-session; it may rotate — read `X-Download-Token` from responses). After downloading compute
+  SHA256 → dedup against `photos.file_hash`; store `photoprism_uid` + `photoprism_file_hash`.
+- **Extra metadata:** albums `GET /api/v1/albums` (+ `s=<albumUID>` for the contents), labels
+  `GET /api/v1/labels`, people `GET /api/v1/subjects`, faces `GET /api/v1/faces`, markers
+  from `Files[].Markers[]`, GPS directly on the photo (or `GET /api/v1/geo`).
+- **Embeddings/faces:** PhotoPrism doesn't expose them usably → after import they are
+  **computed** in Kukátko by a job (on the box). (For photos that are also in photo-sorter, the migration takes them over —
+  see §10, saving the recomputation.)
+- **Pitfalls (to handle):** the API has no deprecation policy (pin the PP version, test after an upgrade);
+  rate-limit 429 → backoff; `Content-Type: application/json` on JSON endpoints.
 
-## 10. Migrace z photo-sorteru (S12)
+## 10. Migration from photo-sorter (S12)
 
-Jednorázová (případně opakovatelná) migrace z běžící DB photo-sorteru. Protože **modely
-i dimenze jsou stejné** (CLIP 768 + InsightFace 512), embeddingy i obličeje se přenášejí 1:1
-bez přepočtu.
+A one-off (optionally repeatable) migration from a running photo-sorter DB. Because **the models
+and dimensions are the same** (CLIP 768 + InsightFace 512), embeddings and faces transfer 1:1
+without recomputation.
 
-- **Přímé čtení Postgresu** photo-sorteru (read-only credentials).
-- **Mapování:** `photos.uid` (PS) → nová fotka v Kukátku; ukládá se `photosorter_uid`.
-  Match přes `file_hash` (SHA256 sdílené) — pokud fotka už je z PP importu, jen se doplní
-  embeddingy/obličeje a `photosorter_uid`.
-- **Přenášené entity:** `photos` (metadata), `embeddings` (768), `faces` (512 + bbox + cache),
+- **Direct read of** photo-sorter's Postgres (read-only credentials).
+- **Mapping:** `photos.uid` (PS) → a new photo in Kukátko; `photosorter_uid` is stored.
+  Match via `file_hash` (SHA256 shared) — if the photo is already from a PP import, only the
+  embeddings/faces and `photosorter_uid` are filled in.
+- **Transferred entities:** `photos` (metadata), `embeddings` (768), `faces` (512 + bbox + cache),
   `subjects`, `markers`, `albums`/`album_photos`, `labels`/`photo_labels`, `photo_edits`,
-  `photo_phashes`. **Nepřenáší se:** fotokniha (`photo_books`, …), share-linky.
-- Originály: pokud nejsou na stejném disku, zkopírovat dle `file_path`.
+  `photo_phashes`. **Not transferred:** the photo book (`photo_books`, …), share links.
+- Originals: if they are not on the same disk, copy them per `file_path`.
 
-**Stav: implementováno.** Read-only klient `internal/photosorter` (vlastní pgx pool, volitelný
-`search_path` scope pro testy) + migrátor `internal/psimport` (`Service.Migrate`). Spouští se CLI
-`kukatko migrate photosorter` (synchronně) nebo admin triggerem `POST /api/v1/import/photosorter`,
-který zařadí singleton `ps_migrate` job na background worker. Běh je **inkrementální a idempotentní**:
-resume přes `import_runs` watermark (viz [§9](#9-import-z-photoprismu-s11)), match dle
-`photosorter_uid`/`file_hash`, embeddingy/obličeje 1:1, satelity find-or-create; per-fotka chyby se
-tallyují a běh pokračuje. Konfigurace `import.photosorter.{dsn,page_size}`
-(`KUKATKO_IMPORT_PHOTOSORTER_DSN`). Pokrytí: unit testy s faky + integrační testy proti
-naseedovanému fake photo-sorter schématu.
-
----
-
-## 11. Auth a bezpečnost
-
-- **Uživatelé:** role viewer/editor/admin/maintainer (přísný žebříček, každá dědí nižší); write od
-  `editor` výš, `maintainer` je vrchol (provoz: importy/údržba/backup/…). Bcrypt cost 12.
-  Bootstrap admina přes env (`BOOTSTRAP_ADMIN_*`) na čistou instalaci.
-- **Sessions:** opaque token v HttpOnly + SameSite=Strict cookie; oddělený `download_token`.
-  **Vylepšení proti photo-sorteru:**
-  - **Sliding expiry** — prodloužení při aktivitě (aktivní uživatel nevypadne po 30 dnech).
-  - **Změna hesla zruší ostatní sessions** uživatele.
-  - **Rate-limit na `/auth/login`** (brute-force ochrana; photo-sorter ji má jen na share-link).
-  - **Rate-limit náročných endpointů** (`internal/ratelimit`) — per-client-IP token-bucket
-    (`ratelimit.*` config) na `POST /upload`, `POST /photos/bulk`, `POST /import/*` a
-    `GET /map/tiles/...`, aby jeden klient nezahltil server; prázdný bucket → 429. Limiter běží
-    před auth checkem a je vypnutelný (`rate_per_sec ≤ 0`).
-- **Audit log durable** — zápis do `audit_log` ve **stejné transakci** jako mutace (photo-sorter
-  zapisuje až po commitu → při crashi ztráta).
-- **Mapy.com klíč** se nikdy neposílá do prohlížeče — tile/geocode requesty jdou přes
-  **backend proxy** (viz §12 Mapy).
+**Status: implemented.** Read-only client `internal/photosorter` (own pgx pool, optional
+`search_path` scope for tests) + migrator `internal/psimport` (`Service.Migrate`). Run via the CLI
+`kukatko migrate photosorter` (synchronously) or via the admin trigger `POST /api/v1/import/photosorter`,
+which enqueues a singleton `ps_migrate` job onto the background worker. The run is **incremental and idempotent**:
+resume via the `import_runs` watermark (see [§9](#9-import-z-photoprismu-s11)), match by
+`photosorter_uid`/`file_hash`, embeddings/faces 1:1, satellites find-or-create; per-photo errors are
+tallied and the run continues. Configuration `import.photosorter.{dsn,page_size}`
+(`KUKATKO_IMPORT_PHOTOSORTER_DSN`). Coverage: unit tests with fakes + integration tests against
+a seeded fake photo-sorter schema.
 
 ---
 
-## 12. Mapy (S9)
+## 11. Auth and security
 
-- **Dlaždice:** Kukátko proxy endpoint → `https://api.mapy.com/v1/maptiles/{mapset}/256/{z}/{x}/{y}`
-  (klíč přidá backend přes `X-Mapy-Api-Key`, nikdy se neobjeví v klientovi). Mapsety
-  `basic|outdoor|aerial|winter`, retina `256@2x` pro basic/outdoor.
-- **Povinné (NEPORUŠIT):** attribution `© Seznam.cz a.s. a další` (link na `/copyright`)
-  **a** klikací logo mapy.com nad mapou (Leaflet control s `logo.svg` → `mapy.com`).
-- **Markery/clustering:** `Leaflet.markercluster` na klientu; data fotek s GPS z Kukátko API.
-- **Reverse geocode (lokalita fotky):** proxy na `GET /v1/rgeocode?lon=&lat=&lang=cs`
-  → `location` string (např. „Praha 1 - Staré Město, Česko"). Volá se na vyžádání / dávkově,
-  ne pro každou fotku (geocode = 4 kredity vs 1 dlaždice).
-- **Limity:** free 250k kreditů/měsíc; rate 500 dlaždic/s, 200 rgeocode/s. Hlídat.
+- **Users:** roles viewer/editor/admin/maintainer (a strict ladder, each inherits the lower one); write from
+  `editor` up, `maintainer` is the top (operations: imports/maintenance/backup/…). Bcrypt cost 12.
+  Bootstrap the admin via env (`BOOTSTRAP_ADMIN_*`) on a clean install.
+- **Sessions:** an opaque token in an HttpOnly + SameSite=Strict cookie; a separate `download_token`.
+  **Improvements over photo-sorter:**
+  - **Sliding expiry** — extension on activity (an active user doesn't get dropped after 30 days).
+  - **A password change revokes the user's other sessions.**
+  - **Rate-limit on `/auth/login`** (brute-force protection; photo-sorter has it only on share links).
+  - **Rate-limit on demanding endpoints** (`internal/ratelimit`) — a per-client-IP token-bucket
+    (`ratelimit.*` config) on `POST /upload`, `POST /photos/bulk`, `POST /import/*` and
+    `GET /map/tiles/...`, so that a single client can't swamp the server; an empty bucket → 429. The limiter runs
+    before the auth check and can be turned off (`rate_per_sec ≤ 0`).
+- **Durable audit log** — written to `audit_log` in the **same transaction** as the mutation (photo-sorter
+  writes only after commit → loss on a crash).
+- **The Mapy.com key** is never sent to the browser — tile/geocode requests go through the
+  **backend proxy** (see §12 Maps).
+
+---
+
+## 12. Maps (S9)
+
+- **Tiles:** Kukátko proxy endpoint → `https://api.mapy.com/v1/maptiles/{mapset}/256/{z}/{x}/{y}`
+  (the backend adds the key via `X-Mapy-Api-Key`, it never appears in the client). Map sets
+  `basic|outdoor|aerial|winter`, retina `256@2x` for basic/outdoor.
+- **Mandatory (DO NOT BREAK):** the attribution `© Seznam.cz a.s. a další` (link to `/copyright`)
+  **and** the clickable mapy.com logo above the map (a Leaflet control with `logo.svg` → `mapy.com`).
+- **Markers/clustering:** `Leaflet.markercluster` on the client; photo data with GPS from the Kukátko API.
+- **Reverse geocode (a photo's locality):** proxy to `GET /v1/rgeocode?lon=&lat=&lang=cs`
+  → a `location` string (e.g. "Praha 1 - Staré Město, Česko"). Called on demand / in batches,
+  not for every photo (geocode = 4 credits vs 1 tile).
+- **Limits:** free 250k credits/month; rate 500 tiles/s, 200 rgeocode/s. Keep an eye on it.
 
 ---
 
 ## 13. Frontend (S14)
 
-- **Stack:** React 19 + TS + Vite + react-bootstrap + Bootswatch Superhero (dark), embedováno do binárky.
-- **i18n:** i18next, **čeština default** + angličtina; přepínač jazyka, persistence volby.
-- **Mobil/tablet:** plně responzivní; multiupload **z mobilní galerie** (`<input capture>` /
-  file picker); touch-friendly slideshow a detail.
-- **„Zpět vždy funguje (i na filtr)":** veškerý stav pohledu (filtry, řazení, hledání, stránka)
-  je v **URL query params** + History API. Browser back obnoví předchozí filtr; server je
-  vůči view-stavu bezstavový. Sdílení URL = sdílení pohledu.
-- **Knihovna:** virtualizovaný grid (`react-virtuoso`), infinite scroll, filtry+řazení.
-- **Detail fotky** (kombinace PP + photo-sorter): náhled + metadata (zobrazení/editace),
-  EXIF, GPS/mini-mapa, **obličeje** (boxy, přiřazení osob), **podobné fotky**, štítky, alba,
-  oblíbené, nedestruktivní úpravy (crop/rotate/jas/kontrast).
-- **Hromadná editace:** výběr více fotek → alba, štítky, popisky, lokalita, oblíbené.
-- **Slideshow:** na albech/štítcích; nastavitelný **efekt přechodu** (fade/slide/…) a **rychlost**;
-  fullscreen, touch/klávesy.
+- **Stack:** React 19 + TS + Vite + react-bootstrap + Bootswatch Superhero (dark), embedded into the binary.
+- **i18n:** i18next, **Czech default** + English; a language switcher, persistence of the choice.
+- **Mobile/tablet:** fully responsive; multi-upload **from the mobile gallery** (`<input capture>` /
+  file picker); touch-friendly slideshow and detail.
+- **"Back always works (even on a filter)":** all view state (filters, sorting, search, page)
+  is in **URL query params** + History API. Browser back restores the previous filter; the server is
+  stateless with respect to view state. Sharing a URL = sharing a view.
+- **Library:** a virtualized grid (`react-virtuoso`), infinite scroll, filters+sorting.
+- **Photo detail** (a combination of PP + photo-sorter): preview + metadata (view/edit),
+  EXIF, GPS/mini-map, **faces** (boxes, assigning people), **similar photos**, labels, albums,
+  favorites, non-destructive edits (crop/rotate/brightness/contrast).
+- **Bulk editing:** select multiple photos → albums, labels, captions, location, favorites.
+- **Slideshow:** on albums/labels; a configurable **transition effect** (fade/slide/…) and **speed**;
+  fullscreen, touch/keys.
 
 ---
 
-## 14. Konfigurace, build a provoz (S15)
+## 14. Configuration, build and operations (S15)
 
-### Konfigurace
-- **YAML + env override** (Viper). Klíče (vychází z photo-sorteru, rozšířeno): `database.url`,
+### Configuration
+- **YAML + env override** (Viper). Keys (based on photo-sorter, extended): `database.url`,
   `storage.originals_path`, `storage.cache_path`, `embedding.url`/`dim`, `web.port`/`host`/
   `session_secret`, `auth.bootstrap_admin_*`, `maps.mapy_api_key`, `backup.s3.{endpoint,
   region,bucket,access_key,secret_key,path_style}`, `backup.schedule`, `duplicate.*`,
-  `trash.retention_days`. Tajemství primárně přes env.
+  `trash.retention_days`. Secrets primarily via env.
 
 ### Build & deploy
-- **goreleaser**, `CGO_ENABLED=0`, **arch arm64** (+ amd64 pro vývoj), `.deb` balík se
-  systemd unitem a env-file (conffile, zachová se při upgradu).
-- Runtime závislosti (apt): `exiftool`, `libheif-examples` (heif-convert), `dcraw`/LibRaw,
-  `postgresql-client` (pg_dump **i** pg_restore). (Bez `texlive` — fotokniha vynechána.)
-- DB migrace auto-apply na startu. Frontend `npm ci && npm run build` → `embed.FS`.
+- **goreleaser**, `CGO_ENABLED=0`, **arch arm64** (+ amd64 for development), a `.deb` package with a
+  systemd unit and env-file (a conffile, preserved across upgrades).
+- Runtime dependencies (apt): `exiftool`, `libheif-examples` (heif-convert), `dcraw`/LibRaw,
+  `postgresql-client` (pg_dump **and** pg_restore). (No `texlive` — the photo book is omitted.)
+- DB migrations auto-apply at startup. Frontend `npm ci && npm run build` → `embed.FS`.
 
-### Zálohování (S13)
-- V procesu, plánovaně (cron/scheduler): `pg_dump` + sync originálů na **S3-kompatibilní**
-  endpoint (`minio-go`, path-style, stream `objectSize=-1`). Konfigurovatelný endpoint
-  (AWS/MinIO/Backblaze/Wasabi). Retence/verze konfigurovatelná.
+### Backup (S13)
+- In-process, scheduled (cron/scheduler): `pg_dump` + sync of originals to an **S3-compatible**
+  endpoint (`minio-go`, path-style, stream `objectSize=-1`). A configurable endpoint
+  (AWS/MinIO/Backblaze/Wasabi). Retention/versions configurable.
 
-### Obnova / disaster recovery (S13)
-- Protějšek zálohy, aby byla **použitelná**. CLI strom `kukatko restore` (sdílí `backup.s3.*`
-  konfiguraci, `internal/backup`):
-  - `restore list` — vypíše dumpy v bucketu (`db/kukatko-*.dump`), nejnovější první.
-  - `restore db [--dump KEY] [--yes] [--verify]` — **destruktivní**: stáhne dump z S3 a streamuje
-    ho do `pg_restore` (`--clean --if-exists --single-transaction`, heslo přes `PGPASSWORD` env,
-    nikdy v argv), pak idempotentně re-aplikuje migrace. Vyžaduje `--yes` (přepisuje data).
-    Bez `--dump` obnoví nejnovější dump.
-  - `restore originals` — stáhne chybějící originály z bucketu do `storage.originals_path`,
-    přeskočí už existující dle **klíče + velikosti**; atomický zápis přes `.tmp` + rename →
-    **resumovatelné** (přerušený běh se bezpečně zopakuje).
-  - `restore verify` — integritní report: počet fotek v DB vs. originálů na disku + nesoulady
-    (`photo_files.file_path` chybějící na disku / soubory na disku bez záznamu).
-- **Admin API** (`internal/restoreapi`, admin-only, jen **read-only** operace): `GET /restore/dumps`
-  a `POST /restore/verify`. Destruktivní obnova DB se přes HTTP **záměrně neexponuje** (obnova pod
-  běžícím serverem by mu podtrhla tabulky) — patří do CLI při zastaveném serveru.
-- Náhledy (cache) se po obnově regenerují **líně** on-demand; embeddingy/faces jsou součástí dumpu.
+### Restore / disaster recovery (S13)
+- The counterpart to the backup, so that it is **usable**. The CLI tree `kukatko restore` (shares the `backup.s3.*`
+  configuration, `internal/backup`):
+  - `restore list` — lists the dumps in the bucket (`db/kukatko-*.dump`), newest first.
+  - `restore db [--dump KEY] [--yes] [--verify]` — **destructive**: downloads the dump from S3 and streams
+    it into `pg_restore` (`--clean --if-exists --single-transaction`, password via the `PGPASSWORD` env,
+    never in argv), then idempotently re-applies migrations. Requires `--yes` (overwrites data).
+    Without `--dump` it restores the newest dump.
+  - `restore originals` — downloads missing originals from the bucket into `storage.originals_path`,
+    skips ones that already exist by **key + size**; an atomic write via `.tmp` + rename →
+    **resumable** (an interrupted run repeats safely).
+  - `restore verify` — an integrity report: the count of photos in the DB vs. originals on disk + mismatches
+    (`photo_files.file_path` missing on disk / files on disk with no record).
+- **Admin API** (`internal/restoreapi`, admin-only, **read-only** operations only): `GET /restore/dumps`
+  and `POST /restore/verify`. Destructive DB restore is **deliberately not exposed** over HTTP (a restore under
+  a running server would pull the tables out from under it) — it belongs in the CLI with the server stopped.
+- Thumbnails (the cache) are regenerated **lazily** on-demand after a restore; embeddings/faces are part of the dump.
 - Runbook (fresh machine → install → restore → verify): [`docs/RESTORE.md`](RESTORE.md).
 
 ### Observability
-- **Prometheus** metriky (jako photo-sorter), `audit_log`, strukturované logy.
+- **Prometheus** metrics (like photo-sorter), `audit_log`, structured logs.
 
 ---
 
-## 15. Co děláme jinak než photo-sorter
+## 15. What we do differently from photo-sorter
 
-| Bolest photo-sorteru | Řešení v Kukátku |
+| photo-sorter pain point | Solution in Kukátko |
 |----------------------|------------------|
-| In-memory joby, ztráta při restartu | Persistentní fronta v Postgresu (`jobs`, SKIP LOCKED, retry, dead-letter) |
-| Žádný rate-limit na login | Rate-limit na `/auth/login` |
-| 30denní absolutní expiry session | Sliding expiry (prodloužení při aktivitě) |
-| Změna hesla nezruší ostatní sessions | Zruší je |
-| Editovaný download drží celý obrázek v RAM | Streamování výstupu |
-| Chybí FK na embeddings/faces | FK s `ON DELETE CASCADE` |
-| Audit log mimo transakci (riziko ztráty) | Audit ve stejné transakci jako mutace |
-| Manuální per-face pojmenování (pracné) | Auto-clustering obličejů + hromadné pojmenování shluku |
-| Globální „favorite" | Per-user oblíbené (`user_favorites`) |
-| Jen env konfigurace | YAML + env |
-| Fotokniha (LaTeX, komplexní) | Vynecháno |
+| In-memory jobs, lost on restart | Persistent queue in Postgres (`jobs`, SKIP LOCKED, retry, dead-letter) |
+| No rate-limit on login | Rate-limit on `/auth/login` |
+| 30-day absolute session expiry | Sliding expiry (extension on activity) |
+| A password change doesn't revoke other sessions | Revokes them |
+| An edited download holds the whole image in RAM | Streaming the output |
+| Missing FK on embeddings/faces | FK with `ON DELETE CASCADE` |
+| Audit log outside the transaction (risk of loss) | Audit in the same transaction as the mutation |
+| Manual per-face naming (laborious) | Auto-clustering of faces + bulk naming of a cluster |
+| Global "favorite" | Per-user favorites (`user_favorites`) |
+| Env-only configuration | YAML + env |
+| Photo book (LaTeX, complex) | Omitted |
 
 ---
 
-## 16. Otevřené otázky a rizika k ověření
+## 16. Open questions and risks to verify
 
-1. **pgvector v `shared-postgres`** — je `CREATE EXTENSION vector` dostupné? (blokující pro M0)
-2. **`halfvec`** vyžaduje pgvector ≥ 0.7 — ověřit verzi; jinak fallback na `vector` (float32).
-3. **PhotoPrism `updated:` filtr** — zachytí i změny pouhých metadat? (ověřit empiricky proti
-   reálné instanci; fallback `added:` + watermark.)
-4. **PhotoPrism token bug** (#4665) — ověřit, že access token funguje na `/api/v1/photos`
-   se správným scope a `Content-Type`.
-5. **Mapy.com klíč** — vázanost na doménu/referrer není doložena; držet klíč server-side.
-6. **HW Pi** — reálná rychlost pure-Go náhledů a HEIC na cílovém Pi; případně zapnout
-   `vipsthumbnail` shell-out. Změřit build HNSW indexu (maintenance_work_mem) na Pi vs build
-   na boxu/shared serveru.
-7. **Inference modely** — potvrdit přesný CLIP checkpoint photo-sorteru (`pretrained` pole),
-   aby migrace embeddingů seděla 1:1 (stejný prostor).
+1. **pgvector in `shared-postgres`** — is `CREATE EXTENSION vector` available? (blocking for M0)
+2. **`halfvec`** requires pgvector ≥ 0.7 — verify the version; otherwise fall back to `vector` (float32).
+3. **PhotoPrism `updated:` filter** — does it also catch changes to metadata alone? (verify empirically against
+   a real instance; fallback `added:` + watermark.)
+4. **PhotoPrism token bug** (#4665) — verify that the access token works on `/api/v1/photos`
+   with the correct scope and `Content-Type`.
+5. **Mapy.com key** — a binding to a domain/referrer is not documented; keep the key server-side.
+6. **Pi HW** — the real speed of pure-Go thumbnails and HEIC on the target Pi; possibly enable
+   the `vipsthumbnail` shell-out. Measure the HNSW index build (maintenance_work_mem) on the Pi vs a build
+   on the box/shared server.
+7. **Inference models** — confirm photo-sorter's exact CLIP checkpoint (the `pretrained` field),
+   so the embeddings migration matches 1:1 (the same space).
 
 ---
 
 ## 17. Reference
 
-**photo-sorter (lokální):** `internal/fingerprint/embedding.go` (sidecar kontrakt),
-`internal/database/postgres/migrations/032_native_photo_management.sql` (schéma),
+**photo-sorter (local):** `internal/fingerprint/embedding.go` (sidecar contract),
+`internal/database/postgres/migrations/032_native_photo_management.sql` (schema),
 `internal/config/config.go`, `internal/thumb/thumb.go`, `internal/web/handlers/process.go`,
 `.goreleaser.yaml`, `deb/photo-sorter.service`.
 
 **PhotoPrism API:** [REST API intro](https://docs.photoprism.app/developer-guide/api/) ·
 [Client Authentication](https://docs.photoprism.app/developer-guide/api/auth/) ·
 [Search Filters](https://docs.photoprism.app/user-guide/search/filters/) ·
-[internal/api routy](https://pkg.go.dev/github.com/photoprism/photoprism/internal/api) ·
+[internal/api routes](https://pkg.go.dev/github.com/photoprism/photoprism/internal/api) ·
 [uid.go](https://github.com/photoprism/photoprism/blob/develop/pkg/rnd/uid.go).
 
 **mapy.com:** [REST API](https://developer.mapy.com/rest-api-mapy-cz/) ·
@@ -830,81 +830,81 @@ naseedovanému fake photo-sorter schématu.
 
 ---
 
-## 18. Rozpad do milníků (epiců)
+## 18. Breakdown into milestones (epics)
 
-Detailní tasky se zakládají v systému **botka**. Milníky jsou seřazené pro brzy viditelnou UI.
+Detailed tasks are created in the **botka** system. The milestones are ordered for an early-visible UI.
 
-- **M0 — Základy:** repo scaffolding, Go modul, config (YAML+env), DB+migrace, pgvector/halfvec
-  (ověřit v shared-postgres), CI/build (goreleaser arm64 .deb), kostra embedded frontendu
+- **M0 — Foundations:** repo scaffolding, Go module, config (YAML+env), DB+migrations, pgvector/halfvec
+  (verify in shared-postgres), CI/build (goreleaser arm64 .deb), skeleton of the embedded frontend
   (react-bootstrap+Superhero+i18n), auth/users+sliding sessions, layout + back/history.
-- **M1 — Storage & ingest:** layout úložiště, upload (multiupload+mobil), dedup (SHA256+pHash),
-  EXIF/GPS, thumbnailer na Pi, CRUD fotek, knihovna s filtry/řazením/stránkováním (viditelná UI).
-- **M2 — Joby & embeddings:** persistentní fronta, sidecar client + health/offline, image
-  embeddings, podobné fotky, sémantické + fulltext (hybrid) hledání.
-- **M3 — Lidé:** face joby, markery/subjekty, IoU matching, auto-clustering, návrhy, přiřazování UX, outliers, stránky osob.
-- **M4 — Organizace:** alba, štítky, hromadná editace metadat, per-user oblíbené, mapa (mapy.com proxy), slideshow.
-- **M5 — Import/migrace:** PhotoPrism API import + originály + inkrement (PP UID); migrace z photo-sorteru (PS UID, 1:1 embeddingy).
-- **M6 — Backup & ops:** S3 backup (originály + dump), durable audit, rate-limiting, metriky, volitelný WoL auto-wake (`internal/wake`), hardening.
-- **M7 — Polish:** detail fotky (PP+PS kombo), mobil/tablet, i18n úplnost, slideshow efekty, výkon, nedestruktivní úpravy.
+- **M1 — Storage & ingest:** storage layout, upload (multi-upload+mobile), dedup (SHA256+pHash),
+  EXIF/GPS, thumbnailer on the Pi, photo CRUD, library with filters/sorting/pagination (a visible UI).
+- **M2 — Jobs & embeddings:** persistent queue, sidecar client + health/offline, image
+  embeddings, similar photos, semantic + full-text (hybrid) search.
+- **M3 — People:** face jobs, markers/subjects, IoU matching, auto-clustering, suggestions, assignment UX, outliers, people pages.
+- **M4 — Organization:** albums, labels, bulk metadata editing, per-user favorites, the map (mapy.com proxy), slideshow.
+- **M5 — Import/migration:** PhotoPrism API import + originals + increment (PP UID); migration from photo-sorter (PS UID, 1:1 embeddings).
+- **M6 — Backup & ops:** S3 backup (originals + dump), durable audit, rate-limiting, metrics, optional WoL auto-wake (`internal/wake`), hardening.
+- **M7 — Polish:** photo detail (PP+PS combo), mobile/tablet, i18n completeness, slideshow effects, performance, non-destructive edits.
 
 ---
 
-## 19. Kvalita, testování a linting
+## 19. Quality, testing and linting
 
-Robustnost a rozšiřitelnost jsou prvotřídní cíl. Každý task (i autonomní v botce) musí
-dodržet tato pravidla; **task není hotový s červeným lintem nebo testy.**
+Robustness and extensibility are a first-class goal. Every task (including autonomous ones in botka) must
+follow these rules; **a task is not done with red lint or tests.**
 
 ### 19.1 Linting (Go)
-- **golangci-lint v2**, konfigurace **`.golangci.yml` převzatá a adaptovaná z photo-sorteru**
-  (přísná sada ~40+ linterů: `revive`, `gosec`, `errcheck`, `errorlint`, `wrapcheck`,
+- **golangci-lint v2**, configuration **`.golangci.yml` adopted and adapted from photo-sorter**
+  (a strict set of ~40+ linters: `revive`, `gosec`, `errcheck`, `errorlint`, `wrapcheck`,
   `cyclop`, `gocognit`, `funlen`, `dupl`, `goconst`, `gocritic`, `prealloc`, `sqlclosecheck`,
   `bodyclose`, `noctx`, `testifylint`, `thelper`, `usetesting`, `nilerr`, `lll` (120),
   `misspell`, `godot`, `nakedret`, `unparam`, `wastedassign`, …).
-- Nastavení mj.: `funlen` 60/40, `gocognit` 15, `goconst` 3, `lll` 120. Exported symboly
-  dokumentované (`revive: exported`). `//nolint` jen s odůvodněním (`nolintlint`).
-- `gofmt`/`gofumpt` čistý kód.
+- Settings incl.: `funlen` 60/40, `gocognit` 15, `goconst` 3, `lll` 120. Exported symbols
+  documented (`revive: exported`). `//nolint` only with justification (`nolintlint`).
+- `gofmt`/`gofumpt` clean code.
 
-### 19.2 Testy (Go)
-- **Unit testy** pro veškerou business logiku (table-driven, `testify`). Čisté funkce bez I/O
-  preferovat → snadno testovatelné.
-- **Integrační testy** pro DB repozitáře a HTTP handlery proti **reálnému pgvector Postgresu**
-  (test DB `kukatko_test`, DSN v `KUKATKO_TEST_DATABASE_URL`). Harness: aplikuje migrace,
-  poskytne čistý stav per test (truncate/transakce + rollback). Když env chybí, integrační
-  testy se `t.Skip` (aby rychlá brána `make check` nevyžadovala DB).
-- **R2 backend** má integrační testy proti **reálnému S3-kompatibilnímu endpointu**
-  (`KUKATKO_TEST_S3_ENDPOINT`, stačí MinIO; volitelně `_BUCKET`/`_REGION`/`_ACCESS_KEY`/`_SECRET_KEY`):
-  store/open/stat/delete, materialize + úklid temp souboru (i na error path) a klíč s UTF-8 jménem.
-  Bez proměnné se skipnou, stejně jako DB testy. Podepisování URL je čistá funkce → unit testy.
-- Externí závislosti (embeddings sidecar, PhotoPrism API, mapy.com, S3) za **rozhraním**
-  (interface) → v testech mockované/fake; kontrakt sidecaru ověřit i contract testem proti
-  fake serveru.
-- Smysluplné pokrytí logiky (ne vanity %). Nové chování = nové/aktualizované testy.
+### 19.2 Tests (Go)
+- **Unit tests** for all business logic (table-driven, `testify`). Prefer pure functions without I/O
+  → easily testable.
+- **Integration tests** for DB repositories and HTTP handlers against a **real pgvector Postgres**
+  (test DB `kukatko_test`, DSN in `KUKATKO_TEST_DATABASE_URL`). Harness: applies migrations,
+  provides a clean state per test (truncate/transaction + rollback). When the env is missing, the integration
+  tests `t.Skip` (so that the fast gate `make check` doesn't require a DB).
+- **The R2 backend** has integration tests against a **real S3-compatible endpoint**
+  (`KUKATKO_TEST_S3_ENDPOINT`, MinIO is enough; optionally `_BUCKET`/`_REGION`/`_ACCESS_KEY`/`_SECRET_KEY`):
+  store/open/stat/delete, materialize + cleanup of the temp file (even on the error path) and a key with a UTF-8 name.
+  Without the variable they are skipped, just like the DB tests. URL signing is a pure function → unit tests.
+- External dependencies (the embeddings sidecar, PhotoPrism API, mapy.com, S3) behind an **interface**
+  (interface) → mocked/fake in tests; verify the sidecar contract with a contract test against
+  a fake server too.
+- Meaningful coverage of the logic (not vanity %). New behavior = new/updated tests.
 
-### 19.3 Frontend testy
-- **ESLint** (strict) + **Prettier**. **Vitest + React Testing Library** pro komponenty a hooky
-  (zejména stav filtrů v URL, i18n, auth flow). Kritické toky (login, upload, hledání) pokrýt.
-- (Volitelně M7) **Playwright** E2E pro pár klíčových scénářů.
+### 19.3 Frontend tests
+- **ESLint** (strict) + **Prettier**. **Vitest + React Testing Library** for components and hooks
+  (especially filter state in the URL, i18n, auth flow). Cover the critical flows (login, upload, search).
+- (Optionally M7) **Playwright** E2E for a few key scenarios.
 
-### 19.4 Make targety a brána
+### 19.4 Make targets and the gate
 ```
-make fmt              # gofmt/gofumpt + prettier (jediný cíl, který přepisuje soubory)
-make fmt-check        # ověření formátu bez zápisu (golangci-lint fmt --diff + prettier --check)
-make vet              # go vet (samostatně; v bráně ho pokrývá govet uvnitř golangci-lint)
+make fmt              # gofmt/gofumpt + prettier (the only target that rewrites files)
+make fmt-check        # format check without writing (golangci-lint fmt --diff + prettier --check)
+make vet              # go vet (standalone; in the gate it's covered by govet inside golangci-lint)
 make lint             # golangci-lint run + eslint
 make lint-fix         # golangci-lint run --fix
 make typecheck        # tsc -b --noEmit (frontend)
-make test             # unit testy (bez DB, CGO_ENABLED=0, bez -race)
-make test-race        # unit testy s race detektorem (CGO_ENABLED=1) — v CI, ne v bráně
-make test-integration # integrační testy (vyžaduje KUKATKO_TEST_DATABASE_URL)
-make check            # docs-budget + fmt-check + lint + typecheck + test   ← brána (nic nemění)
+make test             # unit tests (no DB, CGO_ENABLED=0, no -race)
+make test-race        # unit tests with the race detector (CGO_ENABLED=1) — in CI, not in the gate
+make test-integration # integration tests (requires KUKATKO_TEST_DATABASE_URL)
+make check            # docs-budget + fmt-check + lint + typecheck + test   ← gate (changes nothing)
 make build            # frontend build + go build (embed)
 ```
 
-### 19.5 CI a brána v botce
-- **GitHub Actions:** na push/PR spustit `make check` + `make test-race` + `make test-integration`
-  se service kontejnerem `pgvector/pgvector:pg17` (env `KUKATKO_TEST_DATABASE_URL`) + frontend
-  lint/test. Race detektor je záměrně mimo `make check`, aby brána před commitem zůstala rychlá.
-- **Botka verification command projektu = `make check`** → pokud task zanechá červený lint
-  nebo testy, dostane stav `needs_review` místo `done`.
-- Autonomní agenti pro Go kód používají skill **golang-developer** (přísný lint, dokumentace,
-  testy).
+### 19.5 CI and the gate in botka
+- **GitHub Actions:** on push/PR run `make check` + `make test-race` + `make test-integration`
+  with the service container `pgvector/pgvector:pg17` (env `KUKATKO_TEST_DATABASE_URL`) + frontend
+  lint/test. The race detector is deliberately outside `make check`, so the pre-commit gate stays fast.
+- **The project's Botka verification command = `make check`** → if a task leaves red lint
+  or tests, it gets the `needs_review` state instead of `done`.
+- Autonomous agents for Go code use the **golang-developer** skill (strict lint, documentation,
+  tests).
