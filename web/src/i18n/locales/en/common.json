@@ -982,6 +982,31 @@
       "confirmAll_other": "{{count}} confirmations failed."
     }
   },
+  "candidates": {
+    "title": "May also appear here",
+    "subtitle": "Untagged photos where we recognise this person by face similarity — confirm or reject each.",
+    "search": "Find suggestions",
+    "searching": "Searching…",
+    "rerun": "Search again",
+    "reviewAll": "Open full workspace",
+    "idleHint": "The search is expensive, so it doesn't run on its own. Start it with the button.",
+    "error": "Couldn't load suggestions. Please try again.",
+    "confirmError": "Couldn't assign. Please try again.",
+    "rejectError": "Couldn't reject. Please try again.",
+    "noFaces": {
+      "title": "This person has no faces yet",
+      "hint": "Name a few faces for this person first, so there's something to search from."
+    },
+    "noEmbeddings": {
+      "title": "No face embeddings yet",
+      "hint": "This person's faces have no embedding yet (the box was offline). Search will work once processing catches up."
+    },
+    "zero": {
+      "title": "No new suggestions",
+      "hint": "Nothing else turned up. Try the full workspace to widen the search."
+    },
+    "allReviewed": "Every suggestion has been reviewed."
+  },
   "faces": {
     "title": "Faces",
     "loading": "Loading faces…",

@@ -767,7 +767,9 @@ zapiš sem.
   dlaždice: skrytý v klidu, odhalí se na hoveru/fokusu (na dotyku, kde není hover, zůstává vidět),
   aktuální náhled drží vyplněný accent disk jako značku (`.kk-cover-btn`/`--on`, `image`/
   `image-fill`); chování beze změny — stejný `onSetCover` handler a `PATCH /subjects/{uid}`), a
-  sekce `Outliers` (jen editor/admin); dlaždice nesou **person
+  dvě review sekce jen pro editory: `Candidates` („Možná je i zde" — neotagované fotky, kde osoba
+  je podle podoby obličeje, k potvrzení/odmítnutí; hledání je **explicitní** přes tlačítko, ne
+  on-load) a pod ní `Outliers` (podezřelá přiřazení); dlaždice nesou **person
   scope** v detail odkazu (`detailQuery` s `person=uid`, `DETAIL_DEFAULTS` + jen ten facet) → prev/next
   ve vieweru pageuje fotky téhle osoby (`GET /photos?person=uid`), ne celou knihovnu; galerie
   (`GET /subjects/:uid/photos`) i person facet řadí **shodně** — `taken_at DESC NULLS LAST, uid DESC`
@@ -1100,8 +1102,14 @@ zapiš sem.
   (`{jméno} · {confidence}%`, one-tap) + typeahead nad `useSubjects` (`AddAutocomplete` s `autoFocus`
   a `hint` = počet fotek osoby); u přiřazeného obličeje **Přeřadit** (návrhy, které backend dodává
   i pro přiřazené — vlastní osoba je z nich vyloučená) a **Odebrat**; Esc vyskočí nejdřív z přeřazení,
-  pak z výběru), `ClusterCard`, `Outliers` (žebříček podezřelých obličejů s one-tap unassign na
-  stránce osoby + odkaz **Projít všechny** na `/outliers?subject={uid}`, kde je plná sweep verze),
+  pak z výběru), `ClusterCard`, `Candidates` (per-subject verze `/faces` vsazená do stránky osoby:
+  tlačítko **Najít návrhy** → `searchCandidates` s defaultním prahem `THRESHOLD_DEFAULT_PERCENT` a
+  limitem 60, reuse `useCandidateReview`+`CandidateCard` beze forku; ✓ potvrdí přes `assignFace`
+  a `onAssigned` reloadne galerii, ✗ odmítne přes `rejectFace`, obojí optimisticky a potvrzená/
+  odmítnutá karta z listu zmizí; `no_faces`/`no_embeddings`/prázdno mají vysvětlení; odkaz
+  **Otevřít celý nástroj** na `/faces?subject={uid}`), `Outliers` (žebříček podezřelých obličejů
+  s one-tap unassign na stránce osoby + odkaz **Projít všechny** na `/outliers?subject={uid}`, kde
+  je plná sweep verze),
   `OutlierCard`/`OutlierControls`/`OutlierStats` (stavební bloky `/outliers`: karta s **kontextovým
   výřezem** (30 % kolem bboxu, `padBbox`+`cropImageStyle`+`boxWithinCrop`), otázkou „Je to chyba?"
   a dvěma opačnými verdikty (✓ odebrat / ✗ potvrdit), výběrovým checkboxem a focus ringem; config

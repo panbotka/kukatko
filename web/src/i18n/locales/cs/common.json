@@ -1022,6 +1022,31 @@
       "confirmAll_other": "{{count}} potvrzení se nepodařilo."
     }
   },
+  "candidates": {
+    "title": "Možná je i zde",
+    "subtitle": "Neotagované fotky, kde tuto osobu poznáváme podle podoby obličeje — potvrď, nebo odmítni.",
+    "search": "Najít návrhy",
+    "searching": "Hledám…",
+    "rerun": "Hledat znovu",
+    "reviewAll": "Otevřít celý nástroj",
+    "idleHint": "Hledání je náročné, tak neběží samo. Spusť ho tlačítkem.",
+    "error": "Návrhy se nepodařilo načíst. Zkus to prosím znovu.",
+    "confirmError": "Přiřazení se nepodařilo. Zkus to prosím znovu.",
+    "rejectError": "Odmítnutí se nepodařilo. Zkus to prosím znovu.",
+    "noFaces": {
+      "title": "Tato osoba zatím nemá obličeje",
+      "hint": "Nejdřív u této osoby pojmenuj pár obličejů, ať je z čeho vycházet."
+    },
+    "noEmbeddings": {
+      "title": "Obličeje zatím nemají embedding",
+      "hint": "Obličeje této osoby ještě nemají embedding (box byl offline). Hledání půjde, až zpracování doběhne."
+    },
+    "zero": {
+      "title": "Žádné nové návrhy",
+      "hint": "Nic dalšího se nenašlo. Širší záběr zkus v celém nástroji."
+    },
+    "allReviewed": "Všechny návrhy jsou vyřízené."
+  },
   "faces": {
     "title": "Obličeje",
     "loading": "Načítání obličejů…",

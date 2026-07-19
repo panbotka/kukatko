@@ -13,6 +13,7 @@ import { GridSkeleton } from '../components/library/GridSkeleton'
 import { BulkEditControl } from '../components/organize/BulkEditControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { SelectionStart } from '../components/organize/SelectionStart'
+import { Candidates } from '../components/people/Candidates'
 import { Outliers } from '../components/people/Outliers'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
 import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
@@ -39,8 +40,10 @@ type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; su
  * A subject's page: header (name, type, edit, and the shared images-per-row
  * density control — a view preference open to everyone who can see the page),
  * the photo gallery (with a set-cover action for editors), and — for editors —
- * the outlier review section to spot and detach mis-assigned faces. The gallery
- * pages through `GET /subjects/{uid}/photos` with a load-more control.
+ * two review sections: the candidate search (untagged photos where this person
+ * likely appears, to confirm/reject) and the outlier review (spot and detach
+ * mis-assigned faces). The gallery pages through `GET /subjects/{uid}/photos`
+ * with a load-more control.
  *
  * Editors can also select photos in the gallery and bulk-edit them; the gallery
  * refetches afterwards, since the edit may have taken photos out of it. The
@@ -229,6 +232,16 @@ export function SubjectPage() {
             </div>
           )}
         </>
+      )}
+
+      {canWrite && (
+        <section className="mt-4">
+          <h2 className="kk-section-title">{t('candidates.title')}</h2>
+          <p className="text-secondary small">{t('candidates.subtitle')}</p>
+          {/* Confirming a candidate assigns a face to this subject, which can bring a
+              new photo into the gallery above — reload it so counters/tiles catch up. */}
+          <Candidates subjectUid={subject.uid} onAssigned={reload} />
+        </section>
       )}
 
       {canWrite && (
