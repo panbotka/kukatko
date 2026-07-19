@@ -10,7 +10,8 @@ konfigurační klíč zapiš sem **a** do `config.example.yaml`.
 - **CLI:** `kukatko serve` (načte config, **spustí migrace**, **bootstrapne admina**, spustí
   hodinové čištění expirovaných session, **background worker** (`internal/worker`) na
   zpracování fronty jobů a **plánovaný úklid koše** (`internal/trash` `RunPurge`, každých 6 h —
-  trvale maže fotky archivované déle než `trash.retention_days`; retence ≤ 0 ho vypne),
+  trvale maže fotky archivované déle než `trash.retention_days`, výchozí **365 dní (1 rok)**;
+  retence ≤ 0 ho vypne),
   **plánovanou S3 zálohu** (`internal/backup` `RunSchedule` na `backup.schedule`; jen je-li
   `backup.s3.{endpoint,bucket}` nakonfigurováno) a **volitelný Wake-on-LAN auto-wake boxu**
   (`internal/wake` `Run`, každou minutu; jen je-li `embedding.wake.enabled`, jinak plně inertní),

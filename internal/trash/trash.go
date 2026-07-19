@@ -47,6 +47,11 @@ const (
 	sourceManual = "manual"
 	// sourceEmptyTrash is an admin/editor sweep of the whole trash.
 	sourceEmptyTrash = "empty_trash"
+	// sourcePurgeOlder is an admin sweep of every archived photo older than a
+	// caller-chosen age cutoff (the manual purge-older-than-N-days control). It is
+	// distinct from sourceRetention so the audit trail tells a deliberate,
+	// admin-attributed age purge apart from the scheduled system purge.
+	sourcePurgeOlder = "purge_older"
 	// sourceRetention is the scheduled, system-initiated retention purge.
 	sourceRetention = "retention"
 )
@@ -177,6 +182,26 @@ func (s *Service) PurgePhoto(ctx context.Context, uid string, meta audit.Meta) e
 // recorded and the photo is left in the trash rather than aborting the whole run.
 func (s *Service) EmptyTrash(ctx context.Context, meta audit.Meta) (Result, error) {
 	return s.purgeArchived(ctx, nil, meta, sourceEmptyTrash)
+}
+
+// PurgeOlderThan permanently deletes every archived photo whose archived_at is
+// older than now minus days, attributing each purge to meta (the acting admin)
+// and tagging it with sourcePurgeOlder so a deliberate age-bounded purge is
+// distinguishable in the audit trail from the scheduled retention purge. Unlike
+// PurgeExpired it ignores the configured retention window — the caller chooses
+// the age cutoff — so it works even when the scheduled purge is disabled.
+//
+// days must be >= 0 (the HTTP layer rejects a negative value); a negative value
+// here would place the cutoff in the future and purge everything, so it is
+// clamped to zero. days == 0 sets the cutoff at now, which matches every
+// archived photo — equivalent to EmptyTrash. It returns the count purged and
+// failed, with per-photo failures left in the trash for a later retry.
+func (s *Service) PurgeOlderThan(ctx context.Context, days int, meta audit.Meta) (Result, error) {
+	if days < 0 {
+		days = 0
+	}
+	cutoff := time.Now().Add(-time.Duration(days) * hoursPerDay * time.Hour)
+	return s.purgeArchived(ctx, &cutoff, meta, sourcePurgeOlder)
 }
 
 // PurgeExpired permanently deletes every archived photo whose archived_at is

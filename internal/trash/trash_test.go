@@ -295,6 +295,84 @@ func TestPurgeExpired_respectsRetention(t *testing.T) {
 	}
 }
 
+func TestPurgeOlderThan_removesOnlyOlder(t *testing.T) {
+	t.Parallel()
+	recent := time.Now().Add(-time.Hour)   // 1h old → newer than a 1-day cutoff → kept
+	old := time.Now().Add(-72 * time.Hour) // 3 days old → older than a 1-day cutoff → purged
+	store := newFakePhotoStore()
+	store.seed("ph_live", nil)
+	store.seed("ph_recent", &recent)
+	store.seed("ph_old", &old)
+	fs, th := newFakeStorage(), newFakeThumb()
+	svc := newService(t, store, fs, th, nil)
+
+	res, err := svc.PurgeOlderThan(context.Background(), 1, audit.Meta{ActorUID: "usr_admin"})
+	if err != nil {
+		t.Fatalf("PurgeOlderThan: %v", err)
+	}
+	if res.Purged != 1 || res.Failed != 0 {
+		t.Fatalf("result = %+v, want {Purged:1 Failed:0}", res)
+	}
+	if store.deleted["ph_live"] || store.deleted["ph_recent"] {
+		t.Errorf("only the older archived photo should be purged: %v", store.deleted)
+	}
+	if !store.deleted["ph_old"] {
+		t.Errorf("photo older than the cutoff was not purged")
+	}
+	if got := store.auditedAs["ph_old"]; got.ActorUID != "usr_admin" || got.Details["source"] != sourcePurgeOlder {
+		t.Errorf("purge audit entry = %+v, want actor usr_admin source %q", got, sourcePurgeOlder)
+	}
+}
+
+func TestPurgeOlderThan_zeroDaysEmptiesAll(t *testing.T) {
+	t.Parallel()
+	recent := time.Now().Add(-time.Hour)
+	old := time.Now().Add(-72 * time.Hour)
+	store := newFakePhotoStore()
+	store.seed("ph_live", nil)
+	store.seed("ph_recent", &recent)
+	store.seed("ph_old", &old)
+	fs, th := newFakeStorage(), newFakeThumb()
+	svc := newService(t, store, fs, th, nil)
+
+	// days == 0 means "everything currently in trash", equivalent to EmptyTrash.
+	res, err := svc.PurgeOlderThan(context.Background(), 0, audit.Meta{})
+	if err != nil {
+		t.Fatalf("PurgeOlderThan: %v", err)
+	}
+	if res.Purged != 2 || res.Failed != 0 {
+		t.Fatalf("result = %+v, want {Purged:2 Failed:0}", res)
+	}
+	if store.deleted["ph_live"] {
+		t.Errorf("live photo must not be purged")
+	}
+	if !store.deleted["ph_recent"] || !store.deleted["ph_old"] {
+		t.Errorf("every archived photo should be purged with days=0: %v", store.deleted)
+	}
+}
+
+func TestPurgeOlderThan_negativeDaysClampedToZero(t *testing.T) {
+	t.Parallel()
+	recent := time.Now().Add(-time.Hour)
+	store := newFakePhotoStore()
+	store.seed("ph_recent", &recent)
+	fs, th := newFakeStorage(), newFakeThumb()
+	svc := newService(t, store, fs, th, nil)
+
+	// A negative age is clamped to 0 (the cutoff never lands in the future), so it
+	// behaves like days=0 rather than purging photos archived "after now".
+	res, err := svc.PurgeOlderThan(context.Background(), -5, audit.Meta{})
+	if err != nil {
+		t.Fatalf("PurgeOlderThan: %v", err)
+	}
+	if res.Purged != 1 || res.Failed != 0 {
+		t.Fatalf("result = %+v, want {Purged:1 Failed:0}", res)
+	}
+	if !store.deleted["ph_recent"] {
+		t.Errorf("negative days should clamp to 0 and purge all archived: %v", store.deleted)
+	}
+}
+
 func TestPurgeExpired_disabledWhenRetentionNonPositive(t *testing.T) {
 	t.Parallel()
 	old := time.Now().Add(-72 * time.Hour)

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -913,6 +914,83 @@ func TestTrashPurgeRBAC(t *testing.T) {
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusNoContent {
 			t.Errorf("admin purge status = %d, want 204", resp.StatusCode)
+		}
+	})
+}
+
+// TestTrashPurgeOlderRBAC pins the admin-only age-bounded purge endpoint: viewers
+// and editors are refused (it is a permanent, irreversible deletion tightened to
+// admin), confirm=true and a valid days value are enforced, and an admin purges
+// every archived photo older than the cutoff while a live photo is left alone.
+func TestTrashPurgeOlderRBAC(t *testing.T) {
+	env := newEnv(t)
+	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	admin, _ := env.login(t, "admin", auth.RoleAdmin)
+	base := env.server.URL
+	ctx := t.Context()
+
+	archivedA := env.seedPhoto(t, photos.Photo{Title: "A", TakenAtSource: "unknown"}, "a.jpg", 5, 5, 200)
+	archivedB := env.seedPhoto(t, photos.Photo{Title: "B", TakenAtSource: "unknown"}, "b.jpg", 6, 6, 200)
+	live := env.seedPhoto(t, photos.Photo{Title: "C", TakenAtSource: "unknown"}, "c.jpg", 7, 7, 200)
+	for _, uid := range []string{archivedA.UID, archivedB.UID} {
+		if _, err := env.store.Archive(ctx, uid); err != nil {
+			t.Fatalf("archive %s: %v", uid, err)
+		}
+	}
+
+	t.Run("viewer cannot purge-older", func(t *testing.T) {
+		resp := mustDo(t, viewer, http.MethodPost, base+"/api/v1/trash/purge-older?days=0&confirm=true", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("viewer purge-older status = %d, want 403", resp.StatusCode)
+		}
+	})
+
+	t.Run("editor cannot purge-older", func(t *testing.T) {
+		resp := mustDo(t, editor, http.MethodPost, base+"/api/v1/trash/purge-older?days=0&confirm=true", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("editor purge-older status = %d, want 403", resp.StatusCode)
+		}
+	})
+
+	t.Run("admin needs confirm", func(t *testing.T) {
+		resp := mustDo(t, admin, http.MethodPost, base+"/api/v1/trash/purge-older?days=0", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("admin purge-older without confirm status = %d, want 400", resp.StatusCode)
+		}
+	})
+
+	t.Run("admin needs valid days", func(t *testing.T) {
+		resp := mustDo(t, admin, http.MethodPost, base+"/api/v1/trash/purge-older?days=nope&confirm=true", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("admin purge-older with bad days status = %d, want 400", resp.StatusCode)
+		}
+	})
+
+	t.Run("admin purges the whole trash with days=0", func(t *testing.T) {
+		resp := mustDo(t, admin, http.MethodPost, base+"/api/v1/trash/purge-older?days=0&confirm=true", nil)
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("admin purge-older status = %d, want 200", resp.StatusCode)
+		}
+		var body trash.Result
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Purged != 2 || body.Failed != 0 {
+			t.Errorf("purge-older result = %+v, want {Purged:2 Failed:0}", body)
+		}
+		for _, uid := range []string{archivedA.UID, archivedB.UID} {
+			if _, err := env.store.GetByUID(ctx, uid); !errors.Is(err, photos.ErrPhotoNotFound) {
+				t.Errorf("archived photo %s survived the purge: err = %v", uid, err)
+			}
+		}
+		if _, err := env.store.GetByUID(ctx, live.UID); err != nil {
+			t.Errorf("live photo was purged: %v", err)
 		}
 	})
 }

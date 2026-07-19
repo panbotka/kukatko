@@ -129,6 +129,46 @@ func TestEmptyTrash_writesAuditRowPerPhoto(t *testing.T) {
 	}
 }
 
+// TestPurgeOlderThan_writesAuditRow confirms the admin age-bounded purge records
+// a photo.purge row attributed to the acting admin, targeting the purged photo,
+// tagged source=purge_older so it is distinguishable from the system retention
+// purge, while the photo within the cutoff is left untouched and unaudited.
+func TestPurgeOlderThan_writesAuditRow(t *testing.T) {
+	env := newPurgeEnv(t)
+	ctx := t.Context()
+	auditStore := audit.NewStore(env.db.Pool())
+	actor := makeActor(t, env.db, "usr_trasho", "trasho")
+	now := time.Now()
+	old := now.Add(-200 * 24 * time.Hour)
+	recent := now.Add(-10 * 24 * time.Hour)
+	oldPhoto, _, _ := env.seedPhoto(t, "old", &old)
+	env.seedPhoto(t, "recent", &recent) // within the cutoff: not purged, not audited
+
+	meta := audit.Meta{ActorUID: actor, IP: "203.0.113.9", UserAgent: "purge-older-agent"}
+	res, err := env.svc.PurgeOlderThan(ctx, 100, meta)
+	if err != nil {
+		t.Fatalf("PurgeOlderThan: %v", err)
+	}
+	if res.Purged != 1 {
+		t.Fatalf("PurgeOlderThan purged = %d, want 1", res.Purged)
+	}
+
+	recs := purgeAuditRows(t, ctx, auditStore)
+	if len(recs) != 1 {
+		t.Fatalf("photo.purge rows = %d, want 1 (%+v)", len(recs), recs)
+	}
+	rec := recs[0]
+	if rec.ActorUID == nil || *rec.ActorUID != actor {
+		t.Errorf("purge actor = %v, want %q (the calling admin, not the system actor)", rec.ActorUID, actor)
+	}
+	if rec.TargetUID == nil || *rec.TargetUID != oldPhoto.UID {
+		t.Errorf("purge target = %v, want %q", rec.TargetUID, oldPhoto.UID)
+	}
+	if rec.Details["source"] != "purge_older" {
+		t.Errorf("purge source = %v, want purge_older", rec.Details["source"])
+	}
+}
+
 // TestPurgeExpired_writesSystemActorAuditRow confirms the scheduled retention
 // purge records a photo.purge row with no actor (a system action) for the expired
 // photo, tagged as a retention purge, while leaving recent photos untouched.
