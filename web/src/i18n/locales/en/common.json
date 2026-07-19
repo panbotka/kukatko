@@ -1506,6 +1506,13 @@
     "selectItem": "Select {{name}}",
     "actionError": "The action failed.",
     "unavailable": "Permanent deletion is disabled in the server configuration.",
+    "olderThan": {
+      "button": "Delete older than…",
+      "days": "days",
+      "inputLabel": "Delete photos older than, in days",
+      "success_one": "Deleted {{count}} photo",
+      "success_other": "Deleted {{count}} photos"
+    },
     "countdown": {
       "days": "{{count}}d left",
       "due": "due"
@@ -1516,6 +1523,8 @@
       "bulk_one": "{{count}} photo, including its original, will be permanently deleted. This cannot be undone.",
       "bulk_other": "{{count}} photos, including their originals, will be permanently deleted. This cannot be undone.",
       "empty": "Every photo in the trash, including originals, will be permanently deleted. This cannot be undone.",
+      "older_one": "Every photo in the trash older than {{count}} day, including originals, will be permanently deleted. This cannot be undone.",
+      "older_other": "Every photo in the trash older than {{count}} days, including originals, will be permanently deleted. This cannot be undone.",
       "confirm": "Delete forever",
       "cancel": "Cancel"
     }
