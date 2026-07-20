@@ -401,14 +401,19 @@ when the embeddings box is offline (upload and browsing work without it).
     `SELECT … FOR UPDATE SKIP LOCKED` (`run_after <= now()`, ordered `priority DESC, run_after ASC,
     id ASC`), marks it `running` + `locked_by`/`locked_at`. Empty queue → `ErrNoJobs`. Concurrent
     workers never get the same job.
-  - `Complete(id)` / `Fail(id, err)` — `Fail` increments `attempts`; while `attempts < max_attempts`
-    it requeues with exponential backoff via `run_after` (base 30 s, cap 1 h), otherwise `state=dead` +
-    `last_error` (dead-letter).
-  - `Defer(id, delay)` — requeues a running job to `now()+delay` **without** counting an attempt (the
+  - `Complete(id, workerID)` / `Fail(id, workerID, err)` — `Fail` increments `attempts`; while
+    `attempts < max_attempts` it requeues with exponential backoff via `run_after` (base 30 s, cap 1 h),
+    otherwise `state=dead` + `last_error` (dead-letter).
+  - `Defer(id, workerID, delay)` — requeues a running job to `now()+delay` **without** counting an attempt (the
     `attempts` attribute is unchanged, the lock is released). For transient, error-free states — mainly when the
     embeddings box is offline — so the job waits in the queue for the box to return without exhausting its retry budget.
+  - Every lifecycle write is **fenced by `locked_by = workerID`**: if the job was meanwhile reclaimed, the
+    write is refused with `ErrLockLost` and the late result is dropped rather than clobbering the new owner's run.
   - `Heartbeat(id, workerID)` + `RecoverStaleLocks(staleAfter)` — running jobs with a stale lock
-    (a dead worker) are requeued (counted as an attempt); a heartbeat refreshes the lock and protects against recovery.
+    (a dead worker) are requeued (counted as an attempt, with the same exponential backoff `Fail` applies, so a
+    job that kills its process isn't re-claimed instantly in a crash loop); a heartbeat refreshes the lock, and
+    the worker ticks it for as long as a handler runs, so a job that legitimately outlives `stale_after`
+    (a full import pass) is never recovered and run twice.
   - Helpers: `CountsByState` / `CountsByType`, `ListDead`, `RequeueDead`, `Requeue` (dead **and**
     failed → queued), `List(ListOptions{State,Limit,Offset})` (a recent listing, ordered
     `updated_at DESC`, limit cap 500), `Get`.
@@ -431,15 +436,20 @@ The execution loop that drains the queue runs **inside the `kukatko serve` proce
 - **`Worker`** (`New(Config{Queue, Registry, Concurrency, PollInterval, StaleAfter,
   StaleScanInterval, IDPrefix})`) — `Run(ctx)` starts `Concurrency` goroutines that poll
   `Claim` (filtered to the registered `Types`), dispatch a job to a handler by `job.Type` and, per
-  the result, call `Complete`/`Fail`. The bookkeeping (`Complete`/`Fail`) runs on a
-  **shutdown-immune** context (`context.WithoutCancel`), so a result computed just before
-  shutdown is still persisted. Alongside the workers runs a **stale-lock recovery** ticker.
-- **Graceful shutdown**: cancelling `ctx` (SIGINT/SIGTERM) stops claiming; a job running at
-  shutdown is **abandoned** (its lock is later requeued by the queue via `RecoverStaleLocks`), `Run`
-  returns cleanly. A handler panic → `ErrHandlerPanic` (the job is failed, the worker doesn't crash),
-  an unknown job type → `ErrNoHandler`.
+  the result, call `Complete`/`Fail` **under the claiming worker's id**. The bookkeeping
+  (`Complete`/`Fail`/`Defer`) runs on a **shutdown-immune** context (`context.WithoutCancel`), so a
+  result computed just before shutdown is still persisted. While a handler runs, a **heartbeat
+  goroutine** refreshes the job's lock every `stale_after/3` (floor 100 ms) and is stopped and waited
+  for when the handler returns, so it can never race the outcome write. Alongside the workers runs a
+  **stale-lock recovery** ticker.
+- **Graceful shutdown**: cancelling `ctx` (SIGINT/SIGTERM) stops claiming; a job whose handler
+  errored at shutdown is **abandoned** (its lock is later requeued by the queue via
+  `RecoverStaleLocks`), `Run` returns cleanly. A `RetryAfterError` at shutdown is the exception: it is
+  still written as a `Defer`, because a deferral must never burn a retry attempt (otherwise an
+  `image_embed` job waiting for an offline box would dead-letter across restarts). A handler panic →
+  `ErrHandlerPanic` (the job is failed, the worker doesn't crash), an unknown job type → `ErrNoHandler`.
 - **`Queue`** is an interface = a subset of `jobs.Store` (`Claim`/`Complete`/`Fail`/`Defer`/
-  `RecoverStaleLocks`), so the runtime can be unit-tested with a fake.
+  `Heartbeat`/`RecoverStaleLocks`), so the runtime can be unit-tested with a fake.
 - Tuning via `worker.*` config (`count`, `poll_interval`, `stale_after`,
   `stale_scan_interval`).
 

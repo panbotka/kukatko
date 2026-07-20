@@ -580,21 +580,30 @@ to `## Package map` in `CLAUDE.md`.
   (a persistent job queue in Postgres, **the main robustness gain over photo-sorter** —
   jobs survive a restart, retry, dedup, wait when the box is offline; the `jobs` table in migration
   `0005_jobs.sql`: `state` queued/running/done/failed/dead, `priority`, `payload` JSONB,
-  `attempts`/`max_attempts` (default 5), `run_after` backoff, `locked_by`/`locked_at`; index
-  `(state, run_after, priority)` + **dedup** partial unique on `(type, payload->>'photo_uid')
-  WHERE state IN (queued,running)`; `Store` = `NewStore(pool)` with
+  `attempts`/`max_attempts` (default 5), `run_after` backoff, `locked_by`/`locked_at`; indexes
+  (migration `0040_jobs_claim_index.sql`) `(priority DESC, run_after, id) WHERE state='queued'` —
+  matching the claim `ORDER BY` exactly, so a deep backlog is walked, not re-sorted — plus
+  `(locked_at) WHERE state='running'` for the stale-lock scan, and the **dedup** partial unique on
+  `(type, payload->>'photo_uid') WHERE state IN (queued,running)`; `Store` = `NewStore(pool)` with
   `Enqueue(ctx,type,payload,opts)` (idempotent on the dedup key → `ErrDuplicate`,
   `EnqueueOptions{Priority,MaxAttempts,RunAfter}`),
   `Claim(ctx,workerID,types...)` (atomically via `SELECT … FOR UPDATE SKIP LOCKED`,
   `run_after<=now()`, ordered priority DESC/run_after ASC/id ASC, mark running+lock →
-  an empty queue `ErrNoJobs`), `Complete`/`Fail(err)` (increments attempts → requeue with
-  exponential backoff via `run_after` base 30 s/cap 1 h, otherwise `state=dead`+`last_error`),
-  `Defer(id,delay)` (requeue to `now()+delay` **without** counting an attempt — an offline box waits without
-  burning the retry budget), `Heartbeat`/`RecoverStaleLocks(staleAfter)` (a stale lock = a dead worker → requeue as an attempt),
+  an empty queue `ErrNoJobs`), `Complete(id,workerID)`/`Fail(id,workerID,err)` (increments attempts →
+  requeue with exponential backoff via `run_after` base 30 s/cap 1 h, otherwise
+  `state=dead`+`last_error`),
+  `Defer(id,workerID,delay)` (requeue to `now()+delay` **without** counting an attempt — an offline box waits without
+  burning the retry budget); **every lifecycle write is fenced by `locked_by = workerID`** → a worker whose
+  job was meanwhile reclaimed gets `ErrLockLost` and its late result is dropped instead of clobbering the new
+  owner's run; `Heartbeat(id,workerID)` (refreshes `locked_at`; the worker ticks it for as long as a handler
+  runs, so a job that legitimately outlives the stale window — a full import pass — is not recovered and run
+  twice)/`RecoverStaleLocks(staleAfter)` (a stale lock = a dead worker → requeue as an attempt, **with the same
+  backoff `Fail` applies** so a job that kills its process cannot be re-claimed instantly in a crash loop;
+  an exhausted job is dead-lettered),
   helpers `CountsByState`/`CountsByType`/`ListDead`/`RequeueDead`/`Requeue` (dead **and**
   failed → queued, for the admin endpoint)/`List`(`ListOptions{State,Limit,Offset}`, ordered
   updated_at DESC, limit cap 500, for the admin listing)/`Get`; sentinels
-  `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrNotDead`; **job types** `image_embed`/
+  `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrLockLost`/`ErrNotDead`; **job types** `image_embed`/
   `face_detect`/`thumbnail`/`places`/`metadata`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
   `NewEnqueuer(store)`
   implements `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`/`EnqueueThumbnail`/
@@ -605,11 +614,17 @@ to `## Package map` in `CLAUDE.md`.
   handler/duplicate registration); `HandlerFunc` = `func(ctx, jobs.Job) error`; `Worker` =
   `New(Config{Queue,Registry,Concurrency,PollInterval,StaleAfter,StaleScanInterval,IDPrefix})`
   with `Run(ctx)` — starts `Concurrency` goroutines polling `Claim` (filtered to the registered
-  `Types`), dispatches to the handler by `job.Type`, `Complete`/`Fail` by the result via a
-  **shutdown-immune** bookkeeping context (`context.WithoutCancel`), plus a stale-lock recovery
-  ticker; the `Queue` interface = a subset of `jobs.Store` (`Claim`/`Complete`/`Fail`/`Defer`/
+  `Types`), dispatches to the handler by `job.Type`, `Complete`/`Fail` by the result **under the
+  claiming worker's id** via a **shutdown-immune** bookkeeping context (`context.WithoutCancel`) — a
+  `jobs.ErrLockLost` there means the job was reclaimed, so the result is dropped, not written — plus a
+  stale-lock recovery ticker; while a handler runs, a **heartbeat goroutine** refreshes the lock every
+  `StaleAfter/3` (floor 100 ms) so a long job is never recovered underneath itself, and it stops (waited
+  for, so it cannot race the outcome write) when the handler returns or the lock is reported lost;
+  the `Queue` interface = a subset of `jobs.Store` (`Claim`/`Complete`/`Fail`/`Defer`/`Heartbeat`/
   `RecoverStaleLocks`) for testability; **graceful shutdown** = a ctx cancel stops claiming,
-  a job running at shutdown is abandoned (the queue recovers the lock), a handler panic →
+  a job whose handler errored at shutdown is abandoned (the queue recovers the lock) — but a
+  `RetryAfterError` is **still written as a `Defer`**, since a deferral must never burn a retry attempt;
+  a handler panic →
   `ErrHandlerPanic` (job fail, not a crash), an unknown type → `ErrNoHandler`; a handler can return
   `RetryAfter(delay,cause)`/`RetryAfterError` → the worker calls `Defer(delay)` instead of `Fail` (a transient
   error-free failure, no burned attempt — used by `image_embed` when the box is offline); a built-in **noop**

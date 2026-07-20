@@ -528,8 +528,12 @@ lost on restart).
 - **Worker runtime** (`internal/worker`) runs **in the `kukatko serve` process**: a configurable
   number of goroutines polling `Claim` with bounded concurrency, dispatch to a handler from a **registry**
   (`Register(type, HandlerFunc)`) by `job.Type`, `Complete`/`Fail` per the result, plus
-  stale-lock recovery. **Graceful shutdown** (SIGINT/SIGTERM) stops claiming and leaves abandoned
-  in-flight jobs to the queue for recovery. The queue state is read via the **admin Jobs API**
+  stale-lock recovery. A **heartbeat** refreshes a running job's lock while its handler works, so a job
+  that legitimately outlives `worker.stale_after` (a full import pass) is not recovered and run twice;
+  every lifecycle write is fenced by `locked_by`, so a reclaimed job cannot be finished by its previous
+  owner. Recovery requeues with the same backoff `Fail` uses. **Graceful shutdown** (SIGINT/SIGTERM)
+  stops claiming and leaves abandoned in-flight jobs to the queue for recovery — except a deferral
+  (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
 - **Job types:** `thumbnail`, `places`, `metadata`, `sidecar` (run locally on the Pi, immediately),
   `image_embed`, `face_detect` (require the box), `pp_import`, `ps_migrate`, `backup`.
