@@ -1,6 +1,7 @@
 // Package importapi exposes the HTTP triggers for the read-only imports: the
-// PhotoPrism import (pp_import) and the photo-sorter migration (ps_migrate). It
-// does not run either inline — both are long-running and belong on the
+// PhotoPrism import (pp_import), the photo-sorter direct-database migration
+// (ps_migrate) and the photo-sorter feeds enrichment (ps_feeds_import). It does
+// not run any inline — all are long-running and belong on the
 // background worker — but enqueues a single job and returns its id. Each job's
 // payload carries a fixed sentinel so the queue's dedup key allows only one of
 // that kind to be queued or running at a time: triggering again while one is in
@@ -28,6 +29,7 @@ import (
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/ppimport"
+	"github.com/panbotka/kukatko/internal/psfeedsimport"
 	"github.com/panbotka/kukatko/internal/psimport"
 )
 
@@ -66,6 +68,7 @@ type API struct {
 	rateLimit         func(http.Handler) http.Handler
 	enablePhotoPrism  bool
 	enablePhotoSorter bool
+	enableFeeds       bool
 }
 
 // Config bundles the dependencies of NewAPI. Queue, Runs and RequireMaintainer are
@@ -85,6 +88,8 @@ type Config struct {
 	EnablePhotoPrism bool
 	// EnablePhotoSorter registers POST /import/photosorter when set.
 	EnablePhotoSorter bool
+	// EnableFeeds registers POST /import/photosorter-feeds when set.
+	EnableFeeds bool
 }
 
 // NewAPI returns an API from cfg. A nil RateLimit disables throttling.
@@ -100,6 +105,7 @@ func NewAPI(cfg Config) *API {
 		rateLimit:         rateLimit,
 		enablePhotoPrism:  cfg.EnablePhotoPrism,
 		enablePhotoSorter: cfg.EnablePhotoSorter,
+		enableFeeds:       cfg.EnableFeeds,
 	}
 }
 
@@ -130,9 +136,10 @@ func (c Config) runsOrPanic() RunLister {
 // configured; the triggers are registered only for configured sources. Every
 // route is behind the maintainer guard:
 //
-//	GET  /import/runs         RequireMaintainer  recent import-run history + enabled sources
-//	POST /import/photoprism   RequireMaintainer  enqueue a PhotoPrism import job
-//	POST /import/photosorter  RequireMaintainer  enqueue a photo-sorter migration job
+//	GET  /import/runs               RequireMaintainer  recent import-run history + enabled sources
+//	POST /import/photoprism         RequireMaintainer  enqueue a PhotoPrism import job
+//	POST /import/photosorter        RequireMaintainer  enqueue a photo-sorter migration job
+//	POST /import/photosorter-feeds  RequireMaintainer  enqueue a photo-sorter feeds import job
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireMaintainer).Get("/import/runs", a.handleListRuns)
 	if a.enablePhotoPrism {
@@ -141,6 +148,9 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	if a.enablePhotoSorter {
 		r.With(a.rateLimit, a.requireMaintainer).Post("/import/photosorter", a.handleImportPhotoSorter)
 	}
+	if a.enableFeeds {
+		r.With(a.rateLimit, a.requireMaintainer).Post("/import/photosorter-feeds", a.handleImportFeeds)
+	}
 }
 
 // sources reports which import sources are configured, so the operations UI can show
@@ -148,6 +158,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 type sources struct {
 	PhotoPrism  bool `json:"photoprism"`
 	PhotoSorter bool `json:"photosorter"`
+	Feeds       bool `json:"photosorter_feeds"`
 }
 
 // runsResponse is the JSON body of the run-history endpoint: a page of runs plus
@@ -177,10 +188,14 @@ func (a *API) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		runs = []importer.Run{}
 	}
 	writeJSON(w, http.StatusOK, runsResponse{
-		Runs:    runs,
-		Limit:   limit,
-		Offset:  offset,
-		Sources: sources{PhotoPrism: a.enablePhotoPrism, PhotoSorter: a.enablePhotoSorter},
+		Runs:   runs,
+		Limit:  limit,
+		Offset: offset,
+		Sources: sources{
+			PhotoPrism:  a.enablePhotoPrism,
+			PhotoSorter: a.enablePhotoSorter,
+			Feeds:       a.enableFeeds,
+		},
 	})
 }
 
@@ -236,6 +251,14 @@ func (a *API) handleImportPhotoPrism(w http.ResponseWriter, r *http.Request) {
 // conflict and accepted semantics as the PhotoPrism trigger.
 func (a *API) handleImportPhotoSorter(w http.ResponseWriter, r *http.Request) {
 	a.enqueue(w, r, jobs.TypePSMigrate, psimport.JobPayload(), "a photo-sorter migration is already in progress")
+}
+
+// handleImportFeeds enqueues a single ps_feeds_import job (enrich imported photos
+// with photo-sorter's 1:1 embeddings and faces), with the same conflict and
+// accepted semantics as the other triggers.
+func (a *API) handleImportFeeds(w http.ResponseWriter, r *http.Request) {
+	a.enqueue(w, r, jobs.TypePSFeedsImport, psfeedsimport.JobPayload(),
+		"a photo-sorter feeds import is already in progress")
 }
 
 // enqueue inserts a singleton import job and writes the HTTP response: 409 on a

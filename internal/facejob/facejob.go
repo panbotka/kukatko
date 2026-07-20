@@ -235,7 +235,7 @@ func (s *Service) buildFaces(photo photos.Photo, detected []embedding.Face, mode
 			PhotoUID:    photo.UID,
 			FaceIndex:   len(out),
 			Vector:      f.Embedding,
-			BBox:        normalizeBBox(f.BBox, photo.FileWidth, photo.FileHeight, photo.FileOrientation),
+			BBox:        NormalizeBBox(f.BBox, photo.FileWidth, photo.FileHeight, photo.FileOrientation),
 			DetScore:    f.DetScore,
 			Model:       model,
 			PhotoWidth:  photo.FileWidth,

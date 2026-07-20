@@ -111,6 +111,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/placesjob` — worker handler `places` (reverse geocode, rate-limited due to credits)
 - `internal/ppimport` — incremental **idempotent** import from PhotoPrism
 - `internal/processapi` — maintainer-only `/process/*` backfills (embeddings, faces, clusters, places)
+- `internal/psfeeds` — read-only HTTP client of photo-sorter's migration feeds (`/embeddings`, `/faces`, `/stats`); `psat_` bearer, keyset paging, behind an interface
+- `internal/psfeedsimport` — imports photo-sorter's 1:1 embeddings + faces from the feeds onto PhotoPrism-imported photos (matched by `photoprism_uid`), carrying markers/subjects; idempotent, no GPU recompute
 - `internal/psimport` — incremental **idempotent** direct migration from photo-sorter
 - `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware

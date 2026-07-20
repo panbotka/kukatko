@@ -306,8 +306,9 @@ func buildServices(
 		return nil, backgroundServices{}, err
 	}
 	psMigrate := psMigrateHandlerOrNil(cfg, db, enqueuer, reg)
+	psFeeds := psFeedsHandlerOrNil(cfg, db)
 	jobWorker, jobAPI, processAPI, maintenanceAPI, err := buildJobs(
-		cfg, db, jobStore, authAPI, enqueuer, embedSvc, faceSvc, clusterSvc, importSvc, psMigrate, reg)
+		cfg, db, jobStore, authAPI, enqueuer, embedSvc, faceSvc, clusterSvc, importSvc, psMigrate, psFeeds, reg)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}

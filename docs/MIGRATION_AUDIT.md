@@ -1014,3 +1014,103 @@ production audit shows heavy use).
   that moment the cover photo does not yet exist. The correct fix is a new, idempotent write-back
   pass after the photo loop (for each subject/album, find the Kukátko photo by `photosorter_uid`
   and set the cover) — a structural addition, not a field fix. Recommended as a separate task.
+
+---
+
+# Migration — photo-sorter FEEDS → Kukátko (the production path)
+
+- **Added:** 2026-07-20 (task `1191a2cc`).
+- **Scope:** the field-by-field mapping by which the photo-sorter **HTTP migration feeds**
+  (`internal/psfeeds` + `internal/psfeedsimport`) enrich already-imported PhotoPrism photos with
+  photo-sorter's pre-computed embeddings and faces.
+- **Why this exists alongside the photo-sorter section above:** that section audits the *direct
+  database* migration (`internal/psimport`), which assumes photo-sorter holds photos natively. **In
+  production it does not** (`GET /api/v1/photos` → `total:0`): photo-sorter runs as a vector/faces
+  layer over PhotoPrism, keyed by the PhotoPrism photo UID (~20,687 embeddings, ~112,806 faces). So
+  the real migration imports **photos from PhotoPrism** (`ppimport`) and only enriches them here with
+  photo-sorter's vectors — copied **1:1, no GPU recompute**. The `psimport` DSN path is left intact
+  but is **not** the migration path for this deployment. See `docs/MIGRATION_PLAN.md` (Phase 3).
+
+## How an item attaches
+
+Every feed item carries the **PhotoPrism photo UID** (`photo_uid`). The importer resolves the target
+Kukátko photo with `photos.GetByPhotoprismUID(photo_uid)` (index `idx_photos_photoprism_uid`). No
+photo of the item's UID yet imported → the item is **skipped and counted** (`Skipped`), never an
+error, so the feeds import is safe before/during/after the PhotoPrism import and safe to re-run.
+
+## Embeddings feed (`GET /api/v1/embeddings`)
+
+The target is the `embeddings` table (`0006`, `halfvec(768)` + HNSW), written by
+`vectors.SaveEmbedding` (upsert `ON CONFLICT (photo_uid)`). Matches CLIP ViT-L/14, 768-dim →
+copied verbatim.
+
+| Feed field | Target column | Verdict | Note |
+| --- | --- | --- | --- |
+| `photo_uid` | (resolves the Kukátko photo) | **MAPPED** | Re-owned as the Kukátko photo UID. |
+| `embedding` (`[]float32`) | `embeddings.embedding` | **MAPPED** | 1:1, `len==768` validated; a wrong length → `Failed`, not fatal. |
+| `model` | `embeddings.model` | **MAPPED** | e.g. `ViT-L-14`. |
+| `pretrained` | `embeddings.pretrained` | **MAPPED** | e.g. `laion2b_s32b_b82k`. |
+| `dim` | — | **WAIVED** | Implied by the vector length; the store sets `dim`. |
+| `created_at` | — | **WAIVED** | Drives the informational run high-watermark; `embeddings.created_at` is the local write time. |
+
+## Faces feed (`GET /api/v1/faces`)
+
+The target is the `faces` table (`0006`/`0009`, `halfvec(512)`), written per photo with one
+`vectors.RecordFaceDetection` (atomic replace + a `face_detections` marker). Faces of a photo arrive
+contiguously (feed ordered by `id`, a photo's faces inserted as one batch); the importer groups them
+and flushes on `photo_uid` change (a non-contiguous photo is logged). Matches buffalo_l, 512-dim.
+
+| Feed field | Target column | Verdict | Note |
+| --- | --- | --- | --- |
+| `photo_uid` | `faces.photo_uid` (kk) | **MAPPED** | Re-pointed to the Kukátko photo UID. |
+| `face_index` | `faces.face_index` | **MAPPED** | Preserved. |
+| `embedding` (`[]float32`) | `faces.embedding` | **MAPPED** | 512, 1:1; `ErrDimMismatch`/`ErrFaceIndexTaken` → the photo's group is `Failed`, not fatal. |
+| `bbox` (`[x1,y1,x2,y2]` **raw px**) | `faces.bbox` (`[x,y,w,h]` 0..1) | **MAPPED** | **Converted** by `facejob.NormalizeBBox` using `photo_width`/`photo_height`/`orientation` — the *same* conversion Kukátko's native `face_detect` applies to the sidecar's pixel box, so the result matches native detection and IoU-matches PhotoPrism markers. NOT copied verbatim (contrast `psimport`, which copies the DB bbox as-is). |
+| `det_score` | `faces.det_score` | **MAPPED** | Detector confidence. |
+| `model` | `faces.model` | **MAPPED** | e.g. `buffalo_l (ResNet100)`; also the `RecordFaceDetection` model. |
+| `marker_uid` | `faces.marker_uid` + `markers.uid` | **MAPPED** | Preserved verbatim; see Markers. `""` → no marker. |
+| `subject_uid` | (remapped) | **MAPPED** | The feed's photo-sorter subject UID; **not** stored on the face. The face's `subject_uid` holds the **Kukátko** subject UID (see Subjects). |
+| `subject_name` | `faces.subject_name` + subject match | **MAPPED** | Denormalised render hint on the face; also seeds/matches the subject by name slug. `""` → unassigned. |
+| `photo_width`/`photo_height`/`orientation` | `faces.photo_width`/`photo_height`/`orientation` | **MAPPED** | Cached as the bbox reference frame, and used for the normalisation above. |
+| `id` | — | **WAIVED** | photo-sorter's face id; the feed's keyset cursor only. |
+| `dim` | — | **WAIVED** | Implied by the vector length. |
+| `file_uid` | — | **WAIVED** | Kukátko faces reference the photo, not a file. |
+| `created_at` | — | **WAIVED** | Drives the informational watermark. |
+
+## Subjects and markers (carried from the faces feed)
+
+There is no separate subjects/markers feed — both are materialised from the faces feed so people and
+faces come across, not just raw vectors.
+
+- **Subjects** (`subjects` table). Matched **by name slug** (`people.Slugify(subject_name)`) via
+  `GetSubjectBySlug`, else `CreateSubject` (type `person`). This **reuses** a subject the PhotoPrism
+  import (`ppimport`) already created from the same name — avoiding a duplicate — and is the same
+  slug-pairing rule as `psimport`. The photo-sorter `subject_uid` is remapped to the Kukátko subject
+  UID for the face and the marker; it is never stored as an external column (none exists). Two people
+  who share a name merge into one subject (a property of slug pairing, documented for `psimport` too).
+- **Markers** (`markers` table). Materialised under the **preserved `marker_uid`**: `GetMarkerByUID`
+  → reuse if it already exists (e.g. the same-UID marker seeded by `ppimport` from PhotoPrism), else
+  `CreateMarker` (type `face`, the normalised+clamped bbox, `score` 0 = unrecorded, the Kukátko
+  subject). Preserving the UID keeps each face's `marker_uid` valid and shares marker identity across
+  importers, exactly as the PhotoPrism/`psimport` sections describe. Marker work is **best-effort**
+  (logged, never fatal): the face's assignment survives on its denormalised `subject_uid`/`subject_name`
+  even if the marker row fails.
+
+## Idempotency, incrementality, run bookkeeping
+
+Every write is an upsert or a find-or-create guard, so a re-run converges: `SaveEmbedding` upserts,
+`RecordFaceDetection` replaces a photo's faces atomically, subjects match by slug, markers guard on
+UID. Each pass **scans the whole feed** (the feeds carry no incremental `since` filter); the run
+records the newest item `created_at` as its `high_watermark`, but that is **informational only** —
+it never gates fetching. Runs are recorded under the `import_runs` source **`photosorter_feeds`**
+(migration `0041` extends the source CHECK), kept distinct from the DSN path's `photosorter` so their
+history and watermarks do not mix. `Counts`: `Imported` = embeddings written + photos whose faces were
+recorded; `Skipped` = feed entries whose photo is not imported yet; `Failed` = entries the store
+rejected (a wrong dimension); `Updated` is unused (writes upsert). A feed-fetch or database failure
+fails the whole run (retryable); per-item problems never abort it.
+
+**Coverage:** integration tests (`psfeedsimport_integration_test.go`, against a real DB + a faked
+feeds client) assert the embedding and faces land 1:1 on the photo found by `photoprism_uid`, the
+bbox is normalised, the marker and subject transfer, a not-yet-imported photo is skipped, and a re-run
+does not duplicate subjects/markers/faces. The client wire format is covered by
+`psfeeds/psfeeds_test.go` (auth header, keyset paging, 429 retry, error classification).

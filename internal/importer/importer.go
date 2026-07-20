@@ -32,6 +32,12 @@ const (
 	// SourcePhotoSorter is the one-off (optionally repeatable) migration from the
 	// photo-sorter database.
 	SourcePhotoSorter Source = "photosorter"
+	// SourcePhotoSorterFeeds is the read-only enrichment of PhotoPrism-imported
+	// photos with photo-sorter's pre-computed embeddings and faces, copied 1:1 from
+	// its HTTP migration feeds (internal/psfeedsimport). It is distinct from
+	// SourcePhotoSorter (the direct-database photo migration) so their run history
+	// and watermarks stay separate.
+	SourcePhotoSorterFeeds Source = "photosorter_feeds"
 	// SourceFolder is a `kukatko import dir` run: a directory of originals
 	// ingested from disk. It has no source timestamp to resume from and so never
 	// records a high-watermark; re-running is made safe by the SHA256 dedup.
@@ -40,7 +46,8 @@ const (
 
 // Valid reports whether s is a recognised import source.
 func (s Source) Valid() bool {
-	return s == SourcePhotoPrism || s == SourcePhotoSorter || s == SourceFolder
+	return s == SourcePhotoPrism || s == SourcePhotoSorter ||
+		s == SourcePhotoSorterFeeds || s == SourceFolder
 }
 
 // Status is the lifecycle state of an import run. The values mirror the status

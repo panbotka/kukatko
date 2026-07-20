@@ -44,7 +44,7 @@ import (
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
-	importSvc *ppimport.Service, psMigrate worker.HandlerFunc, reg *metrics.Registry,
+	importSvc *ppimport.Service, psMigrate, psFeeds worker.HandlerFunc, reg *metrics.Registry,
 ) (*worker.Worker, *jobsapi.API, *processapi.API, *maintenanceapi.API, error) {
 	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(cfg, db, enqueuer, embedSvc, faceSvc, reg)
 	if err != nil {
@@ -64,7 +64,7 @@ func buildJobs(
 	}
 	registry := buildRegistry(registryServices{
 		embed: embedSvc, face: faceSvc, thumb: thumbSvc, meta: metaSvc,
-		imp: importSvc, psMigrate: psMigrate, places: placesSvc, sidecar: sidecarSvc,
+		imp: importSvc, psMigrate: psMigrate, psFeeds: psFeeds, places: placesSvc, sidecar: sidecarSvc,
 	})
 
 	w := worker.New(worker.Config{
@@ -114,14 +114,15 @@ type registryServices struct {
 	meta      *metajob.Service
 	imp       *ppimport.Service
 	psMigrate worker.HandlerFunc
+	psFeeds   worker.HandlerFunc
 	places    *placesjob.Service
 	sidecar   *sidecarjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
 // registered. The always-available handlers register unconditionally; the
-// config-gated ones (import, photo-sorter migration, places, sidecar) register
-// only when their service was built, because an unregistered type is never
+// config-gated ones (import, photo-sorter migration, photo-sorter feeds, places,
+// sidecar) register only when their service was built, because an unregistered type is never
 // claimed — so a job of a type with no handler would sit queued forever.
 func buildRegistry(svc registryServices) *worker.Registry {
 	registry := worker.NewRegistry()
@@ -135,6 +136,9 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	}
 	if svc.psMigrate != nil {
 		registry.Register(jobs.TypePSMigrate, svc.psMigrate)
+	}
+	if svc.psFeeds != nil {
+		registry.Register(jobs.TypePSFeedsImport, svc.psFeeds)
 	}
 	if svc.places != nil {
 		registry.Register(jobs.TypePlaces, svc.places.Handle)

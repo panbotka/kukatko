@@ -155,16 +155,25 @@ type ImportConfig struct {
 	PhotoSorter PhotoSorterConfig `mapstructure:"photosorter"`
 }
 
-// PhotoSorterConfig holds the read-only connection to the photo-sorter database
-// for the one-off migration (internal/psimport). The DSN should come from the
-// environment (KUKATKO_IMPORT_PHOTOSORTER_DSN), not a committed file. An empty
-// DSN disables the migration command and its admin trigger.
+// PhotoSorterConfig holds the read-only connections to photo-sorter used by the
+// two migration paths. The direct-database path (internal/psimport) uses DSN; the
+// production HTTP feeds path (internal/psfeedsimport) uses BaseURL + Token. Both
+// should come from the environment, not a committed file. Each path is disabled
+// when its own field is empty.
 type PhotoSorterConfig struct {
 	// DSN is the read-only PostgreSQL connection string for the photo-sorter
-	// database (empty disables the migration).
+	// database used by the legacy direct-database migration (empty disables it).
+	// Set via KUKATKO_IMPORT_PHOTOSORTER_DSN.
 	DSN string `mapstructure:"dsn"`
-	// PageSize is the photo-listing page size; a non-positive value defaults to
-	// psimport.DefaultPageSize.
+	// BaseURL is the root of the photo-sorter HTTP API used by the feeds importer
+	// (internal/psfeedsimport); empty disables the feeds import command and its
+	// admin trigger. Set via KUKATKO_IMPORT_PHOTOSORTER_BASE_URL.
+	BaseURL string `mapstructure:"base_url"`
+	// Token is the read-only psat_ bearer token for the feeds API. Set via
+	// KUKATKO_IMPORT_PHOTOSORTER_TOKEN; do not commit a real value.
+	Token string `mapstructure:"token"`
+	// PageSize is the requested feed/listing page size; a non-positive value
+	// defaults to the importer's own default.
 	PageSize int `mapstructure:"page_size"`
 }
 
@@ -971,6 +980,8 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("import.photoprism.page_size", 1000)
 
 	v.SetDefault("import.photosorter.dsn", "")
+	v.SetDefault("import.photosorter.base_url", "")
+	v.SetDefault("import.photosorter.token", "")
 	v.SetDefault("import.photosorter.page_size", 500)
 
 	// Per-client-IP rate limits on heavy endpoints. Defaults are generous enough

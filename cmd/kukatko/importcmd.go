@@ -16,6 +16,11 @@ import (
 var errImportNotConfigured = errors.New(
 	"photoprism import not configured: set import.photoprism.base_url (and token)")
 
+// errFeedsImportNotConfigured indicates the photo-sorter feeds import was invoked
+// without a configured feeds API base URL.
+var errFeedsImportNotConfigured = errors.New(
+	"photo-sorter feeds import not configured: set import.photosorter.base_url (and token)")
+
 // newImportCmd builds the "import" subcommand group and its children: the
 // photoprism import, which runs a PhotoPrism import synchronously — full, or
 // scoped to an album, a label, a person and/or a year — and prints the resulting
@@ -59,8 +64,61 @@ func newImportCmd() *cobra.Command {
 			"(partial run; leaves the watermark untouched)")
 	ppCmd.Flags().Int("year", 0,
 		"import only photos taken in this year, e.g. 1985 (partial run; leaves the watermark untouched)")
-	importCmd.AddCommand(ppCmd, newImportDirCmd())
+	importCmd.AddCommand(ppCmd, newImportDirCmd(), newImportPSFeedsCmd())
 	return importCmd
+}
+
+// newImportPSFeedsCmd builds the "import photosorter-feeds" command: it enriches
+// the already-imported PhotoPrism photos with photo-sorter's pre-computed CLIP
+// embeddings and InsightFace faces, copied 1:1 from its read-only migration
+// feeds and attached by photoprism_uid. It runs synchronously and prints the
+// resulting counts; the same pass also runs as a background ps_feeds_import job
+// triggered from the API. It never downloads originals or touches PhotoPrism.
+func newImportPSFeedsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "photosorter-feeds",
+		Short: "Enrich imported photos with photo-sorter's 1:1 embeddings and faces",
+		Long: "Page photo-sorter's read-only migration feeds (embeddings + faces) and attach each " +
+			"item to the Kukátko photo whose photoprism_uid matches, copying the vectors verbatim " +
+			"(no GPU recompute). Markers and subject assignments the faces feed carries come across " +
+			"too. Idempotent and incremental: safe to run before, during or after the PhotoPrism " +
+			"import, and safe to re-run. A feed entry whose photo is not imported yet is skipped.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runImportPSFeeds(cmd)
+		},
+	}
+}
+
+// runImportPSFeeds loads the configuration, opens the database (applying
+// migrations), builds the feeds importer and runs one full enrichment pass,
+// printing the run id and counts. It returns errFeedsImportNotConfigured when the
+// feeds API base URL is unset.
+func runImportPSFeeds(cmd *cobra.Command) error {
+	cfg, err := loadConfigFromFlags(cmd)
+	if err != nil {
+		return err
+	}
+	if !psFeedsConfigured(cfg) {
+		return errFeedsImportNotConfigured
+	}
+
+	ctx := cmd.Context()
+	db, err := database.New(ctx, cfg.Database)
+	if err != nil {
+		return fmt.Errorf("connecting to database: %w", err)
+	}
+	defer db.Close()
+	if _, err := db.Migrate(ctx); err != nil {
+		return fmt.Errorf("applying migrations: %w", err)
+	}
+
+	result, err := runPSFeedsImport(ctx, cfg, db)
+	if err != nil {
+		return err
+	}
+	reportPSFeedsImport(cmd.Printf, result)
+	return nil
 }
 
 // importScopeFromFlags reads the scoping flags of "import photoprism" into a

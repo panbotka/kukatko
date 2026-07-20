@@ -65,6 +65,7 @@ func newServerWithRuns(t *testing.T, q Queue, runs RunLister) *httptest.Server {
 		RequireMaintainer: passthrough,
 		EnablePhotoPrism:  true,
 		EnablePhotoSorter: true,
+		EnableFeeds:       true,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -185,6 +186,53 @@ func TestImportPhotoSorter_conflict(t *testing.T) {
 	}
 }
 
+// TestImportFeeds_enqueued verifies a queued feeds import yields 202 with its id
+// and uses the ps_feeds_import job type.
+func TestImportFeeds_enqueued(t *testing.T) {
+	t.Parallel()
+	q := &fakeQueue{job: jobs.Job{ID: 11, State: jobs.StateQueued}}
+	srv := newServer(t, q)
+	resp := post(t, srv, "/import/photosorter-feeds")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", resp.StatusCode)
+	}
+	if q.last != jobs.TypePSFeedsImport {
+		t.Errorf("enqueued type = %q, want %q", q.last, jobs.TypePSFeedsImport)
+	}
+}
+
+// TestImportFeeds_conflict verifies an in-flight feeds import yields 409.
+func TestImportFeeds_conflict(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t, &fakeQueue{err: jobs.ErrDuplicate})
+	resp := post(t, srv, "/import/photosorter-feeds")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("status = %d, want 409", resp.StatusCode)
+	}
+}
+
+// TestRegisterRoutes_gatingFeeds verifies the feeds trigger is not registered
+// (404) when the feeds source is disabled.
+func TestRegisterRoutes_gatingFeeds(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(Config{
+		Queue: &fakeQueue{}, Runs: &fakeRuns{}, RequireMaintainer: passthrough, EnablePhotoPrism: true,
+	})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	resp := post(t, srv, "/import/photosorter-feeds")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("disabled feeds status = %d, want 404", resp.StatusCode)
+	}
+}
+
 // TestRegisterRoutes_gating verifies disabled sources are not registered (404)
 // while the run-history endpoint is always registered.
 func TestRegisterRoutes_gating(t *testing.T) {
@@ -237,8 +285,8 @@ func TestListRuns_returnsRunsAndSources(t *testing.T) {
 	if len(body.Runs) != 1 || body.Runs[0].ID != 3 || body.Runs[0].Counts.Imported != 5 {
 		t.Errorf("runs = %+v, want one run id 3 with 5 imported", body.Runs)
 	}
-	if !body.Sources.PhotoPrism || !body.Sources.PhotoSorter {
-		t.Errorf("sources = %+v, want both enabled", body.Sources)
+	if !body.Sources.PhotoPrism || !body.Sources.PhotoSorter || !body.Sources.Feeds {
+		t.Errorf("sources = %+v, want all enabled", body.Sources)
 	}
 	if body.Limit != defaultRunsLimit {
 		t.Errorf("limit = %d, want default %d", body.Limit, defaultRunsLimit)
