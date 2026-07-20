@@ -290,8 +290,37 @@ func (s *Store) UnstackAll(ctx context.Context, memberUID string) (string, error
 	return stackUID, nil
 }
 
+// LeaveStackTx takes uid out of whatever stack it belongs to and repairs that
+// stack, on tx. It is the shared entry point for the mutations that remove a
+// photo from circulation without going through an explicit stack operation —
+// archiving, purging and dupmerge's copy-archival. Those must not leave the
+// row's stack_uid behind: the default visibility gate is
+// (stack_uid IS NULL OR stack_primary), so a stack whose primary left has no
+// visible member at all and its still-live siblings silently vanish from every
+// default view. A photo that carries no stack, or that does not exist, is a
+// no-op, which makes the call safe to issue unconditionally before the mutation.
+func LeaveStackTx(ctx context.Context, tx pgx.Tx, uid string) error {
+	var stackUID *string
+	err := tx.QueryRow(ctx, `SELECT stack_uid FROM photos WHERE uid = $1`, uid).Scan(&stackUID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("photos: reading stack membership: %w", err)
+	}
+	if stackUID == nil {
+		return nil
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE photos SET stack_uid = NULL, stack_primary = false, updated_at = now()
+		 WHERE uid = $1`, uid); err != nil {
+		return fmt.Errorf("photos: unstacking leaving member: %w", err)
+	}
+	return repairStackTx(ctx, tx, *stackUID)
+}
+
 // inTx runs fn inside a transaction, committing on success and rolling back on
-// any error, so a stack mutation and its invariant repair are atomic.
+// any error, so a mutation and its stack-invariant repair are atomic.
 func (s *Store) inTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

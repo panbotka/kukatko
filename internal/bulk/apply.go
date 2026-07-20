@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/photos"
 )
 
 // addAlbumPhotoSQL adds a photo to an album, leaving an existing membership
@@ -178,6 +179,14 @@ func processPhoto(ctx context.Context, tx pgx.Tx, uid, actorUID string, ops Oper
 	if query, args, ok := ops.photoColumnUpdate(uid); ok {
 		if _, err := tx.Exec(ctx, query, args...); err != nil {
 			return fmt.Errorf("bulk: updating photo %s: %w", uid, err)
+		}
+	}
+	// Archiving takes the photo out of its stack, in this transaction: the default
+	// visibility gate is (stack_uid IS NULL OR stack_primary), so archiving a
+	// primary without re-electing one would hide its still-live siblings.
+	if ops.Archive != nil && *ops.Archive {
+		if err := photos.LeaveStackTx(ctx, tx, uid); err != nil {
+			return fmt.Errorf("bulk: repairing stack of photo %s: %w", uid, err)
 		}
 	}
 	if err := applyAlbums(ctx, tx, uid, ops); err != nil {

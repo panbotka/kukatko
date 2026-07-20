@@ -288,21 +288,33 @@ func updateMetadataRow(ctx context.Context, q rowQuerier, uid string, m Metadata
 
 // Archive marks the photo identified by uid archived (sets archived_at to now)
 // and returns the refreshed photo, or ErrPhotoNotFound. Archiving an
-// already-archived photo refreshes its archived_at.
+// already-archived photo refreshes its archived_at. A stacked photo leaves its
+// stack in the same transaction (see LeaveStackTx), so archiving a primary never
+// hides the still-live members it leaves behind.
 func (s *Store) Archive(ctx context.Context, uid string) (Photo, error) {
-	return s.setArchived(ctx, uid, true)
+	var photo Photo
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := LeaveStackTx(ctx, tx, uid); err != nil {
+			return err
+		}
+		p, err := setArchivedRow(ctx, tx, uid, true)
+		if err != nil {
+			return err
+		}
+		photo = p
+		return nil
+	})
+	if err != nil {
+		return Photo{}, err
+	}
+	return photo, nil
 }
 
 // Unarchive clears the archived state of the photo identified by uid and returns
-// the refreshed photo, or ErrPhotoNotFound.
+// the refreshed photo, or ErrPhotoNotFound. The photo comes back as a standalone
+// one: archiving unstacked it, and rejoining a stack is a deliberate act.
 func (s *Store) Unarchive(ctx context.Context, uid string) (Photo, error) {
-	return s.setArchived(ctx, uid, false)
-}
-
-// setArchived sets or clears archived_at for the photo identified by uid and
-// returns the refreshed photo, translating pgx.ErrNoRows into ErrPhotoNotFound.
-func (s *Store) setArchived(ctx context.Context, uid string, archived bool) (Photo, error) {
-	return setArchivedRow(ctx, s.pool, uid, archived)
+	return setArchivedRow(ctx, s.pool, uid, false)
 }
 
 // setArchivedRow sets or clears archived_at on q, which may be the pool or an
@@ -326,17 +338,24 @@ func setArchivedRow(ctx context.Context, q rowQuerier, uid string, archived bool
 }
 
 // Delete removes the photo identified by uid. Its photo_files, photo_phashes and
-// photo_edits rows are removed by ON DELETE CASCADE. It returns ErrPhotoNotFound
-// if no such photo exists.
+// photo_edits rows are removed by ON DELETE CASCADE. A stacked photo leaves its
+// stack in the same transaction (see LeaveStackTx), so the deletion never leaves
+// a primary-less remnant behind. It returns ErrPhotoNotFound if no such photo
+// exists.
 func (s *Store) Delete(ctx context.Context, uid string) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM photos WHERE uid = $1", uid)
-	if err != nil {
-		return fmt.Errorf("photos: deleting photo: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrPhotoNotFound
-	}
-	return nil
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := LeaveStackTx(ctx, tx, uid); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, "DELETE FROM photos WHERE uid = $1", uid)
+		if err != nil {
+			return fmt.Errorf("photos: deleting photo: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrPhotoNotFound
+		}
+		return nil
+	})
 }
 
 // nilIfEmptyJSON returns nil for an empty raw JSON value so it is stored as SQL

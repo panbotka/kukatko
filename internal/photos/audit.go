@@ -32,9 +32,15 @@ func (s *Store) UpdateMetadataAudited(
 
 // ArchiveAudited archives (soft-deletes) the photo identified by uid and writes
 // entry to the audit log in the same transaction. See UpdateMetadataAudited for
-// the atomicity guarantee. It returns the refreshed photo or ErrPhotoNotFound.
+// the atomicity guarantee. A stacked photo leaves its stack first (see
+// LeaveStackTx), in the same transaction, so its still-live siblings are not
+// hidden by the (stack_uid IS NULL OR stack_primary) visibility gate. It returns
+// the refreshed photo or ErrPhotoNotFound.
 func (s *Store) ArchiveAudited(ctx context.Context, uid string, entry audit.Entry) (Photo, error) {
 	return s.mutateAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
+		if err := LeaveStackTx(ctx, tx, uid); err != nil {
+			return Photo{}, err
+		}
 		return setArchivedRow(ctx, tx, uid, true)
 	})
 }
@@ -53,10 +59,16 @@ func (s *Store) UnarchiveAudited(ctx context.Context, uid string, entry audit.En
 // satellite rows) and writes entry to the audit log in the same transaction, so
 // the row deletion and the record of who purged it commit atomically and roll
 // back together on failure (the durable-audit convention; see internal/audit).
-// entry's TargetUID defaults to uid. It returns ErrPhotoNotFound when no row
-// matched, in which case nothing is deleted and no audit entry is written.
+// entry's TargetUID defaults to uid. A stacked photo leaves its stack first (see
+// LeaveStackTx), in the same transaction, so the purge does not strand its
+// siblings in a primary-less stack that no default view shows and no re-stacking
+// can reach. It returns ErrPhotoNotFound when no row matched, in which case
+// nothing is deleted and no audit entry is written.
 func (s *Store) DeleteAudited(ctx context.Context, uid string, entry audit.Entry) error {
 	_, err := s.mutateAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
+		if err := LeaveStackTx(ctx, tx, uid); err != nil {
+			return Photo{}, err
+		}
 		tag, err := tx.Exec(ctx, "DELETE FROM photos WHERE uid = $1", uid)
 		if err != nil {
 			return Photo{}, fmt.Errorf("photos: deleting photo: %w", err)

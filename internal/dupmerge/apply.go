@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/photos"
 )
 
 // Write statements. Each mirrors the idempotent upsert the organize store uses,
@@ -147,12 +148,24 @@ func fillUserScalars(ctx context.Context, tx pgx.Tx, in Input, f scalarFill) err
 	return nil
 }
 
-// archiveCopies soft-archives each still-active copy. The archived_at IS NULL
-// guard makes re-archiving a no-op, keeping the operation idempotent.
+// archiveCopies soft-archives each still-active copy and takes it out of any
+// stack it belonged to. The archived_at IS NULL guard makes re-archiving a
+// no-op, keeping the operation idempotent; the stack repair only runs for a copy
+// this call actually archived, since an already-archived one left its stack when
+// it was archived. Leaving the stack matters because the default visibility gate
+// is (stack_uid IS NULL OR stack_primary): archiving a stack's primary without
+// re-electing one would hide its still-live siblings everywhere.
 func archiveCopies(ctx context.Context, tx pgx.Tx, copies []string) error {
 	for _, uid := range copies {
-		if _, err := tx.Exec(ctx, archiveSQL, uid); err != nil {
+		tag, err := tx.Exec(ctx, archiveSQL, uid)
+		if err != nil {
 			return fmt.Errorf("dupmerge: archiving copy %s: %w", uid, err)
+		}
+		if tag.RowsAffected() == 0 {
+			continue
+		}
+		if err := photos.LeaveStackTx(ctx, tx, uid); err != nil {
+			return fmt.Errorf("dupmerge: repairing stack of copy %s: %w", uid, err)
 		}
 	}
 	return nil
