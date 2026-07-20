@@ -260,8 +260,10 @@ export function LibraryPage() {
           <div
             ref={gridWrapRef}
             // Keep the last rows scrollable clear of the floating bar while a
-            // selection is active, so nothing hides behind it.
-            style={{ paddingBottom: selection.count > 0 ? '6rem' : undefined }}
+            // selection is active, so nothing hides behind it. The clearance
+            // tracks the bar's measured height (`--kk-batch-clearance`), so it
+            // holds however the bar wraps or collapses on a phone.
+            style={{ paddingBottom: selection.count > 0 ? 'var(--kk-batch-clearance)' : undefined }}
           >
             <PhotoGrid
               photos={displayPhotos}

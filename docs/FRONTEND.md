@@ -370,6 +370,13 @@ here.
   success/failure reported by a **toast** (`useToast`): success clears the selection and reloads the grid (`bulk.finish`),
   **a failure keeps the selection** (it can be retried). Driven by `useBulkEdit({hoverSelect:true})`; Esc clears the
   selection via grid keyboard nav. **Editor/admin only** (`bulk.canBulkEdit`), i18n `batch.*`.
+  **Responsive:** on a phone (`useIsNarrowViewport`) the ~10 labelled actions can't share one row, so the bar
+  **collapses** — clear (✕), the count and the two most-common actions (**Přidat do alba** / **Štítky**, icon-only)
+  stay inline, the rest fold into a **`…` overflow `Dropdown`** (`drop="up"`, `batch.overflow`) — keeping it a single
+  compact row instead of wrapping into a tall block. The grid's bottom clearance is **measured, not constant**: the bar
+  publishes its live rendered height (a `ResizeObserver` sets the `--kk-batch-bar-height` root var) and every list page
+  reserves `--kk-batch-clearance` (`app.css`) as bottom padding while selecting, so the last photo row always scrolls
+  clear however the bar wraps or collapses; the safe-area inset is folded into that var.
   **`extraActions?: readonly BatchExtraAction[]`** merges a page's own actions onto the *same* bar
   (`{id, icon, label, onClick, disabled?, danger?}`, rendered after **Další úpravy** with the shared
   `BarAction` styling, disabled while a batch request is in flight) — so a page never grows a second
@@ -1417,7 +1424,7 @@ here.
   bez wrapperu);
   `useIsNarrowViewport()` = sdílený hook nad `matchMedia` (`(max-width: 767.98px)`, Bootstrap `md`;
   odebírá `change`, chybějící/rozbité `matchMedia` → „široký"; jeden zdroj pravdy pro offcanvas
-  filtrů i výchozí hustotu mřížky);
+  filtrů, výchozí hustotu mřížky i kolaps `BatchActionBar` do „…" overflow menu na telefonu);
   `usePrefersReducedMotion()` = sleduje `(prefers-reduced-motion: reduce)` přes `matchMedia`
   (odebírá `change`, chybějící/rozbité `matchMedia` → `false`) — volající dekorativní animaci
   **vynechá**, ne zkrátí)),

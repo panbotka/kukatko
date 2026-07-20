@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
+import Dropdown from 'react-bootstrap/Dropdown'
 import Modal from 'react-bootstrap/Modal'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
+import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { ApiError } from '../../services/auth'
 import { type BulkOperations, bulkUpdatePhotos } from '../../services/bulk'
 import { type AlbumCount, fetchAlbums, fetchLabels, type LabelCount } from '../../services/organize'
@@ -71,19 +73,26 @@ export interface BatchActionBarProps {
   extraActions?: readonly BatchExtraAction[]
 }
 
-/** A labelled icon action button styled for the frosted bar. */
+/**
+ * A labelled icon action button styled for the frosted bar. On a phone the bar
+ * collapses to save width: `iconOnly` drops the visible label (the glyph carries
+ * the meaning) but keeps it reachable to assistive tech via `aria-label`, and the
+ * `title` tooltip stays in both modes.
+ */
 function BarAction({
   icon,
   label,
   onClick,
   disabled,
   danger,
+  iconOnly = false,
 }: {
   icon: IconName
   label: string
   onClick: () => void
   disabled?: boolean
   danger?: boolean
+  iconOnly?: boolean
 }) {
   return (
     <Button
@@ -92,9 +101,10 @@ function BarAction({
       onClick={onClick}
       disabled={disabled}
       title={label}
+      aria-label={iconOnly ? label : undefined}
     >
-      <Icon name={icon} className="me-1" />
-      <span>{label}</span>
+      <Icon name={icon} className={iconOnly ? undefined : 'me-1'} />
+      {!iconOnly && <span>{label}</span>}
     </Button>
   )
 }
@@ -132,6 +142,9 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
   const [addAlbums, setAddAlbums] = useState<string[]>([])
   const [addLabels, setAddLabels] = useState<string[]>([])
   const [removeLabels, setRemoveLabels] = useState<string[]>([])
+  // On a phone the ~10 labelled actions cannot share one row, so the bar folds
+  // the secondary ones into a "…" overflow menu and shows the rest icon-only.
+  const narrow = useIsNarrowViewport()
 
   // Load albums and labels the first time a picker opens and cache them for the
   // session. Keyed on `picker` (and the retry counter) — deliberately NOT on
@@ -165,6 +178,36 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
       controller.abort()
     }
   }, [picker, reloadOptions])
+
+  // Publish the bar's live rendered height so a photo grid can reserve exactly
+  // that much bottom clearance (the CSS `--kk-batch-clearance` var adds the dock's
+  // own offset on top) and its last row always scrolls clear of the floating bar —
+  // however the bar wraps or collapses. A hard-coded constant under-reserved on
+  // phones, where the bar is taller, and hid the bottom photos behind it.
+  const barRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const bar = barRef.current
+    if (bar === null) {
+      return
+    }
+    const root = document.documentElement
+    const publish = (): void => {
+      root.style.setProperty('--kk-batch-bar-height', `${bar.getBoundingClientRect().height}px`)
+    }
+    publish()
+    // ResizeObserver is absent in jsdom; the one-off publish above still runs there.
+    const observer =
+      typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => {
+            publish()
+          })
+        : null
+    observer?.observe(bar)
+    return () => {
+      observer?.disconnect()
+      root.style.removeProperty('--kk-batch-bar-height')
+    }
+  }, [])
 
   // Retry after a load error: `optionsLoaded` is still false (only a success
   // sets it), so bumping the counter re-runs the effect and fetches again.
@@ -230,9 +273,78 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
         ? addLabels.length > 0 || removeLabels.length > 0
         : false
 
+  // The bar's controls, built once and then placed either all inline (desktop) or
+  // split into inline primaries + an overflow menu (phone). Clear and the count
+  // stay pinned in the wrapper below; these are the actions that move.
+  const selectAllControl =
+    onSelectAll !== undefined ? (
+      <Button variant="outline-light" size="sm" onClick={onSelectAll} disabled={busy}>
+        <Icon name="ui-checks" className="me-1" />
+        <span>{t('batch.selectAll')}</span>
+      </Button>
+    ) : null
+  const albumAction = (
+    <BarAction
+      icon="collection"
+      label={t('batch.album')}
+      iconOnly={narrow}
+      onClick={() => {
+        setPicker('album')
+      }}
+      disabled={busy}
+    />
+  )
+  const labelAction = (
+    <BarAction
+      icon="tags"
+      label={t('batch.label')}
+      iconOnly={narrow}
+      onClick={() => {
+        setPicker('label')
+      }}
+      disabled={busy}
+    />
+  )
+  const favoriteAction = (
+    <BarAction
+      icon="heart"
+      label={t('batch.favorite')}
+      onClick={() => {
+        void applyOps({ set_favorite: true })
+      }}
+      disabled={busy}
+    />
+  )
+  const archiveAction = (
+    <BarAction
+      icon="archive"
+      label={t('batch.archive')}
+      danger
+      onClick={() => {
+        void applyOps({ archive: true })
+      }}
+      disabled={busy}
+    />
+  )
+  const downloadControl = <DownloadZipButton photoUids={bulk.photoUids} variant="outline-light" />
+  const stackControl = <StackSelectedControl bulk={bulk} variant="outline-light" />
+  const moreAction = (
+    <BarAction icon="sliders" label={t('batch.more')} onClick={bulk.open} disabled={busy} />
+  )
+  const extras = extraActions?.map((action) => (
+    <BarAction
+      key={action.id}
+      icon={action.icon}
+      label={action.label}
+      onClick={action.onClick}
+      disabled={busy || action.disabled === true}
+      danger={action.danger}
+    />
+  ))
+
   return (
     <div className="kk-batch-dock">
-      <div className="kk-batch-bar" role="toolbar" aria-label={t('batch.bar')}>
+      <div className="kk-batch-bar" ref={barRef} role="toolbar" aria-label={t('batch.bar')}>
         <Button
           variant="outline-light"
           size="sm"
@@ -245,58 +357,48 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
         <span className="fw-semibold kk-batch-count me-auto" aria-live="polite">
           {t('selection.count', { count: bulk.selection.count })}
         </span>
-        {onSelectAll !== undefined && (
-          <Button variant="outline-light" size="sm" onClick={onSelectAll} disabled={busy}>
-            <Icon name="ui-checks" className="me-1" />
-            <span>{t('batch.selectAll')}</span>
-          </Button>
+        {narrow ? (
+          <>
+            {albumAction}
+            {labelAction}
+            <Dropdown drop="up" align="end" className="kk-batch-overflow">
+              <Dropdown.Toggle
+                variant="outline-light"
+                size="sm"
+                id="batch-overflow"
+                className="kk-batch-overflow-toggle"
+                aria-label={t('batch.overflow')}
+                title={t('batch.overflow')}
+                disabled={busy}
+              >
+                <Icon name="three-dots" />
+              </Dropdown.Toggle>
+              <Dropdown.Menu className="kk-batch-overflow-menu">
+                <div className="d-grid gap-1">
+                  {selectAllControl}
+                  {favoriteAction}
+                  {archiveAction}
+                  {downloadControl}
+                  {stackControl}
+                  {moreAction}
+                  {extras}
+                </div>
+              </Dropdown.Menu>
+            </Dropdown>
+          </>
+        ) : (
+          <>
+            {selectAllControl}
+            {albumAction}
+            {labelAction}
+            {favoriteAction}
+            {archiveAction}
+            {downloadControl}
+            {stackControl}
+            {moreAction}
+            {extras}
+          </>
         )}
-        <BarAction
-          icon="collection"
-          label={t('batch.album')}
-          onClick={() => {
-            setPicker('album')
-          }}
-          disabled={busy}
-        />
-        <BarAction
-          icon="tags"
-          label={t('batch.label')}
-          onClick={() => {
-            setPicker('label')
-          }}
-          disabled={busy}
-        />
-        <BarAction
-          icon="heart"
-          label={t('batch.favorite')}
-          onClick={() => {
-            void applyOps({ set_favorite: true })
-          }}
-          disabled={busy}
-        />
-        <BarAction
-          icon="archive"
-          label={t('batch.archive')}
-          danger
-          onClick={() => {
-            void applyOps({ archive: true })
-          }}
-          disabled={busy}
-        />
-        <DownloadZipButton photoUids={bulk.photoUids} variant="outline-light" />
-        <StackSelectedControl bulk={bulk} variant="outline-light" />
-        <BarAction icon="sliders" label={t('batch.more')} onClick={bulk.open} disabled={busy} />
-        {extraActions?.map((action) => (
-          <BarAction
-            key={action.id}
-            icon={action.icon}
-            label={action.label}
-            onClick={action.onClick}
-            disabled={busy || action.disabled === true}
-            danger={action.danger}
-          />
-        ))}
       </div>
 
       <Modal show={picker !== null} onHide={closePicker} centered scrollable>

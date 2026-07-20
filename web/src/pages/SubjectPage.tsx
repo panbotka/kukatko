@@ -283,8 +283,10 @@ export function SubjectPage() {
       {bulk.canBulkEdit && selecting && (
         <>
           {/* Keeps the page's last section scrollable clear of the floating
-              bar, so nothing hides behind it. */}
-          <div style={{ paddingBottom: '6rem' }} aria-hidden="true" />
+              bar, so nothing hides behind it — the clearance tracks the bar's
+              measured height (`--kk-batch-clearance`), so it holds even when the
+              bar collapses on a phone. */}
+          <div style={{ paddingBottom: 'var(--kk-batch-clearance)' }} aria-hidden="true" />
           <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} extraActions={extraActions} />
         </>
       )}
