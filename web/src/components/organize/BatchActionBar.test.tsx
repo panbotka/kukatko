@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../../auth/AuthContext'
 import { type UseBulkEditResult } from '../../hooks/useBulkEdit'
@@ -287,5 +287,74 @@ describe('BatchActionBar', () => {
     // The second attempt succeeds and the picker renders its options.
     expect(await screen.findByLabelText('Add to albums')).toBeInTheDocument()
     expect(albumsMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer. The shared test
+ * setup stubs a non-matching (desktop) `matchMedia`; a phone-width test overrides
+ * it so the bar takes its collapsed branch.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
+describe('BatchActionBar on a narrow (phone) screen', () => {
+  afterEach(() => {
+    // Restore the shared desktop default so later tests never inherit a phone.
+    mockViewport(false)
+  })
+
+  it('keeps the primary actions inline and folds the rest into an overflow menu', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar(makeBulk())
+
+    // Clear, the live count and the two most-common actions stay directly
+    // reachable — no wrapping into a tall multi-row block.
+    expect(screen.getByRole('button', { name: 'Clear selection' })).toBeInTheDocument()
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add to album' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Labels' })).toBeInTheDocument()
+
+    // The secondary actions are collapsed away until the overflow menu is opened,
+    // so the bar stays a single compact row.
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Favorite' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+
+    // Opening the menu reveals the rest, so nothing is lost on a phone.
+    expect(await screen.findByRole('button', { name: 'Favorite' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select all' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'More edits' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Stack selected' })).toBeInTheDocument()
+  })
+
+  it('still applies a batch action chosen from the overflow menu', async () => {
+    const bulk = makeBulk()
+    bulkMock.mockResolvedValue(result(2))
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await user.click(await screen.findByRole('button', { name: 'Favorite' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['a', 'b'], { set_favorite: true })
+    })
+    expect(bulk.finish).toHaveBeenCalledTimes(1)
   })
 })

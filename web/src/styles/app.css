@@ -24,6 +24,18 @@
      phone, at the cost of a hair of clearance on desktop. Keep in sync with
      `.kukatko-navbar`'s padding and the nav-link sizing below. */
   --kukatko-navbar-height: 3.25rem;
+
+  /* Bottom clearance a photo grid reserves while the floating batch bar is up, so
+     its last row can always scroll fully clear of the bar — however many actions
+     it shows or how it wraps. `--kk-batch-bar-height` is published live by
+     `BatchActionBar` from a ResizeObserver (and is `0px` while no bar is mounted);
+     the rest mirrors the dock's own bottom offset (safe-area inset + one step)
+     plus a small breathing gap. Pages apply it as bottom padding only while a
+     selection is active, so at rest the grid reserves nothing. */
+  --kk-batch-clearance: calc(
+    var(--kk-batch-bar-height, 0px) + env(safe-area-inset-bottom, 0px) + var(--kk-space-4) +
+      var(--kk-space-3)
+  );
 }
 
 html {
@@ -417,6 +429,27 @@ body {
 
 .kk-batch-count {
   font-variant-numeric: tabular-nums;
+}
+
+/* On a phone the ~10 labelled actions cannot fit in one row, so the bar shows
+   only the icon-only primaries (clear, count, add-to-album, labels) plus a "…"
+   overflow toggle and keeps them on a single line — the rest live in the menu,
+   which is what stops the old wrap into a tall multi-row block. */
+@media (max-width: 767.98px) {
+  .kk-batch-bar {
+    flex-wrap: nowrap;
+  }
+}
+
+/* The overflow toggle is a bare "…" glyph: drop Bootstrap's default caret. */
+.kk-batch-overflow-toggle.dropdown-toggle::after {
+  display: none;
+}
+
+/* The overflow menu stacks the secondary actions as full-width buttons (via the
+   inner `d-grid`); give it a sensible minimum so the labels never wrap. */
+.kk-batch-overflow-menu {
+  min-width: 12rem;
 }
 
 @keyframes kk-batch-rise {

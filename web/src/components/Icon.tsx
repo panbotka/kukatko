@@ -58,6 +58,7 @@ export type IconName =
   | 'shield-lock'
   | 'sliders'
   | 'tags'
+  | 'three-dots'
   | 'tools'
   | 'trash'
   | 'trophy'

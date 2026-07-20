@@ -238,7 +238,7 @@ export function SearchPage() {
       {hasResults && (
         // Keep the last rows scrollable clear of the floating bar while a
         // selection is active, so nothing hides behind it.
-        <div style={{ paddingBottom: selecting ? '6rem' : undefined }}>
+        <div style={{ paddingBottom: selecting ? 'var(--kk-batch-clearance)' : undefined }}>
           <PhotoGrid
             photos={photos}
             loadingMore={loadingMore}

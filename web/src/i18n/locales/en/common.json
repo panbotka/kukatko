@@ -771,6 +771,7 @@
     "archive": "Archive",
     "download": "Download",
     "more": "More edits",
+    "overflow": "More actions",
     "apply": "Apply",
     "cancel": "Cancel",
     "optionsError": "Could not load the list. Please try again.",
