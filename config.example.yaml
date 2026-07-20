@@ -522,12 +522,22 @@ import:
     # Photo listing page size; the client clamps it to PhotoPrism's cap (1000).
     page_size: 1000
   photosorter:
-    # Read-only PostgreSQL DSN of the photo-sorter database to migrate from.
-    # Empty disables the `kukatko migrate photosorter` command and the
-    # POST /api/v1/import/photosorter trigger. Set via
-    # KUKATKO_IMPORT_PHOTOSORTER_DSN; do not commit a real value.
+    # Read-only PostgreSQL DSN of the photo-sorter database for the legacy
+    # direct-database migration (internal/psimport). Empty disables the
+    # `kukatko migrate photosorter` command and the POST /api/v1/import/photosorter
+    # trigger. Set via KUKATKO_IMPORT_PHOTOSORTER_DSN; do not commit a real value.
     dsn: ""
-    # Photo listing page size for the migration.
+    # HTTP feeds importer (internal/psfeedsimport): the production path. In
+    # production photo-sorter holds only vectors/faces keyed by the PhotoPrism
+    # photo UID, so this enriches PhotoPrism-imported photos with its 1:1
+    # embeddings + faces. base_url is the photo-sorter API root; empty disables the
+    # `kukatko import photosorter-feeds` command and the
+    # POST /api/v1/import/photosorter-feeds trigger. token is the read-only psat_
+    # bearer token. Set via KUKATKO_IMPORT_PHOTOSORTER_BASE_URL /
+    # KUKATKO_IMPORT_PHOTOSORTER_TOKEN; do not commit a real token.
+    base_url: ""
+    token: ""
+    # Requested feed/listing page size (the feed server clamps it per endpoint).
     page_size: 500
 
 # Structured logging. Logs are emitted as JSON on stderr with a secret-redacting

@@ -77,5 +77,6 @@ func buildImportAPI(cfg *config.Config, db *database.DB, store *jobs.Store, auth
 		RateLimit:         importLimit.Middleware,
 		EnablePhotoPrism:  importConfigured(cfg),
 		EnablePhotoSorter: psImportConfigured(cfg),
+		EnableFeeds:       psFeedsConfigured(cfg),
 	})
 }

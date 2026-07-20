@@ -778,6 +778,41 @@ func TestLoad_importPhotoPrismEnvOverride(t *testing.T) {
 	}
 }
 
+// TestLoad_importPhotoSorterDefaults verifies the import.photosorter keys default
+// to empty/disabled (both the DSN migration and the feeds import off).
+func TestLoad_importPhotoSorterDefaults(t *testing.T) {
+	setMinimalEnv(t)
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	ps := cfg.Import.PhotoSorter
+	if ps.DSN != "" || ps.BaseURL != "" || ps.Token != "" {
+		t.Errorf("import.photosorter defaults = %+v, want empty DSN/BaseURL/Token", ps)
+	}
+	if ps.PageSize != 500 {
+		t.Errorf("import.photosorter.page_size default = %d, want 500", ps.PageSize)
+	}
+}
+
+// TestLoad_importPhotoSorterFeedsEnvOverride verifies the feeds importer's
+// base_url and (secret) token can be supplied via the KUKATKO_ environment.
+func TestLoad_importPhotoSorterFeedsEnvOverride(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_IMPORT_PHOTOSORTER_BASE_URL", "https://sorter.example")
+	t.Setenv("KUKATKO_IMPORT_PHOTOSORTER_TOKEN", "psat_secret")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Import.PhotoSorter.BaseURL != "https://sorter.example" {
+		t.Errorf("base_url = %q", cfg.Import.PhotoSorter.BaseURL)
+	}
+	if cfg.Import.PhotoSorter.Token != "psat_secret" {
+		t.Errorf("token = %q", cfg.Import.PhotoSorter.Token)
+	}
+}
+
 // TestLoad_locationEstimateEnvOverride verifies the location_estimate keys can be
 // supplied via the KUKATKO_ environment, including switching the feature off.
 func TestLoad_locationEstimateEnvOverride(t *testing.T) {

@@ -82,6 +82,9 @@ const (
 	TypePPImport = "pp_import"
 	// TypePSMigrate migrates data from photo-sorter.
 	TypePSMigrate = "ps_migrate"
+	// TypePSFeedsImport enriches PhotoPrism-imported photos with photo-sorter's
+	// pre-computed embeddings and faces, copied 1:1 from its HTTP migration feeds.
+	TypePSFeedsImport = "ps_feeds_import"
 	// TypeBackup runs a backup.
 	TypeBackup = "backup"
 )

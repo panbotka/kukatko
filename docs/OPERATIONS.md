@@ -42,6 +42,17 @@ configuration key both here **and** into `config.example.yaml`.
   slug → `ErrLabelNotFound` (verified **before** downloading), a nonsensical year → `ErrInvalidYear`, no
   flag → a full incremental run. It is idempotent — a re-run does not create a second album, label, or membership.
   Used to verify the import against production and to pre-pull part of the library),
+  `kukatko import photosorter-feeds` (synchronous **feeds enrichment** — `internal/psfeedsimport`; applies DB
+  migrations, then `Service.Import`; needs `import.photosorter.base_url` (and `token`), otherwise
+  `errFeedsImportNotConfigured`. This is the **production** photo-sorter migration path: in production
+  photo-sorter holds no photos of its own, only vectors/faces keyed by the PhotoPrism UID, so this pages the
+  read-only `/api/v1/embeddings` + `/api/v1/faces` feeds (`psat_` bearer token) and attaches photo-sorter's
+  **1:1** CLIP embeddings and InsightFace faces — plus the markers and subject assignments the faces feed
+  carries — to the already-imported photo whose `photoprism_uid` matches the feed's `photo_uid`, **without any
+  GPU recompute**. Idempotent and re-runnable; a feed entry whose photo is not imported yet is **skipped**, not
+  an error. The same pass also runs as the background `ps_feeds_import` job triggered from
+  `POST /api/v1/import/photosorter-feeds`. The legacy DSN-based `migrate photosorter` path is irrelevant for
+  this deployment (photo-sorter has no native photos here)),
   **`kukatko import dir <path>`** (uploads a **directory from disk** — `internal/dirimport`; see below),
   `kukatko backup` (synchronous one-off **S3 backup** — `internal/backup`; pg_dump + sync of
   originals + retention; needs `backup.s3.{endpoint,bucket}`, otherwise `errBackupNotConfigured`;

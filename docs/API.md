@@ -642,12 +642,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   works. Mounted by `server.WithAPI` (`buildMapsAPI` in `cmd/kukatko/maps.go`).
 - **Import API (`/api/v1`, `internal/importapi`, maintainer-only via `RequireMaintainer`):** triggers and
   history of read-only imports. `GET /import/runs` (**always registered**) → `{runs,limit,offset,
-  sources:{photoprism,photosorter}}` — a page of `import_runs` newest-started-first (query
+  sources:{photoprism,photosorter,photosorter_feeds}}` — a page of `import_runs` newest-started-first (query
   `limit`≤200/`offset`, invalid → 400) + `sources` flags of which sources are configured (backing the
   admin Import UI: showing/hiding sections). The history also carries runs of the **`folder`** source
   (`kukatko import dir`, `internal/dirimport`) — those are triggered **only from the CLI** (they read a directory on
-  the server's disk), so they have no trigger endpoint or `sources` flag, but they appear in `runs` like any other run. `POST /import/photoprism` → `pp_import` and
-  `POST /import/photosorter` → `ps_migrate` (only for configured sources, otherwise 404) enqueue one
+  the server's disk), so they have no trigger endpoint or `sources` flag, but they appear in `runs` like any other run. `POST /import/photoprism` → `pp_import`,
+  `POST /import/photosorter` → `ps_migrate` (the legacy direct-DB migration) and
+  `POST /import/photosorter-feeds` → `ps_feeds_import` (the production path: enrich PhotoPrism-imported photos
+  with photo-sorter's 1:1 embeddings + faces, matched by `photoprism_uid`; configured via
+  `import.photosorter.base_url`/`token`) — each (only for configured sources, otherwise 404) enqueues one
   singleton job → 202 `{job_id,status}`; `jobs.ErrDuplicate` (already running) → 409, another error → 500.
   The whole API is always mounted (`buildImportAPI` in `cmd/kukatko/import.go`), so the history works even
   without a configured source. The frontend (`ImportPage`) polls `GET /import/runs` + `GET /jobs/stats`.

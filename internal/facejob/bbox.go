@@ -1,8 +1,11 @@
 package facejob
 
-// normalizeBBox converts a face bounding box from sidecar pixel coordinates
+// NormalizeBBox converts a face bounding box from sidecar pixel coordinates
 // [x1, y1, x2, y2] to normalized display-space coordinates [x, y, w, h] in 0..1,
-// mirroring photo-sorter's ConvertPixelBBoxToDisplayRelative.
+// mirroring photo-sorter's ConvertPixelBBoxToDisplayRelative. It is the single
+// source of truth for this conversion, shared with the photo-sorter feeds
+// importer (internal/psfeedsimport), whose faces feed carries the same raw pixel
+// [x1, y1, x2, y2] boxes.
 //
 // The embeddings sidecar (InsightFace) auto-rotates the image by its EXIF
 // orientation before detecting faces, so the returned pixel box is already in
@@ -16,7 +19,7 @@ package facejob
 // orientation is its EXIF orientation (1–8). If the inputs are degenerate (not a
 // 4-element box, or non-positive dimensions) the box is returned unchanged so a
 // missing/zero dimension never produces NaN/Inf coordinates.
-func normalizeBBox(bbox [4]float64, fileWidth, fileHeight, orientation int) [4]float64 {
+func NormalizeBBox(bbox [4]float64, fileWidth, fileHeight, orientation int) [4]float64 {
 	if fileWidth <= 0 || fileHeight <= 0 {
 		return bbox
 	}

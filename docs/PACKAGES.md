@@ -1677,15 +1677,44 @@ to `## Package map` in `CLAUDE.md`.
   **Per-fotka chyba** → `counts.failed`, **neabortuje běh** (jen infra chyba `Fail`ne); **watermark
   se nikdy neposune za nejstarší selhání** (`runState`); bezpečné re-runovat. **`Handle(ctx,job)`** =
   `worker.HandlerFunc` pro `ps_migrate` (ignoruje payload, volá `Migrate`), `JobPayload()` nese pevný
-  sentinel → dedup fronty pustí jen jednu migraci), `internal/importapi/`
+  sentinel → dedup fronty pustí jen jednu migraci),
+  `internal/psfeeds/`
+  (read-only HTTP klient **migračních feedů photo-sorteru** — v produkci photo-sorter drží jen vektory/faces
+  klíčované PhotoPrism UID, žádné vlastní fotky; vše za rozhraním `Client` → fake v testech.
+  `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryDelay,HTTPClient})` validuje URL (`ErrInvalidURL`);
+  `ListEmbeddings(limit,after string)`/`ListFaces(limit,after int64)` keyset-pageují `GET /api/v1/{embeddings,faces}`
+  (kurzor `next_after`, `nil` = konec walku; `Stats` čte `/api/v1/stats`); posílá `Authorization: Bearer psat_...`,
+  vyžaduje `application/json`, HTTP 429 retryuje s exponenciálním backoffem, stavy klasifikuje do sentinelů
+  (`ErrUnauthorized/NotFound/RateLimited/Upstream/Unavailable/BadResponse` — nikdy neobsahují token/tělo). Face
+  `bbox` z feedu je `[x1,y1,x2,y2]` v **surových pixelech** frame `photo_width×photo_height`, ne normalizované),
+  `internal/psfeedsimport/`
+  (**obohatí** PhotoPrismem naimportované fotky o photo-sorterovy **1:1** CLIP embeddingy (768) a InsightFace
+  faces (512) kopírované z feedů — takže často-offline GPU box nemusí přepočítat migrovanou knihovnu
+  (~20k embeddingů, ~112k faců). Vše za rozhraními `Feeds`/`PhotoStore`/`VectorStore`/`PeopleStore`/`RunStore`
+  → fake v testech; `Service` = `New(Config{Feeds,Photos,Vectors,People,Runs,PageSize,Logger})` (panika na nil).
+  **`Import(ctx) (Result,error)`** otevře `import_runs` běh (`source=photosorter_feeds`), pak dvě pasáže:
+  (1) **embeddings** — per item najde Kukátko fotku dle `photoprism_uid`==`photo_uid` a `vectors.SaveEmbedding`
+  (idempotentní upsert); (2) **faces** — streamem grupuje faces po fotce (feed je řazen dle `id`, faces jedné
+  fotky přicházejí souvisle) a per fotku jeden `vectors.RecordFaceDetection` (atomický replace). Pixelový bbox
+  převede `facejob.NormalizeBBox` (jediná sdílená konverze s nativní detekcí, respektuje orientaci); subjekt
+  matchuje dle slugu jména (znovupoužije subjekt založený PhotoPrism importem, jinak `CreateSubject`), marker
+  znovupoužije dle **zachovaného `marker_uid`** (jinak `CreateMarker`, bbox klampnutý do [0,1], `score` 0) —
+  takže lidé/faces přijdou, ne jen holé vektory. Feed entry pro **ještě nenaimportovanou fotku** se přeskočí
+  (`Skipped`), neabortuje běh; per-item vada (špatná dimenze) → `Failed`; jen infra chyba (fetch/DB) `Fail`ne
+  celý běh. **Idempotentní a inkrementální**: každá pasáž skenuje celý feed (feedy nemají inkrementální kurzor),
+  zapsaný high-watermark (nejnovější `created_at`) je jen informativní, re-run konverguje (upserty +
+  find-or-create guardy). **`Handle(ctx,job)`** = `worker.HandlerFunc` pro `ps_feeds_import` (ignoruje payload,
+  volá `Import`), `JobPayload()` nese pevný sentinel → dedup fronty pustí jen jeden běh),
+  `internal/importapi/`
   (maintainer-only HTTP API importů za `RequireMaintainer`: rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`) a `RunLister`
   (List, splňuje `*importer.Store`); `NewAPI(Config{Queue,Runs,RequireMaintainer,EnablePhotoPrism,
-  EnablePhotoSorter})`+`RegisterRoutes` mountuje **vždy** `GET /import/runs` (historie + `sources`
+  EnablePhotoSorter,EnableFeeds})`+`RegisterRoutes` mountuje **vždy** `GET /import/runs` (historie + `sources`
   flagy jaké zdroje jsou nakonfigurované) a — **jen pro nakonfigurované zdroje** —
-  `POST /import/photoprism` → `pp_import` a `POST /import/photosorter` → `ps_migrate` job (sdílený
+  `POST /import/photoprism` → `pp_import`, `POST /import/photosorter` → `ps_migrate` a
+  `POST /import/photosorter-feeds` → `ps_feeds_import` job (sdílený
   `enqueue` helper, 202 `{job_id,status}`); `jobs.ErrDuplicate` → 409 (už běží), jiná chyba → 500;
   `GET /import/runs` (`parsePaging` limit≤200/offset, neplatný → 400) vrací
-  `{runs,limit,offset,sources:{photoprism,photosorter}}` (stránka `import_runs` newest-started-first
+  `{runs,limit,offset,sources:{photoprism,photosorter,photosorter_feeds}}` (stránka `import_runs` newest-started-first
   přes `importer.Store.List`); celá API se v `serve` mountuje vždy (`buildImportAPI` v
   `cmd/kukatko/import.go`), aby historie fungovala i bez zdroje; triggery neběží inline — patří na
   background worker), `internal/backup/`
