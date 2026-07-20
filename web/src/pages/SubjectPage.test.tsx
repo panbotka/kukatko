@@ -10,6 +10,8 @@ import { GRID_COLUMNS_MAX } from '../lib/gridDensity'
 import { type Subject } from '../services/people'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
+import { albumOption, BATCH_ACTIONS } from '../test/batchBar'
+
 import { SubjectPage } from './SubjectPage'
 
 vi.mock('../services/people', async (importOriginal) => {
@@ -172,7 +174,7 @@ describe('SubjectPage', () => {
     await screen.findByRole('heading', { name: 'Jana' })
     await screen.findByRole('link', { name: 'a.jpg' })
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More edits' })).not.toBeInTheDocument()
   })
 
   it('offers the on-page similarity-candidate section to editors', async () => {
@@ -199,11 +201,84 @@ describe('SubjectPage', () => {
     // No "Select" step: the gallery tile is a link that already carries its
     // checkmark, exactly as on the library.
     expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
-    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'More edits' })).toBeEnabled()
+  })
+
+  it('raises the library’s full batch bar, with the gallery’s set-cover merged in', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+
+    const bars = screen.getAllByRole('toolbar', { name: 'Batch actions' })
+    expect(bars).toHaveLength(1)
+    const [bar] = bars
+    for (const name of BATCH_ACTIONS) {
+      expect(within(bar).getByRole('button', { name })).toBeInTheDocument()
+    }
+    // A tile hides its own set-cover button while the gallery is a selection
+    // target, so the action has to stay reachable from the bar.
+    expect(within(bar).getByRole('button', { name: 'Set as cover' })).toBeEnabled()
+
+    // Select-all reaches the rest of the loaded gallery; a cover is one photo,
+    // so that action goes inapplicable with two picked.
+    await user.click(within(bar).getByRole('button', { name: 'Select all' }))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Set as cover' })).toBeDisabled()
+  })
+
+  it('sets the subject cover from the batch bar', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    updateSubjectMock.mockResolvedValue({ ...subject(), cover_photo_uid: 'a' })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+    // The tile's own overlay is gone by now: this is the bar's action, applied
+    // to exactly the picked photo.
+    await user.click(screen.getByRole('button', { name: 'Set as cover' }))
+
+    await waitFor(() => {
+      expect(updateSubjectMock).toHaveBeenCalledWith(
+        'sj_1',
+        expect.objectContaining({ cover_photo_uid: 'a' }),
+      )
+    })
+  })
+
+  it('adds the picked photos to an album straight from the bar, then reloads', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    albumsMock.mockResolvedValue([albumOption('al_2', 'Trips')])
+    labelsMock.mockResolvedValue([])
+    bulkMock.mockResolvedValue({
+      results: [],
+      counts: { total: 1, updated: 1, skipped: 0, errored: 0 },
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+
+    const fetchesBefore = fetchPhotosMock.mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.click(await screen.findByLabelText('Add to albums'))
+    await user.click(await screen.findByRole('option', { name: /Trips/ }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['a'], { add_to_albums: ['al_2'] })
+    })
+    await waitFor(() => {
+      expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
+    })
   })
 
   it('bulk-edits exactly the picked photos, then reloads the gallery', async () => {
@@ -219,7 +294,7 @@ describe('SubjectPage', () => {
     await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
 
     const fetchesBefore = fetchPhotosMock.mock.calls.length
-    await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
+    await user.click(screen.getByRole('button', { name: 'More edits' }))
     await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 
@@ -230,7 +305,7 @@ describe('SubjectPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Done' }))
 
     // The selection is cleared, so the bar steps back out of the way.
-    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
     })
@@ -245,7 +320,7 @@ describe('SubjectPage', () => {
 
     await screen.findByRole('link', { name: 'a.jpg' })
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
-    await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
+    await user.click(screen.getByRole('button', { name: 'More edits' }))
     await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 

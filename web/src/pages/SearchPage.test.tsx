@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type Photo, type PhotoListResponse } from '../services/photos'
+
+import { albumOption, BATCH_ACTIONS } from '../test/batchBar'
 
 import { SearchPage } from './SearchPage'
 
@@ -309,7 +311,7 @@ describe('SearchPage bulk edit', () => {
 
     await screen.findByRole('link', { name: 'a.jpg' })
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More edits' })).not.toBeInTheDocument()
   })
 
   it('offers a select checkmark on every result, with no selection mode to enter', async () => {
@@ -320,11 +322,59 @@ describe('SearchPage bulk edit', () => {
     // No "Select" step: the result is a link that already carries its checkmark,
     // exactly as on the library.
     expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
-    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'More edits' })).toBeEnabled()
+  })
+
+  it('raises the library’s full batch bar over the results, and only that one bar', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
+    const user = userEvent.setup()
+    renderSearch('/search?q=beach')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+
+    const bars = screen.getAllByRole('toolbar', { name: 'Batch actions' })
+    expect(bars).toHaveLength(1)
+    const [bar] = bars
+    for (const name of BATCH_ACTIONS) {
+      expect(within(bar).getByRole('button', { name })).toBeInTheDocument()
+    }
+
+    // Select-all reaches the rest of the loaded results, as on the library.
+    await user.click(within(bar).getByRole('button', { name: 'Select all' }))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+  })
+
+  it('adds the picked results to an album straight from the bar, then re-runs the search', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    albumsMock.mockResolvedValue([albumOption('al_2', 'Trips')])
+    labelsMock.mockResolvedValue([])
+    bulkMock.mockResolvedValue({
+      results: [],
+      counts: { total: 1, updated: 1, skipped: 0, errored: 0 },
+    })
+    const user = userEvent.setup()
+    renderSearch('/search?q=beach')
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+
+    const searchesBefore = searchMock.mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.click(await screen.findByLabelText('Add to albums'))
+    await user.click(await screen.findByRole('option', { name: /Trips/ }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['a'], { add_to_albums: ['al_2'] })
+    })
+    await waitFor(() => {
+      expect(searchMock.mock.calls.length).toBeGreaterThan(searchesBefore)
+    })
   })
 
   it('bulk-edits exactly the picked photos, then re-runs the search', async () => {
@@ -340,7 +390,7 @@ describe('SearchPage bulk edit', () => {
     await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
 
     const searchesBefore = searchMock.mock.calls.length
-    await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
+    await user.click(screen.getByRole('button', { name: 'More edits' }))
     await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 
@@ -351,7 +401,7 @@ describe('SearchPage bulk edit', () => {
     await user.click(await screen.findByRole('button', { name: 'Done' }))
 
     // The selection is cleared, so the bar steps back out of the way.
-    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(searchMock.mock.calls.length).toBeGreaterThan(searchesBefore)
     })

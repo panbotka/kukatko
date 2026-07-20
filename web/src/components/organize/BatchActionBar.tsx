@@ -36,12 +36,39 @@ function labelOption(label: LabelCount): MultiSelectOption {
   return { value: label.uid, label: label.name, count: label.photo_count }
 }
 
+/**
+ * A page-specific action merged into the shared bar — "Nastavit obálku" on an
+ * album, say. It is described rather than passed as a node so every page's extra
+ * looks and behaves like the built-in actions, instead of each page restyling a
+ * button of its own.
+ */
+export interface BatchExtraAction {
+  /** Stable identity of the action within its page's list (the React key). */
+  id: string
+  /** The glyph shown before the label. */
+  icon: IconName
+  /** The translated, visible label — also the button's title. */
+  label: string
+  /** Runs the action on the current selection. */
+  onClick: () => void
+  /** Greys the action out, e.g. one that needs exactly one photo picked. */
+  disabled?: boolean
+  /** Renders it as destructive (e.g. removing photos from the album). */
+  danger?: boolean
+}
+
 /** Props for {@link BatchActionBar}. */
 export interface BatchActionBarProps {
   /** The bulk-edit state from `useBulkEdit` (hover-select), owned by the page. */
   bulk: UseBulkEditResult
   /** Selects every loaded tile in view; omit to hide the select-all control. */
   onSelectAll?: () => void
+  /**
+   * Actions only this page can offer, appended after the shared ones so the
+   * common vocabulary keeps the same order everywhere. Omit on a page that has
+   * none (the library, favorites, search).
+   */
+  extraActions?: readonly BatchExtraAction[]
 }
 
 /** A labelled icon action button styled for the frosted bar. */
@@ -85,8 +112,13 @@ function BarAction({
  *
  * The bar renders only while something is selected — the page mounts it under
  * that condition — so it never appears empty.
+ *
+ * Every photo list shows this same bar, so the batch vocabulary does not change
+ * from page to page; a page that owns actions of its own (an album's set-cover /
+ * remove-from-album) hands them over as `extraActions` and they join the bar
+ * instead of forcing a second toolbar next to it.
  */
-export function BatchActionBar({ bulk, onSelectAll }: BatchActionBarProps) {
+export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionBarProps) {
   const { t } = useTranslation()
   const { show } = useToast()
   const [busy, setBusy] = useState(false)
@@ -255,6 +287,16 @@ export function BatchActionBar({ bulk, onSelectAll }: BatchActionBarProps) {
         <DownloadZipButton photoUids={bulk.photoUids} variant="outline-light" />
         <StackSelectedControl bulk={bulk} variant="outline-light" />
         <BarAction icon="sliders" label={t('batch.more')} onClick={bulk.open} disabled={busy} />
+        {extraActions?.map((action) => (
+          <BarAction
+            key={action.id}
+            icon={action.icon}
+            label={action.label}
+            onClick={action.onClick}
+            disabled={busy || action.disabled === true}
+            danger={action.danger}
+          />
+        ))}
       </div>
 
       <Modal show={picker !== null} onHide={closePicker} centered scrollable>

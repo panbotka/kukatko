@@ -14,9 +14,8 @@ import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
-import { BulkEditControl } from '../components/organize/BulkEditControl'
+import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { DownloadZipButton } from '../components/organize/DownloadZipButton'
-import { SelectionBar } from '../components/organize/SelectionBar'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -52,9 +51,10 @@ const ALBUMS_PATH = '/albums'
  * cover or bulk-edit their metadata, and rename or delete the album. Mutation
  * controls are hidden from viewers.
  *
- * The page is either browsing or selecting: a writer's tiles offer the corner
- * checkmark from the outset (hover-select, as on the library), and picking the
- * first photo swaps the album's own actions for the selection toolbar.
+ * A writer's tiles offer the corner checkmark from the outset (hover-select, as
+ * on the library), and picking the first photo raises the same floating batch
+ * bar the library uses — with the album's own actions (set cover, remove from
+ * album) merged into it, so the page never shows two competing toolbars.
  */
 export function AlbumDetailPage() {
   const { t } = useTranslation()
@@ -149,6 +149,35 @@ export function AlbumDetailPage() {
     }
   }, [state, selection, leaveMode])
 
+  // Select every tile that has paged in — the album's own select-all, matching
+  // the library's: it never reaches beyond what the grid has actually loaded.
+  const selectAllInView = useCallback(() => {
+    selection.selectMany(photos.map((p) => p.uid))
+  }, [photos, selection])
+
+  // The album's own batch actions, merged into the shared bar rather than shown
+  // on a toolbar of their own. A cover is a single photo, so that action waits
+  // for a selection of exactly one.
+  const extraActions = useMemo<BatchExtraAction[]>(
+    () => [
+      {
+        id: 'set-cover',
+        icon: 'image',
+        label: t('albumDetail.setCover'),
+        disabled: selection.count !== 1,
+        onClick: () => void setCover(),
+      },
+      {
+        id: 'remove-from-album',
+        icon: 'dash-lg',
+        label: t('albumDetail.removeSelected'),
+        danger: true,
+        onClick: () => void removeSelected(),
+      },
+    ],
+    [t, selection.count, setCover, removeSelected],
+  )
+
   const removeAlbum = useCallback(async () => {
     if (state.status !== 'ready') {
       return
@@ -181,7 +210,9 @@ export function AlbumDetailPage() {
           <h1 className="kk-page-title mb-0">{album?.title ?? ''}</h1>
           {album?.private && <Badge bg="secondary">{t('albums.private')}</Badge>}
         </div>
-        {album && !selecting && (
+        {/* The album's own controls stay put during a selection: the batch bar
+            floats over the bottom edge and never contends with the header. */}
+        {album && (
           <div className="d-flex gap-1 flex-wrap">
             {photos.length > 0 && <SlideshowStart scope={scope} view={view} count={total} />}
             {total > 0 && (
@@ -215,28 +246,6 @@ export function AlbumDetailPage() {
 
       {actionError && <Alert variant="danger">{t('albumDetail.actionError')}</Alert>}
 
-      {selecting && (
-        <SelectionBar count={selection.count} onCancel={leaveMode}>
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            disabled={selection.count !== 1}
-            onClick={() => void setCover()}
-          >
-            {t('albumDetail.setCover')}
-          </Button>
-          <BulkEditControl bulk={bulk} />
-          <Button
-            variant="danger"
-            size="sm"
-            disabled={selection.count === 0}
-            onClick={() => void removeSelected()}
-          >
-            {t('albumDetail.removeSelected')}
-          </Button>
-        </SelectionBar>
-      )}
-
       {/* Albums are always chronological; the shared FilterBar hides its sort
           selector here because the backend pins the album order server-side. */}
       <FilterBar view={view} onChange={setView} total={total} showSort={false} />
@@ -250,15 +259,23 @@ export function AlbumDetailPage() {
       )}
 
       {status === 'ready' && photos.length > 0 && (
-        <PhotoGrid
-          photos={photos}
-          loadingMore={loadingMore}
-          moreError={moreError}
-          onEndReached={loadMore}
-          onRetry={retry}
-          selection={bulk.gridSelection}
-          detailQuery={detailQuery}
-        />
+        // Keep the last rows scrollable clear of the floating bar while a
+        // selection is active, so nothing hides behind it.
+        <div style={{ paddingBottom: selecting ? '6rem' : undefined }}>
+          <PhotoGrid
+            photos={photos}
+            loadingMore={loadingMore}
+            moreError={moreError}
+            onEndReached={loadMore}
+            onRetry={retry}
+            selection={bulk.gridSelection}
+            detailQuery={detailQuery}
+          />
+        </div>
+      )}
+
+      {bulk.canBulkEdit && selecting && (
+        <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} extraActions={extraActions} />
       )}
 
       {canWrite && album && (
