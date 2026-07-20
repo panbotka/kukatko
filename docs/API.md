@@ -17,6 +17,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   maintainer (each inherits the rights of the lower ones): viewer read-only, editor adds writing of
   media/metadata, admin governance (user management, audit log, permanent deletion / emptying the
   trash), maintainer operations (imports, maintenance, system, backup/restore, jobs, process).
+  A **username** longer than **64 characters** (runes, not bytes) → 400 with a message naming the
+  field, on both `POST /auth/login` and `POST /admin/users`; login checks it *before* the username
+  reaches the rate limiter, so the public endpoint cannot be flooded with oversized limiter keys.
   **Sliding session expiry**
   (`auth.session_ttl` up to the cap `auth.session_max_lifetime`), **login rate-limit**
   (`auth.login_rate_limit`/`auth.login_rate_window` → 429), **bootstrap admin** from

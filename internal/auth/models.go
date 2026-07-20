@@ -31,11 +31,21 @@ var (
 	// ErrNoteTooLong indicates the user note exceeds MaxNoteLen characters. Its
 	// message names the offending field so it can be surfaced verbatim in a 400.
 	ErrNoteTooLong = errors.New("auth: note must be at most 1000 characters")
+	// ErrUsernameTooLong indicates the username exceeds MaxUsernameLen
+	// characters. Its message names the offending field so it can be surfaced
+	// verbatim in a 400.
+	ErrUsernameTooLong = errors.New("auth: username must be at most 64 characters")
 )
 
 // MaxNoteLen is the maximum length of a user note, measured in runes rather than
 // bytes so that accented text is not penalised against the limit.
 const MaxNoteLen = 1000
+
+// MaxUsernameLen is the maximum length of a username, measured in runes rather
+// than bytes so that accented text is not penalised against the limit. Login
+// enforces it before the username reaches the rate limiter, so an unauthenticated
+// caller cannot use oversized usernames to inflate the limiter's key set.
+const MaxUsernameLen = 64
 
 // User is a local account. PasswordHash is never serialised to clients (no JSON
 // tag exposure); the JSON form is used by the HTTP layer for user-management

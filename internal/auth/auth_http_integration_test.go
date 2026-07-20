@@ -274,6 +274,42 @@ func TestHTTP_loginRateLimited(t *testing.T) {
 	}
 }
 
+// TestHTTP_loginRejectsOverLongUsername verifies the public login endpoint
+// refuses an oversized username with 400 before it can be turned into a
+// rate-limiter key. Without the cap, each such request would leave a
+// megabyte-scale key in the process-global limiter map.
+func TestHTTP_loginRejectsOverLongUsername(t *testing.T) {
+	env := newHTTPEnv(t, 3)
+	client := newClient(t)
+
+	long := strings.Repeat("a", auth.MaxUsernameLen+1)
+	status, body := env.do(t, client, http.MethodPost, "/api/v1/auth/login", loginJSON(long, testPassword))
+	if status != http.StatusBadRequest {
+		t.Fatalf("over-long username status = %d, want 400 (body %s)", status, body)
+	}
+
+	// Rejection must not have consumed the caller's throttling budget either: a
+	// normal login for a real account still works right after.
+	env.mustCreate(t, "quinn", auth.RoleViewer)
+	assertStatus(t, env, client, http.MethodPost, "/api/v1/auth/login",
+		loginJSON("quinn", testPassword), http.StatusOK)
+}
+
+// TestHTTP_createUserRejectsOverLongUsername verifies an admin cannot create an
+// account whose username exceeds the login cap, which could never log in.
+func TestHTTP_createUserRejectsOverLongUsername(t *testing.T) {
+	env := newHTTPEnv(t, 50)
+	env.mustCreate(t, "root", auth.RoleAdmin)
+	client := env.loginClient(t, "root")
+
+	body := adminUserBody(t, map[string]any{
+		"username": strings.Repeat("a", auth.MaxUsernameLen+1),
+		"password": testPassword,
+		"role":     string(auth.RoleViewer),
+	})
+	assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users", body, http.StatusBadRequest)
+}
+
 func TestHTTP_changePassword(t *testing.T) {
 	env := newHTTPEnv(t, 50)
 	env.mustCreate(t, "olive", auth.RoleEditor)

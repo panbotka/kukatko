@@ -133,8 +133,9 @@ func (s *Service) guardMaintainerBoundary(ctx context.Context, actor Role, uid s
 // records no audit entry and is used for system-initiated creation (bootstrap,
 // test seeding); handlers that must attribute the action to an admin call
 // CreateUserAudited. It returns ErrInvalidRole for an unknown role,
-// ErrPasswordTooShort for a weak password, ErrNoteTooLong for an over-length
-// note, ErrUsernameTaken on a duplicate username, and the created user on success.
+// ErrPasswordTooShort for a weak password, ErrUsernameTooLong or ErrNoteTooLong
+// for an over-length username or note, ErrUsernameTaken on a duplicate username,
+// and the created user on success.
 func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, error) {
 	user, err := s.prepareNewUser(in)
 	if err != nil {
@@ -175,10 +176,17 @@ func (s *Service) CreateUserAudited(
 
 // prepareNewUser validates in and builds the User to insert, hashing the password
 // and assigning a fresh UID. It is shared by CreateUser and CreateUserAudited and
-// returns ErrInvalidRole, ErrPasswordTooShort or ErrNoteTooLong on invalid input.
+// returns ErrInvalidRole, ErrUsernameTooLong, ErrPasswordTooShort or
+// ErrNoteTooLong on invalid input.
 func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, ErrInvalidRole
+	}
+	username := normalizeUsername(in.Username)
+	// Login rejects an over-long username outright, so an account with one
+	// could never be used; refuse to create it in the first place.
+	if err := validateUsername(username); err != nil {
+		return User{}, err
 	}
 	if err := validateNote(in.Note); err != nil {
 		return User{}, err
@@ -193,7 +201,7 @@ func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 	}
 	return User{
 		UID:          uid,
-		Username:     normalizeUsername(in.Username),
+		Username:     username,
 		DisplayName:  in.DisplayName,
 		Email:        in.Email,
 		Role:         in.Role,

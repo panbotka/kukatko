@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -94,6 +95,86 @@ func TestLimiter_cleanupRemovesStaleKeys(t *testing.T) {
 	l.mu.Unlock()
 	if present {
 		t.Error("Cleanup should have removed the stale key")
+	}
+}
+
+// TestLimiter_boundsKeysUnderDistinctKeyFlood verifies the key set stays capped
+// at maxKeys when far more distinct keys arrive than the cap allows, without any
+// Cleanup tick in between — the RAM-exhaustion guard for the public login
+// endpoint.
+func TestLimiter_boundsKeysUnderDistinctKeyFlood(t *testing.T) {
+	t.Parallel()
+
+	l := NewLimiter(3, time.Hour)
+	base := time.Unix(1_700_000_000, 0)
+
+	// Every attempt lands within the window, so none of the keys expires: the
+	// cap can only hold if insertion evicts.
+	for i := range maxKeys * 3 {
+		l.Allow(strconv.Itoa(i), base.Add(time.Duration(i)*time.Millisecond))
+	}
+
+	l.mu.Lock()
+	size := len(l.attempts)
+	l.mu.Unlock()
+	if size > maxKeys {
+		t.Errorf("limiter holds %d keys, want at most %d", size, maxKeys)
+	}
+}
+
+// TestLimiter_evictsLeastRecentlyActive verifies a key that keeps being used
+// survives an eviction sweep while single-touch keys are dropped. The tracked
+// key is blocked for most of the run, so this also pins down that a flood of
+// fresh keys cannot evict — and thereby clear — an active block.
+func TestLimiter_evictsLeastRecentlyActive(t *testing.T) {
+	t.Parallel()
+
+	l := NewLimiter(3, time.Hour)
+	base := time.Unix(1_700_000_000, 0)
+
+	// Fill far past the cap, touching the tracked key after every insertion.
+	for i := range maxKeys * 2 {
+		at := base.Add(time.Duration(i) * time.Millisecond)
+		l.Allow(strconv.Itoa(i), at)
+		l.Allow("active", at.Add(time.Microsecond))
+	}
+
+	l.mu.Lock()
+	_, present := l.attempts["active"]
+	size := len(l.attempts)
+	l.mu.Unlock()
+	if !present {
+		t.Error("the continuously refreshed key should survive eviction")
+	}
+	if size > maxKeys {
+		t.Errorf("limiter holds %d keys, want at most %d", size, maxKeys)
+	}
+	// Its block must have survived the flood too, not just its map entry.
+	if l.Allow("active", base.Add(time.Duration(maxKeys*2)*time.Millisecond)) {
+		t.Error("the blocked key should still be blocked after the flood")
+	}
+}
+
+// TestLimiter_expiredKeysFreeRoomBeforeEviction verifies that when the map is
+// full of aged-out keys a new insertion reclaims them rather than evicting live
+// entries, so ordinary traffic never loses its throttling state.
+func TestLimiter_expiredKeysFreeRoomBeforeEviction(t *testing.T) {
+	t.Parallel()
+
+	l := NewLimiter(1, time.Minute)
+	base := time.Unix(1_700_000_000, 0)
+
+	for i := range maxKeys {
+		l.Allow(strconv.Itoa(i), base)
+	}
+	// An hour later every recorded attempt has aged out of the one-minute window.
+	l.Allow("fresh", base.Add(time.Hour))
+
+	l.mu.Lock()
+	size := len(l.attempts)
+	l.mu.Unlock()
+	if size != 1 {
+		t.Errorf("limiter holds %d keys, want only the fresh one", size)
 	}
 }
 

@@ -85,8 +85,8 @@ func (a *API) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateUser creates a user (admin only). It responds 201 with the created
-// user, 400 for a bad body, weak password, invalid role, or over-length note,
-// 409 for a duplicate username, or 500.
+// user, 400 for a bad body, weak password, invalid role, over-length username or
+// note, 409 for a duplicate username, or 500.
 func (a *API) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req createUserRequest
 	if err := decodeJSON(w, r, &req); err != nil {
@@ -116,6 +116,8 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, ErrPasswordTooShort.Error())
 	case errors.Is(err, ErrNoteTooLong):
 		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
+	case errors.Is(err, ErrUsernameTooLong):
+		writeError(w, http.StatusBadRequest, ErrUsernameTooLong.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "could not create user")
 	}
