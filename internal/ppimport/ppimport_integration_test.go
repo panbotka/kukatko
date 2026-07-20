@@ -610,8 +610,9 @@ func TestIntegration_sha256Dedup(t *testing.T) {
 	}
 }
 
-// TestIntegration_perPhotoFailure verifies a failed download is recorded without
-// aborting the run, the other photos import, and the run completes.
+// TestIntegration_perPhotoFailure verifies a failed download does not abort the
+// run (the other photos import), is persisted to import_failures, and closes the
+// run as 'partial' rather than a clean 'done'.
 func TestIntegration_perPhotoFailure(t *testing.T) {
 	ctx := t.Context()
 	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
@@ -636,14 +637,27 @@ func TestIntegration_perPhotoFailure(t *testing.T) {
 	if _, err := env.photos.GetByPhotoprismUID(ctx, "bad"); err == nil {
 		t.Error("bad photo was imported despite download failure")
 	}
-	// The run is recorded as done with the failure tallied.
+	// The run completed its scan but recorded a failure, so it is 'partial', not a
+	// clean 'done' (and its watermark is therefore ignored on the next run).
 	var status string
 	if err := env.db.Pool().QueryRow(ctx,
 		"SELECT status FROM import_runs WHERE id = $1", result.RunID).Scan(&status); err != nil {
 		t.Fatalf("reading run: %v", err)
 	}
-	if status != string(importer.StatusDone) {
-		t.Errorf("run status = %q, want done", status)
+	if status != string(importer.StatusPartial) {
+		t.Errorf("run status = %q, want partial", status)
+	}
+	// The individual failure is persisted so it can be listed and retried.
+	failures, err := importer.NewStore(env.db.Pool()).ListFailures(ctx,
+		importer.FailureFilter{RunID: result.RunID, UnresolvedOnly: true})
+	if err != nil {
+		t.Fatalf("ListFailures: %v", err)
+	}
+	if len(failures) != 1 {
+		t.Fatalf("recorded failures = %d, want 1", len(failures))
+	}
+	if f := failures[0]; f.Stage != importer.StagePhoto || f.SourceRef != "bad" {
+		t.Errorf("recorded failure = %+v, want StagePhoto for pp uid bad", f)
 	}
 }
 

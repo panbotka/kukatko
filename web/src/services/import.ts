@@ -65,8 +65,12 @@ export type ImportSource = 'photoprism' | 'photosorter'
  */
 export type RunSource = ImportSource | 'folder'
 
-/** Lifecycle state of an import run (`importer.Status`). */
-export type RunStatus = 'running' | 'done' | 'failed'
+/**
+ * Lifecycle state of an import run (`importer.Status`). `partial` means the run
+ * finished its scan but recorded at least one unresolved per-photo/per-file
+ * failure, so it is deliberately not reported as a clean `done`.
+ */
+export type RunStatus = 'running' | 'done' | 'partial' | 'failed'
 
 /** Per-run tally of photos handled (`importer.Counts`). */
 export interface ImportCounts {
@@ -140,4 +144,118 @@ export async function startImport(
   signal?: AbortSignal,
 ): Promise<StartImportResult> {
   return postJSON<StartImportResult>(`/import/${source}`, signal)
+}
+
+/** The import step a failure happened in (`importer.Stage`). */
+export type FailureStage =
+  | 'photo'
+  | 'file'
+  | 'marker'
+  | 'album_member'
+  | 'label'
+  | 'thumbnail'
+  | 'embedding'
+  | 'faces'
+  | 'phash'
+  | 'edit'
+  | 'metadata'
+
+/** Every source a failure can be recorded under (`importer.Source`), which unlike
+ * a triggerable run source also includes the feeds import. */
+export type FailureSource = ImportSource | 'photosorter_feeds' | 'folder'
+
+/** One persisted per-photo/per-file import failure (`importer.Failure`). */
+export interface ImportFailure {
+  id: number
+  run_id: number
+  source: FailureSource
+  stage: FailureStage
+  photo_uid: string
+  source_ref: string
+  detail: string
+  error: string
+  created_at: string
+  resolved_at: string | null
+}
+
+/** Response body of `GET /api/v1/import/failures`. */
+export interface ImportFailuresResponse {
+  failures: ImportFailure[]
+  limit: number
+  offset: number
+}
+
+/**
+ * Fetches recorded import failures, most recently recorded first. When
+ * `unresolvedOnly` is set only outstanding failures are returned.
+ */
+export async function fetchImportFailures(
+  opts: { unresolvedOnly?: boolean; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<ImportFailuresResponse> {
+  const params = new URLSearchParams()
+  if (opts.unresolvedOnly) params.set('unresolved', 'true')
+  if (opts.limit) params.set('limit', String(opts.limit))
+  const query = params.toString()
+  return getJSON<ImportFailuresResponse>(`/import/failures${query ? `?${query}` : ''}`, signal)
+}
+
+/** PhotoPrism photo/file reconciliation (`importverify.PhotoPrismReport`). */
+export interface PhotoPrismReport {
+  source_total: number
+  source_by_type: Record<string, number | undefined>
+  imported_count: number
+  deduplicated_count: number
+  missing_count: number
+  missing_uids: string[]
+  file_gap_count: number
+  file_gaps: { photoprism_uid: string; expected: number; actual: number }[]
+}
+
+/** photo-sorter vectors reconciliation (`importverify.VectorsReport`). */
+export interface VectorsReport {
+  not_configured: boolean
+  source_total_photos: number
+  source_photos_with_embeddings: number
+  source_photos_with_faces: number
+  source_total_faces: number
+  catalog_embeddings: number
+  catalog_face_photos: number
+  catalog_faces: number
+  missing_embeddings_count: number
+  missing_embeddings: string[]
+  missing_faces_count: number
+  missing_faces: string[]
+}
+
+/** Source-vs-catalogue counts for one entity kind (`importverify.EntityReport`). */
+export interface EntityReport {
+  source_count: number
+  catalog_count: number
+  missing_count: number
+  missing: string[]
+}
+
+/** Album/label/subject reconciliation (`importverify.StructureReport`). */
+export interface StructureReport {
+  albums: EntityReport
+  labels: EntityReport
+  subjects: EntityReport
+}
+
+/** Full completeness report (`importverify.Report`) from `GET /import/verify`. */
+export interface VerifyReport {
+  photoprism: PhotoPrismReport
+  vectors: VectorsReport
+  structure: StructureReport
+  complete: boolean
+}
+
+/**
+ * Runs the import-completeness reconciliation and returns its report. This may
+ * take a while (it walks the whole source library); throws ApiError 503 when no
+ * import source is configured.
+ */
+export async function fetchVerifyReport(signal?: AbortSignal): Promise<VerifyReport> {
+  return getJSON<VerifyReport>('/import/verify', signal)
 }

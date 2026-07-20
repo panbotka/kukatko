@@ -296,6 +296,7 @@ func bounds(n, offset, count int) (int, int) {
 // resume watermark.
 type fakeRunStore struct {
 	runs        []*importer.Run
+	failures    []importer.Failure
 	startErr    error
 	completeErr error
 	nextID      int64
@@ -322,7 +323,8 @@ func (s *fakeRunStore) UpdateCounts(_ context.Context, id int64, counts importer
 	return nil
 }
 
-// Complete closes a run as done with the watermark and counts.
+// Complete closes a run as done, or partial when the run recorded any failures,
+// mirroring importer.Store.Complete's auto-detection.
 func (s *fakeRunStore) Complete(_ context.Context, id int64, watermark *time.Time, counts importer.Counts) error {
 	if s.completeErr != nil {
 		return s.completeErr
@@ -332,9 +334,29 @@ func (s *fakeRunStore) Complete(_ context.Context, id int64, watermark *time.Tim
 		return importer.ErrRunNotFound
 	}
 	run.Status = importer.StatusDone
+	if s.unresolvedFailures(id) > 0 {
+		run.Status = importer.StatusPartial
+	}
 	run.HighWatermark = watermark
 	run.Counts = counts
 	return nil
+}
+
+// RecordFailures appends the run's per-item failures.
+func (s *fakeRunStore) RecordFailures(_ context.Context, failures []importer.Failure) error {
+	s.failures = append(s.failures, failures...)
+	return nil
+}
+
+// unresolvedFailures counts the failures recorded for run id.
+func (s *fakeRunStore) unresolvedFailures(id int64) int {
+	n := 0
+	for _, f := range s.failures {
+		if f.RunID == id && f.ResolvedAt == nil {
+			n++
+		}
+	}
+	return n
 }
 
 // Fail closes a run as failed.

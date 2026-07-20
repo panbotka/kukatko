@@ -216,6 +216,28 @@ kukatko storage migrate-to-r2 --concurrency 4                # upload, leave ori
 kukatko storage migrate-to-r2 --delete-local                 # upload and clean up after itself
 ```
 
+### `kukatko import verify`
+
+Reconciles the import sources against the catalogue and prints whether **the import is complete and nothing
+is missing** (`internal/importverify`). Read-only: it opens the DB, applies migrations, then pulls the source
+totals — PhotoPrism's photo count, per-type counts (`type:raw`/`type:video`) and each photo's `Files[]`, and
+photo-sorter's feeds `GET /api/v1/stats` (`total_photos`/`photos_with_embeddings`/`total_faces`) — and compares
+them against Kukátko, listing what is missing: PhotoPrism UIDs not imported, photos missing an original file
+(e.g. a dropped RAW sibling), photos missing their photo-sorter embedding/faces, and albums/labels/people not
+transferred. The SHA256/SHA1-dedup delta is accounted for separately (`deduplicated`), so the remaining delta
+is a real gap. It does **not** record an `import_runs` row (it is a check, not an import). Needs
+`import.photoprism.*` configured (and `import.photosorter.*` for the vectors section); exits **nonzero** when
+anything is missing, so a script/CI can gate on it. `--json` prints the full report as JSON.
+
+```bash
+kukatko import verify            # human-readable reconciliation summary; exit 1 if incomplete
+kukatko import verify --json     # the full importverify.Report as JSON
+```
+
+The same reconciliation is exposed over HTTP at `GET /api/v1/import/verify` (maintainer-only) and surfaced in
+the `/import` admin page's completeness-check section. The individual per-photo/per-file failures a run records
+(instead of only logging them) are persisted in `import_failures` and listed at `GET /api/v1/import/failures`.
+
 ### `kukatko ctl` — remote API client
 
 The other subcommands touch the database and filesystem directly. `ctl` is the opposite: it talks to a **running**

@@ -1509,7 +1509,30 @@ to `## Package map` in `CLAUDE.md`.
   `List(ctx,limit,offset)` stránka běhů
   **přes všechny zdroje** newest-started-first (limit clamp `[1,200]`, default 50, non-nil prázdná
   stránka) — podklad admin historie importů; sentinely
-  `ErrRunNotFound`/`ErrInvalidSource`), `internal/photoprism/`
+  `ErrRunNotFound`/`ErrInvalidSource`; **`import_failures`** (migrace `0042_import_failures.sql`) uchovává
+  jednotlivé **per-foto i per-soubor** vady běhu, které dřív šly jen do `slog.Warn` a mizely (satelity —
+  markery/album membership/edity/pHash/soubory): `Failure`
+  (`RunID`/`Source`/`Stage`/`PhotoUID`/`SourceRef`/`Detail`/`Error`/`CreatedAt`/`ResolvedAt`), `Stage` ∈
+  `photo|file|marker|album_member|label|thumbnail|embedding|faces|phash|edit|metadata`, helper
+  `NewFailure(runID,source,stage,photoUID,sourceRef,detail,err)`; `RecordFailures(ctx,[]Failure)` (batch),
+  `CountUnresolvedFailures(ctx,id)`, `ListFailures(ctx,FailureFilter{RunID,Source,UnresolvedOnly,Limit,Offset})`.
+  **`Complete` teď auto-detekuje status**: běh s ≥1 nevyřešenou vadou se uzavře jako nový `StatusPartial`
+  (`partial`, 0042 rozšiřuje status CHECK) místo `done` — a stejně jako failed **neposune watermark**
+  (`LatestWatermark` čte jen `done`), takže re-run okno zopakuje (importy jsou idempotentní). 0042 zároveň
+  obnoví `folder` v source CHECK, které `0041` omylem zahodilo. Import services (ppimport/psimport/
+  psfeedsimport/dirimport) sbírají vady do `runState` a persistují je přes `RecordFailures` před `Complete`),
+  `internal/importverify/`
+  (**nástroj úplnosti importu** — read-only rekonciliace zdrojů proti katalogu, řekne „import je kompletní a
+  nic nechybí“: `Service` = `NewService(Config{PhotoPrism,Feeds,Catalog,SampleLimit,AlbumTypes,Logger})`
+  (panika na nil PhotoPrism/Catalog), `Verify(ctx)` → `Report`; interní úzká rozhraní `PhotoPrismSource`
+  (List Photos/Albums/Labels/Subjects), `FeedsSource` (`Stats` = photo-sorter feedy `/stats`), `Catalog`
+  (pool-backed `Store = NewStore(pool)`: `ImportedRefs`/`OriginalFileCounts`/`Counts`/`PhotosMissing
+  Embeddings`/`PhotosMissingFaces`/`AlbumTitles`/`LabelNames`/`SubjectNames`); `Verify` projde **celou**
+  PhotoPrism knihovnu stránkováním `ListPhotos`, klasifikuje foto jako matched/**deduplicated** (uid chybí,
+  ale primární SHA1 hash je už naimportovaný — účet za SHA256/SHA1 dedup)/**missing**, a matched foto s
+  méně `original` soubory v katalogu než má PhotoPrism `Files[]` → **file gap** (zahozený RAW sourozenec);
+  `Report{photoprism,vectors,structure,complete}` (per-sekce zdroj vs katalog + capnutý seznam chybějících +
+  plné počty); `complete=true` jen když nic nechybí; **nezapisuje** `import_runs`), `internal/photoprism/`
   (read-only HTTP klient k běžící instanci PhotoPrismu — podklad inkrementálního importu, vše za
   rozhraním `Client` (fakeovatelné): `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryBaseDelay,
   RetryMaxDelay,HTTPClient})` → `*HTTPClient`, `ErrInvalidURL` na nevalidní base URL; **autentizace**

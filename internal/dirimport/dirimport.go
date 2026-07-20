@@ -229,10 +229,14 @@ type RunStore interface {
 	// UpdateCounts checkpoints the running tally.
 	UpdateCounts(ctx context.Context, id int64, counts importer.Counts) error
 	// Complete closes the run as done with its final tally. A folder run passes a
-	// nil watermark: it has no source cursor to resume from.
+	// nil watermark: it has no source cursor to resume from. The run is reported
+	// 'partial' rather than 'done' when unresolved failures were recorded.
 	Complete(ctx context.Context, id int64, watermark *time.Time, counts importer.Counts) error
 	// Fail closes the run as failed, recording why.
 	Fail(ctx context.Context, id int64, lastErr string, counts importer.Counts) error
+	// RecordFailures persists the per-file and per-satellite failures of a run so
+	// they can be listed and retried instead of being lost to the log.
+	RecordFailures(ctx context.Context, failures []importer.Failure) error
 }
 
 // PhotoLookup reads the catalogue to classify a file without ingesting it (the

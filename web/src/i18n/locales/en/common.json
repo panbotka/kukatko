@@ -1543,7 +1543,8 @@
     "status": {
       "running": "Running",
       "done": "Done",
-      "failed": "Failed"
+      "failed": "Failed",
+      "partial": "Partial"
     },
     "jobs": {
       "title": "Background processing queue",
@@ -1561,6 +1562,40 @@
       "counts": "Counts",
       "lastError": "Last error",
       "empty": "No import runs yet."
+    },
+    "verify": {
+      "title": "Completeness check",
+      "desc": "Reconciles the sources (PhotoPrism, photo-sorter) against the Kukátko catalogue and reports what is missing. May take a while — it walks the whole source library.",
+      "button": "Verify completeness",
+      "running": "Verifying…",
+      "complete": "The import is complete — nothing is missing.",
+      "incomplete": "The import is not complete — some items are missing (see below).",
+      "error": "The completeness check failed.",
+      "notConfigured": "The vectors source (photo-sorter) is not configured; this section is skipped.",
+      "colCheck": "Check",
+      "colSource": "Source",
+      "colCatalog": "Kukátko",
+      "colMissing": "Missing",
+      "photos": "PhotoPrism photos",
+      "files": "Files (e.g. RAW)",
+      "embeddings": "Embeddings",
+      "faces": "Faces",
+      "albums": "Albums",
+      "labels": "Labels",
+      "subjects": "People",
+      "deduplicated": "Deduplicated",
+      "sampleNote": "Showing the first {{shown}} of {{total}}."
+    },
+    "failures": {
+      "title": "Import failures",
+      "intro": "Individual photos and files that failed to import. Re-running the import retries them.",
+      "empty": "No unresolved import failures.",
+      "colStage": "Stage",
+      "colSource": "Source",
+      "colRef": "Reference",
+      "colDetail": "Detail",
+      "colError": "Error",
+      "colWhen": "When"
     }
   },
   "trash": {

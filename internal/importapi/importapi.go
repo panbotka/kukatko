@@ -58,12 +58,33 @@ type RunLister interface {
 	List(ctx context.Context, limit, offset int) ([]importer.Run, error)
 }
 
+// FailureLister reads the persisted per-photo/per-file import failures for the
+// failures view. It is the import-facing subset of importer.Store, satisfied by
+// *importer.Store.
+type FailureLister interface {
+	// ListFailures returns a page of recorded import failures matching the filter,
+	// most recently recorded first.
+	ListFailures(ctx context.Context, filter importer.FailureFilter) ([]importer.Failure, error)
+}
+
+// Verifier runs an import-completeness reconciliation against the configured
+// sources and returns a JSON-encodable report. It is optional — nil when no
+// import source is configured, in which case the verify endpoint answers 503. It
+// is declared as any-returning so this package stays decoupled from the
+// reconciler's report shape; *importverify.Service is adapted onto it at wiring.
+type Verifier interface {
+	// Verify reconciles the sources against the catalogue, returning the report.
+	Verify(ctx context.Context) (any, error)
+}
+
 // API exposes the import triggers over HTTP. The maintainer guard is supplied by
 // the caller (the auth subsystem) so this package depends on auth's behaviour,
 // not its wiring.
 type API struct {
 	queue             Queue
 	runs              RunLister
+	failures          FailureLister
+	verifier          Verifier
 	requireMaintainer func(http.Handler) http.Handler
 	rateLimit         func(http.Handler) http.Handler
 	enablePhotoPrism  bool
@@ -78,6 +99,11 @@ type Config struct {
 	Queue Queue
 	// Runs reads the import-run history for the history endpoint.
 	Runs RunLister
+	// Failures reads the persisted per-photo/per-file import failures.
+	Failures FailureLister
+	// Verifier runs the completeness reconciliation; nil disables the verify
+	// endpoint (503), which is the case when no import source is configured.
+	Verifier Verifier
 	// RequireMaintainer guards the endpoints for callers permitted to import (the
 	// maintainer role only); imports are an operations capability.
 	RequireMaintainer func(http.Handler) http.Handler
@@ -101,6 +127,8 @@ func NewAPI(cfg Config) *API {
 	return &API{
 		queue:             cfg.queueOrPanic(),
 		runs:              cfg.runsOrPanic(),
+		failures:          cfg.failuresOrPanic(),
+		verifier:          cfg.Verifier,
 		requireMaintainer: cfg.RequireMaintainer,
 		rateLimit:         rateLimit,
 		enablePhotoPrism:  cfg.EnablePhotoPrism,
@@ -130,6 +158,15 @@ func (c Config) runsOrPanic() RunLister {
 	return c.Runs
 }
 
+// failuresOrPanic returns the configured failure lister, panicking on a nil one
+// since a missing store is a wiring bug that should surface at startup.
+func (c Config) failuresOrPanic() FailureLister {
+	if c.Failures == nil {
+		panic("importapi: NewAPI requires a Failures store")
+	}
+	return c.Failures
+}
+
 // RegisterRoutes mounts the import endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1). The history endpoint is always
 // registered so the operations UI can render past runs even when no source is
@@ -137,11 +174,15 @@ func (c Config) runsOrPanic() RunLister {
 // route is behind the maintainer guard:
 //
 //	GET  /import/runs               RequireMaintainer  recent import-run history + enabled sources
+//	GET  /import/failures           RequireMaintainer  recorded per-photo/per-file import failures
+//	GET  /import/verify             RequireMaintainer  completeness reconciliation report (503 if unconfigured)
 //	POST /import/photoprism         RequireMaintainer  enqueue a PhotoPrism import job
 //	POST /import/photosorter        RequireMaintainer  enqueue a photo-sorter migration job
 //	POST /import/photosorter-feeds  RequireMaintainer  enqueue a photo-sorter feeds import job
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireMaintainer).Get("/import/runs", a.handleListRuns)
+	r.With(a.requireMaintainer).Get("/import/failures", a.handleListFailures)
+	r.With(a.requireMaintainer).Get("/import/verify", a.handleVerify)
 	if a.enablePhotoPrism {
 		r.With(a.rateLimit, a.requireMaintainer).Post("/import/photoprism", a.handleImportPhotoPrism)
 	}
@@ -230,6 +271,84 @@ func parsePaging(q url.Values) (limit, offset int, err error) {
 		offset = n
 	}
 	return limit, offset, nil
+}
+
+// failuresResponse is the JSON body of the failures endpoint: a page of recorded
+// import failures plus the echoed paging.
+type failuresResponse struct {
+	Failures []importer.Failure `json:"failures"`
+	Limit    int                `json:"limit"`
+	Offset   int                `json:"offset"`
+}
+
+// handleListFailures returns a page of persisted per-photo/per-file import
+// failures, most recently recorded first, filtered by the optional query
+// parameters ?source=, ?run_id=, ?unresolved=true and paginated by ?limit=/?offset=.
+// A malformed parameter is answered with 400.
+func (a *API) handleListFailures(w http.ResponseWriter, r *http.Request) {
+	limit, offset, err := parsePaging(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	filter, err := parseFailureFilter(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	filter.Limit, filter.Offset = limit, offset
+	failures, err := a.failures.ListFailures(r.Context(), filter)
+	if errors.Is(err, importer.ErrInvalidSource) {
+		writeError(w, http.StatusBadRequest, "invalid source")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "listing import failures failed")
+		return
+	}
+	if failures == nil {
+		failures = []importer.Failure{}
+	}
+	writeJSON(w, http.StatusOK, failuresResponse{Failures: failures, Limit: limit, Offset: offset})
+}
+
+// errInvalidRunID is returned by parseFailureFilter for a malformed run_id.
+var errInvalidRunID = errors.New("invalid run_id")
+
+// parseFailureFilter reads the failures-listing filter query parameters (source,
+// run_id, unresolved), leaving Limit/Offset to the caller. It returns
+// errInvalidRunID for a malformed run_id; an unrecognised source is left for the
+// store to reject so the error text stays in one place.
+func parseFailureFilter(q url.Values) (importer.FailureFilter, error) {
+	filter := importer.FailureFilter{}
+	if raw := q.Get("source"); raw != "" {
+		filter.Source = importer.Source(raw)
+	}
+	if raw := q.Get("run_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id < 1 {
+			return importer.FailureFilter{}, errInvalidRunID
+		}
+		filter.RunID = id
+	}
+	filter.UnresolvedOnly = q.Get("unresolved") == "true"
+	return filter, nil
+}
+
+// handleVerify runs the import-completeness reconciliation and returns its report.
+// It answers 503 when no verifier is configured (no import source) and 502 when
+// reconciling against a source failed.
+func (a *API) handleVerify(w http.ResponseWriter, r *http.Request) {
+	if a.verifier == nil {
+		writeError(w, http.StatusServiceUnavailable, "import verification is not available (no source configured)")
+		return
+	}
+	report, err := a.verifier.Verify(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "import verification failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 
 // importResponse is the JSON body returned when an import job is enqueued.

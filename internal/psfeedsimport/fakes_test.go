@@ -158,6 +158,8 @@ func (f *fakePeople) CreateMarker(_ context.Context, m people.Marker) (people.Ma
 }
 
 // fakeRuns records the import-run lifecycle so tests can assert the final status.
+// Like the real importer.Store it closes a run 'partial' rather than 'done' when
+// the run has any recorded failure.
 type fakeRuns struct {
 	started      int
 	completed    int
@@ -167,6 +169,8 @@ type fakeRuns struct {
 	lastWatermk  *time.Time
 	lastSource   importer.Source
 	updateCounts int
+	failures     []importer.Failure
+	lastStatus   importer.Status
 }
 
 func (f *fakeRuns) Start(_ context.Context, source importer.Source) (importer.Run, error) {
@@ -181,10 +185,14 @@ func (f *fakeRuns) UpdateCounts(_ context.Context, _ int64, counts importer.Coun
 	return nil
 }
 
-func (f *fakeRuns) Complete(_ context.Context, _ int64, watermark *time.Time, counts importer.Counts) error {
+func (f *fakeRuns) Complete(_ context.Context, id int64, watermark *time.Time, counts importer.Counts) error {
 	f.completed++
 	f.lastCounts = counts
 	f.lastWatermk = watermark
+	f.lastStatus = importer.StatusDone
+	if f.unresolvedFailures(id) > 0 {
+		f.lastStatus = importer.StatusPartial
+	}
 	return nil
 }
 
@@ -192,5 +200,23 @@ func (f *fakeRuns) Fail(_ context.Context, _ int64, lastErr string, counts impor
 	f.failed++
 	f.lastError = lastErr
 	f.lastCounts = counts
+	f.lastStatus = importer.StatusFailed
 	return nil
+}
+
+// RecordFailures appends the run's per-item failures.
+func (f *fakeRuns) RecordFailures(_ context.Context, failures []importer.Failure) error {
+	f.failures = append(f.failures, failures...)
+	return nil
+}
+
+// unresolvedFailures counts the outstanding failures recorded for run id.
+func (f *fakeRuns) unresolvedFailures(id int64) int {
+	n := 0
+	for _, fl := range f.failures {
+		if fl.RunID == id && fl.ResolvedAt == nil {
+			n++
+		}
+	}
+	return n
 }

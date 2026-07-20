@@ -8,11 +8,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/psfeeds"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
+
+// hasStage reports whether any recorded failure is of the given stage.
+func hasStage(failures []importer.Failure, stage importer.Stage) bool {
+	for _, f := range failures {
+		if f.Stage == stage {
+			return true
+		}
+	}
+	return false
+}
 
 // quietLogger is a logger that discards output so best-effort warnings do not
 // clutter test output.
@@ -225,6 +236,14 @@ func TestImport_dimMismatchCountedFailedNotFatal(t *testing.T) {
 	}
 	if runs.completed != 1 {
 		t.Errorf("run should still complete, completed=%d", runs.completed)
+	}
+	// The dim mismatch is persisted as a StageEmbedding failure, so the run closes
+	// 'partial' rather than 'done'.
+	if !hasStage(runs.failures, importer.StageEmbedding) {
+		t.Errorf("no StageEmbedding failure recorded: %+v", runs.failures)
+	}
+	if runs.lastStatus != importer.StatusPartial {
+		t.Errorf("run status = %q, want partial", runs.lastStatus)
 	}
 }
 

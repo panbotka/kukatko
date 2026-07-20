@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/photoprism"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -88,6 +89,7 @@ func (s *Service) importOnePhoto(ctx context.Context, pp photoprism.Photo, state
 	if err != nil {
 		s.log.Warn("ppimport: photo failed", "pp_uid", pp.UID, "err", err)
 		state.recordFailure(pp.UpdatedAt)
+		state.recordItemFailure(importer.StagePhoto, "", pp.UID, pp.Title, err)
 		return
 	}
 	state.recordSuccess(pp.UpdatedAt)

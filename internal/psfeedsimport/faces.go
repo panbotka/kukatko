@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/panbotka/kukatko/internal/facejob"
+	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/psfeeds"
@@ -92,6 +93,9 @@ func (fi *facesImport) startGroup(ctx context.Context, psPhotoUID string) error 
 	if _, ok := fi.seen[psPhotoUID]; ok {
 		fi.svc.log.Warn("psfeedsimport: photo's faces are not contiguous in the feed; "+
 			"the earlier batch was overwritten", "photo", psPhotoUID)
+		fi.st.recordItemFailure(importer.StageFaces, "", psPhotoUID,
+			"non-contiguous face group overwritten",
+			errors.New("photo's faces are not contiguous in the feed"))
 	}
 	fi.seen[psPhotoUID] = struct{}{}
 
@@ -188,6 +192,7 @@ func (fi *facesImport) ensureMarker(ctx context.Context, markerUID string, subje
 	}
 	if !errors.Is(err, people.ErrMarkerNotFound) {
 		fi.svc.log.Warn("psfeedsimport: looking up marker", "marker", markerUID, "err", err)
+		fi.st.recordItemFailure(importer.StageMarker, fi.photoUID, fi.psPhotoUID, markerUID, err)
 		return
 	}
 	_, err = fi.svc.people.CreateMarker(ctx, people.Marker{
@@ -203,6 +208,7 @@ func (fi *facesImport) ensureMarker(ctx context.Context, markerUID string, subje
 	if err != nil {
 		fi.svc.log.Warn("psfeedsimport: creating marker",
 			"marker", markerUID, "photo", fi.photoUID, "err", err)
+		fi.st.recordItemFailure(importer.StageMarker, fi.photoUID, fi.psPhotoUID, markerUID, err)
 	}
 }
 
@@ -223,6 +229,7 @@ func (fi *facesImport) flush(ctx context.Context) error {
 		fi.svc.log.Warn("psfeedsimport: recording faces",
 			"photo", fi.photoUID, "faces", len(fi.faces), "err", err)
 		fi.st.counts.Failed++
+		fi.st.recordItemFailure(importer.StageFaces, fi.photoUID, fi.psPhotoUID, "", err)
 		return nil
 	default:
 		return fmt.Errorf("recording faces for %q: %w", fi.photoUID, err)

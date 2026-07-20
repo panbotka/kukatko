@@ -450,7 +450,8 @@ func assertPhotoMetadata(t *testing.T, env *psEnv, psUID string) {
 
 // TestIntegration_perPhotoFailure verifies a photo whose original is missing is
 // tallied as failed without aborting the run, the healthy photo still migrates,
-// and the run is recorded as done.
+// and the run is recorded as partial — the per-photo failure is persisted as an
+// unresolved import_failures row, so Complete auto-detects 'partial' over 'done'.
 func TestIntegration_perPhotoFailure(t *testing.T) {
 	env := newPSEnv(t)
 	ctx := t.Context()
@@ -475,18 +476,36 @@ func TestIntegration_perPhotoFailure(t *testing.T) {
 	if _, err := photos.NewStore(env.pool).GetByPhotosorterUID(ctx, "good"); err != nil {
 		t.Errorf("good photo not migrated: %v", err)
 	}
-	assertRunDone(t, env, result.RunID)
+	assertRunPartial(t, env, result.RunID)
+	assertPhotoFailureRecorded(t, env, result.RunID, "bad")
 }
 
-// assertRunDone checks the import_runs row for id was closed as done.
-func assertRunDone(t *testing.T, env *psEnv, id int64) {
+// assertRunPartial checks the import_runs row for id was closed as partial (a
+// per-photo failure was recorded, so Complete chose partial over done).
+func assertRunPartial(t *testing.T, env *psEnv, id int64) {
 	t.Helper()
 	var status string
 	if err := env.pool.QueryRow(t.Context(),
 		"SELECT status FROM import_runs WHERE id = $1", id).Scan(&status); err != nil {
 		t.Fatalf("reading run: %v", err)
 	}
-	if status != string(importer.StatusDone) {
-		t.Errorf("run status = %q, want done", status)
+	if status != string(importer.StatusPartial) {
+		t.Errorf("run status = %q, want partial", status)
 	}
+}
+
+// assertPhotoFailureRecorded checks a StagePhoto import_failures row was persisted
+// for run id naming the photo-sorter uid that failed.
+func assertPhotoFailureRecorded(t *testing.T, env *psEnv, id int64, psUID string) {
+	t.Helper()
+	failures, err := importer.NewStore(env.pool).ListFailures(t.Context(), importer.FailureFilter{RunID: id})
+	if err != nil {
+		t.Fatalf("listing failures: %v", err)
+	}
+	for _, f := range failures {
+		if f.Stage == importer.StagePhoto && f.SourceRef == psUID {
+			return
+		}
+	}
+	t.Errorf("no StagePhoto failure recorded for %q in run %d: %+v", psUID, id, failures)
 }

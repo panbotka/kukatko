@@ -31,6 +31,9 @@ type fakeSource struct {
 	markers   map[string][]photosorter.Marker
 	albumMem  map[string][]photosorter.AlbumPhoto
 	labelMem  map[string][]photosorter.PhotoLabel
+	// markersErr, when set, makes Markers fail, to exercise the best-effort
+	// per-satellite failure path (the photo still imports, the failure is recorded).
+	markersErr error
 }
 
 // newFakeSource returns an empty fakeSource with initialised maps.
@@ -102,6 +105,9 @@ func (s *fakeSource) Edit(_ context.Context, uid string) (photosorter.Edit, bool
 }
 
 func (s *fakeSource) Markers(_ context.Context, uid string) ([]photosorter.Marker, error) {
+	if s.markersErr != nil {
+		return nil, s.markersErr
+	}
 	return s.markers[uid], nil
 }
 
@@ -304,16 +310,23 @@ func (f *fakeLabels) AttachLabel(_ context.Context, photoUID, labelUID string, _
 	return nil
 }
 
-// fakeRuns is an in-memory import-run store.
+// fakeRuns is an in-memory import-run store. It records recorded failures and, like
+// the real importer.Store, closes a run 'partial' rather than 'done' when the run
+// has any unresolved failure.
 type fakeRuns struct {
 	nextID    int64
 	completed map[int64]*time.Time
 	failed    map[int64]string
 	counts    map[int64]importer.Counts
+	status    map[int64]importer.Status
+	failures  []importer.Failure
 }
 
 func newFakeRuns() *fakeRuns {
-	return &fakeRuns{completed: map[int64]*time.Time{}, failed: map[int64]string{}, counts: map[int64]importer.Counts{}}
+	return &fakeRuns{
+		completed: map[int64]*time.Time{}, failed: map[int64]string{},
+		counts: map[int64]importer.Counts{}, status: map[int64]importer.Status{},
+	}
 }
 
 func (f *fakeRuns) Start(_ context.Context, _ importer.Source) (importer.Run, error) {
@@ -329,13 +342,35 @@ func (f *fakeRuns) UpdateCounts(_ context.Context, id int64, c importer.Counts) 
 func (f *fakeRuns) Complete(_ context.Context, id int64, w *time.Time, c importer.Counts) error {
 	f.completed[id] = w
 	f.counts[id] = c
+	f.status[id] = importer.StatusDone
+	if f.unresolvedFailures(id) > 0 {
+		f.status[id] = importer.StatusPartial
+	}
 	return nil
 }
 
 func (f *fakeRuns) Fail(_ context.Context, id int64, msg string, c importer.Counts) error {
 	f.failed[id] = msg
 	f.counts[id] = c
+	f.status[id] = importer.StatusFailed
 	return nil
+}
+
+// RecordFailures appends the run's per-item failures.
+func (f *fakeRuns) RecordFailures(_ context.Context, failures []importer.Failure) error {
+	f.failures = append(f.failures, failures...)
+	return nil
+}
+
+// unresolvedFailures counts the outstanding failures recorded for run id.
+func (f *fakeRuns) unresolvedFailures(id int64) int {
+	n := 0
+	for _, fl := range f.failures {
+		if fl.RunID == id && fl.ResolvedAt == nil {
+			n++
+		}
+	}
+	return n
 }
 
 func (f *fakeRuns) LatestWatermark(context.Context, importer.Source) (time.Time, bool, error) {

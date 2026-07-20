@@ -5,17 +5,20 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/photosorter"
 )
 
 // transferPhash copies the photo-sorter perceptual hashes onto the Kukátko photo
-// (idempotent upsert). It is best-effort: a failure is logged, not propagated.
-func (s *Service) transferPhash(ctx context.Context, kkUID string, ps photosorter.Photo) {
+// (idempotent upsert). It is best-effort: a failure is logged and recorded on
+// state as a StagePhash failure, not propagated.
+func (s *Service) transferPhash(ctx context.Context, kkUID string, ps photosorter.Photo, state *runState) {
 	ph, ok, err := s.src.Phash(ctx, ps.UID)
 	if err != nil {
 		s.log.Warn("psimport: reading phash", "ps_uid", ps.UID, "err", err)
+		state.recordItemFailure(importer.StagePhash, kkUID, ps.UID, "", err)
 		return
 	}
 	if !ok {
@@ -23,15 +26,18 @@ func (s *Service) transferPhash(ctx context.Context, kkUID string, ps photosorte
 	}
 	if err := s.photos.SetPhash(ctx, photos.Phash{PhotoUID: kkUID, Phash: ph.Phash, Dhash: ph.Dhash}); err != nil {
 		s.log.Warn("psimport: setting phash", "photo", kkUID, "err", err)
+		state.recordItemFailure(importer.StagePhash, kkUID, ps.UID, "", err)
 	}
 }
 
 // transferEdit copies the photo-sorter non-destructive edits onto the Kukátko
-// photo (idempotent upsert). Best-effort: a failure is logged, not propagated.
-func (s *Service) transferEdit(ctx context.Context, kkUID string, ps photosorter.Photo) {
+// photo (idempotent upsert). Best-effort: a failure is logged and recorded on
+// state as a StageEdit failure, not propagated.
+func (s *Service) transferEdit(ctx context.Context, kkUID string, ps photosorter.Photo, state *runState) {
 	e, ok, err := s.src.Edit(ctx, ps.UID)
 	if err != nil {
 		s.log.Warn("psimport: reading edit", "ps_uid", ps.UID, "err", err)
+		state.recordItemFailure(importer.StageEdit, kkUID, ps.UID, "", err)
 		return
 	}
 	if !ok {
@@ -48,21 +54,27 @@ func (s *Service) transferEdit(ctx context.Context, kkUID string, ps photosorter
 		Contrast:   e.Contrast,
 	}); err != nil {
 		s.log.Warn("psimport: setting edit", "photo", kkUID, "err", err)
+		state.recordItemFailure(importer.StageEdit, kkUID, ps.UID, "", err)
 	}
 }
 
 // transferMarkers migrates the photo-sorter markers onto the Kukátko photo,
 // preserving each marker UID (so the migrated faces' cached marker_uid stays
-// valid) and remapping the subject. Best-effort per marker: a failure is logged.
-func (s *Service) transferMarkers(ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings) {
+// valid) and remapping the subject. Best-effort per marker: a failure is logged
+// and recorded on state as a StageMarker failure (its detail the marker uid).
+func (s *Service) transferMarkers(
+	ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings, state *runState,
+) {
 	markers, err := s.src.Markers(ctx, ps.UID)
 	if err != nil {
 		s.log.Warn("psimport: listing markers", "ps_uid", ps.UID, "err", err)
+		state.recordItemFailure(importer.StageMarker, kkUID, ps.UID, "", err)
 		return
 	}
 	for i := range markers {
 		if err := s.transferOneMarker(ctx, kkUID, markers[i], maps); err != nil {
 			s.log.Warn("psimport: migrating marker", "marker", markers[i].UID, "err", err)
+			state.recordItemFailure(importer.StageMarker, kkUID, ps.UID, markers[i].UID, err)
 		}
 	}
 }
@@ -99,19 +111,26 @@ func (s *Service) transferOneMarker(
 }
 
 // transferMemberships attaches the photo to its mapped albums and labels,
-// mirroring photo-sorter membership. Best-effort: per-row failures are logged.
-func (s *Service) transferMemberships(ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings) {
-	s.transferAlbumMemberships(ctx, kkUID, ps, maps)
-	s.transferLabelMemberships(ctx, kkUID, ps, maps)
+// mirroring photo-sorter membership. Best-effort: per-row failures are logged and
+// recorded on state (StageAlbumMember / StageLabel).
+func (s *Service) transferMemberships(
+	ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings, state *runState,
+) {
+	s.transferAlbumMemberships(ctx, kkUID, ps, maps, state)
+	s.transferLabelMemberships(ctx, kkUID, ps, maps, state)
 }
 
 // transferAlbumMemberships adds the photo to every mapped album it belongs to
 // in photo-sorter (AddPhoto is idempotent). Kukátko presents albums
-// chronologically, so photo-sorter's manual sort order is not carried over.
-func (s *Service) transferAlbumMemberships(ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings) {
+// chronologically, so photo-sorter's manual sort order is not carried over. A
+// failure is logged and recorded on state as a StageAlbumMember failure.
+func (s *Service) transferAlbumMemberships(
+	ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings, state *runState,
+) {
 	members, err := s.src.AlbumMemberships(ctx, ps.UID)
 	if err != nil {
 		s.log.Warn("psimport: listing album memberships", "ps_uid", ps.UID, "err", err)
+		state.recordItemFailure(importer.StageAlbumMember, kkUID, ps.UID, "", err)
 		return
 	}
 	for i := range members {
@@ -121,17 +140,21 @@ func (s *Service) transferAlbumMemberships(ctx context.Context, kkUID string, ps
 		}
 		if err := s.albums.AddPhoto(ctx, albumUID, kkUID); err != nil {
 			s.log.Warn("psimport: adding to album", "album", albumUID, "photo", kkUID, "err", err)
+			state.recordItemFailure(importer.StageAlbumMember, kkUID, ps.UID, albumUID, err)
 		}
 	}
 }
 
 // transferLabelMemberships attaches every mapped label the photo carries in
 // photo-sorter, preserving the provenance source and uncertainty (AttachLabel is
-// idempotent).
-func (s *Service) transferLabelMemberships(ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings) {
+// idempotent). A failure is logged and recorded on state as a StageLabel failure.
+func (s *Service) transferLabelMemberships(
+	ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings, state *runState,
+) {
 	members, err := s.src.LabelMemberships(ctx, ps.UID)
 	if err != nil {
 		s.log.Warn("psimport: listing label memberships", "ps_uid", ps.UID, "err", err)
+		state.recordItemFailure(importer.StageLabel, kkUID, ps.UID, "", err)
 		return
 	}
 	for i := range members {
@@ -143,6 +166,7 @@ func (s *Service) transferLabelMemberships(ctx context.Context, kkUID string, ps
 			ctx, kkUID, labelUID, mapLabelSource(members[i].Source), members[i].Uncertainty,
 		); err != nil {
 			s.log.Warn("psimport: attaching label", "label", labelUID, "photo", kkUID, "err", err)
+			state.recordItemFailure(importer.StageLabel, kkUID, ps.UID, labelUID, err)
 		}
 	}
 }

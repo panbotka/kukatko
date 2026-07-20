@@ -110,10 +110,14 @@ type RunStore interface {
 	Start(ctx context.Context, source importer.Source) (importer.Run, error)
 	// UpdateCounts checkpoints the running tally of a run.
 	UpdateCounts(ctx context.Context, id int64, counts importer.Counts) error
-	// Complete closes a run as done, recording the resume watermark and counts.
+	// Complete closes a run, recording the resume watermark and counts; it reports
+	// the run 'partial' rather than 'done' when unresolved failures were recorded.
 	Complete(ctx context.Context, id int64, watermark *time.Time, counts importer.Counts) error
 	// Fail closes a run as failed, recording the error and counts.
 	Fail(ctx context.Context, id int64, lastErr string, counts importer.Counts) error
+	// RecordFailures persists the per-photo and per-file failures of a run so they
+	// can be listed and retried instead of being lost to the log.
+	RecordFailures(ctx context.Context, failures []importer.Failure) error
 	// LatestWatermark returns the resume cursor of the last successful run.
 	LatestWatermark(ctx context.Context, source importer.Source) (time.Time, bool, error)
 }
@@ -346,18 +350,29 @@ func (s *Service) Import(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("ppimport: starting run: %w", err)
 	}
-	state := &runState{}
+	state := &runState{runID: run.ID}
 	if err := s.runImport(ctx, run.ID, state); err != nil {
+		s.persistFailures(ctx, state)
 		if failErr := s.runs.Fail(ctx, run.ID, err.Error(), state.counts); failErr != nil {
 			s.log.Error("ppimport: marking run failed", "run", run.ID, "err", failErr)
 		}
 		return Result{RunID: run.ID, Counts: state.counts}, err
 	}
+	s.persistFailures(ctx, state)
 	watermark := state.watermark()
 	if err := s.runs.Complete(ctx, run.ID, watermark, state.counts); err != nil {
 		return Result{RunID: run.ID, Counts: state.counts}, fmt.Errorf("ppimport: completing run: %w", err)
 	}
 	return Result{RunID: run.ID, Counts: state.counts, Watermark: watermark}, nil
+}
+
+// persistFailures writes the run's accumulated per-photo/per-file failures. A
+// persistence error is logged, not fatal: the run still closes, only losing the
+// itemised failure trail (the aggregate Failed count is still recorded).
+func (s *Service) persistFailures(ctx context.Context, state *runState) {
+	if err := s.runs.RecordFailures(ctx, state.failures); err != nil {
+		s.log.Error("ppimport: recording import failures", "run", state.runID, "err", err)
+	}
 }
 
 // ImportScoped runs one scoped pass: it imports every photo the Scope selects —
@@ -382,13 +397,15 @@ func (s *Service) ImportScoped(ctx context.Context, scope Scope) (Result, error)
 	if err != nil {
 		return Result{}, fmt.Errorf("ppimport: starting run: %w", err)
 	}
-	state := &runState{scope: scope}
+	state := &runState{scope: scope, runID: run.ID}
 	if err := s.runScopedImport(ctx, run.ID, state); err != nil {
+		s.persistFailures(ctx, state)
 		if failErr := s.runs.Fail(ctx, run.ID, err.Error(), state.counts); failErr != nil {
 			s.log.Error("ppimport: marking run failed", "run", run.ID, "err", failErr)
 		}
 		return Result{RunID: run.ID, Counts: state.counts}, err
 	}
+	s.persistFailures(ctx, state)
 	if err := s.runs.Complete(ctx, run.ID, nil, state.counts); err != nil {
 		return Result{RunID: run.ID, Counts: state.counts}, fmt.Errorf("ppimport: completing run: %w", err)
 	}
@@ -435,7 +452,13 @@ func (s *Service) runImport(ctx context.Context, runID int64, state *runState) e
 // photos, capped to never exceed the earliest failed photo's UpdatedAt, so a
 // failure is always re-listed (inclusively) by the next incremental run.
 type runState struct {
-	since time.Time
+	// runID is the import_runs id this run writes its counts and failures against.
+	runID int64
+	// failures accumulates the per-photo and per-file failures recorded during the
+	// run, persisted once (RecordFailures) before the run is closed so a run with any
+	// unresolved failure is reported 'partial' rather than 'done'.
+	failures []importer.Failure
+	since    time.Time
 	// scope, when non-empty, narrows the photo listing to a slice of the source
 	// catalogue and marks the run as partial (no watermark is recorded for it).
 	scope Scope
@@ -454,6 +477,15 @@ type runState struct {
 	minFailed  time.Time
 	hasFailed  bool
 	sawAny     bool
+}
+
+// recordItemFailure appends a per-photo or per-file failure to the run's failure
+// list so it is persisted (and the run reported 'partial') instead of only logged.
+// photoUID is the Kukátko uid when known, sourceRef the PhotoPrism uid/hash, and
+// detail a short human hint (title/filename).
+func (st *runState) recordItemFailure(stage importer.Stage, photoUID, sourceRef, detail string, err error) {
+	st.failures = append(st.failures, importer.NewFailure(
+		st.runID, importer.SourcePhotoPrism, stage, photoUID, sourceRef, detail, err))
 }
 
 // recordSuccess advances the success watermark to include updatedAt.

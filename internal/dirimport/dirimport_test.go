@@ -153,7 +153,9 @@ func (f *fakeIngester) ingested() []string {
 	return out
 }
 
-// fakeRuns is an in-memory RunStore recording the lifecycle of the import run.
+// fakeRuns is an in-memory RunStore recording the lifecycle of the import run. Like
+// the real importer.Store it closes a run 'partial' rather than 'done' when the run
+// has any recorded failure.
 type fakeRuns struct {
 	mu sync.Mutex
 	// started counts Start calls.
@@ -166,6 +168,10 @@ type fakeRuns struct {
 	completed *importer.Counts
 	// failed holds the reason of a Fail call, if any.
 	failed *string
+	// failures holds every per-item failure persisted via RecordFailures.
+	failures []importer.Failure
+	// status is the run's terminal status once Complete or Fail ran.
+	status importer.Status
 }
 
 // Start opens a fake run with id 1.
@@ -187,11 +193,16 @@ func (f *fakeRuns) UpdateCounts(_ context.Context, _ int64, counts importer.Coun
 	return nil
 }
 
-// Complete records the final tally.
+// Complete records the final tally and closes the run 'partial' when it has any
+// recorded failure, mirroring importer.Store.Complete's auto-detection.
 func (f *fakeRuns) Complete(_ context.Context, _ int64, _ *time.Time, counts importer.Counts) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.completed = &counts
+	f.status = importer.StatusDone
+	if len(f.failures) > 0 {
+		f.status = importer.StatusPartial
+	}
 	return nil
 }
 
@@ -200,6 +211,15 @@ func (f *fakeRuns) Fail(_ context.Context, _ int64, lastErr string, _ importer.C
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failed = &lastErr
+	f.status = importer.StatusFailed
+	return nil
+}
+
+// RecordFailures appends the run's per-item failures.
+func (f *fakeRuns) RecordFailures(_ context.Context, failures []importer.Failure) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failures = append(f.failures, failures...)
 	return nil
 }
 
@@ -550,6 +570,78 @@ func TestImport_duplicatesAndFailures(t *testing.T) {
 	// as skipped there.
 	if *env.runs.completed != (importer.Counts{Imported: 1, Skipped: 1, Failed: 1}) {
 		t.Errorf("recorded counts = %+v, want imported=1 skipped=1 failed=1", *env.runs.completed)
+	}
+}
+
+// hasStage reports whether any recorded failure is of the given stage.
+func hasStage(failures []importer.Failure, stage importer.Stage) bool {
+	for _, f := range failures {
+		if f.Stage == stage {
+			return true
+		}
+	}
+	return false
+}
+
+// TestImport_ingestWarningRecordedAsFailure checks that an ingest warning on a
+// photo that was nonetheless created is persisted as a StageFile failure and closes
+// the run 'partial' — the unattended run's warning survives beyond the log — while
+// still counting as an import, not a failure.
+func TestImport_ingestWarningRecordedAsFailure(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t, map[string]ingest.FileResult{
+		"weird.jpg": {
+			Filename: "weird.jpg", Status: http.StatusCreated,
+			Outcome: ingest.OutcomeCreated, PhotoUID: "uid-weird",
+			Warnings: []ingest.Warning{{Code: "thumbnail_failed", Message: "decode: unknown format"}},
+		},
+	})
+	root := t.TempDir()
+	writeFile(t, root, "weird.jpg", "not really a jpeg")
+
+	result, err := env.svc.Import(t.Context(), Options{Root: root, Recursive: true})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Imported != 1 || result.Counts.Failed != 0 {
+		t.Fatalf("counts = %+v, want imported=1 failed=0 (a warning is not a failure)", result.Counts)
+	}
+	if !hasStage(env.runs.failures, importer.StageFile) {
+		t.Errorf("no StageFile failure recorded for the ingest warning: %+v", env.runs.failures)
+	}
+	if env.runs.status != importer.StatusPartial {
+		t.Errorf("run status = %q, want partial", env.runs.status)
+	}
+}
+
+// TestImport_ingestFailureRecorded checks that a file the pipeline could not ingest
+// at all is persisted as a StageFile failure (a retryable row, not only a Failed
+// bump) and closes the run 'partial'.
+func TestImport_ingestFailureRecorded(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t, map[string]ingest.FileResult{
+		"bad.jpg": {
+			Filename: "bad.jpg", Status: http.StatusInternalServerError,
+			Outcome: ingest.OutcomeError, Error: "decoding original: corrupt",
+		},
+	})
+	root := t.TempDir()
+	writeFile(t, root, "bad.jpg", "bad")
+
+	result, err := env.svc.Import(t.Context(), Options{Root: root, Recursive: true})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Failed != 1 {
+		t.Fatalf("counts = %+v, want failed=1", result.Counts)
+	}
+	if !hasStage(env.runs.failures, importer.StageFile) {
+		t.Errorf("no StageFile failure recorded for the failed ingest: %+v", env.runs.failures)
+	}
+	if env.runs.status != importer.StatusPartial {
+		t.Errorf("run status = %q, want partial", env.runs.status)
 	}
 }
 

@@ -1591,7 +1591,8 @@
     "status": {
       "running": "Probíhá",
       "done": "Hotovo",
-      "failed": "Selhalo"
+      "failed": "Selhalo",
+      "partial": "Částečně"
     },
     "jobs": {
       "title": "Fronta zpracování na pozadí",
@@ -1609,6 +1610,40 @@
       "counts": "Počty",
       "lastError": "Poslední chyba",
       "empty": "Zatím žádné běhy importu."
+    },
+    "verify": {
+      "title": "Kontrola úplnosti",
+      "desc": "Porovná zdroje (PhotoPrism, photo-sorter) s katalogem Kukátka a řekne, co chybí. Může chvíli trvat — prochází celou knihovnu zdroje.",
+      "button": "Zkontrolovat úplnost",
+      "running": "Kontroluji…",
+      "complete": "Import je úplný — nic nechybí.",
+      "incomplete": "Import není úplný — něco chybí (viz níže).",
+      "error": "Kontrolu se nepodařilo provést.",
+      "notConfigured": "Zdroj vektorů (photo-sorter) není nakonfigurován; tato část se přeskakuje.",
+      "colCheck": "Kontrola",
+      "colSource": "Zdroj",
+      "colCatalog": "Kukátko",
+      "colMissing": "Chybí",
+      "photos": "PhotoPrism fotky",
+      "files": "Soubory (např. RAW)",
+      "embeddings": "Embeddingy",
+      "faces": "Obličeje",
+      "albums": "Alba",
+      "labels": "Štítky",
+      "subjects": "Lidé",
+      "deduplicated": "Deduplikováno",
+      "sampleNote": "Zobrazeno prvních {{shown}} z {{total}}."
+    },
+    "failures": {
+      "title": "Chyby importu",
+      "intro": "Jednotlivé fotky a soubory, které se nepodařilo naimportovat. Spuštění importu znovu je zkusí znovu.",
+      "empty": "Žádné nevyřešené chyby importu.",
+      "colStage": "Krok",
+      "colSource": "Zdroj",
+      "colRef": "Identifikátor",
+      "colDetail": "Detail",
+      "colError": "Chyba",
+      "colWhen": "Kdy"
     }
   },
   "trash": {

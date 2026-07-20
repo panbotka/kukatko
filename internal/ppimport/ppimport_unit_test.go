@@ -300,8 +300,17 @@ func TestImport_perPhotoFailureDoesNotAbort(t *testing.T) {
 	if result.Counts.Failed != 1 || result.Counts.Imported != 1 {
 		t.Errorf("counts = %+v, want failed 1 imported 1", result.Counts)
 	}
-	if got := h.runs.last().Status; got != importer.StatusDone {
-		t.Errorf("run status = %q, want done (failure must not abort)", got)
+	// A per-photo failure does not abort the run (not 'failed'), but it is no longer
+	// reported as a clean 'done' either: the run is 'partial' and the failure is
+	// recorded so it can be listed and retried.
+	if got := h.runs.last().Status; got != importer.StatusPartial {
+		t.Errorf("run status = %q, want partial (failure recorded, run not aborted)", got)
+	}
+	if len(h.runs.failures) != 1 {
+		t.Fatalf("recorded failures = %d, want 1", len(h.runs.failures))
+	}
+	if f := h.runs.failures[0]; f.Stage != importer.StagePhoto || f.SourceRef != "bad" {
+		t.Errorf("recorded failure = %+v, want StagePhoto for pp uid bad", f)
 	}
 	if result.Watermark == nil || !result.Watermark.Equal(tFail) {
 		t.Errorf("watermark = %v, want %v (capped at the failure)", result.Watermark, tFail)

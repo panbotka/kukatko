@@ -1,12 +1,24 @@
 package psimport
 
 import (
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/photosorter"
 )
+
+// hasFailureStage reports whether any recorded failure is of the given stage.
+func hasFailureStage(failures []importer.Failure, stage importer.Stage) bool {
+	for _, f := range failures {
+		if f.Stage == stage {
+			return true
+		}
+	}
+	return false
+}
 
 // onePhotoSource builds a fakeSource with a single fully-populated photo and the
 // matching on-disk file bytes.
@@ -155,6 +167,54 @@ func TestMigrate_perPhotoFailure(t *testing.T) {
 	}
 	if h.runs.completed[result.RunID] == nil && h.runs.failed[result.RunID] != "" {
 		t.Error("run was failed; a per-photo failure must not fail the run")
+	}
+}
+
+// TestMigrate_perPhotoFailureRecorded verifies a per-photo failure (its original
+// cannot be read) is persisted as a StagePhoto failure and closes the run 'partial'.
+func TestMigrate_perPhotoFailureRecorded(t *testing.T) {
+	t.Parallel()
+	src, _ := onePhotoSource()
+	h := newHarness(src, map[string][]byte{}) // no files -> open fails
+
+	result, err := h.svc.Migrate(t.Context())
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if result.Counts.Failed != 1 {
+		t.Fatalf("counts = %+v, want 1 failed", result.Counts)
+	}
+	if !hasFailureStage(h.runs.failures, importer.StagePhoto) {
+		t.Errorf("no StagePhoto failure recorded: %+v", h.runs.failures)
+	}
+	if got := h.runs.status[result.RunID]; got != importer.StatusPartial {
+		t.Errorf("run status = %q, want partial", got)
+	}
+}
+
+// TestMigrate_satelliteFailureRecorded verifies a best-effort satellite failure (a
+// marker listing that errors) is recorded as its own stage while the photo still
+// imports — the failure surfaces in the trail but never fails the photo.
+func TestMigrate_satelliteFailureRecorded(t *testing.T) {
+	t.Parallel()
+	src, files := onePhotoSource()
+	src.markersErr = errors.New("markers boom")
+	h := newHarness(src, files)
+
+	result, err := h.svc.Migrate(t.Context())
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	// A satellite glitch never fails the photo: it still imports.
+	if result.Counts.Imported != 1 || result.Counts.Failed != 0 {
+		t.Fatalf("counts = %+v, want 1 imported 0 failed", result.Counts)
+	}
+	if !hasFailureStage(h.runs.failures, importer.StageMarker) {
+		t.Errorf("no StageMarker failure recorded: %+v", h.runs.failures)
+	}
+	// A run with any recorded failure closes 'partial', not 'done'.
+	if got := h.runs.status[result.RunID]; got != importer.StatusPartial {
+		t.Errorf("run status = %q, want partial", got)
 	}
 }
 

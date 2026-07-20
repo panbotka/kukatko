@@ -99,10 +99,14 @@ type RunStore interface {
 	Start(ctx context.Context, source importer.Source) (importer.Run, error)
 	// UpdateCounts checkpoints the running counts after each page.
 	UpdateCounts(ctx context.Context, id int64, counts importer.Counts) error
-	// Complete marks the run done with its final watermark and counts.
+	// Complete marks the run done with its final watermark and counts; it reports
+	// the run 'partial' rather than 'done' when unresolved failures were recorded.
 	Complete(ctx context.Context, id int64, watermark *time.Time, counts importer.Counts) error
 	// Fail marks the run failed with the error and the counts reached so far.
 	Fail(ctx context.Context, id int64, lastErr string, counts importer.Counts) error
+	// RecordFailures persists the per-item failures of a run so they can be listed
+	// and retried instead of being lost to the log.
+	RecordFailures(ctx context.Context, failures []importer.Failure) error
 }
 
 // Config bundles the importer's collaborators. All are required; a nil one is a
@@ -188,11 +192,28 @@ type Result struct {
 	Watermark *time.Time
 }
 
-// runState accumulates the counts and the newest item timestamp across both feed
-// passes of one run.
+// runState accumulates the counts, the newest item timestamp and the per-item
+// failures across both feed passes of one run. It is threaded by pointer, so a
+// failure recorded during either pass survives to the persist call before the run
+// is closed.
 type runState struct {
+	// runID is the import_runs id this run records its failures against.
+	runID int64
+	// failures accumulates the per-item failures recorded during the run, persisted
+	// once before the run is closed so a run with any unresolved failure is reported
+	// 'partial' rather than 'done'.
+	failures     []importer.Failure
 	counts       importer.Counts
 	maxCreatedAt time.Time
+}
+
+// recordItemFailure appends a per-item failure to the run's failure list so it is
+// persisted (and the run reported 'partial') instead of only logged. photoUID is
+// the resolved Kukátko uid when known, sourceRef the feed item's photo_uid, and
+// detail a short hint such as the marker uid.
+func (st *runState) recordItemFailure(stage importer.Stage, photoUID, sourceRef, detail string, err error) {
+	st.failures = append(st.failures, importer.NewFailure(
+		st.runID, importer.SourcePhotoSorterFeeds, stage, photoUID, sourceRef, detail, err))
 }
 
 // trackTime advances the run's high-watermark to the newest item timestamp seen.
@@ -220,13 +241,14 @@ func (s *Service) Import(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("starting feeds import run: %w", err)
 	}
-	st := &runState{}
+	st := &runState{runID: run.ID}
 	if err := s.importEmbeddings(ctx, run.ID, st); err != nil {
 		return s.failRun(ctx, run.ID, st, err)
 	}
 	if err := s.importFaces(ctx, run.ID, st); err != nil {
 		return s.failRun(ctx, run.ID, st, err)
 	}
+	s.persistFailures(ctx, st)
 	watermark := st.watermark()
 	if err := s.runs.Complete(ctx, run.ID, watermark, st.counts); err != nil {
 		return Result{RunID: run.ID, Counts: st.counts}, fmt.Errorf("completing feeds import run: %w", err)
@@ -234,11 +256,22 @@ func (s *Service) Import(ctx context.Context) (Result, error) {
 	return Result{RunID: run.ID, Counts: st.counts, Watermark: watermark}, nil
 }
 
-// failRun marks the run failed with cause and returns cause. A failure to record
-// the failure is logged, not masked over the original error.
+// failRun persists the run's per-item failures, then marks the run failed with
+// cause and returns cause. A failure to record either is logged, not masked over
+// the original error.
 func (s *Service) failRun(ctx context.Context, runID int64, st *runState, cause error) (Result, error) {
+	s.persistFailures(ctx, st)
 	if err := s.runs.Fail(ctx, runID, cause.Error(), st.counts); err != nil {
 		s.log.Warn("psfeedsimport: recording run failure", "run", runID, "err", err)
 	}
 	return Result{RunID: runID, Counts: st.counts}, cause
+}
+
+// persistFailures writes the run's accumulated per-item failures. A persistence
+// error is logged, not fatal: the run still closes, only losing the itemised
+// failure trail (the aggregate Failed count is still recorded).
+func (s *Service) persistFailures(ctx context.Context, st *runState) {
+	if err := s.runs.RecordFailures(ctx, st.failures); err != nil {
+		s.log.Error("psfeedsimport: recording import failures", "run", st.runID, "err", err)
+	}
 }

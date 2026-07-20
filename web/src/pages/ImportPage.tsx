@@ -16,15 +16,20 @@ import { ErrorState } from '../components/ErrorState'
 import { formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
 import {
+  fetchImportFailures,
   fetchImportRuns,
   fetchJobStats,
+  fetchVerifyReport,
   startImport,
+  type EntityReport,
   type ImportCounts,
+  type ImportFailure,
   type ImportRun,
   type ImportSource,
   type ImportSources,
   type JobStats,
   type RunStatus,
+  type VerifyReport,
 } from '../services/import'
 
 /** How often the run history and job stats are re-polled while the page is open. */
@@ -37,8 +42,12 @@ const SOURCES: ImportSource[] = ['photoprism', 'photosorter']
 const STATUS_VARIANT: Record<RunStatus, string> = {
   running: 'info',
   done: 'success',
+  partial: 'warning',
   failed: 'danger',
 }
+
+/** How many failure rows to show at once. */
+const FAILURES_LIMIT = 100
 
 /** Transient outcome of a start-import action, shown on the relevant section. */
 type NoticeKind = 'started' | 'conflict' | 'error'
@@ -47,7 +56,7 @@ type NoticeKind = 'started' | 'conflict' | 'error'
 type State =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; runs: ImportRun[]; sources: ImportSources }
+  | { status: 'ready'; runs: ImportRun[]; sources: ImportSources; failures: ImportFailure[] }
 
 /** Formats an ISO timestamp for display using the active UI language. */
 function formatTimestamp(value: string, locale: string): string {
@@ -224,12 +233,243 @@ function RunHistoryTable({ runs }: { runs: ImportRun[] }) {
   )
 }
 
+/** One reconciliation row: source vs catalogue counts and the missing tally. */
+function VerifyRow({
+  label,
+  source,
+  catalog,
+  missing,
+}: {
+  label: string
+  source: string | number
+  catalog: string | number
+  missing: number
+}) {
+  return (
+    <tr>
+      <td>{label}</td>
+      <td>{source}</td>
+      <td>{catalog}</td>
+      <td>
+        {missing > 0 ? (
+          <Badge bg="warning" text="dark">
+            {missing}
+          </Badge>
+        ) : (
+          <Badge bg="success">0</Badge>
+        )}
+      </td>
+    </tr>
+  )
+}
+
+/** A reconciliation row for one structure entity kind (albums/labels/subjects). */
+function EntityRow({ label, report }: { label: string; report: EntityReport }) {
+  return (
+    <VerifyRow
+      label={label}
+      source={report.source_count}
+      catalog={report.catalog_count}
+      missing={report.missing_count}
+    />
+  )
+}
+
+/** A capped list of missing identifiers with a "showing N of total" note. */
+function MissingSample({ label, ids, total }: { label: string; ids: string[]; total: number }) {
+  const { t } = useTranslation()
+  if (ids.length === 0) {
+    return null
+  }
+  return (
+    <div className="small mb-2">
+      <strong>{label}:</strong> <code className="text-break">{ids.join(', ')}</code>
+      {total > ids.length && (
+        <div className="text-secondary">
+          {t('import.verify.sampleNote', { shown: ids.length, total })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Renders a completed reconciliation report: a verdict, a counts table and the
+ * concrete lists of what is missing. */
+function VerifyReportView({ report }: { report: VerifyReport }) {
+  const { t } = useTranslation()
+  const { photoprism: pp, vectors: v, structure: s } = report
+  return (
+    <div className="mt-3">
+      <Alert variant={report.complete ? 'success' : 'warning'}>
+        {report.complete ? t('import.verify.complete') : t('import.verify.incomplete')}
+      </Alert>
+      <Table size="sm" bordered responsive>
+        <thead>
+          <tr>
+            <th>{t('import.verify.colCheck')}</th>
+            <th>{t('import.verify.colSource')}</th>
+            <th>{t('import.verify.colCatalog')}</th>
+            <th>{t('import.verify.colMissing')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <VerifyRow
+            label={t('import.verify.photos')}
+            source={pp.source_total}
+            catalog={pp.imported_count}
+            missing={pp.missing_count}
+          />
+          <VerifyRow
+            label={t('import.verify.files')}
+            source="—"
+            catalog="—"
+            missing={pp.file_gap_count}
+          />
+          {!v.not_configured && (
+            <>
+              <VerifyRow
+                label={t('import.verify.embeddings')}
+                source={v.source_photos_with_embeddings}
+                catalog={v.catalog_embeddings}
+                missing={v.missing_embeddings_count}
+              />
+              <VerifyRow
+                label={t('import.verify.faces')}
+                source={v.source_total_faces}
+                catalog={v.catalog_faces}
+                missing={v.missing_faces_count}
+              />
+            </>
+          )}
+          <EntityRow label={t('import.verify.albums')} report={s.albums} />
+          <EntityRow label={t('import.verify.labels')} report={s.labels} />
+          <EntityRow label={t('import.verify.subjects')} report={s.subjects} />
+        </tbody>
+      </Table>
+      {pp.deduplicated_count > 0 && (
+        <p className="small text-secondary">
+          {t('import.verify.deduplicated')}: {pp.deduplicated_count}
+        </p>
+      )}
+      {v.not_configured && (
+        <Alert variant="secondary" className="small py-2">
+          {t('import.verify.notConfigured')}
+        </Alert>
+      )}
+      <MissingSample
+        label={t('import.verify.photos')}
+        ids={pp.missing_uids}
+        total={pp.missing_count}
+      />
+      <MissingSample
+        label={t('import.verify.embeddings')}
+        ids={v.missing_embeddings}
+        total={v.missing_embeddings_count}
+      />
+    </div>
+  )
+}
+
+/**
+ * The completeness-check section: a button that runs the reconciliation on demand
+ * (it walks the whole source library, so it is not polled) and renders the report.
+ * The button is disabled when PhotoPrism is not configured (verify would 503).
+ */
+function CompletenessCard({ enabled }: { enabled: boolean }) {
+  const { t } = useTranslation()
+  const [phase, setPhase] = useState<'idle' | 'running' | 'error'>('idle')
+  const [report, setReport] = useState<VerifyReport | null>(null)
+
+  async function run() {
+    setPhase('running')
+    try {
+      setReport(await fetchVerifyReport())
+      setPhase('idle')
+    } catch {
+      setPhase('error')
+    }
+  }
+
+  return (
+    <Card className="mb-4">
+      <Card.Body>
+        <h2 className="kk-section-title mb-2">{t('import.verify.title')}</h2>
+        <p className="text-secondary small">{t('import.verify.desc')}</p>
+        <Button
+          variant="outline-primary"
+          disabled={!enabled || phase === 'running'}
+          onClick={() => {
+            void run()
+          }}
+        >
+          {phase === 'running' && (
+            <Spinner animation="border" size="sm" role="status" className="me-2" />
+          )}
+          {phase === 'running' ? t('import.verify.running') : t('import.verify.button')}
+        </Button>
+        {phase === 'error' && (
+          <Alert variant="danger" className="mt-3">
+            {t('import.verify.error')}
+          </Alert>
+        )}
+        {report && <VerifyReportView report={report} />}
+      </Card.Body>
+    </Card>
+  )
+}
+
+/** The recorded per-photo/per-file import-failure list (unresolved failures). */
+function FailuresPanel({ failures }: { failures: ImportFailure[] }) {
+  const { t, i18n } = useTranslation()
+  return (
+    <Card className="mb-4">
+      <Card.Body>
+        <h2 className="kk-section-title mb-2">{t('import.failures.title')}</h2>
+        <p className="text-secondary small">{t('import.failures.intro')}</p>
+        {failures.length === 0 ? (
+          <EmptyState size="sm" title={t('import.failures.empty')} />
+        ) : (
+          <Table striped hover responsive size="sm">
+            <thead>
+              <tr>
+                <th>{t('import.failures.colStage')}</th>
+                <th>{t('import.failures.colSource')}</th>
+                <th>{t('import.failures.colRef')}</th>
+                <th>{t('import.failures.colDetail')}</th>
+                <th>{t('import.failures.colError')}</th>
+                <th>{t('import.failures.colWhen')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {failures.map((f) => (
+                <tr key={f.id}>
+                  <td>
+                    <Badge bg="secondary">{f.stage}</Badge>
+                  </td>
+                  <td className="small">{f.source}</td>
+                  <td className="text-break">
+                    <code>{f.source_ref || f.photo_uid || '—'}</code>
+                  </td>
+                  <td className="small text-break">{f.detail || '—'}</td>
+                  <td className="small text-danger text-break">{f.error}</td>
+                  <td className="small">{formatTimestamp(f.created_at, i18n.language)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card.Body>
+    </Card>
+  )
+}
+
 /**
  * Admin-only import/migration console: triggers a PhotoPrism import or a
  * photo-sorter migration, shows live progress (polled run status + counts and job
- * queue stats) and the full run history. PhotoPrism stays the primary store; the
- * imports are read-only, incremental and repeatable, so the page warns before a
- * first (potentially large) run of each source.
+ * queue stats), the full run history, a completeness check that reconciles the
+ * sources against the catalogue, and the recorded per-photo/per-file failures.
+ * PhotoPrism stays the primary store; the imports are read-only, incremental and
+ * repeatable, so the page warns before a first (potentially large) run of each source.
  */
 export function ImportPage() {
   const { t } = useTranslation()
@@ -245,7 +485,15 @@ export function ImportPage() {
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const runsResp = await fetchImportRuns(signal)
-    setState({ status: 'ready', runs: runsResp.runs, sources: runsResp.sources })
+    let failures: ImportFailure[] = []
+    try {
+      failures = (
+        await fetchImportFailures({ unresolvedOnly: true, limit: FAILURES_LIMIT }, signal)
+      ).failures
+    } catch {
+      // The failures list is supplementary; ignore so the page still renders.
+    }
+    setState({ status: 'ready', runs: runsResp.runs, sources: runsResp.sources, failures })
     try {
       setJobStats(await fetchJobStats(signal))
     } catch {
@@ -350,6 +598,10 @@ export function ImportPage() {
           </Row>
 
           {jobStats && <JobStatsBar stats={jobStats} />}
+
+          <CompletenessCard enabled={state.sources.photoprism} />
+
+          <FailuresPanel failures={state.failures} />
 
           <h2 className="kk-section-title mb-3">{t('import.history.title')}</h2>
           <RunHistoryTable runs={state.runs} />
