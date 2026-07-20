@@ -172,7 +172,16 @@ to `## Package map` in `CLAUDE.md`.
   per `stack_uid` — the tile badge)/`CreateStack`/`SetStackPrimary`/`UnstackMember`/`UnstackAll`
   (reversible bookkeeping over `stack_uid`/`stack_primary`), plus `ListParams.IncludeStackMembers`
   (lifts the shared visibility predicate `(stack_uid IS NULL OR stack_primary)` for a caller that wants
-  **all** members), `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup on SHA256 `file_hash` + external IDs
+  **all** members) and the exported **`LeaveStackTx(ctx,tx,uid)`** (takes one photo out of its stack and
+  repairs the remnant — dissolve below 2 members, re-elect a lost primary — on the caller's transaction).
+  Every path that removes a photo from circulation calls it in the **same transaction** as the mutation:
+  `Archive`/`ArchiveAudited`, `Delete`/`DeleteAudited` (and thus `internal/trash`'s retention purge),
+  `internal/dupmerge`'s copy-archival and `internal/bulk`'s archive operation. Without it an archived or
+  purged primary left its live siblings carrying a primary-less `stack_uid`, which the
+  `(stack_uid IS NULL OR stack_primary)` gate hides from **every** default view — and after a purge
+  irrecoverably, since `ListStackCandidates` skips rows that already carry a `stack_uid`. Unarchiving does
+  not rejoin a stack: a restored photo comes back standalone and therefore visible.
+  `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup on SHA256 `file_hash` + external IDs
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tables in migration
   `0003_photos.sql`: `photos`, `photo_files` (one primary/photo), `photo_phashes`,
   `photo_edits` (all-or-nothing crop, rotation 0/90/180/270); video columns in migration
@@ -1348,7 +1357,10 @@ to `## Package map` in `CLAUDE.md`.
   organize/photos store metody, které mají vlastní spojení); favorite **i hodnocení** jsou
   **per-user** (`actorUID`) — rating/flag upsert + prune all-defaults řádku zrcadlí `organize` store;
   `Result{Results:[{photo_uid,status,error?}],Counts{total,updated,skipped,errored}}`; skutečná DB
-  chyba rollbackne celou dávku; `Summary()` (audit details) + `IsEmpty()`), `internal/bulkapi/`
+  chyba rollbackne celou dávku; an archive operation additionally calls `photos.LeaveStackTx` for each
+  archived photo **in the same transaction**, so archiving a stack's primary does not hide its still-live
+  siblings behind the `(stack_uid IS NULL OR stack_primary)` gate (an unarchive leaves stacks untouched);
+  `Summary()` (audit details) + `IsEmpty()`), `internal/bulkapi/`
   (HTTP nad `bulk.Service`: rozhraní `Service` (Apply) — fakeovatelné; `NewAPI(Config{Service,
   RequireWrite})`+`RegisterRoutes` mountuje `POST /photos/bulk` za `RequireWrite`; tělo
   `{photo_uids,operations}` přes `operationsInput` se **set/clear páry jako samostatné klíče**
@@ -1881,7 +1893,10 @@ to `## Package map` in `CLAUDE.md`.
   (title/description z fotky + per-user favorite/rating/flag actora, **nikdy nepřepíše** existující
   hodnotu), aktivní kopie k archivaci; aplikuje raw SQL (`INSERT … ON CONFLICT DO NOTHING`, osoba =
   box-less `label` marker s vygenerovaným `mk…` uid — nová marker nemá `faces` řádek, cache netřeba),
-  archivuje (`archived_at IS NULL` guard) a zapíše `audit.ActionPhotosMerge`. **Prázdný plán = no-op**
+  archivuje (`archived_at IS NULL` guard) a zapíše `audit.ActionPhotosMerge`. A copy this call actually
+  archived also leaves its stack via `photos.LeaveStackTx` in the same tx (skipped for an already-archived
+  copy, which left its stack back then), so archiving a copy that happened to be a stack's primary does not
+  hide that stack's still-live members. **Prázdný plán = no-op**
   (nezapíše nic → idempotentní re-run na vyřešené skupině); validace `ErrNoKeeper`/`ErrTooFewMembers`/
   `ErrKeeperNotInGroup`/`ErrKeeperNotFound`), `internal/duplicatesapi/`
   (editor/admin HTTP API nad detekcí a řešením duplikátů: rozhraní `Service` (`FindGroups`, splňuje
