@@ -319,7 +319,15 @@ here.
   `anySelected`/`onToggleSelect`, or `selection`): each tile carries a **round check
   circle** in the corner (`.kk-tile__check`, a sibling of the link/button like the heart — a click **selects without
   opening the photo**), which appears on hover and **stays visible once something is selected**
-  (`kk-tile--checks`); a selected tile gets an **accent ring** (`kk-tile--selected` → inset
+  (`kk-tile--checks`). On a **coarse pointer / touch screen** there is no hover to reveal it, and the check
+  is the *only* entry point into multi-select (the library has no "Vybrat" button, and in explicit mode
+  nothing else marks the grid as a selection surface), so `@media (hover: none), (pointer: coarse)` in
+  `tokens.css` **pins it visible at rest** and grows its tap target to the app's **2.75rem (44px)** floor via an
+  invisible `::before` — expanded down/right so it stops at the tile's own edge and can't swallow a tap
+  meant for the neighbouring tile. This is safe by construction: the control is **mounted only while the tile
+  is `selectable`**, so a viewer's grid has nothing to reveal. Guarded by `src/styles/tokens.test.ts`
+  (jsdom evaluates no media queries, so the rule is asserted against the stylesheet source).
+  A selected tile gets an **accent ring** (`kk-tile--selected` → inset
   `::after` from `--kk-accent`) and a **dimmed image**, so the selection is unmissable on the dense wall.
   Selection mode is either **explicit** (`selection.active` — tiles are selection targets from the start,
   only the /expand candidate review via `SelectionStart`), or **hover-select** (`selection.hoverSelect`,
