@@ -31,6 +31,11 @@ var (
 	// ErrNotDead indicates a requeue was attempted on a job that is not in the
 	// dead-letter state.
 	ErrNotDead = errors.New("jobs: job is not dead")
+	// ErrLockLost indicates the job exists but is not running under the worker id
+	// that tried to finish it — typically because stale-lock recovery requeued it
+	// and another worker owns it now. The late result must be dropped rather than
+	// written, or it would clobber the new owner's run.
+	ErrLockLost = errors.New("jobs: job lock lost to another worker")
 )
 
 // State is the lifecycle state of a job, mirrored by the SQL CHECK constraint on

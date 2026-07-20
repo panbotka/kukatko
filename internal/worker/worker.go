@@ -74,6 +74,14 @@ const (
 	// outcome; it uses a shutdown-immune context so an in-flight result is still
 	// persisted while the process drains.
 	bookkeepingTimeout = 10 * time.Second
+	// heartbeatDivisor derives the heartbeat interval from StaleAfter: a running
+	// job refreshes its lock this many times per stale window, so a couple of
+	// missed or slow beats still cannot make a live job look abandoned.
+	heartbeatDivisor = 3
+	// minHeartbeatInterval floors the derived heartbeat interval so a very short
+	// StaleAfter (tests, aggressive configs) cannot turn into a busy loop of
+	// UPDATEs.
+	minHeartbeatInterval = 100 * time.Millisecond
 )
 
 // Job outcome label values reported to the Observer.
@@ -116,12 +124,17 @@ type Queue interface {
 	// Claim atomically picks and locks the next runnable job for workerID,
 	// optionally restricted to the given types, or returns jobs.ErrNoJobs.
 	Claim(ctx context.Context, workerID string, types ...string) (jobs.Job, error)
-	// Complete marks a running job done.
-	Complete(ctx context.Context, id int64) error
-	// Fail records a failed attempt, requeuing with backoff or dead-lettering.
-	Fail(ctx context.Context, id int64, cause error) (jobs.Job, error)
-	// Defer requeues a job to run after delay without counting a failed attempt.
-	Defer(ctx context.Context, id int64, delay time.Duration) (jobs.Job, error)
+	// Complete marks a running job owned by workerID done.
+	Complete(ctx context.Context, id int64, workerID string) error
+	// Fail records a failed attempt on a job owned by workerID, requeuing with
+	// backoff or dead-lettering.
+	Fail(ctx context.Context, id int64, workerID string, cause error) (jobs.Job, error)
+	// Defer requeues a job owned by workerID to run after delay without counting
+	// a failed attempt.
+	Defer(ctx context.Context, id int64, workerID string, delay time.Duration) (jobs.Job, error)
+	// Heartbeat refreshes the lock timestamp of a running job owned by workerID
+	// so a long-running job is not mistaken for an abandoned one.
+	Heartbeat(ctx context.Context, id int64, workerID string) error
 	// RecoverStaleLocks requeues running jobs whose lock is older than staleAfter.
 	RecoverStaleLocks(ctx context.Context, staleAfter time.Duration) (int64, error)
 }
@@ -226,10 +239,11 @@ func orDefaultPrefix(prefix string) string {
 
 // Run starts the worker goroutines plus the stale-lock recovery loop and blocks
 // until ctx is cancelled (for example on SIGINT/SIGTERM), then returns once every
-// goroutine has stopped. New jobs are not claimed after cancellation; a job
-// in flight when shutdown begins is abandoned and later recovered by the queue's
-// stale-lock recovery. Run always returns nil: a cancelled context is a normal,
-// graceful stop, not an error.
+// goroutine has stopped. New jobs are not claimed after cancellation; a job in
+// flight when shutdown begins keeps its lock heartbeated until its handler
+// returns, and is then either recorded (a success or a deferral) or abandoned to
+// the queue's stale-lock recovery (a genuine error). Run always returns nil: a
+// cancelled context is a normal, graceful stop, not an error.
 func (w *Worker) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	for i := range w.concurrency {
@@ -266,25 +280,81 @@ func (w *Worker) loop(ctx context.Context, workerID string) {
 	}
 }
 
-// process dispatches one claimed job to its handler and records the outcome. A
-// job whose type has no handler is failed. A job interrupted by shutdown (its
-// handler returned while ctx was already cancelled) is abandoned without a
-// status write, leaving its lock to be recovered by the queue.
+// process dispatches one claimed job to its handler and records the outcome,
+// refreshing the job's lock on a heartbeat for as long as the handler runs so a
+// job that legitimately outlives StaleAfter is not recovered underneath itself.
+// A job whose type has no handler is failed. A job whose handler returned a
+// genuine error while ctx was already cancelled is abandoned without a status
+// write, leaving its lock to be recovered by the queue; a deferral is still
+// written, because a RetryAfterError must never burn a retry attempt.
 func (w *Worker) process(ctx context.Context, workerID string, job jobs.Job) {
 	handler, ok := w.registry.Handler(job.Type)
 	if !ok {
-		w.record(ctx, job, fmt.Errorf("%w: %q", ErrNoHandler, job.Type))
+		w.record(ctx, workerID, job, fmt.Errorf("%w: %q", ErrNoHandler, job.Type))
 		return
 	}
 	w.metrics.JobStarted(job.Type)
 	start := time.Now()
+	stopHeartbeat := w.startHeartbeat(ctx, workerID, job)
 	err := runHandler(ctx, handler, job)
-	if err != nil && ctx.Err() != nil {
+	stopHeartbeat()
+	if err != nil && ctx.Err() != nil && !isRetryAfter(err) {
 		log.Printf("worker %s: job %d (%s) abandoned on shutdown", workerID, job.ID, job.Type)
 		return
 	}
 	w.metrics.JobFinished(job.Type, outcomeFor(err), time.Since(start))
-	w.record(ctx, job, err)
+	w.record(ctx, workerID, job, err)
+}
+
+// heartbeatInterval is how often a running job refreshes its lock: a fraction of
+// the stale window, floored so an aggressively short StaleAfter cannot turn the
+// heartbeat into a busy loop.
+func (w *Worker) heartbeatInterval() time.Duration {
+	interval := w.staleAfter / heartbeatDivisor
+	if interval < minHeartbeatInterval {
+		return minHeartbeatInterval
+	}
+	return interval
+}
+
+// startHeartbeat launches a goroutine that refreshes job's lock every
+// heartbeatInterval and returns a function that stops it and waits for the
+// goroutine to exit — so no heartbeat can race the outcome write that follows.
+// The ticker runs on a shutdown-immune context: while the process drains, a
+// handler still working must keep its lock, so only the returned stop function
+// ends it.
+func (w *Worker) startHeartbeat(ctx context.Context, workerID string, job jobs.Job) func() {
+	beatCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.heartbeatLoop(beatCtx, workerID, job)
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+// heartbeatLoop refreshes job's lock until ctx is cancelled. It gives up early
+// if the queue reports the job is gone or was reclaimed — there is nothing left
+// to keep alive, and the outcome write will drop the result for the same reason.
+func (w *Worker) heartbeatLoop(ctx context.Context, workerID string, job jobs.Job) {
+	interval := w.heartbeatInterval()
+	for sleep(ctx, interval) {
+		err := w.queue.Heartbeat(ctx, job.ID, workerID)
+		switch {
+		case err == nil:
+		case ctx.Err() != nil:
+			return
+		case errors.Is(err, jobs.ErrLockLost), errors.Is(err, jobs.ErrJobNotFound):
+			log.Printf("worker %s: job %d (%s) lost its lock while running: %v",
+				workerID, job.ID, job.Type, err)
+			return
+		default:
+			log.Printf("worker %s: heartbeating job %d: %v", workerID, job.ID, err)
+		}
+	}
 }
 
 // outcomeFor classifies a handler's result into an Observer outcome label:
@@ -313,35 +383,48 @@ func runHandler(ctx context.Context, handler HandlerFunc, job jobs.Job) (err err
 	return handler(ctx, job)
 }
 
-// record writes a job's outcome to the queue: Complete when cause is nil, Defer
-// (no attempt burned) when cause is a RetryAfterError, otherwise Fail. The write
-// uses a fresh, shutdown-immune context with a short timeout so a result computed
-// just before shutdown is still persisted.
-func (w *Worker) record(ctx context.Context, job jobs.Job, cause error) {
+// record writes a job's outcome to the queue under workerID: Complete when cause
+// is nil, Defer (no attempt burned) when cause is a RetryAfterError, otherwise
+// Fail. The write uses a fresh, shutdown-immune context with a short timeout so a
+// result computed just before shutdown is still persisted. Every write is guarded
+// by the worker id, so if the job was meanwhile reclaimed the result is dropped
+// instead of clobbering the new owner's run.
+func (w *Worker) record(ctx context.Context, workerID string, job jobs.Job, cause error) {
 	bookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bookkeepingTimeout)
 	defer cancel()
 	switch {
 	case cause == nil:
-		if err := w.queue.Complete(bookCtx, job.ID); err != nil {
-			log.Printf("worker: completing job %d: %v", job.ID, err)
-		}
+		w.logOutcomeWrite(job, "completing", w.queue.Complete(bookCtx, job.ID, workerID))
 	case isRetryAfter(cause):
-		w.deferJob(bookCtx, job, cause)
+		w.deferJob(bookCtx, workerID, job, cause)
 	default:
-		if _, err := w.queue.Fail(bookCtx, job.ID, cause); err != nil {
-			log.Printf("worker: failing job %d (cause %v): %v", job.ID, cause, err)
-		}
+		_, err := w.queue.Fail(bookCtx, job.ID, workerID, cause)
+		w.logOutcomeWrite(job, fmt.Sprintf("failing (cause %v)", cause), err)
+	}
+}
+
+// logOutcomeWrite reports the result of an outcome write. A lost lock is not a
+// malfunction — stale-lock recovery handed the job to another worker and
+// dropping this result is exactly the intended behaviour — so it is logged as
+// such rather than as a failed write.
+func (w *Worker) logOutcomeWrite(job jobs.Job, action string, err error) {
+	switch {
+	case err == nil:
+	case errors.Is(err, jobs.ErrLockLost):
+		log.Printf("worker: job %d (%s) was reclaimed by another worker; dropping result",
+			job.ID, job.Type)
+	default:
+		log.Printf("worker: %s job %d: %v", action, job.ID, err)
 	}
 }
 
 // deferJob requeues job for a later run without counting an attempt, used when a
 // handler returns a RetryAfterError for a transient, no-fault condition.
-func (w *Worker) deferJob(ctx context.Context, job jobs.Job, cause error) {
+func (w *Worker) deferJob(ctx context.Context, workerID string, job jobs.Job, cause error) {
 	var ra *RetryAfterError
 	_ = errors.As(cause, &ra)
-	if _, err := w.queue.Defer(ctx, job.ID, ra.Delay); err != nil {
-		log.Printf("worker: deferring job %d (cause %v): %v", job.ID, cause, err)
-	}
+	_, err := w.queue.Defer(ctx, job.ID, workerID, ra.Delay)
+	w.logOutcomeWrite(job, fmt.Sprintf("deferring (cause %v)", cause), err)
 }
 
 // isRetryAfter reports whether err is (or wraps) a RetryAfterError.

@@ -158,28 +158,47 @@ func (s *Store) Claim(ctx context.Context, workerID string, types ...string) (Jo
 	return job, nil
 }
 
-// Complete marks the running job identified by id done and clears its lock. It
-// returns ErrJobNotFound if no running job has that id.
-func (s *Store) Complete(ctx context.Context, id int64) error {
+// Complete marks the running job identified by id and owned by workerID done and
+// clears its lock. It returns ErrLockLost if the job was meanwhile reclaimed by
+// another worker (so this late result must be dropped), or ErrJobNotFound if no
+// job has that id.
+func (s *Store) Complete(ctx context.Context, id int64, workerID string) error {
 	const q = `UPDATE jobs
 		SET state = 'done', locked_by = NULL, locked_at = NULL, updated_at = now()
-		WHERE id = $1 AND state = 'running'`
-	tag, err := s.pool.Exec(ctx, q, id)
+		WHERE id = $1 AND state = 'running' AND locked_by = $2`
+	tag, err := s.pool.Exec(ctx, q, id, workerID)
 	if err != nil {
 		return fmt.Errorf("jobs: completing job %d: %w", id, err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrJobNotFound
+		return s.ownershipMissReason(ctx, id, workerID)
 	}
 	return nil
 }
 
-// Fail records a failed attempt on the running job identified by id, storing
-// cause as last_error and incrementing attempts. If attempts remain it requeues
-// the job with an exponential-backoff run_after; otherwise it dead-letters the
-// job (state='dead'). It returns the refreshed job, or ErrJobNotFound if no
-// running job has that id.
-func (s *Store) Fail(ctx context.Context, id int64, cause error) (Job, error) {
+// ownershipMissReason explains why a lifecycle update guarded by locked_by
+// matched no row: the job is gone (ErrJobNotFound) or it exists but is no longer
+// running under workerID because it was reclaimed (ErrLockLost).
+func (s *Store) ownershipMissReason(ctx context.Context, id int64, workerID string) error {
+	job, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if job.State == StateRunning && job.LockedBy != nil && *job.LockedBy == workerID {
+		// Should not happen: the guard matched but the update did not. Report it
+		// as a miss rather than claiming a successful write.
+		return ErrJobNotFound
+	}
+	return ErrLockLost
+}
+
+// Fail records a failed attempt on the running job identified by id and owned by
+// workerID, storing cause as last_error and incrementing attempts. If attempts
+// remain it requeues the job with an exponential-backoff run_after; otherwise it
+// dead-letters the job (state='dead'). It returns the refreshed job, ErrLockLost
+// if the job was meanwhile reclaimed by another worker, or ErrJobNotFound if no
+// job has that id.
+func (s *Store) Fail(ctx context.Context, id int64, workerID string, cause error) (Job, error) {
 	msg := "unknown error"
 	if cause != nil {
 		msg = cause.Error()
@@ -196,39 +215,41 @@ func (s *Store) Fail(ctx context.Context, id int64, cause error) (Job, error) {
 			locked_by = NULL,
 			locked_at = NULL,
 			updated_at = now()
-		WHERE id = $1 AND state = 'running'
+		WHERE id = $1 AND state = 'running' AND locked_by = $5
 		RETURNING ` + jobColumns
 	job, err := scanJob(s.pool.QueryRow(ctx, q,
-		id, msg, float64(backoffCapSeconds), float64(backoffBaseSeconds)))
+		id, msg, float64(backoffCapSeconds), float64(backoffBaseSeconds), workerID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Job{}, ErrJobNotFound
+			return Job{}, s.ownershipMissReason(ctx, id, workerID)
 		}
 		return Job{}, err
 	}
 	return job, nil
 }
 
-// Defer requeues the running job identified by id to run after delay WITHOUT
-// counting a failed attempt: it returns the job to 'queued', pushes run_after to
-// now()+delay (a non-positive delay runs it again immediately), and clears the
-// lock, leaving attempts untouched. It is for transient, no-fault conditions —
-// chiefly the embeddings box being offline — so a job simply waits in the queue
-// for the box to come back without ever exhausting its retry budget. It returns
-// the refreshed job, or ErrJobNotFound if no running job has that id.
-func (s *Store) Defer(ctx context.Context, id int64, delay time.Duration) (Job, error) {
+// Defer requeues the running job identified by id and owned by workerID to run
+// after delay WITHOUT counting a failed attempt: it returns the job to 'queued',
+// pushes run_after to now()+delay (a non-positive delay runs it again
+// immediately), and clears the lock, leaving attempts untouched. It is for
+// transient, no-fault conditions — chiefly the embeddings box being offline — so
+// a job simply waits in the queue for the box to come back without ever
+// exhausting its retry budget. It returns the refreshed job, ErrLockLost if the
+// job was meanwhile reclaimed by another worker, or ErrJobNotFound if no job has
+// that id.
+func (s *Store) Defer(ctx context.Context, id int64, workerID string, delay time.Duration) (Job, error) {
 	const q = `UPDATE jobs SET
 			state = 'queued',
 			run_after = now() + make_interval(secs => greatest($2::float8, 0)),
 			locked_by = NULL,
 			locked_at = NULL,
 			updated_at = now()
-		WHERE id = $1 AND state = 'running'
+		WHERE id = $1 AND state = 'running' AND locked_by = $3
 		RETURNING ` + jobColumns
-	job, err := scanJob(s.pool.QueryRow(ctx, q, id, delay.Seconds()))
+	job, err := scanJob(s.pool.QueryRow(ctx, q, id, delay.Seconds(), workerID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Job{}, ErrJobNotFound
+			return Job{}, s.ownershipMissReason(ctx, id, workerID)
 		}
 		return Job{}, err
 	}
@@ -237,7 +258,11 @@ func (s *Store) Defer(ctx context.Context, id int64, delay time.Duration) (Job, 
 
 // Heartbeat refreshes the lock timestamp of the running job identified by id and
 // owned by workerID, keeping RecoverStaleLocks from reclaiming a job that is
-// still being worked. It returns ErrJobNotFound if no such running job exists.
+// still being worked. The worker calls it on a ticker for as long as a handler
+// runs, so a job that legitimately takes longer than the stale window (a full
+// import pass, say) is not recovered and run twice. It returns ErrLockLost if
+// the job is no longer running under workerID, or ErrJobNotFound if no job has
+// that id.
 func (s *Store) Heartbeat(ctx context.Context, id int64, workerID string) error {
 	const q = `UPDATE jobs SET locked_at = now(), updated_at = now()
 		WHERE id = $1 AND state = 'running' AND locked_by = $2`
@@ -246,15 +271,18 @@ func (s *Store) Heartbeat(ctx context.Context, id int64, workerID string) error 
 		return fmt.Errorf("jobs: heartbeating job %d: %w", id, err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrJobNotFound
+		return s.ownershipMissReason(ctx, id, workerID)
 	}
 	return nil
 }
 
 // RecoverStaleLocks requeues running jobs whose lock is older than staleAfter,
 // i.e. whose worker is presumed to have died. Each recovery counts as a failed
-// attempt: a job with retries left returns to 'queued' runnable immediately,
-// otherwise it is dead-lettered. It returns the number of jobs recovered.
+// attempt: a job with retries left returns to 'queued' with the same
+// exponential-backoff delay Fail applies, otherwise it is dead-lettered. The
+// backoff matters because a job that kills its process (an OOM on a huge
+// original, say) would otherwise be re-claimed instantly and crash again in a
+// tight loop. It returns the number of jobs recovered.
 func (s *Store) RecoverStaleLocks(ctx context.Context, staleAfter time.Duration) (int64, error) {
 	const q = `UPDATE jobs SET
 			attempts = attempts + 1,
@@ -264,10 +292,15 @@ func (s *Store) RecoverStaleLocks(ctx context.Context, staleAfter time.Duration)
 				ELSE last_error END,
 			locked_by = NULL,
 			locked_at = NULL,
-			run_after = now(),
+			run_after = CASE
+				WHEN attempts + 1 >= max_attempts THEN run_after
+				ELSE now() + make_interval(
+					secs => least($2::float8, $3::float8 * power(2, attempts)::float8))
+			END,
 			updated_at = now()
 		WHERE state = 'running' AND locked_at < now() - make_interval(secs => $1::float8)`
-	tag, err := s.pool.Exec(ctx, q, staleAfter.Seconds())
+	tag, err := s.pool.Exec(ctx, q, staleAfter.Seconds(),
+		float64(backoffCapSeconds), float64(backoffBaseSeconds))
 	if err != nil {
 		return 0, fmt.Errorf("jobs: recovering stale locks: %w", err)
 	}

@@ -86,7 +86,7 @@ func TestEnqueueDedup(t *testing.T) {
 	if claimed.ID != j1.ID {
 		t.Errorf("claimed id = %d, want %d (FIFO)", claimed.ID, j1.ID)
 	}
-	if err := store.Complete(ctx, j1.ID); err != nil {
+	if err := store.Complete(ctx, j1.ID, "w1"); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "p1"), jobs.EnqueueOptions{}); err != nil {
@@ -205,7 +205,7 @@ func TestDefer(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
-	deferred, err := store.Defer(ctx, claimed.ID, time.Minute)
+	deferred, err := store.Defer(ctx, claimed.ID, "w1", time.Minute)
 	if err != nil {
 		t.Fatalf("Defer: %v", err)
 	}
@@ -227,9 +227,12 @@ func TestDefer(t *testing.T) {
 		t.Errorf("claim deferred job = %v, want ErrNoJobs", err)
 	}
 
-	// Defer on a queued (non-running) job matches nothing.
-	if _, err := store.Defer(ctx, job.ID, time.Minute); !errors.Is(err, jobs.ErrJobNotFound) {
-		t.Errorf("Defer non-running = %v, want ErrJobNotFound", err)
+	// Defer on a job that is not running under this worker matches nothing.
+	if _, err := store.Defer(ctx, job.ID, "w1", time.Minute); !errors.Is(err, jobs.ErrLockLost) {
+		t.Errorf("Defer non-running = %v, want ErrLockLost", err)
+	}
+	if _, err := store.Defer(ctx, 999999, "w1", time.Minute); !errors.Is(err, jobs.ErrJobNotFound) {
+		t.Errorf("Defer missing job = %v, want ErrJobNotFound", err)
 	}
 }
 
@@ -252,7 +255,7 @@ func TestRetryBackoffDeadLetter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("claim attempt %d: %v", attempt, err)
 		}
-		failed, err := store.Fail(ctx, claimed.ID, errors.New("boom"))
+		failed, err := store.Fail(ctx, claimed.ID, "w1", errors.New("boom"))
 		if err != nil {
 			t.Fatalf("fail attempt %d: %v", attempt, err)
 		}
@@ -314,10 +317,11 @@ func TestRequeueDeadErrors(t *testing.T) {
 	}
 }
 
-// TestStaleLockRecovery verifies a running job with a stale lock is requeued and
-// re-claimable, while a heartbeated job is left alone.
+// TestStaleLockRecovery verifies a running job with a stale lock is requeued
+// (after a backoff delay) and then re-claimable, while a heartbeated job is left
+// alone.
 func TestStaleLockRecovery(t *testing.T) {
-	store, _ := newStore(t)
+	store, db := newStore(t)
 	ctx := t.Context()
 
 	if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "stale"), jobs.EnqueueOptions{}); err != nil {
@@ -336,6 +340,27 @@ func TestStaleLockRecovery(t *testing.T) {
 	if recovered != 1 {
 		t.Fatalf("recovered = %d, want 1", recovered)
 	}
+
+	// Recovery applies the same backoff as Fail, so a job whose worker keeps
+	// dying on it cannot be re-claimed instantly in a tight crash loop.
+	requeued, err := store.Get(ctx, claimed.ID)
+	if err != nil {
+		t.Fatalf("get recovered job: %v", err)
+	}
+	if requeued.State != jobs.StateQueued {
+		t.Errorf("state = %q, want queued", requeued.State)
+	}
+	if requeued.Attempts != 1 {
+		t.Errorf("attempts = %d, want 1", requeued.Attempts)
+	}
+	if !requeued.RunAfter.After(time.Now()) {
+		t.Errorf("run_after = %v, want a future backoff", requeued.RunAfter)
+	}
+	if _, err := store.Claim(ctx, "w2"); !errors.Is(err, jobs.ErrNoJobs) {
+		t.Errorf("claim during recovery backoff = %v, want ErrNoJobs", err)
+	}
+
+	makeRunnable(t, db, claimed.ID)
 	reclaimed, err := store.Claim(ctx, "w2")
 	if err != nil {
 		t.Fatalf("re-claim after recovery: %v", err)
@@ -354,6 +379,94 @@ func TestStaleLockRecovery(t *testing.T) {
 	}
 	if stillRecovered != 0 {
 		t.Errorf("recovered with fresh heartbeat = %d, want 0", stillRecovered)
+	}
+}
+
+// TestStaleRecoveryDeadLettersWithoutBackoff verifies a recovered job that has
+// exhausted its attempts is dead-lettered rather than pushed into a backoff it
+// would never be claimed out of.
+func TestStaleRecoveryDeadLettersWithoutBackoff(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "lastchance"),
+		jobs.EnqueueOptions{MaxAttempts: 1}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	claimed, err := store.Claim(ctx, "w1")
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := store.RecoverStaleLocks(ctx, 0); err != nil {
+		t.Fatalf("RecoverStaleLocks: %v", err)
+	}
+
+	dead, err := store.Get(ctx, claimed.ID)
+	if err != nil {
+		t.Fatalf("get recovered job: %v", err)
+	}
+	if dead.State != jobs.StateDead {
+		t.Errorf("state = %q, want dead", dead.State)
+	}
+	if dead.LastError == "" {
+		t.Error("last_error is empty, want the stale-lock reason")
+	}
+}
+
+// TestOwnershipGuard verifies the lifecycle writes are fenced by the worker id:
+// once stale-lock recovery has handed a job to another worker, the previous
+// owner's late Complete/Fail/Defer is rejected instead of clobbering the new
+// owner's run.
+func TestOwnershipGuard(t *testing.T) {
+	store, db := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "fenced"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	claimed, err := store.Claim(ctx, "w1")
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	// Worker w1 stalls, recovery requeues the job and w2 picks it up.
+	if _, err := store.RecoverStaleLocks(ctx, 0); err != nil {
+		t.Fatalf("RecoverStaleLocks: %v", err)
+	}
+	makeRunnable(t, db, claimed.ID)
+	if _, err := store.Claim(ctx, "w2"); err != nil {
+		t.Fatalf("re-claim: %v", err)
+	}
+
+	// Every late write from w1 must bounce.
+	if err := store.Complete(ctx, claimed.ID, "w1"); !errors.Is(err, jobs.ErrLockLost) {
+		t.Errorf("Complete by previous owner = %v, want ErrLockLost", err)
+	}
+	if _, err := store.Fail(ctx, claimed.ID, "w1", errors.New("late")); !errors.Is(err, jobs.ErrLockLost) {
+		t.Errorf("Fail by previous owner = %v, want ErrLockLost", err)
+	}
+	if _, err := store.Defer(ctx, claimed.ID, "w1", time.Minute); !errors.Is(err, jobs.ErrLockLost) {
+		t.Errorf("Defer by previous owner = %v, want ErrLockLost", err)
+	}
+	if err := store.Heartbeat(ctx, claimed.ID, "w1"); !errors.Is(err, jobs.ErrLockLost) {
+		t.Errorf("Heartbeat by previous owner = %v, want ErrLockLost", err)
+	}
+	if err := store.Heartbeat(ctx, 999999, "w2"); !errors.Is(err, jobs.ErrJobNotFound) {
+		t.Errorf("Heartbeat on missing job = %v, want ErrJobNotFound", err)
+	}
+
+	// The job is still running under its new owner, which can finish it.
+	current, err := store.Get(ctx, claimed.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if current.State != jobs.StateRunning || current.LockedBy == nil || *current.LockedBy != "w2" {
+		t.Fatalf("job state = %q locked_by = %v, want running under w2", current.State, current.LockedBy)
+	}
+	if err := store.Complete(ctx, claimed.ID, "w2"); err != nil {
+		t.Errorf("Complete by current owner: %v", err)
+	}
+	if err := store.Complete(ctx, 999999, "w2"); !errors.Is(err, jobs.ErrJobNotFound) {
+		t.Errorf("Complete missing job = %v, want ErrJobNotFound", err)
 	}
 }
 
@@ -425,7 +538,7 @@ func TestCountPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
-	if err := store.Complete(ctx, claimed.ID); err != nil {
+	if err := store.Complete(ctx, claimed.ID, "w1"); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	pending, err = store.CountPending(ctx, jobs.TypeImageEmbed, jobs.TypeFaceDetect)

@@ -107,7 +107,7 @@ func (e *env) deadLetter(t *testing.T, uid string) jobs.Job {
 	if claimed.ID != job.ID {
 		t.Fatalf("claim returned job %d, want %d", claimed.ID, job.ID)
 	}
-	dead, err := e.store.Fail(t.Context(), claimed.ID, errors.New("boom"))
+	dead, err := e.store.Fail(t.Context(), claimed.ID, "w", errors.New("boom"))
 	if err != nil {
 		t.Fatalf("fail: %v", err)
 	}
