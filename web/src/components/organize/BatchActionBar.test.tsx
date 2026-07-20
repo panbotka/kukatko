@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
@@ -12,7 +12,7 @@ import { type BulkResult } from '../../services/bulk'
 import { type AlbumCount, type LabelCount } from '../../services/organize'
 import { ToastProvider } from '../toast/ToastProvider'
 
-import { BatchActionBar } from './BatchActionBar'
+import { BatchActionBar, type BatchExtraAction } from './BatchActionBar'
 
 vi.mock('../../services/bulk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/bulk')>()
@@ -125,13 +125,13 @@ const editorAuth: AuthContextValue = {
   refresh: vi.fn(),
 }
 
-function renderBar(bulk: UseBulkEditResult) {
+function renderBar(bulk: UseBulkEditResult, extraActions?: BatchExtraAction[]) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={editorAuth}>
         <ToastProvider>
           <MemoryRouter>
-            <BatchActionBar bulk={bulk} onSelectAll={vi.fn()} />
+            <BatchActionBar bulk={bulk} onSelectAll={vi.fn()} extraActions={extraActions} />
           </MemoryRouter>
         </ToastProvider>
       </AuthContext.Provider>
@@ -159,6 +159,27 @@ describe('BatchActionBar', () => {
     expect(screen.getByRole('button', { name: 'Favorite' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Select all' })).toBeInTheDocument()
+  })
+
+  it("joins a page's own actions onto the same bar, honouring their disabled state", async () => {
+    const setCover = vi.fn()
+    const remove = vi.fn()
+    const user = userEvent.setup()
+    renderBar(makeBulk(), [
+      // A cover is one photo, and two are picked here: the action is offered but
+      // not applicable, exactly as an album's is.
+      { id: 'cover', icon: 'image', label: 'Set as cover', disabled: true, onClick: setCover },
+      { id: 'remove', icon: 'dash-lg', label: 'Remove from album', danger: true, onClick: remove },
+    ])
+
+    // One bar carries both vocabularies: the shared batch actions and the page's.
+    const bar = screen.getByRole('toolbar', { name: 'Batch actions' })
+    expect(within(bar).getByRole('button', { name: 'Add to album' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Set as cover' })).toBeDisabled()
+
+    await user.click(within(bar).getByRole('button', { name: 'Remove from album' }))
+    expect(remove).toHaveBeenCalledTimes(1)
+    expect(setCover).not.toHaveBeenCalled()
   })
 
   it('applies favorite to the whole batch, toasts success and clears the selection', async () => {

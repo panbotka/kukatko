@@ -10,8 +10,7 @@ import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { GridDensityControl } from '../components/library/GridDensityControl'
 import { GridSkeleton } from '../components/library/GridSkeleton'
-import { BulkEditControl } from '../components/organize/BulkEditControl'
-import { SelectionBar } from '../components/organize/SelectionBar'
+import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { Candidates } from '../components/people/Candidates'
 import { Outliers } from '../components/people/Outliers'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
@@ -44,11 +43,12 @@ type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; su
  * mis-assigned faces). The gallery pages through `GET /subjects/{uid}/photos`
  * with a load-more control.
  *
- * Editors can also select photos in the gallery and bulk-edit them; the gallery
- * refetches afterwards, since the edit may have taken photos out of it. Every
- * tile carries the library's corner selection checkmark from the outset (no
- * "enter selection mode" step), and the set-cover action only steps aside once
- * a pick has turned the tiles into selection targets.
+ * Editors can also select photos in the gallery; picking one raises the
+ * library's own floating batch bar, so the full set of batch actions (add to
+ * album, add/remove labels, favorite, archive, download, stack, the full editor)
+ * is available here too, and the gallery refetches afterwards, since the edit
+ * may have taken photos out of it. Every tile carries the library's corner
+ * selection checkmark from the outset (no "enter selection mode" step).
  */
 export function SubjectPage() {
   const { t } = useTranslation()
@@ -133,6 +133,32 @@ export function SubjectPage() {
     [state],
   )
 
+  // Select every tile the gallery has loaded so far — the load-more pages that
+  // have actually arrived, never the whole person.
+  const selectAllInView = useCallback(() => {
+    selection.selectMany(photos.map((p) => p.uid))
+  }, [photos, selection])
+
+  // A tile hides its own set-cover button once the gallery turns into selection
+  // targets, so the action moves onto the batch bar for the duration — it stays
+  // reachable, and like the album's it waits for a selection of exactly one.
+  const extraActions = useMemo<BatchExtraAction[]>(
+    () => [
+      {
+        id: 'set-cover',
+        icon: 'image',
+        label: t('subject.cover.set'),
+        disabled: coverBusy || selection.count !== 1,
+        onClick: () => {
+          // Guarded by `disabled` above: exactly one photo is picked here.
+          const [photoUid] = [...selection.selected]
+          void setCover(photoUid)
+        },
+      },
+    ],
+    [t, coverBusy, selection.count, selection.selected, setCover],
+  )
+
   if (state.status === 'loading') {
     // Hold the page's shape while the record loads: a header placeholder over the
     // gallery skeleton, so the layout does not jump when the subject arrives.
@@ -167,34 +193,26 @@ export function SubjectPage() {
           <h1 className="kk-page-title mb-0">{subject.name}</h1>
           <Badge bg="secondary">{t(`subject.type.${subject.type}`)}</Badge>
         </div>
-        {/* The subject's own actions step aside while a selection is being made:
-            the selection bar below is then the page's only toolbar. */}
-        {!selecting && (
-          <div className="d-flex align-items-center gap-2 flex-wrap">
-            {/* A view preference, not a write action: shown to every viewer so
-                anyone can re-column the gallery, exactly as the other galleries
-                expose it through the FilterBar. */}
-            <GridDensityControl />
-            {canWrite && (
-              <Button
-                variant="outline-secondary"
-                size="sm"
-                onClick={() => {
-                  setEditing(true)
-                }}
-              >
-                {t('subject.editButton')}
-              </Button>
-            )}
-          </div>
-        )}
+        {/* The subject's own actions stay put during a selection: the batch bar
+            floats over the bottom edge and never contends with the header. */}
+        <div className="d-flex align-items-center gap-2 flex-wrap">
+          {/* A view preference, not a write action: shown to every viewer so
+              anyone can re-column the gallery, exactly as the other galleries
+              expose it through the FilterBar. */}
+          <GridDensityControl />
+          {canWrite && (
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={() => {
+                setEditing(true)
+              }}
+            >
+              {t('subject.editButton')}
+            </Button>
+          )}
+        </div>
       </div>
-
-      {selecting && (
-        <SelectionBar count={selection.count} onCancel={selection.disable}>
-          <BulkEditControl bulk={bulk} />
-        </SelectionBar>
-      )}
 
       <h2 className="kk-section-title">{t('subject.photos')}</h2>
       {status === 'loading' && <GridSkeleton label={t('subject.loadingPhotos')} />}
@@ -260,6 +278,15 @@ export function SubjectPage() {
           <p className="text-secondary small">{t('outliers.subtitle')}</p>
           <Outliers subjectUid={subject.uid} />
         </section>
+      )}
+
+      {bulk.canBulkEdit && selecting && (
+        <>
+          {/* Keeps the page's last section scrollable clear of the floating
+              bar, so nothing hides behind it. */}
+          <div style={{ paddingBottom: '6rem' }} aria-hidden="true" />
+          <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} extraActions={extraActions} />
+        </>
       )}
 
       {canWrite && (

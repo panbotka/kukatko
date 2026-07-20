@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Col from 'react-bootstrap/Col'
@@ -11,8 +11,7 @@ import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
-import { BulkEditControl } from '../components/organize/BulkEditControl'
-import { SelectionBar } from '../components/organize/SelectionBar'
+import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SavedSearchesDropdown } from '../components/savedsearch/SavedSearchesDropdown'
 import { GlobalSearchSections } from '../components/search/GlobalSearchSections'
@@ -46,9 +45,10 @@ const SEARCH_DEBOUNCE_MS = 350
  * with the {@link SavedSearchesDropdown} that lists, applies and manages them.
  *
  * Editors can multi-select results straight away — the corner checkmark is
- * offered from the outset, as on the library — and bulk-edit the picked photos;
- * the search re-runs afterwards, since an edit can change what the query and
- * filters match.
+ * offered from the outset, as on the library — and picking one raises the
+ * library's own floating batch bar with the full set of batch actions; the
+ * search re-runs afterwards, since an edit can change what the query and filters
+ * match.
  */
 export function SearchPage() {
   const { t } = useTranslation()
@@ -104,6 +104,12 @@ export function SearchPage() {
     leaveSelection()
   }, [view.q, mode, leaveSelection])
 
+  // Select every result that has paged in, matching the library's select-all: it
+  // never reaches beyond what the grid has actually loaded.
+  const selectAllInView = useCallback(() => {
+    selection.selectMany(photos.map((p) => p.uid))
+  }, [photos, selection])
+
   // Debounce committing the typed query to the URL; an unchanged value is a no-op.
   useEffect(() => {
     if (text === view.q) {
@@ -121,33 +127,25 @@ export function SearchPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="kk-page-title mb-0">{t('search.title')}</h1>
-        {/* The search's own actions step aside while a selection is being made,
-            as on the library: the selection bar below is then the only toolbar. */}
-        {!selecting && (
-          <div className="d-flex align-items-center gap-2 flex-wrap">
-            {hasResults && <SlideshowStart scope={{ mode }} view={view} count={total} />}
-            {/* Saved searches live here rather than in the navbar: they are a
-                search-page concern, and `/saved` stays reachable from the menu. */}
-            <SavedSearchesDropdown />
-            <Button
-              variant="outline-secondary"
-              size="sm"
-              title={t('savedSearches.saveViewTitle')}
-              onClick={() => {
-                setSavingView(true)
-              }}
-            >
-              {t('savedSearches.saveView')}
-            </Button>
-          </div>
-        )}
+        {/* The search's own actions stay put during a selection: the batch bar
+            floats over the bottom edge and never contends with the header. */}
+        <div className="d-flex align-items-center gap-2 flex-wrap">
+          {hasResults && <SlideshowStart scope={{ mode }} view={view} count={total} />}
+          {/* Saved searches live here rather than in the navbar: they are a
+              search-page concern, and `/saved` stays reachable from the menu. */}
+          <SavedSearchesDropdown />
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            title={t('savedSearches.saveViewTitle')}
+            onClick={() => {
+              setSavingView(true)
+            }}
+          >
+            {t('savedSearches.saveView')}
+          </Button>
+        </div>
       </div>
-
-      {selecting && (
-        <SelectionBar count={selection.count} onCancel={selection.disable}>
-          <BulkEditControl bulk={bulk} />
-        </SelectionBar>
-      )}
 
       <Form
         role="search"
@@ -238,15 +236,23 @@ export function SearchPage() {
       )}
 
       {hasResults && (
-        <PhotoGrid
-          photos={photos}
-          loadingMore={loadingMore}
-          moreError={moreError}
-          onEndReached={loadMore}
-          onRetry={retry}
-          selection={bulk.gridSelection}
-          detailQuery={detailQuery}
-        />
+        // Keep the last rows scrollable clear of the floating bar while a
+        // selection is active, so nothing hides behind it.
+        <div style={{ paddingBottom: selecting ? '6rem' : undefined }}>
+          <PhotoGrid
+            photos={photos}
+            loadingMore={loadingMore}
+            moreError={moreError}
+            onEndReached={loadMore}
+            onRetry={retry}
+            selection={bulk.gridSelection}
+            detailQuery={detailQuery}
+          />
+        </div>
+      )}
+
+      {bulk.canBulkEdit && selecting && (
+        <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} />
       )}
 
       <SaveSearchModal

@@ -217,7 +217,7 @@ describe('AlbumDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More edits' })).not.toBeInTheDocument()
   })
 
   it('deletes the album through the styled confirm dialog, not a native prompt', async () => {
@@ -267,14 +267,94 @@ describe('AlbumDetailPage', () => {
     // No "Select" step: the tile is a link that already carries its checkmark,
     // exactly as on the library, and the selection bar is still out of the way.
     expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
-    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
 
     // Picking raises the selection bar with the album's selection actions.
     expect(screen.getByRole('button', { name: 'Set as cover' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove from album' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'More edits' })).toBeEnabled()
+  })
+
+  it('raises the library’s full batch bar, with the album’s own actions merged in', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+
+    // One toolbar, not two: the album's actions live on the shared bar next to
+    // the full batch vocabulary the library offers.
+    const bars = screen.getAllByRole('toolbar', { name: 'Batch actions' })
+    expect(bars).toHaveLength(1)
+    const [bar] = bars
+    for (const name of [
+      'Clear selection',
+      'Select all',
+      'Add to album',
+      'Labels',
+      'Favorite',
+      'Archive',
+      'Download ZIP',
+      'Stack selected',
+      'More edits',
+      'Set as cover',
+      'Remove from album',
+    ]) {
+      expect(within(bar).getByRole('button', { name })).toBeInTheDocument()
+    }
+
+    // Select-all picks up the rest of the loaded grid, so the count follows.
+    await user.click(within(bar).getByRole('button', { name: 'Select all' }))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+
+    // A cover is a single photo: two picked leaves that one action inapplicable.
+    expect(within(bar).getByRole('button', { name: 'Set as cover' })).toBeDisabled()
+  })
+
+  it('adds the selection to another album straight from the bar, then reloads', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    albumsMock.mockResolvedValue([
+      {
+        uid: 'al_2',
+        slug: 'trips',
+        title: 'Trips',
+        description: '',
+        type: 'album',
+        private: false,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        photo_count: 0,
+      },
+    ])
+    labelsMock.mockResolvedValue([])
+    bulkMock.mockResolvedValue({
+      results: [],
+      counts: { total: 1, updated: 1, skipped: 0, errored: 0 },
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+
+    const fetchesBefore = fetchPhotosMock.mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.click(await screen.findByLabelText('Add to albums'))
+    await user.click(await screen.findByRole('option', { name: /Trips/ }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    // Exactly the picked photo, and the album's own grid refetches afterwards.
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['a'], { add_to_albums: ['al_2'] })
+    })
+    await waitFor(() => {
+      expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
+    })
   })
 
   it('bulk-edits exactly the selected photos, then reloads the grid', async () => {
@@ -294,7 +374,7 @@ describe('AlbumDetailPage', () => {
     await user.click(screen.getByRole('button', { name: 'Select c.jpg' }))
 
     const fetchesBefore = fetchPhotosMock.mock.calls.length
-    await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
+    await user.click(screen.getByRole('button', { name: 'More edits' }))
     const dialog = await screen.findByRole('dialog')
     await user.selectOptions(within(dialog).getByLabelText('Favorite'), 'true')
     await user.click(within(dialog).getByRole('button', { name: 'Apply' }))
@@ -306,7 +386,7 @@ describe('AlbumDetailPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Done' }))
     // The selection is cleared, so the bar steps back out of the way.
-    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
     })
@@ -328,7 +408,7 @@ describe('AlbumDetailPage', () => {
     // The selection is dropped, so no removed UID lingers in it — and with it
     // the bar, handing the header back to the album's own actions.
     await waitFor(() => {
-      expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
     })
     expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
   })

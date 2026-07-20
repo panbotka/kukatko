@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -9,6 +9,8 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type Label } from '../services/organize'
 import { type Photo, type PhotoListResponse } from '../services/photos'
+
+import { albumOption, BATCH_ACTIONS } from '../test/batchBar'
 
 import { LabelDetailPage } from './LabelDetailPage'
 
@@ -195,7 +197,7 @@ describe('LabelDetailPage', () => {
 
     await screen.findByRole('heading', { name: 'Sunset' })
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Bulk edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More edits' })).not.toBeInTheDocument()
   })
 
   it('offers a select checkmark on every tile, with no selection mode to enter', async () => {
@@ -207,11 +209,62 @@ describe('LabelDetailPage', () => {
     // No "Select" step: the tile is a link that already carries its checkmark,
     // exactly as on the library.
     expect(await screen.findByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
-    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Bulk edit' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'More edits' })).toBeEnabled()
+  })
+
+  it('raises the library’s full batch bar, and only that one bar', async () => {
+    fetchLabelMock.mockResolvedValue(label())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+
+    const bars = screen.getAllByRole('toolbar', { name: 'Batch actions' })
+    expect(bars).toHaveLength(1)
+    const [bar] = bars
+    for (const name of BATCH_ACTIONS) {
+      expect(within(bar).getByRole('button', { name })).toBeInTheDocument()
+    }
+
+    // Select-all reaches the rest of the loaded grid, as on the library.
+    await user.click(within(bar).getByRole('button', { name: 'Select all' }))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+  })
+
+  it('adds the selection to an album straight from the bar, then reloads', async () => {
+    fetchLabelMock.mockResolvedValue(label())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    albumsMock.mockResolvedValue([albumOption('al_2', 'Trips')])
+    labelsMock.mockResolvedValue([])
+    bulkMock.mockResolvedValue({
+      results: [],
+      counts: { total: 1, updated: 1, skipped: 0, errored: 0 },
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
+
+    const fetchesBefore = fetchPhotosMock.mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.click(await screen.findByLabelText('Add to albums'))
+    await user.click(await screen.findByRole('option', { name: /Trips/ }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['a'], { add_to_albums: ['al_2'] })
+    })
+    // The label's own grid refetches: the edit may have changed what it matches.
+    await waitFor(() => {
+      expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
+    })
   })
 
   it('bulk-edits exactly the selected photos, then reloads the grid', async () => {
@@ -227,7 +280,7 @@ describe('LabelDetailPage', () => {
     await screen.findByRole('link', { name: 'a.jpg' })
     await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
     const fetchesBefore = fetchPhotosMock.mock.calls.length
-    await user.click(screen.getByRole('button', { name: 'Bulk edit' }))
+    await user.click(screen.getByRole('button', { name: 'More edits' }))
     await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 
@@ -237,7 +290,7 @@ describe('LabelDetailPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Done' }))
     // The selection is cleared, so the bar steps back out of the way.
-    expect(screen.queryByRole('toolbar', { name: 'Selection actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(fetchPhotosMock.mock.calls.length).toBeGreaterThan(fetchesBefore)
     })

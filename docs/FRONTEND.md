@@ -354,9 +354,10 @@ here.
   `EmptyState` only for an album with no photos),
   `AlbumEditModal` (create/rename an album: name/description/private), `LabelEditModal` (create/rename
   a label: name/priority), `SelectionBar` (a sticky selection toolbar: count +
-  actions + clear — used by browse grids outside the library, shown at
-  `selection.count > 0` since those grids are hover-select too),
-  `BatchActionBar` (**NEW**: the library's floating bottom **bulk action bar** — frosted
+  actions + clear — shown at `selection.count > 0` since those grids are hover-select too;
+  since the batch bar took over **every photo list**, it is left only to the **non-photo-list**
+  grids: `TrashPage`, `PlacesPage`, `OutliersPage` and the `/expand` candidate review),
+  `BatchActionBar` (the floating bottom **bulk action bar** of **every photo list** — frosted
   (`--kk-header-bg` + `backdrop-filter: blur(--kk-header-blur))`, `--kk-shadow-3`, `.kk-batch-*`
   in `app.css`) `position: fixed` centered at the bottom, **slides up at ≥ 1 selected photo**, carries a live
   count (`aria-live`), **Vybrat vše** (`onSelectAll`), close (✕ = `selection.clear`) and the actions
@@ -368,11 +369,19 @@ here.
   `BulkEditModal`); each metadata action runs **as a single `POST /photos/bulk`** via `bulkUpdatePhotos`,
   success/failure reported by a **toast** (`useToast`): success clears the selection and reloads the grid (`bulk.finish`),
   **a failure keeps the selection** (it can be retried). Driven by `useBulkEdit({hoverSelect:true})`; Esc clears the
-  selection via grid keyboard nav. **Editor/admin only** (`bulk.canBulkEdit`), i18n `batch.*`),
+  selection via grid keyboard nav. **Editor/admin only** (`bulk.canBulkEdit`), i18n `batch.*`.
+  **`extraActions?: readonly BatchExtraAction[]`** merges a page's own actions onto the *same* bar
+  (`{id, icon, label, onClick, disabled?, danger?}`, rendered after **Další úpravy** with the shared
+  `BarAction` styling, disabled while a batch request is in flight) — so a page never grows a second
+  toolbar: `AlbumDetailPage` passes **Nastavit obálku** (needs exactly 1 selected) + **Odebrat z alba**
+  (`danger`), `SubjectPage` passes **Nastavit jako náhled**; the library, favorites, label and search
+  pages pass none),
   `BulkEditControl` (**a reusable trigger** for bulk editing: a button
   (`selection.edit`) + `BulkEditModal`, driven solely by the result of `useBulkEdit`; **it doesn't render at all
   for a viewer**, and is disabled at an empty selection — just drop it into `SelectionBar`, the page
-  holds no dialog state; the optional `prefill` prop flows through into the modal), `SelectionStart` (**the counterpart** to `BulkEditControl`: a button
+  holds no dialog state; the optional `prefill` prop flows through into the modal. The photo lists now
+  reach the same dialog through the batch bar's **Další úpravy**, so this is left to the grids that
+  still use `SelectionBar`), `SelectionStart` (**the counterpart** to `BulkEditControl`: a button
   `selection.enter` that turns on selection mode; it doesn't render for a viewer or for an already-enabled selection,
   `onEnter` overrides the action for a page that must first leave another mode),
   `DownloadZipButton` (**download the selection or the whole album as a ZIP** of originals: calls
@@ -380,8 +389,8 @@ here.
   (`download.zipTooMany`), otherwise generic (`download.zipError`); `photoUids` = the current selection,
   `albumUid` (+ `name` = the album title) = the whole album; **available to a viewer too** (a download is not a write),
   disabled when there is nothing to download. Inserted into the library's `SelectionBar` and into the album header),
-  `StackSelectedControl` (**NEW**: a **Seskupit vybrané** button (`selection.stack`) in the library's selection bar
-  (`LibraryPage`), **editor/admin only**, disabled until **≥ 2** photos are selected; calls
+  `StackSelectedControl` (a **Seskupit vybrané** button (`selection.stack`) on the batch bar — so on
+  every photo list, not just the library — **editor/admin only**, disabled until **≥ 2** photos are selected; calls
   `stackPhotos`, on success clears the selection and reloads the grid),
   `BulkEditModal` (**bulk edit** of the selection via `POST /photos/bulk`, the whole batch
   in a single transaction on the backend; the form is split into **four sections** (`.kk-text-eyebrow`
@@ -454,7 +463,8 @@ here.
   `FavoritesPage` = `/favorites` the current user's favorites: the same grid/filters as the library
   scoped to `favorite=true`, hearts to remove from favorites in place (favoritable),
   the tiles carry the scope in the detail link (`detailQuery` with `favorite=true`) → Esc/Back/prev-next from a photo returns here,
-  for editors **selection mode** → `BulkEditControl`; a bulk removal from favorites drops the photo from the list
+  for editors **hover-select** → the shared **`BatchActionBar`** (the library's full set of actions,
+  `onSelectAll` picks every loaded tile); a bulk removal from favorites drops the photo from the list
   (the selection is cleared **before** the refetch, so no photo that vanished from the grid stays in it),
   `AlbumsPage` = `/albums` a grid of album cards + `Nové album` (editor/admin) — the order **from
   the newest album** (by the newest photo, undated/empty at the end) **is enforced by the backend**,
@@ -464,15 +474,18 @@ here.
   (edit/delete/select) above
   a photo grid scoped to the album (`useScopedPhotos` + `FilterBar showSort={false}` + URL state) —
   an album is **always chronological** (oldest first, enforced by the backend), so the page has no sort
-  selector or manual reordering; selection → set cover / **bulk edit**
-  (`BulkEditControl`) / remove from the album (both removal and a successful edit **empty the selection**, so no
+  selector or manual reordering; selection raises the shared **`BatchActionBar`** with the album's own
+  actions merged in as `extraActions` — **Nastavit obálku** (enabled at exactly 1 selected) and
+  **Odebrat z alba** (`danger`) — beside the full batch vocabulary (both removal and a successful edit
+  **empty the selection**, so no
   UIDs of photos that vanished from the grid stay in it, and reload the grid via `reloadKey`); the tiles carry the
   album scope in the detail link (`detailQuery` with `album=uid`) → Esc/Back/prev-next from a photo returns to the album;
-  the page either browses or selects (`selection.active`),
+  the album's own header controls **stay visible** during a selection (the bar floats over the bottom edge),
   `LabelsPage` = `/labels` a list of labels with counts + create/rename/delete (editor/admin),
   `LabelDetailPage` = `/labels/:uid` a photo grid scoped to the label (`useScopedPhotos` + `FilterBar` + URL);
   the tiles carry the label scope in the detail link (`detailQuery` with `label=uid`) → Esc/Back/prev-next from a photo
-  returns to the label; + a **Promítání** button + for editors **selection mode** → `BulkEditControl` (refetch on success),
+  returns to the label; + a **Promítání** button + for editors **hover-select** → the shared
+  **`BatchActionBar`** (the library's full set of actions, `onSelectAll`; refetch on success),
   `SearchPage` = semantic/hybrid/fulltext search: a prominent debounced (350 ms)
   search field + a mode toggle (`q`+`mode` in the URL), the same virtualized grid as the
   library + the shared `FilterBar` (without query/sort), `degraded` → a non-blocking notice
@@ -496,7 +509,8 @@ here.
   and **the single entry point to saved searches**
   (`SavedSearchesDropdown` — list, open, „Spravovat" → `/saved`) beside the **Uložit pohled** button
   (`SaveSearchModal` — `params` carries `mode` too, so restoration targets `/search`),
-  plus for editors **selection mode** over the results → `BulkEditControl` (on success the search
+  plus for editors **hover-select** over the results → the shared **`BatchActionBar`** (the library's
+  full set of actions, `onSelectAll`; on success the search
   replays via `reloadKey`); changing `q`/`mode` is a different result set, so it **leaves selection mode**
   (filters that only narrow the same search keep the selection, just as in the library),
   `UploadPage` = multi-upload (drag-and-drop + gallery/camera on mobile, **mobile-first**):
@@ -823,8 +837,11 @@ here.
   (`GET /subjects/:uid/photos`) and the person facet sort **identically** — `taken_at DESC NULLS LAST, uid DESC`
   (the backend unified the tiebreaker `internal/people/subjects.go`), so the viewer steps exactly in the order of
   the grid even among photos with the same/no date; editors can **select** in the gallery
-  → `BulkEditControl` (refetch the gallery on success) — in selection mode a tile is one
-  selection target, so „set as cover" steps aside, like the heart/stars on a library tile,
+  → the shared **`BatchActionBar`** (the library's full set of actions, `onSelectAll` over the loaded
+  gallery; refetch the gallery on success) — in selection mode a tile is one
+  selection target, so the tile's „set as cover" steps aside, like the heart/stars on a library tile,
+  and the action moves onto the bar as an `extraActions` entry (enabled at exactly 1 selected), so it
+  stays reachable; the person's own header controls stay visible during a selection,
   `ClustersPage` = `/people/clusters` (editor/admin) a review queue of unnamed clusters:
   `ClusterCard` (a representative + samples + removal of a strayed face + one-shot naming
   of the whole cluster) in a `Row`/`Col` grid, optimistic removal after naming,
@@ -1887,7 +1904,10 @@ here.
   min. šířka, `.kukatko-filter-panel` = 44px tap-targety na prvcích panelu, `.kukatko-filter-chip`
   = tappable pill chip s křížkem); CSS proměnná `--kukatko-navbar-height`),
   `test/setup.ts` (jsdom **`window.matchMedia` stub** — non-matching default, jednotlivé testy ho
-  můžou přepsat pro simulaci telefonu).
+  můžou přepsat pro simulaci telefonu),
+  `test/batchBar.ts` (fixtures sdílené testy stránek s fotomřížkou: `BATCH_ACTIONS` = kompletní
+  slovník akcí `BatchActionBar` podle accessible name — každá stránka ho asertuje **celý**, aby se
+  nemohla tiše vrátit k osekanému toolbaru — a `albumOption()` pro `fetchAlbums` v pickeru).
   Routing v `App.tsx`: tabulka rout žije v exportované `AppRoutes` (aby ji šlo v testech mountnout
   do `MemoryRouter` a ověřit samotné drátování — `App.test.tsx`), `App` ji jen obalí
   `BrowserRouter`+`AuthProvider`+`CapabilitiesProvider` (kapabilit-provider je uvnitř auth-provideru,

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '../components/EmptyState'
@@ -6,8 +6,7 @@ import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
-import { BulkEditControl } from '../components/organize/BulkEditControl'
-import { SelectionBar } from '../components/organize/SelectionBar'
+import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -23,10 +22,11 @@ import { useUrlState } from '../lib/urlState'
  * reload if the request failed). The view state lives in the URL like the library.
  *
  * Editors can also multi-select tiles — the corner checkmark is offered straight
- * away, as on the library — and bulk-edit the picked photos. Since
- * the list *is* the favorites filter, a bulk edit that clears the favorite flag
- * takes those photos out of the view: the selection is cleared before the refetch,
- * so no photo that just left the grid stays selected.
+ * away, as on the library — and picking one raises the library's own floating
+ * batch bar with the full set of batch actions. Since the list *is* the
+ * favorites filter, a bulk edit that clears the favorite flag takes those photos
+ * out of the view: the selection is cleared before the refetch, so no photo that
+ * just left the grid stays selected.
  */
 export function FavoritesPage() {
   const { t } = useTranslation()
@@ -52,16 +52,17 @@ export function FavoritesPage() {
   const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
   const hasPhotos = status === 'ready' && photos.length > 0
+  const selecting = selection.count > 0
+
+  // Select every tile that has paged in, matching the library's select-all: it
+  // never reaches beyond what the grid has actually loaded.
+  const selectAllInView = useCallback(() => {
+    selection.selectMany(photos.map((p) => p.uid))
+  }, [photos, selection])
 
   return (
     <>
       <h1 className="kk-page-title mb-3">{t('favorites.title')}</h1>
-
-      {selection.count > 0 && (
-        <SelectionBar count={selection.count} onCancel={selection.disable}>
-          <BulkEditControl bulk={bulk} />
-        </SelectionBar>
-      )}
 
       <FilterBar view={view} onChange={setView} total={total} />
 
@@ -74,16 +75,24 @@ export function FavoritesPage() {
       )}
 
       {hasPhotos && (
-        <PhotoGrid
-          photos={photos}
-          loadingMore={loadingMore}
-          moreError={moreError}
-          onEndReached={loadMore}
-          onRetry={retry}
-          selection={bulk.gridSelection}
-          favoritable
-          detailQuery={detailQuery}
-        />
+        // Keep the last rows scrollable clear of the floating bar while a
+        // selection is active, so nothing hides behind it.
+        <div style={{ paddingBottom: selecting ? '6rem' : undefined }}>
+          <PhotoGrid
+            photos={photos}
+            loadingMore={loadingMore}
+            moreError={moreError}
+            onEndReached={loadMore}
+            onRetry={retry}
+            selection={bulk.gridSelection}
+            favoritable
+            detailQuery={detailQuery}
+          />
+        </div>
+      )}
+
+      {bulk.canBulkEdit && selecting && (
+        <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} />
       )}
     </>
   )

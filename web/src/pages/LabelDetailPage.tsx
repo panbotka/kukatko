@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 
@@ -8,8 +8,7 @@ import { ErrorState } from '../components/ErrorState'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
-import { BulkEditControl } from '../components/organize/BulkEditControl'
-import { SelectionBar } from '../components/organize/SelectionBar'
+import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -36,9 +35,11 @@ const LABELS_PATH = '/labels'
  * library and Back/Forward restore it.
  *
  * Editors can multi-select tiles straight away — the corner checkmark is offered
- * from the outset, as on the library — and bulk-edit the picked photos, dropping
- * this very label among other things, after which the grid refetches, since the
- * edit may have taken photos out of the label.
+ * from the outset, as on the library — and picking one raises the library's own
+ * floating batch bar, so the full set of batch actions (add to album, add/remove
+ * labels, favorite, archive, download, stack, the full editor) is available here
+ * too. Dropping this very label is one of them, after which the grid refetches,
+ * since the edit may have taken photos out of the label.
  */
 export function LabelDetailPage() {
   const { t } = useTranslation()
@@ -66,6 +67,12 @@ export function LabelDetailPage() {
   const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
   const selecting = selection.count > 0
+
+  // Select every tile that has paged in, matching the library's select-all: it
+  // never reaches beyond what the grid has actually loaded.
+  const selectAllInView = useCallback(() => {
+    selection.selectMany(photos.map((p) => p.uid))
+  }, [photos, selection])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -104,20 +111,14 @@ export function LabelDetailPage() {
           <BackLink to={LABELS_PATH} label={t('labelDetail.back')} />
           <h1 className="kk-page-title mb-0">{title}</h1>
         </div>
-        {/* The label's own actions step aside while a selection is being made:
-            the selection bar below is then the page's only toolbar. */}
-        {!selecting && hasPhotos && (
+        {/* The label's own actions stay put during a selection: the batch bar
+            floats over the bottom edge and never contends with the header. */}
+        {hasPhotos && (
           <div className="d-flex gap-1 flex-wrap">
             <SlideshowStart scope={scope} view={view} count={total} />
           </div>
         )}
       </div>
-
-      {selecting && (
-        <SelectionBar count={selection.count} onCancel={selection.disable}>
-          <BulkEditControl bulk={bulk} />
-        </SelectionBar>
-      )}
 
       <FilterBar view={view} onChange={setView} total={total} />
 
@@ -130,15 +131,23 @@ export function LabelDetailPage() {
       )}
 
       {hasPhotos && (
-        <PhotoGrid
-          photos={photos}
-          loadingMore={loadingMore}
-          moreError={moreError}
-          onEndReached={loadMore}
-          onRetry={retry}
-          selection={bulk.gridSelection}
-          detailQuery={detailQuery}
-        />
+        // Keep the last rows scrollable clear of the floating bar while a
+        // selection is active, so nothing hides behind it.
+        <div style={{ paddingBottom: selecting ? '6rem' : undefined }}>
+          <PhotoGrid
+            photos={photos}
+            loadingMore={loadingMore}
+            moreError={moreError}
+            onEndReached={loadMore}
+            onRetry={retry}
+            selection={bulk.gridSelection}
+            detailQuery={detailQuery}
+          />
+        </div>
+      )}
+
+      {bulk.canBulkEdit && selecting && (
+        <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} />
       )}
     </>
   )
