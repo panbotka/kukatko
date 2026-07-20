@@ -673,6 +673,34 @@
   opacity: 0.82;
 }
 
+/* Touch devices cannot hover, so a hover-revealed checkmark is unreachable there
+   — and it is the whole of the multi-select entry point: in the library's
+   hover-select grid the corner check is the ONLY way to start a selection, and
+   in the explicit "Select" mode it is the only sign the grid just became a
+   selection surface. Pin it visible on coarse pointers. This never offers
+   selection where selection is not on offer: `PhotoTile` mounts the control only
+   while the tile is `selectable`, so a viewer's grid has no control to reveal.
+   The disc keeps its quiet 1.65rem; an invisible `::before` grows the tap target
+   to the app's 2.75rem (44px) touch floor instead. It expands only as far as the
+   tile edge above/left (exactly the `--kk-space-1` inset) and takes the rest
+   down/right, so it never reaches across the grid gutter and steals a tap from
+   the neighbouring tile. */
+@media (hover: none), (pointer: coarse) {
+  .kk-tile__check {
+    opacity: 1;
+  }
+
+  .kk-tile__check::before {
+    content: '';
+    position: absolute;
+    /* 0.25rem + 1.65rem + 0.85rem = 2.75rem in each axis. */
+    top: calc(-1 * var(--kk-space-1));
+    left: calc(-1 * var(--kk-space-1));
+    right: -0.85rem;
+    bottom: -0.85rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kk-tile__check,
   .kk-tile__media::after {
