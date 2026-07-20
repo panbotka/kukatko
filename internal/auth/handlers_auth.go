@@ -57,8 +57,11 @@ func clientIP(r *http.Request) string {
 
 // handleLogin authenticates a username/password, enforces login rate limiting
 // per username+IP, and on success sets the session cookie and returns the user
-// plus download token. It responds 400 (bad body), 429 (rate limited), 401 (bad
-// credentials), or 500 (server error).
+// plus download token. It responds 400 (bad body or over-long username), 429
+// (rate limited), 401 (bad credentials), or 500 (server error).
+//
+// The username length is checked before it is used, so this public endpoint
+// cannot be flooded with oversized usernames to grow the rate limiter's keys.
 func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := decodeJSON(w, r, &req); err != nil {
@@ -66,7 +69,13 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := normalizeUsername(req.Username) + "|" + clientIP(r)
+	username := normalizeUsername(req.Username)
+	if err := validateUsername(username); err != nil {
+		writeError(w, http.StatusBadRequest, ErrUsernameTooLong.Error())
+		return
+	}
+
+	key := username + "|" + clientIP(r)
 	if !a.limiter.Allow(key, a.now()) {
 		writeError(w, http.StatusTooManyRequests, "too many login attempts; try again later")
 		return

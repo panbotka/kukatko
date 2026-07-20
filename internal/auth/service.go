@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // SessionPolicy configures session expiry: TTL is the sliding idle window and
@@ -42,6 +43,18 @@ func (s *Service) WithClock(now func() time.Time) *Service {
 // uniqueness are case-insensitive.
 func normalizeUsername(username string) string {
 	return strings.ToLower(strings.TrimSpace(username))
+}
+
+// validateUsername returns ErrUsernameTooLong when username exceeds
+// MaxUsernameLen. Length is counted in runes so a name of accented characters is
+// not rejected for being multi-byte. The caller passes an already normalized
+// username; no real account can be longer, so rejecting up front keeps oversized
+// input out of both the account store and the login rate limiter's key set.
+func validateUsername(username string) error {
+	if utf8.RuneCountInString(username) > MaxUsernameLen {
+		return ErrUsernameTooLong
+	}
+	return nil
 }
 
 // Login verifies username/password and, on success, creates and returns a new

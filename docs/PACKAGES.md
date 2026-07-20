@@ -33,6 +33,14 @@ to `## Package map` in `CLAUDE.md`.
   `adminUserResponse` (embedded `User` + `note`). Validation `validateNote` → `ErrNoteTooLong`
   (`MaxNoteLen` = 1000 **runes**) → 400. `UpdateUserInput.Note` is a `*string`: `nil` = leave as is,
   `""` = clear (SQL `note = COALESCE($6::text, note)`).
+  **Username length cap** `validateUsername` → `ErrUsernameTooLong` (`MaxUsernameLen` = 64 **runes**)
+  → 400, enforced in `handleLogin` (on the normalized name, *before* it becomes a limiter key) and in
+  `prepareNewUser` (so no account is created that could never log in). Together with the `Limiter`'s
+  `maxKeys` = 8192 hard cap — insertion first drops expired keys, then evicts the least recently seen
+  down to `evictTargetKeys` (¾ of the cap, so the O(n log n) sweep is amortised) — the login limiter's
+  memory is bounded without waiting for the hourly `Cleanup` tick. Eviction ranks by a per-key
+  `lastSeen` that is refreshed even on *blocked* attempts, so flooding fresh keys cannot evict, and
+  thereby clear, an active block.
   **User-management audit** (`store_user_audit.go`): admin handlers call the audited variants
   `Service.CreateUserAudited`/`UpdateUserAudited`/`SetUserDisabledAudited`/`ResetPasswordAudited`,
   which via `Store.CreateUserAudited`/`UpdateUserProfileAudited`/`SetUserDisabledAudited`/

@@ -267,6 +267,31 @@ vulnerabilities). Nothing here required a code change — this report only docum
 - **Suggested fix:** Prefix the path (`./`) or add a `--` separator when invoking
   `vipsthumbnail`, as hardening.
 
+### SEC-015 — HIGH — **FIXED** — Unbounded login rate-limiter map → RAM-exhaustion DoS
+
+- **Where (before the fix):** `internal/auth/handlers_auth.go` keyed the limiter on
+  `normalizeUsername(req.Username) + "|" + clientIP(r)` with **no length validation**, and
+  `internal/auth/ratelimit.go` backed it with an uncapped `map[string][]time.Time` that only
+  ever shrank on the hourly `Cleanup` tick (`cmd/kukatko/serve.go`,
+  `sessionCleanupInterval`).
+- **Attack scenario:** An **unauthenticated** attacker floods `POST /api/v1/auth/login`
+  (public, no outer IP limit) with a distinct ~1 MB username per request — the body cap is
+  1 MiB and an unknown username returns before bcrypt, so the requests are cheap. Every one
+  leaves a megabyte-scale key in the single process-global map. On this shared 16 GB host
+  (co-resident Postgres and other stacks) RAM is exhausted within minutes. Independent of
+  SEC-001 (no header spoofing needed) and of SEC-002 (RAM, not disk).
+- **Fix:** two independent bounds, either of which alone caps the damage.
+  1. `MaxUsernameLen` = 64 runes, `validateUsername` → `ErrUsernameTooLong` → **400**, checked
+     in `handleLogin` *before* the username is used as a limiter key or looked up, and in
+     `prepareNewUser` so no unusable account is created.
+  2. `Limiter` gained a hard `maxKeys` = 8192 cap enforced **on insertion**: it first drops
+     expired keys, then evicts the least recently seen down to `evictTargetKeys`. Eviction
+     ranks by a per-key `lastSeen` refreshed even on *blocked* attempts, so a key flood
+     cannot evict — and thereby clear — an active block. The per-(username, IP) throttling
+     is otherwise unchanged.
+- **Not addressed here:** the optional IP-independent per-username failure counter suggested
+  under SEC-001 remains open.
+
 ---
 
 ## Areas checked — no finding ("reviewed, no findings")
