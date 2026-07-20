@@ -108,7 +108,12 @@ here.
   and the selection readable without a column of checkmarks. Keyboard Up/Down/Enter (with nothing highlighted it takes the best
   match), **Backspace over an empty query removes the last chip**, Esc closes; combobox/listbox
   ARIA (`aria-multiselectable`), a `MAX_SUGGESTIONS` (50) cap on rendered suggestions, ~44px tap
-  targets. The `destructive` prop tints the label and chips into the danger key, so a removal never looks
+  targets. The suggestion list is **layout-responsive** (via `useIsNarrowViewport`) so a scrollable
+  modal never clips it: on desktop it is a **`position: fixed` overlay** measured off the input
+  (escaping any `overflow: auto` `.modal-body` — the bulk pickers and `BulkEditModal` both nest it in
+  one), sized to its content up to `min(50vh, room-below)` and scrolling only its own options beyond
+  that; on a phone it flows **in the modal's own scroll** (`position-static`), keeping the field and
+  its options reachable **above the on-screen keyboard**. The `destructive` prop tints the label and chips into the danger key, so a removal never looks
   like an addition. By default it **creates no items** — it only picks from those it receives (mirrors
   `AddAutocomplete` and `SearchableSelect`); with an optional `onCreate(name)` it appends a
   **„Vytvořit «dotaz»“** row to the list, only when a non-empty trimmed query fold-insensitively (case,
@@ -361,7 +366,9 @@ here.
   (`--kk-header-bg` + `backdrop-filter: blur(--kk-header-blur))`, `--kk-shadow-3`, `.kk-batch-*`
   in `app.css`) `position: fixed` centered at the bottom, **slides up at ≥ 1 selected photo**, carries a live
   count (`aria-live`), **Vybrat vše** (`onSelectAll`), close (✕ = `selection.clear`) and the actions
-  **Přidat do alba** / **Štítky** (add+remove, both via `MultiSelect` in a small `Modal`, options
+  **Přidat do alba** / **Štítky** (add+remove, both via `MultiSelect` in a `Modal centered fullscreen="sm-down"`
+  — deliberately **not `scrollable`**, whose `overflow: auto` body clipped the suggestion overlay; the phone
+  gets the whole screen so the field + its options clear the keyboard, options
   lazy from `fetchAlbums`/`fetchLabels` — the effect keys **only on `picker`** (+ a retry counter), never on
   `options.status`, otherwise writing `loading`/`ready` would re-run the effect and **abort its own fetch**;
   "already loaded" is held by `useRef`, a retry after an error bumps the counter, cache per session), **Oblíbené**, **Archivovat**, **Stáhnout**

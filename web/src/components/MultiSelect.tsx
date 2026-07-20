@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { foldedEquals, foldedIncludes } from '../lib/text'
 
 /** One selectable option in a {@link MultiSelect}. */
@@ -50,6 +51,18 @@ export interface MultiSelectProps {
 /** Cap on rendered suggestions so a catalog with thousands of labels stays responsive. */
 const MAX_SUGGESTIONS = 50
 
+/** Viewport-relative box for the desktop suggestion overlay, measured off the input. */
+interface MenuPosition {
+  /** Distance from the viewport top to the menu's top edge, in px. */
+  top: number
+  /** Distance from the viewport left to the menu's left edge, in px. */
+  left: number
+  /** Menu width (the input's width), in px. */
+  width: number
+  /** The height the menu may grow to before it scrolls its own list, in px. */
+  maxHeight: number
+}
+
 /**
  * A type-to-filter multi-select for collections that grow without bound — albums
  * and labels both do. Typing narrows the option list case- and accent-insensitively
@@ -88,8 +101,53 @@ export function MultiSelect({
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const narrow = useIsNarrowViewport()
+  // On desktop the suggestion list is a fixed-position overlay measured off the
+  // input, so it escapes an `overflow: auto` `.modal-body` (the bulk pickers and
+  // BulkEditModal both nest this field in a scrollable modal that would otherwise
+  // clip an absolutely-positioned child). On a phone it flows in the modal's own
+  // scroll instead — see the render below — so no coordinates are attached and it
+  // stays above the on-screen keyboard.
+  const [menuPos, setMenuPos] = useState<MenuPosition | null>(null)
 
   const listboxId = `${id}-listbox`
+
+  // Re-measures the overlay from the input's current viewport box. The list may
+  // grow to its content but never past half the viewport nor past the room left
+  // below the field; beyond that it scrolls its own options rather than the modal.
+  const positionMenu = useCallback(() => {
+    const input = inputRef.current
+    if (input === null) {
+      return
+    }
+    const rect = input.getBoundingClientRect()
+    const gap = 4
+    const margin = 8
+    const maxHeight = Math.max(
+      120,
+      Math.min(window.innerHeight * 0.5, window.innerHeight - rect.bottom - gap - margin),
+    )
+    setMenuPos({ top: rect.bottom + gap, left: rect.left, width: rect.width, maxHeight })
+  }, [])
+
+  // Only the desktop overlay needs coordinates, and only while it is open. The
+  // capture-phase scroll listener catches the modal body scrolling under it, so
+  // the menu tracks the field; a phone drops back to the in-flow list (no fixed
+  // box), which the modal's own scroll keeps reachable above the keyboard.
+  useLayoutEffect(() => {
+    if (!open || narrow) {
+      setMenuPos(null)
+      return
+    }
+    positionMenu()
+    window.addEventListener('scroll', positionMenu, true)
+    window.addEventListener('resize', positionMenu)
+    return () => {
+      window.removeEventListener('scroll', positionMenu, true)
+      window.removeEventListener('resize', positionMenu)
+    }
+  }, [open, narrow, positionMenu])
 
   // A value whose option has vanished (an album deleted while the modal is open)
   // still gets a chip, labelled by its raw value, so the selection never lies.
@@ -214,6 +272,7 @@ export function MultiSelect({
         {label}
       </Form.Label>
       <Form.Control
+        ref={inputRef}
         id={id}
         type="text"
         className="kukatko-tap-target"
@@ -241,8 +300,30 @@ export function MultiSelect({
           role="listbox"
           aria-label={label}
           aria-multiselectable="true"
-          className="dropdown-menu show w-100 mt-1 shadow overflow-auto"
-          style={{ top: '100%', maxHeight: '50vh' }}
+          // Phone: an in-flow block (`position-static`) inside the modal's scroll,
+          // so the field and its options stay reachable above the keyboard.
+          // Desktop: a fixed overlay measured off the input, escaping any
+          // scrollable modal body that would clip an in-flow or absolute child.
+          className={
+            narrow
+              ? 'dropdown-menu show position-static w-100 mt-1 shadow-sm overflow-auto'
+              : 'dropdown-menu show shadow overflow-auto'
+          }
+          style={
+            narrow
+              ? { maxHeight: '50vh' }
+              : menuPos === null
+                ? // Hidden for the one frame before the layout effect measures it,
+                  // so it never flashes at the top-left corner.
+                  { position: 'fixed', visibility: 'hidden' }
+                : {
+                    position: 'fixed',
+                    top: menuPos.top,
+                    left: menuPos.left,
+                    width: menuPos.width,
+                    maxHeight: menuPos.maxHeight,
+                  }
+          }
         >
           {rowCount === 0 && (
             <li className="dropdown-item-text text-secondary kk-text-caption">

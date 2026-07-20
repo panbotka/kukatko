@@ -2,11 +2,29 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 
 import { MultiSelect, type MultiSelectOption } from './MultiSelect'
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer, driving the
+ * `useIsNarrowViewport` hook the control uses to pick its suggestion-list layout.
+ * The shared test setup stubs a non-matching (desktop) `matchMedia`.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
 
 const OPTIONS: MultiSelectOption[] = [
   { value: 'al1', label: 'Trips', count: 12 },
@@ -44,6 +62,11 @@ function Harness({ destructive, creatable }: { destructive?: boolean; creatable?
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+})
+
+afterEach(() => {
+  // Restore the shared desktop default so a phone test never leaks into the next.
+  mockViewport(false)
 })
 
 describe('MultiSelect', () => {
@@ -165,5 +188,34 @@ describe('MultiSelect', () => {
 
     await user.type(screen.getByLabelText('Albums'), 'Dovolená{Enter}')
     expect(screen.getByRole('button', { name: 'Remove Dovolená' })).toBeInTheDocument()
+  })
+
+  it('renders the suggestions as a fixed overlay on desktop so a scrollable modal cannot clip them', async () => {
+    mockViewport(false)
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    await user.type(screen.getByLabelText('Albums'), 'we')
+
+    // A fixed overlay is measured off the viewport, not clipped by any ancestor
+    // `overflow: auto` (the scrollable modal body), so the match is reachable.
+    const listbox = screen.getByRole('listbox', { name: 'Albums' })
+    expect(listbox).toHaveStyle({ position: 'fixed' })
+    expect(screen.getByRole('option', { name: 'Weddings' })).toBeInTheDocument()
+  })
+
+  it('flows the suggestions inside the scroll on a phone so they clear the keyboard', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    await user.type(screen.getByLabelText('Albums'), 'we')
+
+    // In the modal's own scroll flow (static), never a fixed box that a soft
+    // keyboard would cover, and the match is still offered.
+    const listbox = screen.getByRole('listbox', { name: 'Albums' })
+    expect(listbox).toHaveClass('position-static')
+    expect(listbox).not.toHaveStyle({ position: 'fixed' })
+    expect(screen.getByRole('option', { name: 'Weddings' })).toBeInTheDocument()
   })
 })
