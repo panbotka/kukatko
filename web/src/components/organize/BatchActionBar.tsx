@@ -401,7 +401,10 @@ export function BatchActionBar({ bulk, onSelectAll, extraActions }: BatchActionB
         )}
       </div>
 
-      <Modal show={picker !== null} onHide={closePicker} centered scrollable>
+      {/* No `scrollable`: the picker is short, and its `overflow: auto` body clipped
+          the MultiSelect suggestion overlay. `fullscreen="sm-down"` gives a phone the
+          whole screen so the field and its (in-flow) suggestions clear the keyboard. */}
+      <Modal show={picker !== null} onHide={closePicker} centered fullscreen="sm-down">
         <Modal.Header closeButton>
           <Modal.Title>{picker === 'label' ? t('batch.label') : t('batch.album')}</Modal.Title>
         </Modal.Header>

@@ -257,6 +257,24 @@ describe('BatchActionBar', () => {
     expect(labelsMock).toHaveBeenCalledTimes(1)
   })
 
+  it('offers the album suggestions in a fixed overlay the scrollable picker cannot clip', async () => {
+    const bulk = makeBulk()
+    albumsMock.mockImplementation(abortable([{ ...album('al1', 'Trip'), photo_count: 3 }]))
+    labelsMock.mockImplementation(abortable([]))
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.type(await screen.findByLabelText('Add to albums'), 'tr')
+
+    // The typed query surfaces the album, and its listbox is a fixed overlay —
+    // so the picker's modal body cannot clip it out of reach on desktop.
+    expect(await screen.findByRole('option', { name: /Trip/ })).toBeInTheDocument()
+    expect(screen.getByRole('listbox', { name: 'Add to albums' })).toHaveStyle({
+      position: 'fixed',
+    })
+  })
+
   it('shows the options error state, not an endless spinner, on a load failure', async () => {
     const bulk = makeBulk()
     // A genuine (non-abort) rejection must surface the error state.
