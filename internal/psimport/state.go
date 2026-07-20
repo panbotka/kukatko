@@ -24,6 +24,12 @@ const (
 // safe resume watermark. The watermark advances only as far as it can without
 // skipping a failed photo on the next run.
 type runState struct {
+	// runID is the import_runs id this run records its counts and failures against.
+	runID int64
+	// failures accumulates the per-photo and per-satellite failures recorded during
+	// the run, persisted once (RecordFailures) before the run is closed so a run with
+	// any unresolved failure is reported 'partial' rather than 'done'.
+	failures []importer.Failure
 	// since is the resume cursor inherited from the last successful run.
 	since time.Time
 	// counts is the running imported/updated/skipped/failed tally.
@@ -36,6 +42,15 @@ type runState struct {
 	hasFailed bool
 	// sawAny records whether any photo was processed at all.
 	sawAny bool
+}
+
+// recordItemFailure appends a per-photo or per-satellite failure to the run's
+// failure list so it is persisted (and the run reported 'partial') instead of only
+// logged. photoUID is the Kukátko uid when known, sourceRef the photo-sorter uid,
+// and detail a short hint such as the marker, album or label uid that failed.
+func (st *runState) recordItemFailure(stage importer.Stage, photoUID, sourceRef, detail string, err error) {
+	st.failures = append(st.failures, importer.NewFailure(
+		st.runID, importer.SourcePhotoSorter, stage, photoUID, sourceRef, detail, err))
 }
 
 // recordSuccess advances the success watermark to include updatedAt.

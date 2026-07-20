@@ -70,7 +70,8 @@ func (s *Service) dryRun(ctx context.Context, entries []planEntry, opts Options)
 
 // classifyAgainstCatalogue hashes one media file and reports whether a real run
 // would create it or find it already catalogued. A file that cannot be read is
-// reported as failed — the real run would fail on it too.
+// reported as failed — the real run would fail on it too. A dry run writes nothing,
+// so it records no failures.
 func (s *Service) classifyAgainstCatalogue(ctx context.Context, entry planEntry, idx sidecarIndex) FileResult {
 	_, res := s.readSidecar(ctx, entry, idx)
 	res.Path = entry.rel
@@ -111,21 +112,33 @@ func (s *Service) run(ctx context.Context, entries []planEntry, opts Options) (R
 
 	idx := buildSidecarIndex(entries, opts)
 	tal := newTally(len(entries), opts.Progress, idx.report)
+	tal.runID = run.ID
 	s.recordSkips(entries, tal)
 	s.process(ctx, candidates(entries), tal, run.ID, func(ctx context.Context, entry planEntry) FileResult {
-		return s.ingestOne(ctx, entry, opts.UploadedBy, dest, idx)
+		return s.ingestOne(ctx, entry, opts.UploadedBy, dest, idx, tal)
 	})
 	result.Counts, result.Sidecars = tal.snapshot()
 
+	persistCtx := context.WithoutCancel(ctx)
+	s.persistFailures(persistCtx, run.ID, tal.takeFailures())
 	if err := ctx.Err(); err != nil {
 		interrupted := fmt.Errorf("%w: %w", ErrInterrupted, err)
 		s.fail(ctx, run.ID, interrupted, result.Counts)
 		return result, interrupted
 	}
-	if err := s.runs.Complete(context.WithoutCancel(ctx), run.ID, nil, result.Counts.toImporter()); err != nil {
+	if err := s.runs.Complete(persistCtx, run.ID, nil, result.Counts.toImporter()); err != nil {
 		return result, fmt.Errorf("dirimport: completing run %d: %w", run.ID, err)
 	}
 	return result, nil
+}
+
+// persistFailures writes the run's accumulated per-file and per-satellite failures.
+// A persistence error is only bookkeeping — it cannot undo the import — so it is
+// logged, not fatal: the run still closes, only losing the itemised failure trail.
+func (s *Service) persistFailures(ctx context.Context, runID int64, failures []importer.Failure) {
+	if err := s.runs.RecordFailures(ctx, failures); err != nil {
+		s.log.Warn("dirimport: recording import failures", "run", runID, "err", err)
+	}
 }
 
 // fail closes the run as failed with the tally it reached. The context is
@@ -148,14 +161,14 @@ func (s *Service) fail(ctx context.Context, runID int64, cause error, counts Cou
 // the sidecar, which is what makes re-importing a folder worth doing after the
 // sidecars were noticed.
 func (s *Service) ingestOne(
-	ctx context.Context, entry planEntry, uploadedBy string, dest target, idx sidecarIndex,
+	ctx context.Context, entry planEntry, uploadedBy string, dest target, idx sidecarIndex, tal *tally,
 ) FileResult {
 	sc, res := s.readSidecar(ctx, entry, idx)
 	res.Path = entry.rel
 
 	file, err := os.Open(entry.abs)
 	if err != nil {
-		return res.failed(fmt.Errorf("dirimport: opening file: %w", err))
+		return s.recordFailed(res, entry.rel, fmt.Errorf("dirimport: opening file: %w", err), tal)
 	}
 	defer func() { _ = file.Close() }()
 
@@ -164,27 +177,27 @@ func (s *Service) ingestOne(
 		UploadedBy: uploadedBy,
 		Sidecar:    sc,
 	})
-	s.logWarnings(entry.rel, ingested.Warnings)
+	s.logWarnings(entry.rel, ingested.Warnings, tal)
 
 	switch ingested.Outcome {
 	case ingest.OutcomeCreated:
-		s.applyTarget(ctx, ingested.PhotoUID, dest)
-		s.applyCuration(ctx, ingested.PhotoUID, uploadedBy, sc)
+		s.applyTarget(ctx, ingested.PhotoUID, dest, tal)
+		s.applyCuration(ctx, ingested.PhotoUID, uploadedBy, sc, tal)
 		res.Outcome = OutcomeImported
 		res.PhotoUID = ingested.PhotoUID
 		res.Warnings = warningCodes(ingested.Warnings)
 		return res
 	case ingest.OutcomeDuplicate:
-		s.applyTarget(ctx, ingested.PhotoUID, dest)
-		s.fillFromSidecar(ctx, ingested.PhotoUID, sc)
+		s.applyTarget(ctx, ingested.PhotoUID, dest, tal)
+		s.fillFromSidecar(ctx, ingested.PhotoUID, sc, tal)
 		res.Outcome = OutcomeDuplicate
 		res.PhotoUID = ingested.PhotoUID
 		res.ExistingPath = s.libraryPath(ctx, ingested.PhotoUID)
 		return res
 	case ingest.OutcomeError:
-		return res.failed(errors.New(ingested.Error))
+		return s.recordFailed(res, entry.rel, errors.New(ingested.Error), tal)
 	}
-	return res.failed(fmt.Errorf("dirimport: unknown ingest outcome %q", ingested.Outcome))
+	return s.recordFailed(res, entry.rel, fmt.Errorf("dirimport: unknown ingest outcome %q", ingested.Outcome), tal)
 }
 
 // failed marks a result as a per-file failure, keeping whatever the run already
@@ -195,12 +208,23 @@ func (r FileResult) failed(err error) FileResult {
 	return r
 }
 
+// recordFailed records a dropped media file as a StageFile failure and returns the
+// failed result, so a file the run could not ingest becomes a retryable
+// import_failures row rather than only a bump of the Failed count.
+func (s *Service) recordFailed(res FileResult, rel string, err error, tal *tally) FileResult {
+	tal.recordFailure(importer.StageFile, "", rel, rel, err)
+	return res.failed(err)
+}
+
 // logWarnings reports the ingest pipeline's non-fatal per-file warnings (a failed
 // thumbnail, an unqueued job) against the file they belong to, with their full
-// message. The photo exists either way, so they never change the outcome.
-func (s *Service) logWarnings(rel string, warnings []ingest.Warning) {
+// message, and records each as a StageFile failure so the unattended run's warnings
+// survive in the failure trail. The photo exists either way, so a warning never
+// changes the file's outcome.
+func (s *Service) logWarnings(rel string, warnings []ingest.Warning, tal *tally) {
 	for _, w := range warnings {
 		s.log.Warn("dirimport: ingest warning", "file", rel, "code", w.Code, "message", w.Message)
+		tal.recordFailure(importer.StageFile, "", rel, rel, fmt.Errorf("%s: %s", w.Code, w.Message))
 	}
 }
 
@@ -417,9 +441,9 @@ func cleanNames(names []string) []string {
 // applyTarget files a photo under the run's album and labels. Both stores are
 // idempotent, so this runs for a duplicate too: re-importing a folder into an
 // album is how a user fixes a forgotten --album, and it stays a no-op otherwise.
-// A failure here does not undo the import and is only logged — the photo is in
-// the library either way.
-func (s *Service) applyTarget(ctx context.Context, photoUID string, dest target) {
+// A failure here does not undo the import — the photo is in the library either way
+// — so it is only logged and recorded on the tally (StageAlbumMember / StageLabel).
+func (s *Service) applyTarget(ctx context.Context, photoUID string, dest target, tal *tally) {
 	if photoUID == "" {
 		return
 	}
@@ -427,12 +451,14 @@ func (s *Service) applyTarget(ctx context.Context, photoUID string, dest target)
 		if err := s.albums.AddPhoto(ctx, dest.albumUID, photoUID); err != nil {
 			s.log.Warn("dirimport: adding photo to album",
 				"album", dest.albumUID, "photo", photoUID, "err", err)
+			tal.recordFailure(importer.StageAlbumMember, photoUID, "", dest.albumUID, err)
 		}
 	}
 	for _, labelUID := range dest.labelUIDs {
 		if err := s.labels.AttachLabel(ctx, photoUID, labelUID, organize.SourceImport, 0); err != nil {
 			s.log.Warn("dirimport: attaching label",
 				"label", labelUID, "photo", photoUID, "err", err)
+			tal.recordFailure(importer.StageLabel, photoUID, "", labelUID, err)
 		}
 	}
 }
@@ -464,6 +490,13 @@ type tally struct {
 	total    int
 	done     int
 	progress func(res FileResult, done, total int)
+	// runID is the import_runs id failures are recorded against; zero for a dry run,
+	// which records nothing (it opens no run to attach failures to).
+	runID int64
+	// failures accumulates the per-file and per-satellite failures the workers
+	// record, persisted once after the fan-out drains so a run with any unresolved
+	// failure is reported 'partial' rather than 'done'.
+	failures []importer.Failure
 }
 
 // newTally returns a tally over total files, reporting to progress (which may be
@@ -477,6 +510,28 @@ func newTally(total int, progress func(res FileResult, done, total int), sidecar
 		total:    total,
 		progress: progress,
 	}
+}
+
+// recordFailure appends a per-file or per-satellite failure to the run's failure
+// list so it is persisted (and the run reported 'partial') instead of only logged.
+// A dry run (runID zero) records nothing: it writes no run to attach failures to.
+// It is safe to call from the worker goroutines.
+func (t *tally) recordFailure(stage importer.Stage, photoUID, sourceRef, detail string, err error) {
+	if t.runID == 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.failures = append(t.failures, importer.NewFailure(
+		t.runID, importer.SourceFolder, stage, photoUID, sourceRef, detail, err))
+}
+
+// takeFailures returns a copy of the failures the workers recorded, for the caller
+// to persist once the fan-out has drained.
+func (t *tally) takeFailures() []importer.Failure {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return slices.Clone(t.failures)
 }
 
 // record adds one file's outcome to the tally, reports it to the progress

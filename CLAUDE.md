@@ -80,8 +80,9 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`
 - `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity)
 - `internal/imgconvert` — HEIC/RAW/video → decodable JPEG (shell-out)
-- `internal/importapi` — maintainer-only import triggers + run history
-- `internal/importer` — bookkeeping of import/migration runs + high-watermarks
+- `internal/importapi` — maintainer-only import triggers + run history + failures listing + completeness verify
+- `internal/importer` — bookkeeping of import/migration runs + high-watermarks + persisted per-photo/per-file failures (`partial` status)
+- `internal/importverify` — import-completeness reconciliation (sources vs catalogue); read-only, records no run
 - `internal/ingest` — upload pipeline: stream, SHA256 dedup, metadata, thumbnails, enqueue jobs
 - `internal/jobs` — persistent job queue in Postgres (retry, dedup, backoff, `Defer`)
 - `internal/jobsapi` — maintainer-only `/jobs` (stats, list, requeue)

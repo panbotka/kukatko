@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/panbotka/kukatko/internal/auth"
@@ -8,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/importapi"
 	"github.com/panbotka/kukatko/internal/importer"
+	"github.com/panbotka/kukatko/internal/importverify"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/organize"
@@ -15,6 +18,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photoprism"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/ppimport"
+	"github.com/panbotka/kukatko/internal/psfeeds"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -73,10 +77,87 @@ func buildImportAPI(cfg *config.Config, db *database.DB, store *jobs.Store, auth
 	return importapi.NewAPI(importapi.Config{
 		Queue:             store,
 		Runs:              importer.NewStore(db.Pool()),
+		Failures:          importer.NewStore(db.Pool()),
+		Verifier:          buildImportVerifier(cfg, db),
 		RequireMaintainer: authAPI.RequireMaintainer,
 		RateLimit:         importLimit.Middleware,
 		EnablePhotoPrism:  importConfigured(cfg),
 		EnablePhotoSorter: psImportConfigured(cfg),
 		EnableFeeds:       psFeedsConfigured(cfg),
 	})
+}
+
+// verifierAdapter adapts *importverify.Service onto importapi.Verifier, whose
+// Verify returns any so the API package stays decoupled from the report shape.
+type verifierAdapter struct{ svc *importverify.Service }
+
+// Verify runs the reconciliation and returns its report as any.
+func (a verifierAdapter) Verify(ctx context.Context) (any, error) {
+	report, err := a.svc.Verify(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("verifying import completeness: %w", err)
+	}
+	return report, nil
+}
+
+// buildImportVerifier builds the completeness reconciler behind the maintainer
+// verify endpoint, or returns a nil Verifier (the endpoint then answers 503) when
+// PhotoPrism is not configured or its client cannot be constructed. The
+// photo-sorter feeds source is attached only when configured, so the vectors
+// section is reconciled only where it can be.
+func buildImportVerifier(cfg *config.Config, db *database.DB) importapi.Verifier {
+	if !importConfigured(cfg) {
+		return nil
+	}
+	client, err := photoprism.New(photoprism.Config{
+		BaseURL: cfg.Import.PhotoPrism.BaseURL,
+		Token:   cfg.Import.PhotoPrism.Token,
+	})
+	if err != nil {
+		return nil
+	}
+	verifyCfg := importverify.Config{
+		PhotoPrism: client,
+		Catalog:    importverify.NewStore(db.Pool()),
+	}
+	if psFeedsConfigured(cfg) {
+		if feeds, ferr := psfeeds.New(psfeeds.Config{
+			BaseURL: cfg.Import.PhotoSorter.BaseURL,
+			Token:   cfg.Import.PhotoSorter.Token,
+		}); ferr == nil {
+			verifyCfg.Feeds = feeds
+		}
+	}
+	return verifierAdapter{svc: importverify.NewService(verifyCfg)}
+}
+
+// buildImportVerifierService builds the reconciler directly (not adapted onto the
+// HTTP Verifier) for the `kukatko import verify` CLI command. It returns an error
+// when PhotoPrism is not configured, since the command has nothing to reconcile.
+func buildImportVerifierService(cfg *config.Config, db *database.DB) (*importverify.Service, error) {
+	if !importConfigured(cfg) {
+		return nil, errors.New("photoprism import is not configured (set import.photoprism.base_url)")
+	}
+	client, err := photoprism.New(photoprism.Config{
+		BaseURL: cfg.Import.PhotoPrism.BaseURL,
+		Token:   cfg.Import.PhotoPrism.Token,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialising photoprism client: %w", err)
+	}
+	verifyCfg := importverify.Config{
+		PhotoPrism: client,
+		Catalog:    importverify.NewStore(db.Pool()),
+	}
+	if psFeedsConfigured(cfg) {
+		feeds, ferr := psfeeds.New(psfeeds.Config{
+			BaseURL: cfg.Import.PhotoSorter.BaseURL,
+			Token:   cfg.Import.PhotoSorter.Token,
+		})
+		if ferr != nil {
+			return nil, fmt.Errorf("initialising photo-sorter feeds client: %w", ferr)
+		}
+		verifyCfg.Feeds = feeds
+	}
+	return importverify.NewService(verifyCfg), nil
 }

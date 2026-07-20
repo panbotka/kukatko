@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/panbotka/kukatko/internal/exif"
+	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/sidecar"
 )
@@ -86,9 +87,14 @@ func relPaths(paths []string, rel map[string]string) []string {
 }
 
 // readSidecar loads the sidecar paired with a media file, if it has one. A
-// sidecar that cannot be parsed is reported on the file's result and the file is
-// imported anyway: a corrupt JSON costs the photo its date, not its place in the
-// library.
+// sidecar that cannot be parsed is reported on the file's result — which the run's
+// SidecarReport already surfaces under Unreadable — and the file is imported
+// anyway: a corrupt or empty sidecar costs the photo its date, not its place in the
+// library. It is deliberately NOT recorded as an import_failures row: an unreadable
+// sidecar drops no photo (the photo keeps its own metadata) and is not a data loss
+// worth flipping an otherwise-clean folder import to 'partial'; the sidecar-issue
+// failures that ARE recorded are the ones that dropped metadata that was available
+// (applyCuration / fillFromSidecar).
 func (s *Service) readSidecar(ctx context.Context, entry planEntry, idx sidecarIndex) (*sidecar.Metadata, FileResult) {
 	abs, rel, ok := idx.lookup(entry)
 	if !ok {
@@ -111,18 +117,20 @@ func (s *Service) readSidecar(ctx context.Context, entry planEntry, idx sidecarI
 // They are applied only to a freshly imported photo. A photo that is already in
 // the library keeps the user's own marks: re-importing an old export must not
 // re-favourite what the user has since un-favourited.
-func (s *Service) applyCuration(ctx context.Context, photoUID, userUID string, sc *sidecar.Metadata) {
+func (s *Service) applyCuration(ctx context.Context, photoUID, userUID string, sc *sidecar.Metadata, tal *tally) {
 	if sc == nil || s.curation == nil || photoUID == "" || userUID == "" {
 		return
 	}
 	if sc.Favorite {
 		if err := s.curation.AddFavorite(ctx, userUID, photoUID); err != nil {
 			s.log.Warn("dirimport: marking sidecar favourite", "photo", photoUID, "err", err)
+			tal.recordFailure(importer.StageMetadata, photoUID, "", "sidecar favourite", err)
 		}
 	}
 	if sc.Rating > 0 {
 		if err := s.curation.SetRating(ctx, userUID, photoUID, sc.Rating); err != nil {
 			s.log.Warn("dirimport: setting sidecar rating", "photo", photoUID, "err", err)
+			tal.recordFailure(importer.StageMetadata, photoUID, "", "sidecar rating", err)
 		}
 	}
 }
@@ -132,7 +140,7 @@ func (s *Service) applyCuration(ctx context.Context, photoUID, userUID string, s
 // is now imported again. The photo already exists (the content hash says so), so
 // nothing is created; only the gaps are filled, and only the gaps. A second run
 // finds none left and writes nothing at all.
-func (s *Service) fillFromSidecar(ctx context.Context, photoUID string, sc *sidecar.Metadata) {
+func (s *Service) fillFromSidecar(ctx context.Context, photoUID string, sc *sidecar.Metadata, tal *tally) {
 	if sc == nil || s.filler == nil || photoUID == "" {
 		return
 	}
@@ -150,6 +158,7 @@ func (s *Service) fillFromSidecar(ctx context.Context, photoUID string, sc *side
 	filled, err := s.filler.FillMissingMetadata(ctx, photoUID, fill)
 	if err != nil {
 		s.log.Warn("dirimport: filling metadata from sidecar", "photo", photoUID, "err", err)
+		tal.recordFailure(importer.StageMetadata, photoUID, "", "sidecar fill", err)
 		return
 	}
 	if filled {

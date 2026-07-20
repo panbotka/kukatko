@@ -64,7 +64,7 @@ func newImportCmd() *cobra.Command {
 			"(partial run; leaves the watermark untouched)")
 	ppCmd.Flags().Int("year", 0,
 		"import only photos taken in this year, e.g. 1985 (partial run; leaves the watermark untouched)")
-	importCmd.AddCommand(ppCmd, newImportDirCmd(), newImportPSFeedsCmd())
+	importCmd.AddCommand(ppCmd, newImportDirCmd(), newImportPSFeedsCmd(), newImportVerifyCmd())
 	return importCmd
 }
 

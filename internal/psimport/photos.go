@@ -18,12 +18,14 @@ import (
 // Kukátko record (matching an existing one or copying and cataloguing a new one)
 // and then transfers its satellites (embedding, faces, perceptual hashes, edits,
 // markers, album/label membership). It returns the photo's outcome.
-func (s *Service) processPhoto(ctx context.Context, ps photosorter.Photo, maps mappings) (outcome, error) {
+func (s *Service) processPhoto(
+	ctx context.Context, ps photosorter.Photo, maps mappings, state *runState,
+) (outcome, error) {
 	kkUID, result, err := s.resolvePhoto(ctx, ps)
 	if err != nil {
 		return 0, err
 	}
-	if err := s.transferSatellites(ctx, kkUID, ps, maps); err != nil {
+	if err := s.transferSatellites(ctx, kkUID, ps, maps, state); err != nil {
 		return 0, err
 	}
 	return result, nil

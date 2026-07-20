@@ -282,6 +282,109 @@ func TestStore_List(t *testing.T) {
 	}
 }
 
+// TestStore_Failures records per-photo and per-file failures for a run and
+// verifies they are counted, listed (with filtering and paging) and that
+// completing a run with unresolved failures reports 'partial' rather than 'done'.
+func TestStore_Failures(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	store := importer.NewStore(db.Pool())
+	ctx := t.Context()
+
+	run := mustStart(t, store, importer.SourcePhotoPrism)
+
+	// A run with no failures completes as done.
+	clean := mustStart(t, store, importer.SourcePhotoSorter)
+	if err := store.Complete(ctx, clean, nil, importer.Counts{Imported: 1}); err != nil {
+		t.Fatalf("Complete(clean): %v", err)
+	}
+	if got, _ := store.Get(ctx, clean); got.Status != importer.StatusDone {
+		t.Errorf("clean run status = %q, want done", got.Status)
+	}
+
+	// Record two failures against the running run.
+	failures := []importer.Failure{
+		importer.NewFailure(run, importer.SourcePhotoPrism, importer.StagePhoto, "", "ppa", "beach",
+			errors.New("download failed")),
+		importer.NewFailure(run, importer.SourcePhotoPrism, importer.StageFile, "kk1", "ppb", "raw.dng",
+			errors.New("sibling dropped")),
+	}
+	if err := store.RecordFailures(ctx, failures); err != nil {
+		t.Fatalf("RecordFailures: %v", err)
+	}
+	// Recording an empty slice is a no-op.
+	if err := store.RecordFailures(ctx, nil); err != nil {
+		t.Fatalf("RecordFailures(nil): %v", err)
+	}
+
+	n, err := store.CountUnresolvedFailures(ctx, run)
+	if err != nil {
+		t.Fatalf("CountUnresolvedFailures: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("unresolved failures = %d, want 2", n)
+	}
+
+	// Completing the run now reports partial (its watermark is stored but ignored
+	// by LatestWatermark, so a re-run retries the window).
+	watermark := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	if err := store.Complete(ctx, run, &watermark, importer.Counts{Imported: 3, Failed: 2}); err != nil {
+		t.Fatalf("Complete(partial): %v", err)
+	}
+	got, err := store.Get(ctx, run)
+	if err != nil {
+		t.Fatalf("Get(partial): %v", err)
+	}
+	if got.Status != importer.StatusPartial {
+		t.Errorf("run with failures status = %q, want partial", got.Status)
+	}
+	// A partial run does not advance the resume cursor.
+	if _, ok, _ := store.LatestWatermark(ctx, importer.SourcePhotoPrism); ok {
+		t.Error("LatestWatermark advanced on a partial run, want no cursor")
+	}
+
+	// Listing returns both failures, newest first, and honours the source filter.
+	all, err := store.ListFailures(ctx, importer.FailureFilter{})
+	if err != nil {
+		t.Fatalf("ListFailures: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("ListFailures returned %d, want 2", len(all))
+	}
+	byRun, err := store.ListFailures(ctx, importer.FailureFilter{RunID: run, UnresolvedOnly: true})
+	if err != nil {
+		t.Fatalf("ListFailures(run): %v", err)
+	}
+	if len(byRun) != 2 {
+		t.Errorf("ListFailures(run) returned %d, want 2", len(byRun))
+	}
+	if byRun[0].Source != importer.SourcePhotoPrism || byRun[0].RunID != run {
+		t.Errorf("failure[0] = %+v, want source photoprism run %d", byRun[0], run)
+	}
+	sorter, err := store.ListFailures(ctx, importer.FailureFilter{Source: importer.SourcePhotoSorter})
+	if err != nil {
+		t.Fatalf("ListFailures(sorter): %v", err)
+	}
+	if len(sorter) != 0 {
+		t.Errorf("ListFailures(photosorter) returned %d, want 0", len(sorter))
+	}
+	// Paging bounds the page.
+	page, err := store.ListFailures(ctx, importer.FailureFilter{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListFailures(paged): %v", err)
+	}
+	if len(page) != 1 {
+		t.Errorf("ListFailures(limit=1) returned %d, want 1", len(page))
+	}
+
+	// An unrecognised source filter is rejected.
+	if _, err := store.ListFailures(ctx, importer.FailureFilter{Source: importer.Source("nope")}); !errors.Is(
+		err, importer.ErrInvalidSource,
+	) {
+		t.Errorf("ListFailures(invalid source) error = %v, want ErrInvalidSource", err)
+	}
+}
+
 // mustStart starts a run and fails the test on error, returning the new run id.
 func mustStart(t *testing.T, store *importer.Store, source importer.Source) int64 {
 	t.Helper()

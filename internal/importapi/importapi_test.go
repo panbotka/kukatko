@@ -48,6 +48,31 @@ func (f *fakeRuns) List(_ context.Context, limit, offset int) ([]importer.Run, e
 	return f.runs, f.err
 }
 
+// fakeFailures is a FailureLister whose ListFailures returns a fixed page or error
+// and records the filter it was called with.
+type fakeFailures struct {
+	failures  []importer.Failure
+	err       error
+	gotFilter importer.FailureFilter
+}
+
+// ListFailures records the filter and returns the configured result.
+func (f *fakeFailures) ListFailures(
+	_ context.Context, filter importer.FailureFilter,
+) ([]importer.Failure, error) {
+	f.gotFilter = filter
+	return f.failures, f.err
+}
+
+// fakeVerifier is a Verifier returning a fixed report or error.
+type fakeVerifier struct {
+	report any
+	err    error
+}
+
+// Verify returns the configured report or error.
+func (v *fakeVerifier) Verify(_ context.Context) (any, error) { return v.report, v.err }
+
 // newServer mounts the import API (both triggers enabled) with a pass-through
 // maintainer guard over a fresh chi router, returning a test server.
 func newServer(t *testing.T, q Queue) *httptest.Server {
@@ -59,14 +84,31 @@ func newServer(t *testing.T, q Queue) *httptest.Server {
 // (both triggers enabled) behind a pass-through maintainer guard.
 func newServerWithRuns(t *testing.T, q Queue, runs RunLister) *httptest.Server {
 	t.Helper()
-	api := NewAPI(Config{
+	return newServerWithConfig(t, Config{
 		Queue:             q,
 		Runs:              runs,
+		Failures:          &fakeFailures{},
 		RequireMaintainer: passthrough,
 		EnablePhotoPrism:  true,
 		EnablePhotoSorter: true,
 		EnableFeeds:       true,
 	})
+}
+
+// newServerWithConfig mounts the import API for the given config, defaulting the
+// required stores when a test left them nil, and returns a test server.
+func newServerWithConfig(t *testing.T, cfg Config) *httptest.Server {
+	t.Helper()
+	if cfg.Runs == nil {
+		cfg.Runs = &fakeRuns{}
+	}
+	if cfg.Failures == nil {
+		cfg.Failures = &fakeFailures{}
+	}
+	if cfg.RequireMaintainer == nil {
+		cfg.RequireMaintainer = passthrough
+	}
+	api := NewAPI(cfg)
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
 	srv := httptest.NewServer(r)
@@ -218,13 +260,7 @@ func TestImportFeeds_conflict(t *testing.T) {
 // (404) when the feeds source is disabled.
 func TestRegisterRoutes_gatingFeeds(t *testing.T) {
 	t.Parallel()
-	api := NewAPI(Config{
-		Queue: &fakeQueue{}, Runs: &fakeRuns{}, RequireMaintainer: passthrough, EnablePhotoPrism: true,
-	})
-	r := chi.NewRouter()
-	api.RegisterRoutes(r)
-	srv := httptest.NewServer(r)
-	t.Cleanup(srv.Close)
+	srv := newServerWithConfig(t, Config{Queue: &fakeQueue{}, EnablePhotoPrism: true})
 
 	resp := post(t, srv, "/import/photosorter-feeds")
 	defer func() { _ = resp.Body.Close() }()
@@ -237,13 +273,7 @@ func TestRegisterRoutes_gatingFeeds(t *testing.T) {
 // while the run-history endpoint is always registered.
 func TestRegisterRoutes_gating(t *testing.T) {
 	t.Parallel()
-	api := NewAPI(Config{
-		Queue: &fakeQueue{}, Runs: &fakeRuns{}, RequireMaintainer: passthrough, EnablePhotoPrism: true,
-	})
-	r := chi.NewRouter()
-	api.RegisterRoutes(r)
-	srv := httptest.NewServer(r)
-	t.Cleanup(srv.Close)
+	srv := newServerWithConfig(t, Config{Queue: &fakeQueue{}, EnablePhotoPrism: true})
 
 	resp := post(t, srv, "/import/photosorter")
 	defer func() { _ = resp.Body.Close() }()
@@ -347,4 +377,102 @@ func TestNewAPI_panicsOnNilRuns(t *testing.T) {
 		}
 	}()
 	_ = NewAPI(Config{Queue: &fakeQueue{}, RequireMaintainer: passthrough})
+}
+
+// TestNewAPI_panicsOnNilFailures verifies a missing failure store is a startup panic.
+func TestNewAPI_panicsOnNilFailures(t *testing.T) {
+	t.Parallel()
+	defer func() {
+		if recover() == nil {
+			t.Error("NewAPI did not panic on nil failures")
+		}
+	}()
+	_ = NewAPI(Config{Queue: &fakeQueue{}, Runs: &fakeRuns{}, RequireMaintainer: passthrough})
+}
+
+// TestListFailures_returnsPageAndFilter verifies the failures endpoint returns the
+// stored failures and forwards the query filters to the store.
+func TestListFailures_returnsPageAndFilter(t *testing.T) {
+	t.Parallel()
+	failures := &fakeFailures{failures: []importer.Failure{{
+		ID: 1, RunID: 4, Source: importer.SourcePhotoPrism, Stage: importer.StagePhoto,
+		SourceRef: "pp1", Error: "download failed",
+	}}}
+	srv := newServerWithConfig(t, Config{Queue: &fakeQueue{}, Failures: failures})
+
+	resp := get(t, srv, "/import/failures?source=photoprism&run_id=4&unresolved=true&limit=5&offset=2")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body failuresResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Failures) != 1 || body.Failures[0].Stage != importer.StagePhoto {
+		t.Errorf("failures = %+v, want one StagePhoto failure", body.Failures)
+	}
+	got := failures.gotFilter
+	if got.Source != importer.SourcePhotoPrism || got.RunID != 4 || !got.UnresolvedOnly {
+		t.Errorf("filter = %+v, want photoprism/run 4/unresolved", got)
+	}
+	if got.Limit != 5 || got.Offset != 2 {
+		t.Errorf("filter paging = (%d,%d), want (5,2)", got.Limit, got.Offset)
+	}
+}
+
+// TestListFailures_invalidRunID verifies a malformed run_id yields 400.
+func TestListFailures_invalidRunID(t *testing.T) {
+	t.Parallel()
+	srv := newServerWithConfig(t, Config{Queue: &fakeQueue{}})
+	resp := get(t, srv, "/import/failures?run_id=oops")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+// TestVerify_unavailable verifies the verify endpoint answers 503 when no verifier
+// is configured.
+func TestVerify_unavailable(t *testing.T) {
+	t.Parallel()
+	srv := newServerWithConfig(t, Config{Queue: &fakeQueue{}})
+	resp := get(t, srv, "/import/verify")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+// TestVerify_ok verifies the verify endpoint returns the reconciler's report.
+func TestVerify_ok(t *testing.T) {
+	t.Parallel()
+	report := map[string]any{"complete": true, "photoprism": map[string]any{"missing_count": 0}}
+	srv := newServerWithConfig(t, Config{Queue: &fakeQueue{}, Verifier: &fakeVerifier{report: report}})
+
+	resp := get(t, srv, "/import/verify")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["complete"] != true {
+		t.Errorf("body = %+v, want complete true", body)
+	}
+}
+
+// TestVerify_error verifies a reconciliation failure yields 502.
+func TestVerify_error(t *testing.T) {
+	t.Parallel()
+	srv := newServerWithConfig(t, Config{
+		Queue: &fakeQueue{}, Verifier: &fakeVerifier{err: errors.New("source unreachable")},
+	})
+	resp := get(t, srv, "/import/verify")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502", resp.StatusCode)
+	}
 }

@@ -60,6 +60,12 @@ const (
 	// StatusDone marks a run that finished successfully; its watermark is
 	// eligible to resume the next incremental run.
 	StatusDone Status = "done"
+	// StatusPartial marks a run that finished its scan but recorded at least one
+	// unresolved per-photo or per-file failure (see import_failures). Like a failed
+	// run its watermark is ignored (LatestWatermark reads only 'done' runs), so a
+	// re-run retries the same window; unlike a failed run it did complete its pass,
+	// so the aggregate counts are final and the individual failures are listable.
+	StatusPartial Status = "partial"
 	// StatusFailed marks a run that aborted with an error; its watermark is
 	// ignored so the next run retries the same window.
 	StatusFailed Status = "failed"
@@ -211,12 +217,23 @@ func (s *Store) finish(
 	return nil
 }
 
-// Complete marks the run identified by id as done, recording its final counts and
-// the high-watermark to resume the next incremental run from. A nil watermark
-// stores SQL NULL (the run produced no new cursor). It returns ErrRunNotFound if
-// the run does not exist or is no longer running.
+// Complete closes the run identified by id, recording its final counts and the
+// high-watermark to resume the next incremental run from. A nil watermark stores
+// SQL NULL (the run produced no new cursor). The terminal status is chosen from
+// the run's persisted failures: 'partial' when the run recorded at least one
+// unresolved import_failures row, otherwise 'done'. Persist failures with
+// RecordFailures before calling Complete so they are counted. It returns
+// ErrRunNotFound if the run does not exist or is no longer running.
 func (s *Store) Complete(ctx context.Context, id int64, watermark *time.Time, counts Counts) error {
-	return s.finish(ctx, id, StatusDone, watermark, counts, "")
+	unresolved, err := s.CountUnresolvedFailures(ctx, id)
+	if err != nil {
+		return err
+	}
+	status := StatusDone
+	if unresolved > 0 {
+		status = StatusPartial
+	}
+	return s.finish(ctx, id, status, watermark, counts, "")
 }
 
 // Fail marks the run identified by id as failed, recording lastErr and the final

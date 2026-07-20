@@ -138,10 +138,14 @@ type RunStore interface {
 	Start(ctx context.Context, source importer.Source) (importer.Run, error)
 	// UpdateCounts checkpoints the running tally of a run.
 	UpdateCounts(ctx context.Context, id int64, counts importer.Counts) error
-	// Complete closes a run as done, recording the resume watermark and counts.
+	// Complete closes a run, recording the resume watermark and counts; it reports
+	// the run 'partial' rather than 'done' when unresolved failures were recorded.
 	Complete(ctx context.Context, id int64, watermark *time.Time, counts importer.Counts) error
 	// Fail closes a run as failed, recording the error and counts.
 	Fail(ctx context.Context, id int64, lastErr string, counts importer.Counts) error
+	// RecordFailures persists the per-photo and per-satellite failures of a run so
+	// they can be listed and retried instead of being lost to the log.
+	RecordFailures(ctx context.Context, failures []importer.Failure) error
 	// LatestWatermark returns the resume cursor of the last successful run.
 	LatestWatermark(ctx context.Context, source importer.Source) (time.Time, bool, error)
 }
@@ -293,19 +297,20 @@ func (s *Service) Migrate(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("psimport: starting run: %w", err)
 	}
+	state := &runState{runID: run.ID}
 	maps, err := s.buildMappings(ctx)
 	if err != nil {
-		return s.failRun(ctx, run.ID, err, importer.Counts{})
+		return s.failRun(ctx, run.ID, state, err)
 	}
 	since, _, err := s.runs.LatestWatermark(ctx, importer.SourcePhotoSorter)
 	if err != nil {
-		return s.failRun(ctx, run.ID, err, importer.Counts{})
+		return s.failRun(ctx, run.ID, state, err)
 	}
-
-	state := &runState{since: since}
+	state.since = since
 	if err := s.migratePhotos(ctx, run.ID, maps, state); err != nil {
-		return s.failRun(ctx, run.ID, err, state.counts)
+		return s.failRun(ctx, run.ID, state, err)
 	}
+	s.persistFailures(ctx, state)
 	watermark := state.watermark()
 	if err := s.runs.Complete(ctx, run.ID, watermark, state.counts); err != nil {
 		return Result{}, fmt.Errorf("psimport: completing run: %w", err)
@@ -313,14 +318,26 @@ func (s *Service) Migrate(ctx context.Context) (Result, error) {
 	return Result{RunID: run.ID, Counts: state.counts, Watermark: watermark}, nil
 }
 
-// failRun fails the run identified by id with cause and counts, returning cause
-// (the original failure) wrapped so callers see why the run aborted. A failure to
-// record the failed state is logged but does not mask the original cause.
-func (s *Service) failRun(ctx context.Context, id int64, cause error, counts importer.Counts) (Result, error) {
-	if err := s.runs.Fail(ctx, id, cause.Error(), counts); err != nil {
+// failRun persists the run's per-item failures, then fails the run identified by
+// id with cause, returning cause (the original failure) so callers see why the run
+// aborted. It is used for infrastructure failures, whose state may hold no per-item
+// failures yet — RecordFailures of an empty slice is a no-op. A failure to record
+// the failed state is logged but does not mask the original cause.
+func (s *Service) failRun(ctx context.Context, id int64, state *runState, cause error) (Result, error) {
+	s.persistFailures(ctx, state)
+	if err := s.runs.Fail(ctx, id, cause.Error(), state.counts); err != nil {
 		s.log.Error("psimport: recording failed run", "run", id, "err", err)
 	}
-	return Result{RunID: id, Counts: counts}, cause
+	return Result{RunID: id, Counts: state.counts}, cause
+}
+
+// persistFailures writes the run's accumulated per-photo and per-satellite
+// failures. A persistence error is logged, not fatal: the run still closes, only
+// losing the itemised failure trail (the aggregate Failed count is still recorded).
+func (s *Service) persistFailures(ctx context.Context, state *runState) {
+	if err := s.runs.RecordFailures(ctx, state.failures); err != nil {
+		s.log.Error("psimport: recording import failures", "run", state.runID, "err", err)
+	}
 }
 
 // migratePhotos pages through the in-scope photos, migrating each and
@@ -354,10 +371,11 @@ func (s *Service) migratePhotos(ctx context.Context, runID int64, maps mappings,
 // migrateOnePhoto migrates a single photo, translating its outcome (or failure)
 // into the run state. A failure is logged and tallied; it never propagates.
 func (s *Service) migrateOnePhoto(ctx context.Context, ps photosorter.Photo, maps mappings, state *runState) {
-	result, err := s.processPhoto(ctx, ps, maps)
+	result, err := s.processPhoto(ctx, ps, maps, state)
 	if err != nil {
 		s.log.Warn("psimport: photo failed", "ps_uid", ps.UID, "err", err)
 		state.recordFailure(ps.UpdatedAt)
+		state.recordItemFailure(importer.StagePhoto, "", ps.UID, "", err)
 		return
 	}
 	state.recordSuccess(ps.UpdatedAt)

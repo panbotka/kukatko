@@ -652,8 +652,25 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   with photo-sorter's 1:1 embeddings + faces, matched by `photoprism_uid`; configured via
   `import.photosorter.base_url`/`token`) — each (only for configured sources, otherwise 404) enqueues one
   singleton job → 202 `{job_id,status}`; `jobs.ErrDuplicate` (already running) → 409, another error → 500.
+  A run now also carries the **`partial`** status: it finished its scan but recorded ≥1 unresolved
+  per-photo/per-file failure (see `import_failures`), so it is deliberately not reported as a clean `done`
+  (and, like a failed run, does not advance the resume watermark). `GET /import/failures` (**always
+  registered**) → `{failures,limit,offset}` — a page of `import_failures` newest-recorded-first
+  (`failure = {id,run_id,source,stage,photo_uid,source_ref,detail,error,created_at,resolved_at}`;
+  `stage` ∈ `photo|file|marker|album_member|label|thumbnail|embedding|faces|phash|edit|metadata`), with the
+  filters `?source=`/`?run_id=`/`?unresolved=true` and paging `?limit=`(≤200)/`?offset=` (invalid → 400;
+  an unknown source → 400). `GET /import/verify` (**always registered**) → the completeness
+  reconciliation report (`internal/importverify`): it pulls the source totals (PhotoPrism photo/per-type
+  counts + `Files[]`, photo-sorter feeds `/stats`) and reconciles them against the catalogue, returning
+  `{photoprism:{source_total,source_by_type,imported_count,deduplicated_count,missing_count,missing_uids,
+  file_gap_count,file_gaps},vectors:{not_configured,source_*,catalog_*,missing_embeddings*,missing_faces*},
+  structure:{albums,labels,subjects (each {source_count,catalog_count,missing_count,missing})},complete}`.
+  It is synchronous and may take a while (it walks the whole source library); **503** when no import source
+  is configured, **502** on a source error. `deduplicated_count` accounts for the SHA256/SHA1-dedup delta
+  (a source photo whose file is already imported under another uid), so a legitimate delta is explainable.
   The whole API is always mounted (`buildImportAPI` in `cmd/kukatko/import.go`), so the history works even
-  without a configured source. The frontend (`ImportPage`) polls `GET /import/runs` + `GET /jobs/stats`.
+  without a configured source. The frontend (`ImportPage`) polls `GET /import/runs` + `GET /jobs/stats` +
+  `GET /import/failures`, and runs `GET /import/verify` on demand from the completeness-check section.
 - **Backup API (`/api/v1`, `internal/backupapi`, maintainer-only via `RequireMaintainer`):** the status and trigger of
   the S3 backup. `GET /backup` → status + the last run (`{configured,running,last_started_at,
   last_finished_at,last_error,last_result}`; without configuration `configured:false`); `POST /backup`

@@ -26,6 +26,12 @@ of PhotoPrism and of [photo-sorter](https://github.com/kozaktomas/photo-sorter),
   [`docs/MCP.md`](docs/MCP.md).
 - **Pi-first:** runs on a Raspberry Pi, delegating embedding computation to a powerful machine (a box with a GPU).
 - **Import from PhotoPrism** via the API (+ downloading originals) and **data migration from photo-sorter**.
+- **Proving the import is complete:** `kukatko import verify` (and the completeness-check in the `/import` admin page)
+  reconciles the sources against the catalogue and tells you plainly whether **nothing is missing** — listing any
+  photos not imported, a dropped RAW sibling, a photo missing its photo-sorter embedding/faces, or an album/person
+  not transferred (the SHA256 dedup delta is accounted for). Individual per-photo/per-file failures are no longer
+  lost to the log: they are **recorded** (`GET /import/failures`), a run that hit any is reported **`partial`**, not
+  a clean `done`, and re-running the import retries them.
 - **Uploading a folder from disk:** `kukatko import dir <path>` — you point it at a directory (scans, a card
   from a camera, an old backup) and it walks it recursively through the same pipeline as a browser upload.
   It only **copies** originals, skips junk with a reason, recognizes duplicates by SHA256 —
@@ -152,6 +158,7 @@ export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
                                           # each photo also comes with all the other albums and labels it carries
 ./bin/kukatko import dir /mnt/skeny --dry-run               # what would be imported from the directory (writes nothing)
 ./bin/kukatko import dir /mnt/skeny --album "Skeny 1985" --labels sken,rodina   # uploads a folder from disk
+./bin/kukatko import verify                # reconcile sources vs catalogue; exit 1 if anything is missing (--json)
 ./bin/kukatko backup                      # one-off backup (pg_dump + sync of originals) to S3
 ./bin/kukatko restore list                # lists dumps available in the bucket (newest first)
 ./bin/kukatko restore db --yes            # restores the DB from the newest dump (DESTRUCTIVE) + migrations

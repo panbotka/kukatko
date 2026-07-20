@@ -23,13 +23,17 @@ vi.mock('../services/import', async (importOriginal) => {
     ...actual,
     fetchImportRuns: vi.fn(),
     fetchJobStats: vi.fn(),
+    fetchImportFailures: vi.fn(),
+    fetchVerifyReport: vi.fn(),
     startImport: vi.fn(),
   }
 })
 
-const { fetchImportRuns, fetchJobStats, startImport } = await import('../services/import')
+const { fetchImportRuns, fetchJobStats, fetchImportFailures, startImport } =
+  await import('../services/import')
 const runsMock = vi.mocked(fetchImportRuns)
 const statsMock = vi.mocked(fetchJobStats)
+const failuresMock = vi.mocked(fetchImportFailures)
 const startMock = vi.mocked(startImport)
 
 function run(
@@ -96,8 +100,10 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   runsMock.mockReset()
   statsMock.mockReset()
+  failuresMock.mockReset()
   startMock.mockReset()
   statsMock.mockResolvedValue(emptyStats)
+  failuresMock.mockResolvedValue({ failures: [], limit: 100, offset: 0 })
 })
 
 afterEach(() => {

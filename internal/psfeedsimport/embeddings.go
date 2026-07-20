@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/psfeeds"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -60,6 +61,7 @@ func (s *Service) importEmbedding(ctx context.Context, st *runState, e psfeeds.E
 		s.log.Warn("psfeedsimport: skipping embedding with wrong dimension",
 			"photo", e.PhotoUID, "dim", len(e.Vector))
 		st.counts.Failed++
+		st.recordItemFailure(importer.StageEmbedding, photo.UID, e.PhotoUID, "", err)
 		return nil
 	}
 	if err != nil {

@@ -11,19 +11,22 @@ import (
 // transferSatellites transfers every per-photo satellite from photo-sorter onto
 // the resolved Kukátko photo. The embedding and faces are the core 1:1 transfer
 // and a failure there fails the photo (so it is retried on the next run); the
-// perceptual hashes, edits, markers and membership are best-effort (logged) so a
-// secondary glitch never loses the migrated vectors.
-func (s *Service) transferSatellites(ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings) error {
+// perceptual hashes, edits, markers and membership are best-effort (logged and
+// recorded on state as per-satellite failures) so a secondary glitch never loses
+// the migrated vectors yet still surfaces in the run's failure trail.
+func (s *Service) transferSatellites(
+	ctx context.Context, kkUID string, ps photosorter.Photo, maps mappings, state *runState,
+) error {
 	if err := s.transferEmbedding(ctx, kkUID, ps); err != nil {
 		return fmt.Errorf("psimport: transferring embedding for %s: %w", ps.UID, err)
 	}
 	if err := s.transferFaces(ctx, kkUID, ps, maps); err != nil {
 		return fmt.Errorf("psimport: transferring faces for %s: %w", ps.UID, err)
 	}
-	s.transferPhash(ctx, kkUID, ps)
-	s.transferEdit(ctx, kkUID, ps)
-	s.transferMarkers(ctx, kkUID, ps, maps)
-	s.transferMemberships(ctx, kkUID, ps, maps)
+	s.transferPhash(ctx, kkUID, ps, state)
+	s.transferEdit(ctx, kkUID, ps, state)
+	s.transferMarkers(ctx, kkUID, ps, maps, state)
+	s.transferMemberships(ctx, kkUID, ps, maps, state)
 	return nil
 }
 
