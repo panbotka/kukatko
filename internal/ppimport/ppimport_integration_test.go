@@ -1162,6 +1162,114 @@ func TestIntegration_detailsNeverClobberLocalEdits(t *testing.T) {
 	}
 }
 
+// TestIntegration_reimportPreservesLocalEdits is the regression for the silent
+// revert: a photo imported from PhotoPrism, then edited in Kukátko, keeps every
+// local edit when PhotoPrism bumps its UpdatedAt and the incremental run re-lists
+// it — the retitle, the corrected capture time, the relocated GPS fix, and above
+// all the hidden flag (a hidden photo must never be made public by an import) — while
+// a photo the user never touched still follows upstream.
+func TestIntegration_reimportPreservesLocalEdits(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	edited := client.addPhoto("pp1", t0, "Original", 10)
+	edited.Lat, edited.Lng = 50.0, 14.0
+	untouched := client.addPhoto("pp2", t0.Add(time.Hour), "Keep synced", 20)
+	client.photos = []photoprism.Photo{edited, untouched}
+	env := newEnv(t, client)
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+
+	// The user curates pp1 in Kukátko: a retitle, a corrected capture time, a
+	// relocated GPS fix and a hidden flag — each stamped with the provenance the real
+	// edit paths (internal/photoapi, internal/bulk) write.
+	p1, err := env.photos.GetByPhotoprismUID(ctx, "pp1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID(pp1): %v", err)
+	}
+	userTaken := time.Date(1985, 5, 5, 12, 0, 0, 0, time.UTC)
+	userLat, userLng := 48.2082, 16.3738
+	edit := metadataUpdateFrom(p1)
+	edit.Title, edit.TitleEdited = "Můj název", true
+	edit.TakenAt, edit.TakenAtSource = &userTaken, photos.TakenAtSourceManual
+	edit.Lat, edit.Lng, edit.LocationSource = &userLat, &userLng, photos.LocationSourceManual
+	edit.Private = true
+	if _, err := env.photos.UpdateMetadata(ctx, p1.UID, edit); err != nil {
+		t.Fatalf("local edit: %v", err)
+	}
+
+	// PhotoPrism bumps both photos' UpdatedAt and changes every field upstream — the
+	// re-index/label-change/view that re-lists a photo, entirely outside the user's
+	// control.
+	client.photos[0].UpdatedAt = t0.Add(2 * time.Hour)
+	client.photos[0].Title = "Upstream název"
+	client.photos[0].TakenAt = t0.Add(3 * time.Hour)
+	client.photos[0].Lat, client.photos[0].Lng = 10.0, 20.0
+	client.photos[0].Private = false
+	client.photos[1].UpdatedAt = t0.Add(2 * time.Hour)
+	client.photos[1].Title = "Synced upstream"
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("re-import: %v", err)
+	}
+
+	after, err := env.photos.GetByPhotoprismUID(ctx, "pp1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID(pp1) after re-import: %v", err)
+	}
+	if after.Title != "Můj název" || !after.TitleEdited {
+		t.Errorf("title = %q edited=%v, want the user's retitle kept", after.Title, after.TitleEdited)
+	}
+	if after.TakenAt == nil || !after.TakenAt.Equal(userTaken) ||
+		after.TakenAtSource != photos.TakenAtSourceManual {
+		t.Errorf("taken_at = %v / %q, want the user's correction kept", after.TakenAt, after.TakenAtSource)
+	}
+	if after.Lat == nil || *after.Lat != userLat || after.Lng == nil || *after.Lng != userLng ||
+		after.LocationSource != photos.LocationSourceManual {
+		t.Errorf("location = %v / %v / %q, want the user's fix kept", after.Lat, after.Lng, after.LocationSource)
+	}
+	if !after.Private {
+		t.Error("private = false: a hidden photo must never be made public by a re-import")
+	}
+
+	// The photo the user never touched still follows PhotoPrism.
+	synced, err := env.photos.GetByPhotoprismUID(ctx, "pp2")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID(pp2): %v", err)
+	}
+	if synced.Title != "Synced upstream" {
+		t.Errorf("untouched title = %q, want upstream: a field the user has not edited still syncs", synced.Title)
+	}
+}
+
+// metadataUpdateFrom copies a photo's editable columns into an update, the way each
+// edit path starts from the current row before overlaying its change (the store's
+// UpdateMetadata is a whole-row replace).
+func metadataUpdateFrom(p photos.Photo) photos.MetadataUpdate {
+	return photos.MetadataUpdate{
+		Title:            p.Title,
+		TitleEdited:      p.TitleEdited,
+		Description:      p.Description,
+		Notes:            p.Notes,
+		AiNote:           p.AiNote,
+		Subject:          p.Subject,
+		Keywords:         p.Keywords,
+		Artist:           p.Artist,
+		Copyright:        p.Copyright,
+		License:          p.License,
+		Scan:             p.Scan,
+		TakenAt:          p.TakenAt,
+		TakenAtSource:    p.TakenAtSource,
+		TakenAtEstimated: p.TakenAtEstimated,
+		TakenAtNote:      p.TakenAtNote,
+		Lat:              p.Lat,
+		Lng:              p.Lng,
+		Altitude:         p.Altitude,
+		LocationSource:   p.LocationSource,
+		Private:          p.Private,
+	}
+}
+
 // TestIntegration_subjectFlagsAndType verifies a person seeded from a named face
 // marker carries the source subject's type and its favorite/private flags — the
 // three fields the PhotoPrism import historically dropped — into the real subjects

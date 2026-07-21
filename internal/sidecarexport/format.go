@@ -116,7 +116,13 @@ type External struct {
 // Descriptive is the free text on a photo: what a human wrote, what an AI
 // suggested, and the IPTC/XMP credit fields the file or the user supplied.
 type Descriptive struct {
-	Title       string `yaml:"title,omitempty"`
+	Title string `yaml:"title,omitempty"`
+	// TitleEdited records that the user, not the import, owns the title (the
+	// title_edited column). It rides in the sidecar so a catalogue rebuilt from
+	// storage keeps the marker, and a later PhotoPrism re-import still leaves the
+	// restored title alone — parity with taken_at_source/location_source, which carry
+	// the same provenance for the capture time and the location.
+	TitleEdited bool   `yaml:"title_edited,omitempty"`
 	Description string `yaml:"description,omitempty"`
 	Notes       string `yaml:"notes,omitempty"`
 	// AiNote is free text produced by an automatic classification pass.

@@ -108,6 +108,7 @@ func externalOf(p photos.Photo) *External {
 func descriptiveOf(p photos.Photo) Descriptive {
 	return Descriptive{
 		Title:       p.Title,
+		TitleEdited: p.TitleEdited,
 		Description: p.Description,
 		Notes:       p.Notes,
 		AiNote:      p.AiNote,

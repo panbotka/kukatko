@@ -199,7 +199,10 @@ func decodeUpdate(r *http.Request) (map[string]struct{}, updateBody, error) {
 // taken_at_source in step with taken_at.
 func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateBody) (photos.MetadataUpdate, error) {
 	update := photos.MetadataUpdate{
-		Title:            current.Title,
+		Title: current.Title,
+		// Carried through so editing another field never drops the title's local-edit
+		// provenance; applyScalars sets it when this request actually changes the title.
+		TitleEdited:      current.TitleEdited,
 		Description:      current.Description,
 		Notes:            current.Notes,
 		AiNote:           current.AiNote,
@@ -242,8 +245,14 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 // applyScalars overlays the present non-nullable scalar fields (title,
 // description, notes, ai_note) onto update. An explicit JSON null for one of
 // these is ignored, since the columns are not nullable.
+//
+// A supplied title also stamps title_edited: from here on the title is the user's,
+// and an incremental PhotoPrism re-import must not revert it (see internal/ppimport).
 func applyScalars(update *photos.MetadataUpdate, present map[string]struct{}, body updateBody) {
-	applyPresentString(present, "title", body.Title, &update.Title)
+	if _, ok := present["title"]; ok && body.Title != nil {
+		update.Title = *body.Title
+		update.TitleEdited = true
+	}
 	applyPresentString(present, "description", body.Description, &update.Description)
 	applyPresentString(present, "notes", body.Notes, &update.Notes)
 	applyPresentString(present, "ai_note", body.AiNote, &update.AiNote)
@@ -300,7 +309,7 @@ const locationSourceManual = photos.LocationSourceManual
 func applyTakenAt(update *photos.MetadataUpdate, takenAt *time.Time) {
 	update.TakenAt = takenAt
 	if takenAt != nil {
-		update.TakenAtSource = "manual"
+		update.TakenAtSource = photos.TakenAtSourceManual
 	} else {
 		update.TakenAtSource = "unknown"
 	}

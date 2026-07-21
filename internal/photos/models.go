@@ -70,6 +70,14 @@ const (
 	RoleEdited FileRole = "edited"
 )
 
+// TakenAtSourceManual marks a capture time the user typed in, the taken_at_source
+// value internal/photoapi stamps on a manual edit. It mirrors LocationSourceManual
+// for coordinates and is the signal internal/ppimport reads to leave a
+// user-corrected capture time untouched on an incremental re-import. The rest of
+// the taken_at_source vocabulary ("exif", "unknown", "filename") lives with the
+// extractor that writes it (internal/exif).
+const TakenAtSourceManual = "manual"
+
 // Photo is one catalogued image or video. Mutable text fields are plain strings
 // (the columns default to the empty string in SQL); genuinely optional values
 // use pointers so
@@ -112,7 +120,15 @@ type Photo struct {
 	TakenAtEstimated bool   `json:"taken_at_estimated"`
 	TakenAtNote      string `json:"taken_at_note"`
 
-	Title       string `json:"title"`
+	Title string `json:"title"`
+	// TitleEdited marks the title as owned by the user rather than by the import: it
+	// is set the moment someone edits the title in Kukátko and carried through
+	// untouched afterwards. It is local-edit provenance for the one source-owned
+	// field with no natural source column, mirroring what taken_at_source = 'manual'
+	// and location_source = 'manual' record for the capture time and the location. An
+	// incremental PhotoPrism re-import overwrites an import-owned title (false) from
+	// upstream but leaves an edited one (true) alone, so a re-list never reverts it.
+	TitleEdited bool   `json:"title_edited"`
 	Description string `json:"description"`
 	Notes       string `json:"notes"`
 	// AiNote is free text produced by an external AI classification pass. Like the
@@ -270,7 +286,13 @@ type Edit struct {
 // original_name, projection) are deliberately absent: they describe the file and
 // are written only by the ingest and import paths.
 type MetadataUpdate struct {
-	Title       string `json:"title"`
+	Title string `json:"title"`
+	// TitleEdited is the title's local-edit provenance (see Photo.TitleEdited). An
+	// edit path sets it true when the user changes the title; every other path
+	// carries the photo's current value through, so UpdateMetadata's whole-row write
+	// neither invents nor clears it. internal/ppimport reads it to decide whether a
+	// re-import may overwrite the title from PhotoPrism.
+	TitleEdited bool   `json:"title_edited"`
 	Description string `json:"description"`
 	Notes       string `json:"notes"`
 	AiNote      string `json:"ai_note"`

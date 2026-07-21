@@ -40,7 +40,7 @@ var photoInsertColumns = []string{
 	"software", "scan", "color_profile", "image_codec", "projection", "original_name",
 	"exif", "private", "archived_at", "uploaded_by", "photoprism_uid",
 	"photoprism_file_hash", "photosorter_uid", "metadata_extracted_at",
-	"stack_uid", "stack_primary",
+	"stack_uid", "stack_primary", "title_edited",
 }
 
 // photoColumns is the canonical, ordered column list for photo reads (the insert
@@ -96,7 +96,7 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.Software, &p.Scan, &p.ColorProfile, &p.ImageCodec, &p.Projection, &p.OriginalName,
 		&exif, &p.Private, &p.ArchivedAt, &p.UploadedBy, &p.PhotoprismUID,
 		&p.PhotoprismFileHash, &p.PhotosorterUID, &p.MetadataExtractedAt,
-		&p.StackUID, &p.StackPrimary,
+		&p.StackUID, &p.StackPrimary, &p.TitleEdited,
 		&p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		return Photo{}, fmt.Errorf("photos: scanning photo: %w", err)
@@ -131,7 +131,7 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		p.Software, p.Scan, p.ColorProfile, p.ImageCodec, p.Projection, p.OriginalName,
 		nilIfEmptyJSON(p.Exif), p.Private, p.ArchivedAt, p.UploadedBy, p.PhotoprismUID,
 		p.PhotoprismFileHash, p.PhotosorterUID, p.MetadataExtractedAt,
-		p.StackUID, p.StackPrimary,
+		p.StackUID, p.StackPrimary, p.TitleEdited,
 	}
 	created, err := scanPhoto(s.pool.QueryRow(ctx, insertPhotoSQL, args...))
 	if err != nil {
@@ -269,14 +269,14 @@ func updateMetadataRow(ctx context.Context, q rowQuerier, uid string, m Metadata
 		title = $2, description = $3, notes = $4, ai_note = $5, taken_at = $6, taken_at_source = $7,
 		lat = $8, lng = $9, altitude = $10, private = $11,
 		subject = $12, keywords = $13, artist = $14, copyright = $15, license = $16, scan = $17,
-		taken_at_estimated = $18, taken_at_note = $19, location_source = $20,
+		taken_at_estimated = $18, taken_at_note = $19, location_source = $20, title_edited = $21,
 		updated_at = now()
 		WHERE uid = $1 RETURNING ` + photoColumns
 	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid,
 		m.Title, m.Description, m.Notes, m.AiNote, m.TakenAt, m.TakenAtSource,
 		m.Lat, m.Lng, m.Altitude, m.Private,
 		m.Subject, m.Keywords, m.Artist, m.Copyright, m.License, m.Scan,
-		m.TakenAtEstimated, m.TakenAtNote, m.LocationSource))
+		m.TakenAtEstimated, m.TakenAtNote, m.LocationSource, m.TitleEdited))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Photo{}, ErrPhotoNotFound

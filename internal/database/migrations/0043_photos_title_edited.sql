@@ -1,0 +1,46 @@
+-- 0043_photos_title_edited: local-edit provenance for the title, so an
+-- incremental PhotoPrism re-import never reverts a title the user typed.
+--
+-- The import is read-only and incremental: PhotoPrism stays primary until
+-- cutover, and any change to a photo upstream (a re-index, a label change, even a
+-- view) bumps its updated_at and re-lists it, at which point internal/ppimport
+-- overwrites the catalogue row from PhotoPrism's current values. That is correct
+-- for a field the user never touched — it keeps following upstream — but wrong for
+-- one they edited in Kukátko, which the re-import would silently revert.
+--
+-- Most source-owned fields already carry their own provenance, and the importer
+-- now honours it instead of a schema change:
+--
+--   * taken_at  — taken_at_source = 'manual' marks a capture time the user typed
+--                 in (internal/photoapi stamps it); the re-import skips it.
+--   * lat/lng   — location_source = 'manual' marks a location the user set or
+--                 deliberately cleared (a tombstone; see 0033); the re-import
+--                 skips it.
+--   * private   — never reverted at all. A re-import may only turn a photo MORE
+--                 private (follow an upstream hide), never un-hide one: a hidden
+--                 photo becoming public is a privacy regression, so the importer
+--                 ORs the flag rather than overwriting it. No column is needed.
+--
+-- The title is the one edited field with no natural provenance column — it is a
+-- free-text caption PhotoPrism also fills — so this boolean records it:
+--
+--   * false  the title is import-owned (the default for every catalogued photo).
+--            PhotoPrism's title flows in on every incremental run, an empty
+--            upstream value never erasing a non-empty local one.
+--   * true   the user has edited the title in Kukátko. internal/ppimport then
+--            leaves it alone; PhotoPrism no longer owns it.
+--
+-- It is set by every path that edits the title (internal/photoapi, internal/mcpapi,
+-- internal/bulk) and carried through untouched by everything else, the importers
+-- included — an import must never claim a user edit.
+--
+-- DEFAULT false is safe to backfill onto existing rows: the marker is
+-- forward-looking. A title a user edited BEFORE this column existed is
+-- indistinguishable from an imported one and is not retroactively protected; from
+-- here on every edit is. No index: the column is read only for a photo the import
+-- is already updating by uid, never scanned.
+--
+-- This migration is wrapped in a transaction by the runner.
+
+ALTER TABLE photos
+    ADD COLUMN title_edited BOOLEAN NOT NULL DEFAULT false;

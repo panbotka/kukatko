@@ -1606,7 +1606,16 @@ to `## Package map` in `CLAUDE.md`.
   Kukátkovou** (`UpdateMetadata` přepisuje celý řádek, takže titulek smazaný ve zdroji by jinak
   zničil ten, co napsal uživatel); `notes`/`ai_note` a IPTC kredity se patchem **protahují beze
   změny** (mapují se z detailu, ne z výpisu), stejně tak `taken_at_estimated`/`taken_at_note` —
-  PhotoPrism přibližné datum vůbec nezná, je to Kukátkovo pole a inkrement ho nesmí přepsat. **`Favorite` se záměrně NEMAPUJE**: Kukátkovy oblíbené
+  PhotoPrism přibližné datum vůbec nezná, je to Kukátkovo pole a inkrement ho nesmí přepsat.
+  **Lokální editace vyhrává nad re-importem** (migrace `0043`, `metadataUpdate`): re-list fotku
+  přinese pokaždé, když PP hne jejím `UpdatedAt` (reindex, změna štítku, i view) — mimo kontrolu
+  uživatele — takže inkrement nesmí vrátit editaci udělanou v Kukátku. Každé zdrojové pole ustoupí
+  své **local-edit provenienci**: `title` když je `title_edited`, `taken_at` když
+  `taken_at_source = 'manual'`, `lat`/`lng`/`altitude` když `location_source = 'manual'`; a
+  `private` se **jen ORuje** (`existing.Private || pp.Private`) — re-import může fotku skrýt, ale
+  nikdy nezveřejní skrytou (skryté→veřejné = únik soukromí). Netknuté pole dál sleduje zdroj.
+  Provenienci píší editační cesty (`internal/photoapi`, `internal/mcpapi`, `internal/bulk`).
+  **`Favorite` se záměrně NEMAPUJE**: Kukátkovy oblíbené
   jsou **per-user** a import běžící jako job (nebo z CLI) nemá uživatele, komu ji připsat — a
   `psimport` to nepřekládá taky (jeho `Favorite` je subjektův, ne fotčin);
   (2) **detail fotky** (`details.go`, `importPhotoDetail`) — **POZOR: půlku toho, co PP o fotce ví,

@@ -86,21 +86,38 @@ incremental pass changes metadata via `metadataUpdate` → `UpdateMetadata`.
 ## Photos — the `Photo` structure (listing)
 
 The target is the `photos` table (migrations `0003`, `0004`, `0024`, `0027`, `0028`, `0029`,
-`0030`, `0033`). Precedence for the curatorial fields: **PhotoPrism wins when it has a value;
-empty falls back to the file's own EXIF** (`applyCameraMeta`, `applyCaptureMeta`).
+`0030`, `0033`, `0043`). Precedence for the curatorial fields: **PhotoPrism wins when it has a
+value; empty falls back to the file's own EXIF** (`applyCameraMeta`, `applyCaptureMeta`).
+
+**Local edits win over a re-import (migration `0043`).** The import is read-only and
+incremental, but its trigger — PhotoPrism bumping a photo's `UpdatedAt` on a re-index, a label
+change, even a view — is outside the user's control, so an incremental re-list must never
+revert an edit the user made in Kukátko. Each source-owned field yields to its **local-edit
+provenance**, and a field the user has _not_ touched keeps following upstream:
+
+- **`title`** → skipped when `title_edited` is set (the marker every edit path stamps).
+- **`taken_at`** → skipped when `taken_at_source = 'manual'` (a user-typed time).
+- **`lat`/`lng`/`altitude`** → skipped when `location_source = 'manual'` (a location the user
+  set or deliberately cleared — the tombstone from `0033`).
+- **`private`** → **never** reverted: the flag is ORed, so a re-import may follow an upstream
+  hide but can never make a hidden photo public again (a hidden→public flip is a privacy
+  regression). This is the one field with no "untouched follows upstream" escape hatch.
+
+The rule lives in `ppimport.metadataUpdate`; the provenance is written by the edit paths
+(`internal/photoapi`, `internal/mcpapi`, `internal/bulk`).
 
 | Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
 | `Photo.UID` | `photoprism_uid` | **MAPPED** | Stable import and dedup key (`GetByPhotoprismUID`). |
 | `Photo.Type` | `media_type` | **MAPPED** | `mapMediaType`: `video`/`animated`→video, `live`→live, the rest→image. But the actual downloaded file also decides (`selectMedia`): a video with no stream degrades to image. |
-| `Photo.Title` | `title` | **MAPPED** | Inserted directly; incremental `firstNonEmpty(pp.Title, existing.Title)` — a title deleted upstream won't overwrite a filled one. |
+| `Photo.Title` | `title` | **MAPPED** | Inserted directly; incremental `importedTitle()` = `firstNonEmpty(pp.Title, existing.Title)` unless `title_edited` is set, in which case the user's title stands. A title deleted upstream won't overwrite a filled one either. |
 | `Photo.Caption` | `description` | **MAPPED** | The primary source of the caption; `caption() = firstNonEmpty(Caption, Description)`. |
 | `Photo.Description` | `description` | **MAPPED** | Fallback in `caption()`. On the current PhotoPrism the field is dead (`gorm:"-"`, always empty), but modeled for an older instance; the precedence is right (the live `Caption` first) and a caption cannot slip through the cracks. |
-| `Photo.TakenAt` | `taken_at` (+ `taken_at_source='exif'`) | **MAPPED** | `applyCaptureMeta`; on a zero time, falls back to the file's EXIF with its source. |
+| `Photo.TakenAt` | `taken_at` (+ `taken_at_source='exif'`) | **MAPPED** | `applyCaptureMeta`; on a zero time, falls back to the file's EXIF with its source. Incremental: skipped when `taken_at_source = 'manual'`, so a user-corrected capture time is not reverted. |
 | `Photo.TakenAtLocal` | — | **WAIVED** | Kukátko keeps a single canonical `taken_at` (timestamptz); local rendering is derived on output, `TakenAt` already carries the instant. |
 | `Photo.UpdatedAt` | — (no column) | **WAIVED** | Drives the incremental high-watermark in `import_runs` (max `UpdatedAt` per run), it is not a photo column; `photos.updated_at` is the time of the row's own mutation. |
 | `Photo.CreatedAt` | — (no column) | **WAIVED** | `photos.created_at` = when the photo was created locally (DB `now()`). PhotoPrism's indexing time is not the library's history. |
-| `Photo.Lat` | `lat` (+ `location_source`) | **MAPPED** | Carried only when `Lat != 0 || Lng != 0`; provenance `exif`. Edge: exactly `(0,0)` "Null Island" is treated as no location (a universal convention), see Risks. |
+| `Photo.Lat` | `lat` (+ `location_source`) | **MAPPED** | Carried only when `Lat != 0 || Lng != 0`; provenance `exif`. Incremental: skipped (lat/lng/altitude) when `location_source = 'manual'`, so a user-set or user-cleared location is not reverted. Edge: exactly `(0,0)` "Null Island" is treated as no location (a universal convention), see Risks. |
 | `Photo.Lng` | `lng` | **MAPPED** | See `Lat`. |
 | `Photo.Altitude` | `altitude` | **MAPPED** | Carried only when `Altitude != 0`, otherwise EXIF. Edge: altitude `0` = sea level falls back to EXIF/nil (see Risks, "the zero trap"). |
 | `Photo.Width` | `file_width` | **MAPPED** | `firstPositive(pp.Width, meta.Width)`. |
@@ -116,7 +133,7 @@ empty falls back to the file's own EXIF** (`applyCameraMeta`, `applyCaptureMeta`
 | `Photo.CameraSerial` | `camera_serial` | **MAPPED** | Via `ImportMetadata` from the detail (`detail.CameraSerial`). |
 | `Photo.Scan` | `scan` | **MAPPED** | Via `ImportMetadata` from the detail; a "true-wins" rule (can be set, not cleared). |
 | `Photo.Favorite` | — | **WAIVED** | Favorites in Kukátko are **per-user** by design (`ppimport.go` ~ll. 18–20); an import running as a job/CLI has nobody to attribute the flag to. |
-| `Photo.Private` | `private` | **MAPPED** | `buildPhoto` and `metadataUpdate`. |
+| `Photo.Private` | `private` | **MAPPED** | `buildPhoto` on first import; incremental `metadataUpdate` **ORs** the flag (`existing.Private \|\| pp.Private`), so a re-import can hide but never un-hide — a hidden photo is never made public again. |
 | `Photo.Files` | → the `File` table | **MAPPED** | The files container; see the "Files" section. |
 
 **`PhotoDetail` — relations beyond `Photo`** (the detail endpoint's envelope):
@@ -301,25 +318,27 @@ derived and own columns, which therefore *have no* source PP field:
 
 ## Verification of specific clues from the brief
 
-### 1. Completeness of `metadataUpdate` vs. the 19 overwritten columns — **confirmed correct (not a bug)**
+### 1. Completeness of `metadataUpdate` vs. the 20 overwritten columns — **confirmed correct (not a bug)**
 
-`UpdateMetadata` (`store.go` ~ll. 268–274) overwrites the whole row — 19 columns:
+`UpdateMetadata` (`store.go`) overwrites the whole row — 20 columns:
 `title, description, notes, ai_note, taken_at, taken_at_source, lat, lng, altitude,
 private, subject, keywords, artist, copyright, license, scan, taken_at_estimated,
-taken_at_note, location_source`. `metadataUpdate` (`metadata.go` ~l. 129) **carries all of
+taken_at_note, location_source, title_edited`. `metadataUpdate` (`metadata.go`) **carries all of
 them**: the fields mapped from PP (`Title`, `Description`, `Private`, conditionally
 `TakenAt`/GPS/`Altitude`), and the rest are **provably carried from `existing`** (`Notes`,
 `AiNote`, `Subject`, `Keywords`, `Artist`, `Copyright`, `License`, `Scan`,
-`TakenAtEstimated`, `TakenAtNote`, `LocationSource`). No editable column is silently zeroed by
-the incremental run. Credits are changed separately by `ApplyImportMetadata` from the detail;
-`metadataUpdate` only "carries them through unchanged" so the bulk overwrite does not erase
-them. **The clue about silent erasure is refuted.**
+`TakenAtEstimated`, `TakenAtNote`, `LocationSource`, `TitleEdited`). No editable column is
+silently zeroed by the incremental run. Credits are changed separately by `ApplyImportMetadata`
+from the detail; `metadataUpdate` only "carries them through unchanged" so the bulk overwrite
+does not erase them. **The clue about silent erasure is refuted.** Local edits are additionally
+protected against a value-carrying re-import by the local-edit provenance rule above.
 
 ### 2. Symmetry of `metadataUnchanged` — **confirmed symmetric**
 
 `metadataUnchanged` (`captionsUnchanged` + `creditsUnchanged` + `placementUnchanged`) compares
-exactly the same 19 fields that `UpdateMetadata` writes. No field drops out of the comparison,
-so a real overwrite cannot masquerade as a no-op.
+exactly the same 20 fields that `UpdateMetadata` writes (`title_edited` included in
+`captionsUnchanged`). No field drops out of the comparison, so a real overwrite cannot
+masquerade as a no-op.
 
 ### 3. The zero trap (`firstPositive`/`firstFloatPtr`, GPS) — **mostly harmless, one real edge**
 

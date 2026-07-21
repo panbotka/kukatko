@@ -3,6 +3,7 @@ package ppimport
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/photoprism"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -270,5 +271,132 @@ func TestMetadataUnchanged_locationSource(t *testing.T) {
 	update.LocationSource = photos.LocationSourceExif
 	if metadataUnchanged(existing, update) {
 		t.Errorf("a sync that rewrites location_source was reported as a no-op")
+	}
+}
+
+// TestMetadataUpdate_localEditProvenance pins the fix for the silent revert: an
+// incremental re-import re-lists a photo whenever PhotoPrism bumps its UpdatedAt
+// (a re-index, a label change, even a view), and it must NOT overwrite a field the
+// user has edited in Kukátko. Each edited field yields to its own local-edit
+// provenance, while a field the user has not touched still follows upstream.
+func TestMetadataUpdate_localEditProvenance(t *testing.T) {
+	t.Parallel()
+
+	userTaken := time.Date(1985, 5, 5, 12, 0, 0, 0, time.UTC)
+	ppTaken := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	userLat, userLng := 48.2, 16.3
+
+	tests := []struct {
+		name     string
+		existing photos.Photo
+		pp       photoprism.Photo
+		check    func(t *testing.T, u photos.MetadataUpdate)
+	}{
+		{
+			name:     "an edited title is not reverted",
+			existing: photos.Photo{Title: "Moje jméno", TitleEdited: true},
+			pp:       photoprism.Photo{Title: "Upstream"},
+			check: func(t *testing.T, u photos.MetadataUpdate) {
+				if u.Title != "Moje jméno" || !u.TitleEdited {
+					t.Errorf("title = %q edited=%v, want the user's kept", u.Title, u.TitleEdited)
+				}
+			},
+		},
+		{
+			name:     "an unedited title follows upstream",
+			existing: photos.Photo{Title: "Old"},
+			pp:       photoprism.Photo{Title: "Upstream"},
+			check: func(t *testing.T, u photos.MetadataUpdate) {
+				if u.Title != "Upstream" || u.TitleEdited {
+					t.Errorf("title = %q edited=%v, want upstream", u.Title, u.TitleEdited)
+				}
+			},
+		},
+		{
+			name:     "a manual capture time is not reverted",
+			existing: photos.Photo{TakenAt: &userTaken, TakenAtSource: photos.TakenAtSourceManual},
+			pp:       photoprism.Photo{TakenAt: ppTaken},
+			check: func(t *testing.T, u photos.MetadataUpdate) {
+				if u.TakenAt == nil || !u.TakenAt.Equal(userTaken) ||
+					u.TakenAtSource != photos.TakenAtSourceManual {
+					t.Errorf("taken_at = %v / %q, want the user's kept", u.TakenAt, u.TakenAtSource)
+				}
+			},
+		},
+		{
+			name:     "an exif capture time follows upstream",
+			existing: photos.Photo{TakenAt: &userTaken, TakenAtSource: "exif"},
+			pp:       photoprism.Photo{TakenAt: ppTaken},
+			check: func(t *testing.T, u photos.MetadataUpdate) {
+				if u.TakenAt == nil || !u.TakenAt.Equal(ppTaken) || u.TakenAtSource != "exif" {
+					t.Errorf("taken_at = %v / %q, want upstream", u.TakenAt, u.TakenAtSource)
+				}
+			},
+		},
+		{
+			name:     "a manual location is not reverted",
+			existing: photos.Photo{Lat: &userLat, Lng: &userLng, LocationSource: photos.LocationSourceManual},
+			pp:       photoprism.Photo{Lat: 10, Lng: 20},
+			check: func(t *testing.T, u photos.MetadataUpdate) {
+				if u.Lat == nil || *u.Lat != userLat || u.Lng == nil || *u.Lng != userLng ||
+					u.LocationSource != photos.LocationSourceManual {
+					t.Errorf("location = %v / %v / %q, want the user's kept", u.Lat, u.Lng, u.LocationSource)
+				}
+			},
+		},
+		{
+			name:     "a cleared location stays cleared even when upstream has one",
+			existing: photos.Photo{LocationSource: photos.LocationSourceManual},
+			pp:       photoprism.Photo{Lat: 10, Lng: 20},
+			check: func(t *testing.T, u photos.MetadataUpdate) {
+				if u.Lat != nil || u.Lng != nil || u.LocationSource != photos.LocationSourceManual {
+					t.Errorf("location = %v / %v / %q, want the tombstone kept", u.Lat, u.Lng, u.LocationSource)
+				}
+			},
+		},
+		{
+			name:     "an exif location follows upstream",
+			existing: photos.Photo{Lat: &userLat, Lng: &userLng, LocationSource: photos.LocationSourceExif},
+			pp:       photoprism.Photo{Lat: 10, Lng: 20},
+			check: func(t *testing.T, u photos.MetadataUpdate) {
+				if u.Lat == nil || *u.Lat != 10 || u.LocationSource != photos.LocationSourceExif {
+					t.Errorf("location = %v / %q, want upstream", u.Lat, u.LocationSource)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tt.check(t, metadataUpdate(tt.existing, tt.pp))
+		})
+	}
+}
+
+// TestMetadataUpdate_privateNeverReverts pins the privacy floor: an incremental
+// re-import may turn a photo MORE private (follow an upstream hide) but must never
+// make a hidden photo public again — the flag is ORed, never overwritten.
+func TestMetadataUpdate_privateNeverReverts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                     string
+		existing, upstream, want bool
+	}{
+		{"hidden locally, public upstream stays hidden", true, false, true},
+		{"public locally, hidden upstream follows the hide", false, true, true},
+		{"hidden both stays hidden", true, true, true},
+		{"public both stays public", false, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			u := metadataUpdate(photos.Photo{Private: tt.existing}, photoprism.Photo{Private: tt.upstream})
+			if u.Private != tt.want {
+				t.Errorf("private = %v, want %v", u.Private, tt.want)
+			}
+		})
 	}
 }

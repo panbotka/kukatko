@@ -121,24 +121,38 @@ func applyCameraMeta(p *photos.Photo, pp photoprism.Photo, meta exif.Metadata) {
 // than the listing this patch is built from (see importPhotoDetail), so here they
 // are simply carried through untouched.
 //
-// The two fields it does map obey the import's precedence rule: PhotoPrism wins
-// when it has a value, but an empty PhotoPrism value never erases a non-empty
-// Kukátko one. A title cleared upstream therefore survives here — the alternative,
-// silently destroying a caption the user typed because the source has none, is the
-// far worse failure.
+// The source-owned fields obey the import's precedence rule — PhotoPrism wins when
+// it has a value, an empty upstream value never erases a non-empty local one — but
+// only until the user edits one. A re-import must not revert a local edit, because
+// its trigger (a re-index, a label change, even a view bumping PhotoPrism's
+// UpdatedAt) is entirely outside the user's control. So each source-owned field
+// yields to its local-edit provenance:
+//
+//   - title: only when the user has NOT edited it (see importedTitle / title_edited).
+//   - taken_at: only when it is not a user-typed time (taken_at_source != 'manual').
+//   - lat/lng/altitude: only when the location is not the user's own or a location
+//     they deliberately cleared (location_source != 'manual').
+//   - private: never reverted — the flag is ORed, so a re-import may hide a photo
+//     but never un-hide one (a hidden photo becoming public is a privacy regression).
+//
+// A field the user has not touched keeps following upstream exactly as before.
 func metadataUpdate(existing photos.Photo, pp photoprism.Photo) photos.MetadataUpdate {
 	update := photos.MetadataUpdate{
-		Title:         firstNonEmpty(pp.Title, existing.Title),
-		Description:   firstNonEmpty(caption(pp), existing.Description),
-		Notes:         existing.Notes,
-		AiNote:        existing.AiNote,
-		Subject:       existing.Subject,
-		Keywords:      existing.Keywords,
-		Artist:        existing.Artist,
-		Copyright:     existing.Copyright,
-		License:       existing.License,
-		Scan:          existing.Scan,
-		Private:       pp.Private,
+		Title:       importedTitle(existing, pp),
+		TitleEdited: existing.TitleEdited,
+		Description: firstNonEmpty(caption(pp), existing.Description),
+		Notes:       existing.Notes,
+		AiNote:      existing.AiNote,
+		Subject:     existing.Subject,
+		Keywords:    existing.Keywords,
+		Artist:      existing.Artist,
+		Copyright:   existing.Copyright,
+		License:     existing.License,
+		Scan:        existing.Scan,
+		// ORed, never overwritten: an upstream hide still flows in, an upstream
+		// un-hide is deliberately ignored so the import can never make a hidden photo
+		// public again.
+		Private:       existing.Private || pp.Private,
 		TakenAt:       existing.TakenAt,
 		TakenAtSource: existing.TakenAtSource,
 		// PhotoPrism has no notion of an approximate date, so the estimate flag and
@@ -155,25 +169,44 @@ func metadataUpdate(existing photos.Photo, pp photoprism.Photo) photos.MetadataU
 		// coordinates is exactly what the estimator treats as fair game).
 		LocationSource: existing.LocationSource,
 	}
-	if !pp.TakenAt.IsZero() {
+	// A capture time the user typed in is theirs, not the source's: leave it, and its
+	// provenance, exactly as set. Otherwise PhotoPrism's value flows in (and a
+	// re-import legitimately re-stamps the source 'exif').
+	if !pp.TakenAt.IsZero() && existing.TakenAtSource != photos.TakenAtSourceManual {
 		taken := pp.TakenAt
 		update.TakenAt = &taken
 		update.TakenAtSource = string(exif.SourceExif)
 	}
-	if pp.Lat != 0 || pp.Lng != 0 {
-		lat, lng := pp.Lat, pp.Lng
-		update.Lat, update.Lng = &lat, &lng
-		// The coordinates came out of the file upstream, so their provenance follows
-		// them — the same rule the capture time above obeys. It also means a
-		// re-import legitimately promotes an estimate to a measured fix, which is an
-		// improvement: PhotoPrism knows where the photo was and we were guessing.
-		update.LocationSource = string(exif.SourceExif)
-	}
-	if pp.Altitude != 0 {
-		alt := float64(pp.Altitude)
-		update.Altitude = &alt
+	// A location the user set or deliberately cleared ('manual') is likewise theirs.
+	// Only when it is not do the upstream coordinates flow in — the same rule the
+	// capture time obeys, and it still promotes an earlier estimate to a measured fix.
+	// The altitude rides with the coordinates, so it too is left alone for a manual
+	// location rather than grafting PhotoPrism's onto a fix the user overrode.
+	if existing.LocationSource != photos.LocationSourceManual {
+		if pp.Lat != 0 || pp.Lng != 0 {
+			lat, lng := pp.Lat, pp.Lng
+			update.Lat, update.Lng = &lat, &lng
+			update.LocationSource = string(exif.SourceExif)
+		}
+		if pp.Altitude != 0 {
+			alt := float64(pp.Altitude)
+			update.Altitude = &alt
+		}
 	}
 	return update
+}
+
+// importedTitle is the title an incremental re-import stores: the user's own once
+// they have edited it in Kukátko (title_edited set), otherwise PhotoPrism's current
+// title with the existing one as a fallback, so an empty upstream value never erases
+// a locally filled title. It is the title's local-edit provenance rule, the
+// counterpart of the taken_at_source/location_source checks metadataUpdate applies
+// to the capture time and the location.
+func importedTitle(existing photos.Photo, pp photoprism.Photo) string {
+	if existing.TitleEdited {
+		return existing.Title
+	}
+	return firstNonEmpty(pp.Title, existing.Title)
 }
 
 // metadataUnchanged reports whether applying update to existing would be a no-op,
@@ -187,9 +220,13 @@ func metadataUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool
 		placementUnchanged(existing, update)
 }
 
-// captionsUnchanged compares the caption-like text fields.
+// captionsUnchanged compares the caption-like text fields, the title's local-edit
+// provenance included: UpdateMetadata writes title_edited, so a run that flipped it
+// while leaving every other field alone would still rewrite the row and must not be
+// counted a no-op.
 func captionsUnchanged(existing photos.Photo, update photos.MetadataUpdate) bool {
 	return existing.Title == update.Title &&
+		existing.TitleEdited == update.TitleEdited &&
 		existing.Description == update.Description &&
 		existing.Notes == update.Notes &&
 		existing.AiNote == update.AiNote
