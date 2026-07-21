@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -48,6 +48,39 @@ function renderLayout(value: AuthContextValue, path = '/') {
       </AuthContext.Provider>
     </I18nextProvider>,
   )
+}
+
+/**
+ * Renders the Layout with several destination routes registered under it, so a
+ * navigation triggered from the menu lands on a real route and keeps the shell
+ * (and thus the navbar under test) mounted. Starts at the library root.
+ */
+function renderLayoutWithRoutes(value: AuthContextValue) {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <AuthContext.Provider value={value}>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<div>home page</div>} />
+              <Route path="/albums" element={<div>albums page</div>} />
+              <Route path="/favorites" element={<div>favorites page</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
+    </I18nextProvider>,
+  )
+}
+
+/**
+ * True when the collapsible mobile menu is closed. react-bootstrap tags the
+ * hamburger toggle with `collapsed` exactly when the navbar's `expanded` state
+ * is false, so this reads that controlled state without depending on the CSS
+ * collapse transition (which does not run under jsdom).
+ */
+function menuIsCollapsed(): boolean {
+  return screen.getByRole('button', { name: /toggle navigation/i }).classList.contains('collapsed')
 }
 
 beforeEach(async () => {
@@ -254,6 +287,42 @@ describe('Layout navbar', () => {
     const help = screen.getByRole('link', { name: 'Help' })
     expect(help).toHaveAttribute('href', '/help')
     expect(help).toHaveAttribute('title', 'Show help')
+  })
+
+  it('closes the open mobile menu after tapping a top-level link', async () => {
+    const user = userEvent.setup()
+    renderLayoutWithRoutes(auth())
+
+    // The menu starts collapsed; opening the hamburger expands it.
+    expect(menuIsCollapsed()).toBe(true)
+    await user.click(screen.getByRole('button', { name: /toggle navigation/i }))
+    expect(menuIsCollapsed()).toBe(false)
+
+    // Tapping a destination navigates and must dismiss the menu, rather than
+    // leaving it expanded over the page it just opened.
+    await user.click(screen.getByRole('link', { name: 'Albums' }))
+    expect(await screen.findByText('albums page')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(menuIsCollapsed()).toBe(true)
+    })
+  })
+
+  it('closes the open mobile menu after tapping an item inside a group dropdown', async () => {
+    const user = userEvent.setup()
+    renderLayoutWithRoutes(auth())
+
+    // Open the mobile menu, then the Browse group inside it.
+    await user.click(screen.getByRole('button', { name: /toggle navigation/i }))
+    expect(menuIsCollapsed()).toBe(false)
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+
+    // A grouped item is a raw Dropdown.Item, which never fired the select event
+    // the old collapseOnSelect relied on. It must still close the menu.
+    await user.click(screen.getByRole('link', { name: 'Favorites' }))
+    expect(await screen.findByText('favorites page')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(menuIsCollapsed()).toBe(true)
+    })
   })
 
   it('renders the global footer below the routed content', () => {

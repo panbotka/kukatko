@@ -1,4 +1,5 @@
 import type { ParseKeys } from 'i18next'
+import { useEffect, useState } from 'react'
 import Container from 'react-bootstrap/Container'
 import Dropdown from 'react-bootstrap/Dropdown'
 import Nav from 'react-bootstrap/Nav'
@@ -232,8 +233,23 @@ export function Layout() {
   const { user, canWrite, isAdmin, isMaintainer, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  // The mobile navbar is controlled so it can be closed programmatically. Below
+  // the `md` breakpoint the nav folds into a hamburger; react-bootstrap's
+  // `collapseOnSelect` only collapses on a fired select event, which this bar's
+  // mix of bare `NavLink`s and raw `Dropdown` items does not reliably emit — so
+  // the menu stayed open over the page it had just navigated to.
+  const [expanded, setExpanded] = useState(false)
+
+  // Close the collapsed menu on every navigation, whatever control was tapped
+  // (top-level link, group dropdown item, or user menu item all change the
+  // path). On `md`+ the collapse is always shown, so this is a no-op there.
+  useEffect(() => {
+    setExpanded(false)
+  }, [pathname])
 
   async function handleLogout() {
+    // Logout dismisses via a handler, not a route change, so close explicitly.
+    setExpanded(false)
     await logout()
     void navigate('/login', { replace: true })
   }
@@ -305,7 +321,16 @@ export function Layout() {
 
   return (
     <>
-      <Navbar expand="md" variant="dark" sticky="top" collapseOnSelect className="kukatko-navbar">
+      <Navbar
+        expand="md"
+        variant="dark"
+        sticky="top"
+        expanded={expanded}
+        onToggle={(next) => {
+          setExpanded(next)
+        }}
+        className="kukatko-navbar"
+      >
         <Container>
           <Navbar.Toggle aria-controls="main-navbar" />
           {/* Search leads the bar and stays outside the collapse, so it is always
