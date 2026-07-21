@@ -597,7 +597,11 @@ to `## Package map` in `CLAUDE.md`.
   (migration `0040_jobs_claim_index.sql`) `(priority DESC, run_after, id) WHERE state='queued'` —
   matching the claim `ORDER BY` exactly, so a deep backlog is walked, not re-sorted — plus
   `(locked_at) WHERE state='running'` for the stale-lock scan, and the **dedup** partial unique on
-  `(type, payload->>'photo_uid') WHERE state IN (queued,running)`; `Store` = `NewStore(pool)` with
+  `(type, payload->>'photo_uid') WHERE state='queued' OR (state='running' AND type<>'sidecar')`
+  (migration `0044` scopes the **sidecar** dedup to `queued` only, so an edit landing while a
+  sidecar job runs schedules a follow-up rewrite instead of being swallowed as a duplicate — the
+  running job wrote the file before it saw that edit; other types keep queued|running dedup);
+  `Store` = `NewStore(pool)` with
   `Enqueue(ctx,type,payload,opts)` (idempotent on the dedup key → `ErrDuplicate`,
   `EnqueueOptions{Priority,MaxAttempts,RunAfter}`),
   `Claim(ctx,workerID,types...)` (atomically via `SELECT … FOR UPDATE SKIP LOCKED`,

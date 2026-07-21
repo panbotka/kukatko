@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestPayloadOrEmpty verifies the JSONB fallback used for an absent payload.
@@ -73,17 +74,44 @@ func TestClaimSQL(t *testing.T) {
 type fakeEnqueuer struct {
 	err      error
 	lastType string
+	lastOpts EnqueueOptions
 	calls    int
 }
 
 // Enqueue records the call and returns the preset error.
-func (f *fakeEnqueuer) Enqueue(_ context.Context, jobType string, _ json.RawMessage, _ EnqueueOptions) (Job, error) {
+func (f *fakeEnqueuer) Enqueue(_ context.Context, jobType string, _ json.RawMessage, opts EnqueueOptions) (Job, error) {
 	f.calls++
 	f.lastType = jobType
+	f.lastOpts = opts
 	if f.err != nil {
 		return Job{}, f.err
 	}
 	return Job{Type: jobType, State: StateQueued}, nil
+}
+
+// TestEnqueueSidecar_debounces verifies the sidecar enqueue maps to TypeSidecar
+// and delays the job by SidecarDebounce — the queued-state coalescing window that
+// collapses a burst of edits into a single file write and keeps the follow-up a
+// scoped dedup schedules (migration 0044) from becoming a tight rewrite loop.
+func TestEnqueueSidecar_debounces(t *testing.T) {
+	t.Parallel()
+
+	pinned := time.Date(2026, time.July, 21, 12, 0, 0, 0, time.UTC)
+	fake := &fakeEnqueuer{}
+	enq := &Enqueuer{store: fake, clock: func() time.Time { return pinned }}
+
+	if err := enq.EnqueueSidecar(context.Background(), "ph1"); err != nil {
+		t.Fatalf("EnqueueSidecar: %v", err)
+	}
+	if fake.lastType != TypeSidecar {
+		t.Errorf("lastType = %q, want %q", fake.lastType, TypeSidecar)
+	}
+	if fake.lastOpts.RunAfter == nil {
+		t.Fatal("RunAfter is nil, want the debounce delay")
+	}
+	if want := pinned.Add(SidecarDebounce); !fake.lastOpts.RunAfter.Equal(want) {
+		t.Errorf("RunAfter = %v, want %v (now + SidecarDebounce)", *fake.lastOpts.RunAfter, want)
+	}
 }
 
 // TestEnqueuer verifies the adapter maps each method to the right job type and

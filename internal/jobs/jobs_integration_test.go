@@ -94,6 +94,61 @@ func TestEnqueueDedup(t *testing.T) {
 	}
 }
 
+// TestEnqueueDedup_sidecarScopedToQueued verifies migration 0044's scoped dedup:
+// a sidecar enqueue while a sidecar job for the same photo is already running is
+// not a duplicate (it schedules a follow-up rewrite), while a second *queued*
+// sidecar for that photo still dedups, and every other job type keeps the
+// queued|running dedup unchanged. It is the regression guard for the dropped
+// sidecar rewrite: before the fix the enqueue below collided with the running job
+// and the edit that triggered it never reached disk.
+func TestEnqueueDedup_sidecarScopedToQueued(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	// A queued sidecar job for a photo still dedups a second queued enqueue: the
+	// debounce that collapses an ordinary burst into one write is preserved.
+	if _, err := store.Enqueue(ctx, jobs.TypeSidecar, photoPayload(t, "s1"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("first sidecar enqueue: %v", err)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeSidecar, photoPayload(t, "s1"), jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("second queued sidecar enqueue = %v, want ErrDuplicate (queued-state debounce)", err)
+	}
+
+	// Claiming it moves it to running. A sidecar enqueue for the same photo now
+	// succeeds — an edit arriving mid-run must schedule a follow-up, not be dropped.
+	claimed, err := store.Claim(ctx, "w1", jobs.TypeSidecar)
+	if err != nil {
+		t.Fatalf("Claim sidecar: %v", err)
+	}
+	if claimed.State != jobs.StateRunning {
+		t.Fatalf("claimed state = %q, want running", claimed.State)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeSidecar, photoPayload(t, "s1"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("sidecar enqueue while running = %v, want success (a follow-up rewrite)", err)
+	}
+	// A second follow-up while the first is queued dedups again — bursts during the
+	// running window still coalesce onto the one queued job.
+	if _, err := store.Enqueue(ctx, jobs.TypeSidecar, photoPayload(t, "s1"), jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("second follow-up enqueue = %v, want ErrDuplicate", err)
+	}
+
+	// Other job types are unchanged: a running job still blocks a same-photo
+	// enqueue, so migration 0044 loosened nothing but sidecar.
+	if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "s1"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("image_embed enqueue: %v", err)
+	}
+	embedClaim, err := store.Claim(ctx, "w1", jobs.TypeImageEmbed)
+	if err != nil {
+		t.Fatalf("Claim image_embed: %v", err)
+	}
+	if embedClaim.State != jobs.StateRunning {
+		t.Fatalf("image_embed claimed state = %q, want running", embedClaim.State)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, "s1"), jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("image_embed enqueue while running = %v, want ErrDuplicate (semantics unchanged)", err)
+	}
+}
+
 // TestClaimOrdering verifies claiming respects run_after (skips not-yet-due),
 // then priority DESC, then FIFO by id.
 func TestClaimOrdering(t *testing.T) {

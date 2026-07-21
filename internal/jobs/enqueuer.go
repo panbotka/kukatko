@@ -74,9 +74,13 @@ func (e *Enqueuer) EnqueueMetadata(ctx context.Context, photoUID string) error {
 // survives the database" needs.
 const SidecarDebounce = 5 * time.Second
 
-// EnqueueSidecar schedules a rewrite of the photo's metadata sidecar. A
-// pre-existing active job for the same photo is a no-op (nil error), which is
-// what debounces a burst of edits into a single file write. The job is delayed by
+// EnqueueSidecar schedules a rewrite of the photo's metadata sidecar. Sidecar
+// dedup is scoped to the queued state (idx_jobs_dedup, migration 0044): a
+// pre-existing *queued* job for the same photo is a no-op (nil error), which is
+// what debounces a burst of edits into a single file write. An edit that lands
+// while a sidecar job is already *running* is not swallowed — it schedules a fresh
+// follow-up, because the running job read and wrote the photo before that edit and
+// would otherwise leave the on-disk sidecar stale. The job is delayed by
 // SidecarDebounce so that burst has a window to collapse into.
 //
 // Callers enqueue this after their mutation has committed: the job re-reads the

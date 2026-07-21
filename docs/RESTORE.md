@@ -445,7 +445,10 @@ The file header says all of this, so the next person to open one is told before 
   when a photo is first catalogued. The job re-reads the photo and rewrites the file.
 - **Debounced.** The queue's per-photo dedup index keeps at most one queued `sidecar` job per photo
   and the job waits ~5s before running, so a burst of edits collapses into one file write. A
-  500-photo bulk edit enqueues 500 small rows and returns; the worker writes the files.
+  500-photo bulk edit enqueues 500 small rows and returns; the worker writes the files. The dedup is
+  scoped to the queued state (migration `0044`): an edit that lands while a photo's sidecar job is
+  already *running* schedules a fresh follow-up rather than being dropped, because the running job
+  read and wrote the file before it could see that edit.
 - **Atomically.** The bytes are streamed to a temp file and renamed (`fs`), or verified and removed
   on mismatch (`r2`). A reader never sees a half-written sidecar — a truncated YAML document is not
   a slightly worse sidecar, it is an unparseable one.
