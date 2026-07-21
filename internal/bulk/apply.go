@@ -213,6 +213,9 @@ func (o Operations) photoColumnUpdate(uid string) (string, []any, bool) {
 	}
 	if o.Title != nil {
 		appendSet("title", *o.Title)
+		// The title is now the user's: an incremental PhotoPrism re-import must not
+		// revert it (see photos.Photo.TitleEdited and internal/ppimport).
+		appendSet("title_edited", true)
 	}
 	if o.Description != nil {
 		appendSet("description", *o.Description)
@@ -220,6 +223,10 @@ func (o Operations) photoColumnUpdate(uid string) (string, []any, bool) {
 	if o.Location != nil {
 		appendSet("lat", o.Location.Lat)
 		appendSet("lng", o.Location.Lng)
+		// Stamp the provenance the same way internal/photoapi does for a single-photo
+		// edit, so the location the user set is theirs — kept out of the estimator's
+		// reach and safe from a re-import overwrite.
+		appendSet("location_source", photos.LocationSourceManual)
 	}
 	o.appendLocationAndArchive(&set)
 	if len(set) == 1 {
@@ -232,7 +239,10 @@ func (o Operations) photoColumnUpdate(uid string) (string, []any, bool) {
 // clearing location and for the archive/unarchive toggle.
 func (o Operations) appendLocationAndArchive(set *[]string) {
 	if o.ClearLocation {
-		*set = append(*set, "lat = NULL", "lng = NULL")
+		// 'manual' with NULL coordinates is the tombstone that records the user
+		// deliberately cleared the location, so neither the estimator nor a re-import
+		// hands it back (mirrors photos.LocationSourceManual / internal/photoapi).
+		*set = append(*set, "lat = NULL", "lng = NULL", "location_source = 'manual'")
 	}
 	if o.Archive != nil {
 		if *o.Archive {

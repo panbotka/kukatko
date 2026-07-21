@@ -80,22 +80,22 @@ func TestOperations_photoColumnUpdate(t *testing.T) {
 			name:       "title and description",
 			ops:        Operations{Title: new("cap"), Description: new("desc")},
 			wantOK:     true,
-			wantArgs:   3, // uid + title + description
-			wantSubstr: []string{"title = $2", "description = $3"},
+			wantArgs:   4, // uid + title + title_edited + description
+			wantSubstr: []string{"title = $2", "title_edited = $3", "description = $4"},
 		},
 		{
 			name:       "set location",
 			ops:        Operations{Location: &Location{Lat: 1, Lng: 2}},
 			wantOK:     true,
-			wantArgs:   3, // uid + lat + lng
-			wantSubstr: []string{"lat = $2", "lng = $3"},
+			wantArgs:   4, // uid + lat + lng + location_source ('manual')
+			wantSubstr: []string{"lat = $2", "lng = $3", "location_source = $4"},
 		},
 		{
 			name:       "clear location and archive",
 			ops:        Operations{ClearLocation: true, Archive: new(true)},
 			wantOK:     true,
-			wantArgs:   1, // uid only; NULL/now() are literals
-			wantSubstr: []string{"lat = NULL", "lng = NULL", "archived_at = now()"},
+			wantArgs:   1, // uid only; NULL/now()/'manual' are literals
+			wantSubstr: []string{"lat = NULL", "lng = NULL", "location_source = 'manual'", "archived_at = now()"},
 		},
 		{
 			name:       "unarchive",

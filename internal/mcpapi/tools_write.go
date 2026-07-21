@@ -322,6 +322,11 @@ func (a *API) handleSetPhotoMetadata(
 	applyString(&upd.Title, in.Title)
 	applyString(&upd.Description, in.Description)
 	applyString(&upd.Notes, in.Notes)
+	if in.Title != nil {
+		// The title is now the user's (well, the agent's on their behalf): mark it so
+		// an incremental PhotoPrism re-import leaves it alone (see internal/ppimport).
+		upd.TitleEdited = true
+	}
 
 	details := map[string]any{"fields": changedFields(in), "via": viaMCP}
 	metadataChanges(current, upd).StampInto(details)
@@ -391,6 +396,7 @@ func applyString(dst *string, v *string) {
 func metadataOf(p photos.Photo) photos.MetadataUpdate {
 	return photos.MetadataUpdate{
 		Title:            p.Title,
+		TitleEdited:      p.TitleEdited,
 		Description:      p.Description,
 		Notes:            p.Notes,
 		AiNote:           p.AiNote,

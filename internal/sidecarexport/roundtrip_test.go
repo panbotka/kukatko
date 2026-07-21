@@ -40,6 +40,7 @@ func fullDocument() Document {
 		},
 		Descriptive: Descriptive{
 			Title:       "Svatba",
+			TitleEdited: true,
 			Description: "Obřad na zahradě",
 			Notes:       "poznámka",
 			AiNote:      "an outdoor wedding ceremony",

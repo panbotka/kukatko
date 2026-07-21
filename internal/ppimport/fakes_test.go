@@ -470,11 +470,12 @@ func (s *fakePhotoStore) UpdateMetadata(_ context.Context, uid string, m photos.
 	if !ok {
 		return photos.Photo{}, photos.ErrPhotoNotFound
 	}
-	p.Title, p.Description, p.Notes, p.AiNote = m.Title, m.Description, m.Notes, m.AiNote
-	p.Subject, p.Keywords = m.Subject, m.Keywords
+	p.Title, p.TitleEdited, p.Description, p.AiNote = m.Title, m.TitleEdited, m.Description, m.AiNote
+	p.Notes, p.Subject, p.Keywords = m.Notes, m.Subject, m.Keywords
 	p.Artist, p.Copyright, p.License, p.Scan = m.Artist, m.Copyright, m.License, m.Scan
 	p.TakenAt, p.TakenAtSource = m.TakenAt, m.TakenAtSource
 	p.Lat, p.Lng, p.Altitude, p.Private = m.Lat, m.Lng, m.Altitude, m.Private
+	p.LocationSource = m.LocationSource
 	s.byUID[uid] = p
 	return p, nil
 }
