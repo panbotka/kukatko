@@ -2,6 +2,7 @@ package photoapi
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -437,4 +438,47 @@ func TestParseListParams_queryLanguage(t *testing.T) {
 			t.Errorf("unknown = %v, want empty", unknown)
 		}
 	})
+}
+
+// TestParseListParams_complexityCap verifies the search-complexity guard: a q
+// packing more '|'-alternatives than query.MaxComplexity, or a q longer than
+// query.MaxLength, or more scope UIDs than maxScopeFilters, is rejected with an
+// error the handler answers as 400 — while a query at the cap and a normal
+// query pass untouched. This is the fix for the authenticated slow-query DoS.
+func TestParseListParams_complexityCap(t *testing.T) {
+	t.Parallel()
+
+	// strings.Repeat("a|", n) + "a" yields exactly n+1 pipe-separated alternatives.
+	overAlternatives := "title:" + strings.Repeat("a|", query.MaxComplexity) + "a" // MaxComplexity+1
+	atAlternatives := "title:" + strings.Repeat("a|", query.MaxComplexity-1) + "a" // exactly MaxComplexity
+	overLength := strings.Repeat("a", query.MaxLength+1)                           // one token, over the byte cap
+	overScope := make([]string, maxScopeFilters+1)
+	for i := range overScope {
+		overScope[i] = "al"
+	}
+
+	tests := []struct {
+		name    string
+		values  url.Values
+		wantErr bool
+	}{
+		{name: "alternatives over the cap rejected", values: url.Values{"q": {overAlternatives}}, wantErr: true},
+		{name: "alternatives at the cap accepted", values: url.Values{"q": {atAlternatives}}, wantErr: false},
+		{name: "over-long q rejected", values: url.Values{"q": {overLength}}, wantErr: true},
+		{name: "normal query accepted", values: url.Values{"q": {"beach label:cat|dog iso:100-400"}}, wantErr: false},
+		{name: "too many scope filters rejected", values: url.Values{"album": overScope}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, err := parseListParams(tt.values)
+			if tt.wantErr && err == nil {
+				t.Errorf("parseListParams(%s) = nil error, want a validation error", tt.name)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("parseListParams(%s) error = %v, want nil", tt.name, err)
+			}
+		})
+	}
 }

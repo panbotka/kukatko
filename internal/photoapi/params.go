@@ -67,7 +67,13 @@ func parseListParams(q url.Values) (photos.ListParams, []string, error) {
 	if err := applyRatingFilters(q, &params); err != nil {
 		return photos.ListParams{}, nil, err
 	}
-	unknown := applyQuery(q, &params)
+	if err := capScopeFilters(params); err != nil {
+		return photos.ListParams{}, nil, err
+	}
+	unknown, err := applyQuery(q, &params)
+	if err != nil {
+		return photos.ListParams{}, nil, err
+	}
 	// An album scope is always presented chronologically, oldest first, whatever
 	// sort or order the query carries. The override lives here — where the album
 	// scope enters the shared list path — so the endpoint's defaults stay
@@ -87,13 +93,44 @@ func parseListParams(q url.Values) (photos.ListParams, []string, error) {
 // conditions, the residual free text keeps the substring behaviour of q, and
 // its '-term' negations become exclusions. It returns the raw filter-shaped
 // tokens that were not understood; they already degraded to free text, this
-// list only feeds the UI hint.
-func applyQuery(q url.Values, params *photos.ListParams) []string {
-	parsed := query.Parse(q.Get("q"))
+// list only feeds the UI hint. It caps the query's length and complexity first,
+// so a single authenticated request cannot pack tens of thousands of
+// '|'-alternatives into one token and force an arbitrarily expensive scan; an
+// over-budget query yields a descriptive error the caller answers with 400.
+func applyQuery(q url.Values, params *photos.ListParams) ([]string, error) {
+	raw := q.Get("q")
+	if len(raw) > query.MaxLength {
+		return nil, fmt.Errorf("q is too long: %d characters exceed the limit of %d", len(raw), query.MaxLength)
+	}
+	parsed := query.Parse(raw)
+	if n := parsed.Complexity(); n > query.MaxComplexity {
+		return nil, fmt.Errorf("q is too complex: %d conditions exceed the limit of %d", n, query.MaxComplexity)
+	}
 	params.Search = parsed.PlainText()
 	params.SearchNot = parsed.NotTerms()
 	params.QueryFilters = parsed.Filters
-	return parsed.Unknown
+	return parsed.Unknown, nil
+}
+
+// maxScopeFilters caps the combined number of album, label and person scope
+// UIDs a single request may carry through the repeatable ?album=/?label=/
+// ?person= params — the param-path equivalent of the query language's
+// alternatives. Each UID compiles to its own AND-ed membership condition with a
+// bound parameter, so an unbounded count is a second slow-query / parameter-
+// limit lever; a few hundred is far above any real scoped grid.
+const maxScopeFilters = 256
+
+// capScopeFilters rejects a request whose album, label and person scope filters
+// together exceed maxScopeFilters, so the multi-value param path cannot be used
+// to force an oversized WHERE clause the way a packed q token could. It returns
+// a descriptive error the caller answers with 400; a normal scoped view carries
+// a handful of UIDs and passes untouched.
+func capScopeFilters(params photos.ListParams) error {
+	n := len(params.AlbumUIDs) + len(params.LabelUIDs) + len(params.SubjectUIDs)
+	if n > maxScopeFilters {
+		return fmt.Errorf("too many scope filters: %d exceed the limit of %d", n, maxScopeFilters)
+	}
+	return nil
 }
 
 // applyRatingFilters validates and applies the per-user rating filters: min_rating

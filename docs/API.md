@@ -829,3 +829,19 @@ Booleans accept `yes/no`, `true/false` and `1/0`. Per-user filters (`favorite:`,
 are always scoped to the caller (`RatedBy`); without an authenticated user they are inert.
 Structured query params (`?album=`, `?label=`, `?year=`, …) **keep working unchanged** —
 the language is purely additive and saved searches stay compatible.
+
+### Complexity limits (400)
+
+To stop a single authenticated request from forcing an arbitrarily expensive query, `q` is capped
+before it compiles to SQL (constants live in `internal/query`; enforced by `parseListParams` and by the
+MCP `search_photos` tool):
+
+- **Length** — `q` may be at most **8192** characters (`query.MaxLength`).
+- **Complexity** — the parsed query may compile to at most **256** conditions (`query.MaxComplexity`),
+  counting one per free-text term plus one per filter OR-alternative. So `label:cat\|dog` is 2 and
+  `title:a\|a\|…\|a` with hundreds of pipes is that many; a legitimate search is a handful.
+- **Scope params** — the repeatable `?album=`/`?label=`/`?person=` params add at most **256** UIDs combined
+  (the param-path equivalent of the alternatives cap).
+
+Anything past a cap is rejected with **400** and a descriptive message; every honest query is far below
+the limits and is unaffected.
