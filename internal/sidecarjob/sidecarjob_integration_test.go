@@ -4,6 +4,7 @@ package sidecarjob_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -307,6 +308,76 @@ func TestExport_reflectsAnEditRatherThanTheStateThatTriggeredIt(t *testing.T) {
 	}
 	if got := fix.readSidecar(t, photo.FilePath).Descriptive.Title; got != "Poslední" {
 		t.Errorf("title = %q, want Poslední — the job must write the current state", got)
+	}
+}
+
+// sidecarPayload builds a {"photo_uid": uid} JSON payload for a sidecar job.
+func sidecarPayload(t *testing.T, uid string) json.RawMessage {
+	t.Helper()
+
+	raw, err := json.Marshal(map[string]string{"photo_uid": uid})
+	if err != nil {
+		t.Fatalf("marshaling sidecar payload: %v", err)
+	}
+	return raw
+}
+
+// TestExport_editWhileJobRunningSchedulesAFreshWrite reproduces the dropped-rewrite
+// bug end to end: a sidecar job for P is already running (it read and wrote P's
+// pre-edit state), an edit then lands, and the mutation's EnqueueSidecar(P) runs.
+// With the sidecar dedup scoped to the queued state (migration 0044) that enqueue
+// schedules a fresh follow-up instead of colliding with the in-flight job, and
+// running the follow-up writes the edit to disk. Before the fix the enqueue was
+// swallowed as a duplicate and the on-disk sidecar stayed stale.
+func TestExport_editWhileJobRunningSchedulesAFreshWrite(t *testing.T) {
+	fix := newExportFixture(t)
+	ctx := t.Context()
+
+	store := jobs.NewStore(fix.db.Pool())
+	enq := jobs.NewEnqueuer(store)
+	photo := makePhoto(t, fix.photos, "e2erunedit01")
+
+	// The in-flight job read P and wrote the sidecar for the pre-edit title.
+	if _, err := fix.photos.UpdateMetadata(ctx, photo.UID, photos.MetadataUpdate{Title: "První"}); err != nil {
+		t.Fatalf("first edit: %v", err)
+	}
+	if err := fix.svc.Export(ctx, photo.UID); err != nil {
+		t.Fatalf("export of the pre-edit state: %v", err)
+	}
+	if got := fix.readSidecar(t, photo.FilePath).Descriptive.Title; got != "První" {
+		t.Fatalf("pre-edit sidecar title = %q, want První", got)
+	}
+
+	// A sidecar job for P is in flight: enqueue one and claim it so it is running.
+	if _, err := store.Enqueue(ctx, jobs.TypeSidecar, sidecarPayload(t, photo.UID), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("enqueue in-flight sidecar: %v", err)
+	}
+	claimed, err := store.Claim(ctx, "w1", jobs.TypeSidecar)
+	if err != nil {
+		t.Fatalf("claim in-flight sidecar: %v", err)
+	}
+	if claimed.State != jobs.StateRunning {
+		t.Fatalf("in-flight job state = %q, want running", claimed.State)
+	}
+
+	// The user commits an edit and the mutation enqueues a sidecar rewrite while
+	// the job above is still running.
+	if _, err := fix.photos.UpdateMetadata(ctx, photo.UID, photos.MetadataUpdate{Title: "Poslední"}); err != nil {
+		t.Fatalf("second edit: %v", err)
+	}
+	if err := enq.EnqueueSidecar(ctx, photo.UID); err != nil {
+		t.Fatalf("EnqueueSidecar after the edit: %v", err)
+	}
+	// The follow-up exists (running job excluded); before migration 0044 it was 0.
+	assertQueuedSidecarJobs(t, fix.db, 1)
+
+	// Running the follow-up writes the edited state, so the on-disk sidecar is
+	// current and the edit is not lost.
+	if err := fix.svc.Export(ctx, photo.UID); err != nil {
+		t.Fatalf("export of the follow-up: %v", err)
+	}
+	if got := fix.readSidecar(t, photo.FilePath).Descriptive.Title; got != "Poslední" {
+		t.Errorf("sidecar title = %q, want Poslední — the edit during the running job must reach disk", got)
 	}
 }
 
