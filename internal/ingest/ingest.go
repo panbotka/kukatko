@@ -124,6 +124,11 @@ type Config struct {
 	Duplicate config.DuplicateConfig
 	// MaxFileSize caps a single uploaded file in bytes; 0 means unlimited.
 	MaxFileSize int64
+	// MaxPixels caps the width×height of an original the pipeline will fully
+	// decode for its perceptual hash; a larger source is rejected before its
+	// bitmap is allocated so a decompression bomb cannot OOM the request. 0
+	// disables the cap.
+	MaxPixels int64
 	// TempDir is where uploads are streamed before publishing; "" uses the OS
 	// temp directory.
 	TempDir string
@@ -140,6 +145,7 @@ type Service struct {
 	sidecar     SidecarEnqueuer
 	dup         config.DuplicateConfig
 	maxFileSize int64
+	maxPixels   int64
 	tempDir     string
 }
 
@@ -157,6 +163,7 @@ func New(cfg Config) *Service {
 		sidecar:     cfg.Sidecar,
 		dup:         cfg.Duplicate,
 		maxFileSize: cfg.MaxFileSize,
+		maxPixels:   cfg.MaxPixels,
 		tempDir:     cfg.TempDir,
 	}
 }
@@ -424,6 +431,11 @@ func (s *Service) decodeOriginal(ctx context.Context, photo photos.Photo) (image
 	}
 	// The decoded file may be derived from the original, so drop it first.
 	cleanup := func() { releaseDecoded(); releaseOriginal() }
+
+	if err := imgconvert.EnforcePixelBound(decPath, s.maxPixels); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("ingest: %w", err)
+	}
 
 	file, err := os.Open(decPath) //nolint:gosec // G304: decPath comes from storage/imgconvert, not user input.
 	if err != nil {

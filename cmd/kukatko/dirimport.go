@@ -370,6 +370,7 @@ func buildDirImportService(cfg *config.Config, db *database.DB, concurrency int)
 		Enqueuer:    jobs.NewEnqueuer(jobs.NewStore(pool)),
 		Duplicate:   cfg.Duplicate,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
+		MaxPixels:   cfg.Thumb.MaxPixels,
 	})
 	return dirimport.New(dirimport.Config{
 		Ingest:      ingestSvc,

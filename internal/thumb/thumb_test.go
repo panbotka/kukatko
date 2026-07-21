@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 )
@@ -90,6 +91,37 @@ func jpegBounds(t *testing.T, path string) (width, height int) {
 	}
 	b := img.Bounds()
 	return b.Dx(), b.Dy()
+}
+
+// TestGenerate_rejectsOversizedSource confirms the decode pixel cap refuses a
+// source whose dimensions exceed the bound before the bitmap is allocated, so a
+// decompression bomb fails the job (with imgconvert.ErrImageTooLarge) instead of
+// OOMing the worker. A 1-pixel cap puts any real image over the bound.
+func TestGenerate_rejectsOversizedSource(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	store, err := storage.NewFS(filepath.Join(root, "originals"))
+	if err != nil {
+		t.Fatalf("storage.NewFS: %v", err)
+	}
+	th := New(store, filepath.Join(root, "cache"), WithMaxPixels(1))
+	photo := storeJPEG(t, store, 64, 48, 0)
+
+	if _, err := th.Generate(context.Background(), photo, "fit_720"); !errors.Is(err, imgconvert.ErrImageTooLarge) {
+		t.Fatalf("Generate error = %v, want imgconvert.ErrImageTooLarge", err)
+	}
+}
+
+// TestGenerate_maxPixelsZeroDisablesCap confirms a thumbnailer built without
+// WithMaxPixels (cap 0) decodes normally, so the bound is opt-in and never
+// rejects a legitimate source when unset.
+func TestGenerate_maxPixelsZeroDisablesCap(t *testing.T) {
+	t.Parallel()
+	th, store := newThumbnailer(t) // no WithMaxPixels => cap 0 => disabled
+	photo := storeJPEG(t, store, 64, 48, 0)
+	if _, err := th.Generate(context.Background(), photo, "fit_720"); err != nil {
+		t.Fatalf("Generate with disabled cap = %v, want nil", err)
+	}
 }
 
 // TestGenerate_fitResizesAndBounds confirms a fit size scales the longest side

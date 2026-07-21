@@ -91,6 +91,15 @@ thumb:
   # Max thumbnail sizes encoded in parallel per photo. 0 = GOMAXPROCS. Lower it on
   # memory-constrained hosts to cap peak thumbnail memory. KUKATKO_THUMB_CONCURRENCY.
   concurrency: 0
+  # Max source pixels (width×height) the decode pipeline will fully rasterize. A
+  # larger original — a decompression bomb or an accidentally enormous panorama —
+  # is rejected before its RGBA bitmap is allocated (a 30000×30000 image is ~3.6 GB),
+  # so one bad file fails its thumbnail/pHash job instead of OOMing a worker. The
+  # same cap guards thumbnail generation and the ingest-time perceptual-hash decode.
+  # 0 (or negative) disables the cap. Default 200 MP (~800 MB peak per decode at
+  # ~4 bytes/pixel) admits every current camera and moderate panoramas.
+  # KUKATKO_THUMB_MAX_PIXELS.
+  max_pixels: 200000000
 
 web:
   # Listen host. Use 0.0.0.0 to bind all interfaces.

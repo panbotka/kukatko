@@ -15,9 +15,10 @@ import (
 
 // thumbOptions returns the thumbnailer options shared by every thumb.New call
 // site: generation-timing instrumentation when reg is non-nil, the configured
-// per-photo encode concurrency, and the vips engine when thumb.engine is "vips"
-// (resolved on PATH; a no-op when the binary is missing). It keeps the engine
-// selection and instrumentation consistent across the process.
+// per-photo encode concurrency, the decode pixel cap that rejects a
+// decompression bomb before it can OOM a worker, and the vips engine when
+// thumb.engine is "vips" (resolved on PATH; a no-op when the binary is missing).
+// It keeps the engine selection and instrumentation consistent across the process.
 func thumbOptions(cfg *config.Config, reg *metrics.Registry) []thumb.Option {
 	var opts []thumb.Option
 	if reg != nil {
@@ -26,6 +27,7 @@ func thumbOptions(cfg *config.Config, reg *metrics.Registry) []thumb.Option {
 	if cfg.Thumb.Concurrency > 0 {
 		opts = append(opts, thumb.WithConcurrency(cfg.Thumb.Concurrency))
 	}
+	opts = append(opts, thumb.WithMaxPixels(cfg.Thumb.MaxPixels))
 	if cfg.Thumb.VipsEnabled() {
 		opts = append(opts, thumb.WithVips(cfg.Thumb.VipsBinary))
 	}

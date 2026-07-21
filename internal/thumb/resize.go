@@ -23,13 +23,19 @@ import (
 // via imgconvert for HEIC/RAW originals — decodes it once with the registered
 // JPEG/PNG/WebP decoders, and applies the EXIF orientation so the returned
 // image is in display orientation. The intermediate JPEG (if any) is cleaned up
-// before returning.
-func decodeAndOrient(ctx context.Context, srcPath string, orientation int) (image.Image, error) {
+// before returning. maxPixels caps the source dimensions: an image whose
+// width×height exceeds it is rejected (imgconvert.ErrImageTooLarge) before the
+// full bitmap is allocated; a non-positive maxPixels disables the cap.
+func decodeAndOrient(ctx context.Context, srcPath string, orientation int, maxPixels int64) (image.Image, error) {
 	decPath, cleanup, err := imgconvert.EnsureDecodable(ctx, srcPath)
 	if err != nil {
 		return nil, fmt.Errorf("thumb: prepare %s: %w", srcPath, err)
 	}
 	defer cleanup()
+
+	if err := imgconvert.EnforcePixelBound(decPath, maxPixels); err != nil {
+		return nil, fmt.Errorf("thumb: %s: %w", srcPath, err)
+	}
 
 	f, err := os.Open(decPath) //nolint:gosec // G304: decPath is from the trusted storage layer or imgconvert temp.
 	if err != nil {
