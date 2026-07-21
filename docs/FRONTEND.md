@@ -44,7 +44,12 @@ here.
   prop) when the current route is one of its children (`pathMatches` also honors a detail sub-path like
   `/albums/{uid}`) — it is built from `Dropdown`+`Dropdown.Toggle as={NavLink}` (not `NavDropdown`, which
   consumes the `title` prop for the toggle's content, leaving none for the tooltip); items in the mobile burger
-  menu expand inline with tap-targets (`kukatko-tap-target`),
+  menu expand inline with tap-targets (`kukatko-tap-target`). On a phone the `Navbar` is **controlled**
+  (an `expanded` state + `onToggle`); a `useEffect` on the `useLocation` pathname resets it to closed on
+  **every navigation**, so tapping any item — top-level link, group-dropdown item, or user-menu item —
+  auto-closes the burger instead of leaving it open over the page. Logout closes it explicitly (a handler,
+  not a route change). This replaces react-bootstrap `collapseOnSelect`, which never fired for the bar's
+  bare `NavLink`s and raw `Dropdown.Item`s; on `md`+ the collapse is always shown, so the state is inert there,
   `Footer` (**global footer** below `<main>` on every page in `Layout` — the fullscreen
   `/slideshow` and the immersive `/photos/:uid` run outside the shell, so they don't have it: „Provozuje SDH Veselice“ + a link to the source code
   <https://github.com/panbotka/kukatko> in a new tab with `rel="noopener noreferrer"` and a decorative
