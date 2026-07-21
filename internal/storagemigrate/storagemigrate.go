@@ -6,9 +6,10 @@
 // # The safety rule
 //
 // Every step of a photo happens in one order and no other: upload each of its
-// objects, read each back and check it holds the size and the SHA256 the
-// catalogue promised, commit the row, and only then — and only when asked to —
-// remove the local original. Nothing about a failure is silent and nothing about
+// objects — the original, its metadata sidecar, its cached thumbnails — read
+// each back and check it holds the size and the SHA256 the catalogue promised,
+// commit the row, and only then — and only when asked to — remove the local
+// original and its sidecar. Nothing about a failure is silent and nothing about
 // it is destructive: an object that does not verify is not committed, and an
 // original whose row is not committed is not deleted. There is no path through
 // this package on which bytes exist only in a place that has not answered for
@@ -45,6 +46,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -86,12 +88,17 @@ type Destination interface {
 	Put(ctx context.Context, src io.Reader, file storage.StoredFile) error
 }
 
-// Source is the local store the originals are read from and — only once their
-// objects are verified and their rows committed — removed from.
+// Source is the local store the originals and their sidecars are read from and —
+// only once their objects are verified and their rows committed — removed from.
 type Source interface {
-	// Open opens the original at relPath for reading.
+	// Open opens the file at relPath for reading.
 	Open(ctx context.Context, relPath string) (io.ReadCloser, error)
-	// Delete removes the original at relPath.
+	// Stat reports the size of the file at relPath without reading its content, or
+	// an error wrapping os.ErrNotExist when the source holds none. Whether a photo
+	// has a sidecar at all — and the sidecar's size for the dry-run estimate — is
+	// answered from here, cheaply enough to ask for every photo.
+	Stat(ctx context.Context, relPath string) (os.FileInfo, error)
+	// Delete removes the file at relPath.
 	Delete(ctx context.Context, relPath string) error
 }
 
@@ -198,10 +205,11 @@ type Config struct {
 	BatchSize int
 	// DryRun measures what would move and changes nothing, anywhere.
 	DryRun bool
-	// DeleteLocal removes each local original once its objects are verified and
-	// its row is committed. Cached thumbnails are never removed: they are
-	// regenerable from the original, and the disk they sit on is not the disk this
-	// migration exists to empty.
+	// DeleteLocal removes each local original — and its metadata sidecar — once
+	// every object of the photo is verified in the destination and its row is
+	// committed. Both sit under the originals root this migration exists to empty.
+	// Cached thumbnails are never removed: they are regenerable from the original,
+	// and the cache they sit in is not the disk this migration empties.
 	DeleteLocal bool
 	// ReportEvery throttles the Report callback. Non-positive reports every photo.
 	ReportEvery time.Duration
@@ -347,10 +355,11 @@ func (m *Migrator) handle(ctx context.Context, item Item) error {
 }
 
 // migrateOne performs the whole ordered ritual for one photo: transfer every
-// object, commit the row, then — last, and only if asked — remove the local
-// original. A dry run stops after measuring.
+// object — the original, its sidecar, its cached thumbnails — commit the row,
+// then — last, and only if asked — remove the local original and its sidecar. A
+// dry run stops after measuring.
 func (m *Migrator) migrateOne(ctx context.Context, item Item) error {
-	objects, err := m.plan(item)
+	objects, err := m.plan(ctx, item)
 	if err != nil {
 		return err
 	}
@@ -377,7 +386,7 @@ func (m *Migrator) migrateOne(ctx context.Context, item Item) error {
 // skip is what makes a resumed run cheap: a HEAD is a Class B operation, of which
 // R2 gives ten million a month, while the PUT it avoids is a Class A.
 func (m *Migrator) transfer(ctx context.Context, obj object) error {
-	digest, err := obj.digest()
+	digest, err := obj.digest(ctx)
 	if err != nil {
 		return err
 	}
@@ -456,11 +465,23 @@ func (m *Migrator) verify(ctx context.Context, want storage.StoredFile) error {
 	return nil
 }
 
-// deleteLocal removes the photo's local original. It is reached only after every
-// object of that photo verified and the row was committed, so the bytes are
-// provably somewhere else first. An original already gone is not an error; the
-// cached thumbnails are left alone.
+// deleteLocal removes the photo's local original and then its local sidecar. It
+// is reached only after every object of that photo — the original, its sidecar,
+// any cached thumbnails — verified in the destination and the row was committed,
+// so both the original and the sidecar are provably somewhere else first. The
+// sidecar goes too because it sits under the very originals root this migration
+// exists to empty; the cached thumbnails do not, being regenerable and living in
+// a separate cache, so they are left alone. A file already gone is not an error.
 func (m *Migrator) deleteLocal(ctx context.Context, item Item) error {
+	if err := m.deleteLocalOriginal(ctx, item); err != nil {
+		return err
+	}
+	return m.deleteLocalSidecar(ctx, item)
+}
+
+// deleteLocalOriginal removes the photo's local original, tallying it as deleted.
+// An original already gone is not an error.
+func (m *Migrator) deleteLocalOriginal(ctx context.Context, item Item) error {
 	if err := m.cfg.Source.Delete(ctx, item.FilePath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -468,6 +489,24 @@ func (m *Migrator) deleteLocal(ctx context.Context, item Item) error {
 		return fmt.Errorf("storagemigrate: removing local original %s: %w", item.FilePath, err)
 	}
 	m.record(func(t *Snapshot) { t.Deleted++ })
+	return nil
+}
+
+// deleteLocalSidecar removes the photo's local sidecar, which by now is durable
+// in the destination. It is not counted in the Deleted tally — that is a count
+// of originals — and a photo with no sidecar, or one already removed, is not an
+// error.
+func (m *Migrator) deleteLocalSidecar(ctx context.Context, item Item) error {
+	key, err := sidecarexport.KeyFor(item.FilePath)
+	if err != nil {
+		return fmt.Errorf("storagemigrate: sidecar key for %s: %w", item.FilePath, err)
+	}
+	if err := m.cfg.Source.Delete(ctx, key); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("storagemigrate: removing local sidecar %s: %w", key, err)
+	}
 	return nil
 }
 

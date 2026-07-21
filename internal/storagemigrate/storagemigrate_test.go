@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storagemigrate"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -119,6 +121,29 @@ func (d *brokenDestination) Put(context.Context, io.Reader, storage.StoredFile) 
 	return d.err
 }
 
+// sidecarRejectingDestination writes everything except the sidecar, which it
+// refuses with a non-systemic error — the way a corrupted sidecar upload would
+// fail verification. It exists to prove that an original is not deleted until its
+// sidecar is durable in the destination.
+type sidecarRejectingDestination struct {
+	inner storagemigrate.Destination
+}
+
+func (d sidecarRejectingDestination) Check(ctx context.Context) error {
+	return d.inner.Check(ctx)
+}
+
+func (d sidecarRejectingDestination) Head(ctx context.Context, relPath string) (storage.StoredFile, error) {
+	return d.inner.Head(ctx, relPath)
+}
+
+func (d sidecarRejectingDestination) Put(ctx context.Context, src io.Reader, file storage.StoredFile) error {
+	if strings.HasPrefix(file.RelPath, sidecarexport.Prefix+"/") {
+		return fmt.Errorf("%w: %s", storage.ErrHashMismatch, file.RelPath)
+	}
+	return d.inner.Put(ctx, src, file)
+}
+
 // fixture is a small library on disk: originals under sourceRoot, thumbnails
 // under cacheDir, and a destination root the migration writes into.
 type fixture struct {
@@ -202,6 +227,18 @@ func writeFile(t *testing.T, absPath string, content []byte) {
 	if err := os.WriteFile(absPath, content, 0o600); err != nil {
 		t.Fatalf("write %s: %v", absPath, err)
 	}
+}
+
+// writeSidecar writes a sidecar for the original at relPath under root, at the
+// parallel sidecars/ key the exporter uses, and returns that key.
+func writeSidecar(t *testing.T, root, relPath string, content []byte) string {
+	t.Helper()
+	key, err := sidecarexport.KeyFor(relPath)
+	if err != nil {
+		t.Fatalf("sidecarexport.KeyFor(%s): %v", relPath, err)
+	}
+	writeFile(t, filepath.Join(root, filepath.FromSlash(key)), content)
+	return key
 }
 
 // thumbPath returns the absolute cache path of the grid thumbnail for hash.
@@ -293,6 +330,12 @@ func TestRun_movesOriginalsAndCachedThumbnails(t *testing.T) {
 func TestRun_dryRunMeasuresAndChangesNothing(t *testing.T) {
 	t.Parallel()
 	fixture := newFixture(t, 2)
+	// Sidecars count toward the estimate too, and a dry run must measure them
+	// (from a cheap stat) without hashing, uploading or deleting them.
+	sidecarKeys := make([]string, 0, len(fixture.catalogue.items))
+	for _, item := range fixture.catalogue.items {
+		sidecarKeys = append(sidecarKeys, writeSidecar(t, fixture.sourceRoot, item.FilePath, []byte("sidecar "+item.UID)))
+	}
 	cfg := fixture.config()
 	cfg.DryRun = true
 	// A dry run must not even look at the destination, let alone write to it.
@@ -303,8 +346,9 @@ func TestRun_dryRunMeasuresAndChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run(dry): %v", err)
 	}
-	if !result.DryRun || result.Photos != 2 || result.Objects != 4 {
-		t.Errorf("dry run = %+v, want 2 photos and 4 objects", result.Snapshot)
+	if !result.DryRun || result.Photos != 2 || result.Objects != 6 {
+		t.Errorf("dry run = %+v, want 2 photos and 6 objects (2 originals + 2 thumbnails + 2 sidecars)",
+			result.Snapshot)
 	}
 	if result.Bytes == 0 {
 		t.Error("a dry run must report how many bytes would move")
@@ -315,12 +359,15 @@ func TestRun_dryRunMeasuresAndChangesNothing(t *testing.T) {
 	if keys := objectKeys(t, fixture.destRoot); len(keys) != 0 {
 		t.Errorf("a dry run wrote %v to the destination", keys)
 	}
-	for _, item := range fixture.catalogue.items {
+	for i, item := range fixture.catalogue.items {
 		if fixture.catalogue.isMigrated(item.UID) {
 			t.Errorf("a dry run committed the row of %s", item.UID)
 		}
 		if !exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(item.FilePath))) {
 			t.Errorf("a dry run removed the local original %s", item.FilePath)
+		}
+		if !exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(sidecarKeys[i]))) {
+			t.Errorf("a dry run removed the local sidecar %s", sidecarKeys[i])
 		}
 	}
 }
@@ -390,6 +437,106 @@ func TestRun_deleteLocalRemovesOriginalsOnlyAfterTheRowIsCommitted(t *testing.T)
 		if !exists(t, thumbPath(t, fixture.cacheDir, item.FileHash)) {
 			t.Errorf("the cached thumbnail of %s was removed", item.UID)
 		}
+	}
+}
+
+func TestRun_movesTheMetadataSidecarWithTheOriginal(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 2)
+	// Every photo carries a sidecar on local disk — the disaster-recovery artifact
+	// a rebuild reads the catalogue back out of. The migration must carry it into
+	// the destination rather than strand it on the disk it exists to empty.
+	sidecarKeys := make([]string, 0, len(fixture.catalogue.items))
+	for _, item := range fixture.catalogue.items {
+		sidecarKeys = append(sidecarKeys, writeSidecar(t, fixture.sourceRoot, item.FilePath, []byte("sidecar "+item.UID)))
+	}
+
+	result, err := run(t, fixture.config())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// Three objects per photo now: the original, its thumbnail, and its sidecar.
+	if result.Objects != 6 {
+		t.Errorf("uploaded %d objects, want 6 (2 originals + 2 thumbnails + 2 sidecars)", result.Objects)
+	}
+	keys := objectKeys(t, fixture.destRoot)
+	for i, item := range fixture.catalogue.items {
+		if !slices.Contains(keys, sidecarKeys[i]) {
+			t.Errorf("sidecar %s of %s did not land in the destination; got %v", sidecarKeys[i], item.UID, keys)
+		}
+		// Without --delete-local the local sidecar, like the local original, stays.
+		if !exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(sidecarKeys[i]))) {
+			t.Errorf("local sidecar of %s was removed without --delete-local", item.UID)
+		}
+	}
+}
+
+func TestRun_deleteLocalRemovesTheSidecarAlongsideTheOriginal(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 2)
+	sidecarKeys := make([]string, 0, len(fixture.catalogue.items))
+	for _, item := range fixture.catalogue.items {
+		sidecarKeys = append(sidecarKeys, writeSidecar(t, fixture.sourceRoot, item.FilePath, []byte("sidecar "+item.UID)))
+	}
+	cfg := fixture.config()
+	cfg.DeleteLocal = true
+
+	result, err := run(t, cfg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// The Deleted tally counts originals, not the sidecars removed alongside them.
+	if result.Deleted != 2 {
+		t.Errorf("removed %d local originals, want 2", result.Deleted)
+	}
+	for i, item := range fixture.catalogue.items {
+		// The sidecar is durable in the destination before its local copy is gone.
+		if !exists(t, filepath.Join(fixture.destRoot, filepath.FromSlash(sidecarKeys[i]))) {
+			t.Errorf("sidecar of %s was not in the destination", item.UID)
+		}
+		// And the local copies — both on the disk this migration empties — are gone.
+		if exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(sidecarKeys[i]))) {
+			t.Errorf("local sidecar of %s survived --delete-local", item.UID)
+		}
+		if exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(item.FilePath))) {
+			t.Errorf("local original of %s survived --delete-local", item.UID)
+		}
+	}
+}
+
+func TestRun_keepsTheOriginalWhenTheSidecarFailsVerification(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t, 1)
+	item := fixture.catalogue.items[0]
+	sidecarKey := writeSidecar(t, fixture.sourceRoot, item.FilePath, []byte("sidecar "+item.UID))
+
+	cfg := fixture.config()
+	cfg.DeleteLocal = true
+	// The destination refuses the sidecar, as a corrupted upload would. The
+	// original must not be deleted while its sidecar is not durable there.
+	cfg.Destination = sidecarRejectingDestination{inner: fixture.destination}
+
+	result, err := run(t, cfg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Failed != 1 || len(result.Failures) != 1 {
+		t.Fatalf("Run = %d failures (%v), want exactly 1", result.Failed, result.Failures)
+	}
+	if !errors.Is(result.Failures[0].Err, storage.ErrHashMismatch) {
+		t.Errorf("failure = %v, want a hash mismatch on the sidecar", result.Failures[0].Err)
+	}
+	if fixture.catalogue.isMigrated(item.UID) {
+		t.Error("a photo whose sidecar failed verification was committed as migrated")
+	}
+	if result.Deleted != 0 {
+		t.Errorf("deleted %d local originals though the sidecar never became durable", result.Deleted)
+	}
+	if !exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(item.FilePath))) {
+		t.Error("the local original was deleted before its sidecar was durable in the destination")
+	}
+	if !exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(sidecarKey))) {
+		t.Error("the local sidecar was deleted though its upload failed verification")
 	}
 }
 

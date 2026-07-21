@@ -302,7 +302,10 @@ have the original's storage key. Three consequences worth knowing:
   The whole export is one prefix, so it can be listed, `rsync`ed or discarded as a unit.
 - **Same storage as the originals.** It works identically on the `fs` and `r2` backends, and the
   backup's originals sync copies the sidecars into the backup bucket along with the photos — the
-  curation travels with the photos, which is the point.
+  curation travels with the photos, which is the point. The `storage migrate-to-r2` move (see
+  `docs/OPERATIONS.md`) carries them the same way: each sidecar is uploaded and verified into the
+  destination alongside its original, and — with `--delete-local` — its local copy is removed with
+  the original. Reclaiming the local disk after a migration therefore never strands a sidecar.
 
 ### The file
 
