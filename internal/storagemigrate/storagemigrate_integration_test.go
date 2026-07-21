@@ -544,3 +544,54 @@ func assertLocalDiskMatchesTheCommits(t *testing.T, lib *library) {
 		}
 	}
 }
+
+// TestMigrateToR2_CarriesTheSidecarAndReclaimsItLocally proves the migration
+// moves each photo's metadata sidecar — the disaster-recovery artifact the
+// catalogue can be rebuilt from — into the bucket alongside its original, and,
+// under --delete-local, removes the local sidecar too. That is the whole point:
+// once the disk is reclaimed, the sidecar must not be stranded on it.
+func TestMigrateToR2_CarriesTheSidecarAndReclaimsItLocally(t *testing.T) {
+	const photoCount = 3
+	bucket := os.Getenv(envTestS3Bucket)
+	if bucket == "" {
+		bucket = "kukatko-test"
+	}
+	destination := bucketStore(t)
+	lib := newLibrary(t, photoCount, -1)
+	source, err := storage.NewFS(lib.sourceRoot)
+	if err != nil {
+		t.Fatalf("NewFS(source): %v", err)
+	}
+
+	// Give every photo a sidecar on local disk, in the parallel sidecars/ tree.
+	sidecarKeys := make(map[string]string, photoCount)
+	for _, photo := range lib.photos {
+		sidecarKeys[photo.uid] = writeSidecar(t, lib.sourceRoot, photo.relPath, []byte("sidecar for "+photo.uid))
+	}
+
+	migrator, err := newMigrator(t, lib, source, destination)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	result, err := migrator.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Failures) != 0 {
+		t.Fatalf("Run reported failures: %v", result.Failures)
+	}
+
+	keys := bucketKeys(t, bucketClient(t, os.Getenv(envTestS3Endpoint)), bucket)
+	for _, photo := range lib.photos {
+		key := sidecarKeys[photo.uid]
+		if !slices.Contains(keys, key) {
+			t.Errorf("sidecar %s of %s did not land in the bucket; got %v", key, photo.uid, keys)
+		}
+		if exists(t, filepath.Join(lib.sourceRoot, filepath.FromSlash(key))) {
+			t.Errorf("local sidecar of %s survived --delete-local", photo.uid)
+		}
+		if lib.originalExists(t, photo) {
+			t.Errorf("local original of %s survived --delete-local", photo.uid)
+		}
+	}
+}

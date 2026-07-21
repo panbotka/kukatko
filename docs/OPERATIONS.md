@@ -173,9 +173,10 @@ the **sidecar report** (see above), and the run duration.
 
 ### `kukatko storage migrate-to-r2`
 
-A one-off move of ~120 GB of originals (and already-cached thumbnails) from the local disk to the R2
-bucket. It runs for hours and may be killed and restarted at any time. Object keys = `file_path`
-from Postgres, so nothing is re-keyed — the bucket gets the same layout as the disk.
+A one-off move of ~120 GB of originals (with their metadata sidecars and already-cached thumbnails)
+from the local disk to the R2 bucket. It runs for hours and may be killed and restarted at any time.
+Object keys = `file_path` from Postgres (and the parallel `sidecars/…` key for each sidecar), so
+nothing is re-keyed — the bucket gets the same layout as the disk.
 
 It needs `storage.r2.{endpoint,bucket,access_key,secret_key}` and `storage.temp_path`, otherwise
 it ends on `errStorageR2NotConfigured` (the message names the keys, never their values).
@@ -185,14 +186,19 @@ it does not mint URLs. Run it **before** switching `storage.backend` to `r2`.
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--dry-run` | `false` | only counts how many photos/objects/bytes would be moved; touches neither the bucket, DB, nor disk |
-| `--delete-local` | `false` | deletes the local original — only **after** the row is committed, never for a photo that failed verification |
+| `--delete-local` | `false` | deletes the local original **and its metadata sidecar** — only **after** the row is committed, never for a photo that failed verification |
 | `--concurrency` | `2` | how many photos are uploaded in parallel (deliberately low: small VPS, FDs and memory) |
 | `--batch-size` | `200` | how many pending photos are loaded from the catalog at once |
 
-**The per-photo step order is binding:** upload the objects → read them back (size + SHA256) →
-commit the row (`photos.storage_migrated_at`) → only then delete the local original. Thumbnails are
-never deleted (they are regenerable from the original). A photo that failed stays without a stamp,
-keeps its original on disk, and the next run retries it.
+**The per-photo step order is binding:** upload the objects — the original, its metadata sidecar,
+and any cached thumbnails — → read them back (size + SHA256) → commit the row
+(`photos.storage_migrated_at`) → only then delete the local original **and its sidecar**. The sidecar
+is the disaster-recovery artifact (a rebuild reads the catalogue back out of it), so it travels into
+the bucket with the original and the original is **never** deleted until its sidecar is durable there;
+both sit under the originals root this migration exists to empty, so `--delete-local` removes both.
+Thumbnails are never deleted (regenerable from the original, and living in a separate cache). A photo
+with no sidecar yet simply has none to move. A photo that failed stays without a stamp, keeps its
+original on disk, and the next run retries it.
 
 **Resume:** the cursor is `photos.storage_migrated_at` (migration `0019`) — the same high-watermark
 rule as `internal/importer`, only per row, because under parallelism photo N+1 commonly finishes

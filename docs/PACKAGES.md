@@ -267,10 +267,14 @@ to `## Package map` in `CLAUDE.md`.
   `New(Config)` → `Migrator`, `Run(ctx)` → `Result`. Config takes the narrow interfaces `Catalogue`
   /`Source`/`Destination` (not `storage.Storage`), so the whole pipeline can be tested with `FS`
   instead of a bucket; `Store` over a pgx pool is the production `Catalogue`. **Binding order per photo:**
-  upload all objects (the original + the thumbnails already in cache — it generates no new ones) →
-  `Head` reads them back and verifies size and SHA256 → `MarkMigrated` commits the row → only then
-  the optional `Delete` of the local original. There is no path where the bytes live only where
-  nobody has vouched for them. **The cursor** is `photos.storage_migrated_at` (migration `0019`), i.e.
+  upload all objects (the original, its metadata sidecar if one exists on disk — `sidecarexport.KeyFor`
+  keys it — and the thumbnails already in cache; it generates no new ones) → `Head` reads them back and
+  verifies size and SHA256 → `MarkMigrated` commits the row → only then the optional `Delete` of the
+  local original **and its sidecar**. The sidecar is the non-regenerable disaster-recovery artifact, so
+  it is carried into the store with the original and the original is never deleted until the sidecar is
+  durable there; both live under the originals root the move empties, while thumbnails (regenerable,
+  in a separate cache) stay. There is no path where the bytes live only where nobody has vouched for
+  them. **The cursor** is `photos.storage_migrated_at` (migration `0019`), i.e.
   the `internal/importer` high-watermark **per row** — a scalar watermark would lie, because with
   `Concurrency > 1` photo N+1 commonly finishes before N; it pages by a `uid` cursor, so
   a failed photo doesn't fall into an infinite loop within the same run. An object that lies in the bucket with
@@ -281,7 +285,8 @@ to `## Package map` in `CLAUDE.md`.
   15 s) prints progress + an estimate of the remainder. It streams; never holds a file in RAM. The integration test
   `storagemigrate_integration_test.go` (tag `integration`, needs MinIO **and**
   `KUKATKO_TEST_DATABASE_URL`) kills the run mid-photo, resumes it, and asserts that every object
-  landed **exactly once** and that nobody deleted the original of a photo whose verification failed),
+  landed **exactly once** and that nobody deleted the original of a photo whose verification failed;
+  a second case asserts each photo's sidecar lands in the bucket and its local copy is reclaimed),
   `internal/mediaurl/`
   (mints client media addresses and stamps them onto photo payloads; the only decision is made by the storage
   backend via `URL`. `NewBuilder(store)` → `Builder` with `Thumb(uid,fileHash,size)` /
