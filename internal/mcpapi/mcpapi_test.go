@@ -277,6 +277,29 @@ func TestSearchParamsScopes(t *testing.T) {
 	}
 }
 
+// TestSearchParamsCapsComplexity checks the MCP search tool enforces the same
+// query-complexity cap as the HTTP endpoints, so this equivalent path cannot be
+// used to force an authenticated slow-query DoS. A query packing more
+// '|'-alternatives than query.MaxComplexity is rejected; a normal query is not.
+func TestSearchParamsCapsComplexity(t *testing.T) {
+	api := &API{pageSize: 25, maxPageSize: 100}
+	c := caller{user: auth.User{UID: "user-1", Role: auth.RoleViewer}}
+
+	overComplex := "title:" + strings.Repeat("a|", query.MaxComplexity) + "a"
+	if _, _, err := api.searchParams(c, searchPhotosIn{Query: overComplex}); err == nil {
+		t.Error("searchParams accepted an over-complex query, want a cap error")
+	}
+
+	overLong := strings.Repeat("a", query.MaxLength+1)
+	if _, _, err := api.searchParams(c, searchPhotosIn{Query: overLong}); err == nil {
+		t.Error("searchParams accepted an over-long query, want a cap error")
+	}
+
+	if _, _, err := api.searchParams(c, searchPhotosIn{Query: "babicka label:cat|dog"}); err != nil {
+		t.Errorf("searchParams rejected a normal query: %v", err)
+	}
+}
+
 // TestApplySortRejectsUnknown checks a mistyped sort is an error naming the
 // alternatives, not a silent fallback that answers the wrong question.
 func TestApplySortRejectsUnknown(t *testing.T) {

@@ -162,7 +162,18 @@ func (a *API) runSearch(ctx context.Context, params photos.ListParams, ranked bo
 // searchParams compiles the tool's arguments into store parameters, reporting
 // whether the ranked full-text path applies.
 func (a *API) searchParams(c caller, in searchPhotosIn) (photos.ListParams, bool, error) {
+	// Cap the query the same way the HTTP list/search endpoints do, so this
+	// equivalent path cannot pack tens of thousands of '|'-alternatives into one
+	// token and force an arbitrarily expensive scan.
+	if len(in.Query) > query.MaxLength {
+		return photos.ListParams{}, false,
+			fmt.Errorf("query is too long: %d characters exceed the limit of %d", len(in.Query), query.MaxLength)
+	}
 	parsed := query.Parse(in.Query)
+	if n := parsed.Complexity(); n > query.MaxComplexity {
+		return photos.ListParams{}, false,
+			fmt.Errorf("query is too complex: %d conditions exceed the limit of %d", n, query.MaxComplexity)
+	}
 	params := photos.ListParams{
 		QueryFilters: parsed.Filters,
 		// Scope the query language's per-user filters (favorite:, rating:, flag:)
