@@ -44,6 +44,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"thumb.engine", cfg.Thumb.Engine, ThumbEngineGo},
 		{"thumb.vips_binary", cfg.Thumb.VipsBinary, "vipsthumbnail"},
 		{"thumb.concurrency", cfg.Thumb.Concurrency, 0},
+		{"thumb.max_pixels", cfg.Thumb.MaxPixels, int64(200_000_000)},
 		{"web.host", cfg.Web.Host, "0.0.0.0"},
 		{"web.port", cfg.Web.Port, 8080},
 		{"embedding.url", cfg.Embedding.URL, "http://localhost:8000"},
@@ -148,6 +149,7 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	t.Setenv("KUKATKO_BACKUP_S3_PATH_STYLE", "true")
 	t.Setenv("KUKATKO_MCP_ENABLED", "true")
 	t.Setenv("KUKATKO_MCP_PAGE_SIZE", "5")
+	t.Setenv("KUKATKO_THUMB_MAX_PIXELS", "500000000")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -185,6 +187,11 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	}
 	if cfg.MCP.PageSize != 5 {
 		t.Errorf("mcp.page_size = %d, want 5", cfg.MCP.PageSize)
+	}
+	// A large int64 key: confirm the env string decodes into the int64 field so
+	// operators can raise the decode cap for a genuinely huge-panorama library.
+	if cfg.Thumb.MaxPixels != 500_000_000 {
+		t.Errorf("thumb.max_pixels = %d, want 500000000", cfg.Thumb.MaxPixels)
 	}
 }
 

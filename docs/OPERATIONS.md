@@ -538,8 +538,14 @@ long-running and belong on the machine where the instance runs — so they remai
   shell-out to `vipsthumbnail` (faster/leaner on large images, **still no CGO**),
   pure-Go stays the default and the per-photo fallback; `vips_binary` (the executable on PATH, default
   `vipsthumbnail`, `vips` only); `concurrency` (max sizes encoded in parallel per photo,
-  `0`=GOMAXPROCS — lower it on a memory-constrained host). `KUKATKO_THUMB_ENGINE`/`_VIPS_BINARY`/
-  `_CONCURRENCY`. `serve` logs the active engine + warns when `vips` is missing on PATH. See `docs/PERF.md`.
+  `0`=GOMAXPROCS — lower it on a memory-constrained host); `max_pixels` (`int64`, **default
+  `200000000`** = 200 MP) — the decode-pipeline cap: a source whose `width×height` exceeds it is
+  rejected (`imgconvert.ErrImageTooLarge`) before its RGBA bitmap is allocated, so a decompression
+  bomb or an enormous panorama fails its thumbnail/pHash job instead of OOMing a worker on the shared
+  box (a 30000×30000 image is ~3.6 GB; 200 MP is ~800 MB peak at ~4 bytes/pixel). The same cap guards
+  both thumbnail generation **and** the ingest-time perceptual-hash decode; `0`/negative disables it.
+  `KUKATKO_THUMB_ENGINE`/`_VIPS_BINARY`/`_CONCURRENCY`/`_MAX_PIXELS`. `serve` logs the active engine +
+  warns when `vips` is missing on PATH. See `docs/PERF.md`.
 - **Video keys (`video.*`, `internal/config`):** `transcode` (bool, **default false**) — enables
   on-the-fly transcode of non-web-friendly codecs (HEVC/H.265 …) to H.264/MP4 via ffmpeg for playback
   in the browser. Off = video is streamed as-is (with HTTP Range) and the client offers a download when the

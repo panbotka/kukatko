@@ -279,6 +279,16 @@ type ThumbConfig struct {
 	// photo. A non-positive value uses GOMAXPROCS. Lower it on memory-constrained
 	// hosts to cap peak thumbnail memory.
 	Concurrency int `mapstructure:"concurrency"`
+	// MaxPixels caps the pixel count (width×height) of a source image the decode
+	// pipeline will fully rasterize. A larger original — a decompression bomb or
+	// an accidentally enormous panorama — is rejected before its RGBA bitmap is
+	// allocated (a 30000×30000 image is ~3.6 GB), so one bad file fails its
+	// thumbnail/pHash job instead of OOMing a worker on the shared box. The same
+	// cap guards both thumbnail generation and the ingest-time perceptual-hash
+	// decode. A non-positive value disables the cap. The default (200 MP) admits
+	// every current camera and moderate panoramas while blocking pathological
+	// input; ~4 bytes/pixel decoded, so 200 MP is ~800 MB peak per decode.
+	MaxPixels int64 `mapstructure:"max_pixels"`
 }
 
 // VipsEnabled reports whether the vips engine is requested.
@@ -899,12 +909,14 @@ func setStorageDefaults(v *viper.Viper) {
 }
 
 // setThumbDefaults registers the thumbnail-engine defaults: the pure-Go engine,
-// the vipsthumbnail binary name (used only when the engine is "vips"), and an
-// unbounded (GOMAXPROCS) per-photo encode concurrency.
+// the vipsthumbnail binary name (used only when the engine is "vips"), an
+// unbounded (GOMAXPROCS) per-photo encode concurrency, and the decode pixel cap
+// that rejects a decompression bomb before it can OOM a worker.
 func setThumbDefaults(v *viper.Viper) {
 	v.SetDefault("thumb.engine", ThumbEngineGo) // pure-Go default; vips is opt-in
 	v.SetDefault("thumb.vips_binary", "vipsthumbnail")
-	v.SetDefault("thumb.concurrency", 0) // non-positive falls back to GOMAXPROCS
+	v.SetDefault("thumb.concurrency", 0)          // non-positive falls back to GOMAXPROCS
+	v.SetDefault("thumb.max_pixels", 200_000_000) // 200 MP; <= 0 disables the cap
 }
 
 // setStacksDefaults registers the stacking defaults. It is split out of

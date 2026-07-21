@@ -3,9 +3,11 @@ package thumb
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/storage"
 )
@@ -88,6 +90,31 @@ func TestWithVips_missingBinaryIsNoOp(t *testing.T) {
 	WithVips("definitely-not-a-real-binary-xyz")(th)
 	if th.usesVips() {
 		t.Error("usesVips() = true after WithVips(missing), want false")
+	}
+}
+
+// TestRunVips_respectsContextDeadline confirms a wedged vips is killed once the
+// caller's context deadline passes, so it cannot block a worker goroutine
+// forever. runVips just execs bin with args, so `sleep` stands in for a
+// long-running vips process; the derived vipsTimeout never masks the earlier
+// caller deadline.
+func TestRunVips_respectsContextDeadline(t *testing.T) {
+	t.Parallel()
+	sleepBin, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("sleep not on PATH")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err = runVips(ctx, sleepBin, []string{"30"})
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("runVips returned nil for a deadline-exceeded process, want an error")
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("runVips took %v; the deadline did not kill the process", elapsed)
 	}
 }
 

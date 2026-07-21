@@ -1,10 +1,13 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"image"
+	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,10 +15,41 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/exif"
+	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/sidecar"
 	"github.com/panbotka/kukatko/internal/storage"
 )
+
+// TestDecodeOriginal_rejectsOversizedSource confirms the ingest pHash decode
+// refuses a source whose pixel count exceeds the configured cap before the full
+// bitmap is allocated, so a decompression bomb fails the pHash step (reported as
+// a warning by computePhash) instead of OOMing the request. A 1-pixel cap puts
+// any real image over the bound.
+func TestDecodeOriginal_rejectsOversizedSource(t *testing.T) {
+	t.Parallel()
+	store, err := storage.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatalf("storage.NewFS: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 64, 48)), nil); err != nil {
+		t.Fatalf("encode jpeg: %v", err)
+	}
+	sf, err := store.Store(context.Background(), &buf, time.Time{}, "big.jpg")
+	if err != nil {
+		t.Fatalf("store source: %v", err)
+	}
+	svc := New(Config{Storage: store, MaxPixels: 1})
+
+	_, cleanup, err := svc.decodeOriginal(context.Background(), photos.Photo{FilePath: sf.RelPath})
+	if cleanup != nil {
+		cleanup()
+	}
+	if !errors.Is(err, imgconvert.ErrImageTooLarge) {
+		t.Fatalf("decodeOriginal error = %v, want imgconvert.ErrImageTooLarge", err)
+	}
+}
 
 // TestChooseMIME verifies the EXIF type is preferred and storage is the fallback.
 func TestChooseMIME(t *testing.T) {

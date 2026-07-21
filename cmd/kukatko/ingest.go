@@ -38,6 +38,7 @@ func buildIngest(
 		Sidecar:     sidecar,
 		Duplicate:   cfg.Duplicate,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
+		MaxPixels:   cfg.Thumb.MaxPixels,
 	})
 	uploadLimit := ratelimit.New(cfg.RateLimit.Upload.RatePerSec, cfg.RateLimit.Upload.Burst)
 	return ingest.NewAPI(svc, authAPI.RequireWrite, uploadLimit.Middleware), nil

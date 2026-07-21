@@ -19,6 +19,14 @@ import (
 // override is configured.
 const defaultVipsBinary = "vipsthumbnail"
 
+// vipsTimeout bounds a single vipsthumbnail invocation. Without it a wedged
+// process (pathological input, a stalled read of a materialized R2 temp file)
+// would hang the calling worker goroutine forever, since the worker's context
+// carries no per-job deadline; enough wedged jobs starve the whole background
+// queue until restart. It matches the 60s bound the RAW-preview and video-poster
+// shell-outs already use.
+const vipsTimeout = 60 * time.Second
+
 // mimeJPEG is the canonical JPEG MIME type, named to keep the supported-format
 // check and tests in sync.
 const mimeJPEG = "image/jpeg"
@@ -151,12 +159,18 @@ func reserveVipsTemp(absPath string) (tmpPath string, cleanup func(), err error)
 	return tmpPath, func() { _ = os.Remove(tmpPath) }, nil
 }
 
-// runVips executes vipsthumbnail with args, capturing stderr for diagnostics.
+// runVips executes vipsthumbnail with args, capturing stderr for diagnostics. It
+// bounds the invocation with vipsTimeout (derived from ctx, so an earlier caller
+// deadline still applies): a wedged vips is killed and the job fails/retries
+// instead of blocking the worker forever.
 func runVips(ctx context.Context, bin string, args []string) error {
+	cctx, cancel := context.WithTimeout(ctx, vipsTimeout)
+	defer cancel()
+
 	var stderr bytes.Buffer
 	// #nosec G204 -- bin is an operator-configured executable resolved on PATH at
 	// construction; args are validated registry sizes and trusted storage paths.
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := exec.CommandContext(cctx, bin, args...)
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("thumb: vipsthumbnail: %w (stderr: %s)", err, stderr.String())

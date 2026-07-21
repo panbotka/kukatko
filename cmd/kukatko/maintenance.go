@@ -170,6 +170,7 @@ func buildMaintenanceService(
 		Enqueuer:    enqueuer,
 		Duplicate:   cfg.Duplicate,
 		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
+		MaxPixels:   cfg.Thumb.MaxPixels,
 	})
 	return maintenance.New(maintenance.Config{
 		Photos:    photoStore,

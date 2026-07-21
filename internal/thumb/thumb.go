@@ -81,6 +81,11 @@ type Thumbnailer struct {
 	// vipsBin is the resolved vipsthumbnail path when the vips engine is enabled,
 	// or "" for the pure-Go default. See WithVips.
 	vipsBin string
+	// maxPixels caps the width×height of a source the pure-Go engine will fully
+	// decode; a larger source is rejected before its bitmap is allocated so a
+	// decompression bomb cannot OOM a worker. 0 disables the cap. See
+	// WithMaxPixels.
+	maxPixels int64
 	// observer receives per-size generation timing; never nil after New.
 	observer Observer
 }
@@ -119,6 +124,17 @@ func WithConcurrency(n int) Option {
 		if n >= 1 {
 			t.workers = n
 		}
+	}
+}
+
+// WithMaxPixels caps the width×height of a source the pure-Go engine will fully
+// decode: a larger original is rejected (with imgconvert.ErrImageTooLarge)
+// before its bitmap is allocated, so a decompression bomb or an accidentally
+// enormous panorama fails one thumbnail job instead of OOMing the worker. A
+// non-positive value disables the cap.
+func WithMaxPixels(n int64) Option {
+	return func(t *Thumbnailer) {
+		t.maxPixels = n
 	}
 }
 
@@ -269,7 +285,7 @@ func (t *Thumbnailer) generate(
 		return result, nil
 	}
 
-	img, err := decodeAndOrient(ctx, src, photo.FileOrientation)
+	img, err := decodeAndOrient(ctx, src, photo.FileOrientation, t.maxPixels)
 	if err != nil {
 		return nil, err
 	}

@@ -310,7 +310,7 @@ to `## Package map` in `CLAUDE.md`.
   `fit_720/1280/1920/2560/3840` + `tile_100/224/500`; cache layout under `storage.cache_path`
   `thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg` (shard from the hex SHA256), regenerable +
   **idempotent** (skips existing ones) + atomic write temp+rename; `Thumbnailer` =
-  `New(store,cacheDir,WithConcurrency(n))` with the API `Generate(ctx,photo,sizes...)`/
+  `New(store,cacheDir,WithConcurrency(n),WithMaxPixels(px))` with the API `Generate(ctx,photo,sizes...)`/
   `GenerateAll(ctx,photo)` (a size→abs-path map, skips existing)/
   `RegenerateAll(ctx,photo)` (**force** — overwrites all sizes in-place with an atomic
   temp+rename, and republishes to object store; the basis of the "regenerate thumbnail" service action)/
@@ -325,7 +325,11 @@ to `## Package map` in `CLAUDE.md`.
   gets its thumbnails into the bucket the same as `storage migrate-to-r2`;
   `GridSize` (`tile_500`) is the size the grid renders and that `thumb_url` carries in the payload;
   decode once per photo, parallel encode of the sizes (errgroup, default `GOMAXPROCS`,
-  bound via `thumb.concurrency`),
+  bound via `thumb.concurrency`);
+  **decompression-bomb guard**: `WithMaxPixels(px)` (config `thumb.max_pixels`, default 200 MP) makes
+  `decodeAndOrient` call `imgconvert.EnforcePixelBound` before the full decode, so a source whose
+  `width×height` exceeds the cap fails with `imgconvert.ErrImageTooLarge` instead of allocating a
+  multi-GB bitmap; `0` disables it;
   **EXIF orientation** (1–8) automatically; pure-Go JPEG/PNG/WebP + `golang.org/x/image`
   (`draw.CatmullRom` resize); **an optional vips engine** (`WithVips(bin)`, config `thumb.engine:
   vips`, `vips.go`): pure-Go decoding of large JPEGs is slow/memory-heavy on the Pi (~1 s / ~90 MB
@@ -333,14 +337,17 @@ to `## Package map` in `CLAUDE.md`.
   JPEG/PNG/WebP thumbnails to a **shell-out to `vipsthumbnail`** (`tryVips` → `vipsArgs`: fit `WxH>`
   without upscaling, crop `--smartcrop centre`, `[Q=…,strip]`, EXIF autorotation), **still without CGO**;
   pure-Go remains the default, vips **falls back per-photo** to pure-Go for other formats
-  (HEIC/RAW/video) and on any failure → never changes the output, only the speed; `VipsAvailable(bin)`
+  (HEIC/RAW/video) and on any failure → never changes the output, only the speed; every
+  `vipsthumbnail` invocation is bounded by a **60s per-invocation timeout** (`runVips` wraps
+  `context.WithTimeout`, matching the RAW/poster shell-outs) so a wedged vips fails the job instead of
+  hanging a worker forever; `VipsAvailable(bin)`
   for the startup log; `Remove(hash)` deletes all cached sizes for a hash
   (idempotent, skips missing ones — thumbnail cleanup on photo purge); sentinels
   `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
   `SizeNames()`/`IsValidSize`), `internal/imgconvert/`
   (HEIC/RAW/video → a decodable JPEG, **shell-out**: `EnsureDecodable(ctx,path)` →
   (path, cleanup, err); **pure-Go passthrough** JPEG/PNG/WebP/**BMP/GIF/TIFF** (animated GIF →
-  first frame; the decoders are registered by a blank import in `ingest` and `thumb`), **HEIC** via `heif-convert`
+  first frame; the decoders are registered by a blank import in `imgconvert`, `ingest` and `thumb`), **HEIC** via `heif-convert`
   to a temp JPEG, **RAW** (cr2/cr3/nef/nrw/arw/srf/dng/raf/orf/rw2/pef/srw/3fr/iiq/x3f/kdc/mrw/mef)
   pulls the embedded preview via `exiftool -b -PreviewImage` (fallback `-JpgFromRaw`/`-ThumbnailImage`)
   instead of demosaicing, **video** (`FormatVideo`) delegates to `video.ExtractPoster` (poster frame via
@@ -350,8 +357,12 @@ to `## Package map` in `CLAUDE.md`.
   embedded preview); **exception: TIFF magic doesn't carry RAW** — most RAW containers are TIFF-based
   (`II*`/`MM*`), so the RAW **extension** takes precedence over TIFF magic and the file goes through embedded-preview,
   not as a flat TIFF; otherwise RAW is chosen only when magic recognizes nothing (other RAW headers) → falls back to
-  the extension; `IsSupportedFormat`; sentinels
-  `ErrConverterMissing`/`ErrUnsupportedFormat`/`ErrNoEmbeddedPreview`; a missing tool = a clear
+  the extension; `IsSupportedFormat`;
+  **decompression-bomb guard** `EnforcePixelBound(path,maxPixels)` peeks `image.DecodeConfig` and
+  returns `ErrImageTooLarge` when `width×height` exceeds the cap (before the caller's full decode
+  allocates the bitmap); `maxPixels<=0` disables it and an unreadable header is left to the caller's
+  decode — used by `thumb` and `ingest`; sentinels
+  `ErrConverterMissing`/`ErrUnsupportedFormat`/`ErrNoEmbeddedPreview`/`ErrImageTooLarge`; a missing tool = a clear
   error), `internal/video/`
   (video without CGO, a **shell-out** to the FFmpeg suite: `Probe(ctx,path) (Metadata,error)` via
   `ffprobe -print_format json -show_format -show_streams` → `DurationMs`/`VideoCodec`/`AudioCodec`/
@@ -401,7 +412,9 @@ to `## Package map` in `CLAUDE.md`.
   a 2-D DCT 32×32 → low-freq 8×8 block with a median-without-DC threshold, **dHash** gradient 9×8; `Distance(a,b)`
   = Hamming distance via `bits.OnesCount64`; near-dup = a small distance), `internal/ingest/`
   (the upload/ingest pipeline: `Service` = `New(Config{Storage,Photos,Thumbnailer,Enqueuer,Duplicate,
-  MaxFileSize,TempDir})` with **`IngestFile(ctx,src,Request{Filename,UploadedBy,Sidecar})`** (the full form;
+  MaxFileSize,MaxPixels,TempDir})` (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
+  applied to the pHash decode via `imgconvert.EnforcePixelBound`; a rejected oversize source becomes a
+  `phash_failed` warning, the photo is still catalogued) with **`IngestFile(ctx,src,Request{Filename,UploadedBy,Sidecar})`** (the full form;
   `Ingest(ctx,src,filename,uploadedBy)` = a thin wrapper for an upload without a sidecar) `→ FileResult`
   — streams to a temp +
   SHA256, exact-dup check, metadata (`mediaMeta`: **photo** → EXIF; **video** per `video.IsVideoPath`
