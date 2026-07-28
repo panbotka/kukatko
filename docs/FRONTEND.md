@@ -1137,7 +1137,10 @@ here.
   what the gesture will do; the viewport clips, `object-fit: contain` never crops) + `DiffTable` (a diff
   table: a row that differs is marked with a **border + bold + `visually-hidden` „liší se"** —
   never just color; `onlyDifferences` hides the matching ones, an empty value is „—", all matching → a message
-  instead of the table) + `compare.css`;
+  instead of the table) + `compare.css` (a fullscreen `kk-compare` flex column, `height: 100dvh`;
+mounted **outside `Layout`**, so it carries its own **safe-area insets**: the side ones once on
+`.kk-compare`, `safe-area-inset-top` added to the header's padding and `-bottom` to the footer's,
+so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or the home-indicator bar);
   `components/expand/` = `ExpandSearchForm` (the `/expand` config panel: an Album|Štítek toggle,
   an `AddAutocomplete` collection picker with the photo count in the hint, a percentage threshold slider with bookends,
   limit, a Hledat submit button — purely controlled, the state is held by the page) + `ExpandResults`
@@ -1160,7 +1163,11 @@ here.
   the chrome grows — an alert, a wrapped long name, `pointer: coarse` buttons; `@media
   (max-height: 500px)` tightens the paddings on a **phone in landscape** (wide → no width query catches it,
   and yet it has the least room) and `clamp(…, min(3.5vw, 5dvh), …)` on the question holds the same for
-  the font; `review-photo__box` frame, a progress bar, `kbd` badges, a touch variant of the actions);
+  the font; `review-photo__box` frame, a progress bar, `kbd` badges, a touch variant of the actions;
+mounted **outside `Layout`** as well, so it adds its own **safe-area insets**: the side ones once on
+`.review-game`, `safe-area-inset-top` added to the header's padding and `-bottom` to the actions row
+— and to `review-game__center`, which owns the bottom edge in the loading/error/empty states —
+including inside the `max-height: 500px` block, which re-declares exactly those paddings);
   `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
   velikosti `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exportováno** — stránka musí přednačítat přesně
   tuhle URL), ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
@@ -1979,7 +1986,12 @@ here.
   můžou přepsat pro simulaci telefonu),
   `test/batchBar.ts` (fixtures sdílené testy stránek s fotomřížkou: `BATCH_ACTIONS` = kompletní
   slovník akcí `BatchActionBar` podle accessible name — každá stránka ho asertuje **celý**, aby se
-  nemohla tiše vrátit k osekanému toolbaru — a `albumOption()` pro `fetchAlbums` v pickeru).
+  nemohla tiše vrátit k osekanému toolbaru — a `albumOption()` pro `fetchAlbums` v pickeru),
+  `test/css.ts` (čtení a mini-parsování stylesheetů z testů: `readCss` / `ruleBody` / `declarations`
+  — jsdom nevyhodnocuje `env()` ani media queries, takže CSS-only pravidla se hlídají čtením
+  souboru; používá je `styles/tokens.test.ts` a `styles/safeArea.test.ts`, který dopočítá padding
+  fullscreen overlayů (`review.css`, `compare.css`) proti iPhone-ovým insetům a asertuje, že
+  ovládací řady notch i home bar minou — a že bez insetů zůstane rozestup přesně původní).
   Routing v `App.tsx`: tabulka rout žije v exportované `AppRoutes` (aby ji šlo v testech mountnout
   do `MemoryRouter` a ověřit samotné drátování — `App.test.tsx`), `App` ji jen obalí
   `BrowserRouter`+`AuthProvider`+`CapabilitiesProvider` (kapabilit-provider je uvnitř auth-provideru,
