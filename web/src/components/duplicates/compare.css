@@ -9,6 +9,15 @@
   flex-direction: column;
   height: 100dvh;
   background-color: var(--bs-body-bg);
+  /*
+   * Mounted outside the layout shell, so nothing above keeps it out of the notch,
+   * and `100dvh` under `viewport-fit=cover` is the whole screen — safe area
+   * included. The side insets are taken once here for every row inside; the
+   * header and the footer add their own vertical inset below. `env()` is 0
+   * without insets, so a desktop screen is unchanged.
+   */
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /*
@@ -21,6 +30,17 @@
   flex: 0 0 auto;
   flex-wrap: wrap;
   padding: 0.5rem 1rem;
+}
+
+/* The header owns the top edge (Back, zoom, help) and the footer the bottom one
+   (Keep left / both / right), so each adds the matching inset to its own padding:
+   the notch above, the home-indicator bar below (an iPhone's 34px + 0.5rem). */
+.kk-compare__header {
+  padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
+}
+
+.kk-compare__footer {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 /*

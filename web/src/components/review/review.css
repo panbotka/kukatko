@@ -20,14 +20,23 @@
   background: var(--bs-body-bg);
   /* Nothing may scroll here: the answer buttons must always be on screen. */
   overflow: hidden;
+  /* The game is mounted outside the layout shell, so no ancestor keeps it out of
+     the notch (`viewport-fit=cover` makes the insets real). The side insets are
+     taken once, here, for every row inside — a landscape notch eats a column, not
+     a strip; the top and bottom rows add their own vertical inset below. `env()`
+     is 0 without insets, so a desktop screen is unchanged. */
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* The header carries the close and undo buttons: it must clear the notch, so the
+   top inset is *added* to its own padding rather than replacing it. */
 .review-game__top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  padding: calc(0.5rem + env(safe-area-inset-top, 0px)) 0.75rem 0.5rem;
 }
 
 .review-game__progress-text {
@@ -64,7 +73,9 @@
 }
 
 /* Centering column for the loading / error / empty bodies. No photo to cap
-   here, so a short viewport may scroll rather than clip the retry button. */
+   here, so a short viewport may scroll rather than clip the retry button. These
+   bodies replace the action row, so this column owns the screen's bottom edge and
+   takes the home-indicator inset itself. */
 .review-game__center {
   flex: 1 1 auto;
   min-height: 0;
@@ -72,7 +83,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
 }
 
@@ -160,12 +171,15 @@
   background: var(--bs-info);
 }
 
+/* The answer row is the whole interaction, and it sits on the screen's bottom
+   edge — the home-indicator inset is added to its bottom padding so no button is
+   under the bar (an iPhone's 34px + the 0.75rem of its own). */
 .review-game__actions {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  padding: 0.5rem 1rem 0.75rem;
+  padding: 0.5rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
 }
 
 .review-game__actions .btn {
@@ -197,8 +211,11 @@
    every width-based query, and with the least vertical room of anything. Trade
    chrome padding for photo; the photo shrinks on its own, the text cannot. */
 @media (max-height: 500px) {
+  /* The tightened chrome still keeps the safe-area terms: a landscape phone is
+     exactly where the notch and the home bar are, so dropping them here would
+     put the buttons back under them. */
   .review-game__top {
-    padding: 0.25rem 0.75rem;
+    padding: calc(0.25rem + env(safe-area-inset-top, 0px)) 0.75rem 0.25rem;
   }
 
   .review-game__prompt {
@@ -218,7 +235,7 @@
   }
 
   .review-game__actions {
-    padding: 0.35rem 1rem 0.5rem;
+    padding: 0.35rem 1rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
