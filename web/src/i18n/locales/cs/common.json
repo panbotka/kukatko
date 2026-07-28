@@ -83,7 +83,8 @@
     "expand": "Rozšířit",
     "review": "Třídění",
     "outliers": "Možné chyby",
-    "leaderboard": "Žebříček"
+    "leaderboard": "Žebříček",
+    "tabBar": "Hlavní navigace"
   },
   "help": {
     "title": "Nápověda",

@@ -18,6 +18,7 @@ import { Footer } from './Footer'
 import { Icon, type IconName } from './Icon'
 import { JobQueueBadges } from './JobQueueBadges'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
+import { MobileTabBar } from './MobileTabBar'
 import { SearchCommand } from './search/SearchCommand'
 
 /**
@@ -227,6 +228,11 @@ function pathMatches(pathname: string, route: string): boolean {
  * is not in the bar: this instance is Czech, so the setting sits on the account
  * page rather than spending prime bar space. Every entry pairs an icon (for daily
  * recognition) with a `title` describing the action it performs.
+ *
+ * Below that breakpoint the shell grows a second, thumb-level navigation: the
+ * {@link MobileTabBar} pins the everyday destinations to the bottom edge so a
+ * phone user reaches them without opening the hamburger first. It is phone-only —
+ * on `md`+ the top bar remains the sole navigation.
  */
 export function Layout() {
   const { t } = useTranslation()
@@ -412,6 +418,10 @@ export function Layout() {
       <Footer>
         <JobQueueBadges />
       </Footer>
+      {/* Phone only: the everyday destinations as a fixed bottom strip, so they
+          do not cost a hamburger open-then-tap. Renders nothing on `md`+, where
+          the top bar above is already the whole navigation. */}
+      <MobileTabBar />
     </>
   )
 }

@@ -50,6 +50,25 @@ here.
   auto-closes the burger instead of leaving it open over the page. Logout closes it explicitly (a handler,
   not a route change). This replaces react-bootstrap `collapseOnSelect`, which never fired for the bar's
   bare `NavLink`s and raw `Dropdown.Item`s; on `md`+ the collapse is always shown, so the state is inert there,
+  `MobileTabBar` (**the phone-only bottom tab bar**, rendered by `Layout` after the `Footer`: on a phone the
+  whole primary nav is folded into the burger, so every everyday destination costs an open-then-tap — this
+  pins them to the bottom edge where the thumb already is. Four tabs at most (`TABS`), the everyday loop only:
+  **Knihovna** `/` (`end`-matched, otherwise the root's prefix match lights it up everywhere), **Alba** `/albums`,
+  **Štítky** `/labels`, **Nahrát** `/upload` (gated on `canWrite` — a viewer gets three). Browse / Třídění /
+  Nástroje / Provoz / Správa deliberately stay in the burger menu: the bar earns its permanent strip only by
+  being short enough to hit blind. Each tab is a `NavLink` with a decorative `Icon` above a short label plus the
+  same `nav.titles.*` action tooltip as the navbar, an `active` accent-tinted pill matching the top bar's
+  „you are here", and a 2.75rem (44px) touch target; the landmark is labelled `nav.tabBar` (cs/en).
+  **Shown only below the navbar's `md` expand breakpoint**, and the decision is made in JS
+  (`useIsNarrowViewport`) — it renders `null` on `md`+ rather than hiding via `d-md-none`, so the desktop DOM
+  carries no duplicate set of nav links (the class stays only as a guard for the frame between a resize and
+  the re-render). It publishes its live rendered height (safe-area padding included) into `--kk-tabbar-height`
+  on the document root via a `ResizeObserver`, mirroring `BatchActionBar`'s `--kk-batch-bar-height`; that one
+  variable is what keeps everything else off it — `body`'s `padding-bottom` reserves the scroll clearance for
+  every page at once, `--kk-bottom-edge` (`max(env(safe-area-inset-bottom), --kk-tabbar-height)`) lifts the
+  floating `.kk-batch-dock` and `--kk-batch-clearance` so a selection **stacks above** the tabs instead of
+  colliding with them, and `.kukatko-timeline`'s `bottom` stops the scrubber rail short of them. The variable
+  is removed on unmount and at the desktop breakpoint, so all of that collapses to `0px` when there is no bar),
   `Footer` (**global footer** below `<main>` on every page in `Layout` — the fullscreen
   `/slideshow` and the immersive `/photos/:uid` run outside the shell, so they don't have it: „Provozuje SDH Veselice“ + a link to the source code
   <https://github.com/panbotka/kukatko> in a new tab with `rel="noopener noreferrer"` and a decorative

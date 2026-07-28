@@ -25,16 +25,28 @@
      `.kukatko-navbar`'s padding and the nav-link sizing below. */
   --kukatko-navbar-height: 3.25rem;
 
+  /* Height of the mobile bottom tab bar, published live by `MobileTabBar` from a
+     ResizeObserver — and `0px` whenever no bar is mounted, i.e. on every viewport
+     from `md` up. Everything that lives at the bottom edge reads this one value
+     to stay clear of the tabs: the page's own scroll clearance (`body` below), the
+     floating batch bar, and the timeline rail. The published height already
+     contains the bar's safe-area padding, so a `max()` against the raw inset — not
+     a sum — is what keeps the gap right in both states. */
+  --kk-tabbar-height: 0px;
+
+  /* The room the bottom edge is already spoken for: the tab bar where there is
+     one, the home-indicator inset where there is not. */
+  --kk-bottom-edge: max(env(safe-area-inset-bottom, 0px), var(--kk-tabbar-height));
+
   /* Bottom clearance a photo grid reserves while the floating batch bar is up, so
      its last row can always scroll fully clear of the bar — however many actions
      it shows or how it wraps. `--kk-batch-bar-height` is published live by
      `BatchActionBar` from a ResizeObserver (and is `0px` while no bar is mounted);
-     the rest mirrors the dock's own bottom offset (safe-area inset + one step)
-     plus a small breathing gap. Pages apply it as bottom padding only while a
-     selection is active, so at rest the grid reserves nothing. */
+     the rest mirrors the dock's own bottom offset (the taken bottom edge + one
+     step) plus a small breathing gap. Pages apply it as bottom padding only while
+     a selection is active, so at rest the grid reserves nothing. */
   --kk-batch-clearance: calc(
-    var(--kk-batch-bar-height, 0px) + env(safe-area-inset-bottom, 0px) + var(--kk-space-4) +
-      var(--kk-space-3)
+    var(--kk-batch-bar-height, 0px) + var(--kk-bottom-edge) + var(--kk-space-4) + var(--kk-space-3)
   );
 }
 
@@ -50,6 +62,12 @@ body {
      turning the body into a scroll container, which would break the sticky
      navbar's `position: sticky`. */
   overflow-x: clip;
+
+  /* Scroll clearance for the fixed mobile tab bar: the last of the content —
+     and the footer under it — has to be able to scroll out from behind the tabs.
+     Reserved on the document rather than per page, so no page can forget it; it
+     is exactly `0px` whenever no tab bar is mounted (desktop). */
+  padding-bottom: var(--kk-tabbar-height);
 }
 
 /*
@@ -379,10 +397,15 @@ body {
    the immersive viewer (1080) and Bootstrap modals (1040/1050). The dock is a
    transparent column so its gap passes clicks through to the photos beneath;
    each child re-enables pointer events. */
+/* The floating batch bar and the mobile tab bar both live on the bottom edge, so
+   the dock rises above whichever of the two is actually there (`--kk-bottom-edge`
+   resolves to the tab bar's height on a phone, to the bare home-indicator inset
+   everywhere else). Stacking rather than hiding: a selection does not have to cost
+   you the navigation. */
 .kk-batch-dock {
   position: fixed;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--kk-space-4));
+  bottom: calc(var(--kk-bottom-edge) + var(--kk-space-4));
   transform: translateX(-50%);
   z-index: 1030;
   width: min(100% - 2 * var(--kk-space-3), 56rem);
@@ -468,6 +491,112 @@ body {
   .kk-batch-bar {
     animation: none;
   }
+}
+
+/* ---- Mobile bottom tab bar ---------------------------------------------
+ *
+ * The phone-only strip of primary destinations (`MobileTabBar`), pinned to the
+ * bottom edge where a thumb already is. It is mounted only below the navbar's
+ * `md` expand breakpoint, so these rules need no media query of their own — the
+ * `.d-md-none` on the element is only the guard for the frame between a resize
+ * and React's re-render.
+ *
+ * The bar owns the bottom edge: it carries the home-indicator inset itself
+ * (`env(safe-area-inset-bottom)`, real because `index.html` opts into
+ * `viewport-fit=cover`) and the side insets for a landscape notch, and it
+ * publishes its resulting height as `--kk-tabbar-height` so everything else can
+ * keep off it. Its z-index sits below the floating batch dock's (1030) and above
+ * the timeline rail's (1018), but under Bootstrap's offcanvas/modal layers, so a
+ * dialog still covers it.
+ */
+.kk-tabbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1025;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: var(--kk-space-1);
+  padding-top: var(--kk-space-1);
+  padding-right: calc(env(safe-area-inset-right, 0px) + var(--kk-space-2));
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--kk-space-1));
+  padding-left: calc(env(safe-area-inset-left, 0px) + var(--kk-space-2));
+  background-color: var(--kk-header-bg);
+  border-top: 1px solid var(--kk-header-border);
+  box-shadow: var(--kk-shadow-3);
+}
+
+/* Same treatment as the top bar: frost the backdrop where the browser can, fall
+   back to the solid warm plate where it cannot — the tabs sit over photos, and a
+   see-through bar without the blur is illegible over an arbitrary one. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .kk-tabbar {
+    backdrop-filter: blur(var(--kk-header-blur));
+    -webkit-backdrop-filter: blur(var(--kk-header-blur));
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .kk-tabbar {
+    background-color: var(--kk-surface-1);
+  }
+}
+
+/* Each tab is a stacked icon + label. `flex: 1` splits the row evenly so the
+   targets are predictable to hit blind, `min-height` clears the 44px finger floor
+   on its own (the app-wide `pointer: coarse` floor does not reach an `<a>` that is
+   not a `.nav-link`), and `min-width: 0` lets a long label ellipsize instead of
+   widening its tab and pushing the row past the viewport. */
+.kk-tabbar__tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 2.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  padding: var(--kk-space-1) 0;
+  border-radius: var(--kk-radius-md);
+  color: var(--kk-text-muted);
+  text-decoration: none;
+  transition:
+    color var(--kk-duration-fast) var(--kk-ease-standard),
+    background-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-tabbar__tab:hover,
+.kk-tabbar__tab:focus-visible {
+  color: var(--kk-text);
+  text-decoration: none;
+}
+
+/* "You are here" wears the same accent-tinted pill as the top bar's active nav
+   link, so the two navigations do not speak two different languages. */
+.kk-tabbar__tab.active {
+  color: var(--kk-accent);
+  background-color: var(--kk-accent-subtle);
+}
+
+.kk-tabbar__tab:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: calc(-1 * var(--kk-focus-ring-width));
+}
+
+.kk-tabbar__icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.kk-tabbar__label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--kk-font-size-caption);
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Icon-only controls (e.g. the favorite heart overlay) need a finger-friendly
@@ -621,7 +750,9 @@ body {
   position: fixed;
   top: calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px) + 1rem);
   right: env(safe-area-inset-right, 0px);
-  bottom: 1rem;
+  /* The rail runs to the bottom edge, so on a phone it has to stop above the
+     fixed tab bar — otherwise its oldest ticks sit behind the tabs, unreachable. */
+  bottom: calc(1rem + var(--kk-tabbar-height));
   width: 4.25rem;
   z-index: 1018;
   touch-action: none;
