@@ -1,0 +1,59 @@
+/*
+ * Face-cluster review cards. The one thing that needs real CSS here is the
+ * per-sample "this face does not belong" control: it has to be a compact corner
+ * badge on a mouse and a proper finger target on a phone, and those two are
+ * different layouts, not the same box at two sizes.
+ */
+
+/* One sample: the 48px face crop and its remove control. `position: relative` is
+   the containing block for the corner badge below. */
+.kk-cluster-sample {
+  position: relative;
+}
+
+/*
+ * Mouse / fine pointer (also the default where the pointer media features are
+ * unsupported): a small ✕ tucked into the thumbnail's top-right corner. It is
+ * out of flow, so the sample strip stays as dense as it has always been.
+ *
+ * Written as a descendant selector so it outranks Bootstrap's own `.btn` /
+ * `.btn-sm` box regardless of how the two stylesheets end up ordered.
+ */
+.kk-cluster-sample .kk-cluster-sample__remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  line-height: 1;
+  font-size: var(--kk-font-size-caption);
+}
+
+/*
+ * Touch: an 18px corner badge is un-hittable, and the app-wide touch floor in
+ * `app.css` (a 2.75rem `min-height` on every `.btn` under a coarse pointer) would
+ * stretch it into a ~18px-wide, ~44px-tall red sliver running down the middle of
+ * the very face the user is being asked to judge — obscuring it while still
+ * being too narrow to tap. So on a coarse pointer the control leaves the corner
+ * entirely and becomes an action row under the sample: a real ~44px target in
+ * both dimensions that covers nothing.
+ */
+@media (pointer: coarse) {
+  .kk-cluster-sample {
+    display: flex;
+    flex-direction: column;
+    gap: var(--kk-space-1);
+  }
+
+  .kk-cluster-sample .kk-cluster-sample__remove {
+    position: static;
+    width: 100%;
+    height: auto;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    font-size: var(--kk-font-size-body);
+  }
+}

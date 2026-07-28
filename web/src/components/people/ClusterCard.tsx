@@ -14,6 +14,8 @@ import {
 
 import { FaceThumb } from './FaceThumb'
 
+import './clusters.css'
+
 /** Props for {@link ClusterCard}. */
 export interface ClusterCardProps {
   /** The cluster awaiting a name. */
@@ -64,18 +66,21 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
 
         <div className="d-flex flex-wrap gap-1">
           {cluster.examples.map((face) => (
-            <div key={exampleKey(face)} className="position-relative">
+            <div key={exampleKey(face)} className="kk-cluster-sample">
               <FaceThumb
                 photoUid={face.photo_uid}
                 bbox={face.bbox}
                 label={t('clusters.sample')}
                 size={48}
               />
+              {/* Geometry lives in `clusters.css`, not inline: on a coarse pointer the
+                  control drops out of the thumbnail corner into a full-width row under
+                  the sample, which no single set of inline sizes can express. */}
               <Button
                 variant="danger"
                 size="sm"
-                className="position-absolute top-0 end-0 p-0 lh-1"
-                style={{ width: '18px', height: '18px', fontSize: 'var(--kk-font-size-caption)' }}
+                className="kk-cluster-sample__remove d-inline-flex align-items-center justify-content-center"
+                title={t('clusters.removeFace')}
                 disabled={busy}
                 aria-label={t('clusters.removeFace')}
                 onClick={() => {

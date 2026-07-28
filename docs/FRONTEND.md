@@ -877,7 +877,14 @@ here.
   stays reachable; the person's own header controls stay visible during a selection,
   `ClustersPage` = `/people/clusters` (editor/admin) a review queue of unnamed clusters:
   `ClusterCard` (a representative + samples + removal of a strayed face + one-shot naming
-  of the whole cluster) in a `Row`/`Col` grid, optimistic removal after naming,
+  of the whole cluster) in a `Row`/`Col` grid, optimistic removal after naming;
+  the per-sample ✕ is sized by **`components/people/clusters.css`**, not inline — on a fine
+  pointer it stays the compact 18px badge in the crop's corner, on `pointer: coarse` it drops
+  **out of the corner** into a full-width row under the 48px sample (`position: static`,
+  ≥ 2.75rem in both dimensions, the sample becomes a flex column), because the app-wide touch
+  floor (`.btn { min-height: 2.75rem }`) caps only the height and turned the inline 18px square
+  into a tall red sliver over the very face being judged; pinned by `ClusterCard.test.tsx`
+  (behavior + both pointer layouts read out of the stylesheet via `test/css.ts`),
   `FacesPage` = `/faces` (editor/admin, a link in „Nástrojích") „najdi osobu mezi neotagovanými
   fotkami": the config panel `CandidateSearchForm` (person selection via `AddAutocomplete` with the photo count
   in `hint`, a threshold in **percent** 20–80 % with bookends „Více výsledků"↔„Lepší shody", limit, a
@@ -1989,9 +1996,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   nemohla tiše vrátit k osekanému toolbaru — a `albumOption()` pro `fetchAlbums` v pickeru),
   `test/css.ts` (čtení a mini-parsování stylesheetů z testů: `readCss` / `ruleBody` / `declarations`
   — jsdom nevyhodnocuje `env()` ani media queries, takže CSS-only pravidla se hlídají čtením
-  souboru; používá je `styles/tokens.test.ts` a `styles/safeArea.test.ts`, který dopočítá padding
+  souboru; používá je `styles/tokens.test.ts`, `styles/safeArea.test.ts`, který dopočítá padding
   fullscreen overlayů (`review.css`, `compare.css`) proti iPhone-ovým insetům a asertuje, že
-  ovládací řady notch i home bar minou — a že bez insetů zůstane rozestup přesně původní).
+  ovládací řady notch i home bar minou — a že bez insetů zůstane rozestup přesně původní —
+  a `components/people/ClusterCard.test.tsx`, který stejnou cestou hlídá obě pointer varianty
+  `clusters.css`).
   Routing v `App.tsx`: tabulka rout žije v exportované `AppRoutes` (aby ji šlo v testech mountnout
   do `MemoryRouter` a ověřit samotné drátování — `App.test.tsx`), `App` ji jen obalí
   `BrowserRouter`+`AuthProvider`+`CapabilitiesProvider` (kapabilit-provider je uvnitř auth-provideru,
