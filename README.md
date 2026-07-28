@@ -25,7 +25,8 @@ of PhotoPrism and of [photo-sorter](https://github.com/kozaktomas/photo-sorter),
   written to the **audit** in the same transaction, so it is traceable just like a change made by a human. Details:
   [`docs/MCP.md`](docs/MCP.md).
 - **Pi-first:** runs on a Raspberry Pi, delegating embedding computation to a powerful machine (a box with a GPU).
-- **Import from PhotoPrism** via the API (+ downloading originals) and **data migration from photo-sorter**.
+- **Import from PhotoPrism** via the API (+ downloading originals, **RAW siblings included** — every file
+  of a shot arrives, stacked behind its JPEG) and **data migration from photo-sorter**.
 - **Proving the import is complete:** `kukatko import verify` (and the completeness-check in the `/import` admin page)
   reconciles the sources against the catalogue and tells you plainly whether **nothing is missing** — listing any
   photos not imported, a dropped RAW sibling, a photo missing its photo-sorter embedding/faces, or an album/person
@@ -1203,6 +1204,15 @@ PhotoPrism, network, DB, or disk.
      **for live** it also stores the motion clip as `RoleSidecar`, renders thumbnails (**for video a poster frame**
      via ffmpeg), and **enqueues `image_embed`** (on the poster) **+ `face_detect`** jobs. Counts are
      **checkpointed after every page**.
+     **The photo's other files** (`siblings.go`): a PhotoPrism photo is a **shot, not a file** — a RAW and
+     the JPEG rendered from it are one photo with two `Files[]`. Every non-primary file (the RAW, an
+     alternative encoding, a generated still) is downloaded and catalogued as **its own photo**, and the
+     whole set is **grouped into one stack** whose primary is the displayable original — so the grid still
+     shows one tile and the RAW is a **variant** of it (with its own thumbnail and download) instead of a
+     file the import drops. Siblings get thumbnails only (no embedding/faces: it is the same shot as the
+     stack's primary), are recognised on a re-run by their PhotoPrism file hash so nothing is downloaded
+     twice, and are brought across for **every listed photo** — a library imported before this existed
+     gets its RAWs on the next run.
   2. **People** — from `Files[].Markers[]`, but **only from the photo DETAIL**: the photo listing always returns markers
      as an empty array, so whoever reads them from the listing brings in nobody (this is exactly the bug the import
      used to have). A scoped run takes them from the detail it downloads anyway — for **every** photo in

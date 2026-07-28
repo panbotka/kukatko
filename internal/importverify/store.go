@@ -59,18 +59,26 @@ func (s *Store) ImportedRefs(ctx context.Context) (map[string]struct{}, map[stri
 	return uids, hashes, nil
 }
 
-// originalFileCountsSQL counts the role='original' photo_files of each
-// PhotoPrism-imported photo, keyed by its photoprism_uid.
+// originalFileCountsSQL counts the role='original' photo_files a PhotoPrism photo
+// arrived with, keyed by its photoprism_uid.
+//
+// The count spans the whole STACK, not just the one row: a source photo made of
+// several files (a RAW next to its JPEG) is imported as one Kukátko row per file,
+// grouped into a single stack behind the displayable original, and only that
+// original carries the photoprism_uid (see internal/ppimport, siblings.go).
+// Counting the imported row alone would report a permanent file gap for a shot
+// whose every file is in fact in the catalogue.
 const originalFileCountsSQL = `
 SELECT p.photoprism_uid, count(pf.id)
 FROM photos p
-JOIN photo_files pf ON pf.photo_uid = p.uid AND pf.role = 'original'
+JOIN photos m ON m.uid = p.uid OR (p.stack_uid IS NOT NULL AND m.stack_uid = p.stack_uid)
+JOIN photo_files pf ON pf.photo_uid = m.uid AND pf.role = 'original'
 WHERE p.photoprism_uid IS NOT NULL
 GROUP BY p.photoprism_uid`
 
-// OriginalFileCounts maps each imported photo's photoprism_uid to its number of
-// role='original' photo_files. A photo with no original files simply has no entry
-// (treated as zero by the reconciler).
+// OriginalFileCounts maps each imported photo's photoprism_uid to the number of
+// role='original' photo_files held by it and by the rest of its stack. A photo
+// with no original files simply has no entry (treated as zero by the reconciler).
 func (s *Store) OriginalFileCounts(ctx context.Context) (map[string]int, error) {
 	rows, err := s.pool.Query(ctx, originalFileCountsSQL)
 	if err != nil {

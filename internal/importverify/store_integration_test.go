@@ -47,6 +47,17 @@ func insertOriginalFile(t *testing.T, pool *pgxpool.Pool, photoUID, path string)
 	}
 }
 
+// stackPhotos groups the given photos into one stack, the first as its primary,
+// the way the PhotoPrism import groups a shot's several source files.
+func stackPhotos(t *testing.T, pool *pgxpool.Pool, stackUID string, primaryUID string, memberUIDs ...string) {
+	t.Helper()
+	const q = `UPDATE photos SET stack_uid = $1, stack_primary = (uid = $2) WHERE uid = ANY($3)`
+	members := append([]string{primaryUID}, memberUIDs...)
+	if _, err := pool.Exec(context.Background(), q, stackUID, primaryUID, members); err != nil {
+		t.Fatalf("stacking %v: %v", members, err)
+	}
+}
+
 // insertEmbedding inserts a zero-vector embeddings row for a photo. The vector is
 // built server-side so the test does not depend on the pgvector param codec.
 func insertEmbedding(t *testing.T, pool *pgxpool.Pool, photoUID string) {
@@ -230,4 +241,41 @@ func TestStore_reconciliationReads(t *testing.T) {
 			t.Errorf("SubjectNames = %v, want {Alice}", subjects)
 		}
 	})
+}
+
+// TestStore_originalFileCountsSpanTheStack pins the counting rule the sibling
+// import depends on: a PhotoPrism photo made of several files becomes one
+// catalogue row per file, grouped in one stack behind the displayable original,
+// and only that original carries the photoprism_uid. Counted per row, such a shot
+// would report a file gap forever; counted per stack, it reconciles.
+func TestStore_originalFileCountsSpanTheStack(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	pool := db.Pool()
+	store := importverify.NewStore(pool)
+
+	// The displayable JPEG of a RAW+JPEG shot: imported, primary of the stack.
+	insertPhoto(t, pool, "photoJ", "ppJ", "sha1j")
+	insertOriginalFile(t, pool, "photoJ", "j/1.jpg")
+	// Its RAW sibling: its own row and original, no photoprism_uid, same stack.
+	insertPhoto(t, pool, "photoR", "", "sha1r")
+	insertOriginalFile(t, pool, "photoR", "j/1.cr2")
+	stackPhotos(t, pool, "stack1", "photoJ", "photoR")
+	// An unrelated single-file photo still counts only its own original.
+	insertPhoto(t, pool, "photoS", "ppS", "sha1s")
+	insertOriginalFile(t, pool, "photoS", "s/1.jpg")
+
+	counts, err := store.OriginalFileCounts(context.Background())
+	if err != nil {
+		t.Fatalf("OriginalFileCounts: %v", err)
+	}
+	if counts["ppJ"] != 2 {
+		t.Errorf("counts[ppJ] = %d, want 2 (the JPEG and its stacked RAW)", counts["ppJ"])
+	}
+	if counts["ppS"] != 1 {
+		t.Errorf("counts[ppS] = %d, want 1", counts["ppS"])
+	}
+	if len(counts) != 2 {
+		t.Errorf("len(counts) = %d, want 2 (the sibling carries no photoprism_uid): %v", len(counts), counts)
+	}
 }

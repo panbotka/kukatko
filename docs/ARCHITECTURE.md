@@ -629,6 +629,12 @@ PhotoPrism runs in parallel and stays primary. The import is **read-only, repeat
   thumbnails via ffmpeg, embedding runs on the poster. PP `Type` live → **still** as the primary original +
   **motion clip** as a `sidecar` photo_file (`media_type=live`), video metadata from the motion clip. Everything
   else as for images (dedup, external ID, albums/labels/people, increment).
+- **A photo is a shot, not a file:** a PP photo carries every file of the capture (a RAW next to the
+  JPEG rendered from it). Kukátko stores one original per row, so each non-primary file is imported as
+  **its own photo** and the set is **grouped into one stack** (§ stacks) behind the displayable original
+  — the grid keeps one tile per shot and the RAW is a variant of it, not a dropped file. The sibling row
+  carries only its own `photoprism_file_hash` (never the `photoprism_uid`, which stays the source
+  photo's 1:1 key) and gets no embedding/faces of its own — it is the primary's shot.
 - **Increment:** store the high-watermark `max(UpdatedAt)` in `import_runs`; the next run pulls only
   `updated:` ≥ watermark. (Verify empirically whether `updated:` also catches metadata changes; otherwise
   fall back to `added:` + watermark.)

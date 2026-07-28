@@ -160,6 +160,17 @@ func (s *Store) GetByPhotoprismUID(ctx context.Context, ppUID string) (Photo, er
 	return s.getPhoto(ctx, "photoprism_uid", ppUID)
 }
 
+// GetByPhotoprismFileHash returns the photo holding the PhotoPrism file with the
+// given SHA1 content hash, or ErrPhotoNotFound. It is the identity of a single
+// SOURCE FILE rather than of a source photo: a PhotoPrism photo made of several
+// files (a RAW next to its JPEG) is imported as one Kukátko photo per file, all
+// grouped in one stack, and only the displayable one carries the photoprism_uid
+// (see internal/ppimport). The siblings are recognised on a re-run by this lookup
+// alone, which is what keeps the import from downloading them twice.
+func (s *Store) GetByPhotoprismFileHash(ctx context.Context, ppFileHash string) (Photo, error) {
+	return s.getPhoto(ctx, "photoprism_file_hash", ppFileHash)
+}
+
 // GetByPhotosorterUID returns the photo migrated from the given photo-sorter
 // UID, or ErrPhotoNotFound.
 func (s *Store) GetByPhotosorterUID(ctx context.Context, psUID string) (Photo, error) {
@@ -178,6 +189,27 @@ func (s *Store) SetPhotoprismRef(ctx context.Context, uid, ppUID, ppFileHash str
 	q := `UPDATE photos SET photoprism_uid = $2, photoprism_file_hash = $3, updated_at = now()
 		WHERE uid = $1 RETURNING ` + photoColumns
 	photo, err := scanPhoto(s.pool.QueryRow(ctx, q, uid, ppUID, ppFileHash))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Photo{}, ErrPhotoNotFound
+		}
+		return Photo{}, err
+	}
+	return photo, nil
+}
+
+// SetPhotoprismFileHash stamps the PhotoPrism SHA1 file hash onto the photo
+// identified by uid and returns the refreshed photo, leaving photoprism_uid
+// alone. The PhotoPrism import uses it for a NON-PRIMARY source file (a RAW
+// sibling) whose bytes were already catalogued under another photo: without the
+// reference, every later run would re-download that file only to deduplicate it
+// again on its SHA256. It deliberately does not touch photoprism_uid, which
+// stays the 1:1 key of the source photo's displayable file (see
+// GetByPhotoprismFileHash). It returns ErrPhotoNotFound if no such photo exists.
+func (s *Store) SetPhotoprismFileHash(ctx context.Context, uid, ppFileHash string) (Photo, error) {
+	q := `UPDATE photos SET photoprism_file_hash = $2, updated_at = now()
+		WHERE uid = $1 RETURNING ` + photoColumns
+	photo, err := scanPhoto(s.pool.QueryRow(ctx, q, uid, ppFileHash))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Photo{}, ErrPhotoNotFound

@@ -8,6 +8,13 @@
 // photoprism_file_hash), generates thumbnails and enqueues the image_embed and
 // face_detect jobs that compute embeddings and faces afterwards.
 //
+// A PhotoPrism photo is a SHOT, not a file: a RAW and the JPEG rendered from it
+// are one photo with two files. Kukátko stores one original per row, so every file
+// of the shot is imported as its own row and the set is grouped into one stack
+// (internal/stacks) behind the displayable original — the library still shows one
+// tile, and the RAW is a variant of it rather than a file the import drops
+// (siblings.go).
+//
 // Half of what PhotoPrism knows about a photo is served on the photo DETAIL
 // endpoint and nowhere else — its Details block (subject, artist, copyright,
 // licence, keywords, notes, software), its per-file technicals (still codec, colour
@@ -132,6 +139,10 @@ type PhotoStore interface {
 	GetByFileHash(ctx context.Context, hash string) (photos.Photo, error)
 	// GetByPhotoprismUID finds an already-imported photo (ErrPhotoNotFound).
 	GetByPhotoprismUID(ctx context.Context, ppUID string) (photos.Photo, error)
+	// GetByPhotoprismFileHash finds the photo holding one PhotoPrism source file by
+	// its SHA1 hash (ErrPhotoNotFound). It is how an already-imported non-primary
+	// file — a RAW sibling, which carries no photoprism_uid — is recognised.
+	GetByPhotoprismFileHash(ctx context.Context, ppFileHash string) (photos.Photo, error)
 	// UpdateMetadata applies changed metadata to an existing photo.
 	UpdateMetadata(ctx context.Context, uid string, m photos.MetadataUpdate) (photos.Photo, error)
 	// ApplyImportMetadata carries the source's credits and file-technical fields onto
@@ -140,6 +151,13 @@ type PhotoStore interface {
 	ApplyImportMetadata(ctx context.Context, uid string, m photos.ImportMetadata) (bool, error)
 	// SetPhotoprismRef backfills the external IDs onto a SHA256-deduped photo.
 	SetPhotoprismRef(ctx context.Context, uid, ppUID, ppFileHash string) (photos.Photo, error)
+	// SetPhotoprismFileHash backfills the source file hash of a non-primary file
+	// onto a SHA256-deduped photo, leaving photoprism_uid alone.
+	SetPhotoprismFileHash(ctx context.Context, uid, ppFileHash string) (photos.Photo, error)
+	// ListStackMembers returns every photo of a stack, the primary first.
+	ListStackMembers(ctx context.Context, stackUID string) ([]photos.Photo, error)
+	// CreateStack groups memberUIDs into one stack whose primary is primaryUID.
+	CreateStack(ctx context.Context, primaryUID string, memberUIDs []string) (string, error)
 	// Delete removes a photo (used to roll back a half-created record).
 	Delete(ctx context.Context, uid string) error
 }
@@ -496,11 +514,19 @@ func (st *runState) recordSuccess(updatedAt time.Time) {
 	}
 }
 
-// recordFailure tallies a failed photo and tracks the earliest failure timestamp
-// so the watermark never advances past it.
+// recordFailure tallies a failed photo and holds the watermark at its timestamp.
 func (st *runState) recordFailure(updatedAt time.Time) {
-	st.sawAny = true
 	st.counts.Failed++
+	st.holdWatermark(updatedAt)
+}
+
+// holdWatermark keeps the resume cursor from advancing past updatedAt, tracking
+// the earliest such timestamp. A failed photo holds it (recordFailure) — and so
+// does a photo that lost one of its FILES: the photo itself is imported and must
+// not be tallied as a failure, but its dropped sibling is only ever retried if the
+// next incremental run is served that photo again.
+func (st *runState) holdWatermark(updatedAt time.Time) {
+	st.sawAny = true
 	if !st.hasFailed || updatedAt.Before(st.minFailed) {
 		st.minFailed = updatedAt
 		st.hasFailed = true

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/photoprism"
@@ -84,6 +85,12 @@ func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState
 // and those may be the very thing this run is meant to bring over. Which is also why
 // the outcome is counted only afterwards — a photo the listing pass had nothing new
 // for, but whose detail did, is an update, not a skip.
+//
+// The photo's other FILES follow the same rule (importSiblings): a shot the source
+// keeps as a RAW next to its JPEG has one file the main path never stores, and a
+// library imported before that was mapped is missing exactly those — so they are
+// resolved for every listed photo, not only for a fresh import, and a re-run
+// backfills them.
 func (s *Service) importOnePhoto(ctx context.Context, pp photoprism.Photo, state *runState) {
 	result, err := s.processPhoto(ctx, pp)
 	if err != nil {
@@ -93,7 +100,11 @@ func (s *Service) importOnePhoto(ctx context.Context, pp photoprism.Photo, state
 		return
 	}
 	state.recordSuccess(pp.UpdatedAt)
-	switch s.importPhotoDetail(ctx, pp, state, result) {
+	result = s.importPhotoDetail(ctx, pp, state, result)
+	if s.importSiblings(ctx, pp, state) && result == outcomeSkipped {
+		result = outcomeUpdated
+	}
+	switch result {
 	case outcomeImported:
 		state.counts.Imported++
 	case outcomeUpdated:
@@ -259,10 +270,17 @@ func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, sto
 // its files' marker arrays are always empty); they are brought over from the detail
 // the caller reads afterwards instead (importPhotoDetail).
 func (s *Service) postProcess(ctx context.Context, photo photos.Photo) {
+	s.generateThumbs(ctx, photo)
+	s.enqueueJobs(ctx, photo.UID)
+}
+
+// generateThumbs renders the derived images of a catalogued photo, logging a
+// failure rather than undoing the import: a missing thumbnail is a degraded state
+// the thumbnail job repairs, not a reason to lose a downloaded original.
+func (s *Service) generateThumbs(ctx context.Context, photo photos.Photo) {
 	if _, err := s.thumbs.GenerateAll(ctx, photo); err != nil {
 		s.log.Warn("ppimport: thumbnails failed", "photo", photo.UID, "err", err)
 	}
-	s.enqueueJobs(ctx, photo.UID)
 }
 
 // enqueueJobs schedules the image_embed and face_detect jobs for a new photo so
@@ -284,15 +302,27 @@ func (s *Service) enqueueJobs(ctx context.Context, photoUID string) {
 func (s *Service) storeOriginal(
 	ctx context.Context, pp photoprism.Photo, primary photoprism.File, staged *stagedFile,
 ) (storage.StoredFile, error) {
+	return s.storeStaged(ctx, staged, pp.TakenAt, originalName(pp, primary))
+}
+
+// storeStaged reopens a staged temp file and publishes it into the storage layout
+// under takenAt's month (or the import month when the capture time is unknown),
+// named name. A storage ErrAlreadyExists is treated as success: the byte-identical
+// file is already in place. It is shared by every path that publishes a download —
+// the photo's own original, a live photo's motion clip and a non-primary sibling
+// file — which differ only in the name they file it under.
+func (s *Service) storeStaged(
+	ctx context.Context, staged *stagedFile, takenAt time.Time, name string,
+) (storage.StoredFile, error) {
 	file, err := os.Open(staged.path)
 	if err != nil {
 		return storage.StoredFile{}, fmt.Errorf("ppimport: reopening staged file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
-	out, err := s.storage.Store(ctx, file, pp.TakenAt, originalName(pp, primary))
+	out, err := s.storage.Store(ctx, file, takenAt, name)
 	if err != nil && !errors.Is(err, storage.ErrAlreadyExists) {
-		return storage.StoredFile{}, fmt.Errorf("ppimport: storing original for %s: %w", pp.UID, err)
+		return storage.StoredFile{}, fmt.Errorf("ppimport: storing %s: %w", name, err)
 	}
 	return out, nil
 }
