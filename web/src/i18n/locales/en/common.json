@@ -83,7 +83,8 @@
     "expand": "Expand",
     "review": "Review",
     "outliers": "Possible mistakes",
-    "leaderboard": "Leaderboard"
+    "leaderboard": "Leaderboard",
+    "tabBar": "Primary navigation"
   },
   "help": {
     "title": "Help",
