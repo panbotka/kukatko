@@ -437,7 +437,10 @@ export function OutliersPage() {
             <div
               ref={gridRef}
               className="d-grid gap-3"
-              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(20rem, 1fr))' }}
+              /* 16rem, like the sibling candidate / sweep grids: a 20rem column
+                 minimum cannot shrink into the ~296px content area of a 320px
+                 phone, so the grid overflowed sideways and clipped the cards. */
+              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(16rem, 1fr))' }}
             >
               {items.map((item, index) => (
                 <OutlierCard
