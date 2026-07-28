@@ -28,9 +28,13 @@ These safe, global improvements were applied in the same session as this audit:
 
 1. **App-wide touch-target floor** (`styles/app.css`). A `@media (pointer: coarse)` rule now
    forces every `.btn`, form control, `.nav-link`, `.dropdown-item`, `.list-group-item-action`,
-   `.page-link` and checkbox to clear the ~44 px finger-friendly minimum on phones/tablets —
-   **without** touching desktop layouts or any per-component markup. This is the single
-   highest-leverage fix for the pervasive `size="sm"` touch problem found on almost every page.
+   `.page-link`, the `.navbar-toggler` hamburger, every `.btn-close` dismiss X and checkbox to
+   clear the ~44 px finger-friendly minimum on phones/tablets — **without** touching desktop
+   layouts or any per-component markup. The close button grows as a `border-box`, so only its
+   hit area changes and the glyph stays as small as it looks; the X inside a pill chip
+   (`.badge .btn-close`) is exempt, because there the chip is the target and 44 px would burst
+   the pill. This is the single highest-leverage fix for the pervasive `size="sm"` touch
+   problem found on almost every page.
 2. **Friendly landing page.** The landing page previously led with a **backend health check,
    version number and a raw git commit hash** — pure developer jargon as the very first screen.
    It became a welcome with large, labelled cards linking to the main destinations, and the

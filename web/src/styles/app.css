@@ -501,6 +501,7 @@ body {
   .nav-link,
   .dropdown-item,
   .list-group-item-action,
+  .navbar-toggler,
   .page-link {
     min-height: 2.75rem;
   }
@@ -509,6 +510,39 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+
+  /* The hamburger is the shell's most-used control on a phone, yet Bootstrap
+     sizes it from its glyph alone (~40px). Square it off at the floor; the flex
+     centering keeps the icon centred once the box grows past it, which the
+     default `inline-block` would leave riding the text baseline. */
+  .navbar-toggler {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.75rem;
+  }
+
+  /* Every dismiss X — the announcement banner, a modal / offcanvas header, a
+     toast, the search palette's clear — is a ~24px glyph, i.e. the smallest
+     target in the shell. `border-box` makes the minimum the *whole* button
+     whatever padding its Bootstrap context adds, so the box grows to the finger
+     floor while the glyph itself (a `1em` background image, centred in the box)
+     stays exactly as small as it looks on desktop. */
+  .btn-close {
+    box-sizing: border-box;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  /* The one exception: an X inside a pill chip (`.kukatko-filter-chip`,
+     `.kk-chip`, the keyword / album / label badges). There the chip is the
+     target and the X only trims it, so a 44px button would burst the pill it
+     sits in — those keep the compact sizing their own rules give them. */
+  .badge .btn-close {
+    box-sizing: content-box;
+    min-width: 0;
+    min-height: 0;
   }
 
   /* Checkboxes/radios are the tightest hit areas of all — enlarge the control

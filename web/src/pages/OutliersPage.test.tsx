@@ -95,6 +95,22 @@ describe('OutliersPage', () => {
     expect(await screen.findByTestId('outlier-card')).toBeInTheDocument()
   })
 
+  it('sizes the card grid so one column still fits a 320px phone', async () => {
+    outliersMock.mockResolvedValue(makeResult([face()]))
+    const { container } = renderPage()
+    await screen.findByTestId('outlier-card')
+
+    // The narrowest phone leaves ~296px inside the layout container (320px minus
+    // its 2 × 0.75rem gutter). A column minimum wider than that cannot shrink into
+    // the row, so the grid spills off the right edge and clips the cards.
+    const columns = container.querySelector<HTMLElement>('.d-grid')?.style.gridTemplateColumns
+    const min = /minmax\(([\d.]+)rem/.exec(columns ?? '')
+    if (min === null) {
+      throw new Error(`grid columns not in the expected form: ${String(columns)}`)
+    }
+    expect(Number(min[1]) * 16).toBeLessThanOrEqual(296)
+  })
+
   it('draws the face box inside a padded context crop, not a tight one', async () => {
     outliersMock.mockResolvedValue(makeResult([face()]))
     renderPage()

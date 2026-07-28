@@ -1037,7 +1037,8 @@ here.
   / average distance / shown + a one-line sort explanation, a **`no_embedding`
   message** (a face recognized while the box was offline can't be checked and is **not** in the list — say it
   aloud, otherwise an empty list reads as "clean"), a capped message at `OUTLIER_LIMIT`,
-  a `meaningful:false` message); a grid of **large** `OutlierCard` (`minmax(20rem, 1fr)`): the **context
+  a `meaningful:false` message); a grid of **large** `OutlierCard` (`minmax(16rem, 1fr)` — jako sesterské
+  mřížky kandidátů/sweepu; 20rem se nevešlo do ~296px obsahu 320px telefonu a mřížka přetékala doprava): the **context
   crop** = the bbox enlarged by 30 % on each side via `padBbox` + `cropImageStyle`, inside it
   the face frame via `boxWithinCrop` (all `lib/faceGeometry`, `aspect-ratio` carries the geometry →
   no pixel measurement), a distance badge in **%**, the question „Je to chyba?" and two **opposite**
@@ -1959,9 +1960,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `LabelsPage`/`SavedSearchesPage` a skupiny titulku v `AlbumDetailPage`/`LabelDetailPage`);
   **app-wide touch-target floor** — `@media (pointer: coarse)` blok, který na
   dotykových zařízeních (telefon/tablet) vynutí min. 44px na `.btn`/`.form-control`/`.form-select`/
-  `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link` + větší `.form-check-input`,
+  `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link`/`.navbar-toggler` (hamburger
+  se navíc centruje flexem, jinak by ikona po zvětšení boxu seděla na účaří) a na `.btn-close`
+  (každé zavírací X — banner oznámení, hlavičky modalů/offcanvasu, toasty, mazání dotazu v paletě —
+  roste jako `border-box`, takže se zvětší jen hitbox a glyf zůstává `1em`; výjimka `.badge
+  .btn-close`, tj. X uvnitř pill chipu, kde je cílem samotný chip a 44px by pilulku roztrhlo)
+  + větší `.form-check-input`,
   bez zásahu do desktop (fine-pointer) layoutu a bez per-komponentových změn (systémová oprava
-  všudypřítomných `size="sm"` ovládání);
+  všudypřítomných `size="sm"` ovládání; guardy v `styles/tapTargets.test.ts`, protože jsdom media
+  query nevyhodnotí);
   **native form chrome** — Superhero peče `.form-control`/`.form-select` bíle (`#fff`) bez ohledu na
   téma; místo připnutí na světlé schéma jim dáváme reálný tmavý povrch `--kk-surface-sunken` s
   vláskovou linkou a `color-scheme: dark` (výplň i schéma souhlasí, takže nativní glyfy — kalendář
