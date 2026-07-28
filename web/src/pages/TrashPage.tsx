@@ -112,7 +112,12 @@ export function TrashPage() {
   }
 
   // run applies an async mutation over the given uids, surfacing any failure and
-  // refreshing the list (and clearing the selection) once it settles.
+  // refreshing the list (and clearing the selection) once the batch settles.
+  //
+  // The refresh and the clear happen in a `finally`, so they run on failure too:
+  // a batch that dies on its third uid has already mutated the first two
+  // server-side, and skipping them would leave those photos rendered as archived
+  // and still selected — a retry would then act on photos that are already gone.
   const run = async (uids: string[], op: (uid: string) => Promise<void>) => {
     setPending(true)
     setActionError(null)
@@ -120,11 +125,11 @@ export function TrashPage() {
       for (const uid of uids) {
         await op(uid)
       }
-      selection.clear()
-      reload()
     } catch (err) {
       setActionError(actionMessage(err, t))
     } finally {
+      selection.clear()
+      reload()
       setPending(false)
     }
   }
@@ -142,8 +147,6 @@ export function TrashPage() {
       setActionError(null)
       try {
         const result = await purgeTrashOlderThan(pendingConfirm.days)
-        selection.clear()
-        reload()
         toast.show({
           message: t('trash.olderThan.success', { count: result.purged }),
           variant: 'success',
@@ -153,6 +156,10 @@ export function TrashPage() {
         // the count-bearing success and the failure report the same way.
         toast.show({ message: actionMessage(err, t), variant: 'danger' })
       } finally {
+        // A failed purge may still have deleted part of the trash, so refresh
+        // (and drop the selection) whatever the outcome — see `run`.
+        selection.clear()
+        reload()
         setPending(false)
       }
       return
@@ -162,11 +169,12 @@ export function TrashPage() {
       setActionError(null)
       try {
         await emptyTrash()
-        selection.clear()
-        reload()
       } catch (err) {
         setActionError(actionMessage(err, t))
       } finally {
+        // Emptying the trash can fail part-way through; refresh regardless.
+        selection.clear()
+        reload()
         setPending(false)
       }
       return

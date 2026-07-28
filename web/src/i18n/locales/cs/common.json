@@ -1824,6 +1824,7 @@
       "hint": "Momentálně nic nevypadá jako téměř duplicitní."
     },
     "loadMore": "Načíst další",
+    "moreError": "Další duplikáty se nepodařilo načíst.",
     "compare": {
       "title": "Porovnání duplikátů",
       "back": "Zpět na seznam",

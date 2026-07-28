@@ -1756,6 +1756,7 @@
       "hint": "Nothing looks like a near-duplicate right now."
     },
     "loadMore": "Load more",
+    "moreError": "Could not load more duplicates.",
     "compare": {
       "title": "Compare duplicates",
       "back": "Back to the list",

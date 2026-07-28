@@ -57,6 +57,7 @@ export function DuplicatesPage() {
   const [status, setStatus] = useState<Status>('loading')
   const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [moreError, setMoreError] = useState(false)
   const [busyGroupId, setBusyGroupId] = useState<string | null>(null)
   const [pending, setPending] = useState<PendingMerge | null>(null)
   const [confirming, setConfirming] = useState(false)
@@ -64,15 +65,24 @@ export function DuplicatesPage() {
   const [resultMessage, setResultMessage] = useState<string | null>(null)
 
   // load fetches the page at the given offset, replacing the list on the first
-  // page and appending afterwards. Status reflects the initial load only.
+  // page and appending afterwards. Status reflects the initial load only: a
+  // failed append keeps the page `ready` with every group loaded so far and is
+  // reported inline through `moreError` instead (the same way the library grid
+  // and the trash handle it), so one bad "load more" never wipes the list the
+  // user is halfway through reviewing.
   const load = useCallback(async (offset: number, signal?: AbortSignal) => {
     try {
       const res = await fetchDuplicates({ limit: PAGE_SIZE, offset }, signal)
       setGroups((prev) => (offset === 0 ? res.groups : [...prev, ...res.groups]))
       setNextOffset(res.next_offset)
+      setMoreError(false)
       setStatus('ready')
     } catch (err) {
       if (signal?.aborted === true) {
+        return
+      }
+      if (offset > 0) {
+        setMoreError(true)
         return
       }
       setStatus(err instanceof ApiError && err.status === 503 ? 'unavailable' : 'error')
@@ -88,10 +98,11 @@ export function DuplicatesPage() {
   }, [load])
 
   const loadMore = () => {
-    if (nextOffset === null) {
+    if (nextOffset === null || loadingMore) {
       return
     }
     setLoadingMore(true)
+    setMoreError(false)
     void load(nextOffset).finally(() => {
       setLoadingMore(false)
     })
@@ -102,9 +113,19 @@ export function DuplicatesPage() {
     setGroups((prev) => prev.filter((group) => group.id !== groupId))
   }
 
+  // Whether a resolve is in flight anywhere on the page. It locks *every*
+  // group's actions, not just the busy card's: during a dry-run there is no
+  // modal (and no backdrop) yet, so without a page-level lock a click on another
+  // group would overwrite `busyGroupId` and silently discard the merge already
+  // under way.
+  const resolving = busyGroupId !== null
+
   // beginResolve previews the merge for the chosen keeper and, on success, opens
   // the confirmation modal with what would move. The group stays until confirmed.
   const beginResolve = async (group: DuplicateGroup, keeperUid: string) => {
+    if (resolving) {
+      return
+    }
     setBusyGroupId(group.id)
     setActionError(null)
     setResultMessage(null)
@@ -207,7 +228,7 @@ export function DuplicatesPage() {
           <DuplicateGroupCard
             key={group.id}
             group={group}
-            busy={busyGroupId === group.id}
+            busy={resolving}
             onResolve={(g, keeperUid) => {
               void beginResolve(g, keeperUid)
             }}
@@ -220,6 +241,9 @@ export function DuplicatesPage() {
           <Button variant="outline-secondary" size="sm" disabled={loadingMore} onClick={loadMore}>
             {loadingMore ? <Spinner animation="border" size="sm" /> : t('duplicates.loadMore')}
           </Button>
+          {/* The button above doubles as the retry: the failed page can simply
+              be requested again, with the groups already loaded left in place. */}
+          {moreError && <div className="text-danger small mt-2">{t('duplicates.moreError')}</div>}
         </div>
       )}
 
