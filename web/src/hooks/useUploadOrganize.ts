@@ -19,10 +19,14 @@ export type OrganizeLoadState =
   | { status: 'ready'; albums: AlbumCount[]; labels: LabelCount[] }
 
 /**
- * Lifecycle of the post-upload assignment. It runs at most once per completed
- * batch: `idle` before and between batches, `assigning` while the call is in
- * flight, `done` with the per-photo result, or `error` with a retryable message
- * (the photos are already uploaded — only the album/label assignment failed).
+ * Lifecycle of the post-upload assignment: `idle` before and between batches,
+ * `assigning` while the call is in flight, `done` with the per-photo result, or
+ * `error` with a retryable message (the photos are already uploaded — only the
+ * album/label assignment failed).
+ *
+ * A finished (`done`/`error`) result belongs to the selection it was made with:
+ * changing the selection afterwards drops it back to `idle`, so a pick made
+ * once the batch has already completed is applied instead of silently lost.
  */
 export type OrganizeAssignState =
   | { status: 'idle' }
@@ -38,9 +42,13 @@ export interface UseUploadOrganizeResult {
   albums: string[]
   /** Chosen label values — real UIDs or `create:` markers for pending creations. */
   labels: string[]
-  /** Replaces the chosen albums (the multi-select emits the whole next list). */
+  /**
+   * Replaces the chosen albums (the multi-select emits the whole next list).
+   * Editing the selection after a finished assignment re-arms it (back to
+   * `idle`) so the new pick is applied to the already-uploaded batch.
+   */
   setAlbums: (values: string[]) => void
-  /** Replaces the chosen labels. */
+  /** Replaces the chosen labels, re-arming a finished assignment like {@link setAlbums}. */
   setLabels: (values: string[]) => void
   /** True when at least one album or label is chosen. */
   hasSelection: boolean
@@ -75,8 +83,11 @@ export interface UseUploadOrganizeResult {
  */
 export function useUploadOrganize(): UseUploadOrganizeResult {
   const [load, setLoad] = useState<OrganizeLoadState>({ status: 'loading' })
-  const [albums, setAlbums] = useState<string[]>([])
-  const [labels, setLabels] = useState<string[]>([])
+  // Internal setters: used by `createPending` to swap a `create:` marker for the
+  // fresh UID *during* an assignment, which must not re-arm anything. The
+  // user-facing `setAlbums`/`setLabels` below wrap them.
+  const [albums, setAlbumsState] = useState<string[]>([])
+  const [labels, setLabelsState] = useState<string[]>([])
   const [assign, setAssign] = useState<OrganizeAssignState>({ status: 'idle' })
 
   // The pump reads the latest selection synchronously from an async run.
@@ -122,7 +133,7 @@ export function useUploadOrganize(): UseUploadOrganizeResult {
             ? { ...prev, albums: [...prev.albums, { ...album, photo_count: 0 }] }
             : prev,
         )
-        setAlbums((prev) => prev.map((current) => (current === value ? album.uid : current)))
+        setAlbumsState((prev) => prev.map((current) => (current === value ? album.uid : current)))
         return album.uid
       }
       const label = await createLabel({ name, priority: 0 })
@@ -131,7 +142,7 @@ export function useUploadOrganize(): UseUploadOrganizeResult {
           ? { ...prev, labels: [...prev.labels, { ...label, photo_count: 0 }] }
           : prev,
       )
-      setLabels((prev) => prev.map((current) => (current === value ? label.uid : current)))
+      setLabelsState((prev) => prev.map((current) => (current === value ? label.uid : current)))
       return label.uid
     },
     [],
@@ -184,6 +195,36 @@ export function useUploadOrganize(): UseUploadOrganizeResult {
       }
     },
     [resolve],
+  )
+
+  /**
+   * Invalidates a finished assignment so the caller's completion trigger fires
+   * again with the selection as it now stands. Without this, a pick made after
+   * the batch already completed (and was assigned) would be dropped: the
+   * trigger only runs while the state is `idle`, and the green "assigned" alert
+   * would keep claiming success. An in-flight assignment is left alone — it
+   * reads the live selection anyway, and the selectors are disabled meanwhile.
+   */
+  const rearm = useCallback((): void => {
+    setAssign((prev) =>
+      prev.status === 'done' || prev.status === 'error' ? { status: 'idle' } : prev,
+    )
+  }, [])
+
+  const setAlbums = useCallback(
+    (values: string[]): void => {
+      setAlbumsState(values)
+      rearm()
+    },
+    [rearm],
+  )
+
+  const setLabels = useCallback(
+    (values: string[]): void => {
+      setLabelsState(values)
+      rearm()
+    },
+    [rearm],
   )
 
   const runAssign = useCallback(

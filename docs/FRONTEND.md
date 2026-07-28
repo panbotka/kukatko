@@ -540,7 +540,8 @@ here.
   `UploadOrganize` — before uploading you can pick **albums and labels** for the whole batch, and after all files
   settle **all** recognized photos (new **and** duplicate `resolvedUids`) are assigned
   by a single `POST /photos/bulk` (state „přiřazuji…“, success, or a **retryable** error — the photos are
-  uploaded, only the assignment failed); with no selection no call is made,
+  uploaded, only the assignment failed); with no selection no call is made, and a pick made **after**
+  the batch has finished re-runs the assignment with the current selection,
   `ImportPage` = `/import` (maintainer only) the import/migration console: two sections (PhotoPrism,
   photo-sorter) with a **Spustit import** button (gated on the `sources` flags), the live progress of a running run
   (spinner + imported/updated/skipped/failed counts) and the background queue state (`GET /jobs/stats`),
@@ -1255,6 +1256,10 @@ here.
   jako v `BulkEditModal`, sdílené helpery `lib/pendingCreate`), `runAssign(uids)` nejdřív založí
   čekající alba/štítky a pak jedním `POST /photos/bulk` (`add_to_albums`+`add_labels`) přiřadí;
   stav `idle`/`assigning`/`done`/`error`, `retryAssign` re-poslání téže dávky, `resetAssign`;
+  `setAlbums`/`setLabels` jsou obálky, které po dokončeném přiřazení (`done`/`error`) vrátí stav na
+  `idle` → výběr zvolený **až po** dokončení dávky se skutečně aplikuje (dřív se tiše zahodil,
+  zatímco zelená hláška hlásila úspěch); interní přepis `create:` markeru na reálný UID během
+  běžícího přiřazení stav zpět na `idle` nevrací;
   `useSubjectPhotos(uid,{reloadKey?})` = obálka nad `usePaginatedPhotos` nad
   `GET /subjects/{uid}/photos` (galerie osoby, `uid` jde do `key` → reset se skeletonem při změně
   osoby, `reloadKey` je pozadí refetch po mutaci); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
@@ -1697,7 +1702,9 @@ here.
   `uploadFile(file,{onProgress,signal})`
   nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
   streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
-  `UploadOutcome`; `photos.ts` navíc `fetchPhoto(uid)` (detail `GET /photos/{uid}` →
+  `UploadOutcome`; `onload` je celý v `try`/`catch` a 2xx tělo bez neprázdného pole `results`
+  odmítne `ApiError`em — z callbacku XHR nesmí uniknout výjimka, promise by se nikdy nevyřešila a
+  upload by visel navždy (a držel slot v concurrency limitu); `photos.ts` navíc `fetchPhoto(uid)` (detail `GET /photos/{uid}` →
   `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chipy `+ uploader?` `{uid,name}`),
   `updatePhoto(uid,patch)`
   (`PATCH …` částečná editace metadat → `PhotoMetadataUpdate`, null maže nullable),
