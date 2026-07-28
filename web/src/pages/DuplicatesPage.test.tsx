@@ -47,8 +47,9 @@ function member(uid: string, w: number, h: number, isKeeper: boolean) {
   }
 }
 
-function page(groups: DuplicateGroup[]): DuplicatesResponse {
-  return { groups, total: groups.length, limit: 20, offset: 0, next_offset: null }
+// page wraps groups in a listing response; nextOffset drives the Load more control.
+function page(groups: DuplicateGroup[], nextOffset: number | null = null): DuplicatesResponse {
+  return { groups, total: groups.length, limit: 20, offset: 0, next_offset: nextOffset }
 }
 
 // preview builds a merge preview/result with a mix of moves and one archived copy.
@@ -183,6 +184,69 @@ describe('DuplicatesPage', () => {
     fetchMock.mockResolvedValue(page([]))
     renderPage()
     expect(await screen.findByText('No duplicates found')).toBeInTheDocument()
+  })
+
+  it('keeps the loaded groups and offers a retry when loading more fails', async () => {
+    const user = userEvent.setup()
+    fetchMock
+      .mockResolvedValueOnce(page([group('g1', 'ph_keep', 'ph_dup')], 20))
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(page([group('g2', 'ph_more', 'ph_copy')]))
+    renderPage()
+    await screen.findByRole('img', { name: 'ph_keep.jpg' })
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    // The failed page is reported inline; the first page stays on screen instead
+    // of being replaced by a full-page error.
+    expect(await screen.findByText('Could not load more duplicates.')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'ph_keep.jpg' })).toBeInTheDocument()
+    expect(screen.queryByText('Failed to load duplicates.')).not.toBeInTheDocument()
+
+    // Load more doubles as the retry: a successful retry appends and clears it.
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+    expect(await screen.findByRole('img', { name: 'ph_more.jpg' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'ph_keep.jpg' })).toBeInTheDocument()
+    expect(screen.queryByText('Could not load more duplicates.')).not.toBeInTheDocument()
+  })
+
+  it('locks every group while a dry-run is in flight, before the modal appears', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(
+      page([group('g1', 'ph_keep', 'ph_dup'), group('g2', 'ph_other', 'ph_copy')]),
+    )
+    // Hold the first group's dry-run open: this is the window in which no modal
+    // (and no backdrop) is up yet, so the second group must be locked by itself.
+    let finishDryRun!: (result: MergeResult) => void
+    const dryRun = new Promise<MergeResult>((resolve) => {
+      finishDryRun = resolve
+    })
+    mergeMock.mockImplementationOnce(() => dryRun)
+    renderPage()
+    await screen.findByRole('img', { name: 'ph_keep.jpg' })
+
+    const mergeButtons = screen.getAllByRole('button', { name: 'Keep best & merge' })
+    expect(mergeButtons).toHaveLength(2)
+    await user.click(mergeButtons[0])
+
+    await waitFor(() => {
+      expect(mergeButtons[1]).toBeDisabled()
+    })
+    expect(screen.queryByText('Merge duplicates')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Not a duplicate' })[1]).toBeDisabled()
+
+    // A click on the second group cannot start a competing merge…
+    await user.click(mergeButtons[1])
+    expect(mergeMock).toHaveBeenCalledTimes(1)
+
+    // …and the first group's preview is the one that opens.
+    finishDryRun(preview('ph_keep', true))
+    expect(await screen.findByText('Merge duplicates')).toBeInTheDocument()
+    expect(mergeMock).toHaveBeenCalledWith({
+      keeper_uid: 'ph_keep',
+      member_uids: ['ph_keep', 'ph_dup'],
+      dry_run: true,
+    })
   })
 
   it('shows an unavailable notice when detection is disabled (503)', async () => {

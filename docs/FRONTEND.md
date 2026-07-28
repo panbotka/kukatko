@@ -966,6 +966,10 @@ here.
   + a button → a confirmation modal (`trash.confirm.older` with the specific number of days) → `purgeTrashOlderThan(days)`
   (`POST /trash/purge-older?days=N&confirm=true`), on success `useToast` success with the deleted count
   (`trash.olderThan.success`) + a list reload, on error an error toast (503 → `trash.unavailable`);
+  every mutation reloads the list and clears the selection **once the batch settles** (in a `finally`,
+  not on the success path only) — a bulk restore/purge that dies on its third uid has already mutated
+  the first two server-side, so the grid must not go on rendering them as archived, nor keep them
+  selected for a retry that would act on photos that are already gone;
   `fetchTrashInfo` fetches the retention for the countdown on the cards,
   `DuplicatesPage` = `/duplicates` (editor/admin) reviewing and **resolving** duplicates: a paginated list of
   groups (`fetchDuplicates`, „načíst další" via `next_offset`) in `DuplicateGroupCard`; per group
@@ -974,7 +978,13 @@ here.
   archivovány"); after confirmation `mergeDuplicates()` merges (the keeper inherits albums/labels/people + fills gaps,
   copies to the trash — reversible) → the group disappears + a success alert (`duplicates.merged`), or **rejects** the group
   („není duplikát", hides it locally only); errors via `duplicates.actionError`/503 „nedostupné", loading
-  via `GridSkeleton`, an error with retry; each card offers **„Porovnat vedle sebe"** → `DupComparePage`,
+  via `GridSkeleton`, an error with retry; a failed **„načíst další"** (any `offset > 0`) never touches
+  `status` — the groups loaded so far stay put and the failure is reported inline under the button
+  (`duplicates.moreError`), the button itself being the retry, exactly as `usePaginatedPhotos`/`TrashPage`
+  do with `moreError`; a dry-run in flight locks **every** group's actions (a page-level busy, not
+  `busyGroupId === group.id`), because until the preview resolves there is no modal or backdrop and a
+  click on another group would overwrite `busyGroupId` and discard the merge already under way;
+  each card offers **„Porovnat vedle sebe"** → `DupComparePage`,
   because a 224px tile is enough to recognize a group, not to decide within it,
   `DupComparePage` = `/duplicates/compare?pair=<levá>|<pravá>` (editor/admin, **fullscreen outside
   `Layout`** like `/review` — two photos with a navbar around them are two too-small photos) the decision „kterou

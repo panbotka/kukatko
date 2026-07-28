@@ -32,7 +32,11 @@ function comparePairId(group: DuplicateGroup): string {
 interface DuplicateGroupCardProps {
   /** The group of likely-duplicate photos to review. */
   group: DuplicateGroup
-  /** Whether an action on this group is in flight (disables the buttons). */
+  /**
+   * Whether an action is in flight (disables this card's buttons). The parent
+   * holds this lock page-wide, so while one group is being resolved no other
+   * group can start a competing merge behind its back.
+   */
   busy: boolean
   /** Keep keeperUid and merge the rest of the group into it. */
   onResolve: (group: DuplicateGroup, keeperUid: string) => void

@@ -219,6 +219,38 @@ describe('TrashPage', () => {
     })
   })
 
+  it('refreshes the list and clears the selection when a bulk action fails mid-batch', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg', 1), photo('b', 'b.jpg', 1)]))
+    // The first photo is restored, the second one fails: a partial batch.
+    unarchiveMock.mockImplementation(async (uid: string) => {
+      if (uid === 'b') {
+        throw new Error('boom')
+      }
+      return Promise.resolve()
+    })
+    renderTrash()
+    await screen.findByRole('link', { name: 'a.jpg' })
+
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select a.jpg' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select b.jpg' }))
+    expect(screen.getByRole('toolbar')).toHaveTextContent('2 selected')
+
+    const initialFetches = fetchMock.mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Restore selected' }))
+
+    // The failure is surfaced…
+    expect(await screen.findByText('The action failed.')).toBeInTheDocument()
+    expect(unarchiveMock).toHaveBeenCalledTimes(2)
+    // …but photo 'a' is already gone server-side, so the grid still refreshes
+    // and the selection is dropped: a retry cannot act on stale uids.
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(initialFetches)
+    })
+    expect(screen.getByRole('toolbar')).toHaveTextContent('0 selected')
+  })
+
   it('shows an empty state when the trash has no photos', async () => {
     fetchMock.mockResolvedValue(page([]))
     renderTrash()
