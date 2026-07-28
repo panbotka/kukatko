@@ -125,7 +125,8 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 
 // handleUpdateUser replaces a user's profile fields (admin only). It responds 200
 // with the updated user, 400 for a bad body, invalid role, or over-length note,
-// 404 if the user does not exist, or 500.
+// 404 if the user does not exist, 409 when the change would demote or disable the
+// last enabled maintainer, or 500.
 func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	var req updateUserRequest
@@ -145,6 +146,8 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDisableUser disables a user and invalidates their sessions (admin only).
+// It responds 409 when the target is the instance's last enabled maintainer,
+// whose loss would make every operations surface permanently unreachable.
 func (a *API) handleDisableUser(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	actor, _ := UserFromContext(r.Context())
@@ -186,12 +189,18 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeUserMutationError maps the common user-mutation errors (invalid role,
-// over-length note, not found) onto HTTP statuses, falling back to fallback as a
-// 500 message.
+// over-length note, not found, last maintainer) onto HTTP statuses, falling back
+// to fallback as a 500 message.
+//
+// ErrLastMaintainer is a 409, not a 403: the caller is allowed to make the
+// change, it is the instance's current state that forbids it, and promoting
+// someone else to maintainer first makes the very same request succeed.
 func writeUserMutationError(w http.ResponseWriter, err error, fallback string) {
 	switch {
 	case errors.Is(err, ErrMaintainerRequired):
 		writeError(w, http.StatusForbidden, ErrMaintainerRequired.Error())
+	case errors.Is(err, ErrLastMaintainer):
+		writeError(w, http.StatusConflict, ErrLastMaintainer.Error())
 	case errors.Is(err, ErrInvalidRole):
 		writeError(w, http.StatusBadRequest, "invalid role (want viewer, editor, admin, or maintainer)")
 	case errors.Is(err, ErrNoteTooLong):

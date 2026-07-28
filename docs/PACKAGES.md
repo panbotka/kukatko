@@ -27,6 +27,21 @@ to `## Package map` in `CLAUDE.md`.
   for maintainers only (`requireImport`/`RequireImport`). **Only a maintainer** may create/promote to the
   `maintainer` role or modify a maintainer account — otherwise `ErrMaintainerRequired` (403); the actor's role is passed into
   the create/update validation from the context. Bootstrap creates the first user as a **maintainer**.
+  **Last-maintainer guard** (`store_maintainer.go`): an instance that has an enabled maintainer must keep
+  one, because losing the role entirely is irreversible through the API (granting it is maintainer-only,
+  no delete-user endpoint, `Bootstrap` only on an empty table) and would strand every operations surface.
+  `withMaintainerGuard` counts enabled maintainers **before and after** the mutation inside the
+  mutation's own transaction and returns `ErrLastMaintainer` (→ **409**) when `strandsInstance(before,
+  after)` — i.e. `before > 0 && after == 0` — so a refusal rolls the change *and* its audit row back.
+  The before-count runs as `SELECT … FOR UPDATE` (in a CTE, ordered by `uid`) so two concurrent
+  demotions of two different maintainers queue instead of both seeing the other and committing.
+  Counting rather than inspecting the request keeps the guard indifferent to *how* the capability was
+  lost: role change, disable, both at once, and any future delete are covered by routing through it.
+  `UpdateUserProfile{,Audited}` and `SetUserDisabled{,Audited}` all do — the audited pair nests the
+  guard inside `inAuditedTx`, the plain pair gets its own `inGuardedTx`. A **disabled** maintainer does
+  not count (`disabled = false` in both queries), and an instance already at zero stays editable
+  (`before == 0` ⇒ never stranded), so the guard never freezes a maintainer-less install.
+  `Store.CountEnabledMaintainers` is the read-only view of the same invariant.
   **Admin note on a user** (`note`, migration `0021_user_note.sql`, nullable TEXT →
   `COALESCE(note,'')` in `userColumns`): `User.Note` is `json:"-"`, so it never leaks through
   `loginResponse` (`/auth/login`, `/auth/me`); admin endpoints add it back via

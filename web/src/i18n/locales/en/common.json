@@ -1962,6 +1962,7 @@
       "passwordTooShort": "The password must be at least {{min}} characters.",
       "invalidRole": "Invalid role.",
       "noteTooLong": "The note may be at most {{max}} characters.",
+      "lastMaintainer": "This is the last enabled maintainer. Demoting or disabling it would leave nobody able to grant the role back, and the operations part of the app would become unreachable. Promote somebody else to maintainer first.",
       "generic": "The action could not be completed."
     }
   },

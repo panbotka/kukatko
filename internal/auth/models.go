@@ -26,6 +26,14 @@ var (
 	// maintainer role or to modify an account that already holds it. Only a
 	// maintainer may create, promote to, or alter a maintainer account.
 	ErrMaintainerRequired = errors.New("auth: only a maintainer may manage the maintainer role")
+	// ErrLastMaintainer indicates a change was refused because it would leave the
+	// instance without a single enabled maintainer. That state is irreversible
+	// through the API — granting the maintainer role is itself reserved to
+	// maintainers and there is no delete-user endpoint that would let Bootstrap
+	// run again — so every operations surface (backup, restore, import,
+	// maintenance, jobs, processing) would need direct database surgery to come
+	// back.
+	ErrLastMaintainer = errors.New("auth: cannot remove the last maintainer")
 	// ErrUserDisabled indicates the account is disabled.
 	ErrUserDisabled = errors.New("auth: user is disabled")
 	// ErrNoteTooLong indicates the user note exceeds MaxNoteLen characters. Its

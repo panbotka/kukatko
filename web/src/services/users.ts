@@ -119,7 +119,10 @@ export async function createUser(body: CreateUserBody, signal?: AbortSignal): Pr
 /**
  * Replaces a user's mutable profile fields.
  *
- * @throws ApiError with `status` 400 (invalid role, over-length note) or 404.
+ * @throws ApiError with `status` 400 (invalid role, over-length note), 404, or
+ *   409 when the change would demote or disable the instance's last enabled
+ *   maintainer — a state with no way back through the API, so the backend
+ *   refuses it (`auth.ErrLastMaintainer`).
  */
 export async function updateUser(
   uid: string,
@@ -138,6 +141,9 @@ export async function updateUser(
  * Enabling has no endpoint of its own, so it is a profile update that clears the
  * flag — the remaining fields are echoed back from `user` unchanged. Both paths
  * invalidate the user's sessions on the way to `disabled`.
+ *
+ * @throws ApiError with `status` 409 when disabling would take away the last
+ *   enabled maintainer, leaving the instance's operations surfaces unreachable.
  */
 export async function setUserDisabled(
   user: AdminUser,

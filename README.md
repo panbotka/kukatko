@@ -110,6 +110,9 @@ of PhotoPrism and of [photo-sorter](https://github.com/kozaktomas/photo-sorter),
   batch to albums and labels), per-user favorites, a bilingual UI (Czech default + English), S3 backups.
 - **User management** in the UI (`/users`, admin only): creating an account, changing role/name/note, resetting
   passwords, and disabling an account. Accounts are not deleted — they are retired by disabling so their history stays intact.
+  The **last enabled maintainer cannot be demoted or disabled** (not even by themselves): with nobody left to grant
+  the role back, every operations surface would be locked away for good, so the change is refused until a second
+  maintainer exists.
 - **API tokens** (`Authorization: Bearer kkt_…`) for the CLI, scripts, and agents — a long-lived credential
   with its own expiry and revocation, inheriting its user's role. You create one via `POST /api/v1/auth/tokens`.
 - **`kukatko ctl`** — a remote client that controls a **running** instance via its HTTP API
@@ -1505,8 +1508,8 @@ Endpoints under `/api/v1` (JSON):
 | POST | `/auth/password` | authenticated | `{current_password,new_password}` → changes the password, revokes other sessions |
 | GET  | `/admin/users` | admin | list of users |
 | POST | `/admin/users` | admin | `{username,password,display_name,email,role}` → creates a user |
-| PATCH | `/admin/users/{uid}` | admin | `{display_name,email,role,disabled}` → edits the profile |
-| POST | `/admin/users/{uid}/disable` | admin | disables the account (revokes its sessions) |
+| PATCH | `/admin/users/{uid}` | admin | `{display_name,email,role,disabled}` → edits the profile; **409** if it would demote/disable the last enabled maintainer |
+| POST | `/admin/users/{uid}/disable` | admin | disables the account (revokes its sessions); **409** on the last enabled maintainer |
 | POST | `/admin/users/{uid}/password` | admin | `{new_password}` → password reset (revokes all its sessions) |
 | POST | `/upload` | editor/admin | `multipart/form-data` with one+ files → per-file `{outcome, photo_uid, warnings}` (see Upload / ingest) |
 | GET | `/photos` | authenticated | list with filters/sorting/pagination → `{photos,total,limit,offset,next_offset}` (see Photo API); per-user filters `min_rating` (≥ n), `flag` (`pick`/`reject`) and sorting `sort=rating` scoped to the current user; `country`/`city` scope to a location (see Places) |

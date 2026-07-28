@@ -119,40 +119,36 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	return users, nil
 }
 
+// updateUserProfileQuery replaces the mutable profile fields of one user and
+// returns the refreshed row. The note is a partial update: a nil argument leaves
+// the stored note untouched, while a non-nil one (including a pointer to "")
+// overwrites it. COALESCE keeps that branch in SQL, so a nil note needs no
+// separate statement.
+const updateUserProfileQuery = `UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
+		note = COALESCE($6::text, note), updated_at = now()
+	WHERE uid = $1 RETURNING ` + userColumns
+
+// setUserDisabledQuery flips the disabled flag of one user and returns the
+// refreshed row.
+const setUserDisabledQuery = `UPDATE users SET disabled = $2, updated_at = now()
+	WHERE uid = $1 RETURNING ` + userColumns
+
 // UpdateUserProfile updates the mutable profile fields of the user identified by
 // uid and returns the refreshed user. It returns ErrUserNotFound if no such user
-// exists. updated_at is bumped to now() by the statement.
-//
-// The note is a partial update: a nil in.Note leaves the stored note untouched,
-// while a non-nil one (including a pointer to "") overwrites it. COALESCE keeps
-// that branch in SQL, so a nil note needs no separate statement.
+// exists, or ErrLastMaintainer when the change would leave the instance without a
+// single enabled maintainer (see withMaintainerGuard). updated_at is bumped to
+// now() by the statement.
 func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
-	q := `UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
-			note = COALESCE($6::text, note), updated_at = now()
-		WHERE uid = $1 RETURNING ` + userColumns
-	user, err := scanUser(s.pool.QueryRow(ctx, q, uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return User{}, ErrUserNotFound
-		}
-		return User{}, err
-	}
-	return user, nil
+	return s.updateUserReturningGuarded(ctx, updateUserProfileQuery,
+		uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note)
 }
 
 // SetUserDisabled flips the disabled flag for the user identified by uid, bumps
 // updated_at, and returns the refreshed user. It returns ErrUserNotFound if no
-// such user exists.
+// such user exists, or ErrLastMaintainer when disabling would leave the instance
+// without a single enabled maintainer (see withMaintainerGuard).
 func (s *Store) SetUserDisabled(ctx context.Context, uid string, disabled bool) (User, error) {
-	q := `UPDATE users SET disabled = $2, updated_at = now() WHERE uid = $1 RETURNING ` + userColumns
-	user, err := scanUser(s.pool.QueryRow(ctx, q, uid, disabled))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return User{}, ErrUserNotFound
-		}
-		return User{}, err
-	}
-	return user, nil
+	return s.updateUserReturningGuarded(ctx, setUserDisabledQuery, uid, disabled)
 }
 
 // SetPasswordHash replaces the password hash for the user identified by uid and

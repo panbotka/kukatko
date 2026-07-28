@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -38,31 +37,32 @@ func (s *Store) CreateUserAudited(ctx context.Context, u User, entry audit.Entry
 // identified by uid and writes entry in the same transaction, returning the
 // refreshed user. See CreateUserAudited for the atomicity guarantee. entry's
 // TargetUID defaults to uid. It returns ErrUserNotFound if no such user exists,
-// in which case nothing changes and no audit row is written.
+// or ErrLastMaintainer when the change would leave the instance without a single
+// enabled maintainer (see withMaintainerGuard); in either case nothing changes
+// and no audit row is written.
 func (s *Store) UpdateUserProfileAudited(
 	ctx context.Context, uid string, in UpdateUserInput, entry audit.Entry,
 ) (User, error) {
-	q := `UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
-			note = COALESCE($6::text, note), updated_at = now()
-		WHERE uid = $1 RETURNING ` + userColumns
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	return s.updateUserReturningAudited(ctx, entry, q, uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note)
+	return s.updateUserReturningAudited(ctx, entry, updateUserProfileQuery,
+		uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note)
 }
 
 // SetUserDisabledAudited flips the disabled flag for the user identified by uid,
 // bumps updated_at, and writes entry in the same transaction, returning the
 // refreshed user. See CreateUserAudited for the atomicity guarantee. entry's
-// TargetUID defaults to uid. It returns ErrUserNotFound if no such user exists.
+// TargetUID defaults to uid. It returns ErrUserNotFound if no such user exists,
+// or ErrLastMaintainer when disabling would leave the instance without a single
+// enabled maintainer (see withMaintainerGuard).
 func (s *Store) SetUserDisabledAudited(
 	ctx context.Context, uid string, disabled bool, entry audit.Entry,
 ) (User, error) {
-	q := `UPDATE users SET disabled = $2, updated_at = now() WHERE uid = $1 RETURNING ` + userColumns
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	return s.updateUserReturningAudited(ctx, entry, q, uid, disabled)
+	return s.updateUserReturningAudited(ctx, entry, setUserDisabledQuery, uid, disabled)
 }
 
 // SetPasswordHashAudited replaces the password hash for the user identified by
@@ -88,24 +88,25 @@ func (s *Store) SetPasswordHashAudited(ctx context.Context, uid, hash string, en
 }
 
 // updateUserReturningAudited runs an "UPDATE ... RETURNING userColumns" statement
-// inside an audited transaction and returns the refreshed user. A missing user
-// (pgx.ErrNoRows) becomes ErrUserNotFound, which rolls the transaction back so no
-// audit row is written. It is shared by the profile-update and disable audited
-// writes, which differ only in their SQL and arguments.
+// inside an audited transaction, under the last-maintainer guard, and returns the
+// refreshed user. A missing user (pgx.ErrNoRows) becomes ErrUserNotFound and a
+// change that would strand the instance becomes ErrLastMaintainer; either rolls
+// the transaction back, so neither the change nor its audit row is written. It is
+// shared by the profile-update and disable audited writes, which differ only in
+// their SQL and arguments.
 func (s *Store) updateUserReturningAudited(
 	ctx context.Context, entry audit.Entry, query string, args ...any,
 ) (User, error) {
 	var user User
 	err := s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		u, scanErr := scanUser(tx.QueryRow(ctx, query, args...))
-		if scanErr != nil {
-			if errors.Is(scanErr, pgx.ErrNoRows) {
-				return ErrUserNotFound
+		return withMaintainerGuard(ctx, tx, func(tx pgx.Tx) error {
+			u, scanErr := scanUpdatedUser(ctx, tx, query, args...)
+			if scanErr != nil {
+				return scanErr
 			}
-			return scanErr
-		}
-		user = u
-		return nil
+			user = u
+			return nil
+		})
 	})
 	if err != nil {
 		return User{}, err

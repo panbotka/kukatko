@@ -46,6 +46,7 @@ type ErrorKey =
   | 'users.errors.passwordTooShort'
   | 'users.errors.invalidRole'
   | 'users.errors.noteTooLong'
+  | 'users.errors.lastMaintainer'
   | 'users.errors.generic'
 
 /**
@@ -62,13 +63,21 @@ interface FormError {
  *
  * The admin user handlers answer with a plain `{"error": "..."}` envelope rather
  * than a per-field structure, so the status plus a keyword from the message is
- * all there is to go on: 409 is only ever a duplicate username, and the three
- * possible 400s each name their own field (`internal/auth/handlers_admin.go`).
- * Anything unrecognised degrades to a form-level message.
+ * all there is to go on: 409 is either a duplicate username or the
+ * last-maintainer guard (told apart by the message), and the three possible 400s
+ * each name their own field (`internal/auth/handlers_admin.go`). Anything
+ * unrecognised degrades to a form-level message.
+ *
+ * The last-maintainer refusal belongs to no input — the role select is only the
+ * way it was triggered, and the disable button has no form at all — so it
+ * surfaces as a form-level alert.
  */
 function fieldErrorFor(error: unknown): FormError {
   if (error instanceof ApiError) {
     if (error.status === 409) {
+      if (error.message.toLowerCase().includes('maintainer')) {
+        return { field: null, messageKey: 'users.errors.lastMaintainer' }
+      }
       return { field: 'username', messageKey: 'users.errors.usernameTaken' }
     }
     if (error.status === 400) {
@@ -630,7 +639,11 @@ export function UsersPage() {
   const [state, setState] = useState<State>({ status: 'loading' })
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })
   const [toggling, setToggling] = useState(false)
-  const [actionError, setActionError] = useState(false)
+  // The enable/disable action has no form to hang a field error on, so it keeps
+  // just the message key. It is a real message rather than a boolean because the
+  // backend refuses disabling the last maintainer, and "the action could not be
+  // completed" would leave the reader with no idea what to do about it.
+  const [actionError, setActionError] = useState<ErrorKey | null>(null)
   const [notice, setNotice] = useState<'passwordChanged' | null>(null)
 
   const load = useCallback((signal?: AbortSignal) => {
@@ -677,12 +690,12 @@ export function UsersPage() {
   }, [])
 
   async function confirmToggle(user: AdminUser) {
-    setActionError(false)
+    setActionError(null)
     setToggling(true)
     try {
       upsert(await setUserDisabled(user, !user.disabled))
-    } catch {
-      setActionError(true)
+    } catch (err) {
+      setActionError(fieldErrorFor(err).messageKey)
     } finally {
       setToggling(false)
       // Either way the dialog closes: a modal backdrop would hide the error alert.
@@ -709,16 +722,16 @@ export function UsersPage() {
       </div>
       <p className="text-secondary">{t('users.subtitle')}</p>
 
-      {actionError && (
+      {actionError !== null && (
         <Alert
           variant="danger"
           role="alert"
           dismissible
           onClose={() => {
-            setActionError(false)
+            setActionError(null)
           }}
         >
-          {t('users.errors.generic')}
+          {t(actionError, { min: MIN_PASSWORD_LENGTH, max: MAX_NOTE_LENGTH })}
         </Alert>
       )}
       {notice === 'passwordChanged' && (

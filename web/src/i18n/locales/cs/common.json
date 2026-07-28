@@ -2032,6 +2032,7 @@
       "passwordTooShort": "Heslo musí mít alespoň {{min}} znaků.",
       "invalidRole": "Neplatná role.",
       "noteTooLong": "Poznámka může mít nejvýše {{max}} znaků.",
+      "lastMaintainer": "Toto je poslední aktivní správce systému. Kdyby přišel o roli nebo byl zakázán, nezůstal by nikdo, kdo ji může udělit zpět, a provozní část aplikace by se stala nedostupnou. Nejdřív povyšte na správce systému někoho dalšího.",
       "generic": "Akci se nepodařilo dokončit."
     }
   },

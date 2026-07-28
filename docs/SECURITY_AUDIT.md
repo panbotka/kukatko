@@ -292,6 +292,40 @@ vulnerabilities). Nothing here required a code change — this report only docum
 - **Not addressed here:** the optional IP-independent per-username failure counter suggested
   under SEC-001 remains open.
 
+### SEC-016 — MEDIUM — **FIXED** — Irreversible loss of all maintainer (operations) capability
+
+- **Where (before the fix):** `internal/auth/service_admin.go` `authorizeUserManagement`
+  returned `nil` immediately for a maintainer actor and `guardMaintainerBoundary` authorized
+  the action without asserting any invariant; the handlers
+  (`internal/auth/handlers_admin.go`) never compared actor against target. Nothing counted
+  how many maintainers were left.
+- **Attack scenario:** availability, not confidentiality — and reachable by accident as
+  easily as on purpose. The sole maintainer demotes (`PATCH /admin/users/{uid}` with a lower
+  `role`) or disables (`POST /admin/users/{uid}/disable`) their own account, or the last
+  other maintainer. With zero enabled maintainers left, `authorizeUserManagement` refuses
+  every non-maintainer that tries to grant `maintainer` back (`newRole == RoleMaintainer` →
+  `ErrMaintainerRequired`), there is no delete-user endpoint, and `Bootstrap` only runs when
+  the users table is **empty** — so backup, restore, import, maintenance, jobs and processing
+  are permanently unreachable and only direct database surgery brings them back. A
+  single-account instance (the common case here) reaches this in one click.
+- **Fix:** `internal/auth/store_maintainer.go`. `withMaintainerGuard` counts **enabled**
+  maintainers before and after the mutation, inside the mutation's own transaction, and
+  returns `ErrLastMaintainer` (→ **409**, message `auth: cannot remove the last maintainer`)
+  when the count would drop from ≥1 to 0; the error rolls back the change *and* its audit
+  row. Counting the outcome rather than inspecting the request makes the guard indifferent to
+  how the capability was lost — role change, disable, both at once, and any delete path added
+  later are covered by routing through it, which
+  `UpdateUserProfile{,Audited}`/`SetUserDisabled{,Audited}` all now do. The before-count is a
+  `SELECT … FOR UPDATE` over the enabled maintainers (ordered by `uid`), so two concurrent
+  demotions of two *different* maintainers queue instead of each seeing the other and both
+  committing into the forbidden state. A **disabled** maintainer does not satisfy the
+  invariant — it cannot log in — and an instance that already has zero stays fully editable,
+  so the guard forbids *dropping* to zero without ever freezing an install that is already
+  there.
+- **Not addressed here:** a maintainer may still lock *themselves* out individually (demote
+  or disable their own account) as long as another enabled maintainer remains — that is
+  recoverable by the other maintainer and therefore intentionally allowed.
+
 ---
 
 ## Areas checked — no finding ("reviewed, no findings")
@@ -330,7 +364,9 @@ Silence is not evidence; these areas were examined and are clean.
   tightened from write to `RequireAdmin` because they destroy originals irreversibly — the
   reversible archive (soft delete) stays `RequireWrite` and `GET /trash/info` stays `RequireAuth`;
   media by `RequireAuthOrDownloadToken`. No under-guarded mutating route; a nil middleware would
-  panic at wiring, not silently pass. No editor/viewer can reach a governance or operations
+  panic at wiring, not silently pass. The ladder's top is additionally **irreversibility-guarded**:
+  a change that would leave zero enabled maintainers is refused with 409 (SEC-016), because that
+  state cannot be undone through the API. No editor/viewer can reach a governance or operations
   surface, and a plain admin cannot reach an operations surface; no viewer can reach a mutation.
   The only unauthenticated routes are `/healthz`, `/metrics` (SEC-013), and the SPA static
   handler. No `pprof`/`expvar`/`/debug` endpoints exist.
