@@ -68,8 +68,12 @@ test-race:
 ## -p 1 serialises package execution: integration packages share one test
 ## database, so running them concurrently would let one package's TruncateAll
 ## wipe another's rows mid-test.
+## -timeout raises Go's 10m per-package default: internal/auth alone needs ~11
+## minutes on the ARM dev box, because every seeded account is a bcrypt hash at
+## cost 12 and the race detector multiplies that. The default would abort a
+## healthy run mid-test, which reads as a failure rather than as "too slow".
 test-integration:
-	CGO_ENABLED=1 go test -race -p 1 -tags=integration ./...
+	CGO_ENABLED=1 go test -race -p 1 -timeout 30m -tags=integration ./...
 
 ## check: Quality gate — docs budget, formatting, lint, frontend types, unit tests.
 ## Non-mutating by construction: a successful run leaves `git status --short` empty.

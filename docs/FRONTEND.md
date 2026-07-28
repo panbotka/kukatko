@@ -587,8 +587,13 @@ here.
   `<select>` doesn't offer it to a non-maintainer at all (`ROLES.filter`, prop `isMaintainer`) — and a maintainer account may not
   be edited / re-passworded / disabled by a non-maintainer, so its three row actions are `disabled` with the hint
   `users.maintainerManageHint` (`canManage = isMaintainer || role !== 'maintainer'`). API validation errors map to a specific field
-  (`fieldErrorFor`: 409 → username, 400 by keyword → password/role/note, otherwise
-  a form-level alert), not to a generic banner. States: a **skeleton** (`Placeholder` in the table) while loading,
+  (`fieldErrorFor`: 409 → username *unless* the message names the maintainer, 400 by keyword →
+  password/role/note, otherwise a form-level alert), not to a generic banner. **The last-maintainer
+  refusal** (409 `auth: cannot remove the last maintainer`, see `docs/API.md`) belongs to no input — the
+  role `<select>` is only how it was triggered and the disable button has no form at all — so it renders
+  as a form-level alert with `users.errors.lastMaintainer`, which says *why* and *what to do* (promote a
+  second maintainer first). The row-action alert therefore holds an `ErrorKey`, not a boolean, so a failed
+  **Zakázat** shows that explanation instead of the generic “action could not be completed”. States: a **skeleton** (`Placeholder` in the table) while loading,
   an error alert with **Zkusit znovu**, an empty state (`EmptyState`, practically unreachable — the bootstrap
   admin always exists, but must not crash); self-gated on `isAdmin`,
   `AuditPage` = `/audit` (admin **or** maintainer, `isAdmin`) an **audit log**: a read-only table of records from `GET /audit`

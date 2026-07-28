@@ -224,8 +224,9 @@ func (s *Service) GetUser(ctx context.Context, uid string) (User, error) {
 // handlers use UpdateUserAudited. When the update disables the account, all of
 // that user's sessions are invalidated so the change takes effect immediately. A
 // nil in.Note leaves the stored note untouched. It returns ErrInvalidRole for an
-// unknown role, ErrNoteTooLong for an over-length note, and ErrUserNotFound if no
-// such user exists.
+// unknown role, ErrNoteTooLong for an over-length note, ErrUserNotFound if no
+// such user exists, and ErrLastMaintainer when demoting or disabling the account
+// would leave the instance without a single enabled maintainer.
 func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
 	if err := validateUserUpdate(in); err != nil {
 		return User{}, err
@@ -242,7 +243,9 @@ func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput
 // the change (see internal/audit). actor is the role of the account performing
 // the update: only a maintainer may promote an account to, or modify an account
 // that already holds, the maintainer role, so a lower actor doing so gets
-// ErrMaintainerRequired.
+// ErrMaintainerRequired. A maintainer is still refused, with ErrLastMaintainer,
+// an update that would demote or disable the last enabled maintainer — including
+// their own account.
 func (s *Service) UpdateUserAudited(
 	ctx context.Context, uid string, in UpdateUserInput, actor Role, entry audit.Entry,
 ) (User, error) {
@@ -274,7 +277,9 @@ func validateUserUpdate(in UpdateUserInput) error {
 // SetUserDisabled enables or disables the user identified by uid without
 // recording an audit entry; handlers use SetUserDisabledAudited. Disabling also
 // invalidates all of that user's sessions so the lockout is immediate. It returns
-// the refreshed user, or ErrUserNotFound if no such user exists.
+// the refreshed user, ErrUserNotFound if no such user exists, or
+// ErrLastMaintainer when disabling would leave the instance without a single
+// enabled maintainer.
 func (s *Service) SetUserDisabled(ctx context.Context, uid string, disabled bool) (User, error) {
 	user, err := s.store.SetUserDisabled(ctx, uid, disabled)
 	if err != nil {
@@ -287,7 +292,9 @@ func (s *Service) SetUserDisabled(ctx context.Context, uid string, disabled bool
 // writes a user.disable audit entry attributed to entry's actor in the same
 // transaction as the change (see internal/audit). actor is the role of the
 // account performing the change: only a maintainer may disable or re-enable a
-// maintainer account, so a lower actor gets ErrMaintainerRequired.
+// maintainer account, so a lower actor gets ErrMaintainerRequired. A maintainer
+// is still refused, with ErrLastMaintainer, a disable that would take the last
+// enabled maintainer — including their own account — off the instance.
 func (s *Service) SetUserDisabledAudited(
 	ctx context.Context, uid string, disabled bool, actor Role, entry audit.Entry,
 ) (User, error) {

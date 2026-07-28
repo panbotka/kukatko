@@ -758,7 +758,10 @@ algorithm cannot be changed in just one of them.
   + Vitest — shares the build cache with `build`), `test-race` (`CGO_ENABLED=1 go test -race ./...`,
   requires cgo/gcc; runs in CI, not in the gate), `test-integration` (tag `integration` +
   `KUKATKO_TEST_DATABASE_URL`, `-p 1` — the integration packages share one test DB, so they run
-  serially; the R2-backend tests additionally want `KUKATKO_TEST_S3_ENDPOINT` — without it they are skipped,
+  serially; `-timeout 30m` because Go's 10m per-package default is too tight — `internal/auth` alone
+  takes ~11 minutes on the ARM dev box, since every seeded account is a bcrypt hash at cost 12 and
+  `-race` multiplies that, and the default aborts a healthy run mid-test as if it had failed;
+  the R2-backend tests additionally want `KUKATKO_TEST_S3_ENDPOINT` — without it they are skipped,
   see `docs/DEVELOPMENT.md`), `check` (the gate = `docs-budget` + `fmt-check` + `lint` +
   `web-typecheck` + `test`; **rewrites nothing**, after a successful run `git status --short` is
   empty), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `dev` (smart rebuild + run on

@@ -17,6 +17,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   maintainer (each inherits the rights of the lower ones): viewer read-only, editor adds writing of
   media/metadata, admin governance (user management, audit log, permanent deletion / emptying the
   trash), maintainer operations (imports, maintenance, system, backup/restore, jobs, process).
+  **Last-maintainer guard:** `PATCH /admin/users/{uid}` and `POST /admin/users/{uid}/disable` answer
+  **409** (`auth: cannot remove the last maintainer`) when the change would drop the number of
+  **enabled** maintainers to zero — a demotion, a disable, or both at once, including the caller's own
+  account. Such a state has no way back through the API (granting `maintainer` is itself
+  maintainer-only, there is no delete-user endpoint, and `Bootstrap` only runs on an empty users
+  table), so every operations surface would need database surgery to restore. It is a 409 rather than
+  a 403 because the caller *is* allowed to make the change — promoting a second maintainer first makes
+  the identical request succeed. A disabled maintainer does not count towards the invariant; an
+  instance that has no enabled maintainer at all stays fully editable (the guard only forbids
+  *dropping* to zero, never being there).
   A **username** longer than **64 characters** (runes, not bytes) → 400 with a message naming the
   field, on both `POST /auth/login` and `POST /admin/users`; login checks it *before* the username
   reaches the rate limiter, so the public endpoint cannot be flooded with oversized limiter keys.

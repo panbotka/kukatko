@@ -23,10 +23,21 @@ vi.mock('../services/users', async (importOriginal) => {
   }
 })
 
-const { fetchUsers, createUser, setUserDisabled } = await import('../services/users')
+const { fetchUsers, createUser, setUserDisabled, updateUser } = await import('../services/users')
 const fetchUsersMock = vi.mocked(fetchUsers)
 const createUserMock = vi.mocked(createUser)
 const setUserDisabledMock = vi.mocked(setUserDisabled)
+const updateUserMock = vi.mocked(updateUser)
+
+/**
+ * What the backend answers when a change would take away the instance's last
+ * enabled maintainer (`auth.ErrLastMaintainer` → 409); the page tells it apart
+ * from the other 409, a duplicate username, by the message.
+ */
+const LAST_MAINTAINER_ERROR = new ApiError(409, 'auth: cannot remove the last maintainer')
+
+/** The opening words of the last-maintainer explanation, for a partial match. */
+const LAST_MAINTAINER_TEXT = /This is the last enabled maintainer/
 
 /** The signed-in administrator; their own row must not offer self-disabling. */
 const ME = 'u-admin'
@@ -84,6 +95,7 @@ beforeEach(async () => {
   fetchUsersMock.mockResolvedValue([])
   createUserMock.mockReset()
   setUserDisabledMock.mockReset()
+  updateUserMock.mockReset()
 })
 
 afterEach(() => {
@@ -248,6 +260,48 @@ describe('UsersPage', () => {
       expect(setUserDisabledMock).toHaveBeenCalledWith(ada, true)
     })
     expect(await screen.findByText('Disabled')).toBeInTheDocument()
+  })
+
+  it('explains why the last maintainer cannot be disabled', async () => {
+    const solo = user({ uid: 'u1', username: 'solo', role: 'maintainer' })
+    fetchUsersMock.mockResolvedValue([solo])
+    setUserDisabledMock.mockRejectedValue(LAST_MAINTAINER_ERROR)
+    const actor = userEvent.setup()
+    renderPage(auth({ isMaintainer: true }))
+
+    expect(await screen.findByText('solo')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Disable' }))
+    const dialog = await screen.findByRole('dialog')
+    await actor.click(within(dialog).getByRole('button', { name: 'Disable' }))
+
+    // The refusal names the rule and what to do about it, not "action failed".
+    expect(await screen.findByRole('alert')).toHaveTextContent(LAST_MAINTAINER_TEXT)
+    expect(screen.queryByText('The action could not be completed.')).not.toBeInTheDocument()
+    // The row survives: nothing was disabled.
+    expect(screen.getByText('Enabled')).toBeInTheDocument()
+  })
+
+  it('shows the last-maintainer refusal as a form-level alert, not a username error', async () => {
+    const solo = user({ uid: 'u1', username: 'solo', role: 'maintainer' })
+    fetchUsersMock.mockResolvedValue([solo])
+    updateUserMock.mockRejectedValue(LAST_MAINTAINER_ERROR)
+    const actor = userEvent.setup()
+    renderPage(auth({ isMaintainer: true }))
+
+    expect(await screen.findByText('solo')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    await actor.selectOptions(within(dialog).getByLabelText('Role'), 'admin')
+    await actor.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updateUserMock).toHaveBeenCalled()
+    })
+
+    // The other 409 (a duplicate username) flags the username input; this one
+    // belongs to no field, so it must not be mistaken for it.
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(LAST_MAINTAINER_TEXT)
+    expect(within(dialog).getByLabelText('Username')).not.toHaveClass('is-invalid')
   })
 
   it('renders the username read-only when editing an existing user', async () => {
