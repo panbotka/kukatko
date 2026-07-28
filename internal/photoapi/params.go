@@ -135,9 +135,11 @@ func capScopeFilters(params photos.ListParams) error {
 
 // applyRatingFilters validates and applies the per-user rating filters: min_rating
 // keeps photos the caller has rated at or above the given star value, and flag
-// keeps photos the caller has marked pick or reject. Both take effect only when
-// the handler binds RatedBy to the caller; a photo without a rating row counts as
-// rating 0 / flag "none".
+// keeps photos the caller has marked pick, reject or eye. The accepted flag words
+// are exactly the ones the query language's flag: filter takes, so the two ways of
+// expressing the filter agree. Both take effect only when the handler binds
+// RatedBy to the caller; a photo without a rating row counts as rating 0 / flag
+// "none".
 func applyRatingFilters(q url.Values, params *photos.ListParams) error {
 	if raw := q.Get("min_rating"); raw != "" {
 		n, err := strconv.Atoi(raw)
@@ -148,11 +150,11 @@ func applyRatingFilters(q url.Values, params *photos.ListParams) error {
 	}
 	if raw := q.Get("flag"); raw != "" {
 		switch raw {
-		case "pick", "reject":
+		case "pick", "reject", "eye":
 			flag := raw
 			params.Flag = &flag
 		default:
-			return fmt.Errorf("unknown flag %q (want pick or reject)", raw)
+			return fmt.Errorf("unknown flag %q (want pick, reject or eye)", raw)
 		}
 	}
 	return nil

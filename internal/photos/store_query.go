@@ -104,7 +104,8 @@ func negateCond(cond string) string {
 }
 
 // likeEscaper escapes the LIKE metacharacters so a filter value matches them
-// literally; '*' is left alone because likePattern turns it into the wildcard.
+// literally. It is the whole-string escape used where the value carries no
+// wildcard syntax at all (the free-text terms, the camera/lens params).
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // likeEscape returns text with the LIKE metacharacters escaped.
@@ -112,15 +113,48 @@ func likeEscape(text string) string {
 	return likeEscaper.Replace(text)
 }
 
-// likePattern converts a filter's text value into an ILIKE pattern: '*' is the
-// user's wildcard (the pattern is then anchored to the value's shape), and a
-// value without any wildcard matches as a plain substring.
-func likePattern(text string) string {
-	escaped := likeEscape(text)
-	if !strings.Contains(escaped, "*") {
-		return "%" + escaped + "%"
+// likePattern converts a text filter's query.Value.TextPattern into an ILIKE
+// pattern: an unescaped '*' is the user's wildcard (the pattern is then
+// anchored to the value's shape), a backslash-escaped rune — including an
+// escaped or quoted '*' — matches literally, and a value without any wildcard
+// matches as a plain substring.
+func likePattern(pattern string) string {
+	var b strings.Builder
+	b.Grow(len(pattern) + 2)
+	wildcard, escaped := false, false
+	for _, r := range pattern {
+		switch {
+		case escaped:
+			b.WriteString(likeLiteralRune(r))
+			escaped = false
+		case r == '\\':
+			escaped = true
+		case r == '*':
+			b.WriteRune('%')
+			wildcard = true
+		default:
+			b.WriteString(likeLiteralRune(r))
+		}
 	}
-	return strings.ReplaceAll(escaped, "*", "%")
+	if escaped {
+		// A trailing backslash escapes nothing; match it literally.
+		b.WriteString(`\\`)
+	}
+	if !wildcard {
+		return "%" + b.String() + "%"
+	}
+	return b.String()
+}
+
+// likeLiteralRune renders one rune as a literal inside a LIKE pattern, escaping
+// it when it is a metacharacter.
+func likeLiteralRune(r rune) string {
+	switch r {
+	case '\\', '%', '_':
+		return `\` + string(r)
+	default:
+		return string(r)
+	}
 }
 
 // Effective display dimensions: EXIF orientations 5–8 rotate the frame by 90°,
@@ -182,25 +216,25 @@ var queryCondBuilders = map[query.Key]condBuilder{
 // likeCond builds a case-insensitive pattern match against one column.
 func likeCond(column string) condBuilder {
 	return func(v query.Value, env condEnv) (string, bool) {
-		return column + " ILIKE " + env.bind(likePattern(v.Text)), true
+		return column + " ILIKE " + env.bind(likePattern(v.TextPattern())), true
 	}
 }
 
 // cameraCond matches the camera make or model, mirroring the camera= filter.
 func cameraCond(v query.Value, env condEnv) (string, bool) {
-	p := env.bind(likePattern(v.Text))
+	p := env.bind(likePattern(v.TextPattern()))
 	return "(camera_make ILIKE " + p + " OR camera_model ILIKE " + p + ")", true
 }
 
 // codecCond matches the still-image or video codec.
 func codecCond(v query.Value, env condEnv) (string, bool) {
-	p := env.bind(likePattern(v.Text))
+	p := env.bind(likePattern(v.TextPattern()))
 	return "(image_codec ILIKE " + p + " OR video_codec ILIKE " + p + ")", true
 }
 
 // albumCond matches membership in an album by title pattern or exact UID.
 func albumCond(v query.Value, env condEnv) (string, bool) {
-	p := env.bind(likePattern(v.Text))
+	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM album_photos ap JOIN albums a ON a.uid = ap.album_uid " +
 		"WHERE ap.photo_uid = photos.uid AND (a.title ILIKE " + p + " OR a.uid = " + uid + "))", true
@@ -208,7 +242,7 @@ func albumCond(v query.Value, env condEnv) (string, bool) {
 
 // labelCond matches a carried label by name pattern or exact UID.
 func labelCond(v query.Value, env condEnv) (string, bool) {
-	p := env.bind(likePattern(v.Text))
+	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM photo_labels pl JOIN labels l ON l.uid = pl.label_uid " +
 		"WHERE pl.photo_uid = photos.uid AND (l.name ILIKE " + p + " OR l.uid = " + uid + "))", true
@@ -217,7 +251,7 @@ func labelCond(v query.Value, env condEnv) (string, bool) {
 // personCond matches a contained subject by name pattern or exact UID via a
 // non-invalid marker, the same linkage the person= scope uses.
 func personCond(v query.Value, env condEnv) (string, bool) {
-	p := env.bind(likePattern(v.Text))
+	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM markers m JOIN subjects s ON s.uid = m.subject_uid " +
 		"WHERE m.photo_uid = photos.uid AND m.invalid = FALSE " +
@@ -228,7 +262,7 @@ func personCond(v query.Value, env condEnv) (string, bool) {
 func placeCond(column string) condBuilder {
 	return func(v query.Value, env condEnv) (string, bool) {
 		return "EXISTS (SELECT 1 FROM photo_places pp WHERE pp.photo_uid = photos.uid " +
-			"AND pp." + column + " ILIKE " + env.bind(likePattern(v.Text)) + ")", true
+			"AND pp." + column + " ILIKE " + env.bind(likePattern(v.TextPattern())) + ")", true
 	}
 }
 
@@ -251,20 +285,17 @@ func numberCond(expr string) condBuilder {
 	}
 }
 
-// floatMatchEpsilon widens an exact fractional match (f:1.8) into a hair of a
-// range: single-precision EXIF columns store 1.8 as 1.79999995…, which a bound
-// of exactly 1.8 would miss.
+// floatMatchEpsilon widens a fractional bound (f:1.8, f:1.8-2.8) by a hair:
+// single-precision EXIF columns store 1.8 as 1.79999995…, which a bound of
+// exactly 1.8 would put on the wrong side of the comparison.
 const floatMatchEpsilon = 0.005
 
 // boundsCond renders expr constrained to the value's numeric bounds; ok is
-// false when the value carries no bound at all. An exact fractional match is
-// widened by floatMatchEpsilon so it survives float rounding.
+// false when the value carries no bound at all. Every fractional bound — of an
+// exact match, a range or an open end alike — is slackened by floatMatchEpsilon
+// so it survives float rounding.
 func boundsCond(expr string, v query.Value, env condEnv) (string, bool) {
-	lo, hi := v.Min, v.Max
-	if lo != nil && hi != nil && *lo == *hi && *lo != math.Trunc(*lo) {
-		wlo, whi := *lo-floatMatchEpsilon, *hi+floatMatchEpsilon
-		lo, hi = &wlo, &whi
-	}
+	lo, hi := slackenBound(v.Min, -1), slackenBound(v.Max, +1)
 	var conds []string
 	if lo != nil {
 		conds = append(conds, expr+" >= "+env.bind(*lo))
@@ -278,9 +309,25 @@ func boundsCond(expr string, v query.Value, env condEnv) (string, bool) {
 	return "(" + strings.Join(conds, " AND ") + ")", true
 }
 
+// slackenBound moves a fractional bound floatMatchEpsilon in the given
+// direction (-1 widens a lower bound down, +1 an upper bound up) so a value the
+// column rounded lands inside the comparison. A whole-number bound is returned
+// unchanged: it is exact in every column the numeric filters read, and widening
+// it would pull in the neighbouring integer (rating:3 must not match 2).
+func slackenBound(bound *float64, direction float64) *float64 {
+	if bound == nil || *bound == math.Trunc(*bound) {
+		return bound
+	}
+	slack := *bound + direction*floatMatchEpsilon
+	return &slack
+}
+
 // yearCond compiles a capture-year range the same way the year= filter does:
-// as a half-open taken_at range so idx_photos_taken_at stays usable. The
-// explicit ::int casts pin make_timestamptz's integer signature.
+// as a half-open taken_at range so idx_photos_taken_at stays usable. The year
+// boundaries land in the session time zone, which internal/database pins to UTC
+// — the zone the parser builds taken:'s boundaries in — so year: and taken:
+// agree on a photo taken minutes either side of New Year. The explicit ::int
+// casts pin make_timestamptz's integer signature.
 func yearCond(v query.Value, env condEnv) (string, bool) {
 	var conds []string
 	if v.Min != nil {

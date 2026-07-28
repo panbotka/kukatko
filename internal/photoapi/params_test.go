@@ -282,6 +282,17 @@ func TestParseListParams_valid(t *testing.T) {
 				}
 			},
 		},
+		{
+			// eye is a flag the query language (flag:eye) and the store both
+			// honour, so the param form must accept it too.
+			name:  "flag eye",
+			query: "flag=eye",
+			check: func(t *testing.T, p photos.ListParams) {
+				if p.Flag == nil || *p.Flag != "eye" {
+					t.Errorf("Flag = %v, want eye", p.Flag)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

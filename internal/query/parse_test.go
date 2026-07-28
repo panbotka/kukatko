@@ -302,3 +302,62 @@ func TestQuery_HasFilter(t *testing.T) {
 		t.Error("HasFilter(KeyLabel) = true, want false")
 	}
 }
+
+// TestParse_textPattern covers the wildcard-literalness a text value carries
+// into Pattern: an operator '*' stays bare so the store turns it into a
+// wildcard, while one the user escaped or quoted is backslash-escaped so it
+// matches a literal star. Text keeps the plain, escape-resolved string in both
+// cases, which is exactly why Pattern has to exist.
+func TestParse_textPattern(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		input       string
+		wantText    string
+		wantPattern string
+	}{
+		{"bare wildcard", "filename:IMG_*", "IMG_*", "IMG_*"},
+		{"escaped star is literal", `title:foo\*bar`, "foo*bar", `foo\*bar`},
+		{"quoted star is literal", `title:"foo*bar"`, "foo*bar", `foo\*bar`},
+		{"mixed literal and wildcard", `title:foo\**`, "foo**", `foo\**`},
+		{"backslash is escaped", `title:a\\b`, `a\b`, `a\\b`},
+		{"no star needs no escape", "title:cat", "cat", "cat"},
+		{"like metacharacters stay verbatim", "title:a_b%c", "a_b%c", "a_b%c"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			q := Parse(tt.input)
+			if len(q.Filters) != 1 || len(q.Filters[0].Values) != 1 {
+				t.Fatalf("Parse(%q) = %s, want one filter with one value", tt.input, fmtQuery(q))
+			}
+			v := q.Filters[0].Values[0]
+			if v.Text != tt.wantText {
+				t.Errorf("Text = %q, want %q", v.Text, tt.wantText)
+			}
+			if v.Pattern != tt.wantPattern {
+				t.Errorf("Pattern = %q, want %q", v.Pattern, tt.wantPattern)
+			}
+			if got := v.TextPattern(); got != tt.wantPattern {
+				t.Errorf("TextPattern() = %q, want %q", got, tt.wantPattern)
+			}
+		})
+	}
+}
+
+// TestValue_TextPattern_fallback verifies that a Value assembled in code — which
+// carries no parser escapes — still compiles from its plain Text, so a hand-built
+// filter keeps the substring meaning its Text implies.
+func TestValue_TextPattern_fallback(t *testing.T) {
+	t.Parallel()
+
+	v := Value{Text: "Canon EOS"}
+	if got := v.TextPattern(); got != "Canon EOS" {
+		t.Errorf("TextPattern() = %q, want the plain Text", got)
+	}
+	if got := (Value{}).TextPattern(); got != "" {
+		t.Errorf("empty Value TextPattern() = %q, want empty", got)
+	}
+}

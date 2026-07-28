@@ -303,6 +303,10 @@ func TestQueryLanguage_filters(t *testing.T) {
 		{"iso:-200", []string{"beach"}},
 		{"f:2.8-4.5", []string{"beach"}},
 		{"f:1.8", []string{"winter"}},
+		// A REAL column stores f/1.8 as 1.79999995 and f/2.8 as 2.79999995, so a
+		// range whose ends are exactly those numbers only matches when the bounds
+		// carry their float slack.
+		{"f:1.8-2.8", []string{"beach", "winter"}},
 		{"mm:28-35", []string{"winter"}},
 		{"mp:20-", []string{"beach", "winter"}},
 		{"mp:2-3", []string{"clip"}},

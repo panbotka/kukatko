@@ -795,15 +795,20 @@ handles it on the list path (`mode: "filter"`) and **does not touch the embeddin
 | `-` before a word | NOT for free text — `-rozmazané` |
 | `lo-hi` | a numeric range, both sides optional — `iso:200-400`, `iso:800-`, `iso:-200` |
 | `*` | a wildcard in a text value — `filename:IMG_*`; without `*` it matches a substring |
-| `"…"` | a value with spaces — `camera:"Canon EOS R6"`; text in quotes is literal |
-| `\` | escapes an operator (pipe, `!`, `-`, `"`, `:`), so it matches literally |
+| `"…"` | a value with spaces — `camera:"Canon EOS R6"`; text in quotes is literal, `*` included |
+| `\` | escapes an operator (pipe, `!`, `-`, `"`, `:`, `*`), so it matches literally |
 
 An escape example: `label:a\|b` (a backslash before the pipe) searches for a label with a literal
 pipe `a|b` instead of an OR of two alternatives; likewise `iso:100\-400` is no longer a range, and therefore
-degrades to free text. Keys are case-insensitive (`ISO:100` = `iso:100`). **An unknown key or an invalid value is not
+degrades to free text, and `title:foo\*bar` (or `title:"foo*bar"`) searches for a literal star instead of
+using the wildcard. Keys are case-insensitive (`ISO:100` = `iso:100`). **An unknown key or an invalid value is not
 an error**: the whole token is searched as ordinary text (so `foo:bar` still finds a photo by its caption)
-and the response returns it in `unknown_tokens`, so the UI can show a hint. An exact fractional match
-(`f:1.8`) is tolerated within ±0.005 due to the rounding of single-precision EXIF columns.
+and the response returns it in `unknown_tokens`, so the UI can show a hint. `*` is the **only** wildcard —
+SQL's `%` and `_` always match themselves, in a filter value, in free text and in its `-term` negation alike.
+Every **fractional** bound (`f:1.8`, `f:1.8-2.8`, `f:1.8-`) is tolerated within ±0.005 due to the rounding of
+single-precision EXIF columns; whole-number bounds stay exact. Capture-time filters resolve in **UTC**
+(the connection pool pins the session zone), so `year:`, `?year=`, `taken:` and the year/timeline histograms
+put a photo taken minutes either side of New Year in the same year.
 
 ### Filters
 
