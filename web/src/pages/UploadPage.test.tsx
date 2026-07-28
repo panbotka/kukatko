@@ -279,6 +279,37 @@ describe('UploadPage', () => {
     expect(await screen.findByText('Added to your albums and labels.')).toBeInTheDocument()
   })
 
+  it('applies album and label picks made after the batch already finished', async () => {
+    bulkMock.mockResolvedValue(bulkResult())
+    uploadMock.mockResolvedValue(created('ph1'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('a.jpg')])
+    await user.click(screen.getByRole('button', { name: 'Upload (1)' }))
+
+    expect(await screen.findByText('Upload complete.')).toBeInTheDocument()
+    expect(bulkMock).not.toHaveBeenCalled()
+
+    // Picking an album only now still assigns the finished batch.
+    await selectOption(user, 'Albums', 'Trip')
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['ph1'], { add_to_albums: ['al1'] })
+    })
+    expect(await screen.findByText('Added to your albums and labels.')).toBeInTheDocument()
+
+    // And so does a second pick — it used to be dropped while the success
+    // alert kept claiming everything had been assigned.
+    await selectOption(user, 'Labels', 'Sunset')
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenLastCalledWith(['ph1'], {
+        add_to_albums: ['al1'],
+        add_labels: ['lb1'],
+      })
+    })
+    expect(await screen.findByText('Added to your albums and labels.')).toBeInTheDocument()
+  })
+
   it('offers a retry when assignment fails after a successful upload', async () => {
     bulkMock
       .mockRejectedValueOnce(new ApiError(500, 'assign failed'))

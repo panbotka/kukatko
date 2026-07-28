@@ -214,6 +214,90 @@ describe('useUploadOrganize', () => {
     expect(bulkMock).toHaveBeenCalledTimes(2)
   })
 
+  it('re-arms a finished assignment when the selection changes afterwards', async () => {
+    bulkMock.mockResolvedValue(result({ total: 1, updated: 1 }))
+    const { result: hook } = await renderReady()
+
+    act(() => {
+      hook.current.setAlbums(['al1'])
+    })
+    act(() => {
+      hook.current.runAssign(['ph1'])
+    })
+    await waitFor(() => {
+      expect(hook.current.assign.status).toBe('done')
+    })
+
+    // Picking another album once the batch is already assigned must not be
+    // swallowed: the result goes back to idle so the caller assigns again.
+    act(() => {
+      hook.current.setAlbums(['al1', 'al2'])
+    })
+    expect(hook.current.assign.status).toBe('idle')
+
+    act(() => {
+      hook.current.runAssign(['ph1'])
+    })
+    await waitFor(() => {
+      expect(hook.current.assign.status).toBe('done')
+    })
+    expect(bulkMock).toHaveBeenLastCalledWith(['ph1'], { add_to_albums: ['al1', 'al2'] })
+  })
+
+  it('re-arms a failed assignment when the selection changes afterwards', async () => {
+    bulkMock.mockRejectedValueOnce(new ApiError(500, 'boom'))
+    const { result: hook } = await renderReady()
+
+    act(() => {
+      hook.current.setAlbums(['al1'])
+    })
+    act(() => {
+      hook.current.runAssign(['ph1'])
+    })
+    await waitFor(() => {
+      expect(hook.current.assign.status).toBe('error')
+    })
+
+    act(() => {
+      hook.current.setLabels(['lb1'])
+    })
+    expect(hook.current.assign.status).toBe('idle')
+  })
+
+  it('keeps a pending-create swap from re-arming the assignment it runs in', async () => {
+    let release: (value: Album) => void = () => undefined
+    createAlbumMock.mockImplementation(
+      () =>
+        new Promise<Album>((resolve) => {
+          release = resolve
+        }),
+    )
+    bulkMock.mockResolvedValue(result({ total: 1, updated: 1 }))
+    const { result: hook } = await renderReady()
+
+    act(() => {
+      hook.current.setAlbums([pendingValue('Holiday')])
+    })
+    act(() => {
+      hook.current.runAssign(['ph1'])
+    })
+    await waitFor(() => {
+      expect(hook.current.assign.status).toBe('assigning')
+    })
+
+    // Creating the album rewrites the selection (marker → real UID) from inside
+    // the run; that internal edit must not knock the state back to idle.
+    await act(async () => {
+      release(album('alNew', 'Holiday'))
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(hook.current.assign.status).toBe('done')
+    })
+    expect(hook.current.albums).toEqual(['alNew'])
+    expect(bulkMock).toHaveBeenCalledTimes(1)
+  })
+
   it('resetAssign clears a finished result', async () => {
     bulkMock.mockResolvedValue(result({ total: 1, updated: 1 }))
     const { result: hook } = await renderReady()

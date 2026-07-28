@@ -20,7 +20,9 @@ import { useUploadQueue } from '../hooks/useUploadQueue'
  * photos in the library. Before uploading, the user may pick albums and labels
  * for the whole batch; once every file settles, every resolved photo — new *or*
  * duplicate — is added to them in one bulk call, with an "assigning…" state and
- * a retryable error if that step alone fails. Every state and label is
+ * a retryable error if that step alone fails. Picking (or adding) an album or
+ * label only after the batch has finished re-runs that assignment with the
+ * current selection. Every state and label is
  * translated (cs/en) and the controls are sized for touch.
  */
 export function UploadPage() {
@@ -56,6 +58,9 @@ export function UploadPage() {
 
   // Once every file has settled, assign the whole batch to the chosen albums and
   // labels — but only when something is chosen and at least one photo resolved.
+  // Editing the selection afterwards puts `assign` back to `idle` (see
+  // `useUploadOrganize`), so this also picks up a choice made after the fact
+  // instead of dropping it.
   useEffect(() => {
     if (isComplete && hasSelection && resolvedUids.length > 0 && assign.status === 'idle') {
       runAssign(resolvedUids)

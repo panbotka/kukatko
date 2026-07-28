@@ -140,6 +140,42 @@ describe('uploadFile', () => {
     })
   })
 
+  it.each([
+    ['no results key', {}],
+    ['a null results value', { results: null }],
+    ['a non-array results value', { results: 'nope' }],
+    ['an empty results array', { results: [] }],
+    ['a non-object first result', { results: [42] }],
+  ])('rejects a 2xx body with %s instead of hanging', async (_name, body) => {
+    const xhrs = installFakeXHR()
+    const promise = uploadFile(file())
+    xhrs.instances[0].respond(200, body)
+
+    // The promise must *settle*: indexing a missing `results` used to throw
+    // inside `onload`, leaving the upload pending forever.
+    await expect(promise).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 200,
+      message: 'upload returned no result',
+    })
+  })
+
+  it('rejects instead of hanging when reading the response itself throws', async () => {
+    const xhrs = installFakeXHR()
+    const promise = uploadFile(file())
+
+    const xhr = xhrs.instances[0]
+    Object.defineProperty(xhr, 'response', {
+      get: (): unknown => {
+        throw new Error('boom')
+      },
+    })
+    xhr.status = 200
+    xhr.onload?.()
+
+    await expect(promise).rejects.toMatchObject({ name: 'ApiError', message: 'boom' })
+  })
+
   it('throws ApiError carrying the status on a non-OK response', async () => {
     const xhrs = installFakeXHR()
     const promise = uploadFile(file())

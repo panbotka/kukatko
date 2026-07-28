@@ -81,6 +81,28 @@ function parseBody(xhr: XMLHttpRequest): unknown {
   return null
 }
 
+/**
+ * Extracts the first per-file result from a successful upload body, or
+ * `undefined` when the body does not carry a non-empty `results` array.
+ *
+ * Deliberately total: a 2xx response that does not match the documented shape
+ * (a proxy's HTML/JSON error page, a truncated body, a future API change) must
+ * settle the upload as an error. Indexing blindly would throw inside the XHR
+ * callback, where nothing catches it — the promise would stay pending forever,
+ * hanging the queue item and burning a concurrency slot.
+ */
+function firstResult(body: unknown): UploadFileResult | undefined {
+  if (body === null || typeof body !== 'object') {
+    return undefined
+  }
+  const { results } = body as Partial<UploadResponse>
+  if (!Array.isArray(results) || results.length === 0) {
+    return undefined
+  }
+  const first: unknown = results[0]
+  return first !== null && typeof first === 'object' ? (first as UploadFileResult) : undefined
+}
+
 /** Extracts the `{ error }` message from a parsed error envelope, if present. */
 function errorMessage(body: unknown): string | undefined {
   if (body !== null && typeof body === 'object' && 'error' in body) {
@@ -149,19 +171,26 @@ export function uploadFile(file: File, options: UploadFileOptions = {}): Promise
 
     xhr.onload = (): void => {
       cleanup()
-      const body = parseBody(xhr)
-      if (xhr.status < 200 || xhr.status >= 300) {
-        const message =
-          errorMessage(body) ?? (xhr.statusText || `upload failed: ${String(xhr.status)}`)
-        reject(new ApiError(xhr.status, message))
-        return
+      // Everything here runs inside an XHR callback, outside the promise
+      // executor: an escaping throw would never reject and the upload would
+      // hang forever. Settle it as an error instead.
+      try {
+        const body = parseBody(xhr)
+        if (xhr.status < 200 || xhr.status >= 300) {
+          const message =
+            errorMessage(body) ?? (xhr.statusText || `upload failed: ${String(xhr.status)}`)
+          reject(new ApiError(xhr.status, message))
+          return
+        }
+        const result = firstResult(body)
+        if (result === undefined) {
+          reject(new ApiError(xhr.status, 'upload returned no result'))
+          return
+        }
+        resolve(result)
+      } catch (err: unknown) {
+        reject(new ApiError(xhr.status, err instanceof Error ? err.message : 'malformed response'))
       }
-      const result = (body as UploadResponse | null)?.results[0]
-      if (!result) {
-        reject(new ApiError(xhr.status, 'upload returned no result'))
-        return
-      }
-      resolve(result)
     }
 
     xhr.onerror = (): void => {
