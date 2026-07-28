@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { type AlbumCount, fetchAlbums, fetchLabels, type LabelCount } from '../services/organize'
 import { fetchSubjects, type SubjectCount } from '../services/people'
@@ -39,8 +39,9 @@ function isAbort(err: unknown): boolean {
  * A failed request leaves that list empty rather than surfacing an error: a
  * filter bar that cannot offer a facet is a degraded bar, not a broken page, and
  * the grid itself reports load failures. In-flight requests are aborted when
- * `params` changes or the caller unmounts, so a slow response cannot overwrite a
- * newer one.
+ * `params` changes or the caller unmounts, and every year response is checked
+ * against the request that is current when it lands — aborting is a no-op once a
+ * response is already on the wire — so a slow one cannot overwrite a newer one.
  *
  * Albums, labels and subjects are catalog-wide, so they load once on mount.
  *
@@ -56,14 +57,24 @@ export function useLibraryFacets(params: PhotoListParams): LibraryFacets {
   // Drop the year filter so selecting a year does not re-request the same list.
   const yearParams = useMemo<PhotoListParams>(() => ({ ...params, year: '' }), [params])
 
+  // Monotonic id of the newest year request. The abort on cleanup only helps
+  // while the response is still in flight; a filter change that lands after the
+  // previous counts have already arrived would otherwise flash the old numbers.
+  const latestYears = useRef(0)
+
   useEffect(() => {
+    const requestId = latestYears.current + 1
+    latestYears.current = requestId
     const controller = new AbortController()
     fetchPhotoYears(yearParams, controller.signal)
       .then((res) => {
+        if (latestYears.current !== requestId) {
+          return
+        }
         setYears(res.years)
       })
       .catch((err: unknown) => {
-        if (isAbort(err)) {
+        if (isAbort(err) || latestYears.current !== requestId) {
           return
         }
         setYears([])

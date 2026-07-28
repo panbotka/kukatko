@@ -1229,11 +1229,16 @@ here.
   paginovaný infinite-scroll loader nad libovolným `PageFetcher`: akumuluje stránky,
   `loadMore`/`retry`, reset+refetch **se skeletonem** při změně dotazu/`key`/`enabled`, ruší
   in-flight requesty a ignoruje stale odpovědi, vystavuje i `mode`/`degraded`; `enabled:false`
-  → `idle` stav bez requestu. **`reloadKey` (oddělené od `key`) je _pozadí_ refetch první stránky
-  při nezměněném dotazu: aktuální fotky zůstanou připnuté, `status` zůstane `ready` (žádný
-  skeleton, žádné znovunačtení náhledů), takže hromadná úprava (favorite/archiv) se projeví
-  v místě bez bliknutí mřížky; `reloading` je po dobu refreshe true, neúspěšný refresh je tichý
-  (seznam zůstane).** `usePhotoLibrary(params,{reloadKey?})` = tenká obálka nad ním nad
+  → `idle` stav bez requestu. **`reloadKey` (oddělené od `key`) je _pozadí_ refetch všech dosud
+  načtených stránek při nezměněném dotazu: aktuální fotky zůstanou připnuté, `status` zůstane
+  `ready` (žádný skeleton, žádné znovunačtení náhledů), takže hromadná úprava (favorite/archiv)
+  se projeví v místě bez bliknutí mřížky; `reloading` je po dobu refreshe true, neúspěšný refresh
+  je tichý (seznam zůstane, i když spadne až druhá stránka).** Refetch není jen první stránka:
+  hook si počítá `pages` (počet úspěšně načtených stránek — ne `photos.length / PAGE_SIZE`, stránka
+  může přijít kratší) a projde je popořadě podle serverového `next_offset`, dokud rozsah nedojede
+  nebo (po hromadném archivu) nedojdou fotky. Jinak by čtenáře zanořeného na 4. stránce reload
+  odhodil na konec stostránkového seznamu a o stránky 2–4 by přišel.
+  `usePhotoLibrary(params,{reloadKey?})` = tenká obálka nad ním nad
   `fetchPhotos` (`reloadKey` přehraje mřížku na pozadí po mutaci, stejně jako u `useScopedPhotos`);
   `usePhotoSearch(params,mode,{reloadKey?})` = obálka nad `searchPhotos` s injektovaným `mode`
   (jde do `key` → změna módu resetuje se skeletonem), vypnutá při prázdném `q` (idle), `reloadKey`
@@ -1273,8 +1278,10 @@ here.
   nabídku — a bez něj zůstane request identický, takže přepínání let nerefetchuje); alba, štítky a
   subjekty (osoby, přes `fetchSubjects`) jsou katalogové, načtou se **jednou**. Neúspěch nechá ten seznam **prázdný** místo chyby (facet,
   který nemá co nabídnout, je degradovaný bar, ne rozbitá stránka — chyby načtení hlásí mřížka);
-  in-flight requesty ruší `AbortController` při změně `params`/unmountu, takže pomalá odpověď
-  nepřepíše novější (`params` si volající memoizuje z URL stavu); `useTimeline(params)` = jednorázový loader
+  in-flight requesty ruší `AbortController` při změně `params`/unmountu a odpověď na roky se navíc
+  ověřuje proti `latestYears` seq refu (abort je no-op, jakmile odpověď už letí drátem), takže
+  pomalá odpověď nepřepíše novější — jinak by ve facetu bliklo pár špatných počtů po roce
+  (`params` si volající memoizuje z URL stavu); `useTimeline(params)` = jednorázový loader
   měsíčního date-histogramu nad `fetchTimeline` (`buckets`/`total`/`status`, refetch při změně
   filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGlobalSearch(query,
   debounceMs?)` = debouncovaný (default 250 ms) grouped global-search loader nad `globalSearch`
@@ -1363,7 +1370,14 @@ here.
   **pořadí v poli**, ne `face_index`; `facesRef` proti stale closure) — skupinovou fotku tak projedeš
   bez sahání po myši. `unassign` výběr **nechá** (obličej se právě uvolnil a typicky ho hned
   přejmenováváš). Smiřovací refetch po mutaci auto-výběr **nespouští** (`reload(signal, autoSelect)`),
-  jinak by pojmenování posledního obličeje odskočilo zpátky nahoru;
+  jinak by pojmenování posledního obličeje odskočilo zpátky nahoru. **Detail listuje prev/next bez
+  remountu hooku**, takže se každá odpověď ověřuje proti fotce, pro kterou se ptala: `currentUidRef`
+  (uid aktuálního renderu) zahodí smiřovací refetch fotky, ze které už čtenář odešel — a to _dřív_,
+  než si vezme `latestRequest` id, aby neshodil probíhající načtení té nové; `latestRequest` pak řeší
+  přeskočení pomalé odpovědi novější pro tutéž fotku. Bez toho by pomalý `reload(A)` přemaloval
+  obličeje fotky B a další přiřazení by poslalo `marker_uid` z A proti B (404). Ze stejného důvodu
+  je `busy`/`actionError` na začátku každé fotky vynulován a chyba/dokončení mutace se propíše jen
+  tehdy, když je čtenář pořád u téže fotky;
   `useSubjects()` = líný seznam všech subjektů pro typeahead (mountuje se až s `FacesPanel`,
   takže prohlížení fotky ho nikdy nezaplatí; chyba = prázdný seznam, pole pak jen zakládá nové);
   `useCandidateReview(subjectUid,candidates)` = stavový stroj review mřížky `/faces`: naseeduje

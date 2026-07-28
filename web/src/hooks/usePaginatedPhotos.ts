@@ -43,11 +43,13 @@ export interface UsePaginatedPhotosOptions {
   key?: string
   /**
    * A reload token. Changing it while the query (`params`/`key`/`enabled`) is
-   * unchanged triggers a *background* refetch of the first page: the currently
-   * loaded photos stay mounted and `status` stays `ready` — no skeleton, no
-   * thumbnail re-stream — so a bulk edit (favorite/archive/…) reflects in place
-   * instead of blanking the grid. A change to the query still shows the genuine
-   * loading skeleton. Defaults to '' (no reloads).
+   * unchanged triggers a *background* refetch of the pages loaded so far: the
+   * currently loaded photos stay mounted and `status` stays `ready` — no
+   * skeleton, no thumbnail re-stream — so a bulk edit (favorite/archive/…)
+   * reflects in place instead of blanking the grid. Every loaded page is
+   * refetched, not just the first, so a reader scrolled deep into the list keeps
+   * their scroll position and their loaded range. A change to the query still
+   * shows the genuine loading skeleton. Defaults to '' (no reloads).
    */
   reloadKey?: string
 }
@@ -73,9 +75,9 @@ export interface UsePaginatedPhotosResult {
   /** Query-language tokens the server did not understand (for the inline hint). */
   unknownTokens: string[]
   /**
-   * True while a background reload (a `reloadKey` bump) refetches the first page.
-   * The current photos stay visible throughout, so this only lets a caller show
-   * an optional non-blocking "refreshing" affordance; `status` stays `ready`.
+   * True while a background reload (a `reloadKey` bump) refetches the loaded
+   * pages. The current photos stay visible throughout, so this only lets a caller
+   * show an optional non-blocking "refreshing" affordance; `status` stays `ready`.
    */
   reloading: boolean
   /** Requests the next page; a no-op while a request is in flight or none remain. */
@@ -93,9 +95,16 @@ interface Data {
   /** Whether the in-flight / most recent request is the first page. */
   initial: boolean
   /**
-   * Whether a background reload (a keep-photos refetch of the first page) is in
-   * flight. Kept separate from `loading` so it never flips `status` to `loading`
-   * nor `loadingMore` to true — the grid stays mounted while it refreshes.
+   * How many pages have been loaded so far. Counted rather than derived from
+   * `photos.length` (a page can come back short), because a background reload
+   * has to walk exactly the range the reader already has.
+   */
+  pages: number
+  /**
+   * Whether a background reload (a keep-photos refetch of the loaded pages) is
+   * in flight. Kept separate from `loading` so it never flips `status` to
+   * `loading` nor `loadingMore` to true — the grid stays mounted while it
+   * refreshes.
    */
   reloading: boolean
   error: boolean
@@ -110,6 +119,7 @@ const INITIAL: Data = {
   nextOffset: 0,
   loading: true,
   initial: true,
+  pages: 0,
   reloading: false,
   error: false,
   degraded: false,
@@ -126,11 +136,12 @@ const IDLE: Data = { ...INITIAL, loading: false }
  * to append further pages. Changing `params` (or `options.key`, or `enabled`)
  * resets the accumulator and reloads from the first page with the loading
  * skeleton. Bumping `options.reloadKey` while the query is unchanged instead
- * refetches the first page in the *background*, keeping the current photos
- * mounted (see {@link UsePaginatedPhotosOptions.reloadKey}) — so a bulk edit
- * reflects in place without blanking the grid. In-flight requests are aborted on
- * change and on unmount, and stale responses are ignored, so rapid query changes
- * never leave the list showing the wrong query's results.
+ * refetches the pages loaded so far in the *background*, keeping the current
+ * photos mounted (see {@link UsePaginatedPhotosOptions.reloadKey}) — so a bulk
+ * edit reflects in place without blanking the grid or losing the reader's place
+ * in it. In-flight requests are aborted on change and on unmount, and stale
+ * responses are ignored, so rapid query changes never leave the list showing the
+ * wrong query's results.
  *
  * `params` should be memoised by the caller (e.g. derived from URL state via
  * `useMemo`) so its identity changes only when the query actually changes; the
@@ -173,25 +184,19 @@ export function usePaginatedPhotos(
   const enabledRef = useRef(enabled)
   enabledRef.current = enabled
 
-  const fetchPage = useCallback((offset: number, isInitial: boolean, background = false) => {
+  const fetchPage = useCallback((offset: number, isInitial: boolean) => {
     loadingRef.current = true
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
     const seq = ++seqRef.current
 
-    setData((prev) => {
-      if (!isInitial) {
-        return { ...prev, loading: true, initial: false, error: false }
-      }
-      if (background) {
-        // A reload-key refetch: keep the current list mounted (no skeleton) and
-        // just flag a background reload in flight.
-        return { ...prev, reloading: true, error: false }
-      }
-      // A first load or a query change: reset to the loading skeleton.
-      return { ...INITIAL, loading: true }
-    })
+    setData((prev) =>
+      isInitial
+        ? // A first load or a query change: reset to the loading skeleton.
+          { ...INITIAL, loading: true }
+        : { ...prev, loading: true, initial: false, error: false },
+    )
 
     fetcherRef
       .current({ ...paramsRef.current, limit: PAGE_SIZE, offset }, controller.signal)
@@ -206,6 +211,7 @@ export function usePaginatedPhotos(
           nextOffset: res.next_offset,
           loading: false,
           initial: isInitial,
+          pages: isInitial ? 1 : prev.pages + 1,
           reloading: false,
           error: false,
           mode: res.mode,
@@ -218,14 +224,83 @@ export function usePaginatedPhotos(
           return
         }
         loadingRef.current = false
-        setData((prev) =>
-          background
-            ? // A failed background refresh is silent: keep the current list
-              // visible rather than blanking it to the error state.
-              { ...prev, reloading: false }
-            : { ...prev, loading: false, reloading: false, initial: isInitial, error: true },
-        )
+        setData((prev) => ({
+          ...prev,
+          loading: false,
+          reloading: false,
+          initial: isInitial,
+          error: true,
+        }))
       })
+  }, [])
+
+  /**
+   * Refetches, in the background, every page the reader has already loaded.
+   * Refetching only the first page would replace a deeply-scrolled grid with the
+   * first {@link PAGE_SIZE} photos — bouncing the reader to the bottom of a much
+   * shorter list and silently dropping the pages in between — so the walk follows
+   * the server's `next_offset` until the loaded range is covered, or until the
+   * (possibly shrunken) result runs out. The current photos stay mounted the
+   * whole time and failure is silent, exactly as for a single-page refresh.
+   */
+  const reloadLoaded = useCallback(() => {
+    const pages = Math.max(1, dataRef.current.pages)
+    loadingRef.current = true
+    controllerRef.current?.abort()
+    const controller = new AbortController()
+    controllerRef.current = controller
+    const seq = ++seqRef.current
+
+    setData((prev) => ({ ...prev, reloading: true, error: false }))
+
+    void (async () => {
+      const photos: Photo[] = []
+      let offset: number | null = 0
+      let last: PhotoListResponse | null = null
+      let loaded = 0
+      try {
+        while (loaded < pages && offset !== null) {
+          const res: PhotoListResponse = await fetcherRef.current(
+            { ...paramsRef.current, limit: PAGE_SIZE, offset },
+            controller.signal,
+          )
+          if (seq !== seqRef.current) {
+            return
+          }
+          photos.push(...res.photos)
+          offset = res.next_offset
+          last = res
+          loaded++
+        }
+      } catch (err: unknown) {
+        if (seq !== seqRef.current || (err instanceof DOMException && err.name === 'AbortError')) {
+          return
+        }
+        loadingRef.current = false
+        // A failed background refresh is silent: keep the current list visible
+        // rather than blanking it to the error state.
+        setData((prev) => ({ ...prev, reloading: false }))
+        return
+      }
+      if (last === null) {
+        return
+      }
+      loadingRef.current = false
+      const res = last
+      setData(() => ({
+        photos,
+        total: res.total,
+        nextOffset: res.next_offset,
+        loading: false,
+        initial: loaded <= 1,
+        pages: loaded,
+        reloading: false,
+        error: false,
+        mode: res.mode,
+        degraded: res.degraded ?? false,
+        unknownTokens: res.unknown_tokens ?? [],
+      }))
+    })()
   }, [])
 
   // Load the first page whenever the query changes; abort on unmount/change.
@@ -244,7 +319,7 @@ export function usePaginatedPhotos(
     }
   }, [queryKey, enabled, fetchPage])
 
-  // A `reloadKey` bump (with the query unchanged) refetches the first page in
+  // A `reloadKey` bump (with the query unchanged) refetches the loaded pages in
   // the background, so a bulk edit reflects without unmounting the grid.
   // `lastReloadKey` starts at the initial value so neither the first mount nor
   // React StrictMode's double-invoked mount effect fires a spurious reload — it
@@ -258,8 +333,8 @@ export function usePaginatedPhotos(
     if (!enabledRef.current) {
       return
     }
-    fetchPage(0, true, true)
-  }, [reloadKey, fetchPage])
+    reloadLoaded()
+  }, [reloadKey, reloadLoaded])
 
   const loadMore = useCallback(() => {
     const current = dataRef.current

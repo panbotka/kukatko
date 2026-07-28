@@ -260,6 +260,110 @@ describe('useFaces', () => {
     expect(result.current.selected?.face_index).toBe(0)
   })
 
+  it('does not let a reconcile for the previous photo overwrite the current one', async () => {
+    // The photo detail pages prev/next without remounting the hook, so a refetch
+    // still in flight for the photo just left can land on the new one.
+    const second: FacesResponse = {
+      photo_uid: 'ph2',
+      width: 640,
+      height: 480,
+      orientation: 1,
+      faces: [
+        {
+          face_index: 0,
+          bbox: [0.5, 0.5, 0.6, 0.6],
+          det_score: 0.8,
+          action: 'assign_person',
+          marker_uid: 'mk_2',
+          subject_name: 'Dana',
+          suggestions: [],
+        },
+      ],
+    }
+    fetchMock.mockImplementation((uid: string) =>
+      Promise.resolve(uid === 'ph1' ? namedResponse() : second),
+    )
+
+    // Hold the assignment on ph1 in flight so the reader can page on first.
+    let settleAssign: () => void = () => undefined
+    assignMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settleAssign = resolve
+        }),
+    )
+
+    const { result, rerender } = renderHook((props: { uid: string }) => useFaces(props.uid), {
+      initialProps: { uid: 'ph1' },
+    })
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready')
+    })
+
+    act(() => {
+      result.current.assignName(result.current.faces[0], 'Bob')
+    })
+    expect(result.current.busy).toBe(true)
+
+    rerender({ uid: 'ph2' })
+    await waitFor(() => {
+      expect(result.current.faces.map((f) => f.subject_name)).toEqual(['Dana'])
+    })
+    // The new photo starts with a clean action state, not ph1's spinner.
+    expect(result.current.busy).toBe(false)
+
+    // ph1's assignment settles and reconciles — against ph1, which is gone.
+    await act(async () => {
+      settleAssign()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    // ph2's faces stand. In particular its marker uid: taking ph1's `mk_1` here
+    // would make the next assignment a `mk_1`-against-ph2 request the API 404s.
+    expect(result.current.faces.map((f) => f.marker_uid)).toEqual(['mk_2'])
+    expect(result.current.faces.map((f) => f.subject_name)).toEqual(['Dana'])
+    expect(result.current.busy).toBe(false)
+    // The stale reconcile is dropped before it even hits the network.
+    expect(fetchMock.mock.calls.filter((c) => c[0] === 'ph1')).toHaveLength(1)
+  })
+
+  it('drops a failed assignment on the photo the reader has already left', async () => {
+    fetchMock.mockImplementation((uid: string) =>
+      Promise.resolve(uid === 'ph1' ? facesResponse() : { ...facesResponse(), photo_uid: 'ph2' }),
+    )
+    let failAssign: (err: Error) => void = () => undefined
+    assignMock.mockImplementation(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          failAssign = reject
+        }),
+    )
+
+    const { result, rerender } = renderHook((props: { uid: string }) => useFaces(props.uid), {
+      initialProps: { uid: 'ph1' },
+    })
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready')
+    })
+
+    act(() => {
+      result.current.assignName(result.current.faces[0], 'Bob')
+    })
+    rerender({ uid: 'ph2' })
+    await waitFor(() => {
+      expect(result.current.busy).toBe(false)
+    })
+
+    await act(async () => {
+      failAssign(new Error('nope'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    // ph1's failure is not ph2's problem: no error banner on a photo the reader
+    // never touched.
+    expect(result.current.actionError).toBe(false)
+  })
+
   it('names a face with a subject picked from the typeahead', async () => {
     const { result } = await renderReady()
 

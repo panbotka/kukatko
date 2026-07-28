@@ -95,6 +95,12 @@ function nextUnnamed(faces: FaceView[], afterIndex: number): number | null {
  *
  * On load the first unnamed face is selected, and naming one advances to the next —
  * so a photo full of people is worked through from the keyboard alone.
+ *
+ * The photo detail pages prev/next without remounting the hook, so every response
+ * is checked against the photo it was requested for before it is applied: a
+ * reconcile still in flight for the photo just left never paints its faces (or its
+ * marker uids, which would then be assigned against the wrong photo) over the one
+ * now on screen.
  */
 export function useFaces(photoUid: string): UseFacesResult {
   const [state, setState] = useState<State>({ status: 'loading' })
@@ -102,9 +108,28 @@ export function useFaces(photoUid: string): UseFacesResult {
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState(false)
 
+  // The photo this render is showing, and a monotonic id of the newest request.
+  // Together they decide whether a response is still wanted: the uid rejects work
+  // left over from a previous photo (the mutation reconcile carries no abort
+  // signal, and aborting it would surface as a failed assignment), the id drops a
+  // slow response overtaken by a newer one for the same photo.
+  const currentUidRef = useRef(photoUid)
+  currentUidRef.current = photoUid
+  const latestRequest = useRef(0)
+
   const reload = useCallback(
     async (signal?: AbortSignal, autoSelect = false) => {
+      if (currentUidRef.current !== photoUid) {
+        // A reconcile for a photo already left: drop it before it claims the
+        // request id and invalidates the current photo's load.
+        return
+      }
+      const requestId = latestRequest.current + 1
+      latestRequest.current = requestId
       const data = await fetchFaces(photoUid, signal)
+      if (latestRequest.current !== requestId || currentUidRef.current !== photoUid) {
+        return
+      }
       setState({ status: 'ready', data })
       if (autoSelect) {
         setSelected(firstUnnamed(data.faces))
@@ -117,6 +142,10 @@ export function useFaces(photoUid: string): UseFacesResult {
     const controller = new AbortController()
     setState({ status: 'loading' })
     setSelected(null)
+    // A mutation still settling belongs to the photo just left; the new one starts
+    // with a clean action state rather than inheriting its spinner or its error.
+    setBusy(false)
+    setActionError(false)
     // Only the initial load picks a face. The refetch that reconciles a mutation
     // must not, or naming the last face would drag the selection back to the top.
     reload(controller.signal, true).catch((err: unknown) => {
@@ -165,10 +194,16 @@ export function useFaces(photoUid: string): UseFacesResult {
         await assignFace(photoUid, req)
         await reload()
       } catch {
+        if (currentUidRef.current !== photoUid) {
+          // The reader has moved on; the failure belongs to the photo they left.
+          return
+        }
         setActionError(true)
         await reload().catch(() => undefined)
       } finally {
-        setBusy(false)
+        if (currentUidRef.current === photoUid) {
+          setBusy(false)
+        }
       }
     },
     [applyOptimistic, photoUid, reload],

@@ -244,6 +244,119 @@ describe('usePhotoLibrary', () => {
       expect(result.current.status).toBe('ready')
     })
 
+    it('refetches every loaded page so a deep scroll survives the reload', async () => {
+      // Two pages loaded: the reader has scrolled past the first one.
+      fetchMock.mockResolvedValueOnce(page([photo('a'), photo('b')], 4, 2))
+
+      const { result, rerender } = renderHook(
+        (props: { reloadKey: string }) =>
+          usePhotoLibrary({ sort: 'newest' }, { reloadKey: props.reloadKey }),
+        { initialProps: { reloadKey: '0' } },
+      )
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+
+      fetchMock.mockResolvedValueOnce(page([photo('c'), photo('d')], 4, null))
+      act(() => {
+        result.current.loadMore()
+      })
+      await waitFor(() => {
+        expect(result.current.photos).toHaveLength(4)
+      })
+
+      // A bulk edit reloads. Refetching only the first page would leave the grid
+      // holding two photos while the reader is scrolled to the fourth — bouncing
+      // them to the bottom of a list that just lost half its pages.
+      fetchMock.mockReset()
+      fetchMock.mockResolvedValueOnce(page([photo('a'), photo('b')], 4, 2))
+      fetchMock.mockResolvedValueOnce(
+        page([{ ...photo('c'), is_favorite: true }, photo('d')], 4, null),
+      )
+      rerender({ reloadKey: '1' })
+
+      // The loaded photos stay mounted for the whole walk.
+      expect(result.current.status).toBe('ready')
+      expect(result.current.photos).toHaveLength(4)
+
+      await waitFor(() => {
+        expect(result.current.reloading).toBe(false)
+      })
+      expect(result.current.photos.map((p) => p.uid)).toEqual(['a', 'b', 'c', 'd'])
+      expect(result.current.photos[2].is_favorite).toBe(true)
+      // Both pages were walked, in server order, at the offsets the server gave.
+      expect(fetchMock.mock.calls.map((c) => c[0].offset)).toEqual([0, 2])
+      expect(result.current.status).toBe('ready')
+      expect(result.current.hasMore).toBe(false)
+    })
+
+    it('stops the reload walk when the shrunken list runs out of pages', async () => {
+      fetchMock.mockResolvedValueOnce(page([photo('a'), photo('b')], 4, 2))
+
+      const { result, rerender } = renderHook(
+        (props: { reloadKey: string }) =>
+          usePhotoLibrary({ sort: 'newest' }, { reloadKey: props.reloadKey }),
+        { initialProps: { reloadKey: '0' } },
+      )
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      fetchMock.mockResolvedValueOnce(page([photo('c'), photo('d')], 4, null))
+      act(() => {
+        result.current.loadMore()
+      })
+      await waitFor(() => {
+        expect(result.current.photos).toHaveLength(4)
+      })
+
+      // A batch archive left a single page's worth: the walk must stop at the
+      // server's `next_offset: null` instead of requesting a page past the end.
+      fetchMock.mockReset()
+      fetchMock.mockResolvedValueOnce(page([photo('a')], 1, null))
+      rerender({ reloadKey: '1' })
+
+      await waitFor(() => {
+        expect(result.current.photos.map((p) => p.uid)).toEqual(['a'])
+      })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(result.current.total).toBe(1)
+      expect(result.current.hasMore).toBe(false)
+      expect(result.current.status).toBe('ready')
+    })
+
+    it('keeps every loaded page when a multi-page background reload fails', async () => {
+      fetchMock.mockResolvedValueOnce(page([photo('a'), photo('b')], 4, 2))
+
+      const { result, rerender } = renderHook(
+        (props: { reloadKey: string }) =>
+          usePhotoLibrary({ sort: 'newest' }, { reloadKey: props.reloadKey }),
+        { initialProps: { reloadKey: '0' } },
+      )
+      await waitFor(() => {
+        expect(result.current.status).toBe('ready')
+      })
+      fetchMock.mockResolvedValueOnce(page([photo('c'), photo('d')], 4, null))
+      act(() => {
+        result.current.loadMore()
+      })
+      await waitFor(() => {
+        expect(result.current.photos).toHaveLength(4)
+      })
+
+      // The walk dies on its second page: the reader keeps all four photos rather
+      // than being left with the half that happened to come back.
+      fetchMock.mockReset()
+      fetchMock.mockResolvedValueOnce(page([photo('a'), photo('b')], 4, 2))
+      fetchMock.mockRejectedValueOnce(new Error('boom'))
+      rerender({ reloadKey: '1' })
+
+      await waitFor(() => {
+        expect(result.current.reloading).toBe(false)
+      })
+      expect(result.current.photos.map((p) => p.uid)).toEqual(['a', 'b', 'c', 'd'])
+      expect(result.current.status).toBe('ready')
+    })
+
     it('keeps the current list when a background reload fails', async () => {
       fetchMock.mockResolvedValue(page([photo('a'), photo('b')], 2, null))
 
