@@ -145,6 +145,20 @@ describe('LabelDetailPage', () => {
     expect(fetchPhotosMock.mock.calls[0][0].label).toBe('lb_1')
   })
 
+  it('lets a long unbroken label name wrap inside the header', async () => {
+    // A name with no spaces used to hold the header open past a phone's
+    // viewport: `.kk-page-title` now breaks anywhere, and its group is allowed
+    // to shrink so the break can happen.
+    const long = 'Zapad'.repeat(20)
+    fetchLabelMock.mockResolvedValue({ ...label(), name: long })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { name: long })
+    expect(heading).toHaveClass('kk-page-title')
+    expect(heading.parentElement).toHaveClass('kk-min-w-0')
+  })
+
   it('offers a back link that names the label list it returns to', async () => {
     fetchLabelMock.mockResolvedValue(label())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))

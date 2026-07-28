@@ -79,6 +79,30 @@ describe('SavedSearchesPage', () => {
     expect(searchLink).toHaveAttribute('href', '/search?q=sunset&mode=semantic')
   })
 
+  it('keeps a long unbroken name inside the row on a phone', async () => {
+    // A 360px row cannot fit a name plus two Czech-worded buttons: the name
+    // truncates, the actions collapse to their glyph, and nothing widens the
+    // page beyond the viewport.
+    const long = 'Hledání'.repeat(20)
+    fetchMock.mockResolvedValue([saved('ss_1', long, { sort: 'oldest' })])
+    renderPage()
+
+    const link = await screen.findByRole('link', { name: long })
+    expect(link).toHaveClass('text-truncate', 'kk-min-w-0')
+    for (const [name, glyph] of [
+      ['Rename', 'bi-pencil'],
+      ['Delete', 'bi-trash'],
+    ]) {
+      const button = screen.getByRole('button', { name })
+      expect(button.querySelector(`.${glyph}`)).toHaveAttribute('aria-hidden', 'true')
+      expect(within(button).getByText(name)).toHaveClass('d-none', 'd-sm-inline')
+      expect(button).toHaveClass('kukatko-tap-target-touch')
+    }
+    expect(screen.getByRole('button', { name: 'Rename' }).parentElement).toHaveClass(
+      'flex-shrink-0',
+    )
+  })
+
   it('renames a saved search via the API and updates the row', async () => {
     fetchMock.mockResolvedValue([saved('ss_1', 'Trip', { sort: 'oldest' })])
     updateMock.mockResolvedValue(saved('ss_1', 'Holiday', { sort: 'oldest' }))

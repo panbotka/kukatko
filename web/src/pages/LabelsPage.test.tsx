@@ -157,6 +157,43 @@ describe('LabelsPage', () => {
     })
   })
 
+  it('keeps a long unbroken name inside the row on a phone', async () => {
+    // A 360px row cannot fit a name plus two Czech-worded buttons: the name has
+    // to be allowed to shrink (min-width:0) and truncate, and the actions may
+    // not be squeezed, or the whole page scrolls sideways.
+    const long = 'Fotky'.repeat(20)
+    fetchMock.mockResolvedValue([label('lb_1', long)])
+    renderPage()
+
+    const name = await screen.findByText(long)
+    expect(name).toHaveClass('text-truncate')
+    const link = name.closest('a')
+    expect(link).toHaveClass('kk-min-w-0')
+    // The count rides along beside the truncated name and keeps its own width.
+    expect(within(link as HTMLElement).getByText('5')).toHaveClass('flex-shrink-0')
+    expect(screen.getByRole('button', { name: 'Rename' }).parentElement).toHaveClass(
+      'flex-shrink-0',
+    )
+  })
+
+  it('collapses the row actions to their glyph below the sm breakpoint', async () => {
+    // Icon + a word that hides itself on a narrow viewport; the `aria-label`
+    // keeps the accessible name identical at every width.
+    fetchMock.mockResolvedValue([label('lb_1', 'Sunset')])
+    renderPage()
+
+    await screen.findByText('Sunset')
+    for (const [name, glyph] of [
+      ['Rename', 'bi-pencil'],
+      ['Delete', 'bi-trash'],
+    ]) {
+      const button = screen.getByRole('button', { name })
+      expect(button.querySelector(`.${glyph}`)).toHaveAttribute('aria-hidden', 'true')
+      expect(within(button).getByText(name)).toHaveClass('d-none', 'd-sm-inline')
+      expect(button).toHaveClass('kukatko-tap-target-touch')
+    }
+  })
+
   it('hides mutation controls from viewers', async () => {
     fetchMock.mockResolvedValue([label('lb_1', 'Sunset')])
     renderPage(false)

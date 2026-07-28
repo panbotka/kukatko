@@ -478,6 +478,15 @@ body {
   min-height: 2.75rem;
 }
 
+/* A flex item defaults to `min-width: auto`, i.e. it refuses to shrink below its
+   content's minimum size — one long unbroken name is then enough to push a row
+   past the viewport and give the whole page a horizontal scrollbar. Opting a
+   flex item into `min-width: 0` lets it shrink so its content can truncate or
+   wrap instead. */
+.kk-min-w-0 {
+  min-width: 0;
+}
+
 /* App-wide touch-target floor. On coarse-pointer devices (phones, tablets) every
    interactive control should clear the ~44px finger-friendly minimum regardless
    of Bootstrap's `size="sm"` sizing, without forcing per-component markup
@@ -507,6 +516,16 @@ body {
   .form-check-input {
     min-width: 1.35rem;
     min-height: 1.35rem;
+  }
+
+  /* The touch-only twin of `.kukatko-tap-target`: a 44px square hit area for
+     controls that must stay visually small beside text on a mouse (the query
+     help `?`, a row action whose label collapses to its glyph on a phone).
+     Scoped to coarse pointers, so the desktop layout keeps its compact
+     sizing. */
+  .kukatko-tap-target-touch {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
   }
 }
 

@@ -160,6 +160,20 @@ describe('AlbumDetailPage', () => {
     expect(fetchPhotosMock.mock.calls[0][0].album).toBe('al_1')
   })
 
+  it('lets a long unbroken album title wrap inside the header', async () => {
+    // A title with no spaces used to hold the header open past a phone's
+    // viewport: `.kk-page-title` now breaks anywhere, and its group is allowed
+    // to shrink so the break can happen.
+    const long = 'Dovolena'.repeat(20)
+    fetchAlbumMock.mockResolvedValue({ ...album(), title: long })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { name: long })
+    expect(heading).toHaveClass('kk-page-title')
+    expect(heading.parentElement).toHaveClass('kk-min-w-0')
+  })
+
   it('offers a back link that names the album list it returns to', async () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
