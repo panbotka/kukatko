@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photoprism"
 	"github.com/panbotka/kukatko/internal/photos"
-	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/video"
 )
 
@@ -155,15 +153,8 @@ func (s *Service) stageMotion(ctx context.Context, sel mediaSelection) *stagedFi
 // skipped: the still is already imported, so a missing motion clip is a degraded
 // (repairable) state, never a reason to fail the import.
 func (s *Service) linkMotion(ctx context.Context, photo photos.Photo, motion photoprism.File, staged *stagedFile) {
-	file, err := os.Open(staged.path)
+	stored, err := s.storeStaged(ctx, staged, derefTime(photo.TakenAt), companionName(motion))
 	if err != nil {
-		s.log.Warn("ppimport: reopening motion clip", "photo", photo.UID, "err", err)
-		return
-	}
-	defer func() { _ = file.Close() }()
-
-	stored, err := s.storage.Store(ctx, file, derefTime(photo.TakenAt), companionName(motion))
-	if err != nil && !errors.Is(err, storage.ErrAlreadyExists) {
 		s.log.Warn("ppimport: storing motion clip", "photo", photo.UID, "err", err)
 		return
 	}

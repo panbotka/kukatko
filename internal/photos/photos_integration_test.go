@@ -239,8 +239,49 @@ func TestExternalIDLookups(t *testing.T) {
 		t.Errorf("GetByPhotosorterUID = %+v, %v", byPS, err)
 	}
 
+	byFile, err := store.GetByPhotoprismFileHash(ctx, "da39a3ee5e6b4b0d3255bfef95601890afd80709")
+	if err != nil || byFile.UID != created.UID {
+		t.Errorf("GetByPhotoprismFileHash = %+v, %v", byFile, err)
+	}
+
 	if _, err := store.GetByPhotoprismUID(ctx, "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("GetByPhotoprismUID(nope) = %v, want ErrPhotoNotFound", err)
+	}
+	if _, err := store.GetByPhotoprismFileHash(ctx, "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
+		t.Errorf("GetByPhotoprismFileHash(nope) = %v, want ErrPhotoNotFound", err)
+	}
+}
+
+// TestSetPhotoprismFileHash verifies the source file hash of a non-primary file (a
+// RAW sibling) can be backfilled onto a photo whose bytes were already catalogued,
+// without inventing a photoprism_uid for it: that column stays the 1:1 key of the
+// source photo's displayable file.
+func TestSetPhotoprismFileHash(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	created, err := store.Create(ctx, samplePhoto("sibling"))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	updated, err := store.SetPhotoprismFileHash(ctx, created.UID, "sha1raw")
+	if err != nil {
+		t.Fatalf("SetPhotoprismFileHash: %v", err)
+	}
+	if updated.PhotoprismFileHash == nil || *updated.PhotoprismFileHash != "sha1raw" {
+		t.Errorf("photoprism_file_hash = %v, want sha1raw", updated.PhotoprismFileHash)
+	}
+	if updated.PhotoprismUID != nil {
+		t.Errorf("photoprism_uid = %v, want nil (a sibling never claims the source photo)", updated.PhotoprismUID)
+	}
+	found, err := store.GetByPhotoprismFileHash(ctx, "sha1raw")
+	if err != nil || found.UID != created.UID {
+		t.Errorf("GetByPhotoprismFileHash after backfill = %+v, %v", found, err)
+	}
+
+	if _, err := store.SetPhotoprismFileHash(ctx, "ph_missing", "x"); !errors.Is(err, photos.ErrPhotoNotFound) {
+		t.Errorf("SetPhotoprismFileHash(missing) = %v, want ErrPhotoNotFound", err)
 	}
 }
 

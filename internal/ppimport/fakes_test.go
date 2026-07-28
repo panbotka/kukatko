@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -405,18 +406,24 @@ func (s *fakeRunStore) last() *importer.Run {
 type fakePhotoStore struct {
 	byUID   map[string]photos.Photo
 	byPPUID map[string]string
-	byHash  map[string]string
-	files   map[string][]photos.PhotoFile
-	seq     int
+	// byPPFileHash indexes photos by the SHA1 of the PhotoPrism file they hold. It
+	// is the identity of a single SOURCE FILE, which is how an imported non-primary
+	// sibling — carrying no photoprism_uid — is recognised on a re-run.
+	byPPFileHash map[string]string
+	byHash       map[string]string
+	files        map[string][]photos.PhotoFile
+	seq          int
+	stackSeq     int
 }
 
 // newFakePhotoStore returns an empty fakePhotoStore.
 func newFakePhotoStore() *fakePhotoStore {
 	return &fakePhotoStore{
-		byUID:   map[string]photos.Photo{},
-		byPPUID: map[string]string{},
-		byHash:  map[string]string{},
-		files:   map[string][]photos.PhotoFile{},
+		byUID:        map[string]photos.Photo{},
+		byPPUID:      map[string]string{},
+		byPPFileHash: map[string]string{},
+		byHash:       map[string]string{},
+		files:        map[string][]photos.PhotoFile{},
 	}
 }
 
@@ -432,6 +439,9 @@ func (s *fakePhotoStore) Create(_ context.Context, p photos.Photo) (photos.Photo
 	s.byHash[p.FileHash] = p.UID
 	if p.PhotoprismUID != nil {
 		s.byPPUID[*p.PhotoprismUID] = p.UID
+	}
+	if p.PhotoprismFileHash != nil {
+		s.byPPFileHash[*p.PhotoprismFileHash] = p.UID
 	}
 	return p, nil
 }
@@ -518,6 +528,16 @@ func (s *fakePhotoStore) ApplyImportMetadata(
 	return changed, nil
 }
 
+// GetByPhotoprismFileHash returns the photo holding the PhotoPrism file with the
+// given SHA1 hash.
+func (s *fakePhotoStore) GetByPhotoprismFileHash(_ context.Context, ppFileHash string) (photos.Photo, error) {
+	uid, ok := s.byPPFileHash[ppFileHash]
+	if !ok {
+		return photos.Photo{}, photos.ErrPhotoNotFound
+	}
+	return s.byUID[uid], nil
+}
+
 // SetPhotoprismRef stamps the external IDs onto the photo and returns it.
 func (s *fakePhotoStore) SetPhotoprismRef(_ context.Context, uid, ppUID, ppFileHash string) (photos.Photo, error) {
 	p, ok := s.byUID[uid]
@@ -527,7 +547,116 @@ func (s *fakePhotoStore) SetPhotoprismRef(_ context.Context, uid, ppUID, ppFileH
 	p.PhotoprismUID, p.PhotoprismFileHash = &ppUID, &ppFileHash
 	s.byUID[uid] = p
 	s.byPPUID[ppUID] = uid
+	s.byPPFileHash[ppFileHash] = uid
 	return p, nil
+}
+
+// SetPhotoprismFileHash stamps the source file hash onto the photo, leaving its
+// photoprism_uid alone exactly as the real store does.
+func (s *fakePhotoStore) SetPhotoprismFileHash(_ context.Context, uid, ppFileHash string) (photos.Photo, error) {
+	p, ok := s.byUID[uid]
+	if !ok {
+		return photos.Photo{}, photos.ErrPhotoNotFound
+	}
+	p.PhotoprismFileHash = &ppFileHash
+	s.byUID[uid] = p
+	s.byPPFileHash[ppFileHash] = uid
+	return p, nil
+}
+
+// ListStackMembers returns the members of a stack, the primary first then by uid.
+func (s *fakePhotoStore) ListStackMembers(_ context.Context, stackUID string) ([]photos.Photo, error) {
+	return s.stackMembers(stackUID), nil
+}
+
+// stackMembers is ListStackMembers without the interface's context and error, so
+// the fake's own bookkeeping can reuse it.
+func (s *fakePhotoStore) stackMembers(stackUID string) []photos.Photo {
+	out := make([]photos.Photo, 0)
+	for _, p := range s.byUID {
+		if p.StackUID != nil && *p.StackUID == stackUID {
+			out = append(out, p)
+		}
+	}
+	slices.SortFunc(out, func(a, b photos.Photo) int {
+		if a.StackPrimary != b.StackPrimary {
+			if a.StackPrimary {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.UID, b.UID)
+	})
+	return out
+}
+
+// CreateStack groups the members into a fresh stack with primaryUID as its
+// primary, mirroring the real store's contract: fewer than two distinct members is
+// ErrStackTooSmall, a missing or archived member (or a primary outside the set) is
+// ErrPhotoNotFound, and a stack the members leave is dissolved when it drops below
+// two.
+func (s *fakePhotoStore) CreateStack(_ context.Context, primaryUID string, memberUIDs []string) (string, error) {
+	uids := distinctUIDs(memberUIDs)
+	if len(uids) < 2 {
+		return "", photos.ErrStackTooSmall
+	}
+	if !slices.Contains(uids, primaryUID) {
+		return "", photos.ErrPhotoNotFound
+	}
+	left := map[string]struct{}{}
+	for _, uid := range uids {
+		p, ok := s.byUID[uid]
+		if !ok || p.ArchivedAt != nil {
+			return "", photos.ErrPhotoNotFound
+		}
+		if p.StackUID != nil {
+			left[*p.StackUID] = struct{}{}
+		}
+	}
+	s.stackSeq++
+	stackUID := fmt.Sprintf("st%08d", s.stackSeq)
+	for _, uid := range uids {
+		p := s.byUID[uid]
+		p.StackUID, p.StackPrimary = &stackUID, uid == primaryUID
+		s.byUID[uid] = p
+	}
+	for prev := range left {
+		s.repairStack(prev, stackUID)
+	}
+	return stackUID, nil
+}
+
+// repairStack dissolves a stack the members left when fewer than two remain, and
+// re-elects a primary when it lost its own. The freshly created stack is skipped.
+func (s *fakePhotoStore) repairStack(stackUID, fresh string) {
+	if stackUID == fresh {
+		return
+	}
+	members := s.stackMembers(stackUID)
+	switch {
+	case len(members) < 2:
+		for _, m := range members {
+			m.StackUID, m.StackPrimary = nil, false
+			s.byUID[m.UID] = m
+		}
+	case !members[0].StackPrimary:
+		members[0].StackPrimary = true
+		s.byUID[members[0].UID] = members[0]
+	}
+}
+
+// distinctUIDs returns the distinct uids of in, preserving first-seen order.
+func distinctUIDs(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, uid := range in {
+		if _, dup := seen[uid]; dup {
+			continue
+		}
+		seen[uid] = struct{}{}
+		out = append(out, uid)
+	}
+	return out
 }
 
 // Delete removes the photo and its indexes.
@@ -539,6 +668,9 @@ func (s *fakePhotoStore) Delete(_ context.Context, uid string) error {
 	delete(s.byHash, p.FileHash)
 	if p.PhotoprismUID != nil {
 		delete(s.byPPUID, *p.PhotoprismUID)
+	}
+	if p.PhotoprismFileHash != nil {
+		delete(s.byPPFileHash, *p.PhotoprismFileHash)
 	}
 	delete(s.byUID, uid)
 	return nil

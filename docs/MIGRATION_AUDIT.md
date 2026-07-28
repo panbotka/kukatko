@@ -35,10 +35,13 @@ container/relational fields — `Photo.Files`, `PhotoDetail.Albums`, `PhotoDetai
 
 | Verdict | Count |
 | --- | --- |
-| **MAPPED** | 61 |
-| **WAIVED** | 28 |
+| **MAPPED** | 63 |
+| **WAIVED** | 26 |
 | **GAP** | 0 |
 | **Total** | 89 |
+
+`File.Width`/`File.Height` moved from WAIVED to MAPPED when the import started bringing across a
+photo's non-primary files (a sibling row's geometry is the file's own) — see "Files".
 
 **Gap status — all four resolved (this task's commit):**
 
@@ -134,7 +137,7 @@ The rule lives in `ppimport.metadataUpdate`; the provenance is written by the ed
 | `Photo.Scan` | `scan` | **MAPPED** | Via `ImportMetadata` from the detail; a "true-wins" rule (can be set, not cleared). |
 | `Photo.Favorite` | — | **WAIVED** | Favorites in Kukátko are **per-user** by design (`ppimport.go` ~ll. 18–20); an import running as a job/CLI has nobody to attribute the flag to. |
 | `Photo.Private` | `private` | **MAPPED** | `buildPhoto` on first import; incremental `metadataUpdate` **ORs** the flag (`existing.Private \|\| pp.Private`), so a re-import can hide but never un-hide — a hidden photo is never made public again. |
-| `Photo.Files` | → the `File` table | **MAPPED** | The files container; see the "Files" section. |
+| `Photo.Files` | → the `File` table | **MAPPED** | The files container; **every** file is imported, not just the primary one — see the "Files" section. |
 
 **`PhotoDetail` — relations beyond `Photo`** (the detail endpoint's envelope):
 
@@ -162,16 +165,36 @@ field, **gap-fill** only (it never overwrites the user's note).
 
 ## Files — the `File` structure
 
-Kukátko does not keep a 1:1 catalog of PhotoPrism files; from the primary file it takes the
-content (the download hash + a reference), and the technical fields from the detail. The rest
-are either internal to PhotoPrism or redundant with the photo's fields.
+A PhotoPrism photo is a **shot, not a file**: a RAW and the JPEG rendered from it are one photo
+with two `Files[]`. Kukátko stores one original per photo row, so **every** file of the shot is
+imported as its own row (its own original + `photo_files` row) and the set is grouped into one
+stack behind the displayable original — the one PhotoPrism marks `Primary`
+(`internal/ppimport/siblings.go`, `photos.CreateStack`). The library still shows one tile per
+shot (the visibility gate is `stack_uid IS NULL OR stack_primary`) and the RAW is a variant of
+it (`stack_members` in the photo detail, with a thumbnail and a download URL).
+
+This closed the one real loss of the PhotoPrism path: until then only the primary file was
+downloaded, so the RAW of every `type:raw` photo (12 on the production library) was dropped —
+and unlike a rendered JPEG, a RAW cannot be reconstructed from anything else. Note that this is
+the deployment's **actual** `photo_files` gap: this library lives in PhotoPrism and photo-sorter
+is only a vector layer over it, so the `photo_files` GAP recorded in the photo-sorter section
+below is inert here, while this one was real.
+
+A sibling row deliberately carries **no `photoprism_uid`** — that column is the 1:1 key of the
+source photo (the increment dedups on it and `psfeedsimport` joins photo-sorter's vectors onto
+it), so it stays on the displayable original alone; the sibling is identified by its own
+`photoprism_file_hash` instead. It also gets thumbnails only, no `image_embed`/`face_detect`:
+it is the same shot as the stack's primary, whose embedding and faces already represent it.
+
+Beyond the content and the reference, the technical fields come from the detail. The rest are
+either internal to PhotoPrism or redundant with the photo's fields.
 
 | Source field | Target column | Verdict | Note |
 | --- | --- | --- | --- |
-| `File.Hash` | `photoprism_file_hash` | **MAPPED** | SHA1 of the primary file; also the download key (`/dl/<Hash>`). |
-| `File.Mime` | `file_mime` | **MAPPED** | `firstNonEmpty(primary.Mime, meta.Mime, stored.MIME)`. |
-| `File.Name` | `original_name` (fallback) / name in storage | **MAPPED** | `originalName()` uses `Photo.OriginalName`, otherwise `path.Base(File.Name)`; `companionName()` names the motion clip. |
-| `File.Primary` | (selection of the primary file) | **MAPPED** | The `PrimaryFile()` behavior; the primary file is the original. |
+| `File.Hash` | `photoprism_file_hash` | **MAPPED** | SHA1 of the file; also the download key (`/dl/<Hash>`) and, for a non-primary file, the identity its row is found by on a re-run (`GetByPhotoprismFileHash`). |
+| `File.Mime` | `file_mime` | **MAPPED** | `firstNonEmpty(file.Mime, meta.Mime, stored.MIME)`. |
+| `File.Name` | `original_name` (fallback) / name in storage | **MAPPED** | `originalName()` uses `Photo.OriginalName`, otherwise `path.Base(File.Name)`; `companionName()` names the motion clip and `siblingName()` a sibling file, which keeps the source's own extension (the RAW stays a `.cr2`). |
+| `File.Primary` | (selection of the primary file) | **MAPPED** | The `PrimaryFile()` behavior; the primary file is the photo's original **and the primary of the stack** its siblings are grouped into. |
 | `File.Video` | (media selection / `IsVideo`) | **MAPPED** | Distinguishes a still from a motion clip and co-decides `media_type`. |
 | `File.Codec` | `image_codec` (stills only) | **MAPPED** | `exif.CodecToken`; the video codec (`avc1`/`hvc1`) is **deliberately not taken from PP** — `video_codec` is owned by ffprobe. |
 | `File.ColorProfile` | `color_profile` | **MAPPED** | Detail-only. |
@@ -179,8 +202,8 @@ are either internal to PhotoPrism or redundant with the photo's fields.
 | `File.Markers` | → the `Marker` table | **MAPPED** | Only from the detail (the listing's is empty); see "Markers". |
 | `File.UID` | — | **WAIVED** | Kukátko's files are keyed by `photo_uid` + path; the PP file UID is not needed. |
 | `File.Root` | — | **WAIVED** | PhotoPrism's internal storage-root tag. |
-| `File.Width` | — | **WAIVED** | Redundant — the geometry is taken from `Photo.Width` (see above). |
-| `File.Height` | — | **WAIVED** | ditto. |
+| `File.Width` | `file_width` (sibling rows) | **MAPPED** | For the photo's own original the geometry comes from `Photo.Width` (see above); a sibling row takes the file's own, which is the only geometry that describes it. |
+| `File.Height` | `file_height` (sibling rows) | **MAPPED** | ditto. |
 | `File.FileType` | — | **WAIVED** | The type is carried by `file_mime` + `image_codec`; the text tag is not stored. |
 
 ## Markers / faces — the `Marker` structure
@@ -528,6 +551,11 @@ impact:**
    `photo_files` + `internal/stacks` where they would belong. The fix is **a whole table, not a
    field** (listing `photo_files` in the reader + copying the secondary files + grouping via
    `internal/stacks`) — deliberately left as a GAP, see "Scope and what remains GAP" (clue #1).
+   **Inert in this deployment:** the library lives in PhotoPrism and photo-sorter is only a
+   vector layer over it, so no shot enters the catalogue through `psimport`. The same loss on
+   the path that *is* used — the PhotoPrism import — is **fixed**: it brings across every
+   non-primary file as its own row grouped in one stack (see the "Files" section above), and
+   `psimport` would follow the same shape whenever it is needed.
 2. **IPTC/XMP credits + `keywords`/`scan` — 6 columns. → FIXED (MAPPED).**
    `photos.exif_artist`, `exif_copyright`, `exif_license`, `exif_software`, `keywords` (TEXT[])
    and `scan` **exist** in photo-sorter and Kukátko has columns for them
@@ -787,7 +815,7 @@ The catalog bucket (tables with library data) has **14 tables**; the reader read
 
 | Table | Verdict | What is lost / why not |
 | --- | --- | --- |
-| `photo_files` | **GAP** | **The most serious.** The physical files of a shot — RAW+JPEG stacks, HEIC+JPEG sidecars, edited variants (`role` `original`/`sidecar`/`edited`). The migration copies only the primary original and creates **one** `photo_files` row in Kukátko; the sibling files are lost. **Hits** users with stacks (RAW next to JPEG, a live-photo clip). Kukátko has its own `photo_files` + `internal/stacks`. **Fix:** add listing of `photo_files` in the reader and, in `psimport`, copy the secondary files (roles `sidecar`/`edited`) as additional `photo_files` rows and let `internal/stacks` group them. |
+| `photo_files` | **GAP** | **The most serious.** The physical files of a shot — RAW+JPEG stacks, HEIC+JPEG sidecars, edited variants (`role` `original`/`sidecar`/`edited`). The migration copies only the primary original and creates **one** `photo_files` row in Kukátko; the sibling files are lost. **Hits** users with stacks (RAW next to JPEG, a live-photo clip). Kukátko has its own `photo_files` + `internal/stacks`. **Fix:** add listing of `photo_files` in the reader and, in `psimport`, import each secondary file as its own photo row grouped with the primary in one stack — the shape `ppimport` now uses for a PhotoPrism photo's non-primary files (`siblings.go`). **Inert in this deployment** (nothing enters through `psimport`; the same loss on the PhotoPrism path is fixed). |
 | `era_embeddings` | **WAIVED** | Reference CLIP centroids of "eras" for period estimation — derived/recomputable data, not library content; Kukátko has no "eras" feature. |
 
 The other unread tables (`users`, `sessions`, `photo_books`, `book_sections`,

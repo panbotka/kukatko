@@ -272,6 +272,24 @@ func (c *fakePPClient) addLive(uid string, updated time.Time, title string, shad
 	return photo
 }
 
+// addRAW registers a photo the way PhotoPrism keeps a RAW capture: the JPEG
+// rendered from it is the primary file and the RAW itself hangs off the same photo
+// as a non-primary sibling with its own bytes. The sibling is named .cr2 but holds
+// a real JPEG, so the thumbnailer decodes it by its magic bytes (see
+// imgconvert.DetectFormat) without needing dcraw in the test environment.
+func (c *fakePPClient) addRAW(uid string, updated time.Time, title string, shade uint8) photoprism.Photo {
+	photo := c.addPhoto(uid, updated, title, shade)
+	rawHash := "hraw-" + uid
+	c.files[rawHash] = jpegOf(shade + 1)
+	photo.Type = "raw"
+	photo.Files = []photoprism.File{
+		{UID: "f-" + uid, Hash: "h-" + uid, Primary: true, Mime: "image/jpeg", Name: uid + ".jpg"},
+		{UID: "fraw-" + uid, Hash: rawHash, Mime: "image/x-canon-cr2", Name: uid + ".cr2", FileType: "raw"},
+	}
+	c.register(photo)
+	return photo
+}
+
 // filterByUpdated returns photos updated at or after since (inclusive).
 func filterByUpdated(in []photoprism.Photo, since time.Time) []photoprism.Photo {
 	if since.IsZero() {
@@ -861,6 +879,119 @@ func assertLivePhotoFiles(t *testing.T, files []photos.PhotoFile) {
 	}
 	if sidecar != nil && !strings.HasPrefix(sidecar.FileMime, "video/") {
 		t.Errorf("sidecar mime = %q, want video/*", sidecar.FileMime)
+	}
+}
+
+// TestIntegration_rawSibling verifies a RAW+JPEG shot arrives whole: both source
+// files are downloaded and catalogued, grouped into one stack whose primary is the
+// displayable JPEG, while a single-file photo in the same run keeps exactly one
+// file and no stack — and a re-run duplicates nothing.
+func TestIntegration_rawSibling(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	client.photos = []photoprism.Photo{
+		client.addRAW("raw1", t0, "Capture", 60),
+		client.addPhoto("jpg1", t0.Add(time.Hour), "Plain", 90),
+	}
+	env := newEnv(t, client)
+
+	result, err := env.svc.Import(ctx)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Imported != 2 {
+		t.Fatalf("imported = %d, want 2 (one per source photo)", result.Counts.Imported)
+	}
+	if got := countRows(t, env, "photos"); got != 3 {
+		t.Fatalf("photos = %d, want 3 (the JPEG, its RAW and the plain photo)", got)
+	}
+
+	primary, err := env.photos.GetByPhotoprismUID(ctx, "raw1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID(raw1): %v", err)
+	}
+	sibling, err := env.photos.GetByPhotoprismFileHash(ctx, "hraw-raw1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismFileHash(hraw-raw1): %v", err)
+	}
+	assertSiblingStack(t, env, primary, sibling)
+	assertPlainPhotoUntouched(t, env)
+
+	// Re-run: no new rows, no re-download, and the stack it formed is left alone.
+	downloadsBefore := client.downloadCount()
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("re-run: %v", err)
+	}
+	if got := countRows(t, env, "photos"); got != 3 {
+		t.Errorf("photos after re-run = %d, want 3", got)
+	}
+	if client.downloadCount() != downloadsBefore {
+		t.Errorf("re-run re-downloaded: %d -> %d", downloadsBefore, client.downloadCount())
+	}
+	again, err := env.photos.GetByPhotoprismUID(ctx, "raw1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID after re-run: %v", err)
+	}
+	if again.StackUID == nil || *again.StackUID != *primary.StackUID {
+		t.Errorf("stack re-formed on re-run: %v -> %v", primary.StackUID, again.StackUID)
+	}
+}
+
+// assertSiblingStack checks the RAW became its own row — its own original file,
+// its own source file hash, no photoprism_uid — grouped with the JPEG in one stack
+// the JPEG is the primary of.
+func assertSiblingStack(t *testing.T, env *testEnv, primary, sibling photos.Photo) {
+	t.Helper()
+	ctx := t.Context()
+	if sibling.PhotoprismUID != nil {
+		t.Errorf("sibling photoprism_uid = %v, want nil", *sibling.PhotoprismUID)
+	}
+	if want := sha256Hex(env.client.files["hraw-raw1"]); sibling.FileHash != want {
+		t.Errorf("sibling file_hash = %s, want %s (the RAW's bytes)", sibling.FileHash, want)
+	}
+	if !strings.HasSuffix(sibling.FileName, ".cr2") {
+		t.Errorf("sibling file_name = %q, want the source's .cr2 name", sibling.FileName)
+	}
+	files, err := env.photos.ListFiles(ctx, sibling.UID)
+	if err != nil {
+		t.Fatalf("ListFiles(sibling): %v", err)
+	}
+	if len(files) != 1 || !files[0].IsPrimary || files[0].Role != photos.RoleOriginal {
+		t.Errorf("sibling file rows = %+v, want one primary original", files)
+	}
+	if primary.StackUID == nil || sibling.StackUID == nil || *primary.StackUID != *sibling.StackUID {
+		t.Fatalf("not one stack: primary %v, sibling %v", primary.StackUID, sibling.StackUID)
+	}
+	if !primary.StackPrimary || sibling.StackPrimary {
+		t.Errorf("stack primary = JPEG %v / RAW %v, want the JPEG", primary.StackPrimary, sibling.StackPrimary)
+	}
+	members, err := env.photos.ListStackMembers(ctx, *primary.StackUID)
+	if err != nil {
+		t.Fatalf("ListStackMembers: %v", err)
+	}
+	if len(members) != 2 {
+		t.Errorf("stack members = %d, want 2", len(members))
+	}
+}
+
+// assertPlainPhotoUntouched checks the single-file photo of the same run is
+// catalogued exactly as before: one file row and no stack.
+func assertPlainPhotoUntouched(t *testing.T, env *testEnv) {
+	t.Helper()
+	plain, err := env.photos.GetByPhotoprismUID(t.Context(), "jpg1")
+	if err != nil {
+		t.Fatalf("GetByPhotoprismUID(jpg1): %v", err)
+	}
+	if plain.StackUID != nil {
+		t.Errorf("single-file photo was stacked: %v", *plain.StackUID)
+	}
+	files, err := env.photos.ListFiles(t.Context(), plain.UID)
+	if err != nil {
+		t.Fatalf("ListFiles(jpg1): %v", err)
+	}
+	if len(files) != 1 {
+		t.Errorf("single-file photo has %d file rows, want 1", len(files))
 	}
 }
 

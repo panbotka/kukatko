@@ -100,9 +100,15 @@ to `## Package map` in `CLAUDE.md`.
   (`internal/photoapi` clears it when the flag is dropped)),
   `MediaType` image/video/live, `FileRole` original/sidecar/edited, UID generator prefix `ph`,
   `Store` over pgx with
-  `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotosorterUID`/`SetPhotoprismRef`
+  `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotoprismFileHash`
+  (the identity of a single SOURCE FILE, not of a source photo: a PhotoPrism photo made of several
+  files — a RAW next to its JPEG — becomes one row per file grouped in one stack, and only the
+  displayable one carries the `photoprism_uid`, so a sibling is found again by its own SHA1 alone;
+  partial index from `0045`)/`GetByPhotosorterUID`/`SetPhotoprismRef`
   (backfill `photoprism_uid`+`photoprism_file_hash` onto a photo deduplicated by SHA256 — the PhotoPrism
-  import calls it so the next increment short-circuits on the uid instead of re-downloading)/`ListByUIDs`
+  import calls it so the next increment short-circuits on the uid instead of re-downloading)/
+  `SetPhotoprismFileHash` (the same backfill for a NON-primary source file, **leaving `photoprism_uid`
+  alone** — a sibling never claims the source photo's key)/`ListByUIDs`
   (batch lookup by uid, ignores unknown ones — for the similar API)/`FilterUIDs`
   (from a given set of uids returns those that pass the structural List filters — ignores sorting,
   pagination and `FullText`; companion to semantic search: the caller holds candidates from
@@ -1571,7 +1577,11 @@ to `## Package map` in `CLAUDE.md`.
   Embeddings`/`PhotosMissingFaces`/`AlbumTitles`/`LabelNames`/`SubjectNames`); `Verify` projde **celou**
   PhotoPrism knihovnu stránkováním `ListPhotos`, klasifikuje foto jako matched/**deduplicated** (uid chybí,
   ale primární SHA1 hash je už naimportovaný — účet za SHA256/SHA1 dedup)/**missing**, a matched foto s
-  méně `original` soubory v katalogu než má PhotoPrism `Files[]` → **file gap** (zahozený RAW sourozenec);
+  méně `original` soubory v katalogu než má PhotoPrism `Files[]` → **file gap** (zahozený sourozenec);
+  `OriginalFileCounts` počítá **přes celý stack**, ne jen přes ten jeden řádek: sourozenecké soubory
+  záběru jsou vlastní řádky bez `photoprism_uid` seskupené za zobrazitelným originálem (viz
+  `ppimport/siblings.go`), takže počítání po řádku by u kompletně naimportovaného RAW+JPEG hlásilo
+  file gap napořád;
   `Report{photoprism,vectors,structure,complete}` (per-sekce zdroj vs katalog + capnutý seznam chybějících +
   plné počty); `complete=true` jen když nic nechybí; **nezapisuje** `import_runs`), `internal/photoprism/`
   (read-only HTTP klient k běžící instanci PhotoPrismu — podklad inkrementálního importu, vše za
@@ -1659,6 +1669,34 @@ to `## Package map` in `CLAUDE.md`.
   **`Favorite` se záměrně NEMAPUJE**: Kukátkovy oblíbené
   jsou **per-user** a import běžící jako job (nebo z CLI) nemá uživatele, komu ji připsat — a
   `psimport` to nepřekládá taky (jeho `Favorite` je subjektův, ne fotčin);
+  (1b) **neprimární soubory = vlastní řádky v jednom stacku** (`siblings.go`, `importSiblings`):
+  PP fotka je **záběr, ne soubor** — RAW a JPEG z něj vyrenderovaný jsou jedna fotka se dvěma
+  `Files[]` — a import, který stahoval jen primární soubor, ten RAW **zahazoval** (na produkční
+  knihovně přesně 12 `type:raw` fotek; RAW nejde z ničeho zrekonstruovat). Každý další soubor se
+  proto stáhne, uloží a **katalogizuje jako vlastní fotka** (vlastní originál + `photo_files` řádek
+  `RoleOriginal`) a celá sada se **seskupí do jednoho stacku** (`photos.CreateStack`, sloupce
+  `stack_uid`/`stack_primary` z `0030`), jehož **primární je zobrazitelný originál** — ten, který
+  `Primary` označí zdroj, ne odhad `stacks.PickPrimary`. Mřížka dál ukazuje jednu dlaždici
+  (viditelnostní gate `stack_uid IS NULL OR stack_primary`) a RAW je její varianta (`stack_members`
+  v detailu, s `thumb_url`/`download_url`) místo ztraceného souboru. Výběr souborů (`siblingFiles`)
+  je **záměrně slepý k typu** (RAW, jiné kódování, vygenerovaný still u klipu — pojmenovaný seznam
+  typů by tiše zahodil ten příští), vynechá jen uložený originál a live motion klip (ten už veze
+  `linkMotion` jako `RoleSidecar` řádek **téže** fotky, takže se nezdvojí), dedupuje dle hashe a
+  soubor bez hashe zahodí (hash JE download klíč). Sourozenec **záměrně nedostane `photoprism_uid`**:
+  ten je 1:1 klíč zdrojové fotky (dedup inkrementu i join `psfeedsimport`u) a druhý řádek s ním by
+  oba udělal nejednoznačnými — identitu nese jeho vlastní `photoprism_file_hash`
+  (`photos.GetByPhotoprismFileHash`, částečný index z `0045`), podle kterého ho re-run pozná **bez
+  stažení**; obsah už katalogizovaný jinde (tentýž RAW nahraný ručně) se nezduplikuje, jen se mu
+  hash doplní (`photos.SetPhotoprismFileHash`, nikdy nepřepíše existující). Běží pro **každou
+  vylistovanou** fotku, ne jen pro čerstvý import — knihovna importovaná dřív takhle RAWy dobere —
+  a když něco přiveze, **skip se povýší na update**; jednosouborová fotka skončí ještě před prvním
+  dotazem do DB. Sourozenec dostane **jen náhledy**, žádný `image_embed`/`face_detect`: je to týž
+  záběr jako primární člen stacku, takže jeho embedding i obličeje by byly jen dvojče primárního
+  (trvalý self-duplikát v podobnostním hledání a druhá kopie každého obličeje) u řádku, který
+  knihovna samostatně nikdy neukáže. Archivovaný sourozenec se do stacku nevrací (uživatel ho
+  stáhl z oběhu) a **kurátorský stack se nerozpouští**: když už fotka ve stacku je, přiberou se
+  jeho členové a jeho primární zůstane. Selhání jednoho souboru je **per-file failure**
+  (`StageFile` → běh `partial`), fotku samotnou nikdy neshodí;
   (2) **detail fotky** (`details.go`, `importPhotoDetail`) — **POZOR: půlku toho, co PP o fotce ví,
   servíruje JEN detail endpoint**, výpis je plochá search struktura bez `Details` objektu a s
   **vždy prázdnými** `Files[].Markers` (na tomhle import dřív tiše nepřivezl nikoho). Z **jednoho**
