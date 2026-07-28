@@ -478,7 +478,9 @@ here.
   `createSavedSearch` with the current view object as `params`),
   `SavedSearchesPage` = `/saved` (any logged-in user) „Moje uložená hledání": a list of the current
   user's saved views, each link opens the exactly restored view (`savedSearchHref`), plus
-  renaming (`SaveSearchModal`) and **optimistic deletion** + empty state,
+  renaming (`SaveSearchModal`) and **optimistic deletion** + empty state; the row is phone-proof —
+  the name truncates (`kk-min-w-0` + `text-truncate`) and rename/delete keep only their glyph below
+  `sm` (`aria-label` = the same word, so the accessible name doesn't change with the viewport),
   `FavoritesPage` = `/favorites` the current user's favorites: the same grid/filters as the library
   scoped to `favorite=true`, hearts to remove from favorites in place (favoritable),
   the tiles carry the scope in the detail link (`detailQuery` with `favorite=true`) → Esc/Back/prev-next from a photo returns here,
@@ -500,7 +502,9 @@ here.
   UIDs of photos that vanished from the grid stay in it, and reload the grid via `reloadKey`); the tiles carry the
   album scope in the detail link (`detailQuery` with `album=uid`) → Esc/Back/prev-next from a photo returns to the album;
   the album's own header controls **stay visible** during a selection (the bar floats over the bottom edge),
-  `LabelsPage` = `/labels` a list of labels with counts + create/rename/delete (editor/admin),
+  `LabelsPage` = `/labels` a list of labels with counts + create/rename/delete (editor/admin) — the
+  row takes the same phone treatment as `SavedSearchesPage` (name truncates, the count keeps its
+  width, rename/delete collapse to a glyph below `sm`),
   `LabelDetailPage` = `/labels/:uid` a photo grid scoped to the label (`useScopedPhotos` + `FilterBar` + URL);
   the tiles carry the label scope in the detail link (`detailQuery` with `label=uid`) → Esc/Back/prev-next from a photo
   returns to the label; + a **Promítání** button + for editors **hover-select** → the shared
@@ -516,7 +520,11 @@ here.
   with **filter-key autocomplete** (suggestions from `lib/queryLanguage.ts` `suggestFilterKeys`/
   `applyFilterKey` + `FILTER_KEYS`; arrows + Enter/Tab accept `klíč:`, Esc closes, values are
   never completed), beside the label `SearchQueryHelp` (a `?` button → a modal with operators and filters
-  with examples, rows from `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texts `search.help.*` cs+en),
+  with examples, rows from `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texts `search.help.*` cs+en; the
+  `?` keeps its small glyph but gets a 44px square on touch via `kukatko-tap-target-touch`; the
+  modal is `fullscreen="sm-down"` with both tables `responsive`, and a multi-key row renders every key
+  as its own `text-nowrap` `<code>` (the cell wraps between keys, never inside one) — whatever still
+  doesn't fit scrolls in its own wrapper instead of pushing the dialog past a 320px viewport),
   and `unknown_tokens` from the response (`PhotoListResponse.unknown_tokens` → `usePaginatedPhotos`
   returns `unknownTokens`) → a non-blocking info hint „těmto filtrům nerozumím“ above the grid;
   a pure filter query returns `mode: "filter"` (`EffectiveSearchMode`); the tiles carry the search scope in the detail link
@@ -1872,7 +1880,10 @@ here.
   `--kk-font-size-display`/`-page-title`/`-section-title`/`-body`/`-caption` + `--kk-line-height-*`/
   `--kk-tracking-*`.
   Sémantické třídy: **typografická škála** `.kk-display` (největší krok — hero číslo/statistika),
-  `.kk-page-title` (jedna na route, na `<h1>`), `.kk-section-title` (nadpis panelu/sekce,
+  `.kk-page-title` (jedna na route, na `<h1>`; nese `overflow-wrap: anywhere`, protože část rout se
+  titulkuje uživatelskými daty — jméno alba/štítku/osoby bez mezer se zalomí uvnitř hlavičky místo
+  aby přeteklo přes okraj viewportu, a zároveň přestane držet svůj flex řádek roztažený),
+  `.kk-section-title` (nadpis panelu/sekce,
   `<h2>`/`<h3>`), `.kk-text-body`, `.kk-text-caption`, `.kk-text-eyebrow` — komponenty **nenastavují
   vlastní `font-size`** (žádné `h3`/`h5`/`fs-5` utility na nadpisech, žádné inline `fontSize`);
   **povrchy** `.card` (elevace přes raised výplň + vlásková linka `--bs-card-border-color:
@@ -1926,7 +1937,13 @@ here.
   **sticky-toolbar offset** `.kukatko-sticky-toolbar` (`top: navbar height + safe-area-inset-top`,
   z-index pod navbarem — in-page sticky bary jako `SelectionBar` dosednou pod navbar, ne pod něj);
   **min. tap-target** `.kukatko-tap-target` (2.75rem/44px) pro icon-only ovládání jako
-  `FavoriteButton`; **app-wide touch-target floor** — `@media (pointer: coarse)` blok, který na
+  `FavoriteButton` + jeho dotyk-only dvojče `.kukatko-tap-target-touch` (stejný 44px čtverec, ale
+  jen v `@media (pointer: coarse)` — pro ovládání, které má u myši zůstat vizuálně malé vedle textu:
+  `?` u pole dotazu, akce řádku, jejíž slovo se na telefonu smrskne na glyf); **`.kk-min-w-0`**
+  (`min-width: 0` na flex položku — bez něj se položka odmítne zmenšit pod minimum svého obsahu a
+  jedno dlouhé nezlomitelné jméno vystrčí celý řádek/hlavičku za viewport; používají ho řádky
+  `LabelsPage`/`SavedSearchesPage` a skupiny titulku v `AlbumDetailPage`/`LabelDetailPage`);
+  **app-wide touch-target floor** — `@media (pointer: coarse)` blok, který na
   dotykových zařízeních (telefon/tablet) vynutí min. 44px na `.btn`/`.form-control`/`.form-select`/
   `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link` + větší `.form-check-input`,
   bez zásahu do desktop (fine-pointer) layoutu a bez per-komponentových změn (systémová oprava

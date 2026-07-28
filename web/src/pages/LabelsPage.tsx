@@ -10,6 +10,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import { LabelEditModal } from '../components/organize/LabelEditModal'
 import { ListSkeleton } from '../components/Skeleton'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -112,31 +113,51 @@ export function LabelsPage() {
               key={label.uid}
               className="kk-tile-row d-flex align-items-center justify-content-between gap-2"
             >
-              <Link to={`/labels/${label.uid}`} className="text-decoration-none flex-grow-1">
-                {label.name}{' '}
-                <Badge bg="secondary" pill>
+              {/* The name truncates rather than pushing the row past the
+                  viewport (a label name is user data and can be long or
+                  unbroken); the count keeps its width so it never truncates
+                  away. */}
+              <Link
+                to={`/labels/${label.uid}`}
+                className="text-decoration-none d-flex align-items-center gap-2 flex-grow-1 kk-min-w-0"
+              >
+                <span className="text-truncate">{label.name}</span>
+                <Badge bg="secondary" pill className="flex-shrink-0">
                   {label.photo_count}
                 </Badge>
               </Link>
               {canWrite && (
-                <div className="d-flex gap-1">
+                /* Both actions keep a glyph and drop their word below `sm`, so a
+                   phone row never has to fit a name plus two Czech-worded
+                   buttons across ~336px. The `aria-label` carries the same word
+                   the button shows, so the accessible name is identical at every
+                   width. */
+                <div className="d-flex gap-1 flex-shrink-0">
                   <Button
                     variant="outline-secondary"
                     size="sm"
+                    className="d-inline-flex align-items-center gap-2 kukatko-tap-target-touch"
+                    aria-label={t('labels.rename')}
+                    title={t('labels.rename')}
                     onClick={() => {
                       setEditing(label)
                     }}
                   >
-                    {t('labels.rename')}
+                    <Icon name="pencil" />
+                    <span className="d-none d-sm-inline">{t('labels.rename')}</span>
                   </Button>
                   <Button
                     variant="outline-danger"
                     size="sm"
+                    className="d-inline-flex align-items-center gap-2 kukatko-tap-target-touch"
+                    aria-label={t('labels.delete')}
+                    title={t('labels.delete')}
                     onClick={() => {
                       setPendingDelete(label)
                     }}
                   >
-                    {t('labels.delete')}
+                    <Icon name="trash" />
+                    <span className="d-none d-sm-inline">{t('labels.delete')}</span>
                   </Button>
                 </div>
               )}

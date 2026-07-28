@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Modal from 'react-bootstrap/Modal'
 import Table from 'react-bootstrap/Table'
@@ -23,10 +23,13 @@ export function SearchQueryHelp() {
 
   return (
     <>
+      {/* The glyph stays small, but on a finger the button still needs a real
+          target: `kukatko-tap-target-touch` gives it a 44px square on coarse
+          pointers only, leaving the desktop `?` as compact as before. */}
       <Button
         variant="link"
         size="sm"
-        className="p-0 text-secondary d-inline-flex align-items-center"
+        className="p-0 text-secondary d-inline-flex align-items-center justify-content-center kukatko-tap-target-touch"
         aria-label={t('search.help.open')}
         title={t('search.help.open')}
         onClick={() => {
@@ -36,12 +39,17 @@ export function SearchQueryHelp() {
         <Icon name="question-circle" />
       </Button>
 
+      {/* On a phone the help takes the whole screen: the columns are code that
+          must not break mid-token, so there is no width to give up. Whatever
+          still does not fit scrolls inside its own `.table-responsive` wrapper
+          instead of pushing the dialog past the viewport. */}
       <Modal
         show={show}
         onHide={close}
         centered
         scrollable
         size="lg"
+        fullscreen="sm-down"
         aria-labelledby="query-help-title"
       >
         <Modal.Header closeButton closeLabel={t('search.help.close')}>
@@ -57,7 +65,7 @@ export function SearchQueryHelp() {
 
           <section className="mb-3">
             <h3 className="kk-section-title text-secondary">{t('search.help.operatorsTitle')}</h3>
-            <Table size="sm" borderless className="mb-0 align-middle">
+            <Table size="sm" borderless responsive className="mb-0 align-middle">
               <tbody>
                 {QUERY_HELP_OPERATORS.map((op) => (
                   <tr key={op.id}>
@@ -73,12 +81,21 @@ export function SearchQueryHelp() {
 
           <section className="mb-0">
             <h3 className="kk-section-title text-secondary">{t('search.help.filtersTitle')}</h3>
-            <Table size="sm" borderless className="mb-0 align-middle">
+            <Table size="sm" borderless responsive className="mb-0 align-middle">
               <tbody>
                 {QUERY_HELP_ROWS.map((row) => (
                   <tr key={row.id}>
-                    <td className="text-nowrap pe-3">
-                      <code>{row.keys}</code>
+                    {/* A row can list several keys (`favorite: private:
+                        archived:`). Each key alone stays unbroken, but the cell
+                        may wrap between them — otherwise the widest rows would
+                        force the whole table to scroll on a phone. */}
+                    <td className="pe-3">
+                      {row.keys.split(' ').map((key, index) => (
+                        <Fragment key={key}>
+                          {index > 0 && ' '}
+                          <code className="text-nowrap">{key}</code>
+                        </Fragment>
+                      ))}
                     </td>
                     <td className="text-secondary small">
                       {t(`search.help.desc.${row.id}`)}{' '}

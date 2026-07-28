@@ -107,7 +107,10 @@ export function LabelDetailPage() {
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <div className="d-flex align-items-center gap-2 flex-wrap">
+        {/* `kk-min-w-0`: a label name is user data and can be one long unbroken
+            word — the group must be allowed to shrink so the title wraps inside
+            the header instead of widening the page. */}
+        <div className="d-flex align-items-center gap-2 flex-wrap kk-min-w-0">
           <BackLink to={LABELS_PATH} label={t('labelDetail.back')} />
           <h1 className="kk-page-title mb-0">{title}</h1>
         </div>

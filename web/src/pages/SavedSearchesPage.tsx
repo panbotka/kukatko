@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { savedSearchHref } from '../lib/savedSearchView'
@@ -108,30 +109,46 @@ export function SavedSearchesPage() {
               key={search.uid}
               className="d-flex align-items-center justify-content-between gap-2"
             >
+              {/* The name truncates rather than pushing the row past the
+                  viewport — a saved search is named by the user and can be long
+                  or unbroken. */}
               <Link
                 to={savedSearchHref(search.params)}
-                className="text-decoration-none flex-grow-1"
+                className="text-decoration-none flex-grow-1 kk-min-w-0 text-truncate"
               >
                 {search.name}
               </Link>
-              <div className="d-flex gap-1">
+              {/* Both actions keep a glyph and drop their word below `sm`, so a
+                  phone row never has to fit a name plus two Czech-worded buttons
+                  across ~336px. The `aria-label` carries the same word the
+                  button shows, so the accessible name is identical at every
+                  width. */}
+              <div className="d-flex gap-1 flex-shrink-0">
                 <Button
                   variant="outline-secondary"
                   size="sm"
+                  className="d-inline-flex align-items-center gap-2 kukatko-tap-target-touch"
+                  aria-label={t('savedSearches.rename')}
+                  title={t('savedSearches.rename')}
                   onClick={() => {
                     setEditing(search)
                   }}
                 >
-                  {t('savedSearches.rename')}
+                  <Icon name="pencil" />
+                  <span className="d-none d-sm-inline">{t('savedSearches.rename')}</span>
                 </Button>
                 <Button
                   variant="outline-danger"
                   size="sm"
+                  className="d-inline-flex align-items-center gap-2 kukatko-tap-target-touch"
+                  aria-label={t('savedSearches.delete')}
+                  title={t('savedSearches.delete')}
                   onClick={() => {
                     setPendingDelete(search)
                   }}
                 >
-                  {t('savedSearches.delete')}
+                  <Icon name="trash" />
+                  <span className="d-none d-sm-inline">{t('savedSearches.delete')}</span>
                 </Button>
               </div>
             </ListGroup.Item>

@@ -310,12 +310,19 @@
  * The page title. Exactly one per route, on the `<h1>`. Replaces the ad-hoc
  * `h3`/`display-*` utilities pages used to reach for, so every page opens at
  * the same size regardless of who wrote it.
+ *
+ * Several routes title themselves with user data (an album, a label, a person),
+ * which can be one long unbroken string. `overflow-wrap: anywhere` lets such a
+ * word break mid-token instead of overflowing the header past the viewport
+ * edge — and unlike `break-word` it also shrinks the intrinsic minimum width,
+ * so the title stops holding its flex row open. Titles that fit are untouched.
  */
 .kk-page-title {
   font-size: var(--kk-font-size-page-title);
   line-height: var(--kk-line-height-page-title);
   font-weight: 600;
   letter-spacing: var(--kk-tracking-tight);
+  overflow-wrap: anywhere;
 }
 
 /*
