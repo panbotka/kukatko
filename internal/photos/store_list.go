@@ -165,9 +165,9 @@ type ListParams struct {
 	// A photo with no rating row counts as rating 0, so a positive minimum
 	// excludes it; a value <= 0 matches every photo and adds no filter.
 	MinRating *int
-	// Flag, when non-nil and one of "pick"/"reject", keeps photos the RatedBy user
-	// has marked with that flag (correlated EXISTS over user_ratings). A photo with
-	// no rating row counts as flag "none", so it is excluded.
+	// Flag, when non-nil and one of "pick"/"reject"/"eye", keeps photos the RatedBy
+	// user has marked with that flag (correlated EXISTS over user_ratings). A photo
+	// with no rating row counts as flag "none", so it is excluded.
 	Flag *string
 	// Sort selects the ordering column; an unknown value falls back to
 	// SortByTakenAt.
@@ -485,7 +485,10 @@ func scalarClauses(params ListParams, bind func(any) string) []string {
 // same photos: make_timestamptz resolves the year boundaries in the session time
 // zone, which is the very zone date_part reads the year in, and YearBuckets
 // groups by that same date_part — so filtering on a bucket's year returns exactly
-// the photos the bucket counted. NULL taken_at fails both comparisons, so undated
+// the photos the bucket counted. That session zone is pinned to UTC by
+// internal/database, which is also the zone the query language builds its taken:
+// boundaries in, so year: and taken: classify a photo taken near midnight on New
+// Year's Eve identically. NULL taken_at fails both comparisons, so undated
 // photos are excluded, as in the buckets. The explicit ::int casts pin the
 // parameters to make_timestamptz's integer signature (pgx binds a Go int as
 // bigint, which the function would not resolve).
@@ -511,18 +514,22 @@ func gpsClauses(params ListParams) []string {
 }
 
 // textClauses returns the case-insensitive substring filters (camera, lens,
-// free-text search), binding each wildcard pattern through bind.
+// free-text search), binding each wildcard pattern through bind. Each value is
+// run through likeEscape first: these filters are plain substrings with no
+// wildcard syntax of their own, so a '%' or '_' the user typed must match
+// itself — as it already does on the negation path (searchNotClauses), which
+// would otherwise read the same term differently from its "-term" negation.
 func textClauses(params ListParams, bind func(any) string) []string {
 	var where []string
 	if params.Camera != "" {
-		p := bind("%" + params.Camera + "%")
+		p := bind("%" + likeEscape(params.Camera) + "%")
 		where = append(where, "(camera_make ILIKE "+p+" OR camera_model ILIKE "+p+")")
 	}
 	if params.Lens != "" {
-		where = append(where, "lens_model ILIKE "+bind("%"+params.Lens+"%"))
+		where = append(where, "lens_model ILIKE "+bind("%"+likeEscape(params.Lens)+"%"))
 	}
 	if params.Search != "" {
-		p := bind("%" + params.Search + "%")
+		p := bind("%" + likeEscape(params.Search) + "%")
 		where = append(where, "(title ILIKE "+p+" OR description ILIKE "+p+" OR notes ILIKE "+p+")")
 	}
 	return where

@@ -223,8 +223,16 @@ type Value struct {
 	// Not negates the alternative ('!'): the condition must not match.
 	Not bool
 	// Text is the literal value for KindText (where '*' is a wildcard),
-	// KindEnum (canonical lowercased word) and KindID.
+	// KindEnum (canonical lowercased word) and KindID. Escapes and quotes are
+	// already resolved, so a '*' the user escaped is indistinguishable here from
+	// one they meant as a wildcard — Pattern keeps that apart.
 	Text string
+	// Pattern is, for KindText, the wildcard-aware form of Text: an operator
+	// '*' (unescaped and unquoted) stays bare, while a literal '*' or backslash
+	// is backslash-escaped. It lets a compiler build a LIKE pattern in which
+	// only an unescaped '*' becomes the wildcard; it is empty for every other
+	// kind. Read it through TextPattern.
+	Pattern string
 	// Bool is the parsed yes/no for KindBool, and for KindCount's yes/no form.
 	Bool *bool
 	// Min is the inclusive numeric lower bound; nil when the range is open.
@@ -235,6 +243,18 @@ type Value struct {
 	From *time.Time
 	// Until is the exclusive end of a calendar value for KindDate.
 	Until *time.Time
+}
+
+// TextPattern returns the source a LIKE/ILIKE pattern should be compiled from:
+// the parser-recorded Pattern (which marks the escaped '*' runes as literal)
+// when there is one, otherwise the plain Text. The fallback keeps a Value
+// assembled in code — which carries no escapes — compiling to the substring
+// match its Text implies.
+func (v Value) TextPattern() string {
+	if v.Pattern != "" {
+		return v.Pattern
+	}
+	return v.Text
 }
 
 // Filter is one recognised key:value condition. Values holds the OR-ed

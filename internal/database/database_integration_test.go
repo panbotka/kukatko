@@ -4,10 +4,16 @@ package database_test
 
 import (
 	"context"
+	"net/url"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/pgvector/pgvector-go"
 
+	"github.com/panbotka/kukatko/internal/config"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 )
 
@@ -132,4 +138,63 @@ func TestTruncateAll_preservesMigrations(t *testing.T) {
 	if migrations == 0 {
 		t.Error("TruncateAll removed schema_migrations rows; it must preserve them")
 	}
+}
+
+// TestNew_pinsSessionTimeZoneToUTC verifies every pooled connection starts in
+// UTC even when the DSN asks for another zone. The catalogue's calendar SQL
+// (date_part('year', taken_at), make_timestamptz(…)) resolves in the session
+// zone while the Go side builds its date boundaries in UTC, so the year filters
+// and taken: only classify a New Year's Eve photo identically while the session
+// is pinned — the pin is what makes that a property of the code rather than of
+// the server's configuration.
+func TestNew_pinsSessionTimeZoneToUTC(t *testing.T) {
+	raw := os.Getenv(dbtest.EnvTestDatabaseURL)
+	if raw == "" {
+		t.Skipf("%s not set; skipping integration test", dbtest.EnvTestDatabaseURL)
+	}
+	ctx := t.Context()
+
+	db, err := database.New(ctx, config.DatabaseConfig{
+		URL:          dsnWithTimeZone(raw, "America/New_York"),
+		MaxOpenConns: 2,
+		MaxIdleConns: 1,
+	})
+	if err != nil {
+		t.Fatalf("connecting with a non-UTC DSN time zone: %v", err)
+	}
+	t.Cleanup(db.Close)
+
+	var zone string
+	if err := db.Pool().QueryRow(ctx, "SHOW TimeZone").Scan(&zone); err != nil {
+		t.Fatalf("reading the session time zone: %v", err)
+	}
+	if zone != "UTC" {
+		t.Errorf("session time zone = %q, want UTC even though the DSN asked for America/New_York", zone)
+	}
+
+	// The property that matters: the year the calendar functions read out of an
+	// instant is its UTC year, the one the query language's taken: uses.
+	newYearsEve := time.Date(2019, 12, 31, 23, 30, 0, 0, time.UTC)
+	var year int
+	if err := db.Pool().QueryRow(ctx,
+		"SELECT date_part('year', $1::timestamptz)::int", newYearsEve).Scan(&year); err != nil {
+		t.Fatalf("reading the calendar year of an instant: %v", err)
+	}
+	if year != 2019 {
+		t.Errorf("date_part('year', %s) = %d, want 2019", newYearsEve.Format(time.RFC3339), year)
+	}
+}
+
+// dsnWithTimeZone returns dsn with a session time zone requested, so a test can
+// prove the pool overrides it. It handles both DSN forms pgx accepts: a
+// postgres:// URL (a query parameter) and the keyword/value form.
+func dsnWithTimeZone(dsn, zone string) string {
+	if !strings.Contains(dsn, "://") {
+		return dsn + " timezone=" + zone
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + "timezone=" + url.QueryEscape(zone)
 }

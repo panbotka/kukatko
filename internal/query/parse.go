@@ -215,7 +215,9 @@ func parseAlternative(key Key, chars []tchar) (Value, bool) {
 // parseKindValue parses the alternative's runes according to the spec's kind.
 func parseKindValue(sp spec, chars []tchar) (Value, bool) {
 	switch sp.kind {
-	case KindText, KindID:
+	case KindText:
+		return Value{Text: charsText(chars), Pattern: charsPattern(chars)}, true
+	case KindID:
 		return Value{Text: charsText(chars)}, true
 	case KindBool:
 		return parseBoolValue(charsText(chars))
@@ -386,4 +388,25 @@ func charsText(chars []tchar) string {
 		runes[i] = c.r
 	}
 	return string(runes)
+}
+
+// charsPattern renders the runes into a text filter's Pattern: only an operator
+// '*' (one that arrived neither escaped nor quoted) stays bare, every literal
+// '*' and every backslash is backslash-escaped. The result is therefore
+// unambiguous — `foo\*bar` means a literal star, `foo*bar` a wildcard — where
+// charsText collapses both to the same string.
+func charsPattern(chars []tchar) string {
+	var b strings.Builder
+	b.Grow(len(chars))
+	for _, c := range chars {
+		if c.r == '*' && !c.lit {
+			b.WriteRune('*')
+			continue
+		}
+		if c.r == '*' || c.r == '\\' {
+			b.WriteRune('\\')
+		}
+		b.WriteRune(c.r)
+	}
+	return b.String()
 }

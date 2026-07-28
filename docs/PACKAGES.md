@@ -9,7 +9,11 @@ to `## Package map` in `CLAUDE.md`.
   `internal/server/` (chi HTTP server, graceful shutdown), `internal/version/`
   (ldflags-injectable `Version`/`Commit`), `internal/config/` (typed configuration,
   Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` with `Ping`/`Close`/`Pool`,
-  embedded migration runner `Migrate`, pgvector types registered on every connection;
+  embedded migration runner `Migrate`, pgvector types registered on every connection,
+  **session time zone pinned to UTC** (`pinSessionTimeZone` sets the `timezone` startup runtime
+  param, overriding the DSN) so SQL calendar arithmetic (`date_part('year', taken_at)`,
+  `make_timestamptz`) shares one reference frame with the UTC boundaries the Go side builds —
+  `year:`/`?year=`/histograms and `taken:` then agree on a photo taken around New Year;
   SQL migrations in `internal/database/migrations/*.sql`), `internal/database/dbtest/`
   (integration test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/auth/`
   (authentication/authorization: `Role` viewer/editor/admin/maintainer + `authorize`, bcrypt cost 12
@@ -2083,18 +2087,22 @@ to `## Package map` in `CLAUDE.md`.
   (`dovolená camera:"Canon EOS R6" iso:100-400 faces:2`), žádné I/O: `Parse(input) Query` **nikdy
   neselže** — tokenizer respektuje uvozovky a `\` escapy, operátory `|` (OR mezi alternativami
   hodnoty), `!` (NOT per alternativa), `-` (NOT volného textu), rozsahy `lo-hi` s otevřenými konci
-  (`800-`, `-200`), `*` wildcard v textu; registr filtrů `specs` (Key → Kind
+  (`800-`, `-200`), `*` wildcard v textu (**escapovaná nebo uvozená hvězdička je literál** —
+  `title:foo\*bar` hledá hvězdičku); registr filtrů `specs` (Key → Kind
   text/number/date/bool/enum/id/count + validace mezí: rating 0–5, month 1–12, year 1000–9999, …)
   s aliasy `subject:`→`person:`, `keyword:`→`keywords:`; **neznámý klíč nebo nevalidní hodnota
   degraduje celý token na volný text** a hlásí se v `Query.Unknown` (UI z toho staví hint,
   API `unknown_tokens`). AST: `Query{Terms,Filters,Unknown}`, `Term{Text,Phrase,Not}`,
-  `Filter{Key,Values}`, `Value{Not,Text,Bool,Min,Max,From,Until}` (číselné meze / half-open
-  datumové intervaly); renderingy `FreeText()` (websearch syntax pro FTS vč. frází a `-` negací),
+  `Filter{Key,Values}`, `Value{Not,Text,Pattern,Bool,Min,Max,From,Until}` (číselné meze / half-open
+  datumové intervaly; `Pattern` u KindText nese `*`-literálnost, kterou `Text` ztrácí — čte se přes
+  `Value.TextPattern()`, fallback na `Text` pro hodnoty stavěné v kódu); renderingy `FreeText()` (websearch syntax pro FTS vč. frází a `-` negací),
   `PlainText()` (pozitivní termy pro ILIKE substring a embedding dotazu), `NotTerms()`,
   `HasFilter(key)`. Do SQL AST kompiluje `internal/photos/store_query.go` (`queryClauses` — mapa
   builderů per klíč, vše přes bind parametry; per-user filtry scopnuté na `RatedBy`, `near:`
   sférická vzdálenost s poloměrem `dist:` default 5 km, `faces:` počítá ne-invalid face markery,
-  exact fractional match ±0.005 kvůli float4). Uživatelská gramatika: docs/API.md
+  každá **desetinná** mez (exact i konce rozsahu) povolená ±0.005 kvůli float4, celočíselné meze
+  zůstávají přesné; `likePattern` dělá wildcard jen z neescapované `*` a escapuje `%`/`_`, stejně jako
+  substringové filtry `Search`/`?camera=`/`?lens=` v `store_list.go`). Uživatelská gramatika: docs/API.md
   „Vyhledávací jazyk (q=)“), `internal/ratelimit/`
   (znovupoužitelný **per-key token-bucket rate limiter** + HTTP middleware pro náročné endpointy:
   `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, per-klíč bucket) / `Cleanup`/`RunMaintenance`

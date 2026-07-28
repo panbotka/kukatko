@@ -26,17 +26,27 @@ type DB struct {
 	pool *pgxpool.Pool
 }
 
+// sessionTimeZone is the time zone every pooled connection runs in. Calendar
+// arithmetic in SQL (date_part('year', taken_at), make_timestamptz(…)) resolves
+// in the session zone, while the Go side builds its date boundaries in UTC — so
+// the two only agree, and a photo near midnight on New Year's Eve only lands in
+// one year, when the session is pinned to UTC as well. It is deliberately not
+// configurable: one reference frame everywhere is the point.
+const sessionTimeZone = "UTC"
+
 // New opens a pgx connection pool from cfg.URL, applies the configured pool-size
-// limits, registers the pgvector types (vector, halfvec, sparsevec) on every
-// connection, and verifies connectivity with a Ping. The caller owns the
-// returned DB and must Close it. It returns a wrapped error if the DSN is
-// invalid, the pool cannot be created, or the initial Ping fails.
+// limits, pins every session to UTC, registers the pgvector types (vector,
+// halfvec, sparsevec) on every connection, and verifies connectivity with a
+// Ping. The caller owns the returned DB and must Close it. It returns a wrapped
+// error if the DSN is invalid, the pool cannot be created, or the initial Ping
+// fails.
 func New(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("parsing database url: %w", err)
 	}
 	applyPoolLimits(poolCfg, cfg)
+	pinSessionTimeZone(poolCfg)
 	poolCfg.AfterConnect = registerVectorTypes
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
@@ -60,6 +70,18 @@ func registerVectorTypes(ctx context.Context, conn *pgx.Conn) error {
 		return fmt.Errorf("registering pgvector types: %w", err)
 	}
 	return nil
+}
+
+// pinSessionTimeZone makes every connection of the pool start in
+// sessionTimeZone by sending it as a startup runtime parameter, so no query has
+// to guess which zone the server or the DSN happens to default to. It overrides
+// a timezone the DSN asks for: the catalogue's date arithmetic is only
+// self-consistent in one zone, so that choice is not the deployment's to make.
+func pinSessionTimeZone(poolCfg *pgxpool.Config) {
+	if poolCfg.ConnConfig.RuntimeParams == nil {
+		poolCfg.ConnConfig.RuntimeParams = map[string]string{}
+	}
+	poolCfg.ConnConfig.RuntimeParams["timezone"] = sessionTimeZone
 }
 
 // applyPoolLimits maps Kukátko's connection-pool configuration onto the pgx pool
