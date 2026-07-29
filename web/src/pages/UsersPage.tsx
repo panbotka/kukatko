@@ -137,6 +137,20 @@ function UsersSkeleton() {
   )
 }
 
+/**
+ * The classes a `<Form>` needs when it wraps a whole modal — header, body and
+ * footer — inside a `scrollable` / `fullscreen="sm-down"` dialog.
+ *
+ * Bootstrap pins the footer by making `.modal-content` a height-capped flex
+ * column whose `.modal-body` is the one part allowed to scroll. A `<form>`
+ * between the two breaks that chain: it would size to its content and push the
+ * footer past the bottom of the screen (or under the keyboard). Making the form
+ * a flex column that may shrink — `overflow-hidden` turns it into a scroll
+ * container, whose automatic minimum size is zero — hands the constraint
+ * straight through to the body again.
+ */
+const MODAL_FORM_CLASS = 'd-flex flex-column overflow-hidden'
+
 /** Props shared by the create and edit dialogs. */
 interface UserFormModalProps {
   /** The row being edited, or null to create a new user. */
@@ -157,6 +171,11 @@ interface UserFormModalProps {
  *
  * Validation errors from the API land next to the input that caused them rather
  * than in a banner, so the reader does not have to guess which field to fix.
+ *
+ * On a phone the dialog is a full-screen sheet and only its body scrolls, so the
+ * five fields get the whole small screen and the Save/Cancel pair stays pinned
+ * above the on-screen keyboard rather than under it; on a wider screen it is the
+ * same centred card as before. Its wrapping form carries {@link MODAL_FORM_CLASS}.
  */
 function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalProps) {
   const { t } = useTranslation()
@@ -223,10 +242,11 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
   }
 
   return (
-    <Modal show onHide={onHide} centered>
+    <Modal show onHide={onHide} centered scrollable fullscreen="sm-down">
       <Form
         noValidate
         validated={validated}
+        className={MODAL_FORM_CLASS}
         onSubmit={(event) => {
           void handleSubmit(event)
         }}
@@ -379,6 +399,10 @@ interface PasswordModalProps {
  * Sets another user's password. It never shows the current one — the backend
  * only ever stores a bcrypt hash and never serialises it — and the reset signs
  * the target out of every session.
+ *
+ * Shaped like {@link UserFormModal}: a full-screen sheet with a scrolling body on
+ * a phone, so the two password fields never push the submit button under the
+ * on-screen keyboard.
  */
 function PasswordModal({ user, onHide, onDone }: PasswordModalProps) {
   const { t } = useTranslation()
@@ -409,10 +433,11 @@ function PasswordModal({ user, onHide, onDone }: PasswordModalProps) {
   }
 
   return (
-    <Modal show onHide={onHide} centered>
+    <Modal show onHide={onHide} centered scrollable fullscreen="sm-down">
       <Form
         noValidate
         validated={validated}
+        className={MODAL_FORM_CLASS}
         onSubmit={(event) => {
           void handleSubmit(event)
         }}
@@ -500,12 +525,16 @@ interface ToggleModalProps {
 /**
  * The confirmation step in front of enabling or disabling an account. Disabling
  * signs the user out everywhere, so it is never one stray click away.
+ *
+ * A question with no inputs, so it follows `ConfirmModal` rather than the form
+ * dialogs above: `scrollable` to keep the two buttons pinned, but a centred card
+ * on every screen — a phone-wide sheet for one sentence reads as a page.
  */
 function ToggleModal({ user, onHide, onConfirm, busy }: ToggleModalProps) {
   const { t } = useTranslation()
   const enabling = user.disabled
   return (
-    <Modal show onHide={onHide} centered>
+    <Modal show onHide={onHide} centered scrollable>
       <Modal.Header closeButton>
         <Modal.Title as="h2" className="kk-section-title mb-0">
           {enabling ? t('users.confirm.enableTitle') : t('users.confirm.disableTitle')}

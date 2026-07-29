@@ -41,6 +41,13 @@ export interface ConfirmModalProps {
  * Focus lands on Cancel when the dialog opens, so a stray Enter cancels rather than
  * firing a destructive action; Escape, the ✕ and the backdrop all cancel; and
  * react-bootstrap restores focus to the control that opened it on close.
+ *
+ * It is `scrollable` so a long consequence scrolls inside the body and the two
+ * buttons stay pinned to the bottom of the dialog — on a short phone viewport an
+ * unpinned footer is exactly what slides out of reach. It is deliberately *not*
+ * `fullscreen="sm-down"` like the admin form dialogs: this one has no inputs, so
+ * no on-screen keyboard ever covers its buttons, and blowing a two-line question
+ * up to the whole screen reads as a page rather than as a question.
  */
 export function ConfirmModal({
   show,
@@ -61,6 +68,7 @@ export function ConfirmModal({
       show={show}
       onHide={onCancel}
       centered
+      scrollable
       backdrop={busy ? 'static' : true}
       onEntered={() => {
         // Move focus to the safe action so a stray Enter cancels, never confirms.

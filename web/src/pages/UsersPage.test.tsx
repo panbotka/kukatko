@@ -437,6 +437,67 @@ describe('UsersPage', () => {
     expect(within(dialog).queryByLabelText('Password')).not.toBeInTheDocument()
   })
 
+  it('gives the create/edit dialog the whole phone screen with its actions pinned', async () => {
+    const actor = userEvent.setup()
+    renderPage()
+
+    await actor.click(screen.getByRole('button', { name: 'New user' }))
+    const dialog = await screen.findByRole('dialog')
+
+    // react-bootstrap maps `fullscreen="sm-down"` + `scrollable` onto these two
+    // dialog classes: below `sm` the form gets the whole screen instead of a
+    // cramped centred card, and the body is the only part that scrolls — so the
+    // footer stays pinned above the on-screen keyboard rather than under it.
+    expect(dialog.querySelector('.modal-dialog')).toHaveClass(
+      'modal-fullscreen-sm-down',
+      'modal-dialog-scrollable',
+    )
+
+    // The <form> wraps header, body and footer, so it has to hand Bootstrap's
+    // height cap through to the body instead of sizing to its own content.
+    expect(dialog.querySelector('form')).toHaveClass('d-flex', 'flex-column', 'overflow-hidden')
+
+    // Both footer actions render — neither is dropped by the reflow.
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Create' })).toBeInTheDocument()
+  })
+
+  it('gives the password dialog the same full-screen sheet and pinned actions', async () => {
+    fetchUsersMock.mockResolvedValue([user()])
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Change password' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(dialog.querySelector('.modal-dialog')).toHaveClass(
+      'modal-fullscreen-sm-down',
+      'modal-dialog-scrollable',
+    )
+    expect(dialog.querySelector('form')).toHaveClass('d-flex', 'flex-column', 'overflow-hidden')
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Change password' })).toBeInTheDocument()
+  })
+
+  it('keeps the enable/disable question a centred card, only scrollable', async () => {
+    fetchUsersMock.mockResolvedValue([user()])
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Disable' }))
+    const dialog = await screen.findByRole('dialog')
+
+    // A question with no inputs summons no keyboard, so it keeps its centred
+    // card on every screen; `scrollable` still pins the two buttons.
+    const dialogEl = dialog.querySelector('.modal-dialog')
+    expect(dialogEl).toHaveClass('modal-dialog-scrollable', 'modal-dialog-centered')
+    expect(dialogEl).not.toHaveClass('modal-fullscreen-sm-down')
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Disable' })).toBeInTheDocument()
+  })
+
   it('does not offer deleting a user', async () => {
     fetchUsersMock.mockResolvedValue([user()])
     renderPage()
