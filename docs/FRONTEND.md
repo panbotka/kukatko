@@ -2113,6 +2113,25 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   včetně `line-height` a většího `font-size` +/- glyfů, dává 44px hitbox povinnému mapy.com logu
   a rozvolní řádkování attribution (ta je text, ne tlačítko — 44px pás přes celou spodní hranu by
   polykal ťuknutí); guardy v `styles/tapTargets.test.ts`;
+  **tmavé Leafletí chrome** — Leaflet má své světlé téma zadrátované ve stylesheetu (bílá bublina
+  popupu, bílý průsvitný attribution pás, bílá tlačítka toolbaru, `#ddd` podklad) a žádnou
+  proměnnou na přebarvení, takže se tokeny tlačí dovnitř přes jeho třídy;
+  `.kukatko-map.leaflet-container` = podklad `--kk-surface-sunken` (Leafletí `#ddd` je světlý
+  záblesk uprostřed skoro černé stránky — vidět je za okrajem světa a než se dlaždice načtou);
+  `.leaflet-bar` = hairline `--kk-surface-border` + `--kk-radius-sm` + `--kk-shadow-2`, tlačítka
+  `--kk-surface-overlay`/`--kk-text`, hover stejný akcentový nádech jako ostatní řádky appky,
+  `leaflet-disabled` ztlumené a **až za** hoverem (remizuje s ním na specificitě);
+  `.leaflet-control-attribution` = `--kk-text-muted` na 88 % odstínu stránky, odkaz `--kk-accent`
+  (72 % headeru si tu vzít nelze — attribution sedí přímo na dlaždicích a nad sněhově bílou
+  dlaždicí by odkaz spadl pod AA); popup (`.leaflet-popup-content-wrapper` + `-tip`) =
+  `--kk-surface-overlay` + hairline + `--kk-shadow-3` + `--kk-radius-md`, špička nese stejný
+  rámeček (je oříznutá na dvě hrany, které tak navazují na obrys bubliny), zavírací „×"
+  `--kk-text-muted` → `--kk-text` na hover i **focus**, odkazy v obsahu
+  `--kk-accent`/`--kk-accent-hover` (celá karta je jeden odkaz na detail a markup podtržení nemá)
+  a náhled dostává `--kk-radius-sm`; **dlaždice, piny ani clustery se nepřebarvují** (to je obsah
+  mapy, ne chrome) a Leafletí tooltip/layers/scale se nestylují vůbec — appka je nerenderuje;
+  guardy v `styles/mapChrome.test.ts` (každý `.leaflet-*` selektor v `app.css` musí začínat
+  `.kukatko-map`, barvy jen z tokenů, compound selektory proti Leafletu);
   **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
   okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
   none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`
@@ -2126,7 +2145,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   nemohla tiše vrátit k osekanému toolbaru — a `albumOption()` pro `fetchAlbums` v pickeru),
   `test/css.ts` (čtení a mini-parsování stylesheetů z testů: `readCss` / `ruleBody` / `declarations`
   — jsdom nevyhodnocuje `env()` ani media queries, takže CSS-only pravidla se hlídají čtením
-  souboru; používá je `styles/tokens.test.ts`, `styles/safeArea.test.ts`, který dopočítá padding
+  souboru; používá je `styles/tokens.test.ts`, `styles/mapChrome.test.ts` (Leafletí override —
+  scoping pod `.kukatko-map`, barvy jen z tokenů, compound selektory, které přebijí Leafletí
+  stylesheet), `styles/safeArea.test.ts`, který dopočítá padding
   fullscreen overlayů (`review.css`, `compare.css`) proti iPhone-ovým insetům a asertuje, že
   ovládací řady notch i home bar minou — a že bez insetů zůstane rozestup přesně původní —
   a `components/people/ClusterCard.test.tsx`, který stejnou cestou hlídá obě pointer varianty
