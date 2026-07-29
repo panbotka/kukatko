@@ -6,6 +6,12 @@
 // mapy.com key that is being rejected is visible without opening the map), plus
 // the build version. It depends on small interfaces so the aggregation is
 // unit-testable with fakes, and the HTTP layer lives in internal/systemapi.
+//
+// Alongside that maintainer view it aggregates the library statistics — the
+// instance-wide photo/embedding/face/people counts every signed-in user may see
+// (see Library and Service.LibraryStats). Both aggregations memoise their
+// expensive part for a short TTL so a polled page cannot turn into a query
+// storm.
 package system
 
 import (
@@ -165,18 +171,25 @@ type Config struct {
 	Maps MapsReporter
 	// Imports supplies the latest run per source.
 	Imports ImportLister
+	// Library supplies the library-wide counts behind LibraryStats. A nil Library
+	// makes LibraryStats fail rather than panic, so a caller that only needs
+	// Collect may leave it unset.
+	Library LibraryCounter
 	// OriginalsPath is the on-disk root of the stored originals.
 	OriginalsPath string
 	// CachePath is the on-disk root of the derived cache (thumbnails).
 	CachePath string
 	// StorageTTL memoises the storage measurement; non-positive uses the default.
 	StorageTTL time.Duration
-	// Clock supplies the current time for the storage cache; nil uses time.Now.
+	// LibraryTTL memoises the library counts; non-positive uses the default.
+	LibraryTTL time.Duration
+	// Clock supplies the current time for both caches; nil uses time.Now.
 	Clock func() time.Time
 }
 
 // Service aggregates the operational status of the running instance. It holds no
-// mutable state beyond the storage-usage cache and is safe for concurrent use.
+// mutable state beyond the storage-usage and library-counts caches and is safe
+// for concurrent use.
 type Service struct {
 	db           DBPinger
 	embeddings   EmbeddingHealth
@@ -186,6 +199,7 @@ type Service struct {
 	maps         MapsReporter
 	imports      ImportLister
 	storage      *storageCache
+	library      *libraryCache
 }
 
 // New constructs a Service from cfg.
@@ -199,7 +213,16 @@ func New(cfg Config) *Service {
 		maps:         cfg.Maps,
 		imports:      cfg.Imports,
 		storage:      newStorageCache(cfg.OriginalsPath, cfg.CachePath, cfg.StorageTTL, cfg.Clock),
+		library:      newLibraryCache(cfg.Library, cfg.LibraryTTL, cfg.Clock),
 	}
+}
+
+// LibraryStats returns the instance-wide library counts with their derived
+// coverage gaps, memoised for a short TTL. Unlike Collect it reports a failure
+// as an error rather than inline: a caller must show the reader that the numbers
+// are unavailable instead of rendering zeroes as if they were real counts.
+func (s *Service) LibraryStats(ctx context.Context) (Library, error) {
+	return s.library.counts(ctx)
 }
 
 // Collect gathers the full status snapshot. Database reachability and storage

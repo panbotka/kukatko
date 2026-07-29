@@ -19,6 +19,7 @@ import {
   OPERATIONS_GROUP,
   PRIMARY_ITEMS,
   REVIEW_ITEM,
+  STATS_ITEM,
   TOOLS_GROUP,
   UPLOAD_ITEM,
 } from './navItems'
@@ -59,8 +60,9 @@ interface DrawerSection {
  * **The set of items and their role gating is exactly the navbar's**, because
  * both read the same registries in `navItems.ts`: the everyday block, Procházet,
  * the editor-only Nástroje, the maintainer-only Provoz, the admin-only Správa,
- * and the account block that stands in for the user menu (account, help, the
- * keyboard-shortcuts overlay and sign-out). A section whose role gate is closed
+ * and the account block that stands in for the user menu (account, the library
+ * statistics, help, the keyboard-shortcuts overlay and sign-out). A section whose
+ * role gate is closed
  * is not rendered at all, exactly as its dropdown is not rendered in the bar.
  *
  * Mounted by {@link Layout} only below the breakpoint, so the desktop DOM keeps a
@@ -166,6 +168,7 @@ export function MobileNavDrawer({
               {t('nav.sections.account')}
             </h2>
             {renderRow(ACCOUNT_ITEM)}
+            {renderRow(STATS_ITEM)}
             {renderRow(HELP_ITEM)}
             <KeyboardShortcutsHelp variant="row" />
             <button

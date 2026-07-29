@@ -2096,8 +2096,8 @@ to `## Package map` in `CLAUDE.md`.
   (`jobs.Store.CountsByState`/`CountsByType`/`CountPending`)/`ImportLister` (`importer.Store.LatestRun`)/
   `BackupReporter` (`backup.Service.Status`, **nil = nenakonfigurováno**)/`MapsReporter`
   (`mapy.Health.Snapshot`, **nil = bez mapy.com klíče**) → unit-testovatelné s faky
-  bez DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Imports,OriginalsPath,
-  CachePath,StorageTTL,Clock})`; **`Collect(ctx) (Status,error)`** sbírá `Status{Version,Database,
+  bez DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Imports,Library,
+  OriginalsPath,CachePath,StorageTTL,LibraryTTL,Clock})`; **`Collect(ctx) (Status,error)`** sbírá `Status{Version,Database,
   Embeddings,Jobs,Backup,Imports,Storage,Maps}`: embeddings online/offline, fronta (by_state/by_type/total/
   dead_letter/pending_embeddings = queued+running `image_embed`/`face_detect`), backup stav+poslední
   výsledek, poslední import per zdroj, úložiště (velikost originálů+cache walkem, volné/celkové místo
@@ -2107,12 +2107,23 @@ to `## Package map` in `CLAUDE.md`.
   proxy, žádný vlastní probe/kredit; `key_rejected` = mapy.com odmítá klíč → `degraded`, vidět
   na dashboardu bez otevření mapy), verze/commit; chyby
   čtení fronty/importů (vyžadují DB) → error (500), nedostupná DB a nečitelné úložiště inline
-  best-effort), `internal/systemapi/`
-  (maintainer-only HTTP API nad system stavem: rozhraní `StatusCollector` (`Collect`, splňuje
-  `*system.Service`, fakeovatelné); `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes` mountuje
-  `GET /system/status` za `RequireMaintainer` (snapshot; collect selže → 500); mountuje se vždy
+  best-effort; vedle provozního snapshotu agreguje i **statistiky knihovny** pro všechny přihlášené:
+  `LibraryCounter` (`CountLibrary`, splňuje vlastní `Store` = `NewStore(pool)` — jediný dotaz skalárních
+  podselectů `countLibrarySQL`, **ne** `maintenance scan` po stromu; partial indexy pro archived/video,
+  semi-joiny na PK `embeddings`/unique `faces`), **`LibraryStats(ctx) (Library,error)`** vrací
+  `Library{Photos,Videos,PhotosLive,PhotosArchived,PhotosWith(out)Embedding,PhotosWith(out)Faces,
+  Embeddings,Faces,Subjects,SubjectsPerson/Pet/Other,Markers,MarkersAssigned/Unassigned,Albums,Labels}`
+  — store vrací **jen syrové počty**, odvozené hodnoty (live split + coverage gapy, clampnuté na 0) dopočítá
+  `Library.derive()`; `libraryCache` memoizuje na `defaultLibraryTTL` 30 s a **cachuje jen úspěch**
+  (chyba jde ven, stránka nesmí vykreslit nuly jako reálné počty); nil `Library` → `errNoLibraryCounter`
+  místo paniky), `internal/systemapi/`
+  (HTTP API nad system stavem: rozhraní `StatusCollector` (`Collect`+`LibraryStats`, splňuje
+  `*system.Service`, fakeovatelné); `NewAPI(Config{Service,RequireMaintainer,RequireAuth})`+`RegisterRoutes`
+  mountuje `GET /system/status` za `RequireMaintainer` (snapshot; collect selže → 500) a
+  `GET /system/stats` za `RequireAuth` (počty knihovny pro **každého přihlášeného**; agregace selže → 500,
+  nikdy tělo nul); mountuje se vždy
   (`buildSystemAPI` v `cmd/kukatko/system.go`, staví vlastní bezstavový embeddings klient jen pro
-  Healthy probe, sdílí pool pro job/import stores, backup služba předaná nil-safe; mountuje se
+  Healthy probe, sdílí pool pro job/import/library stores, backup služba předaná nil-safe; mountuje se
   v `appendOpsAPIs` vedle backup/restore)), `internal/capabilitiesapi/`
   (all-authenticated HTTP API instančních feature-flagů: rozhraní `Reachability` (`Reachable() bool`,
   splňuje `*reachability.Checker`, fakeovatelné); `NewAPI(Config{Embeddings,RequireAuth})`+

@@ -80,7 +80,8 @@
       "expand": "Rozšířit album nebo štítek o podobné fotky",
       "review": "Projít návrhy jeden po druhém",
       "outliers": "Najít obličeje přiřazené omylem",
-      "leaderboard": "Zobrazit žebříček třídění"
+      "leaderboard": "Zobrazit žebříček třídění",
+      "stats": "Zobrazit statistiky knihovny"
     },
     "expand": "Rozšířit",
     "review": "Třídění",
@@ -92,7 +93,8 @@
     "sections": {
       "main": "Hlavní",
       "account": "Účet"
-    }
+    },
+    "stats": "Statistiky"
   },
   "help": {
     "title": "Nápověda",
@@ -188,6 +190,37 @@
       "action": "Začněte třídit"
     },
     "viewDecisions": "Zobrazit rozhodnutí hráče {{name}}"
+  },
+  "stats": {
+    "title": "Statistiky knihovny",
+    "subtitle": "Jak velká knihovna je a kolik z ní je už zpracováno.",
+    "loading": "Načítám statistiky…",
+    "error": "Statistiky knihovny se nepodařilo načíst.",
+    "groups": {
+      "photos": "Fotky",
+      "embeddings": "Embeddingy",
+      "faces": "Obličeje",
+      "people": "Lidé a zvířata",
+      "collections": "Alba a štítky"
+    },
+    "photos": "Fotek celkem",
+    "videos": "Z toho videí",
+    "live": "V knihovně",
+    "archived": "V koši",
+    "embeddings": "Embeddingů celkem",
+    "withEmbedding": "Fotek s embeddingem",
+    "withoutEmbedding": "Fotek bez embeddingu",
+    "faces": "Nalezených obličejů",
+    "withFaces": "Fotek s obličejem",
+    "withoutFaces": "Fotek bez obličeje",
+    "subjects": "Lidí a zvířat celkem",
+    "subjectsPerson": "Lidé",
+    "subjectsPet": "Zvířata",
+    "subjectsOther": "Ostatní",
+    "markersAssigned": "Pojmenovaných obličejů",
+    "markersUnassigned": "Nepojmenovaných obličejů",
+    "albums": "Alb celkem",
+    "labels": "Štítků"
   },
   "reviewDecisions": {
     "title": "Rozhodnutí v třídění",
@@ -1975,6 +2008,10 @@
       "unknown": "Zatím nevyužito",
       "keyRejectedHint": "mapy.com odmítá API klíč (vypršel, byl zrušen, nebo došly kredity). Mapa zůstane bez podkladů, dokud klíč nevyměníš v konzoli mapy.com.",
       "checkedAt": "Naposledy ověřeno"
+    },
+    "library": {
+      "title": "Knihovna",
+      "intro": "Kolik z katalogu je zpracováno — stejná čísla jako na stránce statistik."
     }
   },
   "users": {

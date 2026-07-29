@@ -80,7 +80,8 @@
       "expand": "Grow an album or a label with similar photos",
       "review": "Go through the suggestions one at a time",
       "outliers": "Find faces assigned by mistake",
-      "leaderboard": "Show the sorting leaderboard"
+      "leaderboard": "Show the sorting leaderboard",
+      "stats": "Show the library statistics"
     },
     "expand": "Expand",
     "review": "Review",
@@ -92,7 +93,8 @@
     "sections": {
       "main": "Main",
       "account": "Account"
-    }
+    },
+    "stats": "Statistics"
   },
   "help": {
     "title": "Help",
@@ -188,6 +190,37 @@
       "action": "Start sorting"
     },
     "viewDecisions": "View {{name}}'s decisions"
+  },
+  "stats": {
+    "title": "Library statistics",
+    "subtitle": "How big the library is and how much of it has already been processed.",
+    "loading": "Loading the statistics…",
+    "error": "Failed to load the library statistics.",
+    "groups": {
+      "photos": "Photos",
+      "embeddings": "Embeddings",
+      "faces": "Faces",
+      "people": "People and animals",
+      "collections": "Albums and labels"
+    },
+    "photos": "Photos in total",
+    "videos": "Of which videos",
+    "live": "In the library",
+    "archived": "In the trash",
+    "embeddings": "Embeddings in total",
+    "withEmbedding": "Photos with an embedding",
+    "withoutEmbedding": "Photos without an embedding",
+    "faces": "Detected faces",
+    "withFaces": "Photos with a face",
+    "withoutFaces": "Photos without a face",
+    "subjects": "People and animals in total",
+    "subjectsPerson": "People",
+    "subjectsPet": "Animals",
+    "subjectsOther": "Other",
+    "markersAssigned": "Named faces",
+    "markersUnassigned": "Unnamed faces",
+    "albums": "Albums in total",
+    "labels": "Labels"
   },
   "reviewDecisions": {
     "title": "Review decisions",
@@ -1905,6 +1938,10 @@
       "unknown": "Not used yet",
       "keyRejectedHint": "mapy.com is rejecting the API key (expired, revoked or out of credits). The map stays without tiles until the key is replaced in the mapy.com console.",
       "checkedAt": "Last checked"
+    },
+    "library": {
+      "title": "Library",
+      "intro": "How much of the catalogue has been processed — the same counts as the statistics page."
     }
   },
   "users": {

@@ -36,6 +36,7 @@ import { ReviewPage } from './pages/ReviewPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
 import { SearchPage } from './pages/SearchPage'
 import { SlideshowPage } from './pages/SlideshowPage'
+import { StatsPage } from './pages/StatsPage'
 import { SubjectPage } from './pages/SubjectPage'
 import { SystemStatusPage } from './pages/SystemStatusPage'
 import { TrashPage } from './pages/TrashPage'
@@ -123,6 +124,9 @@ export function AppRoutes() {
             <Route path="/audit/reviews" element={<ReviewDecisionsPage />} />
           </Route>
           <Route path="/account" element={<AccountPage />} />
+          {/* Library statistics: read-only aggregate counts, so any signed-in
+              role may open them — no role gate, like the leaderboard. */}
+          <Route path="/stats" element={<StatsPage />} />
           {/* End-user help: no role guard — visible to any authenticated user. */}
           <Route path="/help" element={<HelpPage />} />
           <Route path="*" element={<NotFoundPage />} />

@@ -1,10 +1,14 @@
-// Package systemapi exposes the maintainer-only HTTP endpoint over the aggregated
-// system status (internal/system): GET /system/status returns one snapshot of
-// embeddings reachability, job-queue depth, the backup subsystem state, the last
-// import per source, storage usage, database reachability and the build version.
-// It depends on the system service for data and on the auth subsystem only for
-// the maintainer route guard, injected as middleware. The dashboard polls this
-// endpoint; quick actions reuse the existing jobs/backup/import/maintenance APIs.
+// Package systemapi exposes the HTTP endpoints over the aggregated system state
+// (internal/system). GET /system/status is maintainer-only and returns one
+// snapshot of embeddings reachability, job-queue depth, the backup subsystem
+// state, the last import per source, storage usage, database reachability and
+// the build version. GET /system/stats is open to every signed-in user and
+// returns the library statistics — the instance-wide photo/embedding/face/people
+// counts — because knowing how big and how processed the library is, is not an
+// operations secret. It depends on the system service for data and on the auth
+// subsystem only for the two route guards, injected as middleware. The dashboard
+// polls these endpoints; quick actions reuse the existing
+// jobs/backup/import/maintenance APIs.
 package systemapi
 
 import (
@@ -19,41 +23,54 @@ import (
 )
 
 // StatusCollector is the subset of system.Service the API needs: gathering one
-// status snapshot. It is an interface so the API can be tested with a fake.
+// status snapshot and the library counts. It is an interface so the API can be
+// tested with a fake.
 type StatusCollector interface {
 	// Collect gathers the full system-status snapshot.
 	Collect(ctx context.Context) (system.Status, error)
+	// LibraryStats gathers the instance-wide library counts.
+	LibraryStats(ctx context.Context) (system.Library, error)
 }
 
-// API exposes the system status over HTTP. The maintainer route guard is
-// supplied by the caller (the auth subsystem) so this package depends on auth for
-// the caller's identity, not its wiring.
+// API exposes the system status over HTTP. The route guards are supplied by the
+// caller (the auth subsystem) so this package depends on auth for the caller's
+// identity, not its wiring.
 type API struct {
 	service           StatusCollector
 	requireMaintainer func(http.Handler) http.Handler
+	requireAuth       func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Every field is required.
 type Config struct {
-	// Service aggregates the system status.
+	// Service aggregates the system status and the library counts.
 	Service StatusCollector
-	// RequireMaintainer guards the endpoint: the status dashboard is a maintainer
-	// operation.
+	// RequireMaintainer guards the status endpoint: the operations dashboard is a
+	// maintainer surface.
 	RequireMaintainer func(http.Handler) http.Handler
+	// RequireAuth guards the library-statistics endpoint: the counts are for every
+	// signed-in user, but not for anonymous callers.
+	RequireAuth func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, requireMaintainer: cfg.RequireMaintainer}
+	return &API{
+		service:           cfg.Service,
+		requireMaintainer: cfg.RequireMaintainer,
+		requireAuth:       cfg.RequireAuth,
+	}
 }
 
-// RegisterRoutes mounts the system endpoint onto r, which the caller has scoped
-// under the API base path (for example /api/v1). The route requires maintainer:
+// RegisterRoutes mounts the system endpoints onto r, which the caller has scoped
+// under the API base path (for example /api/v1):
 //
-//	GET /system/status  aggregated operational status snapshot
+//	GET /system/status  aggregated operational status snapshot (maintainer)
+//	GET /system/stats   instance-wide library counts (any signed-in user)
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/system", func(r chi.Router) {
 		r.With(a.requireMaintainer).Get("/status", a.handleStatus)
+		r.With(a.requireAuth).Get("/stats", a.handleStats)
 	})
 }
 
@@ -66,6 +83,18 @@ func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+// handleStats returns the library-statistics snapshot. A failed aggregation is
+// answered with 500 rather than a zeroed body, so a reader is never shown an
+// empty library that only looks like a real count.
+func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := a.service.LibraryStats(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "collecting library statistics failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // errorBody is the JSON body returned for error responses.

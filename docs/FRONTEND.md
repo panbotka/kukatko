@@ -6,7 +6,8 @@ here.
 
 <!-- BODY BEGIN -->
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` with `components/`
-  (`Layout` = navbar shell with a user menu (Můj účet, **Nápověda** `/help`, Odhlásit se) + role-gated
+  (`Layout` = navbar shell with a user menu (Můj účet, **Statistiky** `/stats`, **Nápověda** `/help`,
+  Odhlásit se) + role-gated
   nav with a **visible hierarchy based on
   how often an ordinary person uses an item**: the everyday loop (browsing, sorting, adding photos) is
   loud and immediate, while admin/power-user tooling is present but quieter. It leads with **Knihovna** `/` (= the home
@@ -60,7 +61,7 @@ here.
   consumes the `title` prop for the toggle's content, leaving none for the tooltip). **The whole item registry
   lives in `components/navItems.ts`** (`NavEntry`/`NavGroup`, `PRIMARY_ITEMS`, `BROWSE_GROUP`, `TOOLS_GROUP`,
   `OPERATIONS_GROUP`, `GOVERNANCE_GROUP`, `REVIEW_ITEM`, `LEADERBOARD_ITEM`, `UPLOAD_ITEM`, `ACCOUNT_ITEM`,
-  `HELP_ITEM`, `pathMatches`), so the bar and the phone drawer below read **the same list with the same role
+  `STATS_ITEM`, `HELP_ITEM`, `pathMatches`), so the bar and the phone drawer below read **the same list with the same role
   gates** and cannot drift apart. On a phone the `Navbar` is **controlled**
   (an `expanded` state + `onToggle`); a `useEffect` on the `useLocation` pathname resets it to closed on
   **every navigation**, so tapping any item — top-level link, group-dropdown item, or user-menu item —
@@ -139,6 +140,12 @@ here.
   shared i18n block `jobStates.labels.*`/`jobStates.descriptions.*`, so the wording is identical on
   `MaintenancePage` and `SystemStatusPage`; the `states` prop controls order and selection — Maintenance omits
   `pending`, System adds it. Tests: `JobStateLegend.test.tsx`),
+  `LibraryStatsCards` (**the shared rendering of the library counts** `GET /system/stats`: five
+  `Card`s in a responsive `Row` — photos, embeddings, faces, people, collections — each with a headline
+  number (`kk-display`) over its breakdown (`dl`), every value through `formatCount` for the active language;
+  a **coverage gap** row (bez embeddingu / bez obličeje / nepojmenované) turns `text-warning` while non-zero.
+  Purely presentational — the caller owns loading/errors/retry — so `StatsPage` and `SystemStatusPage`'s
+  Knihovna section cannot drift apart or double-fetch),
   `Icon` (**the app's single icon set**: a bootstrap-icons glyph as `<i class="bi bi-{name}">`,
   the font is imported globally in `main.tsx`; the `IconName` union holds the dictionary of used icons, so a typo
   is a compile error; always `aria-hidden` beside a visible label),
@@ -636,7 +643,10 @@ here.
   `POST /maintenance/audit/purge`); self-gated on `isMaintainer`,
   `SystemStatusPage` = `/system` (maintainer only) a **system-status dashboard**: auto-refresh (polling 5 s)
   `GET /system/status` → a card grid (DB, embeddings, job queue, backup, imports, storage,
-  **maps**, version) with **quick actions** — *requeue dead jobs* (`requeueDeadLetterJobs`: list dead →
+  **maps**, version) plus the **Knihovna section** (`LibrarySection` over `useLibraryStats` →
+  `LibraryStatsCards`, the same `GET /system/stats` the all-users `StatsPage` reads — no second data source,
+  no second aggregation; it owns its own fetch state, so a failed count degrades that section alone and the
+  operational cards keep rendering), with **quick actions** — *requeue dead jobs* (`requeueDeadLetterJobs`: list dead →
   per-job `POST /jobs/{id}/requeue`), *run a backup* (`POST /backup`), links to the import flow
   (`/import`) and the maintenance check (`/maintenance`); **box offline** + pending embeddings → a highlighted
   message „doženou se po návratu"; **the Mapy card** (`MapsCard` over `status.maps`) shows the latest
@@ -1182,6 +1192,19 @@ here.
   (sorted standings + the Ano/Ne split, highlighting of one's own row, switching the window changes the query param and
   refetches, the empty state with a link to `/review`, top-3 medals, a not-on-board hint, **admin click-through /
   non-admin plain name**),
+  `StatsPage` = `/stats` (**any logged-in user** — read-only aggregate counts, so no role gate, like the
+  leaderboard; reachable from the **user menu** and the phone drawer's account section) the **library
+  statistics** over `GET /system/stats` (`useLibraryStats`), modelled on photo-sorter's status page: five
+  cards (`LibraryStatsCards`, shared with `SystemStatusPage`) — **Fotky** (celkem, z toho videa, v knihovně,
+  v koši), **Embeddingy** (celkem, fotek s/bez), **Obličeje** (nalezených, fotek s/bez), **Lidé a zvířata**
+  (subjekty po druhu, pojmenované/nepojmenované obličeje) and **Alba a štítky**. Each card leads with its
+  headline number (`kk-display`) and breaks it down beneath; **every number is grouped for the active
+  language** (`formatCount`, cs „20 310" / en „20,310" — never raw JSON), and the **coverage gaps**
+  (bez embeddingu / bez obličeje / nepojmenované) are highlighted while non-zero — that is what the page is
+  opened for while verifying an import. A failed load shows `ErrorState` + retry and **renders no grid of
+  zeroes**, so an unavailable count never reads as an empty library. i18n `stats.*` (cs/en). Tests:
+  `StatsPage.test.tsx` (loaded counts with separators + group headings, the derived gaps, the error state
+  without a zero grid, retry, cs grouping),
   `ReviewDecisionsPage` = `/audit/reviews` (admin **or** maintainer, `RequireRole role="admin"`)
   an **overview of one user's review decisions** (reachable by clicking through from the leaderboard): over `GET /audit`
   with `?via=review&user=…` (`fetchAuditLog`). At the top the user's name + their **Ano/Ne/Celkem** tally
@@ -1391,6 +1414,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `AnnouncementBanner`: fetch on-mount + refetch po ~60 s, **pauzuje při skryté záložce** a při návratu hned
   refreshne, selhání spolkne a vrátí `null` (banner se skryje), na unmountu ruší timer i in-flight (zrcadlí
   `useJobStats`);
+  `useLibraryStats(enabled=true)` = loader statistik knihovny nad `fetchLibraryStats` (`GET /system/stats`)
+  → `{state,reload}` se stavem `loading|error|ready`: **chybu vystaví explicitně** (nikdy nespolkne do nul —
+  prázdná knihovna a nedostupný počet nesmí vypadat stejně), přerušený request (unmount/retry) chybou není,
+  `reload` fetch zopakuje (retry v `ErrorState`); jeden zdroj pro `StatsPage` i sekci Knihovna
+  na `SystemStatusPage` (agregace je na backendu memoizovaná, dva čtenáři = jeden dotaz);
 
   `useLibraryFacets(params)` = loader nabídek facetů knihovny → `LibraryFacets{years,albums,labels,subjects}`:
   roky přes `fetchPhotoYears` **refetchuje při změně filtrů** (rok drží méně fotek, jakmile přibude
@@ -1751,6 +1779,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (nearchivovaná / retence ≤ 0 / neparsovatelné), odpočet na kartách koše);
   `format.ts` = pure `formatBytes(bytes)` (byte count → human-readable binární jednotky, např.
   `1536`→`"1.5 KB"`, neplatné→`"0 B"`) pro velikost souboru na duplicate-group kartách +
+  `formatCount(value,locale)` (celé číslo → **oddělené tisíce v aktivním jazyce**, `20310` → cs
+  `"20 310"` / en `"20,310"`; zlomek zaokrouhlí, non-finite → `"0"`) pro počty na `LibraryStatsCards` +
   `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, neplatné→`"0:00"`) pro délku videa na dlaždicích +
   `formatMonth(year,month,locale)` (1-based rok/měsíc → locale-aware krátký měsíc + rok, např.
   `2026,1,'en'`→`"Jan 2026"`, mimo 1–12 → `""`) pro popisky ticků časové osy +
@@ -1923,10 +1953,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `POST /api/v1/maintenance/audit/purge` → `AuditPurgeResult` (`{deleted,older_than_days,cutoff}`);
   typy `Finding`/`ScanReport`/`RepairOptions`/`RepairResult`/`AuditPurgeResult`; sdílí `ApiError`
   z `auth.ts` a `fetchJobStats` z `import.ts` pro progress,
-  `system.ts` = admin system-status klient: `fetchSystemStatus(signal)` nad `GET /api/v1/system/status`
-  → `SystemStatus`, `triggerBackup(signal)` nad `POST /api/v1/backup` (409/503 → ApiError),
+  `system.ts` = system klient: `fetchSystemStatus(signal)` nad `GET /api/v1/system/status`
+  → `SystemStatus` (maintainer-only), `fetchLibraryStats(signal)` nad `GET /api/v1/system/stats`
+  → `LibraryStats` (**každý přihlášený**; hodí `ApiError`, když backend počty nesečte — stránka pak ukáže
+  chybu, ne nuly), `triggerBackup(signal)` nad `POST /api/v1/backup` (409/503 → ApiError),
   `requeueDeadLetterJobs(signal)` (vylistuje `GET /jobs?state=dead` → per-job `POST /jobs/{id}/requeue`,
-  vrací počet, 404/409 skip); typy `SystemStatus`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
+  vrací počet, 404/409 skip); typy `SystemStatus`/`LibraryStats`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
   `BackupStatus`/`ImportsStatus`/`StorageStatus`/`MapsStatus`/`MapsState`/`VersionInfo`; sdílí
   `ApiError` z `auth.ts` a `ImportRun` z `import.ts`,
   `users.ts` = admin klient správy účtů nad `/api/v1/admin/users`: `fetchUsers(signal)` → `AdminUser[]`

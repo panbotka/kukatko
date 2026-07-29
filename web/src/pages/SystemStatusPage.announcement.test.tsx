@@ -11,12 +11,15 @@ import { SystemStatusPage } from './SystemStatusPage'
 
 // The status snapshot is irrelevant to the announcement compose control (which
 // renders regardless of the snapshot's state), so keep the page in its loading
-// state with a never-resolving fetch.
+// state with a never-resolving fetch. The library counts are stubbed the same
+// way: the section is not under test here, and every function the page calls
+// must be stubbed so the mock stays a complete stand-in for the module.
 vi.mock('../services/system', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/system')>()
   return {
     ...actual,
     fetchSystemStatus: vi.fn(() => new Promise(() => undefined)),
+    fetchLibraryStats: vi.fn(() => new Promise(() => undefined)),
     requeueDeadLetterJobs: vi.fn(),
     triggerBackup: vi.fn(),
   }

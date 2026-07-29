@@ -355,6 +355,18 @@ describe('Layout navbar', () => {
     expect(help).toHaveAttribute('title', 'Show help')
   })
 
+  it('offers the library statistics in the user menu, for a plain viewer too', async () => {
+    const user = userEvent.setup()
+    // auth() is a viewer: the counts carry no role gate, so they must be here.
+    renderLayout(auth())
+
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+
+    const stats = screen.getByRole('link', { name: 'Statistics' })
+    expect(stats).toHaveAttribute('href', '/stats')
+    expect(stats).toHaveAttribute('title', 'Show the library statistics')
+  })
+
   it('closes the open mobile menu after tapping a top-level link', async () => {
     const user = userEvent.setup()
     renderLayoutWithRoutes(auth())
