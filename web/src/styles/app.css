@@ -1408,3 +1408,116 @@ body {
 .kk-medal--bronze {
   color: #cd7f32;
 }
+
+/* ── Map (Leaflet) ───────────────────────────────────────────────────────────
+   Touch tuning for `LeafletMap`. Leaflet ships no theme hooks, so the sizing of
+   its controls has to be reached through its own class names — scoped under
+   `.kukatko-map` (the element Leaflet also stamps `leaflet-container` /
+   `leaflet-touch` onto), both to keep the overrides off any other map on the
+   page and to out-specify Leaflet's stylesheet, which the bundler emits after
+   this one. */
+.kukatko-map {
+  /* Leaflet sets this itself once it initialises; declaring it here means the
+     hint below is positioned from the first paint, before the map is built. */
+  position: relative;
+  /* Fallback for engines without `dvh`: the component asks for `70dvh` inline
+     so the map fills the height actually left under a phone browser's
+     collapsing chrome. A rejected inline unit leaves no height at all and the
+     map would collapse to nothing, so land it on the `vh` equivalent. A caller
+     passing a fixed height (the detail mini-map, the picker) overrides both. */
+  height: 70vh;
+}
+
+/* The "use two fingers to move the map" hint. It appears after a one-finger drag
+   — the moment the user tries to pan and gets a page scroll instead — and fades
+   out on its own. A full-map scrim would be the obvious treatment and is the
+   wrong one: on a 70dvh map a finger crosses it on the way past on *every*
+   scroll, so the hint has to be a passing remark, not a curtain. Hence a small
+   centred pill over an untouched map.
+
+   The frame spans the map only so the pill can be centred without measuring;
+   `pointer-events: none` on both is essential, since a hint that ate the next
+   tap would be worse than no hint at all. */
+.kukatko-map-gesture-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--kk-space-4);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--kk-duration-base) var(--kk-ease-standard),
+    visibility var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+.kukatko-map-gesture-hint::before {
+  content: attr(data-label);
+  max-width: 100%;
+  padding: var(--kk-space-2) var(--kk-space-4);
+  border-radius: var(--kk-radius-pill);
+  color: #fff;
+  background-color: rgb(0 0 0 / 72%);
+  box-shadow: var(--kk-shadow-2);
+  text-align: center;
+}
+
+.kukatko-map-gesture-hint.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* A draggable marker — the location picker's pin — is the one thing on a
+   gesture-handled map that must still answer a ONE-finger drag. The container
+   sits at `touch-action: pan-x pan-y` (that is what lets the page scroll), which
+   would hand the drag to the scroller; `none` on the marker itself wins, because
+   the effective touch-action is the intersection with its ancestors' and `none`
+   is the narrowest of them. */
+.kukatko-map .leaflet-marker-draggable {
+  touch-action: none;
+}
+
+@media (pointer: coarse) {
+  /* Leaflet sizes its toolbar buttons at 26px (30px with `leaflet-touch`) — the
+     smallest targets in the app, well under the 44px finger floor everything
+     else clears. Both selectors are listed because the `leaflet-touch` class is
+     only added when the browser reports touch support; the plain one alone
+     would lose the cascade to Leaflet's own `.leaflet-touch .leaflet-bar a`. */
+  .kukatko-map .leaflet-bar a,
+  .kukatko-map.leaflet-touch .leaflet-bar a {
+    width: 2.75rem;
+    height: 2.75rem;
+    line-height: 2.75rem;
+  }
+
+  /* The +/- glyphs are drawn as text, so they have to grow with their box or a
+     44px button ends up mostly empty. */
+  .kukatko-map .leaflet-control-zoom-in,
+  .kukatko-map .leaflet-control-zoom-out,
+  .kukatko-map.leaflet-touch .leaflet-control-zoom-in,
+  .kukatko-map.leaflet-touch .leaflet-control-zoom-out {
+    font-size: 1.5rem;
+  }
+
+  /* The mandatory mapy.com logo is a control too, and a licensing check taps it.
+     Its 18px image keeps its size; only the hit area around it grows. */
+  .kukatko-map .kukatko-map-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  /* The attribution is text, not a button: a 44px strip along the whole bottom
+     edge would swallow every tap near it. Grow the line box instead, which lifts
+     the copyright link to a comfortable target without boxing the bar. */
+  .kukatko-map .leaflet-control-attribution {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+}

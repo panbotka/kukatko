@@ -832,6 +832,9 @@
     "count": "Fotek na mapě: {{count}}",
     "loading": "Načítání fotek…",
     "thumbAlt": "Fotka na mapě",
+    "gesture": {
+      "twoFingers": "Mapu posunete dvěma prsty"
+    },
     "mapset": {
       "label": "Podkladová mapa",
       "basic": "Základní",

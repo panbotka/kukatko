@@ -20,6 +20,7 @@ const leaflet = vi.hoisted(() => {
     popup: unknown
   }
   const calls = {
+    mapOptions: [] as Record<string, unknown>[],
     tiles: [] as RecordedTile[],
     markers: [] as RecordedMarker[],
     clusterAdded: [] as RecordedMarker[],
@@ -38,6 +39,7 @@ const leaflet = vi.hoisted(() => {
     fitBounds: vi.fn((latlngs: unknown) => {
       calls.fitBounds.push(latlngs)
     }),
+    dragging: { enable: vi.fn(), disable: vi.fn() },
   }
 
   const cluster = {
@@ -67,7 +69,10 @@ const leaflet = vi.hoisted(() => {
   }
 
   const L = {
-    map: vi.fn(() => map),
+    map: vi.fn((_container: HTMLElement, options: Record<string, unknown>) => {
+      calls.mapOptions.push(options)
+      return map
+    }),
     tileLayer: vi.fn((url: string, options: Record<string, unknown>) => {
       const layer: RecordedTile & {
         addTo: (m: unknown) => unknown
@@ -111,8 +116,23 @@ const leaflet = vi.hoisted(() => {
 vi.mock('leaflet', () => ({ default: leaflet.L }))
 vi.mock('leaflet.markercluster', () => ({}))
 
-const { LeafletMap } = await import('./LeafletMap')
+const { DEFAULT_MAP_HEIGHT, LeafletMap } = await import('./LeafletMap')
 const { buildPopupElement } = await import('../../lib/mapPopup')
+
+/**
+ * Dispatches a touch event carrying the given active touches. jsdom has no
+ * `TouchEvent` constructor, so build an `Event` and hang the touch list on it —
+ * that is all the gesture handlers read.
+ */
+function fireTouch(
+  target: EventTarget,
+  type: string,
+  touches: { clientX: number; clientY: number }[],
+): void {
+  const event = new Event(type, { bubbles: true })
+  Object.defineProperty(event, 'touches', { value: touches })
+  target.dispatchEvent(event)
+}
 
 function feature(uid: string, title: string, lng: number, lat: number): MapFeature {
   return {
@@ -129,6 +149,7 @@ const FEATURES: MapFeature[] = [
 
 afterEach(() => {
   vi.clearAllMocks()
+  leaflet.calls.mapOptions.length = 0
   leaflet.calls.tiles.length = 0
   leaflet.calls.markers.length = 0
   leaflet.calls.clusterAdded.length = 0
@@ -279,5 +300,109 @@ describe('buildPopupElement', () => {
   it('falls back to the alt text when the photo has no title', () => {
     const el = buildPopupElement(FEATURES[1], vi.fn(), 'fallback alt')
     expect(el.querySelector('img')?.getAttribute('alt')).toBe('fallback alt')
+  })
+})
+
+/**
+ * Touch gesture handling: a tall map inside a scrolling page must not eat a
+ * one-finger swipe, or the user is stuck on it and cannot reach what is below.
+ * The wiring is what these assert — the gesture logic itself lives in
+ * `lib/mapGestures` and is tested there.
+ */
+describe('LeafletMap touch gestures', () => {
+  const originalMatchMedia = window.matchMedia
+
+  afterEach(() => {
+    // Reassigning `window.matchMedia` outlives `restoreMocks`, so put the shared
+    // desktop stub back for the rest of the suite.
+    window.matchMedia = originalMatchMedia
+  })
+
+  /** Points `window.matchMedia` at a fixed coarse/fine answer. */
+  function pinPointer(coarse: boolean): void {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: coarse && query.includes('pointer: coarse'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  }
+
+  it('keeps drag-to-pan on a fine pointer, so the mouse behaves as before', () => {
+    pinPointer(false)
+    renderMap()
+    expect(leaflet.calls.mapOptions[0].dragging).toBe(true)
+  })
+
+  it('starts undraggable on a coarse pointer, leaving pinch-zoom on', () => {
+    pinPointer(true)
+    renderMap()
+    // Without the drag handler Leaflet's own stylesheet leaves the container at
+    // `touch-action: pan-x pan-y`, i.e. the page — not the map — takes the swipe.
+    expect(leaflet.calls.mapOptions[0].dragging).toBe(false)
+    expect(leaflet.calls.mapOptions[0].touchZoom).toBe(true)
+  })
+
+  it('shows the two-finger hint once a one-finger drag scrolls the page instead', () => {
+    pinPointer(true)
+    const { container } = render(
+      <LeafletMap
+        features={FEATURES}
+        mapset="basic"
+        viewport={null}
+        onViewportChange={vi.fn()}
+        onSelectPhoto={vi.fn()}
+        thumbAlt="Photo on the map"
+        twoFingerHint="Use two fingers to move the map"
+      />,
+    )
+    const surface = container.querySelector('.kukatko-map')
+    if (surface === null) {
+      throw new Error('the map surface was not rendered')
+    }
+    const hint = surface.querySelector('.kukatko-map-gesture-hint')
+    if (hint === null) {
+      throw new Error('the gesture hint was not attached')
+    }
+    // Nothing is said until the user actually tries to pan.
+    expect(hint.classList.contains('is-visible')).toBe(false)
+    // Decorative: it answers a gesture no screen-reader user makes.
+    expect(hint.getAttribute('aria-hidden')).toBe('true')
+
+    fireTouch(surface, 'touchstart', [{ clientX: 100, clientY: 100 }])
+    fireTouch(surface, 'touchmove', [{ clientX: 100, clientY: 200 }])
+
+    expect(hint.classList.contains('is-visible')).toBe(true)
+    // The pill renders the label through `content: attr(data-label)`.
+    expect(hint.getAttribute('data-label')).toBe('Use two fingers to move the map')
+  })
+
+  it('adds no hint element on a fine pointer', () => {
+    pinPointer(false)
+    const { container } = render(
+      <LeafletMap
+        features={FEATURES}
+        mapset="basic"
+        viewport={null}
+        onViewportChange={vi.fn()}
+        onSelectPhoto={vi.fn()}
+        thumbAlt="Photo on the map"
+        twoFingerHint="Use two fingers to move the map"
+      />,
+    )
+    expect(container.querySelector('.kukatko-map-gesture-hint')).toBeNull()
+  })
+})
+
+describe('LeafletMap sizing', () => {
+  it('asks for its height in dynamic viewport units', () => {
+    // `dvh` is the space actually left under a phone browser's collapsing
+    // chrome; jsdom drops the unit, so read the prop's default rather than the
+    // computed style.
+    expect(DEFAULT_MAP_HEIGHT).toBe('70dvh')
   })
 })

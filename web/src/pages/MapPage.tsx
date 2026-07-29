@@ -149,6 +149,7 @@ export function MapPage() {
             onSelectPhoto={handleSelectPhoto}
             thumbAlt={t('map.thumbAlt')}
             estimatedTitle={t('map.estimatedTitle')}
+            twoFingerHint={t('map.gesture.twoFingers')}
             onTileError={handleTileError}
           />
 
