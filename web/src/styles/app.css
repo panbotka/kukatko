@@ -1644,3 +1644,32 @@ body {
 .kukatko-map .kukatko-map-popup img {
   border-radius: var(--kk-radius-sm);
 }
+
+/* --------------------------------------------------------------------------
+   Stacked record cards — the phone form of a wide admin table (`RecordTable`)
+   -------------------------------------------------------------------------- */
+
+/* Below `md` the user roster and the audit log stop being tables and become one
+   card per record. The action row is the reason the reflow exists at all: on a
+   table those buttons sat at the far right of eight columns, reachable only by
+   dragging `.table-responsive` sideways. On the card they are full-width and
+   stacked, so the floor is stated here unconditionally rather than left to the
+   `pointer: coarse` block above — a narrow *window* on a laptop gets the same
+   card, and a 31px `size="sm"` button in it would be a worse target than the
+   table it replaced. */
+.kk-record-card__actions .btn {
+  min-height: 2.75rem;
+}
+
+/* The audit log's raw `details` payload. Pretty-printed JSON has no soft break
+   opportunities, so an unwrapped `<pre>` sets the width of everything around it:
+   inside `.table-responsive` one long line dragged the summary columns sideways
+   with it, and inside a card it would simply overflow. Wrapping keeps the block
+   within its container; `overflow-x: auto` is the fallback for the single token
+   too long to break (a base64 blob, an unbroken path). */
+.kk-audit-payload {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import {
   AUDIT_DEFAULTS,
   type AuditFilters,
@@ -29,9 +30,6 @@ import {
   fetchAuditLog,
 } from '../services/audit'
 import { type AdminUser, fetchUsers } from '../services/users'
-
-/** The columns the table renders — kept in one place so the expanded row spans them. */
-const COLUMN_COUNT = 6
 
 /** Top-level load status of the audit listing. */
 type State =
@@ -65,6 +63,11 @@ function readChanges(details: Record<string, unknown> | null): AuditChanges | nu
     }
   }
   return Object.keys(out).length > 0 ? out : null
+}
+
+/** The id of an entry's expanded block, shared by its toggle's `aria-controls`. */
+function detailsId(record: AuditRecord): string {
+  return `audit-details-${String(record.id)}`
 }
 
 /**
@@ -186,6 +189,69 @@ export function AuditPage() {
       return next
     })
   }
+
+  // One definition drives both layouts: the six summary columns on a tablet or
+  // desktop, the same fields as "label: value" lines on a phone card.
+  const columns: RecordColumn<AuditRecord>[] = [
+    {
+      key: 'when',
+      header: t('audit.columns.when'),
+      cellClassName: 'text-nowrap',
+      cell: (record) => formatDateTime(record.created_at, i18n.language),
+    },
+    {
+      key: 'actor',
+      header: t('audit.columns.actor'),
+      cellClassName: 'text-break',
+      cell: (record) => actorLabel(record.actor_uid, users),
+    },
+    {
+      key: 'action',
+      header: t('audit.columns.action'),
+      cellClassName: 'text-break',
+      cell: (record) => record.action,
+    },
+    {
+      key: 'target',
+      header: t('audit.columns.target'),
+      cellClassName: 'text-break',
+      cell: (record) => (
+        <>
+          {record.target_type || '—'}
+          {record.target_uid !== null && (
+            <div className="text-secondary small text-break">{record.target_uid}</div>
+          )}
+        </>
+      ),
+    },
+    {
+      key: 'ip',
+      header: t('audit.columns.ip'),
+      cellClassName: 'text-nowrap',
+      cell: (record) => record.ip ?? '—',
+    },
+    {
+      key: 'details',
+      header: t('audit.columns.details'),
+      cell: (record) =>
+        isExpandable(record) ? (
+          <Button
+            variant="link"
+            size="sm"
+            className="p-0"
+            aria-expanded={expanded.has(record.id)}
+            aria-controls={detailsId(record)}
+            onClick={() => {
+              toggleDetails(record.id)
+            }}
+          >
+            {expanded.has(record.id) ? t('audit.details.hide') : t('audit.details.show')}
+          </Button>
+        ) : (
+          <span className="text-secondary">—</span>
+        ),
+    },
+  ]
 
   return (
     <>
@@ -319,33 +385,21 @@ export function AuditPage() {
 
           {state.status === 'ready' && state.data.entries.length > 0 && (
             <>
-              <Table striped hover responsive className="mb-3 align-middle">
-                <thead>
-                  <tr>
-                    <th>{t('audit.columns.when')}</th>
-                    <th>{t('audit.columns.actor')}</th>
-                    <th>{t('audit.columns.action')}</th>
-                    <th>{t('audit.columns.target')}</th>
-                    <th>{t('audit.columns.ip')}</th>
-                    <th>{t('audit.columns.details')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.data.entries.map((record) => (
-                    <AuditEntryRow
-                      key={record.id}
-                      record={record}
-                      users={users}
-                      locale={i18n.language}
-                      expanded={expanded.has(record.id)}
-                      onToggle={() => {
-                        toggleDetails(record.id)
-                      }}
-                    />
-                  ))}
-                </tbody>
-              </Table>
-              <div className="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+              <RecordTable
+                records={state.data.entries}
+                columns={columns}
+                rowKey={(record) => String(record.id)}
+                detail={(record) =>
+                  isExpandable(record) && expanded.has(record.id) ? (
+                    <AuditEntryDetails id={detailsId(record)} record={record} />
+                  ) : null
+                }
+                className="mb-0 align-middle"
+              />
+              {/* The gap belongs to the pagination row, not to the listing: a
+                  `.table` carries a bottom margin of its own but the card stack
+                  does not, and the spacing has to read the same on both. */}
+              <div className="mt-3 d-flex justify-content-between align-items-center gap-3 flex-wrap">
                 <span className="text-secondary small">
                   {t('audit.pagination.range', {
                     from: offset + 1,
@@ -386,83 +440,49 @@ export function AuditPage() {
   )
 }
 
-/** Props for one audit table row. */
-interface AuditEntryRowProps {
+/** Props for the expanded payload of one audit entry. */
+interface AuditEntryDetailsProps {
+  /** The element id the entry's toggle names in `aria-controls`. */
+  id: string
   record: AuditRecord
-  users: Map<string, AdminUser>
-  locale: string
-  expanded: boolean
-  onToggle: () => void
 }
 
 /**
- * One audit entry: the summary columns, plus a toggle that reveals an expanded
- * row with the raw `details` payload and user agent when either is present.
+ * The expanded half of an audit entry: the `details` payload — as an old → new
+ * table when the record carries a well-formed `changes` map, otherwise the raw
+ * JSON — plus the user agent. It is the same block either way: the table puts it
+ * in a row spanning every column, a phone card puts it under the record's fields.
+ *
+ * The raw payload is wrapped rather than left to overflow (`.kk-audit-payload`);
+ * one long JSON line used to set the scroll width of the whole responsive table
+ * and drag the summary columns sideways with it.
  */
-function AuditEntryRow({ record, users, locale, expanded, onToggle }: AuditEntryRowProps) {
+function AuditEntryDetails({ id, record }: AuditEntryDetailsProps) {
   const { t } = useTranslation()
-  const expandable = isExpandable(record)
-  const detailsId = `audit-details-${String(record.id)}`
   const changes = readChanges(record.details)
   return (
-    <>
-      <tr>
-        <td className="text-nowrap">{formatDateTime(record.created_at, locale)}</td>
-        <td className="text-break">{actorLabel(record.actor_uid, users)}</td>
-        <td className="text-break">{record.action}</td>
-        <td className="text-break">
-          {record.target_type || '—'}
-          {record.target_uid !== null && (
-            <div className="text-secondary small text-break">{record.target_uid}</div>
-          )}
-        </td>
-        <td className="text-nowrap">{record.ip ?? '—'}</td>
-        <td>
-          {expandable ? (
-            <Button
-              variant="link"
-              size="sm"
-              className="p-0"
-              aria-expanded={expanded}
-              aria-controls={detailsId}
-              onClick={onToggle}
-            >
-              {expanded ? t('audit.details.hide') : t('audit.details.show')}
-            </Button>
-          ) : (
-            <span className="text-secondary">—</span>
-          )}
-        </td>
-      </tr>
-      {expandable && expanded && (
-        <tr>
-          <td colSpan={COLUMN_COUNT} id={detailsId} className="bg-body-tertiary">
-            <dl className="row mb-0 small">
-              {record.details !== null && Object.keys(record.details).length > 0 && (
-                <>
-                  <dt className="col-sm-2">
-                    {changes ? t('audit.changes.title') : t('audit.details.payload')}
-                  </dt>
-                  <dd className="col-sm-10 mb-2">
-                    {changes ? (
-                      <ChangesTable changes={changes} />
-                    ) : (
-                      <pre className="mb-0">{JSON.stringify(record.details, null, 2)}</pre>
-                    )}
-                  </dd>
-                </>
-              )}
-              {record.user_agent !== null && (
-                <>
-                  <dt className="col-sm-2">{t('audit.details.userAgent')}</dt>
-                  <dd className="col-sm-10 mb-0 text-break">{record.user_agent}</dd>
-                </>
-              )}
-            </dl>
-          </td>
-        </tr>
+    <dl className="row mb-0 small" id={id}>
+      {record.details !== null && Object.keys(record.details).length > 0 && (
+        <>
+          <dt className="col-sm-2">
+            {changes ? t('audit.changes.title') : t('audit.details.payload')}
+          </dt>
+          <dd className="col-sm-10 mb-2">
+            {changes ? (
+              <ChangesTable changes={changes} />
+            ) : (
+              <pre className="kk-audit-payload mb-0">{JSON.stringify(record.details, null, 2)}</pre>
+            )}
+          </dd>
+        </>
       )}
-    </>
+      {record.user_agent !== null && (
+        <>
+          <dt className="col-sm-2">{t('audit.details.userAgent')}</dt>
+          <dd className="col-sm-10 mb-0 text-break">{record.user_agent}</dd>
+        </>
+      )}
+    </dl>
   )
 }
 

@@ -83,6 +83,27 @@ const ROSTER: AdminUser[] = [
   },
 ]
 
+/** The shared setup stubs a non-matching (desktop) `matchMedia`; restore it after. */
+const realMatchMedia = window.matchMedia
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer, so
+ * `useIsNarrowViewport` — and through it the log's table/card choice — takes the
+ * branch under test.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
 /** Surfaces the current location for URL-state assertions. */
 function LocationProbe() {
   const location = useLocation()
@@ -112,6 +133,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  window.matchMedia = realMatchMedia
 })
 
 describe('AuditPage', () => {
@@ -236,6 +258,67 @@ describe('AuditPage', () => {
     expect(within(table).getByText('50.1')).toBeInTheDocument()
     expect(within(table).getByText('—')).toBeInTheDocument()
     expect(table.querySelector('pre')).toBeNull()
+  })
+
+  it('keeps the six-column table on a wide viewport', async () => {
+    renderPage()
+
+    const table = await screen.findByRole('table')
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual(['When', 'Who', 'Action', 'Target', 'IP', 'Details'])
+    expect(screen.queryByRole('listitem')).toBeNull()
+  })
+
+  it('reflows each entry into a stacked card on a phone', async () => {
+    mockViewport(true)
+    renderPage()
+
+    expect(await screen.findByText('photo.update')).toBeInTheDocument()
+    // The wide table is gone entirely — nothing left to drag sideways.
+    expect(screen.queryByRole('table')).toBeNull()
+
+    const card = screen.getByRole('listitem')
+    for (const label of ['When', 'Who', 'Action', 'Target', 'IP', 'Details']) {
+      expect(within(card).getByText(label)).toBeInTheDocument()
+    }
+    expect(within(card).getByText('Ada Admin')).toBeInTheDocument()
+    expect(within(card).getByText('ph9')).toBeInTheDocument()
+    expect(within(card).getByText('10.0.0.1')).toBeInTheDocument()
+    // Pagination still frames the card stack.
+    expect(screen.getByText(/Showing 1–1 of 1/)).toBeInTheDocument()
+  })
+
+  it('expands the details inside the entry’s own card on a phone', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('photo.update')).toBeInTheDocument()
+    const toggle = screen.getByRole('button', { name: 'Show details' })
+    await user.click(toggle)
+
+    // The payload lands in the same card, and the toggle still names the block it
+    // controls — the reflow must not break the expand/collapse wiring.
+    const card = screen.getByRole('listitem')
+    const payload = within(card).getByText(/"field": "title"/)
+    expect(payload).toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(payload.closest('dl')).toHaveAttribute('id', toggle.getAttribute('aria-controls'))
+    // The raw JSON wraps inside its own box instead of widening the listing.
+    expect(payload).toHaveClass('kk-audit-payload')
+  })
+
+  it('gives the raw payload its own wrapping box in the expanded table row', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Show details' }))
+
+    expect(screen.getByText(/"field": "title"/)).toHaveClass('kk-audit-payload')
   })
 
   it('shows the empty state when no entries match', async () => {
