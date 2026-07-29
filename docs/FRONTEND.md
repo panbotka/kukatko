@@ -1231,8 +1231,8 @@ here.
   / average distance / shown + a one-line sort explanation, a **`no_embedding`
   message** (a face recognized while the box was offline can't be checked and is **not** in the list — say it
   aloud, otherwise an empty list reads as "clean"), a capped message at `OUTLIER_LIMIT`,
-  a `meaningful:false` message); a grid of **large** `OutlierCard` (`minmax(16rem, 1fr)` — jako sesterské
-  mřížky kandidátů/sweepu; 20rem se nevešlo do ~296px obsahu 320px telefonu a mřížka přetékala doprava): the **context
+  a `meaningful:false` message); a grid of **large** `OutlierCard` (`minmax(16rem, 1fr)` — like the sibling
+  candidate/sweep grids; 20rem didn't fit into the ~296px of content on a 320px phone and the grid overflowed right): the **context
   crop** = the bbox enlarged by 30 % on each side via `padBbox` + `cropImageStyle`, inside it
   the face frame via `boxWithinCrop` (all `lib/faceGeometry`, `aspect-ratio` carries the geometry →
   no pixel measurement), a distance badge in **%**, the question „Je to chyba?" and two **opposite**
@@ -1383,939 +1383,939 @@ mounted **outside `Layout`** as well, so it adds its own **safe-area insets**: t
 `.review-game`, `safe-area-inset-top` added to the header's padding and `-bottom` to the actions row
 — and to `review-game__center`, which owns the bottom edge in the loading/error/empty states —
 including inside the `max-height: 500px` block, which re-declares exactly those paddings);
-  `components/slideshow/` = `Slideshow` (prezentační fullscreen stage: aktuální fotka v preview
-  velikosti `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exportováno** — stránka musí přednačítat přesně
-  tuhle URL), ovládání předchozí/play-pause/další/fullscreen/nastavení/zavřít + titulek +
-  **postup** (`slideshow.progress` → „snímek 7 ze 40"; počítá se proti `total` ze serveru, ne proti
-  načteným stránkám — zbývající čas už tady není); klávesy ←/→ / mezerník / Esc / F
-  a dotykový swipe; Fullscreen API feature-detected;
-  panel nastavení = výběr efektu + rychlosti a **vedle rychlosti odhad zbývajícího času**
-  (`slideshow.remaining` → „zbývá 2 min 45 s"; `slideshowRemainingMs(index, total, intervalMs)` — sleduje
-  index i zvolenou rychlost, takže odpočítává a hned reaguje na změnu rychlosti, drží se `total` ze
-  serveru (bez blikání při stránkování) a při pauze zamrzne; mizí s koncem promítání);
-  efekt **`kenburns`** navíc zapisuje na `<img>` inline
-  `--kb-*` custom properties z `lib/kenBurns` (endpointy transformu + `--kb-duration` = interval) —
-  aktivuje se **jen pro obrázky**, video snímek a uživatel s `prefers-reduced-motion`
-  (`usePrefersReducedMotion`) dostanou statický snímek bez animace) + `slideshow.css` (keyframes
-  `slideshow-fade`/`slideshow-slide`/`slideshow-kenburns` (`object-fit: cover`, `var()` se dosadí
-  před interpolací, takže se oba transformy interpolují jako shodný `translate() scale()` seznam),
-  `@media (prefers-reduced-motion: reduce)` jako druhá pojistka, fullscreen layout)
-  + `SlideshowStart` (**sdílené** tlačítko Promítání pro knihovnu / album / štítek / hledání:
-  jen `slideshowHref(scope,view)`. **Žádný odhad délky před spuštěním** — přesunul se do přehrávače
-  vedle rychlosti, kde sleduje průběh; `count` prop grid pořád posílá (má ho z `total`), ale
-  komponenta ho nerenderuje);
-  `components/map/` = `LeafletMap` (imperativní Leaflet most: dlaždicová vrstva na **backend
-  proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (klíč server-side, `{r}`→`@2x` na retině),
-  **povinné mapy.com prvky** — attribution „© Seznam.cz a.s. a další" → `/copyright` a klikatelné
-  **logo** vlevo dole → `mapy.com`; `leaflet.markercluster` shluky (klik přibližuje), markery
-  z GeoJSON, popup s náhledem → detail fotky; jednorázový setup, výměna URL dlaždic při změně
-  mapsetu, přestavba markerů při změně fotek, fit-bounds na markery; volitelný **`onTileError`**
-  prop dostane URL dlaždice, kterou se nepodařilo načíst (Leaflet `tileerror`), aby rodič mohl
-  zjistit **proč** — fire per dlaždici, rodič debouncuje;
-  **na dotyku mapa nezabírá jednoprstý swipe**: `prefersTouchGestures()` z `lib/mapGestures`
-  rozhodne jednou při mountu a mapa se pak staví s `dragging: false` + `touchZoom: true`, takže
-  jeden prst scrolluje stránku a dva prsty mapu — nikdo neuvízne na vysoké mapě uprostřed
-  scrollujícího obsahu; myš (fine pointer) si nechá drag-to-pan i wheel-zoom beze změny.
-  Volitelný **`twoFingerHint`** prop je text pilulky, která se ukáže po jednoprstém tažení
-  (imperativní DOM `.kukatko-map-gesture-hint` uvnitř Leafletího kontejneru, popisek jde do
-  `data-label` a kreslí ho CSS `content: attr(...)`, `aria-hidden`, `pointer-events: none`, sama
-  zmizí za 2 s — gesto tak nikdy nepřekreslí React strom);
-  výchozí výška je **`70dvh`** (`DEFAULT_MAP_HEIGHT`, dynamická viewport jednotka = to, co na
-  telefonu opravdu zbyde pod mizející chrome lištou; `vh` fallback v `.kukatko-map`), mini-mapa
-  detailu a picker si posílají pevnou), `MapFilterBar` (přepínač
-  podkladu basic/outdoor/aerial + datum od/do, archiv, soukromé, počet, zrušit filtry);
+  `components/slideshow/` = `Slideshow` (a presentation fullscreen stage: the current photo at preview
+  size `SLIDESHOW_PREVIEW_SIZE` (`fit_1920`, **exported** — the page has to preload exactly
+  this URL), previous/play-pause/next/fullscreen/settings/close controls + a caption +
+  **progress** (`slideshow.progress` → „snímek 7 ze 40"; counted against the server's `total`, not against
+  the loaded pages — the remaining time no longer lives here); keys ←/→ / spacebar / Esc / F
+  and a touch swipe; the Fullscreen API is feature-detected;
+  the settings panel = a choice of effect + speed and **beside the speed an estimate of the remaining time**
+  (`slideshow.remaining` → „zbývá 2 min 45 s"; `slideshowRemainingMs(index, total, intervalMs)` — it follows
+  the index as well as the chosen speed, so it counts down and reacts to a speed change at once, sticks to the server's
+  `total` (no flicker while paging) and freezes on pause; it disappears when the show ends);
+  the **`kenburns`** effect additionally writes inline
+  `--kb-*` custom properties from `lib/kenBurns` onto the `<img>` (transform endpoints + `--kb-duration` = the interval) —
+  it activates **only for images**, a video frame and a user with `prefers-reduced-motion`
+  (`usePrefersReducedMotion`) get a static frame without animation) + `slideshow.css` (keyframes
+  `slideshow-fade`/`slideshow-slide`/`slideshow-kenburns` (`object-fit: cover`, `var()` is substituted
+  before interpolation, so both transforms interpolate as an identical `translate() scale()` list),
+  `@media (prefers-reduced-motion: reduce)` as a second safeguard, fullscreen layout)
+  + `SlideshowStart` (**a shared** Promítání button for the library / album / label / search:
+  just `slideshowHref(scope,view)`. **No length estimate before starting** — it moved into the player
+  beside the speed, where it tracks progress; the grid still passes the `count` prop (it has it from `total`), but
+  the component doesn't render it);
+  `components/map/` = `LeafletMap` (an imperative Leaflet bridge: a tile layer on the **backend
+  proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (the key stays server-side, `{r}`→`@2x` on retina),
+  the **mandatory mapy.com elements** — the attribution „© Seznam.cz a.s. a další" → `/copyright` and a clickable
+  **logo** bottom-left → `mapy.com`; `leaflet.markercluster` clusters (a click zooms in), markers
+  from GeoJSON, a popup with a preview → the photo detail; a one-off setup, a swap of the tile URL when the
+  mapset changes, a rebuild of the markers when the photos change, fit-bounds onto the markers; the optional **`onTileError`**
+  prop receives the URL of a tile that failed to load (Leaflet `tileerror`), so the parent can
+  find out **why** — it fires per tile, the parent debounces;
+  **on touch the map doesn't take over the one-finger swipe**: `prefersTouchGestures()` from `lib/mapGestures`
+  decides once on mount and the map is then built with `dragging: false` + `touchZoom: true`, so
+  one finger scrolls the page and two fingers move the map — nobody gets stuck on a tall map in the middle of
+  scrolling content; the mouse (a fine pointer) keeps drag-to-pan and wheel-zoom unchanged.
+  The optional **`twoFingerHint`** prop is the text of a pill shown after a one-finger drag
+  (an imperative DOM `.kukatko-map-gesture-hint` inside the Leaflet container, the caption goes into
+  `data-label` and CSS draws it with `content: attr(...)`, `aria-hidden`, `pointer-events: none`, it disappears
+  by itself after 2 s — so the gesture never repaints the React tree);
+  the default height is **`70dvh`** (`DEFAULT_MAP_HEIGHT`, a dynamic viewport unit = what really
+  remains on a phone under the disappearing chrome bar; a `vh` fallback in `.kukatko-map`), the detail's mini-map
+  and the picker pass a fixed one), `MapFilterBar` (a basemap toggle
+  basic/outdoor/aerial + date from/to, archived, private, count, clear filters);
   `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`,
-  `FaceCrop` (**preferovaný** výřez obličeje: `<img>` s `fit_*` zdrojem z `lib/faceSource.ts`
-  `faceSourceSize` (celý rám — `tile_*` je centrovaný čtverec, na kterém by výřez minul obličej;
-  velikost se **škáluje podle toho, jak malý obličej je**: pevná by dala 13px šmouhu místo
-  člověka u obličeje přes 2 % rámu, žebřík 720/1280/1920 se zastavuje u 1920, protože dál už ty
-  pixely v originále nejsou) v `overflow:hidden` kontejneru,
-  `cropImageStyle` v %, `aspect-ratio` ze skutečných pixelových proporcí výřezu → **nic se
-  nedeformuje**; `size` = pevná šířka v px, jinak vyplní rodiče (`w-100 h-100`); `label=""` =
-  dekorativní, když jméno stojí vedle. Potřebuje rozměry rámu),
-  `FaceThumb` (**legacy** čtvercový výřez přes `faceCropStyle` — deformuje a čte `tile_*`; zůstává
-  jen pro cluster preview, jejichž payload rám nenese),
-  `FaceOverlay`+`FacesPanel`+`FaceAssignPanel` (`FaceOverlay` = **čistě prezentační** průhledná vrstva
-  klikatelných boxů z normalized bbox přes `faceBoxStyle`, **žádný vlastní obrázek ani fetch** —
-  mountuje se jako poslední dítě `position-relative` obalu těsně kolem `<img>`; vrstva je
-  click-through, pointer events chytají jen boxy (a při `readOnly` ani ty; číslo a jmenovka boxu mají
-  `pointer-events:none`, jinak by ukradly klik a rozbily swipe). Box nese `.kk-face-box` = neviditelný
-  44px hitbox na `pointer: coarse` (viz app.css níže), takže i malá tvář jde na telefonu trefit, a hlásí
-  párování s panelem i z **focusu**, ne jen z hoveru (prst nehoveruje, ale ťuk box zafokusuje). Data +
-  stavový automat pojmenování
-  drží hook `useFaces`. **`FacesPanel`** = panel v zásuvce prohlížeče, jediné místo, kde se přiřazuje:
-  **textové řádky** `Obličej #N` + barevný chip stavu (žádné výřezy — jeden obrázek na stránku),
-  klik vybere/odvybere, hover se zrcadlí s boxem; vybraný řádek se sám **scrollne do view**
-  (`block: 'nearest'`), aby ťuk do boxu na fotce neoznačil řádek mimo obraz; pod vybraným řádkem
-  se rozbalí `FaceAssignPanel`
-  (`key={face_index}` → reset stavu při změně výběru). **`FaceAssignPanel`** = top-3 návrhy
-  (`{jméno} · {confidence}%`, one-tap) + typeahead nad `useSubjects` (`AddAutocomplete` s `autoFocus`
-  a `hint` = počet fotek osoby); u přiřazeného obličeje **Přeřadit** (návrhy, které backend dodává
-  i pro přiřazené — vlastní osoba je z nich vyloučená) a **Odebrat**; Esc vyskočí nejdřív z přeřazení,
-  pak z výběru), `ClusterCard`, `Candidates` (per-subject verze `/faces` vsazená do stránky osoby:
-  tlačítko **Najít návrhy** → `searchCandidates` s defaultním prahem `THRESHOLD_DEFAULT_PERCENT` a
-  limitem 60, reuse `useCandidateReview`+`CandidateCard` beze forku; ✓ potvrdí přes `assignFace`
-  a `onAssigned` reloadne galerii, ✗ odmítne přes `rejectFace`, obojí optimisticky a potvrzená/
-  odmítnutá karta z listu zmizí; `no_faces`/`no_embeddings`/prázdno mají vysvětlení; odkaz
-  **Otevřít celý nástroj** na `/faces?subject={uid}`), `Outliers` (žebříček podezřelých obličejů
-  s one-tap unassign na stránce osoby + odkaz **Projít všechny** na `/outliers?subject={uid}`, kde
-  je plná sweep verze),
-  `OutlierCard`/`OutlierControls`/`OutlierStats` (stavební bloky `/outliers`: karta s **kontextovým
-  výřezem** (30 % kolem bboxu, `padBbox`+`cropImageStyle`+`boxWithinCrop`), otázkou „Je to chyba?"
-  a dvěma opačnými verdikty (✓ odebrat / ✗ potvrdit), výběrovým checkboxem a focus ringem; config
-  strip s pickerem osoby a procentním prahem; statistiky včetně **`no_embedding`** hlášky);
+  `FaceCrop` (**the preferred** face crop: an `<img>` with a `fit_*` source from `lib/faceSource.ts`
+  `faceSourceSize` (the whole frame — `tile_*` is a centred square on which the crop would miss the face;
+  the size **scales with how small the face is**: a fixed one would give a 13px smudge instead of
+  a person for a face over 2 % of the frame, the 720/1280/1920 ladder stops at 1920, because beyond that those
+  pixels aren't in the original) in an `overflow:hidden` container,
+  `cropImageStyle` in %, `aspect-ratio` from the crop's real pixel proportions → **nothing is
+  deformed**; `size` = a fixed width in px, otherwise it fills the parent (`w-100 h-100`); `label=""` =
+  decorative, when the name stands beside it. It needs the frame's dimensions),
+  `FaceThumb` (**the legacy** square crop via `faceCropStyle` — it deforms and reads `tile_*`; it stays
+  only for cluster previews, whose payload doesn't carry the frame),
+  `FaceOverlay`+`FacesPanel`+`FaceAssignPanel` (`FaceOverlay` = a **purely presentational** transparent layer
+  of clickable boxes from the normalized bbox via `faceBoxStyle`, **no image or fetch of its own** —
+  it mounts as the last child of the `position-relative` wrapper tight around the `<img>`; the layer is
+  click-through, pointer events are caught only by the boxes (and with `readOnly` not even by those; the box's number and name tag have
+  `pointer-events:none`, otherwise they would steal the click and break the swipe). A box carries `.kk-face-box` = an invisible
+  44px hitbox on `pointer: coarse` (see app.css below), so even a small face can be hit on a phone, and it reports
+  the pairing with the panel from **focus** too, not only from hover (a finger doesn't hover, but a tap focuses the box). The data +
+  the naming state machine
+  are held by the `useFaces` hook. **`FacesPanel`** = the panel in the viewer's drawer, the single place where assignment happens:
+  **text rows** `Obličej #N` + a colored status chip (no crops — one image per page),
+  a click selects/deselects, hover mirrors the box; the selected row **scrolls itself into view**
+  (`block: 'nearest'`), so that a tap on a box in the photo doesn't mark a row off-screen; under the selected row
+  `FaceAssignPanel` expands
+  (`key={face_index}` → the state resets when the selection changes). **`FaceAssignPanel`** = the top-3 suggestions
+  (`{name} · {confidence}%`, one-tap) + a typeahead over `useSubjects` (`AddAutocomplete` with `autoFocus`
+  and `hint` = the person's photo count); for an assigned face **Přeřadit** (suggestions, which the backend supplies
+  for assigned faces too — the face's own person is excluded from them) and **Odebrat**; Esc leaves the reassignment first,
+  then the selection), `ClusterCard`, `Candidates` (the per-subject version of `/faces` embedded in the person's page:
+  a **Najít návrhy** button → `searchCandidates` with the default threshold `THRESHOLD_DEFAULT_PERCENT` and
+  limit 60, reusing `useCandidateReview`+`CandidateCard` without a fork; ✓ confirms via `assignFace`
+  and `onAssigned` reloads the gallery, ✗ rejects via `rejectFace`, both optimistically, and a confirmed/
+  rejected card disappears from the list; `no_faces`/`no_embeddings`/empty have an explanation; an
+  **Otevřít celý nástroj** link to `/faces?subject={uid}`), `Outliers` (a ranking of suspicious faces
+  with a one-tap unassign on the person's page + a **Projít všechny** link to `/outliers?subject={uid}`, where
+  the full sweep version lives),
+  `OutlierCard`/`OutlierControls`/`OutlierStats` (the building blocks of `/outliers`: a card with a **context
+  crop** (30 % around the bbox, `padBbox`+`cropImageStyle`+`boxWithinCrop`), the question „Je to chyba?"
+  and two opposite verdicts (✓ remove / ✗ confirm), a selection checkbox and a focus ring; a config
+  strip with a person picker and a percentage threshold; statistics including the **`no_embedding`** message);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
-  vystavuje `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`; `ProtectedRoute` =
-  `RequireAuth` + `RequireRole` + `RequireImport` route guardy),
-  `capabilities/` (`CapabilitiesContext`/`useCapabilities` + `CapabilitiesProvider` = instanční
-  feature-flagy `{semantic_search}` z `GET /api/v1/capabilities`; provider je uvnitř `AuthProvider`,
-  fetchuje při mountu + po 60 s + na `visibilitychange` (stejný vzor jako `useJobStats`), selhaný
-  fetch drží poslední stav; **na rozdíl od `useAuth` hook nehází** — kontext má bezpečný default
-  `{semantic_search:false}`, takže komponenta mimo provider jen skryje volitelnou nabídku místo pádu.
-  Čte ho `FilterBar` pro odkaz na sémantické hledání), `hooks/` (`usePaginatedPhotos` = sdílený
-  paginovaný infinite-scroll loader nad libovolným `PageFetcher`: akumuluje stránky,
-  `loadMore`/`retry`, reset+refetch **se skeletonem** při změně dotazu/`key`/`enabled`, ruší
-  in-flight requesty a ignoruje stale odpovědi, vystavuje i `mode`/`degraded`; `enabled:false`
-  → `idle` stav bez requestu. **`reloadKey` (oddělené od `key`) je _pozadí_ refetch všech dosud
-  načtených stránek při nezměněném dotazu: aktuální fotky zůstanou připnuté, `status` zůstane
-  `ready` (žádný skeleton, žádné znovunačtení náhledů), takže hromadná úprava (favorite/archiv)
-  se projeví v místě bez bliknutí mřížky; `reloading` je po dobu refreshe true, neúspěšný refresh
-  je tichý (seznam zůstane, i když spadne až druhá stránka).** Refetch není jen první stránka:
-  hook si počítá `pages` (počet úspěšně načtených stránek — ne `photos.length / PAGE_SIZE`, stránka
-  může přijít kratší) a projde je popořadě podle serverového `next_offset`, dokud rozsah nedojede
-  nebo (po hromadném archivu) nedojdou fotky. Jinak by čtenáře zanořeného na 4. stránce reload
-  odhodil na konec stostránkového seznamu a o stránky 2–4 by přišel.
-  `usePhotoLibrary(params,{reloadKey?})` = tenká obálka nad ním nad
-  `fetchPhotos` (`reloadKey` přehraje mřížku na pozadí po mutaci, stejně jako u `useScopedPhotos`);
-  `usePhotoSearch(params,mode,{reloadKey?})` = obálka nad `searchPhotos` s injektovaným `mode`
-  (jde do `key` → změna módu resetuje se skeletonem), vypnutá při prázdném `q` (idle), `reloadKey`
-  přehraje hledání na pozadí po mutaci;
-  `useUploadQueue` = fronta uploadu: `addFiles` (dedup jméno+velikost+mtime)/`removeItem`/
-  `start`/`retry`/`retryFailed`/`clear`, konkurenční strop `MAX_CONCURRENT_UPLOADS` (3),
-  per-file status+progress, souhrn počtů + `progress` (**celková** frakce dávky 0–1 vážená
-  částečným progressem běžících souborů, terminální soubory = hotové → plynulý overall bar),
-  `createdUids` (jen nové) pro odkaz do knihovny
-  a `resolvedUids` (nové **i** duplicitní fotky) pro pouploadové přiřazení; auto-drainuje
-  frontu efektem po `start`/retry, ruší běžící uploady při unmountu;
-  `useUploadOrganize` = výběr alb/štítků pro celou dávku uploadu + jejich přiřazení: načte katalogy
-  alb a štítků (`fetchAlbums`/`fetchLabels`), drží výběr (inline vytvoření jako `create:` marker
-  jako v `BulkEditModal`, sdílené helpery `lib/pendingCreate`), `runAssign(uids)` nejdřív založí
-  čekající alba/štítky a pak jedním `POST /photos/bulk` (`add_to_albums`+`add_labels`) přiřadí;
-  stav `idle`/`assigning`/`done`/`error`, `retryAssign` re-poslání téže dávky, `resetAssign`;
-  `setAlbums`/`setLabels` jsou obálky, které po dokončeném přiřazení (`done`/`error`) vrátí stav na
-  `idle` → výběr zvolený **až po** dokončení dávky se skutečně aplikuje (dřív se tiše zahodil,
-  zatímco zelená hláška hlásila úspěch); interní přepis `create:` markeru na reálný UID během
-  běžícího přiřazení stav zpět na `idle` nevrací;
-  `useSubjectPhotos(uid,{reloadKey?})` = obálka nad `usePaginatedPhotos` nad
-  `GET /subjects/{uid}/photos` (galerie osoby, `uid` jde do `key` → reset se skeletonem při změně
-  osoby, `reloadKey` je pozadí refetch po mutaci); `useScopedPhotos` = obálka nad `usePaginatedPhotos`
-  nad `GET /photos` scopnutým na album/štítek/**lokalitu** (`PhotoScope` `{album?,label?,country?,city?}`
-  + filtry/sort z URL, options `{reloadKey?,enabled?}` — `reloadKey` pro pozadí refetch po mutaci, `enabled:false`
-  → idle bez fetche, např. Places před výběrem města); `useMapPhotos` = jednorázový (nestránkovaný) loader
-  GeoJSON feedu geotagovaných fotek nad `fetchMapPhotos` (`status` loading/ready/error, `retry`,
-  ruší in-flight + ignoruje stale při změně filtrů);
-  `useJobStats(enabled)` = poller stavu fronty jobů nad `fetchJobStats` (`GET /jobs/stats`) pro badge
-  v patičce: fetchuje **jen když `enabled`** (admin), refetch po ~30 s, **pauzuje při skryté záložce**
-  (`visibilitychange`/`document.hidden`) a při návratu hned refreshne; selhání spolkne a vrátí `null`
-  (badge se skryje), na unmountu/`enabled→false` ruší timer i in-flight request — nic ho nepřežije;
-  `useAnnouncement()` = poller instance-wide oznámení nad `fetchAnnouncement` (`GET /announcement`) pro
-  `AnnouncementBanner`: fetch on-mount + refetch po ~60 s, **pauzuje při skryté záložce** a při návratu hned
-  refreshne, selhání spolkne a vrátí `null` (banner se skryje), na unmountu ruší timer i in-flight (zrcadlí
+  exposes `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`; `ProtectedRoute` =
+  the `RequireAuth` + `RequireRole` + `RequireImport` route guards),
+  `capabilities/` (`CapabilitiesContext`/`useCapabilities` + `CapabilitiesProvider` = the instance
+  feature flags `{semantic_search}` from `GET /api/v1/capabilities`; the provider sits inside `AuthProvider`,
+  fetches on mount + after 60 s + on `visibilitychange` (the same pattern as `useJobStats`), a failed
+  fetch keeps the last state; **unlike `useAuth` the hook doesn't throw** — the context has a safe default
+  `{semantic_search:false}`, so a component outside the provider merely hides the optional offer instead of crashing.
+  `FilterBar` reads it for the semantic-search link), `hooks/` (`usePaginatedPhotos` = a shared
+  paginated infinite-scroll loader over an arbitrary `PageFetcher`: it accumulates pages,
+  `loadMore`/`retry`, reset+refetch **with a skeleton** when the query/`key`/`enabled` changes, cancels
+  in-flight requests and ignores stale responses, and also exposes `mode`/`degraded`; `enabled:false`
+  → an `idle` state without a request. **`reloadKey` (separate from `key`) is a _background_ refetch of all pages
+  loaded so far with the query unchanged: the current photos stay pinned, `status` stays
+  `ready` (no skeleton, no reloading of previews), so a bulk edit (favorite/archive)
+  takes effect in place without the grid blinking; `reloading` is true for the duration of the refresh, a failed refresh
+  is silent (the list stays, even if it is the second page that fails).** The refetch is not just the first page:
+  the hook counts `pages` (the number of successfully loaded pages — not `photos.length / PAGE_SIZE`, a page
+  may come back shorter) and walks them in order by the server's `next_offset`, until the range runs out
+  or (after a bulk archive) the photos run out. Otherwise a reload would throw a reader nested on page 4
+  to the end of a hundred-page list and lose pages 2–4 for them.
+  `usePhotoLibrary(params,{reloadKey?})` = a thin wrapper over it over
+  `fetchPhotos` (`reloadKey` replays the grid in the background after a mutation, just like `useScopedPhotos`);
+  `usePhotoSearch(params,mode,{reloadKey?})` = a wrapper over `searchPhotos` with an injected `mode`
+  (it goes into `key` → a mode change resets with a skeleton), disabled on an empty `q` (idle), `reloadKey`
+  replays the search in the background after a mutation;
+  `useUploadQueue` = the upload queue: `addFiles` (dedup on name+size+mtime)/`removeItem`/
+  `start`/`retry`/`retryFailed`/`clear`, a concurrency ceiling `MAX_CONCURRENT_UPLOADS` (3),
+  per-file status+progress, a summary of counts + `progress` (the **overall** fraction of the batch 0–1 weighted by
+  the partial progress of running files, terminal files = done → a smooth overall bar),
+  `createdUids` (new ones only) for the link into the library
+  and `resolvedUids` (new **and** duplicate photos) for the post-upload assignment; it auto-drains
+  the queue with an effect after `start`/retry, and cancels running uploads on unmount;
+  `useUploadOrganize` = a choice of albums/labels for the whole upload batch + their assignment: it loads the catalogues
+  of albums and labels (`fetchAlbums`/`fetchLabels`), holds the selection (inline creation as a `create:` marker
+  as in `BulkEditModal`, shared helpers `lib/pendingCreate`), `runAssign(uids)` first creates
+  the pending albums/labels and then assigns with a single `POST /photos/bulk` (`add_to_albums`+`add_labels`);
+  state `idle`/`assigning`/`done`/`error`, `retryAssign` resends the same batch, `resetAssign`;
+  `setAlbums`/`setLabels` are wrappers that return the state to `idle` after a completed assignment (`done`/`error`)
+  → a selection made **after** the batch finished really does get applied (it used to be silently dropped
+  while the green message reported success); an internal rewrite of a `create:` marker to a real UID during
+  a running assignment does **not** return the state to `idle`;
+  `useSubjectPhotos(uid,{reloadKey?})` = a wrapper over `usePaginatedPhotos` over
+  `GET /subjects/{uid}/photos` (a person's gallery, `uid` goes into `key` → a reset with a skeleton when the
+  person changes, `reloadKey` is a background refetch after a mutation); `useScopedPhotos` = a wrapper over `usePaginatedPhotos`
+  over `GET /photos` scoped to an album/label/**place** (`PhotoScope` `{album?,label?,country?,city?}`
+  + filters/sort from the URL, options `{reloadKey?,enabled?}` — `reloadKey` for a background refetch after a mutation, `enabled:false`
+  → idle without a fetch, e.g. Places before a city is picked); `useMapPhotos` = a one-off (unpaginated) loader
+  of the GeoJSON feed of geotagged photos over `fetchMapPhotos` (`status` loading/ready/error, `retry`,
+  cancels in-flight + ignores stale when the filters change);
+  `useJobStats(enabled)` = a poller of the job-queue state over `fetchJobStats` (`GET /jobs/stats`) for the badge
+  in the footer: it fetches **only when `enabled`** (admin), refetches after ~30 s, **pauses on a hidden tab**
+  (`visibilitychange`/`document.hidden`) and refreshes immediately on return; it swallows a failure and returns `null`
+  (the badge hides), and on unmount/`enabled→false` it cancels the timer and the in-flight request — nothing outlives it;
+  `useAnnouncement()` = a poller of the instance-wide announcement over `fetchAnnouncement` (`GET /announcement`) for
+  `AnnouncementBanner`: fetch on mount + refetch after ~60 s, **pauses on a hidden tab** and refreshes immediately
+  on return, swallows a failure and returns `null` (the banner hides), on unmount it cancels the timer and the in-flight request (mirrors
   `useJobStats`);
-  `useLibraryStats(enabled=true)` = loader statistik knihovny nad `fetchLibraryStats` (`GET /system/stats`)
-  → `{state,reload}` se stavem `loading|error|ready`: **chybu vystaví explicitně** (nikdy nespolkne do nul —
-  prázdná knihovna a nedostupný počet nesmí vypadat stejně), přerušený request (unmount/retry) chybou není,
-  `reload` fetch zopakuje (retry v `ErrorState`); jeden zdroj pro `StatsPage` i sekci Knihovna
-  na `SystemStatusPage` (agregace je na backendu memoizovaná, dva čtenáři = jeden dotaz);
+  `useLibraryStats(enabled=true)` = a loader of the library statistics over `fetchLibraryStats` (`GET /system/stats`)
+  → `{state,reload}` with the state `loading|error|ready`: it **surfaces an error explicitly** (never swallows it into zeroes —
+  an empty library and an unavailable count must not look the same), an aborted request (unmount/retry) is not an error,
+  `reload` repeats the fetch (the retry in `ErrorState`); one source for `StatsPage` and the Library section
+  on `SystemStatusPage` (the aggregation is memoized on the backend, two readers = one query);
 
-  `useLibraryFacets(params)` = loader nabídek facetů knihovny → `LibraryFacets{years,albums,labels,subjects}`:
-  roky přes `fetchPhotoYears` **refetchuje při změně filtrů** (rok drží méně fotek, jakmile přibude
-  štítek), ale **`year` z requestu strhává** (backend ho stejně ignoruje — facet nesmí zúžit vlastní
-  nabídku — a bez něj zůstane request identický, takže přepínání let nerefetchuje); alba, štítky a
-  subjekty (osoby, přes `fetchSubjects`) jsou katalogové, načtou se **jednou**. Neúspěch nechá ten seznam **prázdný** místo chyby (facet,
-  který nemá co nabídnout, je degradovaný bar, ne rozbitá stránka — chyby načtení hlásí mřížka);
-  in-flight requesty ruší `AbortController` při změně `params`/unmountu a odpověď na roky se navíc
-  ověřuje proti `latestYears` seq refu (abort je no-op, jakmile odpověď už letí drátem), takže
-  pomalá odpověď nepřepíše novější — jinak by ve facetu bliklo pár špatných počtů po roce
-  (`params` si volající memoizuje z URL stavu); `useTimeline(params)` = jednorázový loader
-  měsíčního date-histogramu nad `fetchTimeline` (`buckets`/`total`/`status`, refetch při změně
-  filtrů, ruší in-flight + ignoruje stale — podklad `TimelineScrubber`); `useGlobalSearch(query,
-  debounceMs?)` = debouncovaný (default 250 ms) grouped global-search loader nad `globalSearch`
-  (`status` idle/loading/ready/error + `result`, prázdný dotaz → idle bez requestu, ruší in-flight +
-  ignoruje stale — podklad `GlobalSearchSections`); `usePlaceSearch(query,debounceMs?)` =
-  debouncovaný (default 300 ms) loader našeptávače míst nad `searchPlaces` (`status`
-  idle/loading/ready/**error**/**unavailable** + `places`, ruší in-flight + ignoruje stale —
-  podklad `PlaceSearch`); zrcadlí `useGlobalSearch` s dvěma rozdíly, které plynou z toho, že
-  lookup **stojí kredit**: dotaz kratší než 2 znaky je `idle` **bez requestu** (jedno písmeno není
-  název místa, jen klávesa na cestě k němu) a statusy 424/502/503 dostanou vlastní stav
-  `unavailable` (rozbitá je strana poskytovatele, opakovat nemá smysl) proti `error` (zbytek,
-  vč. 429 — zkusit znovu dává smysl); `useGridJump({gridRef,
-  loadedCount,hasMore,loadingMore,loadMore})` = vrátí `jumpTo(index)`, který skočí mřížkou na foto
-  index přes `VirtuosoGridHandle.scrollToIndex` a **nejdřív donačte stránky**, když cíl leží za
-  infinite-scroll kurzorem (nebo clampne na poslední načtené, když už další stránky nejsou) —
-  podklad skoku časové osy na měsíc před načtenou částí; `useSelection` = multi-výběr fotek v mřížce
+  `useLibraryFacets(params)` = a loader of the library's facet offers → `LibraryFacets{years,albums,labels,subjects}`:
+  the years over `fetchPhotoYears` **refetch when the filters change** (a year holds fewer photos as soon as a label
+  is added), but it **strips `year` from the request** (the backend ignores it anyway — a facet must not narrow its own
+  offer — and without it the request stays identical, so switching years doesn't refetch); albums, labels and
+  subjects (people, via `fetchSubjects`) are catalogues, loaded **once**. A failure leaves that list **empty** instead of an error (a facet
+  that has nothing to offer is a degraded bar, not a broken page — load errors are reported by the grid);
+  in-flight requests are cancelled by `AbortController` when `params` change/on unmount, and the years response is additionally
+  checked against the `latestYears` seq ref (an abort is a no-op once the response is already on the wire), so that a
+  slow response doesn't overwrite a newer one — otherwise a few wrong counts would flash in the facet after a year change
+  (the caller memoizes `params` from the URL state); `useTimeline(params)` = a one-off loader
+  of the monthly date histogram over `fetchTimeline` (`buckets`/`total`/`status`, refetch when the filters
+  change, cancels in-flight + ignores stale — the basis for `TimelineScrubber`); `useGlobalSearch(query,
+  debounceMs?)` = a debounced (default 250 ms) grouped global-search loader over `globalSearch`
+  (`status` idle/loading/ready/error + `result`, an empty query → idle without a request, cancels in-flight +
+  ignores stale — the basis for `GlobalSearchSections`); `usePlaceSearch(query,debounceMs?)` =
+  a debounced (default 300 ms) loader of the place typeahead over `searchPlaces` (`status`
+  idle/loading/ready/**error**/**unavailable** + `places`, cancels in-flight + ignores stale —
+  the basis for `PlaceSearch`); it mirrors `useGlobalSearch` with two differences that follow from the fact that a
+  lookup **costs credit**: a query shorter than 2 characters is `idle` **without a request** (a single letter is not a
+  place name, just a keystroke on the way to one) and the statuses 424/502/503 get their own state
+  `unavailable` (it is the provider's side that is broken, retrying makes no sense) as opposed to `error` (the rest,
+  incl. 429 — retrying does make sense); `useGridJump({gridRef,
+  loadedCount,hasMore,loadingMore,loadMore})` = returns `jumpTo(index)`, which jumps the grid to a photo
+  index via `VirtuosoGridHandle.scrollToIndex` and **loads the pages first** when the target lies past the
+  infinite-scroll cursor (or clamps to the last loaded one when there are no more pages) —
+  the basis for the timeline's jump to a month before the loaded part; `useSelection` = multi-selection of photos in the grid
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
-  poslední `toggle` drží **kotvu** a `toggleRange(uid, orderedUids)` (Shift+klik) vybere souvislý
-  rozsah mezi kotvou a `uid` — jen **přidává**, bez kotvy nebo s kotvou mimo pořadí degraduje na
-  `toggle`, `clear`/`disable` kotvu shodí;
-  `useBulkEdit({onEdited?, hoverSelect?})` = **znovupoužitelná hromadná úprava** libovolného foto-seznamu:
-  `useSelection` + role gate (`canBulkEdit` = `canWrite`) + stav dialogu
-  (`editing`/`open`/`close`/`finish`), k tomu `photoUids` (**přesně vybrané**, nikdy celý filtrovaný
-  výsledek) a `gridSelection` rovnou do `PhotoGrid` (vč. `onToggleRange` → Shift+klik rozsah zdarma
-  v každé mřížce). **`hoverSelect:true`** (**všechny foto-seznamy**: knihovna, detail alba/štítku,
-  oblíbené, hledání, místa, galerie osoby): `gridSelection` je pro editora **vždy** definované
-  s `hoverSelect` (žádný explicitní vstup do režimu — rohové zaškrtávátko na hoveru) a stránka
-  ukazuje `SelectionBar` na `selection.count > 0`, ne na `selection.active`; bez něj (jen /expand)
-  je `gridSelection` definované až po `enable()`. Viewer dostane vždy `undefined`.
-  `finish(outcome?)` = zavřít dialog → `selection.clear()`
-  → `onEdited(outcome?)` (refetch; `outcome` = `BulkEditOutcome` pro stránky, které umí seznam
-  upravit na místě — `/expand`); režim výběru přežije, takže po úspěchu jde hned vybírat dál a žádné
-  zastaralé UID v něm nezůstane. Neúspěšný apply výběr **nechá být**. Stránka wiruje jen
-  `gridSelection` (a v explicitním režimu `SelectionStart`), zbytek obstará `BulkEditControl`;
-  `useReloadKey()` = `[key, reload]`, string čítač do `reloadKey` foto-seznamu — jedno `reload()`
-  přehraje seznam **na pozadí** (refetch první stránky bez blanknutí do skeletonu, fotky zůstanou
-  připnuté); `reload` je stabilní, jde rovnou do `useBulkEdit({onEdited})`;
-  `useKeyboardShortcuts(handlers,{enabled?})` = sdílené plumbing všech klávesových zkratek: jeden
-  document-level `keydown` listener dispatchuje dle normalizovaného `shortcutToken(event.key)` na
-  `handlers` (přes refy, bind jednou a vždy vidí aktuální closury), matched key `preventDefault`;
-  **nikdy nevystřelí** při držení Ctrl/Meta/Alt, při psaní (`isTypingElement`) ani při otevřeném
-  form-modalu (`isFormModalOpen`);
-  `useAutoHideChrome({idleMs?,paused?})` → `{visible,wake}` = **mizející chrome** immersivního
-  prohlížeče (`PhotoDetailPage`): ovládání startuje viditelné, po `idleMs` (default 2600 ms) bez
-  aktivity se ztlumí a vrátí se při další aktivitě. Aktivitu hlídá **globálně** (pointer move/down,
-  key, touch), viditelnost drží přes ref a do stavu commituje **jen na skutečnou změnu**, takže
-  záplava `pointermove` nepřerenderovává každý frame; `paused` chrome **připne viditelné** a timer
-  nespustí (když je zásuvka otevřená). Rozhoduje jen *jestli* se chrome ukáže — *jak* animuje řeší
-  CSS přechod na duration tokenech (pod `prefers-reduced-motion` ~0);
+  the last `toggle` holds the **anchor** and `toggleRange(uid, orderedUids)` (Shift+click) selects a contiguous
+  range between the anchor and `uid` — it only **adds**, without an anchor or with an anchor out of order it degrades to
+  `toggle`, `clear`/`disable` drop the anchor;
+  `useBulkEdit({onEdited?, hoverSelect?})` = a **reusable bulk edit** of an arbitrary photo list:
+  `useSelection` + a role gate (`canBulkEdit` = `canWrite`) + the dialog state
+  (`editing`/`open`/`close`/`finish`), plus `photoUids` (**exactly the selected ones**, never the whole filtered
+  result) and `gridSelection` straight into `PhotoGrid` (incl. `onToggleRange` → a Shift+click range for free
+  in every grid). **`hoverSelect:true`** (**all photo lists**: the library, an album/label detail,
+  favorites, search, places, a person's gallery): `gridSelection` is **always** defined for an editor
+  with `hoverSelect` (no explicit entry into the mode — a corner checkbox on hover) and the page
+  shows `SelectionBar` on `selection.count > 0`, not on `selection.active`; without it (only /expand)
+  `gridSelection` is defined only after `enable()`. A viewer always gets `undefined`.
+  `finish(outcome?)` = close the dialog → `selection.clear()`
+  → `onEdited(outcome?)` (refetch; `outcome` = `BulkEditOutcome` for pages that can edit the list
+  in place — `/expand`); the selection mode survives, so after a success you can keep selecting right away and no
+  stale UID is left in it. A failed apply **leaves the selection alone**. The page wires only
+  `gridSelection` (and `SelectionStart` in the explicit mode), the rest is handled by `BulkEditControl`;
+  `useReloadKey()` = `[key, reload]`, a string counter for a photo list's `reloadKey` — a single `reload()`
+  replays the list **in the background** (a refetch of the first page without blanking into a skeleton, the photos stay
+  pinned); `reload` is stable and goes straight into `useBulkEdit({onEdited})`;
+  `useKeyboardShortcuts(handlers,{enabled?})` = the shared plumbing of all keyboard shortcuts: a single
+  document-level `keydown` listener dispatches by the normalized `shortcutToken(event.key)` onto
+  `handlers` (via refs, bound once and always seeing the current closures), a matched key `preventDefault`s;
+  it **never fires** while Ctrl/Meta/Alt is held, while typing (`isTypingElement`) or with a form modal
+  open (`isFormModalOpen`);
+  `useAutoHideChrome({idleMs?,paused?})` → `{visible,wake}` = the **disappearing chrome** of the immersive
+  viewer (`PhotoDetailPage`): the controls start visible, after `idleMs` (default 2600 ms) without
+  activity they fade out and return on the next activity. It watches activity **globally** (pointer move/down,
+  key, touch), holds visibility in a ref and commits to state **only on a real change**, so a
+  flood of `pointermove` doesn't re-render every frame; `paused` **pins the chrome visible** and doesn't start the
+  timer (when the drawer is open). It decides only *whether* the chrome shows — *how* it animates is handled by
+  a CSS transition on duration tokens (under `prefers-reduced-motion` ~0);
   `useGridKeyboardNavigation({count,enabled,resetKey,getColumns,
-  scrollToIndex,onOpen,onToggleSelect,onToggleFavorite,hasSelection,onClearSelection})` = navigace
-  mřížky nad `useKeyboardShortcuts`: drží `focusedIndex` (zvýraznění), šipky + `j`/`k`/`h`/`l` posouvají
-  (vlevo/vpravo o 1, nahoru/dolů o řádek dle živého počtu sloupců) a dorolují dlaždici do view, `Enter`
-  otevře, `x` vybere (zapne selection mód), `f` přepne oblíbenou, `Escape` zruší nejdřív výběr, pak
-  fokus; fokus se resetuje na `resetKey` (nová filtr/sort/scope);
+  scrollToIndex,onOpen,onToggleSelect,onToggleFavorite,hasSelection,onClearSelection})` = grid navigation
+  over `useKeyboardShortcuts`: it holds `focusedIndex` (the highlight), the arrows + `j`/`k`/`h`/`l` move
+  (left/right by 1, up/down by a row based on the live column count) and scroll the tile into view, `Enter`
+  opens, `x` selects (turning on selection mode), `f` toggles the favorite, `Escape` clears the selection first, then the
+  focus; the focus resets on `resetKey` (a new filter/sort/scope);
   `useSwipeNavigation({onSwipe,enabled?,threshold?})` → `{onTouchStart,onTouchMove,onTouchEnd}` =
-  horizontální **swipe na dotyku → prev/next** na obrázku detailu; čte jen start/konec doteku a
-  **nikdy nedělá `preventDefault`**, takže mostly-vertikální tah propadne nativnímu scrollu (rozhoduje
-  `lib/gestures` `swipeAction`: práh + dominantní vodorovná složka). Gesto se zahodí při druhém prstu
-  (pinch) a když **začne na interaktivním prvku** (`button`/`a`/form) bez `data-swipe-surface` — takže
-  ťuknutí na obličejový box/šipku nelistuje, jen samotný obrázek (jeho tlačítko ten atribut nese). Myš
-  na desktopu sem nechodí, gesto je čistě aditivní pro dotyk;
-  `useSyncZoom({resetKey})` → `{view,zoomed,dragging,handlers,zoomIn,zoomOut,reset}` = **jeden**
-  zoom/pan stav pro **obě** fotky v `DupComparePage`: obě `<img>` renderují týž `ZoomView`, takže
-  jsou synchronní **z konstrukce** — není co kopírovat mezi panely, není kde se rozejít. Kolečko
-  zoomuje k kurzoru, tažení posouvá (jen když je přiblíženo), dvojklik přepíná fit ↔ 3×, změna
-  `resetKey` (id dvojice) vrátí fit, takže další dvojice nezdědí přiblížení. **Není to
-  `usePinchZoom`:** ten je touch-only a měří proti `window` (obrázek vyplňuje viewport), tady jde
-  o myš ve dvou půlkách obrazovky, takže box se předává dovnitř; čistá matematika je v
+  a horizontal **swipe on touch → prev/next** on the detail's image; it reads only the start/end of the touch and
+  **never calls `preventDefault`**, so a mostly-vertical drag falls through to the native scroll (`lib/gestures`
+  `swipeAction` decides: a threshold + a dominant horizontal component). The gesture is dropped on a second finger
+  (pinch) and when it **starts on an interactive element** (`button`/`a`/form) without `data-swipe-surface` — so
+  a tap on a face box/arrow doesn't page, only the image itself does (its button carries that attribute). The mouse
+  on the desktop never comes here, the gesture is purely additive for touch;
+  `useSyncZoom({resetKey})` → `{view,zoomed,dragging,handlers,zoomIn,zoomOut,reset}` = **one**
+  zoom/pan state for **both** photos in `DupComparePage`: both `<img>`s render the same `ZoomView`, so they
+  are synchronous **by construction** — there is nothing to copy between the panels and nowhere to diverge. The wheel
+  zooms toward the cursor, dragging pans (only when zoomed in), a double-click toggles fit ↔ 3×, a change of
+  `resetKey` (the pair's id) returns to fit, so the next pair doesn't inherit the zoom. **It is not
+  `usePinchZoom`:** that one is touch-only and measures against `window` (the image fills the viewport), here it is
+  about a mouse in two halves of the screen, so the box is passed in; the pure maths lives in
   `lib/compareZoom`,
-  `useComparePair(pair)` → `{data,loading,error}` = načte obě strany porovnání (`fetchPhoto` ×2 +
-  `fetchFaces` ×2, paralelně, `AbortController`); selže-li kterákoli, selže celá dvojice — půlka
-  diff tabulky by lhala mlčením,
+  `useComparePair(pair)` → `{data,loading,error}` = loads both sides of the comparison (`fetchPhoto` ×2 +
+  `fetchFaces` ×2, in parallel, `AbortController`); if either fails, the whole pair fails — half of the
+  diff table would lie by omission,
   `usePinchZoom({onSwipe,resetKey,enabled?})` →
-  `{scale,translateX,translateY,isZoomed,gesturing,handlers,reset}` = **pinch/dvojklik zoom** fullscreen
-  lightboxu s **pan** při přiblížení a swipe listováním v klidu: dva prsty škálují (`pinchScale`, clamp
-  `[1,4]`), **dvojklik** přepíná fit ↔ `DOUBLE_TAP_SCALE` (zoom k místu ťuknutí), tah přiblíženého
-  obrázku panuje (clamp `clampPan`, aby nevyjel z obrazovky), tah v klidu rozhodne swipe (`swipeAction`);
-  **zoom se resetuje při změně `resetKey`** (zobrazená fotka) a zavřením (lightbox se odmountuje). Povrch
-  má `touch-action:none`, takže `preventDefault` není potřeba a prohlížeč gesto nepřebíjí;
-  `useFaces(photoUid)` = načte obličeje fotky (`fetchFaces`) a drží stavový automat pojmenování
-  (výběr boxu, optimistické přiřazení, refetch smiřující se serverem, `busy`/`actionError`);
-  vytažen z `FaceOverlay`, aby detail mohl kreslit boxy nad svým jediným obrázkem a panel
-  pojmenování renderovat jinde na stránce. **Po načtení vybere první nepojmenovaný obličej**
-  a **po přiřazení posune výběr na další nepojmenovaný** (`firstUnnamed`/`nextUnnamed`, řadí dle
-  **pořadí v poli**, ne `face_index`; `facesRef` proti stale closure) — skupinovou fotku tak projedeš
-  bez sahání po myši. `unassign` výběr **nechá** (obličej se právě uvolnil a typicky ho hned
-  přejmenováváš). Smiřovací refetch po mutaci auto-výběr **nespouští** (`reload(signal, autoSelect)`),
-  jinak by pojmenování posledního obličeje odskočilo zpátky nahoru. **Detail listuje prev/next bez
-  remountu hooku**, takže se každá odpověď ověřuje proti fotce, pro kterou se ptala: `currentUidRef`
-  (uid aktuálního renderu) zahodí smiřovací refetch fotky, ze které už čtenář odešel — a to _dřív_,
-  než si vezme `latestRequest` id, aby neshodil probíhající načtení té nové; `latestRequest` pak řeší
-  přeskočení pomalé odpovědi novější pro tutéž fotku. Bez toho by pomalý `reload(A)` přemaloval
-  obličeje fotky B a další přiřazení by poslalo `marker_uid` z A proti B (404). Ze stejného důvodu
-  je `busy`/`actionError` na začátku každé fotky vynulován a chyba/dokončení mutace se propíše jen
-  tehdy, když je čtenář pořád u téže fotky;
-  `useSubjects()` = líný seznam všech subjektů pro typeahead (mountuje se až s `FacesPanel`,
-  takže prohlížení fotky ho nikdy nezaplatí; chyba = prázdný seznam, pole pak jen zakládá nové);
-  `useCandidateReview(subjectUid,candidates)` = stavový stroj review mřížky `/faces`: naseeduje
-  pracovní seznam z čerstvého hledání a aplikuje ✓/✗ **optimisticky** (mřížka se nereloadne);
-  `confirm` překlopí kartu na `done` a zavolá `assignFace` (chyba → `error` k retry, sousedů se
-  nedotkne), `reject` kartu odebere + `rejectFace` (při chybě vrátí zpět), `confirmAll(tab)` projde
-  akční karty jedné záložky sekvenčně s `confirmAllState` `{running,current,total,failed}`,
-  zrušitelně (`cancelConfirmAll`), částečné selhání neroluje zpět a nahlásí přes `actionError`;
-  `useSweepReview()` = orchestrátor `/recognition` sweepu (multi-osoba varianta review): streamuje
-  přes `streamSweep`, sbírá jednu `PersonState` na osobu s matchi jak přicházejí (`progress`/`person`/
-  `summary`), `confirm`/`reject`/`confirmAllForPerson` aplikuje **optimisticky** stejnými pravidly
-  (`buildAssignRequest`/`buildRejection` z `candidateReview`), `people` vrací jen osoby s akčními
-  kartami (osoba zmizí, když se vyřídí poslední); `cancel`→`AbortController`, jeden `confirmAll` běží
-  naráz; nikdy neautoconfirmuje;
-  `useOutlierReview(subjectUid,faces)` = stavový stroj mřížky `/outliers`: naseeduje pracovní seznam
-  z čerstvého dotazu a aplikuje oba verdikty **optimisticky a na místě** — karta flipne, kde stojí,
-  mřížka se nereloadne a scroll neuteče kurátorovi uprostřed dlouhého seznamu. Verdikty jsou
-  **opačné a míří na opačné endpointy**: ✓ `unassign` odpojí osobu přes běžný assign automat,
-  ✗ `confirm` zapíše **trvalé potvrzení** (`confirmFace`), které backend z dalších outlier dotazů
-  vyloučí — seznam, co dokola nabízí tytéž plané poplachy, je přesně ten problém, co tahle stránka
-  řeší. Selhaný zápis označí **vlastní** kartu `error` a sousedů se nedotkne. `unassignMany` jde
-  výběrem **sekvenčně** a **přizná částečné selhání** (`bulkState{running,current,total,failed}`,
-  cancelovatelné): už odebrané zůstanou odebrané, chyby se spočítají a řeknou, nerollbackují se
-  ani nespolknou. Nové `faces` (jiná osoba/práh) resetují vše a opustí běžící run;
-  `useReviewGame()` = engine hry na třídění (`/review`): lokální fronta otázek plněná **na pozadí**
-  (`fetchReviewQueue`; refill jakmile klesne na `REFILL_AT = 3`, deduplikace proti **všem** už
-  viděným id, takže hranice batche je neviditelná), **optimistické** odpovědi (`answer` posune UI
-  hned a request doběhne vzadu; selhání spadne do `failed` k explicitnímu retry — nikdy neblokuje
-  rytmus ani tiše neztratí verdikt) a **jednokrokové undo**. Fronta má **zdroj pravdy v refu**, ne
-  ve stavu: dvě odpovědi se vejdou do jednoho renderu (šipky v rychlosti) a čtení hlavy ze stavu by
-  tutéž kartu zodpovědělo dvakrát. `undo` jde přes **inverzní** zápisové cesty (`unassign_person`,
-  DELETE feedback-rejection, detach štítku), protože `POST /review/answer` je **idempotentní per
-  otázka** — a ze stejného důvodu se **znovu**-odpověď na vrácenou otázku posílá přímými cestami
-  (`sendDirect`), jinak by no-opla jako `already_answered`; undo nejdřív **počká na in-flight**
-  request, aby inverze nepředběhla odpověď, kterou vrací, a `create_marker`-ano dohledá vzniklý
-  marker přes `fetchFaces`, takže případné pozdější re-ano je `assign_person` na **týž** marker,
-  ne duplikát;
-  `useFavorite(uid,initial,onChange?)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
-  (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
-  `uid`/server stavu; volitelné `onChange` hlásí **každý** vlastní překlop (optimistický i vrácený,
-  ten i po odmountování dlaždice — vlastník seznamu ji přežije) nahoru, aby stránka, která tutéž
-  fotku oblibuje i jinudy (klávesa `f` v knihovně), držela **jeden** výchozí stav, ne dva rozjeté;
-  resync se nehlásí, ten přichází od vlastníka; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user
-  hodnocení (hvězdy) + pick/reject flag nad `ratePhoto` (`PUT …/rating` jen s měněným polem),
-  `setRating`/`setFlag` s per-poli rollbackem při chybě, no-op na shodnou hodnotu, `pending` přes
-  in-flight counter, resync na změnu `uid`/server stavu (mirror `useFavorite`);
-  `useThumbSrc(uid,thumbUrl)` → `{src,failed,onError}` = **odolnost vůči expirované podepsané URL**:
-  `thumb_url` v payloadu může být krátkodobě podepsaná adresa media Workeru (default 1 h), takže
-  payload držený ve virtualizovaném seznamu nebo přečkaný přes delší nečinnost dá `<img>` adresu,
-  kterou Worker odmítne. První `onError` proto **jednou** refetchne fotku (`fetchPhoto`) a zkusí to
-  s čerstvě podepsanou URL; druhý pád, selhaný refetch, prázdná nebo **nezměněná** adresa (to dělá
-  filesystem backend — jeho URL jsou routy a nestárnou, takže pád = fakt chybějící náhled) → `failed`
-  a volající vykreslí placeholder. Nová `thumbUrl` prop (nová stránka výsledků) resetuje retry budget.
-  Řeší se to takhle, **ne dlouhým TTL** — krátká životnost je celý smysl podpisu. Používá
-  `PhotoTile` a `TrashCard`;
-  `useSlideshow({length,hasMore,intervalMs,autoPlay?,onLoadMore?,readiness?,maxHoldMs?})` = řízení
-  promítání: vlastní `index`+`playing`+`holding`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`,
-  wrap-around, prefetch `PRELOAD_AHEAD` stránek dopředu
-  přes `onLoadMore` (na konci s další stránkou počká místo zacyklení), prázdná sada = no-op, clamp
-  indexu při zmenšení sady. **Auto-advance je hlídaný `readiness(index)`**: uplynulý interval
-  nepřepne slide, ale spustí *hold* — přepne se v okamžiku, kdy je další snímek `ready` (dekódovaný),
-  po `maxHoldMs` (default `MAX_HOLD_MS` = 10 s) přepne tak jako tak, a slide s `error` **přeskočí**
-  (rozbitý snímek show neblokuje). Manuální nav a pauza hold zruší (manuál nikdy nečeká, resume
-  začne čerstvý interval), interval se dá měnit **během holdu** bez restartu/zdvojení timeru
-  (timer se během holdu nearmuje, deadline holdu nezávisí na `intervalMs` ani na `readiness`).
-  Sada < 2 snímků ani nedrží, ani nepřepíná. `preloadWindow(index,length)` = indexy k přednačtení
-  (`PRELOAD_AHEAD` dopředu, `PRELOAD_BEHIND` dozadu, aktuální první, offsety **wrapují** →
-  na konci show jsou první snímky připravené na wrap-around, u malé sady se dedupuje);
-  `useImagePreloader()` → `{statusOf(url),prime(urls)}` = přednačítá okno obrázků a hlásí
-  `pending`/`ready`/`error`. `prime(urls)` je **celé okno** — cokoli mimo se hned uvolní
-  (`removeAttribute('src')` = abort in-flight fetche), poslední okno se uvolní na unmountu, takže
-  dlouhá show nekumuluje dekódované bitmapy. Readiness měří **`img.decode()`**, ne `onload`: onload
-  znamená „bajty dorazily", dekódování by teprve proběhlo při prvním paintu (přesně ten záblesk
-  prázdné plochy, kvůli kterému to celé je); `decode()` je feature-detected (jsdom ho nemá →
-  fallback na `onload`/`onerror`). Pozdní `decode()` už uvolněného obrázku se ignoruje. Statusy žijí
-  ve stavu → `statusOf` mění identitu při každém dosednutí, takže na něm jde záviset efektem;
-  `useSlideshowSettings` = persistentní efekt+rychlost přes
-  `lib/slideshowSettings` (read once on mount, setteri zapisují do localStorage, sanitizace);
-  `useGridDensity()` → `{density,setDensity}` = hustota foto-mřížky (**vždy konkrétní počet sloupců
-  1…10**, žádný `'auto'` režim) přes `useSyncExternalStore` nad `lib/gridDensity`. localStorage je
-  **jediný zdroj pravdy** (žádná in-memory kopie): snapshot je primitivum (počet sloupců, nebo `null`
-  = nic použitelného uloženo), takže Reactí `Object.is` porovnání nikdy nezacyklí. **Při prvním
-  použití** (prázdné úložiště nebo starší `'auto'`/rozbitá hodnota k migraci) se hustota **jednou**
-  naseeduje z šířky viewportu (`initialColumns`) a uloží — auto už jen seeduje první hodnotu, pak je
-  to natvrdo uživatelova volba a pozdější resize s ní **nehne**. `subscribe` poslouchá i `storage`
-  event → všechny záložky na zařízení drží stejný počet sloupců; `setGridDensity` sanitizuje, zapíše
-  a překreslí **všechny** mřížky naráz, bez contextu a bez providera (takže i testy stránek fungují
-  bez wrapperu);
-  `useIsNarrowViewport()` = sdílený hook nad `matchMedia` (`(max-width: 767.98px)`, Bootstrap `md`;
-  odebírá `change`, chybějící/rozbité `matchMedia` → „široký"; jeden zdroj pravdy pro offcanvas
-  filtrů, výchozí hustotu mřížky, kolaps `BatchActionBar` i `HeaderActions` do „…" overflow menu na telefonu i přesun
-  kurátorské smyčky prohlížeče z horní lišty do spodního doku na dosah palce);
-  `usePrefersReducedMotion()` = sleduje `(prefers-reduced-motion: reduce)` přes `matchMedia`
-  (odebírá `change`, chybějící/rozbité `matchMedia` → `false`) — volající dekorativní animaci
-  **vynechá**, ne zkrátí)),
-  `lib/` (`gestures.ts` = **pure, DOM-free rozhodovací helpery dotykových gest** sdílené
-  `useSwipeNavigation`/`usePinchZoom` (a proto **přímo unit-testovatelné** bez jsdom touch sekvencí):
-  `swipeAction(dx,dy,{threshold,ratio})` → `'prev'|'next'|null` (vlevo = next, vpravo = prev, práh +
-  dominantní vodorovná složka), `touchDistance`/`touchMidpoint`, `pinchScale`/`clampScale`
-  (clamp `[MIN_SCALE=1,MAX_SCALE=4]`, `DOUBLE_TAP_SCALE`), `isDoubleTap(dt,dist)` a `clampPan`;
-  `compareZoom.ts` = **pure zoom/pan matematika** synchronního plátna v `DupComparePage` (a proto
-  unit-testovatelná bez DOM): `ZoomView{scale,x,y}`, `IDENTITY_VIEW`, `MIN_SCALE=1`/`MAX_SCALE=8`/
-  `ZOOM_STEP`, `zoomAt(view,factor,px,py,box)` (bod pod kurzorem zůstane pod kurzorem), `zoomCentre`,
-  `panBy`, `clampView` (pan se drží v `(scale-1)*box/2`, takže obrázek nejde vytáhnout z panelu),
-  `isZoomed`, `viewTransform`; oddělené od `gestures.ts` schválně — ten je touch-only a měří proti
-  viewportu;
-  `duplicateCompare.ts` = **pure logika porovnání dvojic**: `buildPairQueue(groups)` → `ComparePair[]`
-  (vícečlenná skupina **po dvojicích proti keeperovi**, nikdy člen-člen; skupina s keeperem mimo
-  members se přeskočí, ne uhodne), `pairId(a,b)` (neuspořádané, jako backend), `pairsInGroup`/
-  `pairIndexInGroup` (popisek „dvojice i z n"), `dropPairsTouching(pairs,uid)` (po merge zmizí
-  dvojice archivované fotky), `buildDiffRows(left,right,fmt)` → `DiffRow{key,left,right,differs}` —
-  `differs` se počítá z **porovnávacího klíče, ne z formátovaného textu** (dva časy ve stejné minutě
-  se pořád liší), jména se porovnávají jako **množina** (pořadí z API nic neznamená); `fmt` se
-  injektuje, takže testy nezávisí na locale; `countDiffering(rows)`;
-  `urlState.ts` = hook `useUrlState` +
-  pure `readUrlState`/`writeUrlState`: stav pohledu ↔ URL query přes History API, „Zpět vždy
-  funguje"; `libraryView.ts` = typ `LibraryView` (vč. `min_rating`/`flag`, přepínače `favorite` a facetů
+  `{scale,translateX,translateY,isZoomed,gesturing,handlers,reset}` = the **pinch/double-click zoom** of the fullscreen
+  lightbox with **pan** while zoomed in and swipe paging at rest: two fingers scale (`pinchScale`, clamped to
+  `[1,4]`), a **double-click** toggles fit ↔ `DOUBLE_TAP_SCALE` (zooming toward the tapped spot), a drag of a zoomed-in
+  image pans (clamped by `clampPan`, so it can't leave the screen), a drag at rest decides a swipe (`swipeAction`);
+  **the zoom resets when `resetKey` changes** (the displayed photo) and on close (the lightbox unmounts). The surface
+  has `touch-action:none`, so `preventDefault` isn't needed and the browser doesn't override the gesture;
+  `useFaces(photoUid)` = loads a photo's faces (`fetchFaces`) and holds the naming state machine
+  (box selection, an optimistic assignment, a reconciling refetch against the server, `busy`/`actionError`);
+  extracted from `FaceOverlay`, so that the detail can draw the boxes over its single image and render the naming
+  panel elsewhere on the page. **After loading it selects the first unnamed face**
+  and **after an assignment it moves the selection to the next unnamed one** (`firstUnnamed`/`nextUnnamed`, ordered by
+  **the order in the array**, not by `face_index`; `facesRef` against a stale closure) — so you get through a group
+  photo without reaching for the mouse. `unassign` **keeps** the selection (the face has just been freed and you
+  typically rename it right away). The reconciling refetch after a mutation does **not** trigger auto-selection (`reload(signal, autoSelect)`),
+  otherwise naming the last face would jump back to the top. **The detail pages prev/next without
+  remounting the hook**, so every response is checked against the photo it was asked for: `currentUidRef`
+  (the uid of the current render) drops the reconciling refetch of a photo the reader has already left — and it does so _before_
+  it takes a `latestRequest` id, so as not to kill the in-flight load of the new one; `latestRequest` then handles
+  skipping a slow response superseded by a newer one for the same photo. Without it a slow `reload(A)` would repaint
+  photo B's faces and the next assignment would send a `marker_uid` from A against B (404). For the same reason
+  `busy`/`actionError` are zeroed at the start of every photo and an error/completion of a mutation is written through only
+  when the reader is still on the same photo;
+  `useSubjects()` = a lazy list of all subjects for the typeahead (it mounts only with `FacesPanel`,
+  so merely viewing a photo never pays for it; an error = an empty list, the field then only creates new ones);
+  `useCandidateReview(subjectUid,candidates)` = the state machine of the `/faces` review grid: it seeds the
+  working list from a fresh search and applies ✓/✗ **optimistically** (the grid doesn't reload);
+  `confirm` flips the card to `done` and calls `assignFace` (an error → `error` for a retry, it doesn't touch
+  the neighbours), `reject` removes the card + `rejectFace` (on an error it puts it back), `confirmAll(tab)` walks
+  one tab's actionable cards sequentially with `confirmAllState` `{running,current,total,failed}`,
+  cancellably (`cancelConfirmAll`), a partial failure doesn't roll back and is reported via `actionError`;
+  `useSweepReview()` = the orchestrator of the `/recognition` sweep (the multi-person variant of review): it streams
+  via `streamSweep`, collects one `PersonState` per person with matches as they arrive (`progress`/`person`/
+  `summary`), `confirm`/`reject`/`confirmAllForPerson` apply **optimistically** by the same rules
+  (`buildAssignRequest`/`buildRejection` from `candidateReview`), `people` returns only people with actionable
+  cards (a person disappears once the last one is dealt with); `cancel`→`AbortController`, one `confirmAll` runs
+  at a time; it never auto-confirms;
+  `useOutlierReview(subjectUid,faces)` = the state machine of the `/outliers` grid: it seeds the working list
+  from a fresh query and applies both verdicts **optimistically and in place** — the card flips where it stands,
+  the grid doesn't reload and the scroll doesn't run away from the curator in the middle of a long list. The verdicts are
+  **opposite and aim at opposite endpoints**: ✓ `unassign` detaches the person via the ordinary assign machine,
+  ✗ `confirm` writes a **permanent confirmation** (`confirmFace`), which the backend then excludes from further outlier
+  queries — a list that keeps offering the same false alarms is exactly the problem this page
+  solves. A failed write marks **its own** card `error` and doesn't touch the neighbours. `unassignMany` walks
+  the selection **sequentially** and **acknowledges partial failure** (`bulkState{running,current,total,failed}`,
+  cancellable): the already removed ones stay removed, the errors are counted and reported, not rolled back
+  or swallowed. New `faces` (a different person/threshold) reset everything and abandon a running run;
+  `useReviewGame()` = the engine of the sorting game (`/review`): a local queue of questions filled **in the background**
+  (`fetchReviewQueue`; a refill as soon as it drops to `REFILL_AT = 3`, deduplication against **all** ids already
+  seen, so the batch boundary is invisible), **optimistic** answers (`answer` moves the UI
+  immediately and the request finishes in the background; a failure falls into `failed` for an explicit retry — it never blocks
+  the rhythm nor silently loses a verdict) and a **single-step undo**. The queue has its **source of truth in a ref**, not
+  in state: two answers can fit into one render (arrows at speed) and reading the head from state would
+  answer the same card twice. `undo` goes through the **inverse** write paths (`unassign_person`,
+  DELETE feedback-rejection, detaching a label), because `POST /review/answer` is **idempotent per
+  question** — and for the same reason a **re**-answer to a restored question is sent via the direct paths
+  (`sendDirect`), otherwise it would no-op as `already_answered`; undo first **waits for the in-flight**
+  request, so the inverse doesn't overtake the answer it is undoing, and a `create_marker`-yes looks up the created
+  marker via `fetchFaces`, so a possible later re-yes is an `assign_person` on **the same** marker,
+  not a duplicate;
+  `useFavorite(uid,initial,onChange?)` = an **optimistic** per-user favorite toggle over `favoritePhoto`
+  (`PUT`/`DELETE …/favorite`), rollback on an error, ignores a concurrent toggle, resyncs on a change of
+  `uid`/the server state; the optional `onChange` reports **every** flip of its own (optimistic and rolled-back,
+  the latter even after the tile has unmounted — the list's owner outlives it) upwards, so that a page which favorites the same
+  photo by another route as well (the `f` key in the library) holds **one** initial state, not two that have diverged;
+  a resync isn't reported, that one comes from the owner; `useRating(uid,initialRating,initialFlag)` = an **optimistic** per-user
+  rating (stars) + pick/reject flag over `ratePhoto` (`PUT …/rating` with only the changed field),
+  `setRating`/`setFlag` with a per-field rollback on an error, a no-op on an identical value, `pending` via an
+  in-flight counter, a resync on a change of `uid`/the server state (mirroring `useFavorite`);
+  `useThumbSrc(uid,thumbUrl)` → `{src,failed,onError}` = **resilience against an expired signed URL**:
+  the `thumb_url` in the payload may be a short-lived signed address of the media Worker (default 1 h), so a
+  payload held in a virtualized list or carried across a longer idle gives the `<img>` an address
+  the Worker rejects. The first `onError` therefore refetches the photo **once** (`fetchPhoto`) and tries it
+  with a freshly signed URL; a second failure, a failed refetch, an empty or **unchanged** address (which is what the
+  filesystem backend does — its URLs are routes and don't age, so a failure = a genuinely missing preview) → `failed`
+  and the caller renders a placeholder. A new `thumbUrl` prop (a new page of results) resets the retry budget.
+  It is solved this way, **not with a long TTL** — a short lifetime is the whole point of signing. Used by
+  `PhotoTile` and `TrashCard`;
+  `useSlideshow({length,hasMore,intervalMs,autoPlay?,onLoadMore?,readiness?,maxHoldMs?})` = the control of the
+  slideshow: it owns `index`+`playing`+`holding`, `next`/`prev`/`play`/`pause`/`toggle`/`goTo`,
+  wrap-around, prefetch of `PRELOAD_AHEAD` pages ahead
+  via `onLoadMore` (at the end with another page it waits instead of looping), an empty set = a no-op, a clamp of the
+  index when the set shrinks. **Auto-advance is guarded by `readiness(index)`**: an elapsed interval
+  doesn't switch the slide but starts a *hold* — it switches the moment the next frame is `ready` (decoded),
+  after `maxHoldMs` (default `MAX_HOLD_MS` = 10 s) it switches anyway, and a slide with `error` is **skipped**
+  (a broken frame doesn't block the show). Manual navigation and a pause cancel the hold (manual never waits, a resume
+  starts a fresh interval), the interval can be changed **during a hold** without restarting/duplicating the timer
+  (the timer isn't armed during a hold, the hold's deadline doesn't depend on `intervalMs` or on `readiness`).
+  A set of < 2 frames neither holds nor switches. `preloadWindow(index,length)` = the indices to preload
+  (`PRELOAD_AHEAD` ahead, `PRELOAD_BEHIND` behind, the current one first, the offsets **wrap** →
+  at the end of the show the first frames are ready for the wrap-around, with a small set it dedupes);
+  `useImagePreloader()` → `{statusOf(url),prime(urls)}` = preloads a window of images and reports
+  `pending`/`ready`/`error`. `prime(urls)` is **the whole window** — anything outside is released at once
+  (`removeAttribute('src')` = aborting the in-flight fetch), the last window is released on unmount, so a
+  long show doesn't accumulate decoded bitmaps. Readiness is measured by **`img.decode()`**, not by `onload`: onload
+  means „the bytes arrived", the decoding would only happen at the first paint (exactly the flash of
+  empty space this whole thing exists for); `decode()` is feature-detected (jsdom doesn't have it →
+  a fallback to `onload`/`onerror`). A late `decode()` of an already released image is ignored. The statuses live
+  in state → `statusOf` changes identity on every settle, so an effect can depend on it;
+  `useSlideshowSettings` = a persistent effect+speed over
+  `lib/slideshowSettings` (read once on mount, the setters write into localStorage, sanitization);
+  `useGridDensity()` → `{density,setDensity}` = the photo grid's density (**always a concrete column count
+  1…10**, no `'auto'` mode) over `useSyncExternalStore` on top of `lib/gridDensity`. localStorage is
+  **the single source of truth** (no in-memory copy): the snapshot is a primitive (a column count, or `null`
+  = nothing usable stored), so React's `Object.is` comparison never loops. **On first
+  use** (empty storage or an older `'auto'`/broken value to be migrated) the density is seeded **once**
+  from the viewport width (`initialColumns`) and stored — auto only ever seeds the first value, after that it is
+  hard-coded to the user's choice and a later resize **doesn't move it**. `subscribe` also listens to the `storage`
+  event → all tabs on the device hold the same column count; `setGridDensity` sanitizes, writes
+  and repaints **all** grids at once, without a context and without a provider (so page tests work
+  without a wrapper too);
+  `useIsNarrowViewport()` = a shared hook over `matchMedia` (`(max-width: 767.98px)`, Bootstrap `md`;
+  it removes `change`, a missing/broken `matchMedia` → „wide"; the single source of truth for the filter
+  offcanvas, the default grid density, the collapse of `BatchActionBar` and `HeaderActions` into the „…" overflow menu on a phone, and the move
+  of the viewer's curatorial loop from the top bar to the bottom dock within thumb's reach);
+  `usePrefersReducedMotion()` = follows `(prefers-reduced-motion: reduce)` via `matchMedia`
+  (removes `change`, a missing/broken `matchMedia` → `false`) — the caller **omits** a decorative animation,
+  it doesn't shorten it)),
+  `lib/` (`gestures.ts` = **pure, DOM-free decision helpers for touch gestures** shared by
+  `useSwipeNavigation`/`usePinchZoom` (and therefore **directly unit-testable** without jsdom touch sequences):
+  `swipeAction(dx,dy,{threshold,ratio})` → `'prev'|'next'|null` (left = next, right = prev, a threshold +
+  a dominant horizontal component), `touchDistance`/`touchMidpoint`, `pinchScale`/`clampScale`
+  (clamped to `[MIN_SCALE=1,MAX_SCALE=4]`, `DOUBLE_TAP_SCALE`), `isDoubleTap(dt,dist)` and `clampPan`;
+  `compareZoom.ts` = the **pure zoom/pan maths** of the synchronous canvas in `DupComparePage` (and therefore
+  unit-testable without a DOM): `ZoomView{scale,x,y}`, `IDENTITY_VIEW`, `MIN_SCALE=1`/`MAX_SCALE=8`/
+  `ZOOM_STEP`, `zoomAt(view,factor,px,py,box)` (the point under the cursor stays under the cursor), `zoomCentre`,
+  `panBy`, `clampView` (the pan stays within `(scale-1)*box/2`, so the image can't be dragged out of the panel),
+  `isZoomed`, `viewTransform`; deliberately separate from `gestures.ts` — that one is touch-only and measures against
+  the viewport;
+  `duplicateCompare.ts` = the **pure logic of pair comparison**: `buildPairQueue(groups)` → `ComparePair[]`
+  (a multi-member group **pair by pair against the keeper**, never member-to-member; a group whose keeper is not among
+  the members is skipped, not guessed), `pairId(a,b)` (unordered, like the backend), `pairsInGroup`/
+  `pairIndexInGroup` (the caption „dvojice i z n"), `dropPairsTouching(pairs,uid)` (after a merge the pairs of the
+  archived photo disappear), `buildDiffRows(left,right,fmt)` → `DiffRow{key,left,right,differs}` —
+  `differs` is computed from **the comparison key, not from the formatted text** (two times within the same minute
+  still differ), names are compared as a **set** (the order from the API means nothing); `fmt` is
+  injected, so the tests don't depend on the locale; `countDiffering(rows)`;
+  `urlState.ts` = the `useUrlState` hook +
+  the pure `readUrlState`/`writeUrlState`: the view state ↔ the URL query via the History API, „Back always
+  works"; `libraryView.ts` = the `LibraryView` type (incl. `min_rating`/`flag`, the `favorite` toggle and the facets
   `year`/`album`/`label`/`person`) + `LIBRARY_DEFAULTS` +
-  `LIBRARY_PATH` (= `/`, kanonická routa knihovny — **knihovna je úvodní stránka**; všechny odkazy
-  v appce míří sem, `/library` je jen redirect pro staré odkazy) +
-  **multi-výběr facetů `album`/`label`/`person`**: každý klíč nese **čárkou spojený seznam UID** (urlState
-  ukládá každý klíč jako jeden string, čárka se v UID nevyskytuje) — helpery `parseFilterList`/
-  `joinFilterList`/`addToFilterList`/`removeFilterList` (sic `removeFromFilterList`) seznam kódují;
-  fotka musí být ve **všech** vybraných albech, nést **všechny** štítky a obsahovat **všechny** vybrané
-  osoby (AND). Celý výběr round-tripuje URL query, takže Zpět ho obnoví;
-  `viewToParams` (sanitizuje sort/archived/**year** — `toYear` propustí jen čtyřciferný rok, ručně
-  psaná/zastaralá URL spadne na „bez filtru" místo backendové 400 —, prosákne `min_rating`/`flag`,
-  přepínač `favorite` a čárkou spojené UID facetů `album`/`label`/`person` beze změny — `buildPhotoQuery`
-  je rozloží na opakované parametry `?album=a&album=b`, které backend ANDuje; neznámé UID prostě nic
-  nenamatchuje; `sort` union navíc `rating`) + `hasActiveFilters` (`{ignoreQuery}` na search stránce,
-  neprázdný seznam album/label/person nebo `favorite` = aktivní filtr, zahrnuje rating/flag i facety) —
-  mapování URL stavu na API params; `ratingHotkeys.ts` = pure `ratingHotkey(key)` (`0`–`5` →
-  rating, `p`/`r`/`v` → osobní označení 👍/👎/👁 (stored pick/reject/eye), jinak null) + `isTypingElement(target)` (input/textarea/select/
-  contenteditable → hotkey se přeskočí) — sdíleno detailem fotky i fokusnutou dlaždicí;
-  `shortcuts.ts` = registr klávesových zkratek + pure helpery: `shortcutToken(key)` (normalizace
-  `KeyboardEvent.key` — single-char lower-case, named keys passthrough, `?` zůstává), `isFormModalOpen`
-  (je otevřený `.modal.show` s form controlem? → suppress zkratek za dialogem), `HELP_SHORTCUT_KEY`
-  (`?`) a `SHORTCUT_GROUPS` (grouped Grid/Detail zdroj pravdy pro nápovědu, `titleKey`/`descriptionKey`
-  typované jako i18next `ParseKeys`, takže neexistující klíč je compile error);
-  `searchView.ts` = typ `SearchView` (= `LibraryView` + `mode`)
-  + `SEARCH_DEFAULTS` (mode `hybrid`) + `toMode` sanitizér;
-  `auditView.ts` = typ `AuditView` (filtry + `offset`, string-only pro URL) + `AUDIT_DEFAULTS`
-  + `AUDIT_PAGE_SIZE` (100) + `pickFilters` (view bez offsetu) + `viewToParams` (mapuje na
-  `AuditListParams`, `since`/`until` z `YYYY-MM-DD` rozšíří na RFC 3339 hranice dne v UTC) — podklad
+  `LIBRARY_PATH` (= `/`, the library's canonical route — **the library is the home page**; every link
+  in the app points here, `/library` is only a redirect for old links) +
+  the **multi-selection of the `album`/`label`/`person` facets**: each key carries a **comma-joined list of UIDs** (urlState
+  stores each key as a single string, a comma doesn't occur in a UID) — the helpers `parseFilterList`/
+  `joinFilterList`/`addToFilterList`/`removeFilterList` (sic `removeFromFilterList`) encode the list;
+  a photo must be in **all** the selected albums, carry **all** the labels and contain **all** the selected
+  people (AND). The whole selection round-trips through the URL query, so Back restores it;
+  `viewToParams` (sanitizes sort/archived/**year** — `toYear` lets only a four-digit year through, a hand-written/stale
+  URL degrades to „no filter" instead of a backend 400 —, passes `min_rating`/`flag`,
+  the `favorite` toggle and the comma-joined UIDs of the `album`/`label`/`person` facets through unchanged — `buildPhotoQuery`
+  expands them into repeated parameters `?album=a&album=b`, which the backend ANDs; an unknown UID simply matches
+  nothing; the `sort` union additionally has `rating`) + `hasActiveFilters` (`{ignoreQuery}` on the search page,
+  a non-empty album/label/person list or `favorite` = an active filter, it covers rating/flag and the facets) —
+  the mapping of the URL state onto the API params; `ratingHotkeys.ts` = the pure `ratingHotkey(key)` (`0`–`5` →
+  a rating, `p`/`r`/`v` → a personal flag 👍/👎/👁 (stored pick/reject/eye), otherwise null) + `isTypingElement(target)` (input/textarea/select/
+  contenteditable → the hotkey is skipped) — shared by the photo detail and a focused tile;
+  `shortcuts.ts` = the keyboard-shortcut registry + pure helpers: `shortcutToken(key)` (normalization of
+  `KeyboardEvent.key` — single-char lower-case, named keys passthrough, `?` stays), `isFormModalOpen`
+  (is a `.modal.show` with a form control open? → suppress the shortcuts behind a dialog), `HELP_SHORTCUT_KEY`
+  (`?`) and `SHORTCUT_GROUPS` (the grouped Grid/Detail source of truth for the help, `titleKey`/`descriptionKey`
+  typed as i18next `ParseKeys`, so a non-existent key is a compile error);
+  `searchView.ts` = the `SearchView` type (= `LibraryView` + `mode`)
+  + `SEARCH_DEFAULTS` (mode `hybrid`) + the `toMode` sanitizer;
+  `auditView.ts` = the `AuditView` type (filters + `offset`, string-only for the URL) + `AUDIT_DEFAULTS`
+  + `AUDIT_PAGE_SIZE` (100) + `pickFilters` (the view without the offset) + `viewToParams` (maps onto
+  `AuditListParams`, `since`/`until` from `YYYY-MM-DD` are expanded to the RFC 3339 day boundaries in UTC) — the basis for
   `AuditPage`;
-  `reviewDecisions.ts` = view-model pro `ReviewDecisionsPage`: typ `ReviewDecisionsView`
-  (`user`/`decision`/`offset`, string-only pro URL) + `REVIEW_DECISIONS_DEFAULTS`
-  + `REVIEW_DECISIONS_PAGE_SIZE` (60) + `viewToAuditParams` (vždy `via:'review'` + `decision`)
-  + `toReviewDecision(record, subjects, labels)` mapuje audit záznam na `ReviewDecision`
-  (`verdict` Ano/Ne z akce, `kind` face/label, `photoUid`/`faceIndex`, cíl přeložený na jméno —
-  `subject_name` z details, jinak roster mapa, fallback UID) + `parseDecisionFilter`;
-  `savedSearchView.ts` = pure `isSearchParams(params)` (přítomnost `mode` rozlišuje search od library
-  pohledu) + `savedSearchHref(params)` (složí `pathname?query` na `LIBRARY_PATH` nebo `/search`, minimálně
-  zakóduje uložené params proti defaultům přes `writeUrlState`, ignoruje neznámé/zastaralé klíče) —
-  obnova uloženého hledání na přesnou URL;
-  `mapView.ts` = typ `MapView` (mapset + viewport `lat`/`lng`/`z` + filtry) + `MAP_DEFAULTS` +
-  `mapViewToParams` (sanitizuje archived) + `viewportFromView`/`mapsetFromView`/`hasActiveMapFilters`
-  — mapování URL stavu mapy na feed params; `mapPopup.ts` = pure `buildPopupElement` (náhled +
-  odkaz na detail fotky jako popup element, plain klik → SPA navigace, modifikovaný klik projde);
-  `mapGestures.ts` = **dotykové gesture handling pro mapu bez pluginu** — `prefersTouchGestures()`
-  (`(pointer: coarse)`, prostředí bez `matchMedia` odpoví `false`, takže myš si nechá své chování)
-  + `enableTwoFingerPan(map, container, onOneFingerDrag)`, které na mapě s **vypnutým `dragging`**
-  zapne tažení jen po dobu, kdy jsou dole aspoň dva prsty; stojí to na detailu Leafletího
-  stylesheetu — `touch-action` kontejneru se řídí zapnutými handlery, takže bez dragu a s pinchem je
-  to `pan-x pan-y`, tj. **jeden prst scrolluje STRÁNKU** (vysoká mapa uprostřed scrollujícího
-  obsahu přestane být scroll trap) a dvěma prsty mapu posouvá i zoomuje Leafletí touch-zoom;
-  `onOneFingerDrag` se ozve **jednou za gesto** až když prst ujede přes práh (8px — ťuknutí na
-  marker není tažení) a **nikdy pro dotyk, který začal na `.leaflet-marker-draggable` /
-  `.leaflet-control`** (tažení pinu pickeru jedním prstem funguje, radit tam „dvěma prsty" by byla
-  špatná rada v nejhorší chvíli), z toho `LeafletMap` zobrazí nápovědu „dvěma prsty";
-  `faceState.ts` = pure `faceState(face)` (`assigned`/`unassigned`/`unmatched` — čte přiřazení, ne
-  `face.action`, aby optimistický update držel box i řádek v syncu s právě provedeným klikem)
-  + `isNamed`; jeden zdroj pravdy pro barvy v overlayi, `FacesPanel` i `PeoplePanel`;
-  `faceGeometry.ts` = pure `faceBoxStyle` (normalized bbox → absolutní `left/top/width/height`
-  v %, pro overlay) + `padBbox`/`boxWithinCrop`/`cropImageStyle` + `displayFrame` (uložené
-  rozměry + EXIF orientace → **zobrazený** rám; orientace 5–8 prohazuje strany, protože bbox je v
-  display space) + `squareCrop` (bbox → výřez **čtvercový v pixelech**, ne v normalized
-  jednotkách — to je to, co brání deformaci: „čtverec" v normalized rámu 4000×3000 je v pixelech
-  obdélník a ve čtvercové dlaždici by obličej rozmáčkl; roste kratší pixelovou stranu ze středu a
-  zasune výřez zpátky do rámu) + `faceCropStyle` (**legacy**, škáluje osy nezávisle → deformuje, a
-  čte `tile_*`, což je centrovaný čtverec, ne celý rám; jen pro `FaceThumb`);
-  `faceThreshold.ts` = pure převod prahu hledání osoby mezi **procenty** (UI) a **kosinovou
-  vzdáleností** (backend): `percentToDistance` (`1 - p/100`)/`distanceToPercent` (inverzní,
-  zaokrouhlený — i „match %" na kartě)/`clampThresholdPercent` + konstanty rozsahu (20–80, krok 5,
-  default 50); `candidateReview.ts` = pure model review mřížky `/faces`: `ReviewItem`/`CandidateStatus`
-  (`pending`/`done`/`error`), bucket `new`/`assign`/`done` (`bucketOf`, sdílený barevný kód přes
+  `reviewDecisions.ts` = the view model for `ReviewDecisionsPage`: the `ReviewDecisionsView` type
+  (`user`/`decision`/`offset`, string-only for the URL) + `REVIEW_DECISIONS_DEFAULTS`
+  + `REVIEW_DECISIONS_PAGE_SIZE` (60) + `viewToAuditParams` (always `via:'review'` + `decision`)
+  + `toReviewDecision(record, subjects, labels)` maps an audit record onto a `ReviewDecision`
+  (`verdict` Ano/Ne from the action, `kind` face/label, `photoUid`/`faceIndex`, the target translated into a name —
+  `subject_name` from the details, otherwise the roster map, fallback the UID) + `parseDecisionFilter`;
+  `savedSearchView.ts` = the pure `isSearchParams(params)` (the presence of `mode` distinguishes a search from a library
+  view) + `savedSearchHref(params)` (assembles `pathname?query` onto `LIBRARY_PATH` or `/search`, encodes the stored
+  params minimally against the defaults via `writeUrlState`, ignores unknown/stale keys) —
+  the restoration of a saved search to an exact URL;
+  `mapView.ts` = the `MapView` type (mapset + the viewport `lat`/`lng`/`z` + filters) + `MAP_DEFAULTS` +
+  `mapViewToParams` (sanitizes archived) + `viewportFromView`/`mapsetFromView`/`hasActiveMapFilters`
+  — the mapping of the map's URL state onto the feed params; `mapPopup.ts` = the pure `buildPopupElement` (a preview +
+  a link to the photo detail as a popup element, a plain click → SPA navigation, a modified click passes through);
+  `mapGestures.ts` = **touch gesture handling for the map without a plugin** — `prefersTouchGestures()`
+  (`(pointer: coarse)`, an environment without `matchMedia` answers `false`, so the mouse keeps its behavior)
+  + `enableTwoFingerPan(map, container, onOneFingerDrag)`, which on a map with **`dragging` turned off**
+  enables dragging only for as long as at least two fingers are down; it rests on a detail of the Leaflet
+  stylesheet — the container's `touch-action` follows the enabled handlers, so without drag and with pinch it is
+  `pan-x pan-y`, i.e. **one finger scrolls THE PAGE** (a tall map in the middle of scrolling
+  content stops being a scroll trap) and two fingers both pan the map and zoom it via Leaflet's touch-zoom;
+  `onOneFingerDrag` fires **once per gesture** and only once the finger has travelled past a threshold (8px — a tap on a
+  marker is not a drag) and **never for a touch that started on `.leaflet-marker-draggable` /
+  `.leaflet-control`** (dragging the picker's pin with one finger works, and advising „two fingers" there would be
+  bad advice at the worst moment), from which `LeafletMap` shows the „dvěma prsty" hint;
+  `faceState.ts` = the pure `faceState(face)` (`assigned`/`unassigned`/`unmatched` — it reads the assignment, not
+  `face.action`, so that an optimistic update keeps the box and the row in sync with the click just made)
+  + `isNamed`; one source of truth for the colors in the overlay, `FacesPanel` and `PeoplePanel`;
+  `faceGeometry.ts` = the pure `faceBoxStyle` (a normalized bbox → absolute `left/top/width/height`
+  in %, for the overlay) + `padBbox`/`boxWithinCrop`/`cropImageStyle` + `displayFrame` (the stored
+  dimensions + the EXIF orientation → the **displayed** frame; orientations 5–8 swap the sides, because the bbox is in
+  display space) + `squareCrop` (a bbox → a crop **square in pixels**, not in normalized
+  units — that is what prevents the deformation: a „square" in a normalized 4000×3000 frame is a rectangle in pixels
+  and would squash the face in a square tile; it grows the shorter pixel side from the centre and
+  pushes the crop back inside the frame) + `faceCropStyle` (**legacy**, it scales the axes independently → it deforms, and
+  it reads `tile_*`, which is a centred square, not the whole frame; only for `FaceThumb`);
+  `faceThreshold.ts` = a pure conversion of the person-search threshold between **percent** (the UI) and the **cosine
+  distance** (the backend): `percentToDistance` (`1 - p/100`)/`distanceToPercent` (the inverse,
+  rounded — also the „match %" on a card)/`clampThresholdPercent` + the range constants (20–80, step 5,
+  default 50); `candidateReview.ts` = the pure model of the `/faces` review grid: `ReviewItem`/`CandidateStatus`
+  (`pending`/`done`/`error`), the buckets `new`/`assign`/`done` (`bucketOf`, a shared color code via
   `BUCKET_VARIANT`), `FilterTab`/`FILTER_TABS`/`matchesTab`/`tabCounts`, `isActionable`,
-  `buildAssignRequest` (zrcadlí `useFaces`: existující `marker_uid` → `assign_person`, jinak
-  `create_marker` s bboxem — nikdy nevyrobí duplicitní marker) a `buildRejection`;
-  `recognitionSweep.ts` = pure helpery `/recognition` sweepu: konstanty posuvníku jistoty (50–95,
-  krok 1, default 75) + `clampConfidencePercent`, `PersonState`, `personActionableCount`/`hasActionable`
-  (karta osoby zmizí, když `hasActionable` je false), a **plochá klávesová fokus sekvence** napříč
-  osobami (`FocusEntry`, `focusKey`, `focusSequence` = jen akční karty, `nextFocusKey`);
-  `expandSearch.ts` = pure logika `/expand`: default prahu **70 %** (`EXPAND_THRESHOLD_DEFAULT_PERCENT`,
-  rozsah/krok sdílí `faceThreshold`) + `clampExpandThresholdPercent`, `expandThresholdDistance`
-  (procenta → vzdálenost, `toFixed(4)` řeže float šum pro URL), limit 1–200 default 50
-  (`clampExpandLimit`), `ExpandSource` + `expandSources` (picker: bez prázdných sbírek, řazený dle
-  počtu fotek sestupně, tiebreak jménem) a `similarityPercent` (podobnost kandidáta → celá %);
-  `outlierReview.ts` = pure model `/outliers`: lifecycle `pending`→`removed`/`confirmed`/`error`
-  (`OutlierItem`, `outlierKey` = `photo_uid:face_index`, `toOutlierItems`, `isActionable` — errored
-  karta se **počítá**, její zápis selhal, takže je pořád nerozhodnutá —, `canUnassign` = má marker,
-  jinak není co odpojit) + aritmetika prahu: **UI mluví v procentech, endpoint v kosinové
-  vzdálenosti**, `outlierThresholdDistance` (0 % → 0 = „vrať vše", 100 % → `OUTLIER_MAX_DISTANCE`=1,
-  protože dva **různí** lidé sedí kolem 1.0 a dál není co schovávat; `toFixed(4)` řeže float šum pro
-  URL), `clampOutlierThresholdPercent` (default **0 = zobrazit vše**; nenulový default by tiše
-  schovával obličeje), `distancePercent` (schválně **ne** podobnost — na téhle stránce větší číslo
-  znamená „dál od člověka", což je ta souzená veličina) a `OUTLIER_LIMIT`=200;
-  `coordinates.ts` = pure tolerantní parser souřadnic pro location picker: `parseCoordinates(input)`
-  → `{ok:true,value:{lat,lng}}` | `{ok:false,error:'empty'|'format'|'range'}` (desetinné stupně /
-  DMS / stupně-desetinné-minuty, komma/mezera oddělovač, ±/hemisféry N/S/E/W, unicode primy/`''`,
-  axis reorder dle hemisfér, range check ±90/±180) + `formatCoordinates({lat,lng},precision=6)` →
-  kanonický `"49.123400, 16.567800"` (round-tripuje parserem, ale je to **zobrazovací, ztrátový**
-  formát — `16.7083583333333` → `16.708358`, proto se nezměněná souřadnice do PATCHe vůbec
-  neposílá) — sdílí `MetadataPanel` picker;
-  `kenBurns.ts` = pure `kenBurnsMotion(uid,intervalMs)` → endpointy pomalého zoom+pan přes celý
-  snímek (`durationMs` = interval, takže animace trvá přesně jeden slide) + `kenBurnsStyle(…)` →
-  `--kb-*` custom properties pro `slideshow.css` + `panLimit(scale)`. Parametry (8 směrů × zoom
-  in/out × 5 hloubek) se derivují **deterministicky** z FNV-1a hashe `uid`, takže stejné album
-  vypadá při každém přehrání stejně. Oba endpointy drží offset do `panLimit` svého scale a scale
-  i offset se interpolují lineárně → **obraz nikdy neodkryje okraj** scény;
-  `gridDensity.ts` = typ `GridDensity` (**prosté `number`**, počet sloupců) + `GRID_COLUMNS_MIN`
-  (**1** = jedna fotka na řádek) / `GRID_COLUMNS_MAX` (**10**) / `GRID_COLUMN_CHOICES` (1…10) /
-  `GRID_TILE_MIN_PX` (140, cílová šířka dlaždice **jen pro seed**) / `GRID_GAP_PX` (**3** — hairline
-  mezera pro hustou hero-first zeď) / `GRID_DENSITY_DEFAULT` (**5** — konkrétní fallback, když nejde
-  změřit šířka viewportu) + pure `readStoredDensity`/`writeDensity`/`sanitizeDensity`/`stepDensity`
-  (localStorage `kukatko.grid.density`, holý skalár v JSON; číslo se zaokrouhlí a **oklampuje do
-  1…10**; `sanitizeDensity` skládá i starší `'auto'`/nečíselné hodnoty na konkrétní počet seedovaný
-  z šířky; `readStoredDensity` vrací `null`, když **není uloženo použitelné číslo** — prázdné/
-  nedostupné úložiště, rozbitý JSON nebo starší `'auto'` —, aby volající naseedoval z šířky a hodnotu
-  zmigroval) + `initialColumnsForWidth(width)` (kolik ~140px dlaždic se vejde přes šířku, oklampnuto
-  1…10; úzký → 1, telefon → 1–2, hodně široko → 10) + `initialColumns()` (seed pro aktuální viewport)
-  + pure `gridTemplateColumns(density)` → **vždy `repeat(N, 1fr)`** = přesně N stejných sloupců na
-  každém viewportu (žádný `auto-fill` fallback, protože uživatel vždy volí konkrétní číslo); mezeru
-  mezi dlaždicemi řeší odděleně `gap` na kontejneru;
-  `slideshowSettings.ts` = typ `SlideshowSettings{effect,intervalMs}` + `SlideshowEffect`
-  (`fade`/`slide`/`kenburns`/`none`) + nabídky `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` (1/2/3/5/10/15/30 s)
+  `buildAssignRequest` (mirrors `useFaces`: an existing `marker_uid` → `assign_person`, otherwise
+  `create_marker` with a bbox — it never produces a duplicate marker) and `buildRejection`;
+  `recognitionSweep.ts` = the pure helpers of the `/recognition` sweep: the confidence slider constants (50–95,
+  step 1, default 75) + `clampConfidencePercent`, `PersonState`, `personActionableCount`/`hasActionable`
+  (a person's card disappears when `hasActionable` is false), and a **flat keyboard focus sequence** across
+  people (`FocusEntry`, `focusKey`, `focusSequence` = actionable cards only, `nextFocusKey`);
+  `expandSearch.ts` = the pure logic of `/expand`: the default threshold **70 %** (`EXPAND_THRESHOLD_DEFAULT_PERCENT`,
+  it shares the range/step with `faceThreshold`) + `clampExpandThresholdPercent`, `expandThresholdDistance`
+  (percent → distance, `toFixed(4)` trims the float noise for the URL), limit 1–200 default 50
+  (`clampExpandLimit`), `ExpandSource` + `expandSources` (the picker: without empty collections, ordered by
+  photo count descending, tiebreak by name) and `similarityPercent` (a candidate's similarity → whole %);
+  `outlierReview.ts` = the pure model of `/outliers`: the lifecycle `pending`→`removed`/`confirmed`/`error`
+  (`OutlierItem`, `outlierKey` = `photo_uid:face_index`, `toOutlierItems`, `isActionable` — an errored
+  card **counts**, its write failed, so it is still undecided —, `canUnassign` = it has a marker,
+  otherwise there is nothing to detach) + the threshold arithmetic: **the UI speaks in percent, the endpoint in the cosine
+  distance**, `outlierThresholdDistance` (0 % → 0 = „return everything", 100 % → `OUTLIER_MAX_DISTANCE`=1,
+  because two **different** people sit around 1.0 and beyond that there is nothing left to hide; `toFixed(4)` trims the float noise for
+  the URL), `clampOutlierThresholdPercent` (default **0 = show everything**; a non-zero default would silently
+  hide faces), `distancePercent` (deliberately **not** similarity — on this page a bigger number
+  means „further from the person", which is the quantity being judged) and `OUTLIER_LIMIT`=200;
+  `coordinates.ts` = a pure tolerant coordinate parser for the location picker: `parseCoordinates(input)`
+  → `{ok:true,value:{lat,lng}}` | `{ok:false,error:'empty'|'format'|'range'}` (decimal degrees /
+  DMS / degrees-decimal-minutes, a comma/space separator, ±/the hemispheres N/S/E/W, unicode primes/`''`,
+  an axis reorder by the hemispheres, a range check of ±90/±180) + `formatCoordinates({lat,lng},precision=6)` →
+  the canonical `"49.123400, 16.567800"` (it round-trips through the parser, but it is a **display, lossy**
+  format — `16.7083583333333` → `16.708358`, which is why an unchanged coordinate isn't sent in the PATCH
+  at all) — shared with the `MetadataPanel` picker;
+  `kenBurns.ts` = the pure `kenBurnsMotion(uid,intervalMs)` → the endpoints of a slow zoom+pan across the whole
+  frame (`durationMs` = the interval, so the animation lasts exactly one slide) + `kenBurnsStyle(…)` →
+  the `--kb-*` custom properties for `slideshow.css` + `panLimit(scale)`. The parameters (8 directions × zoom
+  in/out × 5 depths) are derived **deterministically** from an FNV-1a hash of the `uid`, so the same album
+  looks the same on every replay. Both endpoints keep the offset within the `panLimit` of their scale and both the scale
+  and the offset interpolate linearly → **the image never uncovers the edge** of the scene;
+  `gridDensity.ts` = the `GridDensity` type (**a plain `number`**, the column count) + `GRID_COLUMNS_MIN`
+  (**1** = one photo per row) / `GRID_COLUMNS_MAX` (**10**) / `GRID_COLUMN_CHOICES` (1…10) /
+  `GRID_TILE_MIN_PX` (140, the target tile width **for the seed only**) / `GRID_GAP_PX` (**3** — a hairline
+  gap for a dense hero-first wall) / `GRID_DENSITY_DEFAULT` (**5** — a concrete fallback when the viewport width
+  can't be measured) + the pure `readStoredDensity`/`writeDensity`/`sanitizeDensity`/`stepDensity`
+  (localStorage `kukatko.grid.density`, a bare scalar in JSON; the number is rounded and **clamped into
+  1…10**; `sanitizeDensity` also folds older `'auto'`/non-numeric values onto a concrete count seeded
+  from the width; `readStoredDensity` returns `null` when **no usable number is stored** — empty/
+  unavailable storage, broken JSON or an older `'auto'` —, so that the caller seeds from the width and migrates the
+  value) + `initialColumnsForWidth(width)` (how many ~140px tiles fit across the width, clamped
+  1…10; narrow → 1, a phone → 1–2, very wide → 10) + `initialColumns()` (the seed for the current viewport)
+  + the pure `gridTemplateColumns(density)` → **always `repeat(N, 1fr)`** = exactly N equal columns on
+  every viewport (no `auto-fill` fallback, because the user always picks a concrete number); the gap
+  between tiles is handled separately by `gap` on the container;
+  `slideshowSettings.ts` = the `SlideshowSettings{effect,intervalMs}` type + `SlideshowEffect`
+  (`fade`/`slide`/`kenburns`/`none`) + the offers `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` (1/2/3/5/10/15/30 s)
   + `SLIDESHOW_DEFAULTS` (`fade`, 5 s)
-  + pure `readSettings`/`writeSettings`/`sanitizeSettings` (localStorage `kukatko.slideshow.settings`,
-  sanitizace efektu + interval **snapnutý na nejbližší nabízenou hodnotu** — dřív uložený interval,
-  který už v nabídce není (7 s), tak nespadne pod stůl ani nevyrenderuje prázdnou položku; při shodné
-  vzdálenosti vyhrává kratší; fallback na defaulty při chybě/nedostupném storage);
-  `slideshowView.ts` = pure `slideshowHref(scope,view)` (staví `/slideshow?…` z `LibraryView` přes
-  `writeUrlState` + scope `album`/`label`/`mode`, default filtry vynechá — launch link promítání;
-  `mode` se zapíše i když je roven defaultu, protože `SlideshowPage` čte jeho **přítomnost** jako
-  „tohle přišlo z hledání");
-  `duration.ts` = pure `splitDuration(ms)` → `{hours,minutes,seconds}` (zaokrouhlí na sekundy,
-  záporné/nekonečné → nula) + `formatDuration(ms,t)` → kompaktní jednořádkový zápis přes i18next
-  (`45 s` / `3 min 20 s` / `1 h 5 min`; nulová část se vynechá, u hodin se sekundy zahodí)
-  + `slideshowDurationMs(count,intervalMs)` (celá show = interval na fotku)
-  + `slideshowRemainingMs(index,total,intervalMs)` (fotky, které teprve přijdou — aktuální snímek
-  se nepočítá, poslední slide hlásí nulu, index za koncem taky);
-  `trashCountdown.ts` = pure `purgeCountdown(archivedAt,retentionDays,now?)` (zbývající dny do
-  auto-purge z `archived_at` + retence → `{daysLeft,due}` nebo `null` když odpočet neplatí
-  (nearchivovaná / retence ≤ 0 / neparsovatelné), odpočet na kartách koše);
-  `format.ts` = pure `formatBytes(bytes)` (byte count → human-readable binární jednotky, např.
-  `1536`→`"1.5 KB"`, neplatné→`"0 B"`) pro velikost souboru na duplicate-group kartách +
-  `formatCount(value,locale)` (celé číslo → **oddělené tisíce v aktivním jazyce**, `20310` → cs
-  `"20 310"` / en `"20,310"`; zlomek zaokrouhlí, non-finite → `"0"`) pro počty na `LibraryStatsCards` +
-  `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, neplatné→`"0:00"`) pro délku videa na dlaždicích +
-  `formatMonth(year,month,locale)` (1-based rok/měsíc → locale-aware krátký měsíc + rok, např.
-  `2026,1,'en'`→`"Jan 2026"`, mimo 1–12 → `""`) pro popisky ticků časové osy +
-  `formatCaptureRange(from?,to?)` (rozsah `taken_at` alba → nejužší tvar: jeden měsíc
-  `"6/2007"`, jeden rok `"2006"`, jinak `"1998–1999"` s en-dash; chybějící/neplatná mez →
-  `""`, tj. album bez datovaných fotek nekreslí řádek) pro `AlbumTile` +
-  **locale-aware** `formatDate(value,locale)`/`formatDateTime(value,locale)` (ISO/epoch/`Date` →
-  `toLocaleDateString`/`toLocaleString` s **aktivním jazykem UI** `i18n.language`, ne výchozím
-  jazykem prohlížeče; neparseovatelný vstup → původní string; používá PhotoTile/DuplicateGroupCard/
-  MetadataPanel/Import/System pro datumy v cs/en formátu))),
-  `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` nad `GET /api/v1/capabilities`
-  → `Capabilities{semantic_search}` (posílá session cookie, `credentials:'same-origin'`), `auth.ts` = login/logout/me/changePassword, typy
-  `User`/`Role` (striktní žebřík `viewer < editor < admin < maintainer`)/`AuthSession`, `ApiError` se
-  statusem, `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) a
-  `canImport` (= maintainer; import je provozní schopnost) — vše přes `ROLE_RANK` zrcadlící backend
-  `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` nad `GET /api/v1/photos`
-  (filtry/řazení/stránkování → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
-  `searchPhotos(params,mode?,signal)` nad `GET /api/v1/search` (mód
-  `fulltext`/`semantic`/`hybrid`, odpověď navíc `mode`+`degraded`),
-  `fetchSimilar(uid,limit?,signal)` nad `GET /api/v1/photos/{uid}/similar` → `SimilarPhoto[]`
-  (`Photo`+`distance`; empty-friendly), typy `SimilarPhoto`/`SimilarResponse`,
-  `fetchTimeline(params,signal)` nad `GET /api/v1/photos/timeline` → `Timeline{buckets,total}`
-  (měsíční date-histogram, stejné filtry jako list; sort/stránkování backend ignoruje), typy
-  `Timeline`/`TimelineBucket{year,month,count,cumulative}` — podklad `TimelineScrubber`,
-  `fetchPhotoYears(params,signal)` nad `GET /api/v1/photos/years` → `YearsResponse{years,total}`
-  (rok-histogram, stejné filtry jako list; backend ignoruje `year` sám, sort/stránkování taky),
-  typy `YearsResponse`/`YearBucket{year,count}` — podklad year facetu (`useLibraryFacets`);
-  `PhotoListParams` navíc `year?: string` (čtyřciferný rok), `buildPhotoQuery` ho serializuje,
-  `favoritePhoto(uid,favorite,signal)` nad `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (per-user
-  toggle, 204, podklad optimistického `useFavorite`),
-  `ratePhoto(uid,{rating?,flag?},signal)` nad `PUT /api/v1/photos/{uid}/rating` +
-  `clearRating(uid,signal)` nad `DELETE …/rating` (per-user hvězdy 0–5 + osobní označení
-  none|pick|reject|eye, 204, podklad `useRating`), typy `RatingUpdate`/`RatingFlag`,
-  `regenerateThumbnail(uid,signal)` nad `POST /api/v1/photos/{uid}/regenerate-thumbnail`
-  (editor/admin servisní akce, synchronní, `RegenerateThumbnailResult{status,sizes}`, 422 =
-  originál nedekódovatelný; podklad `RegenerateThumbnailButton`),
-  **koš** `unarchivePhoto(uid)` (`POST …/unarchive` obnova), `purgePhoto(uid)` (`POST …/purge?confirm=true`
-  trvalé mazání), `emptyTrash()` (`POST /trash/empty?confirm=true` → `PurgeResult{purged,failed}`),
+  + the pure `readSettings`/`writeSettings`/`sanitizeSettings` (localStorage `kukatko.slideshow.settings`,
+  sanitization of the effect + the interval **snapped to the nearest offered value** — an interval stored earlier
+  that is no longer on offer (7 s) thus neither falls through the cracks nor renders an empty item; on an equal
+  distance the shorter one wins; a fallback to the defaults on an error/unavailable storage);
+  `slideshowView.ts` = the pure `slideshowHref(scope,view)` (builds `/slideshow?…` from a `LibraryView` via
+  `writeUrlState` + the scope `album`/`label`/`mode`, omitting the default filters — the slideshow's launch link;
+  `mode` is written even when it equals the default, because `SlideshowPage` reads its **presence** as
+  „this came from a search");
+  `duration.ts` = the pure `splitDuration(ms)` → `{hours,minutes,seconds}` (rounds to seconds,
+  negative/infinite → zero) + `formatDuration(ms,t)` → a compact one-line rendering via i18next
+  (`45 s` / `3 min 20 s` / `1 h 5 min`; a zero part is omitted, with hours the seconds are dropped)
+  + `slideshowDurationMs(count,intervalMs)` (the whole show = the interval per photo)
+  + `slideshowRemainingMs(index,total,intervalMs)` (the photos still to come — the current frame
+  doesn't count, the last slide reports zero, an index past the end too);
+  `trashCountdown.ts` = the pure `purgeCountdown(archivedAt,retentionDays,now?)` (the days remaining until the
+  auto-purge from `archived_at` + the retention → `{daysLeft,due}` or `null` when the countdown doesn't apply
+  (not archived / retention ≤ 0 / unparseable), the countdown on the trash cards);
+  `format.ts` = the pure `formatBytes(bytes)` (a byte count → human-readable binary units, e.g.
+  `1536`→`"1.5 KB"`, invalid→`"0 B"`) for the file size on the duplicate-group cards +
+  `formatCount(value,locale)` (a whole number → **thousands separated in the active language**, `20310` → cs
+  `"20 310"` / en `"20,310"`; a fraction is rounded, non-finite → `"0"`) for the counts on `LibraryStatsCards` +
+  `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, invalid→`"0:00"`) for the video length on the tiles +
+  `formatMonth(year,month,locale)` (a 1-based year/month → a locale-aware short month + year, e.g.
+  `2026,1,'en'`→`"Jan 2026"`, outside 1–12 → `""`) for the timeline tick labels +
+  `formatCaptureRange(from?,to?)` (an album's `taken_at` range → the tightest form: a single month
+  `"6/2007"`, a single year `"2006"`, otherwise `"1998–1999"` with an en dash; a missing/invalid bound →
+  `""`, i.e. an album without dated photos draws no line) for `AlbumTile` +
+  the **locale-aware** `formatDate(value,locale)`/`formatDateTime(value,locale)` (ISO/epoch/`Date` →
+  `toLocaleDateString`/`toLocaleString` with the **active UI language** `i18n.language`, not the browser's default
+  language; unparseable input → the original string; used by PhotoTile/DuplicateGroupCard/
+  MetadataPanel/Import/System for dates in the cs/en format))),
+  `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` over `GET /api/v1/capabilities`
+  → `Capabilities{semantic_search}` (it sends the session cookie, `credentials:'same-origin'`), `auth.ts` = login/logout/me/changePassword, the types
+  `User`/`Role` (the strict ladder `viewer < editor < admin < maintainer`)/`AuthSession`, `ApiError` with a
+  status, `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) and
+  `canImport` (= maintainer; import is an operational capability) — all via `ROLE_RANK` mirroring the backend's
+  `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` over `GET /api/v1/photos`
+  (filters/sorting/pagination → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
+  `searchPhotos(params,mode?,signal)` over `GET /api/v1/search` (the mode
+  `fulltext`/`semantic`/`hybrid`, the response additionally has `mode`+`degraded`),
+  `fetchSimilar(uid,limit?,signal)` over `GET /api/v1/photos/{uid}/similar` → `SimilarPhoto[]`
+  (`Photo`+`distance`; empty-friendly), the types `SimilarPhoto`/`SimilarResponse`,
+  `fetchTimeline(params,signal)` over `GET /api/v1/photos/timeline` → `Timeline{buckets,total}`
+  (a monthly date histogram, the same filters as the list; the backend ignores sort/pagination), the types
+  `Timeline`/`TimelineBucket{year,month,count,cumulative}` — the basis for `TimelineScrubber`,
+  `fetchPhotoYears(params,signal)` over `GET /api/v1/photos/years` → `YearsResponse{years,total}`
+  (a year histogram, the same filters as the list; the backend ignores `year` itself, and sort/pagination too),
+  the types `YearsResponse`/`YearBucket{year,count}` — the basis for the year facet (`useLibraryFacets`);
+  `PhotoListParams` additionally has `year?: string` (a four-digit year), `buildPhotoQuery` serializes it,
+  `favoritePhoto(uid,favorite,signal)` over `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (a per-user
+  toggle, 204, the basis for the optimistic `useFavorite`),
+  `ratePhoto(uid,{rating?,flag?},signal)` over `PUT /api/v1/photos/{uid}/rating` +
+  `clearRating(uid,signal)` over `DELETE …/rating` (per-user stars 0–5 + a personal flag
+  none|pick|reject|eye, 204, the basis for `useRating`), the types `RatingUpdate`/`RatingFlag`,
+  `regenerateThumbnail(uid,signal)` over `POST /api/v1/photos/{uid}/regenerate-thumbnail`
+  (an editor/admin service action, synchronous, `RegenerateThumbnailResult{status,sizes}`, 422 =
+  the original is undecodable; the basis for `RegenerateThumbnailButton`),
+  **the trash** `unarchivePhoto(uid)` (`POST …/unarchive` restore), `purgePhoto(uid)` (`POST …/purge?confirm=true`
+  permanent deletion), `emptyTrash()` (`POST /trash/empty?confirm=true` → `PurgeResult{purged,failed}`),
   `fetchTrashInfo()` (`GET /trash/info` → `TrashInfo{retention_days}`),
-  `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `videoUrl(uid,token?)` (range stream pro
-  `<video>`; při R2 backendu routa **302** redirectne na Workera, `<video>` redirect následuje
-  při každém requestu, takže seek jede vždy proti čerstvému podpisu), `GRID_THUMB_SIZE`,
-  typy `Photo` (vč. `is_favorite` + per-user `rating`/`flag` + video pole
+  `buildPhotoQuery`, `thumbUrl(uid,size,token?)`, `videoUrl(uid,token?)` (a range stream for
+  `<video>`; with the R2 backend the route **302** redirects to the Worker, `<video>` follows the redirect
+  on every request, so a seek always runs against a fresh signature), `GRID_THUMB_SIZE`,
+  the types `Photo` (incl. `is_favorite` + the per-user `rating`/`flag` + the video fields
   `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` + **`thumb_url`/`download_url`** +
   **`stack_uid`/`stack_count`**)/`PhotoListParams`
-  (vč. `album`/`label` scope + **`person` scope** (čárkou spojené UID subjektů → opakované `?person=`, AND)
-  + **`country`/`city` place scope** + `favorite` filtr + `min_rating`/`flag` filtry)/`PhotoSort`
-  (vč. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`.
-  **Adresy médií se neskládají z UID.** Grid dlaždice i download odkaz berou `photo.thumb_url` /
-  `photo.download_url` z payloadu — jen server umí URL podepsat. `thumbUrl(uid,size)` zůstává pro
-  velikost, kterou payload nenese (lightbox, canvas editoru, cover podle UID) a `downloadUrl(uid,…)`
-  pro **rendering nedestruktivního editu**, který umí jen aplikace;
-  `organize.ts` = Albums/Labels klient: alba `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
-  `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`, štítky `fetchLabels`/
-  `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; typy
+  (incl. the `album`/`label` scope + the **`person` scope** (comma-joined subject UIDs → repeated `?person=`, AND)
+  + the **`country`/`city` place scope** + the `favorite` filter + the `min_rating`/`flag` filters)/`PhotoSort`
+  (incl. `rating`)/`RatingFlag`/`ArchivedFilter`/`SearchMode`, `ApiError`.
+  **Media addresses are not assembled from a UID.** Both the grid tile and the download link take `photo.thumb_url` /
+  `photo.download_url` from the payload — only the server can sign a URL. `thumbUrl(uid,size)` remains for a
+  size the payload doesn't carry (the lightbox, the editor's canvas, a cover by UID) and `downloadUrl(uid,…)`
+  for **rendering a non-destructive edit**, which only the application can do;
+  `organize.ts` = the Albums/Labels client: albums `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
+  `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`, labels `fetchLabels`/
+  `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; the types
   `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput`;
-  `savedSearches.ts` = uložená hledání klient: `fetchSavedSearches`/`createSavedSearch(name,params)`/
-  `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` nad `/api/v1/saved-searches`, typy
-  `SavedSearch`/`SavedSearchParams` (= verbatim URL view-state `Record<string,string>`)/
-  `SavedSearchUpdate`; `announcement.ts` = instance-wide oznámení klient: `fetchAnnouncement()`/
-  `setAnnouncement(message,level)`/`clearAnnouncement()` nad `/api/v1/announcement`, typy `Announcement`
-  (`{message, level?, author_uid?, updated_at?}`, prázdný `message` = nic zveřejněno)/`AnnouncementLevel`
-  (`'info'|'warning'`); `search.ts` = grouped **global search** klient: `globalSearch(q,signal)` nad
+  `savedSearches.ts` = the saved-searches client: `fetchSavedSearches`/`createSavedSearch(name,params)`/
+  `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` over `/api/v1/saved-searches`, the types
+  `SavedSearch`/`SavedSearchParams` (= the verbatim URL view state `Record<string,string>`)/
+  `SavedSearchUpdate`; `announcement.ts` = the instance-wide announcement client: `fetchAnnouncement()`/
+  `setAnnouncement(message,level)`/`clearAnnouncement()` over `/api/v1/announcement`, the types `Announcement`
+  (`{message, level?, author_uid?, updated_at?}`, an empty `message` = nothing published)/`AnnouncementLevel`
+  (`'info'|'warning'`); `search.ts` = the grouped **global search** client: `globalSearch(q,signal)` over
   `GET /api/v1/search/global` → `GlobalSearchResult{query,albums,labels,people,photos}` (top-N per
-  skupina, každá vždy pole) + pure helpery `hasEntityMatches`/`isEmptyResult`, typy
-  `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult`; oddělené od
-  photo `searchPhotos` (fulltext/semantic/hybrid), podklad `GlobalSearchSections`; `bulk.ts` =
-  `bulkUpdatePhotos(uids,ops)` nad `POST /photos/bulk` (hromadná úprava výběru), typy
-  `BulkOperations` (add/remove alba+štítku, set/clear caption+popisu+polohy,
+  group, each always an array) + the pure helpers `hasEntityMatches`/`isEmptyResult`, the types
+  `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult`; separate from the
+  photo `searchPhotos` (fulltext/semantic/hybrid), the basis for `GlobalSearchSections`; `bulk.ts` =
+  `bulkUpdatePhotos(uids,ops)` over `POST /photos/bulk` (a bulk edit of the selection), the types
+  `BulkOperations` (add/remove an album+label, set/clear the caption+description+location,
   archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `duplicates.ts` =
-  `fetchDuplicates(params,signal)` nad `GET /api/v1/duplicates` (skupiny duplikátů →
-  `DuplicatesResponse{groups,total,limit,offset,next_offset}`) + `mergeDuplicates(input,signal)` nad
-  `POST /api/v1/duplicates/merge` (řešení skupiny → `MergeResult{albums_added,labels_added,people_added,
-  metadata_filled[],archived,dry_run}`; `dry_run:true` = náhled), typy `DuplicateReason`/
+  `fetchDuplicates(params,signal)` over `GET /api/v1/duplicates` (duplicate groups →
+  `DuplicatesResponse{groups,total,limit,offset,next_offset}`) + `mergeDuplicates(input,signal)` over
+  `POST /api/v1/duplicates/merge` (resolving a group → `MergeResult{albums_added,labels_added,people_added,
+  metadata_filled[],archived,dry_run}`; `dry_run:true` = a preview), the types `DuplicateReason`/
   `DuplicateMember`/`DuplicateGroup`/`DuplicatesParams`/`MergeInput`/`MergeResult`; `upload.ts` =
   `uploadFile(file,{onProgress,signal})`
-  nad **`XMLHttpRequest`** (jeden soubor/request kvůli upload-progress eventům, FormData se
-  streamuje), `isAbortError`, typy `UploadFileResult`/`UploadResponse`/`UploadWarning`/
-  `UploadOutcome`; `onload` je celý v `try`/`catch` a 2xx tělo bez neprázdného pole `results`
-  odmítne `ApiError`em — z callbacku XHR nesmí uniknout výjimka, promise by se nikdy nevyřešila a
-  upload by visel navždy (a držel slot v concurrency limitu); `photos.ts` navíc `fetchPhoto(uid)` (detail `GET /photos/{uid}` →
-  `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chipy `+ uploader?` `{uid,name}`),
+  over **`XMLHttpRequest`** (one file per request because of the upload-progress events, the FormData is
+  streamed), `isAbortError`, the types `UploadFileResult`/`UploadResponse`/`UploadWarning`/
+  `UploadOutcome`; `onload` is entirely inside `try`/`catch` and a 2xx body without a non-empty `results` array
+  is rejected with an `ApiError` — an exception must not escape the XHR callback, the promise would never resolve and the
+  upload would hang forever (holding a slot in the concurrency limit); `photos.ts` additionally has `fetchPhoto(uid)` (the detail `GET /photos/{uid}` →
+  `PhotoDetail` = `Photo`+`files`+`albums`+`labels` inline chips `+ uploader?` `{uid,name}`),
   `updatePhoto(uid,patch)`
-  (`PATCH …` částečná editace metadat → `PhotoMetadataUpdate`, null maže nullable),
-  `fetchEdit(uid)`/`saveEdit(uid,edit)` (`GET`/`PUT …/edit` nedestruktivní edit → `PhotoEdit`
-  crop/rotation/brightness/contrast), `downloadUrl(uid,{original?,token?})` (URL downloadu,
-  default honoruje edit, `original:true` pro originál),
-  `downloadPhotosZip({photoUids?,albumUid?,name?})` (**hromadné stažení ZIP**: `POST
-  …/download-zip`, přečte odpověď jako `Blob` a stáhne ji přes dočasnou object URL — jméno
-  archivu skládá klient (`name`.zip nebo `kukatko-photos-<date>.zip`, `date` počítá klient a
-  posílá i serveru), hází `ApiError` (413 = přes strop); typ `ZipDownloadRequest`),
-  **stacky** `stackPhotos(photoUids,signal)` (`POST …/photos/stack` — ruční seskupení výběru → `PhotoDetail`
-  nového primárního), `setStackPrimary(uid,signal)` (`POST …/{uid}/stack/primary`),
-  `unstackMember(uid,signal)` (`POST …/{uid}/unstack`) a `unstackAll(uid,signal)`
-  (`POST …/{uid}/unstack-all`) — všechny vracejí refreshnutý `PhotoDetail`; typy `PhotoDetail` (navíc
-  `stack_members?: StackMember[]` — pruh variant, primary první)/`StackMember`
+  (`PATCH …` a partial metadata edit → `PhotoMetadataUpdate`, null clears a nullable field),
+  `fetchEdit(uid)`/`saveEdit(uid,edit)` (`GET`/`PUT …/edit` a non-destructive edit → `PhotoEdit`
+  crop/rotation/brightness/contrast), `downloadUrl(uid,{original?,token?})` (the download URL,
+  by default honoring the edit, `original:true` for the original),
+  `downloadPhotosZip({photoUids?,albumUid?,name?})` (**a bulk ZIP download**: `POST
+  …/download-zip`, it reads the response as a `Blob` and downloads it via a temporary object URL — the archive's
+  name is assembled by the client (`name`.zip or `kukatko-photos-<date>.zip`, the client computes the `date` and
+  sends it to the server as well), throws `ApiError` (413 = over the ceiling); the type `ZipDownloadRequest`),
+  **stacks** `stackPhotos(photoUids,signal)` (`POST …/photos/stack` — a manual grouping of the selection → the `PhotoDetail`
+  of the new primary), `setStackPrimary(uid,signal)` (`POST …/{uid}/stack/primary`),
+  `unstackMember(uid,signal)` (`POST …/{uid}/unstack`) and `unstackAll(uid,signal)`
+  (`POST …/{uid}/unstack-all`) — all of them return a refreshed `PhotoDetail`; the types `PhotoDetail` (additionally
+  `stack_members?: StackMember[]` — the strip of variants, the primary first)/`StackMember`
   `{uid,file_name,media_type,file_mime,file_width,file_height,file_size,is_primary,thumb_url?,download_url?}`/`PhotoAlbumRef`/
-  `PhotoLabelRef`/`PhotoUploaderRef`/`PhotoMetadataUpdate`/`PhotoEdit`; `people.ts` = People/face klient: subjekty
+  `PhotoLabelRef`/`PhotoUploaderRef`/`PhotoMetadataUpdate`/`PhotoEdit`; `people.ts` = the People/face client: subjects
   `fetchSubjects`/`fetchSubject`/`createSubject`/`updateSubject`/`deleteSubject`/
-  `fetchSubjectPhotos`, obličeje `fetchFaces`/`assignFace`, shluky `fetchClusters`/
-  `assignCluster`/`removeClusterFace`, outlier `fetchOutliers`; typy `Subject`/`SubjectCount`/
+  `fetchSubjectPhotos`, faces `fetchFaces`/`assignFace`, clusters `fetchClusters`/
+  `assignCluster`/`removeClusterFace`, outliers `fetchOutliers`; the types `Subject`/`SubjectCount`/
   `SubjectInput`/`SubjectType`/`Bbox`/`FaceView`/`FacesResponse`/`AssignRequest`/`Suggestion`/
   `ClusterView`/`ExampleFace`/`ClusterAssignRequest`/`RemoveFaceRequest`/`OutlierResult`/
-  `OutlierFace`; sdílí `ApiError`+`buildPhotoQuery` z `auth.ts`/`photos.ts`);
-  `faces.ts` = klient hledání „najdi osobu mezi neotagovanými fotkami":
-  `searchCandidates(subjectUid,{threshold,limit},signal)` nad `POST /subjects/{uid}/candidates`; typy
+  `OutlierFace`; it shares `ApiError`+`buildPhotoQuery` from `auth.ts`/`photos.ts`);
+  `faces.ts` = the client of the „find a person among untagged photos" search:
+  `searchCandidates(subjectUid,{threshold,limit},signal)` over `POST /subjects/{uid}/candidates`; the types
   `CandidateSearchRequest`/`CandidateResult`/`Candidate`/`FaceBox`/`CandidateCounts`/`CandidateAction`
-  (`create_marker`/`assign_person`/`already_done`)/`CandidateReason`; potvrzení jde přes `assignFace`
-  z `people.ts`, zamítnutí přes `feedback.ts`; `feedback.ts` = perzistentní zpětná vazba (nemutuje,
-  jen drží zamítnutý obličej/fotku mimo příští hledání): `rejectFace(req,signal)`/`unrejectFace(req,signal)`
-  nad `POST`/`DELETE /feedback/face-rejections`, typ `FaceRejection` `{photo_uid,face_index,subject_uid}`,
-  a `rejectLabel(req,signal)`/`unrejectLabel(req,signal)` nad `POST`/`DELETE /feedback/label-rejections`,
-  typ `LabelRejection` `{photo_uid,label_uid}`; **`confirmFace(req,signal)`/`unconfirmFace(req,signal)`**
-  nad `POST`/`DELETE /feedback/face-confirmations`, typ `FaceConfirmation`
-  `{photo_uid,face_index,subject_uid}` — **opačná polarita než `rejectFace`**: zapisuje „tenhle
-  obličej **JE** tahle osoba" (✗ v outlier review = „ne, fakt je to on"), backend pak potvrzený
-  obličej z dalších outlier výsledků vyloučí; zaměnit ji za `rejectFace` znamená uložit pravý opak
-  toho, co uživatel řekl; **`dismissDuplicate(req,signal)`/`undismissDuplicate(req,signal)`** nad
-  `POST`/`DELETE /feedback/duplicate-dismissals`, typ `DuplicateDismissal` `{photo_uid,other_uid}` —
-  „tyhle dvě fotky NEJSOU duplikáty" z `DupComparePage` („Nechat obě"); dvojice je **neuspořádaná**
-  (backend normalizuje), nic se nearchivuje ani neslučuje, jen se zapíše názor a `GET /duplicates`
-  pak tu hranu na každém dalším scanu zahodí (vše idempotentní → jde volat optimisticky);
-  `expand.ts` = klient rozšiřování sbírky: `searchSimilar(kind,uid,{threshold,limit},signal)` nad
-  `GET /albums/{uid}/similar` / `GET /labels/{uid}/similar` (`threshold` = **kosinová vzdálenost**,
-  převod z procent dělá volající přes `lib/expandSearch`), typy `ExpandKind`/`ExpandCandidate`
-  (`photo` má `thumb_url` už oražené)/`ExpandResult` (summary počty + `min_match_count` +
+  (`create_marker`/`assign_person`/`already_done`)/`CandidateReason`; a confirmation goes through `assignFace`
+  from `people.ts`, a rejection through `feedback.ts`; `feedback.ts` = persistent feedback (it doesn't mutate,
+  it only keeps a rejected face/photo out of the next search): `rejectFace(req,signal)`/`unrejectFace(req,signal)`
+  over `POST`/`DELETE /feedback/face-rejections`, the type `FaceRejection` `{photo_uid,face_index,subject_uid}`,
+  and `rejectLabel(req,signal)`/`unrejectLabel(req,signal)` over `POST`/`DELETE /feedback/label-rejections`,
+  the type `LabelRejection` `{photo_uid,label_uid}`; **`confirmFace(req,signal)`/`unconfirmFace(req,signal)`**
+  over `POST`/`DELETE /feedback/face-confirmations`, the type `FaceConfirmation`
+  `{photo_uid,face_index,subject_uid}` — **the opposite polarity to `rejectFace`**: it writes „this
+  face **IS** this person" (✗ in the outlier review = „no, it really is them"), the backend then excludes the confirmed
+  face from further outlier results; swapping it for `rejectFace` means storing the exact opposite
+  of what the user said; **`dismissDuplicate(req,signal)`/`undismissDuplicate(req,signal)`** over
+  `POST`/`DELETE /feedback/duplicate-dismissals`, the type `DuplicateDismissal` `{photo_uid,other_uid}` —
+  „these two photos are NOT duplicates" from `DupComparePage` („Nechat obě"); the pair is **unordered**
+  (the backend normalizes it), nothing is archived or merged, only an opinion is recorded and `GET /duplicates`
+  then drops that edge on every subsequent scan (all of it idempotent → it can be called optimistically);
+  `expand.ts` = the collection-expansion client: `searchSimilar(kind,uid,{threshold,limit},signal)` over
+  `GET /albums/{uid}/similar` / `GET /labels/{uid}/similar` (`threshold` = the **cosine distance**,
+  the conversion from percent is done by the caller via `lib/expandSearch`), the types `ExpandKind`/`ExpandCandidate`
+  (the `photo` already has `thumb_url` stamped)/`ExpandResult` (summary counts + `min_match_count` +
   `reason?` `empty_collection`/`no_source_embeddings`)/`ExpandReason`/`ExpandSearchRequest`;
-  přidávání jde přes `bulk.ts` (`POST /photos/bulk`), zamítnutí přes `feedback.ts`;
-  `recognition.ts` = klient recognition sweepu: `streamSweep(params,onMessage,signal)` nad
-  `GET /faces/sweep` **streamuje NDJSON** (`fetch`+`ReadableStream`, řádkuje ručně, `onMessage` dostane
-  jen kompletní řádky), typy `SweepParams` `{confidence,limit}` (`confidence` = **procenta**, backend
-  si je přeloží na vzdálenost) a `SweepMessage` = `progress`|`person`|`summary` (`SweepPerson` nese
-  `candidates`/`counts`/`actionable` ve stejném tvaru jako `faces.ts`); abort přes `signal` = `AbortError`
-  (volající ignoruje); potvrzení jde přes `assignFace`, zamítnutí přes `rejectFace`;
-  `review.ts` = klient review hry: `fetchReviewQueue(limit?,signal)` nad `GET /review/queue`,
-  `answerReview(questionId,answer,signal)` nad `POST /review/answer` (idempotentní; typy
-  `ReviewQuestion`/`ReviewQueue`/`ReviewAnswer`; podklad `useReviewGame`), a **žebříček**
-  `fetchLeaderboard(window,signal)` nad `GET /review/leaderboard?window=all|7d|today` →
+  adding goes through `bulk.ts` (`POST /photos/bulk`), rejecting through `feedback.ts`;
+  `recognition.ts` = the recognition-sweep client: `streamSweep(params,onMessage,signal)` over
+  `GET /faces/sweep` **streams NDJSON** (`fetch`+`ReadableStream`, it splits lines by hand, `onMessage` receives
+  only complete lines), the types `SweepParams` `{confidence,limit}` (`confidence` = **percent**, the backend
+  translates it into a distance) and `SweepMessage` = `progress`|`person`|`summary` (`SweepPerson` carries
+  `candidates`/`counts`/`actionable` in the same shape as `faces.ts`); an abort via `signal` = `AbortError`
+  (the caller ignores it); a confirmation goes through `assignFace`, a rejection through `rejectFace`;
+  `review.ts` = the review-game client: `fetchReviewQueue(limit?,signal)` over `GET /review/queue`,
+  `answerReview(questionId,answer,signal)` over `POST /review/answer` (idempotent; the types
+  `ReviewQuestion`/`ReviewQueue`/`ReviewAnswer`; the basis for `useReviewGame`), and **the leaderboard**
+  `fetchLeaderboard(window,signal)` over `GET /review/leaderboard?window=all|7d|today` →
   `Leaderboard{window,caller_uid,entries:LeaderboardEntry[]}` (`LeaderboardEntry` =
-  `{user_uid,display_name,yes_count,no_count,total,is_me}`, řazeno backendem podle `total`),
-  typ `LeaderboardWindow` = `'all'|'7d'|'today'` + `LEADERBOARD_WINDOWS` (pořadí přepínače);
-  podklad `LeaderboardPage`;
-  `map.ts` = mapový klient: `fetchMapPhotos(params,signal)` nad `GET /api/v1/map/photos`
-  (GeoJSON FeatureCollection geotagovaných fotek + `buildMapQuery`), `tileLayerUrl(mapset)` (Leaflet
-  URL template na backend proxy, **bez API klíče**), `reverseGeocode(lat,lng,signal?)` nad
-  `GET /api/v1/map/rgeocode` (on-demand reverse geocode pro detail fotky → `GeocodeResult`),
-  `searchPlaces(query,limit?,signal?)` nad `GET /api/v1/map/geocode` (**forward** geocode pro
-  editor polohy → `Place[]` = `{name,label,type,location,lat,lng}` od nejlepší shody; žádná shoda
-  = **prázdné pole**, ne chyba; volající **musí debouncovat** — backend sice cachuje a
-  rate-limituje, ale request na klávesu je jak vypálit měsíční kredit za odpoledne),
-  **`probeTileFailure(tileUrl,signal?)`** (`<img>` status v JS nevidíš → dlaždice, kterou Leaflet
-  nenačetl, se přefetchne a status proxy se přeloží na `TileFailure`: **424 → `key_rejected`**
-  (mapy.com odmítá **náš** klíč), 429 → `rate_limited`, 503 → `unavailable`, jinak `error`;
-  200/404 → `null`, protože chybějící dlaždice mimo pokrytí je normální odpověď; síťová chyba →
-  `'error'`, abort probublá), `toMapset`/`MAPSETS`; typy
+  `{user_uid,display_name,yes_count,no_count,total,is_me}`, ordered by the backend by `total`),
+  the type `LeaderboardWindow` = `'all'|'7d'|'today'` + `LEADERBOARD_WINDOWS` (the toggle's order);
+  the basis for `LeaderboardPage`;
+  `map.ts` = the map client: `fetchMapPhotos(params,signal)` over `GET /api/v1/map/photos`
+  (a GeoJSON FeatureCollection of geotagged photos + `buildMapQuery`), `tileLayerUrl(mapset)` (a Leaflet
+  URL template onto the backend proxy, **without the API key**), `reverseGeocode(lat,lng,signal?)` over
+  `GET /api/v1/map/rgeocode` (an on-demand reverse geocode for the photo detail → `GeocodeResult`),
+  `searchPlaces(query,limit?,signal?)` over `GET /api/v1/map/geocode` (a **forward** geocode for the
+  location editor → `Place[]` = `{name,label,type,location,lat,lng}` best match first; no match
+  = an **empty array**, not an error; the caller **must debounce** — the backend does cache and
+  rate-limit, but a request per keystroke is like burning a month's credit in an afternoon),
+  **`probeTileFailure(tileUrl,signal?)`** (an `<img>`'s status isn't visible from JS → a tile that Leaflet
+  failed to load is refetched and the proxy's status is translated into a `TileFailure`: **424 → `key_rejected`**
+  (mapy.com is rejecting **our** key), 429 → `rate_limited`, 503 → `unavailable`, otherwise `error`;
+  200/404 → `null`, because a missing tile outside the coverage is a normal response; a network error →
+  `'error'`, an abort bubbles up), `toMapset`/`MAPSETS`; the types
   `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`Mapset`/
   `TileFailure`/`GeocodeResult`/`RegionalItem`/`Place`);
-  `places.ts` = klient hierarchie míst: `fetchPlaces(country?,signal)` nad `GET /api/v1/places`
-  → `PlaceCountry[]` (země s počty + nested `cities`, volitelné `country` drillne do měst jedné
-  země); typy `PlaceCountry`/`PlaceCity`; procházení fotek lokality jde přes sdílené
+  `places.ts` = the place-hierarchy client: `fetchPlaces(country?,signal)` over `GET /api/v1/places`
+  → `PlaceCountry[]` (countries with counts + nested `cities`, the optional `country` drills into the cities of one
+  country); the types `PlaceCountry`/`PlaceCity`; browsing a place's photos goes through the shared
   `fetchPhotos({country,city})`;
-  `import.ts` = admin import klient: `fetchImportRuns(signal)` nad `GET /api/v1/import/runs`
-  (`{runs,limit,offset,sources}`), `fetchJobStats(signal)` nad `GET /api/v1/jobs/stats`,
-  `startImport(source,signal)` nad `POST /api/v1/import/{photoprism|photosorter}` (409 → ApiError);
-  typy `ImportSource`/`RunStatus`/`ImportCounts`/`ImportRun`/`ImportSources`/`ImportRunsResponse`/
+  `import.ts` = the admin import client: `fetchImportRuns(signal)` over `GET /api/v1/import/runs`
+  (`{runs,limit,offset,sources}`), `fetchJobStats(signal)` over `GET /api/v1/jobs/stats`,
+  `startImport(source,signal)` over `POST /api/v1/import/{photoprism|photosorter}` (409 → ApiError);
+  the types `ImportSource`/`RunStatus`/`ImportCounts`/`ImportRun`/`ImportSources`/`ImportRunsResponse`/
   `StartImportResult`/`JobStats`),
-  `maintenance.ts` = admin maintenance klient: `fetchMaintenanceScan(signal)` nad
-  `GET /api/v1/maintenance/scan` → `ScanReport`, `runMaintenanceRepair(options,signal)` nad
-  `POST /api/v1/maintenance/repair` → `RepairResult`, `purgeAuditLog(olderThanDays,signal)` nad
+  `maintenance.ts` = the admin maintenance client: `fetchMaintenanceScan(signal)` over
+  `GET /api/v1/maintenance/scan` → `ScanReport`, `runMaintenanceRepair(options,signal)` over
+  `POST /api/v1/maintenance/repair` → `RepairResult`, `purgeAuditLog(olderThanDays,signal)` over
   `POST /api/v1/maintenance/audit/purge` → `AuditPurgeResult` (`{deleted,older_than_days,cutoff}`);
-  typy `Finding`/`ScanReport`/`RepairOptions`/`RepairResult`/`AuditPurgeResult`; sdílí `ApiError`
-  z `auth.ts` a `fetchJobStats` z `import.ts` pro progress,
-  `system.ts` = system klient: `fetchSystemStatus(signal)` nad `GET /api/v1/system/status`
-  → `SystemStatus` (maintainer-only), `fetchLibraryStats(signal)` nad `GET /api/v1/system/stats`
-  → `LibraryStats` (**každý přihlášený**; hodí `ApiError`, když backend počty nesečte — stránka pak ukáže
-  chybu, ne nuly), `triggerBackup(signal)` nad `POST /api/v1/backup` (409/503 → ApiError),
-  `requeueDeadLetterJobs(signal)` (vylistuje `GET /jobs?state=dead` → per-job `POST /jobs/{id}/requeue`,
-  vrací počet, 404/409 skip); typy `SystemStatus`/`LibraryStats`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
-  `BackupStatus`/`ImportsStatus`/`StorageStatus`/`MapsStatus`/`MapsState`/`VersionInfo`; sdílí
-  `ApiError` z `auth.ts` a `ImportRun` z `import.ts`,
-  `users.ts` = admin klient správy účtů nad `/api/v1/admin/users`: `fetchUsers(signal)` → `AdminUser[]`
-  (= `User` + `note`), `createUser(body,signal)` (`POST`, 409 = obsazený username, 400 = slabé heslo /
-  neplatná role / dlouhá poznámka), `updateUser(uid,body,signal)` (`PATCH`, **replace** celého
-  mutovatelného profilu → posílej i pole, která dialog nenabízí), `setUserDisabled(user,disabled,signal)`
-  (zakázat → dedikovaný `POST /{uid}/disable`, který nepotřebuje profil a nepřepíše souběžnou editaci;
-  povolit → `PATCH` s `disabled:false`, vlastní endpoint neexistuje) a `resetUserPassword(uid,pwd,signal)`
-  (`POST /{uid}/password`, 204, odhlásí všechny session cíle); konstanty `ROLES`
-  (`viewer`/`editor`/`admin`/`maintainer`, vzestupně po žebříku)/`MAX_NOTE_LENGTH`,
-  typy `AdminUser`/`CreateUserBody`/`UpdateUserBody`; hash hesla nemá kam uniknout — backend ho
-  neserializuje a žádný typ pro něj nemá pole,
-  `audit.ts` = admin auditní klient nad `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
-  `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializuje filtry
-  (prázdné/nulový offset vynechá); typy `AuditRecord` (nullable `actor_uid`/`target_uid`/`ip`/
-  `user_agent`/`details`)/`AuditListParams` (vč. `via:'review'` + `decision:'yes'|'no'` pro admin
-  přehled review rozhodnutí); sdílí `ApiError` z `auth.ts`. Pozor na názvosloví:
-  query params používají jména endpointu (`user`/`entity_type`/`entity_uid`), záznamy sloupce
+  the types `Finding`/`ScanReport`/`RepairOptions`/`RepairResult`/`AuditPurgeResult`; it shares `ApiError`
+  from `auth.ts` and `fetchJobStats` from `import.ts` for the progress,
+  `system.ts` = the system client: `fetchSystemStatus(signal)` over `GET /api/v1/system/status`
+  → `SystemStatus` (maintainer-only), `fetchLibraryStats(signal)` over `GET /api/v1/system/stats`
+  → `LibraryStats` (**any logged-in user**; it throws an `ApiError` when the backend can't total the counts — the page then shows
+  an error, not zeroes), `triggerBackup(signal)` over `POST /api/v1/backup` (409/503 → ApiError),
+  `requeueDeadLetterJobs(signal)` (it lists `GET /jobs?state=dead` → a per-job `POST /jobs/{id}/requeue`,
+  returns the count, 404/409 skip); the types `SystemStatus`/`LibraryStats`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
+  `BackupStatus`/`ImportsStatus`/`StorageStatus`/`MapsStatus`/`MapsState`/`VersionInfo`; it shares
+  `ApiError` from `auth.ts` and `ImportRun` from `import.ts`,
+  `users.ts` = the admin account-management client over `/api/v1/admin/users`: `fetchUsers(signal)` → `AdminUser[]`
+  (= `User` + `note`), `createUser(body,signal)` (`POST`, 409 = the username is taken, 400 = a weak password /
+  an invalid role / too long a note), `updateUser(uid,body,signal)` (`PATCH`, a **replace** of the whole
+  mutable profile → send the fields the dialog doesn't offer as well), `setUserDisabled(user,disabled,signal)`
+  (disable → the dedicated `POST /{uid}/disable`, which doesn't need the profile and won't overwrite a concurrent edit;
+  enable → a `PATCH` with `disabled:false`, there is no dedicated endpoint) and `resetUserPassword(uid,pwd,signal)`
+  (`POST /{uid}/password`, 204, it logs out all of the target's sessions); the constants `ROLES`
+  (`viewer`/`editor`/`admin`/`maintainer`, ascending along the ladder)/`MAX_NOTE_LENGTH`,
+  the types `AdminUser`/`CreateUserBody`/`UpdateUserBody`; the password hash has nowhere to leak — the backend
+  doesn't serialize it and no type has a field for it,
+  `audit.ts` = the admin audit client over `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
+  `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializes the filters
+  (it omits empty ones/a zero offset); the types `AuditRecord` (nullable `actor_uid`/`target_uid`/`ip`/
+  `user_agent`/`details`)/`AuditListParams` (incl. `via:'review'` + `decision:'yes'|'no'` for the admin
+  overview of review decisions); it shares `ApiError` from `auth.ts`. Mind the terminology:
+  the query params use the endpoint's names (`user`/`entity_type`/`entity_uid`), the records use the columns'
   (`actor_uid`/`target_type`/`target_uid`),
-  `i18n/` (i18next init — options jsou exportované jako `initOptions`, ať si je test může nabootit
-  do vlastní instance — + `locales/{cs,en}/common.json`;
-  typované klíče přes `types/i18next.d.ts` — nové stringy přidávej do **obou** locale souborů;
-  **čeština default**, žádné natvrdo zapsané UI texty — vše přes `t()`. Jediný detektor je
-  `localStorage` (kam píše `LanguageSwitcher` z `AccountPage`); `navigator`/`htmlTag` **záměrně
-  nejsou** v `detection.order`, jinak by anglicky nastavený prohlížeč dostal při první návštěvě
-  anglické UI — bez uložené volby rozhoduje `fallbackLng: 'cs'`. **Pluralizace** přes
-  i18next CLDR plural sufixy: count-vázané řetězce kde se podstatné jméno shoduje s číslem mají
-  formy `key_one/_few/_many/_other` (čeština) a `key_one/_other` (angličtina) — caller jen předá
-  `{ count }` (např. `albums.photoCount`, `clusters.size`, `bulkEdit.title`, `duplicates.memberCount`/
-  `archived`, `trash.confirm.bulk`); label-tvary s dvojtečkou/závorkou (`library.count`, `selection.count`)
-  zůstávají bez plurálu. **Datumy/čísla respektují jazyk** přes `lib/format` `formatDate`/`formatDateTime`
-  (`i18n.language`). **Drift-guard testy** `i18n.test.ts` (cs/en mají identické *logické* klíče po
-  odstranění plural sufixu, žádné prázdné hodnoty, každý jazyk má všechny své CLDR plural kategorie,
-  interpolační `{{var}}` proměnné se shodují napříč jazyky; navíc **default-language testy** nad
-  čerstvou instancí z `initOptions`: prázdný localStorage → `cs` i pod anglickým prohlížečem,
-  uložená volba vyhrává, změna jazyka se uloží) + `screens.test.tsx` (reprezentativní
-  obrazovky — navbar + dlaždice — se vykreslí bez missing-key warningů v cs i en přes
-  `cloneInstance({saveMissing})`, plural rendering 1/3/5, language-switch přepíše viditelný text)),
-  `styles/tokens.css` (**design token vrstva** — jediný zdroj pravdy pro odstupy, rádiusy, elevaci,
-  motion a typografickou škálu; importovaná **jednou** v `main.tsx` hned za Bootswatch CSS a **před**
-  `app.css`, které tokeny konzumuje. Bootswatch Superhero zůstává základní téma — tohle je vrstva
-  **nad** ním, nepřepisuje `--bs-*` proměnné globálně (jediná výjimka je cílený **theme root**).
-  **Theme root:** aplikace běží s `data-bs-theme="dark"` na `<html>` (v `index.html`) — bez něj
-  Superhero nechává `--bs-tertiary-bg`, `--bs-secondary-bg(-subtle)` a `--bs-emphasis-color` na
-  **světlých** hodnotách na `:root` a do tmy je překlápí až uvnitř `[data-bs-theme=dark]`, takže
-  `.bg-body-tertiary` panely (advanced-filtr knihovny, `SelectionBar`, detail řádek auditu) i
-  skeletony (`.bg-secondary-subtle`) se malovaly skoro bílé pod skoro bílým `--bs-body-color` =
-  neviditelné popisky (white-on-white). Superhero navíc barví celý chrome do syté navy; foto-appka
-  musí opak — jediné syté na obrazovce má být fotka. `:root[data-bs-theme='dark']` v `tokens.css`
-  proto **re-pinuje hrstku `--bs-*` proměnných na vlastní identitu**: teple-neutrální **near-black**
+  `i18n/` (the i18next init — the options are exported as `initOptions`, so that a test can boot them
+  into its own instance — + `locales/{cs,en}/common.json`;
+  typed keys via `types/i18next.d.ts` — add new strings to **both** locale files;
+  **Czech is the default**, no hard-coded UI texts — everything through `t()`. The only detector is
+  `localStorage` (which `LanguageSwitcher` from `AccountPage` writes to); `navigator`/`htmlTag` are **deliberately
+  not** in `detection.order`, otherwise a browser set to English would get an English UI on the first visit —
+  without a stored choice it is `fallbackLng: 'cs'` that decides. **Pluralization** via
+  i18next CLDR plural suffixes: count-bound strings where the noun agrees with the number have
+  the forms `key_one/_few/_many/_other` (Czech) and `key_one/_other` (English) — the caller only passes
+  `{ count }` (e.g. `albums.photoCount`, `clusters.size`, `bulkEdit.title`, `duplicates.memberCount`/
+  `archived`, `trash.confirm.bulk`); label forms with a colon/parenthesis (`library.count`, `selection.count`)
+  stay without a plural. **Dates/numbers respect the language** via `lib/format` `formatDate`/`formatDateTime`
+  (`i18n.language`). **Drift-guard tests** `i18n.test.ts` (cs/en have identical *logical* keys after
+  the plural suffix is stripped, no empty values, each language has all of its CLDR plural categories,
+  the interpolation `{{var}}` variables match across languages; plus **default-language tests** over
+  a fresh instance from `initOptions`: an empty localStorage → `cs` even under an English browser,
+  a stored choice wins, a language change is stored) + `screens.test.tsx` (representative
+  screens — the navbar + tiles — render without missing-key warnings in both cs and en via
+  `cloneInstance({saveMissing})`, plural rendering 1/3/5, a language switch rewrites the visible text)),
+  `styles/tokens.css` (**the design token layer** — the single source of truth for spacing, radii, elevation,
+  motion and the typographic scale; imported **once** in `main.tsx` right after the Bootswatch CSS and **before**
+  `app.css`, which consumes the tokens. Bootswatch Superhero remains the base theme — this is a layer
+  **on top** of it, it doesn't override the `--bs-*` variables globally (the only exception is a targeted **theme root**).
+  **Theme root:** the application runs with `data-bs-theme="dark"` on `<html>` (in `index.html`) — without it
+  Superhero leaves `--bs-tertiary-bg`, `--bs-secondary-bg(-subtle)` and `--bs-emphasis-color` at
+  **light** values on `:root` and only flips them into the dark inside `[data-bs-theme=dark]`, so
+  the `.bg-body-tertiary` panels (the library's advanced filter, `SelectionBar`, an audit row's detail) and
+  the skeletons (`.bg-secondary-subtle`) were painted almost white under an almost white `--bs-body-color` =
+  invisible labels (white-on-white). Superhero also colors the whole chrome a saturated navy; a photo app
+  must do the opposite — the only saturated thing on the screen should be the photo. `:root[data-bs-theme='dark']` in `tokens.css`
+  therefore **re-pins a handful of `--bs-*` variables to an identity of our own**: a warm-neutral **near-black**
   ramp (`--bs-body-bg`/`-color`, `--bs-tertiary-`/`secondary-bg`, `--bs-card-bg`, `--bs-border-color`
-  a `--bs-dark` pro navbar) a **jeden chladný azurový akcent** (`--bs-primary`, `--bs-link-color`,
-  `--bs-navbar-active-color` + `--bs-primary-*-subtle/emphasis`). Každý re-pin míří na `--kk-*` token,
-  takže paleta žije na jednom místě. Obsah: **akcent** `--kk-accent` (světlý — text/link/focus na
-  tmavých povrchech), `--kk-accent-hover`, `--kk-accent-solid` (tmavší — výplň s bílým textem v AA),
-  `--kk-accent-solid-hover`, `--kk-accent-subtle`, `--kk-on-accent` (azura je záměrná volba, ne
-  oranžová: tři entitní odstíny jsou obsazené, `danger` je červená, tak zbývá jeden nezabraný hue, a
-  chladný akcent na teplém chromu se nepere s fotkami); **povrchy + elevace** — warm-near-black ramp
-  `--kk-surface-page`/`-1`/`-raised`/`-overlay` + `--kk-surface-sunken` (jáma) a `--kk-surface-border`
-  (vlásková linka); **průsvitná hlavička** `--kk-header-bg` (tón stránky na 72 %), `--kk-header-blur`
-  (14px) a `--kk-header-border` — pro slim navbar sedící nad scrollujícím foto-wallem (viz `app.css`,
-  s `@supports` fallbackem na plný `--kk-surface-1`); elevace se čte z **úrovně povrchu + vlásková
-  linka**, ne z těžkého stínu
-  (`--kk-shadow-0..3` jsou proto lehké — jen jemné ukotvení + `inset 0 1px 0` horní highlight; `3` je
-  výjimka pro zvednutou dlaždici/overlay); **text** `--kk-text`/`--kk-text-muted` (teplá bílá, muted
-  nad Superhero baseline kontrastem); **spacing** `--kk-space-1..7` (4px škála), **rádiusy**
-  `--kk-radius-sm/md/lg/pill` (jeden souvislý roh, 8/12/16 rytmus; `md` je kanonický), **motion**
-  `--kk-duration-fast/base/slow` + `--kk-ease-standard`, **focus ring** `--kk-focus-ring-*` (barva =
-  azurový akcent, jeden viditelný prstenec všude), **typografie** modulární škála (~1.2–1.25 krok)
+  and `--bs-dark` for the navbar) and **one cool azure accent** (`--bs-primary`, `--bs-link-color`,
+  `--bs-navbar-active-color` + `--bs-primary-*-subtle/emphasis`). Every re-pin points at a `--kk-*` token,
+  so the palette lives in one place. Contents: the **accent** `--kk-accent` (light — text/link/focus on
+  dark surfaces), `--kk-accent-hover`, `--kk-accent-solid` (darker — a fill with white text at AA),
+  `--kk-accent-solid-hover`, `--kk-accent-subtle`, `--kk-on-accent` (the azure is a deliberate choice, not
+  orange: the three entity hues are taken, `danger` is red, so one unoccupied hue is left, and
+  a cool accent on warm chrome doesn't fight the photos); **surfaces + elevation** — a warm-near-black ramp
+  `--kk-surface-page`/`-1`/`-raised`/`-overlay` + `--kk-surface-sunken` (a well) and `--kk-surface-border`
+  (a hairline); a **translucent header** `--kk-header-bg` (the page's tone at 72 %), `--kk-header-blur`
+  (14px) and `--kk-header-border` — for the slim navbar sitting above a scrolling photo wall (see `app.css`,
+  with an `@supports` fallback to the full `--kk-surface-1`); elevation is read from **the surface level + a hairline
+  line**, not from a heavy shadow
+  (`--kk-shadow-0..3` are therefore light — just a gentle anchoring + an `inset 0 1px 0` top highlight; `3` is
+  the exception for a lifted tile/overlay); **text** `--kk-text`/`--kk-text-muted` (a warm white, the muted one
+  above the Superhero baseline contrast); **spacing** `--kk-space-1..7` (a 4px scale), **radii**
+  `--kk-radius-sm/md/lg/pill` (one continuous corner, an 8/12/16 rhythm; `md` is the canonical one), **motion**
+  `--kk-duration-fast/base/slow` + `--kk-ease-standard`, a **focus ring** `--kk-focus-ring-*` (the color =
+  the azure accent, one visible ring everywhere), **typography** a modular scale (a ~1.2–1.25 step)
   `--kk-font-size-display`/`-page-title`/`-section-title`/`-body`/`-caption` + `--kk-line-height-*`/
   `--kk-tracking-*`.
-  Sémantické třídy: **typografická škála** `.kk-display` (největší krok — hero číslo/statistika),
-  `.kk-page-title` (jedna na route, na `<h1>`; nese `overflow-wrap: anywhere`, protože část rout se
-  titulkuje uživatelskými daty — jméno alba/štítku/osoby bez mezer se zalomí uvnitř hlavičky místo
-  aby přeteklo přes okraj viewportu, a zároveň přestane držet svůj flex řádek roztažený),
-  `.kk-section-title` (nadpis panelu/sekce,
-  `<h2>`/`<h3>`), `.kk-text-body`, `.kk-text-caption`, `.kk-text-eyebrow` — komponenty **nenastavují
-  vlastní `font-size`** (žádné `h3`/`h5`/`fs-5` utility na nadpisech, žádné inline `fontSize`);
-  **povrchy** `.card` (elevace přes raised výplň + vlásková linka `--bs-card-border-color:
-  var(--kk-surface-border)` a `--kk-shadow-1`; `.border-primary` apod. stále fungují) a `.kk-surface`
-  (raised + linka); **dlaždice** `.kk-tile` + `.kk-tile__media` (bez okraje — fotka má vlastní hranu,
-  elevace,
-  hover/focus lift na `--kk-shadow-3` — používají `AlbumTile`, `SubjectTile`, `PhotoTile`;
-  `:focus-within` pokrývá `PhotoTile`, kde je fokusovatelný až vnitřní odkaz).
-  **Hero-first foto zeď**: dlaždice **uvnitř `.kukatko-photo-grid`** (jen ty — album/label/people
-  tiles si nechávají kartu) shazují stín i lift a rádius zmenší na `--kk-radius-tile` (2px); hover
-  místo liftu **přiblíží obrázek** (`scale(1.05)` v `overflow:hidden`, bez layout-shiftu), spodní
-  `.kk-tile__caption` odkryje datum nad scrimem `--kk-tile-scrim`, a fokus-ring se kreslí **dovnitř**
-  (`outline-offset` záporný), aby na husté zdi nepřetekl přes hairline mezeru k sousedům.
-  A `.kk-tile-row`
-  (řádková varianta pro seznam štítků — místo liftu se zvýrazní pozadím, protože řádek v sloupci
-  nemá kam vyskočit); `.kk-tile__placeholder`; **chip** `.kk-chip` (odebíratelný token nad
-  Bootstrap `.badge` — jen to, co badge nemá: box kolem koncového `.btn-close` a strop šířky,
-  aby se dlouhý název alba zkrátil místo roztažení řádku; používá `MultiSelect`);
-  **barvy entit** — album/tag/osoba dostávají každý svůj odstín, aby se rozlišily na první pohled
-  (dřív byly album i štítek stejná primární oranžová = nešly rozeznat). Tokeny
-  `--kk-entity-album-bg` (fialová) / `--kk-entity-tag-bg` (tyrkysová) / `--kk-entity-person-bg`
-  (růžová) + `--kk-entity-fg` (bílá); modifikátory `.kk-entity-album/-tag/-person` na `.badge`
-  (barva má `!important`, aby přebila Bootstrap `.bg-*`/`.text-bg-*`, které jsou taky `!important`,
-  takže třída sedí na plain `.badge` i na `<Badge>` i na odkaz-pill). Mapování kind→třída+ikona je
-  **jednou** v `components/entityStyle.ts` (`ENTITY_STYLE`) a čte ho každé místo, kde se entita
-  zobrazí jako chip: aktivní filtr-chipy knihovny (`FilterBar`), organize panel fota
-  (`OrganizePanel`), pruh badgí nad fotkou (`OrganizeBadges`) a `GlobalSearchSections` — barevný
-  jazyk je tak konzistentní, ne jednorázový.
-  Barva je **jen doplněk**: chip vždy nese i textový popisek a vodicí ikonu (album `collection` /
-  tag `tags` / osoba `person-circle`), aby rozlišení přežilo pro barvoslepé; bílý text má na
-  near-black pozadí kontrast ≥ 5:1. Neutrální filtry (rok, hodnocení, flag…) zůstávají `text-bg-primary`;
-  **appear** `.kk-appear` (jednorázový fade-up).
-  **Motion tokeny:** tři durations `--kk-duration-fast/base/slow` (120/200/320 ms) + jedna křivka
-  `--kk-ease-standard` (decelerate) nesou všechny hover/focus/open-close mikrointerakce; ruční `ms`
-  hodnoty rozházené po komponentách jsou svedené na ně (`PhotoTile`, `TrashCard`, `LivePhoto`,
-  `CompareStage`, `PhotoDetailPage` still-zoom, `review.css` progress). Načítání obrázků a skeletonů
-  má dvě sdílené třídy: **`.kk-media-img`** (fade + `scale(0.98)` dosednutí po dekódování; sdílí
-  `transform` přechod s hover zoomem knihovní zdi, který má vyšší specificitu) a **`.kk-skeleton`**
-  (shimmer lesk přejíždějící warm surface-1 blok, perioda `--kk-duration-skeleton` = 1400 ms,
-  `linear infinite`). **Focus outline se nikdy neodstraňuje** —
-  `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible` kreslí `outline` (přežije `overflow:
-  hidden` náhledu). **`prefers-reduced-motion`**: token durations spadnou na `1ms`, takže lift
-  (`transform`), `.kk-appear` i `.kk-media-img` prolnutí se stanou okamžité; skeleton shimmer
-  (`--kk-duration-skeleton` do kolapsu nepatří) se místo toho vypne přímo a zůstane statický blok;
-  spinnery a progress bary animují dál, protože nesou význam),
-  `styles/app.css` (**global responzivní polish vrstva** importovaná v `main.tsx` hned za
-  `tokens.css` — jen cross-cutting mobil/touch věci, které Bootstrap utility neumí: **safe-area
-  insety** přes `env(safe-area-inset-*)` (fungují díky `viewport-fit=cover` v `index.html`) na
-  navbaru (`.kukatko-navbar`) a hlavním kontejneru (`.kukatko-main`); guard proti vodorovnému
-  scrollu/overscroll bounce (`body overflow-x:hidden`, `html overscroll-behavior-y:none`); sdílený
+  Semantic classes: the **typographic scale** `.kk-display` (the largest step — a hero number/statistic),
+  `.kk-page-title` (one per route, on the `<h1>`; it carries `overflow-wrap: anywhere`, because some routes are
+  titled with user data — an album/label/person name without spaces wraps inside the header instead of
+  overflowing past the viewport's edge, and it also stops holding its flex row stretched),
+  `.kk-section-title` (a panel/section heading,
+  `<h2>`/`<h3>`), `.kk-text-body`, `.kk-text-caption`, `.kk-text-eyebrow` — components **don't set
+  their own `font-size`** (no `h3`/`h5`/`fs-5` utilities on headings, no inline `fontSize`);
+  **surfaces** `.card` (elevation via a raised fill + a hairline line `--bs-card-border-color:
+  var(--kk-surface-border)` and `--kk-shadow-1`; `.border-primary` and friends still work) and `.kk-surface`
+  (raised + a line); **tiles** `.kk-tile` + `.kk-tile__media` (without a border — a photo has an edge of its own,
+  elevation,
+  a hover/focus lift to `--kk-shadow-3` — used by `AlbumTile`, `SubjectTile`, `PhotoTile`;
+  `:focus-within` covers `PhotoTile`, where it is only the inner link that is focusable).
+  **A hero-first photo wall**: tiles **inside `.kukatko-photo-grid`** (those only — album/label/people
+  tiles keep their card) drop both the shadow and the lift and shrink the radius to `--kk-radius-tile` (2px); instead of a lift, hover
+  **zooms the image** (`scale(1.05)` inside `overflow:hidden`, without a layout shift), the bottom
+  `.kk-tile__caption` reveals the date above a `--kk-tile-scrim` scrim, and the focus ring is drawn **inwards**
+  (a negative `outline-offset`), so that on a dense wall it doesn't overflow across the hairline gap onto the neighbours.
+  And `.kk-tile-row`
+  (the row variant for the label list — instead of a lift it is highlighted with a background, because a row in a column
+  has nowhere to jump); `.kk-tile__placeholder`; a **chip** `.kk-chip` (a removable token on top of the
+  Bootstrap `.badge` — only what a badge lacks: a box around the trailing `.btn-close` and a width ceiling,
+  so that a long album name is truncated instead of stretching the row; used by `MultiSelect`);
+  **entity colors** — an album/tag/person each get their own hue, so that they can be told apart at a glance
+  (previously an album and a label were both the same primary orange = indistinguishable). The tokens
+  `--kk-entity-album-bg` (violet) / `--kk-entity-tag-bg` (turquoise) / `--kk-entity-person-bg`
+  (pink) + `--kk-entity-fg` (white); the modifiers `.kk-entity-album/-tag/-person` on a `.badge`
+  (the color has `!important`, so as to beat the Bootstrap `.bg-*`/`.text-bg-*`, which are `!important` too,
+  so the class fits a plain `.badge` as well as a `<Badge>` and a link pill). The kind→class+icon mapping is
+  **once** in `components/entityStyle.ts` (`ENTITY_STYLE`) and it is read by every place where an entity
+  is shown as a chip: the library's active filter chips (`FilterBar`), a photo's organize panel
+  (`OrganizePanel`), the strip of badges above a photo (`OrganizeBadges`) and `GlobalSearchSections` — the color
+  language is thus consistent, not one-off.
+  Color is **only a supplement**: a chip always carries a text label and a guiding icon as well (album `collection` /
+  tag `tags` / person `person-circle`), so that the distinction survives for the color-blind; white text has a contrast
+  of ≥ 5:1 on a near-black background. Neutral filters (year, rating, flag…) stay `text-bg-primary`;
+  **appear** `.kk-appear` (a one-off fade-up).
+  **Motion tokens:** three durations `--kk-duration-fast/base/slow` (120/200/320 ms) + one curve
+  `--kk-ease-standard` (decelerate) carry all the hover/focus/open-close micro-interactions; the manual `ms`
+  values scattered across the components are funnelled onto them (`PhotoTile`, `TrashCard`, `LivePhoto`,
+  `CompareStage`, the `PhotoDetailPage` still-zoom, the `review.css` progress). The loading of images and skeletons
+  has two shared classes: **`.kk-media-img`** (a fade + a `scale(0.98)` settle after decoding; it shares the
+  `transform` transition with the library wall's hover zoom, which has a higher specificity) and **`.kk-skeleton`**
+  (a shimmer gloss travelling across a warm surface-1 block, the period `--kk-duration-skeleton` = 1400 ms,
+  `linear infinite`). **The focus outline is never removed** —
+  `.kk-tile:focus-visible`/`.kk-tile__media:focus-visible` draw an `outline` (it survives the preview's `overflow:
+  hidden`). **`prefers-reduced-motion`**: the token durations drop to `1ms`, so the lift
+  (`transform`), `.kk-appear` and the `.kk-media-img` fade become instant; the skeleton shimmer
+  (`--kk-duration-skeleton` doesn't belong in that collapse) is instead switched off directly and stays a static block;
+  spinners and progress bars keep animating, because they carry meaning),
+  `styles/app.css` (**a global responsive polish layer** imported in `main.tsx` right after
+  `tokens.css` — only cross-cutting mobile/touch things that Bootstrap utilities can't do: **safe-area
+  insets** via `env(safe-area-inset-*)` (they work thanks to `viewport-fit=cover` in `index.html`) on the
+  navbar (`.kukatko-navbar`) and the main container (`.kukatko-main`); a guard against horizontal
+  scrolling/overscroll bounce (`body overflow-x:hidden`, `html overscroll-behavior-y:none`); the shared
   **sticky-toolbar offset** `.kukatko-sticky-toolbar` (`top: navbar height + safe-area-inset-top`,
-  z-index pod navbarem — in-page sticky bary jako `SelectionBar` dosednou pod navbar, ne pod něj);
-  **min. tap-target** `.kukatko-tap-target` (2.75rem/44px) pro icon-only ovládání jako
-  `FavoriteButton` + jeho dotyk-only dvojče `.kukatko-tap-target-touch` (stejný 44px čtverec, ale
-  jen v `@media (pointer: coarse)` — pro ovládání, které má u myši zůstat vizuálně malé vedle textu:
-  `?` u pole dotazu, akce řádku, jejíž slovo se na telefonu smrskne na glyf); **`.kk-min-w-0`**
-  (`min-width: 0` na flex položku — bez něj se položka odmítne zmenšit pod minimum svého obsahu a
-  jedno dlouhé nezlomitelné jméno vystrčí celý řádek/hlavičku za viewport; používají ho řádky
-  `LabelsPage`/`SavedSearchesPage` a skupiny titulku v `AlbumDetailPage`/`LabelDetailPage`);
-  **app-wide touch-target floor** — `@media (pointer: coarse)` blok, který na
-  dotykových zařízeních (telefon/tablet) vynutí min. 44px na `.btn`/`.form-control`/`.form-select`/
-  `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link`/`.navbar-toggler` (hamburger
-  se navíc centruje flexem, jinak by ikona po zvětšení boxu seděla na účaří) a na `.btn-close`
-  (každé zavírací X — banner oznámení, hlavičky modalů/offcanvasu, toasty, mazání dotazu v paletě —
-  roste jako `border-box`, takže se zvětší jen hitbox a glyf zůstává `1em`; výjimka `.badge
-  .btn-close`, tj. X uvnitř pill chipu, kde je cílem samotný chip a 44px by pilulku roztrhlo)
-  + větší `.form-check-input`
-  + **`.kk-face-box::after`** (rámeček obličeje ve `FaceOverlay` je `<button>` velký přesně jako bbox — není
-  `.btn`, takže ho floor nechytá, a zvětšit sám box nejde, jinak by obrys ujel z tváře; dostane tedy
-  neviditelný hitbox: `::after` vycentrovaný přes `top/left: 50%` + `translate(-50%, -50%)`, `2.75rem` čtverec
-  s `min-width/height: 100%`, takže roste jen malý rámeček a velký si nechá svůj vlastní cíl; nic se nekreslí,
-  `pointer-events` se dědí, takže `readOnly` rámeček zůstává průchozí),
-  bez zásahu do desktop (fine-pointer) layoutu a bez per-komponentových změn (systémová oprava
-  všudypřítomných `size="sm"` ovládání; guardy v `styles/tapTargets.test.ts`, protože jsdom media
-  query nevyhodnotí);
-  **native form chrome** — Superhero peče `.form-control`/`.form-select` bíle (`#fff`) bez ohledu na
-  téma; místo připnutí na světlé schéma jim dáváme reálný tmavý povrch `--kk-surface-sunken` s
-  vláskovou linkou a `color-scheme: dark` (výplň i schéma souhlasí, takže nativní glyfy — kalendář
-  `type=date`, list selectu — jsou světlé-na-tmavém a viditelné); chevron selectu je světle tažená
-  kopie přes `--bs-form-select-bg-img`; **akcent na bake-nutých ovládáních** — Bootswatch peče
-  oranžovou výplň napřímo (ne přes `--bs-primary`), tak ji `app.css` přepisuje na azuru:
-  `.btn-primary`/`.btn-outline-primary`, `.form-check-input:checked`/indeterminate, `.form-range`
-  thumb, `.progress-bar` (+ track jako jáma), `.dropdown-menu` (warm overlay + aktivní položka),
-  `.list-group` aktivní řádek a `.navbar.kukatko-navbar` aktivní odkaz;
-  **slim průsvitný navbar** `.kukatko-navbar` (sedí NAD scrollujícím obsahem: výplň `--kk-header-bg`
-  = tón stránky na 72 % + `backdrop-filter: blur(--kk-header-blur)` frostí, co pod ním scrolluje,
-  vlásková spodní linka `--kk-header-border`; `@supports not (backdrop-filter…)` fallback na plný
-  `--kk-surface-1`, aby lišta nikdy nebyla průhledná bez blur; ztenčené `padding-block`, na fine
-  pointeru se `.nav-link` tap-target uvolní na 2.25rem — proto je `--kukatko-navbar-height` 3.25rem,
-  dimenzované na vyšší touch případ); **klidnější nav** — neaktivní `.nav-link` tlumené, aktivní
-  route nese jeden akcentový stav = pilulka `--kk-accent-subtle` + akcentový text (mimo CTA);
-  **global command paleta** `.kukatko-search-trigger` (pole-jako spouštěč vedoucí bar, na fine
-  pointeru slim, na coarse 44px, na mobilu roste) + `.kukatko-search-dialog`/`-panel` (top-anchored
-  konzole na `--kk-surface-overlay`) + `.kukatko-search-option` (řádek: náhled/glyf + text + počet,
-  aktivní řádek `--kk-accent-subtle` + inset akcentová lišta) + `.kukatko-search-legend` (patičková
-  legenda kláves, na telefonu skrytá) — podklad komponenta `SearchCommand`;
-  **mapa (Leaflet)** `.kukatko-map*` — Leaflet nemá theme hooky, takže se na jeho ovládání sahá
-  přes jeho vlastní třídy, ale **scoped pod `.kukatko-map`** (element, na který Leaflet sám dává
-  `leaflet-container`/`leaflet-touch`) — jednak to drží override u našich map, jednak to
-  přebije Leafletí stylesheet, který bundler emituje *až za* `app.css` (`.leaflet-touch
-  .leaflet-bar a` má stejnou specificitu jako jednotřídní override a vyhrálo by pořadím);
-  `.kukatko-map` = `position: relative` (aby byl překryv umístěný od prvního paintu, ne až
-  po Leafletí inicializaci) + `height: 70vh` jako **fallback** za inline `70dvh` (engine, který
-  jednotku odmítne, inline deklaraci zahodí a mapa by neměla výšku žádnou);
-  `.kukatko-map-gesture-hint` = nápověda „dvěma prsty" — rám přes celou mapu jen kvůli
-  vycentrování, vidět je **malá pilulka** v `::before` (`content: attr(data-label)`); **ne scrim
-  přes celou mapu**, protože přes 70dvh vysokou mapu přejede prst při každém scrollu stránky, takže
-  nápověda musí být poznámka, ne opona; `pointer-events: none` na obojím — nápověda, která
-  sežere další ťuknutí, by byla horší než žádná; `.leaflet-marker-draggable` uvnitř mapy dostává
-  `touch-action: none`, protože **tažitelný pin pickeru** musí i na gesture-handled mapě odpovědět
-  jednomu prstu (efektivní `touch-action` je průnik s předky a `none` je nejužší);
-  `@media (pointer: coarse)` pak zvedá Leafletí toolbar (26px, 30px s `leaflet-touch`) na 2.75rem
-  včetně `line-height` a většího `font-size` +/- glyfů, dává 44px hitbox povinnému mapy.com logu
-  a rozvolní řádkování attribution (ta je text, ne tlačítko — 44px pás přes celou spodní hranu by
-  polykal ťuknutí); guardy v `styles/tapTargets.test.ts`;
-  **tmavé Leafletí chrome** — Leaflet má své světlé téma zadrátované ve stylesheetu (bílá bublina
-  popupu, bílý průsvitný attribution pás, bílá tlačítka toolbaru, `#ddd` podklad) a žádnou
-  proměnnou na přebarvení, takže se tokeny tlačí dovnitř přes jeho třídy;
-  `.kukatko-map.leaflet-container` = podklad `--kk-surface-sunken` (Leafletí `#ddd` je světlý
-  záblesk uprostřed skoro černé stránky — vidět je za okrajem světa a než se dlaždice načtou);
-  `.leaflet-bar` = hairline `--kk-surface-border` + `--kk-radius-sm` + `--kk-shadow-2`, tlačítka
-  `--kk-surface-overlay`/`--kk-text`, hover stejný akcentový nádech jako ostatní řádky appky,
-  `leaflet-disabled` ztlumené a **až za** hoverem (remizuje s ním na specificitě);
-  `.leaflet-control-attribution` = `--kk-text-muted` na 88 % odstínu stránky, odkaz `--kk-accent`
-  (72 % headeru si tu vzít nelze — attribution sedí přímo na dlaždicích a nad sněhově bílou
-  dlaždicí by odkaz spadl pod AA); popup (`.leaflet-popup-content-wrapper` + `-tip`) =
-  `--kk-surface-overlay` + hairline + `--kk-shadow-3` + `--kk-radius-md`, špička nese stejný
-  rámeček (je oříznutá na dvě hrany, které tak navazují na obrys bubliny), zavírací „×"
-  `--kk-text-muted` → `--kk-text` na hover i **focus**, odkazy v obsahu
-  `--kk-accent`/`--kk-accent-hover` (celá karta je jeden odkaz na detail a markup podtržení nemá)
-  a náhled dostává `--kk-radius-sm`; **dlaždice, piny ani clustery se nepřebarvují** (to je obsah
-  mapy, ne chrome) a Leafletí tooltip/layers/scale se nestylují vůbec — appka je nerenderuje;
-  guardy v `styles/mapChrome.test.ts` (každý `.leaflet-*` selektor v `app.css` musí začínat
-  `.kukatko-map`, barvy jen z tokenů, compound selektory proti Leafletu);
-  **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
-  okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
-  none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`
-  (`.kukatko-filter-search` = search pole roste a plní řádek hlavičky, `.kukatko-filter-sort`
-  min. šířka, `.kukatko-filter-panel` = 44px tap-targety na prvcích panelu, `.kukatko-filter-chip`
-  = tappable pill chip s křížkem); CSS proměnná `--kukatko-navbar-height`),
-  `test/setup.ts` (jsdom **`window.matchMedia` stub** — non-matching default, jednotlivé testy ho
-  můžou přepsat pro simulaci telefonu),
-  `test/batchBar.ts` (fixtures sdílené testy stránek s fotomřížkou: `BATCH_ACTIONS` = kompletní
-  slovník akcí `BatchActionBar` podle accessible name — každá stránka ho asertuje **celý**, aby se
-  nemohla tiše vrátit k osekanému toolbaru — a `albumOption()` pro `fetchAlbums` v pickeru),
-  `test/css.ts` (čtení a mini-parsování stylesheetů z testů: `readCss` / `ruleBody` / `declarations`
-  — jsdom nevyhodnocuje `env()` ani media queries, takže CSS-only pravidla se hlídají čtením
-  souboru; používá je `styles/tokens.test.ts`, `styles/mapChrome.test.ts` (Leafletí override —
-  scoping pod `.kukatko-map`, barvy jen z tokenů, compound selektory, které přebijí Leafletí
-  stylesheet), `styles/safeArea.test.ts`, který dopočítá padding
-  fullscreen overlayů (`review.css`, `compare.css`) proti iPhone-ovým insetům a asertuje, že
-  ovládací řady notch i home bar minou — a že bez insetů zůstane rozestup přesně původní —
-  a `components/people/ClusterCard.test.tsx`, který stejnou cestou hlídá obě pointer varianty
-  `clusters.css`).
-  Routing v `App.tsx`: tabulka rout žije v exportované `AppRoutes` (aby ji šlo v testech mountnout
-  do `MemoryRouter` a ověřit samotné drátování — `App.test.tsx`), `App` ji jen obalí
-  `BrowserRouter`+`AuthProvider`+`CapabilitiesProvider` (kapabilit-provider je uvnitř auth-provideru,
-  protože `/capabilities` je za `RequireAuth`). `/login` veřejné, zbytek pod `RequireAuth`; `/slideshow` a
-  immersivní `/photos/:uid` jsou pod `RequireAuth` ale **mimo `Layout`** (fullscreen bez navbaru),
-  zbytek pod `Layout`
-  (**`/` = `LibraryPage`** — knihovna je úvodní stránka; `/library` → `LibraryRedirect`
-  (`replace` redirect na `/` se zachovaným query stringem),
+  a z-index below the navbar — in-page sticky bars like `SelectionBar` settle under the navbar, not beneath it);
+  the **minimum tap target** `.kukatko-tap-target` (2.75rem/44px) for icon-only controls like
+  `FavoriteButton` + its touch-only twin `.kukatko-tap-target-touch` (the same 44px square, but
+  only inside `@media (pointer: coarse)` — for controls that should stay visually small next to text with a mouse:
+  the `?` by the query field, a row action whose word shrinks to a glyph on a phone); **`.kk-min-w-0`**
+  (`min-width: 0` on a flex item — without it the item refuses to shrink below the minimum of its content and
+  one long unbreakable name pushes the whole row/header past the viewport; used by the rows of
+  `LabelsPage`/`SavedSearchesPage` and the title groups in `AlbumDetailPage`/`LabelDetailPage`);
+  an **app-wide touch-target floor** — a `@media (pointer: coarse)` block that on
+  touch devices (phone/tablet) enforces a minimum of 44px on `.btn`/`.form-control`/`.form-select`/
+  `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link`/`.navbar-toggler` (the hamburger
+  is additionally centred with flex, otherwise the icon would sit on the baseline once the box grew) and on `.btn-close`
+  (every closing X — the announcement banner, modal/offcanvas headers, toasts, clearing the query in the palette —
+  grows as a `border-box`, so only the hitbox grows and the glyph stays `1em`; the exception is `.badge
+  .btn-close`, i.e. the X inside a pill chip, where the target is the chip itself and 44px would tear the pill apart)
+  + a bigger `.form-check-input`
+  + **`.kk-face-box::after`** (a face frame in `FaceOverlay` is a `<button>` exactly the size of the bbox — it isn't
+  a `.btn`, so the floor doesn't catch it, and the box itself can't be enlarged, otherwise the outline would slide off the face; it therefore gets
+  an invisible hitbox: an `::after` centred via `top/left: 50%` + `translate(-50%, -50%)`, a `2.75rem` square
+  with `min-width/height: 100%`, so that only a small frame grows and a large one keeps a target of its own; nothing is drawn,
+  `pointer-events` are inherited, so a `readOnly` frame stays click-through),
+  without touching the desktop (fine-pointer) layout and without per-component changes (a systemic fix for the
+  ubiquitous `size="sm"` controls; the guards are in `styles/tapTargets.test.ts`, because jsdom doesn't evaluate media
+  queries);
+  **native form chrome** — Superhero bakes `.form-control`/`.form-select` white (`#fff`) regardless of the
+  theme; instead of pinning them to a light scheme we give them a real dark surface `--kk-surface-sunken` with
+  a hairline line and `color-scheme: dark` (the fill and the scheme agree, so the native glyphs — the `type=date`
+  calendar, a select's list — are light-on-dark and visible); the select's chevron is a light-drawn
+  copy via `--bs-form-select-bg-img`; **the accent on baked-in controls** — Bootswatch bakes the
+  orange fill in directly (not through `--bs-primary`), so `app.css` overrides it to azure:
+  `.btn-primary`/`.btn-outline-primary`, `.form-check-input:checked`/indeterminate, the `.form-range`
+  thumb, `.progress-bar` (+ the track as a well), `.dropdown-menu` (a warm overlay + the active item),
+  the `.list-group` active row and the `.navbar.kukatko-navbar` active link;
+  **a slim translucent navbar** `.kukatko-navbar` (it sits ABOVE the scrolling content: the fill `--kk-header-bg`
+  = the page's tone at 72 % + `backdrop-filter: blur(--kk-header-blur)` frosts whatever scrolls beneath it,
+  a hairline bottom line `--kk-header-border`; an `@supports not (backdrop-filter…)` fallback to the full
+  `--kk-surface-1`, so the bar is never transparent without the blur; a thinned `padding-block`, on a fine
+  pointer the `.nav-link` tap target relaxes to 2.25rem — which is why `--kukatko-navbar-height` is 3.25rem,
+  dimensioned for the taller touch case); **a calmer nav** — an inactive `.nav-link` is muted, the active
+  route carries one accent state = a `--kk-accent-subtle` pill + accent text (apart from the CTA);
+  **the global command palette** `.kukatko-search-trigger` (a field-as-trigger leading the bar, slim on a fine
+  pointer, 44px on coarse, growing on mobile) + `.kukatko-search-dialog`/`-panel` (a top-anchored
+  console on `--kk-surface-overlay`) + `.kukatko-search-option` (a row: a preview/glyph + text + a count,
+  the active row `--kk-accent-subtle` + an inset accent bar) + `.kukatko-search-legend` (a footer
+  key legend, hidden on a phone) — the basis for the `SearchCommand` component;
+  **the map (Leaflet)** `.kukatko-map*` — Leaflet has no theme hooks, so its controls are reached
+  through its own classes, but **scoped under `.kukatko-map`** (the element Leaflet itself puts
+  `leaflet-container`/`leaflet-touch` on) — this both keeps the override on our maps and
+  beats the Leaflet stylesheet that the bundler emits *after* `app.css` (`.leaflet-touch
+  .leaflet-bar a` has the same specificity as a single-class override and would win on order);
+  `.kukatko-map` = `position: relative` (so that the overlay is positioned from the first paint, not only
+  after Leaflet's initialization) + `height: 70vh` as a **fallback** for the inline `70dvh` (an engine that
+  rejects the unit drops the inline declaration and the map would have no height at all);
+  `.kukatko-map-gesture-hint` = the „dvěma prsty" hint — a frame across the whole map only for the sake of
+  centring, what is visible is a **small pill** in `::before` (`content: attr(data-label)`); **not a scrim
+  across the whole map**, because a finger crosses a 70dvh-tall map on every scroll of the page, so
+  the hint has to be a note, not a curtain; `pointer-events: none` on both — a hint that
+  eats the next tap would be worse than none; `.leaflet-marker-draggable` inside the map gets
+  `touch-action: none`, because **the picker's draggable pin** has to answer a single finger even on a gesture-handled
+  map (the effective `touch-action` is the intersection with the ancestors and `none` is the narrowest);
+  `@media (pointer: coarse)` then raises the Leaflet toolbar (26px, 30px with `leaflet-touch`) to 2.75rem
+  including the `line-height` and a bigger `font-size` +/- glyphs, gives the mandatory mapy.com logo a 44px hitbox
+  and loosens the attribution's line height (that one is text, not a button — a 44px band across the whole bottom edge would
+  swallow taps); the guards are in `styles/tapTargets.test.ts`;
+  **dark Leaflet chrome** — Leaflet has its light theme hard-wired into the stylesheet (a white popup
+  bubble, a white translucent attribution band, white toolbar buttons, a `#ddd` backdrop) and no
+  variable to recolor it, so the tokens are pushed in through its classes;
+  `.kukatko-map.leaflet-container` = the backdrop `--kk-surface-sunken` (Leaflet's `#ddd` is a light
+  flash in the middle of an almost black page — it is visible past the edge of the world and before the tiles load);
+  `.leaflet-bar` = a hairline `--kk-surface-border` + `--kk-radius-sm` + `--kk-shadow-2`, the buttons
+  `--kk-surface-overlay`/`--kk-text`, hover the same accent tint as the app's other rows,
+  `leaflet-disabled` muted and **after** hover (it ties with it on specificity);
+  `.leaflet-control-attribution` = `--kk-text-muted` at 88 % of the page's tone, the link `--kk-accent`
+  (the header's 72 % can't be taken here — the attribution sits directly on the tiles and above a snow-white
+  tile the link would fall below AA); the popup (`.leaflet-popup-content-wrapper` + `-tip`) =
+  `--kk-surface-overlay` + a hairline + `--kk-shadow-3` + `--kk-radius-md`, the tip carries the same
+  border (it is clipped to two edges, which thus continue the bubble's outline), the closing „×"
+  `--kk-text-muted` → `--kk-text` on hover and on **focus**, the links in the content
+  `--kk-accent`/`--kk-accent-hover` (the whole card is one link to the detail and the markup has no underline)
+  and the preview gets `--kk-radius-sm`; **the tiles, pins and clusters are not recolored** (that is the map's
+  content, not chrome) and the Leaflet tooltip/layers/scale aren't styled at all — the app doesn't render them;
+  the guards are in `styles/mapChrome.test.ts` (every `.leaflet-*` selector in `app.css` must start with
+  `.kukatko-map`, colors only from tokens, compound selectors against Leaflet);
+  **the timeline** `.kukatko-timeline*` (a fixed vertical data bar at the right
+  edge below the navbar, absolutely positioned ticks, a floating label for the active month, `touch-action:
+  none` for dragging, hidden at widths ≤ 575.98px); **the filter bar** `.kukatko-filter-*`
+  (`.kukatko-filter-search` = the search field grows and fills the header's row, `.kukatko-filter-sort`
+  a minimum width, `.kukatko-filter-panel` = 44px tap targets on the panel's elements, `.kukatko-filter-chip`
+  = a tappable pill chip with a cross); the CSS variable `--kukatko-navbar-height`),
+  `test/setup.ts` (a jsdom **`window.matchMedia` stub** — a non-matching default, individual tests can
+  override it to simulate a phone),
+  `test/batchBar.ts` (fixtures shared by the tests of pages with a photo grid: `BATCH_ACTIONS` = the complete
+  dictionary of `BatchActionBar` actions by accessible name — every page asserts it **in full**, so that it
+  can't silently regress to a stripped-down toolbar — and `albumOption()` for `fetchAlbums` in the picker),
+  `test/css.ts` (reading and mini-parsing stylesheets from tests: `readCss` / `ruleBody` / `declarations`
+  — jsdom evaluates neither `env()` nor media queries, so CSS-only rules are guarded by reading the
+  file; it is used by `styles/tokens.test.ts`, `styles/mapChrome.test.ts` (the Leaflet override —
+  the scoping under `.kukatko-map`, colors only from tokens, the compound selectors that beat the Leaflet
+  stylesheet), `styles/safeArea.test.ts`, which computes the padding of the
+  fullscreen overlays (`review.css`, `compare.css`) against the iPhone's insets and asserts that the
+  control rows clear both the notch and the home bar — and that without the insets the spacing stays exactly as before —
+  and `components/people/ClusterCard.test.tsx`, which guards both pointer variants of
+  `clusters.css` the same way).
+  Routing in `App.tsx`: the route table lives in the exported `AppRoutes` (so that a test can mount it
+  into a `MemoryRouter` and verify the wiring itself — `App.test.tsx`), `App` merely wraps it in
+  `BrowserRouter`+`AuthProvider`+`CapabilitiesProvider` (the capabilities provider sits inside the auth provider,
+  because `/capabilities` is behind `RequireAuth`). `/login` is public, the rest is under `RequireAuth`; `/slideshow` and
+  the immersive `/photos/:uid` are under `RequireAuth` but **outside `Layout`** (fullscreen without the navbar),
+  the rest is under `Layout`
+  (**`/` = `LibraryPage`** — the library is the home page; `/library` → `LibraryRedirect`
+  (a `replace` redirect to `/` with the query string preserved),
   `/favorites`, `/albums`, `/albums/:uid`, `/labels`, `/labels/:uid`, `/search`, `/saved`, `/map`,
   `/places`, `/people`,
-  `/people/:uid`, `/account`, `/help`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` a
-  `/duplicates` navíc pod `RequireRole role="editor"` = write-only (a `/duplicates/compare` tamtéž,
-  ale **mimo `Layout`** — fullscreen jako `/review`), `/import` pod `RequireImport` (= maintainer,
-  `canImport`), `/maintenance` a `/system` pod `RequireRole role="maintainer"` = provoz (jen
-  maintainer), `/users` a `/audit` pod `RequireRole role="admin"` = governance (admin **nebo**
-  maintainer)). Konfig:
-  `vite.config.ts` (build → `../internal/web/static/dist`, vitest jsdom, dev proxy
+  `/people/:uid`, `/account`, `/help`; `/upload`, `/people/clusters`, `/faces`, `/recognition`, `/trash` and
+  `/duplicates` are additionally under `RequireRole role="editor"` = write-only (and `/duplicates/compare` there too,
+  but **outside `Layout`** — fullscreen like `/review`), `/import` under `RequireImport` (= maintainer,
+  `canImport`), `/maintenance` and `/system` under `RequireRole role="maintainer"` = operations (maintainer
+  only), `/users` and `/audit` under `RequireRole role="admin"` = governance (admin **or**
+  maintainer)). Config:
+  `vite.config.ts` (the build → `../internal/web/static/dist`, vitest jsdom, the dev proxy
   `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
   `tsconfig*.json`.
