@@ -52,6 +52,24 @@ describe('coarse-pointer touch-target floor', () => {
     expect(toggler.get('justify-content')).toBe('center')
   })
 
+  it('squares the navbar brand off to the floor on touch', () => {
+    // The brand carries its own coarse block (next to the rules that shape it),
+    // so pick the one that actually mentions it rather than the shared floor.
+    const block = ruleBody(css, /@media\s*\(pointer:\s*coarse\)/, /\.kukatko-navbar-brand/) ?? ''
+    const brand = declarations(ruleBody(block, /\.kukatko-navbar-brand\s*(?=\{)/) ?? '')
+    // Below `sm` the wordmark is hidden and the mark is the whole control, so the
+    // box has to clear the floor on both axes — not just vertically.
+    expect(lengthPx(brand.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(lengthPx(brand.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+
+    // The base rule keeps the flex centering that holds the glyph in the middle
+    // once the box grows past it.
+    const base = declarations(ruleBody(css, /\.kukatko-navbar-brand\s*(?=\{)/) ?? '')
+    expect(base.get('display')).toBe('inline-flex')
+    expect(base.get('align-items')).toBe('center')
+    expect(base.get('justify-content')).toBe('center')
+  })
+
   it('gives every close button a 44px hit area without growing its glyph', () => {
     // The lookbehind skips `.badge .btn-close` (a descendant combinator leaves a
     // non-space then a space before the class) so this is the bare rule.

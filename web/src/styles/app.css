@@ -276,6 +276,67 @@ body {
   }
 }
 
+/* The brand / home affordance leading the bar. It is deliberately compact: a
+   phone's top row has to hold `[brand] [search] [hamburger]` at 320px without
+   overflowing or wrapping into a second line, and the unfolded desktop bar has
+   even less spare width than that — so the wordmark is display-gated in the
+   markup (`d-none d-sm-inline d-md-none d-xxl-inline`, reasoned there) and the
+   mark carries the brand alone in between. Bootstrap's own `.navbar-brand` is `inline-block` with a 1rem
+   right margin and vertical padding, all of which fight a mark-plus-wordmark
+   pair squared off to a touch target — so the box is restated here. The heights
+   mirror `.kukatko-search-trigger` next to it (slim on a mouse, the 44px finger
+   target on touch below) rather than the unconditional `.kukatko-tap-target`,
+   which would make the desktop bar taller than the links it sits beside. */
+.kukatko-navbar-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kk-space-2);
+  flex-shrink: 0;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding-block: 0;
+  padding-inline: var(--kk-space-2);
+  margin-inline-end: var(--kk-space-2);
+  color: var(--kk-text);
+  border-radius: var(--kk-radius-pill);
+  transition: color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kukatko-navbar-brand:hover,
+.kukatko-navbar-brand:focus-visible {
+  color: var(--kk-accent);
+}
+
+.kukatko-navbar-brand:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+/* The mark is the logo, so it keeps the accent whatever the label does — on a
+   phone, where the wordmark is hidden, it is the entire brand. */
+.kukatko-navbar-brand__mark {
+  color: var(--kk-accent);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+/* A wordmark, not a heading: it never wraps and never truncates — it is either
+   shown whole or not shown at all. */
+.kukatko-navbar-brand__wordmark {
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* On touch the mark alone still has to be a finger target, not a 20px glyph. */
+@media (pointer: coarse) {
+  .kukatko-navbar-brand {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
 /* Cleaner nav: inactive items are quiet (muted text, no fill); hover/focus lifts
    them to full-strength text; the current route wears one clear accent state — an
    accent-tinted pill (`--kk-accent-subtle`, the token minted for exactly this) with
