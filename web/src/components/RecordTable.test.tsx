@@ -130,6 +130,34 @@ describe('RecordTable', () => {
     expect(within(cards[1]).queryByText(/Payload/)).toBeNull()
   })
 
+  it('renders the compact table density on request', () => {
+    mockViewport(false)
+    render(<RecordTable records={ROWS} columns={COLUMNS} rowKey={(row) => row.id} size="sm" />)
+
+    expect(screen.getByRole('table')).toHaveClass('table-sm')
+  })
+
+  it('drops the desktop header row when the listing labels itself', () => {
+    mockViewport(false)
+    render(<RecordTable records={ROWS} columns={COLUMNS} rowKey={(row) => row.id} hideHeader />)
+
+    expect(screen.queryAllByRole('columnheader')).toHaveLength(0)
+    // One row per record and nothing else: the header row is gone, not hidden.
+    expect(screen.getAllByRole('row')).toHaveLength(ROWS.length)
+    expect(screen.getByRole('cell', { name: 'Ada' })).toBeInTheDocument()
+  })
+
+  it('keeps the card labels of a headerless listing', () => {
+    // A card has no header row to read across from, so `hideHeader` must not
+    // strip the labels a phone depends on to tell the values apart.
+    mockViewport(true)
+    render(<RecordTable records={ROWS} columns={COLUMNS} rowKey={(row) => row.id} hideHeader />)
+
+    const first = screen.getAllByRole('listitem')[0]
+    expect(within(first).getByText('Name')).toBeInTheDocument()
+    expect(within(first).getByText('Role')).toBeInTheDocument()
+  })
+
   it('renders no action row when the caller offers no actions', () => {
     mockViewport(true)
     const { container } = render(

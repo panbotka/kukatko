@@ -5,11 +5,11 @@ import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import Form from 'react-bootstrap/Form'
 import Spinner from 'react-bootstrap/Spinner'
-import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
 import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
+import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { ApiError } from '../services/auth'
 import { fetchJobStats, type JobStats } from '../services/import'
 import {
@@ -88,9 +88,58 @@ type RepairState =
   | { status: 'error' }
   | { status: 'done'; result: RepairResult }
 
-/** The scan-result table: catalogue/disk totals and one row per problem class. */
+/**
+ * The scan-result table: catalogue/disk totals and one row per problem class.
+ *
+ * The listing is headerless on a desktop — the first column names the problem —
+ * but a card has no header row to read across from, so every column still carries
+ * a label for its phone form. Below `md` a finding becomes one stacked card
+ * (problem + explanation, count, samples) instead of three columns the phone can
+ * only reach by dragging sideways.
+ */
 function ScanResult({ report }: { report: ScanReport }) {
   const { t } = useTranslation()
+  const columns: RecordColumn<FindingKey>[] = [
+    {
+      key: 'problem',
+      header: t('maintenance.findings.problem'),
+      cell: (key) => (
+        <>
+          <span className="fw-semibold">{t(`maintenance.findings.${key}`)}</span>
+          <div className="fw-normal text-secondary small">
+            {t(`maintenance.findings.descriptions.${key}`)}
+          </div>
+        </>
+      ),
+    },
+    {
+      key: 'count',
+      header: t('maintenance.findings.count'),
+      cellStyle: { width: '6rem' },
+      cell: (key) => {
+        const { count } = findingOf(report, key)
+        return (
+          <Badge bg={count > 0 ? 'warning' : 'secondary'} text="dark">
+            {count}
+          </Badge>
+        )
+      },
+    },
+    {
+      key: 'samples',
+      header: t('maintenance.findings.samples'),
+      // On the value, not in `cellClassName`: the card shows the same sample ids
+      // and they need the same monospace + break-anywhere treatment there.
+      cell: (key) => {
+        const { samples } = findingOf(report, key)
+        return (
+          <span className="text-secondary small font-monospace text-break">
+            {samples.length > 0 ? samples.join(', ') : '—'}
+          </span>
+        )
+      },
+    },
+  ]
   return (
     <>
       <p className="text-secondary mb-1">
@@ -109,31 +158,13 @@ function ScanResult({ report }: { report: ScanReport }) {
       report.missing_phashes.count === 0 ? (
         <Alert variant="success">{t('maintenance.scan.clean')}</Alert>
       ) : (
-        <Table striped hover responsive size="sm">
-          <tbody>
-            {FINDING_KEYS.map((key) => {
-              const finding = findingOf(report, key)
-              return (
-                <tr key={key}>
-                  <td className="fw-semibold">
-                    {t(`maintenance.findings.${key}`)}
-                    <div className="fw-normal text-secondary small">
-                      {t(`maintenance.findings.descriptions.${key}`)}
-                    </div>
-                  </td>
-                  <td style={{ width: '6rem' }}>
-                    <Badge bg={finding.count > 0 ? 'warning' : 'secondary'} text="dark">
-                      {finding.count}
-                    </Badge>
-                  </td>
-                  <td className="text-secondary small font-monospace text-break">
-                    {finding.samples.length > 0 ? finding.samples.join(', ') : '—'}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </Table>
+        <RecordTable
+          records={FINDING_KEYS}
+          columns={columns}
+          rowKey={(key) => key}
+          size="sm"
+          hideHeader
+        />
       )}
     </>
   )

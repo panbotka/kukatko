@@ -13,6 +13,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { formatDateTime } from '../lib/format'
 import { ApiError } from '../services/auth'
 import {
@@ -195,42 +196,53 @@ function JobStatsBar({ stats }: { stats: JobStats }) {
   )
 }
 
-/** The run-history table across all sources, most recent first. */
+/**
+ * The run-history table across all sources, most recent first. Six columns only
+ * ever fitted a phone by scrolling sideways, so below `md` the shared
+ * {@link RecordTable} re-lays each run as one stacked "label: value" card.
+ */
 function RunHistoryTable({ runs }: { runs: ImportRun[] }) {
   const { t, i18n } = useTranslation()
   if (runs.length === 0) {
     return <EmptyState size="sm" title={t('import.history.empty')} />
   }
-  return (
-    <Table striped hover responsive size="sm">
-      <thead>
-        <tr>
-          <th>{t('import.history.source')}</th>
-          <th>{t('import.history.started')}</th>
-          <th>{t('import.history.finished')}</th>
-          <th>{t('import.history.status')}</th>
-          <th>{t('import.history.counts')}</th>
-          <th>{t('import.history.lastError')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {runs.map((run) => (
-          <tr key={run.id}>
-            <td>{t(`import.source.${run.source}`)}</td>
-            <td>{formatTimestamp(run.started_at, i18n.language)}</td>
-            <td>{run.finished_at ? formatTimestamp(run.finished_at, i18n.language) : '—'}</td>
-            <td>
-              <Badge bg={STATUS_VARIANT[run.status]}>{t(`import.status.${run.status}`)}</Badge>
-            </td>
-            <td>
-              <CountsBadges counts={run.counts} />
-            </td>
-            <td className="text-danger small">{run.last_error || '—'}</td>
-          </tr>
-        ))}
-      </tbody>
-    </Table>
-  )
+  const columns: RecordColumn<ImportRun>[] = [
+    {
+      key: 'source',
+      header: t('import.history.source'),
+      cell: (run) => t(`import.source.${run.source}`),
+    },
+    {
+      key: 'started',
+      header: t('import.history.started'),
+      cell: (run) => formatTimestamp(run.started_at, i18n.language),
+    },
+    {
+      key: 'finished',
+      header: t('import.history.finished'),
+      cell: (run) => (run.finished_at ? formatTimestamp(run.finished_at, i18n.language) : '—'),
+    },
+    {
+      key: 'status',
+      header: t('import.history.status'),
+      cell: (run) => (
+        <Badge bg={STATUS_VARIANT[run.status]}>{t(`import.status.${run.status}`)}</Badge>
+      ),
+    },
+    {
+      key: 'counts',
+      header: t('import.history.counts'),
+      cell: (run) => <CountsBadges counts={run.counts} />,
+    },
+    {
+      key: 'lastError',
+      header: t('import.history.lastError'),
+      // The styling rides on the value, not on `cellClassName`: the card shows the
+      // same error and it has to stay just as red and just as small there.
+      cell: (run) => <span className="text-danger small">{run.last_error || '—'}</span>,
+    },
+  ]
+  return <RecordTable records={runs} columns={columns} rowKey={(run) => String(run.id)} size="sm" />
 }
 
 /** One reconciliation row: source vs catalogue counts and the missing tally. */

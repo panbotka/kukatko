@@ -289,8 +289,13 @@ here.
   its buttons clear the 44px finger floor **unconditionally**, not only on `pointer: coarse` — a narrow
   window on a laptop gets the same card — guarded by `styles/recordCards.test.ts`), `detail?` (an
   expanded block: a `colSpan` row under the table row, a bordered block at the foot of the card; return
-  `null` when the record has nothing to expand), `className?`. Adopted by `UsersPage` and `AuditPage`;
-  any other admin table can take it as-is. Tests: `RecordTable.test.tsx`);
+  `null` when the record has nothing to expand), `className?`, `size?` (`'sm'` = the compact `table-sm`
+  density on the desktop table only) and `hideHeader?` (**drops the desktop header row** for a listing whose
+  first column already names the record — the maintenance findings; the cards keep every `header` as their
+  `<dt>`, because a card has no header row to read across from). A value that must look the same in both
+  layouts (`text-danger small`, `font-monospace`) belongs **in the `cell`, not in `cellClassName`** — the
+  latter reaches the `<td>` only. Adopted by `UsersPage`, `AuditPage`, `ImportPage` (run history) and
+  `MaintenancePage` (scan result); any other admin table can take it as-is. Tests: `RecordTable.test.tsx`);
   `components/upload/` = `DropZone` (a drag-and-drop zone + file input `multiple`
   `accept="image/*,video/*"` → the mobile gallery + a **Vyfotit** button `capture="environment"`),
   `UploadProgressHeader` (**a prominent sticky** header for the whole batch: „done / total", **one**
@@ -646,7 +651,10 @@ here.
   `ImportPage` = `/import` (maintainer only) the import/migration console: two sections (PhotoPrism,
   photo-sorter) with a **Spustit import** button (gated on the `sources` flags), the live progress of a running run
   (spinner + imported/updated/skipped/failed counts) and the background queue state (`GET /jobs/stats`),
-  plus a **run history** table (`import_runs`: source/start/end/status/counts/error); it polls
+  plus a **run history** table (`import_runs`: source/start/end/status/counts/error) — rendered through the
+  shared `RecordTable` (`size="sm"`), so on a phone the six columns become **one stacked card per run**
+  instead of a sideways scroll; the error keeps its `text-danger small` on the *value* (a `cellClassName`
+  would be desktop-only) —; it polls
   `GET /import/runs` + `GET /jobs/stats` every 3 s, 409 → „už běží", a confirm before the first (large) run of a
   source, self-gated on `canImport` (= maintainer). The history also shows runs of the **`folder`** source (`kukatko import dir`,
   reads a directory on the server's disk → **has no button**, it just appears in the table): in `services/import.ts`
@@ -654,7 +662,10 @@ here.
   photoprism/photosorter), the label `import.source.folder`,
   `MaintenancePage` = `/maintenance` (maintainer only) the library maintenance console: a **Spustit kontrolu** button
   (`GET /maintenance/scan`) → a summary of totals + a findings table (count + samples per class, or „knihovna
-  konzistentní"), repair checkboxes (thumbnails/embeddings/faces/hashes/import of orphans — annotated
+  konzistentní") — also through the shared `RecordTable` (`size="sm"` + **`hideHeader`**: the first column names
+  the problem, so the desktop table stays headerless), so a phone gets **one stacked card per finding**
+  (`maintenance.findings.problem`/`.count`/`.samples` are the card's labels — a card has no header row to read
+  the values across from) —, repair checkboxes (thumbnails/embeddings/faces/hashes/import of orphans — annotated
   with the remaining count from the last check) → **Spustit opravy** (`POST /maintenance/repair`) with a result
   summary, plus the background queue state (`GET /jobs/stats` polls every 3 s) as progress; **every finding,
   the summary „drift" row and every queue state carries a quiet plain-language explanation** (without hovering) —

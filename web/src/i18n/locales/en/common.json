@@ -1704,6 +1704,8 @@
       "missing_embeddings": "Missing embeddings",
       "missing_faces": "Missing face detections",
       "missing_phashes": "Missing perceptual hashes",
+      "problem": "Problem",
+      "count": "Count",
       "samples": "Samples",
       "descriptions": {
         "missing_originals": "The photo exists in the catalogue but its original file is gone from disk or storage — a real risk of data loss, worth attention.",

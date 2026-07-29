@@ -51,6 +51,15 @@ export interface RecordTableProps<T> {
   detail?: (record: T) => ReactNode | null
   /** Extra classes for the desktop `<Table>` (spacing, alignment). */
   className?: string
+  /** Renders the desktop table at Bootstrap's compact `table-sm` density. */
+  size?: 'sm'
+  /**
+   * Drops the desktop header row, for a listing whose first column already names
+   * the record (an integrity scan's "problem / count / samples", say). Every
+   * column still needs its `header`: a card has no header row to read across
+   * from, so the label always travels with the value.
+   */
+  hideHeader?: boolean
 }
 
 /**
@@ -78,6 +87,8 @@ export function RecordTable<T>({
   cardActions,
   detail,
   className,
+  size,
+  hideHeader,
 }: RecordTableProps<T>) {
   const narrow = useIsNarrowViewport()
 
@@ -117,14 +128,16 @@ export function RecordTable<T>({
   }
 
   return (
-    <Table striped hover responsive className={className}>
-      <thead>
-        <tr>
-          {columns.map((column) => (
-            <th key={column.key}>{column.header}</th>
-          ))}
-        </tr>
-      </thead>
+    <Table striped hover responsive size={size} className={className}>
+      {hideHeader !== true && (
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key}>{column.header}</th>
+            ))}
+          </tr>
+        </thead>
+      )}
       <tbody>
         {records.map((record) => {
           const detailNode = detail?.(record) ?? null

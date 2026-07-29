@@ -1758,6 +1758,8 @@
       "missing_embeddings": "Chybějící embeddingy",
       "missing_faces": "Chybějící detekce obličejů",
       "missing_phashes": "Chybějící perceptuální hashe",
+      "problem": "Problém",
+      "count": "Počet",
       "samples": "Ukázky",
       "descriptions": {
         "missing_originals": "Fotka je v katalogu, ale její originální soubor na disku či úložišti chybí — hrozí skutečná ztráta dat, stojí za pozornost.",
