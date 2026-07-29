@@ -11,6 +11,12 @@ export interface FavoriteButtonProps {
   favorite: boolean
   /** Extra classes for positioning (e.g. an absolute overlay on a grid tile). */
   className?: string
+  /**
+   * Reports every flip (optimistic and rolled back) to the list that owns this
+   * photo, so a page favoriting the same photo by another route — the library's
+   * `f` shortcut — shares this button's baseline instead of keeping its own.
+   */
+  onChange?: (favorite: boolean) => void
 }
 
 /** A heart glyph that is filled when favorited and outlined otherwise. */
@@ -79,8 +85,8 @@ export function FavoriteToggle({ favorite, pending, onToggle, className }: Favor
  * detail page; `className` positions it. When overlaid on a link/tile it stops the
  * click from bubbling so toggling never navigates.
  */
-export function FavoriteButton({ uid, favorite, className }: FavoriteButtonProps) {
-  const { favorite: isFavorite, pending, toggle } = useFavorite(uid, favorite)
+export function FavoriteButton({ uid, favorite, className, onChange }: FavoriteButtonProps) {
+  const { favorite: isFavorite, pending, toggle } = useFavorite(uid, favorite, onChange)
 
   function handleClick(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault()

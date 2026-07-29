@@ -71,11 +71,14 @@ export function LibraryPage() {
   const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
 
-  // Optimistic per-photo favorite overrides for the `f` keyboard shortcut on the
-  // focused tile: the flip is applied to the displayed photos immediately (each
-  // tile's own useFavorite resyncs from the prop) and rolled back if the request
-  // fails. Cleared whenever the list is refetched — a new view, or a bulk edit
-  // that may itself have set the favorite flag — so no override outlives its list.
+  // The one live favorite state per photo, shared by both ways to flip it: the
+  // `f` shortcut on the focused tile and the tile's own heart, which reports its
+  // flips back here (`onFavoriteChange`). Keeping a single baseline is what makes
+  // `f` after a heart-click toggle rather than repeat the click. The override is
+  // applied to the displayed photos immediately (each tile's own useFavorite
+  // resyncs from the prop) and rolled back if the request fails. Cleared whenever
+  // the list is refetched — a new view, or a bulk edit that may itself have set
+  // the favorite flag — so no override outlives its list.
   const [favOverrides, setFavOverrides] = useState<ReadonlyMap<string, boolean>>(new Map())
   useEffect(() => {
     setFavOverrides(new Map())
@@ -165,6 +168,11 @@ export function LibraryPage() {
     },
     [displayPhotos, favOverrides],
   )
+  // A tile's own heart owns its request; the page only records the resulting
+  // state so the shortcut starts from what the reader last saw.
+  const noteFavorite = useCallback((uid: string, favorite: boolean) => {
+    setFavOverrides((m) => new Map(m).set(uid, favorite))
+  }, [])
   const { focusedIndex } = useGridKeyboardNavigation({
     count: displayPhotos.length,
     enabled: status === 'ready' && displayPhotos.length > 0,
@@ -273,6 +281,7 @@ export function LibraryPage() {
               onRetry={retry}
               selection={bulk.gridSelection}
               favoritable
+              onFavoriteChange={noteFavorite}
               detailQuery={detailQuery}
               gridRef={gridRef}
               onRangeChanged={onRangeChanged}

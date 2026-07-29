@@ -16,10 +16,10 @@ vi.mock('../../services/photos', async (importOriginal) => {
 const { favoritePhoto } = await import('../../services/photos')
 const favoriteMock = vi.mocked(favoritePhoto)
 
-function renderButton(favorite: boolean) {
+function renderButton(favorite: boolean, onChange?: (favorite: boolean) => void) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <FavoriteButton uid="ph1" favorite={favorite} />
+      <FavoriteButton uid="ph1" favorite={favorite} onChange={onChange} />
     </I18nextProvider>,
   )
 }
@@ -86,5 +86,24 @@ describe('FavoriteButton', () => {
       )
     })
     expect(favoriteMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports the flip to the owning list, and the rollback too', async () => {
+    favoriteMock.mockRejectedValue(new Error('boom'))
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderButton(false, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'Add to favorites' }))
+
+    // The optimistic flip is reported at once, so a list favoriting the same
+    // photo by another route (the library's `f`) shares this baseline…
+    expect(onChange).toHaveBeenNthCalledWith(1, true)
+    // …and the rollback is reported too, or that list would keep believing the
+    // photo is favorited after the request failed.
+    await waitFor(() => {
+      expect(onChange).toHaveBeenNthCalledWith(2, false)
+    })
+    expect(onChange).toHaveBeenCalledTimes(2)
   })
 })

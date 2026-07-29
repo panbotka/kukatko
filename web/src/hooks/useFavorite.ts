@@ -21,8 +21,18 @@ export interface UseFavoriteResult {
  * server `initial` resyncs the optimistic state to the server's value. Favoriting
  * is a personal action allowed for every signed-in user, so no role gate is
  * applied here.
+ *
+ * `onChange` reports every flip this hook makes — the optimistic one and the
+ * rollback — so a list that also favorites from elsewhere (the library's `f`
+ * shortcut) can keep one baseline per photo instead of two that drift apart. It
+ * is not called for a resync, which comes *from* the owner. The rollback is
+ * reported even after unmount, since the owner outlives a virtualized tile.
  */
-export function useFavorite(uid: string, initial: boolean): UseFavoriteResult {
+export function useFavorite(
+  uid: string,
+  initial: boolean,
+  onChange?: (favorite: boolean) => void,
+): UseFavoriteResult {
   const [favorite, setFavorite] = useState(initial)
   const [pending, setPending] = useState(false)
 
@@ -30,6 +40,9 @@ export function useFavorite(uid: string, initial: boolean): UseFavoriteResult {
   favoriteRef.current = favorite
   const pendingRef = useRef(false)
   const mountedRef = useRef(true)
+  // Held in a ref so a caller's inline callback never re-creates `toggle`.
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
 
   // Resync to the server's value when the photo or its stored flag changes.
   useEffect(() => {
@@ -49,11 +62,13 @@ export function useFavorite(uid: string, initial: boolean): UseFavoriteResult {
     }
     const next = !favoriteRef.current
     setFavorite(next)
+    onChangeRef.current?.(next)
     setPending(true)
     pendingRef.current = true
     favoritePhoto(uid, next)
       .catch(() => {
         // Roll back the optimistic flip; the stored state never changed.
+        onChangeRef.current?.(!next)
         if (mountedRef.current) {
           setFavorite(!next)
         }
