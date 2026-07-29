@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
@@ -81,6 +81,27 @@ function auth(opts: { isMaintainer?: boolean; role?: string } = {}): AuthContext
   } as unknown as AuthContextValue
 }
 
+/** The shared setup stubs a non-matching (desktop) `matchMedia`; restore it after. */
+const realMatchMedia = window.matchMedia
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer, so
+ * `useIsNarrowViewport` — and through it the scan result's table/card choice —
+ * takes the branch under test.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
 function renderPage(value: AuthContextValue = auth({ isMaintainer: true })) {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -104,6 +125,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  window.matchMedia = realMatchMedia
 })
 
 describe('MaintenancePage', () => {
@@ -146,6 +168,41 @@ describe('MaintenancePage', () => {
     // Each finding carries an inline plain-language explanation of what it means.
     expect(screen.getByText(/has no generated thumbnail/)).toBeInTheDocument()
     expect(screen.getByText(/belongs to no catalogue photo/)).toBeInTheDocument()
+
+    // A wide viewport keeps the compact table, headerless: its first column names
+    // the problem, so there is nothing for a header row to add.
+    const table = screen.getByRole('table')
+    expect(within(table).queryAllByRole('columnheader')).toHaveLength(0)
+    expect(within(table).getAllByRole('row')).toHaveLength(6)
+  })
+
+  it('reflows each finding into a stacked card on a phone', async () => {
+    mockViewport(true)
+    scanMock.mockResolvedValue(
+      report({ missing_thumbnails: { count: 3, samples: ['ph1', 'ph2'] } }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Run scan' }))
+
+    expect(await screen.findByText('Missing thumbnails')).toBeInTheDocument()
+    // Nothing to drag sideways: the three-column table is gone entirely.
+    expect(screen.queryByRole('table')).toBeNull()
+
+    const cards = screen.getAllByRole('listitem')
+    expect(cards).toHaveLength(6)
+    // The headerless table's columns still carry their labels onto the card —
+    // a card has no header row to read the values across from.
+    const thumbnails = cards[2]
+    expect(within(thumbnails).getByText('Problem')).toBeInTheDocument()
+    expect(within(thumbnails).getByText('Count')).toBeInTheDocument()
+    expect(within(thumbnails).getByText('Samples')).toBeInTheDocument()
+    // Count, samples and the plain-language explanation all survive the reflow.
+    expect(within(thumbnails).getByText('Missing thumbnails')).toBeInTheDocument()
+    expect(within(thumbnails).getByText('3')).toBeInTheDocument()
+    expect(within(thumbnails).getByText('ph1, ph2')).toBeInTheDocument()
+    expect(within(thumbnails).getByText(/has no generated thumbnail/)).toBeInTheDocument()
   })
 
   it('reports a clean library when the scan finds no problems', async () => {

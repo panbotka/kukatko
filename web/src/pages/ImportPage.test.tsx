@@ -84,6 +84,27 @@ function auth(
   } as unknown as AuthContextValue
 }
 
+/** The shared setup stubs a non-matching (desktop) `matchMedia`; restore it after. */
+const realMatchMedia = window.matchMedia
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer, so
+ * `useIsNarrowViewport` — and through it the run history's table/card choice —
+ * takes the branch under test.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
 function renderPage(value: AuthContextValue = auth({ isMaintainer: true })) {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -108,6 +129,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  window.matchMedia = realMatchMedia
 })
 
 describe('ImportPage', () => {
@@ -134,6 +156,45 @@ describe('ImportPage', () => {
     expect(screen.getAllByText('Failed').length).toBeGreaterThan(0)
     // The failed run's error message shows in the table.
     expect(screen.getByText('connection refused')).toBeInTheDocument()
+
+    // A wide viewport keeps the familiar six-column table.
+    const table = screen.getByRole('table')
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual(['Source', 'Started', 'Finished', 'Status', 'Counts', 'Last error'])
+    // The header row plus one row per run.
+    expect(within(table).getAllByRole('row')).toHaveLength(3)
+  })
+
+  it('reflows each run into a stacked card on a phone', async () => {
+    mockViewport(true)
+    runsMock.mockResolvedValue(
+      runsResponse([
+        run(2, 'photoprism', 'done'),
+        run(1, 'photosorter', 'failed', { last_error: 'connection refused' }),
+      ]),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Run history')).toBeInTheDocument()
+    // Nothing to drag sideways: the six-column table is gone entirely.
+    expect(screen.queryByRole('table')).toBeNull()
+
+    const cards = screen.getAllByRole('listitem')
+    expect(cards).toHaveLength(2)
+    // Every column travels with its label, so a value is still readable alone.
+    const first = cards[0]
+    for (const label of ['Source', 'Started', 'Finished', 'Status', 'Counts', 'Last error']) {
+      expect(within(first).getByText(label)).toBeInTheDocument()
+    }
+    expect(within(first).getByText('PhotoPrism')).toBeInTheDocument()
+    expect(within(first).getByText('Done')).toBeInTheDocument()
+    expect(within(first).getByText('New: 5')).toBeInTheDocument()
+    // The per-run status detail survives the reflow: the failure keeps its error.
+    expect(within(cards[1]).getByText('connection refused')).toBeInTheDocument()
+    expect(within(cards[1]).getByText('Failed')).toBeInTheDocument()
   })
 
   it('renders live progress and counts for an in-progress run', async () => {
