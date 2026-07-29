@@ -6,6 +6,9 @@
   "confirmModal": {
     "cancel": "Cancel"
   },
+  "headerActions": {
+    "overflow": "More actions"
+  },
   "errors": {
     "retry": "Try again"
   },

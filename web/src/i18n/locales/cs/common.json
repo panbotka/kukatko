@@ -6,6 +6,9 @@
   "confirmModal": {
     "cancel": "Zrušit"
   },
+  "headerActions": {
+    "overflow": "Další akce"
+  },
   "errors": {
     "retry": "Zkusit znovu"
   },

@@ -299,7 +299,24 @@ here.
   `<dt>`, because a card has no header row to read across from). A value that must look the same in both
   layouts (`text-danger small`, `font-monospace`) belongs **in the `cell`, not in `cellClassName`** — the
   latter reaches the `<td>` only. Adopted by `UsersPage`, `AuditPage`, `ImportPage` (run history) and
-  `MaintenancePage` (scan result); any other admin table can take it as-is. Tests: `RecordTable.test.tsx`);
+  `MaintenancePage` (scan result); any other admin table can take it as-is. Tests: `RecordTable.test.tsx`),
+  `HeaderActions` (**the shared „page-header actions → „…" overflow" collapse.** A detail header packs its
+  actions next to the title, and on a phone a row of four or five ≥44px buttons wrapped into two or three rows
+  — with the destructive one sitting inline among the neutral ones, a mis-tap away. Props are ready-made nodes,
+  not descriptors, so a page keeps its own RBAC gating and button styling: `primary` (the one or two actions
+  that stay inline **at every width**), `secondary` (inline on desktop, in the menu on a phone),
+  `destructive` (same, but always last and, inside the menu, **behind a `Dropdown.Divider`**) and `id?` (the
+  toggle's DOM id). Each is a `ReactNode[]` — an array, not a fragment, precisely so a conditionally rendered
+  `{canWrite && <Button/>}` arrives as `false` and can be told apart from a real action: an all-`false` list
+  renders **no toggle at all** rather than an empty menu, and every entry needs a stable `key` as any array of
+  children does. The breakpoint is decided **in JS** (`useIsNarrowViewport`), never `d-md-none`, so only one
+  layout is ever in the DOM; the menu stacks its actions as full-width buttons (an inner `d-grid`, like
+  `BatchActionBar`'s overflow) and **closes itself on any click inside** — a plain button raises no `select`
+  event react-bootstrap would act on, and a menu left standing open behind the modal its item just opened reads
+  as a stuck page. Styles `.kk-header-overflow-*` in `app.css`; the bare „…" toggle drops Bootstrap's caret and
+  squares off to the 44px floor on `pointer: coarse` (guarded by `styles/tapTargets.test.ts`). i18n
+  `headerActions.overflow`. Adopted by `AlbumDetailPage`; any other detail header can take it as-is.
+  Tests: `HeaderActions.test.tsx`);
   `components/upload/` = `DropZone` (a drag-and-drop zone + file input `multiple`
   `accept="image/*,video/*"` → the mobile gallery + a **Vyfotit** button `capture="environment"`),
   `UploadProgressHeader` (**a prominent sticky** header for the whole batch: „done / total", **one**
@@ -596,6 +613,11 @@ here.
   `AlbumDetailPage` = `/albums/:uid` a header + a **Promítání** button (for everyone) + editor actions
   (edit/delete/select) above
   a photo grid scoped to the album (`useScopedPhotos` + `FilterBar showSort={false}` + URL state) —
+  the header row is a **`HeaderActions`** group: **Promítání** stays inline at every width, while
+  **Stáhnout ZIP**, **Upravit** and — behind its own divider, in danger styling — **Smazat** fold into
+  the „…" overflow menu on a phone, so the header keeps to one row instead of wrapping into two or
+  three; on desktop the actions stay inline exactly as before, and either way the RBAC gate is the
+  same `canWrite` on the same buttons;
   an album is **always chronological** (oldest first, enforced by the backend), so the page has no sort
   selector or manual reordering; selection raises the shared **`BatchActionBar`** with the album's own
   actions merged in as `extraActions` — **Nastavit obálku** (enabled at exactly 1 selected) and
@@ -1676,7 +1698,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   bez wrapperu);
   `useIsNarrowViewport()` = sdílený hook nad `matchMedia` (`(max-width: 767.98px)`, Bootstrap `md`;
   odebírá `change`, chybějící/rozbité `matchMedia` → „široký"; jeden zdroj pravdy pro offcanvas
-  filtrů, výchozí hustotu mřížky, kolaps `BatchActionBar` do „…" overflow menu na telefonu i přesun
+  filtrů, výchozí hustotu mřížky, kolaps `BatchActionBar` i `HeaderActions` do „…" overflow menu na telefonu i přesun
   kurátorské smyčky prohlížeče z horní lišty do spodního doku na dosah palce);
   `usePrefersReducedMotion()` = sleduje `(prefers-reduced-motion: reduce)` přes `matchMedia`
   (odebírá `change`, chybějící/rozbité `matchMedia` → `false`) — volající dekorativní animaci
