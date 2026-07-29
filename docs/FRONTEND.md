@@ -274,7 +274,11 @@ here.
   red; non-destructive `primary`), `busy?` (locks both buttons and the close/backdrop for the duration of the
   action), `onConfirm`, `onCancel`. **The destructive button is not Enter's default**: after opening, focus rests
   on Zrušit, so a stray Enter cancels rather than deletes; Escape/close/backdrop cancel; react-bootstrap returns
-  focus to the trigger. Copy is translated by the caller — no hardcoded strings. Tests: `ConfirmModal.test.tsx`),
+  focus to the trigger. Copy is translated by the caller — no hardcoded strings. The dialog is `scrollable`, so a
+  long consequence scrolls inside the body and the two buttons stay pinned instead of sliding off a short
+  (keyboard-shrunk) phone viewport; it is deliberately **not** `fullscreen="sm-down"` like the admin form
+  dialogs — a confirm has no inputs, so no keyboard ever covers its footer, and a phone-wide sheet for a
+  two-line question reads as a page rather than as a question. Tests: `ConfirmModal.test.tsx`),
   `RecordTable` (**the shared „wide admin table → stacked cards" reflow.** A many-column roster only
   ever survived a phone by scrolling sideways inside `.table-responsive`, which parked the later columns
   and — worse — the per-row actions off-screen. One `columns` definition drives both layouts, so a table
@@ -700,7 +704,16 @@ here.
   (username/password/role/name/note) and **Upravit** (role/name/note; username is `readOnly`
   `plaintext` — the backend cannot change it), **Změnit heslo** for another user (logs them out of all
   devices; the hash is never rendered anywhere) and **Povolit/Zakázat** behind a confirmation dialog
-  (`setUserDisabled`); **your own row has a `disabled` toggle** + a short explanation of why
+  (`setUserDisabled`). **The two form dialogs are `scrollable fullscreen="sm-down"`** — on a phone the long
+  form takes the whole screen and only its body scrolls, so Zrušit/Uložit stay pinned above the on-screen
+  keyboard instead of under it; on `sm`+ nothing changes (the same centred 500px card, measured identical).
+  Because their `<Form>` wraps header+body+footer, it also carries `MODAL_FORM_CLASS`
+  (`d-flex flex-column overflow-hidden`): Bootstrap pins the footer by capping `.modal-content`'s height and
+  letting `.modal-body` scroll, and a plain `<form>` in between would size to its content and push the footer
+  off-screen anyway — the utility classes make it a shrinkable flex column (a scroll container's automatic
+  minimum size is 0) and hand the cap through. The **Povolit/Zakázat** question follows `ConfirmModal` instead:
+  `scrollable`, but a centred card on every screen — it has no inputs, so no keyboard can reach it.
+  **Your own row has a `disabled` toggle** + a short explanation of why
   (`users.selfDisableHint`), **deletion is not offered** — an account is retired by disabling it, so the history
   (photos, ratings, audit) stays whole. **The maintainer boundary** (mirrors the backend
   `authorizeUserManagement`): the **maintainer** role may be granted only by a maintainer — the role

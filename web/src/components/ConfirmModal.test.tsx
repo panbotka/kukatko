@@ -86,6 +86,22 @@ describe('ConfirmModal', () => {
     expect(onCancel).toHaveBeenCalled()
   })
 
+  it('scrolls its body so the two buttons stay pinned, staying a centred card', () => {
+    renderModal()
+
+    const dialog = screen.getByRole('dialog').querySelector('.modal-dialog')
+    // `scrollable` keeps a long consequence inside the body instead of pushing
+    // the actions off the bottom of a short phone viewport.
+    expect(dialog).toHaveClass('modal-dialog-scrollable', 'modal-dialog-centered')
+    // Deliberately not full-screen: a confirm has no inputs, so no keyboard ever
+    // covers its footer, and a phone-wide sheet for one question reads as a page.
+    expect(dialog).not.toHaveClass('modal-fullscreen-sm-down')
+
+    const footer = screen.getByRole('dialog').querySelector('.modal-footer')
+    expect(footer).toContainElement(screen.getByRole('button', { name: 'Delete album' }))
+    expect(footer).toContainElement(screen.getByRole('button', { name: 'Cancel' }))
+  })
+
   it('disables both buttons while the confirmed action is in flight', () => {
     renderModal({ busy: true })
 
