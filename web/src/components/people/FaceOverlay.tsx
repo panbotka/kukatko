@@ -15,7 +15,10 @@ export interface FaceOverlayProps {
   hovered?: number | null
   /** Selects a face (opens its naming panel). Never called when read-only. */
   onSelect: (faceIndex: number) => void
-  /** Reports the hovered box, so the panel can highlight its row. Never called when read-only. */
+  /**
+   * Reports the box the pointer/focus is on, so the panel can highlight its row.
+   * Never called when read-only.
+   */
   onHover?: (faceIndex: number | null) => void
   /**
    * When true the boxes are drawn with their names but cannot be selected, for
@@ -48,6 +51,13 @@ const CHROME: CSSProperties = { pointerEvents: 'none', whiteSpace: 'nowrap' }
  *
  * Each box carries its number, so a panel row ("Face #2") can be traced back to a
  * face without hunting; an assigned box also carries the person's name.
+ *
+ * A box is only as big as the face it traces, which on a phone leaves a small
+ * face far below the finger floor — so on a coarse pointer `.kk-face-box` grows
+ * an invisible 44px hit box around it (`app.css`), leaving the drawn outline
+ * alone. Pairing with the panel is reported from focus as well as hover, so a
+ * tap (which focuses the box) and the keyboard both light the matching row,
+ * where hover alone would never fire on touch.
  */
 export function FaceOverlay({
   faces,
@@ -91,7 +101,9 @@ export function FaceOverlay({
             }}
             onMouseEnter={() => onHover?.(face.face_index)}
             onMouseLeave={() => onHover?.(null)}
-            className="position-absolute p-0"
+            onFocus={() => onHover?.(face.face_index)}
+            onBlur={() => onHover?.(null)}
+            className="kk-face-box position-absolute p-0"
             style={{
               ...faceBoxStyle(face.bbox),
               borderStyle: 'solid',
