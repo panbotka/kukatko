@@ -6,6 +6,7 @@ import 'leaflet.markercluster'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
+import { enableTwoFingerPan, prefersTouchGestures } from '../../lib/mapGestures'
 import { buildPopupElement } from '../../lib/mapPopup'
 import { type MapViewport } from '../../lib/mapView'
 import { type MapFeature, type Mapset, tileLayerUrl } from '../../services/map'
@@ -28,6 +29,18 @@ const MAPY_LOGO_HREF = 'https://mapy.com'
 const DEFAULT_CENTER: [number, number] = [49.8, 15.5]
 const DEFAULT_ZOOM = 7
 const MAX_ZOOM = 20
+
+/**
+ * Default map height. `dvh` — the *dynamic* viewport height — is the share of
+ * the space actually left under a mobile browser's collapsing chrome, where
+ * `vh` measures a viewport the user never fully sees. `.kukatko-map` carries a
+ * `vh` fallback for engines that reject the unit; exported so a test can hold
+ * the two in step.
+ */
+export const DEFAULT_MAP_HEIGHT = '70dvh'
+
+/** How long the two-finger hint stays up after a one-finger drag (ms). */
+const GESTURE_HINT_MS = 2000
 
 /** A small CSS-only marker pin, avoiding bundler issues with Leaflet's default image icon. */
 const markerIcon = L.divIcon({
@@ -99,9 +112,16 @@ export interface LeafletMapProps {
    * hover. Optional: a map with no estimated pins never needs it.
    */
   estimatedTitle?: string
-  /** CSS height of the map container. Defaults to `70vh`; a detail mini-map
+  /** CSS height of the map container. Defaults to `70dvh`; a detail mini-map
    * passes a smaller fixed height. */
   height?: string
+  /**
+   * Text of the "use two fingers to move the map" hint, shown over the map when
+   * a one-finger swipe scrolls the page instead of panning (touch devices only,
+   * see `lib/mapGestures`). Optional: without it the gesture handling still
+   * works, it just says nothing — but then nothing tells the user how to pan.
+   */
+  twoFingerHint?: string
   /**
    * Called with the URL of a tile the layer failed to load. An `<img>` never
    * exposes its response status to JavaScript, so the parent has to re-request
@@ -138,9 +158,10 @@ export function LeafletMap({
   onSelectPhoto,
   thumbAlt,
   estimatedTitle,
-  height = '70vh',
+  height = DEFAULT_MAP_HEIGHT,
   picker,
   onTileError,
+  twoFingerHint,
 }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -169,6 +190,8 @@ export function LeafletMap({
   onPickRef.current = picker?.onPick
   const onTileErrorRef = useRef(onTileError)
   onTileErrorRef.current = onTileError
+  const twoFingerHintRef = useRef(twoFingerHint)
+  twoFingerHintRef.current = twoFingerHint
   // Whether this map instance is a picker is fixed at mount (a page renders it in
   // one mode or the other), captured so the one-time setup effect can read it.
   const pickerEnabledRef = useRef(picker !== undefined)
@@ -185,10 +208,22 @@ export function LeafletMap({
     }
 
     const initial = initialViewportRef.current
+    // Whether this map hands one-finger swipes to the page scroller. Decided
+    // here rather than during render: this effect runs exactly once, so the
+    // media query is asked once too, and the answer is fixed for the map's
+    // lifetime (Leaflet cannot swap its handlers under a live gesture anyway).
+    const gestureHandling = prefersTouchGestures()
     const map = L.map(container, {
       center: initial !== null ? [initial.lat, initial.lng] : DEFAULT_CENTER,
       zoom: initial !== null ? initial.zoom : DEFAULT_ZOOM,
       maxZoom: MAX_ZOOM,
+      // On a touch device the map does not claim a one-finger swipe: without the
+      // drag handler Leaflet's own stylesheet leaves the container at
+      // `touch-action: pan-x pan-y`, so the swipe scrolls the PAGE and the user
+      // is never trapped on a tall map. Two fingers still pan and zoom (see
+      // `lib/mapGestures`). A mouse keeps drag-to-pan exactly as before.
+      dragging: !gestureHandling,
+      touchZoom: true,
     })
     mapRef.current = map
     // An explicit viewport means the user chose this position; do not override it
@@ -249,7 +284,41 @@ export function LeafletMap({
       })
     }
 
+    // Touch only: two-finger gesture handling, plus the hint that says so. The
+    // hint is plain DOM rather than React state so a gesture never re-renders
+    // the map; it sits inside the (positioned) Leaflet container and is inert
+    // to hit-testing, so it can never swallow a tap.
+    let detachGestures: (() => void) | undefined
+    let hintElement: HTMLElement | undefined
+    let hintTimer: number | undefined
+    if (gestureHandling) {
+      const hint = document.createElement('div')
+      hint.className = 'kukatko-map-gesture-hint'
+      // Decorative: the hint answers a gesture nobody makes with a keyboard or
+      // a screen reader, and it would otherwise be announced out of nowhere.
+      hint.setAttribute('aria-hidden', 'true')
+      container.appendChild(hint)
+      hintElement = hint
+      detachGestures = enableTwoFingerPan(map, container, () => {
+        const text = twoFingerHintRef.current
+        if (text === undefined || text === '') {
+          return
+        }
+        // The pill draws its label from this attribute (`content: attr(...)`),
+        // so an empty hint leaves nothing visible at all.
+        hint.dataset.label = text
+        hint.classList.add('is-visible')
+        window.clearTimeout(hintTimer)
+        hintTimer = window.setTimeout(() => {
+          hint.classList.remove('is-visible')
+        }, GESTURE_HINT_MS)
+      })
+    }
+
     return () => {
+      window.clearTimeout(hintTimer)
+      detachGestures?.()
+      hintElement?.remove()
       map.remove()
       mapRef.current = null
       tileLayerRef.current = null

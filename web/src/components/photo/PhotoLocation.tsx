@@ -93,6 +93,7 @@ export function PhotoLocation({ photo, canWrite, onUpdated }: PhotoLocationProps
           onViewportChange={() => undefined}
           onSelectPhoto={() => undefined}
           thumbAlt={t('map.thumbAlt')}
+          twoFingerHint={t('map.gesture.twoFingers')}
           height="240px"
         />
       </div>

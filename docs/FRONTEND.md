@@ -1267,7 +1267,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   z GeoJSON, popup s náhledem → detail fotky; jednorázový setup, výměna URL dlaždic při změně
   mapsetu, přestavba markerů při změně fotek, fit-bounds na markery; volitelný **`onTileError`**
   prop dostane URL dlaždice, kterou se nepodařilo načíst (Leaflet `tileerror`), aby rodič mohl
-  zjistit **proč** — fire per dlaždici, rodič debouncuje), `MapFilterBar` (přepínač
+  zjistit **proč** — fire per dlaždici, rodič debouncuje;
+  **na dotyku mapa nezabírá jednoprstý swipe**: `prefersTouchGestures()` z `lib/mapGestures`
+  rozhodne jednou při mountu a mapa se pak staví s `dragging: false` + `touchZoom: true`, takže
+  jeden prst scrolluje stránku a dva prsty mapu — nikdo neuvízne na vysoké mapě uprostřed
+  scrollujícího obsahu; myš (fine pointer) si nechá drag-to-pan i wheel-zoom beze změny.
+  Volitelný **`twoFingerHint`** prop je text pilulky, která se ukáže po jednoprstém tažení
+  (imperativní DOM `.kukatko-map-gesture-hint` uvnitř Leafletího kontejneru, popisek jde do
+  `data-label` a kreslí ho CSS `content: attr(...)`, `aria-hidden`, `pointer-events: none`, sama
+  zmizí za 2 s — gesto tak nikdy nepřekreslí React strom);
+  výchozí výška je **`70dvh`** (`DEFAULT_MAP_HEIGHT`, dynamická viewport jednotka = to, co na
+  telefonu opravdu zbyde pod mizející chrome lištou; `vh` fallback v `.kukatko-map`), mini-mapa
+  detailu a picker si posílají pevnou), `MapFilterBar` (přepínač
   podkladu basic/outdoor/aerial + datum od/do, archiv, soukromé, počet, zrušit filtry);
   `components/people/` = `SubjectTile`/`SubjectPhotoTile`/`SubjectEditModal`,
   `FaceCrop` (**preferovaný** výřez obličeje: `<img>` s `fit_*` zdrojem z `lib/faceSource.ts`
@@ -1624,6 +1635,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `mapViewToParams` (sanitizuje archived) + `viewportFromView`/`mapsetFromView`/`hasActiveMapFilters`
   — mapování URL stavu mapy na feed params; `mapPopup.ts` = pure `buildPopupElement` (náhled +
   odkaz na detail fotky jako popup element, plain klik → SPA navigace, modifikovaný klik projde);
+  `mapGestures.ts` = **dotykové gesture handling pro mapu bez pluginu** — `prefersTouchGestures()`
+  (`(pointer: coarse)`, prostředí bez `matchMedia` odpoví `false`, takže myš si nechá své chování)
+  + `enableTwoFingerPan(map, container, onOneFingerDrag)`, které na mapě s **vypnutým `dragging`**
+  zapne tažení jen po dobu, kdy jsou dole aspoň dva prsty; stojí to na detailu Leafletího
+  stylesheetu — `touch-action` kontejneru se řídí zapnutými handlery, takže bez dragu a s pinchem je
+  to `pan-x pan-y`, tj. **jeden prst scrolluje STRÁNKU** (vysoká mapa uprostřed scrollujícího
+  obsahu přestane být scroll trap) a dvěma prsty mapu posouvá i zoomuje Leafletí touch-zoom;
+  `onOneFingerDrag` se ozve **jednou za gesto** až když prst ujede přes práh (8px — ťuknutí na
+  marker není tažení) a **nikdy pro dotyk, který začal na `.leaflet-marker-draggable` /
+  `.leaflet-control`** (tažení pinu pickeru jedním prstem funguje, radit tam „dvěma prsty" by byla
+  špatná rada v nejhorší chvíli), z toho `LeafletMap` zobrazí nápovědu „dvěma prsty";
   `faceState.ts` = pure `faceState(face)` (`assigned`/`unassigned`/`unmatched` — čte přiřazení, ne
   `face.action`, aby optimistický update držel box i řádek v syncu s právě provedeným klikem)
   + `isNamed`; jeden zdroj pravdy pro barvy v overlayi, `FacesPanel` i `PeoplePanel`;
@@ -2053,6 +2075,25 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   konzole na `--kk-surface-overlay`) + `.kukatko-search-option` (řádek: náhled/glyf + text + počet,
   aktivní řádek `--kk-accent-subtle` + inset akcentová lišta) + `.kukatko-search-legend` (patičková
   legenda kláves, na telefonu skrytá) — podklad komponenta `SearchCommand`;
+  **mapa (Leaflet)** `.kukatko-map*` — Leaflet nemá theme hooky, takže se na jeho ovládání sahá
+  přes jeho vlastní třídy, ale **scoped pod `.kukatko-map`** (element, na který Leaflet sám dává
+  `leaflet-container`/`leaflet-touch`) — jednak to drží override u našich map, jednak to
+  přebije Leafletí stylesheet, který bundler emituje *až za* `app.css` (`.leaflet-touch
+  .leaflet-bar a` má stejnou specificitu jako jednotřídní override a vyhrálo by pořadím);
+  `.kukatko-map` = `position: relative` (aby byl překryv umístěný od prvního paintu, ne až
+  po Leafletí inicializaci) + `height: 70vh` jako **fallback** za inline `70dvh` (engine, který
+  jednotku odmítne, inline deklaraci zahodí a mapa by neměla výšku žádnou);
+  `.kukatko-map-gesture-hint` = nápověda „dvěma prsty" — rám přes celou mapu jen kvůli
+  vycentrování, vidět je **malá pilulka** v `::before` (`content: attr(data-label)`); **ne scrim
+  přes celou mapu**, protože přes 70dvh vysokou mapu přejede prst při každém scrollu stránky, takže
+  nápověda musí být poznámka, ne opona; `pointer-events: none` na obojím — nápověda, která
+  sežere další ťuknutí, by byla horší než žádná; `.leaflet-marker-draggable` uvnitř mapy dostává
+  `touch-action: none`, protože **tažitelný pin pickeru** musí i na gesture-handled mapě odpovědět
+  jednomu prstu (efektivní `touch-action` je průnik s předky a `none` je nejužší);
+  `@media (pointer: coarse)` pak zvedá Leafletí toolbar (26px, 30px s `leaflet-touch`) na 2.75rem
+  včetně `line-height` a většího `font-size` +/- glyfů, dává 44px hitbox povinnému mapy.com logu
+  a rozvolní řádkování attribution (ta je text, ne tlačítko — 44px pás přes celou spodní hranu by
+  polykal ťuknutí); guardy v `styles/tapTargets.test.ts`;
   **časová osa** `.kukatko-timeline*` (fixní svislá datová lišta u pravého
   okraje pod navbarem, absolutně umístěné ticky, floating popisek aktivního měsíce, `touch-action:
   none` pro tažení, na šířkách ≤ 575.98px skrytá); **filtr-bar** `.kukatko-filter-*`

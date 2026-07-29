@@ -93,3 +93,59 @@ describe('coarse-pointer touch-target floor', () => {
     expect(chip.get('box-sizing')).toBe('content-box')
   })
 })
+
+/**
+ * Leaflet ships its own control sizing (26px, 30px with `leaflet-touch`) and no
+ * theme hooks, so the map's buttons sit far below the floor the rest of the app
+ * holds to unless `app.css` reaches in by Leaflet's class names. jsdom loads no
+ * Leaflet stylesheet and evaluates no media query, so read the rules instead.
+ */
+describe('map controls on a coarse pointer', () => {
+  const css = readCss('src/styles/app.css')
+  const coarse = ruleBody(css, /@media\s*\(pointer:\s*coarse\)/, /\.leaflet-bar/) ?? ''
+
+  it('lifts the Leaflet toolbar buttons to the floor', () => {
+    const bar = declarations(ruleBody(coarse, /\.kukatko-map \.leaflet-bar a,/) ?? '')
+    expect(lengthPx(bar.get('width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(lengthPx(bar.get('height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    // The glyph is centred by `line-height`, which has to grow with the box.
+    expect(lengthPx(bar.get('line-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+  })
+
+  it('out-specifies Leaflet, which the bundler emits after app.css', () => {
+    // `.leaflet-touch .leaflet-bar a` (0,2,1) ties with a single-class override
+    // and wins on order, so the rule has to carry `.kukatko-map` on the
+    // container itself as well.
+    expect(coarse).toContain('.kukatko-map.leaflet-touch .leaflet-bar a')
+    expect(coarse).toContain('.kukatko-map.leaflet-touch .leaflet-control-zoom-in')
+  })
+
+  it('gives the mandatory mapy.com logo a real hit area', () => {
+    const logo = declarations(ruleBody(coarse, /\.kukatko-map \.kukatko-map-logo\s*(?=\{)/) ?? '')
+    expect(lengthPx(logo.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(lengthPx(logo.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+  })
+})
+
+/**
+ * The map's height is asked for in `dvh` inline, which an engine without the
+ * unit drops — leaving the map with no height at all. The stylesheet's `vh`
+ * equivalent is what catches that, so it must stay in step with the component.
+ */
+describe('map sizing fallback', () => {
+  it('backs the inline dvh height with the same length in vh', () => {
+    const css = readCss('src/styles/app.css')
+    // The lookahead picks the bare `.kukatko-map` rule, not the descendant ones.
+    const map = declarations(ruleBody(css, /\.kukatko-map\s+(?=\{)/) ?? '')
+    expect(map.get('height')).toBe('70vh')
+    // Absolute positioning of the gesture hint needs a positioned container from
+    // the first paint, before Leaflet sets it itself.
+    expect(map.get('position')).toBe('relative')
+  })
+
+  it('keeps a draggable picker pin answering a one-finger drag', () => {
+    const css = readCss('src/styles/app.css')
+    const pin = declarations(ruleBody(css, /\.kukatko-map \.leaflet-marker-draggable/) ?? '')
+    expect(pin.get('touch-action')).toBe('none')
+  })
+})

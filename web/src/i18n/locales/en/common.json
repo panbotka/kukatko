@@ -509,6 +509,9 @@
     "count": "Photos on the map: {{count}}",
     "loading": "Loading photos…",
     "thumbAlt": "Photo on the map",
+    "gesture": {
+      "twoFingers": "Use two fingers to move the map"
+    },
     "mapset": {
       "label": "Base map",
       "basic": "Basic",

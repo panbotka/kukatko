@@ -796,6 +796,7 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
             onViewportChange={() => undefined}
             onSelectPhoto={() => undefined}
             thumbAlt={t('map.thumbAlt')}
+            twoFingerHint={t('map.gesture.twoFingers')}
             height="260px"
             picker={{ position: markerPosition, onPick: pickLocation }}
           />
