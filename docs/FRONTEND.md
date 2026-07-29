@@ -874,6 +874,13 @@ here.
   The boxes are colored by state (`lib/faceState`), the selected one is primary + a ring, they carry a **number `#N`** and
   for assigned ones **a name under the box**; hovering a box highlights the row in the panel and vice versa (`hovered`/`onHover`
   held by the page). A click on a box or on a panel row = the same selection (and opens the drawer).
+  **On touch** the pair still works: a box is only as big as the face, so on `pointer: coarse` `.kk-face-box`
+  grows an **invisible 44px hit box** around it (an `::after` in `app.css`, `min-*: 100%` so a face already
+  bigger keeps its own target and the **drawn outline never changes**; `pointer-events` is inherited, so a
+  read-only box stays click-through). The pairing highlight is reported from **focus** as well as hover
+  (a finger never hovers, but a tap focuses the box — and the keyboard gets it too), and `FacesPanel`
+  **scrolls the selected row into view** (`block: 'nearest'`), so a box tapped on the photo doesn't select
+  a row somewhere off-screen in the drawer.
   **The information runs in the drawer** (`.kk-viewer__panel`), which **slides in from the side on demand** (on a phone
   full-width with a scrim, at ≥ md the **stage narrows** on the left so the photo doesn't vanish behind the panel; together
   with the stage the **top bar and the `›` arrow** also move over by the drawer's width (`--kk-viewer-panel-w`), so the panel toggles
@@ -1432,10 +1439,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   klikatelných boxů z normalized bbox přes `faceBoxStyle`, **žádný vlastní obrázek ani fetch** —
   mountuje se jako poslední dítě `position-relative` obalu těsně kolem `<img>`; vrstva je
   click-through, pointer events chytají jen boxy (a při `readOnly` ani ty; číslo a jmenovka boxu mají
-  `pointer-events:none`, jinak by ukradly klik a rozbily swipe). Data + stavový automat pojmenování
+  `pointer-events:none`, jinak by ukradly klik a rozbily swipe). Box nese `.kk-face-box` = neviditelný
+  44px hitbox na `pointer: coarse` (viz app.css níže), takže i malá tvář jde na telefonu trefit, a hlásí
+  párování s panelem i z **focusu**, ne jen z hoveru (prst nehoveruje, ale ťuk box zafokusuje). Data +
+  stavový automat pojmenování
   drží hook `useFaces`. **`FacesPanel`** = panel v zásuvce prohlížeče, jediné místo, kde se přiřazuje:
   **textové řádky** `Obličej #N` + barevný chip stavu (žádné výřezy — jeden obrázek na stránku),
-  klik vybere/odvybere, hover se zrcadlí s boxem; pod vybraným řádkem se rozbalí `FaceAssignPanel`
+  klik vybere/odvybere, hover se zrcadlí s boxem; vybraný řádek se sám **scrollne do view**
+  (`block: 'nearest'`), aby ťuk do boxu na fotce neoznačil řádek mimo obraz; pod vybraným řádkem
+  se rozbalí `FaceAssignPanel`
   (`key={face_index}` → reset stavu při změně výběru). **`FaceAssignPanel`** = top-3 návrhy
   (`{jméno} · {confidence}%`, one-tap) + typeahead nad `useSubjects` (`AddAutocomplete` s `autoFocus`
   a `hint` = počet fotek osoby); u přiřazeného obličeje **Přeřadit** (návrhy, které backend dodává
@@ -2200,7 +2212,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (každé zavírací X — banner oznámení, hlavičky modalů/offcanvasu, toasty, mazání dotazu v paletě —
   roste jako `border-box`, takže se zvětší jen hitbox a glyf zůstává `1em`; výjimka `.badge
   .btn-close`, tj. X uvnitř pill chipu, kde je cílem samotný chip a 44px by pilulku roztrhlo)
-  + větší `.form-check-input`,
+  + větší `.form-check-input`
+  + **`.kk-face-box::after`** (rámeček obličeje ve `FaceOverlay` je `<button>` velký přesně jako bbox — není
+  `.btn`, takže ho floor nechytá, a zvětšit sám box nejde, jinak by obrys ujel z tváře; dostane tedy
+  neviditelný hitbox: `::after` vycentrovaný přes `top/left: 50%` + `translate(-50%, -50%)`, `2.75rem` čtverec
+  s `min-width/height: 100%`, takže roste jen malý rámeček a velký si nechá svůj vlastní cíl; nic se nekreslí,
+  `pointer-events` se dědí, takže `readOnly` rámeček zůstává průchozí),
   bez zásahu do desktop (fine-pointer) layoutu a bez per-komponentových změn (systémová oprava
   všudypřítomných `size="sm"` ovládání; guardy v `styles/tapTargets.test.ts`, protože jsdom media
   query nevyhodnotí);

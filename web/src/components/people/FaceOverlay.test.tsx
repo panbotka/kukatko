@@ -143,4 +143,31 @@ describe('FaceOverlay', () => {
     await user.unhover(screen.getByRole('button', { name: 'Unnamed face 1' }))
     expect(onHover).toHaveBeenLastCalledWith(null)
   })
+
+  it('pairs a focused box with its row too, since a finger never hovers', async () => {
+    const user = userEvent.setup()
+    const { onHover } = renderOverlay()
+
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toHaveFocus()
+    expect(onHover).toHaveBeenLastCalledWith(0)
+
+    // Moving on drops the first box's pairing before lighting the next one, so
+    // exactly one row is ever highlighted.
+    await user.tab()
+    expect(onHover).toHaveBeenNthCalledWith(2, null)
+    expect(onHover).toHaveBeenLastCalledWith(1)
+  })
+
+  it('carries the touch hit-box hook without resizing the drawn outline', () => {
+    renderOverlay()
+
+    // The finger-sized hit area is a transparent `::after` on this class, only
+    // on a coarse pointer (`app.css`, guarded in `styles/tapTargets.test.ts`) —
+    // the box itself stays exactly the bbox, or the outline would slide off the
+    // face it traces.
+    const box = screen.getByRole('button', { name: 'Alice' })
+    expect(box).toHaveClass('kk-face-box')
+    expect(box).toHaveStyle({ left: '50%', top: '50%', width: '20%', height: '20%' })
+  })
 })

@@ -125,6 +125,26 @@ describe('FacesPanel', () => {
     expect(onHover).toHaveBeenCalledWith(0)
   })
 
+  it('brings the selected row into view, so a box tapped on the photo finds it', () => {
+    // jsdom's `scrollIntoView` is an inert stub (see `test/setup.ts`); spy on it
+    // to see the panel ask for the row. `restoreMocks` puts it back afterwards.
+    const scrollIntoView = vi.fn()
+    vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(scrollIntoView)
+
+    const face = faceView({ face_index: 0 })
+    const { unmount } = renderPanel(facesResult({ faces: [face, faceView({ face_index: 1 })] }))
+    // Nothing selected → nothing to scroll to; the list stays where the user left it.
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    unmount()
+
+    // On a phone the panel is a scrollable drawer below the photo, so the row of
+    // a face selected on the *photo* can easily sit out of sight — which would
+    // leave the tap looking like it did nothing.
+    renderPanel(facesResult({ faces: [face, faceView({ face_index: 1 })], selected: face }))
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+  })
+
   it('opens the assignment controls under the selected row', async () => {
     const selected = faceView({
       face_index: 0,

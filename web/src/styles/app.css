@@ -918,6 +918,32 @@ body {
     min-width: 2.75rem;
     min-height: 2.75rem;
   }
+
+  /* A face marker on the photo detail (`FaceOverlay`) is a `<button>` sized to
+     the face's bbox, so it is neither a `.btn` the floor above reaches nor
+     something the floor could be applied to: growing the box would drag the
+     outline off the face it traces. Give it an invisible hit box instead — a
+     pseudo-element centred on the marker, 44px square, but never smaller than
+     the marker itself (`min-*: 100%`, resolved against the button, which is the
+     pseudo-element's containing block). So only the small markers grow, the big
+     ones are unchanged, and nothing is painted: the drawn outline keeps its
+     exact bbox sizing.
+
+     A pointer event on a pseudo-element is dispatched to its host, so the
+     button still handles the tap with no JS involved. `pointer-events` is
+     inherited, so a read-only marker (`pointer-events: none` inline) stays
+     click-through here too and a viewer's swipe reaches the photo. */
+  .kk-face-box::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 100%;
+    min-height: 100%;
+    transform: translate(-50%, -50%);
+  }
 }
 
 /* Keyboard focus highlight for the photo grid: a clearly visible ring around the

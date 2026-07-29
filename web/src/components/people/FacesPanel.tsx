@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
@@ -52,6 +53,21 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
   const { subjects, loading: subjectsLoading } = useSubjects()
 
   const selected = faces.selected
+  const listRef = useRef<HTMLDivElement>(null)
+
+  // Tapping a box on the photo selects a face from the other side of the pair,
+  // and on a phone this list scrolls (and lives in a drawer below the photo) —
+  // so the row it selected can easily sit out of sight. Bring it back, which is
+  // what makes the box↔row pairing legible on touch, where the hover highlight
+  // that does it on a mouse never fires. `nearest` leaves an already-visible row
+  // (a row the user just clicked here) exactly where it is.
+  const selectedIndex = selected?.face_index
+  useEffect(() => {
+    if (selectedIndex === undefined) {
+      return
+    }
+    listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex])
 
   return (
     <Card>
@@ -76,7 +92,7 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
         )}
         {faces.status === 'error' && <Alert variant="danger">{t('faces.error')}</Alert>}
 
-        <div className="list-group list-group-flush">
+        <div className="list-group list-group-flush" ref={listRef}>
           {faces.faces.map((face, position) => {
             const state = faceState(face)
             const number = position + 1
@@ -90,7 +106,7 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
             )
 
             return (
-              <div key={face.face_index}>
+              <div key={face.face_index} data-selected={isSelected ? 'true' : undefined}>
                 {canWrite ? (
                   <button
                     type="button"

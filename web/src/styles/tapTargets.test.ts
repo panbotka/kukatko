@@ -95,6 +95,34 @@ describe('coarse-pointer touch-target floor', () => {
     expect(lengthPx(toggle.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
   })
 
+  it('gives a small face marker a 44px hit box without growing its outline', () => {
+    // A `FaceOverlay` box is sized to the face's bbox and is not a `.btn`, so
+    // nothing in the list above reaches it — and sizing the box itself would
+    // slide the outline off the face. The hit area is a pseudo-element instead.
+    const hit = declarations(ruleBody(coarse, /\.kk-face-box::after\s*(?=\{)/) ?? '')
+    expect(lengthPx(hit.get('width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(lengthPx(hit.get('height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    // Only the small markers grow: `100%` of the button is the floor, so a face
+    // already bigger than 44px keeps its own (larger) target.
+    expect(hit.get('min-width')).toBe('100%')
+    expect(hit.get('min-height')).toBe('100%')
+    // Centred on the marker, so it grows symmetrically around the face.
+    expect(hit.get('position')).toBe('absolute')
+    expect(hit.get('top')).toBe('50%')
+    expect(hit.get('left')).toBe('50%')
+    expect(hit.get('transform')).toBe('translate(-50%, -50%)')
+    // Nothing is painted — the visible rectangle is still the bbox alone.
+    for (const painted of ['background', 'background-color', 'border', 'outline', 'box-shadow']) {
+      expect(hit.has(painted)).toBe(false)
+    }
+  })
+
+  it('leaves the face marker untouched on a fine pointer', () => {
+    // The hit box exists only inside the coarse block: on a mouse the target is
+    // the drawn bbox, exactly as before.
+    expect(ruleBody(css, /\.kk-face-box(?!::)/)).toBeUndefined()
+  })
+
   it('exempts the close button inside a pill chip', () => {
     const chip = declarations(ruleBody(coarse, /\.badge\s+\.btn-close\s*(?=\{)/) ?? '')
     expect(lengthPx(chip.get('min-width'))).toBe(0)
