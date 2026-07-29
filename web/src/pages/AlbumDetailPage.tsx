@@ -10,6 +10,7 @@ import { BackLink } from '../components/BackLink'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { HeaderActions } from '../components/HeaderActions'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -214,16 +215,30 @@ export function AlbumDetailPage() {
           {album?.private && <Badge bg="secondary">{t('albums.private')}</Badge>}
         </div>
         {/* The album's own controls stay put during a selection: the batch bar
-            floats over the bottom edge and never contends with the header. */}
+            floats over the bottom edge and never contends with the header.
+            Slideshow is the one action that stays inline on a phone; the rest —
+            and the destructive delete behind its own divider — fold into the
+            shared "…" overflow menu, so the header keeps to a single row. */}
         {album && (
-          <div className="d-flex gap-1 flex-wrap">
-            {photos.length > 0 && <SlideshowStart scope={scope} view={view} count={total} />}
-            {total > 0 && (
-              <DownloadZipButton albumUid={uid} name={album.title} variant="outline-secondary" />
-            )}
-            {canWrite && (
-              <>
+          <HeaderActions
+            id="album-actions-overflow"
+            primary={[
+              photos.length > 0 && (
+                <SlideshowStart key="slideshow" scope={scope} view={view} count={total} />
+              ),
+            ]}
+            secondary={[
+              total > 0 && (
+                <DownloadZipButton
+                  key="download"
+                  albumUid={uid}
+                  name={album.title}
+                  variant="outline-secondary"
+                />
+              ),
+              canWrite && (
                 <Button
+                  key="edit"
                   variant="outline-secondary"
                   size="sm"
                   onClick={() => {
@@ -232,7 +247,12 @@ export function AlbumDetailPage() {
                 >
                   {t('albumDetail.edit')}
                 </Button>
+              ),
+            ]}
+            destructive={[
+              canWrite && (
                 <Button
+                  key="delete"
                   variant="outline-danger"
                   size="sm"
                   onClick={() => {
@@ -241,9 +261,9 @@ export function AlbumDetailPage() {
                 >
                   {t('albumDetail.delete')}
                 </Button>
-              </>
-            )}
-          </div>
+              ),
+            ]}
+          />
         )}
       </div>
 

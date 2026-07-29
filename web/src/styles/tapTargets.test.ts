@@ -86,6 +86,15 @@ describe('coarse-pointer touch-target floor', () => {
     }
   })
 
+  it('squares the header overflow toggle off to the floor on touch', () => {
+    // `HeaderActions`' "…" toggle is a phone-only control and a bare glyph, so
+    // the shared `min-height` alone would leave it ~34px wide. It carries its
+    // own coarse block next to the rules that shape it.
+    const block = ruleBody(css, /@media\s*\(pointer:\s*coarse\)/, /\.kk-header-overflow-toggle/)
+    const toggle = declarations(ruleBody(block ?? '', /\.kk-header-overflow-toggle\s*(?=\{)/) ?? '')
+    expect(lengthPx(toggle.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+  })
+
   it('exempts the close button inside a pill chip', () => {
     const chip = declarations(ruleBody(coarse, /\.badge\s+\.btn-close\s*(?=\{)/) ?? '')
     expect(lengthPx(chip.get('min-width'))).toBe(0)

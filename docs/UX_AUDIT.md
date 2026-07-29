@@ -317,7 +317,7 @@ Ordered by impact-to-effort. 🔴/🟡/⚪ = impact, then effort.
 | 5 | Add **retry** to People / Subject / Clusters error states | 🟡 | ⚪ | They already have the fetch logic. |
 | 6 | Surface **Subject set-cover failure** (currently silent) | 🟡 | ⚪ | One alert. |
 | 7 | Standardize **`<Button as={Link}>`** everywhere (kill `className="btn…"` on `Link`) | 🟡 | 🟡 | Removes a whole class of inconsistency. |
-| 8 | **Saved searches / Album detail**: widen action gaps, separate destructive buttons, overflow menu for 5-button headers | 🟡 | 🟡 | Reduces mis-taps & clutter on mobile. |
+| 8 | **Saved searches** / ✅ **Album detail** — widen action gaps, separate destructive buttons, overflow menu for 5-button headers | 🟡 | 🟡 | Reduces mis-taps & clutter on mobile. Album detail is done: the shared `HeaderActions` keeps Promítání inline on a phone and folds Stáhnout/Upravit + (behind a divider) Smazat into a „…" menu; saved searches can take the same component. |
 | 9 | **Breadcrumb** affordance on Places (padding / real breadcrumb) | 🟡 | ⚪ | Small inline targets today. |
 | 10 | **Contrast** pass on muted text over dark/overlay backgrounds (Map, Slideshow, subtitles) | 🟡 | 🟡 | Readability across the app. |
 | 11 | Align **Account** submit to full-width like Login; **NotFound** to `<Button>`/`h1.h3` | ⚪ | ⚪ | Tidy-ups. |

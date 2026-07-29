@@ -536,6 +536,34 @@ body {
   min-width: 12rem;
 }
 
+/* ---- Page header overflow ----------------------------------------------
+ *
+ * `HeaderActions`: the same "…" collapse as the batch bar above, but for a page
+ * header's own actions, where the row shares its width with the page title and
+ * wrapped into two or three rows of 44px targets on a phone.
+ */
+
+/* A bare "…" glyph, like the batch bar's: drop Bootstrap's default caret. */
+.kk-header-overflow-toggle.dropdown-toggle::after {
+  display: none;
+}
+
+/* The menu stacks its actions as full-width buttons (the inner `d-grid`), so it
+   needs a minimum width wide enough to keep their labels on one line. */
+.kk-header-overflow-menu {
+  min-width: 12rem;
+}
+
+/* The toggle exists only on a phone, and a bare glyph is the narrowest control
+   the header has (~34px). The app-wide floor below lifts every `.btn` to 44px
+   tall; square this one off so the finger target clears the floor on both axes,
+   as the navbar hamburger does. */
+@media (pointer: coarse) {
+  .kk-header-overflow-toggle {
+    min-width: 2.75rem;
+  }
+}
+
 @keyframes kk-batch-rise {
   from {
     transform: translateY(0.75rem);

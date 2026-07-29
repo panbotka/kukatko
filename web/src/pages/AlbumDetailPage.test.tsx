@@ -406,6 +406,21 @@ describe('AlbumDetailPage', () => {
     })
   })
 
+  it('keeps every header action inline on a wide screen', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    // Desktop is unchanged by the phone collapse: no overflow toggle, every
+    // action directly on the header row.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Slideshow' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
   it('drops the selection when the selected photos are removed from the album', async () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
@@ -425,5 +440,145 @@ describe('AlbumDetailPage', () => {
       expect(screen.queryByRole('toolbar', { name: 'Batch actions' })).not.toBeInTheDocument()
     })
     expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+  })
+})
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer. The shared test
+ * setup stubs a non-matching (desktop) `matchMedia`; a phone-width test
+ * overrides it so the header takes its collapsed branch.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
+/**
+ * The header's overflow menu, once opened. react-bootstrap mounts it on the
+ * first open and then only toggles the `show` class; jsdom loads no Bootstrap
+ * CSS, so a closed menu is that missing class, not a missing node.
+ */
+function overflowMenu(): HTMLElement {
+  const menu = document.querySelector<HTMLElement>('.dropdown-menu')
+  if (menu === null) {
+    throw new Error('the overflow menu has not been rendered')
+  }
+  return menu
+}
+
+describe('AlbumDetailPage on a narrow (phone) screen', () => {
+  afterEach(() => {
+    // Restore the shared desktop default so later tests never inherit a phone.
+    mockViewport(false)
+  })
+
+  it('keeps the slideshow inline and folds the rest into an overflow menu', async () => {
+    mockViewport(true)
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    // One compact row: the primary action plus the "…" toggle, instead of five
+    // buttons wrapping into two or three rows beside the title.
+    expect(screen.getByRole('link', { name: 'Slideshow' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Download ZIP' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await waitFor(() => {
+      expect(overflowMenu()).toHaveClass('show')
+    })
+
+    // Every folded action is reachable from the menu, and the destructive one
+    // sits behind a divider in danger styling rather than next to "Edit".
+    const menu = overflowMenu()
+    expect(within(menu).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(within(menu).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    const remove = within(menu).getByRole('button', { name: 'Delete' })
+    expect(remove).toHaveClass('btn-outline-danger')
+    const divider = menu.querySelector('.dropdown-divider')
+    expect(divider).not.toBeNull()
+    expect(divider?.compareDocumentPosition(remove)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('deletes the album from the overflow menu, still through the confirm dialog', async () => {
+    mockViewport(true)
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    deleteAlbumMock.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await waitFor(() => {
+      expect(overflowMenu()).toHaveClass('show')
+    })
+    await user.click(within(overflowMenu()).getByRole('button', { name: 'Delete' }))
+
+    // Collapsing the action changed nothing about it: the dialog still guards
+    // the deletion, and the menu steps out of the way behind it.
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Delete the album "Holidays"/)).toBeInTheDocument()
+    expect(deleteAlbumMock).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(overflowMenu()).not.toHaveClass('show')
+    })
+
+    await user.click(within(dialog).getByRole('button', { name: 'Delete album' }))
+    await waitFor(() => {
+      expect(deleteAlbumMock).toHaveBeenCalledWith('al_1')
+    })
+  })
+
+  it('edits the album from the overflow menu', async () => {
+    mockViewport(true)
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await waitFor(() => {
+      expect(overflowMenu()).toHaveClass('show')
+    })
+    await user.click(within(overflowMenu()).getByRole('button', { name: 'Edit' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('Title')).toHaveValue('Holidays')
+  })
+
+  it('offers a viewer only the actions their role allows', async () => {
+    mockViewport(true)
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage(false)
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await waitFor(() => {
+      expect(overflowMenu()).toHaveClass('show')
+    })
+
+    // The menu is a different place to put the actions, not a way around RBAC:
+    // a viewer's overflow holds the download alone.
+    const menu = overflowMenu()
+    expect(within(menu).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(within(menu).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(menu.querySelector('.dropdown-divider')).toBeNull()
   })
 })
