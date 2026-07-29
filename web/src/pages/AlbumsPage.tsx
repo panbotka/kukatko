@@ -8,6 +8,7 @@ import { ErrorState } from '../components/ErrorState'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { AlbumTile } from '../components/organize/AlbumTile'
 import { TileGridSkeleton } from '../components/Skeleton'
+import { TileGrid } from '../components/TileGrid'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { type AlbumSummary, fetchAlbums } from '../services/organize'
 
@@ -18,8 +19,9 @@ type State =
   | { status: 'ready'; albums: AlbumSummary[] }
 
 /**
- * The albums index: a responsive grid of album cards (cover, title, count), each
- * linking to its detail page, newest album first as the server ranks them.
+ * The albums index: a responsive, virtualized grid of album cards (cover, title,
+ * count), each linking to its detail page, newest album first as the server ranks
+ * them.
  * Editors and admins get a create button; the modal refetches the grid on
  * success. Mutation controls are hidden from viewers.
  */
@@ -76,17 +78,17 @@ export function AlbumsPage() {
       )}
 
       {state.status === 'ready' && state.albums.length > 0 && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-            gap: '12px',
-          }}
-        >
-          {state.albums.map((album) => (
-            <AlbumTile key={album.uid} album={album} />
-          ))}
-        </div>
+        // Virtualized (see TileGrid) so a large collection keeps the DOM — and the
+        // cover loads it starts — bounded by the viewport, not by the album count.
+        // The geometry matches the skeleton above, so the grid doesn't shift when
+        // the data lands.
+        <TileGrid
+          items={state.albums}
+          itemKey={(album) => album.uid}
+          renderItem={(album) => <AlbumTile album={album} />}
+          minTile={160}
+          gap={12}
+        />
       )}
 
       {canWrite && (
