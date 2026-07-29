@@ -274,7 +274,23 @@ here.
   red; non-destructive `primary`), `busy?` (locks both buttons and the close/backdrop for the duration of the
   action), `onConfirm`, `onCancel`. **The destructive button is not Enter's default**: after opening, focus rests
   on Zrušit, so a stray Enter cancels rather than deletes; Escape/close/backdrop cancel; react-bootstrap returns
-  focus to the trigger. Copy is translated by the caller — no hardcoded strings. Tests: `ConfirmModal.test.tsx`);
+  focus to the trigger. Copy is translated by the caller — no hardcoded strings. Tests: `ConfirmModal.test.tsx`),
+  `RecordTable` (**the shared „wide admin table → stacked cards" reflow.** A many-column roster only
+  ever survived a phone by scrolling sideways inside `.table-responsive`, which parked the later columns
+  and — worse — the per-row actions off-screen. One `columns` definition drives both layouts, so a table
+  and its phone form can never drift apart: `RecordColumn<T>` = `key`, `header` (already translated),
+  `cell(record)`, plus `cellClassName?`/`cellStyle?` (the desktop `<td>` only — a `text-nowrap` or a
+  width cap that would be wrong on a card) and `cardHidden?`. On `md`+ it renders the familiar
+  `<Table striped hover responsive>`; below it each record becomes one `Card` in a `<ul>`, every column
+  a „label: value" line of a `dl.row` (`col-5`/`col-7`). The breakpoint is decided **in JS**
+  (`useIsNarrowViewport`), like `MobileTabBar` — never `d-md-none` — so only one of the two layouts is
+  ever in the DOM and assistive tech (or a test) never sees every record twice. Props `records`,
+  `columns`, `rowKey`, `cardActions?` (the card's **full-width** action row, `.kk-record-card__actions`;
+  its buttons clear the 44px finger floor **unconditionally**, not only on `pointer: coarse` — a narrow
+  window on a laptop gets the same card — guarded by `styles/recordCards.test.ts`), `detail?` (an
+  expanded block: a `colSpan` row under the table row, a bordered block at the foot of the card; return
+  `null` when the record has nothing to expand), `className?`. Adopted by `UsersPage` and `AuditPage`;
+  any other admin table can take it as-is. Tests: `RecordTable.test.tsx`);
   `components/upload/` = `DropZone` (a drag-and-drop zone + file input `multiple`
   `accept="image/*,video/*"` → the mobile gallery + a **Vyfotit** button `capture="environment"`),
   `UploadProgressHeader` (**a prominent sticky** header for the whole batch: „done / total", **one**
@@ -665,7 +681,11 @@ here.
   over `setAnnouncement`/`clearAnnouncement`, prefill of the current message via `fetchAnnouncement`, feedback via
   the same dismissible `ActionNotice` `<Alert>` pattern; loading/error/notice states, self-gated on `isMaintainer`,
   `UsersPage` = `/users` (admin **or** maintainer, `isAdmin`) **account management**: a user table (username, full name, role,
-  status, note, last login, created) over `GET /admin/users`, the dialogs **Nový uživatel**
+  status, note, last login, created) over `GET /admin/users` — rendered through the shared `RecordTable`, so on a
+  phone the eight columns become **one stacked card per account** and the three row actions
+  a full-width button row on the card instead of a sideways scroll away; the actions column is
+  `cardHidden` and comes back through `cardActions` (`UserActions`, prop `stacked` = the card's grid items
+  vs. the table cell's inline cluster) —, the dialogs **Nový uživatel**
   (username/password/role/name/note) and **Upravit** (role/name/note; username is `readOnly`
   `plaintext` — the backend cannot change it), **Změnit heslo** for another user (logs them out of all
   devices; the hash is never rendered anywhere) and **Povolit/Zakázat** behind a confirmation dialog
@@ -686,8 +706,13 @@ here.
   an error alert with **Zkusit znovu**, an empty state (`EmptyState`, practically unreachable — the bootstrap
   admin always exists, but must not crash); self-gated on `isAdmin`,
   `AuditPage` = `/audit` (admin **or** maintainer, `isAdmin`) an **audit log**: a read-only table of records from `GET /audit`
-  newest first (when/who/action/target/IP), the `details` JSON via an expandable row (`aria-expanded`,
-  also shows `user_agent`). If `details` carries a `changes` map (the edit convention of `internal/audit`, see
+  newest first (when/who/action/target/IP) — also through the shared `RecordTable`, so a phone gets **one stacked
+  card per entry** —, the `details` JSON via an expandable block (`AuditEntryDetails`, `aria-expanded` +
+  `aria-controls` → `detailsId(record)`: a `colSpan` row under the table row, the foot of the card on a phone;
+  also shows `user_agent`). The raw payload wraps inside its own box (`.kk-audit-payload`:
+  `pre-wrap` + `overflow-wrap: anywhere`, `overflow-x: auto` for an unbreakable token) — unwrapped JSON used to
+  set the scroll width of the whole responsive table and drag the summary columns sideways with it.
+  If `details` carries a `changes` map (the edit convention of `internal/audit`, see
   `AuditChange`/`AuditChanges` in `services/audit.ts`), it is rendered by `readChanges`+`ChangesTable` as
   a compact table **pole / původní / nová** (`data-testid="audit-changes"`, a cleared field =
   `null`/`""` → a muted dash via `ChangeValue`); records without `changes` (legacy, non-edit actions)

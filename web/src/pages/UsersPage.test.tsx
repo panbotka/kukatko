@@ -77,6 +77,27 @@ function auth(opts: { isAdmin?: boolean; isMaintainer?: boolean } = {}): AuthCon
   } as unknown as AuthContextValue
 }
 
+/** The shared setup stubs a non-matching (desktop) `matchMedia`; restore it after. */
+const realMatchMedia = window.matchMedia
+
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer, so
+ * `useIsNarrowViewport` — and through it the roster's table/card choice — takes
+ * the branch under test.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
 function renderPage(value: AuthContextValue = auth({ isAdmin: true })) {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -100,6 +121,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  window.matchMedia = realMatchMedia
 })
 
 describe('UsersPage', () => {
@@ -177,6 +199,103 @@ describe('UsersPage', () => {
     expect(screen.getByText('bob')).toBeInTheDocument()
     expect(screen.getByText('Disabled')).toBeInTheDocument()
     expect(screen.getByText('Never')).toBeInTheDocument()
+  })
+
+  it('keeps the full eight-column table on a wide viewport', async () => {
+    fetchUsersMock.mockResolvedValue([user()])
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    const table = screen.getByRole('table')
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(8)
+    // No card stack alongside it: only one of the two layouts is ever in the DOM.
+    expect(screen.queryByRole('listitem')).toBeNull()
+  })
+
+  it('reflows the roster into stacked cards with a full-width action row on a phone', async () => {
+    mockViewport(true)
+    fetchUsersMock.mockResolvedValue([
+      user({
+        uid: 'u1',
+        username: 'ada',
+        display_name: 'Ada Lovelace',
+        role: 'editor',
+        note: 'On loan from the analytical engine',
+        last_login_at: '2026-06-30T08:15:00Z',
+      }),
+    ])
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    // The wide table is gone entirely — nothing left to drag sideways.
+    expect(screen.queryByRole('table')).toBeNull()
+
+    // One record, one card, every profile column kept as a "label: value" line.
+    const card = screen.getByRole('listitem')
+    for (const label of [
+      'Username',
+      'Real name',
+      'Role',
+      'State',
+      'Note',
+      'Last login',
+      'Created',
+    ]) {
+      expect(within(card).getByText(label)).toBeInTheDocument()
+    }
+    expect(within(card).getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(within(card).getByText('Editor')).toBeInTheDocument()
+    expect(within(card).getByText('Enabled')).toBeInTheDocument()
+    expect(within(card).getByText('On loan from the analytical engine')).toBeInTheDocument()
+
+    // The three row actions sit on the card itself, in the full-width action row,
+    // instead of trailing off the right edge of eight columns.
+    const edit = within(card).getByRole('button', { name: 'Edit' })
+    expect(edit.parentElement).toHaveClass('kk-record-card__actions', 'd-grid')
+    expect(within(card).getByRole('button', { name: 'Change password' })).toBeEnabled()
+    expect(within(card).getByRole('button', { name: 'Disable' })).toBeEnabled()
+    // The actions column header is not repeated as a field label.
+    expect(within(card).queryByText('Actions')).toBeNull()
+  })
+
+  it('keeps the maintainer boundary and the self-disable guard on a phone card', async () => {
+    mockViewport(true)
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: ME, username: 'root', display_name: 'Root', role: 'admin' }),
+      user({ uid: 'u9', username: 'ops', role: 'maintainer' }),
+    ])
+    renderPage(auth({ isAdmin: true }))
+
+    expect(await screen.findByText('ops')).toBeInTheDocument()
+    const [own, maintainer] = screen.getAllByRole('listitem')
+
+    // Own account: disabling is refused, with the reason spelled out on the card.
+    expect(within(own).getByRole('button', { name: 'Disable' })).toBeDisabled()
+    expect(within(own).getByText('You cannot disable your own account.')).toBeInTheDocument()
+    // A maintainer's account is untouchable for a plain admin, same as on the table.
+    expect(within(maintainer).getByRole('button', { name: 'Edit' })).toBeDisabled()
+    expect(within(maintainer).getByRole('button', { name: 'Change password' })).toBeDisabled()
+    expect(within(maintainer).getByRole('button', { name: 'Disable' })).toBeDisabled()
+  })
+
+  it('opens the confirmation dialog from a phone card’s action row', async () => {
+    mockViewport(true)
+    const ada = user({ uid: 'u1', username: 'ada' })
+    fetchUsersMock.mockResolvedValue([ada])
+    setUserDisabledMock.mockResolvedValue({ ...ada, disabled: true })
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    const card = screen.getByRole('listitem')
+    await actor.click(within(card).getByRole('button', { name: 'Disable' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await actor.click(within(dialog).getByRole('button', { name: 'Disable' }))
+    await waitFor(() => {
+      expect(setUserDisabledMock).toHaveBeenCalledWith(ada, true)
+    })
+    expect(await screen.findByText('Disabled')).toBeInTheDocument()
   })
 
   it('shows a retry button when the fetch fails, and reloads on click', async () => {

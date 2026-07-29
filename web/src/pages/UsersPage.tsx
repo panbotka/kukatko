@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { formatDate, formatDateTime } from '../lib/format'
 import { ApiError, MIN_PASSWORD_LENGTH, type Role } from '../services/auth'
 import {
@@ -536,8 +537,8 @@ function ToggleModal({ user, onHide, onConfirm, busy }: ToggleModalProps) {
   )
 }
 
-/** Props for one row of the user table. */
-interface UserRowProps {
+/** Props for the per-user action cluster. */
+interface UserActionsProps {
   user: AdminUser
   /** True when the row is the signed-in administrator's own account. */
   self: boolean
@@ -547,78 +548,85 @@ interface UserRowProps {
    * three actions are disabled — mirroring the backend `guardMaintainerBoundary`.
    */
   canManage: boolean
-  locale: string
+  /**
+   * True on a phone card, where the three actions are the whole point of the
+   * reflow: they become one full-width button per line at the finger-friendly
+   * height instead of a `size="sm"` cluster the reader would have to scroll to.
+   */
+  stacked: boolean
   onEdit: () => void
   onPassword: () => void
   onToggle: () => void
 }
 
-/** One user: profile columns, then the three per-row actions. */
-function UserRow({ user, self, canManage, locale, onEdit, onPassword, onToggle }: UserRowProps) {
+/**
+ * The three things an administrator does to an account, plus the one-line reason
+ * when a control is disabled. Shared by both layouts so the table cell and the
+ * card's action row can never offer different powers.
+ */
+function UserActions({
+  user,
+  self,
+  canManage,
+  stacked,
+  onEdit,
+  onPassword,
+  onToggle,
+}: UserActionsProps) {
   const { t } = useTranslation()
+  const size = stacked ? undefined : 'sm'
+  const buttons = (
+    <>
+      <Button
+        variant="outline-secondary"
+        size={size}
+        disabled={!canManage}
+        title={canManage ? undefined : t('users.maintainerManageHint')}
+        onClick={onEdit}
+      >
+        {t('users.edit')}
+      </Button>
+      <Button
+        variant="outline-secondary"
+        size={size}
+        disabled={!canManage}
+        title={canManage ? undefined : t('users.maintainerManageHint')}
+        onClick={onPassword}
+      >
+        {t('users.changePassword')}
+      </Button>
+      <Button
+        variant={user.disabled ? 'outline-success' : 'outline-danger'}
+        size={size}
+        disabled={self || !canManage}
+        title={
+          self
+            ? t('users.selfDisableHint')
+            : canManage
+              ? undefined
+              : t('users.maintainerManageHint')
+        }
+        onClick={onToggle}
+      >
+        {user.disabled ? t('users.enable') : t('users.disable')}
+      </Button>
+    </>
+  )
+  // Why a control is dead, in one line under it: the reason belongs next to the
+  // button, not only in a `title` a touch device never shows.
+  const hint = self
+    ? t('users.selfDisableHint')
+    : canManage
+      ? null
+      : t('users.maintainerManageHint')
   return (
-    <tr>
-      <td className="fw-semibold text-break">{user.username}</td>
-      <td className="text-break">{user.display_name || '—'}</td>
-      <td>
-        <Badge bg="secondary">{t(`roles.${user.role}`)}</Badge>
-      </td>
-      <td>
-        <Badge bg={user.disabled ? 'danger' : 'success'}>
-          {user.disabled ? t('users.state.disabled') : t('users.state.enabled')}
-        </Badge>
-      </td>
-      <td className="text-secondary small text-break" style={{ maxWidth: '18rem' }}>
-        {user.note || '—'}
-      </td>
-      <td className="text-nowrap">
-        {user.last_login_at === undefined
-          ? t('users.never')
-          : formatDateTime(user.last_login_at, locale)}
-      </td>
-      <td className="text-nowrap">{formatDate(user.created_at, locale)}</td>
-      <td>
-        <div className="d-flex gap-1 flex-wrap">
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            disabled={!canManage}
-            title={canManage ? undefined : t('users.maintainerManageHint')}
-            onClick={onEdit}
-          >
-            {t('users.edit')}
-          </Button>
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            disabled={!canManage}
-            title={canManage ? undefined : t('users.maintainerManageHint')}
-            onClick={onPassword}
-          >
-            {t('users.changePassword')}
-          </Button>
-          <Button
-            variant={user.disabled ? 'outline-success' : 'outline-danger'}
-            size="sm"
-            disabled={self || !canManage}
-            title={
-              self
-                ? t('users.selfDisableHint')
-                : canManage
-                  ? undefined
-                  : t('users.maintainerManageHint')
-            }
-            onClick={onToggle}
-          >
-            {user.disabled ? t('users.enable') : t('users.disable')}
-          </Button>
-        </div>
-        {self && <div className="text-secondary small mt-1">{t('users.selfDisableHint')}</div>}
-        {!self && !canManage && (
-          <div className="text-secondary small mt-1">{t('users.maintainerManageHint')}</div>
-        )}
-      </td>
-    </tr>
+    <>
+      {/* On a card the buttons are the grid items of the card's own full-width
+          action row, so they must not be boxed in a second wrapper; in a table
+          cell they need their own inline cluster. */}
+      {stacked ? buttons : <div className="d-flex gap-1 flex-wrap">{buttons}</div>}
+      {hint !== null && <div className="text-secondary small mt-1">{hint}</div>}
+    </>
   )
 }
 
@@ -707,6 +715,87 @@ export function UsersPage() {
     return <Alert variant="danger">{t('users.adminOnly')}</Alert>
   }
 
+  /** The action-cluster props for one account — the same on a row and on a card. */
+  function actionsFor(user: AdminUser) {
+    return {
+      user,
+      self: user.uid === me?.uid,
+      canManage: isMaintainer || user.role !== 'maintainer',
+      onEdit: () => {
+        setDialog({ kind: 'edit', user })
+      },
+      onPassword: () => {
+        setDialog({ kind: 'password', user })
+      },
+      onToggle: () => {
+        setDialog({ kind: 'toggle', user })
+      },
+    }
+  }
+
+  // One definition drives both layouts: the eight table columns on a tablet or
+  // desktop, and the same fields as "label: value" lines on a phone card.
+  const columns: RecordColumn<AdminUser>[] = [
+    {
+      key: 'username',
+      header: t('users.columns.username'),
+      cellClassName: 'fw-semibold text-break',
+      cell: (user) => user.username,
+    },
+    {
+      key: 'displayName',
+      header: t('users.columns.displayName'),
+      cellClassName: 'text-break',
+      cell: (user) => user.display_name || '—',
+    },
+    {
+      key: 'role',
+      header: t('users.columns.role'),
+      cell: (user) => <Badge bg="secondary">{t(`roles.${user.role}`)}</Badge>,
+    },
+    {
+      key: 'state',
+      header: t('users.columns.state'),
+      cell: (user) => (
+        <Badge bg={user.disabled ? 'danger' : 'success'}>
+          {user.disabled ? t('users.state.disabled') : t('users.state.enabled')}
+        </Badge>
+      ),
+    },
+    {
+      key: 'note',
+      header: t('users.columns.note'),
+      cellClassName: 'text-secondary small text-break',
+      // A long note must not push the actions off the far end of the table; on a
+      // card it has the full width and needs no cap.
+      cellStyle: { maxWidth: '18rem' },
+      cell: (user) => user.note || '—',
+    },
+    {
+      key: 'lastLogin',
+      header: t('users.columns.lastLogin'),
+      cellClassName: 'text-nowrap',
+      cell: (user) =>
+        user.last_login_at === undefined
+          ? t('users.never')
+          : formatDateTime(user.last_login_at, i18n.language),
+    },
+    {
+      key: 'created',
+      header: t('users.columns.created'),
+      cellClassName: 'text-nowrap',
+      cell: (user) => formatDate(user.created_at, i18n.language),
+    },
+    {
+      key: 'actions',
+      header: t('users.columns.actions'),
+      // On a card the same cluster is the full-width action row instead, so it is
+      // not squeezed into the label/value grid.
+      cardHidden: true,
+      cell: (user) => <UserActions {...actionsFor(user)} stacked={false} />,
+    },
+  ]
+
   return (
     <>
       <div className="d-flex justify-content-between align-items-start gap-3 mb-1">
@@ -767,40 +856,13 @@ export function UsersPage() {
           )}
 
           {state.status === 'ready' && state.users.length > 0 && (
-            <Table striped hover responsive className="mb-0 align-middle">
-              <thead>
-                <tr>
-                  <th>{t('users.columns.username')}</th>
-                  <th>{t('users.columns.displayName')}</th>
-                  <th>{t('users.columns.role')}</th>
-                  <th>{t('users.columns.state')}</th>
-                  <th>{t('users.columns.note')}</th>
-                  <th>{t('users.columns.lastLogin')}</th>
-                  <th>{t('users.columns.created')}</th>
-                  <th>{t('users.columns.actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {state.users.map((user) => (
-                  <UserRow
-                    key={user.uid}
-                    user={user}
-                    self={user.uid === me?.uid}
-                    canManage={isMaintainer || user.role !== 'maintainer'}
-                    locale={i18n.language}
-                    onEdit={() => {
-                      setDialog({ kind: 'edit', user })
-                    }}
-                    onPassword={() => {
-                      setDialog({ kind: 'password', user })
-                    }}
-                    onToggle={() => {
-                      setDialog({ kind: 'toggle', user })
-                    }}
-                  />
-                ))}
-              </tbody>
-            </Table>
+            <RecordTable
+              records={state.users}
+              columns={columns}
+              rowKey={(user) => user.uid}
+              cardActions={(user) => <UserActions {...actionsFor(user)} stacked />}
+              className="mb-0 align-middle"
+            />
           )}
         </Card.Body>
       </Card>
