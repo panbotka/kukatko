@@ -1204,7 +1204,8 @@
     "viewer": {
       "label": "Photo viewer",
       "info": "Info",
-      "closeInfo": "Close info"
+      "closeInfo": "Close info",
+      "actions": "Photo actions"
     },
     "tabs": {
       "info": "Info",

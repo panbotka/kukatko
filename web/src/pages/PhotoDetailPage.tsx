@@ -26,6 +26,7 @@ import { useToast } from '../components/toast/ToastContext'
 import { useAutoHideChrome } from '../hooks/useAutoHideChrome'
 import { useFaces } from '../hooks/useFaces'
 import { useFavorite } from '../hooks/useFavorite'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { usePhotoNeighbors } from '../hooks/usePhotoNeighbors'
 import { usePinchZoom } from '../hooks/usePinchZoom'
@@ -77,9 +78,16 @@ type SidePanel = 'faces' | 'edit' | null
  * image is centered and scaled to the largest fit without cropping over a warm
  * near-black backdrop, reflecting the saved non-destructive edit (or, while the
  * edit panel is open, the adjustments in progress). The chrome — a top action
- * bar and the prev/next arrows — melts away after a short idle and returns on any
- * pointer move or tap; a persistent close (Esc / ✕) always works and steps back
- * to the originating list at its exact prior scroll position.
+ * bar, the prev/next arrows and (on a phone) the bottom curation dock — melts
+ * away after a short idle and returns on any pointer move or tap; a persistent
+ * close (Esc / ✕) always works and steps back to the originating list at its
+ * exact prior scroll position.
+ *
+ * Where the everyday curation controls sit depends on the reach: with a mouse
+ * the top edge costs nothing, so they ride the top action bar; on a phone that
+ * corner is the hardest place to hit one-handed on a tall screen, so stars,
+ * personal mark, favorite and archive move down into a thumb-reachable dock
+ * along the bottom edge and the top bar keeps only the occasional view toggles.
  *
  * All the rich metadata and curation — caption & place (EXIF, date, location with
  * its map), people/faces, albums & labels, technical details, the variants stack,
@@ -121,6 +129,11 @@ export function PhotoDetailPage() {
   // disabled and cannot be double-fired.
   const [archivePending, setArchivePending] = useState(false)
   const faces = useFaces(uid)
+  // Phone width moves the curation loop from the top bar into the bottom dock.
+  // The choice is made in JS rather than by a pair of CSS display rules, so the
+  // controls exist exactly ONCE in the DOM: a second, hidden copy would give
+  // every star and heart a twin for assistive tech (and for a query) to find.
+  const narrow = useIsNarrowViewport()
 
   const view = useMemo(() => readUrlState(searchParams, DETAIL_DEFAULTS), [searchParams])
   const neighborParams = useMemo(() => detailToParams(view), [view])
@@ -569,6 +582,54 @@ export function PhotoDetailPage() {
     setThumbVersion((v) => v + 1)
   }
 
+  // The everyday curation loop: the stars, the personal mark, the favorite heart
+  // and — for an editor — archive/restore. Built ONCE here and mounted in exactly
+  // one of two places, the top action bar or the phone's bottom dock, so the two
+  // layouts cannot drift apart: they are the same element tree driving the same
+  // handlers, not two copies kept in sync by hand. Touch gets the larger glyphs
+  // (the dock's own CSS lifts each button to the 44px finger floor).
+  const curation = (
+    <>
+      <RatingStars
+        rating={rating.rating}
+        onRate={rating.setRating}
+        disabled={rating.pending}
+        size={narrow ? 26 : 22}
+      />
+      {/* The marks travel as one cluster, so where the dock has to wrap it breaks
+          between the stars and them — never leaving the heart stranded alone on a
+          line of its own. */}
+      <span className="kk-viewer__marks">
+        <FlagControl
+          flag={rating.flag}
+          onFlag={rating.setFlag}
+          disabled={rating.pending}
+          size={narrow ? 22 : 18}
+        />
+        <FavoriteToggle
+          favorite={favorite.favorite}
+          pending={favorite.pending}
+          onToggle={() => {
+            favorite.toggle()
+          }}
+        />
+        {canWrite && (
+          <button
+            type="button"
+            className="kk-viewer__btn kk-viewer__btn--icon"
+            aria-label={archived ? t('photo.archive.restore') : t('batch.archive')}
+            disabled={archivePending}
+            onClick={() => {
+              void toggleArchive()
+            }}
+          >
+            <Icon name={archived ? 'arrow-counterclockwise' : 'archive'} />
+          </button>
+        )}
+      </span>
+    </>
+  )
+
   const basePoster = thumbUrl(photo.uid, PREVIEW_SIZE, downloadToken)
   // The thumb URL is built from the UID (stable), so a regenerated thumbnail would
   // otherwise be masked by the browser cache. Append a version once the user
@@ -691,8 +752,9 @@ export function PhotoDetailPage() {
         <Icon name="x-lg" />
       </button>
 
-      {/* Auto-hiding top action bar: the photo's name, then the curation loop and
-          the drawer toggle. */}
+      {/* Auto-hiding top action bar: the photo's name, then the view toggles —
+          plus, on a pointer-sized screen, the curation loop (on a phone that one
+          lives in the bottom dock instead). */}
       <div className="kk-viewer__chrome">
         <div className="kk-viewer__heading">
           <h1 className="kk-viewer__title">
@@ -712,38 +774,7 @@ export function PhotoDetailPage() {
           </h1>
         </div>
         <div className="kk-viewer__actions">
-          <RatingStars
-            rating={rating.rating}
-            onRate={rating.setRating}
-            disabled={rating.pending}
-            size={22}
-          />
-          <FlagControl
-            flag={rating.flag}
-            onFlag={rating.setFlag}
-            disabled={rating.pending}
-            size={18}
-          />
-          <FavoriteToggle
-            favorite={favorite.favorite}
-            pending={favorite.pending}
-            onToggle={() => {
-              favorite.toggle()
-            }}
-          />
-          {canWrite && (
-            <button
-              type="button"
-              className="kk-viewer__btn kk-viewer__btn--icon"
-              aria-label={archived ? t('photo.archive.restore') : t('batch.archive')}
-              disabled={archivePending}
-              onClick={() => {
-                void toggleArchive()
-              }}
-            >
-              <Icon name={archived ? 'arrow-counterclockwise' : 'archive'} />
-            </button>
-          )}
+          {!narrow && curation}
           {facesAvailable && (
             <button
               type="button"
@@ -813,6 +844,17 @@ export function PhotoDetailPage() {
         >
           <Icon name="chevron-right" />
         </Link>
+      )}
+
+      {/* The phone's curation dock: the everyday actions along the bottom edge,
+          where the thumb already rests, instead of the top corner it cannot
+          reach. It fades with the rest of the chrome, so the photo is never
+          permanently boxed in, and stands down while the drawer (which owns the
+          whole screen at this width) is open. */}
+      {narrow && (
+        <div className="kk-viewer__dock" role="group" aria-label={t('photo.viewer.actions')}>
+          {curation}
+        </div>
       )}
 
       {/* On a phone the drawer overlays the stage; a scrim dims the photo behind it

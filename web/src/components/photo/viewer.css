@@ -194,6 +194,16 @@
   justify-content: flex-end;
 }
 
+/* The personal mark, the favorite heart and archive form one cluster within the
+   curation loop, spaced like the bar's own items. Grouping them is what makes the
+   phone dock break between the stars and the marks when it has to wrap, instead
+   of stranding whichever control happens to land past the edge. */
+.kk-viewer__marks {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+}
+
 /* Round control buttons on the stage (close, prev/next, chrome toggles). Solid
    enough to read over any photo, with a real focus ring from the tokens. */
 .kk-viewer__btn {
@@ -275,6 +285,78 @@
 
 .kk-viewer__nav--next {
   right: calc(0.75rem + env(safe-area-inset-right, 0px));
+}
+
+/* ---- Curation dock (phone) ------------------------------------------- */
+
+/* On a phone the everyday curation loop — the stars, the personal mark, the
+   favorite heart and archive — moves OFF the top edge, which is the hardest place
+   to reach one-handed on a tall screen, into a strip along the bottom where the
+   thumb already rests. The top bar keeps only the title and the three occasional
+   view toggles (faces / edits / info). PhotoDetailPage mounts this element only
+   below `md` (`useIsNarrowViewport`), so the desktop bar is untouched: with a
+   mouse the top edge costs nothing.
+
+   Like the top bar it is chrome, not furniture: it rides the same idle timer and
+   fades away with everything else, so the photo owns the screen the moment you
+   stop touching it — which is why it may overlay the stage (as the top bar does)
+   rather than shrinking the photo for a strip that is usually invisible. */
+.kk-viewer__dock {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Ten finger-sized controls do not fit one 360px row, so the groups wrap onto
+     a second line (stars / marks + heart + archive) instead of overflowing;
+     a wider phone keeps them on one. */
+  flex-wrap: wrap;
+  gap: var(--kk-space-1) var(--kk-space-2);
+  /* The bar owns the bottom edge, so it carries the home-indicator inset itself
+     (real: index.html opts into `viewport-fit=cover`) and the side insets a
+     landscape notch adds. */
+  padding: var(--kk-space-2) calc(var(--kk-space-2) + env(safe-area-inset-right, 0px))
+    calc(var(--kk-space-2) + env(safe-area-inset-bottom, 0px))
+    calc(var(--kk-space-2) + env(safe-area-inset-left, 0px));
+  background: var(--kk-viewer-dock-scrim);
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  transition:
+    opacity var(--kk-duration-base) var(--kk-ease-standard),
+    transform var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+/* Frost the photo behind it where the browser can — the controls sit over an
+   arbitrary photograph, and the wash alone cannot guarantee they stay legible. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .kk-viewer__dock {
+    backdrop-filter: blur(var(--kk-header-blur));
+    -webkit-backdrop-filter: blur(var(--kk-header-blur));
+  }
+}
+
+.kk-viewer[data-chrome='hidden'] .kk-viewer__dock {
+  opacity: 0;
+  transform: translateY(0.5rem);
+  pointer-events: none;
+}
+
+/* The drawer covers the whole screen at this width, so a dock peeking out from
+   under it would be unreachable noise. It stands down while the drawer is open. */
+.kk-viewer[data-panel='open'] .kk-viewer__dock {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The stars, the flags and the heart are shared with grid tiles and the desktop
+   bar, where a mouse wants them compact — so the dock lifts its own copies (and
+   only them) to the 44px finger floor. They are all `.btn` underneath; the
+   archive control is a viewer pill, which already clears it. */
+.kk-viewer__dock .btn {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
 }
 
 /* ---- Info drawer ----------------------------------------------------- */

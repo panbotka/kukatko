@@ -5,10 +5,12 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { NARROW_VIEWPORT_QUERY } from '../hooks/useIsNarrowViewport'
 import i18n from '../i18n'
 import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type FacesResponse } from '../services/people'
 import { type PhotoDetail, type PhotoEdit, type PhotoListResponse } from '../services/photos'
+import { declarations, readCss, ruleBody } from '../test/css'
 
 import { PhotoDetailPage } from './PhotoDetailPage'
 
@@ -33,6 +35,7 @@ vi.mock('../services/photos', async (importOriginal) => {
     saveEdit: vi.fn(),
     updatePhoto: vi.fn(),
     favoritePhoto: vi.fn(),
+    ratePhoto: vi.fn(),
     fetchPhotos: vi.fn(),
     searchPhotos: vi.fn(),
     archivePhoto: vi.fn(),
@@ -64,6 +67,7 @@ const {
   saveEdit,
   updatePhoto,
   favoritePhoto,
+  ratePhoto,
   fetchPhotos,
   searchPhotos,
   archivePhoto,
@@ -80,6 +84,7 @@ const fetchEditMock = vi.mocked(fetchEdit)
 const saveEditMock = vi.mocked(saveEdit)
 const updatePhotoMock = vi.mocked(updatePhoto)
 const favoritePhotoMock = vi.mocked(favoritePhoto)
+const ratePhotoMock = vi.mocked(ratePhoto)
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const searchPhotosMock = vi.mocked(searchPhotos)
 const archivePhotoMock = vi.mocked(archivePhoto)
@@ -231,6 +236,34 @@ async function openInfo(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Info' }))
 }
 
+/**
+ * Points `window.matchMedia` at a fixed phone/desktop answer for the narrow
+ * viewport query alone, so only `useIsNarrowViewport` changes its mind — every
+ * other media query (reduced motion, coarse pointer) keeps the shared setup's
+ * non-matching default. Reset to desktop after each test.
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow && query === NARROW_VIEWPORT_QUERY,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
+/** The top action bar, which on a phone keeps only the view toggles. */
+function actionBar(container: HTMLElement): HTMLElement {
+  const el = container.querySelector<HTMLElement>('.kk-viewer__actions')
+  if (el === null) {
+    throw new Error('action bar not found')
+  }
+  return el
+}
+
 /** The root immersive-viewer element, for reading its data-* view flags. */
 function viewer(container: HTMLElement): HTMLElement {
   const el = container.querySelector<HTMLElement>('.kk-viewer')
@@ -243,6 +276,9 @@ function viewer(container: HTMLElement): HTMLElement {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   vi.clearAllMocks()
+  // Every test but the phone ones runs at the desktop breakpoint, where the
+  // curation controls ride the top action bar.
+  mockViewport(false)
   // The face-overlay toggle persists to localStorage; start every test from the
   // shipped default (overlay off — the photo is the content).
   window.localStorage.removeItem('kukatko.faces.overlay')
@@ -259,6 +295,7 @@ beforeEach(async () => {
   attachLabelMock.mockResolvedValue(undefined)
   detachLabelMock.mockResolvedValue(undefined)
   favoritePhotoMock.mockResolvedValue(undefined)
+  ratePhotoMock.mockResolvedValue(undefined)
   archivePhotoMock.mockResolvedValue(undefined)
   unarchivePhotoMock.mockResolvedValue(undefined)
 })
@@ -288,15 +325,20 @@ describe('PhotoDetailPage — immersive viewer', () => {
   it('keeps the rating and personal-marking controls in the action bar', async () => {
     // These curation controls stay reachable in the chrome for keyboard and
     // screen-reader users; the favorite heart shares its toggle with the `f` key.
-    renderPage()
+    // With a mouse the top edge costs nothing to reach, so the desktop layout
+    // keeps them there — and carries no bottom dock at all.
+    const { container } = renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
 
-    expect(screen.getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Rate 5 of 5' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Eye' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Thumbs up' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
+    const bar = actionBar(container)
+    expect(within(bar).getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Rate 5 of 5' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Eye' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Thumbs up' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Archive' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Photo actions' })).not.toBeInTheDocument()
   })
 
   describe('archive control', () => {
@@ -339,6 +381,226 @@ describe('PhotoDetailPage — immersive viewer', () => {
         expect(unarchivePhotoMock).toHaveBeenCalledWith('b')
       })
       expect(await screen.findByRole('button', { name: 'Archive' })).toBeInTheDocument()
+    })
+  })
+
+  describe('phone layout — the thumb-reachable curation dock', () => {
+    beforeEach(() => {
+      mockViewport(true)
+    })
+
+    it('moves the everyday curation loop out of the top bar into a bottom dock', async () => {
+      // The top corner is the hardest place to reach one-handed on a tall phone,
+      // so on a phone the stars, the personal mark, the heart and archive live in
+      // a strip along the bottom edge instead. They are MOVED, not duplicated:
+      // `getByRole` throws on a second copy, so each of these assertions also
+      // pins that the desktop bar did not keep a hidden twin.
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const dock = screen.getByRole('group', { name: 'Photo actions' })
+      expect(within(dock).getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Rate 5 of 5' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Eye' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Thumbs up' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Thumbs down' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Archive' })).toBeInTheDocument()
+
+      const bar = actionBar(container)
+      expect(within(bar).queryByRole('button', { name: 'Rate 1 of 5' })).not.toBeInTheDocument()
+      expect(within(bar).queryByRole('button', { name: 'Thumbs up' })).not.toBeInTheDocument()
+      expect(
+        within(bar).queryByRole('button', { name: 'Add to favorites' }),
+      ).not.toBeInTheDocument()
+      expect(within(bar).queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+    })
+
+    it('leaves the occasional toggles, the close and the arrows where they were', async () => {
+      // Only the everyday loop moves. Faces / Edits / Info are occasional, so they
+      // stay in the top cluster, and the two affordances that already worked
+      // one-handed — the persistent ✕ and the ‹/› arrows — are untouched.
+      fetchFacesMock.mockResolvedValue(facesResponse(1))
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const bar = actionBar(container)
+      expect(await within(bar).findByRole('button', { name: 'Show faces' })).toBeInTheDocument()
+      expect(within(bar).getByRole('button', { name: 'Edits' })).toBeInTheDocument()
+      expect(within(bar).getByRole('button', { name: 'Info' })).toBeInTheDocument()
+
+      expect(screen.getByRole('button', { name: 'Back to the list' })).toBeInTheDocument()
+      expect(await screen.findByRole('link', { name: 'Previous photo' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Next photo' })).toBeInTheDocument()
+
+      const dock = screen.getByRole('group', { name: 'Photo actions' })
+      expect(within(dock).queryByRole('button', { name: 'Info' })).not.toBeInTheDocument()
+    })
+
+    it('keeps the dock controls wired to the very same actions', async () => {
+      // The point of the relocation is reach, not a second implementation: the
+      // dock's stars, marks, heart and archive drive the same optimistic hooks
+      // and the same endpoints the top bar drove.
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      const dock = screen.getByRole('group', { name: 'Photo actions' })
+
+      await user.click(within(dock).getByRole('button', { name: 'Rate 4 of 5' }))
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenCalledWith('b', { rating: 4 })
+      })
+      // Optimistic: the stars fill in place, in the dock.
+      expect(within(dock).getByRole('button', { name: 'Rate 4 of 5' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+
+      await user.click(within(dock).getByRole('button', { name: 'Thumbs down' }))
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenCalledWith('b', { flag: 'reject' })
+      })
+
+      await user.click(within(dock).getByRole('button', { name: 'Add to favorites' }))
+      await waitFor(() => {
+        expect(favoritePhotoMock).toHaveBeenCalledWith('b', true)
+      })
+      expect(
+        await within(dock).findByRole('button', { name: 'Remove from favorites' }),
+      ).toBeInTheDocument()
+
+      await user.click(within(dock).getByRole('button', { name: 'Archive' }))
+      await waitFor(() => {
+        expect(archivePhotoMock).toHaveBeenCalledWith('b')
+      })
+      expect(await within(dock).findByRole('button', { name: 'Restore' })).toBeInTheDocument()
+    })
+
+    it('shares its state with the rating hotkeys and the `f` key', async () => {
+      // The dock is the same controlled tree the keys already drove, so a hotkey
+      // has to light it up — otherwise the two would be separate states.
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      const dock = screen.getByRole('group', { name: 'Photo actions' })
+
+      fireEvent.keyDown(document, { key: '3' })
+      await waitFor(() => {
+        expect(ratePhotoMock).toHaveBeenCalledWith('b', { rating: 3 })
+      })
+      expect(within(dock).getByRole('button', { name: 'Rate 3 of 5' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      expect(within(dock).getByRole('button', { name: 'Rate 4 of 5' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+
+      fireEvent.keyDown(document, { key: 'f' })
+      expect(
+        await within(dock).findByRole('button', { name: 'Remove from favorites' }),
+      ).toBeInTheDocument()
+    })
+
+    it('drops archive from a viewer’s dock but keeps the personal actions', async () => {
+      // Archiving is editor+; rating, marking and favoriting are personal actions
+      // every signed-in user gets — so a viewer's dock is one control shorter, not
+      // absent.
+      renderPage(false)
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const dock = screen.getByRole('group', { name: 'Photo actions' })
+      expect(within(dock).getByRole('button', { name: 'Rate 1 of 5' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Eye' })).toBeInTheDocument()
+      expect(within(dock).getByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
+      expect(within(dock).queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+      expect(within(dock).queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument()
+    })
+
+    it('does not disturb the info drawer', async () => {
+      // The drawer still opens from the top bar's Info, still carries its own
+      // close, and the dock does not leak a duplicate control into it.
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
+      await openInfo(user)
+      expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+      // Scope to the drawer: on a phone the scrim behind it answers to the same
+      // label, and both closing affordances are meant to survive this change.
+      const panel = screen.getByRole('complementary', { name: 'Info' })
+      await user.click(within(panel).getByRole('button', { name: 'Close info' }))
+      expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
+    })
+  })
+
+  /**
+   * jsdom evaluates no media queries and computes no layout, so the dock's
+   * placement — bottom edge, safe-area inset, fading with the chrome, standing
+   * down under the drawer, finger-sized targets — is pinned by reading the
+   * stylesheet itself. These are the properties the relocation is FOR: a strip
+   * that a home indicator overlaps, that never fades, or whose buttons stay
+   * mouse-sized would satisfy the DOM tests above and still miss the point.
+   */
+  describe('curation dock stylesheet', () => {
+    const css = readCss('src/components/photo/viewer.css')
+    const dock = declarations(ruleBody(css, /\.kk-viewer__dock\s*(?=\{)/) ?? '')
+
+    it('pins the dock to the bottom edge above the stage', () => {
+      expect(dock.get('position')).toBe('absolute')
+      expect(dock.get('bottom')).toBe('0')
+      expect(dock.get('left')).toBe('0')
+      expect(dock.get('right')).toBe('0')
+      // The same layer the top bar and the arrows sit on, so it is over the photo
+      // but under the drawer (4) and the persistent close (5).
+      expect(dock.get('z-index')).toBe('3')
+    })
+
+    it('carries the home-indicator inset itself', () => {
+      // Without this the bottom row of controls sits under the iOS home bar,
+      // which is exactly the region a thumb-reachable strip must avoid.
+      expect(dock.get('padding')).toContain('env(safe-area-inset-bottom, 0px)')
+      // A landscape notch eats the sides too.
+      expect(dock.get('padding')).toContain('env(safe-area-inset-left, 0px)')
+      expect(dock.get('padding')).toContain('env(safe-area-inset-right, 0px)')
+    })
+
+    it('wraps rather than overflowing a 360px row', () => {
+      // Ten finger-sized targets do not fit one narrow row; wrapping is what
+      // keeps the last of them on screen instead of past its right edge.
+      expect(dock.get('flex-wrap')).toBe('wrap')
+    })
+
+    it('fades away with the rest of the chrome', () => {
+      // The photo owns the screen the moment you stop touching it — a permanent
+      // bar would trade a reachable strip for a cropped photograph.
+      const hidden = declarations(
+        ruleBody(css, /\.kk-viewer\[data-chrome='hidden'\] \.kk-viewer__dock\s*(?=\{)/) ?? '',
+      )
+      expect(hidden.get('opacity')).toBe('0')
+      // Faded-out controls must not still swallow taps meant for the photo.
+      expect(hidden.get('pointer-events')).toBe('none')
+      expect(dock.get('transition')).toContain('opacity')
+    })
+
+    it('stands down while the info drawer is open', () => {
+      // At this width the drawer covers the screen; a strip peeking out from
+      // under it would be unreachable noise.
+      const panelOpen = declarations(
+        ruleBody(css, /\.kk-viewer\[data-panel='open'\] \.kk-viewer__dock\s*(?=\{)/) ?? '',
+      )
+      expect(panelOpen.get('opacity')).toBe('0')
+      expect(panelOpen.get('pointer-events')).toBe('none')
+    })
+
+    it('lifts its shared controls to the 44px finger floor', () => {
+      // The stars/flags/heart are sized for a mouse where they are also used
+      // (grid tiles, the desktop bar); the dock is the one place that has to
+      // enlarge them.
+      const buttons = declarations(ruleBody(css, /\.kk-viewer__dock \.btn\s*(?=\{)/) ?? '')
+      expect(buttons.get('min-width')).toBe('2.75rem')
+      expect(buttons.get('min-height')).toBe('2.75rem')
     })
   })
 

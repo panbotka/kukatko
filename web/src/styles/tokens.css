@@ -203,7 +203,9 @@
      step past `sunken`, so the darkest UI surface still reads as a surface and
      the viewer reads as "the room lights off, the photo lit". The chrome scrim
      is a top-down darkening wash that lets white controls sit legibly over an
-     unknown photograph without a hard bar; the panel scrim dims the stage
+     unknown photograph without a hard bar; the dock scrim is its mirror image
+     for the phone's bottom curation strip, a touch denser because it backs a
+     full row of controls rather than a title; the panel scrim dims the stage
      behind the sliding info drawer on a phone. `z` layers the viewer above the
      app shell (Bootstrap's modal backdrop is 1040/1050, so this clears them). */
   --kk-viewer-backdrop: #0a0806;
@@ -212,6 +214,12 @@
     rgb(0 0 0 / 62%) 0%,
     rgb(0 0 0 / 24%) 55%,
     rgb(0 0 0 / 0%) 100%
+  );
+  --kk-viewer-dock-scrim: linear-gradient(
+    to top,
+    rgb(0 0 0 / 74%) 0%,
+    rgb(0 0 0 / 58%) 60%,
+    rgb(0 0 0 / 34%) 100%
   );
   --kk-viewer-panel-scrim: rgb(0 0 0 / 55%);
   --kk-viewer-z: 1080;
