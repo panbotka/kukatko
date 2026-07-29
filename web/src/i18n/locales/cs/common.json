@@ -84,7 +84,13 @@
     "review": "Třídění",
     "outliers": "Možné chyby",
     "leaderboard": "Žebříček",
-    "tabBar": "Hlavní navigace"
+    "tabBar": "Hlavní navigace",
+    "menu": "Nabídka",
+    "closeMenu": "Zavřít nabídku",
+    "sections": {
+      "main": "Hlavní",
+      "account": "Účet"
+    }
   },
   "help": {
     "title": "Nápověda",
