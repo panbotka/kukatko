@@ -263,6 +263,17 @@ here.
   `ListSkeleton` is a stack of rows (`LabelsPage`). The container carries `role="status"` + `aria-busy` and one
   localized message (the existing keys `*.loading`); the shimmer is the only motion → under
   `prefers-reduced-motion` it turns off and stays a static tone. Tests: `Skeleton.test.tsx`),
+  `TileGrid` (**the virtualized card grid** — the same `react-virtuoso` `VirtuosoGrid` treatment the
+  photo wall gets, for the card lists: generic over the item (`items` + `itemKey` + `renderItem`),
+  window-scroll, geometry via `minTile`/`gap` (the same values as `TileGridSkeleton`, so the grid
+  doesn't shift when the data lands). The list element carries the very same
+  `repeat(auto-fill, minmax(<minTile>px, 1fr))` track list the plain CSS grid it replaced had — the
+  column count keeps following the container width (1 column at 320px, 2 at 360px, 7 at 1280px) —
+  and virtuoso's own style is spread **last** so the padding standing in for the unmounted rows wins.
+  A buffer of `increaseViewportBy {top: 200, bottom: 400}` starts a row's covers a touch before it
+  scrolls in. The class is `.kk-tile-grid`, a **selector hook only**: unlike `.kukatko-photo-grid`,
+  which strips the card chrome off what it holds, the tiles keep their `.kk-tile` look. Used by
+  `AlbumsPage`. Tests: `TileGrid.test.tsx`),
   `ConfirmModal` (**the single shared confirmation dialog** — replaced the native `window.confirm`
   in four places: `AlbumDetailPage` (deleting an album), `LabelsPage` (deleting a label),
   `SavedSearchesPage` (deleting a saved search) and `ImportPage` (confirming the first import run).
@@ -609,7 +620,10 @@ here.
   `AlbumsPage` = `/albums` a grid of album cards + `Nové album` (editor/admin) — the order **from
   the newest album** (by the newest photo, undated/empty at the end) **is enforced by the backend**,
   the page doesn't reorder and has no sort selector; after creating an album it **reloads the list**
-  (`useReloadKey`) instead of locally appending to the end — where a new album belongs is known only to the server,
+  (`useReloadKey`) instead of locally appending to the end — where a new album belongs is known only to the server;
+  the grid is **virtualized** (`TileGrid`, minTile 160 / gap 12 — the skeleton's geometry), so a large
+  collection puts only the visible rows plus a buffer into the DOM and starts only their cover loads,
+  while the layout stays exactly the one the plain CSS grid drew,
   `AlbumDetailPage` = `/albums/:uid` a header + a **Promítání** button (for everyone) + editor actions
   (edit/delete/select) above
   a photo grid scoped to the album (`useScopedPhotos` + `FilterBar showSort={false}` + URL state) —

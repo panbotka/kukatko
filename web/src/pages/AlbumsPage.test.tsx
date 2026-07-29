@@ -1,15 +1,36 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { type ReactNode } from 'react'
+import { type ComponentType, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { type TileGridLayout } from '../components/TileGrid'
 import i18n from '../i18n'
 import { type Album, type AlbumCount } from '../services/organize'
 
 import { AlbumsPage } from './AlbumsPage'
+
+// Minimal stand-in for react-virtuoso's grid (jsdom has no layout, so the real
+// one measures zero and mounts nothing). It renders every album through the real
+// `List` component, which keeps the grid's own column template assertable.
+interface MockGridProps {
+  data: AlbumCount[]
+  context: TileGridLayout
+  components: { List: ComponentType<{ context: TileGridLayout; children: ReactNode }> }
+  itemContent: (index: number, item: AlbumCount) => ReactNode
+  computeItemKey: (index: number, item: AlbumCount) => string
+}
+vi.mock('react-virtuoso', () => ({
+  VirtuosoGrid: ({ components, context, data, itemContent, computeItemKey }: MockGridProps) => (
+    <components.List context={context}>
+      {data.map((item, index) => (
+        <div key={computeItemKey(index, item)}>{itemContent(index, item)}</div>
+      ))}
+    </components.List>
+  ),
+}))
 
 vi.mock('../services/organize', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/organize')>()
@@ -78,6 +99,21 @@ describe('AlbumsPage', () => {
     renderPage()
     expect(await screen.findByText('Holidays')).toBeInTheDocument()
     expect(screen.getByText('3 photos')).toBeInTheDocument()
+  })
+
+  it('renders the albums into a virtualized grid that reflows its columns', async () => {
+    fetchMock.mockResolvedValue([album('al_1', 'Holidays'), album('al_2', 'Alps')])
+    renderPage()
+
+    await screen.findByText('Holidays')
+    const grid = document.querySelector<HTMLElement>('.kk-tile-grid')
+    expect(grid).not.toBeNull()
+    // The virtualized grid keeps the geometry of the plain one it replaced (and
+    // of the loading skeleton): 160px-floor `auto-fill` tracks, so the column
+    // count still follows the container width — one at 320px, two at 360px.
+    expect(grid?.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(160px, 1fr))')
+    expect(grid?.style.gap).toBe('12px')
+    expect(screen.getAllByRole('link')).toHaveLength(2)
   })
 
   it('shows the empty state when there are no albums', async () => {
