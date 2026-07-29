@@ -1521,3 +1521,126 @@ body {
     line-height: 1.5;
   }
 }
+
+/* ── Map chrome on the dark theme ────────────────────────────────────────────
+   Leaflet bakes one light theme into its stylesheet — a white popup bubble, a
+   white translucent attribution strip, white toolbar buttons, a `#ddd` backdrop
+   — and exposes no variable to retint any of it, so the app's own tokens have
+   to be pushed in through Leaflet's class names. Every selector below is scoped
+   under `.kukatko-map`, which keeps the overrides off the rest of the page.
+
+   Two rules govern how those selectors are written. The bundler emits Leaflet's
+   stylesheet AFTER this one, so an override that merely TIES on specificity
+   loses; and where Leaflet qualifies a rule with `.leaflet-container`, that
+   container is the `.kukatko-map` element itself, so both classes go on one
+   compound selector to get ahead of it.
+
+   Only the chrome is retinted. Tiles, pins and cluster bubbles are the map's
+   content and keep their own colours, and Leaflet's tooltip, layers and scale
+   controls are deliberately left alone — this app renders none of them. */
+
+/* The plate the tiles are laid on: visible past the edge of the world, while
+   tiles load, and wherever one fails to. Leaflet's `#ddd` is a light-grey flash
+   in the middle of a near-black page; the sunken well is the tone the app
+   already uses behind imagery. */
+.kukatko-map.leaflet-container {
+  background-color: var(--kk-surface-sunken);
+}
+
+/* Zoom control. The touch variant is spelled out beside the plain one because
+   `.leaflet-touch .leaflet-bar` re-borders the bar in its own `rgba(0,0,0,.2)`
+   the moment the browser reports a touchscreen. */
+.kukatko-map .leaflet-bar,
+.kukatko-map.leaflet-touch .leaflet-bar {
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-sm);
+  box-shadow: var(--kk-shadow-2);
+}
+
+.kukatko-map .leaflet-bar a {
+  color: var(--kk-text);
+  background-color: var(--kk-surface-overlay);
+  /* Only the divider between the stacked buttons — the bar draws the outline. */
+  border-bottom-color: var(--kk-surface-border);
+}
+
+/* The same accent wash every other hoverable row in the app answers with. */
+.kukatko-map .leaflet-bar a:hover,
+.kukatko-map .leaflet-bar a:focus {
+  color: var(--kk-text);
+  background-color: color-mix(in srgb, var(--kk-surface-overlay) 82%, var(--kk-accent) 18%);
+}
+
+/* A button at the end of its zoom range: still readable, plainly inert. Listed
+   after the hover rule, which it ties with, so a pointer over a dead button
+   does not light it up. */
+.kukatko-map .leaflet-bar a.leaflet-disabled {
+  color: var(--kk-text-muted);
+  background-color: var(--kk-surface-1);
+}
+
+/* Attribution bar — the one piece of chrome that sits directly on the tiles, so
+   it cannot borrow the header's 72% alpha: over a snow-bright tile that much map
+   bleeding through drops the link under AA. At 88% of the page tone the map
+   still moves visibly beneath the strip while the link holds ~5.7:1 against the
+   brightest tile and ~8:1 against the darkest. */
+.kukatko-map.leaflet-container .leaflet-control-attribution {
+  color: var(--kk-text-muted);
+  background: color-mix(in srgb, var(--kk-surface-page) 88%, transparent);
+}
+
+.kukatko-map .leaflet-control-attribution a {
+  color: var(--kk-accent);
+}
+
+.kukatko-map .leaflet-control-attribution a:hover,
+.kukatko-map .leaflet-control-attribution a:focus {
+  color: var(--kk-accent-hover);
+}
+
+/* Popup. The bubble becomes the overlay surface a popover already sits on, with
+   the hairline that separates every elevated surface here from what is under it.
+   The tip carries the same fill and border: clipped to its lower half it shows
+   exactly two edges, which then continue the bubble's outline into the arrow
+   instead of hanging off it as a bare triangle. */
+.kukatko-map .leaflet-popup-content-wrapper,
+.kukatko-map .leaflet-popup-tip {
+  color: var(--kk-text);
+  background: var(--kk-surface-overlay);
+  border: 1px solid var(--kk-surface-border);
+  box-shadow: var(--kk-shadow-3);
+}
+
+.kukatko-map .leaflet-popup-content-wrapper {
+  border-radius: var(--kk-radius-md);
+}
+
+/* The close "×": Leaflet's `#757575` was drawn for a white bubble and all but
+   disappears on this one. Muted at rest, full text colour under the pointer and
+   — the part a keyboard depends on — on focus. */
+.kukatko-map.leaflet-container a.leaflet-popup-close-button {
+  color: var(--kk-text-muted);
+}
+
+.kukatko-map.leaflet-container a.leaflet-popup-close-button:hover,
+.kukatko-map.leaflet-container a.leaflet-popup-close-button:focus {
+  color: var(--kk-text);
+}
+
+/* Popup body. The whole card — thumbnail and caption — is one link into the
+   photo detail, and the markup already drops the underline, so the accent colour
+   is the only thing left saying it can be clicked. */
+.kukatko-map .leaflet-popup-content a {
+  color: var(--kk-accent);
+}
+
+.kukatko-map .leaflet-popup-content a:hover,
+.kukatko-map .leaflet-popup-content a:focus {
+  color: var(--kk-accent-hover);
+}
+
+/* Round the thumbnail off so the picture is not a hard rectangle inside a
+   rounded bubble. */
+.kukatko-map .kukatko-map-popup img {
+  border-radius: var(--kk-radius-sm);
+}
