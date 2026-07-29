@@ -1374,925 +1374,925 @@ to `## Package map` in `CLAUDE.md`.
   (`photos.ListParams` `Country`/`City` + `photoapi` `parseListParams`); mounted by `server.WithAPI`
   (`buildPlacesAPI` in `cmd/kukatko/places.go`, aggregation via the photos store over the `photo_places` cache)),
   `internal/audit/`
-  (durable audit trail, tabulka `audit_log` v migraci `0012_audit_log.sql` rozšířená v
-  `0014_audit_request.sql` o `ip`/`user_agent` + composite index `(target_type, target_uid)`:
+  (durable audit trail, the `audit_log` table in migration `0012_audit_log.sql` extended in
+  `0014_audit_request.sql` with `ip`/`user_agent` + composite index `(target_type, target_uid)`:
   `id BIGSERIAL`, `actor_uid` FK users `ON DELETE SET NULL`, `action`, `target_type`, `target_uid`,
-  `details JSONB`, `ip`, `user_agent`, `created_at` (sloupcová jména `actor/target/details` =
-  spec termíny `user/entity/metadata`); **klíčový vzor** `Write(ctx, exec, Entry)` zapisuje přes
-  rozhraní `Execer` (splňuje ho pool **i** `pgx.Tx`), takže audit řádek jede v **téže transakci**
-  jako mutace — commitne/rollbackne s ní (ARCHITECTURE §5.1/§11/§12 „audit log durable", oprava
-  photo-sorter after-commit mezery); `Entry{ActorUID,Action,TargetType,TargetUID,Details,IP,
-  UserAgent}` (prázdné UID/IP/UA → SQL NULL, nil details → `{}`); **konvence pro handlery**
-  `Meta` + `FromRequest(r, actorUID)` (actor z auth kontextu, IP z `X-Forwarded-For`/`X-Real-IP`/
-  `RemoteAddr`, UA z hlavičky) → `(Meta).Entry(action, targetType, targetUID, details)` staví
-  ostatní entry; **konvence `changes` pro editace** (`changes.go`): `ChangeSet` = `NewChangeSet()` +
-  `Add(field, old, new)` (přeskočí neměněná pole přes `reflect.DeepEqual`, ukazatele porovná
-  hodnotou) → `Map()`/`StampInto(details)` zapíše pod klíč `ChangesKey` (`"changes"`) mapu
-  `{"<pole>":{"old":…,"new":…}}` **jen se skutečně změněnými poli** (nil ukazatel → JSON `null`);
-  používají ji všechny editační cesty (foto PATCH + MCP `photo.update`, album/label/subjekt update),
-  aby log ukázal `stary popisek` → `novy popisek`; **hromadná editace `internal/bulk` je záměrně
-  vynechaná** (jeden `UPDATE` nad mnoha fotkami bez načtení starých řádků — SELECT-před-UPDATE by
-  zdvojnásobil dotazy na dávku), ponechává si původní souhrn v details; action konstanty `ActionPhotosBulk`/`ActionPhoto{Update,Archive,Unarchive,Purge}`/
+  `details JSONB`, `ip`, `user_agent`, `created_at` (the column names `actor/target/details` =
+  the spec terms `user/entity/metadata`); **the key pattern** `Write(ctx, exec, Entry)` writes through
+  the `Execer` interface (satisfied by the pool **and** `pgx.Tx`), so the audit row runs in the **same
+  transaction** as the mutation — it commits/rolls back with it (ARCHITECTURE §5.1/§11/§12 "audit log
+  durable", a fix of photo-sorter's after-commit gap); `Entry{ActorUID,Action,TargetType,TargetUID,
+  Details,IP,UserAgent}` (an empty UID/IP/UA → SQL NULL, nil details → `{}`); **the handler convention**
+  `Meta` + `FromRequest(r, actorUID)` (the actor from the auth context, IP from `X-Forwarded-For`/`X-Real-IP`/
+  `RemoteAddr`, UA from the header) → `(Meta).Entry(action, targetType, targetUID, details)` builds
+  the rest of the entry; **the `changes` convention for edits** (`changes.go`): `ChangeSet` = `NewChangeSet()` +
+  `Add(field, old, new)` (skips unchanged fields via `reflect.DeepEqual`, compares pointers by
+  value) → `Map()`/`StampInto(details)` writes under the key `ChangesKey` (`"changes"`) a map
+  `{"<field>":{"old":…,"new":…}}` **with only the fields that actually changed** (a nil pointer → JSON `null`);
+  every editing path uses it (photo PATCH + MCP `photo.update`, album/label/subject update),
+  so the log shows `old caption` → `new caption`; **bulk editing in `internal/bulk` is deliberately
+  left out** (one `UPDATE` over many photos without loading the old rows — a SELECT-before-UPDATE would
+  double the queries per batch), it keeps its original summary in details; action constants `ActionPhotosBulk`/`ActionPhoto{Update,Archive,Unarchive,Purge}`/
   `ActionAlbum{Create,Update,Delete}`/`ActionLabel{Create,Update,Delete}`/`ActionFaceAssign`/
-  `ActionUser{Create,Update,Disable,Password}`/`ActionAuditPurge`; `Store` = `NewStore(pool)` se `Record(ctx,Entry)`
-  (vlastní spojení) a **filtrovaným čtením** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ActorUID,
+  `ActionUser{Create,Update,Disable,Password}`/`ActionAuditPurge`; `Store` = `NewStore(pool)` with `Record(ctx,Entry)`
+  (its own connection) and **filtered reads** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ActorUID,
   TargetType,TargetUID,Action,Since,Until,Limit,Offset}`, newest-first, limit cap 500/default 100)
-  pro admin výpis; **retenční purge** `PurgeOlderThan(ctx, cutoff) (int, error)` = jeden
-  `DELETE FROM audit_log WHERE created_at < $1` přes `idx_audit_log_created_at`, vrací počet smazaných
-  (maintainer-only přes `internal/maintenanceapi`, action `audit.purge`, sám se auditne — čerstvý
-  záznam purge přežije). **Zapojené in-tx mutace**: bulk (`internal/bulk`) + foto PATCH/archive/unarchive
-  přes audited varianty `photos.Store.{UpdateMetadata,Archive,Unarchive}Audited`, **trvalý purge**
-  `photos.Store.DeleteAudited` (`internal/trash` → `photo.purge`, systémový actor u plánované retence)
-  a **správa uživatelů** `auth.Store.{CreateUser,UpdateUserProfile,SetUserDisabled,SetPasswordHash}Audited`
-  (`user.*`) — vše mutace + audit v jedné tx přes sdílený `rowQuerier`/`mutateAudited` (photos) resp.
-  `inAuditedTx` (auth); další domény (alba/štítky/lidé) následují stejnou konvenci), `internal/auditapi/`
-  (admin-only HTTP API nad audit trailem: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
-  mountuje `GET /audit` za `RequireAdmin`; `parseFilter` z query `user`/`entity_type`/`entity_uid`/
-  `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (neplatný
-  čas/číslo/`via`/`decision` → 400), vrací `{entries,total,limit,offset,next_offset}` newest-first;
-  **`via=review`** → `Filter.ReviewOnly` (literál `details ->> 'via' = 'review'`, sedí na partial
-  index 0037), **`decision=yes|no`** → `Filter.Actions` (Ano = `face.assign`+`label.attach` / Ne =
-  `face.reject`+`label.reject`) — podklad pro admin per-user přehled review rozhodnutí; jen čtení — zápisy jdou přes
-  mutační transakce jinde; mountuje se vždy posledním `server.WithAPI` (`buildAuditAPI` v
+  for the admin listing; **retention purge** `PurgeOlderThan(ctx, cutoff) (int, error)` = one
+  `DELETE FROM audit_log WHERE created_at < $1` over `idx_audit_log_created_at`, returns the number deleted
+  (maintainer-only via `internal/maintenanceapi`, action `audit.purge`, it audits itself — the fresh
+  purge record survives the purge). **Wired-in in-tx mutations**: bulk (`internal/bulk`) + photo PATCH/archive/unarchive
+  via the audited variants `photos.Store.{UpdateMetadata,Archive,Unarchive}Audited`, **permanent purge**
+  `photos.Store.DeleteAudited` (`internal/trash` → `photo.purge`, a system actor for the scheduled retention)
+  and **user management** `auth.Store.{CreateUser,UpdateUserProfile,SetUserDisabled,SetPasswordHash}Audited`
+  (`user.*`) — every mutation + audit in one tx via the shared `rowQuerier`/`mutateAudited` (photos) and
+  `inAuditedTx` (auth); further domains (albums/labels/people) follow the same convention), `internal/auditapi/`
+  (admin-only HTTP API over the audit trail: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
+  mounts `GET /audit` behind `RequireAdmin`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
+  `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (an invalid
+  time/number/`via`/`decision` → 400), returns `{entries,total,limit,offset,next_offset}` newest-first;
+  **`via=review`** → `Filter.ReviewOnly` (the literal `details ->> 'via' = 'review'`, matches the partial
+  index 0037), **`decision=yes|no`** → `Filter.Actions` ("Ano" = `face.assign`+`label.attach` / "Ne" =
+  `face.reject`+`label.reject`) — the basis of the admin per-user review-decision overview; read-only — writes go through
+  mutation transactions elsewhere; always mounted by the last `server.WithAPI` (`buildAuditAPI` in
   `cmd/kukatko/audit.go`)), `internal/bulk/`
-  (hromadná editace metadat: `Service` = `NewService(pool, maxBatch)` s `Apply(ctx, actorUID,
-  photoUIDs, ops Operations) (Result, error)` — **celá dávka v jediné transakci** s audit
-  záznamem; `Operations` = volitelná pole `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
-  `Title`/`Description *string` (nil=beze změny, ""=clear), `Location *Location`+`ClearLocation`,
+  (bulk metadata editing: `Service` = `NewService(pool, maxBatch)` with `Apply(ctx, actorUID,
+  photoUIDs, ops Operations) (Result, error)` — **the whole batch in a single transaction** with an audit
+  record; `Operations` = the optional fields `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
+  `Title`/`Description *string` (nil=unchanged, ""=clear), `Location *Location`+`ClearLocation`,
   `Archive`/`Favorite *bool`, **`Rating *int` (0–5) + `Flag *string` (none/pick/reject/eye)**;
-  `Apply` validuje dávku (ErrNoPhotos/ErrNoOperations/
-  ErrBatchTooLarge), ověří existenci alb/štítků v add operacích (ErrAlbumNotFound/ErrLabelNotFound),
-  pak per-foto: duplicitní uid → `skipped`, neexistující fotka → `error` **bez abortu ostatních**,
-  jinak aplikuje a `updated`; vlastní idempotentní SQL (vlastní tx kvůli atomicitě, nepoužívá
-  organize/photos store metody, které mají vlastní spojení); favorite **i hodnocení** jsou
-  **per-user** (`actorUID`) — rating/flag upsert + prune all-defaults řádku zrcadlí `organize` store;
-  `Result{Results:[{photo_uid,status,error?}],Counts{total,updated,skipped,errored}}`; skutečná DB
-  chyba rollbackne celou dávku; an archive operation additionally calls `photos.LeaveStackTx` for each
+  `Apply` validates the batch (ErrNoPhotos/ErrNoOperations/
+  ErrBatchTooLarge), checks that the albums/labels of the add operations exist (ErrAlbumNotFound/ErrLabelNotFound),
+  then per photo: a duplicate uid → `skipped`, a non-existent photo → `error` **without aborting the rest**,
+  otherwise it applies and `updated`; its own idempotent SQL (its own tx for atomicity, it does not use
+  the organize/photos store methods, which have their own connection); favorites **and ratings** are
+  **per-user** (`actorUID`) — the rating/flag upsert + the all-defaults row prune mirror the `organize` store;
+  `Result{Results:[{photo_uid,status,error?}],Counts{total,updated,skipped,errored}}`; a real DB
+  error rolls the whole batch back; an archive operation additionally calls `photos.LeaveStackTx` for each
   archived photo **in the same transaction**, so archiving a stack's primary does not hide its still-live
   siblings behind the `(stack_uid IS NULL OR stack_primary)` gate (an unarchive leaves stacks untouched);
   `Summary()` (audit details) + `IsEmpty()`), `internal/bulkapi/`
-  (HTTP nad `bulk.Service`: rozhraní `Service` (Apply) — fakeovatelné; `NewAPI(Config{Service,
-  RequireWrite})`+`RegisterRoutes` mountuje `POST /photos/bulk` za `RequireWrite`; tělo
-  `{photo_uids,operations}` přes `operationsInput` se **set/clear páry jako samostatné klíče**
-  (jednoznačné, konflikt `set_*`+`clear_*` / `archive`+`unarchive` → 400), `set_caption`→title,
-  **`set_rating` (0–5) / `set_flag` (none/pick/reject/eye)** s validací → 400,
-  validace souřadnic, `DisallowUnknownFields` (neznámá operace → 400) + 4 MiB limit; chyby mapované
-  `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413, jinak 500;
-  per-foto chyby vrací 200 s detailem v těle; mountuje se dalším `server.WithAPI`
-  (`buildBulkAPI` v `cmd/kukatko/bulk.go`)),
+  (HTTP over `bulk.Service`: the `Service` interface (Apply) — fakeable; `NewAPI(Config{Service,
+  RequireWrite})`+`RegisterRoutes` mounts `POST /photos/bulk` behind `RequireWrite`; the body
+  `{photo_uids,operations}` via `operationsInput` with **set/clear pairs as separate keys**
+  (unambiguous, a `set_*`+`clear_*` / `archive`+`unarchive` conflict → 400), `set_caption`→title,
+  **`set_rating` (0–5) / `set_flag` (none/pick/reject/eye)** with validation → 400,
+  coordinate validation, `DisallowUnknownFields` (an unknown operation → 400) + 4 MiB limit; errors mapped
+  `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413, otherwise 500;
+  per-photo errors return 200 with the detail in the body; mounted by a further `server.WithAPI`
+  (`buildBulkAPI` in `cmd/kukatko/bulk.go`)),
   `internal/mapy/`
-  (server-side HTTP klient k mapy.com REST API, **klíč nikdy neopustí server** — posílá se jen
-  v hlavičce `X-Mapy-Api-Key`, nikdy v URL/chybě, vše za rozhraním `Client` (fakeovatelné):
+  (a server-side HTTP client of the mapy.com REST API, **the key never leaves the server** — it is sent only
+  in the `X-Mapy-Api-Key` header, never in a URL/error, all behind the `Client` interface (fakeable):
   `New(Config{BaseURL,APIKey,Lang,Timeout,HTTPClient})` → `*HTTPClient`; `Tile(ctx,TileParams{
-  Mapset,Z,X,Y,Retina}) (*TileResult,error)` (validuje mapset allowlist, staví URL
-  `/v1/maptiles/{mapset}/256[@2x]/{z}/{x}/{y}`, **streamuje** body přes `cancelReadCloser` který
-  na Close zruší request ctx — nikdy nedrží dlaždici v RAM), `ReverseGeocode(ctx,lat,lng)
-  (*GeocodeResult,error)` (`/v1/rgeocode?lon=&lat=&lang=cs` → zjednodušený první `item` na
+  Mapset,Z,X,Y,Retina}) (*TileResult,error)` (validates the mapset allowlist, builds the URL
+  `/v1/maptiles/{mapset}/256[@2x]/{z}/{x}/{y}`, **streams** the body through a `cancelReadCloser` that
+  cancels the request ctx on Close — it never holds a tile in RAM), `ReverseGeocode(ctx,lat,lng)
+  (*GeocodeResult,error)` (`/v1/rgeocode?lon=&lat=&lang=cs` → the first `item` simplified to
   `{Name,Location,RegionalStructure}`), `Geocode(ctx,query,limit) ([]Place,error)` (**forward**,
-  `/v1/geocode?query=&lang=cs&limit=` → `[]Place{Name,Label,Type,Location,Lat,Lng}` v pořadí od
-  nejlepší shody; mapuje `position.lon/lat` → `Lng/Lat` a zahazuje bbox/zip/regionalStructure;
-  prázdný dotaz = `ErrEmptyQuery` **bez volání nahoru**, žádná shoda = **prázdný slice + nil**,
-  ne `ErrNotFound` — nedopsaný název není chyba; `ClampGeocodeLimit` ořízne na
-  1–`MaxGeocodeLimit` (15), ≤0 → `DefaultGeocodeLimit` (5), a volá se i uvnitř `Geocode`, takže
-  žádné call-site nepošle nahoru neomezený počet); allowlist `basic|outdoor|aerial|winter`
-  (`IsValidMapset`), retina jen `basic`/`outdoor` (`RetinaSupported`); sentinely
-  `ErrUnauthorized` (401/403) / `ErrNotFound` (404 i prázdné items) / `ErrRateLimited` (429) /
-  `ErrUpstream` (jiný status / nečitelná odpověď) / `ErrUnavailable` (transport / 502/503/504) /
-  `ErrInvalidMapset` / `ErrInvalidURL`; `statusError` **nepřidává tělo** odpovědi do chyby, aby
-  klíč neprosákl ani když ho mapy.com echoují; každý non-200 se navíc **loguje WARN** se
-  statusem + mapsetem (`slog.WarnContext`, 404 z rgeocode ne — to je normální odpověď), takže
-  odmítnutý klíč nekončí jen jako šedá dlaždice; **`Health`** (`health.go`, nil-safe, concurrency-
-  safe) skládá výsledky volání do `HealthStatus{State,Detail,CheckedAt}`: `Record(err)` klasifikuje
-  sentinel → `HealthState` `ok|key_rejected|rate_limited|unavailable|error` (`ErrNotFound`/
-  `ErrInvalidMapset`/`context.Canceled` **ignoruje** — o zdraví upstreamu nic neříkají),
-  `Snapshot()` čte, `State.Degraded()` = vše kromě `ok`/`unknown`; `Detail` je z chyb klienta,
-  takže nikdy nenese klíč), `internal/mapsapi/`
-  (HTTP API pro mapy — tile proxy, reverse geocode, place search a GeoJSON feed; rozhraní
-  `TileFetcher`/`Geocoder`/`PlaceSearcher` (splňuje je `mapy.Client`, nil → 503) a `PhotoLister`
+  `/v1/geocode?query=&lang=cs&limit=` → `[]Place{Name,Label,Type,Location,Lat,Lng}` ordered from
+  the best match; maps `position.lon/lat` → `Lng/Lat` and drops bbox/zip/regionalStructure;
+  an empty query = `ErrEmptyQuery` **without calling upstream**, no match = **an empty slice + nil**,
+  not `ErrNotFound` — a half-typed name is not an error; `ClampGeocodeLimit` clamps to
+  1–`MaxGeocodeLimit` (15), ≤0 → `DefaultGeocodeLimit` (5), and is called inside `Geocode` too, so
+  no call site sends an unbounded count upstream); allowlist `basic|outdoor|aerial|winter`
+  (`IsValidMapset`), retina only for `basic`/`outdoor` (`RetinaSupported`); the sentinels
+  `ErrUnauthorized` (401/403) / `ErrNotFound` (404 and empty items) / `ErrRateLimited` (429) /
+  `ErrUpstream` (another status / an unreadable response) / `ErrUnavailable` (transport / 502/503/504) /
+  `ErrInvalidMapset` / `ErrInvalidURL`; `statusError` **does not add the response body** to the error, so
+  the key cannot leak even if mapy.com echoes it; every non-200 is additionally **logged at WARN** with the
+  status + mapset (`slog.WarnContext`, not a 404 from rgeocode — that is a normal answer), so
+  a rejected key does not end up as merely a grey tile; **`Health`** (`health.go`, nil-safe, concurrency-
+  safe) folds call results into `HealthStatus{State,Detail,CheckedAt}`: `Record(err)` classifies the
+  sentinel → `HealthState` `ok|key_rejected|rate_limited|unavailable|error` (it **ignores** `ErrNotFound`/
+  `ErrInvalidMapset`/`context.Canceled` — they say nothing about upstream health),
+  `Snapshot()` reads it, `State.Degraded()` = everything except `ok`/`unknown`; `Detail` comes from client errors,
+  so it never carries the key), `internal/mapsapi/`
+  (the HTTP API for maps — tile proxy, reverse geocode, place search and a GeoJSON feed; the interfaces
+  `TileFetcher`/`Geocoder`/`PlaceSearcher` (satisfied by `mapy.Client`, nil → 503) and `PhotoLister`
   (`photos.Store.List`) →
-  unit-testovatelné s faky; `NewAPI(Config{Tiles,Geocoder,Places,Photos,Health,RequireAuth,TileCacheMaxAge,
+  unit-testable with fakes; `NewAPI(Config{Tiles,Geocoder,Places,Photos,Health,RequireAuth,TileCacheMaxAge,
   TileCacheTTL,TileCacheBytes,GeocodeCacheTTL,GeocodeRatePerSec,GeocodeRateBurst,MaxGeoPhotos})`+
-  `RegisterRoutes` mountuje
-  `/map` za `RequireAuth`: `GET /map/tiles/{mapset}/{z}/{x}/{y}` (validuje mapset→400/retina ze
-  sufixu `@2x` na `{y}` nebo `?retina=true`, s `Cache-Control: public, max-age, immutable`;
-  **server-side cache** `tileCache` (`tilecache.go`: bounded na bajty + TTL, lazy expiry,
-  **LRU** eviction, klíč `mapset/z/x/y[@2x]`) — hit se servíruje z paměti bez volání mapy.com
-  (= ušetřený kredit, free tier 1 dlaždice = 1 kredit), miss se streamuje a **jen úspěch** se
-  uloží (chyba se **nikdy** necachuje, jinak by výpadek/odmítnutý klíč zamrzl v mapě na celé TTL);
-  dlaždice nad `maxCachedTileBytes` (512 KiB) se streamuje bez cachování, takže se nikdy nebufferuje
-  celá do RAM; outcome hlásí hlavička `X-Tile-Cache: hit|miss`; chyby přes `writeTileError` →
-  404/429/503/502 a **401/403 → `StatusMapKeyRejected` (424)**, tj. vlastní status pro *odmítnutý
-  náš klíč* (syrová 403 by lhala, že je špatný request volajícího) — frontend ho pozná a řekne
-  proč je mapa prázdná; každé volání upstreamu zapíše výsledek do `mapy.Health` (→ system status)),
+  `RegisterRoutes` mounts
+  `/map` behind `RequireAuth`: `GET /map/tiles/{mapset}/{z}/{x}/{y}` (validates the mapset→400/retina from
+  the `@2x` suffix on `{y}` or `?retina=true`, with `Cache-Control: public, max-age, immutable`;
+  a **server-side cache** `tileCache` (`tilecache.go`: bounded by bytes + TTL, lazy expiry,
+  **LRU** eviction, key `mapset/z/x/y[@2x]`) — a hit is served from memory without calling mapy.com
+  (= a saved credit, on the free tier 1 tile = 1 credit), a miss is streamed and **only a success** is
+  stored (an error is **never** cached, otherwise an outage/rejected key would freeze into the map for the whole TTL);
+  a tile above `maxCachedTileBytes` (512 KiB) is streamed without caching, so it is never buffered
+  whole into RAM; the outcome is reported by the `X-Tile-Cache: hit|miss` header; errors via `writeTileError` →
+  404/429/503/502 and **401/403 → `StatusMapKeyRejected` (424)**, i.e. a dedicated status for *our
+  rejected key* (a raw 403 would lie that the caller's request is bad) — the frontend recognises it and says
+  why the map is empty; every upstream call records its outcome into `mapy.Health` (→ system status)),
   `GET /map/rgeocode
-  ?lat=&lng=` (parsuje+range-checkuje souřadnice→400, **TTL+capacity cache** `ttlCache[GeocodeResult]`
-  klíč = souřadnice na 5 desetin, uncached lookup přes **token-bucket** `rateLimiter`→429 šetří kredity,
-  odpověď zjednodušená + `Cache-Control: private`), `GET /map/geocode?q=&limit=` (`geocode.go`:
-  našeptávač pro editor polohy; pořadí guardů je dané cenou — prázdné/>200 znaků `q` → 400 **před**
-  voláním, pak `ttlCache[[]Place]` (klíč = `limit` + casefoldnutý dotaz se sraženými mezerami,
-  **diakritika zůstává** — `veseli`/`veselí` jsou nahoře různé dotazy), a teprve zbytek jde na
-  **stejný `rateLimiter` jako rgeocode** (jeden kreditový rozpočet = jeden limiter) → 429; klient
-  navíc debouncuje, tohle je půlka škrtiče, kterou nejde obejít. `limit` se **ořízne**
-  (`mapy.ClampGeocodeLimit`), ne 400. `mapy.ErrNotFound` (404 nahoře) se překlápí na **prázdný
-  `items` + 200**; jinak `writeGeocodeError` jako u rgeocode. Cache `ttlCache` (`cache.go`,
-  generická: TTL + capacity, lazy expiry, evikce nejdřív-expirujícího — schválně **ne LRU**, na
-  rozdíl od `tileCache`, protože všechny záznamy jsou stejně drahé), default 2000 záznamů),
-  `GET /map/photos` (GeoJSON
-  **FeatureCollection**, `parseGeoParams` vynutí `HasGPS=true` + ctí `taken_after`/`taken_before`/
-  `album`/`label`/`archived`, `Limit=MaxGeoPhotos`, řazení taken_at desc; každá feature
-  `Point` se souřadnicí RFC 7946 `[lng,lat]` a properties `uid`/`title`/`taken_at`/`media_type`/
-  relativní `thumb` cesta `tile_224`, fotky bez obou souřadnic se přeskočí); defaulty cache 24h /
-  tile cache 64 MiB + 24h / rate 5/s burst 10 / max 50000 features; mountuje se `server.WithAPI`
-  (`buildMapsAPI` v `cmd/kukatko/maps.go`, klient i `mapy.Health` se staví jen když je
-  `maps.mapy_api_key` nastaven — `newMapsHealth`; stejný tracker dostane i `buildSystemAPI`)),
+  ?lat=&lng=` (parses+range-checks the coordinates→400, a **TTL+capacity cache** `ttlCache[GeocodeResult]`
+  keyed by the coordinates to 5 decimals, an uncached lookup goes through the **token-bucket** `rateLimiter`→429 to save credits,
+  the response simplified + `Cache-Control: private`), `GET /map/geocode?q=&limit=` (`geocode.go`:
+  the type-ahead for the location editor; the order of the guards follows cost — an empty/>200-character `q` → 400 **before**
+  the call, then `ttlCache[[]Place]` (key = `limit` + the case-folded query with collapsed spaces,
+  **diacritics are kept** — `veseli`/`veselí` are different queries upstream), and only the rest goes to
+  **the same `rateLimiter` as rgeocode** (one credit budget = one limiter) → 429; the client
+  debounces on top of that, this is the half of the throttle that cannot be bypassed. `limit` is **clamped**
+  (`mapy.ClampGeocodeLimit`), not a 400. `mapy.ErrNotFound` (a 404 upstream) is turned into an **empty
+  `items` + 200**; otherwise `writeGeocodeError` as with rgeocode. The `ttlCache` cache (`cache.go`,
+  generic: TTL + capacity, lazy expiry, eviction of the soonest-expiring — deliberately **not LRU**, unlike
+  `tileCache`, because every entry is equally expensive), default 2000 entries),
+  `GET /map/photos` (a GeoJSON
+  **FeatureCollection**, `parseGeoParams` forces `HasGPS=true` + honours `taken_after`/`taken_before`/
+  `album`/`label`/`archived`, `Limit=MaxGeoPhotos`, ordering taken_at desc; every feature is a
+  `Point` with an RFC 7946 `[lng,lat]` coordinate and the properties `uid`/`title`/`taken_at`/`media_type`/
+  the relative `thumb` path `tile_224`, photos missing either coordinate are skipped); defaults cache 24h /
+  tile cache 64 MiB + 24h / rate 5/s burst 10 / max 50000 features; mounted by `server.WithAPI`
+  (`buildMapsAPI` in `cmd/kukatko/maps.go`, both the client and `mapy.Health` are built only when
+  `maps.mapy_api_key` is set — `newMapsHealth`; `buildSystemAPI` gets the same tracker)),
   `internal/places/`
-  (DB vrstva pro **cache reverse-geocoded místa** fotky — country/region/city/place_name resolvnuté
-  z GPS přes mapy.com a uložené, aby šla knihovna procházet/filtrovat dle lokality bez opakovaného
-  volání rate-limitovaného geokodéru; **schema choice: vedlejší tabulka `photo_places`** (ne sloupce
-  na široké `photos`) keyovaná `photo_uid` FK `ON DELETE CASCADE` — místo je řídké (jen geotagované
-  fotky mají řádek) a je to odvozená regenerovatelná cache plněná asynchronně jobem, zrcadlí
-  `face_detections`/`user_ratings`; migrace `0018_photo_places.sql`: `photo_uid PK`, `country`/
-  `region`/`city`/`place_name TEXT NOT NULL DEFAULT ''`, `lat`/`lng DOUBLE PRECISION` (souřadnice,
-  ze kterých byl geokód spočítán — detekce změny pozice → re-geokód; NULL u fotky bez GPS, jejíž
-  řádek jen značí "zpracováno"), `geocoded_at TIMESTAMPTZ`, indexy na `country` a `city` (grouping/
-  filtering dle lokality); `Store` = `NewStore(pool)`: `GetPlace(photoUID)` (`ErrPlaceNotFound`)/
-  `SavePlace(Place)` (upsert na `photo_uid`, stampne `geocoded_at`)/`ListPhotosMissingPlaces(limit)`
-  (uid nearchivovaných **geotagovaných** fotek bez `photo_places` řádku, newest-first, LEFT JOIN —
-  podklad backfillu)), `internal/placesjob/`
-  (zapojení reverse geokódování do fronty, vše za rozhraními `PhotoStore`/`PlaceStore`/`Geocoder`
-  (podmnožina `mapy.Client`, fakeovatelná)/`Enqueuer`/`RateLimiter` → unit-testovatelné s faky bez
-  sítě/DB; `Service` = `New(Config{Photos,Places,Geocoder,Enqueuer,Limiter,OfflineRetryDelay,
-  RateLimitDelay})` (panika na nil Photos/Places/Geocoder/Enqueuer, `Limiter` nil → always-allow);
-  **handler `places`** `Handle`(=`worker.HandlerFunc`, registrovaný v `serve` když je mapy klíč
-  nastaven) → z payloadu `{"photo_uid"}` načte fotku; **idempotentní** (fotka s místem cachovaným pro
-  **aktuální** souřadnice se přeskočí; změna souřadnic → re-geokód), fotka **bez GPS** → uloží prázdný
-  "processed" marker (nikdy se neretryuje); jinak `mapy.ReverseGeocode(lat,lng)` → `parsePlace`
-  parsuje `regional_structure` (typy `regional.country`/`region`/`municipality`, prefix `regional.`
-  volitelný) na country/region/city + place_name = nejspecifičtější label, uloží přes
-  `places.SavePlace` se zdrojovými souřadnicemi; **mapy.com nedostupné/rate-limited**
-  (`mapy.ErrUnavailable`/`ErrRateLimited`) → `worker.RetryAfter(5 min)` (odložení bez spálení pokusu,
-  zrcadlí embed job), **`mapy.ErrNotFound`** → processed marker se souřadnicemi (neretryuje se forever),
-  jiná chyba normální retry; **respekt k mapy.com kreditům**: `RateLimiter` (token-bucket `NewTokenBucket(
-  ratePerSec,burst)`, zrcadlí geocode proxy limiter; `maps.geocode_rate_per_sec`/`geocode_burst`) — když
-  je prázdný, `worker.RetryAfter(1 min)` (zpracovat pomalu je OK); `BackfillPlaces(ctx)` zařadí `places`
-  pro každou geotagovanou fotku bez místa (dedup no-op), vrací počet), `internal/importer/`
-  (evidence běhů importu/migrace + high-watermarky pro **inkrementální, idempotentní** import,
-  tabulka `import_runs` v migraci `0013_import_runs.sql`: `id BIGSERIAL`, `source TEXT`
+  (the DB layer for the **cache of a photo's reverse-geocoded place** — country/region/city/place_name resolved
+  from GPS via mapy.com and stored, so the library can be browsed/filtered by locality without repeatedly
+  calling the rate-limited geocoder; **schema choice: the side table `photo_places`** (not columns
+  on the wide `photos`) keyed by `photo_uid` FK `ON DELETE CASCADE` — the place is sparse (only geotagged
+  photos have a row) and it is a derived, regenerable cache filled asynchronously by a job, mirroring
+  `face_detections`/`user_ratings`; migration `0018_photo_places.sql`: `photo_uid PK`, `country`/
+  `region`/`city`/`place_name TEXT NOT NULL DEFAULT ''`, `lat`/`lng DOUBLE PRECISION` (the coordinates
+  the geocode was computed from — detecting a position change → re-geocode; NULL for a photo without GPS, whose
+  row only marks "processed"), `geocoded_at TIMESTAMPTZ`, indexes on `country` and `city` (grouping/
+  filtering by locality); `Store` = `NewStore(pool)`: `GetPlace(photoUID)` (`ErrPlaceNotFound`)/
+  `SavePlace(Place)` (upsert on `photo_uid`, stamps `geocoded_at`)/`ListPhotosMissingPlaces(limit)`
+  (uids of non-archived **geotagged** photos with no `photo_places` row, newest-first, LEFT JOIN —
+  the basis of the backfill)), `internal/placesjob/`
+  (wiring reverse geocoding into the queue, all behind the interfaces `PhotoStore`/`PlaceStore`/`Geocoder`
+  (a subset of `mapy.Client`, fakeable)/`Enqueuer`/`RateLimiter` → unit-testable with fakes without
+  network/DB; `Service` = `New(Config{Photos,Places,Geocoder,Enqueuer,Limiter,OfflineRetryDelay,
+  RateLimitDelay})` (panics on nil Photos/Places/Geocoder/Enqueuer, `Limiter` nil → always-allow);
+  **the `places` handler** `Handle`(=`worker.HandlerFunc`, registered in `serve` when the mapy key is
+  set) → loads the photo from the `{"photo_uid"}` payload; **idempotent** (a photo whose place is cached for its
+  **current** coordinates is skipped; a coordinate change → re-geocode), a photo **without GPS** → stores an empty
+  "processed" marker (never retried); otherwise `mapy.ReverseGeocode(lat,lng)` → `parsePlace`
+  parses `regional_structure` (the types `regional.country`/`region`/`municipality`, the `regional.` prefix
+  optional) into country/region/city + place_name = the most specific label, and stores it via
+  `places.SavePlace` with the source coordinates; **mapy.com unavailable/rate-limited**
+  (`mapy.ErrUnavailable`/`ErrRateLimited`) → `worker.RetryAfter(5 min)` (a deferral without burning an attempt,
+  mirrors the embed job), **`mapy.ErrNotFound`** → a processed marker with the coordinates (not retried forever),
+  another error a normal retry; **respect for mapy.com credits**: `RateLimiter` (token-bucket `NewTokenBucket(
+  ratePerSec,burst)`, mirrors the geocode proxy limiter; `maps.geocode_rate_per_sec`/`geocode_burst`) — when
+  it is empty, `worker.RetryAfter(1 min)` (processing slowly is OK); `BackfillPlaces(ctx)` enqueues `places`
+  for every geotagged photo without a place (dedup no-op), returns the count), `internal/importer/`
+  (bookkeeping of import/migration runs + high-watermarks for an **incremental, idempotent** import,
+  the `import_runs` table in migration `0013_import_runs.sql`: `id BIGSERIAL`, `source TEXT`
   CHECK `photoprism|photosorter`, `started_at`/`finished_at TIMESTAMPTZ`, `status TEXT`
-  CHECK `running|done|failed`, `high_watermark TIMESTAMPTZ` (největší zpracovaný zdrojový
-  timestamp, např. max PhotoPrism `UpdatedAt`), `counts JSONB` `{imported,updated,skipped,failed}`,
-  `last_error TEXT`; partial index `(source, finished_at DESC) WHERE status='done' AND
-  high_watermark IS NOT NULL` pro resume dotaz; typy `Source` (`SourcePhotoPrism`/
+  CHECK `running|done|failed`, `high_watermark TIMESTAMPTZ` (the largest processed source
+  timestamp, e.g. max PhotoPrism `UpdatedAt`), `counts JSONB` `{imported,updated,skipped,failed}`,
+  `last_error TEXT`; a partial index `(source, finished_at DESC) WHERE status='done' AND
+  high_watermark IS NOT NULL` for the resume query; the types `Source` (`SourcePhotoPrism`/
   `SourcePhotoSorter` + `Valid()`)/`Status` (`StatusRunning`/`StatusDone`/`StatusFailed`)/`Counts`/
-  `Run`; `Store` = `NewStore(pool)`: `Start(ctx,source)` otevře `running` řádek (`ErrInvalidSource`),
-  `UpdateCounts(ctx,id,counts)` přepíše tally, `Complete(ctx,id,watermark,counts)` uzavře jako
-  `done` se stampnutým `finished_at`+watermarkem, `Fail(ctx,id,lastErr,counts)` jako `failed`
-  **bez** watermarku (oba matchují jen běžící běh → `ErrRunNotFound` na dvojí uzavření),
-  `Get(ctx,id)`, `LatestWatermark(ctx,source)` → `(time.Time, found bool, err)` watermark
-  **posledního úspěšného** běhu zdroje pro navázání dalšího inkrementu — ignoruje běžící/failed
-  běhy i done bez watermarku, každý zdroj má vlastní kurzor, `LatestRun(ctx,source)` →
-  `(Run, found bool, err)` **nejnovější běh zdroje bez ohledu na stav** (running/done/failed —
-  na rozdíl od `LatestWatermark` nefiltruje status; podklad system-status dashboardu),
-  `List(ctx,limit,offset)` stránka běhů
-  **přes všechny zdroje** newest-started-first (limit clamp `[1,200]`, default 50, non-nil prázdná
-  stránka) — podklad admin historie importů; sentinely
-  `ErrRunNotFound`/`ErrInvalidSource`; **`import_failures`** (migrace `0042_import_failures.sql`) uchovává
-  jednotlivé **per-foto i per-soubor** vady běhu, které dřív šly jen do `slog.Warn` a mizely (satelity —
-  markery/album membership/edity/pHash/soubory): `Failure`
+  `Run`; `Store` = `NewStore(pool)`: `Start(ctx,source)` opens a `running` row (`ErrInvalidSource`),
+  `UpdateCounts(ctx,id,counts)` overwrites the tally, `Complete(ctx,id,watermark,counts)` closes it as
+  `done` with `finished_at`+the watermark stamped, `Fail(ctx,id,lastErr,counts)` as `failed`
+  **without** a watermark (both match a running run only → `ErrRunNotFound` on a double close),
+  `Get(ctx,id)`, `LatestWatermark(ctx,source)` → `(time.Time, found bool, err)` the watermark
+  of the source's **last successful** run, for chaining the next increment — it ignores running/failed
+  runs and done ones without a watermark, each source has its own cursor, `LatestRun(ctx,source)` →
+  `(Run, found bool, err)` **the newest run of the source regardless of state** (running/done/failed —
+  unlike `LatestWatermark` it does not filter by status; the basis of the system-status dashboard),
+  `List(ctx,limit,offset)` a page of runs
+  **across all sources** newest-started-first (limit clamp `[1,200]`, default 50, a non-nil empty
+  page) — the basis of the admin import history; the sentinels
+  `ErrRunNotFound`/`ErrInvalidSource`; **`import_failures`** (migration `0042_import_failures.sql`) keeps
+  the individual **per-photo and per-file** defects of a run, which used to go only into `slog.Warn` and vanish (satellites —
+  markers/album membership/edits/pHash/files): `Failure`
   (`RunID`/`Source`/`Stage`/`PhotoUID`/`SourceRef`/`Detail`/`Error`/`CreatedAt`/`ResolvedAt`), `Stage` ∈
-  `photo|file|marker|album_member|label|thumbnail|embedding|faces|phash|edit|metadata`, helper
+  `photo|file|marker|album_member|label|thumbnail|embedding|faces|phash|edit|metadata`, the helper
   `NewFailure(runID,source,stage,photoUID,sourceRef,detail,err)`; `RecordFailures(ctx,[]Failure)` (batch),
   `CountUnresolvedFailures(ctx,id)`, `ListFailures(ctx,FailureFilter{RunID,Source,UnresolvedOnly,Limit,Offset})`.
-  **`Complete` teď auto-detekuje status**: běh s ≥1 nevyřešenou vadou se uzavře jako nový `StatusPartial`
-  (`partial`, 0042 rozšiřuje status CHECK) místo `done` — a stejně jako failed **neposune watermark**
-  (`LatestWatermark` čte jen `done`), takže re-run okno zopakuje (importy jsou idempotentní). 0042 zároveň
-  obnoví `folder` v source CHECK, které `0041` omylem zahodilo. Import services (ppimport/psimport/
-  psfeedsimport/dirimport) sbírají vady do `runState` a persistují je přes `RecordFailures` před `Complete`),
+  **`Complete` now auto-detects the status**: a run with ≥1 unresolved defect closes as the new `StatusPartial`
+  (`partial`, 0042 extends the status CHECK) instead of `done` — and, like failed, it **does not move the watermark**
+  (`LatestWatermark` reads only `done`), so a re-run repeats the window (imports are idempotent). 0042 also
+  restores `folder` in the source CHECK, which `0041` dropped by mistake. The import services (ppimport/psimport/
+  psfeedsimport/dirimport) collect defects into `runState` and persist them via `RecordFailures` before `Complete`),
   `internal/importverify/`
-  (**nástroj úplnosti importu** — read-only rekonciliace zdrojů proti katalogu, řekne „import je kompletní a
-  nic nechybí“: `Service` = `NewService(Config{PhotoPrism,Feeds,Catalog,SampleLimit,AlbumTypes,Logger})`
-  (panika na nil PhotoPrism/Catalog), `Verify(ctx)` → `Report`; interní úzká rozhraní `PhotoPrismSource`
-  (List Photos/Albums/Labels/Subjects), `FeedsSource` (`Stats` = photo-sorter feedy `/stats`), `Catalog`
-  (pool-backed `Store = NewStore(pool)`: `ImportedRefs`/`OriginalFileCounts`/`Counts`/`PhotosMissing
-  Embeddings`/`PhotosMissingFaces`/`AlbumTitles`/`LabelNames`/`SubjectNames`); `Verify` projde **celou**
-  PhotoPrism knihovnu stránkováním `ListPhotos`, klasifikuje foto jako matched/**deduplicated** (uid chybí,
-  ale primární SHA1 hash je už naimportovaný — účet za SHA256/SHA1 dedup)/**missing**, a matched foto s
-  méně `original` soubory v katalogu než má PhotoPrism `Files[]` → **file gap** (zahozený sourozenec);
-  `OriginalFileCounts` počítá **přes celý stack**, ne jen přes ten jeden řádek: sourozenecké soubory
-  záběru jsou vlastní řádky bez `photoprism_uid` seskupené za zobrazitelným originálem (viz
-  `ppimport/siblings.go`), takže počítání po řádku by u kompletně naimportovaného RAW+JPEG hlásilo
-  file gap napořád;
-  `Report{photoprism,vectors,structure,complete}` (per-sekce zdroj vs katalog + capnutý seznam chybějících +
-  plné počty); `complete=true` jen když nic nechybí; **nezapisuje** `import_runs`), `internal/photoprism/`
-  (read-only HTTP klient k běžící instanci PhotoPrismu — podklad inkrementálního importu, vše za
-  rozhraním `Client` (fakeovatelné): `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryBaseDelay,
-  RetryMaxDelay,HTTPClient})` → `*HTTPClient`, `ErrInvalidURL` na nevalidní base URL; **autentizace**
-  dlouhožijícím app password/access tokenem v hlavičce `Authorization: Bearer` na **každém**
-  requestu (ne per-request login); `ListPhotos(ctx,PhotoListParams{Count,Offset,UpdatedSince,Order,
+  (**an import-completeness tool** — a read-only reconciliation of the sources against the catalogue, it answers "the
+  import is complete and nothing is missing": `Service` = `NewService(Config{PhotoPrism,Feeds,Catalog,SampleLimit,AlbumTypes,Logger})`
+  (panics on nil PhotoPrism/Catalog), `Verify(ctx)` → `Report`; the internal narrow interfaces `PhotoPrismSource`
+  (List Photos/Albums/Labels/Subjects), `FeedsSource` (`Stats` = the photo-sorter `/stats` feed), `Catalog`
+  (the pool-backed `Store = NewStore(pool)`: `ImportedRefs`/`OriginalFileCounts`/`Counts`/`PhotosMissing
+  Embeddings`/`PhotosMissingFaces`/`AlbumTitles`/`LabelNames`/`SubjectNames`); `Verify` walks the **whole**
+  PhotoPrism library by paging `ListPhotos`, classifies a photo as matched/**deduplicated** (the uid is missing,
+  but the primary SHA1 hash is already imported — the bill for the SHA256/SHA1 dedup)/**missing**, and a matched photo with
+  fewer `original` files in the catalogue than PhotoPrism's `Files[]` → a **file gap** (a dropped sibling);
+  `OriginalFileCounts` counts **across the whole stack**, not just over that one row: a shot's sibling files
+  are rows of their own without a `photoprism_uid`, grouped behind the displayable original (see
+  `ppimport/siblings.go`), so counting per row would report a file gap forever for a fully imported
+  RAW+JPEG;
+  `Report{photoprism,vectors,structure,complete}` (per section source vs catalogue + a capped list of the missing +
+  full counts); `complete=true` only when nothing is missing; **it does not write** `import_runs`), `internal/photoprism/`
+  (a read-only HTTP client of a running PhotoPrism instance — the basis of the incremental import, all behind
+  the `Client` interface (fakeable): `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryBaseDelay,
+  RetryMaxDelay,HTTPClient})` → `*HTTPClient`, `ErrInvalidURL` on an invalid base URL; **authentication**
+  with a long-lived app password/access token in the `Authorization: Bearer` header on **every**
+  request (not a per-request login); `ListPhotos(ctx,PhotoListParams{Count,Offset,UpdatedSince,Order,
   AlbumUID,Query})`
   → `GET /api/v1/photos?count=…&offset=…&merged=true&order=updated[&q=updated:"<RFC3339>"]`
-  pro **inkrementální** pull (UpdatedSince→filtr `updated:`, count ořez na `MaxCount` 1000, caller
-  pageuje přes offset); **scope pro mapování členství**: `AlbumUID`→`s=<albumUID>` (fotky alba),
-  `Query`→`q=` natvrdo (přebije watermark, pro `label:"<slug>"`); parsuje
+  for an **incremental** pull (UpdatedSince→the `updated:` filter, count clamped to `MaxCount` 1000, the caller
+  pages via offset); **scope for mapping membership**: `AlbumUID`→`s=<albumUID>` (an album's photos),
+  `Query`→`q=` verbatim (overrides the watermark, for `label:"<slug>"`); it parses
   UID/TakenAt/Lat/Lng/Altitude/Title/**Caption**/Type/Width/Height/
   OriginalName/**Scan**/**CameraSerial**/Camera/Lens/EXIF + `Files[]` (UID, **Hash=SHA1**, Primary,
   Mime, `Video`/`Codec`/**`ColorProfile`**/**`Projection`**, `Markers[]`),
-  `Photo.PrimaryFile()` vrátí primární soubor, `File.IsVideo()` (Video flag/`video/*` mime),
-  `Photo.VideoFile()` (motion soubor video/live fotky) a `Photo.StillFile()` (still fotky);
-  **`Caption` je živé pole, `Description` mrtvé** — PP přejmenoval `photo_description` na
-  `photo_caption` (`description_src`→`caption_src`) a starý Go field má `gorm:"-"`, takže se
-  **neperzistuje a vždy přijde prázdný**; obojí je namodelováno (Caption = co odpoví dnešní instance,
-  Description = co stará) a importér bere první neprázdné;
+  `Photo.PrimaryFile()` returns the primary file, `File.IsVideo()` (the Video flag/`video/*` mime),
+  `Photo.VideoFile()` (the motion file of a video/live photo) and `Photo.StillFile()` (the still one);
+  **`Caption` is the live field, `Description` a dead one** — PP renamed `photo_description` to
+  `photo_caption` (`description_src`→`caption_src`) and the old Go field has `gorm:"-"`, so it is
+  **not persisted and always comes back empty**; both are modelled (Caption = what today's instance answers,
+  Description = what an old one did) and the importer takes the first non-empty one;
   `ListAlbums`/`ListLabels`/`ListSubjects(ctx,ListParams
-  {Count,Offset,Type})` → `GET /api/v1/{albums,labels,subjects}`, markery z `Files[].Markers[]`;
-  **`GetPhoto(ctx,uid)`** → `GET /api/v1/photos/{uid}` vrací `PhotoDetail` = `Photo` +
-  **`Details`** (`{Keywords,Notes,Subject,Artist,Copyright,License,Software}` — IPTC/XMP kredity,
-  které PP drží ve vedlejší tabulce; fotka indexovaná starou verzí nemá `photo_details` řádek vůbec →
-  přijde `null` → zero value) + **`Albums[]`** (všechna alba fotky, libovolného typu) + **`Labels[]`**
-  (`PhotoLabel{LabelSrc,Uncertainty,Label}`). **Výpis fotek (`?merged=true`) je plochá search
-  struktura a nenese z toho NIC**: žádný `Details` objekt (tedy ani Subject/Artist/Copyright/License/
-  Keywords/Notes/Software), žádný `CameraSerial`, `Files[].Markers` **vždy prázdné** a
-  `Files[].Codec`/`ColorProfile`/`Projection` taky (`Caption`, `Scan` a `OriginalName` naopak
-  **ve výpisu jsou**). Stojí 1 request na fotku, takže ho volá **scoped import** pro každou fotku a
-  plný import jen pro fotky, které **zapisuje** nebo se kterými zdroj **hnul** po watermarku
-  (`ppimport.importPhotoDetail`); prázdné uid → `ErrBadResponse`, neznámé → `ErrNotFound`;
-  **`Type` je u alb povinný** — `/api/v1/albums` bez typu (i s víc typy naráz, `album,folder`) vrací
-  **400 „Permission denied"**, takže katalog alb se prochází typ po typu (`AlbumTypes` =
-  album/folder/moment/state/month); štítky a subjekty typ neberou a ignorují ho;
-  `DownloadOriginal(ctx,fileHash)` → `GET /api/v1/dl/{hash}?t=<download_token>` **streamuje** originál
-  (`Download{Body,ContentType,ContentLength}`, tělo vlastní caller; nikdy celý v RAM přes
-  `cancelReadCloser`), **download token** z create-session `POST /api/v1/session`
-  (`config.downloadToken`) thread-safe cachovaný, **rotuje** → přebírá se z hlavičky
-  `X-Download-Token`, na 401/403 jednou obnoví session a zopakuje; **robustnost** 429 →
-  exponenciální backoff ctící `Retry-After`, JSON endpointy vyžadují `Content-Type:
-  application/json`; typové chyby `ErrInvalidURL`/`ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/
-  `ErrUpstream`/`ErrUnavailable`/`ErrBadResponse` nikdy nenesou token ani tělo odpovědi; konfig
-  `import.photoprism.{base_url,token,page_size}`; klient staví importér (`ppimport`)),
+  {Count,Offset,Type})` → `GET /api/v1/{albums,labels,subjects}`, markers from `Files[].Markers[]`;
+  **`GetPhoto(ctx,uid)`** → `GET /api/v1/photos/{uid}` returns `PhotoDetail` = `Photo` +
+  **`Details`** (`{Keywords,Notes,Subject,Artist,Copyright,License,Software}` — the IPTC/XMP credits
+  PP keeps in a side table; a photo indexed by an old version has no `photo_details` row at all →
+  `null` arrives → a zero value) + **`Albums[]`** (all of the photo's albums, of any type) + **`Labels[]`**
+  (`PhotoLabel{LabelSrc,Uncertainty,Label}`). **The photo listing (`?merged=true`) is a flat search
+  structure and carries NONE of that**: no `Details` object (hence no Subject/Artist/Copyright/License/
+  Keywords/Notes/Software), no `CameraSerial`, `Files[].Markers` **always empty** and
+  `Files[].Codec`/`ColorProfile`/`Projection` too (`Caption`, `Scan` and `OriginalName`, by contrast,
+  **are in the listing**). It costs 1 request per photo, so the **scoped import** calls it for every photo and
+  a full import only for photos it **writes** or that the source **moved** after the watermark
+  (`ppimport.importPhotoDetail`); an empty uid → `ErrBadResponse`, an unknown one → `ErrNotFound`;
+  **`Type` is mandatory for albums** — `/api/v1/albums` without a type (even with several types at once, `album,folder`) returns
+  **400 "Permission denied"**, so the album catalogue is walked type by type (`AlbumTypes` =
+  album/folder/moment/state/month); labels and subjects do not take a type and ignore it;
+  `DownloadOriginal(ctx,fileHash)` → `GET /api/v1/dl/{hash}?t=<download_token>` **streams** the original
+  (`Download{Body,ContentType,ContentLength}`, the body is owned by the caller; never held whole in RAM thanks to
+  `cancelReadCloser`), the **download token** from the create-session `POST /api/v1/session`
+  (`config.downloadToken`) cached thread-safely, it **rotates** → it is picked up from the
+  `X-Download-Token` header, and on a 401/403 the session is refreshed once and the call repeated; **robustness** 429 →
+  exponential backoff honouring `Retry-After`, JSON endpoints require `Content-Type:
+  application/json`; the typed errors `ErrInvalidURL`/`ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/
+  `ErrUpstream`/`ErrUnavailable`/`ErrBadResponse` never carry the token or the response body; config
+  `import.photoprism.{base_url,token,page_size}`; the client is built by the importer (`ppimport`)),
   `internal/ppimport/`
-  (read-only, **inkrementální a idempotentní** import z PhotoPrismu — vše za rozhraními
+  (a read-only, **incremental and idempotent** import from PhotoPrism — all behind the interfaces
   `PhotoPrismClient`/`RunStore`/`PhotoStore`/`Storage`/`Thumbnailer`/`AlbumStore`/`LabelStore`/
-  `PeopleStore`/`Enqueuer`/`VideoProber` → unit-testovatelné s faky; `Service` = `New(Config{Client,Runs,Photos,
+  `PeopleStore`/`Enqueuer`/`VideoProber` → unit-testable with fakes; `Service` = `New(Config{Client,Runs,Photos,
   Storage,Thumbnailer,Albums,Labels,People,Enqueuer,Prober,PageSize,TempDir,MaxFileSize,Logger})`
-  (`Prober` volitelný — nil → `defaultProber` nad `video.Probe`);
-  **`Import(ctx) (Result,error)`** otevře `import_runs` běh, navrhne na poslední úspěšný watermark a:
-  (1) pageuje `ListPhotos(UpdatedSince=watermark)` — per fotka dedup dle `photoprism_uid` (už
-  importovaná → `UpdateMetadata` jen při změně, jinak skip), jinak **vybere média** (`selectMedia`,
-  `video.go`): PP `Type` video/animated → **stáhne samotný video soubor** (`Photo.VideoFile()`,
-  media_type `video`, video soubor bez streamu graceful → image), live → **still jako primární
-  originál + motion klip jako sidecar** (`Photo.StillFile()`+`VideoFile()`, media_type `live`),
-  jinak image; **stáhne** vybraný originál do
-  tempu + **SHA256**, dedup dle `file_hash` (shodný obsah → backfill ID přes
-  `photos.SetPhotoprismRef`, žádná nová fotka), uloží originál, **probne video metadata**
-  (`Prober.Probe` → `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`; u video z originálu,
-  u live z motion klipu; best-effort, selhání → nulová pole), `photos.Create` s **PP metadaty**
-  (title/**caption**/taken_at/GPS/camera/EXIF) + media_type + video metadata + `photoprism_uid`/`photoprism_file_hash` + **EXIF orientace
-  ze souboru** (PP ji nevystavuje — `exif.Extract` doplní geometrii/orientaci/MIME, PP přebije
-  kurátorská pole), **u live** stáhne+uloží motion klip jako `RoleSidecar` photo_file (best-effort),
-  náhledy (u videa **poster frame** přes thumbnailer/ffmpeg) a **enqueue `image_embed`** (na posteru)
-  **+`face_detect`**; counts **checkpoint po každé
-  stránce** přes `UpdateCounts`. **Popisek se bere z `Caption`, ne z `Description`** (`metadata.go`,
-  `caption()`): `photo_description` je v PP mrtvý sloupec (přejmenovaný na `photo_caption`, Go field
-  `gorm:"-"`), takže čtení `Description` tiše zahazovalo **každý** popisek v knihovně. Precedence
-  update patche: **PP vyhraje, když má hodnotu, ale prázdná PP hodnota nikdy nesmaže neprázdnou
-  Kukátkovou** (`UpdateMetadata` přepisuje celý řádek, takže titulek smazaný ve zdroji by jinak
-  zničil ten, co napsal uživatel); `notes`/`ai_note` a IPTC kredity se patchem **protahují beze
-  změny** (mapují se z detailu, ne z výpisu), stejně tak `taken_at_estimated`/`taken_at_note` —
-  PhotoPrism přibližné datum vůbec nezná, je to Kukátkovo pole a inkrement ho nesmí přepsat.
-  **Lokální editace vyhrává nad re-importem** (migrace `0043`, `metadataUpdate`): re-list fotku
-  přinese pokaždé, když PP hne jejím `UpdatedAt` (reindex, změna štítku, i view) — mimo kontrolu
-  uživatele — takže inkrement nesmí vrátit editaci udělanou v Kukátku. Každé zdrojové pole ustoupí
-  své **local-edit provenienci**: `title` když je `title_edited`, `taken_at` když
-  `taken_at_source = 'manual'`, `lat`/`lng`/`altitude` když `location_source = 'manual'`; a
-  `private` se **jen ORuje** (`existing.Private || pp.Private`) — re-import může fotku skrýt, ale
-  nikdy nezveřejní skrytou (skryté→veřejné = únik soukromí). Netknuté pole dál sleduje zdroj.
-  Provenienci píší editační cesty (`internal/photoapi`, `internal/mcpapi`, `internal/bulk`).
-  **`Favorite` se záměrně NEMAPUJE**: Kukátkovy oblíbené
-  jsou **per-user** a import běžící jako job (nebo z CLI) nemá uživatele, komu ji připsat — a
-  `psimport` to nepřekládá taky (jeho `Favorite` je subjektův, ne fotčin);
-  (1b) **neprimární soubory = vlastní řádky v jednom stacku** (`siblings.go`, `importSiblings`):
-  PP fotka je **záběr, ne soubor** — RAW a JPEG z něj vyrenderovaný jsou jedna fotka se dvěma
-  `Files[]` — a import, který stahoval jen primární soubor, ten RAW **zahazoval** (na produkční
-  knihovně přesně 12 `type:raw` fotek; RAW nejde z ničeho zrekonstruovat). Každý další soubor se
-  proto stáhne, uloží a **katalogizuje jako vlastní fotka** (vlastní originál + `photo_files` řádek
-  `RoleOriginal`) a celá sada se **seskupí do jednoho stacku** (`photos.CreateStack`, sloupce
-  `stack_uid`/`stack_primary` z `0030`), jehož **primární je zobrazitelný originál** — ten, který
-  `Primary` označí zdroj, ne odhad `stacks.PickPrimary`. Mřížka dál ukazuje jednu dlaždici
-  (viditelnostní gate `stack_uid IS NULL OR stack_primary`) a RAW je její varianta (`stack_members`
-  v detailu, s `thumb_url`/`download_url`) místo ztraceného souboru. Výběr souborů (`siblingFiles`)
-  je **záměrně slepý k typu** (RAW, jiné kódování, vygenerovaný still u klipu — pojmenovaný seznam
-  typů by tiše zahodil ten příští), vynechá jen uložený originál a live motion klip (ten už veze
-  `linkMotion` jako `RoleSidecar` řádek **téže** fotky, takže se nezdvojí), dedupuje dle hashe a
-  soubor bez hashe zahodí (hash JE download klíč). Sourozenec **záměrně nedostane `photoprism_uid`**:
-  ten je 1:1 klíč zdrojové fotky (dedup inkrementu i join `psfeedsimport`u) a druhý řádek s ním by
-  oba udělal nejednoznačnými — identitu nese jeho vlastní `photoprism_file_hash`
-  (`photos.GetByPhotoprismFileHash`, částečný index z `0045`), podle kterého ho re-run pozná **bez
-  stažení**; obsah už katalogizovaný jinde (tentýž RAW nahraný ručně) se nezduplikuje, jen se mu
-  hash doplní (`photos.SetPhotoprismFileHash`, nikdy nepřepíše existující). Běží pro **každou
-  vylistovanou** fotku, ne jen pro čerstvý import — knihovna importovaná dřív takhle RAWy dobere —
-  a když něco přiveze, **skip se povýší na update**; jednosouborová fotka skončí ještě před prvním
-  dotazem do DB. Sourozenec dostane **jen náhledy**, žádný `image_embed`/`face_detect`: je to týž
-  záběr jako primární člen stacku, takže jeho embedding i obličeje by byly jen dvojče primárního
-  (trvalý self-duplikát v podobnostním hledání a druhá kopie každého obličeje) u řádku, který
-  knihovna samostatně nikdy neukáže. Archivovaný sourozenec se do stacku nevrací (uživatel ho
-  stáhl z oběhu) a **kurátorský stack se nerozpouští**: když už fotka ve stacku je, přiberou se
-  jeho členové a jeho primární zůstane. Selhání jednoho souboru je **per-file failure**
-  (`StageFile` → běh `partial`), fotku samotnou nikdy neshodí;
-  (2) **detail fotky** (`details.go`, `importPhotoDetail`) — **POZOR: půlku toho, co PP o fotce ví,
-  servíruje JEN detail endpoint**, výpis je plochá search struktura bez `Details` objektu a s
-  **vždy prázdnými** `Files[].Markers` (na tomhle import dřív tiše nepřivezl nikoho). Z **jednoho**
-  `GetPhoto` se proto veze všechno najednou: **IPTC/XMP kredity** (`Details.Subject`/`Artist`/
-  `Copyright`/`License`/`Keywords`/`Software` + `Details.Notes` **jen do prázdna**), **file-technical**
-  (`Scan`, `CameraSerial`, `OriginalName`, primární `Files[].ColorProfile`/`Projection` a
-  `Files[].Codec` → `image_codec` **jen u stillů** — `video_codec`/`audio_codec` zůstávají ffprobu),
-  **markery** i (ve scoped běhu) alba a štítky. Mapuje `importMetadata` → `photos.ApplyImportMetadata`
-  (zdroj svá pole vlastní, ale prázdná hodnota nikdy nemaže; keywords se přeženou přes
-  `exif.NormalizeKeywords` a codec přes `exif.CodecToken`, aby importovaná fotka měla sloupce ve
-  **stejném slovníku** jako extrahovaná). Když detail něco přinesl, **skip se povýší na update**.
-  **Kdo detail dostane** (`wantsDetail`) je nákladová hranice importu: **scoped** běh každá fotka
-  (řez knihovny, 17 fotek = 17 requestů), **plný** běh jen fotka, kterou právě **zapsal**, nebo se
-  kterou zdroj **hnul po watermarku** (`UpdatedAt.After(since)` — editovaný copyright hne fotčiným
-  `UpdatedAt`, ale ve výpisu nezmění nic, takže běh, který se dívá jen na verdikt výpisu, by ho
-  **nikdy neuviděl**); rozhodně **ne** na každou vylistovanou fotku (inkrementální výpis servíruje
-  fotky watermarku pokaždé znovu a při prvním průchodu celou 20tis. knihovnu). Chyba detailu se
-  **jen zaloguje** (fotka zůstane importovaná, re-run to opraví). Pojmenovaný validní face marker →
-  find-or-create subjekt dle `Slugify` + přiřazený
-  marker, který si **ponechá PhotoPrism UID** → import je idempotentní (`GetMarkerByUID` → skip) a
-  identita markerů sedí s `psimport` (photo-sorterovy face řádky odkazují právě na tyhle UID, protože
-  jeho markery JSOU PhotoPrismovy). **Nově zakládaný subjekt se obohatí o `type`/`favorite`/`private`
-  z PP subjektu** (`loadSubjectIndex` přečte `ListSubjects` jednou za běh — best-effort, selhání jen
-  neobohatí — a marker svůj subjekt najde přes `Marker.SubjUID`, fallback slug jména; `newSubject` +
-  `mapSubjectType`). Obohacení **jen při založení**: existující (třeba editovaný) subjekt zůstane beze
-  změny, takže re-run nepřepíše lokální úpravu (symetrie s `psimport`). Obličeje si k markerům dopáruje
-  `facematch` přes IoU;
-  (3) **alba & štítky** find-or-create dle názvu (mapa z
-  `ListAlbums`/`ListLabels`), členství přes scopnutý `ListPhotos` (`AlbumUID`/`label:"<slug>"`) →
-  idempotentní `AddPhoto`/`AttachLabel`; pak běh `Complete` s watermarkem; **per-fotka chyba** se
-  zaznamená do `counts.failed` a **nepřeruší běh** (jen infrastrukturní chyba běh `Fail`ne), 429
-  backoff řeší klient, **watermark se nikdy neposune za nejstarší selhání** (`runState`); bezpečné
-  re-runovat. **`Handle(ctx,job)`** = `worker.HandlerFunc` pro `pp_import` (ignoruje payload, volá
-  `Import`), `JobPayload()` nese pevný sentinel `photo_uid` → dedup fronty pustí jen jeden import.
-  **`ImportScoped(ctx, Scope{AlbumUID,Label,Person,Year})`** = scoped (částečný) běh (CLI
-  `--album`/`--label`/`--person`/`--year`, `scope.go`): `Scope.Query()` složí `q=` výraz —
-  `label:"<slug>"`, `person:"<jméno>"`, `year:<YYYY>`, termy oddělené mezerou (zdroj je ANDuje,
-  hodnoty v uvozovkách kvůli mezerám ve jméně), album jde zvlášť jako `s=` → flagy se **kombinují a
-  běh zužují**; pageuje `ListPhotos(AlbumUID=…, Query=…)` **bez** watermarku (řez se natáhne celý bez
-  ohledu na stáří fotek — `q=` má u klienta přednost před filtrem watermarku). Nejdřív **ověří scope**
-  (`validateScope`, `organize.go`: album uid hledá napříč `photoprism.AlbumTypes` → neznámé
-  `ErrAlbumNotFound`, slug štítku v katalogu štítků → neznámý `ErrLabelNotFound`; kontroluje se **před**
-  stahováním, aby překlep nevypadal jako čistý běh) a pak **každá fotka přinese svůj celý kontext**
-  (`context.go`, `mapPhotoContext` nad detailem, který `importPhotoDetail` už stáhl → **všechna** alba
-  fotky (find-or-create dle
-  názvu → `AddPhoto`) i **všechny** její štítky (find-or-create dle jména → `AttachLabel` se `source`
-  a `uncertainty` ze zdroje: `manual`→`manual`, `image`→`ai`, ostatní (batch/keyword/location/…)
-  →`import`) — **i ta alba a štítky, které scope nejmenoval**, takže fotka ze tří alb importovaná přes
-  scope na jedno album skončí ve všech třech. Indexy alb/štítků se čtou 1× na běh (`photoContext`),
-  mapuje se po **každém** úspěšném outcome (i skip — fotka nezměněná nebo deduplikovaná dle obsahu do
-  svých alb patří taky), vše je idempotentní (find-or-create + `AddPhoto`/`AttachLabel`), chyba detailu
-  se **jen zaloguje** (fotka zůstane importovaná, kontext doplní re-run). Stojí to **1 request na
-  fotku** — proto to plný běh nedělá (20 tis. fotek = 20 tis. requestů) a strukturu mapuje průchodem
-  katalogu alb/štítků (`mapAlbums`/`mapLabels`); kredity, lidi a file-technical pole veze týž detail
-  (viz výš) → **scoped re-run je i cesta, jak knihovnu naimportovanou dřív dotáhnout na paritu**,
-  bez stažení jediného bajtu.
-  Uzavře se **`Complete` s `nil` watermarkem** — scoped běh vidí jen řez knihovny, takže zapsat jeho
-  nejnovější timestamp jako kurzor by přiměl další plný import přeskočit všechno starší. Prázdný scope
-  → `ErrEmptyScope` (na plný běh je `Import`), rok mimo 1826–9999 → `ErrInvalidYear`.
-  Alba se listují **po typech** (`Config.AlbumTypes`, default `DefaultAlbumTypes` = album/folder/moment/state,
-  bez `month` = 560 automatických kalendářních alb) — zdroj vyžaduje právě jeden typ na dotaz),
+  (`Prober` optional — nil → `defaultProber` over `video.Probe`);
+  **`Import(ctx) (Result,error)`** opens an `import_runs` run, resumes from the last successful watermark and:
+  (1) pages `ListPhotos(UpdatedSince=watermark)` — per photo dedup by `photoprism_uid` (already
+  imported → `UpdateMetadata` only on a change, otherwise skip), otherwise it **selects the media** (`selectMedia`,
+  `video.go`): PP `Type` video/animated → **downloads the video file itself** (`Photo.VideoFile()`,
+  media_type `video`, a video file without a stream degrades gracefully → image), live → **the still as the primary
+  original + the motion clip as a sidecar** (`Photo.StillFile()`+`VideoFile()`, media_type `live`),
+  otherwise image; it **downloads** the chosen original into
+  a temp + **SHA256**, dedupes by `file_hash` (identical content → backfill the ID via
+  `photos.SetPhotoprismRef`, no new photo), stores the original, **probes the video metadata**
+  (`Prober.Probe` → `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`; for video from the original,
+  for live from the motion clip; best-effort, a failure → zero fields), `photos.Create` with the **PP metadata**
+  (title/**caption**/taken_at/GPS/camera/EXIF) + media_type + video metadata + `photoprism_uid`/`photoprism_file_hash` + the **EXIF orientation
+  from the file** (PP does not expose it — `exif.Extract` fills in geometry/orientation/MIME, PP overrides
+  the curation fields), **for live** it downloads+stores the motion clip as a `RoleSidecar` photo_file (best-effort),
+  thumbnails (for video a **poster frame** via the thumbnailer/ffmpeg) and **enqueues `image_embed`** (on the poster)
+  **+`face_detect`**; counts are **checkpointed after every
+  page** via `UpdateCounts`. **The caption is taken from `Caption`, not from `Description`** (`metadata.go`,
+  `caption()`): `photo_description` is a dead column in PP (renamed to `photo_caption`, the Go field is
+  `gorm:"-"`), so reading `Description` silently threw away **every** caption in the library. The precedence
+  of the update patch: **PP wins when it has a value, but an empty PP value never erases a non-empty
+  Kukátko one** (`UpdateMetadata` rewrites the whole row, so a title deleted in the source would otherwise
+  destroy the one the user wrote); `notes`/`ai_note` and the IPTC credits are **carried through the patch
+  unchanged** (they are mapped from the detail, not from the listing), and so are `taken_at_estimated`/`taken_at_note` —
+  PhotoPrism does not know the approximate date at all, it is a Kukátko field and an increment must not overwrite it.
+  **A local edit beats a re-import** (migration `0043`, `metadataUpdate`): a re-list brings the photo back
+  every time PP moves its `UpdatedAt` (a reindex, a label change, even a view) — outside the user's
+  control — so an increment must not revert an edit made in Kukátko. Every source field yields to
+  its **local-edit provenance**: `title` when `title_edited`, `taken_at` when
+  `taken_at_source = 'manual'`, `lat`/`lng`/`altitude` when `location_source = 'manual'`; and
+  `private` is **only ORed** (`existing.Private || pp.Private`) — a re-import may hide a photo, but
+  never unhides a hidden one (hidden→public = a privacy leak). An untouched field keeps following the source.
+  The provenance is written by the editing paths (`internal/photoapi`, `internal/mcpapi`, `internal/bulk`).
+  **`Favorite` is deliberately NOT MAPPED**: Kukátko's favorites
+  are **per-user** and an import running as a job (or from the CLI) has no user to credit it to — and
+  `psimport` does not translate it either (its `Favorite` belongs to the subject, not to the photo);
+  (1b) **non-primary files = rows of their own in one stack** (`siblings.go`, `importSiblings`):
+  a PP photo is **a shot, not a file** — a RAW and the JPEG rendered from it are one photo with two
+  `Files[]` — and an import that downloaded only the primary file **threw that RAW away** (exactly 12
+  `type:raw` photos in the production library; a RAW cannot be reconstructed from anything). Every further file is
+  therefore downloaded, stored and **catalogued as a photo of its own** (its own original + a `photo_files` row
+  with `RoleOriginal`), and the whole set is **grouped into one stack** (`photos.CreateStack`, the columns
+  `stack_uid`/`stack_primary` from `0030`), whose **primary is the displayable original** — the one the
+  source marks `Primary`, not the guess of `stacks.PickPrimary`. The grid still shows one tile
+  (the visibility gate `stack_uid IS NULL OR stack_primary`) and the RAW is its variant (`stack_members`
+  in the detail, with `thumb_url`/`download_url`) instead of a lost file. The file selection (`siblingFiles`)
+  is **deliberately blind to type** (RAW, another encoding, a still generated for a clip — a named list of
+  types would silently drop the next one), it skips only the stored original and the live motion clip (which
+  `linkMotion` already carries as a `RoleSidecar` row of the **same** photo, so it is not doubled), dedupes by hash and
+  drops a file without a hash (the hash IS the download key). A sibling **deliberately does not get a `photoprism_uid`**:
+  that is the 1:1 key of the source photo (the increment's dedup and `psfeedsimport`'s join) and a second row carrying it would
+  make both of them ambiguous — its identity is carried by its own `photoprism_file_hash`
+  (`photos.GetByPhotoprismFileHash`, the partial index from `0045`), by which a re-run recognises it **without
+  downloading**; content already catalogued elsewhere (the same RAW uploaded by hand) is not duplicated, only its
+  hash is filled in (`photos.SetPhotoprismFileHash`, which never overwrites an existing one). It runs for **every
+  listed** photo, not just for a fresh import — that is how a library imported earlier picks its RAWs up —
+  and when it brings something in, **a skip is promoted to an update**; a single-file photo finishes before the first
+  query to the DB. A sibling gets **thumbnails only**, no `image_embed`/`face_detect`: it is the same
+  shot as the stack's primary member, so its embedding and its faces would be a mere twin of the primary's
+  (a permanent self-duplicate in similarity search and a second copy of every face) on a row the
+  library never shows on its own. An archived sibling is not rejoined to the stack (the user took it
+  out of circulation) and **a curated stack is not dissolved**: when the photo already is in a stack,
+  its members are added to that one and its primary stays. A failure of one file is a **per-file failure**
+  (`StageFile` → a `partial` run), it never brings the photo itself down;
+  (2) **the photo detail** (`details.go`, `importPhotoDetail`) — **CAREFUL: half of what PP knows about a photo
+  is served ONLY by the detail endpoint**, the listing is a flat search structure without the `Details` object and with
+  **always empty** `Files[].Markers` (this is what used to make the import silently bring in nobody). Everything is
+  therefore carried at once from **one** `GetPhoto`: the **IPTC/XMP credits** (`Details.Subject`/`Artist`/
+  `Copyright`/`License`/`Keywords`/`Software` + `Details.Notes` **only into emptiness**), the **file-technical** fields
+  (`Scan`, `CameraSerial`, `OriginalName`, the primary `Files[].ColorProfile`/`Projection` and
+  `Files[].Codec` → `image_codec` **for stills only** — `video_codec`/`audio_codec` are left to ffprobe),
+  the **markers** and (in a scoped run) the albums and labels. It maps `importMetadata` → `photos.ApplyImportMetadata`
+  (the source owns its fields, but an empty value never erases; keywords are run through
+  `exif.NormalizeKeywords` and the codec through `exif.CodecToken`, so an imported photo has its columns in the
+  **same vocabulary** as an extracted one). When the detail brought something in, **a skip is promoted to an update**.
+  **Who gets a detail** (`wantsDetail`) is the import's cost boundary: in a **scoped** run every photo
+  (a slice of the library, 17 photos = 17 requests), in a **full** run only a photo it has just **written**, or one the
+  source **moved after the watermark** (`UpdatedAt.After(since)` — an edited copyright moves the photo's
+  `UpdatedAt` but changes nothing in the listing, so a run that looks only at the listing's verdict would
+  **never see it**); definitely **not** for every listed photo (the incremental listing serves the
+  watermark's photos over and over, and on the first pass the whole 20k library). A detail error is
+  **only logged** (the photo stays imported, a re-run fixes it). A named, valid face marker →
+  find-or-create a subject by `Slugify` + an assigned
+  marker that **keeps the PhotoPrism UID** → the import is idempotent (`GetMarkerByUID` → skip) and
+  marker identity agrees with `psimport` (photo-sorter's face rows point at exactly these UIDs, because
+  its markers ARE PhotoPrism's). **A newly created subject is enriched with `type`/`favorite`/`private`
+  from the PP subject** (`loadSubjectIndex` reads `ListSubjects` once per run — best-effort, a failure only
+  means no enrichment — and a marker finds its subject via `Marker.SubjUID`, falling back to the name slug; `newSubject` +
+  `mapSubjectType`). The enrichment happens **only on creation**: an existing (possibly edited) subject stays
+  unchanged, so a re-run does not overwrite a local edit (symmetry with `psimport`). Faces are paired to the markers by
+  `facematch` via IoU;
+  (3) **albums & labels** find-or-create by name (a map from
+  `ListAlbums`/`ListLabels`), membership via a scoped `ListPhotos` (`AlbumUID`/`label:"<slug>"`) →
+  an idempotent `AddPhoto`/`AttachLabel`; then the run is `Complete`d with the watermark; a **per-photo error** is
+  recorded into `counts.failed` and **does not interrupt the run** (only an infrastructure error `Fail`s the run), 429
+  backoff is handled by the client, **the watermark never moves past the oldest failure** (`runState`); safe to
+  re-run. **`Handle(ctx,job)`** = `worker.HandlerFunc` for `pp_import` (ignores the payload, calls
+  `Import`), `JobPayload()` carries a fixed `photo_uid` sentinel → the queue's dedup lets only one import through.
+  **`ImportScoped(ctx, Scope{AlbumUID,Label,Person,Year})`** = a scoped (partial) run (CLI
+  `--album`/`--label`/`--person`/`--year`, `scope.go`): `Scope.Query()` composes the `q=` expression —
+  `label:"<slug>"`, `person:"<name>"`, `year:<YYYY>`, terms separated by a space (the source ANDs them,
+  values quoted because of spaces in a name), an album goes separately as `s=` → the flags **combine and
+  narrow** the run; it pages `ListPhotos(AlbumUID=…, Query=…)` **without** a watermark (the slice is pulled whole regardless
+  of the photos' age — in the client `q=` takes precedence over the watermark filter). First it **validates the scope**
+  (`validateScope`, `organize.go`: the album uid is looked up across `photoprism.AlbumTypes` → an unknown one is
+  `ErrAlbumNotFound`, the label slug in the label catalogue → an unknown one is `ErrLabelNotFound`; this is checked **before**
+  downloading, so that a typo does not look like a clean run) and then **every photo brings its whole context**
+  (`context.go`, `mapPhotoContext` over the detail that `importPhotoDetail` has already downloaded → **all** of the
+  photo's albums (find-or-create by
+  title → `AddPhoto`) and **all** of its labels (find-or-create by name → `AttachLabel` with the `source`
+  and `uncertainty` from the source: `manual`→`manual`, `image`→`ai`, the rest (batch/keyword/location/…)
+  →`import`) — **including the albums and labels the scope did not name**, so a photo from three albums imported via
+  a scope on one album ends up in all three. The album/label indexes are read once per run (`photoContext`),
+  mapping happens after **every** successful outcome (a skip too — a photo that is unchanged or deduplicated by content belongs
+  in its albums as well), everything is idempotent (find-or-create + `AddPhoto`/`AttachLabel`), a detail error
+  is **only logged** (the photo stays imported, a re-run fills the context in). It costs **1 request per
+  photo** — which is why a full run does not do it (20k photos = 20k requests) and maps the structure by walking the
+  album/label catalogue (`mapAlbums`/`mapLabels`); the credits, the people and the file-technical fields ride on the same detail
+  (see above) → **a scoped re-run is also the way to bring a library imported earlier up to parity**,
+  without downloading a single byte.
+  It closes with **`Complete` and a `nil` watermark** — a scoped run sees only a slice of the library, so writing its
+  newest timestamp as the cursor would make the next full import skip everything older. An empty scope
+  → `ErrEmptyScope` (a full run is `Import`), a year outside 1826–9999 → `ErrInvalidYear`.
+  Albums are listed **by type** (`Config.AlbumTypes`, default `DefaultAlbumTypes` = album/folder/moment/state,
+  without `month` = 560 automatic calendar albums) — the source requires exactly one type per query),
   `internal/photosorter/`
-  (read-only klient k PostgreSQL DB **photo-sorteru** — datový zdroj přímé migrace (ARCHITECTURE.md
-  §10), vše za `*Reader`: `New(ctx, Config{DSN,Schema,MaxConns})` otevře **vlastní** pgx pool
-  (oddělený od Kukátko) s pgvector typy registrovanými na každém spojení, volitelný `Schema` scopne
-  každý dotaz přes `search_path` (integrační test čte fake schéma vedle Kukátko tabulek); `Close()`
-  uvolní pool; `ErrInvalidDSN`. Čte **jen** tabulky migrace — `ListPhotos(PhotoListParams{UpdatedSince,
-  Limit,Offset})` (řazení `updated_at, uid`, `updated_at > $1` pro resume), `ListSubjects`/`ListAlbums`/
+  (a read-only client of **photo-sorter's** PostgreSQL DB — the data source of the direct migration (ARCHITECTURE.md
+  §10), all behind `*Reader`: `New(ctx, Config{DSN,Schema,MaxConns})` opens its **own** pgx pool
+  (separate from Kukátko's) with pgvector types registered on every connection, the optional `Schema` scopes
+  every query via `search_path` (the integration test reads a fake schema next to the Kukátko tables); `Close()`
+  releases the pool; `ErrInvalidDSN`. It reads **only** the migration's tables — `ListPhotos(PhotoListParams{UpdatedSince,
+  Limit,Offset})` (ordering `updated_at, uid`, `updated_at > $1` for the resume), `ListSubjects`/`ListAlbums`/
   `ListLabels(ListParams)`, `Embedding`/`Faces`/`FacesProcessed`/`Phash`/`Edit`/`Markers`/
-  `AlbumMemberships`/`LabelMemberships(photoUID)` — embeddingy scanují do `[]float32` (pgvector),
-  bbox do `[4]float64`; **fotoknihu ani share-linky nikdy nečte**), `internal/psimport/`
-  (read-only, **inkrementální a idempotentní** přímá migrace z photo-sorteru — vše za rozhraními
+  `AlbumMemberships`/`LabelMemberships(photoUID)` — embeddings scan into `[]float32` (pgvector),
+  bboxes into `[4]float64`; **it never reads the photo book or the share links**), `internal/psimport/`
+  (a read-only, **incremental and idempotent** direct migration from photo-sorter — all behind the interfaces
   `Source`/`RunStore`/`PhotoStore`/`VectorStore`/`PeopleStore`/`AlbumStore`/`LabelStore`/`Storage`/
-  `Thumbnailer`/`Enqueuer` → unit-testovatelné s faky; `Service` = `New(Config{Source,Runs,Photos,
-  Vectors,People,Albums,Labels,Storage,Thumbnailer,Enqueuer,OpenOriginal,PageSize,Logger})` (panika
-  na nil collaborator); **`Migrate(ctx) (Result,error)`** otevře `import_runs` běh (`source=photosorter`),
-  navrhne na poslední úspěšný watermark: (1) **buildMappings** find-or-create Kukátko subjekt (slug
-  z jména) / album (title) / štítek (jméno) pro každý photo-sorter → ps-uid→kk-uid mapy (generický
-  `mapCatalogue`); (2) pageuje `ListPhotos(UpdatedSince=watermark)` — per fotka match dle
-  `photosorter_uid` (skip), jinak dle **`file_hash`** (backfill `photos.SetPhotosorterRef`, žádné
-  kopírování), jinak **zkopíruje originál** z `file_path` (SHA256, náhledy) a `photos.Create` s PS
-  metadaty (vč. IPTC kreditů `artist`/`copyright`/`license`/`software`, `keywords` normalizovaných
-  přes `exif.NormalizeKeywords`, `scan` a `panorama`→`projection` přes `panoramaProjection`) +
-  `photosorter_uid`; (3) **satelity** — embedding (768) a faces (512 + bbox + det_score +
-  cache) vloží **1:1** přes `vectors.SaveEmbedding`/`RecordFaceDetection` (zachová model/pretrained,
-  remapuje subjekt, zachová marker_uid), fotka **bez** PS embeddingu/detekce dostane Kukátko
-  `image_embed`/`face_detect` job; markery (pod původním UID), album/label členství, phash a edit
-  best-effort idempotentně; counts **checkpoint po stránce**; pak `Complete` s watermarkem.
-  **Per-fotka chyba** → `counts.failed`, **neabortuje běh** (jen infra chyba `Fail`ne); **watermark
-  se nikdy neposune za nejstarší selhání** (`runState`); bezpečné re-runovat. **`Handle(ctx,job)`** =
-  `worker.HandlerFunc` pro `ps_migrate` (ignoruje payload, volá `Migrate`), `JobPayload()` nese pevný
-  sentinel → dedup fronty pustí jen jednu migraci),
+  `Thumbnailer`/`Enqueuer` → unit-testable with fakes; `Service` = `New(Config{Source,Runs,Photos,
+  Vectors,People,Albums,Labels,Storage,Thumbnailer,Enqueuer,OpenOriginal,PageSize,Logger})` (panics
+  on a nil collaborator); **`Migrate(ctx) (Result,error)`** opens an `import_runs` run (`source=photosorter`),
+  resumes from the last successful watermark: (1) **buildMappings** find-or-creates a Kukátko subject (a slug
+  of the name) / album (title) / label (name) for every photo-sorter one → ps-uid→kk-uid maps (the generic
+  `mapCatalogue`); (2) it pages `ListPhotos(UpdatedSince=watermark)` — per photo a match by
+  `photosorter_uid` (skip), otherwise by **`file_hash`** (backfill `photos.SetPhotosorterRef`, no
+  copying), otherwise it **copies the original** from `file_path` (SHA256, thumbnails) and `photos.Create` with the PS
+  metadata (incl. the IPTC credits `artist`/`copyright`/`license`/`software`, `keywords` normalized
+  through `exif.NormalizeKeywords`, `scan` and `panorama`→`projection` through `panoramaProjection`) +
+  `photosorter_uid`; (3) **satellites** — the embedding (768) and faces (512 + bbox + det_score +
+  cache) are inserted **1:1** via `vectors.SaveEmbedding`/`RecordFaceDetection` (preserving model/pretrained,
+  remapping the subject, preserving marker_uid), a photo **without** a PS embedding/detection gets a Kukátko
+  `image_embed`/`face_detect` job; markers (under their original UID), album/label membership, phash and edit
+  best-effort and idempotently; counts are **checkpointed per page**; then `Complete` with the watermark.
+  A **per-photo error** → `counts.failed`, it **does not abort the run** (only an infra error `Fail`s it); **the watermark
+  never moves past the oldest failure** (`runState`); safe to re-run. **`Handle(ctx,job)`** =
+  `worker.HandlerFunc` for `ps_migrate` (ignores the payload, calls `Migrate`), `JobPayload()` carries a fixed
+  sentinel → the queue's dedup lets only one migration through),
   `internal/psfeeds/`
-  (read-only HTTP klient **migračních feedů photo-sorteru** — v produkci photo-sorter drží jen vektory/faces
-  klíčované PhotoPrism UID, žádné vlastní fotky; vše za rozhraním `Client` → fake v testech.
-  `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryDelay,HTTPClient})` validuje URL (`ErrInvalidURL`);
-  `ListEmbeddings(limit,after string)`/`ListFaces(limit,after int64)` keyset-pageují `GET /api/v1/{embeddings,faces}`
-  (kurzor `next_after`, `nil` = konec walku; `Stats` čte `/api/v1/stats`); posílá `Authorization: Bearer psat_...`,
-  vyžaduje `application/json`, HTTP 429 retryuje s exponenciálním backoffem, stavy klasifikuje do sentinelů
-  (`ErrUnauthorized/NotFound/RateLimited/Upstream/Unavailable/BadResponse` — nikdy neobsahují token/tělo). Face
-  `bbox` z feedu je `[x1,y1,x2,y2]` v **surových pixelech** frame `photo_width×photo_height`, ne normalizované),
+  (a read-only HTTP client of **photo-sorter's migration feeds** — in production photo-sorter holds only vectors/faces
+  keyed by PhotoPrism UID, no photos of its own; all behind the `Client` interface → a fake in tests.
+  `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryDelay,HTTPClient})` validates the URL (`ErrInvalidURL`);
+  `ListEmbeddings(limit,after string)`/`ListFaces(limit,after int64)` keyset-page `GET /api/v1/{embeddings,faces}`
+  (cursor `next_after`, `nil` = the end of the walk; `Stats` reads `/api/v1/stats`); it sends `Authorization: Bearer psat_...`,
+  requires `application/json`, retries HTTP 429 with exponential backoff, and classifies statuses into sentinels
+  (`ErrUnauthorized/NotFound/RateLimited/Upstream/Unavailable/BadResponse` — they never contain the token/body). A face
+  `bbox` from the feed is `[x1,y1,x2,y2]` in **raw pixels** of the `photo_width×photo_height` frame, not normalized),
   `internal/psfeedsimport/`
-  (**obohatí** PhotoPrismem naimportované fotky o photo-sorterovy **1:1** CLIP embeddingy (768) a InsightFace
-  faces (512) kopírované z feedů — takže často-offline GPU box nemusí přepočítat migrovanou knihovnu
-  (~20k embeddingů, ~112k faců). Vše za rozhraními `Feeds`/`PhotoStore`/`VectorStore`/`PeopleStore`/`RunStore`
-  → fake v testech; `Service` = `New(Config{Feeds,Photos,Vectors,People,Runs,PageSize,Logger})` (panika na nil).
-  **`Import(ctx) (Result,error)`** otevře `import_runs` běh (`source=photosorter_feeds`), pak dvě pasáže:
-  (1) **embeddings** — per item najde Kukátko fotku dle `photoprism_uid`==`photo_uid` a `vectors.SaveEmbedding`
-  (idempotentní upsert); (2) **faces** — streamem grupuje faces po fotce (feed je řazen dle `id`, faces jedné
-  fotky přicházejí souvisle) a per fotku jeden `vectors.RecordFaceDetection` (atomický replace). Pixelový bbox
-  převede `facejob.NormalizeBBox` (jediná sdílená konverze s nativní detekcí, respektuje orientaci); subjekt
-  matchuje dle slugu jména (znovupoužije subjekt založený PhotoPrism importem, jinak `CreateSubject`), marker
-  znovupoužije dle **zachovaného `marker_uid`** (jinak `CreateMarker`, bbox klampnutý do [0,1], `score` 0) —
-  takže lidé/faces přijdou, ne jen holé vektory. Feed entry pro **ještě nenaimportovanou fotku** se přeskočí
-  (`Skipped`), neabortuje běh; per-item vada (špatná dimenze) → `Failed`; jen infra chyba (fetch/DB) `Fail`ne
-  celý běh. **Idempotentní a inkrementální**: každá pasáž skenuje celý feed (feedy nemají inkrementální kurzor),
-  zapsaný high-watermark (nejnovější `created_at`) je jen informativní, re-run konverguje (upserty +
-  find-or-create guardy). **`Handle(ctx,job)`** = `worker.HandlerFunc` pro `ps_feeds_import` (ignoruje payload,
-  volá `Import`), `JobPayload()` nese pevný sentinel → dedup fronty pustí jen jeden běh),
+  (**enriches** photos imported from PhotoPrism with photo-sorter's **1:1** CLIP embeddings (768) and InsightFace
+  faces (512) copied from the feeds — so the often-offline GPU box does not have to recompute a migrated library
+  (~20k embeddings, ~112k faces). All behind the interfaces `Feeds`/`PhotoStore`/`VectorStore`/`PeopleStore`/`RunStore`
+  → a fake in tests; `Service` = `New(Config{Feeds,Photos,Vectors,People,Runs,PageSize,Logger})` (panics on nil).
+  **`Import(ctx) (Result,error)`** opens an `import_runs` run (`source=photosorter_feeds`), then two passes:
+  (1) **embeddings** — per item it finds the Kukátko photo by `photoprism_uid`==`photo_uid` and `vectors.SaveEmbedding`
+  (an idempotent upsert); (2) **faces** — it groups faces per photo from the stream (the feed is ordered by `id`, one
+  photo's faces arrive contiguously) and does one `vectors.RecordFaceDetection` per photo (an atomic replace). The pixel bbox
+  is converted by `facejob.NormalizeBBox` (the single conversion shared with native detection, it honours orientation); the subject
+  is matched by the name slug (reusing the subject created by the PhotoPrism import, otherwise `CreateSubject`), the marker
+  is reused by its **preserved `marker_uid`** (otherwise `CreateMarker`, the bbox clamped into [0,1], `score` 0) —
+  so the people/faces arrive, not just bare vectors. A feed entry for a **not-yet-imported photo** is skipped
+  (`Skipped`) and does not abort the run; a per-item defect (a wrong dimension) → `Failed`; only an infra error (fetch/DB) `Fail`s
+  the whole run. **Idempotent and incremental**: each pass scans the whole feed (the feeds have no incremental cursor),
+  the written high-watermark (the newest `created_at`) is only informative, a re-run converges (upserts +
+  find-or-create guards). **`Handle(ctx,job)`** = `worker.HandlerFunc` for `ps_feeds_import` (ignores the payload,
+  calls `Import`), `JobPayload()` carries a fixed sentinel → the queue's dedup lets only one run through),
   `internal/importapi/`
-  (maintainer-only HTTP API importů za `RequireMaintainer`: rozhraní `Queue` (Enqueue, splňuje `*jobs.Store`) a `RunLister`
-  (List, splňuje `*importer.Store`); `NewAPI(Config{Queue,Runs,RequireMaintainer,EnablePhotoPrism,
-  EnablePhotoSorter,EnableFeeds})`+`RegisterRoutes` mountuje **vždy** `GET /import/runs` (historie + `sources`
-  flagy jaké zdroje jsou nakonfigurované) a — **jen pro nakonfigurované zdroje** —
-  `POST /import/photoprism` → `pp_import`, `POST /import/photosorter` → `ps_migrate` a
-  `POST /import/photosorter-feeds` → `ps_feeds_import` job (sdílený
-  `enqueue` helper, 202 `{job_id,status}`); `jobs.ErrDuplicate` → 409 (už běží), jiná chyba → 500;
-  `GET /import/runs` (`parsePaging` limit≤200/offset, neplatný → 400) vrací
-  `{runs,limit,offset,sources:{photoprism,photosorter,photosorter_feeds}}` (stránka `import_runs` newest-started-first
-  přes `importer.Store.List`); celá API se v `serve` mountuje vždy (`buildImportAPI` v
-  `cmd/kukatko/import.go`), aby historie fungovala i bez zdroje; triggery neběží inline — patří na
+  (maintainer-only HTTP API of the imports behind `RequireMaintainer`: interfaces `Queue` (Enqueue, satisfied by `*jobs.Store`) and `RunLister`
+  (List, satisfied by `*importer.Store`); `NewAPI(Config{Queue,Runs,RequireMaintainer,EnablePhotoPrism,
+  EnablePhotoSorter,EnableFeeds})`+`RegisterRoutes` mounts **always** `GET /import/runs` (the history + `sources`
+  flags telling which sources are configured) and — **only for configured sources** —
+  `POST /import/photoprism` → a `pp_import`, `POST /import/photosorter` → a `ps_migrate` and
+  `POST /import/photosorter-feeds` → a `ps_feeds_import` job (the shared
+  `enqueue` helper, 202 `{job_id,status}`); `jobs.ErrDuplicate` → 409 (already running), another error → 500;
+  `GET /import/runs` (`parsePaging` limit≤200/offset, invalid → 400) returns
+  `{runs,limit,offset,sources:{photoprism,photosorter,photosorter_feeds}}` (a page of `import_runs` newest-started-first
+  via `importer.Store.List`); the whole API is always mounted in `serve` (`buildImportAPI` in
+  `cmd/kukatko/import.go`), so the history works even without a source; the triggers do not run inline — they belong on the
   background worker), `internal/backup/`
-  (v procesu, plánovaná **S3 záloha** databáze a originálů do **druhého, nezávislého bucketu**, vše
-  za rozhraními `ObjectStore`/`Dumper`/`OriginalSource` → unit-testovatelné s faky bez S3/DB/FS;
+  (an in-process, scheduled **S3 backup** of the database and the originals into **a second, independent bucket**, all
+  behind the interfaces `ObjectStore`/`Dumper`/`OriginalSource` → unit-testable with fakes without S3/DB/FS;
   `Service` =
-  `New(Config{Objects,Originals,Dumper,Retention,Logger})` (panika na nil Objects/Originals/Dumper);
-  **`Run(ctx,ts)`** dělá tři věci v pořadí: (1) **dump DB** přes `Dumper` streamovaný na S3 jako
-  `db/kukatko-<ts>.dump` (`objectSize=-1`, nikdy celý v RAM; ts dodá plánovač/příkaz), (2)
-  **inkrementální sync originálů** (`SyncOriginals` — skip dle klíče+velikosti přes `ObjectStore.Stat`,
-  klíč = relativní cesta originálu; **čistě aditivní**, smazání ve zdroji se nepropaguje), (3)
-  **retence** (`PruneDumps` — prořeže staré dumpy na posledních
-  `Retention`, `≤0` = nechat vše; **jen prefix `db/`, nikdy originály**); **dump je povinný** — selhání
-  abortuje běh **před** prořezáním, takže neúspěšná záloha nemůže smazat poslední dobré dumpy;
-  `Run` serializuje souběžné běhy (`ErrAlreadyRunning`), `Trigger(ctx,ts)` spustí běh na pozadí
-  (detached ctx, pro HTTP handler), `Status()` = stav + poslední běh; **`RunSchedule(ctx,spec)`**
-  plánovač přes `ParseSchedule` (standardní 5-pole cron / `@daily`/`@every` deskriptory přes
-  `robfig/cron`; prázdný → `ErrNoSchedule`, neplatný → `ErrInvalidSchedule` → plánované zálohy
-  vypnuté, manuální fungují) s vlastní ctx-aware smyčkou; **`s3Store`** (`NewS3Store(S3Options)`) =
-  minio-go/v7 adaptér, **path-style** (`BucketLookupPath`), `parseEndpoint` (scheme→TLS, bare host =
-  TLS), sentinely `ErrNotConfigured`/`ErrInvalidEndpoint`, `isNotFound` (404/NoSuchKey) → Stat
-  ok=false / Remove idempotentní, **`CopyFrom(srcBucket,srcKey,key)`** = **server-side copy** přes
-  `ComposeObject` (jeden zdroj → degraduje na prostý `CopyObject`, nad 5 GiB sáhne po multipart
-  copy) — bajty **neprojdou procesem**; request jde na *tenhle* endpoint, takže jeho credentials
-  musí umět **číst `srcBucket`**; **`pgDumper`** (`NewPgDumper(dsn)`) = shell-out `pg_dump
-  --format=custom --no-owner --no-privileges`, **DSN přes env `PGDATABASE`** (ne argument, aby heslo
-  nebylo v `ps`), `Dump` vrací reader (Close čeká na proces + surfacuje stderr), `PgDumpAvailable`,
+  `New(Config{Objects,Originals,Dumper,Retention,Logger})` (panics on nil Objects/Originals/Dumper);
+  **`Run(ctx,ts)`** does three things in order: (1) a **DB dump** via `Dumper` streamed to S3 as
+  `db/kukatko-<ts>.dump` (`objectSize=-1`, never whole in RAM; ts is supplied by the scheduler/command), (2)
+  an **incremental sync of the originals** (`SyncOriginals` — skip by key+size via `ObjectStore.Stat`,
+  the key = the original's relative path; **purely additive**, a deletion in the source is not propagated), (3)
+  **retention** (`PruneDumps` — prunes old dumps down to the last
+  `Retention`, `≤0` = keep everything; **only the `db/` prefix, never the originals**); **the dump is mandatory** — a failure
+  aborts the run **before** pruning, so an unsuccessful backup cannot delete the last good dumps;
+  `Run` serialises concurrent runs (`ErrAlreadyRunning`), `Trigger(ctx,ts)` starts a run in the background
+  (a detached ctx, for the HTTP handler), `Status()` = the state + the last run; **`RunSchedule(ctx,spec)`**
+  is a scheduler over `ParseSchedule` (a standard 5-field cron / the `@daily`/`@every` descriptors via
+  `robfig/cron`; empty → `ErrNoSchedule`, invalid → `ErrInvalidSchedule` → scheduled backups are
+  off, manual ones still work) with its own ctx-aware loop; **`s3Store`** (`NewS3Store(S3Options)`) =
+  a minio-go/v7 adapter, **path-style** (`BucketLookupPath`), `parseEndpoint` (scheme→TLS, a bare host =
+  TLS), the sentinels `ErrNotConfigured`/`ErrInvalidEndpoint`, `isNotFound` (404/NoSuchKey) → Stat
+  ok=false / Remove idempotent, **`CopyFrom(srcBucket,srcKey,key)`** = a **server-side copy** via
+  `ComposeObject` (a single source → it degrades to a plain `CopyObject`, above 5 GiB it reaches for a multipart
+  copy) — the bytes **do not pass through the process**; the request goes to *this* endpoint, so its credentials
+  must be able to **read `srcBucket`**; **`pgDumper`** (`NewPgDumper(dsn)`) = a shell-out to `pg_dump
+  --format=custom --no-owner --no-privileges`, the **DSN via the `PGDATABASE` env** (not an argument, so the password
+  is not in `ps`), `Dump` returns a reader (Close waits for the process + surfaces stderr), `PgDumpAvailable`,
   `ErrPgDumpMissing`;
-  **zdroj originálů** = `OriginalSource` (`List` + `CopyTo(ctx,dst,original)`; `CopyTo` si sám volí,
-  jak bajty přenese) a vybírá ho `storage.backend` v `cmd/kukatko/backup.go` (`buildBackupOriginals`):
-  **`DiskOriginals`** (`NewDiskOriginals(root)`, backend `fs`) = walk úložiště (skip `.tmp`,
-  confine klíče proti traversalu), `CopyTo` streamuje soubor nahoru přes `Put` — **slouží i obnově**
-  přes `Stat(key)` (existuje + velikost, pro skip-existing) a `Write(key,r)` (atomický zápis do
-  `.tmp` + rename → resumovatelné);
+  **the source of the originals** = `OriginalSource` (`List` + `CopyTo(ctx,dst,original)`; `CopyTo` chooses for itself
+  how it transfers the bytes) and it is picked by `storage.backend` in `cmd/kukatko/backup.go` (`buildBackupOriginals`):
+  **`DiskOriginals`** (`NewDiskOriginals(root)`, backend `fs`) = a walk of the storage (skipping `.tmp`,
+  confining keys against traversal), `CopyTo` streams the file up via `Put` — **it also serves the restore**
+  through `Stat(key)` (exists + size, for skip-existing) and `Write(key,r)` (an atomic write into
+  `.tmp` + rename → resumable);
   **`BucketOriginals`** (`bucket.go`, `NewBucketOriginals(source,bucket)`, backend `r2`) = `List`
-  vylistuje primární bucket (skip prefixů `db/` a `.tmp/` — dump ani rozdělaný upload není originál),
-  `CopyTo` deleguje na `dst.CopyFrom` → **kopie bucket→bucket server-side**, takže knihovna se nikdy
-  netahá na VPS, aby se odtud nahrála zpět; sentinely `ErrNoSourceStore`/`ErrNoSourceBucket`
-  (nenakonfigurovaný primár **nesmí** vypadat jako prázdná knihovna) a `errBackupSameBucket` ve
-  wiringu (mířit zálohu na primární bucket = nezálohovat nic). **Objektový store nemá verzování**,
-  druhý bucket je jediná ochrana proti smazání → originály se **nikdy** neexpirují; klíče ani
-  tajemství nikdy nelogovat;
-  **OBNOVA / disaster recovery** (`restore.go`, `pgrestore.go` — protějšek zálohy): `ObjectStore`
-  rozšířeno o **`Open(ctx,key)`** (stream GET z bucketu, na `s3Store` přes `minio GetObject`); nová
-  rozhraní **`Restorer`** (`Restore(ctx,archive io.Reader)`), **`LocalOriginals`** (List/Stat/Write,
-  splňuje `DiskOriginals`) a **`PhotoCatalog`** (`CountPhotos`/`ListFilePaths`, splňuje `photos.Store`);
+  lists the primary bucket (skipping the `db/` and `.tmp/` prefixes — neither a dump nor an unfinished upload is an original),
+  `CopyTo` delegates to `dst.CopyFrom` → a **bucket→bucket server-side copy**, so the library is never
+  dragged onto the VPS just to be uploaded back from there; the sentinels `ErrNoSourceStore`/`ErrNoSourceBucket`
+  (an unconfigured primary **must not** look like an empty library) and `errBackupSameBucket` in the
+  wiring (pointing the backup at the primary bucket = backing up nothing). **The object store has no versioning**,
+  the second bucket is the only protection against a deletion → the originals are **never** expired; keys and
+  secrets are never logged;
+  **RESTORE / disaster recovery** (`restore.go`, `pgrestore.go` — the counterpart of the backup): `ObjectStore`
+  is extended with **`Open(ctx,key)`** (a streaming GET from the bucket, on `s3Store` via `minio GetObject`); the new
+  interfaces **`Restorer`** (`Restore(ctx,archive io.Reader)`), **`LocalOriginals`** (List/Stat/Write,
+  satisfied by `DiskOriginals`) and **`PhotoCatalog`** (`CountPhotos`/`ListFilePaths`, satisfied by `photos.Store`);
   **`RestoreService`** = `NewRestoreService(RestoreConfig{Objects,Restorer,Originals,Photos,Logger})`
-  (panika na nil Objects): **`ListDumps`** (dumpy pod `db/` končící `.dump`, nejnovější první) /
-  **`LatestDump`** (`ErrNoDumps`) / **`RestoreDatabase(key)`** (prázdný key → nejnovější; streamuje
-  dump z S3 rovnou do `Restorer`; `ErrDumpNotFound` na neznámý key — **destruktivní**) /
-  **`RestoreOriginals`** (stáhne z bucketu jen chybějící originály — skip dle klíče+velikosti přes
-  `LocalOriginals.Stat`, dumpy pod `db/` přeskočí, atomický `Write` → resumovatelné, ctí ctx cancel,
-  `RestoreOriginalsResult{Downloaded,Skipped}`) / **`Verify`** (integritní report `VerifyReport`
-  {PhotosInDB,FilesInDB,OriginalsOnDisk,MissingOnDisk,ExtraOnDisk,Consistent} přes čistou `reconcile`
-  set-diff `photo_files.file_path` vs disk); **`pgRestorer`** (`NewPgRestorer(dsn)`) = shell-out
+  (panics on nil Objects): **`ListDumps`** (the dumps under `db/` ending in `.dump`, newest first) /
+  **`LatestDump`** (`ErrNoDumps`) / **`RestoreDatabase(key)`** (an empty key → the newest; streams the
+  dump from S3 straight into `Restorer`; `ErrDumpNotFound` on an unknown key — **destructive**) /
+  **`RestoreOriginals`** (downloads from the bucket only the missing originals — skip by key+size via
+  `LocalOriginals.Stat`, the dumps under `db/` are skipped, an atomic `Write` → resumable, honours ctx cancel,
+  `RestoreOriginalsResult{Downloaded,Skipped}`) / **`Verify`** (the integrity report `VerifyReport`
+  {PhotosInDB,FilesInDB,OriginalsOnDisk,MissingOnDisk,ExtraOnDisk,Consistent} via the pure `reconcile`
+  set-diff of `photo_files.file_path` vs the disk); **`pgRestorer`** (`NewPgRestorer(dsn)`) = a shell-out to
   `pg_restore --format=custom --clean --if-exists --no-owner --no-privileges --single-transaction
-  --dbname=<db>`, čte archiv **ze stdin** (nikdy celý v RAM), **DSN parsován do PG\* env**
-  (`PGHOST`/`PGPORT`/`PGUSER`/**`PGPASSWORD`**/`PGDATABASE` přes `pgx.ParseConfig`) → heslo **nikdy
-  v argv**; `PgRestoreAvailable`, sentinely `ErrPgRestoreMissing`/`ErrInvalidDSN`; tajemství nikam
-  neprosáknou), `internal/backupapi/`
-  (maintainer-only HTTP API nad zálohou: rozhraní `Service` (Status+Trigger, splňuje ho `*backup.Service`,
-  fakeovatelné, **nil = nenakonfigurováno**); `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes`
-  mountuje `GET /backup` (stav + poslední běh, nil service → `configured:false`) a `POST /backup`
-  (spustí `Trigger` na pozadí → 202 `{status:"started"}`, `ErrAlreadyRunning` → 409, nil service →
-  503); mountuje se v `serve` vždy (`buildBackupAPI` v `cmd/kukatko/backup.go`)), `internal/restoreapi/`
-  (maintainer-only HTTP API nad obnovou, **jen read-only operace**: rozhraní `Service`
-  (`ListDumps`+`Verify`, splňuje ho `*backup.RestoreService`, fakeovatelné, **nil = nenakonfigurováno**);
-  `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes` mountuje `GET /restore/dumps` (seznam dumpů,
-  503 bez konfigurace, 502 při chybě S3) a `POST /restore/verify` (integritní report, 503 bez
-  konfigurace); **destruktivní obnova DB se přes HTTP záměrně neexponuje** (podtrhla by tabulky
-  běžícímu serveru — patří do CLI při zastaveném serveru); mountuje se v `serve` vždy
-  (`buildRestoreAPI` v `cmd/kukatko/restore.go`)), `internal/maintenance/`
-  (**integritní kontrola & opravy knihovny** — udržuje velkou dlouhožijící knihovnu konzistentní:
-  odhalí drift mezi katalogem a soubory na disku a doplní/přegeneruje odvozená data; zrcadlí
-  photo-sorter `cache build-thumbs`, ale je širší a bezpečnější (**nikdy nemaže originály** — to je
-  práce koše/purge), idempotentní, opravy přes persistentní frontu jobů; vše za rozhraními
+  --dbname=<db>`, reading the archive **from stdin** (never whole in RAM), with the **DSN parsed into PG\* env**
+  (`PGHOST`/`PGPORT`/`PGUSER`/**`PGPASSWORD`**/`PGDATABASE` via `pgx.ParseConfig`) → the password is **never
+  in argv**; `PgRestoreAvailable`, the sentinels `ErrPgRestoreMissing`/`ErrInvalidDSN`; no secret leaks
+  anywhere), `internal/backupapi/`
+  (a maintainer-only HTTP API over the backup: the `Service` interface (Status+Trigger, satisfied by `*backup.Service`,
+  fakeable, **nil = not configured**); `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes`
+  mounts `GET /backup` (the state + the last run, a nil service → `configured:false`) and `POST /backup`
+  (starts `Trigger` in the background → 202 `{status:"started"}`, `ErrAlreadyRunning` → 409, a nil service →
+  503); always mounted in `serve` (`buildBackupAPI` in `cmd/kukatko/backup.go`)), `internal/restoreapi/`
+  (a maintainer-only HTTP API over the restore, **read-only operations only**: the `Service` interface
+  (`ListDumps`+`Verify`, satisfied by `*backup.RestoreService`, fakeable, **nil = not configured**);
+  `NewAPI(Config{Service,RequireMaintainer})`+`RegisterRoutes` mounts `GET /restore/dumps` (the list of dumps,
+  503 without configuration, 502 on an S3 error) and `POST /restore/verify` (the integrity report, 503 without
+  configuration); **the destructive DB restore is deliberately not exposed over HTTP** (it would pull the tables out from under
+  a running server — it belongs in the CLI with the server stopped); always mounted in `serve`
+  (`buildRestoreAPI` in `cmd/kukatko/restore.go`)), `internal/maintenance/`
+  (**library integrity check & repair** — it keeps a large, long-lived library consistent:
+  it reveals drift between the catalogue and the files on disk and fills in/regenerates derived data; it mirrors
+  photo-sorter's `cache build-thumbs`, but is broader and safer (**it never deletes originals** — that is the
+  job of the trash/purge), idempotent, with repairs going through the persistent job queue; all behind the interfaces
   `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`,
-  splňuje `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`,
-  `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`DiskScanner` (`List`, adaptér nad
-  `backup.DiskOriginals`)/`ThumbChecker` (`HasThumbnail`, `NewThumbCache` nad `thumb.Thumbnailer`)/
+  satisfied by `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`,
+  `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`DiskScanner` (`List`, an adapter over
+  `backup.DiskOriginals`)/`ThumbChecker` (`HasThumbnail`, `NewThumbCache` over `thumb.Thumbnailer`)/
   `Enqueuer` (`EnqueueThumbnail`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
-  `FaceBackfiller` (`facejob.Service`)/`OrphanImporter` (volitelný, nil vypne orphan import) →
-  unit-testovatelné s faky bez DB/disku/fronty; `Service` = `New(Config{...,SampleLimit})`
-  (panika na nil povinný kolaborant; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) vrátí
+  `FaceBackfiller` (`facejob.Service`)/`OrphanImporter` (optional, nil turns the orphan import off) →
+  unit-testable with fakes without DB/disk/queue; `Service` = `New(Config{...,SampleLimit})`
+  (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
   `Report{Photos,FilesInDB,OriginalsOnDisk,MissingOriginals,OrphanFiles,MissingThumbnails,
-  MissingEmbeddings,MissingFaces,MissingPhashes}` — každá třída je `Finding{Count,Samples}`
-  (count + omezený vzorek identifikátorů); `representativeThumbSize`=`tile_224` je proxy přítomnosti
-  náhledů, orphan = soubor na disku bez `photo_files.file_path` (`orphanKeys` set-diff), `Report.Clean()`;
-  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans})`** (každá opt-in,
-  idempotentní, pevné pořadí) → `RepairResult` se scheduling počty: thumbnails/phashes zařadí
-  `thumbnail` joby (`EnqueueThumbnail`), embeddings/faces volají backfill, orphan import jede přes
-  upload pipeline (per-orphan selhání se počítá bez abortu); `ErrOrphanImportUnavailable` když je
-  import vybrán bez importéru), `internal/thumbjob/`
-  (worker handler `thumbnail` jobu — **repair path** pro maintenance: regeneruje z originálu odvozená
-  data fotky, **náhledy** (`Thumbnailer.GenerateAll`, skip cachovaných) a **pHash/dHash** (jen když
-  chybí, `phash.Compute` nad dekódovaným originálem), vše za rozhraními `PhotoStore`/`Thumbnailer`/
-  `Decoder` (`StorageDecoder` = `storage.Materialize`+`imgconvert.EnsureDecodable`, fakeovatelný) →
-  unit-testovatelné bez disku; `Service` = `New(Config{Photos,Thumbnailer,Decoder,Lister?,Enqueuer?})`
-  (panika na nil povinný kolaborant; `Lister`/`Enqueuer` volitelné — zapnou backfill),
-  `Handle`=`worker.HandlerFunc` (payload `{photo_uid}`, prázdný → `ErrMissingPhotoUID` dead-letter),
-  `Regenerate(uid)`/`ensurePhash` idempotentní; registrovaný v `serve` na `jobs.TypeThumbnail`.
-  **Force path** `ForceRegenerate(uid) ([]string,error)` je on-demand protějšek (podklad servisní
-  akce "regenerate thumbnail" v `photoapi`): **přepíše** všechny náhledy (`Thumbnailer.RegenerateAll`,
-  atomický overwrite) a **vždy** přepočítá pHash (`recomputePhash`, sdílené s `ensurePhash`), vrací
-  seřazené názvy velikostí; chybějící foto → `photos.ErrPhotoNotFound`, chybějící/nedekódovatelný
-  originál zabalen do `ErrRegenerateFailed` (HTTP 422). **Backfill** `BackfillThumbnails(ctx,all)
-  (int,error)` (podklad `POST /process/thumbnails`): zařadí `thumbnail` job pro každou fotku **bez
-  náhledu** = bez pHashe (`PhotoLister.ListPhotosMissingPhash`), nebo — když `all` — pro každou
-  nearchivovanou (`ListActiveUIDs`, dožene chybějící velikost i u fotky s pHashem); enqueue přes
-  `Enqueuer.EnqueueThumbnail` (dedup no-op → idempotentní), vrací počet; `ErrBackfillUnavailable`
-  když `Service` neměl `Lister`/`Enqueuer`),
+  MissingEmbeddings,MissingFaces,MissingPhashes}` — each class is a `Finding{Count,Samples}`
+  (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
+  thumbnails, an orphan = a file on disk with no `photo_files.file_path` (the `orphanKeys` set-diff), `Report.Clean()`;
+  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans})`** (each opt-in,
+  idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
+  `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
+  upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
+  import is selected without an importer), `internal/thumbjob/`
+  (the worker handler of the `thumbnail` job — the **repair path** for maintenance: it regenerates a photo's derived
+  data from the original, the **thumbnails** (`Thumbnailer.GenerateAll`, cached ones skipped) and the **pHash/dHash** (only when
+  they are missing, `phash.Compute` over the decoded original), all behind the interfaces `PhotoStore`/`Thumbnailer`/
+  `Decoder` (`StorageDecoder` = `storage.Materialize`+`imgconvert.EnsureDecodable`, fakeable) →
+  unit-testable without a disk; `Service` = `New(Config{Photos,Thumbnailer,Decoder,Lister?,Enqueuer?})`
+  (panics on a nil mandatory collaborator; `Lister`/`Enqueuer` optional — they turn the backfill on),
+  `Handle`=`worker.HandlerFunc` (payload `{photo_uid}`, empty → `ErrMissingPhotoUID` dead-letter),
+  `Regenerate(uid)`/`ensurePhash` idempotent; registered in `serve` on `jobs.TypeThumbnail`.
+  The **force path** `ForceRegenerate(uid) ([]string,error)` is the on-demand counterpart (the basis of the service
+  action "regenerate thumbnail" in `photoapi`): it **overwrites** every thumbnail (`Thumbnailer.RegenerateAll`,
+  an atomic overwrite) and **always** recomputes the pHash (`recomputePhash`, shared with `ensurePhash`), returning
+  the sorted size names; a missing photo → `photos.ErrPhotoNotFound`, a missing/undecodable
+  original is wrapped in `ErrRegenerateFailed` (HTTP 422). The **backfill** `BackfillThumbnails(ctx,all)
+  (int,error)` (the basis of `POST /process/thumbnails`): it enqueues a `thumbnail` job for every photo **without a
+  thumbnail** = without a pHash (`PhotoLister.ListPhotosMissingPhash`), or — when `all` — for every
+  non-archived one (`ListActiveUIDs`, which also catches a missing size on a photo that has a pHash); enqueue via
+  `Enqueuer.EnqueueThumbnail` (a dedup no-op → idempotent), returns the count; `ErrBackfillUnavailable`
+  when the `Service` had no `Lister`/`Enqueuer`),
   `internal/sidecarexport/`
-  (**formát** metadatového sidecaru + jeho atomický zápis do storage — YAML soubor na fotku vedle
-  originálů, aby šla knihovna obnovit **jen ze storage**: originály + sidecary, bez databáze.
-  Neplest s `internal/sidecar`, které čte *cizí* sidecary (Google Takeout `.json`, Apple `.xmp`) při
-  importu — tenhle balík jen **zapisuje**, a jen vlastní formát. `Document` = verzované, seskupené
-  schéma (`version`/`generated_at`/`identity`/`descriptive`/`temporal`/`spatial`/`technical`/
-  `curation`/`edit`), `Version = 1`; `Build(Input) Document` je **čistá funkce** (bez I/O, bez
-  hodin — kolaboranty sbírá volající), `Marshal`/`Unmarshal` přidávají/ignorují hlavičkový komentář,
-  který vysvětluje, **proč v souboru nejsou embeddingy** (velké, binární, levné přepočítat z
-  originálu — od toho jsou backfill joby), aby to nikdo „neopravil“. `KeyFor(fileKey)` = paralelní
-  strom `sidecars/<klíč>.yml` (přípona se **přidává**, ne nahrazuje → `IMG_1.jpg` a `IMG_1.png`
-  nekolidují; `ErrEmptyKey` na řádek bez cesty). `Writer` = `NewWriter(ObjectStore)` nad úzkým
-  rozhraním (`Put`/`Delete`, splňuje ho `storage.Storage`) → funguje **na FS i R2**;
-  `Write(ctx,fileKey,doc)` marshaluje do paměti (pár kB), spočítá SHA256 a předá storage přesnou
-  velikost+digest, takže **atomicitu** garantuje storage (FS temp+rename, R2 verifikace+smazání při
-  neshodě) — polovičatý YAML není horší sidecar, je nečitelný; `Delete` je idempotentní (chybějící
-  sidecar není chyba). **Round-trip test** (`TestRoundTrip` + `TestDocument_fixtureIsExhaustive`,
-  který reflexí hlídá, že fixture nemá ani jedno nulové pole) je smlouva formátu a podklad budoucího
+  (**the format** of the metadata sidecar + its atomic write into storage — a YAML file per photo next to
+  the originals, so the library can be restored **from storage alone**: originals + sidecars, without a database.
+  Not to be confused with `internal/sidecar`, which reads *foreign* sidecars (Google Takeout `.json`, Apple `.xmp`) during
+  an import — this package only **writes**, and only its own format. `Document` = a versioned, grouped
+  schema (`version`/`generated_at`/`identity`/`descriptive`/`temporal`/`spatial`/`technical`/
+  `curation`/`edit`), `Version = 1`; `Build(Input) Document` is a **pure function** (no I/O, no
+  clock — the caller collects the collaborators), `Marshal`/`Unmarshal` add/ignore the header comment
+  that explains **why there are no embeddings in the file** (large, binary, cheap to recompute from
+  the original — that is what the backfill jobs are for), so that nobody "fixes" it. `KeyFor(fileKey)` = the parallel
+  tree `sidecars/<key>.yml` (the extension is **appended**, not replaced → `IMG_1.jpg` and `IMG_1.png`
+  do not collide; `ErrEmptyKey` for a row without a path). `Writer` = `NewWriter(ObjectStore)` over a narrow
+  interface (`Put`/`Delete`, satisfied by `storage.Storage`) → it works **on FS and on R2**;
+  `Write(ctx,fileKey,doc)` marshals into memory (a few kB), computes the SHA256 and hands storage the exact
+  size+digest, so **atomicity** is guaranteed by storage (FS temp+rename, R2 verification+deletion on a
+  mismatch) — a half-written YAML is not a worse sidecar, it is an unreadable one; `Delete` is idempotent (a missing
+  sidecar is not an error). The **round-trip test** (`TestRoundTrip` + `TestDocument_fixtureIsExhaustive`,
+  which uses reflection to check that the fixture has not a single zero field) is the format's contract and the basis of a future
   `restore --from-sidecars`),
   `internal/sidecarjob/`
-  (worker handler `sidecar` jobu + backfill — **plánovaná** polovina `sidecarexport`: ten umí formát
-  a zápis, tenhle ví *kdy*. Job zařadí každá mutace metadat/kurátorských dat; handler fotku
-  **znovu přečte** a přepíše soubor, takže je **idempotentní a bezstavový** (dvakrát = stejné bajty,
-  pozdě = aktuální stav) — proto je per-photo dedup fronty bezpečný **debounce**, ne zahozený update.
-  Vše za rozhraními `PhotoStore`/`Organizer`/`PeopleStore`/`PlaceStore`/`UserStore`/`SidecarWriter`/
-  `PhotoLister`/`Enqueuer` → unit-testovatelné bez DB i disku; `Service` =
-  `New(Config{Photos,Organize,People,Writer,Places?,Users?,Lister?,Enqueuer?,Logger?})` (panika na
-  nil povinný kolaborant; `Places`/`Users` volitelné — skupina se vynechá, `Lister`/`Enqueuer`
-  zapnou backfill), `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, prázdný →
-  `ErrMissingPhotoUID` dead-letter), registrovaný v `serve` na `jobs.TypeSidecar` (jen když
-  `sidecar.enabled`). `Export(uid)` posbírá kurátorská data, zapíše a **až potom** orazítkuje
-  `MarkSidecarWritten` — když zápis selže, fotka zůstane pending a backfill ji dožene; **chybějící
-  fotka je logovaný skip** (purge mezi enqueue a během je race, který fronta má prohrát elegantně),
-  ale **selhání čtení kurátorských dat je chyba** (soubor, co tvrdí „žádná alba“, protože dotaz
-  spadl, je horší než žádný — vypadá autoritativně); neresolvnutelný uploader stojí jméno, ne
-  sidecar. `Remove(fileKey)` maže sidecar při purge (sidecar, co přežije fotku, je přesně ten
-  soubor, ze kterého by obnova vzkřísila smazanou fotku). **Backfill** `BackfillSidecars(ctx,all)
-  (int,error)` (podklad `POST /process/sidecars` a `kukatko sidecar backfill`): zařadí job pro každou
-  fotku s chybějícím/zastaralým sidecarem (`ListPhotosMissingSidecar`), nebo — když `all` — pro
-  každou nearchivovanou (`ListActiveUIDs`, dožene kurátorská data mimo řádek fotky); idempotentní a
-  resumable **bez vlastní evidence** (dedup fronty + self-clearing predikát);
-  `ErrBackfillUnavailable` bez `Lister`/`Enqueuer`),
+  (the worker handler of the `sidecar` job + the backfill — the **scheduling** half of `sidecarexport`: that one knows the format
+  and the write, this one knows *when*. The job is enqueued by every mutation of metadata/curation data; the handler
+  **re-reads** the photo and rewrites the file, so it is **idempotent and stateless** (twice = the same bytes,
+  late = the current state) — which is why the queue's per-photo dedup is a safe **debounce**, not a dropped update.
+  All behind the interfaces `PhotoStore`/`Organizer`/`PeopleStore`/`PlaceStore`/`UserStore`/`SidecarWriter`/
+  `PhotoLister`/`Enqueuer` → unit-testable without a DB or a disk; `Service` =
+  `New(Config{Photos,Organize,People,Writer,Places?,Users?,Lister?,Enqueuer?,Logger?})` (panics on
+  a nil mandatory collaborator; `Places`/`Users` optional — the group is then omitted, `Lister`/`Enqueuer`
+  turn the backfill on), `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, empty →
+  `ErrMissingPhotoUID` dead-letter), registered in `serve` on `jobs.TypeSidecar` (only when
+  `sidecar.enabled`). `Export(uid)` collects the curation data, writes it and **only then** stamps
+  `MarkSidecarWritten` — when the write fails, the photo stays pending and the backfill picks it up; **a missing
+  photo is a logged skip** (a purge between the enqueue and the run is a race the queue is meant to lose gracefully),
+  but **a failure to read the curation data is an error** (a file claiming "no albums" because the query
+  crashed is worse than no file — it looks authoritative); an unresolvable uploader costs a name, not the
+  sidecar. `Remove(fileKey)` deletes the sidecar on a purge (a sidecar that outlives its photo is exactly the
+  file a restore would resurrect the deleted photo from). The **backfill** `BackfillSidecars(ctx,all)
+  (int,error)` (the basis of `POST /process/sidecars` and `kukatko sidecar backfill`): it enqueues a job for every
+  photo with a missing/stale sidecar (`ListPhotosMissingSidecar`), or — when `all` — for
+  every non-archived one (`ListActiveUIDs`, which catches curation data living outside the photo's row); idempotent and
+  resumable **without bookkeeping of its own** (the queue's dedup + a self-clearing predicate);
+  `ErrBackfillUnavailable` without `Lister`/`Enqueuer`),
   `internal/metajob/`
-  (worker handler `metadata` jobu — **znovu přečte originál fotky** a doplní sloupce, jejichž
-  autoritou je sám soubor: IPTC/XMP kredit (`subject`/`keywords`/`artist`/`copyright`/`license`)
-  a file-technical (`software`/`color_profile`/`image_codec`/`camera_serial`/`projection`/
-  `original_name`). Existuje kvůli fotkám, které vznikly **dřív než extrakce**: řádky z PhotoPrism
-  importu, z photo-sorter migrace a všechno nahrané předtím, než `internal/exif` tyhle tagy uměl —
-  originály pořád leží ve storage, metadata se tedy pořád **dají** přečíst. Vše za rozhraními
+  (the worker handler of the `metadata` job — it **re-reads a photo's original** and fills in the columns whose
+  authority is the file itself: the IPTC/XMP credits (`subject`/`keywords`/`artist`/`copyright`/`license`)
+  and the file-technical ones (`software`/`color_profile`/`image_codec`/`camera_serial`/`projection`/
+  `original_name`). It exists because of photos that came into being **before the extraction did**: rows from the PhotoPrism
+  import, from the photo-sorter migration and everything uploaded before `internal/exif` could read these tags —
+  the originals still lie in storage, so the metadata still **can** be read. All behind the interfaces
   `PhotoStore`/`Extractor`/`PhotoLister`/`Enqueuer` (`StorageExtractor` = `storage.Materialize` +
-  `exif.Extract`, funguje pro **lokální FS i R2**, temp kopii vždy uklidí) → unit-testovatelné bez
-  disku; `Service` = `New(Config{Photos,Extractor,Lister?,Enqueuer?,Logger?})` (panika na nil povinný
-  kolaborant; `Lister`/`Enqueuer` volitelné — zapnou backfill), `Handle` = `worker.HandlerFunc`
-  (payload `{photo_uid}`, prázdný → `ErrMissingPhotoUID` dead-letter), registrovaný v `serve` na
-  `jobs.TypeMetadata`. **`Reextract(uid)`** je **výhradně gap-filler**: zapisuje jen do sloupců, které
-  jsou pořád prázdné (`photos.FillFileMetadata`), takže prázdná extrakce nikdy nepřepíše hodnotu,
-  kterou napsal uživatel, a ničeho jiného se nedotkne (titulky, `taken_at`, GPS, hodnocení, alba jsou
-  mimo jeho dosah) → **idempotentní**, druhý běh nezmění nic (ani `updated_at`). Video: `image_codec`
-  zůstává prázdný (komprese klipu je ffprobe-derived `video_codec`, ten se netýká); `original_name` se
-  rekonstruuje z `photo.FileName` (storage drží originál pod jménem, se kterým přišel — blíž se
-  katalog nedostane, a stejně se píše jen do prázdného sloupce). **Chybějící originál** (`os.ErrNotExist`
-  z `Materialize`/`Extract`) se **zaloguje a přeskočí** (nil error): soubor je pryč, retry nikdy
-  neuspěje a dead-letter by jen rozbil celoknihovní běh; ostatní storage/DB chyby se vrací → fronta
-  retryuje. **Backfill** `BackfillMetadata(ctx,all) (int,error)` (podklad `POST /process/metadata`):
-  zařadí `metadata` job pro každou fotku, jejíž soubor **nikdy nebyl přečten**
-  (`PhotoLister.ListPhotosMissingFileMetadata` = `metadata_extracted_at IS NULL`), nebo — když `all` —
-  pro každou nearchivovanou (`ListActiveUIDs`, vynucené znovu-přečtení celé knihovny, tak se doženou
-  pole, která se nový extraktor naučil číst); enqueue přes `Enqueuer.EnqueueMetadata` (dedup no-op),
-  vrací počet; `ErrBackfillUnavailable` když `Service` neměl `Lister`/`Enqueuer`. **Konverguje a je
-  resumable**: značka se stampuje ve chvíli, kdy job doběhne, takže přerušený běh naváže přesně tam,
-  kde skončil, a druhý běh nad vyčerpanou knihovnou zařadí **nula** jobů — i pro fotku, jejíž soubor
-  žádné IPTC tagy nemá („podívali jsme se a nic tam nebylo" je hotová fotka, ne čekající)),
+  `exif.Extract`, works for **local FS and R2**, and always cleans the temp copy up) → unit-testable without
+  a disk; `Service` = `New(Config{Photos,Extractor,Lister?,Enqueuer?,Logger?})` (panics on a nil mandatory
+  collaborator; `Lister`/`Enqueuer` optional — they turn the backfill on), `Handle` = `worker.HandlerFunc`
+  (payload `{photo_uid}`, empty → `ErrMissingPhotoUID` dead-letter), registered in `serve` on
+  `jobs.TypeMetadata`. **`Reextract(uid)`** is **exclusively a gap-filler**: it writes only into columns that
+  are still empty (`photos.FillFileMetadata`), so an empty extraction never overwrites a value
+  the user wrote, and it touches nothing else (captions, `taken_at`, GPS, ratings and albums are
+  out of its reach) → **idempotent**, a second run changes nothing (not even `updated_at`). Video: `image_codec`
+  stays empty (a clip's compression is the ffprobe-derived `video_codec`, which is out of scope); `original_name` is
+  reconstructed from `photo.FileName` (storage keeps the original under the name it arrived with — the catalogue
+  cannot get closer, and it is written into an empty column anyway). **A missing original** (`os.ErrNotExist`
+  from `Materialize`/`Extract`) is **logged and skipped** (a nil error): the file is gone, a retry will never
+  succeed and a dead-letter would only break a library-wide run; other storage/DB errors are returned → the queue
+  retries. The **backfill** `BackfillMetadata(ctx,all) (int,error)` (the basis of `POST /process/metadata`):
+  it enqueues a `metadata` job for every photo whose file has **never been read**
+  (`PhotoLister.ListPhotosMissingFileMetadata` = `metadata_extracted_at IS NULL`), or — when `all` —
+  for every non-archived one (`ListActiveUIDs`, a forced re-read of the whole library, which is how the
+  fields a new extractor has learned to read get caught up); enqueue via `Enqueuer.EnqueueMetadata` (a dedup no-op),
+  returns the count; `ErrBackfillUnavailable` when the `Service` had no `Lister`/`Enqueuer`. **It converges and is
+  resumable**: the marker is stamped the moment the job finishes, so an interrupted run picks up exactly where
+  it stopped, and a second run over an exhausted library enqueues **zero** jobs — even for a photo whose file
+  has no IPTC tags at all ("we looked and there was nothing there" is a finished photo, not a pending one)),
   `internal/maintenanceapi/`
-  (maintainer-only HTTP API nad maintenance: rozhraní `Service` (Scan+Repair, splňuje `*maintenance.Service`,
-  nil → 503) a `AuditPurger` (`PurgeOlderThan`+`Record`, splňuje `*audit.Store`, nil → 503);
-  `NewAPI(Config{Service,Audit,RequireMaintainer})`+`RegisterRoutes` mountuje `/maintenance`:
-  `GET /maintenance/scan` (integritní report), `POST /maintenance/repair` (tělo `RepairOptions`,
-  `DisallowUnknownFields`, prázdný výběr → 400, `ErrOrphanImportUnavailable` → 503, jinak `RepairResult`)
-  a `POST /maintenance/audit/purge` (tělo `{older_than_days}` 1..36500, cutoff = `now − older_than_days`,
-  `audit.Store.PurgeOlderThan` → `{deleted,older_than_days,cutoff}`; chybějící/nekladné/přílišné okno
-  nebo neznámé pole → 400; **self-audit** `audit.purge` s cutoffem/oknem/počtem přes `Record` — čerstvý
-  záznam přežije purge, takže mazání trailu je dohledatelné, actor z `auth.UserFromContext`);
-  mountuje se v `serve` (`buildMaintenanceAPI` v `cmd/kukatko/maintenance.go` injektuje `audit.NewStore`,
-  service staví `buildMaintenanceAndThumb` sdílený s registrací `thumbnail` handleru v `buildJobs`)),
+  (a maintainer-only HTTP API over maintenance: the interfaces `Service` (Scan+Repair, satisfied by `*maintenance.Service`,
+  nil → 503) and `AuditPurger` (`PurgeOlderThan`+`Record`, satisfied by `*audit.Store`, nil → 503);
+  `NewAPI(Config{Service,Audit,RequireMaintainer})`+`RegisterRoutes` mounts `/maintenance`:
+  `GET /maintenance/scan` (the integrity report), `POST /maintenance/repair` (body `RepairOptions`,
+  `DisallowUnknownFields`, an empty selection → 400, `ErrOrphanImportUnavailable` → 503, otherwise `RepairResult`)
+  and `POST /maintenance/audit/purge` (body `{older_than_days}` 1..36500, cutoff = `now − older_than_days`,
+  `audit.Store.PurgeOlderThan` → `{deleted,older_than_days,cutoff}`; a missing/non-positive/excessive window
+  or an unknown field → 400; a **self-audit** `audit.purge` with the cutoff/window/count via `Record` — the fresh
+  record survives the purge, so deleting the trail is traceable, the actor from `auth.UserFromContext`);
+  mounted in `serve` (`buildMaintenanceAPI` in `cmd/kukatko/maintenance.go` injects `audit.NewStore`,
+  the service is built by `buildMaintenanceAndThumb`, shared with the registration of the `thumbnail` handler in `buildJobs`)),
   `internal/duplicates/`
-  (**review surface pro near-duplicate fotky** nad rámec upload-time varování: linkuje fotky dvěma
-  signály — pHash Hammingova vzdálenost do `duplicate.phash_max_diff` a embedding cosine vzdálenost
-  do `duplicate.embedding_max_dist` — a slévá hrany do souvislých komponent přes union-find
-  (`algo.go` disjoint-set + path compression/union by rank); **bez O(n²)**: pHash přes **banded-LSH**
-  buckety (`bandCount`=`maxDiff+1` pásem dle pigeonhole garantuje sdílený bucket pro páry do prahu,
-  kandidáti se ověří plnou Hammingovou vzdáleností), embeddingy přes HNSW (`vectors.FindDuplicatePairs`).
-  Vše za rozhraními `PhotoSource` (`ListByUIDs`)/`PhashSource` (`ListActivePhashes`)/`EmbeddingSource`
-  (`FindDuplicatePairs`, nil vypne embedding grouping)/`FeedbackStore` (`DismissedDuplicatePairs`,
-  nil nechá všechny hrany) → unit-testovatelné s faky; `Service` =
-  `New(Config{Photos,Phashes,Embeddings,Feedback,PhashMaxDiff,EmbeddingMaxDist,Neighbours})` (panika na nil
-  Photos/Phashes; `PhashMaxDiff<0` vypne pHash, `EmbeddingMaxDist<=0` vypne embedding);
-  **Zamítnuté dvojice** (`feedback.DismissedDuplicatePairs`, „nechat obě" z compare view) se v
-  `buildGraph` registrují (`graph.addDismissals`) **po `addPhashes` a před `addEmbedPairs`/`runPhash`**
-  a oba linkovací kroky je přeskočí — union-find neumí hranu odebrat, takže se dismissed pár musí
-  potlačit ve chvíli, kdy by hrana vznikla, ne rozplétat potom. Důsledek je záměrný: dvoučlenná
-  skupina po zamítnutí zmizí (bez hrany jsou to singletony, ty se zahazují), **větší skupina přežije
-  na zbývajících hranách** — „A není B" není tvrzení o C. Dvojice s uid, které scan nezná (archivovaná
-  /purgnutá fotka), se ignoruje; pár se skenuje na **indexech uzlů**, kdežto `seen` v `unionBucket` na
-  **pozicích entries** — jsou to různé prostory klíčů, proto se dismissal hledá přes `entries[i].idx`;
+  (**a review surface for near-duplicate photos** beyond the upload-time warning: it links photos by two
+  signals — pHash Hamming distance up to `duplicate.phash_max_diff` and embedding cosine distance
+  up to `duplicate.embedding_max_dist` — and merges the edges into connected components via union-find
+  (`algo.go` disjoint-set + path compression/union by rank); **without O(n²)**: pHash through **banded-LSH**
+  buckets (`bandCount`=`maxDiff+1` bands, which by the pigeonhole principle guarantees a shared bucket for pairs within the threshold,
+  and the candidates are verified by the full Hamming distance), embeddings through HNSW (`vectors.FindDuplicatePairs`).
+  All behind the interfaces `PhotoSource` (`ListByUIDs`)/`PhashSource` (`ListActivePhashes`)/`EmbeddingSource`
+  (`FindDuplicatePairs`, nil turns embedding grouping off)/`FeedbackStore` (`DismissedDuplicatePairs`,
+  nil leaves every edge in place) → unit-testable with fakes; `Service` =
+  `New(Config{Photos,Phashes,Embeddings,Feedback,PhashMaxDiff,EmbeddingMaxDist,Neighbours})` (panics on nil
+  Photos/Phashes; `PhashMaxDiff<0` turns pHash off, `EmbeddingMaxDist<=0` turns embeddings off);
+  **Dismissed pairs** (`feedback.DismissedDuplicatePairs`, "nechat obě" from the compare view) are registered in
+  `buildGraph` (`graph.addDismissals`) **after `addPhashes` and before `addEmbedPairs`/`runPhash`**
+  and both linking steps skip them — union-find cannot remove an edge, so a dismissed pair has to be
+  suppressed at the moment the edge would appear, not untangled afterwards. The consequence is deliberate: a two-member
+  group disappears after a dismissal (without the edge they are singletons, which are dropped), **a larger group survives
+  on its remaining edges** — "A is not B" is not a claim about C. A pair with a uid the scan does not know (an archived
+  /purged photo) is ignored; a pair is scanned over **node indexes**, whereas `seen` in `unionBucket` is over the
+  **positions of entries** — those are different key spaces, which is why a dismissal is looked up via `entries[i].idx`;
   **`FindGroups(ctx,limit,offset)`** (backing `GET /duplicates`) → `Result{Groups,Total,Limit,Offset,
-  NextOffset}`; každá `Group{ID (nejmenší uid),Reason (phash/embedding/both),KeeperUID,Members}`,
-  `Member` nese rozměry/velikost/`taken_at`/media_type + `is_keeper` + `phash_distance`/
-  `embedding_distance` ke keeperovi; **navržený keeper** = nejvyšší rozlišení → největší soubor →
-  nejstarší → nejmenší uid (`selectKeeperIndex`); skupiny řazené largest-first/newest-keeper/id,
-  `limit` clamp `[1,100]`; jen čte, **nikdy nemutuje** (řešení jde přes `dupmerge`); archivované
-  fotky se nescanují (`ListActivePhashes` filtruje `archived_at IS NULL`)), `internal/dupmerge/`
-  (**transakční sloučení near-duplicate skupiny do keepera** — mutační protějšek read-only `duplicates`;
+  NextOffset}`; each `Group{ID (the smallest uid),Reason (phash/embedding/both),KeeperUID,Members}`,
+  a `Member` carries dimensions/size/`taken_at`/media_type + `is_keeper` + `phash_distance`/
+  `embedding_distance` to the keeper; the **proposed keeper** = the highest resolution → the largest file →
+  the oldest → the smallest uid (`selectKeeperIndex`); groups ordered largest-first/newest-keeper/id,
+  `limit` clamped to `[1,100]`; it only reads, **never mutates** (resolution goes through `dupmerge`); archived
+  photos are not scanned (`ListActivePhashes` filters `archived_at IS NULL`)), `internal/dupmerge/`
+  (**the transactional merge of a near-duplicate group into the keeper** — the mutating counterpart of the read-only `duplicates`;
   `Service=NewService(pool)`, `Merge(ctx,Input{KeeperUID,MemberUIDs,ActorUID})→Result{albums_added,
-  labels_added,people_added,metadata_filled[],archived,dry_run}` a `Preview` (dry-run, tx rollback).
-  V **jedné `pgx.Tx`** (jako `bulk` — audited store metody si otevírají vlastní tx, nejdou složit)
-  spočítá `plan`: union alb/štítků/osob z kopií mínus co keeper už má, `pickFill` chybějících skalárů
-  (title/description z fotky + per-user favorite/rating/flag actora, **nikdy nepřepíše** existující
-  hodnotu), aktivní kopie k archivaci; aplikuje raw SQL (`INSERT … ON CONFLICT DO NOTHING`, osoba =
-  box-less `label` marker s vygenerovaným `mk…` uid — nová marker nemá `faces` řádek, cache netřeba),
-  archivuje (`archived_at IS NULL` guard) a zapíše `audit.ActionPhotosMerge`. A copy this call actually
+  labels_added,people_added,metadata_filled[],archived,dry_run}` and `Preview` (a dry run, tx rollback).
+  In **one `pgx.Tx`** (like `bulk` — the audited store methods open their own tx and cannot be composed)
+  it computes a `plan`: the union of the copies' albums/labels/people minus what the keeper already has, `pickFill` of the missing scalars
+  (title/description from the photo + the actor's per-user favorite/rating/flag, **never overwriting** an existing
+  value), and the active copies to archive; it applies raw SQL (`INSERT … ON CONFLICT DO NOTHING`, a person =
+  a box-less `label` marker with a generated `mk…` uid — a new marker has no `faces` row, no cache needed),
+  archives (with an `archived_at IS NULL` guard) and writes `audit.ActionPhotosMerge`. A copy this call actually
   archived also leaves its stack via `photos.LeaveStackTx` in the same tx (skipped for an already-archived
   copy, which left its stack back then), so archiving a copy that happened to be a stack's primary does not
-  hide that stack's still-live members. **Prázdný plán = no-op**
-  (nezapíše nic → idempotentní re-run na vyřešené skupině); validace `ErrNoKeeper`/`ErrTooFewMembers`/
+  hide that stack's still-live members. **An empty plan = a no-op**
+  (it writes nothing → an idempotent re-run on a resolved group); validation `ErrNoKeeper`/`ErrTooFewMembers`/
   `ErrKeeperNotInGroup`/`ErrKeeperNotFound`), `internal/duplicatesapi/`
-  (editor/admin HTTP API nad detekcí a řešením duplikátů: rozhraní `Service` (`FindGroups`, splňuje
-  `*duplicates.Service`, **nil → 503**) a `MergeService` (`Merge`/`Preview`, splňuje `*dupmerge.Service`,
-  **nil → 503**); `NewAPI(Config{Service,Merge,RequireWrite})`+`RegisterRoutes` mountuje `GET /duplicates`
-  a `POST /duplicates/merge` za `RequireWrite` (listing: `limit`≤100/`offset`, neplatný → 400, sken selže
-  → 500; merge: chybná skupina → 400, neexistující keeper → 404, actor z `auth.UserFromContext`);
-  mountuje se v `serve` (`buildDuplicatesAPI` v `cmd/kukatko/duplicates.go`, `Merge` vždy, `Service` při
-  `duplicate.enabled=false` nil)),
+  (an editor/admin HTTP API over duplicate detection and resolution: the interfaces `Service` (`FindGroups`, satisfied by
+  `*duplicates.Service`, **nil → 503**) and `MergeService` (`Merge`/`Preview`, satisfied by `*dupmerge.Service`,
+  **nil → 503**); `NewAPI(Config{Service,Merge,RequireWrite})`+`RegisterRoutes` mounts `GET /duplicates`
+  and `POST /duplicates/merge` behind `RequireWrite` (listing: `limit`≤100/`offset`, invalid → 400, a failed scan
+  → 500; merge: a bad group → 400, a non-existent keeper → 404, the actor from `auth.UserFromContext`);
+  mounted in `serve` (`buildDuplicatesAPI` in `cmd/kukatko/duplicates.go`, `Merge` always, `Service` nil when
+  `duplicate.enabled=false`)),
   `internal/stacks/`
-  (**detekce a správa stacků** — seskupení více souborů jednoho snímku (RAW+JPEG, exportovaná úprava,
-  kopie) pod jednu viditelnou **primární** fotku, **bez slévání řádků** (protějšek `dupmerge`, který
-  slévá skutečné duplicity — členové stacku se drží schválně; viz `docs/ARCHITECTURE.md` §5.1 + migrace
-  `0030_photo_stacks.sql`); `Config{Enabled,Rules RuleSet}` + `Store` rozhraní (splňuje `*photos.Store`,
-  fake v unit testech: `ListStackCandidates`/`StackInfoByUIDs`/`CreateStack`/`SetStackPrimary`/
-  `UnstackMember`/`UnstackAll`); `Service = New(store,cfg)` (panika na nil store):
-  **`DetectStacks(ctx) (created,error)`** (backing `POST /process/stacks`) seskupí **dosud nestacknuté
-  nearchivované** fotky enabled pravidly — synchronní, inkrementální a **idempotentní**: re-run nad
-  usazenou knihovnou nevytvoří nic a nesáhne na existující/ruční stack; no-op (0) když je funkce nebo
-  každé pravidlo vyplé; **`StackSelection(ctx,uids)`** ručně seskupí výběr (`photos.ErrStackTooSmall`
-  < 2 distinct, `photos.ErrPhotoNotFound` chybí/archivovaná), **`SetPrimary`/`Unstack`/`UnstackWhole`**
-  delegují na store; **čistá detekce** (`rules.go`): čtyři nezávisle přepínatelná pravidla
-  (`RuleSet{BaseName,SequentialCopy,UniqueID,TimeGPS}`, každé jiná míra falešných shod — špatně
-  stacknutá fotka je neviditelná, takže pravidla linkují jen fotky, co **plausibilně jsou** tentýž
-  snímek) klíčují kandidáty (`baseNameKey` bare stem / `canonicalNameKey` strhne trailing
-  `(2)`/`copy`/`-edited` / `uniqueIDKey` = ImageUniqueID/InstanceID / `timeGPSKey` = vteřina+GPS),
-  `Group` je slije **union-findem** (`unionfind.go`) do souvislých komponent ≥ 2, deterministicky pro
-  fixní pořadí vstupu; **výběr primárního** (`primary.go` `PickPrimary`): still před videem (live
-  pairing ukáže fotku, ne klip), rendrovaný obraz (JPEG/HEIC) před camera RAW (`rawExtensions`), pak
-  vyšší rozlišení, pak větší soubor, tie-break menší uid), `internal/system/`
-  (agregace provozního stavu instance pro admin **system-status dashboard** — žádná nová data, jen
-  sloučení existujících subsystémů; vše za malými rozhraními `DBPinger` (`database.DB`)/
+  (**stack detection and management** — grouping several files of one shot (RAW+JPEG, an exported edit,
+  a copy) under one visible **primary** photo, **without merging rows** (the counterpart of `dupmerge`, which
+  merges genuine duplicates — stack members are kept on purpose; see `docs/ARCHITECTURE.md` §5.1 + migration
+  `0030_photo_stacks.sql`); `Config{Enabled,Rules RuleSet}` + the `Store` interface (satisfied by `*photos.Store`,
+  a fake in unit tests: `ListStackCandidates`/`StackInfoByUIDs`/`CreateStack`/`SetStackPrimary`/
+  `UnstackMember`/`UnstackAll`); `Service = New(store,cfg)` (panics on a nil store):
+  **`DetectStacks(ctx) (created,error)`** (backing `POST /process/stacks`) groups the **not-yet-stacked
+  non-archived** photos by the enabled rules — synchronous, incremental and **idempotent**: a re-run over a
+  settled library creates nothing and does not touch an existing/manual stack; a no-op (0) when the feature or
+  every rule is off; **`StackSelection(ctx,uids)`** groups a selection manually (`photos.ErrStackTooSmall`
+  below 2 distinct, `photos.ErrPhotoNotFound` when one is missing/archived), **`SetPrimary`/`Unstack`/`UnstackWhole`**
+  delegate to the store; **pure detection** (`rules.go`): four independently switchable rules
+  (`RuleSet{BaseName,SequentialCopy,UniqueID,TimeGPS}`, each with a different rate of false matches — a wrongly
+  stacked photo is invisible, so the rules link only photos that **plausibly are** the same
+  shot) key the candidates (`baseNameKey` the bare stem / `canonicalNameKey` strips a trailing
+  `(2)`/`copy`/`-edited` / `uniqueIDKey` = ImageUniqueID/InstanceID / `timeGPSKey` = the second + GPS),
+  `Group` merges them with **union-find** (`unionfind.go`) into connected components ≥ 2, deterministically for a
+  fixed input order; **picking the primary** (`primary.go` `PickPrimary`): a still before a video (live
+  pairing shows the photo, not the clip), a rendered image (JPEG/HEIC) before a camera RAW (`rawExtensions`), then
+  the higher resolution, then the larger file, tie-break the smaller uid), `internal/system/`
+  (the aggregation of the instance's operational state for the admin **system-status dashboard** — no new data, just
+  a merge of the existing subsystems; all behind the small interfaces `DBPinger` (`database.DB`)/
   `EmbeddingHealth` (`embedding.Client.Healthy`)/`JobCounter`
   (`jobs.Store.CountsByState`/`CountsByType`/`CountPending`)/`ImportLister` (`importer.Store.LatestRun`)/
-  `BackupReporter` (`backup.Service.Status`, **nil = nenakonfigurováno**)/`MapsReporter`
-  (`mapy.Health.Snapshot`, **nil = bez mapy.com klíče**) → unit-testovatelné s faky
-  bez DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Imports,Library,
-  OriginalsPath,CachePath,StorageTTL,LibraryTTL,Clock})`; **`Collect(ctx) (Status,error)`** sbírá `Status{Version,Database,
-  Embeddings,Jobs,Backup,Imports,Storage,Maps}`: embeddings online/offline, fronta (by_state/by_type/total/
-  dead_letter/pending_embeddings = queued+running `image_embed`/`face_detect`), backup stav+poslední
-  výsledek, poslední import per zdroj, úložiště (velikost originálů+cache walkem, volné/celkové místo
-  `statfs` přes `golang.org/x/sys/unix`, **memoizováno** `storageCache` na `defaultStorageTTL` 30 s aby
-  polling nepřecházel strom), DB reachability (`Ping`, **sanitizovaná** chyba), **maps**
-  (`Maps{Configured,State,Degraded,Detail,CheckedAt}` z `mapy.Health` — poslední pozorovaný stav
-  proxy, žádný vlastní probe/kredit; `key_rejected` = mapy.com odmítá klíč → `degraded`, vidět
-  na dashboardu bez otevření mapy), verze/commit; chyby
-  čtení fronty/importů (vyžadují DB) → error (500), nedostupná DB a nečitelné úložiště inline
-  best-effort; vedle provozního snapshotu agreguje i **statistiky knihovny** pro všechny přihlášené:
-  `LibraryCounter` (`CountLibrary`, splňuje vlastní `Store` = `NewStore(pool)` — jediný dotaz skalárních
-  podselectů `countLibrarySQL`, **ne** `maintenance scan` po stromu; partial indexy pro archived/video,
-  semi-joiny na PK `embeddings`/unique `faces`), **`LibraryStats(ctx) (Library,error)`** vrací
+  `BackupReporter` (`backup.Service.Status`, **nil = not configured**)/`MapsReporter`
+  (`mapy.Health.Snapshot`, **nil = no mapy.com key**) → unit-testable with fakes
+  without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Imports,Library,
+  OriginalsPath,CachePath,StorageTTL,LibraryTTL,Clock})`; **`Collect(ctx) (Status,error)`** gathers `Status{Version,Database,
+  Embeddings,Jobs,Backup,Imports,Storage,Maps}`: embeddings online/offline, the queue (by_state/by_type/total/
+  dead_letter/pending_embeddings = queued+running `image_embed`/`face_detect`), the backup state+last
+  result, the last import per source, the storage (the size of the originals+cache by a walk, free/total space via
+  `statfs` through `golang.org/x/sys/unix`, **memoized** by `storageCache` for `defaultStorageTTL` 30 s so that
+  polling does not keep walking the tree), DB reachability (`Ping`, a **sanitized** error), **maps**
+  (`Maps{Configured,State,Degraded,Detail,CheckedAt}` from `mapy.Health` — the last observed state of the
+  proxy, no probe or credit of its own; `key_rejected` = mapy.com is rejecting the key → `degraded`, visible
+  on the dashboard without opening the map), version/commit; errors while
+  reading the queue/imports (which require the DB) → an error (500), an unreachable DB and unreadable storage are handled inline
+  best-effort; alongside the operational snapshot it also aggregates the **library statistics** for every logged-in user:
+  `LibraryCounter` (`CountLibrary`, satisfied by its own `Store` = `NewStore(pool)` — a single query of scalar
+  subselects `countLibrarySQL`, **not** a `maintenance scan` over the tree; partial indexes for archived/video,
+  semi-joins on the `embeddings` PK / the unique `faces`), **`LibraryStats(ctx) (Library,error)`** returns
   `Library{Photos,Videos,PhotosLive,PhotosArchived,PhotosWith(out)Embedding,PhotosWith(out)Faces,
   Embeddings,Faces,Subjects,SubjectsPerson/Pet/Other,Markers,MarkersAssigned/Unassigned,Albums,Labels}`
-  — store vrací **jen syrové počty**, odvozené hodnoty (live split + coverage gapy, clampnuté na 0) dopočítá
-  `Library.derive()`; `libraryCache` memoizuje na `defaultLibraryTTL` 30 s a **cachuje jen úspěch**
-  (chyba jde ven, stránka nesmí vykreslit nuly jako reálné počty); nil `Library` → `errNoLibraryCounter`
-  místo paniky), `internal/systemapi/`
-  (HTTP API nad system stavem: rozhraní `StatusCollector` (`Collect`+`LibraryStats`, splňuje
-  `*system.Service`, fakeovatelné); `NewAPI(Config{Service,RequireMaintainer,RequireAuth})`+`RegisterRoutes`
-  mountuje `GET /system/status` za `RequireMaintainer` (snapshot; collect selže → 500) a
-  `GET /system/stats` za `RequireAuth` (počty knihovny pro **každého přihlášeného**; agregace selže → 500,
-  nikdy tělo nul); mountuje se vždy
-  (`buildSystemAPI` v `cmd/kukatko/system.go`, staví vlastní bezstavový embeddings klient jen pro
-  Healthy probe, sdílí pool pro job/import/library stores, backup služba předaná nil-safe; mountuje se
-  v `appendOpsAPIs` vedle backup/restore)), `internal/capabilitiesapi/`
-  (all-authenticated HTTP API instančních feature-flagů: rozhraní `Reachability` (`Reachable() bool`,
-  splňuje `*reachability.Checker`, fakeovatelné); `NewAPI(Config{Embeddings,RequireAuth})`+
-  `RegisterRoutes` mountuje `GET /capabilities` za `RequireAuth` → `{semantic_search:bool}` čtený
-  z cache-ovaného flagu (nikdy živý probe, takže levné a smí ho číst každý přihlášený — na rozdíl od
-  maintainer-only `/system/status`); tvar záměrně otevřený pro budoucí flagy; mountuje se **vždy**
-  (`buildCapabilitiesAPI`+`buildReachabilityChecker` v `cmd/kukatko/capabilities.go`)),
+  — the store returns **only raw counts**, the derived values (the live split + the coverage gaps, clamped to 0) are computed by
+  `Library.derive()`; `libraryCache` memoizes for `defaultLibraryTTL` 30 s and **caches only a success**
+  (an error goes out, the page must not render zeros as real counts); a nil `Library` → `errNoLibraryCounter`
+  instead of a panic), `internal/systemapi/`
+  (the HTTP API over the system state: the `StatusCollector` interface (`Collect`+`LibraryStats`, satisfied by
+  `*system.Service`, fakeable); `NewAPI(Config{Service,RequireMaintainer,RequireAuth})`+`RegisterRoutes`
+  mounts `GET /system/status` behind `RequireMaintainer` (the snapshot; a failed collect → 500) and
+  `GET /system/stats` behind `RequireAuth` (the library counts for **every logged-in user**; a failed aggregation → 500,
+  never a body of zeros); always mounted
+  (`buildSystemAPI` in `cmd/kukatko/system.go`, which builds its own stateless embeddings client just for the
+  Healthy probe, shares the pool for the job/import/library stores, and passes the backup service nil-safely; mounted
+  in `appendOpsAPIs` next to backup/restore)), `internal/capabilitiesapi/`
+  (an all-authenticated HTTP API of the instance's feature flags: the `Reachability` interface (`Reachable() bool`,
+  satisfied by `*reachability.Checker`, fakeable); `NewAPI(Config{Embeddings,RequireAuth})`+
+  `RegisterRoutes` mounts `GET /capabilities` behind `RequireAuth` → `{semantic_search:bool}` read
+  from the cached flag (never a live probe, so it is cheap and every logged-in user may read it — unlike the
+  maintainer-only `/system/status`); the shape is deliberately open for future flags; mounted **always**
+  (`buildCapabilitiesAPI`+`buildReachabilityChecker` in `cmd/kukatko/capabilities.go`)),
   `internal/query/`
-  (čistý **parser vyhledávacího jazyka** `q=` — volný text + `klíč:hodnota` filtry v jednom stringu
-  (`dovolená camera:"Canon EOS R6" iso:100-400 faces:2`), žádné I/O: `Parse(input) Query` **nikdy
-  neselže** — tokenizer respektuje uvozovky a `\` escapy, operátory `|` (OR mezi alternativami
-  hodnoty), `!` (NOT per alternativa), `-` (NOT volného textu), rozsahy `lo-hi` s otevřenými konci
-  (`800-`, `-200`), `*` wildcard v textu (**escapovaná nebo uvozená hvězdička je literál** —
-  `title:foo\*bar` hledá hvězdičku); registr filtrů `specs` (Key → Kind
-  text/number/date/bool/enum/id/count + validace mezí: rating 0–5, month 1–12, year 1000–9999, …)
-  s aliasy `subject:`→`person:`, `keyword:`→`keywords:`; **neznámý klíč nebo nevalidní hodnota
-  degraduje celý token na volný text** a hlásí se v `Query.Unknown` (UI z toho staví hint,
-  API `unknown_tokens`). AST: `Query{Terms,Filters,Unknown}`, `Term{Text,Phrase,Not}`,
-  `Filter{Key,Values}`, `Value{Not,Text,Pattern,Bool,Min,Max,From,Until}` (číselné meze / half-open
-  datumové intervaly; `Pattern` u KindText nese `*`-literálnost, kterou `Text` ztrácí — čte se přes
-  `Value.TextPattern()`, fallback na `Text` pro hodnoty stavěné v kódu); renderingy `FreeText()` (websearch syntax pro FTS vč. frází a `-` negací),
-  `PlainText()` (pozitivní termy pro ILIKE substring a embedding dotazu), `NotTerms()`,
-  `HasFilter(key)`. Do SQL AST kompiluje `internal/photos/store_query.go` (`queryClauses` — mapa
-  builderů per klíč, vše přes bind parametry; per-user filtry scopnuté na `RatedBy`, `near:`
-  sférická vzdálenost s poloměrem `dist:` default 5 km, `faces:` počítá ne-invalid face markery,
-  každá **desetinná** mez (exact i konce rozsahu) povolená ±0.005 kvůli float4, celočíselné meze
-  zůstávají přesné; `likePattern` dělá wildcard jen z neescapované `*` a escapuje `%`/`_`, stejně jako
-  substringové filtry `Search`/`?camera=`/`?lens=` v `store_list.go`). Uživatelská gramatika: docs/API.md
-  „Vyhledávací jazyk (q=)“), `internal/ratelimit/`
-  (znovupoužitelný **per-key token-bucket rate limiter** + HTTP middleware pro náročné endpointy:
-  `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, per-klíč bucket) / `Cleanup`/`RunMaintenance`
-  (úklid plně doplněných bucketů) / `Middleware` (chi-kompatibilní, keyuje **client IP** přes
-  `clientIP` z `RemoteAddr` — chi `RealIP` ji plní z `X-Forwarded-For`/`X-Real-IP`; prázdný bucket →
-  **429** + `Retry-After`); `ratePerSec ≤ 0` → **disabled** limiter (Allow vždy true, Middleware
-  no-op — endpoint se vypne čistě configem); paměťově omezený opportunistickým úklidem při `maxBuckets`
-  (8192), takže nepotřebuje externí goroutinu; mountuje se jako outermost middleware ahead-of-auth na
-  `POST /upload` (ingest), `POST /photos/bulk` (bulkapi), `POST /import/*` (importapi) a
-  `GET /map/tiles/...` (mapsapi) — limity z `ratelimit.*` configu; login a geocode mají vlastní
-  limitery), `internal/obs/`
-  (strukturované logování + request-scoped plumbing: slog **JSON** handler na konfigurovatelné
-  úrovni (`ParseLevel`/`NewLogger`/`Setup`, `log.level`, neplatná úroveň → chyba při startu),
-  **redakční `ReplaceAttr` hook** (`redactAttr`) škrtne hodnotu každého atributu, jehož klíč nese
-  tajemství (password/passwd/secret/token/apikey/access_key/secret_key/authorization/cookie/
-  credential/dsn) na `[REDACTED]` — i uvnitř skupin, takže secret nikdy neuteče do logu, ani když
-  ho někdo omylem zaloguje; **`AccessLog` middleware** vypíše jeden strukturovaný řádek na HTTP
-  request (request id z chi `RequestID`, method/path/route pattern/status/duration/bytes/remote IP
-  + autentizovaný uživatel, když je znám — auth middleware ho stampne přes `SetUser` do
-  request-scoped `fields` bagu sdíleného pointerem přes kontext, protože zápis hluboko v řetězu musí
-  vidět top-level logger); level dle statusu (5xx=error, 4xx=warn, jinak info), `/metrics` scrape se
-  přeskočí, request id se zrcadlí do hlavičky `X-Request-Id` i sdíleného route labelu metrik),
+  (a pure **parser of the search language** `q=` — free text + `key:value` filters in one string
+  (`dovolená camera:"Canon EOS R6" iso:100-400 faces:2`), no I/O: `Parse(input) Query` **never
+  fails** — the tokenizer honours quotes and `\` escapes, the operators `|` (OR between alternatives of a
+  value), `!` (NOT per alternative), `-` (NOT of free text), the ranges `lo-hi` with open ends
+  (`800-`, `-200`), `*` as a wildcard in text (**an escaped or quoted asterisk is a literal** —
+  `title:foo\*bar` searches for an asterisk); the filter registry `specs` (Key → Kind
+  text/number/date/bool/enum/id/count + bound validation: rating 0–5, month 1–12, year 1000–9999, …)
+  with the aliases `subject:`→`person:`, `keyword:`→`keywords:`; **an unknown key or an invalid value
+  degrades the whole token to free text** and is reported in `Query.Unknown` (the UI builds a hint from it,
+  the API `unknown_tokens`). AST: `Query{Terms,Filters,Unknown}`, `Term{Text,Phrase,Not}`,
+  `Filter{Key,Values}`, `Value{Not,Text,Pattern,Bool,Min,Max,From,Until}` (numeric bounds / half-open
+  date intervals; `Pattern` on KindText carries the `*`-literalness that `Text` loses — it is read via
+  `Value.TextPattern()`, fallback to `Text` for values built in code); renderings `FreeText()` (websearch syntax for FTS incl. phrases and `-` negations),
+  `PlainText()` (the positive terms for an ILIKE substring and for the embedding query), `NotTerms()`,
+  `HasFilter(key)`. The AST is compiled into SQL by `internal/photos/store_query.go` (`queryClauses` — a map of
+  builders per key, everything through bind parameters; per-user filters scoped to `RatedBy`, `near:`
+  a spherical distance with the radius `dist:` default 5 km, `faces:` counts non-invalid face markers,
+  every **decimal** bound (both an exact one and the ends of a range) allowed ±0.005 because of float4, integer bounds
+  stay exact; `likePattern` makes a wildcard only out of an unescaped `*` and escapes `%`/`_`, just like
+  the substring filters `Search`/`?camera=`/`?lens=` in `store_list.go`). The user-facing grammar: docs/API.md
+  "Search language (q=)"), `internal/ratelimit/`
+  (a reusable **per-key token-bucket rate limiter** + HTTP middleware for expensive endpoints:
+  `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, a bucket per key) / `Cleanup`/`RunMaintenance`
+  (cleaning up fully refilled buckets) / `Middleware` (chi-compatible, keyed by the **client IP** via
+  `clientIP` from `RemoteAddr` — chi's `RealIP` fills it from `X-Forwarded-For`/`X-Real-IP`; an empty bucket →
+  **429** + `Retry-After`); `ratePerSec ≤ 0` → a **disabled** limiter (Allow always true, Middleware a
+  no-op — the endpoint is switched off cleanly by config); memory-bounded by an opportunistic cleanup at `maxBuckets`
+  (8192), so it needs no external goroutine; mounted as the outermost middleware ahead of auth on
+  `POST /upload` (ingest), `POST /photos/bulk` (bulkapi), `POST /import/*` (importapi) and
+  `GET /map/tiles/...` (mapsapi) — the limits come from the `ratelimit.*` config; login and geocode have their own
+  limiters), `internal/obs/`
+  (structured logging + request-scoped plumbing: a slog **JSON** handler at a configurable
+  level (`ParseLevel`/`NewLogger`/`Setup`, `log.level`, an invalid level → an error at startup),
+  a **redaction `ReplaceAttr` hook** (`redactAttr`) blanks the value of every attribute whose key carries a
+  secret (password/passwd/secret/token/apikey/access_key/secret_key/authorization/cookie/
+  credential/dsn) to `[REDACTED]` — inside groups too, so a secret never escapes into the log, not even when
+  somebody logs it by mistake; the **`AccessLog` middleware** emits one structured line per HTTP
+  request (the request id from chi's `RequestID`, method/path/route pattern/status/duration/bytes/remote IP
+  + the authenticated user when known — the auth middleware stamps it via `SetUser` into a
+  request-scoped `fields` bag shared by pointer through the context, because a write deep in the chain must
+  be visible to the top-level logger); the level follows the status (5xx=error, 4xx=warn, otherwise info), the `/metrics` scrape is
+  skipped, and the request id is mirrored both into the `X-Request-Id` header and into the shared route label of the metrics),
   `internal/geoestimate/`
-  (**odhad chybějící polohy z fotek pořízených blízko v čase** — fotka bez GPS (foťák bez přijímače,
-  sken, ořezaný export) byla velmi často pořízená tentýž den na tomtéž místě jako fotky, které
-  souřadnice mají; balík stojí na jediném pravidle: **špatná poloha je horší než žádná** — nejen že
-  vypadá blbě na detailu, ale tiše otráví mapu, hierarchii míst i každé `near:` hledání nad nimi, a to
-  se tváří stejně důvěryhodně jako změřená souřadnice, takže odhadovač **mnohem raději odmítá než
-  hádá**; **čisté jádro** (`estimate.go`, bez DB): `Point{Lat,Lng}`, **`Estimate(neighbours,
-  radiusMeters) (Point,bool)`** = těžiště sousedů + kontrola, že **každý** z nich je do `radiusMeters`
-  od něj (jediný odlehlý bod shodí celou množinu — zamýšlené selhání: cena za odmítnutí je prázdné
-  pole, cena za špatný tip je lež, kterou uživatel nemá důvod zpochybnit; **žádné** clusterování ani
-  hlasování, protože „většina souhlasí“ je jiné a mnohem slabší tvrzení, než jaké by za ně UI dělalo),
-  **`DistanceMeters`** (haversine); množina přes ±180° dostane těžiště uprostřed Pacifiku → nesoudržná
-  → nic, což je správná odpověď ze špatného důvodu a nechává se být; **služba** (`service.go`):
+  (**estimating a missing location from photos taken close in time** — a photo without GPS (a camera without a
+  receiver, a scan, a cropped export) was very often taken on the same day in the same place as photos that
+  do have coordinates; the package rests on a single rule: **a wrong location is worse than none** — not only does it
+  look bad on the detail, it silently poisons the map, the place hierarchy and every `near:` search over them, and it
+  looks just as trustworthy as a measured coordinate, so the estimator **much rather refuses than
+  guesses**; the **pure core** (`estimate.go`, no DB): `Point{Lat,Lng}`, **`Estimate(neighbours,
+  radiusMeters) (Point,bool)`** = the centroid of the neighbours + a check that **every** one of them is within `radiusMeters`
+  of it (a single outlier brings the whole set down — an intended failure: the price of a refusal is an empty
+  field, the price of a bad guess is a lie the user has no reason to question; **no** clustering and no
+  voting, because "the majority agrees" is a different and far weaker claim than the one the UI would make on its behalf),
+  **`DistanceMeters`** (haversine); a set spanning ±180° gets a centroid in the middle of the Pacific → incoherent
+  → nothing, which is the right answer for the wrong reason and is left alone; the **service** (`service.go`):
   `Config{Store,Enqueuer,Window,RadiusMeters}` (non-positive → `DefaultWindow` 6h /
-  `DefaultRadiusMeters` 5000 — 6h drží fotku uvnitř jednoho výletu, ne jednoho kalendářního dne, což je
-  přesně ten případ (Brno ráno, Vídeň večer), kdy je same-day odhad špatně), `Store` rozhraní (splňuje
+  `DefaultRadiusMeters` 5000 — 6h keeps a photo inside one trip, not inside one calendar day, which is
+  exactly the case (Brno in the morning, Vienna in the evening) where a same-day estimate is wrong), the `Store` interface (satisfied by
   `*photos.Store`: `ListLocationCandidates`/`ListLocatedNeighbours`/`SetEstimatedLocation`), `Enqueuer`
-  (splňuje `*jobs.Enqueuer`, **smí být nil** = odhady se uloží, ale negeokódují);
-  **`BackfillLocations(ctx) (estimated,error)`** (backing `POST /process/locations`): pro každého
-  kandidáta načte sousedy v okně, zavolá `Estimate`, a při shodě zapíše přes `SetEstimatedLocation`
-  (**guarded UPDATE** — když fotka mezitím polohu získala nebo ji uživatel rozhodl, odhad **prohraje**
-  a zahodí se) + naplánuje `places` job **až po zápisu**, aby `placesjob` viděl nové souřadnice a
-  nepřeskočil geokód jako „už aktuální“; sousedé bez odhadu (`location_source <> 'estimate'`), aby
-  jeden tip nepropagoval knihovnou, kde každý skok vypadá stejně sebejistě jako minulý; fotka bez
-  sousedů / s nesoudržnými sousedy = `(false, nil)`, **ne chyba** — odmítnutí je normální výsledek;
-  idempotentní a resumable **bez kurzoru** (množina kandidátů se prací zmenšuje, takže re-run *je* ten
+  (satisfied by `*jobs.Enqueuer`, it **may be nil** = the estimates are stored but not geocoded);
+  **`BackfillLocations(ctx) (estimated,error)`** (backing `POST /process/locations`): for every
+  candidate it loads the neighbours in the window, calls `Estimate`, and on a match writes via `SetEstimatedLocation`
+  (a **guarded UPDATE** — when the photo has gained a location in the meantime or the user has decided it, the estimate **loses**
+  and is dropped) + schedules a `places` job **only after the write**, so that `placesjob` sees the new coordinates and
+  does not skip the geocode as "already current"; the neighbours exclude estimates (`location_source <> 'estimate'`), so that
+  one guess does not propagate through the library, where every hop would look exactly as confident as the last; a photo without
+  neighbours / with incoherent neighbours = `(false, nil)`, **not an error** — a refusal is a normal outcome;
+  idempotent and resumable **without a cursor** (the candidate set shrinks as the work is done, so a re-run *is* the
   resume), wiring `cmd/kukatko/geoestimate.go` (`buildGeoEstimateServiceOrNil` /
-  `locationEstimatorOrNil` — nil **interface**, ne typed-nil pointer, aby processapi vrátilo 503)),
+  `locationEstimatorOrNil` — a nil **interface**, not a typed-nil pointer, so that processapi returns 503)),
   `internal/metrics/`
-  (Prometheus instrumentace HTTP serveru, workeru fronty a infra (pgx pool, embeddings sidecar,
-  importy, thumbnaily), namespace `kukatko`; **izolovaný `*prometheus.Registry`** místo
-  process-global `DefaultRegisterer`, takže testy staví nezávislé metric surface bez cross-test
-  leaku; `New()` → `Registry` zaregistruje HTTP (`kukatko_http_requests_total` counter + latency
-  histogram + inflight gauge, route label = **chi route pattern**, nikdy raw URL), job lifecycle
-  (started/finished counter + duration histogram by type/outcome), embeddings (duration histogram +
-  up gauge), import progress (gauge per source/outcome) a thumbnail duration + standardní
-  `go_`/`process_` kolektory; **pull-at-scrape kolektory** `RegisterDBPool` (živé pgx pool stats)
-  a `RegisterJobQueue` (hloubka fronty by_state/by_type přes `QueueDepthFunc`, `collectTimeout` 5 s,
-  aby pomalá DB neblokovala scrape) čtou data ve chvíli scrapu bez extra goroutin; `Handler()`
-  mountuje `serve` na `/metrics` (middleware ten path přeskočí, scrape neinstrumentuje sám sebe),
-  observační metody `JobStarted`/`JobFinished`/`ObserveEmbeddingCall`/`SetEmbeddingUp`/
-  `SetImportProgress`/`ObserveThumbnail` a `Middleware(routeOf)` se předají subsystémům, které
-  emitují události; zrcadlí lehký photo-sorter přístup — jeden namespace, omezené label sety;
-  tunables v `metrics.*` configu), `internal/web/`
-  (SPA fallback handler `web.Handler()`/`SPAHandler` + `internal/web/static` embed
-  `//go:embed all:dist/*`; Vite build se zapisuje do `internal/web/static/dist`, ten je
-  gitignorovaný kromě committed `.gitkeep`, aby embed kompiloval i bez buildnutého
-  frontendu). Detail: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md).
+  (Prometheus instrumentation of the HTTP server, the queue worker and the infrastructure (pgx pool, embeddings sidecar,
+  imports, thumbnails), namespace `kukatko`; an **isolated `*prometheus.Registry`** instead of the
+  process-global `DefaultRegisterer`, so tests build independent metric surfaces without cross-test
+  leakage; `New()` → `Registry` registers HTTP (`kukatko_http_requests_total` counter + a latency
+  histogram + an inflight gauge, the route label = the **chi route pattern**, never a raw URL), the job lifecycle
+  (started/finished counter + a duration histogram by type/outcome), embeddings (a duration histogram +
+  an up gauge), import progress (a gauge per source/outcome) and thumbnail duration + the standard
+  `go_`/`process_` collectors; the **pull-at-scrape collectors** `RegisterDBPool` (live pgx pool stats)
+  and `RegisterJobQueue` (queue depth by_state/by_type via `QueueDepthFunc`, `collectTimeout` 5 s,
+  so a slow DB does not block the scrape) read their data at scrape time without extra goroutines; `Handler()`
+  is mounted by `serve` on `/metrics` (the middleware skips that path, a scrape does not instrument itself),
+  the observation methods `JobStarted`/`JobFinished`/`ObserveEmbeddingCall`/`SetEmbeddingUp`/
+  `SetImportProgress`/`ObserveThumbnail` and `Middleware(routeOf)` are handed to the subsystems that
+  emit the events; it mirrors photo-sorter's lightweight approach — one namespace, limited label sets;
+  tunables in the `metrics.*` config), `internal/web/`
+  (the SPA fallback handler `web.Handler()`/`SPAHandler` + the `internal/web/static` embed
+  `//go:embed all:dist/*`; the Vite build writes into `internal/web/static/dist`, which is
+  gitignored except for the committed `.gitkeep`, so that the embed compiles even without a built
+  frontend). Details: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md).
 
-- **Remote CLI klient (`internal/ctl`):** klientská polovina `kukatko ctl` — jediný kus stromu, který
-  Kukátko volá **přes HTTP jako cizí server**, ne přes DB a disk. Nemá nic společného s `internal/config`
-  (ten popisuje *server* a o vzdáleném endpointu nic neví); jediný stav, který vlastní, je klientský
-  soubor `~/.config/kukatko/ctl.yaml`. Motivace: levnější v tokenech než MCP server — žádné tool schema
-  se nenačítá do kontextu modelu, jen krátký příkaz a úzký výsledek. Proto je výstup kompaktní.
-  - `config.go` — `Context{Name,Server,Token}` + `Config{CurrentContext,Contexts}` ve stylu kubectl.
-    `Load(path)` (chybějící soubor = prázdný config, ne chyba — běh jen z env proměnných), `Save(path,cfg)`
-    (atomicky: temp 0600 → `Rename` → `Chmod` 0600, adresář 0700; **existující world-readable soubor
-    utáhne**, nikdy do něj token nezapíše tak, jak je). `DefaultConfigPath()` ctí `XDG_CONFIG_HOME`.
-    `Resolve(cfg, contextName, env)` → `Endpoint`: vybere kontext (jménem → jinak `current-context`),
-    pak `KUKATKO_SERVER`/`KUKATKO_TOKEN` **přebijí po jednotlivých polích**, takže samotné
-    `KUKATKO_TOKEN` přecredentialuje uložený kontext. Chyby `ErrContextNotFound`, `ErrNoServer`.
-  - `client.go` — `NewClient(server, token)` (validuje absolutní http(s) URL → `ErrInvalidServerURL`),
-    interní `get(ctx, path, query)` a `send(ctx, method, path, body)` posílají
-    `Authorization: Bearer <token>` a vracejí **surové** tělo (`json.RawMessage`), protože `-o json`
-    tiskne bajty serveru beze změny; `204 No Content` vrací `nil` tělo. Úspěch je celý rozsah `2xx` —
-    API odpovídá 200, 201 i 204 podle endpointu. `401` → `*UnauthorizedError` s krátkou akční hláškou
-    (token chybí / expiroval / byl revokován + jak vyrobit nový); `403` → `*ForbiddenError`, který
-    **řekne, že nestačí role** (mutace chtějí editor/admin, viewer jen čte), místo výpisu serverového
-    `insufficient permissions`. **Nikdy** výpis těla ani tokenu; jiný non-2xx → `*StatusError`
-    s `{"error":…}` textem serveru (jinak omezený úryvek těla). Tělo se čte přes `io.LimitReader`,
+- **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
+  Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`
+  (which describes the *server* and knows nothing about a remote endpoint); the only state it owns is the client
+  file `~/.config/kukatko/ctl.yaml`. The motivation: cheaper in tokens than the MCP server — no tool schema
+  is loaded into the model's context, just a short command and a narrow result. Hence the compact output.
+  - `config.go` — `Context{Name,Server,Token}` + `Config{CurrentContext,Contexts}` in the kubectl style.
+    `Load(path)` (a missing file = an empty config, not an error — running from env variables alone), `Save(path,cfg)`
+    (atomically: a temp at 0600 → `Rename` → `Chmod` 0600, the directory 0700; it **tightens an existing
+    world-readable file**, it never writes a token into one as it is). `DefaultConfigPath()` honours `XDG_CONFIG_HOME`.
+    `Resolve(cfg, contextName, env)` → `Endpoint`: it picks the context (by name → otherwise `current-context`),
+    then `KUKATKO_SERVER`/`KUKATKO_TOKEN` **override field by field**, so `KUKATKO_TOKEN` on its own
+    re-credentials the stored context. The errors `ErrContextNotFound`, `ErrNoServer`.
+  - `client.go` — `NewClient(server, token)` (validates an absolute http(s) URL → `ErrInvalidServerURL`),
+    the internal `get(ctx, path, query)` and `send(ctx, method, path, body)` send
+    `Authorization: Bearer <token>` and return the **raw** body (`json.RawMessage`), because `-o json`
+    prints the server's bytes unchanged; `204 No Content` returns a `nil` body. Success is the whole `2xx` range —
+    the API answers 200, 201 and 204 depending on the endpoint. `401` → `*UnauthorizedError` with a short, actionable message
+    (the token is missing / expired / was revoked + how to make a new one); `403` → `*ForbiddenError`, which
+    **says that the role is not enough** (mutations want editor/admin, a viewer only reads), instead of printing the server's
+    `insufficient permissions`. It **never** prints the body or the token; another non-2xx → `*StatusError`
+    with the server's `{"error":…}` text (otherwise a limited excerpt of the body). The body is read through `io.LimitReader`,
     timeout 30 s.
   - `photos.go` — `ListPhotos`/`GetPhoto`/`SearchPhotos` + `DecodePhotoPage`/`DecodePhotoDetail`.
-    **Dekodér je per-resource záměrně:** API nemá jednotnou list obálku (`photos` vrací
-    `{photos,total,limit,offset,next_offset}`, ostatní zdroje holý seznam) a sjednocovat ho nesmíme —
-    rozbil by se frontend. `ListOptions` (limit/offset/sort/order/year/album/label/favorite/archived)
-    se validuje lokálně (`ErrInvalidPaging`/`ErrInvalidYear`/`ErrInvalidArchived`), takže překlep
-    nestojí round trip. **`--year` API nezná** — překládá se na inkluzivní rozsah
-    `taken_after`/`taken_before` (`taken_at >= … <= …`), horní mez je poslední instant 31. 12.
-    `SearchOptions` přidává `q` + `mode` (`fulltext`/`semantic`/`hybrid`).
+    **The decoder is per-resource on purpose:** the API has no uniform list envelope (`photos` returns
+    `{photos,total,limit,offset,next_offset}`, the other resources a bare list) and we must not unify it —
+    it would break the frontend. `ListOptions` (limit/offset/sort/order/year/album/label/favorite/archived)
+    is validated locally (`ErrInvalidPaging`/`ErrInvalidYear`/`ErrInvalidArchived`), so a typo does not
+    cost a round trip. **The API does not know `--year`** — it is translated into the inclusive range
+    `taken_after`/`taken_before` (`taken_at >= … <= …`), the upper bound being the last instant of 31 December.
+    `SearchOptions` adds `q` + `mode` (`fulltext`/`semantic`/`hybrid`).
   - `albums.go` — `ListAlbums`/`GetAlbum`/`CreateAlbum`/`AddAlbumPhotos`/`RemoveAlbumPhotos`
-    + `DecodeAlbums`/`DecodeAlbum`/`DecodePhotoUIDs`. Obálka je **holé `{"albums":[…]}` bez stránkování**
-    — proto vlastní dekodér. `PhotoCount` plní jen list; detail ho neposílá, takže ho renderer netiskne.
-    `AlbumInput` se validuje lokálně (`ErrEmptyTitle`, `ErrInvalidAlbumType`); membership posílá celý
-    seznam uidů v **jednom** požadavku a server vrací obnovené pořadí.
+    + `DecodeAlbums`/`DecodeAlbum`/`DecodePhotoUIDs`. The envelope is a **bare `{"albums":[…]}` without paging**
+    — hence its own decoder. `PhotoCount` is filled only by the list; the detail does not send it, so the renderer does not print it.
+    `AlbumInput` is validated locally (`ErrEmptyTitle`, `ErrInvalidAlbumType`); membership sends the whole
+    list of uids in **one** request and the server returns the refreshed order.
   - `labels.go` — `ListLabels`/`GetLabel`/`CreateLabel`/`AttachLabel`/`DetachLabel` + `DecodeLabels`/
-    `DecodeLabel`. Obálka je **holé `{"labels":[…]}`** řazené dle priority (třetí tvar). Attach/detach
-    odpovídají `204`. Prázdný `source` se ze těla vypustí, ať server dosadí vlastní `manual`
+    `DecodeLabel`. The envelope is a **bare `{"labels":[…]}`** ordered by priority (a third shape). Attach/detach
+    answer `204`. An empty `source` is dropped from the body so that the server fills in its own `manual`
     (`ErrInvalidLabelSource`, `ErrEmptyName`).
   - `subjects.go` — `ListSubjects`/`GetSubject`/`SubjectPhotos` + `DecodeSubjects`/`DecodeSubject`.
-    Obálka je **holé `{"subjects":[…]}`**; galerie subjektu ale **má tvar `/photos`**, takže se čte
-    `DecodePhotoPage` (stejný tvar, ne sjednocený). `PageOptions` nabízí jen limit/offset — filtry
-    katalogu endpoint nečte, tak je ctl ani nenabízí.
-  - `curate.go` — `ListFavorites` (obálka `/photos`, parametr `favorite` se zahazuje: endpoint se
-    scopne sám), `AddFavorite`/`RemoveFavorite`, `SetRating`/`ClearRating`. Oblíbené i hodnocení jsou
-    **per-user**, takže je smí měnit i viewer. Hvězdy i flag jsou nezávislé ukazatele — co pošleš `nil`,
-    to server nechá být (`ErrEmptyRating`, `ErrInvalidRating`, `ErrInvalidFlag`).
-  - `bulk.go` — `Bulk(ctx, photoUIDs, ops)` posílá **jeden** `POST /photos/bulk` na celou dávku, protože
-    server ji aplikuje v jedné transakci; smyčka po fotkách by atomicitu vyměnila za N transakcí a N
-    audit řádků. `BulkOperations` má tagy 1:1 s API (endpoint odmítá neznámá pole) a všechno `omitempty`,
-    aby se nulová hodnota neposlala jako reálná změna. `Validate()` zrcadlí serverové kontroly (vzájemně
-    se vylučující set/clear páry, rozsah hvězd, flag, souřadnice) → `ErrNoOperations`,
-    `ErrConflictingOperations`, `ErrInvalidLocation`. `DecodeBulkResult` čte `{results,counts}` (čtvrtý
-    tvar). `ParseLocation("lat,lng")`.
-  - `uids.go` — `ParsePhotoUIDs(r)` čte množinu fotek ze stdin ve **čtyřech** tvarech: obálka
-    `{"photos":[…]}` (přesně to, co tiskne `ctl photos list -o json`), holé JSON pole uidů, holé pole
-    objektů s `uid`, nebo prostý seznam oddělený bílými znaky. `NormalizeUIDs` trimuje, zahazuje prázdné
-    a **deduplikuje** (aby počet v potvrzovacím dotazu odpovídal tomu, co se opravdu pošle) →
-    `ErrNoPhotoUIDs`. `ConfirmThreshold = 50` je hranice, nad kterou se příkaz ptá.
-  - `output.go` — `ParseFormat` (`table`/`json`; **`yaml` schválně ne**), `WriteJSON` (echo bajtů beze
-    změny), sdílené `writeTable`/`writeKeyValues`/`writeLine`, `WritePhotoPage` (tabulka + jeden souhrnný
-    řádek: kolik z kolika, `offset`, `next offset`, u hledání efektivní `mode` a případné `degraded`),
-    `WritePhotoDetail`, `WriteContexts` (**token se nikdy netiskne**, jen `stored`/`not set`).
-    Prázdný výsledek = jediný řádek `no photos found`, žádná hlavička — agent si nesplete hlavičku
-    s řádkem.
+    The envelope is a **bare `{"subjects":[…]}`**; a subject's gallery, however, **has the `/photos` shape**, so it is read by
+    `DecodePhotoPage` (the same shape, not a unified one). `PageOptions` offers only limit/offset — the endpoint does not
+    read the catalogue filters, so ctl does not offer them either.
+  - `curate.go` — `ListFavorites` (the `/photos` envelope, the `favorite` parameter is dropped: the endpoint scopes
+    itself), `AddFavorite`/`RemoveFavorite`, `SetRating`/`ClearRating`. Favorites and ratings are both
+    **per-user**, so even a viewer may change them. The stars and the flag are independent indicators — whatever you send as `nil`
+    the server leaves alone (`ErrEmptyRating`, `ErrInvalidRating`, `ErrInvalidFlag`).
+  - `bulk.go` — `Bulk(ctx, photoUIDs, ops)` sends **one** `POST /photos/bulk` for the whole batch, because
+    the server applies it in a single transaction; a loop over the photos would trade that atomicity for N transactions and N
+    audit rows. `BulkOperations` has tags 1:1 with the API (the endpoint rejects unknown fields) and everything `omitempty`,
+    so that a zero value is not sent as a real change. `Validate()` mirrors the server-side checks (mutually
+    exclusive set/clear pairs, the star range, the flag, the coordinates) → `ErrNoOperations`,
+    `ErrConflictingOperations`, `ErrInvalidLocation`. `DecodeBulkResult` reads `{results,counts}` (a fourth
+    shape). `ParseLocation("lat,lng")`.
+  - `uids.go` — `ParsePhotoUIDs(r)` reads a set of photos from stdin in **four** shapes: the envelope
+    `{"photos":[…]}` (exactly what `ctl photos list -o json` prints), a bare JSON array of uids, a bare array of
+    objects with a `uid`, or a plain whitespace-separated list. `NormalizeUIDs` trims, drops the empty ones
+    and **deduplicates** (so that the count in the confirmation prompt matches what is actually sent) →
+    `ErrNoPhotoUIDs`. `ConfirmThreshold = 50` is the boundary above which the command asks.
+  - `output.go` — `ParseFormat` (`table`/`json`; **deliberately no `yaml`**), `WriteJSON` (echoing the bytes
+    unchanged), the shared `writeTable`/`writeKeyValues`/`writeLine`, `WritePhotoPage` (a table + one summary
+    line: how many out of how many, `offset`, `next offset`, and for a search the effective `mode` and any `degraded`),
+    `WritePhotoDetail`, `WriteContexts` (**the token is never printed**, only `stored`/`not set`).
+    An empty result = the single line `no photos found`, no header — so that an agent does not mistake a header
+    for a row.
   - `render.go` — `WriteAlbums`/`WriteAlbum`, `WriteLabels`/`WriteLabel`, `WriteSubjects`/`WriteSubject`,
-    `WriteMembership` (jeden řádek: kolik fotek album nově drží), `WriteBulkResult` (souhrn + tabulka
-    **jen** neúspěšných fotek) a `WriteAck`. `Ack` je jediný payload, který si CLI **vyrábí samo**: kde
-    API odpoví `204`, není co propustit beze změny, takže `-o json` dostane
-    `{"status":"ok","message":…}` a pipeline pozná úspěch od chyby.
+    `WriteMembership` (one line: how many photos the album now holds), `WriteBulkResult` (a summary + a table of
+    the failed photos **only**) and `WriteAck`. `Ack` is the only payload the CLI **makes up itself**: where
+    the API answers `204` there is nothing to pass through unchanged, so `-o json` gets
+    `{"status":"ok","message":…}` and the pipeline can tell success from failure.
 
-  Strom příkazů, konfigurační soubor a symlink `kukatkoctl` popisuje
+  The command tree, the configuration file and the `kukatkoctl` symlink are described in
   [`docs/OPERATIONS.md`](OPERATIONS.md).
