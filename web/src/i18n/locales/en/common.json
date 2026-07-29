@@ -24,6 +24,7 @@
   },
   "nav": {
     "home": "Home",
+    "brand": "Kukátko — home",
     "browse": "Browse",
     "tools": "Tools",
     "admin": "Admin",
@@ -50,6 +51,7 @@
     "users": "Users",
     "audit": "Audit",
     "titles": {
+      "home": "Back to the start — the photo library",
       "library": "Show the photo library",
       "albums": "Show the albums",
       "labels": "Show the labels",

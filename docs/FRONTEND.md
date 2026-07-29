@@ -32,7 +32,21 @@ here.
   (`nav.admin`, `GOVERNANCE_GROUP`, entirely gated on `isAdmin` = admin **or** maintainer) gathers
   **Uživatelé** `/users` + **Audit** `/audit`. The role model is a strict ladder
   `viewer < editor < admin < maintainer` (see `services/auth.ts` below).
-  **The bar leads with global search** `SearchCommand` (`components/search/`) — a field-as-trigger on the left,
+  **The bar opens with the brand / home affordance** (`Navbar.Brand as={Link}` → `LIBRARY_PATH` `/`, class
+  `kukatko-navbar-brand`): a `binoculars-fill` mark plus the „Kukátko" wordmark (`app.name`). **The mark is
+  always shown, the wordmark only where it measurably fits** — `d-none d-sm-inline d-md-none d-xxl-inline`,
+  i.e. hidden below `sm` (a 320px row is brand + search + hamburger and nothing else), shown `sm`–`md` (the
+  phone/tablet bar, whose nav is folded into the drawer), hidden again from `md` (the inline bar unfolds and
+  the **nav** is what is starved: the wordmark alone pushes a 1024px viewer bar into a horizontal scrollbar),
+  back from `xxl`. It sits **outside the collapse on every viewport** — on a phone, where the
+  whole nav folds into the drawer, it is the only thing on screen saying *which app this is*, and it is the
+  one-tap way back to the start from anywhere. Since the wordmark is display-hidden most of the time, the accessible
+  name is pinned with `aria-label` (`nav.brand` = „Kukátko — domů"), not left to the sometimes-hidden text; the
+  tooltip is `nav.titles.home`. The box mirrors the search trigger's heights (2.25rem on a fine pointer,
+  **2.75rem = the 44px finger target on `pointer: coarse`**, guarded by `styles/tapTargets.test.ts`), so the
+  desktop bar gains the brand without growing taller. The **hamburger closes the phone row** instead of opening
+  it (last in the DOM); it is `display: none` on `md`+, so the desktop bar is unmoved by that.
+  **After the brand the bar leads with global search** `SearchCommand` (`components/search/`) — a field-as-trigger,
   **outside the collapse** (so on mobile it stays visible when the nav folds into the burger), opening a **command
   palette** reachable from anywhere via `/` or Cmd/Ctrl-K (it doesn't steal typing — see `SearchCommand`
   below). The old full `/search` page and saved searches remain; only the navbar no longer has a standalone

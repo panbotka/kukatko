@@ -50,7 +50,11 @@ import { SearchCommand } from './search/SearchCommand'
  * the maintainer-only "Provoz" operations dropdown (import, maintenance, system),
  * and the admin-or-higher "Správa" governance dropdown (users, audit). The
  * role-gated groups are hidden entirely from roles that cannot use any of their
- * children, and the divider only appears when at least one item follows it. Leading the bar is the
+ * children, and the divider only appears when at least one item follows it. Leading the bar — on
+ * every viewport, outside the collapse — is the brand: the binoculars mark, joined by the „Kukátko"
+ * wordmark wherever the row has the width for it, linking to the library at the site root. It is
+ * what answers "which app is this" on a phone whose whole navigation is otherwise folded away, and
+ * it is the one-tap way back to the start from anywhere. Beside it sits the
  * global {@link SearchCommand} — a field-shaped trigger that opens a keyboard-first
  * command palette (`/` or Cmd/Ctrl-K), kept outside the collapse so it stays
  * visible on a phone while the nav folds into the hamburger. The language switcher
@@ -187,10 +191,33 @@ export function Layout() {
         className="kukatko-navbar"
       >
         <Container>
-          <Navbar.Toggle aria-controls={MOBILE_MENU_ID} />
+          {/* The app's identity and its one-tap way home, outside the collapse so
+              it is the first thing on every viewport. The mark is always there;
+              the wordmark shows only where measurement says it fits, which is two
+              separate bands rather than one — hence the four display utilities:
+              hidden below `sm` (a 320px row is brand + search + hamburger and
+              nothing else), shown `sm`–`md` (the phone/tablet bar, where the nav
+              is folded into the drawer and there is room to spare), hidden again
+              from `md` (the inline bar unfolds and the nav is what is starved for
+              width — the wordmark alone pushes a 1024px bar into a horizontal
+              scrollbar), and back from `xxl`, where even a full bar has slack.
+              Because the text is therefore display-hidden most of the time, the
+              link's accessible name is set explicitly rather than left to it. */}
+          <Navbar.Brand
+            as={Link}
+            to={LIBRARY_PATH}
+            title={t('nav.titles.home')}
+            aria-label={t('nav.brand')}
+            className="kukatko-navbar-brand"
+          >
+            <Icon name="binoculars-fill" className="kukatko-navbar-brand__mark" />
+            <span className="kukatko-navbar-brand__wordmark d-none d-sm-inline d-md-none d-xxl-inline">
+              {t('app.name')}
+            </span>
+          </Navbar.Brand>
           {/* Search leads the bar and stays outside the collapse, so it is always
-              visible — on a phone it fills the row beside the hamburger while the
-              nav folds away. */}
+              visible — on a phone it fills the row between the brand and the
+              hamburger while the nav folds away. */}
           <SearchCommand />
           {/* The inline bar is the `md`+ navigation only: on a phone the same
               items are the drawer's, so rendering both would duplicate every
@@ -269,6 +296,12 @@ export function Layout() {
               )}
             </Navbar.Collapse>
           )}
+          {/* The hamburger closes the phone row (`[brand] [search] [hamburger]`)
+              rather than opening it: the brand is the orientation cue and belongs
+              first, and a menu button sits better under the thumb on the trailing
+              edge. It is `display: none` on `md`+, so the desktop bar is unmoved
+              by where it stands in the DOM. */}
+          <Navbar.Toggle aria-controls={MOBILE_MENU_ID} />
         </Container>
       </Navbar>
       {/* Phone only: the hamburger opens a real drawer of labelled sections

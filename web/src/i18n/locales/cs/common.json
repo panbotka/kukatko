@@ -24,6 +24,7 @@
   },
   "nav": {
     "home": "Domů",
+    "brand": "Kukátko — domů",
     "browse": "Procházet",
     "tools": "Nástroje",
     "admin": "Správa",
@@ -50,6 +51,7 @@
     "users": "Uživatelé",
     "audit": "Audit",
     "titles": {
+      "home": "Zpět na začátek – do knihovny fotek",
       "library": "Zobrazit knihovnu fotek",
       "albums": "Zobrazit alba",
       "labels": "Zobrazit štítky",

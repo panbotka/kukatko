@@ -14,6 +14,7 @@ export type IconName =
   | 'arrows-angle-contract'
   | 'arrows-angle-expand'
   | 'award-fill'
+  | 'binoculars-fill'
   | 'bookmarks'
   | 'box-arrow-in-down'
   | 'box-arrow-right'

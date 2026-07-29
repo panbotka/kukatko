@@ -74,6 +74,30 @@ function renderLayoutWithRoutes(value: AuthContextValue) {
 }
 
 /**
+ * Points `window.matchMedia` at a fixed phone/desktop answer. The shared test
+ * setup stubs a non-matching (desktop) `matchMedia`; the phone case overrides it
+ * so `useIsNarrowViewport` takes its narrow branch and the bar renders the way a
+ * phone sees it (no inline collapse, the drawer instead).
+ */
+function mockViewport(narrow: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
+/** True when `first` precedes `second` in document order. */
+function precedes(first: Element, second: Element): boolean {
+  return (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+}
+
+/**
  * True when the collapsible mobile menu is closed. react-bootstrap tags the
  * hamburger toggle with `collapsed` exactly when the navbar's `expanded` state
  * is false, so this reads that controlled state without depending on the CSS
@@ -85,6 +109,9 @@ function menuIsCollapsed(): boolean {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  // Reassigning `window.matchMedia` outlives `restoreMocks`, so re-pin the
+  // desktop answer here rather than leaking a phone viewport into the next test.
+  mockViewport(false)
 })
 
 describe('Layout navbar', () => {
@@ -100,6 +127,45 @@ describe('Layout navbar', () => {
     const { container } = renderLayout(auth())
     expect(container.querySelector('.navbar.kukatko-navbar')).not.toBeNull()
     expect(container.querySelector('main.kukatko-main')).not.toBeNull()
+  })
+
+  it('leads the bar with a brand that links to the home route', () => {
+    // Start away from home so the brand is a real way back, not a self-link.
+    renderLayout(auth(), '/albums')
+
+    // The brand answers "which app is this" and is the one-tap way back to the
+    // start, so it points at the library root.
+    const brand = screen.getByRole('link', { name: 'Kukátko — home' })
+    expect(brand).toHaveAttribute('href', '/')
+    expect(brand).toHaveAttribute('title', 'Back to the start — the photo library')
+
+    // Its accessible name is set explicitly (not left to the text) because the
+    // wordmark is display-hidden below `sm`, where the mark stands alone.
+    expect(brand).toHaveTextContent('Kukátko')
+    const mark = brand.querySelector('i.bi.bi-binoculars-fill')
+    expect(mark).not.toBeNull()
+    expect(mark).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('keeps the brand in the phone bar, ahead of search and the hamburger', () => {
+    mockViewport(true)
+    renderLayout(auth())
+
+    // On a phone the nav folds into the drawer entirely — the brand and the
+    // search field are all the top row has left, so the brand must be outside
+    // the collapse and lead the row: `[brand] [search] [hamburger]`.
+    const brand = screen.getByRole('link', { name: 'Kukátko — home' })
+    const search = screen.getByRole('button', { name: 'Search' })
+    const toggle = screen.getByRole('button', { name: /toggle navigation/i })
+    expect(precedes(brand, search)).toBe(true)
+    expect(precedes(search, toggle)).toBe(true)
+
+    // It lives in the bar itself, not in the drawer the hamburger opens…
+    expect(brand.closest('.navbar.kukatko-navbar')).not.toBeNull()
+    // …and it did not bring the inline nav back with it: the only Albums link on
+    // a phone is the bottom tab bar's.
+    const albums = screen.getByRole('link', { name: 'Albums' })
+    expect(albums.closest('.navbar.kukatko-navbar')).toBeNull()
   })
 
   it('keeps Library, Albums and Labels as always-visible top-level links', () => {
