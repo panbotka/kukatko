@@ -32,6 +32,7 @@ import {
   pathMatches,
   PRIMARY_ITEMS,
   REVIEW_ITEM,
+  STATS_ITEM,
   TOOLS_GROUP,
   UPLOAD_ITEM,
 } from './navItems'
@@ -270,6 +271,17 @@ export function Layout() {
                     >
                       <Icon name={ACCOUNT_ITEM.icon} />
                       {t(ACCOUNT_ITEM.labelKey)}
+                    </NavDropdown.Item>
+                    {/* The library statistics: open to every signed-in role, so
+                        they hang off the user menu rather than a gated group. */}
+                    <NavDropdown.Item
+                      as={Link}
+                      to={STATS_ITEM.to}
+                      title={t(STATS_ITEM.titleKey)}
+                      className="d-flex align-items-center gap-2"
+                    >
+                      <Icon name={STATS_ITEM.icon} />
+                      {t(STATS_ITEM.labelKey)}
                     </NavDropdown.Item>
                     <NavDropdown.Item
                       as={Link}

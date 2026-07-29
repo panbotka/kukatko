@@ -163,6 +163,7 @@ describe('MobileNavDrawer', () => {
       '/users',
       '/audit',
       '/account',
+      '/stats',
       '/help',
     ])
     // The keyboard-shortcuts overlay and sign-out ride along as rows, so nothing
@@ -191,6 +192,7 @@ describe('MobileNavDrawer', () => {
       '/places',
       '/map',
       '/account',
+      '/stats',
       '/help',
     ])
   })

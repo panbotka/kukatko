@@ -75,10 +75,15 @@ func newEnv(t *testing.T) *env {
 		Jobs:          jobStore,
 		Backup:        nil,
 		Imports:       runStore,
+		Library:       system.NewStore(db.Pool()),
 		OriginalsPath: originals,
 		CachePath:     filepath.Join(originals, "missing-cache"),
 	})
-	api := systemapi.NewAPI(systemapi.Config{Service: svc, RequireMaintainer: authAPI.RequireMaintainer})
+	api := systemapi.NewAPI(systemapi.Config{
+		Service:           svc,
+		RequireMaintainer: authAPI.RequireMaintainer,
+		RequireAuth:       authAPI.RequireAuth,
+	})
 
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
@@ -202,6 +207,42 @@ func TestSystemStatus_ForbiddenBelowMaintainer(t *testing.T) {
 				t.Errorf("status for %s = %d, want 403", tc.role, resp.StatusCode)
 			}
 		})
+	}
+}
+
+// TestSystemStats_ViewerAllowedAnonymousRejected verifies the library statistics
+// are open to every signed-in role — a viewer, the bottom of the ladder, gets the
+// counts — while an anonymous caller is refused. It is the deliberate opposite of
+// the maintainer-only status endpoint above.
+func TestSystemStats_ViewerAllowedAnonymousRejected(t *testing.T) {
+	env := newEnv(t)
+
+	anon := do(t, &http.Client{}, http.MethodGet, env.baseURL+"/api/v1/system/stats", nil)
+	defer func() { _ = anon.Body.Close() }()
+	if anon.StatusCode != http.StatusUnauthorized {
+		t.Errorf("anonymous status = %d, want 401", anon.StatusCode)
+	}
+
+	viewer := env.login(t, "stats-viewer", auth.RoleViewer)
+	resp := do(t, viewer, http.MethodGet, env.baseURL+"/api/v1/system/stats", nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("viewer status = %d, want 200", resp.StatusCode)
+	}
+	var got system.Library
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	// The exact numbers are pinned by the fixture test in internal/system; here it
+	// is enough that the payload is a coherent snapshot — the derived splits add
+	// back up to the total — so the endpoint is proven to serve real counts and
+	// not a zero value.
+	if got.PhotosLive+got.PhotosArchived != got.Photos {
+		t.Errorf("live %d + archived %d != total %d", got.PhotosLive, got.PhotosArchived, got.Photos)
+	}
+	if got.PhotosWithEmbedding+got.PhotosWithoutEmbedding != got.Photos {
+		t.Errorf("with %d + without %d embedding != total %d",
+			got.PhotosWithEmbedding, got.PhotosWithoutEmbedding, got.Photos)
 	}
 }
 

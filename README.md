@@ -1418,6 +1418,26 @@ with fakes, without a DB; the HTTP layer (`internal/systemapi`) is thin.
   (`/maintenance`). When the **box is offline** and embedding jobs are waiting, the card highlights it with the message
   „box offline → embeddingy ve frontě, doženou se po návratu".
 
+### Library statistics — for everyone (`GET /system/stats`, `/stats`)
+
+How big the library is and how much of it is already processed — the numbers photo-sorter's status page
+showed, now for **every signed-in user**, not just maintainers (reading aggregate counts is not an
+operations privilege).
+
+- **Counts** (`system.Store.CountLibrary` + `Service.LibraryStats`): photos in total, of which videos,
+  in the library vs in the trash; photos with an embedding and with at least one detected face; total
+  embedding and face rows; people/animals/other subjects; named vs unnamed faces; albums and labels.
+  A single query of cheap `COUNT(*)`s over indexed predicates — **not** a `maintenance scan` tree walk —
+  memoized for 30 s like the storage block.
+- **Coverage gaps are reported explicitly**: *photos without an embedding* and *photos without a face*
+  (plus unnamed faces), derived from the raw counts. That is the number you watch while verifying an
+  import, instead of subtracting two totals by hand.
+- **UI** **Statistiky** (`/stats`, `StatsPage`, in the user menu for every role): five cards with a
+  headline number and its breakdown, thousands grouped in the active language, the gaps highlighted while
+  non-zero. The same cards appear as the **Knihovna** section of the admin **Systém** page, from the same
+  endpoint. If the counts cannot be read, both show an error with a retry — never a grid of zeroes, which
+  would read as an empty library.
+
 ### Observability — metrics & structured logs (`internal/metrics` + `internal/obs`)
 
 Lightweight observability modeled on photo-sorter, wired into `kukatko serve`.

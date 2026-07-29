@@ -13,6 +13,8 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorState } from '../components/ErrorState'
 import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
+import { LibraryStatsCards } from '../components/LibraryStatsCards'
+import { useLibraryStats } from '../hooks/useLibraryStats'
 import { formatBytes, formatDateTime } from '../lib/format'
 import {
   clearAnnouncement,
@@ -370,6 +372,36 @@ function StorageCard({ storage }: { storage: StorageStatus }) {
   )
 }
 
+/**
+ * The Library section: the same instance-wide counts the statistics page shows,
+ * from the same `GET /system/stats` endpoint — the dashboard adds no second data
+ * source and no second aggregation. It owns its own fetch state so a failure
+ * here (or a slow count on a large library) degrades this section alone and
+ * leaves the operational cards above untouched; the counts never render as
+ * zeroes when they could not be read.
+ */
+function LibrarySection() {
+  const { t } = useTranslation()
+  const { state, reload } = useLibraryStats()
+  return (
+    <section className="mb-4" aria-labelledby="system-library-title">
+      <h2 id="system-library-title" className="kk-section-title mb-1">
+        {t('system.library.title')}
+      </h2>
+      <p className="text-secondary small">{t('system.library.intro')}</p>
+      {state.status === 'loading' && (
+        <div className="d-flex justify-content-center py-4">
+          <Spinner animation="border" role="status">
+            <span className="visually-hidden">{t('stats.loading')}</span>
+          </Spinner>
+        </div>
+      )}
+      {state.status === 'error' && <ErrorState title={t('stats.error')} onRetry={reload} />}
+      {state.status === 'ready' && <LibraryStatsCards stats={state.data} />}
+    </section>
+  )
+}
+
 /** The remaining quick-action links (maintenance scan flow). */
 function QuickActions() {
   const { t } = useTranslation()
@@ -530,6 +562,11 @@ function AnnouncementCard() {
  * offline, the queued embedding work is surfaced so it is clear the backlog
  * resumes once the box returns; when mapy.com is rejecting the API key, that is
  * called out here rather than left to show up as a grey map.
+ *
+ * Above the operational cards it also renders the {@link LibrarySection}: the
+ * library statistics, read from the same endpoint as the all-users statistics
+ * page, so "how much is still unprocessed" is answered where an operator is
+ * already looking.
  */
 export function SystemStatusPage() {
   const { t } = useTranslation()
@@ -640,6 +677,7 @@ export function SystemStatusPage() {
       {state.status === 'ready' && (
         <>
           <QuickActions />
+          <LibrarySection />
           <Row className="g-3" xs={1} md={2} lg={3}>
             <Col>
               <DatabaseCard database={state.data.database} />

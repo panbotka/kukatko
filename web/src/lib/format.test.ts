@@ -4,6 +4,7 @@ import {
   formatByteCount,
   formatBytes,
   formatCaptureRange,
+  formatCount,
   formatDate,
   formatDateTime,
   formatDateTimeMinutes,
@@ -31,6 +32,25 @@ describe('formatBytes', () => {
     expect(formatBytes(0)).toBe('0 B')
     expect(formatBytes(-10)).toBe('0 B')
     expect(formatBytes(Number.NaN)).toBe('0 B')
+  })
+})
+
+describe('formatCount', () => {
+  it('groups thousands in the active locale', () => {
+    // Czech groups with a narrow no-break space, so compare on the digits.
+    expect(formatCount(20310, 'cs').replace(/\s/gu, ' ')).toBe('20 310')
+    expect(formatCount(20310, 'en')).toBe('20,310')
+  })
+
+  it('leaves small counts ungrouped', () => {
+    expect(formatCount(0, 'en')).toBe('0')
+    expect(formatCount(7, 'cs')).toBe('7')
+  })
+
+  it('rounds fractions and clamps non-finite input to 0', () => {
+    expect(formatCount(2.6, 'en')).toBe('3')
+    expect(formatCount(Number.NaN, 'en')).toBe('0')
+    expect(formatCount(Number.POSITIVE_INFINITY, 'en')).toBe('0')
   })
 })
 

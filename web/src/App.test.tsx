@@ -16,6 +16,13 @@ vi.mock('./services/photos', async (importOriginal) => {
   return { ...actual, fetchPhotos: vi.fn(), fetchTimeline: vi.fn() }
 })
 
+// The statistics route fetches its counts on mount; stub the call so the route
+// test exercises the wiring rather than the network.
+vi.mock('./services/system', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/system')>()
+  return { ...actual, fetchLibraryStats: vi.fn(() => new Promise(() => undefined)) }
+})
+
 const { fetchPhotos, fetchTimeline } = await import('./services/photos')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchTimelineMock = vi.mocked(fetchTimeline)
@@ -98,6 +105,15 @@ describe('routing', () => {
     renderRoutes(['/help'])
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Help' })).toBeInTheDocument()
+  })
+
+  it('renders the library statistics at /stats for any authenticated user', async () => {
+    // Like /help, the statistics route carries no role guard: a viewer reaches it.
+    renderRoutes(['/stats'])
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Library statistics' }),
+    ).toBeInTheDocument()
   })
 
   it('redirects /library?year=2024 to /?year=2024, preserving the query', async () => {

@@ -2,8 +2,10 @@ import { ApiError } from './auth'
 import type { ImportRun } from './import'
 
 /**
- * Admin system-status client, mirroring the backend JSON shapes from
- * `internal/systemapi` and `internal/system`. It powers the status dashboard:
+ * System client, mirroring the backend JSON shapes from `internal/systemapi` and
+ * `internal/system`. It covers two endpoints: the maintainer-only status
+ * snapshot and the library statistics every signed-in user may read
+ * ({@link fetchLibraryStats}). The former powers the status dashboard:
  * one aggregated snapshot of embeddings reachability, job-queue depth, the
  * backup subsystem, the last import per source, storage usage, database
  * reachability and the map provider's health (a rejected mapy.com key shows up
@@ -142,6 +144,35 @@ export interface SystemStatus {
   maps: MapsStatus
 }
 
+/**
+ * The library-statistics snapshot (`system.Library`): instance-wide counts of
+ * what the catalogue holds and how much of it has been processed. Unlike the
+ * status snapshot above it is readable by every signed-in user, not just
+ * maintainers. `photos_without_embedding` / `photos_without_faces` are the
+ * coverage gaps the backend derives, so the page never has to subtract by hand.
+ */
+export interface LibraryStats {
+  photos: number
+  videos: number
+  photos_live: number
+  photos_archived: number
+  photos_with_embedding: number
+  photos_with_faces: number
+  photos_without_embedding: number
+  photos_without_faces: number
+  embeddings: number
+  faces: number
+  subjects: number
+  subjects_person: number
+  subjects_pet: number
+  subjects_other: number
+  markers: number
+  markers_assigned: number
+  markers_unassigned: number
+  albums: number
+  labels: number
+}
+
 /** One job from the admin listing (`jobs.Job`); only the id is needed here. */
 interface JobSummary {
   id: number
@@ -155,6 +186,16 @@ interface JobListResponse {
 /** Fetches the aggregated system-status snapshot. */
 export async function fetchSystemStatus(signal?: AbortSignal): Promise<SystemStatus> {
   return getJSON<SystemStatus>('/system/status', signal)
+}
+
+/**
+ * Fetches the library statistics. Open to every signed-in user (unlike the
+ * status snapshot) and the single source for both the statistics page and the
+ * System page's Library section. It throws {@link ApiError} when the backend
+ * cannot aggregate the counts, so callers show an error rather than zeroes.
+ */
+export async function fetchLibraryStats(signal?: AbortSignal): Promise<LibraryStats> {
+  return getJSON<LibraryStats>('/system/stats', signal)
 }
 
 /**

@@ -190,6 +190,19 @@ export const ACCOUNT_ITEM: NavEntry = {
   icon: 'person-circle',
 }
 
+/**
+ * The library-statistics page, in the user menu beside the account and help
+ * entries. It lives there rather than in a role-gated group because the counts
+ * are open to every signed-in role — the menu the whole app shares is the one
+ * place a viewer can reach them from.
+ */
+export const STATS_ITEM: NavEntry = {
+  to: '/stats',
+  labelKey: 'nav.stats',
+  titleKey: 'nav.titles.stats',
+  icon: 'bar-chart',
+}
+
 /** The help page, alongside the account entry in the user menu. */
 export const HELP_ITEM: NavEntry = {
   to: '/help',

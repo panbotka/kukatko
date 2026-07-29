@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
-import type { SystemStatus } from '../services/system'
+import type { LibraryStats, SystemStatus } from '../services/system'
 
 import { SystemStatusPage } from './SystemStatusPage'
 
@@ -16,16 +16,44 @@ vi.mock('../services/system', async (importOriginal) => {
   return {
     ...actual,
     fetchSystemStatus: vi.fn(),
+    fetchLibraryStats: vi.fn(),
     requeueDeadLetterJobs: vi.fn(),
     triggerBackup: vi.fn(),
   }
 })
 
-const { fetchSystemStatus, requeueDeadLetterJobs, triggerBackup } =
+const { fetchSystemStatus, fetchLibraryStats, requeueDeadLetterJobs, triggerBackup } =
   await import('../services/system')
 const fetchMock = vi.mocked(fetchSystemStatus)
+const statsMock = vi.mocked(fetchLibraryStats)
 const requeueMock = vi.mocked(requeueDeadLetterJobs)
 const backupMock = vi.mocked(triggerBackup)
+
+/** The library counts the dashboard's Library section renders. */
+function libraryStats(overrides: Partial<LibraryStats> = {}): LibraryStats {
+  return {
+    photos: 1234,
+    videos: 5,
+    photos_live: 1230,
+    photos_archived: 4,
+    photos_with_embedding: 1200,
+    photos_with_faces: 800,
+    photos_without_embedding: 34,
+    photos_without_faces: 434,
+    embeddings: 1200,
+    faces: 3000,
+    subjects: 7,
+    subjects_person: 6,
+    subjects_pet: 1,
+    subjects_other: 0,
+    markers: 90,
+    markers_assigned: 80,
+    markers_unassigned: 10,
+    albums: 3,
+    labels: 4,
+    ...overrides,
+  }
+}
 
 // status builds a full snapshot, with overrides merged shallowly per section.
 function status(overrides: Partial<SystemStatus> = {}): SystemStatus {
@@ -101,9 +129,11 @@ function renderPage(value: AuthContextValue = auth({ isMaintainer: true })) {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchMock.mockReset()
+  statsMock.mockReset()
   requeueMock.mockReset()
   backupMock.mockReset()
   fetchMock.mockResolvedValue(status())
+  statsMock.mockResolvedValue(libraryStats())
   requeueMock.mockResolvedValue(2)
   backupMock.mockResolvedValue(undefined)
 })
@@ -218,6 +248,26 @@ describe('SystemStatusPage', () => {
       'href',
       '/maintenance',
     )
+  })
+
+  it('renders the library counts from the shared stats endpoint', async () => {
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument()
+    expect(await screen.findByTestId('stat-headline-photos')).toHaveTextContent('1,234')
+    expect(screen.getByTestId('stat-embeddings-without-embedding')).toHaveTextContent('34')
+    // One data source: the dashboard reads the same endpoint as the stats page.
+    expect(statsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('degrades the library section alone when the counts fail', async () => {
+    statsMock.mockRejectedValue(new Error('boom'))
+    renderPage()
+
+    expect(await screen.findByText('Failed to load the library statistics.')).toBeInTheDocument()
+    expect(screen.queryByTestId('library-stats')).not.toBeInTheDocument()
+    // The operational cards still render from the healthy status snapshot.
+    expect(screen.getByText('Reachable')).toBeInTheDocument()
   })
 
   it('shows an error state when the snapshot fails to load', async () => {

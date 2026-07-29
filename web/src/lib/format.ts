@@ -45,6 +45,17 @@ export function formatByteCount(bytes: number, locale: string): string {
 }
 
 /**
+ * Formats a whole count with the locale's thousands grouping, e.g. `20310` →
+ * `"20 310"` (Czech) or `"20,310"` (English). Statistics are read at a glance,
+ * and an ungrouped five-digit number is read wrong. Non-finite inputs render as
+ * `"0"`; fractional inputs are rounded, since every count the app shows is whole.
+ */
+export function formatCount(value: number, locale: string): string {
+  const count = Number.isFinite(value) ? Math.round(value) : 0
+  return new Intl.NumberFormat(locale).format(count)
+}
+
+/**
  * Coerces a timestamp input (ISO string, epoch millis, or `Date`) to a `Date`,
  * returning `null` when the value cannot be parsed into a valid date.
  */
