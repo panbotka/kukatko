@@ -27,7 +27,8 @@ export interface SubjectEditModalProps {
 /**
  * A modal form for editing a subject's name, type and visibility flags. It
  * preserves the existing cover (set elsewhere) and submits the full editable set
- * to `PATCH /subjects/{uid}`, surfacing a validation error inline.
+ * to `PATCH /subjects/{uid}`, surfacing a validation error inline. Every opening
+ * starts from the subject as stored, so a cancelled edit is really discarded.
  */
 export function SubjectEditModal({ subject, show, onHide, onSaved }: SubjectEditModalProps) {
   const { t } = useTranslation()
@@ -38,6 +39,23 @@ export function SubjectEditModal({ subject, show, onHide, onSaved }: SubjectEdit
   const [notes, setNotes] = useState(subject.notes)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
+
+  // The page keeps this dialog mounted between openings, so its state outlives a
+  // single edit: re-seed every field the moment it opens. Without it a discarded
+  // edit would come back in place of the stored value, and the error from a save
+  // that failed would greet the user before they typed anything.
+  const [wasOpen, setWasOpen] = useState(show)
+  if (show !== wasOpen) {
+    setWasOpen(show)
+    if (show) {
+      setName(subject.name)
+      setType(subject.type)
+      setFavorite(subject.favorite)
+      setIsPrivate(subject.private)
+      setNotes(subject.notes)
+      setError(false)
+    }
+  }
 
   async function save(event: SyntheticEvent) {
     event.preventDefault()

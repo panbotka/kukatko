@@ -297,11 +297,13 @@ here.
   not shown on touch — without a date it doesn't render); on hover the **image** zooms in discreetly
   (`scale`, inside `overflow:hidden`, no layout shift); an optional **favorite heart** overlay
   `favoritable` → `FavoriteButton` (star ratings and the pick/reject flag live **only in the photo
-  detail**, not on the tile); the heart hides in selection mode; `src` takes **`photo.thumb_url`
-  from the payload** via `useThumbSrc` and **never** builds it from the UID),
+  detail**, not on the tile); the heart hides in selection mode; the optional
+  `onFavoriteChange(uid,favorite)` reports every flip (optimistic **and** rolled back) up to the page,
+  so a list that also favorites by another route keeps **one** baseline per photo; `src` takes
+  **`photo.thumb_url` from the payload** via `useThumbSrc` and **never** builds it from the UID),
   `PhotoGrid` (a virtualized **`react-virtuoso` `VirtuosoGrid`**,
   window-scroll, `endReached` → next page, footer spinner/retry; the `favoritable` prop
-  leaks the heart onto the tiles; an optional `gridRef` (imperative `scrollToIndex`
+  leaks the heart onto the tiles (and `onFavoriteChange` its flips back to the page); an optional `gridRef` (imperative `scrollToIndex`
   handle) + `onRangeChanged` (the visible range) for the timeline; it takes its column template from
   `useGridDensity` → `lib/gridDensity` `gridTemplateColumns`, the DOM carries `data-density` for tests.
   A density change **only restyles** the existing `<div>` — virtuoso re-measures the tiles, scroll and selection
@@ -374,7 +376,9 @@ here.
   empty-friendly + loading/error, refetch on `uid` change),
   `FavoriteButton` (a heart toggle over `useFavorite` — an **optimistic** per-user favorite
   with rollback; no role gate, allowed to any logged-in user; as a tile overlay it is a sibling
-  of the link, so a click doesn't navigate), `RatingStars` (pure controlled 0–5 stars; a click on the current
+  of the link, so a click doesn't navigate; an optional `onChange(favorite)` reports the flip and the
+  rollback to the owning list, which is how the library's `f` shares this button's state instead of
+  keeping a second one), `RatingStars` (pure controlled 0–5 stars; a click on the current
   rating clears it to 0; without `onRate` a read-only display) + `FlagControl` (a pure controlled per-user
   **personal flag** — three neutral states via `Icon` bootstrap-icons: 👁 eye (`text-info`),
   👍 thumbs-up (stored `pick`, `text-success`), 👎 thumbs-down (stored `reject`, `text-danger`);
@@ -527,7 +531,10 @@ here.
   `LibraryPage` = the main photo library **and at the same time the app's home page** (route `/`):
   `FilterBar` above a virtualized infinitely-scrolling
   grid, loading/empty/error states, the whole view (filters+sort) in the URL, hearts
-  on the tiles (favoritable; rating and pick/reject are only in the photo detail), **`SlideshowStart`**
+  on the tiles (favoritable; rating and pick/reject are only in the photo detail) — the heart and the
+  `f` shortcut share **one** state per photo: the page holds the optimistic overrides (cleared on every
+  refetch) and the tile reports its own flips back through `onFavoriteChange`, so `f` after a heart
+  click un-favorites instead of repeating the click, **`SlideshowStart`**
   (a Promítání button + a duration estimate, the photo count comes from `total`),
   **two different empty states** — with active filters „Nenalezeny žádné fotky", whose hint
   **lists the active filters** (`buildChips(..., {facets, includeQuery: true})` joined by ` · `,
@@ -943,7 +950,9 @@ here.
   (marker selection see `listSubjectsSQL`) `padBbox(0.3)` + `squareCrop` → `FaceCrop`, and without
   a usable face a placeholder remains (`people.noCover`) — the app doesn't invent a face,
   `SubjectPage` = `/people/:uid` a person's page: a header (name/type + edit via
-  `SubjectEditModal` + the shared `GridDensityControl` **Dlaždic na řádek** — a view preference
+  `SubjectEditModal` — the page keeps it mounted, so the dialog **re-seeds every field (and clears the
+  error) each time it opens**: a cancelled edit is really discarded and a failed save's message doesn't
+  greet the next opening — + the shared `GridDensityControl` **Dlaždic na řádek** — a view preference
   open to anyone who sees the page, not just editors; the grid carries `data-density` for tests and
   holds the shared `GRID_GAP_PX` like the other galleries), a paginated gallery (`useSubjectPhotos` +
   `SubjectPhotoTile` with a „set as cover" action for editors — now a **quiet icon-only disk** in the corner
@@ -988,7 +997,9 @@ here.
   `done` in `lib/candidateReview`); ✓ confirms (`assignFace`, `create_marker` vs `assign_person` per the
   candidate's `marker_uid`) **optimistically in place** (the card flips, the grid doesn't reload), ✗
   **permanently rejects** via `rejectFace` (`services/feedback`) and removes the card; **keyboard** (arrows/
-  `jkhl` move, `y`/`Enter` confirm, `n` reject, focus jumps to the next actionable card — registered
+  `jkhl` move, `y`/`Enter` confirm, `n` reject — both gated by `isActionable`, so `n` on a **done** card
+  (visible under Vše/Hotovo, already assigned to this person) is a no-op instead of persisting the
+  contradiction; focus jumps to the next actionable card — registered
   in the `?` help via `shortcuts.groups.faceSearch`), „Potvrdit vše (n)" steps through the active tab's actionable cards
   sequentially with a live `current/total`, cancelably, **a partial failure doesn't roll back** and reports
   what failed — the review state is held by `useCandidateReview`; config (person/threshold/limit/tab) in the URL,
@@ -1563,9 +1574,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   request, aby inverze nepředběhla odpověď, kterou vrací, a `create_marker`-ano dohledá vzniklý
   marker přes `fetchFaces`, takže případné pozdější re-ano je `assign_person` na **týž** marker,
   ne duplikát;
-  `useFavorite(uid,initial)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
+  `useFavorite(uid,initial,onChange?)` = **optimistický** per-user favorite toggle nad `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback při chybě, ignoruje souběžný toggle, resync na změnu
-  `uid`/server stavu; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user
+  `uid`/server stavu; volitelné `onChange` hlásí **každý** vlastní překlop (optimistický i vrácený,
+  ten i po odmountování dlaždice — vlastník seznamu ji přežije) nahoru, aby stránka, která tutéž
+  fotku oblibuje i jinudy (klávesa `f` v knihovně), držela **jeden** výchozí stav, ne dva rozjeté;
+  resync se nehlásí, ten přichází od vlastníka; `useRating(uid,initialRating,initialFlag)` = **optimistické** per-user
   hodnocení (hvězdy) + pick/reject flag nad `ratePhoto` (`PUT …/rating` jen s měněným polem),
   `setRating`/`setFlag` s per-poli rollbackem při chybě, no-op na shodnou hodnotu, `pending` přes
   in-flight counter, resync na změnu `uid`/server stavu (mirror `useFavorite`);

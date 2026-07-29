@@ -132,6 +132,12 @@ export interface PhotoGridProps {
    */
   favoritable?: boolean
   /**
+   * Called with a photo's new favorite state whenever its heart flips, so a page
+   * that also favorites from elsewhere (the library's `f` shortcut) keeps one
+   * baseline per photo rather than two that drift apart.
+   */
+  onFavoriteChange?: (uid: string, favorite: boolean) => void
+  /**
    * Query string appended to each tile's detail link so the detail page inherits
    * this list's order and scope (for prev/next and Back).
    */
@@ -173,6 +179,7 @@ export function PhotoGrid({
   onRetry,
   selection,
   favoritable = false,
+  onFavoriteChange,
   detailQuery,
   gridRef,
   onRangeChanged,
@@ -217,6 +224,7 @@ export function PhotoGrid({
           anySelected={anySelected}
           onToggleSelect={selection === undefined ? undefined : toggleSelect}
           favoritable={favoritable}
+          onFavoriteChange={onFavoriteChange}
           detailQuery={detailQuery}
           focused={index === focusedIndex}
           extras={tileExtras?.(photo)}

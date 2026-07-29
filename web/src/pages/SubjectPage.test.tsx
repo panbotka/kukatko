@@ -428,6 +428,56 @@ describe('SubjectPage', () => {
     })
   })
 
+  it('reopens the edit dialog on the saved person, not on a cancelled edit', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Jana' })
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const name = await screen.findByLabelText('Name')
+    await user.clear(name)
+    await user.type(name, 'Foo')
+    // Cancel discards the edit; the dialog instance stays mounted behind the
+    // scenes, so reopening must re-seed the form from the subject.
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(await screen.findByLabelText('Name')).toHaveValue('Jana')
+    expect(updateSubjectMock).not.toHaveBeenCalled()
+  })
+
+  it('reopens the edit dialog without the previous save’s error', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    updateSubjectMock.mockRejectedValue(new Error('nope'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Jana' })
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save' }),
+    )
+    expect(
+      await screen.findByText('Could not save. Check the name and try again.'),
+    ).toBeInTheDocument()
+
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    // A fresh attempt starts clean: the stale failure must not greet the user.
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await screen.findByRole('dialog')
+    expect(
+      screen.queryByText('Could not save. Check the name and try again.'),
+    ).not.toBeInTheDocument()
+  })
+
   it('marks the current cover with a filled indicator on its tile', async () => {
     fetchSubjectMock.mockResolvedValue({ ...subject(), cover_photo_uid: 'a' })
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))

@@ -211,6 +211,37 @@ describe('FacesPage results', () => {
     })
   })
 
+  it('ignores a keyboard reject on an already-confirmed card', async () => {
+    // An `already_done` candidate is on the grid under "All" / "Done": the face is
+    // assigned to this very subject, so recording "not this person" for it would
+    // persist a contradiction. The keyboard is the only way to reach it (the card
+    // shows no reject button), so the guard has to live in the shortcut too.
+    searchMock.mockResolvedValue(
+      makeResult([makeCandidate('p1', 'already_done'), makeCandidate('p2', 'create_marker')]),
+    )
+    renderPage('/faces?subject=su_1')
+    await screen.findAllByTestId('candidate-card')
+
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' }) // focus the done card
+    fireEvent.keyDown(document.body, { key: 'n' })
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('candidate-card')).toHaveLength(2)
+    })
+    expect(rejectMock).not.toHaveBeenCalled()
+
+    // The still-pending card is unaffected: rejecting it works as before.
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    fireEvent.keyDown(document.body, { key: 'n' })
+    await waitFor(() => {
+      expect(rejectMock).toHaveBeenCalledWith({
+        photo_uid: 'p2',
+        face_index: 0,
+        subject_uid: 'su_1',
+      })
+    })
+  })
+
   it('confirm-all walks the tab and reports a partial failure', async () => {
     searchMock.mockResolvedValue(
       makeResult([makeCandidate('p1', 'create_marker'), makeCandidate('p2', 'create_marker')]),

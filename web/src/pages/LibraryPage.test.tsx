@@ -59,7 +59,13 @@ vi.mock('react-virtuoso', () => ({
 // Keep the real thumbUrl/GRID_THUMB_SIZE; only the network calls are faked.
 vi.mock('../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/photos')>()
-  return { ...actual, fetchPhotos: vi.fn(), fetchTimeline: vi.fn(), fetchPhotoYears: vi.fn() }
+  return {
+    ...actual,
+    fetchPhotos: vi.fn(),
+    fetchTimeline: vi.fn(),
+    fetchPhotoYears: vi.fn(),
+    favoritePhoto: vi.fn(),
+  }
 })
 
 // The filter bar's album/label facets load their options on mount.
@@ -71,12 +77,14 @@ vi.mock('../services/people', async (importOriginal) => {
   return { ...actual, fetchSubjects: vi.fn() }
 })
 
-const { fetchPhotos, fetchTimeline, fetchPhotoYears } = await import('../services/photos')
+const { fetchPhotos, fetchTimeline, fetchPhotoYears, favoritePhoto } =
+  await import('../services/photos')
 const { fetchAlbums, fetchLabels } = await import('../services/organize')
 const { fetchSubjects } = await import('../services/people')
 const fetchMock = vi.mocked(fetchPhotos)
 const timelineMock = vi.mocked(fetchTimeline)
 const yearsMock = vi.mocked(fetchPhotoYears)
+const favoriteMock = vi.mocked(favoritePhoto)
 const albumsMock = vi.mocked(fetchAlbums)
 const labelsMock = vi.mocked(fetchLabels)
 const subjectsMock = vi.mocked(fetchSubjects)
@@ -226,6 +234,8 @@ beforeEach(async () => {
   labelsMock.mockResolvedValue([])
   subjectsMock.mockReset()
   subjectsMock.mockResolvedValue([])
+  favoriteMock.mockReset()
+  favoriteMock.mockResolvedValue(undefined)
   grid.scrollToIndex.mockReset()
 })
 
@@ -601,6 +611,44 @@ describe('LibraryPage', () => {
     // The tile is now a selection target and is selected; the selection bar shows.
     expect(await screen.findByText('1 selected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'a.jpg' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('f toggles the focused tile’s favorite', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    fireEvent.keyDown(document, { key: 'ArrowRight' }) // focus tile a
+    fireEvent.keyDown(document, { key: 'f' })
+
+    await waitFor(() => {
+      expect(favoriteMock).toHaveBeenCalledWith('a', true)
+    })
+    // The tile's own heart follows: one favorite state per tile, not two.
+    expect(await screen.findByRole('button', { name: 'Remove from favorites' })).toBeInTheDocument()
+  })
+
+  it('f toggles from the state the tile’s own heart just set', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')], 1, null))
+    const user = userEvent.setup()
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    // Favorite it by clicking the heart on the tile…
+    await user.click(screen.getByRole('button', { name: 'Add to favorites' }))
+    await waitFor(() => {
+      expect(favoriteMock).toHaveBeenCalledWith('a', true)
+    })
+
+    // …then hit `f` on that same tile: the shortcut has to see the click's result,
+    // not the stale server value, so this un-favorites instead of re-favoriting.
+    fireEvent.keyDown(document, { key: 'ArrowRight' }) // focus tile a
+    fireEvent.keyDown(document, { key: 'f' })
+
+    await waitFor(() => {
+      expect(favoriteMock).toHaveBeenLastCalledWith('a', false)
+    })
+    expect(await screen.findByRole('button', { name: 'Add to favorites' })).toBeInTheDocument()
   })
 
   it('does not move focus while typing in the filter search input', async () => {

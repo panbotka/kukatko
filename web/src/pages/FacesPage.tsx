@@ -219,6 +219,13 @@ export function FacesPage() {
       return
     }
     const item = visible[focusedIndex]
+    // A done card is already assigned to this very subject — under "All"/"Done" it
+    // stays on the grid and can be focused, and recording "not this person" for it
+    // would persist a contradiction. Its card offers no reject button, so only the
+    // keyboard can reach it; guard here exactly as the confirm does.
+    if (!isActionable(item)) {
+      return
+    }
     const next = nextActionableKey(visible, focusedIndex)
     review.reject(item.candidate)
     setFocusedKey(next)

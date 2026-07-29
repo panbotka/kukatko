@@ -52,6 +52,13 @@ export interface PhotoTileProps {
    */
   favoritable?: boolean
   /**
+   * Called with this photo's new favorite state whenever the heart flips (the
+   * optimistic flip and a rollback alike). A page that also favorites the photo
+   * by another route — the library's `f` shortcut — passes it so both share one
+   * baseline; a page whose only route is the heart needs none.
+   */
+  onFavoriteChange?: (uid: string, favorite: boolean) => void
+  /**
    * Query string (without the leading `?`) appended to the detail link so the
    * detail page inherits the originating list's order and scope for prev/next and
    * Back. Empty/undefined links to the bare detail route.
@@ -88,6 +95,7 @@ export function PhotoTile({
   anySelected = false,
   onToggleSelect,
   favoritable = false,
+  onFavoriteChange,
   detailQuery,
   focused = false,
   extras,
@@ -252,6 +260,13 @@ export function PhotoTile({
           uid={photo.uid}
           favorite={photo.is_favorite ?? false}
           className="position-absolute bottom-0 end-0 m-1"
+          onChange={
+            onFavoriteChange === undefined
+              ? undefined
+              : (favorite) => {
+                  onFavoriteChange(photo.uid, favorite)
+                }
+          }
         />
       )}
     </div>
