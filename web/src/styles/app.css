@@ -599,6 +599,145 @@ body {
   white-space: nowrap;
 }
 
+/*
+ * The phone navigation drawer (`MobileNavDrawer`), the hamburger's panel below
+ * the navbar's `md` breakpoint. It replaces the old inline collapse, where every
+ * group dropdown expanded into the bar itself: react-bootstrap disables Popper
+ * inside a `Navbar`, so the menu was one long nested stack with no grouping and
+ * no room to aim a thumb.
+ *
+ * It is a Bootstrap offcanvas, so the sliding, the backdrop, the Escape key and
+ * the body scroll-lock come for free; what these rules add is the width, the
+ * safe-area insets and the section/row rhythm. The insets cover the three edges
+ * an `end`-placed drawer actually touches — top, right and bottom — and are
+ * padding on the panel itself, so its own header and rows move inward instead of
+ * disappearing under a notch or the home-indicator bar. The left edge is left
+ * alone deliberately: it faces the middle of the screen, and a landscape notch
+ * there would only steal width from an already narrow panel.
+ */
+.kk-navdrawer {
+  /* Bootstrap sizes the panel from this variable; overriding it (rather than
+     `width`) keeps the override independent of stylesheet order. Narrow enough
+     to keep the page visible behind it, capped so a 320px phone still gets a
+     strip of backdrop to dismiss by. */
+  --bs-offcanvas-width: min(20rem, 86vw);
+
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background-color: var(--kk-surface-1);
+  border-left: 1px solid var(--kk-header-border);
+}
+
+.kk-navdrawer__head {
+  border-bottom: 1px solid var(--kk-header-border);
+}
+
+/* The sections stack with a clear gap; the body is the scroller when the menu is
+   taller than the phone (a maintainer sees every group at once), and it keeps
+   that scroll to itself rather than chaining it to the page underneath. */
+.kk-navdrawer__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-4);
+  overscroll-behavior: contain;
+}
+
+.kk-navdrawer__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-1);
+}
+
+/* Heading *and* rule between blocks: the label says what the block is, the
+   hairline says where the previous one ended. */
+.kk-navdrawer__section + .kk-navdrawer__section {
+  padding-top: var(--kk-space-4);
+  border-top: 1px solid var(--kk-header-border);
+}
+
+.kk-navdrawer__heading {
+  margin-bottom: var(--kk-space-1);
+  padding-inline: var(--kk-space-3);
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* One tap row. 3rem clears the 44px finger floor with room to spare, and the
+   rows are links and buttons alike (sign-out, the shortcuts overlay), so the
+   button defaults — border, background, centred text — are reset here. */
+.kk-navdrawer__link {
+  display: flex;
+  gap: var(--kk-space-3);
+  align-items: center;
+  width: 100%;
+  min-height: 3rem;
+  padding: var(--kk-space-2) var(--kk-space-3);
+  border: 0;
+  border-radius: var(--kk-radius-md);
+  background-color: transparent;
+  color: var(--kk-text);
+  font-size: var(--kk-font-size-body);
+  text-align: left;
+  text-decoration: none;
+  transition:
+    color var(--kk-duration-fast) var(--kk-ease-standard),
+    background-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-navdrawer__link:hover,
+.kk-navdrawer__link:focus-visible {
+  background-color: var(--kk-surface-raised);
+  color: var(--kk-text);
+  text-decoration: none;
+}
+
+/* "You are here" wears the same accent-tinted pill as the top bar and the tab
+   bar, so all three navigations speak one language. */
+.kk-navdrawer__link.active {
+  background-color: var(--kk-accent-subtle);
+  color: var(--kk-accent);
+}
+
+.kk-navdrawer__link:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: calc(-1 * var(--kk-focus-ring-width));
+}
+
+/* Upload keeps the bar's single filled call-to-action, so the everyday payoff
+   reads the same in the drawer as it does on desktop. */
+.kk-navdrawer__link--cta,
+.kk-navdrawer__link--cta:hover,
+.kk-navdrawer__link--cta:focus-visible,
+.kk-navdrawer__link--cta.active {
+  background-color: var(--kk-accent-solid);
+  color: var(--kk-on-accent);
+}
+
+.kk-navdrawer__link--cta:hover,
+.kk-navdrawer__link--cta:focus-visible {
+  background-color: var(--kk-accent-solid-hover);
+}
+
+/* A fixed glyph column keeps every label starting on the same vertical line. */
+.kk-navdrawer__icon {
+  flex: none;
+  width: 1.5rem;
+  font-size: 1.125rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.kk-navdrawer__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Icon-only controls (e.g. the favorite heart overlay) need a finger-friendly
    hit area even when their glyph is small. 44px is the common touch-target
    minimum. */

@@ -43,13 +43,40 @@ here.
   all of its items hidden (Tools/Admin for a viewer); the parent menu has an **active state** (`active`
   prop) when the current route is one of its children (`pathMatches` also honors a detail sub-path like
   `/albums/{uid}`) — it is built from `Dropdown`+`Dropdown.Toggle as={NavLink}` (not `NavDropdown`, which
-  consumes the `title` prop for the toggle's content, leaving none for the tooltip); items in the mobile burger
-  menu expand inline with tap-targets (`kukatko-tap-target`). On a phone the `Navbar` is **controlled**
+  consumes the `title` prop for the toggle's content, leaving none for the tooltip). **The whole item registry
+  lives in `components/navItems.ts`** (`NavEntry`/`NavGroup`, `PRIMARY_ITEMS`, `BROWSE_GROUP`, `TOOLS_GROUP`,
+  `OPERATIONS_GROUP`, `GOVERNANCE_GROUP`, `REVIEW_ITEM`, `LEADERBOARD_ITEM`, `UPLOAD_ITEM`, `ACCOUNT_ITEM`,
+  `HELP_ITEM`, `pathMatches`), so the bar and the phone drawer below read **the same list with the same role
+  gates** and cannot drift apart. On a phone the `Navbar` is **controlled**
   (an `expanded` state + `onToggle`); a `useEffect` on the `useLocation` pathname resets it to closed on
   **every navigation**, so tapping any item — top-level link, group-dropdown item, or user-menu item —
   auto-closes the burger instead of leaving it open over the page. Logout closes it explicitly (a handler,
   not a route change). This replaces react-bootstrap `collapseOnSelect`, which never fired for the bar's
-  bare `NavLink`s and raw `Dropdown.Item`s; on `md`+ the collapse is always shown, so the state is inert there,
+  bare `NavLink`s and raw `Dropdown.Item`s; on `md`+ the collapse is always shown, so the state is inert there.
+  Below `md` the `Navbar.Collapse` is **not rendered at all** — `useIsNarrowViewport` swaps it for the
+  `MobileNavDrawer`, so a phone never carries two copies of the nav links (and a resize past the breakpoint
+  resets `expanded`, or the desktop bar would come back with an invisible open menu behind it),
+  `MobileNavDrawer` (**the phone menu, as a real drawer** — `components/MobileNavDrawer.tsx`, rendered by
+  `Layout` only below the navbar's `md` breakpoint and opened by the hamburger, whose `aria-controls` points at
+  the shared `MOBILE_MENU_ID` = `main-navbar` that the desktop collapse also uses. It replaces the old inline
+  collapse: react-bootstrap disables Popper inside a `Navbar`, so every group dropdown used to expand *into*
+  the bar — one long nested stack with no grouping, no headings and no room to aim a thumb. It is a
+  react-bootstrap `Offcanvas` (`placement="end"`), so sliding, the backdrop (tap outside = dismiss), Escape,
+  the focus trap and the body scroll-lock come from Bootstrap; the header adds a labelled close button
+  (`nav.closeMenu`) and the title `nav.menu`. The body is **labelled sections**, each a `<section>` +
+  `<h2>` heading (so it is a named `region` for assistive tech and for tests): **Hlavní**
+  (`nav.sections.main` — Knihovna/Alba/Štítky + Třídění when `canWrite` + Žebříček + Nahrát when `canWrite`,
+  the last keeping the bar's filled CTA look), **Procházet**, the `canWrite` **Nástroje**, the `isMaintainer`
+  **Provoz**, the `isAdmin` **Správa**, and **Účet** (`nav.sections.account` — Můj účet, Nápověda, the
+  keyboard-shortcuts overlay and Odhlásit se, i.e. the user dropdown unfolded). A closed role gate drops the
+  whole section, exactly as it drops the dropdown in the bar. Rows are 3rem (48px) tap targets with the icon +
+  label + `nav.titles.*` tooltip, the same accent-tinted „you are here" pill as the bar and the tab bar
+  (`NavLink`, `end`-matched for the library root), and each row also closes the drawer `onClick` — the
+  pathname effect covers navigation, the handler additionally covers re-tapping the route you are already on.
+  Styles are `.kk-navdrawer*` in `app.css`: `--bs-offcanvas-width: min(20rem, 86vw)` (a strip of backdrop is
+  always left to dismiss by), `env(safe-area-inset-{top,right,bottom})` padding on the panel (the left edge
+  faces the middle of the screen, so it is deliberately not inset), a hairline + heading between sections, and
+  `overscroll-behavior: contain` on the scrolling body),
   `MobileTabBar` (**the phone-only bottom tab bar**, rendered by `Layout` after the `Footer`: on a phone the
   whole primary nav is folded into the burger, so every everyday destination costs an open-then-tap — this
   pins them to the bottom edge where the thumb already is. Four tabs at most (`TABS`), the everyday loop only:
@@ -160,7 +187,10 @@ here.
   on. Tests: `PlaceSearch.test.tsx`),
   `KeyboardShortcutsHelp` (in the navbar: a keyboard icon + **shortcuts help modal** — opens with
   `?` (Shift+/) anywhere or by click, lists all shortcuts grouped by context (Grid / Detail)
-  from `lib/shortcuts.ts` `SHORTCUT_GROUPS`, closes with Escape/the close button),
+  from `lib/shortcuts.ts` `SHORTCUT_GROUPS`, closes with Escape/the close button. Prop `variant`
+  changes only the trigger: `'icon'` (default) is the bar's compact keyboard cap, `'row'` is the
+  full-width `.kk-navdrawer__link` row `MobileNavDrawer` puts in its account section — the modal is a
+  portal either way, so it stacks above the drawer that opened it),
   `EmptyState` (**shared empty-collection placeholder**: an icon in a round pit, a short title,
   a single-line hint and an optional action button, centered in the space the collection would occupy.
   Props `title` (required), `hint?`, `icon?` (default = the outline of an empty frame, `aria-hidden`),

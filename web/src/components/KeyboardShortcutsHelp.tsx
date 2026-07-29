@@ -36,8 +36,14 @@ function KeyboardIcon() {
  * Escape (react-bootstrap Modal) or its close button. Self-contained so the
  * layout only needs to render it; the `?` handler is suppressed while typing or a
  * form modal is open (see {@link useKeyboardShortcuts}).
+ *
+ * `variant` only changes what the trigger looks like, never what it does: the
+ * default `icon` is the navbar's compact keyboard cap, while `row` renders it as
+ * one more full-width tap row for the mobile nav drawer, where an icon-only
+ * button would be the odd one out among labelled rows. The modal is a portal, so
+ * it stacks above the drawer that opened it and leaves it standing underneath.
  */
-export function KeyboardShortcutsHelp() {
+export function KeyboardShortcutsHelp({ variant = 'icon' }: { variant?: 'icon' | 'row' }) {
   const { t } = useTranslation()
   const [show, setShow] = useState(false)
 
@@ -53,18 +59,34 @@ export function KeyboardShortcutsHelp() {
 
   return (
     <>
-      <Button
-        variant="outline-secondary"
-        size="sm"
-        className="d-inline-flex align-items-center kukatko-tap-target justify-content-center"
-        aria-label={t('shortcuts.open')}
-        title={t('shortcuts.open')}
-        onClick={() => {
-          setShow(true)
-        }}
-      >
-        <KeyboardIcon />
-      </Button>
+      {variant === 'row' ? (
+        <button
+          type="button"
+          className="kk-navdrawer__link"
+          title={t('shortcuts.open')}
+          onClick={() => {
+            setShow(true)
+          }}
+        >
+          <span className="kk-navdrawer__icon d-inline-flex">
+            <KeyboardIcon />
+          </span>
+          <span className="kk-navdrawer__label">{t('shortcuts.title')}</span>
+        </button>
+      ) : (
+        <Button
+          variant="outline-secondary"
+          size="sm"
+          className="d-inline-flex align-items-center kukatko-tap-target justify-content-center"
+          aria-label={t('shortcuts.open')}
+          title={t('shortcuts.open')}
+          onClick={() => {
+            setShow(true)
+          }}
+        >
+          <KeyboardIcon />
+        </Button>
+      )}
 
       <Modal show={show} onHide={close} centered scrollable aria-labelledby="shortcuts-title">
         <Modal.Header closeButton closeLabel={t('shortcuts.close')}>

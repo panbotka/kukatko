@@ -84,7 +84,13 @@
     "review": "Review",
     "outliers": "Possible mistakes",
     "leaderboard": "Leaderboard",
-    "tabBar": "Primary navigation"
+    "tabBar": "Primary navigation",
+    "menu": "Menu",
+    "closeMenu": "Close the menu",
+    "sections": {
+      "main": "Main",
+      "account": "Account"
+    }
   },
   "help": {
     "title": "Help",

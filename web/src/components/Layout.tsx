@@ -1,4 +1,3 @@
-import type { ParseKeys } from 'i18next'
 import { useEffect, useState } from 'react'
 import Container from 'react-bootstrap/Container'
 import Dropdown from 'react-bootstrap/Dropdown'
@@ -11,202 +10,32 @@ import { useTranslation } from 'react-i18next'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
 
 import { AnnouncementBanner } from './AnnouncementBanner'
 import { Footer } from './Footer'
-import { Icon, type IconName } from './Icon'
+import { Icon } from './Icon'
 import { JobQueueBadges } from './JobQueueBadges'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
+import { MOBILE_MENU_ID, MobileNavDrawer } from './MobileNavDrawer'
 import { MobileTabBar } from './MobileTabBar'
+import {
+  ACCOUNT_ITEM,
+  BROWSE_GROUP,
+  GOVERNANCE_GROUP,
+  HELP_ITEM,
+  LEADERBOARD_ITEM,
+  type NavEntry,
+  type NavGroup,
+  OPERATIONS_GROUP,
+  pathMatches,
+  PRIMARY_ITEMS,
+  REVIEW_ITEM,
+  TOOLS_GROUP,
+  UPLOAD_ITEM,
+} from './navItems'
 import { SearchCommand } from './search/SearchCommand'
-
-/**
- * A single navigable destination. `titleKey` names the *action* the entry
- * performs ("Show the albums"), not the destination noun — it becomes the
- * `title` tooltip, so it should tell a first-time user what clicking does while
- * the short visible label plus `icon` carry recognition for the daily users.
- */
-interface NavEntry {
-  to: string
-  labelKey: ParseKeys
-  titleKey: ParseKeys
-  icon: IconName
-}
-
-/** A dropdown of related destinations, behind a labelled, icon-bearing toggle. */
-interface NavGroup {
-  id: string
-  labelKey: ParseKeys
-  titleKey: ParseKeys
-  icon: IconName
-  items: NavEntry[]
-}
-
-/**
- * The always-visible destinations, in the order the library is actually browsed:
- * everything, then by album, then by label. Available to every signed-in role.
- * The library is the homepage, so its entry points to the site root.
- */
-const PRIMARY_ITEMS: NavEntry[] = [
-  { to: LIBRARY_PATH, labelKey: 'nav.library', titleKey: 'nav.titles.library', icon: 'images' },
-  { to: '/albums', labelKey: 'nav.albums', titleKey: 'nav.titles.albums', icon: 'collection' },
-  { to: '/labels', labelKey: 'nav.labels', titleKey: 'nav.titles.labels', icon: 'tags' },
-]
-
-/** The "Procházet" (Browse) group: the less-travelled ways into the library. */
-const BROWSE_GROUP: NavGroup = {
-  id: 'nav-browse',
-  labelKey: 'nav.browse',
-  titleKey: 'nav.titles.browse',
-  icon: 'compass',
-  items: [
-    {
-      to: '/favorites',
-      labelKey: 'nav.favorites',
-      titleKey: 'nav.titles.favorites',
-      icon: 'heart',
-    },
-    { to: '/people', labelKey: 'nav.people', titleKey: 'nav.titles.people', icon: 'people' },
-    { to: '/places', labelKey: 'nav.places', titleKey: 'nav.titles.places', icon: 'geo-alt' },
-    { to: '/map', labelKey: 'nav.map', titleKey: 'nav.titles.map', icon: 'map' },
-  ],
-}
-
-/**
- * The editor-only "Nástroje" (Tools) group, gated behind `canWrite`. It gathers
- * the power-user curation tools that a day-to-day browser rarely reaches for —
- * starting with "Rozšířit" (expand), which grows an album or label with similar
- * photos. Keeping expand here, rather than shouting for attention next to Alba /
- * Štítky, is the whole point of Part 3: the everyday loop stays uncluttered while
- * the tools remain one visible dropdown away.
- */
-const TOOLS_GROUP: NavGroup = {
-  id: 'nav-tools',
-  labelKey: 'nav.tools',
-  titleKey: 'nav.titles.tools',
-  icon: 'tools',
-  items: [
-    { to: '/expand', labelKey: 'nav.expand', titleKey: 'nav.titles.expand', icon: 'magic' },
-    {
-      to: '/faces',
-      labelKey: 'nav.faceSearch',
-      titleKey: 'nav.titles.faceSearch',
-      icon: 'person-bounding-box',
-    },
-    {
-      to: '/recognition',
-      labelKey: 'nav.recognition',
-      titleKey: 'nav.titles.recognition',
-      icon: 'person-check',
-    },
-    {
-      to: '/outliers',
-      labelKey: 'nav.outliers',
-      titleKey: 'nav.titles.outliers',
-      icon: 'exclamation-triangle',
-    },
-    {
-      to: '/duplicates',
-      labelKey: 'nav.duplicates',
-      titleKey: 'nav.titles.duplicates',
-      icon: 'files',
-    },
-    { to: '/trash', labelKey: 'nav.trash', titleKey: 'nav.titles.trash', icon: 'trash' },
-  ],
-}
-
-/**
- * The maintainer-only "Provoz" (Operations) group, gated behind `isMaintainer`.
- * It gathers the operational tools at the top of the role ladder — import,
- * library maintenance and system status. Import lives here rather than top-level:
- * it is no longer an off-ladder capability, it needs the maintainer role like the
- * rest of operations.
- */
-const OPERATIONS_GROUP: NavGroup = {
-  id: 'nav-operations',
-  labelKey: 'nav.operations',
-  titleKey: 'nav.titles.operations',
-  icon: 'sliders',
-  items: [
-    {
-      to: '/import',
-      labelKey: 'nav.import',
-      titleKey: 'nav.titles.import',
-      icon: 'box-arrow-in-down',
-    },
-    {
-      to: '/maintenance',
-      labelKey: 'nav.maintenance',
-      titleKey: 'nav.titles.maintenance',
-      icon: 'wrench-adjustable',
-    },
-    { to: '/system', labelKey: 'nav.system', titleKey: 'nav.titles.system', icon: 'activity' },
-  ],
-}
-
-/**
- * The governance "Správa" (Admin) group, gated behind `isAdmin` (admin or
- * higher). It holds the account and audit administration — the powers an admin
- * has that stop short of operations.
- */
-const GOVERNANCE_GROUP: NavGroup = {
-  id: 'nav-governance',
-  labelKey: 'nav.admin',
-  titleKey: 'nav.titles.admin',
-  icon: 'shield-lock',
-  items: [
-    { to: '/users', labelKey: 'nav.users', titleKey: 'nav.titles.users', icon: 'person-gear' },
-    { to: '/audit', labelKey: 'nav.audit', titleKey: 'nav.titles.audit', icon: 'clock-history' },
-  ],
-}
-
-/**
- * The write-gated review game. Top-level rather than buried in "Nástroje":
- * tidying the library one question at a time is the app's most-used curation
- * loop, and a game nobody can find is a game nobody plays.
- */
-const REVIEW_ITEM: NavEntry = {
-  to: '/review',
-  labelKey: 'nav.review',
-  titleKey: 'nav.titles.review',
-  icon: 'ui-checks',
-}
-
-/**
- * The sorting leaderboard — the review game's competition standings. Visible to
- * every signed-in role (viewer and up): reading the aggregate counts is not a
- * write action, so it is not gated behind a role group. It sits top-level next
- * to the review game it summarizes, so the game's scoreboard is one click away.
- */
-const LEADERBOARD_ITEM: NavEntry = {
-  to: '/leaderboard',
-  labelKey: 'nav.leaderboard',
-  titleKey: 'nav.titles.leaderboard',
-  icon: 'trophy',
-}
-
-/**
- * The write-gated upload entry. Adding photos is the everyday loop's payoff, so
- * it is not just top-level but the bar's one call-to-action: rendered as a filled
- * pill (see `renderLink`'s `cta` option) so a non-technical user's eye lands on
- * "add photos" instead of treating it as just another link beside Import.
- */
-const UPLOAD_ITEM: NavEntry = {
-  to: '/upload',
-  labelKey: 'nav.upload',
-  titleKey: 'nav.titles.upload',
-  icon: 'cloud-arrow-up',
-}
-
-/**
- * Reports whether `pathname` matches the given nav route, treating a route as
- * active for its detail sub-paths too (e.g. `/albums/ab12` activates `/albums`).
- * Used to light up the parent dropdown when any of its children is current.
- */
-function pathMatches(pathname: string, route: string): boolean {
-  return pathname === route || pathname.startsWith(`${route}/`)
-}
 
 /**
  * Application shell: a responsive top navbar (navigation and the
@@ -227,18 +56,25 @@ function pathMatches(pathname: string, route: string): boolean {
  * visible on a phone while the nav folds into the hamburger. The language switcher
  * is not in the bar: this instance is Czech, so the setting sits on the account
  * page rather than spending prime bar space. Every entry pairs an icon (for daily
- * recognition) with a `title` describing the action it performs.
+ * recognition) with a `title` describing the action it performs. The items
+ * themselves live in `navItems.ts`, so the phone menu below cannot drift from the
+ * bar's set or its role gating.
  *
- * Below that breakpoint the shell grows a second, thumb-level navigation: the
- * {@link MobileTabBar} pins the everyday destinations to the bottom edge so a
- * phone user reaches them without opening the hamburger first. It is phone-only —
- * on `md`+ the top bar remains the sole navigation.
+ * Below the `md` breakpoint the shell swaps that inline bar for two thumb-level
+ * navigations. The {@link MobileTabBar} pins the everyday destinations to the
+ * bottom edge so a phone user reaches them without opening the hamburger first,
+ * and the hamburger opens the {@link MobileNavDrawer} — a proper Offcanvas panel
+ * of labelled sections — instead of expanding every dropdown inline into one
+ * cramped nested list. Both are decided in JS ({@link useIsNarrowViewport}), and
+ * the drawer replaces the `Navbar.Collapse` rather than joining it, so neither
+ * breakpoint ever carries two copies of the same links.
  */
 export function Layout() {
   const { t } = useTranslation()
   const { user, canWrite, isAdmin, isMaintainer, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  const narrow = useIsNarrowViewport()
   // The mobile navbar is controlled so it can be closed programmatically. Below
   // the `md` breakpoint the nav folds into a hamburger; react-bootstrap's
   // `collapseOnSelect` only collapses on a fired select event, which this bar's
@@ -252,6 +88,19 @@ export function Layout() {
   useEffect(() => {
     setExpanded(false)
   }, [pathname])
+
+  // A viewport that grows past the breakpoint (rotation, a resized window) drops
+  // the drawer for the inline bar; leaving the state open would then mean the
+  // desktop bar came back with an invisible menu still "expanded" behind it.
+  useEffect(() => {
+    if (!narrow) {
+      setExpanded(false)
+    }
+  }, [narrow])
+
+  function closeMenu() {
+    setExpanded(false)
+  }
 
   async function handleLogout() {
     // Logout dismisses via a handler, not a route change, so close explicitly.
@@ -338,79 +187,101 @@ export function Layout() {
         className="kukatko-navbar"
       >
         <Container>
-          <Navbar.Toggle aria-controls="main-navbar" />
+          <Navbar.Toggle aria-controls={MOBILE_MENU_ID} />
           {/* Search leads the bar and stays outside the collapse, so it is always
               visible — on a phone it fills the row beside the hamburger while the
               nav folds away. */}
           <SearchCommand />
-          <Navbar.Collapse id="main-navbar">
-            <Nav className="me-auto">
-              {/* The everyday loop, loudest first. Library (the homepage), Albums
-                  and Labels are the always-visible entry points. */}
-              {PRIMARY_ITEMS.map((entry) => renderLink(entry))}
-              {/* The remaining browse destinations, one level down. */}
-              {renderGroup(BROWSE_GROUP)}
-              {/* The review game: editors only, and kept in plain sight. */}
-              {canWrite && renderLink(REVIEW_ITEM)}
-              {/* The review game's scoreboard: visible to every signed-in role. */}
-              {renderLink(LEADERBOARD_ITEM)}
-              {/* Adding photos is the loop's payoff: the bar's one filled CTA,
-                  hidden from viewers. */}
-              {canWrite && renderLink(UPLOAD_ITEM, { cta: true })}
+          {/* The inline bar is the `md`+ navigation only: on a phone the same
+              items are the drawer's, so rendering both would duplicate every
+              link in the DOM. */}
+          {!narrow && (
+            <Navbar.Collapse id={MOBILE_MENU_ID}>
+              <Nav className="me-auto">
+                {/* The everyday loop, loudest first. Library (the homepage), Albums
+                    and Labels are the always-visible entry points. */}
+                {PRIMARY_ITEMS.map((entry) => renderLink(entry))}
+                {/* The remaining browse destinations, one level down. */}
+                {renderGroup(BROWSE_GROUP)}
+                {/* The review game: editors only, and kept in plain sight. */}
+                {canWrite && renderLink(REVIEW_ITEM)}
+                {/* The review game's scoreboard: visible to every signed-in role. */}
+                {renderLink(LEADERBOARD_ITEM)}
+                {/* Adding photos is the loop's payoff: the bar's one filled CTA,
+                    hidden from viewers. */}
+                {canWrite && renderLink(UPLOAD_ITEM, { cta: true })}
 
-              {/* A divider fences off the quieter power-user / admin cluster, but
-                  only when the current role actually has something below it. */}
-              {(canWrite || isAdmin) && <div className="kukatko-nav-divider" aria-hidden="true" />}
+                {/* A divider fences off the quieter power-user / admin cluster, but
+                    only when the current role actually has something below it. */}
+                {(canWrite || isAdmin) && (
+                  <div className="kukatko-nav-divider" aria-hidden="true" />
+                )}
 
-              {/* Editor-only tools (expand, faces, duplicates, …); hidden from
-                  viewers. */}
-              {canWrite && renderGroup(TOOLS_GROUP)}
-              {/* Maintainer-only operations (import, maintenance, system). */}
-              {isMaintainer && renderGroup(OPERATIONS_GROUP)}
-              {/* Governance (users, audit); admin or higher. */}
-              {isAdmin && renderGroup(GOVERNANCE_GROUP)}
-            </Nav>
-            <Nav className="align-items-center">
-              <KeyboardShortcutsHelp />
-            </Nav>
-            {user && (
-              <Nav className="ms-md-3">
-                <NavDropdown align="end" title={user.display_name || user.username} id="user-menu">
-                  <NavDropdown.Item
-                    as={Link}
-                    to="/account"
-                    title={t('nav.titles.account')}
-                    className="d-flex align-items-center gap-2"
-                  >
-                    <Icon name="person-circle" />
-                    {t('nav.account')}
-                  </NavDropdown.Item>
-                  <NavDropdown.Item
-                    as={Link}
-                    to="/help"
-                    title={t('nav.titles.help')}
-                    className="d-flex align-items-center gap-2"
-                  >
-                    <Icon name="question-circle" />
-                    {t('nav.help')}
-                  </NavDropdown.Item>
-                  <NavDropdown.Divider />
-                  <NavDropdown.Item
-                    title={t('nav.titles.logout')}
-                    className="d-flex align-items-center gap-2"
-                    onClick={() => {
-                      void handleLogout()
-                    }}
-                  >
-                    <Icon name="box-arrow-right" />
-                    {t('nav.logout')}
-                  </NavDropdown.Item>
-                </NavDropdown>
+                {/* Editor-only tools (expand, faces, duplicates, …); hidden from
+                    viewers. */}
+                {canWrite && renderGroup(TOOLS_GROUP)}
+                {/* Maintainer-only operations (import, maintenance, system). */}
+                {isMaintainer && renderGroup(OPERATIONS_GROUP)}
+                {/* Governance (users, audit); admin or higher. */}
+                {isAdmin && renderGroup(GOVERNANCE_GROUP)}
               </Nav>
-            )}
-          </Navbar.Collapse>
+              <Nav className="align-items-center">
+                <KeyboardShortcutsHelp />
+              </Nav>
+              {user && (
+                <Nav className="ms-md-3">
+                  <NavDropdown
+                    align="end"
+                    title={user.display_name || user.username}
+                    id="user-menu"
+                  >
+                    <NavDropdown.Item
+                      as={Link}
+                      to={ACCOUNT_ITEM.to}
+                      title={t(ACCOUNT_ITEM.titleKey)}
+                      className="d-flex align-items-center gap-2"
+                    >
+                      <Icon name={ACCOUNT_ITEM.icon} />
+                      {t(ACCOUNT_ITEM.labelKey)}
+                    </NavDropdown.Item>
+                    <NavDropdown.Item
+                      as={Link}
+                      to={HELP_ITEM.to}
+                      title={t(HELP_ITEM.titleKey)}
+                      className="d-flex align-items-center gap-2"
+                    >
+                      <Icon name={HELP_ITEM.icon} />
+                      {t(HELP_ITEM.labelKey)}
+                    </NavDropdown.Item>
+                    <NavDropdown.Divider />
+                    <NavDropdown.Item
+                      title={t('nav.titles.logout')}
+                      className="d-flex align-items-center gap-2"
+                      onClick={() => {
+                        void handleLogout()
+                      }}
+                    >
+                      <Icon name="box-arrow-right" />
+                      {t('nav.logout')}
+                    </NavDropdown.Item>
+                  </NavDropdown>
+                </Nav>
+              )}
+            </Navbar.Collapse>
+          )}
         </Container>
       </Navbar>
+      {/* Phone only: the hamburger opens a real drawer of labelled sections
+          rather than expanding the whole nav inline into the bar. */}
+      {narrow && (
+        <MobileNavDrawer
+          show={expanded}
+          onHide={closeMenu}
+          onLogout={() => {
+            void handleLogout()
+          }}
+        />
+      )}
       <Container as="main" className="py-4 kukatko-main">
         <AnnouncementBanner />
         <Outlet />
