@@ -1252,7 +1252,8 @@
     "viewer": {
       "label": "Prohlížeč fotek",
       "info": "Informace",
-      "closeInfo": "Zavřít informace"
+      "closeInfo": "Zavřít informace",
+      "actions": "Akce s fotkou"
     },
     "tabs": {
       "info": "Informace",

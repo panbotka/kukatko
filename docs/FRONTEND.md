@@ -691,7 +691,8 @@ here.
   `components/photo/viewer.css`, the `--kk-viewer-*` tokens (backdrop, chrome/panel scrim, z-index) in
   `tokens.css`. **It replaced the old click-opens-lightbox** — `Lightbox` and `lightbox.css` were removed
   and absorbed here.
-  **Disappearing chrome:** the top action bar (title + curatorial loop + toggles) and the **‹/› arrows**
+  **Disappearing chrome:** the top action bar (title + toggles, plus the curatorial loop on a mouse),
+  the **‹/› arrows** and the phone's **bottom curation dock**
   after a short idle **dim away** and return on mouse move / tap / key
   (`useAutoHideChrome` — an idle timer + a global wake, `paused` when the drawer is open, so a control
   under your hand doesn't vanish); the transitions run on duration tokens, so `prefers-reduced-motion`
@@ -714,12 +715,29 @@ here.
   A); an abort on a `uid` change cancels the leapfrogged request (the last target wins).
   **Deep-linkable:** the open photo is in the route, **the drawer state in the `info` query param** (outside
   `DetailView`/`DETAIL_DEFAULTS`, so it doesn't leak into the neighbors or into `backHref`), scope in the query — so Back and
-  refresh line up. In the header `RatingStars`+`FlagControl` (per-user stars 0–5 + a personal flag
-  eye/👍/👎 over `useRating`) and `FavoriteButton` (shares the optimistic toggle with `f`). Beside it is
+  refresh line up. The **curation loop** is `RatingStars`+`FlagControl` (per-user stars 0–5 + a personal flag
+  eye/👍/👎 over `useRating`) and `FavoriteToggle` (shares the optimistic toggle with `f`), followed by
   **Archivovat/Vrátit z koše** (editor+ only per `canWrite`, as with bulk archiving): `archivePhoto`
   sends the open photo to the trash, `unarchivePhoto` restores it (a photo opened from `/trash` arrives already
   archived); **you stay on the page** — `archived_at` is toggled in place (the icon flips
   `archive` ⇄ `arrow-counterclockwise`, the label Archivovat ⇄ Vrátit z koše) and the result is reported by a toast.
+  **Where that loop sits depends on the reach.** With a mouse it rides the top bar; **below `md`
+  (`useIsNarrowViewport`) it moves into a bottom dock** (`.kk-viewer__dock`, `role="group"` /
+  `photo.viewer.actions`) along the edge the thumb already rests on — the top-right corner is the
+  hardest place to hit one-handed on a tall phone, and rating/flagging/favoriting is the everyday
+  loop. The top bar then keeps only the title and the three occasional view toggles (faces / edits /
+  info); the persistent ✕ and the ‹/› arrows are untouched (already reachable). The controls are
+  **one element tree mounted in one of two places**, never two copies — the decision is made in JS,
+  not by a pair of `d-*-none` rules, so nothing renders a hidden twin of every star for assistive
+  tech (or a query) to find, and the two layouts cannot drift apart. The dock **fades with the rest
+  of the chrome** (same idle timer) so the photo is never permanently boxed in, **stands down while
+  the drawer is open** (which owns the whole screen at this width), carries
+  `env(safe-area-inset-bottom)` itself, frosts the photo behind it, and lifts the shared (mouse-sized)
+  stars/flags/heart to the **44px finger floor**. Ten finger-sized targets do not fit a 360px row, so
+  it **wraps** — the flag+heart+archive cluster is grouped (`.kk-viewer__marks`) so the break falls
+  between the stars and the marks rather than stranding a lone control. `PhotoDetailPage.test.tsx`
+  guards both layouts (DOM) plus the dock's placement/fade/floor by reading `viewer.css` (jsdom
+  evaluates no media query and computes no layout).
   **The viewer carries
   exactly ONE image of the photo** — faces are a **toggleable overlay** over it (`FaceOverlay` over
   `useFaces`), never a second copy of the shot, and even the **Úpravy** panel edits this one shot.
@@ -1567,7 +1585,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   bez wrapperu);
   `useIsNarrowViewport()` = sdílený hook nad `matchMedia` (`(max-width: 767.98px)`, Bootstrap `md`;
   odebírá `change`, chybějící/rozbité `matchMedia` → „široký"; jeden zdroj pravdy pro offcanvas
-  filtrů, výchozí hustotu mřížky i kolaps `BatchActionBar` do „…" overflow menu na telefonu);
+  filtrů, výchozí hustotu mřížky, kolaps `BatchActionBar` do „…" overflow menu na telefonu i přesun
+  kurátorské smyčky prohlížeče z horní lišty do spodního doku na dosah palce);
   `usePrefersReducedMotion()` = sleduje `(prefers-reduced-motion: reduce)` přes `matchMedia`
   (odebírá `change`, chybějící/rozbité `matchMedia` → `false`) — volající dekorativní animaci
   **vynechá**, ne zkrátí)),
