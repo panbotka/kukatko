@@ -16,10 +16,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/panbotka/kukatko/internal/photoprism"
+	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/psfeeds"
 )
 
@@ -111,8 +113,11 @@ type Config struct {
 	// SampleLimit caps every "missing" list; a non-positive value uses
 	// DefaultSampleLimit.
 	SampleLimit int
-	// AlbumTypes are the PhotoPrism album types to walk; empty uses
-	// photoprism.AlbumTypes.
+	// AlbumTypes are the PhotoPrism album types the catalogue is expected to hold;
+	// empty uses ppimport.DefaultAlbumTypes — the importer's own list, so the
+	// verifier can never demand a type the import deliberately skips. The
+	// remaining photoprism.AlbumTypes are still walked, but their albums are
+	// reported as skipped by design instead of missing.
 	AlbumTypes []string
 	// Logger receives a debug line per completed pass; nil uses slog.Default().
 	Logger *slog.Logger
@@ -121,12 +126,13 @@ type Config struct {
 // Service reconciles the source libraries against the catalogue. It holds no
 // mutable state and is safe for concurrent use.
 type Service struct {
-	photoPrism  PhotoPrismSource
-	feeds       FeedsSource
-	catalog     Catalog
-	sampleLimit int
-	albumTypes  []string
-	log         *slog.Logger
+	photoPrism   PhotoPrismSource
+	feeds        FeedsSource
+	catalog      Catalog
+	sampleLimit  int
+	albumTypes   []string
+	skippedTypes []string
+	log          *slog.Logger
 }
 
 // NewService builds a Service from cfg, applying defaults for the optional knobs.
@@ -142,20 +148,35 @@ func NewService(cfg Config) *Service {
 	}
 	albumTypes := cfg.AlbumTypes
 	if len(albumTypes) == 0 {
-		albumTypes = photoprism.AlbumTypes
+		albumTypes = ppimport.DefaultAlbumTypes
 	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Service{
-		photoPrism:  cfg.PhotoPrism,
-		feeds:       cfg.Feeds,
-		catalog:     cfg.Catalog,
-		sampleLimit: sampleLimit,
-		albumTypes:  albumTypes,
-		log:         logger,
+		photoPrism:   cfg.PhotoPrism,
+		feeds:        cfg.Feeds,
+		catalog:      cfg.Catalog,
+		sampleLimit:  sampleLimit,
+		albumTypes:   albumTypes,
+		skippedTypes: skippedAlbumTypes(albumTypes),
+		log:          logger,
 	}
+}
+
+// skippedAlbumTypes returns the PhotoPrism album types outside verified — the
+// ones the import deliberately does not map. Deriving them keeps a single source
+// of truth for the type list: whatever the importer leaves out is exactly what
+// the verifier buckets as skipped by design rather than missing.
+func skippedAlbumTypes(verified []string) []string {
+	skipped := make([]string, 0, len(photoprism.AlbumTypes))
+	for _, albumType := range photoprism.AlbumTypes {
+		if !slices.Contains(verified, albumType) {
+			skipped = append(skipped, albumType)
+		}
+	}
+	return skipped
 }
 
 // Verify runs a full reconciliation pass across the photos, vectors and structure
@@ -369,7 +390,8 @@ func (s *Service) reconcileVectors(ctx context.Context, counts CatalogCounts) (V
 
 // reconcileStructure builds the structure section by comparing the source name
 // sets (albums by title, labels and subjects by name) against the catalogue sets,
-// taking the catalogue row counts from counts.
+// taking the catalogue row counts from counts. Albums go through albumReport,
+// which reconciles only the types the import maps.
 func (s *Service) reconcileStructure(ctx context.Context, counts CatalogCounts) (StructureReport, error) {
 	srcAlbums, srcLabels, srcSubjects, err := s.sourceStructure(ctx)
 	if err != nil {
@@ -388,42 +410,74 @@ func (s *Service) reconcileStructure(ctx context.Context, counts CatalogCounts) 
 		return StructureReport{}, fmt.Errorf("importverify: reading catalog subject names: %w", err)
 	}
 	return StructureReport{
-		Albums:   s.entityReport(srcAlbums, catAlbums, counts.Albums),
+		Albums:   s.albumReport(srcAlbums, catAlbums, counts.Albums),
 		Labels:   s.entityReport(srcLabels, catLabels, counts.Labels),
 		Subjects: s.entityReport(srcSubjects, catSubjects, counts.Subjects),
 	}, nil
+}
+
+// sourceAlbums holds the source album titles split by whether their album type is
+// one the import maps (verified) or one it deliberately skips (skipped).
+type sourceAlbums struct {
+	// verified are the titles of albums whose type the import maps; they are
+	// reconciled against the catalogue and can be reported missing.
+	verified map[string]struct{}
+	// skipped are the titles found only under a deliberately skipped type; they
+	// are counted, never reconciled.
+	skipped map[string]struct{}
 }
 
 // sourceStructure fully pages the PhotoPrism album (walked per type), label and
 // subject listings and returns their deduplicated title/name sets.
 func (s *Service) sourceStructure(
 	ctx context.Context,
-) (albums, labels, subjects map[string]struct{}, err error) {
+) (albums sourceAlbums, labels, subjects map[string]struct{}, err error) {
 	albums, err = s.sourceAlbumTitles(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return sourceAlbums{}, nil, nil, err
 	}
 	labels, err = collectAll(func(offset int) ([]photoprism.Label, error) {
 		return s.photoPrism.ListLabels(ctx, photoprism.ListParams{Count: photoprism.MaxCount, Offset: offset})
 	}, func(label photoprism.Label) string { return label.Name })
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("importverify: listing photoprism labels: %w", err)
+		return sourceAlbums{}, nil, nil, fmt.Errorf("importverify: listing photoprism labels: %w", err)
 	}
 	subjects, err = collectAll(func(offset int) ([]photoprism.Subject, error) {
 		return s.photoPrism.ListSubjects(ctx, photoprism.ListParams{Count: photoprism.MaxCount, Offset: offset})
 	}, func(subject photoprism.Subject) string { return subject.Name })
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("importverify: listing photoprism subjects: %w", err)
+		return sourceAlbums{}, nil, nil, fmt.Errorf("importverify: listing photoprism subjects: %w", err)
 	}
 	return albums, labels, subjects, nil
 }
 
-// sourceAlbumTitles walks the PhotoPrism album listing once per configured album
-// type — the listing takes exactly one type per request — and returns the merged,
+// sourceAlbumTitles walks the whole PhotoPrism album catalogue and returns its
+// titles split into the reconciled types and the deliberately skipped ones. A
+// title served under both (a "month" album whose name a real album repeats)
+// belongs to the reconciled side, so it is checked rather than written off.
+func (s *Service) sourceAlbumTitles(ctx context.Context) (sourceAlbums, error) {
+	verified, err := s.albumTitlesOfTypes(ctx, s.albumTypes)
+	if err != nil {
+		return sourceAlbums{}, err
+	}
+	skipped, err := s.albumTitlesOfTypes(ctx, s.skippedTypes)
+	if err != nil {
+		return sourceAlbums{}, err
+	}
+	for title := range verified {
+		delete(skipped, title)
+	}
+	return sourceAlbums{verified: verified, skipped: skipped}, nil
+}
+
+// albumTitlesOfTypes walks the PhotoPrism album listing once per given album type
+// — the listing takes exactly one type per request — and returns the merged,
 // deduplicated set of album titles.
-func (s *Service) sourceAlbumTitles(ctx context.Context) (map[string]struct{}, error) {
+func (s *Service) albumTitlesOfTypes(
+	ctx context.Context, albumTypes []string,
+) (map[string]struct{}, error) {
 	titles := make(map[string]struct{})
-	for _, albumType := range s.albumTypes {
+	for _, albumType := range albumTypes {
 		found, err := collectAll(func(offset int) ([]photoprism.Album, error) {
 			return s.photoPrism.ListAlbums(ctx, photoprism.ListParams{
 				Type:   albumType,
@@ -439,6 +493,21 @@ func (s *Service) sourceAlbumTitles(ctx context.Context) (map[string]struct{}, e
 		}
 	}
 	return titles, nil
+}
+
+// albumReport reconciles the albums of the mapped types against the catalogue and
+// attaches the skipped-by-design tally, so the section accounts for the whole
+// source album catalogue without ever demanding what the import does not map.
+func (s *Service) albumReport(
+	source sourceAlbums, catalog map[string]struct{}, catalogCount int,
+) AlbumReport {
+	return AlbumReport{
+		EntityReport: s.entityReport(source.verified, catalog, catalogCount),
+		// Cloned: the report travels out of the Service, which promises to hold no
+		// state a caller can reach into.
+		SkippedTypes:         slices.Clone(s.skippedTypes),
+		SkippedByDesignCount: len(source.skipped),
+	}
 }
 
 // entityReport reconciles one structural entity: it lists the source names absent

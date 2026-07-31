@@ -696,7 +696,12 @@ here.
   instead of a sideways scroll; the error keeps its `text-danger small` on the *value* (a `cellClassName`
   would be desktop-only) —; it polls
   `GET /import/runs` + `GET /jobs/stats` every 3 s, 409 → „už běží", a confirm before the first (large) run of a
-  source, self-gated on `canImport` (= maintainer). The history also shows runs of the **`folder`** source (`kukatko import dir`,
+  source, self-gated on `canImport` (= maintainer). The **completeness-check** card runs `GET /import/verify`
+  on demand (never polled — it walks the whole source library) and renders it as a counts table; below it,
+  `import.verify.albumsSkipped` explains any `structure.albums.skipped_by_design_count` — the albums of the
+  types the import deliberately does not map (PhotoPrism's auto-generated monthly ones), which are **counted,
+  never listed as missing**, so the albums row reading `source=198` against PhotoPrism's 758 is not a shortfall
+  (`AlbumReport` in `services/import.ts` = `EntityReport` + `skipped_types` + `skipped_by_design_count`). The history also shows runs of the **`folder`** source (`kukatko import dir`,
   reads a directory on the server's disk → **has no button**, it just appears in the table): in `services/import.ts`
   therefore `RunSource` = `ImportSource | 'folder'` (the launch sections stay `SOURCES` =
   photoprism/photosorter), the label `import.source.folder`,

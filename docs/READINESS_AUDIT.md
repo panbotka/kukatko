@@ -83,7 +83,11 @@ source holding 20 670.
 **Fix direction:** terminate on `len(page) == 0`, not on a short page. A short page
 is not evidence of exhaustion for any endpoint that filters or merges server-side.
 
-### 2.2 The verifier expects albums the importer deliberately never imports
+### 2.2 ~~The verifier expects albums the importer deliberately never imports~~ — **resolved 2026-07-31**
+
+> Fixed: `importverify.Config.AlbumTypes` now defaults to `ppimport.DefaultAlbumTypes` (one source of
+> truth), and the types the import skips are walked into `structure.albums.skipped_by_design_count` +
+> `skipped_types` instead of `missing`. The measurement below is the state before that change.
 
 - Importer, `internal/ppimport/ppimport.go:89`: a full run maps four album types —
   `album, folder, moment, state`. `month` is excluded on purpose (560 auto-generated
@@ -276,7 +280,7 @@ Stated so the gaps are not mistaken for passes:
 
 1. Fix §2.1 (paging) — nothing else can be trusted until the importer and the
    verifier can see the whole library.
-2. Fix §2.2 and §2.3 so the completeness report can reach a clean state.
+2. Fix ~~§2.2~~ (resolved) and §2.3 so the completeness report can reach a clean state.
 3. Run `MIGRATION_PLAN.md` phases 1–4 on the full library.
 4. Re-measure §1 and everything marked UNMEASURABLE in §4.
 

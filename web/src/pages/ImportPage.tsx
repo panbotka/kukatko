@@ -363,6 +363,14 @@ function VerifyReportView({ report }: { report: VerifyReport }) {
           {t('import.verify.deduplicated')}: {pp.deduplicated_count}
         </p>
       )}
+      {s.albums.skipped_by_design_count > 0 && (
+        <p className="small text-secondary">
+          {t('import.verify.albumsSkipped', {
+            n: s.albums.skipped_by_design_count,
+            types: s.albums.skipped_types.join(', '),
+          })}
+        </p>
+      )}
       {v.not_configured && (
         <Alert variant="secondary" className="small py-2">
           {t('import.verify.notConfigured')}

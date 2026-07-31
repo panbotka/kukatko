@@ -675,6 +675,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `{photoprism:{source_total,source_by_type,imported_count,deduplicated_count,missing_count,missing_uids,
   file_gap_count,file_gaps},vectors:{not_configured,source_*,catalog_*,missing_embeddings*,missing_faces*},
   structure:{albums,labels,subjects (each {source_count,catalog_count,missing_count,missing})},complete}`.
+  `structure.albums` carries two more fields — `skipped_types` + `skipped_by_design_count` — because the
+  reconciliation is scoped to the album types the **importer** maps (`ppimport.DefaultAlbumTypes`, the single
+  source of truth): PhotoPrism's auto-generated `month` albums (560 on the production library, covered by
+  Kukátko's timeline) are counted there instead of being listed as missing forever, which is what used to make
+  a clean report unreachable by construction. `source_count` is therefore the album catalogue **minus** the
+  skipped types, not a shortfall.
   It is synchronous and may take a while (it walks the whole source library); **503** when no import source
   is configured, **502** on a source error. `deduplicated_count` accounts for the SHA256/SHA1-dedup delta
   (a source photo whose file is already imported under another uid), so a legitimate delta is explainable.

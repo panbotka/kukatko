@@ -93,11 +93,32 @@ type VectorsReport struct {
 // subjects — between the source and the catalogue.
 type StructureReport struct {
 	// Albums reconciles PhotoPrism album titles against catalogue album titles.
-	Albums EntityReport `json:"albums"`
+	Albums AlbumReport `json:"albums"`
 	// Labels reconciles PhotoPrism label names against catalogue label names.
 	Labels EntityReport `json:"labels"`
 	// Subjects reconciles PhotoPrism subject names against catalogue subject names.
 	Subjects EntityReport `json:"subjects"`
+}
+
+// AlbumReport reconciles albums: an EntityReport over the album types the
+// importer actually maps, plus a tally of the albums of the types it skips on
+// purpose. PhotoPrism serves five album types and generates most of them itself;
+// the import maps ppimport.DefaultAlbumTypes and leaves out "month" — one
+// auto-generated album per calendar month, hundreds of them on a real library,
+// already covered by Kukátko's timeline. Those albums are counted here rather
+// than listed as missing, so a complete import can actually report clean while
+// the report still accounts for the whole source album catalogue.
+//
+// The embedded EntityReport is flattened into the same JSON object, so the album
+// section keeps the shape of the other two plus the two fields below.
+type AlbumReport struct {
+	EntityReport
+	// SkippedTypes are the PhotoPrism album types deliberately left out of the
+	// reconciliation because the importer does not map them.
+	SkippedTypes []string `json:"skipped_types"`
+	// SkippedByDesignCount is how many distinct source album titles those types
+	// hold that the reconciled types do not; they are never reported missing.
+	SkippedByDesignCount int `json:"skipped_by_design_count"`
 }
 
 // EntityReport reconciles one structural entity: how many distinct names the

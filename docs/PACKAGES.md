@@ -1597,6 +1597,15 @@ to `## Package map` in `CLAUDE.md`.
   are rows of their own without a `photoprism_uid`, grouped behind the displayable original (see
   `ppimport/siblings.go`), so counting per row would report a file gap forever for a fully imported
   RAW+JPEG;
+  **the album reconciliation follows the importer, not PhotoPrism**: `Config.AlbumTypes` defaults to
+  `ppimport.DefaultAlbumTypes` (the *single source of truth* — the verifier can never demand a type the import
+  deliberately skips), the remaining `photoprism.AlbumTypes` are still walked but land in
+  `Structure.Albums` (`AlbumReport` = the embedded `EntityReport` + `skipped_types` + `skipped_by_design_count`)
+  as **skipped by design** instead of missing. Defaulting to all five types listed PhotoPrism's ~560
+  auto-generated `month` albums (one per calendar month, already covered by the timeline) as missing forever —
+  `source_count: 758, missing_count: 751` against a catalogue of 8 — so a clean report, which
+  `MIGRATION_PLAN.md` phase 4 gates the cutover on, was unreachable by construction and real gaps drowned in
+  the noise;
   `Report{photoprism,vectors,structure,complete}` (per section source vs catalogue + a capped list of the missing +
   full counts); `complete=true` only when nothing is missing; **it does not write** `import_runs`), `internal/photoprism/`
   (a read-only HTTP client of a running PhotoPrism instance — the basis of the incremental import, all behind

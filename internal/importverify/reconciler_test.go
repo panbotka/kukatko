@@ -465,11 +465,79 @@ func TestService_Verify_structure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
-	assertEntity(t, "albums", report.Structure.Albums, 2, 1, []string{"Family"})
+	assertEntity(t, "albums", report.Structure.Albums.EntityReport, 2, 1, []string{"Family"})
 	assertEntity(t, "labels", report.Structure.Labels, 2, 1, []string{"dog"})
 	assertEntity(t, "subjects", report.Structure.Subjects, 2, 1, []string{"Bob"})
 	if report.Complete {
 		t.Error("Complete = true, want false (structure gaps present)")
+	}
+}
+
+// TestService_Verify_albumTypes checks the album reconciliation defaults to the
+// importer's own type list: an album of a type the importer deliberately skips
+// ("month", PhotoPrism's auto-generated per-calendar-month albums) is bucketed as
+// skipped by design and never reported missing, while an album of an imported
+// type that the catalogue lacks still is.
+func TestService_Verify_albumTypes(t *testing.T) {
+	t.Parallel()
+
+	cat := newFakeCatalog()
+	cat.counts = importverify.CatalogCounts{Albums: 1}
+	cat.albumTitles = set("Trip")
+	svc := importverify.NewService(importverify.Config{
+		PhotoPrism: &fakePhotoPrism{
+			albumsByType: map[string][]photoprism.Album{
+				"album": {{Title: "Trip"}},
+				"state": {{Title: "Moravia"}},
+				"month": {{Title: "July 2019"}, {Title: "August 2019"}},
+			},
+		},
+		Catalog: cat, // no AlbumTypes: the default must mirror the importer's
+	})
+
+	report, err := svc.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	albums := report.Structure.Albums
+	// "Moravia" (type state) is imported and absent → missing; the two month
+	// albums are skipped by design and stay out of both the source count and the
+	// missing list.
+	assertEntity(t, "albums", albums.EntityReport, 2, 1, []string{"Moravia"})
+	if !slices.Equal(albums.SkippedTypes, []string{"month"}) {
+		t.Errorf("SkippedTypes = %v, want [month]", albums.SkippedTypes)
+	}
+	if albums.SkippedByDesignCount != 2 {
+		t.Errorf("SkippedByDesignCount = %d, want 2", albums.SkippedByDesignCount)
+	}
+}
+
+// TestService_Verify_albumTypes_completeWithSkipped checks a catalogue holding
+// every album of the imported types reports complete even though the source still
+// serves albums of a skipped type — the mismatch that made a clean report
+// unreachable by construction.
+func TestService_Verify_albumTypes_completeWithSkipped(t *testing.T) {
+	t.Parallel()
+
+	cat := newFakeCatalog()
+	cat.counts = importverify.CatalogCounts{Albums: 1}
+	cat.albumTitles = set("Trip")
+	svc := importverify.NewService(importverify.Config{
+		PhotoPrism: &fakePhotoPrism{
+			albumsByType: map[string][]photoprism.Album{
+				"album": {{Title: "Trip"}},
+				"month": {{Title: "July 2019"}},
+			},
+		},
+		Catalog: cat,
+	})
+
+	report, err := svc.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if !report.Complete {
+		t.Errorf("Complete = false, want true (albums missing = %v)", report.Structure.Albums.Missing)
 	}
 }
 

@@ -13,6 +13,7 @@ import {
   type JobStats,
   type RunSource,
   type RunStatus,
+  type VerifyReport,
 } from '../services/import'
 
 import { ImportPage } from './ImportPage'
@@ -29,11 +30,12 @@ vi.mock('../services/import', async (importOriginal) => {
   }
 })
 
-const { fetchImportRuns, fetchJobStats, fetchImportFailures, startImport } =
+const { fetchImportRuns, fetchJobStats, fetchImportFailures, fetchVerifyReport, startImport } =
   await import('../services/import')
 const runsMock = vi.mocked(fetchImportRuns)
 const statsMock = vi.mocked(fetchJobStats)
 const failuresMock = vi.mocked(fetchImportFailures)
+const verifyMock = vi.mocked(fetchVerifyReport)
 const startMock = vi.mocked(startImport)
 
 function run(
@@ -60,6 +62,53 @@ function runsResponse(runs: ImportRun[]): ImportRunsResponse {
 }
 
 const emptyStats: JobStats = { by_state: {}, by_type: {}, total: 0 }
+
+/**
+ * A clean completeness report whose album section still carries the albums of the
+ * types the import deliberately skips — the production shape after the verifier
+ * stopped demanding PhotoPrism's auto-generated monthly albums.
+ */
+function cleanVerifyReport(): VerifyReport {
+  return {
+    photoprism: {
+      source_total: 20670,
+      source_by_type: { image: 20670 },
+      imported_count: 20670,
+      deduplicated_count: 0,
+      missing_count: 0,
+      missing_uids: [],
+      file_gap_count: 0,
+      file_gaps: [],
+    },
+    vectors: {
+      not_configured: true,
+      source_total_photos: 0,
+      source_photos_with_embeddings: 0,
+      source_photos_with_faces: 0,
+      source_total_faces: 0,
+      catalog_embeddings: 0,
+      catalog_face_photos: 0,
+      catalog_faces: 0,
+      missing_embeddings_count: 0,
+      missing_embeddings: [],
+      missing_faces_count: 0,
+      missing_faces: [],
+    },
+    structure: {
+      albums: {
+        source_count: 198,
+        catalog_count: 198,
+        missing_count: 0,
+        missing: [],
+        skipped_types: ['month'],
+        skipped_by_design_count: 560,
+      },
+      labels: { source_count: 12, catalog_count: 12, missing_count: 0, missing: [] },
+      subjects: { source_count: 30, catalog_count: 30, missing_count: 0, missing: [] },
+    },
+    complete: true,
+  }
+}
 
 function auth(
   opts: { isMaintainer?: boolean; canImport?: boolean; role?: string } = {},
@@ -122,13 +171,18 @@ beforeEach(async () => {
   runsMock.mockReset()
   statsMock.mockReset()
   failuresMock.mockReset()
+  verifyMock.mockReset()
   startMock.mockReset()
   statsMock.mockResolvedValue(emptyStats)
   failuresMock.mockResolvedValue({ failures: [], limit: 100, offset: 0 })
 })
 
 afterEach(() => {
-  vi.restoreAllMocks()
+  // Only the viewport stub is undone here. `vi.restoreAllMocks()` would empty the
+  // module mocks while the tree is still mounted, and RTL's `cleanup()` afterEach
+  // would then flush the page's pending effects into a mock with no
+  // implementation (see the note in SystemStatusPage.test.tsx); `restoreMocks:
+  // true` in vite.config.ts restores them before the next test anyway.
   window.matchMedia = realMatchMedia
 })
 
@@ -251,6 +305,23 @@ describe('ImportPage', () => {
     await user.click(startButtons[0])
 
     expect(await screen.findByText('An import is already in progress.')).toBeInTheDocument()
+  })
+
+  it('reports albums of a deliberately skipped type as skipped, not missing', async () => {
+    runsMock.mockResolvedValue(runsResponse([run(2, 'photoprism', 'done')]))
+    verifyMock.mockResolvedValue(cleanVerifyReport())
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Completeness check')
+    await user.click(screen.getByRole('button', { name: 'Verify completeness' }))
+
+    // The report is clean even though the source still serves 560 monthly albums…
+    expect(
+      await screen.findByText('The import is complete — nothing is missing.'),
+    ).toBeInTheDocument()
+    // …which are accounted for as skipped by design, with the type named.
+    expect(screen.getByText(/skipped: 560/)).toHaveTextContent('month')
   })
 
   it('denies access to users without import permission', async () => {

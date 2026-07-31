@@ -99,6 +99,17 @@ PhotoPrism/`ppimport` path, not photo-sorter.
    missing item (missing photo, missing RAW sibling, missing embedding/faces) until the
    report is clean. Cross-check `maintenance scan`.
 
+   **What "clean" means for albums.** The check reconciles only the album types the
+   importer maps (`ppimport.DefaultAlbumTypes` = `album, folder, moment, state`).
+   PhotoPrism's auto-generated `month` albums — 560 of them, one per calendar month,
+   covered by Kukátko's timeline — are reported as `structure.albums.skipped_by_design_count`
+   (with `skipped_types`), never as missing. So `structure.albums.source_count` is the
+   source album catalogue **minus** those, and `758 = source_count + skipped_by_design_count`
+   is the sanity check against PhotoPrism's own album total; anything still listed under
+   `missing` is a real gap to resolve. Before this the verifier defaulted to all five
+   types and the report listed ~560 monthly albums as missing forever, so "clean" was
+   unreachable by construction.
+
 ### Phase 5 — prove backup + restore (point-of-no-return gate)
 8. Configure `backup.s3.*` to a second, independent bucket + a non-empty
    `backup.schedule`. Run `kukatko backup`.
