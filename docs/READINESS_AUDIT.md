@@ -176,6 +176,30 @@ carries PhotoPrism's review flag over. UNVERIFIED whether that state matters to 
 | Performance at 20k | **UNMEASURABLE** | catalogue holds 280 photos (§1) |
 | API drift | none — 102 of 102 documented endpoints exist | probe of every path in `docs/API.md` |
 
+### Executing the full import — prerequisites found while sizing it
+
+Measured against the production library (20 670 photos, 5.16 MB average from the 280
+already imported → roughly 104 GB to move; 29 % of the sample carries GPS):
+
+| Finding | Evidence | Effect on the import |
+| --- | --- | --- |
+| No wipe tooling exists | no `reset`/`truncate` in `cmd/kukatko` | plan phase 1 has nothing to run; a manual drop is unrepeatable and unguarded |
+| Geocoding has a rate limit but no budget | `maps.geocode_rate_per_sec: 5` (`config.go:884`), deferral in `internal/placesjob` | ~6 000 reverse geocodes spend mapy.com credits with no cap and no visibility |
+| One global worker slot | `KUKATKO_WORKER_COUNT=1`; `internal/worker` has a single shared concurrency (`worker.go:173,193,249`) | thumbnails, metadata, places and sidecars for 20 670 photos run one at a time on ARM, behind a limit that exists only to protect the GPU |
+
+The last one is worth stating precisely: with the box off during the import — which is
+the plan, since the vectors arrive 1:1 from the feeds — `image_embed` and
+`face_detect` defer without touching the sidecar, so the constraint that justifies the
+single slot does not bind. The CPU work is serialised for nothing.
+
+**Phase order is not cosmetic.** The import enqueues an `image_embed` and a
+`face_detect` job per photo (~41 000 for the full library). Both handlers are
+idempotent and skip when a vector or a `face_detections` row already exists
+(`embedjob.go:7`, `facejob.go:178`, and `vectors/faces.go:82` writes that row on the
+feeds path too). So if phase 3 lands first the queue drains as cheap no-ops — but if
+the box wakes between phases 2 and 3 it will recompute ~20 000 embeddings the feeds
+would have supplied for free.
+
 ### Accepted risks (decided 2026-07-31)
 
 Three items above were **waived by an explicit owner decision**, not left open. They
