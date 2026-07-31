@@ -727,7 +727,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   a missing/non-positive/excessive window or an unknown field → 400, an unwired audit store → 503. The
   purge itself is **audited** (`audit.purge` with the cutoff, the window and the number deleted; the entry is fresh, so
   the purge survives) — deleting the trail stays traceable. Mounted always (`buildMaintenanceAPI`
-  in `cmd/kukatko/maintenance.go`).
+  in `cmd/kukatko/maintenance.go`). The third `maintenance` operation, the **library wipe**
+  (`kukatko maintenance reset`, `internal/reset`), is deliberately **not exposed here** — like the destructive
+  `restore db`, it would pull the tables out from under a running server, so it lives only in the CLI. It is
+  still audited (`library.reset`, written in the truncation's own transaction), so it shows up in `GET /audit`
+  like everything else.
 - **Duplicates API (`/api/v1`, `internal/duplicatesapi` + `internal/duplicates`, editor/admin via
   `RequireWrite`):** `GET /duplicates?limit=&offset=` → `{groups,total,limit,offset,next_offset}`
   groups of likely duplicates from pHash Hamming distance (`duplicate.phash_max_diff`,

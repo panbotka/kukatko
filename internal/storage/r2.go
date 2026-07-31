@@ -110,8 +110,11 @@ type R2 struct {
 	signer *URLSigner
 }
 
-// compile-time assertion that *R2 satisfies Storage.
-var _ Storage = (*R2)(nil)
+// compile-time assertions that *R2 satisfies Storage and can enumerate its keys.
+var (
+	_ Storage   = (*R2)(nil)
+	_ KeyLister = (*R2)(nil)
+)
 
 // NewR2 returns an R2 backend for the destination in opts, creating the temp
 // directory if it does not exist. It returns ErrR2NotConfigured when a required
@@ -407,6 +410,29 @@ func (r *R2) Delete(ctx context.Context, relPath string) error {
 	}
 	if err := r.client.RemoveObject(ctx, r.bucket, key, minio.RemoveObjectOptions{}); err != nil {
 		return fmt.Errorf("storage: deleting %s: %w", relPath, err)
+	}
+	return nil
+}
+
+// Keys lists the bucket recursively and yields every object key it holds,
+// skipping the zero-length directory markers some S3 tools create. minio-go pages
+// the listing itself, so an arbitrarily large bucket is walked in bounded memory.
+// See the KeyLister interface.
+func (r *R2) Keys(ctx context.Context, yield func(key string) error) error {
+	listCtx, cancel := context.WithCancel(ctx)
+	// Cancelling drains minio-go's listing goroutine when yield stops the walk
+	// early; without it the goroutine blocks forever on its unread channel.
+	defer cancel()
+	for object := range r.client.ListObjects(listCtx, r.bucket, minio.ListObjectsOptions{Recursive: true}) {
+		if object.Err != nil {
+			return fmt.Errorf("storage: listing bucket %s: %w", r.bucket, object.Err)
+		}
+		if object.Key == "" || strings.HasSuffix(object.Key, "/") {
+			continue
+		}
+		if err := yield(object.Key); err != nil {
+			return err
+		}
 	}
 	return nil
 }

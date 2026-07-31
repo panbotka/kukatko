@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -532,5 +534,50 @@ func TestR2StoreRecordsContentHashMetadata(t *testing.T) {
 	}
 	if got, want := info.ContentType, "image/jpeg"; got != want {
 		t.Errorf("ContentType = %q, want %q", got, want)
+	}
+}
+
+// TestR2Keys_enumeratesTheBucket verifies Keys yields every object key the bucket
+// holds, under any prefix, which is what lets a caller reconcile or sweep a store
+// whose contents it did not write.
+func TestR2Keys_enumeratesTheBucket(t *testing.T) {
+	store, _ := newTestR2(t)
+
+	stored := storeFixture(t, store, "IMG_0006.jpg", jpegBytes("keys"))
+	extra := StoredFile{
+		Hash:    hashOf([]byte("sidecar")),
+		RelPath: "sidecars/2024/05/IMG_0006.jpg.yml",
+		Size:    int64(len("sidecar")),
+		MIME:    "application/yaml",
+	}
+	if err := store.Put(t.Context(), strings.NewReader("sidecar"), extra); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	var keys []string
+	if err := store.Keys(t.Context(), func(key string) error {
+		keys = append(keys, key)
+		return nil
+	}); err != nil {
+		t.Fatalf("Keys: %v", err)
+	}
+	sort.Strings(keys)
+	want := []string{extra.RelPath, stored.RelPath}
+	sort.Strings(want)
+	if !slices.Equal(keys, want) {
+		t.Errorf("Keys() = %v, want %v", keys, want)
+	}
+}
+
+// TestR2Keys_stopsOnYieldError verifies the caller's own error ends the listing
+// and travels back untouched.
+func TestR2Keys_stopsOnYieldError(t *testing.T) {
+	store, _ := newTestR2(t)
+	storeFixture(t, store, "IMG_0007.jpg", jpegBytes("stop"))
+
+	sentinel := errors.New("enough")
+	err := store.Keys(t.Context(), func(string) error { return sentinel })
+	if !errors.Is(err, sentinel) {
+		t.Errorf("Keys() = %v, want the yield's own error", err)
 	}
 }

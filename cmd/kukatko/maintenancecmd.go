@@ -11,21 +11,25 @@ import (
 	"github.com/panbotka/kukatko/internal/maintenance"
 )
 
-// newMaintenanceCmd builds the "maintenance" subcommand group: an integrity scan
-// and an opt-in repair runner. Both are ops/cron entry points that need no
-// running server (repairs enqueue jobs the running server's worker will drain;
-// the orphan import runs synchronously). The same scan and repairs are also
-// available to admins over the HTTP API.
+// newMaintenanceCmd builds the "maintenance" subcommand group: an integrity scan,
+// an opt-in repair runner and the guarded library wipe. All three are ops/cron
+// entry points that need no running server (repairs enqueue jobs the running
+// server's worker will drain; the orphan import runs synchronously). The scan and
+// the repairs are also available to admins over the HTTP API; the wipe
+// deliberately is not — like `restore db`, it is a CLI-only operation to be run
+// with the server stopped.
 func newMaintenanceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "maintenance",
-		Short: "Library integrity scan and repair",
+		Short: "Library integrity scan, repair and reset",
 		Long: "Scan the library for drift between the catalogue and the files on disk, " +
-			"and repair what can be regenerated (thumbnails, perceptual hashes, embeddings, " +
-			"faces) or imported (orphan originals). Never deletes originals.",
+			"repair what can be regenerated (thumbnails, perceptual hashes, embeddings, " +
+			"faces) or imported (orphan originals), or reset the library entirely. " +
+			"Scan and repair never delete originals; reset deletes the whole library on " +
+			"purpose and is guarded accordingly.",
 		Args: cobra.NoArgs,
 	}
-	cmd.AddCommand(newMaintenanceScanCmd(), newMaintenanceRepairCmd())
+	cmd.AddCommand(newMaintenanceScanCmd(), newMaintenanceRepairCmd(), newMaintenanceResetCmd())
 	return cmd
 }
 

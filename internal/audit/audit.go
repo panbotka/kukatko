@@ -169,6 +169,14 @@ const (
 	// The record is written after the delete and is itself recent, so it survives
 	// the purge — deleting the audit trail stays traceable.
 	ActionAuditPurge = "audit.purge"
+	// ActionLibraryReset records the guarded wipe of the whole library
+	// (`kukatko maintenance reset`): every catalogue table truncated and every
+	// object the store owns deleted. The entry is written in the same transaction
+	// as the truncation, and the audit_log table is one of the tables the reset
+	// must never touch, so the record of the wipe survives it. The operator, the
+	// target database, the per-table row counts removed and the object counts are
+	// recorded in the entry's details.
+	ActionLibraryReset = "library.reset"
 )
 
 // insertSQL appends one audit entry. It is shared by Store.Record and the

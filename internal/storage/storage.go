@@ -125,3 +125,27 @@ type Storage interface {
 	// safe to call more than once.
 	Materialize(ctx context.Context, relPath string) (path string, cleanup func(), err error)
 }
+
+// KeyLister enumerates every key a store holds, whether or not the catalogue
+// knows about it. Both backends implement it (*FS by walking the root, *R2 by
+// listing the bucket).
+//
+// It is deliberately not part of Storage. Every consumer of Storage — the upload
+// pipeline, the thumbnailer, the sidecar writer — addresses objects it already
+// has the key of, and the fakes those packages test against would all have to
+// grow a method they never call. Only the operations that reason about the store
+// as a whole need this: reconciling the store against the catalogue, and sweeping
+// the keys the catalogue no longer references. They type-assert for it and say so
+// when a store cannot answer.
+type KeyLister interface {
+	// Keys calls yield once for every object the store holds, passing its
+	// slash-separated key relative to the store root, in unspecified order. It
+	// stops at the first error from yield and returns it unwrapped, so a caller
+	// can end the walk with a sentinel of its own.
+	//
+	// Keys streams: it never materialises the whole key set, so a store holding
+	// millions of objects is walked in bounded memory. What it enumerates is the
+	// store's own content, including objects written by something other than
+	// Kukátko — deciding which of them may be touched is the caller's job.
+	Keys(ctx context.Context, yield func(key string) error) error
+}
