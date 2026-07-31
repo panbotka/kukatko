@@ -56,6 +56,21 @@ export function formatCount(value: number, locale: string): string {
 }
 
 /**
+ * Formats a `[0,1]` ratio as a locale-aware percentage with at most one decimal,
+ * e.g. `0.0025` → `"0,3 %"` (Czech) or `"0.3%"` (English). Used for coverage
+ * figures, where a tiny share must still read as tiny rather than round to `0 %`
+ * — hence the decimal. Values outside the range are clamped and non-finite
+ * inputs render as `"0 %"`, so a malformed number never shows as full coverage.
+ */
+export function formatPercent(ratio: number, locale: string): string {
+  const value = Number.isFinite(ratio) ? Math.min(Math.max(ratio, 0), 1) : 0
+  return new Intl.NumberFormat(locale, {
+    style: 'percent',
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
+/**
  * Coerces a timestamp input (ISO string, epoch millis, or `Date`) to a `Date`,
  * returning `null` when the value cannot be parsed into a valid date.
  */

@@ -390,8 +390,11 @@ func TestService_Verify_vectors(t *testing.T) {
 		if !report.Vectors.NotConfigured {
 			t.Error("Vectors.NotConfigured = false, want true")
 		}
-		if report.Vectors.MissingEmbeddings == nil || report.Vectors.MissingFaces == nil {
+		if report.Vectors.EmbeddingsMissingUIDs == nil || report.Vectors.FacesMissingUIDs == nil {
 			t.Error("missing slices should be non-nil so they marshal as []")
+		}
+		if !report.Vectors.FullSourceCoverage() {
+			t.Error("FullSourceCoverage() = false, want true (no source means nothing to cover)")
 		}
 		if !report.Complete {
 			t.Error("Complete = false, want true (vectors ignored when not configured)")
@@ -426,16 +429,145 @@ func TestService_Verify_vectors(t *testing.T) {
 		if v.CatalogEmbeddings != 8 || v.CatalogFacePhotos != 3 || v.CatalogFaces != 5 {
 			t.Errorf("catalog counts not propagated: %+v", v)
 		}
-		if v.MissingEmbeddingsCount != 2 || !slices.Equal(v.MissingEmbeddings, []string{"e1", "e2"}) {
-			t.Errorf("missing embeddings = %d/%v", v.MissingEmbeddingsCount, v.MissingEmbeddings)
+		if v.EmbeddingsMissingForImportedPhotos != 2 ||
+			!slices.Equal(v.EmbeddingsMissingUIDs, []string{"e1", "e2"}) {
+			t.Errorf("missing embeddings = %d/%v", v.EmbeddingsMissingForImportedPhotos, v.EmbeddingsMissingUIDs)
 		}
-		if v.MissingFacesCount != 1 || !slices.Equal(v.MissingFaces, []string{"f1"}) {
-			t.Errorf("missing faces = %d/%v", v.MissingFacesCount, v.MissingFaces)
+		if v.FacesMissingForImportedPhotos != 1 || !slices.Equal(v.FacesMissingUIDs, []string{"f1"}) {
+			t.Errorf("missing faces = %d/%v", v.FacesMissingForImportedPhotos, v.FacesMissingUIDs)
+		}
+		if !v.FullSourceCoverage() {
+			t.Errorf("FullSourceCoverage() = false, want true (catalogue holds the whole source): %+v", v)
 		}
 		if report.Complete {
 			t.Error("Complete = true, want false (missing vectors present)")
 		}
 	})
+}
+
+// TestService_Verify_vectorsCoverageOnPartialCatalogue is the regression guard for
+// the counters that read as "done" on an all-but-empty catalogue: with the
+// catalogue a strict subset of the source, every imported photo can have its
+// vectors — so the per-photo gaps are legitimately 0 — while the source coverage
+// stays far below 1. The report must not be readable as complete coverage.
+func TestService_Verify_vectorsCoverageOnPartialCatalogue(t *testing.T) {
+	t.Parallel()
+
+	// The production shape from docs/READINESS_AUDIT.md §2.3: 280 of 20 670 photos
+	// imported, 50 embeddings held against a source of 20 092.
+	cat := newFakeCatalog()
+	cat.counts = importverify.CatalogCounts{Embeddings: 50, FacePhotos: 20, Faces: 30}
+	svc := importverify.NewService(importverify.Config{
+		PhotoPrism: &fakePhotoPrism{photos: []photoprism.Photo{photo("ppMissing", "image", "h1", 1)}},
+		Feeds: &fakeFeeds{stats: psfeeds.Stats{
+			TotalPhotos: 20670, PhotosWithEmbeddings: 20092, PhotosWithFaces: 8000, TotalFaces: 15000,
+		}},
+		Catalog: cat,
+	})
+
+	report, err := svc.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	v := report.Vectors
+
+	// The per-photo gap is 0 — no imported photo lacks anything — and that number
+	// on its own is exactly what used to read as a finished vector migration.
+	if v.EmbeddingsMissingForImportedPhotos != 0 || v.FacesMissingForImportedPhotos != 0 {
+		t.Fatalf("per-photo gaps = %d/%d, want 0/0 (nothing imported lacks vectors)",
+			v.EmbeddingsMissingForImportedPhotos, v.FacesMissingForImportedPhotos)
+	}
+	// The coverage figures contradict that reading, so the section cannot be
+	// mistaken for full coverage.
+	if v.EmbeddingsSourceCoverage >= 1 {
+		t.Errorf("EmbeddingsSourceCoverage = %v, want < 1 (50 of 20092 held)", v.EmbeddingsSourceCoverage)
+	}
+	if want := 0.0025; v.EmbeddingsSourceCoverage != want {
+		t.Errorf("EmbeddingsSourceCoverage = %v, want %v", v.EmbeddingsSourceCoverage, want)
+	}
+	if want := 0.002; v.FacesSourceCoverage != want {
+		t.Errorf("FacesSourceCoverage = %v, want %v", v.FacesSourceCoverage, want)
+	}
+	if v.FullSourceCoverage() {
+		t.Error("FullSourceCoverage() = true, want false (the catalogue is a strict subset of the source)")
+	}
+	if report.Complete {
+		t.Error("Complete = true, want false (source photos are still missing)")
+	}
+}
+
+// TestService_Verify_vectorsCoverageEdges pins the coverage ratio's boundaries: an
+// empty source is covered by definition, an empty catalogue covers nothing, and a
+// catalogue larger than the source (own uploads photo-sorter never had) clamps at
+// 1 instead of reporting more than everything.
+func TestService_Verify_vectorsCoverageEdges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		counts           importverify.CatalogCounts
+		stats            psfeeds.Stats
+		wantEmbeddings   float64
+		wantFaces        float64
+		wantFullCoverage bool
+	}{
+		{
+			name:             "empty source is covered by definition",
+			wantEmbeddings:   1,
+			wantFaces:        1,
+			wantFullCoverage: true,
+		},
+		{
+			name:           "empty catalogue covers nothing",
+			stats:          psfeeds.Stats{PhotosWithEmbeddings: 100, TotalFaces: 40},
+			wantEmbeddings: 0,
+			wantFaces:      0,
+		},
+		{
+			name:             "catalogue larger than the source clamps at 1",
+			counts:           importverify.CatalogCounts{Embeddings: 120, Faces: 50},
+			stats:            psfeeds.Stats{PhotosWithEmbeddings: 100, TotalFaces: 40},
+			wantEmbeddings:   1,
+			wantFaces:        1,
+			wantFullCoverage: true,
+		},
+		{
+			name:           "partial catalogue rounds to four decimals",
+			counts:         importverify.CatalogCounts{Embeddings: 1, Faces: 1},
+			stats:          psfeeds.Stats{PhotosWithEmbeddings: 3, TotalFaces: 8},
+			wantEmbeddings: 0.3333,
+			wantFaces:      0.125,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cat := newFakeCatalog()
+			cat.counts = tt.counts
+			svc := importverify.NewService(importverify.Config{
+				PhotoPrism: &fakePhotoPrism{},
+				Feeds:      &fakeFeeds{stats: tt.stats},
+				Catalog:    cat,
+			})
+
+			report, err := svc.Verify(context.Background())
+			if err != nil {
+				t.Fatalf("Verify: %v", err)
+			}
+			v := report.Vectors
+			if v.EmbeddingsSourceCoverage != tt.wantEmbeddings {
+				t.Errorf("EmbeddingsSourceCoverage = %v, want %v", v.EmbeddingsSourceCoverage, tt.wantEmbeddings)
+			}
+			if v.FacesSourceCoverage != tt.wantFaces {
+				t.Errorf("FacesSourceCoverage = %v, want %v", v.FacesSourceCoverage, tt.wantFaces)
+			}
+			if got := v.FullSourceCoverage(); got != tt.wantFullCoverage {
+				t.Errorf("FullSourceCoverage() = %v, want %v", got, tt.wantFullCoverage)
+			}
+		})
+	}
 }
 
 // TestService_Verify_structure checks structural reconciliation: source names

@@ -10,6 +10,7 @@ import {
   formatDateTimeMinutes,
   formatDuration,
   formatMonth,
+  formatPercent,
 } from './format'
 
 describe('formatBytes', () => {
@@ -51,6 +52,25 @@ describe('formatCount', () => {
     expect(formatCount(2.6, 'en')).toBe('3')
     expect(formatCount(Number.NaN, 'en')).toBe('0')
     expect(formatCount(Number.POSITIVE_INFINITY, 'en')).toBe('0')
+  })
+})
+
+describe('formatPercent', () => {
+  it('renders a share in the active locale', () => {
+    // Czech separates the sign with a no-break space, so compare on the digits.
+    expect(formatPercent(0.42, 'cs').replace(/\s/gu, ' ')).toBe('42 %')
+    expect(formatPercent(0.42, 'en')).toBe('42%')
+  })
+
+  it('keeps a sliver readable instead of rounding it to zero', () => {
+    // 50 of 20 092 embeddings — the import-verify coverage the audit measured.
+    expect(formatPercent(0.0025, 'en')).toBe('0.3%')
+  })
+
+  it('clamps out-of-range and non-finite input', () => {
+    expect(formatPercent(1.5, 'en')).toBe('100%')
+    expect(formatPercent(-0.2, 'en')).toBe('0%')
+    expect(formatPercent(Number.NaN, 'en')).toBe('0%')
   })
 })
 

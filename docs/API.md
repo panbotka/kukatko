@@ -673,8 +673,24 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   reconciliation report (`internal/importverify`): it pulls the source totals (PhotoPrism photo/per-type
   counts + `Files[]`, photo-sorter feeds `/stats`) and reconciles them against the catalogue, returning
   `{photoprism:{source_total,source_by_type,imported_count,deduplicated_count,missing_count,missing_uids,
-  file_gap_count,file_gaps},vectors:{not_configured,source_*,catalog_*,missing_embeddings*,missing_faces*},
+  file_gap_count,file_gaps},vectors:{not_configured,source_*,catalog_*,embeddings_source_coverage,
+  faces_source_coverage,embeddings_missing_for_imported_photos,embeddings_missing_uids,
+  faces_missing_for_imported_photos,faces_missing_uids},
   structure:{albums,labels,subjects (each {source_count,catalog_count,missing_count,missing})},complete}`.
+  The `vectors` section answers **two different questions and names them apart**. The
+  `*_missing_for_imported_photos` counters are scoped to photos **already in the catalogue** (a vector cannot
+  attach to a photo that was never imported), so they legitimately read `0` on a catalogue holding a fraction
+  of the source; `embeddings_source_coverage`/`faces_source_coverage` are the `[0,1]` share of the **source's**
+  vectors Kukátko actually holds (`catalog_embeddings`/`source_photos_with_embeddings` and
+  `catalog_faces`/`source_total_faces`, rounded to 4 decimals, clamped — an empty source is `1`, a catalogue
+  larger than the source clamps to `1` rather than exceeding it). Their predecessors
+  `missing_embeddings_count`/`missing_faces_count` carried the first meaning under a name that read as the
+  second: a catalogue of 280 photos against a source of 20 670 reported `missing_embeddings_count: 0` next to
+  `source_photos_with_embeddings: 20092`, and only `complete:false` contradicted it — read at the point of no
+  return, that says the vector migration is finished (`docs/READINESS_AUDIT.md` §2.3). `complete` deliberately
+  does **not** require full source coverage: photo-sorter's population and PhotoPrism's need not line up, so
+  gating on it would make a finished import unreachable by construction (the trap §2.2's album types fell into);
+  it stays gated on the per-photo counters, and the coverage is what a reader judges the migration by.
   `structure.albums` carries two more fields — `skipped_types` + `skipped_by_design_count` — because the
   reconciliation is scoped to the album types the **importer** maps (`ppimport.DefaultAlbumTypes`, the single
   source of truth): PhotoPrism's auto-generated `month` albums (560 on the production library, covered by

@@ -124,17 +124,35 @@ func printReportSummary(cmd *cobra.Command, report importverify.Report) {
 
 // printVectorsSummary prints the photo-sorter vectors reconciliation, or a note
 // when the feeds source is not configured.
+//
+// Each vector line leads with the source coverage — the share of the source's
+// vectors Kukátko actually holds — and only then reports the per-photo gap, whose
+// scope is spelled out in the label. Printing the gap alone let a report on a
+// near-empty catalogue read "missing=0" next to a source of 20 092 embeddings.
 func printVectorsSummary(cmd *cobra.Command, v importverify.VectorsReport) {
 	if v.NotConfigured {
 		cmd.Println("vectors: photo-sorter feeds not configured (skipped)")
 		return
 	}
-	cmd.Printf("vectors: embeddings source=%d kukatko=%d missing=%d; faces source=%d kukatko=%d missing=%d\n",
-		v.SourcePhotosWithEmbeddings, v.CatalogEmbeddings, v.MissingEmbeddingsCount,
-		v.SourceTotalFaces, v.CatalogFaces, v.MissingFacesCount)
-	if len(v.MissingEmbeddings) > 0 {
-		cmd.Printf("  photos missing embedding: %s\n", strings.Join(v.MissingEmbeddings, ", "))
+	cmd.Printf("vectors: embeddings source=%d kukatko=%d coverage=%s missing-for-imported-photos=%d\n",
+		v.SourcePhotosWithEmbeddings, v.CatalogEmbeddings,
+		formatCoverage(v.EmbeddingsSourceCoverage), v.EmbeddingsMissingForImportedPhotos)
+	cmd.Printf("         faces      source=%d kukatko=%d coverage=%s missing-for-imported-photos=%d\n",
+		v.SourceTotalFaces, v.CatalogFaces,
+		formatCoverage(v.FacesSourceCoverage), v.FacesMissingForImportedPhotos)
+	if !v.FullSourceCoverage() {
+		cmd.Println("  NOTE: missing-for-imported-photos counts only photos already in the catalogue, " +
+			"so it can read 0 while most of the source is not imported yet — read the coverage.")
 	}
+	if len(v.EmbeddingsMissingUIDs) > 0 {
+		cmd.Printf("  imported photos missing an embedding: %s\n", strings.Join(v.EmbeddingsMissingUIDs, ", "))
+	}
+}
+
+// formatCoverage renders a [0,1] coverage ratio as a percentage with one decimal,
+// e.g. 0.0025 as "0.2%".
+func formatCoverage(ratio float64) string {
+	return fmt.Sprintf("%.1f%%", ratio*100)
 }
 
 // printAlbumSummary prints the albums entity plus, when the source holds albums

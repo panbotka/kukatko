@@ -89,10 +89,12 @@ function cleanVerifyReport(): VerifyReport {
       catalog_embeddings: 0,
       catalog_face_photos: 0,
       catalog_faces: 0,
-      missing_embeddings_count: 0,
-      missing_embeddings: [],
-      missing_faces_count: 0,
-      missing_faces: [],
+      embeddings_source_coverage: 1,
+      faces_source_coverage: 1,
+      embeddings_missing_for_imported_photos: 0,
+      embeddings_missing_uids: [],
+      faces_missing_for_imported_photos: 0,
+      faces_missing_uids: [],
     },
     structure: {
       albums: {
@@ -322,6 +324,47 @@ describe('ImportPage', () => {
     ).toBeInTheDocument()
     // …which are accounted for as skipped by design, with the type named.
     expect(screen.getByText(/skipped: 560/)).toHaveTextContent('month')
+  })
+
+  it('cannot be read as finished vectors when the catalogue is a subset of the source', async () => {
+    // docs/READINESS_AUDIT.md §2.3: 280 of 20 670 photos imported, 50 embeddings
+    // held against a source of 20 092. Every imported photo has its vectors, so
+    // the per-photo gap is legitimately 0 — and that lone zero used to read as a
+    // finished vector migration.
+    const report = cleanVerifyReport()
+    report.complete = false
+    report.photoprism = { ...report.photoprism, imported_count: 280, missing_count: 20390 }
+    report.vectors = {
+      not_configured: false,
+      source_total_photos: 20670,
+      source_photos_with_embeddings: 20092,
+      source_photos_with_faces: 8000,
+      source_total_faces: 15000,
+      catalog_embeddings: 50,
+      catalog_face_photos: 20,
+      catalog_faces: 30,
+      embeddings_source_coverage: 0.0025,
+      faces_source_coverage: 0.002,
+      embeddings_missing_for_imported_photos: 0,
+      embeddings_missing_uids: [],
+      faces_missing_for_imported_photos: 0,
+      faces_missing_uids: [],
+    }
+    runsMock.mockResolvedValue(runsResponse([run(2, 'photoprism', 'done')]))
+    verifyMock.mockResolvedValue(report)
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Completeness check')
+    await user.click(screen.getByRole('button', { name: 'Verify completeness' }))
+    await screen.findByText('The import is not complete — some items are missing (see below).')
+
+    // The vector rows carry the source coverage that contradicts the zero gap…
+    const embeddings = screen.getByRole('row', { name: /^Embeddings/ })
+    expect(embeddings).toHaveTextContent('0.3%')
+    expect(screen.getByRole('row', { name: /^Faces/ })).toHaveTextContent('0.2%')
+    // …and the scope of that zero is spelled out rather than left to be guessed.
+    expect(screen.getByText(/counts only photos that are already in the catalogue/)).toBeVisible()
   })
 
   it('denies access to users without import permission', async () => {

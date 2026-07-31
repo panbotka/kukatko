@@ -14,7 +14,7 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
-import { formatDateTime } from '../lib/format'
+import { formatDateTime, formatPercent } from '../lib/format'
 import { ApiError } from '../services/auth'
 import {
   fetchImportFailures,
@@ -30,6 +30,7 @@ import {
   type ImportSources,
   type JobStats,
   type RunStatus,
+  type VectorsReport,
   type VerifyReport,
 } from '../services/import'
 
@@ -245,30 +246,52 @@ function RunHistoryTable({ runs }: { runs: ImportRun[] }) {
   return <RecordTable records={runs} columns={columns} rowKey={(run) => String(run.id)} size="sm" />
 }
 
-/** One reconciliation row: source vs catalogue counts and the missing tally. */
+/**
+ * One reconciliation row: source vs catalogue counts, an optional source-coverage
+ * share, and the missing tally.
+ *
+ * `coverage` is only supplied by the vector rows, whose `missing` is scoped to
+ * photos already in the catalogue and therefore reads 0 on a catalogue holding a
+ * fraction of the source. A green zero there would say "done" about a migration
+ * that has barely started, so the zero badge only turns green once the coverage
+ * confirms it; short of that it stays neutral next to the warning coverage.
+ */
 function VerifyRow({
   label,
   source,
   catalog,
   missing,
+  coverage,
 }: {
   label: string
   source: string | number
   catalog: string | number
   missing: number
+  coverage?: number
 }) {
+  const { i18n } = useTranslation()
+  const covered = coverage === undefined || coverage >= 1
   return (
     <tr>
       <td>{label}</td>
       <td>{source}</td>
       <td>{catalog}</td>
       <td>
+        {coverage === undefined ? (
+          '—'
+        ) : (
+          <Badge bg={covered ? 'success' : 'warning'} text={covered ? undefined : 'dark'}>
+            {formatPercent(coverage, i18n.language)}
+          </Badge>
+        )}
+      </td>
+      <td>
         {missing > 0 ? (
           <Badge bg="warning" text="dark">
             {missing}
           </Badge>
         ) : (
-          <Badge bg="success">0</Badge>
+          <Badge bg={covered ? 'success' : 'secondary'}>0</Badge>
         )}
       </td>
     </tr>
@@ -285,6 +308,16 @@ function EntityRow({ label, report }: { label: string; report: EntityReport }) {
       missing={report.missing_count}
     />
   )
+}
+
+/**
+ * Whether the catalogue holds every embedding and every face the vector source
+ * has (`importverify.VectorsReport.FullSourceCoverage`). Short of that, the
+ * section's zero "missing" tallies — scoped to imported photos — need the
+ * explanatory note, or a reviewer reads the vector migration as finished.
+ */
+function fullVectorCoverage(vectors: VectorsReport): boolean {
+  return vectors.embeddings_source_coverage >= 1 && vectors.faces_source_coverage >= 1
 }
 
 /** A capped list of missing identifiers with a "showing N of total" note. */
@@ -321,6 +354,7 @@ function VerifyReportView({ report }: { report: VerifyReport }) {
             <th>{t('import.verify.colCheck')}</th>
             <th>{t('import.verify.colSource')}</th>
             <th>{t('import.verify.colCatalog')}</th>
+            <th>{t('import.verify.colCoverage')}</th>
             <th>{t('import.verify.colMissing')}</th>
           </tr>
         </thead>
@@ -343,13 +377,15 @@ function VerifyReportView({ report }: { report: VerifyReport }) {
                 label={t('import.verify.embeddings')}
                 source={v.source_photos_with_embeddings}
                 catalog={v.catalog_embeddings}
-                missing={v.missing_embeddings_count}
+                missing={v.embeddings_missing_for_imported_photos}
+                coverage={v.embeddings_source_coverage}
               />
               <VerifyRow
                 label={t('import.verify.faces')}
                 source={v.source_total_faces}
                 catalog={v.catalog_faces}
-                missing={v.missing_faces_count}
+                missing={v.faces_missing_for_imported_photos}
+                coverage={v.faces_source_coverage}
               />
             </>
           )}
@@ -376,6 +412,11 @@ function VerifyReportView({ report }: { report: VerifyReport }) {
           {t('import.verify.notConfigured')}
         </Alert>
       )}
+      {!v.not_configured && !fullVectorCoverage(v) && (
+        <Alert variant="warning" className="small py-2">
+          {t('import.verify.vectorsScopeNote')}
+        </Alert>
+      )}
       <MissingSample
         label={t('import.verify.photos')}
         ids={pp.missing_uids}
@@ -383,8 +424,8 @@ function VerifyReportView({ report }: { report: VerifyReport }) {
       />
       <MissingSample
         label={t('import.verify.embeddings')}
-        ids={v.missing_embeddings}
-        total={v.missing_embeddings_count}
+        ids={v.embeddings_missing_uids}
+        total={v.embeddings_missing_for_imported_photos}
       />
     </div>
   )
