@@ -89,6 +89,15 @@ function status(overrides: Partial<SystemStatus> = {}): SystemStatus {
       total_bytes: 4294967296,
     },
     maps: { configured: true, state: 'ok', degraded: false },
+    geocode: {
+      configured: true,
+      budget_enabled: true,
+      limit: 1000,
+      spent: 120,
+      remaining: 880,
+      window_seconds: 86400,
+      resets_at: '2026-06-02T09:00:00Z',
+    },
     ...overrides,
   }
 }
@@ -313,5 +322,52 @@ describe('SystemStatusPage', () => {
     renderPage()
 
     expect(await screen.findByText('Not configured')).toBeInTheDocument()
+  })
+
+  it('shows the geocode credit spend against its budget', async () => {
+    renderPage()
+
+    expect(await screen.findByText('120 / 1000')).toBeInTheDocument()
+    expect(screen.getByText(/Geocoding credits this window/)).toBeInTheDocument()
+    expect(screen.getByText(/Budget refills/)).toBeInTheDocument()
+  })
+
+  it('flags an exhausted geocode budget and when it refills', async () => {
+    fetchMock.mockResolvedValue(
+      status({
+        geocode: {
+          configured: true,
+          budget_enabled: true,
+          limit: 1000,
+          spent: 1000,
+          remaining: 0,
+          window_seconds: 86400,
+          resets_at: '2026-06-02T09:00:00Z',
+        },
+      }),
+    )
+    renderPage()
+
+    expect(await screen.findByText('1000 / 1000')).toBeInTheDocument()
+    expect(screen.getByText(/Budget spent, refills/)).toBeInTheDocument()
+  })
+
+  it('hides the credit line when no budget caps the geocode spend', async () => {
+    fetchMock.mockResolvedValue(
+      status({
+        geocode: {
+          configured: true,
+          budget_enabled: false,
+          limit: 0,
+          spent: 0,
+          remaining: 0,
+          window_seconds: 86400,
+        },
+      }),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Healthy')).toBeInTheDocument()
+    expect(screen.queryByText(/Geocoding credits/)).not.toBeInTheDocument()
   })
 })

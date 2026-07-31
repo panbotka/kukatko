@@ -306,6 +306,16 @@ maps:
   # processing slowly is fine. geocode_rate_per_sec <= 0 disables the throttle.
   geocode_rate_per_sec: 5
   geocode_burst: 10
+  # Reverse-geocode CREDIT BUDGET: at most geocode_budget geocodes per
+  # geocode_budget_window. The throttle above bounds how FAST credits are spent,
+  # this bounds HOW MANY — without it a full-library import drains the whole
+  # quota in one pass. A spent budget defers the queued `places` jobs until it
+  # refills (nothing fails, the queue just drains over the following days).
+  # <= 0 removes the cap. The count is in memory, so a restart starts a fresh
+  # window. Watch it live: kukatko_geocode_credits_spent_total /
+  # kukatko_geocode_credits_remaining, or GET /system/status → geocode.
+  geocode_budget: 1000
+  geocode_budget_window: 24h
   # Server-side cache of proxied tiles. The free tier bills ONE CREDIT PER TILE
   # (250k/month), so without it every pan over an already-seen area costs again.
   # Only successful tiles are cached, never an error. Bounded by bytes (LRU

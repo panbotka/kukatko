@@ -2,10 +2,12 @@
 // instance into a single snapshot for the admin status dashboard: embeddings
 // sidecar reachability, job-queue depth and dead-letter backlog, the backup
 // subsystem state, the last import run per source, on-disk storage usage,
-// database reachability and the map provider's last observed state (so a
-// mapy.com key that is being rejected is visible without opening the map), plus
-// the build version. It depends on small interfaces so the aggregation is
-// unit-testable with fakes, and the HTTP layer lives in internal/systemapi.
+// database reachability, the map provider's last observed state (so a mapy.com
+// key that is being rejected is visible without opening the map) and the
+// reverse-geocode credit budget (so a running import's credit spend is visible
+// while it happens), plus the build version. It depends on small interfaces so
+// the aggregation is unit-testable with fakes, and the HTTP layer lives in
+// internal/systemapi.
 //
 // Alongside that maintainer view it aggregates the library statistics — the
 // instance-wide photo/embedding/face/people counts every signed-in user may see
@@ -23,6 +25,7 @@ import (
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mapy"
+	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/version"
 )
 
@@ -79,6 +82,14 @@ type BackupReporter interface {
 type MapsReporter interface {
 	// Snapshot returns the map provider's last observed health.
 	Snapshot() mapy.HealthStatus
+}
+
+// GeocodeReporter reports the reverse-geocode credit budget. It is satisfied by
+// *placesjob.WindowBudget; a nil GeocodeReporter means no mapy.com key is
+// configured, so no geocoding happens at all.
+type GeocodeReporter interface {
+	// Snapshot returns the budget's current window: limit, spend and refill.
+	Snapshot() placesjob.BudgetSnapshot
 }
 
 // Database is the database-reachability section of the status snapshot.
@@ -141,6 +152,30 @@ type Maps struct {
 	CheckedAt *time.Time `json:"checked_at,omitempty"`
 }
 
+// Geocode is the reverse-geocode credit section of the status snapshot. Every
+// geocode the `places` job performs costs a metered mapy.com credit, so this
+// reports what the current budget window has spent and what is left of it —
+// visible while an import runs, not reconstructed from the bill afterwards.
+type Geocode struct {
+	// Configured is true when a mapy.com API key is set, i.e. when the `places`
+	// job runs at all. When false the rest of this section is meaningless.
+	Configured bool `json:"configured"`
+	// BudgetEnabled is true when a credit budget caps the spend. When false the
+	// only bound is the per-second rate limiter.
+	BudgetEnabled bool `json:"budget_enabled"`
+	// Limit is how many geocodes one budget window allows.
+	Limit int `json:"limit"`
+	// Spent is how many have been spent in the current window.
+	Spent int `json:"spent"`
+	// Remaining is how many the current window still allows.
+	Remaining int `json:"remaining"`
+	// WindowSeconds is the length of one budget window in seconds.
+	WindowSeconds float64 `json:"window_seconds"`
+	// ResetsAt is when the current window ends and the budget refills; nil while
+	// no budget is enforced or nothing has been spent yet.
+	ResetsAt *time.Time `json:"resets_at,omitempty"`
+}
+
 // Status is the full system-status snapshot returned by GET /system/status.
 type Status struct {
 	Version    version.Info  `json:"version"`
@@ -151,6 +186,7 @@ type Status struct {
 	Imports    Imports       `json:"imports"`
 	Storage    StorageUsage  `json:"storage"`
 	Maps       Maps          `json:"maps"`
+	Geocode    Geocode       `json:"geocode"`
 }
 
 // Config bundles the dependencies of New. Backup may be nil (no destination
@@ -169,6 +205,9 @@ type Config struct {
 	// Maps reports the map provider's last observed health; nil when no mapy.com
 	// key is configured.
 	Maps MapsReporter
+	// Geocode reports the reverse-geocode credit budget; nil when no mapy.com key
+	// is configured.
+	Geocode GeocodeReporter
 	// Imports supplies the latest run per source.
 	Imports ImportLister
 	// Library supplies the library-wide counts behind LibraryStats. A nil Library
@@ -197,6 +236,7 @@ type Service struct {
 	jobs         JobCounter
 	backup       BackupReporter
 	maps         MapsReporter
+	geocode      GeocodeReporter
 	imports      ImportLister
 	storage      *storageCache
 	library      *libraryCache
@@ -211,6 +251,7 @@ func New(cfg Config) *Service {
 		jobs:         cfg.Jobs,
 		backup:       cfg.Backup,
 		maps:         cfg.Maps,
+		geocode:      cfg.Geocode,
 		imports:      cfg.Imports,
 		storage:      newStorageCache(cfg.OriginalsPath, cfg.CachePath, cfg.StorageTTL, cfg.Clock),
 		library:      newLibraryCache(cfg.Library, cfg.LibraryTTL, cfg.Clock),
@@ -250,6 +291,7 @@ func (s *Service) Collect(ctx context.Context) (Status, error) {
 		Imports:    imports,
 		Storage:    storageUsage,
 		Maps:       s.collectMaps(),
+		Geocode:    s.collectGeocode(),
 	}, nil
 }
 
@@ -343,6 +385,29 @@ func (s *Service) collectMaps() Maps {
 	if !snapshot.CheckedAt.IsZero() {
 		checkedAt := snapshot.CheckedAt
 		status.CheckedAt = &checkedAt
+	}
+	return status
+}
+
+// collectGeocode returns the reverse-geocode credit budget, reporting
+// not-configured when no mapy.com key is wired (nothing geocodes, so nothing is
+// spent).
+func (s *Service) collectGeocode() Geocode {
+	if s.geocode == nil {
+		return Geocode{}
+	}
+	snapshot := s.geocode.Snapshot()
+	status := Geocode{
+		Configured:    true,
+		BudgetEnabled: snapshot.Enabled,
+		Limit:         snapshot.Limit,
+		Spent:         snapshot.Spent,
+		Remaining:     snapshot.Remaining,
+		WindowSeconds: snapshot.Window.Seconds(),
+	}
+	if !snapshot.ResetsAt.IsZero() {
+		resetsAt := snapshot.ResetsAt
+		status.ResetsAt = &resetsAt
 	}
 	return status
 }

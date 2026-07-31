@@ -2015,6 +2015,11 @@
       "keyRejectedHint": "mapy.com odmítá API klíč (vypršel, byl zrušen, nebo došly kredity). Mapa zůstane bez podkladů, dokud klíč nevyměníš v konzoli mapy.com.",
       "checkedAt": "Naposledy ověřeno"
     },
+    "geocode": {
+      "credits": "Kredity geokódování v tomto okně",
+      "resetsAt": "Rozpočet se obnoví",
+      "exhausted": "Rozpočet vyčerpán, obnoví se"
+    },
     "library": {
       "title": "Knihovna",
       "intro": "Kolik z katalogu je zpracováno — stejná čísla jako na stránce statistik."

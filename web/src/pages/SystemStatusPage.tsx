@@ -31,6 +31,7 @@ import {
   type BackupStatus,
   type DatabaseStatus,
   type EmbeddingsStatus,
+  type GeocodeStatus,
   type ImportsStatus,
   type JobsStatus,
   type MapsState,
@@ -151,11 +152,43 @@ const MAPS_LABEL = {
 } as const satisfies Record<MapsState, string>
 
 /**
+ * The reverse-geocode credit line inside the map card: how much of the current
+ * budget window an import has spent and when it refills. Credits are metered
+ * money, so the spend belongs where it can be watched while a run is happening,
+ * not reconstructed from the bill afterwards. Renders nothing when no budget
+ * caps the spend.
+ */
+function GeocodeCredits({ geocode }: { geocode: GeocodeStatus }) {
+  const { t, i18n } = useTranslation()
+  if (!geocode.budget_enabled) {
+    return null
+  }
+  const exhausted = geocode.remaining === 0
+  return (
+    <div className="mt-3">
+      <div className="text-secondary small">
+        {t('system.geocode.credits')}:{' '}
+        <span className={exhausted ? 'text-warning' : undefined}>
+          {geocode.spent} / {geocode.limit}
+        </span>
+      </div>
+      {geocode.resets_at !== undefined && (
+        <div className="text-secondary small">
+          {t(exhausted ? 'system.geocode.exhausted' : 'system.geocode.resetsAt')}:{' '}
+          {formatTimestamp(geocode.resets_at, i18n.language)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
  * The map-provider card. A rejected mapy.com key is the failure that otherwise
  * hides — the map view just goes grey — so it is called out here, in red, with
- * what has to be done about it.
+ * what has to be done about it. The reverse-geocode credit budget rides along:
+ * it is the same metered mapy.com account.
  */
-function MapsCard({ maps }: { maps: MapsStatus }) {
+function MapsCard({ maps, geocode }: { maps: MapsStatus; geocode: GeocodeStatus }) {
   const { t, i18n } = useTranslation()
   if (!maps.configured) {
     return (
@@ -188,6 +221,7 @@ function MapsCard({ maps }: { maps: MapsStatus }) {
         {maps.degraded && maps.detail !== undefined && maps.detail !== '' && (
           <div className="text-secondary small font-monospace text-break mt-2">{maps.detail}</div>
         )}
+        <GeocodeCredits geocode={geocode} />
       </Card.Body>
     </Card>
   )
@@ -713,7 +747,7 @@ export function SystemStatusPage() {
               <StorageCard storage={state.data.storage} />
             </Col>
             <Col>
-              <MapsCard maps={state.data.maps} />
+              <MapsCard maps={state.data.maps} geocode={state.data.geocode} />
             </Col>
             <Col>
               <VersionCard version={state.data.version} />

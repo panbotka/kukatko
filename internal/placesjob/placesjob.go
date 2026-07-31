@@ -16,9 +16,17 @@
 // the geocoder has no match for, is recorded as processed so it is never retried
 // forever.
 //
-// Every collaborator — the photo store, the place cache, the geocoder and the
-// rate limiter — is an interface so the Service unit-tests with fakes and no
-// network or database.
+// Because every geocode costs a mapy.com credit, the job is bounded twice: the
+// RateLimiter caps how fast credits are spent, and the CreditBudget (see
+// budget.go) caps how many are spent per period. An exhausted budget defers the
+// job until the budget refills — a long sleep, not a retry loop — so a
+// full-library import spreads its credit spend over days instead of draining the
+// quota in one pass. What it does spend is counted through a CreditMeter, so the
+// spend is visible while it happens.
+//
+// Every collaborator — the photo store, the place cache, the geocoder, the rate
+// limiter, the budget and the meter — is an interface so the Service unit-tests
+// with fakes and no network or database.
 package placesjob
 
 import (
@@ -52,6 +60,11 @@ var ErrMissingPhotoUID = errors.New("placesjob: payload missing photo_uid")
 // errLocalRateLimited is the cause attached to the deferral the handler returns
 // when its own limiter is empty. It is internal control flow, not surfaced.
 var errLocalRateLimited = errors.New("placesjob: geocode rate limit reached")
+
+// errBudgetExhausted is the cause attached to the deferral the handler returns
+// when the credit budget for the current window is spent. Like
+// errLocalRateLimited it is internal control flow, not surfaced.
+var errBudgetExhausted = errors.New("placesjob: geocode credit budget exhausted")
 
 // PhotoStore is the subset of photos.Store the service reads.
 type PhotoStore interface {
@@ -102,6 +115,11 @@ type Config struct {
 	Enqueuer Enqueuer
 	// Limiter caps how often the job reaches mapy.com (default: always allow).
 	Limiter RateLimiter
+	// Budget caps how many geocodes may be spent per period, independently of
+	// the rate (default: no budget at all).
+	Budget CreditBudget
+	// Meter counts the credits actually spent (default: no-op).
+	Meter CreditMeter
 	// OfflineRetryDelay is the deferral applied when mapy.com is unavailable or
 	// rate limited (default DefaultOfflineRetryDelay).
 	OfflineRetryDelay time.Duration
@@ -117,6 +135,8 @@ type Service struct {
 	geocoder       Geocoder
 	enqueuer       Enqueuer
 	limiter        RateLimiter
+	budget         CreditBudget
+	meter          CreditMeter
 	retryDelay     time.Duration
 	rateLimitDelay time.Duration
 }
@@ -132,6 +152,14 @@ func New(cfg Config) *Service {
 	if limiter == nil {
 		limiter = allowAll{}
 	}
+	budget := cfg.Budget
+	if budget == nil {
+		budget = unlimitedBudget{}
+	}
+	meter := cfg.Meter
+	if meter == nil {
+		meter = noopMeter{}
+	}
 	retryDelay := cfg.OfflineRetryDelay
 	if retryDelay <= 0 {
 		retryDelay = DefaultOfflineRetryDelay
@@ -146,10 +174,17 @@ func New(cfg Config) *Service {
 		geocoder:       cfg.Geocoder,
 		enqueuer:       cfg.Enqueuer,
 		limiter:        limiter,
+		budget:         budget,
+		meter:          meter,
 		retryDelay:     retryDelay,
 		rateLimitDelay: rateLimitDelay,
 	}
 }
+
+// BudgetSnapshot reports the current state of the geocode credit budget, so the
+// admin status endpoint can show what a running import is spending. It is safe
+// to call at any time and never touches mapy.com.
+func (s *Service) BudgetSnapshot() BudgetSnapshot { return s.budget.Snapshot() }
 
 // jobPayload is the JSON shape of a `places` job's payload.
 type jobPayload struct {
@@ -212,19 +247,19 @@ func (s *Service) alreadyCurrent(ctx context.Context, photo photos.Photo) (bool,
 	return sameCoord(existing.Lat, photo.Lat) && sameCoord(existing.Lng, photo.Lng), nil
 }
 
-// geocodeAndStore reverse-geocodes the photo's coordinates (after acquiring a rate
-// limiter token) and caches the parsed place. Limiter exhaustion and a mapy.com
-// outage both defer the job without burning a retry attempt.
+// geocodeAndStore reverse-geocodes the photo's coordinates (after reserving a
+// credit and a rate limiter token) and caches the parsed place. An exhausted
+// budget, an exhausted limiter and a mapy.com outage all defer the job without
+// burning a retry attempt.
 func (s *Service) geocodeAndStore(ctx context.Context, photo photos.Photo) error {
-	if !s.limiter.Allow() {
-		// Own credit budget is spent for now; try again shortly. RetryAfter is our
-		// worker control-flow signal, not a foreign error to annotate.
-		return worker.RetryAfter(s.rateLimitDelay, errLocalRateLimited) //nolint:wrapcheck
+	if err := s.reserveCredit(); err != nil {
+		return err
 	}
 	result, err := s.geocoder.ReverseGeocode(ctx, *photo.Lat, *photo.Lng)
 	if err != nil {
 		return s.classifyGeocodeErr(ctx, photo, err)
 	}
+	s.meter.GeocodeCreditSpent()
 	country, region, city, name := parsePlace(result)
 	return s.savePlace(ctx, places.Place{
 		PhotoUID:  photo.UID,
@@ -237,18 +272,48 @@ func (s *Service) geocodeAndStore(ctx context.Context, photo photos.Photo) error
 	})
 }
 
+// reserveCredit claims what one geocode costs — first a credit from the budget,
+// then a token from the rate limiter — and returns a deferral when either is
+// exhausted, so the job is requeued instead of failing.
+//
+// The budget comes first on purpose: an empty budget defers the job until the
+// budget actually refills, where the limiter's deferral is a minute, and a job
+// that keeps waking into an empty budget every minute would churn the queue for
+// the rest of the window. A credit reserved for a call the limiter then blocks
+// is handed straight back, since nothing was spent.
+func (s *Service) reserveCredit() error {
+	retryAfter, ok := s.budget.Reserve()
+	if !ok {
+		// RetryAfter is our worker control-flow signal, not a foreign error to wrap.
+		return worker.RetryAfter(retryAfter, errBudgetExhausted) //nolint:wrapcheck
+	}
+	if !s.limiter.Allow() {
+		s.budget.Refund()
+		return worker.RetryAfter(s.rateLimitDelay, errLocalRateLimited) //nolint:wrapcheck
+	}
+	return nil
+}
+
 // classifyGeocodeErr turns a reverse-geocode failure into the right outcome: no
 // match is recorded as processed (at these coordinates, so it is not retried
 // forever); an unavailable or rate-limited upstream defers the job without
 // burning an attempt; anything else is an ordinary retryable error.
+//
+// It also settles the reserved credit. mapy.com performed no lookup when it was
+// unreachable or refused the request, so that credit goes back to the budget;
+// every answer it did give — including "no match" — cost a credit and is
+// metered.
 func (s *Service) classifyGeocodeErr(ctx context.Context, photo photos.Photo, err error) error {
 	switch {
 	case errors.Is(err, mapy.ErrNotFound):
+		s.meter.GeocodeCreditSpent()
 		return s.savePlace(ctx, places.Place{PhotoUID: photo.UID, Lat: photo.Lat, Lng: photo.Lng})
 	case errors.Is(err, mapy.ErrUnavailable), errors.Is(err, mapy.ErrRateLimited):
+		s.budget.Refund()
 		// RetryAfter is our worker control-flow signal, not a foreign error to wrap.
 		return worker.RetryAfter(s.retryDelay, err) //nolint:wrapcheck
 	default:
+		s.meter.GeocodeCreditSpent()
 		return fmt.Errorf("placesjob: geocoding %s: %w", photo.UID, err)
 	}
 }

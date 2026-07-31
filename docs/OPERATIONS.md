@@ -21,7 +21,7 @@ configuration key both here **and** into `config.example.yaml`.
   under `/api/v1` — see below, and all other paths are served by the **embedded SPA** with a fallback to
   `index.html`; `serve` additionally sets up **structured logging** (`obs.Setup`, JSON slog to
   stderr, level `log.level`) and — when `metrics.enabled` — builds the `metrics.Registry`, registers
-  the DB-pool + job-queue-depth collectors, and inserts the request-metrics + access-log middleware via
+  the DB-pool + job-queue-depth + geocode-credit-budget collectors, and inserts the request-metrics + access-log middleware via
   `server.WithMiddleware`/`WithMetricsHandler`), `kukatko migrate` (runs pending migrations on their own and exits),
   `kukatko migrate photosorter` (synchronous read-only incremental **data migration from photo-sorter** —
   `psimport`; applies DB migrations, then `Service.Migrate`; needs `import.photosorter.dsn`, otherwise
@@ -639,6 +639,17 @@ long-running and belong on the machine where the instance runs — so they remai
   throttle for the background **`places` job** (which caches a photo's locality): `geocode_rate_per_sec`
   (default 5, ≤ 0 disables) + `geocode_burst` (default 10) — protects the monthly mapy.com credit budget,
   processing slowly is OK. `KUKATKO_MAPS_GEOCODE_RATE_PER_SEC`/`_GEOCODE_BURST`.
+- **Geocode credit budget (`maps.geocode_budget`, `maps.geocode_budget_window`):** default **1000 per 24h**;
+  `geocode_budget ≤ 0` removes the cap. The throttle above bounds how **fast** credits are spent, this bounds
+  **how many** — a full-library import (~6k geotagged photos) would otherwise drain the whole quota in one
+  pass at 5/s. When the window's credits are gone the queued `places` jobs are **deferred until the budget
+  refills** (a `worker.RetryAfter` of the time left in the window, floor 1 min) — nothing fails, the queue
+  simply drains over the following days, and the jobs do not churn once a minute in the meantime. Bumping
+  the budget makes an import finish sooner; the count lives **in memory**, so restarting the server starts a
+  fresh window (the budget guards against a runaway import, not against an operator). Env
+  `KUKATKO_MAPS_GEOCODE_BUDGET`/`_GEOCODE_BUDGET_WINDOW`. Watch the spend live on `GET /system/status` →
+  `geocode` (also on the **System** page, in the Maps card) or with `kukatko_geocode_credits_spent_total` /
+  `kukatko_geocode_credits_remaining` / `kukatko_geocode_credits_limit`.
 - **Server-side tile cache (`maps.tile_cache_bytes`, `maps.tile_cache_ttl`):** default **64 MiB**
   (`67108864`) and **24h**; ≤ 0 for either of them disables the cache. The mapy.com free tier charges **1 credit
   per tile** (250k/month), so without a cache every re-pan over an already-seen area costs again.
@@ -716,8 +727,9 @@ long-running and belong on the machine where the instance runs — so they remai
   backfill** `POST /process/locations` → `{estimated}` is the only way an estimate is created (there is no estimation on upload
   — a fresh photo has no neighbors from the same day yet). Every new estimate gets a `places`
   job, so it propagates into the place hierarchy; **the geocode is metered**, it runs through the existing
-  `maps.geocode_rate_per_sec` limiter, so a large backfill feeds the geocoder in drips instead of
-  swamping it — count on **1 mapy.com credit per estimated photo**. A re-run is idempotent and
+  `maps.geocode_rate_per_sec` limiter *and* the `maps.geocode_budget` cap, so a large backfill feeds the
+  geocoder in drips instead of swamping it and cannot outspend the daily budget — count on **1 mapy.com
+  credit per estimated photo**. A re-run is idempotent and
   **an estimate deleted by the user never comes back**.
 - **Candidates keys (`candidates.*`, `internal/config` + `internal/candidates`):** tunes the search for
   "a person among untagged photos" (`POST /subjects/{uid}/candidates`). `max_distance` (**default
