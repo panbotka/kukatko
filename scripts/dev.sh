@@ -122,9 +122,12 @@ fi
 # A fresh npm ci can change the build output, so it also forces a Vite rebuild.
 need_web=true
 if [[ "$FORCE" == false && "$need_npm" == false && -f "$DIST_INDEX" ]]; then
+  # `-print -quit` and NOT `| head -1`: under `set -o pipefail` head closes the
+  # pipe after the first match, find dies on SIGPIPE (141), and `set -e` kills
+  # the script — precisely when there IS something to rebuild.
   changed=$(find web/src web/public web/index.html web/vite.config.ts \
     web/tsconfig.json web/tsconfig.app.json web/tsconfig.node.json \
-    -newer "$DIST_INDEX" 2>/dev/null | head -1)
+    -newer "$DIST_INDEX" -print -quit 2>/dev/null)
   if [[ -z "$changed" ]]; then
     need_web=false
     echo "dev.sh: frontend unchanged, skipping build"
@@ -140,8 +143,9 @@ fi
 # A rebuilt SPA changes the embedded assets, so the binary must be rebuilt too.
 need_go=true
 if [[ "$FORCE" == false && "$need_web" == false && -f "$BINARY" ]]; then
-  changed_go=$(find . -name '*.go' -newer "$BINARY" -not -path './web/*' 2>/dev/null | head -1)
-  changed_mod=$(find . -maxdepth 1 \( -name go.mod -o -name go.sum \) -newer "$BINARY" 2>/dev/null | head -1)
+  # Same SIGPIPE trap as above — stop at the first hit inside find itself.
+  changed_go=$(find . -name '*.go' -not -path './web/*' -newer "$BINARY" -print -quit 2>/dev/null)
+  changed_mod=$(find . -maxdepth 1 \( -name go.mod -o -name go.sum \) -newer "$BINARY" -print -quit 2>/dev/null)
   if [[ -z "$changed_go" && -z "$changed_mod" ]]; then
     need_go=false
     echo "dev.sh: go code unchanged, skipping build"
