@@ -1622,8 +1622,22 @@ to `## Package map` in `CLAUDE.md`.
   `source_count: 758, missing_count: 751` against a catalogue of 8 — so a clean report, which
   `MIGRATION_PLAN.md` phase 4 gates the cutover on, was unreachable by construction and real gaps drowned in
   the noise;
+  **the vectors section names its two questions apart**: `embeddings_missing_for_imported_photos` /
+  `faces_missing_for_imported_photos` (+ their capped `*_missing_uids` samples) are scoped to photos **already
+  in the catalogue** — a vector cannot attach to a photo that was never imported — while
+  `embeddings_source_coverage` / `faces_source_coverage` (`sourceCoverage(catalog,source)`: the ratio rounded
+  to 4 decimals, an empty source → `1`, a catalogue larger than the source clamped to `1`, exposed together as
+  `VectorsReport.FullSourceCoverage()`) are the share of the **source's** vectors Kukátko holds. Under the old
+  names (`missing_embeddings_count`/`missing_faces_count`) the first meaning was read as the second: a
+  catalogue of 280 of 20 670 photos reported `missing_embeddings_count: 0` against
+  `source_photos_with_embeddings: 20092` — a reviewer at the point of no return saw zeros next to the vector
+  section and concluded the vector migration was finished, with only the top-level `complete:false` saying
+  otherwise. The arithmetic was always defensible and is unchanged; the naming and presentation were the bug;
   `Report{photoprism,vectors,structure,complete}` (per section source vs catalogue + a capped list of the missing +
-  full counts); `complete=true` only when nothing is missing; **it does not write** `import_runs`), `internal/photoprism/`
+  full counts); `complete=true` only when nothing is missing — including no *imported* photo left without its
+  vectors, but deliberately **not** requiring full vector source coverage: photo-sorter's population and
+  PhotoPrism's need not be the same set, so gating on the coverage would make a finished import unreachable by
+  construction, the same trap the album types fell into; **it does not write** `import_runs`), `internal/photoprism/`
   (a read-only HTTP client of a running PhotoPrism instance — the basis of the incremental import, all behind
   the `Client` interface (fakeable): `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryBaseDelay,
   RetryMaxDelay,HTTPClient})` → `*HTTPClient`, `ErrInvalidURL` on an invalid base URL; **authentication**

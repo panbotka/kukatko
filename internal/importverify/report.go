@@ -61,6 +61,15 @@ type FileGap struct {
 // from its HTTP feeds) against the catalogue's embeddings/faces for the
 // PhotoPrism-imported population. When no feeds source is configured the whole
 // section is inert and NotConfigured is set.
+//
+// The section answers two different questions and names them apart, because
+// conflating them is how a report of an all-but-empty catalogue used to read as
+// finished. The "missing for imported photos" counters are scoped to photos
+// ALREADY in the catalogue — a vector cannot attach to a photo that was never
+// imported, so they legitimately sit at 0 on a catalogue holding 280 of 20 670
+// photos. The "source coverage" ratios are the share of the SOURCE's vectors
+// Kukátko actually holds, and on that same catalogue they read 0.0025. Read
+// together, the section can no longer be mistaken for full coverage.
 type VectorsReport struct {
 	// NotConfigured is true when no feeds source was supplied; every other field
 	// is then zero and this section is ignored by Complete.
@@ -79,14 +88,36 @@ type VectorsReport struct {
 	CatalogFacePhotos int `json:"catalog_face_photos"`
 	// CatalogFaces is the catalogue's total face count over imported photos.
 	CatalogFaces int `json:"catalog_faces"`
-	// MissingEmbeddingsCount is how many imported photos lack an embeddings row.
-	MissingEmbeddingsCount int `json:"missing_embeddings_count"`
-	// MissingEmbeddings lists their PhotoPrism uids, capped at SampleLimit.
-	MissingEmbeddings []string `json:"missing_embeddings"`
-	// MissingFacesCount is how many imported photos lack a face-detection record.
-	MissingFacesCount int `json:"missing_faces_count"`
-	// MissingFaces lists their PhotoPrism uids, capped at SampleLimit.
-	MissingFaces []string `json:"missing_faces"`
+	// EmbeddingsSourceCoverage is CatalogEmbeddings / SourcePhotosWithEmbeddings —
+	// the share of the source's embeddings the catalogue holds, in [0,1]. Below 1
+	// means the vector migration is unfinished no matter what the two
+	// MissingFor… counters say.
+	EmbeddingsSourceCoverage float64 `json:"embeddings_source_coverage"`
+	// FacesSourceCoverage is CatalogFaces / SourceTotalFaces, in [0,1], with the
+	// same meaning for faces.
+	FacesSourceCoverage float64 `json:"faces_source_coverage"`
+	// EmbeddingsMissingForImportedPhotos is how many photos ALREADY IN the
+	// catalogue lack an embeddings row. It says nothing about source photos that
+	// were never imported — that is what EmbeddingsSourceCoverage is for.
+	EmbeddingsMissingForImportedPhotos int `json:"embeddings_missing_for_imported_photos"`
+	// EmbeddingsMissingUIDs samples those photos' PhotoPrism uids, capped at
+	// SampleLimit while the count above stays the full total.
+	EmbeddingsMissingUIDs []string `json:"embeddings_missing_uids"`
+	// FacesMissingForImportedPhotos is how many photos ALREADY IN the catalogue
+	// lack a face-detection record; same scoping caveat as above.
+	FacesMissingForImportedPhotos int `json:"faces_missing_for_imported_photos"`
+	// FacesMissingUIDs samples those photos' PhotoPrism uids, capped at SampleLimit.
+	FacesMissingUIDs []string `json:"faces_missing_uids"`
+}
+
+// FullSourceCoverage reports whether the catalogue holds every embedding and every
+// face the source has. It is deliberately NOT part of Complete: photo-sorter's
+// population and PhotoPrism's need not line up exactly, so gating completeness on
+// it could make a genuinely finished import unreachable. It exists so a caller —
+// the CLI summary, the frontend — can flag a section whose zero "missing"
+// counters would otherwise read as a finished vector migration.
+func (v VectorsReport) FullSourceCoverage() bool {
+	return v.EmbeddingsSourceCoverage >= 1 && v.FacesSourceCoverage >= 1
 }
 
 // StructureReport reconciles the three structural entities — albums, labels and

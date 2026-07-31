@@ -212,7 +212,17 @@ export interface PhotoPrismReport {
   file_gaps: { photoprism_uid: string; expected: number; actual: number }[]
 }
 
-/** photo-sorter vectors reconciliation (`importverify.VectorsReport`). */
+/**
+ * photo-sorter vectors reconciliation (`importverify.VectorsReport`).
+ *
+ * The section answers two different questions and names them apart. The
+ * `*_missing_for_imported_photos` counters are scoped to photos ALREADY in the
+ * catalogue — a vector cannot attach to a photo that was never imported — so they
+ * legitimately read 0 on a catalogue holding a fraction of the source. The
+ * `*_source_coverage` ratios ([0,1]) are the share of the SOURCE's vectors
+ * Kukátko actually holds, and are the figure that says whether the vector
+ * migration is finished.
+ */
 export interface VectorsReport {
   not_configured: boolean
   source_total_photos: number
@@ -222,10 +232,12 @@ export interface VectorsReport {
   catalog_embeddings: number
   catalog_face_photos: number
   catalog_faces: number
-  missing_embeddings_count: number
-  missing_embeddings: string[]
-  missing_faces_count: number
-  missing_faces: string[]
+  embeddings_source_coverage: number
+  faces_source_coverage: number
+  embeddings_missing_for_imported_photos: number
+  embeddings_missing_uids: string[]
+  faces_missing_for_imported_photos: number
+  faces_missing_uids: string[]
 }
 
 /** Source-vs-catalogue counts for one entity kind (`importverify.EntityReport`). */

@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -352,13 +353,16 @@ func (s *Service) recordFileGap(report *PhotoPrismReport, ref photoRef, fileCoun
 
 // reconcileVectors builds the vectors section. With no feeds source it returns a
 // NotConfigured report; otherwise it reads the feed stats and the catalogue's
-// missing-embeddings/missing-faces samples.
+// missing-embeddings/missing-faces samples, and derives the two source-coverage
+// ratios that keep those per-photo gaps from reading as source coverage.
 func (s *Service) reconcileVectors(ctx context.Context, counts CatalogCounts) (VectorsReport, error) {
 	if s.feeds == nil {
 		return VectorsReport{
-			NotConfigured:     true,
-			MissingEmbeddings: make([]string, 0),
-			MissingFaces:      make([]string, 0),
+			NotConfigured:            true,
+			EmbeddingsSourceCoverage: 1,
+			FacesSourceCoverage:      1,
+			EmbeddingsMissingUIDs:    make([]string, 0),
+			FacesMissingUIDs:         make([]string, 0),
 		}, nil
 	}
 	stats, err := s.feeds.Stats(ctx)
@@ -374,18 +378,40 @@ func (s *Service) reconcileVectors(ctx context.Context, counts CatalogCounts) (V
 		return VectorsReport{}, fmt.Errorf("importverify: reading photos missing faces: %w", err)
 	}
 	return VectorsReport{
-		SourceTotalPhotos:          stats.TotalPhotos,
-		SourcePhotosWithEmbeddings: stats.PhotosWithEmbeddings,
-		SourcePhotosWithFaces:      stats.PhotosWithFaces,
-		SourceTotalFaces:           stats.TotalFaces,
-		CatalogEmbeddings:          counts.Embeddings,
-		CatalogFacePhotos:          counts.FacePhotos,
-		CatalogFaces:               counts.Faces,
-		MissingEmbeddingsCount:     embTotal,
-		MissingEmbeddings:          normalizeStrings(missingEmb),
-		MissingFacesCount:          facesTotal,
-		MissingFaces:               normalizeStrings(missingFaces),
+		SourceTotalPhotos:                  stats.TotalPhotos,
+		SourcePhotosWithEmbeddings:         stats.PhotosWithEmbeddings,
+		SourcePhotosWithFaces:              stats.PhotosWithFaces,
+		SourceTotalFaces:                   stats.TotalFaces,
+		CatalogEmbeddings:                  counts.Embeddings,
+		CatalogFacePhotos:                  counts.FacePhotos,
+		CatalogFaces:                       counts.Faces,
+		EmbeddingsSourceCoverage:           sourceCoverage(counts.Embeddings, stats.PhotosWithEmbeddings),
+		FacesSourceCoverage:                sourceCoverage(counts.Faces, stats.TotalFaces),
+		EmbeddingsMissingForImportedPhotos: embTotal,
+		EmbeddingsMissingUIDs:              normalizeStrings(missingEmb),
+		FacesMissingForImportedPhotos:      facesTotal,
+		FacesMissingUIDs:                   normalizeStrings(missingFaces),
 	}, nil
+}
+
+// sourceCoverage returns the share of the source's vectors the catalogue actually
+// holds — catalog/source clamped to [0,1] and rounded to four decimals so the JSON
+// stays readable and the value is stable to compare.
+//
+// A source holding nothing is fully covered by definition (1), which keeps an
+// unconfigured or empty feed from reading as a permanent shortfall. A catalogue
+// holding more than the source clamps at 1 rather than exceeding it: Kukátko may
+// legitimately hold vectors for photos photo-sorter never had (own uploads), and a
+// coverage above 1 would only read as an error.
+func sourceCoverage(catalog, source int) float64 {
+	if source <= 0 || catalog >= source {
+		return 1
+	}
+	if catalog <= 0 {
+		return 0
+	}
+	const precision = 10000
+	return math.Round(float64(catalog)/float64(source)*precision) / precision
 }
 
 // reconcileStructure builds the structure section by comparing the source name
@@ -534,14 +560,23 @@ func (s *Service) entityReport(source, catalog map[string]struct{}, catalogCount
 }
 
 // isComplete reports whether the report shows nothing left to import: no missing
-// or file-gapped photos, no missing vectors (unless the vectors section is not
-// configured), and no missing structural entities.
+// or file-gapped photos, no imported photo left without its vectors (unless the
+// vectors section is not configured), and no missing structural entities.
+//
+// It deliberately does not require full vector source coverage. photo-sorter's
+// population and PhotoPrism's are not the same set, so a coverage below 1 can be
+// a permanent, legitimate state — gating on it would make a finished import
+// unreachable by construction, the same trap the month-albums reconciliation fell
+// into. With every source photo imported, the per-photo gaps below are the honest
+// measure; VectorsReport.FullSourceCoverage carries the rest of the picture to the
+// CLI and the frontend.
 func isComplete(report Report) bool {
 	if report.PhotoPrism.MissingCount != 0 || report.PhotoPrism.FileGapCount != 0 {
 		return false
 	}
 	if !report.Vectors.NotConfigured &&
-		(report.Vectors.MissingEmbeddingsCount != 0 || report.Vectors.MissingFacesCount != 0) {
+		(report.Vectors.EmbeddingsMissingForImportedPhotos != 0 ||
+			report.Vectors.FacesMissingForImportedPhotos != 0) {
 		return false
 	}
 	return report.Structure.Albums.MissingCount == 0 &&

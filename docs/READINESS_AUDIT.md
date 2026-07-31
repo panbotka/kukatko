@@ -105,7 +105,19 @@ missing albums are buried in ~560 rows of noise.
 **Fix direction:** the verifier should default to the importer's `DefaultAlbumTypes`,
 or classify intentionally-skipped types separately from missing ones.
 
-### 2.3 `missing_*_count: 0` reads as "done" when nothing is imported
+### 2.3 ~~`missing_*_count: 0` reads as "done" when nothing is imported~~ — **resolved 2026-07-31**
+
+> Fixed: the two counters are renamed to say what they measure —
+> `vectors.embeddings_missing_for_imported_photos` / `faces_missing_for_imported_photos` (with
+> `*_missing_uids` samples) — and the section gained `embeddings_source_coverage` /
+> `faces_source_coverage`, the `[0,1]` share of the **source's** vectors the catalogue actually
+> holds. On the library below that reads `0.0025`, so the zeros can no longer be mistaken for
+> coverage. `kukatko import verify` leads each vector line with the coverage and prints a scoping
+> NOTE while it is short of 1; the `ImportPage` table gained a *source coverage* column and only
+> paints a zero green once the coverage confirms it. `complete` is deliberately **not** gated on
+> the coverage — photo-sorter's population and PhotoPrism's need not line up, and gating on it
+> would repeat §2.2's mistake of making a finished import unreachable. The measurement below is
+> the state before that change.
 
 `GET /import/verify` reports `vectors.missing_embeddings_count: 0` and
 `missing_faces_count: 0` while the catalogue holds 50 embeddings against a source of

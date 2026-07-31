@@ -697,7 +697,17 @@ here.
   would be desktop-only) —; it polls
   `GET /import/runs` + `GET /jobs/stats` every 3 s, 409 → „už běží", a confirm before the first (large) run of a
   source, self-gated on `canImport` (= maintainer). The **completeness-check** card runs `GET /import/verify`
-  on demand (never polled — it walks the whole source library) and renders it as a counts table; below it,
+  on demand (never polled — it walks the whole source library) and renders it as a counts table
+  (check / source / Kukátko / **source coverage** / missing). The coverage column is filled only by the two
+  **vector** rows, whose `missing` (`*_missing_for_imported_photos`) counts photos **already in the
+  catalogue** — a vector has nothing to attach to until its photo is imported — and therefore reads `0` on a
+  catalogue holding a fraction of the source. `VerifyRow` takes an optional `coverage` for exactly that: a
+  zero missing-badge only turns **green** once the coverage confirms it (short of that it stays neutral next to
+  a warning coverage badge), and `import.verify.vectorsScopeNote` spells the scoping out in an `Alert` whenever
+  either coverage is below 1 (`fullVectorCoverage(vectors)`, the frontend twin of
+  `importverify.VectorsReport.FullSourceCoverage`). Before that, a catalogue of 280 photos against a source of
+  20 670 rendered two green zeros next to „Embeddingy"/„Obličeje" and read as a finished vector migration —
+  only the overall verdict said otherwise (`docs/READINESS_AUDIT.md` §2.3). Below the table,
   `import.verify.albumsSkipped` explains any `structure.albums.skipped_by_design_count` — the albums of the
   types the import deliberately does not map (PhotoPrism's auto-generated monthly ones), which are **counted,
   never listed as missing**, so the albums row reading `source=198` against PhotoPrism's 758 is not a shortfall
@@ -1901,6 +1911,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `1536`→`"1.5 KB"`, invalid→`"0 B"`) for the file size on the duplicate-group cards +
   `formatCount(value,locale)` (a whole number → **thousands separated in the active language**, `20310` → cs
   `"20 310"` / en `"20,310"`; a fraction is rounded, non-finite → `"0"`) for the counts on `LibraryStatsCards` +
+  `formatPercent(ratio,locale)` (a `[0,1]` share → a locale-aware percentage with **at most one decimal**,
+  `0.0025` → cs `"0,3 %"` / en `"0.3%"` — the decimal is what keeps a sliver from rounding to `0 %` and
+  reading as nothing; out-of-range values are clamped and non-finite → `"0 %"`, so a malformed number never
+  shows as full coverage) for the import-verify source-coverage column +
   `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, invalid→`"0:00"`) for the video length on the tiles +
   `formatMonth(year,month,locale)` (a 1-based year/month → a locale-aware short month + year, e.g.
   `2026,1,'en'`→`"Jan 2026"`, outside 1–12 → `""`) for the timeline tick labels +
