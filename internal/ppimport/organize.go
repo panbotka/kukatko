@@ -179,7 +179,10 @@ func (s *Service) attachAlbumMembers(ctx context.Context, ppAlbumUID, albumUID s
 				s.log.Warn("ppimport: adding photo to album", "album", albumUID, "photo", photo.UID, "err", err)
 			}
 		}
-		if len(page) < s.pageSize {
+		// Only an empty page ends the album: a merged listing routinely serves fewer
+		// entries than the requested count (see importPhotos), so a short page is not
+		// exhaustion — treating it as one lost every member past the first page.
+		if len(page) == 0 {
 			return nil
 		}
 		offset += len(page)
@@ -315,7 +318,9 @@ func (s *Service) attachLabelMembers(ctx context.Context, ppSlug, name, labelUID
 				s.log.Warn("ppimport: attaching label", "label", labelUID, "photo", photo.UID, "err", err)
 			}
 		}
-		if len(page) < s.pageSize {
+		// Only an empty page ends the label's photos — a merged listing's short page
+		// is not exhaustion (see importPhotos).
+		if len(page) == 0 {
 			return nil
 		}
 		offset += len(page)

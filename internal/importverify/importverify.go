@@ -221,13 +221,24 @@ func (s *Service) reconcilePhotos(ctx context.Context) (PhotoPrismReport, error)
 }
 
 // enumeratePhotos pages the whole, unfiltered PhotoPrism photo listing to
-// exhaustion, returning one photoRef per photo and the per-type histogram. It
-// advances the offset by each page's length and stops on a short page.
+// exhaustion, returning one photoRef per distinct photo and the per-type
+// histogram.
+//
+// Only an EMPTY page ends the walk. The listing is served merged, so the source
+// collapses a photo's file rows into one entry and a page comes back shorter than
+// the requested count whenever the window holds a multi-file photo. Stopping on a
+// short page reconciled the catalogue against the first page alone — and a
+// verifier blind in the same way as the importer could call an import complete
+// with most of the library missing.
+//
+// The offset advances by the page length, which under-advances against the
+// source's file-row offset: no row is skipped, but the overlap re-serves photos
+// already seen, so they are deduplicated by uid here.
 func (s *Service) enumeratePhotos(ctx context.Context) ([]photoRef, map[string]int, error) {
 	refs := make([]photoRef, 0)
 	byType := make(map[string]int)
-	offset := 0
-	for {
+	seen := make(map[string]int)
+	for offset := 0; ; {
 		page, err := s.photoPrism.ListPhotos(ctx, photoprism.PhotoListParams{
 			Count:  photoprism.MaxCount,
 			Offset: offset,
@@ -235,23 +246,37 @@ func (s *Service) enumeratePhotos(ctx context.Context) ([]photoRef, map[string]i
 		if err != nil {
 			return nil, nil, fmt.Errorf("importverify: listing photoprism photos at offset %d: %w", offset, err)
 		}
-		for i := range page {
-			byType[strings.ToLower(page[i].Type)]++
-			hash := ""
-			if primary, ok := page[i].PrimaryFile(); ok {
-				hash = primary.Hash
-			}
-			refs = append(refs, photoRef{
-				uid:           page[i].UID,
-				primaryHash:   hash,
-				expectedFiles: len(page[i].Files),
-			})
-		}
-		if len(page) < photoprism.MaxCount {
+		if len(page) == 0 {
 			return refs, byType, nil
 		}
+		refs = collectPhotoRefs(page, refs, byType, seen)
 		offset += len(page)
 	}
+}
+
+// collectPhotoRefs folds one listing page into the accumulating refs and per-type
+// histogram, counting each photo uid once. seen maps an already-collected uid to
+// its index in refs; a repeat only widens that ref's expected file count, since a
+// photo straddling a page boundary is served with part of its files in one page
+// and the rest in the next, and the narrower list would mask a real file gap.
+func collectPhotoRefs(
+	page []photoprism.Photo, refs []photoRef, byType map[string]int, seen map[string]int,
+) []photoRef {
+	for i := range page {
+		files := len(page[i].Files)
+		if idx, dup := seen[page[i].UID]; dup {
+			refs[idx].expectedFiles = max(refs[idx].expectedFiles, files)
+			continue
+		}
+		byType[strings.ToLower(page[i].Type)]++
+		hash := ""
+		if primary, ok := page[i].PrimaryFile(); ok {
+			hash = primary.Hash
+		}
+		seen[page[i].UID] = len(refs)
+		refs = append(refs, photoRef{uid: page[i].UID, primaryHash: hash, expectedFiles: files})
+	}
+	return refs
 }
 
 // classifyPhotos buckets each enumerated photo against the catalogue sets and

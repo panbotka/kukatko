@@ -66,9 +66,18 @@ func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState
 		}
 		c := state.counts
 		s.metrics.SetImportProgress("photoprism", c.Imported, c.Updated, c.Skipped, c.Failed)
-		if len(page) < s.pageSize {
+		// Only an EMPTY page ends the library. A photo listing is served merged, so
+		// the source collapses a photo's file rows into one entry and a page comes
+		// back shorter than the requested count whenever the window holds a
+		// multi-file photo — a short page is routine, not exhaustion. Reading it as
+		// the end imported the first page of the library and reported done.
+		if len(page) == 0 {
 			return nil
 		}
+		// Advancing by the page length under-advances against the source's file-row
+		// offset, which never skips a row (the overlap is re-listed and re-imports
+		// idempotently) and always moves while the page is non-empty, so the walk
+		// terminates.
 		offset += len(page)
 	}
 }

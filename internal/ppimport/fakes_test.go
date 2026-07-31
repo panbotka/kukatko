@@ -59,16 +59,25 @@ type fakeClient struct {
 	files       map[string][]byte
 	downloadErr map[string]error
 	listErr     error
+	// filesPerPhoto, when above 1, serves every PHOTO listing merged the way
+	// PhotoPrism serves it: count/offset select file rows and the rows of one photo
+	// collapse into a single entry, so a page is always shorter than the requested
+	// count. Zero or one keeps the plain one-row-per-photo listing.
+	filesPerPhoto int
 
 	mu          sync.Mutex
 	downloads   []string
 	detailCalls []string
 }
 
-// ListPhotos returns one page of the photos the params select.
+// ListPhotos returns one page of the photos the params select, merged when the
+// fake is configured to serve multi-file photos.
 func (c *fakeClient) ListPhotos(_ context.Context, p photoprism.PhotoListParams) ([]photoprism.Photo, error) {
 	if c.listErr != nil {
 		return nil, c.listErr
+	}
+	if c.filesPerPhoto > 1 {
+		return mergedPage(c.selectPhotos(p), p.Offset, p.Count, c.filesPerPhoto), nil
 	}
 	return page(c.selectPhotos(p), p.Offset, p.Count), nil
 }
@@ -258,6 +267,30 @@ func filterUpdated(in []photoprism.Photo, since time.Time) []photoprism.Photo {
 func page(in []photoprism.Photo, offset, count int) []photoprism.Photo {
 	lo, hi := bounds(len(in), offset, count)
 	return in[lo:hi]
+}
+
+// mergedPage serves a photo listing the way PhotoPrism serves a merged one:
+// offset/count select FILE rows — filesPerPhoto rows per photo — and the rows of
+// one photo then collapse into a single entry. A page therefore comes back up to
+// filesPerPhoto times SHORTER than the requested count while the library is far
+// from exhausted, which is the shape of the production defect: every paging loop
+// read that short first page as the end of the library.
+func mergedPage(in []photoprism.Photo, offset, count, filesPerPhoto int) []photoprism.Photo {
+	rows := make([]photoprism.Photo, 0, len(in)*filesPerPhoto)
+	for i := range in {
+		for range filesPerPhoto {
+			rows = append(rows, in[i])
+		}
+	}
+	lo, hi := bounds(len(rows), offset, count)
+	merged := make([]photoprism.Photo, 0, hi-lo)
+	for _, row := range rows[lo:hi] {
+		if len(merged) > 0 && merged[len(merged)-1].UID == row.UID {
+			continue
+		}
+		merged = append(merged, row)
+	}
+	return merged
 }
 
 // pageAlbums slices an album list into [offset, offset+count).
