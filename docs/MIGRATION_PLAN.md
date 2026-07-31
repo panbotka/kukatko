@@ -2,7 +2,12 @@
 
 The concrete runbook for making Kukátko the primary photo app. This is the
 *executable finish-line*: when every box here is checked, PhotoPrism can go
-read-only. It complements [`MIGRATION_AUDIT.md`](MIGRATION_AUDIT.md) (field-level
+read-only.
+
+> **Blocked as written — see [`READINESS_AUDIT.md`](READINESS_AUDIT.md) (2026-07-31).**
+> Phase 2 imports only the first page of the source library and phase 4's verifier
+> measures against that same truncated page, so a run can report success on a
+> library that is 95 % empty. Fix §2.1–§2.3 of the audit before running this. It complements [`MIGRATION_AUDIT.md`](MIGRATION_AUDIT.md) (field-level
 mapping) with the **verified production topology** and the **wipe + full reimport**
 procedure.
 
