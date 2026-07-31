@@ -71,9 +71,19 @@ PhotoPrism/`ppimport` path, not photo-sorter.
 ### Phase 1 — wipe Kukátko's data
 3. Take a throwaway note of current counts (for comparison). There is no curation worth
    keeping in Kukátko (this is a fresh migration), so a full reset is safe.
-4. Reset Kukátko: truncate the catalog + vectors + faces + originals store (a
-   maintenance/CLI reset, or drop & re-migrate the schema). **Do NOT touch PhotoPrism or
-   photo-sorter** — they are the source and the rollback.
+   `kukatko maintenance reset` prints exactly those counts and deletes nothing, so this
+   step *is* the dry run.
+4. Stop the server, then reset Kukátko with **`kukatko maintenance reset --execute
+   --orphan-sweep`** (`internal/reset`, documented in
+   [`OPERATIONS.md`](OPERATIONS.md#kukatko-maintenance-reset--the-guarded-library-wipe)).
+   It truncates the whole catalogue — photos, files, vectors, faces, albums, labels,
+   places, edits, import history, the job queue and the per-user curation — and deletes the
+   originals, thumbnails and sidecars from the configured store, leaving the accounts,
+   the announcement, the audit trail and the migration history intact. It refuses to run
+   against a database the config does not name, refuses without the target database's name
+   typed in full, refuses a non-interactive run without `--force`, and never deletes a key
+   outside Kukátko's own prefixes. It is idempotent, so an interrupted wipe is simply re-run.
+   **Do NOT touch PhotoPrism or photo-sorter** — they are the source and the rollback.
 
 ### Phase 2 — import photos from PhotoPrism
 5. Run the full PhotoPrism import; drain the job queue. Every photo + all its files

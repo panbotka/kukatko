@@ -170,6 +170,9 @@ export KUKATKO_DATABASE_URL="postgres://kukatko:…@localhost:5432/kukatko"
 ./bin/kukatko restore verify              # integrity report: photos in the DB vs originals on disk
 ./bin/kukatko maintenance scan            # library integrity check (disk↔DB drift, derived data)
 ./bin/kukatko maintenance repair --thumbnails --phashes  # opt-in repairs (thumbnails/hashes/embeddings/faces/orphans)
+./bin/kukatko maintenance reset           # DRY RUN: what a library wipe would delete (rows per table, objects per prefix)
+./bin/kukatko maintenance reset --execute --orphan-sweep   # DESTRUCTIVE: empties the library after you type the DB name
+                                          # (accounts, sessions, API tokens and the audit trail are never touched)
 ./bin/kukatko serve                       # runs migrations, then the HTTP server (default 0.0.0.0:8080)
 ./bin/kukatko serve --config config.yaml  # explicit path to the config
 ./bin/kukatko version                     # prints the version and commit

@@ -48,9 +48,15 @@ var (
 	ErrNotCached = errors.New("thumb: thumbnail not cached")
 )
 
+// CacheSubdir is the top-level directory that holds every cached thumbnail: a
+// subdirectory of the local cache root, and — on a publishing backend, where the
+// thumbnails are uploaded under the same relative path — the object-key prefix
+// that owns them in the bucket. It is exported so the operations that reason
+// about whole prefixes rather than single files (a library wipe) can name the one
+// this package owns instead of hardcoding the string.
+const CacheSubdir = "thumb"
+
 const (
-	// cacheSubdir is the top-level directory under the cache root for thumbs.
-	cacheSubdir = "thumb"
 	// thumbMIME is the media type of every cached thumbnail; the thumbnailer
 	// encodes nothing but JPEG. It is the type a publishing backend serves the
 	// uploaded object as.
@@ -417,7 +423,7 @@ func cacheRelPath(hash, size string) (string, error) {
 		return "", err
 	}
 	name := hash + "_" + size + ".jpg"
-	return path.Join(cacheSubdir, hash[0:shardLen], hash[shardLen:shardLen*2], hash[shardLen*2:shardLen*3], name), nil
+	return path.Join(CacheSubdir, hash[0:shardLen], hash[shardLen:shardLen*2], hash[shardLen*2:shardLen*3], name), nil
 }
 
 // validateHash reports whether hash is a lowercase hex string long enough to

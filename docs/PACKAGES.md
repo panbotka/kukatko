@@ -273,6 +273,14 @@ to `## Package map` in `CLAUDE.md`.
   stay zero-copy; `R2` downloads the object into `storage.temp_path` with the **extension preserved**
   (`imgconvert` dispatches RAW/video by it) and `cleanup` (idempotent via `sync.Once`) deletes it —
   even on the error path, where the partial file is deleted immediately.
+  **`KeyLister`** is an **optional** capability alongside `Storage`, satisfied by both backends
+  (`FS.Keys` walks the root and skips the `.tmp` staging dir; `R2.Keys` lists the bucket recursively via
+  minio-go's own paging and skips directory markers): `Keys(ctx, yield)` streams the key of **everything the
+  store holds**, including objects Kukátko never wrote, and returns a `yield` error untouched so a caller can
+  stop with its own sentinel. It is kept out of `Storage` on purpose — every consumer of `Storage` addresses
+  objects whose key it already has, and each of their test fakes would otherwise grow a method it never calls;
+  only the operations that reason about the store *as a whole* (reconciliation, `internal/reset`'s orphan sweep)
+  type-assert for it, and report plainly when a store cannot answer.
   **Signed URLs** (`sign.go`, `URLSigner`): `https://<media_base_url>/<key>?exp=<unix>&sig=<hex>`,
   where `sig = HMAC-SHA256(secret, key + "\n" + exp)` — the signature covers both the key and the expiry, and the key is
   signed **unescaped** (the UTF-8 name is percent-encoded only when the path is rendered).
@@ -342,6 +350,8 @@ to `## Package map` in `CLAUDE.md`.
   `Path(hash,size)`/`Open(hash,size)`;
   the package-level `RelPath(hash,size)` returns the same cache path relatively — it is also the **object key**
   of the thumbnail in the remote backend, which is why the layout is exported instead of derived a second time elsewhere;
+  `CacheSubdir` (`thumb`) exports the top of that layout for the operations that address the **whole prefix**
+  rather than one file (`internal/reset` sweeping the cache directory and the bucket prefix);
   **publishing to object store**: after a size is written to cache, `publishSize` uploads it with `Put` under
   `RelPath` to the backend that publishes URLs (`store.URL(rel) != ""`, i.e. R2) — on FS it is a no-op;
   if the upload fails, the local file is deleted, so the size counts as not generated and the next
@@ -1938,7 +1948,45 @@ to `## Package map` in `CLAUDE.md`.
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
   upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
-  import is selected without an importer), `internal/thumbjob/`
+  import is selected without an importer), `internal/reset/`
+  (**the guarded library wipe** — what `kukatko maintenance reset` runs and what phase 1 of
+  [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) had nothing to run before: it empties every catalogue table and
+  every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**
+  ([`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4), so the guards *are* the package and the truncation is the easy
+  part. **Two explicit table lists** in `tables.go` — `catalogueTables` (25, wiped) and `preservedTables` (6:
+  `users`/`sessions`/`api_tokens`/`announcements`/`audit_log`/`schema_migrations`, never touched), exported as
+  `CatalogueTables()`/`PreservedTables()`; an allowlist rather than "everything except", because a forgotten
+  entry in the first merely survives while a forgotten entry in an exclusion list would be **destroyed**.
+  `classifySchema` compares them with `pg_tables` and aborts on `ErrSchemaDrift` naming the offender, so a
+  migration that adds a table cannot silently leave part of the library behind. `Service` =
+  `New(Config{Pool,Target,Storage,Thumbs?,CacheDir?})` (panics on a nil Pool/Storage or an empty
+  `Target.Database`); **`Preflight(ctx,Options)`** (read-only) = the dry run: `verifyTarget` (reads
+  `current_database()` **from the server** and compares it with `TargetFromDSN(config.database.url)` →
+  `ErrTargetMismatch`; a DSN naming no database is refused too), the schema check, `Counts{Catalogue,Preserved}`
+  of `[]TableCount` (`Rows()`, `NonEmpty()`) and a `StoragePlan{Referenced,Stored,Foreign,Sweep}` of
+  `PrefixCounts{Originals,Thumbnails,Sidecars}`; **`Execute(ctx,Options,before)`** deletes, in this order —
+  `ErrNotExecuting` without `Options.Execute`, target re-verified, `Options.Confirm` must equal the target
+  database name (`ErrConfirmationMismatch`), the **store emptied before the catalogue** (the catalogue is where
+  the object keys come from), and only then `TRUNCATE … RESTART IDENTITY` (**no CASCADE**) plus
+  `audit.Write(ActionLibraryReset)` **in one transaction**, then a re-count → `Result{Before,After,Storage}`.
+  Any object that fails to delete skips the truncation and returns `ErrStorageIncomplete` — the catalogue is
+  the only remaining record of what those objects are, and the whole run is idempotent, so the answer is to fix
+  the store and repeat. `keys.go` owns the scope: `classifyKey` recognises exactly `YYYY/MM/<name>` (an anchored
+  regexp — the bucket root *is* the namespace, there is no Kukátko prefix), `thumb/` and `sidecars/`, and calls
+  everything else `kindForeign`, which is counted and **never** deleted; `catalogueFiles.objectKeys` expands each
+  catalogued path into its original + `sidecarexport.KeyFor` sidecar and each hash into `thumb.RelPath` × every
+  registered size (blind on purpose: probing first would cost a request per candidate); `deleteKeys` runs the
+  deletions through an `errgroup` bounded by `Options.Concurrency` (default 8), folding each outcome into
+  `StorageResult{Deleted,Missing,Skipped,Foreign,Failed,Failures,ThumbCacheCleared,ThumbCacheSwept}` with the
+  failure sample capped at 20 (`Touched()` reports whether the run got as far as doing anything);
+  `sweepKeys` is the opt-in `Options.OrphanSweep` path over `storage.KeyLister` (`ErrSweepUnsupported` when the
+  store cannot list) and **supersedes** the catalogue's candidates — it deletes what is actually there under the
+  owned prefixes, referenced or not, which is both the correct wipe and the cheaper one. The local thumbnail
+  cache goes too: `Thumbs.Remove(hash)` per catalogued hash, or the whole `<cache_path>/thumb` tree under a
+  sweep. `Options{Execute,Confirm,OrphanSweep,Concurrency,ActorUID,Operator}` — a CLI run has no session, so
+  `ActorUID` stays empty (a system action) and `Operator` carries `$USER@$HOSTNAME` into the entry's details
+  together with the target, the per-table row counts and the object counts. Deliberately **no HTTP surface**,
+  for the reason `restore db` has none: it pulls the tables out from under a running server), `internal/thumbjob/`
   (the worker handler of the `thumbnail` job — the **repair path** for maintenance: it regenerates a photo's derived
   data from the original, the **thumbnails** (`Thumbnailer.GenerateAll`, cached ones skipped) and the **pHash/dHash** (only when
   they are missing, `phash.Compute` over the decoded original), all behind the interfaces `PhotoStore`/`Thumbnailer`/

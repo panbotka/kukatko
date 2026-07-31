@@ -337,7 +337,10 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   retention purge** `POST /api/v1/maintenance/audit/purge` (`audit.Store.PurgeOlderThan`, a single
   `DELETE ... WHERE created_at < cutoff` over `idx_audit_log_created_at`, `older_than_days`), which
   deletes old records and **audits itself** (`audit.purge` with the cutoff and the count — the fresh purge record
-  survives, so deleting the trail stays traceable). Other mutation domains adopt the in-tx audit convention gradually.
+  survives, so deleting the trail stays traceable). The same reasoning makes `audit_log` one of the six tables the
+  **library wipe** (`kukatko maintenance reset`, `internal/reset`) must never truncate: it writes its own
+  `library.reset` entry **in the truncation's transaction**, so the record of the deletion is what survives it.
+  Other mutation domains adopt the in-tx audit convention gradually.
   **The edit payload** (`ChangeSet` in `internal/audit/changes.go`): the `details` of an edit action carries under
   the key `changes` a map `{"<field>":{"old":…,"new":…}}` **with only the changed fields** (old → new),
   so the log shows e.g. a caption change. It is used by photo PATCH (`photo.update` over HTTP and MCP),

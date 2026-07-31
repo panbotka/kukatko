@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -39,8 +41,11 @@ type FS struct {
 	tmpDir string
 }
 
-// compile-time assertion that *FS satisfies Storage.
-var _ Storage = (*FS)(nil)
+// compile-time assertions that *FS satisfies Storage and can enumerate its keys.
+var (
+	_ Storage   = (*FS)(nil)
+	_ KeyLister = (*FS)(nil)
+)
 
 // NewFS returns an FS rooted at root, creating the root and its temporary upload
 // directory if they do not yet exist. It returns a wrapped error if either
@@ -219,6 +224,50 @@ func (s *FS) Delete(_ context.Context, relPath string) error {
 		return fmt.Errorf("storage: deleting %s: %w", relPath, err)
 	}
 	return nil
+}
+
+// Keys walks the storage root and yields the relative key of every regular file
+// under it, skipping the in-progress upload directory (.tmp), whose contents are
+// not objects but half-written ones. See the KeyLister interface.
+func (s *FS) Keys(ctx context.Context, yield func(key string) error) error {
+	var yieldErr error
+	walkErr := filepath.WalkDir(s.root, s.keyWalker(ctx, yield, &yieldErr))
+	// A yield error is the caller's own and travels back untouched; a missing root
+	// is an empty store, not a failure.
+	switch {
+	case yieldErr != nil:
+		return yieldErr
+	case walkErr != nil && !errors.Is(walkErr, os.ErrNotExist):
+		return fmt.Errorf("storage: walking %s: %w", s.root, walkErr)
+	default:
+		return nil
+	}
+}
+
+// keyWalker returns the walk function Keys hands to filepath.WalkDir: it skips
+// the in-progress upload directory and everything that is not a regular file, and
+// yields the relative key of the rest. An error from yield is both returned (to
+// stop the walk) and recorded through yieldErr, so the caller can tell its own
+// error apart from a filesystem one.
+func (s *FS) keyWalker(ctx context.Context, yield func(key string) error, yieldErr *error) fs.WalkDirFunc {
+	return func(abs string, entry fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case ctx.Err() != nil:
+			return fmt.Errorf("storage: walking %s: %w", s.root, ctx.Err())
+		case entry.IsDir() && abs == s.tmpDir:
+			return filepath.SkipDir
+		case entry.IsDir() || !entry.Type().IsRegular():
+			return nil
+		}
+		rel, err := filepath.Rel(s.root, abs)
+		if err != nil {
+			return fmt.Errorf("storage: relativising %s: %w", abs, err)
+		}
+		*yieldErr = yield(filepath.ToSlash(rel))
+		return *yieldErr
+	}
 }
 
 // URL returns the empty string: originals under the storage root are not exposed

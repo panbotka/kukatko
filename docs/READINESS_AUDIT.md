@@ -183,7 +183,7 @@ already imported → roughly 104 GB to move; 29 % of the sample carries GPS):
 
 | Finding | Evidence | Effect on the import |
 | --- | --- | --- |
-| No wipe tooling exists | no `reset`/`truncate` in `cmd/kukatko` | plan phase 1 has nothing to run; a manual drop is unrepeatable and unguarded |
+| ~~No wipe tooling exists~~ — **resolved 2026-07-31** | `kukatko maintenance reset` (`internal/reset`), documented in [`OPERATIONS.md`](OPERATIONS.md#kukatko-maintenance-reset--the-guarded-library-wipe) | plan phase 1 now has a repeatable, guarded command: dry run by default, typed database name, target check, non-interactive refusal, storage deletion confined to Kukátko's own prefixes, audited in the truncation's transaction |
 | Geocoding has a rate limit but no budget | `maps.geocode_rate_per_sec: 5` (`config.go:884`), deferral in `internal/placesjob` | ~6 000 reverse geocodes spend mapy.com credits with no cap and no visibility |
 | One global worker slot | `KUKATKO_WORKER_COUNT=1`; `internal/worker` has a single shared concurrency (`worker.go:173,193,249`) | thumbnails, metadata, places and sidecars for 20 670 photos run one at a time on ARM, behind a limit that exists only to protect the GPU |
 

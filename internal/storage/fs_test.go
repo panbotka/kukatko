@@ -390,6 +390,93 @@ func TestFSURL_noDirectAddress(t *testing.T) {
 	}
 }
 
+// TestFSKeys_enumeratesEveryObject verifies Keys yields the slash-separated key
+// of every stored object, whatever prefix it sits under, and never yields the
+// in-progress upload directory whose contents are not objects yet.
+func TestFSKeys_enumeratesEveryObject(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+
+	want := []string{
+		"2024/05/a.jpg",
+		"README.md",
+		"sidecars/2024/05/a.jpg.yml",
+		"thumb/aa/bb/cc/aabbcc_tile_500.jpg",
+	}
+	for _, key := range want {
+		writeFileAt(t, filepath.Join(fs.root, filepath.FromSlash(key)), "content")
+	}
+	writeFileAt(t, filepath.Join(fs.tmpDir, "half-written"), "staged")
+
+	got := keysOf(t, fs)
+	if !slices.Equal(got, want) {
+		t.Errorf("Keys() = %v, want %v", got, want)
+	}
+}
+
+// TestFSKeys_stopsOnYieldError verifies the caller's own error ends the walk and
+// travels back untouched, so a consumer can stop enumerating with a sentinel.
+func TestFSKeys_stopsOnYieldError(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+
+	for _, key := range []string{"2024/05/a.jpg", "2024/05/b.jpg", "2024/05/c.jpg"} {
+		writeFileAt(t, filepath.Join(fs.root, filepath.FromSlash(key)), "content")
+	}
+	sentinel := errors.New("enough")
+	var seen int
+	err := fs.Keys(t.Context(), func(string) error {
+		seen++
+		return sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Errorf("Keys() = %v, want the yield's own error", err)
+	}
+	if seen != 1 {
+		t.Errorf("yield called %d time(s) after returning an error, want 1", seen)
+	}
+}
+
+// TestFSKeys_missingRootIsEmpty verifies a store whose root has been removed
+// enumerates as empty rather than failing: an empty store and a store that is not
+// there are the same thing to a caller asking what it holds.
+func TestFSKeys_missingRootIsEmpty(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+
+	if err := os.RemoveAll(fs.root); err != nil {
+		t.Fatalf("removing the root: %v", err)
+	}
+	if got := keysOf(t, fs); len(got) != 0 {
+		t.Errorf("Keys() = %v, want none", got)
+	}
+}
+
+// keysOf collects every key the store holds, sorted.
+func keysOf(t *testing.T, fs *FS) []string {
+	t.Helper()
+	var keys []string
+	if err := fs.Keys(t.Context(), func(key string) error {
+		keys = append(keys, key)
+		return nil
+	}); err != nil {
+		t.Fatalf("Keys: %v", err)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// writeFileAt writes content at abs, creating its parent directories.
+func writeFileAt(t *testing.T, abs, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(abs), err)
+	}
+	if err := os.WriteFile(abs, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", abs, err)
+	}
+}
+
 // treeOf returns every file path under root, sorted, so a test can assert that an
 // operation created or removed nothing.
 func treeOf(t *testing.T, root string) []string {

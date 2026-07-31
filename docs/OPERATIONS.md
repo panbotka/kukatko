@@ -68,7 +68,10 @@ configuration key both here **and** into `config.example.yaml`.
   [`docs/RESTORE.md`](RESTORE.md),
   **`kukatko maintenance`** (library integrity check & repair — `internal/maintenance`; for
   ops/cron without a running server, applies migrations and builds a service shared with the admin API):
-  `maintenance scan` (read-only integrity report — disk↔DB drift + missing derived data) and
+  `maintenance scan` (read-only integrity report — disk↔DB drift + missing derived data),
+  **`maintenance reset`** (the **guarded library wipe** — `internal/reset`; dry run by default, `--execute` +
+  a typed database name to delete, `--force` for a non-interactive run, `--orphan-sweep` for the leftovers the
+  catalogue never referenced; accounts/announcement/audit trail/migrations are never touched; see below) and
   `maintenance repair` with the flags `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline; a no-op without any flag;
@@ -243,6 +246,71 @@ kukatko import verify --json     # the full importverify.Report as JSON
 The same reconciliation is exposed over HTTP at `GET /api/v1/import/verify` (maintainer-only) and surfaced in
 the `/import` admin page's completeness-check section. The individual per-photo/per-file failures a run records
 (instead of only logging them) are persisted in `import_failures` and listed at `GET /api/v1/import/failures`.
+
+### `kukatko maintenance reset` — the guarded library wipe
+
+Empties this instance's library — every catalogue table and every object the configured store owns — so it can
+be re-imported from scratch (`internal/reset`). It is **phase 1 of [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md)**
+and the only command in the binary that destroys the library on purpose. This deployment has **no S3 backup**
+([`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4), so the only way back from a misfire is a re-import from
+PhotoPrism: the guards below are the feature, not decoration.
+
+**What it deletes.** The 25 catalogue tables — `photos`, `photo_files`, `albums`, `album_photos`, `labels`,
+`photo_labels`, `subjects`, `markers`, `faces`, `face_clusters`, `face_detections`, `face_confirmations`,
+`embeddings`, `photo_phashes`, `photo_places`, `photo_edits`, `import_runs`, `import_failures`, `jobs`, the
+per-user curation (`user_favorites`, `user_ratings`, `saved_searches`) and the rejection/dismissal tables
+(`face_rejections`, `label_rejections`, `duplicate_dismissals`) — in **one** `TRUNCATE … RESTART IDENTITY`
+(no `CASCADE`: every FK between them is inside the list, so a future table that references one of them and was
+not classified makes Postgres refuse the statement instead of silently widening the blast radius). In the store
+it deletes the `YYYY/MM` originals, the `thumb/` thumbnails and the `sidecars/` metadata, plus the local
+thumbnail cache under `storage.cache_path`.
+
+Emptying `import_runs` is load-bearing rather than incidental: the incremental import's **high-watermark**
+lives there (`internal/importer`), so wiping it is what makes phase 2 re-import the whole source library
+instead of only what changed since the last run.
+
+**What it never touches.** `users`, `sessions`, `api_tokens`, `announcements`, `audit_log` and
+`schema_migrations` — a wipe must not lock you out of the instance you just wiped nor erase the record of the
+wipe. And it has no client of PhotoPrism or photo-sorter: they are read-only sources and the rollback.
+
+**The guards** (all on by default):
+
+| Guard | Behaviour |
+| --- | --- |
+| Dry run is the default | Without `--execute` it prints a row count per table and an object count per prefix, and deletes nothing. |
+| Typed confirmation | You must type the target database's name (not `y/N`); a mismatch → `ErrConfirmationMismatch` and nothing is deleted. `--confirm-database <name>` supplies it without a prompt. |
+| Target check | `current_database()` is read **from the server** and compared with the database in the loaded config; a mismatch → `ErrTargetMismatch`. Host + database are printed before you are asked. |
+| Non-interactive refusal | Stdin that is not a terminal (a script, cron, an agent — `/dev/null` included, which is why the check is a terminal ioctl and not "is a character device") is refused unless `--force` is passed too. Checked **before** the config is loaded, so a stray invocation opens nothing. |
+| Storage scope | Only the three prefixes the store owns are ever deleted; anything else in the bucket is counted as `foreign` and left alone. A key the catalogue does not reference is deleted only with `--orphan-sweep`. There is no delete-everything path. |
+| Audit | One `library.reset` entry (`internal/audit`), written **in the same transaction as the truncation**, recording the operator (`$USER@$HOSTNAME`), the target database, the per-table row counts removed and the object counts. |
+| Before/after summary | Both snapshots are printed, and a catalogue table that somehow survived is flagged with `WARNING`. |
+| Schema drift | A table in `public` that the command classifies as neither wiped nor preserved (or a classified table that is missing) aborts the run with `ErrSchemaDrift`, naming it. Adding a table to a migration therefore cannot silently leave part of the library behind — the fix is one line in `internal/reset/tables.go`. |
+
+```bash
+kukatko maintenance reset                       # dry run: what would be deleted (default; changes nothing)
+kukatko maintenance reset --execute             # asks you to type the database name, then wipes
+kukatko maintenance reset --execute --orphan-sweep   # also deletes leftovers the catalogue never referenced
+kukatko maintenance reset --execute --force \
+    --confirm-database kukatko --orphan-sweep   # non-interactive (a script/agent must say both)
+```
+
+**Stop the server first.** The wipe empties the job queue and the catalogue the running instance is serving; a
+worker mid-job would keep writing rows into a library that no longer exists.
+
+**Use `--orphan-sweep` for the cutover wipe.** Without it the catalogue is the list of what may be deleted,
+which leaves behind whatever an earlier interrupted import put in the bucket. On an object store the sweep is
+also the *faster* path: it deletes the objects that are actually there (one `LIST` + one `DELETE` each) instead
+of probing for the eight thumbnail keys every photo might have.
+
+It **does not apply migrations** — unlike `maintenance scan`/`repair`, a command whose job is to delete has no
+business changing the schema on the way in. A database behind (or ahead of) its migrations therefore aborts on
+the schema-drift guard, naming the tables involved; run `kukatko migrate` first.
+
+The run is **idempotent and resumable**: the store is emptied before the catalogue (the catalogue is where the
+object keys come from), and if any object fails to delete the truncation is skipped and the command exits
+nonzero with `ErrStorageIncomplete` — the catalogue still describes the store, so the fix is to make the store
+reachable and run it again. It is deliberately **not exposed over HTTP**, for the same reason `restore db` is
+not: it pulls the tables out from under a running server.
 
 ### `kukatko ctl` — remote API client
 
