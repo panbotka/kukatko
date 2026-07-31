@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -59,9 +60,17 @@ func (e *RetryAfterError) Unwrap() error {
 }
 
 const (
-	// defaultConcurrency is the number of worker goroutines when Config.Concurrency
-	// is not positive.
+	// defaultConcurrency is the size of the shared pool when Config.Concurrency is
+	// not positive.
 	defaultConcurrency = 2
+	// defaultSidecarBoundConcurrency is how many jobs of a sidecar-bound type run
+	// at once when the configuration does not name that type explicitly. It is 1
+	// on purpose: the embeddings sidecar on the GPU box serves one request at a
+	// time, and a safe default must not depend on anyone remembering to cap it.
+	defaultSidecarBoundConcurrency = 1
+	// sharedPoolName labels the pool that drains every job type without a
+	// per-type override; it appears in worker ids and in the startup log.
+	sharedPoolName = "shared"
 	// defaultPollInterval is how long an idle worker waits before polling Claim
 	// again when the queue is empty.
 	defaultPollInterval = 2 * time.Second
@@ -83,6 +92,14 @@ const (
 	// UPDATEs.
 	minHeartbeatInterval = 100 * time.Millisecond
 )
+
+// sidecarBoundTypes are the job types whose handler talks to the embeddings
+// sidecar on the GPU box. They are the reason a single global worker slot ever
+// existed: the sidecar is a scarce, remote, one-request-at-a-time resource,
+// while every other job type is local CPU work that has no business queueing
+// behind it. Each of these types gets its own pool, capped at
+// defaultSidecarBoundConcurrency unless Config.TypeConcurrency raises it.
+var sidecarBoundTypes = []string{jobs.TypeImageEmbed, jobs.TypeFaceDetect}
 
 // Job outcome label values reported to the Observer.
 const (
@@ -146,9 +163,18 @@ type Config struct {
 	Queue Queue
 	// Registry resolves a job type to its handler.
 	Registry *Registry
-	// Concurrency is the number of jobs processed in parallel. <= 0 uses
+	// Concurrency is the number of jobs processed in parallel by the shared pool,
+	// which drains every job type without a TypeConcurrency entry. <= 0 uses
 	// defaultConcurrency.
 	Concurrency int
+	// TypeConcurrency overrides the parallelism of individual job types. A type
+	// named here is drained by its own dedicated pool of that many goroutines and
+	// no longer competes for the shared pool's slots, so CPU-bound work cannot be
+	// held up by a scarce remote dependency (and vice versa). Entries <= 0 are
+	// ignored. The sidecar-bound types (image_embed, face_detect) are capped at
+	// defaultSidecarBoundConcurrency even when absent from the map — running
+	// several of them against the GPU box has to be an explicit decision.
+	TypeConcurrency map[string]int
 	// PollInterval is the idle delay between empty Claim attempts. <= 0 uses
 	// defaultPollInterval.
 	PollInterval time.Duration
@@ -165,12 +191,13 @@ type Config struct {
 	Metrics Observer
 }
 
-// Worker polls the queue with bounded concurrency and dispatches claimed jobs to
-// registered handlers until its Run context is cancelled.
+// Worker polls the queue with bounded, per-job-type concurrency and dispatches
+// claimed jobs to registered handlers until its Run context is cancelled.
 type Worker struct {
 	queue             Queue
 	registry          *Registry
 	concurrency       int
+	typeConcurrency   map[string]int
 	pollInterval      time.Duration
 	staleAfter        time.Duration
 	staleScanInterval time.Duration
@@ -191,12 +218,70 @@ func New(cfg Config) *Worker {
 		queue:             cfg.Queue,
 		registry:          cfg.Registry,
 		concurrency:       orDefaultInt(cfg.Concurrency, defaultConcurrency),
+		typeConcurrency:   effectiveTypeConcurrency(cfg.TypeConcurrency),
 		pollInterval:      orDefaultDuration(cfg.PollInterval, defaultPollInterval),
 		staleAfter:        orDefaultDuration(cfg.StaleAfter, defaultStaleAfter),
 		staleScanInterval: orDefaultDuration(cfg.StaleScanInterval, defaultStaleScanInterval),
 		idPrefix:          orDefaultPrefix(cfg.IDPrefix),
 		metrics:           orDefaultObserver(cfg.Metrics),
 	}
+}
+
+// effectiveTypeConcurrency merges the configured per-type overrides over the
+// built-in caps, returning the parallelism of every job type that gets its own
+// pool. The sidecar-bound types start at defaultSidecarBoundConcurrency, so
+// omitting them from configured — or replacing the map wholesale with a YAML
+// block that only mentions thumbnails — still leaves the GPU box serialised;
+// only naming one of them explicitly can raise it. Entries <= 0 are ignored, so
+// a zero left over from an unset config field never disables a pool.
+func effectiveTypeConcurrency(configured map[string]int) map[string]int {
+	limits := make(map[string]int, len(sidecarBoundTypes)+len(configured))
+	for _, jobType := range sidecarBoundTypes {
+		limits[jobType] = defaultSidecarBoundConcurrency
+	}
+	for jobType, n := range configured {
+		if jobType != "" && n > 0 {
+			limits[jobType] = n
+		}
+	}
+	return limits
+}
+
+// pool is one group of worker goroutines that claims a fixed set of job types.
+// Restricting the Claim call is what bounds a type's parallelism: a type is
+// drained by exactly one pool, so that pool's size is its concurrency limit.
+type pool struct {
+	// name identifies the pool in worker ids and the startup log.
+	name string
+	// types are the job types this pool may claim, sorted for determinism.
+	types []string
+	// size is the number of goroutines draining types.
+	size int
+}
+
+// pools splits the registered job types into the pools Run will start: one
+// dedicated pool per type with an entry in typeConcurrency, and one shared pool
+// of size concurrency for everything else. Types with no registered handler are
+// left out entirely — claiming a job nobody can run would only fail it — and
+// when nothing is left for the shared pool it is omitted rather than started
+// with an empty type list, which the queue would read as "claim anything".
+// The result is deterministic: registry order is unspecified, so it is sorted.
+func (w *Worker) pools() []pool {
+	registered := w.registry.Types()
+	slices.Sort(registered)
+	pools := make([]pool, 0, len(registered)+1)
+	shared := make([]string, 0, len(registered))
+	for _, jobType := range registered {
+		if size, ok := w.typeConcurrency[jobType]; ok {
+			pools = append(pools, pool{name: jobType, types: []string{jobType}, size: size})
+			continue
+		}
+		shared = append(shared, jobType)
+	}
+	if len(shared) > 0 {
+		pools = append(pools, pool{name: sharedPoolName, types: shared, size: w.concurrency})
+	}
+	return pools
 }
 
 // orDefaultObserver returns obs when non-nil, otherwise a no-op Observer so the
@@ -237,30 +322,34 @@ func orDefaultPrefix(prefix string) string {
 	return host + "-" + strconv.Itoa(os.Getpid())
 }
 
-// Run starts the worker goroutines plus the stale-lock recovery loop and blocks
-// until ctx is cancelled (for example on SIGINT/SIGTERM), then returns once every
-// goroutine has stopped. New jobs are not claimed after cancellation; a job in
-// flight when shutdown begins keeps its lock heartbeated until its handler
-// returns, and is then either recorded (a success or a deferral) or abandoned to
-// the queue's stale-lock recovery (a genuine error). Run always returns nil: a
-// cancelled context is a normal, graceful stop, not an error.
+// Run starts the worker goroutines of every pool plus the stale-lock recovery
+// loop and blocks until ctx is cancelled (for example on SIGINT/SIGTERM), then
+// returns once every goroutine has stopped. New jobs are not claimed after
+// cancellation; a job in flight when shutdown begins keeps its lock heartbeated
+// until its handler returns, and is then either recorded (a success or a
+// deferral) or abandoned to the queue's stale-lock recovery (a genuine error).
+// Run always returns nil: a cancelled context is a normal, graceful stop, not an
+// error.
 func (w *Worker) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
-	for i := range w.concurrency {
-		workerID := w.idPrefix + "-" + strconv.Itoa(i)
-		wg.Go(func() { w.loop(ctx, workerID) })
+	for _, p := range w.pools() {
+		log.Printf("worker: pool %q draining %v with %d slot(s)", p.name, p.types, p.size)
+		for i := range p.size {
+			workerID := w.idPrefix + "-" + p.name + "-" + strconv.Itoa(i)
+			wg.Go(func() { w.loop(ctx, workerID, p.types) })
+		}
 	}
 	wg.Go(func() { w.recoverLoop(ctx) })
 	wg.Wait()
 	return nil
 }
 
-// loop is one worker goroutine: it claims and processes jobs until ctx is
-// cancelled, backing off for pollInterval whenever the queue is empty or a claim
-// transiently fails.
-func (w *Worker) loop(ctx context.Context, workerID string) {
+// loop is one worker goroutine of a pool: it claims and processes jobs of the
+// pool's types until ctx is cancelled, backing off for pollInterval whenever the
+// queue holds none of them or a claim transiently fails.
+func (w *Worker) loop(ctx context.Context, workerID string, types []string) {
 	for ctx.Err() == nil {
-		job, err := w.queue.Claim(ctx, workerID, w.registry.Types()...)
+		job, err := w.queue.Claim(ctx, workerID, types...)
 		switch {
 		case errors.Is(err, jobs.ErrNoJobs):
 			if !sleep(ctx, w.pollInterval) {

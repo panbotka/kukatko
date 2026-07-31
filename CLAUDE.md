@@ -143,7 +143,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/video` — shell-out to ffprobe/ffmpeg: metadata, poster frame, on-the-fly transcode
 - `internal/wake` — optional Wake-on-LAN auto-wake of the box (**default off**, fully inert)
 - `internal/web` — SPA fallback handler + `//go:embed` embedded frontend
-- `internal/worker` — in-process worker runtime over the job queue (claim/dispatch/complete)
+- `internal/worker` — in-process worker runtime over the job queue (claim/dispatch/complete), per-job-type pools
 
 ## Hard quality gate (DO NOT SKIP)
 - **`make check` MUST pass.** It is the project's verification command — red lint/tests = the task

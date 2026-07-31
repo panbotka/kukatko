@@ -677,9 +677,17 @@ to `## Package map` in `CLAUDE.md`.
   (the in-process background worker runtime, **the main queue execution loop**: `Registry` =
   `NewRegistry()`+`Register(type, HandlerFunc)`+`Handler`/`Types` (panics on an empty type/nil
   handler/duplicate registration); `HandlerFunc` = `func(ctx, jobs.Job) error`; `Worker` =
-  `New(Config{Queue,Registry,Concurrency,PollInterval,StaleAfter,StaleScanInterval,IDPrefix})`
-  with `Run(ctx)` — starts `Concurrency` goroutines polling `Claim` (filtered to the registered
-  `Types`), dispatches to the handler by `job.Type`, `Complete`/`Fail` by the result **under the
+  `New(Config{Queue,Registry,Concurrency,TypeConcurrency,PollInterval,StaleAfter,StaleScanInterval,
+  IDPrefix})` with `Run(ctx)` — splits the registered `Types` into **pools** (`pools()`): one dedicated
+  pool per type named in `TypeConcurrency`, plus a **shared** pool of `Concurrency` goroutines for
+  everything else; each pool polls `Claim` filtered to **its own** types, so a type's pool size *is* its
+  concurrency limit. `effectiveTypeConcurrency` overlays the config on the built-in caps, and
+  **`sidecarBoundTypes` (`image_embed`, `face_detect`) default to one slot each** — the embeddings box
+  serves one request at a time, so CPU-bound work must not queue behind it and raising them must be
+  explicit (config maps replace rather than merge, so the cap cannot be lost by omission). A type with no
+  handler gets no pool, and an empty shared pool is not started at all (a type-less `Claim` would mean
+  "claim anything"). Worker ids are `<IDPrefix>-<pool>-<i>`, unique across pools. It
+  dispatches to the handler by `job.Type`, `Complete`/`Fail` by the result **under the
   claiming worker's id** via a **shutdown-immune** bookkeeping context (`context.WithoutCancel`) — a
   `jobs.ErrLockLost` there means the job was reclaimed, so the result is dropped, not written — plus a
   stale-lock recovery ticker; while a handler runs, a **heartbeat goroutine** refreshes the lock every

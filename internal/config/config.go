@@ -682,9 +682,17 @@ type UploadConfig struct {
 
 // WorkerConfig tunes the in-process background worker that drains the job queue.
 type WorkerConfig struct {
-	// Count is the number of jobs processed in parallel. <= 0 uses the worker's
+	// Count is the number of jobs processed in parallel by the shared pool, which
+	// drains every job type without a TypeCount entry. <= 0 uses the worker's
 	// built-in default.
 	Count int `mapstructure:"count"`
+	// TypeCount overrides Count for individual job types, keyed by job type
+	// ("image_embed", "thumbnail", …). A type named here gets its own pool of
+	// that many slots and stops competing with the shared pool, so local CPU work
+	// is not serialised behind a scarce remote dependency. Entries <= 0 are
+	// ignored. image_embed and face_detect stay capped at one slot even when this
+	// map does not mention them — see internal/worker.
+	TypeCount map[string]int `mapstructure:"type_count"`
 	// PollInterval is how long an idle worker waits before polling the queue
 	// again when it is empty.
 	PollInterval time.Duration `mapstructure:"poll_interval"`
@@ -955,6 +963,20 @@ func setMCPDefaults(v *viper.Viper) {
 	v.SetDefault("mcp.max_page_size", 100)
 }
 
+// setWorkerDefaults registers the background worker's defaults: the shared pool
+// size, the per-job-type overrides and the polling/stale-lock timings. The
+// sidecar-bound job types get one slot each because the embeddings box serves a
+// single request at a time; they are listed rather than left implicit so the cap
+// shows up in the effective configuration, but internal/worker enforces it
+// regardless — a YAML block replaces this map instead of merging into it.
+func setWorkerDefaults(v *viper.Viper) {
+	v.SetDefault("worker.count", 2)
+	v.SetDefault("worker.type_count", map[string]int{"image_embed": 1, "face_detect": 1})
+	v.SetDefault("worker.poll_interval", "2s")
+	v.SetDefault("worker.stale_after", "5m")
+	v.SetDefault("worker.stale_scan_interval", "1m")
+}
+
 // setOpsDefaults registers defaults for the backup, trash, duplicate, upload and
 // worker subsystems. It is split out of setDefaults to keep each function focused
 // and within the length budget.
@@ -993,10 +1015,7 @@ func setOpsDefaults(v *viper.Viper) {
 
 	v.SetDefault("video.transcode", false) // on-the-fly HEVC→H.264 transcode is opt-in
 
-	v.SetDefault("worker.count", 2)
-	v.SetDefault("worker.poll_interval", "2s")
-	v.SetDefault("worker.stale_after", "5m")
-	v.SetDefault("worker.stale_scan_interval", "1m")
+	setWorkerDefaults(v)
 
 	v.SetDefault("bulk.max_batch_size", 1000)
 
