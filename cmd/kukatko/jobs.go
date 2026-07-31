@@ -74,6 +74,7 @@ func buildJobs(
 		Queue:             store,
 		Registry:          registry,
 		Concurrency:       cfg.Worker.Count,
+		TypeConcurrency:   cfg.Worker.TypeCount,
 		PollInterval:      cfg.Worker.PollInterval,
 		StaleAfter:        cfg.Worker.StaleAfter,
 		StaleScanInterval: cfg.Worker.StaleScanInterval,

@@ -622,6 +622,25 @@ long-running and belong on the machine where the instance runs — so they remai
   in the browser. Off = video is streamed as-is (with HTTP Range) and the client offers a download when the
   browser cannot decode it. Transcode is CPU-heavy, runs on every playback (not cached), and a
   transcoded stream cannot be seeked precisely — hence opt-in. `KUKATKO_VIDEO_TRANSCODE`.
+- **Worker keys (`worker.*`, `internal/config` + `internal/worker`):** the in-process background
+  worker that drains the job queue inside `kukatko serve`. `count` (**default 2**) sizes the **shared
+  pool** — the goroutines that drain every job type *without* a `type_count` entry (`thumbnail`,
+  `metadata`, `places`, `sidecar`, `pp_import`, …). All of that is local CPU/IO work, so size it by the
+  host's cores. `type_count` is a **map of job type → slots**: a type named there gets its **own
+  dedicated pool** of that many goroutines and stops competing for the shared pool's slots. That split
+  is the whole point — **`image_embed`/`face_detect` call the embeddings sidecar on the GPU box, which
+  serves one request at a time**, and before per-type pools existed the single global slot that
+  protected it also serialised every thumbnail on the box. They stay at **one slot each even when
+  `type_count` does not mention them** (a YAML map *replaces* the default, it does not merge into it),
+  so running several against the box is only ever an explicit entry; values ≤ 0 are ignored and a type
+  with no registered handler gets no pool at all. `serve` logs the resulting layout at startup
+  (`worker: pool "shared" draining [...] with N slot(s)`) — that line is how you confirm an override
+  took effect. Also `poll_interval` (**default 2s**, the idle delay between empty claims — every pool
+  polls, so more pools means proportionally more idle queries), `stale_after` (**default 5m**, the lock
+  age past which a running job is presumed abandoned and requeued) and `stale_scan_interval`
+  (**default 1m**). Env: `KUKATKO_WORKER_COUNT`, `_POLL_INTERVAL`, `_STALE_AFTER`,
+  `_STALE_SCAN_INTERVAL`; `type_count` is a map, so it is set in YAML only (the safe defaults mean an
+  env-only deployment never needs it).
 - **Wake-on-LAN keys (`embedding.wake.*`, `internal/wake`):** `enabled` (bool, **default false** —
   the feature is fully inert), `mac` (the box's MAC, **required and parsed during validation** when enabled),
   `broadcast_addr` (the UDP broadcast target, default `255.255.255.255:9`), `interface` (the NIC for the raw

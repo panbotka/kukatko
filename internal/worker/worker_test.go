@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -42,16 +43,21 @@ func newFakeQueue(pending ...jobs.Job) *fakeQueue {
 	}
 }
 
-// Claim pops and returns the next pending job, or jobs.ErrNoJobs when empty.
-func (q *fakeQueue) Claim(_ context.Context, _ string, _ ...string) (jobs.Job, error) {
+// Claim pops and returns the first pending job whose type is among types (any
+// type when types is empty, matching jobs.Store), or jobs.ErrNoJobs when the
+// queue holds none. Honouring the filter is what lets a test observe the
+// per-type pools: each pool claims only its own types.
+func (q *fakeQueue) Claim(_ context.Context, _ string, types ...string) (jobs.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if len(q.pending) == 0 {
-		return jobs.Job{}, jobs.ErrNoJobs
+	for i, job := range q.pending {
+		if len(types) != 0 && !slices.Contains(types, job.Type) {
+			continue
+		}
+		q.pending = slices.Delete(q.pending, i, i+1)
+		return job, nil
 	}
-	job := q.pending[0]
-	q.pending = q.pending[1:]
-	return job, nil
+	return jobs.Job{}, jobs.ErrNoJobs
 }
 
 // Complete records id as completed under workerID, or reports jobs.ErrLockLost

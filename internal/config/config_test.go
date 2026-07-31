@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,6 +138,40 @@ func TestLoad_defaults(t *testing.T) {
 		if c.got != c.want {
 			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
 		}
+	}
+	// A map does not belong in the comparable table above. This one is worth
+	// pinning anyway: the sidecar-bound job types must be serialised out of the
+	// box, because they hit the single-request-at-a-time embeddings box.
+	wantTypes := map[string]int{"image_embed": 1, "face_detect": 1}
+	if !maps.Equal(cfg.Worker.TypeCount, wantTypes) {
+		t.Errorf("worker.type_count = %v, want %v", cfg.Worker.TypeCount, wantTypes)
+	}
+}
+
+// TestLoad_workerTypeCountFromYAML verifies a per-job-type worker override is
+// read from the config file. A YAML block replaces the default map rather than
+// merging into it, so the sidecar-bound caps are re-applied by internal/worker,
+// not by this key — see TestEffectiveTypeConcurrency there.
+func TestLoad_workerTypeCountFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	yaml := "database:\n  url: postgres://localhost/db\n" +
+		"worker:\n  count: 6\n  type_count:\n    thumbnail: 4\n    image_embed: 2\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.Worker.Count != 6 {
+		t.Errorf("worker.count = %d, want 6", cfg.Worker.Count)
+	}
+	want := map[string]int{"thumbnail": 4, "image_embed": 2}
+	if !maps.Equal(cfg.Worker.TypeCount, want) {
+		t.Errorf("worker.type_count = %v, want %v", cfg.Worker.TypeCount, want)
 	}
 }
 

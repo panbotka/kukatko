@@ -510,8 +510,21 @@ video:
 
 # Background worker that drains the persistent job queue inside `kukatko serve`.
 worker:
-  # Number of jobs processed in parallel. 0 uses the built-in default.
+  # Number of jobs processed in parallel by the shared pool, which drains every
+  # job type without a type_count entry below (thumbnail, metadata, places,
+  # sidecar, the imports). All of it is local CPU/IO work, so size it by the
+  # host's cores. 0 uses the built-in default.
   count: 2
+  # Per-job-type concurrency. A type named here gets its own pool of that many
+  # slots and stops competing for the `count` pool, so a scarce remote
+  # dependency never serialises local work. Values <= 0 are ignored.
+  # image_embed and face_detect call the embeddings sidecar on the GPU box,
+  # which serves one request at a time; they stay at one slot each even if this
+  # block is replaced (a YAML map replaces the default, it does not merge), so
+  # raising them has to be an explicit, deliberate entry.
+  type_count:
+    image_embed: 1
+    face_detect: 1
   # How long an idle worker waits before polling the queue again when empty.
   poll_interval: 2s
   # Lock age past which a running job is presumed abandoned (its worker died)
