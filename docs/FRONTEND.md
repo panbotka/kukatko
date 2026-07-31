@@ -730,7 +730,11 @@ here.
   (`/import`) and the maintenance check (`/maintenance`); **box offline** + pending embeddings → a highlighted
   message „doženou se po návratu"; **the Mapy card** (`MapsCard` over `status.maps`) shows the latest
   mapy.com status — `key_rejected` in red + what to do about it (swap the key in the mapy.com console), degradation
-  in yellow, without a key „Nenastaveno"; the job queue card carries the shared `JobStateLegend`
+  in yellow, without a key „Nenastaveno" — and beneath it the **geocode credit line** (`GeocodeCredits` over
+  `status.geocode`, the same metered mapy.com account): `spent / limit` for the current budget window plus when
+  it refills, the numbers in yellow and the label switched to „Rozpočet vyčerpán, obnoví se" once nothing is
+  left (the queued `places` jobs then wait for that instant instead of failing); it renders nothing when
+  `budget_enabled` is false, i.e. no cap is configured; the job queue card carries the shared `JobStateLegend`
   (total/queued/running/failed/**dead**/**pending** = „Čeká na box") with a plain-language explanation of
   each state (`jobStates.*` + `system.jobs.intro`); it also carries **the Oznámení card** (`AnnouncementCard`,
   gated `isMaintainer`) — a textarea + a level `<select>` (info/warning) + **Zveřejnit**/**Zrušit oznámení**
@@ -2075,7 +2079,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   an error, not zeroes), `triggerBackup(signal)` over `POST /api/v1/backup` (409/503 → ApiError),
   `requeueDeadLetterJobs(signal)` (it lists `GET /jobs?state=dead` → a per-job `POST /jobs/{id}/requeue`,
   returns the count, 404/409 skip); the types `SystemStatus`/`LibraryStats`/`DatabaseStatus`/`EmbeddingsStatus`/`JobsStatus`/
-  `BackupStatus`/`ImportsStatus`/`StorageStatus`/`MapsStatus`/`MapsState`/`VersionInfo`; it shares
+  `BackupStatus`/`ImportsStatus`/`StorageStatus`/`MapsStatus`/`MapsState`/`GeocodeStatus`/`VersionInfo`; it shares
   `ApiError` from `auth.ts` and `ImportRun` from `import.ts`,
   `users.ts` = the admin account-management client over `/api/v1/admin/users`: `fetchUsers(signal)` → `AdminUser[]`
   (= `User` + `note`), `createUser(body,signal)` (`POST`, 409 = the username is taken, 400 = a weak password /

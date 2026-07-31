@@ -759,10 +759,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,total,dead_letter,
   pending_embeddings},backup (=backup.Status),imports{photoprism,photosorter (=importer.Run|null)},
   storage{originals_bytes,cache_bytes,free_bytes,total_bytes},
-  maps{configured,state,degraded,detail?,checked_at?}}`. `maps` = the last observed mapy.com state
+  maps{configured,state,degraded,detail?,checked_at?},
+  geocode{configured,budget_enabled,limit,spent,remaining,window_seconds,resets_at?}}`. `maps` = the last observed mapy.com state
   from the proxy (`mapy.Health`, no probe of its own): `state` ∈ `unknown|ok|key_rejected|rate_limited|
   unavailable|error`, `degraded=true` for all except `ok`/`unknown` — **a rejected key (403) is
-  visible here**, not only as a grey map; `detail` is sanitized (never the key).
+  visible here**, not only as a grey map; `detail` is sanitized (never the key). `geocode` = the
+  **reverse-geocode credit budget** (`placesjob.WindowBudget`): how many of the `limit` geocodes the current
+  window has `spent` and when it `resets_at`, so a running import's metered mapy.com spend is visible while
+  it happens instead of being reconstructed from the bill; `configured:false` = no mapy.com key (nothing
+  geocodes), `budget_enabled:false` = the cap is off (`maps.geocode_budget ≤ 0`), leaving only the
+  per-second limiter. The same numbers are exported as `kukatko_geocode_credits_spent_total` (counter) and
+  `kukatko_geocode_credits_remaining`/`_limit` (gauges).
   A merge of existing subsystems
   (embeddings health, the job queue, backup status, the last import per source via
   `importer.Store.LatestRun`, disk usage, a DB ping); storage is memoized for 30 s. Collect fails (the DB

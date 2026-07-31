@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/obs"
+	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/reachability"
 	"github.com/panbotka/kukatko/internal/server"
@@ -88,14 +89,18 @@ func runServe(cmd *cobra.Command) error {
 
 	// One tracker shared by the maps proxy (which records every upstream outcome)
 	// and the system status (which reports it), so a rejected mapy.com key is
-	// visible on the admin dashboard and not only as a grey map.
+	// visible on the admin dashboard and not only as a grey map. The geocode
+	// credit budget is shared the same way: the places job spends against it, the
+	// status and /metrics report what is left.
 	mapsHealth := newMapsHealth(cfg)
+	geocodeBudget := newGeocodeBudget(cfg)
+	geocodeBudgetMetrics(reg, geocodeBudget)
 
-	apis, bg, err := buildServices(cfg, db, authAPI, reg, mapsHealth)
+	apis, bg, err := buildServices(cfg, db, authAPI, reg, mapsHealth, geocodeBudget)
 	if err != nil {
 		return err
 	}
-	apis, backupSvc, reachChecker, err := appendOpsAPIs(cfg, db, authAPI, apis, mapsHealth)
+	apis, backupSvc, reachChecker, err := appendOpsAPIs(cfg, db, authAPI, apis, mapsHealth, geocodeBudget)
 	if err != nil {
 		return err
 	}
@@ -202,7 +207,7 @@ func setupAuth(ctx context.Context, cmd *cobra.Command, cfg *config.Config, db *
 // caller starts as a background loop, returning it for that purpose.
 func appendOpsAPIs(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, apis []server.Option,
-	mapsHealth *mapy.Health,
+	mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
 ) ([]server.Option, *backup.Service, *reachability.Checker, error) {
 	backupSvc, err := buildBackupService(cfg)
 	if err != nil {
@@ -216,7 +221,7 @@ func appendOpsAPIs(
 	}
 	apis = append(apis, server.WithAPI(restoreAPI.RegisterRoutes))
 
-	systemAPI, err := buildSystemAPI(cfg, db, authAPI, backupSvc, mapsHealth)
+	systemAPI, err := buildSystemAPI(cfg, db, authAPI, backupSvc, mapsHealth, geocodeBudget)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -265,7 +270,7 @@ type backgroundServices struct {
 // routes plus the background services for the serve command to run.
 func buildServices(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, reg *metrics.Registry,
-	mapsHealth *mapy.Health,
+	mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
 ) ([]server.Option, backgroundServices, error) {
 	jobStore := jobs.NewStore(db.Pool())
 	enqueuer := jobs.NewEnqueuer(jobStore)
@@ -307,8 +312,8 @@ func buildServices(
 	}
 	psMigrate := psMigrateHandlerOrNil(cfg, db, enqueuer, reg)
 	psFeeds := psFeedsHandlerOrNil(cfg, db)
-	jobWorker, jobAPI, processAPI, maintenanceAPI, err := buildJobs(
-		cfg, db, jobStore, authAPI, enqueuer, embedSvc, faceSvc, clusterSvc, importSvc, psMigrate, psFeeds, reg)
+	jobWorker, jobAPI, processAPI, maintenanceAPI, err := buildJobs(cfg, db, jobStore, authAPI, enqueuer,
+		embedSvc, faceSvc, clusterSvc, importSvc, psMigrate, psFeeds, reg, geocodeBudget)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}

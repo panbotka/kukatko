@@ -1945,6 +1945,11 @@
       "keyRejectedHint": "mapy.com is rejecting the API key (expired, revoked or out of credits). The map stays without tiles until the key is replaced in the mapy.com console.",
       "checkedAt": "Last checked"
     },
+    "geocode": {
+      "credits": "Geocoding credits this window",
+      "resetsAt": "Budget refills",
+      "exhausted": "Budget spent, refills"
+    },
     "library": {
       "title": "Library",
       "intro": "How much of the catalogue has been processed — the same counts as the statistics page."

@@ -112,6 +112,11 @@ func TestLoad_defaults(t *testing.T) {
 		{"maps.user_agent", cfg.Maps.UserAgent, ""},
 		{"maps.geocode_rate_per_sec", cfg.Maps.GeocodeRatePerSec, 5.0},
 		{"maps.geocode_burst", cfg.Maps.GeocodeBurst, 10},
+		// The rate limiter alone bounds only how fast credits are spent. The budget
+		// is what stops a full import from draining the whole quota, so a default
+		// of "no cap" would be a silently missing guard rail.
+		{"maps.geocode_budget", cfg.Maps.GeocodeBudget, 1000},
+		{"maps.geocode_budget_window", cfg.Maps.GeocodeBudgetWindow, 24 * time.Hour},
 		{"backup.s3.path_style", cfg.Backup.S3.PathStyle, false},
 		{"backup.retention", cfg.Backup.Retention, 7},
 		{"web.secure_cookies", cfg.Web.SecureCookies, false},
@@ -150,6 +155,8 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	t.Setenv("KUKATKO_MCP_ENABLED", "true")
 	t.Setenv("KUKATKO_MCP_PAGE_SIZE", "5")
 	t.Setenv("KUKATKO_THUMB_MAX_PIXELS", "500000000")
+	t.Setenv("KUKATKO_MAPS_GEOCODE_BUDGET", "250")
+	t.Setenv("KUKATKO_MAPS_GEOCODE_BUDGET_WINDOW", "6h")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -192,6 +199,15 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	// operators can raise the decode cap for a genuinely huge-panorama library.
 	if cfg.Thumb.MaxPixels != 500_000_000 {
 		t.Errorf("thumb.max_pixels = %d, want 500000000", cfg.Thumb.MaxPixels)
+	}
+	// The geocode budget is the guard on metered mapy.com credits: an operator
+	// tightens it from the environment before a big import, so both halves of it
+	// must actually decode.
+	if cfg.Maps.GeocodeBudget != 250 {
+		t.Errorf("maps.geocode_budget = %d, want 250", cfg.Maps.GeocodeBudget)
+	}
+	if cfg.Maps.GeocodeBudgetWindow != 6*time.Hour {
+		t.Errorf("maps.geocode_budget_window = %s, want 6h", cfg.Maps.GeocodeBudgetWindow)
 	}
 }
 

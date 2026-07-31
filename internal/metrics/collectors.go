@@ -125,6 +125,51 @@ func (c *queueDepthCollector) Collect(ch chan<- prometheus.Metric) {
 	emitDepth(ctx, ch, c.byType, typeDesc)
 }
 
+// GeocodeBudgetFunc reports the reverse-geocode credit budget's current window:
+// how many credits remain in it and how many one window allows. The serve
+// command adapts placesjob's budget snapshot to this signature.
+type GeocodeBudgetFunc func() (remaining, limit int)
+
+// RegisterGeocodeBudget installs a collector exporting how much of the mapy.com
+// geocode credit budget is left, sampled on every scrape so the gauge follows
+// the window rolling over even while no job runs. A nil fn is a no-op (no budget
+// is enforced, or no mapy.com key is configured).
+func (r *Registry) RegisterGeocodeBudget(fn GeocodeBudgetFunc) {
+	if fn == nil {
+		return
+	}
+	r.reg.MustRegister(&geocodeBudgetCollector{fn: fn})
+}
+
+// geocodeBudgetCollector exports the geocode credit budget as gauges pulled at
+// scrape time.
+type geocodeBudgetCollector struct {
+	fn GeocodeBudgetFunc
+}
+
+// budgetRemainingDesc and budgetLimitDesc describe the credit-budget gauges.
+var (
+	budgetRemainingDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "geocode", "credits_remaining"),
+		"Reverse-geocode credits left in the current budget window.", nil, nil)
+	budgetLimitDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "geocode", "credits_limit"),
+		"Reverse-geocode credits one budget window allows.", nil, nil)
+)
+
+// Describe implements prometheus.Collector.
+func (c *geocodeBudgetCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- budgetRemainingDesc
+	ch <- budgetLimitDesc
+}
+
+// Collect implements prometheus.Collector, sampling the budget at scrape time.
+func (c *geocodeBudgetCollector) Collect(ch chan<- prometheus.Metric) {
+	remaining, limit := c.fn()
+	ch <- prometheus.MustNewConstMetric(budgetRemainingDesc, prometheus.GaugeValue, float64(remaining))
+	ch <- prometheus.MustNewConstMetric(budgetLimitDesc, prometheus.GaugeValue, float64(limit))
+}
+
 // emitDepth samples one queue-depth function and emits a gauge per label value.
 // A nil function or a query error emits nothing for that dimension.
 func emitDepth(ctx context.Context, ch chan<- prometheus.Metric, fn QueueDepthFunc, desc *prometheus.Desc) {

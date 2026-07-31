@@ -8,9 +8,10 @@ import type { ImportRun } from './import'
  * ({@link fetchLibraryStats}). The former powers the status dashboard:
  * one aggregated snapshot of embeddings reachability, job-queue depth, the
  * backup subsystem, the last import per source, storage usage, database
- * reachability and the map provider's health (a rejected mapy.com key shows up
- * here, not only as a grey map), plus the quick actions (trigger a backup,
- * requeue the dead-letter jobs). The session cookie is sent automatically
+ * reachability, the map provider's health (a rejected mapy.com key shows up
+ * here, not only as a grey map) and the reverse-geocode credit budget, plus
+ * the quick actions (trigger a backup, requeue the dead-letter jobs).
+ * The session cookie is sent automatically
  * (same-origin); every call throws {@link ApiError} on a non-OK response so
  * callers can branch on `status`.
  */
@@ -132,6 +133,23 @@ export interface MapsStatus {
   checked_at?: string
 }
 
+/**
+ * Reverse-geocode credit section (`system.Geocode`). Every geocode the `places`
+ * job performs costs a metered mapy.com credit, so the budget caps how many one
+ * window may spend; when it runs out the queued jobs wait for `resets_at`
+ * instead of failing. `budget_enabled` is false when the cap is switched off
+ * (`maps.geocode_budget <= 0`), leaving only the per-second rate limiter.
+ */
+export interface GeocodeStatus {
+  configured: boolean
+  budget_enabled: boolean
+  limit: number
+  spent: number
+  remaining: number
+  window_seconds: number
+  resets_at?: string
+}
+
 /** The full system-status snapshot (`system.Status`). */
 export interface SystemStatus {
   version: VersionInfo
@@ -142,6 +160,7 @@ export interface SystemStatus {
   imports: ImportsStatus
   storage: StorageStatus
   maps: MapsStatus
+  geocode: GeocodeStatus
 }
 
 /**

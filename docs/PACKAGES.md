@@ -1530,9 +1530,10 @@ to `## Package map` in `CLAUDE.md`.
   (uids of non-archived **geotagged** photos with no `photo_places` row, newest-first, LEFT JOIN —
   the basis of the backfill)), `internal/placesjob/`
   (wiring reverse geocoding into the queue, all behind the interfaces `PhotoStore`/`PlaceStore`/`Geocoder`
-  (a subset of `mapy.Client`, fakeable)/`Enqueuer`/`RateLimiter` → unit-testable with fakes without
-  network/DB; `Service` = `New(Config{Photos,Places,Geocoder,Enqueuer,Limiter,OfflineRetryDelay,
-  RateLimitDelay})` (panics on nil Photos/Places/Geocoder/Enqueuer, `Limiter` nil → always-allow);
+  (a subset of `mapy.Client`, fakeable)/`Enqueuer`/`RateLimiter`/`CreditBudget`/`CreditMeter` → unit-testable
+  with fakes without network/DB; `Service` = `New(Config{Photos,Places,Geocoder,Enqueuer,Limiter,Budget,
+  Meter,OfflineRetryDelay,RateLimitDelay})` (panics on nil Photos/Places/Geocoder/Enqueuer, `Limiter` nil →
+  always-allow, `Budget` nil → unlimited, `Meter` nil → no-op), `BudgetSnapshot()` exposes the budget readout;
   **the `places` handler** `Handle`(=`worker.HandlerFunc`, registered in `serve` when the mapy key is
   set) → loads the photo from the `{"photo_uid"}` payload; **idempotent** (a photo whose place is cached for its
   **current** coordinates is skipped; a coordinate change → re-geocode), a photo **without GPS** → stores an empty
@@ -1542,9 +1543,24 @@ to `## Package map` in `CLAUDE.md`.
   `places.SavePlace` with the source coordinates; **mapy.com unavailable/rate-limited**
   (`mapy.ErrUnavailable`/`ErrRateLimited`) → `worker.RetryAfter(5 min)` (a deferral without burning an attempt,
   mirrors the embed job), **`mapy.ErrNotFound`** → a processed marker with the coordinates (not retried forever),
-  another error a normal retry; **respect for mapy.com credits**: `RateLimiter` (token-bucket `NewTokenBucket(
-  ratePerSec,burst)`, mirrors the geocode proxy limiter; `maps.geocode_rate_per_sec`/`geocode_burst`) — when
-  it is empty, `worker.RetryAfter(1 min)` (processing slowly is OK); `BackfillPlaces(ctx)` enqueues `places`
+  another error a normal retry; **respect for mapy.com credits — two independent bounds**: (1) `RateLimiter`
+  (token-bucket `NewTokenBucket(ratePerSec,burst)`, mirrors the geocode proxy limiter;
+  `maps.geocode_rate_per_sec`/`geocode_burst`) caps how **fast** credits go — when it is empty,
+  `worker.RetryAfter(1 min)` (processing slowly is OK); (2) `CreditBudget` (`budget.go`) caps how **many**:
+  `WindowBudget` = `NewWindowBudget(BudgetConfig{Limit,Window,Clock})` is an in-memory fixed-window counter
+  (`maps.geocode_budget`/`geocode_budget_window`, default 1000/24h, `Limit<=0` → unlimited) granting
+  `Limit` geocodes per window, rolled lazily on first use after it elapses (a quiet period accumulates
+  nothing) — an exhausted budget → `worker.RetryAfter(time until the window refills, floor
+  `MinBudgetRetryDelay` 1 min)`, i.e. the job sleeps until credits exist instead of churning the queue every
+  minute for the rest of the window. **Ordering matters**: the budget is reserved *before* the limiter is
+  asked, so an empty budget yields the long deferral; a credit reserved for a call the limiter then blocks is
+  `Refund()`ed. So is one for a call mapy.com never performed (`ErrUnavailable`/`ErrRateLimited`) — every
+  answer it did give, **including `ErrNotFound`**, costs a credit and is reported to `CreditMeter`
+  (`*metrics.Registry` → `kukatko_geocode_credits_spent_total`). The count is in memory, like the token
+  bucket: a restart starts a fresh window. `Snapshot()` → `BudgetSnapshot{Enabled,Limit,Spent,Remaining,
+  Window,ResetsAt}` feeds `GET /system/status` → `geocode` and the `kukatko_geocode_credits_remaining`/
+  `_limit` gauges; one instance is built in `runServe` (`newGeocodeBudget`, nil without a mapy key) and
+  shared by the job, the status service and the collector; `BackfillPlaces(ctx)` enqueues `places`
   for every geotagged photo without a place (dedup no-op), returns the count), `internal/importer/`
   (bookkeeping of import/migration runs + high-watermarks for an **incremental, idempotent** import,
   the `import_runs` table in migration `0013_import_runs.sql`: `id BIGSERIAL`, `source TEXT`
@@ -2172,17 +2188,22 @@ to `## Package map` in `CLAUDE.md`.
   `EmbeddingHealth` (`embedding.Client.Healthy`)/`JobCounter`
   (`jobs.Store.CountsByState`/`CountsByType`/`CountPending`)/`ImportLister` (`importer.Store.LatestRun`)/
   `BackupReporter` (`backup.Service.Status`, **nil = not configured**)/`MapsReporter`
-  (`mapy.Health.Snapshot`, **nil = no mapy.com key**) → unit-testable with fakes
-  without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Imports,Library,
+  (`mapy.Health.Snapshot`, **nil = no mapy.com key**)/`GeocodeReporter`
+  (`placesjob.WindowBudget.Snapshot`, **nil = no mapy.com key**) → unit-testable with fakes
+  without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Geocode,Imports,Library,
   OriginalsPath,CachePath,StorageTTL,LibraryTTL,Clock})`; **`Collect(ctx) (Status,error)`** gathers `Status{Version,Database,
-  Embeddings,Jobs,Backup,Imports,Storage,Maps}`: embeddings online/offline, the queue (by_state/by_type/total/
+  Embeddings,Jobs,Backup,Imports,Storage,Maps,Geocode}`: embeddings online/offline, the queue (by_state/by_type/total/
   dead_letter/pending_embeddings = queued+running `image_embed`/`face_detect`), the backup state+last
   result, the last import per source, the storage (the size of the originals+cache by a walk, free/total space via
   `statfs` through `golang.org/x/sys/unix`, **memoized** by `storageCache` for `defaultStorageTTL` 30 s so that
   polling does not keep walking the tree), DB reachability (`Ping`, a **sanitized** error), **maps**
   (`Maps{Configured,State,Degraded,Detail,CheckedAt}` from `mapy.Health` — the last observed state of the
   proxy, no probe or credit of its own; `key_rejected` = mapy.com is rejecting the key → `degraded`, visible
-  on the dashboard without opening the map), version/commit; errors while
+  on the dashboard without opening the map), **geocode credits**
+  (`Geocode{Configured,BudgetEnabled,Limit,Spent,Remaining,WindowSeconds,ResetsAt}` from
+  `placesjob.WindowBudget` — what the current budget window has spent on reverse geocoding and when it
+  refills, so an import's metered mapy.com spend is watchable while it happens; `Configured:false` = no key,
+  `BudgetEnabled:false` = the cap is switched off), version/commit; errors while
   reading the queue/imports (which require the DB) → an error (500), an unreachable DB and unreadable storage are handled inline
   best-effort; alongside the operational snapshot it also aggregates the **library statistics** for every logged-in user:
   `LibraryCounter` (`CountLibrary`, satisfied by its own `Store` = `NewStore(pool)` — a single query of scalar
@@ -2286,13 +2307,18 @@ to `## Package map` in `CLAUDE.md`.
   leakage; `New()` → `Registry` registers HTTP (`kukatko_http_requests_total` counter + a latency
   histogram + an inflight gauge, the route label = the **chi route pattern**, never a raw URL), the job lifecycle
   (started/finished counter + a duration histogram by type/outcome), embeddings (a duration histogram +
-  an up gauge), import progress (a gauge per source/outcome) and thumbnail duration + the standard
-  `go_`/`process_` collectors; the **pull-at-scrape collectors** `RegisterDBPool` (live pgx pool stats)
-  and `RegisterJobQueue` (queue depth by_state/by_type via `QueueDepthFunc`, `collectTimeout` 5 s,
-  so a slow DB does not block the scrape) read their data at scrape time without extra goroutines; `Handler()`
+  an up gauge), import progress (a gauge per source/outcome), thumbnail duration and the geocode credit
+  counter (`kukatko_geocode_credits_spent_total` — metered mapy.com money, so the spend of a running import
+  is watchable, not inferred from the bill) + the standard
+  `go_`/`process_` collectors; the **pull-at-scrape collectors** `RegisterDBPool` (live pgx pool stats),
+  `RegisterJobQueue` (queue depth by_state/by_type via `QueueDepthFunc`, `collectTimeout` 5 s,
+  so a slow DB does not block the scrape) and `RegisterGeocodeBudget` (`GeocodeBudgetFunc` →
+  `kukatko_geocode_credits_remaining`/`_limit`, sampled at scrape time so the gauge follows the budget
+  window rolling over even while no job runs; a nil func = no budget wired) read their data at scrape time
+  without extra goroutines; `Handler()`
   is mounted by `serve` on `/metrics` (the middleware skips that path, a scrape does not instrument itself),
   the observation methods `JobStarted`/`JobFinished`/`ObserveEmbeddingCall`/`SetEmbeddingUp`/
-  `SetImportProgress`/`ObserveThumbnail` and `Middleware(routeOf)` are handed to the subsystems that
+  `SetImportProgress`/`ObserveThumbnail`/`GeocodeCreditSpent` and `Middleware(routeOf)` are handed to the subsystems that
   emit the events; it mirrors photo-sorter's lightweight approach — one namespace, limited label sets;
   tunables in the `metrics.*` config), `internal/web/`
   (the SPA fallback handler `web.Handler()`/`SPAHandler` + the `internal/web/static` embed

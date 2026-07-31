@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
+	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -55,6 +56,15 @@ func workerObserver(reg *metrics.Registry) worker.Observer {
 // importObserver returns reg as an importer.ProgressObserver, or a nil interface
 // when reg is nil so the import services use their no-op observer.
 func importObserver(reg *metrics.Registry) importer.ProgressObserver {
+	if reg == nil {
+		return nil
+	}
+	return reg
+}
+
+// creditMeter returns reg as a placesjob.CreditMeter, or a nil interface when
+// reg is nil so the places job uses its no-op meter.
+func creditMeter(reg *metrics.Registry) placesjob.CreditMeter {
 	if reg == nil {
 		return nil
 	}

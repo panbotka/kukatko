@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mapy"
+	"github.com/panbotka/kukatko/internal/placesjob"
 )
 
 // fakeDB is a DBPinger whose Ping returns the configured error.
@@ -86,11 +87,22 @@ func rejectedMaps() *mapy.Health {
 	return health
 }
 
+// spentBudget returns a geocode credit budget of limit credits per day with
+// spent of them already used, i.e. what the dashboard reads mid-import.
+func spentBudget(limit, spent int) *placesjob.WindowBudget {
+	budget := placesjob.NewWindowBudget(placesjob.BudgetConfig{Limit: limit, Window: 24 * time.Hour})
+	for range spent {
+		budget.Reserve()
+	}
+	return budget
+}
+
 // healthyConfig builds a Config wired with healthy fakes over the given
 // originals directory, so individual tests can override single fields.
 func healthyConfig(originals string) Config {
 	return Config{
 		Maps:       healthyMaps(),
+		Geocode:    spentBudget(1000, 120),
 		DB:         fakeDB{},
 		Embeddings: fakeHealth{online: true},
 		Jobs: fakeJobs{
@@ -203,6 +215,69 @@ func TestCollect_MapsNotConfigured(t *testing.T) {
 	}
 	if status.Maps.CheckedAt != nil {
 		t.Errorf("maps.checked_at = %v, want nil (nothing was ever observed)", status.Maps.CheckedAt)
+	}
+}
+
+// TestCollect_GeocodeBudget verifies the credit budget is reported with its
+// spend, remainder and refill instant, so an import's mapy.com spend is visible
+// on the dashboard while it happens.
+func TestCollect_GeocodeBudget(t *testing.T) {
+	t.Parallel()
+
+	status, err := New(healthyConfig(t.TempDir())).Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	geocode := status.Geocode
+	if !geocode.Configured || !geocode.BudgetEnabled {
+		t.Errorf("geocode = %+v, want configured with a budget", geocode)
+	}
+	if geocode.Limit != 1000 || geocode.Spent != 120 || geocode.Remaining != 880 {
+		t.Errorf("geocode = %+v, want 1000 limit / 120 spent / 880 remaining", geocode)
+	}
+	if geocode.WindowSeconds != (24 * time.Hour).Seconds() {
+		t.Errorf("geocode.window_seconds = %v, want %v", geocode.WindowSeconds, (24 * time.Hour).Seconds())
+	}
+	if geocode.ResetsAt == nil || !geocode.ResetsAt.After(time.Now()) {
+		t.Errorf("geocode.resets_at = %v, want a future refill instant", geocode.ResetsAt)
+	}
+}
+
+// TestCollect_GeocodeNotConfigured verifies no mapy.com key reports the geocode
+// section as absent — nothing geocodes, so nothing is spent.
+func TestCollect_GeocodeNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Geocode = nil
+
+	status, err := New(cfg).Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if status.Geocode.Configured || status.Geocode.BudgetEnabled || status.Geocode.ResetsAt != nil {
+		t.Errorf("geocode = %+v, want the not-configured zero value", status.Geocode)
+	}
+}
+
+// TestCollect_GeocodeBudgetDisabled verifies a configured key with no budget cap
+// reports the spend as unbounded rather than as a zero budget.
+func TestCollect_GeocodeBudgetDisabled(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Geocode = placesjob.NewWindowBudget(placesjob.BudgetConfig{Limit: 0})
+
+	status, err := New(cfg).Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if !status.Geocode.Configured {
+		t.Error("geocode.configured = false, want true (the key is wired, only the cap is off)")
+	}
+	if status.Geocode.BudgetEnabled {
+		t.Errorf("geocode = %+v, want budget_enabled false", status.Geocode)
 	}
 }
 

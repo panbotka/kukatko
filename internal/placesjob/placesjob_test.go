@@ -96,6 +96,38 @@ type denyLimiter struct{}
 // Allow always denies.
 func (denyLimiter) Allow() bool { return false }
 
+// fakeBudget is a CreditBudget stub with a canned verdict, counting reservations
+// and refunds so a test can assert the credit accounting.
+type fakeBudget struct {
+	deny       bool
+	retryAfter time.Duration
+	reserved   int
+	refunded   int
+}
+
+// Reserve records the call and returns the canned verdict.
+func (f *fakeBudget) Reserve() (time.Duration, bool) {
+	if f.deny {
+		return f.retryAfter, false
+	}
+	f.reserved++
+	return 0, true
+}
+
+// Refund records that a reserved credit was handed back.
+func (f *fakeBudget) Refund() { f.refunded++ }
+
+// Snapshot reports the reservations made so far against a nominal limit.
+func (f *fakeBudget) Snapshot() BudgetSnapshot {
+	return BudgetSnapshot{Enabled: true, Limit: 10, Spent: f.reserved - f.refunded}
+}
+
+// fakeMeter counts the credits the service reports as spent.
+type fakeMeter struct{ spent int }
+
+// GeocodeCreditSpent records one spent credit.
+func (f *fakeMeter) GeocodeCreditSpent() { f.spent++ }
+
 // c<geo> builds a typical Czech regionalStructure with the most specific entry
 // first and the country last, matching mapy.com's ordering.
 func czGeo() *mapy.GeocodeResult {
@@ -347,6 +379,204 @@ func TestGeocode_localRateLimitDefers(t *testing.T) {
 	}
 	if geo.calls != 0 {
 		t.Errorf("geocoder calls = %d, want 0 (throttled before call)", geo.calls)
+	}
+}
+
+// geotagged is a photo with coordinates, the input of every budget test below.
+func geotagged() photos.Photo {
+	return photos.Photo{UID: "ph1", Lat: new(50.0), Lng: new(14.0)}
+}
+
+// TestGeocode_budgetExhaustedDefers verifies an exhausted credit budget defers
+// the job (it must not fail and must not burn a retry attempt), that no credit
+// is spent — neither a mapy.com call nor a place write happens — and that the
+// deferral waits for the budget to refill rather than retrying in a tight loop.
+func TestGeocode_budgetExhaustedDefers(t *testing.T) {
+	t.Parallel()
+
+	pho := &fakePhotos{byUID: map[string]photos.Photo{"ph1": geotagged()}}
+	pl := newFakePlaces()
+	geo := &fakeGeocoder{result: czGeo()}
+	meter := &fakeMeter{}
+	budget := &fakeBudget{deny: true, retryAfter: 4 * time.Hour}
+	svc := New(Config{
+		Photos: pho, Places: pl, Geocoder: geo, Enqueuer: &fakeEnqueuer{},
+		Budget: budget, Meter: meter,
+	})
+
+	err := svc.Geocode(context.Background(), "ph1")
+	var ra *worker.RetryAfterError
+	if !errors.As(err, &ra) {
+		t.Fatalf("err = %v, want RetryAfterError (deferred, not failed)", err)
+	}
+	if ra.Delay != 4*time.Hour {
+		t.Errorf("delay = %s, want %s (until the budget refills)", ra.Delay, 4*time.Hour)
+	}
+	if ra.Delay <= DefaultRateLimitDelay {
+		t.Errorf("delay = %s, want longer than the rate-limit deferral %s so the queue cannot spin",
+			ra.Delay, DefaultRateLimitDelay)
+	}
+	if geo.calls != 0 {
+		t.Errorf("geocoder calls = %d, want 0 (no credit spent on an empty budget)", geo.calls)
+	}
+	if meter.spent != 0 {
+		t.Errorf("metered spend = %d, want 0", meter.spent)
+	}
+	if _, ok := pl.saved["ph1"]; ok {
+		t.Error("place written despite the budget being exhausted")
+	}
+}
+
+// TestGeocode_rateLimitRefundsCredit verifies a credit reserved for a call the
+// rate limiter then blocks is handed back, so throttling never burns budget.
+func TestGeocode_rateLimitRefundsCredit(t *testing.T) {
+	t.Parallel()
+
+	pho := &fakePhotos{byUID: map[string]photos.Photo{"ph1": geotagged()}}
+	geo := &fakeGeocoder{result: czGeo()}
+	budget := &fakeBudget{}
+	meter := &fakeMeter{}
+	svc := New(Config{
+		Photos: pho, Places: newFakePlaces(), Geocoder: geo, Enqueuer: &fakeEnqueuer{},
+		Limiter: denyLimiter{}, Budget: budget, Meter: meter,
+	})
+
+	err := svc.Geocode(context.Background(), "ph1")
+	var ra *worker.RetryAfterError
+	if !errors.As(err, &ra) {
+		t.Fatalf("err = %v, want RetryAfterError", err)
+	}
+	if ra.Delay != DefaultRateLimitDelay {
+		t.Errorf("delay = %s, want the rate-limit deferral %s", ra.Delay, DefaultRateLimitDelay)
+	}
+	if budget.reserved != 1 || budget.refunded != 1 {
+		t.Errorf("budget reserved/refunded = %d/%d, want 1/1", budget.reserved, budget.refunded)
+	}
+	if meter.spent != 0 {
+		t.Errorf("metered spend = %d, want 0 (the call never happened)", meter.spent)
+	}
+}
+
+// TestGeocode_meterCountsActualSpend verifies the credit counter reflects what
+// was really spent: an answered lookup (match or no match) and a failure the
+// geocoder itself returned cost a credit, while a call mapy.com never performed
+// (offline, upstream throttled) costs nothing and returns the credit.
+func TestGeocode_meterCountsActualSpend(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		geocodeErr error
+		wantSpent  int
+		wantRefund int
+	}{
+		{name: "match", wantSpent: 1},
+		{name: "no match", geocodeErr: mapy.ErrNotFound, wantSpent: 1},
+		{name: "upstream error", geocodeErr: errors.New("boom"), wantSpent: 1},
+		{name: "offline", geocodeErr: mapy.ErrUnavailable, wantRefund: 1},
+		{name: "upstream rate limited", geocodeErr: mapy.ErrRateLimited, wantRefund: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			pho := &fakePhotos{byUID: map[string]photos.Photo{"ph1": geotagged()}}
+			geo := &fakeGeocoder{result: czGeo(), err: tt.geocodeErr}
+			budget := &fakeBudget{}
+			meter := &fakeMeter{}
+			svc := New(Config{
+				Photos: pho, Places: newFakePlaces(), Geocoder: geo, Enqueuer: &fakeEnqueuer{},
+				Budget: budget, Meter: meter,
+			})
+
+			_ = svc.Geocode(context.Background(), "ph1")
+
+			if meter.spent != tt.wantSpent {
+				t.Errorf("metered spend = %d, want %d", meter.spent, tt.wantSpent)
+			}
+			if budget.reserved != 1 {
+				t.Errorf("budget reserved = %d, want 1", budget.reserved)
+			}
+			if budget.refunded != tt.wantRefund {
+				t.Errorf("budget refunded = %d, want %d", budget.refunded, tt.wantRefund)
+			}
+		})
+	}
+}
+
+// TestGeocode_skippedWorkCostsNoCredit verifies the paths that never reach
+// mapy.com — an already-current place and a photo without GPS — neither reserve
+// nor spend a credit.
+func TestGeocode_skippedWorkCostsNoCredit(t *testing.T) {
+	t.Parallel()
+
+	pl := newFakePlaces()
+	pl.saved["ph1"] = places.Place{PhotoUID: "ph1", City: "Praha", Lat: new(50.0), Lng: new(14.0)}
+	pho := &fakePhotos{byUID: map[string]photos.Photo{
+		"ph1": geotagged(),
+		"ph2": {UID: "ph2"}, // no GPS
+	}}
+	budget := &fakeBudget{}
+	meter := &fakeMeter{}
+	svc := New(Config{
+		Photos: pho, Places: pl, Geocoder: &fakeGeocoder{result: czGeo()}, Enqueuer: &fakeEnqueuer{},
+		Budget: budget, Meter: meter,
+	})
+
+	for _, uid := range []string{"ph1", "ph2"} {
+		if err := svc.Geocode(context.Background(), uid); err != nil {
+			t.Fatalf("Geocode(%s): %v", uid, err)
+		}
+	}
+	if budget.reserved != 0 || meter.spent != 0 {
+		t.Errorf("reserved/spent = %d/%d, want 0/0 for work that never geocodes",
+			budget.reserved, meter.spent)
+	}
+}
+
+// TestGeocode_budgetDrainsThenDefers verifies the end-to-end shape of a run
+// against a real WindowBudget: the first Limit photos are geocoded, the rest are
+// deferred until the window refills, and the readout reflects the spend.
+func TestGeocode_budgetDrainsThenDefers(t *testing.T) {
+	t.Parallel()
+
+	const limit = 3
+	byUID := map[string]photos.Photo{}
+	for i := range 6 {
+		uid := "ph" + string(rune('1'+i))
+		byUID[uid] = photos.Photo{UID: uid, Lat: new(50.0 + float64(i)), Lng: new(14.0)}
+	}
+	geo := &fakeGeocoder{result: czGeo()}
+	meter := &fakeMeter{}
+	svc := New(Config{
+		Photos: &fakePhotos{byUID: byUID}, Places: newFakePlaces(), Geocoder: geo,
+		Enqueuer: &fakeEnqueuer{}, Meter: meter,
+		Budget: NewWindowBudget(BudgetConfig{Limit: limit, Window: 24 * time.Hour}),
+	})
+
+	deferred := 0
+	for i := range 6 {
+		err := svc.Geocode(context.Background(), "ph"+string(rune('1'+i)))
+		var ra *worker.RetryAfterError
+		switch {
+		case err == nil:
+		case errors.As(err, &ra):
+			deferred++
+		default:
+			t.Fatalf("Geocode #%d: unexpected error %v", i+1, err)
+		}
+	}
+
+	if geo.calls != limit || meter.spent != limit {
+		t.Errorf("geocoder calls/metered spend = %d/%d, want %d/%d", geo.calls, meter.spent, limit, limit)
+	}
+	if deferred != 6-limit {
+		t.Errorf("deferred = %d, want %d", deferred, 6-limit)
+	}
+	snapshot := svc.BudgetSnapshot()
+	if snapshot.Spent != limit || snapshot.Remaining != 0 {
+		t.Errorf("snapshot = %+v, want %d spent and none remaining", snapshot, limit)
 	}
 }
 

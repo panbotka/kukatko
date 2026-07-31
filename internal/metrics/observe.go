@@ -83,6 +83,14 @@ func (r *Registry) SetImportProgress(source string, imported, updated, skipped, 
 	r.importProgress.WithLabelValues(source, "failed").Set(float64(failed))
 }
 
+// GeocodeCreditSpent records that the places job spent one mapy.com
+// reverse-geocode credit. Every credit is metered money, so this counter is the
+// live view of what an import run is spending; it satisfies
+// placesjob.CreditMeter.
+func (r *Registry) GeocodeCreditSpent() {
+	r.geocodeCredits.Inc()
+}
+
 // ObserveThumbnail records the wall-clock time to generate one thumbnail size.
 // It satisfies the thumbnailer's observer contract.
 func (r *Registry) ObserveThumbnail(d time.Duration) {

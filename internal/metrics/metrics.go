@@ -58,6 +58,9 @@ type Registry struct {
 
 	// Thumbnail generation.
 	thumbnailDuration prometheus.Histogram
+
+	// Reverse-geocode credits spent at mapy.com by the places job.
+	geocodeCredits prometheus.Counter
 }
 
 // New constructs a Registry with every series registered, including the
@@ -154,7 +157,14 @@ func (r *Registry) registerExternal() {
 		Help:      "Wall-clock time to generate one thumbnail size in seconds.",
 		Buckets:   prometheus.DefBuckets,
 	})
-	r.reg.MustRegister(r.embeddingDuration, r.embeddingUp, r.importProgress, r.thumbnailDuration)
+	r.geocodeCredits = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: "geocode",
+		Name:      "credits_spent_total",
+		Help:      "Total mapy.com reverse-geocode credits spent by the places job since start.",
+	})
+	r.reg.MustRegister(r.embeddingDuration, r.embeddingUp, r.importProgress,
+		r.thumbnailDuration, r.geocodeCredits)
 }
 
 // Handler returns an http.Handler that serves the registered metrics in the

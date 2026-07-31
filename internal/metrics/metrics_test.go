@@ -46,6 +46,9 @@ func TestRegistry_exposesExpectedMetricNames(t *testing.T) {
 		"kukatko_embedding_service_up",
 		"kukatko_import_run_photos",
 		"kukatko_thumbnail_generation_duration_seconds",
+		"kukatko_geocode_credits_spent_total",
+		"kukatko_geocode_credits_remaining",
+		"kukatko_geocode_credits_limit",
 		"go_goroutines",
 	}
 	for _, name := range wantNames {
@@ -64,11 +67,65 @@ func exerciseAll(r *Registry) {
 	r.SetEmbeddingUp(true)
 	r.SetImportProgress("photoprism", 1, 2, 3, 4)
 	r.ObserveThumbnail(5 * time.Millisecond)
+	r.GeocodeCreditSpent()
 	r.RegisterJobQueue(
 		func(context.Context) (map[string]int, error) { return map[string]int{"queued": 2}, nil },
 		func(context.Context) (map[string]int, error) { return map[string]int{"image_embed": 2}, nil },
 	)
+	r.RegisterGeocodeBudget(func() (int, int) { return 900, 1000 })
 	serveOnce(r, http.MethodGet, "/probe")
+}
+
+// TestGeocodeCreditSpent_countsSpend verifies the credit counter reflects the
+// actual number of geocodes spent, so a run's credit spend is visible while it
+// happens instead of being inferred afterwards.
+func TestGeocodeCreditSpent_countsSpend(t *testing.T) {
+	t.Parallel()
+
+	r := New()
+	if body := scrape(t, r); !strings.Contains(body, "kukatko_geocode_credits_spent_total 0") {
+		t.Errorf("fresh registry should expose a zero credit counter, got:\n%s", body)
+	}
+	for range 3 {
+		r.GeocodeCreditSpent()
+	}
+	if body := scrape(t, r); !strings.Contains(body, "kukatko_geocode_credits_spent_total 3") {
+		t.Errorf("expected 3 spent credits, got:\n%s", body)
+	}
+}
+
+// TestRegisterGeocodeBudget_reportsRemaining verifies the budget gauges are
+// pulled at scrape time, so they follow a window rolling over even while no job
+// runs.
+func TestRegisterGeocodeBudget_reportsRemaining(t *testing.T) {
+	t.Parallel()
+
+	remaining := 40
+	r := New()
+	r.RegisterGeocodeBudget(func() (int, int) { return remaining, 50 })
+
+	body := scrape(t, r)
+	if !strings.Contains(body, "kukatko_geocode_credits_remaining 40") ||
+		!strings.Contains(body, "kukatko_geocode_credits_limit 50") {
+		t.Errorf("expected 40/50 credits, got:\n%s", body)
+	}
+
+	remaining = 0
+	if body := scrape(t, r); !strings.Contains(body, "kukatko_geocode_credits_remaining 0") {
+		t.Errorf("expected the gauge to follow the budget, got:\n%s", body)
+	}
+}
+
+// TestRegisterGeocodeBudget_nilIsNoop verifies an unconfigured budget registers
+// nothing rather than panicking.
+func TestRegisterGeocodeBudget_nilIsNoop(t *testing.T) {
+	t.Parallel()
+
+	r := New()
+	r.RegisterGeocodeBudget(nil)
+	if body := scrape(t, r); strings.Contains(body, "kukatko_geocode_credits_remaining") {
+		t.Errorf("nil budget func should register no gauge, got:\n%s", body)
+	}
 }
 
 // serveOnce runs one request through the Middleware against a chi router with a

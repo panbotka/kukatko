@@ -88,13 +88,20 @@ PhotoPrism/`ppimport` path, not photo-sorter.
 ### Phase 2 — import photos from PhotoPrism
 5. Run the full PhotoPrism import; drain the job queue. Every photo + all its files
    (incl. the 12 RAW) lands, deduped on SHA256.
+6. **Geocode credits**: ~29 % of the library carries GPS (≈6k photos), and every reverse
+   geocode is one metered mapy.com credit. `maps.geocode_budget` (default **1000 / 24h**)
+   caps the spend, so the `places` queue drains over roughly a week instead of in one
+   pass; an exhausted budget defers the jobs until it refills, nothing fails. Raise it if
+   the run must finish sooner, and watch `GET /system/status` → `geocode` (or
+   `kukatko_geocode_credits_spent_total`) while it runs — see
+   [`OPERATIONS.md`](OPERATIONS.md).
 
 ### Phase 3 — enrich with photo-sorter vectors
-6. Run the photo-sorter feeds import (`1191a2cc`): embeddings + faces + markers/subjects
+7. Run the photo-sorter feeds import (`1191a2cc`): embeddings + faces + markers/subjects
    copied 1:1 and attached by `photoprism_uid`. No GPU box needed.
 
 ### Phase 4 — verify completeness
-7. `kukatko import verify` (`3f8f3144`): reconcile PhotoPrism photo/file counts +
+8. `kukatko import verify` (`3f8f3144`): reconcile PhotoPrism photo/file counts +
    photo-sorter `/stats` (embeddings/faces) against Kukátko. Resolve every listed
    missing item (missing photo, missing RAW sibling, missing embedding/faces) until the
    report is clean. Cross-check `maintenance scan`.
@@ -111,16 +118,16 @@ PhotoPrism/`ppimport` path, not photo-sorter.
    unreachable by construction.
 
 ### Phase 5 — prove backup + restore (point-of-no-return gate)
-8. Configure `backup.s3.*` to a second, independent bucket + a non-empty
+9. Configure `backup.s3.*` to a second, independent bucket + a non-empty
    `backup.schedule`. Run `kukatko backup`.
-9. **Rehearse restore end-to-end on a throwaway DB**: `restore db` → `restore
+10. **Rehearse restore end-to-end on a throwaway DB**: `restore db` → `restore
    originals` → `restore verify` = `Consistent`. Do not skip — this path is currently
    untested.
 
 ### Phase 6 — cutover
-10. Side-by-side sample compare (counts, a few albums/people) PhotoPrism vs Kukátko.
-11. Make Kukátko primary; set PhotoPrism read-only.
-12. **Keep the PhotoPrism + photo-sorter libraries intact and read-only** — they are the
+11. Side-by-side sample compare (counts, a few albums/people) PhotoPrism vs Kukátko.
+12. Make Kukátko primary; set PhotoPrism read-only.
+13. **Keep the PhotoPrism + photo-sorter libraries intact and read-only** — they are the
     true rollback (sources untouched, no runtime dependency). Keep `storagemigrate
     DeleteLocal` and trash `retention` **off** until backups are proven.
 

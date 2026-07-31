@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mapy"
+	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/systemapi"
 )
@@ -25,7 +26,7 @@ import (
 // counts.
 func buildSystemAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, backupSvc *backup.Service,
-	mapsHealth *mapy.Health,
+	mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
 ) (*systemapi.API, error) {
 	client, err := embedding.New(embedding.Config{
 		BaseURL:  cfg.Embedding.URL,
@@ -39,7 +40,8 @@ func buildSystemAPI(
 	// A nil *backup.Service must be passed as a nil interface, not a non-nil
 	// interface wrapping a nil pointer, so the status section reports
 	// not-configured rather than panicking. The same holds for the maps health
-	// tracker, which is nil when no mapy.com key is configured.
+	// tracker and the geocode credit budget, both nil when no mapy.com key is
+	// configured.
 	var backupReporter system.BackupReporter
 	if backupSvc != nil {
 		backupReporter = backupSvc
@@ -47,6 +49,10 @@ func buildSystemAPI(
 	var mapsReporter system.MapsReporter
 	if mapsHealth != nil {
 		mapsReporter = mapsHealth
+	}
+	var geocodeReporter system.GeocodeReporter
+	if geocodeBudget != nil {
+		geocodeReporter = geocodeBudget
 	}
 
 	pool := db.Pool()
@@ -57,6 +63,7 @@ func buildSystemAPI(
 		Jobs:          jobs.NewStore(pool),
 		Backup:        backupReporter,
 		Maps:          mapsReporter,
+		Geocode:       geocodeReporter,
 		Imports:       importer.NewStore(pool),
 		Library:       system.NewStore(pool),
 		OriginalsPath: cfg.Storage.OriginalsPath,

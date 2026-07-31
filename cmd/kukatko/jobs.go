@@ -33,7 +33,9 @@ import (
 // (the api packages stay decoupled from auth's wiring). The psMigrate handler (nil when photo-sorter is not configured)
 // registers the ps_migrate job. The places handler (nil when no mapy.com key is
 // configured) registers the `places` reverse-geocode job and backs the place
-// backfill. It also builds the thumbnail service (regenerating thumbnails/pHashes,
+// backfill; it spends its metered mapy.com credits against the shared
+// geocodeBudget the caller also hands to the system status. It also builds the
+// thumbnail service (regenerating thumbnails/pHashes,
 // and backing the missing-thumbnail backfill), the metadata service (re-reading a
 // photo's original into the IPTC/XMP and file-technical columns, and backing the
 // metadata backfill), the metadata sidecar export service (nil when the export is
@@ -45,12 +47,13 @@ func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
 	importSvc *ppimport.Service, psMigrate, psFeeds worker.HandlerFunc, reg *metrics.Registry,
+	geocodeBudget *placesjob.WindowBudget,
 ) (*worker.Worker, *jobsapi.API, *processapi.API, *maintenanceapi.API, error) {
 	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(cfg, db, enqueuer, embedSvc, faceSvc, reg)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	placesSvc, err := buildPlacesServiceOrNil(cfg, db, enqueuer)
+	placesSvc, err := buildPlacesServiceOrNil(cfg, db, enqueuer, geocodeBudget, reg)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}

@@ -522,6 +522,14 @@ type MapsConfig struct {
 	// GeocodeBurst is the `places` job geocode limiter's bucket size (how many
 	// calls may burst before the per-second rate applies).
 	GeocodeBurst int `mapstructure:"geocode_burst"`
+	// GeocodeBudget caps how many reverse geocodes the `places` job may spend per
+	// GeocodeBudgetWindow. It bounds how *many* credits go, where
+	// GeocodeRatePerSec bounds how *fast* — without it a full-library import
+	// drains whatever quota the account has at the limiter's pace. A spent budget
+	// defers the queued jobs until it refills; nothing fails. <= 0 removes the cap.
+	GeocodeBudget int `mapstructure:"geocode_budget"`
+	// GeocodeBudgetWindow is the period GeocodeBudget covers (default 24h).
+	GeocodeBudgetWindow time.Duration `mapstructure:"geocode_budget_window"`
 	// TileCacheBytes is the memory budget of the server-side tile cache. Every hit
 	// is one mapy.com credit not spent (the free tier bills one credit per tile),
 	// so a re-visited area costs nothing. <= 0 disables the cache.
@@ -883,6 +891,11 @@ func setMapsDefaults(v *viper.Viper) {
 	v.SetDefault("maps.base_url", "https://api.mapy.com")
 	v.SetDefault("maps.geocode_rate_per_sec", 5.0)
 	v.SetDefault("maps.geocode_burst", 10)
+	// Conservative on purpose: a full-library import (~6k geotagged photos) then
+	// spreads its credit spend over about a week instead of draining the quota in
+	// one pass. Raise it when a run needs to finish sooner.
+	v.SetDefault("maps.geocode_budget", 1000)
+	v.SetDefault("maps.geocode_budget_window", 24*time.Hour)
 	v.SetDefault("maps.tile_cache_bytes", 64<<20) // 64 MiB ≈ a few thousand tiles
 	v.SetDefault("maps.tile_cache_ttl", 24*time.Hour)
 }
