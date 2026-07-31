@@ -1633,6 +1633,7 @@
       "labels": "Labels",
       "subjects": "People",
       "deduplicated": "Deduplicated",
+      "albumsSkipped": "Albums of type {{types}} are deliberately not imported (PhotoPrism generates them itself and the timeline covers them) — skipped: {{n}}. They never count as missing.",
       "sampleNote": "Showing the first {{shown}} of {{total}}."
     },
     "failures": {

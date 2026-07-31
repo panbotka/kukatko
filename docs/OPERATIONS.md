@@ -234,7 +234,10 @@ photo-sorter's feeds `GET /api/v1/stats` (`total_photos`/`photos_with_embeddings
 them against Kukátko, listing what is missing: PhotoPrism UIDs not imported, photos missing an original file
 (e.g. a dropped RAW sibling), photos missing their photo-sorter embedding/faces, and albums/labels/people not
 transferred. The SHA256/SHA1-dedup delta is accounted for separately (`deduplicated`), so the remaining delta
-is a real gap. It does **not** record an `import_runs` row (it is a check, not an import). Needs
+is a real gap. **Albums are reconciled against the types the importer actually maps** (`ppimport.
+DefaultAlbumTypes`); PhotoPrism's auto-generated `month` albums are printed as `skipped by design` (and carried
+in the JSON as `structure.albums.skipped_types`/`skipped_by_design_count`) instead of being listed as missing —
+see [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md) phase 4 for what a clean report means. It does **not** record an `import_runs` row (it is a check, not an import). Needs
 `import.photoprism.*` configured (and `import.photosorter.*` for the vectors section); exits **nonzero** when
 anything is missing, so a script/CI can gate on it. `--json` prints the full report as JSON.
 

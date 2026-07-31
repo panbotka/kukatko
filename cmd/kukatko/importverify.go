@@ -112,7 +112,7 @@ func printReportSummary(cmd *cobra.Command, report importverify.Report) {
 		cmd.Printf("  %s expected=%d actual=%d\n", gap.PhotoprismUID, gap.Expected, gap.Actual)
 	}
 	printVectorsSummary(cmd, report.Vectors)
-	printEntitySummary(cmd, "albums", report.Structure.Albums)
+	printAlbumSummary(cmd, report.Structure.Albums)
 	printEntitySummary(cmd, "labels", report.Structure.Labels)
 	printEntitySummary(cmd, "people", report.Structure.Subjects)
 	if report.Complete {
@@ -134,6 +134,18 @@ func printVectorsSummary(cmd *cobra.Command, v importverify.VectorsReport) {
 		v.SourceTotalFaces, v.CatalogFaces, v.MissingFacesCount)
 	if len(v.MissingEmbeddings) > 0 {
 		cmd.Printf("  photos missing embedding: %s\n", strings.Join(v.MissingEmbeddings, ", "))
+	}
+}
+
+// printAlbumSummary prints the albums entity plus, when the source holds albums
+// of a type the import deliberately skips (PhotoPrism's auto-generated "month"
+// albums), how many they are — so the source count reads as the whole album
+// catalogue minus what is skipped on purpose, not as a shortfall.
+func printAlbumSummary(cmd *cobra.Command, a importverify.AlbumReport) {
+	printEntitySummary(cmd, "albums", a.EntityReport)
+	if a.SkippedByDesignCount > 0 {
+		cmd.Printf("  skipped by design (%s): %d\n",
+			strings.Join(a.SkippedTypes, ", "), a.SkippedByDesignCount)
 	}
 }
 

@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
@@ -138,9 +138,14 @@ beforeEach(async () => {
   backupMock.mockResolvedValue(undefined)
 })
 
-afterEach(() => {
-  vi.restoreAllMocks()
-})
+// Deliberately no `afterEach(vi.restoreAllMocks)`: `restoreMocks: true` in
+// vite.config.ts already restores every mock BEFORE each test, and beforeEach
+// re-stubs them. Restoring here as well emptied the module mocks while the tree
+// was still mounted — RTL's own `cleanup()` afterEach then unmounted it, React
+// flushed the pending passive effects, and the page's data effect called a mock
+// with no implementation: `fetchLibraryStats(...)` returned undefined and the
+// hook's `.then` threw. That failed a varying test of this file whenever the
+// full suite ran busy enough for the effects to flush that late.
 
 describe('SystemStatusPage', () => {
   it('denies access to non-maintainers (viewer and plain admin) and never fetches', async () => {

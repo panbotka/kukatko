@@ -1681,6 +1681,7 @@
       "labels": "Štítky",
       "subjects": "Lidé",
       "deduplicated": "Deduplikováno",
+      "albumsSkipped": "Alba typu {{types}} se záměrně neimportují (PhotoPrism si je generuje sám a pokrývá je časová osa) — přeskočeno: {{n}}. Nikdy se nepočítají jako chybějící.",
       "sampleNote": "Zobrazeno prvních {{shown}} z {{total}}."
     },
     "failures": {

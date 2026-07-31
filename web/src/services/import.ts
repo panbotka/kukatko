@@ -236,9 +236,20 @@ export interface EntityReport {
   missing: string[]
 }
 
+/**
+ * Album reconciliation (`importverify.AlbumReport`): an `EntityReport` over the
+ * album types the import maps, plus the tally of the ones it skips on purpose
+ * (PhotoPrism's auto-generated per-month albums, covered by the timeline). Those
+ * are counted here, never listed as missing.
+ */
+export interface AlbumReport extends EntityReport {
+  skipped_types: string[]
+  skipped_by_design_count: number
+}
+
 /** Album/label/subject reconciliation (`importverify.StructureReport`). */
 export interface StructureReport {
-  albums: EntityReport
+  albums: AlbumReport
   labels: EntityReport
   subjects: EntityReport
 }
