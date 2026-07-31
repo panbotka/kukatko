@@ -1575,7 +1575,12 @@ to `## Package map` in `CLAUDE.md`.
   (List Photos/Albums/Labels/Subjects), `FeedsSource` (`Stats` = the photo-sorter `/stats` feed), `Catalog`
   (the pool-backed `Store = NewStore(pool)`: `ImportedRefs`/`OriginalFileCounts`/`Counts`/`PhotosMissing
   Embeddings`/`PhotosMissingFaces`/`AlbumTitles`/`LabelNames`/`SubjectNames`); `Verify` walks the **whole**
-  PhotoPrism library by paging `ListPhotos`, classifies a photo as matched/**deduplicated** (the uid is missing,
+  PhotoPrism library by paging `ListPhotos` **to an empty page** (a merged listing's short page is not
+  exhaustion — see the paging contract under `internal/photoprism/`; stopping there reconciled against the
+  first page alone, which is how the gate that guards the point of no return could call a library complete
+  with 19 700 photos missing) and **deduplicates the re-served overlap by uid**, keeping the widest `Files[]`
+  seen for a photo so a boundary-straddling partial does not mask a real file gap; it classifies a photo as
+  matched/**deduplicated** (the uid is missing,
   but the primary SHA1 hash is already imported — the bill for the SHA256/SHA1 dedup)/**missing**, and a matched photo with
   fewer `original` files in the catalogue than PhotoPrism's `Files[]` → a **file gap** (a dropped sibling);
   `OriginalFileCounts` counts **across the whole stack**, not just over that one row: a shot's sibling files
@@ -1592,7 +1597,16 @@ to `## Package map` in `CLAUDE.md`.
   AlbumUID,Query})`
   → `GET /api/v1/photos?count=…&offset=…&merged=true&order=updated[&q=updated:"<RFC3339>"]`
   for an **incremental** pull (UpdatedSince→the `updated:` filter, count clamped to `MaxCount` 1000, the caller
-  pages via offset); **scope for mapping membership**: `AlbumUID`→`s=<albumUID>` (an album's photos),
+  pages via offset). **Paging contract — `merged=true` makes a short page normal:** the offset/count window
+  selects FILE rows and PhotoPrism then collapses a photo's rows into one entry, so a page comes back shorter
+  than the requested count whenever it holds a multi-file photo (measured on the production library at
+  `count=1000`: 914/987/996 entries per page against 20 670 photos). A paging caller must therefore terminate
+  on an **EMPTY** page, never on a short one — `len(page) < pageSize` read the first page as the end of the
+  library and returned success. Advancing the offset by the page length under-advances against the file-row
+  offset: it never skips a photo (the overlap is simply re-listed, and a photo straddling the boundary arrives
+  complete the second time) but it does re-serve photos already seen, so a caller that counts must deduplicate
+  by uid. Album/label/subject listings take no `merged` and are unaffected;
+  **scope for mapping membership**: `AlbumUID`→`s=<albumUID>` (an album's photos),
   `Query`→`q=` verbatim (overrides the watermark, for `label:"<slug>"`); it parses
   UID/TakenAt/Lat/Lng/Altitude/Title/**Caption**/Type/Width/Height/
   OriginalName/**Scan**/**CameraSerial**/Camera/Lens/EXIF + `Files[]` (UID, **Hash=SHA1**, Primary,
@@ -1726,7 +1740,13 @@ to `## Package map` in `CLAUDE.md`.
   `facematch` via IoU;
   (3) **albums & labels** find-or-create by name (a map from
   `ListAlbums`/`ListLabels`), membership via a scoped `ListPhotos` (`AlbumUID`/`label:"<slug>"`) →
-  an idempotent `AddPhoto`/`AttachLabel`; then the run is `Complete`d with the watermark; a **per-photo error** is
+  an idempotent `AddPhoto`/`AttachLabel`; then the run is `Complete`d with the watermark;
+  **every `ListPhotos` walk (the run itself and both membership listings) ends on an EMPTY page, not on a
+  short one** — a merged listing pages short by construction (the paging contract under `internal/photoprism/`),
+  and terminating there imported the first page of the library and reported the run done; the offset still
+  advances by the page length, so the re-listed overlap costs an idempotent re-import and never a skipped
+  photo. The `ListAlbums`/`ListLabels`/`ListSubjects` walks take no `merged`, return full pages and keep the
+  short-page termination; a **per-photo error** is
   recorded into `counts.failed` and **does not interrupt the run** (only an infrastructure error `Fail`s the run), 429
   backoff is handled by the client, **the watermark never moves past the oldest failure** (`runState`); safe to
   re-run. **`Handle(ctx,job)`** = `worker.HandlerFunc` for `pp_import` (ignores the payload, calls

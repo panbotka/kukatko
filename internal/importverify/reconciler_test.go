@@ -24,6 +24,12 @@ type fakePhotoPrism struct {
 	labels       []photoprism.Label
 	subjects     []photoprism.Subject
 	listErr      error
+	// merged, when set, serves the photo listing the way PhotoPrism serves a merged
+	// one: offset/count select FILE rows — one per entry in a photo's Files — and
+	// the rows of one photo then collapse into a single entry. A page is therefore
+	// shorter than the requested count whenever its window holds a multi-file photo,
+	// which is exactly what made a short page look like the end of the library.
+	merged bool
 }
 
 // ListPhotos returns one page of the fake's photos, or the injected error.
@@ -33,7 +39,39 @@ func (f *fakePhotoPrism) ListPhotos(
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
+	if f.merged {
+		return mergedPhotoPage(f.photos, params.Offset, params.Count), nil
+	}
 	return pageSlice(f.photos, params.Offset, params.Count), nil
+}
+
+// mergedPhotoPage expands the photos into one row per file, slices the row window
+// and collapses consecutive rows of the same photo, mirroring PhotoPrism's merged
+// listing. A photo straddling the window keeps only the files inside it, exactly
+// as the source serves it.
+func mergedPhotoPage(in []photoprism.Photo, offset, count int) []photoprism.Photo {
+	rows := make([]photoprism.Photo, 0, len(in))
+	for i := range in {
+		if len(in[i].Files) == 0 {
+			rows = append(rows, in[i])
+			continue
+		}
+		for j := range in[i].Files {
+			row := in[i]
+			row.Files = in[i].Files[j : j+1]
+			rows = append(rows, row)
+		}
+	}
+	merged := make([]photoprism.Photo, 0, count)
+	for _, row := range pageSlice(rows, offset, count) {
+		if n := len(merged); n > 0 && merged[n-1].UID == row.UID {
+			merged[n-1].Files = append(merged[n-1].Files, row.Files...)
+			continue
+		}
+		row.Files = slices.Clone(row.Files)
+		merged = append(merged, row)
+	}
+	return merged
 }
 
 // ListAlbums returns one page of the albums registered for params.Type.
