@@ -4,12 +4,18 @@ The concrete runbook for making Kukátko the primary photo app. This is the
 *executable finish-line*: when every box here is checked, PhotoPrism can go
 read-only.
 
-> **Blocked as written — see [`READINESS_AUDIT.md`](READINESS_AUDIT.md) (2026-07-31).**
-> Phase 2 imports only the first page of the source library and phase 4's verifier
-> measures against that same truncated page, so a run can report success on a
-> library that is 95 % empty. Fix §2.1–§2.3 of the audit before running this. It complements [`MIGRATION_AUDIT.md`](MIGRATION_AUDIT.md) (field-level
+It complements [`MIGRATION_AUDIT.md`](MIGRATION_AUDIT.md) (field-level
 mapping) with the **verified production topology** and the **wipe + full reimport**
 procedure.
+
+> **Unblocked 2026-08-01.** [`READINESS_AUDIT.md`](READINESS_AUDIT.md) §2 found three
+> defects that made this runbook unsafe to execute — the import and its verifier both
+> stopped after the first page of the source, the verifier expected albums the import
+> skips, and the vector counters read as complete on an empty catalogue. All three are
+> fixed and the fix is measured: `import verify` now enumerates 20 660 source photos
+> where it saw 994. The audit's §4 also records the risks accepted for this cutover —
+> no S3 backup, no restore rehearsal — which is why **phase 5 below is waived** and the
+> untouched PhotoPrism + photo-sorter libraries are the only rollback.
 
 ## Verified production topology (measured 2026-07-19, live)
 
@@ -59,7 +65,7 @@ PhotoPrism/`ppimport` path, not photo-sorter.
 - `3f8f3144` — **completeness verify tool** (`kukatko import verify`) + persist
   per-photo/per-file import failures so a run with failures is not `done`.
 
-(Backup→restore rehearsal is still an open cutover gate — see the checklist.)
+(Backup→restore rehearsal was an open cutover gate; it is **waived** — see phase 5.)
 
 ## Runbook — wipe + full reimport
 
@@ -108,29 +114,36 @@ PhotoPrism/`ppimport` path, not photo-sorter.
 
    **What "clean" means for albums.** The check reconciles only the album types the
    importer maps (`ppimport.DefaultAlbumTypes` = `album, folder, moment, state`).
-   PhotoPrism's auto-generated `month` albums — 560 of them, one per calendar month,
+   PhotoPrism's auto-generated `month` albums — 321 of them, one per calendar month,
    covered by Kukátko's timeline — are reported as `structure.albums.skipped_by_design_count`
    (with `skipped_types`), never as missing. So `structure.albums.source_count` is the
    source album catalogue **minus** those, and `758 = source_count + skipped_by_design_count`
    is the sanity check against PhotoPrism's own album total; anything still listed under
    `missing` is a real gap to resolve. Before this the verifier defaulted to all five
-   types and the report listed ~560 monthly albums as missing forever, so "clean" was
+   types and the report listed all 321 monthly albums as missing forever, so "clean" was
    unreachable by construction.
 
-### Phase 5 — prove backup + restore (point-of-no-return gate)
-9. Configure `backup.s3.*` to a second, independent bucket + a non-empty
-   `backup.schedule`. Run `kukatko backup`.
-10. **Rehearse restore end-to-end on a throwaway DB**: `restore db` → `restore
-   originals` → `restore verify` = `Consistent`. Do not skip — this path is currently
-   untested.
+### Phase 5 — ~~prove backup + restore~~ **WAIVED 2026-08-01**
+9. Dropped by an explicit owner decision: Kukátko gets **no S3 backup**, and the restore
+   path is **not rehearsed**. Recorded in [`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4
+   under *Accepted risks*, not as an oversight.
+
+   **What this makes load-bearing.** With no backup of its own, the untouched PhotoPrism
+   and photo-sorter libraries are Kukátko's *only* safety net, so the rollback in phase 6
+   stops being prudence and becomes a hard operating rule: they cannot be retired,
+   `storagemigrate DeleteLocal` stays off, and trash `retention` stays off. Anything that
+   would delete an original from a source library requires revisiting the backup decision
+   first.
 
 ### Phase 6 — cutover
 11. Side-by-side sample compare (counts, a few albums/people) PhotoPrism vs Kukátko.
 12. Make Kukátko primary; set PhotoPrism read-only.
 13. **Keep the PhotoPrism + photo-sorter libraries intact and read-only** — they are the
     true rollback (sources untouched, no runtime dependency). Keep `storagemigrate
-    DeleteLocal` and trash `retention` **off** until backups are proven.
+    DeleteLocal` and trash `retention` **off** — permanently, not "until backups are
+    proven", because phase 5 is waived and there will be no backup to prove.
 
-**Point of no return:** switching Kukátko to primary is safe once Phases 1–4 pass;
-*retiring* PhotoPrism/photo-sorter is safe only after Phase 5 (a real restore) is
-demonstrated. Until then they stay as the rollback.
+**Point of no return:** switching Kukátko to primary is safe once phases 1–4 pass. With
+phase 5 waived there is no restore to demonstrate, so *retiring* PhotoPrism/photo-sorter
+is never demonstrably safe — the point of no return is the moment either source library
+is deleted or written to, and that moment should not come.
