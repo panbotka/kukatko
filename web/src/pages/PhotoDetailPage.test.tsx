@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { NARROW_VIEWPORT_QUERY } from '../hooks/useIsNarrowViewport'
@@ -298,10 +298,6 @@ beforeEach(async () => {
   ratePhotoMock.mockResolvedValue(undefined)
   archivePhotoMock.mockResolvedValue(undefined)
   unarchivePhotoMock.mockResolvedValue(undefined)
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('PhotoDetailPage — immersive viewer', () => {

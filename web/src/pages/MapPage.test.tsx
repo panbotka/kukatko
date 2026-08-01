@@ -91,10 +91,6 @@ beforeEach(async () => {
   fetchMock.mockReset()
 })
 
-afterEach(() => {
-  vi.restoreAllMocks()
-})
-
 describe('MapPage', () => {
   it('loads the GeoJSON feed and plots the markers', async () => {
     fetchMock.mockResolvedValue(collection([feature('ph1'), feature('ph2')]))

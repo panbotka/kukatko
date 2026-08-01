@@ -146,7 +146,6 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers()
-  vi.restoreAllMocks()
 })
 
 describe('SearchPage', () => {

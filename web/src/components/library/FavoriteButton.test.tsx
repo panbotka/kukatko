@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 
@@ -27,10 +27,6 @@ function renderButton(favorite: boolean, onChange?: (favorite: boolean) => void)
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   favoriteMock.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('FavoriteButton', () => {

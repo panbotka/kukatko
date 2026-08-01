@@ -120,7 +120,6 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
-  vi.restoreAllMocks()
   window.matchMedia = realMatchMedia
 })
 

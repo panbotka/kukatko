@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
@@ -140,10 +140,6 @@ beforeEach(async () => {
   albumsMock.mockReset().mockResolvedValue(ALBUMS)
   labelsMock.mockReset().mockResolvedValue(LABELS)
   bulkMock.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('ExpandPage', () => {

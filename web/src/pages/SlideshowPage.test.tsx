@@ -63,7 +63,6 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
-  vi.restoreAllMocks()
   window.localStorage.clear()
 })
 

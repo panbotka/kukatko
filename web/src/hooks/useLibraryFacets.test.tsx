@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type PhotoListParams, type YearsResponse } from '../services/photos'
 
@@ -46,10 +46,6 @@ beforeEach(() => {
   albumsMock.mockResolvedValue([])
   labelsMock.mockResolvedValue([])
   subjectsMock.mockResolvedValue([])
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('useLibraryFacets', () => {

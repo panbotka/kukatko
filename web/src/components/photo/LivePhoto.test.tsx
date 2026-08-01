@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 
@@ -19,10 +19,6 @@ beforeEach(async () => {
   // jsdom does not implement media playback; stub it so start/stop can run.
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('LivePhoto', () => {

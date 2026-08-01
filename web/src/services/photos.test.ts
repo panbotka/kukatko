@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from './auth'
 import {
@@ -61,10 +61,6 @@ function sentBody(init: RequestInit | undefined): unknown {
   }
   return JSON.parse(body)
 }
-
-afterEach(() => {
-  vi.restoreAllMocks()
-})
 
 describe('buildPhotoQuery', () => {
   it('omits empty and undefined values to keep the query minimal', () => {
@@ -245,10 +241,6 @@ describe('thumbUrl', () => {
 })
 
 describe('saveEdit', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
   it('sends only the edit itself, never the fields the GET adds', async () => {
     // The edit panel hands back what `fetchEdit` returned, which also carries
     // `photo_uid`/`updated_at`. The PUT body is decoded strictly, so echoing

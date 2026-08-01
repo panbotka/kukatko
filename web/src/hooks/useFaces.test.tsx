@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type FacesResponse } from '../services/people'
 
@@ -61,10 +61,6 @@ beforeEach(() => {
   fetchMock.mockReset()
   assignMock.mockReset()
   assignMock.mockResolvedValue(undefined)
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('useFaces', () => {

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { type GlobalSearchResult } from '../../services/search'
@@ -37,10 +37,6 @@ function renderSections(query: string) {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   searchMock.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('GlobalSearchSections', () => {

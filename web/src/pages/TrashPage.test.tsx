@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -105,10 +105,6 @@ beforeEach(async () => {
   emptyMock.mockReset()
   olderMock.mockReset()
   infoMock.mockResolvedValue({ retention_days: 30 })
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('TrashPage', () => {

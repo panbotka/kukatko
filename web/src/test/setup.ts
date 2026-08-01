@@ -50,6 +50,15 @@ if (typeof Element !== 'undefined') {
 
 // React Testing Library does not auto-clean between tests under Vitest's
 // default config, so unmount rendered trees after each test to avoid leakage.
+//
+// Mock restoration is deliberately NOT done here (nor in any test file):
+// `restoreMocks: true` in vite.config.ts restores every mock *before* each
+// test, which is the only ordering that is safe. Restoring in an `afterEach`
+// empties the module mocks while the tree is still mounted — the `cleanup()`
+// below then unmounts it, React flushes the pending passive effects, and a
+// service mock with no implementation returns `undefined`, so the calling
+// hook's `.then` throws. That surfaced as a suite-order-dependent flake that
+// blocked a release build, and an ESLint rule now bans the call in tests.
 afterEach(() => {
   cleanup()
 })

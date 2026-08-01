@@ -72,7 +72,6 @@ beforeEach(async () => {
 afterEach(() => {
   // Restore the shared desktop default so later tests never inherit a phone.
   mockViewport(false)
-  vi.restoreAllMocks()
 })
 
 describe('HeaderActions on a wide screen', () => {

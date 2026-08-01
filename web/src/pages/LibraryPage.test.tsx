@@ -4,7 +4,7 @@ import { forwardRef, type ReactNode, useImperativeHandle } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
@@ -237,10 +237,6 @@ beforeEach(async () => {
   favoriteMock.mockReset()
   favoriteMock.mockResolvedValue(undefined)
   grid.scrollToIndex.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('LibraryPage', () => {

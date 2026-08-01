@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from './auth'
 import {
@@ -33,10 +33,6 @@ function jsonResponse(body: unknown, status: number): Response {
     headers: { 'Content-Type': 'application/json' },
   })
 }
-
-afterEach(() => {
-  vi.restoreAllMocks()
-})
 
 describe('buildMapQuery', () => {
   it('omits empty and undefined values', () => {
