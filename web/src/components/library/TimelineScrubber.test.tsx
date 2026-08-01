@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { type PhotoListParams, type Timeline } from '../../services/photos'
@@ -45,10 +45,6 @@ function renderScrubber(props: {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchMock.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('TimelineScrubber', () => {

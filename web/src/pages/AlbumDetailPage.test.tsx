@@ -143,10 +143,6 @@ beforeEach(async () => {
   labelsMock.mockResolvedValue([])
 })
 
-afterEach(() => {
-  vi.restoreAllMocks()
-})
-
 describe('AlbumDetailPage', () => {
   it('scopes the photo grid to the album from the URL', async () => {
     fetchAlbumMock.mockResolvedValue(album())

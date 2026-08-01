@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
@@ -58,10 +58,6 @@ function renderBadges(role: TestRole) {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   statsMock.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('JobQueueBadges', () => {

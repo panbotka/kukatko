@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { type Candidate, type CandidateResult } from '../../services/faces'
@@ -90,10 +90,6 @@ beforeEach(async () => {
   searchMock.mockReset()
   rejectMock.mockReset().mockResolvedValue(undefined)
   assignMock.mockReset().mockResolvedValue(undefined)
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('Candidates', () => {

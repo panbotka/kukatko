@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
@@ -34,10 +34,6 @@ function jsonResponse(body: unknown, status: number): Response {
     headers: { 'Content-Type': 'application/json' },
   })
 }
-
-afterEach(() => {
-  vi.restoreAllMocks()
-})
 
 describe('login', () => {
   it('posts credentials and returns the session on 200', async () => {

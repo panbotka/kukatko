@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { ApiError } from '../../services/auth'
@@ -131,10 +131,6 @@ beforeEach(async () => {
     album('a3', 'Work'),
   ])
   fetchLabelsMock.mockResolvedValue([label('l1', 'sunset'), label('l2', 'winter')])
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('OrganizePanel autocomplete', () => {

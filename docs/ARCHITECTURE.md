@@ -896,6 +896,13 @@ follow these rules; **a task is not done with red lint or tests.**
 ### 19.3 Frontend tests
 - **ESLint** (strict) + **Prettier**. **Vitest + React Testing Library** for components and hooks
   (especially filter state in the URL, i18n, auth flow). Cover the critical flows (login, upload, search).
+- **Mocks are restored centrally, never per file.** `restoreMocks: true` in `vite.config.ts` restores
+  every mock *before* each test, which is the only safe ordering; a test file that also calls
+  `vi.restoreAllMocks()` in an `afterEach` empties the module mocks while the tree is still mounted, RTL's
+  `cleanup()` then unmounts it, React flushes the pending passive effects and a service mock with no
+  implementation returns `undefined` — the calling hook's `.then` throws. That was a real, order-dependent
+  flake that failed a release build, so an ESLint rule (`no-restricted-syntax` on `**/*.test.{ts,tsx}`)
+  bans the call; re-stub in `beforeEach` instead.
 - (Optionally M7) **Playwright** E2E for a few key scenarios.
 
 ### 19.4 Make targets and the gate

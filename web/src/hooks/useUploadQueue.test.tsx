@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type UploadFileOptions, type UploadFileResult } from '../services/upload'
 
@@ -51,10 +51,6 @@ beforeEach(() => {
         pending.push({ options, resolve, reject })
       }),
   )
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('useUploadQueue', () => {

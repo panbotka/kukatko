@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { pendingValue } from '../lib/pendingCreate'
 import { ApiError } from '../services/auth'
@@ -100,10 +100,6 @@ beforeEach(() => {
   labelsMock.mockReset().mockResolvedValue([labelCount('lb1', 'Sunset')])
   createAlbumMock.mockReset()
   createLabelMock.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('useUploadOrganize', () => {

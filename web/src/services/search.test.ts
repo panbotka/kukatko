@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { type GlobalSearchResult, globalSearch, hasEntityMatches, isEmptyResult } from './search'
 
@@ -16,10 +16,6 @@ const RESULT: GlobalSearchResult = {
   people: [{ uid: 'su1', name: 'Beatrice', cover: 'ph3' }],
   photos: [],
 }
-
-afterEach(() => {
-  vi.restoreAllMocks()
-})
 
 describe('globalSearch', () => {
   it('requests the grouped endpoint with the query and parses the body', async () => {

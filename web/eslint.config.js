@@ -40,5 +40,25 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // `restoreMocks: true` in vite.config.ts already restores every mock before
+    // each test. Calling `vi.restoreAllMocks()` from a test file as well empties
+    // the module mocks while the tree is still mounted; RTL's `cleanup()` then
+    // unmounts it, React flushes the pending passive effects, and a service mock
+    // with no implementation returns `undefined` — the hook's `.then` throws.
+    // That was a real, release-blocking flake, so ban the call outright.
+    files: ['**/*.test.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.object.name='vi'][callee.property.name='restoreAllMocks']",
+          message:
+            'Do not call vi.restoreAllMocks() in tests: `restoreMocks: true` in vite.config.ts already restores mocks before each test, and restoring again races with RTL cleanup (see src/test/setup.ts).',
+        },
+      ],
+    },
+  },
   prettier,
 )

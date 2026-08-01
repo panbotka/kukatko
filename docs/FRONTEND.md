@@ -2310,7 +2310,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   a minimum width, `.kukatko-filter-panel` = 44px tap targets on the panel's elements, `.kukatko-filter-chip`
   = a tappable pill chip with a cross); the CSS variable `--kukatko-navbar-height`),
   `test/setup.ts` (a jsdom **`window.matchMedia` stub** — a non-matching default, individual tests can
-  override it to simulate a phone),
+  override it to simulate a phone — plus the stubs for `setPointerCapture`/`scrollIntoView` and RTL's
+  `cleanup()`; **mock restoration deliberately does not live here either** — `restoreMocks: true` in
+  `vite.config.ts` restores mocks *before* each test, and restoring again in an `afterEach` races with
+  that `cleanup()`, see `docs/ARCHITECTURE.md` §19.3),
   `test/batchBar.ts` (fixtures shared by the tests of pages with a photo grid: `BATCH_ACTIONS` = the complete
   dictionary of `BatchActionBar` actions by accessible name — every page asserts it **in full**, so that it
   can't silently regress to a stripped-down toolbar — and `albumOption()` for `fetchAlbums` in the picker),
@@ -2339,6 +2342,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `canImport`), `/maintenance` and `/system` under `RequireRole role="maintainer"` = operations (maintainer
   only), `/users` and `/audit` under `RequireRole role="admin"` = governance (admin **or**
   maintainer)). Config:
-  `vite.config.ts` (the build → `../internal/web/static/dist`, vitest jsdom, the dev proxy
-  `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed), `.prettierrc.json`,
+  `vite.config.ts` (the build → `../internal/web/static/dist`, vitest jsdom, **`restoreMocks: true`** =
+  the single place mocks are restored, the dev proxy
+  `/healthz`+`/api` → `:8080`), `eslint.config.js` (strict typed, plus a test-file-only
+  `no-restricted-syntax` that bans `vi.restoreAllMocks()`), `.prettierrc.json`,
   `tsconfig*.json`.

@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type Photo, type PhotoListParams, type PhotoListResponse } from '../services/photos'
 
@@ -42,10 +42,6 @@ function page(photos: Photo[], total: number, nextOffset: number | null): PhotoL
 
 beforeEach(() => {
   fetchMock.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('usePhotoLibrary', () => {

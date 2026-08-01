@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { type SimilarPhoto } from '../../services/photos'
@@ -53,10 +53,6 @@ function renderSimilar(uid = 'ph-source') {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchMock.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('SimilarPhotos', () => {

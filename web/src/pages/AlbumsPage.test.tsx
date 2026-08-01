@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { type ComponentType, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { type TileGridLayout } from '../components/TileGrid'
@@ -87,10 +87,6 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchMock.mockReset()
   createMock.mockReset()
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('AlbumsPage', () => {

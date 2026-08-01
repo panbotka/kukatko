@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { type AuditListResponse, fetchAuditLog } from './audit'
 
@@ -28,10 +28,6 @@ const RESPONSE: AuditListResponse = {
   offset: 0,
   next_offset: null,
 }
-
-afterEach(() => {
-  vi.restoreAllMocks()
-})
 
 describe('fetchAuditLog', () => {
   it('requests /audit and parses the body', async () => {

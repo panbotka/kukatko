@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
@@ -81,10 +81,6 @@ beforeEach(async () => {
   fetchMock.mockResolvedValue({ message: '' })
   setMock.mockResolvedValue({ message: 'Downtime', level: 'warning', updated_at: 't1' })
   clearMock.mockResolvedValue(undefined)
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('SystemStatusPage announcement compose control', () => {

@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
@@ -141,10 +141,6 @@ beforeEach(async () => {
   })
   albumsMock.mockResolvedValue([])
   labelsMock.mockResolvedValue([])
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('SubjectPage', () => {

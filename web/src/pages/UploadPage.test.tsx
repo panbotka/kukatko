@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { type UploadQueueItem } from '../hooks/useUploadQueue'
@@ -154,10 +154,6 @@ beforeEach(async () => {
   bulkMock.mockReset()
   albumsMock.mockReset().mockResolvedValue([albumSummary('al1', 'Trip')])
   labelsMock.mockReset().mockResolvedValue([labelCount('lb1', 'Sunset')])
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('UploadPage', () => {
