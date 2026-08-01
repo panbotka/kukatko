@@ -281,11 +281,14 @@ read-only viewer.
 changed photos fits in a single page, so it terminates correctly by accident. Only a
 full run is broken — which is why the four scoped test runs looked healthy.
 
-**Decision this forces:** if PhotoPrism really goes read-only at the cutover, none of
-the gaps above matter — the incremental path is only needed for the transition
-window. If PhotoPrism keeps being used in parallel, the library has two masters, a
-one-way sync and no deletion handling, and the catalogues will silently drift apart.
-That is a decision to make, not a feature to build.
+**Decided 2026-08-01.** PhotoPrism stays in use, but **only for viewing**: no uploads
+(judged very unlikely anyway), no deletions and no face assignments happen there. All
+curation — people, albums, labels, deletions — is done in Kukátko from the cutover on.
+
+That closes both gaps above by convention rather than by code, and it is the reason no
+deletion-reconciliation work is planned. The convention is what makes it safe: the
+moment someone deletes a photo or assigns a face in PhotoPrism, the two catalogues
+begin drifting apart with nothing to detect it.
 
 ## 6. What this audit did not measure
 
