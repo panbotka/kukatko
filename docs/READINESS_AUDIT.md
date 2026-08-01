@@ -8,9 +8,20 @@ Companion to [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md), which is the *runbook*. T
 document is the *measurement*: what works, what does not, and what must be fixed
 before the cutover. It changes nothing — every entry is an observation.
 
-**Verdict: NOT ready.** Two defects break the migration itself (§2), and the
-point-of-no-return gate (a proven restore) has never been exercised (§4). Feature
-parity is otherwise good and is not the blocker.
+**Verdict when written (2026-07-31): NOT ready** — three defects broke the migration
+itself (§2) while feature parity was never the blocker.
+
+**Updated 2026-08-01: the blockers are closed.** All three §2 defects are fixed and the
+fixes are measured, not asserted: `import verify` enumerates **20 660** source photos
+where it saw 994, monthly albums are reported as `skipped_by_design` instead of missing,
+and the vector section now carries a source-coverage figure the zeros cannot be mistaken
+for. The tooling gaps found while sizing the import (§4) are closed too — there is a
+guarded `maintenance reset`, a geocode credit budget and per-job-type worker pools.
+
+What remains is not a defect but an **unrun migration**: the catalogue below still holds
+280 of 20 670 photos, so everything marked UNMEASURABLE stays unmeasured until phases
+1–4 have actually run. Backup, restore rehearsal and password rotation are **waived by
+decision** (§4), not outstanding work.
 
 ## Evidence rules
 
@@ -90,17 +101,17 @@ is not evidence of exhaustion for any endpoint that filters or merges server-sid
 > `skipped_types` instead of `missing`. The measurement below is the state before that change.
 
 - Importer, `internal/ppimport/ppimport.go:89`: a full run maps four album types —
-  `album, folder, moment, state`. `month` is excluded on purpose (560 auto-generated
+  `album, folder, moment, state`. `month` is excluded on purpose (321 auto-generated
   monthly albums that Kukátko's timeline already covers).
 - Verifier, `internal/importverify/importverify.go:145`: defaults to **all five**
   types (`photoprism.AlbumTypes`).
 
-So the completeness report permanently lists ~560 monthly albums as missing.
+So the completeness report permanently lists the 321 monthly albums as missing.
 Observed: `structure.albums.source_count: 758`, `missing_count: 751`.
 
 `MIGRATION_PLAN.md` phase 4 requires resolving "every listed missing item … until the
 report is clean". With this mismatch that is unachievable by construction, and real
-missing albums are buried in ~560 rows of noise.
+missing albums are buried in 321 rows of noise.
 
 **Fix direction:** the verifier should default to the importer's `DefaultAlbumTypes`,
 or classify intentionally-skipped types separately from missing ones.

@@ -84,8 +84,8 @@ const DefaultPageSize = photoprism.MaxCount
 // DefaultAlbumTypes are the PhotoPrism album types a full import maps when
 // Config.AlbumTypes is empty. PhotoPrism serves five (photoprism.AlbumTypes) and
 // generates most of them itself; "month" is left out because it holds one
-// auto-generated album per calendar month — 560 of them on the production
-// library — which Kukátko's timeline already covers.
+// auto-generated album per calendar month — 321 of them on the production
+// library, measured 2026-08-01 — which Kukátko's timeline already covers.
 var DefaultAlbumTypes = []string{"album", "folder", "moment", "state"}
 
 // PhotoPrismClient is the read-only PhotoPrism contract the importer needs: photo
