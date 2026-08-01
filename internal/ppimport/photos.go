@@ -47,6 +47,7 @@ func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState
 	// leaves the index empty and subjects fall back to a plain public person.
 	state.subjects = s.loadSubjectIndex(ctx)
 	query := state.scope.Query()
+	lastPage := ""
 	for offset := 0; ; {
 		page, err := s.client.ListPhotos(ctx, photoprism.PhotoListParams{
 			Count:        s.pageSize,
@@ -74,6 +75,18 @@ func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState
 		if len(page) == 0 {
 			return nil
 		}
+		// A source that ignores the offset would serve the same window forever and
+		// the walk above would never reach an empty page — a hang, not an error, and
+		// one that only shows up against a full library. Two identical consecutive
+		// windows mean no progress: stop and say so rather than spin.
+		fingerprint := pageFingerprint(page)
+		if fingerprint == lastPage {
+			return fmt.Errorf(
+				"ppimport: source served the same %d-photo window twice at offset %d: it is ignoring the offset",
+				len(page), offset,
+			)
+		}
+		lastPage = fingerprint
 		// Advancing by the page length under-advances against the source's file-row
 		// offset, which never skips a row (the overlap is re-listed and re-imports
 		// idempotently) and always moves while the page is non-empty, so the walk
@@ -393,4 +406,14 @@ func firstErr(errs ...error) error {
 		}
 	}
 	return nil
+}
+
+// pageFingerprint identifies a listing window by its first and last photo uid and
+// its length — enough to tell "the source moved on" from "the source served the
+// same window again", without holding the page itself.
+func pageFingerprint(page []photoprism.Photo) string {
+	if len(page) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%s:%s", len(page), page[0].UID, page[len(page)-1].UID)
 }

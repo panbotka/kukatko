@@ -64,6 +64,9 @@ type fakeClient struct {
 	// collapse into a single entry, so a page is always shorter than the requested
 	// count. Zero or one keeps the plain one-row-per-photo listing.
 	filesPerPhoto int
+	// ignoreOffset makes every listing serve the window from row 0 regardless of
+	// the requested offset, modelling a source that does not page at all.
+	ignoreOffset bool
 
 	mu          sync.Mutex
 	downloads   []string
@@ -75,6 +78,11 @@ type fakeClient struct {
 func (c *fakeClient) ListPhotos(_ context.Context, p photoprism.PhotoListParams) ([]photoprism.Photo, error) {
 	if c.listErr != nil {
 		return nil, c.listErr
+	}
+	// A source that ignores the offset serves the same window forever, which the
+	// walk must detect instead of spinning on it.
+	if c.ignoreOffset {
+		p.Offset = 0
 	}
 	if c.filesPerPhoto > 1 {
 		return mergedPage(c.selectPhotos(p), p.Offset, p.Count, c.filesPerPhoto), nil

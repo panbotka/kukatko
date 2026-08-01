@@ -80,16 +80,39 @@ type fakePPClient struct {
 }
 
 // ListPhotos returns the photos scoped by album, by search query, or by the
-// incremental watermark.
+// incremental watermark, sliced by the requested window.
+//
+// Honouring Offset is not a detail: the walk ends on an EMPTY page, so a fake that
+// serves the whole list on every call never terminates it. This one used to ignore
+// Offset and only stopped the importer because a short page was read as the end of
+// the library — the very bug that made a full import stop after page one.
 func (c *fakePPClient) ListPhotos(_ context.Context, p photoprism.PhotoListParams) ([]photoprism.Photo, error) {
+	var selected []photoprism.Photo
 	switch {
 	case p.AlbumUID != "":
-		return c.albumPhotos[p.AlbumUID], nil
+		selected = c.albumPhotos[p.AlbumUID]
 	case p.Query != "":
-		return c.queryPhotos[p.Query], nil
+		selected = c.queryPhotos[p.Query]
 	default:
-		return filterByUpdated(c.photos, p.UpdatedSince), nil
+		selected = filterByUpdated(c.photos, p.UpdatedSince)
 	}
+	return window(selected, p.Offset, p.Count), nil
+}
+
+// window slices photos into [offset, offset+count), clamped to the slice, the way
+// a paged source serves a listing. A non-positive count means "no limit".
+func window(photos []photoprism.Photo, offset, count int) []photoprism.Photo {
+	if offset >= len(photos) {
+		return nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	end := len(photos)
+	if count > 0 && offset+count < end {
+		end = offset + count
+	}
+	return photos[offset:end]
 }
 
 // GetPhoto returns the photo's detail: its albums, its labels, its IPTC/XMP
