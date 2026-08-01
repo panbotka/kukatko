@@ -144,3 +144,29 @@ func TestAttachLabelMembers_mergedShortPages(t *testing.T) {
 		t.Errorf("labelled photos = %d, want %d", got, len(tagged))
 	}
 }
+
+// TestImportPhotos_sourceIgnoringOffsetFailsInsteadOfHanging pins the guard on the
+// walk's termination. The loop ends on an EMPTY page, so a source that serves the
+// same window whatever offset it is asked for never ends it: the import would spin
+// re-importing page one until something killed it — which is exactly how it
+// presented, as a 30-minute test timeout rather than a failure. It must stop and
+// say why.
+func TestImportPhotos_sourceIgnoringOffsetFailsInsteadOfHanging(t *testing.T) {
+	t.Parallel()
+	client := &fakeClient{}
+	client.photos = pagedPhotos(client, 5)
+	client.ignoreOffset = true
+
+	h := newHarness(client)
+	done := make(chan error, 1)
+	go func() { _, err := h.svc.Import(context.Background()); done <- err }()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("Import succeeded against a source that never advances, want an error")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("Import did not return: the walk is spinning on a source that ignores the offset")
+	}
+}
