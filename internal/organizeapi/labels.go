@@ -15,11 +15,11 @@ type labelsResponse struct {
 }
 
 // handleLabelList returns every label with its photo count, ordered by priority.
-// It answers 500 if the store fails.
+// It answers 500 if the store fails, logging the cause.
 func (a *API) handleLabelList(w http.ResponseWriter, r *http.Request) {
 	labels, err := a.labels.ListLabels(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "listing labels failed")
+		fail(w, r, http.StatusInternalServerError, "listing labels failed", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, labelsResponse{Labels: labels})
@@ -39,7 +39,7 @@ func (a *API) handleLabelCreate(w http.ResponseWriter, r *http.Request) {
 	created, err := a.labels.CreateLabelAudited(r.Context(), label, entry)
 	if err != nil {
 		status, msg := labelStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
@@ -50,7 +50,7 @@ func (a *API) handleLabelGet(w http.ResponseWriter, r *http.Request) {
 	label, err := a.labels.GetLabelByUID(r.Context(), chi.URLParam(r, "uid"))
 	if err != nil {
 		status, msg := labelStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, label)
@@ -64,7 +64,7 @@ func (a *API) handleLabelUpdate(w http.ResponseWriter, r *http.Request) {
 	existing, err := a.labels.GetLabelByUID(r.Context(), uid)
 	if err != nil {
 		status, msg := labelStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	in, err := decodeLabelInput(r)
@@ -79,7 +79,7 @@ func (a *API) handleLabelUpdate(w http.ResponseWriter, r *http.Request) {
 	label, err := a.labels.UpdateLabelAudited(r.Context(), uid, upd, entry)
 	if err != nil {
 		status, msg := labelStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, label)
@@ -103,7 +103,7 @@ func (a *API) handleLabelDelete(w http.ResponseWriter, r *http.Request) {
 	entry := a.auditEntry(r, audit.ActionLabelDelete, "labels", uid, nil)
 	if err := a.labels.DeleteLabelAudited(r.Context(), uid, entry); err != nil {
 		status, msg := labelStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -126,7 +126,7 @@ func (a *API) handleLabelAttach(w http.ResponseWriter, r *http.Request) {
 	err = a.labels.AttachLabelAudited(r.Context(), in.PhotoUID, uid, in.Source, in.Uncertainty, entry)
 	if err != nil {
 		status, msg := labelStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	a.enqueueSidecar(r.Context(), in.PhotoUID)
@@ -146,12 +146,12 @@ func (a *API) handleLabelDetach(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := a.labels.GetLabelByUID(r.Context(), uid); err != nil {
 		status, msg := labelStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	entry := a.auditEntry(r, audit.ActionLabelDetach, "labels", uid, map[string]any{"photo_uid": in.PhotoUID})
 	if err := a.labels.DetachLabelAudited(r.Context(), in.PhotoUID, uid, entry); err != nil {
-		writeError(w, http.StatusInternalServerError, "detaching label failed")
+		fail(w, r, http.StatusInternalServerError, "detaching label failed", err)
 		return
 	}
 	a.enqueueSidecar(r.Context(), in.PhotoUID)

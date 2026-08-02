@@ -1,8 +1,11 @@
 package organizeapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -258,6 +261,51 @@ func TestAlbumList_ok(t *testing.T) {
 	}
 	if second := got.Albums[1]; second.CoverUID != nil || second.TakenFrom != nil {
 		t.Errorf("empty album carries cover/range: %+v", second)
+	}
+}
+
+// captureLogs installs a logger writing into a buffer as the process-wide slog
+// default for the duration of the test and returns that buffer, restoring the
+// previous default afterwards. A test using it must NOT call t.Parallel: the
+// default logger is global, and Go resumes parallel tests only once the
+// sequential ones have finished, which is what keeps the buffer to one test.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &buf
+}
+
+// TestAlbumList_storeFailureReachesTheLog pins the operator's side of a 500. The
+// client is told only that listing albums failed — the cause must not leak into
+// the response — so the log is the only place the reason can appear, and the
+// access log by itself records nothing but status=500. A 404 is not an incident
+// and stays out of the log.
+func TestAlbumList_storeFailureReachesTheLog(t *testing.T) {
+	logs := captureLogs(t)
+
+	albums := &fakeAlbums{listErr: errors.New("dial tcp: connection refused")}
+	rec := do(t, newServer(albums, &fakeLabels{}), http.MethodGet, "/albums", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if !strings.Contains(logs.String(), "dial tcp: connection refused") {
+		t.Errorf("the log does not carry the cause of the 500: %q", logs.String())
+	}
+	if strings.Contains(rec.Body.String(), "connection refused") {
+		t.Errorf("the response leaks the internal cause: %s", rec.Body.String())
+	}
+
+	logs.Reset()
+	missing := &fakeAlbums{getErr: organize.ErrAlbumNotFound}
+	if rec := do(t, newServer(missing, &fakeLabels{}), http.MethodGet, "/albums/al_x", ""); rec.Code !=
+		http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if logs.Len() != 0 {
+		t.Errorf("a 404 was logged as a failure: %q", logs.String())
 	}
 }
 

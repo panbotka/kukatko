@@ -23,11 +23,11 @@ type photoUIDsResponse struct {
 
 // handleAlbumList returns every album with its photo count, the cover to render
 // for it (hand-picked, else its newest photo) and the span of capture times
-// across its photos. It answers 500 if the store fails.
+// across its photos. It answers 500 if the store fails, logging the cause.
 func (a *API) handleAlbumList(w http.ResponseWriter, r *http.Request) {
 	albums, err := a.albums.ListAlbums(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "listing albums failed")
+		fail(w, r, http.StatusInternalServerError, "listing albums failed", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, albumsResponse{Albums: albums})
@@ -47,7 +47,7 @@ func (a *API) handleAlbumCreate(w http.ResponseWriter, r *http.Request) {
 	created, err := a.albums.CreateAlbumAudited(r.Context(), album, entry)
 	if err != nil {
 		status, msg := albumStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
@@ -58,7 +58,7 @@ func (a *API) handleAlbumGet(w http.ResponseWriter, r *http.Request) {
 	album, err := a.albums.GetAlbumByUID(r.Context(), chi.URLParam(r, "uid"))
 	if err != nil {
 		status, msg := albumStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, album)
@@ -73,7 +73,7 @@ func (a *API) handleAlbumUpdate(w http.ResponseWriter, r *http.Request) {
 	existing, err := a.albums.GetAlbumByUID(r.Context(), uid)
 	if err != nil {
 		status, msg := albumStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	in, err := decodeAlbumInput(r)
@@ -88,7 +88,7 @@ func (a *API) handleAlbumUpdate(w http.ResponseWriter, r *http.Request) {
 	album, err := a.albums.UpdateAlbumAudited(r.Context(), uid, upd, entry)
 	if err != nil {
 		status, msg := albumStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, album)
@@ -115,7 +115,7 @@ func (a *API) handleAlbumDelete(w http.ResponseWriter, r *http.Request) {
 	entry := a.auditEntry(r, audit.ActionAlbumDelete, "albums", uid, nil)
 	if err := a.albums.DeleteAlbumAudited(r.Context(), uid, entry); err != nil {
 		status, msg := albumStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -138,7 +138,7 @@ func (a *API) handleAlbumAddPhotos(w http.ResponseWriter, r *http.Request) {
 	entry := a.auditEntry(r, audit.ActionAlbumAddPhotos, "albums", uid, photoBatchDetails(in.PhotoUIDs))
 	if err := a.albums.AddPhotosAudited(r.Context(), uid, in.PhotoUIDs, entry); err != nil {
 		status, msg := albumStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return
 	}
 	a.enqueueSidecars(r.Context(), in.PhotoUIDs)
@@ -160,7 +160,7 @@ func (a *API) handleAlbumRemovePhotos(w http.ResponseWriter, r *http.Request) {
 	}
 	entry := a.auditEntry(r, audit.ActionAlbumRemovePhotos, "albums", uid, photoBatchDetails(in.PhotoUIDs))
 	if err := a.albums.RemovePhotosAudited(r.Context(), uid, in.PhotoUIDs, entry); err != nil {
-		writeError(w, http.StatusInternalServerError, "removing album photo failed")
+		fail(w, r, http.StatusInternalServerError, "removing album photo failed", err)
 		return
 	}
 	a.enqueueSidecars(r.Context(), in.PhotoUIDs)
@@ -180,7 +180,7 @@ func photoBatchDetails(photoUIDs []string) map[string]any {
 func (a *API) requireAlbum(w http.ResponseWriter, r *http.Request, uid string) bool {
 	if _, err := a.albums.GetAlbumByUID(r.Context(), uid); err != nil {
 		status, msg := albumStatus(err)
-		writeError(w, status, msg)
+		fail(w, r, status, msg, err)
 		return false
 	}
 	return true
@@ -191,7 +191,7 @@ func (a *API) requireAlbum(w http.ResponseWriter, r *http.Request, uid string) b
 func (a *API) writeMembership(w http.ResponseWriter, r *http.Request, uid string) {
 	order, err := a.albums.ListPhotoUIDs(r.Context(), uid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "loading album photos failed")
+		fail(w, r, http.StatusInternalServerError, "loading album photos failed", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, photoUIDsResponse{PhotoUIDs: order})

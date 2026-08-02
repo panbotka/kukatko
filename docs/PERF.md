@@ -202,6 +202,99 @@ pagination O(page) instead of O(offset), but it is a response-shape/contract
 change and is intentionally **out of scope** for this behaviour-preserving pass;
 it is noted here as the next step if deep-scroll latency ever becomes an issue.
 
+### The album index (`GET /api/v1/albums`)
+
+**Symptom (production, 2026-08-02).** The endpoint took **32.8 s** to return
+151 kB for 437 albums / 20 197 visible photos / 40 459 memberships, and the
+requests that did not finish in time failed outright — four `status:500` lines in
+one minute of a user clicking "Alba".
+
+**Root cause.** `listAlbumsSQL` picked each album's fallback cover with a
+correlated `LEFT JOIN LATERAL … ORDER BY p2.taken_at DESC NULLS LAST LIMIT 1`.
+That reads as "sort this album's ~93 photos and take the first", but the planner
+satisfies a per-album `ORDER BY … LIMIT 1` by walking the **global**
+`idx_photos_live_taken_at` order and probing each row for membership of that one
+album (`Incremental Sort`, `Presorted Key: p2.taken_at`). An album whose newest
+photo is old — a 2011 holiday — walks most of the library before its first hit,
+and that happens once per album. `EXPLAIN (ANALYZE, BUFFERS)` on production:
+**16 265 977 buffer hits to produce 437 rows, 99.99 % of them in the cover
+subquery**; the rest of the statement (join, counts, MIN/MAX) cost 2 531 buffers
+and 141 ms. Memoize capped it at 437 executions instead of 40 471, at 79.7 ms
+each. A development library of a few hundred photos makes the global walk free,
+which is exactly why it shipped.
+
+**Fix.** The cover now falls out of the aggregation that already computes the
+count and the capture-time bounds — no second pass over the memberships, no
+correlated probe:
+
+```sql
+COALESCE(a.cover_photo_uid,
+         (array_agg(p.uid ORDER BY p.taken_at DESC NULLS LAST, p.uid)
+              FILTER (WHERE p.uid IS NOT NULL))[1]) AS cover_uid
+```
+
+The contract is unchanged: newest visible photo, unknown capture time last, uid
+breaking ties, a hand-picked cover still winning; on the 437-album reproduction
+the old and new statements return **byte-identical** rows. No migration and no
+new index — the fix is the query shape, and the plan is two sequential scans and
+a `GroupAggregate`.
+
+**Measured** on a reproduction of the production shape (20 000 photos, 437
+albums, 40 641 memberships, each album a contiguous slice of the timeline;
+PostgreSQL 17.8 on the Pi):
+
+| statement | total time | shared blocks | cover-lookup share |
+| --- | --- | --- | --- |
+| `LATERAL … LIMIT 1` (before) | 30 172 ms | 17 279 348 | 17 278 338 (99.99 %) |
+| `DISTINCT ON (album_uid)` CTE | 352 ms | 2 023 | 1 007 (50 %) |
+| single-pass `array_agg` (shipped) | **208 ms** | **1 013** | 0 — no node of its own |
+
+The `DISTINCT ON` variant is the obvious one-pass shape and fixes the pathology
+just as well; it lost because it reads `album_photos ⋈ photos` a second time.
+Both are within budget, so a future rewrite may pick either — what must not come
+back is a per-group `ORDER BY … LIMIT 1`.
+
+**Regression test.** `internal/organize/albums_plan_integration_test.go`,
+`TestAlbumListPlanStaysProportionalToMemberships`. It seeds that fixture, runs
+`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` over the real `listAlbumsSQL` (exported
+to the test through `export_test.go`) and fails when the statement reads more
+than **8× the heap pages of `photos + album_photos + albums`** — 8 104 blocks for
+this fixture, against 1 013 actually read and 17 279 348 before the fix. The
+budget is expressed in pages of the data so it follows the fixture instead of
+hard-coding a number, and it is a plan property rather than a wall-clock
+threshold, which would be flaky on a shared machine. The same test checks a
+sample of the returned covers against the naive per-album definition, so a
+cheaper plan cannot quietly return a different photo.
+
+```
+go test -tags integration -run TestAlbumListPlanStaysProportionalToMemberships ./internal/organize/
+```
+
+**Sibling listings audited** for the same "pick one row per group" antipattern:
+
+- `internal/people` `listSubjectsSQL` — **already correct**: its cover face comes
+  from a `DISTINCT ON (m.subject_uid)` CTE, one pass over the markers.
+- `internal/organize` `listLabelsSQL`, `searchAlbumsSQL`, `searchLabelsSQL` —
+  fine: plain `COUNT` aggregates over one join, no per-group ordered lookup.
+- `internal/vectors` `findDuplicatePairsSQL` — a `CROSS JOIN LATERAL … ORDER BY
+  embedding <=> … LIMIT n`, but that inner order is served by the HNSW index, so
+  the probe is bounded by design rather than a scan of the table.
+- `internal/photos` (`store_places`, `store_years`, `store_timeline`),
+  `internal/review` `leaderboard`, `internal/importverify`, `internal/jobs`
+  stats, `internal/savedsearch` — plain aggregates or single-table listings, no
+  per-group row pick.
+- The remaining `ORDER BY … LIMIT 1` statements (`internal/jobs` claim,
+  `internal/dupmerge`, `internal/importer`, `internal/photos` stack-primary
+  election) run once per mutation against a keyed lookup, not once per row of a
+  listing.
+
+**Operability.** `internal/organizeapi` discarded the store error and answered a
+bare `{"error":"listing albums failed"}`, so the production log carried
+`status:500` and nothing else. Every 5xx in that package now goes through `fail`,
+which logs the cause via `slog.ErrorContext` before writing the (unchanged)
+client response; 4xx stays unlogged, since the caller is already told what was
+wrong with the request.
+
 ---
 
 ## 4. Frontend (large-library smoothness)

@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -206,6 +207,23 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 // writeError writes an error response with the given status code and message.
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorBody{Error: message})
+}
+
+// fail writes the error response for err and, when the response is a server
+// error, logs the cause before discarding it.
+//
+// The client is told only "album operation failed" and the access log records
+// only status=500, so without this line the reason a request broke reaches
+// nobody: an operator watching production sees that listing albums failed, and
+// has no way to learn whether the query timed out, the pool was exhausted or the
+// statement was rejected. Client errors are deliberately not logged — the caller
+// is already told exactly what was wrong with the request, and a bad request is
+// not an incident.
+func fail(w http.ResponseWriter, r *http.Request, status int, message string, err error) {
+	if status >= http.StatusInternalServerError {
+		slog.ErrorContext(r.Context(), "organizeapi: "+message, "error", err)
+	}
+	writeError(w, status, message)
 }
 
 // albumStatus maps a store error from an album operation to the HTTP status and
