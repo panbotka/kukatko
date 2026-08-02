@@ -42,8 +42,14 @@ type Coverage struct {
 	// Scanned is how many subjects this run dispatched — at most Budget, and
 	// usually far fewer when the collector stopped it early. A stop cannot
 	// un-dispatch what the worker pool already started, so it can overshoot the
-	// stopping point by up to Concurrency subjects; those are collected too, so
+	// stopping point by up to Concurrency+1 subjects; those are collected too, so
 	// the count never hides work that was done.
+	//
+	// The +1 is not slack: the stop flag is raised by collect, which runs *after*
+	// the consumer has taken a result off the channel, so at that moment one more
+	// subject has already been handed over on top of the Concurrency still in
+	// flight. Measured at Concurrency 1/2/4/8 the overshoot peaks at exactly
+	// Concurrency+1, so the bound is tight rather than generous.
 	Scanned int
 	// NextOffset is where the following run should start so the rotation
 	// continues without leaving a gap.

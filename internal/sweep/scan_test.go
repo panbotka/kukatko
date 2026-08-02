@@ -105,21 +105,34 @@ func TestScan_rotatesThroughTheLibrary(t *testing.T) {
 
 func TestScan_stopsEarlyWhenTheCollectorHasEnough(t *testing.T) {
 	t.Parallel()
-	svc, finder := scanFixture(t, 40, 1)
+	const (
+		concurrency = 1
+		stopAfter   = 2
+		budget      = 20
+	)
+	svc, finder := scanFixture(t, 40, concurrency)
 	var seen []*Person
-	cov, err := svc.Scan(context.Background(), Params{}, Window{Budget: 20},
+	cov, err := svc.Scan(context.Background(), Params{}, Window{Budget: budget},
 		func(person *Person) (bool, error) {
 			seen = append(seen, person)
-			return len(seen) >= 2, nil
+			return len(seen) >= stopAfter, nil
 		})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
-	// The stop cannot un-dispatch what the pool already started, so the count may
-	// overshoot by up to the concurrency bound — but nowhere near the budget.
-	if cov.Scanned < 2 || cov.Scanned > 3 {
-		t.Fatalf("Coverage.Scanned = %d, want 2..3 (stop plus at most one in flight), budget was 20",
-			cov.Scanned)
+	// The stop cannot un-dispatch what the pool already started, and it is raised
+	// by collect — which runs after the consumer has taken a result off the
+	// channel — so on top of the Concurrency subjects in flight one more has
+	// already been handed over. Hence Concurrency+1, not Concurrency: asserting
+	// the tighter bound made this test fail under -race, where the scheduling that
+	// exposes the extra hand-off is routine rather than rare.
+	//
+	// What actually matters is the upper bound, not an exact count: the point of
+	// the early stop is that the run ends nowhere near its budget.
+	maxScanned := stopAfter + concurrency + 1
+	if cov.Scanned < stopAfter || cov.Scanned > maxScanned {
+		t.Fatalf("Coverage.Scanned = %d, want %d..%d (stop plus at most Concurrency+1 = %d more), budget was %d",
+			cov.Scanned, stopAfter, maxScanned, concurrency+1, budget)
 	}
 	if len(finder.queried) != cov.Scanned {
 		t.Errorf("queried %d subjects, Coverage.Scanned = %d — they must agree",
