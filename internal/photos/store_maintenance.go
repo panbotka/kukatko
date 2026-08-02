@@ -120,6 +120,43 @@ func (s *Store) ListPhotosMissingFileMetadata(ctx context.Context, limit int) ([
 	return s.queryUIDs(ctx, "listing photos missing file metadata", query, args...)
 }
 
+// countMissingPhashSQL counts the photos ListPhotosMissingPhash would return.
+const countMissingPhashSQL = `
+SELECT count(*)
+FROM photos p
+LEFT JOIN photo_phashes ph ON ph.photo_uid = p.uid
+WHERE ph.photo_uid IS NULL AND p.archived_at IS NULL`
+
+// CountPhotosMissingPhash returns how many non-archived photos have no perceptual
+// hashes, which is how many jobs the narrow thumbnail backfill would schedule. It
+// exists so the cost of that backfill can be reported before it is paid: on a
+// library whose thumbnails were never hashed the "narrow" predicate matches
+// everything, and an operator should learn that from a number rather than from a
+// run that takes the rest of the day.
+func (s *Store) CountPhotosMissingPhash(ctx context.Context) (int, error) {
+	return s.queryCount(ctx, "counting photos missing phash", countMissingPhashSQL)
+}
+
+// countActiveSQL counts the photos ListActiveUIDs would return.
+const countActiveSQL = `SELECT count(*) FROM photos WHERE archived_at IS NULL`
+
+// CountActivePhotos returns how many non-archived photos the catalogue holds,
+// which is how many jobs a forced full thumbnail backfill (?all=true) would
+// schedule.
+func (s *Store) CountActivePhotos(ctx context.Context) (int, error) {
+	return s.queryCount(ctx, "counting active photos", countActiveSQL)
+}
+
+// queryCount runs a single-value count query, wrapping any failure with the given
+// action for context.
+func (s *Store) queryCount(ctx context.Context, action, query string, args ...any) (int, error) {
+	var count int
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("photos: %s: %w", action, err)
+	}
+	return count, nil
+}
+
 // queryUIDs runs a single-column uid query and collects the results, wrapping any
 // failure with the given action for context. It is the shared scan loop behind
 // the uid-listing helpers.

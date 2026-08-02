@@ -88,6 +88,12 @@ type PhotoLister interface {
 	// ListActiveUIDs returns the uids of every non-archived photo, for a forced
 	// full re-run that re-checks thumbnails across the whole library.
 	ListActiveUIDs(ctx context.Context) ([]string, error)
+	// CountPhotosMissingPhash returns how many photos ListPhotosMissingPhash would
+	// return, without materialising them.
+	CountPhotosMissingPhash(ctx context.Context) (int, error)
+	// CountActivePhotos returns how many photos ListActiveUIDs would return,
+	// without materialising them.
+	CountActivePhotos(ctx context.Context) (int, error)
 }
 
 // Enqueuer schedules thumbnail jobs for the backfill. It is satisfied by
@@ -223,6 +229,9 @@ func (s *Service) ForceRegenerate(ctx context.Context, photoUID string) ([]strin
 // already queued is a harmless no-op (the enqueuer dedupes), so concurrent or
 // repeated runs never pile up redundant jobs. It returns ErrBackfillUnavailable
 // when the Service was built without the Lister and Enqueuer collaborators.
+//
+// Ask CountBackfillThumbnails first when the size of the run matters: it answers
+// the same question without scheduling anything.
 func (s *Service) BackfillThumbnails(ctx context.Context, all bool) (int, error) {
 	if s.lister == nil || s.enqueuer == nil {
 		return 0, ErrBackfillUnavailable
@@ -239,6 +248,37 @@ func (s *Service) BackfillThumbnails(ctx context.Context, all bool) (int, error)
 		enqueued++
 	}
 	return enqueued, nil
+}
+
+// CountBackfillThumbnails returns how many photos BackfillThumbnails would
+// schedule for the same value of all, without scheduling anything. It is the
+// dry run: a thumbnail job re-reads an original, so a backfill's cost is a
+// function of how many photos it covers, and "the narrow predicate" is no
+// guarantee of a small number — a library imported before the import scheduled
+// thumbnail jobs has no perceptual hash anywhere, and every photo in it matches.
+// Reporting the count first is what lets an operator see a full-library run
+// coming instead of discovering it hours in.
+//
+// The count is a snapshot, not a promise: an import running alongside it keeps
+// adding photos, and the enqueuer's dedup means the eventual run may schedule
+// fewer jobs than this if some are already queued. It returns
+// ErrBackfillUnavailable when the Service was built without the Lister.
+func (s *Service) CountBackfillThumbnails(ctx context.Context, all bool) (int, error) {
+	if s.lister == nil {
+		return 0, ErrBackfillUnavailable
+	}
+	if all {
+		count, err := s.lister.CountActivePhotos(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("thumbjob: counting active photos: %w", err)
+		}
+		return count, nil
+	}
+	count, err := s.lister.CountPhotosMissingPhash(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("thumbjob: counting photos missing thumbnail: %w", err)
+	}
+	return count, nil
 }
 
 // backfillCandidates returns the uids the backfill should schedule: every

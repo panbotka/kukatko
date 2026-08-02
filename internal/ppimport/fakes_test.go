@@ -792,16 +792,6 @@ func (s *fakeStorage) Delete(_ context.Context, relPath string) error {
 	return nil
 }
 
-// fakeThumbs is a no-op Thumbnailer.
-type fakeThumbs struct {
-	err error
-}
-
-// GenerateAll reports success (or the configured error).
-func (t *fakeThumbs) GenerateAll(_ context.Context, _ photos.Photo) (map[string]string, error) {
-	return map[string]string{}, t.err
-}
-
 // fakeAlbumStore records albums and membership in memory.
 type fakeAlbumStore struct {
 	albums  []organize.AlbumSummary
@@ -937,8 +927,15 @@ func (s *fakePeopleStore) GetMarkerByUID(_ context.Context, uid string) (people.
 
 // fakeEnqueuer records the photo UIDs jobs were scheduled for.
 type fakeEnqueuer struct {
+	thumbs []string
 	embeds []string
 	faces  []string
+}
+
+// EnqueueThumbnail records uid.
+func (e *fakeEnqueuer) EnqueueThumbnail(_ context.Context, uid string) error {
+	e.thumbs = append(e.thumbs, uid)
+	return nil
 }
 
 // EnqueueImageEmbed records uid.

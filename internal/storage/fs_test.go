@@ -452,6 +452,96 @@ func TestFSKeys_missingRootIsEmpty(t *testing.T) {
 	}
 }
 
+// TestFSKeysWithPrefix_selectsOnlyMatchingKeys verifies the prefix is matched as
+// a literal string rather than a path component, so a prefix ending mid-filename
+// selects one photo's derived files out of the shard directory it shares with
+// others — which is what makes "what does the store already hold for this photo?"
+// one listing instead of one question per size.
+func TestFSKeysWithPrefix_selectsOnlyMatchingKeys(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+
+	for _, key := range []string{
+		"2024/05/a.jpg",
+		"thumb/aa/bb/cc/aabbccdd_grid.jpg",
+		"thumb/aa/bb/cc/aabbccdd_tile_500.jpg",
+		"thumb/aa/bb/cc/aabbccee_grid.jpg",
+		"thumb/aa/bb/dd/aabbdddd_grid.jpg",
+	} {
+		writeFileAt(t, filepath.Join(fs.root, filepath.FromSlash(key)), "content")
+	}
+
+	got := keysWithPrefixOf(t, fs, "thumb/aa/bb/cc/aabbccdd_")
+	want := []string{"thumb/aa/bb/cc/aabbccdd_grid.jpg", "thumb/aa/bb/cc/aabbccdd_tile_500.jpg"}
+	if !slices.Equal(got, want) {
+		t.Errorf("KeysWithPrefix() = %v, want %v", got, want)
+	}
+}
+
+// TestFSKeysWithPrefix_directoryPrefixDoesNotLeakSiblings verifies a prefix
+// ending in a separator selects that directory's subtree only, and not a sibling
+// directory whose name merely starts with it.
+func TestFSKeysWithPrefix_directoryPrefixDoesNotLeakSiblings(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+
+	for _, key := range []string{"thumb/aa/bb/cc/x.jpg", "thumb/aa/bb/ccc/y.jpg"} {
+		writeFileAt(t, filepath.Join(fs.root, filepath.FromSlash(key)), "content")
+	}
+
+	got := keysWithPrefixOf(t, fs, "thumb/aa/bb/cc/")
+	want := []string{"thumb/aa/bb/cc/x.jpg"}
+	if !slices.Equal(got, want) {
+		t.Errorf("KeysWithPrefix() = %v, want %v", got, want)
+	}
+}
+
+// TestFSKeysWithPrefix_edgeCases verifies the prefixes that name nothing usable:
+// an empty prefix enumerates the whole store (as Keys does), an absent directory
+// and an unmatched prefix are empty rather than errors, and a prefix trying to
+// climb out of the root matches nothing.
+func TestFSKeysWithPrefix_edgeCases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		prefix string
+		want   []string
+	}{
+		{name: "empty prefix enumerates everything", prefix: "", want: []string{"2024/05/a.jpg", "thumb/aa/x.jpg"}},
+		{name: "top-level prefix", prefix: "thumb/", want: []string{"thumb/aa/x.jpg"}},
+		{name: "absent directory", prefix: "thumb/zz/", want: nil},
+		{name: "unmatched leaf", prefix: "thumb/aa/y", want: nil},
+		{name: "escaping prefix matches nothing", prefix: "../../etc/", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fs := newTestFS(t)
+			for _, key := range []string{"2024/05/a.jpg", "thumb/aa/x.jpg"} {
+				writeFileAt(t, filepath.Join(fs.root, filepath.FromSlash(key)), "content")
+			}
+			if got := keysWithPrefixOf(t, fs, tt.prefix); !slices.Equal(got, tt.want) {
+				t.Errorf("KeysWithPrefix(%q) = %v, want %v", tt.prefix, got, tt.want)
+			}
+		})
+	}
+}
+
+// keysWithPrefixOf collects every key the store holds under prefix, sorted.
+func keysWithPrefixOf(t *testing.T, fs *FS, prefix string) []string {
+	t.Helper()
+	var keys []string
+	if err := fs.KeysWithPrefix(t.Context(), prefix, func(key string) error {
+		keys = append(keys, key)
+		return nil
+	}); err != nil {
+		t.Fatalf("KeysWithPrefix(%q): %v", prefix, err)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
 // keysOf collects every key the store holds, sorted.
 func keysOf(t *testing.T, fs *FS) []string {
 	t.Helper()

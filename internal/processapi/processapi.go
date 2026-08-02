@@ -63,6 +63,9 @@ type ThumbnailBackfiller interface {
 	// thumbnail (or, when all is true, for every non-archived photo) and returns
 	// how many were scheduled.
 	BackfillThumbnails(ctx context.Context, all bool) (int, error)
+	// CountBackfillThumbnails returns how many photos BackfillThumbnails would
+	// schedule for the same value of all, scheduling nothing. It backs ?dry_run.
+	CountBackfillThumbnails(ctx context.Context, all bool) (int, error)
 }
 
 // MetadataBackfiller enqueues a `metadata` job for every photo whose original has
@@ -182,7 +185,8 @@ func NewAPI(cfg Config) *API {
 //	POST /process/faces       RequireMaintainer  backfill missing face detections
 //	POST /process/clusters    RequireMaintainer  rebuild face clusters from unassigned faces
 //	POST /process/places      RequireMaintainer  backfill missing reverse-geocoded places
-//	POST /process/thumbnails  RequireMaintainer  backfill missing thumbnails (?all=true forces a full re-run)
+//	POST /process/thumbnails  RequireMaintainer  backfill missing thumbnails (?all=true forces a full
+//	                                             re-run, ?dry_run=true only counts)
 //	POST /process/metadata    RequireMaintainer  backfill unread file metadata (?all=true forces a full re-read)
 //	POST /process/sidecars    RequireMaintainer  backfill missing metadata sidecars (?all=true forces a full re-run)
 //	POST /process/stacks      RequireMaintainer  detect and form stacks over the library
@@ -330,21 +334,48 @@ func (a *API) handleBackfillPlaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
 }
 
+// thumbnailBackfillResponse is the JSON body returned by the thumbnail-backfill
+// endpoint. It carries the candidate count alongside the enqueued one so the size
+// of the run is visible whether or not it was actually started.
+type thumbnailBackfillResponse struct {
+	// Enqueued is the number of thumbnail jobs scheduled by this call — always 0
+	// for a dry run.
+	Enqueued int `json:"enqueued"`
+	// Pending is how many photos match the backfill's predicate, i.e. how many jobs
+	// a real run would schedule.
+	Pending int `json:"pending"`
+	// DryRun reports whether this call only counted.
+	DryRun bool `json:"dry_run"`
+}
+
 // handleBackfillThumbnails enqueues thumbnail jobs for all photos missing a
 // generated thumbnail and reports how many were scheduled. With ?all=true it
-// schedules every non-archived photo (a forced full re-run). It answers 503 when
-// no thumbnail backfiller is wired.
+// schedules every non-archived photo (a forced full re-run). With ?dry_run=true it
+// schedules nothing and only reports how many photos would be covered, so the cost
+// of a run can be seen before it is started — a thumbnail job re-reads an original,
+// and on a library that has never been hashed the narrow predicate matches every
+// photo in it. It answers 503 when no thumbnail backfiller is wired.
 func (a *API) handleBackfillThumbnails(w http.ResponseWriter, r *http.Request) {
 	if a.thumbBackfiller == nil {
 		writeError(w, http.StatusServiceUnavailable, "thumbnail backfill not available")
 		return
 	}
-	enqueued, err := a.thumbBackfiller.BackfillThumbnails(r.Context(), queryFlag(r, "all"))
+	all := queryFlag(r, "all")
+	pending, err := a.thumbBackfiller.CountBackfillThumbnails(r.Context(), all)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "counting thumbnail backfill failed")
+		return
+	}
+	if queryFlag(r, "dry_run") {
+		writeJSON(w, http.StatusOK, thumbnailBackfillResponse{Pending: pending, DryRun: true})
+		return
+	}
+	enqueued, err := a.thumbBackfiller.BackfillThumbnails(r.Context(), all)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling thumbnails failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
+	writeJSON(w, http.StatusOK, thumbnailBackfillResponse{Enqueued: enqueued, Pending: pending})
 }
 
 // handleBackfillMetadata enqueues `metadata` jobs for all photos whose original

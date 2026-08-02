@@ -569,6 +569,61 @@ func TestR2Keys_enumeratesTheBucket(t *testing.T) {
 	}
 }
 
+// TestR2KeysWithPrefix_listsOnlyThePrefix verifies the bucket listing is narrowed
+// server-side to the given prefix, matched literally so it may end mid-filename.
+// That is what lets the thumbnailer ask "which of this photo's sizes are already
+// published?" with one request instead of one Head per size.
+func TestR2KeysWithPrefix_listsOnlyThePrefix(t *testing.T) {
+	store, _ := newTestR2(t)
+
+	want := []string{
+		"thumb/aa/bb/cc/aabbccdd_grid.jpg",
+		"thumb/aa/bb/cc/aabbccdd_tile_500.jpg",
+	}
+	other := []string{
+		"thumb/aa/bb/cc/aabbccee_grid.jpg",
+		"thumb/aa/bb/dd/aabbdddd_grid.jpg",
+	}
+	for _, key := range slices.Concat(want, other) {
+		body := jpegBytes(key)
+		file := StoredFile{Hash: hashOf(body), RelPath: key, Size: int64(len(body)), MIME: "image/jpeg"}
+		if err := store.Put(t.Context(), bytes.NewReader(body), file); err != nil {
+			t.Fatalf("Put(%s): %v", key, err)
+		}
+	}
+
+	var keys []string
+	if err := store.KeysWithPrefix(t.Context(), "thumb/aa/bb/cc/aabbccdd_", func(key string) error {
+		keys = append(keys, key)
+		return nil
+	}); err != nil {
+		t.Fatalf("KeysWithPrefix: %v", err)
+	}
+	sort.Strings(keys)
+	if !slices.Equal(keys, want) {
+		t.Errorf("KeysWithPrefix() = %v, want %v", keys, want)
+	}
+}
+
+// TestR2KeysWithPrefix_unmatchedPrefixIsEmpty verifies a prefix nothing is stored
+// under yields nothing and is not an error — the answer a cold cache gets for a
+// photo whose thumbnails were never uploaded.
+func TestR2KeysWithPrefix_unmatchedPrefixIsEmpty(t *testing.T) {
+	store, _ := newTestR2(t)
+	storeFixture(t, store, "IMG_0008.jpg", jpegBytes("prefix"))
+
+	var seen int
+	if err := store.KeysWithPrefix(t.Context(), "thumb/ff/ee/dd/", func(string) error {
+		seen++
+		return nil
+	}); err != nil {
+		t.Fatalf("KeysWithPrefix: %v", err)
+	}
+	if seen != 0 {
+		t.Errorf("KeysWithPrefix yielded %d key(s), want none", seen)
+	}
+}
+
 // TestR2Keys_stopsOnYieldError verifies the caller's own error ends the listing
 // and travels back untouched.
 func TestR2Keys_stopsOnYieldError(t *testing.T) {

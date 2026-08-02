@@ -238,7 +238,10 @@ func TestNewPanicsOnNil(t *testing.T) {
 	New(Config{})
 }
 
-// fakeLister is an in-memory PhotoLister returning canned uid slices.
+// fakeLister is an in-memory PhotoLister returning canned uid slices. The counts
+// it reports are derived from those slices, as the real store's are derived from
+// the same predicates, so a dry run and the run it predicts cannot drift apart in
+// the fake in a way they could not in Postgres.
 type fakeLister struct {
 	missing    []string
 	active     []string
@@ -252,6 +255,14 @@ func (f *fakeLister) ListPhotosMissingPhash(_ context.Context, _ int) ([]string,
 
 func (f *fakeLister) ListActiveUIDs(context.Context) ([]string, error) {
 	return f.active, f.activeErr
+}
+
+func (f *fakeLister) CountPhotosMissingPhash(context.Context) (int, error) {
+	return len(f.missing), f.missingErr
+}
+
+func (f *fakeLister) CountActivePhotos(context.Context) (int, error) {
+	return len(f.active), f.activeErr
 }
 
 // fakeEnqueuer models the queue's per-photo dedup: it records a job only the
@@ -376,6 +387,73 @@ func TestBackfillThumbnails_unavailable(t *testing.T) {
 	t.Parallel()
 	svc := newService(&fakePhotos{}, &fakeThumbs{}, &fakeDecoder{})
 	if _, err := svc.BackfillThumbnails(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
+		t.Errorf("err = %v, want ErrBackfillUnavailable", err)
+	}
+}
+
+// TestCountBackfillThumbnails_matchesTheRunItPredicts verifies the dry run
+// answers the same number the real run would schedule, for both predicates, and
+// schedules nothing while doing it. That is the whole point: an operator must be
+// able to see a full-library run coming without starting one.
+func TestCountBackfillThumbnails_matchesTheRunItPredicts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		all  bool
+		want int
+	}{
+		{name: "narrow predicate counts the unhashed photos", all: false, want: 3},
+		{name: "forced full re-run counts every active photo", all: true, want: 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			lister := &fakeLister{
+				missing: []string{"a", "b", "c"},
+				active:  []string{"a", "b", "c", "d", "e"},
+			}
+			enq := newFakeEnqueuer()
+			svc := newBackfillService(lister, enq)
+
+			count, err := svc.CountBackfillThumbnails(context.Background(), tt.all)
+			if err != nil {
+				t.Fatalf("CountBackfillThumbnails: %v", err)
+			}
+			if count != tt.want {
+				t.Errorf("count = %d, want %d", count, tt.want)
+			}
+			if enq.calls != 0 {
+				t.Errorf("counting scheduled %d job(s), want none", enq.calls)
+			}
+
+			enqueued, err := svc.BackfillThumbnails(context.Background(), tt.all)
+			if err != nil {
+				t.Fatalf("BackfillThumbnails: %v", err)
+			}
+			if enqueued != count {
+				t.Errorf("the run scheduled %d job(s) after a dry run promised %d", enqueued, count)
+			}
+		})
+	}
+}
+
+// TestCountBackfillThumbnails_countError propagates a counting failure rather
+// than reporting a reassuring zero.
+func TestCountBackfillThumbnails_countError(t *testing.T) {
+	t.Parallel()
+	svc := newBackfillService(&fakeLister{missingErr: errors.New("db down")}, newFakeEnqueuer())
+	if _, err := svc.CountBackfillThumbnails(context.Background(), false); err == nil {
+		t.Error("CountBackfillThumbnails should propagate a counting error")
+	}
+}
+
+// TestCountBackfillThumbnails_unavailable verifies a Service built without the
+// backfill collaborators reports ErrBackfillUnavailable rather than panicking.
+func TestCountBackfillThumbnails_unavailable(t *testing.T) {
+	t.Parallel()
+	svc := newService(&fakePhotos{}, &fakeThumbs{}, &fakeDecoder{})
+	if _, err := svc.CountBackfillThumbnails(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("err = %v, want ErrBackfillUnavailable", err)
 	}
 }

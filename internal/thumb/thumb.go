@@ -14,6 +14,15 @@
 // where aa/bb/cc are the first three byte-pairs of the original's hex file hash.
 // The cache is fully regenerable from originals and generation is idempotent:
 // a size already present on disk is never re-encoded or rewritten.
+//
+// On a backend that publishes its objects the same relative path is the object
+// key, and the bucket — not the local disk — is where the size durably lives. So
+// "already present" is asked of the bucket too: before encoding anything,
+// Generate lists the photo's own key prefix once and drops every size the store
+// already holds. That is what keeps a cold cache cheap. A library whose cache was
+// pruned (thumbnails cost megabytes per photo, and an import can outgrow the
+// disk) is then re-thumbnailed for the price of one listing per photo instead of
+// a full re-encode and re-upload.
 package thumb
 
 import (
@@ -242,9 +251,17 @@ func (t *Thumbnailer) RegenerateAll(ctx context.Context, photo photos.Photo) (ma
 
 // Generate produces the requested thumbnail sizes for photo and returns a map
 // from each requested size name to its absolute cache path. Sizes already on
-// disk are kept untouched (idempotent skip); only the missing ones are encoded,
-// in parallel up to the configured concurrency, after decoding the original
-// exactly once. Use RegenerateAll to force-overwrite cached sizes instead.
+// disk are kept untouched (idempotent skip), as are — on a backend that publishes
+// its objects — sizes the store already holds, which one prefix listing per photo
+// establishes; only the rest are encoded, in parallel up to the configured
+// concurrency, after decoding the original exactly once. Use RegenerateAll to
+// force-overwrite cached sizes instead.
+//
+// A size skipped because the object is already published leaves no local cache
+// file behind, so its returned path need not exist: on such a backend the client
+// fetches the object, and the application never reads the cache file. Only a
+// backend that mints no URLs serves thumbnails from the cache, and there nothing
+// is ever skipped on the strength of the store.
 //
 // It returns ErrUnknownSize if any requested size is unregistered (before any
 // work is done), ErrInvalidHash for a malformed photo file hash, or a wrapped
@@ -266,7 +283,7 @@ func (t *Thumbnailer) generate(
 		return map[string]string{}, nil
 	}
 
-	result, needed, err := t.planSizes(photo.FileHash, sizes, force)
+	result, needed, err := t.plan(ctx, photo.FileHash, sizes, force)
 	if err != nil {
 		return nil, err
 	}
@@ -312,6 +329,21 @@ func (t *Thumbnailer) generate(
 	return result, nil
 }
 
+// plan resolves which of the requested sizes actually have to be encoded, and
+// returns them together with the full size→absolute-path map. A size counts as
+// done when its cache file is on disk or — unless force is set — when the storage
+// backend already holds its object. force skips the store entirely: the point of
+// a forced rebuild is to replace what is there.
+func (t *Thumbnailer) plan(
+	ctx context.Context, hash string, sizes []string, force bool,
+) (result map[string]string, needed []string, err error) {
+	result, needed, err = t.planSizes(hash, sizes, force)
+	if err != nil || force {
+		return result, needed, err
+	}
+	return result, t.dropPublished(ctx, hash, needed), nil
+}
+
 // planSizes validates every requested size and the hash, builds the full
 // size→absolute-path result map, and returns the subset of sizes that must be
 // encoded (in canonical order, deduplicated). When force is false that subset is
@@ -339,6 +371,84 @@ func (t *Thumbnailer) planSizes(
 		}
 	}
 	return result, needed, nil
+}
+
+// dropPublished returns needed without the sizes the storage backend already
+// holds as objects, so a cold local cache does not re-encode and re-upload what
+// is durably in the bucket already. It answers for all of a photo's sizes with a
+// single prefix listing — the sizes share the sharded key prefix derived from the
+// file hash — rather than one Head per size, which would cost a round trip per
+// size and could easily exceed the encode it saves.
+//
+// It applies only where a published object is what a client actually fetches:
+// a backend that mints no URLs serves thumbnails from the local cache, so an
+// object there would not make the size available and the cache file must be
+// written. A backend that cannot list by prefix, an unusable hash, or a failed
+// listing all fall back to encoding: being slower than necessary is a cost, while
+// skipping a size that is not really there would leave a thumbnail no one can
+// fetch.
+//
+// Only a completed upload puts an object under the key — Put verifies the stream
+// against its declared identity and removes the object when it disagrees, and a
+// failed upload additionally un-caches the local file — so an object's presence
+// really does mean the size is published.
+func (t *Thumbnailer) dropPublished(ctx context.Context, hash string, needed []string) []string {
+	if len(needed) == 0 {
+		return needed
+	}
+	lister, ok := t.originals.(storage.PrefixLister)
+	if !ok {
+		return needed
+	}
+	probe, err := RelPath(hash, needed[0])
+	if err != nil || t.originals.URL(probe) == "" {
+		return needed
+	}
+	published, err := t.publishedKeys(ctx, lister, hash)
+	if err != nil {
+		return needed
+	}
+	kept := make([]string, 0, len(needed))
+	for _, name := range needed {
+		rel, relErr := RelPath(hash, name)
+		if relErr != nil || !published[rel] {
+			kept = append(kept, name)
+		}
+	}
+	return kept
+}
+
+// publishedKeys returns the set of object keys the store holds under the photo's
+// cache prefix, from one listing. The prefix ends mid-filename (at the hash
+// followed by the size separator), so the listing covers exactly this photo's
+// sizes and none of the shard directory's other tenants.
+func (t *Thumbnailer) publishedKeys(
+	ctx context.Context, lister storage.PrefixLister, hash string,
+) (map[string]bool, error) {
+	prefix, err := objectPrefix(hash)
+	if err != nil {
+		return nil, err
+	}
+	keys := make(map[string]bool, len(SizeNames()))
+	if err := lister.KeysWithPrefix(ctx, prefix, func(key string) error {
+		keys[key] = true
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("thumb: listing published sizes for %s: %w", hash, err)
+	}
+	return keys, nil
+}
+
+// objectPrefix returns the key prefix every cached size of the given file hash
+// shares — thumb/<aa>/<bb>/<cc>/<hash>_ — for a validated hash, or ErrInvalidHash.
+// It is a literal string prefix, not a directory: the shard directory also holds
+// the sizes of every other hash sharing those three byte-pairs.
+func objectPrefix(hash string) (string, error) {
+	dir, err := cacheDirRel(hash)
+	if err != nil {
+		return "", err
+	}
+	return dir + "/" + hash + "_", nil
 }
 
 // writeSize resizes the already-decoded image for the named size, JPEG-encodes
@@ -419,11 +529,22 @@ func hashAndSize(absPath string) (digest string, size int64, err error) {
 // cacheRelPath returns the slash-separated cache path
 // thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg for a validated hash, or ErrInvalidHash.
 func cacheRelPath(hash, size string) (string, error) {
+	dir, err := cacheDirRel(hash)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(dir, hash+"_"+size+".jpg"), nil
+}
+
+// cacheDirRel returns the slash-separated shard directory thumb/<aa>/<bb>/<cc>
+// that holds every cached size of the given file hash, or ErrInvalidHash. It is
+// the single definition of the shard layout; both the per-size path and the
+// per-photo key prefix are built from it.
+func cacheDirRel(hash string) (string, error) {
 	if err := validateHash(hash); err != nil {
 		return "", err
 	}
-	name := hash + "_" + size + ".jpg"
-	return path.Join(CacheSubdir, hash[0:shardLen], hash[shardLen:shardLen*2], hash[shardLen*2:shardLen*3], name), nil
+	return path.Join(CacheSubdir, hash[0:shardLen], hash[shardLen:shardLen*2], hash[shardLen*2:shardLen*3]), nil
 }
 
 // validateHash reports whether hash is a lowercase hex string long enough to

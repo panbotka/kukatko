@@ -149,3 +149,34 @@ type KeyLister interface {
 	// Kukátko — deciding which of them may be touched is the caller's job.
 	Keys(ctx context.Context, yield func(key string) error) error
 }
+
+// PrefixLister narrows a key listing to one prefix, answering "what does the
+// store already hold under here?" in a single round trip. Both backends
+// implement it (*FS by walking the prefix's own directory, *R2 by listing the
+// bucket with that prefix).
+//
+// It exists because the alternative — one Head per key — is a round trip per
+// question, and the questions come in groups: the thumbnailer asks about a
+// photo's eight sizes at once, all of them sharing the sharded key prefix
+// derived from the photo's file hash. One listing answers all eight, which is
+// what makes "is this already published?" cheap enough to ask before every
+// encode.
+//
+// Like KeyLister it is deliberately not part of Storage: the packages that only
+// ever address a key they already hold would all have to grow a method they
+// never call. A caller type-asserts for it and falls back when a store cannot
+// answer.
+type PrefixLister interface {
+	// KeysWithPrefix calls yield once for every object whose slash-separated key
+	// (relative to the store root) starts with prefix, in unspecified order. An
+	// empty prefix enumerates everything, exactly as KeyLister.Keys does. The
+	// prefix is matched literally, not as a path component, so it may end
+	// mid-filename — which is how a listing selects one photo's derived files out
+	// of the shard directory they share.
+	//
+	// It stops at the first error from yield and returns it unwrapped, so a caller
+	// can end the walk with a sentinel of its own. A prefix nothing matches — or
+	// one naming a directory that does not exist — yields nothing and is not an
+	// error. Like Keys it streams, never materialising the key set.
+	KeysWithPrefix(ctx context.Context, prefix string, yield func(key string) error) error
+}

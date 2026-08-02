@@ -460,11 +460,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `POST /process/clusters` → `{created}` (re-clustering of unassigned faces via
   `cluster.Recluster`), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geocode for
   geotagged photos without a place via `placesjob.BackfillPlaces`; 503 when there is no mapy.com key),
-  `POST /process/thumbnails` → `{enqueued}` (backfill `thumbnail` for photos **without a generated
-  thumbnail** via `thumbjob.BackfillThumbnails`; "missing thumbnail" = a photo without a perceptual hash,
-  which the `thumbnail` job computes together with the thumbnail). Optional `?all=true` schedules **every
+  `POST /process/thumbnails` → `{enqueued,pending,dry_run}` (backfill `thumbnail` for photos **without a
+  generated thumbnail** via `thumbjob.BackfillThumbnails`; "missing thumbnail" = a photo without a perceptual
+  hash, which the `thumbnail` job computes together with the thumbnail). Optional `?all=true` schedules **every
   non-archived photo** (a forced full re-run — it also catches up a missing thumbnail size on a photo that
-  already has the hash; the job skips sizes already in cache, so the run is cheap and never changes the original).
+  already has the hash; the job skips sizes already in cache — and, on a publishing backend, sizes already in
+  the bucket — so the run is cheap and never changes the original). Optional **`?dry_run=true`** schedules
+  nothing and answers only `pending`, the number of photos the same call would cover
+  (`thumbjob.CountBackfillThumbnails`): a thumbnail job re-reads an original, and "the narrow predicate" is no
+  promise of a small run, so the cost is reportable before it is paid. A real run answers `pending` too, so the
+  size of what was just started is visible in the response.
   `POST /process/metadata` → `{enqueued}` (backfill `metadata` for photos whose **file has never
   been read** into the IPTC/XMP and file-technical columns, via `metajob.BackfillMetadata`; "unread"
   = `photos.metadata_extracted_at IS NULL`, which are rows from a PhotoPrism import, a photo-sorter migration

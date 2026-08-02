@@ -5,8 +5,18 @@
 // import_runs), downloads each new original, computes a fresh SHA256, dedups by
 // content and by PhotoPrism UID, stores the original, catalogues the photo with
 // PhotoPrism's curated metadata plus the external identifiers (photoprism_uid,
-// photoprism_file_hash), generates thumbnails and enqueues the image_embed and
-// face_detect jobs that compute embeddings and faces afterwards.
+// photoprism_file_hash) and enqueues the background jobs that derive the rest:
+// thumbnail (thumbnails and perceptual hashes) plus image_embed and face_detect
+// (embeddings and faces).
+//
+// Nothing derived is computed inline. A photo entering the catalogue is a photo
+// with a thumbnail job, exactly as an upload is, which is what keeps the
+// derivation rules in one place — internal/thumbjob — instead of once per
+// importer. It was the second copy that went stale: this import used to
+// thumbnail inline, and since the perceptual hash is computed by the thumbnail
+// job rather than the thumbnailer, every imported photo silently ended up
+// without one, which left near-duplicate detection blind to the whole imported
+// library.
 //
 // A PhotoPrism photo is a SHOT, not a file: a RAW and the JPEG rendered from it
 // are one photo with two files. Kukátko stores one original per row, so every file
@@ -177,13 +187,6 @@ type Storage interface {
 	Delete(ctx context.Context, relPath string) error
 }
 
-// Thumbnailer renders the derived images for a catalogued photo. It is satisfied
-// by thumb.Thumbnailer.
-type Thumbnailer interface {
-	// GenerateAll renders every registered thumbnail size for photo.
-	GenerateAll(ctx context.Context, photo photos.Photo) (map[string]string, error)
-}
-
 // AlbumStore maps albums and their membership. It is the subset of
 // organize.Store the importer uses for albums.
 type AlbumStore interface {
@@ -223,6 +226,9 @@ type PeopleStore interface {
 // Enqueuer schedules the post-import background jobs. It is satisfied by
 // jobs.Enqueuer.
 type Enqueuer interface {
+	// EnqueueThumbnail schedules thumbnail generation and perceptual hashing for a
+	// photo (dedup no-op).
+	EnqueueThumbnail(ctx context.Context, photoUID string) error
 	// EnqueueImageEmbed schedules embedding for a photo (dedup no-op).
 	EnqueueImageEmbed(ctx context.Context, photoUID string) error
 	// EnqueueFaceDetect schedules face detection for a photo (dedup no-op).
@@ -248,15 +254,13 @@ type Config struct {
 	Photos PhotoStore
 	// Storage publishes downloaded originals.
 	Storage Storage
-	// Thumbnailer renders derived images.
-	Thumbnailer Thumbnailer
 	// Albums maps albums and membership.
 	Albums AlbumStore
 	// Labels maps labels and membership.
 	Labels LabelStore
 	// People maps subjects and markers.
 	People PeopleStore
-	// Enqueuer schedules the image_embed and face_detect jobs.
+	// Enqueuer schedules the thumbnail, image_embed and face_detect jobs.
 	Enqueuer Enqueuer
 	// Prober probes downloaded videos for their metadata; nil uses video.Probe.
 	Prober VideoProber
@@ -283,7 +287,6 @@ type Service struct {
 	runs        RunStore
 	photos      PhotoStore
 	storage     Storage
-	thumbs      Thumbnailer
 	albums      AlbumStore
 	labels      LabelStore
 	people      PeopleStore
@@ -327,7 +330,6 @@ func New(cfg Config) *Service {
 		runs:        cfg.Runs,
 		photos:      cfg.Photos,
 		storage:     cfg.Storage,
-		thumbs:      cfg.Thumbnailer,
 		albums:      cfg.Albums,
 		labels:      cfg.Labels,
 		people:      cfg.People,
@@ -345,9 +347,8 @@ func New(cfg Config) *Service {
 // requireCollaborators panics when any required Config collaborator is nil.
 func requireCollaborators(cfg Config) {
 	if cfg.Client == nil || cfg.Runs == nil || cfg.Photos == nil || cfg.Storage == nil ||
-		cfg.Thumbnailer == nil || cfg.Albums == nil || cfg.Labels == nil ||
-		cfg.People == nil || cfg.Enqueuer == nil {
-		panic("ppimport: New requires Client, Runs, Photos, Storage, Thumbnailer, " +
+		cfg.Albums == nil || cfg.Labels == nil || cfg.People == nil || cfg.Enqueuer == nil {
+		panic("ppimport: New requires Client, Runs, Photos, Storage, " +
 			"Albums, Labels, People and Enqueuer")
 	}
 }

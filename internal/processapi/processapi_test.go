@@ -75,6 +75,7 @@ type fakeThumbnailBackfiller struct {
 	pending map[string]bool
 	created int
 	calls   int
+	counts  int
 	lastAll bool
 	err     error
 }
@@ -104,6 +105,20 @@ func (f *fakeThumbnailBackfiller) BackfillThumbnails(_ context.Context, all bool
 		}
 	}
 	return len(candidates), nil
+}
+
+// CountBackfillThumbnails reports how many candidates the same call would cover,
+// recording that it was asked and scheduling nothing.
+func (f *fakeThumbnailBackfiller) CountBackfillThumbnails(_ context.Context, all bool) (int, error) {
+	f.counts++
+	f.lastAll = all
+	if f.err != nil {
+		return 0, f.err
+	}
+	if all {
+		return len(f.active), nil
+	}
+	return len(f.missing), nil
 }
 
 // passthrough is a no-op middleware standing in for the admin guard.
@@ -464,6 +479,78 @@ func TestBackfillThumbnails_ok(t *testing.T) {
 	}
 	if tb.calls != 1 || tb.lastAll {
 		t.Errorf("backfiller calls = %d, lastAll = %v, want 1 call with all=false", tb.calls, tb.lastAll)
+	}
+}
+
+// TestBackfillThumbnails_reportsPendingAlongsideEnqueued verifies a real run also
+// answers how many photos the predicate matched, so the size of what was just
+// started is visible in the response rather than only in the job queue.
+func TestBackfillThumbnails_reportsPendingAlongsideEnqueued(t *testing.T) {
+	t.Parallel()
+
+	tb := newFakeThumbnailBackfiller([]string{"p1", "p2"}, nil)
+	srv := newServerWithThumbnails(t, tb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails")
+	defer func() { _ = resp.Body.Close() }()
+	var body thumbnailBackfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Enqueued != 2 || body.Pending != 2 || body.DryRun {
+		t.Errorf("body = %+v, want enqueued 2, pending 2, dry_run false", body)
+	}
+}
+
+// TestBackfillThumbnails_dryRun verifies ?dry_run=true reports the size of the run
+// without starting it — the whole point being that a twenty-hour, full-library
+// backfill should be a number an operator reads first, not something they discover
+// afterwards.
+func TestBackfillThumbnails_dryRun(t *testing.T) {
+	t.Parallel()
+
+	tb := newFakeThumbnailBackfiller([]string{"p1", "p2", "p3"}, []string{"p1", "p2", "p3", "p4"})
+	srv := newServerWithThumbnails(t, tb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails?dry_run=true")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body thumbnailBackfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Pending != 3 || body.Enqueued != 0 || !body.DryRun {
+		t.Errorf("body = %+v, want pending 3, enqueued 0, dry_run true", body)
+	}
+	if tb.calls != 0 {
+		t.Errorf("a dry run scheduled %d backfill call(s), want none", tb.calls)
+	}
+	if tb.counts != 1 {
+		t.Errorf("counting calls = %d, want 1", tb.counts)
+	}
+}
+
+// TestBackfillThumbnails_dryRunAll verifies the dry run honours ?all=true, so the
+// forced full re-run can be sized before it is started too.
+func TestBackfillThumbnails_dryRunAll(t *testing.T) {
+	t.Parallel()
+
+	tb := newFakeThumbnailBackfiller([]string{"p1"}, []string{"p1", "p2", "p3", "p4"})
+	srv := newServerWithThumbnails(t, tb, passthrough)
+
+	resp := postProcess(t, srv.URL+"/process/thumbnails?all=true&dry_run=true")
+	defer func() { _ = resp.Body.Close() }()
+	var body thumbnailBackfillResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Pending != 4 || body.Enqueued != 0 {
+		t.Errorf("body = %+v, want pending 4, enqueued 0", body)
+	}
+	if !tb.lastAll {
+		t.Error("?all=true should pass all=true to the counting call")
 	}
 }
 

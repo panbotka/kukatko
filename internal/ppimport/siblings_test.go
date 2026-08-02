@@ -134,6 +134,9 @@ func TestImport_rawSiblingIsStackedWithItsJPEG(t *testing.T) {
 	if slices.Contains(h.enq.embeds, raw.UID) || slices.Contains(h.enq.faces, raw.UID) {
 		t.Error("the RAW sibling was queued for embedding/faces; it is the primary's own shot")
 	}
+	if !slices.Contains(h.enq.thumbs, raw.UID) {
+		t.Error("the RAW sibling was not queued for thumbnails; it still needs its own tile")
+	}
 
 	plain := h.photoFor(t, "pp2")
 	if plain.StackUID != nil {

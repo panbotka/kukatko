@@ -112,6 +112,37 @@ path on a host with libvips installed (e.g. the x86 build machine) is the way to
 quantify the speed-up; libvips is not installed on this Pi, so the shell-out path
 here is exercised by tests with a fake `vipsthumbnail` rather than benchmarked.
 
+### The cheapest thumbnail is one that is already in the bucket
+
+The numbers above are what a *cold local cache* used to cost on a publishing
+backend: `Generate` decided "already done" from the local disk alone, so a pruned
+cache meant re-encoding **and** re-uploading objects that were already in R2.
+That is not a hypothetical — eight sizes are ~2.76 MB per photo (~57 GB for the
+production library against ~20 GB of free disk), so the import runs with a pruner
+and the cache is cold by construction. A full pass over ~20 670 photos at ~4 s
+each is around twenty hours and ~57 GB of pointless writes.
+
+`internal/thumb` now asks the store first (`dropPublished`). The shape matters:
+the question is about eight keys at once, and they share the sharded prefix
+`thumb/<aa>/<bb>/<cc>/<hash>_`, so **one prefix listing** answers all eight.
+Measured against the dev MinIO on this Pi
+(`go test -tags integration -v -run TestR2KeysWithPrefix_measure ./internal/storage/`):
+
+| Shape | Round trips | Time |
+|---|---|---|
+| `KeysWithPrefix` over one photo's prefix | 1 | **~2.2 ms** |
+| `Head` per size | 8 | ~8.3 ms |
+
+Against a ~4 s encode (plus eight uploads) the check pays for itself by three
+orders of magnitude, and the gap widens on a real WAN link to R2, where the
+round-trip count is what dominates. Re-run the test above against another
+endpoint before changing the shape.
+
+Two properties keep it from costing anything it should not: a **warm cache never
+lists at all** (nothing is missing, so there is nothing to ask about), and a
+**failed listing falls back to encoding** — slower is a cost, whereas skipping a
+size that is not really in the bucket would leave a thumbnail no client can fetch.
+
 ---
 
 ## 3. Queries / pagination
