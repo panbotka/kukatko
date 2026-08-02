@@ -886,9 +886,11 @@ algorithm cannot be changed in just one of them.
   + Vitest — shares the build cache with `build`), `test-race` (`CGO_ENABLED=1 go test -race ./...`,
   requires cgo/gcc; runs in CI, not in the gate), `test-integration` (tag `integration` +
   `KUKATKO_TEST_DATABASE_URL`, `-p 1` — the integration packages share one test DB, so they run
-  serially; `-timeout 30m` because Go's 10m per-package default is too tight — `internal/auth` alone
-  takes ~11 minutes on the ARM dev box, since every seeded account is a bcrypt hash at cost 12 and
-  `-race` multiplies that, and the default aborts a healthy run mid-test as if it had failed;
+  serially; the `integration` tag also selects the cheap bcrypt work factor
+  (`KUKATKO_TEST_BCRYPT_COST`, default `bcrypt.MinCost` — see `docs/DEVELOPMENT.md`), without which
+  the seeded accounts of ~15 packages dominated the suite; `-timeout 30m` because Go's 10m
+  per-package default is too tight for a run at the production cost — `internal/auth` alone took
+  ~11 minutes on the ARM dev box — and the default aborts a healthy run mid-test as if it failed;
   the R2-backend tests additionally want `KUKATKO_TEST_S3_ENDPOINT` — without it they are skipped,
   see `docs/DEVELOPMENT.md`), `check` (the gate = `docs-budget` + `fmt-check` + `lint` +
   `web-typecheck` + `test`; **rewrites nothing**, after a successful run `git status --short` is

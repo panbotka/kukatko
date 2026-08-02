@@ -18,9 +18,10 @@ import (
 // let Bootstrap run again — so every operations surface would need database
 // surgery to come back. These tests drive the real service and database.
 //
-// Every account costs a bcrypt hash at cost 12, which dominates this package's
-// runtime, so the cases below share accounts wherever the setup allows it rather
-// than seeding a fresh pair per assertion.
+// Every account costs a bcrypt hash, so the cases below share accounts wherever
+// the setup allows it rather than seeding a fresh pair per assertion. The
+// integration build mints those hashes at bcrypt.MinCost (password_cost_integration.go),
+// which is what keeps this package's runtime in seconds rather than minutes.
 
 // assertEnabledMaintainers fails the test unless the store counts want enabled
 // maintainer accounts, proving a refusal actually rolled the change back rather

@@ -7,9 +7,21 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// bcryptCost is the bcrypt work factor used for all password hashes. Cost 12 is
-// a deliberate security choice (slow enough to resist offline brute force on
-// modern hardware) and is fixed so every stored hash is consistent.
+// bcryptCost is the bcrypt work factor every shipped build mints hashes at. Cost
+// 12 is a deliberate security choice: slow enough to resist offline brute force
+// on modern hardware.
+//
+// A bcrypt hash records the cost it was minted at, and CompareHashAndPassword
+// reads the cost from the hash rather than from this constant, so hashes made at
+// different costs verify correctly side by side. That is what lets the
+// integration-test build mint cheap hashes (password_cost_integration.go) while
+// leaving verification untouched — the ~15 packages that seed accounts through
+// the real auth path spent nearly all of their runtime here.
+//
+// The knob is a build-tag-selected identifier, not a variable: a settable
+// var could be lowered by anything that imports this package, whereas the cheap
+// cost is simply not compiled into a build that lacks the `integration` tag.
+// Nothing a running server can reach can weaken production hashing.
 const bcryptCost = 12
 
 // minPasswordLen is the shortest password accepted; bcrypt additionally ignores
@@ -24,15 +36,16 @@ var (
 	ErrPasswordMismatch = errors.New("auth: password does not match")
 )
 
-// HashPassword returns a bcrypt hash of password at the package's fixed cost.
-// It returns ErrPasswordTooShort if password is shorter than minPasswordLen, or
-// a wrapped error if bcrypt fails (for example when the password exceeds
-// bcrypt's 72-byte input limit).
+// HashPassword returns a bcrypt hash of password at hashCost, which is
+// bcryptCost in every build except the integration-test one. It returns
+// ErrPasswordTooShort if password is shorter than minPasswordLen, or a wrapped
+// error if bcrypt fails (for example when the password exceeds bcrypt's 72-byte
+// input limit).
 func HashPassword(password string) (string, error) {
 	if len(password) < minPasswordLen {
 		return "", ErrPasswordTooShort
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), hashCost)
 	if err != nil {
 		return "", fmt.Errorf("auth: hashing password: %w", err)
 	}

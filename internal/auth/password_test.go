@@ -8,8 +8,16 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// productionBcryptCost is the work factor a shipped build must mint hashes at,
+// spelled out as a literal so the tests below break if bcryptCost is ever
+// lowered — the whole point of a build-tag-tunable cost is that the production
+// value stays put. It is declared here, in the untagged test file, so both the
+// production-build and the integration-build assertions can use it.
+const productionBcryptCost = 12
+
 // TestHashPassword_roundTrip verifies a hashed password verifies against itself
-// and that the cost is the configured factor.
+// and that the cost is the one this build mints at (bcryptCost, or the cheaper
+// integration-test cost when built with the `integration` tag).
 func TestHashPassword_roundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -26,8 +34,8 @@ func TestHashPassword_roundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bcrypt.Cost: %v", err)
 	}
-	if cost != bcryptCost {
-		t.Errorf("bcrypt cost = %d, want %d", cost, bcryptCost)
+	if cost != hashCost {
+		t.Errorf("bcrypt cost = %d, want %d", cost, hashCost)
 	}
 	if err := CheckPassword(hash, pw); err != nil {
 		t.Errorf("CheckPassword on valid password: %v", err)
@@ -86,6 +94,31 @@ func TestCheckPassword_malformedHash(t *testing.T) {
 	}
 	if errors.Is(err, ErrPasswordMismatch) {
 		t.Error("malformed hash reported as mismatch; want a distinct wrapped error")
+	}
+}
+
+// TestCheckPassword_mixedCosts verifies the property the tunable cost rests on:
+// a hash carries the cost it was minted at, so hashes made at different costs
+// all verify through the same CheckPassword. Without this, hashes written by a
+// cheap test build and by production could not coexist in one column.
+func TestCheckPassword_mixedCosts(t *testing.T) {
+	t.Parallel()
+
+	const pw = "a password hashed at several costs"
+	for _, cost := range []int{bcrypt.MinCost, productionBcryptCost} {
+		raw, err := bcrypt.GenerateFromPassword([]byte(pw), cost)
+		if err != nil {
+			t.Fatalf("bcrypt.GenerateFromPassword(cost=%d): %v", cost, err)
+		}
+		if got, err := bcrypt.Cost(raw); err != nil || got != cost {
+			t.Fatalf("bcrypt.Cost = %d (err %v), want %d", got, err, cost)
+		}
+		if err := CheckPassword(string(raw), pw); err != nil {
+			t.Errorf("CheckPassword on a cost-%d hash: %v", cost, err)
+		}
+		if err := CheckPassword(string(raw), "the wrong password"); !errors.Is(err, ErrPasswordMismatch) {
+			t.Errorf("CheckPassword(wrong) on a cost-%d hash = %v, want ErrPasswordMismatch", cost, err)
+		}
 	}
 }
 
