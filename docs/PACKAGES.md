@@ -1210,13 +1210,19 @@ to `## Package map` in `CLAUDE.md`.
   newest album**: `MAX(p.taken_at) DESC NULLS LAST, a.uid` — undated and empty albums
   aggregate NULL and go last, `uid` makes the order total and stable; **no COALESCE on
   `created_at`** — for an album that would give an undated album the upload time and float it to the top;
-  `AlbumCount` + `CoverUID`/`TakenFrom`/`TakenTo` — all computed **in one SQL**, without a
-  migration: `photo_count` from a LEFT JOIN on `album_photos`, `MIN`/`MAX(taken_at)` from a LEFT JOIN on `photos`
-  with `archived_at IS NULL`, a fallback cover from `LEFT JOIN LATERAL … ORDER BY taken_at DESC NULLS LAST,
-  uid LIMIT 1`; `CoverUID = COALESCE(cover_photo_uid, fallback)` → a manually chosen cover wins,
-  otherwise the newest **live** photo, deterministically the same on every query. An archived photo is
-  counted in `photo_count`, but supplies neither the cover nor shifts the range; an undated photo can be the cover,
-  but doesn't enter the range)/
+  `AlbumCount` + `CoverUID`/`TakenFrom`/`TakenTo` — all computed **in one SQL and in one pass**, without a
+  migration: a single LEFT JOIN chain `albums → album_photos → photos` restricted to the visible members
+  (`archived_at IS NULL AND (stack_uid IS NULL OR stack_primary)`) carries every derived column —
+  `photo_count = COUNT(p.uid)`, `MIN`/`MAX(taken_at)`, and the fallback cover as
+  `(array_agg(p.uid ORDER BY p.taken_at DESC NULLS LAST, p.uid) FILTER (WHERE p.uid IS NOT NULL))[1]`;
+  `CoverUID = COALESCE(cover_photo_uid, fallback)` → a manually chosen cover wins, otherwise the newest
+  **visible** photo, deterministically the same on every query. A hidden photo (archived, or a non-primary
+  stack member) joins as a NULL row, so it neither counts, nor supplies the cover, nor shifts the range; an
+  undated photo can be the cover, but doesn't enter the range. The cover came from a `LEFT JOIN LATERAL …
+  ORDER BY taken_at DESC LIMIT 1` until 2026-08-02: the planner serves such a per-album `LIMIT 1` by walking
+  the **global** `photos.taken_at` order, which cost 17.3M buffer hits and 33 s on the production library —
+  **never pick a per-group row with a correlated `ORDER BY … LIMIT 1` here**, see `docs/PERF.md` §
+  "The album index" and the plan-budget regression test `albums_plan_integration_test.go`)/
   `SearchAlbums(q,limit)` (accent/case-insensitive ILIKE over `immutable_unaccent(title/description)`,
   with counts → `[]AlbumCount`, cap limit — the basis of `globalsearchapi`)/
   `DeleteAlbum`/`AddPhoto` (idempotent, no position — `ON CONFLICT DO NOTHING`)/`RemovePhoto`
@@ -1276,7 +1282,10 @@ to `## Package map` in `CLAUDE.md`.
   `add_photos`/`remove_photos` and `label.create`/`update`/`delete`/`attach`/`detach`; add/remove of photos =
   one batch record with `photo_uids`/`count`, attach/detach carries `photo_uid` in details); the responses
   don't change; sentinels mapped `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`→404,
-  `ErrInvalidType`/`ErrInvalidSource`→400; **browsing an album's/label's photos has no own endpoint** —
+  `ErrInvalidType`/`ErrInvalidSource`→400; **every 5xx goes through `fail`**, which logs the discarded store
+  error (`slog.ErrorContext`, message `organizeapi: <what failed>`) before writing the generic client body —
+  the access log otherwise records only `status:500` and the cause reaches nobody; 4xx is deliberately not
+  logged (the caller is already told what was wrong); **browsing an album's/label's photos has no own endpoint** —
   it goes through the shared `GET /photos` scoped `?album={uid}`/`?label={uid}` (see `photos.ListParams`
   `AlbumUID`/`LabelUID` + `photoapi` `parseListParams`); mounted by another `server.WithAPI`
   (`buildOrganizeAPI` in `cmd/kukatko/organize.go`, sharing one `organize.Store` for both albums and labels)),

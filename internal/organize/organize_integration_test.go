@@ -452,6 +452,49 @@ func assertRange(t *testing.T, name string, got organize.AlbumSummary, from, to 
 	}
 }
 
+// TestAlbumListCoverStackAndTieBreak pins the two parts of the fallback cover
+// that a cheaper query shape is most likely to get wrong: the visibility rule and
+// the tie-break. A non-primary stack member is the album's newest photo by
+// capture time and must still be invisible — to the cover, to the badge and to
+// the range — because it is invisible in the album's grid. The two photos that
+// remain newest share a capture time to the second, so only the uid can decide
+// between them, and it must decide the same way on every request.
+func TestAlbumListCoverStackAndTieBreak(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+
+	shared := time.Date(2001, 3, 4, 5, 6, 7, 0, time.UTC)
+	tieOne := makePhotoAt(t, photoStore, "tie1", shared)
+	tieTwo := makePhotoAt(t, photoStore, "tie2", shared)
+	oldest := makePhotoAt(t, photoStore, "stk1", time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC))
+	newestHidden := makePhotoAt(t, photoStore, "stk2", time.Date(2020, 6, 1, 0, 0, 0, 0, time.UTC))
+	if _, err := photoStore.CreateStack(ctx, oldest, []string{oldest, newestHidden}); err != nil {
+		t.Fatalf("CreateStack: %v", err)
+	}
+
+	album, err := store.CreateAlbum(ctx, organize.Album{Title: "Stacked"})
+	if err != nil {
+		t.Fatalf("CreateAlbum: %v", err)
+	}
+	addPhotos(t, store, album.UID, tieOne, tieTwo, oldest, newestHidden)
+
+	list, err := store.ListAlbums(ctx)
+	if err != nil {
+		t.Fatalf("ListAlbums: %v", err)
+	}
+	got := albumByUID(t, list, album.UID)
+
+	if want := min(tieOne, tieTwo); got.CoverUID == nil || *got.CoverUID != want {
+		t.Errorf("cover = %v, want the lower uid of the two newest visible photos (%q)",
+			got.CoverUID, want)
+	}
+	if got.PhotoCount != 3 {
+		t.Errorf("photo count = %d, want 3 (the hidden stack member does not count)", got.PhotoCount)
+	}
+	assertRange(t, "stacked", got,
+		time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC), shared)
+}
+
 // TestAlbumCoverSetNullOnPhotoDelete checks SetCover and the cover_photo_uid SET
 // NULL foreign key when the cover photo is deleted.
 func TestAlbumCoverSetNullOnPhotoDelete(t *testing.T) {
