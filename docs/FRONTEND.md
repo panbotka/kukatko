@@ -361,14 +361,27 @@ here.
   `useGridDensity` → `lib/gridDensity` `gridTemplateColumns`, the DOM carries `data-density` for tests.
   A density change **only restyles** the existing `<div>` — virtuoso re-measures the tiles, scroll and selection
   survive because the grid is neither keyed nor remounted),
-  `TimelineScrubber` (**the timeline** — a thin fixed vertical data rail beside the grid: it fetches a monthly
-  histogram via `useTimeline(params)` (refetch on filter change), each month = a clickable tick
-  placed proportionally by `cumulative/total`, month labels via `lib/format` `formatMonth`;
-  a click/drag jumps to a month via `onJump(bucket.cumulative)`, the active month is highlighted per
-  `activeIndex` (start of the visible range) by a floating orange bubble (`.kukatko-timeline-current`)
-  in its own track **left of the rail**; the rail is wide enough that a year tick (`.kukatko-timeline-year`)
-  stays inside, so the bubble and the year labels **never overlap** even at a year boundary (where they fall
-  onto one line); the overlay is `position: fixed`, so a loading/empty timeline renders nothing and
+  `TimelineScrubber` (**the timeline** — a thin fixed vertical date rail beside the grid: it fetches a monthly
+  histogram via `useTimeline(params)` (refetch on filter change) and lays it out through
+  `components/library/timelineRail`. **Every month bucket owns an equal slice of the rail**
+  (`fractionForRank`), not a slice proportional to its photo count: positions used to be `cumulative/total`,
+  which on the real library (121 years, ~98 % of the photos in the last two decades) squeezed six decades
+  into a couple of pixels and stacked 103 year labels on top of each other. `buildRail(buckets, heightPx)`
+  then draws **only what the measured height fits** — month ticks collapse until they are at least
+  `TICK_MIN_GAP_PX` apart and a year label is printed only where it clears the previous one by
+  `LABEL_MIN_GAP_PX`, so **no two labels can overlap** (459 buckets in a 549 px rail → 76 ticks and
+  26 labels, 2026 down to 1905). The height comes from a `ResizeObserver` on the rail
+  (`FALLBACK_RAIL_HEIGHT_PX` until the first measurement, e.g. in jsdom). The **last tick anchors to the
+  library's oldest month**, so the start of the archive is always one click away; a click jumps via
+  `onJump(bucket.cumulative)`, a drag reads the same mapping backwards (`rankForFraction`), so the rail and
+  the grid always agree on where a position lands. A press **does not capture the pointer** — capture
+  retargets the compatibility `click` onto the capturing element, and pressing a tick would then do
+  nothing; capture is taken on the first move past `DRAG_THRESHOLD_PX`, which is also what tells a click
+  from a drag. The active month is highlighted per `activeIndex` (start of the visible range) by a floating
+  orange bubble (`.kukatko-timeline-current`) in its own track **left of the rail**; the rail is wide enough
+  that a year label (`.kukatko-timeline-year`, on a `.has-year` tick) stays inside, so the bubble and the
+  year labels **never overlap** even at a year boundary (where they fall onto one line); the overlay is
+  `position: fixed`, so a loading/empty timeline renders nothing and
   doesn't shift the layout, on small widths it hides via `styles/app.css` `.kukatko-timeline*`; only for
   the default newest sort), `FilterBar`
   (**a redesign for a calm default state + progressive disclosure**: the header holds only a prominent
@@ -424,6 +437,12 @@ here.
   `includeQuery` enables a chip for `q`
   — the filter bar disables it (it has its own field), **the empty state enables it** (a reader at zero results must
   see all the filters that got them there); the field length = the active-filter count on the badge),
+  `timelineRail.ts` (pure layout of the timeline rail, no React: `fractionForRank`/`rankForFraction`
+  = the position of a month bucket on the rail and its exact inverse for a drag, `rankForIndex`
+  = binary search from a photo index back to its month, and `buildRail(buckets, heightPx)` → `RailTick[]`,
+  which collapses month ticks and thins year labels to what the measured height fits; the ticks
+  **partition** the buckets, so nothing becomes unreachable and the active month always highlights
+  a tick — the invariants are tested directly against a ~460-bucket, 122-year fixture),
   `SimilarPhotos` (a reusable horizontally scrollable strip
   of similar photos over `GET /photos/{uid}/similar` via `fetchSimilar`, links to the detail,
   empty-friendly + loading/error, refetch on `uid` change),
@@ -2312,13 +2331,19 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   a minimum width, `.kukatko-filter-panel` = 44px tap targets on the panel's elements, `.kukatko-filter-chip`
   = a tappable pill chip with a cross); the CSS variable `--kukatko-navbar-height`),
   `test/setup.ts` (a jsdom **`window.matchMedia` stub** — a non-matching default, individual tests can
-  override it to simulate a phone — plus the stubs for `setPointerCapture`/`scrollIntoView` and RTL's
+  override it to simulate a phone — a **`PointerEvent` stub** (a `MouseEvent` subclass; without it jsdom
+  dispatches `pointerdown`/`pointermove` as a bare `Event` with no `clientX`/`clientY`, so a drag test
+  could only ever read NaN coordinates) plus the stubs for `setPointerCapture`/`scrollIntoView` and RTL's
   `cleanup()`; **mock restoration deliberately does not live here either** — `restoreMocks: true` in
   `vite.config.ts` restores mocks *before* each test, and restoring again in an `afterEach` races with
   that `cleanup()`, see `docs/ARCHITECTURE.md` §19.3),
   `test/batchBar.ts` (fixtures shared by the tests of pages with a photo grid: `BATCH_ACTIONS` = the complete
   dictionary of `BatchActionBar` actions by accessible name — every page asserts it **in full**, so that it
   can't silently regress to a stripped-down toolbar — and `albumOption()` for `fetchAlbums` in the picker),
+  `test/timeline.ts` (`realisticTimeline()` = the production library's shape as a fixture: ~460 month
+  buckets over 1905–2026, ~10 500 photos, a couple a year before 1950 and thousands a year after 2010 —
+  the timeline rail only ever broke on a distribution like this, a development-sized library makes any
+  layout look fine, so every test that has to prove the rail stays legible starts from this one),
   `test/css.ts` (reading and mini-parsing stylesheets from tests: `readCss` / `ruleBody` / `declarations`
   — jsdom evaluates neither `env()` nor media queries, so CSS-only rules are guarded by reading the
   file; it is used by `styles/tokens.test.ts`, `styles/mapChrome.test.ts` (the Leaflet override —

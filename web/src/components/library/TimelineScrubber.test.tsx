@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { type PhotoListParams, type Timeline } from '../../services/photos'
+import { realisticTimeline } from '../../test/timeline'
 
 import { TimelineScrubber } from './TimelineScrubber'
 
@@ -24,6 +25,40 @@ const TIMELINE: Timeline = {
     { year: 2026, month: 1, count: 5, cumulative: 3 },
   ],
   total: 8,
+}
+
+/** The rail height measured on production at a 1280×633 viewport. */
+const RAIL_HEIGHT_PX = 549
+
+/**
+ * The height of a rendered year label, measured on production. jsdom hands every
+ * element a zero-height box, so the overlap assertions below reconstruct each
+ * label's box from its inline `top` (a percentage of the rail) plus this height;
+ * the real boxes are measured in a browser against the same fixture.
+ */
+const LABEL_HEIGHT_PX = 16
+
+/**
+ * Makes the rail report a real height: without it the component measures 0 and
+ * only its fallback height would ever be exercised.
+ */
+function stubRailGeometry(height = RAIL_HEIGHT_PX): void {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+    x: 0,
+    y: 0,
+    top: 0,
+    left: 0,
+    right: 68,
+    bottom: height,
+    width: 68,
+    height,
+    toJSON: () => ({}),
+  })
+}
+
+/** The centre of every rendered element, in pixels down the rail. */
+function centres(elements: Element[], height = RAIL_HEIGHT_PX): number[] {
+  return elements.map((el) => (parseFloat((el as HTMLElement).style.top) / 100) * height)
 }
 
 function renderScrubber(props: {
@@ -115,6 +150,110 @@ describe('TimelineScrubber', () => {
       'aria-current',
       'true',
     )
+  })
+
+  it('thins a real long-tailed library down to what the rail can show', async () => {
+    stubRailGeometry()
+    const timeline = realisticTimeline()
+    fetchMock.mockResolvedValue(timeline)
+    const { container } = renderScrubber({})
+
+    await screen.findByRole('navigation')
+    await waitFor(() => {
+      expect(container.querySelectorAll('.kukatko-timeline-tick').length).toBeLessThan(
+        timeline.buckets.length / 4,
+      )
+    })
+
+    const ticks = [...container.querySelectorAll('.kukatko-timeline-tick')]
+    const labels = [...container.querySelectorAll('.kukatko-timeline-tick.has-year')]
+
+    // The invariant that matters: no two rendered labels overlap. Asserted on
+    // the boxes rather than on a label count, so any future thinning rule has to
+    // keep it true.
+    const labelTops = centres(labels)
+    const overlaps = labelTops.filter(
+      (top, index) => index > 0 && top - labelTops[index - 1] < LABEL_HEIGHT_PX,
+    )
+    expect(overlaps).toEqual([])
+    // …and enough of them survive to be worth reading.
+    expect(labels.length).toBeGreaterThanOrEqual(8)
+
+    // Month ticks stay individually visible instead of merging into one bar.
+    const tickTops = centres(ticks)
+    const gaps = tickTops.slice(1).map((top, index) => top - tickTops[index])
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(4)
+    expect(Math.max(...tickTops)).toBeLessThanOrEqual(RAIL_HEIGHT_PX)
+  })
+
+  it('keeps the oldest month reachable by click and by drag', async () => {
+    stubRailGeometry()
+    const timeline = realisticTimeline()
+    const oldest = timeline.buckets[timeline.buckets.length - 1]
+    fetchMock.mockResolvedValue(timeline)
+    const onJump = vi.fn()
+    const user = userEvent.setup()
+    const { container } = renderScrubber({ onJump })
+    const rail = await screen.findByRole('navigation')
+
+    // The bottom of the rail names the first year of the archive and jumps to it.
+    await waitFor(() => {
+      expect(container.querySelectorAll('.kukatko-timeline-tick.has-year').length).toBeGreaterThan(
+        0,
+      )
+    })
+    const labels = [...container.querySelectorAll('.kukatko-timeline-tick.has-year')]
+    const last = labels[labels.length - 1]
+    expect(last.textContent).toBe(String(oldest.year))
+    await user.click(last)
+    expect(onJump).toHaveBeenCalledWith(oldest.cumulative)
+
+    // Dragging to the rail's bottom edge lands on the same month: the position a
+    // tick is drawn at and the position a drag reads back agree.
+    onJump.mockClear()
+    fireEvent.pointerDown(rail, { clientY: RAIL_HEIGHT_PX - 1, pointerId: 1 })
+    expect(onJump).toHaveBeenCalledWith(oldest.cumulative)
+    fireEvent.pointerUp(rail, { clientY: RAIL_HEIGHT_PX - 1, pointerId: 1 })
+  })
+
+  it('drags through months without a tick swallowing the gesture', async () => {
+    stubRailGeometry()
+    const timeline = realisticTimeline()
+    fetchMock.mockResolvedValue(timeline)
+    const onJump = vi.fn()
+    const { container } = renderScrubber({ onJump })
+    const rail = await screen.findByRole('navigation')
+    await waitFor(() => {
+      expect(container.querySelectorAll('.kukatko-timeline-tick').length).toBeGreaterThan(0)
+    })
+
+    // Press on a tick: that only arms the drag, so the tick's own click still
+    // decides the month if the pointer never moves.
+    const capture = vi.spyOn(Element.prototype, 'setPointerCapture')
+    const tick = screen.getAllByRole('button')[0]
+    fireEvent.pointerDown(tick, { clientY: 4, pointerId: 1 })
+    expect(onJump).not.toHaveBeenCalled()
+    // …and the press must not capture the pointer: capturing retargets the
+    // compatibility click to the capturing element, so the tick would never
+    // receive its own click and pressing it would do nothing. (jsdom cannot
+    // reproduce that retargeting, hence the assertion on the call itself.)
+    expect(capture).not.toHaveBeenCalled()
+
+    // Once it moves, the rail takes over and every crossed month fires once, in
+    // order, oldest last.
+    for (let y = 100; y <= 500; y += 100) {
+      fireEvent.pointerMove(rail, { clientY: y, pointerId: 1 })
+    }
+    fireEvent.pointerUp(rail, { clientY: 500, pointerId: 1 })
+
+    // Once it is a drag, the pointer is captured so it keeps tracking outside
+    // the rail's bounds.
+    expect(capture).toHaveBeenCalled()
+
+    const jumped = onJump.mock.calls.map((call) => call[0] as number)
+    expect(jumped.length).toBe(5)
+    expect(jumped).toEqual([...jumped].sort((a, b) => a - b))
+    expect(new Set(jumped).size).toBe(jumped.length)
   })
 
   it('renders nothing when the timeline has no buckets', async () => {

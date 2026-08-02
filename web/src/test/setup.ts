@@ -25,6 +25,32 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   })
 }
 
+// jsdom does not implement `PointerEvent` either, and Testing Library then
+// dispatches a bare `Event` for `pointerdown`/`pointermove` — one that carries no
+// clientX/clientY. A drag test could only ever read NaN coordinates from it, so
+// the drag it exercises would not be the one users perform. A MouseEvent
+// subclass carries the coordinates and the few pointer properties components
+// read.
+if (typeof window !== 'undefined' && typeof window.PointerEvent !== 'function') {
+  class StubPointerEvent extends MouseEvent {
+    readonly pointerId: number
+    readonly pointerType: string
+    readonly isPrimary: boolean
+
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init)
+      this.pointerId = init.pointerId ?? 0
+      this.pointerType = init.pointerType ?? 'mouse'
+      this.isPrimary = init.isPrimary ?? true
+    }
+  }
+  Object.defineProperty(window, 'PointerEvent', {
+    writable: true,
+    configurable: true,
+    value: StubPointerEvent,
+  })
+}
+
 // jsdom does not implement the Pointer Capture API, so components that call
 // setPointerCapture / hasPointerCapture / releasePointerCapture during a drag
 // (e.g. the timeline scrubber) would throw. Provide inert no-op stubs so the

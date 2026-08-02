@@ -415,7 +415,8 @@
     },
     "timeline": {
       "label": "Timeline",
-      "jumpTo": "Jump to {{month}}"
+      "jumpTo": "Jump to {{month}}",
+      "jumpToRange": "Jump to {{from}} – {{to}}"
     }
   },
   "search": {
