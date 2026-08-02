@@ -14,7 +14,7 @@ WEB_DIR  := web
 WEB_DEPS_STAMP := $(WEB_DIR)/node_modules/.kukatko-npm-ci-stamp
 
 .PHONY: help fmt fmt-check vet lint lint-fix typecheck test test-race test-integration \
-        check build dev clean docs-budget \
+        check build dev dev-storage clean docs-budget \
         web-deps web-build web-fmt web-fmt-check web-lint web-test web-typecheck
 
 ## help: List available make targets.
@@ -131,6 +131,13 @@ build: web-build
 ## Pass DEV_ARGS=--force to rebuild everything from scratch.
 dev:
 	./scripts/dev.sh $(DEV_ARGS)
+
+## dev-storage: Start the local MinIO the dev runtime and the integration tests
+## share (loopback :18100, named volume, restarts with the host), and create their
+## buckets. Idempotent: run it again to restart a stopped container.
+## `./scripts/dev-storage.sh --env` prints the block .secrets/db.env needs.
+dev-storage:
+	./scripts/dev-storage.sh
 
 ## clean: Remove build artifacts (binary, coverage, embedded dist, web build).
 clean:

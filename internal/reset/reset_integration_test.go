@@ -45,9 +45,11 @@ func newResetEnv(t *testing.T) *resetEnv {
 	if err != nil {
 		t.Fatalf("storage.NewFS: %v", err)
 	}
-	target, err := reset.TargetFromDSN(os.Getenv(dbtest.EnvTestDatabaseURL))
+	// No bucket: the fixture wipes a filesystem store, so nothing is confirmed
+	// beyond the database name.
+	target, err := reset.TargetFromConfig(os.Getenv(dbtest.EnvTestDatabaseURL), "")
 	if err != nil {
-		t.Fatalf("reset.TargetFromDSN: %v", err)
+		t.Fatalf("reset.TargetFromConfig: %v", err)
 	}
 	svc := reset.New(reset.Config{
 		Pool:     db.Pool(),

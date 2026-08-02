@@ -63,8 +63,9 @@ var (
 	// (it must be empty, "fs" or "r2").
 	ErrInvalidStorageBackend = errors.New(`config: storage.backend must be "fs" or "r2"`)
 	// ErrIncompleteR2Config indicates storage.backend is "r2" but a required
-	// storage.r2.* key is missing or storage.r2.url_ttl is non-positive. The error
-	// names the offending keys and never their values.
+	// storage.r2.* key is missing, only one half of the signed-URL pair
+	// (media_base_url + url_signing_secret) is set, or storage.r2.url_ttl is
+	// non-positive. The error names the offending keys and never their values.
 	ErrIncompleteR2Config = errors.New("config: storage.backend is \"r2\" but its configuration is incomplete")
 	// ErrInvalidLocationEstimate indicates location_estimate is enabled with a
 	// nonsensical window or radius. A negative radius would make every set of
@@ -1115,8 +1116,6 @@ func (r R2Config) validate(tempPath string) error {
 		{"storage.r2.bucket", r.Bucket},
 		{"storage.r2.access_key", r.AccessKey},
 		{"storage.r2.secret_key", r.SecretKey},
-		{"storage.r2.media_base_url", r.MediaBaseURL},
-		{"storage.r2.url_signing_secret", r.URLSigningSecret},
 		{"storage.temp_path", tempPath},
 	}
 	missing := make([]string, 0, len(required))
@@ -1127,6 +1126,38 @@ func (r R2Config) validate(tempPath string) error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("%w: missing %s", ErrIncompleteR2Config, strings.Join(missing, ", "))
+	}
+	return r.validateSignedURLs()
+}
+
+// validateSignedURLs checks the signed-URL settings, which are a pair and are
+// optional as a pair.
+//
+// With storage.r2.media_base_url set, the store hands browsers short-lived URLs on
+// the edge Worker's domain; minting them needs storage.r2.url_signing_secret and a
+// positive storage.r2.url_ttl, so both are required alongside it. With both empty
+// the store signs nothing: storage.R2.URL returns the empty string and
+// internal/mediaurl falls back to the application's own /api/v1/photos/… routes,
+// which stream the bytes. That second shape is what a bucket without an edge
+// Worker in front of it looks like — development against a local MinIO — and it is
+// a legitimate deployment, not an incomplete one.
+//
+// Setting exactly one of the pair is neither shape and is refused: a base URL
+// without a secret would mint URLs the Worker rejects, and a secret without a base
+// URL reads like signing is on while nothing is ever signed.
+func (r R2Config) validateSignedURLs() error {
+	base := strings.TrimSpace(r.MediaBaseURL)
+	secret := strings.TrimSpace(r.URLSigningSecret)
+	switch {
+	case base == "" && secret == "":
+		return nil
+	case base == "":
+		return fmt.Errorf("%w: storage.r2.url_signing_secret is set but storage.r2.media_base_url is not"+
+			" (set both to serve media from the edge Worker, or neither to serve it through the application)",
+			ErrIncompleteR2Config)
+	case secret == "":
+		return fmt.Errorf("%w: missing storage.r2.url_signing_secret, required by storage.r2.media_base_url",
+			ErrIncompleteR2Config)
 	}
 	if r.URLTTL <= 0 {
 		return fmt.Errorf("%w: storage.r2.url_ttl must be positive, got %s", ErrIncompleteR2Config, r.URLTTL)

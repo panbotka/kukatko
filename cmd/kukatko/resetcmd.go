@@ -22,6 +22,7 @@ import (
 const (
 	flagExecute         = "execute"
 	flagConfirmDatabase = "confirm-database"
+	flagConfirmBucket   = "confirm-bucket"
 	flagForce           = "force"
 	flagOrphanSweep     = "orphan-sweep"
 )
@@ -37,6 +38,10 @@ var (
 			"(pass --force and --confirm-database <name> if you really mean it)")
 	// errResetNotConfirmed indicates the operator typed nothing at the prompt.
 	errResetNotConfirmed = errors.New("no database name typed; nothing was deleted")
+	// errResetBucketNotConfirmed indicates the operator typed nothing at the bucket
+	// prompt. The database name alone does not confirm a bucket: the two are
+	// configured separately and can point at different deployments.
+	errResetBucketNotConfirmed = errors.New("no bucket name typed; nothing was deleted")
 )
 
 // resetLong is the subcommand's help text. It is long on purpose: this is the
@@ -63,6 +68,10 @@ Guards, all of them on by default:
   * Nothing is deleted without --execute. The default run prints a row count per
     table and an object count per prefix, and stops.
   * You must type the target database's name; y/N is not a confirmation.
+  * On a bucket-backed store you must type the configured bucket's name too. The
+    database and the bucket come from separate config keys and can name separate
+    deployments — a development database pointed at the production bucket is the
+    accident this refuses — so confirming one says nothing about the other.
   * The connected database must be the one the loaded config names, checked
     against the server, and printed before you are asked.
   * A non-interactive run (a script, a cron job, an agent) is refused unless
@@ -99,6 +108,9 @@ func newMaintenanceResetCmd() *cobra.Command {
 	flags.Bool(flagExecute, false, "actually delete; without it the run is a dry run that changes nothing")
 	flags.String(flagConfirmDatabase, "",
 		"the target database's name, instead of typing it at the prompt (required for a non-interactive run)")
+	flags.String(flagConfirmBucket, "",
+		"the configured bucket's name, instead of typing it at the prompt (required for a non-interactive run "+
+			"on a bucket-backed store)")
 	flags.Bool(flagForce, false, "allow a non-interactive run (a script, a cron job, an agent)")
 	flags.Bool(flagOrphanSweep, false,
 		"also delete objects under Kukátko's prefixes that the catalogue does not reference")
@@ -107,10 +119,11 @@ func newMaintenanceResetCmd() *cobra.Command {
 
 // resetFlags is the parsed flag set of one reset invocation.
 type resetFlags struct {
-	execute     bool
-	confirm     string
-	force       bool
-	orphanSweep bool
+	execute      bool
+	confirm      string
+	confirmStore string
+	force        bool
+	orphanSweep  bool
 }
 
 // readResetFlags parses the subcommand's flags, wrapping any lookup failure with
@@ -125,6 +138,9 @@ func readResetFlags(cmd *cobra.Command) (resetFlags, error) {
 	}
 	if parsed.confirm, err = cmd.Flags().GetString(flagConfirmDatabase); err != nil {
 		return parsed, fmt.Errorf("reading --%s: %w", flagConfirmDatabase, err)
+	}
+	if parsed.confirmStore, err = cmd.Flags().GetString(flagConfirmBucket); err != nil {
+		return parsed, fmt.Errorf("reading --%s: %w", flagConfirmBucket, err)
 	}
 	if parsed.force, err = cmd.Flags().GetBool(flagForce); err != nil {
 		return parsed, fmt.Errorf("reading --%s: %w", flagForce, err)
@@ -154,7 +170,7 @@ func runMaintenanceReset(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	target, err := reset.TargetFromDSN(cfg.Database.URL)
+	target, err := reset.TargetFromConfig(cfg.Database.URL, configuredBucket(cfg))
 	if err != nil {
 		return fmt.Errorf("resolving the reset target: %w", err)
 	}
@@ -169,6 +185,17 @@ func runMaintenanceReset(cmd *cobra.Command) error {
 		return err
 	}
 	return runReset(cmd, svc, flags)
+}
+
+// configuredBucket returns the bucket the configured store writes to, or the
+// empty string for a backend that has none. It is the name the operator has to
+// type before a wipe, so it is read from the same key newStorage builds the store
+// from — a bucket nobody is about to empty must never end up being confirmed.
+func configuredBucket(cfg *config.Config) string {
+	if cfg.Storage.Backend != config.StorageBackendR2 {
+		return ""
+	}
+	return cfg.Storage.R2.Bucket
 }
 
 // buildResetService assembles the wipe over the configured originals store, the
@@ -204,11 +231,9 @@ func runReset(cmd *cobra.Command, svc *reset.Service, flags resetFlags) error {
 		return nil
 	}
 
-	typed, err := confirmDatabaseName(cmd, flags, pre.Target.Database)
-	if err != nil {
+	if opts.Confirm, opts.ConfirmBucket, err = confirmTarget(cmd, flags, pre.Target); err != nil {
 		return err
 	}
-	opts.Confirm = typed
 
 	result, err := svc.Execute(cmd.Context(), opts, pre.Counts)
 	printResetResult(cmd, result)
@@ -218,25 +243,67 @@ func runReset(cmd *cobra.Command, svc *reset.Service, flags resetFlags) error {
 	return nil
 }
 
-// confirmDatabaseName obtains the typed confirmation: from --confirm-database
-// when given, otherwise by prompting on the command's own streams. The value is
-// returned as typed and checked by the service, which is where the comparison
-// belongs — a caller that skips this prompt still cannot skip the check.
-func confirmDatabaseName(cmd *cobra.Command, flags resetFlags, database string) (string, error) {
+// confirmTarget obtains both typed confirmations — the database's name and, on a
+// bucket-backed store, the bucket's — and returns them as typed. The comparison
+// belongs to the service, which is where a caller that skipped these prompts
+// still meets it.
+//
+// Both prompts read through ONE scanner: bufio reads ahead, so a second scanner
+// over the same stream would start after the bytes the first one already buffered
+// and find nothing where the second answer is.
+func confirmTarget(cmd *cobra.Command, flags resetFlags, target reset.Target) (database, bucket string, err error) {
+	input := bufio.NewScanner(cmd.InOrStdin())
+	if database, err = confirmDatabaseName(cmd, flags, input, target.Database); err != nil {
+		return "", "", err
+	}
+	if bucket, err = confirmBucketName(cmd, flags, input, target.Bucket); err != nil {
+		return "", "", err
+	}
+	return database, bucket, nil
+}
+
+// confirmDatabaseName obtains the typed confirmation of the target database:
+// from --confirm-database when given, otherwise by prompting on the command's own
+// streams.
+func confirmDatabaseName(
+	cmd *cobra.Command, flags resetFlags, input *bufio.Scanner, database string,
+) (string, error) {
 	if flags.confirm != "" {
 		return flags.confirm, nil
 	}
-	cmd.Printf("Type the database name (%s) to confirm the wipe: ", database)
-	scanner := bufio.NewScanner(cmd.InOrStdin())
+	return promptForName(cmd, input,
+		fmt.Sprintf("Type the database name (%s) to confirm the wipe: ", database), errResetNotConfirmed)
+}
+
+// confirmBucketName obtains the typed confirmation of the object store's bucket:
+// from --confirm-bucket when given, otherwise by prompting. A store with no
+// bucket asks nothing and returns whatever the flag held — including a name typed
+// against a store that has none, which the service then refuses rather than
+// quietly ignores.
+func confirmBucketName(
+	cmd *cobra.Command, flags resetFlags, input *bufio.Scanner, bucket string,
+) (string, error) {
+	if bucket == "" || flags.confirmStore != "" {
+		return flags.confirmStore, nil
+	}
+	return promptForName(cmd, input,
+		fmt.Sprintf("Type the bucket name (%s) to confirm the wipe: ", bucket), errResetBucketNotConfirmed)
+}
+
+// promptForName writes question to the command's output and reads one trimmed
+// line from input, returning empty as the given error so an operator who just
+// pressed Enter ends the run instead of confirming it.
+func promptForName(cmd *cobra.Command, scanner *bufio.Scanner, question string, empty error) (string, error) {
+	cmd.Print(question)
 	if !scanner.Scan() {
 		if err := scanner.Err(); err != nil {
 			return "", fmt.Errorf("reading the confirmation: %w", err)
 		}
-		return "", errResetNotConfirmed
+		return "", empty
 	}
 	typed := strings.TrimSpace(scanner.Text())
 	if typed == "" {
-		return "", errResetNotConfirmed
+		return "", empty
 	}
 	return typed, nil
 }
@@ -294,17 +361,22 @@ func printResetPreflight(cmd *cobra.Command, pre reset.Preflight) {
 			cmd.Printf("  %-22s %d\n", table.Table, table.Rows)
 		}
 	}
-	printResetStoragePlan(cmd, pre.Storage)
+	printResetStoragePlan(cmd, pre.Target, pre.Storage)
 	cmd.Println("preserved (never touched):")
 	for _, table := range pre.Counts.Preserved {
 		cmd.Printf("  %-22s %d\n", table.Table, table.Rows)
 	}
 }
 
-// printResetStoragePlan prints the object counts per owned prefix, and — after a
-// sweep — what the store actually holds and how many foreign keys it will leave
-// alone.
-func printResetStoragePlan(cmd *cobra.Command, plan reset.StoragePlan) {
+// printResetStoragePlan prints which store is about to be emptied, the object
+// counts per owned prefix, and — after a sweep — what the store actually holds
+// and how many foreign keys it will leave alone.
+func printResetStoragePlan(cmd *cobra.Command, target reset.Target, plan reset.StoragePlan) {
+	if target.Bucket != "" {
+		cmd.Printf("store: bucket %s\n", target.Bucket)
+	} else {
+		cmd.Println("store: local filesystem (no bucket)")
+	}
 	cmd.Printf("store (catalogue-referenced keys): %d original(s), %d thumbnail(s), %d sidecar(s)\n",
 		plan.Referenced.Originals, plan.Referenced.Thumbnails, plan.Referenced.Sidecars)
 	if !plan.Sweep {

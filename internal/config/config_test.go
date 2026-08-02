@@ -10,11 +10,41 @@ import (
 	"time"
 )
 
-// setMinimalEnv sets just the required database URL so Load passes validation
-// when a test only cares about other behaviour.
+// setMinimalEnv clears every variable Load reads and then sets just the required
+// database URL, so a test that asserts a default is asserting the default rather
+// than whatever this shell happens to export.
+//
+// The clearing is the point: a developer who sources .secrets/db.env — which is
+// what running the dev server and the integration tests both want — otherwise
+// carries a real deployment's KUKATKO_STORAGE_*, KUKATKO_IMPORT_* and
+// KUKATKO_WORKER_COUNT into `make check`, and the defaults tests fail for reasons
+// that have nothing to do with the change under test.
 func setMinimalEnv(t *testing.T) {
 	t.Helper()
+	clearConfigEnv(t)
 	t.Setenv("KUKATKO_DATABASE_URL", "postgres://u:p@localhost:5432/kukatko")
+}
+
+// clearConfigEnv unsets every KUKATKO_-prefixed variable plus the unprefixed
+// MAPY_API_KEY, restoring the process environment when the test ends.
+func clearConfigEnv(t *testing.T) {
+	t.Helper()
+	for _, entry := range os.Environ() {
+		key, value, found := strings.Cut(entry, "=")
+		if !found || (!strings.HasPrefix(key, envPrefix+"_") && key != "MAPY_API_KEY") {
+			continue
+		}
+		// t.Setenv cannot unset, so restore by hand — with the value captured now,
+		// before anything in this test has had a chance to change it.
+		t.Cleanup(func() {
+			if err := os.Setenv(key, value); err != nil {
+				t.Errorf("restoring %s: %v", key, err)
+			}
+		})
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unsetting %s: %v", key, err)
+		}
+	}
 }
 
 // TestLoad_defaults verifies that, with only the required database URL provided
@@ -153,6 +183,7 @@ func TestLoad_defaults(t *testing.T) {
 // merging into it, so the sidecar-bound caps are re-applied by internal/worker,
 // not by this key — see TestEffectiveTypeConcurrency there.
 func TestLoad_workerTypeCountFromYAML(t *testing.T) {
+	clearConfigEnv(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	yaml := "database:\n  url: postgres://localhost/db\n" +
@@ -315,6 +346,7 @@ func TestLoad_rateLimitEnvOverride(t *testing.T) {
 // TestLoad_envOverridesYAMLFile verifies that an env variable wins over a value
 // set in the YAML file (env always takes precedence).
 func TestLoad_envOverridesYAMLFile(t *testing.T) {
+	clearConfigEnv(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	yaml := "database:\n  url: postgres://from-file/db\nweb:\n  port: 7000\n"
@@ -683,6 +715,51 @@ func TestLoad_r2InvalidTTL(t *testing.T) {
 	_, err := Load("")
 	if !errors.Is(err, ErrIncompleteR2Config) {
 		t.Fatalf("Load error = %v, want ErrIncompleteR2Config", err)
+	}
+}
+
+// TestLoad_r2WithoutSignedURLs verifies the shape a bucket with no edge Worker in
+// front of it takes: the r2 backend with neither media_base_url nor
+// url_signing_secret loads, and the TTL is not checked because nothing is signed.
+// That is the configuration development runs against a local MinIO.
+func TestLoad_r2WithoutSignedURLs(t *testing.T) {
+	setMinimalEnv(t)
+	setR2Env(t)
+	t.Setenv("KUKATKO_STORAGE_R2_MEDIA_BASE_URL", "")
+	t.Setenv("KUKATKO_STORAGE_R2_URL_SIGNING_SECRET", "")
+	t.Setenv("KUKATKO_STORAGE_R2_URL_TTL", "0s")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Storage.R2.MediaBaseURL != "" {
+		t.Errorf("storage.r2.media_base_url = %q, want empty", cfg.Storage.R2.MediaBaseURL)
+	}
+	if cfg.Storage.R2.Bucket != "kukatko" {
+		t.Errorf("storage.r2.bucket = %q, want %q", cfg.Storage.R2.Bucket, "kukatko")
+	}
+}
+
+// TestLoad_r2SigningSecretWithoutBaseURL verifies that half a signed-URL pair
+// fails startup: a signing secret with no base URL reads like signing is on while
+// nothing would ever be signed.
+func TestLoad_r2SigningSecretWithoutBaseURL(t *testing.T) {
+	setMinimalEnv(t)
+	setR2Env(t)
+	t.Setenv("KUKATKO_STORAGE_R2_MEDIA_BASE_URL", "")
+
+	_, err := Load("")
+	if !errors.Is(err, ErrIncompleteR2Config) {
+		t.Fatalf("Load error = %v, want ErrIncompleteR2Config", err)
+	}
+	for _, key := range []string{"storage.r2.media_base_url", "storage.r2.url_signing_secret"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("Load error %q does not name %q", err, key)
+		}
+	}
+	if strings.Contains(err.Error(), `"signing-secret"`) {
+		t.Errorf("Load error leaks a credential value: %v", err)
 	}
 }
 

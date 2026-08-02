@@ -105,17 +105,12 @@ The DSN comes from `KUKATKO_DATABASE_URL_HOST` in the gitignored `.secrets/db.en
 script runs on the host, outside the Docker network, so it needs the localhost DSN.
 Thumbnails are cached in the gitignored `.devdata/cache`.
 
-Dev serves originals from **Cloudflare R2** (bucket `kotrzina-photos`, edge-served through the
-signed-URL CDN Worker at `photos-cdn.kotrzina.cz`). The `KUKATKO_STORAGE_BACKEND=r2` switch and
-the `KUKATKO_STORAGE_R2_*` credentials live in `.secrets/db.env`, so they never reach the repo;
-`dev.sh` only adds a writable `KUKATKO_STORAGE_TEMP_PATH` (`.devdata/tmp`), which the R2 backend
-uses to stage objects and the FS backend ignores. The library was moved with
-`kukatko storage migrate-to-r2` and the local `.devdata/originals` tree was removed once every
-original had been verified byte-for-byte in the bucket. To run dev against the local filesystem
-instead, set `KUKATKO_STORAGE_BACKEND=fs` in `.secrets/db.env`. Caveat: under the R2 backend a
-thumbnail generated *after* the migration is written only to the local cache and the Worker
-cannot serve it until the cache is mirrored into the bucket — every already-imported photo is
-unaffected, since its thumbnails were uploaded by the migration.
+Dev serves originals over the same **`r2` backend production runs**, pointed at a local MinIO
+rather than at Cloudflare — see [Object storage](#object-storage) below for what starts it and
+what goes into `.secrets/db.env`. `dev.sh` only adds a writable `KUKATKO_STORAGE_TEMP_PATH`
+(`.devdata/tmp`), which the R2 backend uses to stage objects and the FS backend ignores. To run
+dev against the local filesystem instead, set `KUKATKO_STORAGE_BACKEND=fs` — but then nothing on
+this box exercises the S3 path, which is where the last two production defects were found.
 
 The same script is registered as the project's `dev_command` in Botka (`dev_port` 6480).
 Botka runs it, waits for it to **exit**, and then discovers the real server PID by scanning
@@ -153,6 +148,7 @@ make test-race        # Go unit tests under the race detector (CGO_ENABLED=1)
 make test-integration # integration tests (requires KUKATKO_TEST_DATABASE_URL)
 make check            # docs-budget + fmt-check + lint + typecheck + test  ← the quality gate
 make build            # frontend build + compile the static binary into bin/
+make dev-storage      # start the local MinIO (dev runtime + S3 integration tests)
 make clean            # remove build artifacts (binary, embedded dist, web build)
 make help             # list targets
 
@@ -218,52 +214,82 @@ Unit tests run without external dependencies. Integration tests (DB/HTTP against
 pgvector Postgres) are kept behind the `integration` build tag and `KUKATKO_TEST_DATABASE_URL`,
 so `make check` stays fast and DB-free; they are added alongside the DB layer in a later task.
 
-The R2 storage backend has its own integration tests, behind the same build tag and
-`KUKATKO_TEST_S3_ENDPOINT` (plus `KUKATKO_TEST_S3_BUCKET`, `_REGION`, `_ACCESS_KEY`,
-`_SECRET_KEY`). They skip when the endpoint is unset. Any S3-compatible endpoint works; a
-throwaway MinIO is the easiest:
+## Object storage
+
+Development runs the **same `r2` backend production runs** — against a local MinIO, not against
+Cloudflare. One container serves both the dev runtime and the S3 integration tests, so the
+storage path that ships is the storage path that gets exercised here. (Until 2026-08-02 dev
+pointed at the *production* bucket with production credentials, then at a local-disk stop-gap
+that exercised nothing; this replaces both.)
 
 ```bash
-docker run -d --name kukatko-minio -p 127.0.0.1:18100:9000 \
-  -e MINIO_ROOT_USER=kukatko -e MINIO_ROOT_PASSWORD=kukatko-secret \
-  quay.io/minio/minio:latest server /data
-
-KUKATKO_TEST_S3_ENDPOINT=http://127.0.0.1:18100 \
-KUKATKO_TEST_S3_ACCESS_KEY=kukatko KUKATKO_TEST_S3_SECRET_KEY=kukatko-secret \
-  go test -tags=integration -run TestR2 ./internal/storage/
+make dev-storage        # start it and create the buckets (idempotent)
+./scripts/dev-storage.sh --env   # print the block .secrets/db.env needs
+docker stop kukatko-minio        # stop it; `make dev-storage` brings it back
 ```
 
-MinIO binds to loopback on a port outside the ranges this host reserves. Running the whole
-`make test-integration` instead also needs `KUKATKO_TEST_DATABASE_URL`, since the other
-integration packages want a database.
+What that gives you: container `kukatko-minio` on the named volume `kukatko-minio-data` (so
+`docker rm` does not take the data with it), `--restart unless-stopped`, a 1 GB memory cap, the
+S3 API on `127.0.0.1:18100` and the console on `127.0.0.1:18101` — loopback only, and outside
+every range this host reserves (5080, 5100–5999, 9000–9999, 12345, 18789), which is why MinIO's
+own 9000/9001 are not used. Credentials are `kukatko` / `kukatko-dev-secret`: dev credentials,
+in the script on purpose, and **not** the production ones. Buckets: `kukatko-dev` for the
+runtime, `kukatko-test`, `kukatko-test-primary` and `kukatko-test-backup` for the tests.
 
-The test bucket (`kukatko-test` by default) is created if absent and **emptied between
-cases** — point the variables at a throwaway bucket, never at a real one.
+The corresponding `.secrets/db.env` block sets `KUKATKO_STORAGE_BACKEND=r2`, the
+`KUKATKO_STORAGE_R2_ENDPOINT`/`_BUCKET`/`_ACCESS_KEY`/`_SECRET_KEY` above, and the
+`KUKATKO_TEST_S3_*` mirror of them for the tests. It never reaches the repo.
 
-`internal/backup` has an integration test for the **bucket-to-bucket** originals backup, behind the
-same variables. It needs **two** buckets, derived from `KUKATKO_TEST_S3_BUCKET` by suffix
-(`kukatko-test-primary` and `kukatko-test-backup`); both are created if absent and emptied between
-cases. It covers the server-side copy, an incremental re-run that copies nothing new, the fact that
-an object deleted from the primary survives in the backup, and the loud failure when no target is
-configured. No database is needed:
+**`storage.r2.media_base_url` stays unset in dev, on purpose.** With no base URL
+`newSignerFor` leaves the signer nil, `R2.URL()` returns the empty string, and `internal/mediaurl`
+falls back to the application's own `/api/v1/photos/…` routes, which stream the bytes. That means
+no Cloudflare Worker has to be reproduced locally — and it means **the signed-URL path is the one
+thing dev does not exercise**. It is covered by the unit tests in `internal/storage` against the
+frozen vectors in `testdata/url_signature_vectors.json`; treat a change to signing as
+CI-verified, not dev-verified. The pair is validated as a pair: set both `media_base_url` and
+`url_signing_secret` or neither, since either alone fails startup.
+
+Never point `KUKATKO_STORAGE_R2_*` on this box at the production bucket. Beyond "don't", the
+enforcement is in `kukatko maintenance reset`, which now makes you type the **bucket** name as
+well as the database name before it deletes anything — see `docs/OPERATIONS.md`. The trade-off of
+putting the guard there and only there: it protects the one command that *deletes*, not the ones
+that *write*. A misconfigured `serve` would still upload into a foreign bucket — but those writes
+are additive and recoverable, while the wipe is not, and a guard on every write path would be a
+confirmation prompt in the upload handler.
+
+### The S3 integration tests
+
+The R2 backend, `internal/backup` and `internal/storagemigrate` have integration tests behind the
+`integration` build tag and `KUKATKO_TEST_S3_ENDPOINT` (plus `KUKATKO_TEST_S3_BUCKET`, `_REGION`,
+`_ACCESS_KEY`, `_SECRET_KEY`). They **skip** when the endpoint is unset, which is what keeps
+`make check` free of any object-storage dependency. Any S3-compatible endpoint works; with
+`make dev-storage` running and `.secrets/db.env` sourced, the variables are already there.
+
+Every test bucket is created if absent and **emptied between cases** — point the variables at a
+throwaway bucket, never at a real one.
 
 ```bash
-KUKATKO_TEST_S3_ENDPOINT=http://127.0.0.1:18100 \
-KUKATKO_TEST_S3_ACCESS_KEY=kukatko KUKATKO_TEST_S3_SECRET_KEY=kukatko-secret \
-  go test -tags=integration -run TestBucketBackup ./internal/backup/
+set -a; source .secrets/db.env; set +a
+
+# the backend itself
+go test -tags=integration -run TestR2 ./internal/storage/
+
+# bucket-to-bucket originals backup: needs TWO buckets, derived from
+# KUKATKO_TEST_S3_BUCKET by suffix (…-primary and …-backup). No database. It covers
+# the server-side copy, an incremental re-run that copies nothing new, the fact that
+# an object deleted from the primary survives in the backup, and the loud failure
+# when no target is configured.
+go test -tags=integration -run TestBucketBackup ./internal/backup/
+
+# the migration wants BOTH the bucket and KUKATKO_TEST_DATABASE_URL: it migrates a
+# fixture library out of a real catalogue, kills the run mid-photo, resumes it, and
+# asserts every object landed exactly once and that the photo which failed
+# verification still has its local original.
+go test -tags=integration -run TestMigrateToR2 ./internal/storagemigrate/
 ```
 
-`internal/storagemigrate` has an integration test that wants **both**: the bucket *and*
-`KUKATKO_TEST_DATABASE_URL`, because it migrates a fixture library out of a real catalogue,
-kills the run mid-photo, resumes it, and asserts every object landed exactly once and that the
-photo which failed verification still has its local original:
-
-```bash
-KUKATKO_TEST_S3_ENDPOINT=http://127.0.0.1:18100 \
-KUKATKO_TEST_S3_ACCESS_KEY=kukatko KUKATKO_TEST_S3_SECRET_KEY=kukatko-secret \
-KUKATKO_TEST_DATABASE_URL=... \
-  go test -tags=integration -run TestMigrateToR2 ./internal/storagemigrate/
-```
+Running the whole `make test-integration` instead also needs `KUKATKO_TEST_DATABASE_URL`, since
+the other integration packages want a database.
 
 ## Releasing version info
 

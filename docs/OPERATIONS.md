@@ -70,8 +70,9 @@ configuration key both here **and** into `config.example.yaml`.
   ops/cron without a running server, applies migrations and builds a service shared with the admin API):
   `maintenance scan` (read-only integrity report — disk↔DB drift + missing derived data),
   **`maintenance reset`** (the **guarded library wipe** — `internal/reset`; dry run by default, `--execute` +
-  a typed database name to delete, `--force` for a non-interactive run, `--orphan-sweep` for the leftovers the
-  catalogue never referenced; accounts/announcement/audit trail/migrations are never touched; see below) and
+  a typed database name — and, on a bucket-backed store, a typed bucket name — to delete, `--force` for a
+  non-interactive run, `--orphan-sweep` for the leftovers the catalogue never referenced;
+  accounts/announcement/audit trail/migrations are never touched; see below) and
   `maintenance repair` with the flags `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline; a no-op without any flag;
@@ -282,10 +283,11 @@ wipe. And it has no client of PhotoPrism or photo-sorter: they are read-only sou
 | --- | --- |
 | Dry run is the default | Without `--execute` it prints a row count per table and an object count per prefix, and deletes nothing. |
 | Typed confirmation | You must type the target database's name (not `y/N`); a mismatch → `ErrConfirmationMismatch` and nothing is deleted. `--confirm-database <name>` supplies it without a prompt. |
+| Typed bucket confirmation | On a bucket-backed store you must type the configured bucket's name too; a mismatch → `ErrBucketConfirmationMismatch`. `--confirm-bucket <name>` supplies it without a prompt. The database and the bucket come from independent config keys and can name independent deployments (a dev database pointed at the production bucket is exactly the accident this refuses), so confirming one says nothing about the other. A name typed against a store that has **no** bucket — the `fs` backend — is refused for the same reason: the operator was aiming at something this run cannot reach. |
 | Target check | `current_database()` is read **from the server** and compared with the database in the loaded config; a mismatch → `ErrTargetMismatch`. Host + database are printed before you are asked. |
 | Non-interactive refusal | Stdin that is not a terminal (a script, cron, an agent — `/dev/null` included, which is why the check is a terminal ioctl and not "is a character device") is refused unless `--force` is passed too. Checked **before** the config is loaded, so a stray invocation opens nothing. |
 | Storage scope | Only the three prefixes the store owns are ever deleted; anything else in the bucket is counted as `foreign` and left alone. A key the catalogue does not reference is deleted only with `--orphan-sweep`. There is no delete-everything path. |
-| Audit | One `library.reset` entry (`internal/audit`), written **in the same transaction as the truncation**, recording the operator (`$USER@$HOSTNAME`), the target database, the per-table row counts removed and the object counts. |
+| Audit | One `library.reset` entry (`internal/audit`), written **in the same transaction as the truncation**, recording the operator (`$USER@$HOSTNAME`), the target database and bucket, the per-table row counts removed and the object counts. |
 | Before/after summary | Both snapshots are printed, and a catalogue table that somehow survived is flagged with `WARNING`. |
 | Schema drift | A table in `public` that the command classifies as neither wiped nor preserved (or a classified table that is missing) aborts the run with `ErrSchemaDrift`, naming it. Adding a table to a migration therefore cannot silently leave part of the library behind — the fix is one line in `internal/reset/tables.go`. |
 
@@ -294,7 +296,9 @@ kukatko maintenance reset                       # dry run: what would be deleted
 kukatko maintenance reset --execute             # asks you to type the database name, then wipes
 kukatko maintenance reset --execute --orphan-sweep   # also deletes leftovers the catalogue never referenced
 kukatko maintenance reset --execute --force \
-    --confirm-database kukatko --orphan-sweep   # non-interactive (a script/agent must say both)
+    --confirm-database kukatko \
+    --confirm-bucket kukatko-dev --orphan-sweep # non-interactive (a script/agent must say all of it;
+                                                # --confirm-bucket only on a bucket-backed store)
 ```
 
 **Stop the server first.** The wipe empties the job queue and the catalogue the running instance is serving; a
@@ -567,9 +571,14 @@ long-running and belong on the machine where the instance runs — so they remai
   (+ `url_signing_secret_previous`) and `url_ttl` (default `1h`, must be positive). Env:
   `KUKATKO_STORAGE_R2_ENDPOINT`/`_REGION`/`_BUCKET`/`_ACCESS_KEY`/
   `_SECRET_KEY`/`_MEDIA_BASE_URL`/`_URL_SIGNING_SECRET`/`_URL_SIGNING_SECRET_PREVIOUS`/`_URL_TTL`.
-  `ErrIncompleteR2Config` validation **at startup**: the `r2` backend requires all keys except
-  `url_signing_secret_previous` (the missing ones are listed in the error — names only, never values)
-  and a positive `url_ttl`. Neither the secrets nor the access key are ever logged or appear in an error.
+  `ErrIncompleteR2Config` validation **at startup**: the `r2` backend requires `endpoint`, `bucket`,
+  `access_key`, `secret_key` and `storage.temp_path` (the missing ones are listed in the error — names
+  only, never values). `media_base_url` + `url_signing_secret` are a **pair and optional as a pair**:
+  set both and objects are served as signed URLs by the edge Worker (then `url_ttl` must be positive);
+  set neither and nothing is signed — `R2.URL()` returns `""`, `internal/mediaurl` falls back to the
+  application's own `/api/v1/photos/…` routes and the app streams the bytes itself, which is what a
+  bucket with no Worker in front of it (development against a local MinIO) needs. Exactly one of the
+  pair fails startup, since it means either URLs the Worker will reject or a secret that signs nothing. Neither the secrets nor the access key are ever logged or appear in an error.
   **The Worker itself is not in this repo** — the bucket, its source, bindings, and hostname are defined and deployed by
   Terraform in the infra repo (root module `cloudflare-r2/`). Rotating the signing secret therefore reaches into
   **two repositories** — procedure below.
@@ -867,7 +876,11 @@ algorithm cannot be changed in just one of them.
   see `docs/DEVELOPMENT.md`), `check` (the gate = `docs-budget` + `fmt-check` + `lint` +
   `web-typecheck` + `test`; **rewrites nothing**, after a successful run `git status --short` is
   empty), `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `dev` (smart rebuild + run on
-  `:6480` via `scripts/dev.sh`, `DEV_ARGS=--force` for a full rebuild), `clean`, `help`.
+  `:6480` via `scripts/dev.sh`, `DEV_ARGS=--force` for a full rebuild), `dev-storage`
+  (`scripts/dev-storage.sh` — the local MinIO the dev runtime *and* the S3 integration tests share:
+  container `kukatko-minio`, named volume `kukatko-minio-data`, `--restart unless-stopped`, 1 GB cap,
+  API `127.0.0.1:18100` + console `:18101`, buckets `kukatko-dev` and `kukatko-test*`; idempotent,
+  and `--env` prints the block `.secrets/db.env` needs — see `docs/DEVELOPMENT.md`), `clean`, `help`.
   Frontend-only targets: `web-deps` (`npm ci`, guarded by the stamp file
   `web/node_modules/.kukatko-npm-ci-stamp` that depends on `web/package-lock.json`, so it is
   reinstalled only when the lockfile changes), `web-build`, `web-fmt`, `web-fmt-check`, `web-lint`,
