@@ -848,6 +848,15 @@ to `## Package map` in `CLAUDE.md`.
   timestamps + indexes on `photo_uid`/`subject_uid`; `Store` = `NewStore(pool)` over the shared pgx
   pool: **subjects** `CreateSubject`(generates a uid + a **unique slug from name** — `Slugify`
   without diacritics/ASCII, a collision → a numeric suffix `name-2`)/`GetSubjectByUID`/`GetSubjectBySlug`/
+  — **two slug functions, and mixing them up is a data bug**: `Slugify` is **total** (a name it cannot
+  slugify falls back to the constant `subject`) and is for slug *generation*; **`NameSlug`** returns `""`
+  when the name identifies nobody (empty/whitespace/punctuation) and a digest slug `subject-<8 hex>` for a
+  name written outside ASCII (CJK/Cyrillic/…, still a name, so still distinct), and is the **only** key a
+  find-or-create-by-name path may use. Keying such a path on `Slugify` makes the fallback a **catch-all**:
+  every nameless face resolves to it, the first creates one empty-named subject and the rest are *found* by
+  it — in production that collected 16 532 markers on a single fake person (fixed in `psfeedsimport`,
+  `psimport`, `ppimport`, `facematch`; `peopleapi` rejects such a name with 400; the repair for existing
+  data is `kukatko maintenance nameless-subjects`, see [`OPERATIONS.md`](OPERATIONS.md))/
   `UpdateSubject`(re-slugging + refresh of the `faces.subject_name` cache)/`ListSubjects` (with counts of
   non-archived... i.e. **non-invalid** markers per subject, ordered by name; plus
   `CoverFace *SubjectFace` = the face that illustrates the subject in the people grid when it has no
@@ -859,7 +868,15 @@ to `## Package map` in `CLAUDE.md`.
   (drawn label boxes aren't faces), `invalid=FALSE` (rejected false-positives aren't returned),
   a non-zero box and photo dimensions, and a visible photo as with the count. It also carries the photo's `width/height/orientation`
   — the client crops the region itself and without the frame would distort it)/
-  `DeleteSubject` (the FK detaches the markers, clears the faces cache)/`ListPhotoUIDsBySubject` (distinct
+  `DeleteSubject` (the FK detaches the markers, clears the faces cache)/**the nameless-subject repair**
+  (`internal/people/nameless.go`) `ListNamelessSubjects` (every subject whose `NameSlug` is `""`, with its
+  marker and face counts — the **dry run**; the predicate stays in Go so the repair cannot drift from the
+  guard the importers use)/`DetachSubject(uid,entry)` (one tx: snapshot the subject + its marker uids +
+  its `(photo_uid,face_index)` face refs, clear the faces cache, delete the subject, audit — returns the
+  `SubjectSnapshot` that **is** the undo, since nothing else records the removed links)/
+  `RestoreSubject(snap,entry)` (re-inserts the row under its original uid/name/timestamps — only the slug
+  may be disambiguated — and re-points its markers and faces; each slug attempt runs in its own audited
+  transaction, because a unique violation aborts the transaction it happens in)/`ListPhotoUIDsBySubject` (distinct
   uids of non-archived photos with a non-invalid marker of the subject, newest-first — the basis of the subject's
   gallery in `peopleapi`)/`SearchSubjects(q,limit)` (accent/case-insensitive ILIKE over
   `immutable_unaccent(name)`, cap limit — the basis of `globalsearchapi`); **markers** `CreateMarker`
@@ -1722,6 +1739,13 @@ to `## Package map` in `CLAUDE.md`.
   `source_photos_with_embeddings: 20092` — a reviewer at the point of no return saw zeros next to the vector
   section and concluded the vector migration was finished, with only the top-level `complete:false` saying
   otherwise. The arithmetic was always defensible and is unchanged; the naming and presentation were the bug;
+  **the structure sections reconcile both directions**: beside `missing`/`missing_count` (in the source, not in
+  the catalogue) an `EntityReport` carries `surplus`/`surplus_count` — distinct catalogue names the source does
+  not have, sorted and capped at `SampleLimit` like the missing ones. A surplus is **reported, never enforced**
+  (`complete` ignores it): anything created in Kukátko itself is a legitimate one. It exists because a
+  one-directional check cannot see a row that should not exist — `people: source=104 kukatko=105 missing=0`
+  read as clean while the extra subject was the nameless catch-all `internal/people` describes, holding 16 532
+  markers; the CLI prints the names quoted, so an empty one shows up as `""`;
   `Report{photoprism,vectors,structure,complete}` (per section source vs catalogue + a capped list of the missing +
   full counts); `complete=true` only when nothing is missing — including no *imported* photo left without its
   vectors, but deliberately **not** requiring full vector source coverage: photo-sorter's population and

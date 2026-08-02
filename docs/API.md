@@ -447,7 +447,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   without the frame would distort it. **An explicit `cover_photo_uid` always wins**, `cover_face` is only a
   fallback;
   `POST /subjects` (RequireWrite) → 201 creates a subject from `{name,type,favorite,private,notes,
-  cover_photo_uid?}` (empty name / unknown type → 400); `GET /subjects/{uid}` (RequireAuth) →
+  cover_photo_uid?}` (empty name / unknown type → 400; a name that identifies **nobody** — punctuation or
+  symbols alone, no letter and no digit — is also 400 `subject name must contain a letter or a digit`: it has
+  no slug of its own, would be stored under the shared fallback slug, read as unnamed everywhere and act as a
+  magnet for find-or-create-by-name lookups, which is exactly the catch-all `docs/OPERATIONS.md` §
+  `maintenance nameless-subjects` describes); `GET /subjects/{uid}` (RequireAuth) →
   the subject (404); `PATCH /subjects/{uid}` (RequireWrite) → editing the same fields (404/400);
   `DELETE /subjects/{uid}` (RequireWrite) → 204 (the markers are detached server-side); `GET
   /subjects/{uid}/photos` (RequireAuth) → a paginated gallery of the subject's photos
@@ -685,7 +689,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   file_gap_count,file_gaps},vectors:{not_configured,source_*,catalog_*,embeddings_source_coverage,
   faces_source_coverage,embeddings_missing_for_imported_photos,embeddings_missing_uids,
   faces_missing_for_imported_photos,faces_missing_uids},
-  structure:{albums,labels,subjects (each {source_count,catalog_count,missing_count,missing})},complete}`.
+  structure:{albums,labels,subjects (each {source_count,catalog_count,missing_count,missing,
+  surplus_count,surplus})},complete}`. Each structure section reconciles **both directions**: `surplus` lists
+  the distinct catalogue names the source does not have (sorted, capped like `missing`). It never affects
+  `complete` — anything created in Kukátko itself is a legitimate surplus — but it is the only place a row that
+  should not exist becomes visible: `subjects` reading `source_count:104, catalog_count:105, missing_count:0`
+  looked clean while the extra one was an empty-named catch-all holding 16 532 markers.
   The `vectors` section answers **two different questions and names them apart**. The
   `*_missing_for_imported_photos` counters are scoped to photos **already in the catalogue** (a vector cannot
   attach to a photo that was never imported), so they legitimately read `0` on a catalogue holding a fraction

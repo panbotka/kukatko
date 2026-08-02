@@ -212,6 +212,111 @@ func TestImport_facesTransferMarkersSubjectsAndNormaliseBBox(t *testing.T) {
 	}
 }
 
+// TestImport_facesWithoutAUsableNameCreateNoSubject is the regression test for
+// the catch-all subject: a face whose subject name identifies nobody must not
+// create — nor be assigned to — any subject.
+//
+// It guards a branch that was dead for a whole release. resolveSubject checked
+// `slug == ""` after people.Slugify, which never returns "": every nameless face
+// slugified to the shared fallback, the first one created an empty-named subject
+// under it and the rest were found by it, collecting 16 532 markers in production.
+// Each case below produces that same fallback slug, so any regression here is a
+// subject appearing where none should.
+func TestImport_facesWithoutAUsableNameCreateNoSubject(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		subjectName string
+	}{
+		{name: "no name at all", subjectName: ""},
+		{name: "whitespace only", subjectName: "   \t "},
+		{name: "punctuation only", subjectName: "!!! ???"},
+		{name: "dashes only", subjectName: "--"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			feeds := &fakeFeeds{faces: []psfeeds.Face{{
+				ID: 1, PhotoUID: "pp1", FaceIndex: 0, Model: "buffalo_l", Vector: faceVec(0.1),
+				BBox: []float64{200, 150, 600, 450}, MarkerUID: "mk1", SubjectName: tt.subjectName,
+				PhotoWidth: 800, PhotoHeight: 600, Orientation: 1,
+			}}}
+			vec := newFakeVectors()
+			ppl := newFakePeople()
+			svc := newService(feeds, photoByPP("pp1"), vec, ppl, &fakeRuns{})
+
+			if _, err := svc.Import(context.Background()); err != nil {
+				t.Fatalf("Import: %v", err)
+			}
+			if ppl.createSubjects != 0 {
+				t.Errorf("createSubjects = %d, want 0 for name %q", ppl.createSubjects, tt.subjectName)
+			}
+			marker, ok := ppl.markers["mk1"]
+			if !ok {
+				t.Fatalf("marker mk1 was not created; the face itself must still be imported")
+			}
+			if marker.SubjectUID != nil {
+				t.Errorf("marker subject_uid = %q, want unassigned", *marker.SubjectUID)
+			}
+			saved := vec.faces["kk-pp1"]
+			if len(saved.faces) != 1 {
+				t.Fatalf("faces = %d, want 1", len(saved.faces))
+			}
+			if saved.faces[0].SubjectUID != nil {
+				t.Errorf("face subject_uid = %q, want unassigned", *saved.faces[0].SubjectUID)
+			}
+			if saved.faces[0].SubjectName != "" {
+				t.Errorf("face subject_name = %q, want empty (no subject backs it)", saved.faces[0].SubjectName)
+			}
+		})
+	}
+}
+
+// TestImport_facesShareASubjectOnlyWhenTheNameMatches checks that the fix did not
+// merely stop creating subjects: two differently-named faces must still resolve to
+// two subjects, and two faces naming the same person to one.
+func TestImport_facesShareASubjectOnlyWhenTheNameMatches(t *testing.T) {
+	t.Parallel()
+	feeds := &fakeFeeds{faces: []psfeeds.Face{
+		{
+			ID: 1, PhotoUID: "pp1", FaceIndex: 0, Vector: faceVec(0.1), BBox: []float64{10, 20, 30, 40},
+			SubjectName: "Alice", PhotoWidth: 800, PhotoHeight: 600, Orientation: 1,
+		},
+		{
+			ID: 2, PhotoUID: "pp1", FaceIndex: 1, Vector: faceVec(0.2), BBox: []float64{50, 60, 70, 80},
+			SubjectName: "", PhotoWidth: 800, PhotoHeight: 600, Orientation: 1,
+		},
+		{
+			ID: 3, PhotoUID: "pp1", FaceIndex: 2, Vector: faceVec(0.3), BBox: []float64{90, 10, 110, 30},
+			SubjectName: "Bob", PhotoWidth: 800, PhotoHeight: 600, Orientation: 1,
+		},
+	}}
+	vec := newFakeVectors()
+	ppl := newFakePeople()
+	svc := newService(feeds, photoByPP("pp1"), vec, ppl, &fakeRuns{})
+
+	if _, err := svc.Import(context.Background()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if ppl.createSubjects != 2 {
+		t.Fatalf("createSubjects = %d, want 2 (Alice and Bob, not the nameless face)", ppl.createSubjects)
+	}
+	saved := vec.faces["kk-pp1"].faces
+	if len(saved) != 3 {
+		t.Fatalf("faces = %d, want 3", len(saved))
+	}
+	if saved[1].SubjectUID != nil {
+		t.Errorf("the nameless face is assigned to %q, want unassigned", *saved[1].SubjectUID)
+	}
+	if saved[0].SubjectUID == nil || saved[2].SubjectUID == nil {
+		t.Fatalf("named faces must resolve: %v / %v", saved[0].SubjectUID, saved[2].SubjectUID)
+	}
+	if *saved[0].SubjectUID == *saved[2].SubjectUID {
+		t.Errorf("Alice and Bob share subject %q", *saved[0].SubjectUID)
+	}
+}
+
 func TestImport_idempotentRerun(t *testing.T) {
 	t.Parallel()
 	feeds := &fakeFeeds{

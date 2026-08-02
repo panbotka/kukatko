@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -167,13 +168,33 @@ func printAlbumSummary(cmd *cobra.Command, a importverify.AlbumReport) {
 	}
 }
 
-// printEntitySummary prints a structure entity's source-vs-catalogue counts and
-// any missing names.
+// printEntitySummary prints a structure entity's source-vs-catalogue counts, any
+// missing names and any surplus ones.
+//
+// The surplus line is not a failure — anything created in Kukátko itself is a
+// legitimate surplus — but it is the only place a catalogue row that should not
+// exist becomes visible. `people: source=104 kukatko=105 missing=0` read as clean
+// while that extra subject was a nameless catch-all holding 16 532 markers.
 func printEntitySummary(cmd *cobra.Command, kind string, e importverify.EntityReport) {
-	cmd.Printf("%s: source=%d kukatko=%d missing=%d\n", kind, e.SourceCount, e.CatalogCount, e.MissingCount)
+	cmd.Printf("%s: source=%d kukatko=%d missing=%d surplus=%d\n",
+		kind, e.SourceCount, e.CatalogCount, e.MissingCount, e.SurplusCount)
 	if len(e.Missing) > 0 {
 		cmd.Printf("  missing: %s\n", strings.Join(e.Missing, ", "))
 	}
+	if len(e.Surplus) > 0 {
+		cmd.Printf("  only in kukatko: %s\n", strings.Join(quoteNames(e.Surplus), ", "))
+	}
+}
+
+// quoteNames quotes each name so an empty one — the signature of a nameless
+// catch-all subject — is visible in the summary instead of printing as a gap
+// between commas.
+func quoteNames(names []string) []string {
+	out := make([]string, len(names))
+	for i, name := range names {
+		out[i] = strconv.Quote(name)
+	}
+	return out
 }
 
 // formatByType renders the per-type counts map as a stable "type=count" string.

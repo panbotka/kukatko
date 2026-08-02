@@ -223,6 +223,11 @@ func TestIsNamedFaceMarker(t *testing.T) {
 		{name: "unnamed face", m: photoprism.Marker{Type: "face"}, want: false},
 		{name: "invalid face", m: photoprism.Marker{Type: "face", Name: "Bob", Invalid: true}, want: false},
 		{name: "label marker", m: photoprism.Marker{Type: "label", Name: "Tree"}, want: false},
+		// A name that identifies nobody is not a name: seeding it would
+		// find-or-create the one subject every such name slugifies to, and every
+		// later punctuation-named marker would join it.
+		{name: "whitespace name", m: photoprism.Marker{Type: "face", Name: "  "}, want: false},
+		{name: "punctuation name", m: photoprism.Marker{Type: "face", Name: "??!"}, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

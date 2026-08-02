@@ -128,6 +128,12 @@ func (fi *facesImport) addFace(ctx context.Context, f psfeeds.Face) error {
 		markerUID = &uid
 		fi.ensureMarker(ctx, uid, subjectUID, bbox)
 	}
+	// The cached name follows the resolved subject: a face whose name identified
+	// nobody stays fully unassigned rather than displaying a name no subject backs.
+	subjectName := f.SubjectName
+	if subjectUID == nil {
+		subjectName = ""
+	}
 	fi.faces = append(fi.faces, vectors.Face{
 		PhotoUID:    fi.photoUID,
 		FaceIndex:   f.FaceIndex,
@@ -137,7 +143,7 @@ func (fi *facesImport) addFace(ctx context.Context, f psfeeds.Face) error {
 		Model:       f.Model,
 		MarkerUID:   markerUID,
 		SubjectUID:  subjectUID,
-		SubjectName: f.SubjectName,
+		SubjectName: subjectName,
 		PhotoWidth:  f.PhotoWidth,
 		PhotoHeight: f.PhotoHeight,
 		Orientation: f.Orientation,
@@ -151,11 +157,17 @@ func (fi *facesImport) addFace(ctx context.Context, f psfeeds.Face) error {
 // resolveSubject returns the Kukátko subject uid for a face's subject name,
 // matching an existing subject by name slug (reusing one the PhotoPrism import may
 // have created) or creating a new one, and caching the result for the run. It
-// returns nil (no error) when the face carries no name, and an error only on an
-// infrastructure failure. Each call returns a fresh pointer so a face and its
-// marker never alias one another's subject uid.
+// returns nil (no error) when the face carries no usable name, and an error only
+// on an infrastructure failure. Each call returns a fresh pointer so a face and
+// its marker never alias one another's subject uid.
+//
+// The key is people.NameSlug, NOT people.Slugify. Slugify is total: it answers
+// "subject" for a nameless face, so every unnamed face in the feed used to resolve
+// to that one key — the first created an empty-named subject and the rest were
+// found by it. That is how 16 532 markers ended up on a single catch-all subject
+// in production; keying on NameSlug leaves a nameless face unassigned instead.
 func (fi *facesImport) resolveSubject(ctx context.Context, name string) (*string, error) {
-	slug := people.Slugify(name)
+	slug := people.NameSlug(name)
 	if slug == "" {
 		return nil, nil //nolint:nilnil // (nil, nil) means "no subject", not an error.
 	}

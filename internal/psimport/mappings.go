@@ -98,9 +98,16 @@ func (s *Service) mapSubjects(ctx context.Context) (map[string]string, error) {
 
 // findOrCreateSubject returns the existing Kukátko subject whose slug matches the
 // photo-sorter subject's name, or creates a new one preserving its type and
-// flags.
+// flags. A source subject whose name identifies nobody (empty, whitespace or
+// punctuation only) resolves to the zero Subject and no error, so the caller
+// leaves it out of the mapping instead of minting a catch-all every nameless
+// marker would then be assigned to.
 func (s *Service) findOrCreateSubject(ctx context.Context, ps photosorter.Subject) (people.Subject, error) {
-	slug := people.Slugify(ps.Name)
+	slug := people.NameSlug(ps.Name)
+	if slug == "" {
+		s.log.Warn("psimport: skipping subject with no usable name", "ps_uid", ps.UID)
+		return people.Subject{}, nil
+	}
 	subject, err := s.people.GetSubjectBySlug(ctx, slug)
 	if err == nil {
 		return subject, nil

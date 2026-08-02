@@ -3,7 +3,6 @@ package cluster
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/facematch"
@@ -14,13 +13,14 @@ import (
 // AssignCluster assigns every face in a cluster to one subject and returns the
 // subject plus the markers created for each member. The subject is named by
 // SubjectUID, or — failing that — found-or-created from SubjectName (by the
-// underlying assignment state machine). Each member face gets a face marker
+// underlying assignment state machine); a name that identifies nobody counts as
+// no name at all. Each member face gets a face marker
 // assigned to the subject; once all faces are assigned (and so no longer
 // clusterable), the now-consumed cluster is deleted, detaching its faces. It
 // returns ErrMissingSubject when neither subject field is set, ErrClusterNotFound
 // for an unknown cluster and ErrEmptyCluster for a cluster with no faces.
 func (s *Service) AssignCluster(ctx context.Context, req AssignRequest) (AssignResult, error) {
-	if req.SubjectUID == "" && strings.TrimSpace(req.SubjectName) == "" {
+	if req.SubjectUID == "" && people.NameSlug(req.SubjectName) == "" {
 		return AssignResult{}, ErrMissingSubject
 	}
 	if _, err := s.store.GetCluster(ctx, req.ClusterUID); err != nil {

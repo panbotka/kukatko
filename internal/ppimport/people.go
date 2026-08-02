@@ -91,7 +91,7 @@ func (s *Service) findOrCreateSubject(
 	ctx context.Context, m photoprism.Marker, idx *subjectIndex,
 ) (people.Subject, error) {
 	name := m.Name
-	subject, err := s.people.GetSubjectBySlug(ctx, people.Slugify(name))
+	subject, err := s.people.GetSubjectBySlug(ctx, people.NameSlug(name))
 	if err == nil {
 		return subject, nil
 	}
@@ -162,7 +162,7 @@ func (idx *subjectIndex) lookup(m photoprism.Marker) (photoprism.Subject, bool) 
 			return subj, true
 		}
 	}
-	if slug := people.Slugify(m.Name); slug != "" {
+	if slug := people.NameSlug(m.Name); slug != "" {
 		if subj, ok := idx.bySlug[slug]; ok {
 			return subj, true
 		}
@@ -192,7 +192,7 @@ func (s *Service) loadSubjectIndex(ctx context.Context) *subjectIndex {
 			if subj.UID != "" {
 				idx.byUID[subj.UID] = subj
 			}
-			if slug := people.Slugify(subj.Name); slug != "" {
+			if slug := people.NameSlug(subj.Name); slug != "" {
 				idx.bySlug[slug] = subj
 			}
 		}
@@ -206,6 +206,10 @@ func (s *Service) loadSubjectIndex(ctx context.Context) *subjectIndex {
 // isNamedFaceMarker reports whether a PhotoPrism marker is a valid, named face
 // region — the only kind the importer seeds as a person. Unnamed or invalid
 // regions are left for Kukátko's own face detection to (re)discover.
+//
+// "Named" means people.NameSlug resolves the name, not merely that the string is
+// non-blank: a name of punctuation alone identifies nobody, and seeding it would
+// find-or-create the one subject every such name slugifies to.
 func isNamedFaceMarker(m photoprism.Marker) bool {
-	return strings.EqualFold(m.Type, "face") && !m.Invalid && strings.TrimSpace(m.Name) != ""
+	return strings.EqualFold(m.Type, "face") && !m.Invalid && people.NameSlug(m.Name) != ""
 }

@@ -12,24 +12,26 @@ import (
 )
 
 // newMaintenanceCmd builds the "maintenance" subcommand group: an integrity scan,
-// an opt-in repair runner and the guarded library wipe. All three are ops/cron
-// entry points that need no running server (repairs enqueue jobs the running
-// server's worker will drain; the orphan import runs synchronously). The scan and
-// the repairs are also available to admins over the HTTP API; the wipe
-// deliberately is not — like `restore db`, it is a CLI-only operation to be run
-// with the server stopped.
+// an opt-in repair runner, the nameless-subject repair and the guarded library
+// wipe. All of them are ops/cron entry points that need no running server (repairs
+// enqueue jobs the running server's worker will drain; the orphan import runs
+// synchronously). The scan and the repairs are also available to admins over the
+// HTTP API; the nameless-subject repair and the wipe deliberately are not — like
+// `restore db`, they are CLI-only operations that delete catalogue rows.
 func newMaintenanceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "maintenance",
 		Short: "Library integrity scan, repair and reset",
 		Long: "Scan the library for drift between the catalogue and the files on disk, " +
 			"repair what can be regenerated (thumbnails, perceptual hashes, embeddings, " +
-			"faces) or imported (orphan originals), or reset the library entirely. " +
+			"faces) or imported (orphan originals), detach nameless catch-all subjects, " +
+			"or reset the library entirely. " +
 			"Scan and repair never delete originals; reset deletes the whole library on " +
 			"purpose and is guarded accordingly.",
 		Args: cobra.NoArgs,
 	}
-	cmd.AddCommand(newMaintenanceScanCmd(), newMaintenanceRepairCmd(), newMaintenanceResetCmd())
+	cmd.AddCommand(newMaintenanceScanCmd(), newMaintenanceRepairCmd(),
+		newMaintenanceNamelessCmd(), newMaintenanceResetCmd())
 	return cmd
 }
 

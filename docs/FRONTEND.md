@@ -732,7 +732,10 @@ here.
   `import.verify.albumsSkipped` explains any `structure.albums.skipped_by_design_count` — the albums of the
   types the import deliberately does not map (PhotoPrism's auto-generated monthly ones), which are **counted,
   never listed as missing**, so the albums row reading `source=198` against PhotoPrism's 758 is not a shortfall
-  (`AlbumReport` in `services/import.ts` = `EntityReport` + `skipped_types` + `skipped_by_design_count`). The history also shows runs of the **`folder`** source (`kukatko import dir`,
+  (`AlbumReport` in `services/import.ts` = `EntityReport` + `skipped_types` + `skipped_by_design_count`).
+  `EntityReport` also carries `surplus_count`/`surplus` (catalogue names the source does not have — never a
+  completeness failure, but where a row that should not exist shows up); the page does not render them yet,
+  the CLI `kukatko import verify` summary does. The history also shows runs of the **`folder`** source (`kukatko import dir`,
   reads a directory on the server's disk → **has no button**, it just appears in the table): in `services/import.ts`
   therefore `RunSource` = `ImportSource | 'folder'` (the launch sections stay `SOURCES` =
   photoprism/photosorter), the label `import.source.folder`,
