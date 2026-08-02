@@ -64,14 +64,18 @@ func (s *Service) importPhotoDetail(
 }
 
 // wantsDetail reports whether this run should read the photo's detail. A scoped run
-// always does (it maps the photo's whole context off it). A full run does when the
-// photo was written by this run, or when the source touched it after the watermark
-// the run resumed from — the two cases where the detail can hold something the
+// always does (it maps the photo's whole context off it). A full run does when this
+// run did something with the photo — imported it, updated it, or collapsed it onto
+// a row already holding its content, whose albums, labels and markers must still be
+// brought across — or when the source touched it after the watermark the run
+// resumed from. Those are the cases where the detail can hold something the
 // catalogue does not. A photo the run merely re-listed at the watermark itself,
 // unchanged upstream, is skipped: that is the difference between one request per
-// changed photo and one per photo in the library.
+// changed photo and one per photo in the library, and it is why the threshold is
+// the WATERMARK (state.detailSince) even when a repair pass zeroes the listing
+// cursor to re-offer the whole library.
 func (s *Service) wantsDetail(pp photoprism.Photo, state *runState, result outcome) bool {
-	return state.photoCtx != nil || result != outcomeSkipped || pp.UpdatedAt.After(state.since)
+	return state.photoCtx != nil || result != outcomeSkipped || pp.UpdatedAt.After(state.detailSince)
 }
 
 // applyDetailMetadata writes the photo's PhotoPrism-owned metadata into the

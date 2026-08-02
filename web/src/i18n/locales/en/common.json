@@ -1587,6 +1587,7 @@
       "imported": "New",
       "updated": "Updated",
       "skipped": "Skipped",
+      "deduplicated": "Deduplicated",
       "failed": "Failed"
     },
     "status": {

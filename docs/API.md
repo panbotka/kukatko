@@ -662,6 +662,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   with photo-sorter's 1:1 embeddings + faces, matched by `photoprism_uid`; configured via
   `import.photosorter.base_url`/`token`) — each (only for configured sources, otherwise 404) enqueues one
   singleton job → 202 `{job_id,status}`; `jobs.ErrDuplicate` (already running) → 409, another error → 500.
+  A run's `counts` object is `{imported,updated,skipped,deduplicated,failed}`: **`deduplicated`** counts SOURCE
+  photos whose content was already catalogued under a different source photo (they collapse onto that row and
+  an alias keeps their uid resolvable — see `internal/ppimport`), and runs recorded before the bucket existed
+  simply have no key for it.
   A run now also carries the **`partial`** status: it finished its scan but recorded ≥1 unresolved
   per-photo/per-file failure (see `import_failures`), so it is deliberately not reported as a clean `done`
   (and, like a failed run, does not advance the resume watermark). `GET /import/failures` (**always

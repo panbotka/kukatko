@@ -80,6 +80,19 @@ type Counts struct {
 	Updated int `json:"updated"`
 	// Skipped is the number of photos already up to date (no change needed).
 	Skipped int `json:"skipped"`
+	// Deduplicated is the number of SOURCE photos whose content was already
+	// catalogued under a different source photo, so they collapsed onto that row
+	// instead of getting one of their own (an alias records the identity; see
+	// internal/photos.AddPhotoprismAlias and migration 0046).
+	//
+	// It is deliberately its own bucket rather than part of Skipped: "already up to
+	// date" and "the catalogue holds these bytes under another name" are different
+	// answers, and reading the second as the first is how 450 production photos went
+	// missing under a run that reported failed=0.
+	//
+	// A run recorded before this field existed simply has no key for it in the
+	// counts JSONB and reads back as zero.
+	Deduplicated int `json:"deduplicated"`
 	// Failed is the number of photos that errored without aborting the run.
 	Failed int `json:"failed"`
 }

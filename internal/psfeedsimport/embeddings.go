@@ -43,7 +43,7 @@ func (s *Service) importEmbeddings(ctx context.Context, runID int64, st *runStat
 // (Failed) is counted, not returned.
 func (s *Service) importEmbedding(ctx context.Context, st *runState, e psfeeds.Embedding) error {
 	st.trackTime(e.CreatedAt)
-	photo, err := s.photos.GetByPhotoprismUID(ctx, e.PhotoUID)
+	photo, err := s.resolvePhoto(ctx, e.PhotoUID)
 	if errors.Is(err, photos.ErrPhotoNotFound) {
 		st.counts.Skipped++
 		return nil

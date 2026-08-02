@@ -16,6 +16,14 @@ import (
 var errImportNotConfigured = errors.New(
 	"photoprism import not configured: set import.photoprism.base_url (and token)")
 
+// errFullWithScope indicates --full was combined with a scoping flag. The two mean
+// different things — --full re-lists the whole library, a scope narrows it to a
+// slice — and a scoped run already ignores the watermark, so combining them can
+// only be a misunderstanding worth surfacing.
+var errFullWithScope = errors.New(
+	"--full re-lists the whole library and cannot be combined with " +
+		"--album/--label/--person/--year (a scoped run already ignores the watermark)")
+
 // errFeedsImportNotConfigured indicates the photo-sorter feeds import was invoked
 // without a configured feeds API base URL.
 var errFeedsImportNotConfigured = errors.New(
@@ -48,12 +56,22 @@ func newImportCmd() *cobra.Command {
 			"combine and narrow the run together, e.g. --album <uid> --year 1985.\n\n" +
 			"A scoped run is PARTIAL and does not advance the resume cursor: the incremental " +
 			"watermark is left untouched, so a later full import still sees every photo — " +
-			"including the ones the scoped run never listed.",
+			"including the ones the scoped run never listed.\n\n" +
+			"--full re-lists the WHOLE source library, ignoring the resume watermark. It is the " +
+			"repair path: a photo an earlier run dropped sits behind the watermark and no " +
+			"incremental run will ever offer it again. Already-imported photos still resolve by " +
+			"uid and skip without a download, and the per-photo detail read stays gated on the " +
+			"watermark, so the pass costs a listing walk plus whatever it actually repairs. It " +
+			"advances the watermark normally and cannot be combined with the scoping flags " +
+			"(a scoped run already ignores the watermark).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runImportPhotoPrism(cmd)
 		},
 	}
+	ppCmd.Flags().Bool("full", false,
+		"re-list the whole source library, ignoring the resume watermark "+
+			"(repairs photos an earlier run dropped)")
 	ppCmd.Flags().String("album", "",
 		"import only this PhotoPrism album uid (partial run; leaves the watermark untouched)")
 	ppCmd.Flags().String("label", "",
@@ -143,6 +161,25 @@ func importScopeFromFlags(cmd *cobra.Command) (ppimport.Scope, error) {
 	return ppimport.Scope{AlbumUID: album, Label: label, Person: person, Year: year}, nil
 }
 
+// importModeFromFlags reads what kind of run the flags ask for: the scope (empty
+// for an unscoped run) and whether the resume watermark is to be ignored. The two
+// are mutually exclusive — a scoped run already ignores the watermark — so asking
+// for both is errFullWithScope rather than a run that quietly honours one of them.
+func importModeFromFlags(cmd *cobra.Command) (ppimport.Scope, bool, error) {
+	scope, err := importScopeFromFlags(cmd)
+	if err != nil {
+		return ppimport.Scope{}, false, err
+	}
+	full, err := cmd.Flags().GetBool("full")
+	if err != nil {
+		return ppimport.Scope{}, false, fmt.Errorf("reading --full: %w", err)
+	}
+	if full && !scope.IsEmpty() {
+		return ppimport.Scope{}, false, errFullWithScope
+	}
+	return scope, full, nil
+}
+
 // runImportPhotoPrism loads the configuration, opens the database (applying
 // migrations), builds the import service and runs one import pass — full, or
 // scoped by the --album/--label/--person/--year flags — printing the run id and
@@ -155,7 +192,7 @@ func runImportPhotoPrism(cmd *cobra.Command) error {
 	if cfg.Import.PhotoPrism.BaseURL == "" {
 		return errImportNotConfigured
 	}
-	scope, err := importScopeFromFlags(cmd)
+	scope, full, err := importModeFromFlags(cmd)
 	if err != nil {
 		return err
 	}
@@ -175,33 +212,37 @@ func runImportPhotoPrism(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	result, err := runImportPass(cmd, svc, scope)
+	result, err := runImportPass(cmd, svc, scope, full)
 	if err != nil {
 		return err
 	}
-	cmd.Printf("photoprism import run %d: imported=%d updated=%d skipped=%d failed=%d\n",
+	cmd.Printf("photoprism import run %d: imported=%d updated=%d skipped=%d deduplicated=%d failed=%d\n",
 		result.RunID, result.Counts.Imported, result.Counts.Updated,
-		result.Counts.Skipped, result.Counts.Failed)
+		result.Counts.Skipped, result.Counts.Deduplicated, result.Counts.Failed)
 	if !scope.IsEmpty() {
 		cmd.Printf("scoped run (%s): partial import, the incremental watermark was left untouched\n", scope)
 	}
 	return nil
 }
 
-// runImportPass runs the scoped import when scope names any filter, and the full
-// incremental import otherwise. It returns the run's result even on failure, so
-// the caller can still report what the aborted run managed to do.
+// runImportPass runs the scoped import when scope names any filter, the
+// watermark-ignoring repair pass when full is set, and the ordinary incremental
+// import otherwise. It returns the run's result even on failure, so the caller can
+// still report what the aborted run managed to do.
 func runImportPass(
-	cmd *cobra.Command, svc *ppimport.Service, scope ppimport.Scope,
+	cmd *cobra.Command, svc *ppimport.Service, scope ppimport.Scope, full bool,
 ) (ppimport.Result, error) {
 	var (
 		result ppimport.Result
 		err    error
 	)
-	if scope.IsEmpty() {
-		result, err = svc.Import(cmd.Context())
-	} else {
+	switch {
+	case !scope.IsEmpty():
 		result, err = svc.ImportScoped(cmd.Context(), scope)
+	case full:
+		result, err = svc.ImportFull(cmd.Context())
+	default:
+		result, err = svc.Import(cmd.Context())
 	}
 	if err != nil {
 		return result, fmt.Errorf("running photoprism import: %w", err)

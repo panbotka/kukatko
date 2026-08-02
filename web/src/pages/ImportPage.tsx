@@ -70,7 +70,7 @@ function latestForSource(runs: ImportRun[], source: ImportSource): ImportRun | n
   return runs.find((run) => run.source === source) ?? null
 }
 
-/** A compact row of imported/updated/skipped/failed count badges. */
+/** A compact row of imported/updated/skipped/deduplicated/failed count badges. */
 function CountsBadges({ counts }: { counts: ImportCounts }) {
   const { t } = useTranslation()
   return (
@@ -84,6 +84,11 @@ function CountsBadges({ counts }: { counts: ImportCounts }) {
       <Badge bg="secondary">
         {t('import.counts.skipped')}: {counts.skipped}
       </Badge>
+      {counts.deduplicated !== undefined && counts.deduplicated > 0 && (
+        <Badge bg="info">
+          {t('import.counts.deduplicated')}: {counts.deduplicated}
+        </Badge>
+      )}
       <Badge bg={counts.failed > 0 ? 'danger' : 'secondary'}>
         {t('import.counts.failed')}: {counts.failed}
       </Badge>

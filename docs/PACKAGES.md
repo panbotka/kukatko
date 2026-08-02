@@ -108,7 +108,15 @@ to `## Package map` in `CLAUDE.md`.
   (backfill `photoprism_uid`+`photoprism_file_hash` onto a photo deduplicated by SHA256 — the PhotoPrism
   import calls it so the next increment short-circuits on the uid instead of re-downloading)/
   `SetPhotoprismFileHash` (the same backfill for a NON-primary source file, **leaving `photoprism_uid`
-  alone** — a sibling never claims the source photo's key)/`ListByUIDs`
+  alone** — a sibling never claims the source photo's key)/
+  **`AddPhotoprismAlias(ctx,ppUID,photoUID,ppFileHash)`**/**`GetByPhotoprismAlias(ctx,ppUID)`**/
+  `ListPhotoprismAliases` (the `photoprism_aliases` table from `0046`, `PhotoprismAlias`: `photoprism_uid`
+  PRIMARY KEY → `photo_uid` many-to-one `ON DELETE CASCADE`. `photoprism_uid` is a 1:1 column and cannot
+  express the source keeping the SAME BYTES as two photos — the second one has no row of its own, because
+  `file_hash` is UNIQUE, and the row holding its content already wears the first one's uid. The alias records
+  that collapse, so the second source uid still resolves to a row; the write is an idempotent upsert (a re-run
+  re-records it, a moved winner re-points it) and the read is the second half of resolving a source uid, after
+  `GetByPhotoprismUID`)/`ListByUIDs`
   (batch lookup by uid, ignores unknown ones — for the similar API)/`FilterUIDs`
   (from a given set of uids returns those that pass the structural List filters — ignores sorting,
   pagination and `FullText`; companion to semantic search: the caller holds candidates from
@@ -1597,6 +1605,10 @@ to `## Package map` in `CLAUDE.md`.
   `photo|file|marker|album_member|label|thumbnail|embedding|faces|phash|edit|metadata`, the helper
   `NewFailure(runID,source,stage,photoUID,sourceRef,detail,err)`; `RecordFailures(ctx,[]Failure)` (batch),
   `CountUnresolvedFailures(ctx,id)`, `ListFailures(ctx,FailureFilter{RunID,Source,UnresolvedOnly,Limit,Offset})`.
+  `Counts` (the `counts` JSONB) is `imported`/`updated`/`skipped`/**`deduplicated`**/`failed` — the fourth bucket
+  counts SOURCE photos whose content was already catalogued under another source photo (see the alias table in
+  `internal/photos` and `internal/ppimport`); reading that as "skipped" is how 450 production photos went missing
+  under a clean-looking run. A run recorded before the field existed simply has no key for it and reads back as 0.
   **`Complete` now auto-detects the status**: a run with ≥1 unresolved defect closes as the new `StatusPartial`
   (`partial`, 0042 extends the status CHECK) instead of `done` — and, like failed, it **does not move the watermark**
   (`LatestWatermark` reads only `done`), so a re-run repeats the window (imports are idempotent). 0042 also
@@ -1608,14 +1620,20 @@ to `## Package map` in `CLAUDE.md`.
   (panics on nil PhotoPrism/Catalog), `Verify(ctx)` → `Report`; the internal narrow interfaces `PhotoPrismSource`
   (List Photos/Albums/Labels/Subjects), `FeedsSource` (`Stats` = the photo-sorter `/stats` feed), `Catalog`
   (the pool-backed `Store = NewStore(pool)`: `ImportedRefs`/`OriginalFileCounts`/`Counts`/`PhotosMissing
-  Embeddings`/`PhotosMissingFaces`/`AlbumTitles`/`LabelNames`/`SubjectNames`); `Verify` walks the **whole**
+  Embeddings`/`PhotosMissingFaces`/`AlbumTitles`/`LabelNames`/`SubjectNames`; `ImportedRefs` answers a
+  `Refs{UIDs,Aliases,FileHashes}` — the three ways a source photo can be accounted for, kept apart so the
+  report can say WHY a photo has no row of its own: `Aliases` are the `photoprism_aliases` uids (`0046`), the
+  source photos that collapsed onto byte-identical content, and a reconciler blind to them reported 450
+  accounted-for production photos as missing); `Verify` walks the **whole**
   PhotoPrism library by paging `ListPhotos` **to an empty page** (a merged listing's short page is not
   exhaustion — see the paging contract under `internal/photoprism/`; stopping there reconciled against the
   first page alone, which is how the gate that guards the point of no return could call a library complete
   with 19 700 photos missing) and **deduplicates the re-served overlap by uid**, keeping the widest `Files[]`
   seen for a photo so a boundary-straddling partial does not mask a real file gap; it classifies a photo as
-  matched/**deduplicated** (the uid is missing,
-  but the primary SHA1 hash is already imported — the bill for the SHA256/SHA1 dedup)/**missing**, and a matched photo with
+  matched/**deduplicated** (the uid is missing, but the photo is accounted for: either an **alias** points it at
+  the row holding its content, or its primary SHA1 hash is already imported — the bill for the SHA256/SHA1
+  dedup; an aliased photo is deliberately NOT file-gap checked, its files belong to the surviving row's
+  uid)/**missing**, and a matched photo with
   fewer `original` files in the catalogue than PhotoPrism's `Files[]` → a **file gap** (a dropped sibling);
   `OriginalFileCounts` counts **across the whole stack**, not just over that one row: a shot's sibling files
   are rows of their own without a `photoprism_uid`, grouped behind the displayable original (see
@@ -1712,8 +1730,9 @@ to `## Package map` in `CLAUDE.md`.
   media_type `video`, a video file without a stream degrades gracefully → image), live → **the still as the primary
   original + the motion clip as a sidecar** (`Photo.StillFile()`+`VideoFile()`, media_type `live`),
   otherwise image; it **downloads** the chosen original into
-  a temp + **SHA256**, dedupes by `file_hash` (identical content → backfill the ID via
-  `photos.SetPhotoprismRef`, no new photo), stores the original, **probes the video metadata**
+  a temp + **SHA256**, dedupes by `file_hash` (identical content is never catalogued twice: content no source
+  photo claims yet → backfill the IDs via `photos.SetPhotoprismRef` and count it as an **update**; content
+  already answering to ANOTHER source photo → an **alias**, see (1c)), stores the original, **probes the video metadata**
   (`Prober.Probe` → `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`; for video from the original,
   for live from the motion clip; best-effort, a failure → zero fields), `photos.Create` with the **PP metadata**
   (title/**caption**/taken_at/GPS/camera/EXIF) + media_type + video metadata + `photoprism_uid`/`photoprism_file_hash` + the **EXIF orientation
@@ -1768,6 +1787,23 @@ to `## Package map` in `CLAUDE.md`.
   out of circulation) and **a curated stack is not dissolved**: when the photo already is in a stack,
   its members are added to that one and its primary stays. A failure of one file is a **per-file failure**
   (`StageFile` → a `partial` run), it never brings the photo itself down;
+  (1c) **one catalogue row can answer to SEVERAL source photos** (`photos.go`, `adoptExisting`, migration
+  `0046`): PhotoPrism indexes the same bytes as two photos, Kukátko's `file_hash` is UNIQUE, so the second
+  source photo has no row to be written into — and the row that holds its content already wears the FIRST
+  one's `photoprism_uid`, which must not be overwritten (that would only move the loss to the other photo).
+  It used to be dropped in **silence**: counted as skipped, nothing logged, no failure recorded — **450 of
+  20 660 production photos**, under a run reporting `failed=0`, invisible to `import verify` and to the
+  photo-sorter feeds. The collapse is now recorded as an **alias** (`photos.AddPhotoprismAlias`), so the source
+  uid still resolves — to the surviving row (`lookupImported` consults `GetByPhotoprismAlias`) — and the
+  duplicate's albums, labels and **face markers land on that row** instead of vanishing with it. It gets its own
+  bucket (`outcomeDeduplicated` → `importer.Counts.Deduplicated`, so "already up to date" and "the catalogue
+  holds these bytes under another name" are never the same answer again), the next run short-circuits on the
+  alias **without re-downloading** (`importUnknown`, before the download), and an alias that cannot be written
+  is a **per-photo failure** — no path may leave the catalogue short while reporting `failed=0`. A `Create`
+  losing to `ErrFileHashTaken` (the pre-check passed and something published those bytes in between — this
+  run's own sibling pass, a concurrent upload) takes the very same route instead of being swallowed;
+  `internal/importverify` and `internal/psfeedsimport` consult the aliases too, so a collapsed photo reconciles
+  as *deduplicated* rather than *missing* and still receives photo-sorter's vectors and faces;
   (2) **the photo detail** (`details.go`, `importPhotoDetail`) — **CAREFUL: half of what PP knows about a photo
   is served ONLY by the detail endpoint**, the listing is a flat search structure without the `Details` object and with
   **always empty** `Files[].Markers` (this is what used to make the import silently bring in nobody). Everything is
@@ -1808,6 +1844,13 @@ to `## Package map` in `CLAUDE.md`.
   backoff is handled by the client, **the watermark never moves past the oldest failure** (`runState`); safe to
   re-run. **`Handle(ctx,job)`** = `worker.HandlerFunc` for `pp_import` (ignores the payload, calls
   `Import`), `JobPayload()` carries a fixed `photo_uid` sentinel → the queue's dedup lets only one import through.
+  **`ImportFull(ctx)`** (CLI `--full`) is the same run with the **listing** watermark zeroed: it re-offers the
+  whole source library and is the **repair path**, because a photo an earlier run dropped sits BEHIND the
+  watermark and no increment will ever list it again. It stays cheap — an already-imported photo resolves by uid
+  and skips without a download, and the **detail** threshold keeps the real watermark
+  (`runState.detailSince`), so re-listing everything does not turn one listing into 20k detail requests — and it
+  advances the watermark as usual. It refuses to combine with the scoping flags (a scoped run already ignores
+  the watermark).
   **`ImportScoped(ctx, Scope{AlbumUID,Label,Person,Year})`** = a scoped (partial) run (CLI
   `--album`/`--label`/`--person`/`--year`, `scope.go`): `Scope.Query()` composes the `q=` expression —
   `label:"<slug>"`, `person:"<name>"`, `year:<YYYY>`, terms separated by a space (the source ANDs them,
@@ -1881,7 +1924,11 @@ to `## Package map` in `CLAUDE.md`.
   (~20k embeddings, ~112k faces). All behind the interfaces `Feeds`/`PhotoStore`/`VectorStore`/`PeopleStore`/`RunStore`
   → a fake in tests; `Service` = `New(Config{Feeds,Photos,Vectors,People,Runs,PageSize,Logger})` (panics on nil).
   **`Import(ctx) (Result,error)`** opens an `import_runs` run (`source=photosorter_feeds`), then two passes:
-  (1) **embeddings** — per item it finds the Kukátko photo by `photoprism_uid`==`photo_uid` and `vectors.SaveEmbedding`
+  (1) **embeddings** — per item it finds the Kukátko photo by `photoprism_uid`==`photo_uid` (`resolvePhoto`, which
+  falls back to the `photoprism_aliases` table from `0046`: a source photo whose bytes were already catalogued under
+  another source uid has NO row of its own, and without that step its vectors and faces would be skipped as
+  "not imported yet" forever; two source photos resolving to one row is expected and harmless — their content is
+  identical, so the upsert and the atomic face replace are last-write-wins) and `vectors.SaveEmbedding`
   (an idempotent upsert); (2) **faces** — it groups faces per photo from the stream (the feed is ordered by `id`, one
   photo's faces arrive contiguously) and does one `vectors.RecordFaceDetection` per photo (an atomic replace). The pixel bbox
   is converted by `facejob.NormalizeBBox` (the single conversion shared with native detection, it honours orientation); the subject
@@ -2000,7 +2047,8 @@ to `## Package map` in `CLAUDE.md`.
   [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) had nothing to run before: it empties every catalogue table and
   every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**
   ([`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4), so the guards *are* the package and the truncation is the easy
-  part. **Two explicit table lists** in `tables.go` — `catalogueTables` (25, wiped) and `preservedTables` (6:
+  part. **Two explicit table lists** in `tables.go` — `catalogueTables` (26, wiped, incl. `photoprism_aliases`
+  from `0046`) and `preservedTables` (6:
   `users`/`sessions`/`api_tokens`/`announcements`/`audit_log`/`schema_migrations`, never touched), exported as
   `CatalogueTables()`/`PreservedTables()`; an allowlist rather than "everything except", because a forgotten
   entry in the first merely survives while a forgotten entry in an exclusion list would be **destroyed**.

@@ -690,7 +690,9 @@ here.
   the batch has finished re-runs the assignment with the current selection,
   `ImportPage` = `/import` (maintainer only) the import/migration console: two sections (PhotoPrism,
   photo-sorter) with a **Spustit import** button (gated on the `sources` flags), the live progress of a running run
-  (spinner + imported/updated/skipped/failed counts) and the background queue state (`GET /jobs/stats`),
+  (spinner + imported/updated/skipped/**deduplicated**/failed counts — the `deduplicated` badge appears only
+  when the run has any, since older runs have no such key: it counts source photos whose content was already
+  catalogued under another source photo) and the background queue state (`GET /jobs/stats`),
   plus a **run history** table (`import_runs`: source/start/end/status/counts/error) — rendered through the
   shared `RecordTable` (`size="sm"`), so on a phone the six columns become **one stacked card per run**
   instead of a sideways scroll; the error keeps its `text-danger small` on the *value* (a `cellClassName`

@@ -99,7 +99,7 @@ func (fi *facesImport) startGroup(ctx context.Context, psPhotoUID string) error 
 	}
 	fi.seen[psPhotoUID] = struct{}{}
 
-	photo, err := fi.svc.photos.GetByPhotoprismUID(ctx, psPhotoUID)
+	photo, err := fi.svc.resolvePhoto(ctx, psPhotoUID)
 	if errors.Is(err, photos.ErrPhotoNotFound) {
 		fi.st.counts.Skipped++
 		return nil

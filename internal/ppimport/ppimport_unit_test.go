@@ -247,7 +247,9 @@ func TestImport_incrementalUpdate(t *testing.T) {
 }
 
 // TestImport_sha256Dedup verifies that an original whose content already exists is
-// not re-created: the existing photo is stamped with the PhotoPrism references.
+// not re-created: the existing photo is stamped with the PhotoPrism references and
+// the run reports it as an UPDATE — the row genuinely changed, it now answers to a
+// source photo it did not before.
 func TestImport_sha256Dedup(t *testing.T) {
 	t.Parallel()
 	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
@@ -269,8 +271,8 @@ func TestImport_sha256Dedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	if result.Counts.Imported != 0 || result.Counts.Skipped != 1 {
-		t.Errorf("counts = %+v, want imported 0 skipped 1", result.Counts)
+	if result.Counts.Imported != 0 || result.Counts.Updated != 1 || result.Counts.Skipped != 0 {
+		t.Errorf("counts = %+v, want imported 0 updated 1 skipped 0", result.Counts)
 	}
 	if len(h.photos.byUID) != 1 {
 		t.Errorf("photo count = %d, want 1 (no new photo)", len(h.photos.byUID))
@@ -867,4 +869,207 @@ func editSubject(t *testing.T, h *harness, name string, edit func(*people.Subjec
 	}
 	edit(&subj)
 	h.people.bySlug[slug] = subj
+}
+
+// TestImport_duplicateSourcePhotoIsAliased pins the fix for the defect that lost
+// 450 production photos: the source keeps the same bytes as two photos, Kukátko
+// deduplicates on content, and the second source photo therefore has no row of its
+// own. It must still be ACCOUNTED FOR — its uid resolves to the row holding its
+// content — and everything hanging off its identity (its album, its label, its
+// face marker) must land on that row instead of being dropped with it.
+func TestImport_duplicateSourcePhotoIsAliased(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakeClient{}
+	first := client.makePhoto("dup1", t0, "Original")
+	second := client.makePhoto("dup2", t0.Add(time.Minute), "Copy", photoprism.Marker{
+		Type: "face", Name: "Alice", X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Score: 90,
+	})
+	// The two source photos hold byte-identical originals under different source
+	// file hashes — exactly what PhotoPrism serves for a photo indexed twice.
+	client.files["h-dup2"] = client.files["h-dup1"]
+	client.photos = []photoprism.Photo{first, second}
+	client.albums = []photoprism.Album{{UID: "ppal1", Title: "Holiday", Type: "album"}}
+	client.albumPhotos = map[string][]photoprism.Photo{"ppal1": {second}}
+	client.labels = []photoprism.Label{{UID: "pplb1", Name: "Beach", Slug: "beach"}}
+	client.queryPhotos = map[string][]photoprism.Photo{`label:"beach"`: {second}}
+	h := newHarness(client)
+
+	result, err := h.svc.Import(context.Background())
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Imported != 1 || result.Counts.Deduplicated != 1 || result.Counts.Failed != 0 {
+		t.Errorf("counts = %+v, want imported 1 deduplicated 1 failed 0", result.Counts)
+	}
+	if len(h.photos.byUID) != 1 {
+		t.Fatalf("photo rows = %d, want 1 (the content is catalogued once)", len(h.photos.byUID))
+	}
+	winner := h.photos.byPPUID["dup1"]
+	if got := h.photos.aliases["dup2"]; got != winner {
+		t.Fatalf("alias for dup2 = %q, want %q", got, winner)
+	}
+	// The content PRE-CHECK is what caught the duplicate, not the insert: both key on
+	// the same SHA256 (the staged download's hash is the one the storage layer
+	// re-computes and the row is written with) and the lookup carries no predicate the
+	// unique index does not, so a sequential run never reaches Create for a duplicate.
+	if h.photos.createCalls != 1 {
+		t.Errorf("Create attempts = %d, want 1 (the pre-check must catch the duplicate)",
+			h.photos.createCalls)
+	}
+	// The duplicate's context landed on the surviving row, not nowhere.
+	if members := h.albums.members[h.albums.albums[0].UID]; !slices.Contains(members, winner) {
+		t.Errorf("album members = %v, want to contain %s", members, winner)
+	}
+	if attached := h.labels.attached[h.labels.labels[0].UID]; !slices.Contains(attached, winner) {
+		t.Errorf("label attachments = %v, want to contain %s", attached, winner)
+	}
+	if len(h.people.markers) != 1 || h.people.markers[0].PhotoUID != winner {
+		t.Errorf("markers = %+v, want one on %s", h.people.markers, winner)
+	}
+}
+
+// TestImport_contentTakenAtInsertIsAliasedToo covers the other door to the same
+// silence: the content pre-check passes and the INSERT loses to the file_hash
+// unique constraint, because something published those bytes in between (this
+// run's own sibling pass, a concurrent upload). That ErrFileHashTaken used to be
+// swallowed as "not created" and the source photo dropped; it now takes the same
+// route as the pre-check would have.
+func TestImport_contentTakenAtInsertIsAliasedToo(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakeClient{}
+	client.photos = []photoprism.Photo{client.makePhoto("pp1", t0, "Racing")}
+	h := newHarness(client)
+
+	// Between the pre-check and the insert, another writer catalogues those bytes
+	// under a different source photo.
+	other := "other-pp"
+	h.photos.beforeCreate = func() {
+		if _, err := h.photos.Create(context.Background(), photos.Photo{
+			FileHash: hashBytes([]byte("bytes-pp1")), FilePath: "x/other.jpg",
+			FileName: "other.jpg", PhotoprismUID: &other,
+		}); err != nil {
+			t.Errorf("seeding the racing row: %v", err)
+		}
+	}
+
+	result, err := h.svc.Import(context.Background())
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Deduplicated != 1 || result.Counts.Imported != 0 || result.Counts.Failed != 0 {
+		t.Errorf("counts = %+v, want deduplicated 1 imported 0 failed 0", result.Counts)
+	}
+	if got := h.photos.aliases["pp1"]; got != h.photos.byPPUID[other] {
+		t.Errorf("alias for pp1 = %q, want the racing row %q", got, h.photos.byPPUID[other])
+	}
+}
+
+// TestImport_aliasedPhotoIsNotRedownloaded verifies the alias short-circuits the
+// next run: a collapsed source photo has no row of its own, so without consulting
+// the alias every incremental run would download its original again only to throw
+// it away at the content dedup.
+func TestImport_aliasedPhotoIsNotRedownloaded(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakeClient{}
+	first := client.makePhoto("dup1", t0, "Original")
+	second := client.makePhoto("dup2", t0, "Copy")
+	client.files["h-dup2"] = client.files["h-dup1"]
+	client.photos = []photoprism.Photo{first, second}
+	h := newHarness(client)
+
+	if _, err := h.svc.Import(context.Background()); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	downloads := client.downloadCount()
+
+	// A second pass over the same window (the watermark re-lists its own photos).
+	result, err := h.svc.Import(context.Background())
+	if err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+	if result.Counts.Deduplicated != 1 {
+		t.Errorf("counts = %+v, want deduplicated 1", result.Counts)
+	}
+	if client.downloadCount() != downloads {
+		t.Errorf("downloads = %d, want %d (the alias must short-circuit)", client.downloadCount(), downloads)
+	}
+}
+
+// TestImport_unrecordableAliasIsAFailure pins the rule that no path may leave the
+// catalogue short while reporting failed=0: when the collapse cannot be recorded,
+// the source photo is neither catalogued nor resolvable, so it is a per-photo
+// FAILURE — logged, tallied and persisted — not a silent skip.
+func TestImport_unrecordableAliasIsAFailure(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakeClient{}
+	first := client.makePhoto("dup1", t0, "Original")
+	second := client.makePhoto("dup2", t0, "Copy")
+	client.files["h-dup2"] = client.files["h-dup1"]
+	client.photos = []photoprism.Photo{first, second}
+	h := newHarness(client)
+	h.photos.aliasErr = errors.New("alias table unavailable")
+
+	result, err := h.svc.Import(context.Background())
+	if err != nil {
+		t.Fatalf("Import returned error, want the failure recorded per photo: %v", err)
+	}
+	if result.Counts.Failed != 1 || result.Counts.Deduplicated != 0 {
+		t.Errorf("counts = %+v, want failed 1 deduplicated 0", result.Counts)
+	}
+	failures := h.runs.failures
+	if len(failures) != 1 {
+		t.Fatalf("recorded failures = %d, want 1", len(failures))
+	}
+	if f := failures[0]; f.Stage != importer.StagePhoto || f.SourceRef != "dup2" {
+		t.Errorf("recorded failure = %+v, want StagePhoto for dup2", f)
+	}
+}
+
+// TestImportFull_relistsBehindTheWatermark verifies the repair path. A photo the
+// last run dropped sits BEHIND the watermark, so no incremental run will ever
+// offer it again; ImportFull re-lists the whole library and heals it, while an
+// ordinary Import over the same state does nothing.
+func TestImportFull_relistsBehindTheWatermark(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakeClient{}
+	dropped := client.makePhoto("old", t0, "Dropped")
+	recent := client.makePhoto("new", t0.Add(48*time.Hour), "Recent")
+	client.photos = []photoprism.Photo{dropped, recent}
+	h := newHarness(client)
+
+	// A first run that imports only the recent photo, leaving the watermark past
+	// the older one — the state the production library was left in.
+	client.photos = []photoprism.Photo{recent}
+	if _, err := h.svc.Import(context.Background()); err != nil {
+		t.Fatalf("seed import: %v", err)
+	}
+	client.photos = []photoprism.Photo{dropped, recent}
+
+	incremental, err := h.svc.Import(context.Background())
+	if err != nil {
+		t.Fatalf("incremental import: %v", err)
+	}
+	if incremental.Counts.Imported != 0 {
+		t.Errorf("incremental imported = %d, want 0 (the photo is behind the watermark)",
+			incremental.Counts.Imported)
+	}
+
+	full, err := h.svc.ImportFull(context.Background())
+	if err != nil {
+		t.Fatalf("ImportFull: %v", err)
+	}
+	if full.Counts.Imported != 1 {
+		t.Errorf("full imported = %d, want 1", full.Counts.Imported)
+	}
+	if _, ok := h.photos.byPPUID["old"]; !ok {
+		t.Error("the dropped photo was not healed by the full pass")
+	}
+	if full.Watermark == nil || !full.Watermark.Equal(t0.Add(48*time.Hour)) {
+		t.Errorf("watermark = %v, want it to still advance normally", full.Watermark)
+	}
 }

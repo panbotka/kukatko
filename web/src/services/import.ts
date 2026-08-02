@@ -77,6 +77,12 @@ export interface ImportCounts {
   imported: number
   updated: number
   skipped: number
+  /**
+   * Source photos whose content was already catalogued under a different source
+   * photo, so they collapsed onto that row instead of getting one of their own.
+   * Runs recorded before this bucket existed have no key for it, hence optional.
+   */
+  deduplicated?: number
   failed: number
 }
 

@@ -327,16 +327,30 @@ func (s *Service) attachLabelMembers(ctx context.Context, ppSlug, name, labelUID
 	}
 }
 
-// lookupImported resolves a PhotoPrism photo UID to its imported Kukátko photo,
-// reporting false when it has not been imported (yet) or the lookup errors (which
-// is logged), so membership mapping silently skips unknown photos.
+// lookupImported resolves a PhotoPrism photo UID to the Kukátko photo that holds
+// it, reporting false when it has not been imported (yet) or the lookup errors
+// (which is logged), so membership mapping silently skips unknown photos.
+//
+// A source photo the catalogue collapsed onto byte-identical content resolves too,
+// through its alias, to the row that survived. That is the whole point of the alias
+// (see photos.AddPhotoprismAlias): the duplicate has no row of its own, but its
+// albums, its labels and its face markers still belong on the row holding its
+// content — resolving only the 1:1 column would leave them behind with it.
 func (s *Service) lookupImported(ctx context.Context, ppUID string) (photos.Photo, bool) {
 	photo, err := s.photos.GetByPhotoprismUID(ctx, ppUID)
+	if err == nil {
+		return photo, true
+	}
+	if !errors.Is(err, photos.ErrPhotoNotFound) {
+		s.log.Warn("ppimport: resolving imported photo", "pp_uid", ppUID, "err", err)
+		return photos.Photo{}, false
+	}
+	photo, err = s.photos.GetByPhotoprismAlias(ctx, ppUID)
 	if errors.Is(err, photos.ErrPhotoNotFound) {
 		return photos.Photo{}, false
 	}
 	if err != nil {
-		s.log.Warn("ppimport: resolving imported photo", "pp_uid", ppUID, "err", err)
+		s.log.Warn("ppimport: resolving aliased photo", "pp_uid", ppUID, "err", err)
 		return photos.Photo{}, false
 	}
 	return photo, true

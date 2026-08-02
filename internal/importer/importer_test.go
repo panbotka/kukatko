@@ -39,12 +39,12 @@ func TestSource_Valid(t *testing.T) {
 func TestCounts_JSONRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	in := Counts{Imported: 3, Updated: 2, Skipped: 5, Failed: 1}
+	in := Counts{Imported: 3, Updated: 2, Skipped: 5, Deduplicated: 4, Failed: 1}
 	encoded, err := json.Marshal(in)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	const want = `{"imported":3,"updated":2,"skipped":5,"failed":1}`
+	const want = `{"imported":3,"updated":2,"skipped":5,"deduplicated":4,"failed":1}`
 	if string(encoded) != want {
 		t.Errorf("Marshal(%+v) = %s, want %s", in, encoded, want)
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/importer"
+	"github.com/panbotka/kukatko/internal/importverify"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
@@ -569,6 +570,17 @@ func countRows(t *testing.T, env *testEnv, table string) int {
 	return n
 }
 
+// scalarCount runs a single-value count query with one photo-uid argument, so a
+// test can assert what landed on one row without hand-rolling a scan each time.
+func scalarCount(t *testing.T, env *testEnv, query, photoUID string) int {
+	t.Helper()
+	var n int
+	if err := env.db.Pool().QueryRow(t.Context(), query, photoUID).Scan(&n); err != nil {
+		t.Fatalf("counting via %q: %v", query, err)
+	}
+	return n
+}
+
 // assertUnchanged fails if a table's row count changed from want.
 func assertUnchanged(t *testing.T, env *testEnv, table string, want int) {
 	t.Helper()
@@ -636,8 +648,8 @@ func TestIntegration_sha256Dedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	if result.Counts.Skipped != 1 || result.Counts.Imported != 0 {
-		t.Errorf("counts = %+v, want skipped 1 imported 0", result.Counts)
+	if result.Counts.Updated != 1 || result.Counts.Imported != 0 {
+		t.Errorf("counts = %+v, want updated 1 imported 0", result.Counts)
 	}
 	if got := countRows(t, env, "photos"); got != 1 {
 		t.Errorf("photos = %d, want 1 (no new photo)", got)
@@ -1504,5 +1516,159 @@ func clearDBSubjectFlags(t *testing.T, env *testEnv, name string) {
 		CoverPhotoUID: subj.CoverPhotoUID,
 	}); err != nil {
 		t.Fatalf("updating subject %q: %v", name, err)
+	}
+}
+
+// TestIntegration_duplicateSourcePhotoIsAliased is the production defect end to
+// end, against the real schema: PhotoPrism serves two photos over byte-identical
+// originals, Kukátko deduplicates on the SHA256 content hash, and the second
+// source photo therefore gets no row of its own. It must still be accounted for —
+// its uid resolves through the alias to the row holding its content — its album,
+// label and face marker must land on that row, and `import verify` must report
+// nothing missing rather than the 450 it once did.
+func TestIntegration_duplicateSourcePhotoIsAliased(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	first := client.addPhoto("dup1", t0, "Original", 70)
+	second := client.addPhoto("dup2", t0.Add(time.Minute), "Copy", 70, photoprism.Marker{
+		UID: "mk-dup2", Type: "face", Name: "Alice", X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Score: 90,
+	})
+	// Byte-identical originals under two source file hashes: the same photo indexed
+	// twice, which is what PhotoPrism actually holds.
+	client.files["h-dup2"] = client.files["h-dup1"]
+	client.photos = []photoprism.Photo{first, second}
+	client.albums = []photoprism.Album{{UID: "ppal1", Title: "Holiday", Type: "album"}}
+	client.albumPhotos = map[string][]photoprism.Photo{"ppal1": {second}}
+	client.labels = []photoprism.Label{{UID: "pplb1", Name: "Beach", Slug: "beach"}}
+	client.queryPhotos = map[string][]photoprism.Photo{`label:"beach"`: {second}}
+	env := newEnv(t, client)
+
+	result, err := env.svc.Import(ctx)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Imported != 1 || result.Counts.Deduplicated != 1 || result.Counts.Failed != 0 {
+		t.Errorf("counts = %+v, want imported 1 deduplicated 1 failed 0", result.Counts)
+	}
+	if got := countRows(t, env, "photos"); got != 1 {
+		t.Fatalf("photos = %d, want 1 (the content is catalogued once)", got)
+	}
+	winner, err := env.photos.GetByPhotoprismUID(ctx, "dup1")
+	if err != nil {
+		t.Fatalf("resolving dup1: %v", err)
+	}
+	held, err := env.photos.GetByPhotoprismAlias(ctx, "dup2")
+	if err != nil {
+		t.Fatalf("resolving dup2 through its alias: %v", err)
+	}
+	if held.UID != winner.UID {
+		t.Errorf("dup2 resolved to %q, want %q", held.UID, winner.UID)
+	}
+
+	// Everything hanging off the duplicate's identity landed on the surviving row.
+	if got := scalarCount(t, env,
+		"SELECT count(*) FROM album_photos ap JOIN albums a ON a.uid = ap.album_uid "+
+			"WHERE ap.photo_uid = $1 AND a.title = 'Holiday'", winner.UID); got != 1 {
+		t.Errorf("album memberships on the surviving row = %d, want 1", got)
+	}
+	if got := scalarCount(t, env,
+		"SELECT count(*) FROM photo_labels pl JOIN labels l ON l.uid = pl.label_uid "+
+			"WHERE pl.photo_uid = $1 AND l.name = 'Beach'", winner.UID); got != 1 {
+		t.Errorf("label attachments on the surviving row = %d, want 1", got)
+	}
+	if got := scalarCount(t, env,
+		"SELECT count(*) FROM markers WHERE photo_uid = $1", winner.UID); got != 1 {
+		t.Errorf("markers on the surviving row = %d, want 1", got)
+	}
+
+	// The reconciliation accounts for both source photos: none missing.
+	report, err := importverify.NewService(importverify.Config{
+		PhotoPrism: client,
+		Catalog:    importverify.NewStore(env.db.Pool()),
+	}).Verify(ctx)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	pp := report.PhotoPrism
+	if pp.SourceTotal != 2 || pp.ImportedCount != 1 || pp.DeduplicatedCount != 1 || pp.MissingCount != 0 {
+		t.Errorf("verify photoprism = %+v, want 2 source, 1 imported, 1 deduplicated, 0 missing", pp)
+	}
+	if pp.FileGapCount != 0 {
+		t.Errorf("verify file gaps = %d, want 0", pp.FileGapCount)
+	}
+
+	// A re-run resolves the duplicate through its alias without downloading again.
+	downloads := client.downloadCount()
+	rerun, err := env.svc.ImportFull(ctx)
+	if err != nil {
+		t.Fatalf("ImportFull: %v", err)
+	}
+	if rerun.Counts.Deduplicated != 1 || rerun.Counts.Imported != 0 {
+		t.Errorf("re-run counts = %+v, want deduplicated 1 imported 0", rerun.Counts)
+	}
+	if client.downloadCount() != downloads {
+		t.Errorf("re-run downloads = %d, want %d (the alias must short-circuit)",
+			client.downloadCount(), downloads)
+	}
+	if got := countRows(t, env, "photos"); got != 1 {
+		t.Errorf("photos after re-run = %d, want 1", got)
+	}
+}
+
+// TestIntegration_fullRelistHealsAPhotoBehindTheWatermark pins the repair path for
+// the production library. A photo an earlier run dropped sits BEHIND the resume
+// watermark, so no incremental run will ever list it again; only a --full pass
+// re-offers it, and that is what turns `import verify` from missing=1 to missing=0.
+func TestIntegration_fullRelistHealsAPhotoBehindTheWatermark(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	dropped := client.addPhoto("old", t0, "Dropped", 40)
+	recent := client.addPhoto("new", t0.Add(48*time.Hour), "Recent", 50)
+	env := newEnv(t, client)
+
+	// The state the production library was left in: the run advanced the watermark
+	// past a photo it never catalogued.
+	client.photos = []photoprism.Photo{recent}
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("seed import: %v", err)
+	}
+	client.photos = []photoprism.Photo{dropped, recent}
+
+	incremental, err := env.svc.Import(ctx)
+	if err != nil {
+		t.Fatalf("incremental import: %v", err)
+	}
+	if incremental.Counts.Imported != 0 {
+		t.Errorf("incremental imported = %d, want 0 (it is behind the watermark)",
+			incremental.Counts.Imported)
+	}
+	verifier := importverify.NewService(importverify.Config{
+		PhotoPrism: client,
+		Catalog:    importverify.NewStore(env.db.Pool()),
+	})
+	before, err := verifier.Verify(ctx)
+	if err != nil {
+		t.Fatalf("Verify before: %v", err)
+	}
+	if before.PhotoPrism.MissingCount != 1 {
+		t.Fatalf("missing before repair = %d, want 1", before.PhotoPrism.MissingCount)
+	}
+
+	full, err := env.svc.ImportFull(ctx)
+	if err != nil {
+		t.Fatalf("ImportFull: %v", err)
+	}
+	if full.Counts.Imported != 1 {
+		t.Errorf("full imported = %d, want 1", full.Counts.Imported)
+	}
+	after, err := verifier.Verify(ctx)
+	if err != nil {
+		t.Fatalf("Verify after: %v", err)
+	}
+	if after.PhotoPrism.MissingCount != 0 {
+		t.Errorf("missing after repair = %d (%v), want 0",
+			after.PhotoPrism.MissingCount, after.PhotoPrism.MissingUIDs)
 	}
 }

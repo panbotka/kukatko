@@ -41,7 +41,16 @@ configuration key both here **and** into `config.example.yaml`.
   a later full import still sees all photos. An unknown album uid → `ErrAlbumNotFound`, an unknown label
   slug → `ErrLabelNotFound` (verified **before** downloading), a nonsensical year → `ErrInvalidYear`, no
   flag → a full incremental run. It is idempotent — a re-run does not create a second album, label, or membership.
-  Used to verify the import against production and to pre-pull part of the library),
+  Used to verify the import against production and to pre-pull part of the library.
+  **`--full`** is the **repair path**: it re-lists the WHOLE source library, ignoring the resume watermark, because a
+  photo an earlier run dropped sits behind that watermark and no incremental run will ever offer it again. Already
+  imported photos resolve by uid and skip without a download, and the per-photo detail read stays gated on the real
+  watermark, so the pass costs a listing walk plus whatever it actually repairs; it advances the watermark as usual
+  and refuses to combine with the scoping flags (a scoped run already ignores the watermark). Run
+  `kukatko import verify` afterwards to confirm `missing=0`.
+  The run summary prints `imported/updated/skipped/deduplicated/failed`; **`deduplicated`** counts SOURCE photos whose
+  content was already catalogued under a different source photo — they collapse onto that row and an alias
+  (`photoprism_aliases`) keeps their uid resolvable, so they are accounted for rather than silently lost),
   `kukatko import photosorter-feeds` (synchronous **feeds enrichment** — `internal/psfeedsimport`; applies DB
   migrations, then `Service.Import`; needs `import.photosorter.base_url` (and `token`), otherwise
   `errFeedsImportNotConfigured`. This is the **production** photo-sorter migration path: in production
