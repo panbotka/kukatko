@@ -366,26 +366,29 @@ func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, sto
 	return nil
 }
 
-// postProcess runs the regenerable side effects of a freshly imported photo —
-// thumbnails and background jobs — collecting failures as logged warnings. Neither
-// undoes the import: a missing thumbnail or unqueued job is a degraded but
-// repairable state.
+// postProcess schedules everything derived from a freshly imported photo —
+// thumbnails and perceptual hashes, embeddings, faces — as background jobs,
+// collecting failures as logged warnings. None undoes the import: an unqueued job
+// is a degraded but repairable state, and the backfills exist to repair it.
 //
 // Neither the credits nor the people are seeded here. Both live only on the photo
 // detail, which this path does not have (the listing carries no Details object and
 // its files' marker arrays are always empty); they are brought over from the detail
 // the caller reads afterwards instead (importPhotoDetail).
 func (s *Service) postProcess(ctx context.Context, photo photos.Photo) {
-	s.generateThumbs(ctx, photo)
+	s.enqueueThumbnail(ctx, photo.UID)
 	s.enqueueJobs(ctx, photo.UID)
 }
 
-// generateThumbs renders the derived images of a catalogued photo, logging a
-// failure rather than undoing the import: a missing thumbnail is a degraded state
-// the thumbnail job repairs, not a reason to lose a downloaded original.
-func (s *Service) generateThumbs(ctx context.Context, photo photos.Photo) {
-	if _, err := s.thumbs.GenerateAll(ctx, photo); err != nil {
-		s.log.Warn("ppimport: thumbnails failed", "photo", photo.UID, "err", err)
+// enqueueThumbnail schedules the thumbnail job for a new photo, which generates
+// its derived images and computes its perceptual hashes. It runs in the local
+// worker, so it needs nothing but this instance, and the queue retries it — where
+// the inline thumbnailing it replaced turned a transient decode failure into a
+// photo permanently without a thumbnail. A duplicate active job is a no-op the
+// enqueuer swallows; any other error is logged.
+func (s *Service) enqueueThumbnail(ctx context.Context, photoUID string) {
+	if err := s.enqueuer.EnqueueThumbnail(ctx, photoUID); err != nil {
+		s.log.Warn("ppimport: enqueue thumbnail failed", "photo", photoUID, "err", err)
 	}
 }
 

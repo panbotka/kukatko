@@ -41,10 +41,12 @@ type FS struct {
 	tmpDir string
 }
 
-// compile-time assertions that *FS satisfies Storage and can enumerate its keys.
+// compile-time assertions that *FS satisfies Storage and can enumerate its keys,
+// whole or under one prefix.
 var (
-	_ Storage   = (*FS)(nil)
-	_ KeyLister = (*FS)(nil)
+	_ Storage      = (*FS)(nil)
+	_ KeyLister    = (*FS)(nil)
+	_ PrefixLister = (*FS)(nil)
 )
 
 // NewFS returns an FS rooted at root, creating the root and its temporary upload
@@ -230,17 +232,55 @@ func (s *FS) Delete(_ context.Context, relPath string) error {
 // under it, skipping the in-progress upload directory (.tmp), whose contents are
 // not objects but half-written ones. See the KeyLister interface.
 func (s *FS) Keys(ctx context.Context, yield func(key string) error) error {
+	return s.KeysWithPrefix(ctx, "", yield)
+}
+
+// KeysWithPrefix walks the smallest subtree that can hold the prefix — the
+// directory the prefix names, so selecting one photo's derived files reads one
+// directory instead of the whole root — and yields the relative key of every
+// regular file under it that starts with prefix. See the PrefixLister interface.
+func (s *FS) KeysWithPrefix(ctx context.Context, prefix string, yield func(key string) error) error {
+	base := s.walkBase(prefix)
 	var yieldErr error
-	walkErr := filepath.WalkDir(s.root, s.keyWalker(ctx, yield, &yieldErr))
-	// A yield error is the caller's own and travels back untouched; a missing root
-	// is an empty store, not a failure.
+	walkErr := filepath.WalkDir(base, s.keyWalker(ctx, filterPrefix(prefix, yield), &yieldErr))
+	// A yield error is the caller's own and travels back untouched; a missing base
+	// directory is an empty store (or an unmatched prefix), not a failure.
 	switch {
 	case yieldErr != nil:
 		return yieldErr
 	case walkErr != nil && !errors.Is(walkErr, os.ErrNotExist):
-		return fmt.Errorf("storage: walking %s: %w", s.root, walkErr)
+		return fmt.Errorf("storage: walking %s: %w", base, walkErr)
 	default:
 		return nil
+	}
+}
+
+// walkBase returns the deepest directory under the root that can still contain
+// every key starting with prefix: the prefix's own parent directory, since the
+// prefix's last segment may name only part of a filename. An empty prefix, or one
+// naming a top-level entry, walks the root. A prefix trying to escape the root is
+// confined to it, and since every yielded key is root-relative and clean, such a
+// prefix then matches nothing.
+func (s *FS) walkBase(prefix string) string {
+	dir := confine(path.Dir(prefix))
+	if dir == "" {
+		return s.root
+	}
+	return filepath.Join(s.root, filepath.FromSlash(dir))
+}
+
+// filterPrefix wraps a key callback so it only fires for keys starting with
+// prefix. An empty prefix is passed through untouched, so a full walk pays
+// nothing for the filter.
+func filterPrefix(prefix string, yield func(key string) error) func(key string) error {
+	if prefix == "" {
+		return yield
+	}
+	return func(key string) error {
+		if !strings.HasPrefix(key, prefix) {
+			return nil
+		}
+		return yield(key)
 	}
 }
 

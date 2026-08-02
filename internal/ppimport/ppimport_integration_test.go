@@ -33,6 +33,7 @@ import (
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
+	"github.com/panbotka/kukatko/internal/thumbjob"
 )
 
 // tinyMP4 is a 64x64, 1-second H.264 sample clip served by the fake PhotoPrism
@@ -354,10 +355,12 @@ type testEnv struct {
 	photos *photos.Store
 	db     *database.DB
 	cache  string
+	thumbs *thumbjob.Service
 }
 
-// newEnv builds an import service wired to real stores, storage and thumbnailer
-// over the integration database and the given fake PhotoPrism client.
+// newEnv builds an import service wired to real stores and storage over the
+// integration database and the given fake PhotoPrism client, together with the
+// real thumbnail job service the import now schedules its derived work onto.
 func newEnv(t *testing.T, client *fakePPClient) *testEnv {
 	t.Helper()
 	db := dbtest.New(t)
@@ -369,19 +372,59 @@ func newEnv(t *testing.T, client *fakePPClient) *testEnv {
 	}
 	cache := t.TempDir()
 	pool := db.Pool()
+	photoStore := photos.NewStore(pool)
 	svc := ppimport.New(ppimport.Config{
-		Client:      client,
-		Runs:        importer.NewStore(pool),
-		Photos:      photos.NewStore(pool),
-		Storage:     store,
-		Thumbnailer: thumb.New(store, cache),
-		Albums:      organize.NewStore(pool),
-		Labels:      organize.NewStore(pool),
-		People:      people.NewStore(pool),
-		Enqueuer:    jobs.NewEnqueuer(jobs.NewStore(pool)),
-		PageSize:    50,
+		Client:   client,
+		Runs:     importer.NewStore(pool),
+		Photos:   photoStore,
+		Storage:  store,
+		Albums:   organize.NewStore(pool),
+		Labels:   organize.NewStore(pool),
+		People:   people.NewStore(pool),
+		Enqueuer: jobs.NewEnqueuer(jobs.NewStore(pool)),
+		PageSize: 50,
 	})
-	return &testEnv{svc: svc, client: client, photos: photos.NewStore(pool), db: db, cache: cache}
+	thumbs := thumbjob.New(thumbjob.Config{
+		Photos:      photoStore,
+		Thumbnailer: thumb.New(store, cache),
+		Decoder:     thumbjob.NewStorageDecoder(store),
+	})
+	return &testEnv{
+		svc: svc, client: client, photos: photoStore,
+		db: db, cache: cache, thumbs: thumbs,
+	}
+}
+
+// runThumbnailJobs runs the thumbnail handler for every queued thumbnail job and
+// returns how many it ran, standing in for the worker that drains the queue in a
+// live instance. The import only schedules the derived work, so a test that wants
+// thumbnails or perceptual hashes has to let that work happen.
+func (e *testEnv) runThumbnailJobs(t *testing.T) int {
+	t.Helper()
+	rows, err := e.db.Pool().Query(t.Context(),
+		"SELECT payload->>'photo_uid' FROM jobs WHERE type = $1 ORDER BY id", jobs.TypeThumbnail)
+	if err != nil {
+		t.Fatalf("listing thumbnail jobs: %v", err)
+	}
+	var uids []string
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			rows.Close()
+			t.Fatalf("scanning thumbnail job: %v", err)
+		}
+		uids = append(uids, uid)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating thumbnail jobs: %v", err)
+	}
+	for _, uid := range uids {
+		if err := e.thumbs.Regenerate(t.Context(), uid); err != nil {
+			t.Fatalf("thumbnail job for %s: %v", uid, err)
+		}
+	}
+	return len(uids)
 }
 
 // thumbCount returns how many JPEG thumbnails the thumbnailer wrote under the
@@ -451,6 +494,54 @@ func TestIntegration_firstImport(t *testing.T) {
 	}
 	if got := env.jobCount(t, jobs.TypeFaceDetect); got != 2 {
 		t.Errorf("face_detect jobs = %d, want 2", got)
+	}
+}
+
+// TestIntegration_importedPhotoGetsAPerceptualHash is the regression test for a
+// whole library imported without one: the import used to thumbnail inline and
+// never schedule the thumbnail job, and since the perceptual hash is computed by
+// that job, photo_phashes stayed empty for every imported photo — which left
+// near-duplicate detection with nothing to band. Importing now schedules a
+// thumbnail job per photo, and running it writes both the thumbnails and the hash.
+func TestIntegration_importedPhotoGetsAPerceptualHash(t *testing.T) {
+	ctx := t.Context()
+	t0 := time.Date(2023, 6, 1, 10, 0, 0, 0, time.UTC)
+	client := &fakePPClient{}
+	client.photos = []photoprism.Photo{
+		client.addPhoto("pp1", t0, "Beach", 10),
+		client.addPhoto("pp2", t0.Add(time.Hour), "Sunset", 20),
+	}
+
+	env := newEnv(t, client)
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	if got := env.jobCount(t, jobs.TypeThumbnail); got != 2 {
+		t.Fatalf("thumbnail jobs = %d, want one per imported photo (2)", got)
+	}
+	if got := countRows(t, env, "photo_phashes"); got != 0 {
+		t.Fatalf("photo_phashes = %d before the job ran, want 0", got)
+	}
+
+	if ran := env.runThumbnailJobs(t); ran != 2 {
+		t.Fatalf("ran %d thumbnail job(s), want 2", ran)
+	}
+
+	if got := countRows(t, env, "photo_phashes"); got != 2 {
+		t.Errorf("photo_phashes = %d after the thumbnail jobs ran, want 2", got)
+	}
+	for _, ppUID := range []string{"pp1", "pp2"} {
+		photo, err := env.photos.GetByPhotoprismUID(ctx, ppUID)
+		if err != nil {
+			t.Fatalf("GetByPhotoprismUID(%s): %v", ppUID, err)
+		}
+		if _, err := env.photos.GetPhash(ctx, photo.UID); err != nil {
+			t.Errorf("GetPhash(%s): %v", ppUID, err)
+		}
+	}
+	if env.thumbCount(t) == 0 {
+		t.Error("no thumbnails written by the thumbnail jobs")
 	}
 }
 
@@ -794,6 +885,12 @@ func TestIntegration_video(t *testing.T) {
 	if photo.PhotoprismUID == nil || *photo.PhotoprismUID != "vid1" ||
 		photo.PhotoprismFileHash == nil || *photo.PhotoprismFileHash != "h-vid1" {
 		t.Errorf("external IDs = %v / %v", photo.PhotoprismUID, photo.PhotoprismFileHash)
+	}
+	if got := env.jobCount(t, jobs.TypeThumbnail); got != 1 {
+		t.Errorf("thumbnail jobs = %d, want 1", got)
+	}
+	if ran := env.runThumbnailJobs(t); ran != 1 {
+		t.Fatalf("ran %d thumbnail job(s), want 1", ran)
 	}
 	if env.thumbCount(t) == 0 {
 		t.Error("no poster/thumbnails generated for the video")

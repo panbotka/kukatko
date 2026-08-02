@@ -110,10 +110,12 @@ type R2 struct {
 	signer *URLSigner
 }
 
-// compile-time assertions that *R2 satisfies Storage and can enumerate its keys.
+// compile-time assertions that *R2 satisfies Storage and can enumerate its keys,
+// whole or under one prefix.
 var (
-	_ Storage   = (*R2)(nil)
-	_ KeyLister = (*R2)(nil)
+	_ Storage      = (*R2)(nil)
+	_ KeyLister    = (*R2)(nil)
+	_ PrefixLister = (*R2)(nil)
 )
 
 // NewR2 returns an R2 backend for the destination in opts, creating the temp
@@ -419,11 +421,20 @@ func (r *R2) Delete(ctx context.Context, relPath string) error {
 // the listing itself, so an arbitrarily large bucket is walked in bounded memory.
 // See the KeyLister interface.
 func (r *R2) Keys(ctx context.Context, yield func(key string) error) error {
+	return r.KeysWithPrefix(ctx, "", yield)
+}
+
+// KeysWithPrefix lists the bucket under prefix, which S3 applies server-side, so
+// asking about one photo's derived objects costs a single request that returns
+// only them — not a walk of the bucket, and not one HEAD per key. See the
+// PrefixLister interface.
+func (r *R2) KeysWithPrefix(ctx context.Context, prefix string, yield func(key string) error) error {
 	listCtx, cancel := context.WithCancel(ctx)
 	// Cancelling drains minio-go's listing goroutine when yield stops the walk
 	// early; without it the goroutine blocks forever on its unread channel.
 	defer cancel()
-	for object := range r.client.ListObjects(listCtx, r.bucket, minio.ListObjectsOptions{Recursive: true}) {
+	opts := minio.ListObjectsOptions{Prefix: prefix, Recursive: true}
+	for object := range r.client.ListObjects(listCtx, r.bucket, opts) {
 		if object.Err != nil {
 			return fmt.Errorf("storage: listing bucket %s: %w", r.bucket, object.Err)
 		}

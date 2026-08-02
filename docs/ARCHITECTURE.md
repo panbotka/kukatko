@@ -640,6 +640,11 @@ PhotoPrism runs in parallel and stays primary. The import is **read-only, repeat
   Pagination `count`≤1000 + `offset`. Fields: UID, TakenAt, Lat/Lng/Altitude, Title/Description,
   Type, Width/Height, OriginalName, Camera/Lens/EXIF, `Files[]` (UID, Hash=SHA1, Primary, Mime,
   Video/Codec, Markers[]).
+- **Derived data is scheduled, never computed inline:** a photo entering the catalogue gets a `thumbnail`
+  job (thumbnails **and** the perceptual hash) plus `image_embed`/`face_detect`, exactly as an upload does.
+  One code path owns "derive what can be rebuilt from the original" — `internal/thumbjob` — because two
+  paths that must each remember the whole list is how a whole imported library ended up with no perceptual
+  hash at all (the import thumbnailed inline; the hash is computed by the job).
 - **Videos & live photos:** PP `Type` video/animated → the **video file itself** is downloaded
   (`Files[]` with `Video=true`), stored with `media_type=video` and **probed** video metadata
   (`duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps` via `internal/video.Probe`), poster +

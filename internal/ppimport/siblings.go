@@ -181,7 +181,7 @@ func (s *Service) importSiblingFile(
 	// near-exact twin of the primary's — a permanent self-duplicate in every
 	// similarity search and a second copy of every face — for a row the library
 	// never shows on its own. The primary carries the shot's identity.
-	s.generateThumbs(ctx, created)
+	s.enqueueThumbnail(ctx, created.UID)
 	return created, true, nil
 }
 

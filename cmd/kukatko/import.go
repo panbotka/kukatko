@@ -20,7 +20,6 @@ import (
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/psfeeds"
 	"github.com/panbotka/kukatko/internal/ratelimit"
-	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // importConfigured reports whether the PhotoPrism import is enabled, i.e. a base
@@ -32,8 +31,8 @@ func importConfigured(cfg *config.Config) bool {
 
 // buildImportService assembles the PhotoPrism import pipeline over the shared
 // pool: the read-only PhotoPrism client, the import-run store, the photo
-// catalogue, on-disk storage and thumbnailer, the album/label/people catalogues
-// and the job enqueuer. The caller must ensure the import is configured
+// catalogue, on-disk storage, the album/label/people catalogues and the job
+// enqueuer (which schedules the thumbnail, embedding and face jobs). The caller must ensure the import is configured
 // (importConfigured) before calling; an empty base URL yields a client error.
 func buildImportService(
 	cfg *config.Config, db *database.DB, enqueuer ppimport.Enqueuer, reg *metrics.Registry,
@@ -55,7 +54,6 @@ func buildImportService(
 		Runs:        importer.NewStore(pool),
 		Photos:      photos.NewStore(pool),
 		Storage:     store,
-		Thumbnailer: thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg)...),
 		Albums:      organize.NewStore(pool),
 		Labels:      organize.NewStore(pool),
 		People:      people.NewStore(pool),

@@ -289,6 +289,14 @@ to `## Package map` in `CLAUDE.md`.
   objects whose key it already has, and each of their test fakes would otherwise grow a method it never calls;
   only the operations that reason about the store *as a whole* (reconciliation, `internal/reset`'s orphan sweep)
   type-assert for it, and report plainly when a store cannot answer.
+  **`PrefixLister`** is the narrowed form, also optional and also on both backends
+  (`FS.KeysWithPrefix` walks only the directory the prefix names; `R2.KeysWithPrefix` passes the prefix to S3,
+  which applies it server-side): `KeysWithPrefix(ctx, prefix, yield)` answers *"what do you already hold under
+  here?"* in **one round trip**. The prefix is matched **literally, not as a path component**, so it may end
+  mid-filename — which is how `internal/thumb` asks about exactly one photo's eight derived objects
+  (`thumb/<aa>/<bb>/<cc>/<hash>_`) instead of paying a `Head` per size. An empty prefix enumerates everything,
+  and both `Keys` implementations are now that call with `""`. A prefix nothing matches — or one naming an
+  absent directory — yields nothing and is **not** an error.
   **Signed URLs** (`sign.go`, `URLSigner`): `https://<media_base_url>/<key>?exp=<unix>&sig=<hex>`,
   where `sig = HMAC-SHA256(secret, key + "\n" + exp)` — the signature covers both the key and the expiry, and the key is
   signed **unescaped** (the UTF-8 name is percent-encoded only when the path is rendered).
@@ -366,6 +374,18 @@ to `## Package map` in `CLAUDE.md`.
   `Generate` renders and uploads it again (invariant: a cached size on a publishing
   backend is always in the bucket too, so the client object URL resolves). This way a fresh ingest on R2
   gets its thumbnails into the bucket the same as `storage migrate-to-r2`;
+  **the published object also counts as done** (`dropPublished`): a cold local cache used to mean a full
+  re-encode + re-upload of objects that were already in the bucket — on a library whose cache is pruned by
+  construction (8 sizes ≈ 2.76 MB per photo, more than the free disk) that is the whole library, twice. Before
+  encoding anything, `Generate` asks the backend once per photo — `storage.PrefixLister.KeysWithPrefix` over
+  `thumb/<aa>/<bb>/<cc>/<hash>_`, which returns exactly that photo's sizes — and drops every size the store
+  already holds. **One listing, not one `Head` per size** (measured on the dev MinIO: 2.2 ms for the listing vs
+  8.3 ms for 8 `Head`s, against ~4 s of encoding — `docs/PERF.md` §2); a warm cache never lists at all, since
+  nothing is missing to ask about. It is gated on `store.URL(rel) != ""` (only there does the object *make* the
+  size available; an FS backend serves thumbnails from the cache and must write the file), skipped when the
+  backend cannot list by prefix, and a **failed listing falls back to encoding** — being slower is a cost,
+  skipping a size that is not really there would leave a thumbnail no client can fetch. `RegenerateAll` (force)
+  ignores the check entirely and rebuilds regardless;
   `GridSize` (`tile_500`) is the size the grid renders and that `thumb_url` carries in the payload;
   decode once per photo, parallel encode of the sizes (errgroup, default `GOMAXPROCS`,
   bound via `thumb.concurrency`);
@@ -920,10 +940,12 @@ to `## Package map` in `CLAUDE.md`.
   (re-clustering of unassigned faces; `Reclusterer` optional — nil → 503),
   `POST /process/places` → `{enqueued}` runs `placesjob.BackfillPlaces` (backfill of reverse-geocode for
   geotagged photos; `PlacesBackfiller` optional — nil → 503, i.e. without a mapy.com key),
-  `POST /process/thumbnails` → `{enqueued}` runs `thumbjob.BackfillThumbnails(all)` (backfill of
+  `POST /process/thumbnails` → `{enqueued,pending,dry_run}` runs `thumbjob.BackfillThumbnails(all)` (backfill of
   `thumbnail` for photos without a thumbnail = without a pHash; `?all=true` schedules every non-archived photo;
-  `ThumbnailBackfiller` optional — nil → 503; local, works even with the box offline; `queryFlag`
-  parses `?all`),
+  `?dry_run=true` schedules **nothing** and only reports `pending` — the count `thumbjob.CountBackfillThumbnails`
+  answers, so a full-library run is a number read beforehand rather than a surprise; a real run reports both,
+  so its size is visible in the response too; `ThumbnailBackfiller` optional — nil → 503; local, works even
+  with the box offline; `queryFlag` parses `?all`/`?dry_run`),
   `POST /process/metadata` → `{enqueued}` runs `metajob.BackfillMetadata(all)` (backfill of `metadata`
   for photos whose file has never been read = `metadata_extracted_at IS NULL`; `?all=true`
   forces a re-read of every non-archived photo; `MetadataBackfiller` optional — nil → 503;
@@ -1756,10 +1778,17 @@ to `## Package map` in `CLAUDE.md`.
   `import.photoprism.{base_url,token,page_size}`; the client is built by the importer (`ppimport`)),
   `internal/ppimport/`
   (a read-only, **incremental and idempotent** import from PhotoPrism — all behind the interfaces
-  `PhotoPrismClient`/`RunStore`/`PhotoStore`/`Storage`/`Thumbnailer`/`AlbumStore`/`LabelStore`/
+  `PhotoPrismClient`/`RunStore`/`PhotoStore`/`Storage`/`AlbumStore`/`LabelStore`/
   `PeopleStore`/`Enqueuer`/`VideoProber` → unit-testable with fakes; `Service` = `New(Config{Client,Runs,Photos,
-  Storage,Thumbnailer,Albums,Labels,People,Enqueuer,Prober,PageSize,TempDir,MaxFileSize,Logger})`
+  Storage,Albums,Labels,People,Enqueuer,Prober,PageSize,TempDir,MaxFileSize,Logger})`
   (`Prober` optional — nil → `defaultProber` over `video.Probe`);
+  **nothing derived is computed inline** — the import has no thumbnailer at all; a photo entering the catalogue
+  gets a **`thumbnail` job** exactly as an upload does, so the rules for deriving thumbnails *and* perceptual
+  hashes live only in `internal/thumbjob`. That second copy is what went stale: this import used to thumbnail
+  inline, and since the pHash is computed by the thumbnail *job* and not by the thumbnailer, **every imported
+  photo ended up without one** (measured on production 2026-08-02: 0 rows in `photo_phashes` for 10 479 photos),
+  which left `internal/duplicates` with nothing to band over the whole imported library and made `thumbjob`'s
+  "narrow" backfill predicate match every photo in it;
   **`Import(ctx) (Result,error)`** opens an `import_runs` run, resumes from the last successful watermark and:
   (1) pages `ListPhotos(UpdatedSince=watermark)` — per photo dedup by `photoprism_uid` (already
   imported → `UpdateMetadata` only on a change, otherwise skip), otherwise it **selects the media** (`selectMedia`,
@@ -1775,8 +1804,8 @@ to `## Package map` in `CLAUDE.md`.
   (title/**caption**/taken_at/GPS/camera/EXIF) + media_type + video metadata + `photoprism_uid`/`photoprism_file_hash` + the **EXIF orientation
   from the file** (PP does not expose it — `exif.Extract` fills in geometry/orientation/MIME, PP overrides
   the curation fields), **for live** it downloads+stores the motion clip as a `RoleSidecar` photo_file (best-effort),
-  thumbnails (for video a **poster frame** via the thumbnailer/ffmpeg) and **enqueues `image_embed`** (on the poster)
-  **+`face_detect`**; counts are **checkpointed after every
+  and **enqueues `thumbnail`** (thumbnails + pHash; for video a **poster frame** via the thumbnailer/ffmpeg),
+  **`image_embed`** (on the poster) **and `face_detect`**; counts are **checkpointed after every
   page** via `UpdateCounts`. **The caption is taken from `Caption`, not from `Description`** (`metadata.go`,
   `caption()`): `photo_description` is a dead column in PP (renamed to `photo_caption`, the Go field is
   `gorm:"-"`), so reading `Description` silently threw away **every** caption in the library. The precedence
@@ -1817,7 +1846,7 @@ to `## Package map` in `CLAUDE.md`.
   hash is filled in (`photos.SetPhotoprismFileHash`, which never overwrites an existing one). It runs for **every
   listed** photo, not just for a fresh import — that is how a library imported earlier picks its RAWs up —
   and when it brings something in, **a skip is promoted to an update**; a single-file photo finishes before the first
-  query to the DB. A sibling gets **thumbnails only**, no `image_embed`/`face_detect`: it is the same
+  query to the DB. A sibling gets **a `thumbnail` job only**, no `image_embed`/`face_detect`: it is the same
   shot as the stack's primary member, so its embedding and its faces would be a mere twin of the primary's
   (a permanent self-duplicate in similarity search and a second copy of every face) on a row the
   library never shows on its own. An archived sibling is not rejoined to the stack (the user took it
@@ -2141,7 +2170,13 @@ to `## Package map` in `CLAUDE.md`.
   thumbnail** = without a pHash (`PhotoLister.ListPhotosMissingPhash`), or — when `all` — for every
   non-archived one (`ListActiveUIDs`, which also catches a missing size on a photo that has a pHash); enqueue via
   `Enqueuer.EnqueueThumbnail` (a dedup no-op → idempotent), returns the count; `ErrBackfillUnavailable`
-  when the `Service` had no `Lister`/`Enqueuer`),
+  when the `Service` had no `Lister`/`Enqueuer`. **The dry run** `CountBackfillThumbnails(ctx,all) (int,error)`
+  answers the same number **without scheduling anything** (`PhotoLister.CountPhotosMissingPhash`/
+  `CountActivePhotos` — a `count(*)`, not a listing), which is what makes the cost of a run legible before it is
+  paid: "the narrow predicate" is no promise of a small number — a library imported before the import scheduled
+  thumbnail jobs has no pHash anywhere, so *every* photo in it matches — and a thumbnail job re-reads an original.
+  It backs `?dry_run=true`; the count is a snapshot, so a concurrent import may grow it and the queue's dedup may
+  shrink what a later real run schedules),
   `internal/sidecarexport/`
   (**the format** of the metadata sidecar + its atomic write into storage — a YAML file per photo next to
   the originals, so the library can be restored **from storage alone**: originals + sidecars, without a database.

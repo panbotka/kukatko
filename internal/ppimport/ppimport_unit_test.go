@@ -49,18 +49,17 @@ func newHarness(client *fakeClient) *harness {
 	store := newFakeStorage()
 	prober := &fakeProber{}
 	svc := New(Config{
-		Client:      client,
-		Runs:        runs,
-		Photos:      photoStore,
-		Storage:     store,
-		Thumbnailer: &fakeThumbs{},
-		Albums:      albums,
-		Labels:      labels,
-		People:      peopleStore,
-		Enqueuer:    enq,
-		Prober:      prober,
-		PageSize:    2,
-		Logger:      discardLogger(),
+		Client:   client,
+		Runs:     runs,
+		Photos:   photoStore,
+		Storage:  store,
+		Albums:   albums,
+		Labels:   labels,
+		People:   peopleStore,
+		Enqueuer: enq,
+		Prober:   prober,
+		PageSize: 2,
+		Logger:   discardLogger(),
 	})
 	return &harness{
 		svc: svc, client: client, runs: runs, photos: photoStore,
@@ -133,6 +132,11 @@ func TestImport_firstRun(t *testing.T) {
 		t.Errorf("run status = %q, want done", got)
 	}
 	assertExternalIDs(t, h, "pp1")
+	if !slices.Contains(h.enq.thumbs, h.photos.byPPUID["pp1"]) {
+		// Without this job an imported photo gets neither thumbnails nor a
+		// perceptual hash, and near-duplicate detection goes blind.
+		t.Error("thumbnail not enqueued for pp1")
+	}
 	if !slices.Contains(h.enq.embeds, h.photos.byPPUID["pp1"]) {
 		t.Error("image_embed not enqueued for pp1")
 	}
