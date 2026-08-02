@@ -476,13 +476,25 @@ type ReviewConfig struct {
 	// before the expensive candidate searches run again. A non-positive value
 	// falls back to the default.
 	CacheTTL time.Duration `mapstructure:"cache_ttl"`
-	// MaxLabels caps how many labels one queue rebuild scans. A non-positive
+	// MaxLabels caps how many labels one queue rebuild considers. A non-positive
 	// value falls back to the default.
 	MaxLabels int `mapstructure:"max_labels"`
 	// LabelConcurrency bounds concurrent label-similarity searches during a
 	// rebuild (each already fans out internally; the box is RAM-constrained). A
 	// non-positive value falls back to the default.
 	LabelConcurrency int `mapstructure:"label_concurrency"`
+	// FaceBudget caps how many named subjects one queue rebuild scans. This is
+	// what keeps the queue off the library's growth curve — a batch of questions
+	// must not cost a library-wide recognition sweep. A non-positive value falls
+	// back to the default.
+	FaceBudget int `mapstructure:"face_budget"`
+	// LabelBudget caps how many labels one queue rebuild scans, for the same
+	// reason. A non-positive value falls back to the default.
+	LabelBudget int `mapstructure:"label_budget"`
+	// BuildTimeout caps how long one queue rebuild may run before it serves what
+	// it has; the backstop behind the two budgets. A non-positive value falls
+	// back to the default.
+	BuildTimeout time.Duration `mapstructure:"build_timeout"`
 }
 
 // AuthConfig holds the credentials used to bootstrap the initial admin account
@@ -884,7 +896,9 @@ func setExpandDefaults(v *viper.Viper) {
 
 // setReviewDefaults registers the review game defaults: the uncertainty band
 // (roughly "the system is 45–75 % sure"), the batch size the UI prefetches, the
-// per-user queue cache window, and the bounds on the label fan-out.
+// per-user queue cache window, the bounds on the label fan-out, and the
+// per-rebuild work budgets plus the deadline that keep one batch of questions
+// off the library's growth curve.
 func setReviewDefaults(v *viper.Viper) {
 	v.SetDefault("review.band_min", 0.45)
 	v.SetDefault("review.band_max", 0.75)
@@ -892,6 +906,9 @@ func setReviewDefaults(v *viper.Viper) {
 	v.SetDefault("review.cache_ttl", "60s")
 	v.SetDefault("review.max_labels", 200)
 	v.SetDefault("review.label_concurrency", 2)
+	v.SetDefault("review.face_budget", 8)
+	v.SetDefault("review.label_budget", 6)
+	v.SetDefault("review.build_timeout", "15s")
 }
 
 func setMapsDefaults(v *viper.Viper) {

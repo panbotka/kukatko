@@ -13,17 +13,24 @@
 // interleaved deterministically, skewed toward whichever kind has more
 // candidates.
 //
-// The queue composes the existing read-only searches — the recognition sweep
-// (per-subject face candidates across all named subjects, which already excludes
-// assigned faces, persisted rejections, negative exemplars and sub-reviewable
-// faces) and the label-similarity search (which already excludes members and
-// rejected photos). Answers route through the existing write paths: yes on a
-// face goes through the facematch assign state machine, yes on a label through
-// the organize attach path, and no records a persisted rejection in feedback.
-// The package never opens a second write path.
+// The queue composes the existing read-only searches — the recognition scan
+// (per-subject face candidates, which already excludes assigned faces, persisted
+// rejections, negative exemplars and sub-reviewable faces) and the
+// label-similarity search (which already excludes members and rejected photos).
+// Both are run in a bounded, rotating window: one batch of questions costs at
+// most FaceBudget subjects and LabelBudget labels, stops as soon as the batch is
+// full, and is capped by BuildTimeout on top of that. Answering one question
+// must not cost a library-wide work list — sweeping all of it took four minutes
+// on a real library, which is longer than any browser waits. The cursors advance
+// on every rebuild, so successive rebuilds walk the whole library.
+//
+// Answers route through the existing write paths: yes on a face goes through the
+// facematch assign state machine, yes on a label through the organize attach
+// path, and no records a persisted rejection in feedback. The package never
+// opens a second write path.
 //
 // Built queues are cached per user for CacheTTL so a batch fetch does not rerun
-// the expensive vector searches, and answered or skipped questions are tracked
+// the vector searches, and answered or skipped questions are tracked
 // in an in-memory session: a skip lasts for the session (an idle session is
 // pruned after sessionIdleTTL, and a restart forgets skips — deliberately, since
 // "don't know" is not "no"), while yes/no answers persist through the underlying
@@ -68,6 +75,18 @@ const (
 	// DefaultLabelConcurrency bounds concurrent label-similarity searches (each
 	// already fans out internally; the box is RAM-constrained).
 	DefaultLabelConcurrency = 2
+	// DefaultFaceBudget is how many named subjects one rebuild may scan. It is
+	// the bound that keeps the queue off the library's growth curve: the cost of
+	// a rebuild is subjects × exemplars × faces, so the subject count is the only
+	// factor a batch of questions has no business paying for.
+	DefaultFaceBudget = 8
+	// DefaultLabelBudget is how many labels one rebuild may scan, for the same
+	// reason (each label search is itself a per-member kNN fan-out).
+	DefaultLabelBudget = 6
+	// DefaultBuildTimeout caps how long one rebuild may run. It is the backstop
+	// behind the budgets: whatever a single subject or label turns out to cost,
+	// GET /review/queue answers rather than holding the request open.
+	DefaultBuildTimeout = 15 * time.Second
 )
 
 const (
@@ -187,12 +206,16 @@ type AnswerResult struct {
 	Remaining int `json:"remaining"`
 }
 
-// Sweeper streams face candidates across all named subjects; *sweep.Service
-// satisfies it.
+// Sweeper scans face candidates over a bounded window of the named subjects;
+// *sweep.Service satisfies it. The queue deliberately depends on the bounded
+// form, not on the full sweep behind GET /faces/sweep: filling one batch of
+// questions must never cost a library-wide scan.
 type Sweeper interface {
-	// Sweep runs the per-subject candidate search across named subjects and
-	// streams events to emit.
-	Sweep(ctx context.Context, params sweep.Params, emit func(sweep.Event) error) error
+	// Scan runs the per-subject candidate search over a window of the named
+	// subjects, hands each subject's actionable candidates to collect, and stops
+	// as soon as collect reports it has enough.
+	Scan(ctx context.Context, params sweep.Params, win sweep.Window,
+		collect sweep.Collect) (sweep.Coverage, error)
 }
 
 // Expander finds photos similar to a label's members; *expand.Service
@@ -261,10 +284,17 @@ type Config struct {
 	QueueSize int
 	// CacheTTL is how long a built queue is reused before rebuilding.
 	CacheTTL time.Duration
-	// MaxLabels caps how many labels one rebuild scans.
+	// MaxLabels caps how many labels one rebuild considers.
 	MaxLabels int
 	// LabelConcurrency bounds concurrent label-similarity searches.
 	LabelConcurrency int
+	// FaceBudget caps how many named subjects one rebuild scans.
+	FaceBudget int
+	// LabelBudget caps how many labels one rebuild scans.
+	LabelBudget int
+	// BuildTimeout caps how long one rebuild may run before it serves what it
+	// has.
+	BuildTimeout time.Duration
 	// Now overrides the clock in tests; nil means time.Now.
 	Now func() time.Time
 }
@@ -286,10 +316,50 @@ type Service struct {
 	cacheTTL         time.Duration
 	maxLabels        int
 	labelConcurrency int
+	faceBudget       int
+	labelBudget      int
+	buildTimeout     time.Duration
 	now              func() time.Time
 
 	mu       sync.Mutex
 	sessions map[string]*session
+
+	// cursorMu guards the two rotation cursors below. They are instance-wide,
+	// not per user: every rebuild advances them, so consecutive rebuilds walk
+	// successive windows of the library instead of re-reading its head.
+	cursorMu    sync.Mutex
+	faceCursor  int
+	labelCursor int
+}
+
+// faceOffset returns the subject-rotation cursor for the next rebuild.
+func (s *Service) faceOffset() int {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	return s.faceCursor
+}
+
+// advanceFaceOffset moves the subject-rotation cursor to where the scan said the
+// next window should start.
+func (s *Service) advanceFaceOffset(next int) {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	s.faceCursor = next
+}
+
+// labelOffset returns the label-rotation cursor for the next rebuild.
+func (s *Service) labelOffset() int {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	return s.labelCursor
+}
+
+// advanceLabelOffset moves the label-rotation cursor past the labels the last
+// rebuild scanned.
+func (s *Service) advanceLabelOffset(next int) {
+	s.cursorMu.Lock()
+	defer s.cursorMu.Unlock()
+	s.labelCursor = next
 }
 
 // New assembles a review Service from cfg. It panics when a required
@@ -311,6 +381,9 @@ func New(cfg Config) *Service {
 		cacheTTL:         cfg.CacheTTL,
 		maxLabels:        orDefaultInt(cfg.MaxLabels, DefaultMaxLabels),
 		labelConcurrency: orDefaultInt(cfg.LabelConcurrency, DefaultLabelConcurrency),
+		faceBudget:       orDefaultInt(cfg.FaceBudget, DefaultFaceBudget),
+		labelBudget:      orDefaultInt(cfg.LabelBudget, DefaultLabelBudget),
+		buildTimeout:     cfg.BuildTimeout,
 		now:              cfg.Now,
 		sessions:         make(map[string]*session),
 	}
@@ -337,6 +410,9 @@ func (s *Service) applyFallbacks() {
 	}
 	if s.cacheTTL <= 0 {
 		s.cacheTTL = DefaultCacheTTL
+	}
+	if s.buildTimeout <= 0 {
+		s.buildTimeout = DefaultBuildTimeout
 	}
 	if s.now == nil {
 		s.now = time.Now

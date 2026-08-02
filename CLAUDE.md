@@ -131,7 +131,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/stacks` — group RAW+JPEG / edited variants of one shot into a stack (detection rules + manual stack/unstack/set-primary); **grouping, never merging**
 - `internal/storage` — storage of originals (`YYYY/MM`, SHA256): local `FS` or Cloudflare `R2` with signed URLs
 - `internal/storagemigrate` — resumable move of the library to object store; verify → commit the row → only then delete the original
-- `internal/sweep` — recognition sweep: runs the per-subject candidate search across **all** named subjects at a high confidence, bounded worker pool, streams a per-person work list; read-only, **never auto-assigns**
+- `internal/sweep` — recognition sweep: the per-subject candidate search across **all** named subjects (`Sweep`, streamed) or a bounded rotating window of them (`Scan`, for one request), bounded worker pool; read-only, **never auto-assigns**
 - `internal/sweepapi` — `GET /faces/sweep` (RequireWrite) streaming NDJSON
 - `internal/system` — aggregation of instance operational state for the admin dashboard
 - `internal/systemapi` — maintainer-only `GET /system/status`

@@ -156,7 +156,7 @@ func (s *Service) run(ctx context.Context, pl plan, params Params, emit func(Eve
 	defer cancel()
 
 	results := make(chan personResult)
-	go s.scanAll(ctx, pl.subjects, params, results)
+	go s.scanAll(ctx, pl.subjects, params, results, new(dispatchState))
 
 	summary := Summary{SubjectsTotal: pl.total, Capped: pl.capped}
 	var emitErr error
@@ -176,15 +176,23 @@ func (s *Service) run(ctx context.Context, pl plan, params Params, emit func(Eve
 }
 
 // scanAll runs one scanSubject per subject under a concurrency-bounded errgroup,
-// sending each result on results and closing it when every subject is done. A send
-// races the context so a cancelled sweep never blocks on a consumer that stopped
-// reading.
+// sending each result on results and closing it when every dispatched subject is
+// done. A send races the context so a cancelled sweep never blocks on a consumer
+// that stopped reading. It stops dispatching as soon as state.stop is raised —
+// subjects already in flight still finish and are still delivered, so a bounded
+// caller throws no computed work away — and records how many subjects it started
+// in state.dispatched. A full Sweep passes a state nobody ever stops.
 func (s *Service) scanAll(
 	ctx context.Context, subjects []people.SubjectCount, params Params, results chan<- personResult,
+	state *dispatchState,
 ) {
 	grp, gctx := errgroup.WithContext(ctx)
 	grp.SetLimit(s.concurrency)
 	for _, subj := range subjects {
+		if state.stop.Load() {
+			break
+		}
+		state.dispatched.Add(1)
 		grp.Go(func() error {
 			r := s.scanSubject(gctx, subj, params)
 			select {
@@ -252,12 +260,18 @@ func (s *Service) emitResult(
 	}
 	summary.PeopleWithMatches++
 	summary.TotalActionable += len(r.candidates)
-	return emit(Event{Type: EventPerson, Person: &Person{
+	return emit(Event{Type: EventPerson, Person: personOf(r)})
+}
+
+// personOf projects one scanned subject's result into the Person payload both
+// the streaming sweep and the bounded scan hand to their consumer.
+func personOf(r personResult) *Person {
+	return &Person{
 		Subject:    r.subject.Subject,
 		Candidates: r.candidates,
 		Counts:     r.counts,
 		Actionable: len(r.candidates),
-	}})
+	}
 }
 
 // actionableCandidates returns the candidates that still need a human decision,

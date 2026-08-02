@@ -295,6 +295,110 @@ which logs the cause via `slog.ErrorContext` before writing the (unchanged)
 client response; 4xx stays unlogged, since the caller is already told what was
 wrong with the request.
 
+
+### The review queue (`GET /api/v1/review/queue`)
+
+**Symptom (production, 2026-08-02).** The endpoint answered **200 OK after
+250.8 s** with a valid 89 kB payload for 105 named subjects / 113 628 faces /
+20 437 photos. Nothing was broken — it was four minutes slow, so every browser
+gave up first and `/review` simply never loaded.
+
+**Root cause.** `internal/review` built the queue by running the **entire
+recognition sweep across every named subject**, synchronously, inside the
+request (`queue.go`, `s.sweeper.Sweep(...)`). That is the machinery behind
+`GET /faces/sweep`, which exists as a *streaming* NDJSON endpoint precisely
+because it is long-running; here its full result was awaited before a single
+byte was written. `pg_stat_activity` sampled during the request showed no slow
+statement at all — five concurrent kNNs, each 20–60 ms. **It was not one slow
+query but thousands of fast ones**, and the count scaled with
+`subjects × exemplars`, so it could only get worse. The per-user cache
+(`CacheTTL`) made the *second* load instant and hid the problem: the first load
+after any expiry exceeded every client timeout. A development library of a
+handful of people makes the sweep milliseconds, which is why it shipped.
+
+**Fix — bound the work to what one batch needs.** The review game shows one
+question at a time, so producing a library-wide work list to fill a single card
+was the mismatch. `internal/sweep` gained `Scan` — the same per-subject search,
+the same worker pool, over a *window*:
+
+```go
+cov, err := sweeper.Scan(ctx, params, sweep.Window{Offset: cursor, Budget: 8},
+    func(person *sweep.Person) (enough bool, err error) { … })
+```
+
+Three bounds now apply to one rebuild, in order of how often they bite:
+
+1. **Early stop.** The collector returns `enough` as soon as the batch has
+   `QueueSize` band candidates. A stop cannot un-dispatch what the pool already
+   started, so it can overshoot by up to `Concurrency` subjects — those are
+   still collected, so nothing computed is thrown away.
+2. **Budget.** `review.face_budget` (8 subjects) and `review.label_budget` (6
+   labels) cap a rebuild even when nothing qualifies. This is the bound that
+   removes the library's size from the cost.
+3. **Deadline.** `review.build_timeout` (15 s) is the backstop behind both: a
+   rebuild that runs out of time serves what it has instead of holding the
+   request open, and is logged. It never degrades into a wrong answer — a
+   timed-out scan cannot report `no_people_no_labels`, only `no_candidates`.
+
+**Coverage is preserved by rotation, not by exhaustiveness.** Each rebuild
+advances an instance-wide cursor by the subjects (and labels) it scanned, so
+successive rebuilds walk the whole library instead of re-reading its head. An
+empty queue is no longer cached for the full TTL either: a dry queue rebuilds on
+the next request, which scans the *next* window, so a player who works through a
+batch keeps moving rather than waiting the cache out.
+
+**What did not change.** The queue's content: the same uncertainty band, the
+same exclusions the per-subject search already applies (assigned faces,
+persisted rejections, negative exemplars, sub-reviewable faces),
+`already_done` still dropped, the same informativeness ordering, the same
+face/label interleave, and the same two reason codes — `no_people_no_labels`
+still comes from the library-wide subject and label totals, which are cheap
+counts, not from the window. The HTTP response shape is untouched.
+`GET /faces/sweep` is untouched: `Sweep` still walks every subject and streams.
+
+**Verified as a bounded-work property, not a wall-clock number** (which would be
+flaky on a shared machine). `internal/review/queue_bound_test.go` runs one
+`Queue` call over synthetic libraries of 10, 105 and 1 000 named subjects at the
+production ratio of ~240 exemplars each, and asserts the kNN count stays under
+`face_budget + concurrency` subjects' worth in all three — 1 000 subjects cost
+what 10 do. Against the real database
+(`internal/review/queue_scale_integration_test.go`, 105 named subjects, 4 000
+unassigned faces, the face store instrumented to count kNN queries) one cold
+`GET /review/queue` returned a full batch of 20 questions in **120 ms behind 7
+kNN queries**, where a full sweep of the same fixture runs 105; the same request
+over a 10-subject library ran 6, so the work does not follow the library. A
+bounded queue is also compared question-for-question against an unbounded one on
+a fixture small enough to enumerate.
+
+```
+make test-integration                       # or, for just this endpoint:
+go test -tags integration -run TestReviewQueue_ ./internal/review/
+```
+
+The face dimension of that fixture is deliberately not seeded to 100 000: the
+number of kNN queries is a function of the subject count, not of how many rows
+each query walks, so 100 000 HNSW inserts would add minutes of fixture without
+changing an assertion.
+
+**Sibling endpoints audited** for the same "per-exemplar kNN loop awaited inside
+a request" pattern:
+
+- `internal/sweepapi` (`GET /faces/sweep`) — **by design**: it is the
+  long-running one, and it streams NDJSON per subject, so the client renders
+  progress from the first subject instead of waiting for the last.
+- `internal/candidatesapi` (`POST /subjects/{uid}/candidates`) — **fine**: one
+  subject, so the fan-out is that subject's exemplars (bounded by its own photo
+  count, not by the library's people), under `candidates.concurrency`.
+- `internal/expandapi` (`GET /albums|labels/{uid}/similar`) — **fine**: one
+  collection, and `expand.source_cap` (500) already caps how many members become
+  query vectors, so a thousand-photo album is sampled rather than queried whole.
+- `internal/outlierapi` (`GET /subjects/{uid}/outliers`) — **fine**: no kNN at
+  all. It loads one subject's faces and measures each against their centroid in
+  memory.
+
+The review queue was the only endpoint that multiplied a per-subject search by
+the *number of subjects* before answering.
+
 ---
 
 ## 4. Frontend (large-library smoothness)

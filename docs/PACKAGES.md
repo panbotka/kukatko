@@ -1038,7 +1038,18 @@ to `## Package map` in `CLAUDE.md`.
   fatal; `already_done` candidates are filtered out of the work list (`actionableCandidates`),
   but counted into `TotalAlreadyDone`; **never auto-confirms**. `Event` = `{type,progress?,
   person?,summary?}` (`events.go`). Unit tests with fakes (concurrency/cap/filter/omit-empty/emit-fail),
-  an integration test over real candidates+DB), `internal/sweepapi/`
+  an integration test over real candidates+DB. **`Scan(ctx, Params, Window{Offset,Budget}, collect Collect)
+  (Coverage{SubjectsTotal,Scanned,NextOffset}, error)`** (`scan.go`) is the **bounded** form of the same
+  scan for callers that answer inside one request instead of streaming: it walks a **rotating window**
+  (`Offset` wraps, `Budget` <= 0 = every planned subject) of the same plan and stops dispatching as soon as
+  `collect` returns `enough` — subjects already in flight still finish and are still collected, so a stop
+  can overshoot by up to `Concurrency` but never throws computed work away; `Coverage.SubjectsTotal` is the
+  library-wide count (so a bounded caller can still tell "no named people" from "nobody in this window"),
+  `NextOffset` is fed back to continue the rotation with no gap. Per-subject failures are logged and skipped
+  exactly as in `Sweep`; only the subject listing is fatal. `Sweep` shares the dispatcher (`dispatchState`)
+  and the `Person` projection (`personOf`) and is otherwise unchanged — `GET /faces/sweep` still covers
+  everyone. Unit tests in `scan_test.go` (budget bound, rotation without gaps, early stop, wrapping offset,
+  skipped failures, collector error, empty library)), `internal/sweepapi/`
   (an editor/admin HTTP API over the sweep: the `Service` interface (satisfied by `*sweep.Service`),
   `NewAPI(Config{Service,RequireWrite})` (nil RequireWrite → pass-through) + `RegisterRoutes` mounts
   `GET /faces/sweep` behind `RequireWrite`; `parseConfidence` (percent-or-distance → distance, floor
@@ -1125,8 +1136,9 @@ to `## Package map` in `CLAUDE.md`.
   rejections, negative exemplar, min. face size), label questions via `Expander` (satisfied by
   `*expand.Service` → excludes members and rejected ones), writes via `Assigner` (`*facematch.Service`),
   `OrganizeStore.AttachLabelAudited` and `FeedbackStore.RejectFace/RejectLabel`; `New(Config{...,BandMin,
-  BandMax,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,Now})` (an invalid band → the default pair
-  0.45/0.75, `Now` = a test hook). **`Queue(ctx,userUID,limit)`**: candidates with confidence
+  BandMax,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,FaceBudget,LabelBudget,BuildTimeout,Now})`
+  (an invalid band → the default pair 0.45/0.75, `Now` = a test hook).
+  **`Queue(ctx,userUID,limit)`**: candidates with confidence
   (= 1 − distance) in `[BandMin,BandMax)` — the sweep runs with `Threshold: 1−BandMin` and review trims the upper edge
   (above it a candidate belongs on `/recognition`/expand, not in the game); labels with `PhotoCount>0`
   (cap `MaxLabels`, fan-out `errgroup.SetLimit(LabelConcurrency)`, an error on one label is
@@ -1134,7 +1146,19 @@ to `## Package map` in `CLAUDE.md`.
   **interleaved** deterministically (comparison of integer fractions, no `rand`); the queue is **cached
   per user** (`CacheTTL`) and the session holds `answered`/`skipped` sets + a counter (in-memory, idle-pruned after
   12 h; skip is **deliberately** only session-scoped — "I don't know" is not "no"). An empty library → `reason:
-  "no_people_no_labels"`, an empty band → `"no_candidates"` (both non-error). **`Answer(ctx,userUID,
+  "no_people_no_labels"`, an empty band → `"no_candidates"` (both non-error).
+  **A rebuild is bounded — the game asks one question at a time, so it must never cost a library-wide
+  work list** (it did: 250 s for 105 subjects on production, see `docs/PERF.md` §3). Faces go through
+  `Sweeper.Scan` with `Window{Offset: cursor, Budget: FaceBudget}` (default 8 subjects), labels through a
+  `LabelConcurrency`-sized chunked loop over a rotating window of `LabelBudget` labels (default 6); both
+  stop as soon as the batch holds `limit` band candidates, and `BuildTimeout` (default 15 s) caps the whole
+  rebuild — a deadline serves a **partial** queue with a logged warning instead of a 500 and never reports
+  `no_people_no_labels` (a timed-out scan cannot prove the library is empty), while a caller's own
+  cancellation still propagates. Two **instance-wide cursors** (`faceCursor`/`labelCursor`, own mutex)
+  advance by what each rebuild scanned, so successive rebuilds rotate through the library; a **dry queue
+  rebuilds immediately** instead of waiting out `CacheTTL`, which is what makes the rotation reach everyone.
+  The library-wide subject/label totals still come from the full listings, so the reason codes stay exact;
+  content, ordering, exclusions and the HTTP shape are unchanged. **`Answer(ctx,userUID,
   questionID,answer,meta)`**: the id is **content-derived** (`face:<photo>:<idx>:<subject>` /
   `label:<photo>:<label>`) → the endpoint is stateless; a yes on a face **re-reads** the current face
   row (`FacesByKeys`) and derives the action (marker → `assign_person`, otherwise `create_marker` with the stored
@@ -1143,8 +1167,12 @@ to `## Package map` in `CLAUDE.md`.
   audited in the mutation's transaction); a vanished target (`ErrPhotoNotFound`/`ErrMarkerNotFound`/
   `ErrSubjectNotFound`/`ErrLabelNotFound`/`ErrTargetNotFound`) → `result:"gone"`, not an error; invalid
   input → `ErrInvalidQuestion`/`ErrInvalidAnswer`. Unit tests with fakes (band, ordering, interleaving,
-  determinism, cache TTL, skip, idempotence, gone), integration tests over real
-  sweep+candidates+expand+facematch+feedback+DB. Additionally **`LeaderboardStore`** (`NewLeaderboardStore(
+  determinism, cache TTL, skip, idempotence, gone) plus `queue_bound_test.go` (the bounded-work property
+  over synthetic libraries of 10/105/1000 named subjects at the production exemplar ratio, rotation,
+  early stop, dry-queue rebuild, deadline degradation), integration tests over real
+  sweep+candidates+expand+facematch+feedback+DB, incl. `queue_scale_integration_test.go` (105 named
+  subjects, an instrumented face store counting the kNN queries, and a bounded-vs-unbounded content
+  comparison). Additionally **`LeaderboardStore`** (`NewLeaderboardStore(
   pool)`, separate from `Service` — read-only) aggregates a **review leaderboard** directly from `audit_log`: per
   `actor_uid` it counts decisions marked `details.via = "review"` — yes = `face.assign`+`label.attach`,
   no = `face.reject`+`label.reject`; a skip writes nothing, so it isn't counted — with the windows `WindowAllTime`/

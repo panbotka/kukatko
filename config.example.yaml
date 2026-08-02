@@ -274,13 +274,28 @@ review:
   # candidate searches run again. Answers update the cached queue in place, so the
   # session counter stays cheap. Set to 0 (or below) to fall back to the default.
   cache_ttl: 60s
-  # At most this many labels are scanned per queue rebuild. Set to 0 (or below) to
-  # fall back to the default.
+  # At most this many labels are considered per queue rebuild. Set to 0 (or below)
+  # to fall back to the default.
   max_labels: 200
   # How many label-similarity searches run at once during a rebuild (each already
   # fans out internally; keep low on a RAM-constrained box). Set to 0 (or below) to
   # fall back to the default.
   label_concurrency: 2
+  # How many named subjects one rebuild may scan. This is the bound that keeps the
+  # queue fast: a rebuild costs subjects x exemplars x faces, and filling one batch
+  # of questions has no business paying for every person in the library. The
+  # rebuild stops even earlier once the batch is full, and the cursor rotates, so
+  # successive rebuilds walk the whole library. Raise it for a broader mix of
+  # people per batch, at the cost of a slower first load. Set to 0 (or below) to
+  # fall back to the default.
+  face_budget: 8
+  # The same bound for the label side (each label search is itself a per-member kNN
+  # fan-out). Set to 0 (or below) to fall back to the default.
+  label_budget: 6
+  # Hard cap on how long one rebuild may run before the endpoint serves what it has
+  # — the backstop behind the two budgets, so GET /review/queue always answers.
+  # Go duration string; set to 0 (or below) to fall back to the default.
+  build_timeout: 15s
 
 auth:
   # Credentials used to create the initial admin account on first run.

@@ -140,7 +140,7 @@ func TestAnswer_noRecordsRejections(t *testing.T) {
 func TestAnswer_skipShelvesWithoutWrites(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
-		f.sweeper.events = []sweep.Event{personEvent("subj1", 0.4, 0.41), summaryEvent(1)}
+		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4, 0.41)}
 	})
 	ctx := context.Background()
 	first, err := f.svc.Queue(ctx, "user", 1)
@@ -265,7 +265,7 @@ func TestAnswer_invalidInput(t *testing.T) {
 func TestAnswer_updatesQueueCounters(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
-		f.sweeper.events = []sweep.Event{personEvent("subj1", 0.4, 0.41), summaryEvent(1)}
+		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4, 0.41)}
 		f.faces.faces[vectors.FaceKey{PhotoUID: "photo-subj1-0", FaceIndex: 0}] = vectors.Face{}
 		f.faces.faces[vectors.FaceKey{PhotoUID: "photo-subj1-1", FaceIndex: 0}] = vectors.Face{}
 	})
