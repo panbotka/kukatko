@@ -29,34 +29,48 @@ SELECT photoprism_uid, photoprism_file_hash
 FROM photos
 WHERE photoprism_uid IS NOT NULL OR photoprism_file_hash IS NOT NULL`
 
-// ImportedRefs returns the sets of photoprism_uid and photoprism_file_hash across
-// imported photos. Both columns are nullable, so NULL and empty values are
-// skipped rather than added to the sets.
-func (s *Store) ImportedRefs(ctx context.Context) (map[string]struct{}, map[string]struct{}, error) {
+// aliasUIDsSQL selects the source uids of photos that collapsed onto a catalogue
+// row already holding their content (migration 0046). They have no row of their
+// own, so the query above cannot see them — and a reconciler blind to them
+// reported 450 accounted-for production photos as missing.
+const aliasUIDsSQL = `SELECT photoprism_uid FROM photoprism_aliases`
+
+// ImportedRefs returns the catalogue's PhotoPrism reference sets: the uids of
+// imported photos, the uids of aliased (collapsed) source photos, and the source
+// file hashes. photoprism_uid and photoprism_file_hash are nullable, so NULL and
+// empty values are skipped rather than added to the sets.
+func (s *Store) ImportedRefs(ctx context.Context) (Refs, error) {
 	rows, err := s.pool.Query(ctx, importedRefsSQL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("importverify: querying imported refs: %w", err)
+		return Refs{}, fmt.Errorf("importverify: querying imported refs: %w", err)
 	}
 	defer rows.Close()
 
-	uids := make(map[string]struct{})
-	hashes := make(map[string]struct{})
+	refs := Refs{
+		UIDs:       make(map[string]struct{}),
+		Aliases:    make(map[string]struct{}),
+		FileHashes: make(map[string]struct{}),
+	}
 	for rows.Next() {
 		var uid, hash *string
 		if err := rows.Scan(&uid, &hash); err != nil {
-			return nil, nil, fmt.Errorf("importverify: scanning imported ref: %w", err)
+			return Refs{}, fmt.Errorf("importverify: scanning imported ref: %w", err)
 		}
 		if uid != nil && *uid != "" {
-			uids[*uid] = struct{}{}
+			refs.UIDs[*uid] = struct{}{}
 		}
 		if hash != nil && *hash != "" {
-			hashes[*hash] = struct{}{}
+			refs.FileHashes[*hash] = struct{}{}
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("importverify: iterating imported refs: %w", err)
+		return Refs{}, fmt.Errorf("importverify: iterating imported refs: %w", err)
 	}
-	return uids, hashes, nil
+	refs.Aliases, err = s.stringSet(ctx, aliasUIDsSQL)
+	if err != nil {
+		return Refs{}, err
+	}
+	return refs, nil
 }
 
 // originalFileCountsSQL counts the role='original' photo_files a PhotoPrism photo

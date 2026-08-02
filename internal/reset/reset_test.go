@@ -57,7 +57,7 @@ func TestCatalogueTables_holdTheLibrary(t *testing.T) {
 		"subjects", "markers", "faces", "face_detections", "embeddings", "photo_phashes",
 		"photo_places", "photo_edits", "import_runs", "import_failures", "jobs",
 		"user_favorites", "user_ratings", "saved_searches", "face_rejections",
-		"label_rejections", "duplicate_dismissals",
+		"label_rejections", "duplicate_dismissals", "photoprism_aliases",
 	} {
 		if !slices.Contains(catalogue, name) {
 			t.Errorf("table %q must be wiped by a reset, but is not in the list", name)

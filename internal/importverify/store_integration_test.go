@@ -130,25 +130,34 @@ func TestStore_reconciliationReads(t *testing.T) {
 	insertNamed(t, pool, `INSERT INTO subjects (uid, slug, name) VALUES ($1, $2, $3)`,
 		"su1", "alice", "Alice")
 
+	// ppDup: a source photo with no row of its own, collapsed onto photoA because
+	// their content is byte-identical (migration 0046).
+	insertNamed(t, pool,
+		`INSERT INTO photoprism_aliases (photoprism_uid, photo_uid, photoprism_file_hash)
+		 VALUES ($1, $2, $3)`, "ppDup", "photoA", "sha1dup")
+
 	t.Run("ImportedRefs", func(t *testing.T) {
-		uids, hashes, err := store.ImportedRefs(ctx)
+		refs, err := store.ImportedRefs(ctx)
 		if err != nil {
 			t.Fatalf("ImportedRefs: %v", err)
 		}
-		if _, ok := uids["ppA"]; !ok {
-			t.Errorf("uids missing ppA: %v", uids)
+		if _, ok := refs.UIDs["ppA"]; !ok {
+			t.Errorf("uids missing ppA: %v", refs.UIDs)
 		}
-		if _, ok := uids["ppB"]; !ok {
-			t.Errorf("uids missing ppB: %v", uids)
+		if _, ok := refs.UIDs["ppB"]; !ok {
+			t.Errorf("uids missing ppB: %v", refs.UIDs)
 		}
-		if len(uids) != 2 {
-			t.Errorf("len(uids) = %d, want 2 (%v)", len(uids), uids)
+		if len(refs.UIDs) != 2 {
+			t.Errorf("len(uids) = %d, want 2 (%v)", len(refs.UIDs), refs.UIDs)
 		}
-		if _, ok := hashes["sha1a"]; !ok {
-			t.Errorf("hashes missing sha1a: %v", hashes)
+		if _, ok := refs.Aliases["ppDup"]; !ok || len(refs.Aliases) != 1 {
+			t.Errorf("aliases = %v, want exactly ppDup", refs.Aliases)
 		}
-		if len(hashes) != 2 {
-			t.Errorf("len(hashes) = %d, want 2 (%v)", len(hashes), hashes)
+		if _, ok := refs.FileHashes["sha1a"]; !ok {
+			t.Errorf("hashes missing sha1a: %v", refs.FileHashes)
+		}
+		if len(refs.FileHashes) != 2 {
+			t.Errorf("len(hashes) = %d, want 2 (%v)", len(refs.FileHashes), refs.FileHashes)
 		}
 	})
 

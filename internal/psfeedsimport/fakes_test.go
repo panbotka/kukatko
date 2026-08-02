@@ -64,13 +64,23 @@ func (f *fakeFeeds) ListFaces(_ context.Context, limit int, after int64) (psfeed
 	return out, nil
 }
 
-// fakePhotos resolves photos by PhotoPrism UID from an in-memory map.
+// fakePhotos resolves photos by PhotoPrism UID from an in-memory map, and by
+// alias from a second one — the source photos that collapsed onto a row already
+// holding their content and so have no photoprism_uid of their own.
 type fakePhotos struct {
-	byPPUID map[string]photos.Photo
+	byPPUID      map[string]photos.Photo
+	byPPUIDAlias map[string]photos.Photo
 }
 
 func (f *fakePhotos) GetByPhotoprismUID(_ context.Context, ppUID string) (photos.Photo, error) {
 	if p, ok := f.byPPUID[ppUID]; ok {
+		return p, nil
+	}
+	return photos.Photo{}, photos.ErrPhotoNotFound
+}
+
+func (f *fakePhotos) GetByPhotoprismAlias(_ context.Context, ppUID string) (photos.Photo, error) {
+	if p, ok := f.byPPUIDAlias[ppUID]; ok {
 		return p, nil
 	}
 	return photos.Photo{}, photos.ErrPhotoNotFound

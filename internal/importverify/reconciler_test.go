@@ -110,6 +110,7 @@ func (f *fakeFeeds) Stats(_ context.Context) (psfeeds.Stats, error) {
 // capping the returned sample while reporting the full total.
 type fakeCatalog struct {
 	importedUIDs   map[string]struct{}
+	aliasUIDs      map[string]struct{}
 	importedHashes map[string]struct{}
 	fileCounts     map[string]int
 	counts         importverify.CatalogCounts
@@ -125,6 +126,7 @@ type fakeCatalog struct {
 func newFakeCatalog() *fakeCatalog {
 	return &fakeCatalog{
 		importedUIDs:   map[string]struct{}{},
+		aliasUIDs:      map[string]struct{}{},
 		importedHashes: map[string]struct{}{},
 		fileCounts:     map[string]int{},
 		albumTitles:    map[string]struct{}{},
@@ -133,11 +135,13 @@ func newFakeCatalog() *fakeCatalog {
 	}
 }
 
-// ImportedRefs returns the fake's uid and file-hash sets.
-func (c *fakeCatalog) ImportedRefs(
-	_ context.Context,
-) (map[string]struct{}, map[string]struct{}, error) {
-	return c.importedUIDs, c.importedHashes, nil
+// ImportedRefs returns the fake's uid, alias and file-hash sets.
+func (c *fakeCatalog) ImportedRefs(_ context.Context) (importverify.Refs, error) {
+	return importverify.Refs{
+		UIDs:       c.importedUIDs,
+		Aliases:    c.aliasUIDs,
+		FileHashes: c.importedHashes,
+	}, nil
 }
 
 // OriginalFileCounts returns the fake's per-uid original-file counts.
@@ -234,6 +238,7 @@ func TestService_Verify_classifiesPhotos(t *testing.T) {
 		name          string
 		photos        []photoprism.Photo
 		importedUIDs  map[string]struct{}
+		aliasUIDs     map[string]struct{}
 		importedHash  map[string]struct{}
 		wantImported  int
 		wantDedup     int
@@ -269,6 +274,17 @@ func TestService_Verify_classifiesPhotos(t *testing.T) {
 			wantMissingID: []string{},
 		},
 		{
+			// The shape that lost 450 production photos: the source photo has no row of
+			// its own AND no catalogue row carries its file hash (the winner was
+			// catalogued from the OTHER source photo's file), so only the alias can
+			// account for it. Without it this reads as missing forever.
+			name:          "aliased onto identical content is deduplicated, not missing",
+			photos:        []photoprism.Photo{photo("ppDup", "image", "h-dup", 1)},
+			aliasUIDs:     set("ppDup"),
+			wantDedup:     1,
+			wantMissingID: []string{},
+		},
+		{
 			name:          "empty primary hash is not deduplicated",
 			photos:        []photoprism.Photo{photo("ppZ", "image", "", 1)},
 			importedHash:  set(""),
@@ -284,6 +300,9 @@ func TestService_Verify_classifiesPhotos(t *testing.T) {
 			cat := newFakeCatalog()
 			if tt.importedUIDs != nil {
 				cat.importedUIDs = tt.importedUIDs
+			}
+			if tt.aliasUIDs != nil {
+				cat.aliasUIDs = tt.aliasUIDs
 			}
 			if tt.importedHash != nil {
 				cat.importedHashes = tt.importedHash

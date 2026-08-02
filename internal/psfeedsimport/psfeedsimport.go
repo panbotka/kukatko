@@ -32,6 +32,7 @@ package psfeedsimport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -64,6 +65,10 @@ type PhotoStore interface {
 	// GetByPhotoprismUID returns the photo with the given PhotoPrism UID, or
 	// photos.ErrPhotoNotFound when it has not been imported yet.
 	GetByPhotoprismUID(ctx context.Context, ppUID string) (photos.Photo, error)
+	// GetByPhotoprismAlias returns the photo holding the content of a source photo
+	// that collapsed onto it, or photos.ErrPhotoNotFound when the uid is not
+	// aliased.
+	GetByPhotoprismAlias(ctx context.Context, ppUID string) (photos.Photo, error)
 }
 
 // VectorStore stores the copied embeddings and faces. It is the import-facing
@@ -274,4 +279,31 @@ func (s *Service) persistFailures(ctx context.Context, st *runState) {
 	if err := s.runs.RecordFailures(ctx, st.failures); err != nil {
 		s.log.Error("psfeedsimport: recording import failures", "run", st.runID, "err", err)
 	}
+}
+
+// resolvePhoto returns the catalogue photo a feed item's photoprism_uid attaches
+// to: the photo imported from that source uid, or — when the source photo has no
+// row of its own because its exact content was already catalogued under another
+// source uid — the surviving row its alias points at (see
+// photos.GetByPhotoprismAlias). It returns photos.ErrPhotoNotFound when neither
+// resolves, which the callers count as skipped.
+//
+// Without the alias step a duplicated source photo's embeddings and faces would be
+// dropped as "not imported yet" on every run, forever: it never gets a row. Two
+// source photos resolving to ONE row is expected and harmless — their bytes are
+// identical, so the vectors and faces they carry are equivalent, and both the
+// embedding upsert and the atomic face replace are last-write-wins.
+func (s *Service) resolvePhoto(ctx context.Context, ppUID string) (photos.Photo, error) {
+	photo, err := s.photos.GetByPhotoprismUID(ctx, ppUID)
+	if err == nil {
+		return photo, nil
+	}
+	if !errors.Is(err, photos.ErrPhotoNotFound) {
+		return photos.Photo{}, fmt.Errorf("looking up %q by photoprism uid: %w", ppUID, err)
+	}
+	aliased, err := s.photos.GetByPhotoprismAlias(ctx, ppUID)
+	if err != nil {
+		return photos.Photo{}, fmt.Errorf("looking up %q by alias: %w", ppUID, err)
+	}
+	return aliased, nil
 }

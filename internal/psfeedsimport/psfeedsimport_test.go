@@ -96,6 +96,33 @@ func TestImport_embeddingsAttachByPhotoprismUID(t *testing.T) {
 	}
 }
 
+// TestImport_attachesToAnAliasedPhoto pins the feeds side of the duplicate-source
+// fix: a source photo whose bytes were already catalogued under another source uid
+// has NO row of its own, so resolving it by photoprism_uid alone would skip its
+// vectors and faces as "not imported yet" on every run, forever. It resolves
+// through the alias onto the row that holds its content instead.
+func TestImport_attachesToAnAliasedPhoto(t *testing.T) {
+	t.Parallel()
+	feeds := &fakeFeeds{embeddings: []psfeeds.Embedding{
+		{PhotoUID: "ppDup", Model: "ViT-L-14", Pretrained: "laion", Vector: clipVec(0.5)},
+	}}
+	ph := photoByPP("pp1")
+	ph.byPPUIDAlias = map[string]photos.Photo{"ppDup": ph.byPPUID["pp1"]}
+	vec := newFakeVectors()
+	svc := newService(feeds, ph, vec, newFakePeople(), &fakeRuns{})
+
+	res, err := svc.Import(context.Background())
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if res.Counts.Imported != 1 || res.Counts.Skipped != 0 {
+		t.Errorf("counts = %+v, want imported 1 skipped 0", res.Counts)
+	}
+	if got := vec.embeddings["kk-pp1"]; got.PhotoUID != "kk-pp1" || got.Vector[0] != 0.5 {
+		t.Errorf("embedding attached to %+v, want the row holding the content", got)
+	}
+}
+
 func TestImport_skipsNotYetImportedPhoto(t *testing.T) {
 	t.Parallel()
 	feeds := &fakeFeeds{

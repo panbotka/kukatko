@@ -77,10 +77,9 @@ type CatalogCounts struct {
 // is an interface so the reconciler is testable with an in-memory fake; the
 // concrete Store implements it over a pgx pool.
 type Catalog interface {
-	// ImportedRefs returns the sets of photoprism_uid and photoprism_file_hash of
-	// imported photos, used to classify each source photo as imported or
-	// deduplicated.
-	ImportedRefs(ctx context.Context) (uids map[string]struct{}, fileHashes map[string]struct{}, err error)
+	// ImportedRefs returns the catalogue's PhotoPrism reference sets, used to
+	// classify each source photo as imported, deduplicated or missing.
+	ImportedRefs(ctx context.Context) (Refs, error)
 	// OriginalFileCounts maps photoprism_uid to the number of role='original'
 	// photo_files for that photo.
 	OriginalFileCounts(ctx context.Context) (map[string]int, error)
@@ -98,6 +97,25 @@ type Catalog interface {
 	LabelNames(ctx context.Context) (map[string]struct{}, error)
 	// SubjectNames returns the set of catalogue subject names.
 	SubjectNames(ctx context.Context) (map[string]struct{}, error)
+}
+
+// Refs are the catalogue's PhotoPrism reference sets: the three different ways a
+// source photo can be accounted for. Keeping them apart is what lets the
+// reconciler say WHY a source photo has no row of its own instead of calling it
+// missing.
+type Refs struct {
+	// UIDs are the photoprism_uids of photos imported 1:1 (photos.photoprism_uid).
+	UIDs map[string]struct{}
+	// Aliases are the photoprism_uids of source photos that collapsed onto a
+	// catalogue row already holding their exact content under another source uid
+	// (photoprism_aliases, migration 0046). They are accounted for — the uid still
+	// resolves to a row — but they are not imported photos of their own.
+	Aliases map[string]struct{}
+	// FileHashes are the photoprism_file_hashes the catalogue holds
+	// (photos.photoprism_file_hash): the identity of a single SOURCE FILE, which
+	// recognises a source photo whose primary file is catalogued under some other
+	// row even when no alias was ever recorded for it.
+	FileHashes map[string]struct{}
 }
 
 // Config configures a Service. PhotoPrism and Catalog are required; Feeds is
@@ -231,7 +249,7 @@ func (s *Service) reconcilePhotos(ctx context.Context) (PhotoPrismReport, error)
 	if err != nil {
 		return PhotoPrismReport{}, err
 	}
-	importedUIDs, importedHashes, err := s.catalog.ImportedRefs(ctx)
+	catalogRefs, err := s.catalog.ImportedRefs(ctx)
 	if err != nil {
 		return PhotoPrismReport{}, fmt.Errorf("importverify: reading imported refs: %w", err)
 	}
@@ -239,7 +257,7 @@ func (s *Service) reconcilePhotos(ctx context.Context) (PhotoPrismReport, error)
 	if err != nil {
 		return PhotoPrismReport{}, fmt.Errorf("importverify: reading original file counts: %w", err)
 	}
-	return s.classifyPhotos(refs, byType, importedUIDs, importedHashes, fileCounts), nil
+	return s.classifyPhotos(refs, byType, catalogRefs, fileCounts), nil
 }
 
 // enumeratePhotos pages the whole, unfiltered PhotoPrism photo listing to
@@ -307,7 +325,7 @@ func collectPhotoRefs(
 func (s *Service) classifyPhotos(
 	refs []photoRef,
 	byType map[string]int,
-	importedUIDs, importedHashes map[string]struct{},
+	catalog Refs,
 	fileCounts map[string]int,
 ) PhotoPrismReport {
 	report := PhotoPrismReport{
@@ -318,10 +336,15 @@ func (s *Service) classifyPhotos(
 	}
 	for _, ref := range refs {
 		switch {
-		case contains(importedUIDs, ref.uid):
+		case contains(catalog.UIDs, ref.uid):
 			report.ImportedCount++
 			s.recordFileGap(&report, ref, fileCounts)
-		case ref.primaryHash != "" && contains(importedHashes, ref.primaryHash):
+		// An aliased source photo is accounted for but has no row of its own, so it
+		// is counted as deduplicated and NOT file-gap checked: the files it would be
+		// measured against belong to the row that survived, under that row's uid.
+		case contains(catalog.Aliases, ref.uid):
+			report.DeduplicatedCount++
+		case ref.primaryHash != "" && contains(catalog.FileHashes, ref.primaryHash):
 			report.DeduplicatedCount++
 		default:
 			report.MissingCount++

@@ -451,8 +451,22 @@ type fakePhotoStore struct {
 	// is the identity of a single SOURCE FILE, which is how an imported non-primary
 	// sibling — carrying no photoprism_uid — is recognised on a re-run.
 	byPPFileHash map[string]string
-	byHash       map[string]string
-	files        map[string][]photos.PhotoFile
+	// aliases maps a PhotoPrism uid with no row of its own to the photo holding its
+	// content, mirroring the photoprism_aliases table.
+	aliases map[string]string
+	// aliasErr, when set, fails every alias write, so a test can pin what the
+	// import does when a collapse cannot be recorded.
+	aliasErr error
+	byHash   map[string]string
+	files    map[string][]photos.PhotoFile
+	// createCalls counts every Create attempt, including the ones rejected as a
+	// duplicate hash — the difference between "the pre-check caught it" and "the
+	// insert did".
+	createCalls int
+	// beforeCreate, when set, runs once immediately before Create's uniqueness
+	// check, so a test can publish content BETWEEN the import's content pre-check
+	// and its insert: the race the ErrFileHashTaken path exists for.
+	beforeCreate func()
 	seq          int
 	stackSeq     int
 }
@@ -463,6 +477,7 @@ func newFakePhotoStore() *fakePhotoStore {
 		byUID:        map[string]photos.Photo{},
 		byPPUID:      map[string]string{},
 		byPPFileHash: map[string]string{},
+		aliases:      map[string]string{},
 		byHash:       map[string]string{},
 		files:        map[string][]photos.PhotoFile{},
 	}
@@ -470,6 +485,11 @@ func newFakePhotoStore() *fakePhotoStore {
 
 // Create inserts p, rejecting a duplicate file hash with ErrFileHashTaken.
 func (s *fakePhotoStore) Create(_ context.Context, p photos.Photo) (photos.Photo, error) {
+	s.createCalls++
+	if hook := s.beforeCreate; hook != nil {
+		s.beforeCreate = nil
+		hook()
+	}
 	if _, ok := s.byHash[p.FileHash]; ok {
 		return photos.Photo{}, photos.ErrFileHashTaken
 	}
@@ -510,6 +530,30 @@ func (s *fakePhotoStore) GetByPhotoprismUID(_ context.Context, ppUID string) (ph
 		return photos.Photo{}, photos.ErrPhotoNotFound
 	}
 	return s.byUID[uid], nil
+}
+
+// GetByPhotoprismAlias returns the photo holding the content of an aliased
+// (collapsed) source photo.
+func (s *fakePhotoStore) GetByPhotoprismAlias(_ context.Context, ppUID string) (photos.Photo, error) {
+	uid, ok := s.aliases[ppUID]
+	if !ok {
+		return photos.Photo{}, photos.ErrPhotoNotFound
+	}
+	return s.byUID[uid], nil
+}
+
+// AddPhotoprismAlias records (idempotently) that a source photo collapsed onto the
+// photo holding its content, rejecting an alias for a photo that does not exist
+// exactly as the real store's foreign key does.
+func (s *fakePhotoStore) AddPhotoprismAlias(_ context.Context, ppUID, photoUID, _ string) error {
+	if s.aliasErr != nil {
+		return s.aliasErr
+	}
+	if _, ok := s.byUID[photoUID]; !ok {
+		return photos.ErrPhotoNotFound
+	}
+	s.aliases[ppUID] = photoUID
+	return nil
 }
 
 // UpdateMetadata applies m to the photo and returns it. It overwrites every field

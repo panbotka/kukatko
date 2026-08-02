@@ -139,6 +139,12 @@ type PhotoStore interface {
 	GetByFileHash(ctx context.Context, hash string) (photos.Photo, error)
 	// GetByPhotoprismUID finds an already-imported photo (ErrPhotoNotFound).
 	GetByPhotoprismUID(ctx context.Context, ppUID string) (photos.Photo, error)
+	// GetByPhotoprismAlias finds the photo holding the content of a source photo
+	// that collapsed onto it (ErrPhotoNotFound when the uid is not aliased).
+	GetByPhotoprismAlias(ctx context.Context, ppUID string) (photos.Photo, error)
+	// AddPhotoprismAlias records that a source photo's content is already
+	// catalogued under another source uid, so its own uid stays resolvable.
+	AddPhotoprismAlias(ctx context.Context, ppUID, photoUID, ppFileHash string) error
 	// GetByPhotoprismFileHash finds the photo holding one PhotoPrism source file by
 	// its SHA1 hash (ErrPhotoNotFound). It is how an already-imported non-primary
 	// file — a RAW sibling, which carries no photoprism_uid — is recognised.
@@ -364,12 +370,36 @@ type Result struct {
 // infrastructure failure (cannot list, cannot reach the run store) fails the run
 // and returns an error. The returned Result is always populated with the run id.
 func (s *Service) Import(ctx context.Context) (Result, error) {
+	return s.runIncremental(ctx, false)
+}
+
+// ImportFull runs one pass over the WHOLE source library, ignoring the resume
+// watermark for the listing so every source photo is offered again. It is the
+// repair path: a photo an earlier run dropped (or collapsed onto other content
+// before aliases existed) lies behind the watermark and no incremental run will
+// ever list it again, so healing the library takes a pass that re-lists it.
+//
+// It stays cheap on a healthy library. Every already-imported photo resolves by
+// uid and skips without a download, and the per-photo DETAIL read — the expensive
+// part, one request each — is still gated on the watermark rather than on the
+// listing cursor: only photos the source has genuinely touched since the last run,
+// and the ones this pass actually changes, are read in full. The watermark it
+// records at the end is the usual one, so the next incremental run resumes as
+// though nothing unusual happened.
+func (s *Service) ImportFull(ctx context.Context) (Result, error) {
+	return s.runIncremental(ctx, true)
+}
+
+// runIncremental opens a run and drives a full (unscoped) import through it,
+// re-listing the whole library when relist is set. It is the shared body of
+// Import and ImportFull.
+func (s *Service) runIncremental(ctx context.Context, relist bool) (Result, error) {
 	run, err := s.runs.Start(ctx, importer.SourcePhotoPrism)
 	if err != nil {
 		return Result{}, fmt.Errorf("ppimport: starting run: %w", err)
 	}
 	state := &runState{runID: run.ID}
-	if err := s.runImport(ctx, run.ID, state); err != nil {
+	if err := s.runImport(ctx, run.ID, state, relist); err != nil {
 		s.persistFailures(ctx, state)
 		if failErr := s.runs.Fail(ctx, run.ID, err.Error(), state.counts); failErr != nil {
 			s.log.Error("ppimport: marking run failed", "run", run.ID, "err", failErr)
@@ -447,14 +477,21 @@ func (s *Service) runScopedImport(ctx context.Context, runID int64, state *runSt
 }
 
 // runImport drives the three import phases over the open run, resuming from the
-// last successful watermark. Any returned error is an infrastructure failure that
-// should fail the whole run.
-func (s *Service) runImport(ctx context.Context, runID int64, state *runState) error {
+// last successful watermark. With relist set the LISTING ignores that watermark
+// (every source photo is offered again) while the detail threshold keeps it, so a
+// repair pass re-visits the whole library without turning one listing into 20k
+// detail requests. Any returned error is an infrastructure failure that should
+// fail the whole run.
+func (s *Service) runImport(ctx context.Context, runID int64, state *runState, relist bool) error {
 	since, _, err := s.runs.LatestWatermark(ctx, importer.SourcePhotoPrism)
 	if err != nil {
 		return fmt.Errorf("ppimport: reading watermark: %w", err)
 	}
 	state.since = since
+	state.detailSince = since
+	if relist {
+		state.since = time.Time{}
+	}
 	if err := s.importPhotos(ctx, runID, state); err != nil {
 		return err
 	}
@@ -476,7 +513,13 @@ type runState struct {
 	// run, persisted once (RecordFailures) before the run is closed so a run with any
 	// unresolved failure is reported 'partial' rather than 'done'.
 	failures []importer.Failure
-	since    time.Time
+	// since is the listing cursor: the source is asked for photos updated after it.
+	since time.Time
+	// detailSince is the threshold that decides whose DETAIL is worth a request
+	// (wantsDetail). It equals since for an ordinary run and holds the real
+	// watermark while a repair pass re-lists the whole library with since zeroed —
+	// re-listing everything must not also re-read everything.
+	detailSince time.Time
 	// scope, when non-empty, narrows the photo listing to a slice of the source
 	// catalogue and marks the run as partial (no watermark is recorded for it).
 	scope Scope

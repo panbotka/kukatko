@@ -312,6 +312,9 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   - a generated `fts tsvector` column (GIN index) — see [§6.2](#62-hledani).
   - `favorite` is **moved** into a per-user table (see below).
 - **`photo_files`** — originals + derivatives, `role IN (original|sidecar|edited)`, `is_primary`.
+- **`photoprism_aliases`** — `photoprism_uid PK` → `photo_uid` (many-to-one, `ON DELETE CASCADE`),
+  `photoprism_file_hash`: the source photos that collapsed onto a row already holding their exact
+  content (see §5.3).
 - **`photo_phashes`** — `phash/dhash BIGINT` (near-duplicate detection).
 - **`photo_edits`** — non-destructive edits (crop/rotation/brightness/contrast), 0..1 coordinates.
 - **`embeddings`** — `photo_uid PK`, `embedding halfvec(768)`, `model`, `pretrained`, `dim`;
@@ -394,12 +397,23 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
 | Source | Key in the source | Storage in Kukátko | Purpose |
 |-------|----------------|-------------------|------|
 | PhotoPrism | PhotoUID (16 chars) | `photos.photoprism_uid` | dedup, increment |
+| PhotoPrism | PhotoUID of a DUPLICATE | `photoprism_aliases.photoprism_uid` | a source photo whose content is already catalogued |
 | PhotoPrism | Files[].Hash (SHA1) | `photos.photoprism_file_hash` | download the original `/dl/:hash` |
 | photo-sorter | `photos.uid` | `photos.photosorter_uid` | 1:1 migration of embeddings/faces |
 
 > **Note:** PhotoPrism uses **SHA1** for the file hash, Kukátko uses **SHA256**. After downloading
 > the original from PhotoPrism, Kukátko computes its own SHA256 (dedup) and stores the PP SHA1 only for
 > lookup. The migration from photo-sorter, by contrast, shares SHA256, so dedup is direct.
+
+> **`photos.photoprism_uid` is 1:1 and cannot express a duplicated source photo.** PhotoPrism indexes the
+> same bytes as two photos; `photos.file_hash` is UNIQUE, so the second one gets no row, and the row that
+> holds its content already wears the first one's uid. **`photoprism_aliases`** (migration `0046`:
+> `photoprism_uid` PK → `photo_uid` many-to-one, `ON DELETE CASCADE`) records that collapse, so the second
+> uid still resolves — to the surviving row — and the duplicate's albums, labels and markers are attached
+> there instead of being dropped with it. Every reader of a source uid resolves through it after the 1:1
+> column: `internal/ppimport` (`lookupImported`), `internal/psfeedsimport` and `internal/importverify`,
+> which counts an aliased photo as *deduplicated* rather than *missing*. Before it existed, 450 of the
+> 20 660 production source photos were lost in silence under a run reporting `failed=0`.
 
 ---
 

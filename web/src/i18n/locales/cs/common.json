@@ -1635,6 +1635,7 @@
       "imported": "Nové",
       "updated": "Aktualizované",
       "skipped": "Přeskočené",
+      "deduplicated": "Duplicitní",
       "failed": "Chyby"
     },
     "status": {

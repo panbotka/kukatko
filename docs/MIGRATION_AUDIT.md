@@ -436,6 +436,50 @@ through the cracks.
 
 ---
 
+## Duplicate source photos — what the import guarantees
+
+PhotoPrism can hold the **same bytes as two photo entries**. Kukátko deduplicates on the SHA256
+content hash (`photos.file_hash` is UNIQUE), so the second entry gets **no row of its own** —
+and the row that holds its content already carries the first entry's `photoprism_uid`, a 1:1
+column that must not be overwritten (that would only move the loss to the other photo).
+
+Until migration `0046` that second source photo was **dropped in silence**: counted as
+`skipped`, nothing logged, no failure recorded, and its albums, labels and face markers left
+behind with it because nothing could resolve its uid to a row. Measured on the production
+library after the full import of 2026-08-02: **450 of 20 660 source photos**, under a run that
+reported `imported=20197 updated=1 skipped=704 failed=0` and an empty `import_failures` table.
+
+What the import guarantees now:
+
+1. **Every source photo is accounted for.** A source photo whose content is already catalogued
+   is recorded in `photoprism_aliases` (source uid → catalogue uid, many-to-one), so its uid
+   still resolves — to the row that holds its content.
+2. **Its context is not lost.** Because the uid resolves, `importPhotoDetail` and the album and
+   label membership passes attach the duplicate's **albums, labels and face markers to the
+   surviving row** instead of dropping them. Its *pixels* were never at risk; its *identity*
+   was, and everything hanging off it.
+3. **It is counted as itself.** The run summary distinguishes `skipped` ("already up to date")
+   from `deduplicated` ("the catalogue holds these bytes under another source photo"), so the
+   collapse can never again be read as a no-op.
+4. **Nothing is dropped in silence.** A collapse that cannot be recorded is a per-photo failure
+   in `import_failures` and the run closes `partial`, not clean. The `ErrFileHashTaken` path in
+   `catalogue` — the insert losing a race the pre-check won — is routed through the same
+   recording instead of being swallowed.
+5. **The reconciliation agrees.** `kukatko import verify` counts an aliased photo as
+   *deduplicated*, not *missing*; `internal/psfeedsimport` resolves aliases too, so photo-sorter's
+   embeddings and faces still land (their content is identical, so the values are equivalent and
+   the writes are last-write-wins).
+
+What it does **not** do: it does not create a second catalogue row for identical content, and it
+does not merge the two source photos' metadata. The surviving row keeps the metadata of the
+source photo it was created from; the duplicate contributes only membership and markers. Two
+markers at the same face region are possible where PhotoPrism detected the face twice.
+
+**Healing an already-imported library.** The affected photos sit BEHIND the resume watermark, so
+an ordinary incremental run will never list them again. The repair is
+`kukatko import photoprism --full`, which re-lists the whole source library (see
+`docs/OPERATIONS.md`); re-run `kukatko import verify` afterwards and it reports `missing=0`.
+
 ## Risks and deliberate trade-offs
 
 Items that are not a "GAP" (either decided on, or with a marginal impact), but which the owner
