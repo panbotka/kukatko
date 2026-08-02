@@ -415,7 +415,8 @@
     },
     "timeline": {
       "label": "Časová osa",
-      "jumpTo": "Přejít na {{month}}"
+      "jumpTo": "Přejít na {{month}}",
+      "jumpToRange": "Přejít na {{from}} – {{to}}"
     }
   },
   "search": {

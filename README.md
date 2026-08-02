@@ -1846,7 +1846,10 @@ Next to the grid there is a **timeline** ([`components/library/TimelineScrubber`
 — a thin fixed vertical data bar for quick jumps to a month. The hook
 [`useTimeline`](web/src/hooks/useTimeline.ts) pulls the monthly date histogram via
 `fetchTimeline` (`GET /api/v1/photos/timeline`, the same filters as the list, refetch on their change);
-each month is a clickable tick positioned proportionally by `cumulative / total`, the month labels via
+every month of the library owns an equal slice of the bar and the rendered ticks and year labels are
+thinned to what its measured height can show ([`timelineRail`](web/src/components/library/timelineRail.ts)) —
+a library spanning 121 years with almost all of its photos in the last two decades stays readable, the
+oldest year is printed at the bottom and is one click away; the month labels via
 `lib/format` `formatMonth`. A click or drag jumps the grid to that month via `scrollToIndex`
 with index `bucket.cumulative` — if the month lies **beyond** the loaded portion, the hook
 [`useGridJump`](web/src/hooks/useGridJump.ts) first loads more pages before jumping. As the grid

@@ -1042,6 +1042,19 @@ body {
     height var(--kk-duration-fast) var(--kk-ease-standard);
 }
 
+/* A tick carrying a year label is an anchor of the scale — the rail only prints
+   as many of these as fit without overlapping, so they carry the reading. Give
+   them full-strength text and a longer mark; the plain month ticks between them
+   stay dim texture. Declared before the hover/active rules so those still win at
+   equal specificity. */
+.kukatko-timeline-tick.has-year {
+  color: var(--bs-emphasis-color, #fff);
+}
+
+.kukatko-timeline-tick.has-year .kukatko-timeline-mark {
+  width: 1.1rem;
+}
+
 .kukatko-timeline-tick:hover,
 .kukatko-timeline-tick.active {
   color: var(--bs-emphasis-color, #fff);
