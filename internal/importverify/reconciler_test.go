@@ -624,6 +624,57 @@ func TestService_Verify_structure(t *testing.T) {
 	}
 }
 
+// TestService_Verify_structureSurplus checks the other direction of the
+// reconciliation: a catalogue name the source does not have is reported as
+// surplus. It is the case the report used to be blind to — `people: source=104
+// kukatko=105 missing=0` read as clean while the extra subject was an empty-named
+// catch-all holding 16 532 markers — so the empty name has to survive into the
+// report rather than being filtered out as a blank.
+//
+// A surplus must not make the report incomplete: subjects, albums and labels
+// created in Kukátko itself are a permanent, legitimate surplus, so gating on it
+// would put Complete out of reach.
+func TestService_Verify_structureSurplus(t *testing.T) {
+	t.Parallel()
+
+	cat := newFakeCatalog()
+	cat.counts = importverify.CatalogCounts{Albums: 1, Labels: 1, Subjects: 3}
+	cat.albumTitles = set("Trip")
+	cat.labelNames = set("cat")
+	cat.subjectNames = set("Alice", "", "Local Only")
+	svc := importverify.NewService(importverify.Config{
+		PhotoPrism: &fakePhotoPrism{
+			albumsByType: map[string][]photoprism.Album{"album": {{Title: "Trip"}}},
+			labels:       []photoprism.Label{{Name: "cat"}},
+			subjects:     []photoprism.Subject{{Name: "Alice"}},
+		},
+		Catalog:    cat,
+		AlbumTypes: []string{"album"},
+	})
+
+	report, err := svc.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	subjects := report.Structure.Subjects
+	if subjects.MissingCount != 0 {
+		t.Errorf("subjects MissingCount = %d, want 0", subjects.MissingCount)
+	}
+	if subjects.SurplusCount != 2 {
+		t.Fatalf("subjects SurplusCount = %d, want 2", subjects.SurplusCount)
+	}
+	if !slices.Equal(subjects.Surplus, []string{"", "Local Only"}) {
+		t.Errorf("subjects Surplus = %q, want the empty name and the local one", subjects.Surplus)
+	}
+	if report.Structure.Albums.SurplusCount != 0 || report.Structure.Labels.SurplusCount != 0 {
+		t.Errorf("albums/labels reported a surplus: %+v / %+v",
+			report.Structure.Albums.EntityReport, report.Structure.Labels)
+	}
+	if !report.Complete {
+		t.Error("Complete = false, want true: a surplus is reported, never enforced")
+	}
+}
+
 // TestService_Verify_albumTypes checks the album reconciliation defaults to the
 // importer's own type list: an album of a type the importer deliberately skips
 // ("month", PhotoPrism's auto-generated per-calendar-month albums) is bucketed as

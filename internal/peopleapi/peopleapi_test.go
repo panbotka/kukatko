@@ -179,6 +179,25 @@ func TestHandleCreate_emptyName(t *testing.T) {
 	}
 }
 
+// TestHandleCreate_nameIdentifyingNobody rejects a name made of punctuation or
+// symbols alone. Such a name has no slug of its own, so the subject would be
+// stored under the shared fallback slug and read as unnamed everywhere — the same
+// catch-all shape an importer once created by accident.
+func TestHandleCreate_nameIdentifyingNobody(t *testing.T) {
+	t.Parallel()
+
+	for _, body := range []string{`{"name":"!!!"}`, `{"name":" - "}`, `{"name":"···"}`} {
+		subjects := &fakeSubjects{}
+		rec := do(t, newServer(subjects, fakePhotos{}), http.MethodPost, "/subjects", body)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("POST %s status = %d, want 400", body, rec.Code)
+		}
+		if subjects.lastCreate.Name != "" {
+			t.Errorf("POST %s reached the store with %+v", body, subjects.lastCreate)
+		}
+	}
+}
+
 // TestHandleCreate_unknownField rejects an unexpected JSON field.
 func TestHandleCreate_unknownField(t *testing.T) {
 	t.Parallel()

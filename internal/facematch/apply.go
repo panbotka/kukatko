@@ -138,8 +138,9 @@ func unassignDetails(req AssignRequest) map[string]any {
 }
 
 // resolveSubject returns the subject named by the request: the one identified by
-// SubjectUID, or — failing that — found-or-created from a non-empty SubjectName.
-// A request naming neither returns ErrMissingSubject.
+// SubjectUID, or — failing that — found-or-created from SubjectName. A request
+// naming neither — including one whose name identifies nobody, such as
+// punctuation alone — returns ErrMissingSubject.
 func (s *Service) resolveSubject(ctx context.Context, req AssignRequest) (people.Subject, error) {
 	if req.SubjectUID != "" {
 		subj, err := s.people.GetSubjectByUID(ctx, req.SubjectUID)
@@ -149,7 +150,7 @@ func (s *Service) resolveSubject(ctx context.Context, req AssignRequest) (people
 		return subj, nil
 	}
 	name := strings.TrimSpace(req.SubjectName)
-	if name == "" {
+	if people.NameSlug(name) == "" {
 		return people.Subject{}, ErrMissingSubject
 	}
 	return s.findOrCreateSubject(ctx, name)
@@ -158,8 +159,13 @@ func (s *Service) resolveSubject(ctx context.Context, req AssignRequest) (people
 // findOrCreateSubject returns the subject whose slug matches name's slug, creating a
 // new person subject when none exists. It is the auto-create-by-name path so an
 // assignment can name a fresh person without a separate create step.
+//
+// It keys on people.NameSlug, so it is only ever reached with a name that
+// identifies somebody; resolveSubject rejects the rest. Keying on Slugify would
+// send every unusable name to the one slug it falls back to, quietly assigning
+// unrelated faces to whichever subject got there first.
 func (s *Service) findOrCreateSubject(ctx context.Context, name string) (people.Subject, error) {
-	slug := people.Slugify(name)
+	slug := people.NameSlug(name)
 	subj, err := s.people.GetSubjectBySlug(ctx, slug)
 	if err == nil {
 		return subj, nil

@@ -82,6 +82,8 @@ configuration key both here **and** into `config.example.yaml`.
   a typed database name — and, on a bucket-backed store, a typed bucket name — to delete, `--force` for a
   non-interactive run, `--orphan-sweep` for the leftovers the catalogue never referenced;
   accounts/announcement/audit trail/migrations are never touched; see below) and
+  **`maintenance nameless-subjects`** (reports — and with `--apply --undo-file` detaches — subjects whose name
+  identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
   `maintenance repair` with the flags `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline; a no-op without any flag;
@@ -259,6 +261,54 @@ kukatko import verify --json     # the full importverify.Report as JSON
 The same reconciliation is exposed over HTTP at `GET /api/v1/import/verify` (maintainer-only) and surfaced in
 the `/import` admin page's completeness-check section. The individual per-photo/per-file failures a run records
 (instead of only logging them) are persisted in `import_failures` and listed at `GET /api/v1/import/failures`.
+
+**Albums, labels and people are reconciled in both directions.** Beside `missing` (in the source, not in the
+catalogue) each structure section carries `surplus_count`/`surplus` — distinct catalogue names the source does
+not have — and the CLI prints them as `surplus=N` plus an `only in kukatko:` line with the names quoted. A
+surplus **never** makes the report incomplete: anything created in Kukátko itself is a legitimate one. It is
+reported because a one-directional check is blind to a row that should not exist at all —
+`people: source=104 kukatko=105 missing=0` read as clean while that extra subject was the nameless catch-all
+below, holding 16 532 markers. An empty name in the `only in kukatko:` list (printed as `""`) is exactly that
+tell-tale.
+
+### `kukatko maintenance nameless-subjects` — the nameless catch-all subject
+
+Reports, and on request removes, subjects whose **name identifies nobody** — empty, whitespace, or punctuation
+alone. Such a subject cannot be created deliberately: `POST /api/v1/subjects` rejects a name with no letter or
+digit. One in the catalogue was therefore minted by an importer, and it behaves as a **catch-all**: the
+find-or-create-by-name paths used to key on `people.Slugify`, which is total and answers `subject` for a
+nameless face, so the first unnamed face created one empty-named subject and every unnamed face after it was
+*found* by that same key and assigned to it. On production (2026-08-02) one such subject collected **16 532
+markers** against 4 635 on all real people, sat first in `/people`, and made face assignment unusable.
+
+The importers now key on `people.NameSlug`, which returns `""` for exactly those names, so a nameless face
+stays unassigned. This command is the repair for the data the old behaviour already wrote.
+
+```bash
+kukatko maintenance nameless-subjects                                   # dry run (default): report only
+kukatko maintenance nameless-subjects --apply --undo-file /tmp/undo.json   # detach, writing the undo
+kukatko maintenance nameless-subjects --undo /tmp/undo.json                # put everything back
+```
+
+- **Dry run by default.** With no flag it lists every nameless subject with its uid, slug, creation time and
+  how many markers and cached faces point at it, then totals them. It changes nothing.
+- **`--apply` requires `--undo-file`** (`errUndoFileRequired`). Detaching sets the marker→subject links NULL,
+  and nothing else in the database records what they were, so the undo file is the only way back; the command
+  refuses to run destructively with nowhere to put it. The file is written (and so proven writable) *before*
+  the first deletion and rewritten after each one, so an interrupted run leaves an undo covering exactly what
+  it changed. If a rewrite ever fails, the snapshot is printed to stdout to be saved by hand.
+- **What `--apply` does** per subject, in one transaction: the markers are detached (`markers.subject_uid`
+  → NULL via the FK), the cached `subject_uid`/`subject_name` on the `faces` rows are cleared, the subject row
+  is deleted, and a `subject.delete` audit entry is written in that same transaction. No photo, marker or face
+  is deleted — only the assignment.
+- **`--undo <file>` restores** every subject in the file under its original uid, name, notes and timestamps
+  (only the slug may differ, if another subject took the base slug meanwhile) and re-points its markers and
+  faces, auditing each as `subject.create`. A marker or face deleted since the snapshot is simply skipped, so a
+  partially outdated undo restores what it can.
+
+It is deliberately **not exposed over HTTP** and **not a migration**: it deletes catalogue rows the user might
+conceivably have wanted, so it stays an operator decision taken with the report in hand. `kukatko import
+verify` (above) is what surfaces the problem in the first place.
 
 ### `kukatko maintenance reset` — the guarded library wipe
 

@@ -246,12 +246,22 @@ export interface VectorsReport {
   faces_missing_uids: string[]
 }
 
-/** Source-vs-catalogue counts for one entity kind (`importverify.EntityReport`). */
+/**
+ * Source-vs-catalogue counts for one entity kind (`importverify.EntityReport`).
+ *
+ * `surplus` is the other direction: catalogue names the source does not have. It
+ * never makes the report incomplete — anything created in Kukátko itself is a
+ * legitimate surplus — but it is where a row that should not exist shows up, so
+ * the fields stay part of the contract even though only the CLI summary prints
+ * them today.
+ */
 export interface EntityReport {
   source_count: number
   catalog_count: number
   missing_count: number
   missing: string[]
+  surplus_count: number
+  surplus: string[]
 }
 
 /**

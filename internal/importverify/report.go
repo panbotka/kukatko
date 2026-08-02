@@ -153,8 +153,14 @@ type AlbumReport struct {
 }
 
 // EntityReport reconciles one structural entity: how many distinct names the
-// source and the catalogue hold, and which source names are absent from the
-// catalogue.
+// source and the catalogue hold, which source names are absent from the catalogue
+// and which catalogue names the source does not have.
+//
+// The surplus half exists because "missing = 0" hid a real defect: the report read
+// `people: source=104 kukatko=105 missing=0` while that one extra subject was an
+// empty-named catch-all an importer had minted, holding 16 532 markers. A
+// reconciliation that only ever looks for absences cannot see a row that should
+// not exist.
 type EntityReport struct {
 	// SourceCount is the number of distinct source names/titles.
 	SourceCount int `json:"source_count"`
@@ -165,4 +171,13 @@ type EntityReport struct {
 	// Missing lists those source names, sorted and capped at SampleLimit while
 	// MissingCount stays the full total.
 	Missing []string `json:"missing"`
+	// SurplusCount is how many distinct catalogue names have no source counterpart.
+	// It never gates Complete: a surplus is usually legitimate (anything created in
+	// Kukátko itself), so it is reported for a human to read, not enforced.
+	SurplusCount int `json:"surplus_count"`
+	// Surplus lists those catalogue names, sorted and capped at SampleLimit while
+	// SurplusCount stays the full total. An empty string in here is the tell-tale
+	// of a nameless subject; `kukatko maintenance nameless-subjects` reports what
+	// hangs off it.
+	Surplus []string `json:"surplus"`
 }

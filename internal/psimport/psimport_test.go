@@ -100,6 +100,35 @@ func TestMigrate_happyPath(t *testing.T) {
 	}
 }
 
+// TestMigrate_namelessSubjectIsNotMapped checks that a source subject whose name
+// identifies nobody creates no Kukátko subject and leaves the faces referencing it
+// unassigned, rather than minting the one subject every such name slugifies to and
+// hanging every nameless face off it.
+func TestMigrate_namelessSubjectIsNotMapped(t *testing.T) {
+	t.Parallel()
+	src, files := onePhotoSource()
+	src.subjects = []photosorter.Subject{{UID: "su_ps1", Slug: "subject", Name: "  ", Type: "person"}}
+	h := newHarness(src, files)
+
+	result, err := h.svc.Migrate(t.Context())
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if result.Counts.Failed != 0 {
+		t.Fatalf("counts = %+v, want no failure: a nameless subject is skipped, not an error", result.Counts)
+	}
+	if len(h.people.bySlug) != 0 {
+		t.Errorf("subjects created = %v, want none", h.people.bySlug)
+	}
+	faces := h.vec.faces[h.photos.byPS["ps1"]]
+	if len(faces) != 1 {
+		t.Fatalf("faces = %d, want 1", len(faces))
+	}
+	if faces[0].SubjectUID != nil {
+		t.Errorf("face subject = %q, want unassigned", *faces[0].SubjectUID)
+	}
+}
+
 // TestMigrate_matchByFileHash attaches to an existing photo (e.g. from PhotoPrism)
 // without copying the original, backfilling photosorter_uid.
 func TestMigrate_matchByFileHash(t *testing.T) {

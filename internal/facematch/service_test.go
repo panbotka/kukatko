@@ -391,6 +391,23 @@ func TestApply_validation(t *testing.T) {
 			AssignRequest{Action: ActionCreateMarker, BBox: &[4]float64{0, 0, 0.1, 0.1}},
 			ErrMissingSubject,
 		},
+		// A name with no letter or digit identifies nobody. Accepting it would
+		// find-or-create the single subject every such name slugifies to, so each
+		// one would silently join the faces named before it.
+		{
+			"create with a name that identifies nobody",
+			AssignRequest{
+				Action: ActionCreateMarker, BBox: &[4]float64{0, 0, 0.1, 0.1}, SubjectName: "!!!",
+			},
+			ErrMissingSubject,
+		},
+		{
+			"create with a whitespace name",
+			AssignRequest{
+				Action: ActionCreateMarker, BBox: &[4]float64{0, 0, 0.1, 0.1}, SubjectName: " \t ",
+			},
+			ErrMissingSubject,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

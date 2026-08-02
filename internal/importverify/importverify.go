@@ -559,27 +559,45 @@ func (s *Service) albumReport(
 	}
 }
 
-// entityReport reconciles one structural entity: it lists the source names absent
-// from the catalogue set (sorted for determinism, capped at the sample limit) and
-// keeps the full missing total alongside the source and catalogue counts.
+// entityReport reconciles one structural entity in both directions: the source
+// names absent from the catalogue (missing) and the catalogue names the source
+// does not have (surplus), each sorted for determinism and capped at the sample
+// limit while its full total is kept.
+//
+// The surplus side is reported, never enforced — see EntityReport — but it is what
+// makes a catalogue row that should not exist visible at all.
 func (s *Service) entityReport(source, catalog map[string]struct{}, catalogCount int) EntityReport {
-	missing := make([]string, 0, len(source))
-	for name := range source {
-		if _, ok := catalog[name]; !ok {
-			missing = append(missing, name)
-		}
-	}
-	sort.Strings(missing)
-	report := EntityReport{
+	missing := difference(source, catalog)
+	surplus := difference(catalog, source)
+	return EntityReport{
 		SourceCount:  len(source),
 		CatalogCount: catalogCount,
 		MissingCount: len(missing),
-		Missing:      missing,
+		Missing:      s.sample(missing),
+		SurplusCount: len(surplus),
+		Surplus:      s.sample(surplus),
 	}
-	if len(report.Missing) > s.sampleLimit {
-		report.Missing = report.Missing[:s.sampleLimit]
+}
+
+// difference returns the sorted names present in a but not in b.
+func difference(a, b map[string]struct{}) []string {
+	out := make([]string, 0, len(a))
+	for name := range a {
+		if _, ok := b[name]; !ok {
+			out = append(out, name)
+		}
 	}
-	return report
+	sort.Strings(out)
+	return out
+}
+
+// sample truncates names to the service's sample limit, so a report stays a
+// readable illustration while its counts remain the full totals.
+func (s *Service) sample(names []string) []string {
+	if len(names) > s.sampleLimit {
+		return names[:s.sampleLimit]
+	}
+	return names
 }
 
 // isComplete reports whether the report shows nothing left to import: no missing
