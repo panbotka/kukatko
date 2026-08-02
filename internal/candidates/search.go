@@ -3,6 +3,7 @@ package candidates
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
@@ -106,6 +107,47 @@ func filterVoted(cands []votedCandidate, minMatch int, minRel float64) []votedCa
 		out = append(out, candidate)
 	}
 	return out
+}
+
+// boundSurvivors turns the voted set into the bounded set that is worth hydrating:
+// it drops candidates nearer than minDistance (the caller wanting only the
+// uncertain middle), orders what is left nearest-first, and cuts it to ceiling,
+// reporting whether the cut bit.
+//
+// Everything here works on the small vote structs, which is the whole point. Past
+// this call each candidate costs a full photos.Photo — EXIF blob included — copied
+// once into the response and again by every consumer, so a subject matching tens of
+// thousands of unnamed faces used to turn one request into hundreds of megabytes.
+// Truncating the built candidates afterwards, as the request's own Limit does,
+// bounds the answer but not the work. A non-positive ceiling disables the cut.
+func boundSurvivors(voted []votedCandidate, minDistance float64, ceiling int) ([]votedCandidate, bool) {
+	kept := voted[:0]
+	for _, candidate := range voted {
+		if candidate.distance < minDistance {
+			continue
+		}
+		kept = append(kept, candidate)
+	}
+	sortVoted(kept)
+	if ceiling <= 0 || len(kept) <= ceiling {
+		return kept, false
+	}
+	return kept[:ceiling], true
+}
+
+// sortVoted orders voted candidates nearest first, breaking ties on (photo, face)
+// so the cut to the hydration ceiling is deterministic.
+func sortVoted(cands []votedCandidate) {
+	sort.Slice(cands, func(i, j int) bool {
+		switch {
+		case cands[i].distance != cands[j].distance:
+			return cands[i].distance < cands[j].distance
+		case cands[i].key.PhotoUID != cands[j].key.PhotoUID:
+			return cands[i].key.PhotoUID < cands[j].key.PhotoUID
+		default:
+			return cands[i].key.FaceIndex < cands[j].key.FaceIndex
+		}
+	})
 }
 
 // rejectionKeys converts feedback FaceRefs into the vectors.FaceKey exclusion set

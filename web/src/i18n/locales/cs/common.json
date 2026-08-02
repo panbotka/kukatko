@@ -1107,7 +1107,9 @@
       "noEmbeddingNote_one": "{{count}} obličej téhle osoby nemá otisk, hledá se bez něj.",
       "noEmbeddingNote_few": "{{count}} obličeje téhle osoby nemají otisk, hledá se bez nich.",
       "noEmbeddingNote_many": "{{count}} obličejů téhle osoby nemá otisk, hledá se bez nich.",
-      "noEmbeddingNote_other": "{{count}} obličejů téhle osoby nemá otisk, hledá se bez nich."
+      "noEmbeddingNote_other": "{{count}} obličejů téhle osoby nemá otisk, hledá se bez nich.",
+      "sourceCappedNote": "Osoba má hodně označených fotek, hledalo se z {{used}} z nich rovnoměrně rozložených napříč — jeden dotaz nesmí růst s velikostí knihovny.",
+      "cappedNote": "Shod bylo víc, než se dá najednou zobrazit; ukazujeme {{count}} nejbližších. Potvrď je a spusť hledání znovu."
     },
     "card": {
       "photoAlt": "Fotka s kandidátským obličejem",

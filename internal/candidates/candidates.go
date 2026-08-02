@@ -38,6 +38,16 @@ const (
 	DefaultConcurrency = 8
 	// DefaultMinFacePx is the fallback minimum reviewable face width in pixels.
 	DefaultMinFacePx = 32
+	// DefaultMaxExemplars is the fallback cap on how many of a subject's faces seed
+	// the kNN. It mirrors expand.DefaultSourceCap: one exemplar is one query and one
+	// result set to merge, so an uncapped source set puts a request's allocation on
+	// the library's growth curve.
+	DefaultMaxExemplars = 500
+	// DefaultMaxCandidates is the fallback ceiling on how many voted candidates are
+	// hydrated into full photo records. Hydration is where a wide match turns into
+	// gigabytes — every candidate carries a copy of its photo, EXIF blob included —
+	// so the cut has to happen before it, not after.
+	DefaultMaxCandidates = 500
 )
 
 // minMatchDivisor scales the vote rule: min_match_count grows with the square root
@@ -74,8 +84,10 @@ const (
 // FaceStore is the subset of vectors.Store the service reads. It is an interface so
 // the service is unit-testable with a fake; *vectors.Store satisfies it.
 type FaceStore interface {
-	// ListFacesBySubject returns every face cached as assigned to subjectUID.
-	ListFacesBySubject(ctx context.Context, subjectUID string) ([]vectors.Face, error)
+	// SampleFacesBySubject returns at most limit of subjectUID's faces, evenly
+	// spread rather than taken from the head, plus the subject's true face and
+	// photo totals.
+	SampleFacesBySubject(ctx context.Context, subjectUID string, limit int) (vectors.SubjectFaces, error)
 	// FindSimilarUnassignedFaceCandidates returns the nearest unassigned faces to
 	// vec, excluding the given keys, within maxDistance.
 	FindSimilarUnassignedFaceCandidates(
@@ -133,6 +145,13 @@ type Config struct {
 	SearchLimit int
 	MinFacePx   int
 	Concurrency int
+	// MaxExemplars caps how many of a subject's faces seed the kNN and how many of
+	// their vectors are held for the negative-exemplar rule; MaxCandidates caps how
+	// many voted candidates are hydrated into full photo records. Both are memory
+	// bounds — they are what keeps one request off the library's growth curve. A
+	// non-positive value falls back to the Default*.
+	MaxExemplars  int
+	MaxCandidates int
 	// MinFaceRel is the minimum normalised face width (0..1), reused from
 	// faces.min_face_size. A non-positive value disables the relative floor.
 	MinFaceRel float64
@@ -140,16 +159,18 @@ type Config struct {
 
 // Service computes untagged-face candidates for a subject.
 type Service struct {
-	faces       FaceStore
-	people      PeopleStore
-	feedback    FeedbackStore
-	photos      PhotoStore
-	media       *mediaurl.Builder
-	maxDistance float64
-	searchLimit int
-	minFacePx   int
-	concurrency int
-	minFaceRel  float64
+	faces         FaceStore
+	people        PeopleStore
+	feedback      FeedbackStore
+	photos        PhotoStore
+	media         *mediaurl.Builder
+	maxDistance   float64
+	searchLimit   int
+	minFacePx     int
+	concurrency   int
+	minFaceRel    float64
+	maxExemplars  int
+	maxCandidates int
 }
 
 // New returns a Service from cfg, applying the Default* tunables where cfg leaves a
@@ -160,16 +181,18 @@ func New(cfg Config) *Service {
 		panic("candidates: New requires non-nil Faces, People, Feedback, Photos and Media")
 	}
 	return &Service{
-		faces:       cfg.Faces,
-		people:      cfg.People,
-		feedback:    cfg.Feedback,
-		photos:      cfg.Photos,
-		media:       cfg.Media,
-		maxDistance: orDefaultFloat(cfg.MaxDistance, DefaultMaxDistance),
-		searchLimit: orDefaultInt(cfg.SearchLimit, DefaultSearchLimit),
-		minFacePx:   orDefaultInt(cfg.MinFacePx, DefaultMinFacePx),
-		concurrency: orDefaultInt(cfg.Concurrency, DefaultConcurrency),
-		minFaceRel:  cfg.MinFaceRel,
+		faces:         cfg.Faces,
+		people:        cfg.People,
+		feedback:      cfg.Feedback,
+		photos:        cfg.Photos,
+		media:         cfg.Media,
+		maxDistance:   orDefaultFloat(cfg.MaxDistance, DefaultMaxDistance),
+		searchLimit:   orDefaultInt(cfg.SearchLimit, DefaultSearchLimit),
+		minFacePx:     orDefaultInt(cfg.MinFacePx, DefaultMinFacePx),
+		concurrency:   orDefaultInt(cfg.Concurrency, DefaultConcurrency),
+		minFaceRel:    cfg.MinFaceRel,
+		maxExemplars:  orDefaultInt(cfg.MaxExemplars, DefaultMaxExemplars),
+		maxCandidates: orDefaultInt(cfg.MaxCandidates, DefaultMaxCandidates),
 	}
 }
 
@@ -178,7 +201,16 @@ type Request struct {
 	// Threshold is the maximum cosine distance a candidate may sit from an exemplar.
 	// A non-positive value uses the configured default.
 	Threshold float64 `json:"threshold"`
-	// Limit caps how many candidates are returned; 0 means all.
+	// MinDistance is the opposite edge: candidates nearer than this to every voting
+	// exemplar are dropped, so a caller interested only in the uncertain middle can
+	// say so. It is applied to a candidate's merged (nearest) distance, after voting
+	// and before the candidates are hydrated into photo records — which is the point:
+	// the review game asks only about the uncertainty band, and without this it paid
+	// to hydrate the confident matches it was going to throw away. Zero means no
+	// floor.
+	MinDistance float64 `json:"min_distance"`
+	// Limit caps how many candidates are returned; 0 means as many as the service's
+	// MaxCandidates ceiling allows.
 	Limit int `json:"limit"`
 }
 
@@ -228,6 +260,14 @@ type Result struct {
 	// photo), and SourceFaceCount how many embedded faces the subject has.
 	SourcePhotoCount int `json:"source_photo_count"`
 	SourceFaceCount  int `json:"source_face_count"`
+	// ExemplarsUsed is how many exemplars actually seeded the kNN and SourceCapped
+	// reports that this is a sample of SourcePhotoCount rather than all of it. The
+	// cap is a memory bound; it is surfaced instead of applied silently.
+	ExemplarsUsed int  `json:"exemplars_used"`
+	SourceCapped  bool `json:"source_capped"`
+	// Capped reports that more candidates survived the filters than MaxCandidates
+	// allows to be hydrated, so the nearest ones were kept and the rest dropped.
+	Capped bool `json:"capped"`
 	// FacesWithoutEmbedding is how many of the subject's marked photos have no
 	// embedded face to search from (the sidecar was offline). Surfaced, not hidden.
 	FacesWithoutEmbedding int `json:"faces_without_embedding"`
@@ -246,9 +286,13 @@ type Result struct {
 
 // Find computes the untagged-face candidates for subjectUID under req. It returns
 // people.ErrSubjectNotFound when no such subject exists. A subject with no exemplars
-// yields a non-error empty Result carrying a Reason. The work stays in SQL and is
-// bounded: exemplar searches run with a concurrency cap and only the filtered
-// survivors are hydrated into memory.
+// yields a non-error empty Result carrying a Reason.
+//
+// The work is bounded at both ends, and neither bound follows the library: at most
+// MaxExemplars faces seed the kNN however heavily the person is tagged, and at most
+// MaxCandidates survivors are hydrated into photo records however many faces match.
+// Everything before hydration works on small vote structs, so a wide match costs
+// vectors and not photo rows. Both cuts are reported on the Result.
 func (s *Service) Find(ctx context.Context, subjectUID string, req Request) (Result, error) {
 	if _, err := s.people.GetSubjectByUID(ctx, subjectUID); err != nil {
 		return Result{}, fmt.Errorf("loading subject %s: %w", subjectUID, err)
@@ -275,7 +319,9 @@ func (s *Service) Find(ctx context.Context, subjectUID string, req Request) (Res
 	if err != nil {
 		return Result{}, err
 	}
-	survivors := filterVoted(voted, minMatch, s.minFaceRel)
+	survivors, capped := boundSurvivors(
+		filterVoted(voted, minMatch, s.minFaceRel), req.MinDistance, s.maxCandidates)
+	result.Capped = capped
 
 	built, err := s.build(ctx, subjectUID, survivors, src.acceptedVecs, rejected)
 	if err != nil {
@@ -296,6 +342,8 @@ func (s *Service) baseResult(subjectUID string, src source, threshold float64) R
 		SubjectUID:            subjectUID,
 		SourcePhotoCount:      src.photoCount,
 		SourceFaceCount:       src.faceCount,
+		ExemplarsUsed:         len(src.exemplars),
+		SourceCapped:          src.capped,
 		FacesWithoutEmbedding: src.withoutEmbedding,
 		Threshold:             threshold,
 		Candidates:            []Candidate{},

@@ -94,7 +94,7 @@ func (s *Service) rebuild(ctx context.Context, sess *session, need int) error {
 	labelQs := excludeSeen(mat.labelQs, sess)
 	s.orderQuestions(faceQs)
 	s.orderQuestions(labelQs)
-	sess.queue = interleave(faceQs, labelQs)
+	sess.queue = capQueue(interleave(faceQs, labelQs))
 	sess.hasQueue = true
 	sess.builtAt = s.now()
 	sess.reason = ReasonNoCandidates
@@ -150,9 +150,17 @@ func (s *Service) tolerateDeadline(ctx context.Context, err error) bool {
 // full count, not the window's — for the empty-library reason. The scan bounds
 // its own concurrency and already excludes assigned faces, persisted rejections,
 // negative exemplars and sub-reviewable faces.
+//
+// The band is pushed all the way down into the search as a distance window rather
+// than filtered out here: confidence >= BandMin is the scan's Threshold, and
+// confidence < BandMax is its MinDistance. Asking for the whole threshold and
+// discarding the confident matches afterwards made the scan hydrate a full photo
+// record — EXIF blob included — for every match it was about to throw away, which
+// on a subject that matches half the library is the difference between megabytes
+// and gigabytes. inBand still runs below; this only stops the waste upstream.
 func (s *Service) faceQuestions(ctx context.Context, need int) ([]Question, int, error) {
 	var questions []Question
-	params := sweep.Params{Threshold: 1 - s.bandMin}
+	params := sweep.Params{Threshold: 1 - s.bandMin, MinDistance: 1 - s.bandMax}
 	win := sweep.Window{Offset: s.faceOffset(), Budget: s.faceBudget}
 	cov, err := s.sweeper.Scan(ctx, params, win, func(person *sweep.Person) (bool, error) {
 		questions = append(questions, s.personQuestions(person)...)
@@ -328,6 +336,22 @@ func wrapOffset(offset, total int) int {
 // inBand reports whether a confidence sits inside [BandMin, BandMax).
 func (s *Service) inBand(confidence float64) bool {
 	return confidence >= s.bandMin && confidence < s.bandMax
+}
+
+// capQueue cuts a freshly built queue down to maxQueued, keeping the head — the
+// most informative questions, since the queue is already ordered. What is dropped
+// is not lost: the queue rebuilds when it runs dry, and the rotation cursors have
+// moved on, so the next rebuild covers new ground rather than re-serving this tail.
+//
+// The cap is a memory bound. A question carries the whole photo record it is asked
+// about, EXIF blob included, and a built queue is cached per user for CacheTTL and
+// kept for up to sessionIdleTTL — so an uncapped queue would let a handful of
+// players pin hundreds of megabytes of photo rows in the process for half a day.
+func capQueue(questions []Question) []Question {
+	if len(questions) <= maxQueued {
+		return questions
+	}
+	return questions[:maxQueued]
 }
 
 // excludeSeen drops questions the session already answered or skipped.

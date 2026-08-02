@@ -101,7 +101,13 @@ type Params struct {
 	// Threshold is the maximum cosine distance a candidate may sit from an exemplar; a
 	// non-positive value uses the candidate search's configured default.
 	Threshold float64
-	// Limit caps how many candidates each person contributes; 0 means all.
+	// MinDistance is the opposite edge: candidates nearer than this are dropped before
+	// they are hydrated. A caller after the uncertain middle only — the review game —
+	// passes it so the confident matches it would discard never cost a photo record.
+	// Zero means no floor.
+	MinDistance float64
+	// Limit caps how many candidates each person contributes; 0 means as many as the
+	// candidate search's own ceiling allows.
 	Limit int
 }
 
@@ -223,8 +229,9 @@ func (s *Service) scanSubject(
 	ctx context.Context, subj people.SubjectCount, params Params,
 ) personResult {
 	res, err := s.finder.Find(ctx, subj.UID, candidates.Request{
-		Threshold: params.Threshold,
-		Limit:     params.Limit,
+		Threshold:   params.Threshold,
+		MinDistance: params.MinDistance,
+		Limit:       params.Limit,
 	})
 	if err != nil {
 		return personResult{subject: subj, err: err}

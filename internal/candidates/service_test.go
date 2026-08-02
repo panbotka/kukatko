@@ -40,8 +40,19 @@ type fakeFaces struct {
 	byKeys      map[vectors.FaceKey]vectors.Face
 }
 
-func (f *fakeFaces) ListFacesBySubject(_ context.Context, _ string) ([]vectors.Face, error) {
-	return f.bySubject, nil
+func (f *fakeFaces) SampleFacesBySubject(
+	_ context.Context, _ string, limit int,
+) (vectors.SubjectFaces, error) {
+	out := vectors.SubjectFaces{Faces: f.bySubject, Total: len(f.bySubject)}
+	photos := map[string]struct{}{}
+	for _, face := range f.bySubject {
+		photos[face.PhotoUID] = struct{}{}
+	}
+	out.Photos = len(photos)
+	if limit > 0 && len(out.Faces) > limit {
+		out.Faces = out.Faces[:limit]
+	}
+	return out, nil
 }
 
 func (f *fakeFaces) FindSimilarUnassignedFaceCandidates(
@@ -108,12 +119,15 @@ func (f *fakeFeedback) FaceRejectionsForSubject(_ context.Context, uid string) (
 	return f.rejections[uid], nil
 }
 
-// fakePhotos scripts the photos.Store behaviour.
+// fakePhotos scripts the photos.Store behaviour and records how many uids it was
+// asked to hydrate, so a test can assert the memory bounds cut before hydration.
 type fakePhotos struct {
-	byUID map[string]photos.Photo
+	byUID     map[string]photos.Photo
+	requested int
 }
 
 func (f *fakePhotos) ListByUIDs(_ context.Context, uids []string) ([]photos.Photo, error) {
+	f.requested += len(uids)
 	var out []photos.Photo
 	for _, uid := range uids {
 		if photo, ok := f.byUID[uid]; ok {
@@ -409,5 +423,104 @@ func TestFind_limitTruncates(t *testing.T) {
 	}
 	if len(res.Candidates) != 1 || res.Candidates[0].Photo.UID != "near" {
 		t.Fatalf("candidates = %+v, want only nearest 'near'", res.Candidates)
+	}
+}
+
+// TestFind_minDistanceKeepsTheUncertainMiddle checks the request's distance floor
+// drops the confident matches before they are hydrated, leaving the band the
+// review game asks about.
+func TestFind_minDistanceKeepsTheUncertainMiddle(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	subj := h.addSubject("su_band")
+	h.faces.bySubject = []vectors.Face{{PhotoUID: "src", FaceIndex: 0, Vector: oneHot(0), DetScore: 0.9}}
+	for _, uid := range []string{"sure", "unsure"} {
+		h.addPhoto(uid)
+	}
+	h.faces.perExemplar[0] = []vectors.FaceCandidate{
+		{PhotoUID: "sure", FaceIndex: 0, Distance: 0.05, BBox: bigBox},
+		{PhotoUID: "unsure", FaceIndex: 0, Distance: 0.4, BBox: bigBox},
+	}
+
+	res, err := h.svc.Find(context.Background(), subj, Request{MinDistance: 0.25})
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if len(res.Candidates) != 1 || res.Candidates[0].Photo.UID != "unsure" {
+		t.Fatalf("candidates = %+v, want only 'unsure' — a floor of 0.25 excludes the confident match",
+			res.Candidates)
+	}
+}
+
+// TestFind_capsExemplars checks a subject with more faces than the cap searches
+// from a sample of them, reports the true totals rather than the sample's, and
+// says so.
+func TestFind_capsExemplars(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.svc = New(Config{
+		Faces: h.faces, People: h.people, Feedback: h.feedback, Photos: h.photos,
+		Media: mediaurl.NewBuilder(nil), MaxDistance: 0.5, MinFacePx: 32,
+		Concurrency: 4, MinFaceRel: 0.02, MaxExemplars: 3,
+	})
+	subj := h.addSubject("su_many")
+	for i := range 10 {
+		h.faces.bySubject = append(h.faces.bySubject, vectors.Face{
+			PhotoUID: "src" + string(rune('a'+i)), FaceIndex: 0, Vector: oneHot(i), DetScore: 0.9,
+		})
+	}
+	h.people.marked[subj] = []string{"srca", "srcb", "srcc", "srcd", "unembedded"}
+
+	res, err := h.svc.Find(context.Background(), subj, Request{})
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if res.ExemplarsUsed != 3 || !res.SourceCapped {
+		t.Errorf("ExemplarsUsed/SourceCapped = %d/%v, want 3/true", res.ExemplarsUsed, res.SourceCapped)
+	}
+	// The summary must describe the subject, not the sample: ten faces over ten
+	// photos, one marked photo with no embedded face at all.
+	if res.SourceFaceCount != 10 || res.SourcePhotoCount != 10 || res.FacesWithoutEmbedding != 0 {
+		t.Errorf("summary = faces %d photos %d without %d, want 10/10/0",
+			res.SourceFaceCount, res.SourcePhotoCount, res.FacesWithoutEmbedding)
+	}
+}
+
+// TestFind_capsHydratedCandidates checks the hydration ceiling keeps the nearest
+// candidates and reports the cut instead of applying it silently.
+func TestFind_capsHydratedCandidates(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.svc = New(Config{
+		Faces: h.faces, People: h.people, Feedback: h.feedback, Photos: h.photos,
+		Media: mediaurl.NewBuilder(nil), MaxDistance: 0.5, MinFacePx: 32,
+		Concurrency: 4, MinFaceRel: 0.02, MaxCandidates: 2,
+	})
+	subj := h.addSubject("su_wide")
+	h.faces.bySubject = []vectors.Face{{PhotoUID: "src", FaceIndex: 0, Vector: oneHot(0), DetScore: 0.9}}
+	for i := range 5 {
+		uid := "cand" + string(rune('a'+i))
+		h.addPhoto(uid)
+		h.faces.perExemplar[0] = append(h.faces.perExemplar[0], vectors.FaceCandidate{
+			PhotoUID: uid, FaceIndex: 0, Distance: 0.4 - 0.05*float64(i), BBox: bigBox,
+		})
+	}
+
+	res, err := h.svc.Find(context.Background(), subj, Request{})
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if !res.Capped || len(res.Candidates) != 2 {
+		t.Fatalf("candidates = %d, capped = %v; want 2 and true", len(res.Candidates), res.Capped)
+	}
+	// cande is nearest (0.20), candd next (0.25) — the ceiling keeps the nearest.
+	if res.Candidates[0].Photo.UID != "cande" || res.Candidates[1].Photo.UID != "candd" {
+		t.Errorf("kept %s and %s, want the two nearest cande and candd",
+			res.Candidates[0].Photo.UID, res.Candidates[1].Photo.UID)
+	}
+	// Only the survivors may be hydrated: the ceiling is a memory bound, so it has
+	// to cut before the photo records are loaded, not after.
+	if h.photos.requested != 2 {
+		t.Errorf("hydrated %d photos, want 2 — the ceiling must cut before hydration", h.photos.requested)
 	}
 }

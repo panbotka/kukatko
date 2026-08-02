@@ -826,9 +826,16 @@ long-running and belong on the machine where the instance runs — so they remai
   `min_face_px` (**default 32**) — the minimum face width in **display pixels** for it to be
   reviewable (a tiny face in a crowd cannot be judged; complements the relative floor taken from
   `faces.min_face_size`); `concurrency` (**default 8**) — how many exemplar kNNs run at once, so searching for
-  a person with hundreds of photos does not fan out unbounded. A non-positive value for any key falls back to the
-  default (for `min_face_px` it disables the absolute floor). Env: `KUKATKO_CANDIDATES_MAX_DISTANCE`,
-  `_SEARCH_LIMIT`, `_MIN_FACE_PX`, `_CONCURRENCY`.
+  a person with hundreds of photos does not fan out unbounded; `max_exemplars` (**default 500**) — how many of a
+  subject's faces seed the kNN, read as an even-strided sample **in SQL** above that, so a person tagged on
+  thousands of photos costs the same as one tagged on hundreds (the vote rule clamps at five agreeing exemplars,
+  so the recall cost is small); `max_candidates` (**default 500**) — how many voted candidates are hydrated into
+  full photo records (EXIF blob included) and returned, nearest first, with the cut reported as `capped` on the
+  response instead of applied silently. The last two are **memory bounds**: without them one request grows with
+  the library, and a subject holding 16 532 exemplars once grew the process to 10.9 GB and the host OOM killer
+  took the whole VPS down with it — see [`docs/PERF.md`](PERF.md) §3. A non-positive value for any key falls back
+  to the default (for `min_face_px` it disables the absolute floor). Env: `KUKATKO_CANDIDATES_MAX_DISTANCE`,
+  `_SEARCH_LIMIT`, `_MIN_FACE_PX`, `_CONCURRENCY`, `_MAX_EXEMPLARS`, `_MAX_CANDIDATES`.
 - **Sweep keys (`sweep.*`, `internal/config` + `internal/sweep`):** tunes the **recognition sweep**
   (`GET /faces/sweep`), which composes the candidates search across all people at once. `concurrency`
   (**default 4**) — how many subjects are scanned **at once**; it **stacks** on `candidates.concurrency`

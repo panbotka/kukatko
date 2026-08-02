@@ -417,9 +417,11 @@ a request" pattern:
 - `internal/sweepapi` (`GET /faces/sweep`) — **by design**: it is the
   long-running one, and it streams NDJSON per subject, so the client renders
   progress from the first subject instead of waiting for the last.
-- `internal/candidatesapi` (`POST /subjects/{uid}/candidates`) — **fine**: one
-  subject, so the fan-out is that subject's exemplars (bounded by its own photo
-  count, not by the library's people), under `candidates.concurrency`.
+- `internal/candidatesapi` (`POST /subjects/{uid}/candidates`) — one subject, so
+  the fan-out is that subject's exemplars, under `candidates.concurrency`.
+  Judged fine at the time on the grounds that this is "bounded by its own photo
+  count, not by the library's people" — which is not a bound at all, as the
+  memory section below records. It is bounded now.
 - `internal/expandapi` (`GET /albums|labels/{uid}/similar`) — **fine**: one
   collection, and `expand.source_cap` (500) already caps how many members become
   query vectors, so a thousand-photo album is sampled rather than queried whole.
@@ -429,6 +431,132 @@ a request" pattern:
 
 The review queue was the only endpoint that multiplied a per-subject search by
 the *number of subjects* before answering.
+
+### The candidate search's memory (`POST /subjects/{uid}/candidates`, `GET /review/queue`)
+
+**Symptom (production, 2026-08-02, 19:36).** The server process grew to
+**10.9 GB anon-rss** and the *host* OOM killer took it out:
+
+```
+Out of memory: Killed process 4173337 (kukatko)
+  total-vm:13049748kB  anon-rss:10919464kB
+oom-kill: constraint=CONSTRAINT_NONE ... global_oom
+```
+
+`global_oom` on a 15 GB VPS with no swap and no container memory limit means this
+was never Kukátko's problem alone — photoprism, mariadb and the embeddings
+sidecar were all in the blast radius. A logged-in user clicking through
+`/review` could take the whole box down.
+
+**Attribution — measured, not guessed.** `import photoprism --full` was sampled
+every 15 s for a whole run and peaked at **33 MB**, so it was not the importer;
+the idle serve process holds 45–60 MB. The log at that minute carries
+`review: queue rebuild hit its deadline, serving a partial queue` and a
+`GET /api/v1/review/queue` lasting **15 086 ms** — the rebuild deadline firing,
+which bounds *time* and says nothing at all about memory.
+
+**Root cause — two unbounded axes in `internal/candidates`, one request wide.**
+
+1. **Exemplars.** `Find` loaded *every* face assigned to the subject, embeddings
+   included, and ran one kNN per exemplar, merging every result set. Nothing
+   capped that count, so the cost followed how heavily a person was tagged. The
+   separate catch-all-subject bug had left one "person" holding **16 532**
+   exemplars, which is what lit the fuse — but a genuinely well-tagged person in
+   a large library gets there on merit.
+2. **Candidates.** Every survivor was hydrated into a full `photos.Photo` —
+   **EXIF blob included** — before the request's `Limit` was applied, and that
+   record was then copied again into each `Candidate`, again by the sweep, and
+   again into each review `Question`. Truncating afterwards bounds the answer,
+   not the work. A subject matching tens of thousands of unnamed faces therefore
+   cost hundreds of megabytes, and the review scan repeated it per subject for
+   the full 15 s of its deadline, four subjects at a time.
+
+**Measured, in `internal/candidates/memory_test.go`** (synthetic library, fakes
+allocating what the pgx-backed store allocates, `runtime.MemStats.TotalAlloc`
+around one `Find`):
+
+| shape | before | after |
+| --- | ---: | ---: |
+| 1 000 exemplars | 65 MB | 33.9 MB |
+| 20 000 exemplars | **1 247 MB** | 34.6 MB |
+| 500 matching unnamed faces | 33.9 MB | 33.9 MB |
+| 40 000 matching unnamed faces | **246 MB** | 46.4 MB |
+
+**Fix — three bounds, none of which mentions the library's size.**
+
+1. **`candidates.max_exemplars` (500).** `vectors.SampleFacesBySubject` reads an
+   *even-strided sample* of a subject's faces **in SQL**, plus the true face and
+   photo totals so the summary stays honest about what it sampled from. Capping
+   in Go would still have transferred and decoded a 512-dimension embedding per
+   row. Recall barely moves: the vote rule clamps at five agreeing exemplars,
+   which hundreds supply as well as thousands.
+2. **`candidates.max_candidates` (500).** The voted set is ordered nearest-first
+   and cut **before hydration**, on the small vote structs. Past that cut each
+   candidate costs a photo row; before it, it costs 80 bytes. The cut is reported
+   as `capped` on the response rather than applied silently.
+3. **`Request.MinDistance`.** The review game only ever asks about the
+   uncertainty band, so it now pushes the band's *far* edge into the search
+   (`Threshold = 1 − band_min`, `MinDistance = 1 − band_max`) instead of
+   discarding the confident matches after paying to hydrate them. The queue it
+   builds is capped too — a `Question` carries a whole photo record and the queue
+   is cached per user until the session is pruned.
+
+The residual worst case is a constant: `max_exemplars` kNN queries of the vector
+layer's 500-row maximum each, merged into one voted set — a few tens of
+megabytes, whatever the library does.
+
+**Noticed while measuring, not fixed here: there is no index on
+`faces.subject_uid`.** Every "this subject's faces" read — `ListFacesBySubject`,
+the new `SampleFacesBySubject`, outlier detection — therefore seq-scans the whole
+`faces` table (113 628 rows in production), and a review rebuild does it once per
+subject in its window. `sampleFacesBySubjectSQL` is deliberately written to scan
+once rather than twice (`max(dense_rank())` over two query levels instead of a
+second subquery for the distinct-photo count), so this change does not make it
+worse — but a `CREATE INDEX idx_faces_subject_uid ON faces (subject_uid)` would
+turn a dozen seq scans per rebuild into a dozen index scans. That is a latency
+fix, not a memory one, so it is recorded here rather than smuggled into a
+migration under this heading.
+
+**One memory exposure is knowingly left in place.** `GET /subjects/{uid}/outliers`
+(`internal/outliers`) still reads *every* face of a subject via
+`ListFacesBySubject`, embeddings included — 2 kB a face, so ~34 MB for a
+16 532-face subject and ~200 MB for a hypothetical 100 000-face one. It is two
+orders of magnitude below what the candidate search was doing, and it is not the
+same kind of bug: outlier detection ranks a person's faces *against their own
+centroid*, so a sample would not bound the work, it would change the answer.
+Bounding it properly means computing the centroid and the distances in SQL, which
+is a different job from this one. Noted rather than silently claimed as fixed.
+
+**The runnable check.** `internal/candidates/memory_test.go` asserts both axes
+structurally — 20× the exemplars must not cost more than 1.5× the bytes, 80× the
+matches not more than 2×, and neither may exceed a 96 MiB ceiling. It runs in
+`make check` (no build tag). Removing either cap makes it fail by an order of
+magnitude, so it is a real regression detector and not a passing decoration:
+
+```
+go test -run TestFind_allocationDoesNotScale -v ./internal/candidates/
+```
+
+**Still outstanding — the container has no memory limit.** The fix bounds the
+application; it does not change what happens if anything else on that box ever
+does this again. The `kukatko` service in the `vps` repo's `docker-compose.yml`
+runs with `MemoryLimit=0`, which is why a runaway process became a *global* OOM
+instead of one dead container. Proposed (not applied — that repo is deployed
+separately):
+
+```yaml
+  kukatko:
+    image: ghcr.io/panbotka/kukatko:0.2.0
+    mem_limit: 1g          # idles at 45–60 MB; 1 GB is ~16x headroom
+    memswap_limit: 1g      # no swap on this VPS anyway — make that explicit
+    restart: always        # already set: a cgroup OOM then restarts one service
+```
+
+With that in place the same bug degrades from "the VPS falls over" to "one
+container restarts", which is the difference the limit buys. Sizing rests on the
+measurements above: bounded requests peak in the tens of megabytes, and the
+CPU-bound worker pool (`KUKATKO_WORKER_COUNT: 4`, thumbnail decodes) is the other
+consumer.
 
 ---
 
