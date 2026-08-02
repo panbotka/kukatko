@@ -20,6 +20,11 @@
 //     against the server rather than trusted from the DSN (verifyTarget).
 //   - The operator must have typed that database's name; y/N is not a
 //     confirmation, because y/N is what a tired person answers by reflex.
+//   - When the store is a bucket, the operator must have typed that bucket's name
+//     too. The database and the bucket are configured independently and can be
+//     pointed at different deployments — a dev database against the production
+//     bucket is exactly the accident that motivated this guard — so confirming one
+//     of them says nothing about the other.
 //   - The live schema must match the tables this package classifies, so a
 //     migration that adds a table cannot silently leave part of the library
 //     behind (classifySchema).
@@ -72,6 +77,11 @@ var (
 	// ErrConfirmationMismatch indicates the operator did not type the target
 	// database's name exactly.
 	ErrConfirmationMismatch = errors.New("reset: the typed name does not match the target database")
+	// ErrBucketConfirmationMismatch indicates the operator did not type the
+	// configured bucket's name exactly. It is also what a run gets when it names a
+	// bucket against a store that has none: an operator who types a bucket name is
+	// aiming at a bucket, and the run they meant is not the one about to happen.
+	ErrBucketConfirmationMismatch = errors.New("reset: the typed name does not match the configured bucket")
 	// ErrSchemaDrift indicates the database holds tables this package does not
 	// classify, or lacks tables it does. Either way the wipe would be incomplete
 	// or misdirected, so it does not run.
@@ -117,9 +127,10 @@ type ThumbCache interface {
 	Remove(hash string) error
 }
 
-// Target names the database a reset is allowed to touch, as the loaded config
-// names it. It is compared against what the server reports, so the DSN alone
-// never decides what gets wiped.
+// Target names the two things a reset is allowed to touch, as the loaded config
+// names them: one database and — on a bucket-backed store — one bucket. The
+// database is compared against what the server reports, so the DSN alone never
+// decides what gets wiped.
 type Target struct {
 	// Host and Port are where the config points; they are printed for the
 	// operator and not otherwise enforced, because a host is reachable under many
@@ -128,12 +139,23 @@ type Target struct {
 	Port uint16 `json:"port"`
 	// Database is the database name the wipe is confined to.
 	Database string `json:"database"`
+	// Bucket is the object store's bucket, empty when the configured backend has
+	// none (the local filesystem). It is not an address the wipe enforces — the
+	// store was already built from the same config — but the name the operator has
+	// to type, and the one printed before they are asked.
+	Bucket string `json:"bucket"`
 }
 
-// TargetFromDSN parses dsn — the loaded config's database.url — into the target
-// a reset may touch. It returns an error when the DSN is unusable or names no
-// database, since "whatever the server defaults to" is not a target anyone chose.
-func TargetFromDSN(dsn string) (Target, error) {
+// TargetFromConfig resolves what a reset may touch from the loaded config: dsn is
+// database.url and bucket is the configured object store's bucket, which is the
+// empty string for a backend that has no bucket.
+//
+// It returns an error when the DSN is unusable or names no database, since
+// "whatever the server defaults to" is not a target anyone chose. A missing
+// bucket is not an error for the same reason it is not a guess: the filesystem
+// backend genuinely has none, and its originals are already confined to a
+// configured directory.
+func TargetFromConfig(dsn, bucket string) (Target, error) {
 	parsed, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		return Target{}, fmt.Errorf("reset: parsing database url: %w", err)
@@ -141,13 +163,17 @@ func TargetFromDSN(dsn string) (Target, error) {
 	if parsed.Database == "" {
 		return Target{}, fmt.Errorf("%w: the configured database url names no database", ErrTargetMismatch)
 	}
-	return Target{Host: parsed.Host, Port: parsed.Port, Database: parsed.Database}, nil
+	return Target{Host: parsed.Host, Port: parsed.Port, Database: parsed.Database, Bucket: bucket}, nil
 }
 
-// String renders the target as host:port/database, the one line an operator has
-// to read before confirming.
+// String renders the target as host:port/database, plus the bucket when there is
+// one — the one line an operator has to read before confirming.
 func (t Target) String() string {
-	return fmt.Sprintf("%s:%d/%s", t.Host, t.Port, t.Database)
+	target := fmt.Sprintf("%s:%d/%s", t.Host, t.Port, t.Database)
+	if t.Bucket == "" {
+		return target
+	}
+	return target + " + bucket " + t.Bucket
 }
 
 // Connection is what the server says about itself, read back over the same pool
@@ -168,6 +194,11 @@ type Options struct {
 	// Confirm is the database name the operator typed. It must equal
 	// Target.Database exactly or Execute refuses.
 	Confirm string
+	// ConfirmBucket is the bucket name the operator typed. It must equal
+	// Target.Bucket exactly or Execute refuses — including when Target.Bucket is
+	// empty, where anything typed means the operator is aiming at a bucket this run
+	// does not have.
+	ConfirmBucket string
 	// OrphanSweep also deletes the objects under Kukátko's prefixes that the
 	// catalogue does not reference — leftovers from an interrupted import, or from
 	// a library wiped before this command existed. Off by default: without it the
@@ -315,16 +346,18 @@ func (s *Service) Preflight(ctx context.Context, opts Options) (Preflight, error
 }
 
 // Execute performs the wipe: it re-verifies the target, checks the typed
-// confirmation, empties the store, then truncates every catalogue table and
+// confirmations, empties the store, then truncates every catalogue table and
 // writes the audit entry in one transaction, and finally re-counts every table so
 // the caller can print a before/after summary.
 //
 // before is the preflight's counts, carried into the audit entry and the summary.
 //
-// It returns ErrNotExecuting without Options.Execute, ErrConfirmationMismatch
-// when the typed name is wrong, ErrTargetMismatch when the connection moved, and
-// ErrStorageIncomplete when an object could not be deleted — in that last case
-// the catalogue is deliberately left intact and the run can simply be repeated.
+// It returns ErrNotExecuting without Options.Execute, ErrConfirmationMismatch or
+// ErrBucketConfirmationMismatch when a typed name is wrong (the database's and,
+// on a bucket-backed store, the bucket's), ErrTargetMismatch when the connection
+// moved, and ErrStorageIncomplete when an object could not be deleted — in that
+// last case the catalogue is deliberately left intact and the run can simply be
+// repeated.
 func (s *Service) Execute(ctx context.Context, opts Options, before Counts) (Result, error) {
 	if !opts.Execute {
 		return Result{}, ErrNotExecuting
@@ -338,8 +371,8 @@ func (s *Service) Execute(ctx context.Context, opts Options, before Counts) (Res
 	if err := s.checkSchema(ctx); err != nil {
 		return Result{}, err
 	}
-	if opts.Confirm != s.target.Database {
-		return Result{}, fmt.Errorf("%w: typed %q, target %q", ErrConfirmationMismatch, opts.Confirm, s.target.Database)
+	if err := s.checkConfirmation(opts); err != nil {
+		return Result{}, err
 	}
 
 	stored, err := s.wipeStorage(ctx, opts)
@@ -359,6 +392,26 @@ func (s *Service) Execute(ctx context.Context, opts Options, before Counts) (Res
 	}
 	result.After = after
 	return result, nil
+}
+
+// checkConfirmation compares what the operator typed against what the config
+// names — the database, and the bucket when the store has one. Both are exact
+// comparisons, so a runbook line copied from another deployment is refused rather
+// than accepted with a shrug: that is the whole point of typing them.
+//
+// The bucket is checked even when there is none to wipe. A typed bucket name
+// against a filesystem store means the operator believed they were emptying a
+// bucket, and a wipe that proceeds on that belief is the misfire this guard is
+// here to stop.
+func (s *Service) checkConfirmation(opts Options) error {
+	if opts.Confirm != s.target.Database {
+		return fmt.Errorf("%w: typed %q, target %q", ErrConfirmationMismatch, opts.Confirm, s.target.Database)
+	}
+	if opts.ConfirmBucket != s.target.Bucket {
+		return fmt.Errorf("%w: typed %q, configured %q",
+			ErrBucketConfirmationMismatch, opts.ConfirmBucket, s.target.Bucket)
+	}
+	return nil
 }
 
 // verifyTarget asks the server which database this pool is actually connected to
@@ -591,6 +644,7 @@ func (s *Service) auditEntry(opts Options, before Counts, stored StorageResult) 
 			"operator":        opts.Operator,
 			"host":            s.target.Host,
 			"database":        s.target.Database,
+			"bucket":          s.target.Bucket,
 			"orphan_sweep":    opts.OrphanSweep,
 			"rows_deleted":    before.Rows(),
 			"rows_by_table":   rows,

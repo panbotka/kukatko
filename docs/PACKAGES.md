@@ -2008,12 +2008,17 @@ to `## Package map` in `CLAUDE.md`.
   migration that adds a table cannot silently leave part of the library behind. `Service` =
   `New(Config{Pool,Target,Storage,Thumbs?,CacheDir?})` (panics on a nil Pool/Storage or an empty
   `Target.Database`); **`Preflight(ctx,Options)`** (read-only) = the dry run: `verifyTarget` (reads
-  `current_database()` **from the server** and compares it with `TargetFromDSN(config.database.url)` →
-  `ErrTargetMismatch`; a DSN naming no database is refused too), the schema check, `Counts{Catalogue,Preserved}`
+  `current_database()` **from the server** and compares it with
+  `TargetFromConfig(config.database.url, <the configured bucket>)` → `ErrTargetMismatch`; a DSN naming no
+  database is refused too), the schema check, `Counts{Catalogue,Preserved}`
   of `[]TableCount` (`Rows()`, `NonEmpty()`) and a `StoragePlan{Referenced,Stored,Foreign,Sweep}` of
   `PrefixCounts{Originals,Thumbnails,Sidecars}`; **`Execute(ctx,Options,before)`** deletes, in this order —
-  `ErrNotExecuting` without `Options.Execute`, target re-verified, `Options.Confirm` must equal the target
-  database name (`ErrConfirmationMismatch`), the **store emptied before the catalogue** (the catalogue is where
+  `ErrNotExecuting` without `Options.Execute`, target re-verified, `checkConfirmation` (`Options.Confirm` must
+  equal the target database name → `ErrConfirmationMismatch`, **and** `Options.ConfirmBucket` must equal
+  `Target.Bucket` → `ErrBucketConfirmationMismatch` — the two come from independent config keys and can name
+  independent deployments, so a dev database pointed at the production bucket is refused rather than confirmed
+  by proxy; an empty `Target.Bucket` (the `fs` backend) makes a typed bucket name a mismatch too, since the
+  operator was aiming at something this run cannot reach), the **store emptied before the catalogue** (the catalogue is where
   the object keys come from), and only then `TRUNCATE … RESTART IDENTITY` (**no CASCADE**) plus
   `audit.Write(ActionLibraryReset)` **in one transaction**, then a re-count → `Result{Before,After,Storage}`.
   Any object that fails to delete skips the truncation and returns `ErrStorageIncomplete` — the catalogue is
@@ -2030,7 +2035,7 @@ to `## Package map` in `CLAUDE.md`.
   store cannot list) and **supersedes** the catalogue's candidates — it deletes what is actually there under the
   owned prefixes, referenced or not, which is both the correct wipe and the cheaper one. The local thumbnail
   cache goes too: `Thumbs.Remove(hash)` per catalogued hash, or the whole `<cache_path>/thumb` tree under a
-  sweep. `Options{Execute,Confirm,OrphanSweep,Concurrency,ActorUID,Operator}` — a CLI run has no session, so
+  sweep. `Options{Execute,Confirm,ConfirmBucket,OrphanSweep,Concurrency,ActorUID,Operator}` — a CLI run has no session, so
   `ActorUID` stays empty (a system action) and `Operator` carries `$USER@$HOSTNAME` into the entry's details
   together with the target, the per-table row counts and the object counts. Deliberately **no HTTP surface**,
   for the reason `restore db` has none: it pulls the tables out from under a running server), `internal/thumbjob/`

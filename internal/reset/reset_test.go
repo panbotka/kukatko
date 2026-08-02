@@ -144,15 +144,17 @@ func TestCounts_rowsAndNonEmpty(t *testing.T) {
 	}
 }
 
-// TestTargetFromDSN verifies the target is parsed out of the configured DSN and
-// that a DSN naming no database is refused — "whatever the server defaults to"
-// is not a target anyone chose to wipe.
-func TestTargetFromDSN(t *testing.T) {
+// TestTargetFromConfig verifies the target is parsed out of the configured DSN,
+// carries the configured bucket alongside it, and that a DSN naming no database
+// is refused — "whatever the server defaults to" is not a target anyone chose to
+// wipe.
+func TestTargetFromConfig(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name    string
 		dsn     string
+		bucket  string
 		want    Target
 		wantErr error
 	}{
@@ -160,6 +162,12 @@ func TestTargetFromDSN(t *testing.T) {
 			name: "full dsn",
 			dsn:  "postgres://kukatko:secret@db.example:5433/kukatko?sslmode=disable",
 			want: Target{Host: "db.example", Port: 5433, Database: "kukatko"},
+		},
+		{
+			name:   "with a bucket",
+			dsn:    "postgres://kukatko:secret@db.example:5433/kukatko?sslmode=disable",
+			bucket: "kukatko-dev",
+			want:   Target{Host: "db.example", Port: 5433, Database: "kukatko", Bucket: "kukatko-dev"},
 		},
 		{
 			name:    "no database",
@@ -171,35 +179,124 @@ func TestTargetFromDSN(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := TargetFromDSN(tt.dsn)
+			got, err := TargetFromConfig(tt.dsn, tt.bucket)
 			switch {
 			case tt.wantErr != nil:
 				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("TargetFromDSN(%q) error = %v, want %v", tt.dsn, err, tt.wantErr)
+					t.Fatalf("TargetFromConfig(%q) error = %v, want %v", tt.dsn, err, tt.wantErr)
 				}
 			case tt.want == (Target{}):
 				if err == nil {
-					t.Fatalf("TargetFromDSN(%q) = %+v, want an error", tt.dsn, got)
+					t.Fatalf("TargetFromConfig(%q) = %+v, want an error", tt.dsn, got)
 				}
 			default:
 				if err != nil {
-					t.Fatalf("TargetFromDSN(%q) error = %v", tt.dsn, err)
+					t.Fatalf("TargetFromConfig(%q) error = %v", tt.dsn, err)
 				}
 				if got != tt.want {
-					t.Errorf("TargetFromDSN(%q) = %+v, want %+v", tt.dsn, got, tt.want)
+					t.Errorf("TargetFromConfig(%q) = %+v, want %+v", tt.dsn, got, tt.want)
 				}
 			}
 		})
 	}
 }
 
-// TestTarget_String verifies the one line an operator reads before confirming.
+// TestTarget_String verifies the one line an operator reads before confirming:
+// the bucket appears when there is one and is not implied when there is not.
 func TestTarget_String(t *testing.T) {
 	t.Parallel()
 
-	target := Target{Host: "localhost", Port: 5432, Database: "kukatko"}
-	if got := target.String(); got != "localhost:5432/kukatko" {
-		t.Errorf("String() = %q, want localhost:5432/kukatko", got)
+	tests := []struct {
+		name   string
+		target Target
+		want   string
+	}{
+		{
+			name:   "no bucket",
+			target: Target{Host: "localhost", Port: 5432, Database: "kukatko"},
+			want:   "localhost:5432/kukatko",
+		},
+		{
+			name:   "with a bucket",
+			target: Target{Host: "localhost", Port: 5432, Database: "kukatko", Bucket: "kukatko-dev"},
+			want:   "localhost:5432/kukatko + bucket kukatko-dev",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.target.String(); got != tt.want {
+				t.Errorf("String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestService_checkConfirmation verifies both typed confirmations are exact and
+// independent: the database's name, and the bucket's when the store has one. The
+// interesting cases are the crossed ones — the right database with the wrong
+// bucket is precisely a dev deployment pointed at a production bucket — and a
+// bucket typed at a store that has none, which means the operator believed they
+// were emptying something this run cannot even reach.
+func TestService_checkConfirmation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		target  Target
+		opts    Options
+		wantErr error
+	}{
+		{
+			name:   "both match",
+			target: Target{Database: "kukatko", Bucket: "kukatko-dev"},
+			opts:   Options{Confirm: "kukatko", ConfirmBucket: "kukatko-dev"},
+		},
+		{
+			name:   "no bucket configured, none typed",
+			target: Target{Database: "kukatko"},
+			opts:   Options{Confirm: "kukatko"},
+		},
+		{
+			name:    "wrong database",
+			target:  Target{Database: "kukatko", Bucket: "kukatko-dev"},
+			opts:    Options{Confirm: "kukatko_test", ConfirmBucket: "kukatko-dev"},
+			wantErr: ErrConfirmationMismatch,
+		},
+		{
+			name:    "right database, wrong bucket",
+			target:  Target{Database: "kukatko", Bucket: "kukatko-dev"},
+			opts:    Options{Confirm: "kukatko", ConfirmBucket: "kotrzina-photos"},
+			wantErr: ErrBucketConfirmationMismatch,
+		},
+		{
+			name:    "bucket not typed at all",
+			target:  Target{Database: "kukatko", Bucket: "kukatko-dev"},
+			opts:    Options{Confirm: "kukatko"},
+			wantErr: ErrBucketConfirmationMismatch,
+		},
+		{
+			name:    "bucket typed at a store that has none",
+			target:  Target{Database: "kukatko"},
+			opts:    Options{Confirm: "kukatko", ConfirmBucket: "kotrzina-photos"},
+			wantErr: ErrBucketConfirmationMismatch,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			svc := &Service{target: tt.target}
+			err := svc.checkConfirmation(tt.opts)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Fatalf("checkConfirmation(%+v) = %v, want nil", tt.opts, err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("checkConfirmation(%+v) = %v, want %v", tt.opts, err, tt.wantErr)
+			}
+		})
 	}
 }
 

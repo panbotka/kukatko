@@ -39,10 +39,17 @@ storage:
   # KUKATKO_STORAGE_TEMP_PATH.
   temp_path: "/var/lib/kukatko/tmp"
 
-  # Cloudflare R2. Read only when backend is "r2"; then every key below except
-  # url_signing_secret_previous is REQUIRED, and a missing one fails startup with a
-  # message naming it. Keep credentials out of this file — set them via the
-  # environment.
+  # Cloudflare R2, or any S3-compatible endpoint (development runs this backend
+  # against a local MinIO — `make dev-storage`). Read only when backend is "r2";
+  # then endpoint, bucket, access_key, secret_key and storage.temp_path are
+  # REQUIRED, and a missing one fails startup with a message naming it. Keep
+  # credentials out of this file — set them via the environment.
+  #
+  # media_base_url + url_signing_secret are a PAIR and optional as a pair: set both
+  # and objects are served as short-lived signed URLs by the edge Worker, set
+  # neither and the application streams the bytes itself through /api/v1/photos/…
+  # (what a bucket with no Worker in front of it, i.e. dev, does). Exactly one of
+  # them fails startup.
   r2:
     # S3 API endpoint: https://<accountid>.r2.cloudflarestorage.com.
     # KUKATKO_STORAGE_R2_ENDPOINT.
@@ -58,7 +65,9 @@ storage:
     # Domain of the edge Worker serving the objects — https://kukatko-media.panbotka.cz.
     # Signed URLs are minted under it and handed straight to the browser. The Worker
     # is NOT built here: it, the bucket and this hostname are defined in the infra
-    # repo (cloudflare-r2/) and deployed by Terraform.
+    # repo (cloudflare-r2/) and deployed by Terraform. Leave EMPTY (together with
+    # url_signing_secret) when no Worker fronts the bucket: nothing is signed and the
+    # application streams the bytes over its own media routes instead.
     # KUKATKO_STORAGE_R2_MEDIA_BASE_URL.
     media_base_url: ""
     # Shared with the Worker; signs "<object-key>\n<expiry>" with HMAC-SHA256. The

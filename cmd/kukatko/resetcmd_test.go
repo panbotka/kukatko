@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/reset"
 )
 
@@ -54,7 +56,7 @@ func TestResetCmd_flagsRegistered(t *testing.T) {
 	t.Parallel()
 
 	flags := newMaintenanceResetCmd().Flags()
-	for _, name := range []string{flagExecute, flagConfirmDatabase, flagForce, flagOrphanSweep} {
+	for _, name := range []string{flagExecute, flagConfirmDatabase, flagConfirmBucket, flagForce, flagOrphanSweep} {
 		if flags.Lookup(name) == nil {
 			t.Errorf("reset command has no --%s flag", name)
 		}
@@ -137,7 +139,7 @@ func TestConfirmDatabaseName(t *testing.T) {
 			cmd.SetOut(&buf)
 			cmd.SetIn(strings.NewReader(tt.stdin))
 
-			got, err := confirmDatabaseName(cmd, tt.flags, "kukatko")
+			got, err := confirmDatabaseName(cmd, tt.flags, bufio.NewScanner(cmd.InOrStdin()), "kukatko")
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("confirmDatabaseName() error = %v, want %v", err, tt.wantErr)
@@ -152,6 +154,120 @@ func TestConfirmDatabaseName(t *testing.T) {
 			}
 			if tt.flags.confirm == "" && !strings.Contains(buf.String(), "kukatko") {
 				t.Errorf("prompt %q does not name the database to type", buf.String())
+			}
+		})
+	}
+}
+
+// TestConfirmBucketName verifies the bucket confirmation is read from the flag
+// when given and from the operator otherwise, that typing nothing is not a
+// confirmation, and that a store with no bucket asks nothing — while still
+// carrying a stray typed name through, so the service can refuse a run aimed at a
+// bucket this store does not have.
+func TestConfirmBucketName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		flags   resetFlags
+		bucket  string
+		stdin   string
+		want    string
+		wantErr error
+	}{
+		{name: "from the flag", flags: resetFlags{confirmStore: "kukatko-dev"}, bucket: "kukatko-dev", want: "kukatko-dev"},
+		{name: "typed at the prompt", bucket: "kukatko-dev", stdin: "kukatko-dev\n", want: "kukatko-dev"},
+		{name: "typed with surrounding space", bucket: "kukatko-dev", stdin: "  kukatko-dev \n", want: "kukatko-dev"},
+		{name: "a wrong name is still returned", bucket: "kukatko-dev", stdin: "kotrzina-photos\n", want: "kotrzina-photos"},
+		{name: "nothing typed", bucket: "kukatko-dev", stdin: "\n", wantErr: errResetBucketNotConfirmed},
+		{name: "closed input", bucket: "kukatko-dev", stdin: "", wantErr: errResetBucketNotConfirmed},
+		{name: "no bucket configured", stdin: "", want: ""},
+		{
+			name:  "no bucket configured, one typed anyway",
+			flags: resetFlags{confirmStore: "kotrzina-photos"},
+			want:  "kotrzina-photos",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := &cobra.Command{}
+			var buf bytes.Buffer
+			cmd.SetOut(&buf)
+			cmd.SetIn(strings.NewReader(tt.stdin))
+
+			got, err := confirmBucketName(cmd, tt.flags, bufio.NewScanner(cmd.InOrStdin()), tt.bucket)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("confirmBucketName() error = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("confirmBucketName() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("confirmBucketName() = %q, want %q", got, tt.want)
+			}
+			if tt.bucket == "" && buf.Len() != 0 {
+				t.Errorf("a store with no bucket still prompted: %q", buf.String())
+			}
+		})
+	}
+}
+
+// TestConfirmTarget_bothAnswersFromOneStream verifies the two prompts read
+// consecutive lines of the same input. Giving each prompt its own bufio.Scanner
+// would lose the second answer to the first scanner's read-ahead buffer, which
+// looks exactly like an operator who typed nothing.
+func TestConfirmTarget_bothAnswersFromOneStream(t *testing.T) {
+	t.Parallel()
+
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetIn(strings.NewReader("kukatko\nkukatko-dev\n"))
+
+	database, bucket, err := confirmTarget(cmd, resetFlags{},
+		reset.Target{Database: "kukatko", Bucket: "kukatko-dev"})
+	if err != nil {
+		t.Fatalf("confirmTarget() error = %v", err)
+	}
+	if database != "kukatko" || bucket != "kukatko-dev" {
+		t.Errorf("confirmTarget() = (%q, %q), want (kukatko, kukatko-dev)", database, bucket)
+	}
+	for _, want := range []string{"database name (kukatko)", "bucket name (kukatko-dev)"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("prompts %q do not include %q", buf.String(), want)
+		}
+	}
+}
+
+// TestConfiguredBucket verifies the name an operator is asked to type comes from
+// the backend that is actually in use: a bucket left in the config while the
+// filesystem backend runs is not a bucket anyone is about to empty, and must not
+// become a confirmable one.
+func TestConfiguredBucket(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		backend string
+		bucket  string
+		want    string
+	}{
+		{name: "r2 backend", backend: config.StorageBackendR2, bucket: "kukatko-dev", want: "kukatko-dev"},
+		{name: "fs backend with a leftover bucket", backend: config.StorageBackendFS, bucket: "kotrzina-photos"},
+		{name: "unset backend", bucket: "kotrzina-photos"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := &config.Config{}
+			cfg.Storage.Backend = tt.backend
+			cfg.Storage.R2.Bucket = tt.bucket
+			if got := configuredBucket(cfg); got != tt.want {
+				t.Errorf("configuredBucket() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -224,6 +340,7 @@ func TestPrintResetPreflight(t *testing.T) {
 	for _, want := range []string{
 		"localhost:5432/kukatko", "local socket", "photos", "280", "2240",
 		"orphan sweep off", "preserved (never touched)", "users",
+		"local filesystem (no bucket)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("preflight output does not mention %q:\n%s", want, out)
@@ -242,7 +359,7 @@ func TestPrintResetPreflight_sweep(t *testing.T) {
 	cmd := &cobra.Command{}
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
-	printResetStoragePlan(cmd, reset.StoragePlan{
+	printResetStoragePlan(cmd, reset.Target{Database: "kukatko", Bucket: "kukatko-dev"}, reset.StoragePlan{
 		Referenced: reset.PrefixCounts{Originals: 2},
 		Stored:     reset.PrefixCounts{Originals: 5, Thumbnails: 1},
 		Foreign:    3,
@@ -250,7 +367,7 @@ func TestPrintResetPreflight_sweep(t *testing.T) {
 	})
 
 	out := buf.String()
-	for _, want := range []string{"orphan sweep on", "5 original", "3 key(s) outside"} {
+	for _, want := range []string{"bucket kukatko-dev", "orphan sweep on", "5 original", "3 key(s) outside"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("sweep plan output does not mention %q:\n%s", want, out)
 		}

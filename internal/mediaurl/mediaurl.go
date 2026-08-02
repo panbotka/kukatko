@@ -6,8 +6,10 @@
 // backend that publishes its objects (storage.R2) returns a short-lived signed
 // URL from URL(), pointing at the edge Worker that fronts the private bucket;
 // the application then transfers no image bytes at all. A backend whose objects
-// no browser can reach (storage.FS) returns the empty string, and this package
-// falls back to the application's own media routes, which stream the file. Above
+// no browser can reach returns the empty string, and this package falls back to
+// the application's own media routes, which stream the file. That is storage.FS,
+// and also storage.R2 with no media base URL configured — a bucket with no Worker
+// in front of it, which is what development runs against a local MinIO. Above
 // this package nothing knows which of the two it is looking at.
 //
 // # Authorization
