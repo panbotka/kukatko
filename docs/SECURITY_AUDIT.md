@@ -370,7 +370,12 @@ Silence is not evidence; these areas were examined and are clean.
   surface, and a plain admin cannot reach an operations surface; no viewer can reach a mutation.
   The only unauthenticated routes are `/healthz`, `/metrics` (SEC-013), and the SPA static
   handler. No `pprof`/`expvar`/`/debug` endpoints exist.
-- **Auth primitives — clean.** bcrypt cost **12** (`internal/auth/password.go:13`); session and
+- **Auth primitives — clean.** bcrypt cost **12** (`internal/auth/password.go`, `bcryptCost`).
+  The work factor `HashPassword` mints at is selected by build tag: `password_cost.go` pins it to
+  12 in every build that is not the integration-test build, and the cheaper test cost lives in
+  `password_cost_integration.go`, which a shipped binary does not compile at all — it is not a
+  variable an importer could lower. `TestHashPassword_productionCost` (in `make test`) fails if a
+  tagless build ever mints below 12. Session and
   download tokens are 256-bit from `crypto/rand`, independently generated
   (`internal/auth/token.go`, `internal/auth/service.go:80-96`); API-token secret is 256-bit,
   **SHA-256-hashed at rest**, compared with `subtle.ConstantTimeCompare`

@@ -210,9 +210,94 @@ Two caveats worth knowing before optimising further:
   packages plus the instrumented standard library, and `npm ci` had to download the world;
   neither happens any more.
 
+## The integration suite
+
 Unit tests run without external dependencies. Integration tests (DB/HTTP against a real
 pgvector Postgres) are kept behind the `integration` build tag and `KUKATKO_TEST_DATABASE_URL`,
-so `make check` stays fast and DB-free; they are added alongside the DB layer in a later task.
+so `make check` stays fast and DB-free.
+
+```bash
+# the DSN lives in the gitignored .secrets/db.env; from the Pi host use the _HOST variant
+export KUKATKO_TEST_DATABASE_URL=postgres://kukatko:…@localhost:5432/kukatko_test?sslmode=disable
+make test-integration
+```
+
+`-p 1` is not optional: every package truncates the same test database, so a second package
+running concurrently would wipe the first one's rows mid-test.
+
+### The bcrypt work factor is lower under the `integration` tag
+
+About fifteen packages seed their accounts through the real auth path
+(`auth.Service.CreateUser`), so RBAC is exercised end to end instead of faked. Each seeded
+account cost a bcrypt hash at the production cost 12, and `-race` multiplies that: password
+hashing, not the behaviour under test, was **88 % of the suite's runtime** measured end to end,
+and 95–98 % of it in the packages that only seed and assert. `internal/auditapi` — a handful of
+assertions about a read-only listing — spent 49 s hashing.
+
+`internal/auth/password_cost_integration.go` is compiled **only** under the `integration` build
+tag and lowers the cost `HashPassword` mints at to `bcrypt.MinCost`. Nothing else changes: a
+bcrypt hash records the cost it was minted at and `CompareHashAndPassword` reads it from the
+hash rather than from a constant, so cheap and production hashes verify side by side through
+the same `CheckPassword` (`TestCheckPassword_mixedCosts` pins that property down).
+
+The knob is a **build-tag-selected identifier, not a settable `var`** — a var could be lowered
+by anything that imports `internal/auth`, whereas the cheap cost is simply not compiled into a
+build that lacks the tag, so nothing a running server can reach can weaken production hashing.
+Two tests keep it honest:
+
+- `TestHashPassword_productionCost` (`password_cost_test.go`, `//go:build !integration`) runs in
+  `make test` — i.e. in the gate — and fails unless a tagless build mints cost 12.
+- `TestBcryptCost_productionUnchanged` asserts the same constant from *inside* the integration
+  build, so lowering the suite's cost cannot quietly drift into lowering the production one.
+
+| env var | default | meaning |
+| --- | --- | --- |
+| `KUKATKO_TEST_BCRYPT_COST` | `4` (`bcrypt.MinCost`) | work factor the integration build mints at; read only by that build |
+
+Set it to `12` to run the suite at the production cost (that is how the "before" column below
+was measured). A value outside bcrypt's accepted range panics rather than silently falling back
+to a cost nobody intended.
+
+### Wall time, before and after
+
+Measured on the Raspberry Pi dev box on 2026-08-03, same machine, same command
+(`CGO_ENABLED=1 go test -race -p 1 -timeout 30m -tags=integration -count=1 ./...`), cold test
+cache both times. "Before" is the identical binary run with `KUKATKO_TEST_BCRYPT_COST=12`, so
+the only variable is the work factor:
+
+| run | wall clock | sum of package times (97 packages) |
+| --- | --- | --- |
+| before — cost 12 | **39 min 46 s** | 2298.0 s |
+| after — `bcrypt.MinCost` | **6 min 00 s** | 270.9 s |
+
+Both runs are green. The ~90 s that the "after" run spends outside the tests is the cgo race
+toolchain compiling the tree; a rerun with a warm test cache (`make test-integration`, no
+`-count=1`) took 5 min 26 s.
+
+The ten packages that dominated the old run:
+
+| package | before | after | factor |
+| --- | --- | --- | --- |
+| `internal/photoapi` | 647.8 s | 12.6 s | 51× |
+| `internal/auth` | 641.6 s | 23.1 s | 28× |
+| `internal/mcpapi` | 77.7 s | 5.2 s | 15× |
+| `internal/announcementapi` | 77.3 s | 1.9 s | 40× |
+| `internal/ingest` | 69.8 s | 8.5 s | 8× |
+| `internal/bulkapi` | 68.2 s | 2.2 s | 31× |
+| `internal/facematch` | 68.0 s | 2.1 s | 32× |
+| `internal/organizeapi` | 67.9 s | 2.1 s | 33× |
+| `internal/jobsapi` | 58.2 s | 1.7 s | 33× |
+| `internal/maintenanceapi` | 58.0 s | 1.6 s | 36× |
+
+Nothing else changed — the suite runs the same tests, seeds the same accounts and logs in
+through the same code; it just stops paying cost 12 for accounts it throws away seconds later.
+Note that the packages that gained least (`internal/ingest`, `internal/mcpapi`) are the ones
+actually doing work beyond seeding, which is what the remaining time should look like.
+
+**Per-package schemas are not worth it yet.** `-p 1` remains the other structural limit, but
+with the ten slowest packages now at 23 s and below, giving each package its own schema to
+unlock parallelism would be a large, risky change for a handful of minutes. Revisit only if the
+suite grows back into the tens of minutes.
 
 ## Object storage
 

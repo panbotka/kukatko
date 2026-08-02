@@ -17,7 +17,11 @@ to `## Package map` in `CLAUDE.md`.
   SQL migrations in `internal/database/migrations/*.sql`), `internal/database/dbtest/`
   (integration test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/auth/`
   (authentication/authorization: `Role` viewer/editor/admin/maintainer + `authorize`, bcrypt cost 12
-  `HashPassword`/`CheckPassword`, UID/token generators, sliding-window `Limiter`,
+  `HashPassword`/`CheckPassword` — the cost is a **build-tag-selected** identifier
+  (`password_cost.go` = production 12, `password_cost_integration.go` = `bcrypt.MinCost` and the
+  `KUKATKO_TEST_BCRYPT_COST` override, compiled only under the `integration` tag), so no running
+  server can lower it and `TestHashPassword_productionCost` in `make test` fails if the default
+  moves; UID/token generators, sliding-window `Limiter`,
   `Store` over pgx, `Service` orchestrating login/session/bootstrap/user management,
   `API` = HTTP handlers + RBAC middleware
   `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer`/`RequireImport` +

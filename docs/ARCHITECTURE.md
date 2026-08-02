@@ -903,6 +903,14 @@ follow these rules; **a task is not done with red lint or tests.**
   (test DB `kukatko_test`, DSN in `KUKATKO_TEST_DATABASE_URL`). Harness: applies migrations,
   provides a clean state per test (truncate/transaction + rollback). When the env is missing, the integration
   tests `t.Skip` (so that the fast gate `make check` doesn't require a DB).
+- **The `integration` build tag also lowers the bcrypt work factor.** ~15 packages seed accounts through the
+  real auth path to exercise RBAC, and at the production cost 12 (multiplied by `-race`) those hashes were
+  88 % of the suite's runtime (measured 39m46s → 6m00s). `internal/auth/password_cost_integration.go` —
+  compiled **only** under the tag — mints at `bcrypt.MinCost` (override: `KUKATKO_TEST_BCRYPT_COST`).
+  Verification is unaffected: a hash
+  carries the cost it was minted at. The knob is a build-tag-selected identifier, not a settable `var`, so a
+  running server cannot reach it, and `TestHashPassword_productionCost` in `make test` fails if a tagless
+  build stops minting at 12. Details and the measured before/after in `docs/DEVELOPMENT.md`.
 - **The R2 backend** has integration tests against a **real S3-compatible endpoint**
   (`KUKATKO_TEST_S3_ENDPOINT`, MinIO is enough; optionally `_BUCKET`/`_REGION`/`_ACCESS_KEY`/`_SECRET_KEY`):
   store/open/stat/delete, materialize + cleanup of the temp file (even on the error path) and a key with a UTF-8 name.
