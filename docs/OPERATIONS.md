@@ -808,12 +808,20 @@ long-running and belong on the machine where the instance runs — so they remai
   the default batch size, the UI prefetches; a request may send its own `?limit` (cap 100).
   `cache_ttl` (**default 60s**) — how long a built queue is served from the per-user cache before the
   expensive vector searches run again (answers edit the queue in-place, the session counter is cheap).
-  `max_labels` (**default 200**) — a cap on how many labels one rebuild scans. `label_concurrency`
+  `max_labels` (**default 200**) — a cap on how many labels one rebuild considers. `label_concurrency`
   (**default 2**) — how many label-similarity searches run at once (each already fans out internally; on a
-  RAM-constrained box keep it low). The review does not take the face side with its own keys — it runs through
-  sweep/candidates and their `sweep.*`/`candidates.*` limits. A non-positive value for any key
+  RAM-constrained box keep it low). `face_budget` / `label_budget` (**default 8 / 6**) — how many named
+  subjects and how many labels **one rebuild may scan**. These are the bound that keeps the endpoint off the
+  library's growth curve: building the queue used to run the whole recognition sweep inside the request, which
+  on 105 named subjects took 250 s and meant `/review` never loaded (`docs/PERF.md` §3). A rebuild stops
+  earlier still once the batch is full, and the cursor rotates, so successive rebuilds walk the rest of the
+  library; raise a budget for a broader mix of people or labels per batch at the cost of a slower first load.
+  `build_timeout` (**default 15s**) — the hard cap on one rebuild, the backstop behind both budgets: a rebuild
+  that runs out of time serves what it has (logged as `review: queue rebuild hit its deadline`) rather than
+  holding the request open. Apart from the budgets, the review does not take the face side with its own keys —
+  it runs through sweep/candidates and their `sweep.*`/`candidates.*` limits. A non-positive value for any key
   falls back to the default. Env: `KUKATKO_REVIEW_BAND_MIN`, `_BAND_MAX`, `_QUEUE_SIZE`, `_CACHE_TTL`,
-  `_MAX_LABELS`, `_LABEL_CONCURRENCY`.
+  `_MAX_LABELS`, `_LABEL_CONCURRENCY`, `_FACE_BUDGET`, `_LABEL_BUDGET`, `_BUILD_TIMEOUT`.
 
 ### `maps.user_agent` — restricting the mapy.com key to a User-Agent
 

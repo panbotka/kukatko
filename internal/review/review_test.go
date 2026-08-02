@@ -20,25 +20,67 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
-// fakeSweeper replays a scripted event stream and counts invocations.
+// fakeSweeper replays scripted per-subject results through the bounded-scan
+// contract — it honours the window's offset and budget and stops when the
+// collector has enough — and records what each call covered.
 type fakeSweeper struct {
-	mu     sync.Mutex
-	events []sweep.Event
-	calls  int
-	err    error
+	mu sync.Mutex
+	// people are the scripted subjects in plan order.
+	people []*sweep.Person
+	// subjectsTotal overrides the reported library-wide subject count; 0 means
+	// len(people).
+	subjectsTotal int
+	// calls counts Scan invocations, visited counts the subjects actually
+	// scanned across them, and windows records each call's window.
+	calls   int
+	visited int
+	windows []sweep.Window
+	err     error
 }
 
-// Sweep replays the scripted events to emit.
-func (f *fakeSweeper) Sweep(_ context.Context, _ sweep.Params, emit func(sweep.Event) error) error {
+// Scan walks the scripted subjects from win.Offset for at most win.Budget of
+// them, handing each to collect and stopping early when collect says so.
+func (f *fakeSweeper) Scan(
+	_ context.Context, _ sweep.Params, win sweep.Window, collect sweep.Collect,
+) (sweep.Coverage, error) {
 	f.mu.Lock()
 	f.calls++
+	f.windows = append(f.windows, win)
 	f.mu.Unlock()
-	for _, ev := range f.events {
-		if err := emit(ev); err != nil {
-			return err
+	if f.err != nil {
+		return sweep.Coverage{}, f.err
+	}
+	total := f.subjectsTotal
+	if total == 0 {
+		total = len(f.people)
+	}
+	if len(f.people) == 0 {
+		return sweep.Coverage{SubjectsTotal: total}, nil
+	}
+	offset := wrapOffset(win.Offset, len(f.people))
+	budget := win.Budget
+	if budget <= 0 || budget > len(f.people) {
+		budget = len(f.people)
+	}
+	scanned := 0
+	for i := range budget {
+		f.mu.Lock()
+		f.visited++
+		f.mu.Unlock()
+		scanned++
+		enough, err := collect(f.people[(offset+i)%len(f.people)])
+		if err != nil {
+			return sweep.Coverage{}, err
+		}
+		if enough {
+			break
 		}
 	}
-	return f.err
+	return sweep.Coverage{
+		SubjectsTotal: total,
+		Scanned:       scanned,
+		NextOffset:    wrapOffset(offset+scanned, len(f.people)),
+	}, nil
 }
 
 // fakeExpander returns scripted per-label results.
@@ -181,9 +223,9 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 	return f
 }
 
-// personEvent builds a sweep person event with face candidates at the given
-// cosine distances for the subject.
-func personEvent(subjectUID string, distances ...float64) sweep.Event {
+// scannedPerson builds a scanned subject with face candidates at the given
+// cosine distances.
+func scannedPerson(subjectUID string, distances ...float64) *sweep.Person {
 	person := sweep.Person{Subject: people.Subject{UID: subjectUID, Name: "Person " + subjectUID}}
 	for i, dist := range distances {
 		person.Candidates = append(person.Candidates, candidates.Candidate{
@@ -193,12 +235,8 @@ func personEvent(subjectUID string, distances ...float64) sweep.Event {
 			Action:    candidates.ActionCreateMarker,
 		})
 	}
-	return sweep.Event{Type: sweep.EventPerson, Person: &person}
-}
-
-// summaryEvent builds a sweep summary event reporting total named subjects.
-func summaryEvent(subjectsTotal int) sweep.Event {
-	return sweep.Event{Type: sweep.EventSummary, Summary: &sweep.Summary{SubjectsTotal: subjectsTotal}}
+	person.Actionable = len(person.Candidates)
+	return &person
 }
 
 // labelResult builds an expand result with candidates at the given similarities.
@@ -226,7 +264,7 @@ func TestQueue_bandFilter(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
 		// Confidences 0.9 (too certain), 0.6 (in band), 0.44 (below band).
-		f.sweeper.events = []sweep.Event{personEvent("subj1", 0.1, 0.4, 0.56), summaryEvent(1)}
+		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.1, 0.4, 0.56)}
 		f.organize.labels = []organize.LabelCount{labelCount("lab1", 3)}
 		// Similarities 0.8 (too certain), 0.5 (in band).
 		f.expander.results["lab1"] = labelResult("lab1", 0.8, 0.5)
@@ -264,9 +302,9 @@ func TestQueue_bandFilter(t *testing.T) {
 func TestQueue_alreadyDoneExcluded(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
-		ev := personEvent("subj1", 0.4)
-		ev.Person.Candidates[0].Action = candidates.ActionAlreadyDone
-		f.sweeper.events = []sweep.Event{ev, summaryEvent(1)}
+		person := scannedPerson("subj1", 0.4)
+		person.Candidates[0].Action = candidates.ActionAlreadyDone
+		f.sweeper.people = []*sweep.Person{person}
 	})
 	res, err := f.svc.Queue(context.Background(), "user", 0)
 	if err != nil {
@@ -281,7 +319,7 @@ func TestQueue_ordersByBoundaryDistanceAndInterleaves(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
 		// Band mid is 0.60: face confidences 0.50, 0.61, 0.70 → order 0.61, 0.70, 0.50.
-		f.sweeper.events = []sweep.Event{personEvent("subj1", 0.50, 0.39, 0.30), summaryEvent(1)}
+		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.50, 0.39, 0.30)}
 		f.organize.labels = []organize.LabelCount{labelCount("lab1", 1)}
 		f.expander.results["lab1"] = labelResult("lab1", 0.46)
 	})
@@ -306,10 +344,9 @@ func TestQueue_deterministicAcrossRebuilds(t *testing.T) {
 	t.Parallel()
 	build := func() []string {
 		f := newFixture(t, func(f *fixture) {
-			f.sweeper.events = []sweep.Event{
-				personEvent("subj2", 0.42, 0.35),
-				personEvent("subj1", 0.40, 0.28),
-				summaryEvent(2),
+			f.sweeper.people = []*sweep.Person{
+				scannedPerson("subj2", 0.42, 0.35),
+				scannedPerson("subj1", 0.40, 0.28),
 			}
 			f.organize.labels = []organize.LabelCount{labelCount("lab1", 1), labelCount("lab2", 1)}
 			f.expander.results["lab1"] = labelResult("lab1", 0.55, 0.65)
@@ -337,7 +374,7 @@ func TestQueue_deterministicAcrossRebuilds(t *testing.T) {
 func TestQueue_cacheTTL(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
-		f.sweeper.events = []sweep.Event{personEvent("subj1", 0.4), summaryEvent(1)}
+		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4)}
 	})
 	ctx := context.Background()
 	for range 3 {
@@ -360,10 +397,7 @@ func TestQueue_cacheTTL(t *testing.T) {
 func TestQueue_limit(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
-		f.sweeper.events = []sweep.Event{
-			personEvent("subj1", 0.4, 0.41, 0.42, 0.43, 0.44),
-			summaryEvent(1),
-		}
+		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4, 0.41, 0.42, 0.43, 0.44)}
 	})
 	res, err := f.svc.Queue(context.Background(), "user", 2)
 	if err != nil {
@@ -383,13 +417,13 @@ func TestQueue_emptyReasons(t *testing.T) {
 	}{
 		{
 			name:   "no people and no labels",
-			mutate: func(f *fixture) { f.sweeper.events = []sweep.Event{summaryEvent(0)} },
+			mutate: func(*fixture) {},
 			want:   ReasonNoSources,
 		},
 		{
 			name: "sources exist but nothing in band",
 			mutate: func(f *fixture) {
-				f.sweeper.events = []sweep.Event{personEvent("subj1", 0.05), summaryEvent(1)}
+				f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.05)}
 				f.organize.labels = []organize.LabelCount{labelCount("lab1", 2)}
 				f.expander.results["lab1"] = labelResult("lab1", 0.95)
 			},
@@ -398,7 +432,6 @@ func TestQueue_emptyReasons(t *testing.T) {
 		{
 			name: "labels exist with zero photos",
 			mutate: func(f *fixture) {
-				f.sweeper.events = []sweep.Event{summaryEvent(0)}
 				f.organize.labels = []organize.LabelCount{labelCount("lab1", 0)}
 			},
 			want: ReasonNoSources,
@@ -423,7 +456,6 @@ func TestQueue_emptyReasons(t *testing.T) {
 func TestQueue_labelSearchFailureSkipsLabel(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
-		f.sweeper.events = []sweep.Event{summaryEvent(0)}
 		f.organize.labels = []organize.LabelCount{labelCount("bad", 1), labelCount("good", 1)}
 		f.expander.errs["bad"] = errors.New("boom")
 		f.expander.results["good"] = labelResult("good", 0.6)

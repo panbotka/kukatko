@@ -16,10 +16,13 @@ import (
 )
 
 // buildReviewAPI assembles the review game over the shared pool. The queue
-// side composes the same searches the /recognition and /expand pages use — a
-// recognition sweep (reusing the candidate service as its finder, bounded by
+// side composes the same searches the /recognition and /expand pages use — the
+// recognition scan (reusing the candidate service as its finder, bounded by
 // cfg.Sweep) for face questions and the expand service for label questions —
-// tuned to the uncertainty band from cfg.Review. The answer side reuses the
+// tuned to the uncertainty band from cfg.Review. It calls the sweep service's
+// bounded Scan, never the full Sweep behind /faces/sweep: the per-rebuild
+// budgets in cfg.Review are what keep the queue off the library's growth curve.
+// The answer side reuses the
 // photo API's facematch service (matchSvc) so face confirmations go through
 // the one assign state machine, the organize store for label attaches and the
 // feedback store for rejections. The leaderboard aggregates the review-tagged
@@ -48,6 +51,9 @@ func buildReviewAPI(
 		CacheTTL:         cfg.Review.CacheTTL,
 		MaxLabels:        cfg.Review.MaxLabels,
 		LabelConcurrency: cfg.Review.LabelConcurrency,
+		FaceBudget:       cfg.Review.FaceBudget,
+		LabelBudget:      cfg.Review.LabelBudget,
+		BuildTimeout:     cfg.Review.BuildTimeout,
 	})
 	return reviewapi.NewAPI(reviewapi.Config{
 		Service:      svc,
