@@ -290,3 +290,51 @@ func TestNew_boundedDefaults(t *testing.T) {
 		t.Errorf("buildTimeout = %s, want the default %s", svc.buildTimeout, DefaultBuildTimeout)
 	}
 }
+
+func TestQueue_faceScanAsksOnlyForTheUncertaintyBand(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, func(f *fixture) {
+		f.sweeper.people = append(f.sweeper.people, scannedPerson("subj01", 0.4))
+	})
+	if _, err := f.svc.Queue(context.Background(), "user", 0); err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	if len(f.sweeper.params) != 1 {
+		t.Fatalf("scan calls = %d, want 1", len(f.sweeper.params))
+	}
+	// The band is a distance window, and both edges have to reach the search.
+	// Asking for the whole threshold and dropping the confident matches here
+	// instead made the scan hydrate a full photo record — EXIF blob included —
+	// for every match it was about to discard.
+	got := f.sweeper.params[0]
+	if got.Threshold != 1-DefaultBandMin || got.MinDistance != 1-DefaultBandMax {
+		t.Errorf("scan params = threshold %v, min distance %v; want %v and %v — the band's far "+
+			"edge must be pushed into the search, not filtered out after hydration",
+			got.Threshold, got.MinDistance, 1-DefaultBandMin, 1-DefaultBandMax)
+	}
+}
+
+func TestQueue_cachedQueueIsCapped(t *testing.T) {
+	t.Parallel()
+	// One subject offering far more band candidates than a session has any use
+	// for. Each question carries the whole photo record it asks about, and the
+	// queue is cached per user until the session is pruned, so the cache is a
+	// retention bound as much as the searches behind it are an allocation one.
+	confidences := make([]float64, 4*maxQueued)
+	for i := range confidences {
+		confidences[i] = 0.4
+	}
+	f := newFixture(t, func(f *fixture) {
+		f.sweeper.people = append(f.sweeper.people, scannedPerson("subj01", confidences...))
+	})
+	res, err := f.svc.Queue(context.Background(), "user", 0)
+	if err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	if len(res.Questions) != DefaultQueueSize {
+		t.Fatalf("batch = %d questions, want a full batch of %d", len(res.Questions), DefaultQueueSize)
+	}
+	if res.Remaining != maxQueued {
+		t.Errorf("cached queue = %d questions, want it capped at %d", res.Remaining, maxQueued)
+	}
+}

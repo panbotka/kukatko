@@ -4,6 +4,7 @@ package vectors_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -234,5 +235,75 @@ func TestFacesCascadeDelete(t *testing.T) {
 	}
 	if got, _ := store.ListFaces(ctx, uid); len(got) != 0 {
 		t.Errorf("faces survived photo delete: %d", len(got))
+	}
+}
+
+// TestSampleFacesBySubject checks the bounded read: a subject within the limit
+// comes back whole, a subject over it comes back as a spread sample carrying the
+// true totals, and a non-positive limit still means "all".
+func TestSampleFacesBySubject(t *testing.T) {
+	store, photoStore, _ := newStore(t)
+	ctx := t.Context()
+	const subject = "su_sample"
+
+	// Twelve faces over six photos, two faces per photo.
+	for i := range 6 {
+		uid := makePhoto(t, photoStore, fmt.Sprintf("sample_p%d", i))
+		if err := store.SaveFaces(ctx, uid, []vectors.Face{
+			subjectFace(0, faceVec(map[int]float32{2 * i: 1}), subject),
+			subjectFace(1, faceVec(map[int]float32{2*i + 1: 1}), subject),
+		}); err != nil {
+			t.Fatalf("SaveFaces p%d: %v", i, err)
+		}
+	}
+
+	all, err := store.SampleFacesBySubject(ctx, subject, 100)
+	if err != nil {
+		t.Fatalf("SampleFacesBySubject(limit 100): %v", err)
+	}
+	if len(all.Faces) != 12 || all.Total != 12 || all.Photos != 6 {
+		t.Fatalf("under the limit = %d faces, total %d, photos %d; want 12/12/6",
+			len(all.Faces), all.Total, all.Photos)
+	}
+
+	sample, err := store.SampleFacesBySubject(ctx, subject, 4)
+	if err != nil {
+		t.Fatalf("SampleFacesBySubject(limit 4): %v", err)
+	}
+	if len(sample.Faces) != 4 {
+		t.Fatalf("sample = %d faces, want exactly the requested 4", len(sample.Faces))
+	}
+	// The totals describe the subject, not the sample — the search reports them.
+	if sample.Total != 12 || sample.Photos != 6 {
+		t.Errorf("sample totals = %d faces over %d photos, want 12/6", sample.Total, sample.Photos)
+	}
+	if len(sample.Faces[0].Vector) != vectors.FaceDim {
+		t.Errorf("sampled face embedding len = %d, want %d", len(sample.Faces[0].Vector), vectors.FaceDim)
+	}
+	// A sample must be spread across the ordered set, not its first rows: with a
+	// quarter of the rows kept, the last one has to come from the tail.
+	ordered, err := store.ListFacesBySubject(ctx, subject)
+	if err != nil {
+		t.Fatalf("ListFacesBySubject: %v", err)
+	}
+	last := sample.Faces[len(sample.Faces)-1]
+	tail := ordered[len(ordered)-1]
+	if last.PhotoUID != tail.PhotoUID || last.FaceIndex != tail.FaceIndex {
+		t.Errorf("sample ends at %s#%d, want the ordered set's last row %s#%d — an even stride "+
+			"spreads across the subject rather than reading its head",
+			last.PhotoUID, last.FaceIndex, tail.PhotoUID, tail.FaceIndex)
+	}
+
+	unbounded, err := store.SampleFacesBySubject(ctx, subject, 0)
+	if err != nil {
+		t.Fatalf("SampleFacesBySubject(limit 0): %v", err)
+	}
+	if len(unbounded.Faces) != 12 {
+		t.Errorf("limit 0 = %d faces, want all 12", len(unbounded.Faces))
+	}
+
+	none, err := store.SampleFacesBySubject(ctx, "su_nobody", 4)
+	if err != nil || len(none.Faces) != 0 || none.Total != 0 || none.Photos != 0 {
+		t.Errorf("SampleFacesBySubject(nobody) = %+v, %v; want an empty result", none, err)
 	}
 }

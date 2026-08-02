@@ -306,10 +306,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Candidates API (`/api/v1`, `internal/candidatesapi`, editor/admin via `RequireWrite`):**
   "find a person among untagged photos". `POST /subjects/{uid}/candidates` with an **optional** body
   `{threshold?,limit?}` (`threshold` = max cosine distance, default `candidates.max_distance`;
-  `limit` 0 = all; `DisallowUnknownFields` + 64 KiB, negative values → 400) →
-  `{subject_uid,source_photo_count,source_face_count,faces_without_embedding,min_match_count,threshold,
+  `limit` 0 = as many as `candidates.max_candidates` allows; `DisallowUnknownFields` + 64 KiB, negative
+  values → 400) →
+  `{subject_uid,source_photo_count,source_face_count,exemplars_used,source_capped,capped,
+  faces_without_embedding,min_match_count,threshold,
   reason?,counts:{create_marker,assign_person,already_done},candidates:[{photo,face_index,
-  bbox:{relative:[x,y,w,h],pixel:[x,y,w,h]},distance,match_count,action,marker_uid?}]}`. For a subject it finds
+  bbox:{relative:[x,y,w,h],pixel:[x,y,w,h]},distance,match_count,action,marker_uid?}]}`. The two caps
+  behind `exemplars_used`/`source_capped` (only `candidates.max_exemplars` of a heavily tagged subject's
+  faces seed the search) and `capped` (only `candidates.max_candidates` survivors are hydrated and returned,
+  nearest first) are **memory bounds** — one request must not grow with the library — and are reported rather
+  than applied silently; the `source_*` counts still describe the subject, not the sample. For a subject it finds
   **unassigned** faces that resemble its own tagged ones (per-exemplar kNN over
   `subject_uid IS NULL` + voting; `min_match_count` is a vote rule scaled by the number of exemplars and
   the threshold, clamped 1..5, returned so the UI can explain the filter). Already-rejected faces drop out

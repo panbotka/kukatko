@@ -92,6 +92,10 @@ const (
 const (
 	// maxBatch is the hard cap on the per-request batch size.
 	maxBatch = 100
+	// maxQueued is the hard cap on how many questions one rebuild caches for a
+	// user. Several batches deep is all the prefetch needs; beyond that a queue is
+	// just photo records pinned in memory until the session is pruned.
+	maxQueued = 5 * maxBatch
 	// labelCandidateLimit is how many candidates one label search may return;
 	// it matches expand's maximum so band candidates are not truncated away
 	// behind the too-certain ones that sort first.

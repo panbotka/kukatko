@@ -211,6 +211,20 @@ candidates:
   # of tagged photos does not fan out unboundedly. Set to 0 (or below) to fall back
   # to the default.
   concurrency: 8
+  # The two memory bounds. One search costs one kNN per exemplar plus one photo
+  # record per hydrated candidate, so without them a single request grows with the
+  # library — a subject holding 16 532 exemplars once grew the process to 10.9 GB
+  # and the host OOM killer took the whole box down with it.
+  #
+  # How many of a subject's faces seed the kNN. Above this they are read as an
+  # even-strided sample rather than in full, so a person tagged on thousands of
+  # photos costs the same as one tagged on hundreds. The vote rule clamps at five
+  # agreeing exemplars, so the recall cost is small. 0 (or below) = the default.
+  max_exemplars: 500
+  # How many voted candidates are hydrated into full photo records (EXIF blob
+  # included) and returned. The nearest survive; the result reports "capped" rather
+  # than truncating silently. 0 (or below) = the default.
+  max_candidates: 500
 
 sweep:
   # Recognition sweep: scan every named person for confident matches among unnamed

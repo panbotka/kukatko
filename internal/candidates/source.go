@@ -10,17 +10,22 @@ import (
 )
 
 // source is the subject's evidence for one search: the deduplicated exemplars that
-// seed the kNN, every embedded face's vector (the positive set for the
-// negative-exemplar rule), and the counts the Result reports.
+// seed the kNN, the embedded faces' vectors (the positive set for the
+// negative-exemplar rule), and the counts the Result reports. Both sets are capped
+// at maxExemplars — see sampleFaces for why.
 type source struct {
 	// exemplars is one face per source photo — the highest-confidence face — so a
 	// photo with three faces of the person casts a single vote, not three.
 	exemplars []vectors.Face
-	// acceptedVecs is every embedded face's vector, the full positive evidence.
+	// acceptedVecs is the embedded faces' vectors, the positive evidence.
 	acceptedVecs [][]float32
-	// photoCount is len(exemplars); faceCount is every embedded face.
+	// photoCount is how many photos contributed an exemplar before the cap;
+	// faceCount is every embedded face.
 	photoCount int
 	faceCount  int
+	// capped reports that the subject has more exemplars than the cap allows, so
+	// exemplars is a sample of them rather than all of them.
+	capped bool
 	// withoutEmbedding is how many marked photos have no embedded face to search
 	// from.
 	withoutEmbedding int
@@ -28,26 +33,36 @@ type source struct {
 	emptyReason string
 }
 
-// loadSource loads the subject's tagged faces, deduplicates them to one exemplar
-// per photo, and computes the source-set summary — including how many of the
-// subject's marked photos lack an embedded face (the "sidecar was offline" gap).
+// loadSource reads a bounded sample of the subject's tagged faces, deduplicates it
+// to one exemplar per photo, and computes the source-set summary — including how
+// many of the subject's marked photos lack an embedded face (the "sidecar was
+// offline" gap). The counts come from the sample's totals, not from its length, so
+// capping the source set does not distort what the search reports about it.
+//
+// The cap is a memory bound, and it is the reason this reads a sample at all: one
+// exemplar means one kNN query and one result set to merge, so an uncapped source
+// set puts a single request's allocation on the library's growth curve. One subject
+// holding 16 532 exemplars is what let a GET /review/queue grow the process to
+// 10.9 GB and take the host down with it. It costs little recall — the vote rule
+// clamps at five agreeing exemplars, which hundreds supply as well as thousands.
 func (s *Service) loadSource(ctx context.Context, subjectUID string) (source, error) {
-	faces, err := s.faces.ListFacesBySubject(ctx, subjectUID)
+	sample, err := s.faces.SampleFacesBySubject(ctx, subjectUID, s.maxExemplars)
 	if err != nil {
-		return source{}, fmt.Errorf("listing faces for subject %s: %w", subjectUID, err)
+		return source{}, fmt.Errorf("sampling faces for subject %s: %w", subjectUID, err)
 	}
 	markedPhotos, err := s.people.ListPhotoUIDsBySubject(ctx, subjectUID)
 	if err != nil {
 		return source{}, fmt.Errorf("listing marked photos for subject %s: %w", subjectUID, err)
 	}
 
-	exemplars := dedupExemplars(faces)
+	exemplars := dedupExemplars(sample.Faces)
 	src := source{
 		exemplars:        exemplars,
-		acceptedVecs:     vectorsOf(faces),
-		photoCount:       len(exemplars),
-		faceCount:        len(faces),
-		withoutEmbedding: countWithoutEmbedding(markedPhotos, faces),
+		acceptedVecs:     vectorsOf(sample.Faces),
+		photoCount:       sample.Photos,
+		faceCount:        sample.Total,
+		capped:           sample.Total > len(sample.Faces),
+		withoutEmbedding: max(0, len(markedPhotos)-sample.Photos),
 	}
 	if len(exemplars) == 0 {
 		src.emptyReason = emptyReason(len(markedPhotos))
@@ -96,23 +111,6 @@ func vectorsOf(faces []vectors.Face) [][]float32 {
 		out = append(out, faces[i].Vector)
 	}
 	return out
-}
-
-// countWithoutEmbedding returns how many marked photos have no embedded face for the
-// subject: the set difference between photos carrying a marker and photos carrying
-// an embedded face. This is the "faces have no embeddings" count the UI surfaces.
-func countWithoutEmbedding(markedPhotos []string, faces []vectors.Face) int {
-	withFace := make(map[string]struct{}, len(faces))
-	for i := range faces {
-		withFace[faces[i].PhotoUID] = struct{}{}
-	}
-	missing := 0
-	for _, photoUID := range markedPhotos {
-		if _, ok := withFace[photoUID]; !ok {
-			missing++
-		}
-	}
-	return missing
 }
 
 // emptyReason distinguishes a subject with nothing tagged (ReasonNoFaces) from one

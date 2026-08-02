@@ -24,6 +24,10 @@ function Stat({ label, value }: { label: string; value: number }) {
  * already done — and, crucially, the computed `min_match_count`: the vote threshold a
  * photo had to clear. That filter is not hidden, it is explained in a line, so a
  * sparse result reads as "the bar was high", not "there is nothing there".
+ *
+ * The server's two memory caps get the same treatment. Either one silently applied
+ * would read as "this person has nothing left to find", which is a different and
+ * wrong answer; said out loud they read as "there is more, come back for it".
  */
 export function CandidateStats({ result }: CandidateStatsProps) {
   const { t } = useTranslation()
@@ -43,6 +47,16 @@ export function CandidateStats({ result }: CandidateStatsProps) {
       {result.faces_without_embedding > 0 && (
         <p className="small text-warning mt-1 mb-0">
           {t('faceSearch.stats.noEmbeddingNote', { count: result.faces_without_embedding })}
+        </p>
+      )}
+      {result.source_capped && (
+        <p className="small text-secondary mt-1 mb-0">
+          {t('faceSearch.stats.sourceCappedNote', { used: result.exemplars_used })}
+        </p>
+      )}
+      {result.capped && (
+        <p className="small text-secondary mt-1 mb-0">
+          {t('faceSearch.stats.cappedNote', { count: result.candidates.length })}
         </p>
       )}
     </div>

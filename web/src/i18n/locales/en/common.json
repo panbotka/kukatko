@@ -1071,7 +1071,9 @@
       "minMatchExplain_one": "A photo must match at least {{count}} source photo.",
       "minMatchExplain_other": "A photo must match at least {{count}} source photos.",
       "noEmbeddingNote_one": "{{count}} of this person's faces has no embedding; searching without it.",
-      "noEmbeddingNote_other": "{{count}} of this person's faces have no embedding; searching without them."
+      "noEmbeddingNote_other": "{{count}} of this person's faces have no embedding; searching without them.",
+      "sourceCappedNote": "This person is tagged on a lot of photos; the search used {{used}} of them, spread evenly across — one request must not grow with the library.",
+      "cappedNote": "More matches were found than can be shown at once; these are the {{count}} nearest. Confirm them and search again."
     },
     "card": {
       "photoAlt": "Photo with the candidate face",

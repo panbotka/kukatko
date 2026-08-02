@@ -409,6 +409,17 @@ type CandidatesConfig struct {
 	// person with hundreds of photos does not fan out unboundedly. A non-positive
 	// value falls back to the default.
 	Concurrency int `mapstructure:"concurrency"`
+	// MaxExemplars caps how many of a subject's faces seed the kNN: they are read as
+	// an even-strided sample rather than in full, so a person tagged on thousands of
+	// photos costs the same as one tagged on hundreds. A non-positive value falls
+	// back to the default.
+	MaxExemplars int `mapstructure:"max_exemplars"`
+	// MaxCandidates caps how many voted candidates are hydrated into full photo
+	// records. Hydration is where a wide match turns into hundreds of megabytes —
+	// every candidate carries a copy of its photo, EXIF blob included — so this is
+	// the memory bound on one request, independent of library size. A non-positive
+	// value falls back to the default.
+	MaxCandidates int `mapstructure:"max_candidates"`
 }
 
 // SweepConfig tunes the recognition sweep — the "scan every named person for
@@ -864,12 +875,15 @@ func setDiscoveryDefaults(v *viper.Viper) {
 
 // setCandidatesDefaults registers the untagged-person candidate-search defaults:
 // the fallback cosine distance, the per-exemplar kNN cap, the minimum reviewable
-// face width in pixels, and the concurrency bound on exemplar searches.
+// face width in pixels, the concurrency bound on exemplar searches, and the two
+// memory bounds that keep one search off the library's growth curve.
 func setCandidatesDefaults(v *viper.Viper) {
 	v.SetDefault("candidates.max_distance", 0.5)
 	v.SetDefault("candidates.search_limit", 1000)
 	v.SetDefault("candidates.min_face_px", 32)
 	v.SetDefault("candidates.concurrency", 8)
+	v.SetDefault("candidates.max_exemplars", 500)
+	v.SetDefault("candidates.max_candidates", 500)
 }
 
 // setSweepDefaults registers the recognition-sweep defaults: a small worker pool of

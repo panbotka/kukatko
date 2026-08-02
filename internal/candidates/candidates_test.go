@@ -150,14 +150,52 @@ func TestFaceBox(t *testing.T) {
 	}
 }
 
-// TestCountWithoutEmbedding checks the marked-photo minus embedded-face gap.
-func TestCountWithoutEmbedding(t *testing.T) {
+// TestBoundSurvivors checks the distance floor, the nearest-first order and the
+// hydration ceiling, plus that the ceiling is reported rather than applied
+// silently.
+func TestBoundSurvivors(t *testing.T) {
 	t.Parallel()
 
-	marked := []string{"p1", "p2", "p3"}
-	faces := []vectors.Face{{PhotoUID: "p1"}, {PhotoUID: "p3"}}
-	if got := countWithoutEmbedding(marked, faces); got != 1 {
-		t.Errorf("countWithoutEmbedding = %d, want 1 (p2 has no embedded face)", got)
+	voted := []votedCandidate{
+		{key: vectors.FaceKey{PhotoUID: "far"}, distance: 0.5},
+		{key: vectors.FaceKey{PhotoUID: "near"}, distance: 0.1},
+		{key: vectors.FaceKey{PhotoUID: "mid"}, distance: 0.3},
+	}
+	kept, capped := boundSurvivors(append([]votedCandidate(nil), voted...), 0, 0)
+	if capped || len(kept) != 3 || kept[0].key.PhotoUID != "near" || kept[2].key.PhotoUID != "far" {
+		t.Errorf("boundSurvivors(_, 0, 0) = %+v, capped=%v; want all three nearest-first", kept, capped)
+	}
+
+	floored, _ := boundSurvivors(append([]votedCandidate(nil), voted...), 0.3, 0)
+	if len(floored) != 2 || floored[0].key.PhotoUID != "mid" {
+		t.Errorf("boundSurvivors(_, 0.3, 0) = %+v, want mid and far — the floor is inclusive", floored)
+	}
+
+	cut, capped := boundSurvivors(append([]votedCandidate(nil), voted...), 0, 2)
+	if !capped || len(cut) != 2 || cut[1].key.PhotoUID != "mid" {
+		t.Errorf("boundSurvivors(_, 0, 2) = %+v, capped=%v; want the two nearest and capped=true",
+			cut, capped)
+	}
+}
+
+// TestSortVoted checks the (photo, face) tie-break makes the cut to the hydration
+// ceiling deterministic for candidates at the same distance.
+func TestSortVoted(t *testing.T) {
+	t.Parallel()
+
+	cands := []votedCandidate{
+		{key: vectors.FaceKey{PhotoUID: "b", FaceIndex: 0}, distance: 0.2},
+		{key: vectors.FaceKey{PhotoUID: "a", FaceIndex: 1}, distance: 0.2},
+		{key: vectors.FaceKey{PhotoUID: "a", FaceIndex: 0}, distance: 0.2},
+	}
+	sortVoted(cands)
+	got := []string{
+		cands[0].key.PhotoUID + string(rune('0'+cands[0].key.FaceIndex)),
+		cands[1].key.PhotoUID + string(rune('0'+cands[1].key.FaceIndex)),
+		cands[2].key.PhotoUID + string(rune('0'+cands[2].key.FaceIndex)),
+	}
+	if got[0] != "a0" || got[1] != "a1" || got[2] != "b0" {
+		t.Errorf("sortVoted order = %v, want [a0 a1 b0]", got)
 	}
 }
 

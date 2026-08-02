@@ -97,6 +97,8 @@ func TestLoad_defaults(t *testing.T) {
 		{"candidates.search_limit", cfg.Candidates.SearchLimit, 1000},
 		{"candidates.min_face_px", cfg.Candidates.MinFacePx, 32},
 		{"candidates.concurrency", cfg.Candidates.Concurrency, 8},
+		{"candidates.max_exemplars", cfg.Candidates.MaxExemplars, 500},
+		{"candidates.max_candidates", cfg.Candidates.MaxCandidates, 500},
 		{"sweep.concurrency", cfg.Sweep.Concurrency, 4},
 		{"sweep.max_subjects", cfg.Sweep.MaxSubjects, 500},
 		{"expand.max_distance", cfg.Expand.MaxDistance, 0.30},

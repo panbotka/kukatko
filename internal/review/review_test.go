@@ -35,17 +35,21 @@ type fakeSweeper struct {
 	calls   int
 	visited int
 	windows []sweep.Window
-	err     error
+	// params records each call's search parameters, so a test can assert what the
+	// queue asked the scan for rather than only what it did with the answer.
+	params []sweep.Params
+	err    error
 }
 
 // Scan walks the scripted subjects from win.Offset for at most win.Budget of
 // them, handing each to collect and stopping early when collect says so.
 func (f *fakeSweeper) Scan(
-	_ context.Context, _ sweep.Params, win sweep.Window, collect sweep.Collect,
+	_ context.Context, params sweep.Params, win sweep.Window, collect sweep.Collect,
 ) (sweep.Coverage, error) {
 	f.mu.Lock()
 	f.calls++
 	f.windows = append(f.windows, win)
+	f.params = append(f.params, params)
 	f.mu.Unlock()
 	if f.err != nil {
 		return sweep.Coverage{}, f.err

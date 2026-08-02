@@ -114,6 +114,15 @@ export interface CandidateResult {
   source_photo_count: number
   /** How many embedded faces the subject has. */
   source_face_count: number
+  /**
+   * How many exemplars actually seeded the search, and whether that is a sample
+   * of `source_photo_count` rather than all of it. The server caps the source set
+   * so one request cannot grow with the library; the cap is reported, not hidden.
+   */
+  exemplars_used: number
+  source_capped: boolean
+  /** More candidates survived than the server will hydrate; the nearest were kept. */
+  capped: boolean
   /** Marked photos with no embedded face to search from (sidecar was offline). */
   faces_without_embedding: number
   /** The computed vote threshold that was applied. */

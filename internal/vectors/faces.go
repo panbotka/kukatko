@@ -40,6 +40,42 @@ FROM faces
 WHERE subject_uid = $1
 ORDER BY photo_uid, face_index`
 
+// sampleFacesBySubjectSQL reads at most $2 of a subject's faces, evenly spread
+// across the same deterministic (photo_uid, face_index) order listFacesBySubjectSQL
+// uses, and carries the two totals a sample cannot be counted from: how many faces
+// the subject has and over how many distinct photos.
+//
+// The stride is the classic even-selection predicate: a row is kept when it is the
+// one at which floor(rn·limit/total) steps up, which picks exactly $2 rows spread
+// across the whole set instead of its first $2 rows. Sampling in SQL rather than in
+// Go is the point — a caller that only needs a few hundred exemplars must not pay
+// to transfer and decode a 512-dimension embedding for every photo a person appears
+// in, which for a heavily tagged subject is tens of megabytes per request.
+//
+// The distinct-photo count is `max(dense_rank())` across two query levels rather
+// than `count(DISTINCT …) OVER ()` (which PostgreSQL does not implement) or a
+// second subquery over the same rows (which would scan the subject's faces twice;
+// there is no index on faces.subject_uid, so that scan is not free).
+const sampleFacesBySubjectSQL = `
+WITH ranked AS (
+    SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
+           marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation,
+           row_number() OVER (ORDER BY photo_uid, face_index) AS rn,
+           count(*) OVER () AS total,
+           dense_rank() OVER (ORDER BY photo_uid) AS photo_rank
+    FROM faces
+    WHERE subject_uid = $1
+), tallied AS (
+    SELECT ranked.*, max(photo_rank) OVER () AS photos FROM ranked
+)
+SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
+       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation,
+       total, photos
+FROM tallied
+WHERE $2 <= 0 OR total <= $2
+   OR (rn * $2::bigint) / total > ((rn - 1) * $2::bigint) / total
+ORDER BY photo_uid, face_index`
+
 // facesByKeysSQL selects the face rows identified by the two parallel arrays of
 // photo uids and face indexes, joined via unnest so a whole batch of keys is
 // fetched in one round-trip. Keys with no matching row simply produce no output
@@ -259,6 +295,74 @@ func (s *Store) FacesByKeys(ctx context.Context, keys []FaceKey) ([]Face, error)
 		return nil, fmt.Errorf("iterating faces by keys: %w", err)
 	}
 	return faces, nil
+}
+
+// SubjectFaces is a bounded read of one subject's embedded faces: a sample of the
+// rows plus the two totals the sample itself can no longer be counted from.
+type SubjectFaces struct {
+	// Faces is the sample, in (photo_uid, face_index) order. It holds every face
+	// when the subject has no more than the requested limit.
+	Faces []Face
+	// Total is how many embedded faces the subject has, before the sample.
+	Total int
+	// Photos is over how many distinct photos those faces are spread, before the
+	// sample. It is what "one exemplar per source photo" counts.
+	Photos int
+}
+
+// SampleFacesBySubject returns at most limit of subjectUID's faces, spread evenly
+// across the deterministic (photo_uid, face_index) order rather than taken from its
+// head, together with the subject's true face and photo totals. A non-positive limit
+// returns every face, matching ListFacesBySubject. A subject with no assigned faces
+// yields a zero SubjectFaces and a nil error.
+//
+// It backs the untagged-face candidate search, whose cost per request is one kNN per
+// exemplar: the sample is what keeps a person tagged on thousands of photos from
+// putting a single request's memory on the library's growth curve, while the totals
+// keep the summary the search reports honest about what was sampled from.
+func (s *Store) SampleFacesBySubject(ctx context.Context, subjectUID string, limit int) (SubjectFaces, error) {
+	rows, err := s.pool.Query(ctx, sampleFacesBySubjectSQL, subjectUID, limit)
+	if err != nil {
+		return SubjectFaces{}, fmt.Errorf("sampling faces for subject %s: %w", subjectUID, err)
+	}
+	defer rows.Close()
+
+	var out SubjectFaces
+	for rows.Next() {
+		face, total, photos, scanErr := scanSampledFace(rows)
+		if scanErr != nil {
+			return SubjectFaces{}, scanErr
+		}
+		out.Faces = append(out.Faces, face)
+		out.Total, out.Photos = total, photos
+	}
+	if err := rows.Err(); err != nil {
+		return SubjectFaces{}, fmt.Errorf("iterating sampled faces for subject %s: %w", subjectUID, err)
+	}
+	return out, nil
+}
+
+// scanSampledFace reads one row of sampleFacesBySubjectSQL: a face in the shared
+// column order followed by the two window totals every row repeats.
+func scanSampledFace(rows pgx.Rows) (Face, int, int, error) {
+	var (
+		face   Face
+		hv     pgvector.HalfVector
+		bbox   []float64
+		total  int
+		photos int
+	)
+	err := rows.Scan(
+		&face.ID, &face.PhotoUID, &face.FaceIndex, &hv, &bbox, &face.DetScore,
+		&face.Model, &face.Dim, &face.CreatedAt, &face.MarkerUID, &face.SubjectUID,
+		&face.SubjectName, &face.PhotoWidth, &face.PhotoHeight, &face.Orientation,
+		&total, &photos)
+	if err != nil {
+		return Face{}, 0, 0, fmt.Errorf("scanning sampled face row: %w", err)
+	}
+	face.Vector = FromHalfVec(hv)
+	copy(face.BBox[:], bbox)
+	return face, total, photos, nil
 }
 
 // queryFaces runs a face-listing query with a single argument and scans every row

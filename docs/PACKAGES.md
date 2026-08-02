@@ -791,6 +791,12 @@ to `## Package map` in `CLAUDE.md`.
   for 768-dim image embeddings, `SaveFaces`(idempotent replace in a transaction)/`ListFaces`/
   `ListFacesBySubject(subjectUID)` (faces with the given `subject_uid`, ordered `(photo_uid,
   face_index)` — the basis of outlier detection; shares `queryFaces`/`scanFace` with `ListFaces`)/
+  `SampleFacesBySubject(subjectUID,limit)` → `SubjectFaces{Faces,Total,Photos}` (the **bounded** read of the
+  same set: at most `limit` rows selected by an even stride **in SQL** — a row survives where
+  `floor(rn·limit/total)` steps up — plus the subject's true face count and distinct-photo count, since a
+  sample can no longer be counted from; `limit ≤ 0` = all. It backs the candidate search, whose cost is one
+  kNN per exemplar: without it a person tagged on thousands of photos transfers and decodes a 512-dim
+  embedding per row, which is how one request reached 10.9 GB — see `docs/PERF.md` §3)/
   `DeleteFaces`/`FindSimilarFaces`/`FindSimilarFaceCandidates` (like `FindSimilarFaces`, but
   also returns the cache `subject_uid`/`subject_name`/`marker_uid` + `bbox` — the basis of identity suggestions)/
   `FindSimilarUnassignedFaceCandidates(vec,limit,maxDistance,exclude)` (like the previous one, but only
@@ -1038,9 +1044,11 @@ to `## Package map` in `CLAUDE.md`.
   won't surface a lone unnamed face of a well-known person; all behind the interfaces `FaceStore`
   (`vectors.Store`), `PeopleStore` (`people.Store`), `FeedbackStore` (`feedback.Store`) and `PhotoStore`
   (`photos.Store`) → unit-testable with fakes without a DB; `Service` = `New(Config{Faces,People,Feedback,
-  Photos,Media,MaxDistance,SearchLimit,MinFacePx,Concurrency,MinFaceRel})`, tunables default via the
-  `Default*` constants (0.5/1000/32/8). **`Find(ctx,subjectUID,Request{Threshold,Limit})`**: verifies the
-  subject (`people.ErrSubjectNotFound`); loads `ListFacesBySubject` and **deduplicates exemplars to
+  Photos,Media,MaxDistance,SearchLimit,MinFacePx,Concurrency,MinFaceRel,MaxExemplars,MaxCandidates})`, tunables
+  default via the `Default*` constants (0.5/1000/32/8/500/500).
+  **`Find(ctx,subjectUID,Request{Threshold,MinDistance,Limit})`**: verifies the
+  subject (`people.ErrSubjectNotFound`); reads `SampleFacesBySubject` — at most `MaxExemplars` faces, sampled
+  with an even stride **in SQL**, plus the subject's true face/photo totals — and **deduplicates exemplars to
   one per source photo** (highest `det_score`, tie lowest `face_index`), so a photo with three
   faces of that person doesn't vote three times; for each exemplar runs `FindSimilarUnassignedFaceCandidates`
   with **bounded concurrency** (`errgroup.SetLimit`) and an exclusion set of already-rejected faces
@@ -1048,16 +1056,22 @@ to `## Package map` in `CLAUDE.md`.
   distinct exemplars, `distance` = the **minimum** across votes); **vote rule** `min_match_count`
   (`computeMinMatchCount`, scales `√exemplarCount * threshold/base / 2`, **clamp 1..5** and ≤ the number of
   exemplars — a single-face subject always 1; returned in the response so the UI can explain the filter); then
-  a **relative size floor** (`bbox[2] ≥ MinFaceRel`, shares `faces.min_face_size`); the survivors are
+  a **relative size floor** (`bbox[2] ≥ MinFaceRel`, shares `faces.min_face_size`); `boundSurvivors` then applies
+  the request's `MinDistance` floor (drop candidates *nearer* than it — a caller after the uncertain middle
+  only), orders nearest-first and **cuts to `MaxCandidates` before hydration** (`capped` in the response), which
+  is the memory bound: past that cut every candidate costs a whole `photos.Photo`, EXIF blob included, and the
+  request's `Limit` truncating afterwards bounds the answer but not the work; the survivors are
   hydrated (`photos.ListByUIDs` + `mediaurl.Decorate`), an **absolute pixel floor** is applied
   (`MinFacePx`) and the **negative-exemplar rule** (`vectors.IsNegativeExemplar` over embeddings from
   `FacesByKeys` — **a no-op without rejections**, the embeddings are then not loaded at all); finally the **action
   classification** (`create_marker` without a marker / `assign_person` a marker without (another) subject / `already_done`
   the marker already points at this subject = a stale cache, via `GetMarkerByUID` with a cache), ordered by distance
-  and truncated to `Limit` (0 = all). `Result` = `{subject_uid,source_photo_count,source_face_count,
+  and truncated to `Limit` (0 = as many as `MaxCandidates` allows). `Result` =
+  `{subject_uid,source_photo_count,source_face_count,exemplars_used,source_capped,capped,
   faces_without_embedding,min_match_count,threshold,reason?,counts{create_marker,assign_person,
   already_done},candidates:[Candidate{photo,face_index,bbox{relative,pixel},distance,match_count,
-  action}]}`; `bbox` carries **both relative 0..1 and pixels** honouring EXIF orientation (`displayDims` swaps
+  action}]}` — the counts describe the **subject**, not the sample, and both caps are surfaced rather
+  than applied silently; `bbox` carries **both relative 0..1 and pixels** honouring EXIF orientation (`displayDims` swaps
   W/H for orientations 5–8). **Edge cases**: a subject with no faces → an empty **non-error** result with
   `reason:"no_faces"`; a subject with markers but no embedded faces → `reason:"no_embeddings"` +
   `faces_without_embedding`; the box being offline doesn't matter — the vectors are read already in Postgres. **Read-only** —
@@ -1072,7 +1086,9 @@ to `## Package map` in `CLAUDE.md`.
   (**recognition sweep** — composes the per-subject candidate search across **all** named
   subjects at once: the `Finder` interface (satisfied by `*candidates.Service`) and `SubjectLister` (satisfied by
   `*people.Store`), `New(Config{Subjects,Finder,Concurrency,MaxSubjects,Log})` (defaults 4/500, nil
-  Log→`slog.Default()`, nil store→panic), `Sweep(ctx, Params{Threshold,Limit}, emit func(Event) error)`;
+  Log→`slog.Default()`, nil store→panic), `Sweep(ctx, Params{Threshold,MinDistance,Limit}, emit func(Event) error)`
+  (`MinDistance` passes straight through to `candidates.Request`, so a caller wanting only the uncertain middle
+  never pays to hydrate the confident matches);
   lists subjects with `MarkerCount>0`, caps at `MaxSubjects` (`capped`+`SubjectsTotal`
   in the summary), the scan runs in a **bounded worker pool** (`errgroup.SetLimit`) and **funnels** the results
   through one consumer, so `emit` is always called **serially** (the handler writes it straight into
@@ -1182,8 +1198,10 @@ to `## Package map` in `CLAUDE.md`.
   BandMax,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,FaceBudget,LabelBudget,BuildTimeout,Now})`
   (an invalid band → the default pair 0.45/0.75, `Now` = a test hook).
   **`Queue(ctx,userUID,limit)`**: candidates with confidence
-  (= 1 − distance) in `[BandMin,BandMax)` — the sweep runs with `Threshold: 1−BandMin` and review trims the upper edge
-  (above it a candidate belongs on `/recognition`/expand, not in the game); labels with `PhotoCount>0`
+  (= 1 − distance) in `[BandMin,BandMax)` — the band is a **distance window pushed into the search**
+  (`Threshold: 1−BandMin`, `MinDistance: 1−BandMax`), so the confident matches (which belong on
+  `/recognition`/expand, not in the game) are never hydrated only to be discarded here; `inBand` still trims
+  the exact upper edge; labels with `PhotoCount>0`
   (cap `MaxLabels`, fan-out `errgroup.SetLimit(LabelConcurrency)`, an error on one label is
   logged and skipped); ordered by **distance from the band's center** (tie-break a stable id), the kinds are
   **interleaved** deterministically (comparison of integer fractions, no `rand`); the queue is **cached
@@ -1200,6 +1218,10 @@ to `## Package map` in `CLAUDE.md`.
   cancellation still propagates. Two **instance-wide cursors** (`faceCursor`/`labelCursor`, own mutex)
   advance by what each rebuild scanned, so successive rebuilds rotate through the library; a **dry queue
   rebuilds immediately** instead of waiting out `CacheTTL`, which is what makes the rotation reach everyone.
+  A built queue is also **capped at `maxQueued` (500) questions** (`capQueue`): a `Question` carries a whole
+  photo record and the queue is cached per user until the session is pruned, so an uncapped one pins photo
+  rows in memory for half a day; what is dropped is not lost, since the cursors have moved on and the next
+  rebuild covers new ground.
   The library-wide subject/label totals still come from the full listings, so the reason codes stay exact;
   content, ordering, exclusions and the HTTP shape are unchanged. **`Answer(ctx,userUID,
   questionID,answer,meta)`**: the id is **content-derived** (`face:<photo>:<idx>:<subject>` /
