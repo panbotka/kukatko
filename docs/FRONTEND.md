@@ -781,7 +781,18 @@ here.
   means and whether action is needed; plus the destructive card **`AuditPurgeCard`** (**Vymazat audit log**)
   with a retention choice (presets 3/6 months, 1/2 years or a custom number of days), a **confirmation step**
   (irreversible deletion) and a result `Alert` with the deleted count (`purgeAuditLog(olderThanDays)` →
-  `POST /maintenance/audit/purge`); self-gated on `isMaintainer`,
+  `POST /maintenance/audit/purge`), and the card **`NamelessSubjectsCard`**
+  (`components/maintenance/NamelessSubjectsCard.tsx`, **Osoba bez jména**) — the importer-minted catch-all
+  subject that sits first in `/people` owning 96 % of the library's faces, whose repair used to be reachable
+  only over SSH: **Zkontrolovat** (`fetchNamelessSubjects` → `GET /maintenance/nameless-subjects`, read-only)
+  renders the found subjects through the shared `RecordTable` (uid + „prázdné jméno", markers, faces, created),
+  **Odpojit a smazat subjekt** goes through a confirmation that names both the loss and the undo file, and the
+  apply (`detachNamelessSubjects` → `POST …/detach`) **saves the undo file to the user's downloads** —
+  the response body *is* the file, and the backend schedules the detach only once it has gone out, so a refusal
+  (409 „nothing to detach", 503 „not wired", any 5xx) renders as its own message and nothing was changed. The
+  undo direction is a file picker (`restoreNamelessSubjects(file)` → `POST …/restore`, 400 → „not a usable undo
+  file"); both destructive halves run in the job queue, so their `Alert`s report what was **scheduled** and
+  point at the queue card below; self-gated on `isMaintainer`,
   `SystemStatusPage` = `/system` (maintainer only) a **system-status dashboard**: auto-refresh (polling 5 s)
   `GET /system/status` → a card grid (DB, embeddings, job queue, backup, imports, storage,
   **maps**, version) plus the **Knihovna section** (`LibrarySection` over `useLibraryStats` →
@@ -2175,8 +2186,15 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `maintenance.ts` = the admin maintenance client: `fetchMaintenanceScan(signal)` over
   `GET /api/v1/maintenance/scan` → `ScanReport`, `runMaintenanceRepair(options,signal)` over
   `POST /api/v1/maintenance/repair` → `RepairResult`, `purgeAuditLog(olderThanDays,signal)` over
-  `POST /api/v1/maintenance/audit/purge` → `AuditPurgeResult` (`{deleted,older_than_days,cutoff}`);
-  the types `Finding`/`ScanReport`/`RepairOptions`/`RepairResult`/`AuditPurgeResult`; it shares `ApiError`
+  `POST /api/v1/maintenance/audit/purge` → `AuditPurgeResult` (`{deleted,older_than_days,cutoff}`),
+  plus the nameless-subject repair: `fetchNamelessSubjects(signal)` over
+  `GET /api/v1/maintenance/nameless-subjects` → `NamelessReport`, `detachNamelessSubjects(signal)` over
+  `POST …/detach` — the response body *is* the undo file, so it `saveBlob`s it to the user's downloads under the
+  server-chosen `Content-Disposition` name and returns `NamelessUndoFile` (`{filename,subjects,markers,faces}`
+  read from the `X-Kukatko-Nameless-*` headers) — and `restoreNamelessSubjects(file,signal)` over `POST …/restore`
+  (the `File` as the raw body) → `{queued}`;
+  the types `Finding`/`ScanReport`/`RepairOptions`/`RepairResult`/`AuditPurgeResult`/`NamelessSubject`/
+  `NamelessReport`/`NamelessUndoFile`/`NamelessRestoreResult`; it shares `ApiError`
   from `auth.ts` and `fetchJobStats` from `import.ts` for the progress,
   `system.ts` = the system client: `fetchSystemStatus(signal)` over `GET /api/v1/system/status`
   → `SystemStatus` (maintainer-only), `fetchLibraryStats(signal)` over `GET /api/v1/system/stats`

@@ -1820,6 +1820,39 @@
       "invalid": "Zadejte kladný počet dní.",
       "error": "Vymazání se nezdařilo.",
       "result": "Smazáno {{deleted}} záznamů auditu."
+    },
+    "nameless": {
+      "title": "Osoba bez jména (nálezový koš importu)",
+      "hint": "Subjekt bez jména nelze založit ručně — vznikl při importu jako „nálezový koš“, do kterého se pak přiřazovaly všechny nepojmenované obličeje. V /people bývá první a nejde o skutečnou osobu. Kontrola je jen pro čtení; odpojení je nevratné a proto vždy stáhne soubor pro vrácení zpět.",
+      "check": "Zkontrolovat",
+      "checking": "Kontroluji…",
+      "empty": "Zatím neproběhla žádná kontrola.",
+      "clean": "Žádný subjekt bez jména — není co opravovat.",
+      "unavailable": "Oprava není na tomto serveru dostupná.",
+      "reportError": "Kontrola se nezdařila.",
+      "summary": "Nalezeno {{subjects}} subjektů bez jména: {{markers}} značek a {{faces}} obličejů z knihovny na ně ukazuje.",
+      "emptyName": "prázdné jméno, slug „{{slug}}“",
+      "columns": {
+        "subject": "Subjekt",
+        "markers": "Značky",
+        "faces": "Obličeje",
+        "created": "Vytvořeno"
+      },
+      "detach": "Odpojit a smazat subjekt",
+      "detaching": "Odpojuji…",
+      "confirm": "Trvale smaže tyto subjekty a {{markers}} značek i {{faces}} obličejů zůstane nepřiřazených. Tuto akci nelze vrátit jinak než souborem níže.",
+      "confirmUndo": "Před spuštěním se do vašich stažených souborů uloží soubor pro vrácení zpět. Uschovejte ho — je to jediná cesta zpátky. Bez něj se oprava nespustí.",
+      "confirmRun": "Ano, odpojit",
+      "cancel": "Zrušit",
+      "detachError": "Odpojení se nezdařilo.",
+      "detachResult": "Staženo {{filename}} — uschovejte ho. Odpojení {{markers}} značek a {{faces}} obličejů běží na pozadí ve frontě úloh.",
+      "restoreTitle": "Vrátit zpět ze souboru",
+      "restoreHint": "Nahrajte soubor stažený při odpojení (nebo zapsaný pomocí `kukatko maintenance nameless-subjects --undo-file`). Subjekty se obnoví pod původním uid a jejich značky i obličeje se znovu přiřadí.",
+      "restoreLabel": "Soubor pro vrácení zpět",
+      "restoring": "Nahrávám…",
+      "restoreInvalid": "Tohle není použitelný soubor pro vrácení zpět.",
+      "restoreError": "Vrácení zpět se nezdařilo.",
+      "restoreResult": "Naplánováno obnovení {{queued}} subjektů; běží na pozadí ve frontě úloh."
     }
   },
   "duplicates": {

@@ -20,6 +20,8 @@ import (
 	"github.com/panbotka/kukatko/internal/maintenanceapi"
 	"github.com/panbotka/kukatko/internal/metajob"
 	"github.com/panbotka/kukatko/internal/metrics"
+	"github.com/panbotka/kukatko/internal/namelessjob"
+	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -205,14 +207,27 @@ func buildMaintenanceAndThumb(
 	return thumbSvc, maintenanceSvc, nil
 }
 
+// buildNamelessService assembles the nameless-subject repair over the people
+// store and the job queue: the admin surface reports and schedules through it,
+// the worker runs its two handlers. It needs no configuration, so it is always
+// available — the repair for a catch-all subject an importer minted must not
+// depend on an optional feature being switched on.
+func buildNamelessService(db *database.DB, store *jobs.Store) *namelessjob.Service {
+	return namelessjob.New(people.NewStore(db.Pool()), store, nil)
+}
+
 // buildMaintenanceAPI assembles the maintainer-only maintenance HTTP API over
-// svc and the audit store (for the retention purge of old audit entries).
-// Library maintenance is an operations capability, so the maintainer guard is
-// supplied via authAPI (maintenanceapi stays decoupled from auth's wiring).
-func buildMaintenanceAPI(svc *maintenance.Service, db *database.DB, authAPI *auth.API) *maintenanceapi.API {
+// svc, the audit store (for the retention purge of old audit entries) and the
+// nameless-subject repair. Library maintenance is an operations capability, so
+// the maintainer guard is supplied via authAPI (maintenanceapi stays decoupled
+// from auth's wiring).
+func buildMaintenanceAPI(
+	svc *maintenance.Service, nameless *namelessjob.Service, db *database.DB, authAPI *auth.API,
+) *maintenanceapi.API {
 	return maintenanceapi.NewAPI(maintenanceapi.Config{
 		Service:           svc,
 		Audit:             audit.NewStore(db.Pool()),
+		Nameless:          nameless,
 		RequireMaintainer: authAPI.RequireMaintainer,
 	})
 }

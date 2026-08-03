@@ -87,6 +87,18 @@ const (
 	TypePSFeedsImport = "ps_feeds_import"
 	// TypeBackup runs a backup.
 	TypeBackup = "backup"
+	// TypeNamelessDetach detaches one nameless catch-all subject: the subject row
+	// is deleted and every marker and cached face that pointed at it is left
+	// unassigned. It runs locally, in the queue rather than in the HTTP request,
+	// because clearing a five-figure number of faces moves all of them into the
+	// partial "unassigned faces" HNSW index and takes minutes. See
+	// internal/namelessjob.
+	TypeNamelessDetach = "nameless_detach"
+	// TypeNamelessRestore replays one snapshot from a nameless-subject undo file:
+	// the subject is re-created under its original uid and the markers and faces
+	// it owned are re-assigned to it. It is the undo of TypeNamelessDetach and
+	// runs in the queue for the same reason.
+	TypeNamelessRestore = "nameless_restore"
 )
 
 // Job is one row of the persistent queue. Payload holds the job's opaque

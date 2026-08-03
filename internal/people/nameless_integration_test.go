@@ -5,6 +5,7 @@ package people_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/audit"
@@ -243,5 +244,56 @@ func TestRestoreSubject_slugTakenSinceTheSnapshot(t *testing.T) {
 	}
 	if got := markerSubject(t, store, markerUID); got == nil || *got != catchAll.UID {
 		t.Errorf("marker after undo = %v, want %s", got, catchAll.UID)
+	}
+}
+
+// TestSnapshotSubject_readsWhatADetachWouldRemove verifies the read-only half of
+// the repair: the snapshot names the subject and every marker and cached face
+// pointing at it, and taking it leaves all of them exactly where they were. It is
+// what the admin repair hands to the browser *before* it schedules the detach, so
+// it has to be both complete and harmless.
+func TestSnapshotSubject_readsWhatADetachWouldRemove(t *testing.T) {
+	store, photoStore, vecStore, _ := newStores(t)
+	ctx := t.Context()
+
+	catchAll, err := store.CreateSubject(ctx, people.Subject{Name: "", Notes: "importer artefact"})
+	if err != nil {
+		t.Fatalf("CreateSubject nameless: %v", err)
+	}
+	_, markerA := seedAssignedFace(t, store, photoStore, vecStore, "snapshot_a", catchAll.UID)
+	_, markerB := seedAssignedFace(t, store, photoStore, vecStore, "snapshot_b", catchAll.UID)
+
+	snap, err := store.SnapshotSubject(ctx, catchAll.UID)
+	if err != nil {
+		t.Fatalf("SnapshotSubject: %v", err)
+	}
+	if snap.Subject.UID != catchAll.UID || snap.Subject.Slug != catchAll.Slug {
+		t.Errorf("snapshot subject = %s/%q, want %s/%q",
+			snap.Subject.UID, snap.Subject.Slug, catchAll.UID, catchAll.Slug)
+	}
+	if len(snap.MarkerUIDs) != 2 || len(snap.Faces) != 2 {
+		t.Fatalf("snapshot = %d markers / %d faces, want 2/2", len(snap.MarkerUIDs), len(snap.Faces))
+	}
+	for _, uid := range []string{markerA, markerB} {
+		if !slices.Contains(snap.MarkerUIDs, uid) {
+			t.Errorf("snapshot markers %v miss %s", snap.MarkerUIDs, uid)
+		}
+		if got := markerSubject(t, store, uid); got == nil || *got != catchAll.UID {
+			t.Errorf("marker %s after the snapshot = %v, want still %s", uid, got, catchAll.UID)
+		}
+	}
+	if _, err := store.GetSubjectByUID(ctx, catchAll.UID); err != nil {
+		t.Errorf("the snapshot removed the subject: %v", err)
+	}
+}
+
+// TestSnapshotSubject_missingSubject verifies a snapshot of a subject that is not
+// there reports ErrSubjectNotFound, so a caller that lost a race skips it instead
+// of handing out an empty undo.
+func TestSnapshotSubject_missingSubject(t *testing.T) {
+	store, _, _, _ := newStores(t)
+
+	if _, err := store.SnapshotSubject(t.Context(), "sub_does_not_exist"); !errors.Is(err, people.ErrSubjectNotFound) {
+		t.Fatalf("SnapshotSubject on a missing subject = %v, want ErrSubjectNotFound", err)
 	}
 }

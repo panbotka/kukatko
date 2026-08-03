@@ -15,6 +15,10 @@ vi.mock('../services/maintenance', () => ({
   fetchMaintenanceScan: vi.fn(),
   runMaintenanceRepair: vi.fn(),
   purgeAuditLog: vi.fn(),
+  // The nameless-subject card lives on this page too; its own tests drive it.
+  fetchNamelessSubjects: vi.fn(),
+  detachNamelessSubjects: vi.fn(),
+  restoreNamelessSubjects: vi.fn(),
 }))
 
 vi.mock('../services/import', async (importOriginal) => {

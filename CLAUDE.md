@@ -94,6 +94,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/mediaurl` — stamps `thumb_url`/`download_url` into payloads; signed URL, or an own route
 - `internal/metajob` — worker handler `metadata` + backfill: re-reads an original into the IPTC/XMP and file-technical columns; gap-filler only
 - `internal/metrics` — Prometheus registry + collectors (DB pool, queue depth)
+- `internal/namelessjob` — the nameless catch-all subject repair as queue work: the undo-file format shared with the CLI, the report/schedule service, the `nameless_detach`/`nameless_restore` handlers
 - `internal/obs` — structured logging (JSON slog to stderr)
 - `internal/organize` — albums, labels, **per-user** favorites and ratings
 - `internal/organizeapi` — `/albums`, `/labels`
