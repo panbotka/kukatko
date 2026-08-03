@@ -198,7 +198,7 @@ func TestQueue_labelScanStopsOnceTheBatchIsFull(t *testing.T) {
 		for i := range 6 {
 			uid := fmt.Sprintf("lab%02d", i)
 			f.organize.labels = append(f.organize.labels, labelCount(uid, 2))
-			// 20 band candidates each: the first chunk alone fills the batch.
+			// 20 band candidates each, of which the per-entity share takes four.
 			sims := make([]float64, 20)
 			for j := range sims {
 				sims[j] = 0.6
@@ -206,7 +206,11 @@ func TestQueue_labelScanStopsOnceTheBatchIsFull(t *testing.T) {
 			f.expander.results[uid] = labelResult(uid, sims...)
 		}
 	})
-	if _, err := f.svc.Queue(context.Background(), "user", 0); err != nil {
+	// A batch of two labels' worth: the first chunk alone fills it. Asking for a
+	// full batch would (rightly) walk further now — a batch of 20 that may take
+	// only 4 questions per label cannot be filled from two labels.
+	batch := DefaultLabelConcurrency * DefaultMaxPerEntity
+	if _, err := f.svc.Queue(context.Background(), "user", batch); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	// LabelConcurrency is 2, so the scan runs one chunk and stops: it must not
@@ -214,6 +218,40 @@ func TestQueue_labelScanStopsOnceTheBatchIsFull(t *testing.T) {
 	if f.expander.calls != DefaultLabelConcurrency {
 		t.Fatalf("label searches = %d, want %d (one chunk, then enough)",
 			f.expander.calls, DefaultLabelConcurrency)
+	}
+}
+
+func TestQueue_labelScanSpendsItsBudgetOnVariety(t *testing.T) {
+	t.Parallel()
+	// The other half of the trade: one label can no longer end the scan on its
+	// own, so filling a full batch costs more label searches than it used to —
+	// bounded, as always, by LabelBudget.
+	f := newFixture(t, func(f *fixture) {
+		for i := range 10 {
+			uid := fmt.Sprintf("lab%02d", i)
+			f.organize.labels = append(f.organize.labels, labelCount(uid, 2))
+			sims := make([]float64, 20)
+			for j := range sims {
+				sims[j] = 0.6
+			}
+			f.expander.results[uid] = labelResult(uid, sims...)
+		}
+	})
+	res, err := f.svc.Queue(context.Background(), "user", 0)
+	if err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	if f.expander.calls > DefaultLabelBudget {
+		t.Fatalf("label searches = %d, want at most the budget of %d",
+			f.expander.calls, DefaultLabelBudget)
+	}
+	if want := DefaultQueueSize / DefaultMaxPerEntity; f.expander.calls < want {
+		t.Errorf("label searches = %d, want at least %d — a batch of %d that takes %d "+
+			"questions per label cannot come from fewer",
+			f.expander.calls, want, DefaultQueueSize, DefaultMaxPerEntity)
+	}
+	if got := longestEntityRun(res.Questions); got > maxSameEntityRun {
+		t.Errorf("longest run of one label = %d, want at most %d", got, maxSameEntityRun)
 	}
 }
 
@@ -320,6 +358,9 @@ func TestQueue_cachedQueueIsCapped(t *testing.T) {
 	// for. Each question carries the whole photo record it asks about, and the
 	// queue is cached per user until the session is pruned, so the cache is a
 	// retention bound as much as the searches behind it are an allocation one.
+	// The per-entity share is now the tighter of the two bounds — one subject
+	// gets four questions, not five hundred — and capQueue stays the backstop
+	// for a wide MaxPerEntity (TestCapQueue_backstop covers it directly).
 	confidences := make([]float64, 4*maxQueued)
 	for i := range confidences {
 		confidences[i] = 0.4
@@ -331,10 +372,12 @@ func TestQueue_cachedQueueIsCapped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if len(res.Questions) != DefaultQueueSize {
-		t.Fatalf("batch = %d questions, want a full batch of %d", len(res.Questions), DefaultQueueSize)
+	if res.Remaining != DefaultMaxPerEntity {
+		t.Errorf("cached queue = %d questions from a single subject, want its share of %d",
+			res.Remaining, DefaultMaxPerEntity)
 	}
-	if res.Remaining != maxQueued {
-		t.Errorf("cached queue = %d questions, want it capped at %d", res.Remaining, maxQueued)
+	if len(res.Questions) != res.Remaining {
+		t.Errorf("batch = %d questions, want the whole %d-question queue",
+			len(res.Questions), res.Remaining)
 	}
 }

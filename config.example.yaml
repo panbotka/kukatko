@@ -310,6 +310,16 @@ review:
   # — the backstop behind the two budgets, so GET /review/queue always answers.
   # Go duration string; set to 0 (or below) to fall back to the default.
   build_timeout: 15s
+  # How many questions about one person or one label may enter a single batch.
+  # This is the variety rule: sorting by informativeness alone let one label that
+  # matches half the library supply the whole batch, and the game asked about it
+  # twenty times in a row. With the default batch of 20 a cap of 4 forces a rebuild
+  # to draw on at least five different people or labels, and no entity is asked
+  # about more than twice in a row while another one still has a question waiting.
+  # Lower it for more variety at the cost of a slower rebuild (the batch has to be
+  # filled from more sources); raise it for the opposite. Set to 0 (or below) to
+  # fall back to the default.
+  max_per_entity: 4
 
 auth:
   # Credentials used to create the initial admin account on first run.

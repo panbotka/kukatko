@@ -13,6 +13,14 @@
 // interleaved deterministically, skewed toward whichever kind has more
 // candidates.
 //
+// Informativeness alone does not make the game playable, though. One label that
+// matches half the library supplies hundreds of band candidates and used to fill
+// a whole batch by itself — twenty questions in a row about the same label. A
+// batch therefore takes at most MaxPerEntity questions about any one subject or
+// label, and asks no more than maxSameEntityRun of them in a row while another
+// entity still has a question waiting; see variety.go for both rules and why
+// they are shaped that way.
+//
 // The queue composes the existing read-only searches — the recognition scan
 // (per-subject face candidates, which already excludes assigned faces, persisted
 // rejections, negative exemplars and sub-reviewable faces) and the
@@ -87,6 +95,15 @@ const (
 	// behind the budgets: whatever a single subject or label turns out to cost,
 	// GET /review/queue answers rather than holding the request open.
 	DefaultBuildTimeout = 15 * time.Second
+	// DefaultMaxPerEntity is how many questions about one subject or one label
+	// may enter a single batch. It is the variety knob: with the default batch of
+	// 20 it forces a rebuild to draw on at least five different people or labels,
+	// which is what stops the game being twenty questions about the same label in
+	// a row. Four rather than one, because a couple of questions about the same
+	// face in a row is easier for the player, not harder — see maxSameEntityRun.
+	// Raising it makes a rebuild cheaper and the game more repetitive; lowering it
+	// does the opposite.
+	DefaultMaxPerEntity = 4
 )
 
 const (
@@ -299,6 +316,9 @@ type Config struct {
 	// BuildTimeout caps how long one rebuild may run before it serves what it
 	// has.
 	BuildTimeout time.Duration
+	// MaxPerEntity caps how many questions about one subject or one label may
+	// enter a batch.
+	MaxPerEntity int
 	// Now overrides the clock in tests; nil means time.Now.
 	Now func() time.Time
 }
@@ -323,6 +343,7 @@ type Service struct {
 	faceBudget       int
 	labelBudget      int
 	buildTimeout     time.Duration
+	maxPerEntity     int
 	now              func() time.Time
 
 	mu       sync.Mutex
@@ -388,6 +409,7 @@ func New(cfg Config) *Service {
 		faceBudget:       orDefaultInt(cfg.FaceBudget, DefaultFaceBudget),
 		labelBudget:      orDefaultInt(cfg.LabelBudget, DefaultLabelBudget),
 		buildTimeout:     cfg.BuildTimeout,
+		maxPerEntity:     orDefaultInt(cfg.MaxPerEntity, DefaultMaxPerEntity),
 		now:              cfg.Now,
 		sessions:         make(map[string]*session),
 	}

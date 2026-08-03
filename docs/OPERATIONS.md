@@ -889,10 +889,18 @@ long-running and belong on the machine where the instance runs — so they remai
   library; raise a budget for a broader mix of people or labels per batch at the cost of a slower first load.
   `build_timeout` (**default 15s**) — the hard cap on one rebuild, the backstop behind both budgets: a rebuild
   that runs out of time serves what it has (logged as `review: queue rebuild hit its deadline`) rather than
-  holding the request open. Apart from the budgets, the review does not take the face side with its own keys —
-  it runs through sweep/candidates and their `sweep.*`/`candidates.*` limits. A non-positive value for any key
-  falls back to the default. Env: `KUKATKO_REVIEW_BAND_MIN`, `_BAND_MAX`, `_QUEUE_SIZE`, `_CACHE_TTL`,
-  `_MAX_LABELS`, `_LABEL_CONCURRENCY`, `_FACE_BUDGET`, `_LABEL_BUDGET`, `_BUILD_TIMEOUT`.
+  holding the request open. `max_per_entity` (**default 4**) — **the variety knob**: how many questions about
+  one person or one label may enter a batch. Ordering by informativeness alone let one label matching half the
+  library supply the whole batch (measured: 19 of 20 questions about the same label, 11 of them in a row), so a
+  batch takes at most this many per entity and never asks about the same one more than **twice in a row** while
+  another entity still has a question waiting. With the default batch of 20 that forces a rebuild to draw on at
+  least five different people or labels — lower it for more variety at the cost of a costlier rebuild (a batch
+  must be filled from more sources), raise it for the opposite. Every rebuild logs the result at debug level
+  (`review: queue rebuilt` with `questions`/`entities`/`longest_run`). Apart from the budgets, the review does
+  not take the face side with its own keys — it runs through sweep/candidates and their
+  `sweep.*`/`candidates.*` limits. A non-positive value for any key falls back to the default. Env:
+  `KUKATKO_REVIEW_BAND_MIN`, `_BAND_MAX`, `_QUEUE_SIZE`, `_CACHE_TTL`, `_MAX_LABELS`, `_LABEL_CONCURRENCY`,
+  `_FACE_BUDGET`, `_LABEL_BUDGET`, `_BUILD_TIMEOUT`, `_MAX_PER_ENTITY`.
 
 ### `maps.user_agent` — restricting the mapy.com key to a User-Agent
 

@@ -1228,7 +1228,7 @@ to `## Package map` in `CLAUDE.md`.
   rejections, negative exemplar, min. face size), label questions via `Expander` (satisfied by
   `*expand.Service` → excludes members and rejected ones), writes via `Assigner` (`*facematch.Service`),
   `OrganizeStore.AttachLabelAudited` and `FeedbackStore.RejectFace/RejectLabel`; `New(Config{...,BandMin,
-  BandMax,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,FaceBudget,LabelBudget,BuildTimeout,Now})`
+  BandMax,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,FaceBudget,LabelBudget,BuildTimeout,MaxPerEntity,Now})`
   (an invalid band → the default pair 0.45/0.75, `Now` = a test hook).
   **`Queue(ctx,userUID,limit)`**: candidates with confidence
   (= 1 − distance) in `[BandMin,BandMax)` — the band is a **distance window pushed into the search**
@@ -1237,7 +1237,25 @@ to `## Package map` in `CLAUDE.md`.
   the exact upper edge; labels with `PhotoCount>0`
   (cap `MaxLabels`, fan-out `errgroup.SetLimit(LabelConcurrency)`, an error on one label is
   logged and skipped); ordered by **distance from the band's center** (tie-break a stable id), the kinds are
-  **interleaved** deterministically (comparison of integer fractions, no `rand`); the queue is **cached
+  **interleaved** deterministically (comparison of integer fractions, no `rand`).
+  **Variety (`variety.go`) — the game must not be an interrogation.** Informativeness alone let a single label
+  that matches half the library own a whole batch; the measurement (`longestEntityRun`, `countEntities`, logged
+  per rebuild at debug as `review: queue rebuilt`) on the reproduction fixture was **19 of 20 questions about one
+  label, 11 of them in a row, 2 entities** → now **8 entities, longest run 2**. Two rules, both deterministic
+  reorderings of the informativeness order (no `rand`, so a rebuild over an unchanged library and unchanged
+  cursors is still byte-for-byte reproducible): (1) **`MaxPerEntity`** (default 4, config `review.max_per_entity`)
+  — `keepBest` orders one subject's/label's questions and keeps only its share, applied **inside**
+  `personQuestions`/`labelResultQuestions` so that the scans' "I have `need` questions, stop" means *enough
+  from enough different entities* — filling a batch of 20 therefore visits ≥ 5 people/labels instead of stopping
+  at the first prolific one (a rebuild spends more of its `FaceBudget`/`LabelBudget`; that is the price of the
+  variety and the budgets still bound it); (2) **`spread(questions, maxSameEntityRun)`** (`maxSameEntityRun` = 2,
+  a constant — a game property, not an ops trade-off) — a greedy that always takes the **most informative
+  question left** whose entity was not just asked about twice in a row, falling back to it only when nothing
+  else remains (a one-subject library stays playable). It runs **per source before `interleave`**: interleaving
+  only inserts the other kind between two of the same kind and a face and a label are never the same entity, so
+  bounding the sources bounds the queue. `questionEntity` keys on kind+uid, so a subject and a label sharing a
+  uid never collide.
+  The queue is **cached
   per user** (`CacheTTL`) and the session holds `answered`/`skipped` sets + a counter (in-memory, idle-pruned after
   12 h; skip is **deliberately** only session-scoped — "I don't know" is not "no"). An empty library → `reason:
   "no_people_no_labels"`, an empty band → `"no_candidates"` (both non-error).
@@ -1254,7 +1272,8 @@ to `## Package map` in `CLAUDE.md`.
   A built queue is also **capped at `maxQueued` (500) questions** (`capQueue`): a `Question` carries a whole
   photo record and the queue is cached per user until the session is pruned, so an uncapped one pins photo
   rows in memory for half a day; what is dropped is not lost, since the cursors have moved on and the next
-  rebuild covers new ground.
+  rebuild covers new ground. With the default `MaxPerEntity` the per-entity share is the tighter of the two
+  bounds (budgets × share ≪ 500) and `capQueue` is the backstop for a wide `max_per_entity`.
   The library-wide subject/label totals still come from the full listings, so the reason codes stay exact;
   content, ordering, exclusions and the HTTP shape are unchanged. **`Answer(ctx,userUID,
   questionID,answer,meta)`**: the id is **content-derived** (`face:<photo>:<idx>:<subject>` /
@@ -1267,7 +1286,11 @@ to `## Package map` in `CLAUDE.md`.
   input → `ErrInvalidQuestion`/`ErrInvalidAnswer`. Unit tests with fakes (band, ordering, interleaving,
   determinism, cache TTL, skip, idempotence, gone) plus `queue_bound_test.go` (the bounded-work property
   over synthetic libraries of 10/105/1000 named subjects at the production exemplar ratio, rotation,
-  early stop, dry-queue rebuild, deadline degradation), integration tests over real
+  early stop, dry-queue rebuild, deadline degradation) and `variety_test.go` (**`TestQueue_monotonyBaseline`
+  runs the pre-fix pipeline — order + interleave, share out of reach, no spread — over the same fixture and
+  fails if it stops reproducing the complaint**, then: run cap, per-entity share, ≥ 5 entities per batch,
+  every question still inside the band, reproducibility, `spread`/`longestEntityRun` unit tables),
+  integration tests over real
   sweep+candidates+expand+facematch+feedback+DB, incl. `queue_scale_integration_test.go` (105 named
   subjects, an instrumented face store counting the kNN queries, and a bounded-vs-unbounded content
   comparison). Additionally **`LeaderboardStore`** (`NewLeaderboardStore(

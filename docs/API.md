@@ -413,7 +413,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **stable, derived from content** (`face:<photo>:<index>:<subject>` / `label:<photo>:<label>`),
   `bbox` relative 0..1 **and** pixels (honouring EXIF orientation), the queue is **deterministic** for a given
   library state (ordered by distance from the centre of the band, tie-break id; face/label questions are
-  **interleaved** proportionally, no `rand`). The queue is **cached per user** (`review.cache_ttl`, default 60 s) —
+  **interleaved** proportionally, no `rand`). On top of that order the batch is **spread across the entities it
+  asks about**, so the game does not turn into an interrogation: at most `review.max_per_entity` (default 4)
+  questions about one person or label per batch, and never more than **two in a row** about the same one while
+  another entity still has a question waiting — the variation is a deterministic reordering of the
+  informativeness order, not randomness. The queue is **cached per user** (`review.cache_ttl`, default 60 s) —
   a batch fetch does not recompute the expensive vector searches; `remaining`/`answered` are cheap session counters.
   An empty library (no named people or labels) → a **non-error** empty queue with `reason:
   "no_people_no_labels"`; sources exist, but the band is empty → `reason:"no_candidates"`.
