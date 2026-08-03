@@ -42,6 +42,20 @@ func TestRegistry_exposesExpectedMetricNames(t *testing.T) {
 		"kukatko_jobs_execution_duration_seconds",
 		"kukatko_jobs_queue_depth",
 		"kukatko_jobs_queue_depth_by_type",
+		"kukatko_jobs_queue_depth_by_type_state",
+		"kukatko_library_photos",
+		"kukatko_library_photos_archived",
+		"kukatko_library_photos_processed",
+		"kukatko_library_photos_pending",
+		"kukatko_library_embeddings",
+		"kukatko_library_faces",
+		"kukatko_library_markers",
+		"kukatko_library_subjects",
+		"kukatko_library_albums",
+		"kukatko_library_labels",
+		"kukatko_library_collect_errors_total",
+		"kukatko_import_last_run_status",
+		"kukatko_import_last_run_start_timestamp_seconds",
 		"kukatko_embedding_request_duration_seconds",
 		"kukatko_embedding_service_up",
 		"kukatko_import_run_photos",
@@ -68,11 +82,13 @@ func exerciseAll(r *Registry) {
 	r.SetImportProgress("photoprism", 1, 2, 3, 4)
 	r.ObserveThumbnail(5 * time.Millisecond)
 	r.GeocodeCreditSpent()
-	r.RegisterJobQueue(
-		func(context.Context) (map[string]int, error) { return map[string]int{"queued": 2}, nil },
-		func(context.Context) (map[string]int, error) { return map[string]int{"image_embed": 2}, nil },
-	)
+	r.RegisterJobQueue(func(context.Context) (map[QueueCell]int, error) {
+		return map[QueueCell]int{{Type: "image_embed", State: "queued"}: 2}, nil
+	})
 	r.RegisterGeocodeBudget(func() (int, int) { return 900, 1000 })
+	r.RegisterLibrary(func(context.Context) (LibrarySnapshot, error) {
+		return sampleSnapshot(), nil
+	}, time.Minute)
 	serveOnce(r, http.MethodGet, "/probe")
 }
 

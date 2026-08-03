@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -44,11 +45,18 @@ const (
 	SourceFolder Source = "folder"
 )
 
+// allSources lists every recognised source once, so Valid and AllSources cannot
+// drift apart when a source is added.
+var allSources = []Source{SourcePhotoPrism, SourcePhotoSorter, SourcePhotoSorterFeeds, SourceFolder}
+
+// AllSources returns every recognised import source in a stable order. Callers
+// that report per-source state (the system status, the /metrics import gauges)
+// iterate it so a newly added source is picked up without a second list. The
+// returned slice is a copy; mutating it does not affect later calls.
+func AllSources() []Source { return slices.Clone(allSources) }
+
 // Valid reports whether s is a recognised import source.
-func (s Source) Valid() bool {
-	return s == SourcePhotoPrism || s == SourcePhotoSorter ||
-		s == SourcePhotoSorterFeeds || s == SourceFolder
-}
+func (s Source) Valid() bool { return slices.Contains(allSources, s) }
 
 // Status is the lifecycle state of an import run. The values mirror the status
 // column's CHECK constraint.
@@ -70,6 +78,16 @@ const (
 	// ignored so the next run retries the same window.
 	StatusFailed Status = "failed"
 )
+
+// allStatuses lists every lifecycle state a recorded run can be in, in the order
+// a run passes through them. AllStatuses hands it out so a reporter can publish
+// one series per status (rather than only the status a run happens to be in),
+// which is what makes a transition visible instead of a series simply vanishing.
+var allStatuses = []Status{StatusRunning, StatusDone, StatusPartial, StatusFailed}
+
+// AllStatuses returns every recognised import-run status in lifecycle order. The
+// returned slice is a copy; mutating it does not affect later calls.
+func AllStatuses() []Status { return slices.Clone(allStatuses) }
 
 // Counts is the running tally of an import, serialised to the counts JSONB
 // column. Each field counts photos handled in one way during the run.

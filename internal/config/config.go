@@ -146,6 +146,12 @@ type MetricsConfig struct {
 	// when true. /metrics is unauthenticated, so restrict it at the network
 	// layer (bind/firewall) when exposing the server publicly.
 	Enabled bool `mapstructure:"enabled"`
+	// LibraryTTL memoises the library-content gauges (photo/embedding/face/album
+	// counts and the last import run per source). They are aggregates over the
+	// largest tables in the database and Prometheus scrapes forever, so they are
+	// recomputed at most once per TTL rather than once per scrape. Raise it on a
+	// large library; a non-positive value uses the built-in default.
+	LibraryTTL time.Duration `mapstructure:"library_ttl"`
 }
 
 // ImportConfig groups the read-only import sources. PhotoPrism stays primary
@@ -860,6 +866,7 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("log.level", "info")
 	v.SetDefault("metrics.enabled", true)
+	v.SetDefault("metrics.library_ttl", "1m")
 
 	setOpsDefaults(v)
 }

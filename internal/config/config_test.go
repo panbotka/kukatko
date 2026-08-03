@@ -168,6 +168,11 @@ func TestLoad_defaults(t *testing.T) {
 		{"ratelimit.import.burst", cfg.RateLimit.Import.Burst, 3},
 		{"ratelimit.tiles.rate_per_sec", cfg.RateLimit.Tiles.RatePerSec, 50.0},
 		{"ratelimit.tiles.burst", cfg.RateLimit.Tiles.Burst, 200},
+		{"metrics.enabled", cfg.Metrics.Enabled, true},
+		// The library gauges aggregate over the largest tables there are and
+		// Prometheus scrapes forever, so a default of "no memoisation" would make
+		// /metrics itself the load it exists to report on.
+		{"metrics.library_ttl", cfg.Metrics.LibraryTTL, time.Minute},
 	}
 	for _, c := range checks {
 		if c.got != c.want {

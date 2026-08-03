@@ -364,6 +364,45 @@ func (s *Store) CountsByType(ctx context.Context) (map[string]int, error) {
 	return s.groupCount(ctx, "type")
 }
 
+// TypeState is one cell of the queue breakdown: a job type paired with a
+// lifecycle state. It is a comparable struct so CountsByTypeState can key a map
+// by it without stringly-typed concatenation.
+type TypeState struct {
+	// Type is the job type ("image_embed", "thumbnail", ...).
+	Type string
+	// State is the lifecycle state ("queued", "running", ...).
+	State State
+}
+
+// CountsByTypeState returns the number of jobs per (type, state) pair. Pairs
+// with no jobs are absent from the map, so a caller wanting a dense matrix fills
+// the gaps itself.
+//
+// It is the single query behind the /metrics queue gauges: the per-state and
+// per-type totals are sums over this breakdown, so one scan of the jobs table
+// answers all three rather than the two separate GROUP BYs a scrape used to run.
+func (s *Store) CountsByTypeState(ctx context.Context) (map[TypeState]int, error) {
+	const q = "SELECT type, state, count(*) FROM jobs GROUP BY type, state"
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("jobs: counting by type and state: %w", err)
+	}
+	defer rows.Close()
+	counts := make(map[TypeState]int)
+	for rows.Next() {
+		var key TypeState
+		var n int
+		if err := rows.Scan(&key.Type, &key.State, &n); err != nil {
+			return nil, fmt.Errorf("jobs: scanning type/state count: %w", err)
+		}
+		counts[key] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("jobs: iterating type/state counts: %w", err)
+	}
+	return counts, nil
+}
+
 // CountPending returns how many jobs of the given types are still pending, that
 // is queued or running (not yet in a terminal state). With no types it returns
 // 0. It backs the optional Wake-on-LAN auto-wake, which only sends a magic

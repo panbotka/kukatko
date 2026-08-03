@@ -325,17 +325,45 @@ func (s *Service) collectJobs(ctx context.Context) (Jobs, error) {
 	}, nil
 }
 
-// collectImports reads the latest run per source for the import section.
+// LatestRuns returns the most recent run of every recognised import source,
+// keyed by source. A source that has never run is absent from the map rather
+// than present with a zero run, so a caller can tell "never imported" from
+// "imported and the tallies happen to be zero".
+//
+// It exists alongside Collect because /metrics wants every source (including the
+// folder import and the photo-sorter feeds), while the dashboard's Imports
+// section reports only the two migration paths it renders.
+func (s *Service) LatestRuns(ctx context.Context) (map[importer.Source]importer.Run, error) {
+	sources := importer.AllSources()
+	runs := make(map[importer.Source]importer.Run, len(sources))
+	for _, source := range sources {
+		run, err := s.latestRun(ctx, source)
+		if err != nil {
+			return nil, err
+		}
+		if run != nil {
+			runs[source] = *run
+		}
+	}
+	return runs, nil
+}
+
+// collectImports reads the latest run per source for the import section. It
+// reports only the two migration paths the dashboard renders; LatestRuns covers
+// every source.
 func (s *Service) collectImports(ctx context.Context) (Imports, error) {
-	photoprism, err := s.latestRun(ctx, importer.SourcePhotoPrism)
+	runs, err := s.LatestRuns(ctx)
 	if err != nil {
 		return Imports{}, err
 	}
-	photosorter, err := s.latestRun(ctx, importer.SourcePhotoSorter)
-	if err != nil {
-		return Imports{}, err
+	imports := Imports{}
+	if run, ok := runs[importer.SourcePhotoPrism]; ok {
+		imports.PhotoPrism = &run
 	}
-	return Imports{PhotoPrism: photoprism, PhotoSorter: photosorter}, nil
+	if run, ok := runs[importer.SourcePhotoSorter]; ok {
+		imports.PhotoSorter = &run
+	}
+	return imports, nil
 }
 
 // latestRun returns the most recent run for source, or nil when none exists.

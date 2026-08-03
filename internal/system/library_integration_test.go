@@ -75,12 +75,35 @@ func seedMarker(t *testing.T, db *database.DB, uid, photoUID, subjectUID string)
 	}
 }
 
-// seedAlbum inserts one album.
-func seedAlbum(t *testing.T, db *database.DB, uid string) {
+// seedAlbum inserts one album of the given type ('album', 'folder', 'month', ...).
+func seedAlbum(t *testing.T, db *database.DB, uid, albumType string) {
 	t.Helper()
-	const stmt = `INSERT INTO albums (uid, slug, title) VALUES ($1, $2, $3)`
-	if _, err := db.Pool().Exec(t.Context(), stmt, uid, "slug-"+uid, uid); err != nil {
+	const stmt = `INSERT INTO albums (uid, slug, title, type) VALUES ($1, $2, $3, $4)`
+	if _, err := db.Pool().Exec(t.Context(), stmt, uid, "slug-"+uid, uid, albumType); err != nil {
 		t.Fatalf("seed album %s: %v", uid, err)
+	}
+}
+
+// seedCoordinates stamps GPS coordinates onto an already-seeded photo, which is
+// what makes it eligible for reverse geocoding.
+func seedCoordinates(t *testing.T, db *database.DB, uid string, lat, lng float64) {
+	t.Helper()
+	const stmt = `UPDATE photos SET lat = $2, lng = $3 WHERE uid = $1`
+	if _, err := db.Pool().Exec(t.Context(), stmt, uid, lat, lng); err != nil {
+		t.Fatalf("seed coordinates for %s: %v", uid, err)
+	}
+}
+
+// seedPlace inserts the cached place of a photo. Passing geocoded=false records
+// the photo as processed without coordinates — how the `places` job marks a photo
+// with no GPS so it never retries it — which must not count as geocoded.
+func seedPlace(t *testing.T, db *database.DB, photoUID string, geocoded bool) {
+	t.Helper()
+	const stmt = `
+INSERT INTO photo_places (photo_uid, country, lat, lng)
+VALUES ($1, $2, CASE WHEN $3 THEN 50.08 ELSE NULL END, CASE WHEN $3 THEN 14.44 ELSE NULL END)`
+	if _, err := db.Pool().Exec(t.Context(), stmt, photoUID, "Česko", geocoded); err != nil {
+		t.Fatalf("seed place for %s: %v", photoUID, err)
 	}
 }
 
@@ -96,15 +119,20 @@ func seedLabel(t *testing.T, db *database.DB, uid string) {
 // seedLibrary fills the empty database with a fixture whose every count is known
 // by construction:
 //
-//	p1 image,   live,     embedding, 2 faces
-//	p2 image,   live,     embedding, 1 face
-//	p3 video,   live,     embedding, no faces
-//	p4 image,   archived, no embedding, no faces
-//	p5 image,   live,     no embedding, 1 face
-//	p6 video,   archived, embedding, no faces
+//	p1  image, live,     embedding, 2 faces
+//	p2  image, live,     embedding, 1 face
+//	p3  video, live,     embedding, no faces
+//	p4  image, archived, no embedding, no faces
+//	p5  image, live,     no embedding, 1 face
+//	p6  video, archived, embedding, no faces
+//	p7  live,  live,     the third media type
+//	p8  image, live,     GPS, geocoded
+//	p9  image, live,     GPS, not geocoded yet — the backlog
+//	p10 image, archived, GPS, not geocoded — archived, so not backlog
+//	p11 image, live,     no GPS, recorded as processed without coordinates
 //
-// plus three subjects (one of each kind), four markers (two named), two albums
-// and three labels.
+// plus three subjects (one of each kind), four markers (two named), three albums
+// of three different types and three labels.
 func seedLibrary(t *testing.T, db *database.DB) {
 	t.Helper()
 	seedPhoto(t, db, "p1", "image", false)
@@ -113,6 +141,7 @@ func seedLibrary(t *testing.T, db *database.DB) {
 	seedPhoto(t, db, "p4", "image", true)
 	seedPhoto(t, db, "p5", "image", false)
 	seedPhoto(t, db, "p6", "video", true)
+	seedPhoto(t, db, "p7", "live", false)
 
 	for _, uid := range []string{"p1", "p2", "p3", "p6"} {
 		seedEmbedding(t, db, uid)
@@ -121,6 +150,8 @@ func seedLibrary(t *testing.T, db *database.DB) {
 	seedFace(t, db, "p1", 1)
 	seedFace(t, db, "p2", 0)
 	seedFace(t, db, "p5", 0)
+
+	seedPlaces(t, db)
 
 	seedSubject(t, db, "s1", "person")
 	seedSubject(t, db, "s2", "pet")
@@ -131,11 +162,30 @@ func seedLibrary(t *testing.T, db *database.DB) {
 	seedMarker(t, db, "m3", "p2", "")
 	seedMarker(t, db, "m4", "p5", "")
 
-	seedAlbum(t, db, "a1")
-	seedAlbum(t, db, "a2")
+	seedAlbum(t, db, "a1", "album")
+	seedAlbum(t, db, "a2", "folder")
+	seedAlbum(t, db, "a3", "month")
 	seedLabel(t, db, "l1")
 	seedLabel(t, db, "l2")
 	seedLabel(t, db, "l3")
+}
+
+// seedPlaces adds the geocoding half of the fixture: one geocoded photo, one
+// still in the backlog, one archived (which the backlog must ignore) and one
+// recorded as processed without coordinates (which must not count as geocoded).
+func seedPlaces(t *testing.T, db *database.DB) {
+	t.Helper()
+	seedPhoto(t, db, "p8", "image", false)
+	seedPhoto(t, db, "p9", "image", false)
+	seedPhoto(t, db, "p10", "image", true)
+	seedPhoto(t, db, "p11", "image", false)
+
+	seedCoordinates(t, db, "p8", 50.08, 14.44)
+	seedCoordinates(t, db, "p9", 49.19, 16.61)
+	seedCoordinates(t, db, "p10", 48.97, 14.47)
+
+	seedPlace(t, db, "p8", true)
+	seedPlace(t, db, "p11", false)
 }
 
 // TestLibraryStats_CountsFixture asserts every count and every derived coverage
@@ -152,14 +202,18 @@ func TestLibraryStats_CountsFixture(t *testing.T) {
 	}
 
 	want := system.Library{
-		Photos:                 6,
+		Photos:                 11,
 		Videos:                 2,
-		PhotosLive:             4,
-		PhotosArchived:         2,
+		LivePhotos:             1,
+		Images:                 8,
+		PhotosLive:             8,
+		PhotosArchived:         3,
 		PhotosWithEmbedding:    4,
 		PhotosWithFaces:        3,
-		PhotosWithoutEmbedding: 2,
-		PhotosWithoutFaces:     3,
+		PhotosWithoutEmbedding: 7,
+		PhotosWithoutFaces:     8,
+		PhotosGeocoded:         1,
+		PhotosPendingGeocode:   1,
 		Embeddings:             4,
 		Faces:                  4,
 		Subjects:               3,
@@ -169,7 +223,10 @@ func TestLibraryStats_CountsFixture(t *testing.T) {
 		Markers:                4,
 		MarkersAssigned:        2,
 		MarkersUnassigned:      2,
-		Albums:                 2,
+		Albums:                 3,
+		AlbumsManual:           1,
+		AlbumsFolder:           1,
+		AlbumsMonth:            1,
 		Labels:                 3,
 	}
 	if got != want {
@@ -206,10 +263,10 @@ func TestCountLibrary_RawCountsLeaveDerivedZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CountLibrary: %v", err)
 	}
-	if got.Photos != 6 || got.PhotosWithEmbedding != 4 {
-		t.Errorf("counts = %+v, want photos 6 / with embedding 4", got)
+	if got.Photos != 11 || got.PhotosWithEmbedding != 4 {
+		t.Errorf("counts = %+v, want photos 11 / with embedding 4", got)
 	}
-	if got.PhotosLive != 0 || got.PhotosWithoutEmbedding != 0 ||
+	if got.PhotosLive != 0 || got.Images != 0 || got.PhotosWithoutEmbedding != 0 ||
 		got.PhotosWithoutFaces != 0 || got.MarkersUnassigned != 0 {
 		t.Errorf("counts = %+v, want the derived fields left at zero", got)
 	}
