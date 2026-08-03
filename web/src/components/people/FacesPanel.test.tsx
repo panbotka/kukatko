@@ -68,7 +68,7 @@ beforeEach(async () => {
 })
 
 describe('FacesPanel', () => {
-  it('lists a row per face, chipped by how far it has got through naming', () => {
+  it('lists a row per face, chipped by whether it has a name', () => {
     renderPanel(
       facesResult({
         faces: [
@@ -78,19 +78,81 @@ describe('FacesPanel', () => {
       }),
     )
 
-    expect(screen.getByRole('button', { name: 'Select face #1' })).toHaveAttribute(
-      'data-face-state',
-      'unmatched',
-    )
+    const unnamed = screen.getByRole('button', { name: 'Select face #1' })
+    expect(unnamed).toHaveAttribute('data-face-state', 'unnamed')
+    expect(unnamed).toHaveTextContent('No name')
     const named = screen.getByRole('button', { name: 'Select face #2' })
-    expect(named).toHaveAttribute('data-face-state', 'assigned')
+    expect(named).toHaveAttribute('data-face-state', 'named')
     expect(named).toHaveTextContent('Alice')
+  })
+
+  it('chips a face a marker already covers exactly like a bare detection', () => {
+    // `create_marker` vs `assign_person` is the backend's business; both rows are
+    // one click from a name, so the panel says the same thing about both.
+    renderPanel(
+      facesResult({
+        faces: [faceView({ face_index: 0 }), faceView({ face_index: 1, marker_uid: 'mk_1' })],
+      }),
+    )
+
+    for (const number of [1, 2]) {
+      const row = screen.getByRole('button', { name: `Select face #${String(number)}` })
+      expect(row).toHaveAttribute('data-face-state', 'unnamed')
+      expect(row).toHaveTextContent('No name')
+    }
+  })
+
+  it('says "Bez jména" in Czech, from i18n', async () => {
+    await i18n.changeLanguage('cs')
+    renderPanel(facesResult({ faces: [faceView({ face_index: 0 })] }))
+
+    expect(screen.getByRole('button', { name: 'Vybrat obličej #1' })).toHaveTextContent('Bez jména')
   })
 
   it('numbers rows by position, so a marker with no detected face is not "#0"', () => {
     // Markers with no detected face carry negative face indexes.
     renderPanel(facesResult({ faces: [faceView({ face_index: -1, marker_uid: 'mk_1' })] }))
-    expect(screen.getByRole('button', { name: 'Select face #1' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Select face #1 (no embedding)' }),
+    ).toBeInTheDocument()
+  })
+
+  it('marks a row whose face has no embedding, and leaves the rest unmarked', () => {
+    // A negative face index is a marker with no face row behind it: nameable by
+    // hand, but no similarity search will ever surface it.
+    renderPanel(
+      facesResult({
+        faces: [faceView({ face_index: -1, marker_uid: 'mk_1' }), faceView({ face_index: 0 })],
+      }),
+    )
+
+    const marked = screen.getByRole('button', { name: 'Select face #1 (no embedding)' })
+    expect(marked).toHaveAttribute('data-embedding', 'none')
+    expect(marked).toHaveTextContent('No embedding')
+    // The mark is not a state: the row is still just "not named".
+    expect(marked).toHaveAttribute('data-face-state', 'unnamed')
+
+    const plain = screen.getByRole('button', { name: 'Select face #2' })
+    expect(plain).not.toHaveAttribute('data-embedding')
+    expect(plain).not.toHaveTextContent('No embedding')
+  })
+
+  it('explains the missing embedding in the assignment controls, in both languages', async () => {
+    const selected = faceView({ face_index: -1, marker_uid: 'mk_1' })
+    const { unmount } = renderPanel(facesResult({ faces: [selected], selected }))
+    expect(screen.getByText(/it can only ever be named here, by hand/i)).toBeInTheDocument()
+    unmount()
+
+    await i18n.changeLanguage('cs')
+    renderPanel(facesResult({ faces: [selected], selected }))
+    expect(screen.getByText(/jméno mu jde dát jen tady a ručně/i)).toBeInTheDocument()
+  })
+
+  it('says nothing about embeddings for a face that has one', () => {
+    const selected = faceView({ face_index: 0 })
+    renderPanel(facesResult({ faces: [selected], selected }))
+
+    expect(screen.queryByText(/no embedding/i)).not.toBeInTheDocument()
   })
 
   it('selects a face when its row is clicked, and deselects it when clicked again', async () => {

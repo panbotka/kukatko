@@ -30,13 +30,17 @@ function faces(): FaceView[] {
   ]
 }
 
-function renderOverlay(readOnly = false, selected: number | null = null) {
+function renderOverlay(
+  readOnly = false,
+  selected: number | null = null,
+  boxes: FaceView[] = faces(),
+) {
   const onSelect = vi.fn()
   const onHover = vi.fn()
   const result = render(
     <I18nextProvider i18n={i18n}>
       <FaceOverlay
-        faces={faces()}
+        faces={boxes}
         selected={selected}
         onSelect={onSelect}
         onHover={onHover}
@@ -105,18 +109,35 @@ describe('FaceOverlay', () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 
-  it('colours each box by how far its face has got through naming', () => {
+  it('colours each box by whether its face is named, in two colours only', () => {
     renderOverlay()
 
-    // Red: a bare detection nobody has touched. Green: a named person.
-    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toHaveAttribute(
-      'data-face-state',
-      'unmatched',
-    )
-    expect(screen.getByRole('button', { name: 'Alice' })).toHaveAttribute(
-      'data-face-state',
-      'assigned',
-    )
+    // Yellow: nobody named on it yet. Green: a named person.
+    const unnamed = screen.getByRole('button', { name: 'Unnamed face 1' })
+    expect(unnamed).toHaveAttribute('data-face-state', 'unnamed')
+    expect(unnamed).toHaveStyle({ borderColor: 'var(--bs-warning)' })
+
+    const named = screen.getByRole('button', { name: 'Alice' })
+    expect(named).toHaveAttribute('data-face-state', 'named')
+    expect(named).toHaveStyle({ borderColor: 'var(--bs-success)' })
+  })
+
+  it('draws a face a marker already covers exactly like a bare detection', () => {
+    // The marker/no-marker split is the backend's own bookkeeping; both are one
+    // click from a name, so neither the colour nor the label may give it away.
+    const [bare] = faces()
+    renderOverlay(false, null, [bare, { ...bare, face_index: 2, marker_uid: 'mk_2' }])
+
+    const boxes = screen.getAllByRole('button')
+    expect(boxes).toHaveLength(2)
+    for (const box of boxes) {
+      expect(box).toHaveAttribute('data-face-state', 'unnamed')
+      expect(box).toHaveStyle({ borderColor: 'var(--bs-warning)' })
+    }
+    // Neither is drawn in the colour that means "something is wrong".
+    expect(screen.getByRole('button', { name: 'Unnamed face 2' })).not.toHaveStyle({
+      borderColor: 'var(--bs-danger)',
+    })
   })
 
   it('numbers every box and labels the named ones, without stealing their clicks', () => {

@@ -2,8 +2,9 @@ import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
-import { isNamed } from '../../lib/faceState'
+import { hasEmbedding, isNamed } from '../../lib/faceState'
 import { type FaceView, type SubjectCount, type Suggestion } from '../../services/people'
+import { Icon } from '../Icon'
 import { AddAutocomplete } from '../photo/AddAutocomplete'
 
 /** The identity an assignment names a face with. */
@@ -46,6 +47,10 @@ function confidencePct(confidence: number): string {
  * alternatives for it too, with the person it already names excluded — or cleared.
  * Reassignment is a mode rather than the default view, so a correct name is never
  * one stray click from being replaced.
+ *
+ * A face with no embedding says so: it is the honest explanation of an empty
+ * suggestion list (there is nothing to rank neighbours against), and it tells the
+ * reader that this panel, by hand, is the *only* way that face will ever be named.
  */
 export function FaceAssignPanel({
   face,
@@ -63,6 +68,7 @@ export function FaceAssignPanel({
   const assigned = isNamed(face)
   const naming = !assigned || reassigning
   const suggestions = face.suggestions.slice(0, MAX_SUGGESTIONS)
+  const embedded = hasEmbedding(face)
 
   return (
     <div
@@ -114,6 +120,13 @@ export function FaceAssignPanel({
             {t('faces.panel.unassign')}
           </Button>
         </div>
+      )}
+
+      {!embedded && (
+        <p className="small text-secondary d-flex gap-2 mb-2">
+          <Icon name="slash-circle" className="mt-1" />
+          <span>{t('faces.noEmbedding.note')}</span>
+        </p>
       )}
 
       {naming && (

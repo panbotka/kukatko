@@ -1190,11 +1190,15 @@
     "count": "Obličejů: {{count}}",
     "row": {
       "label": "Obličej #{{number}}",
-      "select": "Vybrat obličej #{{number}}"
+      "select": "Vybrat obličej #{{number}}",
+      "selectNoEmbedding": "Vybrat obličej #{{number}} (bez embeddingu)"
     },
     "state": {
-      "detected": "Nepojmenovaný",
-      "unassigned": "Bez osoby"
+      "unnamed": "Bez jména"
+    },
+    "noEmbedding": {
+      "mark": "Bez embeddingu",
+      "note": "Tenhle obličej nemá embedding — jméno mu jde dát jen tady a ručně. Návrhy, hledání podle podoby ani hra na třídění se k němu nikdy nedostanou."
     }
   },
   "outliers": {

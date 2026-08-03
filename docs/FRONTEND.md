@@ -980,8 +980,9 @@ here.
   orientations 6 and 8). The importers now de-orient on the way in (`internal/exif` `RawDimensions`) and
   already-imported rows are corrected by `kukatko maintenance repair --dimensions`, whose dry run is
   `maintenance scan` (the `transposed_dimensions` finding).
-  The boxes are colored by state (`lib/faceState`), the selected one is primary + a ring, they carry a **number `#N`** and
-  for assigned ones **a name under the box**; hovering a box highlights the row in the panel and vice versa (`hovered`/`onHover`
+  The boxes are colored by state (`lib/faceState`) — **two colors: green = named, yellow = not named**, deliberately
+  no third one (see the `faceState.ts` note below); the selected one is primary + a ring, they carry a **number `#N`** and
+  for named ones **a name under the box**; hovering a box highlights the row in the panel and vice versa (`hovered`/`onHover`
   held by the page). A click on a box or on a panel row = the same selection (and opens the drawer).
   **On touch** the pair still works: a box is only as big as the face, so on `pointer: coarse` `.kk-face-box`
   grows an **invisible 44px hit box** around it (an `::after` in `app.css`, `min-*: 100%` so a face already
@@ -1574,13 +1575,19 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the pairing with the panel from **focus** too, not only from hover (a finger doesn't hover, but a tap focuses the box). The data +
   the naming state machine
   are held by the `useFaces` hook. **`FacesPanel`** = the panel in the viewer's drawer, the single place where assignment happens:
-  **text rows** `Obličej #N` + a colored status chip (no crops — one image per page),
-  a click selects/deselects, hover mirrors the box; the selected row **scrolls itself into view**
+  **text rows** `Obličej #N` + a colored status chip (no crops — one image per page): the person's name (green), or
+  **Bez jména** (yellow) — the same two states as the boxes. A row whose face has **no embedding**
+  (`hasEmbedding` = a negative `face_index`, i.e. a marker with no face row behind it) also carries a small muted
+  `slash-circle` (`data-embedding="none"`, title/visually-hidden **Bez embeddingu**, and the row's `aria-label` says it too,
+  because the label replaces the button's content for a screen reader) — that one *is* worth knowing: it is nameable by
+  hand here and nowhere else, no suggestion, similarity search or the review game will ever bring it up.
+  A click selects/deselects, hover mirrors the box; the selected row **scrolls itself into view**
   (`block: 'nearest'`), so that a tap on a box in the photo doesn't mark a row off-screen; under the selected row
   `FaceAssignPanel` expands
   (`key={face_index}` → the state resets when the selection changes). **`FaceAssignPanel`** = the top-3 suggestions
   (`{name} · {confidence}%`, one-tap) + a typeahead over `useSubjects` (`AddAutocomplete` with `autoFocus`
-  and `hint` = the person's photo count); for an assigned face **Přeřadit** (suggestions, which the backend supplies
+  and `hint` = the person's photo count); a face with no embedding leads with a muted note saying so, which is also
+  the honest explanation of its empty suggestion list; for an assigned face **Přeřadit** (suggestions, which the backend supplies
   for assigned faces too — the face's own person is excluded from them) and **Odebrat**; Esc leaves the reassignment first,
   then the selection), `ClusterCard`, `Candidates` (the per-subject version of `/faces` embedded in the person's page:
   a **Najít návrhy** button → `searchCandidates` with the default threshold `THRESHOLD_DEFAULT_PERCENT` and
@@ -1962,9 +1969,21 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   marker is not a drag) and **never for a touch that started on `.leaflet-marker-draggable` /
   `.leaflet-control`** (dragging the picker's pin with one finger works, and advising „two fingers" there would be
   bad advice at the worst moment), from which `LeafletMap` shows the „dvěma prsty" hint;
-  `faceState.ts` = the pure `faceState(face)` (`assigned`/`unassigned`/`unmatched` — it reads the assignment, not
+  `faceState.ts` = the pure `faceState(face)` (**`named`/`unnamed`, two states and two colors** — it reads the assignment, not
   `face.action`, so that an optimistic update keeps the box and the row in sync with the click just made)
-  + `isNamed`; one source of truth for the colors in the overlay, `FacesPanel` and `PeoplePanel`;
+  + `isNamed` + `hasEmbedding`; one source of truth for the colors in the overlay, `FacesPanel` and `PeoplePanel`.
+  **Why two and not three:** it used to split the unnamed half by whether a marker already covered the face
+  (`unassigned` yellow „Bez osoby" / `unmatched` red „Nepojmenovaný" — the labels were also the wrong way round).
+  That split is PhotoPrism's bookkeeping (boxes) meeting Kukátko's detector (vectors): `internal/facematch` handles
+  both in one step (`create_marker` creates the marker *and* assigns, `assign_person` assigns to the existing one),
+  so naming either one is the same single click and only the verb the backend picks differs — while the marker-less
+  half is **82 % of the library** (94 194 of 115 457 faces, 2026-08-03) and was drawn in the color that means
+  „something is wrong". **The backend state machine is unchanged** — this is only what the UI shows.
+  What replaced it is `hasEmbedding(face)` = `face_index >= 0`: `facematch` appends markers that matched no stored
+  face under *descending negative* indexes, so a negative index is exactly „a marker with no vector behind it"
+  (144 in production) — the payload already carries the fact, no backend change was needed. That one is **not a
+  color**, only a mark on the panel row + a note in `FaceAssignPanel`, because it decides whether automation can
+  ever reach the face at all;
   `faceGeometry.ts` = the pure `faceBoxStyle` (a normalized bbox → absolute `left/top/width/height`
   in %, for the overlay) + `padBbox`/`boxWithinCrop`/`cropImageStyle` + `displayFrame` (the stored
   dimensions + the EXIF orientation → the **displayed** frame; orientations 5–8 swap the sides, because the bbox is in

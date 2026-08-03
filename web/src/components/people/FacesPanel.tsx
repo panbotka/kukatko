@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useSubjects } from '../../hooks/useSubjects'
 import { type UseFacesResult } from '../../hooks/useFaces'
-import { type FaceState, faceState } from '../../lib/faceState'
+import { type FaceState, faceState, hasEmbedding } from '../../lib/faceState'
 import { Icon } from '../Icon'
 import { FaceAssignPanel } from './FaceAssignPanel'
 
@@ -25,18 +25,11 @@ export interface FacesPanelProps {
   onClose: () => void
 }
 
-/** Chip style per naming state — the same colours the boxes on the photo use. */
+/** Chip style per naming state — the same two colours the boxes on the photo use. */
 const STATE_CHIP: Record<FaceState, string> = {
-  assigned: 'text-bg-success',
-  unassigned: 'text-bg-warning',
-  unmatched: 'text-bg-danger',
+  named: 'text-bg-success',
+  unnamed: 'text-bg-warning',
 }
-
-/** The i18n key naming what a not-yet-assigned face is still missing. */
-const STATE_KEY = {
-  unassigned: 'faces.state.unassigned',
-  unmatched: 'faces.state.detected',
-} as const
 
 /**
  * The faces sidebar of the photo detail: one row per detected face, and the
@@ -47,6 +40,12 @@ const STATE_KEY = {
  *
  * Rows are numbered by position, matching the number drawn on each box: `face_index`
  * cannot be used, as markers with no detected face carry negative ones.
+ *
+ * A row is either named or not — the same two states the boxes use. What it does
+ * carry beyond that is a small mark when the face has no embedding
+ * ({@link hasEmbedding}): that one is worth knowing, because such a face can only
+ * ever be named here by hand — no suggestion, no similarity search and no review
+ * game will bring it up.
  */
 export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: FacesPanelProps) {
   const { t } = useTranslation()
@@ -97,11 +96,24 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
             const state = faceState(face)
             const number = position + 1
             const isSelected = selected?.face_index === face.face_index
-            const chip = state === 'assigned' ? (face.subject_name ?? '') : t(STATE_KEY[state])
+            const embedded = hasEmbedding(face)
+            const chip = state === 'named' ? (face.subject_name ?? '') : t('faces.state.unnamed')
             const row = (
               <>
                 <span className="fw-medium">{t('faces.row.label', { number })}</span>
                 <span className={`badge ms-2 text-truncate ${STATE_CHIP[state]}`}>{chip}</span>
+                {!embedded && (
+                  // The row of a `canWrite` viewer is a button whose aria-label
+                  // replaces its content, so it says this in its own label instead;
+                  // the hidden text is what a viewer's plain row announces.
+                  // `opacity` rather than `text-secondary`: it stays muted on a
+                  // plain row and still legible on the selected (primary) one,
+                  // where a fixed secondary grey all but disappears.
+                  <span className="ms-2 opacity-75" title={t('faces.noEmbedding.mark')}>
+                    <Icon name="slash-circle" />
+                    <span className="visually-hidden">{t('faces.noEmbedding.mark')}</span>
+                  </span>
+                )}
               </>
             )
 
@@ -114,8 +126,13 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
                       isSelected ? 'active' : ''
                     } ${hovered === face.face_index && !isSelected ? 'bg-body-secondary' : ''}`}
                     aria-pressed={isSelected}
-                    aria-label={t('faces.row.select', { number })}
+                    aria-label={
+                      embedded
+                        ? t('faces.row.select', { number })
+                        : t('faces.row.selectNoEmbedding', { number })
+                    }
                     data-face-state={state}
+                    data-embedding={embedded ? undefined : 'none'}
                     onClick={() => {
                       faces.select(isSelected ? null : face.face_index)
                     }}
@@ -132,6 +149,7 @@ export function FacesPanel({ faces, canWrite, hovered, onHover, onClose }: Faces
                   <div
                     className="list-group-item d-flex align-items-center"
                     data-face-state={state}
+                    data-embedding={embedded ? undefined : 'none'}
                   >
                     {row}
                   </div>
