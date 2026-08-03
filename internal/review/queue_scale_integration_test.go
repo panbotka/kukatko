@@ -134,7 +134,7 @@ func TestReviewQueue_workIsBoundedAtProductionScaleDB(t *testing.T) {
 
 	svc, faces := h.instrumentedService(review.Config{})
 	begin := time.Now()
-	res, err := svc.Queue(context.Background(), "tester", 0)
+	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 0)
 	elapsed := time.Since(begin)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
@@ -164,7 +164,7 @@ func TestReviewQueue_workDoesNotGrowWithTheLibraryDB(t *testing.T) {
 		h.seedNamedSubjects(t, subjects)
 		h.seedUnassignedFaces(t, 50, 20)
 		svc, faces := h.instrumentedService(review.Config{})
-		if _, err := svc.Queue(context.Background(), "tester", 0); err != nil {
+		if _, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 0); err != nil {
 			t.Fatalf("Queue over %d subjects: %v", subjects, err)
 		}
 		return faces.queries()

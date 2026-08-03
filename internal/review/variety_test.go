@@ -73,7 +73,7 @@ func TestQueue_monotonyBaseline(t *testing.T) {
 		monotonousLibrary(f)
 		f.perEntity = math.MaxInt32
 	})
-	mat, err := f.svc.collect(context.Background(), DefaultQueueSize)
+	mat, err := f.svc.collect(context.Background(), SourceBoth, DefaultQueueSize)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestQueue_monotonyBaseline(t *testing.T) {
 func TestQueue_noEntityRepeatsMoreThanTheRunCap(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, monotonousLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", 0)
+	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestQueue_noEntityRepeatsMoreThanTheRunCap(t *testing.T) {
 func TestQueue_noEntityOwnsMoreThanItsShare(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, monotonousLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", maxBatch)
+	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestQueue_varietyStaysInsideTheBand(t *testing.T) {
 			scannedPerson("certain", 0.02, 0.05), scannedPerson("hopeless", 0.90, 0.95))
 		f.expander.results["lab01"] = labelResult("lab01", 0.99, 0.98, 0.2, 0.6)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", maxBatch)
+	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestQueue_spreadStaysDeterministic(t *testing.T) {
 	t.Parallel()
 	build := func() []string {
 		f := newFixture(t, monotonousLibrary)
-		res, err := f.svc.Queue(context.Background(), "user", maxBatch)
+		res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
 		if err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
@@ -192,7 +192,7 @@ func TestQueue_maxPerEntityIsConfigurable(t *testing.T) {
 		monotonousLibrary(f)
 		f.perEntity = 1
 	})
-	res, err := f.svc.Queue(context.Background(), "user", maxBatch)
+	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}

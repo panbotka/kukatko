@@ -5,6 +5,10 @@ package review
 // durable outcomes of the game (assignments, labels, rejections) live in the
 // underlying stores, so losing a session on restart only forgets skips and the
 // session counter.
+//
+// Only the cached queue belongs to one question source; the answered/skipped
+// sets and the counters span all of them, because a skipped question is skipped
+// whichever selection happened to surface it.
 
 import (
 	"sync"
@@ -21,6 +25,10 @@ type session struct {
 	// hasQueue reports whether queue was ever built (an empty built queue is
 	// still a valid cache entry).
 	hasQueue bool
+	// source is the selection queue was built for. The cache is keyed on it as
+	// much as on time: a batch of face questions is worthless to a player who
+	// has just switched the game to labels.
+	source Source
 	// builtAt is when queue was last rebuilt, for the CacheTTL check.
 	builtAt time.Time
 	// reason explains an empty queue (ReasonNoSources / ReasonNoCandidates).

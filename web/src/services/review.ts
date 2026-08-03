@@ -97,8 +97,25 @@ export interface ReviewQuestion {
   label?: Label
 }
 
+/**
+ * What the game may ask about (`review.Source`): only faces, only labels, or
+ * both interleaved. These literal values are the `source` query parameter the
+ * backend accepts, and the choice is applied *inside* the queue build — asking
+ * for labels does not run the face scan at all.
+ */
+export type ReviewSource = 'both' | 'people' | 'labels'
+
+/** The sources in the order the toggle presents them; `both` is the default. */
+export const REVIEW_SOURCES: readonly ReviewSource[] = ['both', 'people', 'labels']
+
 /** The library has no named people and no labels yet — the game has no sources. */
 export const REASON_NO_SOURCES = 'no_people_no_labels'
+
+/** The game is restricted to people, but no one is named yet. */
+export const REASON_NO_PEOPLE = 'no_people'
+
+/** The game is restricted to labels, but no label has photos yet. */
+export const REASON_NO_LABELS = 'no_labels'
 
 /** Sources exist but no candidate currently falls into the uncertainty band. */
 export const REASON_NO_CANDIDATES = 'no_candidates'
@@ -106,11 +123,16 @@ export const REASON_NO_CANDIDATES = 'no_candidates'
 /** Response body of `GET /review/queue` (`review.QueueResult`). */
 export interface ReviewQueue {
   questions: ReviewQuestion[]
+  /** The applied source, echoed back so a stale batch is recognisable. */
+  source: ReviewSource
   /** How many questions this session answered so far. */
   answered: number
   /** Rough estimate of how many candidates are still queued. */
   remaining: number
-  /** Explains an empty queue: {@link REASON_NO_SOURCES} / {@link REASON_NO_CANDIDATES}. */
+  /**
+   * Explains an empty queue: {@link REASON_NO_SOURCES}, {@link REASON_NO_PEOPLE},
+   * {@link REASON_NO_LABELS} or {@link REASON_NO_CANDIDATES}.
+   */
   reason?: string
 }
 
@@ -123,13 +145,21 @@ export interface ReviewAnswerResult {
 }
 
 /**
- * Fetches the next batch of questions for the signed-in user. The queue is
- * cached server-side per user, so refetching between batches is cheap; an
- * omitted limit uses the server's configured batch size.
+ * Fetches the next batch of questions for the signed-in user from `source`
+ * (default both). The queue is cached server-side per user *and per source*, so
+ * refetching between batches is cheap while a switched source always rebuilds;
+ * an omitted limit uses the server's configured batch size.
  */
-export async function fetchReviewQueue(limit?: number, signal?: AbortSignal): Promise<ReviewQueue> {
-  const suffix = limit !== undefined && limit > 0 ? `?limit=${String(limit)}` : ''
-  return getJSON<ReviewQueue>(`/review/queue${suffix}`, signal)
+export async function fetchReviewQueue(
+  source: ReviewSource = 'both',
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<ReviewQueue> {
+  const params = new URLSearchParams({ source })
+  if (limit !== undefined && limit > 0) {
+    params.set('limit', String(limit))
+  }
+  return getJSON<ReviewQueue>(`/review/queue?${params.toString()}`, signal)
 }
 
 /**

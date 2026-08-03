@@ -278,7 +278,7 @@ func TestQueue_bandFilter(t *testing.T) {
 		// Similarities 0.8 (too certain), 0.5 (in band).
 		f.expander.results["lab1"] = labelResult("lab1", 0.8, 0.5)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", 0)
+	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestQueue_alreadyDoneExcluded(t *testing.T) {
 		person.Candidates[0].Action = candidates.ActionAlreadyDone
 		f.sweeper.people = []*sweep.Person{person}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", 0)
+	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestQueue_ordersByBoundaryDistanceAndInterleaves(t *testing.T) {
 		f.organize.labels = []organize.LabelCount{labelCount("lab1", 1)}
 		f.expander.results["lab1"] = labelResult("lab1", 0.46)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", 0)
+	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestQueue_deterministicAcrossRebuilds(t *testing.T) {
 			f.expander.results["lab1"] = labelResult("lab1", 0.55, 0.65)
 			f.expander.results["lab2"] = labelResult("lab2", 0.6)
 		})
-		res, err := f.svc.Queue(context.Background(), "user", 0)
+		res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
 		if err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
@@ -387,7 +387,7 @@ func TestQueue_cacheTTL(t *testing.T) {
 	})
 	ctx := context.Background()
 	for range 3 {
-		if _, err := f.svc.Queue(ctx, "user", 0); err != nil {
+		if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
 	}
@@ -395,7 +395,7 @@ func TestQueue_cacheTTL(t *testing.T) {
 		t.Fatalf("sweep calls within TTL = %d, want 1 (cached)", f.sweeper.calls)
 	}
 	*f.now = f.now.Add(2 * DefaultCacheTTL)
-	if _, err := f.svc.Queue(ctx, "user", 0); err != nil {
+	if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
 		t.Fatalf("Queue after TTL: %v", err)
 	}
 	if f.sweeper.calls != 2 {
@@ -410,7 +410,7 @@ func TestQueue_limit(t *testing.T) {
 	f := newFixture(t, func(f *fixture) {
 		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4, 0.41, 0.42)}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", 2)
+	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 2)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestQueue_emptyReasons(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t, tt.mutate)
-			res, err := f.svc.Queue(context.Background(), "user", 0)
+			res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
 			if err != nil {
 				t.Fatalf("Queue: %v", err)
 			}
@@ -471,7 +471,7 @@ func TestQueue_labelSearchFailureSkipsLabel(t *testing.T) {
 		f.expander.errs["bad"] = errors.New("boom")
 		f.expander.results["good"] = labelResult("good", 0.6)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", 0)
+	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestQueue_labelSearchFailureSkipsLabel(t *testing.T) {
 func TestQueue_sweepFailureFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) { f.sweeper.err = errors.New("boom") })
-	if _, err := f.svc.Queue(context.Background(), "user", 0); err == nil {
+	if _, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0); err == nil {
 		t.Fatal("Queue with failing sweep: want error, got nil")
 	}
 }

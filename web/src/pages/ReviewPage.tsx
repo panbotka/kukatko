@@ -1,12 +1,13 @@
 import { type ReactNode, useCallback, useEffect } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
+import ButtonGroup from 'react-bootstrap/ButtonGroup'
 import Spinner from 'react-bootstrap/Spinner'
 import { Trans, useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
-import { Icon } from '../components/Icon'
+import { Icon, type IconName } from '../components/Icon'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { REVIEW_PREVIEW_SIZE, ReviewPhoto } from '../components/review/ReviewPhoto'
 import { useImagePreloader } from '../hooks/useImagePreloader'
@@ -14,12 +15,181 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useReviewGame } from '../hooks/useReviewGame'
 import { isTypingElement } from '../lib/ratingHotkeys'
 import { thumbUrl } from '../services/photos'
-import { REASON_NO_SOURCES, type ReviewQuestion } from '../services/review'
+import {
+  REASON_NO_LABELS,
+  REASON_NO_PEOPLE,
+  REASON_NO_SOURCES,
+  REVIEW_SOURCES,
+  type ReviewQuestion,
+  type ReviewSource,
+} from '../services/review'
 
 import '../components/review/review.css'
 
 /** How many upcoming photos are decoded ahead of the player. */
 const PRELOAD_AHEAD = 4
+
+/**
+ * The i18n label key per source, an explicit map (rather than a template
+ * literal) so a typo is a compile error and the typed `t` accepts it — the same
+ * pattern the leaderboard's window toggle uses.
+ */
+const SOURCE_LABEL_KEYS = {
+  both: 'review.source.both',
+  people: 'review.source.people',
+  labels: 'review.source.labels',
+} as const
+
+/** The glyph per source; decorative, the label carries the meaning. */
+const SOURCE_ICONS: Record<ReviewSource, IconName> = {
+  both: 'ui-checks',
+  people: 'people',
+  labels: 'tags',
+}
+
+/**
+ * Narrows an arbitrary query-string value to a supported source, defaulting to
+ * both. An unknown value (an old bookmark, a hand-edited URL) degrades to the
+ * default instead of erroring — the backend rejects it, the URL should not
+ * strand the player on an error screen.
+ */
+function parseSource(raw: string | null): ReviewSource {
+  return REVIEW_SOURCES.find((candidate) => candidate === raw) ?? 'both'
+}
+
+/** The three-state source toggle: ask about people, labels, or both. */
+function SourceToggle({
+  source,
+  onSelect,
+}: {
+  source: ReviewSource
+  onSelect: (next: ReviewSource) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <ButtonGroup size="sm" aria-label={t('review.source.label')} className="review-game__source">
+      {REVIEW_SOURCES.map((candidate) => {
+        const isActive = candidate === source
+        const label = t(SOURCE_LABEL_KEYS[candidate])
+        return (
+          <Button
+            key={candidate}
+            variant={isActive ? 'secondary' : 'outline-secondary'}
+            active={isActive}
+            aria-pressed={isActive}
+            // The label is the button's only text on a phone (it is hidden
+            // below `md` to keep the row on one line), so it has to be the
+            // accessible name as well, not just decoration next to the glyph.
+            aria-label={label}
+            title={label}
+            data-testid={`review-source-${candidate}`}
+            className="d-inline-flex align-items-center gap-2 kukatko-tap-target"
+            onClick={() => {
+              onSelect(candidate)
+            }}
+          >
+            <Icon name={SOURCE_ICONS[candidate]} />
+            <span className="d-none d-md-inline">{label}</span>
+          </Button>
+        )
+      })}
+    </ButtonGroup>
+  )
+}
+
+/**
+ * The nothing-to-ask bodies, told apart by the reason the backend gave. They
+ * differ because the way out differs: an empty library needs people or labels
+ * created, an empty *chosen* source needs the toggle moved, and an exhausted
+ * band needs only patience. A single "no results" would send the player hunting
+ * a bug that is not there.
+ */
+function EmptyQueue({
+  reason,
+  source,
+  onSelect,
+  onRetry,
+}: {
+  reason: string | undefined
+  source: ReviewSource
+  onSelect: (next: ReviewSource) => void
+  onRetry: () => void
+}) {
+  const { t } = useTranslation()
+  if (reason === REASON_NO_SOURCES) {
+    return (
+      <div className="review-game__center" data-testid="review-empty-library">
+        <EmptyState
+          title={t('review.empty.libraryTitle')}
+          hint={t('review.empty.libraryHint')}
+          action={
+            <div className="d-flex gap-2 justify-content-center flex-wrap">
+              <Link to="/people" className="btn btn-sm btn-outline-light">
+                {t('review.empty.people')}
+              </Link>
+              <Link to="/labels" className="btn btn-sm btn-outline-light">
+                {t('review.empty.labels')}
+              </Link>
+            </div>
+          }
+        />
+      </div>
+    )
+  }
+  if (reason === REASON_NO_PEOPLE || reason === REASON_NO_LABELS) {
+    const noPeople = reason === REASON_NO_PEOPLE
+    return (
+      <div className="review-game__center" data-testid="review-empty-source">
+        <EmptyState
+          title={t(noPeople ? 'review.empty.noPeopleTitle' : 'review.empty.noLabelsTitle')}
+          hint={t(noPeople ? 'review.empty.noPeopleHint' : 'review.empty.noLabelsHint')}
+          action={
+            <div className="d-flex gap-2 justify-content-center flex-wrap">
+              <Link to={noPeople ? '/people' : '/labels'} className="btn btn-sm btn-outline-light">
+                {t(noPeople ? 'review.empty.people' : 'review.empty.labels')}
+              </Link>
+              <Button
+                variant="outline-light"
+                size="sm"
+                onClick={() => {
+                  onSelect(noPeople ? 'labels' : 'people')
+                }}
+              >
+                {t(noPeople ? 'review.empty.askLabels' : 'review.empty.askPeople')}
+              </Button>
+            </div>
+          }
+        />
+      </div>
+    )
+  }
+  return (
+    <div className="review-game__center" data-testid="review-empty-queue">
+      <EmptyState
+        title={t('review.empty.queueTitle')}
+        hint={source === 'both' ? t('review.empty.queueHint') : t('review.empty.queueHintScoped')}
+        action={
+          <div className="d-flex gap-2 justify-content-center flex-wrap">
+            {source !== 'both' && (
+              <Button
+                variant="outline-light"
+                size="sm"
+                onClick={() => {
+                  onSelect('both')
+                }}
+              >
+                {t('review.empty.askBoth')}
+              </Button>
+            )}
+            <Button variant="outline-light" size="sm" onClick={onRetry}>
+              {t('review.empty.checkAgain')}
+            </Button>
+          </div>
+        }
+      />
+    </div>
+  )
+}
 
 /** The confidence context under the question: a quiet percentage plus bar. */
 function ConfidenceHint({ confidence }: { confidence: number }) {
@@ -60,12 +230,37 @@ function QuestionText({ question }: { question: ReviewQuestion }) {
  * question is always already in memory, so the rhythm is never broken by a
  * spinner (see {@link useReviewGame}). Rendered outside the layout shell so
  * nothing competes with the photo.
+ *
+ * What the game asks about is the player's choice — people, labels or both —
+ * and it lives in the `source` query parameter, not in component state, so it
+ * survives a reload and a shared link like every other view state here.
  */
 export function ReviewPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const game = useReviewGame()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const source = parseSource(searchParams.get('source'))
+  const game = useReviewGame(source)
   const { prime } = useImagePreloader()
+
+  /**
+   * Writes the chosen source into the URL. It replaces the entry rather than
+   * pushing one: Esc leaves the game with `navigate(-1)`, so a stacked toggle
+   * history would turn "leave" into "switch back" instead.
+   */
+  const selectSource = useCallback(
+    (next: ReviewSource) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev)
+          params.set('source', next)
+          return params
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
 
   // Decode the next few photos ahead of the player: the card after an answer
   // must paint instantly, and a batch refill must be invisible.
@@ -213,41 +408,16 @@ export function ReviewPage() {
         </Alert>
       </div>
     )
-  } else if (game.reason === REASON_NO_SOURCES) {
-    // The backend reports an empty *library* (no named people, no labels)
-    // separately from an empty queue — a generic "no results" here would send
-    // the user hunting a bug that is not there.
-    body = (
-      <div className="review-game__center" data-testid="review-empty-library">
-        <EmptyState
-          title={t('review.empty.libraryTitle')}
-          hint={t('review.empty.libraryHint')}
-          action={
-            <div className="d-flex gap-2 justify-content-center">
-              <Link to="/people" className="btn btn-sm btn-outline-light">
-                {t('review.empty.people')}
-              </Link>
-              <Link to="/labels" className="btn btn-sm btn-outline-light">
-                {t('review.empty.labels')}
-              </Link>
-            </div>
-          }
-        />
-      </div>
-    )
   } else {
+    // The backend distinguishes an empty library, an empty *chosen* source and
+    // an exhausted band; EmptyQueue turns each into its own way out.
     body = (
-      <div className="review-game__center" data-testid="review-empty-queue">
-        <EmptyState
-          title={t('review.empty.queueTitle')}
-          hint={t('review.empty.queueHint')}
-          action={
-            <Button variant="outline-light" size="sm" onClick={game.retryLoad}>
-              {t('review.empty.checkAgain')}
-            </Button>
-          }
-        />
-      </div>
+      <EmptyQueue
+        reason={game.reason}
+        source={source}
+        onSelect={selectSource}
+        onRetry={game.retryLoad}
+      />
     )
   }
 
@@ -278,6 +448,9 @@ export function ReviewPage() {
             <kbd className="review-game__kbd">z</kbd>
           </Button>
         </div>
+        {/* A direct child of the header, not part of the button pair, so the
+            narrow-screen rule can drop it onto its own line. */}
+        <SourceToggle source={source} onSelect={selectSource} />
         <div className="review-game__progress-text" data-testid="review-progress">
           {t('review.progress.answered', { count: game.answered })}
           {game.remaining > 0 && (

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
@@ -10,9 +10,12 @@ import { type Subject } from '../services/people'
 import { type Photo } from '../services/photos'
 import {
   REASON_NO_CANDIDATES,
+  REASON_NO_LABELS,
+  REASON_NO_PEOPLE,
   REASON_NO_SOURCES,
   type ReviewQuestion,
   type ReviewQueue,
+  type ReviewSource,
 } from '../services/review'
 
 import { ReviewPage } from './ReviewPage'
@@ -116,20 +119,28 @@ function labelQuestion(id: string, name = 'Ostatky'): ReviewQuestion {
   }
 }
 
-/** Wraps questions in a queue response. */
+/** Wraps questions in a queue response; the backend echoes the applied source. */
 function makeQueue(questions: ReviewQuestion[], overrides: Partial<ReviewQueue> = {}): ReviewQueue {
   return {
     questions,
+    source: 'both',
     answered: 0,
     remaining: questions.length,
     ...overrides,
   }
 }
 
-function renderPage() {
+/** Reflects the current `source` query param so a test can assert the URL. */
+function SourceProbe() {
+  const [params] = useSearchParams()
+  return <span data-testid="source-probe">{params.get('source') ?? ''}</span>
+}
+
+function renderPage(entry = '/review') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/review']}>
+      <MemoryRouter initialEntries={[entry]}>
+        <SourceProbe />
         <ReviewPage />
       </MemoryRouter>
     </I18nextProvider>,
@@ -319,6 +330,126 @@ describe('ReviewPage', () => {
     renderPage()
     expect(await screen.findByTestId('review-empty-queue')).toBeInTheDocument()
     expect(screen.queryByTestId('review-empty-library')).toBeNull()
+  })
+
+  it('asks the backend for the source the URL names', async () => {
+    queueMock.mockResolvedValue(makeQueue([labelQuestion('q1')], { source: 'labels' }))
+    renderPage('/review?source=labels')
+
+    await screen.findByTestId('review-question')
+    expect(queueMock).toHaveBeenCalledWith('labels')
+    // The toggle reflects what is being asked, so the state is never invisible.
+    expect(screen.getByTestId('review-source-labels')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('review-source-both')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('rebuilds the game from the chosen source and puts the choice in the URL', async () => {
+    const user = userEvent.setup()
+    // The backend echoes the source it built for; the questions differ per
+    // source, which is how the swap is visible on screen.
+    queueMock.mockImplementation((source: ReviewSource = 'both') =>
+      Promise.resolve(
+        source === 'people'
+          ? makeQueue([faceQuestion('f1', 'Alice')], { source })
+          : makeQueue([labelQuestion('l1', 'Cats')], { source }),
+      ),
+    )
+    renderPage()
+    expect(await screen.findByTestId('review-question')).toHaveTextContent('Cats')
+
+    await user.click(screen.getByTestId('review-source-people'))
+
+    // The URL owns the choice ("back always works"), the queue was rebuilt from
+    // it, and the label card the player asked to stop seeing is gone.
+    await waitFor(() => {
+      expect(screen.getByTestId('source-probe')).toHaveTextContent('people')
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
+    })
+    expect(queueMock).toHaveBeenLastCalledWith('people')
+  })
+
+  it('drops a batch that arrives after the source changed', async () => {
+    const user = userEvent.setup()
+    let resolveStale: ((queue: ReviewQueue) => void) | undefined
+    queueMock
+      .mockImplementationOnce(
+        () =>
+          new Promise<ReviewQueue>((resolve) => {
+            resolveStale = resolve
+          }),
+      )
+      .mockImplementation((source: ReviewSource = 'both') =>
+        Promise.resolve(makeQueue([faceQuestion('f1', 'Alice')], { source })),
+      )
+    renderPage()
+
+    await user.click(screen.getByTestId('review-source-people'))
+    // The first fetch answers late, for the source nobody is playing any more.
+    resolveStale?.(makeQueue([labelQuestion('l1', 'Cats')], { source: 'both' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
+    })
+    expect(screen.getByTestId('review-question')).not.toHaveTextContent('Cats')
+  })
+
+  it('says which chosen source is empty and offers the other one', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue([], { source: 'people', remaining: 0, reason: REASON_NO_PEOPLE }),
+    )
+    renderPage('/review?source=people')
+
+    const empty = await screen.findByTestId('review-empty-source')
+    expect(empty).toHaveTextContent('No people yet')
+    expect(screen.queryByTestId('review-empty-library')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Ask about labels' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('source-probe')).toHaveTextContent('labels')
+    })
+  })
+
+  it('offers both sources when the chosen one has run dry', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue([], { source: 'labels', remaining: 0, reason: REASON_NO_CANDIDATES }),
+    )
+    renderPage('/review?source=labels')
+
+    const empty = await screen.findByTestId('review-empty-queue')
+    expect(empty).toHaveTextContent('Nothing left to sort in the chosen source.')
+
+    await user.click(screen.getByRole('button', { name: 'Ask about both' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('source-probe')).toHaveTextContent('both')
+    })
+  })
+
+  it('keeps the plain empty-queue wording when both sources are in play', async () => {
+    queueMock.mockResolvedValue(makeQueue([], { remaining: 0, reason: REASON_NO_CANDIDATES }))
+    renderPage()
+
+    // Nothing to switch to, so no scoped hint and no switch button either.
+    const empty = await screen.findByTestId('review-empty-queue')
+    expect(empty).toHaveTextContent('No questions right now.')
+    expect(screen.queryByRole('button', { name: 'Ask about both' })).toBeNull()
+  })
+
+  it('shows the labels-are-empty state with a way to the other source', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue([], { source: 'labels', remaining: 0, reason: REASON_NO_LABELS }),
+    )
+    renderPage('/review?source=labels')
+
+    expect(await screen.findByTestId('review-empty-source')).toHaveTextContent('No labels yet')
+    await user.click(screen.getByRole('button', { name: 'Ask about people' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('source-probe')).toHaveTextContent('people')
+    })
   })
 
   it('reports a failed queue fetch and retries on demand', async () => {

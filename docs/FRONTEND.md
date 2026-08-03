@@ -1336,13 +1336,26 @@ here.
   decodes `PRELOAD_AHEAD = 4` photos ahead), so between cards **a spinner never flashes**;
   an unsaved answer isn't lost — it sits in an alert with **Uložit znovu**/**Zahodit**, undo has its own
   alert with retry; the session shows a **counter of answered + remaining** and a thin progress bar
-  (no score, streaks or confetti — the reward is a tidy library); states: an **empty library**
-  (`no_people_no_labels` → „nejdřív pojmenuj lidi / založ štítky" with links to `/people` and
-  `/labels`) is **distinct from an empty queue** (`no_candidates` → „vše posouzeno" + Zkusit znovu),
+  (no score, streaks or confetti — the reward is a tidy library);
+  **the player chooses what is asked about** — `SourceToggle`, a three-state `ButtonGroup` **Oboje · Lidé ·
+  Štítky** in the header (glyph + label, the label hidden below `md`, so on a tablet down it is three glyphs
+  with an `aria-label`) whose state lives in the **`?source=` query param** (`parseSource` degrades an unknown
+  value to `both`), written with `{replace: true}`: `Esc` leaves via `navigate(-1)`, so pushed toggle entries
+  would turn "leave" into "switch back". Below `sm` the toggle takes **a line of its own** in the header
+  (`review.css`: `flex-wrap` + `order: 4` + `flex: 1 0 100%`, and the counter's basis is `0` so a wrapping
+  header breaks *there* and not under the help button) — three more buttons don't fit next to the counter at
+  360 px, and the row of chrome must stay readable; the ~40 px is taken from the photo, which the stage
+  absorbs by design. `useReviewGame(source)` rebuilds from the new source rather than filtering the cards in
+  hand; states (all through `EmptyQueue`): an **empty library** (`no_people_no_labels` → „nejdřív pojmenuj
+  lidi / založ štítky" with links to `/people` and `/labels`) is **distinct from an empty chosen source**
+  (`no_people`/`no_labels` → „hra se ptá jen na lidi/štítky, ale…" + a link to `/people`/`/labels` **and** a
+  button that moves the toggle to the other one) and from an **empty queue** (`no_candidates` → „vše
+  posouzeno" + Zkusit znovu; with a restricted source the hint says so and offers **Ptát se na oboje**),
   plus loading the first batch and **offline/error** with retry; tests `ReviewPage.test.tsx` (a padded
   bbox, the name/label in the question, →/←/spacebar send the right verdict and advance, **no fetch
   between cards within a batch**, undo via the right inverse endpoint, a failed answer doesn't lose
-  the place, the two empty states differently),
+  the place, the empty states differently, the URL drives the fetched source, a toggle rebuilds the game and
+  lands in the URL, and a batch that arrives after the switch is dropped),
   `LeaderboardPage` = `/leaderboard` (**any logged-in user** — reading aggregates is not a write, so the
   top-level link **Žebříček** is seen by a viewer too, right next to **Třídění**; **inside `Layout`**, not
   fullscreen) a **competitive sorting leaderboard** over `GET /review/leaderboard` (`fetchLeaderboard(window)`):
@@ -1744,7 +1757,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`sendDirect`), otherwise it would no-op as `already_answered`; undo first **waits for the in-flight**
   request, so the inverse doesn't overtake the answer it is undoing, and a `create_marker`-yes looks up the created
   marker via `fetchFaces`, so a possible later re-yes is an `assign_person` on **the same** marker,
-  not a duplicate;
+  not a duplicate. `useReviewGame(source)` takes **what the game asks about** (`both`/`people`/`labels`, owned by
+  the URL on `ReviewPage`): a change **throws the local queue away** instead of filtering it (those cards are
+  exactly what the player turned off) together with the exhausted/error latches and the undo target, while the
+  answered counter and the seen-set survive — they are about the session, not the selection. A batch that was
+  in flight during the switch is recognised by the `source` the response **echoes** and dropped; because the
+  refill effect already ran behind the in-flight latch, dropping it also **bumps a reload key**, otherwise
+  nothing would ever fetch the source the player actually chose;
   `useFavorite(uid,initial,onChange?)` = an **optimistic** per-user favorite toggle over `favoritePhoto`
   (`PUT`/`DELETE …/favorite`), rollback on an error, ignores a concurrent toggle, resyncs on a change of
   `uid`/the server state; the optional `onChange` reports **every** flip of its own (optimistic and rolled-back,
@@ -2105,7 +2124,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   translates it into a distance) and `SweepMessage` = `progress`|`person`|`summary` (`SweepPerson` carries
   `candidates`/`counts`/`actionable` in the same shape as `faces.ts`); an abort via `signal` = `AbortError`
   (the caller ignores it); a confirmation goes through `assignFace`, a rejection through `rejectFace`;
-  `review.ts` = the review-game client: `fetchReviewQueue(limit?,signal)` over `GET /review/queue`,
+  `review.ts` = the review-game client: `fetchReviewQueue(source?,limit?,signal)` over `GET /review/queue`
+  (`source` = `ReviewSource` `'both'|'people'|'labels'` + `REVIEW_SOURCES` in the toggle's order, default
+  `both`; the response echoes the applied `source`, and `REASON_NO_PEOPLE`/`REASON_NO_LABELS` join
+  `REASON_NO_SOURCES`/`REASON_NO_CANDIDATES`),
   `answerReview(questionId,answer,signal)` over `POST /review/answer` (idempotent; the types
   `ReviewQuestion`/`ReviewQueue`/`ReviewAnswer`; the basis for `useReviewGame`), and **the leaderboard**
   `fetchLeaderboard(window,signal)` over `GET /review/leaderboard?window=all|7d|today` →

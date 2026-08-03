@@ -103,8 +103,10 @@ of PhotoPrism and of [photo-sorter](https://github.com/kozaktomas/photo-sorter),
   from a tight crop you can't recognize a person. **The keyboard is the main control**: `→` yes, `←` no,
   **spacebar** don't know, `z` undoes the last answer (a typo at speed is inevitable). The next
   card is **always preloaded**, so there's no waiting between questions — it runs like flipping through cards, not
-  like filling out a form. The session shows **how many you've done and how many remain**, and nothing more: no
-  score, streaks, or confetti. The reward is a tidy library.
+  like filling out a form. **You choose what it asks about** — people, labels, or both — with a toggle in the
+  header; the choice lives in the address, so a reload or a shared link resumes the same game. The session
+  shows **how many you've done and how many remain**, and nothing more: no score, streaks, or confetti. The
+  reward is a tidy library.
 - **Video playback** (HTTP range streaming + HTML5 player, live photos), maps
   ([mapy.com](https://mapy.com)), browsing by place (country/city), slideshow, albums, labels, bulk metadata editing,
   **multi-file uploads** (drag-and-drop / gallery / camera, with optional assignment of the whole

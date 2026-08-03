@@ -29,13 +29,15 @@ import (
 	"github.com/panbotka/kukatko/internal/sweep"
 )
 
-// Queue returns the next batch of questions for the user, at most limit long
-// (non-positive limit means the configured default). The queue is rebuilt when
-// it is cold, when it has run dry, or once per CacheTTL; between rebuilds
-// batches are served from the cache, so answering stays fast. An empty batch
-// carries a Reason the UI can show. The error is non-nil only when the
-// underlying searches fail outright.
-func (s *Service) Queue(ctx context.Context, userUID string, limit int) (QueueResult, error) {
+// Queue returns the next batch of questions for the user from src (empty or
+// unknown means both sources), at most limit long (non-positive limit means the
+// configured default). The queue is rebuilt when it is cold, when it has run
+// dry, when the source changed, or once per CacheTTL; between rebuilds batches
+// are served from the cache, so answering stays fast. An empty batch carries a
+// Reason the UI can show. The error is non-nil only when the underlying searches
+// fail outright.
+func (s *Service) Queue(ctx context.Context, userUID string, src Source, limit int) (QueueResult, error) {
+	src = src.orBoth()
 	if limit <= 0 {
 		limit = s.queueSize
 	}
@@ -43,14 +45,16 @@ func (s *Service) Queue(ctx context.Context, userUID string, limit int) (QueueRe
 	sess := s.session(userUID)
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	if s.needsRebuild(sess) {
-		if err := s.rebuild(ctx, sess, limit); err != nil {
+	if s.needsRebuild(sess, src) {
+		if err := s.rebuild(ctx, sess, src, limit); err != nil {
 			return QueueResult{}, err
 		}
 	}
 	batch := make([]Question, min(limit, len(sess.queue)))
 	copy(batch, sess.queue)
-	res := QueueResult{Questions: batch, Answered: sess.answeredCount, Remaining: len(sess.queue)}
+	res := QueueResult{
+		Questions: batch, Source: src, Answered: sess.answeredCount, Remaining: len(sess.queue),
+	}
 	if len(sess.queue) == 0 {
 		res.Reason = sess.reason
 	}
@@ -58,13 +62,18 @@ func (s *Service) Queue(ctx context.Context, userUID string, limit int) (QueueRe
 }
 
 // needsRebuild reports whether the session's cached queue has to be rebuilt: it
-// was never built, it has run dry, or it has aged past CacheTTL. Rebuilding a dry
-// queue is what makes the bounded scan cover the library — each rebuild scans the
-// next window, so a player who works through a batch immediately gets the next
-// slice of the library instead of an empty queue until the TTL expires. A rebuild
-// is cheap now precisely because it is bounded.
-func (s *Service) needsRebuild(sess *session) bool {
-	return !sess.hasQueue || len(sess.queue) == 0 || s.now().Sub(sess.builtAt) > s.cacheTTL
+// was never built, it has run dry, it is for a different source, or it has aged
+// past CacheTTL. Rebuilding a dry queue is what makes the bounded scan cover the
+// library — each rebuild scans the next window, so a player who works through a
+// batch immediately gets the next slice of the library instead of an empty queue
+// until the TTL expires. A rebuild is cheap now precisely because it is bounded.
+//
+// The source check is why the cache cannot hand back the previous selection's
+// batch: switching to labels is a request to stop being asked about faces, and
+// a warm cache serving them anyway would look exactly like a broken toggle.
+func (s *Service) needsRebuild(sess *session, src Source) bool {
+	return !sess.hasQueue || sess.source != src || len(sess.queue) == 0 ||
+		s.now().Sub(sess.builtAt) > s.cacheTTL
 }
 
 // material is what one rebuild collected before ordering and interleaving.
@@ -73,7 +82,9 @@ type material struct {
 	faceQs  []Question
 	labelQs []Question
 	// subjectsTotal and labelsTotal are the library-wide source counts (not the
-	// window's), so the empty-queue reason stays exact.
+	// window's), so the empty-queue reason stays exact. A source the selection
+	// excluded is never scanned, so its count stays zero — reasonFor only reads
+	// the counts of the sources that were actually asked for.
 	subjectsTotal int
 	labelsTotal   int
 	// degraded reports that the rebuild deadline cut a scan short, so the totals
@@ -81,14 +92,15 @@ type material struct {
 	degraded bool
 }
 
-// rebuild recomputes the session's queue from the current library state, aiming
-// for need questions per source. The caller holds sess.mu, so concurrent batch
-// fetches for one user never run the searches twice. The result is deterministic
-// for a fixed library state and a fixed pair of cursors: both searches' outputs
-// are re-sorted here, so goroutine completion order cannot leak into the queue,
-// and the variety rules on top of that sort are pure functions of it.
-func (s *Service) rebuild(ctx context.Context, sess *session, need int) error {
-	mat, err := s.collect(ctx, need)
+// rebuild recomputes the session's queue from the current library state for the
+// selected source, aiming for need questions per source. The caller holds
+// sess.mu, so concurrent batch fetches for one user never run the searches
+// twice. The result is deterministic for a fixed library state and a fixed pair
+// of cursors: both searches' outputs are re-sorted here, so goroutine completion
+// order cannot leak into the queue, and the variety rules on top of that sort
+// are pure functions of it.
+func (s *Service) rebuild(ctx context.Context, sess *session, src Source, need int) error {
+	mat, err := s.collect(ctx, src, need)
 	if err != nil {
 		return err
 	}
@@ -103,41 +115,52 @@ func (s *Service) rebuild(ctx context.Context, sess *session, need int) error {
 	// bounds the queue.
 	sess.queue = capQueue(interleave(spread(faceQs, maxSameEntityRun), spread(labelQs, maxSameEntityRun)))
 	sess.hasQueue = true
+	sess.source = src
 	sess.builtAt = s.now()
-	sess.reason = ReasonNoCandidates
-	if !mat.degraded && mat.subjectsTotal == 0 && mat.labelsTotal == 0 {
-		sess.reason = ReasonNoSources
-	}
+	sess.reason = reasonFor(src, mat)
 	s.log.DebugContext(ctx, "review: queue rebuilt", "questions", len(sess.queue),
-		"entities", countEntities(sess.queue), "longest_run", longestEntityRun(sess.queue))
+		"source", string(src), "entities", countEntities(sess.queue),
+		"longest_run", longestEntityRun(sess.queue))
 	return nil
 }
 
-// collect gathers up to need band candidates from each source under the rebuild
-// deadline. The deadline is the backstop behind the per-source budgets: whatever
-// the library does, the request cannot stay open longer than BuildTimeout, and a
-// scan cut short degrades to a shorter batch instead of a failed request.
-func (s *Service) collect(ctx context.Context, need int) (material, error) {
+// collect gathers up to need band candidates from each selected source under the
+// rebuild deadline. The deadline is the backstop behind the per-source budgets:
+// whatever the library does, the request cannot stay open longer than
+// BuildTimeout, and a scan cut short degrades to a shorter batch instead of a
+// failed request.
+//
+// A source the player did not choose is not scanned at all. Skipping it is not
+// an optimisation on the side: the scans are what a rebuild costs — a subject
+// sweep hydrates a whole photo record per match — so filtering their output
+// afterwards would spend the whole price of a batch on questions nobody asked
+// for. The unscanned side's total therefore stays zero, which reasonFor knows
+// not to read as an empty library.
+func (s *Service) collect(ctx context.Context, src Source, need int) (material, error) {
 	buildCtx, cancel := context.WithTimeout(ctx, s.buildTimeout)
 	defer cancel()
 
 	var mat material
-	faceQs, subjectsTotal, err := s.faceQuestions(buildCtx, need)
-	if err != nil {
-		if !s.tolerateDeadline(ctx, err) {
-			return material{}, err
+	if src.wantsFaces() {
+		faceQs, subjectsTotal, err := s.faceQuestions(buildCtx, need)
+		if err != nil {
+			if !s.tolerateDeadline(ctx, err) {
+				return material{}, err
+			}
+			mat.degraded = true
 		}
-		mat.degraded = true
+		mat.faceQs, mat.subjectsTotal = faceQs, subjectsTotal
 	}
-	labelQs, labelsTotal, err := s.labelQuestions(buildCtx, need)
-	if err != nil {
-		if !s.tolerateDeadline(ctx, err) {
-			return material{}, err
+	if src.wantsLabels() {
+		labelQs, labelsTotal, err := s.labelQuestions(buildCtx, need)
+		if err != nil {
+			if !s.tolerateDeadline(ctx, err) {
+				return material{}, err
+			}
+			mat.degraded = true
 		}
-		mat.degraded = true
+		mat.labelQs, mat.labelsTotal = labelQs, labelsTotal
 	}
-	mat.faceQs, mat.subjectsTotal = faceQs, subjectsTotal
-	mat.labelQs, mat.labelsTotal = labelQs, labelsTotal
 	return mat, nil
 }
 
