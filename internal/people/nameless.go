@@ -90,6 +90,38 @@ func (s *Store) ListNamelessSubjects(ctx context.Context) ([]NamelessSubject, er
 	return out, nil
 }
 
+// SnapshotSubject returns the snapshot DetachSubject would take for uid without
+// changing anything. It is the read-only half of the detach, split out for the
+// caller that has to hand the undo over *before* the destructive write happens:
+// the admin HTTP repair delivers the undo file to the browser and only then
+// schedules the detach, because over HTTP there is no `--undo-file` path to
+// write to first. It returns ErrSubjectNotFound if no such subject exists.
+//
+// The snapshot describes the moment it is taken, not a reservation: a marker
+// assigned to the subject between this call and the detach is detached but not
+// recorded here, so replaying the file would leave that one marker unassigned.
+// The authoritative snapshot therefore stays the one DetachSubject returns, and
+// the detach path compares the two.
+func (s *Store) SnapshotSubject(ctx context.Context, uid string) (SubjectSnapshot, error) {
+	// A plain (read-write) transaction, not a read-only one: snapshotSubjectTx
+	// takes FOR UPDATE on the subject row, which Postgres rejects in a READ ONLY
+	// transaction. The lock is held only for the length of the two list queries.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return SubjectSnapshot{}, fmt.Errorf("people: begin snapshot transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	snap, err := snapshotSubjectTx(ctx, tx, uid)
+	if err != nil {
+		return SubjectSnapshot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return SubjectSnapshot{}, fmt.Errorf("people: commit snapshot transaction: %w", err)
+	}
+	return snap, nil
+}
+
 // DetachSubject deletes the subject identified by uid and returns the snapshot
 // that undoes it. Its markers are detached (markers.subject_uid is set NULL by the
 // foreign key) and the cached subject_uid/subject_name on any faces pointing at it

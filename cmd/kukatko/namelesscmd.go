@@ -11,6 +11,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/namelessjob"
 	"github.com/panbotka/kukatko/internal/people"
 )
 
@@ -27,10 +28,11 @@ var errUndoFileRequired = errors.New("--apply requires --undo-file: refusing to 
 // namelessUndo is the on-disk undo file: every subject the run detached, with the
 // markers and faces that pointed at it. `nameless-subjects --undo <file>` replays
 // it to put everything back.
-type namelessUndo struct {
-	// Subjects are the detached subjects, in the order they were detached.
-	Subjects []people.SubjectSnapshot `json:"subjects"`
-}
+//
+// It is namelessjob.Undo — the very format the admin Maintenance page hands to
+// the browser and takes back — so an undo file written here can be uploaded
+// there and one downloaded there can be replayed here.
+type namelessUndo = namelessjob.Undo
 
 // newMaintenanceNamelessCmd builds the "maintenance nameless-subjects"
 // subcommand: the reporting and repair path for subjects whose name identifies

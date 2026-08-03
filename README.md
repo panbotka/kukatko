@@ -1394,6 +1394,14 @@ through the persistent job queue (bounded concurrency, resumable). Everything is
   (runs the selected repairs → `RepairResult`; 400 without a selected repair, 503 when orphan import is not
   configured). The **Údržba** admin UI (`/maintenance`, `MaintenancePage`) runs the check, shows
   the findings, and runs the repairs with progress via job-queue polling.
+- **The nameless catch-all subject** (`internal/namelessjob`) is repaired from the same page. An importer once
+  keyed find-or-create on a fallback slug, so one subject with an empty name collected every unnamed face —
+  in production 16 531 markers and 96 % of the library's faces, sitting first in `/people`. **Osoba bez jména**
+  on the Údržba page reports it (read-only), detaches it behind a confirmation that first **downloads the undo
+  file** — nothing is scheduled until the browser has it — and takes that file back for the undo. Both
+  destructive halves run as `nameless_detach`/`nameless_restore` jobs, because detaching ~111 000 faces is
+  minutes of HNSW index maintenance. The same repair, and the same file format, is
+  `kukatko maintenance nameless-subjects [--apply --undo-file <path> | --undo <path>]`.
 
 ### System status — admin dashboard (`internal/system` + `internal/systemapi`)
 

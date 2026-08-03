@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
 import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
+import { NamelessSubjectsCard } from '../components/maintenance/NamelessSubjectsCard'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { ApiError } from '../services/auth'
 import { fetchJobStats, type JobStats } from '../services/import'
@@ -574,6 +575,8 @@ export function MaintenancePage() {
         }}
         state={repair}
       />
+
+      <NamelessSubjectsCard />
 
       <AuditPurgeCard />
 

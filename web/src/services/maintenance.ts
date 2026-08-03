@@ -126,3 +126,137 @@ export async function purgeAuditLog(
   }
   return (await res.json()) as AuditPurgeResult
 }
+
+/**
+ * One subject whose name identifies nobody, with how much of the catalogue
+ * currently points at it (`people.NamelessSubject`). Such a subject cannot be
+ * created deliberately — it is a catch-all an importer minted — and its counts
+ * are what let a maintainer tell it apart from a real person before deciding.
+ */
+export interface NamelessSubject {
+  uid: string
+  slug: string
+  name: string
+  type: string
+  created_at: string
+  marker_count: number
+  face_count: number
+}
+
+/** The read-only nameless-subject report with the totals across its subjects. */
+export interface NamelessReport {
+  subjects: NamelessSubject[]
+  marker_total: number
+  face_total: number
+}
+
+/** Runs the read-only nameless-subject report. Safe: it never writes. */
+export async function fetchNamelessSubjects(signal?: AbortSignal): Promise<NamelessReport> {
+  const res = await fetch(`${API_BASE}/maintenance/nameless-subjects`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as NamelessReport
+}
+
+/** The undo file a detach handed over, with what it covers. */
+export interface NamelessUndoFile {
+  filename: string
+  subjects: number
+  markers: number
+  faces: number
+}
+
+/** Reads a positive integer response header, defaulting to 0. */
+function headerCount(res: Response, name: string): number {
+  const raw = Number(res.headers.get(name))
+  return Number.isFinite(raw) && raw > 0 ? raw : 0
+}
+
+/** Extracts the server-chosen filename from Content-Disposition, if present. */
+function attachmentName(res: Response, fallback: string): string {
+  const match = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
+  return match?.[1] ?? fallback
+}
+
+/**
+ * Applies the nameless-subject repair: the response body *is* the undo file, so
+ * it is saved to the user's downloads before this resolves. The backend writes
+ * the file first and schedules the detach only once it has gone out — the HTTP
+ * form of the CLI refusing `--apply` without `--undo-file` — and the stream ends
+ * after the scheduling, so holding the file means the work is queued.
+ *
+ * Destructive and maintainer-only. The detach itself runs in the background job
+ * queue; keep the returned file, it is the only way back.
+ *
+ * @throws ApiError with `status` 409 (nothing to detach), 503 (repair not wired)
+ *   or 5xx so the caller can render the matching message.
+ */
+export async function detachNamelessSubjects(signal?: AbortSignal): Promise<NamelessUndoFile> {
+  const res = await fetch(`${API_BASE}/maintenance/nameless-subjects/detach`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  const filename = attachmentName(res, 'kukatko-nameless-undo.json')
+  saveBlob(await res.blob(), filename)
+  return {
+    filename,
+    subjects: headerCount(res, 'X-Kukatko-Nameless-Subjects'),
+    markers: headerCount(res, 'X-Kukatko-Nameless-Markers'),
+    faces: headerCount(res, 'X-Kukatko-Nameless-Faces'),
+  }
+}
+
+/** How many restore jobs an uploaded undo file scheduled. */
+export interface NamelessRestoreResult {
+  queued: number
+}
+
+/**
+ * Replays an undo file: every subject it records is re-created under its original
+ * uid and the markers and faces it owned are re-assigned. The work runs in the
+ * background job queue, so the result reports what was scheduled, not what is
+ * already done.
+ *
+ * @throws ApiError with `status` 400 (not a usable undo file), 503 or 5xx.
+ */
+export async function restoreNamelessSubjects(
+  file: File,
+  signal?: AbortSignal,
+): Promise<NamelessRestoreResult> {
+  const res = await fetch(`${API_BASE}/maintenance/nameless-subjects/restore`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: file,
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as NamelessRestoreResult
+}
+
+/**
+ * Saves a Blob to the user's downloads as `filename` by clicking a temporary
+ * anchor pointed at an object URL, revoking the URL afterwards so the blob can be
+ * garbage-collected.
+ */
+function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}

@@ -320,9 +320,20 @@ kukatko maintenance nameless-subjects --undo /tmp/undo.json                # put
   faces, auditing each as `subject.create`. A marker or face deleted since the snapshot is simply skipped, so a
   partially outdated undo restores what it can.
 
-It is deliberately **not exposed over HTTP** and **not a migration**: it deletes catalogue rows the user might
-conceivably have wanted, so it stays an operator decision taken with the report in hand. `kukatko import
-verify` (above) is what surfaces the problem in the first place.
+It is **not a migration**: it deletes catalogue rows the user might conceivably have wanted, so it stays an
+operator decision taken with the report in hand. `kukatko import verify` (above) is what surfaces the problem
+in the first place.
+
+The same repair is on the admin **Údržba** page (`/maintenance`, maintainer-only, `GET`/`POST
+/api/v1/maintenance/nameless-subjects[/detach|/restore]`, see `docs/API.md`), because SSH into the production
+container is a poor place to keep the fix for the one row the user is actually staring at. The HTTP form keeps
+the same contract with the same code: the report is read-only, the apply hands the undo file to the browser as
+a **download** and schedules the detach only once it has gone out (the browser's copy *is* `--undo-file`), and
+the undo takes that file back. The file format is identical (`namelessjob.Undo`), so a file downloaded in the
+browser replays with `--undo` and one written by `--undo-file` uploads to the page. The destructive halves run
+as the `nameless_detach` / `nameless_restore` **jobs** rather than inside the request: detaching production's
+catch-all moves ~111 000 faces into the partial "unassigned faces" HNSW index (migration 0047), which is
+minutes of index maintenance. Watch the job queue on the same page for progress.
 
 ### `kukatko maintenance reset` — the guarded library wipe
 

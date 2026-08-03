@@ -793,8 +793,22 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   a single `DELETE` via `idx_audit_log_created_at`) → `{deleted,older_than_days,cutoff}`;
   a missing/non-positive/excessive window or an unknown field → 400, an unwired audit store → 503. The
   purge itself is **audited** (`audit.purge` with the cutoff, the window and the number deleted; the entry is fresh, so
-  the purge survives) — deleting the trail stays traceable. Mounted always (`buildMaintenanceAPI`
-  in `cmd/kukatko/maintenance.go`). The third `maintenance` operation, the **library wipe**
+  the purge survives) — deleting the trail stays traceable.
+  `GET /maintenance/nameless-subjects` → `{subjects,marker_total,face_total}` is the **read-only report** of the
+  importer-minted catch-all subject (`people.ListNamelessSubjects`; each entry is a `Subject` plus
+  `marker_count`/`face_count`). `POST /maintenance/nameless-subjects/detach` **applies** it: the response body
+  *is* the undo file (`namelessjob.Undo`, `Content-Disposition: attachment`, the plan in
+  `X-Kukatko-Nameless-Subjects`/`-Markers`/`-Faces`), and the detach is enqueued **only after that body has been
+  written and flushed** — the HTTP form of the CLI's `--apply` refusing without `--undo-file`, since the
+  browser's download is the operator's only way back. A snapshot that cannot be read → 500, a client the file
+  cannot be written to → nothing scheduled, nothing to detach → 409; all three leave the catalogue untouched.
+  The body carries no `Content-Length`, so a client that reads it to EOF (any browser taking it as a Blob) knows
+  the jobs are queued. `POST /maintenance/nameless-subjects/restore` takes that file back (raw JSON body, ≤64 MiB;
+  unparsable or subject-less → 400) → `202 {queued}`. Both destructive directions run as the `nameless_detach` /
+  `nameless_restore` jobs over `people.DetachSubject`/`RestoreSubject` (audited inside their own transaction),
+  never inline: detaching production's catch-all moves ~111 000 faces into the partial HNSW index of migration
+  0047 and takes minutes. Mounted always (`buildMaintenanceAPI`
+  in `cmd/kukatko/maintenance.go`). The `maintenance` operation that stays CLI-only, the **library wipe**
   (`kukatko maintenance reset`, `internal/reset`), is deliberately **not exposed here** — like the destructive
   `restore db`, it would pull the tables out from under a running server, so it lives only in the CLI. It is
   still audited (`library.reset`, written in the truncation's own transaction), so it shows up in `GET /audit`

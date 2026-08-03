@@ -1766,6 +1766,39 @@
       "invalid": "Enter a positive number of days.",
       "error": "The purge failed.",
       "result": "Deleted {{deleted}} audit entries."
+    },
+    "nameless": {
+      "title": "The nameless subject (an import catch-all)",
+      "hint": "A subject with no name cannot be created deliberately — an importer minted it as a catch-all and every nameless face after it was assigned to it. It tends to sit first in /people and it is not a real person. The check is read-only; detaching is irreversible, so it always hands you an undo file first.",
+      "check": "Check",
+      "checking": "Checking…",
+      "empty": "No check has been run yet.",
+      "clean": "No nameless subject — nothing to repair.",
+      "unavailable": "The repair is not available on this instance.",
+      "reportError": "The check failed.",
+      "summary": "Found {{subjects}} nameless subject(s): {{markers}} markers and {{faces}} faces of the library point at them.",
+      "emptyName": "empty name, slug “{{slug}}”",
+      "columns": {
+        "subject": "Subject",
+        "markers": "Markers",
+        "faces": "Faces",
+        "created": "Created"
+      },
+      "detach": "Detach and delete the subject",
+      "detaching": "Detaching…",
+      "confirm": "This permanently deletes these subjects and leaves {{markers}} markers and {{faces}} faces unassigned. Nothing but the file below can undo it.",
+      "confirmUndo": "The undo file is saved to your downloads before anything is scheduled. Keep it — it is the only way back. Without it the repair does not run.",
+      "confirmRun": "Yes, detach",
+      "cancel": "Cancel",
+      "detachError": "The detach failed.",
+      "detachResult": "Downloaded {{filename}} — keep it. Detaching {{markers}} markers and {{faces}} faces is running in the background job queue.",
+      "restoreTitle": "Undo from a file",
+      "restoreHint": "Upload the file the detach downloaded (or one written by `kukatko maintenance nameless-subjects --undo-file`). The subjects come back under their original uid and their markers and faces are re-assigned.",
+      "restoreLabel": "Undo file",
+      "restoring": "Uploading…",
+      "restoreInvalid": "That is not a usable undo file.",
+      "restoreError": "The undo failed.",
+      "restoreResult": "Scheduled the restore of {{queued}} subject(s); it runs in the background job queue."
     }
   },
   "duplicates": {

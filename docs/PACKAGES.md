@@ -914,7 +914,10 @@ to `## Package map` in `CLAUDE.md`.
   `DeleteSubject` (the FK detaches the markers, clears the faces cache)/**the nameless-subject repair**
   (`internal/people/nameless.go`) `ListNamelessSubjects` (every subject whose `NameSlug` is `""`, with its
   marker and face counts — the **dry run**; the predicate stays in Go so the repair cannot drift from the
-  guard the importers use)/`DetachSubject(uid,entry)` (one tx: snapshot the subject + its marker uids +
+  guard the importers use)/`SnapshotSubject(uid)` (the same snapshot **read-only** — the half the admin HTTP
+  repair needs *before* it schedules anything, since over HTTP the browser's download is the undo file and it
+  has to be in hand first; a plain, not read-only, tx because the read takes `FOR UPDATE`)/
+  `DetachSubject(uid,entry)` (one tx: snapshot the subject + its marker uids +
   its `(photo_uid,face_index)` face refs, clear the faces cache, delete the subject, audit — returns the
   `SubjectSnapshot` that **is** the undo, since nothing else records the removed links)/
   `RestoreSubject(snap,entry)` (re-inserts the row under its original uid/name/timestamps — only the slug
@@ -2394,15 +2397,40 @@ to `## Package map` in `CLAUDE.md`.
   `internal/maintenanceapi/`
   (a maintainer-only HTTP API over maintenance: the interfaces `Service` (Scan+Repair, satisfied by `*maintenance.Service`,
   nil → 503) and `AuditPurger` (`PurgeOlderThan`+`Record`, satisfied by `*audit.Store`, nil → 503);
-  `NewAPI(Config{Service,Audit,RequireMaintainer})`+`RegisterRoutes` mounts `/maintenance`:
+  plus `NamelessRepair` (`List`/`Snapshot`/`EnqueueDetach`/`EnqueueRestore`, satisfied by
+  `*namelessjob.Service`, nil → 503);
+  `NewAPI(Config{Service,Audit,Nameless,RequireMaintainer})`+`RegisterRoutes` mounts `/maintenance`:
   `GET /maintenance/scan` (the integrity report), `POST /maintenance/repair` (body `RepairOptions`,
   `DisallowUnknownFields`, an empty selection → 400, `ErrOrphanImportUnavailable` → 503, otherwise `RepairResult`)
   and `POST /maintenance/audit/purge` (body `{older_than_days}` 1..36500, cutoff = `now − older_than_days`,
   `audit.Store.PurgeOlderThan` → `{deleted,older_than_days,cutoff}`; a missing/non-positive/excessive window
   or an unknown field → 400; a **self-audit** `audit.purge` with the cutoff/window/count via `Record` — the fresh
   record survives the purge, so deleting the trail is traceable, the actor from `auth.UserFromContext`);
+  and the three **nameless-subject** routes: `GET /maintenance/nameless-subjects`
+  (`{subjects,marker_total,face_total}`, read-only), `POST /maintenance/nameless-subjects/detach` (the response
+  body **is** the undo file — `attachment` disposition, `X-Kukatko-Nameless-Subjects`/`-Markers`/`-Faces` headers
+  — written and flushed by `deliverUndo` *before* `EnqueueDetach` is called, so a snapshot that cannot be read
+  (500), a client the file cannot be written to, or nothing to detach (409) all leave the catalogue untouched;
+  the scheduling runs on `context.WithoutCancel`+`enqueueTimeout`, because a client that has the file and closes
+  the body cancels the request the instant delivery succeeded) and
+  `POST /maintenance/nameless-subjects/restore` (the undo file as the body, ≤`maxUndoBytes` = 64 MiB, unknown
+  fields **allowed** — an old file must still replay — unparsable/subject-less → 400) → `202 {queued}`;
   mounted in `serve` (`buildMaintenanceAPI` in `cmd/kukatko/maintenance.go` injects `audit.NewStore`,
   the service is built by `buildMaintenanceAndThumb`, shared with the registration of the `thumbnail` handler in `buildJobs`)),
+  `internal/namelessjob/`
+  (**the nameless-subject repair as background work**: the `Undo` file format (`{subjects:[people.SubjectSnapshot]}`,
+  shared verbatim with the CLI's `--undo-file`/`--undo`, so a file crosses freely between the two), the `Service`
+  the admin surface drives (`List` — read-only report; `Snapshot` — the undo of every nameless subject via
+  `people.SnapshotSubject`, skipping one that vanished mid-read; `EnqueueDetach`/`EnqueueRestore` — one job per
+  subject, the scheduling maintainer's `audit.Meta` carried in the payload so the job's audit row names them),
+  and the two handlers `HandleDetach`/`HandleRestore` over `people.DetachSubject`/`RestoreSubject`.
+  **Why the queue and not the request:** detaching production's catch-all sets `subject_uid` NULL on ~111 000
+  faces, moving every one into the partial `WHERE subject_uid IS NULL` HNSW index of migration 0047 — minutes of
+  index maintenance no HTTP request may sit on. `HandleDetach` treats `ErrSubjectNotFound` as done (a retry, a
+  double-click or the CLI having got there first all mean the repair happened) and **warns** when it detached
+  more than the delivered undo file recorded, since replaying that file would leave the difference unassigned.
+  Registered unconditionally in `buildRegistry` — the repair for an importer artefact must not depend on an
+  optional feature being on),
   `internal/duplicates/`
   (**a review surface for near-duplicate photos** beyond the upload-time warning: it links photos by two
   signals — pHash Hamming distance up to `duplicate.phash_max_diff` and embedding cosine distance

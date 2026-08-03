@@ -15,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/maintenanceapi"
 	"github.com/panbotka/kukatko/internal/metajob"
 	"github.com/panbotka/kukatko/internal/metrics"
+	"github.com/panbotka/kukatko/internal/namelessjob"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/processapi"
@@ -65,9 +66,11 @@ func buildJobs(
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	namelessSvc := buildNamelessService(db, store)
 	registry := buildRegistry(registryServices{
 		embed: embedSvc, face: faceSvc, thumb: thumbSvc, meta: metaSvc,
 		imp: importSvc, psMigrate: psMigrate, psFeeds: psFeeds, places: placesSvc, sidecar: sidecarSvc,
+		nameless: namelessSvc,
 	})
 
 	w := worker.New(worker.Config{
@@ -106,7 +109,7 @@ func buildJobs(
 		LocationEstimator: locationEstimatorOrNil(cfg, db, enqueuer),
 		RequireMaintainer: authAPI.RequireMaintainer,
 	})
-	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, db, authAPI), nil
+	return w, jobAPI, procAPI, buildMaintenanceAPI(maintenanceSvc, namelessSvc, db, authAPI), nil
 }
 
 // registryServices bundles the job handlers buildRegistry wires, so the
@@ -121,6 +124,7 @@ type registryServices struct {
 	psFeeds   worker.HandlerFunc
 	places    *placesjob.Service
 	sidecar   *sidecarjob.Service
+	nameless  *namelessjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
@@ -135,6 +139,8 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	registry.Register(jobs.TypeFaceDetect, svc.face.Handle)
 	registry.Register(jobs.TypeThumbnail, svc.thumb.Handle)
 	registry.Register(jobs.TypeMetadata, svc.meta.Handle)
+	registry.Register(jobs.TypeNamelessDetach, svc.nameless.HandleDetach)
+	registry.Register(jobs.TypeNamelessRestore, svc.nameless.HandleRestore)
 	if svc.imp != nil {
 		registry.Register(jobs.TypePPImport, svc.imp.Handle)
 	}
