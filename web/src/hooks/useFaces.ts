@@ -52,7 +52,11 @@ export interface UseFacesResult {
 /**
  * Builds the assignment request for naming `face` with the given identity (by
  * subject UID or free-text name). A face matched to an existing marker is
- * assigned in place; an unmatched detection creates a new marker from its bbox.
+ * assigned in place; one with no marker creates a new marker from its bbox.
+ *
+ * That fork is the backend's own (`internal/facematch`) and stays here; the UI
+ * shows neither of its two branches, because naming either face is the same one
+ * click (see `lib/faceState`).
  */
 function buildAssign(
   face: FaceView,

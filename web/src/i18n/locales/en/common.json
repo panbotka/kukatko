@@ -1150,11 +1150,15 @@
     "count": "Faces: {{count}}",
     "row": {
       "label": "Face #{{number}}",
-      "select": "Select face #{{number}}"
+      "select": "Select face #{{number}}",
+      "selectNoEmbedding": "Select face #{{number}} (no embedding)"
     },
     "state": {
-      "detected": "Unnamed",
-      "unassigned": "No person"
+      "unnamed": "No name"
+    },
+    "noEmbedding": {
+      "mark": "No embedding",
+      "note": "This face has no embedding — it can only ever be named here, by hand. Suggestions, similarity search and the review game will never reach it."
     }
   },
   "outliers": {

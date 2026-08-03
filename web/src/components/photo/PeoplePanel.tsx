@@ -52,7 +52,7 @@ export interface PeoplePanelProps {
  * {@link useFaces} state machine that drives the on-image overlay. It answers "who
  * is in this photo" without turning the face boxes on — they are off by default —
  * and an editor's click on a chip opens the faces panel at that face. Named faces
- * are rose chips, unassigned detections neutral chips an editor can still name; a
+ * are rose chips, unnamed detections neutral chips an editor can still name; a
  * viewer sees only the named people, read-only.
  *
  * Each chip carries a crop of its own face, so "who is on this photo" is answered

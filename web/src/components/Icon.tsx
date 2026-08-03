@@ -57,6 +57,7 @@ export type IconName =
   | 'question-circle'
   | 'search'
   | 'shield-lock'
+  | 'slash-circle'
   | 'sliders'
   | 'tags'
   | 'three-dots'

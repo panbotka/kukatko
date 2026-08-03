@@ -27,11 +27,15 @@ export interface FaceOverlayProps {
   readOnly?: boolean
 }
 
-/** Border colour per naming state — red is furthest from done, green is done. */
+/**
+ * Border colour per naming state — two colours for two states: yellow is left to
+ * do, green is done. Deliberately no third one: whether a marker already covers
+ * the face changes nothing the reader can act on (see `lib/faceState`), and red
+ * would mean "something is wrong" about the ordinary majority of a library.
+ */
 const STATE_COLOR: Record<FaceState, string> = {
-  assigned: 'var(--bs-success)',
-  unassigned: 'var(--bs-warning)',
-  unmatched: 'var(--bs-danger)',
+  named: 'var(--bs-success)',
+  unnamed: 'var(--bs-warning)',
 }
 
 /**
@@ -81,7 +85,7 @@ export function FaceOverlay({
         const isSelected = selected === face.face_index
         const isHovered = hovered === face.face_index
         const label =
-          state === 'assigned' ? (face.subject_name ?? '') : t('faces.unnamed', { index: number })
+          state === 'named' ? (face.subject_name ?? '') : t('faces.unnamed', { index: number })
         // A box hugging the bottom edge would have its name label clipped away by
         // the photo container's overflow — flip the label above the box instead.
         const bottomEdge = face.bbox[1] + face.bbox[3] > 0.9
@@ -123,7 +127,7 @@ export function FaceOverlay({
             >
               {number}
             </span>
-            {state === 'assigned' && (
+            {state === 'named' && (
               <span
                 className={`position-absolute start-0 badge text-bg-dark ${
                   bottomEdge ? 'bottom-100' : 'top-100'
