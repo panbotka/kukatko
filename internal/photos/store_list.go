@@ -440,12 +440,13 @@ func placeClauses(params ListParams, bind func(any) string) []string {
 // archived-only when requested (which takes precedence), or none when archived
 // photos are explicitly included. When the search query language carries its
 // own archived: condition, the default yields to it — otherwise archived:yes
-// would fight the live-only clause and never match anything.
+// would fight the live-only clause and never match anything. A uid: filter
+// lifts it too (see uidLookup).
 func archivedClauses(params ListParams) []string {
 	switch {
 	case params.OnlyArchived:
 		return []string{"archived_at IS NOT NULL"}
-	case queryHasFilter(params.QueryFilters, query.KeyArchived):
+	case queryHasFilter(params.QueryFilters, query.KeyArchived), uidLookup(params):
 		return nil
 	case !params.IncludeArchived:
 		return []string{"archived_at IS NULL"}
@@ -461,12 +462,23 @@ func archivedClauses(params ListParams) []string {
 // is a pure photos.* predicate (no bind), the natural sibling of archivedClauses,
 // so adding it here propagates to List, Count, Search, FilterUIDs, YearBuckets
 // and TimelineBuckets at once. IncludeStackMembers lifts it for the callers that
-// deliberately want every member (e.g. listing a single stack's variants).
+// deliberately want every member (e.g. listing a single stack's variants), and so
+// does a uid: filter (see uidLookup) — an id names one file, not the shot it is
+// filed under.
 func stackClauses(params ListParams) []string {
-	if params.IncludeStackMembers {
+	if params.IncludeStackMembers || uidLookup(params) {
 		return nil
 	}
 	return []string{"(stack_uid IS NULL OR stack_primary)"}
+}
+
+// uidLookup reports whether the query language names a photo by its id. An
+// explicit uid is explicit intent, so such a query answers for a photo whatever
+// state it is in — archived, hidden from the library, or a non-primary member of
+// a stack — rather than reporting nothing about a photo that plainly exists. The
+// state is the caller's to show; silence about it is the one useless answer.
+func uidLookup(params ListParams) bool {
+	return queryHasFilter(params.QueryFilters, query.KeyUID)
 }
 
 // hiddenClauses returns the library-visibility filter that keeps the photos the
@@ -484,14 +496,14 @@ func stackClauses(params ListParams) []string {
 // remembering a flag. IncludeHidden is the explicit escape hatch for the rest;
 // an explicit hidden: in the search query language also yields to it (compare
 // archivedClauses), or hidden:yes — the documented way back to a hidden photo —
-// would match nothing.
+// would match nothing. A uid: filter lifts it as well (see uidLookup).
 func hiddenClauses(params ListParams) []string {
 	switch {
 	case params.IncludeHidden:
 		return nil
 	case len(params.AlbumUIDs) > 0 || len(params.LabelUIDs) > 0 || params.FavoriteOf != "":
 		return nil
-	case queryHasFilter(params.QueryFilters, query.KeyHidden):
+	case queryHasFilter(params.QueryFilters, query.KeyHidden), uidLookup(params):
 		return nil
 	default:
 		return []string{"NOT hidden_from_library"}

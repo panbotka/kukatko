@@ -258,6 +258,10 @@ func TestHiddenClauses(t *testing.T) {
 			params: ListParams{QueryFilters: boolFilters(query.KeyArchived, yes)},
 			want:   []string{"NOT hidden_from_library"},
 		},
+		{
+			name:   "a uid: lookup lifts it",
+			params: ListParams{QueryFilters: uidFilters("ph_1")},
+		},
 	}
 
 	for _, tt := range tests {
@@ -305,6 +309,57 @@ func TestBuildListQuery_hiddenQueryFilterCompiles(t *testing.T) {
 // internal/query hands the store.
 func boolFilters(key query.Key, value bool) []query.Filter {
 	return []query.Filter{{Key: key, Values: []query.Value{{Bool: &value}}}}
+}
+
+// uidFilters returns a parsed uid: filter naming one photo, the shape the
+// visibility scopes yield to.
+func uidFilters(uid string) []query.Filter {
+	return []query.Filter{{Key: query.KeyUID, Values: []query.Value{{Text: uid}}}}
+}
+
+// TestUIDLookupLiftsScopes verifies a uid: filter lifts every default scope that
+// would otherwise hide the photo it names: the live-only archive filter, the
+// visible-only library filter and the stack-primary-only filter. Naming an id is
+// explicit intent, and reporting nothing about a photo that exists is the one
+// useless answer.
+func TestUIDLookupLiftsScopes(t *testing.T) {
+	t.Parallel()
+
+	params := ListParams{QueryFilters: uidFilters("ph_1")}
+	if got := archivedClauses(params); len(got) != 0 {
+		t.Errorf("archivedClauses = %v, want none", got)
+	}
+	if got := hiddenClauses(params); len(got) != 0 {
+		t.Errorf("hiddenClauses = %v, want none", got)
+	}
+	if got := stackClauses(params); len(got) != 0 {
+		t.Errorf("stackClauses = %v, want none", got)
+	}
+	// OnlyArchived is a caller decision, not a default, so it still wins.
+	onlyArchived := ListParams{OnlyArchived: true, QueryFilters: uidFilters("ph_1")}
+	if got := archivedClauses(onlyArchived); !slices.Equal(got, []string{"archived_at IS NOT NULL"}) {
+		t.Errorf("archivedClauses(OnlyArchived) = %v, want the archived-only clause", got)
+	}
+}
+
+// TestUIDCond verifies the uid: filter compiles to the three exact, indexed
+// lookups it promises — the photo's own uid, the PhotoPrism uid it was imported
+// under, and the alias of a source photo that collapsed onto this row — with the
+// value bound once rather than interpolated.
+func TestUIDCond(t *testing.T) {
+	t.Parallel()
+
+	q, args := buildListQuery(ListParams{QueryFilters: uidFilters("ph_1")})
+	for _, want := range []string{
+		"photos.uid = $", "photos.photoprism_uid = $", "FROM photoprism_aliases pa",
+	} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %q: %s", want, q)
+		}
+	}
+	if !slices.Contains(args, any("ph_1")) {
+		t.Errorf("args = %v, want the bound uid", args)
+	}
 }
 
 // TestBuildListQuery_membershipScope verifies the album/label scope filters add

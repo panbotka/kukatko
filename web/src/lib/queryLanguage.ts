@@ -50,6 +50,7 @@ export const FILTER_KEYS = [
   'taken',
   'title',
   'type',
+  'uid',
   'year',
 ] as const
 
@@ -107,6 +108,7 @@ export function applyFilterKey(input: string, suggestion: KeySuggestion, key: st
  */
 export type QueryHelpRowId =
   | 'text'
+  | 'uid'
   | 'filename'
   | 'keywords'
   | 'album'
@@ -146,6 +148,7 @@ export interface QueryHelpRow {
  */
 export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'text', keys: 'title: description: notes:', example: 'title:svatba' },
+  { id: 'uid', keys: 'uid:', example: 'uid:ph7lpul2io09bcg2rvp2rljsr6' },
   { id: 'filename', keys: 'filename:', example: 'filename:IMG_*' },
   { id: 'keywords', keys: 'keywords:', example: 'keywords:beach' },
   { id: 'album', keys: 'album:', example: 'album:"Léto 2024"' },

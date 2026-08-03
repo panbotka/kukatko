@@ -5,10 +5,20 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
+import {
+  DIRECT_KIND_LABEL,
+  DIRECT_TARGET_ICON,
+  directHitSecondary,
+  directHitTitle,
+} from '../../lib/directHit'
 import { isTypingElement } from '../../lib/ratingHotkeys'
 import { isFormModalOpen } from '../../lib/shortcuts'
 import { thumbUrl } from '../../services/photos'
-import { type GlobalSearchResult } from '../../services/search'
+import {
+  directHitRoute,
+  type GlobalSearchDirect,
+  type GlobalSearchResult,
+} from '../../services/search'
 import { FadeInImage } from '../FadeInImage'
 import { Icon, type IconName } from '../Icon'
 
@@ -74,8 +84,44 @@ function formatPhotoDate(takenAt: string | undefined, lang: string): string {
 }
 
 /**
+ * The palette group for a resolved UID lookup, or null when the query carries no
+ * id (or the id resolved to nothing — the dialog says that in words instead).
+ * It is a group of its own, above the "search everything" action, because an id
+ * is an exact reference: pasting one and pressing Enter should open the thing,
+ * not run a text search that cannot match it.
+ */
+function buildDirectGroup(
+  direct: GlobalSearchDirect | undefined,
+  t: TFunction,
+): SearchGroup | null {
+  if (direct === undefined) {
+    return null
+  }
+  const route = directHitRoute(direct)
+  if (route === null || direct.target_kind === undefined) {
+    return null
+  }
+  return {
+    key: 'direct',
+    headingKey: 'globalSearch.direct.heading',
+    items: [
+      {
+        id: 'sc-opt-direct',
+        to: route,
+        primary: directHitTitle(direct),
+        secondary: directHitSecondary(direct, t),
+        thumbUid: direct.target_kind === 'photo' ? direct.target_uid : direct.cover,
+        circle: direct.target_kind === 'person',
+        icon: DIRECT_TARGET_ICON[direct.target_kind],
+      },
+    ],
+  }
+}
+
+/**
  * Builds the ordered, grouped palette rows for a query and its (possibly still
- * loading) result. The first row is always the "search everything" action, so a
+ * loading) result. A resolved UID lookup comes first — pasting an id is an exact
+ * reference and Enter should open it. Then the "search everything" action, so a
  * user who just types and presses Enter lands on the full search page; the entity
  * groups (photos, people, albums, labels — the groups the global-search endpoint
  * returns) follow when they arrive. An empty query yields no rows (the idle hint
@@ -110,6 +156,11 @@ function buildGroups(
 
   if (result === null) {
     return groups
+  }
+
+  const directGroup = buildDirectGroup(result.direct, t)
+  if (directGroup !== null) {
+    groups.unshift(directGroup)
   }
 
   if (result.photos.length > 0) {
@@ -304,6 +355,12 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
   }
   const listboxOpen = message === null && flat.length > 0
 
+  // A well-formed id that names nothing gets said out loud, above the rows. The
+  // fallback would otherwise be the "search everything" action over a string
+  // that can never match any text — an empty result that reads as a broken
+  // search rather than as "there is no such id".
+  const unknownUid = result?.direct !== undefined && !result.direct.found ? result.direct : null
+
   return (
     <Modal
       show={show}
@@ -350,6 +407,15 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
           />
         )}
       </div>
+
+      {unknownUid !== null && (
+        <p className="kukatko-search-status text-warning-emphasis mb-0" role="status">
+          {t('globalSearch.direct.notFound', {
+            kind: t(DIRECT_KIND_LABEL[unknownUid.kind]),
+            uid: unknownUid.uid,
+          })}
+        </p>
+      )}
 
       {listboxOpen ? (
         <ul

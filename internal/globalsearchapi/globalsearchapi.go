@@ -9,6 +9,14 @@
 // type-ahead. The collaborating stores and the auth guard are injected as small
 // interfaces, so the handler stays decoupled from their construction and is
 // unit-testable with fakes.
+//
+// It also answers the most obvious gesture of all: pasting an id. A query
+// carrying a UID is not fuzzy-searched — its two-letter prefix says which table
+// it belongs to (see query.ClassifyUID), so it is resolved there and returned as
+// a "direct" hit, and the fan-out is skipped rather than extended. A marker id
+// resolves to the photo it sits on, a stack id to the stack's primary and a
+// PhotoPrism id to the catalogue row that holds that source photo; a well-formed
+// id matching nothing says so instead of returning an empty result set.
 package globalsearchapi
 
 import (
@@ -24,6 +32,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/query"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -40,21 +49,44 @@ type Organizer interface {
 	SearchAlbums(ctx context.Context, q string, limit int) ([]organize.AlbumCount, error)
 	// SearchLabels returns up to limit labels whose name matches q.
 	SearchLabels(ctx context.Context, q string, limit int) ([]organize.LabelCount, error)
+	// GetAlbumByUID resolves one album by its uid, or organize.ErrAlbumNotFound.
+	GetAlbumByUID(ctx context.Context, uid string) (organize.Album, error)
+	// GetLabelByUID resolves one label by its uid, or organize.ErrLabelNotFound.
+	GetLabelByUID(ctx context.Context, uid string) (organize.Label, error)
 }
 
 // PeopleSearcher is the subset of people.Store the endpoint needs: name search
-// over subjects (people/pets/other).
+// over subjects (people/pets/other), plus the uid lookups a pasted id resolves
+// through.
 type PeopleSearcher interface {
 	// SearchSubjects returns up to limit subjects whose name matches q.
 	SearchSubjects(ctx context.Context, q string, limit int) ([]people.Subject, error)
+	// GetSubjectByUID resolves one subject by its uid, or people.ErrSubjectNotFound.
+	GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error)
+	// GetMarkerByUID resolves one marker by its uid, or people.ErrMarkerNotFound.
+	// A marker id stands for the photo it sits on.
+	GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error)
 }
 
 // PhotoSearcher is the subset of photos.Store the endpoint needs: the existing
-// Czech-aware full-text search, driven through ListParams.FullText.
+// Czech-aware full-text search, driven through ListParams.FullText, plus the
+// exact lookups that resolve a pasted photo/stack/PhotoPrism id. The lookups are
+// unscoped on purpose — an explicit id must find an archived, hidden or stacked
+// photo too.
 type PhotoSearcher interface {
 	// Search returns the photos whose search vector matches params.FullText,
 	// honouring params' limit for the per-group cap.
 	Search(ctx context.Context, params photos.ListParams) ([]photos.Photo, error)
+	// GetByUID resolves one photo by its uid, or photos.ErrPhotoNotFound.
+	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetByPhotoprismUID resolves the photo imported under a PhotoPrism source
+	// uid, or photos.ErrPhotoNotFound.
+	GetByPhotoprismUID(ctx context.Context, ppUID string) (photos.Photo, error)
+	// GetByPhotoprismAlias resolves a PhotoPrism source uid whose bytes were
+	// already catalogued under another uid, or photos.ErrPhotoNotFound.
+	GetByPhotoprismAlias(ctx context.Context, ppUID string) (photos.Photo, error)
+	// ListStackMembers returns a stack's photos, the primary first.
+	ListStackMembers(ctx context.Context, stackUID string) ([]photos.Photo, error)
 }
 
 // API exposes the grouped global-search endpoint over HTTP. The auth guard is
@@ -137,22 +169,64 @@ type subjectHit struct {
 // response is the grouped global-search JSON envelope. Every group is a non-nil
 // slice so absent groups serialise as [] rather than null.
 type response struct {
-	Query  string         `json:"query"`
+	Query string `json:"query"`
+	// Direct is the resolved UID lookup, present only when the query names an
+	// entity by its id. When it is present the fuzzy groups are all empty: the
+	// id lookup REPLACES the four-way fan-out rather than adding a fifth query
+	// to it, so a search-as-you-type box does not get more expensive.
+	Direct *directHit     `json:"direct,omitempty"`
 	Albums []albumHit     `json:"albums"`
 	Labels []labelHit     `json:"labels"`
 	People []subjectHit   `json:"people"`
 	Photos []photos.Photo `json:"photos"`
 }
 
+// emptyGroups returns the envelope's groups as empty (never nil) slices, for the
+// uid branch that skips the fan-out entirely.
+func emptyGroups(query string, direct *directHit) response {
+	return response{
+		Query:  query,
+		Direct: direct,
+		Albums: []albumHit{},
+		Labels: []labelHit{},
+		People: []subjectHit{},
+		Photos: []photos.Photo{},
+	}
+}
+
 // handleGlobal runs the query across all entity groups and writes the grouped
 // top-N result. The q parameter is required; an empty or whitespace-only value is
 // answered with 400. Any store failure is answered with 500.
+//
+// A query that carries a UID takes a different, cheaper path: the id is resolved
+// against the one table its prefix names and returned as a direct hit, and the
+// four-way fuzzy fan-out is skipped — a uid matches no album title, label name,
+// subject name or photo full text anyway, so running it would only cost four
+// queries to return nothing.
 func (a *API) handleGlobal(w http.ResponseWriter, r *http.Request) {
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if query == "" {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
 		writeError(w, http.StatusBadRequest, "q is required")
 		return
 	}
+	ctx := r.Context()
+
+	if ref, ok := query.FindUID(q); ok {
+		hit, err := a.resolveDirect(ctx, ref)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "resolving uid failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, emptyGroups(q, hit))
+		return
+	}
+
+	a.handleFuzzy(w, r, q)
+}
+
+// handleFuzzy runs the ordinary cross-entity search: the four per-group top-N
+// searches over names and full text.
+func (a *API) handleFuzzy(w http.ResponseWriter, r *http.Request, query string) {
 	ctx := r.Context()
 
 	albums, err := a.organizer.SearchAlbums(ctx, query, a.limit)

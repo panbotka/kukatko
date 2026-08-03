@@ -4,7 +4,13 @@ import { Link } from 'react-router-dom'
 
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
 import { thumbUrl } from '../../services/photos'
-import { hasEntityMatches } from '../../services/search'
+import {
+  DIRECT_KIND_LABEL,
+  DIRECT_TARGET_ICON,
+  directHitSecondary,
+  directHitTitle,
+} from '../../lib/directHit'
+import { directHitRoute, type GlobalSearchDirect, hasEntityMatches } from '../../services/search'
 import { ENTITY_STYLE } from '../entityStyle'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
@@ -35,18 +41,71 @@ function ChipThumb({ uid, circle }: { uid?: string; circle?: boolean }) {
 }
 
 /**
+ * The banner for a pasted UID: a prominent "go to this" card when the id
+ * resolved, and a plain statement when it did not. It sits above everything
+ * else and looks nothing like the fuzzy chips below — an id is an exact
+ * reference, and a photo grid that stays empty underneath is the expected
+ * outcome, not a failed search.
+ */
+function DirectHitBanner({ direct }: { direct: GlobalSearchDirect }) {
+  const { t } = useTranslation()
+  const route = directHitRoute(direct)
+
+  if (route === null || direct.target_kind === undefined) {
+    return (
+      <div className="alert alert-warning d-flex align-items-center gap-2 mb-4" role="status">
+        <Icon name="exclamation-triangle" />
+        <span>
+          {t('globalSearch.direct.notFound', {
+            kind: t(DIRECT_KIND_LABEL[direct.kind]),
+            uid: direct.uid,
+          })}
+        </span>
+      </div>
+    )
+  }
+
+  const cover = direct.target_kind === 'photo' ? direct.target_uid : direct.cover
+  return (
+    <section aria-label={t('globalSearch.direct.heading')} className="mb-4">
+      <h2 className="kk-section-title text-secondary mb-2">{t('globalSearch.direct.heading')}</h2>
+      <Link
+        to={route}
+        className="d-inline-flex align-items-center gap-3 text-decoration-none text-body border rounded p-2"
+      >
+        <ChipThumb uid={cover} circle={direct.target_kind === 'person'} />
+        <span className="d-flex flex-column">
+          <span className="fw-semibold">{directHitTitle(direct)}</span>
+          <span className="small text-secondary">{directHitSecondary(direct, t)}</span>
+        </span>
+        <Icon name={DIRECT_TARGET_ICON[direct.target_kind]} />
+      </Link>
+    </section>
+  )
+}
+
+/**
  * Compact cross-entity sections for the search page: given the current query,
  * it renders chips linking to matching Albums, Labels and People above the photo
  * results grid, so a text search also surfaces non-photo entities. It runs its
  * own grouped global search (independent of the photo full-text/semantic search
  * below) and renders nothing until that returns at least one album/label/person —
  * so an empty query, a still-loading search or a photos-only match adds no chrome.
+ *
+ * A query that is a UID is the one exception: it renders the direct hit banner
+ * instead, because that is the whole answer to pasting an id.
  */
 export function GlobalSearchSections({ query }: { query: string }) {
   const { t } = useTranslation()
   const { status, result } = useGlobalSearch(query)
 
-  if (status !== 'ready' || result === null || !hasEntityMatches(result)) {
+  if (status !== 'ready' || result === null) {
+    return null
+  }
+  if (result.direct !== undefined) {
+    return <DirectHitBanner direct={result.direct} />
+  }
+  if (!hasEntityMatches(result)) {
     return null
   }
 

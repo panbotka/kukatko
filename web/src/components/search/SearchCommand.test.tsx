@@ -43,6 +43,10 @@ function photo(overrides: Partial<Photo> = {}): Photo {
   }
 }
 
+/** Well-formed ids the direct-hit cases paste into the palette. */
+const PHOTO_UID = 'ph7lpul2io09bcg2rvp2rljsr6'
+const MARKER_UID = 'mk7lpul2io09bcg2rvp2rljsr6'
+
 const RESULT: GlobalSearchResult = {
   query: 'beach',
   albums: [{ uid: 'al1', title: 'Beach trip', cover: 'ph9', photo_count: 12 }],
@@ -175,5 +179,90 @@ describe('SearchCommand', () => {
 
     await user.click(await screen.findByRole('option', { name: /Beach trip/ }))
     expect(screen.getByTestId('loc')).toHaveTextContent('/albums/al1')
+  })
+
+  it('shows a pasted UID as its own "go to" row, ahead of the text search', async () => {
+    const user = userEvent.setup()
+    searchMock.mockResolvedValue({
+      query: PHOTO_UID,
+      direct: {
+        uid: PHOTO_UID,
+        kind: 'photo',
+        found: true,
+        target_kind: 'photo',
+        target_uid: PHOTO_UID,
+        title: 'Sunset beach',
+        photo: photo({ uid: PHOTO_UID }),
+      },
+      albums: [],
+      labels: [],
+      people: [],
+      photos: [],
+    })
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.type(await screen.findByRole('combobox'), PHOTO_UID)
+
+    // The hit is a group of its own — "Go to", not one text match among others.
+    const hit = await screen.findByRole('option', { name: /Sunset beach/ })
+    expect(screen.getByText('Go to')).toBeInTheDocument()
+    expect(hit).toHaveTextContent('photo ID')
+    // …and it is the FIRST row, so Enter opens the photo instead of running a
+    // text search that could never match the id.
+    const options = screen.getAllByRole('option')
+    expect(options[0]).toBe(hit)
+    await user.keyboard('{Enter}')
+    expect(screen.getByTestId('loc')).toHaveTextContent(`/photos/${PHOTO_UID}`)
+  })
+
+  it('labels the state of a photo that a UID reached outside the library view', async () => {
+    const user = userEvent.setup()
+    searchMock.mockResolvedValue({
+      query: MARKER_UID,
+      direct: {
+        uid: MARKER_UID,
+        kind: 'marker',
+        found: true,
+        target_kind: 'photo',
+        target_uid: PHOTO_UID,
+        title: 'Old attic',
+        states: ['archived', 'hidden'],
+      },
+      albums: [],
+      labels: [],
+      people: [],
+      photos: [],
+    })
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.type(await screen.findByRole('combobox'), MARKER_UID)
+
+    // It says what the id was (a marker, so the photo it sits on) and why the
+    // photo is not in the grid.
+    const hit = await screen.findByRole('option', { name: /Old attic/ })
+    expect(hit).toHaveTextContent('marker ID · the photo it sits on')
+    expect(hit).toHaveTextContent('archived')
+    expect(hit).toHaveTextContent('hidden from the library')
+  })
+
+  it('says so plainly when a well-formed UID names nothing', async () => {
+    const user = userEvent.setup()
+    searchMock.mockResolvedValue({
+      query: PHOTO_UID,
+      direct: { uid: PHOTO_UID, kind: 'photo', found: false },
+      albums: [],
+      labels: [],
+      people: [],
+      photos: [],
+    })
+    renderCommand()
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.type(await screen.findByRole('combobox'), PHOTO_UID)
+
+    expect(
+      await screen.findByText(`Nothing matches this photo ID: ${PHOTO_UID}`),
+    ).toBeInTheDocument()
+    // No "go to" row is offered for something that does not exist.
+    expect(screen.queryByText('Go to')).not.toBeInTheDocument()
   })
 })
