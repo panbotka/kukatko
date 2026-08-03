@@ -129,40 +129,58 @@ describe('Layout navbar', () => {
     expect(container.querySelector('main.kukatko-main')).not.toBeNull()
   })
 
-  it('leads the bar with a brand that links to the home route', () => {
-    // Start away from home so the brand is a real way back, not a self-link.
-    renderLayout(auth(), '/albums')
+  it('carries no logo and no wordmark, on either viewport', () => {
+    // Width is the bar's scarce resource: the brand is gone entirely, mark and
+    // wordmark alike, rather than being juggled by display utilities.
+    const { container, unmount } = renderLayout(auth(), '/albums')
+    expect(screen.queryByRole('link', { name: /Kukátko/ })).not.toBeInTheDocument()
+    const bar = container.querySelector('.kukatko-navbar')
+    expect(bar).not.toBeNull()
+    expect(bar?.textContent).not.toContain('Kukátko')
+    expect(container.querySelector('.kukatko-navbar i.bi-binoculars-fill')).toBeNull()
 
-    // The brand answers "which app is this" and is the one-tap way back to the
-    // start, so it points at the library root.
-    const brand = screen.getByRole('link', { name: 'Kukátko — home' })
-    expect(brand).toHaveAttribute('href', '/')
-    expect(brand).toHaveAttribute('title', 'Back to the start — the photo library')
-
-    // Its accessible name is set explicitly (not left to the text) because the
-    // wordmark is display-hidden below `sm`, where the mark stands alone.
-    expect(brand).toHaveTextContent('Kukátko')
-    const mark = brand.querySelector('i.bi.bi-binoculars-fill')
-    expect(mark).not.toBeNull()
-    expect(mark).toHaveAttribute('aria-hidden', 'true')
+    unmount()
+    mockViewport(true)
+    const phone = renderLayout(auth(), '/albums')
+    expect(phone.container.querySelector('.kukatko-navbar i.bi-binoculars-fill')).toBeNull()
+    expect(screen.queryByRole('link', { name: /Kukátko/ })).not.toBeInTheDocument()
   })
 
-  it('keeps the brand in the phone bar, ahead of search and the hamburger', () => {
+  it('keeps a labelled one-tap way home on the desktop bar', () => {
+    // Start away from home so the way back is a real link, not a self-link. With
+    // the brand gone this is what replaces it: the bar's first item, labelled.
+    renderLayout(auth(), '/albums')
+
+    const home = screen.getByRole('link', { name: 'Library' })
+    expect(home).toHaveAttribute('href', '/')
+    expect(home).toHaveAttribute('title', 'Show the photo library')
+    expect(home.closest('.navbar.kukatko-navbar')).not.toBeNull()
+  })
+
+  it('keeps a one-tap way home on a phone, in the bottom tab bar', () => {
+    mockViewport(true)
+    renderLayout(auth(), '/albums')
+
+    // The phone bar has no nav at all (it folds into the drawer), so the way home
+    // is the tab bar's leading tab — permanently under the thumb, no menu first.
+    const home = screen.getByRole('link', { name: 'Library' })
+    expect(home).toHaveAttribute('href', '/')
+    expect(home.closest('.kk-tabbar')).not.toBeNull()
+  })
+
+  it('pairs search with the hamburger on the phone row', () => {
     mockViewport(true)
     renderLayout(auth())
 
-    // On a phone the nav folds into the drawer entirely — the brand and the
-    // search field are all the top row has left, so the brand must be outside
-    // the collapse and lead the row: `[brand] [search] [hamburger]`.
-    const brand = screen.getByRole('link', { name: 'Kukátko — home' })
+    // On a phone the nav folds into the drawer entirely, so the top row is just
+    // `[search] [hamburger]` — search first (the hamburger belongs on the
+    // trailing edge), and outside the collapse so it never folds away.
     const search = screen.getByRole('button', { name: 'Search' })
     const toggle = screen.getByRole('button', { name: /toggle navigation/i })
-    expect(precedes(brand, search)).toBe(true)
     expect(precedes(search, toggle)).toBe(true)
+    expect(search.closest('.navbar.kukatko-navbar')).not.toBeNull()
 
-    // It lives in the bar itself, not in the drawer the hamburger opens…
-    expect(brand.closest('.navbar.kukatko-navbar')).not.toBeNull()
-    // …and it did not bring the inline nav back with it: the only Albums link on
+    // The bar did not bring the inline nav back with it: the only Albums link on
     // a phone is the bottom tab bar's.
     const albums = screen.getByRole('link', { name: 'Albums' })
     expect(albums.closest('.navbar.kukatko-navbar')).toBeNull()

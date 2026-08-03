@@ -33,25 +33,37 @@ here.
   (`nav.admin`, `GOVERNANCE_GROUP`, entirely gated on `isAdmin` = admin **or** maintainer) gathers
   **Uživatelé** `/users` + **Audit** `/audit`. The role model is a strict ladder
   `viewer < editor < admin < maintainer` (see `services/auth.ts` below).
-  **The bar opens with the brand / home affordance** (`Navbar.Brand as={Link}` → `LIBRARY_PATH` `/`, class
-  `kukatko-navbar-brand`): a `binoculars-fill` mark plus the „Kukátko" wordmark (`app.name`). **The mark is
-  always shown, the wordmark only where it measurably fits** — `d-none d-sm-inline d-md-none d-xxl-inline`,
-  i.e. hidden below `sm` (a 320px row is brand + search + hamburger and nothing else), shown `sm`–`md` (the
-  phone/tablet bar, whose nav is folded into the drawer), hidden again from `md` (the inline bar unfolds and
-  the **nav** is what is starved: the wordmark alone pushes a 1024px viewer bar into a horizontal scrollbar),
-  back from `xxl`. It sits **outside the collapse on every viewport** — on a phone, where the
-  whole nav folds into the drawer, it is the only thing on screen saying *which app this is*, and it is the
-  one-tap way back to the start from anywhere. Since the wordmark is display-hidden most of the time, the accessible
-  name is pinned with `aria-label` (`nav.brand` = „Kukátko — domů"), not left to the sometimes-hidden text; the
-  tooltip is `nav.titles.home`. The box mirrors the search trigger's heights (2.25rem on a fine pointer,
-  **2.75rem = the 44px finger target on `pointer: coarse`**, guarded by `styles/tapTargets.test.ts`), so the
-  desktop bar gains the brand without growing taller. The **hamburger closes the phone row** instead of opening
+  **The bar carries no brand — no mark, no wordmark, no logo home link.** It used to open with one
+  (`Navbar.Brand` + a `binoculars-fill` mark + the „Kukátko" wordmark), but width is this row's scarce
+  resource: the wordmark only stayed alive by juggling four display utilities (`d-none d-sm-inline
+  d-md-none d-xxl-inline`) because it fit nowhere, and the inline bar ran past its container for an editor
+  and a maintainer well into desktop widths. Dropping it — with the `kukatko-navbar-brand*` rules and the
+  `nav.brand` / `app.name` / `nav.titles.home` keys — buys the whole leading block back. Measured in a
+  static before/after harness (real bootswatch + tokens + `app.css`, the actually rendered bar, Czech
+  labels), the compact search below plus the dropped brand cut the overflow past the viewport edge by
+  **264px at every desktop width**: an **editor** bar stops scrolling horizontally from ~1160px instead of
+  ~1420px, a **maintainer** one from ~1290px instead of ~1890px (at 1200px: editor +135px → fits,
+  maintainer +352px → +88px; at 1400px: +14px / +231px → both fit). Below `md` nothing overflowed before or
+  after, since the collapse is not rendered there. **The way home does not depend on a logo:** on `md`+ it
+  is the bar's first item **Knihovna** `/` (labelled, `end`-matched, `title` „Zobrazit knihovnu fotek"),
+  below `md` it is the leading tab of `MobileTabBar`, permanently under the thumb — one tap either way,
+  exactly as the mark was. The **hamburger closes the phone row** `[search] [hamburger]` instead of opening
   it (last in the DOM); it is `display: none` on `md`+, so the desktop bar is unmoved by that.
-  **After the brand the bar leads with global search** `SearchCommand` (`components/search/`) — a field-as-trigger,
-  **outside the collapse** (so on mobile it stays visible when the nav folds into the burger), opening a **command
-  palette** reachable from anywhere via `/` or Cmd/Ctrl-K (it doesn't steal typing — see `SearchCommand`
-  below). The old full `/search` page and saved searches remain; only the navbar no longer has a standalone
-  „Hledat" link or the library's filter field.
+  **The bar leads with global search** `SearchCommand` (`components/search/`) — since the same change a
+  **compact icon button** (a 2.25rem magnifier, 2.75rem on `pointer: coarse`, guarded by
+  `styles/tapTargets.test.ts`), not the old 16rem field-shaped pill: the control never takes a keystroke, it
+  only opens a dialog, so it does not need to look like a place to type. It keeps the sunken well and the
+  hairline so it still reads as a control among the quiet nav links, and stays **outside the collapse** (on
+  mobile it survives the nav folding into the burger). Below `md` `margin-inline-start: auto` pairs it with
+  the hamburger at the trailing edge rather than leaving it alone on the left of the row the brand used to
+  open; from `md` the margin flips and it leads the bar ahead of the nav. Nothing on it is visible text, so
+  its name and its shortcut are stated outright: `aria-label` (`searchCommand.open`), `aria-keyshortcuts`
+  and a `title` tooltip (`searchCommand.triggerTitle` = „Hledat v celé knihovně (klávesa / nebo Ctrl+K)")
+  which is what replaces the keycap the field used to draw — both chords are listed in the
+  keyboard-shortcuts overlay sitting in the same bar too. It opens a **command palette** reachable from
+  anywhere via `/` or Cmd/Ctrl-K (it doesn't steal typing — see `SearchCommand` below). The old full
+  `/search` page and saved searches remain; only the navbar no longer has a standalone „Hledat" link or the
+  library's filter field.
   Every item and every dropdown toggle carries an **icon** (`Icon`) and a **`title` describing the action**, not
   the noun („Zobrazit alba", not „Alba"; keys `nav.titles.*`); icons are decorative
   (`aria-hidden`) beside the visible text label. A dropdown is hidden entirely when the user has
@@ -1410,8 +1422,9 @@ here.
   chips of matching **albums/people/labels** linking to the entity; independent of the photo fulltext/semantic
   search below it, renders nothing until at least one non-photo match arrives — an empty query /
   an in-progress search / a photos-only match adds no chrome) +
-  `SearchCommand` (**a global command palette** in the navbar: a field-as-trigger (`kukatko-search-trigger`
-  with a key hint) opens via `react-bootstrap` `Modal` a top-anchored console — a live input (a combobox
+  `SearchCommand` (**a global command palette** in the navbar: a compact icon trigger
+  (`kukatko-search-trigger`, named + shortcut-hinted by `aria-label`/`title`, see the navbar above)
+  opens via `react-bootstrap` `Modal` a top-anchored console — a live input (a combobox
   with `aria-activedescendant`), grouped **keyboard-operable** results from `useGlobalSearch`
   (rows Fotky/Lidé/Alba/Štítky + always a leading action „Hledat vše" → `/search?q=`) and a footer legend
   of keys. Arrows ↑/↓ move (wrapping), Enter opens the active row, Esc closes, a click opens. It opens

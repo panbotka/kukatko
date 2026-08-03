@@ -76,12 +76,17 @@ beforeEach(async () => {
 })
 
 describe('SearchCommand', () => {
-  it('renders a field-shaped trigger showing the keyboard hint', () => {
+  it('renders a compact icon trigger that still names itself and its shortcut', () => {
     renderCommand()
     const trigger = screen.getByRole('button', { name: 'Search' })
-    expect(trigger).toBeInTheDocument()
-    // The shortcut is advertised in the field itself.
-    expect(trigger).toHaveTextContent('/')
+    // Nothing on it is visible text: it is the magnifier and nothing else…
+    expect(trigger).toHaveTextContent('')
+    expect(trigger.querySelector('i.bi.bi-search')).not.toBeNull()
+    // …so the name and the shortcut are stated outright instead of drawn. The
+    // icon itself stays decorative, as every icon in the app is.
+    expect(trigger).toHaveAttribute('title', 'Search the whole library (press / or Ctrl+K)')
+    expect(trigger).toHaveAttribute('aria-keyshortcuts', '/ Control+K Meta+K')
+    expect(trigger.querySelector('i.bi.bi-search')).toHaveAttribute('aria-hidden', 'true')
     // The palette is closed until asked for.
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })

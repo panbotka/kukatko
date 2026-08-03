@@ -1,6 +1,5 @@
 {
   "app": {
-    "name": "Kukátko",
     "tagline": "Self-hosted photo & video library"
   },
   "confirmModal": {
@@ -27,7 +26,6 @@
   },
   "nav": {
     "home": "Home",
-    "brand": "Kukátko — home",
     "browse": "Browse",
     "tools": "Tools",
     "admin": "Admin",
@@ -54,7 +52,6 @@
     "users": "Users",
     "audit": "Audit",
     "titles": {
-      "home": "Back to the start — the photo library",
       "library": "Show the photo library",
       "albums": "Show the albums",
       "labels": "Show the labels",
@@ -497,9 +494,8 @@
   },
   "searchCommand": {
     "open": "Search",
-    "triggerLabel": "Search…",
+    "triggerTitle": "Search the whole library (press / or Ctrl+K)",
     "placeholder": "Search photos, people, albums, labels",
-    "shortcutHint": "/",
     "dialogLabel": "Global search",
     "clear": "Clear search",
     "idle": "Start typing to search across your library.",

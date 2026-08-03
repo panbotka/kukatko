@@ -1926,7 +1926,8 @@ and **Labels** links are in the navbar under the **Browse** dropdown.
 
 **Navbar — grouped menu:** to keep the top bar tidy, related destinations in
 [`Layout`](web/src/components/Layout.tsx) are consolidated into `react-bootstrap` `NavDropdown` groups instead of
-a flat list of links: **Home** is reachable via the brand link, the **Browse** dropdown groups
+a flat list of links: **Home** is the bar's first item **Library** (the bar carries no brand or logo link;
+on a phone the same destination is the first tab of the bottom bar), the **Browse** dropdown groups
 Library/Favorites/Albums/Labels/People/Places/Map (for all roles), **Search** and **Upload** stay
 prominent top-level, the editor **Tools** dropdown (gated by `canWrite`) groups Duplicates + Trash and
 the admin **Manage** dropdown (gated by `isAdmin`) groups Import + Maintenance + System. A group hides

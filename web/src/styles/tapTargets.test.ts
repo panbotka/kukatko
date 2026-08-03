@@ -52,19 +52,20 @@ describe('coarse-pointer touch-target floor', () => {
     expect(toggler.get('justify-content')).toBe('center')
   })
 
-  it('squares the navbar brand off to the floor on touch', () => {
-    // The brand carries its own coarse block (next to the rules that shape it),
+  it('squares the navbar search trigger off to the floor on touch', () => {
+    // The trigger carries its own coarse block (next to the rules that shape it),
     // so pick the one that actually mentions it rather than the shared floor.
-    const block = ruleBody(css, /@media\s*\(pointer:\s*coarse\)/, /\.kukatko-navbar-brand/) ?? ''
-    const brand = declarations(ruleBody(block, /\.kukatko-navbar-brand\s*(?=\{)/) ?? '')
-    // Below `sm` the wordmark is hidden and the mark is the whole control, so the
-    // box has to clear the floor on both axes — not just vertically.
-    expect(lengthPx(brand.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
-    expect(lengthPx(brand.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    const block = ruleBody(css, /@media\s*\(pointer:\s*coarse\)/, /\.kukatko-search-trigger/) ?? ''
+    const trigger = declarations(ruleBody(block, /\.kukatko-search-trigger\s*(?=\{)/) ?? '')
+    // It is an icon button now, not a field: the magnifier is the whole control,
+    // so the box has to clear the floor on both axes — not just vertically, as it
+    // could get away with while it was a full-width pill.
+    expect(lengthPx(trigger.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(lengthPx(trigger.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
 
     // The base rule keeps the flex centering that holds the glyph in the middle
     // once the box grows past it.
-    const base = declarations(ruleBody(css, /\.kukatko-navbar-brand\s*(?=\{)/) ?? '')
+    const base = declarations(ruleBody(css, /\.kukatko-search-trigger\s*(?=\{)/) ?? '')
     expect(base.get('display')).toBe('inline-flex')
     expect(base.get('align-items')).toBe('center')
     expect(base.get('justify-content')).toBe('center')
