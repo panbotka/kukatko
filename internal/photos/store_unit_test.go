@@ -1,10 +1,13 @@
 package photos
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/query"
 )
 
 // TestPlaceholders verifies the positional-parameter list for representative
@@ -215,6 +218,93 @@ func TestBuildListQuery(t *testing.T) {
 			t.Errorf("query missing absent-gps filter: %q", query)
 		}
 	})
+}
+
+// TestHiddenClauses verifies the library-visibility filter: on by default,
+// lifted for the scopes a photo is only reachable through because the user put
+// it there (album, label, favorites), lifted by the explicit IncludeHidden
+// escape hatch, and lifted by an explicit hidden: in the query language so
+// hidden:yes can actually match.
+func TestHiddenClauses(t *testing.T) {
+	t.Parallel()
+
+	yes, no := true, false
+
+	tests := []struct {
+		name   string
+		params ListParams
+		want   []string
+	}{
+		{name: "default hides", params: ListParams{}, want: []string{"NOT hidden_from_library"}},
+		{name: "include-hidden lifts", params: ListParams{IncludeHidden: true}},
+		{name: "album scope lifts", params: ListParams{AlbumUIDs: []string{"al_1"}}},
+		{name: "label scope lifts", params: ListParams{LabelUIDs: []string{"lb_1"}}},
+		{name: "favorites scope lifts", params: ListParams{FavoriteOf: "us_1"}},
+		{
+			name:   "subject scope still hides",
+			params: ListParams{SubjectUIDs: []string{"sub_1"}},
+			want:   []string{"NOT hidden_from_library"},
+		},
+		{
+			name:   "explicit hidden:yes lifts the default",
+			params: ListParams{QueryFilters: boolFilters(query.KeyHidden, yes)},
+		},
+		{
+			name:   "explicit hidden:no lifts the default too",
+			params: ListParams{QueryFilters: boolFilters(query.KeyHidden, no)},
+		},
+		{
+			name:   "an unrelated filter does not lift it",
+			params: ListParams{QueryFilters: boolFilters(query.KeyArchived, yes)},
+			want:   []string{"NOT hidden_from_library"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := hiddenClauses(tt.params); !slices.Equal(got, tt.want) {
+				t.Errorf("hiddenClauses(%+v) = %v, want %v", tt.params, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuildListQuery_hiddenFromLibrary verifies the visibility filter reaches the
+// assembled list query — the point of writing it as a bare photos.* predicate is
+// that it rides along with every listing.
+func TestBuildListQuery_hiddenFromLibrary(t *testing.T) {
+	t.Parallel()
+
+	got, _ := buildListQuery(ListParams{})
+	if !strings.Contains(got, "NOT hidden_from_library") {
+		t.Errorf("default list query missing the visibility filter: %q", got)
+	}
+	scoped, _ := buildListQuery(ListParams{AlbumUIDs: []string{"al_1"}})
+	if strings.Contains(scoped, "NOT hidden_from_library") {
+		t.Errorf("album-scoped list query must not hide: %q", scoped)
+	}
+}
+
+// TestBuildListQuery_hiddenQueryFilterCompiles verifies hidden:yes compiles to
+// the positive predicate, so the documented way back to a hidden photo returns
+// the hidden ones rather than nothing.
+func TestBuildListQuery_hiddenQueryFilterCompiles(t *testing.T) {
+	t.Parallel()
+
+	got, _ := buildListQuery(ListParams{QueryFilters: boolFilters(query.KeyHidden, true)})
+	if !strings.Contains(got, "(hidden_from_library)") {
+		t.Errorf("query missing the hidden:yes predicate: %q", got)
+	}
+	if strings.Contains(got, "NOT hidden_from_library") {
+		t.Errorf("hidden:yes must not be ANDed with the default visible-only filter: %q", got)
+	}
+}
+
+// boolFilters builds the parsed-filter slice for one yes/no key, the shape
+// internal/query hands the store.
+func boolFilters(key query.Key, value bool) []query.Filter {
+	return []query.Filter{{Key: key, Values: []query.Value{{Bool: &value}}}}
 }
 
 // TestBuildListQuery_membershipScope verifies the album/label scope filters add

@@ -31,6 +31,7 @@ export type IconName =
   | 'exclamation-triangle'
   | 'eye'
   | 'eye-fill'
+  | 'eye-slash'
   | 'files'
   | 'geo-alt'
   | 'github'

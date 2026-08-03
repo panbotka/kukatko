@@ -207,6 +207,17 @@ type Photo struct {
 	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 	UploadedBy *string    `json:"uploaded_by,omitempty"`
 
+	// HiddenFromLibrary keeps the photo out of the library firehose — the grid and
+	// its counts, the timeline and year buckets, the map and places, the slideshow,
+	// the review game and the default search — while leaving it fully visible in
+	// album and label galleries, in favourites and at its own URL. It is curation
+	// the user set by hand, for the things that belong in the catalogue but not
+	// among the photographs: scanned documents, screenshots, receipts.
+	//
+	// It is NOT ArchivedAt (a photo on its way out, purged after retention) and NOT
+	// Private (a sharing concept that is out of scope). See migration 0049.
+	HiddenFromLibrary bool `json:"hidden_from_library"`
+
 	PhotoprismUID      *string `json:"photoprism_uid,omitempty"`
 	PhotoprismFileHash *string `json:"photoprism_file_hash,omitempty"`
 	PhotosorterUID     *string `json:"photosorter_uid,omitempty"`

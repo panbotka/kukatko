@@ -223,6 +223,8 @@ func curationOf(in Input) Curation {
 		Favorites: favoritesFrom(in.Favorites),
 		Ratings:   ratingsFrom(in.Ratings),
 		Private:   p.Private,
+
+		HiddenFromLibrary: p.HiddenFromLibrary,
 	}
 	if p.ArchivedAt != nil {
 		at := p.ArchivedAt.UTC()

@@ -303,8 +303,17 @@ func (s *Service) faceQuestions(ctx context.Context, need int) (tiered, int, err
 }
 
 // personQuestions converts one subject's scanned candidates into face questions,
-// split by tier, dropping what falls in neither tier and stale already-done rows
-// and keeping at most MaxPerEntity per tier. The cap is applied here rather than
+// split by tier, dropping what falls in neither tier, stale already-done rows and
+// photos hidden from the library, and keeping at most MaxPerEntity per tier.
+//
+// The hidden ones are dropped here rather than in the sweep because hiding is a
+// statement about browsing, not about the data: the face is still detected, its
+// vector still indexed, and a candidate search that skipped hidden photos
+// entirely would quietly weaken every other feature built on it. The game is a
+// browse, though — a scanned document is exactly what nobody wants to be asked
+// twenty questions about — so the questions stop here.
+//
+// The cap is applied here rather than
 // after the scan on purpose: the scan stops once it holds need questions, so
 // capping first is what makes "enough" mean "enough from enough different
 // people" instead of "enough from whoever happened to be scanned first". The
@@ -317,7 +326,7 @@ func (s *Service) personQuestions(person *sweep.Person) tiered {
 	for _, cand := range person.Candidates {
 		confidence := 1 - cand.Distance
 		which, ok := s.tierOf(confidence)
-		if !ok || cand.Action == candidates.ActionAlreadyDone {
+		if !ok || cand.Action == candidates.ActionAlreadyDone || cand.Photo.HiddenFromLibrary {
 			continue
 		}
 		subject := person.Subject
@@ -474,10 +483,12 @@ func (s *Service) scanLabels(ctx context.Context, chunk []organize.LabelCount) (
 }
 
 // labelResultQuestions converts one label's similarity candidates into label
-// questions split by tier, dropping what falls in neither and keeping at most
-// MaxPerEntity of each tier — the same share rule the face side applies, and for
-// the same reason: a label that matches half the library returns hundreds of
-// candidates and would otherwise be the only thing the batch asks about.
+// questions split by tier, dropping what falls in neither, dropping photos
+// hidden from the library (see personQuestions for why that cut is made here),
+// and keeping at most MaxPerEntity of each tier — the same share rule the face
+// side applies, and for the same reason: a label that matches half the library
+// returns hundreds of candidates and would otherwise be the only thing the batch
+// asks about.
 //
 // The label search costs the same for both tiers: it already ran at the band's
 // threshold and returned the confident matches nearest-first, and the old code
@@ -486,7 +497,7 @@ func (s *Service) labelResultQuestions(label organize.Label, res expand.Result) 
 	var questions tiered
 	for _, cand := range res.Candidates {
 		which, ok := s.tierOf(cand.Similarity)
-		if !ok {
+		if !ok || cand.Photo.HiddenFromLibrary {
 			continue
 		}
 		labelCopy := label

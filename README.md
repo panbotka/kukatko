@@ -221,6 +221,15 @@ The core of the catalog is in migration `0003_photos.sql` and the `internal/phot
   The `private` column is **legacy**: it remains only so that import from PhotoPrism/photo-sorter
   can keep mirroring their flag. The application nowhere filters, edits, or displays it —
   it was never a security boundary (a private photo was served like any other).
+  **Hidden from the library** (migration `0049_photos_hidden_from_library.sql`):
+  `hidden_from_library` keeps a photo out of the firehose — the grid and its counts, the timeline
+  and year buckets, the map and places, the slideshow, the review game and the default search —
+  while it stays fully visible in its albums and labels, in favourites and at its own URL. For the
+  things that belong in the catalogue but not among the photographs: scanned documents,
+  screenshots, receipts. It is toggled per photo (`POST /photos/{uid}/hide`+`/unhide`) or for a
+  whole selection (`hide`/`unhide` in the bulk API), listed again with `hidden:yes` in search, and
+  carried in the metadata sidecar so a restore does not un-hide everything. It is **not**
+  `archived_at`, which is a photo on its way out (trash, purged after retention), and not `private`.
   **Approximate date** (migration `0029_photos_taken_at_estimate.sql`): `taken_at_estimated`
   (the date is an estimate, not a fact) + `taken_at_note` (free text about the dating, max 500 chars). `taken_at`
   remains the sole anchor for sorting/timeline/filters; the note is kept only for an estimate (drop the flag →
@@ -247,7 +256,7 @@ The core of the catalog is in migration `0003_photos.sql` and the `internal/phot
 
 `photos.Store` (over the pgx pool) offers `Create`, `GetByUID`/`GetByFileHash`/
 `GetByPhotoprismUID`/`GetByPhotosorterUID`, `UpdateMetadata`, `Archive`/`Unarchive`,
-`Delete`, `List`/`Count` (archived/uploader filter, sorting, pagination),
+`SetHiddenFromLibrary`, `Delete`, `List`/`Count` (archived/hidden/uploader filter, sorting, pagination),
 `Search` (full-text over the `fts` column, sorting by `ts_rank`, honors the list filters +
 pagination; empty query → `ErrEmptySearch`), `FilterUIDs` (from a set of uids returns those
 that pass the structural list filters — for semantic search: it filters the vector
@@ -896,12 +905,14 @@ Supported operations (each optional, an omitted field = no change):
 - `set_caption`/`clear_caption` (→ `title`), `set_description`/`clear_description`;
 - `set_location {lat,lng}` (range validation) / `clear_location`;
 - `archive` / `unarchive` (mutually exclusive);
+- `hide` / `unhide` (mutually exclusive) — takes the photos out of the library firehose
+  (`photos.hidden_from_library`) or brings them back;
 - `set_favorite` (bool) — **per-user** favorite for the caller;
 - `set_rating` (0–5) / `set_flag` (`none`/`pick`/`reject`/`eye`) — **per-user** rating for the caller
   (an invalid value → **400**; the `user_ratings` row is cleared when it drops to rating 0 + flag `none`).
 
 Set/clear pairs are separate keys (not presence/null), so the payload is unambiguous and a conflict
-(`set_*` + `clear_*`, `archive` + `unarchive`) is **400**. An unknown operation key → **400**
+(`set_*` + `clear_*`, `archive` + `unarchive`, `hide` + `unhide`) is **400**. An unknown operation key → **400**
 (`DisallowUnknownFields`). A batch over the `bulk.max_batch_size` limit (default 1000) → **413**.
 
 - **Result semantics** — response `{results:[{photo_uid,status,error?}],counts:{total,updated,

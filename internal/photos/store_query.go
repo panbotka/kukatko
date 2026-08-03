@@ -206,6 +206,7 @@ var queryCondBuilders = map[query.Key]condBuilder{
 	query.KeyFavorite:    favoriteCond,
 	query.KeyPrivate:     privateCond,
 	query.KeyArchived:    archivedCond,
+	query.KeyHidden:      hiddenCond,
 	query.KeyRating:      ratingCond,
 	query.KeyFlag:        flagCond,
 	query.KeyFaces:       facesCond,
@@ -428,6 +429,20 @@ func archivedCond(v query.Value, _ condEnv) (string, bool) {
 		return "archived_at IS NOT NULL", true
 	}
 	return "archived_at IS NULL", true
+}
+
+// hiddenCond keeps the photos hidden from the library (yes) or the visible ones
+// (no). The store's default visible-only clause yields to it (see
+// hiddenClauses), so hidden:yes can actually match — which is what makes a
+// hidden photo findable, and therefore un-hideable, again.
+func hiddenCond(v query.Value, _ condEnv) (string, bool) {
+	if v.Bool == nil {
+		return "", false
+	}
+	if *v.Bool {
+		return "hidden_from_library", true
+	}
+	return "NOT hidden_from_library", true
 }
 
 // ratingCond compiles a rating range over the caller's per-user rating; a

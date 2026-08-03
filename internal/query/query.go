@@ -47,6 +47,10 @@ const (
 	// KeyArchived keeps (or drops) archived photos (yes/no); using it lifts
 	// the default live-only scope so archived:yes can actually match.
 	KeyArchived Key = "archived"
+	// KeyHidden keeps (or drops) the photos hidden from the library (yes/no);
+	// using it lifts the default visible-only scope so hidden:yes can actually
+	// match. It is the documented way back to a hidden photo.
+	KeyHidden Key = "hidden"
 	// KeyRating matches the caller's star rating, 0–5 with ranges (number).
 	KeyRating Key = "rating"
 	// KeyFlag matches the caller's pick/reject/eye flag (enum).
@@ -153,6 +157,7 @@ var specs = map[Key]spec{
 	KeyFavorite:    {kind: KindBool},
 	KeyPrivate:     {kind: KindBool},
 	KeyArchived:    {kind: KindBool},
+	KeyHidden:      {kind: KindBool},
 	KeyRating:      {kind: KindNumber, lo: 0, hi: 5, integer: true},
 	KeyFlag:        {kind: KindEnum, enum: []string{"pick", "reject", "eye"}},
 	KeyYear:        {kind: KindNumber, lo: 1000, hi: 9999, integer: true},

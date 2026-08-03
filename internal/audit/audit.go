@@ -70,6 +70,12 @@ const (
 	ActionPhotoArchive = "photo.archive"
 	// ActionPhotoUnarchive records restoring a photo from the trash.
 	ActionPhotoUnarchive = "photo.unarchive"
+	// ActionPhotoHide records hiding a photo from the library firehose. Unlike
+	// ActionPhotoArchive nothing is deleted or scheduled for deletion: the photo
+	// stays in the catalogue and in its albums, labels and favourites.
+	ActionPhotoHide = "photo.hide"
+	// ActionPhotoUnhide records bringing a hidden photo back into the library.
+	ActionPhotoUnhide = "photo.unhide"
 	// ActionPhotoPurge records the permanent, irreversible deletion of a photo
 	// from the trash — a manual purge, emptying the trash, or the scheduled
 	// retention purge. Unlike ActionPhotoArchive it cannot be undone, so it is

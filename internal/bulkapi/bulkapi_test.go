@@ -66,6 +66,38 @@ func TestToOperations(t *testing.T) {
 			},
 		},
 		{
+			name:    "hide and unhide conflict",
+			in:      operationsInput{Hide: true, Unhide: true},
+			wantErr: true,
+		},
+		{
+			name: "hide sets pointer true",
+			in:   operationsInput{Hide: true},
+			check: func(t *testing.T, ops bulk.Operations) {
+				if ops.Hide == nil || !*ops.Hide {
+					t.Errorf("Hide = %v, want true", ops.Hide)
+				}
+			},
+		},
+		{
+			name: "unhide sets pointer false",
+			in:   operationsInput{Unhide: true},
+			check: func(t *testing.T, ops bulk.Operations) {
+				if ops.Hide == nil || *ops.Hide {
+					t.Errorf("Hide = %v, want false", ops.Hide)
+				}
+			},
+		},
+		{
+			name: "neither hide nor unhide leaves it unchanged",
+			in:   operationsInput{SetCaption: new("x")},
+			check: func(t *testing.T, ops bulk.Operations) {
+				if ops.Hide != nil {
+					t.Errorf("Hide = %v, want nil", ops.Hide)
+				}
+			},
+		},
+		{
 			name:    "set and clear location conflict",
 			in:      operationsInput{SetLocation: &locationInput{Lat: 1, Lng: 2}, ClearLocation: true},
 			wantErr: true,

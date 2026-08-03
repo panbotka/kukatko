@@ -181,6 +181,8 @@ func NewAPI(cfg Config) *API {
 //	PUT    /photos/{uid}/edit         RequireWrite     save non-destructive edit
 //	POST   /photos/{uid}/archive      RequireWrite     soft-delete
 //	POST   /photos/{uid}/unarchive    RequireWrite     restore
+//	POST   /photos/{uid}/hide         RequireWrite     hide from the library
+//	POST   /photos/{uid}/unhide       RequireWrite     show in the library again
 //	POST   /photos/stack              RequireWrite     stack a selection (manual)
 //	POST   /photos/{uid}/stack/primary RequireWrite    make this member the primary
 //	POST   /photos/{uid}/unstack      RequireWrite     remove this member from its stack
@@ -223,6 +225,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Put("/{uid}/edit", a.handlePutEdit)
 		r.With(a.requireWrite).Post("/{uid}/archive", a.handleArchive)
 		r.With(a.requireWrite).Post("/{uid}/unarchive", a.handleUnarchive)
+		r.With(a.requireWrite).Post("/{uid}/hide", a.handleHide)
+		r.With(a.requireWrite).Post("/{uid}/unhide", a.handleUnhide)
 		r.With(a.requireWrite).Post("/stack", a.handleStackSelection)
 		r.With(a.requireWrite).Post("/{uid}/stack/primary", a.handleStackSetPrimary)
 		r.With(a.requireWrite).Post("/{uid}/unstack", a.handleUnstackMember)
@@ -569,21 +573,48 @@ func (a *API) photoMemberships(ctx context.Context, uid string) ([]albumRef, []l
 // refreshed photo, recording an audit entry in the same transaction. A missing
 // photo is answered with 404.
 func (a *API) handleArchive(w http.ResponseWriter, r *http.Request) {
-	a.runArchive(w, r, audit.ActionPhotoArchive, a.store.ArchiveAudited, "archiving photo failed")
+	a.runStateChange(w, r, audit.ActionPhotoArchive, a.store.ArchiveAudited, "archiving photo failed")
 }
 
 // handleUnarchive restores an archived photo (clears archived_at) and returns
 // the refreshed photo, recording an audit entry in the same transaction. A
 // missing photo is answered with 404.
 func (a *API) handleUnarchive(w http.ResponseWriter, r *http.Request) {
-	a.runArchive(w, r, audit.ActionPhotoUnarchive, a.store.UnarchiveAudited, "unarchiving photo failed")
+	a.runStateChange(w, r, audit.ActionPhotoUnarchive, a.store.UnarchiveAudited, "unarchiving photo failed")
 }
 
-// runArchive applies the audited archive-state transition op to the photo named
-// in the request path and writes the refreshed photo, recording action in the
-// audit log within the mutation transaction. It maps a missing photo to 404 and
-// any other failure to 500 with failMsg.
-func (a *API) runArchive(
+// handleHide keeps the photo out of the library firehose (sets
+// hidden_from_library) and returns the refreshed photo, recording an audit entry
+// in the same transaction. It is not archiving: the photo stays in the
+// catalogue, in its albums and labels, in favourites and at its own URL. A
+// missing photo is answered with 404.
+func (a *API) handleHide(w http.ResponseWriter, r *http.Request) {
+	a.runStateChange(w, r, audit.ActionPhotoHide, a.setHidden(true), "hiding photo failed")
+}
+
+// handleUnhide brings a hidden photo back into the library (clears
+// hidden_from_library) and returns the refreshed photo, recording an audit entry
+// in the same transaction. A missing photo is answered with 404.
+func (a *API) handleUnhide(w http.ResponseWriter, r *http.Request) {
+	a.runStateChange(w, r, audit.ActionPhotoUnhide, a.setHidden(false), "unhiding photo failed")
+}
+
+// setHidden binds the target library-visibility value to the audited store call,
+// yielding the transition signature runStateChange drives — so hide and unhide
+// share one handler body, as archive and unarchive do.
+func (a *API) setHidden(
+	hidden bool,
+) func(ctx context.Context, uid string, entry audit.Entry) (photos.Photo, error) {
+	return func(ctx context.Context, uid string, entry audit.Entry) (photos.Photo, error) {
+		return a.store.SetHiddenFromLibraryAudited(ctx, uid, hidden, entry)
+	}
+}
+
+// runStateChange applies the audited photo-state transition op (archive/restore,
+// hide/unhide) to the photo named in the request path and writes the refreshed
+// photo, recording action in the audit log within the mutation transaction. It
+// maps a missing photo to 404 and any other failure to 500 with failMsg.
+func (a *API) runStateChange(
 	w http.ResponseWriter, r *http.Request, action string,
 	op func(ctx context.Context, uid string, entry audit.Entry) (photos.Photo, error),
 	failMsg string,

@@ -464,6 +464,7 @@
         "label": "Photos carrying a label (by name or UID).",
         "person": "Photos with a person (by name or UID).",
         "state": "Favorites, private and archived (yes/no).",
+        "hidden": "Hidden from the library (yes/no) — the way back to a hidden photo.",
         "rating": "Your star rating, 0–5.",
         "flag": "Your flag: pick, reject or eye.",
         "date": "Capture year, month and day.",
@@ -745,6 +746,13 @@
       "archive": "Archive",
       "unarchive": "Unarchive"
     },
+    "hidden": {
+      "label": "Library",
+      "noChange": "— no change —",
+      "hide": "Hide from the library",
+      "unhide": "Show in the library",
+      "hint": "Hidden photos stay in their albums and labels. Find them by searching hidden:yes."
+    },
     "favorite": {
       "label": "Favorite",
       "noChange": "— no change —",
@@ -767,6 +775,8 @@
       "clearLocation": "Clear the location",
       "archive": "Archive",
       "unarchive": "Unarchive",
+      "hide": "Hide from the library (they stay in albums and labels)",
+      "unhide": "Show in the library again",
       "favorite": "Add to favorites",
       "unfavorite": "Remove from favorites"
     },
@@ -1449,6 +1459,15 @@
       "archived": "Photo moved to trash",
       "restored": "Photo restored from trash",
       "error": "The action failed."
+    },
+    "hidden": {
+      "hide": "Hide from the library",
+      "show": "Show in the library",
+      "hideHint": "Hide from the library — the photo stays in its albums, labels and favourites. Find it again by searching hidden:yes.",
+      "showHint": "Bring the photo back into the library",
+      "hidden": "Photo hidden from the library. Find it by searching hidden:yes.",
+      "shown": "Photo is back in the library",
+      "error": "The action could not be completed."
     },
     "untitled": "Untitled"
   },

@@ -40,7 +40,7 @@ var photoInsertColumns = []string{
 	"software", "scan", "color_profile", "image_codec", "projection", "original_name",
 	"exif", "private", "archived_at", "uploaded_by", "photoprism_uid",
 	"photoprism_file_hash", "photosorter_uid", "metadata_extracted_at",
-	"stack_uid", "stack_primary", "title_edited",
+	"stack_uid", "stack_primary", "title_edited", "hidden_from_library",
 }
 
 // photoColumns is the canonical, ordered column list for photo reads (the insert
@@ -96,7 +96,7 @@ func scanPhoto(row pgx.Row) (Photo, error) {
 		&p.Software, &p.Scan, &p.ColorProfile, &p.ImageCodec, &p.Projection, &p.OriginalName,
 		&exif, &p.Private, &p.ArchivedAt, &p.UploadedBy, &p.PhotoprismUID,
 		&p.PhotoprismFileHash, &p.PhotosorterUID, &p.MetadataExtractedAt,
-		&p.StackUID, &p.StackPrimary, &p.TitleEdited,
+		&p.StackUID, &p.StackPrimary, &p.TitleEdited, &p.HiddenFromLibrary,
 		&p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		return Photo{}, fmt.Errorf("photos: scanning photo: %w", err)
@@ -131,7 +131,7 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		p.Software, p.Scan, p.ColorProfile, p.ImageCodec, p.Projection, p.OriginalName,
 		nilIfEmptyJSON(p.Exif), p.Private, p.ArchivedAt, p.UploadedBy, p.PhotoprismUID,
 		p.PhotoprismFileHash, p.PhotosorterUID, p.MetadataExtractedAt,
-		p.StackUID, p.StackPrimary, p.TitleEdited,
+		p.StackUID, p.StackPrimary, p.TitleEdited, p.HiddenFromLibrary,
 	}
 	created, err := scanPhoto(s.pool.QueryRow(ctx, insertPhotoSQL, args...))
 	if err != nil {
@@ -360,6 +360,31 @@ func setArchivedRow(ctx context.Context, q rowQuerier, uid string, archived bool
 	sql := "UPDATE photos SET archived_at = " + expr + ", updated_at = now() " +
 		"WHERE uid = $1 RETURNING " + photoColumns
 	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Photo{}, ErrPhotoNotFound
+		}
+		return Photo{}, err
+	}
+	return photo, nil
+}
+
+// SetHiddenFromLibrary hides the photo identified by uid from the library
+// firehose (hidden true) or brings it back (false) and returns the refreshed
+// photo, or ErrPhotoNotFound. Unlike Archive it is a pure visibility toggle: it
+// touches nothing else, leaves the photo's stack alone and never puts it on a
+// path to deletion. See Photo.HiddenFromLibrary and migration 0049.
+func (s *Store) SetHiddenFromLibrary(ctx context.Context, uid string, hidden bool) (Photo, error) {
+	return setHiddenRow(ctx, s.pool, uid, hidden)
+}
+
+// setHiddenRow writes hidden_from_library on q, which may be the pool or an open
+// transaction, and returns the refreshed photo or ErrPhotoNotFound. The
+// transaction form backs SetHiddenFromLibraryAudited.
+func setHiddenRow(ctx context.Context, q rowQuerier, uid string, hidden bool) (Photo, error) {
+	sql := "UPDATE photos SET hidden_from_library = $2, updated_at = now() " +
+		"WHERE uid = $1 RETURNING " + photoColumns
+	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid, hidden))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Photo{}, ErrPhotoNotFound

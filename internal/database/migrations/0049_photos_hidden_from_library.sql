@@ -1,0 +1,41 @@
+-- 0049_photos_hidden_from_library: keep a photo out of the library firehose
+-- without taking it out of the catalogue.
+--
+-- Some things belong in the system but not in the timeline: a scan of a
+-- document, a screenshot kept for reference, a receipt. The user wants them
+-- stored, addressable and reachable from an album or a label — just not mixed
+-- into the grid they scroll to look at photographs.
+--
+--   * false  (the default) the photo behaves exactly as it always has.
+--   * true   the photo disappears from the library grid and its counts, the
+--            timeline/year buckets, the map, the places hierarchy, the
+--            slideshow, the review game and the default search — but stays
+--            fully visible in album and label galleries, in favourites, and at
+--            its own /photos/{uid} URL, and is found by `hidden:yes` in the
+--            search query language.
+--
+-- DEFAULT FALSE is what makes this migration a no-op for an existing library.
+--
+-- THIS IS NOT archived_at, and the long column name exists so the two can never
+-- be confused. An archived photo is on its way OUT: it sits in the trash and the
+-- retention purge deletes it and its original for good. A hidden photo is a
+-- PERMANENT RESIDENT that simply does not appear in the firehose; nothing ever
+-- deletes it, and un-hiding is a single toggle. The two states are independent:
+-- a photo may be both, and archiving does not clear this flag.
+--
+-- It is also not `private`, which exists for a sharing feature that is out of
+-- scope: "who may see this" and "where does this appear for its owner" are
+-- different questions and must not share a column.
+--
+-- No index. The predicate is `NOT hidden_from_library`, which matches almost
+-- every row, so it can only ever be a filter on top of the ordering index
+-- (idx_photos_live_taken_at) — exactly like the stack-visibility predicate
+-- `(stack_uid IS NULL OR stack_primary)` that already rides along there. An
+-- index on an overwhelmingly-false boolean would never be chosen and would only
+-- cost writes. If hidden photos ever become a large fraction of the library,
+-- revisit by adding the column to the two partial indexes of migration 0015.
+--
+-- This migration is wrapped in a transaction by the runner.
+
+ALTER TABLE photos
+    ADD COLUMN hidden_from_library BOOLEAN NOT NULL DEFAULT false;

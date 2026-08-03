@@ -39,6 +39,8 @@ type operationsInput struct {
 	ClearLocation    bool           `json:"clear_location"`
 	Archive          bool           `json:"archive"`
 	Unarchive        bool           `json:"unarchive"`
+	Hide             bool           `json:"hide"`
+	Unhide           bool           `json:"unhide"`
 	SetFavorite      *bool          `json:"set_favorite"`
 	SetRating        *int           `json:"set_rating"`
 	SetFlag          *string        `json:"set_flag"`
@@ -87,11 +89,17 @@ func (in operationsInput) toOperations() (bulk.Operations, error) {
 	ops.Location = location
 	ops.ClearLocation = clearLocation
 
-	archive, err := resolveArchive(in.Archive, in.Unarchive)
+	archive, err := resolveToggle(in.Archive, in.Unarchive, "archive", "unarchive")
 	if err != nil {
 		return bulk.Operations{}, err
 	}
 	ops.Archive = archive
+
+	hide, err := resolveToggle(in.Hide, in.Unhide, "hide", "unhide")
+	if err != nil {
+		return bulk.Operations{}, err
+	}
+	ops.Hide = hide
 
 	rating, err := resolveRating(in.SetRating)
 	if err != nil {
@@ -170,23 +178,22 @@ func (in operationsInput) resolveLocation() (*bulk.Location, bool, error) {
 	return &bulk.Location{Lat: in.SetLocation.Lat, Lng: in.SetLocation.Lng}, false, nil
 }
 
-// resolveArchive turns the archive/unarchive flags into an optional archive
-// directive: nil for no change, true to archive, false to unarchive. It rejects
-// supplying both.
-func resolveArchive(archive, unarchive bool) (*bool, error) {
-	if archive && unarchive {
-		return nil, errors.New("archive and unarchive are mutually exclusive")
+// resolveToggle turns a pair of opposing boolean flags (archive/unarchive,
+// hide/unhide) into an optional directive: nil for no change, true for the
+// on flag, false for the off one. onName/offName name the two request keys in
+// the error returned when both are supplied.
+func resolveToggle(on, off bool, onName, offName string) (*bool, error) {
+	if on && off {
+		return nil, fmt.Errorf("%s and %s are mutually exclusive", onName, offName)
 	}
-	if archive {
-		value := true
-		return &value, nil
+	if on {
+		return new(true), nil
 	}
-	if unarchive {
-		value := false
-		return &value, nil
+	if off {
+		return new(false), nil
 	}
-	// No archive change requested: a nil pointer with a nil error is the intended
-	// "leave unchanged" signal here.
+	// No change requested: a nil pointer with a nil error is the intended "leave
+	// unchanged" signal here.
 	//nolint:nilnil // optional value: nil means no change, not a missing result.
 	return nil, nil
 }

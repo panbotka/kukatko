@@ -320,7 +320,7 @@ then the YAML document. Comments are ignored by any parser, so the file round-tr
 # ...
 # NOT in this file, deliberately, and please do not "fix" it: the image embedding
 # and the face vectors. ...
-version: 1
+version: 2
 generated_at: 2026-07-17T12:00:00Z
 identity:
     uid: pht000000000001
@@ -382,6 +382,7 @@ curation:
         - user: pan.botka
           stars: 4
           flag: pick
+    hidden_from_library: true
 edit:
     crop: {x: 0.1, y: 0.2, w: 0.6, h: 0.5}
     rotation: 90
@@ -393,14 +394,14 @@ Every group and key is omitted when empty, so a photo nobody has touched yields 
 
 | Group | Holds | Notes |
 | --- | --- | --- |
-| `version` | Schema version (currently `1`) | First key, so a reader can dispatch before parsing. A reader that meets a version it does not know should **refuse the file**, not guess. |
+| `version` | Schema version (currently `2`) | First key, so a reader can dispatch before parsing. A reader that meets a version it does not know should **refuse the file**, not guess. `2` added `curation.hidden_from_library`; a `1` document simply has no hidden photos. |
 | `generated_at` | When the file was written | Provenance: it tells you how current the file is, the first thing you want to know when rebuilding. |
 | `identity` | `uid`, `sha256`, `file_name`, `file_path`, `original_name`, `media_type`, `uploaded_by`, `external` | `sha256` is the durable link to the original: paths move, content does not. `external` carries `photoprism_uid` / `photoprism_file_hash` (PhotoPrism's SHA1, not Kukátko's SHA256) / `photosorter_uid` so a re-import recognises what it already has. |
 | `descriptive` | `title`, `description`, `notes`, `ai_note`, `subject`, `keywords`, `artist`, `copyright`, `license` | `keywords` are the IPTC keywords verbatim, comma-separated. They are **not** labels — labels are Kukátko's own taxonomy and live under `curation`. |
 | `temporal` | `taken_at`, `taken_at_source`, `estimated`, `note` | `estimated: true` marks the date as a guess and `note` records what it rests on ("kolem roku 1950"). A photo with no `taken_at` may still be estimated, the note then carrying the whole meaning. |
 | `spatial` | `lat`, `lng`, `altitude`, `source`, `place` | `source` is `exif` / `manual` / `estimate` / empty. **It matters:** an inferred location must never be rebuilt as a measured one. `source: manual` with no coordinates is not a contradiction but a **tombstone** — the user deleted the location on purpose, and a rebuild must not hand it back. `place` is the cached reverse-geocode (geocoding costs credits; recording it means a rebuild does not pay twice). |
 | `technical` | Camera, lens, exposure, dimensions, file, `video` | Mostly recomputable from the original, recorded anyway: it is small, and a sidecar readable on its own is worth more than the saved bytes. `video` is present only for videos and live photos. |
-| `curation` | `albums`, `labels`, `people`, `favorites`, `ratings`, `private`, `archived_at`, `stack` | **The group that exists nowhere else.** Everything above can in the last resort be re-derived from the original; none of this can. |
+| `curation` | `albums`, `labels`, `people`, `favorites`, `ratings`, `private`, `hidden_from_library`, `archived_at`, `stack` | **The group that exists nowhere else.** Everything above can in the last resort be re-derived from the original; none of this can. |
 | `edit` | `crop`, `rotation`, `brightness`, `contrast` | The non-destructive edit. Originals are never modified, so a lost edit is a visible change silently reverted. Omitted when the edit is a no-op. Crop is normalised `0..1`; brightness/contrast are CSS-filter-style, meaningful in `[-1, 1]`, `0` neutral. |
 
 Details inside `curation` that a rebuild must not drop:
@@ -421,6 +422,10 @@ Details inside `curation` that a rebuild must not drop:
   rebuild; `user_uid` is this database's identifier and will not mean anything in a new one.
 - **`archived_at`** marks a photo in the trash awaiting purge. **A rebuild should honour it** — a
   photo the user deleted, silently resurrected, is the worst kind of restore bug.
+- **`hidden_from_library`** marks a photo the user took out of the library firehose — a scanned
+  document, a screenshot — which stays fully visible in its albums and labels. It is *not*
+  `archived_at`: nothing deletes it, ever. A rebuild that dropped it would pour every hidden scan
+  back into the timeline, which is exactly the mess the user cleaned up by hand.
 - **`uid`/`slug` on albums and labels, `subject_uid` on people** are this database's identifiers. A
   rebuild should match on the **name/title/slug**; UIDs are regenerated.
 

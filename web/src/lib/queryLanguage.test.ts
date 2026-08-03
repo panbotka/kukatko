@@ -46,6 +46,12 @@ describe('suggestFilterKeys', () => {
     expect(suggestFilterKeys('iso')).toBeNull()
   })
 
+  it('offers hidden:, the documented way back to a hidden photo', () => {
+    // A flag you cannot list is a flag you cannot undo, so the key has to be
+    // reachable from the search box, not only from the docs.
+    expect(suggestFilterKeys('hid')?.keys).toContain('hidden')
+  })
+
   it('knows every documented key', () => {
     for (const key of FILTER_KEYS) {
       const prefix = key.slice(0, key.length - 1)

@@ -4,9 +4,9 @@ import { ApiError } from './auth'
  * Bulk-metadata client for `POST /api/v1/photos/bulk` (`internal/bulkapi`):
  * applies one operation set to many photos in a single transaction. The UI uses
  * it from the grid-selection bulk-edit toolbar to add/remove albums and labels,
- * set or clear the description and location, change the archive state and toggle
- * the per-user favorite — all in one call — and to render the per-photo
- * result summary the endpoint returns.
+ * set or clear the description and location, change the archive state, hide the
+ * photos from the library and toggle the per-user favorite — all in one call —
+ * and to render the per-photo result summary the endpoint returns.
  */
 
 const API_BASE = '/api/v1'
@@ -64,6 +64,14 @@ export interface BulkOperations {
   archive?: boolean
   /** Unarchive the photos. */
   unarchive?: boolean
+  /**
+   * Hide the photos from the library: out of the grid, the timeline, the map and
+   * the default search, still visible in their albums and labels. Not archiving
+   * — nothing is deleted. Supplying both `hide` and `unhide` is a 400.
+   */
+  hide?: boolean
+  /** Bring the hidden photos back into the library. */
+  unhide?: boolean
   /** Favorite (true) or unfavorite (false) for the acting user. */
   set_favorite?: boolean
 }

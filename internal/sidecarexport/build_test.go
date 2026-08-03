@@ -152,7 +152,7 @@ func TestBuild_curation(t *testing.T) {
 
 	subjectUID := "sub1"
 	doc := Build(Input{
-		Photo:  photos.Photo{UID: "pht1", Private: true},
+		Photo:  photos.Photo{UID: "pht1", Private: true, HiddenFromLibrary: true},
 		Albums: []organize.Album{{UID: "alb1", Slug: "svatba", Title: "Svatba", Type: organize.AlbumManual}},
 		Labels: []organize.PhotoLabel{{
 			Label:  organize.Label{UID: "lbl1", Name: "Portrét", Priority: 3},
@@ -195,6 +195,11 @@ func TestBuild_curation(t *testing.T) {
 	}
 	if !c.Private {
 		t.Error("Private = false, want true")
+	}
+	// Hiding is curation the user set by hand and it lives nowhere else, so a
+	// sidecar that dropped it would un-hide the photo on restore.
+	if !c.HiddenFromLibrary {
+		t.Error("HiddenFromLibrary = false, want true")
 	}
 }
 

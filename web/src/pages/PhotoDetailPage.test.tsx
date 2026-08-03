@@ -40,6 +40,8 @@ vi.mock('../services/photos', async (importOriginal) => {
     searchPhotos: vi.fn(),
     archivePhoto: vi.fn(),
     unarchivePhoto: vi.fn(),
+    hidePhoto: vi.fn(),
+    unhidePhoto: vi.fn(),
   }
 })
 
@@ -72,6 +74,8 @@ const {
   searchPhotos,
   archivePhoto,
   unarchivePhoto,
+  hidePhoto,
+  unhidePhoto,
 } = await import('../services/photos')
 const { fetchAlbums, fetchLabels, addAlbumPhotos, removeAlbumPhotos, attachLabel, detachLabel } =
   await import('../services/organize')
@@ -89,6 +93,8 @@ const fetchPhotosMock = vi.mocked(fetchPhotos)
 const searchPhotosMock = vi.mocked(searchPhotos)
 const archivePhotoMock = vi.mocked(archivePhoto)
 const unarchivePhotoMock = vi.mocked(unarchivePhoto)
+const hidePhotoMock = vi.mocked(hidePhoto)
+const unhidePhotoMock = vi.mocked(unhidePhoto)
 const fetchAlbumsMock = vi.mocked(fetchAlbums)
 const fetchLabelsMock = vi.mocked(fetchLabels)
 const addAlbumPhotosMock = vi.mocked(addAlbumPhotos)
@@ -299,6 +305,8 @@ beforeEach(async () => {
   ratePhotoMock.mockResolvedValue(undefined)
   archivePhotoMock.mockResolvedValue(undefined)
   unarchivePhotoMock.mockResolvedValue(undefined)
+  hidePhotoMock.mockResolvedValue(undefined)
+  unhidePhotoMock.mockResolvedValue(undefined)
 })
 
 describe('PhotoDetailPage — immersive viewer', () => {
@@ -378,6 +386,66 @@ describe('PhotoDetailPage — immersive viewer', () => {
         expect(unarchivePhotoMock).toHaveBeenCalledWith('b')
       })
       expect(await screen.findByRole('button', { name: 'Archive' })).toBeInTheDocument()
+    })
+  })
+
+  describe('hide-from-library control', () => {
+    it('hides the open photo and swaps the control to Show', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      // The toggle sits next to archive/favourite, but it is a different act: the
+      // photo is not deleted, so the page stays put and the control simply offers
+      // the way back.
+      await user.click(screen.getByRole('button', { name: 'Hide from the library' }))
+      await waitFor(() => {
+        expect(hidePhotoMock).toHaveBeenCalledWith('b')
+      })
+      expect(await screen.findByRole('button', { name: 'Show in the library' })).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Hide from the library' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('shows the way back in the control title, so the flag can be undone', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      // A flag you cannot list is a flag you cannot undo, so the one glyph that
+      // sets it also names the search that finds it again.
+      expect(screen.getByRole('button', { name: 'Hide from the library' })).toHaveAttribute(
+        'title',
+        expect.stringContaining('hidden:yes'),
+      )
+    })
+
+    it('leads with Show for an already-hidden photo and unhides on click', async () => {
+      const user = userEvent.setup()
+      fetchPhotoMock.mockResolvedValue(photo({ hidden_from_library: true }))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(
+        screen.queryByRole('button', { name: 'Hide from the library' }),
+      ).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Show in the library' }))
+      await waitFor(() => {
+        expect(unhidePhotoMock).toHaveBeenCalledWith('b')
+      })
+      expect(
+        await screen.findByRole('button', { name: 'Hide from the library' }),
+      ).toBeInTheDocument()
+    })
+
+    it('hides the control from a viewer', async () => {
+      renderPage(false)
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(
+        screen.queryByRole('button', { name: 'Hide from the library' }),
+      ).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Show in the library' })).not.toBeInTheDocument()
     })
   })
 
