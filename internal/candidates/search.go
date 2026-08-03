@@ -23,6 +23,12 @@ type votedCandidate struct {
 	markerUID  *string
 }
 
+// minPerExemplarSearch is the floor of the per-exemplar neighbour cap. It matches
+// the pinned hnsw.ef_search (internal/vectors), so the common search is a single
+// HNSW pass with no iterative widening, and it is still twenty times the most votes
+// the vote rule can ever demand.
+const minPerExemplarSearch = 100
+
 // search runs one unassigned-face kNN per exemplar, bounded to the configured
 // concurrency, and merges the neighbours by face into a voted set. The rejected
 // faces are excluded in SQL (before each LIMIT) via exclude, so a rejected face
@@ -35,13 +41,14 @@ func (s *Service) search(
 		mu     sync.Mutex
 		merged = make(map[vectors.FaceKey]*votedCandidate)
 	)
+	perExemplar := s.perExemplarLimit(len(exemplars))
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(s.concurrency)
 	for i := range exemplars {
 		exemplar := exemplars[i]
 		group.Go(func() error {
 			found, err := s.faces.FindSimilarUnassignedFaceCandidates(
-				groupCtx, exemplar.Vector, s.searchLimit, threshold, exclude)
+				groupCtx, exemplar.Vector, perExemplar, threshold, exclude)
 			if err != nil {
 				return fmt.Errorf("searching from exemplar %s#%d: %w", exemplar.PhotoUID, exemplar.FaceIndex, err)
 			}
@@ -57,6 +64,35 @@ func (s *Service) search(
 		return nil, fmt.Errorf("candidates: exemplar search: %w", err)
 	}
 	return mapToSlice(merged), nil
+}
+
+// perExemplarLimit is how many neighbours one exemplar's kNN may return, and it is
+// the second half of what made this search affordable — the first being the partial
+// index of migration 0047. Every extra neighbour is paid for once per exemplar: on a
+// 50 410-face library the same query costs 10 ms at 100 neighbours and 41 ms at
+// 1000, and the subject that prompted this work has 428 exemplars.
+//
+// A lone exemplar carries the whole answer by itself, so it is given the configured
+// SearchLimit — which the store caps at its own 500-row maximum, exactly the
+// hydration ceiling, and that makes its ranking exact. A crowd shares the work: the
+// size is four times MaxCandidates spread over the exemplars, still far more raw
+// material than the ceiling can take, and never below a floor that keeps each
+// exemplar generous in absolute terms.
+//
+// The reason a crowd can share is that their neighbour lists overlap without being
+// identical — they are faces of one person taken years apart, so what one of them
+// ranks out of its window another one ranks inside. That is an empirical claim, not
+// a proof, so it is measured rather than asserted: TestFind_perExemplarCapCostsNoMatchesDB
+// builds the shape in which the cap could bite and requires the bounded search to
+// return exactly what an unbounded one does, and the same comparison run against the
+// 50 410-face benchmark library — both when the subject has 32 unnamed matches and
+// when it has 632 — returned identical candidate sets in identical order.
+func (s *Service) perExemplarLimit(exemplarCount int) int {
+	if exemplarCount <= 1 {
+		return s.searchLimit
+	}
+	per := max((4*s.maxCandidates+exemplarCount-1)/exemplarCount, minPerExemplarSearch)
+	return min(per, s.searchLimit)
 }
 
 // mergeCandidate folds one search row into the voted set: a first sighting seeds the

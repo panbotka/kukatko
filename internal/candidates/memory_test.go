@@ -239,21 +239,26 @@ func TestFind_allocationDoesNotScaleWithExemplarCount(t *testing.T) {
 // the work.
 func TestFind_allocationDoesNotScaleWithLibrarySize(t *testing.T) {
 	// The exemplar count is held fixed; the windows walk the pool so the number
-	// of distinct candidates — and only that — grows with the library.
+	// of distinct candidates — and only that — grows with the library. The stride
+	// is derived from the per-exemplar neighbour cap rather than fixed, because a
+	// candidate still has to be returned by enough exemplars to clear the vote
+	// rule: at a cap/8 stride every face falls inside eight windows, comfortably
+	// above the rule's five-vote ceiling, whatever the cap is tuned to.
 	const exemplars = 500
+	stride := minPerExemplarSearch / 8
 	small := findAllocation(t, exemplars, 500, 1)
-	large := findAllocation(t, exemplars, 40000, 40000/exemplars)
-	t.Logf("allocated: 500 unnamed faces %d B, 40000 unnamed faces %d B", small, large)
+	large := findAllocation(t, exemplars, 40000, stride)
+	t.Logf("allocated: 500 unnamed faces %d B, %d unnamed faces %d B", small, exemplars*stride, large)
 
 	if large > searchCeilingBytes {
-		t.Errorf("a subject matching 40000 unnamed faces allocated %d B, want at most %d B — "+
+		t.Errorf("a subject matching %d unnamed faces allocated %d B, want at most %d B — "+
 			"one request must not scale with the library",
-			large, searchCeilingBytes)
+			exemplars*stride, large, searchCeilingBytes)
 	}
-	// 80x the matches. The voted set still has to be seen to be ranked, so some
-	// growth is honest; hydrating them all is not.
+	// An order of magnitude more matches. The voted set still has to be seen to be
+	// ranked, so some growth is honest; hydrating them all is not.
 	if ratio := float64(large) / float64(small); ratio > 2 {
-		t.Errorf("80x the unnamed faces allocated %.2fx the memory (%d B vs %d B), want at most 2x",
-			ratio, large, small)
+		t.Errorf("%dx the unnamed faces allocated %.2fx the memory (%d B vs %d B), want at most 2x",
+			stride, ratio, large, small)
 	}
 }

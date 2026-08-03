@@ -3,6 +3,8 @@ package candidates
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/feedback"
@@ -38,6 +40,10 @@ type fakeFaces struct {
 	bySubject   []vectors.Face
 	perExemplar map[int][]vectors.FaceCandidate
 	byKeys      map[vectors.FaceKey]vectors.Face
+	// searchLimit records the neighbour cap the kNN was asked for, so a test can
+	// assert how the per-exemplar limit was sized. It is atomic because the exemplar
+	// searches run concurrently.
+	searchLimit atomic.Int64
 }
 
 func (f *fakeFaces) SampleFacesBySubject(
@@ -56,8 +62,9 @@ func (f *fakeFaces) SampleFacesBySubject(
 }
 
 func (f *fakeFaces) FindSimilarUnassignedFaceCandidates(
-	_ context.Context, vec []float32, _ int, maxDistance float64, exclude []vectors.FaceKey,
+	_ context.Context, vec []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
 ) ([]vectors.FaceCandidate, error) {
+	f.searchLimit.Store(int64(limit))
 	excluded := make(map[vectors.FaceKey]struct{}, len(exclude))
 	for _, key := range exclude {
 		excluded[key] = struct{}{}
@@ -522,5 +529,42 @@ func TestFind_capsHydratedCandidates(t *testing.T) {
 	// to cut before the photo records are loaded, not after.
 	if h.photos.requested != 2 {
 		t.Errorf("hydrated %d photos, want 2 — the ceiling must cut before hydration", h.photos.requested)
+	}
+}
+
+// TestFind_perExemplarLimitFollowsTheSourceSet checks that the neighbour cap the kNN
+// is asked for shrinks as the source set grows. It is the whole latency story of this
+// search: the same query costs 10 ms per exemplar at a hundred neighbours and 41 ms at
+// a thousand (measured, docs/PERF.md), and a subject tagged on 428 photos pays that
+// difference once per exemplar. A lone exemplar has nobody to share the answer with
+// and keeps the configured limit.
+func TestFind_perExemplarLimitFollowsTheSourceSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		exemplars int
+		want      int64
+	}{
+		{"one exemplar keeps the configured limit", 1, 1000},
+		{"a heavily tagged subject lands on the floor", 60, 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			subj := h.addSubject("su_limit")
+			for i := range tt.exemplars {
+				h.faces.bySubject = append(h.faces.bySubject, vectors.Face{
+					PhotoUID: fmt.Sprintf("src%03d", i), FaceIndex: 0, Vector: oneHot(i), DetScore: 0.9,
+				})
+			}
+			if _, err := h.svc.Find(context.Background(), subj, Request{}); err != nil {
+				t.Fatalf("Find: %v", err)
+			}
+			if got := h.faces.searchLimit.Load(); got != tt.want {
+				t.Errorf("per-exemplar limit = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
