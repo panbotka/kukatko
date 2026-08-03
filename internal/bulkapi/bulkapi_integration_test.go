@@ -379,3 +379,59 @@ func TestBulk_unknownOperationRejected(t *testing.T) {
 		t.Fatalf("unknown op status = %d, want 400", resp.StatusCode)
 	}
 }
+
+// TestBulk_hidesAndUnhides verifies the bulk library-visibility toggle, the one
+// the feature actually needs: the real use is fifty document scans at once, not
+// one photo at a time.
+func TestBulk_hidesAndUnhides(t *testing.T) {
+	env := newEnv(t, 1000)
+	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	ctx := t.Context()
+
+	p1 := env.seedPhoto(t, "hide1")
+	p2 := env.seedPhoto(t, "hide2")
+
+	hide, _ := json.Marshal(map[string]any{
+		"photo_uids": []string{p1, p2},
+		"operations": map[string]any{"hide": true},
+	})
+	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", hide)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulk hide status = %d, want 200", resp.StatusCode)
+	}
+	assertHidden(t, ctx, env, true, p1, p2)
+
+	unhide, _ := json.Marshal(map[string]any{
+		"photo_uids": []string{p1, p2},
+		"operations": map[string]any{"unhide": true},
+	})
+	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", unhide)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulk unhide status = %d, want 200", resp.StatusCode)
+	}
+	assertHidden(t, ctx, env, false, p1, p2)
+
+	both, _ := json.Marshal(map[string]any{
+		"photo_uids": []string{p1},
+		"operations": map[string]any{"hide": true, "unhide": true},
+	})
+	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", both)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("bulk hide+unhide status = %d, want 400", resp.StatusCode)
+	}
+}
+
+// assertHidden fails unless every listed photo carries the wanted
+// hidden_from_library state.
+func assertHidden(t *testing.T, ctx context.Context, env *env, want bool, uids ...string) {
+	t.Helper()
+	for _, uid := range uids {
+		photo, err := env.photos.GetByUID(ctx, uid)
+		if err != nil {
+			t.Fatalf("get %s: %v", uid, err)
+		}
+		if photo.HiddenFromLibrary != want {
+			t.Errorf("%s hidden_from_library = %v, want %v", uid, photo.HiddenFromLibrary, want)
+		}
+	}
+}

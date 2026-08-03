@@ -115,6 +115,17 @@ export interface Photo {
   photoprism_uid?: string
   photosorter_uid?: string
   archived_at?: string
+  /**
+   * Whether the photo is hidden from the library: it is left out of the grid and
+   * its counts, the timeline, the map and places, the slideshow, the review game
+   * and the default search, while staying fully visible in its albums and
+   * labels, in favourites and at its own URL. Curation the user set by hand, for
+   * the things that belong in the catalogue but not among the photographs
+   * (scanned documents, screenshots). It is neither `archived_at` (on its way
+   * out, purged after retention) nor "private". Search `hidden:yes` to list
+   * them.
+   */
+  hidden_from_library?: boolean
   created_at: string
   updated_at: string
   /**
@@ -1018,6 +1029,45 @@ export async function archivePhoto(uid: string, signal?: AbortSignal): Promise<v
  */
 export async function unarchivePhoto(uid: string, signal?: AbortSignal): Promise<void> {
   const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/unarchive`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+}
+
+/**
+ * Hides a photo from the library via `POST /api/v1/photos/{uid}/hide`, setting
+ * its `hidden_from_library`. It is not archiving: the photo stays in the
+ * catalogue, in its albums and labels, in favourites and at its own URL — it
+ * only leaves the library grid, the timeline, the map, the slideshow, the review
+ * game and the default search. List the hidden ones again with `hidden:yes`, and
+ * bring one back with {@link unhidePhoto}. Editor/admin only.
+ *
+ * @throws ApiError with `status` 404 (no such photo), 403 (not an editor) or 5xx.
+ */
+export async function hidePhoto(uid: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/hide`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+}
+
+/**
+ * Brings a hidden photo back into the library via
+ * `POST /api/v1/photos/{uid}/unhide`, clearing its `hidden_from_library`.
+ * Editor/admin only.
+ *
+ * @throws ApiError with `status` 404 (no such photo), 403 (not an editor) or 5xx.
+ */
+export async function unhidePhoto(uid: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/unhide`, {
     method: 'POST',
     credentials: 'same-origin',
     signal,

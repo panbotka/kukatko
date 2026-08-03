@@ -22,6 +22,7 @@ func TestOperations_IsEmpty(t *testing.T) {
 		{"set title", Operations{Title: new("")}, false},
 		{"clear location", Operations{ClearLocation: true}, false},
 		{"archive", Operations{Archive: new(true)}, false},
+		{"hide", Operations{Hide: new(true)}, false},
 		{"favorite", Operations{Favorite: new(false)}, false},
 		{"rating", Operations{Rating: new(4)}, false},
 		{"flag", Operations{Flag: new("pick")}, false},
@@ -46,12 +47,13 @@ func TestOperations_Summary(t *testing.T) {
 		RemoveLabels:  []string{"lb1"},
 		Description:   new("hi"),
 		ClearLocation: true,
+		Hide:          new(true),
 		Rating:        new(5),
 		Flag:          new("reject"),
 	}
 	summary := ops.Summary()
 	for _, key := range []string{
-		"add_albums", "remove_labels", "description", "clear_location", "rating", "flag",
+		"add_albums", "remove_labels", "description", "clear_location", "hide", "rating", "flag",
 	} {
 		if _, ok := summary[key]; !ok {
 			t.Errorf("Summary() missing key %q in %v", key, summary)
@@ -103,6 +105,20 @@ func TestOperations_photoColumnUpdate(t *testing.T) {
 			wantOK:     true,
 			wantArgs:   1,
 			wantSubstr: []string{"archived_at = NULL"},
+		},
+		{
+			name:       "hide",
+			ops:        Operations{Hide: new(true)},
+			wantOK:     true,
+			wantArgs:   2, // uid + the boolean, bound rather than literal
+			wantSubstr: []string{"hidden_from_library = $2"},
+		},
+		{
+			name:       "unhide alongside an archive toggle",
+			ops:        Operations{Hide: new(false), Archive: new(false)},
+			wantOK:     true,
+			wantArgs:   2,
+			wantSubstr: []string{"hidden_from_library = $2", "archived_at = NULL"},
 		},
 	}
 	for _, tt := range tests {

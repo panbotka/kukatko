@@ -156,6 +156,8 @@ func TestParse_table(t *testing.T) {
 		{"favorite no", "favorite:no", "filters=[favorite=bool:false]"},
 		{"private", "private:no", "filters=[private=bool:false]"},
 		{"archived", "archived:yes", "filters=[archived=bool:true]"},
+		{"hidden yes", "hidden:yes", "filters=[hidden=bool:true]"},
+		{"hidden no", "hidden:no", "filters=[hidden=bool:false]"},
 		{"rating exact", "rating:3", "filters=[rating=num:3..3]"},
 		{"rating range", "rating:2-5", "filters=[rating=num:2..5]"},
 		{"rating open low", "rating:-2", "filters=[rating=num:..2]"},

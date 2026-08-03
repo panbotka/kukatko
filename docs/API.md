@@ -196,6 +196,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (comma-separated), **they are not labels** — `/labels` remains a separate curatorial taxonomy;
   `POST /photos/{uid}/archive`+`/unarchive`
   (editor/admin) soft-delete via `archived_at` (archived ones outside the default list);
+  `POST /photos/{uid}/hide`+`/unhide` (editor/admin) set/clear `hidden_from_library` and return the
+  refreshed photo (404 missing, audited as `photo.hide`/`photo.unhide` in the mutation's transaction).
+  This is **not** archiving and **not** `private`: nothing is deleted or scheduled for deletion. A hidden
+  photo leaves the library grid and its counts, the timeline/year buckets, the map and places, the
+  slideshow, the review game and the **default** search — and stays fully visible in album and label
+  galleries, in favourites, and at its own `GET /photos/{uid}`. The filter lifts itself whenever the
+  listing is scoped to an album, a label or the caller's favourites, so those galleries need no flag;
+  `q=hidden:yes` lists the hidden ones (§ Search query language). The flag rides in `photos.Photo` as
+  `hidden_from_library`, so **every** response with a photo carries it;
   `POST /photos/{uid}/regenerate-thumbnail` (editor/admin) — a **service action** for a
   missing/stale thumbnail: it regenerates the photo's thumbnails and its perceptual hashes
   from the original via `thumbjob.Service.ForceRegenerate` (sharing the thumbnailer and the job handler,
@@ -658,11 +667,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **in a single transaction** with an audit-log entry. Operations (each optional): `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
   `set_description`/`clear_description`, `set_location {lat,lng}`/`clear_location`,
-  `archive`/`unarchive`, `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
+  `archive`/`unarchive`, `hide`/`unhide` (library visibility, see above),
+  `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
   (none/pick/reject/eye) (**per-user**, invalid value → 400). Response `{results:[{photo_uid,status,
   error?}],counts:{total,updated,skipped,errored}}` (200 even on partial errors): `updated`/
   `skipped` (duplicate uid)/`error` (the photo does not exist — it **does not abort valid** ones); only a DB error
-  rolls back the whole batch (500). A set/clear or archive/unarchive conflict, an unknown operation,
+  rolls back the whole batch (500). A set/clear, archive/unarchive or hide/unhide conflict, an unknown operation,
   a missing album/label in an add → **400**; a batch above `bulk.max_batch_size` (default 1000) → **413**.
   Mounted by another `server.WithAPI` (`buildBulkAPI` in `cmd/kukatko/bulk.go`).
 - **Maps API (`/api/v1`, `internal/mapsapi` + `internal/mapy`, authenticated via `RequireAuth`):**
@@ -966,6 +976,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `label:` | text | a label by **name** or UID |
 | `person:` (alias `subject:`) | text | a subject by **name** or UID, via non-invalid markers |
 | `favorite:` `private:` `archived:` | `yes\|no` | per-user favourite / private / archived; `archived:` **removes the default live-only scope** |
+| `hidden:` | `yes\|no` | hidden from the library (`photos.hidden_from_library`); like `archived:` it **removes the default visible-only scope**, so `hidden:yes` is the documented way back to a hidden photo |
 | `rating:` | `0-5`, ranges | the current user's rating; no row = 0, so `rating:0` finds the unrated |
 | `flag:` | `pick\|reject\|eye` | the current user's flag |
 | `year:` `month:` `day:` | number, ranges | year (1000–9999) / month (1–12) / day (1–31) of capture |

@@ -35,12 +35,19 @@ type placeCell struct {
 // contribute. The %s placeholder receives a country filter only when one is
 // requested. A country's empty-city group still contributes to that country's
 // total, which the caller folds into Count.
+//
+// This query builds its own WHERE clause instead of going through
+// buildListQuery, so the library-visibility predicates have to be repeated by
+// hand: hidden_from_library alongside the archive and stack gates. Places is a
+// browse of the library, and a count that includes photos no grid will show is a
+// count that lies.
 const aggregatePlacesSQL = `
 SELECT pp.country, pp.city, count(*)
 FROM photo_places pp
 JOIN photos p ON p.uid = pp.photo_uid
 WHERE p.archived_at IS NULL
   AND (p.stack_uid IS NULL OR p.stack_primary)
+  AND NOT p.hidden_from_library
   AND pp.country <> ''%s
 GROUP BY pp.country, pp.city`
 

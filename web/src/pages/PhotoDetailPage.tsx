@@ -46,11 +46,13 @@ import {
   downloadUrl,
   fetchEdit,
   fetchPhoto,
+  hidePhoto,
   type PhotoDetail,
   type PhotoEdit,
   setStackPrimary,
   thumbUrl,
   unarchivePhoto,
+  unhidePhoto,
   unstackAll,
   unstackMember,
 } from '../services/photos'
@@ -128,6 +130,9 @@ export function PhotoDetailPage() {
   // In flight while the archive/restore (trash) mutation runs, so its button is
   // disabled and cannot be double-fired.
   const [archivePending, setArchivePending] = useState(false)
+  // In flight while the hide/show (library visibility) mutation runs, so its
+  // button is disabled and cannot be double-fired.
+  const [hidePending, setHidePending] = useState(false)
   const faces = useFaces(uid)
   // Phone width moves the curation loop from the top bar into the bottom dock.
   // The choice is made in JS rather than by a pair of CSS display rules, so the
@@ -554,6 +559,34 @@ export function PhotoDetailPage() {
       setArchivePending(false)
     }
   }
+  // Whether the open photo is currently hidden from the library. Unlike
+  // `archived` this is not a step towards deletion: the photo stays in the
+  // catalogue and in everything it was filed in, it just leaves the firehose.
+  const hidden = photo.hidden_from_library === true
+
+  // Hide the open photo from the library, or bring it back. Like the archive
+  // toggle the page stays put and flips the flag locally (both endpoints answer
+  // with the refreshed photo, but nothing else on the page depends on it). The
+  // success toast names where the photo went and how to find it again — a flag
+  // you cannot list is a flag you cannot undo.
+  const toggleHidden = async (): Promise<void> => {
+    setHidePending(true)
+    try {
+      if (hidden) {
+        await unhidePhoto(photo.uid)
+        setPhoto({ ...photo, hidden_from_library: false })
+        toast.show({ message: t('photo.hidden.shown'), variant: 'success' })
+      } else {
+        await hidePhoto(photo.uid)
+        setPhoto({ ...photo, hidden_from_library: true })
+        toast.show({ message: t('photo.hidden.hidden'), variant: 'success' })
+      }
+    } catch {
+      toast.show({ message: t('photo.hidden.error'), variant: 'danger' })
+    } finally {
+      setHidePending(false)
+    }
+  }
   const handleSetStackPrimary = async (memberUid: string): Promise<void> => {
     await setStackPrimary(memberUid)
     await reloadPhoto()
@@ -624,6 +657,23 @@ export function PhotoDetailPage() {
             }}
           >
             <Icon name={archived ? 'arrow-counterclockwise' : 'archive'} />
+          </button>
+        )}
+        {canWrite && (
+          <button
+            type="button"
+            className="kk-viewer__btn kk-viewer__btn--icon"
+            aria-label={hidden ? t('photo.hidden.show') : t('photo.hidden.hide')}
+            // The title spells out what the toggle does and how to get back, so
+            // the one-glyph control is not the only place the rule is written.
+            title={hidden ? t('photo.hidden.showHint') : t('photo.hidden.hideHint')}
+            aria-pressed={hidden}
+            disabled={hidePending}
+            onClick={() => {
+              void toggleHidden()
+            }}
+          >
+            <Icon name={hidden ? 'eye' : 'eye-slash'} />
           </button>
         )}
       </span>

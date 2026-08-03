@@ -464,6 +464,7 @@
         "label": "Fotky se štítkem (podle názvu nebo UID).",
         "person": "Fotky s osobou (podle jména nebo UID).",
         "state": "Oblíbené, soukromé a archivované (yes/no).",
+        "hidden": "Skryté z knihovny (yes/no) — jediná cesta zpátky ke skryté fotce.",
         "rating": "Vaše hodnocení hvězdičkami, 0–5.",
         "flag": "Váš příznak: pick, reject nebo eye.",
         "date": "Rok, měsíc a den pořízení.",
@@ -703,6 +704,13 @@
       "archive": "Archivovat",
       "unarchive": "Vrátit z archivu"
     },
+    "hidden": {
+      "label": "Knihovna",
+      "noChange": "— beze změny —",
+      "hide": "Skrýt z knihovny",
+      "unhide": "Vrátit do knihovny",
+      "hint": "Skryté fotky zůstávají v albech a štítcích. Najdeš je hledáním hidden:yes."
+    },
     "favorite": {
       "label": "Oblíbené",
       "noChange": "— beze změny —",
@@ -727,6 +735,8 @@
       "clearLocation": "Vymazat polohu",
       "archive": "Archivovat",
       "unarchive": "Vrátit z archivu",
+      "hide": "Skrýt z knihovny (zůstanou v albech a štítcích)",
+      "unhide": "Vrátit do knihovny",
       "favorite": "Přidat mezi oblíbené",
       "unfavorite": "Odebrat z oblíbených"
     },
@@ -1496,6 +1506,15 @@
       "restore": "Vrátit z koše",
       "archived": "Fotka přesunuta do koše",
       "restored": "Fotka vrácena z koše",
+      "error": "Akci se nepodařilo provést."
+    },
+    "hidden": {
+      "hide": "Skrýt z knihovny",
+      "show": "Vrátit do knihovny",
+      "hideHint": "Skrýt z knihovny — fotka zůstane v albech, štítcích i mezi oblíbenými. Zpátky ji najdeš hledáním hidden:yes.",
+      "showHint": "Vrátit fotku zpátky do knihovny",
+      "hidden": "Fotka skryta z knihovny. Najdeš ji hledáním hidden:yes.",
+      "shown": "Fotka je zase v knihovně",
       "error": "Akci se nepodařilo provést."
     },
     "untitled": "Bez názvu"

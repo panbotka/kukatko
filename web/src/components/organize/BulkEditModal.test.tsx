@@ -208,6 +208,47 @@ describe('BulkEditModal', () => {
     expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], { archive: true })
   })
 
+  it('hides the selection from the library in one apply', async () => {
+    // The real use of the feature is fifty document scans at once, so the bulk
+    // path is not an extra: it is the one that solves the stated problem.
+    bulkMock.mockResolvedValue(result({ total: 2, updated: 2 }))
+    const user = userEvent.setup()
+    renderModal()
+
+    await user.selectOptions(await screen.findByLabelText('Library'), 'hide')
+    // The running summary states the effect in prose, including what hiding does
+    // NOT do — the photos stay in their albums and labels.
+    expect(
+      screen.getByText('Hide from the library (they stay in albums and labels)'),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], { hide: true })
+    })
+  })
+
+  it('brings a hidden selection back into the library', async () => {
+    bulkMock.mockResolvedValue(result({ total: 2, updated: 2 }))
+    const user = userEvent.setup()
+    renderModal()
+
+    await user.selectOptions(await screen.findByLabelText('Library'), 'unhide')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], { unhide: true })
+    })
+  })
+
+  it('names the search that lists hidden photos again', async () => {
+    // Discoverability of the way back is part of the feature: setting a flag you
+    // cannot list is setting a flag you cannot undo.
+    renderModal()
+    await screen.findByLabelText('Library')
+    expect(screen.getByText(/hidden:yes/)).toBeInTheDocument()
+  })
+
   it('filters the options as the reader types, case- and accent-insensitively', async () => {
     const user = userEvent.setup()
     renderModal()

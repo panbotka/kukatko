@@ -63,6 +63,10 @@ type LocatedPoint struct {
 //     says nothing about where the scanner's other photos that day were.
 //   - archived_at IS NULL — archived photos are on their way out; spending
 //     geocoder credits on them is waste.
+//   - NOT hidden_from_library — the same argument. A photo the user hid never
+//     appears on the map or in the places hierarchy, which is the only thing an
+//     estimated location would have been for, so guessing one buys nothing and
+//     the guess is not free.
 //
 // The ordering is by uid rather than taken_at so a limited run is a stable
 // prefix, and it rides the primary key.
@@ -73,6 +77,7 @@ const listLocationCandidatesSQL = `SELECT uid, taken_at FROM photos
 	  AND NOT taken_at_estimated
 	  AND NOT scan
 	  AND archived_at IS NULL
+	  AND NOT hidden_from_library
 	ORDER BY uid`
 
 // ListLocationCandidates returns the photos the estimator may fill in: no
@@ -116,7 +121,9 @@ func (s *Store) ListLocationCandidates(ctx context.Context, limit int) ([]Locati
 // seed further estimates would let one guess propagate across a whole library,
 // each hop looking exactly as confident as the last. Rows with an empty source
 // are included on purpose — a legacy row's coordinates are real, only their
-// provenance is unrecorded.
+// provenance is unrecorded. So are the photos hidden from the library: hiding is
+// a statement about where a photo is shown, not about whether its GPS tag is
+// true, and dropping real measurements would only make the estimates worse.
 const listLocatedNeighboursSQL = `SELECT lat, lng FROM photos
 	WHERE lat IS NOT NULL AND lng IS NOT NULL
 	  AND location_source <> 'estimate'

@@ -236,6 +236,21 @@ to `## Package map` in `CLAUDE.md`.
   `(stack_uid IS NULL OR stack_primary)` gate hides from **every** default view — and after a purge
   irrecoverably, since `ListStackCandidates` skips rows that already carry a `stack_uid`. Unarchiving does
   not rejoin a stack: a restored photo comes back standalone and therefore visible.
+  **Hidden from the library** (`photos.hidden_from_library`, migration `0049`, see `docs/ARCHITECTURE.md`
+  §5.1): `SetHiddenFromLibrary(uid,hidden)`/`SetHiddenFromLibraryAudited` toggle a photo out of the
+  firehose, and `hiddenClauses` — `stackClauses`' sibling, a bare `photos.*` predicate in
+  `whereClauses`, so it reaches `List`, `Count`, `Search`, `FilterUIDs`, `YearBuckets` and
+  `TimelineBuckets` at once — emits `NOT hidden_from_library` by default. It **lifts itself** when the
+  listing is scoped to an album (`AlbumUIDs`), a label (`LabelUIDs`) or the caller's favourites
+  (`FavoriteOf`): a photo filed there was put there deliberately, and that one rule spares every caller
+  a flag. `ListParams.IncludeHidden` is the explicit escape hatch, and an explicit `hidden:` in the
+  query language yields the default too (`archivedClauses`' precedent — otherwise `hidden:yes` would
+  match nothing). It is neither `archived_at` (on its way out, purged after retention) nor `private`
+  (a sharing concept, out of scope). The two hand-written library queries repeat the predicate by hand:
+  `AggregatePlaces` (`store_places.go`) and `ListLocationCandidates` (`store_location.go`, no geocoder
+  credits on a photo no map shows) — `ListLocatedNeighbours` deliberately does **not**, since a hidden
+  photo's GPS tag is still a real measurement. Duplicate detection, maintenance, the backfills, backup
+  and import verify are all untouched: they are about data integrity, not browsing.
   `SetPhash`/`GetPhash`, `SetEdit`/`GetEdit`; dedup on SHA256 `file_hash` + external IDs
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tables in migration
   `0003_photos.sql`: `photos`, `photo_files` (one primary/photo), `photo_phashes`,
@@ -1274,6 +1289,11 @@ to `## Package map` in `CLAUDE.md`.
   It is dropped in `labelPlan`, before the plan, and dropped from the label total too, so a library whose every
   label is switched off honestly reports `no_labels`. Subjects have no equivalent flag. The switch is about the
   label as a whole; "not this photo for this label" stays a per-photo `internal/feedback` rejection.
+  **Photos hidden from the library** (`photos.hidden_from_library`) produce no question of either kind: the cut
+  is made in `personQuestions`/`labelResultQuestions`, not in the searches, because hiding is a statement about
+  browsing rather than about the data — the face is still detected and its vector still indexed, and a
+  candidate search that skipped hidden photos would quietly weaken everything else built on it. The game *is* a
+  browse, and a scanned document is exactly what nobody wants twenty questions about.
   **Variety (`variety.go`) — the game must not be an interrogation.** Informativeness alone let a single label
   that matches half the library own a whole batch; the measurement (`longestEntityRun`, `countEntities`, logged
   per rebuild at debug as `review: queue rebuilt`) on the reproduction fixture was **19 of 20 questions about one
@@ -1677,7 +1697,9 @@ to `## Package map` in `CLAUDE.md`.
   photoUIDs, ops Operations) (Result, error)` — **the whole batch in a single transaction** with an audit
   record; `Operations` = the optional fields `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
   `Title`/`Description *string` (nil=unchanged, ""=clear), `Location *Location`+`ClearLocation`,
-  `Archive`/`Favorite *bool`, **`Rating *int` (0–5) + `Flag *string` (none/pick/reject/eye)**;
+  `Archive`/`Hide`/`Favorite *bool` (`Hide` = `photos.hidden_from_library`, the operation the
+  hide-from-library feature actually needs — the real use is fifty document scans at once),
+  **`Rating *int` (0–5) + `Flag *string` (none/pick/reject/eye)**;
   `Apply` validates the batch (ErrNoPhotos/ErrNoOperations/
   ErrBatchTooLarge), checks that the albums/labels of the add operations exist (ErrAlbumNotFound/ErrLabelNotFound),
   then per photo: a duplicate uid → `skipped`, a non-existent photo → `error` **without aborting the rest**,
@@ -2414,7 +2436,9 @@ to `## Package map` in `CLAUDE.md`.
   Not to be confused with `internal/sidecar`, which reads *foreign* sidecars (Google Takeout `.json`, Apple `.xmp`) during
   an import — this package only **writes**, and only its own format. `Document` = a versioned, grouped
   schema (`version`/`generated_at`/`identity`/`descriptive`/`temporal`/`spatial`/`technical`/
-  `curation`/`edit`), `Version = 1`; `Build(Input) Document` is a **pure function** (no I/O, no
+  `curation`/`edit`), `Version = 2` (v2 added `curation.hidden_from_library` — additive, but still a bump,
+  because a reader that ignored the key would un-hide every hidden photo on restore);
+  `Build(Input) Document` is a **pure function** (no I/O, no
   clock — the caller collects the collaborators), `Marshal`/`Unmarshal` add/ignore the header comment
   that explains **why there are no embeddings in the file** (large, binary, cheap to recompute from
   the original — that is what the backfill jobs are for), so that nobody "fixes" it. `KeyFor(fileKey)` = the parallel
@@ -2648,7 +2672,9 @@ to `## Package map` in `CLAUDE.md`.
   (`800-`, `-200`), `*` as a wildcard in text (**an escaped or quoted asterisk is a literal** —
   `title:foo\*bar` searches for an asterisk); the filter registry `specs` (Key → Kind
   text/number/date/bool/enum/id/count + bound validation: rating 0–5, month 1–12, year 1000–9999, …)
-  with the aliases `subject:`→`person:`, `keyword:`→`keywords:`; **an unknown key or an invalid value
+  with the aliases `subject:`→`person:`, `keyword:`→`keywords:`; the bool keys include
+  `hidden:` (photos hidden from the library — like `archived:`, using it lifts the store's default scope,
+  so `hidden:yes` is the way back to a hidden photo); **an unknown key or an invalid value
   degrades the whole token to free text** and is reported in `Query.Unknown` (the UI builds a hint from it,
   the API `unknown_tokens`). AST: `Query{Terms,Filters,Unknown}`, `Term{Text,Phrase,Not}`,
   `Filter{Key,Values}`, `Value{Not,Text,Pattern,Bool,Min,Max,From,Until}` (numeric bounds / half-open

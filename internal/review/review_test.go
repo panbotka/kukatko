@@ -343,6 +343,36 @@ func TestQueue_alreadyDoneExcluded(t *testing.T) {
 	}
 }
 
+// TestQueue_hiddenPhotosExcluded asserts a photo the user hid from the library
+// produces no question of either kind. A scanned document is exactly what nobody
+// wants to be asked about, and it is the reason the flag exists.
+func TestQueue_hiddenPhotosExcluded(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, func(f *fixture) {
+		person := scannedPerson("subj1", 0.1, 0.4)
+		person.Candidates[0].Photo.HiddenFromLibrary = true
+		f.sweeper.people = []*sweep.Person{person}
+
+		f.organize.labels = []organize.LabelCount{labelCount("lab1", 3)}
+		res := labelResult("lab1", 0.85, 0.5)
+		res.Candidates[0].Photo.HiddenFromLibrary = true
+		f.expander.results["lab1"] = res
+	})
+	got, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	if err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	if len(got.Questions) != 2 {
+		t.Fatalf("questions = %d, want 2 (the visible candidate of each kind): %+v",
+			len(got.Questions), got.Questions)
+	}
+	for _, q := range got.Questions {
+		if q.Photo.HiddenFromLibrary {
+			t.Errorf("a hidden photo became a question: %+v", q)
+		}
+	}
+}
+
 func TestQueue_ordersByBoundaryDistanceAndInterleaves(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {

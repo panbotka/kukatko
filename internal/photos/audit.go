@@ -55,6 +55,20 @@ func (s *Store) UnarchiveAudited(ctx context.Context, uid string, entry audit.En
 	})
 }
 
+// SetHiddenFromLibraryAudited hides the photo identified by uid from the library
+// firehose (hidden true) or brings it back (false) and writes entry to the audit
+// log in the same transaction. See UpdateMetadataAudited for the atomicity
+// guarantee. Unlike ArchiveAudited it deliberately leaves the photo's stack
+// alone: hiding is a visibility toggle on one photo, not a state its siblings
+// have to be rescued from. It returns the refreshed photo or ErrPhotoNotFound.
+func (s *Store) SetHiddenFromLibraryAudited(
+	ctx context.Context, uid string, hidden bool, entry audit.Entry,
+) (Photo, error) {
+	return s.mutateAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
+		return setHiddenRow(ctx, tx, uid, hidden)
+	})
+}
+
 // DeleteAudited permanently deletes the photo identified by uid (cascading its
 // satellite rows) and writes entry to the audit log in the same transaction, so
 // the row deletion and the record of who purged it commit atomically and roll

@@ -56,8 +56,10 @@ type Location struct {
 // field is independently optional: nil slices/pointers and a false ClearLocation
 // mean "leave unchanged". A non-nil Title/Description pointer sets that column
 // (the empty string clears it); ClearLocation wipes lat/lng; Archive true
-// archives and false unarchives; Favorite toggles the acting user's favorite;
-// Rating sets the acting user's star rating (0–5) and Flag the pick/reject flag.
+// archives and false unarchives; Hide true keeps the photos out of the library
+// firehose and false brings them back; Favorite toggles the acting user's
+// favorite; Rating sets the acting user's star rating (0–5) and Flag the
+// pick/reject flag.
 type Operations struct {
 	AddAlbums     []string
 	RemoveAlbums  []string
@@ -68,9 +70,13 @@ type Operations struct {
 	Location      *Location
 	ClearLocation bool
 	Archive       *bool
-	Favorite      *bool
-	Rating        *int
-	Flag          *string
+	// Hide sets photos.hidden_from_library. Hiding is the operation this whole
+	// batch path exists for on the feature's own terms: the real use is fifty
+	// document scans at once, not one.
+	Hide     *bool
+	Favorite *bool
+	Rating   *int
+	Flag     *string
 }
 
 // PhotoResult is the outcome of one photo in a bulk request.
@@ -177,6 +183,9 @@ func (o Operations) addScalarSummary(summary map[string]any) {
 	}
 	if o.Archive != nil {
 		summary["archive"] = *o.Archive
+	}
+	if o.Hide != nil {
+		summary["hide"] = *o.Hide
 	}
 	if o.Favorite != nil {
 		summary["favorite"] = *o.Favorite

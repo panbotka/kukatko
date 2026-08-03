@@ -1,6 +1,7 @@
 package sidecarexport
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -117,9 +118,10 @@ func fullDocument() Document {
 			Ratings: []Rating{{
 				User: "pan.botka", UserUID: "usr001", Stars: 4, Flag: "pick", UpdatedAt: &rated,
 			}},
-			Private:    true,
-			ArchivedAt: &archived,
-			Stack:      &Stack{UID: "stk001", Primary: true},
+			Private:           true,
+			HiddenFromLibrary: true,
+			ArchivedAt:        &archived,
+			Stack:             &Stack{UID: "stk001", Primary: true},
 		},
 		Edit: &Edit{
 			Crop:       &Box{X: 0.1, Y: 0.2, W: 0.6, H: 0.5},
@@ -307,7 +309,7 @@ func TestVersion_isWritten(t *testing.T) {
 		t.Fatalf("Marshal returned error: %v", err)
 	}
 	body := string(data[strings.Index(string(data), "version:"):])
-	if !strings.HasPrefix(body, "version: 1\n") {
+	if !strings.HasPrefix(body, fmt.Sprintf("version: %d\n", Version)) {
 		t.Errorf("document does not start with the schema version; body starts:\n%.80s", body)
 	}
 }

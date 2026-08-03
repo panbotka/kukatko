@@ -242,6 +242,18 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
     `file_name` is the name in the storage layout), `projection` (`equirectangular` for panoramas).
     Populating from EXIF and mapping from the PhotoPrism import are separate tasks — existing rows have
     defaults.
+  - **Hidden from the library** (migration `0049_photos_hidden_from_library.sql`):
+    `hidden_from_library BOOLEAN NOT NULL DEFAULT false` keeps a photo out of the firehose — the grid
+    and its counts, the timeline and year buckets, the map and places, the slideshow, the review game
+    and the default search — while it stays fully visible in album and label galleries, in favourites
+    and at its own URL. It is for what belongs in the catalogue but not among the photographs: scanned
+    documents, screenshots. The filter is `hiddenClauses` in `internal/photos` (`stackClauses`' sibling,
+    so it reaches every listing at once) and it **lifts itself** for a listing scoped to an album, a
+    label or the caller's favourites — filing a photo there was a deliberate act. Distinguish it
+    carefully from **`archived_at`** (a photo on its way OUT: trash, purged after retention) and from
+    **`private`** (a sharing concept, out of scope); the long column name exists so the three cannot be
+    confused. Toggled by `POST /photos/{uid}/hide`+`/unhide` and by the bulk API, listed again with
+    `hidden:yes`, and carried in the metadata sidecar (format version 2).
   - **Approximate ("circa") date** (migration `0029_photos_taken_at_estimate.sql`): `taken_at_estimated`
     (`BOOLEAN NOT NULL DEFAULT false` — the date is an **estimate**, not a fact) + `taken_at_note`
     (`TEXT NOT NULL DEFAULT ''` — free text in one's own words: "around 1950", "during the war").

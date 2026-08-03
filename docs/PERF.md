@@ -189,9 +189,20 @@ The default, by far most frequent, query is:
 ```sql
 SELECT … FROM photos
 WHERE archived_at IS NULL
+  AND (stack_uid IS NULL OR stack_primary)
+  AND NOT hidden_from_library
 ORDER BY taken_at DESC NULLS LAST, uid DESC
 LIMIT n OFFSET m
 ```
+
+The two extra predicates are the stack-visibility gate and the
+hide-from-library flag (migration `0049`). Neither is in an index and neither
+needs to be: both drop a small minority, so they ride along as **filters** on the
+index scan below — measured on 25 000 rows (250 hidden, 500 archived), page 1
+costs 7 shared buffers and 0.11 ms with or without `NOT hidden_from_library`, and
+the plan is the same `Index Scan using idx_photos_live_taken_at`. The EXPLAIN
+test below mirrors them, so the day one of them stops being free is the day it
+fails.
 
 ### Problem found
 

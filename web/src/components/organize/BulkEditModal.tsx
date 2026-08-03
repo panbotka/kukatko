@@ -89,6 +89,12 @@ interface FormState {
   lat: string
   lng: string
   archiveMode: '' | 'archive' | 'unarchive'
+  /**
+   * Library visibility: hide the photos from the grid/timeline/search or bring
+   * them back. It is the operation this dialog exists for on the feature's own
+   * terms — the real use is fifty document scans at once.
+   */
+  hiddenMode: '' | 'hide' | 'unhide'
   favoriteMode: BoolMode
 }
 
@@ -103,6 +109,7 @@ const EMPTY_FORM: FormState = {
   lat: '',
   lng: '',
   archiveMode: '',
+  hiddenMode: '',
   favoriteMode: '',
 }
 
@@ -158,6 +165,11 @@ function buildOperations(form: FormState): BulkOperations | 'invalid-coords' | '
   } else if (form.archiveMode === 'unarchive') {
     ops.unarchive = true
   }
+  if (form.hiddenMode === 'hide') {
+    ops.hide = true
+  } else if (form.hiddenMode === 'unhide') {
+    ops.unhide = true
+  }
   if (form.favoriteMode !== '') {
     ops.set_favorite = form.favoriteMode === 'true'
   }
@@ -167,8 +179,8 @@ function buildOperations(form: FormState): BulkOperations | 'invalid-coords' | '
 /**
  * A modal bulk-edit dialog: applies a set of metadata operations (add/remove
  * albums, add/remove labels, set/clear description, set/clear location,
- * archive, favorite) to a multi-photo grid selection in one `POST /photos/bulk`
- * call, applied by the backend in one transaction.
+ * archive, hide from the library, favorite) to a multi-photo grid selection in
+ * one `POST /photos/bulk` call, applied by the backend in one transaction.
  *
  * The form is grouped into four sections — Organize, Metadata, Location, Flags —
  * and each album/label field is a searchable {@link MultiSelect}, so a single
@@ -706,6 +718,26 @@ function BulkEditForm({
             </Form.Group>
           </Col>
           <Col xs={12} md={4}>
+            <Form.Group controlId="bulk-hidden">
+              {/* Hiding is not archiving and is deliberately not toned danger:
+                  nothing is deleted, the photos stay in their albums and labels,
+                  and the hint says how to list them again. */}
+              <Form.Label className="kk-text-caption mb-1">{t('bulkEdit.hidden.label')}</Form.Label>
+              <Form.Select
+                value={form.hiddenMode}
+                disabled={busy}
+                onChange={(e) => {
+                  onChange({ hiddenMode: e.target.value as FormState['hiddenMode'] })
+                }}
+              >
+                <option value="">{t('bulkEdit.hidden.noChange')}</option>
+                <option value="hide">{t('bulkEdit.hidden.hide')}</option>
+                <option value="unhide">{t('bulkEdit.hidden.unhide')}</option>
+              </Form.Select>
+              <Form.Text className="kk-text-caption">{t('bulkEdit.hidden.hint')}</Form.Text>
+            </Form.Group>
+          </Col>
+          <Col xs={12} md={4}>
             <Form.Group controlId="bulk-favorite">
               <Form.Label className="kk-text-caption mb-1">
                 {t('bulkEdit.favorite.label')}
@@ -831,6 +863,15 @@ function PendingChanges({
           ? t('bulkEdit.summary.archive')
           : t('bulkEdit.summary.unarchive'),
       destructive: form.archiveMode === 'archive',
+    })
+  }
+  if (form.hiddenMode !== '') {
+    lines.push({
+      id: 'hidden',
+      text: form.hiddenMode === 'hide' ? t('bulkEdit.summary.hide') : t('bulkEdit.summary.unhide'),
+      // Not destructive: nothing is deleted and the photos stay in their albums
+      // and labels — the toning is reserved for changes that lose something.
+      destructive: false,
     })
   }
   if (form.favoriteMode !== '') {

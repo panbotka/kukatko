@@ -35,7 +35,12 @@ import (
 // guess at it.
 //
 // Version 1 is the initial format.
-const Version = 1
+// Version 2 adds curation.hidden_from_library (see Curation.HiddenFromLibrary).
+// The change is additive — a version 1 document read by a version 2 reader is
+// simply a photo that is not hidden — but it is still a bump, because a reader
+// that silently ignored the key would un-hide every hidden photo on restore,
+// which is precisely the class of quiet data loss the version exists to prevent.
+const Version = 2
 
 // Document is one photo's sidecar: everything a human created or a machine
 // derived that would be expensive or impossible to recompute from the original
@@ -242,6 +247,13 @@ type Curation struct {
 	Ratings   []Rating   `yaml:"ratings,omitempty"`
 	// Private hides the photo from shared views.
 	Private bool `yaml:"private,omitempty"`
+	// HiddenFromLibrary keeps the photo out of the library firehose — the grid,
+	// the timeline, the map, the default search — while leaving it visible in its
+	// albums and labels. It is a decision the user made by hand and it exists
+	// nowhere but the database, so a rebuild that dropped it would silently pour
+	// every hidden document scan back into the timeline. It is NOT ArchivedAt: a
+	// hidden photo is a permanent resident, not one awaiting purge.
+	HiddenFromLibrary bool `yaml:"hidden_from_library,omitempty"`
 	// ArchivedAt is set when the photo is in the trash, awaiting purge. A rebuild
 	// should honour it: a photo the user deleted, silently resurrected, is the
 	// worst kind of restore bug.

@@ -103,7 +103,11 @@ func seedTimeline(t *testing.T, pool *pgxpool.Pool, n int) {
 // taken_at timeline and the "recently added" created_at ordering, both scoped to
 // live photos) are served by the partial composite indexes from migration 0015
 // without a Sort node — the optimisation the perf pass added. The queries mirror
-// buildListQuery's WHERE/ORDER BY for those two sorts.
+// buildListQuery's WHERE/ORDER BY for those two sorts, including the visibility
+// predicates that ride along as filters: the stack gate and
+// NOT hidden_from_library. Mirroring them is the point — each is a predicate no
+// index covers, and this test is what says so on the day one of them stops being
+// free and starts costing a Sort over the whole library.
 func TestListQueryPlan_usesLiveIndexes(t *testing.T) {
 	_, db := newStore(t)
 	pool := db.Pool()
@@ -117,12 +121,14 @@ func TestListQueryPlan_usesLiveIndexes(t *testing.T) {
 		{
 			name: "default taken_at timeline",
 			query: "SELECT uid FROM photos WHERE archived_at IS NULL " +
+				"AND (stack_uid IS NULL OR stack_primary) AND NOT hidden_from_library " +
 				"ORDER BY taken_at DESC NULLS LAST, uid DESC LIMIT 100 OFFSET 0",
 			wantIndex: "idx_photos_live_taken_at",
 		},
 		{
 			name: "recently added created_at",
 			query: "SELECT uid FROM photos WHERE archived_at IS NULL " +
+				"AND (stack_uid IS NULL OR stack_primary) AND NOT hidden_from_library " +
 				"ORDER BY created_at DESC NULLS LAST, uid DESC LIMIT 100 OFFSET 0",
 			wantIndex: "idx_photos_live_created_at",
 		},

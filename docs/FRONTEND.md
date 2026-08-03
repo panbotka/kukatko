@@ -600,9 +600,12 @@ here.
   **Metadata** (set/clear the description), **Poloha**
   (set/clear coordinates; above the `lat`/`lng` fields on `set` sits **the same `PlaceSearch`** as in the detail
   editor — it fills only those two fields, so the sent batch is the same as if someone typed the coordinates
-  by hand) and **Příznaky** (private, archive, favorite); the set/clear pairs remain
-  separate modes. **Destructive choices** (removal from an album/label, archiving) are in the danger key
-  (`destructive` chips, `text-danger` label, `border-danger` select). Below the form is
+  by hand) and **Příznaky** (private, archive, **Knihovna** = `hide`/`unhide`, favorite); the set/clear
+  pairs remain separate modes. The Knihovna select is the bulk half of hide-from-library and the one that
+  actually solves the stated problem (fifty document scans at once, not one); it carries a `Form.Text`
+  hint naming `hidden:yes`, and it is deliberately **not** toned danger — nothing is deleted and the
+  photos stay in their albums and labels. **Destructive choices** (removal from an album/label, archiving)
+  are in the danger key (`destructive` chips, `text-danger` label, `border-danger` select). Below the form is
   **`PendingChanges`** — a `.kk-surface` panel that says sentence by sentence what apply will do, and **how many
   photos it affects** (destructive rows in red + `visually-hidden` „(destruktivní)"; `aria-live`).
   A selection **over `LARGE_SELECTION` (50) photos** requires **explicit confirmation**: the first Apply only
@@ -924,6 +927,12 @@ here.
   sends the open photo to the trash, `unarchivePhoto` restores it (a photo opened from `/trash` arrives already
   archived); **you stay on the page** — `archived_at` is toggled in place (the icon flips
   `archive` ⇄ `arrow-counterclockwise`, the label Archivovat ⇄ Vrátit z koše) and the result is reported by a toast.
+  Beside it sits **Skrýt z knihovny/Vrátit do knihovny** (editor+ too): `hidePhoto`/`unhidePhoto` toggle
+  `hidden_from_library` in place (icon `eye-slash` ⇄ `eye`, `aria-pressed`), which takes the photo out of
+  the library grid, the timeline, the map, the slideshow and the default search while leaving it in its
+  albums, labels and favourites. It is **not** archiving and nothing is deleted, so it is not toned
+  danger; the button's `title` and the success toast both name the way back (`hidden:yes` in search) —
+  a flag you cannot list is a flag you cannot undo.
   **Where that loop sits depends on the reach.** With a mouse it rides the top bar; **below `md`
   (`useIsNarrowViewport`) it moves into a bottom dock** (`.kk-viewer__dock`, `role="group"` /
   `photo.viewer.actions`) along the edge the thumb already rests on — the top-right corner is the
@@ -2119,6 +2128,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `regenerateThumbnail(uid,signal)` over `POST /api/v1/photos/{uid}/regenerate-thumbnail`
   (an editor/admin service action, synchronous, `RegenerateThumbnailResult{status,sizes}`, 422 =
   the original is undecodable; the basis for `RegenerateThumbnailButton`),
+  `hidePhoto(uid)`/`unhidePhoto(uid)` (`POST …/hide`/`…/unhide`, editor/admin, set/clear
+  `Photo.hidden_from_library` — library visibility, **not** the trash and not `private`),
   **the trash** `unarchivePhoto(uid)` (`POST …/unarchive` restore), `purgePhoto(uid)` (`POST …/purge?confirm=true`
   permanent deletion), `emptyTrash()` (`POST /trash/empty?confirm=true` → `PurgeResult{purged,failed}`),
   `fetchTrashInfo()` (`GET /trash/info` → `TrashInfo{retention_days}`),

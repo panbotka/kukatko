@@ -29,6 +29,7 @@ export const FILTER_KEYS = [
   'filename',
   'flag',
   'geo',
+  'hidden',
   'iso',
   'keywords',
   'label',
@@ -112,6 +113,7 @@ export type QueryHelpRowId =
   | 'label'
   | 'person'
   | 'state'
+  | 'hidden'
   | 'rating'
   | 'flag'
   | 'date'
@@ -150,6 +152,7 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'label', keys: 'label:', example: 'label:cat|dog' },
   { id: 'person', keys: 'person: subject:', example: 'person:Anna' },
   { id: 'state', keys: 'favorite: private: archived:', example: 'favorite:yes' },
+  { id: 'hidden', keys: 'hidden:', example: 'hidden:yes' },
   { id: 'rating', keys: 'rating:', example: 'rating:4-5' },
   { id: 'flag', keys: 'flag:', example: 'flag:pick' },
   { id: 'date', keys: 'year: month: day:', example: 'year:2020-2023' },

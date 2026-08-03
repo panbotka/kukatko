@@ -78,6 +78,12 @@ type ListParams struct {
 	// primaries when true. By default (false) only a stack's primary is returned,
 	// so the several files of one shot occupy a single tile in every listing.
 	IncludeStackMembers bool
+	// IncludeHidden returns the photos hidden from the library alongside the
+	// visible ones when true. By default (false) they are dropped from every
+	// listing — see hiddenClauses, which also lifts the filter on its own for a
+	// listing scoped to an album, a label or the caller's favorites, since a photo
+	// filed there was put there deliberately.
+	IncludeHidden bool
 	// UploadedBy, when non-empty, restricts the result to photos uploaded by the
 	// given user UID.
 	UploadedBy string
@@ -310,6 +316,7 @@ func buildWhere(params ListParams) (where []string, args []any) {
 func whereClauses(params ListParams, bind func(any) string) []string {
 	where := archivedClauses(params)
 	where = append(where, stackClauses(params)...)
+	where = append(where, hiddenClauses(params)...)
 	where = append(where, scalarClauses(params, bind)...)
 	where = append(where, yearClauses(params, bind)...)
 	where = append(where, gpsClauses(params)...)
@@ -460,6 +467,35 @@ func stackClauses(params ListParams) []string {
 		return nil
 	}
 	return []string{"(stack_uid IS NULL OR stack_primary)"}
+}
+
+// hiddenClauses returns the library-visibility filter that keeps the photos the
+// user hid out of the firehose: the grid and its counts, the timeline and year
+// buckets, the map, the slideshow and the default search. Like stackClauses it
+// is a pure photos.* predicate (no bind), so adding it in whereClauses
+// propagates to List, Count, Search, FilterUIDs, YearBuckets and TimelineBuckets
+// at once.
+//
+// The filter lifts itself in the three cases where the photo is not being
+// browsed as part of the library but reached through something the user
+// deliberately filed it in — an album (AlbumUIDs), a label (LabelUIDs) or their
+// own favorites (FavoriteOf). That automatic rule is the feature as asked for:
+// "in an album or on a label I want to see it", and it saves every caller from
+// remembering a flag. IncludeHidden is the explicit escape hatch for the rest;
+// an explicit hidden: in the search query language also yields to it (compare
+// archivedClauses), or hidden:yes — the documented way back to a hidden photo —
+// would match nothing.
+func hiddenClauses(params ListParams) []string {
+	switch {
+	case params.IncludeHidden:
+		return nil
+	case len(params.AlbumUIDs) > 0 || len(params.LabelUIDs) > 0 || params.FavoriteOf != "":
+		return nil
+	case queryHasFilter(params.QueryFilters, query.KeyHidden):
+		return nil
+	default:
+		return []string{"NOT hidden_from_library"}
+	}
 }
 
 // scalarClauses returns the equality and range filters (uploader, date range),
