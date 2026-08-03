@@ -41,6 +41,17 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * True when a rejected call means "there is no such thing" (HTTP 404) rather
+ * than "the request failed". A detail page uses it to tell a purged photo or a
+ * deleted album apart from a broken connection: one is gone for good, the other
+ * is worth retrying. It matters most for links out of the audit log, which
+ * outlives what it audits.
+ */
+export function isNotFound(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404
+}
+
 const API_BASE = '/api/v1'
 
 /** Standard backend error envelope (`internal/auth/http.go`). */

@@ -310,6 +310,25 @@ beforeEach(async () => {
 })
 
 describe('PhotoDetailPage — immersive viewer', () => {
+  it('says a purged photo is gone rather than failing blankly', async () => {
+    // The audit log outlives what it audits: an entry recording a purge links to
+    // the photo it purged, so a 404 here is the normal case, not a failure.
+    const { ApiError } = await import('../services/auth')
+    fetchPhotoMock.mockRejectedValue(new ApiError(404, 'photo not found'))
+    renderPage()
+
+    expect(await screen.findByText('This photo no longer exists.')).toBeInTheDocument()
+    expect(screen.getByText(/It was most likely purged from the trash/)).toBeInTheDocument()
+    expect(screen.queryByText('Could not load this photo.')).toBeNull()
+  })
+
+  it('still reports a failed load as a failure, with a way back', async () => {
+    fetchPhotoMock.mockRejectedValue(new Error('boom'))
+    renderPage()
+
+    expect(await screen.findByText('Could not load this photo.')).toBeInTheDocument()
+  })
+
   it('opens the photo full-bleed into a viewer, the image owning the screen', async () => {
     const { container } = renderPage()
     await screen.findByRole('heading', { name: 'Beach' })

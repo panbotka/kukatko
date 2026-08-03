@@ -147,6 +147,102 @@ describe('AuditPage', () => {
     expect(screen.getByText(/Showing 1–1 of 42/)).toBeInTheDocument()
   })
 
+  it.each([
+    ['photos', 'ph9', '/photos/ph9'],
+    ['albums', 'al7', '/albums/al7'],
+    ['labels', 'lb5', '/labels/lb5'],
+    ['subjects', 'su3', '/people/su3'],
+  ])('links a %s target straight to the thing that was edited', async (type, uid, href) => {
+    fetchAuditMock.mockResolvedValue(
+      response([record({ target_type: type, target_uid: uid, details: null })]),
+    )
+    renderPage()
+
+    expect(await screen.findByRole('link', { name: uid })).toHaveAttribute('href', href)
+  })
+
+  it('links a face entry to the photo its marker sits on, on that person', async () => {
+    fetchAuditMock.mockResolvedValue(
+      response([
+        record({
+          action: 'face.assign',
+          target_type: 'markers',
+          target_uid: 'mk3',
+          details: { action: 'create_marker', photo_uid: 'ph8', subject_uid: 'su4' },
+        }),
+      ]),
+    )
+    renderPage()
+
+    // A marker UID addresses no page of its own, so the target link is routed
+    // through the photo the details name.
+    expect(await screen.findByRole('link', { name: 'mk3' })).toHaveAttribute(
+      'href',
+      '/photos/ph8?person=su4&info=1',
+    )
+  })
+
+  it('leaves a target with no page of its own as plain text', async () => {
+    fetchAuditMock.mockResolvedValue(
+      response([record({ action: 'user.update', target_type: 'users', target_uid: 'us7' })]),
+    )
+    renderPage()
+
+    expect(await screen.findByText('us7')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'us7' })).toBeNull()
+  })
+
+  it('links the UIDs inside the details, where a bulk action lists its targets', async () => {
+    const user = userEvent.setup()
+    fetchAuditMock.mockResolvedValue(
+      response([
+        record({
+          action: 'photos.bulk',
+          target_type: 'photos',
+          target_uid: null,
+          details: { photo_uids: ['ph1', 'ph2'], album_uid: 'al7', count: 2 },
+        }),
+      ]),
+    )
+    renderPage()
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Show details' }))
+
+    const links = screen.getByTestId('audit-links')
+    expect(within(links).getByText('photo_uids')).toBeInTheDocument()
+    expect(within(links).getByRole('link', { name: 'ph1' })).toHaveAttribute('href', '/photos/ph1')
+    expect(within(links).getByRole('link', { name: 'ph2' })).toHaveAttribute('href', '/photos/ph2')
+    expect(within(links).getByRole('link', { name: 'al7' })).toHaveAttribute('href', '/albums/al7')
+    // The raw payload is still there underneath, unchanged.
+    expect(screen.getByText(/"count": 2/)).toBeInTheDocument()
+  })
+
+  it('links the photo a label rejection was made on, not just the label', async () => {
+    const user = userEvent.setup()
+    fetchAuditMock.mockResolvedValue(
+      response([
+        record({
+          action: 'label.reject',
+          target_type: 'labels',
+          target_uid: 'lbl4',
+          details: { via: 'review', photo_uid: 'ph9e' },
+        }),
+      ]),
+    )
+    renderPage()
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Show details' }))
+
+    // The target is the label, but the entry happened on a photo — reachable
+    // only through the details.
+    expect(screen.getByRole('link', { name: 'lbl4' })).toHaveAttribute('href', '/labels/lbl4')
+    expect(
+      within(screen.getByTestId('audit-links')).getByRole('link', { name: 'ph9e' }),
+    ).toHaveAttribute('href', '/photos/ph9e')
+  })
+
   it('applies a filter to the request params and reflects it in the URL', async () => {
     const user = userEvent.setup()
     renderPage()

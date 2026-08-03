@@ -24,6 +24,7 @@ import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { detailQueryString } from '../lib/detailView'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
+import { isNotFound } from '../services/auth'
 import {
   type Album,
   deleteAlbum,
@@ -32,8 +33,17 @@ import {
   updateAlbum,
 } from '../services/organize'
 
-/** Fetch lifecycle of the album record. */
-type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; album: Album }
+/**
+ * Fetch lifecycle of the album record. `missing` is a 404 kept apart from
+ * `error`: an album reached from an audit entry may well have been deleted since
+ * — the log records the deletion — and "this no longer exists" is a different
+ * message from "could not be loaded".
+ */
+type State =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'missing' }
+  | { status: 'ready'; album: Album }
 
 /**
  * Where the back link leads. The albums index keeps no view state of its own in
@@ -100,7 +110,7 @@ export function AlbumDetailPage() {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return
         }
-        setState({ status: 'error' })
+        setState({ status: isNotFound(err) ? 'missing' : 'error' })
       })
     return () => {
       controller.abort()
@@ -191,6 +201,16 @@ export function AlbumDetailPage() {
       setActionError(true)
     }
   }, [state, navigate])
+
+  if (state.status === 'missing') {
+    return (
+      <ErrorState
+        title={t('albumDetail.missing')}
+        hint={t('albumDetail.missingHint')}
+        action={<BackLink to={ALBUMS_PATH} label={t('albumDetail.back')} />}
+      />
+    )
+  }
 
   if (state.status === 'error') {
     return (

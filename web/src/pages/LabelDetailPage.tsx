@@ -16,10 +16,20 @@ import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { detailQueryString } from '../lib/detailView'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
+import { isNotFound } from '../services/auth'
 import { fetchLabel, type Label } from '../services/organize'
 
-/** Fetch lifecycle of the label record. */
-type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; label: Label }
+/**
+ * Fetch lifecycle of the label record. `missing` is a 404 kept apart from
+ * `error`: a label reached from an audit entry may well have been deleted since
+ * — the log records the deletion — and "this no longer exists" is a different
+ * message from "could not be loaded".
+ */
+type State =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'missing' }
+  | { status: 'ready'; label: Label }
 
 /**
  * Where the back link leads. The labels index keeps no view state of its own in
@@ -85,12 +95,22 @@ export function LabelDetailPage() {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return
         }
-        setState({ status: 'error' })
+        setState({ status: isNotFound(err) ? 'missing' : 'error' })
       })
     return () => {
       controller.abort()
     }
   }, [uid])
+
+  if (state.status === 'missing') {
+    return (
+      <ErrorState
+        title={t('labelDetail.missing')}
+        hint={t('labelDetail.missingHint')}
+        action={<BackLink to={LABELS_PATH} label={t('labelDetail.back')} />}
+      />
+    )
+  }
 
   if (state.status === 'error') {
     return (

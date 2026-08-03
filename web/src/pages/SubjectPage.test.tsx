@@ -152,6 +152,19 @@ describe('SubjectPage', () => {
     expect(back).toHaveAttribute('href', '/people')
   })
 
+  it('says a deleted person is gone rather than failing blankly', async () => {
+    // The audit log outlives what it audits, so a link from one of its entries
+    // may well point at a person who has since been deleted or merged away.
+    const { ApiError } = await import('../services/auth')
+    fetchSubjectMock.mockRejectedValue(new ApiError(404, 'subject not found'))
+    fetchPhotosMock.mockResolvedValue(page([]))
+    renderPage()
+
+    expect(await screen.findByText('This person no longer exists.')).toBeInTheDocument()
+    expect(screen.queryByText('Could not load this person.')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Back to people' })).toHaveAttribute('href', '/people')
+  })
+
   it('scopes each photo tile to this subject so the viewer pages the person set', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     renderPage()

@@ -8,6 +8,7 @@ import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
@@ -17,6 +18,8 @@ import {
   AUDIT_DEFAULTS,
   type AuditFilters,
   type AuditView,
+  auditDetailLinks,
+  auditTargetHref,
   pickFilters,
   viewToParams,
 } from '../lib/auditView'
@@ -215,14 +218,7 @@ export function AuditPage() {
       key: 'target',
       header: t('audit.columns.target'),
       cellClassName: 'text-break',
-      cell: (record) => (
-        <>
-          {record.target_type || '—'}
-          {record.target_uid !== null && (
-            <div className="text-secondary small text-break">{record.target_uid}</div>
-          )}
-        </>
-      ),
+      cell: (record) => <AuditTarget record={record} />,
     },
     {
       key: 'ip',
@@ -440,6 +436,32 @@ export function AuditPage() {
   )
 }
 
+/**
+ * The Target cell: the entity type, with its UID underneath as a link to the
+ * thing the entry records a change of ({@link auditTargetHref}) — the photo, the
+ * album, the label, the person, or for a face entry the photo the marker sits
+ * on. A target with no page of its own (a user, an API token, the announcement)
+ * keeps the plain muted UID it always had, so the row stays scannable either
+ * way: same size, same place, only a link where there is somewhere to go.
+ */
+function AuditTarget({ record }: { record: AuditRecord }) {
+  const href = auditTargetHref(record)
+  return (
+    <>
+      {record.target_type || '—'}
+      {record.target_uid !== null && (
+        <div className="small text-break">
+          {href === null ? (
+            <span className="text-secondary">{record.target_uid}</span>
+          ) : (
+            <Link to={href}>{record.target_uid}</Link>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
 /** Props for the expanded payload of one audit entry. */
 interface AuditEntryDetailsProps {
   /** The element id the entry's toggle names in `aria-controls`. */
@@ -448,10 +470,15 @@ interface AuditEntryDetailsProps {
 }
 
 /**
- * The expanded half of an audit entry: the `details` payload — as an old → new
- * table when the record carries a well-formed `changes` map, otherwise the raw
- * JSON — plus the user agent. It is the same block either way: the table puts it
- * in a row spanning every column, a phone card puts it under the record's fields.
+ * The expanded half of an audit entry: the UIDs the payload names as links, the
+ * `details` payload itself — as an old → new table when the record carries a
+ * well-formed `changes` map, otherwise the raw JSON — plus the user agent. It is
+ * the same block either way: the table puts it in a row spanning every column, a
+ * phone card puts it under the record's fields.
+ *
+ * The links come first because the target is not always the useful destination:
+ * `label.reject` targets the label but happened on a photo, and a bulk edit
+ * names no target at all — its photos exist only here.
  *
  * The raw payload is wrapped rather than left to overflow (`.kk-audit-payload`);
  * one long JSON line used to set the scroll width of the whole responsive table
@@ -460,8 +487,31 @@ interface AuditEntryDetailsProps {
 function AuditEntryDetails({ id, record }: AuditEntryDetailsProps) {
   const { t } = useTranslation()
   const changes = readChanges(record.details)
+  const { groups, hidden } = auditDetailLinks(record.details)
   return (
     <dl className="row mb-0 small" id={id}>
+      {groups.length > 0 && (
+        <>
+          <dt className="col-sm-2">{t('audit.details.links')}</dt>
+          <dd className="col-sm-10 mb-2">
+            <ul className="list-unstyled mb-0" data-testid="audit-links">
+              {groups.map((group) => (
+                <li key={group.key} className="text-break">
+                  <code className="text-secondary">{group.key}</code>{' '}
+                  {group.links.map((link) => (
+                    <Link key={link.href} to={link.href} className="me-2">
+                      {link.uid}
+                    </Link>
+                  ))}
+                </li>
+              ))}
+            </ul>
+            {hidden > 0 && (
+              <div className="text-secondary">{t('audit.details.moreLinks', { n: hidden })}</div>
+            )}
+          </dd>
+        </>
+      )}
       {record.details !== null && Object.keys(record.details).length > 0 && (
         <>
           <dt className="col-sm-2">

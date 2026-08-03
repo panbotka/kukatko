@@ -567,6 +567,8 @@
   "albumDetail": {
     "back": "Zpět na alba",
     "error": "Toto album se nepodařilo načíst.",
+    "missing": "Toto album už neexistuje.",
+    "missingHint": "Nejspíš bylo smazáno. Auditní log na smazané věci odkazuje dál — je to záznam o té změně.",
     "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
     "edit": "Upravit",
     "delete": "Smazat",
@@ -613,6 +615,8 @@
   "labelDetail": {
     "back": "Zpět na štítky",
     "error": "Tento štítek se nepodařilo načíst.",
+    "missing": "Tento štítek už neexistuje.",
+    "missingHint": "Nejspíš byl smazán. Auditní log na smazané věci odkazuje dál — je to záznam o té změně.",
     "empty": {
       "title": "Žádné fotky s tímto štítkem",
       "hint": "Připoj tento štítek k fotkám a uvidíš je tady."
@@ -942,6 +946,8 @@
   "subject": {
     "loading": "Načítání osoby…",
     "error": "Tuto osobu se nepodařilo načíst.",
+    "missing": "Tato osoba už neexistuje.",
+    "missingHint": "Nejspíš byla smazána nebo sloučena s jinou. Auditní log na smazané věci odkazuje dál — je to záznam o té změně.",
     "back": "Zpět na lidi",
     "editButton": "Upravit",
     "photos": "Fotky",
@@ -1298,6 +1304,8 @@
     "loading": "Načítání fotky…",
     "loadingNext": "Načítání fotky…",
     "error": "Tuto fotku se nepodařilo načíst.",
+    "missing": "Tato fotka už neexistuje.",
+    "missingHint": "Nejspíš byla trvale smazána z koše. Auditní log na smazané věci odkazuje dál — je to záznam o té změně.",
     "back": "Zpět na seznam",
     "prev": "Předchozí fotka",
     "next": "Další fotka",
@@ -2199,6 +2207,8 @@
       "show": "Zobrazit detaily",
       "hide": "Skrýt detaily",
       "payload": "Detaily",
+      "links": "Odkazy",
+      "moreLinks": "Zbytek ({{n}}) najdeš v datech níže.",
       "userAgent": "User agent"
     },
     "changes": {
