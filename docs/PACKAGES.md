@@ -211,7 +211,17 @@ to `## Package map` in `CLAUDE.md`.
   without IPTC tags; it is covered by the partial index `idx_photos_metadata_pending` from migration
   `0028_photos_metadata_extracted.sql`, which is empty once the backfill is exhausted) and `ListActiveUIDs()`
   (uids of all non-archived photos — the basis of the forced full thumbnail/metadata backfill
-  `?all=true`), **stack methods** (`store_stacks.go`, see `docs/ARCHITECTURE.md` §5.1):
+  `?all=true`), the **orientation-geometry repair** (`store_geometry.go`):
+  `ListDimensionMismatches()` → `[]DimensionMismatch{UID,StoredWidth,StoredHeight,Orientation,RawWidth,RawHeight}`
+  = quarter-turned photos (`file_orientation` 5–8) whose columns hold their own file's dimensions **transposed**,
+  i.e. the displayed frame instead of the stored one — the PhotoPrism-derived import defect that letterboxed the
+  viewer and drifted the face boxes. The raw pair is read out of the `exif` jsonb document
+  (`ImageWidth`/`ExifImageWidth`/`PixelXDimension` + the height equivalents, each `jsonb_typeof`-checked so a
+  non-numeric value degrades to "unknown" instead of aborting the query with a cast error), so **the comparison
+  is the evidence** — a photo whose document says nothing, whose columns already agree, or whose frame is square
+  is never reported and no provenance is guessed. It is read-only, hence the **dry run** of
+  `RepairDimensions(m)` → `bool` (writes the file's own pair, guarded on the transposed one it replaces, so a
+  repeat is a no-op and can never swap a corrected row back), **stack methods** (`store_stacks.go`, see `docs/ARCHITECTURE.md` §5.1):
   `ListStackCandidates` (not-yet-stacked non-archived photos for detection)/`StackInfoByUIDs`/
   `ListStackMembers` (stack members, **primary first** — the strip of variants)/`StackCounts` (member count
   per `stack_uid` — the tile badge)/`CreateStack`/`SetStackPrimary`/`UnstackMember`/`UnstackAll`
@@ -474,7 +484,15 @@ to `## Package map` in `CLAUDE.md`.
   joined by commas) and `CodecToken(s) string` (any codec spelling — `HEIC`, `image/x-canon-cr2`,
   PhotoPrism's `jpeg` — → a token for `image_codec`, otherwise empty). `internal/ppimport` runs them through
   these so an imported photo has its columns in the **same vocabulary** as an extracted one — a column that after
-  extraction says `jpeg` and after import `JPEG` isn't one column, but two), `internal/phash/`
+  extraction says `jpeg` and after import `JPEG` isn't one column, but two.
+  **Orientation geometry** (`geometry.go`): `QuarterTurn(orientation) bool` (5–8 — the only values that
+  exchange the sides) and `RawDimensions(w,h,orientation) (int,int)`, which converts an **already oriented**
+  („displayed") pair **back** to the file's stored one. It exists because the whole geometry stack —
+  `internal/thumb` (which decodes the untouched original and applies the tag itself), the frontend's
+  `displayFrame`, `facejob.NormalizeBBox` — reads `photos.file_width`/`file_height` as the bytes on disk with
+  `file_orientation` still to be applied. PhotoPrism does the opposite (`MediaFile.Width()` swaps the sides for
+  5–8), so `ppimport`/`psimport`/`psfeedsimport` de-orient on the way in; without it the pair contradicted
+  itself and every consumer rotated a second time. The transform is **its own inverse**), `internal/phash/`
   (perceptual hashes, **CGO-free**: `Compute(img) Hashes{Phash,Dhash int64}` — **pHash** via
   a 2-D DCT 32×32 → low-freq 8×8 block with a median-without-DC threshold, **dHash** gradient 9×8; `Distance(a,b)`
   = Hamming distance via `bits.OnesCount64`; near-dup = a small distance), `internal/ingest/`
@@ -847,7 +865,13 @@ to `## Package map` in `CLAUDE.md`.
   helper with `SaveFaces`), `FacesDetected(uid)` (does a row exist?), `ListPhotosMissingFaces(limit)`
   (uids of photos with no `face_detections` row, like `ListPhotosMissingEmbedding`); FK
   `ON DELETE CASCADE` — deleting a photo
-  deletes embeddings, faces and face_detections, fixing the photo-sorter gap with orphans),
+  deletes embeddings, faces and face_detections, fixing the photo-sorter gap with orphans;
+  **orientation geometry** (`geometry.go`): `RenormalizeTransposedBBox(bbox,rawW,rawH,orientation)` repairs a
+  box that was divided by the **transposed** display frame (a per-axis rescale by `rawW/rawH` and its
+  reciprocal; anything but a quarter turn or a degenerate frame is returned unchanged) — `psimport` runs
+  photo-sorter's migrated faces through it — and `RepairFaceDimensions(uid,rawW,rawH)` is the same correction as
+  one guarded `UPDATE` over a photo's face rows (it matches only rows whose cached `photo_width`/`photo_height`
+  are the raw pair swapped, so it is idempotent), the faces half of `maintenance repair --dimensions`),
   `internal/people/`
   (the DB layer for **subjects** (people/animals/other) and **markers** (face/label regions on
   photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`: `subjects`
@@ -2151,8 +2175,10 @@ to `## Package map` in `CLAUDE.md`.
   it reveals drift between the catalogue and the files on disk and fills in/regenerates derived data; it mirrors
   photo-sorter's `cache build-thumbs`, but is broader and safer (**it never deletes originals** — that is the
   job of the trash/purge), idempotent, with repairs going through the persistent job queue; all behind the interfaces
-  `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`,
-  satisfied by `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`,
+  `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`/
+  `ListDimensionMismatches`/`RepairDimensions`,
+  satisfied by `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`/
+  `RepairFaceDimensions`,
   `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`DiskScanner` (`List`, an adapter over
   `backup.DiskOriginals`)/`ThumbChecker` (`HasThumbnail`, `NewThumbCache` over `thumb.Thumbnailer`)/
   `Enqueuer` (`EnqueueThumbnail`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
@@ -2160,14 +2186,19 @@ to `## Package map` in `CLAUDE.md`.
   unit-testable with fakes without DB/disk/queue; `Service` = `New(Config{...,SampleLimit})`
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
   `Report{Photos,FilesInDB,OriginalsOnDisk,MissingOriginals,OrphanFiles,MissingThumbnails,
-  MissingEmbeddings,MissingFaces,MissingPhashes}` — each class is a `Finding{Count,Samples}`
+  MissingEmbeddings,MissingFaces,MissingPhashes,TransposedDimensions}` — each class is a `Finding{Count,Samples}`
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
   thumbnails, an orphan = a file on disk with no `photo_files.file_path` (the `orphanKeys` set-diff), `Report.Clean()`;
-  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans})`** (each opt-in,
+  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Dimensions})`** (each opt-in,
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
   upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
-  import is selected without an importer), `internal/reset/`
+  import is selected without an importer.
+  **`Dimensions`** is the one repair that writes the catalogue instead of enqueuing regenerable work: for every
+  photo `TransposedDimensions` reports it writes the file's own pair (`photos.RepairDimensions`) and then, only
+  for a row that actually changed, re-normalizes that photo's faces against the corrected frame
+  (`vectors.RepairFaceDimensions`) → `DimensionsFixed`/`FaceBoxesFixed`. Both halves are guarded on the state
+  they replace, so an interrupted run resumes and a re-run is a no-op; `Scan` is the **dry run**), `internal/reset/`
   (**the guarded library wipe** — what `kukatko maintenance reset` runs and what phase 1 of
   [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) had nothing to run before: it empties every catalogue table and
   every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**

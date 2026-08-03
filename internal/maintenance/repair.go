@@ -26,11 +26,16 @@ type RepairOptions struct {
 	Phashes bool `json:"phashes"`
 	// ImportOrphans catalogues originals on disk that have no catalogue row.
 	ImportOrphans bool `json:"import_orphans"`
+	// Dimensions rewrites the pixel dimensions of quarter-turned photos whose
+	// columns hold the displayed frame instead of the stored one, and the faces
+	// normalised against it.
+	Dimensions bool `json:"dimensions"`
 }
 
 // Any reports whether at least one repair is selected.
 func (o RepairOptions) Any() bool {
-	return o.Thumbnails || o.Embeddings || o.Faces || o.Phashes || o.ImportOrphans
+	return o.Thumbnails || o.Embeddings || o.Faces || o.Phashes ||
+		o.ImportOrphans || o.Dimensions
 }
 
 // RepairResult reports what each selected repair scheduled or did. Enqueue counts
@@ -51,6 +56,11 @@ type RepairResult struct {
 	OrphansSkipped int `json:"orphans_skipped"`
 	// OrphansFailed is the number of orphans that could not be imported.
 	OrphansFailed int `json:"orphans_failed"`
+	// DimensionsFixed is the number of photos whose transposed pixel dimensions
+	// were rewritten from the file's own EXIF.
+	DimensionsFixed int `json:"dimensions_fixed"`
+	// FaceBoxesFixed is the number of face rows re-normalised alongside them.
+	FaceBoxesFixed int `json:"face_boxes_fixed"`
 }
 
 // Repair runs the selected repairs and returns what each scheduled or did. It is
@@ -75,7 +85,50 @@ func (s *Service) Repair(ctx context.Context, opts RepairOptions) (RepairResult,
 	if err := s.repairOrphans(ctx, opts, &res); err != nil {
 		return res, err
 	}
+	if err := s.repairDimensions(ctx, opts, &res); err != nil {
+		return res, err
+	}
 	return res, nil
+}
+
+// repairDimensions rewrites the pixel dimensions of every photo the scan reports
+// as transposed and re-normalises the faces recorded against that transposed
+// frame, when the dimension repair is selected.
+//
+// The photo row is fixed first and the faces second, because the faces repair is
+// keyed on the photo's corrected (stored) pair; both are guarded on the exact
+// state they replace, so an interrupted run resumes cleanly and a re-run is a
+// no-op. Unlike the other repairs it writes the catalogue directly instead of
+// enqueuing work — there is nothing to regenerate, only two columns and a bbox to
+// correct — which is why `maintenance scan` reports it first and the flag is
+// opt-in.
+func (s *Service) repairDimensions(ctx context.Context, opts RepairOptions, res *RepairResult) error {
+	if !opts.Dimensions {
+		return nil
+	}
+	mismatches, err := s.photos.ListDimensionMismatches(ctx)
+	if err != nil {
+		return fmt.Errorf("maintenance: listing dimension mismatches: %w", err)
+	}
+	for _, m := range mismatches {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("maintenance: dimension repair interrupted: %w", ctxErr)
+		}
+		changed, repairErr := s.photos.RepairDimensions(ctx, m)
+		if repairErr != nil {
+			return fmt.Errorf("maintenance: repairing dimensions of %s: %w", m.UID, repairErr)
+		}
+		if !changed {
+			continue
+		}
+		res.DimensionsFixed++
+		faces, faceErr := s.vectors.RepairFaceDimensions(ctx, m.UID, m.RawWidth, m.RawHeight)
+		if faceErr != nil {
+			return fmt.Errorf("maintenance: repairing face dimensions of %s: %w", m.UID, faceErr)
+		}
+		res.FaceBoxesFixed += int(faces)
+	}
+	return nil
 }
 
 // repairThumbnails enqueues a thumbnail job for every photo whose representative

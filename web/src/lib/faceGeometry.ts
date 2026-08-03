@@ -111,8 +111,20 @@ export interface Frame {
  * or 0 when absent) into the frame the viewer actually sees. Orientations 5–8
  * rotate the image a quarter turn, so they swap width and height — the
  * thumbnailer bakes that rotation in (`internal/thumb` `applyOrientation`), and
- * markers are stored in that same display space, so anything reasoning in pixels
+ * bboxes are stored in that same display space, so anything reasoning in pixels
  * about a bbox has to swap them too.
+ *
+ * **The `width`/`height` passed in must be the photo's STORED, pre-rotation
+ * dimensions** — the bytes on disk, which `orientation` still has to be applied
+ * to. That is the invariant `photos.file_width`/`file_height` and a face row's
+ * `photo_width`/`photo_height` carry, and it is not free: PhotoPrism reports its
+ * file dimensions with the tag already applied, so an import that took them
+ * verbatim stored a pair this function then rotated a *second* time. The viewer
+ * sizes its figure from the result (`PhotoDetailPage`), so a transposed frame
+ * letterboxes the photo inside its own box and every percentage-positioned face
+ * box drifts off the faces. `internal/exif` `RawDimensions` is where the
+ * importers undo that swap, and `kukatko maintenance repair --dimensions`
+ * (dry run: `maintenance scan`) is where already-imported rows are corrected.
  *
  * A frame with a non-positive side is returned as-is; callers treat it as
  * unusable rather than dividing by it.

@@ -762,12 +762,19 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Maintenance API (`/api/v1`, `internal/maintenanceapi`, maintainer-only via `RequireMaintainer`):**
   the library's integrity check & repairs. `GET /maintenance/scan` → `Report` (counts + samples:
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
-  `missing_phashes` + the totals `photos`/`files_in_db`/`originals_on_disk`); `POST /maintenance/repair`
-  `{thumbnails,embeddings,faces,phashes,import_orphans}` (each opt-in) → `RepairResult` with scheduling
-  counts (`*_enqueued` + `orphans_imported/skipped/failed`); `DisallowUnknownFields`, an empty selection →
+  `missing_phashes`/`transposed_dimensions` + the totals `photos`/`files_in_db`/`originals_on_disk`);
+  `POST /maintenance/repair`
+  `{thumbnails,embeddings,faces,phashes,import_orphans,dimensions}` (each opt-in) → `RepairResult` with scheduling
+  counts (`*_enqueued` + `orphans_imported/skipped/failed` + `dimensions_fixed`/`face_boxes_fixed`);
+  `DisallowUnknownFields`, an empty selection →
   400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`). The repairs are idempotent and
   run through the job queue (thumbnail/pHash via the `thumbnail` job, embeddings/faces backfill), and **never
-  delete originals**. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
+  delete originals**. `dimensions` is the exception that writes the catalogue directly: it rewrites the
+  pixel dimensions of quarter-turned photos whose columns hold the **displayed** frame instead of the stored
+  one (the PhotoPrism-derived import defect that letterboxed the viewer and drifted the face boxes) plus the
+  faces normalized against that transposed frame. Each row is corrected from **the file's own EXIF document**,
+  not from a guess about where it came from, and every write is guarded on the exact state it replaces — so
+  `transposed_dimensions` in the scan is its dry run and a re-run is a no-op. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
   1..36500) deletes audit entries older than `now − older_than_days` (`audit.Store.PurgeOlderThan`,
   a single `DELETE` via `idx_audit_log_created_at`) → `{deleted,older_than_days,cutoff}`;
   a missing/non-positive/excessive window or an unknown field → 400, an unwired audit store → 503. The

@@ -89,9 +89,18 @@ configuration key both here **and** into `config.example.yaml`.
   accounts/announcement/audit trail/migrations are never touched; see below) and
   **`maintenance nameless-subjects`** (reports — and with `--apply --undo-file` detaches — subjects whose name
   identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
-  `maintenance repair` with the flags `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`
+  `maintenance repair` with the flags
+  `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--dimensions`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
-  embeddings/faces backfill, orphan import synchronously via the upload pipeline; a no-op without any flag;
+  embeddings/faces backfill, orphan import synchronously via the upload pipeline; `--dimensions` writes the
+  catalogue directly — it rewrites the pixel dimensions of quarter-turned photos whose columns hold the
+  **displayed** frame instead of the stored one, plus the faces normalized against that transposed frame,
+  taking every correction from the file's own EXIF document rather than from its provenance; its **dry run is
+  `maintenance scan`**, whose `transposed dims` line and sample are exactly what it would rewrite, and every
+  write is guarded on the state it replaces, so a re-run is a no-op and the swap is undone by swapping back.
+  It does **not** rewrite the metadata sidecars, which carry a copy of the dimensions — follow it with
+  `kukatko sidecar backfill` if the corrected pair should reach them too;
+  a no-op without any flag;
   the **retention purge of old audit logs** is separate, only via HTTP/UI, not the CLI — the maintainer calls
   `POST /api/v1/maintenance/audit/purge` `{older_than_days}` (`internal/maintenanceapi`), which deletes audit
   entries older than `now − older_than_days` and **audits itself** (`audit.purge`, so that deleting the trail

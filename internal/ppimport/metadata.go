@@ -35,15 +35,17 @@ func buildPhoto(
 ) photos.Photo {
 	ppUID := pp.UID
 	ppHash := primary.Hash
+	orientation := orientationOrDefault(meta.Orientation)
+	width, height := rawGeometry(pp, meta, orientation)
 	p := photos.Photo{
 		FileHash:           stored.Hash,
 		FilePath:           stored.RelPath,
 		FileName:           path.Base(stored.RelPath),
 		FileSize:           stored.Size,
 		FileMime:           firstNonEmpty(primary.Mime, meta.Mime, stored.MIME),
-		FileWidth:          firstPositive(pp.Width, meta.Width),
-		FileHeight:         firstPositive(pp.Height, meta.Height),
-		FileOrientation:    orientationOrDefault(meta.Orientation),
+		FileWidth:          width,
+		FileHeight:         height,
+		FileOrientation:    orientation,
 		MediaType:          mapMediaType(pp.Type),
 		Title:              pp.Title,
 		Description:        caption(pp),
@@ -55,6 +57,30 @@ func buildPhoto(
 	applyCaptureMeta(&p, pp, meta)
 	applyCameraMeta(&p, pp, meta)
 	return p
+}
+
+// rawGeometry resolves the photo's STORED (pre-rotation) pixel dimensions, which
+// is what file_width/file_height mean everywhere in Kukátko: file_orientation is
+// the raw EXIF tag and the thumbnailer applies it to the untouched original, so
+// the dimensions have to describe that same untouched original.
+//
+// PhotoPrism's Width/Height do NOT: its MediaFile.Width()/Height() already swap
+// the two for orientations 5-8 (see decodeDimensions / meta.Data.ActualWidth), so
+// taking them verbatim while taking the orientation from the file's own EXIF
+// stored a self-contradicting pair — the frontend's displayFrame then rotated a
+// second time, the viewer letterboxed the photo inside a transposed frame, and
+// every percentage-positioned face box drifted off the faces. That is the bug
+// this function exists to prevent, so the file's own EXIF geometry wins; only
+// when the file says nothing do we fall back to PhotoPrism's, undoing its swap.
+func rawGeometry(pp photoprism.Photo, meta exif.Metadata, orientation int) (int, int) {
+	if meta.Width > 0 && meta.Height > 0 {
+		return meta.Width, meta.Height
+	}
+	return exif.RawDimensions(
+		firstPositive(pp.Width, meta.Width),
+		firstPositive(pp.Height, meta.Height),
+		orientation,
+	)
 }
 
 // caption returns the photo's long description. PhotoPrism renamed its

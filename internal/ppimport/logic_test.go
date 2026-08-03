@@ -284,8 +284,12 @@ func TestBuildPhoto_precedence(t *testing.T) {
 	if p.FileOrientation != 6 {
 		t.Errorf("orientation = %d, want 6 (from EXIF)", p.FileOrientation)
 	}
-	if p.FileWidth != 1920 {
-		t.Errorf("width = %d, want 1920 (PhotoPrism display dims)", p.FileWidth)
+	// Geometry is the one field PhotoPrism does NOT win: its dimensions already
+	// have the orientation applied, while the orientation above comes from the
+	// file, so the two must be read from the same source or the pair contradicts
+	// itself and every consumer rotates twice (see rawGeometry).
+	if p.FileWidth != 4000 || p.FileHeight != 3000 {
+		t.Errorf("dimensions = %d×%d, want the file's own 4000×3000", p.FileWidth, p.FileHeight)
 	}
 	if p.FileHash != "sha256xyz" || p.PhotoprismUID == nil || *p.PhotoprismUID != "ppX" ||
 		p.PhotoprismFileHash == nil || *p.PhotoprismFileHash != "sha1abc" {

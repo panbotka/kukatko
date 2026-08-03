@@ -43,6 +43,12 @@ type PhotoCatalog interface {
 	ListFilePaths(ctx context.Context) ([]string, error)
 	// ListPhotosMissingPhash returns the uids of photos with no perceptual hashes.
 	ListPhotosMissingPhash(ctx context.Context, limit int) ([]string, error)
+	// ListDimensionMismatches returns the photos whose stored pixel dimensions are
+	// their own file's dimensions transposed.
+	ListDimensionMismatches(ctx context.Context) ([]photos.DimensionMismatch, error)
+	// RepairDimensions writes a mismatch's raw dimensions onto its photo, reporting
+	// whether the row changed.
+	RepairDimensions(ctx context.Context, m photos.DimensionMismatch) (bool, error)
 }
 
 // VectorCatalog is the subset of the embeddings/faces store the scan and the
@@ -52,6 +58,9 @@ type VectorCatalog interface {
 	ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]string, error)
 	// ListPhotosMissingFaces returns the uids of photos with no face detection.
 	ListPhotosMissingFaces(ctx context.Context, limit int) ([]string, error)
+	// RepairFaceDimensions re-normalises the faces of one photo that were recorded
+	// against the transposed display frame, returning how many rows changed.
+	RepairFaceDimensions(ctx context.Context, photoUID string, rawWidth, rawHeight int) (int64, error)
 }
 
 // OriginalStore reports whether a stored original is present on disk. It is the
@@ -202,17 +211,37 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	dimensions, err := s.scanDimensions(ctx)
+	if err != nil {
+		return Report{}, err
+	}
 	return Report{
-		Photos:            photoCount,
-		FilesInDB:         filesInDB,
-		OriginalsOnDisk:   originalsOnDisk,
-		MissingOriginals:  missingOriginals,
-		OrphanFiles:       findingFrom(orphans, s.sampleLimit),
-		MissingThumbnails: missingThumbs,
-		MissingEmbeddings: derived.embeddings,
-		MissingFaces:      derived.faces,
-		MissingPhashes:    derived.phashes,
+		Photos:               photoCount,
+		FilesInDB:            filesInDB,
+		OriginalsOnDisk:      originalsOnDisk,
+		MissingOriginals:     missingOriginals,
+		OrphanFiles:          findingFrom(orphans, s.sampleLimit),
+		MissingThumbnails:    missingThumbs,
+		MissingEmbeddings:    derived.embeddings,
+		MissingFaces:         derived.faces,
+		MissingPhashes:       derived.phashes,
+		TransposedDimensions: dimensions,
 	}, nil
+}
+
+// scanDimensions turns the catalogue's transposed-dimension rows into a Finding.
+// The list it reads is the dry run of the dimension repair: every uid in it is a
+// row `maintenance repair --dimensions` would rewrite.
+func (s *Service) scanDimensions(ctx context.Context) (Finding, error) {
+	mismatches, err := s.photos.ListDimensionMismatches(ctx)
+	if err != nil {
+		return Finding{}, fmt.Errorf("maintenance: listing dimension mismatches: %w", err)
+	}
+	uids := make([]string, len(mismatches))
+	for i, m := range mismatches {
+		uids[i] = m.UID
+	}
+	return findingFrom(uids, s.sampleLimit), nil
 }
 
 // scanFiles iterates every photo's primary original, checking the original's
