@@ -421,12 +421,22 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
 }
 
 /**
- * The header's global search: a field-shaped trigger that opens a command
- * palette. The palette is reachable from anywhere with `/` or Cmd/Ctrl-K —
- * neither of which hijacks typing (the `/` shortcut is suppressed while a text
- * field or a form dialog has focus, mirroring the app's other shortcuts). The
- * open state is local component state, so the palette never touches the URL-driven
- * view state and Back keeps working.
+ * The header's global search: a compact icon button that opens a command palette.
+ * It is deliberately *not* field-shaped — the control never receives a keystroke,
+ * it only opens a dialog, and looking like an input spent 16rem of a navbar that
+ * was already overflowing. A magnifier the size of a tap target says the same
+ * thing in a tenth of the width.
+ *
+ * Because nothing about it is visible text, its name and its shortcut are stated
+ * outright: `aria-label` names the action, `aria-keyshortcuts` publishes the
+ * chords to assistive tech, and the `title` tooltip spells both out for anyone
+ * hovering — the keycap the old field displayed is otherwise the one thing the
+ * shrink would have cost. The palette stays reachable from anywhere with `/` or
+ * Cmd/Ctrl-K (neither hijacks typing: the `/` shortcut is suppressed while a text
+ * field or a form dialog has focus, mirroring the app's other shortcuts), and both
+ * chords are listed in the keyboard-shortcuts overlay that sits in the same bar.
+ * The open state is local component state, so the palette never touches the
+ * URL-driven view state and Back keeps working.
  */
 export function SearchCommand() {
   const { t } = useTranslation()
@@ -469,16 +479,13 @@ export function SearchCommand() {
         type="button"
         className="kukatko-search-trigger"
         aria-label={t('searchCommand.open')}
+        title={t('searchCommand.triggerTitle')}
         aria-keyshortcuts="/ Control+K Meta+K"
         onClick={() => {
           setOpen(true)
         }}
       >
         <Icon name="search" />
-        <span className="kukatko-search-trigger__label">{t('searchCommand.triggerLabel')}</span>
-        <kbd className="kukatko-search-trigger__hint" aria-hidden="true">
-          {t('searchCommand.shortcutHint')}
-        </kbd>
       </button>
       <SearchCommandDialog
         show={open}

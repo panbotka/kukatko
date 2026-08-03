@@ -1,6 +1,5 @@
 {
   "app": {
-    "name": "Kukátko",
     "tagline": "Samostatná správa fotek a videí"
   },
   "confirmModal": {
@@ -27,7 +26,6 @@
   },
   "nav": {
     "home": "Domů",
-    "brand": "Kukátko — domů",
     "browse": "Procházet",
     "tools": "Nástroje",
     "admin": "Správa",
@@ -54,7 +52,6 @@
     "users": "Uživatelé",
     "audit": "Audit",
     "titles": {
-      "home": "Zpět na začátek – do knihovny fotek",
       "library": "Zobrazit knihovnu fotek",
       "albums": "Zobrazit alba",
       "labels": "Zobrazit štítky",
@@ -497,9 +494,8 @@
   },
   "searchCommand": {
     "open": "Hledat",
-    "triggerLabel": "Hledat…",
+    "triggerTitle": "Hledat v celé knihovně (klávesa / nebo Ctrl+K)",
     "placeholder": "Hledat fotky, lidi, alba, štítky",
-    "shortcutHint": "/",
     "dialogLabel": "Globální hledání",
     "clear": "Vymazat hledání",
     "idle": "Začni psát a prohledej celou knihovnu.",

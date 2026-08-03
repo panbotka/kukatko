@@ -276,66 +276,10 @@ body {
   }
 }
 
-/* The brand / home affordance leading the bar. It is deliberately compact: a
-   phone's top row has to hold `[brand] [search] [hamburger]` at 320px without
-   overflowing or wrapping into a second line, and the unfolded desktop bar has
-   even less spare width than that — so the wordmark is display-gated in the
-   markup (`d-none d-sm-inline d-md-none d-xxl-inline`, reasoned there) and the
-   mark carries the brand alone in between. Bootstrap's own `.navbar-brand` is `inline-block` with a 1rem
-   right margin and vertical padding, all of which fight a mark-plus-wordmark
-   pair squared off to a touch target — so the box is restated here. The heights
-   mirror `.kukatko-search-trigger` next to it (slim on a mouse, the 44px finger
-   target on touch below) rather than the unconditional `.kukatko-tap-target`,
-   which would make the desktop bar taller than the links it sits beside. */
-.kukatko-navbar-brand {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--kk-space-2);
-  flex-shrink: 0;
-  min-width: 2.25rem;
-  min-height: 2.25rem;
-  padding-block: 0;
-  padding-inline: var(--kk-space-2);
-  margin-inline-end: var(--kk-space-2);
-  color: var(--kk-text);
-  border-radius: var(--kk-radius-pill);
-  transition: color var(--kk-duration-fast) var(--kk-ease-standard);
-}
-
-.kukatko-navbar-brand:hover,
-.kukatko-navbar-brand:focus-visible {
-  color: var(--kk-accent);
-}
-
-.kukatko-navbar-brand:focus-visible {
-  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
-  outline-offset: var(--kk-focus-ring-offset);
-}
-
-/* The mark is the logo, so it keeps the accent whatever the label does — on a
-   phone, where the wordmark is hidden, it is the entire brand. */
-.kukatko-navbar-brand__mark {
-  color: var(--kk-accent);
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
-/* A wordmark, not a heading: it never wraps and never truncates — it is either
-   shown whole or not shown at all. */
-.kukatko-navbar-brand__wordmark {
-  font-size: 1rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-/* On touch the mark alone still has to be a finger target, not a 20px glyph. */
-@media (pointer: coarse) {
-  .kukatko-navbar-brand {
-    min-width: 2.75rem;
-    min-height: 2.75rem;
-  }
-}
+/* The bar carries no brand: no mark, no wordmark, no home link of its own. What
+   little width this row has goes to the navigation (reasoned in `Layout`), and
+   the way home is the labelled Knihovna item on `md`+ / the leading tab of
+   `.kk-tabbar` below it — hence no `.kukatko-navbar-brand*` rules here. */
 
 /* Cleaner nav: inactive items are quiet (muted text, no fill); hover/focus lifts
    them to full-strength text; the current route wears one clear accent state — an
@@ -1153,29 +1097,34 @@ body {
 /* ---- Global search command --------------------------------------------- */
 
 /*
- * The header search trigger: a field-shaped button that reads as "a place to
- * type" without actually being an input, so it is a single tab stop that opens
- * the command palette. It borrows the form-control language — the sunken well,
- * the hairline — with a muted placeholder label, a leading magnifier and a
- * trailing keycap hinting the shortcut. It leads the bar (search-first), growing
- * to fill the row next to the hamburger on a phone and settling to a fixed width
- * on desktop.
+ * The header search trigger: a compact icon button, one tab stop, that opens the
+ * command palette. It used to be field-shaped — a 16rem pill with a placeholder
+ * label and a keycap — which promised typing it never accepted and spent width a
+ * bar that already overflowed did not have. The magnifier alone says it; the
+ * name and the shortcut are on the button's `aria-label` / `title` instead of on
+ * screen. It keeps the sunken well and the hairline so it still reads as a
+ * control among the quiet nav links rather than as one more glyph.
+ *
+ * `margin-inline-start: auto` is the phone rule: with the brand gone the top row
+ * is `[search] [hamburger]`, and the pair belongs together at the thumb end
+ * instead of one control at each edge with a hole between them. From `md` the
+ * margin flips (below) and it leads the bar again, ahead of the nav.
  */
 .kukatko-search-trigger {
   display: inline-flex;
   align-items: center;
-  gap: var(--kk-space-2);
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 22rem;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 2.25rem;
   min-height: 2.25rem;
-  padding-inline: var(--kk-space-3);
-  padding-block: var(--kk-space-1);
+  margin-inline-start: auto;
+  padding: 0;
   color: var(--kk-text-muted);
   background-color: var(--kk-surface-sunken);
   border: 1px solid var(--kk-surface-border);
   border-radius: var(--kk-radius-pill);
-  text-align: start;
+  font-size: 1.05rem;
+  line-height: 1;
   transition:
     color var(--kk-duration-fast) var(--kk-ease-standard),
     border-color var(--kk-duration-fast) var(--kk-ease-standard);
@@ -1192,49 +1141,22 @@ body {
   outline-offset: var(--kk-focus-ring-offset);
 }
 
-/* The placeholder-like label fills the middle and truncates rather than pushing
-   the keycap off the pill on a narrow bar. */
-.kukatko-search-trigger__label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--kk-font-size-caption);
-}
-
-/* The shortcut keycap is a hint, not a control: it recedes and drops off the
-   narrowest bars so the label + magnifier always fit. */
-.kukatko-search-trigger__hint {
-  flex-shrink: 0;
-  margin: 0;
-  padding: 0.05rem 0.4rem;
-  background-color: var(--kk-surface-raised);
-  border-radius: var(--kk-radius-sm);
-  color: var(--kk-text-muted);
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-
+/* From the navbar's own breakpoint the bar unfolds and the trigger leads it, so
+   it stops hugging the trailing edge and just keeps a gap to the first nav item. */
 @media (min-width: 768px) {
   .kukatko-search-trigger {
-    flex: 0 0 auto;
-    width: 16rem;
+    margin-inline-start: 0;
     margin-inline-end: var(--kk-space-3);
   }
 }
 
-/* Below the pill's comfortable width the keycap is the first thing to go. */
-@media (max-width: 22rem) {
-  .kukatko-search-trigger__hint {
-    display: none;
-  }
-}
-
-/* The trigger keeps the slim 2.25rem height on a fine pointer but grows to the
-   44px finger target on touch, matching the nav links it sits beside. */
+/* The trigger keeps the slim 2.25rem box on a fine pointer but grows to the 44px
+   finger target on touch, matching the nav links it sits beside. Now that the
+   glyph is the whole control, the floor has to hold on both axes — a square
+   2.75rem, not a 2.75rem-tall sliver. */
 @media (pointer: coarse) {
   .kukatko-search-trigger {
+    min-width: 2.75rem;
     min-height: 2.75rem;
   }
 }

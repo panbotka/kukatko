@@ -51,19 +51,29 @@ import { SearchCommand } from './search/SearchCommand'
  * the maintainer-only "Provoz" operations dropdown (import, maintenance, system),
  * and the admin-or-higher "Správa" governance dropdown (users, audit). The
  * role-gated groups are hidden entirely from roles that cannot use any of their
- * children, and the divider only appears when at least one item follows it. Leading the bar — on
- * every viewport, outside the collapse — is the brand: the binoculars mark, joined by the „Kukátko"
- * wordmark wherever the row has the width for it, linking to the library at the site root. It is
- * what answers "which app is this" on a phone whose whole navigation is otherwise folded away, and
- * it is the one-tap way back to the start from anywhere. Beside it sits the
- * global {@link SearchCommand} — a field-shaped trigger that opens a keyboard-first
- * command palette (`/` or Cmd/Ctrl-K), kept outside the collapse so it stays
- * visible on a phone while the nav folds into the hamburger. The language switcher
- * is not in the bar: this instance is Czech, so the setting sits on the account
- * page rather than spending prime bar space. Every entry pairs an icon (for daily
- * recognition) with a `title` describing the action it performs. The items
- * themselves live in `navItems.ts`, so the phone menu below cannot drift from the
- * bar's set or its role gating.
+ * children, and the divider only appears when at least one item follows it.
+ *
+ * The bar deliberately carries **no logo and no wordmark**. Width is the scarce
+ * resource here, not identity: for an editor or a maintainer the inline row of
+ * items already ran past the container well into desktop widths, and the „Kukátko"
+ * wordmark was only kept alive by four stacked display utilities because it fit
+ * nowhere. Dropping the brand buys back the whole leading block. The way home
+ * survives it on every viewport and does not depend on a logo: on `md`+ the first
+ * item of the bar is **Knihovna**, the library at the site root, labelled and
+ * `end`-matched; below `md` the same destination is the leading tab of the
+ * {@link MobileTabBar}, permanently under the thumb. Both are one tap, exactly as
+ * the mark was.
+ *
+ * Leading the bar — outside the collapse, so it survives the nav folding into the
+ * hamburger — is the global {@link SearchCommand}: a compact icon button, since
+ * all it does is open the command palette (`/` or Cmd/Ctrl-K). On a phone CSS
+ * pairs it with the hamburger at the trailing edge rather than leaving it alone
+ * on the left of a row the brand used to open. The language switcher is not in the
+ * bar: this instance is Czech, so the setting sits on the account page rather than
+ * spending prime bar space. Every entry pairs an icon (for daily recognition) with
+ * a `title` describing the action it performs. The items themselves live in
+ * `navItems.ts`, so the phone menu below cannot drift from the bar's set or its
+ * role gating.
  *
  * Below the `md` breakpoint the shell swaps that inline bar for two thumb-level
  * navigations. The {@link MobileTabBar} pins the everyday destinations to the
@@ -192,33 +202,11 @@ export function Layout() {
         className="kukatko-navbar"
       >
         <Container>
-          {/* The app's identity and its one-tap way home, outside the collapse so
-              it is the first thing on every viewport. The mark is always there;
-              the wordmark shows only where measurement says it fits, which is two
-              separate bands rather than one — hence the four display utilities:
-              hidden below `sm` (a 320px row is brand + search + hamburger and
-              nothing else), shown `sm`–`md` (the phone/tablet bar, where the nav
-              is folded into the drawer and there is room to spare), hidden again
-              from `md` (the inline bar unfolds and the nav is what is starved for
-              width — the wordmark alone pushes a 1024px bar into a horizontal
-              scrollbar), and back from `xxl`, where even a full bar has slack.
-              Because the text is therefore display-hidden most of the time, the
-              link's accessible name is set explicitly rather than left to it. */}
-          <Navbar.Brand
-            as={Link}
-            to={LIBRARY_PATH}
-            title={t('nav.titles.home')}
-            aria-label={t('nav.brand')}
-            className="kukatko-navbar-brand"
-          >
-            <Icon name="binoculars-fill" className="kukatko-navbar-brand__mark" />
-            <span className="kukatko-navbar-brand__wordmark d-none d-sm-inline d-md-none d-xxl-inline">
-              {t('app.name')}
-            </span>
-          </Navbar.Brand>
           {/* Search leads the bar and stays outside the collapse, so it is always
-              visible — on a phone it fills the row between the brand and the
-              hamburger while the nav folds away. */}
+              visible — on a phone it is one half of the row while the nav folds
+              away into the drawer (CSS pairs it with the hamburger there). It is
+              a bare icon button: it opens a dialog, so it does not need the width
+              of something you can type into. */}
           <SearchCommand />
           {/* The inline bar is the `md`+ navigation only: on a phone the same
               items are the drawer's, so rendering both would duplicate every
@@ -308,11 +296,10 @@ export function Layout() {
               )}
             </Navbar.Collapse>
           )}
-          {/* The hamburger closes the phone row (`[brand] [search] [hamburger]`)
-              rather than opening it: the brand is the orientation cue and belongs
-              first, and a menu button sits better under the thumb on the trailing
-              edge. It is `display: none` on `md`+, so the desktop bar is unmoved
-              by where it stands in the DOM. */}
+          {/* The hamburger closes the phone row (`[search] [hamburger]`): a menu
+              button sits best under the thumb on the trailing edge. It is
+              `display: none` on `md`+, so the desktop bar is unmoved by where it
+              stands in the DOM. */}
           <Navbar.Toggle aria-controls={MOBILE_MENU_ID} />
         </Container>
       </Navbar>
