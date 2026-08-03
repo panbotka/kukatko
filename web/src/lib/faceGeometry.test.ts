@@ -24,6 +24,39 @@ describe('displayFrame', () => {
       expect(displayFrame(4000, 3000, orientation)).toEqual({ width: 4000, height: 3000 })
     }
   })
+
+  // The production regression: a 5472 × 3648 original with orientation 8 is
+  // displayed portrait. Feeding the STORED pair (the invariant the function
+  // documents) yields the frame the viewer sizes its figure from; feeding
+  // PhotoPrism's already-rotated pair instead yields the transpose, which is what
+  // letterboxed the photo and drifted every face box off the faces.
+  describe('the four orientations the library actually holds', () => {
+    const stored = { width: 5472, height: 3648 }
+    const cases: { orientation: number; width: number; height: number }[] = [
+      { orientation: 1, width: 5472, height: 3648 },
+      { orientation: 3, width: 5472, height: 3648 },
+      { orientation: 6, width: 3648, height: 5472 },
+      { orientation: 8, width: 3648, height: 5472 },
+    ]
+
+    it.each(cases)('resolves orientation $orientation from the stored pair', (tc) => {
+      expect(displayFrame(stored.width, stored.height, tc.orientation)).toEqual({
+        width: tc.width,
+        height: tc.height,
+      })
+    })
+
+    it('is its own inverse, so a double-rotated pair is exactly the transpose', () => {
+      for (const { orientation, width, height } of cases) {
+        expect(displayFrame(width, height, orientation)).toEqual(stored)
+      }
+    })
+  })
+
+  it('leaves a degenerate frame alone rather than inventing one', () => {
+    expect(displayFrame(0, 0, 8)).toEqual({ width: 0, height: 0 })
+    expect(displayFrame(-1, 100, 1)).toEqual({ width: -1, height: 100 })
+  })
 })
 
 describe('squareCrop', () => {

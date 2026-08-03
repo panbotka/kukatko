@@ -168,7 +168,9 @@ func TestBuildPhoto(t *testing.T) {
 	psUID := "ps123"
 	want := photos.Photo{
 		FileHash: "realhash", FilePath: "2024/01/x.jpg", FileName: "psp.jpg",
-		FileSize: 42, FileMime: "image/jpeg", FileWidth: 800, FileHeight: 600,
+		// photo-sorter's 800×600 is PhotoPrism's pair, i.e. already rotated by the
+		// orientation 6 it also carries; the stored pair is that transposed.
+		FileSize: 42, FileMime: "image/jpeg", FileWidth: 600, FileHeight: 800,
 		FileOrientation: 6, TakenAt: &takenAt, TakenAtSource: "exif",
 		Title: "Sunset", Description: "Golden hour", Notes: "keep",
 		Keywords: "beach,sunset", Artist: "Ansel", Copyright: "(c) 2023",

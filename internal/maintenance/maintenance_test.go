@@ -3,6 +3,7 @@ package maintenance
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -17,6 +18,13 @@ type fakePhotos struct {
 	primary      []photos.PrimaryFile
 	filePaths    []string
 	missingPhash []string
+	// mismatches are the transposed-dimension rows the scan reports and the
+	// dimension repair rewrites; repaired records the uids actually written.
+	// repairNoop makes every write report "row unchanged", the state a
+	// concurrently-repaired row leaves behind.
+	mismatches []photos.DimensionMismatch
+	repaired   []photos.DimensionMismatch
+	repairNoop bool
 }
 
 func (f *fakePhotos) CountPhotos(context.Context) (int, error) { return f.count, nil }
@@ -27,15 +35,37 @@ func (f *fakePhotos) ListFilePaths(context.Context) ([]string, error) { return f
 func (f *fakePhotos) ListPhotosMissingPhash(context.Context, int) ([]string, error) {
 	return f.missingPhash, nil
 }
+func (f *fakePhotos) ListDimensionMismatches(context.Context) ([]photos.DimensionMismatch, error) {
+	return f.mismatches, nil
+}
+func (f *fakePhotos) RepairDimensions(_ context.Context, m photos.DimensionMismatch) (bool, error) {
+	if f.repairNoop {
+		return false, nil
+	}
+	f.repaired = append(f.repaired, m)
+	return true, nil
+}
 
 // fakeVectors is an in-memory VectorCatalog.
-type fakeVectors struct{ missingEmb, missingFaces []string }
+type fakeVectors struct {
+	missingEmb, missingFaces []string
+	// facesPerPhoto is how many face rows RepairFaceDimensions reports changing;
+	// repairedFaces records the (uid, raw width, raw height) it was called with.
+	facesPerPhoto int64
+	repairedFaces []string
+}
 
 func (f *fakeVectors) ListPhotosMissingEmbedding(context.Context, int) ([]string, error) {
 	return f.missingEmb, nil
 }
 func (f *fakeVectors) ListPhotosMissingFaces(context.Context, int) ([]string, error) {
 	return f.missingFaces, nil
+}
+func (f *fakeVectors) RepairFaceDimensions(
+	_ context.Context, photoUID string, rawWidth, rawHeight int,
+) (int64, error) {
+	f.repairedFaces = append(f.repairedFaces, fmt.Sprintf("%s:%dx%d", photoUID, rawWidth, rawHeight))
+	return f.facesPerPhoto, nil
 }
 
 // fakeOriginals reports presence from a key set, returning os.ErrNotExist for

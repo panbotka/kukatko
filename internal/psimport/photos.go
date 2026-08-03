@@ -145,14 +145,20 @@ func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, sto
 // too, so the migrated photo keeps the credits/tags the source held.
 func buildPhoto(ps photosorter.Photo, stored storage.StoredFile) photos.Photo {
 	psUID := ps.UID
+	// photo-sorter copied its file_width/file_height straight out of PhotoPrism,
+	// which reports them with the EXIF orientation already applied, while
+	// file_orientation is the raw tag. Kukátko's columns mean the stored,
+	// pre-rotation dimensions (the thumbnailer applies the tag itself), so the
+	// quarter turn has to be undone here — see exif.RawDimensions.
+	width, height := exif.RawDimensions(ps.FileWidth, ps.FileHeight, ps.FileOrientation)
 	return photos.Photo{
 		FileHash:        stored.Hash,
 		FilePath:        stored.RelPath,
 		FileName:        originalName(ps),
 		FileSize:        stored.Size,
 		FileMime:        photoMime(ps, stored),
-		FileWidth:       ps.FileWidth,
-		FileHeight:      ps.FileHeight,
+		FileWidth:       width,
+		FileHeight:      height,
 		FileOrientation: ps.FileOrientation,
 		TakenAt:         ps.TakenAt,
 		TakenAtSource:   ps.TakenAtSource,

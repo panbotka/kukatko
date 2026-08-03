@@ -930,6 +930,14 @@ here.
   `inline-flex` shrink — a frameless photo carries no face geometry anyway. (jsdom doesn't catch the letterbox
   — verify the geometry visually; previously the figure just shrank to the `<img>` and when the stage was narrowed by the panel
   it stretched, so the **frames drifted apart**.)
+  The other half of that invariant is on the backend: `file_width`/`file_height` **must be the stored,
+  pre-rotation dimensions**, because `displayFrame` is what applies the orientation to them. PhotoPrism
+  reports its own dimensions with the tag **already applied**, so the import that took them verbatim
+  stored a pair the frontend rotated a second time — the figure got the transposed aspect ratio, „contain"
+  letterboxed the photo inside it, and every percentage box drifted off the faces (85 photos with a marker,
+  orientations 6 and 8). The importers now de-orient on the way in (`internal/exif` `RawDimensions`) and
+  already-imported rows are corrected by `kukatko maintenance repair --dimensions`, whose dry run is
+  `maintenance scan` (the `transposed_dimensions` finding).
   The boxes are colored by state (`lib/faceState`), the selected one is primary + a ring, they carry a **number `#N`** and
   for assigned ones **a name under the box**; hovering a box highlights the row in the panel and vice versa (`hovered`/`onHover`
   held by the page). A click on a box or on a panel row = the same selection (and opens the drawer).
@@ -1876,7 +1884,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `faceGeometry.ts` = the pure `faceBoxStyle` (a normalized bbox → absolute `left/top/width/height`
   in %, for the overlay) + `padBbox`/`boxWithinCrop`/`cropImageStyle` + `displayFrame` (the stored
   dimensions + the EXIF orientation → the **displayed** frame; orientations 5–8 swap the sides, because the bbox is in
-  display space) + `squareCrop` (a bbox → a crop **square in pixels**, not in normalized
+  display space — its input **must** be the pre-rotation pair, see the invariant at the viewer above)
+  + `squareCrop` (a bbox → a crop **square in pixels**, not in normalized
   units — that is what prevents the deformation: a „square" in a normalized 4000×3000 frame is a rectangle in pixels
   and would squash the face in a square tile; it grows the shorter pixel side from the centre and
   pushes the crop back inside the frame) + `faceCropStyle` (**legacy**, it scales the axes independently → it deforms, and

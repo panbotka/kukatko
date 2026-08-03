@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/photosorter"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -90,19 +91,28 @@ func (s *Service) transferFaces(
 
 // convertFace maps a photo-sorter face onto a Kukátko face row, remapping the
 // cached subject UID and keeping the marker UID, bounding box and render hints.
+//
+// The frame and the box both need correcting on the way in. photo-sorter cached
+// PhotoPrism's dimensions, which already have the EXIF orientation applied, and
+// then normalised the detector's (display-space) pixel box by that pair swapped
+// again — so for a quarter turn the row describes the transposed frame and the
+// bbox was divided by the wrong side. Undoing both here keeps every face row in
+// the one meaning the rest of Kukátko reads: a display-space box over the stored,
+// pre-rotation frame.
 func convertFace(kkUID string, f photosorter.Face, maps mappings) vectors.Face {
+	rawWidth, rawHeight := exif.RawDimensions(f.PhotoWidth, f.PhotoHeight, f.Orientation)
 	return vectors.Face{
 		PhotoUID:    kkUID,
 		FaceIndex:   f.FaceIndex,
 		Vector:      f.Vector,
-		BBox:        f.BBox,
+		BBox:        vectors.RenormalizeTransposedBBox(f.BBox, rawWidth, rawHeight, f.Orientation),
 		DetScore:    f.DetScore,
 		Model:       f.Model,
 		MarkerUID:   f.MarkerUID,
 		SubjectUID:  remapSubject(f.SubjectUID, maps.subjects),
 		SubjectName: f.SubjectName,
-		PhotoWidth:  f.PhotoWidth,
-		PhotoHeight: f.PhotoHeight,
+		PhotoWidth:  rawWidth,
+		PhotoHeight: rawHeight,
 		Orientation: f.Orientation,
 	}
 }

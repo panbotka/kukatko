@@ -65,6 +65,11 @@ func newMaintenanceRepairCmd() *cobra.Command {
 	cmd.Flags().Bool("faces", false, "backfill missing face detections")
 	cmd.Flags().Bool("phashes", false, "recompute missing perceptual hashes")
 	cmd.Flags().Bool("import-orphans", false, "import orphan originals on disk into the catalogue")
+	// No backticks in the usage string: Cobra reads the first backquoted word as
+	// the flag's value placeholder, which would print this bool as if it took one.
+	cmd.Flags().Bool("dimensions", false,
+		"rewrite transposed pixel dimensions (and the faces normalised against them) "+
+			"from each file's own EXIF; 'maintenance scan' is its dry run")
 	return cmd
 }
 
@@ -134,6 +139,12 @@ func printScanReport(cmd *cobra.Command, report maintenance.Report) {
 	cmd.Printf("  missing embeddings: %d\n", report.MissingEmbeddings.Count)
 	cmd.Printf("  missing faces:      %d\n", report.MissingFaces.Count)
 	cmd.Printf("  missing phashes:    %d\n", report.MissingPhashes.Count)
+	// The dry run of `repair --dimensions`: the sample makes the affected photos
+	// inspectable before anything is rewritten.
+	cmd.Printf("  transposed dims:    %d\n", report.TransposedDimensions.Count)
+	if len(report.TransposedDimensions.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.TransposedDimensions.Samples)
+	}
 	if report.Clean() {
 		cmd.Println("library is consistent")
 	}
@@ -147,7 +158,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 		return err
 	}
 	if !opts.Any() {
-		cmd.Println("no repair selected; pass --thumbnails, --embeddings, --faces, --phashes or --import-orphans")
+		cmd.Println("no repair selected; pass --thumbnails, --embeddings, --faces, --phashes, " +
+			"--import-orphans or --dimensions")
 		return nil
 	}
 	svc, cleanup, err := openMaintenanceService(cmd)
@@ -164,6 +176,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 		result.ThumbnailsEnqueued, result.PhashesEnqueued, result.EmbeddingsEnqueued, result.FacesEnqueued)
 	cmd.Printf("orphans imported=%d skipped=%d failed=%d\n",
 		result.OrphansImported, result.OrphansSkipped, result.OrphansFailed)
+	cmd.Printf("dimensions fixed=%d face boxes fixed=%d\n",
+		result.DimensionsFixed, result.FaceBoxesFixed)
 	return nil
 }
 
@@ -177,6 +191,7 @@ func repairOptionsFromFlags(cmd *cobra.Command) (maintenance.RepairOptions, erro
 		"faces":          &opts.Faces,
 		"phashes":        &opts.Phashes,
 		"import-orphans": &opts.ImportOrphans,
+		"dimensions":     &opts.Dimensions,
 	} {
 		val, err := flags.GetBool(name)
 		if err != nil {

@@ -36,6 +36,11 @@ type Report struct {
 	MissingFaces Finding `json:"missing_faces"`
 	// MissingPhashes are photos with no perceptual hashes yet.
 	MissingPhashes Finding `json:"missing_phashes"`
+	// TransposedDimensions are quarter-turned photos whose file_width/file_height
+	// hold the displayed frame instead of the stored one, so every consumer that
+	// applies the orientation to them rotates a second time. Listing them is the
+	// dry run of `maintenance repair --dimensions`.
+	TransposedDimensions Finding `json:"transposed_dimensions"`
 }
 
 // Clean reports whether the scan found no problems at all, i.e. every Finding has
@@ -46,7 +51,8 @@ func (r Report) Clean() bool {
 		r.MissingThumbnails.Count == 0 &&
 		r.MissingEmbeddings.Count == 0 &&
 		r.MissingFaces.Count == 0 &&
-		r.MissingPhashes.Count == 0
+		r.MissingPhashes.Count == 0 &&
+		r.TransposedDimensions.Count == 0
 }
 
 // findingCollector accumulates affected identifiers while iterating, counting

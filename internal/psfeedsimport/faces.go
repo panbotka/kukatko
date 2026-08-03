@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/people"
@@ -120,7 +121,13 @@ func (fi *facesImport) addFace(ctx context.Context, f psfeeds.Face) error {
 	if err != nil {
 		return err
 	}
-	bbox := facejob.NormalizeBBox(toBBox(f.BBox), f.PhotoWidth, f.PhotoHeight, f.Orientation)
+	// The feed's PhotoWidth/PhotoHeight are PhotoPrism's, which already have the
+	// EXIF orientation applied, while NormalizeBBox (like the rest of Kukátko)
+	// expects the stored, pre-rotation pair and derives the display frame from it.
+	// Undo the quarter turn so both the normalisation and the cached render hints
+	// on the face row mean what every consumer reads them to mean.
+	rawWidth, rawHeight := exif.RawDimensions(f.PhotoWidth, f.PhotoHeight, f.Orientation)
+	bbox := facejob.NormalizeBBox(toBBox(f.BBox), rawWidth, rawHeight, f.Orientation)
 
 	var markerUID *string
 	if f.MarkerUID != "" {
@@ -144,8 +151,8 @@ func (fi *facesImport) addFace(ctx context.Context, f psfeeds.Face) error {
 		MarkerUID:   markerUID,
 		SubjectUID:  subjectUID,
 		SubjectName: subjectName,
-		PhotoWidth:  f.PhotoWidth,
-		PhotoHeight: f.PhotoHeight,
+		PhotoWidth:  rawWidth,
+		PhotoHeight: rawHeight,
 		Orientation: f.Orientation,
 	})
 	if fi.model == "" {
