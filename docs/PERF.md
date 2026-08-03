@@ -686,6 +686,18 @@ Verified, already optimal — no change required:
   page, cancels the previous in-flight request via `AbortController`, and ignores
   stale responses via a sequence guard; `loadMore` is a no-op while loading or at
   the end (`web/src/hooks/usePaginatedPhotos.ts`).
+- **Windowed library grid (jump cost independent of distance)**: the library does
+  *not* accumulate pages — `useWindowedPhotos`
+  (`web/src/hooks/useWindowedPhotos.ts`) sizes the grid to the result's `total`
+  from the first response and loads only the pages under the visible range
+  (`ensureRange` from `onRangeChanged`, ±`WINDOW_PREFETCH_PAGES`), aborting
+  requests a jump has travelled past and evicting down to `WINDOW_MAX_PAGES`
+  (~2 400 photos) so memory stays bounded. Unloaded slots render as placeholder
+  tiles. A timeline jump is therefore `scrollToIndex` to the month's `cumulative`
+  (counted in SQL by `GET /photos/timeline`) plus one page fetch. Measured in
+  Chromium against a seeded **20 889-photo** library, clicking the rail's oldest
+  year: **40.3 s / 102 sequential page requests → ~3.1 s**, the same as jumping
+  one month back (6.2 s → 3.2 s) — the point being that the two are now equal.
 - **Search debounce**: `SearchPage` debounces typed queries by 350 ms (immediate
   on submit), so keystrokes don't each fire a semantic search
   (`web/src/pages/SearchPage.tsx`).

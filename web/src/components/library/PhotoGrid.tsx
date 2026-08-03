@@ -12,6 +12,7 @@ import {
 import { useGridDensity } from '../../hooks/useGridDensity'
 import { GRID_GAP_PX, gridTemplateColumns } from '../../lib/gridDensity'
 import { type Photo } from '../../services/photos'
+import { Skeleton } from '../Skeleton'
 
 import { PhotoTile } from './PhotoTile'
 
@@ -90,6 +91,16 @@ const gridComponents: GridComponents<GridContext> = {
   Footer: GridFooter,
 }
 
+/**
+ * Stand-in for a photo the grid knows exists but has not loaded yet — a slot the
+ * windowed library list leaves empty until the page covering it arrives. It is
+ * exactly a tile's shape (a square of the same radius), so the row it sits in has
+ * the right height from the outset and nothing shifts when the photo lands.
+ */
+function TilePlaceholder() {
+  return <Skeleton radius="var(--kk-radius-tile)" style={{ aspectRatio: '1 / 1' }} />
+}
+
 /** Selection wiring for a grid that offers multi-select. */
 export interface PhotoGridSelection {
   /**
@@ -119,10 +130,22 @@ export interface PhotoGridSelection {
 
 /** Props for {@link PhotoGrid}. */
 export interface PhotoGridProps {
-  photos: Photo[]
+  /**
+   * The photos to render, in order. A slot may be `undefined`: the windowed
+   * library list sizes this array to the *whole* result and fills only the pages
+   * it has loaded, so an index here is a photo's absolute position and a hole is
+   * a photo whose page is still on its way. Holes render as
+   * {@link TilePlaceholder}; a plain `Photo[]` (every other grid) has none.
+   */
+  photos: readonly (Photo | undefined)[]
   loadingMore: boolean
   moreError: boolean
-  onEndReached: () => void
+  /**
+   * Called when the reader reaches the end of the loaded list. Omit it for a
+   * windowed list, which loads from the visible range
+   * ({@link PhotoGridProps.onRangeChanged}) rather than from its end.
+   */
+  onEndReached?: () => void
   onRetry: () => void
   /** Optional selection mode; when omitted the grid is a plain link grid. */
   selection?: PhotoGridSelection
@@ -166,10 +189,16 @@ export interface PhotoGridProps {
 }
 
 /**
- * Virtualized, infinite-scroll grid of photo tiles. Only the visible rows are
- * mounted (react-virtuoso), and reaching the end requests the next page via
- * `onEndReached`. It scrolls with the window so the page behaves like a normal
- * document. The footer surfaces load-more progress and errors.
+ * Virtualized grid of photo tiles. Only the visible rows are mounted
+ * (react-virtuoso) and it scrolls with the window, so the page behaves like a
+ * normal document. The footer surfaces load-more progress and errors.
+ *
+ * It serves both loading shapes. A grid that grows by appending pages requests
+ * the next one via `onEndReached`. A *windowed* grid (the library) instead hands
+ * over an array as long as the whole result with holes where pages are not
+ * loaded, watches `onRangeChanged` to fetch what came into view, and leaves
+ * `onEndReached` off — that is what lets it jump straight to any position
+ * instead of paging its way there.
  */
 export function PhotoGrid({
   photos,
@@ -188,11 +217,13 @@ export function PhotoGrid({
 }: PhotoGridProps) {
   // Shift+click selects the contiguous range between the anchor and the clicked
   // tile; the grid supplies its own photo order so pages need no extra wiring.
+  // Only loaded photos can take part — a range cannot select a tile whose uid
+  // nobody knows yet.
   const toggleSelect = (uid: string, shiftKey?: boolean) => {
     if (shiftKey === true && selection?.onToggleRange !== undefined) {
       selection.onToggleRange(
         uid,
-        photos.map((p) => p.uid),
+        photos.filter((p) => p !== undefined).map((p) => p.uid),
       )
       return
     }
@@ -215,22 +246,28 @@ export function PhotoGrid({
       endReached={onEndReached}
       rangeChanged={onRangeChanged}
       components={gridComponents}
-      itemContent={(index, photo) => (
-        <PhotoTile
-          photo={photo}
-          selectable={selectable}
-          selectFirst={selectFirst}
-          selected={selection?.selected.has(photo.uid) ?? false}
-          anySelected={anySelected}
-          onToggleSelect={selection === undefined ? undefined : toggleSelect}
-          favoritable={favoritable}
-          onFavoriteChange={onFavoriteChange}
-          detailQuery={detailQuery}
-          focused={index === focusedIndex}
-          extras={tileExtras?.(photo)}
-        />
-      )}
-      computeItemKey={(_index, photo) => photo.uid}
+      itemContent={(index, photo) =>
+        photo === undefined ? (
+          <TilePlaceholder />
+        ) : (
+          <PhotoTile
+            photo={photo}
+            selectable={selectable}
+            selectFirst={selectFirst}
+            selected={selection?.selected.has(photo.uid) ?? false}
+            anySelected={anySelected}
+            onToggleSelect={selection === undefined ? undefined : toggleSelect}
+            favoritable={favoritable}
+            onFavoriteChange={onFavoriteChange}
+            detailQuery={detailQuery}
+            focused={index === focusedIndex}
+            extras={tileExtras?.(photo)}
+          />
+        )
+      }
+      // A not-yet-loaded slot keys on its index, so the placeholder is replaced
+      // (not reordered) the moment its photo arrives.
+      computeItemKey={(index, photo) => photo?.uid ?? `slot-${String(index)}`}
       style={{ minHeight: '50vh' }}
     />
   )

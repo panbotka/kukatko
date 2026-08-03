@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { forwardRef, type ReactNode, useImperativeHandle } from 'react'
+import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
@@ -16,43 +16,74 @@ import { LibraryPage } from './LibraryPage'
 
 // Shared spy captured across renders so tests can assert the scrubber scrolled
 // the grid. Hoisted so the (hoisted) vi.mock factory can reference it.
-const grid = vi.hoisted(() => ({ scrollToIndex: vi.fn() }))
+const grid = vi.hoisted(() => ({
+  scrollToIndex: vi.fn(),
+  /** Set by the mock grid: scrolls its window so `index` sits at the top. */
+  scrollTo: null as ((index: number) => void) | null,
+}))
+
+/**
+ * How many items the mock grid keeps "on screen". The library hands the grid an
+ * array as long as the whole result, so a mock that rendered all of it would
+ * mount 20 000 nodes for the very tests that care about a big library.
+ */
+const MOCK_WINDOW = 100
 
 // Minimal stand-in for react-virtuoso's grid: jsdom has no layout, so the real
-// virtualized grid would render nothing. This renders every item, exposes a
-// button to fire `endReached` (the infinite-scroll trigger), and forwards a
-// `scrollToIndex` handle so the timeline scrubber can drive it.
+// virtualized grid would render nothing. This renders a window of MOCK_WINDOW
+// items starting where the last `scrollToIndex` landed — which is what makes it
+// a faithful stand-in for a windowed list — reports that window through
+// `rangeChanged`, and forwards a `scrollToIndex` handle so the timeline scrubber
+// can drive it.
 interface MockGridProps {
-  data: Photo[]
-  itemContent: (index: number, item: Photo) => ReactNode
-  endReached?: () => void
+  data: readonly (Photo | undefined)[]
+  itemContent: (index: number, item: Photo | undefined) => ReactNode
+  computeItemKey?: (index: number, item: Photo | undefined) => string
   rangeChanged?: (range: ListRange) => void
 }
 vi.mock('react-virtuoso', () => ({
   VirtuosoGrid: forwardRef<VirtuosoGridHandle, MockGridProps>(function MockGrid(
-    { data, itemContent, endReached },
+    { data, itemContent, computeItemKey, rangeChanged },
     ref,
   ) {
+    const [start, setStart] = useState(0)
+    grid.scrollTo = setStart
+    const rangeRef = useRef(rangeChanged)
+    rangeRef.current = rangeChanged
     useImperativeHandle(ref, () => ({
-      scrollToIndex: grid.scrollToIndex,
+      scrollToIndex: (location: number | { index?: number | 'LAST'; align?: string }) => {
+        grid.scrollToIndex(location)
+        const index = typeof location === 'number' ? location : location.index
+        if (typeof index !== 'number') {
+          return
+        }
+        const align = typeof location === 'number' ? undefined : location.align
+        // `align: 'start'` puts the index at the top (a timeline jump); a bare
+        // index only scrolls far enough to reveal it (the keyboard focus).
+        setStart((current) => {
+          if (align === 'start' || index < current) {
+            return index
+          }
+          return index > current + MOCK_WINDOW - 1 ? index - MOCK_WINDOW + 1 : current
+        })
+      },
       scrollTo: vi.fn(),
       scrollBy: vi.fn(),
     }))
-    return (
-      <div data-testid="grid">
-        {data.map((item, index) => (
-          <div key={item.uid}>{itemContent(index, item)}</div>
-        ))}
-        <button
-          type="button"
-          onClick={() => {
-            endReached?.()
-          }}
-        >
-          __endReached
-        </button>
-      </div>
-    )
+    const end = Math.min(data.length - 1, start + MOCK_WINDOW - 1)
+    useEffect(() => {
+      if (data.length > 0) {
+        rangeRef.current?.({ startIndex: start, endIndex: end })
+      }
+    }, [start, end, data.length])
+    const window = []
+    for (let index = start; index <= end; index++) {
+      const item = data[index]
+      window.push(
+        <div key={computeItemKey?.(index, item) ?? index}>{itemContent(index, item)}</div>,
+      )
+    }
+    return <div data-testid="grid">{window}</div>
   }),
 }))
 
@@ -159,6 +190,31 @@ function photo(uid: string, name: string): Photo {
 
 function page(photos: Photo[], total: number, nextOffset: number | null): PhotoListResponse {
   return { photos, total, limit: 100, offset: 0, next_offset: nextOffset }
+}
+
+/**
+ * One page of a library of `total` photos, holding a single photo named after
+ * its own offset — enough to tell from the DOM which page the grid is showing
+ * without building 20 000 fixtures.
+ */
+function pageAt(total: number, offset: number): PhotoListResponse {
+  return {
+    photos: [photo(`p${String(offset)}`, `p${String(offset)}.jpg`)],
+    total,
+    limit: 100,
+    offset,
+    next_offset: offset + 100 < total ? offset + 100 : null,
+  }
+}
+
+/** Answers every page request from a library of `total` photos. */
+function servePagesOf(total: number): void {
+  fetchMock.mockImplementation((params) => Promise.resolve(pageAt(total, params.offset ?? 0)))
+}
+
+/** The offsets the grid has asked the API for, in ascending order. */
+function offsetsRequested(): number[] {
+  return [...new Set(fetchMock.mock.calls.map((call) => call[0].offset ?? 0))].sort((a, b) => a - b)
 }
 
 /** Surfaces the current URL query and a Back control for navigation tests. */
@@ -499,19 +555,97 @@ describe('LibraryPage', () => {
     expect(calls[calls.length - 1][0].sort).toBe('newest')
   })
 
-  it('requests the next page when the grid reaches its end', async () => {
-    fetchMock.mockResolvedValueOnce(page([photo('a', 'a.jpg')], 3, 1))
+  it('loads the page the visible range needs, not everything before it', async () => {
+    // A production-sized library: 20 000 photos, ~200 pages.
+    servePagesOf(20000)
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    // The first load is the visible page plus the prefetch one behind it, and it
+    // already reports the full total — which is what fixes the grid's index space
+    // and makes any position reachable.
+    await waitFor(() => {
+      expect(offsetsRequested()).toEqual([0, 100])
+    })
+
+    // Scrolling deep into the archive fetches the pages under the viewport plus
+    // one on each side — three more requests, not the 190 a walk from the top
+    // costs.
+    act(() => {
+      grid.scrollTo?.(19000)
+    })
+    expect(await screen.findByRole('link', { name: 'p19000.jpg' })).toBeInTheDocument()
+    expect(offsetsRequested()).toEqual([0, 100, 18900, 19000, 19100])
+  })
+
+  it('leaves a placeholder tile where a page has not arrived yet', async () => {
+    const held: (() => void)[] = []
+    fetchMock.mockImplementation(async (params) => {
+      if ((params.offset ?? 0) === 0) {
+        return pageAt(500, 0)
+      }
+      await new Promise<void>((resolve) => {
+        held.push(resolve)
+      })
+      return pageAt(500, params.offset ?? 0)
+    })
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    act(() => {
+      grid.scrollTo?.(300)
+    })
+
+    // The slot exists in the grid from the outset — the total said so — so the
+    // reader sees a tile-shaped placeholder rather than a shorter list.
+    await waitFor(() => {
+      expect(document.querySelectorAll('.kk-skeleton').length).toBeGreaterThan(0)
+    })
+    act(() => {
+      for (const resolve of held) {
+        resolve()
+      }
+    })
+    expect(await screen.findByRole('link', { name: 'p300.jpg' })).toBeInTheDocument()
+  })
+
+  it('records the jumped-to month in the URL so Back returns to the prior view', async () => {
+    servePagesOf(3)
+    timelineMock.mockResolvedValue({
+      buckets: [
+        { year: 2026, month: 2, count: 2, cumulative: 0 },
+        { year: 2026, month: 1, count: 1, cumulative: 2 },
+      ],
+      total: 3,
+    })
     const user = userEvent.setup()
     renderLibrary()
 
-    await screen.findByRole('link', { name: 'a.jpg' })
+    await user.click(await screen.findByRole('button', { name: 'Jump to Jan 2026' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('search')).toHaveTextContent('at=2026-01')
+    })
 
-    fetchMock.mockResolvedValueOnce(page([photo('b', 'b.jpg')], 3, null))
-    await user.click(screen.getByRole('button', { name: '__endReached' }))
+    await user.click(screen.getByRole('button', { name: '__back' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('search')).not.toHaveTextContent('at=2026-01')
+    })
+  })
 
-    expect(await screen.findByRole('link', { name: 'b.jpg' })).toBeInTheDocument()
-    const second = fetchMock.mock.calls[1][0]
-    expect(second.offset).toBe(1)
+  it('restores the anchored month from the URL on load', async () => {
+    servePagesOf(3)
+    timelineMock.mockResolvedValue({
+      buckets: [
+        { year: 2026, month: 2, count: 2, cumulative: 0 },
+        { year: 2026, month: 1, count: 1, cumulative: 2 },
+      ],
+      total: 3,
+    })
+    renderLibrary('/?at=2026-01')
+
+    await waitFor(() => {
+      expect(grid.scrollToIndex).toHaveBeenCalledWith({ index: 2, align: 'start' })
+    })
   })
 
   it('shows favorite hearts to a viewer but no selection / bulk-edit controls', async () => {

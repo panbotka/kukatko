@@ -355,7 +355,12 @@ here.
   so a list that also favorites by another route keeps **one** baseline per photo; `src` takes
   **`photo.thumb_url` from the payload** via `useThumbSrc` and **never** builds it from the UID),
   `PhotoGrid` (a virtualized **`react-virtuoso` `VirtuosoGrid`**,
-  window-scroll, `endReached` → next page, footer spinner/retry; the `favoritable` prop
+  window-scroll, footer spinner/retry. It serves **two loading shapes**: a grid that grows by
+  appending pages passes `onEndReached` (→ next page), while a **windowed** grid (the library)
+  omits it and instead hands over `photos` as long as the *whole* result with `undefined` where
+  a page is not loaded — a hole renders as a tile-shaped `Skeleton` placeholder, `computeItemKey`
+  falls back to `slot-<index>`, and a Shift+click range only spans the loaded uids. An index is then
+  a photo's **absolute** position, which is what lets the timeline jump anywhere in one scroll; the `favoritable` prop
   leaks the heart onto the tiles (and `onFavoriteChange` its flips back to the page); an optional `gridRef` (imperative `scrollToIndex`
   handle) + `onRangeChanged` (the visible range) for the timeline; it takes its column template from
   `useGridDensity` → `lib/gridDensity` `gridTemplateColumns`, the DOM carries `data-density` for tests.
@@ -373,8 +378,13 @@ here.
   26 labels, 2026 down to 1905). The height comes from a `ResizeObserver` on the rail
   (`FALLBACK_RAIL_HEIGHT_PX` until the first measurement, e.g. in jsdom). The **last tick anchors to the
   library's oldest month**, so the start of the archive is always one click away; a click jumps via
-  `onJump(bucket.cumulative)`, a drag reads the same mapping backwards (`rankForFraction`), so the rail and
-  the grid always agree on where a position lands. A press **does not capture the pointer** — capture
+  `onJump({index,month,replace})` — `index` is the bucket's `cumulative`, i.e. the month's **absolute**
+  position in the result as counted by the DB, so the grid scrolls straight there and fetches only the page
+  that lands under it (`replace` is true for the steps of a drag and for an anchor restore, so one gesture
+  leaves one history entry, not one per month crossed). A drag reads the same mapping backwards
+  (`rankForFraction`), so the rail and the grid always agree on where a position lands. The `anchor`
+  prop (`YYYY-MM`, from the page's `at` URL param) is resolved against the buckets and jumped to **once**,
+  which is what makes Back, a reload and a shared link land on the month the reader was on. A press **does not capture the pointer** — capture
   retargets the compatibility `click` onto the capturing element, and pressing a tick would then do
   nothing; capture is taken on the first move past `DRAG_THRESHOLD_PX`, which is also what tells a click
   from a drag. The active month is highlighted per `activeIndex` (start of the visible range) by a floating
@@ -438,7 +448,8 @@ here.
   — the filter bar disables it (it has its own field), **the empty state enables it** (a reader at zero results must
   see all the filters that got them there); the field length = the active-filter count on the badge),
   `timelineRail.ts` (pure layout of the timeline rail, no React: `fractionForRank`/`rankForFraction`
-  = the position of a month bucket on the rail and its exact inverse for a drag, `rankForIndex`
+  = the position of a month bucket on the rail and its exact inverse for a drag, `anchorOf(bucket)`
+  = the bucket's month as the `YYYY-MM` value the library carries in its `at` URL param, `rankForIndex`
   = binary search from a photo index back to its month, and `buildRail(buckets, heightPx)` → `RailTick[]`,
   which collapses month ticks and thins year labels to what the measured height fits; the ticks
   **partition** the buckets, so nothing becomes unreachable and the active month always highlights
@@ -616,8 +627,13 @@ here.
   `LibraryRedirect` = a shim for the retired route `/library`: `<Navigate replace>` to `/` with the
   `search`+`hash` preserved literally (old bookmarks and links work, `replace` prevents a Back bounce),
   plus **the timeline** (`TimelineScrubber`) beside the grid for quick jumps to a month — the grid
-  exposes `gridRef`+`onRangeChanged`, the jump runs via `useGridJump` (loads pages when the month
-  lies beyond the loaded portion), shown only for the default newest sort and outside selection (`selection.count === 0`),
+  is a **window** over the whole result (`useWindowedPhotos`; `gridRef`+`onRangeChanged` drive both the
+  highlighted month and `ensureRange`), so a jump is `scrollToIndex({index,align:'start'})` to the month's
+  absolute index plus the one page that lands there — **the cost does not depend on how far it jumps**.
+  The month rides in the URL as `at=YYYY-MM` (via `useSearchParams`, deliberately **not** a `LibraryView`
+  key: it filters nothing, so it must not reach the API nor be stored in a saved search — and `writeUrlState`
+  dropping it on any filter change is right, a new filter renumbers every position). Shown only for the
+  default newest sort and outside selection (`selection.count === 0`),
   plus for editors **a modern multi-select** — `useBulkEdit({hoverSelect:true})`: each tile has
   a corner checkbox (hover; Shift+click a range), **no „Vybrat" button** is needed anymore, and
   once something is selected, **`BatchActionBar`** slides up (a floating bottom bar: album/labels/favorites/
@@ -1592,11 +1608,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   lookup **costs credit**: a query shorter than 2 characters is `idle` **without a request** (a single letter is not a
   place name, just a keystroke on the way to one) and the statuses 424/502/503 get their own state
   `unavailable` (it is the provider's side that is broken, retrying makes no sense) as opposed to `error` (the rest,
-  incl. 429 — retrying does make sense); `useGridJump({gridRef,
-  loadedCount,hasMore,loadingMore,loadMore})` = returns `jumpTo(index)`, which jumps the grid to a photo
-  index via `VirtuosoGridHandle.scrollToIndex` and **loads the pages first** when the target lies past the
-  infinite-scroll cursor (or clamps to the last loaded one when there are no more pages) —
-  the basis for the timeline's jump to a month before the loaded part; `useSelection` = multi-selection of photos in the grid
+  incl. 429 — retrying does make sense); `useWindowedPhotos(params,{reloadKey?})`
+  = the library grid as a **window** over the result instead of a growing prefix of it: the first request
+  reports `total`, which fixes the item count, and `photos` is that long from then on with `undefined`
+  where a page is not loaded; `ensureRange(start,end)` (called from `onRangeChanged`) loads the pages
+  covering the visible range plus `WINDOW_PREFETCH_PAGES` either side, **aborts** the requests a jump has
+  travelled past, and evicts down to `WINDOW_MAX_PAGES` so memory stays bounded however far the reader goes.
+  A failed page is retried on the next range change up to `WINDOW_MAX_ATTEMPTS`, then surfaces as `moreError`
+  (footer retry); a `reloadKey` bump refetches exactly the loaded pages in the background.
+  This is what makes the timeline's jump cost **independent of distance** — measured on a seeded
+  20 889-photo library, clicking the oldest year went from **40.3 s / 102 sequential page requests**
+  (the old `useGridJump`, which paged its way to the target) to **~3.1 s**, the same as a jump one month
+  back; `useSelection` = multi-selection of photos in the grid
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
   the last `toggle` holds the **anchor** and `toggleRange(uid, orderedUids)` (Shift+click) selects a contiguous
   range between the anchor and `uid` — it only **adds**, without an anchor or with an anchor out of order it degrades to

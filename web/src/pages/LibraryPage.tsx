@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { type ListRange, type VirtuosoGridHandle } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
@@ -11,16 +11,15 @@ import { FilterBar } from '../components/library/FilterBar'
 import { buildChips } from '../components/library/filterChips'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
-import { TimelineScrubber } from '../components/library/TimelineScrubber'
+import { type TimelineJump, TimelineScrubber } from '../components/library/TimelineScrubber'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useBulkEdit } from '../hooks/useBulkEdit'
-import { useGridJump } from '../hooks/useGridJump'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import { useLibraryFacets } from '../hooks/useLibraryFacets'
-import { usePhotoLibrary } from '../hooks/usePhotoLibrary'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
 import { detailQueryString } from '../lib/detailView'
 import {
   hasActiveFilters,
@@ -37,10 +36,22 @@ import { favoritePhoto } from '../services/photos'
 const NO_SCOPE: SlideshowScope = {}
 
 /**
- * The main photo library: a filter/sort bar over a virtualized, infinite-scroll
- * thumbnail grid. The entire view (filters, sort) lives in the URL, so Back /
- * Forward restore the exact view and sharing the URL reproduces it. The grid
- * pages through the API as the user scrolls. Every tile carries a favorite heart
+ * Query param holding the month (`YYYY-MM`) the grid is positioned at. It is not
+ * part of {@link LibraryView}: it filters nothing, so it must neither reach the
+ * API nor be saved with a smart album — and dropping it whenever a filter changes
+ * (which `writeUrlState` does, since it only writes the view's own keys) is
+ * exactly right, because a new filter renumbers every position anyway.
+ */
+const ANCHOR_PARAM = 'at'
+
+/**
+ * The main photo library: a filter/sort bar over a virtualized thumbnail grid.
+ * The entire view (filters, sort) lives in the URL, so Back / Forward restore the
+ * exact view and sharing the URL reproduces it — the timeline's position
+ * ({@link ANCHOR_PARAM}) included. The grid is a *window* over the result: it is
+ * as tall as the whole library from the first response on and fetches the pages
+ * under the viewport as they come into view, which is what lets the timeline jump
+ * to any month at a fixed cost. Every tile carries a favorite heart
  * (a personal toggle for all roles); an editor additionally gets a modern
  * multi-select — a corner checkmark on each tile (hover to reveal, Shift+click for
  * a range) and a floating batch action bar that rises once anything is picked, for
@@ -62,8 +73,12 @@ export function LibraryPage() {
   const detailQuery = useMemo(() => detailQueryString({ ...view, mode: '' }), [view])
   // A bulk edit can change what the filters match, so bump the key to refetch.
   const [reloadKey, reload] = useReloadKey()
-  const { photos, total, status, loadingMore, moreError, hasMore, loadMore, retry } =
-    usePhotoLibrary(params, { reloadKey })
+  // The grid is a *window* over the result, not a growing prefix of it: `photos`
+  // is as long as the whole library with holes where pages are not loaded, so any
+  // position is reachable in one scroll plus one fetch.
+  const { photos, total, status, moreError, ensureRange, retry } = useWindowedPhotos(params, {
+    reloadKey,
+  })
   const facets = useLibraryFacets(params)
   // Hover-select: every tile carries a corner checkmark for a writer, with no
   // explicit "enter selection mode" step, and the floating batch bar rises the
@@ -88,28 +103,50 @@ export function LibraryPage() {
       return photos
     }
     return photos.map((p) =>
-      favOverrides.has(p.uid) ? { ...p, is_favorite: favOverrides.get(p.uid) } : p,
+      p !== undefined && favOverrides.has(p.uid)
+        ? { ...p, is_favorite: favOverrides.get(p.uid) }
+        : p,
     )
   }, [photos, favOverrides])
 
   // Timeline scrubber wiring: a ref to the grid to scroll it, the first visible
-  // index to highlight the current month, and a jump that loads pages first when
-  // the target month lies ahead of the infinite-scroll cursor. The scrubber is
-  // only meaningful for the default newest-first date order (the timeline is
-  // always date-grouped), so it is hidden for other sorts and in selection mode.
+  // index to highlight the current month, and a jump that scrolls straight to the
+  // month's absolute index and fetches the one page that lands there — the cost
+  // of a jump no longer depends on how far it goes, which is what made "jump to
+  // 2011" unusable on a 20 000 photo library. The scrubber is only meaningful for
+  // the default newest-first date order (the timeline is always date-grouped), so
+  // it is hidden for other sorts and in selection mode.
   const gridRef = useRef<VirtuosoGridHandle>(null)
   const [rangeStart, setRangeStart] = useState(0)
-  const jumpTo = useGridJump({
-    gridRef,
-    loadedCount: photos.length,
-    hasMore,
-    loadingMore,
-    loadMore,
-  })
-  const onRangeChanged = useCallback((range: ListRange) => {
-    setRangeStart(range.startIndex)
-  }, [])
+  const onRangeChanged = useCallback(
+    (range: ListRange) => {
+      setRangeStart(range.startIndex)
+      ensureRange(range.startIndex, range.endIndex)
+    },
+    [ensureRange],
+  )
   const showScrubber = view.sort === LIBRARY_DEFAULTS.sort && selection.count === 0
+
+  // The month the view is positioned at, kept in the URL so Back, a reload and a
+  // shared link all land where the reader was — the project's "Back always
+  // works" rule applied to the one navigation that can skip thousands of photos.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const anchor = searchParams.get(ANCHOR_PARAM) ?? ''
+  const jumpTo = useCallback(
+    (jump: TimelineJump) => {
+      // Start the fetch before the scroll: both are one request/one frame, and
+      // overlapping them is what keeps the placeholders on screen briefest.
+      ensureRange(jump.index, jump.index)
+      gridRef.current?.scrollToIndex({ index: jump.index, align: 'start' })
+      if ((searchParams.get(ANCHOR_PARAM) ?? '') === jump.month) {
+        return
+      }
+      const next = new URLSearchParams(searchParams)
+      next.set(ANCHOR_PARAM, jump.month)
+      setSearchParams(next, { replace: jump.replace })
+    },
+    [ensureRange, searchParams, setSearchParams],
+  )
 
   // Keyboard navigation over the grid: a visible focus highlight moved by the
   // arrow keys / hjkl, with Enter/x/f/Escape acting on the focused tile. Row-wise
@@ -149,9 +186,10 @@ export function LibraryPage() {
     },
     [displayPhotos, canWrite, selection],
   )
-  // Select every loaded tile in view (only what has paged in, not every match).
+  // Select every loaded tile in view (only what has paged in, not every match —
+  // and with a windowed list that is the pages around the reader's position).
   const selectAllInView = useCallback(() => {
-    selection.selectMany(displayPhotos.map((p) => p.uid))
+    selection.selectMany(displayPhotos.filter((p) => p !== undefined).map((p) => p.uid))
   }, [displayPhotos, selection])
   const toggleFavorite = useCallback(
     (index: number) => {
@@ -275,9 +313,11 @@ export function LibraryPage() {
           >
             <PhotoGrid
               photos={displayPhotos}
-              loadingMore={loadingMore}
+              // A windowed list has no "end" to reach: it loads from what is on
+              // screen (`onRangeChanged`), so nothing appends and the footer only
+              // ever has to offer a retry.
+              loadingMore={false}
               moreError={moreError}
-              onEndReached={loadMore}
               onRetry={retry}
               selection={bulk.gridSelection}
               favoritable
@@ -289,7 +329,12 @@ export function LibraryPage() {
             />
           </div>
           {showScrubber && (
-            <TimelineScrubber params={params} activeIndex={rangeStart} onJump={jumpTo} />
+            <TimelineScrubber
+              params={params}
+              activeIndex={rangeStart}
+              anchor={anchor}
+              onJump={jumpTo}
+            />
           )}
         </>
       )}

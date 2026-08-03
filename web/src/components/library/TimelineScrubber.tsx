@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next'
 
 import { useTimeline } from '../../hooks/useTimeline'
 import { formatMonth } from '../../lib/format'
-import { type PhotoListParams } from '../../services/photos'
+import { type PhotoListParams, type TimelineBucket } from '../../services/photos'
 
 import {
+  anchorOf,
   bucketKey,
   buildRail,
   fractionForRank,
@@ -20,14 +21,39 @@ import {
  */
 const DRAG_THRESHOLD_PX = 3
 
+/** A month the rail asks the grid to jump to. */
+export interface TimelineJump {
+  /**
+   * The grid index of the month's first photo — its bucket's `cumulative`. The
+   * grid can scroll straight to it: the index is absolute in the whole result,
+   * not relative to what happens to be loaded.
+   */
+  index: number
+  /** The month, as `YYYY-MM`, for the view's URL anchor. */
+  month: string
+  /**
+   * True for a jump that should not leave a history entry behind: the steps of a
+   * drag (which crosses a month at a time) and the restore of an anchor that is
+   * already in the URL. A deliberate click on a tick pushes.
+   */
+  replace: boolean
+}
+
 /** Props for {@link TimelineScrubber}. */
 export interface TimelineScrubberProps {
   /** The active library filters; the timeline is fetched with these and refetched on change. */
   params: PhotoListParams
   /** The first visible photo index in the grid, used to highlight the current month. */
   activeIndex: number
-  /** Jumps the grid to a photo index (loads pages first when it lies ahead). */
-  onJump: (index: number) => void
+  /**
+   * The month (`YYYY-MM`) the view is anchored to, from the URL. Once the
+   * timeline is loaded the rail resolves it to a grid index and jumps there
+   * once, which is what makes Back — and a shared link — land on the month the
+   * reader was looking at. Empty for an un-anchored view.
+   */
+  anchor?: string
+  /** Jumps the grid to a month. */
+  onJump: (jump: TimelineJump) => void
 }
 
 /**
@@ -37,7 +63,10 @@ export interface TimelineScrubberProps {
  * (`buildRail` — ticks no closer than a few pixels, year labels only where one
  * clears the previous), and a click or a drag jumps the grid to a month via
  * {@link TimelineScrubberProps.onJump} using that bucket's `cumulative` as the
- * scroll index.
+ * scroll index. That index is the month's absolute position in the whole result
+ * — the database counted it — so the grid scrolls straight to it and fetches the
+ * page that lands there. The jump costs the same whether the month is the second
+ * one or the ten-thousandth.
  *
  * Positions used to be proportional to `cumulative / total`, i.e. to photo
  * counts. On a real long-tailed archive (121 years, ~98 % of the photos in the
@@ -52,7 +81,12 @@ export interface TimelineScrubberProps {
  * never shifts the grid layout; on very small screens it is hidden via CSS to
  * avoid crowding the grid.
  */
-export function TimelineScrubber({ params, activeIndex, onJump }: TimelineScrubberProps) {
+export function TimelineScrubber({
+  params,
+  activeIndex,
+  anchor = '',
+  onJump,
+}: TimelineScrubberProps) {
   const { t, i18n } = useTranslation()
   const { buckets, total, status } = useTimeline(params)
   // The rail element is state, not a ref: its height decides how much of the
@@ -92,6 +126,19 @@ export function TimelineScrubber({ params, activeIndex, onJump }: TimelineScrubb
   const activeRank = useMemo(() => rankForIndex(buckets, activeIndex), [buckets, activeIndex])
   const activeBucket = activeRank >= 0 ? buckets[activeRank] : undefined
 
+  // The anchor this rail has already acted on. A jump the rail itself made is
+  // recorded here too, so the URL it writes does not bounce straight back as an
+  // anchor to restore.
+  const appliedAnchorRef = useRef<string | null>(null)
+  const emitJump = useCallback(
+    (bucket: TimelineBucket, replace: boolean) => {
+      const month = anchorOf(bucket)
+      appliedAnchorRef.current = month
+      onJump({ index: bucket.cumulative, month, replace })
+    },
+    [onJump],
+  )
+
   // Maps a pointer Y position on the rail to the month it lands in and jumps to
   // it, de-duplicating repeated jumps to the same month during a drag.
   const jumpToPointer = useCallback(
@@ -108,10 +155,13 @@ export function TimelineScrubber({ params, activeIndex, onJump }: TimelineScrubb
       const key = bucketKey(bucket)
       if (key !== lastJumpedRef.current) {
         lastJumpedRef.current = key
-        onJump(bucket.cumulative)
+        // A drag sweeps through months; each step replaces the anchor rather
+        // than pushing, so Back returns to where the drag started, not to every
+        // month it passed.
+        emitJump(bucket, draggedRef.current)
       }
     },
-    [rail, buckets, onJump],
+    [rail, buckets, emitJump],
   )
 
   const handlePointerDown = useCallback(
@@ -168,16 +218,35 @@ export function TimelineScrubber({ params, activeIndex, onJump }: TimelineScrubb
   )
 
   const handleTickClick = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>, cumulative: number) => {
+    (event: React.MouseEvent<HTMLButtonElement>, bucket: TimelineBucket) => {
       // Ignore the click that ends a drag — the drag already jumped. A keyboard
       // activation carries no pointer detail and always jumps.
       if (event.detail !== 0 && draggedRef.current) {
         return
       }
-      onJump(cumulative)
+      emitJump(bucket, false)
     },
-    [onJump],
+    [emitJump],
   )
+
+  // Restore the anchor the URL carries (a reload, a shared link, or Back onto a
+  // jumped-to view) exactly once per anchor, as soon as the buckets that resolve
+  // it to a grid index have arrived. Jumping straight to a month costs one scroll
+  // and one page fetch, so this is as cheap on the archive's oldest month as on
+  // its newest.
+  useEffect(() => {
+    if (anchor === '' || buckets.length === 0 || appliedAnchorRef.current === anchor) {
+      return
+    }
+    const bucket = buckets.find((candidate) => anchorOf(candidate) === anchor)
+    appliedAnchorRef.current = anchor
+    if (bucket === undefined) {
+      // The month holds nothing under the current filters; leave the grid alone
+      // rather than guessing at a neighbour.
+      return
+    }
+    emitJump(bucket, true)
+  }, [anchor, buckets, emitJump])
 
   // Nothing to scrub yet (loading, error or an empty library): render no rail so
   // the grid layout never shifts.
@@ -225,7 +294,7 @@ export function TimelineScrubber({ params, activeIndex, onJump }: TimelineScrubb
                   })
             }
             onClick={(event) => {
-              handleTickClick(event, tick.target.cumulative)
+              handleTickClick(event, tick.target)
             }}
           >
             <span className="kukatko-timeline-mark" aria-hidden="true" />
