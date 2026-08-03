@@ -1,0 +1,52 @@
+/*
+ * The face marker on an /outliers review card. It exists in CSS rather than
+ * inline because the two guarantees it has to make — "never clipped" and "never
+ * too small to see" — are both `max()`/`clamp()` arithmetic against the rendered
+ * tile, and the tile's pixel size is not something the card knows: the user picks
+ * the column count, so the same card is ~90 px wide at ten columns and ~1400 px
+ * at one. JS supplies only the geometry, as the `--kk-face-*` custom properties
+ * `lib/faceGeometry` `faceMarkerStyle` emits.
+ */
+
+.kk-face-marker {
+  /* The smallest the marker is ever drawn. The crop is defined *from* the box
+     (the bbox grown 30 % per side), so the face normally covers 62.5 % of the
+     tile and can never go sub-pixel — but a frame-edge crop, or a bbox that
+     arrived degenerate, can leave a sliver. Below this the marker stops
+     shrinking and simply becomes a "the face is here" target instead. */
+  --kk-face-min: 28px;
+
+  position: absolute;
+
+  /* Anchored on the face's centre and pulled back by half its own size, so
+     hitting the minimum above grows the marker *around* the face rather than
+     dragging it off. The clamp keeps that grown box inside the crop, which is
+     what stops the card's `overflow: hidden` from ever clipping it. */
+  left: clamp(
+    calc(var(--kk-face-min) / 2),
+    var(--kk-face-x, 50%),
+    calc(100% - var(--kk-face-min) / 2)
+  );
+  top: clamp(
+    calc(var(--kk-face-min) / 2),
+    var(--kk-face-y, 50%),
+    calc(100% - var(--kk-face-min) / 2)
+  );
+  width: max(var(--kk-face-w, 100%), var(--kk-face-min));
+  height: max(var(--kk-face-h, 100%), var(--kk-face-min));
+  transform: translate(-50%, -50%);
+
+  /* Dark / warning / dark, so the ring reads over both a bright sky and a dark
+     coat. Every stroke is inside the element's own border box (Bootstrap sets
+     `box-sizing: border-box`, and `inset` shadows paint within the border), so
+     nothing sticks out to be clipped. The widths are absolute pixels: a stroke
+     that scaled with the tile would thin out to nothing exactly where the tiles
+     are smallest, which is where the marker matters most. */
+  border: 1px solid rgb(0 0 0 / 65%);
+  box-shadow:
+    inset 0 0 0 3px var(--bs-warning),
+    inset 0 0 0 4px rgb(0 0 0 / 65%);
+
+  /* Decoration over the photo: it must not eat the card's clicks. */
+  pointer-events: none;
+}

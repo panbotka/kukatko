@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { faceSourceSize } from './faceSource'
+import {
+  FACE_SOURCE_REVIEW_MAX,
+  faceSourceSize,
+  OUTLIER_TARGET_PX,
+  smallerFaceSource,
+} from './faceSource'
 
 import { type Bbox } from '../services/people'
 
@@ -65,5 +70,46 @@ describe('faceSourceSize', () => {
     for (const share of [0.01, 0.05, 0.2, 0.5, 0.9]) {
       expect(faceSourceSize(crop(share), FRAME, 300)).toMatch(/^fit_/)
     }
+  })
+
+  it('caps a chip at fit_1920 but lets a review crop climb higher', () => {
+    // The same tiny face: a people-grid chip stops where a dense grid of chips
+    // stops being worth the bytes, a card whose whole job is to be judged does not.
+    expect(faceSourceSize(crop(0.02), FRAME, 300)).toBe('fit_1920')
+    expect(faceSourceSize(crop(0.02), FRAME, 300, FACE_SOURCE_REVIEW_MAX)).toBe('fit_3840')
+  })
+
+  it('still takes the smallest rung that clears the review target', () => {
+    // A face that was already sharp at 720 must not be dragged up the ladder just
+    // because the review ceiling is higher.
+    expect(faceSourceSize(crop(0.4), FRAME, OUTLIER_TARGET_PX, FACE_SOURCE_REVIEW_MAX)).toBe(
+      'fit_720',
+    )
+  })
+
+  it('never asks for more resolution than the original holds', () => {
+    // fit_* never upscales, so on a 1200px original every rung above 1280 is the
+    // same pixels under a different URL — and a needless second cache entry.
+    const small = { width: 1200, height: 800 }
+    expect(faceSourceSize(crop(0.02), small, 300, FACE_SOURCE_REVIEW_MAX)).toBe('fit_1280')
+  })
+})
+
+describe('smallerFaceSource', () => {
+  it('steps one rung down the ladder', () => {
+    expect(smallerFaceSource('fit_3840')).toBe('fit_2560')
+    expect(smallerFaceSource('fit_2560')).toBe('fit_1920')
+    expect(smallerFaceSource('fit_1280')).toBe('fit_720')
+  })
+
+  it('stops at the bottom rather than wrapping or looping', () => {
+    // The card retries on error; a bottom that answered anything but null would
+    // make a permanently missing thumbnail retry forever.
+    expect(smallerFaceSource('fit_720')).toBeNull()
+  })
+
+  it('refuses a size that is not on the ladder', () => {
+    expect(smallerFaceSource('tile_500')).toBeNull()
+    expect(smallerFaceSource('')).toBeNull()
   })
 })
