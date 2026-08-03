@@ -1,6 +1,11 @@
 package video
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // TestApplyExiftoolVideoFields verifies the video-only fields are pulled from a
 // numeric exiftool tag object.
@@ -78,5 +83,27 @@ func TestTagFloat(t *testing.T) {
 	}
 	if _, ok := tagFloat(obj, "missing"); ok {
 		t.Error("tagFloat(missing) ok = true, want false")
+	}
+}
+
+// TestProbeWithExiftool_neverDatesFromTheFileName covers the ingest case: the
+// video is probed while staged under a generated temp name, so a date read from
+// that name would be pure invention — and worse than a missing one, because
+// sharedFromVideo labels any time the probe returns as EXIF-sourced. The real
+// upload name gets its own fallback one level up, where the name is known.
+func TestProbeWithExiftool_neverDatesFromTheFileName(t *testing.T) {
+	t.Parallel()
+
+	staged := filepath.Join(t.TempDir(), "kukatko-ingest-2879101112")
+	if err := os.WriteFile(staged, []byte("not really a video"), 0o600); err != nil {
+		t.Fatalf("write staged file: %v", err)
+	}
+
+	meta, err := probeWithExiftool(context.Background(), staged)
+	if err != nil {
+		t.Fatalf("probeWithExiftool() error = %v", err)
+	}
+	if meta.TakenAt != nil {
+		t.Errorf("TakenAt = %v, want nil (the staged name must not become a capture time)", meta.TakenAt)
 	}
 }
