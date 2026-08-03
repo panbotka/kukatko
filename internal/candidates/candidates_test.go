@@ -3,6 +3,7 @@ package candidates
 import (
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -239,5 +240,43 @@ func TestTruncate(t *testing.T) {
 	}
 	if got := truncate(cands, 2); len(got) != 2 {
 		t.Errorf("truncate(_, 2) len = %d, want 2", len(got))
+	}
+}
+
+// TestPerExemplarLimit checks how the per-exemplar neighbour cap is sized: one
+// exemplar carries the whole answer and keeps the configured limit, a crowd of them
+// shares it, and the floor never lets any exemplar drop below a hundred neighbours.
+// The cap is the difference between a search that costs 10 ms per exemplar and one
+// that costs 41 ms, paid once per exemplar — see docs/PERF.md.
+func TestPerExemplarLimit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		searchLimit   int
+		maxCandidates int
+		exemplarCount int
+		want          int
+	}{
+		{"single exemplar keeps the configured limit", 1000, 500, 1, 1000},
+		{"a handful still ask for the configured limit", 1000, 500, 2, 1000},
+		{"the share falls with the exemplar count", 1000, 500, 8, 250},
+		{"a heavily tagged subject lands on the floor", 1000, 500, 428, 100},
+		{"the catch-all subject's cap lands there too", 1000, 500, 500, 100},
+		{"a low configured limit still wins over the floor", 40, 500, 300, 40},
+		{"the floor applies to a small hydration ceiling", 1000, 10, 50, 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			svc := New(Config{
+				Faces: &fakeFaces{}, People: &fakePeople{}, Feedback: &fakeFeedback{}, Photos: &fakePhotos{},
+				Media:       mediaurl.NewBuilder(nil),
+				SearchLimit: tt.searchLimit, MaxCandidates: tt.maxCandidates,
+			})
+			if got := svc.perExemplarLimit(tt.exemplarCount); got != tt.want {
+				t.Errorf("perExemplarLimit(%d) = %d, want %d", tt.exemplarCount, got, tt.want)
+			}
+		})
 	}
 }

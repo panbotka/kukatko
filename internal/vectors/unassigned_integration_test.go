@@ -4,6 +4,7 @@ package vectors_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -115,6 +116,108 @@ func TestFindSimilarUnassignedFaceCandidates_exclusionKeepsLimit(t *testing.T) {
 	// The five nearest survivors are face indexes 3..7, nearest first.
 	if got[0].FaceIndex != 3 || got[4].FaceIndex != 7 {
 		t.Errorf("survivor order = first %d, last %d, want first 3, last 7", got[0].FaceIndex, got[4].FaceIndex)
+	}
+}
+
+// TestFindSimilarUnassignedFaceCandidates_maxDistanceCut checks that maxDistance
+// still bounds the result exactly, now that it is applied to the ordered rows in Go
+// rather than as a SQL predicate. The SQL predicate was what made this search walk
+// the HNSW graph to hnsw.max_scan_tuples on every call (see migration 0047); the
+// answer it produced must not change with it gone.
+func TestFindSimilarUnassignedFaceCandidates_maxDistanceCut(t *testing.T) {
+	store, photoStore, _ := newStore(t)
+	ctx := t.Context()
+
+	photo := makePhoto(t, photoStore, "cutoff")
+	faces := make([]vectors.Face, 8)
+	for i := range faces {
+		faces[i] = gradientFace(i, 0.2*float32(i), nil)
+	}
+	if err := store.SaveFaces(ctx, photo, faces); err != nil {
+		t.Fatalf("SaveFaces: %v", err)
+	}
+
+	query := faceVec(map[int]float32{0: 1})
+	// Take every neighbour first, so the cut can be expressed against real distances
+	// instead of a guess about the embedding geometry.
+	all, err := store.FindSimilarUnassignedFaceCandidates(ctx, query, 20, 0, nil)
+	if err != nil {
+		t.Fatalf("FindSimilarUnassignedFaceCandidates(no cutoff): %v", err)
+	}
+	if len(all) != len(faces) {
+		t.Fatalf("got %d candidates without a cutoff, want %d", len(all), len(faces))
+	}
+	cutoff := all[2].Distance // admits the three nearest, excludes the rest
+
+	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, query, 20, cutoff, nil)
+	if err != nil {
+		t.Fatalf("FindSimilarUnassignedFaceCandidates(cutoff): %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d candidates within %v, want 3", len(got), cutoff)
+	}
+	for i, candidate := range got {
+		if candidate.Distance > cutoff {
+			t.Errorf("candidate %d distance %v exceeds the cutoff %v", i, candidate.Distance, cutoff)
+		}
+		if candidate.FaceIndex != all[i].FaceIndex {
+			t.Errorf("candidate %d = face %d, want %d (order must be unchanged)",
+				i, candidate.FaceIndex, all[i].FaceIndex)
+		}
+	}
+}
+
+// TestFindSimilarUnassignedFaceCandidates_limitCutsWithinDistance checks the case
+// where more faces sit within maxDistance than the limit allows: the caller must get
+// the limit NEAREST of them, which is what the SQL predicate used to guarantee and
+// what the ordered-rows cut has to keep guaranteeing.
+func TestFindSimilarUnassignedFaceCandidates_limitCutsWithinDistance(t *testing.T) {
+	store, photoStore, _ := newStore(t)
+	ctx := t.Context()
+
+	photo := makePhoto(t, photoStore, "crowded")
+	faces := make([]vectors.Face, 6)
+	for i := range faces {
+		faces[i] = gradientFace(i, 0.05*float32(i), nil) // face 0 nearest, face 5 farthest
+	}
+	if err := store.SaveFaces(ctx, photo, faces); err != nil {
+		t.Fatalf("SaveFaces: %v", err)
+	}
+
+	query := faceVec(map[int]float32{0: 1})
+	// A cutoff every face clears, so only the limit can cut the result.
+	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, query, 2, 0.5, nil)
+	if err != nil {
+		t.Fatalf("FindSimilarUnassignedFaceCandidates: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d candidates, want 2 (the limit)", len(got))
+	}
+	if got[0].FaceIndex != 0 || got[1].FaceIndex != 1 {
+		t.Errorf("got faces %d and %d, want the two nearest (0 and 1)", got[0].FaceIndex, got[1].FaceIndex)
+	}
+}
+
+// TestUnassignedFaceHNSWIndexExists guards migration 0047. The search's WHERE clause
+// and the index predicate have to stay written the same way: if they drift apart the
+// planner falls back to the full face index, the iterative scan starts filtering out
+// the assigned neighbours again, and the per-exemplar search silently returns to
+// costing an order of magnitude more (measured 10 ms → 90 ms). Nothing fails, it just
+// gets slow again — which is exactly why this is a test.
+func TestUnassignedFaceHNSWIndexExists(t *testing.T) {
+	_, _, db := newStore(t)
+
+	var definition string
+	err := db.Pool().QueryRow(t.Context(),
+		`SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = $1`,
+		"idx_faces_unassigned_hnsw").Scan(&definition)
+	if err != nil {
+		t.Fatalf("looking up idx_faces_unassigned_hnsw: %v", err)
+	}
+	for _, want := range []string{"USING hnsw", "halfvec_cosine_ops", "WHERE (subject_uid IS NULL)"} {
+		if !strings.Contains(definition, want) {
+			t.Errorf("index definition %q does not contain %q", definition, want)
+		}
 	}
 }
 

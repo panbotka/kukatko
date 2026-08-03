@@ -83,38 +83,49 @@ func (s *Store) FindSimilarFaceCandidates(
 
 // findSimilarUnassignedFaceCandidatesSQL ranks the face embeddings that are not yet
 // assigned to any subject (subject_uid IS NULL) by cosine distance to the query
-// vector, keeping only those within $2 and excluding any (photo_uid, face_index)
-// pair present in the exclusion arrays ($4 photo uids, $5 face indexes), then
-// returning the $3 nearest. The exclusion is a NOT EXISTS anti-join over the two
-// parallel arrays unnested into rows, so it filters in SQL — before the LIMIT — and
-// an empty exclusion set unnests to no rows (matching everything). Run under an
-// iterative HNSW scan (see withFilteredReadTx), the LIMIT is filled from rows that
-// pass the filters instead of shrinking to whatever survives the first ef_search
-// candidates.
+// vector, excluding any (photo_uid, face_index) pair present in the exclusion arrays
+// ($3 photo uids, $4 face indexes), and returns the $2 nearest. The exclusion is a
+// NOT EXISTS anti-join over the two parallel arrays unnested into rows, so it filters
+// in SQL — before the LIMIT — and an empty exclusion set unnests to no rows (matching
+// everything). Run under an iterative HNSW scan (see withFilteredReadTx), the LIMIT is
+// filled from rows that pass the filter instead of shrinking to whatever survives the
+// first ef_search candidates.
+//
+// There is deliberately NO distance predicate here; the caller cuts the ordered rows
+// at maxDistance instead. A `(embedding <=> $1) <= 0.4` in this WHERE clause is
+// invisible to the index scan, so the iterative scan cannot tell "no more rows are
+// near enough" from "keep looking" and walks the graph until hnsw.max_scan_tuples
+// (20 000) — every time, for every exemplar, whatever the LIMIT. Measured on a
+// 50 410-face library: 90 ms with the predicate, 10 ms without it, same 32 rows out.
+// See docs/PERF.md.
 const findSimilarUnassignedFaceCandidatesSQL = `
 SELECT photo_uid, face_index, embedding <=> $1 AS distance, bbox,
        subject_uid, subject_name, marker_uid
 FROM faces
 WHERE subject_uid IS NULL
-  AND (embedding <=> $1) <= $2
   AND NOT EXISTS (
       SELECT 1
-      FROM unnest($4::text[], $5::int[]) AS ex(photo_uid, face_index)
+      FROM unnest($3::text[], $4::int[]) AS ex(photo_uid, face_index)
       WHERE ex.photo_uid = faces.photo_uid AND ex.face_index = faces.face_index)
 ORDER BY embedding <=> $1
-LIMIT $3`
+LIMIT $2`
 
 // FindSimilarUnassignedFaceCandidates returns the faces whose embedding is closest
 // to vec by cosine distance, nearest first, restricted to faces not yet assigned to
 // any subject (subject_uid IS NULL) and with every face in exclude filtered out. It
 // is the search every review feature needs: "find the nearest faces nobody has named
 // yet", minus the ones already rejected for the subject being searched. limit and
-// maxDistance behave as in FindSimilarFaceCandidates. Both filters are applied in
-// SQL before the LIMIT and the query runs with pgvector's iterative index scan, so
-// the caller gets the number of candidates it asked for even when the exclusion set
-// eats into the nearest neighbours — filtering after the HNSW limit would silently
-// shrink the result set, a real bug. It returns ErrDimMismatch if vec is not FaceDim
-// long.
+// maxDistance behave as in FindSimilarFaceCandidates.
+//
+// The assignment and exclusion filters are applied in SQL before the LIMIT and the
+// query runs with pgvector's iterative index scan, so the caller gets the number of
+// candidates it asked for even when the exclusion set eats into the nearest
+// neighbours — filtering after the HNSW limit would silently shrink the result set,
+// a real bug. maxDistance is the one filter applied here rather than in SQL: the
+// rows arrive ordered by distance, so cutting at the first row beyond it yields
+// exactly the same set as a SQL predicate would, without blinding the index scan
+// (see findSimilarUnassignedFaceCandidatesSQL). It returns ErrDimMismatch if vec is
+// not FaceDim long.
 func (s *Store) FindSimilarUnassignedFaceCandidates(
 	ctx context.Context, vec []float32, limit int, maxDistance float64, exclude []FaceKey,
 ) ([]FaceCandidate, error) {
@@ -122,11 +133,11 @@ func (s *Store) FindSimilarUnassignedFaceCandidates(
 		return nil, fmt.Errorf("%w: got %d, want %d", ErrDimMismatch, len(vec), FaceDim)
 	}
 	excludePhotos, excludeIndexes := splitFaceKeys(exclude)
+	cutoff := normalizeMaxDistance(maxDistance)
 	var candidates []FaceCandidate
 	err := s.withFilteredReadTx(ctx, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, findSimilarUnassignedFaceCandidatesSQL,
-			ToHalfVec(vec), normalizeMaxDistance(maxDistance), normalizeLimit(limit),
-			excludePhotos, excludeIndexes)
+			ToHalfVec(vec), normalizeLimit(limit), excludePhotos, excludeIndexes)
 		if err != nil {
 			return fmt.Errorf("querying similar unassigned face candidates: %w", err)
 		}
@@ -136,6 +147,9 @@ func (s *Store) FindSimilarUnassignedFaceCandidates(
 			candidate, scanErr := scanFaceCandidate(rows)
 			if scanErr != nil {
 				return scanErr
+			}
+			if candidate.Distance > cutoff {
+				break
 			}
 			candidates = append(candidates, candidate)
 		}

@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/audit"
@@ -317,4 +319,111 @@ func TestFind_subjectNotFoundDB(t *testing.T) {
 	if !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("Find = %v, want ErrSubjectNotFound", err)
 	}
+}
+
+// TestFind_perExemplarCapCostsNoMatchesDB is the quality half of the performance work
+// behind migration 0047. A subject tagged on hundreds of photos runs one kNN per
+// exemplar, and the neighbour cap those kNNs are given was cut so that a request
+// costs 0.8 s instead of 13.7 s on a 50 410-face library. The cap is only defensible
+// if it changes nothing, so this builds the shape in which it could bite — a crowded
+// source set and far more genuine lookalikes inside the threshold than one exemplar's
+// kNN may return — and demands the bounded search return exactly what an unbounded one
+// does, candidate for candidate, in the same order.
+func TestFind_perExemplarCapCostsNoMatchesDB(t *testing.T) {
+	h := newCandHarness(t)
+	ctx := t.Context()
+	subject, err := h.people.CreateSubject(ctx, people.Subject{Name: "Crowded"})
+	if err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+
+	// Forty exemplars, mutually ~0.2 cosine apart: one person photographed over the
+	// years, not forty copies of one frame.
+	const exemplars = 40
+	for i := range exemplars {
+		h.exemplarFor(t, fmt.Sprintf("src-%03d", i), subject.UID,
+			vec(map[int]float32{0: 1, 200 + i: 0.5}))
+	}
+	// Ninety unnamed lookalikes spread across the threshold — comfortably more than
+	// the bounded cap of 50 that forty exemplars earn.
+	const lookalikes = 90
+	for i := range lookalikes {
+		h.saveFace(t, fmt.Sprintf("match-%03d", i), vectors.Face{
+			FaceIndex: 0, Vector: atDistance(0.05 + 0.004*float64(i)), DetScore: 0.9,
+		})
+	}
+	// Strangers, far outside any threshold: they must never appear.
+	for j := range 60 {
+		h.saveFace(t, fmt.Sprintf("stranger-%03d", j), vectors.Face{
+			FaceIndex: 0, Vector: vec(map[int]float32{0: 0.1, 10 + j: 0.995}), DetScore: 0.9,
+		})
+	}
+
+	got, err := h.svc.Find(ctx, subject.UID, candidates.Request{})
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got.ExemplarsUsed != exemplars {
+		t.Fatalf("ExemplarsUsed = %d, want %d", got.ExemplarsUsed, exemplars)
+	}
+	if len(got.Candidates) == 0 {
+		t.Fatal("no candidates at all; the planted library is wrong")
+	}
+
+	// The same search with a hydration ceiling so large that every exemplar asks for
+	// the store's maximum — the answer the cap must not change.
+	unbounded := candidates.New(candidates.Config{
+		Faces: h.faces, People: h.people, Feedback: h.feedback, Photos: h.photos,
+		Media:       mediaurl.NewBuilder(nil),
+		MaxDistance: 0.5, SearchLimit: 5000, MinFacePx: 32, Concurrency: 4, MinFaceRel: 0.02,
+		MaxCandidates: 5000,
+	})
+	want, err := unbounded.Find(ctx, subject.UID, candidates.Request{})
+	if err != nil {
+		t.Fatalf("Find(unbounded): %v", err)
+	}
+	if len(got.Candidates) != len(want.Candidates) {
+		t.Fatalf("bounded search returned %d candidates, unbounded %d — the cap cost matches",
+			len(got.Candidates), len(want.Candidates))
+	}
+	for i := range want.Candidates {
+		if got.Candidates[i].Photo.UID != want.Candidates[i].Photo.UID {
+			t.Errorf("candidate %d = %s, want %s (ranking must be unchanged)",
+				i, got.Candidates[i].Photo.UID, want.Candidates[i].Photo.UID)
+		}
+		if got.Candidates[i].Distance != want.Candidates[i].Distance {
+			t.Errorf("candidate %d distance = %v, want %v",
+				i, got.Candidates[i].Distance, want.Candidates[i].Distance)
+		}
+	}
+	for _, candidate := range got.Candidates {
+		if strings.HasPrefix(candidate.Photo.FileName, "stranger") {
+			t.Errorf("stranger %s slipped through the threshold at distance %v",
+				candidate.Photo.UID, candidate.Distance)
+		}
+	}
+
+	// A tighter threshold: the distance cut now lives in Go rather than in the SQL
+	// predicate, so it has to land in exactly the same place.
+	tight, err := h.svc.Find(ctx, subject.UID, candidates.Request{Threshold: 0.25})
+	if err != nil {
+		t.Fatalf("Find(threshold 0.25): %v", err)
+	}
+	if len(tight.Candidates) == 0 || len(tight.Candidates) >= len(got.Candidates) {
+		t.Fatalf("candidates within 0.25 = %d, want some but fewer than the %d within 0.5",
+			len(tight.Candidates), len(got.Candidates))
+	}
+	for _, candidate := range tight.Candidates {
+		if candidate.Distance > 0.25 {
+			t.Errorf("candidate %s at %v exceeds the requested threshold 0.25",
+				candidate.Photo.UID, candidate.Distance)
+		}
+	}
+}
+
+// atDistance returns a unit face vector whose cosine distance from the e0 exemplar
+// direction is distance, so a test can plant a lookalike at a chosen similarity.
+func atDistance(distance float64) []float32 {
+	cos := 1 - distance
+	return vec(map[int]float32{0: float32(cos), 1: float32(math.Sqrt(1 - cos*cos))})
 }

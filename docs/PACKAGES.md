@@ -802,10 +802,15 @@ to `## Package map` in `CLAUDE.md`.
   `FindSimilarUnassignedFaceCandidates(vec,limit,maxDistance,exclude)` (like the previous one, but only
   **unassigned** faces `subject_uid IS NULL` and with an **exclusion set** `[]FaceKey` filtered out
   directly in SQL (an anti-join via `unnest` of two parallel arrays) — the basis of finding a person among
-  untagged photos, the recognition sweep and the review game; filters **before** `LIMIT` and runs under
-  `hnsw.iterative_scan = strict_order`, so the caller gets `limit` candidates even when rejections
+  untagged photos, the recognition sweep and the review game; the exclusion filters **before** `LIMIT` and
+  runs under `hnsw.iterative_scan = strict_order`, so the caller gets `limit` candidates even when rejections
   take away the nearest neighbours — filtering only after the HNSW limit would silently shrink the result, which is a real
-  bug)/
+  bug. `subject_uid IS NULL` is served by the **partial index** `idx_faces_unassigned_hnsw` (migration 0047),
+  whose predicate is this `WHERE` clause verbatim; keep the two in step or the search costs 9× again.
+  `maxDistance` is the one filter applied **in Go**, by cutting the distance-ordered rows at the first one
+  beyond it — the same set a SQL predicate returns, but a `(embedding <=> $1) <= x` in the `WHERE` clause is
+  invisible to the index scan and made the iterative scan walk to `hnsw.max_scan_tuples` on every call:
+  90 ms per exemplar instead of 10, see `docs/PERF.md` §3)/
   `FacesByKeys(keys)` (batch fetch of `faces` rows by `[]FaceKey` `(photo_uid,face_index)` in one
   query via `JOIN unnest` — **including embeddings**; keys with no row (a face deleted by re-detection)
   are missing from the result, order undefined, empty input → `nil`; the basis of `internal/candidates`,
@@ -1051,8 +1056,12 @@ to `## Package map` in `CLAUDE.md`.
   with an even stride **in SQL**, plus the subject's true face/photo totals — and **deduplicates exemplars to
   one per source photo** (highest `det_score`, tie lowest `face_index`), so a photo with three
   faces of that person doesn't vote three times; for each exemplar runs `FindSimilarUnassignedFaceCandidates`
-  with **bounded concurrency** (`errgroup.SetLimit`) and an exclusion set of already-rejected faces
-  (`feedback.FaceRejectionsForSubject`); **merges candidates with voting** (`match_count` = the number of
+  with **bounded concurrency** (`errgroup.SetLimit`), an exclusion set of already-rejected faces
+  (`feedback.FaceRejectionsForSubject`) and a **per-exemplar neighbour cap that follows the source set**
+  (`perExemplarLimit`: a lone exemplar keeps `SearchLimit` — the store caps it at its own 500-row maximum,
+  which makes its ranking exact — a crowd gets `4·MaxCandidates` shared between them, floored at 100; every
+  neighbour is paid for once per exemplar, which is why a 428-exemplar subject took 13.7 s, see
+  `docs/PERF.md` §3); **merges candidates with voting** (`match_count` = the number of
   distinct exemplars, `distance` = the **minimum** across votes); **vote rule** `min_match_count`
   (`computeMinMatchCount`, scales `√exemplarCount * threshold/base / 2`, **clamp 1..5** and ≤ the number of
   exemplars — a single-face subject always 1; returned in the response so the UI can explain the filter); then

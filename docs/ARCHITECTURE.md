@@ -469,6 +469,13 @@ Same as photo-sorter (`EMBEDDING_URL`, offline-aware by default). HTTP:
   the caller gets the number of candidates it asked for even when rejections take away the nearest neighbors —
   **filtering only after the HNSW limit would quietly shrink the result** (a list of 50 from which rejections remove
   30 must still return 50 good candidates). This is a design decision, not an implementation detail.
+- **The unassigned-face search has its own partial index** (`idx_faces_unassigned_hnsw`, migration 0047)
+  whose predicate is that `WHERE subject_uid IS NULL` verbatim, and the **distance threshold is applied in Go**
+  to the ordered rows rather than as a SQL predicate. Both follow from the same property of the iterative scan:
+  a filter it cannot see forces it to walk the graph to `hnsw.max_scan_tuples` before it gives up. Around a
+  well-tagged person nearly every near neighbor is already assigned, so on the full index that happened on
+  every one of the hundreds of per-exemplar searches a single request runs — 13.7 s for one request, measured.
+  This too is a design decision: the index predicate and the query's `WHERE` clause must stay written the same way.
 - **The negative-exemplar rule** (`vectors.IsNegativeExemplar`, shared for faces and labels):
   so that a rejection **teaches**, not just hides one row. For a candidate *C* and a subject *S*: compute
   the distance from *C* to the nearest **accepted** exemplar of *S* (faces already assigned / photos carrying

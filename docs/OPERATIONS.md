@@ -22,7 +22,12 @@ configuration key both here **and** into `config.example.yaml`.
   `index.html`; `serve` additionally sets up **structured logging** (`obs.Setup`, JSON slog to
   stderr, level `log.level`) and — when `metrics.enabled` — builds the `metrics.Registry`, registers
   the DB-pool + job-queue-depth + geocode-credit-budget collectors, and inserts the request-metrics + access-log middleware via
-  `server.WithMiddleware`/`WithMetricsHandler`), `kukatko migrate` (runs pending migrations on their own and exits),
+  `server.WithMiddleware`/`WithMetricsHandler`; **note on the first start after an upgrade to
+  migration 0047**: it builds a second HNSW graph over the unassigned faces and that is
+  minutes of work on a large library — a couple per 50 000 faces on Pi-class hardware,
+  once, before the server accepts anything. Run `kukatko migrate` ahead of the deploy if that
+  downtime matters; see `docs/PERF.md` §3),
+  `kukatko migrate` (runs pending migrations on their own and exits),
   `kukatko migrate photosorter` (synchronous read-only incremental **data migration from photo-sorter** —
   `psimport`; applies DB migrations, then `Service.Migrate`; needs `import.photosorter.dsn`, otherwise
   `errPSMigrateNotConfigured`; for ops/cron without a running server),

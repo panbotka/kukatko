@@ -528,8 +528,9 @@ Bounding it properly means computing the centroid and the distances in SQL, whic
 is a different job from this one. Noted rather than silently claimed as fixed.
 
 **The runnable check.** `internal/candidates/memory_test.go` asserts both axes
-structurally — 20× the exemplars must not cost more than 1.5× the bytes, 80× the
-matches not more than 2×, and neither may exceed a 96 MiB ceiling. It runs in
+structurally — 20× the exemplars must not cost more than 1.5× the bytes, an
+order of magnitude more matches not more than 2×, and neither may exceed a
+96 MiB ceiling. It runs in
 `make check` (no build tag). Removing either cap makes it fail by an order of
 magnitude, so it is a real regression detector and not a passing decoration:
 
@@ -557,6 +558,114 @@ container restarts", which is the difference the limit buys. Sizing rests on the
 measurements above: bounded requests peak in the tens of megabytes, and the
 CPU-bound worker pool (`KUKATKO_WORKER_COUNT: 4`, thumbnail decodes) is the other
 consumer.
+
+### The candidate search's latency (`POST /subjects/{uid}/candidates`)
+
+**Symptom (production, 2026-08-03, from the user).**
+`/faces?subject=sudh96iqevipv1v2cjfn85a26q&threshold=60&limit=0` "takes forever.
+In the sorter it took a few milliseconds." The subject is Tomáš Kozák, 428
+markers. The HNSW indexes were all in place, so this was never a missing index.
+
+**Reproduced before anything was changed**, because a fix without a number
+before and after is a guess. A synthetic library of the production shape was
+loaded into the development database on the Pi: 50 410 faces over 1 000
+identities, one of them holding 460 faces of which 428 are assigned to a subject
+and 32 are not. Baseline, warm cache, nothing else running:
+
+```
+Find(subject, threshold 0.4): 13.7 s, 428 exemplars, 32 candidates
+```
+
+**Root cause — the per-exemplar query, not the number of them.** Every exemplar
+ran this, under `hnsw.iterative_scan = strict_order`:
+
+```sql
+WHERE subject_uid IS NULL AND (embedding <=> $1) <= 0.4
+ORDER BY embedding <=> $1 LIMIT 500
+```
+
+`EXPLAIN (ANALYZE, BUFFERS)` on one of them:
+
+```
+Limit (actual time=5.4..116.8 rows=32)
+  -> Index Scan using idx_faces_hnsw on faces (actual rows=32)
+       Rows Removed by Filter: 20260
+       Buffers: shared hit=38874 read=3957
+Execution Time: 117.4 ms
+```
+
+`20260` is `hnsw.max_scan_tuples` (20 000) plus the overshoot of the batch that
+reached it — the scan gave up on the cap, not on running out of neighbours. Both
+filters are invisible to the index scan, so the iterative scan cannot tell "no
+more rows are near enough" from "keep looking" and walks the graph until the cap
+— **every time, for every exemplar, whatever the LIMIT**. 428 exemplars × 90 ms
+of graph walking is the whole 13.7 s. The two filters cost differently, though:
+
+| variant (same query, same 32 rows out) | time |
+| --- | ---: |
+| iterative scan + distance predicate (**before**) | 90 ms |
+| iterative scan, distance cut in Go | 38 ms |
+| iterative scan, distance cut in Go, 100 neighbours | 15 ms |
+| partial index, distance cut in Go, 100 neighbours (**after**) | 10 ms |
+
+**Fix — three changes, none of which touches what the search returns.**
+
+1. **A partial HNSW index** (`0047_faces_unassigned_hnsw.sql`) whose predicate is
+   the search's predicate verbatim: `WHERE subject_uid IS NULL`. In the
+   neighbourhood of a well-tagged person almost every near neighbour *is*
+   assigned — they are that person's own tagged faces — so on the full index the
+   filter threw nearly all of them away and the iterative scan had to keep
+   walking. On the partial index there is nothing to filter. Cost of carrying it:
+   65 MB per 50 000 faces, and assignment writes maintain both graphs.
+2. **The distance cut moved out of SQL into Go**
+   (`internal/vectors.FindSimilarUnassignedFaceCandidates`). The rows arrive
+   ordered by distance, so stopping at the first one beyond `maxDistance` yields
+   exactly the set the SQL predicate did — including when more faces are within
+   the threshold than the `LIMIT`, where both keep the nearest `LIMIT` of them —
+   without blinding the index scan.
+3. **A per-exemplar neighbour cap that follows the source set**
+   (`internal/candidates.perExemplarLimit`): a lone exemplar keeps the full
+   500-row maximum, a crowd gets `4 × max_candidates` shared between them, floored
+   at 100. Every neighbour is paid for once per exemplar, and 428 × 400 unwanted
+   neighbours is most of what remained after (1) and (2).
+
+**End to end, same library, same query:**
+
+| | before | after |
+| --- | ---: | ---: |
+| 428 exemplars, 32 unnamed matches | 13.7 s | **0.80 s** |
+| 428 exemplars, 632 unnamed matches | — | 0.66 s |
+
+**Quality is unchanged, and that is measured too.** Both benchmark shapes — the
+sparse one above and a dense one where every exemplar has 632 unnamed neighbours
+inside the threshold — return the *identical* candidate set in the identical
+order with the cap at 100 and at the store's 500-row maximum. The regression net
+is `TestFind_perExemplarCapCostsNoMatchesDB` (`internal/candidates`,
+`-tags integration`), which plants the shape in which the cap could bite and
+requires the bounded search to equal an unbounded one candidate for candidate;
+dropping the cap to 8 makes it fail. `TestUnassignedFaceHNSWIndexExists`
+(`internal/vectors`) guards the index predicate, because a drift between it and
+the query's `WHERE` clause breaks nothing — it just silently costs 9× again.
+
+**Ruled out, with measurements rather than opinion:**
+
+- **`ef_search`.** Recall on this library is complete at `ef_search = 40`; the
+  pinned 100 is not the problem and raising it only costs latency (200 → 14 ms,
+  400 → 21 ms, 800 → 29 ms per query, all returning the same 32 rows).
+- **Batching the round trips.** One transaction per exemplar is five round trips,
+  2 140 of them per request. A `CROSS JOIN LATERAL` over `unnest(...) WITH
+  ORDINALITY` does use the partial index and collapses them to one — but at
+  0.8 s wall for 4.3 s of database CPU the concurrency already hides them, so it
+  would buy latency the request does not spend. Not done.
+- **One query over a centroid**, which is what photo-sorter is assumed to have
+  done. It would be a single query, but it collapses a person's several
+  appearances into one point and there is no widening radius that provably covers
+  the exemplars' union: for face embeddings the angular triangle inequality gives
+  a radius above 90°, i.e. "everything". Rejected on quality.
+
+**The catch-all subject is already bounded.** `candidates.max_exemplars` (500)
+caps the source set before any of this, so the 16 532-exemplar "person" runs 500
+searches, not 16 532 — the same bound that fixed the memory blow-up above.
 
 ---
 
