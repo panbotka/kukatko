@@ -1,7 +1,8 @@
 package review
 
 // Queue building: run the existing candidate searches over a bounded window of
-// the library, keep only the uncertainty band, order by informativeness and
+// the library, keep only the uncertainty band, order by informativeness, spread
+// the questions across the entities they are about (see variety.go) and
 // interleave the two kinds.
 //
 // The bound is the point. The game shows one question at a time, so producing a
@@ -84,7 +85,8 @@ type material struct {
 // for need questions per source. The caller holds sess.mu, so concurrent batch
 // fetches for one user never run the searches twice. The result is deterministic
 // for a fixed library state and a fixed pair of cursors: both searches' outputs
-// are re-sorted here, so goroutine completion order cannot leak into the queue.
+// are re-sorted here, so goroutine completion order cannot leak into the queue,
+// and the variety rules on top of that sort are pure functions of it.
 func (s *Service) rebuild(ctx context.Context, sess *session, need int) error {
 	mat, err := s.collect(ctx, need)
 	if err != nil {
@@ -94,13 +96,20 @@ func (s *Service) rebuild(ctx context.Context, sess *session, need int) error {
 	labelQs := excludeSeen(mat.labelQs, sess)
 	s.orderQuestions(faceQs)
 	s.orderQuestions(labelQs)
-	sess.queue = capQueue(interleave(faceQs, labelQs))
+	// Each source is spread before the merge, not after. Interleaving only ever
+	// inserts questions of the other kind between two of the same kind, and a
+	// face question and a label question are never about the same entity, so any
+	// run in the merged queue is a run inside one source: bounding the sources
+	// bounds the queue.
+	sess.queue = capQueue(interleave(spread(faceQs, maxSameEntityRun), spread(labelQs, maxSameEntityRun)))
 	sess.hasQueue = true
 	sess.builtAt = s.now()
 	sess.reason = ReasonNoCandidates
 	if !mat.degraded && mat.subjectsTotal == 0 && mat.labelsTotal == 0 {
 		sess.reason = ReasonNoSources
 	}
+	s.log.DebugContext(ctx, "review: queue rebuilt", "questions", len(sess.queue),
+		"entities", countEntities(sess.queue), "longest_run", longestEntityRun(sess.queue))
 	return nil
 }
 
@@ -146,10 +155,12 @@ func (s *Service) tolerateDeadline(ctx context.Context, err error) bool {
 
 // faceQuestions scans a bounded, rotating window of the named subjects and keeps
 // the candidates inside the uncertainty band, stopping as soon as need of them
-// are in hand. It also returns how many named subjects the library holds — the
-// full count, not the window's — for the empty-library reason. The scan bounds
-// its own concurrency and already excludes assigned faces, persisted rejections,
-// negative exemplars and sub-reviewable faces.
+// are in hand — where each subject contributes at most MaxPerEntity, so "enough"
+// can only be reached by scanning several people. It also returns how many named
+// subjects the library holds — the full count, not the window's — for the
+// empty-library reason. The scan bounds its own concurrency and already excludes
+// assigned faces, persisted rejections, negative exemplars and sub-reviewable
+// faces.
 //
 // The band is pushed all the way down into the search as a distance window rather
 // than filtered out here: confidence >= BandMin is the scan's Threshold, and
@@ -174,7 +185,11 @@ func (s *Service) faceQuestions(ctx context.Context, need int) ([]Question, int,
 }
 
 // personQuestions converts one subject's scanned candidates into face questions,
-// keeping only the uncertainty band and dropping stale already-done rows.
+// keeping only the uncertainty band, dropping stale already-done rows and
+// keeping at most MaxPerEntity of what is left. The cap is applied here rather
+// than after the scan on purpose: the scan stops once it holds need questions,
+// so capping first is what makes "enough" mean "enough from enough different
+// people" instead of "enough from whoever happened to be scanned first".
 func (s *Service) personQuestions(person *sweep.Person) []Question {
 	if person == nil {
 		return nil
@@ -200,15 +215,28 @@ func (s *Service) personQuestions(person *sweep.Person) []Question {
 			MarkerUID:  cand.MarkerUID,
 		})
 	}
+	return s.keepBest(questions)
+}
+
+// keepBest orders one entity's questions by informativeness and keeps at most
+// MaxPerEntity of them, which is the share of a batch a single subject or label
+// may claim. It orders before it cuts, so what survives is the entity's most
+// informative material, not whatever the search happened to return first.
+func (s *Service) keepBest(questions []Question) []Question {
+	s.orderQuestions(questions)
+	if len(questions) > s.maxPerEntity {
+		questions = questions[:s.maxPerEntity]
+	}
 	return questions
 }
 
 // labelQuestions runs the label-similarity search over a bounded, rotating
 // window of the labels that have photos and keeps the candidates inside the
-// uncertainty band, stopping as soon as need of them are in hand. It also
-// returns how many labels have photos library-wide, for the empty-library
-// reason. A single label's search failing is logged and skipped, like the
-// per-subject scan's policy.
+// uncertainty band, stopping as soon as need of them are in hand — again
+// counting at most MaxPerEntity per label, so one prolific label cannot end the
+// scan on its own. It also returns how many labels have photos library-wide, for
+// the empty-library reason. A single label's search failing is logged and
+// skipped, like the per-subject scan's policy.
 func (s *Service) labelQuestions(ctx context.Context, need int) ([]Question, int, error) {
 	labels, total, err := s.labelPlan(ctx)
 	if err != nil {
@@ -286,7 +314,10 @@ func (s *Service) scanLabels(ctx context.Context, chunk []organize.LabelCount) (
 }
 
 // labelResultQuestions converts one label's similarity candidates into label
-// questions, keeping only the uncertainty band.
+// questions, keeping only the uncertainty band and, of those, at most
+// MaxPerEntity — the same share rule the face side applies, and for the same
+// reason: a label that matches half the library returns hundreds of band
+// candidates and would otherwise be the only thing the batch asks about.
 func (s *Service) labelResultQuestions(label organize.Label, res expand.Result) []Question {
 	var questions []Question
 	for _, cand := range res.Candidates {
@@ -302,7 +333,7 @@ func (s *Service) labelResultQuestions(label organize.Label, res expand.Result) 
 			Label:      &labelCopy,
 		})
 	}
-	return questions
+	return s.keepBest(questions)
 }
 
 // rotateLabels returns the budget-long window of labels starting at offset,
@@ -385,6 +416,11 @@ func (s *Service) orderQuestions(questions []Question) {
 // match, skewed toward the kind with more candidates otherwise. Positions are
 // compared as exact integer rationals ((2i+1)/2·len) so the merge is
 // deterministic with no floating-point or randomness involved.
+//
+// It takes from each list in order and never reorders within one, so a run of
+// one entity in the merged sequence is a run inside one of the inputs: whatever
+// bound spread put on the sources survives the merge (and the later truncation
+// to a batch, which only ever keeps a prefix).
 func interleave(faceQs, labelQs []Question) []Question {
 	merged := make([]Question, 0, len(faceQs)+len(labelQs))
 	fi, li := 0, 0

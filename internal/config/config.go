@@ -506,6 +506,12 @@ type ReviewConfig struct {
 	// it has; the backstop behind the two budgets. A non-positive value falls
 	// back to the default.
 	BuildTimeout time.Duration `mapstructure:"build_timeout"`
+	// MaxPerEntity caps how many questions about one subject or one label may
+	// enter a batch, which is what keeps the game from asking twenty times in a
+	// row about the same label. Lower means more variety and a costlier rebuild
+	// (a batch has to be filled from more people and labels); higher means the
+	// opposite. A non-positive value falls back to the default.
+	MaxPerEntity int `mapstructure:"max_per_entity"`
 }
 
 // AuthConfig holds the credentials used to bootstrap the initial admin account
@@ -910,9 +916,10 @@ func setExpandDefaults(v *viper.Viper) {
 
 // setReviewDefaults registers the review game defaults: the uncertainty band
 // (roughly "the system is 45–75 % sure"), the batch size the UI prefetches, the
-// per-user queue cache window, the bounds on the label fan-out, and the
-// per-rebuild work budgets plus the deadline that keep one batch of questions
-// off the library's growth curve.
+// per-user queue cache window, the bounds on the label fan-out, the per-rebuild
+// work budgets plus the deadline that keep one batch of questions off the
+// library's growth curve, and the share of a batch a single person or label may
+// claim.
 func setReviewDefaults(v *viper.Viper) {
 	v.SetDefault("review.band_min", 0.45)
 	v.SetDefault("review.band_max", 0.75)
@@ -923,6 +930,7 @@ func setReviewDefaults(v *viper.Viper) {
 	v.SetDefault("review.face_budget", 8)
 	v.SetDefault("review.label_budget", 6)
 	v.SetDefault("review.build_timeout", "15s")
+	v.SetDefault("review.max_per_entity", 4)
 }
 
 func setMapsDefaults(v *viper.Viper) {

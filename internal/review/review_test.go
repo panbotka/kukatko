@@ -195,8 +195,12 @@ type fixture struct {
 	faces    *fakeFaces
 	feedback *fakeFeedback
 	assigner *fakeAssigner
-	now      *time.Time
-	svc      *Service
+	// perEntity overrides Config.MaxPerEntity (0 = the package default), so a
+	// test can widen or tighten the share one subject or label may take of a
+	// batch.
+	perEntity int
+	now       *time.Time
+	svc       *Service
 }
 
 // newFixture builds a Service over fresh fakes with a controllable clock.
@@ -216,13 +220,14 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 		mutate(f)
 	}
 	f.svc = New(Config{
-		Sweeper:  f.sweeper,
-		Expander: f.expander,
-		Organize: f.organize,
-		Faces:    f.faces,
-		Feedback: f.feedback,
-		Assigner: f.assigner,
-		Now:      func() time.Time { return *f.now },
+		Sweeper:      f.sweeper,
+		Expander:     f.expander,
+		Organize:     f.organize,
+		Faces:        f.faces,
+		Feedback:     f.feedback,
+		Assigner:     f.assigner,
+		MaxPerEntity: f.perEntity,
+		Now:          func() time.Time { return *f.now },
 	})
 	return f
 }
@@ -400,15 +405,17 @@ func TestQueue_cacheTTL(t *testing.T) {
 
 func TestQueue_limit(t *testing.T) {
 	t.Parallel()
+	// Three band candidates on one subject — under the per-entity share, so what
+	// the limit does is the only thing under test here.
 	f := newFixture(t, func(f *fixture) {
-		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4, 0.41, 0.42, 0.43, 0.44)}
+		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4, 0.41, 0.42)}
 	})
 	res, err := f.svc.Queue(context.Background(), "user", 2)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if len(res.Questions) != 2 || res.Remaining != 5 {
-		t.Fatalf("batch = %d remaining = %d, want 2/5", len(res.Questions), res.Remaining)
+	if len(res.Questions) != 2 || res.Remaining != 3 {
+		t.Fatalf("batch = %d remaining = %d, want 2/3", len(res.Questions), res.Remaining)
 	}
 }
 

@@ -54,6 +54,7 @@ func buildReviewAPI(
 		FaceBudget:       cfg.Review.FaceBudget,
 		LabelBudget:      cfg.Review.LabelBudget,
 		BuildTimeout:     cfg.Review.BuildTimeout,
+		MaxPerEntity:     cfg.Review.MaxPerEntity,
 	})
 	return reviewapi.NewAPI(reviewapi.Config{
 		Service:      svc,
