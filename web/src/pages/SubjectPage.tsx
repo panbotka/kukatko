@@ -22,6 +22,7 @@ import { useReloadKey } from '../hooks/useReloadKey'
 import { useSubjectPhotos } from '../hooks/useSubjectPhotos'
 import { DETAIL_DEFAULTS, detailQueryString } from '../lib/detailView'
 import { GRID_GAP_PX, gridTemplateColumns } from '../lib/gridDensity'
+import { isNotFound } from '../services/auth'
 import { fetchSubject, type Subject, updateSubject } from '../services/people'
 
 /**
@@ -31,8 +32,17 @@ import { fetchSubject, type Subject, updateSubject } from '../services/people'
  */
 const PEOPLE_PATH = '/people'
 
-/** Fetch lifecycle of the subject record. */
-type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; subject: Subject }
+/**
+ * Fetch lifecycle of the subject record. `missing` is a 404 kept apart from
+ * `error`: a person reached from an audit entry may well have been deleted or
+ * merged away since — the log records that — and "this no longer exists" is a
+ * different message from "could not be loaded".
+ */
+type State =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'missing' }
+  | { status: 'ready'; subject: Subject }
 
 /**
  * A subject's page: header (name, type, edit, and the shared images-per-row
@@ -91,7 +101,7 @@ export function SubjectPage() {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return
         }
-        setState({ status: 'error' })
+        setState({ status: isNotFound(err) ? 'missing' : 'error' })
       })
     return () => {
       controller.abort()
@@ -171,6 +181,16 @@ export function SubjectPage() {
         <h2 className="kk-section-title">{t('subject.photos')}</h2>
         <GridSkeleton label={t('subject.loadingPhotos')} />
       </>
+    )
+  }
+
+  if (state.status === 'missing') {
+    return (
+      <ErrorState
+        title={t('subject.missing')}
+        hint={t('subject.missingHint')}
+        action={<BackLink to={PEOPLE_PATH} label={t('subject.back')} />}
+      />
     )
   }
 

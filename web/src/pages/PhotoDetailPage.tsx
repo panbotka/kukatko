@@ -41,6 +41,7 @@ import { photoDisplayTitle, photoTitleText, titleSource } from '../lib/photoTitl
 import { isTypingElement, ratingHotkey } from '../lib/ratingHotkeys'
 import { toMode } from '../lib/searchView'
 import { readUrlState } from '../lib/urlState'
+import { isNotFound } from '../services/auth'
 import {
   archivePhoto,
   downloadUrl,
@@ -60,10 +61,16 @@ import {
 /** Preview size for the viewer stage: a large fit-to-box preview, not a tile. */
 const PREVIEW_SIZE = 'fit_1920'
 
-/** Fetch lifecycle of the photo detail (the photo and its stored edit). */
+/**
+ * Fetch lifecycle of the photo detail (the photo and its stored edit). `missing`
+ * is a 404 kept apart from `error`: a photo reached from an audit entry may well
+ * have been purged since — the log records the purge — and "this no longer
+ * exists" is a different message from "could not be loaded".
+ */
 type State =
   | { status: 'loading' }
   | { status: 'error' }
+  | { status: 'missing' }
   | { status: 'ready'; photo: PhotoDetail; edit: PhotoEdit }
 
 /**
@@ -458,7 +465,7 @@ export function PhotoDetailPage() {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return
         }
-        setState({ status: 'error' })
+        setState({ status: isNotFound(err) ? 'missing' : 'error' })
       })
     return () => {
       controller.abort()
@@ -495,12 +502,14 @@ export function PhotoDetailPage() {
     )
   }
 
-  if (state.status === 'error') {
+  if (state.status === 'error' || state.status === 'missing') {
+    const gone = state.status === 'missing'
     return (
       <div className="kk-viewer" data-chrome="visible">
         <div className="kk-viewer__stage">
           <ErrorState
-            title={t('photo.error')}
+            title={gone ? t('photo.missing') : t('photo.error')}
+            hint={gone ? t('photo.missingHint') : undefined}
             action={
               <Button variant="outline-light" size="sm" onClick={close}>
                 {t('photo.back')}

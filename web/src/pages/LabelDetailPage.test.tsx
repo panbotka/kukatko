@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { ApiError } from '../services/auth'
 import { type Label } from '../services/organize'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -175,6 +176,18 @@ describe('LabelDetailPage', () => {
 
     const back = await screen.findByRole('link', { name: 'Back to labels' })
     expect(back).toHaveAttribute('href', '/labels')
+  })
+
+  it('says a deleted label is gone rather than failing blankly', async () => {
+    // The audit log outlives what it audits, so a link from it may well point at
+    // a label that has since been deleted.
+    fetchLabelMock.mockRejectedValue(new ApiError(404, 'label not found'))
+    fetchPhotosMock.mockResolvedValue(page([]))
+    renderPage()
+
+    expect(await screen.findByText('This label no longer exists.')).toBeInTheDocument()
+    expect(screen.queryByText('Could not load this label.')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Back to labels' })).toHaveAttribute('href', '/labels')
   })
 
   it('links each tile to the detail page carrying the label scope', async () => {

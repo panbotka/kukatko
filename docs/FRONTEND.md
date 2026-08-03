@@ -880,7 +880,21 @@ here.
   `AuditChange`/`AuditChanges` in `services/audit.ts`), it is rendered by `readChanges`+`ChangesTable` as
   a compact table **pole / původní / nová** (`data-testid="audit-changes"`, a cleared field =
   `null`/`""` → a muted dash via `ChangeValue`); records without `changes` (legacy, non-edit actions)
-  fall back to the existing `JSON.stringify`. Filters (actor = a `<select>` over the roster via `fetchUsers`, action, entity type+UID,
+  fall back to the existing `JSON.stringify`.
+  **The Target column links to the thing that was edited** (`AuditTarget` + `auditTargetHref`): the UID under the
+  type is a `<Link>` to `/photos|/albums|/labels/{uid}`, or `/people/{uid}` for a `subjects` target; a `markers`
+  entry — a marker UID addresses no page of its own — is routed through its own `details.photo_uid` and lands on
+  `/photos/{uid}?person={subject_uid}&info=1` when the payload names a subject. A target with no detail page
+  (`users`, `api_tokens`, `announcement`) keeps the plain muted UID, so the row stays scannable either way. The
+  expanded block opens with the same links for the UIDs the payload itself names (`auditDetailLinks`,
+  `data-testid="audit-links"`, grouped by the `<entity>_uid`/`_uids` key, cut off at `AUDIT_DETAIL_LINK_LIMIT`
+  = 25 with `audit.details.moreLinks`) — the target is not always the useful destination (`label.reject` targets
+  the label but happened on a photo) and a bulk action names no target at all, listing its photos only in
+  `details`. **The audit log outlives what it audits**, so a link to a purged photo or a deleted album is normal,
+  not exceptional: the link is offered anyway and the destination says so itself — a 404 (`isNotFound`) puts
+  `AlbumDetailPage`/`LabelDetailPage`/`SubjectPage`/`PhotoDetailPage` into a `missing` state
+  (*Toto album už neexistuje.* + a hint) instead of the generic “could not be loaded”.
+  Filters (actor = a `<select>` over the roster via `fetchUsers`, action, entity type+UID,
   date range `od`/`do`) in a **draft** form → **Filtrovat** writes them to the URL and resets
   the page, **Zrušit filtry** clears them; the dates are expanded in `viewToParams` to RFC 3339 day boundaries
   (UTC). prev/next pagination over `offset`/`next_offset` (limit 100) with a `od–do z total` count;
@@ -1952,7 +1966,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `auditView.ts` = the `AuditView` type (filters + `offset`, string-only for the URL) + `AUDIT_DEFAULTS`
   + `AUDIT_PAGE_SIZE` (100) + `pickFilters` (the view without the offset) + `viewToParams` (maps onto
   `AuditListParams`, `since`/`until` from `YYYY-MM-DD` are expanded to the RFC 3339 day boundaries in UTC) — the basis for
-  `AuditPage`;
+  `AuditPage`; plus the **one** `target_type -> path` table both its Target column and its details block are
+  driven by: `auditTargetHref(record)` (null for a type with no page, or a `markers` entry whose details name no
+  photo) and `auditDetailLinks(details)` → `{groups, hidden}` (the `<entity>_uid`/`_uids` keys of a known entity,
+  grouped by key, a destination never repeated, capped at `AUDIT_DETAIL_LINK_LIMIT` = 25);
   `reviewDecisions.ts` = the view model for `ReviewDecisionsPage`: the `ReviewDecisionsView` type
   (`user`/`decision`/`offset`, string-only for the URL) + `REVIEW_DECISIONS_DEFAULTS`
   + `REVIEW_DECISIONS_PAGE_SIZE` (60) + `viewToAuditParams` (always `via:'review'` + `decision`)
@@ -2105,7 +2122,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` over `GET /api/v1/capabilities`
   → `Capabilities{semantic_search}` (it sends the session cookie, `credentials:'same-origin'`), `auth.ts` = login/logout/me/changePassword, the types
   `User`/`Role` (the strict ladder `viewer < editor < admin < maintainer`)/`AuthSession`, `ApiError` with a
-  status, `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) and
+  status, `isNotFound(err)` (a 404 = "there is no such thing", which the detail pages tell apart from a failed
+  load so a link out of the audit log to something deleted explains itself),
+  `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) and
   `canImport` (= maintainer; import is an operational capability) — all via `ROLE_RANK` mirroring the backend's
   `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; `photos.ts` = `fetchPhotos(params,signal)` over `GET /api/v1/photos`
   (filters/sorting/pagination → `PhotoListResponse{photos,total,limit,offset,next_offset}`),

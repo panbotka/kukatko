@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { ApiError } from '../services/auth'
 import { type Album } from '../services/organize'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
@@ -189,6 +190,19 @@ describe('AlbumDetailPage', () => {
 
     const back = await screen.findByRole('link', { name: 'Back to albums' })
     expect(back).toHaveAttribute('href', '/albums')
+  })
+
+  it('says a deleted album is gone rather than failing blankly', async () => {
+    // A link out of the audit log is a link to what an entry recorded a change
+    // of — including its deletion — so a 404 is normal here, not a failure.
+    fetchAlbumMock.mockRejectedValue(new ApiError(404, 'album not found'))
+    fetchPhotosMock.mockResolvedValue(page([]))
+    renderPage()
+
+    expect(await screen.findByText('This album no longer exists.')).toBeInTheDocument()
+    expect(screen.getByText(/It was most likely deleted/)).toBeInTheDocument()
+    expect(screen.queryByText('Could not load this album.')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Back to albums' })).toHaveAttribute('href', '/albums')
   })
 
   it('links each tile to the detail page carrying the album scope', async () => {

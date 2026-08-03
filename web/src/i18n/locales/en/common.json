@@ -613,6 +613,8 @@
   "albumDetail": {
     "back": "Back to albums",
     "error": "Could not load this album.",
+    "missing": "This album no longer exists.",
+    "missingHint": "It was most likely deleted. The audit log keeps linking to deleted things — it is the record of that change.",
     "actionError": "The action failed. Please try again.",
     "edit": "Edit",
     "delete": "Delete",
@@ -659,6 +661,8 @@
   "labelDetail": {
     "back": "Back to labels",
     "error": "Could not load this label.",
+    "missing": "This label no longer exists.",
+    "missingHint": "It was most likely deleted. The audit log keeps linking to deleted things — it is the record of that change.",
     "empty": {
       "title": "No photos with this label",
       "hint": "Attach this label to photos to see them here."
@@ -926,6 +930,8 @@
   "subject": {
     "loading": "Loading person…",
     "error": "Could not load this person.",
+    "missing": "This person no longer exists.",
+    "missingHint": "They were most likely deleted or merged into someone else. The audit log keeps linking to deleted things — it is the record of that change.",
     "back": "Back to people",
     "editButton": "Edit",
     "photos": "Photos",
@@ -1250,6 +1256,8 @@
     "loading": "Loading photo…",
     "loadingNext": "Loading photo…",
     "error": "Could not load this photo.",
+    "missing": "This photo no longer exists.",
+    "missingHint": "It was most likely purged from the trash. The audit log keeps linking to deleted things — it is the record of that change.",
     "back": "Back to the list",
     "prev": "Previous photo",
     "next": "Next photo",
@@ -2129,6 +2137,8 @@
       "show": "Show details",
       "hide": "Hide details",
       "payload": "Details",
+      "links": "Links",
+      "moreLinks": "The rest ({{n}}) is in the payload below.",
       "userAgent": "User agent"
     },
     "changes": {
