@@ -1,7 +1,13 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { GRID_COLUMNS_MAX, GRID_COLUMNS_MIN, initialColumnsForWidth } from '../lib/gridDensity'
+import {
+  GRID_COLUMNS_MAX,
+  GRID_COLUMNS_MIN,
+  initialColumnsForWidth,
+  LIBRARY_GRID_SCOPE,
+  OUTLIER_GRID_SCOPE,
+} from '../lib/gridDensity'
 
 import { useGridDensity } from './useGridDensity'
 
@@ -124,5 +130,35 @@ describe('useGridDensity', () => {
     })
 
     expect(b.result.current.density).toBe(9)
+  })
+
+  it('keeps a second scope on its own number', () => {
+    const library = renderHook(() => useGridDensity(LIBRARY_GRID_SCOPE))
+    const review = renderHook(() => useGridDensity(OUTLIER_GRID_SCOPE))
+
+    act(() => {
+      library.result.current.setDensity(9)
+    })
+
+    expect(library.result.current.density).toBe(9)
+    // Woken by the same listener set, but reading its own key: unmoved.
+    expect(review.result.current.density).toBe(initialColumnsForWidth(1024, OUTLIER_GRID_SCOPE))
+    expect(window.localStorage.getItem(OUTLIER_GRID_SCOPE.storageKey)).not.toBe('9')
+  })
+
+  it('does not thrash when the scope is passed as a fresh object each render', () => {
+    // A call site that inlines `{…}` would otherwise re-run the seeding effect on
+    // every render — the memo keys on the fields, not the object's identity.
+    const { result, rerender } = renderHook(() => useGridDensity({ ...OUTLIER_GRID_SCOPE }))
+    const seeded = initialColumnsForWidth(1024, OUTLIER_GRID_SCOPE)
+    expect(result.current.density).toBe(seeded)
+
+    act(() => {
+      result.current.setDensity(2)
+    })
+    rerender()
+    rerender()
+
+    expect(result.current.density).toBe(2)
   })
 })

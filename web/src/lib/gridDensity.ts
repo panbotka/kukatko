@@ -40,8 +40,59 @@ export const GRID_GAP_PX = 3
  */
 export const GRID_DENSITY_DEFAULT = 5
 
-/** localStorage key under which the density is persisted. Per-device, never synced. */
-const STORAGE_KEY = 'kukatko.grid.density'
+/**
+ * The width an outlier-review tile targets when its column count is seeded from
+ * the screen: the 16rem the grid was hard-coded to before it had a control. A
+ * face you are asked to judge needs far more room than a library thumbnail, so
+ * seeding it from the library's 140 px would open the page at twice the density
+ * anyone wants.
+ */
+export const OUTLIER_TILE_MIN_PX = 256
+
+/**
+ * The gap between outlier-review cards, in pixels (Bootstrap's `gap-3`). Unlike
+ * the library's hairline these are cards with buttons in them, so they need real
+ * gutters — the grid is a worksheet, not a wall of photographs.
+ */
+export const OUTLIER_GAP_PX = 16
+
+/**
+ * Which grid a density belongs to. A scope is the whole per-grid contract: where
+ * the count is persisted, what tile width seeds the first value and how wide the
+ * gutters are. It exists so a second grid can have the *same* control without
+ * sharing the *same* number.
+ */
+export interface GridDensityScope {
+  /** localStorage key under which this grid's density is persisted. */
+  storageKey: string
+  /** Target tile width used once, to seed the count from the viewport width. */
+  tileMinPx: number
+  /** The gutter between tiles, in pixels. */
+  gapPx: number
+}
+
+/**
+ * The photo library's grid: the browsing wall shared by `/library`, the album and
+ * label galleries, favorites, trash and a subject's photos.
+ */
+export const LIBRARY_GRID_SCOPE: GridDensityScope = {
+  storageKey: 'kukatko.grid.density',
+  tileMinPx: GRID_TILE_MIN_PX,
+  gapPx: GRID_GAP_PX,
+}
+
+/**
+ * The `/outliers` review grid, deliberately on its **own** key. Browsing a
+ * library and judging whether a 4 %-wide face is the right person are different
+ * jobs at different comfortable densities: sharing one number would mean every
+ * trip to `/outliers` re-densifies the library on the way back, and every trip
+ * back re-densifies the review. The control is shared; the preference is not.
+ */
+export const OUTLIER_GRID_SCOPE: GridDensityScope = {
+  storageKey: 'kukatko.outliers.density',
+  tileMinPx: OUTLIER_TILE_MIN_PX,
+  gapPx: OUTLIER_GAP_PX,
+}
 
 /**
  * Rounds a finite number to the nearest whole column and clamps it into
@@ -62,23 +113,26 @@ function viewportWidth(): number {
 
 /**
  * The concrete column count to seed the grid with for a viewport of `width`
- * pixels: roughly how many {@link GRID_TILE_MIN_PX}-wide tiles (plus the hairline
- * gaps between them) fit across it, clamped into 1..{@link GRID_COLUMNS_MAX}. This
- * is the concrete resolution of the old responsive "auto" intent — used once to
- * pick the initial value, never as an ongoing recompute. A phone lands at one or
- * two columns, a very wide monitor at the maximum.
+ * pixels: roughly how many `scope.tileMinPx`-wide tiles (plus the gaps between
+ * them) fit across it, clamped into 1..{@link GRID_COLUMNS_MAX}. This is the
+ * concrete resolution of the old responsive "auto" intent — used once to pick the
+ * initial value, never as an ongoing recompute. A phone lands at one or two
+ * columns, a very wide monitor at the maximum.
  */
-export function initialColumnsForWidth(width: number): number {
+export function initialColumnsForWidth(
+  width: number,
+  scope: GridDensityScope = LIBRARY_GRID_SCOPE,
+): number {
   if (!Number.isFinite(width) || width <= 0) {
     return GRID_DENSITY_DEFAULT
   }
-  const fit = Math.floor((width + GRID_GAP_PX) / (GRID_TILE_MIN_PX + GRID_GAP_PX))
+  const fit = Math.floor((width + scope.gapPx) / (scope.tileMinPx + scope.gapPx))
   return clampColumns(fit)
 }
 
 /** The seed column count for the current viewport — auto's one and only job. */
-export function initialColumns(): number {
-  return initialColumnsForWidth(viewportWidth())
+export function initialColumns(scope: GridDensityScope = LIBRARY_GRID_SCOPE): number {
+  return initialColumnsForWidth(viewportWidth(), scope)
 }
 
 /**
@@ -88,11 +142,14 @@ export function initialColumns(): number {
  * seeded from the current viewport width. Never throws, and always returns a
  * number in range.
  */
-export function sanitizeDensity(raw: unknown): number {
+export function sanitizeDensity(
+  raw: unknown,
+  scope: GridDensityScope = LIBRARY_GRID_SCOPE,
+): number {
   if (typeof raw === 'number' && Number.isFinite(raw)) {
     return clampColumns(raw)
   }
-  return initialColumns()
+  return initialColumns(scope)
 }
 
 /**
@@ -102,8 +159,12 @@ export function sanitizeDensity(raw: unknown): number {
  * {@link GRID_COLUMNS_MAX} the ceiling. The input is sanitized first, so a
  * tampered value can never step off the ladder.
  */
-export function stepDensity(density: number, delta: number): number {
-  const current = sanitizeDensity(density)
+export function stepDensity(
+  density: number,
+  delta: number,
+  scope: GridDensityScope = LIBRARY_GRID_SCOPE,
+): number {
+  const current = sanitizeDensity(density, scope)
   if (delta < 0) {
     return Math.max(GRID_COLUMNS_MIN, current - 1)
   }
@@ -121,10 +182,10 @@ export function stepDensity(density: number, delta: number): number {
  * use, and migrate a legacy `'auto'` to a real number rather than recomputing it
  * on every render. A stored number is clamped into range before it is returned.
  */
-export function readStoredDensity(): number | null {
+export function readStoredDensity(scope: GridDensityScope = LIBRARY_GRID_SCOPE): number | null {
   let raw: string | null
   try {
-    raw = window.localStorage.getItem(STORAGE_KEY)
+    raw = window.localStorage.getItem(scope.storageKey)
   } catch {
     // Storage unavailable (private mode / no window) — treat as "no preference".
     return null
@@ -147,9 +208,9 @@ export function readStoredDensity(): number | null {
  * Persists the column count. Failures (storage disabled / quota) are swallowed:
  * persistence is best-effort and must never break the grid.
  */
-export function writeDensity(density: number): void {
+export function writeDensity(density: number, scope: GridDensityScope = LIBRARY_GRID_SCOPE): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(density))
+    window.localStorage.setItem(scope.storageKey, JSON.stringify(density))
   } catch {
     // Best-effort: ignore storage failures.
   }

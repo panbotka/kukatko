@@ -74,6 +74,54 @@ export function boxWithinCrop(
   }
 }
 
+/** A style object carrying the `--kk-face-*` custom properties `outliers.css` reads. */
+export type FaceMarkerStyle = CSSProperties & Record<`--kk-face-${string}`, string>
+
+/**
+ * Formats a 0..1 fraction as a CSS percentage, rounded to four decimals. The
+ * rounding is worth a line of its own: `0.2 / 0.32` is `62.499999999999986` in
+ * binary floating point, which would put arithmetic noise into the DOM (and into
+ * every assertion about it) for a difference of a millionth of a tile.
+ */
+function markerPct(v: number): string {
+  return `${Math.round(clampUnit(v) * 1e6) / 1e4}%`
+}
+
+/**
+ * Describes the face rectangle inside a context crop as the four `--kk-face-*`
+ * custom properties the `.kk-face-marker` rule consumes: the box's **centre** and
+ * its size, both as percentages of the crop.
+ *
+ * It is the centre-anchored twin of {@link boxWithinCrop}, and the reason is the
+ * minimum apparent size the stylesheet enforces. A marker that grows from its
+ * top-left corner slides off the face as it hits that minimum; one anchored at
+ * its centre and pulled back by `translate(-50%, -50%)` grows around the face
+ * instead. Keeping the `max()`/`clamp()` in CSS rather than inline is also what
+ * makes the rule survive a jsdom test — its CSSOM mangles `clamp()` in `left`,
+ * but passes custom properties through verbatim.
+ *
+ * A degenerate (zero-area) crop yields a centred, full-size marker rather than
+ * NaNs.
+ */
+export function faceMarkerStyle(bbox: Bbox, crop: Bbox): FaceMarkerStyle {
+  const [x, y, w, h] = bbox
+  const [cx, cy, cw, ch] = crop
+  if (cw <= 0 || ch <= 0) {
+    return {
+      '--kk-face-x': '50%',
+      '--kk-face-y': '50%',
+      '--kk-face-w': '100%',
+      '--kk-face-h': '100%',
+    }
+  }
+  return {
+    '--kk-face-x': markerPct((x + w / 2 - cx) / cw),
+    '--kk-face-y': markerPct((y + h / 2 - cy) / ch),
+    '--kk-face-w': markerPct(w / cw),
+    '--kk-face-h': markerPct(h / ch),
+  }
+}
+
 /**
  * Builds the CSS that renders only the `crop` region of a full-frame image
  * inside a `position: relative; overflow: hidden` container: the image is

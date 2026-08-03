@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react'
+import { type CSSProperties, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
@@ -6,17 +6,21 @@ import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
-import { boxWithinCrop, cropImageStyle, padBbox } from '../../lib/faceGeometry'
+import { cropImageStyle, displayFrame, faceMarkerStyle, padBbox } from '../../lib/faceGeometry'
+import {
+  FACE_SOURCE_REVIEW_MAX,
+  faceSourceSize,
+  OUTLIER_TARGET_PX,
+  smallerFaceSource,
+} from '../../lib/faceSource'
 import { canUnassign, distancePercent, type OutlierItem, outlierKey } from '../../lib/outlierReview'
-import { type OutlierFace } from '../../services/people'
 import { thumbUrl } from '../../services/photos'
 import { Icon } from '../Icon'
 
+import './outliers.css'
+
 /** How much of the surrounding photo is kept around the face box, per side. */
 const CONTEXT_PADDING = 0.3
-
-/** The preview cropped from: the whole frame, since the bbox is frame-relative. */
-const OUTLIER_PREVIEW_SIZE = 'fit_720'
 
 /** Props for {@link OutlierCard}. */
 export interface OutlierCardProps {
@@ -39,16 +43,6 @@ export interface OutlierCardProps {
 }
 
 /**
- * displayDims returns the photo's dimensions in display (EXIF-oriented) space.
- * Orientations 5–8 swap the stored raw width and height, matching how the
- * normalised face box was derived at detection time.
- */
-function displayDims(face: OutlierFace): [number, number] {
-  const rotated = face.orientation >= 5 && face.orientation <= 8
-  return rotated ? [face.height, face.width] : [face.width, face.height]
-}
-
-/**
  * OutlierCard is one suspicious face in the /outliers grid.
  *
  * The picture is the point: it shows a **context crop** — the face box grown by
@@ -56,8 +50,17 @@ function displayDims(face: OutlierFace): [number, number] {
  * That padding is not cosmetic. A tight crop of a face you are asked to judge is
  * unjudgeable; you need the hair, the shoulders and the room to recognise
  * someone. The crop is built from the full frame with `cropImageStyle` and the
- * rectangle placed with `boxWithinCrop` (both from `lib/faceGeometry`), so the
+ * marker placed with `faceMarkerStyle` (both from `lib/faceGeometry`), so the
  * geometry needs no pixel measurement — the container's `aspect-ratio` carries it.
+ *
+ * **Which thumbnail the crop is cut from is chosen per face**, by
+ * `lib/faceSource`. The card used to hard-code `fit_720`, which is why a small
+ * face came out as mush: most faces span a few percent of the frame, so 720 px
+ * left them 20–40 px wide before a ~7× upscale into the tile. Asking for the
+ * smallest `fit_*` that still puts `OUTLIER_TARGET_PX` pixels across the crop
+ * fixes that without making a grid of dozens of cards fetch `fit_3840` for faces
+ * that were already fine. A size missing from the object store degrades down the
+ * ladder on `onError` instead of showing a broken image.
  *
  * The card asks a question ("is this a mistake?") so its ✓ and ✗ read as the
  * answer to it: ✓ agrees and unassigns the person, ✗ disagrees and vouches for
@@ -78,22 +81,27 @@ export function OutlierCard({
   const { face, status } = item
   const percent = distancePercent(face.distance)
   const crop = padBbox(face.bbox, CONTEXT_PADDING)
-  const [displayWidth, displayHeight] = displayDims(face)
+  const frame = displayFrame(face.width, face.height, face.orientation)
+  const known = frame.width > 0 && frame.height > 0
 
   const frameStyle: CSSProperties = {
     // The crop's own proportions: its share of the frame's width over its share
-    // of the frame's height. Without this the context crop would stretch.
-    aspectRatio: `${String(crop[2] * displayWidth)} / ${String(crop[3] * displayHeight)}`,
+    // of the frame's height. Without this the context crop would stretch — and
+    // without the guard, a photo whose dimensions were never recorded would ask
+    // for the invalid `0 / 0` and collapse the tile.
+    aspectRatio: known
+      ? `${String(crop[2] * frame.width)} / ${String(crop[3] * frame.height)}`
+      : '1 / 1',
     background: 'var(--bs-dark)',
   }
-  const boxStyle: CSSProperties = {
-    ...boxWithinCrop(face.bbox, crop),
-    borderStyle: 'solid',
-    borderWidth: 3,
-    borderColor: 'var(--bs-warning)',
-    // A faint dark halo keeps the box visible over a light patch of photo.
-    boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.55)',
-  }
+
+  // The preferred source is a pure function of the face, so a card that has
+  // already fallen back keeps that fallback — and a card whose face changed
+  // identity (never in the grid, which keys by face, but cheap to be right about)
+  // starts again from the preferred size.
+  const preferred = faceSourceSize(crop, frame, OUTLIER_TARGET_PX, FACE_SOURCE_REVIEW_MAX)
+  const [degraded, setDegraded] = useState<{ from: string; size: string } | null>(null)
+  const source = degraded !== null && degraded.from === preferred ? degraded.size : preferred
 
   const decided = status === 'removed' || status === 'confirmed'
   const unassignable = canUnassign(face)
@@ -112,13 +120,28 @@ export function OutlierCard({
     >
       <div className="position-relative overflow-hidden rounded-top" style={frameStyle}>
         <img
-          src={thumbUrl(face.photo_uid, OUTLIER_PREVIEW_SIZE)}
+          src={thumbUrl(face.photo_uid, source)}
+          data-testid="outlier-photo"
+          data-thumb-size={source}
           alt={t('outliersPage.card.photoAlt')}
           loading="lazy"
           decoding="async"
           style={{ ...cropImageStyle(crop), objectFit: 'cover', opacity: decided ? 0.5 : 1 }}
+          onError={() => {
+            // The size is missing from the object store (a publishing backend
+            // redirects rather than generating), so step down the ladder instead
+            // of leaving a broken image where a face should be.
+            const next = smallerFaceSource(source)
+            if (next !== null) {
+              setDegraded({ from: preferred, size: next })
+            }
+          }}
         />
-        <span className="position-absolute" style={boxStyle} data-testid="outlier-bbox" />
+        <span
+          className="kk-face-marker"
+          style={faceMarkerStyle(face.bbox, crop)}
+          data-testid="outlier-bbox"
+        />
         <Badge
           bg="warning"
           text="dark"

@@ -8,6 +8,8 @@ import {
   gridTemplateColumns,
   initialColumns,
   initialColumnsForWidth,
+  LIBRARY_GRID_SCOPE,
+  OUTLIER_GRID_SCOPE,
   readStoredDensity,
   sanitizeDensity,
   stepDensity,
@@ -202,5 +204,43 @@ describe('gridTemplateColumns', () => {
   it('clamps an out-of-range count before templating', () => {
     expect(gridTemplateColumns(99)).toBe('repeat(10, 1fr)')
     expect(gridTemplateColumns(0)).toBe('repeat(1, 1fr)')
+  })
+})
+
+describe('grid density scopes', () => {
+  it('keeps the library and the outlier review on separate keys', () => {
+    // Browsing a wall of photographs and judging whether a 4 %-wide face is the
+    // right person are different jobs at different comfortable densities. One
+    // shared number would mean every trip to /outliers re-densifies the library.
+    expect(OUTLIER_GRID_SCOPE.storageKey).not.toBe(LIBRARY_GRID_SCOPE.storageKey)
+
+    writeDensity(9, LIBRARY_GRID_SCOPE)
+    writeDensity(2, OUTLIER_GRID_SCOPE)
+
+    expect(readStoredDensity(LIBRARY_GRID_SCOPE)).toBe(9)
+    expect(readStoredDensity(OUTLIER_GRID_SCOPE)).toBe(2)
+  })
+
+  it('defaults every function to the library, the grid that had this first', () => {
+    writeDensity(7)
+    expect(window.localStorage.getItem(LIBRARY_GRID_SCOPE.storageKey)).toBe('7')
+    expect(readStoredDensity()).toBe(7)
+    expect(readStoredDensity(OUTLIER_GRID_SCOPE)).toBeNull()
+  })
+
+  it('seeds a review grid sparser than a library grid on the same screen', () => {
+    // A review card is a 16rem tile, not a 140px thumbnail: seeding it from the
+    // library's tile would open the page at roughly twice the density anyone wants.
+    setViewportWidth(1400)
+    const library = initialColumns(LIBRARY_GRID_SCOPE)
+    const review = initialColumns(OUTLIER_GRID_SCOPE)
+    expect(review).toBeLessThan(library)
+    expect(review).toBeGreaterThanOrEqual(GRID_COLUMNS_MIN)
+  })
+
+  it('gives the review grid one column on the narrowest phone', () => {
+    // The 16rem card cannot shrink into the ~296px a 320px phone leaves inside the
+    // layout container, so the seed must not put two of them side by side.
+    expect(initialColumnsForWidth(320, OUTLIER_GRID_SCOPE)).toBe(1)
   })
 })

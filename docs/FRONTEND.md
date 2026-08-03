@@ -493,6 +493,9 @@ here.
   localStorage, **not the URL** — it is a device preference, not part of the shared view; it sits in the header of
   `FilterBar` and in the header of `SubjectPage` (a person's gallery), it changes all photo grids in the app
   at once — and because it is only a view preference, **it is not write-gated** (a viewer sees it too);
+  the `scope?` prop says **which** count it moves (default `LIBRARY_GRID_SCOPE` = the photo library);
+  `/outliers` hands it `OUTLIER_GRID_SCOPE`, so the review grid gets the same control on its **own**
+  number — the same control, a separate preference, see `lib/gridDensity`;
   `PhotoTile`+`PhotoGrid` support
   **a modern multi-select in the style of photo apps** (props `selectable`/`selectFirst`/`selected`/
   `anySelected`/`onToggleSelect`, or `selection`): each tile carries a **round check
@@ -1337,10 +1340,14 @@ here.
   / average distance / shown + a one-line sort explanation, a **`no_embedding`
   message** (a face recognized while the box was offline can't be checked and is **not** in the list — say it
   aloud, otherwise an empty list reads as "clean"), a capped message at `OUTLIER_LIMIT`,
-  a `meaningful:false` message); a grid of **large** `OutlierCard` (`minmax(16rem, 1fr)` — like the sibling
-  candidate/sweep grids; 20rem didn't fit into the ~296px of content on a 320px phone and the grid overflowed right): the **context
+  a `meaningful:false` message); a grid of **large** `OutlierCard` whose **column count the user picks**
+  — the shared `GridDensityControl` beside the statistics, on `OUTLIER_GRID_SCOPE`, i.e. **its own**
+  localStorage key (`kukatko.outliers.density`): browsing a wall of photos and judging a 4%-wide face are
+  two different jobs, one shared number would re-densify the library on every trip here (the former
+  hard-coded `minmax(16rem, 1fr)` survives only as the tile the first count is **seeded** from, so a phone
+  starts at one column); ↑/↓ therefore jump a row by the pinned count, without measuring the DOM: the **context
   crop** = the bbox enlarged by 30 % on each side via `padBbox` + `cropImageStyle`, inside it
-  the face frame via `boxWithinCrop` (all `lib/faceGeometry`, `aspect-ratio` carries the geometry →
+  the face frame via `faceMarkerStyle` (all `lib/faceGeometry`, `aspect-ratio` carries the geometry →
   no pixel measurement), a distance badge in **%**, the question „Je to chyba?" and two **opposite**
   answers to it: **✓ „Ano, odebrat"** → `assignFace` `unassign_person`, **✗ „Ne, je to {{name}}"** →
   `confirmFace` (`services/feedback`) — **mind the polarity, it is not `rejectFace`**; both flip
@@ -1548,8 +1555,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `FaceCrop` (**the preferred** face crop: an `<img>` with a `fit_*` source from `lib/faceSource.ts`
   `faceSourceSize` (the whole frame — `tile_*` is a centred square on which the crop would miss the face;
   the size **scales with how small the face is**: a fixed one would give a 13px smudge instead of
-  a person for a face over 2 % of the frame, the 720/1280/1920 ladder stops at 1920, because beyond that those
-  pixels aren't in the original) in an `overflow:hidden` container,
+  a person for a face over 2 % of the frame. The ladder is 720/1280/1920/2560/3840, but **the ceiling belongs
+  to the caller**: a chip stops at `FACE_SOURCE_TILE_MAX` (1920 — a dense grid of chips isn't worth megabytes),
+  a card that exists to be **judged** goes to `FACE_SOURCE_REVIEW_MAX` (3840, `/outliers`). Below the target
+  it never picks a rung above the original's own long side — `fit_*` doesn't upscale, so that would be the same
+  pixels at another URL) in an `overflow:hidden` container,
   `cropImageStyle` in %, `aspect-ratio` from the crop's real pixel proportions → **nothing is
   deformed**; `size` = a fixed width in px, otherwise it fills the parent (`w-100 h-100`); `label=""` =
   decorative, when the name stands beside it. It needs the frame's dimensions),
@@ -1581,9 +1591,21 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   with a one-tap unassign on the person's page + a **Projít všechny** link to `/outliers?subject={uid}`, where
   the full sweep version lives),
   `OutlierCard`/`OutlierControls`/`OutlierStats` (the building blocks of `/outliers`: a card with a **context
-  crop** (30 % around the bbox, `padBbox`+`cropImageStyle`+`boxWithinCrop`), the question „Je to chyba?"
+  crop** (30 % around the bbox, `padBbox`+`cropImageStyle`+`faceMarkerStyle`), the question „Je to chyba?"
   and two opposite verdicts (✓ remove / ✗ confirm), a selection checkbox and a focus ring; a config
-  strip with a person picker and a percentage threshold; statistics including the **`no_embedding`** message);
+  strip with a person picker and a percentage threshold; statistics including the **`no_embedding`** message).
+  Two things the card does **not** hard-code: **which thumbnail the crop is cut from** — `lib/faceSource`
+  `faceSourceSize(crop, frame, OUTLIER_TARGET_PX, FACE_SOURCE_REVIEW_MAX)` picks the smallest `fit_*` that
+  still puts ~154 real px across the crop (≈ 96 px across the face), because a fixed `fit_720` left a
+  5%-wide face 35 px and blew it up ~7× into the card = the „nejde vidět, že je to obličej" complaint;
+  a size the bucket lacks steps down the ladder on `onError` (`smallerFaceSource`) instead of a broken image —
+  and **the marker's geometry**, which lives in `components/people/outliers.css` (`.kk-face-marker`): JS emits
+  only the `--kk-face-*` custom properties (the box's **centre** + size in % of the crop), the CSS does the
+  `max()`/`clamp()` against the rendered tile, whose px size the card cannot know (the user picks the columns).
+  It guarantees two things: a **minimum apparent size** (`--kk-face-min: 28px`, grown around the centre via
+  `translate(-50%,-50%)` and clamped inside the crop, so it never drags off the face nor past the edge) and a ring
+  built **only** of the element's own `border` + `inset` shadows (dark/warning/dark), which the card's
+  `overflow: hidden` therefore cannot clip; the strokes are absolute px, so they don't thin out at ten columns);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   exposes `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`; `ProtectedRoute` =
   the `RequireAuth` + `RequireRole` + `RequireImport` route guards),
@@ -1854,7 +1876,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   hard-coded to the user's choice and a later resize **doesn't move it**. `subscribe` also listens to the `storage`
   event → all tabs on the device hold the same column count; `setGridDensity` sanitizes, writes
   and repaints **all** grids at once, without a context and without a provider (so page tests work
-  without a wrapper too);
+  without a wrapper too). It takes an optional **`GridDensityScope`** (default `LIBRARY_GRID_SCOPE`): the
+  key, seed tile and gutter of *one* grid. Every subscriber is woken by every change but each reads its
+  own key, so `/outliers` (`OUTLIER_GRID_SCOPE`) and the library never move each other's number; the scope is
+  re-`useMemo`d from its fields, not used by identity, so an inline `{…}` at a call site can't thrash the seed;
   `useIsNarrowViewport()` = a shared hook over `matchMedia` (`(max-width: 767.98px)`, Bootstrap `md`;
   it removes `change`, a missing/broken `matchMedia` → „wide"; the single source of truth for the filter
   offcanvas, the default grid density, the collapse of `BatchActionBar` and `HeaderActions` into the „…" overflow menu on a phone, and the move
@@ -1947,7 +1972,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   + `squareCrop` (a bbox → a crop **square in pixels**, not in normalized
   units — that is what prevents the deformation: a „square" in a normalized 4000×3000 frame is a rectangle in pixels
   and would squash the face in a square tile; it grows the shorter pixel side from the centre and
-  pushes the crop back inside the frame) + `faceCropStyle` (**legacy**, it scales the axes independently → it deforms, and
+  pushes the crop back inside the frame) + `faceMarkerStyle` (a bbox + a crop → the `--kk-face-*` custom
+  properties of `.kk-face-marker`: the box's **centre** and its size in % of the crop. The centre-anchored
+  twin of `boxWithinCrop` — a marker growing from its top-left corner would slide off the face when it hits
+  the CSS minimum; the `max()`/`clamp()` stay in CSS also because jsdom's CSSOM mangles `clamp()` in `left`
+  but passes custom properties through verbatim) + `faceCropStyle` (**legacy**, it scales the axes independently → it deforms, and
   it reads `tile_*`, which is a centred square, not the whole frame; only for `FaceThumb`);
   `faceThreshold.ts` = a pure conversion of the person-search threshold between **percent** (the UI) and the **cosine
   distance** (the backend): `percentToDistance` (`1 - p/100`)/`distanceToPercent` (the inverse,
@@ -2001,7 +2030,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   1…10; narrow → 1, a phone → 1–2, very wide → 10) + `initialColumns()` (the seed for the current viewport)
   + the pure `gridTemplateColumns(density)` → **always `repeat(N, 1fr)`** = exactly N equal columns on
   every viewport (no `auto-fill` fallback, because the user always picks a concrete number); the gap
-  between tiles is handled separately by `gap` on the container;
+  between tiles is handled separately by `gap` on the container. Everything above takes an optional
+  **`GridDensityScope`** `{storageKey, tileMinPx, gapPx}` (the whole per-grid contract) and defaults to
+  `LIBRARY_GRID_SCOPE` (`kukatko.grid.density`, 140px, 3px). The second scope is `OUTLIER_GRID_SCOPE`
+  (`kukatko.outliers.density`, `OUTLIER_TILE_MIN_PX` 256 = the 16rem card, `OUTLIER_GAP_PX` 16 = `gap-3`):
+  **a shared control, a separate number**, because a density for browsing photographs is not one for judging
+  faces — and a review card seeded from the library's 140px would open at twice the density anyone wants;
   `slideshowSettings.ts` = the `SlideshowSettings{effect,intervalMs}` type + `SlideshowEffect`
   (`fade`/`slide`/`kenburns`/`none`) + the offers `SLIDESHOW_EFFECTS`/`SLIDESHOW_INTERVALS_MS` (1/2/3/5/10/15/30 s)
   + `SLIDESHOW_DEFAULTS` (`fade`, 5 s)

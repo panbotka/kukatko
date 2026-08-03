@@ -8,15 +8,18 @@ import { useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
+import { GridDensityControl } from '../components/library/GridDensityControl'
 import { SelectionBar } from '../components/organize/SelectionBar'
 import { OutlierCard } from '../components/people/OutlierCard'
 import { OutlierControls } from '../components/people/OutlierControls'
 import { OutlierStats } from '../components/people/OutlierStats'
+import { useGridDensity } from '../hooks/useGridDensity'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useOutlierReview } from '../hooks/useOutlierReview'
 import { useSelection } from '../hooks/useSelection'
 import { useSubjects } from '../hooks/useSubjects'
+import { gridTemplateColumns, OUTLIER_GRID_SCOPE } from '../lib/gridDensity'
 import { isTypingElement } from '../lib/ratingHotkeys'
 import {
   clampOutlierThresholdPercent,
@@ -69,7 +72,9 @@ function nextActionableIndex(items: OutlierItem[], fromIndex: number): number {
  * is right when you are already looking at a person; this one is right when you
  * want to hunt. Each card is a **context crop** with the face outlined, because a
  * tight crop is unjudgeable, and carries the two opposite verdicts: ✓ unassigns,
- * ✗ vouches for the face so it is never offered again. A selection with
+ * ✗ vouches for the face so it is never offered again. How many cards fit across
+ * is the user's call, via the library's `GridDensityControl` on this grid's own
+ * stored count (`OUTLIER_GRID_SCOPE`). A selection with
  * shift-range and Ctrl/Cmd+A drives a bulk unassign, and the whole grid is
  * keyboard-drivable (arrows/`hjkl`, `y`/Enter, `n`, `x`) — photo-sorter's
  * equivalent page had none of this and was its weakest. Editor-only. See
@@ -168,6 +173,9 @@ export function OutliersPage() {
 
   const [focusedIndex, setFocusedIndex] = useState(-1)
   const gridRef = useRef<HTMLDivElement>(null)
+  // How many cards fit across, on the review grid's own stored count — the
+  // library's density is a browsing preference and would fight this one.
+  const { density } = useGridDensity(OUTLIER_GRID_SCOPE)
 
   // A fresh query drops the highlight: it would otherwise point at a stale card.
   // Keyed on the *response*, deliberately — not on the working list, which gets a
@@ -184,17 +192,6 @@ export function OutliersPage() {
     }
     gridRef.current?.querySelector('[data-focused="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [focusedIndex])
-
-  const columns = useCallback(() => {
-    const el = gridRef.current
-    if (el === null) {
-      return 1
-    }
-    const tracks = getComputedStyle(el)
-      .gridTemplateColumns.split(' ')
-      .filter((track) => track.trim() !== '')
-    return Math.max(1, tracks.length)
-  }, [])
 
   const move = useCallback(
     (delta: number) => {
@@ -276,17 +273,19 @@ export function OutliersPage() {
       h: () => {
         move(-1)
       },
+      // A row is exactly the pinned column count: the grid renders `repeat(N,
+      // 1fr)`, so ↑/↓ need no measurement of the DOM to land one row away.
       ArrowDown: () => {
-        move(columns())
+        move(density)
       },
       j: () => {
-        move(columns())
+        move(density)
       },
       ArrowUp: () => {
-        move(-columns())
+        move(-density)
       },
       k: () => {
-        move(-columns())
+        move(-density)
       },
       y: unassignFocused,
       Enter: unassignFocused,
@@ -385,7 +384,14 @@ export function OutliersPage() {
 
       {result !== null && (
         <>
-          <OutlierStats result={result} shown={items.length} />
+          <div className="d-flex flex-wrap align-items-start justify-content-between gap-3">
+            <div className="flex-grow-1">
+              <OutlierStats result={result} shown={items.length} />
+            </div>
+            {/* The library's stepper, driving the review grid's own stored count —
+                see OUTLIER_GRID_SCOPE for why the two numbers are separate. */}
+            {items.length > 0 && <GridDensityControl scope={OUTLIER_GRID_SCOPE} />}
+          </div>
 
           {selection.active && (
             <SelectionBar count={selection.count} onCancel={selection.disable}>
@@ -436,11 +442,15 @@ export function OutliersPage() {
           ) : (
             <div
               ref={gridRef}
-              className="d-grid gap-3"
-              /* 16rem, like the sibling candidate / sweep grids: a 20rem column
-                 minimum cannot shrink into the ~296px content area of a 320px
-                 phone, so the grid overflowed sideways and clipped the cards. */
-              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(16rem, 1fr))' }}
+              className="d-grid"
+              data-density={density}
+              /* The user picks the column count, exactly as in the library — the
+                 grid used to be a fixed `minmax(16rem, 1fr)`, which is now only
+                 the width the count is *seeded* from on a device's first visit. */
+              style={{
+                gridTemplateColumns: gridTemplateColumns(density),
+                gap: `${String(OUTLIER_GRID_SCOPE.gapPx)}px`,
+              }}
             >
               {items.map((item, index) => (
                 <OutlierCard

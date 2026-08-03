@@ -143,6 +143,39 @@ lists at all** (nothing is missing, so there is nothing to ask about), and a
 **failed listing falls back to encoding** — slower is a cost, whereas skipping a
 size that is not really in the bucket would leave a thumbnail no client can fetch.
 
+### Which `fit_*` a face crop is worth
+
+A crop of a face is the one place where the smallest thumbnail is usually the
+wrong answer, and the largest is usually too expensive. Measured on the
+production library for one subject (289 assigned faces): the **average box is
+4.9 % of the frame wide**, 69 % are narrower than 5 % and 40 % narrower than 3 %.
+In a `fit_720` thumbnail that average face is **35 px** across, the smallest
+8.4 px — which is why a review card blowing it up ~7× reads as a smear rather
+than a person.
+
+`web/src/lib/faceSource.ts` therefore picks the **smallest** registered `fit_*`
+that still puts a target number of real pixels across the crop, per face. Two
+ceilings keep that from turning into a blanket `fit_3840`:
+
+| Caller | Ceiling | Target | Why |
+|---|---|---|---|
+| chips/tiles (`FaceCrop`: people grid, clusters, markers) | `fit_1920` | 300 px | dozens on screen at once; past 1920 the pixels are mostly not in the original either |
+| `/outliers` review card | `fit_3840` | 154 px across the crop (≈ 96 px across the face) | the card *is* the question being asked; a handful on screen, all `loading="lazy"` |
+
+96 px is roughly the width a face is *rendered* at in the densest grid the review
+page offers (ten columns of a ~1400 px page ⇒ ~88 px, since the crop is defined
+from the box and the face is always 62.5 % of a tile), so at maximum density the
+crop is essentially 1:1 and at the default it is a ~2× upscale. Raising the bar
+buys mostly bytes: with that distribution, the target is what decides how much of
+the library lands on `fit_3840` (~1.9 MB) rather than `fit_1920` (~0.5 MB).
+
+Two guards on the cost: a rung above the original's own long side is never
+chosen (`fit_*` does not upscale, so it would be the same pixels under another
+URL and a second cache entry), and the card **degrades** down the ladder on
+`onError` — on a publishing backend the thumb route redirects instead of
+generating, so a size missing from the bucket 404s, and one failed request lands
+on the `fit_720` that has always been there rather than a broken image.
+
 ---
 
 ## 3. Queries / pagination
@@ -701,3 +734,7 @@ Verified, already optimal — no change required:
 - **Search debounce**: `SearchPage` debounces typed queries by 350 ms (immediate
   on submit), so keystrokes don't each fire a semantic search
   (`web/src/pages/SearchPage.tsx`).
+- **Per-face thumbnail choice**: the `/outliers` cards pick their source size per
+  face rather than sharing a constant, and the size is deliberately *not* a
+  function of the column count — changing the density restyles the grid without
+  re-fetching a single image. See "Which `fit_*` a face crop is worth" above.

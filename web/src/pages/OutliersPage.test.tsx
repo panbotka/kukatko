@@ -1,11 +1,13 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { initialColumns, LIBRARY_GRID_SCOPE, OUTLIER_GRID_SCOPE } from '../lib/gridDensity'
 import { type OutlierFace, type OutlierResult, type SubjectCount } from '../services/people'
+import { readCss } from '../test/css'
 
 import { OutliersPage } from './OutliersPage'
 
@@ -32,6 +34,18 @@ const SUBJECTS = [
   { uid: 's1', name: 'Alice', marker_count: 42 },
   { uid: 's2', name: 'Bob', marker_count: 7 },
 ] as unknown as SubjectCount[]
+
+/** A frame big enough that the thumbnail ladder is not capped by the original. */
+const BIG_FRAME = { width: 6000, height: 4000 }
+
+/** The grid element the cards sit in. */
+function gridElement(container: HTMLElement): HTMLElement {
+  const grid = container.querySelector<HTMLElement>('[data-density]')
+  if (grid === null) {
+    throw new Error('outlier grid not rendered')
+  }
+  return grid
+}
 
 /** An outlier face; the bbox is off-centre so the padding has something to move. */
 function face(overrides: Partial<OutlierFace> = {}): OutlierFace {
@@ -74,10 +88,15 @@ function renderPage(entry = '/outliers?subject=s1') {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  window.localStorage.clear()
   outliersMock.mockReset()
   assignMock.mockReset().mockResolvedValue(undefined)
   subjectsMock.mockReset().mockResolvedValue(SUBJECTS)
   confirmMock.mockReset().mockResolvedValue(undefined)
+})
+
+afterEach(() => {
+  window.localStorage.clear()
 })
 
 describe('OutliersPage', () => {
@@ -95,33 +114,136 @@ describe('OutliersPage', () => {
     expect(await screen.findByTestId('outlier-card')).toBeInTheDocument()
   })
 
-  it('sizes the card grid so one column still fits a 320px phone', async () => {
+  it('renders the column count stored for the review grid', async () => {
+    window.localStorage.setItem(OUTLIER_GRID_SCOPE.storageKey, '4')
     outliersMock.mockResolvedValue(makeResult([face()]))
     const { container } = renderPage()
     await screen.findByTestId('outlier-card')
 
-    // The narrowest phone leaves ~296px inside the layout container (320px minus
-    // its 2 × 0.75rem gutter). A column minimum wider than that cannot shrink into
-    // the row, so the grid spills off the right edge and clips the cards.
-    const columns = container.querySelector<HTMLElement>('.d-grid')?.style.gridTemplateColumns
-    const min = /minmax\(([\d.]+)rem/.exec(columns ?? '')
-    if (min === null) {
-      throw new Error(`grid columns not in the expected form: ${String(columns)}`)
-    }
-    expect(Number(min[1]) * 16).toBeLessThanOrEqual(296)
+    const grid = gridElement(container)
+    expect(grid).toHaveAttribute('data-density', '4')
+    expect(grid.style.gridTemplateColumns).toBe('repeat(4, 1fr)')
   })
 
-  it('draws the face box inside a padded context crop, not a tight one', async () => {
+  it('keeps its own density rather than the library’s', async () => {
+    // Someone browses the library at ten tiny tiles per row. That is a fine
+    // density for photographs and a terrible one for judging faces, so this grid
+    // seeds its own count from its own (much wider) tile instead of inheriting it.
+    window.localStorage.setItem(LIBRARY_GRID_SCOPE.storageKey, '10')
+    outliersMock.mockResolvedValue(makeResult([face()]))
+    const { container } = renderPage()
+    await screen.findByTestId('outlier-card')
+
+    const seeded = initialColumns(OUTLIER_GRID_SCOPE)
+    expect(gridElement(container)).toHaveAttribute('data-density', String(seeded))
+    expect(window.localStorage.getItem(OUTLIER_GRID_SCOPE.storageKey)).toBe(String(seeded))
+    // …and the library's own preference is left exactly where it was.
+    expect(window.localStorage.getItem(LIBRARY_GRID_SCOPE.storageKey)).toBe('10')
+  })
+
+  it('re-columns the grid from the density stepper and persists the choice', async () => {
+    window.localStorage.setItem(OUTLIER_GRID_SCOPE.storageKey, '2')
+    const user = userEvent.setup()
+    outliersMock.mockResolvedValue(makeResult([face()]))
+    const { container } = renderPage()
+    await screen.findByTestId('outlier-card')
+
+    await user.click(screen.getByRole('button', { name: 'More tiles per row' }))
+
+    await waitFor(() => {
+      expect(gridElement(container)).toHaveAttribute('data-density', '3')
+    })
+    expect(gridElement(container).style.gridTemplateColumns).toBe('repeat(3, 1fr)')
+    expect(window.localStorage.getItem(OUTLIER_GRID_SCOPE.storageKey)).toBe('3')
+    // The library's density is a separate preference and must not have moved.
+    expect(window.localStorage.getItem(LIBRARY_GRID_SCOPE.storageKey)).toBeNull()
+  })
+
+  it('draws the face marker inside a padded context crop, not a tight one', async () => {
     outliersMock.mockResolvedValue(makeResult([face()]))
     renderPage()
 
     // The crop is the bbox grown 30 % per side, so within it the face covers
     // 0.2 / 0.32 = 62.5 % — the rest is the context you need to recognise anyone.
+    // The marker is anchored on the face's centre, which is the crop's centre.
     const box = await screen.findByTestId('outlier-bbox')
-    expect(parseFloat(box.style.width)).toBeCloseTo(62.5)
-    expect(parseFloat(box.style.height)).toBeCloseTo(62.5)
-    expect(parseFloat(box.style.left)).toBeCloseTo(18.75)
-    expect(parseFloat(box.style.top)).toBeCloseTo(18.75)
+    expect(box.style.getPropertyValue('--kk-face-w')).toBe('62.5%')
+    expect(box.style.getPropertyValue('--kk-face-h')).toBe('62.5%')
+    expect(box.style.getPropertyValue('--kk-face-x')).toBe('50%')
+    expect(box.style.getPropertyValue('--kk-face-y')).toBe('50%')
+  })
+
+  it('keeps the marker on screen at every density', async () => {
+    // The crop is defined *from* the box, so the marker is 62.5 % of a tile
+    // whatever the tile's size — one column or ten, it neither vanishes nor
+    // wanders out of the frame.
+    for (const density of ['1', '5', '10']) {
+      window.localStorage.setItem(OUTLIER_GRID_SCOPE.storageKey, density)
+      outliersMock.mockResolvedValue(makeResult([face()]))
+      const view = renderPage()
+      const box = await screen.findByTestId('outlier-bbox')
+
+      expect(gridElement(view.container)).toHaveAttribute('data-density', density)
+      expect(box.style.getPropertyValue('--kk-face-w')).toBe('62.5%')
+      expect(box.style.getPropertyValue('--kk-face-x')).toBe('50%')
+      view.unmount()
+    }
+  })
+
+  it('guarantees the marker a minimum size and an unclippable stroke', () => {
+    // The two promises that cannot be asserted in jsdom (it has no layout) live
+    // in CSS, so assert the CSS: a floor under the marker's size, and a ring made
+    // only of the element's own border and `inset` shadows, which `overflow:
+    // hidden` on the card cannot clip.
+    const css = readCss('src/components/people/outliers.css')
+    const rule = /\.kk-face-marker\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? ''
+
+    expect(rule).toMatch(/--kk-face-min:\s*\d+px/)
+    expect(rule).toMatch(/width:\s*max\(var\(--kk-face-w[^)]*\),\s*var\(--kk-face-min\)\)/)
+    expect(rule).toMatch(/height:\s*max\(var\(--kk-face-h[^)]*\),\s*var\(--kk-face-min\)\)/)
+    // Centre-anchored and clamped, so the minimum grows the box around the face
+    // and never pushes it past the crop's edge.
+    expect(rule).toMatch(/transform:\s*translate\(-50%,\s*-50%\)/)
+    expect(rule).toMatch(/left:\s*clamp\(/)
+    expect(rule).toMatch(/top:\s*clamp\(/)
+    expect(rule).toMatch(/box-shadow:[\s\S]*inset/)
+    expect(rule).not.toMatch(/box-shadow:\s*0 0 0/)
+  })
+
+  it('cuts a small face from a larger thumbnail than a big one', async () => {
+    // The complaint this exists for: a hard-coded fit_720 leaves a 2 %-wide face
+    // ~35 px across before a 7× upscale into the card. The source is chosen per
+    // face, so the small one asks for more pixels and the big one does not.
+    outliersMock.mockResolvedValue(
+      makeResult([
+        face({ photo_uid: 'small', bbox: [0.4, 0.3, 0.02, 0.03], ...BIG_FRAME }),
+        face({ photo_uid: 'big', bbox: [0.3, 0.2, 0.25, 0.35], ...BIG_FRAME }),
+      ]),
+    )
+    renderPage()
+    const images = await screen.findAllByTestId('outlier-photo')
+
+    expect(images[0]).toHaveAttribute('data-thumb-size', 'fit_3840')
+    expect(images[1]).toHaveAttribute('data-thumb-size', 'fit_720')
+    expect(images[0].getAttribute('src')).toContain('/thumb/fit_3840')
+  })
+
+  it('degrades to a smaller thumbnail rather than showing a broken image', async () => {
+    // On a publishing storage backend the thumb route redirects instead of
+    // generating, so a size that never reached the bucket answers 404. Step down
+    // the ladder — the fit_720 every card used before is always there.
+    outliersMock.mockResolvedValue(
+      makeResult([face({ bbox: [0.4, 0.3, 0.05, 0.07], ...BIG_FRAME })]),
+    )
+    renderPage()
+    const img = await screen.findByTestId('outlier-photo')
+    expect(img).toHaveAttribute('data-thumb-size', 'fit_2560')
+
+    fireEvent.error(img)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('outlier-photo')).toHaveAttribute('data-thumb-size', 'fit_1920')
+    })
   })
 
   it('✓ unassigns the person through the assign endpoint', async () => {
