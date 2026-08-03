@@ -27,12 +27,13 @@ const createMock = vi.mocked(createLabel)
 const updateMock = vi.mocked(updateLabel)
 const deleteMock = vi.mocked(deleteLabel)
 
-function label(uid: string, name: string, priority = 0): LabelCount {
+function label(uid: string, name: string, priority = 0, reviewEnabled = true): LabelCount {
   return {
     uid,
     slug: name.toLowerCase(),
     name,
     priority,
+    review_enabled: reviewEnabled,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     photo_count: 5,
@@ -88,6 +89,7 @@ describe('LabelsPage', () => {
       slug: 'beach',
       name: 'Beach',
       priority: 0,
+      review_enabled: true,
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     }
@@ -113,6 +115,7 @@ describe('LabelsPage', () => {
       slug: 'sundown',
       name: 'Sundown',
       priority: 0,
+      review_enabled: true,
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-02T00:00:00Z',
     })
@@ -197,5 +200,119 @@ describe('LabelsPage', () => {
     expect(screen.queryByRole('button', { name: 'New label' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(queryReviewSwitch('Sunset')).toBeNull()
+  })
+
+  describe('the review-game switch', () => {
+    it('reflects each label’s current setting', async () => {
+      fetchMock.mockResolvedValue([label('lb_1', 'Sunset'), label('lb_2', 'Cats', 0, false)])
+      renderPage()
+
+      await screen.findByText('Sunset')
+      expect(reviewSwitch('Sunset')).toBeChecked()
+      expect(reviewSwitch('Cats')).not.toBeChecked()
+    })
+
+    it('switches a label out of the game, carrying its other fields across', async () => {
+      // The endpoint takes the whole editable record, so the toggle has to send
+      // the name and priority back unchanged or it would rewrite them.
+      fetchMock.mockResolvedValue([label('lb_1', 'Sunset', 3)])
+      updateMock.mockResolvedValue({
+        uid: 'lb_1',
+        slug: 'sunset',
+        name: 'Sunset',
+        priority: 3,
+        review_enabled: false,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      })
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText('Sunset')
+      await user.click(reviewSwitch('Sunset'))
+
+      await waitFor(() => {
+        expect(updateMock).toHaveBeenCalledWith('lb_1', {
+          name: 'Sunset',
+          priority: 3,
+          review_enabled: false,
+        })
+      })
+      expect(reviewSwitch('Sunset')).not.toBeChecked()
+    })
+
+    it('switches a label back into the game', async () => {
+      fetchMock.mockResolvedValue([label('lb_1', 'Sunset', 0, false)])
+      updateMock.mockResolvedValue({
+        uid: 'lb_1',
+        slug: 'sunset',
+        name: 'Sunset',
+        priority: 0,
+        review_enabled: true,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      })
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText('Sunset')
+      await user.click(reviewSwitch('Sunset'))
+
+      await waitFor(() => {
+        expect(updateMock).toHaveBeenCalledWith('lb_1', {
+          name: 'Sunset',
+          priority: 0,
+          review_enabled: true,
+        })
+      })
+      expect(reviewSwitch('Sunset')).toBeChecked()
+    })
+
+    it('rolls the switch back and says so when the save fails', async () => {
+      // A switch that stays flipped after a failed save is a lie: the operator
+      // would walk away believing the label is out of the game when it is not.
+      fetchMock.mockResolvedValue([label('lb_1', 'Sunset')])
+      updateMock.mockRejectedValue(new Error('boom'))
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText('Sunset')
+      await user.click(reviewSwitch('Sunset'))
+
+      expect(await screen.findByText('The action failed. Please try again.')).toBeInTheDocument()
+      expect(reviewSwitch('Sunset')).toBeChecked()
+    })
+
+    it('is wordless, carrying the game’s icon and an accessible name', async () => {
+      // A per-row sentence would repeat itself down the whole page, so the glyph
+      // carries the meaning — and the accessible name has to name both the label
+      // and what the switch does, since the glyph says neither out loud.
+      fetchMock.mockResolvedValue([label('lb_1', 'Sunset')])
+      renderPage()
+
+      await screen.findByText('Sunset')
+      // The hover text says which way the switch currently sits, since the glyph
+      // is the same either way, and it wraps the control it describes.
+      const wrapper = screen.getByTitle('The review game asks about this label')
+      expect(wrapper).toContainElement(reviewSwitch('Sunset'))
+      expect(wrapper.querySelector('.bi-ui-checks')).toHaveAttribute('aria-hidden', 'true')
+      expect(wrapper).not.toHaveTextContent(/\w/)
+    })
   })
 })
+
+/** The accessible name the review-game switch carries for a given label. */
+function reviewSwitchName(name: string): string {
+  return `Ask about the label “${name}” in the review game`
+}
+
+/** Finds a label row's review-game switch by the label it is about. */
+function reviewSwitch(name: string): HTMLElement {
+  return screen.getByRole('checkbox', { name: reviewSwitchName(name) })
+}
+
+/** Like {@link reviewSwitch}, but yields null where no switch is rendered. */
+function queryReviewSwitch(name: string): HTMLElement | null {
+  return screen.queryByRole('checkbox', { name: reviewSwitchName(name) })
+}

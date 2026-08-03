@@ -404,16 +404,24 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (`buildMCPAPI` in `cmd/kukatko/mcp.go`). In detail: [`docs/MCP.md`](MCP.md).
 - **Review game API (`/api/v1`, `internal/reviewapi`, editor/admin via `RequireWrite`):** a "game" for
   tidying up the library — one question at a time ("Is this Tomáš?", "Should this photo have the label Ostatky?"),
-  answer yes/no/skip. Questions are drawn from the **uncertainty band** (`review.band_min ≤ confidence <
-  review.band_max`, confidence = 1 − cosine distance, default 0.45–0.75) — below the band it is noise,
-  above it, confirmation happens in bulk on `/recognition` or via expand. `GET
+  answer yes/no/skip. Questions are mixed from **two confidence tiers** (confidence = 1 − cosine distance):
+  `review.sure_share` of a batch (default 0.70) from the **confident tier** (confidence ≥ `review.sure_min`,
+  default 0.80 — the answer is almost always a one-click yes, and a yes is real work done), the rest from the
+  **uncertainty band** (`review.band_min ≤ confidence < review.band_max`, default 0.45–0.75 — where a human
+  answer teaches the system the most). Below `band_min` nothing is asked: the guess is noise. The ratio holds
+  in **any prefix** of the queue, not merely on average, so a batch never opens with a run of hard questions —
+  and the minority of hard questions is deliberate, since an all-easy game turns the player into a rubber
+  stamp. Running out of one tier fills from the other, and a rebuild whose window came back empty rotates to
+  the next one, so the queue only reports "nothing" for a genuinely empty library. `GET
   /review/queue?source=both|people|labels&limit=N` (source empty → `both`, unknown → 400; limit empty/0 →
   `review.queue_size`, cap 100, non-numeric/negative → 400) → `{questions:[{id,kind:
-  "face"|"label",confidence,photo,subject?,face_index?,bbox?{relative,pixel},action?
+  "face"|"label",tier:"sure"|"band",confidence,photo,subject?,face_index?,bbox?{relative,pixel},action?
   ("create_marker"|"assign_person"),marker_uid?,label?}],source,answered,remaining,reason?}`; `id` is
   **stable, derived from content** (`face:<photo>:<index>:<subject>` / `label:<photo>:<label>`),
-  `bbox` relative 0..1 **and** pixels (honouring EXIF orientation), the queue is **deterministic** for a given
-  library state (ordered by distance from the centre of the band, tie-break id; face/label questions are
+  `tier` says which tier the question came from (the UI asks the same question either way; it is there so the
+  mix can be observed), `bbox` relative 0..1 **and** pixels (honouring EXIF orientation), the queue is
+  **deterministic** for a given library state (within a tier: the band by distance from its centre, the
+  confident tier by confidence descending, tie-break id; then the tier blend; face/label questions are
   **interleaved** proportionally, no `rand`). On top of that order the batch is **spread across the entities it
   asks about**, so the game does not turn into an interrogation: at most `review.max_per_entity` (default 4)
   questions about one person or label per batch, and never more than **two in a row** about the same one while
@@ -423,6 +431,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   rebuild**, not as a filter on its result: a labels-only queue never runs the subject sweep at all (the scans
   are the whole cost of a rebuild, and a subject sweep hydrates a full photo record per match). The applied
   source is echoed back in `source`, so a client can recognise a batch that arrived after the player switched.
+  A label whose `review_enabled` is false is **not asked about and not even searched** (see Labels below).
   The queue is **cached per user *and per source*** (`review.cache_ttl`, default 60 s) — a batch fetch does not
   recompute the expensive vector searches, but a **changed source always rebuilds** (a warm cache serving the
   previous selection would look exactly like a broken toggle); skips/answers are session-wide, so they hold
@@ -553,9 +562,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   removed (→ 404) and an album always displays from the oldest photo (see Photos API). **Labels** `GET /labels`
   (RequireAuth) → `{labels:[{...label, photo_count}]}` (ordered by priority DESC); `POST /labels`
   (RequireWrite) → 201 from `{name,priority?}` (empty name → 400); `GET /labels/{uid}`
-  (RequireAuth, 404); `PATCH /labels/{uid}` (RequireWrite, name/priority); `DELETE /labels/{uid}`
+  (RequireAuth, 404); `PATCH /labels/{uid}` (RequireWrite, name/priority/review_enabled); `DELETE /labels/{uid}`
   (RequireWrite → 204); attaching `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}`
-  → 204 (invalid source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204. **An album's/label's
+  → 204 (invalid source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204.
+  Every label payload carries **`review_enabled`** — whether the review game may ask about it. It is `true` for
+  every created label (`POST` ignores the field) and is switched on the labels page via `PATCH`; **omitting it
+  from a PATCH body keeps the stored value**, so the rename form and the toggle can each send only what they
+  know without clobbering the other's field. Switching it off means the label produces no questions *and is not
+  scanned* — a label search is a per-member kNN fan-out, so it costs a queue rebuild nothing either. It is a
+  statement about the label as a whole; "not this photo for this label" remains a per-photo rejection under
+  `/feedback/label-rejections`. Subjects have no equivalent flag. **An album's/label's
   photo gallery** runs via the shared `GET /photos?album={uid}`/`?label={uid}` (the same shape +
   filters/pagination; an album scope always has forced chronology, a label honours the chosen order). A viewer reads, but does not mutate (403).
   Every mutation (create/update/delete of an album or label, add/remove of photos, attach/detach) writes an audit entry

@@ -11,9 +11,12 @@ import (
 
 // labelColumns is the canonical, ordered column list for label reads, matched by
 // scanLabel.
-const labelColumns = "uid, slug, name, priority, created_at, updated_at"
+const labelColumns = "uid, slug, name, priority, review_enabled, created_at, updated_at"
 
-// insertLabelSQL inserts a label and returns the stored row.
+// insertLabelSQL inserts a label and returns the stored row. review_enabled is
+// deliberately absent from the column list: a new label always takes part in the
+// review game (the column's DEFAULT true), so no caller can create one the game
+// ignores by passing a zero-valued struct. Switching it off is an update.
 const insertLabelSQL = `
 INSERT INTO labels (uid, slug, name, priority)
 VALUES ($1, $2, $3, $4)
@@ -24,7 +27,7 @@ RETURNING ` + labelColumns
 func scanLabel(row pgx.Row) (Label, error) {
 	var l Label
 	if err := row.Scan(
-		&l.UID, &l.Slug, &l.Name, &l.Priority, &l.CreatedAt, &l.UpdatedAt,
+		&l.UID, &l.Slug, &l.Name, &l.Priority, &l.ReviewEnabled, &l.CreatedAt, &l.UpdatedAt,
 	); err != nil {
 		return Label{}, fmt.Errorf("organize: scanning label: %w", err)
 	}
@@ -37,7 +40,8 @@ func scanLabel(row pgx.Row) (Label, error) {
 func scanLabelCount(row pgx.Row) (LabelCount, error) {
 	var lc LabelCount
 	if err := row.Scan(
-		&lc.UID, &lc.Slug, &lc.Name, &lc.Priority, &lc.CreatedAt, &lc.UpdatedAt, &lc.PhotoCount,
+		&lc.UID, &lc.Slug, &lc.Name, &lc.Priority, &lc.ReviewEnabled,
+		&lc.CreatedAt, &lc.UpdatedAt, &lc.PhotoCount,
 	); err != nil {
 		return LabelCount{}, fmt.Errorf("organize: scanning label count: %w", err)
 	}
@@ -65,7 +69,8 @@ func insertLabelRow(ctx context.Context, q rowQuerier, l Label, slug string) (La
 
 // CreateLabel inserts l and returns it refreshed with the generated UID, unique
 // slug and timestamps. The slug is derived from l.Name and a numeric suffix is
-// appended on collision.
+// appended on collision. l.ReviewEnabled is ignored — a new label always takes
+// part in the review game; see insertLabelSQL.
 func (s *Store) CreateLabel(ctx context.Context, l Label) (Label, error) {
 	prepared, base, err := prepareLabelInsert(l)
 	if err != nil {
@@ -104,7 +109,7 @@ func (s *Store) getLabel(ctx context.Context, col, val string) (Label, error) {
 // updateLabelSQL rewrites a label's editable fields (including a re-derived slug)
 // and returns the refreshed row.
 const updateLabelSQL = `
-UPDATE labels SET slug = $2, name = $3, priority = $4, updated_at = now()
+UPDATE labels SET slug = $2, name = $3, priority = $4, review_enabled = $5, updated_at = now()
 WHERE uid = $1
 RETURNING ` + labelColumns
 
@@ -112,12 +117,13 @@ RETURNING ` + labelColumns
 // using q (a pool or a transaction), returning the refreshed row (or pgx.ErrNoRows
 // when no label matches, which callers translate to ErrLabelNotFound).
 func updateLabelRow(ctx context.Context, q rowQuerier, uid string, upd LabelUpdate, slug string) (Label, error) {
-	return scanLabel(q.QueryRow(ctx, updateLabelSQL, uid, slug, upd.Name, upd.Priority))
+	return scanLabel(q.QueryRow(ctx, updateLabelSQL, uid, slug, upd.Name, upd.Priority, upd.ReviewEnabled))
 }
 
 // UpdateLabel applies upd to the label identified by uid: it re-slugs from the new
-// name (kept unique) and rewrites the editable fields. It returns ErrLabelNotFound
-// if no such label exists.
+// name (kept unique) and rewrites the editable fields, the review-game switch
+// included — upd carries the value to store, not a delta. It returns
+// ErrLabelNotFound if no such label exists.
 func (s *Store) UpdateLabel(ctx context.Context, uid string, upd LabelUpdate) (Label, error) {
 	base := slugify(upd.Name, labelFallbackSlug)
 	updated, err := insertWithUniqueSlug(base, func(slug string) (Label, error) {
@@ -135,7 +141,7 @@ func (s *Store) UpdateLabel(ctx context.Context, uid string, upd LabelUpdate) (L
 // stack member) — COUNT(p.uid) ignores the NULL rows hidden photos join as — so
 // the badge agrees with the grid the label filter shows.
 const listLabelsSQL = `
-SELECT l.uid, l.slug, l.name, l.priority, l.created_at, l.updated_at,
+SELECT l.uid, l.slug, l.name, l.priority, l.review_enabled, l.created_at, l.updated_at,
        COUNT(p.uid) AS photo_count
 FROM labels l
 LEFT JOIN photo_labels pl ON pl.label_uid = l.uid
@@ -286,7 +292,8 @@ func (s *Store) ListPhotoUIDsByLabel(ctx context.Context, labelUID string) ([]st
 // listLabelsForPhotoSQL selects every label attached to a photo, highest
 // priority first then by name. The columns are alias-qualified because
 // photo_labels also has a created_at column, which would otherwise be ambiguous.
-const listLabelsForPhotoSQL = "SELECT l.uid, l.slug, l.name, l.priority, l.created_at, l.updated_at " +
+const listLabelsForPhotoSQL = "SELECT l.uid, l.slug, l.name, l.priority, l.review_enabled, " +
+	"l.created_at, l.updated_at " +
 	"FROM labels l JOIN photo_labels pl ON pl.label_uid = l.uid WHERE pl.photo_uid = $1 " +
 	"ORDER BY l.priority DESC, l.name"
 

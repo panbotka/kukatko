@@ -121,7 +121,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/reachability` — cached background probe of the embeddings sidecar (atomic flag for `/capabilities`)
 - `internal/reset` — the guarded library wipe (`kukatko maintenance reset`): dry run by default, typed database + bucket name, target + schema checks, storage deletion confined to Kukátko's own prefixes, audited in the truncation's transaction; never touches accounts/announcement/audit/migrations
 - `internal/restoreapi` — maintainer-only **read-only** `/restore/*` (destructive restore only via CLI)
-- `internal/review` — the review game: one-question-at-a-time queue of face/label candidates from the uncertainty band; answers reuse existing write paths
+- `internal/review` — the review game: one-question-at-a-time queue of face/label candidates, mixed from a confident tier and the uncertainty band; answers reuse existing write paths
 - `internal/reviewapi` — `GET /review/queue`, `POST /review/answer` (RequireWrite)
 - `internal/savedsearch` — per-user saved searches ("smart albums")
 - `internal/savedsearchapi` — `/saved-searches`, everything scoped to the owner (foreign → 404)

@@ -41,9 +41,17 @@ type albumInput struct {
 }
 
 // labelInput is the JSON body accepted by the label create and update endpoints.
+//
+// ReviewEnabled is a pointer because omitting it has to mean "leave it alone".
+// The label edit modal sends only the name and the priority, and the review
+// toggle sends the whole record back — a plain bool would let either of them
+// silently clobber the other's field with a Go zero value. Honoured only on
+// update: a created label always takes part in the review game (see
+// organize.CreateLabel).
 type labelInput struct {
-	Name     string `json:"name"`
-	Priority int    `json:"priority"`
+	Name          string `json:"name"`
+	Priority      int    `json:"priority"`
+	ReviewEnabled *bool  `json:"review_enabled"`
 }
 
 // photoUIDsInput is the JSON body accepted by the album membership endpoints:
@@ -154,7 +162,14 @@ func (in labelInput) toLabel() organize.Label {
 	return organize.Label{Name: in.Name, Priority: in.Priority}
 }
 
-// toUpdate converts the request input into an organize.LabelUpdate for editing.
-func (in labelInput) toUpdate() organize.LabelUpdate {
-	return organize.LabelUpdate{Name: in.Name, Priority: in.Priority}
+// toUpdate converts the request input into an organize.LabelUpdate for editing,
+// falling back to the label's current review-game setting when the body omits
+// review_enabled — the store writes the field unconditionally, so a missing
+// value has to be carried across rather than defaulted.
+func (in labelInput) toUpdate(existing organize.Label) organize.LabelUpdate {
+	reviewEnabled := existing.ReviewEnabled
+	if in.ReviewEnabled != nil {
+		reviewEnabled = *in.ReviewEnabled
+	}
+	return organize.LabelUpdate{Name: in.Name, Priority: in.Priority, ReviewEnabled: reviewEnabled}
 }

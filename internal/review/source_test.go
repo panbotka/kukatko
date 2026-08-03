@@ -150,11 +150,12 @@ func TestQueue_emptyChosenSourceSaysWhich(t *testing.T) {
 			},
 			want: ReasonNoLabels,
 		},
-		"people exist but the band is empty": {
+		"people exist but neither tier has anything": {
 			source: SourcePeople,
 			setup: func(f *fixture) {
-				// Confidence 0.9: a match, but far too certain to be a question.
-				f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.1)}
+				// Confidence 0.30: below the band, so the guess is noise rather than
+				// a fair question, and nowhere near the confident tier either.
+				f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.7)}
 			},
 			want: ReasonNoCandidates,
 		},

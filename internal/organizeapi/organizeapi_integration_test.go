@@ -317,6 +317,69 @@ func TestLabelLifecycleAndAttach(t *testing.T) {
 	_ = resp.Body.Close()
 }
 
+// TestLabelReviewEnabledRoundTrip drives the labels page's review-game toggle
+// over HTTP: a created label is in the game, a PATCH can take it out and put it
+// back, and every read path — the single label and the list the page renders
+// from — reports the stored value.
+func TestLabelReviewEnabledRoundTrip(t *testing.T) {
+	env := newEnv(t)
+	editor := env.login(t, "editor", auth.RoleEditor)
+
+	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/labels",
+		[]byte(`{"name":"Výlet","priority":0}`))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create label status = %d, want 201", resp.StatusCode)
+	}
+	var label organize.Label
+	decodeBody(t, resp, &label)
+	if !label.ReviewEnabled {
+		t.Fatalf("a created label is review_enabled=%v, want true", label.ReviewEnabled)
+	}
+
+	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/labels/"+label.UID,
+		[]byte(`{"name":"Výlet","priority":0,"review_enabled":false}`))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch status = %d, want 200", resp.StatusCode)
+	}
+	var off organize.Label
+	decodeBody(t, resp, &off)
+	if off.ReviewEnabled {
+		t.Fatalf("patched label = %+v, want review_enabled false", off)
+	}
+
+	resp = env.mustDo(t, editor, http.MethodGet, "/api/v1/labels/"+label.UID, nil)
+	var fetched organize.Label
+	decodeBody(t, resp, &fetched)
+	if fetched.ReviewEnabled {
+		t.Errorf("GET /labels/%s = %+v, want review_enabled false", label.UID, fetched)
+	}
+	resp = env.mustDo(t, editor, http.MethodGet, "/api/v1/labels", nil)
+	var list struct {
+		Labels []organize.LabelCount `json:"labels"`
+	}
+	decodeBody(t, resp, &list)
+	if len(list.Labels) != 1 || list.Labels[0].ReviewEnabled {
+		t.Errorf("GET /labels = %+v, want one label with review_enabled false", list.Labels)
+	}
+
+	// A rename that says nothing about the switch must not flip it back on.
+	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/labels/"+label.UID,
+		[]byte(`{"name":"Výlety","priority":1}`))
+	var renamed organize.Label
+	decodeBody(t, resp, &renamed)
+	if renamed.ReviewEnabled || renamed.Name != "Výlety" {
+		t.Errorf("renamed label = %+v, want the new name with review_enabled still false", renamed)
+	}
+
+	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/labels/"+label.UID,
+		[]byte(`{"name":"Výlety","priority":1,"review_enabled":true}`))
+	var back organize.Label
+	decodeBody(t, resp, &back)
+	if !back.ReviewEnabled {
+		t.Errorf("switched back on = %+v, want review_enabled true", back)
+	}
+}
+
 // TestRoleEnforcement verifies a viewer can read but not mutate, while an editor
 // can do both.
 func TestRoleEnforcement(t *testing.T) {

@@ -1,18 +1,25 @@
 package review
 
 // Queue building: run the existing candidate searches over a bounded window of
-// the library, keep only the uncertainty band, order by informativeness, spread
-// the questions across the entities they are about (see variety.go) and
-// interleave the two kinds.
+// the library, split what they return into the two confidence tiers (see
+// tiers.go), order each tier by its own rule, blend them in the configured
+// ratio, spread the questions across the entities they are about (see
+// variety.go) and interleave the two kinds.
 //
 // The bound is the point. The game shows one question at a time, so producing a
 // library-wide work list to fill a single batch is the wrong trade: on a real
 // library (105 named subjects, 113 628 faces) sweeping every subject cost four
 // minutes inside one request and no browser waited that long. Each source is
 // therefore scanned in a rotating window — a handful of subjects, a handful of
-// labels — and stops as soon as the batch has enough band candidates, with a
-// deadline behind that as a backstop. The cursors advance on every rebuild, so
-// successive rebuilds walk the whole library instead of re-reading its head.
+// labels — and stops as soon as the batch has enough candidates, with a deadline
+// behind that as a backstop. The cursors advance on every rebuild, so successive
+// rebuilds walk the whole library instead of re-reading its head.
+//
+// A rebuild that finds nothing rotates and tries again rather than reporting an
+// empty queue: the game has to stay playable while any unconfirmed candidate
+// exists anywhere, and "this window happened to be exhausted" is not "there is
+// nothing to do". The rounds share one deadline, so degrading costs latency
+// only up to BuildTimeout.
 
 import (
 	"context"
@@ -78,9 +85,11 @@ func (s *Service) needsRebuild(sess *session, src Source) bool {
 
 // material is what one rebuild collected before ordering and interleaving.
 type material struct {
-	// faceQs and labelQs are the band candidates from the two sources.
-	faceQs  []Question
-	labelQs []Question
+	// faceQs and labelQs are the two sources' candidates, each still split by
+	// confidence tier because the tiers are ordered differently and mixed by a
+	// ratio (see tiers.go).
+	faceQs  tiered
+	labelQs tiered
 	// subjectsTotal and labelsTotal are the library-wide source counts (not the
 	// window's), so the empty-queue reason stays exact. A source the selection
 	// excluded is never scanned, so its count stays zero — reasonFor only reads
@@ -92,22 +101,40 @@ type material struct {
 	degraded bool
 }
 
+// questions is how many questions the round collected across both sources and
+// both tiers.
+func (m material) questions() int {
+	return m.faceQs.len() + m.labelQs.len()
+}
+
+// sources is how many things the round found worth scanning at all, library-wide
+// — named subjects plus labels the game may ask about. Zero means another
+// rotation would scan the same nothing, so it is the signal to stop rotating.
+func (m material) sources() int {
+	return m.subjectsTotal + m.labelsTotal
+}
+
 // rebuild recomputes the session's queue from the current library state for the
 // selected source, aiming for need questions per source. The caller holds
 // sess.mu, so concurrent batch fetches for one user never run the searches
 // twice. The result is deterministic for a fixed library state and a fixed pair
 // of cursors: both searches' outputs are re-sorted here, so goroutine completion
-// order cannot leak into the queue, and the variety rules on top of that sort
-// are pure functions of it.
+// order cannot leak into the queue, and the tier blend and variety rules on top
+// of that sort are pure functions of it.
+//
+// The whole rebuild shares one deadline. That is what lets it rotate on an empty
+// round without turning a slow library into a request that never answers: the
+// rounds spend one BuildTimeout between them, not one each.
 func (s *Service) rebuild(ctx context.Context, sess *session, src Source, need int) error {
-	mat, err := s.collect(ctx, src, need)
+	buildCtx, cancel := context.WithTimeout(ctx, s.buildTimeout)
+	defer cancel()
+
+	mat, err := s.collectRotating(buildCtx, ctx, src, need)
 	if err != nil {
 		return err
 	}
-	faceQs := excludeSeen(mat.faceQs, sess)
-	labelQs := excludeSeen(mat.labelQs, sess)
-	s.orderQuestions(faceQs)
-	s.orderQuestions(labelQs)
+	faceQs := s.compose(mat.faceQs, sess)
+	labelQs := s.compose(mat.labelQs, sess)
 	// Each source is spread before the merge, not after. Interleaving only ever
 	// inserts questions of the other kind between two of the same kind, and a
 	// face question and a label question are never about the same entity, so any
@@ -118,15 +145,61 @@ func (s *Service) rebuild(ctx context.Context, sess *session, src Source, need i
 	sess.source = src
 	sess.builtAt = s.now()
 	sess.reason = reasonFor(src, mat)
+	sure, band := tierCounts(sess.queue)
 	s.log.DebugContext(ctx, "review: queue rebuilt", "questions", len(sess.queue),
 		"source", string(src), "entities", countEntities(sess.queue),
-		"longest_run", longestEntityRun(sess.queue))
+		"longest_run", longestEntityRun(sess.queue), "sure", sure, "band", band)
 	return nil
 }
 
-// collect gathers up to need band candidates from each selected source under the
-// rebuild deadline. The deadline is the backstop behind the per-source budgets:
-// whatever the library does, the request cannot stay open longer than
+// collectRotating runs collect until a round comes back with candidates,
+// rotating the scan cursors on every empty one (each scan advances its cursor by
+// the whole window it walked, so the next round looks somewhere else), and
+// returns that round's material. It gives up after maxRebuildRounds, when the
+// deadline fires, when a round was cut short (its totals cannot be trusted to
+// say the library is empty) or when the library genuinely holds no source to ask
+// about.
+//
+// This is what "infinite" means in practice. Every scan is a bounded window over
+// a rotating cursor, so an empty result means "nothing left in *this* window",
+// which is not a reason to tell the player there is nothing to do — the next
+// window may be full. Only a library with no named people and no reviewable
+// label is genuinely out of questions.
+//
+// A round whose candidates the session has all already answered or skipped is
+// not retried here (excludeSeen runs later, in compose): that queue comes back
+// empty, and needsRebuild then rebuilds on the very next request, which rotates
+// just the same — one request later instead of one round.
+func (s *Service) collectRotating(
+	buildCtx, ctx context.Context, src Source, need int,
+) (material, error) {
+	var mat material
+	for round := range maxRebuildRounds {
+		var err error
+		if mat, err = s.collect(buildCtx, ctx, src, need); err != nil {
+			return material{}, err
+		}
+		if roundIsFinal(mat, buildCtx) {
+			break
+		}
+		s.log.DebugContext(ctx, "review: empty rebuild round, rotating to the next window",
+			"round", round+1, "source", string(src))
+	}
+	return mat, nil
+}
+
+// roundIsFinal reports whether one collect round is worth stopping on: it found
+// questions, it was cut short (so its emptiness proves nothing and another
+// window would only burn what is left of the deadline), the deadline has already
+// fired, or the library holds no source to rotate through at all.
+func roundIsFinal(mat material, buildCtx context.Context) bool {
+	return mat.questions() > 0 || mat.degraded || mat.sources() == 0 || buildCtx.Err() != nil
+}
+
+// collect gathers up to need candidates from each selected source under the
+// rebuild deadline carried by buildCtx; ctx is the caller's own context, used
+// only to tell the deadline firing (tolerable) from the client going away (not).
+// Whatever the library does, the request cannot stay open longer than
 // BuildTimeout, and a scan cut short degrades to a shorter batch instead of a
 // failed request.
 //
@@ -136,10 +209,7 @@ func (s *Service) rebuild(ctx context.Context, sess *session, src Source, need i
 // afterwards would spend the whole price of a batch on questions nobody asked
 // for. The unscanned side's total therefore stays zero, which reasonFor knows
 // not to read as an empty library.
-func (s *Service) collect(ctx context.Context, src Source, need int) (material, error) {
-	buildCtx, cancel := context.WithTimeout(ctx, s.buildTimeout)
-	defer cancel()
-
+func (s *Service) collect(buildCtx, ctx context.Context, src Source, need int) (material, error) {
 	var mat material
 	if src.wantsFaces() {
 		faceQs, subjectsTotal, err := s.faceQuestions(buildCtx, need)
@@ -164,6 +234,19 @@ func (s *Service) collect(ctx context.Context, src Source, need int) (material, 
 	return mat, nil
 }
 
+// compose turns one source's collected material into the ordered, blended,
+// share-capped sequence the variety rules then reorder: each tier is stripped of
+// what the session has already answered or skipped and ordered by its own rule,
+// the two are blended in the configured ratio, and the per-entity share is
+// enforced across the result.
+func (s *Service) compose(mat tiered, sess *session) []Question {
+	sure := excludeSeen(mat.sure, sess)
+	band := excludeSeen(mat.band, sess)
+	s.orderQuestions(sure, tierSure)
+	s.orderQuestions(band, tierBand)
+	return capEntities(blend(sure, band, s.sureShare), s.maxPerEntity)
+}
+
 // tolerateDeadline reports whether err is the rebuild's own deadline firing —
 // the bound doing its job — rather than a real failure. The caller's own
 // cancellation (the client went away) and every other error still propagate.
@@ -177,58 +260,73 @@ func (s *Service) tolerateDeadline(ctx context.Context, err error) bool {
 }
 
 // faceQuestions scans a bounded, rotating window of the named subjects and keeps
-// the candidates inside the uncertainty band, stopping as soon as need of them
-// are in hand — where each subject contributes at most MaxPerEntity, so "enough"
-// can only be reached by scanning several people. It also returns how many named
-// subjects the library holds — the full count, not the window's — for the
-// empty-library reason. The scan bounds its own concurrency and already excludes
-// assigned faces, persisted rejections, negative exemplars and sub-reviewable
-// faces.
+// the candidates that fall in either tier, stopping as soon as need of them are
+// in hand — where each subject contributes at most MaxPerEntity per tier, so
+// "enough" can only be reached by scanning several people. It also returns how
+// many named subjects the library holds — the full count, not the window's — for
+// the empty-library reason. The scan bounds its own concurrency and already
+// excludes assigned faces, persisted rejections, negative exemplars and
+// sub-reviewable faces.
 //
-// The band is pushed all the way down into the search as a distance window rather
-// than filtered out here: confidence >= BandMin is the scan's Threshold, and
-// confidence < BandMax is its MinDistance. Asking for the whole threshold and
-// discarding the confident matches afterwards made the scan hydrate a full photo
-// record — EXIF blob included — for every match it was about to throw away, which
-// on a subject that matches half the library is the difference between megabytes
-// and gigabytes. inBand still runs below; this only stops the waste upstream.
-func (s *Service) faceQuestions(ctx context.Context, need int) ([]Question, int, error) {
-	var questions []Question
-	params := sweep.Params{Threshold: 1 - s.bandMin, MinDistance: 1 - s.bandMax}
+// The search window now runs from the confident tier down to BandMin (Threshold
+// = 1 - BandMin, no MinDistance floor) because the game asks about both tiers.
+// That is a deliberate reversal of d0d6518, which had pushed the band's far edge
+// into the search as MinDistance after one rebuild reached 10.9 GB anon-rss and
+// the host OOM killer took the whole box down. What actually bounds the memory
+// is not that floor: it is candidates' MaxExemplars and MaxCandidates and the
+// fact that the cut to MaxCandidates happens *before* hydration, so at most a
+// fixed number of photo records — EXIF blobs included — are ever built,
+// whatever the window admits. Those must keep doing the work;
+// internal/candidates/memory_test.go measures exactly this window.
+//
+// One consequence is worth naming: MaxCandidates keeps the *nearest* survivors,
+// so a subject with more than MaxCandidates confident matches contributes no
+// band candidates at all. That takes a person who resembles hundreds of
+// still-unnamed faces at over BandMax — the shape the catch-all-subject bug
+// produced, not a healthy library — and the rotation moves past them either way.
+func (s *Service) faceQuestions(ctx context.Context, need int) (tiered, int, error) {
+	var questions tiered
+	collected := 0
+	params := sweep.Params{Threshold: 1 - s.bandMin}
 	win := sweep.Window{Offset: s.faceOffset(), Budget: s.faceBudget}
 	cov, err := s.sweeper.Scan(ctx, params, win, func(person *sweep.Person) (bool, error) {
-		questions = append(questions, s.personQuestions(person)...)
-		return len(questions) >= need, nil
+		theirs := s.personQuestions(person)
+		questions.merge(theirs)
+		collected += s.batchShare(theirs)
+		return collected >= need, nil
 	})
 	if err != nil {
-		return nil, 0, fmt.Errorf("review: scanning face candidates: %w", err)
+		return tiered{}, 0, fmt.Errorf("review: scanning face candidates: %w", err)
 	}
 	s.advanceFaceOffset(cov.NextOffset)
 	return questions, cov.SubjectsTotal, nil
 }
 
 // personQuestions converts one subject's scanned candidates into face questions,
-// keeping only the uncertainty band, dropping stale already-done rows and
-// keeping at most MaxPerEntity of what is left. The cap is applied here rather
-// than after the scan on purpose: the scan stops once it holds need questions,
-// so capping first is what makes "enough" mean "enough from enough different
-// people" instead of "enough from whoever happened to be scanned first".
-func (s *Service) personQuestions(person *sweep.Person) []Question {
+// split by tier, dropping what falls in neither tier and stale already-done rows
+// and keeping at most MaxPerEntity per tier. The cap is applied here rather than
+// after the scan on purpose: the scan stops once it holds need questions, so
+// capping first is what makes "enough" mean "enough from enough different
+// people" instead of "enough from whoever happened to be scanned first". The
+// batch-wide share across both tiers is enforced later, by capEntities.
+func (s *Service) personQuestions(person *sweep.Person) tiered {
 	if person == nil {
-		return nil
+		return tiered{}
 	}
-	var questions []Question
+	var questions tiered
 	for _, cand := range person.Candidates {
 		confidence := 1 - cand.Distance
-		if !s.inBand(confidence) || cand.Action == candidates.ActionAlreadyDone {
+		which, ok := s.tierOf(confidence)
+		if !ok || cand.Action == candidates.ActionAlreadyDone {
 			continue
 		}
 		subject := person.Subject
 		faceIndex := cand.FaceIndex
 		box := cand.BBox
-		questions = append(questions, Question{
+		questions.add(which, Question{
 			ID:         faceQuestionID(cand.Photo.UID, cand.FaceIndex, subject.UID),
 			Kind:       KindFace,
+			Tier:       string(which),
 			Confidence: confidence,
 			Photo:      cand.Photo,
 			Subject:    &subject,
@@ -241,55 +339,94 @@ func (s *Service) personQuestions(person *sweep.Person) []Question {
 	return s.keepBest(questions)
 }
 
-// keepBest orders one entity's questions by informativeness and keeps at most
-// MaxPerEntity of them, which is the share of a batch a single subject or label
-// may claim. It orders before it cuts, so what survives is the entity's most
-// informative material, not whatever the search happened to return first.
-func (s *Service) keepBest(questions []Question) []Question {
-	s.orderQuestions(questions)
+// keepBest orders one entity's questions within each tier and keeps at most
+// MaxPerEntity of each, which is the share of a batch a single subject or label
+// may claim there. It orders before it cuts, so what survives is the entity's
+// best material per tier — its surest confident candidates and its most
+// informative uncertain ones — not whatever the search happened to return first.
+func (s *Service) keepBest(questions tiered) tiered {
+	return tiered{
+		sure: s.keepBestTier(questions.sure, tierSure),
+		band: s.keepBestTier(questions.band, tierBand),
+	}
+}
+
+// keepBestTier orders one entity's questions from a single tier and cuts them to
+// the per-entity share.
+func (s *Service) keepBestTier(questions []Question, which tier) []Question {
+	s.orderQuestions(questions, which)
 	if len(questions) > s.maxPerEntity {
 		questions = questions[:s.maxPerEntity]
 	}
 	return questions
 }
 
+// batchShare is how many of one entity's questions can actually reach a batch:
+// its material, capped at the per-entity share.
+//
+// It is what a scan counts toward "enough", and counting anything else breaks
+// the batch. Each tier keeps up to MaxPerEntity of an entity's questions, so an
+// entity that has material in both offers twice the share — and a scan that
+// counted all of it would stop after half the people it needs, leaving
+// capEntities to cut the batch back below the size that was asked for. Counting
+// what survives the cut makes the two agree exactly: a scan that stops at need
+// yields a batch of need.
+func (s *Service) batchShare(questions tiered) int {
+	if s.maxPerEntity <= 0 {
+		return questions.len()
+	}
+	return min(questions.len(), s.maxPerEntity)
+}
+
 // labelQuestions runs the label-similarity search over a bounded, rotating
-// window of the labels that have photos and keeps the candidates inside the
-// uncertainty band, stopping as soon as need of them are in hand — again
-// counting at most MaxPerEntity per label, so one prolific label cannot end the
-// scan on its own. It also returns how many labels have photos library-wide, for
+// window of the labels the game may ask about and keeps the candidates that fall
+// in either tier, stopping as soon as need of them are in hand — again counting
+// at most MaxPerEntity per label per tier, so one prolific label cannot end the
+// scan on its own. It also returns how many such labels the library holds, for
 // the empty-library reason. A single label's search failing is logged and
 // skipped, like the per-subject scan's policy.
-func (s *Service) labelQuestions(ctx context.Context, need int) ([]Question, int, error) {
+func (s *Service) labelQuestions(ctx context.Context, need int) (tiered, int, error) {
 	labels, total, err := s.labelPlan(ctx)
 	if err != nil {
-		return nil, 0, err
+		return tiered{}, 0, err
 	}
 	if len(labels) == 0 {
-		return nil, total, nil
+		return tiered{}, total, nil
 	}
 	offset := wrapOffset(s.labelOffset(), len(labels))
 	window := rotateLabels(labels, offset, s.labelBudget)
 
-	var questions []Question
-	scanned := 0
-	for start := 0; start < len(window) && len(questions) < need; start += s.labelConcurrency {
+	var questions tiered
+	scanned, collected := 0, 0
+	for start := 0; start < len(window) && collected < need; start += s.labelConcurrency {
 		chunk := window[start:min(start+s.labelConcurrency, len(window))]
 		results, chunkErr := s.scanLabels(ctx, chunk)
 		if chunkErr != nil {
-			return nil, 0, chunkErr
+			return tiered{}, 0, chunkErr
 		}
 		scanned += len(chunk)
 		for i := range chunk {
-			questions = append(questions, s.labelResultQuestions(chunk[i].Label, results[i])...)
+			label := s.labelResultQuestions(chunk[i].Label, results[i])
+			questions.merge(label)
+			collected += s.batchShare(label)
 		}
 	}
 	s.advanceLabelOffset(wrapOffset(offset+scanned, len(labels)))
 	return questions, total, nil
 }
 
-// labelPlan lists the labels that have photos, capped at MaxLabels, and returns
-// them with the uncapped total the empty-library reason is derived from.
+// labelPlan lists the labels the review game may ask about — those that have
+// photos and have not been switched off on the labels page — capped at
+// MaxLabels, and returns them with the uncapped total the empty-library reason
+// is derived from.
+//
+// A switched-off label is dropped here, before the plan, rather than filtered
+// out of the questions afterwards. That is the point of the switch: one label's
+// similarity search is a per-member kNN fan-out, so a label nobody wants to be
+// asked about must not spend a rebuild's budget either. Dropping it from the
+// total as well is deliberate too — a library whose every label is switched off
+// is, as far as the game is concerned, a library with no labels, and that is
+// what the empty-queue reason should say.
 func (s *Service) labelPlan(ctx context.Context) ([]organize.LabelCount, int, error) {
 	all, err := s.organize.ListLabels(ctx)
 	if err != nil {
@@ -297,7 +434,7 @@ func (s *Service) labelPlan(ctx context.Context) ([]organize.LabelCount, int, er
 	}
 	labels := make([]organize.LabelCount, 0, len(all))
 	for _, label := range all {
-		if label.PhotoCount > 0 {
+		if label.PhotoCount > 0 && label.ReviewEnabled {
 			labels = append(labels, label)
 		}
 	}
@@ -337,20 +474,26 @@ func (s *Service) scanLabels(ctx context.Context, chunk []organize.LabelCount) (
 }
 
 // labelResultQuestions converts one label's similarity candidates into label
-// questions, keeping only the uncertainty band and, of those, at most
-// MaxPerEntity — the same share rule the face side applies, and for the same
-// reason: a label that matches half the library returns hundreds of band
+// questions split by tier, dropping what falls in neither and keeping at most
+// MaxPerEntity of each tier — the same share rule the face side applies, and for
+// the same reason: a label that matches half the library returns hundreds of
 // candidates and would otherwise be the only thing the batch asks about.
-func (s *Service) labelResultQuestions(label organize.Label, res expand.Result) []Question {
-	var questions []Question
+//
+// The label search costs the same for both tiers: it already ran at the band's
+// threshold and returned the confident matches nearest-first, and the old code
+// simply threw them away. Splitting them out is free.
+func (s *Service) labelResultQuestions(label organize.Label, res expand.Result) tiered {
+	var questions tiered
 	for _, cand := range res.Candidates {
-		if !s.inBand(cand.Similarity) {
+		which, ok := s.tierOf(cand.Similarity)
+		if !ok {
 			continue
 		}
 		labelCopy := label
-		questions = append(questions, Question{
+		questions.add(which, Question{
 			ID:         labelQuestionID(cand.Photo.UID, label.UID),
 			Kind:       KindLabel,
+			Tier:       string(which),
 			Confidence: cand.Similarity,
 			Photo:      cand.Photo,
 			Label:      &labelCopy,
@@ -419,10 +562,26 @@ func excludeSeen(questions []Question, sess *session) []Question {
 	return kept
 }
 
-// orderQuestions sorts questions by informativeness: distance from the band
-// midpoint ascending (the closest to the decision boundary teaches the most),
-// with the stable question id as the deterministic tie-break.
-func (s *Service) orderQuestions(questions []Question) {
+// orderQuestions sorts one tier's questions by that tier's own notion of "best
+// first", with the stable question id as the deterministic tie-break:
+//
+//   - tierBand by informativeness — distance from the band midpoint ascending,
+//     since the candidate closest to the decision boundary teaches the most;
+//   - tierSure by confidence descending, since a tier whose purpose is the
+//     one-click yes is best served surest-first.
+//
+// Ranking the confident tier by boundary distance instead would put its *least*
+// certain members at the head, which is the opposite of what it is for.
+func (s *Service) orderQuestions(questions []Question, which tier) {
+	if which == tierSure {
+		sort.Slice(questions, func(i, j int) bool {
+			if questions[i].Confidence != questions[j].Confidence {
+				return questions[i].Confidence > questions[j].Confidence
+			}
+			return questions[i].ID < questions[j].ID
+		})
+		return
+	}
 	mid := s.bandMid()
 	sort.Slice(questions, func(i, j int) bool {
 		di := math.Abs(questions[i].Confidence - mid)

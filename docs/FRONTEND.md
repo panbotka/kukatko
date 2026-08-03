@@ -689,7 +689,16 @@ here.
   the album's own header controls **stay visible** during a selection (the bar floats over the bottom edge),
   `LabelsPage` = `/labels` a list of labels with counts + create/rename/delete (editor/admin) — the
   row takes the same phone treatment as `SavedSearchesPage` (name truncates, the count keeps its
-  width, rename/delete collapse to a glyph below `sm`),
+  width, rename/delete collapse to a glyph below `sm`); each row also carries the **review-game switch**
+  (`Form.Check type="switch"`, `label.review_enabled`, editor/admin only): wordless at every width — a per-row
+  sentence would repeat itself down the whole page — so the game's own `ui-checks` glyph carries the meaning,
+  the `aria-label` names both the label and what the switch does (`labels.review.toggle`), and a wrapping
+  `<span title>` says which way it currently sits (`Form.Check` forwards `title` to neither the input nor its
+  label). It `PATCH`es the label with its name and priority carried across unchanged, flips the row
+  optimistically and **rolls back plus shows `labels.actionError` if the save fails** — a switch left flipped
+  after a failed save would tell the operator a label is out of the game when it is not. The switch lives here
+  and deliberately **not inside the game**: "don't ask me about this label again" mid-round is a decision about
+  a whole label taken at the worst moment, and "not this photo" is already a per-photo rejection,
   `LabelDetailPage` = `/labels/:uid` a photo grid scoped to the label (`useScopedPhotos` + `FilterBar` + URL);
   the tiles carry the label scope in the detail link (`detailQuery` with `label=uid`) → Esc/Back/prev-next from a photo
   returns to the label; + a **Promítání** button + for editors **hover-select** → the shared
@@ -2069,7 +2078,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `organize.ts` = the Albums/Labels client: albums `fetchAlbums`/`fetchAlbum`/`createAlbum`/`updateAlbum`/
   `deleteAlbum`/`addAlbumPhotos`/`removeAlbumPhotos`, labels `fetchLabels`/
   `fetchLabel`/`createLabel`/`updateLabel`/`deleteLabel`/`attachLabel`/`detachLabel`; the types
-  `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput`;
+  `Album`/`AlbumCount`/`AlbumInput`/`AlbumType`/`Label`/`LabelCount`/`LabelInput` (`Label.review_enabled` =
+  whether the review game may ask about the label; `LabelInput.review_enabled` is **optional**, because
+  omitting it means "leave it as it is" — the rename modal and the labels page's switch each send only what
+  they know, so neither can clobber the other's field);
   `savedSearches.ts` = the saved-searches client: `fetchSavedSearches`/`createSavedSearch(name,params)`/
   `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` over `/api/v1/saved-searches`, the types
   `SavedSearch`/`SavedSearchParams` (= the verbatim URL view state `Record<string,string>`)/
@@ -2153,7 +2165,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `both`; the response echoes the applied `source`, and `REASON_NO_PEOPLE`/`REASON_NO_LABELS` join
   `REASON_NO_SOURCES`/`REASON_NO_CANDIDATES`),
   `answerReview(questionId,answer,signal)` over `POST /review/answer` (idempotent; the types
-  `ReviewQuestion`/`ReviewQueue`/`ReviewAnswer`; the basis for `useReviewGame`), and **the leaderboard**
+  `ReviewQuestion`/`ReviewQueue`/`ReviewAnswer` — `ReviewQuestion.tier` = `'sure'|'band'`, which confidence
+  tier the question came from; the UI asks the same question either way, it is carried so the mix can be
+  observed; the basis for `useReviewGame`), and **the leaderboard**
   `fetchLeaderboard(window,signal)` over `GET /review/leaderboard?window=all|7d|today` →
   `Leaderboard{window,caller_uid,entries:LeaderboardEntry[]}` (`LeaderboardEntry` =
   `{user_uid,display_name,yes_count,no_count,total,is_me}`, ordered by the backend by `total`),

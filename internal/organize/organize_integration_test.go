@@ -628,6 +628,68 @@ func TestLabelCRUDAndAttach(t *testing.T) {
 	}
 }
 
+// TestLabelReviewEnabledRoundTrip covers the per-label review-game switch end to
+// end through the store: a created label takes part in the game whatever the
+// caller's struct said, an update can switch it off and on again, and every read
+// path carries the current value.
+func TestLabelReviewEnabledRoundTrip(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+	photoUID := makePhoto(t, photoStore, "lre1")
+
+	// Deliberately zero-valued: a struct literal must not be able to create a
+	// label the review game silently ignores.
+	label, err := store.CreateLabel(ctx, organize.Label{Name: "Výlet"})
+	if err != nil {
+		t.Fatalf("CreateLabel: %v", err)
+	}
+	if !label.ReviewEnabled {
+		t.Fatalf("a freshly created label is review_enabled=%v, want true", label.ReviewEnabled)
+	}
+	if err := store.AttachLabel(ctx, photoUID, label.UID, organize.SourceManual, 0); err != nil {
+		t.Fatalf("AttachLabel: %v", err)
+	}
+
+	off, err := store.UpdateLabel(ctx, label.UID,
+		organize.LabelUpdate{Name: "Výlet", Priority: 0, ReviewEnabled: false})
+	if err != nil {
+		t.Fatalf("UpdateLabel off: %v", err)
+	}
+	if off.ReviewEnabled {
+		t.Fatalf("UpdateLabel(review_enabled=false) returned %+v", off)
+	}
+
+	// Every read path has to agree, or the toggle looks broken from whichever
+	// page happens to use the other query.
+	fetched, err := store.GetLabelByUID(ctx, label.UID)
+	if err != nil || fetched.ReviewEnabled {
+		t.Errorf("GetLabelByUID = %+v, %v; want review_enabled false", fetched, err)
+	}
+	list, err := store.ListLabels(ctx)
+	if err != nil || len(list) != 1 || list[0].ReviewEnabled {
+		t.Errorf("ListLabels = %+v, %v; want one label with review_enabled false", list, err)
+	}
+	found, err := store.SearchLabels(ctx, "výlet", 10)
+	if err != nil || len(found) != 1 || found[0].ReviewEnabled {
+		t.Errorf("SearchLabels = %+v, %v; want one label with review_enabled false", found, err)
+	}
+	onPhoto, err := store.LabelsForPhoto(ctx, photoUID)
+	if err != nil || len(onPhoto) != 1 || onPhoto[0].ReviewEnabled {
+		t.Errorf("LabelsForPhoto = %+v, %v; want one label with review_enabled false", onPhoto, err)
+	}
+	exported, err := store.PhotoLabelsForPhoto(ctx, photoUID)
+	if err != nil || len(exported) != 1 || exported[0].ReviewEnabled {
+		t.Errorf("PhotoLabelsForPhoto = %+v, %v; want one label with review_enabled false",
+			exported, err)
+	}
+
+	back, err := store.UpdateLabel(ctx, label.UID,
+		organize.LabelUpdate{Name: "Výlet", Priority: 0, ReviewEnabled: true})
+	if err != nil || !back.ReviewEnabled {
+		t.Fatalf("UpdateLabel back on = %+v, %v", back, err)
+	}
+}
+
 // TestLabelAttachInvalidSourceAndMissing checks source validation and the
 // not-found mappings for attachment writes.
 func TestLabelAttachInvalidSourceAndMissing(t *testing.T) {

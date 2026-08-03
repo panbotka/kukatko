@@ -53,7 +53,8 @@ type UserRating struct {
 // listPhotoLabelsSQL selects every label attached to a photo together with the
 // join row's provenance, highest priority first then by name. The label columns
 // are alias-qualified because photo_labels also has a created_at column.
-const listPhotoLabelsSQL = "SELECT l.uid, l.slug, l.name, l.priority, l.created_at, l.updated_at, " +
+const listPhotoLabelsSQL = "SELECT l.uid, l.slug, l.name, l.priority, l.review_enabled, " +
+	"l.created_at, l.updated_at, " +
 	"pl.source, pl.uncertainty, pl.created_at " +
 	"FROM labels l JOIN photo_labels pl ON pl.label_uid = l.uid WHERE pl.photo_uid = $1 " +
 	"ORDER BY l.priority DESC, l.name"
@@ -75,7 +76,8 @@ func (s *Store) PhotoLabelsForPhoto(ctx context.Context, photoUID string) ([]Pho
 	out := make([]PhotoLabel, 0)
 	for rows.Next() {
 		var pl PhotoLabel
-		if err := rows.Scan(&pl.UID, &pl.Slug, &pl.Name, &pl.Priority, &pl.CreatedAt, &pl.UpdatedAt,
+		if err := rows.Scan(&pl.UID, &pl.Slug, &pl.Name, &pl.Priority, &pl.ReviewEnabled,
+			&pl.CreatedAt, &pl.UpdatedAt,
 			&pl.Source, &pl.Uncertainty, &pl.AttachedAt); err != nil {
 			return nil, fmt.Errorf("organize: scanning photo label for %s: %w", photoUID, err)
 		}

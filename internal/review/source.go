@@ -90,6 +90,9 @@ func reasonFor(src Source, mat material) string {
 			return ReasonNoPeople
 		}
 	case SourceLabels:
+		// A library whose every label has been switched off on the labels page
+		// reads as "no labels" here, and that is the honest message: the game has
+		// nothing to ask about, and the fix is the toggle, not more photos.
 		if mat.labelsTotal == 0 {
 			return ReasonNoLabels
 		}

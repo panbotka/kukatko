@@ -474,11 +474,12 @@ type ExpandConfig struct {
 	Concurrency int `mapstructure:"concurrency"`
 }
 
-// ReviewConfig tunes the review game: one question at a time over candidates
-// the system is genuinely unsure about. Confidence is 1 - cosine distance;
-// only candidates inside [BandMin, BandMax) become questions — below the band
-// the guess is noise, at or above BandMax the /recognition and /expand pages
-// confirm in bulk instead.
+// ReviewConfig tunes the review game: one question at a time, mixed from two
+// confidence tiers. Confidence is 1 - cosine distance. Most of a batch comes
+// from the confident tier (at least SureMin), where the answer is almost always
+// a one-click yes and a "yes" is real work done; the rest comes from the
+// uncertainty band [BandMin, BandMax), where a human answer buys the most
+// information. Below the band the guess is noise and is never asked about.
 type ReviewConfig struct {
 	// BandMin is the inclusive lower confidence bound of the uncertainty band.
 	// Out-of-range values fall back to the default pair.
@@ -486,6 +487,18 @@ type ReviewConfig struct {
 	// BandMax is the exclusive upper confidence bound of the uncertainty band.
 	// Out-of-range values fall back to the default pair.
 	BandMax float64 `mapstructure:"band_max"`
+	// SureMin is the inclusive floor of the confident tier — the candidates whose
+	// answer is almost certainly yes. It is clamped up to BandMax so the two
+	// tiers can never overlap; setting it equal to BandMax leaves no confidence
+	// between them unasked. Out-of-range values fall back to the default.
+	SureMin float64 `mapstructure:"sure_min"`
+	// SureShare is the fraction of a batch drawn from the confident tier, the
+	// rest coming from the band. Raising it makes the game easier and more
+	// productive per minute; raise it too far and the player stops looking and
+	// rubber-stamps wrong assignments into the library, which is the very thing
+	// the game exists to clean up. A value outside (0, 1) falls back to the
+	// default.
+	SureShare float64 `mapstructure:"sure_share"`
 	// QueueSize is the default number of questions per queue batch, sized so the
 	// UI can prefetch. A non-positive value falls back to the default.
 	QueueSize int `mapstructure:"queue_size"`
@@ -922,14 +935,16 @@ func setExpandDefaults(v *viper.Viper) {
 }
 
 // setReviewDefaults registers the review game defaults: the uncertainty band
-// (roughly "the system is 45–75 % sure"), the batch size the UI prefetches, the
-// per-user queue cache window, the bounds on the label fan-out, the per-rebuild
-// work budgets plus the deadline that keep one batch of questions off the
-// library's growth curve, and the share of a batch a single person or label may
-// claim.
+// (roughly "the system is 45–75 % sure"), the confident tier above 80 % and the
+// 70 % of a batch drawn from it, the batch size the UI prefetches, the per-user
+// queue cache window, the bounds on the label fan-out, the per-rebuild work
+// budgets plus the deadline that keep one batch of questions off the library's
+// growth curve, and the share of a batch a single person or label may claim.
 func setReviewDefaults(v *viper.Viper) {
 	v.SetDefault("review.band_min", 0.45)
 	v.SetDefault("review.band_max", 0.75)
+	v.SetDefault("review.sure_min", 0.80)
+	v.SetDefault("review.sure_share", 0.70)
 	v.SetDefault("review.queue_size", 20)
 	v.SetDefault("review.cache_ttl", "60s")
 	v.SetDefault("review.max_labels", 200)

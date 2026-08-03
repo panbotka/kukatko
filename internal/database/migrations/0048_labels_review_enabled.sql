@@ -1,0 +1,33 @@
+-- 0048_labels_review_enabled: a per-label switch for the review game.
+--
+-- The review game asks "does <label> fit this photo?" about every label that has
+-- photos on it. Some labels are not worth the question — a label the operator
+-- keeps for bookkeeping, one whose members are visually unrelated so the
+-- similarity search only ever produces nonsense, one already finished. Before
+-- this column the only way to stop being asked was to delete the label.
+--
+--   * true   (the default) the label takes part in the game: internal/review
+--            scans it and may ask about it.
+--   * false  the label produces no questions AND is not scanned at all. Not
+--            scanning is half the point: one label's similarity search is a
+--            per-member kNN fan-out, so a label nobody wants questions about
+--            must not cost a rebuild anything either.
+--
+-- DEFAULT true is what makes this migration a no-op for an existing library:
+-- every label keeps behaving exactly as it did until someone switches one off on
+-- the labels page. The flag is deliberately label-wide and one-way-ish — it says
+-- nothing about individual photos. "Not this photo for this label" is already a
+-- persisted rejection (internal/feedback) and stays that way; the two are
+-- independent.
+--
+-- Subjects get no equivalent flag: a person you do not want to be asked about is
+-- a person you stop naming, and the face side has no cheap analogue of a label's
+-- whole-collection search to switch off.
+--
+-- No index: the column is read by a full label listing (internal/organize
+-- ListLabels, a few hundred rows at most) and never used as a lookup key.
+--
+-- This migration is wrapped in a transaction by the runner.
+
+ALTER TABLE labels
+    ADD COLUMN review_enabled BOOLEAN NOT NULL DEFAULT true;

@@ -616,6 +616,59 @@ func TestLabelUpdate_recordsChanges(t *testing.T) {
 	assertChange(t, changes, "priority", 1, 5)
 }
 
+// TestLabelUpdate_reviewEnabled covers the labels page's review-game toggle: the
+// field is honoured when sent, and — because the store writes it
+// unconditionally — the label's current value is carried across when it is not,
+// so the rename form cannot silently switch a label back on.
+func TestLabelUpdate_reviewEnabled(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		existing bool
+		body     string
+		want     bool
+	}{
+		{"switching it off", true, `{"name":"Sea","priority":0,"review_enabled":false}`, false},
+		{"switching it on", false, `{"name":"Sea","priority":0,"review_enabled":true}`, true},
+		{"omitted keeps it on", true, `{"name":"Sea","priority":0}`, true},
+		{"omitted keeps it off", false, `{"name":"Sea","priority":0}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			labels := &fakeLabels{
+				label:   organize.Label{UID: "lb_a", Name: "Sea", ReviewEnabled: tt.existing},
+				updated: organize.Label{UID: "lb_a", Name: "Sea", ReviewEnabled: tt.want},
+			}
+			rec := do(t, newServer(&fakeAlbums{}, labels), http.MethodPatch, "/labels/lb_a", tt.body)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			if labels.lastUpdate.ReviewEnabled != tt.want {
+				t.Errorf("stored review_enabled = %v, want %v",
+					labels.lastUpdate.ReviewEnabled, tt.want)
+			}
+		})
+	}
+}
+
+// TestLabelUpdate_recordsReviewEnabledChange audits the toggle like any other
+// curation write: switching the game off for a label is a decision someone made,
+// and the trail has to say who and when.
+func TestLabelUpdate_recordsReviewEnabledChange(t *testing.T) {
+	t.Parallel()
+	labels := &fakeLabels{
+		label:   organize.Label{UID: "lb_a", Name: "Sea", ReviewEnabled: true},
+		updated: organize.Label{UID: "lb_a", Name: "Sea"},
+	}
+	rec := do(t, newServer(&fakeAlbums{}, labels), http.MethodPatch, "/labels/lb_a",
+		`{"name":"Sea","priority":0,"review_enabled":false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	assertChange(t, changeMap(t, labels.lastEntry), "review_enabled", true, false)
+}
+
 // TestLabelUpdate_notFound maps a missing label to 404 (the handler now loads the
 // label first to capture its old values).
 func TestLabelUpdate_notFound(t *testing.T) {

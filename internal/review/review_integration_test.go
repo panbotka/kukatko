@@ -194,7 +194,7 @@ func queueIDs(t *testing.T, svc *review.Service) []string {
 // bandFace is 0.4 cosine-distance from e0 → confidence 0.60, inside the band.
 func bandFace() []float32 { return vec(map[int]float32{0: 0.6, 1: 0.8}) }
 
-func TestReviewQueue_faceBandAndExclusionsDB(t *testing.T) {
+func TestReviewQueue_faceTiersAndExclusionsDB(t *testing.T) {
 	h := newReviewHarness(t)
 	alice := h.namedSubject(t, "Alice", "alice-src", vec(map[int]float32{0: 1}))
 	bob, err := h.people.CreateSubject(context.Background(), people.Subject{Name: "Bob"})
@@ -202,8 +202,9 @@ func TestReviewQueue_faceBandAndExclusionsDB(t *testing.T) {
 		t.Fatalf("CreateSubject(Bob): %v", err)
 	}
 	bandPhoto := h.face(t, "band", vectors.Face{FaceIndex: 0, Vector: bandFace(), DetScore: 0.9})
-	// Too certain (confidence 0.90 ≥ 0.75): belongs on /recognition, not the game.
-	h.face(t, "certain", vectors.Face{
+	// Confidence 0.90: the confident tier — a one-click yes, and now a question in
+	// its own right rather than something the game refuses to mention.
+	surePhoto := h.face(t, "certain", vectors.Face{
 		FaceIndex: 0, Vector: vec(map[int]float32{0: 0.9, 1: 0.43589}), DetScore: 0.9,
 	})
 	// Below the band (confidence 0.30): outside the search threshold entirely.
@@ -233,15 +234,29 @@ func TestReviewQueue_faceBandAndExclusionsDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if len(res.Questions) != 1 {
-		t.Fatalf("questions = %+v, want exactly the one band candidate", res.Questions)
+	if len(res.Questions) != 2 {
+		t.Fatalf("questions = %+v, want the confident and the band candidate", res.Questions)
 	}
-	q := res.Questions[0]
-	if q.Kind != review.KindFace || q.Photo.UID != bandPhoto || q.Subject.UID != alice.UID {
+	// The confident question comes first: the blend spends its majority tier
+	// before the band, so a batch never opens on a hard question.
+	byPhoto := map[string]review.Question{}
+	for _, q := range res.Questions {
+		byPhoto[q.Photo.UID] = q
+	}
+	sure, ok := byPhoto[surePhoto]
+	if !ok || sure.Tier != "sure" || sure.Confidence < 0.85 {
+		t.Errorf("confident question = %+v, want tier sure at ≈0.90", sure)
+	}
+	if res.Questions[0].Tier != "sure" {
+		t.Errorf("queue opens with a %q question, want the confident tier first",
+			res.Questions[0].Tier)
+	}
+	q, ok := byPhoto[bandPhoto]
+	if !ok || q.Kind != review.KindFace || q.Subject.UID != alice.UID {
 		t.Errorf("question = %+v, want the band face for Alice on %s", q, bandPhoto)
 	}
-	if q.Confidence < 0.55 || q.Confidence > 0.65 {
-		t.Errorf("confidence = %f, want ≈0.60", q.Confidence)
+	if q.Tier != "band" || q.Confidence < 0.55 || q.Confidence > 0.65 {
+		t.Errorf("band question = tier %q at %f, want band at ≈0.60", q.Tier, q.Confidence)
 	}
 	if q.BBox == nil || q.BBox.Pixel == ([4]int{}) || q.BBox.Relative != reviewableBox {
 		t.Errorf("bbox = %+v, want pixel and relative boxes for %v", q.BBox, reviewableBox)
@@ -408,7 +423,7 @@ func TestReviewAnswer_labelFlowDB(t *testing.T) {
 	member := h.embedded(t, "member", imgVec(map[int]float32{0: 1}))
 	label := h.label(t, "Ostatky", member)
 	bandPhoto := h.embedded(t, "band", imgVec(map[int]float32{0: 0.6, 1: 0.8}))
-	// Too certain (similarity 0.95 ≥ 0.75): bulk-confirm territory.
+	// Similarity 0.95: the confident tier, asked about alongside the band one.
 	h.embedded(t, "certain", imgVec(map[int]float32{0: 0.95, 1: 0.3122}))
 
 	svc := h.service()
@@ -416,11 +431,11 @@ func TestReviewAnswer_labelFlowDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if len(res.Questions) != 1 {
-		t.Fatalf("questions = %+v, want exactly the band candidate", res.Questions)
+	if len(res.Questions) != 2 {
+		t.Fatalf("questions = %+v, want the confident and the band candidate", res.Questions)
 	}
-	q := res.Questions[0]
-	if q.Kind != review.KindLabel || q.Photo.UID != bandPhoto || q.Label.UID != label.UID {
+	q := questionAbout(t, res.Questions, bandPhoto)
+	if q.Kind != review.KindLabel || q.Label.UID != label.UID || q.Tier != "band" {
 		t.Fatalf("question = %+v, want the band photo for label %s", q, label.UID)
 	}
 
@@ -438,9 +453,16 @@ func TestReviewAnswer_labelFlowDB(t *testing.T) {
 	if len(labels) != 1 || labels[0].UID != label.UID {
 		t.Fatalf("labels = %+v, want [%s]", labels, label.UID)
 	}
-	// Now a member, the photo is excluded from the next rebuilt queue.
-	if ids := queueIDs(t, h.service()); len(ids) != 0 {
-		t.Errorf("queue after labeling = %v, want empty", ids)
+	// Now a member, the photo is excluded from the next rebuilt queue — while the
+	// confident candidate, which nobody has answered, is still waiting.
+	ids := queueIDs(t, h.service())
+	for _, id := range ids {
+		if id == q.ID {
+			t.Errorf("the labeled photo came back in the queue: %v", ids)
+		}
+	}
+	if len(ids) != 1 {
+		t.Errorf("queue after labeling = %v, want just the confident candidate", ids)
 	}
 }
 
@@ -605,4 +627,156 @@ func TestReviewQueue_deterministicDB(t *testing.T) {
 // sqrt32 returns the float32 square root, for building unit vectors.
 func sqrt32(x float32) float32 {
 	return float32(math.Sqrt(float64(x)))
+}
+
+// questionAbout returns the question asked about photoUID, failing the test when
+// there is none.
+func questionAbout(t *testing.T, questions []review.Question, photoUID string) review.Question {
+	t.Helper()
+	for _, q := range questions {
+		if q.Photo.UID == photoUID {
+			return q
+		}
+	}
+	t.Fatalf("no question about photo %s in %d questions", photoUID, len(questions))
+	return review.Question{}
+}
+
+// faceAt plants an unassigned face at the given cosine similarity to the
+// exemplar vector (1, 0, …), so a test can say "an 0.9-confident candidate"
+// without doing the trigonometry at every call site.
+func (h *reviewHarness) faceAt(t *testing.T, hash string, confidence float32) string {
+	t.Helper()
+	return h.face(t, hash, vectors.Face{
+		FaceIndex: 0, DetScore: 0.9,
+		Vector: vec(map[int]float32{0: confidence, 1: sqrt32(1 - confidence*confidence)}),
+	})
+}
+
+// tierShare reports the fraction of the questions drawn from the confident tier.
+func tierShare(questions []review.Question) float64 {
+	if len(questions) == 0 {
+		return 0
+	}
+	sure := 0
+	for _, q := range questions {
+		if q.Tier == "sure" {
+			sure++
+		}
+	}
+	return float64(sure) / float64(len(questions))
+}
+
+// TestReviewQueue_tierMixDB is the mix measured against real vectors in the real
+// database rather than a fake sweep: a library holding plenty of both tiers must
+// hand the player a batch that is mostly one-click yes, with a real minority of
+// hard questions still in it.
+//
+// The face half is planted deliberately. In production the unassigned faces this
+// half draws on are almost all attached to a nameless catch-all subject pending a
+// separate repair, so "sometimes a face" cannot be observed there at all — the
+// mix has to be proved against fixtures that actually contain unassigned faces.
+func TestReviewQueue_tierMixDB(t *testing.T) {
+	h := newReviewHarness(t)
+	h.namedSubject(t, "Alice", "alice-src", vec(map[int]float32{0: 1}))
+	for i, confidence := range []float32{0.95, 0.93, 0.91, 0.89, 0.87, 0.85} {
+		h.faceAt(t, fmt.Sprintf("sure%d", i), confidence)
+	}
+	for i, confidence := range []float32{0.70, 0.68, 0.66, 0.64, 0.62, 0.60} {
+		h.faceAt(t, fmt.Sprintf("band%d", i), confidence)
+	}
+
+	res, err := h.service().Queue(context.Background(), "tester", review.SourcePeople, 100)
+	if err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	// One subject may claim only its per-entity share of a batch, which is what
+	// bounds this queue: the mix inside that share is what is under test.
+	if len(res.Questions) == 0 {
+		t.Fatal("empty queue, so the mix proves nothing")
+	}
+	share := tierShare(res.Questions)
+	t.Logf("batch of %d questions, confident share %.2f", len(res.Questions), share)
+	if share < 0.5 {
+		t.Errorf("confident share = %.2f over %d questions, want the majority of a batch to be "+
+			"the easy tier", share, len(res.Questions))
+	}
+	for _, q := range res.Questions {
+		if q.Tier != "sure" && q.Tier != "band" {
+			t.Errorf("question %s carries tier %q, want sure or band", q.ID, q.Tier)
+		}
+	}
+}
+
+// TestReviewQueue_confidentTierExhaustedDegradesDB proves the promise that the
+// game is infinite: with nothing confident left in the library the queue fills
+// from the band instead of reporting that there is nothing to do.
+func TestReviewQueue_confidentTierExhaustedDegradesDB(t *testing.T) {
+	h := newReviewHarness(t)
+	h.namedSubject(t, "Alice", "alice-src", vec(map[int]float32{0: 1}))
+	for i, confidence := range []float32{0.70, 0.66, 0.62, 0.58} {
+		h.faceAt(t, fmt.Sprintf("band%d", i), confidence)
+	}
+
+	res, err := h.service().Queue(context.Background(), "tester", review.SourcePeople, 100)
+	if err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	if len(res.Questions) == 0 {
+		t.Fatalf("empty queue with reason %q, want the band candidates — an exhausted tier is "+
+			"not an exhausted library", res.Reason)
+	}
+	if got := tierShare(res.Questions); got != 0 {
+		t.Errorf("confident share = %.2f in a library with no confident candidate", got)
+	}
+	if res.Reason != "" {
+		t.Errorf("reason = %q on a non-empty queue, want none", res.Reason)
+	}
+}
+
+// TestReviewQueue_reviewDisabledLabelDB covers the labels page's switch against
+// the real store: a label switched off produces no questions, and — since a
+// label search is a per-member kNN fan-out — is not searched at all.
+func TestReviewQueue_reviewDisabledLabelDB(t *testing.T) {
+	h := newReviewHarness(t)
+	member := h.embedded(t, "member", imgVec(map[int]float32{0: 1}))
+	label := h.label(t, "Ostatky", member)
+	bandPhoto := h.embedded(t, "band", imgVec(map[int]float32{0: 0.6, 1: 0.8}))
+
+	if ids := queueIDs(t, h.service()); len(ids) != 1 {
+		t.Fatalf("queue before the switch = %v, want the one band question", ids)
+	}
+
+	off, err := h.organize.UpdateLabel(context.Background(), label.UID,
+		organize.LabelUpdate{Name: label.Name, Priority: label.Priority, ReviewEnabled: false})
+	if err != nil {
+		t.Fatalf("UpdateLabel: %v", err)
+	}
+	if off.ReviewEnabled {
+		t.Fatalf("UpdateLabel left review_enabled true: %+v", off)
+	}
+
+	res, err := h.service().Queue(context.Background(), "tester", review.SourceLabels, 100)
+	if err != nil {
+		t.Fatalf("Queue(labels): %v", err)
+	}
+	if len(res.Questions) != 0 {
+		t.Fatalf("questions = %+v, want none about photo %s from a switched-off label",
+			res.Questions, bandPhoto)
+	}
+	// With its only label out of the game the library has nothing to ask about,
+	// and the reason has to say so rather than blaming an empty band.
+	if res.Reason != review.ReasonNoLabels {
+		t.Errorf("reason = %q, want %q", res.Reason, review.ReasonNoLabels)
+	}
+
+	// And back on again: the switch is a setting, not a deletion.
+	if _, err := h.organize.UpdateLabel(context.Background(), label.UID,
+		organize.LabelUpdate{Name: label.Name, Priority: label.Priority, ReviewEnabled: true},
+	); err != nil {
+		t.Fatalf("UpdateLabel back on: %v", err)
+	}
+	if ids := queueIDs(t, h.service()); len(ids) != 1 {
+		t.Errorf("queue after switching back on = %v, want the band question again", ids)
+	}
 }

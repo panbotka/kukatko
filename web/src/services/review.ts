@@ -79,6 +79,12 @@ export interface ReviewQuestion {
   /** Stable, content-derived id the answer endpoint takes. */
   id: string
   kind: ReviewKind
+  /**
+   * Which confidence tier the question was drawn from: `sure` (the answer is
+   * almost certainly yes) or `band` (genuinely uncertain). The UI asks the same
+   * question either way — it is carried so the mix can be observed.
+   */
+  tier?: 'sure' | 'band'
   /** The candidate's 0–1 confidence (1 − cosine distance). */
   confidence: number
   /** The full catalog record with media URLs stamped. */

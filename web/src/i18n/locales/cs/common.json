@@ -602,6 +602,11 @@
       "priority": "Priorita",
       "cancel": "Zrušit",
       "save": "Uložit"
+    },
+    "review": {
+      "toggle": "Ptát se na štítek „{{name}}“ při třídění",
+      "on": "Třídění se na tenhle štítek ptá",
+      "off": "Třídění se na tenhle štítek neptá"
     }
   },
   "labelDetail": {
@@ -2301,7 +2306,7 @@
       "noPeopleTitle": "Zatím tu nejsou lidé",
       "noPeopleHint": "Hra se teď ptá jen na lidi, ale nikdo tu není pojmenovaný. Pojmenuj někoho, nebo se nech ptát na štítky.",
       "noLabelsTitle": "Zatím tu nejsou štítky",
-      "noLabelsHint": "Hra se teď ptá jen na štítky, ale žádný štítek zatím nemá fotky. Založ štítek, nebo se nech ptát na lidi.",
+      "noLabelsHint": "Hra se teď ptá jen na štítky, ale žádný štítek zatím nemá fotky — nebo jsou všechny na stránce Štítky z třídění vypnuté. Založ štítek, zapni ho zpátky, nebo se nech ptát na lidi.",
       "queueHintScoped": "Ve zvoleném zdroji už není co třídit. Zkus se nechat ptát na oboje, nebo se vrať později.",
       "askPeople": "Ptát se na lidi",
       "askLabels": "Ptát se na štítky",

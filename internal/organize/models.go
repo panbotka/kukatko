@@ -154,12 +154,19 @@ type AlbumUpdate struct {
 // Label is a tag that can be attached to photos. Slug is generated from Name and
 // made unique by the store. Priority floats higher labels up in the UI.
 type Label struct {
-	UID       string    `json:"uid"`
-	Slug      string    `json:"slug"`
-	Name      string    `json:"name"`
-	Priority  int       `json:"priority"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	UID      string `json:"uid"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Priority int    `json:"priority"`
+	// ReviewEnabled reports whether the review game may ask about this label.
+	// False means it produces no questions and is not even scanned (see
+	// migration 0048). It is never read from a Label on the way *in*: a created
+	// label is always review-enabled, whatever the caller's zero value says, so
+	// that a struct literal can never silently create a label the game ignores.
+	// Switching it off is an explicit edit — see LabelUpdate.
+	ReviewEnabled bool      `json:"review_enabled"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // LabelCount is a label paired with how many photos carry it, as returned by
@@ -175,6 +182,11 @@ type LabelCount struct {
 type LabelUpdate struct {
 	Name     string `json:"name"`
 	Priority int    `json:"priority"`
+	// ReviewEnabled switches the label's participation in the review game. It is
+	// written unconditionally, so a caller that means "leave it as it is" has to
+	// carry the label's current value across — internal/organizeapi does exactly
+	// that for a request body that omits the field.
+	ReviewEnabled bool `json:"review_enabled"`
 }
 
 // RatingFlag is a per-user personal marking on a photo — a neutral,

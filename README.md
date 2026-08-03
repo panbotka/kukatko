@@ -98,8 +98,13 @@ of PhotoPrism and of [photo-sorter](https://github.com/kozaktomas/photo-sorter),
   by itself** — it only sorts and asks.
 - **Sorting — a one-question game** (`/review`, editors): Kukátko shows you one photo and asks
   one thing — *"Is **Tomáš Kozák** in the photo?"* or *"Does the **Ostatky** label fit the photo?"*. You answer,
-  and the next one appears. The questions aim **at the uncertainty band** (where the machine doesn't know and a human does), so
-  every answer pays off. The photo is **full-screen** and the face has a frame **with a margin** —
+  and the next one appears. **Most of the questions are ones you'll answer "yes" to in a single click** — a
+  confident guess confirmed is real work done — with a deliberate minority of genuinely uncertain ones mixed in,
+  where the machine doesn't know and you do. (Roughly seven to three; the ratio is configurable, but a game
+  that's all easy makes you stop looking, and that's how wrong answers get in.) The game **never runs out**:
+  when one kind of question is exhausted it moves on to the other, and then to the next part of the library.
+  A label you never want to be asked about again gets **switched off on the Labels page** — it then costs the
+  game nothing at all. The photo is **full-screen** and the face has a frame **with a margin** —
   from a tight crop you can't recognize a person. **The keyboard is the main control**: `→` yes, `←` no,
   **spacebar** don't know, `z` undoes the last answer (a typo at speed is inevitable). The next
   card is **always preloaded**, so there's no waiting between questions — it runs like flipping through cards, not
@@ -738,7 +743,8 @@ a neutral three-state icon — 👁 eye, 👍 thumbs up (stored as `pick`), 👎
   `ListAlbums` (with photo counts, sorted by title)/`DeleteAlbum`; membership `AddPhoto`
   (idempotent position upsert)/`RemovePhoto` (idempotent)/`ReorderPhotos` (atomic rewrite of
   `sort_order` by order)/`SetCover` (set/clear cover)/`ListPhotoUIDs` (ordered by `sort_order`).
-- **Labels** — `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel` (re-slug)/
+- **Labels** — `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel` (re-slug; also writes
+  `review_enabled`, the review-game switch — a created label is always in the game)/
   `ListLabels` (with counts, sorted by priority DESC)/`DeleteLabel`; attachment `AttachLabel`
   (idempotent upsert of source/uncertainty)/`DetachLabel` (idempotent)/`ListPhotoUIDsByLabel`.
 - **Favorites** — `AddFavorite`/`RemoveFavorite` (both idempotent), `IsFavorite`,
@@ -774,7 +780,8 @@ frontend reuses the same virtualized grid.
   **chronological** order `{photo_uids:[…]}`; manual reordering (`PATCH /albums/{uid}/order`)
   does not exist, an album always starts from the oldest photo.
 - **Labels** — `GET /labels` (list with counts), `POST /labels` (201, `name` required),
-  `GET /labels/{uid}`, `PATCH /labels/{uid}` (name/priority), `DELETE /labels/{uid}` (204);
+  `GET /labels/{uid}`, `PATCH /labels/{uid}` (name/priority/`review_enabled` — omitting the last keeps the
+  stored value), `DELETE /labels/{uid}` (204);
   attachment `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}` (204),
   `DELETE /labels/{uid}/photos` `{photo_uid}` (204).
 - **Scoped listing** — `GET /photos?album={uid}` and `GET /photos?label={uid}` (and likewise

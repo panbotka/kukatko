@@ -177,21 +177,29 @@ func allocatedBytes(tb testing.TB, fn func()) uint64 {
 	return after.TotalAlloc - before.TotalAlloc
 }
 
-// findAllocation measures one Find over a synthetic library of the given shape.
+// findAllocation measures one Find over a synthetic library of the given shape
+// under the default request — the whole configured threshold, no floor.
 func findAllocation(tb testing.TB, exemplars, pool, spread int) uint64 {
+	tb.Helper()
+	return requestAllocation(tb, exemplars, pool, spread, Request{})
+}
+
+// requestAllocation measures one Find of the given shape under a specific
+// request, so a test can pin the search *window* and not only the library.
+func requestAllocation(tb testing.TB, exemplars, pool, spread int, req Request) uint64 {
 	tb.Helper()
 	svc := scaleService(exemplars, pool, spread)
 	var res Result
 	bytes := allocatedBytes(tb, func() {
 		var err error
-		res, err = svc.Find(context.Background(), "su_scale", Request{})
+		res, err = svc.Find(context.Background(), "su_scale", req)
 		if err != nil {
 			tb.Fatalf("Find(exemplars=%d, pool=%d): %v", exemplars, pool, err)
 		}
 	})
 	if len(res.Candidates) == 0 {
-		tb.Fatalf("Find(exemplars=%d, pool=%d) returned no candidates; the fake library is wrong",
-			exemplars, pool)
+		tb.Fatalf("Find(exemplars=%d, pool=%d, req=%+v) returned no candidates; "+
+			"the fake library is wrong", exemplars, pool, req)
 	}
 	return bytes
 }
@@ -260,5 +268,53 @@ func TestFind_allocationDoesNotScaleWithLibrarySize(t *testing.T) {
 	if ratio := float64(large) / float64(small); ratio > 2 {
 		t.Errorf("%dx the unnamed faces allocated %.2fx the memory (%d B vs %d B), want at most 2x",
 			stride, ratio, large, small)
+	}
+}
+
+// The review game's two search windows. The band-only queue asked for the
+// uncertain middle and pushed both of its edges into the search; the game now
+// mixes in a confident tier, so it asks for everything from the confident end
+// down to the band's floor and classifies the answer itself.
+const (
+	// reviewBandMin and reviewBandMax mirror internal/review's default band, and
+	// reviewThreshold is the maximum distance both windows search to.
+	reviewBandMin   = 0.45
+	reviewBandMax   = 0.75
+	reviewThreshold = 1 - reviewBandMin
+)
+
+// TestFind_allocationHoldsForTheWidenedReviewWindow checks that dropping the
+// MinDistance floor — which is exactly what the review game did when it started
+// mixing confident candidates into its questions — does not put a search back on
+// the path that reached 10.9 GB and killed the box.
+//
+// The floor was added in d0d6518 as part of that fix, but it was never the
+// structural bound: MaxExemplars caps the queries, MaxCandidates caps the
+// survivors, and the cut to MaxCandidates happens *before* hydration, so the
+// number of full photos.Photo records built is fixed whatever the window admits.
+// This test is what says so out loud, over a library big enough for the
+// difference to show: 40 000 unnamed faces, every one of them a match.
+func TestFind_allocationHoldsForTheWidenedReviewWindow(t *testing.T) {
+	const exemplars = 500
+	stride := minPerExemplarSearch / 8
+	band := requestAllocation(t, exemplars, 40000, stride,
+		Request{Threshold: reviewThreshold, MinDistance: 1 - reviewBandMax})
+	widened := requestAllocation(t, exemplars, 40000, stride,
+		Request{Threshold: reviewThreshold})
+	t.Logf("allocated over %d unnamed faces: band-only window %d B, widened window %d B",
+		exemplars*stride, band, widened)
+
+	if widened > searchCeilingBytes {
+		t.Errorf("the widened review window allocated %d B, want at most %d B — asking for "+
+			"the confident tier as well must not reopen the OOM: the cut to MaxCandidates "+
+			"before hydration is what bounds this, not the MinDistance floor",
+			widened, searchCeilingBytes)
+	}
+	// Admitting the near half of the window means more candidates clear the cut
+	// and reach hydration, so some growth is expected. What must not happen is
+	// the cost jumping with the window rather than staying pinned to the ceiling.
+	if ratio := float64(widened) / float64(band); ratio > 2 {
+		t.Errorf("the widened window allocated %.2fx the band-only one (%d B vs %d B), "+
+			"want at most 2x", ratio, widened, band)
 	}
 }

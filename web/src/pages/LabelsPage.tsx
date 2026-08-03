@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
+import Form from 'react-bootstrap/Form'
 import ListGroup from 'react-bootstrap/ListGroup'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -14,15 +15,27 @@ import { Icon } from '../components/Icon'
 import { LabelEditModal } from '../components/organize/LabelEditModal'
 import { ListSkeleton } from '../components/Skeleton'
 import { useReloadKey } from '../hooks/useReloadKey'
-import { deleteLabel, fetchLabels, type Label, type LabelCount } from '../services/organize'
+import {
+  deleteLabel,
+  fetchLabels,
+  type Label,
+  type LabelCount,
+  updateLabel,
+} from '../services/organize'
 
 /** Fetch lifecycle of the labels list. */
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; labels: LabelCount[] }
 
 /**
  * The labels index: a list of labels with photo counts, each linking to its
- * scoped photo grid. Editors and admins can create, rename and delete labels;
- * mutation controls are hidden from viewers.
+ * scoped photo grid. Editors and admins can create, rename and delete labels,
+ * and switch a label in or out of the review game; mutation controls are hidden
+ * from viewers.
+ *
+ * The review switch lives here and deliberately nowhere else. Inside the game it
+ * would be an answer to the wrong question — "not this photo" is already a
+ * per-photo rejection — and a decision about a whole label belongs where the
+ * labels are managed, taken calmly rather than mid-round.
  */
 export function LabelsPage() {
   const { t } = useTranslation()
@@ -32,6 +45,7 @@ export function LabelsPage() {
   const [creating, setCreating] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Label | null>(null)
   const [actionError, setActionError] = useState(false)
+  const [savingUID, setSavingUID] = useState<string | null>(null)
   const [reloadKey, reload] = useReloadKey()
 
   useEffect(() => {
@@ -64,6 +78,41 @@ export function LabelsPage() {
     } catch {
       setActionError(true)
     }
+  }
+
+  /**
+   * Switches a label in or out of the review game. The row flips immediately and
+   * is rolled back if the save fails, so the switch never shows a state the
+   * server does not hold. Name and priority are sent back unchanged because the
+   * endpoint takes the whole editable record.
+   */
+  async function setReviewEnabled(label: LabelCount, enabled: boolean) {
+    setActionError(false)
+    setSavingUID(label.uid)
+    applyReviewEnabled(label.uid, enabled)
+    try {
+      await updateLabel(label.uid, {
+        name: label.name,
+        priority: label.priority,
+        review_enabled: enabled,
+      })
+    } catch {
+      applyReviewEnabled(label.uid, !enabled)
+      setActionError(true)
+    } finally {
+      setSavingUID(null)
+    }
+  }
+
+  function applyReviewEnabled(uid: string, enabled: boolean) {
+    setState((prev) =>
+      prev.status === 'ready'
+        ? {
+            status: 'ready',
+            labels: prev.labels.map((l) => (l.uid === uid ? { ...l, review_enabled: enabled } : l)),
+          }
+        : prev,
+    )
   }
 
   function upsert(saved: Label) {
@@ -132,7 +181,29 @@ export function LabelsPage() {
                    buttons across ~336px. The `aria-label` carries the same word
                    the button shows, so the accessible name is identical at every
                    width. */
-                <div className="d-flex gap-1 flex-shrink-0">
+                <div className="d-flex align-items-center gap-1 flex-shrink-0">
+                  {/* The review switch is wordless at every width — a per-row
+                      label would repeat the same sentence down the whole page —
+                      so the game's own icon carries the meaning and the
+                      accessible name names both the label and what the switch
+                      does. The hover text sits on the wrapper because Form.Check
+                      does not forward `title` to either the input or its label. */}
+                  <span
+                    title={label.review_enabled ? t('labels.review.on') : t('labels.review.off')}
+                  >
+                    <Form.Check
+                      type="switch"
+                      id={`label-review-${label.uid}`}
+                      className="mb-0 me-1 d-inline-flex align-items-center gap-1"
+                      checked={label.review_enabled}
+                      disabled={savingUID === label.uid}
+                      aria-label={t('labels.review.toggle', { name: label.name })}
+                      label={<Icon name="ui-checks" />}
+                      onChange={(event) => {
+                        void setReviewEnabled(label, event.target.checked)
+                      }}
+                    />
+                  </span>
                   <Button
                     variant="outline-secondary"
                     size="sm"

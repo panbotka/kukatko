@@ -73,13 +73,16 @@ func TestQueue_monotonyBaseline(t *testing.T) {
 		monotonousLibrary(f)
 		f.perEntity = math.MaxInt32
 	})
-	mat, err := f.svc.collect(context.Background(), SourceBoth, DefaultQueueSize)
+	ctx := context.Background()
+	mat, err := f.svc.collect(ctx, ctx, SourceBoth, DefaultQueueSize)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}
-	f.svc.orderQuestions(mat.faceQs)
-	f.svc.orderQuestions(mat.labelQs)
-	old := interleave(mat.faceQs, mat.labelQs)
+	// The fixture is entirely band material, so the tiers do not enter into the
+	// baseline: what is measured is informativeness plus the kind interleave.
+	f.svc.orderQuestions(mat.faceQs.band, tierBand)
+	f.svc.orderQuestions(mat.labelQs.band, tierBand)
+	old := interleave(mat.faceQs.band, mat.labelQs.band)
 	batch := old[:min(DefaultQueueSize, len(old))]
 	run := longestEntityRun(batch)
 	t.Logf("baseline: a batch of %d asks about %d entities, longest run %d\n%s",
@@ -141,13 +144,14 @@ func TestQueue_noEntityOwnsMoreThanItsShare(t *testing.T) {
 	}
 }
 
-func TestQueue_varietyStaysInsideTheBand(t *testing.T) {
+func TestQueue_varietyStaysInsideTheTiers(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
 		monotonousLibrary(f)
-		// Candidates on both sides of the band mixed in with the uncertain ones:
-		// variety must not be bought by asking about things the system is already
-		// sure of, or ones it is only guessing at.
+		// Candidates on both sides of the band mixed in with the uncertain ones.
+		// The confident ones are now fair game — that is the point of the tiers —
+		// but the hopeless ones are not: variety must never be bought by asking
+		// about something the system is only guessing at.
 		f.sweeper.people = append(f.sweeper.people,
 			scannedPerson("certain", 0.02, 0.05), scannedPerson("hopeless", 0.90, 0.95))
 		f.expander.results["lab01"] = labelResult("lab01", 0.99, 0.98, 0.2, 0.6)
@@ -157,13 +161,26 @@ func TestQueue_varietyStaysInsideTheBand(t *testing.T) {
 		t.Fatalf("Queue: %v", err)
 	}
 	if len(res.Questions) == 0 {
-		t.Fatal("no questions at all, so the band assertion proves nothing")
+		t.Fatal("no questions at all, so the tier assertion proves nothing")
 	}
+	sawSure := false
 	for _, q := range res.Questions {
-		if !f.svc.inBand(q.Confidence) {
-			t.Errorf("question %s has confidence %v, outside the band [%v, %v)",
-				q.ID, q.Confidence, DefaultBandMin, DefaultBandMax)
+		which, ok := f.svc.tierOf(q.Confidence)
+		if !ok {
+			t.Errorf("question %s has confidence %v, in neither tier — the band is [%v, %v) and "+
+				"the confident tier starts at %v", q.ID, q.Confidence,
+				DefaultBandMin, DefaultBandMax, f.svc.sureFloor())
+			continue
 		}
+		if q.Tier != string(which) {
+			t.Errorf("question %s at confidence %v is labelled tier %q, want %q",
+				q.ID, q.Confidence, q.Tier, which)
+		}
+		sawSure = sawSure || which == tierSure
+	}
+	if !sawSure {
+		t.Error("no confident-tier question in the batch, so the fixture's certain candidates " +
+			"were dropped rather than asked about")
 	}
 }
 
