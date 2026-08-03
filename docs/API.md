@@ -839,20 +839,28 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   polls every 5 s and offers quick actions (requeue dead-letter, trigger backup, links to import/maintenance).
 - **Library statistics (`/api/v1`, `internal/systemapi` + `internal/system`, **every authenticated
   user** via `RequireAuth`):** `GET /system/stats` → instance-wide counts of the catalogue, modelled on
-  photo-sorter's status page: `{photos,videos,photos_live,photos_archived,photos_with_embedding,
-  photos_with_faces,photos_without_embedding,photos_without_faces,embeddings,faces,subjects,
-  subjects_person,subjects_pet,subjects_other,markers,markers_assigned,markers_unassigned,albums,labels}`.
+  photo-sorter's status page: `{photos,videos,live_photos,images,photos_live,photos_archived,
+  photos_with_embedding,photos_with_faces,photos_without_embedding,photos_without_faces,photos_geocoded,
+  photos_pending_geocode,embeddings,faces,subjects,subjects_person,subjects_pet,subjects_other,markers,
+  markers_assigned,markers_unassigned,albums,albums_manual,albums_folder,albums_moment,albums_state,
+  albums_month,labels}`.
   Never per-user and never a `maintenance scan` tree walk — a single query of cheap `COUNT(*)`s
   (`system.Store.CountLibrary`), memoized for **30 s** like the storage block. `photos_archived` is
   exactly the trash (a photo is soft-deleted by stamping `archived_at`; there is no second trash state),
-  `videos` is `media_type='video'`. The four derived values — `photos_live` and the coverage gaps
+  and `videos`/`live_photos`/`images` are the three `media_type` values (`images` derived, see below).
+  `photos_geocoded` counts photos with a cached place resolved from coordinates, `photos_pending_geocode`
+  the live geotagged photos that still have none — the outstanding, metered mapy.com spend.
+  The derived values — `photos_live`, `images` (total minus the other two media types, because the
+  `media_type` index deliberately excludes the majority value) and the coverage gaps
   `photos_without_embedding` / `photos_without_faces` / `markers_unassigned` — are computed by the service
   from the raw counts (clamped at 0) and are what makes the endpoint useful during import verification;
   `photos_without_faces` cannot distinguish "not yet detected" from "genuinely no face". A failed
   aggregation → **500** (never a body of zeroes, which would read as an empty library). Deliberately
   **not** part of `/system/status` and it does not loosen that endpoint's maintainer guard. Mounted
   **always** (`buildSystemAPI`). The frontend renders it on **Statistiky** (`/stats`, all roles) and as the
-  Library section of `SystemStatusPage`, from this one endpoint.
+  Library section of `SystemStatusPage`, from this one endpoint. The same aggregation also backs the
+  `kukatko_library_*` gauges on `/metrics` (see `docs/OPERATIONS.md` § Prometheus metrics), so the two
+  cannot disagree — one query, two readers.
 - **Capabilities API (`/api/v1`, `internal/capabilitiesapi`, authenticated via `RequireAuth`):**
   `GET /capabilities` → `{semantic_search:bool}` — a small object of instance feature-flags that
   **every authenticated user** may read (unlike the maintainer-only `/system/status`). `semantic_search` is

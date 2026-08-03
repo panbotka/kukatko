@@ -100,7 +100,7 @@ func runServe(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	apis, backupSvc, reachChecker, err := appendOpsAPIs(cfg, db, authAPI, apis, mapsHealth, geocodeBudget)
+	apis, backupSvc, reachChecker, err := appendOpsAPIs(cfg, db, authAPI, apis, reg, mapsHealth, geocodeBudget)
 	if err != nil {
 		return err
 	}
@@ -204,10 +204,12 @@ func setupAuth(ctx context.Context, cmd *cobra.Command, cfg *config.Config, db *
 // the restore service is nil (503) when no destination is set; the returned
 // backup service drives the scheduler (nil when not configured). It also builds
 // the embeddings-reachability checker that both backs GET /capabilities and the
-// caller starts as a background loop, returning it for that purpose.
+// caller starts as a background loop, returning it for that purpose. It also
+// registers the library-content /metrics collector over the system service it
+// builds, so the gauges and the dashboard share one aggregation.
 func appendOpsAPIs(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, apis []server.Option,
-	mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
+	reg *metrics.Registry, mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
 ) ([]server.Option, *backup.Service, *reachability.Checker, error) {
 	backupSvc, err := buildBackupService(cfg)
 	if err != nil {
@@ -221,11 +223,12 @@ func appendOpsAPIs(
 	}
 	apis = append(apis, server.WithAPI(restoreAPI.RegisterRoutes))
 
-	systemAPI, err := buildSystemAPI(cfg, db, authAPI, backupSvc, mapsHealth, geocodeBudget)
+	systemAPI, systemSvc, err := buildSystemAPI(cfg, db, authAPI, backupSvc, mapsHealth, geocodeBudget)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	apis = append(apis, server.WithAPI(systemAPI.RegisterRoutes))
+	registerLibraryMetrics(reg, systemSvc, cfg.Metrics.LibraryTTL)
 
 	reachChecker, err := buildReachabilityChecker(cfg)
 	if err != nil {

@@ -630,12 +630,19 @@ log:
 
 # Prometheus metrics. When enabled, `kukatko serve` mounts GET /metrics
 # (unauthenticated) and instruments HTTP requests, the job queue/worker, the
-# embeddings sidecar, imports, thumbnail generation, and the DB pool. /metrics is
+# embeddings sidecar, imports, thumbnail generation, the DB pool, and the library
+# itself (photo/embedding/face/album counts and processing coverage). /metrics is
 # not authenticated — restrict it at the network layer (bind/firewall) when the
 # server is exposed publicly. Override with KUKATKO_METRICS_ENABLED.
 metrics:
   # Mount /metrics and install the request-metrics middleware.
   enabled: true
+  # How long the library-content gauges are memoised. They are aggregates over
+  # the largest tables in the database and Prometheus scrapes on a fixed interval
+  # forever, so they are recomputed at most once per TTL rather than once per
+  # scrape. Raise it on a large library; it only makes the counts staler, never
+  # wrong. Override with KUKATKO_METRICS_LIBRARY_TTL.
+  library_ttl: 1m
 
 # Per-client-IP rate limits on resource-intensive endpoints. Each rule is an
 # independent token bucket keyed by the caller's IP (taken from

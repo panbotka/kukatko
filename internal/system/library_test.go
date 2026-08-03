@@ -21,9 +21,10 @@ func (f *fakeCounter) CountLibrary(context.Context) (Library, error) {
 	return f.counts, f.err
 }
 
-// TestLibraryDerive checks every derived value: the live/archived split, both
-// coverage gaps and the unassigned markers, including the clamp that keeps a
-// snapshot taken mid-write from reporting a negative count.
+// TestLibraryDerive checks every derived value: the live/archived split, the
+// plain-image share of the media types, both coverage gaps and the unassigned
+// markers, including the clamp that keeps a snapshot taken mid-write from
+// reporting a negative count.
 func TestLibraryDerive(t *testing.T) {
 	t.Parallel()
 
@@ -39,10 +40,20 @@ func TestLibraryDerive(t *testing.T) {
 				PhotosWithFaces: 40, Markers: 30, MarkersAssigned: 12,
 			},
 			want: Library{
-				Photos: 100, PhotosArchived: 7, PhotosLive: 93,
+				Photos: 100, Images: 100, PhotosArchived: 7, PhotosLive: 93,
 				PhotosWithEmbedding: 90, PhotosWithoutEmbedding: 10,
 				PhotosWithFaces: 40, PhotosWithoutFaces: 60,
 				Markers: 30, MarkersAssigned: 12, MarkersUnassigned: 18,
+			},
+		},
+		{
+			name: "plain images are the total minus the other media types",
+			raw: Library{
+				Photos: 20, Videos: 3, LivePhotos: 2,
+			},
+			want: Library{
+				Photos: 20, Videos: 3, LivePhotos: 2, Images: 15,
+				PhotosLive: 20, PhotosWithoutEmbedding: 20, PhotosWithoutFaces: 20,
 			},
 		},
 		{
@@ -52,18 +63,18 @@ func TestLibraryDerive(t *testing.T) {
 				Markers: 2, MarkersAssigned: 2,
 			},
 			want: Library{
-				Photos: 5, PhotosLive: 5, PhotosWithEmbedding: 5, PhotosWithFaces: 5,
+				Photos: 5, Images: 5, PhotosLive: 5, PhotosWithEmbedding: 5, PhotosWithFaces: 5,
 				Markers: 2, MarkersAssigned: 2,
 			},
 		},
 		{
 			name: "an inconsistent snapshot clamps at zero, never negative",
 			raw: Library{
-				Photos: 3, PhotosArchived: 4, PhotosWithEmbedding: 4,
+				Photos: 3, Videos: 9, PhotosArchived: 4, PhotosWithEmbedding: 4,
 				PhotosWithFaces: 9, Markers: 1, MarkersAssigned: 2,
 			},
 			want: Library{
-				Photos: 3, PhotosArchived: 4, PhotosWithEmbedding: 4,
+				Photos: 3, Videos: 9, PhotosArchived: 4, PhotosWithEmbedding: 4,
 				PhotosWithFaces: 9, Markers: 1, MarkersAssigned: 2,
 			},
 		},

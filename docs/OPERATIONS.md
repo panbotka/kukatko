@@ -627,8 +627,12 @@ long-running and belong on the machine where the instance runs — so they remai
 
 <!-- BODY CONFIG -->
 - **Observability keys:** `log.level` (debug/info/warn/error, default info, invalid → an error at
-  startup; `KUKATKO_LOG_LEVEL`) and `metrics.enabled` (bool, default true; disabled → `/metrics` is
-  not mounted, the request-metrics middleware is not installed, the access log keeps running; `KUKATKO_METRICS_ENABLED`).
+  startup; `KUKATKO_LOG_LEVEL`), `metrics.enabled` (bool, default true; disabled → `/metrics` is
+  not mounted, the request-metrics middleware is not installed, the access log keeps running; `KUKATKO_METRICS_ENABLED`)
+  and `metrics.library_ttl` (duration, default `1m`; how long the **library-content gauges** are
+  memoised — they are aggregates over the largest tables in the database and Prometheus scrapes on a
+  fixed interval forever, so raising it on a large library only makes the counts staler, never wrong;
+  a non-positive value falls back to the built-in default; `KUKATKO_METRICS_LIBRARY_TTL`).
 - **Storage keys (`storage.*`, `internal/storage`):** `backend` (`fs` **default** = local disk /
   `r2` = a private Cloudflare R2 bucket; an unknown value → `ErrInvalidStorageBackend` at startup),
   `originals_path` (the originals root, `fs` only), `cache_path` (derived artifacts — thumbnails,
@@ -953,6 +957,48 @@ The shortcut through steps 1–2 (overwriting `url_signing_secret` without savin
 contract itself (the message `"<key>\n<expiry>"`, HMAC-SHA256, hex) is frozen in the golden vectors
 `internal/storage/testdata/url_signature_vectors.json`; both sides are tested against them, so the
 algorithm cannot be changed in just one of them.
+
+## Prometheus metrics
+
+`GET /metrics` (namespace `kukatko`, mounted outside `/api/v1` when `metrics.enabled`) exposes four
+groups. It is **unauthenticated** — restrict it at the network layer — so it deliberately carries only
+instance-wide aggregates: nothing per-user, and no name of a photo, album, label or person ever
+becomes a label value.
+
+- **Request and worker instrumentation** (event-driven, recorded as things happen):
+  `kukatko_http_requests_total{method,route,status}` + `_request_duration_seconds` + `_inflight_requests`
+  (the route label is the chi route *pattern*, never a raw URL), `kukatko_jobs_started_total{type}` /
+  `_finished_total{type,outcome}` / `_execution_duration_seconds{type,outcome}`,
+  `kukatko_embedding_request_duration_seconds{operation,outcome}` + `_service_up`,
+  `kukatko_thumbnail_generation_duration_seconds`, `kukatko_import_run_photos{source,outcome}` (the
+  tally of a run **in progress**, checkpointed by the importer) and `kukatko_geocode_credits_spent_total`.
+- **Infrastructure, sampled at scrape time:** `kukatko_db_pool_*` (live pgx pool stats),
+  `kukatko_jobs_queue_depth{state}` / `_by_type{type}` / `_by_type_state{type,state}` (all three folded
+  from **one** `GROUP BY type, state` — the two one-dimensional families are sums over the third, so
+  they can never disagree) and `kukatko_geocode_credits_remaining` / `_limit`.
+- **Library content**, memoised for `metrics.library_ttl` (default 1 m) over the same aggregation the
+  admin dashboard reads (`internal/system`, one SQL statement), so the gauges and `GET /system/stats`
+  cannot disagree and a scrape does not re-count the catalogue:
+  `kukatko_library_photos{media_type="image|video|live"}` (the total is `sum()` over the label),
+  `_photos_archived` (the trash), `_photos_processed{stage="embedding|faces|places"}` and
+  `_photos_pending{stage=…}` (the processing coverage and its gap — note the `faces` gap also counts
+  photos that genuinely contain no face, which the counts cannot tell apart), `_embeddings`, `_faces`,
+  `_markers{state="assigned|unassigned"}`, `_subjects{type}`, `_albums{type}`, `_labels`, plus
+  `kukatko_library_collect_errors_total` (a failed aggregation exports **no** library gauges for that
+  scrape — a gap, not a stale number — and bumps this counter, so alert on it).
+  RAW originals are deliberately **not** a media type here: RAW-ness is a per-file property judged by
+  extension (`internal/stacks`), not a column, so counting it would mean an unindexed scan on every
+  refresh; use `media_type`, which is what the catalogue actually models.
+- **Import history** (same memoisation): `kukatko_import_last_run_status{source,status}` — 1 for the
+  status the last run of that source is in and **0 for every other known status**, so a transition is
+  visible instead of a series silently vanishing — plus
+  `kukatko_import_last_run_start_timestamp_seconds{source}` and `_finish_timestamp_seconds{source}`
+  (absent while a run is still going). Both are Unix seconds: express the age as `time() - <gauge>`
+  rather than exporting a pre-computed one.
+
+The gauges carry no `_total` suffix on purpose (it is reserved for counters, so `rate()` over a name
+stays meaningful). A queue-query or library-aggregation failure drops only its own families and never
+fails the whole scrape.
 
 ## Make targets and CI/CD
 

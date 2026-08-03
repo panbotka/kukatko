@@ -380,3 +380,46 @@ func TestCollect_StorageBestEffort(t *testing.T) {
 		t.Errorf("storage.originals = %d, want 0 for a missing directory", status.Storage.OriginalsBytes)
 	}
 }
+
+// TestLatestRuns_EveryConfiguredSource verifies LatestRuns reports every source
+// that has run and omits the ones that never have, so a caller can tell "never
+// imported" from "imported with zero tallies".
+func TestLatestRuns_EveryConfiguredSource(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Imports = fakeImports{runs: map[importer.Source]importer.Run{
+		importer.SourcePhotoPrism: {ID: 7, Source: importer.SourcePhotoPrism, Status: importer.StatusDone},
+		importer.SourceFolder:     {ID: 9, Source: importer.SourceFolder, Status: importer.StatusRunning},
+	}}
+
+	runs, err := New(cfg).LatestRuns(t.Context())
+	if err != nil {
+		t.Fatalf("LatestRuns: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("LatestRuns() returned %d runs, want 2: %+v", len(runs), runs)
+	}
+	if runs[importer.SourcePhotoPrism].Status != importer.StatusDone {
+		t.Errorf("photoprism status = %q, want done", runs[importer.SourcePhotoPrism].Status)
+	}
+	if runs[importer.SourceFolder].ID != 9 {
+		t.Errorf("folder run id = %d, want 9", runs[importer.SourceFolder].ID)
+	}
+	if _, ok := runs[importer.SourcePhotoSorter]; ok {
+		t.Error("a source that never ran must be absent, not present with a zero run")
+	}
+}
+
+// TestLatestRuns_Error verifies a failing import lister surfaces as an error
+// rather than an empty map a caller would read as "nothing ever imported".
+func TestLatestRuns_Error(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Imports = fakeImports{err: errors.New("db down")}
+
+	if _, err := New(cfg).LatestRuns(t.Context()); err == nil {
+		t.Error("LatestRuns with a failing lister = nil error, want error")
+	}
+}

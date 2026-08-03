@@ -557,6 +557,44 @@ func TestCounts(t *testing.T) {
 	}
 }
 
+// TestCountsByTypeState verifies the two-dimensional breakdown behind the
+// /metrics queue gauges: it splits one type across the states its jobs are
+// actually in, and its cells sum to the one-dimensional tallies.
+func TestCountsByTypeState(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	for _, uid := range []string{"a", "b"} {
+		if _, err := store.Enqueue(ctx, jobs.TypeImageEmbed, photoPayload(t, uid), jobs.EnqueueOptions{}); err != nil {
+			t.Fatalf("enqueue image_embed %s: %v", uid, err)
+		}
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeThumbnail, photoPayload(t, "a"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("enqueue thumbnail: %v", err)
+	}
+	if _, err := store.Claim(ctx, "w1", jobs.TypeImageEmbed); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	counts, err := store.CountsByTypeState(ctx)
+	if err != nil {
+		t.Fatalf("CountsByTypeState: %v", err)
+	}
+	want := map[jobs.TypeState]int{
+		{Type: jobs.TypeImageEmbed, State: jobs.StateRunning}: 1,
+		{Type: jobs.TypeImageEmbed, State: jobs.StateQueued}:  1,
+		{Type: jobs.TypeThumbnail, State: jobs.StateQueued}:   1,
+	}
+	if len(counts) != len(want) {
+		t.Fatalf("CountsByTypeState() = %+v, want %+v", counts, want)
+	}
+	for cell, n := range want {
+		if counts[cell] != n {
+			t.Errorf("count for %+v = %d, want %d (full: %+v)", cell, counts[cell], n, counts)
+		}
+	}
+}
+
 // TestCountPending verifies CountPending counts only queued/running jobs of the
 // requested types, excludes other types and terminal (done) jobs, and returns 0
 // with no types — the query backing the optional Wake-on-LAN auto-wake.

@@ -715,7 +715,9 @@ to `## Package map` in `CLAUDE.md`.
   twice)/`RecoverStaleLocks(staleAfter)` (a stale lock = a dead worker → requeue as an attempt, **with the same
   backoff `Fail` applies** so a job that kills its process cannot be re-claimed instantly in a crash loop;
   an exhausted job is dead-lettered),
-  helpers `CountsByState`/`CountsByType`/`ListDead`/`RequeueDead`/`Requeue` (dead **and**
+  helpers `CountsByState`/`CountsByType`/`CountsByTypeState` (the `(type,state)` breakdown keyed by the
+  comparable `TypeState`; one `GROUP BY type, state` answers all three `/metrics` queue-depth families, so
+  a scrape runs one query instead of one per dimension)/`ListDead`/`RequeueDead`/`Requeue` (dead **and**
   failed → queued, for the admin endpoint)/`List`(`ListOptions{State,Limit,Offset}`, ordered
   updated_at DESC, limit cap 500, for the admin listing)/`Get`; sentinels
   `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrLockLost`/`ErrNotDead`; **job types** `image_embed`/
@@ -1760,7 +1762,11 @@ to `## Package map` in `CLAUDE.md`.
   timestamp, e.g. max PhotoPrism `UpdatedAt`), `counts JSONB` `{imported,updated,skipped,failed}`,
   `last_error TEXT`; a partial index `(source, finished_at DESC) WHERE status='done' AND
   high_watermark IS NOT NULL` for the resume query; the types `Source` (`SourcePhotoPrism`/
-  `SourcePhotoSorter` + `Valid()`)/`Status` (`StatusRunning`/`StatusDone`/`StatusFailed`)/`Counts`/
+  `SourcePhotoSorter` + `Valid()` + `AllSources()`, both reading one package-level list so the
+  predicate a writer validates against and the enumeration a reporter iterates — the system status, the
+  `/metrics` import gauges — cannot drift apart; both hand out a **copy**)/`Status`
+  (`StatusRunning`/`StatusDone`/`StatusFailed` + `AllStatuses()` in lifecycle order, so a reporter can
+  publish one series per status instead of only the one a run happens to be in)/`Counts`/
   `Run`; `Store` = `NewStore(pool)`: `Start(ctx,source)` opens a `running` row (`ErrInvalidSource`),
   `UpdateCounts(ctx,id,counts)` overwrites the tally, `Complete(ctx,id,watermark,counts)` closes it as
   `done` with `finished_at`+the watermark stamped, `Fail(ctx,id,lastErr,counts)` as `failed`
@@ -2482,14 +2488,22 @@ to `## Package map` in `CLAUDE.md`.
   refills, so an import's metered mapy.com spend is watchable while it happens; `Configured:false` = no key,
   `BudgetEnabled:false` = the cap is switched off), version/commit; errors while
   reading the queue/imports (which require the DB) → an error (500), an unreachable DB and unreadable storage are handled inline
-  best-effort; alongside the operational snapshot it also aggregates the **library statistics** for every logged-in user:
+  best-effort; **`LatestRuns(ctx)`** → the newest run of **every** `importer.AllSources()` keyed by source
+  (a source that never ran is **absent**, not a zero run), which `collectImports` picks the dashboard's two
+  migration paths out of and `/metrics` exports whole — one implementation, not two;
+  alongside the operational snapshot it also aggregates the **library statistics** for every logged-in user:
   `LibraryCounter` (`CountLibrary`, satisfied by its own `Store` = `NewStore(pool)` — a single query of scalar
-  subselects `countLibrarySQL`, **not** a `maintenance scan` over the tree; partial indexes for archived/video,
-  semi-joins on the `embeddings` PK / the unique `faces`), **`LibraryStats(ctx) (Library,error)`** returns
-  `Library{Photos,Videos,PhotosLive,PhotosArchived,PhotosWith(out)Embedding,PhotosWith(out)Faces,
-  Embeddings,Faces,Subjects,SubjectsPerson/Pet/Other,Markers,MarkersAssigned/Unassigned,Albums,Labels}`
-  — the store returns **only raw counts**, the derived values (the live split + the coverage gaps, clamped to 0) are computed by
-  `Library.derive()`; `libraryCache` memoizes for `defaultLibraryTTL` 30 s and **caches only a success**
+  subselects `countLibrarySQL`, **not** a `maintenance scan` over the tree; partial indexes for archived/video/live,
+  semi-joins on the `embeddings` PK / the unique `faces`, one CTE for the album types),
+  **`LibraryStats(ctx) (Library,error)`** returns
+  `Library{Photos,Videos,LivePhotos,Images,PhotosLive,PhotosArchived,PhotosWith(out)Embedding,PhotosWith(out)Faces,
+  PhotosGeocoded,PhotosPendingGeocode,Embeddings,Faces,Subjects,SubjectsPerson/Pet/Other,Markers,
+  MarkersAssigned/Unassigned,Albums,AlbumsManual/Folder/Moment/State/Month,Labels}`
+  — the store returns **only raw counts**, the derived values (the live split, `Images` = total − video − live
+  because the `media_type` index deliberately excludes the majority value, + the coverage gaps, clamped to 0) are computed by
+  `Library.derive()`; `PhotosGeocoded` counts `photo_places` rows **with** coordinates (a row without them
+  only records a GPS-less photo as processed) and `PhotosPendingGeocode` the live geotagged photos with no row
+  at all — the outstanding metered mapy.com spend; `libraryCache` memoizes for `defaultLibraryTTL` 30 s and **caches only a success**
   (an error goes out, the page must not render zeros as real counts); a nil `Library` → `errNoLibraryCounter`
   instead of a panic), `internal/systemapi/`
   (the HTTP API over the system state: the `StatusCollector` interface (`Collect`+`LibraryStats`, satisfied by
@@ -2588,11 +2602,28 @@ to `## Package map` in `CLAUDE.md`.
   counter (`kukatko_geocode_credits_spent_total` — metered mapy.com money, so the spend of a running import
   is watchable, not inferred from the bill) + the standard
   `go_`/`process_` collectors; the **pull-at-scrape collectors** `RegisterDBPool` (live pgx pool stats),
-  `RegisterJobQueue` (queue depth by_state/by_type via `QueueDepthFunc`, `collectTimeout` 5 s,
+  `RegisterJobQueue` (`QueueDepthFunc` → `map[QueueCell]int` keyed by (type,state); the collector folds that
+  one breakdown into `kukatko_jobs_queue_depth{state}`/`_by_type{type}`/`_by_type_state{type,state}`, so the
+  three families are sums of each other and one query per scrape answers all of them; `collectTimeout` 5 s,
   so a slow DB does not block the scrape) and `RegisterGeocodeBudget` (`GeocodeBudgetFunc` →
   `kukatko_geocode_credits_remaining`/`_limit`, sampled at scrape time so the gauge follows the budget
   window rolling over even while no job runs; a nil func = no budget wired) read their data at scrape time
-  without extra goroutines; `Handler()`
+  without extra goroutines; `RegisterLibrary(LibraryStatsFunc, ttl)` (`library.go`) adds the **library-content**
+  gauges — `kukatko_library_photos{media_type}`/`_photos_archived`/`_photos_processed{stage}`/
+  `_photos_pending{stage}`/`_embeddings`/`_faces`/`_markers{state}`/`_subjects{type}`/`_albums{type}`/`_labels`
+  and `kukatko_import_last_run_status{source,status}` (1 for the status the run is in, **0** for every other
+  known one, so a transition is visible instead of a series vanishing) + `_start`/`_finish_timestamp_seconds{source}`
+  (Unix seconds; the age is `time() - gauge`, not a pre-computed one) — over a `LibrarySnapshot` whose every
+  labelled dimension is a `map[string]int`, so a new album/media type needs no change here; the snapshot is
+  **memoised** for `metrics.library_ttl` (`defaultLibraryTTL` 1 min) because these are aggregates over the
+  largest tables and a scrape arrives forever — without it `/metrics` becomes the load it reports on; a stale
+  value is **never** served past the TTL: a failure exports no library gauges (a gap, not a number the library
+  no longer has) and bumps `kukatko_library_collect_errors_total`; the gauges carry no `_total` suffix on
+  purpose, that is reserved for counters. The func is wired in `cmd/kukatko/obs.go`
+  (`registerLibraryMetrics`/`librarySnapshot`/`importRuns`) onto `system.Service.LibraryStats`+`LatestRuns` —
+  the **same** aggregation the admin dashboard reads, so `/metrics` and `GET /system/stats` cannot disagree;
+  `/metrics` is unauthenticated, so only instance-wide aggregates go in it, never a per-user number or a
+  photo/album/label/person name as a label value; `Handler()`
   is mounted by `serve` on `/metrics` (the middleware skips that path, a scrape does not instrument itself),
   the observation methods `JobStarted`/`JobFinished`/`ObserveEmbeddingCall`/`SetEmbeddingUp`/
   `SetImportProgress`/`ObserveThumbnail`/`GeocodeCreditSpent` and `Middleware(routeOf)` are handed to the subsystems that

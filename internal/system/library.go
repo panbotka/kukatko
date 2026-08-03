@@ -42,6 +42,14 @@ type Library struct {
 	Photos int `json:"photos"`
 	// Videos is how many of those are videos (media_type = 'video').
 	Videos int `json:"videos"`
+	// LivePhotos is how many are live photos (media_type = 'live'), i.e. a still
+	// paired with a short motion clip. Not to be confused with PhotosLive, which
+	// is the not-archived count.
+	LivePhotos int `json:"live_photos"`
+	// Images is how many are plain stills (media_type = 'image'). Derived from the
+	// total and the two other media types, which is what the partial index on
+	// media_type makes cheap to count.
+	Images int `json:"images"`
 	// PhotosLive is the catalogue as browsed: total minus archived. Derived.
 	PhotosLive int `json:"photos_live"`
 	// PhotosArchived is how many photos are soft-deleted, i.e. sitting in the
@@ -58,6 +66,14 @@ type Library struct {
 	// photos not yet run through detection and photos genuinely containing no
 	// face, which the counts alone cannot tell apart. Derived.
 	PhotosWithoutFaces int `json:"photos_without_faces"`
+	// PhotosGeocoded is how many photos carry a cached place resolved from their
+	// coordinates. The `places` job also records a GPS-less photo as processed, but
+	// such a row has no coordinates and is deliberately not counted here.
+	PhotosGeocoded int `json:"photos_geocoded"`
+	// PhotosPendingGeocode is the reverse-geocode backlog: live photos that carry
+	// coordinates but have no cached place yet. Every one of them costs a metered
+	// mapy.com credit to resolve, so this is the outstanding spend.
+	PhotosPendingGeocode int `json:"photos_pending_geocode"`
 	// Embeddings is the total number of image-embedding rows.
 	Embeddings int `json:"embeddings"`
 	// Faces is the total number of detected-face rows across all photos.
@@ -78,16 +94,30 @@ type Library struct {
 	MarkersUnassigned int `json:"markers_unassigned"`
 	// Albums is the total number of albums, of every type.
 	Albums int `json:"albums"`
+	// AlbumsManual is how many albums were curated by hand (type 'album').
+	AlbumsManual int `json:"albums_manual"`
+	// AlbumsFolder is how many albums came from an import folder (type 'folder').
+	AlbumsFolder int `json:"albums_folder"`
+	// AlbumsMoment is how many albums are auto-generated events (type 'moment').
+	AlbumsMoment int `json:"albums_moment"`
+	// AlbumsState is how many albums are auto-generated place groupings (type
+	// 'state').
+	AlbumsState int `json:"albums_state"`
+	// AlbumsMonth is how many albums are auto-generated calendar months (type
+	// 'month').
+	AlbumsMonth int `json:"albums_month"`
 	// Labels is the total number of labels.
 	Labels int `json:"labels"`
 }
 
 // derive fills in the values that follow from the raw counts rather than from
-// their own query: the live/archived split, the two coverage gaps and the
-// unassigned markers. Each difference is clamped at zero so a snapshot taken
-// while rows are being written concurrently can never report a negative gap.
+// their own query: the live/archived split, the plain-image share of the media
+// types, the two coverage gaps and the unassigned markers. Each difference is
+// clamped at zero so a snapshot taken while rows are being written concurrently
+// can never report a negative gap.
 func (l Library) derive() Library {
 	l.PhotosLive = nonNegative(l.Photos - l.PhotosArchived)
+	l.Images = nonNegative(l.Photos - l.Videos - l.LivePhotos)
 	l.PhotosWithoutEmbedding = nonNegative(l.Photos - l.PhotosWithEmbedding)
 	l.PhotosWithoutFaces = nonNegative(l.Photos - l.PhotosWithFaces)
 	l.MarkersUnassigned = nonNegative(l.Markers - l.MarkersAssigned)

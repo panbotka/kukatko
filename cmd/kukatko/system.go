@@ -24,17 +24,20 @@ import (
 // guards are supplied via authAPI (systemapi stays decoupled from auth's
 // wiring): maintainer for the operations view, plain authentication for the
 // counts.
+//
+// It returns the service alongside the API so /metrics can export the same
+// aggregation the dashboard reads instead of counting the catalogue twice.
 func buildSystemAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, backupSvc *backup.Service,
 	mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
-) (*systemapi.API, error) {
+) (*systemapi.API, *system.Service, error) {
 	client, err := embedding.New(embedding.Config{
 		BaseURL:  cfg.Embedding.URL,
 		ImageDim: cfg.Embedding.ImageDim,
 		FaceDim:  cfg.Embedding.FaceDim,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("initialising embedding client: %w", err)
+		return nil, nil, fmt.Errorf("initialising embedding client: %w", err)
 	}
 
 	// A nil *backup.Service must be passed as a nil interface, not a non-nil
@@ -69,9 +72,10 @@ func buildSystemAPI(
 		OriginalsPath: cfg.Storage.OriginalsPath,
 		CachePath:     cfg.Storage.CachePath,
 	})
-	return systemapi.NewAPI(systemapi.Config{
+	api := systemapi.NewAPI(systemapi.Config{
 		Service:           svc,
 		RequireMaintainer: authAPI.RequireMaintainer,
 		RequireAuth:       authAPI.RequireAuth,
-	}), nil
+	})
+	return api, svc, nil
 }

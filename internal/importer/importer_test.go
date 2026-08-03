@@ -34,6 +34,51 @@ func TestSource_Valid(t *testing.T) {
 	}
 }
 
+// TestAllSources_MatchesValid checks that the enumeration a reporter iterates and
+// the predicate a writer validates against cannot drift apart, and that a caller
+// mutating the returned slice cannot corrupt the package's own list.
+func TestAllSources_MatchesValid(t *testing.T) {
+	t.Parallel()
+
+	sources := AllSources()
+	if len(sources) != 4 {
+		t.Errorf("AllSources() = %v, want the four recognised sources", sources)
+	}
+	for _, source := range sources {
+		if !source.Valid() {
+			t.Errorf("AllSources() yielded %q, which Valid() rejects", source)
+		}
+	}
+
+	sources[0] = Source("flickr")
+	if !AllSources()[0].Valid() {
+		t.Error("mutating the returned slice corrupted the package's source list")
+	}
+}
+
+// TestAllStatuses_AreTheRecognisedSet checks the status enumeration the import
+// gauges publish one series per, so a run's transition never leaves a stale
+// series behind.
+func TestAllStatuses_AreTheRecognisedSet(t *testing.T) {
+	t.Parallel()
+
+	want := []Status{StatusRunning, StatusDone, StatusPartial, StatusFailed}
+	got := AllStatuses()
+	if len(got) != len(want) {
+		t.Fatalf("AllStatuses() = %v, want %v", got, want)
+	}
+	for i, status := range want {
+		if got[i] != status {
+			t.Errorf("AllStatuses()[%d] = %q, want %q", i, got[i], status)
+		}
+	}
+
+	got[0] = Status("bogus")
+	if AllStatuses()[0] != StatusRunning {
+		t.Error("mutating the returned slice corrupted the package's status list")
+	}
+}
+
 // TestCounts_JSONRoundTrip confirms the counts tally serialises with stable,
 // lower-snake JSON keys (the on-disk JSONB shape) and decodes back unchanged.
 func TestCounts_JSONRoundTrip(t *testing.T) {

@@ -1459,12 +1459,21 @@ layer) and installs the request-metrics middleware. Series:
 - **Jobs** — `kukatko_jobs_started_total{type}`, `kukatko_jobs_finished_total{type,outcome}`,
   `kukatko_jobs_execution_duration_seconds{type,outcome}` (outcome `success`/`error`/`deferred`)
   via the `worker.Observer` hook; queue depth `kukatko_jobs_queue_depth{state}` +
-  `kukatko_jobs_queue_depth_by_type{type}` via a collector that reads `jobs.Store` on scrape.
+  `kukatko_jobs_queue_depth_by_type{type}` + `kukatko_jobs_queue_depth_by_type_state{type,state}` via a
+  collector that reads `jobs.Store` on scrape — all three folded from one `GROUP BY type, state`.
 - **Embeddings sidecar** — `kukatko_embedding_request_duration_seconds{operation,outcome}` +
   `kukatko_embedding_service_up` via the `embedding.Instrument` decorator (transparent, returns
   the inner error unchanged, so `errors.Is(ErrUnavailable)` keeps working).
+- **Library content** — what is actually *in* the library: `kukatko_library_photos{media_type}`,
+  `_photos_archived`, `_photos_processed{stage}` / `_photos_pending{stage}` (the embedding/face/geocode
+  coverage and its gap), `_embeddings`, `_faces`, `_markers{state}`, `_subjects{type}`, `_albums{type}`,
+  `_labels`. Read from the **same aggregation** the admin dashboard uses (`internal/system`), memoised for
+  `metrics.library_ttl` (default 1 m) so a scrape never re-counts the catalogue; a failed aggregation
+  exports a gap plus `kukatko_library_collect_errors_total` rather than a misleading number.
 - **Import** — `kukatko_import_run_photos{source,outcome}` (the run's last checkpointed tally)
-  via `importer.ProgressObserver` in ppimport/psimport.
+  via `importer.ProgressObserver` in ppimport/psimport, plus the persisted history
+  `kukatko_import_last_run_status{source,status}` and `_start`/`_finish_timestamp_seconds{source}`
+  (Unix seconds — the age of the last import is `time() - gauge`).
 - **Thumbnails** — `kukatko_thumbnail_generation_duration_seconds` via `thumb.WithObserver`.
 - **DB pool** — `kukatko_db_pool_*` (total/acquired/idle/max + wait/empty-acquire) via a collector
   over `pgxpool.Stat`.
