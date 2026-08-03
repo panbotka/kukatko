@@ -3,15 +3,22 @@
 // The game asks one question at a time — "is this face subject X?" over a photo
 // with an unnamed face, or "should this photo carry label Y?" over a photo that
 // looks like the ones already on that label — and the user answers yes, no or
-// don't-know. Questions are picked from the uncertainty band: candidates whose
-// confidence (1 − cosine distance) falls inside [BandMin, BandMax). Below the
-// band the guess is noise and the question demoralising; at or above BandMax the
-// candidate is confirmed in bulk on the /recognition or /expand pages instead,
-// so asking one-by-one would waste the player's time. Inside the band a human
-// answer buys the most: questions are ordered by distance from the band's
-// midpoint (closest to the decision boundary first) and the two kinds are
-// interleaved deterministically, skewed toward whichever kind has more
-// candidates.
+// don't-know.
+//
+// A batch is mixed from two confidence tiers, because what the game is actually
+// buying is confirmed assignments per minute of a human's attention, not
+// information per answer. SureShare of it (0.70) comes from the confident tier —
+// confidence (1 − cosine distance) at or above SureMin, where the answer is
+// almost always a one-click yes — and the rest from the uncertainty band
+// [BandMin, BandMax), where a human verdict teaches the system the most. Below
+// BandMin the guess is noise and the question demoralising, so it is never
+// asked. See tiers.go for why the ratio is enforced positionally and why the
+// minority of hard questions must not be tuned away.
+//
+// Within a tier the order is that tier's own: the band by distance from its
+// midpoint (closest to the decision boundary first), the confident tier by
+// confidence descending. The two kinds are then interleaved deterministically,
+// skewed toward whichever kind has more candidates.
 //
 // Informativeness alone does not make the game playable, though. One label that
 // matches half the library supplies hundreds of band candidates and used to fill
@@ -35,7 +42,13 @@
 // full, and is capped by BuildTimeout on top of that. Answering one question
 // must not cost a library-wide work list — sweeping all of it took four minutes
 // on a real library, which is longer than any browser waits. The cursors advance
-// on every rebuild, so successive rebuilds walk the whole library.
+// on every rebuild, so successive rebuilds walk the whole library, and a rebuild
+// whose window came back empty rotates and tries again (up to maxRebuildRounds,
+// inside the one deadline) rather than telling the player there is nothing left.
+//
+// A label can be taken out of the game entirely on the labels page
+// (labels.review_enabled): it then produces no questions and is not scanned, so
+// it costs a rebuild nothing. Subjects have no equivalent switch.
 //
 // Answers route through the existing write paths: yes on a face goes through the
 // facematch assign state machine, yes on a label through the organize attach
@@ -74,9 +87,16 @@ const (
 	// DefaultBandMin is the lower edge of the uncertainty band: candidates less
 	// confident than this are noise, not fair questions.
 	DefaultBandMin = 0.45
-	// DefaultBandMax is the upper edge of the uncertainty band: candidates at
-	// least this confident belong on the bulk-confirm pages, not in the game.
+	// DefaultBandMax is the upper edge of the uncertainty band: above it a
+	// candidate is no longer a hard question, and belongs to the confident tier.
 	DefaultBandMax = 0.75
+	// DefaultSureMin is the floor of the confident tier: candidates at least this
+	// confident are the ones a player confirms in one click.
+	DefaultSureMin = 0.80
+	// DefaultSureShare is the fraction of a batch drawn from the confident tier.
+	// Seven in ten, decided with the operator: enough that the game mostly feels
+	// like progress, not so much that the player stops reading the question.
+	DefaultSureShare = 0.70
 	// DefaultQueueSize is the default number of questions per batch, sized so
 	// the UI can prefetch and stay instant between answers.
 	DefaultQueueSize = 20
@@ -125,6 +145,13 @@ const (
 	// sessionIdleTTL is how long an untouched per-user session (its skip set
 	// and counters) survives before being pruned.
 	sessionIdleTTL = 12 * time.Hour
+	// maxRebuildRounds is how many rotating windows one rebuild may try before
+	// it accepts that it has nothing. It exists so "never come back empty while
+	// a candidate exists somewhere" cannot turn into a request that walks the
+	// whole library: the rounds share one BuildTimeout, and three of them is
+	// enough to get past a run of exhausted windows without the deadline ever
+	// becoming the thing that stops it in the normal case.
+	maxRebuildRounds = 3
 )
 
 // Sentinel errors returned for client mistakes.
@@ -181,10 +208,11 @@ const (
 	// no named subjects — the chosen source itself is empty, not the band.
 	ReasonNoPeople = "no_people"
 	// ReasonNoLabels means the game was restricted to labels but the library has
-	// no label with photos on it.
+	// no label with photos on it that is still switched on for the game.
 	ReasonNoLabels = "no_labels"
-	// ReasonNoCandidates means sources exist but no candidate currently falls
-	// inside the uncertainty band.
+	// ReasonNoCandidates means sources exist but neither tier produced a
+	// candidate — across every window the rebuild rotated through, so it is not
+	// merely "this tier is exhausted here".
 	ReasonNoCandidates = "no_candidates"
 )
 
@@ -194,6 +222,11 @@ type Question struct {
 	ID string `json:"id"`
 	// Kind is "face" or "label".
 	Kind Kind `json:"kind"`
+	// Tier is which confidence tier the question was drawn from: "sure" (at or
+	// above the confident floor — the answer is almost certainly yes) or "band"
+	// (the uncertainty band). It is exposed so an operator can see what the mix
+	// actually is; the UI asks the same question either way.
+	Tier string `json:"tier,omitempty"`
 	// Confidence is the candidate's 0–1 confidence (1 − cosine distance),
 	// shown by the UI.
 	Confidence float64 `json:"confidence"`
@@ -318,6 +351,12 @@ type Config struct {
 	BandMin float64
 	// BandMax is the exclusive upper confidence bound of the uncertainty band.
 	BandMax float64
+	// SureMin is the inclusive lower bound of the confident tier; it is clamped
+	// up to BandMax so the tiers stay disjoint.
+	SureMin float64
+	// SureShare is the fraction of a batch drawn from the confident tier; a
+	// value outside (0, 1) falls back to the default.
+	SureShare float64
 	// QueueSize is the default batch size for Queue.
 	QueueSize int
 	// CacheTTL is how long a built queue is reused before rebuilding.
@@ -353,6 +392,8 @@ type Service struct {
 
 	bandMin          float64
 	bandMax          float64
+	sureMin          float64
+	sureShare        float64
 	queueSize        int
 	cacheTTL         time.Duration
 	maxLabels        int
@@ -419,6 +460,8 @@ func New(cfg Config) *Service {
 		log:              cfg.Log,
 		bandMin:          cfg.BandMin,
 		bandMax:          cfg.BandMax,
+		sureMin:          cfg.SureMin,
+		sureShare:        cfg.SureShare,
 		queueSize:        orDefaultInt(cfg.QueueSize, DefaultQueueSize),
 		cacheTTL:         cfg.CacheTTL,
 		maxLabels:        orDefaultInt(cfg.MaxLabels, DefaultMaxLabels),
@@ -444,13 +487,16 @@ func requireDeps(cfg Config) {
 
 // applyFallbacks replaces unset or out-of-range tunables with the package
 // defaults; an inconsistent band falls back as a pair so it stays non-empty.
+//
+// SureMin is only bounds-checked here, not compared with the band: sureFloor
+// clamps it up to BandMax on every read, so a value below the band is a narrower
+// confident tier rather than a configuration error, and the tiers cannot overlap
+// however it is set.
 func (s *Service) applyFallbacks() {
 	if s.log == nil {
 		s.log = slog.Default()
 	}
-	if s.bandMin <= 0 || s.bandMin >= 1 || s.bandMax <= s.bandMin || s.bandMax > 1 {
-		s.bandMin, s.bandMax = DefaultBandMin, DefaultBandMax
-	}
+	s.applyTierFallbacks()
 	if s.cacheTTL <= 0 {
 		s.cacheTTL = DefaultCacheTTL
 	}
@@ -459,6 +505,21 @@ func (s *Service) applyFallbacks() {
 	}
 	if s.now == nil {
 		s.now = time.Now
+	}
+}
+
+// applyTierFallbacks bounds-checks the four numbers that decide which candidates
+// become questions and in what mix. The band falls back as a pair so it stays
+// non-empty; the confident tier's floor and share fall back individually.
+func (s *Service) applyTierFallbacks() {
+	if s.bandMin <= 0 || s.bandMin >= 1 || s.bandMax <= s.bandMin || s.bandMax > 1 {
+		s.bandMin, s.bandMax = DefaultBandMin, DefaultBandMax
+	}
+	if s.sureMin <= 0 || s.sureMin > 1 {
+		s.sureMin = DefaultSureMin
+	}
+	if s.sureShare <= 0 || s.sureShare >= 1 {
+		s.sureShare = DefaultSureShare
 	}
 }
 

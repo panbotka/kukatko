@@ -198,6 +198,12 @@ export interface Label {
   slug: string
   name: string
   priority: number
+  /**
+   * Whether the review game may ask about this label. False means it produces
+   * no questions and is not even searched for candidates. Always true for a
+   * freshly created label; switched from the labels page.
+   */
+  review_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -207,10 +213,18 @@ export interface LabelCount extends Label {
   photo_count: number
 }
 
-/** Editable label fields sent to create (`POST /labels`) and update. */
+/**
+ * Editable label fields sent to create (`POST /labels`) and update.
+ *
+ * `review_enabled` is optional because omitting it means "leave it as it is":
+ * the rename form and the review toggle each send only what they know, so
+ * neither can clobber the other's field. It is ignored on create (a new label
+ * always takes part in the review game).
+ */
 export interface LabelInput {
   name: string
   priority: number
+  review_enabled?: boolean
 }
 
 /** Response body of `GET /api/v1/labels`. */

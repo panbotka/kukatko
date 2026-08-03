@@ -59,7 +59,7 @@ func (s *Store) SearchAlbums(ctx context.Context, q string, limit int) ([]AlbumC
 // ordered by priority (highest first) then name then uid, capped at the bound
 // limit. The pattern in $1 is a pre-escaped "contains" ILIKE pattern.
 const searchLabelsSQL = `
-SELECT l.uid, l.slug, l.name, l.priority, l.created_at, l.updated_at,
+SELECT l.uid, l.slug, l.name, l.priority, l.review_enabled, l.created_at, l.updated_at,
        COUNT(p.uid) AS photo_count
 FROM labels l
 LEFT JOIN photo_labels pl ON pl.label_uid = l.uid

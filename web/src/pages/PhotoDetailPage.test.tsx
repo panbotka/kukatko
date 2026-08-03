@@ -185,6 +185,7 @@ function labelCount(uid: string, name: string): LabelCount {
     slug: name.toLowerCase(),
     name,
     priority: 0,
+    review_enabled: true,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     photo_count: 0,

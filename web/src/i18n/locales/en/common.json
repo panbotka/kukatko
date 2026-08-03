@@ -648,6 +648,11 @@
       "priority": "Priority",
       "cancel": "Cancel",
       "save": "Save"
+    },
+    "review": {
+      "toggle": "Ask about the label “{{name}}” in the review game",
+      "on": "The review game asks about this label",
+      "off": "The review game skips this label"
     }
   },
   "labelDetail": {
@@ -2221,7 +2226,7 @@
       "noPeopleTitle": "No people yet",
       "noPeopleHint": "The game is asking about people only, but nobody is named yet. Name someone, or switch to labels.",
       "noLabelsTitle": "No labels yet",
-      "noLabelsHint": "The game is asking about labels only, but no label has photos yet. Create a label, or switch to people.",
+      "noLabelsHint": "The game is asking about labels only, but no label has photos yet — or they are all switched off for the game on the Labels page. Create a label, switch one back on, or ask about people.",
       "queueHintScoped": "Nothing left to sort in the chosen source. Try asking about both, or come back later.",
       "askPeople": "Ask about people",
       "askLabels": "Ask about labels",

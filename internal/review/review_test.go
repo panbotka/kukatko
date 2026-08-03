@@ -199,6 +199,10 @@ type fixture struct {
 	// test can widen or tighten the share one subject or label may take of a
 	// batch.
 	perEntity int
+	// sureShare and sureMin override the confident tier's fraction of a batch and
+	// its floor (0 = the package defaults).
+	sureShare float64
+	sureMin   float64
 	now       *time.Time
 	svc       *Service
 }
@@ -227,6 +231,8 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 		Feedback:     f.feedback,
 		Assigner:     f.assigner,
 		MaxPerEntity: f.perEntity,
+		SureShare:    f.sureShare,
+		SureMin:      f.sureMin,
 		Now:          func() time.Time { return *f.now },
 	})
 	return f
@@ -261,50 +267,63 @@ func labelResult(labelUID string, similarities ...float64) expand.Result {
 	return res
 }
 
-// labelCount builds a LabelCount fixture.
+// labelCount builds a LabelCount fixture, review-enabled like every label the
+// store creates. Switching it off is what TestQueue_reviewDisabledLabelIsNeither
+// exercises.
 func labelCount(uid string, photoCount int) organize.LabelCount {
 	return organize.LabelCount{
-		Label:      organize.Label{UID: uid, Name: "Label " + uid},
+		Label:      organize.Label{UID: uid, Name: "Label " + uid, ReviewEnabled: true},
 		PhotoCount: photoCount,
 	}
 }
 
-func TestQueue_bandFilter(t *testing.T) {
+func TestQueue_tierFilter(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
-		// Confidences 0.9 (too certain), 0.6 (in band), 0.44 (below band).
+		// Confidences 0.9 (confident tier), 0.6 (band), 0.44 (below the band, so
+		// neither).
 		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.1, 0.4, 0.56)}
 		f.organize.labels = []organize.LabelCount{labelCount("lab1", 3)}
-		// Similarities 0.8 (too certain), 0.5 (in band).
-		f.expander.results["lab1"] = labelResult("lab1", 0.8, 0.5)
+		// Similarities 0.85 (confident tier), 0.5 (band).
+		f.expander.results["lab1"] = labelResult("lab1", 0.85, 0.5)
 	})
 	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if len(res.Questions) != 2 {
-		t.Fatalf("questions = %d, want 2 (one per kind in band): %+v", len(res.Questions), res.Questions)
+	if len(res.Questions) != 4 {
+		t.Fatalf("questions = %d, want 4 (a confident and a band one per kind): %+v",
+			len(res.Questions), res.Questions)
 	}
-	byKind := map[Kind]Question{}
+	byConfidence := map[float64]Question{}
 	for _, q := range res.Questions {
-		byKind[q.Kind] = q
+		byConfidence[q.Confidence] = q
 	}
-	face, ok := byKind[KindFace]
-	if !ok || face.Confidence != 0.6 {
-		t.Errorf("face question = %+v, want confidence 0.6", face)
+	// The 0.44 candidate is the one that must be gone: below BandMin the guess is
+	// noise, and no amount of wanting easy questions makes it a fair one.
+	if _, asked := byConfidence[0.44]; asked {
+		t.Errorf("a 0.44-confidence candidate became a question: %+v", res.Questions)
 	}
+	wantTiers := map[float64]string{0.9: "sure", 0.6: "band", 0.85: "sure", 0.5: "band"}
+	for confidence, wantTier := range wantTiers {
+		q, ok := byConfidence[confidence]
+		if !ok {
+			t.Errorf("no question at confidence %v; got %+v", confidence, res.Questions)
+			continue
+		}
+		if q.Tier != wantTier {
+			t.Errorf("question at confidence %v is tier %q, want %q", confidence, q.Tier, wantTier)
+		}
+	}
+	face := byConfidence[0.6]
 	if face.Subject == nil || face.Subject.UID != "subj1" || face.BBox == nil || face.FaceIndex == nil {
 		t.Errorf("face question missing subject/bbox/face_index: %+v", face)
 	}
-	label, ok := byKind[KindLabel]
-	if !ok || label.Confidence != 0.5 {
-		t.Errorf("label question = %+v, want confidence 0.5", label)
+	if label := byConfidence[0.5]; label.Label == nil || label.Label.UID != "lab1" {
+		t.Errorf("label question missing label: %+v", byConfidence[0.5])
 	}
-	if label.Label == nil || label.Label.UID != "lab1" {
-		t.Errorf("label question missing label: %+v", label)
-	}
-	if res.Remaining != 2 || res.Answered != 0 {
-		t.Errorf("counters = answered %d remaining %d, want 0/2", res.Answered, res.Remaining)
+	if res.Remaining != 4 || res.Answered != 0 {
+		t.Errorf("counters = answered %d remaining %d, want 0/4", res.Answered, res.Remaining)
 	}
 }
 
@@ -432,13 +451,24 @@ func TestQueue_emptyReasons(t *testing.T) {
 			want:   ReasonNoSources,
 		},
 		{
-			name: "sources exist but nothing in band",
+			name: "sources exist but nothing in either tier",
 			mutate: func(f *fixture) {
-				f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.05)}
+				// Confidence 0.30 on both sides: below the band, so noise.
+				f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.7)}
 				f.organize.labels = []organize.LabelCount{labelCount("lab1", 2)}
-				f.expander.results["lab1"] = labelResult("lab1", 0.95)
+				f.expander.results["lab1"] = labelResult("lab1", 0.3)
 			},
 			want: ReasonNoCandidates,
+		},
+		{
+			name: "every label is switched off for the game",
+			mutate: func(f *fixture) {
+				off := labelCount("lab1", 5)
+				off.ReviewEnabled = false
+				f.organize.labels = []organize.LabelCount{off}
+				f.expander.results["lab1"] = labelResult("lab1", 0.6)
+			},
+			want: ReasonNoSources,
 		},
 		{
 			name: "labels exist with zero photos",

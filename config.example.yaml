@@ -274,13 +274,30 @@ expand:
 review:
   # The review game (GET /api/v1/review/queue + POST /api/v1/review/answer,
   # editor-only): one question at a time — "is this face person X?", "should this
-  # photo carry label Y?" — picked from the uncertainty band where a human answer
-  # teaches the system the most. Confidence is 1 - cosine distance; only candidates
-  # with band_min <= confidence < band_max become questions. Below the band the
-  # guess is noise; at or above band_max the /recognition and /expand pages confirm
-  # in bulk instead. Out-of-range values fall back to the default band.
+  # photo carry label Y?" — mixed from two confidence tiers. Confidence is
+  # 1 - cosine distance.
+  #
+  # The uncertainty band, band_min <= confidence < band_max: the candidates the
+  # system is genuinely unsure about, where a human answer teaches it the most.
+  # Below band_min the guess is noise and the question demoralising, so nothing
+  # there is ever asked about. Out-of-range values fall back to the default band.
   band_min: 0.45
   band_max: 0.75
+  # The confident tier: confidence at or above sure_min, where the answer is
+  # almost always a one-click yes. It is clamped up to band_max so the two tiers
+  # can never overlap; setting it equal to band_max leaves no confidence between
+  # them that nothing asks about. Out of range falls back to the default.
+  sure_min: 0.80
+  # The fraction of a batch drawn from the confident tier, the rest coming from
+  # the band — and it holds in any prefix of the queue, not merely on average, so
+  # a batch never opens with a run of hard questions.
+  #
+  # Raise it and the game feels more productive per minute; raise it too far and
+  # the player stops reading the question and rubber-stamps wrong assignments into
+  # the library through the very feature meant to clean it up. The minority of
+  # hard questions is load-bearing — do not set this above ~0.85. A value outside
+  # (0, 1) falls back to the default.
+  sure_share: 0.70
   # Default number of questions per queue batch (the UI prefetches to stay instant
   # between answers). Set to 0 (or below) to fall back to the default.
   queue_size: 20

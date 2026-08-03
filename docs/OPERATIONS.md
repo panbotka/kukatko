@@ -887,10 +887,22 @@ long-running and belong on the machine where the instance runs — so they remai
   `KUKATKO_EXPAND_MAX_DISTANCE`, `_LIMIT`, `_MAX_LIMIT`, `_SEARCH_LIMIT`, `_SOURCE_CAP`, `_CONCURRENCY`.
 - **Review keys (`review.*`, `internal/config` + `internal/review`):** tunes the **review game**
   (`GET /review/queue`, `POST /review/answer`) — one question at a time over candidates the
-  system is unsure about. `band_min` / `band_max` (**default 0.45 / 0.75**) — the **uncertainty band**:
-  only a candidate with confidence (= 1 − cosine distance) in `[band_min, band_max)` becomes a question;
-  below the band the guess is noise, from `band_max` up it is confirmed in bulk on `/recognition` / via expand.
-  An invalid band (outside (0,1), min ≥ max) falls back to the default **pair**. `queue_size` (**default 20**) —
+  system is unsure about. `band_min` / `band_max` (**default 0.45 / 0.75**) — the **uncertainty band**: a
+  candidate with confidence (= 1 − cosine distance) in `[band_min, band_max)` is a hard question, where a human
+  answer teaches the system the most; below `band_min` the guess is noise and nothing is ever asked.
+  An invalid band (outside (0,1), min ≥ max) falls back to the default **pair**.
+  `sure_min` / `sure_share` (**default 0.80 / 0.70**) — the **confident tier and its share of a batch**.
+  A candidate at or above `sure_min` is one the answer to is almost certainly yes, and `sure_share` of every
+  batch is drawn from there, the rest from the band; the ratio holds in any *prefix* of the queue, so a batch
+  never opens with a run of hard questions. `sure_min` is clamped up to `band_max` so the tiers cannot overlap
+  (setting the two equal leaves no confidence between them that nothing asks about); a `sure_share` outside
+  (0, 1) falls back to the default.
+  **Do not raise `sure_share` much above 0.85.** The point of the game is confirmed assignments per minute of
+  human attention, but a game that is 95 % "yes" turns the player into a rubber stamp who stops looking, and
+  wrong assignments then enter the library through the very feature meant to clean it up — the minority of hard
+  questions is load-bearing. Running out of one tier fills from the other, and a rebuild whose window came back
+  empty rotates to the next one (up to three, inside the one `build_timeout`), so an empty queue means a
+  genuinely empty library rather than an exhausted tier. `queue_size` (**default 20**) —
   the default batch size, the UI prefetches; a request may send its own `?limit` (cap 100).
   `cache_ttl` (**default 60s**) — how long a built queue is served from the per-user cache before the
   expensive vector searches run again (answers edit the queue in-place, the session counter is cheap).
@@ -911,11 +923,16 @@ long-running and belong on the machine where the instance runs — so they remai
   another entity still has a question waiting. With the default batch of 20 that forces a rebuild to draw on at
   least five different people or labels — lower it for more variety at the cost of a costlier rebuild (a batch
   must be filled from more sources), raise it for the opposite. Every rebuild logs the result at debug level
-  (`review: queue rebuilt` with `questions`/`entities`/`longest_run`). Apart from the budgets, the review does
-  not take the face side with its own keys — it runs through sweep/candidates and their
-  `sweep.*`/`candidates.*` limits. A non-positive value for any key falls back to the default. Env:
-  `KUKATKO_REVIEW_BAND_MIN`, `_BAND_MAX`, `_QUEUE_SIZE`, `_CACHE_TTL`, `_MAX_LABELS`, `_LABEL_CONCURRENCY`,
-  `_FACE_BUDGET`, `_LABEL_BUDGET`, `_BUILD_TIMEOUT`, `_MAX_PER_ENTITY`.
+  (`review: queue rebuilt` with `questions`/`entities`/`longest_run`/`sure`/`band`). Apart from the budgets, the
+  review does not take the face side with its own keys — it runs through sweep/candidates and their
+  `sweep.*`/`candidates.*` limits (**and the memory bound lives there**: the queue asks for the whole window
+  from the confident tier down to `band_min`, so `candidates.max_exemplars`/`max_candidates` and the
+  cut-before-hydration order are what keep one rebuild off the library's growth curve — see `docs/PERF.md` §3).
+  There is no per-label config key: taking a single label out of the game is a **per-label switch on the labels
+  page** (`labels.review_enabled`, default on), not an operator setting. A non-positive value for any key falls
+  back to the default. Env:
+  `KUKATKO_REVIEW_BAND_MIN`, `_BAND_MAX`, `_SURE_MIN`, `_SURE_SHARE`, `_QUEUE_SIZE`, `_CACHE_TTL`,
+  `_MAX_LABELS`, `_LABEL_CONCURRENCY`, `_FACE_BUDGET`, `_LABEL_BUDGET`, `_BUILD_TIMEOUT`, `_MAX_PER_ENTITY`.
 
 ### `maps.user_agent` — restricting the mapy.com key to a User-Agent
 

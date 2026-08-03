@@ -109,6 +109,8 @@ func TestLoad_defaults(t *testing.T) {
 		{"expand.concurrency", cfg.Expand.Concurrency, 8},
 		{"review.band_min", cfg.Review.BandMin, 0.45},
 		{"review.band_max", cfg.Review.BandMax, 0.75},
+		{"review.sure_min", cfg.Review.SureMin, 0.80},
+		{"review.sure_share", cfg.Review.SureShare, 0.70},
 		{"review.queue_size", cfg.Review.QueueSize, 20},
 		{"review.cache_ttl", cfg.Review.CacheTTL, 60 * time.Second},
 		{"review.max_labels", cfg.Review.MaxLabels, 200},
@@ -375,6 +377,26 @@ func TestLoad_envOverridesYAMLFile(t *testing.T) {
 	}
 	if cfg.Web.Port != 8181 {
 		t.Errorf("web.port = %d, want 8181 (env overrides file)", cfg.Web.Port)
+	}
+}
+
+// TestLoad_reviewTierEnvOverrides verifies the two tier-mix keys can be tuned
+// from the environment like everything else, since they are the dial an operator
+// reaches for when the game feels too hard or too mindless.
+func TestLoad_reviewTierEnvOverrides(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_REVIEW_SURE_MIN", "0.85")
+	t.Setenv("KUKATKO_REVIEW_SURE_SHARE", "0.6")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Review.SureMin != 0.85 {
+		t.Errorf("review.sure_min = %v, want 0.85", cfg.Review.SureMin)
+	}
+	if cfg.Review.SureShare != 0.6 {
+		t.Errorf("review.sure_share = %v, want 0.6", cfg.Review.SureShare)
 	}
 }
 

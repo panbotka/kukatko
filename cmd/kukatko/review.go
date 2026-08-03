@@ -47,6 +47,8 @@ func buildReviewAPI(
 		Assigner:         matchSvc,
 		BandMin:          cfg.Review.BandMin,
 		BandMax:          cfg.Review.BandMax,
+		SureMin:          cfg.Review.SureMin,
+		SureShare:        cfg.Review.SureShare,
 		QueueSize:        cfg.Review.QueueSize,
 		CacheTTL:         cfg.Review.CacheTTL,
 		MaxLabels:        cfg.Review.MaxLabels,

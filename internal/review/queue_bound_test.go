@@ -329,7 +329,7 @@ func TestNew_boundedDefaults(t *testing.T) {
 	}
 }
 
-func TestQueue_faceScanAsksOnlyForTheUncertaintyBand(t *testing.T) {
+func TestQueue_faceScanAsksForBothTiers(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) {
 		f.sweeper.people = append(f.sweeper.people, scannedPerson("subj01", 0.4))
@@ -338,17 +338,20 @@ func TestQueue_faceScanAsksOnlyForTheUncertaintyBand(t *testing.T) {
 		t.Fatalf("Queue: %v", err)
 	}
 	if len(f.sweeper.params) != 1 {
-		t.Fatalf("scan calls = %d, want 1", len(f.sweeper.params))
+		t.Fatalf("scan calls = %d, want 1 — asking for both tiers must not cost a second scan",
+			len(f.sweeper.params))
 	}
-	// The band is a distance window, and both edges have to reach the search.
-	// Asking for the whole threshold and dropping the confident matches here
-	// instead made the scan hydrate a full photo record — EXIF blob included —
-	// for every match it was about to discard.
+	// The window runs from the confident tier all the way down to BandMin, so one
+	// scan serves both tiers. The MinDistance floor that used to cut it at the
+	// band's far edge is deliberately gone: what keeps a rebuild off the
+	// library's growth curve is candidates' MaxCandidates cut *before* hydration,
+	// not this floor (see internal/candidates/memory_test.go, and the 10.9 GB
+	// OOM that put the floor there in the first place).
 	got := f.sweeper.params[0]
-	if got.Threshold != 1-DefaultBandMin || got.MinDistance != 1-DefaultBandMax {
-		t.Errorf("scan params = threshold %v, min distance %v; want %v and %v — the band's far "+
-			"edge must be pushed into the search, not filtered out after hydration",
-			got.Threshold, got.MinDistance, 1-DefaultBandMin, 1-DefaultBandMax)
+	if got.Threshold != 1-DefaultBandMin || got.MinDistance != 0 {
+		t.Errorf("scan params = threshold %v, min distance %v; want %v and 0 — one scan has to "+
+			"cover the confident tier and the band alike",
+			got.Threshold, got.MinDistance, 1-DefaultBandMin)
 	}
 }
 

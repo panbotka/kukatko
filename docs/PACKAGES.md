@@ -1233,31 +1233,59 @@ to `## Package map` in `CLAUDE.md`.
   MCP transport**, real auth and real `kkt_` tokens; mounted in `serve`
   (`buildMCPAPI` in `cmd/kukatko/mcp.go`, in `discoveryAPIOptions`). See `docs/MCP.md`),
   `internal/review/`
-  (**the review game** — a queue of "one at a time" questions over the **uncertainty band** and the application of answers;
+  (**the review game** — a queue of "one at a time" questions mixed from **two confidence tiers** and the application of answers;
   **it composes existing pieces, reimplements nothing**: face questions via the `Sweeper` interface (satisfied by
   `*sweep.Service` → per-subject candidate search with all its filters: unassigned-only,
   rejections, negative exemplar, min. face size), label questions via `Expander` (satisfied by
   `*expand.Service` → excludes members and rejected ones), writes via `Assigner` (`*facematch.Service`),
   `OrganizeStore.AttachLabelAudited` and `FeedbackStore.RejectFace/RejectLabel`; `New(Config{...,BandMin,
-  BandMax,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,FaceBudget,LabelBudget,BuildTimeout,MaxPerEntity,Now})`
-  (an invalid band → the default pair 0.45/0.75, `Now` = a test hook).
-  **`Queue(ctx,userUID,source,limit)`**: candidates with confidence
-  (= 1 − distance) in `[BandMin,BandMax)` — the band is a **distance window pushed into the search**
-  (`Threshold: 1−BandMin`, `MinDistance: 1−BandMax`), so the confident matches (which belong on
-  `/recognition`/expand, not in the game) are never hydrated only to be discarded here; `inBand` still trims
-  the exact upper edge; labels with `PhotoCount>0`
-  (cap `MaxLabels`, fan-out `errgroup.SetLimit(LabelConcurrency)`, an error on one label is
-  logged and skipped); ordered by **distance from the band's center** (tie-break a stable id), the kinds are
-  **interleaved** deterministically (comparison of integer fractions, no `rand`).
+  BandMax,SureMin,SureShare,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,FaceBudget,LabelBudget,BuildTimeout,
+  MaxPerEntity,Now})` (an invalid band → the default pair 0.45/0.75, `Now` = a test hook).
+  **The tiers (`tiers.go`) — the game must mostly be a click on "yes".** Band-only maximises information per
+  answer but optimises the wrong quantity: what an evening of clicking buys is **confirmed assignments per
+  minute of attention**, and a 90 %-confident candidate answered yes in one click is real work done, merely
+  unsurprising — while excluding it by design made *every* question a hard one. So a batch is **`SureShare`
+  (default 0.70, `review.sure_share`) from the confident tier** (confidence ≥ `sureFloor()` = `max(SureMin,
+  BandMax)`, default 0.80 via `review.sure_min`; the clamp keeps the tiers disjoint, and setting `sure_min` =
+  `band_max` leaves no confidence between them unasked) **and the rest from the band** `[BandMin,BandMax)`.
+  Below `BandMin` nothing is ever asked — the guess is noise and the question demoralising. The minority of hard
+  questions is **load-bearing**: a game that is 95 % yes turns the player into a rubber stamp who stops looking,
+  and wrong assignments then enter the library through the very feature meant to clean it. `blend` enforces the
+  ratio **positionally** (take from the confident tier while the running share stays ≤ `SureShare`), because a
+  batch is a *prefix* of the built queue and a queue that is 70/30 only in aggregate could still open with ten
+  hard questions; the measured deviation on a full batch is the per-entity rounding, ±0.15.
+  **`Queue(ctx,userUID,source,limit)`**: within a tier the order is that tier's own — the band by **distance
+  from its center** (closest to the decision boundary first), the confident tier by **confidence descending**
+  (the surest is the cheapest yes) — tie-break a stable id, then `blend`, then `capEntities`; the kinds are
+  **interleaved** deterministically (comparison of integer fractions, no `rand`). Labels need `PhotoCount>0`
+  **and `ReviewEnabled`** (cap `MaxLabels`, fan-out `errgroup.SetLimit(LabelConcurrency)`, an error on one label
+  is logged and skipped).
+  **The face scan asks for both tiers in one pass** (`Threshold: 1−BandMin`, **no `MinDistance`**), reversing
+  d0d6518's floor — which had been added after a rebuild reached 10.9 GB anon-rss and the host OOM killer took
+  the box down. That floor was never the structural bound: `candidates.MaxExemplars`, `MaxCandidates` and the
+  **cut to `MaxCandidates` before hydration** are, so the number of full photo records built is fixed whatever
+  the window admits (`internal/candidates/memory_test.go` measures exactly this window). One consequence is
+  named rather than hidden: `MaxCandidates` keeps the *nearest* survivors, so a subject with more than 500
+  confident matches contributes no band candidates — the shape the catch-all-subject bug produced, not a
+  healthy library, and the rotation moves past it either way.
+  **The per-label switch.** `labels.review_enabled` (migration `0048`, default `TRUE`) takes a label out of the
+  game: it produces no questions **and is not scanned**, which is half the point — a label search is a
+  per-member kNN fan-out, so a label nobody wants to be asked about must not cost a rebuild anything either.
+  It is dropped in `labelPlan`, before the plan, and dropped from the label total too, so a library whose every
+  label is switched off honestly reports `no_labels`. Subjects have no equivalent flag. The switch is about the
+  label as a whole; "not this photo for this label" stays a per-photo `internal/feedback` rejection.
   **Variety (`variety.go`) — the game must not be an interrogation.** Informativeness alone let a single label
   that matches half the library own a whole batch; the measurement (`longestEntityRun`, `countEntities`, logged
   per rebuild at debug as `review: queue rebuilt`) on the reproduction fixture was **19 of 20 questions about one
   label, 11 of them in a row, 2 entities** → now **8 entities, longest run 2**. Two rules, both deterministic
   reorderings of the informativeness order (no `rand`, so a rebuild over an unchanged library and unchanged
   cursors is still byte-for-byte reproducible): (1) **`MaxPerEntity`** (default 4, config `review.max_per_entity`)
-  — `keepBest` orders one subject's/label's questions and keeps only its share, applied **inside**
-  `personQuestions`/`labelResultQuestions` so that the scans' "I have `need` questions, stop" means *enough
-  from enough different entities* — filling a batch of 20 therefore visits ≥ 5 people/labels instead of stopping
+  — `keepBest` orders one subject's/label's questions **per tier** and keeps only its share of each, applied
+  **inside** `personQuestions`/`labelResultQuestions`, and `capEntities` then enforces the share **across** the
+  blended sequence so an entity with material in both tiers cannot claim twice the allowance; what a scan counts
+  toward "enough" is `batchShare` (the entity's material capped at the share), so that a scan stopping at `need`
+  yields a batch of `need` rather than one `capEntities` cuts back. That makes "I have `need` questions, stop"
+  mean *enough from enough different entities* — filling a batch of 20 therefore visits ≥ 5 people/labels instead of stopping
   at the first prolific one (a rebuild spends more of its `FaceBudget`/`LabelBudget`; that is the price of the
   variety and the budgets still bound it); (2) **`spread(questions, maxSameEntityRun)`** (`maxSameEntityRun` = 2,
   a constant — a game property, not an ops trade-off) — a greedy that always takes the **most informative
@@ -1281,12 +1309,17 @@ to `## Package map` in `CLAUDE.md`.
   questions the player just turned off is indistinguishable from a broken toggle. An empty library → `reason:
   "no_people_no_labels"`, an empty **chosen** source → `"no_people"`/`"no_labels"` (`reasonFor`; only for a
   restricted source, because the unscanned side's total is 0 by construction, and never after a
-  degraded rebuild), an empty band → `"no_candidates"` (all non-error).
+  degraded rebuild), neither tier producing anything → `"no_candidates"` (all non-error).
+  **Infinite means degrading, not stopping.** Running out of one tier fills from the other (both scans see the
+  same material, so this is automatic), and a round that came back empty **rotates to the next window and tries
+  again** — `collectRotating`, up to `maxRebuildRounds` (3) **inside the one `BuildTimeout`**, stopping early
+  when a round found something, was cut short, or the library holds no source to rotate through. An empty
+  *window* is not an empty library, and only a genuinely empty one may report so.
   **A rebuild is bounded — the game asks one question at a time, so it must never cost a library-wide
   work list** (it did: 250 s for 105 subjects on production, see `docs/PERF.md` §3). Faces go through
   `Sweeper.Scan` with `Window{Offset: cursor, Budget: FaceBudget}` (default 8 subjects), labels through a
   `LabelConcurrency`-sized chunked loop over a rotating window of `LabelBudget` labels (default 6); both
-  stop as soon as the batch holds `limit` band candidates, and `BuildTimeout` (default 15 s) caps the whole
+  stop as soon as the batch holds `limit` candidates, and `BuildTimeout` (default 15 s) caps the whole
   rebuild — a deadline serves a **partial** queue with a logged warning instead of a 500 and never reports
   `no_people_no_labels` (a timed-out scan cannot prove the library is empty), while a caller's own
   cancellation still propagates. Two **instance-wide cursors** (`faceCursor`/`labelCursor`, own mutex)
@@ -1312,15 +1345,21 @@ to `## Package map` in `CLAUDE.md`.
   early stop, dry-queue rebuild, deadline degradation) and `variety_test.go` (**`TestQueue_monotonyBaseline`
   runs the pre-fix pipeline — order + interleave, share out of reach, no spread — over the same fixture and
   fails if it stops reproducing the complaint**, then: run cap, per-entity share, ≥ 5 entities per batch,
-  every question still inside the band, reproducibility, `spread`/`longestEntityRun` unit tables)
+  every question still inside one of the two tiers, reproducibility, `spread`/`longestEntityRun` unit tables)
   and `source_test.go` (`ParseSource`, a restricted queue **not calling** the other source's search at all,
   an unknown source falling back to both, a switch rebuilding inside a warm `CacheTTL`, the per-source empty
-  reasons, a skip holding across a switch),
+  reasons, a skip holding across a switch)
+  and `tiers_test.go` (the measured mix within a stated ±0.15, the mix holding in every prefix, a configurable
+  `SureShare`, either tier exhausted degrading to the other, an empty window rotating while a genuinely empty
+  library does not, surest-first ordering, the per-entity share counting both tiers together, a switched-off
+  label neither asked about nor searched, plus `blend`/`capEntities`/`tierOf`/fallback unit tables),
   integration tests over real
   sweep+candidates+expand+facematch+feedback+DB, incl. `queue_scale_integration_test.go` (105 named
   subjects, an instrumented face store counting the kNN queries, and a bounded-vs-unbounded content
   comparison) and the three selections driven over one real library in one session (plus a people-only
-  queue on a labels-only library reporting `no_people`). Additionally **`LeaderboardStore`** (`NewLeaderboardStore(
+  queue on a labels-only library reporting `no_people`), the tier mix over **planted unassigned faces**
+  (production's are almost all on the nameless catch-all subject, so the face half cannot be observed there
+  at all), the confident tier exhausted degrading to the band, and the label switch driven off and back on. Additionally **`LeaderboardStore`** (`NewLeaderboardStore(
   pool)`, separate from `Service` — read-only) aggregates a **review leaderboard** directly from `audit_log`: per
   `actor_uid` it counts decisions marked `details.via = "review"` — yes = `face.assign`+`label.attach`,
   no = `face.reject`+`label.reject`; a skip writes nothing, so it isn't counted — with the windows `WindowAllTime`/
@@ -1405,7 +1444,9 @@ to `## Package map` in `CLAUDE.md`.
   `DeleteAlbum`/`AddPhoto` (idempotent, no position — `ON CONFLICT DO NOTHING`)/`RemovePhoto`
   (idempotent)/`SetCover` (set/clear cover)/`ListPhotoUIDs`
   (chronologically: `COALESCE(taken_at, created_at), photo_uid` via a JOIN on `photos`); **labels** `CreateLabel`/`GetLabelByUID`/`GetLabelBySlug`/`UpdateLabel`
-  (re-slug)/`ListLabels` (with counts, ordered priority DESC)/`SearchLabels(q,limit)` (accent/case-insensitive
+  (re-slug; also writes `LabelUpdate.ReviewEnabled` **unconditionally**, so a caller meaning "leave it alone"
+  carries the current value across — `internal/organizeapi` does exactly that for a body omitting the field)/
+  `ListLabels` (with counts, ordered priority DESC)/`SearchLabels(q,limit)` (accent/case-insensitive
   ILIKE over `immutable_unaccent(name)`, with counts, cap limit — the basis of `globalsearchapi`)/`DeleteLabel`/
   `AttachLabel` (idempotent upsert source/uncertainty)/`DetachLabel` (idempotent)/`ListPhotoUIDsByLabel`; **favorites**
   `AddFavorite`/`RemoveFavorite` (both idempotent)/`IsFavorite`/`ListFavorites` (per-user,
@@ -1419,6 +1460,11 @@ to `## Package map` in `CLAUDE.md`.
   `GetRating(user,photo)` → `PhotoRating{Rating,Flag}` (a missing row = 0/`none`, nil err);
   `RatingsAmong(user,photoUIDs)` → a map `photo_uid → PhotoRating` only for rated photos (annotates
   a whole page in one query, mirror of `FavoritedAmong`, a missing caller defaults to 0/`none`);
+  `Label.ReviewEnabled` (migration `0048`, `labels.review_enabled`, default `TRUE`) is whether the review game
+  may ask about the label; it is **never read on the way in** — `insertLabelSQL` omits the column so the DB
+  default governs and a zero-valued struct literal can never create a label the game silently ignores, and
+  switching it off is an explicit `UpdateLabel`. Every label read path carries it (`labelColumns`, the two
+  count projections, `LabelsForPhoto`, `PhotoLabelsForPhoto`);
   types `AlbumType`/`LabelSource`/`RatingFlag` (none/pick/reject/eye)
   mirror the SQL CHECKs, a slug helper with a per-kind
   fallback (`album`/`label`); sentinels `ErrAlbumNotFound`/`ErrLabelNotFound`/`ErrPhotoNotFound`/
