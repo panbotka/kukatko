@@ -98,7 +98,33 @@ func (c *fakePPClient) ListPhotos(_ context.Context, p photoprism.PhotoListParam
 	default:
 		selected = filterByUpdated(c.photos, p.UpdatedSince)
 	}
-	return window(selected, p.Offset, p.Count), nil
+	return window(exposedByOrder(selected, p.Order), p.Offset, p.Count), nil
+}
+
+// exposedByOrder models the half of PhotoPrism's sort orders that are also
+// filters. order=updated compiles to `WHERE photos.updated_at >
+// photos.created_at`, so a picture untouched since it was indexed is not in the
+// listing at all — no error, no short page, it is simply not there. That is how
+// 17 production photos were never once offered for import, and it is why every
+// walk in this package pins photoprism.FullListingOrder.
+func exposedByOrder(in []photoprism.Photo, order string) []photoprism.Photo {
+	if _, filters := photoprism.FilteringOrderPredicate(order); !filters {
+		return in
+	}
+	out := make([]photoprism.Photo, 0, len(in))
+	for i := range in {
+		if in[i].UpdatedAt.After(in[i].CreatedAt) {
+			out = append(out, in[i])
+		}
+	}
+	return out
+}
+
+// Counts reports what the library holds, the way PhotoPrism's own aggregate does:
+// from the photos themselves, never from a listing. A listing narrowed by its sort
+// order therefore disagrees with it, which is exactly what the reconciler checks.
+func (c *fakePPClient) Counts(_ context.Context) (photoprism.LibraryCounts, error) {
+	return photoprism.LibraryCounts{All: len(c.photos), Photos: len(c.photos)}, nil
 }
 
 // window slices photos into [offset, offset+count), clamped to the slice, the way
@@ -1767,5 +1793,116 @@ func TestIntegration_fullRelistHealsAPhotoBehindTheWatermark(t *testing.T) {
 	if after.PhotoPrism.MissingCount != 0 {
 		t.Errorf("missing after repair = %d (%v), want 0",
 			after.PhotoPrism.MissingCount, after.PhotoPrism.MissingUIDs)
+	}
+}
+
+// TestIntegration_photoUntouchedSinceIndexingIsImportedAndReconciled is the
+// regression test for the defect this whole change exists for, end to end against
+// the real catalogue.
+//
+// Two live PhotoPrism photos ("Rybník Chmelínek" and "Letecký snímek areálu
+// muničních skladů", taken 2026-04-25, indexed 2026-04-27) had no Kukátko row
+// under any identifier — no photoprism_uid, no photoprism_file_hash, no
+// original_name, no alias — while `import verify` printed
+// "source=20660 kukatko=20647 deduplicated=13 missing=0 => COMPLETE".
+//
+// Neither the importer nor the verifier had ever seen them. Both listed with
+// PhotoPrism's order=updated, which is not merely an order: it compiles to
+// `WHERE photos.updated_at > photos.created_at`, hiding every picture untouched
+// since it was indexed. 17 of 20 677 photos were behind that clause, and every
+// count either component produced described the 20 660-photo window it could see.
+//
+// The fixture is that library in miniature, and it pins all four consequences:
+// the untouched photo IS listed, verify names it as missing, a full import
+// catalogues it, and the photo the source no longer holds at all is surplus
+// rather than missing.
+func TestIntegration_photoUntouchedSinceIndexingIsImportedAndReconciled(t *testing.T) {
+	ctx := t.Context()
+	indexed := time.Date(2026, 4, 27, 21, 38, 7, 0, time.UTC)
+	client := &fakePPClient{}
+
+	touched := client.addPhoto("ppTouched", indexed.Add(72*time.Hour), "Edited since", 10)
+	touched.CreatedAt = indexed
+	// The two production photos' shape: written once by the indexer and never
+	// modified, so updated_at never moved past created_at.
+	untouched := client.addPhoto("ppUntouched", indexed, "Rybnik Chmelinek", 20)
+	untouched.CreatedAt = indexed
+	untouched.UpdatedAt = indexed
+	// Imported once, then deleted in PhotoPrism — the control case: it must never
+	// be reported missing, because the source no longer has it to give.
+	gone := client.addPhoto("ppGone", indexed.Add(time.Hour), "Deleted upstream", 30)
+	gone.CreatedAt = indexed
+	// A second source uid over byte-identical content: dedup collapses it onto the
+	// surviving row and records an alias, which still counts as accounted for.
+	dup := client.addPhoto("ppDup", indexed.Add(2*time.Hour), "Same picture twice", 10)
+	dup.CreatedAt = indexed
+	client.files["h-ppDup"] = client.files["h-ppTouched"]
+	client.register(touched)
+	client.register(untouched)
+	client.register(gone)
+	client.register(dup)
+
+	env := newEnv(t, client)
+	client.photos = []photoprism.Photo{touched, gone, dup}
+	if _, err := env.svc.Import(ctx); err != nil {
+		t.Fatalf("seed import: %v", err)
+	}
+
+	// The library as it stands now: the untouched photo was always there, and the
+	// deleted one is gone from the listing while its Kukátko row remains.
+	client.photos = []photoprism.Photo{touched, untouched, dup}
+	verifier := importverify.NewService(importverify.Config{
+		PhotoPrism: client,
+		Catalog:    importverify.NewStore(env.db.Pool()),
+	})
+	before, err := verifier.Verify(ctx)
+	if err != nil {
+		t.Fatalf("Verify before: %v", err)
+	}
+	pp := before.PhotoPrism
+	if pp.SourceTotal != 3 || pp.ListingShortfall != 0 {
+		t.Fatalf("source enumerated = %d (shortfall %d), want 3 and 0: the listing must serve "+
+			"the untouched photo", pp.SourceTotal, pp.ListingShortfall)
+	}
+	if !slices.Equal(pp.MissingUIDs, []string{"ppUntouched"}) {
+		t.Errorf("MissingUIDs = %v, want [ppUntouched]", pp.MissingUIDs)
+	}
+	if pp.DeduplicatedCount != 1 {
+		t.Errorf("DeduplicatedCount = %d, want 1 (ppDup is accounted for by its alias)",
+			pp.DeduplicatedCount)
+	}
+	if !slices.Equal(pp.SurplusUIDs, []string{"ppGone"}) {
+		t.Errorf("SurplusUIDs = %v, want [ppGone]: deleted upstream, never missing", pp.SurplusUIDs)
+	}
+	if before.Complete {
+		t.Error("Complete = true while a source photo has no catalogue row")
+	}
+
+	// The repair: only a full pass re-offers a photo this old (it sits far behind
+	// the watermark), and it must actually catalogue it.
+	full, err := env.svc.ImportFull(ctx)
+	if err != nil {
+		t.Fatalf("ImportFull: %v", err)
+	}
+	if full.Counts.Imported != 1 {
+		t.Fatalf("full import imported = %d, want 1 (the untouched photo)", full.Counts.Imported)
+	}
+	assertPhotoImported(t, env, "ppUntouched")
+
+	after, err := verifier.Verify(ctx)
+	if err != nil {
+		t.Fatalf("Verify after: %v", err)
+	}
+	if after.PhotoPrism.MissingCount != 0 {
+		t.Errorf("missing after repair = %d (%v), want 0",
+			after.PhotoPrism.MissingCount, after.PhotoPrism.MissingUIDs)
+	}
+	if after.PhotoPrism.SurplusCount != 1 {
+		t.Errorf("surplus after repair = %d, want 1 (the upstream deletion is still there)",
+			after.PhotoPrism.SurplusCount)
+	}
+	if !after.Complete {
+		t.Errorf("Complete = false after the repair; a surplus must never gate it: %+v",
+			after.PhotoPrism)
 	}
 }

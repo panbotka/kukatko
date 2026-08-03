@@ -100,13 +100,19 @@ func printReportJSON(cmd *cobra.Command, report importverify.Report) error {
 // printReportSummary prints a human-readable reconciliation summary.
 func printReportSummary(cmd *cobra.Command, report importverify.Report) {
 	pp := report.PhotoPrism
-	cmd.Printf("PhotoPrism photos: source=%d kukatko=%d deduplicated=%d missing=%d\n",
-		pp.SourceTotal, pp.ImportedCount, pp.DeduplicatedCount, pp.MissingCount)
+	cmd.Printf("PhotoPrism photos: source=%d (reported %d) kukatko=%d deduplicated=%d missing=%d surplus=%d\n",
+		pp.SourceTotal, pp.SourceReportedTotal, pp.ImportedCount,
+		pp.DeduplicatedCount, pp.MissingCount, pp.SurplusCount)
 	if len(pp.SourceByType) > 0 {
 		cmd.Printf("  by type: %s\n", formatByType(pp.SourceByType))
 	}
+	printListingShortfall(cmd, pp)
 	if len(pp.MissingUIDs) > 0 {
 		cmd.Printf("  missing uids: %s\n", strings.Join(pp.MissingUIDs, ", "))
+	}
+	if len(pp.SurplusUIDs) > 0 {
+		cmd.Printf("  only in kukatko (the source listing never returned them): %s\n",
+			strings.Join(pp.SurplusUIDs, ", "))
 	}
 	cmd.Printf("files missing (e.g. RAW sibling): %d\n", pp.FileGapCount)
 	for _, gap := range pp.FileGaps {
@@ -121,6 +127,22 @@ func printReportSummary(cmd *cobra.Command, report importverify.Report) {
 	} else {
 		cmd.Println("=> INCOMPLETE: some items are missing (see above)")
 	}
+}
+
+// printListingShortfall prints the loudest line in the report when the photo
+// listing served fewer pictures than PhotoPrism says it holds.
+//
+// It is worth a paragraph of its own because it invalidates everything printed
+// around it: the missing count, the per-type histogram and the completeness
+// verdict all describe whatever slice of the library the listing chose to serve.
+// The uids cannot be named — the listing is precisely what will not name them.
+func printListingShortfall(cmd *cobra.Command, pp importverify.PhotoPrismReport) {
+	if pp.ListingShortfall == 0 {
+		return
+	}
+	cmd.Printf("  LISTING SHORTFALL: PhotoPrism reports %d pictures but the listing served %d "+
+		"— %d were never enumerated, so every count above describes a window, not the library\n",
+		pp.SourceReportedTotal, pp.SourceTotal, pp.ListingShortfall)
 }
 
 // printVectorsSummary prints the photo-sorter vectors reconciliation, or a note

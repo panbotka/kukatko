@@ -1624,6 +1624,7 @@
       "running": "Verifying…",
       "complete": "The import is complete — nothing is missing.",
       "incomplete": "The import is not complete — some items are missing (see below).",
+      "listingShortfall": "Careful: PhotoPrism reports {{reported}} pictures but the listing served only {{served}} — {{n}} never reached the comparison. The numbers below therefore describe a window of the library, not the library, and “missing 0” proves nothing.",
       "error": "The completeness check failed.",
       "notConfigured": "The vectors source (photo-sorter) is not configured; this section is skipped.",
       "colCheck": "Check",
@@ -1641,7 +1642,8 @@
       "subjects": "People",
       "deduplicated": "Deduplicated",
       "albumsSkipped": "Albums of type {{types}} are deliberately not imported (PhotoPrism generates them itself and the timeline covers them) — skipped: {{n}}. They never count as missing.",
-      "sampleNote": "Showing the first {{shown}} of {{total}}."
+      "sampleNote": "Showing the first {{shown}} of {{total}}.",
+      "surplus": "Only in Kukátko (the source no longer returns them)"
     },
     "failures": {
       "title": "Import failures",

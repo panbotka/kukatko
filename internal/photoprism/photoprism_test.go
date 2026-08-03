@@ -66,7 +66,9 @@ func TestNew_validation(t *testing.T) {
 }
 
 // TestListPhotos_incrementalQuery verifies the incremental query is built with
-// the clamped count, offset, merged=true, order=updated, and the updated: filter.
+// the clamped count, offset, merged=true, the non-filtering default order, and
+// the updated: filter. The watermark rides in q=, not in the order, so an
+// incremental pull narrows by time without narrowing by anything else.
 func TestListPhotos_incrementalQuery(t *testing.T) {
 	t.Parallel()
 	var gotQuery url.Values
@@ -95,7 +97,7 @@ func TestListPhotos_incrementalQuery(t *testing.T) {
 		"count":  "1000",
 		"offset": "2000",
 		"merged": "true",
-		"order":  "updated",
+		"order":  FullListingOrder,
 		"q":      `updated:"2023-01-02T03:04:05Z"`,
 	}
 	for key, want := range checks {

@@ -72,11 +72,15 @@ function cleanVerifyReport(): VerifyReport {
   return {
     photoprism: {
       source_total: 20670,
+      source_reported_total: 20670,
+      listing_shortfall: 0,
       source_by_type: { image: 20670 },
       imported_count: 20670,
       deduplicated_count: 0,
       missing_count: 0,
       missing_uids: [],
+      surplus_count: 0,
+      surplus_uids: [],
       file_gap_count: 0,
       file_gaps: [],
     },
@@ -381,6 +385,56 @@ describe('ImportPage', () => {
     expect(screen.getByRole('row', { name: /^Faces/ })).toHaveTextContent('0.2%')
     // …and the scope of that zero is spelled out rather than left to be guessed.
     expect(screen.getByText(/counts only photos that are already in the catalogue/)).toBeVisible()
+  })
+
+  it('says the counts describe a window when the source listing came back short', async () => {
+    // The production report: "source=20660 kukatko=20647 deduplicated=13
+    // missing=0 => COMPLETE" while PhotoPrism held 20 677 pictures. The 17
+    // absentees were never listed, so nothing could classify them as missing —
+    // and a reader looking at "missing 0" had no way to tell.
+    const report = cleanVerifyReport()
+    report.complete = false
+    report.photoprism = {
+      ...report.photoprism,
+      source_total: 20660,
+      source_reported_total: 20677,
+      listing_shortfall: 17,
+      imported_count: 20647,
+      deduplicated_count: 13,
+      missing_count: 0,
+    }
+    runsMock.mockResolvedValue(runsResponse([run(2, 'photoprism', 'done')]))
+    verifyMock.mockResolvedValue(report)
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Completeness check')
+    await user.click(screen.getByRole('button', { name: 'Verify completeness' }))
+
+    await screen.findByText('The import is not complete — some items are missing (see below).')
+    expect(screen.getByText(/never reached the comparison/)).toBeVisible()
+    expect(screen.getByText(/20677/)).toBeVisible()
+  })
+
+  it('names the catalogue photos the source listing no longer returns', async () => {
+    const report = cleanVerifyReport()
+    report.photoprism = {
+      ...report.photoprism,
+      surplus_count: 1,
+      surplus_uids: ['pteek3u9kw8oxi7y'],
+    }
+    runsMock.mockResolvedValue(runsResponse([run(2, 'photoprism', 'done')]))
+    verifyMock.mockResolvedValue(report)
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Completeness check')
+    await user.click(screen.getByRole('button', { name: 'Verify completeness' }))
+
+    // Reported, never enforced: a photo deleted in PhotoPrism after import leaves
+    // exactly this trace and keeps the report complete.
+    await screen.findByText('The import is complete — nothing is missing.')
+    expect(screen.getByText('pteek3u9kw8oxi7y')).toBeVisible()
   })
 
   it('denies access to users without import permission', async () => {

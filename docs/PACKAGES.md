@@ -1854,7 +1854,8 @@ to `## Package map` in `CLAUDE.md`.
   (**an import-completeness tool** — a read-only reconciliation of the sources against the catalogue, it answers "the
   import is complete and nothing is missing": `Service` = `NewService(Config{PhotoPrism,Feeds,Catalog,SampleLimit,AlbumTypes,Logger})`
   (panics on nil PhotoPrism/Catalog), `Verify(ctx)` → `Report`; the internal narrow interfaces `PhotoPrismSource`
-  (List Photos/Albums/Labels/Subjects), `FeedsSource` (`Stats` = the photo-sorter `/stats` feed), `Catalog`
+  (List Photos/Albums/Labels/Subjects + **`Counts`**, PhotoPrism's own library totals), `FeedsSource`
+  (`Stats` = the photo-sorter `/stats` feed), `Catalog`
   (the pool-backed `Store = NewStore(pool)`: `ImportedRefs`/`OriginalFileCounts`/`Counts`/`PhotosMissing
   Embeddings`/`PhotosMissingFaces`/`AlbumTitles`/`LabelNames`/`SubjectNames`; `ImportedRefs` answers a
   `Refs{UIDs,Aliases,FileHashes}` — the three ways a source photo can be accounted for, kept apart so the
@@ -1875,6 +1876,22 @@ to `## Package map` in `CLAUDE.md`.
   are rows of their own without a `photoprism_uid`, grouped behind the displayable original (see
   `ppimport/siblings.go`), so counting per row would report a file gap forever for a fully imported
   RAW+JPEG;
+  **the listing is pinned to a non-filtering order and measured against the source's own total**: the walk asks
+  for `photoprism.FullListingOrder` and `Verify` additionally reads `Counts` (PhotoPrism's `GET /api/v1/config`
+  aggregate — a code path the photo search never touches) into `source_reported_total`; the positive difference
+  `source_reported_total - source_total` is `listing_shortfall` and it **fails `complete`**. Both exist because
+  the client's old default order, `updated`, is not merely an order: it compiles to
+  `WHERE photos.updated_at > photos.created_at`, so every picture untouched since PhotoPrism indexed it was
+  absent from the listing. The verifier reconciled a 20 660-photo window of a 20 677-photo library and every
+  set comparison drawn from that window agreed nothing was missing — two live photos (`pte69fjicag4g4i3`,
+  `pte6a54vj8p5w5jr`) had no catalogue row under any identifier while the report read
+  `source=20660 kukatko=20647 deduplicated=13 missing=0 => COMPLETE`. A narrowed listing never fails: it pages
+  to exhaustion and hands back a self-consistent subset, so only a total from **outside** it can tell. The
+  reported total is a **lower bound** (PP subtracts pictures in review from it and hides private ones from a
+  restricted session), so only a listing serving FEWER than it is a finding;
+  **the photo section reconciles both directions**: `surplus_count`/`surplus_uids` are the catalogue's
+  `photoprism_uid`s the enumeration never yielded — a photo deleted in PhotoPrism after import leaves exactly
+  that trace — **reported, never enforced**, like the structural surplus below;
   **the album reconciliation follows the importer, not PhotoPrism**: `Config.AlbumTypes` defaults to
   `ppimport.DefaultAlbumTypes` (the *single source of truth* — the verifier can never demand a type the import
   deliberately skips), the remaining `photoprism.AlbumTypes` are still walked but land in
@@ -1913,9 +1930,27 @@ to `## Package map` in `CLAUDE.md`.
   with a long-lived app password/access token in the `Authorization: Bearer` header on **every**
   request (not a per-request login); `ListPhotos(ctx,PhotoListParams{Count,Offset,UpdatedSince,Order,
   AlbumUID,Query})`
-  → `GET /api/v1/photos?count=…&offset=…&merged=true&order=updated[&q=updated:"<RFC3339>"]`
+  → `GET /api/v1/photos?count=…&offset=…&merged=true&order=added[&q=updated:"<RFC3339>"]`
   for an **incremental** pull (UpdatedSince→the `updated:` filter, count clamped to `MaxCount` 1000, the caller
-  pages via offset). **Paging contract — `merged=true` makes a short page normal:** the offset/count window
+  pages via offset).
+  **Sort orders that are also FILTERS — the trap `FullListingOrder` exists for:** PhotoPrism compiles some
+  `order=` values into a `WHERE` clause on top of the ordering (`internal/entity/search/photos.go`), so asking
+  for one silently NARROWS the library: `updated`/`updated_at` → `photos.updated_at > photos.created_at`,
+  `edited` → `photos.edited_at IS NOT NULL`, `similar` → `files.file_diff > 0`. They are listed by
+  `FilteringOrderPredicate(order) (predicate, filters)` so a walking caller can assert instead of remembering.
+  `updated` was this client's default from the start, which hid every photo untouched since it was indexed —
+  17 of 20 677 production photos, never once offered for import, and invisible to `import verify` too because
+  it listed the same way (see `internal/importverify/`). The default is now **`FullListingOrder` = `added`**
+  (a plain `ORDER BY files.media_id`: no `WHERE`, a total order over a unique key, new media sorting to the
+  front, so an offset walk can only re-serve a photo, never skip one), and the incremental watermark is
+  unaffected because it rides in `q=`, not in the order.
+  **`Counts(ctx)` → `LibraryCounts`** reads `GET /api/v1/config` and keeps only its `count` object (`all`,
+  `photos`, `media`, `videos`, `live`, `animated`, `audio`, `documents`, `hidden`, `archived`, `private`,
+  `review`, `files`; the rest of the client config, including the tokens it carries, is discarded). It is the
+  independent cross-check on a listing walk — `all` comes from aggregates over the photos table, not from the
+  search — and it is a **lower bound**: PP subtracts `review` from it when that feature is on and excludes
+  hidden, archived and (for a restricted session) private pictures.
+  **Paging contract — `merged=true` makes a short page normal:** the offset/count window
   selects FILE rows and PhotoPrism then collapses a photo's rows into one entry, so a page comes back shorter
   than the requested count whenever it holds a multi-file photo (measured on the production library at
   `count=1000`: 914/987/996 entries per page against 20 670 photos). A paging caller must therefore terminate
@@ -1974,7 +2009,12 @@ to `## Package map` in `CLAUDE.md`.
   which left `internal/duplicates` with nothing to band over the whole imported library and made `thumbjob`'s
   "narrow" backfill predicate match every photo in it;
   **`Import(ctx) (Result,error)`** opens an `import_runs` run, resumes from the last successful watermark and:
-  (1) pages `ListPhotos(UpdatedSince=watermark)` — per photo dedup by `photoprism_uid` (already
+  (1) pages `ListPhotos(UpdatedSince=watermark, Order=photoprism.FullListingOrder)` — the order is **pinned to
+  a non-filtering one**: PhotoPrism's `updated` order, the client's old default, is also a
+  `WHERE photos.updated_at > photos.created_at`, so 17 production photos untouched since indexing were never
+  listed and never once offered for import (the trap and the full list of such orders are under
+  `internal/photoprism/`; the album- and label-membership walks in `organize.go` pin it too) — per photo dedup
+  by `photoprism_uid` (already
   imported → `UpdateMetadata` only on a change, otherwise skip), otherwise it **selects the media** (`selectMedia`,
   `video.go`): PP `Type` video/animated → **downloads the video file itself** (`Photo.VideoFile()`,
   media_type `video`, a video file without a stream degrades gracefully → image), live → **the still as the primary

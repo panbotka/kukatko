@@ -206,14 +206,27 @@ export async function fetchImportFailures(
   return getJSON<ImportFailuresResponse>(`/import/failures${query ? `?${query}` : ''}`, signal)
 }
 
-/** PhotoPrism photo/file reconciliation (`importverify.PhotoPrismReport`). */
+/**
+ * PhotoPrism photo/file reconciliation (`importverify.PhotoPrismReport`).
+ *
+ * Every photo is reconciled by identity, never by total. `source_total` is what
+ * the listing served; `source_reported_total` is what PhotoPrism says its library
+ * holds, read from its own aggregate. `listing_shortfall` is the positive
+ * difference — above zero, every other number here describes a window rather than
+ * the library, and `missing_count: 0` means nothing at all.
+ */
 export interface PhotoPrismReport {
   source_total: number
+  source_reported_total: number
+  listing_shortfall: number
   source_by_type: Record<string, number | undefined>
   imported_count: number
   deduplicated_count: number
   missing_count: number
   missing_uids: string[]
+  /** Catalogue photos whose PhotoPrism uid the source listing never returned. */
+  surplus_count: number
+  surplus_uids: string[]
   file_gap_count: number
   file_gaps: { photoprism_uid: string; expected: number; actual: number }[]
 }

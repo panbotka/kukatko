@@ -2,7 +2,13 @@
 // instance. PhotoPrism stays the primary catalog during the migration, so this
 // client only ever reads: it lists photos incrementally, reads a single photo's
 // whole context (its albums and labels, which the listing omits), reads albums,
-// labels and subjects (people), and streams original files for re-import.
+// labels and subjects (people), reads the instance's own library counts, and
+// streams original files for re-import.
+//
+// A listing is only ever as complete as the sort order it asks for: several of
+// PhotoPrism's orders also filter (FilteringOrderPredicate), so every walk of the
+// library goes through FullListingOrder, and LibraryCounts exists so a caller can
+// check the walk against a total the search never touched.
 //
 // Authentication uses a long-lived app password / access token sent as an
 // Authorization: Bearer header on every request — never a per-request login,
@@ -57,10 +63,49 @@ const (
 	// downloadTokenHeader is the response header through which PhotoPrism may
 	// rotate the download token.
 	downloadTokenHeader = "X-Download-Token"
-	// defaultPhotoOrder is the listing order used for incremental pulls so newly
-	// updated photos are walked deterministically.
-	defaultPhotoOrder = "updated"
+
+	// FullListingOrder is the listing order every walk of the library must use,
+	// and the default when PhotoListParams leaves Order empty.
+	//
+	// PhotoPrism's "added" order compiles to a plain `ORDER BY files.media_id`
+	// (internal/entity/search/photos.go) — no WHERE clause, over a per-file unique
+	// key, so the order is total and stable, and newly indexed media sorts to the
+	// front. An offset walk under it can therefore only ever re-serve a photo it
+	// has already seen, never skip one.
+	//
+	// It replaced "updated", which is not merely an order: see filteringOrders.
+	FullListingOrder = "added"
 )
+
+// filteringOrders maps each PhotoPrism sort order that is not merely an order to
+// the WHERE clause it silently adds to the search
+// (photoprism/internal/entity/search/photos.go). Asking for one of them NARROWS
+// the library instead of just reordering it, and the narrowing is invisible: the
+// listing simply never serves the excluded photos and pages to exhaustion as if
+// they did not exist.
+//
+// This is not theoretical. Kukátko listed with order=updated from the start, so
+// every photo never touched since PhotoPrism indexed it (updated_at =
+// created_at) was invisible to both the importer and the verifier: 17 of 20 677
+// production photos were never offered for import, and `import verify`
+// reconciled the catalogue against the same 20 660-photo window and called it
+// COMPLETE.
+var filteringOrders = map[string]string{
+	"updated":    "photos.updated_at > photos.created_at",
+	"updated_at": "photos.updated_at > photos.created_at",
+	"edited":     "photos.edited_at IS NOT NULL",
+	"similar":    "files.file_diff > 0",
+}
+
+// FilteringOrderPredicate returns the WHERE clause the given listing order adds
+// to a PhotoPrism search and whether it adds one at all. An order that filters
+// must never be used to enumerate the library — use FullListingOrder — and a
+// caller that walks the source can assert against this rather than hard-coding
+// the list of traps.
+func FilteringOrderPredicate(order string) (predicate string, filters bool) {
+	predicate, filters = filteringOrders[strings.ToLower(strings.TrimSpace(order))]
+	return predicate, filters
+}
 
 // Sentinel errors classifying an outcome. They never embed the access token or a
 // response body, so they are safe to wrap and surface.
@@ -100,9 +145,12 @@ type PhotoListParams struct {
 	// Offset is the zero-based page offset; negative values are treated as zero.
 	Offset int
 	// UpdatedSince, when non-zero, filters to photos with UpdatedAt >= it. It is
-	// ignored when Query is set.
+	// ignored when Query is set. It renders as a q= filter, so it is independent of
+	// the listing order.
 	UpdatedSince time.Time
-	// Order overrides the listing order; it defaults to "updated".
+	// Order overrides the listing order; it defaults to FullListingOrder. Some of
+	// PhotoPrism's orders are also filters (FilteringOrderPredicate), so anything
+	// that walks the whole library must leave this empty or set FullListingOrder.
 	Order string
 	// AlbumUID, when non-empty, scopes the listing to the album's photos via the
 	// s=<albumUID> filter (used to map album membership).
@@ -118,7 +166,7 @@ type PhotoListParams struct {
 func (p PhotoListParams) query() url.Values {
 	order := p.Order
 	if order == "" {
-		order = defaultPhotoOrder
+		order = FullListingOrder
 	}
 	q := url.Values{}
 	q.Set("count", strconv.Itoa(clampCount(p.Count)))

@@ -721,7 +721,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   an unknown source → 400). `GET /import/verify` (**always registered**) → the completeness
   reconciliation report (`internal/importverify`): it pulls the source totals (PhotoPrism photo/per-type
   counts + `Files[]`, photo-sorter feeds `/stats`) and reconciles them against the catalogue, returning
-  `{photoprism:{source_total,source_by_type,imported_count,deduplicated_count,missing_count,missing_uids,
+  `{photoprism:{source_total,source_reported_total,listing_shortfall,source_by_type,imported_count,
+  deduplicated_count,missing_count,missing_uids,surplus_count,surplus_uids,
   file_gap_count,file_gaps},vectors:{not_configured,source_*,catalog_*,embeddings_source_coverage,
   faces_source_coverage,embeddings_missing_for_imported_photos,embeddings_missing_uids,
   faces_missing_for_imported_photos,faces_missing_uids},
@@ -731,6 +732,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `complete` — anything created in Kukátko itself is a legitimate surplus — but it is the only place a row that
   should not exist becomes visible: `subjects` reading `source_count:104, catalog_count:105, missing_count:0`
   looked clean while the extra one was an empty-named catch-all holding 16 532 markers.
+  The `photoprism` section reconciles both directions too, and does not trust its own enumeration.
+  `source_total` is what the listing served; `source_reported_total` is what PhotoPrism says its library holds
+  (its own `GET /api/v1/config` aggregate, a code path the search never touches) and `listing_shortfall` is the
+  positive difference — above zero it **fails `complete`**, because every count beside it then describes a
+  window rather than the library. That is the state the report was in when it printed
+  `source=20660 kukatko=20647 deduplicated=13 missing=0 => COMPLETE` over a 20 677-photo source: the listing
+  asked for PhotoPrism's `order=updated`, which is also a `WHERE photos.updated_at > photos.created_at`, so
+  photos untouched since indexing were never served and so could never be counted missing (the order is now
+  pinned non-filtering, see `internal/photoprism` in `docs/PACKAGES.md`). The reported total is a **lower
+  bound** (pictures in review are subtracted from it, private ones hidden), so a listing serving *more* than it
+  is normal. `surplus_count`/`surplus_uids` are the catalogue's `photoprism_uid`s the enumeration never
+  yielded — a photo deleted in PhotoPrism after import leaves exactly that trace — reported, never enforced.
   The `vectors` section answers **two different questions and names them apart**. The
   `*_missing_for_imported_photos` counters are scoped to photos **already in the catalogue** (a vector cannot
   attach to a photo that was never imported), so they legitimately read `0` on a catalogue holding a fraction

@@ -21,9 +21,25 @@ type Report struct {
 // catalogue: how many photos the source holds (in total and per media type), how
 // many are imported, how many are covered by SHA dedup, and a capped, concrete
 // list of what is still missing plus per-photo file gaps.
+//
+// Every photo is reconciled by identity, never by total: a source uid is looked
+// up in the catalogue's uid, alias and file-hash sets, and each catalogue uid is
+// looked up back in the enumerated source. Matching totals prove nothing about
+// matching sets — and neither proves anything at all if the enumeration itself
+// was short, which is what SourceReportedTotal and ListingShortfall are for.
 type PhotoPrismReport struct {
 	// SourceTotal is the number of photos enumerated from PhotoPrism.
 	SourceTotal int `json:"source_total"`
+	// SourceReportedTotal is how many pictures PhotoPrism itself says its library
+	// holds, read from its own aggregate rather than from the listing. It is a lower
+	// bound (see photoprism.LibraryCounts), so only SourceTotal falling below it
+	// means anything.
+	SourceReportedTotal int `json:"source_reported_total"`
+	// ListingShortfall is SourceReportedTotal - SourceTotal when positive: how many
+	// pictures the source reports that the listing never served. Anything above zero
+	// means the reconciliation ran against a window, not the library, and every
+	// "missing = 0" below it is unfounded — so it gates Complete.
+	ListingShortfall int `json:"listing_shortfall"`
 	// SourceByType buckets the source photos by their lowercased media type
 	// (e.g. "image", "raw", "video", "live").
 	SourceByType map[string]int `json:"source_by_type"`
@@ -38,6 +54,15 @@ type PhotoPrismReport struct {
 	// MissingUIDs lists the PhotoPrism uids of missing photos, capped at the
 	// service's SampleLimit while MissingCount stays the full total.
 	MissingUIDs []string `json:"missing_uids"`
+	// SurplusCount is how many catalogue photos carry a photoprism_uid the source
+	// enumeration never yielded. Like EntityReport's surplus it never gates
+	// Complete — a photo deleted in PhotoPrism after import leaves exactly this
+	// trace — but it is the only place where a catalogue reference the source can no
+	// longer resolve becomes visible.
+	SurplusCount int `json:"surplus_count"`
+	// SurplusUIDs lists those uids, sorted and capped at SampleLimit while
+	// SurplusCount stays the full total.
+	SurplusUIDs []string `json:"surplus_uids"`
 	// FileGapCount is how many imported photos have fewer catalogue original files
 	// than PhotoPrism reports files for them (e.g. a dropped RAW sibling).
 	FileGapCount int `json:"file_gap_count"`
