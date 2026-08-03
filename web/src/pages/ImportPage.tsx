@@ -353,6 +353,15 @@ function VerifyReportView({ report }: { report: VerifyReport }) {
       <Alert variant={report.complete ? 'success' : 'warning'}>
         {report.complete ? t('import.verify.complete') : t('import.verify.incomplete')}
       </Alert>
+      {pp.listing_shortfall > 0 && (
+        <Alert variant="danger" className="small py-2">
+          {t('import.verify.listingShortfall', {
+            reported: pp.source_reported_total,
+            served: pp.source_total,
+            n: pp.listing_shortfall,
+          })}
+        </Alert>
+      )}
       <Table size="sm" bordered responsive>
         <thead>
           <tr>
@@ -426,6 +435,11 @@ function VerifyReportView({ report }: { report: VerifyReport }) {
         label={t('import.verify.photos')}
         ids={pp.missing_uids}
         total={pp.missing_count}
+      />
+      <MissingSample
+        label={t('import.verify.surplus')}
+        ids={pp.surplus_uids}
+        total={pp.surplus_count}
       />
       <MissingSample
         label={t('import.verify.embeddings')}

@@ -59,17 +59,72 @@ func TestListParamsQuery(t *testing.T) {
 }
 
 // TestPhotoListParamsQuery_defaults checks defaults when no order or filter set.
+// The default order must be the non-filtering one: PhotoPrism's "updated" — the
+// default until it cost the import 17 photos — narrows the listing to pictures
+// modified since they were indexed.
 func TestPhotoListParamsQuery_defaults(t *testing.T) {
 	t.Parallel()
 	q := PhotoListParams{}.query()
-	if q.Get("order") != "updated" {
-		t.Errorf("order = %q, want updated", q.Get("order"))
+	if q.Get("order") != FullListingOrder {
+		t.Errorf("order = %q, want %q", q.Get("order"), FullListingOrder)
+	}
+	if _, filters := FilteringOrderPredicate(q.Get("order")); filters {
+		t.Errorf("default order %q also filters the library", q.Get("order"))
 	}
 	if q.Get("merged") != "true" {
 		t.Errorf("merged = %q, want true", q.Get("merged"))
 	}
 	if _, ok := q["q"]; ok {
 		t.Errorf("q should be absent without UpdatedSince, got %q", q.Get("q"))
+	}
+}
+
+// TestPhotoListParamsQuery_explicitOrder checks an explicit order is passed
+// through verbatim — including a filtering one, which stays a caller's choice to
+// make deliberately (the enumerating callers assert against
+// FilteringOrderPredicate instead).
+func TestPhotoListParamsQuery_explicitOrder(t *testing.T) {
+	t.Parallel()
+	if got := (PhotoListParams{Order: "oldest"}).query().Get("order"); got != "oldest" {
+		t.Errorf("order = %q, want oldest", got)
+	}
+	if got := (PhotoListParams{Order: "updated"}).query().Get("order"); got != "updated" {
+		t.Errorf("order = %q, want updated", got)
+	}
+}
+
+// TestFilteringOrderPredicate pins which PhotoPrism sort orders are secretly also
+// filters. Each predicate is copied from photoprism's
+// internal/entity/search/photos.go; getting this list wrong is how a listing
+// silently stops covering the library.
+func TestFilteringOrderPredicate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		order       string
+		wantFilters bool
+		want        string
+	}{
+		{order: "updated", wantFilters: true, want: "photos.updated_at > photos.created_at"},
+		{order: "updated_at", wantFilters: true, want: "photos.updated_at > photos.created_at"},
+		{order: "UPDATED", wantFilters: true, want: "photos.updated_at > photos.created_at"},
+		{order: " updated ", wantFilters: true, want: "photos.updated_at > photos.created_at"},
+		{order: "edited", wantFilters: true, want: "photos.edited_at IS NOT NULL"},
+		{order: "similar", wantFilters: true, want: "files.file_diff > 0"},
+		{order: FullListingOrder, wantFilters: false},
+		{order: "", wantFilters: false},
+		{order: "newest", wantFilters: false},
+		{order: "oldest", wantFilters: false},
+		{order: "name", wantFilters: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.order, func(t *testing.T) {
+			t.Parallel()
+			got, filters := FilteringOrderPredicate(tt.order)
+			if filters != tt.wantFilters || got != tt.want {
+				t.Errorf("FilteringOrderPredicate(%q) = (%q, %v), want (%q, %v)",
+					tt.order, got, filters, tt.want, tt.wantFilters)
+			}
+		})
 	}
 }
 

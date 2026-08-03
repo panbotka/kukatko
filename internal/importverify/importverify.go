@@ -31,12 +31,17 @@ import (
 const DefaultSampleLimit = 100
 
 // PhotoPrismSource is the read-only slice of the PhotoPrism client the reconciler
-// needs: the full photo listing plus the album, label and subject listings. It is
-// satisfied by *photoprism.HTTPClient and by any photoprism.Client.
+// needs: the full photo listing, the instance's own library counts, and the
+// album, label and subject listings. It is satisfied by *photoprism.HTTPClient.
 type PhotoPrismSource interface {
 	// ListPhotos returns one page of photos for the given params. The reconciler
-	// pages a full, unfiltered listing by advancing Offset until a short page.
+	// pages a full, unfiltered listing by advancing Offset until an EMPTY page —
+	// a short page is routine on a merged listing, not exhaustion.
 	ListPhotos(ctx context.Context, params photoprism.PhotoListParams) ([]photoprism.Photo, error)
+	// Counts returns PhotoPrism's own library totals, read from an aggregate the
+	// photo search never touches. It is what lets the reconciler notice that the
+	// listing it walked is narrower than the library behind it.
+	Counts(ctx context.Context) (photoprism.LibraryCounts, error)
 	// ListAlbums returns one page of albums of a single album type (params.Type).
 	ListAlbums(ctx context.Context, params photoprism.ListParams) ([]photoprism.Album, error)
 	// ListLabels returns one page of labels.
@@ -229,6 +234,8 @@ func (s *Service) Verify(ctx context.Context) (Report, error) {
 		"complete", report.Complete,
 		"missing_photos", report.PhotoPrism.MissingCount,
 		"file_gaps", report.PhotoPrism.FileGapCount,
+		"listing_shortfall", report.PhotoPrism.ListingShortfall,
+		"surplus_photos", report.PhotoPrism.SurplusCount,
 	)
 	return report, nil
 }
@@ -244,10 +251,19 @@ type photoRef struct {
 // reconcilePhotos enumerates the PhotoPrism library and classifies each photo
 // against the catalogue into imported, deduplicated or missing, recording file
 // gaps for imported photos with fewer catalogue originals than source files.
+//
+// The classification is set-based in both directions — every source uid is looked
+// up in the catalogue and every catalogue uid in the enumerated source — and the
+// enumeration itself is measured against the source's own total, so a match of
+// totals can no longer stand in for a match of sets.
 func (s *Service) reconcilePhotos(ctx context.Context) (PhotoPrismReport, error) {
 	refs, byType, err := s.enumeratePhotos(ctx)
 	if err != nil {
 		return PhotoPrismReport{}, err
+	}
+	sourceCounts, err := s.photoPrism.Counts(ctx)
+	if err != nil {
+		return PhotoPrismReport{}, fmt.Errorf("importverify: reading photoprism library counts: %w", err)
 	}
 	catalogRefs, err := s.catalog.ImportedRefs(ctx)
 	if err != nil {
@@ -257,12 +273,69 @@ func (s *Service) reconcilePhotos(ctx context.Context) (PhotoPrismReport, error)
 	if err != nil {
 		return PhotoPrismReport{}, fmt.Errorf("importverify: reading original file counts: %w", err)
 	}
-	return s.classifyPhotos(refs, byType, catalogRefs, fileCounts), nil
+	report := s.classifyPhotos(refs, byType, catalogRefs, fileCounts)
+	recordListingShortfall(&report, sourceCounts)
+	s.recordSurplus(&report, refs, catalogRefs)
+	return report, nil
+}
+
+// recordListingShortfall compares the number of photos the listing yielded
+// against the number PhotoPrism itself reports holding, and records the
+// difference when the listing came back short.
+//
+// This is the only check in the section that does not go through the listing, and
+// it exists because everything that does is only ever as complete as the listing
+// is. A narrowed listing does not fail: it pages to exhaustion, hands back a
+// consistent subset, and every set comparison built on it agrees that nothing is
+// missing. That is exactly how 17 production photos stayed invisible while the
+// report read COMPLETE.
+//
+// Only a shortfall is recorded. The reported total is a lower bound — PhotoPrism
+// subtracts pictures in review from it when that feature is on, and hides private
+// ones from a restricted session — so a listing that yields MORE than it is a
+// normal state, not a finding.
+func recordListingShortfall(report *PhotoPrismReport, counts photoprism.LibraryCounts) {
+	report.SourceReportedTotal = counts.All
+	if gap := counts.All - report.SourceTotal; gap > 0 {
+		report.ListingShortfall = gap
+	}
+}
+
+// recordSurplus records the catalogue's PhotoPrism uids that the source
+// enumeration never yielded — the other direction of the same set comparison.
+//
+// It never gates Complete: a photo deleted in PhotoPrism after Kukátko imported
+// it leaves exactly this trace and is not a defect (nor is it fixable by
+// importing). It is reported because a catalogue reference the source cannot
+// resolve is either that, or the listing having gone narrow — and the second one
+// is worth a human look.
+func (s *Service) recordSurplus(report *PhotoPrismReport, refs []photoRef, catalog Refs) {
+	enumerated := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		enumerated[ref.uid] = struct{}{}
+	}
+	surplus := make([]string, 0)
+	for uid := range catalog.UIDs {
+		if !contains(enumerated, uid) {
+			surplus = append(surplus, uid)
+		}
+	}
+	sort.Strings(surplus)
+	report.SurplusCount = len(surplus)
+	report.SurplusUIDs = s.sample(surplus)
 }
 
 // enumeratePhotos pages the whole, unfiltered PhotoPrism photo listing to
 // exhaustion, returning one photoRef per distinct photo and the per-type
 // histogram.
+//
+// The order is pinned to photoprism.FullListingOrder because several PhotoPrism
+// sort orders are also filters. The default used to be "updated", which compiles
+// to `WHERE photos.updated_at > photos.created_at`: every photo untouched since
+// the source indexed it was absent from the listing, so the reconciler could
+// neither import nor miss it — it enumerated 20 660 of 20 677 production photos
+// and reported the catalogue complete. recordListingShortfall is the guard that
+// notices the next such window.
 //
 // Only an EMPTY page ends the walk. The listing is served merged, so the source
 // collapses a photo's file rows into one entry and a page comes back shorter than
@@ -282,6 +355,7 @@ func (s *Service) enumeratePhotos(ctx context.Context) ([]photoRef, map[string]i
 		page, err := s.photoPrism.ListPhotos(ctx, photoprism.PhotoListParams{
 			Count:  photoprism.MaxCount,
 			Offset: offset,
+			Order:  photoprism.FullListingOrder,
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("importverify: listing photoprism photos at offset %d: %w", offset, err)
@@ -600,9 +674,15 @@ func (s *Service) sample(names []string) []string {
 	return names
 }
 
-// isComplete reports whether the report shows nothing left to import: no missing
-// or file-gapped photos, no imported photo left without its vectors (unless the
-// vectors section is not configured), and no missing structural entities.
+// isComplete reports whether the report shows nothing left to import: a source
+// listing that accounted for the whole library, no missing or file-gapped photos,
+// no imported photo left without its vectors (unless the vectors section is not
+// configured), and no missing structural entities.
+//
+// A listing shortfall fails it even though nothing is known to be missing —
+// because nothing CAN be known while the listing is narrower than the library it
+// was drawn from, and "nothing known to be missing" is precisely the answer such
+// a listing produces.
 //
 // It deliberately does not require full vector source coverage. photo-sorter's
 // population and PhotoPrism's are not the same set, so a coverage below 1 can be
@@ -613,6 +693,9 @@ func (s *Service) sample(names []string) []string {
 // CLI and the frontend.
 func isComplete(report Report) bool {
 	if report.PhotoPrism.MissingCount != 0 || report.PhotoPrism.FileGapCount != 0 {
+		return false
+	}
+	if report.PhotoPrism.ListingShortfall != 0 {
 		return false
 	}
 	if !report.Vectors.NotConfigured &&

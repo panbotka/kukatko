@@ -174,3 +174,73 @@ func TestFormatCoverage(t *testing.T) {
 		})
 	}
 }
+
+// capturePhotoPrism renders printReportSummary's photo section into a buffer and
+// returns its text.
+func capturePhotoPrism(t *testing.T, pp importverify.PhotoPrismReport) string {
+	t.Helper()
+
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	printReportSummary(cmd, importverify.Report{
+		PhotoPrism: pp,
+		Vectors:    importverify.VectorsReport{NotConfigured: true},
+	})
+	return buf.String()
+}
+
+// TestPrintReportSummary_listingShortfall checks the shortfall gets the loud line
+// it needs. The production report read
+// "source=20660 kukatko=20647 deduplicated=13 missing=0 => COMPLETE" while the
+// source held 20 677 pictures: the missing count was not wrong so much as
+// unfounded, because the 17 absentees were never listed to be counted. A reader
+// has to be told the numbers describe a window.
+func TestPrintReportSummary_listingShortfall(t *testing.T) {
+	t.Parallel()
+
+	out := capturePhotoPrism(t, importverify.PhotoPrismReport{
+		SourceTotal:         20660,
+		SourceReportedTotal: 20677,
+		ListingShortfall:    17,
+		ImportedCount:       20647,
+		DeduplicatedCount:   13,
+	})
+
+	for _, want := range []string{"LISTING SHORTFALL", "20677", "20660", "17"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("summary should mention %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestPrintReportSummary_noShortfallStaysQuiet checks a healthy listing prints no
+// shortfall line, so the loud one keeps meaning something.
+func TestPrintReportSummary_noShortfallStaysQuiet(t *testing.T) {
+	t.Parallel()
+
+	out := capturePhotoPrism(t, importverify.PhotoPrismReport{
+		SourceTotal: 20677, SourceReportedTotal: 20677, ImportedCount: 20677,
+	})
+
+	if strings.Contains(out, "LISTING SHORTFALL") {
+		t.Errorf("a complete listing must not print a shortfall:\n%s", out)
+	}
+}
+
+// TestPrintReportSummary_surplusUIDs checks a catalogue photo the source listing
+// no longer returns is named — the trace an upstream deletion leaves, and the
+// only place it becomes visible.
+func TestPrintReportSummary_surplusUIDs(t *testing.T) {
+	t.Parallel()
+
+	out := capturePhotoPrism(t, importverify.PhotoPrismReport{
+		SourceTotal: 2, SourceReportedTotal: 2, ImportedCount: 3,
+		SurplusCount: 1, SurplusUIDs: []string{"pteek3u9kw8oxi7y"},
+	})
+
+	if !strings.Contains(out, "only in kukatko") || !strings.Contains(out, "pteek3u9kw8oxi7y") {
+		t.Errorf("summary should name the surplus uid:\n%s", out)
+	}
+}

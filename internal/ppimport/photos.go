@@ -55,9 +55,15 @@ func (s *Service) importPhotos(ctx context.Context, runID int64, state *runState
 	query := state.scope.Query()
 	lastPage := ""
 	for offset := 0; ; {
+		// The order is pinned, and pinned to a NON-FILTERING one. PhotoPrism's
+		// "updated" order — this walk's original, and the client's old default — is
+		// also a filter (`WHERE photos.updated_at > photos.created_at`), so a photo
+		// never touched since the source indexed it was never listed and never
+		// offered for import: 17 production photos, invisible from the first run on.
 		page, err := s.client.ListPhotos(ctx, photoprism.PhotoListParams{
 			Count:        s.pageSize,
 			Offset:       offset,
+			Order:        photoprism.FullListingOrder,
 			UpdatedSince: state.since,
 			AlbumUID:     state.scope.AlbumUID,
 			Query:        query,

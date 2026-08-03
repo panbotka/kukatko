@@ -24,6 +24,15 @@ type fakePhotoPrism struct {
 	labels       []photoprism.Label
 	subjects     []photoprism.Subject
 	listErr      error
+	countsErr    error
+	// reportedTotal overrides what Counts reports the library holds; zero means
+	// "as many as the fake serves". A value above the number of photos models the
+	// case this whole guard exists for: a source that holds more than its listing
+	// ever admits to.
+	reportedTotal int
+	// lastOrder records the order the last photo listing asked for, so a test can
+	// assert the reconciler never walks the library through a filtering one.
+	lastOrder string
 	// merged, when set, serves the photo listing the way PhotoPrism serves a merged
 	// one: offset/count select FILE rows — one per entry in a photo's Files — and
 	// the rows of one photo then collapse into a single entry. A page is therefore
@@ -32,17 +41,56 @@ type fakePhotoPrism struct {
 	merged bool
 }
 
-// ListPhotos returns one page of the fake's photos, or the injected error.
+// ListPhotos returns one page of the fake's photos, or the injected error. The
+// page is drawn from the photos the requested order actually exposes, so a
+// reconciler that asks for a filtering order gets the narrowed library back and
+// pages it to exhaustion none the wiser — exactly as the real source behaves.
 func (f *fakePhotoPrism) ListPhotos(
 	_ context.Context, params photoprism.PhotoListParams,
 ) ([]photoprism.Photo, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
+	f.lastOrder = params.Order
+	listable := exposedByOrder(f.photos, params.Order)
 	if f.merged {
-		return mergedPhotoPage(f.photos, params.Offset, params.Count), nil
+		return mergedPhotoPage(listable, params.Offset, params.Count), nil
 	}
-	return pageSlice(f.photos, params.Offset, params.Count), nil
+	return pageSlice(listable, params.Offset, params.Count), nil
+}
+
+// exposedByOrder models PhotoPrism's filtering sort orders: several of them
+// compile to a WHERE clause on top of the ordering, so asking for one narrows the
+// library instead of just reordering it. The narrowing modelled here is the one
+// that hit production — order=updated adds `photos.updated_at >
+// photos.created_at`, hiding every photo untouched since it was indexed — and it
+// stands in for the rest, since what matters is that a filtering order serves a
+// subset without ever saying so.
+func exposedByOrder(in []photoprism.Photo, order string) []photoprism.Photo {
+	if _, filters := photoprism.FilteringOrderPredicate(order); !filters {
+		return in
+	}
+	out := make([]photoprism.Photo, 0, len(in))
+	for i := range in {
+		if in[i].UpdatedAt.After(in[i].CreatedAt) {
+			out = append(out, in[i])
+		}
+	}
+	return out
+}
+
+// Counts reports the library totals. reportedTotal wins when set; otherwise the
+// fake reports exactly what it serves, so an ordinary fixture carries no
+// shortfall.
+func (f *fakePhotoPrism) Counts(_ context.Context) (photoprism.LibraryCounts, error) {
+	if f.countsErr != nil {
+		return photoprism.LibraryCounts{}, f.countsErr
+	}
+	all := f.reportedTotal
+	if all == 0 {
+		all = len(f.photos)
+	}
+	return photoprism.LibraryCounts{All: all, Photos: all}, nil
 }
 
 // mergedPhotoPage expands the photos into one row per file, slices the row window

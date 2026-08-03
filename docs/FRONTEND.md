@@ -772,7 +772,14 @@ here.
   (`AlbumReport` in `services/import.ts` = `EntityReport` + `skipped_types` + `skipped_by_design_count`).
   `EntityReport` also carries `surplus_count`/`surplus` (catalogue names the source does not have — never a
   completeness failure, but where a row that should not exist shows up); the page does not render them yet,
-  the CLI `kukatko import verify` summary does. The history also shows runs of the **`folder`** source (`kukatko import dir`,
+  the CLI `kukatko import verify` summary does. The photo section has its own pair of both kinds:
+  `import.verify.listingShortfall` is a **danger** `Alert` above the table whenever
+  `photoprism.listing_shortfall > 0` — PhotoPrism reported more pictures than its listing served, so every
+  number in the table describes a window of the library and „chybí 0" proves nothing (the state the production
+  report was in: `source=20660 … missing=0 => COMPLETE` over a 20 677-photo source, see `docs/API.md`) —, and
+  `photoprism.surplus_uids` renders through the same `MissingSample` as the missing ones under
+  `import.verify.surplus`, for catalogue photos the source no longer returns (an upstream deletion; reported,
+  never a failure). The history also shows runs of the **`folder`** source (`kukatko import dir`,
   reads a directory on the server's disk → **has no button**, it just appears in the table): in `services/import.ts`
   therefore `RunSource` = `ImportSource | 'folder'` (the launch sections stay `SOURCES` =
   photoprism/photosorter), the label `import.source.folder`,

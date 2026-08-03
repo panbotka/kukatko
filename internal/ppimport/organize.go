@@ -163,8 +163,11 @@ func (s *Service) findOrCreateAlbum(
 func (s *Service) attachAlbumMembers(ctx context.Context, ppAlbumUID, albumUID string) error {
 	for offset := 0; ; {
 		page, err := s.client.ListPhotos(ctx, photoprism.PhotoListParams{
-			Count:    s.pageSize,
-			Offset:   offset,
+			Count:  s.pageSize,
+			Offset: offset,
+			// Non-filtering by construction, like every other walk here: an order that
+			// also filters would drop members from the album silently (see importPhotos).
+			Order:    photoprism.FullListingOrder,
 			AlbumUID: ppAlbumUID,
 		})
 		if err != nil {
@@ -304,7 +307,9 @@ func (s *Service) attachLabelMembers(ctx context.Context, ppSlug, name, labelUID
 		page, err := s.client.ListPhotos(ctx, photoprism.PhotoListParams{
 			Count:  s.pageSize,
 			Offset: offset,
-			Query:  labelQuery(ppSlug, name),
+			// Non-filtering by construction, like every other walk here (see importPhotos).
+			Order: photoprism.FullListingOrder,
+			Query: labelQuery(ppSlug, name),
 		})
 		if err != nil {
 			return fmt.Errorf("ppimport: listing label %q photos: %w", name, err)

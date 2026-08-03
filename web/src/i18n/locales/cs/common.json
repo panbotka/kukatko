@@ -1672,6 +1672,7 @@
       "running": "Kontroluji…",
       "complete": "Import je úplný — nic nechybí.",
       "incomplete": "Import není úplný — něco chybí (viz níže).",
+      "listingShortfall": "Pozor: PhotoPrism hlásí {{reported}} položek, ale výpis jich vrátil jen {{served}} — {{n}} se do porovnání vůbec nedostalo. Čísla níže tedy popisují jen výřez knihovny, ne celou knihovnu, a „chybí 0“ nic nedokazuje.",
       "error": "Kontrolu se nepodařilo provést.",
       "notConfigured": "Zdroj vektorů (photo-sorter) není nakonfigurován; tato část se přeskakuje.",
       "colCheck": "Kontrola",
@@ -1689,7 +1690,8 @@
       "subjects": "Lidé",
       "deduplicated": "Deduplikováno",
       "albumsSkipped": "Alba typu {{types}} se záměrně neimportují (PhotoPrism si je generuje sám a pokrývá je časová osa) — přeskočeno: {{n}}. Nikdy se nepočítají jako chybějící.",
-      "sampleNote": "Zobrazeno prvních {{shown}} z {{total}}."
+      "sampleNote": "Zobrazeno prvních {{shown}} z {{total}}.",
+      "surplus": "Jen v Kukátku (zdroj je už nevrací)"
     },
     "failures": {
       "title": "Chyby importu",
