@@ -479,7 +479,8 @@
         "type": "Typ média: image, video nebo live.",
         "codec": "Kodek obrázku či videa.",
         "orientation": "Na výšku, na šířku, čtverec, panorama (yes/no).",
-        "faces": "Počet tváří (faces:3 = aspoň tři); face:new = zatím nepřiřazená tvář."
+        "faces": "Počet tváří (faces:3 = aspoň tři); face:new = zatím nepřiřazená tvář.",
+        "uid": "Jedna fotka podle svého ID (nebo podle ID z PhotoPrismu). Najde ji i archivovanou nebo skrytou."
       }
     }
   },
@@ -491,6 +492,30 @@
       "albums": "Alba",
       "labels": "Štítky",
       "people": "Lidé"
+    },
+    "direct": {
+      "heading": "Přejít na",
+      "notFound": "Nic neodpovídá tomuto {{kind}}: {{uid}}",
+      "kind": {
+        "photo": "ID fotky",
+        "album": "ID alba",
+        "label": "ID štítku",
+        "person": "ID osoby",
+        "marker": "ID značky",
+        "stack": "ID skupiny",
+        "photoprism": "ID z PhotoPrismu"
+      },
+      "via": {
+        "marker": "fotka, na které je",
+        "stack": "hlavní fotka skupiny",
+        "photoprism": "fotka naimportovaná z PhotoPrismu"
+      },
+      "state": {
+        "archived": "archivovaná",
+        "hidden": "skrytá z knihovny",
+        "private": "soukromá",
+        "stackMember": "varianta ve skupině"
+      }
     }
   },
   "searchCommand": {

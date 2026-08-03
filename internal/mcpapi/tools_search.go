@@ -27,8 +27,10 @@ const queryLanguageHelp = `Free words match the title, description, notes and fi
 	`other numbers take ranges like year:1960-1969), country:, city:, geo:yes|no, near:<photo-uid>, ` +
 	`dist:<km>, camera:, lens:, iso:, f:, mm:, mp:, type:image|video|live, faces:yes|no or a count, ` +
 	`face:new, favorite:yes|no, rating:0-5, flag:pick|reject|eye, archived:yes|no, private:yes|no, ` +
-	`portrait:, landscape:, square:, panorama:, filename:, keywords:. ` +
+	`portrait:, landscape:, square:, panorama:, filename:, keywords:, ` +
+	`uid:<photo-uid or PhotoPrism-uid>. ` +
 	`favorite:, rating: and flag: mean the calling token's own user. ` +
+	`uid: names exactly one photo and finds it even when archived, hidden or a stack variant. ` +
 	`Example: person:babicka year:1960-1969 -album:dovolena`
 
 // searchPhotosIn is the search tool's argument set. It is deliberately small:

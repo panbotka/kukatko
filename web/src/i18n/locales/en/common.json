@@ -479,7 +479,8 @@
         "type": "Media type: image, video or live.",
         "codec": "Image or video codec.",
         "orientation": "Portrait, landscape, square, panorama (yes/no).",
-        "faces": "Face count (faces:3 = at least three); face:new = a face nobody named yet."
+        "faces": "Face count (faces:3 = at least three); face:new = a face nobody named yet.",
+        "uid": "One photo by its own ID (or by its PhotoPrism ID). It finds it even when archived or hidden."
       }
     }
   },
@@ -491,6 +492,30 @@
       "albums": "Albums",
       "labels": "Labels",
       "people": "People"
+    },
+    "direct": {
+      "heading": "Go to",
+      "notFound": "Nothing matches this {{kind}}: {{uid}}",
+      "kind": {
+        "photo": "photo ID",
+        "album": "album ID",
+        "label": "label ID",
+        "person": "person ID",
+        "marker": "marker ID",
+        "stack": "stack ID",
+        "photoprism": "PhotoPrism ID"
+      },
+      "via": {
+        "marker": "the photo it sits on",
+        "stack": "the stack's primary photo",
+        "photoprism": "the photo imported from PhotoPrism"
+      },
+      "state": {
+        "archived": "archived",
+        "hidden": "hidden from the library",
+        "private": "private",
+        "stackMember": "variant in a stack"
+      }
     }
   },
   "searchCommand": {

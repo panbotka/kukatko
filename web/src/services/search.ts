@@ -56,17 +56,77 @@ export interface GlobalSearchPerson {
   cover?: string
 }
 
+/** What a pasted UID names, as reported by the backend's direct hit. */
+export type GlobalSearchUidKind =
+  | 'photo'
+  | 'album'
+  | 'label'
+  | 'person'
+  | 'marker'
+  | 'stack'
+  | 'photoprism'
+
+/** The entity a direct hit opens — always one of the four routable kinds. */
+export type GlobalSearchTargetKind = 'photo' | 'album' | 'label' | 'person'
+
+/** A photo state a direct hit reports, when the photo is outside the library view. */
+export type GlobalSearchPhotoState = 'archived' | 'hidden' | 'private' | 'stack_member'
+
+/**
+ * The answer to a UID pasted into the search box: an exact reference, not a
+ * fuzzy match. `found: false` means the id was well-formed but names nothing —
+ * the UI says so rather than showing an empty result set, which reads as a
+ * broken search. `kind` is what the id itself names; `target_kind`/`target_uid`
+ * are what to open, which differs for the ids that stand for something else (a
+ * marker → its photo, a stack → its primary, a PhotoPrism id → the catalogue
+ * photo holding it).
+ */
+export interface GlobalSearchDirect {
+  uid: string
+  kind: GlobalSearchUidKind
+  found: boolean
+  target_kind?: GlobalSearchTargetKind
+  target_uid?: string
+  title?: string
+  photo?: Photo
+  cover?: string
+  states?: GlobalSearchPhotoState[]
+}
+
 /**
  * Grouped global-search result. Every group is always present as an array
  * (possibly empty), matching the backend envelope which serialises absent groups
- * as `[]` rather than `null`.
+ * as `[]` rather than `null`. `direct` is present only for a query that names an
+ * entity by its UID; the groups are then all empty, because the backend resolves
+ * the id instead of running the fuzzy fan-out.
  */
 export interface GlobalSearchResult {
   query: string
+  direct?: GlobalSearchDirect
   albums: GlobalSearchAlbum[]
   labels: GlobalSearchLabel[]
   people: GlobalSearchPerson[]
   photos: Photo[]
+}
+
+/** The app route each routable target kind lives under. */
+const TARGET_ROUTES: Record<GlobalSearchTargetKind, string> = {
+  photo: '/photos',
+  album: '/albums',
+  label: '/labels',
+  person: '/people',
+}
+
+/**
+ * The route a resolved direct hit opens, or `null` when it resolved to nothing
+ * (or to a kind this build does not route).
+ */
+export function directHitRoute(direct: GlobalSearchDirect): string | null {
+  if (!direct.found || direct.target_kind === undefined || direct.target_uid === undefined) {
+    return null
+  }
+  const base = TARGET_ROUTES[direct.target_kind] as string | undefined
+  return base === undefined ? null : `${base}/${direct.target_uid}`
 }
 
 /**
@@ -100,11 +160,14 @@ export function hasEntityMatches(result: GlobalSearchResult): boolean {
 }
 
 /**
- * Whether a grouped result has no matches at all (every group empty). The navbar
- * dropdown uses this to show its "nothing found" line.
+ * Whether a grouped result has no matches at all (every group empty and no
+ * direct UID hit). The navbar dropdown uses this to show its "nothing found"
+ * line. An unresolved direct hit still counts as "something to say" — the UI
+ * reports the unknown id explicitly.
  */
 export function isEmptyResult(result: GlobalSearchResult): boolean {
   return (
+    result.direct === undefined &&
     result.albums.length === 0 &&
     result.labels.length === 0 &&
     result.people.length === 0 &&

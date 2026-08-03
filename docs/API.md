@@ -662,6 +662,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   are always non-nil. An empty/whitespace `q` → 400, a store error → 500. The existing `GET /search` (per-user
   photo fulltext/semantic/hybrid) stays unchanged. Mounted by `server.WithAPI` (`buildGlobalSearchAPI`
   in `cmd/kukatko/globalsearch.go`, sharing the organize/people/photos store).
+  **A `q` that carries a UID takes a different branch:** the id is resolved against the one table its prefix
+  names and returned as `direct`, and the four-way fuzzy fan-out is **skipped** (the groups come back as `[]`) —
+  a uid matches no title, name or full text anyway, so this replaces the fan-out rather than adding a fifth query.
+  Recognised prefixes (`query.ClassifyUID`, 26 characters unless noted): `ph` photo, `al` album, `lb` label,
+  `su` subject, `st` stack, `mk` marker, and `pt` = a **PhotoPrism** photo uid (16 characters). An id with an
+  unknown prefix is **not** probed against every table. The id may be the whole `q` or one word of it.
+  `direct` = `{uid, kind, found, target_kind?, target_uid?, title?, photo?, cover?, states?}`: `kind` is what the
+  id itself names, `target_kind`/`target_uid` what to open — a `mk…` resolves to the photo it sits on, an `st…`
+  to the stack's primary, a `pt…` through `photos.photoprism_uid` and then `photoprism_aliases`. A well-formed id
+  that matches nothing comes back with `found: false` rather than an empty result set. The lookups are **unscoped**
+  — an archived, hidden, private or non-primary-stack-member photo resolves, and `states` (`archived`, `hidden`,
+  `private`, `stack_member`) says which, so a hit outside the library view is labelled instead of confusing.
 - **Bulk metadata API (`/api/v1`, `internal/bulkapi`, editor/admin via `RequireWrite`):**
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` applies a set of operations to many photos
   **in a single transaction** with an audit-log entry. Operations (each optional): `add_to_albums`/
@@ -969,6 +981,7 @@ put a photo taken minutes either side of New Year in the same year.
 
 | Filter | Value | Matches |
 | --- | --- | --- |
+| `uid:` | a photo's UID **or** its PhotoPrism UID | exactly one photo, by its own id or by the `pt…` id it was imported under (`photos.photoprism_uid` and `photoprism_aliases`). It **removes the default live-only, visible-only and stack-primary scopes**, so an archived, hidden or stacked photo is found — naming an id is explicit intent. One key covers both id shapes because they cannot collide (26 vs 16 characters) |
 | `title:` `description:` `notes:` | text | the corresponding photo column (substring, `*` wildcard) |
 | `filename:` | text | the file name |
 | `keywords:` (alias `keyword:`) | text | IPTC keywords |

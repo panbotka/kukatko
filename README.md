@@ -9,9 +9,13 @@ of PhotoPrism and of [photo-sorter](https://github.com/kozaktomas/photo-sorter),
 - **Semantic and full-text search**, similar photos, **face/people recognition**.
 - **Global search as a command palette**: from any page via `/` or Cmd/Ctrl-K —
   keyboard-navigable grouped results (photos, people, albums, labels) in an overlay console.
+- **Search by ID**: paste an id — of a photo, album, label, person, a face marker, a stack, or a
+  PhotoPrism id from the old library — and the search takes you straight there instead of searching
+  for the id as text. It finds the photo even when it is archived or hidden, and says so; an id that
+  matches nothing says that too. The `uid:` filter does the same inside the query language.
 - **A search query language**: free text + `key:value` filters in a single query —
   `dovolená camera:"Canon EOS R6" iso:100-400 faces:2`, `label:cat|dog`, `label:!blurry`,
-  `near:<uid> dist:2`, `taken:2024-05`, `type:video`, `face:new`… OR operators (`|`), NOT (`!`,
+  `uid:<uid>`, `near:<uid> dist:2`, `taken:2024-05`, `type:video`, `face:new`… OR operators (`|`), NOT (`!`,
   `-`), ranges (`800-`, `-200`), wildcard `*`, quotes; an unknown filter is searched as text
   and the UI flags it gently; a pure-filter query never touches the embedding sidecar. In-UI help
   (`?` next to the search field) and key autocomplete. Grammar: `docs/API.md`.

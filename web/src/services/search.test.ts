@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { type GlobalSearchResult, globalSearch, hasEntityMatches, isEmptyResult } from './search'
+import {
+  directHitRoute,
+  type GlobalSearchResult,
+  type GlobalSearchTargetKind,
+  globalSearch,
+  hasEntityMatches,
+  isEmptyResult,
+} from './search'
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -61,5 +68,46 @@ describe('isEmptyResult', () => {
   it('is true only when every group is empty', () => {
     expect(isEmptyResult({ query: 'x', albums: [], labels: [], people: [], photos: [] })).toBe(true)
     expect(isEmptyResult(RESULT)).toBe(false)
+  })
+
+  it('is false for a UID lookup even when it resolved to nothing', () => {
+    // An unknown id is something to say, not silence: the UI reports the id
+    // rather than the "nothing found" line that reads as a broken search.
+    expect(
+      isEmptyResult({
+        query: 'x',
+        direct: { uid: 'ph7lpul2io09bcg2rvp2rljsr6', kind: 'photo', found: false },
+        albums: [],
+        labels: [],
+        people: [],
+        photos: [],
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('directHitRoute', () => {
+  it('routes each target kind to its page', () => {
+    const cases: [GlobalSearchTargetKind, string][] = [
+      ['photo', '/photos/x'],
+      ['album', '/albums/x'],
+      ['label', '/labels/x'],
+      ['person', '/people/x'],
+    ]
+    for (const [kind, want] of cases) {
+      expect(
+        directHitRoute({
+          uid: 'u',
+          kind: 'photo',
+          found: true,
+          target_kind: kind,
+          target_uid: 'x',
+        }),
+      ).toBe(want)
+    }
+  })
+
+  it('has no route for an id that resolved to nothing', () => {
+    expect(directHitRoute({ uid: 'u', kind: 'photo', found: false })).toBeNull()
   })
 })

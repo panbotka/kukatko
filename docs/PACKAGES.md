@@ -1631,15 +1631,26 @@ to `## Package map` in `CLAUDE.md`.
   (`updated_at` RFC3339, otherwise omitted); mounted by `server.WithAPI` (`buildAnnouncementAPI` in
   `cmd/kukatko/announcement.go`)), `internal/globalsearchapi/`
   (a grouped **global search** HTTP API across entities — the basis of the navbar quick-results and the cross-entity section
-  of the search page: the small interfaces `Organizer` (`SearchAlbums`/`SearchLabels`, satisfied by `organize.Store`),
-  `PeopleSearcher` (`SearchSubjects`, satisfied by `people.Store`) and `PhotoSearcher` (`Search`, satisfied by
+  of the search page: the small interfaces `Organizer` (`SearchAlbums`/`SearchLabels` + `GetAlbumByUID`/
+  `GetLabelByUID`, satisfied by `organize.Store`), `PeopleSearcher` (`SearchSubjects` + `GetSubjectByUID`/
+  `GetMarkerByUID`, satisfied by `people.Store`) and `PhotoSearcher` (`Search` + `GetByUID`/
+  `GetByPhotoprismUID`/`GetByPhotoprismAlias`/`ListStackMembers`, satisfied by
   `photos.Store` — reusing the existing fulltext via `ListParams.FullText`) → unit-testable with fakes;
   `NewAPI(Config{Organizer,People,Photos,Limit,RequireAuth})`+`RegisterRoutes` mounts
   `GET /search/global?q=` behind `RequireAuth`: handles each group separately (`SearchAlbums`/`SearchLabels`/
   `SearchSubjects` capped at `Limit`, default `defaultGroupLimit` 8; photos via fulltext with `Limit`),
   returns a grouped envelope `{query, albums:[{uid,title,cover,photo_count}], labels:[{uid,name,photo_count}],
   people:[{uid,name,cover}], photos:[…usual photo shape…]}` (each group always a non-nil array); an empty/
-  whitespace `q` → 400, a store error → 500; mounted by `server.WithAPI` (`buildGlobalSearchAPI` in
+  whitespace `q` → 400, a store error → 500; **the uid branch** (`direct.go`): when `query.FindUID` recognises an
+  id in `q`, the id is resolved against the one table its prefix names and returned as `direct`
+  `{uid,kind,found,target_kind?,target_uid?,title?,photo?,cover?,states?}`, and the fuzzy fan-out is **skipped**
+  (the groups serialise as `[]`) — it replaces the four searches instead of becoming a fifth, since a uid matches
+  no title, name or full text anyway; a `mk…` resolves to the photo it sits on, an `st…` to the stack's primary
+  (`ListStackMembers` orders it first), a `pt…` through `photos.photoprism_uid` and then the
+  `photoprism_aliases` of migration 0046; the lookups are **unscoped** (an archived, hidden, private or
+  non-primary stack member resolves) and `states` names which of those it is, so a hit outside the library view
+  is labelled rather than merely puzzling; a well-formed id matching nothing → `found:false`, **not** an empty
+  result set, and only a store failure is a 500; mounted by `server.WithAPI` (`buildGlobalSearchAPI` in
   `cmd/kukatko/globalsearch.go`, sharing the organize/people/photos store)), `internal/placesapi/`
   (a read-only HTTP API over the reverse-geocoded place hierarchy — the basis of Places browse: the interface
   `Store` (a subset of `photos.Store`: `AggregatePlaces`) → unit-testable with a fake; `NewAPI(Config{
@@ -2674,7 +2685,11 @@ to `## Package map` in `CLAUDE.md`.
   text/number/date/bool/enum/id/count + bound validation: rating 0–5, month 1–12, year 1000–9999, …)
   with the aliases `subject:`→`person:`, `keyword:`→`keywords:`; the bool keys include
   `hidden:` (photos hidden from the library — like `archived:`, using it lifts the store's default scope,
-  so `hidden:yes` is the way back to a hidden photo); **an unknown key or an invalid value
+  so `hidden:yes` is the way back to a hidden photo); the id key **`uid:`** names exactly one photo — by its own
+  uid **or** by the PhotoPrism uid it was imported under, one key for both because the two shapes cannot collide
+  — and lifts the live-only, visible-only **and** stack-primary scopes at once (`uidLookup` in
+  `store_list.go`), because naming an id is explicit intent and silence about a photo that exists is the one
+  useless answer; **an unknown key or an invalid value
   degrades the whole token to free text** and is reported in `Query.Unknown` (the UI builds a hint from it,
   the API `unknown_tokens`). AST: `Query{Terms,Filters,Unknown}`, `Term{Text,Phrase,Not}`,
   `Filter{Key,Values}`, `Value{Not,Text,Pattern,Bool,Min,Max,From,Until}` (numeric bounds / half-open
@@ -2686,7 +2701,14 @@ to `## Package map` in `CLAUDE.md`.
   a spherical distance with the radius `dist:` default 5 km, `faces:` counts non-invalid face markers,
   every **decimal** bound (both an exact one and the ends of a range) allowed ±0.005 because of float4, integer bounds
   stay exact; `likePattern` makes a wildcard only out of an unescaped `*` and escapes `%`/`_`, just like
-  the substring filters `Search`/`?camera=`/`?lens=` in `store_list.go`). The user-facing grammar: docs/API.md
+  the substring filters `Search`/`?camera=`/`?lens=` in `store_list.go`). The package also owns the **uid
+  router** (`uidref.go`, pure, no I/O): `ClassifyUID(token) (UIDRef, bool)` reads a uid's two-letter prefix and
+  says what it names — `ph` photo, `al` album, `lb` label, `su` subject (`EntityPerson`), `st` stack, `mk`
+  marker, all 26 characters of lowercase base32, plus `pt` = a **PhotoPrism** photo uid at 16 characters of
+  base36, a length that keeps the two families apart; `FindUID(input)` returns the first uid-shaped word of an
+  input, so an id pasted with a word beside it is still recognised. A token with an **unknown** prefix is
+  deliberately **not** accepted — probing every table per keystroke buys nothing. `internal/globalsearchapi`
+  routes a pasted id with it. The user-facing grammar: docs/API.md
   "Search language (q=)"), `internal/ratelimit/`
   (a reusable **per-key token-bucket rate limiter** + HTTP middleware for expensive endpoints:
   `New(ratePerSec, burst)` → `Allow(key)` (lazy refill, a bucket per key) / `Cleanup`/`RunMaintenance`

@@ -24,6 +24,16 @@ type Key string
 // keywords:) are resolved during parsing, so a Filter always carries the
 // canonical key.
 const (
+	// KeyUID matches one photo by its own UID, or by the PhotoPrism UID it was
+	// imported under — a "pt…" id resolves through photos.photoprism_uid and
+	// through the aliases of the source photos that collapsed onto one row (id).
+	// One key covers both because the two shapes cannot collide (see
+	// ClassifyUID), and an operator holding an id does not want to first work
+	// out which of two keys it belongs to. Using it lifts the default
+	// live-only/visible-only/stack-primary scopes: naming an id is explicit
+	// intent, and reporting nothing for a photo that exists is worse than
+	// showing an archived or hidden one.
+	KeyUID Key = "uid"
 	// KeyTitle matches the photo title (text).
 	KeyTitle Key = "title"
 	// KeyDescription matches the photo description (text).
@@ -146,6 +156,7 @@ type spec struct {
 // Adding a filter means adding a row here, a condition builder in the photos
 // store, and a line in the docs/API.md grammar.
 var specs = map[Key]spec{
+	KeyUID:         {kind: KindID},
 	KeyTitle:       {kind: KindText},
 	KeyDescription: {kind: KindText},
 	KeyNotes:       {kind: KindText},

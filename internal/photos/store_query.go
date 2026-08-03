@@ -172,6 +172,7 @@ type condBuilder func(v query.Value, env condEnv) (string, bool)
 // queryCondBuilders maps each canonical filter key to its condition builder.
 // query.KeyDist is deliberately absent: dist: only parameterises near:.
 var queryCondBuilders = map[query.Key]condBuilder{
+	query.KeyUID:         uidCond,
 	query.KeyTitle:       likeCond("title"),
 	query.KeyDescription: likeCond("description"),
 	query.KeyNotes:       likeCond("notes"),
@@ -231,6 +232,20 @@ func cameraCond(v query.Value, env condEnv) (string, bool) {
 func codecCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	return "(image_codec ILIKE " + p + " OR video_codec ILIKE " + p + ")", true
+}
+
+// uidCond matches one photo by its own UID or by the PhotoPrism UID it was
+// imported under. All three lookups are exact and indexed (uid is the primary
+// key, photoprism_uid carries a partial index since migration 0003, and
+// photoprism_aliases is keyed by it), so the OR costs three index probes rather
+// than a scan. The alias arm is what makes a source photo that collapsed onto a
+// byte-identical row (migration 0046) still resolvable by the uid the operator
+// has in hand.
+func uidCond(v query.Value, env condEnv) (string, bool) {
+	uid := env.bind(v.Text)
+	return "(photos.uid = " + uid + " OR photos.photoprism_uid = " + uid +
+		" OR EXISTS (SELECT 1 FROM photoprism_aliases pa" +
+		" WHERE pa.photoprism_uid = " + uid + " AND pa.photo_uid = photos.uid))", true
 }
 
 // albumCond matches membership in an album by title pattern or exact UID.

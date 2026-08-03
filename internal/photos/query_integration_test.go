@@ -25,6 +25,9 @@ type queryLibrary struct {
 	uids map[string]string
 	// names maps back from UID to fixture name for readable failures.
 	names map[string]string
+	// org maps the seeded album/label/subject fixture names to their UIDs, so a
+	// test can drive the id half of album:/label:/person: too.
+	org map[string]string
 	// user is the UID of the seeded user owning the ratings and favorites.
 	user string
 }
@@ -34,6 +37,11 @@ func ptrOf[T any](v T) *T {
 	return &v
 }
 
+// winterPhotoprismUID is the PhotoPrism source uid the winter fixture was
+// imported under, so uid: can be driven against an external id too. No other
+// filter reads the column, so carrying it changes no other expectation.
+const winterPhotoprismUID = "pt8suk5b57jgshdz"
+
 // seedQueryLibrary builds the library every filter assertion runs against:
 //
 //	beach   image  Canon EOS R6, RF lens, ISO 100 f/2.8 50mm, 24MP landscape,
@@ -42,7 +50,8 @@ func ptrOf[T any](v T) *T {
 //	               album "Léto 2024", rated 5 + pick, place Praha/Czechia
 //	prague2 image  Prague GPS ~0.9 km from beach, 6MP panorama, taken
 //	               2024-05-03, album "Léto 2024", place Praha/Czechia
-//	winter  image  Nikon Z6, ISO 800 f/1.8 35mm, 24MP portrait, private, Brno
+//	winter  image  Nikon Z6, ISO 800 f/1.8 35mm, 24MP portrait, private,
+//	               photoprism_uid winterPhotoprismUID, Brno
 //	               GPS alt 240, taken 2023-12-24, notes, label dog, one face
 //	               marker + one invalid marker + one unassigned faces row,
 //	               favorite of the user, rated 2, place Brno/Czechia
@@ -54,7 +63,10 @@ func seedQueryLibrary(t *testing.T) queryLibrary {
 	t.Helper()
 	store, db := newStore(t)
 	ctx := t.Context()
-	lib := queryLibrary{store: store, uids: map[string]string{}, names: map[string]string{}, user: "u_ql"}
+	lib := queryLibrary{
+		store: store, uids: map[string]string{}, names: map[string]string{},
+		org: map[string]string{}, user: "u_ql",
+	}
 
 	add := func(name string, p photos.Photo) photos.Photo {
 		created := mustCreate(t, store, p)
@@ -83,7 +95,8 @@ func seedQueryLibrary(t *testing.T) queryLibrary {
 		FileHash: "ql-3", FilePath: "p/3.jpg", FileName: "DSC_0003.jpg", FileMime: "image/jpeg",
 		FileWidth: 4000, FileHeight: 6000,
 		Title: "Winter cabin", Notes: "todo edit", Private: true,
-		TakenAt: ptrOf(time.Date(2023, 12, 24, 9, 0, 0, 0, time.UTC)), TakenAtSource: "exif",
+		PhotoprismUID: ptrOf(winterPhotoprismUID),
+		TakenAt:       ptrOf(time.Date(2023, 12, 24, 9, 0, 0, 0, time.UTC)), TakenAtSource: "exif",
 		Lat: ptrOf(49.19), Lng: ptrOf(16.61), Altitude: ptrOf(240.0),
 		CameraMake: "Nikon", CameraModel: "Nikon Z6",
 		ISO: ptrOf(800), Aperture: ptrOf(1.8), FocalLength: ptrOf(35.0),
@@ -128,6 +141,7 @@ func seedQueryOrganisation(
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
+	lib.org["album"] = album.UID
 	for _, uid := range []string{beach.UID, prague2.UID} {
 		if err := org.AddPhoto(ctx, album.UID, uid); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
@@ -143,12 +157,14 @@ func seedQueryOrganisation(
 		if err := org.AttachLabel(ctx, photoUID, label.UID, organize.SourceManual, 0); err != nil {
 			t.Fatalf("AttachLabel(%s): %v", name, err)
 		}
+		lib.org["label:"+name] = label.UID
 	}
 
 	alice, err := ppl.CreateSubject(ctx, people.Subject{Name: "Alice", Type: people.SubjectPerson})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
+	lib.org["person"] = alice.UID
 	markers := []people.Marker{
 		{PhotoUID: beach.UID, SubjectUID: &alice.UID, Type: people.MarkerFace, X: 0.1, Y: 0.1, W: 0.2, H: 0.2},
 		{PhotoUID: beach.UID, Type: people.MarkerFace, X: 0.5, Y: 0.1, W: 0.2, H: 0.2},
@@ -335,6 +351,104 @@ func TestQueryLanguage_filters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
+			got := runLanguage(t, lib, tt.query)
+			want := append([]string{}, tt.want...)
+			sort.Strings(want)
+			if len(got) != len(want) {
+				t.Fatalf("query %q = %v, want %v", tt.query, got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("query %q = %v, want %v", tt.query, got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestQueryLanguage_entityUIDs verifies the documented id half of album:, label:
+// and person: — each matches by name OR by uid — actually works against the
+// database. It was documented long before it was covered, and "documented" is
+// not the same as "works".
+func TestQueryLanguage_entityUIDs(t *testing.T) {
+	lib := seedQueryLibrary(t)
+
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"album by uid", "album:" + lib.org["album"], []string{"beach", "prague2"}},
+		{"label by uid", "label:" + lib.org["label:cat"], []string{"beach"}},
+		{"person by uid", "person:" + lib.org["person"], []string{"beach"}},
+		{
+			"an id composes with a name alternative",
+			"label:" + lib.org["label:cat"] + "|dog",
+			[]string{"beach", "winter"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := runLanguage(t, lib, tt.query)
+			want := append([]string{}, tt.want...)
+			sort.Strings(want)
+			if len(got) != len(want) {
+				t.Fatalf("query %q = %v, want %v", tt.query, got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("query %q = %v, want %v", tt.query, got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestQueryLanguage_uid drives the uid: filter through the real store: it finds
+// a photo by its own id, composes with another filter, resolves a PhotoPrism id
+// and its alias, and — the point of the filter — reaches a photo the default
+// scopes would hide (archived, hidden from the library, a non-primary member of
+// a stack), because naming an id is explicit intent.
+func TestQueryLanguage_uid(t *testing.T) {
+	lib := seedQueryLibrary(t)
+	ctx := t.Context()
+
+	// shelf leaves the library view; attic is archived by the fixture already.
+	if _, err := lib.store.SetHiddenFromLibrary(ctx, lib.uids["shelf"], true); err != nil {
+		t.Fatalf("SetHiddenFromLibrary(shelf): %v", err)
+	}
+	// clip becomes a non-primary member of a stack behind beach.
+	if _, err := lib.store.CreateStack(ctx, lib.uids["beach"],
+		[]string{lib.uids["beach"], lib.uids["clip"]}); err != nil {
+		t.Fatalf("CreateStack: %v", err)
+	}
+	// winter carries a PhotoPrism source uid from the fixture; a second source
+	// photo of the same bytes is recorded as an alias onto it.
+	const ppAlias = "pt9suk5b57jgshdz"
+	if err := lib.store.AddPhotoprismAlias(ctx, ppAlias, lib.uids["winter"], ""); err != nil {
+		t.Fatalf("AddPhotoprismAlias: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"own uid", "uid:" + lib.uids["beach"], []string{"beach"}},
+		{"combined with another filter", "uid:" + lib.uids["beach"] + " year:2024", []string{"beach"}},
+		{"combined filter that excludes it", "uid:" + lib.uids["beach"] + " year:2020", []string{}},
+		{"reaches an archived photo", "uid:" + lib.uids["attic"], []string{"attic"}},
+		{"reaches a hidden photo", "uid:" + lib.uids["shelf"], []string{"shelf"}},
+		{"reaches a stack member", "uid:" + lib.uids["clip"], []string{"clip"}},
+		{"photoprism uid", "uid:" + winterPhotoprismUID, []string{"winter"}},
+		{"photoprism alias", "uid:" + ppAlias, []string{"winter"}},
+		{"unknown uid", "uid:ph000000000000000000000000", []string{}},
+		{"or-ed alternatives", "uid:" + lib.uids["beach"] + "|" + lib.uids["attic"], []string{"attic", "beach"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			got := runLanguage(t, lib, tt.query)
 			want := append([]string{}, tt.want...)
 			sort.Strings(want)

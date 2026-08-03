@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/query"
 	"github.com/panbotka/kukatko/internal/savedsearch"
 )
 
@@ -117,6 +118,40 @@ func TestSavedSearchCreateDefaultsParams(t *testing.T) {
 	}
 	if string(created.Params) != "{}" {
 		t.Fatalf("params = %s, want {}", created.Params)
+	}
+}
+
+// TestSavedSearchCarriesUIDQuery checks that a search saved on a uid: query
+// survives storage and comes back parseable — the id filter composes with the
+// rest of the language, so a "this one photo, whatever state it is in" view is a
+// smart album like any other.
+func TestSavedSearchCarriesUIDQuery(t *testing.T) {
+	store, users, _ := newStore(t)
+	ctx := context.Background()
+	owner := makeUser(t, users, "ss_uid", "uid")
+
+	const params = `{"q":"uid:ph7lpul2io09bcg2rvp2rljsr6 favorite:yes","mode":"filter"}`
+	created, err := store.Create(ctx, owner, "That one photo", json.RawMessage(params))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := store.Get(ctx, created.UID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !jsonEqual(t, got.Params, params) {
+		t.Fatalf("params = %s, want %s", got.Params, params)
+	}
+
+	var stored struct {
+		Q string `json:"q"`
+	}
+	if err := json.Unmarshal(got.Params, &stored); err != nil {
+		t.Fatalf("unmarshal params: %v", err)
+	}
+	parsed := query.Parse(stored.Q)
+	if len(parsed.Unknown) != 0 || !parsed.HasFilter(query.KeyUID) {
+		t.Fatalf("reparsed %q = %+v, want a recognised uid: filter", stored.Q, parsed)
 	}
 }
 

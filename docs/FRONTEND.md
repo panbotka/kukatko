@@ -731,7 +731,9 @@ here.
   (`detailQuery` with `q`+`mode`) → Esc/Back from a photo returns to the search (sorted results, not the library with `q`
   as a substring) and prev/next pages the same results, plus above the grid a **cross-entity section**
   (`GlobalSearchSections`) with chips of matching albums/people/labels (grouped `GET /search/global`), so a
-  text query surfaces non-photo entities too, plus in the header **`SlideshowStart`** (scope `{mode}`,
+  text query surfaces non-photo entities too — **and a pasted uid turns that section into a „Přejít na" card**
+  for the resolved entity (or a plain „nothing matches this id" alert), which is why the grid below it may
+  legitimately stay empty; plus in the header **`SlideshowStart`** (scope `{mode}`,
   so the slideshow plays **the search results**, not the library filtered by the substring `q`)
   and **the single entry point to saved searches**
   (`SavedSearchesDropdown` — list, open, „Spravovat" → `/saved`) beside the **Uložit pohled** button
@@ -1479,7 +1481,10 @@ here.
   search page: via `useGlobalSearch(query)` it pulls the grouped `GET /search/global` and renders
   chips of matching **albums/people/labels** linking to the entity; independent of the photo fulltext/semantic
   search below it, renders nothing until at least one non-photo match arrives — an empty query /
-  an in-progress search / a photos-only match adds no chrome) +
+  an in-progress search / a photos-only match adds no chrome. **A pasted uid replaces the chips** with
+  `DirectHitBanner`: a „Přejít na" card linking straight to the resolved photo/album/label/person, or — when the
+  id names nothing — a plain warning alert saying so, because the photo grid staying empty underneath is the
+  expected outcome of an id lookup, not a failed search) +
   `SearchCommand` (**a global command palette** in the navbar: a compact icon trigger
   (`kukatko-search-trigger`, named + shortcut-hinted by `aria-label`/`title`, see the navbar above)
   opens via `react-bootstrap` `Modal` a top-anchored console — a live input (a combobox
@@ -1488,9 +1493,17 @@ here.
   of keys. Arrows ↑/↓ move (wrapping), Enter opens the active row, Esc closes, a click opens. It opens
   with `/` (suppressed while typing / with a form-modal open via `isTypingElement`+`isFormModalOpen`) or
   Cmd/Ctrl-K (a chord, works while typing too); **the open/closed state and the query live only in the component, not in the URL**,
-  so Back stays untouched. The backend `/search/global` doesn't return `Místa` groups, so the palette
-  doesn't show them. Keys `searchCommand.*`, `globalSearch.groups.*`; in the shortcut help the group
-  `shortcuts.groups.global`);
+  so Back stays untouched. **A pasted uid gets its own „Přejít na" group at the very top** (ahead of the
+  „Hledat vše" action, so Enter opens the thing instead of running a text search that could never match an id);
+  its second line says what the id was and — via `states` — whether the photo is archived/hidden/private/a stack
+  variant, and an id that names nothing is stated in words above the rows instead of being offered as a row.
+  The backend `/search/global` doesn't return `Místa` groups, so the palette
+  doesn't show them. Keys `searchCommand.*`, `globalSearch.groups.*`, `globalSearch.direct.*`; in the shortcut
+  help the group `shortcuts.groups.global`). Both surfaces share `lib/directHit.ts` — the label maps
+  `DIRECT_KIND_LABEL`/`DIRECT_VIA_LABEL`/`DIRECT_STATE_LABEL`, the icon map `DIRECT_TARGET_ICON` and the pure
+  `directHitSecondary`/`directHitTitle` — so the palette and the search page never drift apart on what an id
+  means, and every i18n key stays a **literal** (a key built from a template would widen to `string` and lose
+  type checking);
   `components/trash/` = `TrashCard` (an archived-photo tile: a preview + a countdown to auto-purge via
   `trashCountdown` + restore/delete actions + selection in selection mode);
   `components/duplicates/` = `DuplicateGroupCard` (a group card: members side by side with a preview/
@@ -2179,10 +2192,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `setAnnouncement(message,level)`/`clearAnnouncement()` over `/api/v1/announcement`, the types `Announcement`
   (`{message, level?, author_uid?, updated_at?}`, an empty `message` = nothing published)/`AnnouncementLevel`
   (`'info'|'warning'`); `search.ts` = the grouped **global search** client: `globalSearch(q,signal)` over
-  `GET /api/v1/search/global` → `GlobalSearchResult{query,albums,labels,people,photos}` (top-N per
-  group, each always an array) + the pure helpers `hasEntityMatches`/`isEmptyResult`, the types
-  `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult`; separate from the
-  photo `searchPhotos` (fulltext/semantic/hybrid), the basis for `GlobalSearchSections`; `bulk.ts` =
+  `GET /api/v1/search/global` → `GlobalSearchResult{query,direct?,albums,labels,people,photos}` (top-N per
+  group, each always an array) + the pure helpers `hasEntityMatches`/`isEmptyResult`/`directHitRoute`, the types
+  `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult` +
+  `GlobalSearchDirect{uid,kind,found,target_kind?,target_uid?,title?,photo?,cover?,states?}` with
+  `GlobalSearchUidKind`/`GlobalSearchTargetKind`/`GlobalSearchPhotoState`. **`direct` is the answer to a pasted
+  id**: present only for a query that names an entity by its uid, and then every group is empty (the backend
+  resolves the id instead of fuzzy-searching); `directHitRoute` maps a resolved hit to its page
+  (`/photos|/albums|/labels|/people`) and returns `null` when the id named nothing — which is why
+  `isEmptyResult` is **false** for an unresolved hit: an unknown id is something to say, not silence. Separate
+  from the photo `searchPhotos` (fulltext/semantic/hybrid), the basis for `GlobalSearchSections`; `bulk.ts` =
   `bulkUpdatePhotos(uids,ops)` over `POST /photos/bulk` (a bulk edit of the selection), the types
   `BulkOperations` (add/remove an album+label, set/clear the caption+description+location,
   archive/unarchive, set_favorite per-user)/`BulkLocation`/`BulkResult`; `duplicates.ts` =
