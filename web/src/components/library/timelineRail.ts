@@ -24,6 +24,15 @@ export const LABEL_MIN_GAP_PX = 20
  */
 export const FALLBACK_RAIL_HEIGHT_PX = 600
 
+/**
+ * The month a bucket covers, as the `YYYY-MM` anchor the library carries in its
+ * URL so a jump survives Back, a reload and being shared. Zero-padded so the
+ * value sorts and compares as text.
+ */
+export function anchorOf(bucket: TimelineBucket): string {
+  return `${String(bucket.year).padStart(4, '0')}-${String(bucket.month).padStart(2, '0')}`
+}
+
 /** A stable key for a month bucket (year+month uniquely identifies it). */
 export function bucketKey(bucket: TimelineBucket): string {
   return `${bucket.year}-${bucket.month}`

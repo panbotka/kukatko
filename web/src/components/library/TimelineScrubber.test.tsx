@@ -7,7 +7,7 @@ import i18n from '../../i18n'
 import { type PhotoListParams, type Timeline } from '../../services/photos'
 import { realisticTimeline } from '../../test/timeline'
 
-import { TimelineScrubber } from './TimelineScrubber'
+import { type TimelineJump, TimelineScrubber } from './TimelineScrubber'
 
 // Only the network call is faked; the component's positioning/highlight logic
 // runs for real.
@@ -64,17 +64,24 @@ function centres(elements: Element[], height = RAIL_HEIGHT_PX): number[] {
 function renderScrubber(props: {
   params?: PhotoListParams
   activeIndex?: number
-  onJump?: (index: number) => void
+  anchor?: string
+  onJump?: (jump: TimelineJump) => void
 }) {
   return render(
     <I18nextProvider i18n={i18n}>
       <TimelineScrubber
         params={props.params ?? { sort: 'newest' }}
         activeIndex={props.activeIndex ?? 0}
+        anchor={props.anchor}
         onJump={props.onJump ?? vi.fn()}
       />
     </I18nextProvider>,
   )
+}
+
+/** The grid indexes a spy was asked to jump to, in call order. */
+function jumpedIndexes(onJump: ReturnType<typeof vi.fn>): number[] {
+  return onJump.mock.calls.map((call) => (call[0] as TimelineJump).index)
 }
 
 beforeEach(async () => {
@@ -93,7 +100,8 @@ describe('TimelineScrubber', () => {
     expect(screen.getByRole('button', { name: 'Jump to Feb 2026' })).toBeInTheDocument()
 
     await user.click(jan)
-    expect(onJump).toHaveBeenCalledWith(3)
+    // A deliberate click pushes its month onto the history, so Back undoes it.
+    expect(onJump).toHaveBeenCalledWith({ index: 3, month: '2026-01', replace: false })
   })
 
   it('reflects the active filters, refetching when the params change', async () => {
@@ -206,13 +214,17 @@ describe('TimelineScrubber', () => {
     const last = labels[labels.length - 1]
     expect(last.textContent).toBe(String(oldest.year))
     await user.click(last)
-    expect(onJump).toHaveBeenCalledWith(oldest.cumulative)
+    expect(onJump).toHaveBeenCalledWith({
+      index: oldest.cumulative,
+      month: `${String(oldest.year)}-06`,
+      replace: false,
+    })
 
     // Dragging to the rail's bottom edge lands on the same month: the position a
     // tick is drawn at and the position a drag reads back agree.
     onJump.mockClear()
     fireEvent.pointerDown(rail, { clientY: RAIL_HEIGHT_PX - 1, pointerId: 1 })
-    expect(onJump).toHaveBeenCalledWith(oldest.cumulative)
+    expect(jumpedIndexes(onJump)).toEqual([oldest.cumulative])
     fireEvent.pointerUp(rail, { clientY: RAIL_HEIGHT_PX - 1, pointerId: 1 })
   })
 
@@ -250,10 +262,66 @@ describe('TimelineScrubber', () => {
     // the rail's bounds.
     expect(capture).toHaveBeenCalled()
 
-    const jumped = onJump.mock.calls.map((call) => call[0] as number)
+    const jumped = jumpedIndexes(onJump)
     expect(jumped.length).toBe(5)
     expect(jumped).toEqual([...jumped].sort((a, b) => a - b))
     expect(new Set(jumped).size).toBe(jumped.length)
+  })
+
+  it('marks the steps of a drag as replacing, so back undoes the whole gesture', async () => {
+    stubRailGeometry()
+    fetchMock.mockResolvedValue(realisticTimeline())
+    const onJump = vi.fn()
+    const { container } = renderScrubber({ onJump })
+    const rail = await screen.findByRole('navigation')
+    await waitFor(() => {
+      expect(container.querySelectorAll('.kukatko-timeline-tick').length).toBeGreaterThan(0)
+    })
+
+    // The press that starts on the bare rail is still a deliberate pick…
+    fireEvent.pointerDown(rail, { clientY: 100, pointerId: 1 })
+    expect((onJump.mock.calls[0][0] as TimelineJump).replace).toBe(false)
+    // …but every month the drag then sweeps through only replaces it, so the
+    // history holds one entry for the gesture rather than one per month.
+    for (let y = 200; y <= 400; y += 100) {
+      fireEvent.pointerMove(rail, { clientY: y, pointerId: 1 })
+    }
+    fireEvent.pointerUp(rail, { clientY: 400, pointerId: 1 })
+    const replaces = onJump.mock.calls.slice(1).map((call) => (call[0] as TimelineJump).replace)
+    expect(replaces.length).toBeGreaterThan(0)
+    expect(replaces.every(Boolean)).toBe(true)
+  })
+
+  it('restores the month the URL anchors to, once, without pushing it again', async () => {
+    fetchMock.mockResolvedValue(TIMELINE)
+    const onJump = vi.fn()
+    const { rerender } = renderScrubber({ anchor: '2026-01', onJump })
+
+    await waitFor(() => {
+      expect(onJump).toHaveBeenCalledWith({ index: 3, month: '2026-01', replace: true })
+    })
+    // Re-rendering with the same anchor must not jump again — otherwise every
+    // render would yank a reader who has since scrolled away back to the month.
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <TimelineScrubber
+          params={{ sort: 'newest' }}
+          activeIndex={7}
+          anchor="2026-01"
+          onJump={onJump}
+        />
+      </I18nextProvider>,
+    )
+    expect(onJump).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores an anchor no bucket matches', async () => {
+    fetchMock.mockResolvedValue(TIMELINE)
+    const onJump = vi.fn()
+    renderScrubber({ anchor: '1999-03', onJump })
+
+    await screen.findByRole('navigation')
+    expect(onJump).not.toHaveBeenCalled()
   })
 
   it('renders nothing when the timeline has no buckets', async () => {
