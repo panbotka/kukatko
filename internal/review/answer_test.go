@@ -143,7 +143,7 @@ func TestAnswer_skipShelvesWithoutWrites(t *testing.T) {
 		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4, 0.41)}
 	})
 	ctx := context.Background()
-	first, err := f.svc.Queue(ctx, "user", 1)
+	first, err := f.svc.Queue(ctx, "user", SourceBoth, 1)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestAnswer_skipShelvesWithoutWrites(t *testing.T) {
 	if len(f.feedback.faceRejects) != 0 {
 		t.Error("skip must not record a rejection")
 	}
-	next, err := f.svc.Queue(ctx, "user", 10)
+	next, err := f.svc.Queue(ctx, "user", SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue after skip: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestAnswer_skipShelvesWithoutWrites(t *testing.T) {
 	}
 	// The skip also survives a rebuild within the session.
 	*f.now = f.now.Add(2 * DefaultCacheTTL)
-	rebuilt, err := f.svc.Queue(ctx, "user", 10)
+	rebuilt, err := f.svc.Queue(ctx, "user", SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue after rebuild: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestAnswer_updatesQueueCounters(t *testing.T) {
 		f.faces.faces[vectors.FaceKey{PhotoUID: "photo-subj1-1", FaceIndex: 0}] = vectors.Face{}
 	})
 	ctx := context.Background()
-	first, err := f.svc.Queue(ctx, "user", 10)
+	first, err := f.svc.Queue(ctx, "user", SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestAnswer_updatesQueueCounters(t *testing.T) {
 	if res.Answered != 1 || res.Remaining != 1 {
 		t.Errorf("after answer: %+v, want answered 1 remaining 1", res)
 	}
-	next, err := f.svc.Queue(ctx, "user", 10)
+	next, err := f.svc.Queue(ctx, "user", SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue after answer: %v", err)
 	}

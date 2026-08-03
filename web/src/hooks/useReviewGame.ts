@@ -8,7 +8,10 @@ import {
   fetchReviewQueue,
   type ReviewAnswer,
   type ReviewQuestion,
+  type ReviewSource,
 } from '../services/review'
+
+import { useReloadKey } from './useReloadKey'
 
 /**
  * When the local queue shrinks to this many cards a background refill starts,
@@ -41,7 +44,7 @@ export interface ReviewGame {
   loadError: boolean
   /** True when the server has nothing new to ask. */
   exhausted: boolean
-  /** Why the queue is empty: `no_people_no_labels` / `no_candidates`. */
+  /** Why the queue is empty: `no_people_no_labels` / `no_people` / `no_labels` / `no_candidates`. */
   reason: string | undefined
   /** Answers whose requests failed, awaiting retry or dismissal. */
   failed: readonly FailedAnswer[]
@@ -82,8 +85,15 @@ export interface ReviewGame {
  * as `create_marker` is undone by first looking the new marker up via
  * `GET /photos/{uid}/faces` — unassigning keeps the marker, so any later
  * re-yes is an `assign_person` to that same marker, never a duplicate.
+ *
+ * `source` decides what the game asks about (people, labels or both). Changing
+ * it throws the local queue away rather than filtering it: those cards are
+ * exactly the questions the player just asked to stop being asked. The answered
+ * counter and the seen-set survive the switch — they are about the session, not
+ * about the selection — while the undo target does not, since the card it would
+ * restore no longer belongs to the game on screen.
  */
-export function useReviewGame(): ReviewGame {
+export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
   const [queue, setQueue] = useState<ReviewQuestion[]>([])
   const [answered, setAnswered] = useState(0)
   const [remaining, setRemaining] = useState(0)
@@ -95,6 +105,9 @@ export function useReviewGame(): ReviewGame {
   const [lastAnswer, setLastAnswer] = useState<AnsweredQuestion | null>(null)
   const [undoing, setUndoing] = useState(false)
   const [undoError, setUndoError] = useState(false)
+  // Bumped when a fetch has to be re-driven from the outside — a response that
+  // arrived for a source the player has already left behind.
+  const [reloadKey, reload] = useReloadKey()
 
   // The queue's source of truth. State only mirrors it for rendering: two
   // answers can land within one render (arrow keys at speed), and reading the
@@ -110,6 +123,8 @@ export function useReviewGame(): ReviewGame {
   const inflightRef = useRef<Map<string, Promise<boolean>>>(new Map())
   const fetchingRef = useRef(false)
   const startedRef = useRef(false)
+  /** The selection the queue currently belongs to; a batch for anything else is stale. */
+  const sourceRef = useRef<ReviewSource>(source)
   const undoingRef = useRef(false)
   const failedRef = useRef<FailedAnswer[]>([])
   failedRef.current = failed
@@ -131,7 +146,18 @@ export function useReviewGame(): ReviewGame {
     const initial = !startedRef.current
     startedRef.current = true
     try {
-      const res = await fetchReviewQueue()
+      const res = await fetchReviewQueue(source)
+      // A batch that was in flight when the player switched the source belongs
+      // to a game that is no longer on screen. The response carries the source
+      // it was built for, so a stale one is recognisable without timing
+      // assumptions. Dropping it is not enough, though: the refill effect
+      // already ran while this request held the in-flight latch, so nothing
+      // else would ask for the source the player actually chose — hence the
+      // bump, which re-runs the effect once the latch is free.
+      if (res.source !== sourceRef.current) {
+        reload()
+        return
+      }
       const fresh = res.questions.filter((q) => !seenRef.current.has(q.id))
       for (const q of fresh) {
         seenRef.current.add(q.id)
@@ -153,7 +179,26 @@ export function useReviewGame(): ReviewGame {
       fetchingRef.current = false
       setFetching(false)
     }
-  }, [commitQueue])
+  }, [commitQueue, reload, source])
+
+  // A changed source starts the game over: the cards in hand are about the kind
+  // of question the player just turned off, so they go rather than get filtered.
+  // The latches go with them — "exhausted" was a statement about the old
+  // selection — and so does the undo target, whose card would otherwise be
+  // pushed back into a queue it does not belong to.
+  useEffect(() => {
+    if (sourceRef.current === source) {
+      return
+    }
+    sourceRef.current = source
+    commitQueue([])
+    setExhausted(false)
+    setLoadError(false)
+    setReason(undefined)
+    setRemaining(0)
+    setLastAnswer(null)
+    setUndoError(false)
+  }, [source, commitQueue])
 
   // Initial load and background refills fall out of the same rule: whenever the
   // local queue runs low and nothing says stop, fetch. The error/exhausted
@@ -162,7 +207,7 @@ export function useReviewGame(): ReviewGame {
     if (queue.length <= REFILL_AT && !exhausted && !loadError) {
       void load()
     }
-  }, [queue.length, exhausted, loadError, load])
+  }, [queue.length, exhausted, loadError, load, reloadKey])
 
   /**
    * Finds the marker uid a face-yes must act on: the one the question carried,

@@ -43,6 +43,19 @@
   font-size: 0.875rem;
   text-align: center;
   min-width: 0;
+  /* It owns whatever the buttons leave, so the counter stays centred between
+     them however wide the source toggle renders. The basis is 0, not auto:
+     when the header wraps (below `sm`) a line is broken on the *hypothetical*
+     sizes, before shrinking, so a text-width basis would push the help button
+     onto a line of its own before the counter ever gave up a pixel. */
+  flex: 1 1 0;
+}
+
+/* What the game asks about: people, labels or both. It rides in the header row
+   wherever it fits — the labels themselves are hidden below `md`, so from a
+   tablet down it is three glyphs. */
+.review-game__source {
+  flex: 0 0 auto;
 }
 
 /* The hairline session progress under the header: present, not loud. */
@@ -204,6 +217,22 @@
     min-width: 0;
     padding-top: 0.75rem;
     padding-bottom: 0.75rem;
+  }
+
+  /* Three more buttons do not fit next to the counter at 360 px: kept in the
+     row, the header holds its height only by breaking the counter into a column
+     of single words that slides under the help button. So the toggle takes a
+     line of its own. It costs ~40 px of photo, which the stage absorbs by
+     design (`flex: 1 1 0`) — the chrome is what must always be readable. */
+  .review-game__top {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
+  .review-game__source {
+    order: 4;
+    flex: 1 0 100%;
+    justify-content: center;
   }
 }
 

@@ -406,10 +406,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   tidying up the library — one question at a time ("Is this Tomáš?", "Should this photo have the label Ostatky?"),
   answer yes/no/skip. Questions are drawn from the **uncertainty band** (`review.band_min ≤ confidence <
   review.band_max`, confidence = 1 − cosine distance, default 0.45–0.75) — below the band it is noise,
-  above it, confirmation happens in bulk on `/recognition` or via expand. `GET /review/queue?limit=N`
-  (empty/0 → `review.queue_size`, cap 100, non-numeric/negative → 400) → `{questions:[{id,kind:
+  above it, confirmation happens in bulk on `/recognition` or via expand. `GET
+  /review/queue?source=both|people|labels&limit=N` (source empty → `both`, unknown → 400; limit empty/0 →
+  `review.queue_size`, cap 100, non-numeric/negative → 400) → `{questions:[{id,kind:
   "face"|"label",confidence,photo,subject?,face_index?,bbox?{relative,pixel},action?
-  ("create_marker"|"assign_person"),marker_uid?,label?}],answered,remaining,reason?}`; `id` is
+  ("create_marker"|"assign_person"),marker_uid?,label?}],source,answered,remaining,reason?}`; `id` is
   **stable, derived from content** (`face:<photo>:<index>:<subject>` / `label:<photo>:<label>`),
   `bbox` relative 0..1 **and** pixels (honouring EXIF orientation), the queue is **deterministic** for a given
   library state (ordered by distance from the centre of the band, tie-break id; face/label questions are
@@ -417,10 +418,19 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   asks about**, so the game does not turn into an interrogation: at most `review.max_per_entity` (default 4)
   questions about one person or label per batch, and never more than **two in a row** about the same one while
   another entity still has a question waiting — the variation is a deterministic reordering of the
-  informativeness order, not randomness. The queue is **cached per user** (`review.cache_ttl`, default 60 s) —
-  a batch fetch does not recompute the expensive vector searches; `remaining`/`answered` are cheap session counters.
+  informativeness order, not randomness. **`source` decides what the game asks about** — only faces
+  (`people`), only labels (`labels`) or both interleaved (`both`, the default) — and it is applied **inside the
+  rebuild**, not as a filter on its result: a labels-only queue never runs the subject sweep at all (the scans
+  are the whole cost of a rebuild, and a subject sweep hydrates a full photo record per match). The applied
+  source is echoed back in `source`, so a client can recognise a batch that arrived after the player switched.
+  The queue is **cached per user *and per source*** (`review.cache_ttl`, default 60 s) — a batch fetch does not
+  recompute the expensive vector searches, but a **changed source always rebuilds** (a warm cache serving the
+  previous selection would look exactly like a broken toggle); skips/answers are session-wide, so they hold
+  across a switch. `remaining`/`answered` are cheap session counters.
   An empty library (no named people or labels) → a **non-error** empty queue with `reason:
-  "no_people_no_labels"`; sources exist, but the band is empty → `reason:"no_candidates"`.
+  "no_people_no_labels"`; the chosen source itself is empty → `reason:"no_people"` / `"no_labels"` (only for a
+  restricted source; the untouched source is never counted); sources exist, but the band is empty →
+  `reason:"no_candidates"`.
   `POST /review/answer` with `{question_id,answer:"yes"|"no"|"skip"}` → `{result,answered,remaining}`.
   **yes** on a face goes through the **existing** assign state machine (the same path as
   `POST /photos/{uid}/faces/assign`; the action is derived from the face's current state — a marker exists →

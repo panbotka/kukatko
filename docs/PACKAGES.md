@@ -1230,7 +1230,7 @@ to `## Package map` in `CLAUDE.md`.
   `OrganizeStore.AttachLabelAudited` and `FeedbackStore.RejectFace/RejectLabel`; `New(Config{...,BandMin,
   BandMax,QueueSize,CacheTTL,MaxLabels,LabelConcurrency,FaceBudget,LabelBudget,BuildTimeout,MaxPerEntity,Now})`
   (an invalid band → the default pair 0.45/0.75, `Now` = a test hook).
-  **`Queue(ctx,userUID,limit)`**: candidates with confidence
+  **`Queue(ctx,userUID,source,limit)`**: candidates with confidence
   (= 1 − distance) in `[BandMin,BandMax)` — the band is a **distance window pushed into the search**
   (`Threshold: 1−BandMin`, `MinDistance: 1−BandMax`), so the confident matches (which belong on
   `/recognition`/expand, not in the game) are never hydrated only to be discarded here; `inBand` still trims
@@ -1255,10 +1255,22 @@ to `## Package map` in `CLAUDE.md`.
   only inserts the other kind between two of the same kind and a face and a label are never the same entity, so
   bounding the sources bounds the queue. `questionEntity` keys on kind+uid, so a subject and a label sharing a
   uid never collide.
+  **The source is the player's choice (`source.go`)** — `SourceBoth` (default), `SourcePeople`, `SourceLabels`;
+  `ParseSource` maps `?source=` (empty → both, other → `ErrInvalidSource` → 400), `orBoth` folds an unknown
+  value from a non-HTTP caller back to the default. It travels **into `collect`**, not onto its result: a
+  labels-only rebuild never calls `Sweeper.Scan` and a people-only one never calls `Expander.Label`. That is
+  the point of the knob — the scans **are** the cost of a rebuild (a subject sweep hydrates a full photo record
+  per match), so filtering afterwards would spend the whole price of a batch on questions nobody asked for.
+  `QueueResult.Source` echoes what was applied.
   The queue is **cached
-  per user** (`CacheTTL`) and the session holds `answered`/`skipped` sets + a counter (in-memory, idle-pruned after
-  12 h; skip is **deliberately** only session-scoped — "I don't know" is not "no"). An empty library → `reason:
-  "no_people_no_labels"`, an empty band → `"no_candidates"` (both non-error).
+  per user _and per source_** (`CacheTTL`) and the session holds `answered`/`skipped` sets + a counter (in-memory,
+  idle-pruned after 12 h; skip is **deliberately** only session-scoped — "I don't know" is not "no"). Those sets
+  span all sources (a skip is about the question, not about the toggle), but the cached queue does not:
+  `needsRebuild` compares `sess.source`, so a **switch always rebuilds** — a warm cache handing back the
+  questions the player just turned off is indistinguishable from a broken toggle. An empty library → `reason:
+  "no_people_no_labels"`, an empty **chosen** source → `"no_people"`/`"no_labels"` (`reasonFor`; only for a
+  restricted source, because the unscanned side's total is 0 by construction, and never after a
+  degraded rebuild), an empty band → `"no_candidates"` (all non-error).
   **A rebuild is bounded — the game asks one question at a time, so it must never cost a library-wide
   work list** (it did: 250 s for 105 subjects on production, see `docs/PERF.md` §3). Faces go through
   `Sweeper.Scan` with `Window{Offset: cursor, Budget: FaceBudget}` (default 8 subjects), labels through a
@@ -1289,11 +1301,15 @@ to `## Package map` in `CLAUDE.md`.
   early stop, dry-queue rebuild, deadline degradation) and `variety_test.go` (**`TestQueue_monotonyBaseline`
   runs the pre-fix pipeline — order + interleave, share out of reach, no spread — over the same fixture and
   fails if it stops reproducing the complaint**, then: run cap, per-entity share, ≥ 5 entities per batch,
-  every question still inside the band, reproducibility, `spread`/`longestEntityRun` unit tables),
+  every question still inside the band, reproducibility, `spread`/`longestEntityRun` unit tables)
+  and `source_test.go` (`ParseSource`, a restricted queue **not calling** the other source's search at all,
+  an unknown source falling back to both, a switch rebuilding inside a warm `CacheTTL`, the per-source empty
+  reasons, a skip holding across a switch),
   integration tests over real
   sweep+candidates+expand+facematch+feedback+DB, incl. `queue_scale_integration_test.go` (105 named
   subjects, an instrumented face store counting the kNN queries, and a bounded-vs-unbounded content
-  comparison). Additionally **`LeaderboardStore`** (`NewLeaderboardStore(
+  comparison) and the three selections driven over one real library in one session (plus a people-only
+  queue on a labels-only library reporting `no_people`). Additionally **`LeaderboardStore`** (`NewLeaderboardStore(
   pool)`, separate from `Service` — read-only) aggregates a **review leaderboard** directly from `audit_log`: per
   `actor_uid` it counts decisions marked `details.via = "review"` — yes = `face.assign`+`label.attach`,
   no = `face.reject`+`label.reject`; a skip writes nothing, so it isn't counted — with the windows `WindowAllTime`/
@@ -1308,7 +1324,8 @@ to `## Package map` in `CLAUDE.md`.
   (satisfied by `*review.LeaderboardStore`), `NewAPI(Config{Service,Leaderboard,RequireWrite,RequireAuth})`
   (nil guards → pass-through) + `RegisterRoutes` mounts `GET /review/queue` and `POST /review/answer`
   behind **`RequireWrite`** (editor/admin — they mutate the library) and `GET /review/leaderboard` behind **`RequireAuth`**
-  (only aggregates → any logged-in user, even a viewer); the queue reads `?limit=` (empty → default,
+  (only aggregates → any logged-in user, even a viewer); the queue reads `?source=` (empty → `both`,
+  `review.ParseSource` → 400 on anything else) and `?limit=` (empty → default,
   non-numeric/negative → 400), answer decodes `{question_id,answer}` (`DisallowUnknownFields`, 64 KiB,
   empty fields → 400) and builds `audit.Meta` via `audit.FromRequest` + `auth.UserFromContext`;
   `ErrInvalidQuestion`/`ErrInvalidAnswer` → 400, any other error → 500, `result:"gone"` stays 200;

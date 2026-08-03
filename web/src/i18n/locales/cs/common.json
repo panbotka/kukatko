@@ -2245,6 +2245,12 @@
     },
     "loading": "Načítám otázky…",
     "close": "Ukončit hru",
+    "source": {
+      "label": "Na co se ptát",
+      "both": "Oboje",
+      "people": "Lidé",
+      "labels": "Štítky"
+    },
     "progress": {
       "answered_one": "{{count}} zodpovězená",
       "answered_few": "{{count}} zodpovězené",
@@ -2262,7 +2268,15 @@
       "labels": "Štítky",
       "queueTitle": "Vše posouzeno",
       "queueHint": "Teď tu žádné otázky nejsou. Nové se objeví, jakmile přibudou fotky nebo návrhy.",
-      "checkAgain": "Zkusit znovu"
+      "checkAgain": "Zkusit znovu",
+      "noPeopleTitle": "Zatím tu nejsou lidé",
+      "noPeopleHint": "Hra se teď ptá jen na lidi, ale nikdo tu není pojmenovaný. Pojmenuj někoho, nebo se nech ptát na štítky.",
+      "noLabelsTitle": "Zatím tu nejsou štítky",
+      "noLabelsHint": "Hra se teď ptá jen na štítky, ale žádný štítek zatím nemá fotky. Založ štítek, nebo se nech ptát na lidi.",
+      "queueHintScoped": "Ve zvoleném zdroji už není co třídit. Zkus se nechat ptát na oboje, nebo se vrať později.",
+      "askPeople": "Ptát se na lidi",
+      "askLabels": "Ptát se na štítky",
+      "askBoth": "Ptát se na oboje"
     },
     "errors": {
       "load": "Frontu otázek se nepodařilo načíst.",

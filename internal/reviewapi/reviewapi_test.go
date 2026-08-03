@@ -16,17 +16,21 @@ import (
 
 // fakeService records calls and returns scripted results.
 type fakeService struct {
-	queueRes   review.QueueResult
-	queueErr   error
-	queueLimit int
-	answerRes  review.AnswerResult
-	answerErr  error
-	questionID string
-	answer     review.Answer
+	queueRes    review.QueueResult
+	queueErr    error
+	queueLimit  int
+	queueSource review.Source
+	answerRes   review.AnswerResult
+	answerErr   error
+	questionID  string
+	answer      review.Answer
 }
 
-// Queue records the limit and returns the scripted result.
-func (f *fakeService) Queue(_ context.Context, _ string, limit int) (review.QueueResult, error) {
+// Queue records the source and limit and returns the scripted result.
+func (f *fakeService) Queue(
+	_ context.Context, _ string, src review.Source, limit int,
+) (review.QueueResult, error) {
+	f.queueSource = src
 	f.queueLimit = limit
 	return f.queueRes, f.queueErr
 }
@@ -138,6 +142,36 @@ func TestHandleQueue_badLimit(t *testing.T) {
 	for _, raw := range []string{"abc", "-1", "1.5"} {
 		if status := doJSON(t, http.MethodGet, server.URL+"/review/queue?limit="+raw, "", nil); status != http.StatusBadRequest {
 			t.Errorf("limit=%q status = %d, want 400", raw, status)
+		}
+	}
+}
+
+func TestHandleQueue_passesTheSourceThrough(t *testing.T) {
+	t.Parallel()
+	for query, want := range map[string]review.Source{
+		"":               review.SourceBoth,
+		"?source=both":   review.SourceBoth,
+		"?source=people": review.SourcePeople,
+		"?source=labels": review.SourceLabels,
+	} {
+		svc := &fakeService{}
+		server := newServer(t, svc)
+		if status := doJSON(t, http.MethodGet, server.URL+"/review/queue"+query, "", nil); status != http.StatusOK {
+			t.Fatalf("%q status = %d, want 200", query, status)
+		}
+		if svc.queueSource != want {
+			t.Errorf("%q passed source %q, want %q", query, svc.queueSource, want)
+		}
+	}
+}
+
+func TestHandleQueue_badSource(t *testing.T) {
+	t.Parallel()
+	server := newServer(t, &fakeService{})
+	for _, raw := range []string{"faces", "people,labels", "everything"} {
+		status := doJSON(t, http.MethodGet, server.URL+"/review/queue?source="+raw, "", nil)
+		if status != http.StatusBadRequest {
+			t.Errorf("source=%q status = %d, want 400", raw, status)
 		}
 	}
 }

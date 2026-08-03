@@ -180,7 +180,7 @@ func (h *reviewHarness) label(t *testing.T, name string, members ...string) orga
 // queueIDs fetches one big batch and returns the question ids in order.
 func queueIDs(t *testing.T, svc *review.Service) []string {
 	t.Helper()
-	res, err := svc.Queue(context.Background(), "tester", 100)
+	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestReviewQueue_faceBandAndExclusionsDB(t *testing.T) {
 		t.Fatalf("RejectFace: %v", err)
 	}
 
-	res, err := h.service().Queue(context.Background(), "tester", 100)
+	res, err := h.service().Queue(context.Background(), "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestReviewAnswer_faceYesAssignsAndConvergesDB(t *testing.T) {
 	bandPhoto := h.face(t, "band", vectors.Face{FaceIndex: 0, Vector: bandFace(), DetScore: 0.9})
 
 	svc := h.service()
-	res, err := svc.Queue(context.Background(), "tester", 100)
+	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestReviewAnswer_faceYesTagsAuditViaReview(t *testing.T) {
 	h.face(t, "band", vectors.Face{FaceIndex: 0, Vector: bandFace(), DetScore: 0.9})
 
 	svc := h.service()
-	res, err := svc.Queue(context.Background(), "tester", 100)
+	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestReviewAnswer_labelFlowDB(t *testing.T) {
 	h.embedded(t, "certain", imgVec(map[int]float32{0: 0.95, 1: 0.3122}))
 
 	svc := h.service()
-	res, err := svc.Queue(context.Background(), "tester", 100)
+	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -478,7 +478,7 @@ func TestReviewAnswer_skipDoesNotLeadNextBatchDB(t *testing.T) {
 	})
 
 	svc := h.service()
-	first, err := svc.Queue(context.Background(), "tester", 1)
+	first, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 1)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -490,7 +490,7 @@ func TestReviewAnswer_skipDoesNotLeadNextBatchDB(t *testing.T) {
 	if res.Result != "skipped" || res.Answered != 0 {
 		t.Fatalf("skip = %+v, want skipped and uncounted", res)
 	}
-	next, err := svc.Queue(context.Background(), "tester", 10)
+	next, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue after skip: %v", err)
 	}
@@ -504,9 +504,73 @@ func TestReviewAnswer_skipDoesNotLeadNextBatchDB(t *testing.T) {
 	}
 }
 
+// TestReviewQueue_sourceSelectionDB drives the three selections over the real
+// composed searches: one library that offers exactly one face question and one
+// label question, asked three ways in one session, so the cache invalidation on
+// a switch is exercised against real material rather than fakes.
+func TestReviewQueue_sourceSelectionDB(t *testing.T) {
+	h := newReviewHarness(t)
+	h.namedSubject(t, "Alice", "alice-src", vec(map[int]float32{0: 1}))
+	facePhoto := h.face(t, "band-face", vectors.Face{FaceIndex: 0, Vector: bandFace(), DetScore: 0.9})
+	member := h.embedded(t, "member", imgVec(map[int]float32{0: 1}))
+	h.label(t, "Ostatky", member)
+	labelPhoto := h.embedded(t, "band-label", imgVec(map[int]float32{0: 0.6, 1: 0.8}))
+
+	svc := h.service()
+	both, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
+	if err != nil {
+		t.Fatalf("Queue(both): %v", err)
+	}
+	if len(both.Questions) != 2 {
+		t.Fatalf("both = %+v, want one question per source", both.Questions)
+	}
+
+	people, err := svc.Queue(context.Background(), "tester", review.SourcePeople, 100)
+	if err != nil {
+		t.Fatalf("Queue(people): %v", err)
+	}
+	if len(people.Questions) != 1 || people.Questions[0].Kind != review.KindFace ||
+		people.Questions[0].Photo.UID != facePhoto {
+		t.Fatalf("people = %+v, want only the band face on %s", people.Questions, facePhoto)
+	}
+	if people.Source != review.SourcePeople {
+		t.Errorf("people source = %q, want %q", people.Source, review.SourcePeople)
+	}
+
+	labels, err := svc.Queue(context.Background(), "tester", review.SourceLabels, 100)
+	if err != nil {
+		t.Fatalf("Queue(labels): %v", err)
+	}
+	if len(labels.Questions) != 1 || labels.Questions[0].Kind != review.KindLabel ||
+		labels.Questions[0].Photo.UID != labelPhoto {
+		t.Fatalf("labels = %+v, want only the band photo on %s", labels.Questions, labelPhoto)
+	}
+	if labels.Source != review.SourceLabels {
+		t.Errorf("labels source = %q, want %q", labels.Source, review.SourceLabels)
+	}
+}
+
+// TestReviewQueue_chosenSourceEmptyDB proves the empty reason names the source
+// the player chose: a library full of label work is still "no people to ask
+// about" when the game was restricted to people.
+func TestReviewQueue_chosenSourceEmptyDB(t *testing.T) {
+	h := newReviewHarness(t)
+	member := h.embedded(t, "member", imgVec(map[int]float32{0: 1}))
+	h.label(t, "Ostatky", member)
+	h.embedded(t, "band-label", imgVec(map[int]float32{0: 0.6, 1: 0.8}))
+
+	res, err := h.service().Queue(context.Background(), "tester", review.SourcePeople, 0)
+	if err != nil {
+		t.Fatalf("Queue(people): %v", err)
+	}
+	if len(res.Questions) != 0 || res.Reason != review.ReasonNoPeople {
+		t.Fatalf("result = %+v, want an empty queue with reason %q", res, review.ReasonNoPeople)
+	}
+}
+
 func TestReviewQueue_emptyLibraryDB(t *testing.T) {
 	h := newReviewHarness(t)
-	res, err := h.service().Queue(context.Background(), "tester", 0)
+	res, err := h.service().Queue(context.Background(), "tester", review.SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue on empty library: %v", err)
 	}

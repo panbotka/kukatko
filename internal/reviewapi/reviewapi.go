@@ -1,6 +1,7 @@
 // Package reviewapi exposes the review game over HTTP: GET /review/queue hands
 // the player a batch of one-at-a-time questions targeted at the uncertainty
-// band, POST /review/answer applies a yes/no/skip verdict through the existing
+// band — drawn from people, labels or both, per the caller's ?source — and
+// POST /review/answer applies a yes/no/skip verdict through the existing
 // write paths. Both endpoints require the editor or admin role — answering
 // mutates the library — via the injected RequireWrite guard, so the package
 // stays decoupled from auth's wiring. GET /review/leaderboard ranks players by
@@ -32,8 +33,9 @@ const maxBodyBytes = 64 << 10
 // Service is the slice of *review.Service the handlers need; the indirection
 // keeps handler tests store-free.
 type Service interface {
-	// Queue returns the user's next batch of questions plus session counters.
-	Queue(ctx context.Context, userUID string, limit int) (review.QueueResult, error)
+	// Queue returns the user's next batch of questions from the chosen source,
+	// plus session counters.
+	Queue(ctx context.Context, userUID string, src review.Source, limit int) (review.QueueResult, error)
 	// Answer applies one verdict and returns the outcome plus session counters.
 	Answer(ctx context.Context, userUID, questionID string, answer review.Answer,
 		meta audit.Meta) (review.AnswerResult, error)
@@ -100,12 +102,18 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/review/leaderboard", a.handleLeaderboard)
 }
 
-// handleQueue answers GET /review/queue?limit=N with the next batch of
-// questions for the authenticated user. A missing or zero limit uses the
-// configured default; a malformed one answers 400.
+// handleQueue answers GET /review/queue?source=both|people|labels&limit=N with
+// the next batch of questions for the authenticated user. A missing source
+// means both; a missing or zero limit uses the configured default; a malformed
+// value of either answers 400.
 func (a *API) handleQueue(w http.ResponseWriter, r *http.Request) {
 	if a.service == nil {
 		writeError(w, http.StatusServiceUnavailable, "review game not available")
+		return
+	}
+	src, err := review.ParseSource(r.URL.Query().Get("source"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	limit, err := parseLimit(r.URL.Query().Get("limit"))
@@ -114,7 +122,7 @@ func (a *API) handleQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := auth.UserFromContext(r.Context())
-	res, err := a.service.Queue(r.Context(), user.UID, limit)
+	res, err := a.service.Queue(r.Context(), user.UID, src, limit)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "review queue failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "building review queue failed")

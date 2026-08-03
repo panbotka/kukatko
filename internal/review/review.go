@@ -21,6 +21,11 @@
 // entity still has a question waiting; see variety.go for both rules and why
 // they are shaped that way.
 //
+// What the game asks about is the player's choice: people, labels or both (see
+// source.go). The selection is pushed into the rebuild rather than applied to
+// its output, so a player who only wants label questions never pays for the
+// subject sweep.
+//
 // The queue composes the existing read-only searches — the recognition scan
 // (per-subject face candidates, which already excludes assigned faces, persisted
 // rejections, negative exemplars and sub-reviewable faces) and the
@@ -122,12 +127,14 @@ const (
 	sessionIdleTTL = 12 * time.Hour
 )
 
-// Sentinel errors returned by Answer for client mistakes.
+// Sentinel errors returned for client mistakes.
 var (
 	// ErrInvalidQuestion indicates a malformed question id.
 	ErrInvalidQuestion = errors.New("review: invalid question id")
 	// ErrInvalidAnswer indicates an answer outside yes/no/skip.
 	ErrInvalidAnswer = errors.New("review: invalid answer")
+	// ErrInvalidSource indicates a queue source outside people/labels/both.
+	ErrInvalidSource = errors.New("review: invalid source")
 )
 
 // Kind tells face and label questions apart.
@@ -170,6 +177,12 @@ const (
 	// ReasonNoSources means the library has no named people and no labels yet,
 	// so there is nothing to ask about.
 	ReasonNoSources = "no_people_no_labels"
+	// ReasonNoPeople means the game was restricted to people but the library has
+	// no named subjects — the chosen source itself is empty, not the band.
+	ReasonNoPeople = "no_people"
+	// ReasonNoLabels means the game was restricted to labels but the library has
+	// no label with photos on it.
+	ReasonNoLabels = "no_labels"
 	// ReasonNoCandidates means sources exist but no candidate currently falls
 	// inside the uncertainty band.
 	ReasonNoCandidates = "no_candidates"
@@ -207,12 +220,16 @@ type Question struct {
 type QueueResult struct {
 	// Questions is the batch, most informative first.
 	Questions []Question `json:"questions"`
+	// Source is the applied question source, echoed back so a client can tell a
+	// batch built for the selection it is showing from one that is already stale.
+	Source Source `json:"source"`
 	// Answered is how many questions this session answered so far.
 	Answered int `json:"answered"`
 	// Remaining estimates how many candidates are still queued (the cached
 	// queue's length — not recomputed per answer).
 	Remaining int `json:"remaining"`
-	// Reason explains an empty queue: ReasonNoSources or ReasonNoCandidates.
+	// Reason explains an empty queue: ReasonNoSources, ReasonNoPeople,
+	// ReasonNoLabels or ReasonNoCandidates.
 	Reason string `json:"reason,omitempty"`
 }
 
