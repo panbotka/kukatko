@@ -112,7 +112,30 @@ type Metadata struct {
 // Extract returns an error only when path is empty or the file cannot be
 // stat'ed; a readable file with no EXIF yields a Metadata with zero values for
 // the missing fields and a nil error.
+//
+// Extract reads the capture-time fallback out of path's own base name, so it is
+// only correct when the file still sits under the name it arrived with. Callers
+// holding the bytes under a staged or content-addressed name must use
+// ExtractNamed and pass the real one.
 func Extract(ctx context.Context, path string) (Metadata, error) {
+	return ExtractNamed(ctx, path, path)
+}
+
+// ExtractNamed reads the metadata of the file at path exactly as Extract does,
+// but recovers the filename capture-time fallback from name instead of from
+// path. The two are the same file for a caller reading media in place; they are
+// not for an upload, which is staged under a generated temp name while its real
+// name travels separately.
+//
+// Splitting them is not a convenience. A generated name is digits, and any run
+// of eight that happens to read as YYYYMMDD parses as a date: os.CreateTemp
+// names alone produced capture times in the year 2879 for roughly one upload in
+// thirty. A date invented from a temp name is worse than no date at all, since
+// nothing downstream can tell it from one the camera recorded.
+//
+// An empty name disables the fallback rather than reviving path's, so a caller
+// that has no real name gets no date instead of a fabricated one.
+func ExtractNamed(ctx context.Context, path, name string) (Metadata, error) {
 	if path == "" {
 		return Metadata{}, errors.New("exif: path must not be empty")
 	}
@@ -132,19 +155,20 @@ func Extract(ctx context.Context, path string) (Metadata, error) {
 		meta = extractWithFallback(path)
 	}
 
-	resolveTakenAt(&meta, path)
+	resolveTakenAt(&meta, name)
 	return meta, nil
 }
 
 // resolveTakenAt fills in TakenAt/TakenAtSource for files whose EXIF carried no
-// capture time, attempting a filename date parse before giving up. It leaves an
-// EXIF-sourced time untouched.
-func resolveTakenAt(meta *Metadata, path string) {
+// capture time, attempting a date parse of name before giving up. It leaves an
+// EXIF-sourced time untouched. name is the file's real name, which is not
+// necessarily the path the bytes were read from — see ExtractNamed.
+func resolveTakenAt(meta *Metadata, name string) {
 	if meta.TakenAt != nil {
 		meta.TakenAtSource = SourceExif
 		return
 	}
-	if when, ok := parseFilenameDate(path); ok {
+	if when, ok := parseFilenameDate(name); ok {
 		meta.TakenAt = &when
 		meta.TakenAtSource = SourceFilename
 		return

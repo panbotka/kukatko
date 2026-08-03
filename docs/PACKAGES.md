@@ -461,7 +461,13 @@ to `## Package map` in `CLAUDE.md`.
   `rwcarlsen/goexif` (+ `image.DecodeConfig`/`http.DetectContentType` for dimensions/MIME) when
   `exiftool` is missing/fails; GPS rational→decimal degrees per the `N/S/E/W` refs, `GPSAltitudeRef=1`
   → negative altitude; `taken_at` from `DateTimeOriginal` (zone-less = UTC), otherwise from the file name,
-  otherwise `unknown`; a file without EXIF (PNG) = zero values, **not an error**;
+  otherwise `unknown`; **the file-name fallback reads the name, not the path** —
+  `ExtractNamed(ctx,path,name)` takes the bytes from `path` and the date from `name`, and `Extract` is
+  it with both the same. A caller holding the bytes under a generated name (`ingest` stages every upload
+  as `os.CreateTemp` → `kukatko-ingest-<digits>`) **must** pass the real name: eight digits that happen
+  to read as `YYYYMMDD` parse as a date, which invented capture times in the year 2879 for roughly one
+  upload in thirty. An empty `name` disables the fallback (used by `video.probeWithExiftool`, whose
+  caller applies its own with the upload's name); a file without EXIF (PNG) = zero values, **not an error**;
   **IPTC/XMP + file-technical fields** (`iptc.go`, mapped onto the same-named `photos` columns):
   `Subject` ← `Subject`(scalar)/`Headline`/`XPSubject`/`ObjectName`, `Keywords` ←
   `Keywords`/`Subject`(**list**)/`XPKeywords`, `Artist` ← `Artist`/`Creator`/`By-line`/`XPAuthor`,

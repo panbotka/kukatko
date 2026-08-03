@@ -10,6 +10,8 @@ import (
 	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -379,5 +381,62 @@ func TestApplySidecar_none(t *testing.T) {
 	photo := buildPhoto(storage.StoredFile{RelPath: "2020/01/a.jpg", Hash: "h"}, media, "a.jpg", "")
 	if photo.TakenAtSource != string(exif.SourceExif) || photo.Title != "" || photo.Description != "" {
 		t.Errorf("a file with no sidecar was changed: %+v", photo)
+	}
+}
+
+// TestExtractMedia_datesFromTheUploadNameNotTheStagedFile pins down which of the
+// two names the image path reads. The upload is staged under a generated temp
+// name, so reading the date off the staged file both invents capture times out
+// of its random digits and loses the real one the uploader's name carried. The
+// staged name here is verbatim the one that produced a year-2879 photo in CI.
+func TestExtractMedia_datesFromTheUploadNameNotTheStagedFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	staged := filepath.Join(dir, "kukatko-ingest-2879101112")
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 8, 8)), nil); err != nil {
+		t.Fatalf("encode jpeg: %v", err)
+	}
+	if err := os.WriteFile(staged, buf.Bytes(), 0o600); err != nil {
+		t.Fatalf("write staged file: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		filename   string
+		wantSource exif.Source
+		wantTaken  *time.Time
+	}{
+		{
+			name:       "no date anywhere means no date",
+			filename:   "lake.jpg",
+			wantSource: exif.SourceUnknown,
+		},
+		{
+			name:       "the uploader's date survives staging",
+			filename:   "IMG_20230115_143052.jpg",
+			wantSource: exif.SourceFilename,
+			wantTaken:  new(time.Date(2023, 1, 15, 14, 30, 52, 0, time.UTC)),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			media, err := extractMedia(context.Background(), staged, tc.filename)
+			if err != nil {
+				t.Fatalf("extractMedia() error = %v", err)
+			}
+			if media.shared.TakenAtSource != tc.wantSource {
+				t.Errorf("TakenAtSource = %q, want %q", media.shared.TakenAtSource, tc.wantSource)
+			}
+			switch {
+			case tc.wantTaken == nil && media.shared.TakenAt != nil:
+				t.Errorf("TakenAt = %v, want nil (the staged name must not be read)", media.shared.TakenAt)
+			case tc.wantTaken != nil && (media.shared.TakenAt == nil || !media.shared.TakenAt.Equal(*tc.wantTaken)):
+				t.Errorf("TakenAt = %v, want %v", media.shared.TakenAt, *tc.wantTaken)
+			}
+		})
 	}
 }

@@ -537,7 +537,7 @@ type videoFields struct {
 // is reported as an error (the only fatal case — see extractVideoMedia).
 func extractMedia(ctx context.Context, path, filename string) (mediaMeta, error) {
 	if !video.IsVideoPath(filename) {
-		return mediaMeta{kind: photos.MediaImage, shared: extractMeta(ctx, path)}, nil
+		return mediaMeta{kind: photos.MediaImage, shared: extractMeta(ctx, path, filename)}, nil
 	}
 	return extractVideoMedia(ctx, path, filename)
 }
@@ -545,8 +545,14 @@ func extractMedia(ctx context.Context, path, filename string) (mediaMeta, error)
 // extractMeta reads EXIF/GPS metadata from the staged file, degrading to an
 // empty (unknown-source) Metadata when extraction fails so a file with no EXIF
 // is never a reason to reject an upload.
-func extractMeta(ctx context.Context, path string) exif.Metadata {
-	meta, err := exif.Extract(ctx, path)
+//
+// The bytes are read from path — the staged temp file — while the capture-time
+// fallback reads filename, the name the upload arrived under. The staged file is
+// named by os.CreateTemp, so its name is a random number that parses as a date
+// often enough to matter; this mirrors what the video path already does through
+// sharedFromVideo.
+func extractMeta(ctx context.Context, path, filename string) exif.Metadata {
+	meta, err := exif.ExtractNamed(ctx, path, filename)
 	if err != nil {
 		return exif.Metadata{TakenAtSource: exif.SourceUnknown}
 	}

@@ -75,3 +75,57 @@ func TestExtract_unknownSource(t *testing.T) {
 		t.Errorf("TakenAt = %v, want nil", meta.TakenAt)
 	}
 }
+
+// TestExtractNamed_readsTheGivenNameNotThePath is the regression test for the
+// staged-upload bug: the bytes live under a generated temp name while the real
+// name travels separately, and reading the date off the wrong one invented
+// capture times out of random digits. The temp name here is verbatim the one
+// that put a photo in the year 2879 in CI.
+func TestExtractNamed_readsTheGivenNameNotThePath(t *testing.T) {
+	t.Parallel()
+
+	staged := writePNG(t, filepath.Join(t.TempDir(), "kukatko-ingest-2879101112"), 2, 2)
+
+	tests := []struct {
+		name       string
+		upload     string
+		wantSource Source
+		wantTaken  *time.Time
+	}{
+		{
+			name:       "undated upload name gets no date at all",
+			upload:     "lake.jpg",
+			wantSource: SourceUnknown,
+		},
+		{
+			name:       "dated upload name is recovered through the staged file",
+			upload:     "IMG_20230115_143052.jpg",
+			wantSource: SourceFilename,
+			wantTaken:  new(time.Date(2023, 1, 15, 14, 30, 52, 0, time.UTC)),
+		},
+		{
+			name:       "no name at all is not an invitation to fall back to the path",
+			upload:     "",
+			wantSource: SourceUnknown,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			meta, err := ExtractNamed(context.Background(), staged, tc.upload)
+			if err != nil {
+				t.Fatalf("ExtractNamed() error = %v", err)
+			}
+			if meta.TakenAtSource != tc.wantSource {
+				t.Errorf("TakenAtSource = %q, want %q", meta.TakenAtSource, tc.wantSource)
+			}
+			switch {
+			case tc.wantTaken == nil && meta.TakenAt != nil:
+				t.Errorf("TakenAt = %v, want nil (the staged name must not be read)", meta.TakenAt)
+			case tc.wantTaken != nil && (meta.TakenAt == nil || !meta.TakenAt.Equal(*tc.wantTaken)):
+				t.Errorf("TakenAt = %v, want %v", meta.TakenAt, *tc.wantTaken)
+			}
+		})
+	}
+}

@@ -14,8 +14,14 @@ import (
 // (the shared time/GPS/dimension fields) and augments it with the video-only
 // fields — duration, frame rate, codecs — pulled from the raw exiftool tag
 // document. It is the fallback used when ffprobe is not installed.
+//
+// It asks for no filename date fallback (the empty name), because path is
+// whatever file the caller holds the bytes in — during ingest a generated temp
+// name, whose digits parse as a date often enough to matter. A capture time
+// invented here would be indistinguishable from one the camera wrote; the
+// caller that knows the video's real name applies that fallback itself.
 func probeWithExiftool(ctx context.Context, path string) (Metadata, error) {
-	em, err := exif.Extract(ctx, path)
+	em, err := exif.ExtractNamed(ctx, path, "")
 	if err != nil {
 		return Metadata{}, fmt.Errorf("video: exiftool fallback: %w", err)
 	}
