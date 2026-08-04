@@ -69,8 +69,12 @@ function label(uid: string, name: string, photoCount: number): LabelCount {
   }
 }
 
-/** A subject the person facet offers, trimmed to the fields the bar reads. */
-function subject(uid: string, name: string, markerCount: number): SubjectCount {
+/**
+ * A subject the person facet offers, trimmed to the fields the bar reads. The
+ * marker count is deliberately the larger of the two — the bar filters photos, so
+ * showing the marker count would overstate what picking the person yields.
+ */
+function subject(uid: string, name: string, photoCount: number): SubjectCount {
   return {
     uid,
     slug: uid,
@@ -81,7 +85,8 @@ function subject(uid: string, name: string, markerCount: number): SubjectCount {
     notes: '',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
-    marker_count: markerCount,
+    marker_count: photoCount + 100,
+    photo_count: photoCount,
   }
 }
 
@@ -346,13 +351,16 @@ describe('FilterBar facets', () => {
     expect(onChange).toHaveBeenCalledWith({ label: 'lb_1,lb_2' })
   })
 
-  it('offers each subject in the person facet with its marker count', async () => {
+  it('offers each subject in the person facet with its photo count', async () => {
     const user = userEvent.setup()
     renderBar(LIBRARY_DEFAULTS, vi.fn(), { facets: FACETS })
 
     await user.click(screen.getByLabelText('Person'))
-    expect(screen.getByRole('option', { name: /Alice/ })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /Bob/ })).toBeInTheDocument()
+    // The count beside a person is how many photos picking them yields — the same
+    // question the album and label options answer, not how many faces were found.
+    expect(screen.getByRole('option', { name: /Alice/ })).toHaveTextContent('9')
+    expect(screen.getByRole('option', { name: /Alice/ })).not.toHaveTextContent('109')
+    expect(screen.getByRole('option', { name: /Bob/ })).toHaveTextContent('5')
   })
 
   it('writes the person picked from the searchable select to the view state', async () => {

@@ -137,11 +137,11 @@ type labelInfo struct {
 }
 
 // subjectInfo is a subject — a person, an animal or another recurring
-// character — as the tools report it. The two counters are different questions
-// and only one is answered at a time: list_subjects reports FaceCount because
-// that is what a listing can count cheaply, and get_subject reports PhotoCount
-// because that is what someone asking about one person means. They are not
-// interchangeable — one photo can hold several of a person's faces.
+// character — as the tools report it. The two counters are different questions:
+// FaceCount is how many faces were recognised, PhotoCount on how many photos the
+// person appears. They are not interchangeable — one photo can hold several of a
+// person's faces — so list_subjects reports both and get_subject, which looks the
+// photos up one subject at a time, reports only PhotoCount.
 type subjectInfo struct {
 	UID  string `json:"uid"`
 	Slug string `json:"slug"`

@@ -273,6 +273,7 @@ describe('FacesPanel', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         marker_count: 12,
+        photo_count: 10,
       },
     ])
     const selected = faceView({ face_index: 0 })

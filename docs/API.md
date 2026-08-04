@@ -476,8 +476,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `review.LeaderboardStore` over the shared pool; the partial index `idx_audit_log_review_actor`
   (migration `0037`) keeps the scan cheap.
 - **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
-  `{subjects:[{...subject, marker_count, cover_face?}]}` (ordered by name, counts of non-invalid
-  markers). `cover_face` = `{photo_uid,x,y,w,h,width,height,orientation}` — the face by which the
+  `{subjects:[{...subject, marker_count, photo_count, cover_face?}]}` (ordered by name). Both counts
+  cover only non-invalid markers on visible photos and they are **not interchangeable**:
+  `marker_count` counts markers (the figure the face tools want), `photo_count` counts **distinct
+  photos** and is smaller whenever one photo carries several of the person's faces (on production the
+  catch-all subject had 16 531 markers on 6 767 photos). A "N photos" label must use `photo_count` —
+  it is the length of the list `GET /subjects/{uid}/photos` pages through.
+  `cover_face` = `{photo_uid,x,y,w,h,width,height,orientation}` — the face by which the
   subject is illustrated in the people grid when it **has no** `cover_photo_uid`; absent when the subject has no
   usable marker. Picked by `listSubjectsSQL` (the largest box, then `score`, then `uid`; only
   `type='face'`, non-invalid, on a visible photo). `width`/`height`/`orientation` are the stored frame of the

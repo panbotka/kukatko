@@ -178,13 +178,22 @@ func updateSubjectTx(ctx context.Context, tx pgx.Tx, uid string, upd SubjectUpda
 	return updated, err
 }
 
-// listSubjectsSQL reads every subject with its count of valid (non-invalid)
-// markers that fall on a visible photo plus the face that illustrates it, ordered
-// by name then uid for a stable people-index display. The subject columns are
-// alias-qualified because the markers join also exposes a uid column. The photos
-// join restricts the count to visible members (not archived, not a non-primary
-// stack member) so the badge agrees with the subject's gallery: COUNT(p.uid)
-// ignores the NULL rows a marker on a hidden photo joins as.
+// listSubjectsSQL reads every subject with its two counts and the face that
+// illustrates it, ordered by name then uid for a stable people-index display. The
+// subject columns are alias-qualified because the markers join also exposes a uid
+// column. The photos join restricts both counts to visible members (not archived,
+// not a non-primary stack member) so they agree with the subject's gallery:
+// COUNT ignores the NULL rows a marker on a hidden photo joins as.
+//
+// The two counts answer different questions and the caller picks the one it means:
+//
+//   - marker_count — how many faces of this subject exist. The figure the face
+//     tools want, since they work one marker at a time.
+//   - photo_count — on how many photos the subject appears, which is
+//     COUNT(DISTINCT p.uid) because one photo can carry several markers of the
+//     same subject. This is what the people index shows, because clicking a tile
+//     opens listSubjectPhotoUIDsSQL, which is distinct by photo too — a badge is a
+//     promise about the next page.
 //
 // The best_face CTE picks the one face per subject the tile is cropped to. The
 // ordering is the whole rule, so it is worth saying why each term is there:
@@ -223,6 +232,7 @@ WITH best_face AS (
 )
 SELECT s.uid, s.slug, s.name, s.type, s.favorite, s.private, s.notes,
        s.cover_photo_uid, s.created_at, s.updated_at, COUNT(p.uid) AS marker_count,
+       COUNT(DISTINCT p.uid) AS photo_count,
        bf.photo_uid, bf.x, bf.y, bf.w, bf.h,
        bf.file_width, bf.file_height, bf.file_orientation
 FROM subjects s
@@ -247,7 +257,7 @@ func scanSubjectCount(row pgx.Row) (SubjectCount, error) {
 	if err := row.Scan(
 		&sc.UID, &sc.Slug, &sc.Name, &sc.Type, &sc.Favorite, &sc.Private,
 		&sc.Notes, &sc.CoverPhotoUID, &sc.CreatedAt, &sc.UpdatedAt, &sc.MarkerCount,
-		&photoUID, &x, &y, &w, &h, &width, &height, &orientation,
+		&sc.PhotoCount, &photoUID, &x, &y, &w, &h, &width, &height, &orientation,
 	); err != nil {
 		return SubjectCount{}, fmt.Errorf("people: scanning subject count: %w", err)
 	}
@@ -276,8 +286,9 @@ func deref[T any](ptr *T) T {
 }
 
 // ListSubjects returns every subject together with how many non-invalid markers
-// reference it and the face picked to illustrate it, ordered by name then uid. A
-// store with no subjects yields an empty slice and a nil error.
+// reference it, on how many photos those markers sit, and the face picked to
+// illustrate it, ordered by name then uid. A store with no subjects yields an
+// empty slice and a nil error.
 func (s *Store) ListSubjects(ctx context.Context) ([]SubjectCount, error) {
 	rows, err := s.pool.Query(ctx, listSubjectsSQL)
 	if err != nil {

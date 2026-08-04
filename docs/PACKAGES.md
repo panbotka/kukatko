@@ -915,8 +915,12 @@ to `## Package map` in `CLAUDE.md`.
   it — in production that collected 16 532 markers on a single fake person (fixed in `psfeedsimport`,
   `psimport`, `ppimport`, `facematch`; `peopleapi` rejects such a name with 400; the repair for existing
   data is `kukatko maintenance nameless-subjects`, see [`OPERATIONS.md`](OPERATIONS.md))/
-  `UpdateSubject`(re-slugging + refresh of the `faces.subject_name` cache)/`ListSubjects` (with counts of
-  non-archived... i.e. **non-invalid** markers per subject, ordered by name; plus
+  `UpdateSubject`(re-slugging + refresh of the `faces.subject_name` cache)/`ListSubjects` (ordered by
+  name, with **two** counts over the same non-invalid markers on visible photos: `MarkerCount` =
+  `COUNT(p.uid)`, what the face tools mean, and `PhotoCount` = `COUNT(DISTINCT p.uid)`, what the
+  people index shows — they part company when one photo carries several markers of the same subject,
+  and `PhotoCount` is exactly the length of `ListPhotoUIDsBySubject`, so a "N photos" badge keeps its
+  promise about the gallery behind it; plus
   `CoverFace *SubjectFace` = the face that illustrates the subject in the people grid when it has no
   `cover_photo_uid` — the `best_face` CTE in `listSubjectsSQL` takes per subject a `DISTINCT ON` with
   the order **`w*h DESC, score DESC, uid`**: the tile is a square zoomed from the crop of the cache
@@ -1412,7 +1416,7 @@ to `## Package map` in `CLAUDE.md`.
   → unit-testable with fakes without a DB; `NewAPI(Config{Subjects,Photos,RequireAuth,RequireWrite})`+
   `RegisterRoutes` mounts **flat** paths (not a mounted subrouter, so they coexist with
   `outlierapi`'s `GET /subjects/{uid}/outliers` without a chi Mount conflict): `GET /subjects`
-  (RequireAuth, `{subjects:[SubjectCount]}` with marker counts), `POST /subjects` (RequireWrite,
+  (RequireAuth, `{subjects:[SubjectCount]}` with marker **and** photo counts), `POST /subjects` (RequireWrite,
   create → 201, name/type validation), `GET /subjects/{uid}` (RequireAuth), `PATCH /subjects/{uid}`
   (RequireWrite, editing name/type/favorite/private/notes/cover_photo_uid), `DELETE /subjects/{uid}`
   (RequireWrite → 204), `GET /subjects/{uid}/photos` (RequireAuth, a paginated gallery of the subject's photos
@@ -2867,7 +2871,8 @@ to `## Package map` in `CLAUDE.md`.
     `WritePhotoDetail`, `WriteContexts` (**the token is never printed**, only `stored`/`not set`).
     An empty result = the single line `no photos found`, no header — so that an agent does not mistake a header
     for a row.
-  - `render.go` — `WriteAlbums`/`WriteAlbum`, `WriteLabels`/`WriteLabel`, `WriteSubjects`/`WriteSubject`,
+  - `render.go` — `WriteAlbums`/`WriteAlbum`, `WriteLabels`/`WriteLabel`, `WriteSubjects` (both counts,
+    `PHOTOS` and `MARKERS`, because they answer different questions)/`WriteSubject`,
     `WriteMembership` (one line: how many photos the album now holds), `WriteBulkResult` (a summary + a table of
     the failed photos **only**) and `WriteAck`. `Ack` is the only payload the CLI **makes up itself**: where
     the API answers `204` there is nothing to pass through unchanged, so `-o json` gets

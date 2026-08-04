@@ -415,7 +415,10 @@ function FacetRow({
             .map((subject) => ({
               value: subject.uid,
               label: subject.name,
-              count: subject.marker_count,
+              // A photo count, like the album and label options above it: picking
+              // a person filters the library to photos, and one photo can carry
+              // several of that person's faces.
+              count: subject.photo_count,
             }))}
           onChange={(value) => {
             push({ person: addToFilterList(view.person, value) })

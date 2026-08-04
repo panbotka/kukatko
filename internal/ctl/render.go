@@ -102,7 +102,10 @@ func WriteLabel(w io.Writer, label Label) error {
 }
 
 // WriteSubjects renders the subject list as a compact table, in the API's name
-// order. MARKERS is how many non-invalid face markers point at the subject.
+// order. MARKERS is how many non-invalid face markers point at the subject and
+// PHOTOS on how many photos those markers sit — both columns, because a marker
+// count is what the face tools mean and a photo count is what the gallery shows,
+// and one photo can hold several faces of the same person.
 func WriteSubjects(w io.Writer, subjects []Subject) error {
 	if len(subjects) == 0 {
 		return writeLine(w, "no subjects found")
@@ -113,15 +116,17 @@ func WriteSubjects(w io.Writer, subjects []Subject) error {
 			subject.UID,
 			elide(dash(subject.Name), nameWidth),
 			dash(subject.Type),
+			strconv.Itoa(subject.PhotoCount),
 			strconv.Itoa(subject.MarkerCount),
 			strconv.FormatBool(subject.Favorite),
 		})
 	}
-	return writeTable(w, []string{"UID", "NAME", "TYPE", "MARKERS", "FAVORITE"}, rows)
+	return writeTable(w,
+		[]string{"UID", "NAME", "TYPE", "PHOTOS", "MARKERS", "FAVORITE"}, rows)
 }
 
-// WriteSubject renders one subject as an aligned key/value table. MARKERS is
-// absent: the detail endpoint does not count them.
+// WriteSubject renders one subject as an aligned key/value table. PHOTOS and
+// MARKERS are absent: the detail endpoint does not count them.
 func WriteSubject(w io.Writer, subject Subject) error {
 	return writeKeyValues(w, [][2]string{
 		{"UID", subject.UID},

@@ -708,7 +708,9 @@ A read/curation HTTP API over subjects (people/animals/other) — the backend fo
 interfaces (`SubjectStore` = a subset of `people.Store`, `PhotoStore` = `photos.Store.ListByUIDs`),
 so it unit-tests with fakes without a DB.
 
-- `GET /subjects` (RequireAuth) → `{subjects:[{...subject, marker_count}]}` (sorted by name).
+- `GET /subjects` (RequireAuth) → `{subjects:[{...subject, marker_count, photo_count}]}` (sorted by
+  name). `marker_count` counts faces, `photo_count` distinct photos — one photo can hold several of a
+  person's faces, so a "N photos" label must use the latter.
 - `POST /subjects` (RequireWrite) → 201 creates a subject from `{name, type, favorite, private, notes,
   cover_photo_uid?}`; body via `DisallowUnknownFields` + 1 MiB limit, empty name/unknown type → 400.
 - `GET /subjects/{uid}` (RequireAuth) → the subject (404 if missing).
@@ -1058,8 +1060,9 @@ mounted).
 A complete human experience over the APIs above (react-bootstrap Superhero, i18n cs/en,
 responsive/touch). Routes in the `Layout` navbar under the **Lidé** link (`/people`):
 
-- **`/people`** (`PeoplePage`) — a grid of people (`SubjectTile`: cover/name/photo count);
-  editors get a link to cluster review.
+- **`/people`** (`PeoplePage`) — a grid of people (`SubjectTile`: cover/name/photo count, counting
+  photos rather than faces so the badge matches the gallery it opens); editors get a link to cluster
+  review.
 - **`/people/:uid`** (`SubjectPage`) — a person's page: header (name/type, edit via
   `SubjectEditModal`), a paginated gallery (`useSubjectPhotos` + `SubjectPhotoTile` with a "set as
   cover" action), and an **outliers** section (`Outliers` — a ranking of suspicious faces, one-tap unassign;
@@ -1604,7 +1607,7 @@ Endpoints under `/api/v1` (JSON):
 | POST | `/faces/clusters/{id}/assign` | editor/admin | assigns an **entire cluster** to one subject `{subject_uid?,subject_name?}` (find-or-create by name) → markers for all faces; the cluster is consumed |
 | POST | `/faces/clusters/{id}/remove-face` | editor/admin | detaches a stray face `{photo_uid,face_index}` from the cluster before naming it → the refreshed cluster (or `null` when it is orphaned) |
 | GET | `/subjects/{uid}/outliers` | editor/admin | a person's faces ordered by distance from the centroid (most suspicious first) → `{subject_uid,count,meaningful,faces:[{photo_uid,face_index,bbox,distance,…}]}`; 1–2 faces → `meaningful:false` (see `internal/outliers`); a wrong face is detached via the assign API |
-| GET | `/subjects` | authenticated | list of subjects with photo counts → `{subjects:[{…subject, marker_count}]}` (see Subjects / People API) |
+| GET | `/subjects` | authenticated | list of subjects with their marker and photo counts → `{subjects:[{…subject, marker_count, photo_count}]}` (see Subjects / People API) |
 | POST | `/subjects` | editor/admin | `{name,type,favorite,private,notes,cover_photo_uid?}` → 201 creates a subject (empty name/unknown type → 400) |
 | GET | `/subjects/{uid}` | authenticated | subject detail (404 missing) |
 | PATCH | `/subjects/{uid}` | editor/admin | edits `name/type/favorite/private/notes/cover_photo_uid` |

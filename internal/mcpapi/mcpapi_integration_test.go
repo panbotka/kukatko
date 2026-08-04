@@ -736,6 +736,16 @@ func TestMCPListAndLookupCollections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
+	// Two of her faces on the one photo, so the listing's two counters cannot be
+	// mistaken for each other.
+	for _, box := range [][4]float64{{0.1, 0.1, 0.2, 0.2}, {0.5, 0.1, 0.2, 0.2}} {
+		if _, err := e.people.CreateMarker(t.Context(), people.Marker{
+			PhotoUID: photoUID, SubjectUID: &subj.UID, Type: people.MarkerFace,
+			X: box[0], Y: box[1], W: box[2], H: box[3],
+		}); err != nil {
+			t.Fatalf("CreateMarker: %v", err)
+		}
+	}
 
 	// A name filter narrows the listing.
 	var albums struct {
@@ -761,13 +771,19 @@ func TestMCPListAndLookupCollections(t *testing.T) {
 
 	var subjects struct {
 		People []struct {
-			UID  string `json:"uid"`
-			Name string `json:"name"`
+			UID        string `json:"uid"`
+			Name       string `json:"name"`
+			FaceCount  int    `json:"face_count"`
+			PhotoCount int    `json:"photo_count"`
 		} `json:"people"`
 	}
 	e.mustCall(t, bearer, "list_subjects", map[string]any{}).decode(t, &subjects)
 	if len(subjects.People) != 1 || subjects.People[0].UID != subj.UID {
 		t.Fatalf("list_subjects = %+v, want the one subject", subjects.People)
+	}
+	if subjects.People[0].FaceCount != 2 || subjects.People[0].PhotoCount != 1 {
+		t.Errorf("list_subjects counts = %d faces / %d photos, want 2/1: she is twice in one frame",
+			subjects.People[0].FaceCount, subjects.People[0].PhotoCount)
 	}
 
 	// A missing thing is a clear refusal, not an empty success.

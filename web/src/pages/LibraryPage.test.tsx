@@ -152,7 +152,7 @@ function label(uid: string, name: string, photoCount: number): LabelCount {
 }
 
 /** A subject the person facet offers, trimmed to the fields the bar reads. */
-function subject(uid: string, name: string, markerCount: number): SubjectCount {
+function subject(uid: string, name: string, photoCount: number): SubjectCount {
   return {
     uid,
     slug: uid,
@@ -163,7 +163,8 @@ function subject(uid: string, name: string, markerCount: number): SubjectCount {
     private: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
-    marker_count: markerCount,
+    marker_count: photoCount,
+    photo_count: photoCount,
   }
 }
 

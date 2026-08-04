@@ -7,14 +7,16 @@ import (
 	"testing"
 )
 
-// subjectsBody is a realistic bare {"subjects": […]} envelope.
+// subjectsBody is a realistic bare {"subjects": […]} envelope. Anna's two counts
+// differ, as they do for anyone photographed twice in one frame.
 const subjectsBody = `{"subjects":[
-	{"uid":"sub01","slug":"anna","name":"Anna","type":"person","favorite":true,"marker_count":128},
-	{"uid":"sub02","slug":"rex","name":"Rex","type":"pet","marker_count":9}
+	{"uid":"sub01","slug":"anna","name":"Anna","type":"person","favorite":true,
+	 "marker_count":128,"photo_count":120},
+	{"uid":"sub02","slug":"rex","name":"Rex","type":"pet","marker_count":9,"photo_count":9}
 ]}`
 
 // TestClient_ListSubjects verifies the bare subject envelope decodes with its own
-// decoder, marker counts included.
+// decoder, both counts included and kept apart.
 func TestClient_ListSubjects(t *testing.T) {
 	t.Parallel()
 
@@ -38,7 +40,8 @@ func TestClient_ListSubjects(t *testing.T) {
 	if len(subjects) != 2 {
 		t.Fatalf("subjects = %+v, want two rows", subjects)
 	}
-	if subjects[0].Name != "Anna" || !subjects[0].Favorite || subjects[0].MarkerCount != 128 {
+	if subjects[0].Name != "Anna" || !subjects[0].Favorite ||
+		subjects[0].MarkerCount != 128 || subjects[0].PhotoCount != 120 {
 		t.Errorf("first subject = %+v, want the decoded Anna subject", subjects[0])
 	}
 	if subjects[1].Type != "pet" {
@@ -92,8 +95,9 @@ func TestClient_GetSubject(t *testing.T) {
 	if subject.CoverPhotoUID == nil || *subject.CoverPhotoUID != "pht09" {
 		t.Errorf("cover = %v, want pht09", subject.CoverPhotoUID)
 	}
-	if subject.MarkerCount != 0 {
-		t.Errorf("marker_count = %d, want zero: the detail endpoint does not send one", subject.MarkerCount)
+	if subject.MarkerCount != 0 || subject.PhotoCount != 0 {
+		t.Errorf("counts = %d markers / %d photos, want zero: the detail endpoint sends neither",
+			subject.MarkerCount, subject.PhotoCount)
 	}
 }
 

@@ -116,12 +116,20 @@ type SubjectFace struct {
 	Orientation int `json:"orientation"`
 }
 
-// SubjectCount is a subject paired with how many valid (non-invalid) markers
-// reference it, as returned by ListSubjects.
+// SubjectCount is a subject paired with how much of the library it appears on,
+// as returned by ListSubjects. It carries both counts because they answer
+// different questions and the caller knows which one it is asking: the face tools
+// work marker by marker, the people index shows photos.
 type SubjectCount struct {
 	Subject
-	// MarkerCount is the number of non-invalid markers assigned to the subject.
+	// MarkerCount is the number of non-invalid markers assigned to the subject
+	// that fall on a visible photo.
 	MarkerCount int `json:"marker_count"`
+	// PhotoCount is how many visible photos the subject appears on. It is at most
+	// MarkerCount and lower whenever one photo carries several of the subject's
+	// markers, which is why the two are not interchangeable. This is the figure
+	// the subject's gallery pages through.
+	PhotoCount int `json:"photo_count"`
 	// CoverFace is the subject's automatically picked face, nil when none of its
 	// markers is usable. It is a fallback the client uses only when the subject has
 	// no CoverPhotoUID: an explicitly chosen cover is a decision, and this is a

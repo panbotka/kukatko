@@ -545,7 +545,7 @@ creating and editing subjects belongs in the UI, where the face gallery is visib
 
 | Command | Meaning |
 | --- | --- |
-| `ctl subjects list` | `GET /subjects` — a **bare `{"subjects":[…]}`**, with a marker count |
+| `ctl subjects list` | `GET /subjects` — a **bare `{"subjects":[…]}`**; `PHOTOS` = distinct photos, `MARKERS` = faces |
 | `ctl subjects get <uid>` | `GET /subjects/{uid}` |
 | `ctl subjects photos <uid>` | `GET /subjects/{uid}/photos`; `--limit`/`--offset` |
 

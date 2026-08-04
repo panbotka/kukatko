@@ -160,6 +160,7 @@ export function FaceAssignPanel({
             options={subjects.map((subject) => ({
               uid: subject.uid,
               label: subject.name,
+              // Naming a face is face work, so the hint counts faces, not photos.
               hint: String(subject.marker_count),
             }))}
             onAdd={(uid) => {

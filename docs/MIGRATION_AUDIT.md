@@ -248,7 +248,7 @@ and does not overwrite a local edit (the same behavior as `psimport`).
 | `Subject.Name` | `subjects.name` | **WAIVED** | Redundant: the name arrives via `Marker.Name`, the `Subject.Name` field itself is not read — nothing of value is lost. |
 | `Subject.UID` | (index `SubjUID`→subject) | **MAPPED** | Not stored as a column, but `loadSubjectIndex` uses it as the key through which a marker (`Marker.SubjUID`) finds its PP subject to enrich `type`/`favorite`/`private`. Kukátko's `subjects.uid` is still generated on its own. |
 | `Subject.Slug` | `subjects.slug` | **WAIVED** | Kukátko generates the slug from the name (`people.Slugify`); the PP subject's slug only serves as a fallback index key. |
-| `Subject.FileCount` | — (no column) | **WAIVED** | Kukátko counts markers live (`ListSubjects`/`SubjectCount`), it does not cache. |
+| `Subject.FileCount` | — (no column) | **WAIVED** | Kukátko counts live (`ListSubjects`/`SubjectCount` reports markers **and** distinct photos), it does not cache. |
 | `Subject.Type` | `subjects.type` | **MAPPED** | `mapSubjectType` (`pet`/`other`/default `person`), same as `psimport`. An animal keeps its type; set when the subject is created. |
 | `Subject.Favorite` | `subjects.favorite` | **MAPPED** | Carried when the subject is created (`newSubject`); a global column, not per-user. |
 | `Subject.Private` | `subjects.private` | **MAPPED** | A private person from PP stays private. Set when the subject is created. |
