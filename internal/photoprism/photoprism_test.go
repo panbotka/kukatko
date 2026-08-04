@@ -15,8 +15,24 @@ import (
 
 // newTestClient builds an HTTPClient pointed at base with tiny backoff delays so
 // retry tests run fast.
+// newTestClient builds a client against base with retries tuned for a test's
+// patience rather than a server's.
+//
+// It gives every client its **own** transport. Without one, New falls back to
+// `&http.Client{}`, whose transport is the process-wide http.DefaultTransport —
+// so all 19 parallel tests in this file share a single connection pool while each
+// raises and tears down its own httptest.Server. Tearing one down can then evict
+// a pooled connection another test is about to reuse, which surfaces as
+// `transport connection broken: http: CloseIdleConnections called` in whichever
+// test happened to be mid-request. That is a property of the pool, not of the
+// client under test, and it failed CI on 2026-08-03 in
+// TestDownloadOriginal_refreshesSessionOnUnauthorized. It shows up under -race
+// because the detector widens the window, which is also why `make check` never
+// saw it.
 func newTestClient(t *testing.T, base string) *HTTPClient {
 	t.Helper()
+	transport := &http.Transport{}
+	t.Cleanup(transport.CloseIdleConnections)
 	c, err := New(Config{
 		BaseURL:        base,
 		Token:          "test-token",
@@ -24,6 +40,7 @@ func newTestClient(t *testing.T, base string) *HTTPClient {
 		MaxRetries:     5,
 		RetryBaseDelay: time.Millisecond,
 		RetryMaxDelay:  5 * time.Millisecond,
+		HTTPClient:     &http.Client{Transport: transport},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
