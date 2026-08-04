@@ -115,9 +115,23 @@ export interface SubjectFace {
   orientation: number
 }
 
-/** A subject paired with its non-invalid marker count (`people.SubjectCount`). */
+/**
+ * A subject paired with how much of the library it appears on
+ * (`people.SubjectCount`). The two counts are different questions and the call
+ * site picks the one it means — see the fields.
+ */
 export interface SubjectCount extends Subject {
+  /**
+   * How many non-invalid markers on visible photos point at the subject. This is
+   * the figure the face tools want: they work one marker at a time.
+   */
   marker_count: number
+  /**
+   * On how many visible photos the subject appears — at most `marker_count`, and
+   * lower whenever one photo carries several of the subject's faces. This is what
+   * a "N photos" label must use, because it is what the subject's gallery shows.
+   */
+  photo_count: number
   /**
    * The automatically picked face, absent when the subject has no usable marker.
    * It is a *fallback* for a subject with no `cover_photo_uid` and never overrides
@@ -145,7 +159,7 @@ export interface SubjectInput {
   cover_photo_uid: string | null
 }
 
-/** Lists every subject with its photo (marker) count, ordered by name. */
+/** Lists every subject with its photo and marker counts, ordered by name. */
 export async function fetchSubjects(signal?: AbortSignal): Promise<SubjectCount[]> {
   const body = await getJSON<SubjectsResponse>('/subjects', signal)
   return body.subjects

@@ -15,7 +15,7 @@ const (
 		`"private":false},{"uid":"alb02","title":"Moments","type":"moment","photo_count":3,"private":true}]}`
 	labelsListBody = `{"labels":[{"uid":"lbl01","name":"lake","priority":10,"photo_count":42}]}`
 	subjectsBody   = `{"subjects":[{"uid":"sub01","name":"Anna","type":"person","favorite":true,` +
-		`"marker_count":128}]}`
+		`"marker_count":128,"photo_count":120}]}`
 	bulkBody = `{"results":[{"photo_uid":"pht01","status":"updated"}],` +
 		`"counts":{"total":1,"updated":1,"skipped":0,"errored":0}}`
 )
@@ -145,7 +145,9 @@ func TestCtlSubjects_listGetAndPhotos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subjects list returned %v", err)
 	}
-	for _, want := range []string{"UID", "NAME", "MARKERS", "sub01", "Anna", "128"} {
+	for _, want := range []string{
+		"UID", "NAME", "PHOTOS", "MARKERS", "sub01", "Anna", "128", "120",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("subject table does not contain %q:\n%s", want, out)
 		}

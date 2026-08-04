@@ -132,11 +132,13 @@ func do(t *testing.T, h http.Handler, method, target, body string) *httptest.Res
 	return rec
 }
 
-// TestHandleList_ok returns the subjects with their counts.
+// TestHandleList_ok returns the subjects with both of their counts. They are set
+// apart here on purpose: a client picks between them by name, so the response
+// must carry each under its own key rather than one number twice.
 func TestHandleList_ok(t *testing.T) {
 	t.Parallel()
 	subjects := &fakeSubjects{list: []people.SubjectCount{
-		{Subject: people.Subject{UID: "su_a", Name: "Alice"}, MarkerCount: 3},
+		{Subject: people.Subject{UID: "su_a", Name: "Alice"}, MarkerCount: 3, PhotoCount: 2},
 	}}
 	rec := do(t, newServer(subjects, fakePhotos{}), http.MethodGet, "/subjects", "")
 	if rec.Code != http.StatusOK {
@@ -148,7 +150,8 @@ func TestHandleList_ok(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(got.Subjects) != 1 || got.Subjects[0].MarkerCount != 3 {
+	if len(got.Subjects) != 1 ||
+		got.Subjects[0].MarkerCount != 3 || got.Subjects[0].PhotoCount != 2 {
 		t.Errorf("body mismatch: %+v", got.Subjects)
 	}
 }

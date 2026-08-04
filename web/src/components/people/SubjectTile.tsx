@@ -12,7 +12,7 @@ import { FaceCrop } from './FaceCrop'
 
 /** Props for {@link SubjectTile}. */
 export interface SubjectTileProps {
-  /** The subject with its photo (marker) count. */
+  /** The subject with its counts. */
   subject: SubjectCount
 }
 
@@ -25,6 +25,11 @@ export interface SubjectTileProps {
  * falls back to a crop of their own face taken from a photo they appear on — see
  * {@link subjectTileImage} for which image wins. Only a subject with no usable
  * face at all keeps the placeholder.
+ *
+ * The count is `photo_count`, not `marker_count`: the caption says "photos", and
+ * the tile links straight to the subject's gallery, which lists each photo once
+ * however many of the person's faces it holds. The face tools next door show
+ * `marker_count` instead, which is the right figure for them.
  */
 export function SubjectTile({ subject }: SubjectTileProps) {
   const { t } = useTranslation()
@@ -72,7 +77,7 @@ export function SubjectTile({ subject }: SubjectTileProps) {
       </div>
       <div className="fw-semibold text-truncate">{subject.name}</div>
       <div className="kk-text-caption text-secondary">
-        {t('people.photoCount', { count: subject.marker_count })}
+        {t('people.photoCount', { count: subject.photo_count })}
       </div>
     </Link>
   )

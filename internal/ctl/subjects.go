@@ -11,9 +11,10 @@ import (
 
 // Subject is the subset of a subject payload the CLI renders. A subject is a
 // person, a pet or another recurring thing the face pipeline groups markers
-// under. MarkerCount is only populated by GET /subjects, which pairs every
-// subject with its non-invalid marker count; GET /subjects/{uid} returns a bare
-// subject and leaves it zero.
+// under. MarkerCount and PhotoCount are only populated by GET /subjects, which
+// pairs every subject with both; GET /subjects/{uid} returns a bare subject and
+// leaves them zero. They differ whenever one photo carries several markers of
+// the same subject.
 type Subject struct {
 	UID           string    `json:"uid"`
 	Slug          string    `json:"slug"`
@@ -24,6 +25,7 @@ type Subject struct {
 	Notes         string    `json:"notes"`
 	CoverPhotoUID *string   `json:"cover_photo_uid,omitempty"`
 	MarkerCount   int       `json:"marker_count"`
+	PhotoCount    int       `json:"photo_count"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }

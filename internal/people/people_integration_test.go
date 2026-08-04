@@ -169,7 +169,8 @@ func TestSubjectInvalidType(t *testing.T) {
 }
 
 // TestListSubjectsCounts checks that ListSubjects reports the non-invalid marker
-// count per subject, ordered by name.
+// count per subject, ordered by name. Both of Alice's valid markers sit on the
+// same photo, so the two counts must part company: two markers, one photo.
 func TestListSubjectsCounts(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
@@ -190,11 +191,61 @@ func TestListSubjectsCounts(t *testing.T) {
 	if len(list) != 2 {
 		t.Fatalf("ListSubjects len = %d, want 2", len(list))
 	}
-	if list[0].UID != alice.UID || list[0].MarkerCount != 2 {
-		t.Errorf("subject[0] = %+v, want Alice count 2", list[0])
+	if list[0].UID != alice.UID || list[0].MarkerCount != 2 || list[0].PhotoCount != 1 {
+		t.Errorf("subject[0] = %+v, want Alice 2 markers on 1 photo", list[0])
 	}
-	if list[1].UID != bob.UID || list[1].MarkerCount != 0 {
-		t.Errorf("subject[1] = %+v, want Bob count 0", list[1])
+	if list[1].UID != bob.UID || list[1].MarkerCount != 0 || list[1].PhotoCount != 0 {
+		t.Errorf("subject[1] = %+v, want Bob 0 markers on 0 photos", list[1])
+	}
+}
+
+// TestListSubjectsPhotoCountMatchesGallery is the badge's promise: the people
+// index says "N photos" under a subject and clicking it opens the gallery, so the
+// count ListSubjects reports must be the length of the list the gallery pages
+// through — not the marker count, which is larger whenever one photo holds
+// several of the person's faces.
+//
+// The fixture makes every way they can diverge visible at once: a photo with two
+// valid markers (counted once), a photo with one (counted once), a photo whose
+// only marker is invalid, and an archived photo with a valid marker — the last
+// two counted by neither.
+func TestListSubjectsPhotoCountMatchesGallery(t *testing.T) {
+	store, photoStore, _, db := newStores(t)
+	ctx := t.Context()
+
+	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+
+	twice := makePhoto(t, photoStore, "gallery_twice")
+	once := makePhoto(t, photoStore, "gallery_once")
+	rejected := makePhoto(t, photoStore, "gallery_rejected")
+	archived := makePhoto(t, photoStore, "gallery_archived")
+
+	mkMarker(t, store, twice, &alice.UID, false)
+	mkMarker(t, store, twice, &alice.UID, false)
+	mkMarker(t, store, once, &alice.UID, false)
+	mkMarker(t, store, rejected, &alice.UID, true)
+	mkMarker(t, store, archived, &alice.UID, false)
+	if _, err := db.Pool().Exec(ctx,
+		"UPDATE photos SET archived_at = now() WHERE uid = $1", archived); err != nil {
+		t.Fatalf("archiving photo: %v", err)
+	}
+
+	gallery, err := store.ListPhotoUIDsBySubject(ctx, alice.UID)
+	if err != nil {
+		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
+	}
+	sc := firstSubject(t, store)
+	if sc.PhotoCount != len(gallery) {
+		t.Errorf("PhotoCount = %d, gallery has %d photos (%v)",
+			sc.PhotoCount, len(gallery), gallery)
+	}
+	if sc.PhotoCount != 2 {
+		t.Errorf("PhotoCount = %d, want 2 (the two visible photos)", sc.PhotoCount)
+	}
+	// The marker count keeps counting markers: three valid ones, of which the
+	// archived photo's does not count either.
+	if sc.MarkerCount != 3 {
+		t.Errorf("MarkerCount = %d, want 3", sc.MarkerCount)
 	}
 }
 

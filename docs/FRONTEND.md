@@ -434,7 +434,9 @@ here.
   **Rok** = a plain `<select>`
   („Libovolný rok" + `{{year}} ({{n}})` from `GET /photos/years`, the catalog always has only a handful of years),
   **Album**, **Štítek** and **Osoba** = `SearchableSelect` (all collections grow without limit;
-  people from `GET /subjects` with `marker_count`), **multi-select**: each choice is **added** to the current
+  people from `GET /subjects` with `photo_count` — the count beside an option promises how many photos
+  picking it yields, so a person is counted by photos like an album or a label, not by faces),
+  **multi-select**: each choice is **added** to the current
   set (AND — a photo must be in all selected albums, carry all labels and contain all
   selected people), the select is a pure „add-picker" (it keeps the placeholder „libovolné", drops its selected
   items from its options so they can't be added twice), already-selected albums/labels/people hang as
@@ -1171,7 +1173,10 @@ here.
   edit→CSS (`editPreviewStyle`/`editFilter`/`editTransform`/`cropClipPath`/`isIdentityEdit`/
   `rotateRight`/`hasCrop`/`NEUTRAL_EDIT`),
   `PeoplePage` = `/people` a people index: a responsive `SubjectTile` grid (image/name/photo
-  count), for editors a link to cluster review; the tile shows **that person's face** — what exactly
+  count — `photo_count`, **not** `marker_count`: the caption says „fotek" and the tile links to the
+  subject's gallery, which lists a photo once however many of that person's faces it holds; the face
+  tools — `CandidateSearchForm`, `FaceAssignPanel`, `OutlierControls` — keep `marker_count`, and their
+  strings say „obličejů"), for editors a link to cluster review; the tile shows **that person's face** — what exactly
   is decided by pure `lib/subjectTile.ts` `subjectTileImage` → `{kind:'cover'|'face'|'none'}`:
   an explicit `cover_photo_uid` always wins (a decision overrides a guess), otherwise `cover_face` from the API
   (marker selection see `listSubjectsSQL`) `padBbox(0.3)` + `squareCrop` → `FaceCrop`, and without

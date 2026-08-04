@@ -75,8 +75,9 @@ func (a *API) registerCollectionTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "list_subjects",
 		Description: "List the people (and animals) the library knows by name, with how many " +
-			"recognised faces each has. Use it to turn a name a human used into the uid the other " +
-			"tools want. To read someone's photos, pass their uid to search_photos as person_uid.",
+			"recognised faces each has (face_count) and on how many photos each appears " +
+			"(photo_count). Use it to turn a name a human used into the uid the other tools " +
+			"want. To read someone's photos, pass their uid to search_photos as person_uid.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, a.handleListSubjects)
 
@@ -216,6 +217,7 @@ func (a *API) handleListSubjects(
 		}
 		info := toSubjectInfo(s.Subject)
 		info.FaceCount = s.MarkerCount
+		info.PhotoCount = s.PhotoCount
 		out = append(out, info)
 	}
 	return nil, subjectList{People: out}, nil

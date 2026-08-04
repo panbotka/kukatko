@@ -348,7 +348,10 @@ go test -tags integration -run TestAlbumListPlanStaysProportionalToMemberships .
 **Sibling listings audited** for the same "pick one row per group" antipattern:
 
 - `internal/people` `listSubjectsSQL` — **already correct**: its cover face comes
-  from a `DISTINCT ON (m.subject_uid)` CTE, one pass over the markers.
+  from a `DISTINCT ON (m.subject_uid)` CTE, one pass over the markers. Its
+  `COUNT(DISTINCT p.uid)` (the photo count next to the marker count) is an extra
+  sort per group, not an extra join — it reads the rows the marker count already
+  aggregates.
 - `internal/organize` `listLabelsSQL`, `searchAlbumsSQL`, `searchLabelsSQL` —
   fine: plain `COUNT` aggregates over one join, no per-group ordered lookup.
 - `internal/vectors` `findDuplicatePairsSQL` — a `CROSS JOIN LATERAL … ORDER BY

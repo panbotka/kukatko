@@ -78,6 +78,9 @@ export function CandidateSearchForm({
             options={subjects.map((subject) => ({
               uid: subject.uid,
               label: subject.name,
+              // The search matches face against face, so the count that says how
+              // much material it has to go on is the marker count — the string
+              // says "faces" for that reason and must not be given photos.
               hint: t('faceSearch.form.subjectHint', { count: subject.marker_count }),
             }))}
             onAdd={onSubjectChange}
