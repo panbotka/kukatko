@@ -1,12 +1,30 @@
-// Package auditapi exposes the admin-only HTTP API over the durable audit trail
-// (internal/audit). It serves a single read endpoint, GET /audit, that lists
-// audit entries newest-first with optional filters (acting user, entity type and
-// UID, action, review-game decisions via=review, Ano/Ne bucket decision=yes|no,
-// created-at date range) and limit/offset pagination, plus the total matching
-// count so the admin UI can page. The via=review and decision filters back the
-// admin per-user review-decision view. The audit log is write-only
-// from the application's side — entries are appended within mutation
-// transactions elsewhere — so this package never mutates it.
+// Package auditapi exposes the HTTP API over the durable audit trail
+// (internal/audit). It serves two read endpoints. GET /audit is the admin-only
+// listing of the whole trail, newest-first, with optional filters (acting user,
+// entity type and UID, action, review-game decisions via=review, Ano/Ne bucket
+// decision=yes|no, created-at date range) and limit/offset pagination, plus the
+// total matching count so the admin UI can page. GET /audit/mine is the same
+// listing for any signed-in user, narrowed to their own actions. The audit log
+// is write-only from the application's side — entries are appended within
+// mutation transactions elsewhere — so this package never mutates it.
+//
+// # Why /audit/mine is a route of its own
+//
+// The own-activity view could have been the same endpoint under a looser guard,
+// narrowing the filter for a non-admin inside the handler. It is a separate
+// route instead: handleListMine overwrites the actor filter unconditionally, so
+// "a caller cannot read someone else's actions" is a property of the route's
+// shape rather than of a branch a later edit could weaken. It costs one small
+// handler; the filter parsing, the response building and the store are shared.
+//
+// A caller who asks for another user's actions there is answered 403 rather than
+// silently served their own: quietly rewriting the request would leave the user
+// believing they are looking at something they are not.
+//
+// The narrowed listing returns the full record, ip and user_agent included.
+// Those are the caller's own request metadata — the address and browser they
+// themselves acted from — and seeing them is how a user recognises (or disowns)
+// an action, so withholding them would only make the page harder to trust.
 package auditapi
 
 import (
@@ -21,33 +39,41 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 )
 
-// API serves the audit log over HTTP behind the admin guard.
+// API serves the audit log over HTTP: the whole trail behind the admin guard,
+// and the caller's own actions behind the plain auth guard.
 type API struct {
 	store        *audit.Store
 	requireAdmin func(http.Handler) http.Handler
+	requireAuth  func(http.Handler) http.Handler
 }
 
-// Config bundles the dependencies of NewAPI. Both fields are required.
+// Config bundles the dependencies of NewAPI. All fields are required.
 type Config struct {
 	// Store reads audit entries.
 	Store *audit.Store
-	// RequireAdmin guards the endpoint so only admins can read the trail.
+	// RequireAdmin guards the full listing so only admins can read the trail.
 	RequireAdmin func(http.Handler) http.Handler
+	// RequireAuth guards the own-activity listing, which any signed-in user may
+	// read because it never leaves their own actions.
+	RequireAuth func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{store: cfg.Store, requireAdmin: cfg.RequireAdmin}
+	return &API{store: cfg.Store, requireAdmin: cfg.RequireAdmin, requireAuth: cfg.RequireAuth}
 }
 
-// RegisterRoutes mounts the audit endpoint onto r, which the caller has scoped
+// RegisterRoutes mounts the audit endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
-//	GET /audit   RequireAdmin   list audit entries with filters + pagination
+//	GET /audit        RequireAdmin   list audit entries with filters + pagination
+//	GET /audit/mine   RequireAuth    the same, narrowed to the caller's own actions
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAdmin).Get("/audit", a.handleList)
+	r.With(a.requireAuth).Get("/audit/mine", a.handleListMine)
 }
 
 // listResponse is the JSON body returned by the list endpoint. NextOffset is the
@@ -70,6 +96,39 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	a.respond(w, r, filter)
+}
+
+// handleListMine serves the caller's own actions: the same filters and paging as
+// handleList, except the actor is taken from the authenticated session and
+// overwrites whatever the query asked for, on every page. Entries with no actor
+// (system actions) therefore never appear. A user parameter naming somebody else
+// is answered with 403 — the request is refused rather than quietly rewritten,
+// so nobody reads a listing believing it is somebody else's; naming oneself is
+// accepted and changes nothing.
+func (a *API) handleListMine(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		// Unreachable behind RequireAuth; refuse rather than list unfiltered.
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	filter, err := parseFilter(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if filter.ActorUID != "" && filter.ActorUID != user.UID {
+		writeError(w, http.StatusForbidden, "this listing only serves your own actions")
+		return
+	}
+	filter.ActorUID = user.UID
+	a.respond(w, r, filter)
+}
+
+// respond reads the page of entries matching filter plus the total count and
+// writes them with the next-page offset. A store failure is answered with 500.
+func (a *API) respond(w http.ResponseWriter, r *http.Request, filter audit.Filter) {
 	entries, err := a.store.List(r.Context(), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing audit entries failed")

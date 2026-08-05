@@ -359,7 +359,10 @@ Silence is not evidence; these areas were examined and are clean.
   role ladder: writes by `RequireWrite`; **operations surfaces** (`/jobs`, `/process`,
   `/maintenance`, `/backup`, `/restore`, `/system`, and the import triggers `/import/*`) by
   `RequireMaintainer` (maintainer only — a plain admin is refused); **governance surfaces**
-  (`/admin/users`, `/audit`) by `RequireAdmin` (admin or maintainer via the ladder); the
+  (`/admin/users`, `/audit`) by `RequireAdmin` (admin or maintainer via the ladder — note the sibling
+  read `GET /audit/mine` is `RequireAuth` by design: it is a **separate route** whose handler overwrites
+  the actor filter with the session's user unconditionally, so it cannot serve another user's rows,
+  and a `?user=` naming somebody else is refused with 403 rather than silently narrowed); the
   permanent trash operations (`POST /trash/empty` and the per-photo `POST /photos/{uid}/purge`)
   tightened from write to `RequireAdmin` because they destroy originals irreversibly — the
   reversible archive (soft delete) stays `RequireWrite` and `GET /trash/info` stays `RequireAuth`;

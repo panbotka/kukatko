@@ -320,6 +320,121 @@
       "checking": "Ověřuji dostupnost…",
       "healthy": "Vše funguje",
       "unhealthy": "Aplikace je momentálně nedostupná"
+    },
+    "activity": {
+      "title": "Moje aktivita",
+      "hint": "Přehled toho, co jste v Kukátku udělali — od nejnovějšího. Hodí se, když víte, že jste něco odklikli špatně, a potřebujete to najít.",
+      "link": "Zobrazit moji aktivitu"
+    }
+  },
+  "activity": {
+    "title": "Moje aktivita",
+    "subtitle": "Co jsem v Kukátku naposledy udělal, od nejnovějšího. Kliknutím se dostanu na fotku, album nebo štítek, kterého se změna týkala — a můžu ji opravit.",
+    "back": "Zpět na účet",
+    "loading": "Načítání aktivity…",
+    "error": "Aktivitu se nepodařilo načíst.",
+    "empty": {
+      "title": "Zatím tu nic není",
+      "hint": "Jakmile něco upravíte, přidáte nebo smažete, objeví se to tady."
+    },
+    "columns": {
+      "when": "Kdy",
+      "what": "Co",
+      "where": "Kde"
+    },
+    "target": {
+      "unknown": "Neznámý cíl"
+    },
+    "moreLinks": "a další ({{n}})",
+    "pagination": {
+      "range": "Zobrazeno {{from}}–{{to}} z {{total}}",
+      "prev": "Předchozí",
+      "next": "Další"
+    },
+    "actions": {
+      "album": {
+        "add_photos": "Přidání fotek do alba",
+        "create": "Vytvoření alba",
+        "delete": "Smazání alba",
+        "remove_photos": "Odebrání fotek z alba",
+        "update": "Úprava alba"
+      },
+      "announcement": {
+        "clear": "Zrušení oznámení",
+        "set": "Zveřejnění oznámení"
+      },
+      "api_token": {
+        "create": "Vytvoření API tokenu",
+        "revoke": "Zneplatnění API tokenu"
+      },
+      "audit": {
+        "purge": "Úklid auditního logu"
+      },
+      "duplicate": {
+        "dismiss": "Označení dvojice jako různých fotek",
+        "undismiss": "Vrácení dvojice mezi duplicity"
+      },
+      "duplicate_marker": {
+        "dismiss": "Potvrzení dvojího označení osoby",
+        "undismiss": "Vrácení dvojího označení k řešení"
+      },
+      "face": {
+        "assign": "Přiřazení obličeje k osobě",
+        "confirm": "Potvrzení obličeje",
+        "reject": "Odmítnutí osoby u obličeje",
+        "unassign": "Zrušení přiřazení obličeje",
+        "unconfirm": "Zrušení potvrzení obličeje",
+        "unreject": "Zrušení odmítnutí obličeje"
+      },
+      "label": {
+        "attach": "Přidání štítku k fotce",
+        "create": "Vytvoření štítku",
+        "delete": "Smazání štítku",
+        "detach": "Odebrání štítku z fotky",
+        "reject": "Odmítnutí štítku u fotky",
+        "unreject": "Zrušení odmítnutí štítku",
+        "update": "Úprava štítku"
+      },
+      "library": {
+        "reset": "Vymazání knihovny"
+      },
+      "marker": {
+        "invalidate": "Označení rámečku jako neplatného"
+      },
+      "photo": {
+        "archive": "Přesun fotky do koše",
+        "hide": "Skrytí fotky z knihovny",
+        "purge": "Trvalé smazání fotky",
+        "thumbnail": "Přegenerování náhledu fotky",
+        "unarchive": "Obnovení fotky z koše",
+        "unhide": "Vrácení fotky do knihovny",
+        "update": "Úprava fotky"
+      },
+      "photos": {
+        "bulk": "Hromadná úprava fotek",
+        "merge": "Sloučení duplicitních fotek"
+      },
+      "subject": {
+        "create": "Vytvoření osoby",
+        "delete": "Smazání osoby",
+        "update": "Úprava osoby"
+      },
+      "user": {
+        "create": "Vytvoření uživatele",
+        "disable": "Změna přístupu uživatele",
+        "password": "Změna hesla uživatele",
+        "update": "Úprava uživatele"
+      }
+    },
+    "targets": {
+      "photos": "Fotka",
+      "albums": "Album",
+      "labels": "Štítek",
+      "subjects": "Osoba",
+      "users": "Uživatel",
+      "api_tokens": "API token",
+      "announcement": "Oznámení",
+      "audit_log": "Auditní log"
     }
   },
   "library": {

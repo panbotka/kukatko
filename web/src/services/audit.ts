@@ -1,12 +1,14 @@
 import { ApiError } from './auth'
 
 /**
- * Admin audit-log client, mirroring the backend JSON shapes from
- * `internal/auditapi` and `internal/audit`. It powers the read-only `/audit`
- * administration page: a newest-first, filterable, offset-paginated listing of
- * the durable audit trail. The session cookie is sent automatically
- * (same-origin); every call throws {@link ApiError} on a non-OK response so
- * callers can branch on `status`.
+ * Audit-log client, mirroring the backend JSON shapes from `internal/auditapi`
+ * and `internal/audit`. It powers two read-only pages over the same records: the
+ * `/audit` administration listing of the whole durable trail
+ * ({@link fetchAuditLog}), and every user's own activity page
+ * ({@link fetchMyActivity}), which the server narrows to the caller. Both are
+ * newest-first, filterable and offset-paginated. The session cookie is sent
+ * automatically (same-origin); every call throws {@link ApiError} on a non-OK
+ * response so callers can branch on `status`.
  *
  * Note the field/param naming: the query params use the endpoint's names
  * (`user`, `entity_type`, `entity_uid`) while the returned records use the
@@ -151,4 +153,27 @@ export async function fetchAuditLog(
   const query = buildAuditQuery(params)
   const suffix = query === '' ? '' : `?${query}`
   return getJSON<AuditListResponse>(`/audit${suffix}`, signal)
+}
+
+/**
+ * Query parameters for `GET /audit/mine` — the same filters as the admin listing
+ * except `user`, which the endpoint takes from the session instead. It is left
+ * out on purpose: the server narrows every page to the caller and answers a
+ * request naming somebody else with 403, so there is nothing for a client to say
+ * about whose activity it wants.
+ */
+export type MyActivityParams = Omit<AuditListParams, 'user'>
+
+/**
+ * Fetches a page of the caller's own audit entries, newest-first. The narrowing
+ * is the server's (see `internal/auditapi`), so this listing can never contain
+ * another user's actions — nor the system's, which have no actor at all.
+ */
+export async function fetchMyActivity(
+  params: MyActivityParams = {},
+  signal?: AbortSignal,
+): Promise<AuditListResponse> {
+  const query = buildAuditQuery(params)
+  const suffix = query === '' ? '' : `?${query}`
+  return getJSON<AuditListResponse>(`/audit/mine${suffix}`, signal)
 }

@@ -50,7 +50,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/announcement` — single instance-wide banner message (`Get`/`Set`/`Clear`), one-row table, publish/clear audited in the mutation's transaction
 - `internal/announcementapi` — dual-guard `/announcement` (`GET` RequireAuth, `PUT`/`DELETE` RequireMaintainer)
 - `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
-- `internal/auditapi` — admin-only `GET /audit` (read-only listing)
+- `internal/auditapi` — read-only listings: admin-only `GET /audit`, own-actions `GET /audit/mine`
 - `internal/auth` — viewer/editor/admin/maintainer roles (strict ladder), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer)
 - `internal/backup` — S3 backup (pg_dump + sync of originals + retention) **and** restore
 - `internal/backupapi` — maintainer-only `GET`/`POST /backup`

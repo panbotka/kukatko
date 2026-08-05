@@ -8,9 +8,12 @@ import Form from 'react-bootstrap/Form'
 import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { Icon } from '../components/Icon'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { ACTIVITY_PATH } from '../lib/activityView'
 import { ApiError, changePassword, MIN_PASSWORD_LENGTH } from '../services/auth'
 import { fetchHealth, type HealthResponse } from '../services/health'
 
@@ -55,6 +58,10 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  * status line — backend reachability and the build version. That detail used to
  * greet everyone on the landing page; it lives here now, where a curious user
  * goes looking for it, rather than in front of the photos.
+ *
+ * It is also the way to {@link MyActivityPage} — the user's own history of
+ * actions. That entry point lives here rather than in the navigation: the bar is
+ * crowded already, and "what I did" belongs with the rest of what is mine.
  */
 export function AccountPage() {
   const { t } = useTranslation()
@@ -128,6 +135,25 @@ export function AccountPage() {
                 {role ? <Badge bg="secondary">{t(`roles.${role}`)}</Badge> : null}
               </dd>
             </dl>
+          </Card.Body>
+        </Card>
+
+        {/* The way to one's own history. It hangs off the account rather than
+            the navigation: it is a fact about the signed-in user, and the admin
+            group next door is about supervising everybody. */}
+        <Card text="light" className="mb-4">
+          <Card.Body>
+            <Card.Title as="h2" className="kk-section-title mb-3">
+              {t('account.activity.title')}
+            </Card.Title>
+            <p className="text-secondary">{t('account.activity.hint')}</p>
+            <Link
+              to={ACTIVITY_PATH}
+              className="btn btn-outline-light d-inline-flex align-items-center gap-2"
+            >
+              <Icon name="clock-history" />
+              {t('account.activity.link')}
+            </Link>
           </Card.Body>
         </Card>
 

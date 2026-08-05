@@ -1754,13 +1754,22 @@ to `## Package map` in `CLAUDE.md`.
   and **user management** `auth.Store.{CreateUser,UpdateUserProfile,SetUserDisabled,SetPasswordHash}Audited`
   (`user.*`) — every mutation + audit in one tx via the shared `rowQuerier`/`mutateAudited` (photos) and
   `inAuditedTx` (auth); further domains (albums/labels/people) follow the same convention), `internal/auditapi/`
-  (admin-only HTTP API over the audit trail: `NewAPI(Config{Store,RequireAdmin})`+`RegisterRoutes`
-  mounts `GET /audit` behind `RequireAdmin`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
+  (HTTP API over the audit trail: `NewAPI(Config{Store,RequireAdmin,RequireAuth})`+`RegisterRoutes`
+  mounts `GET /audit` behind `RequireAdmin` and `GET /audit/mine` behind `RequireAuth`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
   `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (an invalid
   time/number/`via`/`decision` → 400), returns `{entries,total,limit,offset,next_offset}` newest-first;
   **`via=review`** → `Filter.ReviewOnly` (the literal `details ->> 'via' = 'review'`, matches the partial
   index 0037), **`decision=yes|no`** → `Filter.Actions` ("Ano" = `face.assign`+`label.attach` / "Ne" =
-  `face.reject`+`label.reject`) — the basis of the admin per-user review-decision overview; read-only — writes go through
+  `face.reject`+`label.reject`) — the basis of the admin per-user review-decision overview;
+  **`handleListMine`** (the own-activity listing behind `RequireAuth`) parses the very same filters, then
+  **overwrites `Filter.ActorUID` with the session user's UID unconditionally** (`auth.UserFromContext`) — so on
+  every page, under every filter, the query can only reach the caller's own rows, and the system's actor-less
+  ones (empty `actor_uid`) match nothing; a `user` parameter naming **somebody else → 403** (refusing beats
+  silently rewriting: the caller must not believe they are reading someone else's history), naming oneself is
+  accepted; no principal on the context → 401 (fail closed). It is a **separate route rather than a looser guard
+  on `/audit`** so the impossibility of reading foreign rows is a property of the route's shape, not of a branch
+  a later edit could weaken; `respond` (list+count+`buildResponse`) is shared by both handlers. The narrowed
+  records are returned whole, `ip`/`user_agent` included — the caller's own request metadata; read-only — writes go through
   mutation transactions elsewhere; always mounted by the last `server.WithAPI` (`buildAuditAPI` in
   `cmd/kukatko/audit.go`)), `internal/bulk/`
   (bulk metadata editing: `Service` = `NewService(pool, maxBatch)` with `Apply(ctx, actorUID,
