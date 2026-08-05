@@ -1545,6 +1545,7 @@
     },
     "archive": {
       "restore": "Vrátit z koše",
+      "badge": "V koši",
       "archived": "Fotka přesunuta do koše",
       "restored": "Fotka vrácena z koše",
       "error": "Akci se nepodařilo provést."
@@ -1552,6 +1553,7 @@
     "hidden": {
       "hide": "Skrýt z knihovny",
       "show": "Vrátit do knihovny",
+      "badge": "Skrytá z knihovny",
       "hideHint": "Skrýt z knihovny — fotka zůstane v albech, štítcích i mezi oblíbenými. Zpátky ji najdeš hledáním hidden:yes.",
       "showHint": "Vrátit fotku zpátky do knihovny",
       "hidden": "Fotka skryta z knihovny. Najdeš ji hledáním hidden:yes.",

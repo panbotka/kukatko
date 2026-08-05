@@ -15,6 +15,7 @@ import { EditPanel } from '../components/photo/EditPanel'
 import { LivePhoto } from '../components/photo/LivePhoto'
 import { MetadataPanel } from '../components/photo/MetadataPanel'
 import { OrganizePanel } from '../components/photo/OrganizePanel'
+import { PhotoFlagBadges } from '../components/photo/PhotoFlagBadges'
 import { PeoplePanel } from '../components/photo/PeoplePanel'
 import { StackStrip } from '../components/photo/StackStrip'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
@@ -80,6 +81,28 @@ type State =
  * unrepresentable: at most one is active, never both.
  */
 type SidePanel = 'faces' | 'edit' | null
+
+/**
+ * The classes of a *flag toggle* — a control over a flag that holds the photo
+ * back from the library (hidden from it, or archived into the trash) — for the
+ * flag's current value.
+ *
+ * **The glyph on these two buttons shows STATE, never the action.** That is the
+ * decision; please do not flip it back. It used to show the action (a hidden
+ * photo got a plain eye meaning "click to show"), which contradicted the
+ * `aria-pressed` state right next to it and was unreadable anyway: an eye and a
+ * struck-through eye differ by a hairline at 1rem, so the state could only be
+ * guessed by someone who already knew the convention. Now everything visual says
+ * state — the glyph (a struck eye = hidden; the archive box names the flag
+ * itself, as no glyph exists for "not in the trash"), `aria-pressed`, the
+ * `active` marking and its `danger` tone — and only the `aria-label`/`title` say
+ * what a click will do. The colour is never alone: `active` carries the state
+ * for a colour-blind reader and forced colours, and {@link PhotoFlagBadges}
+ * repeats it in words beside the title.
+ */
+function flagBtnClass(on: boolean): string {
+  return `kk-viewer__btn kk-viewer__btn--icon kk-viewer__btn--flag${on ? ' active' : ''}`
+}
 
 /**
  * The immersive full-bleed photo viewer, and the `/photos/:uid` route itself.
@@ -658,20 +681,23 @@ export function PhotoDetailPage() {
         {canWrite && (
           <button
             type="button"
-            className="kk-viewer__btn kk-viewer__btn--icon"
+            className={flagBtnClass(archived)}
             aria-label={archived ? t('photo.archive.restore') : t('batch.archive')}
+            aria-pressed={archived}
             disabled={archivePending}
             onClick={() => {
               void toggleArchive()
             }}
           >
-            <Icon name={archived ? 'arrow-counterclockwise' : 'archive'} />
+            {/* No glyph exists for "not in the trash", so this one names the flag
+                itself and never moves; the on-state marking says whether it is set. */}
+            <Icon name="archive" />
           </button>
         )}
         {canWrite && (
           <button
             type="button"
-            className="kk-viewer__btn kk-viewer__btn--icon"
+            className={flagBtnClass(hidden)}
             aria-label={hidden ? t('photo.hidden.show') : t('photo.hidden.hide')}
             // The title spells out what the toggle does and how to get back, so
             // the one-glyph control is not the only place the rule is written.
@@ -682,7 +708,8 @@ export function PhotoDetailPage() {
               void toggleHidden()
             }}
           >
-            <Icon name={hidden ? 'eye' : 'eye-slash'} />
+            {/* State, not action: a struck-through eye means the photo IS hidden. */}
+            <Icon name={hidden ? 'eye-slash' : 'eye'} />
           </button>
         )}
       </span>
@@ -831,6 +858,10 @@ export function PhotoDetailPage() {
               title
             )}
           </h1>
+          {/* The flags that hold this photo back from the library, in words —
+              the one place the state shows outside the toggle that sets it, and
+              the only one a viewer (who gets no toggles) ever sees. */}
+          <PhotoFlagBadges hidden={hidden} archived={archived} />
         </div>
         <div className="kk-viewer__actions">
           {!narrow && curation}
