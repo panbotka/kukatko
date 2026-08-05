@@ -22,6 +22,14 @@ export interface RecordColumn<T> {
   /** Inline style for the desktop `<td>` only (e.g. a column width cap). */
   cellStyle?: CSSProperties
   /**
+   * Keeps the line breaks in a value the user typed on more than one line (a
+   * `<textarea>` field such as the roster's note). Unlike `cellClassName` it
+   * applies to **both** layouts: a note that reads as two lines on the table may
+   * not collapse into one on the card, and the card is where the value has the
+   * room for them.
+   */
+  multiline?: boolean
+  /**
    * Keeps the column out of the card's label/value list. Used for a column of row
    * actions, which a card renders as the full-width `cardActions` row instead of
    * squeezing a button cluster into a two-column grid.
@@ -108,7 +116,11 @@ export function RecordTable<T>({
                         <dt className="col-5 small fw-normal text-secondary text-break">
                           {column.header}
                         </dt>
-                        <dd className="col-7 mb-1 text-break">{column.cell(record)}</dd>
+                        <dd
+                          className={`col-7 mb-1 text-break${column.multiline === true ? ' kk-multiline' : ''}`}
+                        >
+                          {column.cell(record)}
+                        </dd>
                       </Fragment>
                     ))}
                   </dl>
@@ -145,7 +157,15 @@ export function RecordTable<T>({
             <Fragment key={rowKey(record)}>
               <tr>
                 {columns.map((column) => (
-                  <td key={column.key} className={column.cellClassName} style={column.cellStyle}>
+                  <td
+                    key={column.key}
+                    className={
+                      column.multiline === true
+                        ? `${column.cellClassName ?? ''} kk-multiline`.trim()
+                        : column.cellClassName
+                    }
+                    style={column.cellStyle}
+                  >
                     {column.cell(record)}
                   </td>
                 ))}

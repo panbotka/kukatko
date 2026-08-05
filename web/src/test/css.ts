@@ -58,6 +58,28 @@ export function ruleBody(css: string, prelude: RegExp, contains?: RegExp): strin
   return undefined
 }
 
+/**
+ * Hands one real rule out of a stylesheet to jsdom, which loads none of its own,
+ * and answers with the function that takes it away again. It lets a component test
+ * assert what an element *computes to* — `getComputedStyle(el).whiteSpace` — rather
+ * than which class name it happens to carry, while still failing if the shipped
+ * stylesheet stops declaring the rule: the body installed here is read out of
+ * `app.css`, never written by the test.
+ */
+export function installRule(relPath: string, selector: string): () => void {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const body = ruleBody(readCss(relPath), new RegExp(`${escaped}\\s*(?=\\{)`))
+  if (body === undefined) {
+    throw new Error(`${relPath} declares no ${selector} rule`)
+  }
+  const style = document.createElement('style')
+  style.textContent = `${selector} {${body}}`
+  document.head.append(style)
+  return () => {
+    style.remove()
+  }
+}
+
 /** Parses a rule body's declarations into a name → value map. */
 export function declarations(body: string): Map<string, string> {
   const out = new Map<string, string>()

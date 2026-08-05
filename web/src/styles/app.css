@@ -1662,3 +1662,25 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* --------------------------------------------------------------------------
+   Text the user typed on more than one line
+   -------------------------------------------------------------------------- */
+
+/* A value entered in a `<textarea>` and read back as plain text. HTML collapses
+   every run of whitespace, newlines included, so a two-line photo description
+   ("Fotokniha 2026 - str. 135 p. 2" and then the caption) came back as one line
+   with the page reference glued to the front of the sentence — and an automatic
+   description came back with its `AI_MODEL:` trailer glued to the last sentence.
+   The text is the user's own, so this is a rendering concern and stays in CSS:
+   nothing rewrites `\n` into `<br>`, and nothing about the value becomes markup.
+
+   `pre-wrap` rather than `pre-line`: the two agree about line breaks and differ
+   about a run of spaces, and in text a person typed by hand the second space is
+   their decision, not noise. Wrapping is still on, so this only ever *adds* the
+   breaks the author made; pair it with `text-break` where a single unbroken token
+   could otherwise set the width of the box. Bootstrap has no utility for it
+   (`text-wrap`/`text-nowrap` toggle wrapping, not whitespace handling). */
+.kk-multiline {
+  white-space: pre-wrap;
+}

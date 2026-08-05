@@ -1,13 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, getDefaultNormalizer, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { ApiError } from '../../services/auth'
 import { type Place } from '../../services/map'
 import { type PhotoDetail, type PhotoMetadataUpdate } from '../../services/photos'
+import { installRule } from '../../test/css'
 
 import { MetadataPanel } from './MetadataPanel'
 
@@ -986,5 +987,87 @@ describe('MetadataPanel estimated location', () => {
     ).toBeInTheDocument()
     // The estimate is still an estimate, and still actionable.
     expect(screen.getByRole('button', { name: 'Accept estimate' })).toBeEnabled()
+  })
+})
+
+/**
+ * The description 738 photos of the photo-book album really carry: the page it
+ * came off, then the caption. Collapsed onto one line the page reference reads as
+ * the opening of the sentence, which is exactly what the two lines were for.
+ */
+const PHOTOBOOK_CAPTION = 'Fotokniha 2026 - str. 135 p. 2\nVeseličtí mrskači – rok 1965'
+
+/** The production shape of an automatic description: the text, a blank line, the model. */
+const AI_NOTE = 'Skupina mužů v krojích na návsi.\n\nAI_MODEL: gemini-2.5-flash'
+
+/**
+ * Finds the element whose own text is exactly `text` — newlines, blank lines and
+ * all. The default matcher collapses whitespace before comparing, which would
+ * happily match the very rendering this suite is here to rule out.
+ */
+function verbatim(text: string): HTMLElement {
+  return screen.getByText(text, {
+    normalizer: getDefaultNormalizer({ collapseWhitespace: false, trim: false }),
+  })
+}
+
+describe('MetadataPanel multi-line values', () => {
+  // The fields are typed into a <textarea> and stored with the breaks the user
+  // put there, so the read-only rendering has to keep them: with the default
+  // `white-space` every newline is one more space and two lines become one.
+  // jsdom loads no stylesheet, so the real rule is installed from `app.css` —
+  // these assertions therefore fail both if the element loses the class and if
+  // the stylesheet stops declaring it.
+  let uninstall: (() => void) | undefined
+
+  beforeAll(() => {
+    uninstall = installRule('src/styles/app.css', '.kk-multiline')
+  })
+
+  afterAll(() => {
+    uninstall?.()
+  })
+
+  it('keeps a two-line description on two lines for an editor', () => {
+    renderPanel({ photo: photo({ description: PHOTOBOOK_CAPTION }) })
+
+    const value = verbatim(PHOTOBOOK_CAPTION)
+    expect(getComputedStyle(value).whiteSpace).toBe('pre-wrap')
+    // Inside the button that is the field's edit affordance, not loose beside it.
+    expect(value.closest('button')).not.toBeNull()
+    // The break stays a newline in the user's own text — it is never turned into
+    // markup, so nothing typed into the field can become HTML.
+    expect(value.textContent).toContain('\n')
+    expect(value.querySelector('br')).toBeNull()
+    // And a long unbroken token still may not stretch the panel.
+    expect(value).toHaveClass('text-break')
+  })
+
+  it('keeps it on two lines for a viewer, who gets no button around it', () => {
+    renderPanel({ canWrite: false, photo: photo({ description: PHOTOBOOK_CAPTION }) })
+
+    const value = verbatim(PHOTOBOOK_CAPTION)
+    expect(getComputedStyle(value).whiteSpace).toBe('pre-wrap')
+    expect(value.closest('button')).toBeNull()
+    expect(value).toHaveClass('text-break')
+  })
+
+  it('leaves the model line of an automatic description on its own line', () => {
+    // 2500 photos carry this shape; run together, the model name lands glued to
+    // the end of the last sentence.
+    renderPanel({ photo: photo({ ai_note: AI_NOTE }) })
+
+    const value = verbatim(AI_NOTE)
+    expect(getComputedStyle(value).whiteSpace).toBe('pre-wrap')
+    expect(value.textContent).toContain('\n\nAI_MODEL: gemini-2.5-flash')
+  })
+
+  it('still prompts an empty field in italics', () => {
+    renderPanel({ photo: photo({ description: '' }) })
+
+    const prompt = screen.getByText('What is happening here, and why it is worth remembering')
+    expect(prompt).toHaveClass('fst-italic')
+    // A one-line prompt has no breaks to keep, so it is not a multi-line value.
+    expect(getComputedStyle(prompt).whiteSpace).not.toBe('pre-wrap')
   })
 })
