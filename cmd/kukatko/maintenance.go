@@ -153,8 +153,9 @@ func buildMetaService(
 // buildMaintenanceService assembles the library-maintenance service over the
 // shared collaborators: the photo and vector catalogues, the originals store and
 // its on-disk walk, the thumbnail cache check, the queue adapter (thumbnail/pHash
-// repairs), the embedding and face backfills, and the orphan importer (the upload
-// pipeline). It returns a service ready to scan and repair.
+// repairs), the embedding and face backfills, the face-matching service (which
+// owns the face↔marker pairing the cache repair re-derives), and the orphan
+// importer (the upload pipeline). It returns a service ready to scan and repair.
 func buildMaintenanceService(
 	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, reg *metrics.Registry,
@@ -183,6 +184,7 @@ func buildMaintenanceService(
 		Enqueuer:  enqueuer,
 		Embed:     embedSvc,
 		Faces:     faceSvc,
+		FaceCache: buildFaceMatch(cfg, db),
 		Importer:  orphanImporter{storage: store, ingest: ingestSvc},
 	}), nil
 }

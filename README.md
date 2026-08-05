@@ -618,12 +618,18 @@ Links detected faces to markers/subjects and suggests likely identities. Everyth
 interfaces (`PhotoStore`/`FaceStore`/`PeopleStore`), so it unit-tests with fakes without a DB.
 
 - **IoU geometry** (`IoU(a, b [4]float64)`, pure function): Intersection-over-Union of two
-  normalized boxes `[x,y,w,h]` (0..1). `findBestMarker` picks the most-overlapping **face**
-  marker (ignores `invalid`), a match holds when `IoU ≥ faces.iou_threshold` (default 0.1, mirroring
-  photo-sorter).
-- **`PhotoFaces(ctx, photoUID)`** (backing `GET /photos/{uid}/faces`): for every stored face
-  computes the best marker by IoU, determines the action (`create_marker` / `assign_person` / `already_done`),
-  **caches the match on the face row** (`UpdateFaceMarker`) and adds suggestions to **every** face with an
+  normalized boxes `[x,y,w,h]` (0..1). A pair counts as a match at `IoU ≥ faces.iou_threshold`
+  (default 0.1, mirroring photo-sorter), and only **face** markers that are not `invalid` take part.
+- **Exclusive pairing** (`matchMarkers`, pure function): **one marker may be claimed by at most one
+  face, and one face by at most one marker.** Every qualifying (face, marker) pair is scored, sorted by
+  descending IoU and taken greedily while both sides are free; ties break on face index, then marker uid,
+  so repeated reads of a photo reach the same pairing. A per-face "best marker" search is not enough —
+  two faces both find the same marker, and the same person is then drawn twice on the photo (and cached
+  twice onto the face rows). A face the pairing leaves empty is simply a face without a marker: it is
+  offered for assignment like any other, and its stale cached link is cleared.
+- **`PhotoFaces(ctx, photoUID)`** (backing `GET /photos/{uid}/faces`): resolves the pairing once,
+  determines each face's action (`create_marker` / `assign_person` / `already_done`),
+  **caches the link on the face row** (`UpdateFaceMarker`) and adds suggestions to **every** face with an
   embedding — naming candidates for an unnamed one, **reassignment alternatives** for an assigned one
   (never suggesting the person it already carries). Markers without a matching face are attached (negative
   `face_index`) for the detail UI.
@@ -1411,8 +1417,15 @@ through the persistent job queue (bounded concurrency, resumable). Everything is
   from the original), enqueues `image_embed`/`face_detect` for photos without them, and optionally
   **imports orphaned originals** into the catalog via the upload pipeline (content dedup). Fixed order;
   a per-orphan failure is counted without aborting, the result is a `RepairResult` with scheduling counts.
+- **Surplus face↔marker links** (`--face-markers`): a marker describes one region, so at most one detected
+  face may claim it. The scan counts the markers more than one face row still caches (sampled by marker uid)
+  and the repair re-derives each affected photo's exclusive pairing, clearing the cached
+  `marker_uid`/`subject_uid`/`subject_name` of every face but the winner. It deletes no face and no marker,
+  and leaves a marker with a single face link alone — genuinely duplicated *markers* from an import are a
+  separate problem.
 - **CLI**: `kukatko maintenance scan` (prints the report) and `kukatko maintenance repair`
-  with flags `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans` (ops/cron without a
+  with flags `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--dimensions`/
+  `--face-markers` (ops/cron without a
   running server; repairs enqueue jobs that the running server's worker drains).
 - **Admin API** (`internal/maintenanceapi`, admin-only): `GET /api/v1/maintenance/scan` (the integrity
   report) and `POST /api/v1/maintenance/repair` `{thumbnails,embeddings,faces,phashes,import_orphans}`

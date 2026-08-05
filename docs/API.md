@@ -834,10 +834,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Maintenance API (`/api/v1`, `internal/maintenanceapi`, maintainer-only via `RequireMaintainer`):**
   the library's integrity check & repairs. `GET /maintenance/scan` → `Report` (counts + samples:
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
-  `missing_phashes`/`transposed_dimensions` + the totals `photos`/`files_in_db`/`originals_on_disk`);
+  `missing_phashes`/`transposed_dimensions`/`duplicate_face_markers` + the totals
+  `photos`/`files_in_db`/`originals_on_disk`);
   `POST /maintenance/repair`
-  `{thumbnails,embeddings,faces,phashes,import_orphans,dimensions}` (each opt-in) → `RepairResult` with scheduling
-  counts (`*_enqueued` + `orphans_imported/skipped/failed` + `dimensions_fixed`/`face_boxes_fixed`);
+  `{thumbnails,embeddings,faces,phashes,import_orphans,dimensions,face_markers}` (each opt-in) → `RepairResult`
+  with scheduling counts (`*_enqueued` + `orphans_imported/skipped/failed` +
+  `dimensions_fixed`/`face_boxes_fixed`/`face_links_cleared`);
   `DisallowUnknownFields`, an empty selection →
   400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`). The repairs are idempotent and
   run through the job queue (thumbnail/pHash via the `thumbnail` job, embeddings/faces backfill), and **never
@@ -846,7 +848,14 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   one (the PhotoPrism-derived import defect that letterboxed the viewer and drifted the face boxes) plus the
   faces normalized against that transposed frame. Each row is corrected from **the file's own EXIF document**,
   not from a guess about where it came from, and every write is guarded on the exact state it replaces — so
-  `transposed_dimensions` in the scan is its dry run and a re-run is a no-op. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
+  `transposed_dimensions` in the scan is its dry run and a re-run is a no-op. `face_markers` is the other
+  direct-write repair: a marker describes one region, so at most one detected face may claim it, and
+  `duplicate_face_markers` (sampled by **marker uid**) counts the markers more than one face row still caches —
+  the surplus links non-exclusive matching wrote, which render one person twice and mislead everything reading
+  `faces.subject_uid`. The repair re-derives each affected photo's exclusive pairing and clears the cached
+  `marker_uid`/`subject_uid`/`subject_name` of every face but the one the pairing awards the marker to
+  (`face_links_cleared`); it deletes no face and no marker, and leaves a marker with a single face link alone —
+  genuinely duplicated **markers** from an import are a different problem. `POST /maintenance/audit/purge` `{older_than_days}` (a positive integer of days,
   1..36500) deletes audit entries older than `now − older_than_days` (`audit.Store.PurgeOlderThan`,
   a single `DELETE` via `idx_audit_log_created_at`) → `{deleted,older_than_days,cutoff}`;
   a missing/non-positive/excessive window or an unknown field → 400, an unwired audit store → 503. The

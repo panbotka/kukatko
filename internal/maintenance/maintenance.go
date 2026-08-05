@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/vectors"
 )
 
 // defaultSampleLimit is the number of affected identifiers retained per Finding
@@ -61,6 +62,17 @@ type VectorCatalog interface {
 	// RepairFaceDimensions re-normalises the faces of one photo that were recorded
 	// against the transposed display frame, returning how many rows changed.
 	RepairFaceDimensions(ctx context.Context, photoUID string, rawWidth, rawHeight int) (int64, error)
+	// ListDuplicateFaceMarkers returns the markers cached on more than one face row.
+	ListDuplicateFaceMarkers(ctx context.Context) ([]vectors.DuplicateFaceMarker, error)
+}
+
+// FaceCache re-derives a photo's denormalised face↔marker cache. It is satisfied
+// by *facematch.Service, which owns the matching rules the cache must agree with.
+type FaceCache interface {
+	// ClearSurplusLinks re-derives the photo's exclusive face↔marker pairing and
+	// clears the cached marker/subject of every face claiming a marker another face
+	// won, returning how many face rows it cleared.
+	ClearSurplusLinks(ctx context.Context, photoUID string) (int, error)
 }
 
 // OriginalStore reports whether a stored original is present on disk. It is the
@@ -146,6 +158,7 @@ type Config struct {
 	Enqueuer    Enqueuer
 	Embed       EmbedBackfiller
 	Faces       FaceBackfiller
+	FaceCache   FaceCache
 	Importer    OrphanImporter
 	SampleLimit int
 }
@@ -161,6 +174,7 @@ type Service struct {
 	enqueuer    Enqueuer
 	embed       EmbedBackfiller
 	faces       FaceBackfiller
+	faceCache   FaceCache
 	importer    OrphanImporter
 	sampleLimit int
 }
@@ -168,10 +182,9 @@ type Service struct {
 // New returns a Service from cfg. It panics if any required collaborator is nil,
 // since a scan needs all of them; the optional OrphanImporter may be nil.
 func New(cfg Config) *Service {
-	if cfg.Photos == nil || cfg.Vectors == nil || cfg.Originals == nil ||
-		cfg.Disk == nil || cfg.Thumbs == nil || cfg.Enqueuer == nil ||
-		cfg.Embed == nil || cfg.Faces == nil {
-		panic("maintenance: Photos, Vectors, Originals, Disk, Thumbs, Enqueuer, Embed and Faces are required")
+	if missingCollaborator(cfg) {
+		panic("maintenance: Photos, Vectors, Originals, Disk, Thumbs, Enqueuer, " +
+			"Embed, Faces and FaceCache are required")
 	}
 	limit := cfg.SampleLimit
 	if limit <= 0 {
@@ -186,9 +199,26 @@ func New(cfg Config) *Service {
 		enqueuer:    cfg.Enqueuer,
 		embed:       cfg.Embed,
 		faces:       cfg.Faces,
+		faceCache:   cfg.FaceCache,
 		importer:    cfg.Importer,
 		sampleLimit: limit,
 	}
+}
+
+// missingCollaborator reports whether any collaborator a scan needs is left nil in
+// cfg. OrphanImporter is deliberately absent: it is the one optional dependency
+// (nil disables the orphan-import repair).
+func missingCollaborator(cfg Config) bool {
+	required := []any{
+		cfg.Photos, cfg.Vectors, cfg.Originals, cfg.Disk, cfg.Thumbs,
+		cfg.Enqueuer, cfg.Embed, cfg.Faces, cfg.FaceCache,
+	}
+	for _, dep := range required {
+		if dep == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Scan reconciles the catalogue against the files on disk and the derived data,
@@ -215,6 +245,10 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	duplicateMarkers, err := s.scanFaceMarkers(ctx)
+	if err != nil {
+		return Report{}, err
+	}
 	return Report{
 		Photos:               photoCount,
 		FilesInDB:            filesInDB,
@@ -226,7 +260,23 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 		MissingFaces:         derived.faces,
 		MissingPhashes:       derived.phashes,
 		TransposedDimensions: dimensions,
+		DuplicateFaceMarkers: duplicateMarkers,
 	}, nil
+}
+
+// scanFaceMarkers turns the markers cached on more than one face into a Finding
+// sampled by marker uid. It is the dry run of `maintenance repair --face-markers`:
+// every marker it counts is one whose surplus face links that repair clears.
+func (s *Service) scanFaceMarkers(ctx context.Context) (Finding, error) {
+	duplicates, err := s.vectors.ListDuplicateFaceMarkers(ctx)
+	if err != nil {
+		return Finding{}, fmt.Errorf("maintenance: listing duplicate face markers: %w", err)
+	}
+	uids := make([]string, len(duplicates))
+	for i, dup := range duplicates {
+		uids[i] = dup.MarkerUID
+	}
+	return findingFrom(uids, s.sampleLimit), nil
 }
 
 // scanDimensions turns the catalogue's transposed-dimension rows into a Finding.

@@ -499,3 +499,80 @@ func decodeAssign(t *testing.T, resp *http.Response) facematch.AssignResult {
 	}
 	return out
 }
+
+// TestFaces_oneMarkerPerFace checks the invariant "a marker is claimed by at most
+// one face" end-to-end over the geometry of the production photo where one person
+// showed up twice: two detected faces, one named marker overlapping both, and both
+// face rows already caching that marker.
+//
+// Two consecutive reads are what the assertion needs. The first must both report
+// the person once and clear the losing face's surplus link; the second must reach
+// the same pairing over the repaired rows, since an unstable choice would rewrite
+// the cache back and forth and put the duplicate straight back.
+func TestFaces_oneMarkerPerFace(t *testing.T) {
+	env := newEnv(t)
+	client := env.login(t, "dup-admin", auth.RoleAdmin)
+	ctx := context.Background()
+
+	uid := env.makePhoto(t, "onemarkerperface")
+	tomas := env.createSubject(t, "Tomáš Kozák")
+	marker := env.createMarker(t, uid, tomas.UID, [4]float64{0.2889, 0.3241, 0.0917, 0.1222})
+	unnamed := env.createMarker(t, uid, "", [4]float64{0.4019, 0.3121, 0.0430, 0.0783})
+	// Face 7 overlaps the marker by ~0.80, face 6 by ~0.16: both clear the matching
+	// threshold, which is why per-face matching handed the marker to each in turn.
+	env.saveFace(t, uid, 6, faceVec(6), [4]float64{0.3489, 0.2873, 0.0464, 0.1067}, "", "")
+	env.saveFace(t, uid, 7, faceVec(7), [4]float64{0.2965, 0.3217, 0.0755, 0.1227}, "", "")
+	for _, index := range []int{6, 7} {
+		if err := env.vectors.UpdateFaceMarker(ctx, uid, index, marker.UID, tomas.UID, tomas.Name); err != nil {
+			t.Fatalf("seeding duplicate link on face %d: %v", index, err)
+		}
+	}
+
+	for round := range 2 {
+		resp := env.getFaces(t, client, uid)
+		named, views := 0, map[int]facematch.FaceView{}
+		for _, view := range resp.Faces {
+			views[view.FaceIndex] = view
+			if view.SubjectUID == tomas.UID {
+				named++
+			}
+		}
+		if named != 1 {
+			t.Errorf("round %d: %d views name Tomáš Kozák, want 1 (%+v)", round, named, resp.Faces)
+		}
+		if got := views[7]; got.MarkerUID != marker.UID || got.Action != facematch.ActionAlreadyDone {
+			t.Errorf("round %d: face 7 = %+v, want already_done on %s", round, got, marker.UID)
+		}
+		if got := views[6]; got.MarkerUID != "" || got.SubjectUID != "" ||
+			got.Action != facematch.ActionCreateMarker {
+			t.Errorf("round %d: face 6 = %+v, want an unnamed face offered a new marker", round, got)
+		}
+		if got := views[-1]; got.MarkerUID != unnamed.UID {
+			t.Errorf("round %d: unmatched marker not rendered (%+v)", round, resp.Faces)
+		}
+	}
+
+	// The stored cache must agree: no marker may be claimed by two faces, and both
+	// face rows survive.
+	faces, err := env.vectors.ListFaces(ctx, uid)
+	if err != nil {
+		t.Fatalf("ListFaces: %v", err)
+	}
+	if len(faces) != 2 {
+		t.Fatalf("faces = %d, want 2 (rows are never deleted)", len(faces))
+	}
+	links := map[string]int{}
+	for _, face := range faces {
+		if face.MarkerUID != nil {
+			links[*face.MarkerUID]++
+		}
+	}
+	for markerUID, count := range links {
+		if count > 1 {
+			t.Errorf("marker %s claimed by %d faces, want at most 1", markerUID, count)
+		}
+	}
+	if links[marker.UID] != 1 {
+		t.Errorf("marker %s claimed by %d faces, want exactly 1", marker.UID, links[marker.UID])
+	}
+}

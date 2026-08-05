@@ -34,6 +34,62 @@ func (s *Store) UpdateFaceMarker(
 	return nil
 }
 
+// DuplicateFaceMarker is one marker cached on more than one of a photo's detected
+// faces. Face↔marker matching is exclusive — a marker describes one region, so at
+// most one face may claim it — which makes every row here a surplus link left by
+// the non-exclusive matching that used to run per face, or by an import that
+// carried the same marker onto two faces.
+type DuplicateFaceMarker struct {
+	// MarkerUID is the marker more than one face row caches.
+	MarkerUID string `json:"marker_uid"`
+	// PhotoUID is the photo those face rows belong to; re-matching it is what
+	// resolves the duplicate.
+	PhotoUID string `json:"photo_uid"`
+	// Faces is how many face rows cache the marker (always at least 2).
+	Faces int `json:"faces"`
+}
+
+// listDuplicateFaceMarkersSQL groups the face rows by the marker they cache and
+// keeps the markers cached on more than one face.
+//
+// The photo comes from the faces themselves rather than from a join onto markers,
+// because the faces are what a repair re-matches: were a marker's links somehow to
+// span two photos, both photos need visiting, and grouping this way reports one
+// row per photo instead of hiding one of them behind the marker's own photo.
+const listDuplicateFaceMarkersSQL = `
+SELECT marker_uid, photo_uid, count(*)
+FROM faces
+WHERE marker_uid IS NOT NULL
+GROUP BY marker_uid, photo_uid
+HAVING count(*) > 1
+ORDER BY marker_uid, photo_uid`
+
+// ListDuplicateFaceMarkers returns every marker cached on more than one face row,
+// with the photo the faces belong to and how many of them there are, ordered by
+// marker uid so the result is stable between runs. It is read-only: it reports the
+// surplus links the library-maintenance scan surfaces and the face↔marker repair
+// clears, and returns an empty slice when the cache is consistent.
+func (s *Store) ListDuplicateFaceMarkers(ctx context.Context) ([]DuplicateFaceMarker, error) {
+	rows, err := s.pool.Query(ctx, listDuplicateFaceMarkersSQL)
+	if err != nil {
+		return nil, fmt.Errorf("querying duplicate face markers: %w", err)
+	}
+	defer rows.Close()
+
+	duplicates := make([]DuplicateFaceMarker, 0)
+	for rows.Next() {
+		var dup DuplicateFaceMarker
+		if err := rows.Scan(&dup.MarkerUID, &dup.PhotoUID, &dup.Faces); err != nil {
+			return nil, fmt.Errorf("scanning duplicate face marker: %w", err)
+		}
+		duplicates = append(duplicates, dup)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading duplicate face markers: %w", err)
+	}
+	return duplicates, nil
+}
+
 // findSimilarFaceCandidatesSQL ranks face embeddings by cosine distance to the
 // query vector, keeping only those within $2 and returning the $3 nearest, with
 // the cached assignment columns and the bounding box needed to build suggestions.

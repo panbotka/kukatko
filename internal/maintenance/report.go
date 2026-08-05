@@ -41,6 +41,12 @@ type Report struct {
 	// applies the orientation to them rotates a second time. Listing them is the
 	// dry run of `maintenance repair --dimensions`.
 	TransposedDimensions Finding `json:"transposed_dimensions"`
+	// DuplicateFaceMarkers are markers cached on more than one detected face,
+	// sampled by marker uid. A marker describes one region, so a second face
+	// claiming it is a surplus link — it renders one person twice on the photo and
+	// misleads everything that reads faces.subject_uid. Listing them is the dry run
+	// of `maintenance repair --face-markers`.
+	DuplicateFaceMarkers Finding `json:"duplicate_face_markers"`
 }
 
 // Clean reports whether the scan found no problems at all, i.e. every Finding has
@@ -52,7 +58,8 @@ func (r Report) Clean() bool {
 		r.MissingEmbeddings.Count == 0 &&
 		r.MissingFaces.Count == 0 &&
 		r.MissingPhashes.Count == 0 &&
-		r.TransposedDimensions.Count == 0
+		r.TransposedDimensions.Count == 0 &&
+		r.DuplicateFaceMarkers.Count == 0
 }
 
 // findingCollector accumulates affected identifiers while iterating, counting

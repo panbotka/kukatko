@@ -27,6 +27,7 @@ func dimensionScenario() (*Service, *fakePhotos, *fakeVectors) {
 		Enqueuer:  &fakeEnqueuer{},
 		Embed:     &fakeBackfiller{},
 		Faces:     &fakeFaceBackfiller{},
+		FaceCache: &fakeFaceCache{},
 	})
 	return svc, ph, vec
 }

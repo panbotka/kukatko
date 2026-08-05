@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/vectors"
 )
 
 // --- fakes -------------------------------------------------------------------
@@ -53,6 +55,9 @@ type fakeVectors struct {
 	// repairedFaces records the (uid, raw width, raw height) it was called with.
 	facesPerPhoto int64
 	repairedFaces []string
+	// duplicateMarkers are the markers cached on more than one face, which the scan
+	// reports and the face-marker repair re-matches.
+	duplicateMarkers []vectors.DuplicateFaceMarker
 }
 
 func (f *fakeVectors) ListPhotosMissingEmbedding(context.Context, int) ([]string, error) {
@@ -66,6 +71,21 @@ func (f *fakeVectors) RepairFaceDimensions(
 ) (int64, error) {
 	f.repairedFaces = append(f.repairedFaces, fmt.Sprintf("%s:%dx%d", photoUID, rawWidth, rawHeight))
 	return f.facesPerPhoto, nil
+}
+func (f *fakeVectors) ListDuplicateFaceMarkers(context.Context) ([]vectors.DuplicateFaceMarker, error) {
+	return f.duplicateMarkers, nil
+}
+
+// fakeFaceCache records the photos whose surplus face↔marker links were cleared
+// and reports a fixed number of cleared rows per photo.
+type fakeFaceCache struct {
+	perPhoto int
+	cleared  []string
+}
+
+func (f *fakeFaceCache) ClearSurplusLinks(_ context.Context, photoUID string) (int, error) {
+	f.cleared = append(f.cleared, photoUID)
+	return f.perPhoto, nil
 }
 
 // fakeOriginals reports presence from a key set, returning os.ErrNotExist for
@@ -138,7 +158,8 @@ func (f *fakeImporter) ImportOriginal(_ context.Context, key string) (ImportOutc
 
 // scenario builds a Service over a representative drift fixture: p2's original is
 // missing on disk, p3's thumbnail is missing, orphan1 is an extra file on disk,
-// and one photo each is missing an embedding, faces and a pHash.
+// one photo each is missing an embedding, faces and a pHash, and marker mk1 is
+// cached on two of p1's faces.
 func scenario() (*Service, *fakeEnqueuer, *fakeBackfiller, *fakeFaceBackfiller, *fakeImporter) {
 	enq := &fakeEnqueuer{}
 	emb := &fakeBackfiller{n: 7}
@@ -155,13 +176,18 @@ func scenario() (*Service, *fakeEnqueuer, *fakeBackfiller, *fakeFaceBackfiller, 
 			filePaths:    []string{"a", "b", "c"},
 			missingPhash: []string{"p3"},
 		},
-		Vectors:   &fakeVectors{missingEmb: []string{"p2"}, missingFaces: []string{"p1"}},
+		Vectors: &fakeVectors{
+			missingEmb:       []string{"p2"},
+			missingFaces:     []string{"p1"},
+			duplicateMarkers: []vectors.DuplicateFaceMarker{{MarkerUID: "mk1", PhotoUID: "p1", Faces: 2}},
+		},
 		Originals: fakeOriginals{present: map[string]bool{"a": true, "c": true}},
 		Disk:      fakeDisk{files: []DiskFile{{Key: "a"}, {Key: "c"}, {Key: "orphan1"}}},
 		Thumbs:    fakeThumbs{have: map[string]bool{"h1": true, "h2": true}},
 		Enqueuer:  enq,
 		Embed:     emb,
 		Faces:     faces,
+		FaceCache: &fakeFaceCache{},
 		Importer:  imp,
 	})
 	return svc, enq, emb, faces, imp
@@ -191,6 +217,7 @@ func TestScan(t *testing.T) {
 		{"missing embeddings", report.MissingEmbeddings, 1, "p2"},
 		{"missing faces", report.MissingFaces, 1, "p1"},
 		{"missing phashes", report.MissingPhashes, 1, "p3"},
+		{"duplicate face markers", report.DuplicateFaceMarkers, 1, "mk1"},
 	}
 	for _, c := range checks {
 		if c.got.Count != c.count {
@@ -295,6 +322,7 @@ func TestRepairImportOrphanTally(t *testing.T) {
 		Enqueuer:  &fakeEnqueuer{},
 		Embed:     &fakeBackfiller{},
 		Faces:     &fakeFaceBackfiller{},
+		FaceCache: &fakeFaceCache{},
 		Importer:  imp,
 	})
 	res, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true})
@@ -319,10 +347,66 @@ func TestRepairOrphanImportUnavailable(t *testing.T) {
 		Enqueuer:  &fakeEnqueuer{},
 		Embed:     &fakeBackfiller{},
 		Faces:     &fakeFaceBackfiller{},
+		FaceCache: &fakeFaceCache{},
 		// Importer omitted.
 	})
 	if _, err := svc.Repair(context.Background(), RepairOptions{ImportOrphans: true}); !errors.Is(err, ErrOrphanImportUnavailable) {
 		t.Errorf("Repair error = %v, want ErrOrphanImportUnavailable", err)
+	}
+}
+
+// TestRepairFaceMarkersVisitsEachPhotoOnce verifies the face-marker repair
+// re-matches every photo carrying a duplicated marker exactly once — several
+// duplicates on one photo are resolved by a single pass — and tallies the cleared
+// links.
+func TestRepairFaceMarkersVisitsEachPhotoOnce(t *testing.T) {
+	t.Parallel()
+	cache := &fakeFaceCache{perPhoto: 2}
+	svc := New(Config{
+		Photos: &fakePhotos{},
+		Vectors: &fakeVectors{duplicateMarkers: []vectors.DuplicateFaceMarker{
+			{MarkerUID: "mkB", PhotoUID: "p2", Faces: 2},
+			{MarkerUID: "mkA", PhotoUID: "p1", Faces: 3},
+			{MarkerUID: "mkC", PhotoUID: "p1", Faces: 2},
+		}},
+		Originals: fakeOriginals{present: map[string]bool{}},
+		Disk:      fakeDisk{},
+		Thumbs:    fakeThumbs{have: map[string]bool{}},
+		Enqueuer:  &fakeEnqueuer{},
+		Embed:     &fakeBackfiller{},
+		Faces:     &fakeFaceBackfiller{},
+		FaceCache: cache,
+	})
+
+	res, err := svc.Repair(context.Background(), RepairOptions{FaceMarkers: true})
+	if err != nil {
+		t.Fatalf("Repair(face markers): %v", err)
+	}
+	if !slices.Equal(cache.cleared, []string{"p1", "p2"}) {
+		t.Errorf("re-matched photos = %v, want [p1 p2] (each once, sorted)", cache.cleared)
+	}
+	if res.FaceLinksCleared != 4 {
+		t.Errorf("FaceLinksCleared = %d, want 4 (2 per photo)", res.FaceLinksCleared)
+	}
+}
+
+// TestRepairFaceMarkersNotSelected verifies the face-marker repair is opt-in: an
+// unrelated repair must not touch the face cache.
+func TestRepairFaceMarkersNotSelected(t *testing.T) {
+	t.Parallel()
+	svc, _, _, _, _ := scenario()
+
+	if _, err := svc.Repair(context.Background(), RepairOptions{Thumbnails: true}); err != nil {
+		t.Fatalf("Repair(thumbnails): %v", err)
+	}
+	// The fixture reports a duplicated marker; nothing may have been cleared.
+	report, err := svc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if report.DuplicateFaceMarkers.Count != 1 {
+		t.Errorf("duplicate face markers = %d, want 1 (repair was not selected)",
+			report.DuplicateFaceMarkers.Count)
 	}
 }
 
