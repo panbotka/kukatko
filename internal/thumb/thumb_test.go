@@ -414,22 +414,23 @@ func TestPath_validation(t *testing.T) {
 	}
 }
 
-// TestOpen covers the not-cached path and a successful open after generation.
-func TestOpen(t *testing.T) {
+// TestOpenCached covers the not-cached path and a successful open after
+// generation.
+func TestOpenCached(t *testing.T) {
 	t.Parallel()
 	th, store := newThumbnailer(t)
 	photo := storeJPEG(t, store, 400, 300, 0)
 
-	if _, err := th.Open(photo.FileHash, "fit_720"); !errors.Is(err, ErrNotCached) {
-		t.Errorf("Open before generate error = %v, want ErrNotCached", err)
+	if _, err := th.OpenCached(photo.FileHash, "fit_720"); !errors.Is(err, ErrNotCached) {
+		t.Errorf("OpenCached before generate error = %v, want ErrNotCached", err)
 	}
 
 	if _, err := th.Generate(context.Background(), photo, "fit_720"); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	rc, err := th.Open(photo.FileHash, "fit_720")
+	rc, err := th.OpenCached(photo.FileHash, "fit_720")
 	if err != nil {
-		t.Fatalf("Open after generate: %v", err)
+		t.Fatalf("OpenCached after generate: %v", err)
 	}
 	defer func() { _ = rc.Close() }()
 	if _, _, err := image.Decode(rc); err != nil {

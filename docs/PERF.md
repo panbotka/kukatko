@@ -143,6 +143,19 @@ lists at all** (nothing is missing, so there is nothing to ask about), and a
 **failed listing falls back to encoding** — slower is a cost, whereas skipping a
 size that is not really in the bucket would leave a thumbnail no client can fetch.
 
+The price of the optimisation is a rule the rest of the application has to keep:
+**a generated size need not exist on disk.** `Generate` skipping a published size
+is the *point*, and the local file it did not write is exactly the file a caller
+must not go looking for. Whatever wants a thumbnail's bytes therefore reads them
+through `thumb.OpenOrGenerate` — local cache, then the published object, then
+encode — and never through `OpenCached`, which sees the disk alone. Breaking that
+rule is not a slow path, it is a dead one: reading the cache directly is what made
+**every** `image_embed` job on R2 fail its five attempts and dead-letter with
+`thumb: thumbnail not cached`, silently leaving each newly imported photo without
+an embedding — so no semantic search, no near-duplicate check and no "similar
+photos" for anything new. Fetching the object instead costs one GET against ~4 s
+of encoding it did not have to do.
+
 ### Which `fit_*` a face crop is worth
 
 A crop of a face is the one place where the smallest thumbnail is usually the

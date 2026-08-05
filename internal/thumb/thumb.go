@@ -23,6 +23,11 @@
 // pruned (thumbnails cost megabytes per photo, and an import can outgrow the
 // disk) is then re-thumbnailed for the price of one listing per photo instead of
 // a full re-encode and re-upload.
+//
+// The flip side is that on such a backend a size can be perfectly available
+// without a cache file to open, so anything that wants a thumbnail's bytes reads
+// them through OpenOrGenerate — cache, then bucket, then encode — and never
+// through OpenCached, which answers about the local disk alone.
 package thumb
 
 import (
@@ -192,10 +197,17 @@ func (t *Thumbnailer) Path(hash, size string) (string, error) {
 	return filepath.Join(t.cacheDir, filepath.FromSlash(rel)), nil
 }
 
-// Open opens the cached thumbnail for the given hash and size for reading. The
-// caller owns the returned reader and must close it. It returns ErrNotCached
-// (wrapping os.ErrNotExist) when the thumbnail has not been generated.
-func (t *Thumbnailer) Open(hash, size string) (io.ReadCloser, error) {
+// OpenCached opens the thumbnail for the given hash and size from the local disk
+// cache. The caller owns the returned reader and must close it. It returns
+// ErrNotCached when no cache file is there.
+//
+// It answers about the cache and nothing else, which on a backend that publishes
+// its objects is not the same question as "is this size available": there the
+// bucket is where a size durably lives, a published size may well have no cache
+// file at all (see Generate), and asking this is how a caller ends up concluding
+// a thumbnail is missing when it is one GET away. Anything that needs the bytes
+// rather than the cache entry must call OpenOrGenerate.
+func (t *Thumbnailer) OpenCached(hash, size string) (io.ReadCloser, error) {
 	abs, err := t.Path(hash, size)
 	if err != nil {
 		return nil, err
@@ -208,6 +220,81 @@ func (t *Thumbnailer) Open(hash, size string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("thumb: open cached %s/%s: %w", hash, size, err)
 	}
 	return f, nil
+}
+
+// OpenOrGenerate returns a reader over the photo's thumbnail at size, wherever
+// that size happens to live, generating it when it lives nowhere yet. The caller
+// owns the returned reader and must close it.
+//
+// It looks in the local cache first, then — on a backend that publishes its
+// objects — at the object the store holds, and only then encodes. That order is
+// what makes it backend-independent: on such a backend the bucket, not the disk,
+// is where a size durably lives, so a cache file need never have existed (an
+// upload happened on another host, or the cache was pruned) and Generate will
+// not create one for a size the store already holds. A caller that wants the
+// bytes must therefore be prepared to fetch them, which is the whole difference
+// between this and OpenCached.
+//
+// It returns ErrUnknownSize for an unregistered size, ErrInvalidHash for a
+// malformed photo file hash, or a wrapped error from the store or the encoder.
+func (t *Thumbnailer) OpenOrGenerate(
+	ctx context.Context, photo photos.Photo, size string,
+) (io.ReadCloser, error) {
+	reader, err := t.openAvailable(ctx, photo.FileHash, size)
+	if err == nil {
+		return reader, nil
+	}
+	if !errors.Is(err, ErrNotCached) {
+		return nil, err
+	}
+	if _, err := t.Generate(ctx, photo, size); err != nil {
+		return nil, err
+	}
+	// Generate may have written the cache file, or may have skipped the size
+	// because the store already published it — in which case the object is where
+	// the bytes are. Ask both again rather than assuming which one happened.
+	reader, err = t.openAvailable(ctx, photo.FileHash, size)
+	if err != nil {
+		return nil, err
+	}
+	return reader, nil
+}
+
+// openAvailable opens the size from the local cache, falling back to the object
+// the storage backend published. It returns ErrNotCached when neither holds it,
+// which is the signal OpenOrGenerate turns into an encode.
+func (t *Thumbnailer) openAvailable(ctx context.Context, hash, size string) (io.ReadCloser, error) {
+	reader, err := t.OpenCached(hash, size)
+	if err == nil {
+		return reader, nil
+	}
+	if !errors.Is(err, ErrNotCached) {
+		return nil, err
+	}
+	return t.openPublished(ctx, hash, size)
+}
+
+// openPublished opens the thumbnail object the storage backend holds under the
+// size's canonical key. It returns ErrNotCached both when the backend publishes
+// no URLs — a filesystem backend keeps thumbnails in the cache directory alone,
+// so its store holds no such object — and when the object is not there, so the
+// caller can treat "not available yet" uniformly and encode it.
+func (t *Thumbnailer) openPublished(ctx context.Context, hash, size string) (io.ReadCloser, error) {
+	rel, err := RelPath(hash, size)
+	if err != nil {
+		return nil, err
+	}
+	if t.originals.URL(rel) == "" {
+		return nil, fmt.Errorf("%w: %s/%s", ErrNotCached, hash, size)
+	}
+	reader, err := t.originals.Open(ctx, rel)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("%w: %s/%s", ErrNotCached, hash, size)
+		}
+		return nil, fmt.Errorf("thumb: fetching published %s/%s: %w", hash, size, err)
+	}
+	return reader, nil
 }
 
 // Remove deletes every registered thumbnail size cached for the given file

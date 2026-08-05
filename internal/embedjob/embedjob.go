@@ -71,14 +71,13 @@ type VectorStore interface {
 	ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]string, error)
 }
 
-// Previewer renders and opens a decodable preview image for a photo. It is
-// satisfied by thumb.Thumbnailer.
+// Previewer opens a decodable preview image for a photo, producing it if it does
+// not exist yet. It is satisfied by thumb.Thumbnailer.
 type Previewer interface {
-	// Generate produces the requested sizes for photo (idempotent skip when
-	// already cached) and returns size→absolute path.
-	Generate(ctx context.Context, photo photos.Photo, sizes ...string) (map[string]string, error)
-	// Open opens the cached thumbnail for the given file hash and size.
-	Open(hash, size string) (io.ReadCloser, error)
+	// OpenOrGenerate returns a reader over the photo's preview at size, from
+	// wherever it is available (local cache or object store) and generating it
+	// when it is available nowhere.
+	OpenOrGenerate(ctx context.Context, photo photos.Photo, size string) (io.ReadCloser, error)
 }
 
 // Enqueuer schedules image_embed jobs for the backfill. It is satisfied by
@@ -217,17 +216,21 @@ func (s *Service) Embed(ctx context.Context, photoUID string) error {
 	return nil
 }
 
-// computeEmbedding renders (if needed) the photo's preview thumbnail and streams
-// it to the sidecar, returning the embedding vector and the sidecar's model
-// tags. The sidecar error (including the offline ErrUnavailable) is returned
-// wrapped so callers can classify it with embedding.IsUnavailable.
+// computeEmbedding opens the photo's preview thumbnail — rendering or fetching
+// it as needed — and streams it to the sidecar, returning the embedding vector
+// and the sidecar's model tags. The sidecar error (including the offline
+// ErrUnavailable) is returned wrapped so callers can classify it with
+// embedding.IsUnavailable.
+//
+// The preview is asked for by photo rather than opened from the thumbnail cache
+// by hand: on an object-store backend the preview usually has no local cache file
+// at all (the thumbnail job published it and the cache is pruned), and reading
+// the cache directly is what left every image_embed job on such a backend
+// dead-lettering with "thumbnail not cached".
 func (s *Service) computeEmbedding(
 	ctx context.Context, photo photos.Photo,
 ) (vec []float32, model, pretrained string, err error) {
-	if _, err := s.preview.Generate(ctx, photo, s.previewSize); err != nil {
-		return nil, "", "", fmt.Errorf("embedjob: generating preview for %s: %w", photo.UID, err)
-	}
-	reader, err := s.preview.Open(photo.FileHash, s.previewSize)
+	reader, err := s.preview.OpenOrGenerate(ctx, photo, s.previewSize)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("embedjob: opening preview for %s: %w", photo.UID, err)
 	}

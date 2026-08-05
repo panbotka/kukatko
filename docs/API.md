@@ -237,7 +237,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `GET /photos/{uid}/thumb/{size}` and `/download` (session/`?t=` token) **stream** the media
   (`Cache-Control`/`ETag`/`304`), or — when the backend publishes objects — answer with a **`302` redirect**
   to a signed URL (`Cache-Control: private, no-store`, so the cache does not outlive the signature); the routes
-  remain, so old links and bookmarks keep working. `GET /photos/{uid}/video` (session/`?t=` token) streams
+  remain, so old links and bookmarks keep working. The streaming branch of `/thumb/{size}` reads the size
+  through `thumb.OpenOrGenerate` (local cache → the published object → generate), so it also answers on a
+  backend that publishes objects but mints no signed URL, where the thumbnail may exist only in the bucket. `GET /photos/{uid}/video` (session/`?t=` token) streams
   video **with HTTP Range** (206 partial, `Accept-Ranges`, seek; a live photo = a motion clip, still → 404)
   for inline HTML5 playback, or redirects to the Worker, which serves Range directly from R2 (dropping the
   requirement of a seekable local file); an optional on-the-fly transcode of non-web-friendly codecs via
