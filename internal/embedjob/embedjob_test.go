@@ -68,25 +68,30 @@ func (f *fakeVectorStore) ListPhotosMissingEmbedding(_ context.Context, _ int) (
 	return append([]string(nil), f.missing...), nil
 }
 
-// fakePreviewer is a Previewer that serves a fixed preview payload.
+// previewBytes is the fixed payload the fake previewer serves, so a test can
+// assert the sidecar received exactly what the previewer handed over.
+const previewBytes = "jpeg-bytes"
+
+// fakePreviewer is a Previewer that serves a fixed preview payload and records
+// what it was asked for. It has no notion of a local cache, which is the point:
+// on the object-store backend a preview is routinely available with no cache file
+// behind it, so the service may only ask for the image itself.
 type fakePreviewer struct {
-	generateErr error
-	openErr     error
+	openErr  error
+	gotPhoto photos.Photo
+	gotSize  string
 }
 
-// Generate records nothing and returns generateErr.
-func (f *fakePreviewer) Generate(
-	_ context.Context, _ photos.Photo, _ ...string,
-) (map[string]string, error) {
-	return map[string]string{}, f.generateErr
-}
-
-// Open returns a fixed in-memory preview reader or openErr.
-func (f *fakePreviewer) Open(_, _ string) (io.ReadCloser, error) {
+// OpenOrGenerate records the request and returns a fixed in-memory preview
+// reader, or openErr when one is configured.
+func (f *fakePreviewer) OpenOrGenerate(
+	_ context.Context, photo photos.Photo, size string,
+) (io.ReadCloser, error) {
+	f.gotPhoto, f.gotSize = photo, size
 	if f.openErr != nil {
 		return nil, f.openErr
 	}
-	return io.NopCloser(strings.NewReader("jpeg-bytes")), nil
+	return io.NopCloser(strings.NewReader(previewBytes)), nil
 }
 
 // fakeClient is an embedding.Client returning canned image embeddings.
@@ -96,11 +101,18 @@ type fakeClient struct {
 	pretrained string
 	err        error
 	calls      int
+	got        string // the image bytes of the most recent ImageEmbedding call
 }
 
-// ImageEmbedding records the call and returns the canned vector or error.
-func (f *fakeClient) ImageEmbedding(_ context.Context, _ io.Reader) ([]float32, string, string, error) {
+// ImageEmbedding records the call and the bytes it was handed, then returns the
+// canned vector or error.
+func (f *fakeClient) ImageEmbedding(_ context.Context, src io.Reader) ([]float32, string, string, error) {
 	f.calls++
+	body, err := io.ReadAll(src)
+	if err != nil {
+		return nil, "", "", err
+	}
+	f.got = string(body)
 	if f.err != nil {
 		return nil, "", "", f.err
 	}
@@ -172,6 +184,61 @@ func TestEmbed_success(t *testing.T) {
 	}
 	if len(got.Vector) != vectors.ImageDim {
 		t.Errorf("saved vector len = %d, want %d", len(got.Vector), vectors.ImageDim)
+	}
+}
+
+// TestEmbed_asksForThePreviewByPhoto proves how the preview is obtained, which is
+// where this handler used to be wrong: it asks the previewer for the photo's
+// preview at the configured size and streams back exactly what it is given.
+//
+// It must not resolve the image itself — the local thumbnail cache is not where a
+// preview necessarily lives. On the object-store backend the thumbnail job
+// publishes the size to the bucket and leaves no cache file, and a handler that
+// opened the cache by file hash found nothing, retried five times and
+// dead-lettered every image_embed job on that backend.
+func TestEmbed_asksForThePreviewByPhoto(t *testing.T) {
+	t.Parallel()
+
+	photo := photos.Photo{UID: "ph1", FileHash: "abc", FilePath: "2026/08/a.jpg"}
+	ps := &fakePhotoStore{photos: map[string]photos.Photo{"ph1": photo}}
+	client := &fakeClient{vec: imageVec()}
+	preview := &fakePreviewer{}
+	svc := newService(t, ps, &fakeVectorStore{}, client, preview, &fakeEnqueuer{})
+
+	if err := svc.Embed(context.Background(), "ph1"); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if preview.gotPhoto.UID != photo.UID || preview.gotPhoto.FilePath != photo.FilePath {
+		t.Errorf("previewer was asked for %+v, want the photo %+v", preview.gotPhoto, photo)
+	}
+	if preview.gotSize != DefaultPreviewSize {
+		t.Errorf("previewer was asked for size %q, want %q", preview.gotSize, DefaultPreviewSize)
+	}
+	if client.got != previewBytes {
+		t.Errorf("sidecar received %q, want the previewer's bytes %q", client.got, previewBytes)
+	}
+}
+
+// TestEmbed_previewFailureIsReported proves a preview that can be obtained from
+// nowhere fails the job (so it retries and is visible) rather than embedding
+// something else.
+func TestEmbed_previewFailureIsReported(t *testing.T) {
+	t.Parallel()
+
+	ps := &fakePhotoStore{photos: map[string]photos.Photo{"ph1": {UID: "ph1", FileHash: "abc"}}}
+	client := &fakeClient{vec: imageVec()}
+	preview := &fakePreviewer{openErr: errors.New("original is gone")}
+	svc := newService(t, ps, &fakeVectorStore{}, client, preview, &fakeEnqueuer{})
+
+	err := svc.Embed(context.Background(), "ph1")
+	if err == nil {
+		t.Fatal("Embed with an unavailable preview = nil, want an error")
+	}
+	if !strings.Contains(err.Error(), "original is gone") {
+		t.Errorf("Embed error = %v, want the previewer's cause", err)
+	}
+	if client.calls != 0 {
+		t.Errorf("sidecar called %d time(s) without a preview, want 0", client.calls)
 	}
 }
 

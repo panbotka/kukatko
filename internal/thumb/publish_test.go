@@ -3,7 +3,7 @@ package thumb
 import (
 	"context"
 	"errors"
-	"fmt"
+	"image"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -28,6 +29,7 @@ type publishingFS struct {
 	lists   int    // how many times the published keys were listed
 	failOn  string // size name whose Put fails, or "" to never fail
 	listErr error  // when set, every prefix listing fails with it
+	openErr error  // when set, every object read fails with it
 }
 
 // newPublishingFS wraps store as a publishing backend that records its Puts.
@@ -41,28 +43,39 @@ func (p *publishingFS) URL(relPath string) string {
 	return "https://cdn.example/" + relPath + "?sig=test"
 }
 
-// Put records the uploaded object's identity keyed by its RelPath, draining the
-// stream to confirm it is readable and its length matches the declared size (as
-// the real backends verify). It returns an error when file.RelPath names the
+// Put records the uploaded object's identity keyed by its RelPath and keeps its
+// bytes, writing them through the wrapped store (which verifies the stream
+// against the declared size and digest, as the real backends do). Keeping the
+// bytes is what lets Open serve a published size back — the read path a cold
+// local cache depends on. It returns an error when file.RelPath names the
 // configured failing size, simulating a backend that rejects the write.
-func (p *publishingFS) Put(_ context.Context, src io.Reader, file storage.StoredFile) error {
+func (p *publishingFS) Put(ctx context.Context, src io.Reader, file storage.StoredFile) error {
 	p.mu.Lock()
 	p.putCall++
 	p.mu.Unlock()
 	if p.failOn != "" && strings.HasSuffix(file.RelPath, p.failOn+".jpg") {
 		return errors.New("simulated put failure")
 	}
-	length, err := io.Copy(io.Discard, src)
-	if err != nil {
+	if err := p.FS.Put(ctx, src, file); err != nil {
 		return err
-	}
-	if length != file.Size {
-		return fmt.Errorf("stream length %d != declared size %d", length, file.Size)
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.puts[file.RelPath] = file
 	return nil
+}
+
+// Open reads a published object back, which is how a cold local cache is served
+// from the bucket. It fails with openErr when one is configured, standing in for
+// a bucket that is briefly unreachable.
+func (p *publishingFS) Open(ctx context.Context, relPath string) (io.ReadCloser, error) {
+	p.mu.Lock()
+	openErr := p.openErr
+	p.mu.Unlock()
+	if openErr != nil {
+		return nil, openErr
+	}
+	return p.FS.Open(ctx, relPath)
 }
 
 // recorded returns the identity of the object published at relPath.
@@ -459,6 +472,180 @@ func TestRegenerateAll_rebuildsEvenWhenPublished(t *testing.T) {
 	}
 	if puts, _ := pub.counts(); puts != firstPuts+len(SizeNames()) {
 		t.Errorf("RegenerateAll made %d Put(s), want %d", puts-firstPuts, len(SizeNames()))
+	}
+}
+
+// decodeAll reads everything from reader, closes it, and fails the test unless
+// the bytes are a decodable image.
+func decodeAll(t *testing.T, reader io.ReadCloser) image.Image {
+	t.Helper()
+	defer func() { _ = reader.Close() }()
+	img, _, err := image.Decode(reader)
+	if err != nil {
+		t.Fatalf("decoding the opened thumbnail: %v", err)
+	}
+	return img
+}
+
+// TestOpenOrGenerate_readsThePublishedObject reproduces production on the object
+// store — the size is in the bucket and the local cache has been pruned — and
+// proves the read succeeds from the bucket without re-encoding anything.
+//
+// This is the state that dead-lettered every image_embed job after the move to
+// R2: the thumbnail job published the size, Generate then correctly declined to
+// encode it again, and the caller that went looking for a cache file found none.
+func TestOpenOrGenerate_readsThePublishedObject(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	store, err := storage.NewFS(filepath.Join(root, "originals"))
+	if err != nil {
+		t.Fatalf("storage.NewFS: %v", err)
+	}
+	pub := newPublishingFS(store)
+	cache := filepath.Join(root, "cache")
+	th := New(pub, cache)
+	photo := storeJPEG(t, store, 800, 600, 1)
+
+	if _, err := th.Generate(t.Context(), photo, "fit_720"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if err := os.RemoveAll(cache); err != nil {
+		t.Fatalf("pruning the cache: %v", err)
+	}
+	publishedPuts, _ := pub.counts()
+
+	// The trap: the local cache alone says the size does not exist.
+	if _, err := th.OpenCached(photo.FileHash, "fit_720"); !errors.Is(err, ErrNotCached) {
+		t.Fatalf("OpenCached over a pruned cache = %v, want ErrNotCached", err)
+	}
+
+	reader, err := th.OpenOrGenerate(t.Context(), photo, "fit_720")
+	if err != nil {
+		t.Fatalf("OpenOrGenerate over a pruned cache: %v", err)
+	}
+	if bounds := decodeAll(t, reader).Bounds(); bounds.Dx() != 720 || bounds.Dy() != 540 {
+		t.Errorf("published fit_720 decoded to %dx%d, want 720x540", bounds.Dx(), bounds.Dy())
+	}
+	if puts, _ := pub.counts(); puts != publishedPuts {
+		t.Errorf("reading the published size made %d further Put(s), want 0", puts-publishedPuts)
+	}
+	abs, err := th.Path(photo.FileHash, "fit_720")
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	if fileExists(abs) {
+		t.Errorf("reading re-encoded the size into %s; want it read from the bucket", abs)
+	}
+}
+
+// TestOpenOrGenerate_encodesWhatIsNowhereYet proves the last resort still works
+// on a publishing backend: a size that is in neither the cache nor the bucket is
+// encoded, published and returned.
+func TestOpenOrGenerate_encodesWhatIsNowhereYet(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	store, err := storage.NewFS(filepath.Join(root, "originals"))
+	if err != nil {
+		t.Fatalf("storage.NewFS: %v", err)
+	}
+	pub := newPublishingFS(store)
+	th := New(pub, filepath.Join(root, "cache"))
+	photo := storeJPEG(t, store, 800, 600, 1)
+
+	reader, err := th.OpenOrGenerate(t.Context(), photo, "fit_720")
+	if err != nil {
+		t.Fatalf("OpenOrGenerate: %v", err)
+	}
+	if bounds := decodeAll(t, reader).Bounds(); bounds.Dx() != 720 || bounds.Dy() != 540 {
+		t.Errorf("generated fit_720 decoded to %dx%d, want 720x540", bounds.Dx(), bounds.Dy())
+	}
+	rel, err := RelPath(photo.FileHash, "fit_720")
+	if err != nil {
+		t.Fatalf("RelPath: %v", err)
+	}
+	if _, ok := pub.recorded(rel); !ok {
+		t.Errorf("the generated size was not published to %s", rel)
+	}
+}
+
+// TestOpenOrGenerate_filesystemBackendServesTheCache proves the primitive is
+// backend-independent in the other direction too: with no published URLs the
+// bytes come from the local cache, generated on the first call and reused on the
+// second.
+func TestOpenOrGenerate_filesystemBackendServesTheCache(t *testing.T) {
+	t.Parallel()
+	th, store := newThumbnailer(t)
+	photo := storeJPEG(t, store, 800, 600, 0)
+
+	first, err := th.OpenOrGenerate(t.Context(), photo, "tile_224")
+	if err != nil {
+		t.Fatalf("first OpenOrGenerate: %v", err)
+	}
+	if bounds := decodeAll(t, first).Bounds(); bounds.Dx() != 224 || bounds.Dy() != 224 {
+		t.Errorf("tile_224 decoded to %dx%d, want 224x224", bounds.Dx(), bounds.Dy())
+	}
+	abs, err := th.Path(photo.FileHash, "tile_224")
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	if !fileExists(abs) {
+		t.Fatalf("a non-publishing backend left no cache file at %s", abs)
+	}
+
+	second, err := th.OpenOrGenerate(t.Context(), photo, "tile_224")
+	if err != nil {
+		t.Fatalf("second OpenOrGenerate: %v", err)
+	}
+	_ = decodeAll(t, second)
+}
+
+// TestOpenOrGenerate_rejectsBadInput proves an unregistered size and a malformed
+// hash fail before any work, with the same sentinels the rest of the package
+// uses.
+func TestOpenOrGenerate_rejectsBadInput(t *testing.T) {
+	t.Parallel()
+	th, store := newThumbnailer(t)
+	photo := storeJPEG(t, store, 100, 100, 0)
+
+	if _, err := th.OpenOrGenerate(t.Context(), photo, "bogus"); !errors.Is(err, ErrUnknownSize) {
+		t.Errorf("unknown size error = %v, want ErrUnknownSize", err)
+	}
+	bad := photos.Photo{FileHash: "xyz", FilePath: photo.FilePath}
+	if _, err := th.OpenOrGenerate(t.Context(), bad, "fit_720"); !errors.Is(err, ErrInvalidHash) {
+		t.Errorf("invalid hash error = %v, want ErrInvalidHash", err)
+	}
+}
+
+// TestOpenOrGenerate_storeFailureIsNotMistakenForMissing proves a store that
+// errors on the read is reported as an error rather than silently re-encoded: a
+// bucket that is briefly unreachable must not turn into a full re-encode of every
+// preview the embedding backfill touches.
+func TestOpenOrGenerate_storeFailureIsNotMistakenForMissing(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	store, err := storage.NewFS(filepath.Join(root, "originals"))
+	if err != nil {
+		t.Fatalf("storage.NewFS: %v", err)
+	}
+	pub := newPublishingFS(store)
+	cache := filepath.Join(root, "cache")
+	th := New(pub, cache)
+	photo := storeJPEG(t, store, 400, 300, 1)
+
+	if _, err := th.Generate(t.Context(), photo, "fit_720"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if err := os.RemoveAll(cache); err != nil {
+		t.Fatalf("pruning the cache: %v", err)
+	}
+	pub.openErr = errors.New("bucket unreachable")
+
+	_, err = th.OpenOrGenerate(t.Context(), photo, "fit_720")
+	if err == nil {
+		t.Fatal("OpenOrGenerate: expected the store's read error, got nil")
+	}
+	if errors.Is(err, ErrNotCached) {
+		t.Errorf("a failed store read was reported as ErrNotCached: %v", err)
 	}
 }
 

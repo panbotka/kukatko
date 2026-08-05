@@ -95,22 +95,19 @@ func (a *API) handleThumb(w http.ResponseWriter, r *http.Request) {
 	streamMedia(w, r, reader, etag, 0)
 }
 
-// openThumb returns a reader for the photo's thumbnail at size, generating the
-// thumbnail when it is not yet cached.
+// openThumb returns a reader for the photo's thumbnail at size, from wherever it
+// is available and generating it when it is available nowhere.
+//
+// This route is normally unreachable on a backend that publishes its objects —
+// handleThumb has already redirected to the signed URL by then — but it must not
+// depend on that, because the fallback is what answers when signing is not
+// configured. Going through the thumbnailer's backend-independent read keeps that
+// path from concluding "unavailable" over a thumbnail that is sitting in the
+// bucket, the way image_embed used to.
 func (a *API) openThumb(r *http.Request, photo photos.Photo, size string) (io.ReadCloser, error) {
-	reader, err := a.thumbnailer.Open(photo.FileHash, size)
-	if err == nil {
-		return reader, nil
-	}
-	if !errors.Is(err, thumb.ErrNotCached) {
-		return nil, fmt.Errorf("photoapi: opening thumbnail: %w", err)
-	}
-	if _, genErr := a.thumbnailer.Generate(r.Context(), photo, size); genErr != nil {
-		return nil, fmt.Errorf("photoapi: generating thumbnail: %w", genErr)
-	}
-	reader, err = a.thumbnailer.Open(photo.FileHash, size)
+	reader, err := a.thumbnailer.OpenOrGenerate(r.Context(), photo, size)
 	if err != nil {
-		return nil, fmt.Errorf("photoapi: opening generated thumbnail: %w", err)
+		return nil, fmt.Errorf("photoapi: opening thumbnail: %w", err)
 	}
 	return reader, nil
 }

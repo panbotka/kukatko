@@ -392,7 +392,8 @@ to `## Package map` in `CLAUDE.md`.
   `GenerateAll(ctx,photo)` (a size→abs-path map, skips existing)/
   `RegenerateAll(ctx,photo)` (**force** — overwrites all sizes in-place with an atomic
   temp+rename, and republishes to object store; the basis of the "regenerate thumbnail" service action)/
-  `Path(hash,size)`/`Open(hash,size)`;
+  `Path(hash,size)`/`OpenCached(hash,size)` (the **local cache alone**)/
+  `OpenOrGenerate(ctx,photo,size)` (**the backend-independent read** — see below);
   the package-level `RelPath(hash,size)` returns the same cache path relatively — it is also the **object key**
   of the thumbnail in the remote backend, which is why the layout is exported instead of derived a second time elsewhere;
   `CacheSubdir` (`thumb`) exports the top of that layout for the operations that address the **whole prefix**
@@ -415,6 +416,16 @@ to `## Package map` in `CLAUDE.md`.
   backend cannot list by prefix, and a **failed listing falls back to encoding** — being slower is a cost,
   skipping a size that is not really there would leave a thumbnail no client can fetch. `RegenerateAll` (force)
   ignores the check entirely and rebuilds regardless;
+  **reading a size back is not the same question as "is it cached"** — the flip side of the above. On a publishing
+  backend a size that `dropPublished` skipped leaves no local file at all (nor does one whose cache was pruned),
+  so `Generate` returning success promises nothing about the disk. `OpenOrGenerate(ctx,photo,size)` is the read
+  that does not care which backend it is on: local cache → the object the store published (`storage.Open` under
+  `RelPath`, gated on `URL(rel) != ""`, a missing object mapped onto `ErrNotCached`) → encode. Everything that
+  wants the **bytes** goes through it (`internal/embedjob`'s preview, `photoapi`'s thumbnail-route fallback);
+  `OpenCached` answers about the local disk alone and is only for callers that really mean the cache. Mistaking
+  the one for the other is what dead-lettered **every** `image_embed` job after the move to R2 — the thumbnail
+  job published the preview, `Generate` rightly declined to re-encode it, and the handler then failed on the
+  cache file that had never existed (spec `task-08a84c07`);
   `GridSize` (`tile_500`) is the size the grid renders and that `thumb_url` carries in the payload;
   decode once per photo, parallel encode of the sizes (errgroup, default `GOMAXPROCS`,
   bound via `thumb.concurrency`);
@@ -993,7 +1004,11 @@ to `## Package map` in `CLAUDE.md`.
   `PhotoStore`/`VectorStore`/`Previewer`/`Enqueuer`+`embedding.Client`: `Service` =
   `New(Config{Photos,Vectors,Client,Previewer,Enqueuer,PreviewSize,OfflineRetryDelay,
   DuplicateMaxDist})`; **the `image_embed` handler** `Handle`(=`worker.HandlerFunc`, registered
-  in `serve`) → from the payload `{"photo_uid"}` loads the photo, renders (idempotently) the `fit_720` thumbnail,
+  in `serve`) → from the payload `{"photo_uid"}` loads the photo, opens the `fit_720` preview through
+  `Previewer.OpenOrGenerate(ctx,photo,size)` — **the whole `Previewer` interface**, one method: the preview is
+  asked for by photo, never resolved out of the thumbnail cache by hash, because on the object-store backend a
+  published preview routinely has no cache file (that mistake dead-lettered every `image_embed` job on R2, see
+  `internal/thumb`) —
   sends `ImageEmbedding` to the sidecar, stores a 768-dim `halfvec` via `vectors.SaveEmbedding`+`model`/
   `pretrained`; **idempotent** (a photo with an embedding is skipped without calling the sidecar), **box
   offline** (`embedding.IsUnavailable`) → `worker.RetryAfter(5 min)` (deferral without burning an attempt),

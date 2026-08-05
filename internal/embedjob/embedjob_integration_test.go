@@ -38,7 +38,8 @@ type harness struct {
 	photos      *photos.Store
 	vectors     *vectors.Store
 	jobs        *jobs.Store
-	storage     *storage.FS
+	storage     storage.Storage
+	cacheDir    string
 	thumbnailer *thumb.Thumbnailer
 }
 
@@ -46,21 +47,31 @@ type harness struct {
 // integration database and isolated temp directories.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	db := dbtest.New(t)
-	dbtest.TruncateAll(t, db)
-
 	root := t.TempDir()
 	store, err := storage.NewFS(filepath.Join(root, "originals"))
 	if err != nil {
 		t.Fatalf("storage.NewFS: %v", err)
 	}
+	return newHarnessOver(t, store, filepath.Join(root, "cache"))
+}
+
+// newHarnessOver builds the live stores over the given originals backend and
+// thumbnail cache root, on a freshly truncated integration database. It is what
+// lets the same cases run against the object store as against the local disk —
+// the two backends differ in exactly the places this package used to get wrong.
+func newHarnessOver(t *testing.T, store storage.Storage, cacheDir string) *harness {
+	t.Helper()
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+
 	return &harness{
 		db:          db,
 		photos:      photos.NewStore(db.Pool()),
 		vectors:     vectors.NewStore(db.Pool()),
 		jobs:        jobs.NewStore(db.Pool()),
 		storage:     store,
-		thumbnailer: thumb.New(store, filepath.Join(root, "cache")),
+		cacheDir:    cacheDir,
+		thumbnailer: thumb.New(store, cacheDir),
 	}
 }
 
