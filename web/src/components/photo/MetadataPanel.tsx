@@ -123,6 +123,13 @@ interface EditableFieldProps {
  * one placeholder is a column of identical grey text that tells the reader nothing
  * about what any of them is for or why they would fill it in — which is exactly
  * the moment they most need telling.
+ *
+ * Every one of these fields is typed into a `<textarea>`, so a value comes back
+ * with the line breaks its author put there and `.kk-multiline` keeps them
+ * (`white-space: pre-wrap`); left to HTML's whitespace collapsing a two-line photo-
+ * book caption rendered as one line. The value stays plain text — the breaks are
+ * never rewritten into markup — so `text-break` stays with it to keep one long
+ * unbroken token from setting the width of the panel.
  */
 function EditableField({ label, prompt, value, display, canWrite, onEdit }: EditableFieldProps) {
   const { t } = useTranslation()
@@ -141,7 +148,11 @@ function EditableField({ label, prompt, value, display, canWrite, onEdit }: Edit
           {label}
           <Icon name="pencil" />
         </span>
-        <span className={hasValue ? 'd-block text-break' : 'd-block text-secondary fst-italic'}>
+        <span
+          className={
+            hasValue ? 'd-block text-break kk-multiline' : 'd-block text-secondary fst-italic'
+          }
+        >
           {hasValue ? shown : prompt}
         </span>
       </button>
@@ -154,7 +165,7 @@ function EditableField({ label, prompt, value, display, canWrite, onEdit }: Edit
   return (
     <div className="mb-2">
       <div className="small text-secondary">{label}</div>
-      <div className="text-break">{shown}</div>
+      <div className="text-break kk-multiline">{shown}</div>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { getDefaultNormalizer, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
@@ -8,6 +8,7 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { ApiError } from '../services/auth'
 import { type AdminUser } from '../services/users'
+import { installRule } from '../test/css'
 
 import { UsersPage } from './UsersPage'
 
@@ -198,6 +199,44 @@ describe('UsersPage', () => {
     expect(screen.getByText('bob')).toBeInTheDocument()
     expect(screen.getByText('Disabled')).toBeInTheDocument()
     expect(screen.getByText('Never')).toBeInTheDocument()
+  })
+
+  it('keeps a note written on two lines on two lines', async () => {
+    // The note is typed into a `<textarea>`, so it comes back with the breaks the
+    // administrator put there; HTML's whitespace collapsing would run them into
+    // one line. jsdom loads no stylesheet, so the real rule comes from `app.css`.
+    const uninstall = installRule('src/styles/app.css', '.kk-multiline')
+    try {
+      fetchUsersMock.mockResolvedValue([user({ note: 'On loan\nuntil June' })])
+      renderPage()
+
+      expect(await screen.findByText('ada')).toBeInTheDocument()
+      const note = screen.getByText('On loan\nuntil June', {
+        normalizer: getDefaultNormalizer({ collapseWhitespace: false, trim: false }),
+      })
+      expect(getComputedStyle(note).whiteSpace).toBe('pre-wrap')
+    } finally {
+      uninstall()
+    }
+  })
+
+  it('keeps those line breaks on the phone card as well', async () => {
+    // The card is the same column read out in a different layout; a note that
+    // reads as two lines on the desktop table may not silently become one here.
+    mockViewport(true)
+    const uninstall = installRule('src/styles/app.css', '.kk-multiline')
+    try {
+      fetchUsersMock.mockResolvedValue([user({ note: 'On loan\nuntil June' })])
+      renderPage()
+
+      expect(await screen.findByText('ada')).toBeInTheDocument()
+      const note = within(screen.getByRole('listitem')).getByText('On loan\nuntil June', {
+        normalizer: getDefaultNormalizer({ collapseWhitespace: false, trim: false }),
+      })
+      expect(getComputedStyle(note).whiteSpace).toBe('pre-wrap')
+    } finally {
+      uninstall()
+    }
   })
 
   it('keeps the full eight-column table on a wide viewport', async () => {

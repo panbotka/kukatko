@@ -795,6 +795,9 @@ export function UsersPage() {
       key: 'note',
       header: t('users.columns.note'),
       cellClassName: 'text-secondary small text-break',
+      // The note is written in a `<textarea>`, so it comes back with the line
+      // breaks its author made; without this they collapse into spaces.
+      multiline: true,
       // A long note must not push the actions off the far end of the table; on a
       // card it has the full width and needs no cap.
       cellStyle: { maxWidth: '18rem' },

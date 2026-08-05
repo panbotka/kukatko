@@ -307,7 +307,9 @@ here.
   and — worse — the per-row actions off-screen. One `columns` definition drives both layouts, so a table
   and its phone form can never drift apart: `RecordColumn<T>` = `key`, `header` (already translated),
   `cell(record)`, plus `cellClassName?`/`cellStyle?` (the desktop `<td>` only — a `text-nowrap` or a
-  width cap that would be wrong on a card) and `cardHidden?`. On `md`+ it renders the familiar
+  width cap that would be wrong on a card), `multiline?` (a value typed into a `<textarea>` — the roster's
+  note: it adds `.kk-multiline` in **both** layouts, because a note that reads as two lines on the table
+  may not collapse into one on the card) and `cardHidden?`. On `md`+ it renders the familiar
   `<Table striped hover responsive>`; below it each record becomes one `Card` in a `<ul>`, every column
   a „label: value" line of a `dl.row` (`col-5`/`col-7`). The breakpoint is decided **in JS**
   (`useIsNarrowViewport`), like `MobileTabBar` — never `d-md-none` — so only one of the two layouts is
@@ -842,7 +844,8 @@ here.
   `UsersPage` = `/users` (admin **or** maintainer, `isAdmin`) **account management**: a user table (username, full name, role,
   status, note, last login, created) over `GET /admin/users` — rendered through the shared `RecordTable`, so on a
   phone the eight columns become **one stacked card per account** and the three row actions
-  a full-width button row on the card instead of a sideways scroll away; the actions column is
+  a full-width button row on the card instead of a sideways scroll away; the note column is `multiline`
+  (it is written in a `<textarea>`, so its line breaks survive both layouts); the actions column is
   `cardHidden` and comes back through `cardActions` (`UserActions`, prop `stacked` = the card's grid items
   vs. the table cell's inline cluster) —, the dialogs **Nový uživatel**
   (username/password/role/name/note) and **Upravit** (role/name/note; username is `readOnly`
@@ -1043,7 +1046,18 @@ here.
   **read-only until the editor clicks a field** — each field is its own inline edit affordance
   (`EditableField` = the whole row is an „Upravit «pole»" button with a pencil icon and a muted „Přidat…"
   placeholder on an empty field), **no hidden global „Upravit"** at the bottom (that was this task's
-  fix — discoverability of editing the title/description/AI note). A click on any field opens one
+  fix — discoverability of editing the title/description/AI note). **A value written on more than one line
+  stays on more than one line:** every one of those fields is typed into a `<textarea>` and comes back with
+  the breaks its author made, but HTML collapses them into spaces — so the photo book's two-line description
+  („Fotokniha 2026 - str. 135 p. 2" and the caption underneath it) rendered as one sentence, and the
+  `AI_MODEL:` trailer of an automatic description ended up glued to its last sentence. Both branches of
+  `EditableField` (the editor's button and the viewer's `<div>`) therefore add **`.kk-multiline`**
+  (`white-space: pre-wrap`) next to `text-break` — `pre-wrap` rather than `pre-line`: the two differ only in
+  what they do with a run of spaces, and in text a person typed by hand the second space is their decision.
+  **Nothing is turned into HTML** (no `<br>`, no `dangerouslySetInnerHTML`) — it is the user's own text, so
+  it is a rendering concern and stays in CSS; `text-break` stays with it so one long unbroken token still
+  cannot stretch the panel. The tests in `MetadataPanel.test.tsx` install the real rule out of `app.css`
+  through `test/css.ts` `installRule` and measure `getComputedStyle`, on both branches. A click on any field opens one
   shared form (title/description/ai_note/notes/taken_at + **an approximate date** +
   **a visual location picker**), Save `updatePhoto` PATCH, Cancel reverts. **Save/Cancel are always at the bottom:**
   the form is long (the map is 260 px), so a quick caption edit would otherwise mean scrolling all the way to the button.
@@ -2465,6 +2479,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`min-width: 0` on a flex item — without it the item refuses to shrink below the minimum of its content and
   one long unbreakable name pushes the whole row/header past the viewport; used by the rows of
   `LabelsPage`/`SavedSearchesPage` and the title groups in `AlbumDetailPage`/`LabelDetailPage`);
+  **`.kk-multiline`** (`white-space: pre-wrap` — a value the user typed into a `<textarea>` and that is read
+  back as plain text: HTML would collapse its line breaks into spaces, so a two-line photo description came
+  back as one line. `pre-wrap`, not `pre-line`, keeps a run of spaces too — in hand-typed text that is the
+  author's decision; pair it with `text-break`. Used by `EditableField` in `MetadataPanel` and by
+  `RecordTable`'s `multiline` columns);
   an **app-wide touch-target floor** — a `@media (pointer: coarse)` block that on
   touch devices (phone/tablet) enforces a minimum of 44px on `.btn`/`.form-control`/`.form-select`/
   `.nav-link`/`.dropdown-item`/`.list-group-item-action`/`.page-link`/`.navbar-toggler` (the hamburger
@@ -2561,8 +2580,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the timeline rail only ever broke on a distribution like this, a development-sized library makes any
   layout look fine, so every test that has to prove the rail stays legible starts from this one),
   `test/css.ts` (reading and mini-parsing stylesheets from tests: `readCss` / `ruleBody` / `declarations`
-  — jsdom evaluates neither `env()` nor media queries, so CSS-only rules are guarded by reading the
-  file; it is used by `styles/tokens.test.ts`, `styles/mapChrome.test.ts` (the Leaflet override —
+  / `installRule` — jsdom evaluates neither `env()` nor media queries, so CSS-only rules are guarded by reading the
+  file; `installRule(path, selector)` goes one step further and hands **the real rule body** to the jsdom
+  document (returning the function that removes it again), so a component test can assert what an element
+  *computes to* — `getComputedStyle(el).whiteSpace` — instead of which class name it carries: it then fails
+  both when the element loses the class and when `app.css` stops declaring the rule (`MetadataPanel.test.tsx`,
+  `UsersPage.test.tsx` and the multi-line values below); it is used by `styles/tokens.test.ts`, `styles/mapChrome.test.ts` (the Leaflet override —
   the scoping under `.kukatko-map`, colors only from tokens, the compound selectors that beat the Leaflet
   stylesheet), `styles/safeArea.test.ts`, which computes the padding of the
   fullscreen overlays (`review.css`, `compare.css`) against the iPhone's insets and asserts that the
