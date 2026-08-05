@@ -897,6 +897,7 @@
       "no": "Ne — zamítnout otázku",
       "skip": "Nevím — přeskočit otázku",
       "undo": "Vrátit poslední odpověď",
+      "open": "Otevřít posuzovanou fotku v nové záložce",
       "leave": "Ukončit třídění"
     },
     "compare": {
@@ -2370,6 +2371,7 @@
     "confidence": "Jistota {{percent}} %",
     "photoAlt": "Posuzovaná fotka",
     "faceHint": "Posuzovaná tvář je zvýrazněná rámečkem.",
+    "openPhoto": "Otevřít fotku v nové záložce",
     "actions": {
       "yes": "Ano",
       "no": "Ne",

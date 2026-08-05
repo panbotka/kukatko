@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { faceBoxStyle, padBbox } from '../../lib/faceGeometry'
 import { type Bbox } from '../../services/people'
@@ -16,6 +18,13 @@ export const REVIEW_PREVIEW_SIZE = 'fit_1280'
 export interface ReviewPhotoProps {
   /** The photo under question. */
   photo: Photo
+  /**
+   * Where the photo's own page is (`/photos/{uid}`). Handed in rather than built
+   * here, because the page's `o` shortcut opens the same target — one string for
+   * both means the link the player copies and the tab the key opens can never
+   * disagree.
+   */
+  href: string
   /**
    * The tight face box, normalised `[x, y, w, h]` in display space (face
    * questions only). The drawn rectangle is padded ~30 % around it — a person
@@ -48,9 +57,11 @@ function displayAspect(orientation: number, fileWidth: number, fileHeight: numbe
  * frame is width-driven with `aspect-ratio` and capped against the stage's own
  * height in container-query units, so the normalised box lines up with no pixel
  * measurement (the {@link CandidateFaceImage} approach, scaled to a full
- * screen).
+ * screen). A quiet corner anchor leads out to the photo's own page, so anything
+ * worth keeping or sharing can be taken along.
  */
-export function ReviewPhoto({ photo, bbox, alt }: ReviewPhotoProps) {
+export function ReviewPhoto({ photo, href, bbox, alt }: ReviewPhotoProps) {
+  const { t } = useTranslation()
   const [failed, setFailed] = useState(false)
 
   // A new photo is a clean slate for the load-failure flag.
@@ -97,6 +108,27 @@ export function ReviewPhoto({ photo, bbox, alt }: ReviewPhotoProps) {
           />
         </div>
       )}
+      {/* The way out to the photo itself. A real anchor, not a click handler:
+          the point is to *get the URL* — right-click → copy link address,
+          Ctrl/Cmd+click, middle-click — and only an `href` can give that. It
+          opens in a new tab because the queue lives in memory (`useReviewGame`):
+          navigating away would throw the whole run away, and the player wants to
+          set a photo aside, not leave the game. It sits in the frame's corner
+          rather than being the whole preview: the preview carries the face
+          rectangle, and a click into it must never be ambiguous. Answering stays
+          the easiest thing on the screen — this is one small, quiet target. */}
+      <Link
+        to={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="review-photo__open"
+        aria-label={t('review.openPhoto')}
+        title={t('review.openPhoto')}
+        data-testid="review-open-photo"
+      >
+        <Icon name="box-arrow-up-right" />
+        <kbd className="review-game__kbd">o</kbd>
+      </Link>
     </div>
   )
 }

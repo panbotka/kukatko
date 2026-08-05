@@ -30,6 +30,15 @@ import '../components/review/review.css'
 const PRELOAD_AHEAD = 4
 
 /**
+ * The path of a photo's own detail page. The game's single place for it: the
+ * anchor on the stage and the `o` shortcut are handed the same string, so the
+ * link the player copies and the tab the key opens can never disagree.
+ */
+function photoDetailPath(uid: string): string {
+  return `/photos/${encodeURIComponent(uid)}`
+}
+
+/**
  * The i18n label key per source, an explicit map (rather than a template
  * literal) so a typo is a compile error and the typed `t` accepts it — the same
  * pattern the leaderboard's window toggle uses.
@@ -225,8 +234,10 @@ function QuestionText({ question }: { question: ReviewQuestion }) {
  * card flow — one plain-language question, the photo under it as large as the
  * room left over allows, and Ano / Ne / Nevím. The question and the buttons
  * always fit; the photo is what shrinks. The keyboard is the primary interface
- * (← no, → yes, Space/↓ skip, y/n, z undo, Esc leave); the buttons are the
- * fallback and the touch interface. Answers are optimistic and the next
+ * (← no, → yes, Space/↓ skip, y/n, z undo, o open the photo in a new tab, Esc
+ * leave); the buttons are the fallback and the touch interface. The way out to
+ * the photo is a real anchor on the stage as well, because the point of it is
+ * being able to copy the URL. Answers are optimistic and the next
  * question is always already in memory, so the rhythm is never broken by a
  * spinner (see {@link useReviewGame}). Rendered outside the layout shell so
  * nothing competes with the photo.
@@ -280,6 +291,22 @@ export function ReviewPage() {
     void navigate('/')
   }, [navigate])
 
+  const question = game.current
+
+  /**
+   * The keyboard twin of the anchor in {@link ReviewPhoto}: opens the photo
+   * under question in a new tab, same path and same `noopener`. It answers
+   * nothing and touches the queue not at all — the card the player is looking at
+   * is still there when they come back. A new tab, not this one, because the
+   * queue lives in memory and leaving would drop the whole run.
+   */
+  const openPhoto = useCallback(() => {
+    if (question === undefined) {
+      return
+    }
+    window.open(photoDetailPath(question.photo.uid), '_blank', 'noopener,noreferrer')
+  }, [question])
+
   useKeyboardShortcuts({
     ArrowLeft: () => {
       game.answer('no')
@@ -300,6 +327,10 @@ export function ReviewPage() {
       game.answer('skip')
     },
     z: game.undo,
+    // `o` for open. It is deliberately not one of the answer keys' neighbours,
+    // and it is an addition, not a replacement — the game runs on touch too,
+    // where the corner anchor is the only way there.
+    o: openPhoto,
     Escape: () => {
       // Leave Escape to a react-bootstrap modal (the shortcuts help) when one
       // is open — it closes itself.
@@ -329,7 +360,6 @@ export function ReviewPage() {
     }
   }, [undo])
 
-  const question = game.current
   const total = game.answered + game.remaining
   const progressPct = total > 0 ? Math.min(100, Math.round((game.answered / total) * 100)) : 0
 
@@ -347,6 +377,7 @@ export function ReviewPage() {
         <main className="review-game__stage">
           <ReviewPhoto
             photo={question.photo}
+            href={photoDetailPath(question.photo.uid)}
             bbox={question.kind === 'face' ? question.bbox?.relative : undefined}
             alt={t('review.photoAlt')}
           />

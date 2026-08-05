@@ -118,7 +118,9 @@ of PhotoPrism and of [photo-sorter](https://github.com/kozaktomas/photo-sorter),
   when one kind of question is exhausted it moves on to the other, and then to the next part of the library.
   A label you never want to be asked about again gets **switched off on the Labels page** — it then costs the
   game nothing at all. The photo is **full-screen** and the face has a frame **with a margin** —
-  from a tight crop you can't recognize a person. **The keyboard is the main control**: `→` yes, `←` no,
+  from a tight crop you can't recognize a person. Find something worth keeping mid-game? The **↗ in the photo's
+  corner** (or the `o` key) opens it **in a new tab**, so you can copy its address or send it on — the game keeps
+  its place and its queue, nothing gets answered. **The keyboard is the main control**: `→` yes, `←` no,
   **spacebar** don't know, `z` undoes the last answer (a typo at speed is inevitable). The next
   card is **always preloaded**, so there's no waiting between questions — it runs like flipping through cards, not
   like filling out a form. **You choose what it asks about** — people, labels, or both — with a toggle in the

@@ -18,6 +18,7 @@ export type IconName =
   | 'bookmarks'
   | 'box-arrow-in-down'
   | 'box-arrow-right'
+  | 'box-arrow-up-right'
   | 'check-lg'
   | 'chevron-down'
   | 'chevron-left'
