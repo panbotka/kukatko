@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
 
 import { Layout } from './Layout'
@@ -34,20 +35,28 @@ function auth(
   } as unknown as AuthContextValue
 }
 
-function renderLayout(value: AuthContextValue, path = '/') {
+function renderLayout(value: AuthContextValue, path = '/', caps = CAPABILITIES_DEFAULT) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
-        <MemoryRouter initialEntries={[path]}>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route path={path} element={<div>page content</div>} />
-            </Route>
-          </Routes>
-        </MemoryRouter>
+        <CapabilitiesContext.Provider value={caps}>
+          <MemoryRouter initialEntries={[path]}>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path={path} element={<div>page content</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </CapabilitiesContext.Provider>
       </AuthContext.Provider>
     </I18nextProvider>,
   )
+}
+
+/** Capabilities as they arrive from a stamped (released) build. */
+const withVersion = {
+  ...CAPABILITIES_DEFAULT,
+  version: { version: '0.5.1', commit: '77fba72' },
 }
 
 /**
@@ -383,6 +392,59 @@ describe('Layout navbar', () => {
     const stats = screen.getByRole('link', { name: 'Statistics' })
     expect(stats).toHaveAttribute('href', '/stats')
     expect(stats).toHaveAttribute('title', 'Show the library statistics')
+  })
+
+  it('prints the build version in the user menu, above sign-out', async () => {
+    const user = userEvent.setup()
+    renderLayout(auth(), '/', withVersion)
+
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+
+    // A semantic version is shown the customary way, and the commit is left for
+    // the help page — the menu is a narrow place.
+    const version = screen.getByText('v0.5.1')
+    expect(version).toHaveAttribute('title', 'App version')
+    expect(version.textContent).not.toContain('77fba72')
+
+    // Order is what the user asked for: the version sits above sign-out.
+    const logout = screen.getByRole('button', { name: 'Sign out' })
+    expect(precedes(version, logout)).toBe(true)
+  })
+
+  it('shows the version as inert text, not a menu item', async () => {
+    const user = userEvent.setup()
+    renderLayout(auth(), '/', withVersion)
+
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+
+    // It is a `dropdown-item-text`: no role, no href, nothing to activate, and
+    // no tab stop — arrowing or tabbing through the menu passes it by.
+    const version = screen.getByText('v0.5.1')
+    expect(version.tagName).toBe('SPAN')
+    expect(version).toHaveClass('dropdown-item-text')
+    expect(version.closest('a, button')).toBeNull()
+    expect(version).not.toHaveAttribute('href')
+    expect(version).not.toHaveAttribute('tabindex')
+
+    // Tab from the account item lands on the next real item, never on the text.
+    screen.getByRole('link', { name: 'My account' }).focus()
+    await user.tab()
+    await user.tab()
+    await user.tab()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Sign out' }))
+  })
+
+  it('shows no version when the capabilities call has not answered', async () => {
+    const user = userEvent.setup()
+    // The default context is what a failed (or not yet resolved) call leaves
+    // behind: the menu must still open and work, just without a version.
+    renderLayout(auth())
+
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+
+    expect(screen.queryByTitle('App version')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'My account' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
   })
 
   it('closes the open mobile menu after tapping a top-level link', async () => {

@@ -10,8 +10,10 @@ import { useTranslation } from 'react-i18next'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { formatVersion } from '../lib/version'
 
 import { AnnouncementBanner } from './AnnouncementBanner'
 import { Footer } from './Footer'
@@ -90,6 +92,10 @@ export function Layout() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const narrow = useIsNarrowViewport()
+  // The build the server runs, printed at the foot of the user menu. It rides
+  // along on the capabilities the shell already holds, so opening the menu costs
+  // no request; `null` (nothing loaded yet, or the call failed) shows nothing.
+  const version = formatVersion(useCapabilities().version)
   // The mobile navbar is controlled so it can be closed programmatically. Below
   // the `md` breakpoint the nav folds into a hamburger; react-bootstrap's
   // `collapseOnSelect` only collapses on a fired select event, which this bar's
@@ -280,6 +286,18 @@ export function Layout() {
                       <Icon name={HELP_ITEM.icon} />
                       {t(HELP_ITEM.labelKey)}
                     </NavDropdown.Item>
+                    {/* The build, as a plain line of text above the divider: an
+                        `ItemText` is not a menu item, so it neither takes focus
+                        when arrowing through the menu nor invites a click. The
+                        full form — with the commit — lives on the help page. */}
+                    {version && (
+                      <NavDropdown.ItemText
+                        className="kk-menu-version"
+                        title={t('nav.versionTitle')}
+                      >
+                        {version}
+                      </NavDropdown.ItemText>
+                    )}
                     <NavDropdown.Divider />
                     <NavDropdown.Item
                       title={t('nav.titles.logout')}

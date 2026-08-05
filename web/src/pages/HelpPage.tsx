@@ -5,7 +5,9 @@ import Col from 'react-bootstrap/Col'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 
+import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { Icon, type IconName } from '../components/Icon'
+import { commitUrl, formatVersion } from '../lib/version'
 
 /**
  * One collapsible help section: a stable `id` (used as the accordion event key
@@ -125,6 +127,52 @@ function renderParagraphs(body: string) {
 }
 
 /**
+ * The build identity in full, at the foot of the page: the version, and — for a
+ * stamped build — the commit as a link into the public repository, so anyone
+ * reporting a problem can name exactly which build they saw it on. The user menu
+ * shows only the version (it is a narrow place); this is where the whole of it
+ * lives.
+ *
+ * A development build reports the `dev` / `none` placeholders: `dev` is shown as
+ * it is and there is no commit to link to. Until the capabilities response
+ * arrives — or if it never does — the block renders nothing at all rather than
+ * an empty heading.
+ */
+function BuildInfo() {
+  const { t } = useTranslation()
+  const { version } = useCapabilities()
+  const label = formatVersion(version)
+  const href = commitUrl(version)
+
+  if (!label) {
+    return null
+  }
+  return (
+    <section className="mt-4" aria-labelledby="help-version">
+      <h2 id="help-version" className="kk-section-title h6 mb-1">
+        {t('help.version.title')}
+      </h2>
+      <p className="text-secondary small mb-0">
+        {label}
+        {href !== null && (
+          <>
+            {' · '}
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={t('help.version.commitTitle')}
+            >
+              {version?.commit}
+            </a>
+          </>
+        )}
+      </p>
+    </section>
+  )
+}
+
+/**
  * End-user Help page: a plain-language tour of what Kukátko does and how each
  * feature behaves, reachable from the user menu by any authenticated role. A
  * short table of contents jumps to sections, each an open-by-default,
@@ -178,6 +226,8 @@ export function HelpPage() {
             </Accordion.Item>
           ))}
         </Accordion>
+
+        <BuildInfo />
       </Col>
     </Row>
   )

@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/panbotka/kukatko/internal/version"
 )
 
 // fakeReachability is a Reachability returning a fixed cached result.
@@ -36,10 +38,23 @@ func blockAnonymous(next http.Handler) http.Handler {
 	})
 }
 
+// testBuild is the pinned build metadata the router under test reports, so the
+// assertions do not depend on the linker flags of the test binary.
+var testBuild = version.Info{Version: "1.2.3", Commit: "abc1234"}
+
 // newRouter mounts the capabilities API with the given reachability source and
-// auth guard, returning a router ready for httptest requests.
+// auth guard (and the pinned testBuild), returning a router ready for httptest
+// requests.
 func newRouter(reach Reachability, guard func(http.Handler) http.Handler) chi.Router {
-	api := NewAPI(Config{Embeddings: reach, RequireAuth: guard})
+	return newRouterWithBuild(reach, guard, testBuild)
+}
+
+// newRouterWithBuild is newRouter with the reported build metadata pinned to
+// build, so a test can cover a development build's placeholders.
+func newRouterWithBuild(
+	reach Reachability, guard func(http.Handler) http.Handler, build version.Info,
+) chi.Router {
+	api := NewAPI(Config{Embeddings: reach, Build: build, RequireAuth: guard})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 	return r
@@ -80,6 +95,70 @@ func TestHandleGet_ReflectsFlag(t *testing.T) {
 				t.Errorf("semantic_search = %v, want %v", body.SemanticSearch, tt.reachable)
 			}
 		})
+	}
+}
+
+// TestHandleGet_PayloadShape pins the JSON body: the flag and the nested build
+// object under the exact keys the frontend reads (the user menu prints the
+// version from this response, so a renamed key would silently blank it out).
+func TestHandleGet_PayloadShape(t *testing.T) {
+	t.Parallel()
+
+	r := newRouter(fakeReachability{reachable: true}, passThrough)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(
+		context.Background(), http.MethodGet, "/api/v1/capabilities", nil)
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(body) != 2 {
+		t.Errorf("body keys = %v, want exactly semantic_search and version", body)
+	}
+	if got, ok := body["semantic_search"].(bool); !ok || !got {
+		t.Errorf("semantic_search = %v, want true", body["semantic_search"])
+	}
+	build, ok := body["version"].(map[string]any)
+	if !ok {
+		t.Fatalf("version = %v, want a nested object", body["version"])
+	}
+	if got := build["version"]; got != testBuild.Version {
+		t.Errorf("version.version = %v, want %q", got, testBuild.Version)
+	}
+	if got := build["commit"]; got != testBuild.Commit {
+		t.Errorf("version.commit = %v, want %q", got, testBuild.Commit)
+	}
+}
+
+// TestHandleGet_DevBuild verifies an un-stamped (development) build is reported
+// verbatim with its "dev"/"none" placeholders rather than being hidden, leaving
+// it to the client to decide how to present them.
+func TestHandleGet_DevBuild(t *testing.T) {
+	t.Parallel()
+
+	dev := version.Info{Version: "dev", Commit: "none"}
+	r := newRouterWithBuild(fakeReachability{reachable: false}, passThrough, dev)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(
+		context.Background(), http.MethodGet, "/api/v1/capabilities", nil)
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Version version.Info `json:"version"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if body.Version != dev {
+		t.Errorf("version = %+v, want %+v", body.Version, dev)
 	}
 }
 
