@@ -468,6 +468,160 @@ describe('PhotoDetailPage — immersive viewer', () => {
     })
   })
 
+  /**
+   * "Held back from the library" — hidden, or archived into the trash — is a
+   * state the viewer has to SHOW, not just announce. The rule these tests pin:
+   * the glyph never names the action, the on-state marking (`active` plus the
+   * `--flag` danger tone) names the state, and only the label/title name what a
+   * click does. See the comment on the controls in `PhotoDetailPage`.
+   */
+  describe('withheld state — hidden from the library, archived', () => {
+    it('marks the hide control as on while the photo is hidden', async () => {
+      // The reported bug: an eye and a struck-through eye read alike at 1rem, so
+      // the state was legible to a screen reader and to nobody else.
+      fetchPhotoMock.mockResolvedValue(photo({ hidden_from_library: true }))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(screen.getByRole('button', { name: 'Show in the library' })).toHaveClass('active')
+    })
+
+    it('leaves the hide control unmarked while the photo is in the library', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(screen.getByRole('button', { name: 'Hide from the library' })).not.toHaveClass(
+        'active',
+      )
+    })
+
+    it('takes the marking on when the photo is hidden and off when it comes back', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      await user.click(screen.getByRole('button', { name: 'Hide from the library' }))
+      expect(await screen.findByRole('button', { name: 'Show in the library' })).toHaveClass(
+        'active',
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Show in the library' }))
+      expect(await screen.findByRole('button', { name: 'Hide from the library' })).not.toHaveClass(
+        'active',
+      )
+    })
+
+    it('keeps the state on aria-pressed and the action in the label and title', async () => {
+      // The visual marking is added to the screen-reader state, never instead of
+      // it — and the wording keeps promising what the click will do.
+      fetchPhotoMock.mockResolvedValue(photo({ hidden_from_library: true }))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const on = screen.getByRole('button', { name: 'Show in the library' })
+      expect(on).toHaveAttribute('aria-pressed', 'true')
+      expect(on).toHaveAttribute('title', 'Bring the photo back into the library')
+    })
+
+    it('reports the library photo as not pressed, with the hiding wording', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const off = screen.getByRole('button', { name: 'Hide from the library' })
+      expect(off).toHaveAttribute('aria-pressed', 'false')
+      expect(off).toHaveAttribute('title', expect.stringContaining('hidden:yes'))
+    })
+
+    it('marks the archive control the same way once the photo is in the trash', async () => {
+      // Two adjacent toggles of the same shape behave the same, or the marking
+      // teaches nothing.
+      fetchPhotoMock.mockResolvedValue(photo({ archived_at: '2026-01-01T00:00:00Z' }))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const restore = screen.getByRole('button', { name: 'Restore' })
+      expect(restore).toHaveClass('active')
+      expect(restore).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('leaves the archive control unmarked for a photo outside the trash', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const archive = screen.getByRole('button', { name: 'Archive' })
+      expect(archive).not.toHaveClass('active')
+      expect(archive).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('says "hidden from the library" in words beside the title', async () => {
+      // Colour alone fails a colour-blind reader and every forced-colours mode;
+      // the badge carries the same state as text, and puts it somewhere other
+      // than on the one small button.
+      fetchPhotoMock.mockResolvedValue(photo({ hidden_from_library: true }))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const badge = screen.getByText('Hidden from the library')
+      expect(badge.closest('.kk-viewer__flags')).not.toBeNull()
+    })
+
+    it('says "in the trash" in words for an archived photo', async () => {
+      fetchPhotoMock.mockResolvedValue(photo({ archived_at: '2026-01-01T00:00:00Z' }))
+      renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      const badge = screen.getByText('In the trash')
+      expect(badge.closest('.kk-viewer__flags')).not.toBeNull()
+    })
+
+    it('badges nothing for a photo that is simply in the library', async () => {
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(container.querySelector('.kk-viewer__flags')).toBeNull()
+      expect(screen.queryByText('Hidden from the library')).toBeNull()
+    })
+
+    it('badges a hidden photo for a viewer, who cannot toggle it', async () => {
+      // The state is worth knowing even where the controls are not offered.
+      fetchPhotoMock.mockResolvedValue(photo({ hidden_from_library: true }))
+      renderPage(false)
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(screen.queryByRole('button', { name: 'Show in the library' })).toBeNull()
+      expect(screen.getByText('Hidden from the library')).toBeInTheDocument()
+    })
+
+    it('appears the moment the photo is hidden and goes when it comes back', async () => {
+      const user = userEvent.setup()
+      const { container } = renderPage()
+      await screen.findByRole('heading', { name: 'Beach' })
+      expect(container.querySelector('.kk-viewer__flags')).toBeNull()
+
+      await user.click(screen.getByRole('button', { name: 'Hide from the library' }))
+      expect(await screen.findByText('Hidden from the library')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Show in the library' }))
+      await waitFor(() => {
+        expect(container.querySelector('.kk-viewer__flags')).toBeNull()
+      })
+    })
+
+    /**
+     * jsdom loads no stylesheet, so the tone itself is pinned by reading the one
+     * that ships. The point is that the red comes from the theme's `danger`
+     * token: a literal would drift away from the dark theme's own doctoring.
+     */
+    it('tones the on-state with the danger token rather than a hard-coded red', () => {
+      const css = readCss('src/components/photo/viewer.css')
+      const on = declarations(
+        ruleBody(css, /\.kk-viewer__btn\.kk-viewer__btn--flag\.active\s*(?=\{)/) ?? '',
+      )
+      expect(on.get('background')).toContain('--bs-danger')
+      expect(on.get('border-color')).toContain('--bs-danger')
+    })
+  })
+
   describe('phone layout — the thumb-reachable curation dock', () => {
     beforeEach(() => {
       mockViewport(true)

@@ -958,14 +958,34 @@ here.
   eye/👍/👎 over `useRating`) and `FavoriteToggle` (shares the optimistic toggle with `f`), followed by
   **Archivovat/Vrátit z koše** (editor+ only per `canWrite`, as with bulk archiving): `archivePhoto`
   sends the open photo to the trash, `unarchivePhoto` restores it (a photo opened from `/trash` arrives already
-  archived); **you stay on the page** — `archived_at` is toggled in place (the icon flips
-  `archive` ⇄ `arrow-counterclockwise`, the label Archivovat ⇄ Vrátit z koše) and the result is reported by a toast.
+  archived); **you stay on the page** — `archived_at` is toggled in place (the label flips
+  Archivovat ⇄ Vrátit z koše) and the result is reported by a toast.
   Beside it sits **Skrýt z knihovny/Vrátit do knihovny** (editor+ too): `hidePhoto`/`unhidePhoto` toggle
-  `hidden_from_library` in place (icon `eye-slash` ⇄ `eye`, `aria-pressed`), which takes the photo out of
+  `hidden_from_library` in place, which takes the photo out of
   the library grid, the timeline, the map, the slideshow and the default search while leaving it in its
-  albums, labels and favourites. It is **not** archiving and nothing is deleted, so it is not toned
-  danger; the button's `title` and the success toast both name the way back (`hidden:yes` in search) —
+  albums, labels and favourites. It is **not** archiving and nothing is deleted;
+  the button's `title` and the success toast both name the way back (`hidden:yes` in search) —
   a flag you cannot list is a flag you cannot undo.
+  **Both are *flag toggles*, and their glyph shows STATE, never the action** (`flagBtnClass`, a
+  comment on the decision at the call site). They used to show the action — a hidden photo got a
+  plain `eye` meaning "click to show" — which contradicted the `aria-pressed` beside it and was
+  unreadable anyway: an eye and a struck-through eye differ by a hairline at 1rem, so the state was
+  legible to a screen reader and to nobody else (a reported bug). Now the glyph says state
+  (`eye-slash` = hidden, `eye` = in the library; archive keeps the `archive` box in both states —
+  there is no glyph for "not in the trash", and `arrow-counterclockwise` named the action), and
+  so do `aria-pressed`, Bootstrap's `active` marking and its tone; only `aria-label`/`title` say
+  what a click will do. **The on-state is toned `danger`** (`.kk-viewer__btn--flag.active` in
+  `viewer.css`, `color-mix` over `var(--bs-danger)` — the token, never a literal, so the dark
+  theme's own doctoring carries through; deepened towards black so the white glyph clears AA on an
+  opaque pill, whatever photograph is underneath) — the one place in the viewer where "on" means
+  "this photo is held back", not "this view is turned on", which keeps the azure accent. Colour is
+  never alone: `active` carries the state where colour is lost (colour blindness, forced colours),
+  and **`PhotoFlagBadges`** repeats it in words under the title — a `danger` pill per flag
+  (`photo.archive.badge` „V koši", `photo.hidden.badge` „Skrytá z knihovny", `.kk-viewer__flags`),
+  nothing for an ordinary photo. That badge is the only place the state shows for a **viewer**, who
+  gets no toggles at all. Elsewhere — the album and label galleries, which raise the filter and do
+  list hidden photos — nothing marks them yet; that is left for a later task, as marking a tile is a
+  grid concern, not this control's.
   **Where that loop sits depends on the reach.** With a mouse it rides the top bar; **below `md`
   (`useIsNarrowViewport`) it moves into a bottom dock** (`.kk-viewer__dock`, `role="group"` /
   `photo.viewer.actions`) along the edge the thumb already rests on — the top-right corner is the

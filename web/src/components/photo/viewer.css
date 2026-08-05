@@ -185,6 +185,28 @@
   font-weight: 400;
 }
 
+/* The "held back from the library" badges under the title. They wrap rather than
+   push the title's ellipsis around, and stay small enough not to compete with
+   the photograph — the point is that the state is READABLE somewhere other than
+   on one small toggle, not that it shouts. */
+.kk-viewer__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kk-space-1);
+  margin-top: var(--kk-space-1);
+}
+
+/* The same deepened `danger` fill the toggle's on-state wears, so the two read
+   as one signal — and so white text clears AA on it: Bootstrap's own
+   `.text-bg-danger` puts white on the bare token, which measures 3.96:1 and
+   fails at this size. */
+.kk-viewer__flag-badge {
+  background: color-mix(in srgb, var(--bs-danger) 85%, #000);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 .kk-viewer__actions {
   display: flex;
   align-items: center;
@@ -244,6 +266,30 @@
 
 .kk-viewer__btn--icon {
   padding: 0;
+}
+
+/* ---- Flag toggles: held back from the library ------------------------ */
+
+/* A *flag* toggle (hidden from the library, archived into the trash) is the one
+   place in the viewer where "on" is not "this view is turned on" but "this photo
+   is held back", so its on-state leaves the azure accent every other toggle uses
+   and takes the theme's `danger` red instead — a variable, never a literal, so
+   the dark theme's own doctoring of `--bs-danger` carries through. The fill is
+   deepened towards black so white glyphs clear AA on it (the accent's on-state
+   does the same); the opaque pill also means the contrast no longer depends on
+   whatever photograph happens to be underneath. Colour is never the only signal:
+   `.active` pairs with the already-present `aria-pressed`, and the badge strip
+   below the title repeats the state in words. */
+.kk-viewer__btn.kk-viewer__btn--flag.active {
+  background: color-mix(in srgb, var(--bs-danger) 85%, #000);
+  border-color: var(--bs-danger);
+  color: #fff;
+}
+
+.kk-viewer__btn.kk-viewer__btn--flag.active:hover {
+  background: var(--bs-danger);
+  border-color: var(--bs-danger);
+  color: #fff;
 }
 
 /* The persistent close button: top-left, always reachable (never fades with the

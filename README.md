@@ -243,7 +243,10 @@ The core of the catalog is in migration `0003_photos.sql` and the `internal/phot
   things that belong in the catalogue but not among the photographs: scanned documents,
   screenshots, receipts. It is toggled per photo (`POST /photos/{uid}/hide`+`/unhide`) or for a
   whole selection (`hide`/`unhide` in the bulk API), listed again with `hidden:yes` in search, and
-  carried in the metadata sidecar so a restore does not un-hide everything. It is **not**
+  carried in the metadata sidecar so a restore does not un-hide everything. On the photo detail the
+  flag is **visible, not just announced**: the toggle wears a `danger`-toned on-state and a
+  „Skrytá z knihovny" badge sits under the title (the same for „V koši"), so a hidden photo says so
+  even to a viewer who gets no toggle. It is **not**
   `archived_at`, which is a photo on its way out (trash, purged after retention), and not `private`.
   **Approximate date** (migration `0029_photos_taken_at_estimate.sql`): `taken_at_estimated`
   (the date is an estimate, not a fact) + `taken_at_note` (free text about the dating, max 500 chars). `taken_at`

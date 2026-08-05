@@ -1497,6 +1497,7 @@
     },
     "archive": {
       "restore": "Restore",
+      "badge": "In the trash",
       "archived": "Photo moved to trash",
       "restored": "Photo restored from trash",
       "error": "The action failed."
@@ -1504,6 +1505,7 @@
     "hidden": {
       "hide": "Hide from the library",
       "show": "Show in the library",
+      "badge": "Hidden from the library",
       "hideHint": "Hide from the library — the photo stays in its albums, labels and favourites. Find it again by searching hidden:yes.",
       "showHint": "Bring the photo back into the library",
       "hidden": "Photo hidden from the library. Find it by searching hidden:yes.",
