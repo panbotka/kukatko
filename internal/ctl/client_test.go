@@ -11,6 +11,17 @@ import (
 
 // testClient starts an httptest server with the given handler and returns a
 // client pointed at it, authenticating with token.
+//
+// The client is re-pointed at a connection pool of its own. NewClient leaves
+// Transport nil, which is right in production — ctl is a CLI, one process holds
+// one client — but under test it means every client here shares
+// http.DefaultTransport, a process-wide singleton, while each test raises and
+// tears down its own httptest.Server. Closing one server evicts pooled
+// connections another parallel test is about to reuse, and whichever request is
+// in flight at that moment fails with "transport connection broken:
+// http: CloseIdleConnections called". Which test loses the race is arbitrary,
+// which is why it moved between runs. Scoping the pool to the test that owns it
+// removes the coupling rather than papering over it.
 func testClient(t *testing.T, token string, handler http.HandlerFunc) *Client {
 	t.Helper()
 
@@ -21,6 +32,9 @@ func testClient(t *testing.T, token string, handler http.HandlerFunc) *Client {
 	if err != nil {
 		t.Fatalf("NewClient(%q) returned %v", srv.URL, err)
 	}
+	transport := &http.Transport{}
+	t.Cleanup(transport.CloseIdleConnections)
+	client.httpc = &http.Client{Timeout: defaultTimeout, Transport: transport}
 	return client
 }
 
