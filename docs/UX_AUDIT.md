@@ -13,6 +13,19 @@ intimidated?_
 - **Status tags:** ✅ **Done** (implemented in this pass) · 📋 **Backlog** (recommended,
   not yet done) · 🚧 **Out of scope** (tracked in a separate ticket — see the end).
 
+> **Companion document.** This audit was written by reading the code. A second study,
+> [`UX_RESEARCH.md`](UX_RESEARCH.md), was made the other way round — by using the live
+> production instance on desktop and phone. The two do not overlap; where they touch,
+> they cross-reference. Read this one for per-screen consistency, touch sizing and
+> jargon; read that one for what breaks under 20 906 real photos.
+>
+> **Verification pass — 2026-08-05.** Every open (📋) item below was re-checked against
+> production (app version 0.5.1) with a **viewer** account. Items are now marked
+> `— verified still open (2026-08-05)`, `— no longer applies` (with the reason), or
+> `— not verified in this pass` when a viewer could not reach the screen or force the
+> state. Admin pages (`/import`, `/maintenance`, `/system`, `/trash`, `/duplicates`)
+> return 403 to a viewer, so their items are all unverified.
+
 The app is already in good shape on several fronts: **i18n discipline is excellent** (virtually
 no hardcoded user-facing strings; cs/en parity enforced by `i18n.test.ts`), **empty/error copy
 is uniformly friendly** and never leaks stack traces (except one spot, noted below), and there is
@@ -66,12 +79,17 @@ implemented**, per the task's conservative-changes rule.
   that cannot use them.
 - **Touch-friendliness:** Nav links and dropdown items carry `kukatko-tap-target`; the coarse-pointer
   floor also covers `.nav-link` and the collapsed burger menu. ✅
-- **Consistency:** `app.name` brand doubles as the "Home" link — fine, but there is no visible
-  "Home"/"Domů" entry in the bar itself. Minor.
-  📋 Consider a small home/brand affordance hint. ⚪⚪
-- **Readability / States / Intimidation:** No issues. Every entry pairs a bootstrap-icons glyph with
-  an action-describing `title`, so daily users recognise entries by shape. Searching and saved
-  searches left the bar: both are reached from `/search` (search also from the library page). ✅
+- **Consistency:** ~~`app.name` brand doubles as the "Home" link — fine, but there is no visible
+  "Home"/"Domů" entry in the bar itself.~~ — **no longer applies:** the bar now carries a
+  labelled **Knihovna** entry pointing at `/`, which *is* the home destination since the
+  library became the landing page. Nothing further to do.
+- **Readability / States / Intimidation:** Every entry pairs a bootstrap-icons glyph with an
+  action-describing `title`, so daily users recognise entries by shape.
+  ⚠️ **Correction (2026-08-05):** this section used to claim that searching and saved searches
+  "are reached from `/search`". They are not reachable at all from the bar — `/search` itself
+  has no nav entry in any role, only the unlabelled magnifier icon, and `/saved` sits one level
+  inside `/search`. Meanwhile `Žebříček` holds a top-level slot for a page with one player.
+  See `UX_RESEARCH.md` **N3**. 🔴⚪
 
 ---
 
@@ -83,7 +101,8 @@ implemented**, per the task's conservative-changes rule.
   raw API errors never surface.
 - **Touch:** Full-size, full-width submit (`d-grid`). Good.
 - 📋 `autoFocus` on username can force the mobile keyboard open on load — consider dropping on
-  touch. ⚪⚪
+  touch. ⚪⚪ — **verified still open (2026-08-05)**: on load `document.activeElement` is the
+  username input (focused from JS, not via the `autofocus` attribute).
 
 ### Home (`/`)
 - **Was the biggest single issue.** The landing page's centerpiece was "Backend status /
@@ -102,7 +121,8 @@ implemented**, per the task's conservative-changes rule.
 - **Clarity/States:** Clear two-section layout (identity + change password). Thorough inline
   validation and mapped error messages.
 - **Consistency:** The submit button is **not** full-width here, unlike Login's `d-grid`. 📋 Align
-  the two password forms. ⚪⚪
+  the two password forms. ⚪⚪ — **verified still open (2026-08-05)**: "Změnit heslo" measures
+  117 px inside a 614 px container, while Login's submit is 430 px in a 430 px `d-grid`.
 
 ### Not found (`*`)
 - Friendly, clear recovery link. Uses a raw `className="btn btn-primary"` on a `Link` and a
@@ -133,16 +153,21 @@ implemented**, per the task's conservative-changes rule.
   inference service is offline" and "semantic/full-text". ✅ **Done:** reworded to plain language.
   📋 The **mode selector labels** ("Hybrid / Full-text / Semantic") remain technical — rename to
   plain terms (e.g. "Smart / By text / By meaning") and/or hide the selector behind an "advanced"
-  toggle, defaulting everyone to the smart mode. 🔴🟡
+  toggle, defaulting everyone to the smart mode. 🔴🟡 — **verified still open (2026-08-05)**:
+  the selector reads "Hybridní / Fulltext / Sémantické". While renaming it, fix the bigger
+  problem behind it: with the box offline every hybrid query blocks for a **30 s** timeout even
+  though `/capabilities` already reports `semantic_search: false`. See `UX_RESEARCH.md` **N1**.
 - **Touch/States:** Field is full-size (good); header Save-view + retry are `size="sm"` (now
   floored on touch ✅).
 
 ### Saved searches (`/saved`)
 - **Touch (weakest here):** Each row packs a `flex-grow-1` link + two `size="sm"` buttons at
   `gap-1` — Rename and destructive Delete adjacent with tiny targets. Coarse-pointer floor helps
-  ✅, but 📋 widen the gap and separate Delete. 🟡⚪
+  ✅, but 📋 widen the gap and separate Delete. 🟡⚪ — **not verified in this pass**: the audit
+  account has no saved searches, so only the (good) empty state was observable.
 - **Readability:** Row link uses `text-decoration-none` → tappable saved-search names don't look
-  tappable. 📋 Add an affordance (icon or hover underline). 🟡⚪
+  tappable. 📋 Add an affordance (icon or hover underline). 🟡⚪ — **not verified in this pass**,
+  same reason.
 - **Consistency:** Delete used a native `window.confirm` — unstyled vs. the app's own modals.
   ✅ **Done:** now routes through the shared `ConfirmModal` (see cross-cutting item 3).
 
@@ -150,14 +175,22 @@ implemented**, per the task's conservative-changes rule.
 - **Clarity/Touch:** Country/city rows are large full-width `ListGroup.Item action` targets —
   good. But the **breadcrumb links use `variant="link" p-0`** → small, tightly packed inline
   targets around "/" separators. 📋 Give breadcrumb links padding / a real breadcrumb component. 🟡⚪
+  — **verified still open (2026-08-05)**: the "Místa" crumb is `btn btn-link p-0` measuring
+  42 × 26 px.
 - **Intimidation:** Empty hint mentions "GPS souřadnice" / "zpracování polohy" — mildly technical.
-  📋 Soften. ⚪⚪
+  📋 Soften. ⚪⚪ — **not verified in this pass** (the production instance has places, so the
+  empty state never rendered).
 - A grid skeleton is shown while loading what is actually a **list** — minor mismatch. 📋 ⚪⚪
+- **New (2026-08-05):** for this library the whole page is *one row* ("Česko — 2 351 fotek") and
+  the rows carry no thumbnails at all. See `UX_RESEARCH.md` **N23**.
 
 ### Map (`/map`)
 - Clean. Loading/empty are overlays on the map (intentional divergence from full-page empties).
 - **Readability:** The empty-state hint is `text-secondary` on `bg-dark` — lower contrast than
-  elsewhere. 📋 Lighten. ⚪⚪
+  elsewhere. 📋 Lighten. ⚪⚪ — **not verified in this pass** (the map has data). The *inactive*
+  style tabs ("Turistická", "Letecká") do read as low-contrast, which supports backlog item #10.
+- **New (2026-08-05):** the tile layer itself is light inside the dark app, and only 11 % of the
+  library is on the map with no explanation. See `UX_RESEARCH.md` **N23**.
 
 ---
 
@@ -166,6 +199,10 @@ implemented**, per the task's conservative-changes rule.
 ### Albums index (`/albums`) & Labels index (`/labels`)
 - **Consistency:** Two sibling "index" pages render differently — Albums as a **card grid**, Labels
   as a **ListGroup**. Defensible (labels are lightweight) but worth a deliberate decision. 📋 ⚪⚪
+  — **verified still open (2026-08-05)**, and at production scale it stops being cosmetic:
+  Albums shows **438** cards in one flat unsorted grid, Labels shows **113** full-width rows over
+  5 730 px, and neither page has a search box or a sort control. See `UX_RESEARCH.md`
+  **N7** and **N10**.
 - **Primary action:** Create CTA was `size="sm"`. ✅ **Done:** now full size.
 - **Touch:** Label rows pack Rename + Delete `size="sm"` at the right edge (floored on touch ✅).
 - States/copy: friendly and complete.
@@ -194,9 +231,17 @@ implemented**, per the task's conservative-changes rule.
 - **Touch:** Prev/next on-image nav (`‹`/`›`) rely on default button padding, positioned at image
   edges — can crowd small screens; rating/flag icons are small (18–22 px). Coarse floor helps the
   buttons ✅. 📋 Enlarge on-image nav hit areas / add `kukatko-tap-target`. 🟡⚪
+  — **verified still open (2026-08-05)**: the arrows sit on the image edges and overlap it when
+  a side panel is open.
 - **Intimidation:** Child panels expose photographic jargon (Aperture/Exposure/Focal length/ISO,
   DMS coordinate help) and previously "Geotag" (✅ reworded). The EXIF terms are legitimate for a
-  photo app but could get tooltips. 📋 ⚪⚪
+  photo app but could get tooltips. 📋 ⚪⚪ — **verified still open (2026-08-05)**, plus three
+  harder leaks found by using the page: `AI_MODEL: gemini-2.5-flash` rendered as part of the
+  auto description, literal `Unknown` for camera/lens, and a raw SHA256 + PhotoPrism UID +
+  lat/long. See `UX_RESEARCH.md` **N12** and **N26**.
+- **New (2026-08-05), mobile only:** the faces and info panels are full-viewport opaque sheets on
+  a phone, so the photo they describe is completely hidden, and the viewer's close button
+  overlaps the panel title. See `UX_RESEARCH.md` **N6**.
 
 ### Upload (`/upload`)
 - **The model to copy.** Full-size primary/secondary buttons, proper h1→h2 hierarchy, friendly
@@ -213,7 +258,12 @@ implemented**, per the task's conservative-changes rule.
 ### People index (`/people`)
 - **Primary action:** "Review clusters" link was `outline-primary size="sm"` (under-emphasized).
   ✅ **Done:** now full size. Uses the plain-language "skupiny obličejů" (face groups) — good.
+  (Not shown to a viewer, who has no access to clusters.)
 - **States:** Error alert has **no retry** (must reload the page). 📋 Add retry. 🟡🟡
+  — **not verified in this pass**: a read-only account cannot force the error state.
+- **New (2026-08-05):** at 105 subjects the page has no search and no sort at all, and each
+  152 px face tile is cropped out of a `fit_1920`/`fit_1280` source — 125 Mpx downloaded to
+  paint 1,7 Mpx. See `UX_RESEARCH.md` **N8**.
 
 ### Subject (`/people/:uid`)
 - **Touch / wayfinding:** Back was a **bare arrow + noun** ("← Lidé"), the smallest target on the
@@ -223,11 +273,15 @@ implemented**, per the task's conservative-changes rule.
   focus ring, and a 44px minimum on coarse pointers.
 - **States:** "No photos" was a bare paragraph. ✅ **Done:** now the standard centered block.
   **Set-cover failure is silently swallowed** — no feedback, unlike the visible `actionError`
-  elsewhere. 📋 Surface a toast/alert. 🟡🟡
+  elsewhere. 📋 Surface a toast/alert. 🟡🟡 — **not verified in this pass** (write-gated).
+- **New (2026-08-05):** the page offers no filter or sort over a person's photos, so "photos of
+  X from the sixties" cannot be done from here; and it shows no photo count, unlike the index.
 
 ### Clusters (`/people/clusters`)
 - Best-explained of the three (title + subtitle). **Intimidation:** empty hint previously said
   "clustered" (ML jargon). ✅ **Done:** reworded. Error state has no retry. 📋 Add retry. 🟡⚪
+  — **not verified in this pass**: `GET /api/v1/faces/clusters` returns 403 to a viewer, so the
+  whole page (and `/outliers`, `/review`, `/duplicates`) was out of reach.
 
 ---
 
@@ -235,6 +289,11 @@ implemented**, per the task's conservative-changes rule.
 
 These pages are admin-only, so a _technical_ operator is the audience — but the copy still leans
 on unexplained jargon that even a non-developer admin will struggle with.
+
+> **Not verified in the 2026-08-05 pass.** Every page in this section returns 403 to the viewer
+> account used for the production walkthrough, so all 📋 items below are carried forward
+> unchanged and unconfirmed. One data point does transfer: the "embeddings" jargon flagged here
+> also appears on **`/stats`**, which is not admin-only — see `UX_RESEARCH.md` **N22**.
 
 ### Trash (`/trash`)
 - **Touch (weakest admin page):** nearly every control is `size="sm"` — header, selection bar
@@ -290,39 +349,54 @@ on unexplained jargon that even a non-developer admin will struggle with.
    confirm button carries the action ("Smazat album" / "Spustit import"), destructive confirms are
    `danger` and never the default Enter target, and focus/Escape/restore are handled.
 4. **Missing retry on error states** (People, Subject, Clusters) — user must reload. 📋 Add a retry
-   button (they already have the fetch logic). 🟡🟡
+   button (they already have the fetch logic). 🟡🟡 — **not verified in this pass** (could not
+   force the failure from a read-only account).
 5. **Silent failures** (Subject set-cover) contradict the visible-error pattern used elsewhere.
-   📋 Always surface an alert/toast. 🟡⚪
+   📋 Always surface an alert/toast. 🟡⚪ — **not verified in this pass** (write-gated).
 6. **Jargon inventory to keep out of user copy:** "backend/commit", "inference service",
    "semantic/full-text", "clustered", "geotag" (✅ all fixed), plus still-present "perceptual
    hash / embedding distance", "dead jobs / dead-letter", "orphan files", "box". 📋
+   — **extended 2026-08-05:** the list also has to cover copy that reaches *every* role —
+   "Embeddingy" on `/stats`, `AI_MODEL: gemini-2.5-flash` and `Unknown` on photo detail, and
+   the flag buttons named after their glyph ("Oko", "Palec nahoru", "Označené okem").
+   See `UX_RESEARCH.md` **N11**, **N12**, **N22**.
 7. **Muted-text contrast.** `text-secondary` subtitles/hints on the dark Superhero theme are on the
    low side, especially over `bg-dark` overlays (Map, Slideshow empties). 📋 Audit contrast; consider
-   a slightly lighter muted token. 🟡🟡
+   a slightly lighter muted token. 🟡🟡 — **partially verified (2026-08-05)**: the inactive map
+   style tabs are hard to read; the two empty-state cases named here have data in production and
+   could not be checked.
 8. **Heading hierarchy** is otherwise consistent (`h1.h3` titles, `h2.h5/h6` sections) after the
    photo-detail fix. ✅
+9. **New (2026-08-05) — RBAC is invisible.** Routes a role cannot use redirect silently to the
+   library, and controls it cannot use are `disabled` with no explanation. See
+   `UX_RESEARCH.md` **N13** and **N14**. 🟡⚪
+10. **New (2026-08-05) — index pages don't scale.** Albums (438), Labels (113) and People (105)
+    all render one flat list with no search and no sort. See `UX_RESEARCH.md` **N7**, **N8**,
+    **N10**. 🔴🟡
 
 ---
 
 ## Prioritized backlog (follow-up tickets)
 
-Ordered by impact-to-effort. 🔴/🟡/⚪ = impact, then effort.
+Ordered by impact-to-effort. 🔴/🟡/⚪ = impact, then effort. The **Checked** column records the
+2026-08-05 production pass: ✔ = still open and confirmed by using the app, — = could not be
+reached or reproduced with a viewer account, ✅ = done.
 
-| # | Item | Impact | Effort | Notes |
-|---|------|:---:|:---:|-------|
-| 1 | Plain-language **search modes** ("Smart / By text / By meaning") + hide selector behind "advanced" | 🔴 | 🟡 | Search is a core flow; mode names are the last scary copy there. |
-| 2 | ✅ **Done** — shared **`ConfirmModal`** replaces all `window.confirm` (Album/Labels/Saved/Import) | 🔴 | 🟡 | One dialog modelled on Trash: confirm button carries the action, `danger` by default and not the Enter target, focus/Escape/restore handled, cs+en. |
-| 3 | **Import**: stop rendering `run.last_error` verbatim; friendly "details" disclosure | 🔴 | 🟡 | Only raw-error leak in the app. |
-| 4 | **Maintenance/Import/Duplicates/System**: plain-language explainers/tooltips for jargon (embeddings, hashes, orphans, dead jobs, box) | 🔴 | 🟡 | Admin pages, but still meant to be usable. |
-| 5 | Add **retry** to People / Subject / Clusters error states | 🟡 | ⚪ | They already have the fetch logic. |
-| 6 | Surface **Subject set-cover failure** (currently silent) | 🟡 | ⚪ | One alert. |
-| 7 | Standardize **`<Button as={Link}>`** everywhere (kill `className="btn…"` on `Link`) | 🟡 | 🟡 | Removes a whole class of inconsistency. |
-| 8 | **Saved searches** / ✅ **Album detail** — widen action gaps, separate destructive buttons, overflow menu for 5-button headers | 🟡 | 🟡 | Reduces mis-taps & clutter on mobile. Album detail is done: the shared `HeaderActions` keeps Promítání inline on a phone and folds Stáhnout/Upravit + (behind a divider) Smazat into a „…" menu; saved searches can take the same component. |
-| 9 | **Breadcrumb** affordance on Places (padding / real breadcrumb) | 🟡 | ⚪ | Small inline targets today. |
-| 10 | **Contrast** pass on muted text over dark/overlay backgrounds (Map, Slideshow, subtitles) | 🟡 | 🟡 | Readability across the app. |
-| 11 | Align **Account** submit to full-width like Login; **NotFound** to `<Button>`/`h1.h3` | ⚪ | ⚪ | Tidy-ups. |
-| 12 | Saved-search **link affordance** (`text-decoration-none` hides that names are tappable) | 🟡 | ⚪ | |
-| 13 | Drop `autoFocus` on Login username for touch | ⚪ | ⚪ | Avoids keyboard-on-load. |
+| # | Item | Impact | Effort | Checked | Notes |
+|---|------|:---:|:---:|:---:|-------|
+| 1 | Plain-language **search modes** ("Smart / By text / By meaning") + hide selector behind "advanced" | 🔴 | 🟡 | ✔ | Search is a core flow; mode names are the last scary copy there. Fix together with `UX_RESEARCH.md` **N1** (30 s timeout on an offline box) — same component. |
+| 2 | ✅ **Done** — shared **`ConfirmModal`** replaces all `window.confirm` (Album/Labels/Saved/Import) | 🔴 | 🟡 | ✅ | One dialog modelled on Trash: confirm button carries the action, `danger` by default and not the Enter target, focus/Escape/restore handled, cs+en. |
+| 3 | **Import**: stop rendering `run.last_error` verbatim; friendly "details" disclosure | 🔴 | 🟡 | — | Only raw-error leak in the app. Admin-only, 403 for the audit account. May become moot: removing the dead import is already a queued task. |
+| 4 | **Maintenance/Import/Duplicates/System**: plain-language explainers/tooltips for jargon (embeddings, hashes, orphans, dead jobs, box) | 🔴 | 🟡 | — | Admin pages, but still meant to be usable. The same jargon leaks onto the all-roles `/stats` — see `UX_RESEARCH.md` **N22**. |
+| 5 | Add **retry** to People / Subject / Clusters error states | 🟡 | ⚪ | — | They already have the fetch logic. Error state not forceable read-only. |
+| 6 | Surface **Subject set-cover failure** (currently silent) | 🟡 | ⚪ | — | One alert. Write-gated. |
+| 7 | Standardize **`<Button as={Link}>`** everywhere (kill `className="btn…"` on `Link`) | 🟡 | 🟡 | — | Removes a whole class of inconsistency. Code-level, not observable by using the app. |
+| 8 | **Saved searches** / ✅ **Album detail** — widen action gaps, separate destructive buttons, overflow menu for 5-button headers | 🟡 | 🟡 | — | Reduces mis-taps & clutter on mobile. Album detail is done: the shared `HeaderActions` keeps Promítání inline on a phone and folds Stáhnout/Upravit + (behind a divider) Smazat into a „…" menu; saved searches can take the same component. The audit account has no saved searches, so the row layout was not observable. |
+| 9 | **Breadcrumb** affordance on Places (padding / real breadcrumb) | 🟡 | ⚪ | ✔ | Still `btn btn-link p-0`, 42 × 26 px. |
+| 10 | **Contrast** pass on muted text over dark/overlay backgrounds (Map, Slideshow, subtitles) | 🟡 | 🟡 | ✔ | Readability across the app; the inactive map style tabs are the clearest live example. |
+| 11 | Align **Account** submit to full-width like Login; **NotFound** to `<Button>`/`h1.h3` | ⚪ | ⚪ | ✔ | Account submit 117 px vs. Login's 430 px `d-grid`. |
+| 12 | Saved-search **link affordance** (`text-decoration-none` hides that names are tappable) | 🟡 | ⚪ | — | No saved searches on the audit account. |
+| 13 | Drop `autoFocus` on Login username for touch | ⚪ | ⚪ | ✔ | Avoids keyboard-on-load; focus is set from JS, not the attribute. |
 
 ---
 
@@ -332,11 +406,15 @@ Per the task brief, these larger items are owned by their own tickets and were i
 touched in this pass:
 
 - **Navbar structure** — already shipped (top-level Library/Albums/Labels + Browse/Tools/Admin
-  dropdowns, icons + action titles); any further restructuring is separate.
+  dropdowns, icons + action titles); any further restructuring is separate. ⚠️ The shipped
+  structure has a gap: nothing links to `/search` or `/saved` — see `UX_RESEARCH.md` **N3**.
 - **Library FilterBar redesign** — already shipped (calm default + progressive disclosure); further
   work separate.
-- **Fullscreen photo viewer** — already shipped (Lightbox); further work separate.
+- **Fullscreen photo viewer** — already shipped (Lightbox); further work separate. ⚠️ Its mobile
+  layout is where `UX_RESEARCH.md` **N6** and **N20** live.
 - **Album/label add autocomplete** — already shipped (`AddAutocomplete`); further work separate.
 - **Map-based location picker** — already shipped (LeafletMap picker mode); further work separate.
 
-Items #1–#13 in the backlog above are the recommended follow-up scope.
+Items #1–#13 in the backlog above are the recommended follow-up scope for *this* document.
+The production walkthrough in [`UX_RESEARCH.md`](UX_RESEARCH.md) proposes a separate,
+larger list (N1–N26); pick from both, they don't overlap.
