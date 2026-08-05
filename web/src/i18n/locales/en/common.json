@@ -96,12 +96,17 @@
       "main": "Main",
       "account": "Account"
     },
-    "stats": "Statistics"
+    "stats": "Statistics",
+    "versionTitle": "App version"
   },
   "help": {
     "title": "Help",
     "intro": "Kukátko is your photo gallery – a place to find, organise and rediscover your photos and videos. Below is a short tour of what the app does and how each feature behaves. What exactly you can do depends on your role (see the User roles section).",
     "tocTitle": "Contents",
+    "version": {
+      "title": "App version",
+      "commitTitle": "Show this build on GitHub"
+    },
     "sections": {
       "browsing": {
         "title": "Browsing photos",

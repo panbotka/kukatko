@@ -981,13 +981,20 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `kukatko_library_*` gauges on `/metrics` (see `docs/OPERATIONS.md` § Prometheus metrics), so the two
   cannot disagree — one query, two readers.
 - **Capabilities API (`/api/v1`, `internal/capabilitiesapi`, authenticated via `RequireAuth`):**
-  `GET /capabilities` → `{semantic_search:bool}` — a small object of instance feature-flags that
-  **every authenticated user** may read (unlike the maintainer-only `/system/status`). `semantic_search` is
+  `GET /capabilities` → `{semantic_search:bool, version:{version,commit}}` — a small object saying what this
+  instance is, which **every authenticated user** may read (unlike the maintainer-only `/system/status`).
+  `semantic_search` is
   the **cached** reachability state of the embeddings sidecar (not a live probe): filled by the background loop
   `internal/reachability` (a probe every 60 s, `cmd/kukatko/capabilities.go`); when `embedding.url` is not
-  set, it is always `false`. The shape is **deliberately open** for future flags (e.g. maps-configured).
+  set, it is always `false`. `version` is the link-time build metadata of the running binary (`version.Info`,
+  injected at wiring by `version.Get()`) — the same value `/healthz` reports, verbatim including a
+  development build's `dev`/`none` placeholders. It rides along here rather than being read from `/healthz`
+  (a monitoring endpoint) or baked into the frontend bundle: the bundle is `//go:embed`-ed into the binary,
+  so a version compiled into it would drift from the binary that serves it, while a value read from the
+  server cannot. The shape is **deliberately open** for future flags (e.g. maps-configured).
   The frontend (`CapabilitiesProvider`) polls it and hides the link to semantic search in
-  `FilterBar` accordingly, when the box is offline (full text keeps working). Mounted **always**.
+  `FilterBar` accordingly, when the box is offline (full text keeps working), and prints `version` in the
+  user menu (`Layout`, `MobileNavDrawer`) and in full — with the commit linked — on `/help`. Mounted **always**.
 
 ## Search language (q=)
 

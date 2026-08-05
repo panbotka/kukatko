@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
 import { declarations, readCss, ruleBody } from '../test/css'
 
@@ -52,24 +53,32 @@ function mockViewport(narrow: boolean): void {
 }
 
 /** Renders the shell with a few real destinations, starting at `path`. */
-function renderShell(value: AuthContextValue, path = '/') {
+function renderShell(value: AuthContextValue, path = '/', caps = CAPABILITIES_DEFAULT) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
-        <MemoryRouter initialEntries={[path]}>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route path="/" element={<div>home page</div>} />
-              <Route path="/albums" element={<div>albums page</div>} />
-              <Route path="/albums/:uid" element={<div>album detail</div>} />
-              <Route path="/people" element={<div>people page</div>} />
-              <Route path="/login" element={<div>login page</div>} />
-            </Route>
-          </Routes>
-        </MemoryRouter>
+        <CapabilitiesContext.Provider value={caps}>
+          <MemoryRouter initialEntries={[path]}>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path="/" element={<div>home page</div>} />
+                <Route path="/albums" element={<div>albums page</div>} />
+                <Route path="/albums/:uid" element={<div>album detail</div>} />
+                <Route path="/people" element={<div>people page</div>} />
+                <Route path="/login" element={<div>login page</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </CapabilitiesContext.Provider>
       </AuthContext.Provider>
     </I18nextProvider>,
   )
+}
+
+/** Capabilities as they arrive from a stamped (released) build. */
+const withVersion = {
+  ...CAPABILITIES_DEFAULT,
+  version: { version: '0.5.1', commit: '77fba72' },
 }
 
 /** Opens the hamburger and returns the drawer dialog. */
@@ -170,6 +179,46 @@ describe('MobileNavDrawer', () => {
     // The keyboard-shortcuts overlay and sign-out ride along as rows, so nothing
     // the bar offers is lost on a phone.
     expect(within(drawer).getByRole('button', { name: 'Keyboard shortcuts' })).toBeInTheDocument()
+    expect(within(drawer).getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
+  })
+
+  it('prints the build version in the account block, above sign-out', async () => {
+    const user = userEvent.setup()
+    renderShell(auth(), '/', withVersion)
+    const drawer = await openDrawer(user)
+
+    const account = within(drawer).getByRole('region', { name: 'Account' })
+    const version = within(account).getByText('v0.5.1')
+    expect(version).toHaveAttribute('title', 'App version')
+
+    // Above the one destructive action in the drawer, as on the desktop menu.
+    const logout = within(account).getByRole('button', { name: 'Sign out' })
+    expect(
+      version.compareDocumentPosition(logout) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0)
+  })
+
+  it('shows the version as text, not a tappable row', async () => {
+    const user = userEvent.setup()
+    renderShell(auth(), '/', withVersion)
+    const drawer = await openDrawer(user)
+
+    // Not a link, not a button, not even a row: a paragraph the thumb and the
+    // keyboard both pass over. It also stays out of the drawer's link list.
+    const version = within(drawer).getByText('v0.5.1')
+    expect(version.tagName).toBe('P')
+    expect(version).not.toHaveClass('kk-navdrawer__link')
+    expect(version.closest('a, button')).toBeNull()
+    expect(drawerHrefs(drawer)).not.toContain('v0.5.1')
+  })
+
+  it('shows no version when the capabilities call has not answered', async () => {
+    const user = userEvent.setup()
+    renderShell(auth())
+    const drawer = await openDrawer(user)
+
+    // The drawer keeps working; there is simply nothing to print.
+    expect(within(drawer).queryByTitle('App version')).not.toBeInTheDocument()
     expect(within(drawer).getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
   })
 

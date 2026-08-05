@@ -2776,11 +2776,17 @@ to `## Package map` in `CLAUDE.md`.
   (`buildSystemAPI` in `cmd/kukatko/system.go`, which builds its own stateless embeddings client just for the
   Healthy probe, shares the pool for the job/import/library stores, and passes the backup service nil-safely; mounted
   in `appendOpsAPIs` next to backup/restore)), `internal/capabilitiesapi/`
-  (an all-authenticated HTTP API of the instance's feature flags: the `Reachability` interface (`Reachable() bool`,
-  satisfied by `*reachability.Checker`, fakeable); `NewAPI(Config{Embeddings,RequireAuth})`+
-  `RegisterRoutes` mounts `GET /capabilities` behind `RequireAuth` → `{semantic_search:bool}` read
-  from the cached flag (never a live probe, so it is cheap and every logged-in user may read it — unlike the
-  maintainer-only `/system/status`); the shape is deliberately open for future flags; mounted **always**
+  (an all-authenticated HTTP API of what the instance is — its feature flags and the build it runs: the
+  `Reachability` interface (`Reachable() bool`,
+  satisfied by `*reachability.Checker`, fakeable); `NewAPI(Config{Embeddings,Build,RequireAuth})`+
+  `RegisterRoutes` mounts `GET /capabilities` behind `RequireAuth` → `{semantic_search:bool,
+  version:version.Info}` — the flag read
+  from the cached probe result (never a live probe, so it is cheap and every logged-in user may read it — unlike the
+  maintainer-only `/system/status`), the build injected as a value (`version.Get()` at wiring, so tests pin
+  it) and reported verbatim, `dev`/`none` placeholders included. The build lives here, not in the frontend
+  bundle: the bundle is `//go:embed`-ed into this binary, so a version compiled into it would drift from the
+  binary that serves it — read from the server it cannot. The shape is deliberately open for future flags;
+  mounted **always**
   (`buildCapabilitiesAPI`+`buildReachabilityChecker` in `cmd/kukatko/capabilities.go`)),
   `internal/query/`
   (a pure **parser of the search language** `q=` — free text + `key:value` filters in one string

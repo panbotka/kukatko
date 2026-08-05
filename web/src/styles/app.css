@@ -238,6 +238,14 @@ body {
   --bs-dropdown-link-active-bg: var(--kk-accent-solid);
 }
 
+/* The build version at the foot of the user menu. Bootstrap gives
+   `.dropdown-item-text` the same weight as a real item; this pulls it back to a
+   quiet caption, because it is a fact to glance at, not something to act on. */
+.kk-menu-version {
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+}
+
 /* The selected list-group row takes the accent fill (its white label stays AA). */
 .list-group {
   --bs-list-group-active-bg: var(--kk-accent-solid);
@@ -769,6 +777,16 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The build version above sign-out: a fact, not a row. It takes the rows' inline
+   padding so it lines up with the section heading rather than floating loose,
+   and stays small and muted so it never competes with the actions around it. */
+.kk-navdrawer__version {
+  margin-bottom: 0;
+  padding: var(--kk-space-1) var(--kk-space-3);
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
 }
 
 /* Icon-only controls (e.g. the favorite heart overlay) need a finger-friendly

@@ -7,7 +7,11 @@ here.
 <!-- BODY BEGIN -->
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` with `components/`
   (`Layout` = navbar shell with a user menu (Můj účet, **Statistiky** `/stats`, **Nápověda** `/help`,
-  Odhlásit se) + role-gated
+  **the build version**, Odhlásit se; the version is a `NavDropdown.ItemText` with `kk-menu-version`
+  — muted caption-sized text above the divider, deliberately **not** an `Item`: it takes no click and no
+  focus while arrowing through the menu. Its value is `formatVersion(useCapabilities().version)`, so it
+  costs no request when the menu opens and simply isn't rendered until (or unless) the capabilities call
+  answers; the commit belongs to `/help`, the menu is too narrow for it) + role-gated
   nav with a **visible hierarchy based on
   how often an ordinary person uses an item**: the everyday loop (browsing, sorting, adding photos) is
   loud and immediate, while admin/power-user tooling is present but quieter. It leads with **Knihovna** `/` (= the home
@@ -95,7 +99,9 @@ here.
   (`nav.sections.main` — Knihovna/Alba/Štítky + Třídění when `canWrite` + Žebříček + Nahrát when `canWrite`,
   the last keeping the bar's filled CTA look), **Procházet**, the `canWrite` **Nástroje**, the `isMaintainer`
   **Provoz**, the `isAdmin` **Správa**, and **Účet** (`nav.sections.account` — Můj účet, Nápověda, the
-  keyboard-shortcuts overlay and Odhlásit se, i.e. the user dropdown unfolded). A closed role gate drops the
+  keyboard-shortcuts overlay, **the build version** and Odhlásit se, i.e. the user dropdown unfolded; the
+  version is a plain `<p class="kk-navdrawer__version">` above the sign-out button — no row, no tap target,
+  same `formatVersion(useCapabilities().version)` value the bar shows). A closed role gate drops the
   whole section, exactly as it drops the dropdown in the bar. Rows are 3rem (48px) tap targets with the icon +
   label + `nav.titles.*` tooltip, the same accent-tinted „you are here" pill as the bar and the tab bar
   (`NavLink`, `end`-matched for the library root), and each row also closes the drawer `onClick` — the
@@ -632,7 +638,13 @@ here.
   with a short **table of contents** at the top and an `Accordion` (collapsible sections, open by default) that in plain
   language explains browsing, search, albums, labels, favorites/rating, people and faces, duplicates,
   shot variants (stacks), the map and places, deletion+trash, import and **roles** (what each role may do). Texts
-  in the new top-level namespace `help.*` (cs/en); the first `Accordion` in the app,
+  in the new top-level namespace `help.*` (cs/en); the first `Accordion` in the app. At the foot the
+  `BuildInfo` block (`help.version.*`, a named `region`) gives the **build in full** — the version plus the
+  commit as a real `<a href>` (`target="_blank" rel="noopener noreferrer"`, as the footer's GitHub link
+  does) into the public repository, which is what
+  the user menu deliberately leaves out. A development build (`dev`/`none`) shows `dev` **and no link**
+  (`commitUrl` refuses anything that is not a hex sha); with no capabilities answer the block is absent
+  altogether,
   `LibraryPage` = the main photo library **and at the same time the app's home page** (route `/`):
   `FilterBar` above a virtualized infinitely-scrolling
   grid, loading/empty/error states, the whole view (filters+sort) in the URL, hearts
@@ -1716,12 +1728,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   exposes `user`/`role`/`login`/`logout`/`refresh`/`canWrite`/`isAdmin` (admin+)/`isMaintainer`/`canImport`; `ProtectedRoute` =
   the `RequireAuth` + `RequireRole` + `RequireImport` route guards),
-  `capabilities/` (`CapabilitiesContext`/`useCapabilities` + `CapabilitiesProvider` = the instance
-  feature flags `{semantic_search}` from `GET /api/v1/capabilities`; the provider sits inside `AuthProvider`,
+  `capabilities/` (`CapabilitiesContext`/`useCapabilities` + `CapabilitiesProvider` = what the instance is —
+  the feature flags `{semantic_search}` **and the running build `{version?}`** — from
+  `GET /api/v1/capabilities`; the provider sits inside `AuthProvider`,
   fetches on mount + after 60 s + on `visibilitychange` (the same pattern as `useJobStats`), a failed
   fetch keeps the last state; **unlike `useAuth` the hook doesn't throw** — the context has a safe default
-  `{semantic_search:false}`, so a component outside the provider merely hides the optional offer instead of crashing.
-  `FilterBar` reads it for the semantic-search link), `hooks/` (`usePaginatedPhotos` = a shared
+  `{semantic_search:false}` (**no `version`**), so a component outside the provider merely hides the optional
+  offer — or prints no version — instead of crashing.
+  `FilterBar` reads it for the semantic-search link, `Layout`/`MobileNavDrawer`/`HelpPage` for the version:
+  the shell holds it once, so no menu open ever costs a request and the number cannot disagree with the
+  binary that serves the page — a version baked into this bundle would drift the moment either side is
+  rebuilt alone), `hooks/` (`usePaginatedPhotos` = a shared
   paginated infinite-scroll loader over an arbitrary `PageFetcher`: it accumulates pages,
   `loadMore`/`retry`, reset+refetch **with a skeleton** when the query/`key`/`enabled` changes, cancels
   in-flight requests and ignores stale responses, and also exposes `mode`/`degraded`; `enabled:false`
@@ -2013,6 +2030,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `differs` is computed from **the comparison key, not from the formatted text** (two times within the same minute
   still differ), names are compared as a **set** (the order from the API means nothing); `fmt` is
   injected, so the tests don't depend on the locale; `countDiffering(rows)`;
+  `version.ts` = the two pure display helpers over the build metadata carried by `Capabilities`:
+  `formatVersion(info)` (a semantic version gets the customary `v` prefix, `0.5.1` → `v0.5.1`; anything
+  else — notably the `dev` placeholder of an un-stamped binary — is shown as it is; `null` when there is
+  nothing to show, so the caller renders nothing rather than an empty line) and `commitUrl(info)`
+  (`https://github.com/panbotka/kukatko/commit/<sha>`, or `null` unless the commit is 7–40 hex characters,
+  which is what keeps a development build's `none` from becoming a dead link);
   `urlState.ts` = the `useUrlState` hook +
   the pure `readUrlState`/`writeUrlState`: the view state ↔ the URL query via the History API, „Back always
   works"; `libraryView.ts` = the `LibraryView` type (incl. `min_rating`/`flag`, the `favorite` toggle and the facets
@@ -2197,7 +2220,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   language; unparseable input → the original string; used by PhotoTile/DuplicateGroupCard/
   MetadataPanel/Import/System for dates in the cs/en format))),
   `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` over `GET /api/v1/capabilities`
-  → `Capabilities{semantic_search}` (it sends the session cookie, `credentials:'same-origin'`), `auth.ts` = login/logout/me/changePassword, the types
+  → `Capabilities{semantic_search, version?: VersionInfo{version,commit}}` (it sends the session cookie,
+  `credentials:'same-origin'`; `version` is optional on the client because it is absent before the first
+  answer and after a failed one, not because the endpoint may omit it), `auth.ts` = login/logout/me/changePassword, the types
   `User`/`Role` (the strict ladder `viewer < editor < admin < maintainer`)/`AuthSession`, `ApiError` with a
   status, `isNotFound(err)` (a 404 = "there is no such thing", which the detail pages tell apart from a failed
   load so a link out of the audit log to something deleted explains itself),

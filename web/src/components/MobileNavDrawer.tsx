@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { formatVersion } from '../lib/version'
 
 import { Icon } from './Icon'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
@@ -81,6 +83,10 @@ export function MobileNavDrawer({
 }) {
   const { t } = useTranslation()
   const { user, canWrite, isAdmin, isMaintainer } = useAuth()
+  // The build the server runs, printed above sign-out exactly as the desktop
+  // user menu prints it. It comes from the capabilities the shell already holds,
+  // so opening the drawer costs no request.
+  const version = formatVersion(useCapabilities().version)
 
   // Each of the bar's dropdowns becomes one section, unfolded, behind the very
   // same role gate — a closed gate drops the whole section, exactly as it drops
@@ -171,6 +177,14 @@ export function MobileNavDrawer({
             {renderRow(STATS_ITEM)}
             {renderRow(HELP_ITEM)}
             <KeyboardShortcutsHelp variant="row" />
+            {/* The build, as text rather than a row: no button, no link, nothing
+                the thumb or the keyboard can land on — an unobtrusive fact above
+                the one destructive action in the drawer. */}
+            {version && (
+              <p className="kk-navdrawer__version" title={t('nav.versionTitle')}>
+                {version}
+              </p>
+            )}
             <button
               type="button"
               title={t('nav.titles.logout')}

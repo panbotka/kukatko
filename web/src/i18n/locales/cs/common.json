@@ -96,12 +96,17 @@
       "main": "Hlavní",
       "account": "Účet"
     },
-    "stats": "Statistiky"
+    "stats": "Statistiky",
+    "versionTitle": "Verze aplikace"
   },
   "help": {
     "title": "Nápověda",
     "intro": "Kukátko je vaše fotogalerie – místo, kde svoje fotky a videa najdete, uspořádáte a znovu objevíte. Níže je stručný přehled toho, co aplikace umí a jak jednotlivé funkce fungují. Co přesně můžete dělat, závisí na vaší roli (viz sekce Uživatelské role).",
     "tocTitle": "Obsah",
+    "version": {
+      "title": "Verze aplikace",
+      "commitTitle": "Zobrazit tuto verzi na GitHubu"
+    },
     "sections": {
       "browsing": {
         "title": "Procházení fotek",

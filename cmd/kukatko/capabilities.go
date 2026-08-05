@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/reachability"
+	"github.com/panbotka/kukatko/internal/version"
 )
 
 // capabilitiesCheckInterval is how often the embeddings-reachability loop probes
@@ -41,10 +42,12 @@ func buildReachabilityChecker(cfg *config.Config) (*reachability.Checker, error)
 
 // buildCapabilitiesAPI mounts GET /capabilities, an all-authenticated view of the
 // instance feature flags (currently semantic search) backed by the cached
-// reachability checker.
+// reachability checker, plus the build metadata of this binary — the one source
+// of truth for the version the UI prints, read from the server that runs it.
 func buildCapabilitiesAPI(checker *reachability.Checker, authAPI *auth.API) *capabilitiesapi.API {
 	return capabilitiesapi.NewAPI(capabilitiesapi.Config{
 		Embeddings:  checker,
+		Build:       version.Get(),
 		RequireAuth: authAPI.RequireAuth,
 	})
 }
