@@ -17,6 +17,7 @@ import {
   type ReviewQueue,
   type ReviewSource,
 } from '../services/review'
+import { declarations, readCss, ruleBody } from '../test/css'
 
 import { ReviewPage } from './ReviewPage'
 
@@ -213,6 +214,79 @@ describe('ReviewPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('review-question')).toHaveTextContent('Dana')
     })
+  })
+
+  it('links the photo under question to its own page, on a face and on a label question', async () => {
+    // The point is the *URL*: a real anchor can be right-click-copied and
+    // Ctrl/Cmd+clicked, which is what the player asked for. So the assertion is
+    // on `href`, not on a navigation happening.
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1')]))
+    const { unmount } = renderPage()
+
+    await screen.findByTestId('review-question')
+    const faceLink = screen.getByRole('link', { name: 'Open the photo in a new tab' })
+    expect(faceLink).toHaveAttribute('href', '/photos/p-q1')
+    unmount()
+
+    queueMock.mockResolvedValue(makeQueue([labelQuestion('q2')]))
+    renderPage()
+    await screen.findByTestId('review-question')
+    expect(screen.getByRole('link', { name: 'Open the photo in a new tab' })).toHaveAttribute(
+      'href',
+      '/photos/p-q2',
+    )
+  })
+
+  it('opens the photo in a new tab without handing it the opener', async () => {
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1')]))
+    renderPage()
+
+    await screen.findByTestId('review-question')
+    const link = screen.getByRole('link', { name: 'Open the photo in a new tab' })
+    expect(link).toHaveAttribute('target', '_blank')
+    // A `_blank` target without `noopener` would let the photo page reach back
+    // into the game's window through `window.opener`.
+    expect(link.getAttribute('rel')).toContain('noopener')
+  })
+
+  it('does not answer or advance the queue when the photo link is clicked', async () => {
+    const user = userEvent.setup()
+    // jsdom cannot open a tab; stub it so the click is quiet and the assertion
+    // is about the game, not about the navigation.
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')]))
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    await user.click(screen.getByRole('link', { name: 'Open the photo in a new tab' }))
+
+    expect(answerMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
+    expect(screen.getByTestId('review-progress')).toHaveTextContent('0 answered')
+  })
+
+  it('opens the photo on `o` without answering, and still answers on y / n', async () => {
+    const user = userEvent.setup()
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')]))
+    renderPage()
+    await screen.findByTestId('review-question')
+
+    await user.keyboard('o')
+    expect(open).toHaveBeenCalledWith('/photos/p-q1', '_blank', 'noopener,noreferrer')
+    // The shortcut is a detour, not an answer: nothing was sent and the same
+    // card is still on screen.
+    expect(answerMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
+
+    // ...and it did not eat the answer keys either (the collision regression).
+    await user.keyboard('y')
+    expect(answerMock).toHaveBeenLastCalledWith('q1', 'yes')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('Bob')
+    })
+    await user.keyboard('n')
+    expect(answerMock).toHaveBeenLastCalledWith('q2', 'no')
   })
 
   it('keeps the next question in memory: answering within a batch fetches nothing', async () => {
@@ -465,5 +539,57 @@ describe('ReviewPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
     })
+  })
+})
+
+/**
+ * The anchor out to the photo is an overlay, and jsdom evaluates no media query
+ * and loads no stylesheet — so what keeps it off the answer buttons and above the
+ * face rectangle's dimming veil is asserted against the shipped `review.css`
+ * itself. The live geometry was measured in a browser harness; these guards are
+ * what stops a later edit from quietly undoing it.
+ */
+describe('review.css photo-link overlay', () => {
+  const css = readCss('src/components/review/review.css')
+  /** The finger-friendly minimum a touch target has to clear (2.75rem at a 16px root). */
+  const TOUCH_FLOOR_PX = 44
+  const REM_PX = 16
+
+  /** The declarations of a rule, or a loud failure when the class was renamed. */
+  function rule(source: string, prelude: RegExp): Map<string, string> {
+    const body = ruleBody(source, prelude)
+    if (body === undefined) {
+      throw new Error(`rule not found: ${prelude.source}`)
+    }
+    return declarations(body)
+  }
+
+  it('pins the link into the frame’s corner, above the dimming veil', () => {
+    const fine = rule(css, /\.review-photo__open\s*(?=\{)/)
+    expect(fine.get('position')).toBe('absolute')
+    // Anchored top/right: the answer buttons own the bottom of the screen.
+    expect(fine.get('top')).toBe('0.5rem')
+    expect(fine.get('right')).toBe('0.5rem')
+    expect(fine.get('bottom')).toBeUndefined()
+    // The face box's `box-shadow` veil is drawn after the image; the link has to
+    // sit above it to stay legible and clickable.
+    expect(Number(fine.get('z-index'))).toBeGreaterThan(0)
+    // Present but quiet on a pointer that can hover it into full strength.
+    expect(Number(fine.get('opacity'))).toBeGreaterThan(0.5)
+    expect(Number(fine.get('opacity'))).toBeLessThan(1)
+  })
+
+  it('gives touch a full-size target at full strength instead of a hover reveal', () => {
+    const touch = ruleBody(css, /@media\s*\(hover:\s*none\)\s*/, /review-photo__open/)
+    expect(touch).toBeDefined()
+    const onTouch = rule(touch ?? '', /\.review-photo__open\s*(?=\{)/)
+    expect(parseFloat(onTouch.get('min-width') ?? '0') * REM_PX).toBeGreaterThanOrEqual(
+      TOUCH_FLOOR_PX,
+    )
+    expect(parseFloat(onTouch.get('min-height') ?? '0') * REM_PX).toBeGreaterThanOrEqual(
+      TOUCH_FLOOR_PX,
+    )
+    // There is no hover to reveal it with, so it may not be dimmed there.
+    expect(onTouch.get('opacity')).toBe('1')
   })
 })

@@ -931,6 +931,7 @@
       "no": "No — reject the question",
       "skip": "Skip — I don't know",
       "undo": "Undo the last answer",
+      "open": "Open the photo under review in a new tab",
       "leave": "Leave the review game"
     },
     "compare": {
@@ -2288,6 +2289,7 @@
     "confidence": "Confidence {{percent}} %",
     "photoAlt": "Photo under review",
     "faceHint": "The face under review is highlighted with a frame.",
+    "openPhoto": "Open the photo in a new tab",
     "actions": {
       "yes": "Yes",
       "no": "No",

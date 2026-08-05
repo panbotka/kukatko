@@ -1442,9 +1442,18 @@ here.
   and the confidence `ConfidenceHint` (a muted % + a bar: context, not the answer); three actions **Ano · Ne ·
   Nevím** are real buttons (large, at the bottom, thumb-reachable on touch), **but the keyboard is the
   primary interface**: `→`/`y` yes, `←`/`n` no, **spacebar**/`↓` don't know, `z` and **Ctrl/Cmd+Z** undo
-  (the chord binds outside `useKeyboardShortcuts`, which deliberately ignores modifiers), `Esc` end (leaves
-  `Esc` for an open help modal) — all registered in the `?` overlay via
-  `shortcuts.groups.review`; the answers are **optimistic** (the UI moves on, the request finishes in the background) and
+  (the chord binds outside `useKeyboardShortcuts`, which deliberately ignores modifiers), `o` open the photo
+  under question **in a new tab**, `Esc` end (leaves `Esc` for an open help modal)
+  — all registered in the `?` overlay via
+  `shortcuts.groups.review`; **the photo leads out to itself**: a small anchor in the frame's top-right corner
+  (`ReviewPhoto`'s `href` prop, built by the page's `photoDetailPath` — one string for both routes, so the copied
+  link and the opened tab can't disagree) to `/photos/{uid}` with `target="_blank"` +
+  `rel="noopener noreferrer"`, and `o` opens the same path via `window.open(…, 'noopener,noreferrer')` — it is a
+  **real `href`**, so right-click → copy link address, middle-click and Ctrl/Cmd+click all work; *getting the
+  URL* is the point (a photo worth sharing is found mid-game and would otherwise have to be hunted down again
+  in the library), and a click handler cannot give that. A new tab, because the queue lives in memory and
+  navigating away would drop the run — and neither route answers, skips nor moves the queue;
+  the answers are **optimistic** (the UI moves on, the request finishes in the background) and
   the next card is **always already in memory** (`useReviewGame` refills in the background, `useImagePreloader`
   decodes `PRELOAD_AHEAD = 4` photos ahead), so between cards **a spinner never flashes**;
   an unsaved answer isn't lost — it sits in an alert with **Uložit znovu**/**Zahodit**, undo has its own
@@ -1468,7 +1477,11 @@ here.
   bbox, the name/label in the question, →/←/spacebar send the right verdict and advance, **no fetch
   between cards within a batch**, undo via the right inverse endpoint, a failed answer doesn't lose
   the place, the empty states differently, the URL drives the fetched source, a toggle rebuilds the game and
-  lands in the URL, and a batch that arrives after the switch is dropped),
+  lands in the URL, a batch that arrives after the switch is dropped, the photo anchor's `href` on a face **and**
+  on a label question plus its `target`/`rel`, a click on it neither answers nor advances, and `o` opens without
+  answering while `y`/`n` still answer — the key-collision regression) + two `review.css` guards for the overlay
+  (its corner placement above the veil, and a 44 px full-strength target under `@media (hover: none)`, which
+  jsdom evaluates for nobody — read out of the shipped stylesheet like the `app.css` guards in `src/styles/`),
   `LeaderboardPage` = `/leaderboard` (**any logged-in user** — reading aggregates is not a write, so the
   top-level link **Žebříček** is seen by a viewer too, right next to **Třídění**; **inside `Layout`**, not
   fullscreen) a **competitive sorting leaderboard** over `GET /review/leaderboard` (`fetchLeaderboard(window)`):
@@ -1576,7 +1589,17 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   the ratio in **display** (EXIF-oriented) space — orientation 5–8 swap width/height —,
   fallback 3:2 so the stage never collapses; the face frame = `padBbox` (~30 %) → `faceBoxStyle`,
   `pointer-events: none` + `aria-hidden`, the surroundings a gentle dim; a broken preview degrades to an icon, a new
-  photo resets the flag) + `review.css` (a fullscreen **flex column** `review-game`: top bar /
+  photo resets the flag; the `.review-photo__open` anchor to the `href` prop (the page's `photoDetailPath`, which
+  its `o` shortcut opens too) in the frame's **top-right corner**, `target="_blank"` +
+  `rel="noopener noreferrer"`: deliberately a small corner target and **not the whole preview**, because the
+  preview carries the face rectangle and a click into it must not be ambiguous — the three answers stay the
+  easiest thing on the screen (measured: 0 px overlap with the action row, ~620 px away from it on a desktop, ~360
+  px on a phone). It is an overlay, so it costs the photo no height; `z-index: 2` puts it above the dimming veil,
+  quiet at `opacity: .7` with the `o` hint on a fine pointer and a full 44×44 icon-only target under
+  `@media (hover: none)`. The one price of a fixed corner: a face pinned into that same corner has the plate over
+  ~1500 px² of its padded box (~0.2 % of the frame, verified in the harness) — accepted, because a control that
+  hops between corners per card is worse than a rare, small overlap)
+  + `review.css` (a fullscreen **flex column** `review-game`: top bar /
   progress / **question** / stage / actions — text **above** the photo; the stage is `flex: 1 1 0` +
   `container-type: size` + `overflow: hidden`, so its height **is** the remainder after the chrome (basis 0 →
   the photo inside can't push anything out) and an overflow of the photo onto the text is **structurally impossible**, however
