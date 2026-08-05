@@ -151,3 +151,35 @@ func decodeDuplicateDismissal(r *http.Request) (duplicateDismissalInput, error) 
 func (in duplicateDismissalInput) toKey() feedback.DuplicateDismissalKey {
 	return feedback.DuplicateDismissalKey{PhotoUID: in.PhotoUID, OtherUID: in.OtherUID}
 }
+
+// markerDismissalInput is the JSON body accepted by the repeated-marker dismissal
+// endpoints: the photo and the person marked more than once on it. The markers
+// themselves are deliberately absent — the opinion is about the situation, not
+// about two particular boxes (see feedback.DuplicateMarkerDismissalKey).
+type markerDismissalInput struct {
+	PhotoUID   string `json:"photo_uid"`
+	SubjectUID string `json:"subject_uid"`
+}
+
+// decodeMarkerDismissal decodes and validates a repeated-marker dismissal body,
+// requiring both the photo and the subject.
+func decodeMarkerDismissal(r *http.Request) (markerDismissalInput, error) {
+	var in markerDismissalInput
+	if err := decodeJSON(r, &in); err != nil {
+		return markerDismissalInput{}, err
+	}
+	in.PhotoUID = strings.TrimSpace(in.PhotoUID)
+	in.SubjectUID = strings.TrimSpace(in.SubjectUID)
+	switch {
+	case in.PhotoUID == "":
+		return markerDismissalInput{}, errNoPhotoUID
+	case in.SubjectUID == "":
+		return markerDismissalInput{}, errNoSubjectUID
+	}
+	return in, nil
+}
+
+// toKey converts the request input into a feedback.DuplicateMarkerDismissalKey.
+func (in markerDismissalInput) toKey() feedback.DuplicateMarkerDismissalKey {
+	return feedback.DuplicateMarkerDismissalKey{PhotoUID: in.PhotoUID, SubjectUID: in.SubjectUID}
+}

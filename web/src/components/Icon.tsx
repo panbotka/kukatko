@@ -54,6 +54,7 @@ export type IconName =
   | 'person-check'
   | 'person-circle'
   | 'person-gear'
+  | 'person-lines-fill'
   | 'plus-lg'
   | 'question-circle'
   | 'search'

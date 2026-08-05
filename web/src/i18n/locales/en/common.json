@@ -44,6 +44,7 @@
     "faceSearch": "Find a person",
     "recognition": "Recognition",
     "duplicates": "Duplicates",
+    "duplicateMarkers": "Repeated markers",
     "account": "My account",
     "help": "Help",
     "logout": "Sign out",
@@ -66,6 +67,7 @@
       "faceSearch": "Find a person among untagged photos",
       "recognition": "Scan everyone for matches among unnamed faces",
       "duplicates": "Review the duplicates",
+      "duplicateMarkers": "Find people marked more than once on one photo",
       "trash": "Show the trash",
       "admin": "Show the administration",
       "operations": "Show the operations tools",
@@ -1948,6 +1950,40 @@
         "title": "All done",
         "hint": "You have resolved every pair we found."
       }
+    }
+  },
+  "duplicateMarkers": {
+    "title": "Repeated markers",
+    "subtitle": "Photos where one and the same person is marked more than once. It is always a mistake — usually a group shot where the same name landed on two neighbouring boxes. Pick the right one; the others are only detached from the person and stay as regions for somebody else.",
+    "remaining_one": "{{count}} group left",
+    "remaining_other": "{{count}} groups left",
+    "kept_one": "{{name}}: {{count}} marker detached.",
+    "kept_other": "{{name}}: {{count}} markers detached.",
+    "invalidated": "Box flagged as holding no face.",
+    "dismissed": "{{name}} on this photo is fine — the group will not come back.",
+    "actionError": "The action failed.",
+    "stale": "This group has changed in the meantime. Reload the page.",
+    "unavailable": "Repeated-marker review is not available on this server.",
+    "error": "Failed to load repeated markers.",
+    "empty": {
+      "title": "No repeated markers",
+      "hint": "Nobody is marked twice on the same photo right now."
+    },
+    "loadMore": "Load more",
+    "moreError": "Could not load more groups.",
+    "card": {
+      "count_one": "{{count}} marker",
+      "count_other": "{{count}} markers",
+      "untitled": "Untitled",
+      "openPhoto": "Open the photo",
+      "previewAlt": "The photo with every box of {{name}} outlined",
+      "cropAlt": "Close-up of the box",
+      "keep": "Keep #{{index}}",
+      "invalid": "No face here",
+      "invalidTitle": "Flags the box as invalid. The box is not deleted, it just stops counting as a face.",
+      "hint": "The kept marker stays with the person, the others are detached from them — nothing is deleted.",
+      "dismiss": "Leave it be",
+      "dismissTitle": "The person really is on the photo more than once (a mirror, a double exposure, a photo of a photo). The group will never be offered again."
     }
   },
   "jobStates": {

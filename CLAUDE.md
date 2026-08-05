@@ -67,6 +67,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/dirimport` — `kukatko import dir`: walks a directory on disk and uploads its media via `internal/ingest`
 - `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only
 - `internal/duplicatesapi` — `GET /duplicates`, `POST /duplicates/merge`
+- `internal/dupmarkers` — finds one person marked more than once on the same photo (repeated valid face markers, named subjects only); read-only, grouping is a pure function
+- `internal/dupmarkersapi` — `GET /duplicate-markers` + the two repairs (`keep`, `invalid`), both delegating to existing write paths
 - `internal/dupmerge` — transactional resolve of a dup group: union albums/labels/people onto the keeper, fill gaps, archive copies
 - `internal/embedding` — HTTP client of the inference sidecar on the box; offline-aware typed errors
 - `internal/embedjob` — worker handler `image_embed` + backfill

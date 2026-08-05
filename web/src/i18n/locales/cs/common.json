@@ -44,6 +44,7 @@
     "faceSearch": "Najít osobu",
     "recognition": "Rozpoznávání",
     "duplicates": "Duplikáty",
+    "duplicateMarkers": "Vícenásobné značky",
     "account": "Můj účet",
     "help": "Nápověda",
     "logout": "Odhlásit se",
@@ -66,6 +67,7 @@
       "faceSearch": "Najít osobu mezi neotagovanými fotkami",
       "recognition": "Projít všechny a najít shody mezi neoznačenými obličeji",
       "duplicates": "Zkontrolovat duplikáty",
+      "duplicateMarkers": "Najít osoby označené na fotce vícekrát",
       "trash": "Zobrazit koš",
       "admin": "Zobrazit správu",
       "operations": "Zobrazit provozní nástroje",
@@ -2018,6 +2020,46 @@
         "title": "Hotovo",
         "hint": "Všechny nalezené dvojice máte vyřešené."
       }
+    }
+  },
+  "duplicateMarkers": {
+    "title": "Vícenásobné značky",
+    "subtitle": "Fotky, na kterých je jedna osoba označená víc než jednou. Je to vždycky chyba — obvykle na skupinovce, kde stejné jméno dostaly dva sousední rámečky. Vyberte, který je ten pravý; ostatní se od osoby jen odpojí a zůstanou jako rámečky pro někoho jiného.",
+    "remaining_one": "Zbývá {{count}} skupina",
+    "remaining_few": "Zbývají {{count}} skupiny",
+    "remaining_many": "Zbývá {{count}} skupiny",
+    "remaining_other": "Zbývá {{count}} skupin",
+    "kept_one": "{{name}}: {{count}} značka odpojena.",
+    "kept_few": "{{name}}: {{count}} značky odpojeny.",
+    "kept_many": "{{name}}: {{count}} značky odpojeno.",
+    "kept_other": "{{name}}: {{count}} značek odpojeno.",
+    "invalidated": "Rámeček označen jako neplatný.",
+    "dismissed": "{{name}} na téhle fotce je v pořádku — skupina se už nenabídne.",
+    "actionError": "Akce se nezdařila.",
+    "stale": "Tahle skupina se mezitím změnila. Načtěte stránku znovu.",
+    "unavailable": "Kontrola vícenásobných značek není na serveru dostupná.",
+    "error": "Načtení vícenásobných značek se nezdařilo.",
+    "empty": {
+      "title": "Žádné vícenásobné značky",
+      "hint": "Nikdo momentálně není na jedné fotce označený dvakrát."
+    },
+    "loadMore": "Načíst další",
+    "moreError": "Další skupiny se nepodařilo načíst.",
+    "card": {
+      "count_one": "{{count}} značka",
+      "count_few": "{{count}} značky",
+      "count_many": "{{count}} značky",
+      "count_other": "{{count}} značek",
+      "untitled": "Bez názvu",
+      "openPhoto": "Otevřít fotku",
+      "previewAlt": "Fotka s vyznačenými rámečky osoby {{name}}",
+      "cropAlt": "Výřez rámečku",
+      "keep": "Nechat #{{index}}",
+      "invalid": "Není tu obličej",
+      "invalidTitle": "Označí rámeček jako neplatný. Rámeček se nemaže, jen přestane platit jako obličej.",
+      "hint": "Ponechaná značka zůstane u osoby, ostatní se od ní odpojí — nic se nemaže.",
+      "dismiss": "Nechat být",
+      "dismissTitle": "Osoba je na fotce opravdu vícekrát (zrcadlo, dvojexpozice, fotka fotky). Skupina se už nikdy nenabídne."
     }
   },
   "jobStates": {

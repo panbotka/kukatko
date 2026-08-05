@@ -135,6 +135,50 @@ func (a *API) handleDuplicateUndismiss(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleMarkerDismiss records that the person in the request body really IS marked
+// more than once on the given photo — a double exposure, a mirror, a photo of a
+// photo — and answers 204, so the repeated-marker review stops offering the group.
+// Nothing is detached or invalidated by it. The write is idempotent, so dismissing
+// the same group twice is a no-op. A malformed body or a missing identifier answers
+// 400; a non-existent photo or subject answers 404.
+func (a *API) handleMarkerDismiss(w http.ResponseWriter, r *http.Request) {
+	in, err := decodeMarkerDismissal(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := in.toKey()
+	entry := a.auditEntry(r, audit.ActionDuplicateMarkerDismiss, "subjects", key.SubjectUID,
+		map[string]any{"photo_uid": key.PhotoUID})
+	if err := a.store.DismissDuplicateMarkers(r.Context(), key, entry); err != nil {
+		status, msg := rejectionStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleMarkerUndismiss takes back the repeated-marker dismissal in the request
+// body and answers 204, letting the group be offered for review again.
+// Un-dismissing a group that was never dismissed is a no-op. A malformed body or a
+// missing identifier answers 400.
+func (a *API) handleMarkerUndismiss(w http.ResponseWriter, r *http.Request) {
+	in, err := decodeMarkerDismissal(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := in.toKey()
+	entry := a.auditEntry(r, audit.ActionDuplicateMarkerUndismiss, "subjects", key.SubjectUID,
+		map[string]any{"photo_uid": key.PhotoUID})
+	if err := a.store.UndismissDuplicateMarkers(r.Context(), key, entry); err != nil {
+		status, msg := rejectionStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleLabelReject records that the photo in the request body should NOT have the
 // given label and answers 204. Rejecting the same pair twice is a no-op. A malformed
 // body or a missing identifier answers 400; a non-existent photo or label answers

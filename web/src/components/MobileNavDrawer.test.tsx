@@ -155,6 +155,7 @@ describe('MobileNavDrawer', () => {
       '/faces',
       '/recognition',
       '/outliers',
+      '/duplicate-markers',
       '/duplicates',
       '/trash',
       '/import',

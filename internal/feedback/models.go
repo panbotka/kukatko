@@ -1,21 +1,25 @@
 // Package feedback is Kukátko's store for persisted review feedback: a user's
 // durable "no" to a face↔subject guess or a photo↔label guess (a rejection), the
 // durable "yes, this really is them" to a face↔subject assignment (a
-// confirmation), and the durable "these two photos are genuinely different" to a
-// duplicate pair (a dismissal). It exists to close photo-sorter's gap where an
-// opinion was never persisted, so the very same wrong face was offered again on
-// the next search forever and the review work never shrank (see
-// docs/ARCHITECTURE.md and migrations 0031, 0032 and 0034).
+// confirmation), the durable "these two photos are genuinely different" to a
+// duplicate pair (a dismissal), and the durable "this person really is marked
+// twice on this photo" to a repeated-marker group (also a dismissal). It exists
+// to close photo-sorter's gap where an opinion was never persisted, so the very
+// same wrong face was offered again on the next search forever and the review
+// work never shrank (see docs/ARCHITECTURE.md and migrations 0031, 0032, 0034
+// and 0050).
 //
 // Feedback records an OPINION; it never mutates the data it is about. Rejecting
 // a face does not unassign a marker or delete the face; rejecting a label does not
 // detach the label; confirming a face assigns nothing; dismissing a duplicate pair
-// archives nothing. The review features read these opinions to exclude what a user
-// has already settled (the unassigned-face search takes a face rejection set as an
-// exclusion filter; label expansion takes a label rejection set; outlier review
-// takes a face confirmation set; duplicate detection drops the dismissed edges),
-// and the negative-exemplar rule in internal/vectors turns a rejection into a
-// nearest-neighbour margin test rather than just hiding one row.
+// archives nothing; dismissing a repeated-marker group detaches no marker. The
+// review features read these opinions to exclude what a user has already settled
+// (the unassigned-face search takes a face rejection set as an exclusion filter;
+// label expansion takes a label rejection set; outlier review takes a face
+// confirmation set; duplicate detection drops the dismissed edges; the
+// repeated-marker page drops the dismissed groups), and the negative-exemplar rule
+// in internal/vectors turns a rejection into a nearest-neighbour margin test
+// rather than just hiding one row.
 //
 // Every write is audited in the same transaction as the mutation, matching the
 // project's durable-audit convention. Recording feedback is idempotent: the
@@ -131,6 +135,27 @@ func (k DuplicateDismissalKey) normalized() DuplicateDismissalKey {
 		return k
 	}
 	return DuplicateDismissalKey{PhotoUID: k.OtherUID, OtherUID: k.PhotoUID}
+}
+
+// DuplicateMarkerDismissalKey identifies a single "this person really is marked
+// more than once on this photo" decision about a (photo, subject) pair.
+//
+// It keys the pair, not the markers. Marker uids are not stable — a photo can be
+// re-detected and its boxes redrawn — and the opinion is about the situation
+// ("two of her on this shot is correct: it is a mirror"), not about two specific
+// rectangles. Keying the rectangles would resurrect the group the moment one was
+// replaced. See migration 0050.
+type DuplicateMarkerDismissalKey struct {
+	// PhotoUID is the photo the repeated markers sit on.
+	PhotoUID string
+	// SubjectUID is the person marked more than once on it.
+	SubjectUID string
+}
+
+// valid reports whether the key has both identifiers a repeated-marker dismissal
+// needs.
+func (k DuplicateMarkerDismissalKey) valid() bool {
+	return k.PhotoUID != "" && k.SubjectUID != ""
 }
 
 // FaceRef is a face identified by (photo UID, face index) with no subject — the

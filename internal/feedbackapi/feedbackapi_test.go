@@ -21,13 +21,14 @@ func passthrough(next http.Handler) http.Handler { return next }
 // handler test can assert the key, the audit entry and the status mapping without a
 // database.
 type fakeStore struct {
-	err        error
-	called     string
-	faceKey    feedback.FaceRejectionKey
-	labelKey   feedback.LabelRejectionKey
-	confirmKey feedback.FaceConfirmationKey
-	dupKey     feedback.DuplicateDismissalKey
-	entry      audit.Entry
+	err          error
+	called       string
+	faceKey      feedback.FaceRejectionKey
+	labelKey     feedback.LabelRejectionKey
+	confirmKey   feedback.FaceConfirmationKey
+	dupKey       feedback.DuplicateDismissalKey
+	dupMarkerKey feedback.DuplicateMarkerDismissalKey
+	entry        audit.Entry
 }
 
 func (f *fakeStore) RejectFace(_ context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error {
@@ -71,6 +72,20 @@ func (f *fakeStore) UndismissDuplicate(
 	_ context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry,
 ) error {
 	f.called, f.dupKey, f.entry = "UndismissDuplicate", key, entry
+	return f.err
+}
+
+func (f *fakeStore) DismissDuplicateMarkers(
+	_ context.Context, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
+) error {
+	f.called, f.dupMarkerKey, f.entry = "DismissDuplicateMarkers", key, entry
+	return f.err
+}
+
+func (f *fakeStore) UndismissDuplicateMarkers(
+	_ context.Context, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
+) error {
+	f.called, f.dupMarkerKey, f.entry = "UndismissDuplicateMarkers", key, entry
 	return f.err
 }
 
@@ -349,6 +364,82 @@ func TestHandleDuplicateDismissUnknownPhoto(t *testing.T) {
 	store := &fakeStore{err: feedback.ErrTargetNotFound}
 	rec := serve(store, http.MethodPost, "/api/v1/feedback/duplicate-dismissals",
 		`{"photo_uid":"ph1","other_uid":"ph2"}`)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+// TestHandleMarkerDismiss checks settling "she really is marked twice here"
+// answers 204 and forwards the (photo, subject) key with an audit entry naming
+// both.
+func TestHandleMarkerDismiss(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{}
+	rec := serve(store, http.MethodPost, "/api/v1/feedback/duplicate-marker-dismissals",
+		`{"photo_uid":"ph1","subject_uid":"su1"}`)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if store.called != "DismissDuplicateMarkers" {
+		t.Fatalf("store call = %q, want DismissDuplicateMarkers", store.called)
+	}
+	want := feedback.DuplicateMarkerDismissalKey{PhotoUID: "ph1", SubjectUID: "su1"}
+	if store.dupMarkerKey != want {
+		t.Errorf("dismissal key = %+v, want %+v", store.dupMarkerKey, want)
+	}
+	if store.entry.Action != audit.ActionDuplicateMarkerDismiss || store.entry.TargetUID != "su1" {
+		t.Errorf("audit entry = %+v, want duplicate_marker.dismiss targeting su1", store.entry)
+	}
+	if store.entry.Details["photo_uid"] != "ph1" {
+		t.Errorf("audit details = %+v, want photo_uid ph1", store.entry.Details)
+	}
+}
+
+// TestHandleMarkerUndismiss checks the take-back route answers 204 and calls
+// UndismissDuplicateMarkers.
+func TestHandleMarkerUndismiss(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{}
+	rec := serve(store, http.MethodDelete, "/api/v1/feedback/duplicate-marker-dismissals",
+		`{"photo_uid":"ph1","subject_uid":"su1"}`)
+
+	if rec.Code != http.StatusNoContent || store.called != "UndismissDuplicateMarkers" {
+		t.Fatalf("status = %d, call = %q, want 204 UndismissDuplicateMarkers", rec.Code, store.called)
+	}
+	if store.entry.Action != audit.ActionDuplicateMarkerUndismiss {
+		t.Errorf("audit action = %q, want duplicate_marker.undismiss", store.entry.Action)
+	}
+}
+
+// TestHandleMarkerDismissIncompleteBody checks a body missing either identifier is
+// refused with 400 before the store is touched.
+func TestHandleMarkerDismissIncompleteBody(t *testing.T) {
+	t.Parallel()
+
+	for _, body := range []string{`{}`, `{"photo_uid":"ph1"}`, `{"subject_uid":"su1"}`} {
+		store := &fakeStore{}
+		rec := serve(store, http.MethodPost, "/api/v1/feedback/duplicate-marker-dismissals", body)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("POST %s status = %d, want 400", body, rec.Code)
+		}
+		if store.called != "" {
+			t.Errorf("POST %s called the store (%q), want none", body, store.called)
+		}
+	}
+}
+
+// TestHandleMarkerDismissUnknownTarget checks a group naming a photo or subject
+// that does not exist answers 404 rather than a generic failure.
+func TestHandleMarkerDismissUnknownTarget(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeStore{err: feedback.ErrTargetNotFound}
+	rec := serve(store, http.MethodPost, "/api/v1/feedback/duplicate-marker-dismissals",
+		`{"photo_uid":"ph1","subject_uid":"su1"}`)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)

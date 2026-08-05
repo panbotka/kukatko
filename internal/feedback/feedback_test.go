@@ -22,6 +22,7 @@ func TestEmptyKeyValidation(t *testing.T) {
 	faceKey := feedback.FaceRejectionKey{FaceIndex: 0}       // no photo/subject UID
 	labelKey := feedback.LabelRejectionKey{}                 // no photo/label UID
 	confirmKey := feedback.FaceConfirmationKey{FaceIndex: 0} // no photo/subject UID
+	markerKey := feedback.DuplicateMarkerDismissalKey{}      // no photo/subject UID
 
 	checks := []struct {
 		name string
@@ -33,6 +34,8 @@ func TestEmptyKeyValidation(t *testing.T) {
 		{"UnrejectLabel", store.UnrejectLabel(ctx, labelKey, entry)},
 		{"ConfirmFace", store.ConfirmFace(ctx, confirmKey, entry)},
 		{"UnconfirmFace", store.UnconfirmFace(ctx, confirmKey, entry)},
+		{"DismissDuplicateMarkers", store.DismissDuplicateMarkers(ctx, markerKey, entry)},
+		{"UndismissDuplicateMarkers", store.UndismissDuplicateMarkers(ctx, markerKey, entry)},
 	}
 	for _, c := range checks {
 		if !errors.Is(c.err, feedback.ErrEmptyKey) {
@@ -57,5 +60,8 @@ func TestEmptyKeyValidation(t *testing.T) {
 	}
 	if _, err := store.LabelRejectionsForLabel(ctx, ""); !errors.Is(err, feedback.ErrEmptyKey) {
 		t.Errorf("LabelRejectionsForLabel empty = %v, want ErrEmptyKey", err)
+	}
+	if _, err := store.IsDuplicateMarkersDismissed(ctx, markerKey); !errors.Is(err, feedback.ErrEmptyKey) {
+		t.Errorf("IsDuplicateMarkersDismissed empty key = %v, want ErrEmptyKey", err)
 	}
 }

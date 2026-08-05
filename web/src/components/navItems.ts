@@ -90,6 +90,12 @@ export const TOOLS_GROUP: NavGroup = {
       icon: 'exclamation-triangle',
     },
     {
+      to: '/duplicate-markers',
+      labelKey: 'nav.duplicateMarkers',
+      titleKey: 'nav.titles.duplicateMarkers',
+      icon: 'person-lines-fill',
+    },
+    {
       to: '/duplicates',
       labelKey: 'nav.duplicates',
       titleKey: 'nav.titles.duplicates',

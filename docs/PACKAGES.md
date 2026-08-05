@@ -969,11 +969,15 @@ to `## Package map` in `CLAUDE.md`.
   `ErrInvalidType`/`ErrInvalidBounds`; **the faces cache is kept consistent** on every change of a
   marker/subject (delete, rename, assign/unassign); **audited variants**
   `CreateSubjectAudited`/`UpdateSubjectAudited`/`DeleteSubjectAudited` and
-  `CreateMarkerAudited`/`AssignSubjectAudited`/`UnassignSubjectAudited` (`internal/people/audit.go`)
+  `CreateMarkerAudited`/`AssignSubjectAudited`/`UnassignSubjectAudited`/`SetMarkerInvalidAudited`
+  (`internal/people/audit.go`)
   take an `audit.Entry` and write it **in the same transaction** as the change (`audit.Write(ctx,tx,entry)`),
   so the audit row commits/rolls back atomically with the mutation (the `internal/photos`/`internal/organize` convention);
-  a shared tx-core (`insertMarkerTx`/`assignSubjectTx`/`unassignSubjectTx`/`prepareSubjectInsert`) is used by
-  both variants), `internal/facematch/`
+  a shared tx-core (`insertMarkerTx`/`assignSubjectTx`/`unassignSubjectTx`/`setMarkerInvalid`/
+  `prepareSubjectInsert`) is used by
+  both variants. `SetMarkerInvalidAudited` (action `marker.invalidate`, used by the repeated-marker review)
+  changes **nothing but the flag**: the row survives and keeps its subject, so the decision is reversible and an
+  invalidation stays distinguishable from an unassignment), `internal/facematch/`
   (linking detected faces to markers/subjects + identity suggestions, all behind the interfaces
   `PhotoStore`/`FaceStore`/`PeopleStore` (unit-testable with fakes without a DB): `Service` =
   `New(Config{Photos,Faces,People,IoUThreshold,SuggestionLimit,SuggestionMaxDistance,MinFaceSize})`;
@@ -1616,7 +1620,20 @@ to `## Package map` in `CLAUDE.md`.
   scans the catalog in one pass and needs the whole exclusion set up front); sentinel `ErrSamePhoto`
   (→400, a photo isn't a duplicate of itself). **Why it exists:** duplicate detection is derived state,
   recomputed on every `GET /duplicates` from hashes and embeddings, which the user's
-  disagreement doesn't change — without persistence the same pair would be offered forever),
+  disagreement doesn't change — without persistence the same pair would be offered forever).
+  **Repeated-marker dismissals** (`markerdismissals.go`, table `duplicate_marker_dismissals`, migration
+  `0050_duplicate_marker_dismissals.sql`) are a fourth kind: "this person **really is** marked more than once on
+  this photo" — a double exposure, a mirror, a photo of a photo, a face on a poster behind its owner. Keyed by
+  the **(photo, subject) pair**, which is exactly the group `internal/dupmarkers` shows; deliberately **not** by
+  the markers, whose uids come and go when a photo is re-detected and whose replacement would resurrect a
+  settled group. `UNIQUE (photo_uid, subject_uid)`, both FKs `ON DELETE CASCADE`, `dismissed_by` FK users
+  `ON DELETE SET NULL`. `DismissDuplicateMarkers`/`UndismissDuplicateMarkers` (idempotent audited
+  insert/delete, actions `duplicate_marker.dismiss`/`duplicate_marker.undismiss`),
+  `IsDuplicateMarkersDismissed`, bulk `DismissedDuplicateMarkerGroups()`
+  (→ `[]DuplicateMarkerDismissalKey`, the whole table in one query — the listing recomputes its groups in one
+  pass and needs the whole exclusion set up front). **Why it exists:** the repeated-marker listing is derived
+  state too, so without this the same false alarm would be re-offered on every reload and a curator would keep
+  clicking past it),
   `internal/feedbackapi/`
   (an HTTP API over rejections — the `Store` interface (a subset of `feedback.Store`) → unit-testable with fakes;
   `NewAPI(Config{Store,RequireWrite})`+`RegisterRoutes` mounts the subrouter `/feedback`:
@@ -1626,7 +1643,11 @@ to `## Package map` in `CLAUDE.md`.
   (like label-detach); body decode `DisallowUnknownFields` + 64 KiB, a missing id → 400, a negative
   `face_index` → 400; **each mutation writes an audit record in the same transaction** (the actor from
   `auth.UserFromContext` + `audit.FromRequest`, actions `face.reject`/`face.unreject`/`label.reject`/
-  `label.unreject`, `entry.ActorUID` is also `rejected_by`); `ErrTargetNotFound`→404, `ErrEmptyKey`→400,
+  `label.unreject`, `entry.ActorUID` is also `rejected_by`); the confirmation, duplicate-dismissal and
+  **repeated-marker dismissal** routes ride the same subrouter and the same rules —
+  `POST`/`DELETE /feedback/duplicate-marker-dismissals` `{photo_uid,subject_uid}` → 204 (actions
+  `duplicate_marker.dismiss`/`duplicate_marker.undismiss`, targeting the subject with the photo in the details);
+  `ErrTargetNotFound`→404, `ErrEmptyKey`→400,
   otherwise 500; mounted by another `server.WithAPI` (`buildFeedbackAPI` in `cmd/kukatko/feedback.go`)),
   `internal/savedsearch/`
   (the DB layer for **per-user saved searches** ("smart albums") — a named, owner's private
@@ -2648,6 +2669,44 @@ to `## Package map` in `CLAUDE.md`.
   → 500; merge: a bad group → 400, a non-existent keeper → 404, the actor from `auth.UserFromContext`);
   mounted in `serve` (`buildDuplicatesAPI` in `cmd/kukatko/duplicates.go`, `Merge` always, `Service` nil when
   `duplicate.enabled=false`)),
+  `internal/dupmarkers/`
+  (**"one person marked more than once on the same photo"** — a different defect from `duplicates`, which is about
+  duplicate *photos*: here it is one photo where the matcher put the same name on two or three neighbouring boxes
+  of a group shot, so the people beside her lost their tag and her own face count is inflated. It counts **markers,
+  not faces** — several detected faces matched onto one marker is a face↔marker pairing bug in
+  `internal/facematch` and a separate task, and mixing the two would mean neither count falls when either is
+  fixed. Read-only: it finds the groups, every repair goes through an existing write path.
+  `MarkerSource` (`ListRepeatedMarkers`, satisfied by `*Store`)/`DismissalSource`
+  (`DismissedDuplicateMarkerGroups`, satisfied by `*feedback.Store`) →
+  `Service = New(Config{Markers,Dismissals})`, **`FindGroups(ctx,limit,offset)`** →
+  `Result{Groups,Total,Limit,Offset,NextOffset}`; a `Group{PhotoUID,PhotoTitle,TakenAt,Width,Height,
+  Orientation,SubjectUID,SubjectName,Markers[]{uid,bbox,score,reviewed}}` with the markers ordered **left to
+  right** so a client's numbering reads in reading order, `limit` clamped to `[1,200]` (default 50).
+  **`GroupMarkers(rows,dismissed)` is exported and pure**: it keeps only valid (`invalid=false`) `face` markers of
+  **named** subjects, groups by (photo, subject), drops the dismissed groups and the ones left under
+  `minGroupSize`=2, and orders most-markers-first → by name → by uid. The SQL (`store.go`) applies the same
+  predicates plus a `COUNT(*) OVER (PARTITION BY photo_uid, subject_uid) > 1` window so Postgres ships a few
+  dozen rows instead of the whole catalogue — an optimisation, **not** the rule, which lives in Go where it is
+  unit-tested. The nameless catch-all subject is excluded (it holds thousands of untagged regions and would bury
+  every real finding, cf. the 6 767 photos in `docs/API.md`); archived photos are excluded, **non-primary stack
+  members are not** — a RAW sibling with the same person twice is the same mistake),
+  `internal/dupmarkersapi/`
+  (the HTTP surface of the repeated-marker review: `Service` (`FindGroups`, **nil → 503**)/`MarkerStore`
+  (`ListMarkersByPhoto`/`GetMarkerByUID`/`SetMarkerInvalidAudited`, satisfied by `*people.Store`)/`Assigner`
+  (`Apply`, satisfied by `*facematch.Service`); `NewAPI(Config{Service,Markers,Assigner,RequireAuth,
+  RequireWrite})`+`RegisterRoutes` mounts `GET /duplicate-markers` behind **RequireAuth** (reading is not a write)
+  and `POST /duplicate-markers/keep` + `POST /duplicate-markers/invalid` behind `RequireWrite`.
+  **Neither repair is new behaviour**: `keep` resolves the group **server-side** from (photo, subject) —
+  the losing markers are deliberately not in the body, so a stale client list cannot detach a marker that has
+  meanwhile been re-tagged — and detaches each one through `facematch.Apply(unassign_person)`, the same
+  transition the photo detail and the review game use (subject cleared, `reviewed` cleared, `faces` cache
+  refreshed, `face.unassign` audited); `invalid` flips the flag through `people.SetMarkerInvalidAudited`
+  (`marker.invalidate`), which changes **nothing but the flag** — the row survives and keeps its subject, so the
+  decision is reversible and an invalidation stays distinguishable from an unassignment. A keeper that is not one
+  of that person's valid face markers on that photo → **404 before anything is detached**;
+  mounted in `serve` (`buildDupMarkersAPI` in `cmd/kukatko/dupmarkers.go`, sharing the photo API's
+  `facematch.Service`). The third decision — "leave it be" — is an opinion, not a repair, so it lives with the rest
+  of the persisted feedback at `POST`/`DELETE /feedback/duplicate-marker-dismissals`),
   `internal/stacks/`
   (**stack detection and management** — grouping several files of one shot (RAW+JPEG, an exported edit,
   a copy) under one visible **primary** photo, **without merging rows** (the counterpart of `dupmerge`, which
