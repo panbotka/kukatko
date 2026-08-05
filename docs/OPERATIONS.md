@@ -90,7 +90,7 @@ configuration key both here **and** into `config.example.yaml`.
   **`maintenance nameless-subjects`** (reports — and with `--apply --undo-file` detaches — subjects whose name
   identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
   `maintenance repair` with the flags
-  `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--dimensions`
+  `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--dimensions`/`--face-markers`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline; `--dimensions` writes the
   catalogue directly — it rewrites the pixel dimensions of quarter-turned photos whose columns hold the
@@ -99,7 +99,14 @@ configuration key both here **and** into `config.example.yaml`.
   `maintenance scan`**, whose `transposed dims` line and sample are exactly what it would rewrite, and every
   write is guarded on the state it replaces, so a re-run is a no-op and the swap is undone by swapping back.
   It does **not** rewrite the metadata sidecars, which carry a copy of the dimensions — follow it with
-  `kukatko sidecar backfill` if the corrected pair should reach them too;
+  `kukatko sidecar backfill` if the corrected pair should reach them too.
+  `--face-markers` likewise writes the catalogue directly: a marker describes one region, so at most one
+  detected face may claim it, and this clears the surplus links non-exclusive matching left behind (which
+  render one person twice on a photo). Its **dry run is `maintenance scan`** too — the `dup face markers`
+  line counts the markers more than one face row still caches, sampled by marker uid — and it only ever nulls
+  `marker_uid`/`subject_uid`/`subject_name` on the losing faces: no face row and no marker is deleted, and a
+  marker with a single face link is left alone, so genuinely duplicated markers from an import are not swept
+  up by it. A re-run is a no-op;
   a no-op without any flag;
   the **retention purge of old audit logs** is separate, only via HTTP/UI, not the CLI — the maintainer calls
   `POST /api/v1/maintenance/audit/purge` `{older_than_days}` (`internal/maintenanceapi`), which deletes audit

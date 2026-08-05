@@ -19,8 +19,10 @@ import (
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/facejob"
+	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/maintenance"
+	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -76,6 +78,7 @@ type harness struct {
 	svc      *maintenance.Service
 	photos   *photos.Store
 	vectors  *vectors.Store
+	people   *people.Store
 	storage  *storage.FS
 	thumbs   *thumb.Thumbnailer
 	jobs     *jobs.Store
@@ -98,6 +101,7 @@ func newHarness(t *testing.T) *harness {
 	thumbnailer := thumb.New(store, t.TempDir())
 	photoStore := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
+	peopleStore := people.NewStore(db.Pool())
 	jobStore := jobs.NewStore(db.Pool())
 	enqueuer := jobs.NewEnqueuer(jobStore)
 
@@ -119,13 +123,16 @@ func newHarness(t *testing.T) *harness {
 		Enqueuer:  enqueuer,
 		Embed:     embedSvc,
 		Faces:     faceSvc,
+		FaceCache: facematch.New(facematch.Config{
+			Photos: photoStore, Faces: vectorStore, People: peopleStore,
+		}),
 	})
 	tj := thumbjob.New(thumbjob.Config{
 		Photos: photoStore, Thumbnailer: thumbnailer, Decoder: thumbjob.NewStorageDecoder(store),
 	})
 	return &harness{
-		svc: svc, photos: photoStore, vectors: vectorStore, storage: store,
-		thumbs: thumbnailer, jobs: jobStore, thumbjob: tj, root: root,
+		svc: svc, photos: photoStore, vectors: vectorStore, people: peopleStore,
+		storage: store, thumbs: thumbnailer, jobs: jobStore, thumbjob: tj, root: root,
 	}
 }
 

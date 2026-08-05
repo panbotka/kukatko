@@ -11,8 +11,8 @@ import (
 
 // PhotoFaces returns every stored face on the photo with its marker assignment and
 // ranked subject suggestions — for an unnamed face the candidates to name it with,
-// for an assigned one the alternatives to reassign it to. Faces are matched to the photo's
-// markers by IoU and the best match (when it clears the threshold) is cached on the
+// for an assigned one the alternatives to reassign it to. Faces and markers are
+// paired exclusively by IoU (see matchMarkers) and each pairing is cached on the
 // face row. Markers that matched no detected face are appended so the detail UI can
 // render manually drawn regions too. A missing photo yields photos.ErrPhotoNotFound
 // (wrapped), which the HTTP layer maps to 404.
@@ -30,14 +30,21 @@ func (s *Service) PhotoFaces(ctx context.Context, photoUID string) (FacesRespons
 		return FacesResponse{}, fmt.Errorf("facematch: listing markers for %s: %w", photoUID, err)
 	}
 
+	matched := matchMarkers(faces, markers, s.iouThreshold)
 	names := s.assignedSubjectNames(ctx, markers)
-	exclude := subjectUIDSet(names)
-	matched := make(map[string]bool, len(markers))
+	state := photoPairing{
+		pairs:   matched,
+		claimed: matched.claims(),
+		surplus: surplusFaces(faces, matched),
+		markers: markersByUID(markers),
+		names:   names,
+		exclude: subjectUIDSet(names),
+	}
 	views := make([]FaceView, 0, len(faces)+len(markers))
 	for i := range faces {
-		views = append(views, s.buildFaceView(ctx, faces[i], markers, names, exclude, matched))
+		views = append(views, s.buildFaceView(ctx, faces[i], state))
 	}
-	views = appendUnmatchedMarkers(views, markers, matched, names)
+	views = appendUnmatchedMarkers(views, markers, state.claimed, names)
 
 	return FacesResponse{
 		PhotoUID:    photoUID,
@@ -48,9 +55,28 @@ func (s *Service) PhotoFaces(ctx context.Context, photoUID string) (FacesRespons
 	}, nil
 }
 
-// buildFaceView matches one stored face to the photo's markers, fills its
-// assignment and recommended action, caches the match on the face row, and adds
-// subject suggestions.
+// photoPairing is the per-photo matching state a face view is built from: the
+// exclusive pairing, its inverse (marker → claiming face), the faces whose cached
+// link is surplus, the photo's markers by uid, and the subject names/exclusions
+// shared by every face on the photo.
+type photoPairing struct {
+	pairs   pairing
+	claimed map[string]int
+	surplus map[int]bool
+	markers map[string]people.Marker
+	names   map[string]string
+	exclude map[string]bool
+}
+
+// buildFaceView turns one stored face into its view: the marker the exclusive
+// pairing awarded it (if any), the resulting assignment and recommended action,
+// the refreshed face-row cache, and the subject suggestions.
+//
+// A face the pairing left empty is a face without a marker — create_marker, no
+// subject, suggestions like any other unnamed face — even when its row still
+// caches a marker another face claims. That stale link is cleared here rather than
+// merely ignored, because everything downstream reads faces.subject_uid and would
+// otherwise keep seeing one person twice on the photo.
 //
 // Suggestions are computed for an assigned face too, so the UI can offer a
 // reassignment. The face never suggests the person it already names: exclude holds
@@ -59,10 +85,7 @@ func (s *Service) PhotoFaces(ctx context.Context, photoUID string) (FacesRespons
 // near neighbours are its own (excluded) subject, so an empty result is the honest
 // answer "no plausible alternative", while a misassigned one still surfaces the
 // right person from the primary pass.
-func (s *Service) buildFaceView(
-	ctx context.Context, face vectors.Face, markers []people.Marker,
-	names map[string]string, exclude map[string]bool, matched map[string]bool,
-) FaceView {
+func (s *Service) buildFaceView(ctx context.Context, face vectors.Face, state photoPairing) FaceView {
 	view := FaceView{
 		FaceIndex:   face.FaceIndex,
 		BBox:        face.BBox,
@@ -70,14 +93,17 @@ func (s *Service) buildFaceView(
 		Action:      ActionCreateMarker,
 		Suggestions: []Suggestion{},
 	}
-	if best, iou := s.findBestMarker(face.BBox, markers); best != nil {
-		matched[best.UID] = true
-		view.MarkerUID = best.UID
-		view.IoU = iou
-		applyMarkerAssignment(&view, *best, names)
-		s.cacheFaceMatch(ctx, face, *best, view.SubjectName)
+	switch match, ok := state.pairs[face.FaceIndex]; {
+	case ok:
+		marker := state.markers[match.MarkerUID]
+		view.MarkerUID = marker.UID
+		view.IoU = match.IoU
+		applyMarkerAssignment(&view, marker, state.names)
+		s.cacheFaceLink(ctx, face, marker.UID, view.SubjectUID, view.SubjectName)
+	case state.surplus[face.FaceIndex]:
+		s.cacheFaceLink(ctx, face, "", "", "")
 	}
-	view.Suggestions = s.suggestForFace(ctx, face, exclude, view.SubjectUID == "")
+	view.Suggestions = s.suggestForFace(ctx, face, state.exclude, view.SubjectUID == "")
 	return view
 }
 
@@ -94,32 +120,36 @@ func applyMarkerAssignment(view *FaceView, marker people.Marker, names map[strin
 	view.Action = ActionAlreadyDone
 }
 
-// cacheFaceMatch persists the matched marker (and its subject) on the face row when
-// it differs from the cached value, so face↔marker matching is recorded for later
-// reads and assignments. It is best-effort: a write failure is logged, not returned,
-// because the response is already computed and the cache is regenerable.
-func (s *Service) cacheFaceMatch(ctx context.Context, face vectors.Face, marker people.Marker, subjectName string) {
-	subjectUID := derefSubject(marker.SubjectUID)
-	if derefSubject(face.MarkerUID) == marker.UID && derefSubject(face.SubjectUID) == subjectUID {
+// cacheFaceLink persists the face's marker link (and that marker's subject) on the
+// face row when it differs from the cached value, so face↔marker matching is
+// recorded for later reads and assignments. All-empty arguments clear the link,
+// which is how a surplus claim on a marker another face won is dropped. It is
+// best-effort: a write failure is logged, not returned, because the response is
+// already computed and the cache is regenerable.
+func (s *Service) cacheFaceLink(
+	ctx context.Context, face vectors.Face, markerUID, subjectUID, subjectName string,
+) {
+	if derefSubject(face.MarkerUID) == markerUID && derefSubject(face.SubjectUID) == subjectUID {
 		return // already cached identically
 	}
 	if err := s.faces.UpdateFaceMarker(
-		ctx, face.PhotoUID, face.FaceIndex, marker.UID, subjectUID, subjectName,
+		ctx, face.PhotoUID, face.FaceIndex, markerUID, subjectUID, subjectName,
 	); err != nil {
-		log.Printf("facematch: caching marker match for %s face %d: %v", face.PhotoUID, face.FaceIndex, err)
+		log.Printf("facematch: caching marker link for %s face %d: %v", face.PhotoUID, face.FaceIndex, err)
 	}
 }
 
-// appendUnmatchedMarkers adds face-type, non-invalid markers that matched no stored
-// face to views, with descending negative face indexes so the detail UI can render
-// hand-drawn or stale regions. Already-matched markers are skipped.
+// appendUnmatchedMarkers adds face-type, non-invalid markers that no face claimed
+// in the exclusive pairing to views, with descending negative face indexes so the
+// detail UI can render hand-drawn or stale regions. claimed maps a marker uid to
+// the face index that won it; markers listed there are skipped.
 func appendUnmatchedMarkers(
-	views []FaceView, markers []people.Marker, matched map[string]bool, names map[string]string,
+	views []FaceView, markers []people.Marker, claimed map[string]int, names map[string]string,
 ) []FaceView {
 	index := -1
 	for i := range markers {
 		m := markers[i]
-		if m.Type != people.MarkerFace || m.Invalid || matched[m.UID] {
+		if _, taken := claimed[m.UID]; m.Type != people.MarkerFace || m.Invalid || taken {
 			continue
 		}
 		view := FaceView{

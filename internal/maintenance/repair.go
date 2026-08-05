@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+
+	"github.com/panbotka/kukatko/internal/vectors"
 )
 
 // ErrOrphanImportUnavailable indicates an orphan-import repair was requested but
@@ -30,12 +33,16 @@ type RepairOptions struct {
 	// columns hold the displayed frame instead of the stored one, and the faces
 	// normalised against it.
 	Dimensions bool `json:"dimensions"`
+	// FaceMarkers clears the surplus face↔marker links: where several faces cache
+	// the same marker, the pairing is re-derived and every face but the one it
+	// awards the marker to has its cached link cleared.
+	FaceMarkers bool `json:"face_markers"`
 }
 
 // Any reports whether at least one repair is selected.
 func (o RepairOptions) Any() bool {
 	return o.Thumbnails || o.Embeddings || o.Faces || o.Phashes ||
-		o.ImportOrphans || o.Dimensions
+		o.ImportOrphans || o.Dimensions || o.FaceMarkers
 }
 
 // RepairResult reports what each selected repair scheduled or did. Enqueue counts
@@ -61,6 +68,9 @@ type RepairResult struct {
 	DimensionsFixed int `json:"dimensions_fixed"`
 	// FaceBoxesFixed is the number of face rows re-normalised alongside them.
 	FaceBoxesFixed int `json:"face_boxes_fixed"`
+	// FaceLinksCleared is the number of face rows whose surplus claim on a marker
+	// another face won was cleared.
+	FaceLinksCleared int `json:"face_links_cleared"`
 }
 
 // Repair runs the selected repairs and returns what each scheduled or did. It is
@@ -88,7 +98,58 @@ func (s *Service) Repair(ctx context.Context, opts RepairOptions) (RepairResult,
 	if err := s.repairDimensions(ctx, opts, &res); err != nil {
 		return res, err
 	}
+	if err := s.repairFaceMarkers(ctx, opts, &res); err != nil {
+		return res, err
+	}
 	return res, nil
+}
+
+// repairFaceMarkers clears the surplus face↔marker links reported by the scan,
+// when the face-marker repair is selected.
+//
+// It visits each affected photo once and delegates to the face cache, which
+// re-derives that photo's exclusive pairing and clears every face claiming a
+// marker another face won. It writes nothing else: no face row and no marker is
+// ever deleted, and a face whose link is the only one on its marker is left alone
+// — including the genuinely duplicated markers an import created, which are a
+// different problem and must not be quietly swept up here. Re-running is a no-op
+// once the cache is consistent.
+func (s *Service) repairFaceMarkers(ctx context.Context, opts RepairOptions, res *RepairResult) error {
+	if !opts.FaceMarkers {
+		return nil
+	}
+	duplicates, err := s.vectors.ListDuplicateFaceMarkers(ctx)
+	if err != nil {
+		return fmt.Errorf("maintenance: listing duplicate face markers: %w", err)
+	}
+	for _, photoUID := range affectedPhotos(duplicates) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("maintenance: face-marker repair interrupted: %w", ctxErr)
+		}
+		cleared, clearErr := s.faceCache.ClearSurplusLinks(ctx, photoUID)
+		if clearErr != nil {
+			return fmt.Errorf("maintenance: clearing surplus face links on %s: %w", photoUID, clearErr)
+		}
+		res.FaceLinksCleared += cleared
+	}
+	return nil
+}
+
+// affectedPhotos returns the distinct photos the duplicate markers sit on, sorted
+// so a repair run visits them in a deterministic order (several markers of one
+// photo are re-matched in a single pass).
+func affectedPhotos(duplicates []vectors.DuplicateFaceMarker) []string {
+	seen := make(map[string]struct{}, len(duplicates))
+	uids := make([]string, 0, len(duplicates))
+	for _, dup := range duplicates {
+		if _, ok := seen[dup.PhotoUID]; ok {
+			continue
+		}
+		seen[dup.PhotoUID] = struct{}{}
+		uids = append(uids, dup.PhotoUID)
+	}
+	sort.Strings(uids)
+	return uids
 }
 
 // repairDimensions rewrites the pixel dimensions of every photo the scan reports

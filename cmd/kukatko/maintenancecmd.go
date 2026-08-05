@@ -70,6 +70,9 @@ func newMaintenanceRepairCmd() *cobra.Command {
 	cmd.Flags().Bool("dimensions", false,
 		"rewrite transposed pixel dimensions (and the faces normalised against them) "+
 			"from each file's own EXIF; 'maintenance scan' is its dry run")
+	cmd.Flags().Bool("face-markers", false,
+		"clear surplus face-to-marker links so one marker is claimed by at most one "+
+			"face; 'maintenance scan' is its dry run")
 	return cmd
 }
 
@@ -145,6 +148,11 @@ func printScanReport(cmd *cobra.Command, report maintenance.Report) {
 	if len(report.TransposedDimensions.Samples) > 0 {
 		cmd.Printf("    e.g. %v\n", report.TransposedDimensions.Samples)
 	}
+	// Likewise the dry run of `repair --face-markers`, sampled by marker uid.
+	cmd.Printf("  dup face markers:   %d\n", report.DuplicateFaceMarkers.Count)
+	if len(report.DuplicateFaceMarkers.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.DuplicateFaceMarkers.Samples)
+	}
 	if report.Clean() {
 		cmd.Println("library is consistent")
 	}
@@ -159,7 +167,7 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	}
 	if !opts.Any() {
 		cmd.Println("no repair selected; pass --thumbnails, --embeddings, --faces, --phashes, " +
-			"--import-orphans or --dimensions")
+			"--import-orphans, --dimensions or --face-markers")
 		return nil
 	}
 	svc, cleanup, err := openMaintenanceService(cmd)
@@ -178,6 +186,7 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 		result.OrphansImported, result.OrphansSkipped, result.OrphansFailed)
 	cmd.Printf("dimensions fixed=%d face boxes fixed=%d\n",
 		result.DimensionsFixed, result.FaceBoxesFixed)
+	cmd.Printf("surplus face links cleared=%d\n", result.FaceLinksCleared)
 	return nil
 }
 
@@ -192,6 +201,7 @@ func repairOptionsFromFlags(cmd *cobra.Command) (maintenance.RepairOptions, erro
 		"phashes":        &opts.Phashes,
 		"import-orphans": &opts.ImportOrphans,
 		"dimensions":     &opts.Dimensions,
+		"face-markers":   &opts.FaceMarkers,
 	} {
 		val, err := flags.GetBool(name)
 		if err != nil {

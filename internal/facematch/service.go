@@ -2,6 +2,7 @@ package facematch
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
@@ -141,23 +142,38 @@ func markerBox(m people.Marker) [4]float64 {
 	return [4]float64{m.X, m.Y, m.W, m.H}
 }
 
-// findBestMarker returns the face-type, non-invalid marker overlapping faceBBox the
-// most, together with its IoU, or nil when none reaches the matching threshold.
-func (s *Service) findBestMarker(faceBBox [4]float64, markers []people.Marker) (*people.Marker, float64) {
-	var best *people.Marker
-	bestIoU := 0.0
-	for i := range markers {
-		if markers[i].Type != people.MarkerFace || markers[i].Invalid {
+// ClearSurplusLinks re-derives the exclusive face↔marker pairing of one photo and
+// clears the cached marker/subject on every face holding a surplus claim — a link
+// on a marker the pairing awarded to another face. It returns how many face rows
+// it cleared.
+//
+// It is the bulk counterpart of what PhotoFaces already does when a photo is
+// viewed, for the links written before the pairing was exclusive: those never fix
+// themselves, because the read path only touches the photo being read. It never
+// deletes a face or a marker and never touches a face whose link is the only one
+// on its marker — only the denormalised marker_uid/subject_uid/subject_name
+// columns of the surplus faces.
+func (s *Service) ClearSurplusLinks(ctx context.Context, photoUID string) (int, error) {
+	faces, err := s.faces.ListFaces(ctx, photoUID)
+	if err != nil {
+		return 0, fmt.Errorf("facematch: listing faces for %s: %w", photoUID, err)
+	}
+	markers, err := s.people.ListMarkersByPhoto(ctx, photoUID)
+	if err != nil {
+		return 0, fmt.Errorf("facematch: listing markers for %s: %w", photoUID, err)
+	}
+	surplus := surplusFaces(faces, matchMarkers(faces, markers, s.iouThreshold))
+
+	cleared := 0
+	for i := range faces {
+		if !surplus[faces[i].FaceIndex] {
 			continue
 		}
-		score := IoU(faceBBox, markerBox(markers[i]))
-		if score > bestIoU {
-			bestIoU = score
-			best = &markers[i]
+		if err := s.faces.UpdateFaceMarker(ctx, photoUID, faces[i].FaceIndex, "", "", ""); err != nil {
+			return cleared, fmt.Errorf(
+				"facematch: clearing surplus link on %s face %d: %w", photoUID, faces[i].FaceIndex, err)
 		}
+		cleared++
 	}
-	if best == nil || bestIoU < s.iouThreshold {
-		return nil, 0
-	}
-	return best, bestIoU
+	return cleared, nil
 }

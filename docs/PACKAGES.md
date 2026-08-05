@@ -868,7 +868,12 @@ to `## Package map` in `CLAUDE.md`.
   are missing from the result, order undefined, empty input → `nil`; the basis of `internal/candidates`,
   where the negative-exemplar rule needs the embeddings of the filtered candidate set without N+1)/
   `UpdateFaceMarker(photoUID,faceIndex,markerUID,subjectUID,subjectName)` (writes the cache columns onto
-  a single face, empty marker/subject → `NULL`; this is how an IoU match is cached) for 512-dim face
+  a single face, empty marker/subject → `NULL`; this is how an IoU match is cached — and, all-empty, how a
+  surplus one is cleared)/
+  `ListDuplicateFaceMarkers()` (read-only; `GROUP BY marker_uid,photo_uid HAVING count(*) > 1` →
+  `[]DuplicateFaceMarker{MarkerUID,PhotoUID,Faces}` ordered by marker uid — the markers cached on more than
+  one face, i.e. the surplus links `maintenance` reports and `facematch.ClearSurplusLinks` repairs; the photo
+  comes from the faces, because they are what gets re-matched) for 512-dim face
   embeddings + cache columns
   marker_uid/subject_uid/subject_name/photo_width/photo_height/orientation and a normalized
   `bbox DOUBLE PRECISION[4]` `[x,y,w,h]`; similarity via `embedding <=> $vec` (cosine, nearest
@@ -973,11 +978,20 @@ to `## Package map` in `CLAUDE.md`.
   `PhotoStore`/`FaceStore`/`PeopleStore` (unit-testable with fakes without a DB): `Service` =
   `New(Config{Photos,Faces,People,IoUThreshold,SuggestionLimit,SuggestionMaxDistance,MinFaceSize})`;
   **IoU geometry** `IoU(a,b [4]float64)` (a pure function, Intersection-over-Union of normalized
-  boxes `[x,y,w,h]`), `findBestMarker` picks the most-overlapping **face** marker (ignores
-  `invalid`), a match at `IoU ≥ faces.iou_threshold` (default 0.1, mirrors photo-sorter);
-  **`PhotoFaces(ctx,photoUID)`** (backing `GET /photos/{uid}/faces`) → for each stored face
-  computes the best marker by IoU, determines the action (`create_marker`/`assign_person`/`already_done`),
-  **caches the match onto the face row** via `vectors.UpdateFaceMarker`, and adds suggestions to **every** face
+  boxes `[x,y,w,h]`); **`matchMarkers`** (`pairing.go`, pure) pairs a photo's faces with its **face**
+  markers (ignores `invalid`) **exclusively**: it scores every (face,marker) pair reaching
+  `IoU ≥ faces.iou_threshold` (default 0.1, mirrors photo-sorter), sorts them by descending IoU and
+  takes them greedily while both sides are free, so **one marker is claimed by at most one face**
+  (ties break on face index, then marker uid, so consecutive requests reach the same pairing instead of
+  rewriting the cache back and forth); the per-face "best marker" search it replaces was not exclusive
+  and rendered one person twice on a photo; `surplusFaces` names the faces whose cached link sits on a
+  marker another face won (a marker nobody claims any more is kept by the lowest face index, so a
+  repair converges instead of reporting the same duplicate forever);
+  **`PhotoFaces(ctx,photoUID)`** (backing `GET /photos/{uid}/faces`) → resolves the pairing once,
+  determines each face's action (`create_marker`/`assign_person`/`already_done`),
+  **caches the link onto the face row** via `vectors.UpdateFaceMarker` — and **clears** a surplus one,
+  so a face the pairing left empty behaves as a face without a marker everywhere
+  `faces.subject_uid` is read — and adds suggestions to **every** face
   with an embedding (candidates for an unnamed one, alternatives for reassignment for an assigned one —
   the own subject filters itself out, because `exclude` holds all people on the photo; widening the
   threshold without a cutoff runs only for unnamed ones, so an assigned face with no close alternative
@@ -996,7 +1010,12 @@ to `## Package map` in `CLAUDE.md`.
   methods in the same transaction as the change — `create_marker`/`assign_person` → `face.assign`,
   `unassign_person` → `face.unassign` (target = marker, details action/photo/subject/face_index);
   `meta` is the actor+request from `photoapi.handleFaceAssign`, empty for the system cluster caller
-  (actor NULL); sentinels `ErrInvalidAction`/`ErrMissingBBox`/
+  (actor NULL); **`ClearSurplusLinks(ctx,photoUID)`** re-derives one photo's pairing and clears the
+  cached `marker_uid`/`subject_uid`/`subject_name` of every face holding a surplus claim (→ how many rows
+  were cleared) — the bulk counterpart of what `PhotoFaces` does when a photo is viewed, for the links
+  written before matching was exclusive; it is what `maintenance repair --face-markers` drives and it
+  **never deletes a face or a marker** nor touches a face whose link is the only one on its marker;
+  sentinels `ErrInvalidAction`/`ErrMissingBBox`/
   `ErrMissingMarker`/`ErrMissingSubject`, a missing photo/marker/subject → 404 in the HTTP layer
   (`photoapi.FaceService` interface + handlers in `internal/photoapi/faces.go`); tunables in
   `faces.*` config), `internal/embedjob/`
@@ -2371,18 +2390,21 @@ to `## Package map` in `CLAUDE.md`.
   `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`/
   `ListDimensionMismatches`/`RepairDimensions`,
   satisfied by `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`/
-  `RepairFaceDimensions`,
+  `RepairFaceDimensions`/`ListDuplicateFaceMarkers`,
   `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`DiskScanner` (`List`, an adapter over
   `backup.DiskOriginals`)/`ThumbChecker` (`HasThumbnail`, `NewThumbCache` over `thumb.Thumbnailer`)/
   `Enqueuer` (`EnqueueThumbnail`, `jobs.Enqueuer`)/`EmbedBackfiller` (`embedjob.Service`)/
-  `FaceBackfiller` (`facejob.Service`)/`OrphanImporter` (optional, nil turns the orphan import off) →
+  `FaceBackfiller` (`facejob.Service`)/`FaceCache` (`ClearSurplusLinks`, `facematch.Service` — which owns
+  the face↔marker pairing rules the cache has to agree with)/`OrphanImporter` (optional, nil turns the
+  orphan import off) →
   unit-testable with fakes without DB/disk/queue; `Service` = `New(Config{...,SampleLimit})`
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
   `Report{Photos,FilesInDB,OriginalsOnDisk,MissingOriginals,OrphanFiles,MissingThumbnails,
-  MissingEmbeddings,MissingFaces,MissingPhashes,TransposedDimensions}` — each class is a `Finding{Count,Samples}`
+  MissingEmbeddings,MissingFaces,MissingPhashes,TransposedDimensions,DuplicateFaceMarkers}` — each class is a
+  `Finding{Count,Samples}`
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
   thumbnails, an orphan = a file on disk with no `photo_files.file_path` (the `orphanKeys` set-diff), `Report.Clean()`;
-  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Dimensions})`** (each opt-in,
+  **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Dimensions,FaceMarkers})`** (each opt-in,
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
   upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
@@ -2391,7 +2413,14 @@ to `## Package map` in `CLAUDE.md`.
   photo `TransposedDimensions` reports it writes the file's own pair (`photos.RepairDimensions`) and then, only
   for a row that actually changed, re-normalizes that photo's faces against the corrected frame
   (`vectors.RepairFaceDimensions`) → `DimensionsFixed`/`FaceBoxesFixed`. Both halves are guarded on the state
-  they replace, so an interrupted run resumes and a re-run is a no-op; `Scan` is the **dry run**), `internal/reset/`
+  they replace, so an interrupted run resumes and a re-run is a no-op; `Scan` is the **dry run**.
+  **`FaceMarkers`** likewise writes the catalogue directly: `DuplicateFaceMarkers` (from
+  `vectors.ListDuplicateFaceMarkers`, sampled by marker uid) is its dry run, and the repair visits each
+  affected photo once (`affectedPhotos`, sorted, deduplicated) and delegates to `FaceCache.ClearSurplusLinks`,
+  which re-derives that photo's exclusive pairing and clears the cached link of every face claiming a marker
+  another face won → `FaceLinksCleared`. It only ever nulls three columns on a face row: no face and no marker
+  is deleted, and a marker with a single face link is untouched — the genuinely **duplicated markers** an import
+  created are a different problem and must not be swept up here), `internal/reset/`
   (**the guarded library wipe** — what `kukatko maintenance reset` runs and what phase 1 of
   [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) had nothing to run before: it empties every catalogue table and
   every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**
