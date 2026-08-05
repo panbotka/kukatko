@@ -5,6 +5,7 @@ import { RequireAuth, RequireImport, RequireRole } from './auth/ProtectedRoute'
 import { CapabilitiesProvider } from './capabilities/CapabilitiesProvider'
 import { Layout } from './components/Layout'
 import { ToastProvider } from './components/toast/ToastProvider'
+import { ACTIVITY_PATH } from './lib/activityView'
 import { AccountPage } from './pages/AccountPage'
 import { AlbumDetailPage } from './pages/AlbumDetailPage'
 import { AlbumsPage } from './pages/AlbumsPage'
@@ -26,6 +27,7 @@ import { LibraryRedirect } from './pages/LibraryRedirect'
 import { LoginPage } from './pages/LoginPage'
 import { MaintenancePage } from './pages/MaintenancePage'
 import { MapPage } from './pages/MapPage'
+import { MyActivityPage } from './pages/MyActivityPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { OutliersPage } from './pages/OutliersPage'
 import { PeoplePage } from './pages/PeoplePage'
@@ -128,6 +130,11 @@ export function AppRoutes() {
             <Route path="/audit/reviews" element={<ReviewDecisionsPage />} />
           </Route>
           <Route path="/account" element={<AccountPage />} />
+          {/* One user's own actions, from the audit trail narrowed to them by the
+              server. No role gate: it is self-repair ("what did I just click
+              wrong?"), not the governance view of everybody, which stays admin
+              only at /audit. */}
+          <Route path={ACTIVITY_PATH} element={<MyActivityPage />} />
           {/* Library statistics: read-only aggregate counts, so any signed-in
               role may open them — no role gate, like the leaderboard. */}
           <Route path="/stats" element={<StatsPage />} />

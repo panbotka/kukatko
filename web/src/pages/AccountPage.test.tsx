@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -36,7 +37,9 @@ function renderAccount() {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={editorAuth}>
-        <AccountPage />
+        <MemoryRouter initialEntries={['/account']}>
+          <AccountPage />
+        </MemoryRouter>
       </AuthContext.Provider>
     </I18nextProvider>,
   )
@@ -77,6 +80,18 @@ describe('AccountPage', () => {
     expect(await screen.findByText('The app is currently unavailable')).toBeInTheDocument()
     // The account itself stays usable even when the probe cannot reach the API.
     expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument()
+  })
+})
+
+describe('AccountPage activity section', () => {
+  it('offers the way to the own-activity page', () => {
+    renderAccount()
+
+    expect(screen.getByRole('heading', { name: 'My activity' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Show my activity/ })).toHaveAttribute(
+      'href',
+      '/account/activity',
+    )
   })
 })
 

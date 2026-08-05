@@ -320,6 +320,121 @@
       "checking": "Checking availability…",
       "healthy": "Everything is working",
       "unhealthy": "The app is currently unavailable"
+    },
+    "activity": {
+      "title": "My activity",
+      "hint": "A list of what you have done in Kukátko, newest first. Useful when you know you clicked something wrong and need to find it.",
+      "link": "Show my activity"
+    }
+  },
+  "activity": {
+    "title": "My activity",
+    "subtitle": "What you have done in Kukátko, newest first. Follow a row to the photo, album or label it changed — and put it right.",
+    "back": "Back to the account",
+    "loading": "Loading your activity…",
+    "error": "Your activity could not be loaded.",
+    "empty": {
+      "title": "Nothing here yet",
+      "hint": "As soon as you edit, add or delete something, it shows up here."
+    },
+    "columns": {
+      "when": "When",
+      "what": "What",
+      "where": "Where"
+    },
+    "target": {
+      "unknown": "Unknown target"
+    },
+    "moreLinks": "and {{n}} more",
+    "pagination": {
+      "range": "Showing {{from}}–{{to}} of {{total}}",
+      "prev": "Previous",
+      "next": "Next"
+    },
+    "actions": {
+      "album": {
+        "add_photos": "Photos added to an album",
+        "create": "Album created",
+        "delete": "Album deleted",
+        "remove_photos": "Photos removed from an album",
+        "update": "Album edited"
+      },
+      "announcement": {
+        "clear": "Announcement cleared",
+        "set": "Announcement published"
+      },
+      "api_token": {
+        "create": "API token created",
+        "revoke": "API token revoked"
+      },
+      "audit": {
+        "purge": "Audit log purged"
+      },
+      "duplicate": {
+        "dismiss": "Pair settled as not duplicates",
+        "undismiss": "Pair returned to the duplicates"
+      },
+      "duplicate_marker": {
+        "dismiss": "Repeated marker settled as correct",
+        "undismiss": "Repeated marker reopened"
+      },
+      "face": {
+        "assign": "Face assigned to a person",
+        "confirm": "Face confirmed",
+        "reject": "Person rejected for a face",
+        "unassign": "Face unassigned",
+        "unconfirm": "Face confirmation taken back",
+        "unreject": "Face rejection taken back"
+      },
+      "label": {
+        "attach": "Label attached to a photo",
+        "create": "Label created",
+        "delete": "Label deleted",
+        "detach": "Label detached from a photo",
+        "reject": "Label rejected for a photo",
+        "unreject": "Label rejection taken back",
+        "update": "Label edited"
+      },
+      "library": {
+        "reset": "Library wiped"
+      },
+      "marker": {
+        "invalidate": "Face box marked invalid"
+      },
+      "photo": {
+        "archive": "Photo moved to the trash",
+        "hide": "Photo hidden from the library",
+        "purge": "Photo permanently deleted",
+        "thumbnail": "Photo thumbnail regenerated",
+        "unarchive": "Photo restored from the trash",
+        "unhide": "Photo returned to the library",
+        "update": "Photo edited"
+      },
+      "photos": {
+        "bulk": "Bulk photo edit",
+        "merge": "Duplicate photos merged"
+      },
+      "subject": {
+        "create": "Person created",
+        "delete": "Person deleted",
+        "update": "Person edited"
+      },
+      "user": {
+        "create": "User created",
+        "disable": "User access changed",
+        "password": "User password changed",
+        "update": "User edited"
+      }
+    },
+    "targets": {
+      "photos": "Photo",
+      "albums": "Album",
+      "labels": "Label",
+      "subjects": "Person",
+      "users": "User",
+      "api_tokens": "API token",
+      "announcement": "Announcement",
+      "audit_log": "Audit log"
     }
   },
   "library": {

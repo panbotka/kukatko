@@ -47,7 +47,11 @@ func newEnv(t *testing.T) *env {
 	authAPI := auth.NewAPI(auth.APIConfig{Service: authSvc, Limiter: auth.NewLimiter(100, time.Minute)})
 
 	store := audit.NewStore(db.Pool())
-	api := auditapi.NewAPI(auditapi.Config{Store: store, RequireAdmin: authAPI.RequireAdmin})
+	api := auditapi.NewAPI(auditapi.Config{
+		Store:        store,
+		RequireAdmin: authAPI.RequireAdmin,
+		RequireAuth:  authAPI.RequireAuth,
+	})
 
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
@@ -86,9 +90,19 @@ func (e *env) createUser(t *testing.T, username string, role auth.Role) string {
 // login creates a user with the given role and returns a cookie-bearing client.
 func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
 	t.Helper()
-	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
+	client, _ := e.loginUser(t, username, role)
+	return client
+}
+
+// loginUser creates a user with the given role and returns both a cookie-bearing
+// client for it and its UID, so a test can seed audit rows attributed to the very
+// user it acts as.
+func (e *env) loginUser(t *testing.T, username string, role auth.Role) (*http.Client, string) {
+	t.Helper()
+	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Password: testPassword, Role: role,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)
 	}
 	jar, err := cookiejar.New(nil)
@@ -102,7 +116,7 @@ func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want 200", resp.StatusCode)
 	}
-	return client
+	return client, user.UID
 }
 
 // listResponse mirrors the endpoint's JSON body for decoding in tests.
@@ -269,6 +283,173 @@ func TestReviewDecisionFilter(t *testing.T) {
 	defer func() { _ = forbidden.Body.Close() }()
 	if forbidden.StatusCode != http.StatusForbidden {
 		t.Errorf("editor review filter status = %d, want 403", forbidden.StatusCode)
+	}
+}
+
+// ownRows returns three ordinary curation entries attributed to actorUID: two on
+// photos (so an entity_type filter keeps more than one row) and one on an album.
+func ownRows(actorUID string) []audit.Entry {
+	return []audit.Entry{
+		{ActorUID: actorUID, Action: audit.ActionPhotoUpdate, TargetType: "photos", TargetUID: "ph-1",
+			IP: "10.0.0.9", UserAgent: "kukatko-test"},
+		{ActorUID: actorUID, Action: audit.ActionPhotoArchive, TargetType: "photos", TargetUID: "ph-2",
+			IP: "10.0.0.9", UserAgent: "kukatko-test"},
+		{ActorUID: actorUID, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-1",
+			IP: "10.0.0.9", UserAgent: "kukatko-test"},
+	}
+}
+
+// TestMineListsOnlyOwnEntries verifies that a non-admin reading GET /audit/mine
+// is served their own actions and nothing else — neither another user's rows nor
+// the system's actor-less ones — and that even the lowest role may read it.
+func TestMineListsOnlyOwnEntries(t *testing.T) {
+	env := newEnv(t)
+	viewer, viewerUID := env.loginUser(t, "viewer", auth.RoleViewer)
+	otherUID := env.createUser(t, "other", auth.RoleEditor)
+
+	seed := ownRows(viewerUID)
+	seed = append(seed, ownRows(otherUID)...)
+	// A system action carries no actor at all (the scheduled retention purge).
+	seed = append(seed, audit.Entry{
+		Action: audit.ActionPhotoPurge, TargetType: "photos", TargetUID: "ph-9",
+		Details: map[string]any{"source": "retention"},
+	})
+	env.seed(t, seed...)
+
+	got := list(t, viewer, env.baseURL+"/api/v1/audit/mine")
+	if got.Total != 3 || len(got.Entries) != 3 {
+		t.Fatalf("mine total/len = %d/%d, want 3/3", got.Total, len(got.Entries))
+	}
+	for _, e := range got.Entries {
+		if e.ActorUID == nil || *e.ActorUID != viewerUID {
+			t.Errorf("entry %s actor = %v, want %s", e.Action, e.ActorUID, viewerUID)
+		}
+	}
+	// Newest first, as on the admin listing.
+	if got.Entries[0].Action != audit.ActionAlbumCreate {
+		t.Errorf("entries[0].Action = %q, want %s", got.Entries[0].Action, audit.ActionAlbumCreate)
+	}
+	// The caller's own request metadata is served with the entry: it is their own
+	// address and browser, and it is how a user recognises an action as theirs.
+	if got.Entries[0].IP == nil || *got.Entries[0].IP != "10.0.0.9" {
+		t.Errorf("entries[0].IP = %v, want 10.0.0.9", got.Entries[0].IP)
+	}
+	if got.Entries[0].UserAgent == nil || *got.Entries[0].UserAgent != "kukatko-test" {
+		t.Errorf("entries[0].UserAgent = %v, want kukatko-test", got.Entries[0].UserAgent)
+	}
+}
+
+// TestMineRejectsAnotherUsersFilter verifies the user parameter cannot widen the
+// own-activity listing: naming somebody else is refused with 403 rather than
+// quietly serving one's own rows, while naming oneself changes nothing.
+func TestMineRejectsAnotherUsersFilter(t *testing.T) {
+	env := newEnv(t)
+	editor, editorUID := env.loginUser(t, "editor", auth.RoleEditor)
+	otherUID := env.createUser(t, "other", auth.RoleEditor)
+	seed := ownRows(editorUID)
+	env.seed(t, append(seed, ownRows(otherUID)...)...)
+
+	foreign := do(t, editor, http.MethodGet, env.baseURL+"/api/v1/audit/mine?user="+otherUID, nil)
+	defer func() { _ = foreign.Body.Close() }()
+	if foreign.StatusCode != http.StatusForbidden {
+		t.Errorf("mine?user=<other> status = %d, want 403", foreign.StatusCode)
+	}
+
+	own := list(t, editor, env.baseURL+"/api/v1/audit/mine?user="+editorUID)
+	if own.Total != 3 {
+		t.Errorf("mine?user=<self> total = %d, want 3", own.Total)
+	}
+}
+
+// TestMineNarrowingSurvivesPagingAndFilters verifies the actor narrowing is
+// applied on every page and alongside the other filters, so a second page or a
+// filtered view can never reach another user's rows.
+func TestMineNarrowingSurvivesPagingAndFilters(t *testing.T) {
+	env := newEnv(t)
+	editor, editorUID := env.loginUser(t, "editor", auth.RoleEditor)
+	otherUID := env.createUser(t, "other", auth.RoleEditor)
+	seed := ownRows(editorUID)
+	env.seed(t, append(seed, ownRows(otherUID)...)...)
+
+	base := env.baseURL + "/api/v1/audit/mine"
+	page1 := list(t, editor, base+"?limit=2&offset=0")
+	if page1.Total != 3 || len(page1.Entries) != 2 || page1.NextOffset == nil || *page1.NextOffset != 2 {
+		t.Fatalf("page1 total/len/next = %d/%d/%v, want 3/2/2", page1.Total, len(page1.Entries), page1.NextOffset)
+	}
+	page2 := list(t, editor, base+"?limit=2&offset=2")
+	if len(page2.Entries) != 1 || page2.NextOffset != nil {
+		t.Fatalf("page2 len/next = %d/%v, want 1 / nil", len(page2.Entries), page2.NextOffset)
+	}
+	for _, e := range append(page1.Entries, page2.Entries...) {
+		if e.ActorUID == nil || *e.ActorUID != editorUID {
+			t.Errorf("paged entry %s actor = %v, want %s", e.Action, e.ActorUID, editorUID)
+		}
+	}
+
+	// An entity filter narrows within the caller's own rows, never beyond them:
+	// both users have two `photos` entries, only the caller's two are served.
+	photos := list(t, editor, base+"?entity_type=photos")
+	if photos.Total != 2 {
+		t.Errorf("entity_type=photos total = %d, want 2", photos.Total)
+	}
+	for _, e := range photos.Entries {
+		if e.ActorUID == nil || *e.ActorUID != editorUID || e.TargetType != "photos" {
+			t.Errorf("filtered entry = %s/%v/%s, want photos row of %s", e.Action, e.ActorUID, e.TargetType, editorUID)
+		}
+	}
+}
+
+// TestAdminListingUnchanged is the regression guard for the admin trail: adding
+// the own-activity route must not narrow GET /audit. An admin still sees every
+// actor's rows including the actor-less system ones, and ?user= still selects
+// anybody — while the admin's own /audit/mine shows only the admin's rows.
+func TestAdminListingUnchanged(t *testing.T) {
+	env := newEnv(t)
+	admin, adminUID := env.loginUser(t, "admin", auth.RoleAdmin)
+	otherUID := env.createUser(t, "other", auth.RoleEditor)
+	seed := ownRows(otherUID)
+	seed = append(seed,
+		audit.Entry{ActorUID: adminUID, Action: audit.ActionUserCreate, TargetType: "users", TargetUID: otherUID},
+		audit.Entry{Action: audit.ActionPhotoPurge, TargetType: "photos", TargetUID: "ph-9"},
+	)
+	env.seed(t, seed...)
+
+	all := list(t, admin, env.baseURL+"/api/v1/audit")
+	if all.Total != 5 {
+		t.Errorf("admin unfiltered total = %d, want 5", all.Total)
+	}
+	systemRows := 0
+	for _, e := range all.Entries {
+		if e.ActorUID == nil {
+			systemRows++
+		}
+	}
+	if systemRows != 1 {
+		t.Errorf("system rows visible to admin = %d, want 1", systemRows)
+	}
+
+	byUser := list(t, admin, env.baseURL+"/api/v1/audit?user="+otherUID)
+	if byUser.Total != 3 {
+		t.Errorf("admin ?user=<other> total = %d, want 3", byUser.Total)
+	}
+
+	mine := list(t, admin, env.baseURL+"/api/v1/audit/mine")
+	if mine.Total != 1 || len(mine.Entries) != 1 {
+		t.Fatalf("admin mine total/len = %d/%d, want 1/1", mine.Total, len(mine.Entries))
+	}
+	if mine.Entries[0].Action != audit.ActionUserCreate {
+		t.Errorf("admin mine action = %q, want %s", mine.Entries[0].Action, audit.ActionUserCreate)
+	}
+}
+
+// TestMineRequiresAuthentication verifies the own-activity listing is not public:
+// a caller with no session gets 401, not an unfiltered trail.
+func TestMineRequiresAuthentication(t *testing.T) {
+	env := newEnv(t)
+	resp := do(t, &http.Client{}, http.MethodGet, env.baseURL+"/api/v1/audit/mine", nil)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("anonymous mine status = %d, want 401", resp.StatusCode)
 	}
 }
 

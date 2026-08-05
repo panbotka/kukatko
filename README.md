@@ -982,6 +982,12 @@ shipped names are kept, a rename applied by migration would be destructive.)
   `?entity_uid=`/`?action=`/`?since=`/`?until=` (RFC3339) and `?limit=`(≤500)/`?offset=`; an invalid
   time/number → 400. Read-only — writes go exclusively through the mutation transactions. Mounted via
   `buildAuditAPI` in `cmd/kukatko/audit.go`.
+- **Own activity** — `GET /api/v1/audit/mine` (any signed-in user via `RequireAuth`) is the same listing
+  narrowed to the caller: the actor comes from the session and overwrites the query on every page, so
+  another user's rows — and the system's actor-less ones — are unreachable, and `?user=` naming somebody
+  else is answered **403** rather than silently rewritten. It backs the **Moje aktivita** page
+  (`/account/activity`, linked from the account), where a user finds the thing they just changed by
+  mistake and clicks straight through to it. Admins keep the full log at `/audit` unchanged.
 
 ### Maps: tiles, reverse geocode & GeoJSON (`internal/mapy` + `internal/mapsapi`)
 

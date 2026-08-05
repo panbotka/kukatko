@@ -822,8 +822,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   restore db` with the server stopped. The whole API is mounted **always** (`buildRestoreAPI` in
   `cmd/kukatko/restore.go`; a nil service = not configured). Runtime dep `pg_restore`
   (`postgresql-client`, the same package as pg_dump). Runbook: `docs/RESTORE.md`.
-- **Audit API (`/api/v1`, `internal/auditapi`, admin-only via `RequireAdmin`):** a read-only listing of
-  the durable audit trail. `GET /audit` → `{entries,total,limit,offset,next_offset}` (entry =
+- **Audit API (`/api/v1`, `internal/auditapi`):** a read-only listing of
+  the durable audit trail — the whole trail for an admin (`GET /audit`, `RequireAdmin`), one's own actions for
+  anybody signed in (`GET /audit/mine`, `RequireAuth`). `GET /audit` → `{entries,total,limit,offset,next_offset}` (entry =
   `{id,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}`, newest-first;
   for edit actions `details.changes` = `{"<field>":{"old":…,"new":…}}` with only the changed fields — see
   the `internal/audit` convention; a bulk edit `photos.bulk` does not have it)
@@ -832,7 +833,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   overview of one user's decisions in the review game**: `?via=review` (only review decisions —
   `details.via='review'`, i.e. the actions `face.assign`/`label.attach`/`face.reject`/`label.reject`;
   the literal matches the partial index from migration 0037) and `?decision=yes|no` (the Yes bucket = assign+attach /
-  No = reject); another `via`/`decision` value → 400. Audit entries are **not added
+  No = reject); another `via`/`decision` value → 400.
+  **`GET /audit/mine`** (`RequireAuth`, so viewer and up) answers the same body with the same filters and paging,
+  except the actor is **taken from the session** and overwrites whatever the query asked for, on every page —
+  a non-admin therefore never reads somebody else's rows, and never the **system's** either (an entry with an
+  empty `actor_uid` matches no actor filter). `?user=` naming **somebody else → 403**, not a silent narrowing:
+  quietly rewriting the request would leave the caller believing they see something they do not; `?user=` naming
+  **oneself** is accepted and changes nothing. It is a route of its own rather than a looser guard on `/audit`
+  precisely so the narrowing is a property of the route's shape, not of a branch a later edit could weaken.
+  The records are served **whole, `ip` and `user_agent` included** — that is the caller's own address and
+  browser, and seeing it is how a user recognises (or disowns) an action. For an admin nothing changes:
+  `GET /audit` still lists every actor including the system's, and `?user=` still selects anybody.
+  Audit entries are **not added
   over HTTP** — they arise inside mutation transactions (in-tx `audit.Write`, see the `internal/audit`
   convention); the only HTTP mutation of the trail is the maintainer-only **retention purge**
   (`POST /maintenance/audit/purge`, see Maintenance API), which deletes old entries and audits itself.

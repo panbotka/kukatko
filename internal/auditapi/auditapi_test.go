@@ -1,12 +1,35 @@
 package auditapi
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/panbotka/kukatko/internal/audit"
 )
+
+// TestListMineWithoutPrincipal verifies the own-activity handler fails closed:
+// a request that reaches it without an authenticated user — a guard wired wrong —
+// is refused rather than served an unnarrowed listing of everybody's actions.
+func TestListMineWithoutPrincipal(t *testing.T) {
+	t.Parallel()
+	passthrough := func(next http.Handler) http.Handler { return next }
+	// A nil store is safe here precisely because the handler must not reach it.
+	api := NewAPI(Config{RequireAdmin: passthrough, RequireAuth: passthrough})
+	router := chi.NewRouter()
+	api.RegisterRoutes(router)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/audit/mine", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+}
 
 // TestParseFilter verifies query parameters map onto an audit.Filter and that
 // malformed timestamps and pagination values are rejected.

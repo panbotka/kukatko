@@ -632,7 +632,9 @@ here.
   a hint, `account.language*`) and changing your own password, **plus the app's technical status**
   (`GET /healthz` badge + version, without the commit hash) in a small muted row at the bottom — status and language
   came here from elsewhere (from the home page and the navbar respectively): they belong where the user looks for them, not
-  in front of the photos nor in a prime spot in the bar,
+  in front of the photos nor in a prime spot in the bar; **plus the way to `MyActivityPage`** (the
+  `account.activity.*` card linking to `ACTIVITY_PATH`) — "what I did" is a fact about the signed-in user, so its
+  entry point lives here rather than as another item in the already crowded nav bar,
   `HelpPage` = **user help** (route `/help`, **no role gate** — every logged-in user sees it;
   the link is in the user menu under the name, the item „Nápověda" with a `question-circle` icon): a reading column
   with a short **table of contents** at the top and an `Accordion` (collapsible sections, open by default) that in plain
@@ -921,6 +923,23 @@ here.
   Actor names are fetched from the roster **best-effort** (fallback to UID, or `—` for a system action),
   never blocking the table render. Loading/empty/error (retry via `reloadKey`) states, self-gated on
   `isAdmin`,
+  `MyActivityPage` = `/account/activity` (**no role gate** — every signed-in user, viewer included) **the user's
+  own history**: the same audit records as `/audit`, but from `GET /audit/mine`, which the server narrows to the
+  caller. It exists for self-repair, not supervision — *"I know I clicked something wrong a minute ago, what was
+  it?"* — and everything follows from that. Three columns through the shared `RecordTable` (a phone gets one card
+  per entry): **Kdy** (`formatDateTime`), **Co** (the action in words via `activityActionKey`, e.g. `photo.update`
+  → *Úprava fotky*; an unknown action falls back to the raw label) and **Kde** — a `<Link>` to the thing that
+  changed, named by its kind (*Fotka* / *Album* / *Štítek* / *Osoba*) rather than by UID, resolved by the very
+  same `auditTargetHref` the admin log uses. Two fallbacks in the Kde cell: an entry with no target of its own
+  (a bulk edit names its photos only in the payload) links the payload's UIDs (`auditDetailLinks`,
+  `data-testid="activity-links"`, capped at `ACTIVITY_LINK_LIMIT` = 5 + `activity.moreLinks`), and a target with
+  no page at all (`users`, `api_tokens`, `announcement`) is plain text. **No “kdo” column** (the answer is always
+  the reader) and **no filter form** (the recent end of a one-user list is where the answer is); prev/next
+  pagination over `offset`/`next_offset` with the offset in the URL (`useUrlState` over `ACTIVITY_DEFAULTS`), so
+  Back returns to the right page after following a row out. Loading (`ListSkeleton`)/empty/error (retry via
+  `useReloadKey`) states, a `BackLink` to `/account`. **It is deliberately absent from the navigation:** the entry
+  point is a card on `AccountPage`, because the desktop bar is crowded already and the admin group next door
+  (`nav.admin`) is about supervising everybody, which this page is not,
   `PhotoDetailPage` = `/photos/:uid` a **full-canvas immersive viewer** (and the route itself;
   **outside `Layout`**, like `/slideshow` — the photo owns the whole viewport, no navbar/footer).
   The photo is centered, `object-fit: contain` at the **largest fit without cropping** over a **warm near-black
@@ -2090,6 +2109,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   driven by: `auditTargetHref(record)` (null for a type with no page, or a `markers` entry whose details name no
   photo) and `auditDetailLinks(details)` → `{groups, hidden}` (the `<entity>_uid`/`_uids` keys of a known entity,
   grouped by key, a destination never repeated, capped at `AUDIT_DETAIL_LINK_LIMIT` = 25);
+  `activityView.ts` = the view model for `MyActivityPage`: `ACTIVITY_PATH` (`/account/activity` — the one
+  place the route is written down, shared by `App.tsx`, the link on `AccountPage` and the tests), the
+  `ActivityView` type (**only** `offset` — a one-user listing read newest-first has nothing else to choose)
+  + `ACTIVITY_DEFAULTS` + `ACTIVITY_PAGE_SIZE` (50, smaller than the admin log's 100: this page is read to find
+  one recent action) + `ACTIVITY_LINK_LIMIT` (5) + `viewToParams`; plus the two word-catalogues that turn a raw
+  audit row into a sentence — `activityActionKey(action)` (all 44 `internal/audit` action labels →
+  `activity.actions.<domain>.<verb>`) and `activityTargetKey(targetType)` (→ `activity.targets.*`; `markers`
+  deliberately maps to the **photo's** label, because that is where its link leads). Both return `undefined` for
+  something the catalogue does not know, and the page falls back to the raw label — a missing translation must
+  never blank a row. The values are literal `ParseKeys`, not a computed `` `activity.actions.${…}` `` template,
+  so a key absent from the catalogue is a compile error,
   `reviewDecisions.ts` = the view model for `ReviewDecisionsPage`: the `ReviewDecisionsView` type
   (`user`/`decision`/`offset`, string-only for the URL) + `REVIEW_DECISIONS_DEFAULTS`
   + `REVIEW_DECISIONS_PAGE_SIZE` (60) + `viewToAuditParams` (always `via:'review'` + `decision`)
@@ -2461,11 +2491,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`viewer`/`editor`/`admin`/`maintainer`, ascending along the ladder)/`MAX_NOTE_LENGTH`,
   the types `AdminUser`/`CreateUserBody`/`UpdateUserBody`; the password hash has nowhere to leak — the backend
   doesn't serialize it and no type has a field for it,
-  `audit.ts` = the admin audit client over `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
+  `audit.ts` = the audit client over `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
   `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializes the filters
   (it omits empty ones/a zero offset); the types `AuditRecord` (nullable `actor_uid`/`target_uid`/`ip`/
   `user_agent`/`details`)/`AuditListParams` (incl. `via:'review'` + `decision:'yes'|'no'` for the admin
-  overview of review decisions); it shares `ApiError` from `auth.ts`. Mind the terminology:
+  overview of review decisions); plus `fetchMyActivity(params,signal)` over `GET /api/v1/audit/mine` — the same
+  response, the same query builder, but `MyActivityParams` = `AuditListParams` **without `user`**: whose actions
+  the listing shows is the server's decision (it takes the actor from the session and answers a request naming
+  somebody else with 403), so there is nothing for the client to say about it; it shares `ApiError` from `auth.ts`. Mind the terminology:
   the query params use the endpoint's names (`user`/`entity_type`/`entity_uid`), the records use the columns'
   (`actor_uid`/`target_type`/`target_uid`),
   `i18n/` (the i18next init — the options are exported as `initOptions`, so that a test can boot them

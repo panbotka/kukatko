@@ -23,6 +23,13 @@ vi.mock('./services/system', async (importOriginal) => {
   return { ...actual, fetchLibraryStats: vi.fn(() => new Promise(() => undefined)) }
 })
 
+// The own-activity route loads the caller's audit entries on mount; stub the
+// call (never resolving) so the route test exercises the wiring, not the network.
+vi.mock('./services/audit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/audit')>()
+  return { ...actual, fetchMyActivity: vi.fn(() => new Promise(() => undefined)) }
+})
+
 const { fetchPhotos, fetchTimeline } = await import('./services/photos')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchTimelineMock = vi.mocked(fetchTimeline)
@@ -113,6 +120,16 @@ describe('routing', () => {
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Library statistics' }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the own activity at /account/activity for any authenticated user', async () => {
+    // Reading one's own actions is self-repair, not governance: no role guard,
+    // so a plain viewer reaches it — unlike the admin-only /audit next door.
+    renderRoutes(['/account/activity'])
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'My activity' }),
     ).toBeInTheDocument()
   })
 
