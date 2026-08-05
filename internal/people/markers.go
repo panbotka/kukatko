@@ -238,10 +238,38 @@ func unassignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID string) (Marker
 	return updated, nil
 }
 
+// setMarkerInvalidSQL flips a marker's invalid flag and returns the refreshed row.
+// It is a named statement rather than a call to updateMarkerFlag because the
+// audited path has to run it inside a caller-supplied transaction.
+const setMarkerInvalidSQL = "UPDATE markers SET invalid = $2, updated_at = now() " +
+	"WHERE uid = $1 RETURNING " + markerColumns
+
+// rowQuerier is the one method a single-row marker update needs. Both *pgxpool.Pool
+// and pgx.Tx satisfy it, which is what lets the plain and audited invalid-flag
+// paths run the very same statement and error mapping.
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // SetMarkerInvalid sets or clears the invalid flag on the marker identified by
-// uid and returns the refreshed marker, or ErrMarkerNotFound.
+// uid and returns the refreshed marker, or ErrMarkerNotFound. Use
+// SetMarkerInvalidAudited when the change is a user's curation decision that
+// belongs in the audit trail.
 func (s *Store) SetMarkerInvalid(ctx context.Context, uid string, invalid bool) (Marker, error) {
-	return s.updateMarkerFlag(ctx, "invalid", uid, invalid)
+	return setMarkerInvalid(ctx, s.pool, uid, invalid)
+}
+
+// setMarkerInvalid flips uid's invalid flag over q and returns the refreshed row,
+// translating pgx.ErrNoRows into ErrMarkerNotFound.
+func setMarkerInvalid(ctx context.Context, q rowQuerier, uid string, invalid bool) (Marker, error) {
+	m, err := scanMarker(q.QueryRow(ctx, setMarkerInvalidSQL, uid, invalid))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Marker{}, ErrMarkerNotFound
+		}
+		return Marker{}, err
+	}
+	return m, nil
 }
 
 // SetMarkerReviewed sets or clears the reviewed flag on the marker identified by

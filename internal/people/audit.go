@@ -246,6 +246,28 @@ func (s *Store) AssignSubjectAudited(
 	})
 }
 
+// SetMarkerInvalidAudited sets or clears the invalid flag on the marker identified
+// by uid and writes entry in the same transaction, so flagging a region as "there
+// is no face in this box" and the record of who said so commit atomically. entry's
+// TargetUID defaults to uid.
+//
+// It behaves like SetMarkerInvalid otherwise, which means it changes nothing but
+// the flag: the row survives, and it keeps whatever subject it carried, so the
+// decision is reversible by setting the flag back. That is deliberate — every
+// listing that means "a real face" already filters on invalid = FALSE, and
+// detaching the subject here would make an invalidation indistinguishable from an
+// unassignment. A missing marker returns ErrMarkerNotFound and writes no audit row.
+func (s *Store) SetMarkerInvalidAudited(
+	ctx context.Context, uid string, invalid bool, entry audit.Entry,
+) (Marker, error) {
+	if entry.TargetUID == "" {
+		entry.TargetUID = uid
+	}
+	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Marker, error) {
+		return setMarkerInvalid(ctx, tx, uid, invalid)
+	})
+}
+
 // UnassignSubjectAudited clears the subject of the marker identified by markerUID
 // and writes entry in the same transaction. entry's TargetUID defaults to markerUID.
 // It behaves like UnassignSubject otherwise (resetting the faces cache,

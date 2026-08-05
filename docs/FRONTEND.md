@@ -1406,6 +1406,28 @@ here.
   hangs on the **answer**, not on the working list that changes with every verdict —
   otherwise the move would be discarded after every decision); states idle („vyber osobu")/loading/error/
   empty („nic podezřelého, sniž práh"); tests `OutliersPage.test.tsx` + `lib/outlierReview.test.ts`,
+  `DuplicateMarkersPage` = `/duplicate-markers` (editor/admin, a **Vícenásobné značky** link in „Nástrojích")
+  „na téhle fotce je jeden člověk označený vícekrát": the other kind of duplicate — not two photos but one
+  person tagged two or three times on the same shot, which is **always** a mistake (on a group photo the
+  matcher marched one name across a row of boxes, so the people beside her lost their tag).
+  `fetchDuplicateMarkers` (`services/dupmarkers`) pages the findings worst-first into a **virtualized**
+  `Virtuoso` list (`useWindowScroll`, keyed by `groupKey`) — a card is tall, and twenty of them mounted at once
+  is a lot of images. Each `DuplicateMarkerGroupCard` is built around the picture, because the decision cannot be
+  made without one: **the whole photo** (`fit_1280`, never a `tile_*` — a centre-cropped square is not the frame
+  the bboxes were normalised to) with every one of that person's boxes outlined and **numbered**, and one
+  numbered `DuplicateMarkerCrop` close-up per box below it (the same 30 % context crop as `/outliers`, its source
+  size picked per marker by `lib/faceSource`); the numbers are the join between the two halves.
+  Three decisions, all explicit: **„Nechat #n"** → `keepMarker` (the others are **detached**, not deleted — on a
+  group shot the box belongs to whoever stood next to her), **„Není tu obličej"** → `invalidateMarker`, and
+  **„Nechat být"** → `dismissDuplicateMarkers` (persistent, `POST /feedback/duplicate-marker-dismissals`, for the
+  genuine cases: a mirror, a double exposure, a photo of a photo). The list is settled **locally** rather than
+  refetched (`lib/duplicateMarkers`: `groupKey`/`removeGroup`/`dropMarker`) — a refetch would renumber and
+  reorder everything under the pointer mid-review; flagging a box drops it from its card and the card leaves the
+  queue only once fewer than `MIN_GROUP_SIZE` markers remain, so a three-marker finding shrinks to a
+  two-marker one instead of vanishing half-fixed. One page-level `busy` serializes the decisions; a 404 says the
+  group changed underneath („načtěte stránku znovu") rather than blaming the user, a 503 says the review is off;
+  a failed **„načíst další"** is reported inline exactly as on `/duplicates`; tests
+  `DuplicateMarkersPage.test.tsx` (with the repo's standard `react-virtuoso` mock) + `lib/duplicateMarkers.test.ts`,
   `ReviewPage` = `/review` (editor/admin, a top-level link **Třídění** right next to Nahrát) a **sorting
   game**: one question („Je na fotce **Tomáš Kozák**?" / „Sedí k fotce štítek **Ostatky**?")
   across **the whole screen** — the page is **outside `Layout`** (no navbar, like `/slideshow`), because
@@ -2228,7 +2250,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `DuplicatesResponse{groups,total,limit,offset,next_offset}`) + `mergeDuplicates(input,signal)` over
   `POST /api/v1/duplicates/merge` (resolving a group → `MergeResult{albums_added,labels_added,people_added,
   metadata_filled[],archived,dry_run}`; `dry_run:true` = a preview), the types `DuplicateReason`/
-  `DuplicateMember`/`DuplicateGroup`/`DuplicatesParams`/`MergeInput`/`MergeResult`; `upload.ts` =
+  `DuplicateMember`/`DuplicateGroup`/`DuplicatesParams`/`MergeInput`/`MergeResult`;
+  `dupmarkers.ts` = the repeated-marker client (one **person** marked more than once on one photo, not two
+  photos): `fetchDuplicateMarkers(params,signal)` over `GET /api/v1/duplicate-markers` →
+  `DuplicateMarkersResponse{groups,total,limit,offset,next_offset}`, `keepMarker(input,signal)` over
+  `POST /api/v1/duplicate-markers/keep` → `KeepMarkerResult{…,detached[]}` (the losing markers are **not**
+  sent — the server resolves the group from `(photo_uid, subject_uid)`, so a stale list cannot detach a marker
+  that was meanwhile re-tagged) and `invalidateMarker(markerUid,signal)` over
+  `POST /api/v1/duplicate-markers/invalid` (204); the types `DuplicateMarker`/`DuplicateMarkerGroup`/
+  `DuplicateMarkersResponse`/`DuplicateMarkersParams`/`KeepMarkerResult`. The third decision („nechat být") is
+  feedback, so it lives in `feedback.ts`; `upload.ts` =
   `uploadFile(file,{onProgress,signal})`
   over **`XMLHttpRequest`** (one file per request because of the upload-progress events, the FormData is
   streamed), `isAbortError`, the types `UploadFileResult`/`UploadResponse`/`UploadWarning`/
@@ -2275,7 +2306,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `POST`/`DELETE /feedback/duplicate-dismissals`, the type `DuplicateDismissal` `{photo_uid,other_uid}` —
   „these two photos are NOT duplicates" from `DupComparePage` („Nechat obě"); the pair is **unordered**
   (the backend normalizes it), nothing is archived or merged, only an opinion is recorded and `GET /duplicates`
-  then drops that edge on every subsequent scan (all of it idempotent → it can be called optimistically);
+  then drops that edge on every subsequent scan;
+  **`dismissDuplicateMarkers(req,signal)`/`undismissDuplicateMarkers(req,signal)`** over
+  `POST`/`DELETE /feedback/duplicate-marker-dismissals`, the type `DuplicateMarkerDismissal`
+  `{photo_uid,subject_uid}` — „this person really IS marked more than once here" from
+  `DuplicateMarkersPage` („Nechat být"), for the genuine cases (a mirror, a double exposure, a photo of a
+  photo); it keys the (photo, person) pair rather than the markers, whose uids change on re-detection, and it
+  detaches or invalidates nothing (all of it idempotent → it can be called optimistically);
   `expand.ts` = the collection-expansion client: `searchSimilar(kind,uid,{threshold,limit},signal)` over
   `GET /albums/{uid}/similar` / `GET /labels/{uid}/similar` (`threshold` = the **cosine distance**,
   the conversion from percent is done by the caller via `lib/expandSearch`), the types `ExpandKind`/`ExpandCandidate`

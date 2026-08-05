@@ -11,6 +11,7 @@ import { AlbumsPage } from './pages/AlbumsPage'
 import { AuditPage } from './pages/AuditPage'
 import { ClustersPage } from './pages/ClustersPage'
 import { DupComparePage } from './pages/DupComparePage'
+import { DuplicateMarkersPage } from './pages/DuplicateMarkersPage'
 import { DuplicatesPage } from './pages/DuplicatesPage'
 import { ExpandPage } from './pages/ExpandPage'
 import { FacesPage } from './pages/FacesPage'
@@ -100,6 +101,9 @@ export function AppRoutes() {
             <Route path="/recognition" element={<RecognitionPage />} />
             {/* Reviewing a person's outliers unassigns faces: a write action. */}
             <Route path="/outliers" element={<OutliersPage />} />
+            {/* Fixing a person tagged twice on one photo detaches markers: a
+                write action, editors and admins only. */}
+            <Route path="/duplicate-markers" element={<DuplicateMarkersPage />} />
             {/* Duplicate review archives photos in bulk: editors and admins only. */}
             <Route path="/duplicates" element={<DuplicatesPage />} />
             {/* Trash management (restore / permanent delete) is a write action. */}

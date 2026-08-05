@@ -349,10 +349,11 @@ func buildServices(
 // discoveryAPIOptions builds the server options for the API groups that need the
 // config, the pool, the auth guard and the media store together: the editor-only
 // discovery APIs riding the vector indexes (per-subject candidates, the
-// recognition sweep, collection expansion and the review game) and the MCP server
-// that lets an AI agent drive the library. The review game additionally reuses the
-// photo API's facematch service so face confirmations go through the one assign
-// state machine; the MCP server is off unless mcp.enabled is set.
+// recognition sweep, collection expansion, the review game and repeated-marker
+// review) and the MCP server that lets an AI agent drive the library. The review
+// game and repeated-marker review additionally reuse the photo API's facematch
+// service so their face writes go through the one assign state machine; the MCP
+// server is off unless mcp.enabled is set.
 func discoveryAPIOptions(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 	matchSvc *facematch.Service,
@@ -362,6 +363,9 @@ func discoveryAPIOptions(
 		server.WithAPI(buildSweepAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildExpandAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildReviewAPI(cfg, db, authAPI, mediaStore, matchSvc).RegisterRoutes),
+		// Repeated-marker review shares the same assign state machine, so a marker
+		// detached there is detached exactly as it is on the photo detail.
+		server.WithAPI(buildDupMarkersAPI(db, authAPI, matchSvc).RegisterRoutes),
 		// The MCP server mounts nothing unless mcp.enabled is set.
 		server.WithAPI(buildMCPAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
 	}

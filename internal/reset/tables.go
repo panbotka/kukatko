@@ -33,6 +33,7 @@ var catalogueTables = []string{
 	"album_photos",
 	"albums",
 	"duplicate_dismissals",
+	"duplicate_marker_dismissals",
 	"embeddings",
 	"face_clusters",
 	"face_confirmations",

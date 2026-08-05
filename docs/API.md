@@ -604,7 +604,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   label-detach); `POST /feedback/face-confirmations` `{photo_uid,face_index,subject_uid}` → 204
   and `DELETE /feedback/face-confirmations` (same body) → 204;
   `POST /feedback/duplicate-dismissals` `{photo_uid,other_uid}` → 204 ("these two photos are NOT
-  duplicates") and `DELETE /feedback/duplicate-dismissals` (same body) → 204 (undo).
+  duplicates") and `DELETE /feedback/duplicate-dismissals` (same body) → 204 (undo);
+  `POST /feedback/duplicate-marker-dismissals` `{photo_uid,subject_uid}` → 204 ("this person really IS
+  marked more than once on this photo" — a double exposure, a mirror, a photo of a photo) and
+  `DELETE /feedback/duplicate-marker-dismissals` (same body) → 204 (undo). The latter keys the **(photo,
+  subject) pair**, which is exactly the group `GET /duplicate-markers` shows — never the markers, whose uids
+  change when a photo is re-detected and would resurrect a settled group; it detaches and invalidates nothing.
   The pair is **unordered** — the backend normalizes it (smaller uid first), so the uid order
   does not matter and `(A,B)` and `(B,A)` are one decision; both photos the same → 400 (`ErrSamePhoto`),
   a non-existent photo → 404. `GET /duplicates` **discards rejected pairs as edges** of the graph
@@ -622,7 +627,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   Body `DisallowUnknownFields` + 64 KiB; a missing `photo_uid`/`subject_uid`/`label_uid` or a negative
   `face_index` → 400; a non-existent photo/subject/label → 404 (`ErrTargetNotFound`). Every mutation writes an
   audit entry **in the same transaction** as the write (actions `face.reject`/`face.unreject`/`label.reject`/
-  `label.unreject`/`face.confirm`/`face.unconfirm`; actor = `rejected_by`/`confirmed_by`).
+  `label.unreject`/`face.confirm`/`face.unconfirm`/`duplicate_marker.dismiss`/`duplicate_marker.undismiss`;
+  actor = `rejected_by`/`confirmed_by`/`dismissed_by`).
   Mounted by another `server.WithAPI` (`buildFeedbackAPI` in
   `cmd/kukatko/feedback.go`). The consumers (find a person among untagged ones, recognition sweep, the review game)
   come in later tasks.
@@ -896,6 +902,38 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   to purge) and writes `photos.merge` to the audit. Idempotent (re-running on a resolved group = a no-op);
   `dry_run:true` only computes a preview without changes. An invalid group → 400, a non-existent keeper → 404,
   `merge=nil` → 503. The `merge` route runs even with detection off. Mounted always by `buildDuplicatesAPI` (`cmd/kukatko/duplicates.go`).
+- **Repeated-marker API (`/api/v1`, `internal/dupmarkersapi` + `internal/dupmarkers`):** the other kind of
+  duplicate — not two photos, but **one person marked more than once on one photo**. On a group shot the
+  matcher puts the same name on two or three neighbouring boxes, so the people beside her lose their tag and
+  her own face count is inflated; it is always a mistake.
+  `GET /duplicate-markers?limit=&offset=` (**`RequireAuth`** — reading is not a write) →
+  `{groups,total,limit,offset,next_offset}`, each group
+  `{photo_uid,photo_title,taken_at?,width,height,orientation,subject_uid,subject_name,
+  markers:[{uid,bbox,score,reviewed}]}`, worst (most markers) first, then by the person's name; markers ordered
+  **left to right**, so a client's numbering reads in reading order. `limit` ≤ 200 (default 50), invalid → 400,
+  scan fails → 500, no backend → 503. It counts **markers, not faces**: several detected faces matched onto one
+  marker is a face↔marker pairing bug (`internal/facematch`) and looks identical in the UI, so counting faces
+  here would mix the two and neither figure would fall when either is fixed. Valid (`invalid=false`) `face`
+  markers of **named** subjects only — the nameless catch-all holds thousands of untagged regions and would
+  bury every real finding — and non-archived photos only.
+  The two repairs are `RequireWrite` and **neither is new behaviour**:
+  `POST /duplicate-markers/keep` `{photo_uid,subject_uid,keep_marker_uid}` →
+  `{photo_uid,subject_uid,keep_marker_uid,detached[]}` keeps that one marker and clears the subject from every
+  other valid face marker of that person on that photo, each through the existing
+  `unassign_person` transition (`subject_uid` → NULL, `reviewed` → false, `faces` cache refreshed,
+  `face.unassign` audited) — **detached, never deleted**: the box almost always belongs to the person standing
+  next to her and is worth re-tagging. The losing markers are deliberately **not** in the request body: the
+  server resolves the group from (photo, subject) itself, so a stale client list cannot detach a marker that has
+  meanwhile been re-tagged. A keeper that is not one of that person's valid face markers there → **404 before
+  anything is detached**.
+  `POST /duplicate-markers/invalid` `{marker_uid}` → 204 flags one box as holding no face at all
+  (`marker.invalidate`); the row survives and **keeps its subject**, so the decision is reversible and an
+  invalidation stays distinguishable from an unassignment — every listing that means "a real face" already
+  filters `invalid = FALSE`, this one included, so the group shrinks and, at one marker, disappears.
+  The third decision, "leave it be", is a durable opinion rather than a repair and lives with the rest of the
+  persisted feedback at `POST`/`DELETE /feedback/duplicate-marker-dismissals` (see the Feedback API below).
+  Mounted always by `buildDupMarkersAPI` (`cmd/kukatko/dupmarkers.go`), sharing the photo API's
+  `facematch.Service`. The UI is `/duplicate-markers` (`DuplicateMarkersPage`, editor/admin).
 - **System status API (`/api/v1`, `internal/systemapi` + `internal/system`, maintainer-only via
   `RequireMaintainer`):** `GET /system/status` → one aggregated snapshot of operational health:
   `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,total,dead_letter,

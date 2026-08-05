@@ -170,3 +170,45 @@ export async function undismissDuplicate(
 ): Promise<void> {
   await send('DELETE', '/feedback/duplicate-dismissals', req, signal)
 }
+
+/**
+ * A "this person really is marked more than once here" dismissal
+ * (`feedbackapi.markerDismissalInput`): the photo and the person on it. Recorded
+ * from the repeated-marker review's "leave it be", for the genuine cases — a
+ * double exposure, a mirror, a photo of a photo — so the group is not offered
+ * again on every reload.
+ *
+ * It keys the (photo, person) pair, not the markers: the opinion is about the
+ * situation, and marker uids come and go when a photo is re-detected.
+ */
+export interface DuplicateMarkerDismissal {
+  photo_uid: string
+  subject_uid: string
+}
+
+/**
+ * Records a repeated-marker dismissal via
+ * `POST /feedback/duplicate-marker-dismissals`, so the group drops out of every
+ * later `GET /duplicate-markers` listing. No marker is detached, invalidated or
+ * deleted: it records only the opinion. It is idempotent, so the caller can fire
+ * it optimistically.
+ */
+export async function dismissDuplicateMarkers(
+  req: DuplicateMarkerDismissal,
+  signal?: AbortSignal,
+): Promise<void> {
+  await send('POST', '/feedback/duplicate-marker-dismissals', req, signal)
+}
+
+/**
+ * Withdraws a repeated-marker dismissal via
+ * `DELETE /feedback/duplicate-marker-dismissals`, the inverse of
+ * {@link dismissDuplicateMarkers}, putting the group back in the review queue.
+ * Also idempotent.
+ */
+export async function undismissDuplicateMarkers(
+  req: DuplicateMarkerDismissal,
+  signal?: AbortSignal,
+): Promise<void> {
+  await send('DELETE', '/feedback/duplicate-marker-dismissals', req, signal)
+}

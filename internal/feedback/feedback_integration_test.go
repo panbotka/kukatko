@@ -555,3 +555,102 @@ func TestDuplicateDismissalAudited(t *testing.T) {
 		t.Fatalf("dismissals attributed to the actor = %d, want 1", n)
 	}
 }
+
+// TestDuplicateMarkerDismissalLifecycle checks the "she really is marked twice
+// here" decision: idempotent, readable back, reversible, and attributed to the
+// user who made it — with its audit row written in the same transaction.
+func TestDuplicateMarkerDismissalLifecycle(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	photo := f.makePhoto(t, "dupmarker_a")
+	subject := f.makeSubject(t, "Marie Repeated")
+	user := f.makeUser(t, "usr_markerdismiss00000", "markerdismisser")
+	key := feedback.DuplicateMarkerDismissalKey{PhotoUID: photo, SubjectUID: subject}
+	entry := audit.Entry{
+		Action:     audit.ActionDuplicateMarkerDismiss,
+		TargetType: "subjects",
+		TargetUID:  subject,
+		ActorUID:   user,
+	}
+
+	if err := f.feedback.DismissDuplicateMarkers(ctx, key, entry); err != nil {
+		t.Fatalf("DismissDuplicateMarkers: %v", err)
+	}
+	// Dismissing the same group twice is a no-op, not a unique-constraint error.
+	if err := f.feedback.DismissDuplicateMarkers(ctx, key, entry); err != nil {
+		t.Fatalf("DismissDuplicateMarkers (repeat): %v", err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM duplicate_marker_dismissals"); n != 1 {
+		t.Fatalf("row count after two dismissals = %d, want 1", n)
+	}
+	if ok, err := f.feedback.IsDuplicateMarkersDismissed(ctx, key); err != nil || !ok {
+		t.Fatalf("IsDuplicateMarkersDismissed = %v, %v, want true, nil", ok, err)
+	}
+	// entry.ActorUID doubles as dismissed_by, so the row itself names the user.
+	if n := f.count(t,
+		"SELECT count(*) FROM duplicate_marker_dismissals WHERE dismissed_by = $1", user); n != 1 {
+		t.Fatalf("dismissals attributed to the actor = %d, want 1", n)
+	}
+	// Idempotency is about the decision, not the trail: the second dismissal
+	// changed no row but still records that somebody pressed the button.
+	if n := f.count(t, "SELECT count(*) FROM audit_log WHERE action = $1",
+		audit.ActionDuplicateMarkerDismiss); n != 2 {
+		t.Fatalf("audit rows after two dismissals = %d, want 2", n)
+	}
+
+	groups, err := f.feedback.DismissedDuplicateMarkerGroups(ctx)
+	if err != nil {
+		t.Fatalf("DismissedDuplicateMarkerGroups: %v", err)
+	}
+	if len(groups) != 1 || groups[0] != key {
+		t.Fatalf("bulk lookup = %+v, want [%+v]", groups, key)
+	}
+
+	undo := entry
+	undo.Action = audit.ActionDuplicateMarkerUndismiss
+	if err := f.feedback.UndismissDuplicateMarkers(ctx, key, undo); err != nil {
+		t.Fatalf("UndismissDuplicateMarkers: %v", err)
+	}
+	if ok, _ := f.feedback.IsDuplicateMarkersDismissed(ctx, key); ok {
+		t.Fatal("IsDuplicateMarkersDismissed after undismiss = true, want false")
+	}
+	// Un-dismissing what was never dismissed is a no-op, not an error.
+	if err := f.feedback.UndismissDuplicateMarkers(ctx, key, undo); err != nil {
+		t.Fatalf("UndismissDuplicateMarkers (repeat): %v", err)
+	}
+}
+
+// TestDuplicateMarkerDismissalRejectsBadKeys checks an incomplete key never reaches
+// the database and a group naming a photo or subject that does not exist trips the
+// foreign key, so the HTTP layer can answer 400/404 rather than 500.
+func TestDuplicateMarkerDismissalRejectsBadKeys(t *testing.T) {
+	f := newFixtures(t)
+	ctx := t.Context()
+	photo := f.makePhoto(t, "dupmarker_bad")
+	subject := f.makeSubject(t, "Marie Bad")
+	entry := audit.Entry{Action: audit.ActionDuplicateMarkerDismiss, TargetType: "subjects"}
+
+	partial := feedback.DuplicateMarkerDismissalKey{PhotoUID: photo}
+	if err := f.feedback.DismissDuplicateMarkers(ctx, partial, entry); !errors.Is(err, feedback.ErrEmptyKey) {
+		t.Fatalf("DismissDuplicateMarkers(partial) = %v, want ErrEmptyKey", err)
+	}
+	ghostPhoto := feedback.DuplicateMarkerDismissalKey{
+		PhotoUID: "ph_nonexistent00000000000", SubjectUID: subject,
+	}
+	if err := f.feedback.DismissDuplicateMarkers(ctx, ghostPhoto, entry); !errors.Is(
+		err, feedback.ErrTargetNotFound,
+	) {
+		t.Fatalf("DismissDuplicateMarkers(ghost photo) = %v, want ErrTargetNotFound", err)
+	}
+	ghostSubject := feedback.DuplicateMarkerDismissalKey{
+		PhotoUID: photo, SubjectUID: "sb_nonexistent00000000000",
+	}
+	if err := f.feedback.DismissDuplicateMarkers(ctx, ghostSubject, entry); !errors.Is(
+		err, feedback.ErrTargetNotFound,
+	) {
+		t.Fatalf("DismissDuplicateMarkers(ghost subject) = %v, want ErrTargetNotFound", err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM duplicate_marker_dismissals"); n != 0 {
+		t.Fatalf("row count after rejected keys = %d, want 0", n)
+	}
+}

@@ -50,6 +50,16 @@ type Store interface {
 	// UndismissDuplicate takes a duplicate dismissal back, idempotently and
 	// audited.
 	UndismissDuplicate(ctx context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry) error
+	// DismissDuplicateMarkers records that a person really IS marked more than
+	// once on a photo, idempotently and audited.
+	DismissDuplicateMarkers(
+		ctx context.Context, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
+	) error
+	// UndismissDuplicateMarkers takes a repeated-marker dismissal back,
+	// idempotently and audited.
+	UndismissDuplicateMarkers(
+		ctx context.Context, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
+	) error
 }
 
 // API exposes the rejection endpoints over HTTP. The write guard is supplied by the
@@ -84,9 +94,13 @@ func NewAPI(cfg Config) *API {
 //	DELETE /feedback/face-confirmations    RequireWrite  take a face confirmation back
 //	POST   /feedback/duplicate-dismissals  RequireWrite  settle a pair as not duplicates
 //	DELETE /feedback/duplicate-dismissals  RequireWrite  take a duplicate dismissal back
+//	POST   /feedback/duplicate-marker-dismissals  RequireWrite  settle "she really is
+//	                                                            marked twice here"
+//	DELETE /feedback/duplicate-marker-dismissals  RequireWrite  take that back
 //
-// The face, the label and the pair are named in the request body rather than the
-// path, so a DELETE carries a body the same way the label-detach endpoint does.
+// The face, the label, the pair and the (photo, subject) group are named in the
+// request body rather than the path, so a DELETE carries a body the same way the
+// label-detach endpoint does.
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/feedback", func(r chi.Router) {
 		r.With(a.requireWrite).Post("/face-rejections", a.handleFaceReject)
@@ -97,6 +111,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireWrite).Delete("/face-confirmations", a.handleFaceUnconfirm)
 		r.With(a.requireWrite).Post("/duplicate-dismissals", a.handleDuplicateDismiss)
 		r.With(a.requireWrite).Delete("/duplicate-dismissals", a.handleDuplicateUndismiss)
+		r.With(a.requireWrite).Post("/duplicate-marker-dismissals", a.handleMarkerDismiss)
+		r.With(a.requireWrite).Delete("/duplicate-marker-dismissals", a.handleMarkerUndismiss)
 	})
 }
 

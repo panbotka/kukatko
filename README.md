@@ -100,6 +100,15 @@ of PhotoPrism and of [photo-sorter](https://github.com/kozaktomas/photo-sorter),
   won't be offered again, so repeated passes converge instead of the same false alarms over and over.
   Threshold, bulk removal, and the keyboard (`y`/`n`, arrows, Ctrl+A). Kukátko **never removes anything
   by itself** — it only sorts and asks.
+- **Repeated markers** (`/duplicate-markers`, editors): the third kind of face mistake — **one person marked
+  more than once on the same photo**. It is never right by accident: on a group shot the matcher marched one
+  name across two or three neighbouring boxes, so the people beside her lost their tag and her own face count
+  is inflated. Each finding shows the **whole photo with that person's boxes outlined and numbered**, plus a
+  close-up of every box, because you cannot decide which one is really her from a thumbnail. Three answers:
+  **"Keep #n"** detaches the person from the other boxes — the boxes stay, ready to be given to whoever they
+  really show; **"No face here"** flags a box that holds no face at all; **"Leave it be"** settles the genuine
+  cases (a mirror, a double exposure, a photo of a photo) **permanently**, so the same false alarm is not
+  offered on every reload. Nothing is merged and nothing is deleted, ever.
 - **Sorting — a one-question game** (`/review`, editors): Kukátko shows you one photo and asks
   one thing — *"Is **Tomáš Kozák** in the photo?"* or *"Does the **Ostatky** label fit the photo?"*. You answer,
   and the next one appears. **Most of the questions are ones you'll answer "yes" to in a single click** — a
@@ -1651,6 +1660,9 @@ Endpoints under `/api/v1` (JSON):
 | POST | `/trash/empty` | editor/admin | **permanently** deletes all archived photos (requires `?confirm=true`) → `{purged,failed}` |
 | GET | `/duplicates` | editor/admin | groups of likely duplicates (pHash + embedding) → `{groups,total,limit,offset,next_offset}`; query `limit`(≤100)/`offset`; 503 when `duplicate.enabled=false` (see Duplicates) |
 | POST | `/duplicates/merge` | editor/admin | resolves a group — merges the copies into the keeper (union of albums/labels/people, fills missing fields) and archives them, in one transaction → `{keeper_uid,albums_added,labels_added,people_added,metadata_filled,archived,dry_run}`; `dry_run:true` = preview |
+| GET | `/duplicate-markers` | authenticated | photos where one person carries more than one valid face marker → `{groups,total,limit,offset,next_offset}`; worst (most markers) first, query `limit`(≤200)/`offset` |
+| POST | `/duplicate-markers/keep` | editor/admin | `{photo_uid,subject_uid,keep_marker_uid}` — keeps that marker and **detaches** (never deletes) the person from every other valid face marker of theirs on that photo → `{…,detached[]}`; 404 when the keeper is not one of them |
+| POST | `/duplicate-markers/invalid` | editor/admin | `{marker_uid}` — flags a box as holding no face; the row survives and keeps its subject → 204 |
 | GET | `/photos/{uid}/thumb/{size}` | session/token | thumbnail (cached, generated on-miss) — streams JPEG, `ETag`/304 |
 | GET | `/photos/{uid}/video` | session/token | inline video stream with **HTTP Range** (206 partial, `Accept-Ranges`, seek; a live photo = motion clip, still → 404); optional on-the-fly transcode via `video.transcode` |
 | GET | `/photos/{uid}/download` | session/token | photo as an attachment — the original is streamed (never wholly in RAM), `Content-Length`/`ETag`; if a non-destructive edit is stored, it returns the **edited** version rendered on the fly (unless `?original=true`) |

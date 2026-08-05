@@ -64,6 +64,16 @@ const (
 	// ActionDuplicateUndismiss records a user taking a duplicate dismissal back,
 	// letting the pair be offered for review again.
 	ActionDuplicateUndismiss = "duplicate.undismiss"
+	// ActionDuplicateMarkerDismiss records a user settling a repeated-marker
+	// group as "this person really is marked twice on this photo" (a double
+	// exposure, a mirror, a photo of a photo). Like the duplicate dismissal it
+	// records an opinion — no marker is detached or invalidated — so the review
+	// page stops offering the group. The subject is the target and the photo is
+	// in the details.
+	ActionDuplicateMarkerDismiss = "duplicate_marker.dismiss"
+	// ActionDuplicateMarkerUndismiss records a user taking a repeated-marker
+	// dismissal back, letting the group be offered for review again.
+	ActionDuplicateMarkerUndismiss = "duplicate_marker.undismiss"
 	// ActionPhotoUpdate records a single-photo metadata edit (PATCH).
 	ActionPhotoUpdate = "photo.update"
 	// ActionPhotoArchive records moving a photo to the trash (soft delete).
@@ -125,6 +135,13 @@ const (
 	// ActionFaceUnassign records clearing a marker's subject (unassigning a face);
 	// the affected marker and photo are listed in the details.
 	ActionFaceUnassign = "face.unassign"
+	// ActionMarkerInvalidate records a user marking a marker region invalid —
+	// "there is no face in this box at all". The marker row survives (nothing is
+	// deleted) and keeps whatever subject it carried, so the decision is a flag
+	// and is reversible; every listing that means "a real face" already filters
+	// on invalid = FALSE. The affected marker is the target; the photo and the
+	// subject it was assigned to are in the details.
+	ActionMarkerInvalidate = "marker.invalidate"
 	// ActionFaceReject records a user rejecting a face↔subject guess ("this face is
 	// NOT this person"). It records an opinion — the face is not unassigned or
 	// deleted — so a later search can exclude it. The face (photo UID + face index)

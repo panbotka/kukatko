@@ -235,6 +235,55 @@ func TestAuditFaceMutations(t *testing.T) {
 	}
 }
 
+// TestAuditMarkerInvalidate checks flagging a marker invalid records one audit row
+// and changes nothing but the flag — the marker survives and keeps its subject, so
+// the decision stays reversible.
+func TestAuditMarkerInvalidate(t *testing.T) {
+	store, photoStore, _, db := newStores(t)
+	ctx := t.Context()
+	auditStore := audit.NewStore(db.Pool())
+	actor := makeUser(t, db, "usr_audi", "audi")
+	photoUID := makePhoto(t, photoStore, "auditinvalidphoto")
+	subj, err := store.CreateSubject(ctx, people.Subject{Name: "Invalid Subject"})
+	if err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+	marker, err := store.CreateMarker(ctx, people.Marker{
+		PhotoUID: photoUID, SubjectUID: &subj.UID, Type: people.MarkerFace,
+		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
+	})
+	if err != nil {
+		t.Fatalf("CreateMarker: %v", err)
+	}
+
+	updated, err := store.SetMarkerInvalidAudited(ctx, marker.UID, true,
+		actorEntry(actor, audit.ActionMarkerInvalidate, "markers", "",
+			map[string]any{"photo_uid": photoUID}))
+	if err != nil {
+		t.Fatalf("SetMarkerInvalidAudited: %v", err)
+	}
+	if !updated.Invalid {
+		t.Error("marker is not flagged invalid")
+	}
+	if updated.SubjectUID == nil || *updated.SubjectUID != subj.UID {
+		t.Errorf("marker subject = %v, want it kept (%q)", updated.SubjectUID, subj.UID)
+	}
+	rec := requireOneAudit(t, ctx, auditStore, audit.ActionMarkerInvalidate, actor, marker.UID)
+	if rec.Details["photo_uid"] != photoUID {
+		t.Errorf("details photo_uid = %v, want %q", rec.Details["photo_uid"], photoUID)
+	}
+
+	// A missing marker rolls back and leaves no second row behind.
+	if _, err := store.SetMarkerInvalidAudited(ctx, "mk_missing", true,
+		actorEntry(actor, audit.ActionMarkerInvalidate, "markers", "mk_missing", nil),
+	); !errors.Is(err, people.ErrMarkerNotFound) {
+		t.Fatalf("SetMarkerInvalidAudited err = %v, want ErrMarkerNotFound", err)
+	}
+	if n := len(auditRecords(t, ctx, auditStore, audit.ActionMarkerInvalidate)); n != 1 {
+		t.Errorf("marker.invalidate rows = %d, want 1", n)
+	}
+}
+
 // TestAuditFaceRollback checks a face-assignment mutation targeting a missing marker
 // fails and writes no audit row.
 func TestAuditFaceRollback(t *testing.T) {
