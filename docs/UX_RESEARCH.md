@@ -105,7 +105,7 @@ v `performance`:
 ```
 GET /api/v1/capabilities                            →    27 ms  {"semantic_search": false}
 GET /api/v1/search?…&q=svatba&mode=hybrid           → 30 179 ms
-GET /api/v1/search?…&q=osoba:Anna&mode=hybrid       → 30 039 ms
+GET /api/v1/search?…&q=osoba:Jarmila&mode=hybrid       → 30 039 ms
 ```
 
 Aplikace se tedy hned na startu zeptá, jestli sémantické hledání funguje, dostane
@@ -144,9 +144,9 @@ Zkusil jsem do něj napsat `year:1960-1969` — a knihovna se skutečně profilt
 na **227 fotek** ze šedesátých let, přesně jako `/search`. Celý dotazovací jazyk tam
 funguje; jen o tom pole lže.
 
-Druhá půlka: napsal jsem `osoba:Anna` (česká varianta klíče `person:`). Knihovna
+Druhá půlka: napsal jsem `osoba:Jarmila` (česká varianta klíče `person:`). Knihovna
 ukázala „Nenalezeny žádné fotky" a **žádné upozornění**. Tentýž dotaz na `/search`
-hlásí *„Těmto filtrům nerozumím (hledám je jako obyčejný text): osoba:Anna"*.
+hlásí *„Těmto filtrům nerozumím (hledám je jako obyčejný text): osoba:Jarmila"*.
 
 Navíc: když dotaz obsahuje `year:1960-1969`, rozbalovací filtr **Rok** vedle něj dál
 říká „Libovolný rok". Viditelný stav filtrů odporuje zobrazeným výsledkům.
