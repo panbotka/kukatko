@@ -23,7 +23,7 @@ import {
   type AnnouncementLevel,
 } from '../services/announcement'
 import { ApiError } from '../services/auth'
-import type { ImportRun, ImportSource } from '../services/import'
+import type { ImportRun } from '../services/import'
 import {
   fetchSystemStatus,
   requeueDeadLetterJobs,
@@ -279,12 +279,12 @@ function JobsCard({
   )
 }
 
-/** Renders the most recent run of one import source, or a "never" placeholder. */
-function ImportRunLine({ source, run }: { source: ImportSource; run: ImportRun | null }) {
+/** Renders the most recent folder-import run, or a "never" placeholder. */
+function ImportRunLine({ run }: { run: ImportRun | null }) {
   const { t, i18n } = useTranslation()
   return (
     <div className="mb-2">
-      <span className="fw-semibold">{t(`import.source.${source}`)}</span>:{' '}
+      <span className="fw-semibold">{t('import.source.folder')}</span>:{' '}
       {run ? (
         <>
           <Badge
@@ -304,18 +304,21 @@ function ImportRunLine({ source, run }: { source: ImportSource; run: ImportRun |
   )
 }
 
-/** The last-import-per-source card with a link to the import flow. */
+/**
+ * The last-import card. It reports the folder import (`kukatko import dir`),
+ * the only import that can still run — the PhotoPrism/photo-sorter migration
+ * finished and was removed — and links to the full run history.
+ */
 function ImportsCard({ imports }: { imports: ImportsStatus }) {
   const { t } = useTranslation()
   return (
     <Card className="h-100">
       <Card.Body className="d-flex flex-column">
         <h2 className="kk-section-title mb-2">{t('system.imports.title')}</h2>
-        <ImportRunLine source="photoprism" run={imports.photoprism} />
-        <ImportRunLine source="photosorter" run={imports.photosorter} />
+        <ImportRunLine run={imports.folder} />
         <div className="mt-auto pt-2">
           <Link to="/import" className="btn btn-outline-primary btn-sm">
-            {t('system.imports.trigger')}
+            {t('system.imports.history')}
           </Link>
         </div>
       </Card.Body>

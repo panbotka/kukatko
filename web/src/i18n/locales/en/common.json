@@ -1743,31 +1743,17 @@
     "back": "Back to home"
   },
   "import": {
-    "title": "Import & migration",
-    "intro": "PhotoPrism stays the primary store. Imports are read-only, incremental and repeatable — it is safe to run them again and they resume where they left off.",
-    "warnFirstRun": "A first run can take a while and pull in a large number of photos. Subsequent runs only process new changes.",
-    "confirmFirstRunTitle": "First import run",
-    "confirmFirstRun": "This is the first run for this source and may take a while. Start the import?",
+    "title": "Import",
+    "intro": "History of import runs and the failures they recorded. Imports are started from the command line only: `kukatko import dir` reads a directory on the server’s disk. The PhotoPrism and photo-sorter migration finished in August 2026 and was removed — its runs stay in the history as the record of where the library came from.",
     "maintainerOnly": "This page is available to system maintainers only.",
     "loading": "Loading imports…",
     "error": "Failed to load import status.",
     "source": {
       "photoprism": "PhotoPrism",
       "photosorter": "Photo-sorter",
-      "folder": "Folder on disk"
+      "folder": "Folder on disk",
+      "photosorter_feeds": "Photo-sorter (feeds)"
     },
-    "photoprismDesc": "Incremental import from a running PhotoPrism instance (photos, metadata, albums, labels, people).",
-    "photosorterDesc": "Direct migration from the photo-sorter database (photos, embeddings, faces, albums, labels).",
-    "start": "Start import",
-    "starting": "Starting…",
-    "inProgress": "In progress",
-    "notConfigured": "This source is not configured.",
-    "noRuns": "No runs yet.",
-    "lastRun": "Last run",
-    "runningSince": "Running since {{time}}",
-    "startedNotice": "The import has been queued and will start shortly.",
-    "conflictNotice": "An import is already in progress.",
-    "errorNotice": "Failed to start the import. Please try again.",
     "counts": {
       "imported": "New",
       "updated": "Updated",
@@ -1797,34 +1783,6 @@
       "counts": "Counts",
       "lastError": "Last error",
       "empty": "No import runs yet."
-    },
-    "verify": {
-      "title": "Completeness check",
-      "desc": "Reconciles the sources (PhotoPrism, photo-sorter) against the Kukátko catalogue and reports what is missing. May take a while — it walks the whole source library.",
-      "button": "Verify completeness",
-      "running": "Verifying…",
-      "complete": "The import is complete — nothing is missing.",
-      "incomplete": "The import is not complete — some items are missing (see below).",
-      "listingShortfall": "Careful: PhotoPrism reports {{reported}} pictures but the listing served only {{served}} — {{n}} never reached the comparison. The numbers below therefore describe a window of the library, not the library, and “missing 0” proves nothing.",
-      "error": "The completeness check failed.",
-      "notConfigured": "The vectors source (photo-sorter) is not configured; this section is skipped.",
-      "colCheck": "Check",
-      "colSource": "Source",
-      "colCatalog": "Kukátko",
-      "colCoverage": "Source coverage",
-      "colMissing": "Missing",
-      "vectorsScopeNote": "Careful: for embeddings and faces the “Missing” column counts only photos that are already in the catalogue — a vector has nothing to attach to until its photo is imported. It can therefore read zero while most of the source is not imported yet. The “Source coverage” column is the one that decides.",
-      "photos": "PhotoPrism photos",
-      "files": "Files (e.g. RAW)",
-      "embeddings": "Embeddings",
-      "faces": "Faces",
-      "albums": "Albums",
-      "labels": "Labels",
-      "subjects": "People",
-      "deduplicated": "Deduplicated",
-      "albumsSkipped": "Albums of type {{types}} are deliberately not imported (PhotoPrism generates them itself and the timeline covers them) — skipped: {{n}}. They never count as missing.",
-      "sampleNote": "Showing the first {{shown}} of {{total}}.",
-      "surplus": "Only in Kukátko (the source no longer returns them)"
     },
     "failures": {
       "title": "Import failures",
@@ -2163,7 +2121,7 @@
     "imports": {
       "title": "Imports",
       "never": "never run",
-      "trigger": "Trigger import"
+      "history": "Import history"
     },
     "backup": {
       "title": "Backup",

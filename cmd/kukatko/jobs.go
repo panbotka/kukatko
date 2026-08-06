@@ -17,7 +17,6 @@ import (
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/namelessjob"
 	"github.com/panbotka/kukatko/internal/placesjob"
-	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/processapi"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
 	"github.com/panbotka/kukatko/internal/thumbjob"
@@ -31,8 +30,7 @@ import (
 // and thumbnail backfills plus the face-clustering trigger). The worker is
 // returned to the serve command to run for the process lifetime; both APIs are
 // operations surfaces, so they mount their maintainer-guarded routes via authAPI
-// (the api packages stay decoupled from auth's wiring). The psMigrate handler (nil when photo-sorter is not configured)
-// registers the ps_migrate job. The places handler (nil when no mapy.com key is
+// (the api packages stay decoupled from auth's wiring). The places handler (nil when no mapy.com key is
 // configured) registers the `places` reverse-geocode job and backs the place
 // backfill; it spends its metered mapy.com credits against the shared
 // geocodeBudget the caller also hands to the system status. It also builds the
@@ -47,8 +45,7 @@ import (
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	embedSvc *embedjob.Service, faceSvc *facejob.Service, clusterSvc *cluster.Service,
-	importSvc *ppimport.Service, psMigrate, psFeeds worker.HandlerFunc, reg *metrics.Registry,
-	geocodeBudget *placesjob.WindowBudget,
+	reg *metrics.Registry, geocodeBudget *placesjob.WindowBudget,
 ) (*worker.Worker, *jobsapi.API, *processapi.API, *maintenanceapi.API, error) {
 	thumbSvc, maintenanceSvc, err := buildMaintenanceAndThumb(cfg, db, enqueuer, embedSvc, faceSvc, reg)
 	if err != nil {
@@ -69,8 +66,7 @@ func buildJobs(
 	namelessSvc := buildNamelessService(db, store)
 	registry := buildRegistry(registryServices{
 		embed: embedSvc, face: faceSvc, thumb: thumbSvc, meta: metaSvc,
-		imp: importSvc, psMigrate: psMigrate, psFeeds: psFeeds, places: placesSvc, sidecar: sidecarSvc,
-		nameless: namelessSvc,
+		places: placesSvc, sidecar: sidecarSvc, nameless: namelessSvc,
 	})
 
 	w := worker.New(worker.Config{
@@ -113,25 +109,22 @@ func buildJobs(
 }
 
 // registryServices bundles the job handlers buildRegistry wires, so the
-// registration list is one parameter rather than eight.
+// registration list is one parameter rather than seven.
 type registryServices struct {
-	embed     *embedjob.Service
-	face      *facejob.Service
-	thumb     *thumbjob.Service
-	meta      *metajob.Service
-	imp       *ppimport.Service
-	psMigrate worker.HandlerFunc
-	psFeeds   worker.HandlerFunc
-	places    *placesjob.Service
-	sidecar   *sidecarjob.Service
-	nameless  *namelessjob.Service
+	embed    *embedjob.Service
+	face     *facejob.Service
+	thumb    *thumbjob.Service
+	meta     *metajob.Service
+	places   *placesjob.Service
+	sidecar  *sidecarjob.Service
+	nameless *namelessjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
 // registered. The always-available handlers register unconditionally; the
-// config-gated ones (import, photo-sorter migration, photo-sorter feeds, places,
-// sidecar) register only when their service was built, because an unregistered type is never
-// claimed — so a job of a type with no handler would sit queued forever.
+// config-gated ones (places, sidecar) register only when their service was
+// built, because an unregistered type is never claimed — so a job of a type with
+// no handler would sit queued forever.
 func buildRegistry(svc registryServices) *worker.Registry {
 	registry := worker.NewRegistry()
 	worker.RegisterBuiltins(registry)
@@ -141,15 +134,6 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	registry.Register(jobs.TypeMetadata, svc.meta.Handle)
 	registry.Register(jobs.TypeNamelessDetach, svc.nameless.HandleDetach)
 	registry.Register(jobs.TypeNamelessRestore, svc.nameless.HandleRestore)
-	if svc.imp != nil {
-		registry.Register(jobs.TypePPImport, svc.imp.Handle)
-	}
-	if svc.psMigrate != nil {
-		registry.Register(jobs.TypePSMigrate, svc.psMigrate)
-	}
-	if svc.psFeeds != nil {
-		registry.Register(jobs.TypePSFeedsImport, svc.psFeeds)
-	}
 	if svc.places != nil {
 		registry.Register(jobs.TypePlaces, svc.places.Handle)
 	}

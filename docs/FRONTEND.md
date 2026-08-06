@@ -294,7 +294,7 @@ here.
   `AlbumsPage`. Tests: `TileGrid.test.tsx`),
   `ConfirmModal` (**the single shared confirmation dialog** — replaced the native `window.confirm`
   in four places: `AlbumDetailPage` (deleting an album), `LabelsPage` (deleting a label),
-  `SavedSearchesPage` (deleting a saved search) and `ImportPage` (confirming the first import run).
+  `SavedSearchesPage` (deleting a saved search).
   Following the styled-modal pattern on `TrashPage` — one pattern instead of a grey OS dialog: **the confirm
   button carries the action itself** („Smazat album" / „Spustit import"), never „OK", and reads the same as
   the control that opened the dialog — the action keeps one name across the whole flow. Props `show`, `title`
@@ -770,45 +770,21 @@ here.
   by a single `POST /photos/bulk` (state „přiřazuji…“, success, or a **retryable** error — the photos are
   uploaded, only the assignment failed); with no selection no call is made, and a pick made **after**
   the batch has finished re-runs the assignment with the current selection,
-  `ImportPage` = `/import` (maintainer only) the import/migration console: two sections (PhotoPrism,
-  photo-sorter) with a **Spustit import** button (gated on the `sources` flags), the live progress of a running run
-  (spinner + imported/updated/skipped/**deduplicated**/failed counts — the `deduplicated` badge appears only
-  when the run has any, since older runs have no such key: it counts source photos whose content was already
-  catalogued under another source photo) and the background queue state (`GET /jobs/stats`),
-  plus a **run history** table (`import_runs`: source/start/end/status/counts/error) — rendered through the
+  `ImportPage` = `/import` (maintainer only) the import console, now **read-only**: the background queue
+  state (`GET /jobs/stats`), the recorded per-photo/per-file failures (`GET /import/failures`) and a
+  **run history** table (`import_runs`: source/start/end/status/counts/error) — rendered through the
   shared `RecordTable` (`size="sm"`), so on a phone the six columns become **one stacked card per run**
   instead of a sideways scroll; the error keeps its `text-danger small` on the *value* (a `cellClassName`
-  would be desktop-only) —; it polls
-  `GET /import/runs` + `GET /jobs/stats` every 3 s, 409 → „už běží", a confirm before the first (large) run of a
-  source, self-gated on `canImport` (= maintainer). The **completeness-check** card runs `GET /import/verify`
-  on demand (never polled — it walks the whole source library) and renders it as a counts table
-  (check / source / Kukátko / **source coverage** / missing). The coverage column is filled only by the two
-  **vector** rows, whose `missing` (`*_missing_for_imported_photos`) counts photos **already in the
-  catalogue** — a vector has nothing to attach to until its photo is imported — and therefore reads `0` on a
-  catalogue holding a fraction of the source. `VerifyRow` takes an optional `coverage` for exactly that: a
-  zero missing-badge only turns **green** once the coverage confirms it (short of that it stays neutral next to
-  a warning coverage badge), and `import.verify.vectorsScopeNote` spells the scoping out in an `Alert` whenever
-  either coverage is below 1 (`fullVectorCoverage(vectors)`, the frontend twin of
-  `importverify.VectorsReport.FullSourceCoverage`). Before that, a catalogue of 280 photos against a source of
-  20 670 rendered two green zeros next to „Embeddingy"/„Obličeje" and read as a finished vector migration —
-  only the overall verdict said otherwise (`docs/READINESS_AUDIT.md` §2.3). Below the table,
-  `import.verify.albumsSkipped` explains any `structure.albums.skipped_by_design_count` — the albums of the
-  types the import deliberately does not map (PhotoPrism's auto-generated monthly ones), which are **counted,
-  never listed as missing**, so the albums row reading `source=198` against PhotoPrism's 758 is not a shortfall
-  (`AlbumReport` in `services/import.ts` = `EntityReport` + `skipped_types` + `skipped_by_design_count`).
-  `EntityReport` also carries `surplus_count`/`surplus` (catalogue names the source does not have — never a
-  completeness failure, but where a row that should not exist shows up); the page does not render them yet,
-  the CLI `kukatko import verify` summary does. The photo section has its own pair of both kinds:
-  `import.verify.listingShortfall` is a **danger** `Alert` above the table whenever
-  `photoprism.listing_shortfall > 0` — PhotoPrism reported more pictures than its listing served, so every
-  number in the table describes a window of the library and „chybí 0" proves nothing (the state the production
-  report was in: `source=20660 … missing=0 => COMPLETE` over a 20 677-photo source, see `docs/API.md`) —, and
-  `photoprism.surplus_uids` renders through the same `MissingSample` as the missing ones under
-  `import.verify.surplus`, for catalogue photos the source no longer returns (an upstream deletion; reported,
-  never a failure). The history also shows runs of the **`folder`** source (`kukatko import dir`,
-  reads a directory on the server's disk → **has no button**, it just appears in the table): in `services/import.ts`
-  therefore `RunSource` = `ImportSource | 'folder'` (the launch sections stay `SOURCES` =
-  photoprism/photosorter), the label `import.source.folder`,
+  would be desktop-only) —, with the imported/updated/skipped/**deduplicated**/failed counts per run (the
+  `deduplicated` badge appears only when the run has any, since older runs have no such key: it counts
+  source photos whose content was already catalogued under another source photo). It polls every 3 s and
+  is self-gated on `canImport` (= maintainer).
+  There is **nothing to start from the page**: the only import left is `kukatko import dir`, which reads a
+  directory on the server's disk and therefore runs from the CLI, and the PhotoPrism/photo-sorter migration
+  closed in August 2026 and was removed together with its start buttons and its completeness-check card.
+  Its runs stay in the history as the catalogue's provenance record, so `RunSource` in `services/import.ts`
+  is `'folder' | 'photoprism' | 'photosorter' | 'photosorter_feeds'` and each has a label under
+  `import.source.*` — a raw i18n key in that table would be worse than useless,
   `MaintenancePage` = `/maintenance` (maintainer only) the library maintenance console: a **Spustit kontrolu** button
   (`GET /maintenance/scan`) → a summary of totals + a findings table (count + samples per class, or „knihovna
   konzistentní") — also through the shared `RecordTable` (`size="sm"` + **`hideHeader`**: the first column names
@@ -841,8 +817,9 @@ here.
   `LibraryStatsCards`, the same `GET /system/stats` the all-users `StatsPage` reads — no second data source,
   no second aggregation; it owns its own fetch state, so a failed count degrades that section alone and the
   operational cards keep rendering), with **quick actions** — *requeue dead jobs* (`requeueDeadLetterJobs`: list dead →
-  per-job `POST /jobs/{id}/requeue`), *run a backup* (`POST /backup`), links to the import flow
-  (`/import`) and the maintenance check (`/maintenance`); **box offline** + pending embeddings → a highlighted
+  per-job `POST /jobs/{id}/requeue`), *run a backup* (`POST /backup`), links to the import history
+  (`/import`) and the maintenance check (`/maintenance`); the **imports card** reports the last
+  `kukatko import dir` run (`imports.folder`) — the only import that can still happen; **box offline** + pending embeddings → a highlighted
   message „doženou se po návratu"; **the Mapy card** (`MapsCard` over `status.maps`) shows the latest
   mapy.com status — `key_rejected` in red + what to do about it (swap the key in the mapy.com console), degradation
   in yellow, without a key „Nenastaveno" — and beneath it the **geocode credit line** (`GeocodeCredits` over
@@ -2258,7 +2235,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `formatPercent(ratio,locale)` (a `[0,1]` share → a locale-aware percentage with **at most one decimal**,
   `0.0025` → cs `"0,3 %"` / en `"0.3%"` — the decimal is what keeps a sliver from rounding to `0 %` and
   reading as nothing; out-of-range values are clamped and non-finite → `"0 %"`, so a malformed number never
-  shows as full coverage) for the import-verify source-coverage column +
+  shows as full coverage) — its consumer, the import-verify source-coverage column, went with the
+  migration in August 2026; the formatter stays as a tested primitive +
   `formatDuration(ms)` (ms → `M:SS`/`H:MM:SS`, invalid→`"0:00"`) for the video length on the tiles +
   `formatMonth(year,month,locale)` (a 1-based year/month → a locale-aware short month + year, e.g.
   `2026,1,'en'`→`"Jan 2026"`, outside 1–12 → `""`) for the timeline tick labels +
@@ -2455,11 +2433,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   → `PlaceCountry[]` (countries with counts + nested `cities`, the optional `country` drills into the cities of one
   country); the types `PlaceCountry`/`PlaceCity`; browsing a place's photos goes through the shared
   `fetchPhotos({country,city})`;
-  `import.ts` = the admin import client: `fetchImportRuns(signal)` over `GET /api/v1/import/runs`
-  (`{runs,limit,offset,sources}`), `fetchJobStats(signal)` over `GET /api/v1/jobs/stats`,
-  `startImport(source,signal)` over `POST /api/v1/import/{photoprism|photosorter}` (409 → ApiError);
-  the types `ImportSource`/`RunStatus`/`ImportCounts`/`ImportRun`/`ImportSources`/`ImportRunsResponse`/
-  `StartImportResult`/`JobStats`),
+  `import.ts` = the **read-only** admin import client: `fetchImportRuns(signal)` over
+  `GET /api/v1/import/runs` (`{runs,limit,offset}`), `fetchImportFailures({unresolvedOnly,limit},signal)`
+  over `GET /api/v1/import/failures` and `fetchJobStats(signal)` over `GET /api/v1/jobs/stats`;
+  the types `RunSource`/`RunStatus`/`ImportCounts`/`ImportRun`/`ImportRunsResponse`/`FailureStage`/
+  `FailureSource`/`ImportFailure`/`ImportFailuresResponse`/`JobStats`. There is no trigger: `startImport`
+  and `fetchVerifyReport` went with the migration in August 2026),
   `maintenance.ts` = the admin maintenance client: `fetchMaintenanceScan(signal)` over
   `GET /api/v1/maintenance/scan` → `ScanReport`, `runMaintenanceRepair(options,signal)` over
   `POST /api/v1/maintenance/repair` → `RepairResult`, `purgeAuditLog(olderThanDays,signal)` over

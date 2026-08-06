@@ -324,7 +324,7 @@ func (a *API) handleSetPhotoMetadata(
 	applyString(&upd.Notes, in.Notes)
 	if in.Title != nil {
 		// The title is now the user's (well, the agent's on their behalf): mark it so
-		// an incremental PhotoPrism re-import leaves it alone (see internal/ppimport).
+		// nothing downstream mistakes it for a title carried in from a source.
 		upd.TitleEdited = true
 	}
 

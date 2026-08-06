@@ -2,10 +2,13 @@ import { ApiError } from './auth'
 
 /**
  * Admin import client, mirroring the backend JSON shapes from `internal/importapi`
- * and `internal/jobsapi`. It drives the import admin UI: triggering a PhotoPrism
- * import or photo-sorter migration, reading the run history, and polling the job
- * queue stats. The session cookie is sent automatically (same-origin); every call
- * throws {@link ApiError} on a non-OK response so callers can branch on `status`.
+ * and `internal/jobsapi`. It drives the read-only import admin UI: the run
+ * history, the recorded per-photo failures, and the job queue stats. There is
+ * nothing to trigger — the only remaining import is `kukatko import dir`, run
+ * from the CLI; the PhotoPrism/photo-sorter migration finished in August 2026 and
+ * its triggers are gone. The session cookie is sent automatically (same-origin);
+ * every call throws {@link ApiError} on a non-OK response so callers can branch
+ * on `status`.
  */
 
 const API_BASE = '/api/v1'
@@ -41,29 +44,13 @@ async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await res.json()) as T
 }
 
-/** Issues a POST and parses the JSON body, throwing ApiError on a non-OK status. */
-async function postJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    credentials: 'same-origin',
-    signal,
-  })
-  if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res))
-  }
-  return (await res.json()) as T
-}
-
-/** Import sources that can be triggered from the UI (`importer.Source`). */
-export type ImportSource = 'photoprism' | 'photosorter'
-
 /**
- * Every source a recorded run can carry: the triggerable ones plus `folder`, a
- * `kukatko import dir` run. A folder import is driven from the CLI (it reads a
- * directory on the server's disk), so it has no start button — but its runs show
- * up in the same history.
+ * Every source a recorded run can carry (`importer.Source`): `folder` is a
+ * `kukatko import dir` run, the only one still produced; the other three are the
+ * finished migration, whose runs stay in the history as the catalogue's
+ * provenance record.
  */
-export type RunSource = ImportSource | 'folder'
+export type RunSource = 'folder' | 'photoprism' | 'photosorter' | 'photosorter_feeds'
 
 /**
  * Lifecycle state of an import run (`importer.Status`). `partial` means the run
@@ -98,24 +85,11 @@ export interface ImportRun {
   last_error: string
 }
 
-/** Which import sources are configured on the backend. */
-export interface ImportSources {
-  photoprism: boolean
-  photosorter: boolean
-}
-
 /** Response body of `GET /api/v1/import/runs`. */
 export interface ImportRunsResponse {
   runs: ImportRun[]
   limit: number
   offset: number
-  sources: ImportSources
-}
-
-/** Response body of an import trigger (`importapi.importResponse`). */
-export interface StartImportResult {
-  job_id: number
-  status: string
 }
 
 /**
@@ -128,10 +102,7 @@ export interface JobStats {
   total: number
 }
 
-/**
- * Fetches the import-run history together with which sources are configured. The
- * runs are ordered most recently started first.
- */
+/** Fetches the import-run history, most recently started first. */
 export async function fetchImportRuns(signal?: AbortSignal): Promise<ImportRunsResponse> {
   return getJSON<ImportRunsResponse>('/import/runs', signal)
 }
@@ -139,17 +110,6 @@ export async function fetchImportRuns(signal?: AbortSignal): Promise<ImportRunsR
 /** Fetches the aggregate job-queue stats (counts by state and type). */
 export async function fetchJobStats(signal?: AbortSignal): Promise<JobStats> {
   return getJSON<JobStats>('/jobs/stats', signal)
-}
-
-/**
- * Triggers an import run for the given source by enqueuing a background job.
- * Throws ApiError 409 when a run of that source is already in progress.
- */
-export async function startImport(
-  source: ImportSource,
-  signal?: AbortSignal,
-): Promise<StartImportResult> {
-  return postJSON<StartImportResult>(`/import/${source}`, signal)
 }
 
 /** The import step a failure happened in (`importer.Stage`). */
@@ -166,9 +126,8 @@ export type FailureStage =
   | 'edit'
   | 'metadata'
 
-/** Every source a failure can be recorded under (`importer.Source`), which unlike
- * a triggerable run source also includes the feeds import. */
-export type FailureSource = ImportSource | 'photosorter_feeds' | 'folder'
+/** Every source a failure can be recorded under (`importer.Source`). */
+export type FailureSource = RunSource
 
 /** One persisted per-photo/per-file import failure (`importer.Failure`). */
 export interface ImportFailure {
@@ -204,110 +163,4 @@ export async function fetchImportFailures(
   if (opts.limit) params.set('limit', String(opts.limit))
   const query = params.toString()
   return getJSON<ImportFailuresResponse>(`/import/failures${query ? `?${query}` : ''}`, signal)
-}
-
-/**
- * PhotoPrism photo/file reconciliation (`importverify.PhotoPrismReport`).
- *
- * Every photo is reconciled by identity, never by total. `source_total` is what
- * the listing served; `source_reported_total` is what PhotoPrism says its library
- * holds, read from its own aggregate. `listing_shortfall` is the positive
- * difference — above zero, every other number here describes a window rather than
- * the library, and `missing_count: 0` means nothing at all.
- */
-export interface PhotoPrismReport {
-  source_total: number
-  source_reported_total: number
-  listing_shortfall: number
-  source_by_type: Record<string, number | undefined>
-  imported_count: number
-  deduplicated_count: number
-  missing_count: number
-  missing_uids: string[]
-  /** Catalogue photos whose PhotoPrism uid the source listing never returned. */
-  surplus_count: number
-  surplus_uids: string[]
-  file_gap_count: number
-  file_gaps: { photoprism_uid: string; expected: number; actual: number }[]
-}
-
-/**
- * photo-sorter vectors reconciliation (`importverify.VectorsReport`).
- *
- * The section answers two different questions and names them apart. The
- * `*_missing_for_imported_photos` counters are scoped to photos ALREADY in the
- * catalogue — a vector cannot attach to a photo that was never imported — so they
- * legitimately read 0 on a catalogue holding a fraction of the source. The
- * `*_source_coverage` ratios ([0,1]) are the share of the SOURCE's vectors
- * Kukátko actually holds, and are the figure that says whether the vector
- * migration is finished.
- */
-export interface VectorsReport {
-  not_configured: boolean
-  source_total_photos: number
-  source_photos_with_embeddings: number
-  source_photos_with_faces: number
-  source_total_faces: number
-  catalog_embeddings: number
-  catalog_face_photos: number
-  catalog_faces: number
-  embeddings_source_coverage: number
-  faces_source_coverage: number
-  embeddings_missing_for_imported_photos: number
-  embeddings_missing_uids: string[]
-  faces_missing_for_imported_photos: number
-  faces_missing_uids: string[]
-}
-
-/**
- * Source-vs-catalogue counts for one entity kind (`importverify.EntityReport`).
- *
- * `surplus` is the other direction: catalogue names the source does not have. It
- * never makes the report incomplete — anything created in Kukátko itself is a
- * legitimate surplus — but it is where a row that should not exist shows up, so
- * the fields stay part of the contract even though only the CLI summary prints
- * them today.
- */
-export interface EntityReport {
-  source_count: number
-  catalog_count: number
-  missing_count: number
-  missing: string[]
-  surplus_count: number
-  surplus: string[]
-}
-
-/**
- * Album reconciliation (`importverify.AlbumReport`): an `EntityReport` over the
- * album types the import maps, plus the tally of the ones it skips on purpose
- * (PhotoPrism's auto-generated per-month albums, covered by the timeline). Those
- * are counted here, never listed as missing.
- */
-export interface AlbumReport extends EntityReport {
-  skipped_types: string[]
-  skipped_by_design_count: number
-}
-
-/** Album/label/subject reconciliation (`importverify.StructureReport`). */
-export interface StructureReport {
-  albums: AlbumReport
-  labels: EntityReport
-  subjects: EntityReport
-}
-
-/** Full completeness report (`importverify.Report`) from `GET /import/verify`. */
-export interface VerifyReport {
-  photoprism: PhotoPrismReport
-  vectors: VectorsReport
-  structure: StructureReport
-  complete: boolean
-}
-
-/**
- * Runs the import-completeness reconciliation and returns its report. This may
- * take a while (it walks the whole source library); throws ApiError 503 when no
- * import source is configured.
- */
-export async function fetchVerifyReport(signal?: AbortSignal): Promise<VerifyReport> {
-  return getJSON<VerifyReport>('/import/verify', signal)
 }

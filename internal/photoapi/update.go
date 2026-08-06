@@ -247,7 +247,7 @@ func mergeUpdate(current photos.Photo, present map[string]struct{}, body updateB
 // these is ignored, since the columns are not nullable.
 //
 // A supplied title also stamps title_edited: from here on the title is the user's,
-// and an incremental PhotoPrism re-import must not revert it (see internal/ppimport).
+// and nothing downstream may revert it (see photos.Photo.TitleEdited).
 func applyScalars(update *photos.MetadataUpdate, present map[string]struct{}, body updateBody) {
 	if _, ok := present["title"]; ok && body.Title != nil {
 		update.Title = *body.Title

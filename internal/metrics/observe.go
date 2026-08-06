@@ -73,16 +73,6 @@ func (r *Registry) SetEmbeddingUp(up bool) {
 	r.embeddingUp.Set(0)
 }
 
-// SetImportProgress publishes the latest checkpointed photo tally of an import
-// run for source ("photoprism" or "photosorter"). It satisfies the import
-// services' progress-observer contract.
-func (r *Registry) SetImportProgress(source string, imported, updated, skipped, failed int) {
-	r.importProgress.WithLabelValues(source, "imported").Set(float64(imported))
-	r.importProgress.WithLabelValues(source, "updated").Set(float64(updated))
-	r.importProgress.WithLabelValues(source, "skipped").Set(float64(skipped))
-	r.importProgress.WithLabelValues(source, "failed").Set(float64(failed))
-}
-
 // GeocodeCreditSpent records that the places job spent one mapy.com
 // reverse-geocode credit. Every credit is metered money, so this counter is the
 // live view of what an import run is spending; it satisfies

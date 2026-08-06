@@ -72,8 +72,8 @@ func TestStore_RunLifecycle(t *testing.T) {
 	}
 }
 
-// TestStore_Fail records a failed run with an error message and confirms it does
-// not advance the watermark cursor.
+// TestStore_Fail records a failed run with an error message and confirms it
+// stores no watermark.
 func TestStore_Fail(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -100,68 +100,11 @@ func TestStore_Fail(t *testing.T) {
 	if failed.HighWatermark != nil {
 		t.Errorf("high_watermark = %v, want nil", failed.HighWatermark)
 	}
-
-	if _, ok, err := store.LatestWatermark(ctx, importer.SourcePhotoSorter); err != nil || ok {
-		t.Errorf("LatestWatermark after only a failed run = (ok=%v, err=%v), want (false, nil)", ok, err)
-	}
-}
-
-// TestStore_LatestWatermark verifies the cursor query returns the most recent
-// successful run's watermark per source and ignores failed and still-running
-// runs, including a newer running run that must not shadow the done one.
-func TestStore_LatestWatermark(t *testing.T) {
-	db := dbtest.New(t)
-	dbtest.TruncateAll(t, db)
-	store := importer.NewStore(db.Pool())
-	ctx := t.Context()
-
-	// No runs yet: not found.
-	if _, ok, err := store.LatestWatermark(ctx, importer.SourcePhotoPrism); err != nil || ok {
-		t.Fatalf("LatestWatermark with no runs = (ok=%v, err=%v), want (false, nil)", ok, err)
-	}
-
-	older := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	newer := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
-
-	// First successful run sets the cursor to older.
-	first := mustStart(t, store, importer.SourcePhotoPrism)
-	if err := store.Complete(ctx, first, &older, importer.Counts{Imported: 1}); err != nil {
-		t.Fatalf("Complete first: %v", err)
-	}
-	// Second successful run, finished later, advances the cursor to newer.
-	second := mustStart(t, store, importer.SourcePhotoPrism)
-	if err := store.Complete(ctx, second, &newer, importer.Counts{Imported: 2}); err != nil {
-		t.Fatalf("Complete second: %v", err)
-	}
-	// A failed run with a (would-be) even newer watermark must be ignored: Fail
-	// stores no watermark, so this just confirms it cannot win.
-	failed := mustStart(t, store, importer.SourcePhotoPrism)
-	if err := store.Fail(ctx, failed, "boom", importer.Counts{Failed: 1}); err != nil {
-		t.Fatalf("Fail: %v", err)
-	}
-	// A still-running run must not shadow the latest done run.
-	mustStart(t, store, importer.SourcePhotoPrism)
-
-	got, ok, err := store.LatestWatermark(ctx, importer.SourcePhotoPrism)
-	if err != nil {
-		t.Fatalf("LatestWatermark: %v", err)
-	}
-	if !ok {
-		t.Fatal("LatestWatermark ok = false, want true")
-	}
-	if !got.Equal(newer) {
-		t.Errorf("LatestWatermark = %v, want %v", got, newer)
-	}
-
-	// A different source has its own independent cursor (still empty here).
-	if _, ok, err := store.LatestWatermark(ctx, importer.SourcePhotoSorter); err != nil || ok {
-		t.Errorf("LatestWatermark for photosorter = (ok=%v, err=%v), want (false, nil)", ok, err)
-	}
 }
 
 // TestStore_LatestRun verifies the per-source latest-run query returns the most
-// recently started run regardless of status (unlike LatestWatermark) and keeps
-// each source's cursor independent.
+// recently started run regardless of status and keeps each source's cursor
+// independent.
 func TestStore_LatestRun(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -229,8 +172,8 @@ func TestStore_Errors(t *testing.T) {
 	if err := store.Complete(ctx, 99999, nil, importer.Counts{}); !errors.Is(err, importer.ErrRunNotFound) {
 		t.Errorf("Complete(missing) error = %v, want ErrRunNotFound", err)
 	}
-	if _, _, err := store.LatestWatermark(ctx, importer.Source("nope")); !errors.Is(err, importer.ErrInvalidSource) {
-		t.Errorf("LatestWatermark(invalid) error = %v, want ErrInvalidSource", err)
+	if _, _, err := store.LatestRun(ctx, importer.Source("nope")); !errors.Is(err, importer.ErrInvalidSource) {
+		t.Errorf("LatestRun(invalid) error = %v, want ErrInvalidSource", err)
 	}
 }
 
@@ -325,8 +268,7 @@ func TestStore_Failures(t *testing.T) {
 		t.Errorf("unresolved failures = %d, want 2", n)
 	}
 
-	// Completing the run now reports partial (its watermark is stored but ignored
-	// by LatestWatermark, so a re-run retries the window).
+	// Completing the run now reports partial.
 	watermark := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	if err := store.Complete(ctx, run, &watermark, importer.Counts{Imported: 3, Failed: 2}); err != nil {
 		t.Fatalf("Complete(partial): %v", err)
@@ -338,11 +280,6 @@ func TestStore_Failures(t *testing.T) {
 	if got.Status != importer.StatusPartial {
 		t.Errorf("run with failures status = %q, want partial", got.Status)
 	}
-	// A partial run does not advance the resume cursor.
-	if _, ok, _ := store.LatestWatermark(ctx, importer.SourcePhotoPrism); ok {
-		t.Error("LatestWatermark advanced on a partial run, want no cursor")
-	}
-
 	// Listing returns both failures, newest first, and honours the source filter.
 	all, err := store.ListFailures(ctx, importer.FailureFilter{})
 	if err != nil {

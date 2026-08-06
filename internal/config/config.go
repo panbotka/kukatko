@@ -104,7 +104,6 @@ type Config struct {
 	Video     VideoConfig     `mapstructure:"video"`
 	Worker    WorkerConfig    `mapstructure:"worker"`
 	Bulk      BulkConfig      `mapstructure:"bulk"`
-	Import    ImportConfig    `mapstructure:"import"`
 	Log       LogConfig       `mapstructure:"log"`
 	Metrics   MetricsConfig   `mapstructure:"metrics"`
 	RateLimit RateLimitConfig `mapstructure:"ratelimit"`
@@ -118,8 +117,6 @@ type RateLimitConfig struct {
 	Upload RateLimitRule `mapstructure:"upload"`
 	// Bulk caps POST /photos/bulk (batch metadata edits).
 	Bulk RateLimitRule `mapstructure:"bulk"`
-	// Import caps the POST /import/* migration triggers.
-	Import RateLimitRule `mapstructure:"import"`
 	// Tiles caps GET /map/tiles/... (the mapy.com tile proxy). The geocode
 	// proxy has its own credit-protecting limiter under maps.*.
 	Tiles RateLimitRule `mapstructure:"tiles"`
@@ -152,50 +149,6 @@ type MetricsConfig struct {
 	// recomputed at most once per TTL rather than once per scrape. Raise it on a
 	// large library; a non-positive value uses the built-in default.
 	LibraryTTL time.Duration `mapstructure:"library_ttl"`
-}
-
-// ImportConfig groups the read-only import sources. PhotoPrism stays primary
-// during the migration; its import is incremental and repeatable. PhotoSorter is
-// the one-off (optionally repeatable) direct database migration from photo-sorter.
-type ImportConfig struct {
-	PhotoPrism  PhotoPrismConfig  `mapstructure:"photoprism"`
-	PhotoSorter PhotoSorterConfig `mapstructure:"photosorter"`
-}
-
-// PhotoSorterConfig holds the read-only connections to photo-sorter used by the
-// two migration paths. The direct-database path (internal/psimport) uses DSN; the
-// production HTTP feeds path (internal/psfeedsimport) uses BaseURL + Token. Both
-// should come from the environment, not a committed file. Each path is disabled
-// when its own field is empty.
-type PhotoSorterConfig struct {
-	// DSN is the read-only PostgreSQL connection string for the photo-sorter
-	// database used by the legacy direct-database migration (empty disables it).
-	// Set via KUKATKO_IMPORT_PHOTOSORTER_DSN.
-	DSN string `mapstructure:"dsn"`
-	// BaseURL is the root of the photo-sorter HTTP API used by the feeds importer
-	// (internal/psfeedsimport); empty disables the feeds import command and its
-	// admin trigger. Set via KUKATKO_IMPORT_PHOTOSORTER_BASE_URL.
-	BaseURL string `mapstructure:"base_url"`
-	// Token is the read-only psat_ bearer token for the feeds API. Set via
-	// KUKATKO_IMPORT_PHOTOSORTER_TOKEN; do not commit a real value.
-	Token string `mapstructure:"token"`
-	// PageSize is the requested feed/listing page size; a non-positive value
-	// defaults to the importer's own default.
-	PageSize int `mapstructure:"page_size"`
-}
-
-// PhotoPrismConfig holds the connection details for the read-only PhotoPrism API
-// client (internal/photoprism). The token is a long-lived app password / access
-// token and should come from the environment
-// (KUKATKO_IMPORT_PHOTOPRISM_TOKEN), not a committed file.
-type PhotoPrismConfig struct {
-	// BaseURL is the root of the PhotoPrism instance (empty disables the import).
-	BaseURL string `mapstructure:"base_url"`
-	// Token is the Bearer app password / access token used for every request.
-	Token string `mapstructure:"token"`
-	// PageSize is the photo listing page size; the client clamps it to
-	// PhotoPrism's cap (1000) and a non-positive value defaults to 1000.
-	PageSize int `mapstructure:"page_size"`
 }
 
 // DatabaseConfig holds the PostgreSQL connection string and pool sizing.
@@ -1081,15 +1034,6 @@ func setOpsDefaults(v *viper.Viper) {
 
 	v.SetDefault("bulk.max_batch_size", 1000)
 
-	v.SetDefault("import.photoprism.base_url", "")
-	v.SetDefault("import.photoprism.token", "")
-	v.SetDefault("import.photoprism.page_size", 1000)
-
-	v.SetDefault("import.photosorter.dsn", "")
-	v.SetDefault("import.photosorter.base_url", "")
-	v.SetDefault("import.photosorter.token", "")
-	v.SetDefault("import.photosorter.page_size", 500)
-
 	// Per-client-IP rate limits on heavy endpoints. Defaults are generous enough
 	// for normal human/UI use and only bite under abusive flooding. Set
 	// rate_per_sec to 0 to disable any individual rule.
@@ -1097,8 +1041,6 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("ratelimit.upload.burst", 30)
 	v.SetDefault("ratelimit.bulk.rate_per_sec", 2)
 	v.SetDefault("ratelimit.bulk.burst", 10)
-	v.SetDefault("ratelimit.import.rate_per_sec", 1)
-	v.SetDefault("ratelimit.import.burst", 3)
 	v.SetDefault("ratelimit.tiles.rate_per_sec", 50)
 	v.SetDefault("ratelimit.tiles.burst", 200)
 }

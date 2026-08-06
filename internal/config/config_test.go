@@ -166,8 +166,6 @@ func TestLoad_defaults(t *testing.T) {
 		{"ratelimit.upload.burst", cfg.RateLimit.Upload.Burst, 30},
 		{"ratelimit.bulk.rate_per_sec", cfg.RateLimit.Bulk.RatePerSec, 2.0},
 		{"ratelimit.bulk.burst", cfg.RateLimit.Bulk.Burst, 10},
-		{"ratelimit.import.rate_per_sec", cfg.RateLimit.Import.RatePerSec, 1.0},
-		{"ratelimit.import.burst", cfg.RateLimit.Import.Burst, 3},
 		{"ratelimit.tiles.rate_per_sec", cfg.RateLimit.Tiles.RatePerSec, 50.0},
 		{"ratelimit.tiles.burst", cfg.RateLimit.Tiles.Burst, 200},
 		{"metrics.enabled", cfg.Metrics.Enabled, true},
@@ -911,72 +909,46 @@ func TestResolveConfigPath(t *testing.T) {
 	})
 }
 
-// TestLoad_importPhotoPrismDefaults verifies the import.photoprism keys default
-// to empty (import disabled).
-func TestLoad_importPhotoPrismDefaults(t *testing.T) {
-	setMinimalEnv(t)
-	cfg, err := Load("")
+// TestLoad_retiredImportSectionsAreIgnored pins what happens to a config file
+// written before the PhotoPrism/photo-sorter migration was removed: the
+// import.photoprism, import.photosorter and ratelimit.import blocks no longer
+// map onto anything, and Load must ignore them rather than fail. Deployed
+// config.yaml files in production still carry them, so a strict decode here
+// would refuse to start the server on an untouched machine. Viper unmarshals
+// without mapstructure's ErrorUnused, which is what makes this hold.
+func TestLoad_retiredImportSectionsAreIgnored(t *testing.T) {
+	clearConfigEnv(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	yaml := "database:\n  url: postgres://localhost/db\n" +
+		"import:\n" +
+		"  photoprism:\n    base_url: https://photos.example\n    token: secret-app-token\n    page_size: 1000\n" +
+		"  photosorter:\n    dsn: postgres://localhost/sorter\n    base_url: https://sorter.example\n" +
+		"    token: psat_secret\n    page_size: 500\n" +
+		"ratelimit:\n  import:\n    rate_per_sec: 1\n    burst: 3\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
+		t.Fatalf("Load with retired import sections returned error: %v", err)
 	}
-	if cfg.Import.PhotoPrism.BaseURL != "" || cfg.Import.PhotoPrism.Token != "" {
-		t.Errorf("import.photoprism defaults = %+v, want empty", cfg.Import.PhotoPrism)
-	}
-	if cfg.Import.PhotoPrism.PageSize != 1000 {
-		t.Errorf("import.photoprism.page_size default = %d, want 1000", cfg.Import.PhotoPrism.PageSize)
+	if cfg.Database.URL != "postgres://localhost/db" {
+		t.Errorf("database.url = %q, want the value from the file", cfg.Database.URL)
 	}
 }
 
-// TestLoad_importPhotoPrismEnvOverride verifies the import.photoprism keys can be
-// supplied via the KUKATKO_ environment (secret token included).
-func TestLoad_importPhotoPrismEnvOverride(t *testing.T) {
+// TestLoad_retiredImportEnvIsIgnored is the same guarantee for the environment:
+// a deployment unit still exporting KUKATKO_IMPORT_PHOTOPRISM_* /
+// KUKATKO_IMPORT_PHOTOSORTER_* must start, not fail.
+func TestLoad_retiredImportEnvIsIgnored(t *testing.T) {
 	setMinimalEnv(t)
 	t.Setenv("KUKATKO_IMPORT_PHOTOPRISM_BASE_URL", "https://photos.example")
 	t.Setenv("KUKATKO_IMPORT_PHOTOPRISM_TOKEN", "secret-app-token")
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
-	if cfg.Import.PhotoPrism.BaseURL != "https://photos.example" {
-		t.Errorf("base_url = %q", cfg.Import.PhotoPrism.BaseURL)
-	}
-	if cfg.Import.PhotoPrism.Token != "secret-app-token" {
-		t.Errorf("token = %q", cfg.Import.PhotoPrism.Token)
-	}
-}
-
-// TestLoad_importPhotoSorterDefaults verifies the import.photosorter keys default
-// to empty/disabled (both the DSN migration and the feeds import off).
-func TestLoad_importPhotoSorterDefaults(t *testing.T) {
-	setMinimalEnv(t)
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
-	ps := cfg.Import.PhotoSorter
-	if ps.DSN != "" || ps.BaseURL != "" || ps.Token != "" {
-		t.Errorf("import.photosorter defaults = %+v, want empty DSN/BaseURL/Token", ps)
-	}
-	if ps.PageSize != 500 {
-		t.Errorf("import.photosorter.page_size default = %d, want 500", ps.PageSize)
-	}
-}
-
-// TestLoad_importPhotoSorterFeedsEnvOverride verifies the feeds importer's
-// base_url and (secret) token can be supplied via the KUKATKO_ environment.
-func TestLoad_importPhotoSorterFeedsEnvOverride(t *testing.T) {
-	setMinimalEnv(t)
-	t.Setenv("KUKATKO_IMPORT_PHOTOSORTER_BASE_URL", "https://sorter.example")
+	t.Setenv("KUKATKO_IMPORT_PHOTOSORTER_DSN", "postgres://localhost/sorter")
 	t.Setenv("KUKATKO_IMPORT_PHOTOSORTER_TOKEN", "psat_secret")
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
-	if cfg.Import.PhotoSorter.BaseURL != "https://sorter.example" {
-		t.Errorf("base_url = %q", cfg.Import.PhotoSorter.BaseURL)
-	}
-	if cfg.Import.PhotoSorter.Token != "psat_secret" {
-		t.Errorf("token = %q", cfg.Import.PhotoSorter.Token)
+	if _, err := Load(""); err != nil {
+		t.Fatalf("Load with retired import environment returned error: %v", err)
 	}
 }
 

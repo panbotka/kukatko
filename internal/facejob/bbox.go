@@ -3,8 +3,8 @@ package facejob
 // NormalizeBBox converts a face bounding box from sidecar pixel coordinates
 // [x1, y1, x2, y2] to normalized display-space coordinates [x, y, w, h] in 0..1,
 // mirroring photo-sorter's ConvertPixelBBoxToDisplayRelative. It is the single
-// source of truth for this conversion, shared with the photo-sorter feeds
-// importer (internal/psfeedsimport), whose faces feed carries the same raw pixel
+// source of truth for this conversion. It was shared with the retired
+// photo-sorter feeds importer, whose faces feed carried the same raw pixel
 // [x1, y1, x2, y2] boxes.
 //
 // The embeddings sidecar (InsightFace) auto-rotates the image by its EXIF

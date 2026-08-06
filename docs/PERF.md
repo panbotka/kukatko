@@ -371,7 +371,7 @@ go test -tags integration -run TestAlbumListPlanStaysProportionalToMemberships .
   embedding <=> … LIMIT n`, but that inner order is served by the HNSW index, so
   the probe is bounded by design rather than a scan of the table.
 - `internal/photos` (`store_places`, `store_years`, `store_timeline`),
-  `internal/review` `leaderboard`, `internal/importverify`, `internal/jobs`
+  `internal/review` `leaderboard`, `internal/jobs`
   stats, `internal/savedsearch` — plain aggregates or single-table listings, no
   per-group row pick.
 - The remaining `ORDER BY … LIMIT 1` statements (`internal/jobs` claim,
@@ -508,8 +508,9 @@ was never Kukátko's problem alone — photoprism, mariadb and the embeddings
 sidecar were all in the blast radius. A logged-in user clicking through
 `/review` could take the whole box down.
 
-**Attribution — measured, not guessed.** `import photoprism --full` was sampled
-every 15 s for a whole run and peaked at **33 MB**, so it was not the importer;
+**Attribution — measured, not guessed.** The PhotoPrism import (then still in the
+binary) was sampled every 15 s for a whole `--full` run and peaked at **33 MB**,
+so it was not the importer;
 the idle serve process holds 45–60 MB. The log at that minute carries
 `review: queue rebuild hit its deadline, serving a partial queue` and a
 `GET /api/v1/review/queue` lasting **15 086 ms** — the rebuild deadline firing,

@@ -20,9 +20,10 @@
 //     one corrupt JPEG never aborts a 2000-file run.
 //
 // The run is recorded through internal/importer under importer.SourceFolder, so
-// it shows up in /import and GET /import/runs beside the PhotoPrism and
-// photo-sorter runs. It records no high-watermark: a folder has no source
-// timestamp to resume from, the content hash does that job.
+// it shows up in /import and GET /import/runs beside the finished PhotoPrism and
+// photo-sorter migration runs. It is the only source still written. It records no
+// high-watermark: a folder has no source timestamp to resume from, the content
+// hash does that job.
 //
 // Concurrency is deliberately small (see DefaultConcurrency): thumbnailing a
 // wide fan-out of large images on a 16 GB box will swap the machine solid.

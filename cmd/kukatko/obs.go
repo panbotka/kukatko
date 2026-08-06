@@ -56,15 +56,6 @@ func workerObserver(reg *metrics.Registry) worker.Observer {
 	return reg
 }
 
-// importObserver returns reg as an importer.ProgressObserver, or a nil interface
-// when reg is nil so the import services use their no-op observer.
-func importObserver(reg *metrics.Registry) importer.ProgressObserver {
-	if reg == nil {
-		return nil
-	}
-	return reg
-}
-
 // creditMeter returns reg as a placesjob.CreditMeter, or a nil interface when
 // reg is nil so the places job uses its no-op meter.
 func creditMeter(reg *metrics.Registry) placesjob.CreditMeter {

@@ -8,11 +8,12 @@
 //
 // This package deletes on purpose, and the deployment it was written for has no
 // backup of its own (docs/READINESS_AUDIT.md §4: S3 backup and the restore
-// rehearsal were waived by an explicit owner decision). A misfire therefore
-// cannot be undone from a dump — only by re-importing from PhotoPrism, which is
-// the rollback the whole cutover leans on. So the interesting part of this
-// package is not the truncation, which is one statement, but everything that has
-// to be true before it runs:
+// rehearsal were waived by an explicit owner decision). It used to have one
+// rollback left — re-importing from PhotoPrism — and that is gone too: the
+// migration finished in August 2026 and its importers were removed. A misfire is
+// now simply unrecoverable. So the interesting part of this package is not the
+// truncation, which is one statement, but everything that has to be true before
+// it runs:
 //
 //   - Nothing is deleted unless the caller sets Options.Execute. A run without it
 //     counts what it would delete and stops.
@@ -48,8 +49,8 @@
 // # What it never touches
 //
 // The accounts, sessions, API tokens, the announcement, the audit trail and the
-// migration history (preservedTables), and both source libraries: PhotoPrism and
-// photo-sorter are read-only sources this package has no client of.
+// import-run history (preservedTables) — the last of which is the only surviving
+// record of where the library came from.
 package reset
 
 import (

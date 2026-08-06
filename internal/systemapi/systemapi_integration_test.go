@@ -136,13 +136,12 @@ func TestSystemStatus_Aggregates(t *testing.T) {
 		t.Fatalf("enqueue b: %v", err)
 	}
 
-	// One completed PhotoPrism run is the latest for that source.
-	run, err := env.runs.Start(ctx, importer.SourcePhotoPrism)
+	// One completed folder import is the latest run the dashboard reports.
+	run, err := env.runs.Start(ctx, importer.SourceFolder)
 	if err != nil {
 		t.Fatalf("start run: %v", err)
 	}
-	watermark := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	if err := env.runs.Complete(ctx, run.ID, &watermark, importer.Counts{Imported: 9}); err != nil {
+	if err := env.runs.Complete(ctx, run.ID, nil, importer.Counts{Imported: 9}); err != nil {
 		t.Fatalf("complete run: %v", err)
 	}
 
@@ -169,11 +168,8 @@ func TestSystemStatus_Aggregates(t *testing.T) {
 	if got.Backup.Configured {
 		t.Error("backup configured, want not configured")
 	}
-	if got.Imports.PhotoPrism == nil || got.Imports.PhotoPrism.Counts.Imported != 9 {
-		t.Errorf("imports.photoprism = %+v, want imported 9", got.Imports.PhotoPrism)
-	}
-	if got.Imports.PhotoSorter != nil {
-		t.Errorf("imports.photosorter = %+v, want nil", got.Imports.PhotoSorter)
+	if got.Imports.Folder == nil || got.Imports.Folder.Counts.Imported != 9 {
+		t.Errorf("imports.folder = %+v, want imported 9", got.Imports.Folder)
 	}
 	if got.Storage.OriginalsBytes != 256 {
 		t.Errorf("storage.originals = %d, want 256", got.Storage.OriginalsBytes)

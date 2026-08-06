@@ -97,10 +97,12 @@ export interface BackupStatus {
   }
 }
 
-/** Last-import-per-source section (`system.Imports`). */
+/**
+ * Last-import section (`system.Imports`): the most recent `kukatko import dir`
+ * run, the only import that can still happen. Null when none has ever run.
+ */
 export interface ImportsStatus {
-  photoprism: ImportRun | null
-  photosorter: ImportRun | null
+  folder: ImportRun | null
 }
 
 /** On-disk storage usage section (`system.StorageUsage`). */

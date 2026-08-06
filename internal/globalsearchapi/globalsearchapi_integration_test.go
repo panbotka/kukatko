@@ -271,6 +271,10 @@ func TestGlobalSearch_directUID(t *testing.T) {
 		{"person", env.uids["person"], "person", "person", env.uids["person"], "Alice"},
 		{"marker", env.uids["marker"], "marker", "photo", env.uids["photo"], "Beach sunset"},
 		{"stack", env.uids["stack"], "stack", "photo", env.uids["photo"], "Beach sunset"},
+		// A shipped feature (v0.5.0) and the regression to fear after the
+		// PhotoPrism/photo-sorter import was removed in August 2026: paste a `pt…`
+		// source id into search and the app must still take you to that photo.
+		// `photos.photoprism_uid` is provenance, not an import leftover.
 		{"photoprism", uidFixturePhotoprism, "photoprism", "photo", env.uids["photo"], "Beach sunset"},
 	}
 	for _, tt := range tests {
