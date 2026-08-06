@@ -159,7 +159,7 @@ jako *„napsal jsi to špatně"*.
 
 **Návrh.**
 1. Přepsat placeholder i nápovědu tak, aby říkaly pravdu, např.
-   *„Hledat — text, nebo filtr jako `year:1965` či `person:Anna`"*.
+   *„Hledat — text, nebo filtr jako `year:1965` či `person:Jarmila`"*.
 2. Přidat k poli stejnou ikonu **?**, která na `/search` otevírá `SearchQueryHelp`.
 3. Ukazovat v knihovně **stejné upozornění na neznámý filtr**, jaké už `/search` má
    (parser ho vrací, jen se nevykreslí).
