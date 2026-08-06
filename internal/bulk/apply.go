@@ -214,7 +214,7 @@ func (o Operations) photoColumnUpdate(uid string) (string, []any, bool) {
 	if o.Title != nil {
 		appendSet("title", *o.Title)
 		// The title is now the user's: an incremental PhotoPrism re-import must not
-		// revert it (see photos.Photo.TitleEdited and internal/ppimport).
+		// revert it (see photos.Photo.TitleEdited).
 		appendSet("title_edited", true)
 	}
 	if o.Description != nil {

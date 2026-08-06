@@ -1,5 +1,18 @@
 # Migration audit — PhotoPrism → Kukátko
 
+> ## ⛳ Closed — the migration is done and its code is gone
+>
+> The migration this document audits **finished on 2026-08-05** (`import verify` → COMPLETE) and
+> its importers were **removed on 2026-08-06**: `internal/ppimport`, `internal/psimport`,
+> `internal/psfeedsimport`, `internal/importverify` and the
+> `internal/photoprism`/`internal/photosorter`/`internal/psfeeds` clients no longer exist. Every
+> package path and every "recommended fix" below is therefore about code that is no longer in the
+> tree. The field-by-field mapping is kept as the **record of what came across and what was
+> deliberately dropped** — the only account of how the catalogue's 20 647 photos got their data.
+>
+> The mapping's outputs are still live: `photos.photoprism_uid`, `photos.photoprism_file_hash`,
+> `photos.photosorter_uid` and `photoprism_aliases`.
+
 - **Audit date:** 2026-07-17
 - **Audited commit:** `6e2600e` (branch `main`)
 - **Scope:** the complete field-by-field mapping by which the import from a running

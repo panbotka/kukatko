@@ -1,13 +1,16 @@
-// Package importer records the history of import and migration runs. Each run of
-// the PhotoPrism import or the photo-sorter migration is tracked in the
-// import_runs table together with a high-watermark — the largest source
-// timestamp processed — so the next run can resume incrementally from where the
-// last successful run left off (see ARCHITECTURE.md §5.2, §9, §10).
+// Package importer records the history of import runs and the per-photo/per-file
+// failures they hit. Every run is a row in import_runs; the only importer that
+// still produces them is `kukatko import dir` (internal/dirimport).
+//
+// The table is also the catalogue's provenance record. The one-off migration
+// from PhotoPrism and photo-sorter finished in August 2026 and its importers are
+// gone, but its rows — and the SourcePhotoPrism/SourcePhotoSorter/
+// SourcePhotoSorterFeeds constants they are written under — stay, because they
+// are the only account of where 20 647 photos came from. Nothing writes those
+// sources any more; everything still reads them.
 //
 // A run progresses through a small lifecycle: Start opens a row in the running
-// state, UpdateCounts records progress, and Complete or Fail closes it. Only a
-// completed run advances the cursor returned by LatestWatermark, so a crashed or
-// failed run leaves the watermark untouched and the work is simply retried.
+// state, UpdateCounts records progress, and Complete or Fail closes it.
 package importer
 
 import (
@@ -27,21 +30,23 @@ import (
 type Source string
 
 const (
-	// SourcePhotoPrism is the read-only, repeatable import from a running
-	// PhotoPrism instance.
+	// SourcePhotoPrism is the finished read-only import from a running PhotoPrism
+	// instance. Retired: nothing writes it any more, but the completed runs stay
+	// in the table and must keep decoding.
 	SourcePhotoPrism Source = "photoprism"
-	// SourcePhotoSorter is the one-off (optionally repeatable) migration from the
-	// photo-sorter database.
+	// SourcePhotoSorter is the finished direct-database migration from
+	// photo-sorter. Retired like SourcePhotoPrism.
 	SourcePhotoSorter Source = "photosorter"
-	// SourcePhotoSorterFeeds is the read-only enrichment of PhotoPrism-imported
+	// SourcePhotoSorterFeeds is the finished enrichment of PhotoPrism-imported
 	// photos with photo-sorter's pre-computed embeddings and faces, copied 1:1 from
-	// its HTTP migration feeds (internal/psfeedsimport). It is distinct from
-	// SourcePhotoSorter (the direct-database photo migration) so their run history
-	// and watermarks stay separate.
+	// its HTTP migration feeds. It was kept distinct from SourcePhotoSorter (the
+	// direct-database photo migration) so their run history stayed separate.
+	// Retired like the other two.
 	SourcePhotoSorterFeeds Source = "photosorter_feeds"
 	// SourceFolder is a `kukatko import dir` run: a directory of originals
-	// ingested from disk. It has no source timestamp to resume from and so never
-	// records a high-watermark; re-running is made safe by the SHA256 dedup.
+	// ingested from disk. It is the only source still produced. It has no source
+	// timestamp to resume from and so never records a high-watermark; re-running is
+	// made safe by the SHA256 dedup.
 	SourceFolder Source = "folder"
 )
 
@@ -65,17 +70,16 @@ type Status string
 const (
 	// StatusRunning marks a run that has started but not yet finished.
 	StatusRunning Status = "running"
-	// StatusDone marks a run that finished successfully; its watermark is
-	// eligible to resume the next incremental run.
+	// StatusDone marks a run that finished successfully with no unresolved
+	// per-photo or per-file failure.
 	StatusDone Status = "done"
 	// StatusPartial marks a run that finished its scan but recorded at least one
-	// unresolved per-photo or per-file failure (see import_failures). Like a failed
-	// run its watermark is ignored (LatestWatermark reads only 'done' runs), so a
-	// re-run retries the same window; unlike a failed run it did complete its pass,
-	// so the aggregate counts are final and the individual failures are listable.
+	// unresolved per-photo or per-file failure (see import_failures). Unlike a
+	// failed run it did complete its pass, so the aggregate counts are final and
+	// the individual failures are listable.
 	StatusPartial Status = "partial"
-	// StatusFailed marks a run that aborted with an error; its watermark is
-	// ignored so the next run retries the same window.
+	// StatusFailed marks a run that aborted with an error before finishing its
+	// pass, so its counts are whatever it managed before giving up.
 	StatusFailed Status = "failed"
 )
 
@@ -114,23 +118,6 @@ type Counts struct {
 	// Failed is the number of photos that errored without aborting the run.
 	Failed int `json:"failed"`
 }
-
-// ProgressObserver receives an import run's latest checkpointed photo tally so
-// it can be exported as metrics. It is satisfied by *metrics.Registry; the
-// import services call it after every page checkpoint. Implementations must be
-// safe for concurrent use. source is the import source ("photoprism" or
-// "photosorter").
-type ProgressObserver interface {
-	// SetImportProgress publishes the latest tally for source.
-	SetImportProgress(source string, imported, updated, skipped, failed int)
-}
-
-// NopProgressObserver is a ProgressObserver whose methods do nothing; the
-// import services fall back to it when no observer is configured.
-type NopProgressObserver struct{}
-
-// SetImportProgress does nothing.
-func (NopProgressObserver) SetImportProgress(string, int, int, int, int) {}
 
 // Run is one row of import_runs: a single import or migration run with its
 // lifecycle state, watermark, and tallies. FinishedAt and HighWatermark are nil
@@ -248,9 +235,12 @@ func (s *Store) finish(
 	return nil
 }
 
-// Complete closes the run identified by id, recording its final counts and the
-// high-watermark to resume the next incremental run from. A nil watermark stores
-// SQL NULL (the run produced no new cursor). The terminal status is chosen from
+// Complete closes the run identified by id, recording its final counts and an
+// optional high-watermark. A nil watermark stores SQL NULL, which is what every
+// live caller passes: the watermark was the incremental cursor of the retired
+// PhotoPrism/photo-sorter importers, and a folder import has no source timestamp
+// to resume from. The column stays because the finished migration's rows carry
+// one. The terminal status is chosen from
 // the run's persisted failures: 'partial' when the run recorded at least one
 // unresolved import_failures row, otherwise 'done'. Persist failures with
 // RecordFailures before calling Complete so they are counted. It returns
@@ -333,35 +323,6 @@ func (s *Store) List(ctx context.Context, limit, offset int) ([]Run, error) {
 	return runs, nil
 }
 
-// latestWatermarkSQL reads the watermark of the most recent successful run for a
-// source. Only done runs that produced a watermark are considered, so running and
-// failed runs never advance the cursor.
-const latestWatermarkSQL = `
-SELECT high_watermark
-FROM import_runs
-WHERE source = $1 AND status = 'done' AND high_watermark IS NOT NULL
-ORDER BY finished_at DESC
-LIMIT 1`
-
-// LatestWatermark returns the high-watermark of the most recent successful run
-// for source, which the next incremental run should resume from. The boolean is
-// false when no successful run with a watermark exists yet (a first, full run).
-// It returns ErrInvalidSource if source is not recognised.
-func (s *Store) LatestWatermark(ctx context.Context, source Source) (time.Time, bool, error) {
-	if !source.Valid() {
-		return time.Time{}, false, fmt.Errorf("%w: %q", ErrInvalidSource, source)
-	}
-	var watermark time.Time
-	err := s.pool.QueryRow(ctx, latestWatermarkSQL, string(source)).Scan(&watermark)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return time.Time{}, false, nil
-	}
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("importer: latest watermark for %s: %w", source, err)
-	}
-	return watermark, true, nil
-}
-
 // latestRunSQL reads the most recently started run for a source regardless of
 // its status, so the admin dashboard can show the last run (running, done or
 // failed) of each source. The id tiebreaker keeps the order stable when two runs
@@ -375,8 +336,8 @@ LIMIT 1`
 
 // LatestRun returns the most recently started run for source, whatever its
 // status. The boolean is false when the source has never run. It returns
-// ErrInvalidSource if source is not recognised. Unlike LatestWatermark it does
-// not filter on status, so a running or failed run is reported too.
+// ErrInvalidSource if source is not recognised. It does not filter on status, so
+// a running or failed run is reported too.
 func (s *Store) LatestRun(ctx context.Context, source Source) (Run, bool, error) {
 	if !source.Valid() {
 		return Run{}, false, fmt.Errorf("%w: %q", ErrInvalidSource, source)

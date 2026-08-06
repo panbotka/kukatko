@@ -53,9 +53,6 @@ type Registry struct {
 	embeddingDuration *prometheus.HistogramVec
 	embeddingUp       prometheus.Gauge
 
-	// Import progress (latest checkpointed run tally per source/outcome).
-	importProgress *prometheus.GaugeVec
-
 	// Thumbnail generation.
 	thumbnailDuration prometheus.Histogram
 
@@ -144,12 +141,6 @@ func (r *Registry) registerExternal() {
 		Name:      "service_up",
 		Help:      "Whether the embeddings sidecar responded to its last call (1 = reachable, 0 = offline).",
 	})
-	r.importProgress = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: "import",
-		Name:      "run_photos",
-		Help:      "Latest checkpointed import-run photo tally, partitioned by source and outcome.",
-	}, []string{"source", "outcome"})
 	r.thumbnailDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: "thumbnail",
@@ -163,8 +154,7 @@ func (r *Registry) registerExternal() {
 		Name:      "credits_spent_total",
 		Help:      "Total mapy.com reverse-geocode credits spent by the places job since start.",
 	})
-	r.reg.MustRegister(r.embeddingDuration, r.embeddingUp, r.importProgress,
-		r.thumbnailDuration, r.geocodeCredits)
+	r.reg.MustRegister(r.embeddingDuration, r.embeddingUp, r.thumbnailDuration, r.geocodeCredits)
 }
 
 // Handler returns an http.Handler that serves the registered metrics in the

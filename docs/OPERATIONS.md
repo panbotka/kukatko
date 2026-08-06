@@ -28,45 +28,6 @@ configuration key both here **and** into `config.example.yaml`.
   once, before the server accepts anything. Run `kukatko migrate` ahead of the deploy if that
   downtime matters; see `docs/PERF.md` §3),
   `kukatko migrate` (runs pending migrations on their own and exits),
-  `kukatko migrate photosorter` (synchronous read-only incremental **data migration from photo-sorter** —
-  `psimport`; applies DB migrations, then `Service.Migrate`; needs `import.photosorter.dsn`, otherwise
-  `errPSMigrateNotConfigured`; for ops/cron without a running server),
-  `kukatko import photoprism` (synchronous read-only incremental import from PhotoPrism — `ppimport`;
-  needs `import.photoprism.base_url`, otherwise an error; for ops/cron without a running server;
-  a **scoped run** = the library can be migrated in slices: `--album <photoprism-uid>` (an album's photos),
-  `--label <slug>` (photos with that label, e.g. `sdh`), `--person <name>` (photos the given
-  subject appears in, e.g. `"Aleš Kozák"`), `--year <YYYY>` (photos taken in that year). Flags **combine
-  and narrow the run** (the album goes into `s=`, the rest into `q=` as ANDed terms, verified against production:
-  `--album X --year 1985`). A scoped run pulls its slice in **full, regardless of photo age**
-  (it ignores the watermark) and **transfers each photo complete**: it creates and attaches **all** the albums the
-  photo is in, plus **all** its labels (with `source`/`uncertainty` from the source) — including the ones the
-  scope did not name, so a photo from three albums imported via `--album` into one ends up in all three
-  (this costs 1 extra photo-detail request; a full run does not do this and maps the structure by walking the
-  album/label catalog). People seed the face markers of imported photos. The run **does not advance the watermark**, so
-  a later full import still sees all photos. An unknown album uid → `ErrAlbumNotFound`, an unknown label
-  slug → `ErrLabelNotFound` (verified **before** downloading), a nonsensical year → `ErrInvalidYear`, no
-  flag → a full incremental run. It is idempotent — a re-run does not create a second album, label, or membership.
-  Used to verify the import against production and to pre-pull part of the library.
-  **`--full`** is the **repair path**: it re-lists the WHOLE source library, ignoring the resume watermark, because a
-  photo an earlier run dropped sits behind that watermark and no incremental run will ever offer it again. Already
-  imported photos resolve by uid and skip without a download, and the per-photo detail read stays gated on the real
-  watermark, so the pass costs a listing walk plus whatever it actually repairs; it advances the watermark as usual
-  and refuses to combine with the scoping flags (a scoped run already ignores the watermark). Run
-  `kukatko import verify` afterwards to confirm `missing=0`.
-  The run summary prints `imported/updated/skipped/deduplicated/failed`; **`deduplicated`** counts SOURCE photos whose
-  content was already catalogued under a different source photo — they collapse onto that row and an alias
-  (`photoprism_aliases`) keeps their uid resolvable, so they are accounted for rather than silently lost),
-  `kukatko import photosorter-feeds` (synchronous **feeds enrichment** — `internal/psfeedsimport`; applies DB
-  migrations, then `Service.Import`; needs `import.photosorter.base_url` (and `token`), otherwise
-  `errFeedsImportNotConfigured`. This is the **production** photo-sorter migration path: in production
-  photo-sorter holds no photos of its own, only vectors/faces keyed by the PhotoPrism UID, so this pages the
-  read-only `/api/v1/embeddings` + `/api/v1/faces` feeds (`psat_` bearer token) and attaches photo-sorter's
-  **1:1** CLIP embeddings and InsightFace faces — plus the markers and subject assignments the faces feed
-  carries — to the already-imported photo whose `photoprism_uid` matches the feed's `photo_uid`, **without any
-  GPU recompute**. Idempotent and re-runnable; a feed entry whose photo is not imported yet is **skipped**, not
-  an error. The same pass also runs as the background `ps_feeds_import` job triggered from
-  `POST /api/v1/import/photosorter-feeds`. The legacy DSN-based `migrate photosorter` path is irrelevant for
-  this deployment (photo-sorter has no native photos here)),
   **`kukatko import dir <path>`** (uploads a **directory from disk** — `internal/dirimport`; see below),
   `kukatko backup` (synchronous one-off **S3 backup** — `internal/backup`; pg_dump + sync of
   originals + retention; needs `backup.s3.{endpoint,bucket}`, otherwise `errBackupNotConfigured`;
@@ -138,7 +99,8 @@ pipeline as a browser upload** (`internal/ingest`): stream + SHA256, metadata, t
 `YYYY/MM`, thumbnails, `image_embed`/`face_detect` jobs onto the queue. The source directory is **read only** —
 originals are copied, never moved or modified. For ops/cron without a running server (it applies
 migrations and opens the DB itself); the run is recorded in `import_runs` as source `folder`, so it is visible
-in `/import` and in `GET /import/runs` alongside PhotoPrism and photo-sorter runs.
+in `/import` and in `GET /import/runs` alongside the finished migration's runs. It is the **only** source
+still written.
 
 **It is always safe to run again.** Identity is the SHA256 of the content: anything already in the library is reported
 as a duplicate (even under a different name — the listing shows both paths) and nothing is written. The run is also
@@ -258,39 +220,24 @@ kukatko storage migrate-to-r2 --concurrency 4                # upload, leave ori
 kukatko storage migrate-to-r2 --delete-local                 # upload and clean up after itself
 ```
 
-### `kukatko import verify`
+### Retired: the PhotoPrism / photo-sorter migration
 
-Reconciles the import sources against the catalogue and prints whether **the import is complete and nothing
-is missing** (`internal/importverify`). Read-only: it opens the DB, applies migrations, then pulls the source
-totals — PhotoPrism's photo count, per-type counts (`type:raw`/`type:video`) and each photo's `Files[]`, and
-photo-sorter's feeds `GET /api/v1/stats` (`total_photos`/`photos_with_embeddings`/`total_faces`) — and compares
-them against Kukátko, listing what is missing: PhotoPrism UIDs not imported, photos missing an original file
-(e.g. a dropped RAW sibling), photos missing their photo-sorter embedding/faces, and albums/labels/people not
-transferred. The SHA256/SHA1-dedup delta is accounted for separately (`deduplicated`), so the remaining delta
-is a real gap. **Albums are reconciled against the types the importer actually maps** (`ppimport.
-DefaultAlbumTypes`); PhotoPrism's auto-generated `month` albums are printed as `skipped by design` (and carried
-in the JSON as `structure.albums.skipped_types`/`skipped_by_design_count`) instead of being listed as missing —
-see [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md) phase 4 for what a clean report means. It does **not** record an `import_runs` row (it is a check, not an import). Needs
-`import.photoprism.*` configured (and `import.photosorter.*` for the vectors section); exits **nonzero** when
-anything is missing, so a script/CI can gate on it. `--json` prints the full report as JSON.
+`kukatko import photoprism`, `kukatko import photosorter-feeds`, `kukatko migrate photosorter` and
+`kukatko import verify` are **gone**, together with the `POST /api/v1/import/{photoprism,photosorter,
+photosorter-feeds}` triggers and `GET /api/v1/import/verify`. The migration closed on 2026-08-05 with a
+COMPLETE reconciliation and will not be run again; keeping ~20 000 lines of importer alive to prove it
+was not worth it. See [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md) and
+[`MIGRATION_AUDIT.md`](MIGRATION_AUDIT.md) for what it did.
 
-```bash
-kukatko import verify            # human-readable reconciliation summary; exit 1 if incomplete
-kukatko import verify --json     # the full importverify.Report as JSON
-```
+What stays: the `import_runs`/`import_failures` history (`GET /api/v1/import/runs`,
+`GET /api/v1/import/failures`, the `/import` page) including the migration's own rows, and the
+`photos.photoprism_uid`/`photoprism_file_hash`/`photosorter_uid` columns — they are live data, not
+leftovers: `uid:pt…` search resolves through them and every metadata sidecar carries them.
 
-The same reconciliation is exposed over HTTP at `GET /api/v1/import/verify` (maintainer-only) and surfaced in
-the `/import` admin page's completeness-check section. The individual per-photo/per-file failures a run records
-(instead of only logging them) are persisted in `import_failures` and listed at `GET /api/v1/import/failures`.
-
-**Albums, labels and people are reconciled in both directions.** Beside `missing` (in the source, not in the
-catalogue) each structure section carries `surplus_count`/`surplus` — distinct catalogue names the source does
-not have — and the CLI prints them as `surplus=N` plus an `only in kukatko:` line with the names quoted. A
-surplus **never** makes the report incomplete: anything created in Kukátko itself is a legitimate one. It is
-reported because a one-directional check is blind to a row that should not exist at all —
-`people: source=104 kukatko=105 missing=0` read as clean while that extra subject was the nameless catch-all
-below, holding 16 532 markers. An empty name in the `only in kukatko:` list (printed as `""`) is exactly that
-tell-tale.
+An old `config.yaml` or unit file may still set `import.photoprism.*`, `import.photosorter.*` or
+`ratelimit.import.*`. Nothing maps onto those keys any more and Viper ignores them silently, so a
+deployment that was never cleaned up still starts (pinned by `TestLoad_retiredImportSectionsAreIgnored`
+and `TestLoad_retiredImportEnvIsIgnored` in `internal/config`).
 
 ### `kukatko maintenance nameless-subjects` — the nameless catch-all subject
 
@@ -328,8 +275,7 @@ kukatko maintenance nameless-subjects --undo /tmp/undo.json                # put
   partially outdated undo restores what it can.
 
 It is **not a migration**: it deletes catalogue rows the user might conceivably have wanted, so it stays an
-operator decision taken with the report in hand. `kukatko import verify` (above) is what surfaces the problem
-in the first place.
+operator decision taken with the report in hand.
 
 The same repair is on the admin **Údržba** page (`/maintenance`, maintainer-only, `GET`/`POST
 /api/v1/maintenance/nameless-subjects[/detach|/restore]`, see `docs/API.md`), because SSH into the production
@@ -344,11 +290,12 @@ minutes of index maintenance. Watch the job queue on the same page for progress.
 
 ### `kukatko maintenance reset` — the guarded library wipe
 
-Empties this instance's library — every catalogue table and every object the configured store owns — so it can
-be re-imported from scratch (`internal/reset`). It is **phase 1 of [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md)**
-and the only command in the binary that destroys the library on purpose. This deployment has **no S3 backup**
-([`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4), so the only way back from a misfire is a re-import from
-PhotoPrism: the guards below are the feature, not decoration.
+Empties this instance's library — every catalogue table and every object the configured store owns
+(`internal/reset`). It was **phase 1 of [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md)** and is the only command in
+the binary that destroys the library on purpose. This deployment has **no S3 backup**
+([`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4), and since the migration closed and its importers were removed
+there is nothing to re-import from either: a misfire is now **unrecoverable**. The guards below are the
+feature, not decoration.
 
 **What it deletes.** The 25 catalogue tables — `photos`, `photo_files`, `albums`, `album_photos`, `labels`,
 `photo_labels`, `subjects`, `markers`, `faces`, `face_clusters`, `face_detections`, `face_confirmations`,
@@ -360,13 +307,9 @@ not classified makes Postgres refuse the statement instead of silently widening 
 it deletes the `YYYY/MM` originals, the `thumb/` thumbnails and the `sidecars/` metadata, plus the local
 thumbnail cache under `storage.cache_path`.
 
-Emptying `import_runs` is load-bearing rather than incidental: the incremental import's **high-watermark**
-lives there (`internal/importer`), so wiping it is what makes phase 2 re-import the whole source library
-instead of only what changed since the last run.
-
 **What it never touches.** `users`, `sessions`, `api_tokens`, `announcements`, `audit_log` and
 `schema_migrations` — a wipe must not lock you out of the instance you just wiped nor erase the record of the
-wipe. And it has no client of PhotoPrism or photo-sorter: they are read-only sources and the rollback.
+wipe.
 
 **The guards** (all on by default):
 
@@ -752,8 +695,8 @@ long-running and belong on the machine where the instance runs — so they remai
   jobs, default 1), `cooldown` (min. spacing between packets, default 5m). `ErrInvalidWake` validation:
   enabled requires a valid MAC + at least one target (`broadcast_addr`/`interface`).
 - **Rate-limit keys (`ratelimit.*`, `internal/ratelimit`):** per-client-IP token-bucket limits on
-  heavy endpoints. Sections `upload`/`bulk`/`import`/`tiles`, each `{rate_per_sec, burst}`;
-  defaults 5/30, 2/10, 1/3, 50/200; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
+  heavy endpoints. Sections `upload`/`bulk`/`tiles`, each `{rate_per_sec, burst}`;
+  defaults 5/30, 2/10, 50/200; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
   `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. Login has its own limiter (`auth.login_rate_*`), the geocode
   proxy too (`maps.*`).
 - **Maps/geocode keys (`maps.*`, `internal/config`):** `mapy_api_key` (server-side, env
@@ -1005,8 +948,9 @@ becomes a label value.
   (the route label is the chi route *pattern*, never a raw URL), `kukatko_jobs_started_total{type}` /
   `_finished_total{type,outcome}` / `_execution_duration_seconds{type,outcome}`,
   `kukatko_embedding_request_duration_seconds{operation,outcome}` + `_service_up`,
-  `kukatko_thumbnail_generation_duration_seconds`, `kukatko_import_run_photos{source,outcome}` (the
-  tally of a run **in progress**, checkpointed by the importer) and `kukatko_geocode_credits_spent_total`.
+  `kukatko_thumbnail_generation_duration_seconds` and `kukatko_geocode_credits_spent_total`.
+  `kukatko_import_run_photos{source,outcome}` — the tally of a run in progress — was removed with the
+  migration importers that checkpointed it; the last-run gauges below are unaffected.
 - **Infrastructure, sampled at scrape time:** `kukatko_db_pool_*` (live pgx pool stats),
   `kukatko_jobs_queue_depth{state}` / `_by_type{type}` / `_by_type_state{type,state}` (all three folded
   from **one** `GROUP BY type, state` — the two one-dimensional families are sums over the third, so

@@ -62,14 +62,14 @@ It is **not** for you if you are looking for:
 Around that sit the ordinary things a library needs and Kukátko has: albums and labels, videos
 (range streaming, live photos), maps and browsing by place, a slideshow, per-user favourites and
 ratings, bulk editing, multi-upload from a phone, duplicate detection, a trash with retention,
-accounts with four roles, a durable audit trail, S3 backup with a restore runbook, and import
-from PhotoPrism, from photo-sorter, from a Google Takeout export, or from any folder on disk.
+accounts with four roles, a durable audit trail, S3 backup with a restore runbook, and import from
+any folder on disk — a Google Takeout export included, sidecars and all.
 
 ## Status
 
 Kukátko is **deployed and in daily use** against a real family library of roughly twenty thousand
-photos. The migration off PhotoPrism is still under way — until the cutover, PhotoPrism stays the
-primary system and Kukátko imports from it read-only, in parallel.
+photos. The migration off PhotoPrism and photo-sorter finished in August 2026; the importers that
+carried it have been removed, and Kukátko now stands on its own.
 
 It is also, unambiguously, **a personal project and not a product**. There is no support, no
 release cadence you can rely on, and no promise that the next version will not change something
@@ -130,7 +130,7 @@ line (`kukatko import`, `backup`, `restore`, `maintenance`, `ctl`) are all cover
 | find my way around the frontend | [`docs/FRONTEND.md`](docs/FRONTEND.md) |
 | make it fast on small hardware | [`docs/PERF.md`](docs/PERF.md) |
 | rebuild an instance from a backup | [`docs/RESTORE.md`](docs/RESTORE.md) |
-| know what does and does not migrate from PhotoPrism and photo-sorter | [`docs/MIGRATION_AUDIT.md`](docs/MIGRATION_AUDIT.md), [`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md), [`docs/READINESS_AUDIT.md`](docs/READINESS_AUDIT.md) |
+| know what did and did not come across from PhotoPrism and photo-sorter | [`docs/MIGRATION_AUDIT.md`](docs/MIGRATION_AUDIT.md), [`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md), [`docs/READINESS_AUDIT.md`](docs/READINESS_AUDIT.md) |
 | read the security review | [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) |
 | read the usability review | [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md), [`docs/UX_RESEARCH.md`](docs/UX_RESEARCH.md) |
 | write code for it — conventions and hard rules | [`CLAUDE.md`](CLAUDE.md) |

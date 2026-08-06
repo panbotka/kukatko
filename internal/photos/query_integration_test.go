@@ -441,6 +441,9 @@ func TestQueryLanguage_uid(t *testing.T) {
 		{"reaches an archived photo", "uid:" + lib.uids["attic"], []string{"attic"}},
 		{"reaches a hidden photo", "uid:" + lib.uids["shelf"], []string{"shelf"}},
 		{"reaches a stack member", "uid:" + lib.uids["clip"], []string{"clip"}},
+		// Provenance, not an import leftover: `photos.photoprism_uid` and
+		// `photoprism_aliases` outlived the import that filled them (removed in
+		// August 2026) and still resolve a `pt…` id to its photo.
 		{"photoprism uid", "uid:" + winterPhotoprismUID, []string{"winter"}},
 		{"photoprism alias", "uid:" + ppAlias, []string{"winter"}},
 		{"unknown uid", "uid:ph000000000000000000000000", []string{}},

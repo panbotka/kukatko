@@ -78,13 +78,6 @@ const (
 	// originals that holds its metadata and curation, so the catalogue can be
 	// rebuilt from storage alone. It runs locally. See internal/sidecarexport.
 	TypeSidecar = "sidecar"
-	// TypePPImport imports a batch from PhotoPrism.
-	TypePPImport = "pp_import"
-	// TypePSMigrate migrates data from photo-sorter.
-	TypePSMigrate = "ps_migrate"
-	// TypePSFeedsImport enriches PhotoPrism-imported photos with photo-sorter's
-	// pre-computed embeddings and faces, copied 1:1 from its HTTP migration feeds.
-	TypePSFeedsImport = "ps_feeds_import"
 	// TypeBackup runs a backup.
 	TypeBackup = "backup"
 	// TypeNamelessDetach detaches one nameless catch-all subject: the subject row

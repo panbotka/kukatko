@@ -70,9 +70,9 @@ function status(overrides: Partial<SystemStatus> = {}): SystemStatus {
     },
     backup: { configured: true, running: false, last_finished_at: '2026-06-01T10:00:00Z' },
     imports: {
-      photoprism: {
+      folder: {
         id: 1,
-        source: 'photoprism',
+        source: 'folder',
         started_at: '2026-06-01T09:00:00Z',
         finished_at: '2026-06-01T09:30:00Z',
         status: 'done',
@@ -80,7 +80,6 @@ function status(overrides: Partial<SystemStatus> = {}): SystemStatus {
         counts: { imported: 9, updated: 0, skipped: 0, failed: 0 },
         last_error: '',
       },
-      photosorter: null,
     },
     storage: {
       originals_bytes: 1048576,
@@ -254,7 +253,7 @@ describe('SystemStatusPage', () => {
 
   it('links the import and maintenance quick actions to their flows', async () => {
     renderPage()
-    expect(await screen.findByRole('link', { name: 'Trigger import' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'Import history' })).toHaveAttribute(
       'href',
       '/import',
     )

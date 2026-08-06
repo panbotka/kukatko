@@ -1,6 +1,7 @@
 package sidecarexport
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -53,8 +54,8 @@ func TestBuild_externalOmittedWhenNotImported(t *testing.T) {
 	}
 }
 
-// TestBuild_externalPresentWhenImported carries the source system's identifiers
-// so a re-import recognises what it already has.
+// TestBuild_externalPresentWhenImported carries the source system's identifiers,
+// which are a photo's provenance: the only record of where it came from.
 func TestBuild_externalPresentWhenImported(t *testing.T) {
 	t.Parallel()
 
@@ -68,6 +69,44 @@ func TestBuild_externalPresentWhenImported(t *testing.T) {
 	}
 	if doc.Identity.External.PhotoprismUID != "ppuid" {
 		t.Errorf("PhotoprismUID = %q, want ppuid", doc.Identity.External.PhotoprismUID)
+	}
+	if doc.Identity.External.PhotoprismFileHash != "pphash" {
+		t.Errorf("PhotoprismFileHash = %q, want pphash", doc.Identity.External.PhotoprismFileHash)
+	}
+}
+
+// TestMarshal_externalKeysSurviveTheImportRemoval pins the sidecar's wire format
+// for the source identifiers. Removing the PhotoPrism/photo-sorter import in
+// August 2026 made them look like import leftovers; they are not. 25 791 sidecar
+// files next to the originals in object storage already carry these exact keys,
+// and they are how a catalogue rebuilt from storage alone knows a photo's
+// provenance. Renaming or dropping one silently invalidates every one of them.
+func TestMarshal_externalKeysSurviveTheImportRemoval(t *testing.T) {
+	t.Parallel()
+
+	ppUID, ppHash, psUID := "pt8suk5b57jgshdz", "cd0123456789abcdef0123456789abcdef012345", "ps01"
+	doc := Build(Input{
+		Photo: photos.Photo{
+			UID:                "pht1",
+			PhotoprismUID:      &ppUID,
+			PhotoprismFileHash: &ppHash,
+			PhotosorterUID:     &psUID,
+		},
+		Now: fixedNow,
+	})
+	data, err := Marshal(doc)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	for _, want := range []string{
+		"external:",
+		"photoprism_uid: " + ppUID,
+		"photoprism_file_hash: " + ppHash,
+		"photosorter_uid: " + psUID,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("sidecar YAML does not contain %q:\n%s", want, data)
+		}
 	}
 }
 

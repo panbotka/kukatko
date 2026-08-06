@@ -605,38 +605,6 @@ bulk:
   # to the built-in default (1000).
   max_batch_size: 1000
 
-# Read-only import sources. PhotoPrism stays the primary catalog during the
-# migration; its import is incremental (high-watermark on UpdatedAt) and
-# repeatable.
-import:
-  photoprism:
-    # Root URL of the running PhotoPrism instance. Empty disables the import.
-    base_url: ""
-    # Long-lived app password / access token, sent as Authorization: Bearer on
-    # every request (PhotoPrism: `photoprism auth add -n Kukatko -s "photos albums"`).
-    # Set via KUKATKO_IMPORT_PHOTOPRISM_TOKEN; do not commit a real value.
-    token: ""
-    # Photo listing page size; the client clamps it to PhotoPrism's cap (1000).
-    page_size: 1000
-  photosorter:
-    # Read-only PostgreSQL DSN of the photo-sorter database for the legacy
-    # direct-database migration (internal/psimport). Empty disables the
-    # `kukatko migrate photosorter` command and the POST /api/v1/import/photosorter
-    # trigger. Set via KUKATKO_IMPORT_PHOTOSORTER_DSN; do not commit a real value.
-    dsn: ""
-    # HTTP feeds importer (internal/psfeedsimport): the production path. In
-    # production photo-sorter holds only vectors/faces keyed by the PhotoPrism
-    # photo UID, so this enriches PhotoPrism-imported photos with its 1:1
-    # embeddings + faces. base_url is the photo-sorter API root; empty disables the
-    # `kukatko import photosorter-feeds` command and the
-    # POST /api/v1/import/photosorter-feeds trigger. token is the read-only psat_
-    # bearer token. Set via KUKATKO_IMPORT_PHOTOSORTER_BASE_URL /
-    # KUKATKO_IMPORT_PHOTOSORTER_TOKEN; do not commit a real token.
-    base_url: ""
-    token: ""
-    # Requested feed/listing page size (the feed server clamps it per endpoint).
-    page_size: 500
-
 # Structured logging. Logs are emitted as JSON on stderr with a secret-redacting
 # hook (values whose key names a password/token/api_key/secret/cookie/dsn are
 # replaced with "[REDACTED]"). Override the level with KUKATKO_LOG_LEVEL.
@@ -647,7 +615,7 @@ log:
 
 # Prometheus metrics. When enabled, `kukatko serve` mounts GET /metrics
 # (unauthenticated) and instruments HTTP requests, the job queue/worker, the
-# embeddings sidecar, imports, thumbnail generation, the DB pool, and the library
+# embeddings sidecar, thumbnail generation, the DB pool, and the library
 # itself (photo/embedding/face/album counts and processing coverage). /metrics is
 # not authenticated — restrict it at the network layer (bind/firewall) when the
 # server is exposed publicly. Override with KUKATKO_METRICS_ENABLED.
@@ -677,9 +645,6 @@ ratelimit:
   bulk: # POST /photos/bulk (batch metadata edits)
     rate_per_sec: 2
     burst: 10
-  import: # POST /import/photoprism and /import/photosorter triggers
-    rate_per_sec: 1
-    burst: 3
   tiles: # GET /map/tiles/... (mapy.com tile proxy)
     rate_per_sec: 50
     burst: 200

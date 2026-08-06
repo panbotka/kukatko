@@ -58,7 +58,6 @@ func TestRegistry_exposesExpectedMetricNames(t *testing.T) {
 		"kukatko_import_last_run_start_timestamp_seconds",
 		"kukatko_embedding_request_duration_seconds",
 		"kukatko_embedding_service_up",
-		"kukatko_import_run_photos",
 		"kukatko_thumbnail_generation_duration_seconds",
 		"kukatko_geocode_credits_spent_total",
 		"kukatko_geocode_credits_remaining",
@@ -79,7 +78,6 @@ func exerciseAll(r *Registry) {
 	r.JobFinished("image_embed", OutcomeSuccess, 250*time.Millisecond)
 	r.ObserveEmbeddingCall("image", 10*time.Millisecond, nil)
 	r.SetEmbeddingUp(true)
-	r.SetImportProgress("photoprism", 1, 2, 3, 4)
 	r.ObserveThumbnail(5 * time.Millisecond)
 	r.GeocodeCreditSpent()
 	r.RegisterJobQueue(func(context.Context) (map[QueueCell]int, error) {

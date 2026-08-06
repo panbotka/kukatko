@@ -25,7 +25,6 @@ import (
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/obs"
 	"github.com/panbotka/kukatko/internal/placesjob"
-	"github.com/panbotka/kukatko/internal/ppimport"
 	"github.com/panbotka/kukatko/internal/reachability"
 	"github.com/panbotka/kukatko/internal/server"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -309,14 +308,8 @@ func buildServices(
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
-	importSvc, err := buildImportServiceOrNil(cfg, db, enqueuer, reg)
-	if err != nil {
-		return nil, backgroundServices{}, err
-	}
-	psMigrate := psMigrateHandlerOrNil(cfg, db, enqueuer, reg)
-	psFeeds := psFeedsHandlerOrNil(cfg, db)
 	jobWorker, jobAPI, processAPI, maintenanceAPI, err := buildJobs(cfg, db, jobStore, authAPI, enqueuer,
-		embedSvc, faceSvc, clusterSvc, importSvc, psMigrate, psFeeds, reg, geocodeBudget)
+		embedSvc, faceSvc, clusterSvc, reg, geocodeBudget)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
@@ -331,8 +324,7 @@ func buildServices(
 		server.WithAPI(jobAPI.RegisterRoutes),
 		server.WithAPI(processAPI.RegisterRoutes),
 		server.WithAPI(maintenanceAPI.RegisterRoutes),
-		// Import history is always mounted (import triggers self-gate).
-		server.WithAPI(buildImportAPI(cfg, db, jobStore, authAPI).RegisterRoutes),
+		server.WithAPI(buildImportAPI(db, authAPI).RegisterRoutes),
 	}, discoveryAPIOptions(cfg, db, authAPI, mediaStore, matchSvc), readAPIOptions(db, authAPI, mediaStore, sidecarSched))
 	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
 }
@@ -385,16 +377,4 @@ func readAPIOptions(
 		server.WithAPI(buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 	}
-}
-
-// buildImportServiceOrNil builds the PhotoPrism import service when a source is
-// configured, returning (nil, nil) otherwise so the caller mounts import history
-// without a trigger.
-func buildImportServiceOrNil(
-	cfg *config.Config, db *database.DB, enqueuer *jobs.Enqueuer, reg *metrics.Registry,
-) (*ppimport.Service, error) {
-	if !importConfigured(cfg) {
-		return nil, nil //nolint:nilnil // (nil, nil) is the documented "not configured" signal.
-	}
-	return buildImportService(cfg, db, enqueuer, reg)
 }

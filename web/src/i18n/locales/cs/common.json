@@ -1791,31 +1791,17 @@
     "back": "Zpět na domovskou stránku"
   },
   "import": {
-    "title": "Import a migrace",
-    "intro": "PhotoPrism zůstává primární úložiště. Import je pouze pro čtení, inkrementální a opakovatelný — bezpečně ho můžeš spustit znovu a naváže tam, kde skončil.",
-    "warnFirstRun": "První spuštění může být dlouhé a stáhne velké množství fotek. Další běhy už zpracují jen novinky.",
-    "confirmFirstRunTitle": "První běh importu",
-    "confirmFirstRun": "Tohle je první běh pro tento zdroj a může chvíli trvat. Spustit import?",
+    "title": "Import",
+    "intro": "Historie importních běhů a jejich chyb. Spouští se jen z příkazové řádky: `kukatko import dir` načte složku ze serverového disku. Migrace z PhotoPrismu a photo-sorteru skončila v srpnu 2026 a byla odstraněna — její běhy zůstávají v historii jako záznam o původu knihovny.",
     "maintainerOnly": "Tato stránka je dostupná pouze správcům systému.",
     "loading": "Načítání importů…",
     "error": "Stav importu se nepodařilo načíst.",
     "source": {
       "photoprism": "PhotoPrism",
       "photosorter": "Photo-sorter",
-      "folder": "Složka z disku"
+      "folder": "Složka z disku",
+      "photosorter_feeds": "Photo-sorter (feedy)"
     },
-    "photoprismDesc": "Inkrementální import z běžící instance PhotoPrismu (fotky, metadata, alba, štítky, lidé).",
-    "photosorterDesc": "Přímá migrace z databáze photo-sorteru (fotky, embeddingy, obličeje, alba, štítky).",
-    "start": "Spustit import",
-    "starting": "Spouštím…",
-    "inProgress": "Probíhá",
-    "notConfigured": "Tento zdroj není nakonfigurován.",
-    "noRuns": "Zatím žádné běhy.",
-    "lastRun": "Poslední běh",
-    "runningSince": "Běží od {{time}}",
-    "startedNotice": "Import byl zařazen a brzy se rozběhne.",
-    "conflictNotice": "Import už probíhá.",
-    "errorNotice": "Import se nepodařilo spustit. Zkus to prosím znovu.",
     "counts": {
       "imported": "Nové",
       "updated": "Aktualizované",
@@ -1845,34 +1831,6 @@
       "counts": "Počty",
       "lastError": "Poslední chyba",
       "empty": "Zatím žádné běhy importu."
-    },
-    "verify": {
-      "title": "Kontrola úplnosti",
-      "desc": "Porovná zdroje (PhotoPrism, photo-sorter) s katalogem Kukátka a řekne, co chybí. Může chvíli trvat — prochází celou knihovnu zdroje.",
-      "button": "Zkontrolovat úplnost",
-      "running": "Kontroluji…",
-      "complete": "Import je úplný — nic nechybí.",
-      "incomplete": "Import není úplný — něco chybí (viz níže).",
-      "listingShortfall": "Pozor: PhotoPrism hlásí {{reported}} položek, ale výpis jich vrátil jen {{served}} — {{n}} se do porovnání vůbec nedostalo. Čísla níže tedy popisují jen výřez knihovny, ne celou knihovnu, a „chybí 0“ nic nedokazuje.",
-      "error": "Kontrolu se nepodařilo provést.",
-      "notConfigured": "Zdroj vektorů (photo-sorter) není nakonfigurován; tato část se přeskakuje.",
-      "colCheck": "Kontrola",
-      "colSource": "Zdroj",
-      "colCatalog": "Kukátko",
-      "colCoverage": "Pokrytí zdroje",
-      "colMissing": "Chybí",
-      "vectorsScopeNote": "Pozor: u embeddingů a obličejů sloupec „Chybí“ počítá jen fotky, které už v katalogu jsou — vektor se nemá k čemu připojit, dokud fotka není naimportovaná. Může tedy ukazovat nulu i ve chvíli, kdy je většina zdroje ještě neimportovaná. Rozhoduje sloupec „Pokrytí zdroje“.",
-      "photos": "PhotoPrism fotky",
-      "files": "Soubory (např. RAW)",
-      "embeddings": "Embeddingy",
-      "faces": "Obličeje",
-      "albums": "Alba",
-      "labels": "Štítky",
-      "subjects": "Lidé",
-      "deduplicated": "Deduplikováno",
-      "albumsSkipped": "Alba typu {{types}} se záměrně neimportují (PhotoPrism si je generuje sám a pokrývá je časová osa) — přeskočeno: {{n}}. Nikdy se nepočítají jako chybějící.",
-      "sampleNote": "Zobrazeno prvních {{shown}} z {{total}}.",
-      "surplus": "Jen v Kukátku (zdroj je už nevrací)"
     },
     "failures": {
       "title": "Chyby importu",
@@ -2239,7 +2197,7 @@
     "imports": {
       "title": "Importy",
       "never": "zatím neproběhl",
-      "trigger": "Spustit import"
+      "history": "Historie importů"
     },
     "backup": {
       "title": "Záloha",

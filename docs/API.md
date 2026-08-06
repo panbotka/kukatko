@@ -730,81 +730,29 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   section `maps`). Without `maps.mapy_api_key`, tile/rgeocode/geocode return 503 (the location editor shows this
   as „vyhledávání míst není dostupné“ and continues on coordinates and a click into the map), GeoJSON
   works. Mounted by `server.WithAPI` (`buildMapsAPI` in `cmd/kukatko/maps.go`).
-- **Import API (`/api/v1`, `internal/importapi`, maintainer-only via `RequireMaintainer`):** triggers and
-  history of read-only imports. `GET /import/runs` (**always registered**) → `{runs,limit,offset,
-  sources:{photoprism,photosorter,photosorter_feeds}}` — a page of `import_runs` newest-started-first (query
-  `limit`≤200/`offset`, invalid → 400) + `sources` flags of which sources are configured (backing the
-  admin Import UI: showing/hiding sections). The history also carries runs of the **`folder`** source
-  (`kukatko import dir`, `internal/dirimport`) — those are triggered **only from the CLI** (they read a directory on
-  the server's disk), so they have no trigger endpoint or `sources` flag, but they appear in `runs` like any other run. `POST /import/photoprism` → `pp_import`,
-  `POST /import/photosorter` → `ps_migrate` (the legacy direct-DB migration) and
-  `POST /import/photosorter-feeds` → `ps_feeds_import` (the production path: enrich PhotoPrism-imported photos
-  with photo-sorter's 1:1 embeddings + faces, matched by `photoprism_uid`; configured via
-  `import.photosorter.base_url`/`token`) — each (only for configured sources, otherwise 404) enqueues one
-  singleton job → 202 `{job_id,status}`; `jobs.ErrDuplicate` (already running) → 409, another error → 500.
+- **Import API (`/api/v1`, `internal/importapi`, maintainer-only via `RequireMaintainer`):** the
+  **read-only** bookkeeping of imports — there is nothing here to trigger. `GET /import/runs` →
+  `{runs,limit,offset}` — a page of `import_runs` newest-started-first (query `limit`≤200/`offset`,
+  invalid → 400). The only source still written is **`folder`** (`kukatko import dir`,
+  `internal/dirimport`), which reads a directory on the server's disk and is therefore started **only
+  from the CLI**. The other sources in the history — `photoprism`, `photosorter`, `photosorter_feeds` —
+  are the migration that closed in August 2026; its importers were removed and its runs stay as the
+  catalogue's provenance record, so every reader must keep decoding them.
   A run's `counts` object is `{imported,updated,skipped,deduplicated,failed}`: **`deduplicated`** counts SOURCE
   photos whose content was already catalogued under a different source photo (they collapse onto that row and
-  an alias keeps their uid resolvable — see `internal/ppimport`), and runs recorded before the bucket existed
+  an alias keeps their uid resolvable — see `photoprism_aliases`), and runs recorded before the bucket existed
   simply have no key for it.
-  A run now also carries the **`partial`** status: it finished its scan but recorded ≥1 unresolved
-  per-photo/per-file failure (see `import_failures`), so it is deliberately not reported as a clean `done`
-  (and, like a failed run, does not advance the resume watermark). `GET /import/failures` (**always
-  registered**) → `{failures,limit,offset}` — a page of `import_failures` newest-recorded-first
+  A run can also carry the **`partial`** status: it finished its scan but recorded ≥1 unresolved
+  per-photo/per-file failure (see `import_failures`), so it is deliberately not reported as a clean `done`.
+  `GET /import/failures` → `{failures,limit,offset}` — a page of `import_failures` newest-recorded-first
   (`failure = {id,run_id,source,stage,photo_uid,source_ref,detail,error,created_at,resolved_at}`;
   `stage` ∈ `photo|file|marker|album_member|label|thumbnail|embedding|faces|phash|edit|metadata`), with the
   filters `?source=`/`?run_id=`/`?unresolved=true` and paging `?limit=`(≤200)/`?offset=` (invalid → 400;
-  an unknown source → 400). `GET /import/verify` (**always registered**) → the completeness
-  reconciliation report (`internal/importverify`): it pulls the source totals (PhotoPrism photo/per-type
-  counts + `Files[]`, photo-sorter feeds `/stats`) and reconciles them against the catalogue, returning
-  `{photoprism:{source_total,source_reported_total,listing_shortfall,source_by_type,imported_count,
-  deduplicated_count,missing_count,missing_uids,surplus_count,surplus_uids,
-  file_gap_count,file_gaps},vectors:{not_configured,source_*,catalog_*,embeddings_source_coverage,
-  faces_source_coverage,embeddings_missing_for_imported_photos,embeddings_missing_uids,
-  faces_missing_for_imported_photos,faces_missing_uids},
-  structure:{albums,labels,subjects (each {source_count,catalog_count,missing_count,missing,
-  surplus_count,surplus})},complete}`. Each structure section reconciles **both directions**: `surplus` lists
-  the distinct catalogue names the source does not have (sorted, capped like `missing`). It never affects
-  `complete` — anything created in Kukátko itself is a legitimate surplus — but it is the only place a row that
-  should not exist becomes visible: `subjects` reading `source_count:104, catalog_count:105, missing_count:0`
-  looked clean while the extra one was an empty-named catch-all holding 16 532 markers.
-  The `photoprism` section reconciles both directions too, and does not trust its own enumeration.
-  `source_total` is what the listing served; `source_reported_total` is what PhotoPrism says its library holds
-  (its own `GET /api/v1/config` aggregate, a code path the search never touches) and `listing_shortfall` is the
-  positive difference — above zero it **fails `complete`**, because every count beside it then describes a
-  window rather than the library. That is the state the report was in when it printed
-  `source=20660 kukatko=20647 deduplicated=13 missing=0 => COMPLETE` over a 20 677-photo source: the listing
-  asked for PhotoPrism's `order=updated`, which is also a `WHERE photos.updated_at > photos.created_at`, so
-  photos untouched since indexing were never served and so could never be counted missing (the order is now
-  pinned non-filtering, see `internal/photoprism` in `docs/PACKAGES.md`). The reported total is a **lower
-  bound** (pictures in review are subtracted from it, private ones hidden), so a listing serving *more* than it
-  is normal. `surplus_count`/`surplus_uids` are the catalogue's `photoprism_uid`s the enumeration never
-  yielded — a photo deleted in PhotoPrism after import leaves exactly that trace — reported, never enforced.
-  The `vectors` section answers **two different questions and names them apart**. The
-  `*_missing_for_imported_photos` counters are scoped to photos **already in the catalogue** (a vector cannot
-  attach to a photo that was never imported), so they legitimately read `0` on a catalogue holding a fraction
-  of the source; `embeddings_source_coverage`/`faces_source_coverage` are the `[0,1]` share of the **source's**
-  vectors Kukátko actually holds (`catalog_embeddings`/`source_photos_with_embeddings` and
-  `catalog_faces`/`source_total_faces`, rounded to 4 decimals, clamped — an empty source is `1`, a catalogue
-  larger than the source clamps to `1` rather than exceeding it). Their predecessors
-  `missing_embeddings_count`/`missing_faces_count` carried the first meaning under a name that read as the
-  second: a catalogue of 280 photos against a source of 20 670 reported `missing_embeddings_count: 0` next to
-  `source_photos_with_embeddings: 20092`, and only `complete:false` contradicted it — read at the point of no
-  return, that says the vector migration is finished (`docs/READINESS_AUDIT.md` §2.3). `complete` deliberately
-  does **not** require full source coverage: photo-sorter's population and PhotoPrism's need not line up, so
-  gating on it would make a finished import unreachable by construction (the trap §2.2's album types fell into);
-  it stays gated on the per-photo counters, and the coverage is what a reader judges the migration by.
-  `structure.albums` carries two more fields — `skipped_types` + `skipped_by_design_count` — because the
-  reconciliation is scoped to the album types the **importer** maps (`ppimport.DefaultAlbumTypes`, the single
-  source of truth): PhotoPrism's auto-generated `month` albums (560 on the production library, covered by
-  Kukátko's timeline) are counted there instead of being listed as missing forever, which is what used to make
-  a clean report unreachable by construction. `source_count` is therefore the album catalogue **minus** the
-  skipped types, not a shortfall.
-  It is synchronous and may take a while (it walks the whole source library); **503** when no import source
-  is configured, **502** on a source error. `deduplicated_count` accounts for the SHA256/SHA1-dedup delta
-  (a source photo whose file is already imported under another uid), so a legitimate delta is explainable.
-  The whole API is always mounted (`buildImportAPI` in `cmd/kukatko/import.go`), so the history works even
-  without a configured source. The frontend (`ImportPage`) polls `GET /import/runs` + `GET /jobs/stats` +
-  `GET /import/failures`, and runs `GET /import/verify` on demand from the completeness-check section.
+  an unknown source → 400).
+  **Removed with the migration:** `POST /import/photoprism`, `POST /import/photosorter`,
+  `POST /import/photosorter-feeds` and `GET /import/verify` (the completeness reconciliation) are gone —
+  they now 404. Mounted by `buildImportAPI` in `cmd/kukatko/import.go`. The frontend (`ImportPage`) polls
+  `GET /import/runs` + `GET /jobs/stats` + `GET /import/failures`.
 - **Backup API (`/api/v1`, `internal/backupapi`, maintainer-only via `RequireMaintainer`):** the status and trigger of
   the S3 backup. `GET /backup` → status + the last run (`{configured,running,last_started_at,
   last_finished_at,last_error,last_result}`; without configuration `configured:false`); `POST /backup`
@@ -949,7 +897,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **System status API (`/api/v1`, `internal/systemapi` + `internal/system`, maintainer-only via
   `RequireMaintainer`):** `GET /system/status` → one aggregated snapshot of operational health:
   `{version,database{reachable,error?},embeddings{online,url},jobs{by_state,by_type,total,dead_letter,
-  pending_embeddings},backup (=backup.Status),imports{photoprism,photosorter (=importer.Run|null)},
+  pending_embeddings},backup (=backup.Status),imports{folder (=importer.Run|null)},
   storage{originals_bytes,cache_bytes,free_bytes,total_bytes},
   maps{configured,state,degraded,detail?,checked_at?},
   geocode{configured,budget_enabled,limit,spent,remaining,window_seconds,resets_at?}}`. `maps` = the last observed mapy.com state

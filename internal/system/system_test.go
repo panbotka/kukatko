@@ -111,7 +111,10 @@ func healthyConfig(originals string) Config {
 			pending: 5,
 		},
 		Imports: fakeImports{runs: map[importer.Source]importer.Run{
-			importer.SourcePhotoPrism: {ID: 7, Source: importer.SourcePhotoPrism, Status: importer.StatusDone},
+			importer.SourceFolder: {ID: 7, Source: importer.SourceFolder, Status: importer.StatusDone},
+			// A finished migration run is still in the table; the dashboard section
+			// must not resurrect it as if it were live import state.
+			importer.SourcePhotoPrism: {ID: 4, Source: importer.SourcePhotoPrism, Status: importer.StatusDone},
 		}},
 		Backup:        fakeBackup{status: backup.Status{Configured: true, Running: true}},
 		EmbeddingURL:  "http://box:8000",
@@ -122,7 +125,7 @@ func healthyConfig(originals string) Config {
 
 // TestCollect_Aggregates verifies a healthy snapshot folds every section
 // correctly: job totals/dead-letter/pending, embeddings, backup, the latest
-// import per source, storage sizes and reachable database.
+// folder import, storage sizes and reachable database.
 func TestCollect_Aggregates(t *testing.T) {
 	t.Parallel()
 
@@ -149,11 +152,8 @@ func TestCollect_Aggregates(t *testing.T) {
 	if !status.Backup.Configured || !status.Backup.Running {
 		t.Errorf("backup = %+v, want configured + running", status.Backup)
 	}
-	if status.Imports.PhotoPrism == nil || status.Imports.PhotoPrism.ID != 7 {
-		t.Errorf("imports.photoprism = %+v, want run id 7", status.Imports.PhotoPrism)
-	}
-	if status.Imports.PhotoSorter != nil {
-		t.Errorf("imports.photosorter = %+v, want nil", status.Imports.PhotoSorter)
+	if status.Imports.Folder == nil || status.Imports.Folder.ID != 7 {
+		t.Errorf("imports.folder = %+v, want run id 7", status.Imports.Folder)
 	}
 	if status.Storage.OriginalsBytes != 120 {
 		t.Errorf("storage.originals = %d, want 120", status.Storage.OriginalsBytes)

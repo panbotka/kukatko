@@ -1,5 +1,24 @@
 # MIGRATION_PLAN — cutover from PhotoPrism + photo-sorter
 
+> ## ⛳ Closed — 2026-08-05
+>
+> **The cutover happened and this runbook is history.** `kukatko import verify` reported
+> COMPLETE: photos, faces, albums, labels and people all reconciled without a gap. Kukátko is
+> the primary photo app.
+>
+> On **2026-08-06** the code that carried the migration was **removed** — `internal/ppimport`,
+> `internal/psimport`, `internal/psfeedsimport`, `internal/importverify`, the
+> `internal/photoprism`/`internal/photosorter`/`internal/psfeeds` clients, the
+> `import photoprism` / `import photosorter-feeds` / `migrate photosorter` / `import verify`
+> commands, the `POST /api/v1/import/*` triggers, `GET /api/v1/import/verify` and the
+> `import.photoprism.*`/`import.photosorter.*` configuration. Roughly 20 000 lines that could
+> never run again. Every command and endpoint this document mentions is therefore **gone**;
+> the document is kept as the record of what was done, not as instructions.
+>
+> What stayed: the `photos.photoprism_uid`/`photoprism_file_hash`/`photosorter_uid` columns and
+> the `photoprism_aliases` table (provenance, `uid:pt…` search, every metadata sidecar), and the
+> migration's own rows in `import_runs`/`import_failures`.
+
 The concrete runbook for making Kukátko the primary photo app. This is the
 *executable finish-line*: when every box here is checked, PhotoPrism can go
 read-only.

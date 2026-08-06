@@ -32,9 +32,8 @@ SET photo_uid = excluded.photo_uid, photoprism_file_hash = excluded.photoprism_f
 
 // AddPhotoprismAlias records that the PhotoPrism photo ppUID is held by the
 // catalogue photo photoUID, whose content is byte-identical to it but which
-// already answers to another source uid (see migration 0046 and
-// internal/ppimport). ppFileHash is the source file's SHA1 provenance and may be
-// empty.
+// already answers to another source uid (see migration 0046). ppFileHash is the
+// source file's SHA1 provenance and may be empty.
 //
 // It is idempotent: recording the same alias twice is a no-op, and an alias whose
 // content ended up on a different row is re-pointed rather than rejected. It

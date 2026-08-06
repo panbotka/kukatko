@@ -72,10 +72,10 @@ const (
 
 // TakenAtSourceManual marks a capture time the user typed in, the taken_at_source
 // value internal/photoapi stamps on a manual edit. It mirrors LocationSourceManual
-// for coordinates and is the signal internal/ppimport reads to leave a
-// user-corrected capture time untouched on an incremental re-import. The rest of
-// the taken_at_source vocabulary ("exif", "unknown", "filename") lives with the
-// extractor that writes it (internal/exif).
+// for coordinates: it is the provenance that tells a later metadata pass the value
+// came from a person and must not be recomputed. The rest of the taken_at_source
+// vocabulary ("exif", "unknown", "filename") lives with the extractor that writes
+// it (internal/exif).
 const TakenAtSourceManual = "manual"
 
 // Photo is one catalogued image or video. Mutable text fields are plain strings
@@ -301,8 +301,8 @@ type MetadataUpdate struct {
 	// TitleEdited is the title's local-edit provenance (see Photo.TitleEdited). An
 	// edit path sets it true when the user changes the title; every other path
 	// carries the photo's current value through, so UpdateMetadata's whole-row write
-	// neither invents nor clears it. internal/ppimport reads it to decide whether a
-	// re-import may overwrite the title from PhotoPrism.
+	// neither invents nor clears it: a hand-written title stays distinguishable from
+	// one a source supplied.
 	TitleEdited bool   `json:"title_edited"`
 	Description string `json:"description"`
 	Notes       string `json:"notes"`

@@ -1,5 +1,17 @@
 # READINESS_AUDIT — is Kukátko complete enough to replace PhotoPrism?
 
+> ## ⛳ Historical — the cutover is done
+>
+> The cutover this document sized happened on **2026-08-05**, and on **2026-08-06** the import
+> code it measures (`internal/ppimport`, `internal/psimport`, `internal/psfeedsimport`,
+> `internal/importverify`, the `internal/photoprism`/`internal/photosorter`/`internal/psfeeds`
+> clients) was removed. Every file and line number below refers to code that is no longer in the
+> tree. Kept as the measurement it was, not as a current description.
+>
+> §4's accepted risks outlived it and got worse in one respect: there is still no S3 backup of
+> this deployment, and re-importing from PhotoPrism is no longer a rollback either, so
+> `kukatko maintenance reset` is now unrecoverable.
+
 Measured 2026-07-31 against the live production PhotoPrism (`fotky.kotrzina.cz`,
 version `251130` Plus), the live photo-sorter feeds and the running Kukátko dev
 instance on `:6480` (commit `ab3c7d5`).

@@ -9,8 +9,9 @@ components, config keys) live in `docs/` and you read them only when you need th
 ## What it is
 Kukátko = a standalone photo/video management app, a replacement for PhotoPrism (combines
 PhotoPrism + photo-sorter features, more robust). Full design: `docs/ARCHITECTURE.md`. Phase:
-active development via autonomous tasks; PhotoPrism stays **primary** until cutover (import is
-read-only, incremental).
+in production, active development via autonomous tasks. The migration from PhotoPrism and
+photo-sorter closed in August 2026 and its importers were removed; the only import left is
+`kukatko import dir`.
 
 ## Tech stack (binding)
 - **Backend: Go**, a single static binary, **`CGO_ENABLED=0`**. Module `github.com/panbotka/kukatko`.
@@ -39,7 +40,7 @@ Open **one** document based on what you're touching. Don't read them all preempt
 | Performance (thumbnails, vips, HNSW `ef_search`, indexes) | [`docs/PERF.md`](docs/PERF.md) |
 | Restore from backup / disaster recovery | [`docs/RESTORE.md`](docs/RESTORE.md) |
 | UX decisions and audit | [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md) |
-| The import field mapping (PhotoPrism + photo-sorter) — what migrates, what's dropped | [`docs/MIGRATION_AUDIT.md`](docs/MIGRATION_AUDIT.md) |
+| The finished migration (PhotoPrism + photo-sorter) — what came across, what was dropped | [`docs/MIGRATION_AUDIT.md`](docs/MIGRATION_AUDIT.md) |
 | Security audit — findings, severities, attack scenarios | [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) |
 
 ## Package map
@@ -82,9 +83,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`
 - `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity)
 - `internal/imgconvert` — HEIC/RAW/video → decodable JPEG (shell-out)
-- `internal/importapi` — maintainer-only import triggers + run history + failures listing + completeness verify
-- `internal/importer` — bookkeeping of import/migration runs + high-watermarks + persisted per-photo/per-file failures (`partial` status)
-- `internal/importverify` — import-completeness reconciliation (sources vs catalogue); read-only, records no run
+- `internal/importapi` — maintainer-only, read-only import bookkeeping: run history + failures listing
+- `internal/importer` — bookkeeping of import runs + persisted per-photo/per-file failures (`partial` status); keeps the finished migration's runs as provenance
 - `internal/ingest` — upload pipeline: stream, SHA256 dedup, metadata, thumbnails, enqueue jobs
 - `internal/jobs` — persistent job queue in Postgres (retry, dedup, backoff, `Defer`)
 - `internal/jobsapi` — maintainer-only `/jobs` (stats, list, requeue)
@@ -107,17 +107,11 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/phash` — perceptual hashes (pHash via DCT, dHash gradient)
 - `internal/photoapi` — read/curation API over the catalog: list, search, media, edit, faces, rating
 - `internal/photoedit` — applies non-destructive edits (crop/rotate/brightness/contrast), pure-Go
-- `internal/photoprism` — read-only HTTP client of a running PhotoPrism
 - `internal/photos` — **the photo-catalog core**, `Store` over pgx; dedup on SHA256 `file_hash`
-- `internal/photosorter` — read-only client of the photo-sorter PostgreSQL DB
 - `internal/places` — cache of reverse-geocoded places (side table `photo_places`)
 - `internal/placesapi` — `GET /places` (hierarchy of countries → cities with counts)
 - `internal/placesjob` — worker handler `places` (reverse geocode, rate-limited due to credits)
-- `internal/ppimport` — incremental **idempotent** import from PhotoPrism
 - `internal/processapi` — maintainer-only `/process/*` backfills (embeddings, faces, clusters, places)
-- `internal/psfeeds` — read-only HTTP client of photo-sorter's migration feeds (`/embeddings`, `/faces`, `/stats`); `psat_` bearer, keyset paging, behind an interface
-- `internal/psfeedsimport` — imports photo-sorter's 1:1 embeddings + faces from the feeds onto PhotoPrism-imported photos (matched by `photoprism_uid`), carrying markers/subjects; idempotent, no GPU recompute
-- `internal/psimport` — incremental **idempotent** direct migration from photo-sorter
 - `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
 - `internal/reachability` — cached background probe of the embeddings sidecar (atomic flag for `/capabilities`)
@@ -191,12 +185,12 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - **The embeddings sidecar is NOT built.** Kukátko calls the existing service on the **box** (same
   models as photo-sorter → 1:1 migration) at a configurable `embedding.url`. **The box is often
   offline** → jobs (`image_embed`, `face_detect`) wait in a **persistent queue** in Postgres, upload
-  and browsing work without it. External dependencies (sidecar, PhotoPrism API, mapy.com, S3) always
+  and browsing work without it. External dependencies (sidecar, mapy.com, S3) always
   behind an interface → fake/mock in tests.
 - **"Back always works":** view state (filters/sorting/search/page) lives in **URL query params**
   + History API.
-- **Import/migration:** store external IDs (`photoprism_uid`, `photoprism_file_hash`,
-  `photosorter_uid`). The PhotoPrism file hash is SHA1, Kukátko uses SHA256.
+- **Provenance:** `photos.photoprism_uid`, `photoprism_file_hash` and `photosorter_uid` are live
+  data, not import leftovers — they back uid search and every metadata sidecar. Never drop them.
 - **Per-user favorites** (not global). **Keep the mapy.com key server-side** (backend proxy).
 - Stream large files (upload/download/video) — don't hold them entirely in RAM.
 

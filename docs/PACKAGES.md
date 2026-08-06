@@ -109,8 +109,8 @@ to `## Package map` in `CLAUDE.md`.
   files — a RAW next to its JPEG — becomes one row per file grouped in one stack, and only the
   displayable one carries the `photoprism_uid`, so a sibling is found again by its own SHA1 alone;
   partial index from `0045`)/`GetByPhotosorterUID`/`SetPhotoprismRef`
-  (backfill `photoprism_uid`+`photoprism_file_hash` onto a photo deduplicated by SHA256 — the PhotoPrism
-  import calls it so the next increment short-circuits on the uid instead of re-downloading)/
+  (backfill `photoprism_uid`+`photoprism_file_hash` onto a photo deduplicated by SHA256, so the row
+  still answers to the source uid it came from)/
   `SetPhotoprismFileHash` (the same backfill for a NON-primary source file, **leaving `photoprism_uid`
   alone** — a sibling never claims the source photo's key)/
   **`AddPhotoprismAlias(ctx,ppUID,photoUID,ppFileHash)`**/**`GetByPhotoprismAlias(ctx,ppUID)`**/
@@ -145,8 +145,8 @@ to `## Package map` in `CLAUDE.md`.
   is always stamped — the file was read, whatever it said. Nothing outside `fileMetadataColumns` is
   touched: captions, `taken_at`, GPS, ratings and curation data are out of scope. `ErrPhotoNotFound`)/
   **`ApplyImportMetadata(ctx,uid,ImportMetadata) (changed,error)`**
-  (the write side of an **import from a foreign catalog** (`internal/ppimport`: the PhotoPrism `Details` block +
-  file-technical fields from the photo detail) onto a photo already in the catalog. Differs from
+  (the write side of an **import from a foreign catalog** (it carried the PhotoPrism `Details` block and
+  the file-technical fields of a photo detail) onto a photo already in the catalog. Differs from
   `FillFileMetadata` in **precedence**: the source **owns** its fields, so a non-empty value overrides what
   is in the photo (just like camera/exposure from the first import) — `subject`/`keywords`/`artist`/
   `copyright`/`license`/`software`/`camera_serial`/`color_profile`/`image_codec`/`projection`/
@@ -514,16 +514,16 @@ to `## Package map` in `CLAUDE.md`.
   **Exported normalizers for importers**: `NormalizeKeywords(raw) string` (a foreign comma/semicolon
   list → exactly the shape the own extraction stores: trim, junk gone, dedup, order preserved,
   joined by commas) and `CodecToken(s) string` (any codec spelling — `HEIC`, `image/x-canon-cr2`,
-  PhotoPrism's `jpeg` — → a token for `image_codec`, otherwise empty). `internal/ppimport` runs them through
-  these so an imported photo has its columns in the **same vocabulary** as an extracted one — a column that after
-  extraction says `jpeg` and after import `JPEG` isn't one column, but two.
+  PhotoPrism's `jpeg` — → a token for `image_codec`, otherwise empty). The retired PhotoPrism import ran
+  every value through these so an imported photo had its columns in the **same vocabulary** as an extracted
+  one — a column that after extraction says `jpeg` and after import `JPEG` isn't one column, but two.
   **Orientation geometry** (`geometry.go`): `QuarterTurn(orientation) bool` (5–8 — the only values that
   exchange the sides) and `RawDimensions(w,h,orientation) (int,int)`, which converts an **already oriented**
   („displayed") pair **back** to the file's stored one. It exists because the whole geometry stack —
   `internal/thumb` (which decodes the untouched original and applies the tag itself), the frontend's
   `displayFrame`, `facejob.NormalizeBBox` — reads `photos.file_width`/`file_height` as the bytes on disk with
   `file_orientation` still to be applied. PhotoPrism does the opposite (`MediaFile.Width()` swaps the sides for
-  5–8), so `ppimport`/`psimport`/`psfeedsimport` de-orient on the way in; without it the pair contradicted
+  5–8), so the retired importers de-oriented on the way in; without it the pair contradicted
   itself and every consumer rotated a second time. The transform is **its own inverse**), `internal/phash/`
   (perceptual hashes, **CGO-free**: `Compute(img) Hashes{Phash,Dhash int64}` — **pHash** via
   a 2-D DCT 32×32 → low-freq 8×8 block with a median-without-DC threshold, **dHash** gradient 9×8; `Distance(a,b)`
@@ -907,8 +907,8 @@ to `## Package map` in `CLAUDE.md`.
   deletes embeddings, faces and face_detections, fixing the photo-sorter gap with orphans;
   **orientation geometry** (`geometry.go`): `RenormalizeTransposedBBox(bbox,rawW,rawH,orientation)` repairs a
   box that was divided by the **transposed** display frame (a per-axis rescale by `rawW/rawH` and its
-  reciprocal; anything but a quarter turn or a degenerate frame is returned unchanged) — `psimport` runs
-  photo-sorter's migrated faces through it — and `RepairFaceDimensions(uid,rawW,rawH)` is the same correction as
+  reciprocal; anything but a quarter turn or a degenerate frame is returned unchanged) — the photo-sorter
+  migration ran its faces through it — and `RepairFaceDimensions(uid,rawW,rawH)` is the same correction as
   one guarded `UPDATE` over a photo's face rows (it matches only rows whose cached `photo_width`/`photo_height`
   are the raw pair swapped, so it is idempotent), the faces half of `maintenance repair --dimensions`),
   `internal/people/`
@@ -928,8 +928,8 @@ to `## Package map` in `CLAUDE.md`.
   name written outside ASCII (CJK/Cyrillic/…, still a name, so still distinct), and is the **only** key a
   find-or-create-by-name path may use. Keying such a path on `Slugify` makes the fallback a **catch-all**:
   every nameless face resolves to it, the first creates one empty-named subject and the rest are *found* by
-  it — in production that collected 16 532 markers on a single fake person (fixed in `psfeedsimport`,
-  `psimport`, `ppimport`, `facematch`; `peopleapi` rejects such a name with 400; the repair for existing
+  it — in production that collected 16 532 markers on a single fake person (fixed in the importers of the
+  day and in `facematch`; `peopleapi` rejects such a name with 400; the repair for existing
   data is `kukatko maintenance nameless-subjects`, see [`OPERATIONS.md`](OPERATIONS.md))/
   `UpdateSubject`(re-slugging + refresh of the `faces.subject_name` cache)/`ListSubjects` (ordered by
   name, with **two** counts over the same non-invalid markers on visible photos: `MarkerCount` =
@@ -1540,8 +1540,8 @@ to `## Package map` in `CLAUDE.md`.
   `AttachLabelAudited`/`DetachLabelAudited` run the change and `audit.Write` **in one transaction** (durable
   audit — when the mutation rolls back, no audit record is created; the shared `inAuditedTx` +
   `insertAuditedWithUniqueSlug`, which resolves a slug collision on create/update by retrying through separate transactions
-  and writes the audit only for the successful attempt); the non-audited variants remain for the system importers
-  (`psimport`/`ppimport`, without an actor)), `internal/organizeapi/`
+  and writes the audit only for the successful attempt); the non-audited variants remain for system callers
+  that have no actor)), `internal/organizeapi/`
   (a read/curation HTTP API over albums and labels — the basis of the Albums/Labels UI: the interfaces `AlbumStore`/
   `LabelStore` (subsets of `organize.Store`) → unit-testable with fakes without a DB;
   `NewAPI(Config{Albums,Labels,RequireAuth,RequireWrite})`+`RegisterRoutes` mounts two
@@ -1911,27 +1911,28 @@ to `## Package map` in `CLAUDE.md`.
   `_limit` gauges; one instance is built in `runServe` (`newGeocodeBudget`, nil without a mapy key) and
   shared by the job, the status service and the collector; `BackfillPlaces(ctx)` enqueues `places`
   for every geotagged photo without a place (dedup no-op), returns the count), `internal/importer/`
-  (bookkeeping of import/migration runs + high-watermarks for an **incremental, idempotent** import,
-  the `import_runs` table in migration `0013_import_runs.sql`: `id BIGSERIAL`, `source TEXT`
-  CHECK `photoprism|photosorter`, `started_at`/`finished_at TIMESTAMPTZ`, `status TEXT`
-  CHECK `running|done|failed`, `high_watermark TIMESTAMPTZ` (the largest processed source
-  timestamp, e.g. max PhotoPrism `UpdatedAt`), `counts JSONB` `{imported,updated,skipped,failed}`,
-  `last_error TEXT`; a partial index `(source, finished_at DESC) WHERE status='done' AND
-  high_watermark IS NOT NULL` for the resume query; the types `Source` (`SourcePhotoPrism`/
-  `SourcePhotoSorter` + `Valid()` + `AllSources()`, both reading one package-level list so the
-  predicate a writer validates against and the enumeration a reporter iterates — the system status, the
-  `/metrics` import gauges — cannot drift apart; both hand out a **copy**)/`Status`
-  (`StatusRunning`/`StatusDone`/`StatusFailed` + `AllStatuses()` in lifecycle order, so a reporter can
-  publish one series per status instead of only the one a run happens to be in)/`Counts`/
+  (bookkeeping of import runs, the `import_runs` table in migration `0013_import_runs.sql`:
+  `id BIGSERIAL`, `source TEXT` CHECK `photoprism|photosorter` (`0026` adds `folder`, `0041` adds
+  `photosorter_feeds`), `started_at`/`finished_at TIMESTAMPTZ`, `status TEXT`
+  CHECK `running|done|failed`, `high_watermark TIMESTAMPTZ`, `counts JSONB`
+  `{imported,updated,skipped,failed}`, `last_error TEXT`. **Only `folder` is still written**: the
+  PhotoPrism/photo-sorter migration finished in August 2026 and its importers were removed, so its
+  runs — and the watermarks they stamped — are now a **provenance record** the table keeps and every
+  reader still decodes. The types `Source` (`SourcePhotoPrism`/`SourcePhotoSorter`/
+  `SourcePhotoSorterFeeds`/`SourceFolder` + `Valid()` + `AllSources()`, both reading one package-level
+  list so the predicate a writer validates against and the enumeration a reporter iterates — the system
+  status, the `/metrics` import gauges — cannot drift apart; both hand out a **copy**)/`Status`
+  (`StatusRunning`/`StatusDone`/`StatusPartial`/`StatusFailed` + `AllStatuses()` in lifecycle order, so
+  a reporter can publish one series per status instead of only the one a run happens to be in)/`Counts`/
   `Run`; `Store` = `NewStore(pool)`: `Start(ctx,source)` opens a `running` row (`ErrInvalidSource`),
   `UpdateCounts(ctx,id,counts)` overwrites the tally, `Complete(ctx,id,watermark,counts)` closes it as
-  `done` with `finished_at`+the watermark stamped, `Fail(ctx,id,lastErr,counts)` as `failed`
-  **without** a watermark (both match a running run only → `ErrRunNotFound` on a double close),
-  `Get(ctx,id)`, `LatestWatermark(ctx,source)` → `(time.Time, found bool, err)` the watermark
-  of the source's **last successful** run, for chaining the next increment — it ignores running/failed
-  runs and done ones without a watermark, each source has its own cursor, `LatestRun(ctx,source)` →
-  `(Run, found bool, err)` **the newest run of the source regardless of state** (running/done/failed —
-  unlike `LatestWatermark` it does not filter by status; the basis of the system-status dashboard),
+  `done`/`partial` with `finished_at` stamped, `Fail(ctx,id,lastErr,counts)` as `failed`
+  **without** a watermark (both match a running run only → `ErrRunNotFound` on a double close);
+  every live caller passes a `nil` watermark (a folder has no source timestamp to resume from), so the
+  column only carries the finished migration's values,
+  `Get(ctx,id)`, `LatestRun(ctx,source)` →
+  `(Run, found bool, err)` **the newest run of the source regardless of state** (running/done/failed;
+  the basis of the system-status dashboard),
   `List(ctx,limit,offset)` a page of runs
   **across all sources** newest-started-first (limit clamp `[1,200]`, default 50, a non-nil empty
   page) — the basis of the admin import history; the sentinels
@@ -1943,407 +1944,25 @@ to `## Package map` in `CLAUDE.md`.
   `NewFailure(runID,source,stage,photoUID,sourceRef,detail,err)`; `RecordFailures(ctx,[]Failure)` (batch),
   `CountUnresolvedFailures(ctx,id)`, `ListFailures(ctx,FailureFilter{RunID,Source,UnresolvedOnly,Limit,Offset})`.
   `Counts` (the `counts` JSONB) is `imported`/`updated`/`skipped`/**`deduplicated`**/`failed` — the fourth bucket
-  counts SOURCE photos whose content was already catalogued under another source photo (see the alias table in
-  `internal/photos` and `internal/ppimport`); reading that as "skipped" is how 450 production photos went missing
-  under a clean-looking run. A run recorded before the field existed simply has no key for it and reads back as 0.
-  **`Complete` now auto-detects the status**: a run with ≥1 unresolved defect closes as the new `StatusPartial`
-  (`partial`, 0042 extends the status CHECK) instead of `done` — and, like failed, it **does not move the watermark**
-  (`LatestWatermark` reads only `done`), so a re-run repeats the window (imports are idempotent). 0042 also
-  restores `folder` in the source CHECK, which `0041` dropped by mistake. The import services (ppimport/psimport/
-  psfeedsimport/dirimport) collect defects into `runState` and persist them via `RecordFailures` before `Complete`),
-  `internal/importverify/`
-  (**an import-completeness tool** — a read-only reconciliation of the sources against the catalogue, it answers "the
-  import is complete and nothing is missing": `Service` = `NewService(Config{PhotoPrism,Feeds,Catalog,SampleLimit,AlbumTypes,Logger})`
-  (panics on nil PhotoPrism/Catalog), `Verify(ctx)` → `Report`; the internal narrow interfaces `PhotoPrismSource`
-  (List Photos/Albums/Labels/Subjects + **`Counts`**, PhotoPrism's own library totals), `FeedsSource`
-  (`Stats` = the photo-sorter `/stats` feed), `Catalog`
-  (the pool-backed `Store = NewStore(pool)`: `ImportedRefs`/`OriginalFileCounts`/`Counts`/`PhotosMissing
-  Embeddings`/`PhotosMissingFaces`/`AlbumTitles`/`LabelNames`/`SubjectNames`; `ImportedRefs` answers a
-  `Refs{UIDs,Aliases,FileHashes}` — the three ways a source photo can be accounted for, kept apart so the
-  report can say WHY a photo has no row of its own: `Aliases` are the `photoprism_aliases` uids (`0046`), the
-  source photos that collapsed onto byte-identical content, and a reconciler blind to them reported 450
-  accounted-for production photos as missing); `Verify` walks the **whole**
-  PhotoPrism library by paging `ListPhotos` **to an empty page** (a merged listing's short page is not
-  exhaustion — see the paging contract under `internal/photoprism/`; stopping there reconciled against the
-  first page alone, which is how the gate that guards the point of no return could call a library complete
-  with 19 700 photos missing) and **deduplicates the re-served overlap by uid**, keeping the widest `Files[]`
-  seen for a photo so a boundary-straddling partial does not mask a real file gap; it classifies a photo as
-  matched/**deduplicated** (the uid is missing, but the photo is accounted for: either an **alias** points it at
-  the row holding its content, or its primary SHA1 hash is already imported — the bill for the SHA256/SHA1
-  dedup; an aliased photo is deliberately NOT file-gap checked, its files belong to the surviving row's
-  uid)/**missing**, and a matched photo with
-  fewer `original` files in the catalogue than PhotoPrism's `Files[]` → a **file gap** (a dropped sibling);
-  `OriginalFileCounts` counts **across the whole stack**, not just over that one row: a shot's sibling files
-  are rows of their own without a `photoprism_uid`, grouped behind the displayable original (see
-  `ppimport/siblings.go`), so counting per row would report a file gap forever for a fully imported
-  RAW+JPEG;
-  **the listing is pinned to a non-filtering order and measured against the source's own total**: the walk asks
-  for `photoprism.FullListingOrder` and `Verify` additionally reads `Counts` (PhotoPrism's `GET /api/v1/config`
-  aggregate — a code path the photo search never touches) into `source_reported_total`; the positive difference
-  `source_reported_total - source_total` is `listing_shortfall` and it **fails `complete`**. Both exist because
-  the client's old default order, `updated`, is not merely an order: it compiles to
-  `WHERE photos.updated_at > photos.created_at`, so every picture untouched since PhotoPrism indexed it was
-  absent from the listing. The verifier reconciled a 20 660-photo window of a 20 677-photo library and every
-  set comparison drawn from that window agreed nothing was missing — two live photos (`pte69fjicag4g4i3`,
-  `pte6a54vj8p5w5jr`) had no catalogue row under any identifier while the report read
-  `source=20660 kukatko=20647 deduplicated=13 missing=0 => COMPLETE`. A narrowed listing never fails: it pages
-  to exhaustion and hands back a self-consistent subset, so only a total from **outside** it can tell. The
-  reported total is a **lower bound** (PP subtracts pictures in review from it and hides private ones from a
-  restricted session), so only a listing serving FEWER than it is a finding;
-  **the photo section reconciles both directions**: `surplus_count`/`surplus_uids` are the catalogue's
-  `photoprism_uid`s the enumeration never yielded — a photo deleted in PhotoPrism after import leaves exactly
-  that trace — **reported, never enforced**, like the structural surplus below;
-  **the album reconciliation follows the importer, not PhotoPrism**: `Config.AlbumTypes` defaults to
-  `ppimport.DefaultAlbumTypes` (the *single source of truth* — the verifier can never demand a type the import
-  deliberately skips), the remaining `photoprism.AlbumTypes` are still walked but land in
-  `Structure.Albums` (`AlbumReport` = the embedded `EntityReport` + `skipped_types` + `skipped_by_design_count`)
-  as **skipped by design** instead of missing. Defaulting to all five types listed PhotoPrism's ~560
-  auto-generated `month` albums (one per calendar month, already covered by the timeline) as missing forever —
-  `source_count: 758, missing_count: 751` against a catalogue of 8 — so a clean report, which
-  `MIGRATION_PLAN.md` phase 4 gates the cutover on, was unreachable by construction and real gaps drowned in
-  the noise;
-  **the vectors section names its two questions apart**: `embeddings_missing_for_imported_photos` /
-  `faces_missing_for_imported_photos` (+ their capped `*_missing_uids` samples) are scoped to photos **already
-  in the catalogue** — a vector cannot attach to a photo that was never imported — while
-  `embeddings_source_coverage` / `faces_source_coverage` (`sourceCoverage(catalog,source)`: the ratio rounded
-  to 4 decimals, an empty source → `1`, a catalogue larger than the source clamped to `1`, exposed together as
-  `VectorsReport.FullSourceCoverage()`) are the share of the **source's** vectors Kukátko holds. Under the old
-  names (`missing_embeddings_count`/`missing_faces_count`) the first meaning was read as the second: a
-  catalogue of 280 of 20 670 photos reported `missing_embeddings_count: 0` against
-  `source_photos_with_embeddings: 20092` — a reviewer at the point of no return saw zeros next to the vector
-  section and concluded the vector migration was finished, with only the top-level `complete:false` saying
-  otherwise. The arithmetic was always defensible and is unchanged; the naming and presentation were the bug;
-  **the structure sections reconcile both directions**: beside `missing`/`missing_count` (in the source, not in
-  the catalogue) an `EntityReport` carries `surplus`/`surplus_count` — distinct catalogue names the source does
-  not have, sorted and capped at `SampleLimit` like the missing ones. A surplus is **reported, never enforced**
-  (`complete` ignores it): anything created in Kukátko itself is a legitimate one. It exists because a
-  one-directional check cannot see a row that should not exist — `people: source=104 kukatko=105 missing=0`
-  read as clean while the extra subject was the nameless catch-all `internal/people` describes, holding 16 532
-  markers; the CLI prints the names quoted, so an empty one shows up as `""`;
-  `Report{photoprism,vectors,structure,complete}` (per section source vs catalogue + a capped list of the missing +
-  full counts); `complete=true` only when nothing is missing — including no *imported* photo left without its
-  vectors, but deliberately **not** requiring full vector source coverage: photo-sorter's population and
-  PhotoPrism's need not be the same set, so gating on the coverage would make a finished import unreachable by
-  construction, the same trap the album types fell into; **it does not write** `import_runs`), `internal/photoprism/`
-  (a read-only HTTP client of a running PhotoPrism instance — the basis of the incremental import, all behind
-  the `Client` interface (fakeable): `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryBaseDelay,
-  RetryMaxDelay,HTTPClient})` → `*HTTPClient`, `ErrInvalidURL` on an invalid base URL; **authentication**
-  with a long-lived app password/access token in the `Authorization: Bearer` header on **every**
-  request (not a per-request login); `ListPhotos(ctx,PhotoListParams{Count,Offset,UpdatedSince,Order,
-  AlbumUID,Query})`
-  → `GET /api/v1/photos?count=…&offset=…&merged=true&order=added[&q=updated:"<RFC3339>"]`
-  for an **incremental** pull (UpdatedSince→the `updated:` filter, count clamped to `MaxCount` 1000, the caller
-  pages via offset).
-  **Sort orders that are also FILTERS — the trap `FullListingOrder` exists for:** PhotoPrism compiles some
-  `order=` values into a `WHERE` clause on top of the ordering (`internal/entity/search/photos.go`), so asking
-  for one silently NARROWS the library: `updated`/`updated_at` → `photos.updated_at > photos.created_at`,
-  `edited` → `photos.edited_at IS NOT NULL`, `similar` → `files.file_diff > 0`. They are listed by
-  `FilteringOrderPredicate(order) (predicate, filters)` so a walking caller can assert instead of remembering.
-  `updated` was this client's default from the start, which hid every photo untouched since it was indexed —
-  17 of 20 677 production photos, never once offered for import, and invisible to `import verify` too because
-  it listed the same way (see `internal/importverify/`). The default is now **`FullListingOrder` = `added`**
-  (a plain `ORDER BY files.media_id`: no `WHERE`, a total order over a unique key, new media sorting to the
-  front, so an offset walk can only re-serve a photo, never skip one), and the incremental watermark is
-  unaffected because it rides in `q=`, not in the order.
-  **`Counts(ctx)` → `LibraryCounts`** reads `GET /api/v1/config` and keeps only its `count` object (`all`,
-  `photos`, `media`, `videos`, `live`, `animated`, `audio`, `documents`, `hidden`, `archived`, `private`,
-  `review`, `files`; the rest of the client config, including the tokens it carries, is discarded). It is the
-  independent cross-check on a listing walk — `all` comes from aggregates over the photos table, not from the
-  search — and it is a **lower bound**: PP subtracts `review` from it when that feature is on and excludes
-  hidden, archived and (for a restricted session) private pictures.
-  **Paging contract — `merged=true` makes a short page normal:** the offset/count window
-  selects FILE rows and PhotoPrism then collapses a photo's rows into one entry, so a page comes back shorter
-  than the requested count whenever it holds a multi-file photo (measured on the production library at
-  `count=1000`: 914/987/996 entries per page against 20 670 photos). A paging caller must therefore terminate
-  on an **EMPTY** page, never on a short one — `len(page) < pageSize` read the first page as the end of the
-  library and returned success. Advancing the offset by the page length under-advances against the file-row
-  offset: it never skips a photo (the overlap is simply re-listed, and a photo straddling the boundary arrives
-  complete the second time) but it does re-serve photos already seen, so a caller that counts must deduplicate
-  by uid. Album/label/subject listings take no `merged` and are unaffected;
-  **scope for mapping membership**: `AlbumUID`→`s=<albumUID>` (an album's photos),
-  `Query`→`q=` verbatim (overrides the watermark, for `label:"<slug>"`); it parses
-  UID/TakenAt/Lat/Lng/Altitude/Title/**Caption**/Type/Width/Height/
-  OriginalName/**Scan**/**CameraSerial**/Camera/Lens/EXIF + `Files[]` (UID, **Hash=SHA1**, Primary,
-  Mime, `Video`/`Codec`/**`ColorProfile`**/**`Projection`**, `Markers[]`),
-  `Photo.PrimaryFile()` returns the primary file, `File.IsVideo()` (the Video flag/`video/*` mime),
-  `Photo.VideoFile()` (the motion file of a video/live photo) and `Photo.StillFile()` (the still one);
-  **`Caption` is the live field, `Description` a dead one** — PP renamed `photo_description` to
-  `photo_caption` (`description_src`→`caption_src`) and the old Go field has `gorm:"-"`, so it is
-  **not persisted and always comes back empty**; both are modelled (Caption = what today's instance answers,
-  Description = what an old one did) and the importer takes the first non-empty one;
-  `ListAlbums`/`ListLabels`/`ListSubjects(ctx,ListParams
-  {Count,Offset,Type})` → `GET /api/v1/{albums,labels,subjects}`, markers from `Files[].Markers[]`;
-  **`GetPhoto(ctx,uid)`** → `GET /api/v1/photos/{uid}` returns `PhotoDetail` = `Photo` +
-  **`Details`** (`{Keywords,Notes,Subject,Artist,Copyright,License,Software}` — the IPTC/XMP credits
-  PP keeps in a side table; a photo indexed by an old version has no `photo_details` row at all →
-  `null` arrives → a zero value) + **`Albums[]`** (all of the photo's albums, of any type) + **`Labels[]`**
-  (`PhotoLabel{LabelSrc,Uncertainty,Label}`). **The photo listing (`?merged=true`) is a flat search
-  structure and carries NONE of that**: no `Details` object (hence no Subject/Artist/Copyright/License/
-  Keywords/Notes/Software), no `CameraSerial`, `Files[].Markers` **always empty** and
-  `Files[].Codec`/`ColorProfile`/`Projection` too (`Caption`, `Scan` and `OriginalName`, by contrast,
-  **are in the listing**). It costs 1 request per photo, so the **scoped import** calls it for every photo and
-  a full import only for photos it **writes** or that the source **moved** after the watermark
-  (`ppimport.importPhotoDetail`); an empty uid → `ErrBadResponse`, an unknown one → `ErrNotFound`;
-  **`Type` is mandatory for albums** — `/api/v1/albums` without a type (even with several types at once, `album,folder`) returns
-  **400 "Permission denied"**, so the album catalogue is walked type by type (`AlbumTypes` =
-  album/folder/moment/state/month); labels and subjects do not take a type and ignore it;
-  `DownloadOriginal(ctx,fileHash)` → `GET /api/v1/dl/{hash}?t=<download_token>` **streams** the original
-  (`Download{Body,ContentType,ContentLength}`, the body is owned by the caller; never held whole in RAM thanks to
-  `cancelReadCloser`), the **download token** from the create-session `POST /api/v1/session`
-  (`config.downloadToken`) cached thread-safely, it **rotates** → it is picked up from the
-  `X-Download-Token` header, and on a 401/403 the session is refreshed once and the call repeated; **robustness** 429 →
-  exponential backoff honouring `Retry-After`, JSON endpoints require `Content-Type:
-  application/json`; the typed errors `ErrInvalidURL`/`ErrUnauthorized`/`ErrNotFound`/`ErrRateLimited`/
-  `ErrUpstream`/`ErrUnavailable`/`ErrBadResponse` never carry the token or the response body; config
-  `import.photoprism.{base_url,token,page_size}`; the client is built by the importer (`ppimport`)),
-  `internal/ppimport/`
-  (a read-only, **incremental and idempotent** import from PhotoPrism — all behind the interfaces
-  `PhotoPrismClient`/`RunStore`/`PhotoStore`/`Storage`/`AlbumStore`/`LabelStore`/
-  `PeopleStore`/`Enqueuer`/`VideoProber` → unit-testable with fakes; `Service` = `New(Config{Client,Runs,Photos,
-  Storage,Albums,Labels,People,Enqueuer,Prober,PageSize,TempDir,MaxFileSize,Logger})`
-  (`Prober` optional — nil → `defaultProber` over `video.Probe`);
-  **nothing derived is computed inline** — the import has no thumbnailer at all; a photo entering the catalogue
-  gets a **`thumbnail` job** exactly as an upload does, so the rules for deriving thumbnails *and* perceptual
-  hashes live only in `internal/thumbjob`. That second copy is what went stale: this import used to thumbnail
-  inline, and since the pHash is computed by the thumbnail *job* and not by the thumbnailer, **every imported
-  photo ended up without one** (measured on production 2026-08-02: 0 rows in `photo_phashes` for 10 479 photos),
-  which left `internal/duplicates` with nothing to band over the whole imported library and made `thumbjob`'s
-  "narrow" backfill predicate match every photo in it;
-  **`Import(ctx) (Result,error)`** opens an `import_runs` run, resumes from the last successful watermark and:
-  (1) pages `ListPhotos(UpdatedSince=watermark, Order=photoprism.FullListingOrder)` — the order is **pinned to
-  a non-filtering one**: PhotoPrism's `updated` order, the client's old default, is also a
-  `WHERE photos.updated_at > photos.created_at`, so 17 production photos untouched since indexing were never
-  listed and never once offered for import (the trap and the full list of such orders are under
-  `internal/photoprism/`; the album- and label-membership walks in `organize.go` pin it too) — per photo dedup
-  by `photoprism_uid` (already
-  imported → `UpdateMetadata` only on a change, otherwise skip), otherwise it **selects the media** (`selectMedia`,
-  `video.go`): PP `Type` video/animated → **downloads the video file itself** (`Photo.VideoFile()`,
-  media_type `video`, a video file without a stream degrades gracefully → image), live → **the still as the primary
-  original + the motion clip as a sidecar** (`Photo.StillFile()`+`VideoFile()`, media_type `live`),
-  otherwise image; it **downloads** the chosen original into
-  a temp + **SHA256**, dedupes by `file_hash` (identical content is never catalogued twice: content no source
-  photo claims yet → backfill the IDs via `photos.SetPhotoprismRef` and count it as an **update**; content
-  already answering to ANOTHER source photo → an **alias**, see (1c)), stores the original, **probes the video metadata**
-  (`Prober.Probe` → `duration_ms`/`video_codec`/`audio_codec`/`has_audio`/`fps`; for video from the original,
-  for live from the motion clip; best-effort, a failure → zero fields), `photos.Create` with the **PP metadata**
-  (title/**caption**/taken_at/GPS/camera/EXIF) + media_type + video metadata + `photoprism_uid`/`photoprism_file_hash` + the **EXIF orientation
-  from the file** (PP does not expose it — `exif.Extract` fills in geometry/orientation/MIME, PP overrides
-  the curation fields), **for live** it downloads+stores the motion clip as a `RoleSidecar` photo_file (best-effort),
-  and **enqueues `thumbnail`** (thumbnails + pHash; for video a **poster frame** via the thumbnailer/ffmpeg),
-  **`image_embed`** (on the poster) **and `face_detect`**; counts are **checkpointed after every
-  page** via `UpdateCounts`. **The caption is taken from `Caption`, not from `Description`** (`metadata.go`,
-  `caption()`): `photo_description` is a dead column in PP (renamed to `photo_caption`, the Go field is
-  `gorm:"-"`), so reading `Description` silently threw away **every** caption in the library. The precedence
-  of the update patch: **PP wins when it has a value, but an empty PP value never erases a non-empty
-  Kukátko one** (`UpdateMetadata` rewrites the whole row, so a title deleted in the source would otherwise
-  destroy the one the user wrote); `notes`/`ai_note` and the IPTC credits are **carried through the patch
-  unchanged** (they are mapped from the detail, not from the listing), and so are `taken_at_estimated`/`taken_at_note` —
-  PhotoPrism does not know the approximate date at all, it is a Kukátko field and an increment must not overwrite it.
-  **A local edit beats a re-import** (migration `0043`, `metadataUpdate`): a re-list brings the photo back
-  every time PP moves its `UpdatedAt` (a reindex, a label change, even a view) — outside the user's
-  control — so an increment must not revert an edit made in Kukátko. Every source field yields to
-  its **local-edit provenance**: `title` when `title_edited`, `taken_at` when
-  `taken_at_source = 'manual'`, `lat`/`lng`/`altitude` when `location_source = 'manual'`; and
-  `private` is **only ORed** (`existing.Private || pp.Private`) — a re-import may hide a photo, but
-  never unhides a hidden one (hidden→public = a privacy leak). An untouched field keeps following the source.
-  The provenance is written by the editing paths (`internal/photoapi`, `internal/mcpapi`, `internal/bulk`).
-  **`Favorite` is deliberately NOT MAPPED**: Kukátko's favorites
-  are **per-user** and an import running as a job (or from the CLI) has no user to credit it to — and
-  `psimport` does not translate it either (its `Favorite` belongs to the subject, not to the photo);
-  (1b) **non-primary files = rows of their own in one stack** (`siblings.go`, `importSiblings`):
-  a PP photo is **a shot, not a file** — a RAW and the JPEG rendered from it are one photo with two
-  `Files[]` — and an import that downloaded only the primary file **threw that RAW away** (exactly 12
-  `type:raw` photos in the production library; a RAW cannot be reconstructed from anything). Every further file is
-  therefore downloaded, stored and **catalogued as a photo of its own** (its own original + a `photo_files` row
-  with `RoleOriginal`), and the whole set is **grouped into one stack** (`photos.CreateStack`, the columns
-  `stack_uid`/`stack_primary` from `0030`), whose **primary is the displayable original** — the one the
-  source marks `Primary`, not the guess of `stacks.PickPrimary`. The grid still shows one tile
-  (the visibility gate `stack_uid IS NULL OR stack_primary`) and the RAW is its variant (`stack_members`
-  in the detail, with `thumb_url`/`download_url`) instead of a lost file. The file selection (`siblingFiles`)
-  is **deliberately blind to type** (RAW, another encoding, a still generated for a clip — a named list of
-  types would silently drop the next one), it skips only the stored original and the live motion clip (which
-  `linkMotion` already carries as a `RoleSidecar` row of the **same** photo, so it is not doubled), dedupes by hash and
-  drops a file without a hash (the hash IS the download key). A sibling **deliberately does not get a `photoprism_uid`**:
-  that is the 1:1 key of the source photo (the increment's dedup and `psfeedsimport`'s join) and a second row carrying it would
-  make both of them ambiguous — its identity is carried by its own `photoprism_file_hash`
-  (`photos.GetByPhotoprismFileHash`, the partial index from `0045`), by which a re-run recognises it **without
-  downloading**; content already catalogued elsewhere (the same RAW uploaded by hand) is not duplicated, only its
-  hash is filled in (`photos.SetPhotoprismFileHash`, which never overwrites an existing one). It runs for **every
-  listed** photo, not just for a fresh import — that is how a library imported earlier picks its RAWs up —
-  and when it brings something in, **a skip is promoted to an update**; a single-file photo finishes before the first
-  query to the DB. A sibling gets **a `thumbnail` job only**, no `image_embed`/`face_detect`: it is the same
-  shot as the stack's primary member, so its embedding and its faces would be a mere twin of the primary's
-  (a permanent self-duplicate in similarity search and a second copy of every face) on a row the
-  library never shows on its own. An archived sibling is not rejoined to the stack (the user took it
-  out of circulation) and **a curated stack is not dissolved**: when the photo already is in a stack,
-  its members are added to that one and its primary stays. A failure of one file is a **per-file failure**
-  (`StageFile` → a `partial` run), it never brings the photo itself down;
-  (1c) **one catalogue row can answer to SEVERAL source photos** (`photos.go`, `adoptExisting`, migration
-  `0046`): PhotoPrism indexes the same bytes as two photos, Kukátko's `file_hash` is UNIQUE, so the second
-  source photo has no row to be written into — and the row that holds its content already wears the FIRST
-  one's `photoprism_uid`, which must not be overwritten (that would only move the loss to the other photo).
-  It used to be dropped in **silence**: counted as skipped, nothing logged, no failure recorded — **450 of
-  20 660 production photos**, under a run reporting `failed=0`, invisible to `import verify` and to the
-  photo-sorter feeds. The collapse is now recorded as an **alias** (`photos.AddPhotoprismAlias`), so the source
-  uid still resolves — to the surviving row (`lookupImported` consults `GetByPhotoprismAlias`) — and the
-  duplicate's albums, labels and **face markers land on that row** instead of vanishing with it. It gets its own
-  bucket (`outcomeDeduplicated` → `importer.Counts.Deduplicated`, so "already up to date" and "the catalogue
-  holds these bytes under another name" are never the same answer again), the next run short-circuits on the
-  alias **without re-downloading** (`importUnknown`, before the download), and an alias that cannot be written
-  is a **per-photo failure** — no path may leave the catalogue short while reporting `failed=0`. A `Create`
-  losing to `ErrFileHashTaken` (the pre-check passed and something published those bytes in between — this
-  run's own sibling pass, a concurrent upload) takes the very same route instead of being swallowed;
-  `internal/importverify` and `internal/psfeedsimport` consult the aliases too, so a collapsed photo reconciles
-  as *deduplicated* rather than *missing* and still receives photo-sorter's vectors and faces;
-  (2) **the photo detail** (`details.go`, `importPhotoDetail`) — **CAREFUL: half of what PP knows about a photo
-  is served ONLY by the detail endpoint**, the listing is a flat search structure without the `Details` object and with
-  **always empty** `Files[].Markers` (this is what used to make the import silently bring in nobody). Everything is
-  therefore carried at once from **one** `GetPhoto`: the **IPTC/XMP credits** (`Details.Subject`/`Artist`/
-  `Copyright`/`License`/`Keywords`/`Software` + `Details.Notes` **only into emptiness**), the **file-technical** fields
-  (`Scan`, `CameraSerial`, `OriginalName`, the primary `Files[].ColorProfile`/`Projection` and
-  `Files[].Codec` → `image_codec` **for stills only** — `video_codec`/`audio_codec` are left to ffprobe),
-  the **markers** and (in a scoped run) the albums and labels. It maps `importMetadata` → `photos.ApplyImportMetadata`
-  (the source owns its fields, but an empty value never erases; keywords are run through
-  `exif.NormalizeKeywords` and the codec through `exif.CodecToken`, so an imported photo has its columns in the
-  **same vocabulary** as an extracted one). When the detail brought something in, **a skip is promoted to an update**.
-  **Who gets a detail** (`wantsDetail`) is the import's cost boundary: in a **scoped** run every photo
-  (a slice of the library, 17 photos = 17 requests), in a **full** run only a photo it has just **written**, or one the
-  source **moved after the watermark** (`UpdatedAt.After(since)` — an edited copyright moves the photo's
-  `UpdatedAt` but changes nothing in the listing, so a run that looks only at the listing's verdict would
-  **never see it**); definitely **not** for every listed photo (the incremental listing serves the
-  watermark's photos over and over, and on the first pass the whole 20k library). A detail error is
-  **only logged** (the photo stays imported, a re-run fixes it). A named, valid face marker →
-  find-or-create a subject by `Slugify` + an assigned
-  marker that **keeps the PhotoPrism UID** → the import is idempotent (`GetMarkerByUID` → skip) and
-  marker identity agrees with `psimport` (photo-sorter's face rows point at exactly these UIDs, because
-  its markers ARE PhotoPrism's). **A newly created subject is enriched with `type`/`favorite`/`private`
-  from the PP subject** (`loadSubjectIndex` reads `ListSubjects` once per run — best-effort, a failure only
-  means no enrichment — and a marker finds its subject via `Marker.SubjUID`, falling back to the name slug; `newSubject` +
-  `mapSubjectType`). The enrichment happens **only on creation**: an existing (possibly edited) subject stays
-  unchanged, so a re-run does not overwrite a local edit (symmetry with `psimport`). Faces are paired to the markers by
-  `facematch` via IoU;
-  (3) **albums & labels** find-or-create by name (a map from
-  `ListAlbums`/`ListLabels`), membership via a scoped `ListPhotos` (`AlbumUID`/`label:"<slug>"`) →
-  an idempotent `AddPhoto`/`AttachLabel`; then the run is `Complete`d with the watermark;
-  **every `ListPhotos` walk (the run itself and both membership listings) ends on an EMPTY page, not on a
-  short one** — a merged listing pages short by construction (the paging contract under `internal/photoprism/`),
-  and terminating there imported the first page of the library and reported the run done; the offset still
-  advances by the page length, so the re-listed overlap costs an idempotent re-import and never a skipped
-  photo. The `ListAlbums`/`ListLabels`/`ListSubjects` walks take no `merged`, return full pages and keep the
-  short-page termination; a **per-photo error** is
-  recorded into `counts.failed` and **does not interrupt the run** (only an infrastructure error `Fail`s the run), 429
-  backoff is handled by the client, **the watermark never moves past the oldest failure** (`runState`); safe to
-  re-run. **`Handle(ctx,job)`** = `worker.HandlerFunc` for `pp_import` (ignores the payload, calls
-  `Import`), `JobPayload()` carries a fixed `photo_uid` sentinel → the queue's dedup lets only one import through.
-  **`ImportFull(ctx)`** (CLI `--full`) is the same run with the **listing** watermark zeroed: it re-offers the
-  whole source library and is the **repair path**, because a photo an earlier run dropped sits BEHIND the
-  watermark and no increment will ever list it again. It stays cheap — an already-imported photo resolves by uid
-  and skips without a download, and the **detail** threshold keeps the real watermark
-  (`runState.detailSince`), so re-listing everything does not turn one listing into 20k detail requests — and it
-  advances the watermark as usual. It refuses to combine with the scoping flags (a scoped run already ignores
-  the watermark).
-  **`ImportScoped(ctx, Scope{AlbumUID,Label,Person,Year})`** = a scoped (partial) run (CLI
-  `--album`/`--label`/`--person`/`--year`, `scope.go`): `Scope.Query()` composes the `q=` expression —
-  `label:"<slug>"`, `person:"<name>"`, `year:<YYYY>`, terms separated by a space (the source ANDs them,
-  values quoted because of spaces in a name), an album goes separately as `s=` → the flags **combine and
-  narrow** the run; it pages `ListPhotos(AlbumUID=…, Query=…)` **without** a watermark (the slice is pulled whole regardless
-  of the photos' age — in the client `q=` takes precedence over the watermark filter). First it **validates the scope**
-  (`validateScope`, `organize.go`: the album uid is looked up across `photoprism.AlbumTypes` → an unknown one is
-  `ErrAlbumNotFound`, the label slug in the label catalogue → an unknown one is `ErrLabelNotFound`; this is checked **before**
-  downloading, so that a typo does not look like a clean run) and then **every photo brings its whole context**
-  (`context.go`, `mapPhotoContext` over the detail that `importPhotoDetail` has already downloaded → **all** of the
-  photo's albums (find-or-create by
-  title → `AddPhoto`) and **all** of its labels (find-or-create by name → `AttachLabel` with the `source`
-  and `uncertainty` from the source: `manual`→`manual`, `image`→`ai`, the rest (batch/keyword/location/…)
-  →`import`) — **including the albums and labels the scope did not name**, so a photo from three albums imported via
-  a scope on one album ends up in all three. The album/label indexes are read once per run (`photoContext`),
-  mapping happens after **every** successful outcome (a skip too — a photo that is unchanged or deduplicated by content belongs
-  in its albums as well), everything is idempotent (find-or-create + `AddPhoto`/`AttachLabel`), a detail error
-  is **only logged** (the photo stays imported, a re-run fills the context in). It costs **1 request per
-  photo** — which is why a full run does not do it (20k photos = 20k requests) and maps the structure by walking the
-  album/label catalogue (`mapAlbums`/`mapLabels`); the credits, the people and the file-technical fields ride on the same detail
-  (see above) → **a scoped re-run is also the way to bring a library imported earlier up to parity**,
-  without downloading a single byte.
-  It closes with **`Complete` and a `nil` watermark** — a scoped run sees only a slice of the library, so writing its
-  newest timestamp as the cursor would make the next full import skip everything older. An empty scope
-  → `ErrEmptyScope` (a full run is `Import`), a year outside 1826–9999 → `ErrInvalidYear`.
-  Albums are listed **by type** (`Config.AlbumTypes`, default `DefaultAlbumTypes` = album/folder/moment/state,
-  without `month` = 560 automatic calendar albums) — the source requires exactly one type per query),
-  `internal/photosorter/`
-  (a read-only client of **photo-sorter's** PostgreSQL DB — the data source of the direct migration (ARCHITECTURE.md
-  §10), all behind `*Reader`: `New(ctx, Config{DSN,Schema,MaxConns})` opens its **own** pgx pool
-  (separate from Kukátko's) with pgvector types registered on every connection, the optional `Schema` scopes
-  every query via `search_path` (the integration test reads a fake schema next to the Kukátko tables); `Close()`
-  releases the pool; `ErrInvalidDSN`. It reads **only** the migration's tables — `ListPhotos(PhotoListParams{UpdatedSince,
-  Limit,Offset})` (ordering `updated_at, uid`, `updated_at > $1` for the resume), `ListSubjects`/`ListAlbums`/
-  `ListLabels(ListParams)`, `Embedding`/`Faces`/`FacesProcessed`/`Phash`/`Edit`/`Markers`/
-  `AlbumMemberships`/`LabelMemberships(photoUID)` — embeddings scan into `[]float32` (pgvector),
-  bboxes into `[4]float64`; **it never reads the photo book or the share links**), `internal/psimport/`
-  (a read-only, **incremental and idempotent** direct migration from photo-sorter — all behind the interfaces
-  `Source`/`RunStore`/`PhotoStore`/`VectorStore`/`PeopleStore`/`AlbumStore`/`LabelStore`/`Storage`/
-  `Thumbnailer`/`Enqueuer` → unit-testable with fakes; `Service` = `New(Config{Source,Runs,Photos,
-  Vectors,People,Albums,Labels,Storage,Thumbnailer,Enqueuer,OpenOriginal,PageSize,Logger})` (panics
-  on a nil collaborator); **`Migrate(ctx) (Result,error)`** opens an `import_runs` run (`source=photosorter`),
-  resumes from the last successful watermark: (1) **buildMappings** find-or-creates a Kukátko subject (a slug
-  of the name) / album (title) / label (name) for every photo-sorter one → ps-uid→kk-uid maps (the generic
-  `mapCatalogue`); (2) it pages `ListPhotos(UpdatedSince=watermark)` — per photo a match by
-  `photosorter_uid` (skip), otherwise by **`file_hash`** (backfill `photos.SetPhotosorterRef`, no
-  copying), otherwise it **copies the original** from `file_path` (SHA256, thumbnails) and `photos.Create` with the PS
-  metadata (incl. the IPTC credits `artist`/`copyright`/`license`/`software`, `keywords` normalized
-  through `exif.NormalizeKeywords`, `scan` and `panorama`→`projection` through `panoramaProjection`) +
-  `photosorter_uid`; (3) **satellites** — the embedding (768) and faces (512 + bbox + det_score +
-  cache) are inserted **1:1** via `vectors.SaveEmbedding`/`RecordFaceDetection` (preserving model/pretrained,
-  remapping the subject, preserving marker_uid), a photo **without** a PS embedding/detection gets a Kukátko
-  `image_embed`/`face_detect` job; markers (under their original UID), album/label membership, phash and edit
-  best-effort and idempotently; counts are **checkpointed per page**; then `Complete` with the watermark.
-  A **per-photo error** → `counts.failed`, it **does not abort the run** (only an infra error `Fail`s it); **the watermark
-  never moves past the oldest failure** (`runState`); safe to re-run. **`Handle(ctx,job)`** =
-  `worker.HandlerFunc` for `ps_migrate` (ignores the payload, calls `Migrate`), `JobPayload()` carries a fixed
-  sentinel → the queue's dedup lets only one migration through),
-  `internal/psfeeds/`
-  (a read-only HTTP client of **photo-sorter's migration feeds** — in production photo-sorter holds only vectors/faces
-  keyed by PhotoPrism UID, no photos of its own; all behind the `Client` interface → a fake in tests.
-  `New(Config{BaseURL,Token,Timeout,MaxRetries,RetryDelay,HTTPClient})` validates the URL (`ErrInvalidURL`);
-  `ListEmbeddings(limit,after string)`/`ListFaces(limit,after int64)` keyset-page `GET /api/v1/{embeddings,faces}`
-  (cursor `next_after`, `nil` = the end of the walk; `Stats` reads `/api/v1/stats`); it sends `Authorization: Bearer psat_...`,
-  requires `application/json`, retries HTTP 429 with exponential backoff, and classifies statuses into sentinels
-  (`ErrUnauthorized/NotFound/RateLimited/Upstream/Unavailable/BadResponse` — they never contain the token/body). A face
-  `bbox` from the feed is `[x1,y1,x2,y2]` in **raw pixels** of the `photo_width×photo_height` frame, not normalized),
-  `internal/psfeedsimport/`
-  (**enriches** photos imported from PhotoPrism with photo-sorter's **1:1** CLIP embeddings (768) and InsightFace
-  faces (512) copied from the feeds — so the often-offline GPU box does not have to recompute a migrated library
-  (~20k embeddings, ~112k faces). All behind the interfaces `Feeds`/`PhotoStore`/`VectorStore`/`PeopleStore`/`RunStore`
-  → a fake in tests; `Service` = `New(Config{Feeds,Photos,Vectors,People,Runs,PageSize,Logger})` (panics on nil).
-  **`Import(ctx) (Result,error)`** opens an `import_runs` run (`source=photosorter_feeds`), then two passes:
-  (1) **embeddings** — per item it finds the Kukátko photo by `photoprism_uid`==`photo_uid` (`resolvePhoto`, which
-  falls back to the `photoprism_aliases` table from `0046`: a source photo whose bytes were already catalogued under
-  another source uid has NO row of its own, and without that step its vectors and faces would be skipped as
-  "not imported yet" forever; two source photos resolving to one row is expected and harmless — their content is
-  identical, so the upsert and the atomic face replace are last-write-wins) and `vectors.SaveEmbedding`
-  (an idempotent upsert); (2) **faces** — it groups faces per photo from the stream (the feed is ordered by `id`, one
-  photo's faces arrive contiguously) and does one `vectors.RecordFaceDetection` per photo (an atomic replace). The pixel bbox
-  is converted by `facejob.NormalizeBBox` (the single conversion shared with native detection, it honours orientation); the subject
-  is matched by the name slug (reusing the subject created by the PhotoPrism import, otherwise `CreateSubject`), the marker
-  is reused by its **preserved `marker_uid`** (otherwise `CreateMarker`, the bbox clamped into [0,1], `score` 0) —
-  so the people/faces arrive, not just bare vectors. A feed entry for a **not-yet-imported photo** is skipped
-  (`Skipped`) and does not abort the run; a per-item defect (a wrong dimension) → `Failed`; only an infra error (fetch/DB) `Fail`s
-  the whole run. **Idempotent and incremental**: each pass scans the whole feed (the feeds have no incremental cursor),
-  the written high-watermark (the newest `created_at`) is only informative, a re-run converges (upserts +
-  find-or-create guards). **`Handle(ctx,job)`** = `worker.HandlerFunc` for `ps_feeds_import` (ignores the payload,
-  calls `Import`), `JobPayload()` carries a fixed sentinel → the queue's dedup lets only one run through),
+  counts SOURCE photos whose content was already catalogued under another source photo (see the
+  `photoprism_aliases` table in `internal/photos`); reading that as "skipped" is how 450 production
+  photos went missing under a clean-looking migration run. A run recorded before the field existed simply has no key for it and reads back as 0.
+  **`Complete` auto-detects the status**: a run with ≥1 unresolved defect closes as `StatusPartial`
+  (`partial`, 0042 extends the status CHECK) instead of `done`. 0042 also
+  restores `folder` in the source CHECK, which `0041` dropped by mistake. `internal/dirimport` collects
+  defects into `runState` and persists them via `RecordFailures` before `Complete`),
   `internal/importapi/`
-  (maintainer-only HTTP API of the imports behind `RequireMaintainer`: interfaces `Queue` (Enqueue, satisfied by `*jobs.Store`) and `RunLister`
-  (List, satisfied by `*importer.Store`); `NewAPI(Config{Queue,Runs,RequireMaintainer,EnablePhotoPrism,
-  EnablePhotoSorter,EnableFeeds})`+`RegisterRoutes` mounts **always** `GET /import/runs` (the history + `sources`
-  flags telling which sources are configured) and — **only for configured sources** —
-  `POST /import/photoprism` → a `pp_import`, `POST /import/photosorter` → a `ps_migrate` and
-  `POST /import/photosorter-feeds` → a `ps_feeds_import` job (the shared
-  `enqueue` helper, 202 `{job_id,status}`); `jobs.ErrDuplicate` → 409 (already running), another error → 500;
-  `GET /import/runs` (`parsePaging` limit≤200/offset, invalid → 400) returns
-  `{runs,limit,offset,sources:{photoprism,photosorter,photosorter_feeds}}` (a page of `import_runs` newest-started-first
-  via `importer.Store.List`); the whole API is always mounted in `serve` (`buildImportAPI` in
-  `cmd/kukatko/import.go`), so the history works even without a source; the triggers do not run inline — they belong on the
-  background worker), `internal/backup/`
+  (maintainer-only, **read-only** HTTP API over the import bookkeeping, behind `RequireMaintainer`:
+  interfaces `RunLister` (List) and `FailureLister` (ListFailures), both satisfied by
+  `*importer.Store`; `NewAPI(Config{Runs,Failures,RequireMaintainer})`+`RegisterRoutes` mounts
+  `GET /import/runs` (`parsePaging` limit≤200/offset, invalid → 400) → `{runs,limit,offset}`, a page of
+  `import_runs` newest-started-first via `importer.Store.List`, and `GET /import/failures`
+  (`?source=&run_id=&unresolved=&limit=&offset=`, an unknown source → 400 via `importer.ErrInvalidSource`)
+  → `{failures,limit,offset}`. **There is nothing to trigger.** The `POST /import/photoprism`,
+  `/import/photosorter`, `/import/photosorter-feeds` triggers and `GET /import/verify` went with the
+  importers in August 2026; the only import left, `kukatko import dir`, reads a directory on the
+  server's disk and is therefore driven from the CLI. Wired in `serve` by `buildImportAPI` in
+  `cmd/kukatko/import.go`), `internal/backup/`
   (an in-process, scheduled **S3 backup** of the database and the originals into **a second, independent bucket**, all
   behind the interfaces `ObjectStore`/`Dumper`/`OriginalSource` → unit-testable with fakes without S3/DB/FS;
   `Service` =

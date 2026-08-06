@@ -124,13 +124,14 @@ type Jobs struct {
 	PendingEmbeddings int `json:"pending_embeddings"`
 }
 
-// Imports is the last-import-per-source section of the status snapshot. A nil
-// run means that source has never run.
+// Imports is the last-import section of the status snapshot. A nil run means
+// nothing has been imported that way yet.
 type Imports struct {
-	// PhotoPrism is the most recent PhotoPrism import run, or nil.
-	PhotoPrism *importer.Run `json:"photoprism"`
-	// PhotoSorter is the most recent photo-sorter migration run, or nil.
-	PhotoSorter *importer.Run `json:"photosorter"`
+	// Folder is the most recent `kukatko import dir` run, or nil. It is the only
+	// import that can still happen: the PhotoPrism/photo-sorter migration finished
+	// in August 2026 and its importers are gone. Its runs are still in the history
+	// (GET /import/runs); they are simply not live state a dashboard should watch.
+	Folder *importer.Run `json:"folder"`
 }
 
 // Maps is the map-provider (mapy.com) section of the status snapshot. It reports
@@ -330,9 +331,9 @@ func (s *Service) collectJobs(ctx context.Context) (Jobs, error) {
 // than present with a zero run, so a caller can tell "never imported" from
 // "imported and the tallies happen to be zero".
 //
-// It exists alongside Collect because /metrics wants every source (including the
-// folder import and the photo-sorter feeds), while the dashboard's Imports
-// section reports only the two migration paths it renders.
+// It exists alongside Collect because /metrics wants every source, including the
+// retired migration ones whose finished runs stay in the table, while the
+// dashboard's Imports section reports only the folder import it renders.
 func (s *Service) LatestRuns(ctx context.Context) (map[importer.Source]importer.Run, error) {
 	sources := importer.AllSources()
 	runs := make(map[importer.Source]importer.Run, len(sources))
@@ -348,22 +349,14 @@ func (s *Service) LatestRuns(ctx context.Context) (map[importer.Source]importer.
 	return runs, nil
 }
 
-// collectImports reads the latest run per source for the import section. It
-// reports only the two migration paths the dashboard renders; LatestRuns covers
-// every source.
+// collectImports reads the latest folder-import run for the import section;
+// LatestRuns covers every source, including the retired migration ones.
 func (s *Service) collectImports(ctx context.Context) (Imports, error) {
-	runs, err := s.LatestRuns(ctx)
+	run, err := s.latestRun(ctx, importer.SourceFolder)
 	if err != nil {
 		return Imports{}, err
 	}
-	imports := Imports{}
-	if run, ok := runs[importer.SourcePhotoPrism]; ok {
-		imports.PhotoPrism = &run
-	}
-	if run, ok := runs[importer.SourcePhotoSorter]; ok {
-		imports.PhotoSorter = &run
-	}
-	return imports, nil
+	return Imports{Folder: run}, nil
 }
 
 // latestRun returns the most recent run for source, or nil when none exists.

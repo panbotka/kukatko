@@ -345,8 +345,9 @@ hledání, ani řazení, ani stránkování (rošt je virtualizovaný a scrolluj
 5. Zvlášť: automatické „album podle měsíce importu" u skenů starých fotek je věcně
    zavádějící — mělo by se odvozovat od `taken_at`, ne od data přidání.
 
-**Kde to je.** `web/src/pages/AlbumsPage.tsx` (nepoužívá `type` z odpovědi API),
-pojmenování vzniká v `internal/ppimport` / `internal/psimport`.
+**Kde to je.** `web/src/pages/AlbumsPage.tsx` (nepoužívá `type` z odpovědi API);
+pojmenování vzniklo v importerech migrace, které byly 2026-08-06 odstraněny — data
+zůstávají, kód, který je vyrobil, ne.
 
 ---
 
@@ -559,7 +560,7 @@ stejný účinek v malém.
 
 **Kde to je.** `web/src/components/photo/MetadataPanel.tsx` (vykreslení `ai_note`),
 `web/src/components/photo/TechnicalDetails.tsx`, skládání názvu fotky/alba
-v `internal/ppimport` / `internal/psimport` / `internal/places`.
+v `internal/places` a v odstraněných importerech migrace.
 
 ---
 

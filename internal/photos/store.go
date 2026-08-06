@@ -164,9 +164,9 @@ func (s *Store) GetByPhotoprismUID(ctx context.Context, ppUID string) (Photo, er
 // given SHA1 content hash, or ErrPhotoNotFound. It is the identity of a single
 // SOURCE FILE rather than of a source photo: a PhotoPrism photo made of several
 // files (a RAW next to its JPEG) is imported as one Kukátko photo per file, all
-// grouped in one stack, and only the displayable one carries the photoprism_uid
-// (see internal/ppimport). The siblings are recognised on a re-run by this lookup
-// alone, which is what keeps the import from downloading them twice.
+// grouped in one stack, and only the displayable one carries the photoprism_uid.
+// It is how a RAW sibling is still identifiable by its source file after the
+// PhotoPrism import that created it was retired.
 func (s *Store) GetByPhotoprismFileHash(ctx context.Context, ppFileHash string) (Photo, error) {
 	return s.getPhoto(ctx, "photoprism_file_hash", ppFileHash)
 }
@@ -179,12 +179,10 @@ func (s *Store) GetByPhotosorterUID(ctx context.Context, psUID string) (Photo, e
 
 // SetPhotoprismRef stamps the PhotoPrism external identifiers (the photo's
 // PhotoPrism UID and its SHA1 file hash) onto the photo identified by uid and
-// returns the refreshed photo. The PhotoPrism import uses it to backfill these
-// references onto a photo whose content was deduplicated by SHA256 against an
-// already-catalogued file (for example one uploaded directly or migrated from
-// photo-sorter), so subsequent incremental runs short-circuit on the
-// photoprism_uid lookup instead of re-downloading the original. It returns
-// ErrPhotoNotFound if no such photo exists.
+// returns the refreshed photo. It backfills the provenance of a photo whose
+// content was deduplicated by SHA256 against an already-catalogued file, so the
+// row still answers to the source uid it came from. It returns ErrPhotoNotFound
+// if no such photo exists.
 func (s *Store) SetPhotoprismRef(ctx context.Context, uid, ppUID, ppFileHash string) (Photo, error) {
 	q := `UPDATE photos SET photoprism_uid = $2, photoprism_file_hash = $3, updated_at = now()
 		WHERE uid = $1 RETURNING ` + photoColumns

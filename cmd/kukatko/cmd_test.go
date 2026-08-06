@@ -44,19 +44,29 @@ func TestRootCmd_subcommandsRegistered(t *testing.T) {
 	}
 }
 
-// TestImportCmd_hasPhotoPrismChild verifies the import command exposes the
-// photoprism subcommand.
-func TestImportCmd_hasPhotoPrismChild(t *testing.T) {
+// TestImportCmd_onlyDirChild verifies the import command exposes the dir
+// subcommand and nothing else: the PhotoPrism/photo-sorter migration commands
+// were removed with their importers in August 2026 and must not come back.
+func TestImportCmd_onlyDirChild(t *testing.T) {
 	t.Parallel()
 
-	var found bool
-	for _, c := range newImportCmd().Commands() {
-		if c.Name() == "photoprism" {
-			found = true
+	children := newImportCmd().Commands()
+	if len(children) != 1 || children[0].Name() != "dir" {
+		names := make([]string, 0, len(children))
+		for _, c := range children {
+			names = append(names, c.Name())
 		}
+		t.Errorf("import subcommands = %v, want exactly [dir]", names)
 	}
-	if !found {
-		t.Error("import command has no photoprism subcommand")
+}
+
+// TestMigrateCmd_hasNoDataMigrationChild verifies `migrate` only applies schema
+// migrations: its `photosorter` data-migration child went with the importers.
+func TestMigrateCmd_hasNoDataMigrationChild(t *testing.T) {
+	t.Parallel()
+
+	if children := newMigrateCmd().Commands(); len(children) != 0 {
+		t.Errorf("migrate has %d subcommands, want none", len(children))
 	}
 }
 

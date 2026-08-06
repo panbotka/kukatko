@@ -52,16 +52,15 @@ albums, labels, people, faces, embeddings, places, edits, import history, the
 job queue and the per-user curation) and every object the configured store owns
 (the YYYY/MM originals, the thumb/ thumbnails and the sidecars/ metadata).
 
-It is phase 1 of docs/MIGRATION_PLAN.md — the wipe that precedes a full
-re-import — and it is the only command here that deletes the library on
-purpose. There is no S3 backup of this deployment (docs/READINESS_AUDIT.md §4),
-so the only way back is to re-import from PhotoPrism.
+It is the only command here that deletes the library on purpose, and since the
+PhotoPrism/photo-sorter migration finished and its importers were removed there
+is nothing to re-import from. There is no S3 backup of this deployment either
+(docs/READINESS_AUDIT.md §4), so a wipe is final.
 
 It never touches the accounts (users, sessions, API tokens), the announcement,
-the audit trail or the migration history — a wipe must not lock you out of the
-instance you just wiped, nor erase the record of the wipe. It has no client of
-PhotoPrism or photo-sorter: the source libraries are read-only and are the
-rollback.
+the audit trail or the import-run history — a wipe must not lock you out of the
+instance you just wiped, nor erase the record of the wipe or of where the
+library originally came from.
 
 Guards, all of them on by default:
 
